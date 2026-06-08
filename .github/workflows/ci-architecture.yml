@@ -623,6 +623,26 @@ jobs:
       - name: Default-enabled timer first-run guard (v1.161)
         run: bash cli/lib/nftban/tests/default_enabled_timer_first_run_guard_v161.sh
 
+      # v1.162 PR-A (DELTA §3.1): SSH durable multi-port render + reboot-sim.
+      # Sources cmd_firewall.sh's _firewall_substitute_placeholders, mocks the
+      # SSH detector to a multi-port union (22, 2222, 55000), renders the real
+      # install/nftables/nftables.conf.tpl, and asserts the durable `set
+      # ssh_ports` carries the FULL union (not primary-only) in BOTH families,
+      # the SSH ct-count rule stays set-driven (`tcp dport @ssh_ports`), no
+      # __SSH_PORT__ placeholder survives, and (reboot-sim) the durable file
+      # alone re-reads with every union port intact (no kernel reconcile).
+      # Hermetic (TMPDIR sandbox; no host, no systemd, no sshd).
+      - name: SSH durable multi-port render + reboot-sim (v1.162 PR-A)
+        run: bash cli/lib/nftban/tests/ssh_durable_multiport_render_v162.sh
+
+      # v1.162 PR-B (DELTA §3.5): static fallback install/nftables/nftables.conf
+      # must be set-driven — `set ssh_ports` defined in both ip/ip6 tables and the
+      # SSH ct-count rule reads `tcp dport @ssh_ports` (no literal `tcp dport 22`),
+      # set defined-before-use. Static grep guard (the boot-baseline `nft -c`
+      # parse is exercised by the package install/runtime CI legs).
+      - name: Static nftables fallback is set-driven (v1.162 PR-B)
+        run: bash cli/lib/nftban/tests/static_nftables_ssh_set_driven_v162.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
