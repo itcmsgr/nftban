@@ -654,6 +654,17 @@ jobs:
       - name: RPM spec has no section macro in a comment (v1.165 PR-A)
         run: bash cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh
 
+      # v1.165 PR-B: the %files section both %include nftban-files.inc (which
+      # %dir-owns every /usr/lib/nftban payload dir) and used to repeat those
+      # dirs as bare payload paths, so strict rpm 4.16 warned "File listed
+      # twice". PR-B lists the 12 lib dirs as <dir>/* (inc keeps sole %dir
+      # ownership) and strips dotfiles in %install so the /* glob (which skips
+      # dotfiles) does not orphan tests/.gitkeep. This static guard asserts the
+      # dedup shape + the dotfile strip; the full no-double-listing / no-orphan
+      # parse is confirmed by Build RPM el9/el10.
+      - name: RPM %files lib-dir dedup (no double dir listing) (v1.165 PR-B)
+        run: bash cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v165_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
