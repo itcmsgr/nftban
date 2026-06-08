@@ -107,6 +107,27 @@ GONE="$(mktemp -d)"   # no feeds/ subdir at all
     || no "absent feeds dir not zeroed"
 rm -rf "$GONE"
 
+# --- (e) BOTH cmd_status.sh feed surfaces route through the helper -----------
+# v1.167 blocker fix: Lane A originally missed the cmd_status.sh:~914 "Threat
+# Feeds … Active" surface (counted all *.txt incl. disabled/orphans). Assert
+# every bare `find … feeds … *.txt … wc -l` in cmd_status.sh is helper-guarded
+# (declare -f nftban_feed_file_count fallback), and the helper is referenced on
+# both surfaces.
+STATUS_SH="$TEST_DIR/../cli/cmd_status.sh"
+if [[ -f "$STATUS_SH" ]]; then
+    helper_refs=$(grep -c 'nftban_feed_file_count' "$STATUS_SH" || true)
+    bare_finds=$(grep -cE 'find .*feeds.*\*\.txt.*-type f.*wc -l' "$STATUS_SH" || true)
+    guards=$(grep -c 'declare -f nftban_feed_file_count' "$STATUS_SH" || true)
+    [[ "$helper_refs" -ge 2 ]] \
+        && ok "cmd_status.sh routes both feed surfaces through nftban_feed_file_count ($helper_refs refs)" \
+        || no "cmd_status.sh feed surfaces not both routed through the helper ($helper_refs)"
+    [[ "$guards" -ge "$bare_finds" ]] \
+        && ok "every bare feed find in cmd_status.sh is helper-guarded (guards=$guards >= finds=$bare_finds)" \
+        || no "unguarded bare feed find remains in cmd_status.sh (guards=$guards < finds=$bare_finds)"
+else
+    no "cmd_status.sh not found for Lane-A coverage check"
+fi
+
 echo ""
 echo "  PASS=$PASS FAIL=$FAIL"
 [[ "$FAIL" -eq 0 ]] || exit 1

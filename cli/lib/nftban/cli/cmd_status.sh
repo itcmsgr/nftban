@@ -908,11 +908,16 @@ _status_section_protection() {
         fi
     fi
 
-    # Feeds
+    # Feeds — v1.167 BUG-CtCount-feeds: route through the shared
+    # nftban_feed_file_count() helper (enabled-aware) instead of counting every
+    # on-disk *.txt (incl. disabled/orphans). Mirrors the status :2086 surface.
     local feeds_enabled=0
-    if [[ -d "${NFTBAN_DATA_DIR}/feeds" ]]; then
+    if declare -f nftban_feed_file_count >/dev/null 2>&1; then
+        feeds_enabled=$(nftban_feed_file_count)
+    elif [[ -d "${NFTBAN_DATA_DIR}/feeds" ]]; then
         feeds_enabled=$(find "${NFTBAN_DATA_DIR}/feeds" -name "*.txt" -type f 2>/dev/null | wc -l)
     fi
+    feeds_enabled="${feeds_enabled:-0}"
     printf "  %-20s %s Active\n" "Threat Feeds........" "$feeds_enabled"
     [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(list: nftban feeds list | enable: nftban feeds enable <FEED>)"
 

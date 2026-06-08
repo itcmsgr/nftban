@@ -678,6 +678,20 @@ jobs:
       - name: RPM %files templates dedup (FHS-generator correction) (v1.166 PR-C)
         run: bash cli/lib/nftban/tests/rpm_files_templates_dedup_v166_test.sh
 
+      # v1.167 UX-residual lane guards (were merged un-wired; wired here as part
+      # of the v1.167 blocker fix so future regressions are caught in CI).
+      - name: Feed-counter unification (v1.167 PR-1, BUG-CtCount-feeds)
+        run: bash cli/lib/nftban/tests/feed_counters_unify_v167_test.sh
+      - name: CLI output-truth + flag-parity (v1.167 PR-2)
+        run: bash cli/lib/nftban/tests/cli_output_truth_v167_test.sh
+      - name: No re-introduced orphan modules (v1.167 PR-3)
+        run: bash cli/lib/nftban/tests/no_reintroduced_orphan_modules_v167_test.sh
+      # v1.167 SHIP-BLOCKER guard: `nftban update --dry-run` must return rc=1 with
+      # the 3-line hint (NOT command-not-found rc=127). Also asserts the dispatcher
+      # sources cmd_common.sh so the 6 CLI-BUG-1 sibling error paths are reachable.
+      - name: update --dry-run hint rc=1 + CLI-BUG-1 reachability (v1.167)
+        run: bash cli/lib/nftban/tests/cli_update_dry_run_hint_v167_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
