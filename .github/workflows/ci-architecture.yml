@@ -665,6 +665,19 @@ jobs:
       - name: RPM %files lib-dir dedup (no double dir listing) (v1.165 PR-B)
         run: bash cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v165_test.sh
 
+      # v1.166 PR-C: templates %files dedup via FHS-generator correction. The
+      # bare /usr/share/nftban/templates line both double-listed the generator
+      # %dir-owned dirs and solely owned the email/+partials/ staged .html (no
+      # inc %dir), so it could not be dropped naively. PR-C adds %dir for
+      # templates/email + templates/partials to build/fhs-spec.yaml (regenerated
+      # into nftban-files.inc), lists the 4 content subdirs as <dir>/*, keeps
+      # zabbix as an empty %dir, and strips dotfiles in %install. This guard
+      # asserts the dedup shape + generator ownership; the no-orphan/no-double
+      # parse is confirmed by Build RPM el9/el10. (FHS body changes by design —
+      # the "FHS spec generated files check" gate enforces generator parity.)
+      - name: RPM %files templates dedup (FHS-generator correction) (v1.166 PR-C)
+        run: bash cli/lib/nftban/tests/rpm_files_templates_dedup_v166_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

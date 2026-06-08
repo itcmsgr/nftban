@@ -167,6 +167,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates"]="0755|root|root|Templates"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/mail"]="0755|root|root|Mail templates"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/reports"]="0755|root|root|Report templates"
+    NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/email"]="0755|root|root|Email templates (HTML)"
+    NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/partials"]="0755|root|root|Email/report partial templates (HTML)"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/zabbix"]="0755|root|root|Zabbix import templates (5.x XML, 6.x+ YAML)"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/dashboards"]="0755|root|root|Monitoring dashboards"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/dashboards/grafana"]="0755|root|root|Grafana dashboard JSON files"

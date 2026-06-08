@@ -75,6 +75,8 @@
 /usr/share/nftban/templates
 /usr/share/nftban/templates/mail
 /usr/share/nftban/templates/reports
+/usr/share/nftban/templates/email
+/usr/share/nftban/templates/partials
 /usr/share/nftban/templates/zabbix
 /usr/share/nftban/dashboards
 /usr/share/nftban/dashboards/grafana
