@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-03"
-# meta:description="v1.147-A — asserts the MAC profile shipment. SELinux: nftban.te policy_module 1.1.0, nftban.if exists, nftban.fc labels /usr/lib/nftban/bin/nftband as nftband_exec_t, .te carries the netlink/capability allows, build path ships+compiles nftban.pp, RPM %post has a selinuxenabled-guarded semodule -i, RPM %postun has a selinuxenabled-guarded semodule -r on final erase, no permissive nftband_t, no unconfined workaround. AppArmor: profile exists in complain mode with net_admin/dac_override/netlink-raw + the nftband.service ReadWritePaths, DEB postinst has an AppArmor-guarded apparmor_parser -r, DEB postrm has an AppArmor-guarded apparmor_parser -R. Guards spelled 'selinuxenabled' (not the plan typo). No polkit-as-SELinux-fix; no Go/daemon/core/schema change. Hermetic — static assertions on repo files, no host contact."
+# meta:description="v1.147-A — asserts the MAC profile shipment. SELinux: nftban.te policy_module 1.2.0, nftban.if exists, nftban.fc labels /usr/lib/nftban/bin/nftband as nftband_exec_t, .te carries the netlink/capability allows, build path ships+compiles nftban.pp, RPM %post has a selinuxenabled-guarded semodule -i, RPM %postun has a selinuxenabled-guarded semodule -r on final erase, no permissive nftband_t, no unconfined workaround. AppArmor: profile exists in complain+attach_disconnected mode with net_admin/dac_override/netlink-raw + the nftband.service ReadWritePaths, DEB postinst has an AppArmor-guarded apparmor_parser -r, DEB postrm has an AppArmor-guarded apparmor_parser -R. Guards spelled 'selinuxenabled' (not the plan typo). No polkit-as-SELinux-fix; no Go/daemon/core/schema change. Hermetic — static assertions on repo files, no host contact."
 # meta:input="install/selinux/*, install/apparmor/*, packaging/build_nftban.sh, packaging/deb/postinst, packaging/deb/postrm"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep,awk"
@@ -38,14 +38,14 @@ POSTINST="$REPO/packaging/deb/postinst"
 POSTRM="$REPO/packaging/deb/postrm"
 
 # ── SELinux ────────────────────────────────────────────────────────────────
-[[ -f "$TE" ]] && grep -qE 'policy_module\(nftban, 1\.1\.0\)' "$TE" \
-  && ok "S1 nftban.te policy_module is 1.1.0" || no "S1 nftban.te policy_module is 1.1.0" "missing/old"
+[[ -f "$TE" ]] && grep -qE 'policy_module\(nftban, 1\.2\.0\)' "$TE" \
+  && ok "S1 nftban.te policy_module is 1.2.0" || no "S1 nftban.te policy_module is 1.2.0" "missing/old"
 [[ -f "$IF" ]] && grep -q 'nftban_domtrans' "$IF" \
   && ok "S2 nftban.if exists with interfaces" || no "S2 nftban.if exists" "missing"
 [[ -f "$FC" ]] && grep -Eq '/usr/lib/nftban/bin/nftband[[:space:]].*nftband_exec_t' "$FC" \
   && ok "S3 nftban.fc labels the daemon binary nftband_exec_t" || no "S3 .fc labels daemon binary" "missing"
 if grep -q 'netlink_netfilter_socket' "$TE" && grep -q 'netlink_route_socket' "$TE" \
-   && grep -Eq 'self:capability \{ net_admin net_raw \}' "$TE"; then
+   && grep -Eq 'self:capability \{[^}]*\bnet_admin\b[^}]*\bnet_raw\b' "$TE"; then
   ok "S4 nftban.te carries netlink + net_admin/net_raw allows"
 else no "S4 .te netlink/capability allows" "missing"; fi
 if grep -qE 'make -f /usr/share/selinux/devel/Makefile nftban\.pp' "$BUILD" \
@@ -76,8 +76,8 @@ if ! grep -rq 'selinunenabled' "$BUILD" "$POSTINST" "$POSTRM"; then
 else no "S10 selinuxenabled typo" "found selinunenabled"; fi
 
 # ── AppArmor ───────────────────────────────────────────────────────────────
-[[ -f "$AA" ]] && grep -qE 'profile nftband /usr/lib/nftban/bin/nftband flags=\(complain\)' "$AA" \
-  && ok "A1 AppArmor profile exists in complain mode" || no "A1 AppArmor profile complain" "missing/not-complain"
+[[ -f "$AA" ]] && grep -qE 'profile nftband /usr/lib/nftban/bin/nftband flags=\(complain attach_disconnected\)' "$AA" \
+  && ok "A1 AppArmor profile exists in complain+attach_disconnected mode" || no "A1 AppArmor profile complain+attach_disconnected" "missing/not-complain"
 if grep -q 'capability net_admin,' "$AA" && grep -q 'capability dac_override,' "$AA" \
    && grep -q 'network netlink raw,' "$AA"; then
   ok "A2 profile has net_admin + dac_override + netlink raw"

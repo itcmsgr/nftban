@@ -612,6 +612,24 @@ jobs:
       - name: SSH-port-change lifecycle validator (v1.155 PR-2)
         run: bash cli/lib/nftban/tests/ssh_port_change_lifecycle_v155_test.sh
 
+      # v1.161: default-enabled-timer first-run guard (geoban lesson, v1.156->v1.159).
+      # Enumerates the installer's auto-enabled timers (coreTimers in
+      # internal/installer/services/timers.go) and asserts each timer's .service
+      # EITHER has all ExecStart deps shipped/always-present OR carries an
+      # ExecCondition that SKIPS (not fails) when an optional dep is absent — so a
+      # default-enabled timer cannot hard-fail on a package-default host and flip
+      # INSTALL_STATE=DEGRADED (the v1.156 nftban-geoban-refresh regression).
+      # Hermetic / repo-static (no systemd, no host).
+      - name: Default-enabled timer first-run guard (v1.161)
+        run: bash cli/lib/nftban/tests/default_enabled_timer_first_run_guard_v161.sh
+
+      # v1.161 BUG-RPM-FILES-LISTED-TWICE: static guard that the RPM %files payload
+      # in packaging/build_nftban.sh does not list a directory path as a bare line
+      # when the generated nftban-files.inc already owns it via %dir (which made
+      # rpmbuild warn "File listed twice"). Allows the documented bare exceptions.
+      - name: RPM %files no double-dir-listing guard (v1.161)
+        run: bash cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v161.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

@@ -1376,21 +1376,34 @@ fi
 %include %{_sourcedir}/nftban-files.inc
 # Binary entry point (explicit attr; NOT a directory)
 %attr(0750,root,nftban) /usr/sbin/nftban
-# Package payload trees (bare paths -> recursive include of files within generator-owned dirs)
-/usr/lib/nftban/bin
-/usr/lib/nftban/sbin
+# v1.161 BUG-RPM-FILES-LISTED-TWICE: package each payload dir's CONTENTS (`/*`),
+# not the bare directory path. The directory %dir ownership already comes from
+# %include nftban-files.inc above; listing the bare dir here too made RPM see the
+# same %dir entry twice ("File listed twice: /usr/lib/nftban/<dir>" warnings on
+# strict rpm 4.16/EL9). `<dir>/*` packages every file inside while leaving the
+# inc's single %dir entry as the sole owner of the directory node.
+#
+# Safe-to-convert: every /usr/lib/nftban payload dir below is FLAT (no nested
+# subdirs — verified against cli/lib/nftban/* and the build staging) and is
+# non-empty at package time, so `/*` always matches at least one file (no
+# "contains no files" error) and there are no un-%dir'd subdirs to orphan.
+# Empty payload dirs (e.g. /usr/lib/nftban/modules, .../tools) are intentionally
+# NOT given a `/*` line — they keep their inc %dir entry only; adding `/*` would
+# fail the build with "contains no files".
+/usr/lib/nftban/bin/*
+/usr/lib/nftban/sbin/*
 /usr/lib/nftban/VERSION
 /usr/lib/nftban/BUILD_TARGET
-/usr/lib/nftban/cli
-/usr/lib/nftban/core
-/usr/lib/nftban/lib
-/usr/lib/nftban/cron
-/usr/lib/nftban/helpers
-/usr/lib/nftban/setup
-/usr/lib/nftban/exporters
-/usr/lib/nftban/tests
-/usr/lib/nftban/data
-/usr/lib/nftban/health
+/usr/lib/nftban/cli/*
+/usr/lib/nftban/core/*
+/usr/lib/nftban/lib/*
+/usr/lib/nftban/cron/*
+/usr/lib/nftban/helpers/*
+/usr/lib/nftban/setup/*
+/usr/lib/nftban/exporters/*
+/usr/lib/nftban/tests/*
+/usr/lib/nftban/data/*
+/usr/lib/nftban/health/*
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
 # v1.50.0: template with placeholders (always replaced on upgrade, NOT %config)
@@ -1410,6 +1423,16 @@ fi
 /etc/polkit-1/rules.d/20-nftban-auditor.rules
 # Shared data
 /usr/share/nftban/specs/structure_default.json
+# v1.161 BUG-RPM-FILES-LISTED-TWICE: LEFT AS A BARE DIR ON PURPOSE.
+# /usr/share/nftban/templates has subdirs (email/, partials/) that the generated
+# nftban-files.inc does NOT carry a %dir entry for (the inc only owns templates/,
+# templates/mail/, templates/reports/, templates/zabbix/). The bare dir path here
+# is what recursively owns those un-%dir'd subdirs + their files. Converting it to
+# `/*` would orphan email/ and partials/ ("installed but unpackaged" / unowned
+# dir). Since the inc is generator-owned (DO NOT EDIT), the one residual
+# "listed twice" warning on /usr/share/nftban/templates is accepted until the FHS
+# generator emits %dir entries for those subdirs. selinux/ below has no inc %dir
+# entry, so it correctly stays a bare dir (sole owner, no double-listing).
 /usr/share/nftban/templates
 /usr/share/nftban/selinux
 /usr/share/bash-completion/completions/nftban
