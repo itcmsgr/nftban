@@ -84,6 +84,15 @@ elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban
     source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_service_control.sh" || return 1
 fi
 
+# Load shared feed-counter helpers (v1.167 PR-1: single source of truth for
+# feed IP-total / enabled-file-count surfaces — BUG-CtCount-feeds)
+# shellcheck source=/usr/lib/nftban/lib/nftban_feed_counters.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_feed_counters.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_feed_counters.sh" || return 1
+elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_feed_counters.sh" ]]; then
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_feed_counters.sh" || return 1
+fi
+
 # =============================================================================
 # BINARY INTEGRITY VALIDATION
 # =============================================================================
@@ -2066,12 +2075,19 @@ output_json() {
     fi
     echo "    \"tunnel\": {\"enabled\": $json_tunnel_enabled, \"high\": $json_tunnel_high, \"medium\": $json_tunnel_med, \"advisory_only\": true},"
 
-    # Feeds
+    # Feeds — feed FILE count (enabled feed files). v1.167 PR-1: unified via the
+    # shared nftban_feed_file_count() helper (BUG-CtCount-feeds). The pre-v1.167
+    # `find *.txt | wc -l` counted every on-disk file (incl. disabled/orphans);
+    # the helper counts ENABLED feed files via the canonical v1.141 PR-C
+    # resolution, matching the other feed surfaces. The "count" label is a FILE
+    # count, so it routes through nftban_feed_file_count (not the IP-total).
     local feeds_count=0
-    if [[ -d "${NFTBAN_DATA_DIR}/feeds" ]]; then
+    if declare -f nftban_feed_file_count >/dev/null 2>&1; then
+        feeds_count=$(nftban_feed_file_count)
+    elif [[ -d "${NFTBAN_DATA_DIR}/feeds" ]]; then
         feeds_count=$(find "${NFTBAN_DATA_DIR}/feeds" -name "*.txt" -type f 2>/dev/null | wc -l || true)
-        feeds_count="${feeds_count:-0}"
     fi
+    feeds_count="${feeds_count:-0}"
     echo "    \"feeds\": {\"count\": $feeds_count}"
     echo "  },"
 
