@@ -89,6 +89,8 @@
 %dir %attr(0755,root,root) /usr/share/nftban/templates
 %dir %attr(0755,root,root) /usr/share/nftban/templates/mail
 %dir %attr(0755,root,root) /usr/share/nftban/templates/reports
+%dir %attr(0755,root,root) /usr/share/nftban/templates/email
+%dir %attr(0755,root,root) /usr/share/nftban/templates/partials
 %dir %attr(0755,root,root) /usr/share/nftban/templates/zabbix
 %dir %attr(0755,root,root) /usr/share/nftban/dashboards
 %dir %attr(0755,root,root) /usr/share/nftban/dashboards/grafana
