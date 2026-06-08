@@ -1386,12 +1386,9 @@ nftban_health_check_immutable_flags() {
     # Allow tests to override the list via NFTBAN_IMMUT_FILES (space-separated).
     local immutable_files
     if [[ -n "${NFTBAN_IMMUT_FILES:-}" ]]; then
-        # Whitespace-split the override regardless of the caller's IFS.
-        local _saved_ifs="${IFS:-}"
-        IFS=$' \t\n'
-        # shellcheck disable=SC2206  # intentional word-split of test override
-        immutable_files=(${NFTBAN_IMMUT_FILES})
-        IFS="$_saved_ifs"
+        # Whitespace-split the override into the array with IFS scoped to this
+        # read only — no persistent IFS= assignment (avoids Semgrep ifs-tampering).
+        IFS=$' \t\n' read -r -a immutable_files <<< "${NFTBAN_IMMUT_FILES}"
     else
         immutable_files=(
             "/etc/nftban/nftban.conf"
