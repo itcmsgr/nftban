@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.161.0] - 2026-06-08 — installer remainder + hygiene
+
+**Codename:** `V161_INSTALLER_REMAINDER_HYGIENE`
+**Controlling record:** `NFTBAN_ROADMAP/NFTBAN_PENDINGS_AND_BUGS_CURRENT.md` (DELTA installer clusters + PACKAGING-HYGIENE)
+**PR:** [#793](https://github.com/itcmsgr/nftban/pull/793) (sq `0e08f3d3`)
+
+> **Why:** bounded installer-remainder + hygiene lane after the v1.150.1→v1.159.0 fleet rollout. Daemon `cmd/nftband` byte-identical (chain v1.147→v1.161; tree `85a2de3e…`); schema 1.83.0 frozen; installer/core binaries change intentionally.
+
+### Ships
+- **cPanel TCP 4190 (managesieve) parity** — `etc/nftban/conf.d/panels/cpanel/main.conf` gains `4190` in `TCP_IN`+`TCP6_IN` (dovecot managesieve, RFC 5804), matching the Plesk profile.
+- **INST-CVE-PARITY — detect-phase parity** — the Go installer `phaseDetect` now classifies the CVE-2025-NFTBAN-001 `inet filter` skeleton (`internal/installer/detect/cve_inet_filter.go`), mirroring the proven DEB/RPM scriptlet guards so the source-install path gets detect/classify/message parity. (Full refuse-on-populated *enforcement* via switchop remains a follow-up — see Not shipped.)
+- **OSV scanner curl retry** — `.github/workflows/osv-scanner.yml` install uses `--retry 5 --retry-all-errors …` (transient github.com 504s no longer hard-fail the scan; mirrors the v1.157 fetch-hardening policy).
+- **v147a MAC-profile test drift refresh** — `cli/lib/nftban/tests/cli_mac_profiles_v147a_test.sh` S1/S4/A1 updated to the shipped assets: SELinux `policy_module 1.2.0`, capability-set assertion loosened (`net_admin`+`net_raw` within the set), AppArmor `flags=(complain attach_disconnected)`.
+- **default-enabled timer first-run CI guard** — `cli/lib/nftban/tests/default_enabled_timer_first_run_guard_v161.sh` (+ CI wiring) asserts every default-enabled timer's service either ships its ExecStart deps or has an ExecCondition that *skips* (not fails) on an absent optional dep — locks the geoban lesson (`TEST_LESSON_GEOBAN_REFRESH_V159`).
+
+### Not shipped (reopened/refined — remain open in the register)
+- **§2.2 raw-ghost cleanup** — attempted then reverted: adding `ip/ip6 raw` to the static `ghostTables` violated the PR26.6 preserve-`ip raw` invariant. Refined shape = classify-empty-raw-only (preserve populated/safety raw; remove only proven-empty iptables-nft skeleton).
+- **RPM `%files` double-listing cleanup** — attempted then reverted: the `/*` conversion broke the strict rpm 4.16 EL9/EL10 build (`Installed (but unpackaged) file(s) found`) and `templates/{mail,reports,zabbix}` stayed double-listed. Benign LOW warning; correct fix needs `%dir` for the templates subdirs in the FHS generator first, then EL9 iteration.
+- **full refuse-on-populated switchop enforcement** — follow-up bundled with the §2.2 classify-empty lane (`CleanGhostTables` still deletes `inet filter` unconditionally; v1.161 ships detect parity, not enforcement parity).
+
+### Notes
+- **Envelope:** installer-Go + config + CI + tests — `0 cmd/nftband` (daemon byte-identical) · `0` schema (1.83.0 frozen) · no CSF · no firewall behaviour change.
+- **Validation:** lab2 `go build`+`go test` (detect/switchop/installer) ok, gofmt clean, v147a 17/0, timer-guard pass; CI #793 69/0/1-skip; post-merge main `0e08f3d3` green (Build RPM el9/el10 ✅, OSV ✅, daemon tree unchanged). Strict rpm 4.16 `%files` validation is a CI `Build RPM (el9)` concern — the lab hosts can't build the EL RPM (lab4 no Go; lab2 no EL build-deps).
+
 ## [v1.160.0] - 2026-06-08 — update-log operator-output truth
 
 **Codename:** `V160_UPDATE_LOG_TRUTH_FIXES`
