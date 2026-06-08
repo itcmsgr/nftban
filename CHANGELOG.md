@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.164.0] - 2026-06-08 — switchop classify-content safety
+
+**Codename:** `V164_SWITCHOP_CLASSIFY_EMPTY`
+**Controlling record:** `NFTBAN_ROADMAP/V164_SWITCHOP_CLASSIFY_EMPTY_SCOPE.md`
+**PR:** [#799](https://github.com/itcmsgr/nftban/pull/799) (sq `42183f78`)
+
+> **Why:** close the v1.161 reopened installer-correctness debts — §2.2 raw-ghost cleanup and refuse-on-populated `inet filter` enforcement. The `internal/installer/switchop` cleanup deleted known table names on sight; it now **classifies table content before deleting**. Installer-Go only; daemon `cmd/nftband` byte-identical (chain v1.147→v1.164; tree `85a2de3e…`); schema 1.83.0 frozen; no packaging/`build_nftban.sh` change; FHS body byte-unchanged.
+
+### Changed — switchop ghost-table cleanup now classifies content (§2.2 + refuse-on-populated)
+- New shared **`TableIsEmpty(exec, family, table)`** helper (`internal/installer/switchop/classify.go`) — generalizes the `detect/cve_inet_filter` rule-count classifier; returns true only when a `nft list table` shows zero rules (conservative false on not-exist/error).
+- **`CleanGhostTables`** (`internal/installer/switchop/ghost.go`) reworked into three classes:
+  - **Class 1 — unconditional compat-shim skeletons** (`ip/ip6 filter`, `nat`, `mangle`, `security`, `inet firewalld`): deleted on sight, unchanged.
+  - **Class 2 — `ip raw` / `ip6 raw`, classify-empty:** an **empty** raw table is an iptables-nft skeleton → **removed**; a **populated** raw table (operator/kernel NOTRACK / conntrack-exemption rules) → **preserved + WARN**, never deleted on sight.
+  - **Class 3 — `inet filter`, classify-empty + override:** an **empty/default** skeleton → **removed** (CVE-2025-NFTBAN-001 guard — it would shadow nftban blocking); a **populated operator-owned** table → **preserved + WARN/refuse**, unless `NFTBAN_ALLOW_REMOVE_INET_FILTER=1` authorises a deliberate, logged **high-risk** removal. This aligns the Go cleanup path with the DEB/RPM scriptlets and the detect-phase verdict, so cleanup can no longer destroy what detect preserved.
+
+### Changed — PR26.6 invariant refined (intentional, not a regression)
+- `TestPR26_6_GhostCleanup_DoesNotDeleteOperatorTable` now asserts **empty `ip raw` → removed** (an empty raw table is an iptables-nft skeleton, not a kernel default in pure nftables, where tables are created on demand) while **populated raw** and the operator/nftban/ssh_safety tables stay **preserved**. (`internal/installer/switchop/takeover_pr26_6_test.go`)
+
+### Not shipped — reverted/descoped (remain open in the register)
+- **RPM `%files` double-listing cleanup (PR-C) — REVERTED.** It failed strict rpm 4.16 EL9/EL10 a **second** time, this round on a bare `%install` token inside a generated-spec comment (`error: line 1295: second %install`, the v1.157 packaging-comment class) — before the `%files` dedup was even evaluated. PR-C was reverted; v1.164 ships the switchop classify-content work only. RPM %files dedup is now a **dedicated micro-lane** whose next attempt **must** add a strict **generated-spec lint forbidding bare RPM section macros (`%install`/`%files`/…) in spec comments before `rpmbuild`** (lab rpm 4.18 is lenient and cannot pre-catch this; the strict gate is CI `Build RPM (el9)`/(el10) only).
+- daemon-Go lanes (§3.6 ssh_ports counter + v1.150 Lane-C) · SEC-AUDITLOG · SEC-DAEMON-PRIV · schema unfreeze · CSF restore.
+
+### Notes
+- **Envelope:** installer-Go (switchop) + tests only — `0 cmd/nftband` (daemon byte-identical, tree `85a2de3e…`) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no CSF · **no packaging/`build_nftban.sh` change** · **no FHS-body change**. The installer binary (`cmd/nftban-installer`/`internal/installer/switchop`) changes intentionally.
+- **Validation:** lab2 `go build` + `go test ./internal/installer/switchop/...` green (hermetic `MockExecutor.RunResults` empty-vs-populated cases + flipped PR26.6 invariant), gofmt clean, `cmd/nftband` tree `85a2de3e…` unchanged. CI #799 — Build RPM el9/el10 ✅ (after the PR-C revert), `Build & Test` ✅, Semgrep/ShellCheck/Policy Gates ✅. Post-merge main `42183f78` green (70/0 check-runs, full DEB+RPM matrix ✅, daemon tree unchanged).
+
 ## [v1.163.0] - 2026-06-08 — whitelist verify + immutable health checks
 
 **Codename:** `V163_SEC_WL_VERIFY_IMMUT`
