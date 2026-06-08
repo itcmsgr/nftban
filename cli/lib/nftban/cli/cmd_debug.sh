@@ -34,6 +34,15 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 [[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
 
+# v1.167 PR-2 (B): load the JSON helper so the no-jq JSON fallback below can
+# escape free-form string fields ($trace_log path, $log_level) via
+# json_escape(). Guarded + best-effort: if the helper is absent we fall back
+# to raw interpolation (unchanged pre-v1.167 behaviour).
+if [[ -f "${NFTBAN_LIB_DIR}/helpers/json_output.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/helpers/json_output.sh" 2>/dev/null || true
+fi
+
 # Prevent double-loading
 [[ -n "${CMD_DEBUG_LOADED:-}" ]] && return 0
 readonly CMD_DEBUG_LOADED=1
@@ -126,7 +135,16 @@ nftban_debug_status() {
         fi
         local orphans=$((start_count - end_count))
         [[ $orphans -lt 0 ]] && orphans=0
-        echo "{\"trace_enabled\":$([ "$trace_enabled" == "true" ] && echo true || echo false),\"trace_log\":\"$trace_log\",\"trace_size_bytes\":$trace_size,\"trace_entries\":$trace_lines,\"log_level\":\"$log_level\",\"start_count\":$start_count,\"end_count\":$end_count,\"potential_orphans\":$orphans,\"timestamp\":\"$(date -Iseconds)\"}"
+        # v1.167 PR-2 (B): escape the free-form string fields so a path or
+        # log-level value containing a quote/backslash/newline cannot break
+        # the hand-built JSON in this no-jq fallback.
+        local trace_log_esc="$trace_log"
+        local log_level_esc="$log_level"
+        if declare -f json_escape >/dev/null 2>&1; then
+            trace_log_esc=$(json_escape "$trace_log")
+            log_level_esc=$(json_escape "$log_level")
+        fi
+        echo "{\"trace_enabled\":$([ "$trace_enabled" == "true" ] && echo true || echo false),\"trace_log\":\"$trace_log_esc\",\"trace_size_bytes\":$trace_size,\"trace_entries\":$trace_lines,\"log_level\":\"$log_level_esc\",\"start_count\":$start_count,\"end_count\":$end_count,\"potential_orphans\":$orphans,\"timestamp\":\"$(date -Iseconds)\"}"
         return 0
     fi
 
