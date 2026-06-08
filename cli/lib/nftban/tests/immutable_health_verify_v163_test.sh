@@ -95,12 +95,14 @@ run_check() {
             export PATH="$path_extra:$PATH"
         fi
         export NFTBAN_IMMUT_FILES="$files"
+        # shellcheck disable=SC2034  # set to satisfy the sourced health function's globals; not read by the test
         declare -gA NFTBAN_HEALTH_RESULTS=() NFTBAN_HEALTH_ISSUES=()
         NFTBAN_HEALTH_WARNINGS=(); NFTBAN_HEALTH_ERRORS=()
         # Source ONLY the security lib (self-contained; uses HEALTH_* env vars).
         # NB: the lib re-enables 'set -Eeuo pipefail' on source, so disable
         # errexit AFTER sourcing — otherwise the function's non-zero advisory
         # return would abort this subshell before we can report it.
+        # shellcheck disable=SC1090  # intentional non-constant source of the security lib under test
         source "$SEC_LIB" >/dev/null 2>&1
         set +e
         nftban_health_check_immutable_flags
