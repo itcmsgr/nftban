@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.162.0] - 2026-06-08 — SSH durable multi-port lock + static fallback
+
+**Codename:** `V162_SSH_DURABLE_MULTI_PORT`
+**Controlling record:** `NFTBAN_ROADMAP/V162_SSH_DURABLE_MULTI_PORT_SCOPE.md`
+**PR:** [#795](https://github.com/itcmsgr/nftban/pull/795) (sq `b06eed7f`)
+
+> **Why:** DELTA §3.1 was code-challenged and found **largely stale** — both durable-render paths (shell `cmd_firewall.sh` + Go `RenderNftablesConfMultiPort`/`ensureSSHPortsInSet`) already seed the **full** SSH-port union into the durable `ssh_ports` set (v1.125 R-1 + v1.145 PR-A lineage). The genuine residue was test coverage (§3.1) and the static boot-baseline fallback (§3.5). Daemon `cmd/nftband` byte-identical (chain v1.147→v1.162; tree `85a2de3e…`); schema 1.83.0 frozen.
+
+### Ships
+- **PR-A (§3.1) — hermetic multi-port durable-render + reboot-sim regression coverage.** New Go test `internal/installer/render/nftables_multiport_reboot_v162_test.go` (mock-executor; `{22,2222,55000}`) and shell test `cli/lib/nftban/tests/ssh_durable_multiport_render_v162.sh` (renders the real `nftables.conf.tpl` via `_firewall_substitute_placeholders` with a mocked multi-port detector). Both assert the durable `set ssh_ports` carries the **full union** (not primary-only) in BOTH ip and ip6 tables, the SSH ct-count rule reads `tcp dport @ssh_ports`, and the durable file alone survives a reboot (no kernel reconcile). Single-port byte-compat retained. Locks the render fix against regression.
+- **PR-B (§3.5) — static fallback `install/nftables/nftables.conf` is now set-driven.** Added `set ssh_ports { type inet_service; elements = { 22 } }` to both `table ip nftban` and `table ip6 nftban` (defined-before-use) and migrated both SSH ct-count rules from the literal `tcp dport 22` to `tcp dport @ssh_ports` (the static fallback bakes the default `22` and ct-limit `15`). Brings the boot-baseline in line with the `.tpl` set-driven form. New guard `cli/lib/nftban/tests/static_nftables_ssh_set_driven_v162.sh`; both guards CI-wired.
+
+### Explicitly NOT in scope (remain open in the register)
+- **§3.6** daemon `ssh_ports` counter seeding (`cmd/nftband/daemon_init.go` `setNames`) — cosmetic, **DAEMON-Go** (would break the byte-identical chain) → deferred.
+- Socket-activated SSH mismatch warning · SSH-port lifecycle validator · SSH-port operator docs · any production-host second-port testing.
+
+### Notes
+- **Envelope:** installer-render-test + static-config + CI — `0 cmd/nftband` (daemon byte-identical) · `0` schema (1.83.0 frozen) · no CSF.
+- **Validation:** lab2 `go build`/`go test ./internal/installer/render/...` ok, gofmt clean, shell render+reboot-sim + static-set-driven guards pass, v145 set-driven guard still 18/0, **`nft -c -f install/nftables/nftables.conf` rc=0** (boot-baseline parses, `@ssh_ports` resolves, set defined-before-use). CI #795 59/0/3-skip (after one comment-placeholder Policy-Gates fix); post-merge main `b06eed7f` green (Build RPM el9/el10 ✅, full DEB matrix ✅, placeholder guard ✅, daemon tree unchanged).
+
 ## [v1.161.0] - 2026-06-08 — installer remainder + hygiene
 
 **Codename:** `V161_INSTALLER_REMAINDER_HYGIENE`
