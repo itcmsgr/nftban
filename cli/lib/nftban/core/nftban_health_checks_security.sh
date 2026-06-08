@@ -1368,7 +1368,74 @@ nftban_health_check_ruleset_fingerprint() {
     return "$status"
 }
 
+# SEC-IMMUT (v1.163): advisory verification that the security-critical files
+# still carry the immutable bit (chattr +i). The installer applies +i via
+# internal/installer/validate/authority.go SetImmutableFlags(); this check only
+# READS state with lsattr and reports drift — it NEVER re-applies the flag.
+#   file present + has 'i'   -> OK (no finding)
+#   file present + missing i -> advisory WARNING with remediation hint
+#   file absent              -> silent skip (nft_schema.sh may not exist on all installs)
+#   lsattr unavailable / non-root / unreadable attrs -> INFO skip (not a finding)
+# Advisory-only: appends to NFTBAN_HEALTH_WARNINGS, never to errors/issues, so it
+# does not escalate the health exit code. Read-only — no chattr writes.
+nftban_health_check_immutable_flags() {
+    local status=$HEALTH_OK
+
+    # File list pinned to internal/installer/validate/authority.go:62
+    # (SetImmutableFlags immutableFiles). Keep in sync with that source.
+    # Allow tests to override the list via NFTBAN_IMMUT_FILES (space-separated).
+    local immutable_files
+    if [[ -n "${NFTBAN_IMMUT_FILES:-}" ]]; then
+        # Whitespace-split the override into the array with IFS scoped to this
+        # read only — no persistent IFS= assignment (avoids Semgrep ifs-tampering).
+        IFS=$' \t\n' read -r -a immutable_files <<< "${NFTBAN_IMMUT_FILES}"
+    else
+        immutable_files=(
+            "/etc/nftban/nftban.conf"
+            "/usr/lib/nftban/lib/nft_schema.sh"
+        )
+    fi
+
+    # Graceful INFO/skip when the tool is unavailable. lsattr ships with e2fsprogs
+    # and may be absent on minimal images; treat as not-a-finding.
+    if ! command -v lsattr &>/dev/null; then
+        # shellcheck disable=SC2034  # Used by render functions externally
+        NFTBAN_HEALTH_RESULTS["immutable_flags"]=$HEALTH_OK
+        return "$HEALTH_OK"
+    fi
+
+    local f attr_field lsattr_out rc
+    for f in "${immutable_files[@]}"; do
+        # Absent file -> silent skip (not a finding).
+        [[ -e "$f" ]] || continue
+
+        # Read the attribute string. lsattr can fail (EPERM as non-root on some
+        # paths/filesystems, or unsupported fs) -> graceful skip for that file.
+        rc=0
+        lsattr_out=$(lsattr -d "$f" 2>/dev/null) || rc=$?
+        if [[ $rc -ne 0 || -z "$lsattr_out" ]]; then
+            # Could not read attributes (non-root EPERM, unsupported fs, etc.).
+            # Advisory cannot conclude -> skip silently, do NOT warn.
+            continue
+        fi
+
+        # lsattr -d output: "<attr-string> <path>". The immutable bit is the
+        # literal 'i' inside the attribute field (first whitespace-delimited
+        # token), e.g. "----i---------e----- /etc/nftban/nftban.conf".
+        attr_field=${lsattr_out%%[[:space:]]*}
+        if [[ "$attr_field" != *i* ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Immutable flag missing on security-critical file: ${f} — restore tamper-resistance with 'chattr +i ${f}' (or re-run 'nftban update --repair')")
+            status=$HEALTH_WARNING
+        fi
+    done
+
+    # shellcheck disable=SC2034  # Used by render functions externally
+    NFTBAN_HEALTH_RESULTS["immutable_flags"]=$status
+    return "$status"
+}
+
 # Export functions
+export -f nftban_health_check_immutable_flags
 export -f nftban_health_check_ruleset_fingerprint
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection

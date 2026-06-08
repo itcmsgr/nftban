@@ -149,6 +149,11 @@ nftban_cmd_whitelist() {
             # Show whitelist (v1.59.0: added --json support)
             nftban_whitelist_list "$@"
             ;;
+        verify)
+            # v1.163.0 (SEC-WL-VERIFY): READ-ONLY anomaly report comparing the
+            # live kernel whitelist sets against the durable whitelist.d baseline.
+            nftban_whitelist_verify "$@"
+            ;;
         sync|whitelistme)
             # Pass to whitelist-system for these commands
             if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_whitelist_system.sh" ]]; then
@@ -570,6 +575,235 @@ nftban_whitelist_list() {
     fi
 }
 
+# =============================================================================
+# v1.163.0 — `nftban whitelist verify` (SEC-WL-VERIFY)
+# =============================================================================
+# READ-ONLY anomaly report. Compares the live kernel whitelist sets
+# (@whitelist_ipv4 in `ip nftban`, @whitelist_ipv6 in `ip6 nftban`) against the
+# DURABLE whitelist.d baseline (entries with NO EXPIRES_AT — the 99-manual.conf
+# class loaded permanently on every rebuild by internal/whitelist/loader.go).
+#
+# Anomaly classes (both set rc=1):
+#   IN-KERNEL-NOT-IN-BASELINE  — a kernel entry that is neither a durable baseline
+#                                entry nor a current (unexpired) session entry.
+#                                This is the security-relevant case (possible
+#                                out-of-band injection into the live set).
+#   IN-BASELINE-NOT-IN-KERNEL  — a durable baseline entry not applied to the
+#                                kernel (drift / not-applied).
+#
+# Session/TTL entries (whitelist.d/*.conf lines WITH an EXPIRES_AT that has not
+# yet passed, e.g. 00-session.conf) are INFORMATIONAL only — a legitimate live
+# admin session in the kernel must NOT be flagged as injected. Expired session
+# entries are NOT treated as baseline (the loader would not keep them), so a
+# kernel entry matching only an expired session line is still an anomaly.
+#
+# Strictly read-only: the only nft invocation is `nft list set` (read). No add,
+# no delete, no sync. Remediation is a hint; there is no --fix.
+
+# Directory holding the durable + session whitelist config files.
+_NFTBAN_WHITELIST_CONF_DIR="/etc/nftban/whitelist.d"
+
+# Normalize a single nft `elements` token to a bare IP/CIDR key for comparison.
+# Drops any trailing nft annotation (e.g. ` comment "..."` / ` timeout ...`) and
+# surrounding whitespace, leaving "1.2.3.4" or "1.2.3.0/24". Lowercased so IPv6
+# hex compares stably against config lines.
+_nftban_wl_norm_key() {
+    local tok="$1"
+    tok="${tok%%comment*}"   # strip ` comment "..."`
+    tok="${tok%%timeout*}"   # strip ` timeout ...`
+    tok="${tok%%expires*}"   # strip ` expires ...`
+    # trim surrounding whitespace
+    tok="${tok#"${tok%%[![:space:]]*}"}"
+    tok="${tok%"${tok##*[![:space:]]}"}"
+    printf '%s' "${tok,,}"
+}
+
+# Read one kernel whitelist set, one normalized key per line (read-only).
+# $1 = family table words ("ip nftban" | "ip6 nftban"), $2 = set name.
+# Returns rc 0 on a readable set (even if empty), rc 1 if the set is unreadable
+# (nft absent, daemon down, or no table) so the caller can report gracefully.
+_nftban_wl_read_kernel_set() {
+    local table="$1" set_name="$2" raw tok
+    # shellcheck disable=SC2086
+    raw=$(timeout 10s nft list set ${table} ${set_name} 2>/dev/null) || return 1
+    # Empty/absent elements block is a valid (empty) set, not an error.
+    [[ "$raw" == *"elements"* ]] || return 0
+    printf '%s\n' "$raw" \
+        | tr '\n' ' ' \
+        | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' \
+        | tr ',' '\n' \
+        | while IFS= read -r tok || [[ -n "$tok" ]]; do
+            [[ -z "${tok//[[:space:]]/}" ]] && continue
+            local k; k="$(_nftban_wl_norm_key "$tok")"
+            [[ -n "$k" ]] && printf '%s\n' "$k"
+          done
+    return 0
+}
+
+# Read durable baseline keys (whitelist.d/*.conf entries with NO EXPIRES_AT).
+# $1 = "4" or "6" to filter by family (IPv6 keys contain ':').
+_nftban_wl_read_baseline() {
+    local fam="$1" f line before_hash ip
+    [[ -d "$_NFTBAN_WHITELIST_CONF_DIR" ]] || return 0
+    for f in "$_NFTBAN_WHITELIST_CONF_DIR"/*.conf; do
+        [[ -e "$f" ]] || continue
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            local trimmed="${line#"${line%%[![:space:]]*}"}"
+            [[ -z "$trimmed" ]] && continue
+            [[ "${trimmed:0:1}" == "#" ]] && continue
+            # Durable baseline = NO EXPIRES_AT marker (session/TTL entries excluded).
+            [[ "$line" == *EXPIRES_AT=* ]] && continue
+            before_hash="${line%%#*}"
+            # shellcheck disable=SC2086
+            ip=$(printf '%s' $before_hash | awk '{print $1}')
+            [[ -z "$ip" ]] && continue
+            if [[ "$fam" == "6" && "$ip" == *:* ]]; then
+                printf '%s\n' "${ip,,}"
+            elif [[ "$fam" == "4" && "$ip" != *:* ]]; then
+                printf '%s\n' "${ip,,}"
+            fi
+        done < "$f"
+    done
+}
+
+# Read CURRENT (unexpired) session keys (whitelist.d/*.conf entries WITH an
+# EXPIRES_AT still in the future). $1 = "4"/"6". Used to classify kernel entries
+# as legitimate live sessions rather than injections. Unparseable/expired lines
+# are skipped (NOT counted as session), so they fall through to anomaly checks.
+_nftban_wl_read_sessions() {
+    local fam="$1" f line before_hash ip expires_at expires_unix now_unix
+    now_unix=$(date -u +%s 2>/dev/null) || now_unix=0
+    [[ -d "$_NFTBAN_WHITELIST_CONF_DIR" ]] || return 0
+    for f in "$_NFTBAN_WHITELIST_CONF_DIR"/*.conf; do
+        [[ -e "$f" ]] || continue
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            local trimmed="${line#"${line%%[![:space:]]*}"}"
+            [[ -z "$trimmed" ]] && continue
+            [[ "${trimmed:0:1}" == "#" ]] && continue
+            [[ "$line" == *EXPIRES_AT=* ]] || continue
+            expires_at=$(printf '%s' "$line" | grep -oE 'EXPIRES_AT=[^ ]+' | head -1 | cut -d= -f2)
+            [[ -z "$expires_at" ]] && continue
+            expires_unix=$(date -u -d "$expires_at" +%s 2>/dev/null) || continue
+            [[ "$expires_unix" -le "$now_unix" ]] && continue   # expired => not a current session
+            before_hash="${line%%#*}"
+            # shellcheck disable=SC2086
+            ip=$(printf '%s' $before_hash | awk '{print $1}')
+            [[ -z "$ip" ]] && continue
+            if [[ "$fam" == "6" && "$ip" == *:* ]]; then
+                printf '%s\n' "${ip,,}"
+            elif [[ "$fam" == "4" && "$ip" != *:* ]]; then
+                printf '%s\n' "${ip,,}"
+            fi
+        done < "$f"
+    done
+}
+
+# Verify one family. Echoes report lines; returns the anomaly count for the
+# family via the named-by-convention globals below (bash can't return ints >255
+# cleanly, and we want a precise count). Sets _NFTBAN_WL_VERIFY_ANOM.
+# $1 = family label (IPv4/IPv6), $2 = "4"/"6", $3 = table words, $4 = set name.
+_nftban_wl_verify_family() {
+    local label="$1" fam="$2" table="$3" set_name="$4"
+    local -a kernel=() baseline=() sessions=()
+    local k
+
+    if ! _nftban_wl_read_kernel_set "$table" "$set_name" >/dev/null 2>&1; then
+        # Distinguish "unreadable" from "empty": re-run and capture rc.
+        :
+    fi
+    local kraw krc=0
+    kraw="$(_nftban_wl_read_kernel_set "$table" "$set_name")" || krc=$?
+    if [[ $krc -ne 0 ]]; then
+        echo "  $label: kernel set ${set_name} is UNREADABLE (nft missing, daemon down, or table absent) — cannot verify."
+        _NFTBAN_WL_VERIFY_UNREADABLE=$(( ${_NFTBAN_WL_VERIFY_UNREADABLE:-0} + 1 ))
+        return 0
+    fi
+    while IFS= read -r k; do [[ -n "$k" ]] && kernel+=("$k"); done <<< "$kraw"
+    while IFS= read -r k; do [[ -n "$k" ]] && baseline+=("$k"); done < <(_nftban_wl_read_baseline "$fam")
+    while IFS= read -r k; do [[ -n "$k" ]] && sessions+=("$k"); done < <(_nftban_wl_read_sessions "$fam")
+
+    local anom=0 b kk found
+
+    echo "  ${label} (set ${set_name}):"
+
+    # IN-KERNEL-NOT-IN-BASELINE: kernel keys absent from durable baseline.
+    for kk in "${kernel[@]}"; do
+        found=false
+        for b in "${baseline[@]}"; do [[ "$kk" == "$b" ]] && { found=true; break; }; done
+        if [[ "$found" == "true" ]]; then continue; fi
+        # Not baseline — is it a current session? (informational, not anomaly)
+        local is_session=false
+        for b in "${sessions[@]}"; do [[ "$kk" == "$b" ]] && { is_session=true; break; }; done
+        if [[ "$is_session" == "true" ]]; then
+            echo "    [info]    $kk — active session whitelist (unexpired 00-session.conf); not an anomaly"
+        else
+            echo "    [ANOMALY] $kk — IN-KERNEL-NOT-IN-BASELINE (present in live set, not in durable whitelist.d; possible injection)"
+            anom=$(( anom + 1 ))
+        fi
+    done
+
+    # IN-BASELINE-NOT-IN-KERNEL: durable baseline keys missing from the kernel.
+    for b in "${baseline[@]}"; do
+        found=false
+        for kk in "${kernel[@]}"; do [[ "$b" == "$kk" ]] && { found=true; break; }; done
+        if [[ "$found" == "false" ]]; then
+            echo "    [ANOMALY] $b — IN-BASELINE-NOT-IN-KERNEL (durable whitelist.d entry not applied to live set; drift)"
+            anom=$(( anom + 1 ))
+        fi
+    done
+
+    [[ "$anom" -eq 0 ]] && echo "    OK — kernel matches durable baseline (sessions informational)."
+
+    _NFTBAN_WL_VERIFY_ANOM=$(( ${_NFTBAN_WL_VERIFY_ANOM:-0} + anom ))
+    return 0
+}
+
+# Public entry point: `nftban whitelist verify`. rc=0 clean, rc=1 anomalies.
+nftban_whitelist_verify() {
+    # No write flags accepted — this surface is read-only by contract.
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help) nftban_whitelist_usage; return 0 ;;
+            --fix)     echo "ERROR: 'whitelist verify' is read-only; there is no --fix. Use 'nftban sync' to reapply durable entries." >&2; return 2 ;;
+            --*)       echo "ERROR: Unknown flag for 'whitelist verify': $1" >&2; return 2 ;;
+            *)         echo "ERROR: Unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+
+    if ! command -v nft >/dev/null 2>&1; then
+        echo "ERROR: nft (nftables) not found — cannot read the live whitelist sets." >&2
+        return 2
+    fi
+
+    _NFTBAN_WL_VERIFY_ANOM=0
+    _NFTBAN_WL_VERIFY_UNREADABLE=0
+
+    echo "Whitelist verify (read-only) — live kernel sets vs durable whitelist.d baseline"
+    echo "──────────────────────────────────────────────────────────────────────────────"
+    _nftban_wl_verify_family "IPv4" "4" "ip nftban"  "whitelist_ipv4"
+    _nftban_wl_verify_family "IPv6" "6" "ip6 nftban" "whitelist_ipv6"
+    echo ""
+
+    if [[ "${_NFTBAN_WL_VERIFY_UNREADABLE:-0}" -gt 0 && "${_NFTBAN_WL_VERIFY_ANOM:-0}" -eq 0 ]]; then
+        echo "Result: could not read one or more kernel whitelist sets — verification incomplete."
+        echo "Hint: ensure the nftband daemon is running (systemctl status nftband) and re-run."
+        return 2
+    fi
+
+    if [[ "${_NFTBAN_WL_VERIFY_ANOM:-0}" -gt 0 ]]; then
+        echo "Result: ${_NFTBAN_WL_VERIFY_ANOM} anomaly(ies) found."
+        echo "Hint:"
+        echo "  • IN-BASELINE-NOT-IN-KERNEL (drift) → reapply durable entries: nftban sync"
+        echo "  • IN-KERNEL-NOT-IN-BASELINE (possible injection) → review the source of the live entry;"
+        echo "    it is not in whitelist.d and not a current session. Persist it with"
+        echo "    'nftban whitelist add --static <IP>' or remove it if unexpected."
+        return 1
+    fi
+
+    echo "Result: OK — no anomalies. Live whitelist matches the durable baseline."
+    return 0
+}
+
 # Show usage
 nftban_whitelist_usage() {
     cat <<'EOF'
@@ -582,6 +816,7 @@ COMMANDS:
   remove <IP>            Remove IP from the runtime whitelist (live set only)
   remove --static <IP>   Remove IP from the permanent whitelist (99-manual.conf) + live set
   list                   Show all whitelisted IPs
+  verify                 Read-only: compare live kernel sets vs durable whitelist.d baseline (reports anomalies)
   sync                   Auto-detect and whitelist system IPs
   whitelistme            Whitelist your current IP (interactive)
 
@@ -597,6 +832,7 @@ EXAMPLES:
   nftban whitelist add --ttl 30m 192.168.1.100    # 30-minute session
   nftban whitelist remove --static 192.168.1.100  # remove permanent entry + live
   nftban whitelist list
+  nftban whitelist verify                          # read-only anomaly check (live set vs baseline)
   nftban whitelist sync
 
 EOF
@@ -612,6 +848,7 @@ EOF
 command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "whitelist"
 
 export -f nftban_cmd_whitelist
+export -f nftban_whitelist_verify 2>/dev/null || true
 
 # =============================================================================
 
