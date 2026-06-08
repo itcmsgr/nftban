@@ -18,9 +18,9 @@
 //
 // Invariant TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001:
 //
-//   During takeover, nftban may disable external firewall authority through
-//   reversible lifecycle operations, but must not destructively delete
-//   non-nftban-owned authority or operator-safety assets.
+//	During takeover, nftban may disable external firewall authority through
+//	reversible lifecycle operations, but must not destructively delete
+//	non-nftban-owned authority or operator-safety assets.
 //
 // The dns2 install evidence (2026-04-30) reported "/usr/sbin/csf MISSING".
 // Survey confirmed the path is absent because takeover.go::disarmCSFArtifacts
@@ -61,6 +61,7 @@ func sha256Hex(b []byte) string {
 // invariant for /usr/sbin/csf. After takeover:
 //   - /usr/sbin/csf path is absent (it was renamed)
 //   - /usr/sbin/csf.disabled exists with the original byte content (sha256 match)
+//
 // This lets the §32/§42 restore path put it back with no panel-side reinstall.
 func TestPR26_6_CSFBinary_RenamedNotDestroyed(t *testing.T) {
 	mock := executor.NewMockExecutor()
@@ -265,12 +266,26 @@ func TestPR26_6_CronManifest_WrittenBeforeRm(t *testing.T) {
 // This is a defense-in-depth lock: the destructive bug was in shell rebuild,
 // not Go ghost.go, but if a future refactor moves logic into the Go path
 // it must inherit the operator-safety preservation rule.
+//
+// v1.164 INVARIANT REFINEMENT (PR-A): the `ip raw` assertion changed from
+// "kernel default, preserved unconditionally" to "POPULATED raw is preserved".
+// An EMPTY `ip raw` table is an iptables-nft compat skeleton, NOT a kernel
+// default, and is now removed by the classify-empty path. What must be
+// preserved is a raw table that actually holds rules (operator NOTRACK /
+// conntrack exemptions). So this case seeds `ip raw` with a rule line via
+// RunResults and asserts the populated table survives. Empty-raw removal is
+// covered by classify_empty_v164_test.go.
 func TestPR26_6_GhostCleanup_DoesNotDeleteOperatorTable(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.NftTables["inet:ssh_safety"] = true
 	mock.NftTables["ip:nftban"] = true
 	mock.NftTables["ip:filter"] = true // EXTERNAL_AUTHORITY_GHOST — may be removed
-	mock.NftTables["ip:raw"] = true    // KERNEL_DEFAULT — preserved
+	mock.NftTables["ip:raw"] = true    // POPULATED operator raw — must be preserved
+	// Make `ip raw` read as populated: a real rule line (non-structural) so the
+	// classify-empty path keeps it.
+	mock.RunResults["nft:list:table:ip:raw"] = executor.Result{
+		Stdout: "table ip raw {\n\tchain prerouting {\n\t\ttype filter hook prerouting priority -300; policy accept;\n\t\tip saddr 10.0.0.0/8 notrack\n\t}\n}\n",
+	}
 
 	CleanGhostTables(mock, newTestLogger())
 
@@ -281,6 +296,6 @@ func TestPR26_6_GhostCleanup_DoesNotDeleteOperatorTable(t *testing.T) {
 		t.Error("CleanGhostTables wrongly removed nftban-owned table ip nftban")
 	}
 	if !mock.NftTableExists("ip", "raw") {
-		t.Error("CleanGhostTables wrongly removed kernel-default table ip raw")
+		t.Error("CleanGhostTables wrongly removed POPULATED operator raw table ip raw")
 	}
 }
