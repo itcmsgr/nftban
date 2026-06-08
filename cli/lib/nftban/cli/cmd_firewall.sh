@@ -1036,6 +1036,14 @@ firewall_validate() {
     local output_json=false
     local strict_mode=false
     local quiet_mode=false
+    # v1.167 PR-2 (D) UX-INFO: by default the human-readable validate output
+    # drops INFO-severity findings (mirrors the `nftban health` text filter at
+    # cmd_health.sh:~581-605) so an idle host does not surface alarming-but-
+    # useless "[INFO]" lines. Opt back in with --verbose or NFTBAN_VALIDATE_VERBOSE=1.
+    # JSON output (--json) is unaffected: consumers always see the full findings
+    # array straight from the validator. SHELL-SIDE filter only — no Go change.
+    local verbose_mode=false
+    [[ "${NFTBAN_VALIDATE_VERBOSE:-0}" == "1" ]] && verbose_mode=true
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -1050,6 +1058,10 @@ firewall_validate() {
                 ;;
             --quiet|-q)
                 quiet_mode=true
+                shift
+                ;;
+            --verbose|-v)
+                verbose_mode=true
                 shift
                 ;;
             -h|--help)
@@ -1153,7 +1165,19 @@ firewall_validate() {
             local _val_status
             _val_status=$(echo "$_val_json" | jq -r '.status' 2>/dev/null)
             echo "Validator Status: $(echo "$_val_status" | tr '[:lower:]' '[:upper:]')"
-            echo "$_val_json" | jq -r '.findings[] | "  [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null || true
+            # v1.167 PR-2 (D): shell-side INFO filter (mirrors cmd_health.sh).
+            # Default drops info-severity findings; --verbose / NFTBAN_VALIDATE_VERBOSE=1
+            # shows them. Count hidden INFO so the operator knows they exist.
+            if [[ "$verbose_mode" == "true" ]]; then
+                echo "$_val_json" | jq -r '.findings[] | "  [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null || true
+            else
+                echo "$_val_json" | jq -r '.findings[] | select((.severity | ascii_downcase) != "info") | "  [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null || true
+                local _info_hidden
+                _info_hidden=$(echo "$_val_json" | jq '[.findings[] | select((.severity | ascii_downcase) == "info")] | length' 2>/dev/null || echo 0)
+                if [[ "${_info_hidden:-0}" -gt 0 ]]; then
+                    echo "  (${_info_hidden} INFO finding(s) hidden — use --verbose to show)"
+                fi
+            fi
         elif [[ -n "$_val_json" ]]; then
             echo "$_val_json"
         fi
@@ -3424,9 +3448,11 @@ Strict Mode (--strict): Single Firewall Authority
   - No non-NFTBan active input hooks in nftables
 
 Options:
-  --strict, -s  Enforce Single Firewall Authority (recommended)
-  --json        Output results as JSON
-  -h, --help    Show this help message
+  --strict, -s   Enforce Single Firewall Authority (recommended)
+  --json         Output results as JSON
+  --verbose, -v  Show INFO-severity findings (hidden by default; same effect
+                 as NFTBAN_VALIDATE_VERBOSE=1)
+  -h, --help     Show this help message
 
 Exit codes:
   0   All validation checks passed (OK)

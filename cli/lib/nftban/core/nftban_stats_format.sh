@@ -87,7 +87,10 @@ nftban_stats_generate_dashboard() {
     # values or derived live-aggregation values from the awk fallback.
     # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.3)
     if [[ "$use_unified_cache" == "true" ]]; then
-        printf "  %-20s %s\n" "Data source........." "unified cache"
+        # v1.167 PR-2 (E): casing-consistency. The two Data source values are
+        # siblings; align the cache-hit value to the all-caps convention used
+        # by its sibling ("DERIVED ...") and the section headers (SYSTEM, etc.).
+        printf "  %-20s %s\n" "Data source........." "UNIFIED CACHE"
     else
         printf "  %-20s %s\n" "Data source........." "DERIVED (cache miss; live aggregation from nftables + bans.log)"
     fi

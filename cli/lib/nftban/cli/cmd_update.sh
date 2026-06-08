@@ -2366,6 +2366,22 @@ nftban_cmd_update() {
         fi
     done
 
+    # v1.167 PR-2 (C) UX-C5 flag-parity: `--dry-run` is intentionally NOT
+    # supported on `nftban update` (the help NOTES section documents the
+    # asymmetry — package-manager transactions cannot be safely simulated
+    # end-to-end). Before subcommand dispatch, catch `--dry-run` in any
+    # position (bare `nftban update --dry-run` captures it as $cmd; a
+    # trailing `nftban update auto --dry-run` lands in "$@") and emit the
+    # canonical 3-line ERROR/Hint/Run via _v144_error_with_hint instead of
+    # routing it to the generic "Unknown command" path. rc=1.
+    if [[ "$cmd" == "--dry-run" ]] || printf '%s\n' "$@" | grep -qx -- '--dry-run'; then
+        _v144_error_with_hint \
+            "--dry-run is not supported for 'nftban update'" \
+            "package transactions cannot be safely simulated" \
+            "nftban update check"
+        return 1
+    fi
+
     # v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): capture the operator's
     # SSH peer IP from $SSH_CLIENT and propagate it to the installer via
     # the env mirror NFTBAN_OPERATOR_SESSION_IP. The installer's
