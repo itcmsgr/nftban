@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.166.0] - 2026-06-08 — RPM templates %files dedup via FHS-generator correction
+
+**Codename:** `V166_RPM_TEMPLATES_FHS_DEDUP`
+**Controlling record:** `NFTBAN_ROADMAP/V166_RPM_TEMPLATES_FHS_DEDUP_SCOPE.md`
+**PR:** [#804](https://github.com/itcmsgr/nftban/pull/804) (sq `29dd622b`)
+
+> **Why:** complete the RPM `%files` cleanup — the templates half of `BUG-RPM-FILES-LISTED-TWICE` (lib-dir half shipped in v1.165 PR-B). This is a deliberate **FHS-authority edit**: the bare `/usr/share/nftban/templates` line both double-listed the generator `%dir`-owned dirs *and* solely owned the `email/`+`partials/` staged `.html` (which had no inc `%dir`), so it could not be dropped without orphaning them (the v1.161 trap). Build-time only; daemon `cmd/nftband` byte-identical (chain v1.147→v1.166; tree `85a2de3e…`); schema 1.83.0 frozen.
+
+### Changed — templates `%files` dedup + FHS-generator ownership
+- **`build/fhs-spec.yaml`** now `%dir`-owns `/usr/share/nftban/templates/email` + `/usr/share/nftban/templates/partials`; `templates/zabbix` kept as an **empty owned `%dir`** for compatibility. All FHS outputs regenerated (`nftban-files.inc`, `nftban_fhs_spec.sh`, `fhs_directories.json`, `deb/nftban.dirs`).
+- **`packaging/build_nftban.sh` `%files`:** the bare `/usr/share/nftban/templates` line is replaced with explicit subdir contents — `mail/*`, `reports/*`, `email/*`, `partials/*` — so `%include nftban-files.inc` keeps sole `%dir` ownership (removes the remaining "File listed twice" warning). `zabbix` gets no `/*` line (no content). A `%install` templates dotfile strip (`find %{buildroot}/usr/share/nftban/templates -name '.*' -type f -delete`) keeps the `<dir>/*` glob complete.
+- New hermetic guard `cli/lib/nftban/tests/rpm_files_templates_dedup_v166_test.sh`, CI-wired (the PR-A comment-macro guard stays the first tripwire).
+
+### Closed
+- **`BUG-RPM-FILES-LISTED-TWICE` — fully closed in code:** lib-dir half (v1.165 PR-B) + templates half (this lane PR-C).
+
+### Not shipped (separate lanes)
+- v1.167 = UX residual (mostly shell) · v1.168 = state-write atomicity §4.1–4.3 (daemon-Go, breaks zero-Go) · schema unfreeze · daemon-Go · runtime/firewall behavior.
+
+### Notes
+- **Envelope:** FHS-generator + regenerated outputs + packaging-build-script + test + CI — `0 cmd/nftband` (daemon byte-identical, tree `85a2de3e…`) · `0` schema (1.83.0 frozen) · no CSF. The shipped DEB/RPM packages change intentionally (deduped templates `%files`).
+- **FHS body DELIBERATELY CHANGED** (this is an FHS-authority lane, not a body-frozen one): `nftban-files.inc` → `08e0163f3baefee0e6d43c9e709e4b98098a1f258eb714d6c8ff7da991cb1ccd`; `nftban_fhs_spec.sh` body → `3a389e9a94fa9c96b25f2aa51bbd32a99c098115c3a48b24a7cd5979488bc411`. **The release-prep commit changes only the FHS header/`meta:version` on top of this PR-C body — it does not touch the FHS body.**
+- **Validation:** v166 guard 13/0 · PR-A 5/0 · PR-B 15/0 · v157 6/0 (hermetic). `generate-fhs-outputs.sh --check` rc=0 (generator parity). A hermetic mini-rpmbuild (templates `%dir` + `/*` + strip + staged `email`/`partials` + planted `.gitkeep`) proved no "File listed twice" and no unpackaged `.gitkeep` — rpm-version-independent, so it holds for EL9/EL10. CI #804: FHS generated-files check ✅, Build RPM el9/el10 ✅, full DEB matrix ✅, Policy Gates / Semgrep / ShellCheck ✅. Post-merge main `29dd622b` green.
+
 ## [v1.165.0] - 2026-06-08 — RPM packaging correctness + hidden spec-parser hardening
 
 **Codename:** `V165_RPM_FILES_DEDUP_LINT_FIRST`
