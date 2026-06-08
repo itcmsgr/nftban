@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.163.0] - 2026-06-08 — whitelist verify + immutable health checks
+
+**Codename:** `V163_SEC_WL_VERIFY_IMMUT`
+**Controlling record:** `NFTBAN_ROADMAP/V163_SEC_WL_VERIFY_IMMUT_SCOPE.md`
+**PR:** [#797](https://github.com/itcmsgr/nftban/pull/797) (sq `9e61faa1`)
+
+> **Why:** two security-visibility gaps (SEC-WL-VERIFY, SEC-IMMUT). Both shell-only, read-only, daemon `cmd/nftband` byte-identical (chain v1.147→v1.163; tree `85a2de3e…`); schema 1.83.0 frozen; no nft writes, no chattr application.
+
+### Added — `nftban whitelist verify` (SEC-WL-VERIFY)
+- New **read-only** `verify` subcommand: reads the live kernel whitelist sets (`@whitelist_ipv4` / `@whitelist_ipv6`, via `nft list set` only) and compares them against the durable `whitelist.d/` baseline (no-`EXPIRES_AT` entries). Reports `IN-KERNEL-NOT-IN-BASELINE` (potential injection) and `IN-BASELINE-NOT-IN-KERNEL` (drift / not-applied). Session/TTL entries (`00-session.conf`, unexpired) are **informational, not anomalies** — a live admin session isn't flagged as injected. Symmetric IPv4 + IPv6; rc=0 clean / rc=1 anomalies; remediation hint only (no `--fix`, no nft writes). (`cli/lib/nftban/cli/cmd_whitelist.sh`)
+
+### Added — immutable-flag health verification (SEC-IMMUT)
+- New **advisory** health check `nftban_health_check_immutable_flags`: `lsattr` (read-only) confirms `chattr +i` is still present on the security-critical files, **pinned by comment to `internal/installer/validate/authority.go:62`** (`/etc/nftban/nftban.conf` + `/usr/lib/nftban/lib/nft_schema.sh`). WARN-only (appends to `NFTBAN_HEALTH_WARNINGS`, never escalates the health exit code); graceful skip when `lsattr`/`chattr` is unavailable or non-root; never applies the flag (the installer's `SetImmutableFlags` already re-applies it on every install/update). (`cli/lib/nftban/core/nftban_health_checks_security.sh`, registered in `nftban_health.sh`)
+
+### Not in scope (remain open in the register)
+- whitelist `--fix` · `permissions --reapply-immutable` · daemon least-privilege · audit-log uid/gid/pid · §2.2/%files/switchop follow-up · §3.6 daemon ssh_ports counter · schema unfreeze · CSF restore.
+
+### Notes
+- **Envelope:** shell + tests only — `0 cmd/nftband` (daemon byte-identical) · `0` schema (1.83.0 frozen) · no CSF · no nft writes · no chattr writes.
+- **Validation:** lab2 `shellcheck -x -S warning` clean, `bash -n` clean, `whitelist_verify_v163` 23/0, `immutable_health_verify_v163` 16/0 (no nft/chattr writes — mock-verified). CI #797 52/0/2-skip (after a test-file shellcheck-directive fix + a Semgrep IFS-tampering source cleanup — the persistent `IFS=` was rewritten to a scoped `IFS=… read -r -a`, clearing the review threads under the new `required_conversation_resolution` branch protection). Post-merge main `9e61faa1` green (Semgrep ✅, ShellCheck ✅, Project Health ✅, Build RPM el9/el10 ✅, full DEB matrix ✅, Runtime Truth ✅, daemon tree unchanged).
+
 ## [v1.162.0] - 2026-06-08 — SSH durable multi-port lock + static fallback
 
 **Codename:** `V162_SSH_DURABLE_MULTI_PORT`
