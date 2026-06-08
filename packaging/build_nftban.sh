@@ -445,21 +445,6 @@ install -D -m 0640 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.con
 mkdir -p %{buildroot}/usr/lib/nftban/lib
 cp -r cli/lib/nftban/* %{buildroot}/usr/lib/nftban/
 
-# v1.164 BUG-RPM-FILES-LISTED-TWICE: strip git placeholder dotfiles from the
-# staged tree. cli/lib/nftban/tests/.gitkeep is the ONLY dotfile in the source
-# tree (it keeps the otherwise-empty tests/ dir under version control) and is
-# copied here by the recursive cp -r above (the shell glob skips the top-level
-# dotfile, but tests/ itself is matched and copied with its contents).
-# It has zero runtime value and the tests/ dir is %dir-owned by nftban-files.inc,
-# so removing it lets the %files /usr/lib/nftban/tests line be dropped and the
-# remaining payload dirs convert to <dir>/* WITHOUT leaving .gitkeep unpackaged
-# (RPM /* globs do NOT match dotfiles -> strict rpm 4.16/EL9 hard error
-# "Installed (but unpackaged) file(s) found: /usr/lib/nftban/tests/.gitkeep",
-# which is exactly what broke the v1.161 attempt). The -name .* -type f pattern
-# is defensive: it removes ANY dotfile that may appear under the tree in future,
-# not just .gitkeep, so a new placeholder can never re-introduce this.
-find %{buildroot}/usr/lib/nftban -name '.*' -type f -delete 2>/dev/null || true
-
 # CRITICAL: Set executable permissions on all shell scripts
 # (cp -r doesn't preserve permissions from source)
 find %{buildroot}/usr/lib/nftban -name "*.sh" -exec chmod 755 {} \;
@@ -1391,41 +1376,21 @@ fi
 %include %{_sourcedir}/nftban-files.inc
 # Binary entry point (explicit attr; NOT a directory)
 %attr(0750,root,nftban) /usr/sbin/nftban
-# v1.164 BUG-RPM-FILES-LISTED-TWICE: package each payload dir's CONTENTS (<dir>/*),
-# not the bare directory path. The directory %dir ownership already comes from
-# %include nftban-files.inc above (lines 16-32 of the generated inc), so listing
-# the bare dir here too made strict rpm 4.16/EL9 see the same %dir node twice
-# ("File listed twice: /usr/lib/nftban/<dir>"). The <dir>/* form packages every
-# file inside while leaving the inc's single %dir entry as the sole dir owner.
-#
-# Safe-to-convert (each verified against the source layout cli/lib/nftban/<dir>
-# plus the install/cp staging above): every dir below is FLAT (no nested subdirs
-# needing their own %dir) and is NON-EMPTY at package time, so the /* form matches
-# at least one file (no "contains no files" error). After the .gitkeep strip in
-# %install, no dotfiles remain under /usr/lib/nftban, so /* (which does NOT match
-# dotfiles) leaves nothing unpackaged.
-#   bin       2 staged libs + 6 install -D binaries
-#   sbin      6 install -D helper scripts (no source dir; inc %dir owns it)
-#   cli       77 files   core 61   lib 36   cron 1   helpers 9
-#   setup     13   exporters 6   data 5   health 1
-/usr/lib/nftban/bin/*
-/usr/lib/nftban/sbin/*
+# Package payload trees (bare paths -> recursive include of files within generator-owned dirs)
+/usr/lib/nftban/bin
+/usr/lib/nftban/sbin
 /usr/lib/nftban/VERSION
 /usr/lib/nftban/BUILD_TARGET
-/usr/lib/nftban/cli/*
-/usr/lib/nftban/core/*
-/usr/lib/nftban/lib/*
-/usr/lib/nftban/cron/*
-/usr/lib/nftban/helpers/*
-/usr/lib/nftban/setup/*
-/usr/lib/nftban/exporters/*
-# tests: payload line DROPPED entirely. After the %install .gitkeep strip the
-# tests/ dir is EMPTY; the inc %dir (line 23) is its sole owner. We must NOT emit
-# /usr/lib/nftban/tests/* because /* over an empty dir errors "contains no files"
-# on rpm 4.16. (Empty inc-%dir'd dirs modules/ and tools/ are likewise
-# intentionally absent from %files for the same reason.)
-/usr/lib/nftban/data/*
-/usr/lib/nftban/health/*
+/usr/lib/nftban/cli
+/usr/lib/nftban/core
+/usr/lib/nftban/lib
+/usr/lib/nftban/cron
+/usr/lib/nftban/helpers
+/usr/lib/nftban/setup
+/usr/lib/nftban/exporters
+/usr/lib/nftban/tests
+/usr/lib/nftban/data
+/usr/lib/nftban/health
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
 # v1.50.0: template with placeholders (always replaced on upgrade, NOT %config)
@@ -1445,23 +1410,7 @@ fi
 /etc/polkit-1/rules.d/20-nftban-auditor.rules
 # Shared data
 /usr/share/nftban/specs/structure_default.json
-# v1.164 BUG-RPM-FILES-LISTED-TWICE: /usr/share/nftban/templates is LEFT BARE on
-# purpose. The staged tree has subdirs email/ and partials/ (each holds .html
-# files) that the GENERATED nftban-files.inc carries NO %dir entry for — the inc
-# only %dir-owns templates/, templates/mail/, templates/reports/, templates/zabbix/
-# (inc lines 89-92). The bare dir path here is what recursively owns those
-# un-%dir'd subdirs and their files; converting it to /* (or per-subdir globs)
-# would orphan email/ and partials/ ("installed but unpackaged" / directory not
-# owned). The inc is generator-owned (DO NOT EDIT — out of scope this lane), and
-# zabbix/ has a %dir but ships empty, so it cannot take a /* glob. The one residual
-# "listed twice" on /usr/share/nftban/templates is a BENIGN warning, not the
-# build-breaking error; closing it cleanly needs the FHS generator to emit %dir
-# for templates/email + templates/partials first, then this can be split.
 /usr/share/nftban/templates
-# selinux: LEFT BARE — the inc has NO %dir for /usr/share/nftban/selinux, so this
-# bare line is its SOLE owner (not double-listed) and must stay to own the dir +
-# its .te/.fc/.if/Makefile (and conditional .pp). Converting to /* would leave
-# the directory node itself unowned.
 /usr/share/nftban/selinux
 /usr/share/bash-completion/completions/nftban
 %attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml
