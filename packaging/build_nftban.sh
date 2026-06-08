@@ -414,7 +414,7 @@ install -D -m 0755 bin/nftban-detect-ssh-ports %{buildroot}/usr/lib/nftban/bin/n
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
 install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
 # NB-5: privileged binaries ship 0750 (root:nftban), not 0755 (root:root).
-# Canonical ownership set declaratively via %attr() in %files below.
+# Canonical ownership set declaratively via %attr() in the files manifest below.
 install -D -m 0750 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
 # v1.100.1b.A: nftban-ui + nftban-ui-auth binaries no longer installed.
 
@@ -536,11 +536,11 @@ install -D -m 0644 install/selinux/nftban.te %{buildroot}/usr/share/nftban/selin
 install -D -m 0644 install/selinux/nftban.fc %{buildroot}/usr/share/nftban/selinux/nftban.fc
 install -D -m 0644 install/selinux/nftban.if %{buildroot}/usr/share/nftban/selinux/nftban.if
 install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinux/Makefile
-# v1.147-A: compile the policy module (.pp) at build so %post can semodule -i it
+# v1.147-A: compile the policy module (.pp) at build so the post scriptlet can semodule -i it
 # without requiring selinux-policy-devel on the target. MUST use the refpolicy
 # devel Makefile — checkmodule alone errors on policy_module()/init_daemon_domain
 # (refpolicy m4 interfaces). Guarded: if the devel Makefile is absent the .pp is
-# simply not shipped and %post falls back to compile-on-target (or no-ops).
+# simply not shipped and the post scriptlet falls back to compile-on-target (or no-ops).
 if [ -f /usr/share/selinux/devel/Makefile ]; then
     ( cd install/selinux && make -f /usr/share/selinux/devel/Makefile nftban.pp ) \
         && install -D -m 0644 install/selinux/nftban.pp %{buildroot}/usr/share/nftban/selinux/nftban.pp \
@@ -583,7 +583,7 @@ install -m 0755 scripts/nftban-soak-check.sh %{buildroot}/usr/lib/nftban/scripts
 mkdir -p %{buildroot}/usr/lib/nftban/tests
 find cli/lib/nftban/tests -type f -name "*.sh" -exec install -m 0755 {} %{buildroot}/usr/lib/nftban/tests/ \;
 
-# Config directories (must match %files section)
+# Config directories (must match the files manifest)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard/profiles
@@ -981,7 +981,7 @@ usermod -a -G nftban root 2>/dev/null || true
 
 %post
 # =============================================================================
-# NFTBan v1.73.0 - Go-based installer (replaces shell %post)
+# NFTBan v1.73.0 - Go-based installer (replaces the shell post scriptlet)
 # =============================================================================
 # The Go binary handles: detection, rendering, switchop, services, validation.
 # This thin wrapper just determines install mode and calls the binary.
@@ -1026,7 +1026,7 @@ fi
 # (RPM previously had NO inet-filter guard at all). Empty/default distro
 # skeleton -> auto-remove (both modes; it would shadow nftban). Populated,
 # operator-owned table -> never delete: fresh install prints the runbook and
-# SKIPS activation via exit 0 (rpm %post cannot cleanly abort; a non-zero exit
+# SKIPS activation via exit 0 (the rpm post scriptlet cannot cleanly abort; a non-zero exit
 # leaves a confusing scriptlet-failed-but-installed state); upgrade warns and
 # continues.
 _nftban_classify_inet_filter() {
@@ -1240,7 +1240,7 @@ if [ -f "/usr/lib/nftban/lib/nftban_pro.sh" ]; then
     ) &
 fi
 
-# Ensure %post exits 0 (RPM treats non-zero as scriptlet failure)
+# Ensure the post scriptlet exits 0 (RPM treats non-zero as scriptlet failure)
 exit 0
 
 %preun
