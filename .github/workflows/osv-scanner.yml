@@ -56,7 +56,11 @@ jobs:
 
       - name: Install OSV-Scanner
         run: |
-          curl -sSfL https://github.com/google/osv-scanner/releases/download/v2.3.3/osv-scanner_linux_amd64 -o osv-scanner
+          # v1.161: retry/fail-fast hardening (mirrors v1.157 fetch_verified policy) —
+          # transient github.com blips (HTTP 504) no longer hard-fail the scan.
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+               --connect-timeout 10 --max-time 120 -sS \
+               https://github.com/google/osv-scanner/releases/download/v2.3.3/osv-scanner_linux_amd64 -o osv-scanner
           chmod +x osv-scanner
           ./osv-scanner --version
 

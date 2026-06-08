@@ -180,6 +180,18 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 		log.Detect("conflicts", "services", sf.Conflicts)
 	}
 
+	// 4b. CVE-2025-NFTBAN-001 inet-filter guard (v1.161 INST-CVE-PARITY / A-11).
+	// Source-path twin of the DEB postinst / RPM %post classify-then-act guard
+	// (both v1.146 Phase-D). A pre-existing `inet filter` table is classified:
+	// an empty/default distro skeleton is removed here (it would shadow nftban
+	// blocking); a populated, operator-owned table is NEVER auto-deleted (warned
+	// only, unless NFTBAN_ALLOW_REMOVE_INET_FILTER=1 is set). Non-fatal and
+	// idempotent — running after the package scriptlet already cleaned the
+	// skeleton observes NONE and is a clean no-op. Placed before phaseSwitch's
+	// CleanGhostTables so the documented removal + operator messaging happen in
+	// the detect phase, matching the scriptlet timing (pre-activation).
+	detect.CheckCVEInetFilter(exec, log)
+
 	// 5. Detect CT limits (for nftables rendering)
 	pd.ctLimits = detect.ReadCTLimits(exec, log)
 	log.Detect("ct_limits", "ssh", fmt.Sprintf("%d", pd.ctLimits.SSH))
@@ -549,13 +561,13 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 // phaseValidate runs post-install assertions, writes authority files, sets immutable flags.
 //
 // v1.98 flow (INV-I-010 through INV-I-013):
-//   1. Write authority files
-//   2. Run permissions enforce (safe auto-fix for FHS drift)
-//   3. Run assertions (VALIDATE_1)
-//   4. If assertions fail → try health fix once (safe auto-fix)
-//   5. Re-run assertions (VALIDATE_2) — only post-fix result counts
-//   6. Set immutable flags
-//   7. Final result from VALIDATE_2 (or VALIDATE_1 if no fix needed)
+//  1. Write authority files
+//  2. Run permissions enforce (safe auto-fix for FHS drift)
+//  3. Run assertions (VALIDATE_1)
+//  4. If assertions fail → try health fix once (safe auto-fix)
+//  5. Re-run assertions (VALIDATE_2) — only post-fix result counts
+//  6. Set immutable flags
+//  7. Final result from VALIDATE_2 (or VALIDATE_1 if no fix needed)
 //
 // V125 R-3: honors ctx cancellation at phase entry and before the
 // auto-fix retry path (VALIDATE_2). The retry path is the only place
