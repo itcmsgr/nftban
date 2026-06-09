@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.169.0] - 2026-06-09 — hygiene/UX residuals (CLI-BUG-3 · CI-TEST-GAP · docs)
+
+**Codename:** `V169_HYGIENE_UX` · **Controlling record:** `NFTBAN_ROADMAP/V169_HYGIENE_UX_SCOPE.md`
+**PR:** [#814](https://github.com/itcmsgr/nftban/pull/814) (sq `5a8f05b8`)
+
+> **Why:** a low-risk hygiene/UX bundle following the daemon-Go v1.168. **Shell + CI-workflow + docs only** — daemon `cmd/nftband` byte-identical to v1.168.0; schema **1.83.0 frozen**; no FHS body/generator or packaging-authority change.
+
+### Fixed — `whitelist list` labels timed/session entries (CLI-BUG-3)
+- Since v1.168 a timed kernel element renders as `1.2.3.4 timeout 30m expires 29m55s`; the list printed that raw text appended to the IP, unlabeled. `cmd_whitelist.sh` now formats each element via `nftban_whitelist_fmt_element` (**TIMED (expires in …)** vs **DURABLE**) and emits a bare IP in `--json` via `nftban_whitelist_bare_ip` (keeps JSON values valid). Read-only display; no nft writes. Guard `whitelist_list_timed_label_v169_test.sh`.
+
+### Changed — CI-TEST-GAP: wire previously-unwired guards
+- Wired 6 substantive guards that shipped with v1.158–v1.163 but were never in any workflow (`mac_posture_v158`, `geoban_refresh_execcondition_v159`, `firewall_pkg_wording_v160`, `permissions_optional_module_skip_v160`, `whitelist_verify_v163`, `immutable_health_verify_v163`) plus the new v169 CLI-BUG-3 guard into `ci-architecture.yml`.
+
+### Changed — docs/hygiene (REPO-DOC-HYGIENE)
+- README: `Tier 1 — Future Platforms` → `Tier 1 — Newer Platforms` + a clarifier that all tiers are built/released/CI-tested every release (tiers reflect recommendation/age, not support level; verified against artifacts).
+- Removed the stale `# NFTBan v1.0.0` banner from `packaging/systemd/nftban-firewall-init.service` (comment-only; the `install/systemd/` copy was already clean since #552).
+
+### Envelope
+- **Daemon `cmd/nftband` byte-identical to v1.168.0** (0 Go/internal change) · schema **1.83.0 frozen** · FHS body byte-unchanged (release-prep header-only; `generate-fhs-outputs.sh --check` rc=0).
+
+### Validation
+- Local: `bash -n` + shellcheck `-S warning` (0 new) on touched shell; new test + all 6 wired guards pass; `ci-architecture.yml` YAML valid. PR #814 CI green; post-merge main `5a8f05b8` green (non-blocking Dependabot bot run + a superseded namespace-guard leg aside; neither is a required check). **Not shipped here:** DDoS wiki drift (separate `nftban.wiki` repo).
+
+---
+
 ## [v1.168.0] - 2026-06-09 — CLI-BUG-2: whitelist TTLs expire in-kernel
 
 **Codename:** `V168_CLI_BUG_2_WHITELIST_TTL`
