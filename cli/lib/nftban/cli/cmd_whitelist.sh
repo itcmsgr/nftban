@@ -476,6 +476,35 @@ nftban_whitelist_remove_static_ip() {
 }
 
 # List whitelisted IPs
+# v1.169 (CLI-BUG-3): format one kernel whitelist set element for display,
+# labeling timed (session / `--ttl`, carries an nft `timeout`) vs durable
+# entries. Since v1.168 a timed element renders as
+# "1.2.3.4 timeout 30m expires 29m55s"; without this the list printed that raw
+# text appended to the IP, unlabeled. Input = one element line from
+# `nft list set` (timed or a bare "1.2.3.4"). Output = "  <ip>   <LABEL>".
+# Pure/string-only — no nft calls, no writes (unit-testable).
+nftban_whitelist_fmt_element() {
+    local _el="$1" _bare _rem
+    _bare="${_el%% *}"
+    if [[ "$_el" == *" timeout "* ]]; then
+        if [[ "$_el" == *" expires "* ]]; then
+            _rem="${_el##* expires }"; _rem="${_rem%% *}"
+            printf '  %-18s TIMED (expires in %s)\n' "$_bare" "$_rem"
+        else
+            printf '  %-18s TIMED\n' "$_bare"
+        fi
+    else
+        printf '  %-18s DURABLE\n' "$_bare"
+    fi
+}
+
+# nftban_whitelist_bare_ip — first whitespace-delimited field of an element line
+# (strips any `timeout …`/`expires …` suffix). Keeps --json values valid IPs.
+nftban_whitelist_bare_ip() {
+    local _el="$1"
+    printf '%s' "${_el%% *}"
+}
+
 nftban_whitelist_list() {
     # v1.59.0 UX-2: Added --json support for scripting/monitoring
     local _json_mode="false"
@@ -525,14 +554,14 @@ nftban_whitelist_list() {
         while IFS= read -r _ip; do
             [[ -z "$_ip" ]] && continue
             [[ "$_first" == "true" ]] && _first=false || _json+=","
-            _json+="\"$_ip\""
+            _json+="\"$(nftban_whitelist_bare_ip "$_ip")\""
         done <<< "$_wl_v4"
         _json+='],"ipv6":['
         _first=true
         while IFS= read -r _ip; do
             [[ -z "$_ip" ]] && continue
             [[ "$_first" == "true" ]] && _first=false || _json+=","
-            _json+="\"$_ip\""
+            _json+="\"$(nftban_whitelist_bare_ip "$_ip")\""
         done <<< "$_wl_v6"
         _json+=']}}'
         echo "$_json"
@@ -558,7 +587,7 @@ nftban_whitelist_list() {
     echo "───────────────"
     if [[ -n "$_wl_v4" ]]; then
         while IFS= read -r _ip; do
-            [[ -n "$_ip" ]] && echo "  $_ip"
+            [[ -n "$_ip" ]] && nftban_whitelist_fmt_element "$_ip"
         done <<< "$_wl_v4"
     else
         echo "  (empty or not available)"
@@ -568,7 +597,7 @@ nftban_whitelist_list() {
     echo "───────────────"
     if [[ -n "$_wl_v6" ]]; then
         while IFS= read -r _ip; do
-            [[ -n "$_ip" ]] && echo "  $_ip"
+            [[ -n "$_ip" ]] && nftban_whitelist_fmt_element "$_ip"
         done <<< "$_wl_v6"
     else
         echo "  (empty or not available)"
