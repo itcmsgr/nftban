@@ -100,6 +100,8 @@ Interpretation rules:
 
 ## Quick Install
 
+> All tiers below are built, released, and install-tested in CI every release. Tiers reflect **recommendation/age**, not support level: **Tier 0** = primary/recommended · **Tier 1** = newer releases · **Tier 2** = older LTS still supported.
+
 ### Tier 0 — Primary Platforms
 
 #### Ubuntu 24.04 LTS (Noble)
@@ -126,7 +128,7 @@ wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_6
 sudo dnf install -y ./nftban-el9-x86_64.rpm
 ```
 
-### Tier 1 — Future Platforms
+### Tier 1 — Newer Platforms
 
 #### Debian 13 (Trixie)
 ```bash
