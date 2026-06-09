@@ -42,6 +42,14 @@ import (
 type WhitelistEntry struct {
 	Value  string // exact normalized form as written: "1.2.3.4" or "1.2.3.0/27"
 	IsCIDR bool   // true if Value contains "/"
+	// ExpiresAt carries the absolute RFC3339 timestamp from an inline
+	// `# EXPIRES_AT=<ts>` marker (V120 session-whitelist convention). Zero
+	// value = non-expiring (durable/trust entry) → permanent in the kernel.
+	// A future timestamp = the element must carry a kernel timeout anchored
+	// to this absolute instant, so a daemon FullSync/rebuild REFRESHES the
+	// remaining TTL instead of clobbering the entry to permanent (CLI-BUG-2,
+	// v1.168). Past timestamps are skipped at load and never reach here.
+	ExpiresAt time.Time
 }
 
 // LoadAllWhitelists loads IPs from all whitelist sources and returns two
@@ -173,12 +181,16 @@ func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntr
 		}
 		// V120: skip if the entry carries an EXPIRES_AT marker that is past
 		// or unparseable. No marker → load normally (backward compat).
-		if shouldSkipDueToExpiresAt(line) {
+		// v1.168 (CLI-BUG-2): for future markers, carry the absolute timestamp
+		// so the daemon sync can apply a kernel timeout (not skip-only).
+		expiresAt, skip := parseExpiresAt(line)
+		if skip {
 			return nil
 		}
 		we := WhitelistEntry{
-			Value:  entry.Value,
-			IsCIDR: entry.IsCIDR,
+			Value:     entry.Value,
+			IsCIDR:    entry.IsCIDR,
+			ExpiresAt: expiresAt,
 		}
 		if entry.IPv4 {
 			ipv4[entry.Value] = we
@@ -200,24 +212,49 @@ func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntr
 // V120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): keeps the EXPIRES_AT contract
 // in one place so AddSessionWhitelist (writer) and the loader (reader)
 // stay byte-compatible. See internal/installer/safety/session_whitelist.go.
+//
+// v1.168 (CLI-BUG-2): thin wrapper over parseExpiresAt, preserving the
+// original skip-only boolean contract for callers/tests that only care
+// whether an entry must be dropped.
 func shouldSkipDueToExpiresAt(line string) bool {
+	_, skip := parseExpiresAt(line)
+	return skip
+}
+
+// parseExpiresAt inspects the raw whitelist line for an inline
+// `EXPIRES_AT=<RFC3339>` marker and returns:
+//   - expiresAt: the parsed absolute timestamp for a still-future marker
+//     (zero time when there is no marker — i.e. a non-expiring entry);
+//   - skip: true when the entry must be DROPPED — marker present-but-malformed
+//     (no value / unparseable) or already past.
+//
+// v1.168 (CLI-BUG-2): the daemon needs the absolute timestamp (not just a
+// skip decision) so FullSync can apply a kernel timeout anchored to it. A
+// re-sync recomputes remaining = expiresAt − now, so the timeout is REFRESHED
+// rather than clobbered to permanent. Entries with no marker return
+// (zero, false) → loaded as permanent (durable/trust).
+func parseExpiresAt(line string) (expiresAt time.Time, skip bool) {
 	const marker = "EXPIRES_AT="
 	idx := strings.Index(line, marker)
 	if idx < 0 {
-		// No marker — entry is non-expiring; load normally.
-		return false
+		// No marker — entry is non-expiring; load normally as permanent.
+		return time.Time{}, false
 	}
 	rest := line[idx+len(marker):]
 	fields := strings.Fields(rest)
 	if len(fields) == 0 {
 		// Marker present but no value — malformed; skip conservatively.
-		return true
+		return time.Time{}, true
 	}
 	ts, err := time.Parse(time.RFC3339, fields[0])
 	if err != nil {
 		// Unparseable timestamp — skip conservatively.
-		return true
+		return time.Time{}, true
 	}
-	return time.Now().UTC().After(ts)
+	if time.Now().UTC().After(ts) {
+		// Already expired — skip.
+		return time.Time{}, true
+	}
+	// Still future — carry the absolute timestamp for kernel-timeout sync.
+	return ts.UTC(), false
 }
-
