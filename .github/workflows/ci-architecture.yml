@@ -692,6 +692,16 @@ jobs:
       - name: update --dry-run hint rc=1 + CLI-BUG-1 reachability (v1.167)
         run: bash cli/lib/nftban/tests/cli_update_dry_run_hint_v167_test.sh
 
+      # v1.168 CLI-BUG-2 whitelist-TTL lane guards: the 4 whitelist set decls
+      # must carry interval,timeout (render prereq) AND the DEB/RPM upgrade path
+      # must re-activate timeout-capable sets (GetOrCreateIntervalSet reuses
+      # existing flagless sets). The TTL-survives-FullSync invariant is a Go test
+      # (internal/setsync) run by ci-go.yml.
+      - name: Whitelist sets carry timeout flag (v1.168 render prereq)
+        run: bash cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh
+      - name: Whitelist-TTL upgrade activation backstop (v1.168 deb+rpm)
+        run: bash cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

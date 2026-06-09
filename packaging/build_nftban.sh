@@ -1199,6 +1199,28 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
             echo "[NFTBan] WARN: to finish the migration manually, run: nftban firewall reload"
         fi
     fi
+
+    # --- v1.168 CLI-BUG-2: activate timeout-capable whitelist sets ---
+    # v1.168 adds \`flags interval, timeout\` to whitelist_ipv4/ipv6 so
+    # \`whitelist add --ttl\` can expire in-kernel. The installer's switchop.Rebuild
+    # (-> \`nftban firewall rebuild\`) above re-renders the v1.168 template and
+    # normally recreates the sets with the new flag on upgrade. This is a
+    # conditional BACKSTOP: a pre-v1.168 live set is created with bare
+    # \`flags interval\`, and GetOrCreateIntervalSet REUSES an existing set without
+    # upgrading its flags — so if the installer rebuild was skipped/DEGRADED and
+    # the live whitelist_ipv4 set still shows \`flags interval\`, recreate it with
+    # an explicit, SSH-guarded full rebuild. Idempotent: a no-op once the flag is
+    # present. NON-FATAL: a failed rebuild is warned and the upgrade continues.
+    if [ "\$INSTALL_MODE" = "upgrade" ] && [ "\${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ] && command -v nft >/dev/null 2>&1; then
+        if nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -qE 'flags[[:space:]]+interval[[:space:]]*\$'; then
+            echo "[NFTBan] v1.168: whitelist sets lack the timeout flag; rebuilding to enable --ttl expiry..."
+            if /usr/sbin/nftban firewall rebuild >/dev/null 2>&1; then
+                echo "[NFTBan] v1.168: whitelist sets are now timeout-capable (flags interval, timeout)."
+            else
+                echo "[NFTBan] WARN: v1.168 rebuild did not complete; run 'nftban firewall rebuild' to enable whitelist TTLs."
+            fi
+        fi
+    fi
 else
     echo "[NFTBan ERROR] Installer binary not found: \$NFTBAN_INSTALLER"
     echo "[NFTBan ERROR] Package may be corrupt. Try reinstalling."
