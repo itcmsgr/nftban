@@ -181,8 +181,11 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		}
 	}
 
-	// Get snapshots from runtime state
-	whitelistIPv4, whitelistIPv6 := state.GetWhitelistSnapshot()
+	// Get snapshots from runtime state.
+	// v1.168 (CLI-BUG-2): the whitelist snapshot carries per-IP absolute
+	// expiry so FullSync can apply kernel timeouts to timed entries instead
+	// of repopulating them as permanent.
+	whitelistIPv4, whitelistIPv6, whitelistExpiry := state.GetWhitelistSnapshotWithExpiry()
 	blacklistIPv4, blacklistIPv6 := state.GetBlacklistSnapshot()
 
 	// Perform full sync
@@ -192,6 +195,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		blacklistIPv4Set, blacklistIPv6Set,
 		whitelistIPv4, whitelistIPv6,
 		blacklistIPv4, blacklistIPv6,
+		whitelistExpiry,
 	)
 
 	if err != nil {

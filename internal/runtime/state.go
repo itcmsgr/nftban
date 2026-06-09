@@ -128,8 +128,12 @@ func (rs *RuntimeState) LoadWhitelists() error {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
-	// Load from all whitelist sources
-	ipv4Set, ipv6Set, err := whitelist.LoadAllWhitelists(rs.ConfigDir)
+	// Load from all whitelist sources.
+	// v1.168 (CLI-BUG-2): use the typed loader so per-entry EXPIRES_AT is
+	// carried into runtime state (IPEntry.ExpireAt). The daemon sync then
+	// applies a kernel timeout to timed entries instead of treating every
+	// whitelist element as permanent.
+	ipv4Set, ipv6Set, err := whitelist.LoadAllWhitelistsTyped(rs.ConfigDir)
 	if err != nil {
 		return fmt.Errorf("failed to load whitelists: %w", err)
 	}
@@ -139,21 +143,31 @@ func (rs *RuntimeState) LoadWhitelists() error {
 	rs.WhitelistIPv6 = make(map[string]*IPEntry)
 
 	// Populate IPv4 whitelist
-	for ip := range ipv4Set {
-		rs.WhitelistIPv4[ip] = &IPEntry{
+	for ip, we := range ipv4Set {
+		entry := &IPEntry{
 			IP:      ip,
 			Source:  "whitelist",
 			AddedAt: time.Now(),
 		}
+		if !we.ExpiresAt.IsZero() {
+			exp := we.ExpiresAt
+			entry.ExpireAt = &exp
+		}
+		rs.WhitelistIPv4[ip] = entry
 	}
 
 	// Populate IPv6 whitelist
-	for ip := range ipv6Set {
-		rs.WhitelistIPv6[ip] = &IPEntry{
+	for ip, we := range ipv6Set {
+		entry := &IPEntry{
 			IP:      ip,
 			Source:  "whitelist",
 			AddedAt: time.Now(),
 		}
+		if !we.ExpiresAt.IsZero() {
+			exp := we.ExpiresAt
+			entry.ExpireAt = &exp
+		}
+		rs.WhitelistIPv6[ip] = entry
 	}
 
 	// Update counters
@@ -387,6 +401,38 @@ func (rs *RuntimeState) GetWhitelistSnapshot() ([]string, []string) {
 	}
 
 	return ipv4List, ipv6List
+}
+
+// GetWhitelistSnapshotWithExpiry returns the current whitelist IPs plus a
+// map of ip → absolute expiry for entries that carry an EXPIRES_AT marker.
+// Entries without an expiry are absent from the map (permanent/durable/trust).
+//
+// v1.168 (CLI-BUG-2): the daemon sync uses the expiry map to apply a kernel
+// timeout (remaining = expiry − now) to timed whitelist elements, so a
+// "temporary" whitelist actually expires in-kernel instead of becoming
+// permanent on the next FullSync/rebuild.
+func (rs *RuntimeState) GetWhitelistSnapshotWithExpiry() ([]string, []string, map[string]time.Time) {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+
+	ipv4List := make([]string, 0, len(rs.WhitelistIPv4))
+	ipv6List := make([]string, 0, len(rs.WhitelistIPv6))
+	expiry := make(map[string]time.Time)
+
+	for ip, e := range rs.WhitelistIPv4 {
+		ipv4List = append(ipv4List, ip)
+		if e.ExpireAt != nil {
+			expiry[ip] = *e.ExpireAt
+		}
+	}
+	for ip, e := range rs.WhitelistIPv6 {
+		ipv6List = append(ipv6List, ip)
+		if e.ExpireAt != nil {
+			expiry[ip] = *e.ExpireAt
+		}
+	}
+
+	return ipv4List, ipv6List, expiry
 }
 
 // GetBlacklistSnapshot returns a copy of current blacklist
