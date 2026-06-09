@@ -11,6 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.168.0] - 2026-06-09 — CLI-BUG-2: whitelist TTLs expire in-kernel
+
+**Codename:** `V168_CLI_BUG_2_WHITELIST_TTL`
+**Controlling records:** `NFTBAN_ROADMAP/CLI_BUG_2_WHITELIST_TIMEOUT_SCOPE.md` · `NFTBAN_ROADMAP/V168_CLI_BUG_2_VALIDATION_RECORD.md`
+**PR:** [#812](https://github.com/itcmsgr/nftban/pull/812) (sq `dd794d1a`)
+
+> **Why:** `nftban firewall whitelist-session add <ip> --ttl <dur>` (and `whitelist add --ttl`) reported an expiry, but the entry never expired in the kernel. The daemon's `FullSync` repopulated the whitelist sets from an IP-only snapshot (`EXPIRES_AT` was load-time skip-only), so any kernel timeout was dropped on the next sync/rebuild and a "temporary" whitelist became permanent — exempt from all protection indefinitely. This is the first daemon-Go change since v1.147: the daemon `cmd/nftband` byte-identical chain (v1.147→v1.167; tree `85a2de3e…`) **ends intentionally here**. Schema **1.83.0 frozen** — no schema change.
+
+### Fixed — whitelist TTLs expire in-kernel and survive sync (CLI-BUG-2)
+- **Loader** (`internal/whitelist/loader.go`): `WhitelistEntry` now carries the absolute `ExpiresAt` from the inline `EXPIRES_AT` marker (`parseExpiresAt`) instead of only skipping expired lines. Past/malformed markers are still dropped; entries with no marker stay permanent. `shouldSkipDueToExpiresAt` retained as a compatible wrapper.
+- **Runtime state** (`internal/runtime/state.go`): `LoadWhitelists` populates `IPEntry.ExpireAt`; new `GetWhitelistSnapshotWithExpiry()` exposes `ip → absolute expiry` for timed entries only (permanent entries are absent from the map).
+- **Sync** (`internal/setsync/diff.go`): new pure `remainingTimeout()` + timeout-aware `SyncWhitelistSetToNFT`; `FullSync` gains a `whitelistExpiry` argument and applies `AddIPWithTimeout(remaining)` to timed entries. The timeout is anchored to the **absolute** expiry and recomputed every sync, so a re-sync/rebuild **refreshes** the remaining TTL rather than clobbering it to permanent. Blacklist sync unchanged.
+- **Daemon** (`cmd/nftband/daemon_handlers_sync.go`): passes the expiry snapshot into `FullSync`.
+
+### Changed — whitelist sets are timeout-capable (render prerequisite)
+- `whitelist_ipv4`/`whitelist_ipv6` now declare `flags interval, timeout` in both the static boot-baseline `install/nftables/nftables.conf` and the rebuild template `install/nftables/nftables.conf.tpl` (the blacklist sets already had it). Without the `timeout` flag the kernel set cannot hold a per-element timeout.
+
+### Changed — upgrade activation (normal rebuild; backstop is defense-in-depth)
+- On upgrade the installer's existing `switchop.Rebuild` runs `nftban firewall rebuild`, which re-renders the v1.168 template and recreates the whitelist sets with `flags interval, timeout`. Validation confirmed this **normal upgrade rebuild activates the flag** on lab2 (DEB), lab4 (RPM/EL9) and monitor (real host) **without any manual rebuild**.
+- A conditional, SSH-guarded **backstop** was added to the DEB postinst + RPM `%post` (modeled on the v1.145 PR-A.1 migration): if a live whitelist set still shows bare `flags interval` (installer rebuild skipped/DEGRADED), it recreates the set via an explicit `nftban firewall rebuild`; idempotent, non-fatal. The backstop is **defense-in-depth and was dormant during validation** — it did not fire on any host.
+
+### Tests
+- `internal/setsync` `TestRemainingTimeout_TTLSurvivesFullSync` (primary acceptance: TTL survives FullSync, anchored/refreshed, never clobbered) + loader `ExpiresAt`-carry + runtime expiry-snapshot tests.
+- Shell guards CI-wired in `ci-architecture.yml`: `whitelist_set_timeout_flag_v168_test.sh` (the 4 whitelist decls carry `timeout`) + `whitelist_timeout_upgrade_activation_v168_test.sh` (deb+rpm backstop). Schema-freeze guard green (1.83.0).
+
+### Envelope
+- **Daemon `cmd/nftband` changes** — the v1.147→v1.167 byte-identical chain (`85a2de3e…`) ends here by design.
+- Schema **1.83.0 frozen**. FHS body byte-unchanged (release-prep header-only; `generate-fhs-outputs.sh --check` rc=0).
+
+### Validation
+- Local: `go build/test ./...`, `go vet`, `staticcheck`, `gofmt`, schema-freeze, shell guards, shellcheck — all green.
+- Kernel-level (binary-swap **and** real package upgrade) on lab2 (DEB), lab4 (RPM/EL9), monitor (real host, v1.159→v1.168 jump): a timed `--ttl` entry kept a shrinking kernel timeout across an extra FullSync; durable/trust entries stayed permanent; SSH preserved; all hosts restored to baseline. dns1/dns2 untouched. Record: `NFTBAN_ROADMAP/V168_CLI_BUG_2_VALIDATION_RECORD.md`.
+- PR #812 CI green; post-merge main `dd794d1a` green (sole failure = the non-blocking Dependabot Updates bot run, not in `required_status_checks`).
+
+---
+
 ## [v1.167.0] - 2026-06-08 — UX residual (CLI output-truth + hygiene)
 
 **Codename:** `V167_UX_RESIDUAL`
