@@ -702,6 +702,26 @@ jobs:
       - name: Whitelist-TTL upgrade activation backstop (v1.168 deb+rpm)
         run: bash cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh
 
+      # v1.169 CLI-BUG-3: `whitelist list` labels timed/session vs durable entries.
+      - name: Whitelist list timed/session label (v1.169 CLI-BUG-3)
+        run: bash cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh
+
+      # v1.169 CI-TEST-GAP: wire 6 substantive guards that shipped with their
+      # lanes (v1.158–v1.163) but were never added to any workflow. Each is
+      # hermetic (no host/root) — they only catch a future regression once run.
+      - name: MAC posture advisory surface (v1.158)
+        run: bash cli/lib/nftban/tests/mac_posture_v158_test.sh
+      - name: Geoban-refresh ExecCondition skip-not-fail (v1.159)
+        run: bash cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh
+      - name: Firewall-pkg state-aware wording (v1.160)
+        run: bash cli/lib/nftban/tests/firewall_pkg_wording_v160.sh
+      - name: Permissions optional-module skip (v1.160)
+        run: bash cli/lib/nftban/tests/permissions_optional_module_skip_v160.sh
+      - name: Whitelist verify read-only (v1.163)
+        run: bash cli/lib/nftban/tests/whitelist_verify_v163_test.sh
+      - name: Immutable-flag health verify (v1.163)
+        run: bash cli/lib/nftban/tests/immutable_health_verify_v163_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
