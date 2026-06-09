@@ -47,6 +47,98 @@ func ComputeDiff(desiredIPs []string, currentIPs []string) *DiffResult {
 	return &diff
 }
 
+// remainingTimeout computes the kernel timeout to apply to a whitelist element
+// given its absolute expiry. It returns (0, false) for permanent entries — no
+// expiry recorded (durable/trust) — and (expiry−now, true) for timed entries.
+//
+// The duration is anchored to the ABSOLUTE expiry instant and recomputed on
+// every sync, so a re-sync/rebuild REFRESHES the remaining TTL instead of
+// clobbering the element to permanent. This is the CLI-BUG-2 (v1.168) core
+// invariant: a timed whitelist must keep a (shrinking) kernel timeout across
+// FullSync, never silently become permanent. A non-positive result means the
+// entry is already past — the caller skips it (the loader normally drops past
+// entries first; this is defense-in-depth against the load→sync race window).
+func remainingTimeout(expiry map[string]time.Time, ip string, now time.Time) (time.Duration, bool) {
+	if expiry == nil {
+		return 0, false
+	}
+	exp, ok := expiry[ip]
+	if !ok || exp.IsZero() {
+		return 0, false // permanent
+	}
+	return exp.Sub(now), true // timed (may be <= 0 if already past)
+}
+
+// SyncWhitelistSetToNFT performs a differential sync of a whitelist set,
+// applying a per-element kernel timeout to entries that carry an absolute
+// expiry (CLI-BUG-2, v1.168). Permanent entries (no expiry) are added in a
+// single batch exactly as before; timed entries are added individually with
+// AddIPWithTimeout(remaining). Removals are unchanged.
+//
+// Only newly-added elements (diff.ToAdd) receive a timeout. Elements already
+// present in the kernel are left untouched so their existing countdown
+// continues toward the absolute expiry; when the set is flushed/rebuilt they
+// re-enter ToAdd and the remaining TTL is recomputed. Either way a timed
+// entry never reverts to permanent.
+func SyncWhitelistSetToNFT(nft *NFTManager, set *nftables.Set, desiredIPs []string, expiry map[string]time.Time) (*SyncStats, error) {
+	startTime := time.Now()
+
+	stats := &SyncStats{
+		SetName:      set.Name,
+		TotalDesired: len(desiredIPs),
+	}
+
+	currentIPs, err := nft.GetSetElements(set)
+	if err != nil {
+		stats.Error = fmt.Errorf("failed to get current elements: %w", err)
+		stats.Duration = time.Since(startTime)
+		return stats, stats.Error
+	}
+	stats.TotalCurrent = len(currentIPs)
+
+	diff := ComputeDiff(desiredIPs, currentIPs)
+	stats.IPsAdded = len(diff.ToAdd)
+	stats.IPsRemoved = len(diff.ToRemove)
+	stats.IPsUnchanged = diff.Unchanged
+
+	now := time.Now().UTC()
+	permanent := make([]string, 0, len(diff.ToAdd))
+	for _, ip := range diff.ToAdd {
+		d, timed := remainingTimeout(expiry, ip, now)
+		if !timed {
+			permanent = append(permanent, ip)
+			continue
+		}
+		if d <= 0 {
+			// Expired in the load→sync window — skip; the loader will drop
+			// it on the next reload.
+			continue
+		}
+		if err := nft.AddIPWithTimeout(set, ip, d); err != nil {
+			stats.Error = fmt.Errorf("failed to add timed element %s: %w", ip, err)
+			stats.Duration = time.Since(startTime)
+			return stats, stats.Error
+		}
+	}
+	if len(permanent) > 0 {
+		if err := nft.AddSetElements(set, permanent); err != nil {
+			stats.Error = fmt.Errorf("failed to add permanent elements: %w", err)
+			stats.Duration = time.Since(startTime)
+			return stats, stats.Error
+		}
+	}
+	if len(diff.ToRemove) > 0 {
+		if err := nft.DeleteSetElements(set, diff.ToRemove); err != nil {
+			stats.Error = fmt.Errorf("failed to remove elements: %w", err)
+			stats.Duration = time.Since(startTime)
+			return stats, stats.Error
+		}
+	}
+
+	stats.Duration = time.Since(startTime)
+	return stats, nil
+}
+
 // SyncStats holds statistics about a sync operation
 type SyncStats struct {
 	SetName       string
@@ -107,20 +199,25 @@ type SyncResult struct {
 	Success       bool
 }
 
-// FullSync performs a complete sync of all whitelist/blacklist sets
+// FullSync performs a complete sync of all whitelist/blacklist sets.
+//
+// whitelistExpiry maps ip → absolute expiry for timed whitelist entries
+// (CLI-BUG-2, v1.168); pass nil/empty to treat every whitelist element as
+// permanent (the pre-v1.168 behavior). Blacklist sync is unchanged.
 func FullSync(
 	nft *NFTManager,
 	whitelistIPv4Set, whitelistIPv6Set *nftables.Set,
 	blacklistIPv4Set, blacklistIPv6Set *nftables.Set,
 	whitelistIPv4, whitelistIPv6 []string,
 	blacklistIPv4, blacklistIPv6 []string,
+	whitelistExpiry map[string]time.Time,
 ) (*SyncResult, error) {
 	startTime := time.Now()
 	result := &SyncResult{Success: true}
 
-	// Sync whitelist IPv4
+	// Sync whitelist IPv4 (timeout-aware: timed entries get a kernel timeout)
 	if whitelistIPv4Set != nil {
-		stats, err := SyncSetToNFT(nft, whitelistIPv4Set, whitelistIPv4)
+		stats, err := SyncWhitelistSetToNFT(nft, whitelistIPv4Set, whitelistIPv4, whitelistExpiry)
 		result.WhitelistIPv4 = stats
 		if err != nil {
 			result.Success = false
@@ -128,9 +225,9 @@ func FullSync(
 		}
 	}
 
-	// Sync whitelist IPv6
+	// Sync whitelist IPv6 (timeout-aware)
 	if whitelistIPv6Set != nil {
-		stats, err := SyncSetToNFT(nft, whitelistIPv6Set, whitelistIPv6)
+		stats, err := SyncWhitelistSetToNFT(nft, whitelistIPv6Set, whitelistIPv6, whitelistExpiry)
 		result.WhitelistIPv6 = stats
 		if err != nil {
 			result.Success = false
