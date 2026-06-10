@@ -919,9 +919,14 @@ nftban_stats_cmd_ip() {
 
     if command -v jq &>/dev/null; then
         local total
-        total=$(echo "$history" | jq '. | length')
+        # v1.170: defensive — coerce to a single integer. The producer is now
+        # single-emit, but this guarantees the arithmetic test below can never
+        # crash on a multi-line/garbage value (the pre-v1.170 "0\n0" syntax error).
+        total=$(echo "$history" | jq '. | length' 2>/dev/null | head -1)
+        total=${total//[^0-9]/}
+        total=${total:-0}
 
-        if [[ $total -eq 0 ]]; then
+        if [[ "$total" -eq 0 ]]; then
             echo "No ban records found for ${ip}"
             echo ""
             return 0
