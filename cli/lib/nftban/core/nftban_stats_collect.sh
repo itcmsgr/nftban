@@ -552,12 +552,39 @@ nftban_stats_ip_history() {
         return 0
     fi
 
-    grep "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null | \
+    # v1.170: read the live ban log AND its rotated/compressed archives
+    # (logrotate keeps bans.log.1 + bans.log.*.gz, rotate 12) so per-IP history
+    # is COMPLETE, not silently truncated to the current uncompressed window.
+    # Build the file list with a nullglob-safe guard (no shopt side effects).
+    local -a _logs=("$NFTBAN_BAN_LOG")
+    local _f
+    for _f in "$NFTBAN_BAN_LOG".*; do
+        [[ -e "$_f" ]] && _logs+=("$_f")
+    done
+
+    # SINGLE-EMIT: capture the matcher into a var first. The pre-v1.170 form
+    # `grep "|ip|" log | awk '…[]…' || echo "[]"` double-emitted under
+    # `set -Eeuo pipefail` — a zero-match grep made the pipeline exit non-zero,
+    # so the `|| echo "[]"` fired IN ADDITION to awk's already-printed "[]",
+    # returning "[]\n[]" → caller's `jq length` → "0\n0" → `[[ -eq ]]` arith
+    # crash (cmd_stats.sh). zgrep transparently reads plain + .gz archives.
+    local _matches=""
+    if command -v zgrep >/dev/null 2>&1; then
+        _matches=$(zgrep -h "|${ip}|" "${_logs[@]}" 2>/dev/null || true)
+    else
+        # Graceful degrade (source/minimal installs without gzip): live log only.
+        echo "Warning: zgrep not found (gzip); ban history limited to ${NFTBAN_BAN_LOG} — rotated/compressed archives skipped." >&2
+        _matches=$(grep -h "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null || true)
+    fi
+
+    # awk emits a valid "[]" on EMPTY input, so NO "|| echo []" fallback is
+    # needed (that fallback was the double-emit bug). Sort by timestamp (field 1).
+    printf '%s\n' "$_matches" | sed '/^$/d' | sort -t'|' -k1,1 | \
     awk -F'|' 'BEGIN{printf "["}
                NR>1{printf ","}
                {printf "{\"timestamp\":\"%s\",\"ip\":\"%s\",\"jail\":\"%s\",\"action\":\"%s\",\"reason\":\"%s\"}",
                        $1, $4, $3, $6, $5}
-               END{printf "]"}' || echo "[]"
+               END{printf "]"}'
 }
 
 # =============================================================================
