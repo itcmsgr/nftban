@@ -722,6 +722,12 @@ jobs:
       - name: Immutable-flag health verify (v1.163)
         run: bash cli/lib/nftban/tests/immutable_health_verify_v163_test.sh
 
+      # v1.170 BUG-STATS-IP-HISTORY: `nftban stats ip <IP>` must single-emit (no
+      # pipefail double-`[]` arith crash for zero-record IPs) AND read compressed/
+      # rotated bans.log archives (zgrep); + gzip dep stays declared.
+      - name: stats ip history pipefail + compressed-log fix (v1.170)
+        run: bash cli/lib/nftban/tests/stats_ip_history_v170_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
