@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.174.0] - 2026-06-12 — install/health reliability (stale failed-unit classification + health OOM + alert bookkeeping)
+
+**Codename:** `INSTALL_HEALTH_RELIABILITY` · **Records:** `NFTBAN_ROADMAP/V1_174_INSTALL_HEALTH_RELIABILITY_SCOPE.md`, `V1_173_INSTALL_WARNINGS_CLASSIFICATION.md`
+**PR:** [#825](https://github.com/itcmsgr/nftban/pull/825) (sq `cb7fb5b8`)
+
+> **Why:** the installer's `failed_units_postinstall_ok` flagged DEGRADED on a **pre-existing** failed nftban unit (one that failed *before* the upgrade) — observed on dns2 (`nftban-health.service` OOM) and monitor (`nftban-alert@nftband.service.service`, a stale alert latch) — even though live health passed. It had no install-window timestamp comparison.
+
+### Fixed — pre-existing failed-unit no longer falsely DEGRADES
+- **Classification** (`internal/installer/validate`): a failed nftban unit is compared to an install-window start (recorded at installer startup). **Pre-existing** (failed strictly before the window) **+ clean live `nftban health`** → `WARN_PRE_EXISTING_RECOVERED` (non-fatal; `--repair` reaches COMMITTED). **In-window / unknown timestamp / unknown-or-unhealthy live health** → stays DEGRADED. A newly-failed unit is **never** classified as recovered (fail-safe). Covers templated `nftban-alert@*.service`.
+- **Live-health parser** accepts the real four-axis vocabulary — `Overall: OK|IDLE|PROTECTED` + `Findings: none` / `none (N INFO hidden)` — so the downgrade fires on a normally-protecting host.
+- **Bounded `reset-failed`** clears the stale systemd failed-state for ONLY the recovered units (exact names; never in-window/unknown/non-nftban; a reset-failed error is non-fatal).
+
+### Fixed — health OOM
+- `nftban-health.service` `MemoryMax` 128M → **256M** (validator + concurrent children RSS on hosts with large journals; the validator's journalctl read is already bounded).
+
+### Fixed — alert unit no longer latches on bookkeeping
+- `cli/sbin/nftban-service-alert`: the non-delivery bookkeeping writes (throttle, failure-metric, diagnostics) are **best-effort** — a permission error logs WARN and continues instead of failing the unit (it runs `User=nftban` and those paths were root-owned). **`send_email_alert` (delivery) keeps its rc contract.**
+
+### Changed — update messaging
+- `nftban update` summary now surfaces an **auto-recovered pre-existing unit** (transparency; this-run-scoped; quiet when none), and the DEGRADED block no longer says "often a known transient on the exporter" — it now states the failure may be current **or** a stale pre-existing latch and points to `nftban health` + `--repair`.
+
+### Envelope
+- **Installer-Go + shell — daemon `cmd/nftband` BYTE-IDENTICAL to v1.173.0** (daemon does not import `internal/installer/validate`) · schema **1.83.0 frozen** · FHS body unchanged. Lab-first PASS lab2 + lab4 (recovered-path fires on real PROTECTED hosts; in-window stays DEGRADED).
+- **Explicitly NOT fixed here (open lanes):** ALERT-THROTTLE-FHS (relocate throttle to an nftban-owned dir so it persists — v1.175 FHS), SUPPORT-DIAG-FAILED-UNIT-COVERAGE (support-bundle gaps — diagnostics release), UX-MSG-AUDIT (broad scan for similar misleading messages).
+
+---
+
 ## [v1.173.0] - 2026-06-11 — §4.1 session-whitelist cross-language flock + executor fsync
 
 **Codename:** `SESSION_FLOCK` · **Controlling record:** `NFTBAN_ROADMAP/V173_SESSION_FLOCK_SCOPE.md`
