@@ -728,6 +728,12 @@ jobs:
       - name: stats ip history pipefail + compressed-log fix (v1.170)
         run: bash cli/lib/nftban/tests/stats_ip_history_v170_test.sh
 
+      # v1.171 §4.2/§4.3/§3.6: daemon state writes are atomic (route through
+      # safety.SafeWriteFile); ssh_ports counter seeded. The atomic mechanism
+      # itself is proven by Go test internal/safety/atomic_write_v171_test.go.
+      - name: state-write atomicity call-site lock (v1.171)
+        run: bash cli/lib/nftban/tests/state_write_atomicity_v171_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

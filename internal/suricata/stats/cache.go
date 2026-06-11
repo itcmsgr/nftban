@@ -301,8 +301,10 @@ func (c *Cache) Save() error {
 		return fmt.Errorf("failed to marshal cache: %w", err)
 	}
 
-	// Write to file
-	if err := os.WriteFile(c.snapshotPath, data, 0644); err != nil {
+	// Write to file. v1.171 §4.2: atomic (temp+fsync+rename, random temp) via
+	// the gold helper so a crash mid-write or a concurrent Load() can never see
+	// a truncated/torn JSON snapshot (the dir was MkdirAll'd above).
+	if err := safety.SafeWriteFile(c.snapshotPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write snapshot: %w", err)
 	}
 

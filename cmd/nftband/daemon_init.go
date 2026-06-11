@@ -518,6 +518,7 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 		"whitelist_ipv4", "whitelist_ipv6",
 		"tcp_ports_in", "tcp_ports_out",
 		"udp_ports_in", "udp_ports_out",
+		"ssh_ports", // v1.171 §3.6: was omitted → ssh_ports counter never seeded from kernel on startup
 	}
 
 	for _, setName := range setNames {
