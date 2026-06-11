@@ -31,6 +31,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/lock"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/installer/validate"
 	"github.com/itcmsgr/nftban/pkg/version"
 
 	// PR26.3: panel adapter registration via blank import. The package
@@ -61,6 +62,15 @@ func main() {
 	// Write run header to log file for post-mortem analysis
 	hostname, osInfo := systemIdentity()
 	log.RunHeader(version.Version, cfg.mode, hostname, osInfo)
+
+	// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: record the install-
+	// window start ONCE, before any phase runs, so post-install validation can
+	// distinguish a unit that failed during this run (in-window → DEGRADED)
+	// from a stale latch carried over from before it (pre-existing → eligible
+	// for WARN_PRE_EXISTING_RECOVERED when live health is clean). This is the
+	// window START — distinct from state INSTALL_TIMESTAMP, which is the end/
+	// write time.
+	validate.SetInstallWindowStart(time.Now())
 
 	log.Info("nftban-installer %s starting (mode=%s, repair=%v)", version.Version, cfg.mode, cfg.repair)
 	log.Debug("flags: rpm=%v takeover=%v force=%v dry-run=%v verbose=%v", cfg.rpm, cfg.takeover, cfg.force, cfg.dryRun, cfg.verbose)

@@ -749,6 +749,29 @@ jobs:
       - name: session-whitelist flock shell-side (v1.173)
         run: bash cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh
 
+      # v1.174 HEALTH-OOM-JOURNALCTL: every actual journalctl invocation on the
+      # nftban-health.service health-check path is bounded (-n/--since), and the
+      # unit's MemoryMax is raised 128M->256M for the validator + concurrent-
+      # children RSS on large journals. The Go validator read is already bounded
+      # (internal/validator/journal.go --since -15m -n 200). The stale failed-
+      # unit classification half is covered by Go test
+      # internal/installer/validate/systemd_payload_v174_test.go.
+      - name: health journalctl bounded + MemoryMax 256M (v1.174)
+        run: bash cli/lib/nftban/tests/health_journalctl_bounded_v174_test.sh
+
+      # v1.174 ALERT-THROTTLE-NONFATAL: a state-write (throttle/diagnostics/
+      # failure-metric) permission failure must NOT fail/latch nftban-alert@*.service
+      # (monitor root cause), but a real alert DELIVERY failure still follows the rc
+      # contract. cli/sbin/nftban-service-alert.
+      - name: alert bookkeeping non-fatal, delivery keeps rc (v1.174)
+        run: bash cli/lib/nftban/tests/alert_bookkeeping_nonfatal_v174_test.sh
+
+      # v1.174 update-summary messaging: surface an auto-recovered pre-existing
+      # failed unit to the operator (transparency) + fix the misleading DEGRADED
+      # "known transient on the exporter" wording. cli/lib/nftban/cli/cmd_update.sh.
+      - name: update messaging recovered + DEGRADED (v1.174)
+        run: bash cli/lib/nftban/tests/update_msg_recovered_v174_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

@@ -34,8 +34,8 @@
 set -Eeuo pipefail
 
 readonly FAILED_SERVICE="${1:-unknown}"
-readonly TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-readonly HOSTNAME=$(hostname -f 2>/dev/null || hostname)
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S'); readonly TIMESTAMP
+HOSTNAME=$(hostname -f 2>/dev/null || hostname); readonly HOSTNAME
 
 # Load config
 NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
@@ -84,7 +84,12 @@ should_throttle() {
 
 update_throttle() {
     mkdir -p "$(dirname "$ALERT_THROTTLE_FILE")" 2>/dev/null || true
-    date +%s > "$ALERT_THROTTLE_FILE"
+    # Best-effort: a throttle-state write failure (e.g. EACCES — the alert unit
+    # runs as User=nftban while the path may be root-owned 0750) returns non-zero
+    # so the caller can WARN and continue. It must NOT fail/latch the alert unit
+    # (v1.174 ALERT-THROTTLE-NONFATAL). Proper relocation to an nftban-owned dir
+    # is a separate lane (ALERT-THROTTLE-FHS).
+    date +%s > "$ALERT_THROTTLE_FILE" 2>/dev/null
 }
 
 # =============================================================================
@@ -92,7 +97,8 @@ update_throttle() {
 # =============================================================================
 
 collect_diagnostics() {
-    local diag_file="${NFTBAN_DATA_DIR}/alerts/${FAILED_SERVICE}_$(date +%Y%m%d_%H%M%S).txt"
+    local diag_file
+    diag_file="${NFTBAN_DATA_DIR}/alerts/${FAILED_SERVICE}_$(date +%Y%m%d_%H%M%S).txt"
     mkdir -p "$(dirname "$diag_file")" 2>/dev/null || true
 
     {
@@ -129,7 +135,13 @@ collect_diagnostics() {
         uptime 2>&1 || true
         echo ""
 
-    } > "$diag_file"
+    } > "$diag_file" 2>/dev/null || {
+        # Diagnostics are best-effort bookkeeping; a write failure (e.g. EACCES on
+        # a root-owned data dir while the alert unit runs as User=nftban) must NOT
+        # fail/latch the alert unit. Return empty so the caller continues (v1.174).
+        echo ""
+        return 0
+    }
 
     echo "$diag_file"
 }
@@ -245,18 +257,32 @@ main() {
         exit 0
     fi
 
-    # Update throttle timestamp
-    update_throttle
+    # Update throttle timestamp — best-effort bookkeeping (v1.174
+    # ALERT-THROTTLE-NONFATAL). A state-write failure (EACCES) must NOT fail or
+    # latch the alert unit; only a real alert-delivery failure may. The throttle
+    # simply does not persist this round (alert still sends).
+    if ! update_throttle; then
+        log_alert "WARN" "throttle state write failed (permission denied?); continuing without throttle persistence"
+    fi
 
-    # Increment failure counter (for metrics)
-    increment_failure_metric
+    # Increment failure counter — best-effort bookkeeping.
+    if ! increment_failure_metric; then
+        log_alert "WARN" "failure-metric update failed; continuing"
+    fi
 
-    # Collect diagnostic information
+    # Collect diagnostic information — best-effort bookkeeping (collect_diagnostics
+    # returns "" on a write failure rather than failing the unit).
     local diag_file
     diag_file=$(collect_diagnostics)
-    log_alert "INFO" "Diagnostic report saved: $diag_file"
+    if [[ -n "$diag_file" ]]; then
+        log_alert "INFO" "Diagnostic report saved: $diag_file"
+    else
+        log_alert "WARN" "diagnostic collection failed (permission denied?); continuing without diagnostics"
+    fi
 
-    # Send email alert
+    # Send email alert — DELIVERY: keeps its existing rc contract. A real
+    # alert-delivery failure still fails the alert unit (deliberately NOT
+    # made best-effort).
     send_email_alert "$diag_file"
 
     log_alert "INFO" "Alert processing completed for $FAILED_SERVICE"
