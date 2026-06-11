@@ -1040,7 +1040,9 @@ _cmd_update_history() {
     fi
 
     local count
-    count=$(jq 'length' "$history_file" 2>/dev/null || echo 0)
+    # single integer for single/appended arrays; strip/default guards the `[[ -eq 0 ]]`.
+    count=$(jq -s 'add // [] | length' "$history_file" 2>/dev/null || true)
+    count=${count//[^0-9]/}; count=${count:-0}
 
     if [[ "$count" -eq 0 ]]; then
         echo "  (empty)"

@@ -657,7 +657,9 @@ nftban_enable_all() {
 
     # Check 4: core timers active (at least 1)
     local timers_active=0
-    timers_active=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
+    # wrap systemctl (rc!=0 path) so wc emits one count, never "0\n0" into the `[[ -eq 0 ]]`.
+    timers_active=$({ systemctl list-timers 'nftban-*' --no-legend 2>/dev/null || true; } | wc -l)
+    timers_active=${timers_active//[^0-9]/}; timers_active=${timers_active:-0}
     if [[ "$timers_active" -eq 0 ]]; then
         validation_failures+=("timers: 0 active")
     fi

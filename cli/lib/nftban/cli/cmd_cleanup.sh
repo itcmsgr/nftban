@@ -199,7 +199,10 @@ _cleanup_dry_run() {
 
             if command -v jq &>/dev/null; then
                 local ip_count
-                ip_count=$(echo "$ips_json" | jq -r 'length')
+                # 2>/dev/null + strip/default so empty/invalid `$ips_json` can't crash
+                # the `[[ "$ip_count" -eq 0 ]]` arith below.
+                ip_count=$(echo "$ips_json" | jq -r 'length' 2>/dev/null || true)
+                ip_count=${ip_count//[^0-9]/}; ip_count=${ip_count:-0}
                 if [[ "$ip_count" -eq 0 ]]; then
                     echo "  (none)"
                 else
