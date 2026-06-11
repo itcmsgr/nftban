@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.171.0] - 2026-06-11 — daemon state-write atomicity (§4.2–§4.3) + §3.6 ssh_ports counter
+
+**Codename:** `STATE_WRITE_ATOMICITY` · **Controlling records:** `NFTBAN_ROADMAP/V171_STATE_WRITE_ATOMICITY_SCOPE.md` · `NFTBAN_ROADMAP/V171_LAB_VALIDATION_RECORD.md`
+**PR:** [#818](https://github.com/itcmsgr/nftban/pull/818) (sq `d05509b3`)
+
+> **Why:** several daemon state files were written with a plain `os.WriteFile`/`os.Create` (torn-on-crash / torn-on-concurrent-read), and the startup set-counter reconcile omitted `ssh_ports`. **Daemon-Go lane** — the daemon `cmd/nftband` hash **moves intentionally** (the v1.147→v1.167 byte-identical chain already ended at v1.168). **Schema 1.83.0 frozen** — only the write *mechanism* changes; on-disk payloads are byte-identical. **Does NOT close §4.1** (cross-process flock on `00-session.conf`) — that remains a separate future lane.
+
+### Fixed — atomic state writes (§4.2/§4.3)
+- Routed the offending writers through the in-tree gold helper `safety.SafeWriteFile` (temp → `Sync` → rename, random temp): **§4.2** suricata sid-stats snapshot (`internal/suricata/stats/cache.go`); **§4.3a–c** `internal/safety/limits.go` ProtectionState/FilterState/PermanentBans; **§4.3d** `internal/ports/panel_loader.go` (streamed `os.Create` → buffer + `SafeWriteFile`, byte-identical content). A crash mid-write or a concurrent read can no longer observe a truncated/torn file.
+
+### Fixed — §3.6 ssh_ports startup counter
+- `cmd/nftband/daemon_init.go` reconcile `setNames` now includes `ssh_ports`, so its in-memory counter is seeded from the kernel on startup (was silently omitted; count-only, set was always enforced).
+
+### Tests
+- `internal/safety/atomic_write_v171_test.go` (concurrent-read atomicity + no stray temp on success) + `cli/lib/nftban/tests/state_write_atomicity_v171_test.sh` (8/0 call-site lock), CI-wired in `ci-architecture.yml`.
+
+### Envelope
+- **Daemon-Go — daemon `cmd/nftband` NOT byte-identical** (hash moves by design). Schema **1.83.0 frozen** (payloads unchanged). Installer/runtime behavior otherwise unchanged.
+
+### Validation
+- Local: `go build/test/vet ./...` + staticcheck + gofmt + shellcheck green.
+- **Lab-first (mandatory for daemon-Go) PASS 3/3** — lab2 (DEB), lab4 (RPM/EL9), monitor (real host): daemon SHA256 moved to the single v1.171 build then restored to each baseline; `ssh_ports` counter seeded (`Reconciled ssh_ports: count=1`); state JSON valid across a restart-survival cycle, no torn-JSON; SSH preserved. dns1/dns2/srv1 held for the post-release fleet gate. Record `NFTBAN_ROADMAP/V171_LAB_VALIDATION_RECORD.md`.
+- PR #818 CI green; post-merge main `d05509b3` green (non-blocking Dependabot bot aside).
+
 ## [v1.170.0] - 2026-06-10 — stats ip history: pipefail fix + rotated/compressed logs
 
 **Codename:** `STATS_IP_HISTORY_FIX` · **Controlling record:** `NFTBAN_ROADMAP/V170_STATS_IP_HISTORY_FIX_SCOPE.md`
