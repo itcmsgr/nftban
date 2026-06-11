@@ -323,7 +323,9 @@ func RecordProtectionTriggered(feedsSkipped bool, geobanSkipped bool, feedsCIDRs
 		return err
 	}
 
-	return os.WriteFile(ProtectionStateFile, data, 0644)
+	// v1.171 §4.3a: atomic write (temp+fsync+rename) via the in-package gold
+	// helper instead of a torn-on-crash os.WriteFile.
+	return SafeWriteFile(ProtectionStateFile, data, 0644)
 }
 
 // ClearProtectionState removes protection state (called when sync succeeds fully)
@@ -423,7 +425,8 @@ func RecordFilterState(total, filtered, bogon, oversize, kept int) error {
 		return err
 	}
 
-	return os.WriteFile(FilterStateFile, data, 0644)
+	// v1.171 §4.3b: atomic write via the in-package gold helper.
+	return SafeWriteFile(FilterStateFile, data, 0644)
 }
 
 // GetFilterState reads current CIDR filter state
@@ -585,7 +588,8 @@ func SavePermanentBans(state *PermanentBansState) error {
 		return err
 	}
 
-	return os.WriteFile(PermanentBansFile, data, 0644)
+	// v1.171 §4.3c: atomic write via the in-package gold helper.
+	return SafeWriteFile(PermanentBansFile, data, 0644)
 }
 
 // TrackPermanentBan adds or updates a permanent ban in tracking
