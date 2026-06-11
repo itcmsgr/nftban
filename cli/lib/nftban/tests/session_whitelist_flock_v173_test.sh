@@ -49,16 +49,21 @@ func_body(){ awk -v fn="$1" '
 for fn in _whitelist_session_add _whitelist_session_remove _whitelist_session_cleanup; do
   body="$(func_body "$fn")"
   if [[ -z "$body" ]]; then no "B:$fn body" "not found"; continue; fi
-  has_flock=0; has_fd=0; has_mv=0
+  has_flock=0; has_fd=0; has_mv=0; has_ensure=0
   grep -qE 'flock 9' <<<"$body" && has_flock=1
   grep -qE '9>"\$_NFTBAN_SESSION_WL_LOCK"' <<<"$body" && has_fd=1
   grep -qE 'mv "\$tmp" "\$_NFTBAN_SESSION_WHITELIST_PATH"' <<<"$body" && has_mv=1
-  if [[ $has_flock -eq 1 && $has_fd -eq 1 && $has_mv -eq 1 ]]; then
-    ok "B $fn: RMW (mv) runs under flock 9 on the shared lock"
+  grep -qE '_whitelist_session_ensure_lock' <<<"$body" && has_ensure=1
+  if [[ $has_flock -eq 1 && $has_fd -eq 1 && $has_mv -eq 1 && $has_ensure -eq 1 ]]; then
+    ok "B $fn: ensures 0600 lock + RMW (mv) under flock 9 on the shared lock"
   else
-    no "B $fn: flock-wrapped RMW" "flock=$has_flock fd=$has_fd mv=$has_mv"
+    no "B $fn: flock-wrapped RMW" "flock=$has_flock fd=$has_fd mv=$has_mv ensure=$has_ensure"
   fi
 done
+
+echo "== Part B2: ensure-lock helper forces 0600 (cross-language parity with Go) =="
+grep -qE 'chmod 0600 "\$_NFTBAN_SESSION_WL_LOCK"' "$FW" \
+  && ok "B2a helper chmod 0600 present" || no "B2a helper chmod 0600" "missing"
 
 echo "== Part C: flock(1) actually serializes concurrent appenders (mechanism) =="
 if ! command -v flock >/dev/null 2>&1; then
@@ -76,6 +81,20 @@ else
   got=$(wc -l < "$out"); got=${got//[^0-9]/}
   [[ "$got" == "30" ]] && ok "C flock serialized 30 concurrent RMW appenders (no lost update)" \
     || no "C flock mechanism" "expected 30 lines, got $got"
+
+  echo "== Part D: the REAL ensure-lock helper creates the lock at 0600 =="
+  # eval the actual helper definition from cmd_firewall.sh and run it against a
+  # temp lock; assert mode 0600 even under a group-readable umask (027 → 0640).
+  eval "$(awk '/^_whitelist_session_ensure_lock\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$FW")"
+  if declare -f _whitelist_session_ensure_lock >/dev/null 2>&1; then
+    ( umask 027
+      _NFTBAN_SESSION_WL_LOCK="$WORK/parity.lock" _whitelist_session_ensure_lock )
+    mode=$(stat -c '%a' "$WORK/parity.lock" 2>/dev/null)
+    [[ "$mode" == "600" ]] && ok "D ensure-lock created the lock at 0600 (parity with Go 0o600)" \
+      || no "D lock mode parity" "expected 600, got '$mode'"
+  else
+    no "D ensure-lock helper" "could not extract/eval helper"
+  fi
 fi
 
 echo ""
