@@ -25,6 +25,7 @@
 package validate
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,38 @@ import (
 const auxiliarySettleAttempts = 3
 
 var auxiliarySettleDelay = 2 * time.Second
+
+// installWindowStart records the wall-clock instant the current installer
+// run began. It is set ONCE via SetInstallWindowStart at the very start of
+// the run (before any phase executes) and consumed by
+// GatherSystemdPayloadInputs to classify pre-existing vs in-window unit
+// failures. Zero value => unknown (no downgrade is permitted; fail closed).
+// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE.
+var installWindowStart time.Time
+
+// SetInstallWindowStart records the install-window start instant. Call once
+// at the very start of the installer run, before the phases execute. The
+// validate gatherer reads this when building SystemdPayloadInputs. Note:
+// state/file.go INSTALL_TIMESTAMP is the END/write time and must NOT be
+// reused as the window start.
+func SetInstallWindowStart(t time.Time) { installWindowStart = t }
+
+// liveHealthProbeTimeout bounds the live `nftban health` probe so a hung or
+// pathologically slow health run cannot stall install validation. On
+// timeout the probe reports known=false (no downgrade — fail closed).
+const liveHealthProbeTimeout = 20 * time.Second
+
+// systemdTimestampLayouts lists the layouts accepted when parsing a systemd
+// timestamp property value such as "Thu 2026-06-11 03:06:02 UTC". systemd
+// renders the weekday + zone abbreviation; a numeric-zone fallback is kept
+// for environments that emit one. Empty / unparseable => FailureTimeKnown
+// stays false (fatal via the classification rules).
+var systemdTimestampLayouts = []string{
+	"Mon 2006-01-02 15:04:05 MST",
+	"Mon 2006-01-02 15:04:05 -0700",
+	"2006-01-02 15:04:05 MST",
+	"2006-01-02 15:04:05 -0700",
+}
 
 // DefaultUnitDirs is the canonical systemd unit search path for
 // nftban-owned units. Both vendor and operator-owned dirs are scanned
@@ -129,7 +162,105 @@ func GatherSystemdPayloadInputs(exec executor.Executor, log *logging.Logger, inv
 
 	in.FailedNftbanUnits, in.FailedUnitQueryError = listFailedNftbanUnits(exec, log)
 
+	// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: hand the pure
+	// validator the install-window start and a bounded live-health verdict so
+	// it can downgrade a stale pre-existing latch (and ONLY that) to a
+	// non-fatal warning. Both are fail-closed: an unset window start or an
+	// inconclusive probe leaves the failure fatal.
+	in.InstallWindowStart = installWindowStart
+	in.InstallWindowStartKnown = !installWindowStart.IsZero()
+	in.LiveHealthClean, in.LiveHealthKnown = gatherLiveHealthClean(exec, log)
+
 	return in, nil
+}
+
+// gatherLiveHealthClean runs a bounded live `nftban health` text probe and
+// reports whether overall health is clean. clean=true requires ALL of:
+//   - an "Overall:" line whose value is OK or IDLE (case-insensitive),
+//   - a "Findings: none" line, and
+//   - no "CRITICAL" anywhere in the output.
+//
+// known=false (no confident verdict) on: missing nftban binary, non-zero
+// exit, context timeout, or output with no parseable "Overall:" line. The
+// caller treats known=false as "do not downgrade" (fail closed). Text only
+// — deliberately not --json.
+func gatherLiveHealthClean(exec executor.Executor, log *logging.Logger) (clean bool, known bool) {
+	if !exec.CommandExists("nftban") {
+		if log != nil {
+			log.Debug("systemd_payload: live-health probe skipped — nftban binary not in PATH (known=false)")
+		}
+		return false, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), liveHealthProbeTimeout)
+	defer cancel()
+	res := exec.RunContext(ctx, "nftban", "health")
+	if ctx.Err() != nil {
+		if log != nil {
+			log.Warn("systemd_payload: live-health probe timed out after %s (known=false)", liveHealthProbeTimeout)
+		}
+		return false, false
+	}
+	if res.ExitCode != 0 {
+		if log != nil {
+			log.Debug("systemd_payload: live-health probe exit=%d (known=false)", res.ExitCode)
+		}
+		return false, false
+	}
+	return parseLiveHealthClean(res.Stdout)
+}
+
+// parseLiveHealthClean parses the text output of `nftban health` and applies
+// the conservative clean/known rules described on gatherLiveHealthClean.
+// Pure function so it is unit-testable without an executor.
+// parseLiveHealthClean reads `nftban health` text output and decides whether the
+// system is healthy enough to downgrade a PRE_EXISTING failed-unit latch.
+//
+// Uses the real four-axis health vocabulary (cli/lib/nftban/cli/cmd_health.sh):
+//   - Overall: OK / IDLE / PROTECTED are ALL healthy — PROTECTED is the NORMAL
+//     active-protection state and MUST count as clean, else the v1.174 downgrade
+//     never fires on a protecting host. DOWN / DEGRADED / WARN / other = not clean.
+//   - Findings: "none" OR "none (N INFO finding(s) hidden ...)" are BOTH clean —
+//     hidden INFO findings are informational, not problems.
+//   - Any CRITICAL / FAIL / ERROR token anywhere → unambiguously not clean.
+//   - Missing Overall OR missing Findings → unknown verdict → fail-safe.
+func parseLiveHealthClean(out string) (clean bool, known bool) {
+	up := strings.ToUpper(out)
+	if strings.Contains(up, "CRITICAL") || strings.Contains(up, "FAIL") || strings.Contains(up, "ERROR") {
+		// Unambiguous not-clean (covers Truth: FAILED, CRITICAL findings, errors).
+		return false, true
+	}
+	overallSeen := false
+	overallHealthy := false
+	findingsSeen := false
+	findingsClean := false
+	for _, line := range strings.Split(out, "\n") {
+		t := strings.TrimSpace(line)
+		lower := strings.ToLower(t)
+		if strings.HasPrefix(lower, "overall:") {
+			overallSeen = true
+			fields := strings.Fields(strings.ToUpper(strings.TrimSpace(t[len("overall:"):])))
+			if len(fields) > 0 {
+				switch fields[0] {
+				case "OK", "IDLE", "PROTECTED":
+					overallHealthy = true
+				}
+			}
+			continue
+		}
+		if strings.HasPrefix(lower, "findings:") {
+			findingsSeen = true
+			val := strings.ToLower(strings.TrimSpace(t[len("findings:"):]))
+			// "none" or "none (N INFO finding(s) hidden ...)" — INFO-only is clean.
+			if val == "none" || strings.HasPrefix(val, "none ") || strings.HasPrefix(val, "none(") {
+				findingsClean = true
+			}
+		}
+	}
+	if !overallSeen || !findingsSeen {
+		// Need both axes to form a verdict — fail safe to unknown.
+		return false, false
+	}
+	return overallHealthy && findingsClean, true
 }
 
 // isUnitFilename returns true for systemd unit filenames we care about.
@@ -244,12 +375,81 @@ func queryFailedNftbanUnitsOnce(exec executor.Executor, log *logging.Logger) (fi
 		if !IsNftbanUnit(unit) {
 			continue
 		}
-		findings = append(findings, FailedUnitFinding{
+		finding := FailedUnitFinding{
 			Unit:   unit,
 			Active: fields[2],
 			Sub:    fields[3],
 			Detail: strings.Join(fields[4:], " "),
-		})
+		}
+		// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: capture the
+		// unit's last-failure timestamp so the validator can classify it as
+		// pre-existing vs in-window. Parse error => FailureTimeKnown stays
+		// false (fail closed → fatal).
+		finding.FailureTime, finding.FailureTimeKnown = queryUnitFailureTime(exec, unit, log)
+		findings = append(findings, finding)
 	}
 	return findings, ""
+}
+
+// queryUnitFailureTime asks systemd for a unit's last-failure timestamp via
+// `systemctl show` and returns the most recent of InactiveEnterTimestamp /
+// ExecMainExitTimestamp. Robust by design: any error, missing property, or
+// unparseable value yields known=false so the unit is treated as a hard
+// failure (fail closed).
+func queryUnitFailureTime(exec executor.Executor, unit string, log *logging.Logger) (time.Time, bool) {
+	res := exec.Run("systemctl", "show",
+		"-p", "InactiveEnterTimestamp",
+		"-p", "ExecMainExitTimestamp",
+		unit)
+	if res.ExitCode != 0 {
+		if log != nil {
+			log.Debug("systemd_payload: systemctl show %s exit=%d (failure-time unknown)", unit, res.ExitCode)
+		}
+		return time.Time{}, false
+	}
+	var best time.Time
+	bestKnown := false
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		eq := strings.IndexByte(line, '=')
+		if eq < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:eq])
+		if key != "InactiveEnterTimestamp" && key != "ExecMainExitTimestamp" {
+			continue
+		}
+		val := strings.TrimSpace(line[eq+1:])
+		if val == "" {
+			continue
+		}
+		t, ok := parseSystemdTimestamp(val)
+		if !ok {
+			continue
+		}
+		if !bestKnown || t.After(best) {
+			best = t
+			bestKnown = true
+		}
+	}
+	if !bestKnown && log != nil {
+		log.Debug("systemd_payload: no parseable failure timestamp for %s (failure-time unknown)", unit)
+	}
+	return best, bestKnown
+}
+
+// parseSystemdTimestamp parses a systemd timestamp property value (e.g.
+// "Thu 2026-06-11 03:06:02 UTC") against systemdTimestampLayouts. Empty or
+// unparseable input returns ok=false.
+func parseSystemdTimestamp(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range systemdTimestampLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
