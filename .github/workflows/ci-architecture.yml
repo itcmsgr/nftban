@@ -734,6 +734,13 @@ jobs:
       - name: state-write atomicity call-site lock (v1.171)
         run: bash cli/lib/nftban/tests/state_write_atomicity_v171_test.sh
 
+      # v1.172 CLI-PIPEFAIL-ARITH sweep: zero-match grep / SIGPIPE / jq-parse failures
+      # under set -Eeuo pipefail must not double-emit a numeric ("0\n0") that crashes a
+      # downstream [[ -eq/-gt ]] / jq tonumber. Behavioral single-emit checks + static
+      # lint that the previously-broken arith-fed sites no longer carry the unsafe forms.
+      - name: CLI pipefail-arith sweep (v1.172)
+        run: bash cli/lib/nftban/tests/cli_pipefail_arith_sweep_v172_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

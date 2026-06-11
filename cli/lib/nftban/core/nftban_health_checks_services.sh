@@ -787,7 +787,9 @@ nftban_health_check_hung_processes() {
             local wchan=""
             wchan=$(cat "/proc/$pid/wchan" 2>/dev/null || echo "")
             local fd_count=0
-            fd_count=$(ls "/proc/$pid/fd" 2>/dev/null | wc -l || echo 0)
+            # wrap ls (rc!=0 when the pid is gone) so wc emits one count, never "0\n0".
+            fd_count=$({ ls "/proc/$pid/fd" 2>/dev/null || true; } | wc -l)
+            fd_count=${fd_count//[^0-9]/}; fd_count=${fd_count:-0}
             if [[ "$wchan" == *"wait_woken"* ]] || [[ "$wchan" == *"pipe_read"* ]]; then
                 root_cause="blocked_on_read(likely_stdin_prompt)"
             elif [[ "$wchan" == *"poll"* ]] || [[ "$wchan" == *"select"* ]]; then

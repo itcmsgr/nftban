@@ -39,8 +39,11 @@ source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" 2>/dev/null || true
 # CONFIGURATION
 # =============================================================================
 
-readonly NFTBAN_CONFIG_LOCAL="${NFTBAN_CONFIG_LOCAL:-/etc/nftban/nftban.conf.local}"
-readonly NFTBAN_PROFILE_CURRENT="${NFTBAN_PROFILE_CURRENT:-/var/lib/nftban/profile.current}"
+# Guard the readonly: re-sourcing this module in one shell (e.g. `profile list/select/apply`
+# dispatched after another command already set these) would otherwise hit
+# "readonly variable" on stderr. Only declare when unset.
+[[ -n "${NFTBAN_CONFIG_LOCAL:-}" ]]   || readonly NFTBAN_CONFIG_LOCAL="/etc/nftban/nftban.conf.local"
+[[ -n "${NFTBAN_PROFILE_CURRENT:-}" ]] || readonly NFTBAN_PROFILE_CURRENT="/var/lib/nftban/profile.current"
 
 # =============================================================================
 # ENVIRONMENT DETECTION

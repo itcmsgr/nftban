@@ -166,7 +166,9 @@ _count_unique_ips_24h() {
     since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
 
     if [[ -f "$ban_log" ]]; then
-        grep "^${since}" "$ban_log" 2>/dev/null | cut -d'|' -f4 | sort -u | wc -l || echo 0
+        # pipefail-safe single-emit: wrap zero-match grep so wc emits exactly one count,
+        # never "0\n0" (grep-fail + trailing `|| echo 0`) which crashed the caller's arith.
+        { grep "^${since}" "$ban_log" 2>/dev/null || true; } | cut -d'|' -f4 | sort -u | wc -l
     else
         echo 0
     fi

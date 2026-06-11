@@ -230,10 +230,13 @@ _nftban_ddos_stats_json() {
         # Count ddos bans in last 24 hours
         local yesterday_ts
         yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null || echo "0")
-        blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+        # pipefail-safe: wrap the filtering jq so a parse error / zero match (rc!=0) can't
+        # combine with the trailing `|| echo "0"` to double-emit "0\n0" (the slurp `jq -s`
+        # already yields a single integer); strip+default below guards the tonumber feed.
+        blocked_24h=$({ jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" 2>/dev/null || true; } | jq -s 'length' 2>/dev/null || true)
 
         # Count total ddos bans
-        blocked_total=$(jq -r 'select(.source == "ddos" and .event == "ban")' "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+        blocked_total=$({ jq -r 'select(.source == "ddos" and .event == "ban")' "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" 2>/dev/null || true; } | jq -s 'length' 2>/dev/null || true)
     fi
 
     # Try to get nftables counter stats (packets/bytes dropped)
@@ -245,16 +248,18 @@ _nftban_ddos_stats_json() {
         if [[ -n "$counter_output" ]]; then
             # Parse packets and bytes from counter output
             # Format: counter packets X bytes Y
-            packets_dropped=$(echo "$counter_output" | grep -oP 'counter packets \K[0-9]+' | head -1 || echo "0")
-            bytes_dropped=$(echo "$counter_output" | grep -oP 'bytes \K[0-9]+' | head -1 || echo "0")
+            # Wrap grep so a no-match (rc=1) or head-closes-pipe SIGPIPE (rc=141) can't
+            # pair with `|| echo "0"` to emit a second line; head -1 keeps it single.
+            packets_dropped=$(echo "$counter_output" | { grep -oP 'counter packets \K[0-9]+' || true; } | head -1)
+            bytes_dropped=$(echo "$counter_output" | { grep -oP 'bytes \K[0-9]+' || true; } | head -1)
         fi
     fi
 
-    # Ensure numeric values
-    packets_dropped=${packets_dropped:-0}
-    bytes_dropped=${bytes_dropped:-0}
-    blocked_24h=${blocked_24h:-0}
-    blocked_total=${blocked_total:-0}
+    # Ensure numeric values (strip any non-digit so the `| tonumber` jq feed never aborts)
+    packets_dropped=${packets_dropped//[^0-9]/}; packets_dropped=${packets_dropped:-0}
+    bytes_dropped=${bytes_dropped//[^0-9]/};     bytes_dropped=${bytes_dropped:-0}
+    blocked_24h=${blocked_24h//[^0-9]/};         blocked_24h=${blocked_24h:-0}
+    blocked_total=${blocked_total//[^0-9]/};     blocked_total=${blocked_total:-0}
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         local data

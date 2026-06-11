@@ -1026,7 +1026,10 @@ nftban_login_cmd_mode() {
         local digest_count=0
 
         if [[ -f "$digest_file" ]] && command -v jq &>/dev/null; then
-            digest_count=$(jq 'length' "$digest_file" 2>/dev/null || echo "0")
+            # `jq -s 'add // [] | length'` yields one integer for a single array AND for
+            # accidentally-appended arrays; strip/default guards the later display/arith.
+            digest_count=$(jq -s 'add // [] | length' "$digest_file" 2>/dev/null || true)
+            digest_count=${digest_count//[^0-9]/}; digest_count=${digest_count:-0}
         fi
 
         echo "Login Alert Email Mode"
@@ -1100,7 +1103,9 @@ nftban_login_cmd_digest() {
             local count=0
 
             if [[ -f "$digest_file" ]] && command -v jq &>/dev/null; then
-                count=$(jq 'length' "$digest_file" 2>/dev/null || echo "0")
+                # single integer for single/appended arrays; guards the `[[ -gt 0 ]]` below.
+                count=$(jq -s 'add // [] | length' "$digest_file" 2>/dev/null || true)
+                count=${count//[^0-9]/}; count=${count:-0}
             fi
 
             echo "Login Digest Status"

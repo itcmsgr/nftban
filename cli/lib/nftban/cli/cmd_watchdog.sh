@@ -773,9 +773,14 @@ nftban_watchdog_cmd_stats_history() {
         echo "$response" | jq '.data'
     else
         local history
-        history=$(echo "$response" | jq '.data.history')
+        # `.data.history // []` coerces a null/absent field to [] so `length` is a
+        # clean 0 (never a jq error → empty count → `[[ -eq ]]` arith crash) on the
+        # daemon-just-started path; sanitize guards any stray output.
+        history=$(echo "$response" | jq -c '.data.history // []' 2>/dev/null || echo '[]')
+        history=${history:-[]}
         local count
-        count=$(echo "$history" | jq 'length')
+        count=$(echo "$history" | jq 'length' 2>/dev/null || true)
+        count=${count//[^0-9]/}; count=${count:-0}
 
         if [[ "$count" -eq 0 ]]; then
             echo "No historical data available (daemon may have just started)"
