@@ -434,7 +434,8 @@ nftban_stats_cmd_dashboard() {
 
         if declare -f nftban_stats_top_countries >/dev/null 2>&1; then
             top_countries=$(nftban_stats_top_countries 10 "$since" "$until" 2>/dev/null || echo "[]")
-            total_countries=$(echo "$top_countries" | jq '. | length' 2>/dev/null) || total_countries=0
+            total_countries=$(echo "$top_countries" | jq '. | length' 2>/dev/null | head -1 || true)
+            total_countries=${total_countries//[^0-9]/}; total_countries=${total_countries:-0}
         fi
 
         # C5: "filters" (ban-source breakdown) replaces the old fail2ban-era
@@ -884,7 +885,11 @@ nftban_stats_cmd_ip() {
         local data
         if command -v jq &>/dev/null; then
             local total
-            total=$(echo "$history" | jq '. | length' 2>/dev/null) || total=0
+            # head -1 + strip/default: the weak `|| total=0` only caught a failed $() —
+            # a multi-value `$history` makes `jq length` emit one number per value, so
+            # collapse to a single integer before it feeds `--arg total`.
+            total=$(echo "$history" | jq '. | length' 2>/dev/null | head -1 || true)
+            total=${total//[^0-9]/}; total=${total:-0}
             data=$(jq -n \
                 --arg ip "$ip" \
                 --arg total "$total" \
@@ -1209,7 +1214,10 @@ nftban_stats_cmd_check_alerts() {
 
     if command -v jq &>/dev/null; then
         local count
-        count=$(echo "$offenders" | jq '. | length')
+        # 2>/dev/null + strip/default so an empty/invalid `$offenders` (jq error → empty
+        # count) can't crash the `[[ $count -gt 0 ]]` arith below.
+        count=$(echo "$offenders" | jq '. | length' 2>/dev/null || true)
+        count=${count//[^0-9]/}; count=${count:-0}
 
         if [[ $count -gt 0 ]]; then
             echo ""

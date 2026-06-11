@@ -410,7 +410,9 @@ nftban_login_digest_count() {
     fi
 
     if command -v jq &>/dev/null; then
-        jq 'length' "$digest_file" 2>/dev/null || echo "0"
+        # single integer for single/appended arrays (parity with cmd_login digest count).
+        local _dc; _dc=$(jq -s 'add // [] | length' "$digest_file" 2>/dev/null || true)
+        _dc=${_dc//[^0-9]/}; echo "${_dc:-0}"
     else
         # V131 PR-A.2: capture + numeric fallback so this branch emits a
         # single integer (parity with the jq branch's "0"); grep -c prints
