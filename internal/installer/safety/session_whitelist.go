@@ -56,7 +56,9 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -65,8 +67,47 @@ import (
 
 // sessionWhitelistPath is the canonical path for time-bounded operator-session
 // whitelist entries. Distinct from manualWhitelistPath (99-manual.conf) which
-// holds permanent operator-owned content.
-const sessionWhitelistPath = "/etc/nftban/whitelist.d/00-session.conf"
+// holds permanent operator-owned content. A var (not const) so hermetic tests
+// can redirect it to a temp file and restore via t.Cleanup.
+var sessionWhitelistPath = "/etc/nftban/whitelist.d/00-session.conf"
+
+// sessionWhitelistLockPath is a volatile, on-demand advisory lock file used to
+// serialize the read-modify-write of sessionWhitelistPath ACROSS processes and
+// ACROSS languages: Go takes it via syscall.Flock here; the shell CLI takes the
+// SAME path via flock(1) in cli/lib/nftban/cli/cmd_firewall.sh. Both use
+// flock(2), so they genuinely interlock. It lives under /run (not the config
+// dir) so the whitelist `*.conf` loader glob can never see it. A var so tests
+// can redirect it.
+var sessionWhitelistLockPath = "/run/nftban/session_whitelist.lock"
+
+// lockSessionWhitelist takes an exclusive advisory lock (flock LOCK_EX) on
+// sessionWhitelistLockPath for the full duration of a session-whitelist
+// read-modify-write, returning an unlock func the caller MUST defer.
+//
+// A SEPARATE lock file (not the data file) is used deliberately: the data file
+// is replaced via atomic rename, which changes its inode, so a lock held on the
+// data fd would not exclude a concurrent writer that opens the new inode. Same
+// rationale as internal/persistence/blacklistd.go. The parent runtime dir is
+// created on-demand (volatile /run).
+func lockSessionWhitelist() (func(), error) {
+	if dir := filepath.Dir(sessionWhitelistLockPath); dir != "" {
+		_ = os.MkdirAll(dir, 0o750)
+	}
+	// 0600 root-only: only root processes (installer + CLI firewall verbs) take
+	// this lock. filepath.Clean keeps gosec G304 quiet (matches blacklistd.go).
+	f, err := os.OpenFile(filepath.Clean(sessionWhitelistLockPath), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open session-whitelist lock %s: %w", sessionWhitelistLockPath, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -- fd always fits in int
+		_ = f.Close()
+		return nil, fmt.Errorf("flock session-whitelist lock %s: %w", sessionWhitelistLockPath, err)
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -- fd always fits in int
+		_ = f.Close()
+	}, nil
+}
 
 // DefaultSessionWhitelistTTL is the default time-to-live for auto-seeded
 // operator SSH peer entries during `nftban update` / `firewall takeover`.
@@ -134,6 +175,14 @@ func AddSessionWhitelist(exec executor.Executor, log *logging.Logger, entry Sess
 		entry.Reason = "session"
 	}
 
+	// Serialize the whole read-modify-write against concurrent Go/shell writers
+	// (cross-process, cross-language lost-update guard, §4.1).
+	unlock, lerr := lockSessionWhitelist()
+	if lerr != nil {
+		return fmt.Errorf("AddSessionWhitelist: %w", lerr)
+	}
+	defer unlock()
+
 	// Read existing content if file exists.
 	var existing []byte
 	if exec.FileExists(sessionWhitelistPath) {
@@ -192,6 +241,13 @@ func AddSessionWhitelist(exec executor.Executor, log *logging.Logger, entry Sess
 // function is OPTIONAL for correctness — it is provided as a file-hygiene
 // helper so the on-disk file doesn't accumulate stale entries indefinitely.
 func CleanupExpiredSessionWhitelist(exec executor.Executor, log *logging.Logger) (int, error) {
+	// Serialize the read-modify-write (cross-process, cross-language, §4.1).
+	unlock, lerr := lockSessionWhitelist()
+	if lerr != nil {
+		return 0, fmt.Errorf("CleanupExpiredSessionWhitelist: %w", lerr)
+	}
+	defer unlock()
+
 	if !exec.FileExists(sessionWhitelistPath) {
 		return 0, nil
 	}
@@ -271,6 +327,13 @@ func RemoveSessionWhitelist(exec executor.Executor, log *logging.Logger, ip stri
 	if ip == "" {
 		return 0, fmt.Errorf("RemoveSessionWhitelist: empty IP")
 	}
+	// Serialize the read-modify-write (cross-process, cross-language, §4.1).
+	unlock, lerr := lockSessionWhitelist()
+	if lerr != nil {
+		return 0, fmt.Errorf("RemoveSessionWhitelist: %w", lerr)
+	}
+	defer unlock()
+
 	if !exec.FileExists(sessionWhitelistPath) {
 		return 0, nil
 	}

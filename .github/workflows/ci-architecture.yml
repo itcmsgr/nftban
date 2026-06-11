@@ -741,6 +741,14 @@ jobs:
       - name: CLI pipefail-arith sweep (v1.172)
         run: bash cli/lib/nftban/tests/cli_pipefail_arith_sweep_v172_test.sh
 
+      # v1.173 §4.1 session-whitelist flock (shell side): each of the 3
+      # cmd_firewall.sh session RMW funcs serializes its read-modify-write under
+      # flock(9) on the shared cross-language lock /run/nftban/session_whitelist.lock
+      # (same path the Go installer flock(2)s). Go side is covered by
+      # internal/installer/safety/session_whitelist_flock_v173_test.go.
+      - name: session-whitelist flock shell-side (v1.173)
+        run: bash cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

@@ -383,8 +383,16 @@ HELP_EOF
     esac
 }
 
-# Internal helper: 00-session.conf path
-_NFTBAN_SESSION_WHITELIST_PATH="/etc/nftban/whitelist.d/00-session.conf"
+# Internal helper: 00-session.conf path (overridable for hermetic tests)
+_NFTBAN_SESSION_WHITELIST_PATH="${_NFTBAN_SESSION_WHITELIST_PATH:-/etc/nftban/whitelist.d/00-session.conf}"
+
+# §4.1: cross-process / cross-language advisory lock shared with the Go installer
+# (internal/installer/safety/session_whitelist.go). Both sides flock(2) this SAME
+# path to serialize the read-modify-write of 00-session.conf so a concurrent
+# `nftban update` (Go) and a CLI add/remove/cleanup can't lose an update (atomic
+# rename only prevents torn reads, not lost updates). Volatile /run, on-demand;
+# overridable for hermetic tests.
+_NFTBAN_SESSION_WL_LOCK="${_NFTBAN_SESSION_WL_LOCK:-/run/nftban/session_whitelist.lock}"
 
 # Internal helper: validate IP or CIDR. Returns 0 if valid, 1 otherwise.
 # Uses basic bash regex; not as strict as Go's net.ParseIP but catches
@@ -503,39 +511,48 @@ _whitelist_session_add() {
         return 1
     fi
 
-    _whitelist_session_ensure_header
-
     local expires_at
     expires_at=$(date -u -d "@$(( $(date -u +%s) + ttl_sec ))" '+%Y-%m-%dT%H:%M:%SZ')
 
-    # Remove any prior entry for the same IP (refresh semantics).
-    local tmp
-    tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
-    # shellcheck disable=SC2016
-    awk -v ip="$ip" '
-        # Drop entry lines whose first token equals ip
-        {
-            t = $0
-            # Strip leading whitespace
-            gsub(/^[ \t]+/, "", t)
-            # If line starts with # or is empty, keep as-is
-            if (t == "" || substr(t, 1, 1) == "#") { print; next }
-            # Take first whitespace-delimited token; strip trailing comment
-            split(t, a, "#")
-            n = split(a[1], b, /[ \t]+/)
-            if (n >= 1 && b[1] == ip) next   # drop
-            print
-        }
-    ' "$_NFTBAN_SESSION_WHITELIST_PATH" > "$tmp"
+    # §4.1: serialize the whole read-modify-write under the cross-process /
+    # cross-language advisory lock shared with the Go installer (both flock(2)
+    # $_NFTBAN_SESSION_WL_LOCK). ensure_header + awk-read + append + rename all
+    # run while the lock is held.
+    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    (
+        flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
 
-    # Append the new entry.
-    printf '%s  # EXPIRES_AT=%s  REASON=%s  ADDED_BY=nftban-firewall-whitelist-session\n' \
-        "$ip" "$expires_at" "$reason" >> "$tmp"
+        _whitelist_session_ensure_header
 
-    # Atomic rename.
-    mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
-    chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
-    chown root:nftban "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+        # Remove any prior entry for the same IP (refresh semantics).
+        local tmp
+        tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
+        # shellcheck disable=SC2016
+        awk -v ip="$ip" '
+            # Drop entry lines whose first token equals ip
+            {
+                t = $0
+                # Strip leading whitespace
+                gsub(/^[ \t]+/, "", t)
+                # If line starts with # or is empty, keep as-is
+                if (t == "" || substr(t, 1, 1) == "#") { print; next }
+                # Take first whitespace-delimited token; strip trailing comment
+                split(t, a, "#")
+                n = split(a[1], b, /[ \t]+/)
+                if (n >= 1 && b[1] == ip) next   # drop
+                print
+            }
+        ' "$_NFTBAN_SESSION_WHITELIST_PATH" > "$tmp"
+
+        # Append the new entry.
+        printf '%s  # EXPIRES_AT=%s  REASON=%s  ADDED_BY=nftban-firewall-whitelist-session\n' \
+            "$ip" "$expires_at" "$reason" >> "$tmp"
+
+        # Atomic rename.
+        mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
+        chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+        chown root:nftban "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+    ) 9>"$_NFTBAN_SESSION_WL_LOCK" || return 1
 
     echo "Added: $ip  (expires $expires_at, reason=$reason)"
 
@@ -651,6 +668,12 @@ _whitelist_session_remove() {
         return 0
     fi
 
+    # §4.1: serialize the read-modify-write under the shared cross-process /
+    # cross-language advisory lock (same path the Go installer flock(2)s).
+    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    (
+        flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
+
     local tmp
     tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
     local removed=0
@@ -691,6 +714,7 @@ _whitelist_session_remove() {
     else
         echo "Removed: $ip"
     fi
+    ) 9>"$_NFTBAN_SESSION_WL_LOCK" || return 1
 
     if command -v nftban >/dev/null 2>&1; then
         nftban firewall reload >/dev/null 2>&1 || true
@@ -709,43 +733,55 @@ _whitelist_session_cleanup() {
         return 1
     fi
 
-    local now_unix
-    now_unix=$(date -u +%s)
-    local tmp
-    tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
+    # §4.1: serialize the read-modify-write under the shared cross-process /
+    # cross-language advisory lock (same path the Go installer flock(2)s). The
+    # subshell prints the removed-count on stdout so the caller acts on it AFTER
+    # the lock is released (the reload runs unlocked).
+    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    local removed
+    removed=$(
+        flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
 
-    local removed=0
-    local line
-    while IFS= read -r line; do
-        local trimmed="${line#"${line%%[![:space:]]*}"}"
-        if [[ -z "$trimmed" || "${trimmed:0:1}" == "#" ]]; then
+        local now_unix
+        now_unix=$(date -u +%s)
+        local tmp
+        tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
+
+        local _rm=0
+        local line
+        while IFS= read -r line; do
+            local trimmed="${line#"${line%%[![:space:]]*}"}"
+            if [[ -z "$trimmed" || "${trimmed:0:1}" == "#" ]]; then
+                printf '%s\n' "$line" >> "$tmp"
+                continue
+            fi
+
+            # Entry line — check EXPIRES_AT
+            if [[ "$line" == *EXPIRES_AT=* ]]; then
+                local expires_at
+                expires_at=$(echo "$line" | grep -oE 'EXPIRES_AT=[^ ]+' | head -1 | cut -d= -f2)
+                local expires_unix
+                expires_unix=$(date -u -d "$expires_at" +%s 2>/dev/null)
+                if [[ -z "$expires_unix" ]]; then
+                    # Unparseable — drop conservatively
+                    _rm=$(( _rm + 1 ))
+                    continue
+                fi
+                if [[ "$expires_unix" -le "$now_unix" ]]; then
+                    # Expired — drop
+                    _rm=$(( _rm + 1 ))
+                    continue
+                fi
+            fi
+            # No EXPIRES_AT marker OR not expired — keep
             printf '%s\n' "$line" >> "$tmp"
-            continue
-        fi
+        done < "$_NFTBAN_SESSION_WHITELIST_PATH"
 
-        # Entry line — check EXPIRES_AT
-        if [[ "$line" == *EXPIRES_AT=* ]]; then
-            local expires_at
-            expires_at=$(echo "$line" | grep -oE 'EXPIRES_AT=[^ ]+' | head -1 | cut -d= -f2)
-            local expires_unix
-            expires_unix=$(date -u -d "$expires_at" +%s 2>/dev/null)
-            if [[ -z "$expires_unix" ]]; then
-                # Unparseable — drop conservatively
-                removed=$(( removed + 1 ))
-                continue
-            fi
-            if [[ "$expires_unix" -le "$now_unix" ]]; then
-                # Expired — drop
-                removed=$(( removed + 1 ))
-                continue
-            fi
-        fi
-        # No EXPIRES_AT marker OR not expired — keep
-        printf '%s\n' "$line" >> "$tmp"
-    done < "$_NFTBAN_SESSION_WHITELIST_PATH"
-
-    mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
-    chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+        mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
+        chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+        echo "$_rm"
+    ) 9>"$_NFTBAN_SESSION_WL_LOCK" || return 1
+    removed=${removed//[^0-9]/}; removed=${removed:-0}
 
     if [[ "$removed" -gt 0 ]]; then
         echo "Removed $removed expired entries"
