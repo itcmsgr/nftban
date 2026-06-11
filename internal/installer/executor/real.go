@@ -91,6 +91,15 @@ func (r *RealExecutor) WriteFileAtomic(path string, data []byte, perm os.FileMod
 		os.Remove(tmpName)
 		return fmt.Errorf("chmod temp for %s: %w", path, err)
 	}
+	// fsync the temp file before rename so a crash right after the rename
+	// cannot leave a renamed-but-empty/partial file on the target path.
+	// Directory fsync is intentionally omitted (an old-but-complete version
+	// after a crash is acceptable here; see the F-3 DIR-FSYNC decision note).
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("sync temp for %s: %w", path, err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("close temp for %s: %w", path, err)

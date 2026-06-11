@@ -23,6 +23,8 @@
 package safety
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +32,21 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
+
+// TestMain redirects the cross-process session-whitelist lock to a writable
+// temp path so the package's tests neither require /run/nftban nor root (they
+// run unprivileged in CI). The flock still engages on the temp file, so the
+// concurrency test exercises a real lock.
+func TestMain(m *testing.M) {
+	d, err := os.MkdirTemp("", "nftban-sessionlock-")
+	if err != nil {
+		panic(err)
+	}
+	sessionWhitelistLockPath = filepath.Join(d, "session_whitelist.lock")
+	code := m.Run()
+	_ = os.RemoveAll(d)
+	os.Exit(code)
+}
 
 // newSessionTestLogger returns a Logger writing to /dev/null. The test never
 // asserts on log output; we just need a non-nil Logger.
