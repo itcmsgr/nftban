@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.170.0] - 2026-06-10 — stats ip history: pipefail fix + rotated/compressed logs
+
+**Codename:** `STATS_IP_HISTORY_FIX` · **Controlling record:** `NFTBAN_ROADMAP/V170_STATS_IP_HISTORY_FIX_SCOPE.md`
+**PR:** [#816](https://github.com/itcmsgr/nftban/pull/816) (sq `5e6ddc94`)
+
+> **Why:** `nftban stats ip <IP>` crashed with a bash arithmetic error and garbled output for any IP with **zero** ban records (the common case). **Shell-only** — daemon `cmd/nftband` byte-identical; schema **1.83.0 frozen**; no packaging-dependency change (gzip already declared — CI assertion only).
+
+### Fixed — BUG-STATS-IP-HISTORY-PIPEFAIL
+- `nftban_stats_ip_history()` (`core/nftban_stats_collect.sh`) was `grep | awk '…[]…' || echo "[]"`. Under `set -Eeuo pipefail`, a zero-match grep made the pipeline exit non-zero → the `|| echo "[]"` fired **in addition** to awk's `[]` → `"[]\n[]"` → caller `jq '. | length'` → `"0\n0"` → `cmd_stats.sh:924 [[ $total -eq 0 ]]` arithmetic crash. Now **single-emit** (capture matcher into a var; awk emits a valid `[]` on empty input). `cmd_stats.sh` also defensively sanitizes the jq total to one integer.
+
+### Changed — complete history across rotated/compressed logs
+- The reader greps the live `bans.log` **and** its rotated archives (`bans.log.1`, `bans.log.*.gz`) via `zgrep` (sorted by timestamp), so per-IP history is no longer silently truncated to the current uncompressed window (logrotate keeps `rotate 12` compressed). **Graceful-degrade:** if `zgrep`/`gzip` is absent (source/minimal installs), falls back to the live log + a WARN — never hard-errors. `gzip` is already a declared dependency (DEB `Depends` + RPM `Requires`); CI now asserts it stays declared.
+
+### Tests
+- New guard `stats_ip_history_v170_test.sh` (7/0), CI-wired in `ci-architecture.yml`: zero-match→single `[]` (no arith crash) · live-log IP · compressed-only `.gz` IP · merged+sorted live+gz · caller total sanitized · gzip dep declared.
+
+### Envelope
+- **Shell-only — daemon `cmd/nftband` byte-identical**; schema **1.83.0 frozen**; no dependency mutation.
+
 ## [v1.169.0] - 2026-06-09 — hygiene/UX residuals (CLI-BUG-3 · CI-TEST-GAP · docs)
 
 **Codename:** `V169_HYGIENE_UX` · **Controlling record:** `NFTBAN_ROADMAP/V169_HYGIENE_UX_SCOPE.md`
