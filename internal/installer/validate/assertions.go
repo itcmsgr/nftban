@@ -116,6 +116,9 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 		assertSystemdPayloadInventory(spr, log),
 		assertFailedUnitsPostInstall(spr, log),
 	)
+	// v1.174: clear the stale systemd failed-state latch for units classified
+	// WARN_PRE_EXISTING_RECOVERED (and ONLY those) — see resetRecoveredPreExistingUnits.
+	resetRecoveredPreExistingUnits(exec, log, spr)
 
 	// v1.135 CORE-TIMER-ENABLED-001: critical core timers must be enabled +
 	// active/scheduled (or NFTBAN_RECONCILE_CORE_TIMERS=false — intentional).
@@ -387,6 +390,24 @@ func assertCriticalTimersEnabled(tvr TimerValidationResult, log *logging.Logger)
 func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *logging.Logger) AssertionResult {
 	r := AssertionResult{Name: "failed_units_postinstall_ok", Passed: spr.FailedUnitsOK()}
 	if r.Passed {
+		// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: a protection-
+		// critical unit that was ALREADY failed before this install window
+		// AND whose live `nftban health` probe is clean is a stale latch, not
+		// a fresh break. The assertion still PASSES (install COMMITTED-with-
+		// warning, not DEGRADED), but the recovered units are surfaced so the
+		// operator can reset-failed them. A newly-failed unit, or a pre-
+		// existing one with live health not clean/unknown, is in FailedUnits
+		// and would have failed FailedUnitsOK() above (fail safe → DEGRADED).
+		if len(spr.FailedUnitsPreExistingRecovered) > 0 {
+			rec := make([]string, 0, len(spr.FailedUnitsPreExistingRecovered))
+			for _, f := range spr.FailedUnitsPreExistingRecovered {
+				rec = append(rec, f.Unit+"("+f.Detail+")")
+			}
+			r.Detail = "WARN_PRE_EXISTING_RECOVERED: pre-existing failed unit(s), live health clean — non-fatal: " + strings.Join(rec, "; ")
+			log.Warn("ASSERT failed_units_postinstall_ok: PASS — WARN_PRE_EXISTING_RECOVERED (pre-existing failed unit(s), live health clean): %s",
+				strings.Join(rec, "; "))
+			return r
+		}
 		// v1.135 D-EXPORTER-SETTLE-WINDOW: a failed auxiliary (metrics/
 		// observability) unit does NOT fail this assertion, but it IS
 		// surfaced as a non-fatal warning so operators still see it.
@@ -418,6 +439,35 @@ func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *loggi
 	log.Warn("ASSERT failed_units_postinstall_ok: FAIL — %d failed: %s",
 		len(spr.FailedUnits), strings.Join(parts, "; "))
 	return r
+}
+
+// resetRecoveredPreExistingUnits issues a BOUNDED `systemctl reset-failed` for
+// exactly the nftban units classified WARN_PRE_EXISTING_RECOVERED — i.e. units
+// that (a) failed strictly before the install window, (b) on a host whose live
+// nftban health is known-clean, and (c) had no in-window failure. Those three
+// conditions are already proven by membership in spr.FailedUnitsPreExistingRecovered
+// (ValidateInstalledSystemdPayload), so clearing exactly that set is safe and keeps
+// the fail-safe rule intact: IN_WINDOW / unknown-timestamp / unknown-or-unhealthy-
+// live-health units are NOT in this bucket and stay DEGRADED (they remain in
+// spr.FailedUnits). Without this, v1.174 leaves install_state COMMITTED-with-warning
+// but `systemctl --failed` polluted, so the next diagnostic/support/operator check
+// still distrusts the host.
+//
+// Contract: always an explicit unit name (never a blanket `reset-failed`), never a
+// non-nftban unit. A reset-failed error is NON-FATAL — the host is already proven
+// healthy, so failing to clear cosmetic systemd state must not re-poison the
+// install; it is logged WARN and the install stays COMMITTED-with-warning.
+func resetRecoveredPreExistingUnits(exec executor.Executor, log *logging.Logger, spr SystemdPayloadValidationResult) {
+	for _, f := range spr.FailedUnitsPreExistingRecovered {
+		if !IsNftbanUnit(f.Unit) { // defense-in-depth; the bucket is already nftban-only
+			continue
+		}
+		if err := exec.ServiceResetFailed(f.Unit); err != nil {
+			log.Warn("reset-failed %s (WARN_PRE_EXISTING_RECOVERED) failed: %v — leaving cosmetic systemd failed-state; install stays COMMITTED-with-warning", f.Unit, err)
+			continue
+		}
+		log.Info("reset-failed %s: cleared stale pre-existing systemd failed-state latch (failure pre-dates the install window; live health clean)", f.Unit)
+	}
 }
 
 // defaultInventoryPaths returns the set of nftban-owned paths the

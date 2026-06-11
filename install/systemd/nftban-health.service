@@ -79,7 +79,16 @@ ReadWritePaths=/var/lib/nftban /var/cache/nftban /var/log/nftban /run/nftban
 RestrictAddressFamilies=AF_UNIX AF_NETLINK
 
 # Resource limits
-MemoryMax=128M
+# v1.174 HEALTH-OOM-JOURNALCTL: raised 128M->256M. On hosts with a large/
+# noisy journal (multi-GB, e.g. portscan-log flood) the aggregate concurrent
+# child RSS in the health-check path — the Go nftban-validate validator plus
+# the many short-lived nft/jq children it spawns, all on the Go 1.25 runtime —
+# crosses the old 128M cgroup cap and OOM-kills the unit, while a quiet host
+# peaks at single-digit MB. The validator's own journalctl reads are already
+# bounded (internal/validator/journal.go: --since "-15m" -n 200); the
+# amplifier was the cap + concurrency on a multi-GB journal, not an unbounded
+# read. ExecStart behavior is unchanged.
+MemoryMax=256M
 # Mirror of the nftban-core-geoip.service TasksMax fix (#525). The health
 # check shells out to nftban-core subcommands, including geoip status,
 # which exercise the same Go 1.25 runtime + finalizer-goroutine surface.

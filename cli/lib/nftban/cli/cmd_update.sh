@@ -409,6 +409,15 @@ _cmd_update_main_locked() {
     install_type=$(_detect_install_type)
     current_version=$(_get_current_version)
 
+    # v1.174: record the installer.log line count BEFORE the install so the final
+    # verdict can detect a WARN_PRE_EXISTING_RECOVERED (a stale pre-existing failed
+    # nftban unit cleared during THIS run) scoped to this update only — not a marker
+    # left by a prior run.
+    local _ilog_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+    local _ilog_before_lines
+    _ilog_before_lines=$(wc -l < "$_ilog_file" 2>/dev/null || echo 0)
+    _ilog_before_lines=${_ilog_before_lines//[^0-9]/}; _ilog_before_lines=${_ilog_before_lines:-0}
+
     # Auto-detect source if needed
     # V108 Item 6: handle "source" (canonical from history.json) + "mixed" cleanly.
     # "git" is kept as a backward-compatible alias for "source" (same update path).
@@ -752,6 +761,25 @@ _cmd_update_main_locked() {
             echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
+
+            # v1.174 transparency: if this run auto-recovered a PRE-EXISTING failed
+            # nftban unit (failed before the upgrade, live health clean → stale
+            # systemd failed-state cleared), tell the operator. Scoped to THIS run's
+            # installer.log lines so a clean COMMITTED with no recovery stays quiet.
+            local _recovered_units=""
+            if [[ -f "$_ilog_file" ]] && tail -n +$((_ilog_before_lines + 1)) "$_ilog_file" 2>/dev/null | grep -q "WARN_PRE_EXISTING_RECOVERED"; then
+                _recovered_units=$(tail -n +$((_ilog_before_lines + 1)) "$_ilog_file" 2>/dev/null \
+                    | sed -n 's/.*reset-failed \([^ ]*\): cleared stale.*/\1/p' | sort -u | tr '\n' ' ')
+                _recovered_units="${_recovered_units% }"
+            fi
+            if [[ -n "$_recovered_units" ]]; then
+                echo "  ℹ️  A pre-existing failed NFTBan unit was found before this upgrade:"
+                echo "        ${_recovered_units}"
+                echo "      Live NFTBan health is clean, so the stale systemd failed-state was"
+                echo "      cleared automatically. No action is required."
+                echo ""
+            fi
+
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
@@ -780,13 +808,14 @@ _cmd_update_main_locked() {
                 echo "  Reason: $_failure_reason"
                 echo ""
             fi
-            echo "  The package was upgraded but the installer's post-install validation"
-            echo "  reported non-fatal assertion failures (often a known transient on the"
-            echo "  exporter or related auxiliary service)."
+            echo "  A failed NFTBan unit was found during post-install validation."
+            echo "  This may be a CURRENT failure, or a STALE pre-existing systemd failed-state"
+            echo "  (a unit that failed BEFORE this upgrade) — the system may already be healthy."
             echo ""
-            echo "  Recommended:"
+            echo "  Verify and re-validate:"
+            echo "      nftban health                                   # check live four-axis health"
             echo "      /usr/lib/nftban/bin/nftban-installer --repair   # re-run post-install validation"
-            echo "      nftban support                                  # capture diagnostic bundle"
+            echo "      nftban support                                  # capture diagnostic bundle (optional)"
             echo ""
             echo "  Kernel-state verification (trust but verify):"
             echo "      nft list tables"

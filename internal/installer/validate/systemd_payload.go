@@ -40,6 +40,7 @@ package validate
 
 import (
 	"strings"
+	"time"
 )
 
 // nftbanUnitExtensions lists the systemd unit suffixes considered in
@@ -167,6 +168,19 @@ type FailedUnitFinding struct {
 	Active string // e.g., "failed"
 	Sub    string // e.g., "failed", "exit-code"
 	Detail string // best-effort short description, may be empty
+
+	// FailureTime is the unit's last-failure timestamp (most recent of
+	// InactiveEnterTimestamp / ExecMainExitTimestamp from `systemctl show`).
+	// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: used to classify
+	// a failed unit as pre-existing (failed before the install window) vs
+	// in-window. Zero value when unknown.
+	FailureTime time.Time
+
+	// FailureTimeKnown is true only when FailureTime was parsed
+	// successfully. When false, the unit is treated as a hard failure
+	// (fail closed) — an unparseable timestamp can never be classified as
+	// pre-existing/recovered.
+	FailureTimeKnown bool
 }
 
 // PayloadInventory describes which paths are considered known after
@@ -224,6 +238,29 @@ type SystemdPayloadInputs struct {
 	// by SYSTEMD-TIMER-PAIR-001 to confirm a timer's target service
 	// is installed alongside it.
 	AllUnitNames map[string]bool
+
+	// InstallWindowStart is the wall-clock instant the current installer
+	// run began (set once at the very start of the run via
+	// SetInstallWindowStart). A failed unit whose FailureTime is strictly
+	// before this instant is "pre-existing"; one at/after is "in-window".
+	// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE.
+	InstallWindowStart time.Time
+
+	// InstallWindowStartKnown is true only when InstallWindowStart was
+	// set. When false, no failed unit can be classified as pre-existing —
+	// all non-aux failures stay fatal (fail closed).
+	InstallWindowStartKnown bool
+
+	// LiveHealthClean reports whether a bounded live `nftban health` probe
+	// returned a clean overall status (Overall OK/IDLE, Findings: none, no
+	// CRITICAL). Only consulted to downgrade a PRE_EXISTING latched failure.
+	LiveHealthClean bool
+
+	// LiveHealthKnown is true only when the live-health probe produced a
+	// confident clean/not-clean verdict. When false (probe timeout, missing
+	// binary, unparseable output, non-zero exit), no downgrade is permitted
+	// — pre-existing failures stay fatal (fail closed).
+	LiveHealthKnown bool
 }
 
 // MissingExecPath records one SYSTEMD-EXECSTART-001 hit.
@@ -252,6 +289,14 @@ type UnknownPayloadRef struct {
 type FailedUnitPostInstall struct {
 	Unit   string
 	Detail string
+
+	// Classification is the v1.174 disposition of the failure, one of:
+	// "" (default / in-window fatal), "IN_WINDOW", "PRE_EXISTING_FATAL"
+	// (pre-existing but live health not clean/unknown), or
+	// "WARN_PRE_EXISTING_RECOVERED" (pre-existing + live health clean —
+	// non-fatal). Diagnostic only; the fatal/non-fatal decision is encoded
+	// by which result bucket the entry lands in.
+	Classification string
 }
 
 // SystemdPayloadValidationResult is the structured outcome.
@@ -278,6 +323,16 @@ type SystemdPayloadValidationResult struct {
 	// transient exporter exit-2 cannot DEGRADE the install — D-EXPORTER-
 	// SETTLE-WINDOW, v1.135).
 	FailedAuxiliaryUnits []FailedUnitPostInstall
+
+	// FailedUnitsPreExistingRecovered holds protection-critical nftban units
+	// that were ALREADY in a failed state before this install window started
+	// AND whose live `nftban health` probe is clean. v1.174 D-INSTALL-FAILED-
+	// UNITS-STALE-LATCHED-STATE: these are a stale latch, not a fresh break,
+	// so they are surfaced as WARN_PRE_EXISTING_RECOVERED and do NOT fail
+	// FAILED-UNIT-POSTINSTALL-001 (install COMMITTED-with-warning). A newly-
+	// failed unit, or a pre-existing one with live health not clean/unknown,
+	// stays in FailedUnits (fatal) — fail safe toward DEGRADED.
+	FailedUnitsPreExistingRecovered []FailedUnitPostInstall
 
 	// FailedUnitQueryError mirrors SystemdPayloadInputs.FailedUnitQueryError
 	// for the assertion-side detail message. When non-empty,
@@ -360,6 +415,28 @@ func ValidateInstalledSystemdPayload(in SystemdPayloadInputs) SystemdPayloadVali
 		if IsAuxiliaryUnit(f.Unit) {
 			res.FailedAuxiliaryUnits = append(res.FailedAuxiliaryUnits, entry)
 			continue
+		}
+
+		// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: classify a
+		// protection-critical failure as pre-existing (failed strictly before
+		// the install window started) vs in-window. A pre-existing latch with
+		// a clean live `nftban health` probe is a stale flag from before this
+		// run — downgrade to non-fatal WARN_PRE_EXISTING_RECOVERED. Everything
+		// else (in-window failure, unparseable failure time, unknown window
+		// start, live health not clean / unknown) stays FATAL — fail safe
+		// toward DEGRADED. A newly-failed unit is NEVER labeled recovered.
+		preExisting := in.InstallWindowStartKnown &&
+			f.FailureTimeKnown &&
+			f.FailureTime.Before(in.InstallWindowStart)
+		if preExisting && in.LiveHealthKnown && in.LiveHealthClean {
+			entry.Classification = "WARN_PRE_EXISTING_RECOVERED"
+			res.FailedUnitsPreExistingRecovered = append(res.FailedUnitsPreExistingRecovered, entry)
+			continue
+		}
+		if preExisting {
+			entry.Classification = "PRE_EXISTING_FATAL"
+		} else {
+			entry.Classification = "IN_WINDOW"
 		}
 		res.FailedUnits = append(res.FailedUnits, entry)
 	}
