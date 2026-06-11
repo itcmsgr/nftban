@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.173.0] - 2026-06-11 — §4.1 session-whitelist cross-language flock + executor fsync
+
+**Codename:** `SESSION_FLOCK` · **Controlling record:** `NFTBAN_ROADMAP/V173_SESSION_FLOCK_SCOPE.md`
+**PR:** [#822](https://github.com/itcmsgr/nftban/pull/822) (sq `0a85527c`)
+
+> **Why:** `/etc/nftban/whitelist.d/00-session.conf` was written by SIX read-modify-write writers across two languages with no shared lock, so a concurrent `nftban update` (Go) and `nftban firewall whitelist-session add/remove/cleanup` (shell) could lose an update (atomic rename prevents torn reads, not lost updates).
+
+### Fixed — §4.1 cross-process / cross-language lost-update
+- One shared advisory lock `/run/nftban/session_whitelist.lock`, taken for the FULL read→modify→write. Go `syscall.Flock(LOCK_EX)` (`internal/installer/safety/session_whitelist.go` Add/Cleanup/Remove) and shell `flock(1)` (`cli/lib/nftban/cli/cmd_firewall.sh` add/remove/cleanup) both use flock(2), so they genuinely interlock. Separate lock file (the data-file inode changes on atomic rename — `blacklistd.go` rationale).
+- Durability: `RealExecutor.WriteFileAtomic` now `tmp.Sync()` before rename (pure-win for all installer atomic writes; directory fsync intentionally omitted per the F-3 decision note). FakeExecutor unchanged.
+
+### Envelope
+- **Installer-Go + shell only. Daemon `cmd/nftband` BYTE-IDENTICAL to v1.172.0** (reader-only; does not import `internal/installer/{executor,safety}` — verified SHA256 unchanged, 0 `cmd/nftband` files). Schema **1.83.0 frozen**; FHS body byte-unchanged (volatile on-demand `/run` lock); no dependency change.
+
+### Tests
+- `internal/installer/safety/session_whitelist_flock_v173_test.go` (24 concurrent adds → no lost update; cross-language: Go holds LOCK_EX → shell `flock -n` fails, then succeeds — passes under `-race`) + `cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh` (lock-structure + flock(1) mechanism); CI-wired. Lab-first PASS (lab2 DEB + lab4 RPM) before tag.
+
+---
+
 ## [v1.172.0] - 2026-06-11 — CLI-PIPEFAIL-ARITH full-class sweep
 
 **Codename:** `CLI_PIPEFAIL_SWEEP` · **Controlling record:** `NFTBAN_ROADMAP/V172_CLI_PIPEFAIL_SWEEP_SCOPE.md`
