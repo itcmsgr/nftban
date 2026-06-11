@@ -801,16 +801,12 @@ nftban_stats_trend_collect() {
     hour_end=$(date +%Y-%m-%dT%H:%M:%SZ)
 
     # Count bans/unbans in current hour
-    local today bans unbans
-    today=$(date +%Y-%m-%d)
-    local hour_pattern
-    hour_pattern="^${today}|$(date +%H):"
+    local bans unbans
 
     if [[ -f "$NFTBAN_BAN_LOG" ]]; then
-        bans=$(grep -c "BANNED$" "$NFTBAN_BAN_LOG" 2>/dev/null | grep -cE "$hour_pattern" 2>/dev/null) || bans=0
-        unbans=$(grep -c "UNBANNED$" "$NFTBAN_BAN_LOG" 2>/dev/null | grep -cE "$hour_pattern" 2>/dev/null) || unbans=0
-
-        # Simpler: count today's bans in current hour
+        # Count today's bans/unbans in the current hour via awk on the current %H.
+        # (Removed a dead, buggy `grep -c … | grep -cE …` pair + its now-unused
+        # today/hour_pattern locals that this awk had already superseded.)
         bans=$(awk -F'|' -v h="$(date +%H)" '$1 ~ /^[0-9]/ && $2 ~ "^"h":" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || bans=0
         unbans=$(awk -F'|' -v h="$(date +%H)" '$1 ~ /^[0-9]/ && $2 ~ "^"h":" && $6=="UNBANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || unbans=0
     else
