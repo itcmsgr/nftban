@@ -30,6 +30,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // PanelConfig represents a control panel's port configuration
@@ -133,25 +135,26 @@ func SetPanelEnabled(panelName string, enabled bool) error {
 	}
 	existingState[panelName] = status
 
-	// Write back
-	f, err := os.Create(PanelStateFile)
-	if err != nil {
-		return fmt.Errorf("failed to create panel state file: %w", err)
-	}
-	defer f.Close()
-
-	// Write header
-	fmt.Fprintln(f, "# NFTBan Panel State Configuration")
-	fmt.Fprintln(f, "# Format: panelname=enabled|disabled")
-	fmt.Fprintln(f, "# This file is automatically managed by 'nftban panel' commands")
-	fmt.Fprintln(f, "")
+	// Write back. v1.171 §4.3d: build the body then atomic-write (temp+fsync+
+	// rename, random temp) via the gold helper — torn-on-crash safe and parity
+	// with the shell sibling's temp+mv — instead of streaming into os.Create.
+	// Byte-for-byte the same content as the previous Fprintln/Fprintf stream.
+	var sb strings.Builder
+	sb.WriteString("# NFTBan Panel State Configuration\n")
+	sb.WriteString("# Format: panelname=enabled|disabled\n")
+	sb.WriteString("# This file is automatically managed by 'nftban panel' commands\n")
+	sb.WriteString("\n")
 
 	// Write all panels in alphabetical order
 	panels := []string{"directadmin", "cpanel", "plesk", "cyberpanel", "cwp", "interworx", "vesta"}
 	for _, panel := range panels {
 		if state, exists := existingState[panel]; exists {
-			fmt.Fprintf(f, "%s=%s\n", panel, state)
+			fmt.Fprintf(&sb, "%s=%s\n", panel, state)
 		}
+	}
+
+	if err := safety.SafeWriteFile(PanelStateFile, []byte(sb.String()), 0644); err != nil {
+		return fmt.Errorf("failed to write panel state file: %w", err)
 	}
 
 	return nil
