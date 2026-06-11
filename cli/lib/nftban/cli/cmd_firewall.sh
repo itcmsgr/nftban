@@ -394,6 +394,17 @@ _NFTBAN_SESSION_WHITELIST_PATH="${_NFTBAN_SESSION_WHITELIST_PATH:-/etc/nftban/wh
 # overridable for hermetic tests.
 _NFTBAN_SESSION_WL_LOCK="${_NFTBAN_SESSION_WL_LOCK:-/run/nftban/session_whitelist.lock}"
 
+# Ensure the shared lock file exists at mode 0600 BEFORE the `9>` redirect opens
+# it — the redirect itself honors the process umask (root umask 027 → 0640), so
+# without this the shell would create the lock 0640 while the Go side opens 0600
+# (whichever creates it first wins). Forcing 0600 here gives exact cross-language
+# parity (root-only; matches internal/installer/safety/session_whitelist.go).
+_whitelist_session_ensure_lock() {
+    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    [[ -e "$_NFTBAN_SESSION_WL_LOCK" ]] || ( umask 0177; : > "$_NFTBAN_SESSION_WL_LOCK" ) 2>/dev/null || true
+    chmod 0600 "$_NFTBAN_SESSION_WL_LOCK" 2>/dev/null || true
+}
+
 # Internal helper: validate IP or CIDR. Returns 0 if valid, 1 otherwise.
 # Uses basic bash regex; not as strict as Go's net.ParseIP but catches
 # obvious garbage. Real validation happens at whitelist-load time.
@@ -518,7 +529,7 @@ _whitelist_session_add() {
     # cross-language advisory lock shared with the Go installer (both flock(2)
     # $_NFTBAN_SESSION_WL_LOCK). ensure_header + awk-read + append + rename all
     # run while the lock is held.
-    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    _whitelist_session_ensure_lock
     (
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
 
@@ -670,7 +681,7 @@ _whitelist_session_remove() {
 
     # §4.1: serialize the read-modify-write under the shared cross-process /
     # cross-language advisory lock (same path the Go installer flock(2)s).
-    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    _whitelist_session_ensure_lock
     (
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
 
@@ -737,7 +748,7 @@ _whitelist_session_cleanup() {
     # cross-language advisory lock (same path the Go installer flock(2)s). The
     # subshell prints the removed-count on stdout so the caller acts on it AFTER
     # the lock is released (the reload runs unlocked).
-    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    _whitelist_session_ensure_lock
     local removed
     removed=$(
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
