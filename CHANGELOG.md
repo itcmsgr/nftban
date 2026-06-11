@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.172.0] - 2026-06-11 — CLI-PIPEFAIL-ARITH full-class sweep
+
+**Codename:** `CLI_PIPEFAIL_SWEEP` · **Controlling record:** `NFTBAN_ROADMAP/V172_CLI_PIPEFAIL_SWEEP_SCOPE.md`
+**PR:** [#820](https://github.com/itcmsgr/nftban/pull/820) (sq `26a53867`)
+
+> **Why:** under `set -Eeuo pipefail` a `producer | <emit-on-empty> … || <fallback>` inside `$()` double-emits when an early pipe stage fails (zero-match `grep` rc=1, head-closes-pipe SIGPIPE rc=141, or a `jq` parse error) while a later stage already printed a default → `"0\n0"`; the consumer's `[[ $X -eq/-gt ]]` / `jq tonumber` then crashes. Already closed for `stats ip` in v1.170 — this applies the proven idioms to every remaining sibling. Merges the former v1.172 (HIGH) + v1.173 (MED/LOW) into one **shell-only** release.
+
+### Fixed — pipefail-arith crash class (16 sites)
+- **HIGH:** `core/nftban_report_email.sh` blacklist/whitelist empty-set counts (aborted the daily report on a fresh install); `cli/cmd_watchdog.sh` history count on the daemon-just-started path (`.data.history // []` + sanitize).
+- **MED:** `lib/nftban_report_data.sh` unique-IP count; `cli/cmd_ddos.sh` blocked_24h/total + packets/bytes; `cli/cmd_stats.sh` repeat-offenders / ip-history total / total_countries; `cli/cmd_cleanup.sh` ip_count; `cli/cmd_login.sh` + `cli/cmd_update.sh` digest/history counts (`jq -s 'add // [] | length'` for single + appended arrays).
+- **MED (siblings found via full-class scan, beyond the original audit list):** `core/nftban_login_alert.sh` digest count; `core/nftban_health_checks_services.sh` fd_count; `lib/service_control.sh` timers_active (directly `[[ -eq 0 ]]`-consumed).
+- **LOW:** `cli/cmd_wizard.sh` re-`readonly` guard (no "readonly variable" stderr on re-source); `core/nftban_stats_format.sh` removed a dead, buggy `grep -c | grep -cE` pair (+ its now-unused locals).
+
+Dropped `|| echo X` fallbacks were replaced with `|| true` (rc-safe under `set -e`, no second emit) — empirically confirmed bare assignments abort (exit 5) otherwise.
+
+### Tests
+- `cli/lib/nftban/tests/cli_pipefail_arith_sweep_v172_test.sh` (20/0): behavioral single-emit + static lint that the broken forms are gone; CI-wired in `ci-architecture.yml`.
+
+### Envelope
+- **Shell-only — `0 cmd/nftband` + `internal` (daemon byte-identical to v1.171.0)** · schema **1.83.0 frozen** · FHS body byte-unchanged · no packaging/dependency change · hermetic (no lab gate). `bash -n` 13/13, shellcheck `-S warning` 0 new; CI #820 green; post-merge main `26a53867` green (non-blocking Dependabot bot aside).
+
+---
+
 ## [v1.171.0] - 2026-06-11 — daemon state-write atomicity (§4.2–§4.3) + §3.6 ssh_ports counter
 
 **Codename:** `STATE_WRITE_ATOMICITY` · **Controlling records:** `NFTBAN_ROADMAP/V171_STATE_WRITE_ATOMICITY_SCOPE.md` · `NFTBAN_ROADMAP/V171_LAB_VALIDATION_RECORD.md`

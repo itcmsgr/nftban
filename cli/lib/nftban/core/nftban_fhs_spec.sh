@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.171.0 - FHS Specification (GENERATED)
+# NFTBan v1.172.0 - FHS Specification (GENERATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
 # meta:name="nftban_fhs_spec"
 # meta:type="core"
 # meta:header="FHS Specification"
-# meta:version="1.171.0"
+# meta:version="1.172.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
