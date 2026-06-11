@@ -69,7 +69,10 @@ nftban_report_email_generate() {
     # Count blocked IPs from nft blacklist sets (IPv4 + IPv6)
     local blocked_ips=0 _blocked_v4=0 _blocked_v6=0
     if timeout 10s nft list set ip nftban blacklist_ipv4 &>/dev/null; then
-        _blocked_v4=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
+        # pipefail-safe single-emit: wrap zero-match grep (rc=1) so wc emits one count,
+        # never the old "0\n0" double (grep-fail + trailing `|| echo 0`) that crashed `$(( ))`.
+        _blocked_v4=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' || true; } | wc -l || true)
+        _blocked_v4=${_blocked_v4//[^0-9]/}; _blocked_v4=${_blocked_v4:-0}
     fi
     if timeout 10s nft list set ip6 nftban blacklist_ipv6 &>/dev/null; then
         _blocked_v6=$(timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -cE '[0-9a-f:]+/|[0-9a-f]{2,}:' || true)
@@ -80,7 +83,9 @@ nftban_report_email_generate() {
     # Count whitelist (IPv4 + IPv6)
     local whitelist_count=0 _wl_v4=0 _wl_v6=0
     if timeout 10s nft list set ip nftban whitelist_ipv4 &>/dev/null; then
-        _wl_v4=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
+        # pipefail-safe single-emit (see blacklist_ipv4 note above).
+        _wl_v4=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' || true; } | wc -l || true)
+        _wl_v4=${_wl_v4//[^0-9]/}; _wl_v4=${_wl_v4:-0}
     fi
     if timeout 10s nft list set ip6 nftban whitelist_ipv6 &>/dev/null; then
         _wl_v6=$(timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -cE '[0-9a-f:]+/|[0-9a-f]{2,}:' || true)
