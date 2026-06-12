@@ -124,7 +124,7 @@ nftban_http_discover_access_logs() {
         # IFS-INDEPENDENTLY (callers like login_classic set IFS=$'\n\t' with no
         # space, which would otherwise merge a space-separated list into one token).
         local og; local -a _ovr=()
-        local _save_ifs="$IFS"; IFS=$' \t\n'; read -ra _ovr <<< "$override"; IFS="$_save_ifs"
+        IFS=$' \t\n' read -ra _ovr <<< "$override"   # IFS scoped to this read only (no global tamper)
         for og in "${_ovr[@]}"; do
             [[ -n "$og" ]] && _nftban_http_collect_glob "$og"
         done
@@ -244,7 +244,7 @@ nftban_http_classify_candidates() {
     local g
     if [[ -n "$override" ]]; then
         local og; local -a _ovr=()
-        local _save_ifs="$IFS"; IFS=$' \t\n'; read -ra _ovr <<< "$override"; IFS="$_save_ifs"
+        IFS=$' \t\n' read -ra _ovr <<< "$override"   # IFS scoped to this read only (no global tamper)
         for og in "${_ovr[@]}"; do [[ -n "$og" ]] && _nftban_http_collect_candidate_glob "$og"; done
     fi
     if [[ ${#_NFTBAN_HTTP_CAND[@]} -eq 0 ]]; then
