@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.178.0] - 2026-06-13 — BotScan read-authority (cap-scoped collector → nftban-readable spool)
+
+**Codename:** `BOTSCAN_READ_AUTHORITY` (v1.178-A) · **Records:** `NFTBAN_ROADMAP/BOTSCAN_READ_AUTHORITY_SCOPE.md`, `BOTSCAN_READ_AUTHORITY_IMPL_RECORD.md`, `V178A_PACKAGED_INSTALL_LAB_VALIDATION.md`, `V1_177_DIAGNOSTIC_FLEET_VALIDATION.md`
+**PR:** [#833](https://github.com/itcmsgr/nftban/pull/833) (sq `e0ed237e`)
+
+> **Why:** v1.177 proved the unprivileged `nftban-botscan.service` (`User=nftban`) cannot read panel access logs — fleet-validated **8/9 hosts DEGRADED**, two blocker shapes: DirectAdmin `/var/log/httpd/domains` `drwx--x--- apache:root` (parent traversal) and generic/Plesk `/var/log/{apache2,nginx}` `0640 root:adm` (file read). No single group/ACL covers both.
+
+### Added — separate cap-scoped read-collector → spool (B1)
+- **`cli/sbin/nftban-botscan-collector`** + **`nftban-botscan-collector.{service,timer}`** — runs `User=nftban` with **`AmbientCapabilities=CAP_DAC_READ_SEARCH` only** (read+traverse), on its OWN hardened unit (`ProtectSystem=strict`, `RestrictAddressFamilies=AF_UNIX`, `NoNewPrivileges=true`, `RestrictSUIDSGID=true`, `ReadWritePaths` limited to the spool + offset state). Reads **allowlisted** access-log roots: realpath-canonicalize → revalidate inside an allowlisted root → **reject symlink escape** → regular-files only → bounded max files/bytes → **per-read audit**. Writes an **`nftban:nftban 0640`** spool under `/run/nftban/botscan`.
+- The scanner is now **spool-first** and reports **"OK (served via collector spool)"** when direct source readability is DEGRADED/UNKNOWN but the spool is feeding.
+
+### Unchanged (security boundary preserved)
+- **`nftban-botscan.service` scanner stays `User=nftban`, capless, `NoNewPrivileges=true`, `RestrictSUIDSGID=true`** — the capability lives only on the separate collector unit.
+
+### Packaging / FHS / systemd (first-class)
+- New spool + offset dirs (`/run/nftban/botscan`, `/var/lib/nftban/botscan-collector`) via `build/fhs-spec.yaml` → regenerated tmpfiles/`fhs_directories.json`/`nftban_fhs_spec.sh`; collector installed by DEB + RPM; systemd install list + `docs/systemd/UNITS.md` + restore-staging manifests updated.
+
+### Validation
+- **Package-family lab validation PASS:** lab2 (ubuntu24.04 **DEB**) + lab4 (almalinux9 **RPM**) — files/units/tmpfiles land; Shape B recovered on lab2, Shape A recovered on lab4 (real cPanel `domlogs` symlink-chain canonicalized) through the real packaged collector unit; no failed nftban units; SSH/firewall preserved.
+- Hermetic tests `botscan_read_authority_v178_test.sh` **13/0**, CI-wired. CI #833 green (60 pass / 3 skip / 0 fail / 0 GHAS).
+
+### Envelope
+- **Daemon `cmd/nftband` SOURCE byte-identical to v1.177.0 (`48b82663`)** — local `-trimpath -buildvcs=false` reproduction identical; `cmd/nftband` has 0 `internal/installer` deps. **Packaged daemon binary hashes may differ because CI embeds VCS metadata (`buildvcs=auto`) — this is build-metadata, NOT a code change; packaged binary byte-identity is NOT claimed.** **Schema 1.83.0 frozen.**
+
+### Not included (later lanes)
+- Go LoginMon WordPress/web runtime authority (v1.178-B); FTP/cphulkd/exim-reject/HTTP-auth watchers; global Go health input-axis; v1.178-A fleet rollout; fleet-wide xmlrpc mitigation.
+
+---
+
 ## [v1.177.0] - 2026-06-12 — BotScan panel access-log discovery + diagnostic/readability truth
 
 **Codename:** `HTTP_LOG_DISCOVERY_AND_BOTSCAN_PANEL_PATHS` · **Records:** `NFTBAN_ROADMAP/V1_177_HTTP_LOG_DISCOVERY_AND_BOTSCAN_PANEL_PATHS_SCOPE.md`, `DETECTION_INPUT_AUTHORITY_AUDIT.md`, `SENIOR_ARCHITECT_ROADMAP_INPUT_AUTHORITY.md`
