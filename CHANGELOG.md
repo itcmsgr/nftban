@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.177.0] - 2026-06-12 — BotScan panel access-log discovery + diagnostic/readability truth
+
+**Codename:** `HTTP_LOG_DISCOVERY_AND_BOTSCAN_PANEL_PATHS` · **Records:** `NFTBAN_ROADMAP/V1_177_HTTP_LOG_DISCOVERY_AND_BOTSCAN_PANEL_PATHS_SCOPE.md`, `DETECTION_INPUT_AUTHORITY_AUDIT.md`, `SENIOR_ARCHITECT_ROADMAP_INPUT_AUTHORITY.md`
+**PR:** [#831](https://github.com/itcmsgr/nftban/pull/831) (sq `e2453ddd`)
+
+> **Why:** BotScan used a hardcoded single-file `[[ -f ]]` access-log lookup → "No access log found" on panel hosts (DirectAdmin/cPanel/Plesk), so web/xmlrpc attacks went undetected fleet-wide. This release fixes **discovery** and adds **honest diagnostics**; it does **not** grant read authority.
+
+### Fixed — BotScan panel access-log discovery
+- Panel-aware **multi-glob discovery** (DirectAdmin `/var/log/httpd/domains/*.log` + nginx domains, cPanel `/usr/local/apache/domlogs/*`, Plesk `/var/www/vhosts/system/*/logs/access_log`, generic Apache/nginx/LiteSpeed) replacing the single-file lookup, plus a **bounded incremental/offset reader** (rotation + copytruncate aware), **IPv4/IPv6**, and a `BOTSCAN_LOG_PATHS` override (`cli/lib/nftban/lib/nftban_http_logs.sh`).
+
+### Added — diagnostic / readability truth (no enforcement change)
+- `nftban botscan logs --detect` and `nftban botscan status` report a **five-state verdict — OK / DEGRADED / WARN_NO_LOGS / NO_LOGS / UNKNOWN** — evaluated **as the service account (`User=nftban`) via `runuser`, never the caller** (root-blindness guard). Unreadable and UNKNOWN states are surfaced instead of a bare "No access log found".
+
+### Corrected — false coverage claims
+- LoginMon/Roundcube/apache-auth runtime-coverage claims corrected to reflect what actually has a runtime watcher.
+
+### Does NOT (explicit limitations)
+- Does **not** grant BotScan read authority — `BOTSCAN_READ_AUTHORITY` remains **OPEN** (on DA/cPanel where panel logs are unreadable to `User=nftban`, BotScan reports DEGRADED but enforcement stays blocked until a later read-authority lane).
+- Does **not** restore BotScan enforcement fleet-wide; does **not** mitigate xmlrpc on DA/cPanel.
+- Go LoginMon WordPress/web runtime authority remains **deferred**; FTP/cphulkd/exim-reject/http-auth remain **separate input-authority lanes**.
+
+### Envelope
+- **Shell/data/test only — daemon `cmd/nftband` BYTE-IDENTICAL `48b82663…`** (no Go/systemd/packaging/ACL/Polkit change). **Schema 1.83.0 frozen.**
+- **Validation:** `http_log_discovery_v177_test.sh` 30/0 (panel matrix, exclusion, dedup, bounded scan, incremental/rotation/copytruncate, IPv4/IPv6 parse, service-account readability T13–T19 incl. root-blindness guard), CI-wired; `bash -n` + shellcheck `-S warning` clean; GHAS Semgrep `ifs-tampering` cleared via command-scoped IFS (`6f9bf9f1`); CI #831 green (52 pass / 2 skip / 0 fail); post-merge main `e2453ddd`.
+
+---
+
 ## [v1.176.0] - 2026-06-12 — daemon reliability (loginmon watcher respawn + fsync-residual state writes)
 
 **Codename:** `DAEMON_RELIABILITY` · **Records:** `NFTBAN_ROADMAP/V1_176_DAEMON_RELIABILITY_SCOPE.md`, `V1_176_LAB_VALIDATION_RECORD.md`
