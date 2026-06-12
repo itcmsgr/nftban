@@ -40,6 +40,9 @@ readonly NFTBAN_BOTSCAN_LOADED=1
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# v1.177: shared panel-aware HTTP access-log discovery (DirectAdmin/cPanel/Plesk).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_http_logs.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION
@@ -57,6 +60,10 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_LOG_APACHE:=/var/log/apache2/access.log}"
     : "${BOTSCAN_LOG_APACHE_ALT:=/var/log/httpd/access_log}"
     : "${BOTSCAN_LOG_NGINX:=/var/log/nginx/access.log}"
+    # v1.177: optional multi-path/glob override (space/newline list). When set it is
+    # preferred; if it resolves to no readable file we fall back to panel-aware
+    # auto-detect (never silently blind). Legacy single-path vars above stay honored.
+    : "${BOTSCAN_LOG_PATHS:=}"
     : "${BOTSCAN_DEFAULT_THRESHOLD:=5}"
     : "${BOTSCAN_DEFAULT_WINDOW:=60}"
     : "${BOTSCAN_DEFAULT_BAN_SHORT:=1800}"
@@ -246,16 +253,32 @@ nftban_botscan_toggle_pattern() {
 # =============================================================================
 
 # Find access log
-nftban_botscan_find_log() {
-    if [[ -f "$BOTSCAN_LOG_NGINX" ]]; then
-        echo "$BOTSCAN_LOG_NGINX"
-    elif [[ -f "$BOTSCAN_LOG_APACHE" ]]; then
-        echo "$BOTSCAN_LOG_APACHE"
-    elif [[ -f "$BOTSCAN_LOG_APACHE_ALT" ]]; then
-        echo "$BOTSCAN_LOG_APACHE_ALT"
-    else
-        echo ""
+# v1.177: full panel-aware discovery — emits ALL access logs to scan (one per line),
+# deduped. Source order: BOTSCAN_LOG_PATHS override / panel-aware auto (shared helper)
+# PLUS the legacy single-path vars as an existence-filtered back-compat safety net.
+nftban_botscan_discover_logs() {
+    local -a logs=()
+    local f
+    if declare -F nftban_http_discover_access_logs >/dev/null 2>&1; then
+        while IFS= read -r f; do [[ -n "$f" ]] && logs+=("$f"); done \
+            < <(nftban_http_discover_access_logs "${BOTSCAN_LOG_PATHS:-}")
     fi
+    # Legacy single-file vars (back-compat; honors a custom-pointed path).
+    for f in "$BOTSCAN_LOG_NGINX" "$BOTSCAN_LOG_APACHE" "$BOTSCAN_LOG_APACHE_ALT"; do
+        [[ -n "$f" && -f "$f" && -r "$f" ]] && logs+=("$f")
+    done
+    [[ ${#logs[@]} -eq 0 ]] && return 1
+    # Dedup, preserve order.
+    local -A seen=(); local -a uniq=()
+    for f in "${logs[@]}"; do [[ -n "${seen[$f]:-}" ]] && continue; seen[$f]=1; uniq+=("$f"); done
+    printf '%s\n' "${uniq[@]}"
+    return 0
+}
+
+# Back-compat single-path finder (status display, optional arg default). Returns
+# the first discovered log, or "" if none.
+nftban_botscan_find_log() {
+    nftban_botscan_discover_logs 2>/dev/null | head -1
 }
 
 # Parse access log line
@@ -580,36 +603,47 @@ nftban_botscan_process_logs() {
         return 0
     }
 
-    # Find log file
-    if [[ -z "$log_file" ]]; then
-        log_file=$(nftban_botscan_find_log)
-        [[ -z "$log_file" ]] && {
+    # v1.177: discover ALL panel-aware access logs (multi-log), not just the first.
+    # An explicit single arg still pins one file (back-compat / tests).
+    local -a logs=()
+    local f
+    if [[ -n "$log_file" ]]; then
+        logs+=("$log_file")
+    else
+        while IFS= read -r f; do [[ -n "$f" ]] && logs+=("$f"); done < <(nftban_botscan_discover_logs)
+        if [[ ${#logs[@]} -eq 0 ]]; then
             echo "ERROR: No access log found" >&2
+            echo "  Hint: run 'nftban botscan logs --detect' to see candidate paths and panel detection." >&2
+            echo "  Or set BOTSCAN_LOG_PATHS in /etc/nftban/conf.d/botscan/main.conf to your access-log glob(s)." >&2
             return 1
-        }
+        fi
     fi
 
     # Initialize
     nftban_botscan_init_state
     nftban_botscan_load_patterns
 
-    echo "Processing: $log_file"
+    echo "Processing: ${#logs[@]} access log(s)"
     echo "Patterns loaded: ${#_BOTSCAN_PATTERNS[@]}"
 
-    # Process recent entries (last 1000 lines)
+    # v1.177: bounded incremental read per file (offset/inode; rotation/truncation
+    # safe; capped MAX_BYTES) — no more re-scanning whole domain logs from BOF.
+    # If a single file was pinned (arg), keep the legacy bounded tail.
     local processed=0
-
-    while IFS= read -r line; do
-        local parsed
-        parsed=$(nftban_botscan_parse_line "$line") || continue
-
-        local ip url method status ua
-        IFS='|' read -r ip url method status ua <<< "$parsed"
-
-        nftban_botscan_process_entry "$ip" "$url" "$method" "$status" "$ua"
-        processed=$((processed + 1))
-
-    done < <(tail -1000 "$log_file")
+    for f in "${logs[@]}"; do
+        while IFS= read -r line; do
+            local parsed
+            parsed=$(nftban_botscan_parse_line "$line") || continue
+            local ip url method status ua
+            IFS='|' read -r ip url method status ua <<< "$parsed"
+            nftban_botscan_process_entry "$ip" "$url" "$method" "$status" "$ua"
+            processed=$((processed + 1))
+        done < <(
+            if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
+            elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
+            else tail -1000 -- "$f" 2>/dev/null; fi
+        )
+    done
 
     echo "Processed: $processed entries"
     echo "IPs tracked: ${#_BOTSCAN_IP_HITS[@]}"
@@ -658,6 +692,19 @@ nftban_botscan_status() {
     local log
     log=$(nftban_botscan_find_log)
     echo "Log Source:     ${log:-NOT FOUND}"
+
+    # Service-account readability health (v1.177). Evaluated AS the service account
+    # (nftban), not the caller — root could read panel logs the timer cannot.
+    if declare -F nftban_http_classify_candidates >/dev/null 2>&1; then
+        local svc="${NFTBAN_BOTSCAN_SERVICE_USER:-nftban}"
+        nftban_http_classify_candidates "${BOTSCAN_LOG_PATHS:-}" >/dev/null 2>&1 || true
+        local verdict="${_NFTBAN_HTTP_READ_VERDICT:-UNKNOWN}"
+        echo "Readability:    ${verdict} (${_NFTBAN_HTTP_READ_COUNT_READABLE}/${_NFTBAN_HTTP_READ_COUNT_TOTAL} readable by ${svc})"
+        if [[ "$verdict" == "DEGRADED" ]]; then
+            echo "                BOTSCAN_READ_AUTHORITY open: access logs discovered but unreadable by"
+            echo "                the service account — enforcement blocked until a read-authority lane lands."
+        fi
+    fi
 
     return 0
 }

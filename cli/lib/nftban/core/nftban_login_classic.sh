@@ -40,6 +40,10 @@ umask 027
 [[ -n "${NFTBAN_LOGIN_CLASSIC_LOADED:-}" ]] && return 0
 readonly NFTBAN_LOGIN_CLASSIC_LOADED=1
 
+# v1.177: shared panel-aware HTTP access-log discovery (WordPress parity).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_http_logs.sh" 2>/dev/null || true
+
 # =============================================================================
 # MODULE METADATA
 # =============================================================================
@@ -922,18 +926,45 @@ nftban_login_classic_start() {
         _LOGIN_CLASSIC_MONITOR_PIDS[proftpd]=$!
     fi
 
-    # Start WordPress monitor (file-based)
+    # Start WordPress monitor(s) — file-based.
+    # v1.177 parity (SHELL/CLASSIC-MODE SURFACE ONLY): use the shared panel-aware
+    # discovery (DirectAdmin/cPanel/Plesk per-domain logs) instead of the legacy
+    # generic single-file find, so WordPress detection is not blind WHEN THIS SHELL
+    # CLASSIC PATH RUNS. tail -F is one process per file, so the number of live
+    # monitors is BOUNDED (LOGIN_SERVICE_WORDPRESS_MAX_MONITORS); the batch BotScan
+    # path covers the full set, while this live-tails the most-recently-active subset.
+    # NOTE (v1.177 B-split): the deployed runtime is the GO daemon (internal/loginmon),
+    # NOT this shell-classic path — so this change does NOT close runtime daemon
+    # LoginMon-WordPress detection. The Go-daemon WordPress/web watcher is DEFERRED
+    # to v1.178 (V1_178_LOGINMON_WEB_RUNTIME_AUTHORITY_SCOPE_STUB.md). This block is
+    # legacy/classic-mode + CLI support.
     if nftban_login_service_detected "wordpress"; then
-        local log_file=""
-        for f in "${LOGIN_SERVICE_WORDPRESS_LOG_APACHE:-/var/log/apache2/access.log}" \
-                 "${LOGIN_SERVICE_WORDPRESS_LOG_HTTPD:-/var/log/httpd/access_log}" \
-                 "${LOGIN_SERVICE_WORDPRESS_LOG_NGINX:-/var/log/nginx/access.log}"; do
-            [[ -f "$f" ]] && log_file="$f" && break
-        done
+        local -a _wp_logs=()
+        local f
+        if declare -F nftban_http_discover_access_logs >/dev/null 2>&1; then
+            while IFS= read -r f; do [[ -n "$f" ]] && _wp_logs+=("$f"); done \
+                < <(nftban_http_discover_access_logs "${LOGIN_SERVICE_WORDPRESS_LOG_PATHS:-}")
+        fi
+        if [[ ${#_wp_logs[@]} -eq 0 ]]; then
+            # Back-compat fallback: legacy generic single-file find.
+            for f in "${LOGIN_SERVICE_WORDPRESS_LOG_APACHE:-/var/log/apache2/access.log}" \
+                     "${LOGIN_SERVICE_WORDPRESS_LOG_HTTPD:-/var/log/httpd/access_log}" \
+                     "${LOGIN_SERVICE_WORDPRESS_LOG_NGINX:-/var/log/nginx/access.log}"; do
+                [[ -f "$f" ]] && { _wp_logs+=("$f"); break; }
+            done
+        fi
 
-        if [[ -n "$log_file" ]]; then
-            _nftban_login_classic_monitor_file "wordpress" "$log_file" "" &
-            _LOGIN_CLASSIC_MONITOR_PIDS[wordpress]=$!
+        local _wp_cap="${LOGIN_SERVICE_WORDPRESS_MAX_MONITORS:-50}"
+        local _wp_started=0 _wp_idx=0
+        for f in "${_wp_logs[@]}"; do
+            [[ "$_wp_started" -ge "$_wp_cap" ]] && break
+            local _key="wordpress"; [[ "$_wp_idx" -gt 0 ]] && _key="wordpress_${_wp_idx}"
+            _nftban_login_classic_monitor_file "wordpress" "$f" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[$_key]=$!
+            _wp_started=$((_wp_started + 1)); _wp_idx=$((_wp_idx + 1))
+        done
+        if [[ "$_wp_started" -gt 0 ]]; then
+            nftban_login_log "INFO" "WordPress: monitoring ${_wp_started}/${#_wp_logs[@]} discovered access log(s) (cap ${_wp_cap})"
         fi
     fi
 
