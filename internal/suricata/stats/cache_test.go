@@ -23,9 +23,77 @@
 package stats
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+// TestMigrateLegacySnapshot locks the v1.175 FHS-SMELL-SIDSTATS relocation:
+// the SID-stats snapshot moved from /etc (ConfigDir) to /var/lib (DataDir), and
+// migrateLegacySnapshot moves a pre-v1.175 file on first startup. Best-effort:
+// failures must never panic; Load() just starts fresh.
+func TestMigrateLegacySnapshot(t *testing.T) {
+	t.Run("moves legacy file and removes old", func(t *testing.T) {
+		dir := t.TempDir()
+		oldPath := filepath.Join(dir, "etc/suricata/cache/sid-stats.json")
+		newPath := filepath.Join(dir, "var/suricata/cache/sid-stats.json")
+		if err := os.MkdirAll(filepath.Dir(oldPath), 0750); err != nil {
+			t.Fatal(err)
+		}
+		want := []byte(`[{"sid":"1","trigger_count":7}]`)
+		if err := os.WriteFile(oldPath, want, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		migrateLegacySnapshot(oldPath, newPath)
+
+		got, err := os.ReadFile(newPath)
+		if err != nil {
+			t.Fatalf("new snapshot not created: %v", err)
+		}
+		if string(got) != string(want) {
+			t.Errorf("content not preserved: got %q want %q", got, want)
+		}
+		if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+			t.Errorf("old snapshot should be removed after migration, stat err=%v", err)
+		}
+	})
+
+	t.Run("no-op when new already exists", func(t *testing.T) {
+		dir := t.TempDir()
+		oldPath := filepath.Join(dir, "etc/sid-stats.json")
+		newPath := filepath.Join(dir, "var/sid-stats.json")
+		_ = os.MkdirAll(filepath.Dir(oldPath), 0750)
+		_ = os.MkdirAll(filepath.Dir(newPath), 0750)
+		if err := os.WriteFile(oldPath, []byte("OLD"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(newPath, []byte("NEW"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		migrateLegacySnapshot(oldPath, newPath)
+
+		// New must be untouched; old must remain (we never overwrite/clobber).
+		if got, _ := os.ReadFile(newPath); string(got) != "NEW" {
+			t.Errorf("existing new snapshot was overwritten: got %q", got)
+		}
+		if _, err := os.Stat(oldPath); err != nil {
+			t.Errorf("old snapshot should be left intact when new exists, err=%v", err)
+		}
+	})
+
+	t.Run("no-op when neither exists", func(t *testing.T) {
+		dir := t.TempDir()
+		newPath := filepath.Join(dir, "var/sid-stats.json")
+		// Must not panic and must not create anything.
+		migrateLegacySnapshot(filepath.Join(dir, "etc/sid-stats.json"), newPath)
+		if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+			t.Errorf("nothing should be created when neither file exists")
+		}
+	})
+}
 
 // newTestCache creates a Cache without calling nftbanconf.MustLoad() or
 // safety.GetMemoryLimits() so tests can run without production config files.

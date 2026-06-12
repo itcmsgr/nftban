@@ -555,8 +555,7 @@ directories:
       owner: root
       group: nftban-auditor
       description: "Auditor reports (nftban-auditor group access)"
-      created_by: tmpfiles
-      tmpfiles_reconcile: "z"
+      created_by: package
       note: |
         D-NEW-10 closure (Slot 6 / 2026-05-09): AUTHORITY EXCEPTION — intentional, NOT drift.
         This is the ONLY directory in the /var/lib/nftban tree owned by `nftban-auditor`
@@ -565,6 +564,13 @@ directories:
         + group nftban-auditor is intentional.
         DO NOT "normalize" this entry to the 0750 root:nftban / 0750 nftban:nftban defaults
         seen elsewhere in this section — that would break the auditor write-channel.
+        v1.175 BUG-TMPFILES: created_by tmpfiles→package. This root-owned child under the
+        nftban-owned /var/lib/nftban/reports parent made systemd-tmpfiles refuse the
+        non-root-parent→root-child transition (exit 73, both families). The dir is now
+        created+owned at install (RPM %dir %attr — nftban-auditor resolves via the %pre
+        groupadd, which runs before file unpack; DEB nftban.dirs + dir-attrs in postinst,
+        after group creation), so systemd-tmpfiles never attempts the unsafe transition.
+        Contents are still maintained by fhs-permissions.sh (root:nftban-auditor 0660).
         Structural assertion (CI hard-fails on drift):
           - .github/workflows/ci-runtime-truth.yml G8 step (sudo-wrapped post-Slot-5b)
           - scripts/test-package-effective-parity.sh EXPECTED_TABLE entry (line 77)
@@ -776,6 +782,35 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
 
+    - path: /var/lib/nftban/suricata/cache
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Suricata SID-statistics cache (sid-stats.json snapshot)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.175 FHS-SMELL-SIDSTATS: the daemon's suricata SID-stats snapshot moved here from
+        /etc/nftban/suricata/cache/sid-stats.json (mutable runtime cache must not live under
+        /etc, which FHS reserves for config). nftban-owned because the daemon (User=nftban)
+        rewrites it on every auto-save tick via safety.SafeWriteFile (atomic since v1.171).
+        cache.go migrates the old /etc copy on first startup. See internal/suricata/stats/cache.go.
+
+    - path: /var/lib/nftban/alerts
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Service-failure alert bookkeeping (throttle timestamps + diagnostic reports)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.175 ALERT-THROTTLE-FHS: nftban-owned home for nftban-alert@.service bookkeeping.
+        The alert worker runs User=nftban; its throttle file + diagnostics previously sat
+        directly under root-owned 0750 /var/lib/nftban (not group-writable) → EACCES → throttle
+        never persisted (v1.174 only made those writes non-fatal). Relocating throttle to
+        /var/lib/nftban/alerts/throttle_<svc> and diagnostics to /var/lib/nftban/alerts/<svc>_<ts>.txt
+        (both nftban:nftban) lets throttling actually persist. See cli/sbin/nftban-service-alert.
+
     - path: /var/lib/nftban/update-backups
       mode: "0750"
       owner: root
@@ -911,8 +946,20 @@ directories:
       owner: root
       group: nftban
       description: "V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN"
-      created_by: tmpfiles
-      tmpfiles_reconcile: "z"
+      created_by: feature_enable
+      note: |
+        v1.175 BUG-TMPFILES: created_by tmpfiles→feature_enable. This root-owned child
+        under the nftban-owned /run/nftban parent made systemd-tmpfiles refuse the
+        non-root-parent→root-child transition (exit 73, both families). It must stay
+        root-owned (integrity: only the audited root service may write last.json; the
+        nftban group only READS it 0640) AND /run is tmpfs (reboot-wiped, so it cannot be
+        package-created). It is now created per-start by the sole authoritative creator —
+        nftban-firewall-validate.service's `+`-prefixed (unsandboxed) ExecStartPre:
+        `/usr/bin/install -d -o root -g nftban -m 2750 /run/nftban/firewall-validate`,
+        which already runs before the sandboxed ExecStart (it must, since ReadWritePaths
+        only binds an existing path). Removing it from tmpfiles loses nothing and kills the
+        exit-73. Still listed in nftban_fhs_spec.sh / fhs_directories.json / fhs-permissions
+        for health/permission awareness; created_by feature_enable = not tmpfiles, not package.
 
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data

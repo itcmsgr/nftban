@@ -78,10 +78,14 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 # it can create the handoff dir even though ProtectSystem=strict makes /run
 # read-only for the (sandboxed) main process. The `+` exemption is required:
 # ReadWritePaths=<subdir> only binds an EXISTING path writable, so the subdir
-# must exist before the sandboxed ExecStart runs. tmpfiles creates it at boot
-# (d /run/nftban/firewall-validate 2750 root nftban); this guarantees it
-# per-start too (idempotent mkdir+chown+chmod via /usr/bin/install). Absolute
-# path is required by systemd for ExecStartPre.
+# must exist before the sandboxed ExecStart runs. This ExecStartPre is the SOLE
+# creator (idempotent mkdir+chown+chmod via /usr/bin/install). Absolute path is
+# required by systemd for ExecStartPre.
+# v1.175 BUG-TMPFILES: this dir is NO LONGER created by tmpfiles. A root-owned
+# child (2750 root:nftban) under the nftban-owned /run/nftban parent made
+# systemd-tmpfiles refuse the non-root-parent→root-child transition (exit 73,
+# both families). /run is tmpfs so it can't be package-created either; this
+# per-start ExecStartPre is the correct and only creator.
 #
 # V131.3 D13 fix: the dir mode is now SETGID (2750, not 0750). The setgid bit
 # makes a file created in this dir inherit the dir's GROUP (nftban) regardless
@@ -106,9 +110,10 @@ StandardError=journal
 # fix: the unit now WRITES one group-readable handoff file via the
 # firewall_validate_run.sh wrapper, so it needs exactly one writable path.
 # ProtectSystem=strict makes all of /run (and the whole filesystem) read-only;
-# grant write to ONLY the dedicated status subdir, which tmpfiles creates as
-# setgid root:nftban 2750 (d /run/nftban/firewall-validate 2750 root nftban). This
-# does NOT expose the daemon's /run/nftban (which holds the live socket) and
+# grant write to ONLY the dedicated status subdir, which the `+`-prefixed
+# ExecStartPre above creates as setgid root:nftban 2750 (v1.175: no longer in
+# tmpfiles — see the ExecStartPre note). This does NOT expose the daemon's
+# /run/nftban (which holds the live socket) and
 # does NOT re-chown /run/nftban — it is the narrowest writable surface that
 # lets the validator drop last.json for nftban-group operators to read.
 PrivateTmp=yes

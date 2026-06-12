@@ -55,24 +55,29 @@ echo "  Repo root: $_repo_root"
 echo "==============================================================================="
 
 # ----------------------------------------------------------------------------
-# A: generated tmpfiles — setgid (2750) handoff dir, exact line.
+# A: the setgid (2750 root:nftban) handoff dir is created by the unit's
+# +ExecStartPre, NOT by tmpfiles. v1.175 BUG-TMPFILES: the root-under-nftban
+# entry tripped systemd-tmpfiles exit 73; it is removed from tmpfiles and the
+# +ExecStartPre install -d (asserted in B1 below) is the sole creator. The setgid
+# semantics (2750 root:nftban → last.json inherits group nftban without CAP_CHOWN)
+# are preserved by the ExecStartPre's `-m 2750 -o root -g nftban`.
 # ----------------------------------------------------------------------------
 echo "--- A: tmpfiles (generated) ---"
 
-# A1: exact setgid line (must match exactly; mode 2750, owner root, group nftban).
-if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
-    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -'" 0
-else
-    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -'" 1 \
+# A1: tmpfiles no longer carries the firewall-validate dir (v1.175 — exit-73 fix).
+if grep -qE '/run/nftban/firewall-validate' "$_tmpfiles"; then
+    _t_assert "A1: tmpfiles does NOT list /run/nftban/firewall-validate (v1.175 BUG-TMPFILES; created by +ExecStartPre)" 1 \
         "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
+else
+    _t_assert "A1: tmpfiles does NOT list /run/nftban/firewall-validate (v1.175 BUG-TMPFILES; created by +ExecStartPre)" 0
 fi
 
-# A2: the old non-setgid 0750 form is GONE (no stale mode left behind).
-if grep -qE '^d /run/nftban/firewall-validate 0750 ' "$_tmpfiles"; then
-    _t_assert "A2: stale non-setgid 0750 tmpfiles entry is absent" 1 \
-        "0750 entry still present — generator did not pick up the 2750 mode"
+# A2: (kept) no stale tmpfiles entry of any mode remains for the dir.
+if grep -qE '^[dz] /run/nftban/firewall-validate ' "$_tmpfiles"; then
+    _t_assert "A2: no stale tmpfiles d/z entry for the handoff dir" 1 \
+        "entry still present — generator still emits firewall-validate"
 else
-    _t_assert "A2: stale non-setgid 0750 tmpfiles entry is absent" 0
+    _t_assert "A2: no stale tmpfiles d/z entry for the handoff dir" 0
 fi
 
 # ----------------------------------------------------------------------------

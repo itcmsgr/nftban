@@ -79,6 +79,7 @@
 # ---------------------------------------------------------------------------
 # DATA DIRECTORIES (package-territory only; tmpfiles-managed runtime dirs excluded)
 # ---------------------------------------------------------------------------
+%dir %attr(0770,root,nftban-auditor) /var/lib/nftban/reports/auditors
 %dir %attr(0750,nftban,nftban) /var/lib/nftban/community
 %dir %attr(0750,root,nftban) /var/lib/nftban
 

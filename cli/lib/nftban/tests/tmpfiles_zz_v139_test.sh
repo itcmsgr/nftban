@@ -131,15 +131,26 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# T6: the auditor authority exception (/var/lib/nftban/reports/auditors) is
-# annotated `z` (non-recursive) — recursive Z would clobber auditor-written
-# report files. Required by the HYBRID design.
+# T6: the auditor authority exception (/var/lib/nftban/reports/auditors) is now
+# created_by=package, NOT tmpfiles. v1.175 BUG-TMPFILES: this root-owned child
+# (0770 root:nftban-auditor) under the nftban-owned /var/lib/nftban/reports parent
+# made systemd-tmpfiles refuse the non-root-parent→root-child transition (exit 73).
+# It is created+owned at install (RPM %dir %attr — nftban-auditor resolves via the
+# %pre groupadd; DEB nftban.dirs + dir-attrs in postinst), so tmpfiles never
+# attempts the unsafe transition. The authority exception (root:nftban-auditor 0770)
+# is preserved — only the CREATOR changed (tmpfiles → package).
 # -----------------------------------------------------------------------------
-AUD_REC=$(yq -r '.directories.data[] | select(.path == "/var/lib/nftban/reports/auditors") | .tmpfiles_reconcile // "missing"' "$SPEC")
-if [[ "$AUD_REC" == "z" ]]; then
-    ok "T6 auditor authority exception path uses non-recursive z (operator-writable subtree safe)"
+AUD_CB=$(yq -r '.directories.data[] | select(.path == "/var/lib/nftban/reports/auditors") | .created_by // "missing"' "$SPEC")
+if [[ "$AUD_CB" == "package" ]]; then
+    ok "T6 auditor authority exception is created_by=package (v1.175 BUG-TMPFILES; not tmpfiles → no exit-73)"
 else
-    no "T6 auditor authority exception uses non-recursive z" "got tmpfiles_reconcile=$AUD_REC"
+    no "T6 auditor authority exception created_by=package" "got created_by=$AUD_CB"
+fi
+# T6b: and it is therefore absent from the generated tmpfiles.d.
+if grep -qE '/var/lib/nftban/reports/auditors' "$REPO/install/systemd/tmpfiles.d/nftban.conf"; then
+    no "T6b auditors absent from tmpfiles.d" "still present — generator emitted a tmpfiles entry"
+else
+    ok "T6b auditors absent from generated tmpfiles.d (created by package, not tmpfiles)"
 fi
 
 # -----------------------------------------------------------------------------

@@ -46,11 +46,13 @@ _bin="${NFTBAN_VALIDATE_BIN:-/usr/lib/nftban/bin/nftban-validate}"
 rm -f "$_file" 2>/dev/null || true
 
 # Ensure the runtime dir exists and is group-readable by the nftban group.
-# V131.2 D13: the dir is now pre-created by tmpfiles (root:nftban 0750) and
-# bound writable via the unit's ReadWritePaths=/run/nftban/firewall-validate.
-# This mkdir is a best-effort no-op for the standalone/dev path; under the
-# narrow ReadWritePaths a parent-write mkdir of the bound subdir would fail,
-# so it MUST NOT abort the wrapper under set -e before the write attempt.
+# V131.2 D13 / v1.175: under the service the dir is created per-start by the
+# unit's `+`-prefixed ExecStartPre (/usr/bin/install -d -o root -g nftban -m 2750);
+# it is NO LONGER created by tmpfiles (v1.175 BUG-TMPFILES: the root-under-nftban
+# transition tripped systemd-tmpfiles exit 73). ReadWritePaths binds that
+# existing dir writable. This mkdir is a best-effort no-op for the standalone/dev
+# path; under the narrow ReadWritePaths a parent-write mkdir of the bound subdir
+# would fail, so it MUST NOT abort the wrapper under set -e before the write attempt.
 mkdir -p "$_dir" 2>/dev/null || true
 chgrp nftban "$_dir" 2>/dev/null || true
 chmod 0750 "$_dir" 2>/dev/null || true
