@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.175.0] - 2026-06-12 — FHS lane (auditors / sid-stats / alert-throttle FHS; firewall-validate accepted security exception)
+
+**Codename:** `FHS_LANE` · **Records:** `NFTBAN_ROADMAP/V1_175_FHS_LANE_SCOPE.md`
+**PR:** [#827](https://github.com/itcmsgr/nftban/pull/827) (sq `94069c08`; D-1 correction `2e910850`)
+
+> **Why:** three FHS-authority defects in the generated tmpfiles / file layout, plus a lab-corrected design decision (D-1) on the one path that cannot be relocated.
+
+### Fixed — BUG-TMPFILES-AUDITORS (unsafe path transition closed)
+- `/var/lib/nftban/reports/auditors` moved `created_by tmpfiles → package` (RPM `%dir %attr(0770,root,nftban-auditor)`; DEB `nftban.dirs` + postinst converge to `root:nftban-auditor 0770`). Removed from the generated tmpfiles → systemd-tmpfiles no longer attempts the non-root-parent→root-child transition → **auditors exit-73 eliminated** on both families.
+
+### Fixed — FHS-SMELL-SIDSTATS (mutable cache out of /etc)
+- suricata sid-stats snapshot moved `/etc/nftban/suricata/cache/sid-stats.json` → `/var/lib/nftban/suricata/cache/sid-stats.json` (`cfg.DataDir`) + `migrateLegacySnapshot` (relocates an old `/etc` copy on first start). `internal/suricata/stats` is in no `cmd/` binary → **daemon byte-identical**.
+
+### Fixed — ALERT-THROTTLE-FHS (throttle/diagnostics ownership)
+- `nftban-alert@` throttle + diagnostics relocated under the nftban-owned `/var/lib/nftban/alerts` (`0750 nftban:nftban`, new tmpfiles entry) + `cli/sbin/nftban-service-alert` repointed → throttling now **persists** on `User=nftban` hosts (the root-cause fix deferred from v1.174 Item 3).
+
+### Retained — BUG-TMPFILES-FIREWALL-VALIDATE (accepted non-fatal security exception — NOT closed)
+- `/run/nftban/firewall-validate` (`2750 root:nftban`) **intentionally stays** in tmpfiles. The dir is root-owned because only the audited root service writes `last.json` (the nftban group reads it `0640`) — owning it `nftban:nftban` would let a compromised daemon forge the independent validation result. `/run` is tmpfs, so it must be tmpfiles-created at boot. The "drop tmpfiles, unit `+ExecStartPre` sole creator" alternative (D-1) was **rejected — lab-proven reboot-latent `226/NAMESPACE`** on systemd 252 + 255 (ReadWritePaths binds at mount-namespace setup, before ExecStartPre runs). Structurally guarded by `fhs_lane_v175_test` T1 (allowlists exactly this path; fails for any other root-under-non-root).
+
+### Envelope
+- **FHS-generator + shell + `internal/suricata/stats` (not in any `cmd/` binary) — daemon `cmd/nftband` BYTE-IDENTICAL** · schema **1.83.0 frozen**. CI green; lab2 (systemd 255) + lab4 (systemd 252) Option-I proof PASS.
+- **NOT a full BUG-TMPFILES closure (audit truth):** the auditors unsafe transition is closed; firewall-validate's exit-73 is retained as an accepted non-fatal security exception, so `systemd-tmpfiles --create` may still exit 73 because of that one path.
+- **Still open:** SUPPORT-DIAG-FAILED-UNIT-COVERAGE, UX-MSG-AUDIT, FSYNC-RESIDUAL, SEC / VX (v1.176), firewall-validate `RuntimeDirectory=` (deferred, security-reviewed).
+
+---
+
 ## [v1.174.0] - 2026-06-12 — install/health reliability (stale failed-unit classification + health OOM + alert bookkeeping)
 
 **Codename:** `INSTALL_HEALTH_RELIABILITY` · **Records:** `NFTBAN_ROADMAP/V1_174_INSTALL_HEALTH_RELIABILITY_SCOPE.md`, `V1_173_INSTALL_WARNINGS_CLASSIFICATION.md`
