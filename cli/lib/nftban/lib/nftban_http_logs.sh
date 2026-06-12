@@ -35,6 +35,19 @@ _NFTBAN_HTTP_LAST_PANEL=""
 _NFTBAN_HTTP_LAST_SELECTED=()
 _NFTBAN_HTTP_LAST_SKIPPED=()   # "path: reason"
 
+# Last-classification diagnostics (populated by nftban_http_classify_candidates).
+# These describe SERVICE-ACCOUNT readability, used by the diagnostic/health surfaces
+# only — NOT the hot scan path.
+_NFTBAN_HTTP_LAST_CANDIDATES=()      # existing, non-excluded candidate access logs (pre-readability)
+_NFTBAN_HTTP_LAST_UNREADABLE=()      # candidates the service account cannot read
+_NFTBAN_HTTP_READ_VERDICT=""         # OK | DEGRADED | WARN_NO_LOGS | NO_LOGS | UNKNOWN
+_NFTBAN_HTTP_READ_PERSPECTIVE=""     # how readability was evaluated (honest reporting)
+_NFTBAN_HTTP_READ_STACK=""           # detected web stack at classification time
+_NFTBAN_HTTP_READ_COUNT_TOTAL=0
+_NFTBAN_HTTP_READ_COUNT_READABLE=0
+_NFTBAN_HTTP_READ_COUNT_UNREADABLE=0
+_NFTBAN_HTTP_READ_COUNT_UNKNOWN=0
+
 # --- panel / stack detection -------------------------------------------------
 nftban_http_detect_panel() {
     if [[ -x /usr/local/directadmin/directadmin || -d /usr/local/directadmin ]]; then echo "directadmin"; return 0; fi
@@ -151,6 +164,132 @@ nftban_http_discover_access_logs() {
     fi
 
     printf '%s\n' "${_NFTBAN_HTTP_LAST_SELECTED[@]}"
+    return 0
+}
+
+# --- service-account readability + health classification (DIAGNOSTIC ONLY) ----
+# These run on the status/health/--detect path, which is typically invoked by an
+# admin as root. They MUST evaluate readability AS THE SERVICE ACCOUNT (default
+# nftban) — NOT the invoking user — or root produces a false OK on panels whose
+# log dirs (e.g. DirectAdmin /var/log/httpd/domains drwx--x--- apache:root) the
+# unprivileged timer cannot traverse. The hot scan path is untouched: at timer
+# time the process already runs as nftban, so its own [[ -r ]] filter is truthful.
+
+# Readability of one path AS THE SERVICE ACCOUNT.
+# Returns: 0 readable, 1 unreadable, 2 indeterminate (cannot assume service identity).
+nftban_http_service_can_read() {
+    local path="$1"
+    local service_user="${NFTBAN_BOTSCAN_SERVICE_USER:-nftban}"
+
+    # CI/hermetic hook: lets tests simulate readable/unreadable/indeterminate
+    # without a real user or root. Invoked as: HOOK <service_user> <path>.
+    if [[ -n "${NFTBAN_BOTSCAN_READ_TEST_HOOK:-}" ]]; then
+        local rc=0; "${NFTBAN_BOTSCAN_READ_TEST_HOOK}" "$service_user" "$path" || rc=$?
+        return "$rc"
+    fi
+
+    # Already the service account → a direct check is truthful.
+    if [[ "$(id -un 2>/dev/null || true)" == "$service_user" ]]; then
+        if [[ -r "$path" ]]; then return 0; else return 1; fi
+    fi
+
+    # Root → drop to the service account to test REAL traversal+read in the sandbox.
+    if [[ "$(id -u 2>/dev/null || echo -1)" -eq 0 ]]; then
+        if command -v runuser >/dev/null 2>&1 && id "$service_user" >/dev/null 2>&1; then
+            local rc=0; runuser -u "$service_user" -- test -r "$path" 2>/dev/null || rc=$?
+            return "$rc"
+        fi
+        return 2   # root but cannot drop (no runuser / no such user) → never false OK
+    fi
+
+    # Non-root, non-service caller cannot authoritatively test the service account.
+    return 2
+}
+
+# Internal: collect candidate access logs for one glob (existing + non-excluded),
+# WITHOUT a readability filter. Mutates global _NFTBAN_HTTP_CAND in the current shell.
+_nftban_http_collect_candidate_glob() {
+    local g="$1" f
+    local -a matches=()
+    mapfile -t matches < <(compgen -G "$g" 2>/dev/null || true)
+    for f in "${matches[@]}"; do
+        [[ -f "$f" ]] || continue
+        case "$f" in
+            *error_log|*error.log|*-error*|*_error*|*.gz|*.[0-9]) continue ;;  # access logs only
+        esac
+        _NFTBAN_HTTP_CAND+=("$f")
+    done
+}
+
+# Classify discovered access-log CANDIDATES by service-account readability and set
+# a five-state health verdict. Arg $1 = optional override glob list. Populates
+# _NFTBAN_HTTP_LAST_{CANDIDATES,UNREADABLE}, the counts, _NFTBAN_HTTP_READ_{VERDICT,
+# PERSPECTIVE,STACK}. Echoes the verdict. Decides by access-log presence +
+# readability — NEVER by panel name, NEVER by caller/root readability.
+#   OK           candidates>=1 AND readable_as_service>=1
+#   DEGRADED     candidates>=1 AND readable_as_service==0 (all definitively unreadable)
+#   UNKNOWN      candidates>=1 AND readable==0 AND indeterminate>=1 (cannot test as service)
+#   WARN_NO_LOGS candidates==0 AND a web stack is present (logs expected but missing)
+#   NO_LOGS      candidates==0 AND no web stack detected (inactive — neutral)
+nftban_http_classify_candidates() {
+    local override="${1:-}"
+    local panel stack
+    panel="$(nftban_http_detect_panel)"; stack="$(nftban_http_detect_stack)"
+    _NFTBAN_HTTP_READ_STACK="$stack"
+    _NFTBAN_HTTP_LAST_CANDIDATES=(); _NFTBAN_HTTP_LAST_UNREADABLE=()
+    _NFTBAN_HTTP_READ_COUNT_TOTAL=0; _NFTBAN_HTTP_READ_COUNT_READABLE=0
+    _NFTBAN_HTTP_READ_COUNT_UNREADABLE=0; _NFTBAN_HTTP_READ_COUNT_UNKNOWN=0
+
+    _NFTBAN_HTTP_CAND=()
+    local g
+    if [[ -n "$override" ]]; then
+        local og; local -a _ovr=()
+        local _save_ifs="$IFS"; IFS=$' \t\n'; read -ra _ovr <<< "$override"; IFS="$_save_ifs"
+        for og in "${_ovr[@]}"; do [[ -n "$og" ]] && _nftban_http_collect_candidate_glob "$og"; done
+    fi
+    if [[ ${#_NFTBAN_HTTP_CAND[@]} -eq 0 ]]; then
+        while IFS= read -r g; do [[ -n "$g" ]] && _nftban_http_collect_candidate_glob "$g"; done \
+            < <(nftban_http_candidate_globs "$panel")
+    fi
+
+    # Dedup candidates (preserve order).
+    local -A seen=(); local -a uniq=(); local f
+    for f in "${_NFTBAN_HTTP_CAND[@]}"; do [[ -n "${seen[$f]:-}" ]] && continue; seen[$f]=1; uniq+=("$f"); done
+    _NFTBAN_HTTP_LAST_CANDIDATES=("${uniq[@]}")
+    _NFTBAN_HTTP_READ_COUNT_TOTAL=${#uniq[@]}
+
+    # Readability perspective (for honest reporting).
+    local me svc; me="$(id -un 2>/dev/null || echo '?')"; svc="${NFTBAN_BOTSCAN_SERVICE_USER:-nftban}"
+    if [[ -n "${NFTBAN_BOTSCAN_READ_TEST_HOOK:-}" ]]; then
+        _NFTBAN_HTTP_READ_PERSPECTIVE="test-hook"
+    elif [[ "$me" == "$svc" ]]; then
+        _NFTBAN_HTTP_READ_PERSPECTIVE="direct (running as $svc)"
+    elif [[ "$(id -u 2>/dev/null || echo -1)" -eq 0 ]]; then
+        _NFTBAN_HTTP_READ_PERSPECTIVE="dropped to $svc via runuser"
+    else
+        _NFTBAN_HTTP_READ_PERSPECTIVE="indeterminate (caller=$me, not root/$svc)"
+    fi
+
+    local rc
+    for f in "${uniq[@]}"; do
+        rc=0; nftban_http_service_can_read "$f" || rc=$?
+        case "$rc" in
+            0) _NFTBAN_HTTP_READ_COUNT_READABLE=$((_NFTBAN_HTTP_READ_COUNT_READABLE+1)) ;;
+            1) _NFTBAN_HTTP_READ_COUNT_UNREADABLE=$((_NFTBAN_HTTP_READ_COUNT_UNREADABLE+1)); _NFTBAN_HTTP_LAST_UNREADABLE+=("$f") ;;
+            *) _NFTBAN_HTTP_READ_COUNT_UNKNOWN=$((_NFTBAN_HTTP_READ_COUNT_UNKNOWN+1)) ;;
+        esac
+    done
+
+    if [[ ${_NFTBAN_HTTP_READ_COUNT_TOTAL} -eq 0 ]]; then
+        if [[ -n "$stack" ]]; then _NFTBAN_HTTP_READ_VERDICT="WARN_NO_LOGS"; else _NFTBAN_HTTP_READ_VERDICT="NO_LOGS"; fi
+    elif [[ ${_NFTBAN_HTTP_READ_COUNT_READABLE} -ge 1 ]]; then
+        _NFTBAN_HTTP_READ_VERDICT="OK"
+    elif [[ ${_NFTBAN_HTTP_READ_COUNT_UNKNOWN} -ge 1 ]]; then
+        _NFTBAN_HTTP_READ_VERDICT="UNKNOWN"
+    else
+        _NFTBAN_HTTP_READ_VERDICT="DEGRADED"
+    fi
+    printf '%s\n' "$_NFTBAN_HTTP_READ_VERDICT"
     return 0
 }
 

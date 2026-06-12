@@ -173,6 +173,67 @@ else
     no "T12 regression" "miss=$miss da=[$found_da] cp=[$found_cp] pl=[$found_pl]"
 fi
 
+# -----------------------------------------------------------------------------
+# T13–T19: service-account readability health classifier (DIAGNOSTIC path).
+# Uses NFTBAN_BOTSCAN_READ_TEST_HOOK so readability is simulated hermetically
+# (no real nftban user, no root). Hook is called: HOOK <service_user> <path>,
+# returns 0 readable / 1 unreadable / 2 indeterminate.
+# -----------------------------------------------------------------------------
+hook_all_readable(){ return 0; }
+hook_all_unreadable(){ return 1; }
+hook_all_unknown(){ return 2; }
+hook_mixed(){ case "$2" in *good*) return 0 ;; *) return 1 ;; esac; }
+
+# T13: candidates discovered, all unreadable as service account → DEGRADED.
+mk "$WORK/rd/example.com.log" 'da'
+NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unreadable
+nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
+[[ "$_NFTBAN_HTTP_READ_VERDICT" == DEGRADED ]] && ok "T13 discovered-but-unreadable → DEGRADED" || no "T13 DEGRADED" "$_NFTBAN_HTTP_READ_VERDICT"
+
+# T14: candidates discovered, readable as service account → OK.
+NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_readable
+nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
+[[ "$_NFTBAN_HTTP_READ_VERDICT" == OK && "$_NFTBAN_HTTP_READ_COUNT_READABLE" -ge 1 ]] && ok "T14 readable → OK" || no "T14 OK" "$_NFTBAN_HTTP_READ_VERDICT"
+
+# T15: ROOT-BLINDNESS GUARD — file IS readable by the caller (mode 644), but the
+# service-account check says no → MUST be DEGRADED, not OK. Proves the verdict does
+# NOT reuse the caller's (often root's) readability.
+mk "$WORK/rb/access.log" 'caller-readable'
+[[ -r "$WORK/rb/access.log" ]] && caller_ok=1 || caller_ok=0
+NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unreadable
+nftban_http_classify_candidates "$WORK/rb/*.log" >/dev/null 2>&1 || true
+[[ "$caller_ok" -eq 1 && "$_NFTBAN_HTTP_READ_VERDICT" == DEGRADED ]] \
+  && ok "T15 root-blindness guard: caller-readable file still DEGRADED via service-account check" \
+  || no "T15 root-blindness guard" "caller_ok=$caller_ok verdict=$_NFTBAN_HTTP_READ_VERDICT"
+
+# T16: indeterminate (cannot test as service account) → UNKNOWN, never false OK.
+NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unknown
+nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
+[[ "$_NFTBAN_HTTP_READ_VERDICT" == UNKNOWN ]] && ok "T16 indeterminate readability → UNKNOWN" || no "T16 UNKNOWN" "$_NFTBAN_HTTP_READ_VERDICT"
+
+# T17: mixed — at least one readable → OK, with the unreadable count tracked.
+mk "$WORK/mix/good.log" 'g'; mk "$WORK/mix/bad.log" 'b'
+NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_mixed
+nftban_http_classify_candidates "$WORK/mix/*.log" >/dev/null 2>&1 || true
+[[ "$_NFTBAN_HTTP_READ_VERDICT" == OK && "$_NFTBAN_HTTP_READ_COUNT_READABLE" -eq 1 && "$_NFTBAN_HTTP_READ_COUNT_UNREADABLE" -eq 1 ]] \
+  && ok "T17 mixed readability → OK with correct readable/unreadable counts" \
+  || no "T17 mixed" "v=$_NFTBAN_HTTP_READ_VERDICT r=$_NFTBAN_HTTP_READ_COUNT_READABLE u=$_NFTBAN_HTTP_READ_COUNT_UNREADABLE"
+unset NFTBAN_BOTSCAN_READ_TEST_HOOK
+
+# T18/T19: no candidates — NO_LOGS (no web stack) vs WARN_NO_LOGS (stack present).
+# Distinct from DEGRADED (which requires discovered candidates). Mock auto globs +
+# stack detection for determinism (CI runner may have real logs / packages).
+_save_cg3="$(declare -f nftban_http_candidate_globs)"
+_save_ds3="$(declare -f nftban_http_detect_stack)"
+nftban_http_candidate_globs(){ :; }              # no auto candidates
+nftban_http_detect_stack(){ :; }                 # no web stack
+nftban_http_classify_candidates "$WORK/none/*.log" >/dev/null 2>&1 || true
+[[ "$_NFTBAN_HTTP_READ_VERDICT" == NO_LOGS ]] && ok "T18 no candidates + no web stack → NO_LOGS (distinct from DEGRADED)" || no "T18 NO_LOGS" "$_NFTBAN_HTTP_READ_VERDICT"
+nftban_http_detect_stack(){ echo nginx; }        # web stack present, logs missing
+nftban_http_classify_candidates "$WORK/none/*.log" >/dev/null 2>&1 || true
+[[ "$_NFTBAN_HTTP_READ_VERDICT" == WARN_NO_LOGS ]] && ok "T19 web stack present but no access logs → WARN_NO_LOGS" || no "T19 WARN_NO_LOGS" "$_NFTBAN_HTTP_READ_VERDICT"
+eval "$_save_cg3"; eval "$_save_ds3"
+
 echo ""
 echo "=== RESULT: $PASS passed, $FAIL failed ==="
 [[ "$FAIL" -eq 0 ]]

@@ -708,30 +708,64 @@ _nftban_botscan_cmd_logs() {
     echo "  Candidate globs:"
     nftban_http_candidate_globs "$panel" | sed 's/^/    /'
     echo ""
-    local -a selected=()
-    local f
-    while IFS= read -r f; do [[ -n "$f" ]] && selected+=("$f"); done < <(nftban_botscan_discover_logs 2>/dev/null)
-    if [[ ${#selected[@]} -gt 0 ]]; then
-        echo "  Selected logs (${#selected[@]}):"
-        printf '    %s\n' "${selected[@]}"
+    # Authoritative health: classify candidates by SERVICE-ACCOUNT readability.
+    # Decide by access-log presence + readability as nftban — NOT by panel name and
+    # NOT by the (often root) caller's readability. Call directly (NOT in $(...)) so
+    # the populated globals survive into this shell.
+    local svc="${NFTBAN_BOTSCAN_SERVICE_USER:-nftban}"
+    nftban_http_classify_candidates "${BOTSCAN_LOG_PATHS:-}" >/dev/null 2>&1 || true
+    local verdict="${_NFTBAN_HTTP_READ_VERDICT:-UNKNOWN}"
+    local n=${_NFTBAN_HTTP_READ_COUNT_TOTAL}
+    if [[ $n -gt 0 ]]; then
+        echo "  Candidate access logs ($n):"
+        printf '    %s\n' "${_NFTBAN_HTTP_LAST_CANDIDATES[@]}"
     else
-        echo "  Selected logs: NONE"
-    fi
-    if [[ ${#_NFTBAN_HTTP_LAST_SKIPPED[@]} -gt 0 ]]; then
-        echo "  Skipped:"
-        printf '    %s\n' "${_NFTBAN_HTTP_LAST_SKIPPED[@]}"
+        echo "  Candidate access logs: NONE"
     fi
     echo ""
-    if [[ ${#selected[@]} -eq 0 ]]; then
-        echo "  Result: NO ACCESS LOG FOUND."
-        echo "  Remediation:"
-        echo "    - Confirm a web server is logging (apache/nginx/litespeed)."
-        echo "    - For a non-standard layout, set BOTSCAN_LOG_PATHS to your access-log glob(s)"
-        echo "      in /etc/nftban/conf.d/botscan/main.conf (space/newline list), then re-run."
-        return 1
+    echo "  Service-account readability (User=${svc}):"
+    echo "    perspective: ${_NFTBAN_HTTP_READ_PERSPECTIVE}"
+    echo "    readable:    ${_NFTBAN_HTTP_READ_COUNT_READABLE}"
+    echo "    unreadable:  ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE}"
+    [[ ${_NFTBAN_HTTP_READ_COUNT_UNKNOWN} -gt 0 ]] && echo "    unknown:     ${_NFTBAN_HTTP_READ_COUNT_UNKNOWN}"
+    if [[ ${#_NFTBAN_HTTP_LAST_UNREADABLE[@]} -gt 0 ]]; then
+        echo "    Unreadable by service account:"
+        printf '      %s\n' "${_NFTBAN_HTTP_LAST_UNREADABLE[@]}"
     fi
-    echo "  Result: OK — ${#selected[@]} access log(s) will be scanned."
-    return 0
+    echo ""
+    case "$verdict" in
+        NO_LOGS)
+            echo "  Verdict: NO-LOGS — no web access logs discovered and no web stack detected (inactive)."
+            echo "  Remediation:"
+            echo "    - If a web server is expected here, confirm it is logging (apache/nginx/litespeed)."
+            echo "    - For a non-standard layout, set BOTSCAN_LOG_PATHS to your access-log glob(s)"
+            echo "      in /etc/nftban/conf.d/botscan/main.conf (space/newline list), then re-run."
+            return 1 ;;
+        WARN_NO_LOGS)
+            echo "  Verdict: WARN — a web stack (${_NFTBAN_HTTP_READ_STACK}) is present but NO access-log candidates were discovered."
+            echo "  Remediation:"
+            echo "    - Confirm access logging is enabled and check the log path layout."
+            echo "    - Set BOTSCAN_LOG_PATHS to your access-log glob(s) in"
+            echo "      /etc/nftban/conf.d/botscan/main.conf, then re-run."
+            return 1 ;;
+        DEGRADED)
+            echo "  Verdict: DEGRADED — ${n} access log(s) discovered but 0 readable by service account '${svc}'."
+            echo "  Known limitation (BOTSCAN_READ_AUTHORITY): discovery works, but the unprivileged"
+            echo "  botscan service cannot traverse/read panel-owned log directories (for example on"
+            echo "  DirectAdmin, /var/log/httpd/domains is drwx--x--- apache:root). BotScan enforcement"
+            echo "  stays blocked on this host until a least-privilege read-authority mechanism (ACL/"
+            echo "  reconcile or a separate privileged collector) lands in a later lane. v1.177 detects"
+            echo "  and reports this; it does NOT grant read access."
+            return 2 ;;
+        UNKNOWN)
+            echo "  Verdict: UNKNOWN — cannot test readability as service account '${svc}' from this context."
+            echo "    Re-run as root (so it can drop to '${svc}' via runuser) for an authoritative result."
+            return 0 ;;
+        *)
+            echo "  Verdict: OK — ${_NFTBAN_HTTP_READ_COUNT_READABLE} of ${n} access log(s) readable by service account '${svc}'; BotScan will scan them."
+            [[ ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} -gt 0 ]] && echo "  Note: ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} discovered log(s) are NOT readable by '${svc}' and will be skipped."
+            return 0 ;;
+    esac
 }
 
 nftban_cmd_botscan() {

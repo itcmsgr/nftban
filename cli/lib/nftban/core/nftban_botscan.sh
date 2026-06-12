@@ -693,6 +693,19 @@ nftban_botscan_status() {
     log=$(nftban_botscan_find_log)
     echo "Log Source:     ${log:-NOT FOUND}"
 
+    # Service-account readability health (v1.177). Evaluated AS the service account
+    # (nftban), not the caller — root could read panel logs the timer cannot.
+    if declare -F nftban_http_classify_candidates >/dev/null 2>&1; then
+        local svc="${NFTBAN_BOTSCAN_SERVICE_USER:-nftban}"
+        nftban_http_classify_candidates "${BOTSCAN_LOG_PATHS:-}" >/dev/null 2>&1 || true
+        local verdict="${_NFTBAN_HTTP_READ_VERDICT:-UNKNOWN}"
+        echo "Readability:    ${verdict} (${_NFTBAN_HTTP_READ_COUNT_READABLE}/${_NFTBAN_HTTP_READ_COUNT_TOTAL} readable by ${svc})"
+        if [[ "$verdict" == "DEGRADED" ]]; then
+            echo "                BOTSCAN_READ_AUTHORITY open: access logs discovered but unreadable by"
+            echo "                the service account — enforcement blocked until a read-authority lane lands."
+        fi
+    fi
+
     return 0
 }
 
