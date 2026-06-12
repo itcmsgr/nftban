@@ -29,6 +29,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // DefaultMarkerPath is the canonical location for the recovery marker.
@@ -124,14 +126,11 @@ func (m *RecoveryMarker) WriteTo(path string) error {
 		return fmt.Errorf("create marker directory: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0640); err != nil { // #nosec G306 — intentional 0640
-		return fmt.Errorf("write temp marker: %w", err)
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp) // best-effort cleanup
-		return fmt.Errorf("rename marker: %w", err)
+	// v1.176 FSYNC-RESIDUAL (F-2): route through safety.SafeWriteFile — temp +
+	// fsync + atomic rename (was os.WriteFile(tmp)+Rename with NO Sync → a crash
+	// could leave a torn/zero-length recovery marker, defeating its crash-safety).
+	if err := safety.SafeWriteFile(path, data, 0640); err != nil {
+		return fmt.Errorf("write recovery marker: %w", err)
 	}
 
 	return nil
