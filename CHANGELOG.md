@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.176.0] - 2026-06-12 — daemon reliability (loginmon watcher respawn + fsync-residual state writes)
+
+**Codename:** `DAEMON_RELIABILITY` · **Records:** `NFTBAN_ROADMAP/V1_176_DAEMON_RELIABILITY_SCOPE.md`, `V1_176_LAB_VALIDATION_RECORD.md`
+**PR:** [#829](https://github.com/itcmsgr/nftban/pull/829) (sq `b3c8c82b`)
+
+> **Why:** two daemon-graph reliability defects — a killed `tail -F` log-watcher child was never respawned (a detection source silently went dark until daemon restart), and two state writers did temp+rename without `fsync` (torn-on-crash).
+
+### Fixed — LOGINMON-WATCHER-NO-RESPAWN (detection availability)
+- The loginmon `tail -F` file-watcher is now **supervised**: if the child dies while the context is alive it **respawns with bounded exponential backoff** (1s→60s, reset after a 30s-healthy run). A killed watcher child no longer leaves that log source dark until daemon restart.
+- **Shutdown via context cancel stays clean** — no respawn, no leaked `*exec.Cmd` (the watcher registry tracks only currently-live children).
+
+### Fixed — FSYNC-RESIDUAL F-1/F-2 (crash-consistency)
+- `internal/stats/set_counters.go` (set_counts.json) and `internal/rebuild/marker.go` (recovery marker) now write via `safety.SafeWriteFile` (temp + **fsync** + atomic rename), replacing `os.WriteFile(tmp)+os.Rename` with no Sync. Perms 0640 preserved.
+- A new **CI guard** (`cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh`) blocks any **new** unapproved hand-rolled temp+rename Go state writer outside `internal/safety`.
+- The **13 pre-existing hand-rolled temp+rename writers are explicitly baselined as separate tech debt — NOT claimed fixed** by this release.
+
+### Envelope
+- **Daemon `cmd/nftband` hash MOVES (expected):** code-only `65ac698d…` → `48b82663…`, attributable to `internal/loginmon` + `internal/stats`; the rebuild change lands in `nftban-core`/`nftban-installer`. **Schema 1.83.0 frozen**; no FHS/packaging/schema change.
+- **Lab-first PASS** lab2 (DEB/Plesk) + lab4 (RPM/cPanel): kill→respawn with unchanged daemon MainPID + no leak + clean shutdown; `set_counts.json` durable 0640 with no temp residue across restart; `validate`/`fhs` rc=0, no failed nftban units. CI #829 green (56 pass / 1 skip / 0 fail).
+
+---
+
 ## [v1.175.0] - 2026-06-12 — FHS lane (auditors / sid-stats / alert-throttle FHS; firewall-validate accepted security exception)
 
 **Codename:** `FHS_LANE` · **Records:** `NFTBAN_ROADMAP/V1_175_FHS_LANE_SCOPE.md`
