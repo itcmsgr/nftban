@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.178.0 - Bot Scanner Read-Authority Collector (B1)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# meta:name="nftban_botscan_collector"
+# meta:type="worker"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-06-12"
+# meta:description="Separate minimal privileged read-collector for BotScan read-authority (B1). Runs as User=nftban with AmbientCapabilities=CAP_DAC_READ_SEARCH (read+traverse only) on its OWN hardened unit — NOT a child of the unprivileged nftban-botscan.service (which stays User=nftban, NoNewPrivileges, RestrictSUIDSGID). Reads ONLY allowlisted access-log roots, canonicalizes every path with realpath, re-validates the canonical path remains inside an allowlisted root (rejects symlink escape), regular files only, bounded by max-files/max-bytes, and appends only NEW bytes (incremental per-source offset, rotation/truncation safe) to an nftban:nftban 0640 spool under /run/nftban/botscan. The scanner then reads the spool — solving both fleet blocker shapes (DA drwx--x--- apache:root parent traversal AND generic 0640 root:adm file-read) uniformly without weakening the scanner. Audits every source read to the journal. No network. No shell evaluation of log content."
+# meta:input="allowlisted access logs (DA /var/log/httpd/domains, generic /var/log/{apache2,nginx}, cPanel domlogs, Plesk vhost logs)"
+# meta:output="nftban:nftban 0640 spool files under /run/nftban/botscan (consumed by nftban-botscan-processor)"
+# meta:depends="bash,realpath,stat,tail,nftban_http_logs.sh"
+# meta:trigger="systemd-timer"
+# meta:systemd_timer="nftban-botscan-collector.timer"
+# meta:systemd_service="nftban-botscan-collector.service"
+#
+# meta:inventory.files="nftban_http_logs.sh"
+# meta:inventory.binaries="realpath,stat,tail"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,BOTSCAN_SPOOL_DIR,NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR,BOTSCAN_COLLECTOR_MAX_FILES,BOTSCAN_COLLECTOR_MAX_BYTES,BOTSCAN_COLLECTOR_SPOOL_MAX_BYTES,BOTSCAN_LOG_PATHS"
+# meta:inventory.config_files="/etc/nftban/conf.d/botscan/main.conf"
+# meta:inventory.systemd_units="nftban-botscan-collector.timer,nftban-botscan-collector.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban+CAP_DAC_READ_SEARCH"
+#
+# Exit codes:
+#   0 - cycle completed (including "nothing new" and per-source skips)
+#   1 - fatal setup error (cannot source lib / cannot create spool)
+# =============================================================================
+set -Eeuo pipefail
+
+readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+SPOOL_DIR="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}"
+OFFSET_DIR="${NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR:-/var/lib/nftban/botscan-collector}"
+MAX_FILES="${BOTSCAN_COLLECTOR_MAX_FILES:-500}"
+MAX_BYTES="${BOTSCAN_COLLECTOR_MAX_BYTES:-10485760}"          # per source per cycle
+SPOOL_MAX_BYTES="${BOTSCAN_COLLECTOR_SPOOL_MAX_BYTES:-10485760}"  # per spool file cap
+
+# Allowlisted access-log roots = the security boundary. A discovered candidate is
+# read ONLY if its CANONICAL path stays inside one of these (after realpath). This
+# is what makes the CAP_DAC_READ_SEARCH grant safe: it can read any file the kernel
+# allows, but this collector only ever opens allowlisted access-log trees.
+ALLOW_ROOTS=(
+    /var/log/httpd/domains
+    /var/log/nginx/domains
+    /var/log/apache2
+    /var/log/httpd
+    /var/log/nginx
+    /usr/local/apache/domlogs
+    /etc/apache2/logs/domlogs
+    /var/log/apache2/domlogs
+    /var/www/vhosts/system
+    /usr/local/lsws/logs
+)
+
+# Reuse the shared discovery helpers (candidate globs, panel detect, incremental read).
+# shellcheck source=/dev/null
+if ! source "${NFTBAN_LIB_DIR}/lib/nftban_http_logs.sh" 2>/dev/null; then
+    echo "[botscan-collector] FATAL: cannot source ${NFTBAN_LIB_DIR}/lib/nftban_http_logs.sh" >&2
+    exit 1
+fi
+
+# The collector keeps its OWN per-source offset state (separate from the scanner's
+# spool offsets) so each privileged read only emits NEW bytes since the last cycle.
+export NFTBAN_HTTP_LOG_OFFSET_DIR="$OFFSET_DIR"
+export NFTBAN_HTTP_LOG_MAX_BYTES="$MAX_BYTES"
+
+audit() { echo "[botscan-collector] $*"; }
+
+# Test-only allowlist override (hermetic CI fixtures). Space-separated roots.
+# Never set in production; the hardcoded ALLOW_ROOTS above is the real boundary.
+if [[ -n "${NFTBAN_BOTSCAN_COLLECTOR_ALLOW_ROOTS:-}" ]]; then
+    read -ra ALLOW_ROOTS <<< "${NFTBAN_BOTSCAN_COLLECTOR_ALLOW_ROOTS}"
+fi
+
+# Canonicalize the allow roots once (handles symlink chains like cPanel domlogs).
+CANON_ROOTS=()
+for _r in "${ALLOW_ROOTS[@]}"; do
+    _c="$(realpath -m -- "$_r" 2>/dev/null)" || continue
+    CANON_ROOTS+=("$_c")
+done
+
+# in_allowlist <canonical-path> : 0 if inside an allowlisted root, else 1.
+in_allowlist() {
+    local p="$1" root
+    for root in "${CANON_ROOTS[@]}"; do
+        [[ "$p" == "$root" || "$p" == "$root"/* ]] && return 0
+    done
+    return 1
+}
+
+if ! mkdir -p "$SPOOL_DIR" "$OFFSET_DIR" 2>/dev/null; then
+    echo "[botscan-collector] FATAL: cannot create spool/offset dir" >&2
+    exit 1
+fi
+chmod 0750 "$SPOOL_DIR" 2>/dev/null || true
+
+# Build candidate globs (panel-aware + generic + operator override).
+panel="$(nftban_http_detect_panel)"
+globs=()
+while IFS= read -r g; do [[ -n "$g" ]] && globs+=("$g"); done < <(nftban_http_candidate_globs "$panel")
+if [[ -n "${BOTSCAN_LOG_PATHS:-}" ]]; then
+    IFS=$' \t\n' read -ra _ov <<< "$BOTSCAN_LOG_PATHS"   # IFS scoped to this read only
+    globs+=("${_ov[@]}")
+fi
+
+declare -A seen=()
+count=0 collected=0 skipped=0
+for g in "${globs[@]}"; do
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        case "$f" in *error_log|*error.log|*-error*|*_error*|*.gz|*.[0-9]) continue ;; esac
+        # SECURITY: canonicalize then re-validate inside an allowlisted root.
+        canon="$(realpath -- "$f" 2>/dev/null)" || { skipped=$((skipped+1)); audit "skip realpath-failed: $f"; continue; }
+        [[ -f "$canon" && ! -L "$canon" ]] || { skipped=$((skipped+1)); audit "skip not-regular: $f"; continue; }
+        in_allowlist "$canon" || { skipped=$((skipped+1)); audit "skip outside-allowlist: $f -> $canon"; continue; }
+        [[ -n "${seen[$canon]:-}" ]] && continue
+        seen[$canon]=1
+        count=$((count+1))
+        if [[ $count -gt $MAX_FILES ]]; then audit "MAX_FILES=$MAX_FILES reached; remaining skipped"; break 2; fi
+        # Privileged incremental read of NEW bytes since the last cycle.
+        new="$(nftban_http_read_incremental "$canon" 2>/dev/null)" || new=""
+        [[ -z "$new" ]] && continue
+        spf="$SPOOL_DIR/$(printf '%s' "$canon" | tr '/' '_')"
+        if ! printf '%s\n' "$new" >> "$spf" 2>/dev/null; then audit "spool-write-failed: $spf"; continue; fi
+        chmod 0640 "$spf" 2>/dev/null || true
+        sz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
+        if [[ "$sz" -gt "$SPOOL_MAX_BYTES" ]]; then
+            if tail -c "$SPOOL_MAX_BYTES" "$spf" > "$spf.trim" 2>/dev/null; then
+                mv -f "$spf.trim" "$spf" 2>/dev/null || true
+                chmod 0640 "$spf" 2>/dev/null || true
+            fi
+        fi
+        collected=$((collected+1))
+    done < <(compgen -G "$g" 2>/dev/null || true)
+done
+
+audit "panel=${panel:-none} sources=$count collected=$collected skipped=$skipped spool=$SPOOL_DIR"
+exit 0

@@ -14,7 +14,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 > `OnBootSec=` directives where applicable. The unit file is authoritative; this
 > table is a curated projection.
 
-## Timers (22)
+## Timers (23)
 
 | Timer | Schedule | Purpose |
 |-------|----------|---------|
@@ -35,13 +35,14 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-update-apply.timer` | Weekly Sun 4:00 | Auto-update apply (gated) |
 | `nftban-rollback.timer` | Manual-trigger (`OnActiveSec=5min`) | Emergency rollback — started by `nftban-apply`, stopped by `nftban-confirm` |
 | `nftban-botscan.timer` | 5min boot, then every 10min | Bot scanner cycle (Clock 3) |
+| `nftban-botscan-collector.timer` | 2min boot, then every 5min | BotScan read-authority collector (feeds spool ahead of scan) |
 | `nftban-community-stats.timer` | Daily | Anonymous community stats submission (opt-in) |
 | `nftban-rebuild-recovery.timer` | 60s boot, deferred retry | Post-boot rebuild recovery |
 | `nftban-report-daily.timer` | Daily 6:00 | Daily report generation |
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (29)
+## Services (30)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
@@ -69,6 +70,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-pro-license.service` | oneshot | Pro license check |
 | `nftban-alert@.service` | template | Alert notifications |
 | `nftban-botscan.service` | oneshot | Bot scanner processor (Clock 3) |
+| `nftban-botscan-collector.service` | oneshot | BotScan read-authority collector (cap-scoped read → nftban spool) |
 | `nftban-community-stats.service` | oneshot | Anonymous community stats submission |
 | `nftban-rebuild-recovery.service` | oneshot | Rebuild recovery (deferred retry) |
 | `nftban-report-daily.service` | oneshot | Daily report generation |

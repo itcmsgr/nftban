@@ -391,6 +391,7 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-rollback", dstGlob: "/usr/lib/nftban/sbin/nftban-rollback", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-service-alert", dstGlob: "/usr/lib/nftban/sbin/nftban-service-alert", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-botscan-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-botscan-processor", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-botscan-collector", dstGlob: "/usr/lib/nftban/sbin/nftban-botscan-collector", mode: 0755, policy: policyAlways},
 
 		// -----------------------------------------------------------------
 		// G-14-C: Shell payload under /usr/lib/nftban/

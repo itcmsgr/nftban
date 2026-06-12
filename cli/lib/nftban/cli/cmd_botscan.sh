@@ -733,6 +733,18 @@ _nftban_botscan_cmd_logs() {
         printf '      %s\n' "${_NFTBAN_HTTP_LAST_UNREADABLE[@]}"
     fi
     echo ""
+    # v1.178-A: spool-aware override. If direct source readability is DEGRADED/UNKNOWN
+    # but the privileged collector is feeding the spool, the scanner DOES get input →
+    # report OK (via collector spool) while still showing the upstream source reason.
+    local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}" _spool_fed=0 _sf
+    if [[ -d "$_spool" ]]; then
+        for _sf in "$_spool"/*; do [[ -f "$_sf" && -r "$_sf" && -s "$_sf" ]] && { _spool_fed=1; break; }; done
+    fi
+    if [[ "$_spool_fed" -eq 1 && ( "$verdict" == "DEGRADED" || "$verdict" == "UNKNOWN" ) ]]; then
+        echo "  Verdict: OK (served via collector spool) — direct source readability is ${verdict} for"
+        echo "  '${svc}', but nftban-botscan-collector.service is feeding ${_spool} (read-authority active)."
+        return 0
+    fi
     case "$verdict" in
         NO_LOGS)
             echo "  Verdict: NO-LOGS — no web access logs discovered and no web stack detected (inactive)."

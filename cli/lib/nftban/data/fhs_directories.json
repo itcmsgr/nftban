@@ -782,6 +782,14 @@
         "group": "nftban",
         "description": "Pro subscription data",
         "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/botscan-collector",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "BotScan read-collector per-source incremental offset state (v1.178-A). Separate from the scanner's spool offsets so privileged reads only emit new bytes per cycle.",
+        "created_by": "tmpfiles"
       }
     ],
     "logs": [
@@ -873,6 +881,14 @@
         "owner": "nftban",
         "group": "nftban",
         "description": "Runtime data (PID files, sockets)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/run/nftban/botscan",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "BotScan read-authority spool (v1.178-A): nftban:nftban access-log lines written by nftban-botscan-collector.service (CAP_DAC_READ_SEARCH) and read by the unprivileged nftban-botscan.service scanner. tmpfs/ephemeral.",
         "created_by": "tmpfiles"
       },
       {
