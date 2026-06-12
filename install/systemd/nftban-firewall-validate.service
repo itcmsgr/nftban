@@ -82,6 +82,15 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 # (d /run/nftban/firewall-validate 2750 root nftban); this guarantees it
 # per-start too (idempotent mkdir+chown+chmod via /usr/bin/install). Absolute
 # path is required by systemd for ExecStartPre.
+# v1.175 BUG-TMPFILES (ACCEPTED SECURITY EXCEPTION): tmpfiles emits a NON-FATAL
+# exit-73 for this one root-owned child under the nftban-owned /run/nftban (the
+# dir is still created — the whole fleet runs with it). It is RETAINED in tmpfiles
+# deliberately (see fhs-spec.yaml). Dropping the tmpfiles entry and relying on this
+# ExecStartPre as the SOLE creator was REJECTED (lab-disproven, systemd 255):
+# ReadWritePaths is bound at mount-namespace setup, which on fresh-boot tmpfs
+# precedes ExecStartPre, so the unit fails 226/NAMESPACE before this line can run.
+# tmpfiles MUST create it at boot; this ExecStartPre stays as an idempotent
+# per-start belt-and-suspenders, NOT the sole creator.
 #
 # V131.3 D13 fix: the dir mode is now SETGID (2750, not 0750). The setgid bit
 # makes a file created in this dir inherit the dir's GROUP (nftban) regardless

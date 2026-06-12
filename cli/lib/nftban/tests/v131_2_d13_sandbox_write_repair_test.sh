@@ -107,14 +107,32 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# B: generated tmpfiles contains the handoff dir entry.
+# B: the handoff dir is created by tmpfiles at boot (the authoritative creator),
+# with the unit's +ExecStartPre as an idempotent per-start belt-and-suspenders.
+# v1.175 BUG-TMPFILES D-1 (Option I): this root-owned child (2750 root:nftban)
+# under the nftban-owned /run/nftban is RETAINED in tmpfiles as an ACCEPTED
+# non-fatal exit-73 SECURITY EXCEPTION — root-only-writer of last.json. The
+# ExecStartPre-SOLE-creator alternative was REJECTED (lab-disproven 226/NAMESPACE:
+# ReadWritePaths binds at namespace setup on tmpfs, before ExecStartPre runs).
 # ----------------------------------------------------------------------------
-echo "--- B: tmpfiles ---"
+echo "--- B: handoff dir creator (tmpfiles at boot + ExecStartPre belt-and-suspenders) ---"
 
+# B1: tmpfiles.d carries the exact handoff dir entry (boot creator; required —
+# ReadWritePaths needs the path to pre-exist at namespace setup on tmpfs).
 if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
-    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -'" 0
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 0
 else
-    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -'" 1
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 1 \
+        "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
+fi
+
+# B1b: the unit's +-prefixed ExecStartPre ALSO creates the dir (2750 root:nftban)
+# as an idempotent per-start belt-and-suspenders (NOT the sole creator).
+if grep -qE '^ExecStartPre=\+/usr/bin/install -d .*-m 2750 .*/run/nftban/firewall-validate' "$_unit_file"; then
+    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 also creates the handoff dir (per-start belt-and-suspenders)" 0
+else
+    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 also creates the handoff dir (per-start belt-and-suspenders)" 1 \
+        "line: [$(grep -E '^ExecStartPre=' "$_unit_file" | head -1)]"
 fi
 
 # ----------------------------------------------------------------------------

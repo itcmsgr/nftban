@@ -69,3 +69,14 @@
 # 0750 by name on the target host, which is verified by Test * install Phase 4.
 
 /var/lib/nftban|postinst-converged
+
+# =============================================================================
+# v1.175 BUG-TMPFILES: /var/lib/nftban/reports/auditors moved created_by
+# tmpfiles→package (root-under-nftban tmpfiles transition tripped systemd-tmpfiles
+# exit 73). RPM ships the final group via name-based %attr(0770,root,nftban-auditor)
+# (nftban-auditor resolves at the %pre groupadd); DEB ships root:root in the
+# archive and converges to root:nftban-auditor at postinst via nftban-dir-attrs.list.
+# Same postinst-converged authority model as the entries above. L4 (installed-fs
+# stat) still requires both packagers to converge to root:nftban-auditor 0770.
+# =============================================================================
+/var/lib/nftban/reports/auditors|postinst-converged

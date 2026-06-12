@@ -772,6 +772,14 @@ jobs:
       - name: update messaging recovered + DEGRADED (v1.174)
         run: bash cli/lib/nftban/tests/update_msg_recovered_v174_test.sh
 
+      # v1.175 FHS lane: (T1) GENERIC guard — no root-owned tmpfiles entry under a
+      # non-root declared parent (the systemd-tmpfiles exit-73 "unsafe path transition"
+      # class — structural BUG-TMPFILES regression lock); auditors→package +
+      # firewall-validate→ExecStartPre out of tmpfiles; ALERT-THROTTLE-FHS alerts dir;
+      # FHS-SMELL-SIDSTATS cache.go DataDir relocation + migration.
+      - name: FHS lane invariants — tmpfiles transition guard + relocations (v1.175)
+        run: bash cli/lib/nftban/tests/fhs_lane_v175_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

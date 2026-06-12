@@ -55,20 +55,26 @@ echo "  Repo root: $_repo_root"
 echo "==============================================================================="
 
 # ----------------------------------------------------------------------------
-# A: generated tmpfiles — setgid (2750) handoff dir, exact line.
+# A: the setgid (2750 root:nftban) handoff dir is created by tmpfiles at boot
+# (the authoritative creator) AND by the unit's +ExecStartPre per-start.
+# v1.175 BUG-TMPFILES D-1 (Option I): the root-under-nftban tmpfiles entry is
+# RETAINED as an ACCEPTED non-fatal exit-73 SECURITY EXCEPTION (root-only-writer
+# of last.json). ExecStartPre-sole was REJECTED (lab-disproven 226/NAMESPACE).
+# The setgid semantics (2750 root:nftban → last.json inherits group nftban without
+# CAP_CHOWN) are carried by BOTH the tmpfiles entry and the ExecStartPre `-m 2750`.
 # ----------------------------------------------------------------------------
 echo "--- A: tmpfiles (generated) ---"
 
-# A1: exact setgid line (must match exactly; mode 2750, owner root, group nftban).
+# A1: exact setgid line present (mode 2750, owner root, group nftban) — boot creator.
 if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
-    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -'" 0
+    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 0
 else
-    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -'" 1 \
+    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 1 \
         "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
 fi
 
 # A2: the old non-setgid 0750 form is GONE (no stale mode left behind).
-if grep -qE '^d /run/nftban/firewall-validate 0750 ' "$_tmpfiles"; then
+if grep -qE '^[dz] /run/nftban/firewall-validate 0750 ' "$_tmpfiles"; then
     _t_assert "A2: stale non-setgid 0750 tmpfiles entry is absent" 1 \
         "0750 entry still present — generator did not pick up the 2750 mode"
 else

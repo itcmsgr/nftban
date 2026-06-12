@@ -141,6 +141,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/staging"]="0750|nftban|nftban|Feed staging area (temporary download/validation)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/state"]="0750|nftban|nftban|Critical runtime state files"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/suricata"]="0750|nftban|nftban|Suricata integration state"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/suricata/cache"]="0750|nftban|nftban|Suricata SID-statistics cache (sid-stats.json snapshot)"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/alerts"]="0750|nftban|nftban|Service-failure alert bookkeeping (throttle timestamps + diagnostic reports)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/update-backups"]="0750|root|nftban|Update rollback backups (root-owned for integrity)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/watchdog"]="0750|nftban|nftban|Watchdog reports and state"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/archive"]="0750|nftban|nftban|Archived reports"
