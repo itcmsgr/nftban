@@ -946,20 +946,29 @@ directories:
       owner: root
       group: nftban
       description: "V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN"
-      created_by: feature_enable
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
       note: |
-        v1.175 BUG-TMPFILES: created_by tmpfiles→feature_enable. This root-owned child
-        under the nftban-owned /run/nftban parent made systemd-tmpfiles refuse the
-        non-root-parent→root-child transition (exit 73, both families). It must stay
-        root-owned (integrity: only the audited root service may write last.json; the
-        nftban group only READS it 0640) AND /run is tmpfs (reboot-wiped, so it cannot be
-        package-created). It is now created per-start by the sole authoritative creator —
-        nftban-firewall-validate.service's `+`-prefixed (unsandboxed) ExecStartPre:
-        `/usr/bin/install -d -o root -g nftban -m 2750 /run/nftban/firewall-validate`,
-        which already runs before the sandboxed ExecStart (it must, since ReadWritePaths
-        only binds an existing path). Removing it from tmpfiles loses nothing and kills the
-        exit-73. Still listed in nftban_fhs_spec.sh / fhs_directories.json / fhs-permissions
-        for health/permission awareness; created_by feature_enable = not tmpfiles, not package.
+        v1.175 BUG-TMPFILES — ACCEPTED SECURITY EXCEPTION (intentionally retained as tmpfiles).
+        This is the ONE root-owned child (2750 root:nftban, setgid) under the nftban-owned
+        /run/nftban parent. systemd-tmpfiles flags the non-root-parent→root-child transition
+        (exit 73, both families) — but the dir IS still created (the exit-73 is NON-FATAL;
+        the entire production fleet runs with it). It MUST stay root-owned: the integrity
+        boundary is that only the audited root service may WRITE last.json, while the nftban
+        group only READS it (0640). Owning the dir nftban:nftban (which would clear exit-73)
+        is REJECTED: a compromised nftban daemon could then delete+replace last.json and
+        forge the independent firewall-validation result operators trust. /run is tmpfs
+        (reboot-wiped), so it cannot be package-created.
+        REJECTED ALTERNATIVE (v1.175 D-1, lab-disproven): making the service ExecStartPre the
+        SOLE creator and dropping this tmpfiles entry is REBOOT-LATENT-BROKEN — the unit has
+        ReadWritePaths=/run/nftban/firewall-validate, which systemd binds at MOUNT-NAMESPACE
+        SETUP; on a fresh-boot tmpfs the path is absent at that point and the unit fails
+        226/NAMESPACE before ExecStartPre can create it (proven on lab4, systemd 255).
+        So tmpfiles MUST create it at boot. The `+`-prefixed per-start ExecStartPre in the
+        unit remains as an idempotent belt-and-suspenders (not the sole creator).
+        Net v1.175 scope: this path's exit-73 is an accepted non-fatal SECURITY EXCEPTION
+        (BUG-TMPFILES-FIREWALL-VALIDATE-SECURITY-EXCEPTION) — NOT closed; the AUDITORS unsafe
+        transition IS closed. Any future nftban:nftban change requires an explicit security review.
 
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data

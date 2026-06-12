@@ -107,28 +107,31 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# B: the handoff dir is created by the unit's +ExecStartPre, NOT by tmpfiles.
-# v1.175 BUG-TMPFILES: the root-under-nftban (2750 root:nftban under nftban-owned
-# /run/nftban) entry made systemd-tmpfiles refuse the transition (exit 73). It is
-# removed from tmpfiles; the per-start +ExecStartPre install -d is the sole creator
-# (and /run is tmpfs so it cannot be package-created either). See the unit comment.
+# B: the handoff dir is created by tmpfiles at boot (the authoritative creator),
+# with the unit's +ExecStartPre as an idempotent per-start belt-and-suspenders.
+# v1.175 BUG-TMPFILES D-1 (Option I): this root-owned child (2750 root:nftban)
+# under the nftban-owned /run/nftban is RETAINED in tmpfiles as an ACCEPTED
+# non-fatal exit-73 SECURITY EXCEPTION — root-only-writer of last.json. The
+# ExecStartPre-SOLE-creator alternative was REJECTED (lab-disproven 226/NAMESPACE:
+# ReadWritePaths binds at namespace setup on tmpfs, before ExecStartPre runs).
 # ----------------------------------------------------------------------------
-echo "--- B: handoff dir creator (ExecStartPre, not tmpfiles) ---"
+echo "--- B: handoff dir creator (tmpfiles at boot + ExecStartPre belt-and-suspenders) ---"
 
-# B1: tmpfiles.d does NOT carry the firewall-validate dir (v1.175 — exit-73 fix).
-if grep -qE '/run/nftban/firewall-validate' "$_tmpfiles"; then
-    _t_assert "B1: tmpfiles.d/nftban.conf does NOT list /run/nftban/firewall-validate (v1.175 BUG-TMPFILES)" 1 \
-        "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
+# B1: tmpfiles.d carries the exact handoff dir entry (boot creator; required —
+# ReadWritePaths needs the path to pre-exist at namespace setup on tmpfs).
+if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 0
 else
-    _t_assert "B1: tmpfiles.d/nftban.conf does NOT list /run/nftban/firewall-validate (v1.175 BUG-TMPFILES)" 0
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 1 \
+        "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
 fi
 
-# B1b: the unit's +-prefixed ExecStartPre creates the dir (2750 root:nftban) — the
-# sole authoritative creator now that tmpfiles no longer does.
+# B1b: the unit's +-prefixed ExecStartPre ALSO creates the dir (2750 root:nftban)
+# as an idempotent per-start belt-and-suspenders (NOT the sole creator).
 if grep -qE '^ExecStartPre=\+/usr/bin/install -d .*-m 2750 .*/run/nftban/firewall-validate' "$_unit_file"; then
-    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 creates the handoff dir (sole creator)" 0
+    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 also creates the handoff dir (per-start belt-and-suspenders)" 0
 else
-    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 creates the handoff dir (sole creator)" 1 \
+    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 also creates the handoff dir (per-start belt-and-suspenders)" 1 \
         "line: [$(grep -E '^ExecStartPre=' "$_unit_file" | head -1)]"
 fi
 
