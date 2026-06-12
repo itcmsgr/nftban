@@ -37,6 +37,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // Scale levels for set size classification
@@ -80,10 +82,10 @@ type SetCounters struct {
 	trendHistory map[string][]trendSample // last N samples per set
 
 	// Cache file
-	cacheDir     string
-	cacheDirty   atomic.Bool
+	cacheDir       string
+	cacheDirty     atomic.Bool
 	lastCacheWrite time.Time
-	daemonPID    int
+	daemonPID      int
 
 	// Debounce timer for cache writes
 	writeMu sync.Mutex
@@ -97,11 +99,11 @@ type trendSample struct {
 
 // SetCountSnapshot is the JSON-serializable snapshot of all counters
 type SetCountSnapshot struct {
-	Timestamp       string                       `json:"timestamp"`
-	DaemonPID       int                          `json:"daemon_pid"`
-	ScaleMode       string                       `json:"scale_mode"`
-	ExporterInterval int                         `json:"exporter_interval_seconds"`
-	Sets            map[string]SetCountEntry     `json:"sets"`
+	Timestamp        string                   `json:"timestamp"`
+	DaemonPID        int                      `json:"daemon_pid"`
+	ScaleMode        string                   `json:"scale_mode"`
+	ExporterInterval int                      `json:"exporter_interval_seconds"`
+	Sets             map[string]SetCountEntry `json:"sets"`
 }
 
 // SetCountEntry is per-set data in the snapshot
@@ -304,16 +306,13 @@ func (sc *SetCounters) WriteCacheFile() error {
 	}
 
 	cacheFile := filepath.Join(sc.cacheDir, "set_counts.json")
-	tmpFile := cacheFile + ".tmp"
 
-	// 0640: root-rw, group-r — shell scripts read this via nftban group
-	if err := os.WriteFile(tmpFile, data, 0640); err != nil { // #nosec G306
-		return fmt.Errorf("write %s: %w", tmpFile, err)
-	}
-
-	if err := os.Rename(tmpFile, cacheFile); err != nil {
-		os.Remove(tmpFile)
-		return fmt.Errorf("rename %s: %w", cacheFile, err)
+	// v1.176 FSYNC-RESIDUAL (F-1): route through safety.SafeWriteFile — temp +
+	// fsync + atomic rename (was os.WriteFile(tmp)+Rename with NO Sync → a crash
+	// between rename and writeback could leave a torn/zero-length set_counts.json).
+	// 0640: root-rw, group-r — shell scripts read this via nftban group.
+	if err := safety.SafeWriteFile(cacheFile, data, 0640); err != nil {
+		return fmt.Errorf("write %s: %w", cacheFile, err)
 	}
 
 	sc.lastCacheWrite = time.Now()
