@@ -147,6 +147,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/watchdog"]="0750|nftban|nftban|Watchdog reports and state"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/archive"]="0750|nftban|nftban|Archived reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/pro"]="0750|root|nftban|Pro subscription data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan-collector"]="0750|nftban|nftban|BotScan read-collector per-source incremental offset state (v1.178-A). Separate from the scanner's spool offsets so privileged reads only emit new bytes per cycle."
 
     # Log Directories
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban"]="0750|nftban|nftban|Log files"
@@ -162,6 +163,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban"]="0755|nftban|nftban|Cache files"
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/health"]="0750|nftban|nftban|Health check status cache"
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
+    NFTBAN_FHS_DIRECTORIES["/run/nftban/botscan"]="0750|nftban|nftban|BotScan read-authority spool (v1.178-A): nftban:nftban access-log lines written by nftban-botscan-collector.service (CAP_DAC_READ_SEARCH) and read by the unprivileged nftban-botscan.service scanner. tmpfs/ephemeral."
     NFTBAN_FHS_DIRECTORIES["/run/nftban/firewall-validate"]="2750|root|nftban|V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN"
 
     # Shared Directories

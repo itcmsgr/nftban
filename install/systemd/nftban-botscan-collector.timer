@@ -1,0 +1,40 @@
+# =============================================================================
+# NFTBan - Bot Scanner Read-Authority Collector Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Trigger the read-collector every 5 minutes so the spool is fresh
+#          ahead of the 10-minute scanner cycle.
+#
+# meta:name="nftban_botscan_collector_timer"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-06-12"
+# meta:description="Timer that triggers the NFTBan botscan read-collector every 5 minutes (ahead of the 10-minute scanner)"
+# meta:input="None"
+# meta:output="Triggers nftban-botscan-collector.service"
+# meta:depends="nftban-botscan-collector.service"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-botscan-collector.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Bot Scanner Read-Authority Collector Timer
+Documentation=man:nftban(8)
+
+[Timer]
+# 5-minute interval — keep the spool fresher than the 10-minute scan
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=1min
+FixedRandomDelay=true
+Persistent=true
+
+[Install]
+WantedBy=timers.target

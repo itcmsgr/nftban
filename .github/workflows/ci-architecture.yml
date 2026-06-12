@@ -793,6 +793,9 @@ jobs:
       - name: HTTP log discovery + BotScan panel paths (v1.177)
         run: bash cli/lib/nftban/tests/http_log_discovery_v177_test.sh
 
+      - name: BotScan read-authority collector + spool-first (v1.178-A)
+        run: bash cli/lib/nftban/tests/botscan_read_authority_v178_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================

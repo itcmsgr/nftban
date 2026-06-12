@@ -14,6 +14,8 @@
 # imply enable. See V106_LANE_MFST_C1_SCOPE.md §7 for safety analysis.
 # =============================================================================
 nftban-alert@.service
+nftban-botscan-collector.service
+nftban-botscan-collector.timer
 nftban-botscan.service
 nftban-botscan.timer
 nftban-community-stats.service
