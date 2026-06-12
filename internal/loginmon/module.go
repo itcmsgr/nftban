@@ -135,6 +135,15 @@ type Module struct {
 	// (DirectAdmin, cPanel, Plesk use their own log files)
 	fileWatcherCmds []*exec.Cmd
 
+	// v1.176 LOGINMON-WATCHER-NO-RESPAWN: supervise/respawn knobs. A file-watcher
+	// child (tail -F) that dies while ctx is alive is respawned with bounded
+	// exponential backoff so a detection source never silently goes dark.
+	// newWatcherCmd is overridable in tests; nil → the default tail -F builder.
+	newWatcherCmd       func(ctx context.Context, logPath string) *exec.Cmd
+	watcherBackoffMin   time.Duration
+	watcherBackoffMax   time.Duration
+	watcherHealthyReset time.Duration // a run lasting ≥ this resets backoff to min
+
 	// v1.80 Phase B: Go pipeline (runs alongside legacy when PipelineEnabled=true)
 	pipeline *pipelineRuntime.Pipeline
 }
@@ -148,6 +157,10 @@ func New() *Module {
 		config:           DefaultConfig(),
 		mode:             ModeAuto,
 		detectedServices: make(map[string]bool),
+		// v1.176 watcher-respawn defaults (production): 1s → 60s, reset after 30s healthy.
+		watcherBackoffMin:   1 * time.Second,
+		watcherBackoffMax:   60 * time.Second,
+		watcherHealthyReset: 30 * time.Second,
 	}
 }
 
@@ -425,8 +438,14 @@ func (m *Module) Stop() error {
 		m.journalCmd.Process.Kill()
 	}
 
-	// v1.48.0: Clean up file watcher commands
-	for _, cmd := range m.fileWatcherCmds {
+	// v1.48.0 / v1.176: Clean up file watcher commands. Snapshot under the lock —
+	// the supervise loop (register/unregisterWatcherCmd) mutates this slice
+	// concurrently. ctx cancellation already stops respawns; this reaps any
+	// child still live at Stop().
+	m.mu.Lock()
+	watcherCmds := append([]*exec.Cmd(nil), m.fileWatcherCmds...)
+	m.mu.Unlock()
+	for _, cmd := range watcherCmds {
 		if cmd != nil && cmd.Process != nil {
 			cmd.Process.Kill()
 		}
@@ -913,8 +932,8 @@ func (m *Module) detectMode() Mode {
 func (m *Module) runJournalWatcher(ctx context.Context) {
 	// Build journalctl command
 	m.journalCmd = exec.CommandContext(ctx, "journalctl",
-		"-f",             // Follow mode
-		"-n", "0",        // Don't show historical entries
+		"-f",      // Follow mode
+		"-n", "0", // Don't show historical entries
 		"--no-pager",
 		"-o", "short-iso",
 		"SYSLOG_FACILITY=4",  // Auth facility
@@ -950,14 +969,16 @@ func (m *Module) runJournalWatcher(ctx context.Context) {
 // v1.48.0: Verified against real servers (srv2=DA, lab4=cPanel, lab2=Plesk)
 var panelLogPaths = map[string][]string{
 	"directadmin": {"/var/log/directadmin/login.log"},
-	"cpanel":      {"/usr/local/cpanel/logs/access_log"},   // 401 on POST /login/
-	"plesk":       {"/var/log/plesk/panel.log"},              // "[Action Log] Failed login attempt"
+	"cpanel":      {"/usr/local/cpanel/logs/access_log"}, // 401 on POST /login/
+	"plesk":       {"/var/log/plesk/panel.log"},          // "[Action Log] Failed login attempt"
 }
 
 // mailLogPaths maps mail services to their log file paths.
 // Mail services (Exim, Dovecot, Postfix) log to plain files, NOT journalctl.
 // v1.69.0: Verified against lab (Debian 13), lab2 (Ubuntu 24.04/Plesk),
-//          lab4 (AlmaLinux 9/cPanel), srv2 (AlmaLinux 9/DirectAdmin).
+//
+//	lab4 (AlmaLinux 9/cPanel), srv2 (AlmaLinux 9/DirectAdmin).
+//
 // Zero journal entries for SYSLOG_FACILITY=4+10 from mail on all 4 servers.
 var mailLogPaths = map[string][]string{
 	"exim": {
@@ -966,10 +987,10 @@ var mailLogPaths = map[string][]string{
 		"/var/log/exim4/mainlog", // Debian/Ubuntu
 	},
 	"dovecot": {
-		"/var/log/maillog",   // EL9, Ubuntu via rsyslog
-		"/var/log/mail.log",  // Debian default
-		"/var/log/secure",    // EL9 PAM auth (dovecot:auth)
-		"/var/log/auth.log",  // Debian/Ubuntu PAM auth
+		"/var/log/maillog",  // EL9, Ubuntu via rsyslog
+		"/var/log/mail.log", // Debian default
+		"/var/log/secure",   // EL9 PAM auth (dovecot:auth)
+		"/var/log/auth.log", // Debian/Ubuntu PAM auth
 	},
 	"postfix": {
 		"/var/log/maillog",  // EL9, Ubuntu via rsyslog
@@ -1226,36 +1247,106 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 	}
 }
 
-// runFileWatcher tails a log file and feeds lines through the detector pipeline.
+// runFileWatcher SUPERVISES a tail -F watcher: it (re)spawns the child via
+// runFileWatcherOnce and, if the child dies while ctx is still alive, respawns
+// it with bounded exponential backoff. Without this, a killed tail child (OOM,
+// abnormal stream end) would leave that log source DARK until daemon restart —
+// a silent detection-availability hole (v1.176 LOGINMON-WATCHER-NO-RESPAWN).
+// On ctx cancellation (clean shutdown) it returns without respawning.
 func (m *Module) runFileWatcher(ctx context.Context, service, logPath string) {
-	cmd := exec.CommandContext(ctx, "tail", "-F", "-n", "0", logPath)
+	backoff := m.watcherBackoffMin
+	for attempt := 0; ; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+		start := time.Now()
+		err := m.runFileWatcherOnce(ctx, service, logPath, attempt)
+		// Clean shutdown → do not respawn.
+		if ctx.Err() != nil {
+			return
+		}
+		// A run that lasted long enough is "healthy" → reset backoff.
+		if time.Since(start) >= m.watcherHealthyReset {
+			backoff = m.watcherBackoffMin
+		}
+		m.status.RecordError(fmt.Errorf("file watcher %s exited (ran %s): %v — respawning in %s",
+			service, time.Since(start).Round(time.Millisecond), err, backoff))
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventError, ModuleName).
+			WithMessage(fmt.Sprintf("File watcher DOWN: %s (%s) — respawning in %s", service, logPath, backoff)))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff *= 2; backoff > m.watcherBackoffMax {
+			backoff = m.watcherBackoffMax
+		}
+	}
+}
+
+// runFileWatcherOnce runs a single tail -F child and feeds its lines through the
+// detector pipeline until the child dies or ctx is cancelled. Returns the reason
+// the run ended (nil on clean ctx cancellation). The child cmd is registered in
+// fileWatcherCmds for the duration of the run and unregistered on exit so the
+// slice always reflects the currently-live watchers (no leak across respawns).
+func (m *Module) runFileWatcherOnce(ctx context.Context, service, logPath string, attempt int) error {
+	var cmd *exec.Cmd
+	if m.newWatcherCmd != nil {
+		cmd = m.newWatcherCmd(ctx, logPath)
+	} else {
+		cmd = exec.CommandContext(ctx, "tail", "-F", "-n", "0", logPath)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		m.status.RecordError(fmt.Errorf("file watcher %s: pipe: %w", service, err))
-		return
+		return fmt.Errorf("pipe: %w", err)
 	}
 	defer stdout.Close()
 
 	if err := cmd.Start(); err != nil {
-		m.status.RecordError(fmt.Errorf("file watcher %s: start: %w", service, err))
-		return
+		return fmt.Errorf("start: %w", err)
 	}
+	m.registerWatcherCmd(cmd)
+	defer m.unregisterWatcherCmd(cmd)
 
-	// Track for cleanup on Stop()
-	m.mu.Lock()
-	m.fileWatcherCmds = append(m.fileWatcherCmds, cmd)
-	m.mu.Unlock()
-
+	verb := "started"
+	if attempt > 0 {
+		verb = "RESPAWNED"
+	}
 	m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, ModuleName).
-		WithMessage(fmt.Sprintf("File watcher started: %s (%s)", service, logPath)))
+		WithMessage(fmt.Sprintf("File watcher %s: %s (%s)", verb, service, logPath)))
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		default:
 			m.processLine(scanner.Bytes())
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scan: %w", err)
+	}
+	_ = cmd.Wait()
+	return fmt.Errorf("log stream ended (child exited)")
+}
+
+// registerWatcherCmd / unregisterWatcherCmd keep m.fileWatcherCmds equal to the
+// set of currently-live watcher children so Stop() can reap them and respawns
+// don't leak stale *exec.Cmd entries.
+func (m *Module) registerWatcherCmd(cmd *exec.Cmd) {
+	m.mu.Lock()
+	m.fileWatcherCmds = append(m.fileWatcherCmds, cmd)
+	m.mu.Unlock()
+}
+
+func (m *Module) unregisterWatcherCmd(cmd *exec.Cmd) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, c := range m.fileWatcherCmds {
+		if c == cmd {
+			m.fileWatcherCmds = append(m.fileWatcherCmds[:i], m.fileWatcherCmds[i+1:]...)
+			return
 		}
 	}
 }

@@ -780,6 +780,12 @@ jobs:
       - name: FHS lane invariants — tmpfiles transition guard + relocations (v1.175)
         run: bash cli/lib/nftban/tests/fhs_lane_v175_test.sh
 
+      # v1.176 DAEMON RELIABILITY: FSYNC-RESIDUAL durability-idiom class lock —
+      # no NEW hand-rolled temp+rename Go state writer outside internal/safety
+      # (route through safety.SafeWriteFile); regression-guards the F-1/F-2 fixes.
+      - name: FSYNC-RESIDUAL durability-idiom guard (v1.176)
+        run: bash cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
