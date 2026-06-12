@@ -277,7 +277,7 @@ jobs:
       # G8: PKG-EFFECTIVE-PARITY L4 tmpfiles-managed coverage (Slot 5 / row 14)
       # ------------------------------------------------------------------
       # Runtime Truth runs on real OS images with full systemd. This step
-      # verifies the 6 tmpfiles-managed critical paths (which Test RPM/DEB
+      # verifies the tmpfiles-managed critical paths (which Test RPM/DEB
       # install jobs in build-packages.yml cannot reliably exercise inside
       # vanilla Docker without systemd PID 1).
       #
@@ -285,10 +285,9 @@ jobs:
       #   - /run/nftban (0755 nftban:nftban)
       #   - /var/cache/nftban (0755 nftban:nftban)
       #   - /var/lib/nftban (0750 root:nftban)
-      #   - /var/lib/nftban/reports/auditors (0770 root:nftban-auditor)
       #   - /var/log/nftban (0750 nftban:nftban)
-      #   (Note: /var/lib/nftban/community is package-shipped, NOT tmpfiles —
-      #   asserted in build-packages.yml Test * install jobs)
+      #   (Note: /var/lib/nftban/community AND, since v1.175, /var/lib/nftban/reports/auditors
+      #   are package-shipped, NOT tmpfiles — asserted in build-packages.yml Test * install jobs)
       - name: G8 — PKG-EFFECTIVE-PARITY L4 tmpfiles parity (real-systemd)
         shell: bash
         run: |
@@ -448,22 +447,28 @@ jobs:
           sudo grep -E "reports|auditors|nftban-auditor|skip|ignor|Failed|fail|denied|invalid" /tmp/g8-tmpfiles.log 2>/dev/null \
             | head -40 || echo "(no relevant lines in tmpfiles log)"
 
-          # 5. Assert each of the 6 tmpfiles-managed critical paths (UNCHANGED).
+          # 5. Assert each of the tmpfiles-managed critical paths.
           # Diagnostics above are purely additive; the contract this step enforces
-          # is identical to before — failure on missing/mismatched dirs.
+          # is failure on missing/mismatched dirs. (v1.175: auditors dropped from
+          # this list — now package-created, asserted by the Test * install jobs.)
           fail=0
           # Format: path|expected_mode|expected_owner|expected_group
+          # v1.175 BUG-TMPFILES: /var/lib/nftban/reports/auditors is NO LONGER
+          # tmpfiles-managed (moved created_by tmpfiles→package; the root-under-nftban
+          # tmpfiles transition tripped systemd-tmpfiles exit 73). Like
+          # /var/lib/nftban/community it is now package-created + postinst-converged
+          # and asserted by the Test RPM/DEB install jobs (build-packages.yml L4),
+          # NOT by this tmpfiles-only parity step.
           for entry in \
               "/run/nftban|0755|nftban|nftban" \
               "/var/cache/nftban|0755|nftban|nftban" \
               "/var/lib/nftban|0750|root|nftban" \
-              "/var/lib/nftban/reports/auditors|0770|root|nftban-auditor" \
               "/var/log/nftban|0750|nftban|nftban" \
           ; do
             IFS='|' read -r p exp_mode exp_owner exp_group <<< "$entry"
             # Slot 5b Stage 2-F: sudo-wrap path-existence + stat checks.
             # See diag.4 comment block above — same Bucket F mechanism. The
-            # 5-path mode/owner/group contract below is unchanged; only the
+            # mode/owner/group contract below; only the
             # privilege context of the verifier changes so it can traverse
             # the 0750 root:nftban parent.
             if ! sudo test -d "$p"; then

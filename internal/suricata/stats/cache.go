@@ -110,19 +110,12 @@ func migrateLegacySnapshot(oldPath, newPath string) {
 	if err := os.MkdirAll(filepath.Dir(newPath), 0750); err != nil {
 		return
 	}
-	if err := os.Rename(oldPath, newPath); err == nil {
-		return
-	}
-	// Rename failed (e.g. cross-filesystem EXDEV): copy then remove. If the copy
-	// fails, leave the old file untouched and let Load() start fresh.
-	data, err := os.ReadFile(oldPath)
-	if err != nil {
-		return
-	}
-	if err := safety.SafeWriteFile(newPath, data, 0644); err != nil {
-		return
-	}
-	_ = os.Remove(oldPath)
+	// Best-effort rename. If it fails (e.g. EXDEV when /etc and /var are separate
+	// mounts), leave the old file in place; Load() then starts fresh and the cache
+	// rebuilds from live SID-trigger events. We deliberately do NOT read+copy as a
+	// fallback: it would add an os.ReadFile(variable) file-inclusion surface
+	// (gosec G304) for a non-critical, self-rebuilding cache — not worth it.
+	_ = os.Rename(oldPath, newPath)
 }
 
 // RecordTrigger records a SID trigger event
