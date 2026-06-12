@@ -67,6 +67,7 @@ COMMANDS:
     enable              Enable bot scanner detection
     disable             Disable bot scanner detection
     status              Show detection status and configuration
+    logs [--detect]     Show panel-aware HTTP access-log discovery (read-only; no bans)
     check               Run manual log analysis (parse recent entries)
     patterns            List all detection patterns
       patterns list     List patterns (all|enabled|disabled)
@@ -679,6 +680,60 @@ _nftban_botscan_cmd_test() {
 # MAIN COMMAND HANDLER
 # =============================================================================
 
+# v1.177: `nftban botscan logs [--detect]` — READ-ONLY HTTP access-log discovery
+# diagnostic. Shows detected panel/stack, candidate globs, selected + skipped logs,
+# and remediation. Never bans, never mutates.
+_nftban_botscan_cmd_logs() {
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" || return 1
+    else
+        echo "ERROR: Bot scanner core module not found" >&2
+        return 1
+    fi
+    nftban_botscan_load_config 2>/dev/null || true
+    _nftban_botscan_banner
+    echo ""
+    echo "HTTP access-log discovery (read-only)"
+    if ! declare -F nftban_http_discover_access_logs >/dev/null 2>&1; then
+        echo "  ERROR: discovery helper (lib/nftban_http_logs.sh) not loaded" >&2
+        return 1
+    fi
+    local panel stack
+    panel="$(nftban_http_detect_panel)"; stack="$(nftban_http_detect_stack)"
+    echo "  Detected panel:    ${panel:-none}"
+    echo "  Detected web stack:${stack:+ $stack}"
+    echo "  Override (BOTSCAN_LOG_PATHS): ${BOTSCAN_LOG_PATHS:-<unset>}"
+    echo ""
+    echo "  Candidate globs:"
+    nftban_http_candidate_globs "$panel" | sed 's/^/    /'
+    echo ""
+    local -a selected=()
+    local f
+    while IFS= read -r f; do [[ -n "$f" ]] && selected+=("$f"); done < <(nftban_botscan_discover_logs 2>/dev/null)
+    if [[ ${#selected[@]} -gt 0 ]]; then
+        echo "  Selected logs (${#selected[@]}):"
+        printf '    %s\n' "${selected[@]}"
+    else
+        echo "  Selected logs: NONE"
+    fi
+    if [[ ${#_NFTBAN_HTTP_LAST_SKIPPED[@]} -gt 0 ]]; then
+        echo "  Skipped:"
+        printf '    %s\n' "${_NFTBAN_HTTP_LAST_SKIPPED[@]}"
+    fi
+    echo ""
+    if [[ ${#selected[@]} -eq 0 ]]; then
+        echo "  Result: NO ACCESS LOG FOUND."
+        echo "  Remediation:"
+        echo "    - Confirm a web server is logging (apache/nginx/litespeed)."
+        echo "    - For a non-standard layout, set BOTSCAN_LOG_PATHS to your access-log glob(s)"
+        echo "      in /etc/nftban/conf.d/botscan/main.conf (space/newline list), then re-run."
+        return 1
+    fi
+    echo "  Result: OK — ${#selected[@]} access log(s) will be scanned."
+    return 0
+}
+
 nftban_cmd_botscan() {
     local action="${1:-status}"
     local json_mode=false
@@ -718,6 +773,10 @@ nftban_cmd_botscan() {
 
         config)
             _nftban_botscan_cmd_config "$json_mode"
+            ;;
+
+        logs)
+            _nftban_botscan_cmd_logs "$@"
             ;;
 
         check)

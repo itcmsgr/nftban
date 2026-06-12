@@ -181,7 +181,7 @@
       "requires_runtime": "suricata_detected"
     },
     "conf.d/login/main.conf": {
-      "description": "Login monitor main configuration (MODE selector)",
+      "description": "Login monitor main configuration (MODE selector). v1.177: WordPress monitor uses the shared panel-aware HTTP access-log discovery (parity with BotScan); optional override LOGIN_SERVICE_WORDPRESS_LOG_PATHS (glob list) + LOGIN_SERVICE_WORDPRESS_MAX_MONITORS (bounded live-tail count, default 50); legacy LOGIN_SERVICE_WORDPRESS_LOG_APACHE/HTTPD/NGINX still honored as fallback.",
       "active_when": "always",
       "category": "modules",
       "key_count": 51,
@@ -220,7 +220,7 @@
       "active_when": "always",
       "category": "modules",
       "key_count": 25,
-      "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis"
+      "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis. v1.177: panel-aware multi-log discovery (DirectAdmin/cPanel/Plesk per-domain logs); optional override BOTSCAN_LOG_PATHS (space/newline glob list) falls back to auto-detect if it resolves no readable file (never silently blind); legacy BOTSCAN_LOG_APACHE/APACHE_ALT/NGINX still honored."
     },
     "conf.d/trust.conf": {
       "description": "Trusted provider IP whitelist (CDN, Cloud providers)",

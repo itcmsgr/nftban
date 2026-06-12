@@ -1264,8 +1264,8 @@ MONITORED SERVICES (auto-detected):
       • Dovecot           - IMAP/POP3 login failures
 
     Web/CMS:
-      • WordPress         - wp-login.php + xmlrpc.php attacks
-      • Roundcube         - Webmail login failures
+      • WordPress         - wp-login.php + xmlrpc.php attacks (via BotScan access-log scan)
+      • Roundcube         - DEFERRED: no runtime watcher yet (advertised key exists; coverage planned v1.178)
 
     FTP:
       • Pure-FTPd         - FTP login failures

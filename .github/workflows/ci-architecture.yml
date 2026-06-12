@@ -786,6 +786,13 @@ jobs:
       - name: FSYNC-RESIDUAL durability-idiom guard (v1.176)
         run: bash cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh
 
+      # v1.177 HTTP LOG DISCOVERY: panel-aware access-log discovery helper —
+      # DirectAdmin/cPanel/Plesk/generic/LiteSpeed globs, multi-log, dedup,
+      # error/rotated exclusion, MAX_FILES bound, IPv6 parse, incremental offset
+      # + rotation/copytruncate, and the legacy-miss vs new-find regression.
+      - name: HTTP log discovery + BotScan panel paths (v1.177)
+        run: bash cli/lib/nftban/tests/http_log_discovery_v177_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
