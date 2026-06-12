@@ -64,6 +64,8 @@ nftban_botscan_load_config() {
     # preferred; if it resolves to no readable file we fall back to panel-aware
     # auto-detect (never silently blind). Legacy single-path vars above stay honored.
     : "${BOTSCAN_LOG_PATHS:=}"
+    # v1.178-A: read-authority spool produced by nftban-botscan-collector.service.
+    : "${BOTSCAN_SPOOL_DIR:=/run/nftban/botscan}"
     : "${BOTSCAN_DEFAULT_THRESHOLD:=5}"
     : "${BOTSCAN_DEFAULT_WINDOW:=60}"
     : "${BOTSCAN_DEFAULT_BAN_SHORT:=1800}"
@@ -259,6 +261,18 @@ nftban_botscan_toggle_pattern() {
 nftban_botscan_discover_logs() {
     local -a logs=()
     local f
+    # v1.178-A read-authority: SPOOL-FIRST. If the separate privileged collector
+    # (nftban-botscan-collector.service, CAP_DAC_READ_SEARCH) produced a spool, the
+    # unprivileged scanner reads ONLY the spool — it already holds the privileged-read
+    # content the scanner cannot obtain directly on DA/cPanel/0640 hosts. If no spool
+    # (collector absent/empty), fall back to direct discovery (legacy behavior; will
+    # report DEGRADED on blocked hosts via the v1.177 diagnostic).
+    local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}"
+    if [[ -d "$_spool" ]]; then
+        local -a _sp=()
+        for f in "$_spool"/*; do [[ -f "$f" && -r "$f" && -s "$f" ]] && _sp+=("$f"); done
+        if [[ ${#_sp[@]} -gt 0 ]]; then printf '%s\n' "${_sp[@]}"; return 0; fi
+    fi
     if declare -F nftban_http_discover_access_logs >/dev/null 2>&1; then
         while IFS= read -r f; do [[ -n "$f" ]] && logs+=("$f"); done \
             < <(nftban_http_discover_access_logs "${BOTSCAN_LOG_PATHS:-}")
@@ -699,10 +713,19 @@ nftban_botscan_status() {
         local svc="${NFTBAN_BOTSCAN_SERVICE_USER:-nftban}"
         nftban_http_classify_candidates "${BOTSCAN_LOG_PATHS:-}" >/dev/null 2>&1 || true
         local verdict="${_NFTBAN_HTTP_READ_VERDICT:-UNKNOWN}"
-        echo "Readability:    ${verdict} (${_NFTBAN_HTTP_READ_COUNT_READABLE}/${_NFTBAN_HTTP_READ_COUNT_TOTAL} readable by ${svc})"
-        if [[ "$verdict" == "DEGRADED" ]]; then
-            echo "                BOTSCAN_READ_AUTHORITY open: access logs discovered but unreadable by"
-            echo "                the service account — enforcement blocked until a read-authority lane lands."
+        # v1.178-A: collector spool feeds the scanner even when direct source is unreadable.
+        local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}" _spool_fed=0 _sf
+        if [[ -d "$_spool" ]]; then
+            for _sf in "$_spool"/*; do [[ -f "$_sf" && -r "$_sf" && -s "$_sf" ]] && { _spool_fed=1; break; }; done
+        fi
+        if [[ "$_spool_fed" -eq 1 && ( "$verdict" == "DEGRADED" || "$verdict" == "UNKNOWN" ) ]]; then
+            echo "Readability:    OK via collector spool (direct source ${verdict} for ${svc}; collector feeding ${_spool})"
+        else
+            echo "Readability:    ${verdict} (${_NFTBAN_HTTP_READ_COUNT_READABLE}/${_NFTBAN_HTTP_READ_COUNT_TOTAL} readable by ${svc})"
+            if [[ "$verdict" == "DEGRADED" ]]; then
+                echo "                BOTSCAN_READ_AUTHORITY open: access logs discovered but unreadable by the"
+                echo "                service account — install/enable nftban-botscan-collector.service (read-authority)."
+            fi
         fi
     fi
 

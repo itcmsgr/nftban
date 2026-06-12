@@ -843,6 +843,14 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
 
+    - path: /var/lib/nftban/botscan-collector
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "BotScan read-collector per-source incremental offset state (v1.178-A). Separate from the scanner's spool offsets so privileged reads only emit new bytes per cycle."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
   # ---------------------------------------------------------------------------
   # Logs (nftban:nftban, 750) - Daemon writes, group reads
   # ---------------------------------------------------------------------------
@@ -940,6 +948,14 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
       note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict. 0755 intentional: socket-discovery — non-nftban-group processes (panel adapters, monitoring tools) must stat() the daemon socket; the socket file itself uses unit-level SocketMode=0660 + group ownership for access control. Tightening the parent dir would break socket-discovery for anything outside the nftban group."
+
+    - path: /run/nftban/botscan
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "BotScan read-authority spool (v1.178-A): nftban:nftban access-log lines written by nftban-botscan-collector.service (CAP_DAC_READ_SEARCH) and read by the unprivileged nftban-botscan.service scanner. tmpfs/ephemeral."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /run/nftban/firewall-validate
       mode: "2750"

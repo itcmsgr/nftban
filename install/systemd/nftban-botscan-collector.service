@@ -1,0 +1,76 @@
+# =============================================================================
+# NFTBan - Bot Scanner Read-Authority Collector
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Separate privileged read-collector (B1) — reads allowlisted access logs
+#          and writes an nftban-readable spool for the unprivileged scanner.
+#
+# meta:name="nftban_botscan_collector_service"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-06-12"
+# meta:description="Oneshot collector that reads allowlisted access logs (CAP_DAC_READ_SEARCH) and writes a nftban:nftban spool for nftban-botscan.service. SEPARATE unit so the scanner stays unprivileged."
+# meta:input="allowlisted access logs"
+# meta:output="/run/nftban/botscan spool for nftban-botscan.service"
+# meta:depends="nftban-botscan-collector"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-botscan-collector.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="CAP_DAC_READ_SEARCH"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Bot Scanner Read-Authority Collector
+Documentation=man:nftban(8)
+After=network.target nftables.service
+# Run before the scanner so the spool is fresh
+Before=nftban-botscan.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/nftban/sbin/nftban-botscan-collector
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-botscan-collector
+
+# Unprivileged user + the SINGLE capability needed to read/traverse access logs
+# the nftban user otherwise cannot (covers DA drwx--x--- apache:root traversal AND
+# generic 0640 root:adm file-read). Read+search ONLY — never write, never anything
+# else. This capability is on THIS collector unit, NOT on nftban-botscan.service.
+User=nftban
+Group=nftban
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+
+# Resource limits
+MemoryMax=256M
+TasksMax=50
+
+# Security hardening (kept even with the read cap)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+PrivateDevices=yes
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX
+# Writes ONLY to the spool + its own offset state — nothing else. Tightened to the
+# exact two dirs (not the whole /run/nftban); both are tmpfiles-pre-created at boot.
+ReadWritePaths=/run/nftban/botscan /var/lib/nftban/botscan-collector
+
+# Timeout after 5 minutes (bounded read should be quick)
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

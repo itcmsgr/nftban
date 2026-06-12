@@ -496,6 +496,7 @@ func defaultInventoryPaths() map[string]bool {
 		"/usr/lib/nftban/sbin/nftban-rollback":          true,
 		"/usr/lib/nftban/sbin/nftban-service-alert":     true,
 		"/usr/lib/nftban/sbin/nftban-botscan-processor": true,
+		"/usr/lib/nftban/sbin/nftban-botscan-collector": true,
 		// PR26.5: shell payload destinations referenced by installed
 		// systemd units. Each lives at the corresponding source-side
 		// path under cli/lib/nftban/{core,cron,exporters} or scripts/

@@ -426,6 +426,7 @@ install -m 0755 cli/sbin/nftban-queue-processor %{buildroot}/usr/lib/nftban/sbin
 install -m 0755 cli/sbin/nftban-rollback %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-service-alert %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-botscan-processor %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-botscan-collector %{buildroot}/usr/lib/nftban/sbin/
 
 # Version file
 install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
@@ -1875,7 +1876,7 @@ build_deb() {
     # Bug fix v1.9.4: Ensure sbin scripts are always installed with correct permissions
     local sbin_count=0
     for script in nftban-apply nftban-confirm nftban-queue-processor \
-                  nftban-botscan-processor nftban-rollback nftban-service-alert; do
+                  nftban-botscan-processor nftban-botscan-collector nftban-rollback nftban-service-alert; do
         if [[ -f "${PROJECT_ROOT}/cli/sbin/${script}" ]]; then
             install -m 0755 "${PROJECT_ROOT}/cli/sbin/${script}" "${deb_root}/usr/lib/nftban/sbin/"
             ((sbin_count++))
