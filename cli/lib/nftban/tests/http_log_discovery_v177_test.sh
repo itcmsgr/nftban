@@ -88,8 +88,19 @@ allda="$(disc "$WORK/da/httpd/domains/*")"
 dd="$(disc "$WORK/gen/nginx/access.log $WORK/gen/nginx/*")"
 [[ "$(printf '%s\n' "$dd" | grep -c '/gen/nginx/access.log')" -eq 1 ]] && ok "T4 dedup (no duplicate path)" || no "T4 dedup" "$dd"
 
-# T5: no-log-found.
-disc "$WORK/nonexistent/*.log" >/dev/null 2>&1 && no "T5 no-log-found returns nonzero" || ok "T5 no-log-found → nonzero/empty"
+# T5: no-log-found — when override resolves nothing AND auto-detect finds nothing,
+# discovery returns nonzero. A bad override ALONE falls back to auto by design
+# ("never silently blind"), and the CI runner may have real /var/log files — so we
+# mock the auto candidate-globs to a controlled set for a deterministic result.
+_save_cg="$(declare -f nftban_http_candidate_globs)"
+nftban_http_candidate_globs(){ :; }   # simulate a host with no web logs (no auto candidates)
+if disc "$WORK/nonexistent/*.log" >/dev/null 2>&1; then no "T5 no-log-found returns nonzero"; else ok "T5 no-log-found → nonzero (override empty + auto empty)"; fi
+# T5b: a bad override FALLS BACK to auto-detect (never silently blind).
+mk "$WORK/fb/access.log" 'fb'
+nftban_http_candidate_globs(){ printf '%s\n' "$WORK/fb/*.log"; }
+fbr="$(disc "$WORK/nonexistent/*.log")" || true
+[[ "$fbr" == *fb/access.log ]] && ok "T5b bad override falls back to auto-detect (never silently blind)" || no "T5b override fallback" "$fbr"
+eval "$_save_cg"   # restore real candidate globs
 
 # T6: unreadable-log skip (non-root only; root bypasses perms).
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -117,10 +128,13 @@ printf 'line2\n' >> "$inc"
 r2="$(nftban_http_read_incremental "$inc")"
 [[ "$r1" == *line1* && "$r2" == *line2* && "$r2" != *line1* ]] && ok "T8 incremental: 2nd run reads only new lines" || no "T8 incremental" "r1=[$r1] r2=[$r2]"
 
-# T9: rotation/inode-change → read from BOF.
-rm -f "$inc"; printf 'fresh1\nfresh2\n' > "$inc"   # new inode
+# T9: rotation = logrotate "create" mode (new inode at the same path) → read from BOF.
+# Use `mv` to GUARANTEE a different inode — `rm`+recreate can REUSE the inode on some
+# filesystems (observed on CI), which is not a real log-rotation mode. The reader's
+# real-mode coverage: create=new-inode (here) + copytruncate=size-drop (T10).
+printf 'fresh1\nfresh2\n' > "$WORK/inc.rotated"; mv -f "$WORK/inc.rotated" "$inc"
 r3="$(nftban_http_read_incremental "$inc")"
-[[ "$r3" == *fresh1* && "$r3" == *fresh2* ]] && ok "T9 rotation/inode-change re-reads from BOF" || no "T9 rotation" "r3=[$r3]"
+[[ "$r3" == *fresh1* && "$r3" == *fresh2* ]] && ok "T9 rotation (new inode) re-reads from BOF" || no "T9 rotation" "r3=[$r3]"
 
 # T10: copytruncate (size < stored offset at a read) → offset resets; later appends read fresh.
 printf 'aaaa\n' > "$inc"; _=$(nftban_http_read_incremental "$inc")   # offset advances to ~5
