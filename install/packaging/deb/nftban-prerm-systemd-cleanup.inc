@@ -35,6 +35,8 @@ mask_if_exists() {
 # Templates (*@.service) are skipped: the template itself is not a runnable unit;
 # only instances are stoppable.
 for unit in \
+    nftban-botscan-collector.service \
+    nftban-botscan-collector.timer \
     nftban-botscan.service \
     nftban-botscan.timer \
     nftban-community-stats.service \

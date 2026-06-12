@@ -40,6 +40,7 @@ var coreTimers = []string{
 // optionalTimers are started only if their unit file exists (panel-dependent).
 var optionalTimers = []string{
 	"nftban-botscan.timer",
+	"nftban-botscan-collector.timer",
 }
 
 // allKnownTimers is the canonical, exhaustive list of every nftban systemd
@@ -53,6 +54,7 @@ var optionalTimers = []string{
 // is removed), this slice MUST be updated — the drift-parity test
 // (timers_post_install_parity_test.go) fails otherwise.
 var allKnownTimers = []string{
+	"nftban-botscan-collector.timer",
 	"nftban-botscan.timer",
 	"nftban-community-stats.timer",
 	"nftban-core-feeds.timer",
@@ -121,8 +123,8 @@ func ReconcileTimers(exec executor.Executor, log *logging.Logger) {
 
 	for _, timer := range optionalTimers {
 		// Only start if unit file exists
-		if exec.FileExists("/etc/systemd/system/" + timer) ||
-			exec.FileExists("/usr/lib/systemd/system/" + timer) {
+		if exec.FileExists("/etc/systemd/system/"+timer) ||
+			exec.FileExists("/usr/lib/systemd/system/"+timer) {
 			enableAndStart(exec, timer, log)
 		} else {
 			log.Debug("optional timer %s not installed — skipping", timer)
