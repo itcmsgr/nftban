@@ -186,12 +186,12 @@ hook_mixed(){ case "$2" in *good*) return 0 ;; *) return 1 ;; esac; }
 
 # T13: candidates discovered, all unreadable as service account → DEGRADED.
 mk "$WORK/rd/example.com.log" 'da'
-NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unreadable
+export NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unreadable
 nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
 [[ "$_NFTBAN_HTTP_READ_VERDICT" == DEGRADED ]] && ok "T13 discovered-but-unreadable → DEGRADED" || no "T13 DEGRADED" "$_NFTBAN_HTTP_READ_VERDICT"
 
 # T14: candidates discovered, readable as service account → OK.
-NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_readable
+export NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_readable
 nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
 [[ "$_NFTBAN_HTTP_READ_VERDICT" == OK && "$_NFTBAN_HTTP_READ_COUNT_READABLE" -ge 1 ]] && ok "T14 readable → OK" || no "T14 OK" "$_NFTBAN_HTTP_READ_VERDICT"
 
@@ -200,20 +200,20 @@ nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
 # NOT reuse the caller's (often root's) readability.
 mk "$WORK/rb/access.log" 'caller-readable'
 [[ -r "$WORK/rb/access.log" ]] && caller_ok=1 || caller_ok=0
-NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unreadable
+export NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unreadable
 nftban_http_classify_candidates "$WORK/rb/*.log" >/dev/null 2>&1 || true
 [[ "$caller_ok" -eq 1 && "$_NFTBAN_HTTP_READ_VERDICT" == DEGRADED ]] \
   && ok "T15 root-blindness guard: caller-readable file still DEGRADED via service-account check" \
   || no "T15 root-blindness guard" "caller_ok=$caller_ok verdict=$_NFTBAN_HTTP_READ_VERDICT"
 
 # T16: indeterminate (cannot test as service account) → UNKNOWN, never false OK.
-NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unknown
+export NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_all_unknown
 nftban_http_classify_candidates "$WORK/rd/*.log" >/dev/null 2>&1 || true
 [[ "$_NFTBAN_HTTP_READ_VERDICT" == UNKNOWN ]] && ok "T16 indeterminate readability → UNKNOWN" || no "T16 UNKNOWN" "$_NFTBAN_HTTP_READ_VERDICT"
 
 # T17: mixed — at least one readable → OK, with the unreadable count tracked.
 mk "$WORK/mix/good.log" 'g'; mk "$WORK/mix/bad.log" 'b'
-NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_mixed
+export NFTBAN_BOTSCAN_READ_TEST_HOOK=hook_mixed
 nftban_http_classify_candidates "$WORK/mix/*.log" >/dev/null 2>&1 || true
 [[ "$_NFTBAN_HTTP_READ_VERDICT" == OK && "$_NFTBAN_HTTP_READ_COUNT_READABLE" -eq 1 && "$_NFTBAN_HTTP_READ_COUNT_UNREADABLE" -eq 1 ]] \
   && ok "T17 mixed readability → OK with correct readable/unreadable counts" \
