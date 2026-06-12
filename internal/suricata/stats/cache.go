@@ -11,7 +11,7 @@
 // meta:input="SID trigger events"
 // meta:output="Statistics per SID"
 // meta:depends="github.com/itcmsgr/nftban/internal/nftbanconf,github.com/itcmsgr/nftban/internal/safety"
-// meta:inventory.files="/etc/nftban/suricata/cache/sid-stats.json"
+// meta:inventory.files="/var/lib/nftban/suricata/cache/sid-stats.json"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
 // meta:inventory.config_files=""
@@ -37,25 +37,25 @@ import (
 
 // SIDStats holds statistics for a single SID
 type SIDStats struct {
-	SID           string    `json:"sid"`
-	Category      string    `json:"category"`
-	Signature     string    `json:"signature"`
-	TriggerCount  int       `json:"trigger_count"`
-	LastTrigger   time.Time `json:"last_trigger"`
-	FirstTrigger  time.Time `json:"first_trigger"`
+	SID           string          `json:"sid"`
+	Category      string          `json:"category"`
+	Signature     string          `json:"signature"`
+	TriggerCount  int             `json:"trigger_count"`
+	LastTrigger   time.Time       `json:"last_trigger"`
+	FirstTrigger  time.Time       `json:"first_trigger"`
 	UniqueSources map[string]bool `json:"-"` // Not serialized (capped in memory)
-	SourceCount   int       `json:"source_count"`
-	SourceIPs     []string  `json:"source_ips,omitempty"` // Top 10 for display
+	SourceCount   int             `json:"source_count"`
+	SourceIPs     []string        `json:"source_ips,omitempty"` // Top 10 for display
 }
 
 // Cache holds in-memory SID statistics
 // Implements bounded memory via caps on SIDs and sources per SID.
 // Protects against CWE-400 (Uncontrolled Resource Consumption).
 type Cache struct {
-	mu            sync.RWMutex
-	stats         map[string]*SIDStats // Key: SID
-	snapshotPath  string
-	lastSnapshot  time.Time
+	mu           sync.RWMutex
+	stats        map[string]*SIDStats // Key: SID
+	snapshotPath string
+	lastSnapshot time.Time
 
 	// Memory limits (CWE-400 mitigation)
 	maxSIDs          int
@@ -65,7 +65,13 @@ type Cache struct {
 // NewCache creates a new statistics cache with bounded memory
 func NewCache() (*Cache, error) {
 	cfg := nftbanconf.MustLoad()
-	snapshotPath := filepath.Join(cfg.ConfigDir, "suricata/cache/sid-stats.json")
+	// v1.175 FHS-SMELL-SIDSTATS: the snapshot lives under DataDir (/var/lib/nftban),
+	// NOT ConfigDir (/etc). FHS reserves /etc for configuration; this is a mutable
+	// runtime cache rewritten on every auto-save tick. Write atomicity is unchanged
+	// (still safety.SafeWriteFile, v1.171) — only the location moved.
+	snapshotPath := filepath.Join(cfg.DataDir, "suricata/cache/sid-stats.json")
+	// Migrate a pre-v1.175 snapshot from the old /etc location on first startup.
+	migrateLegacySnapshot(filepath.Join(cfg.ConfigDir, "suricata/cache/sid-stats.json"), snapshotPath)
 
 	limits := safety.GetMemoryLimits()
 
@@ -82,6 +88,34 @@ func NewCache() (*Cache, error) {
 	}
 
 	return cache, nil
+}
+
+// migrateLegacySnapshot moves the pre-v1.175 SID-stats snapshot from its old
+// location under /etc (ConfigDir) to the new location under /var/lib (DataDir)
+// on first startup. Best-effort: any failure leaves the old file in place and the
+// subsequent Load() simply starts fresh — no panic, no data-integrity risk (the
+// cache rebuilds from live SID-trigger events). v1.175 FHS-SMELL-SIDSTATS.
+func migrateLegacySnapshot(oldPath, newPath string) {
+	if oldPath == newPath {
+		return
+	}
+	// New snapshot already present → nothing to migrate.
+	if _, err := os.Stat(newPath); err == nil {
+		return
+	}
+	// No legacy snapshot → nothing to do (fresh install / already migrated).
+	if _, err := os.Stat(oldPath); err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(newPath), 0750); err != nil {
+		return
+	}
+	// Best-effort rename. If it fails (e.g. EXDEV when /etc and /var are separate
+	// mounts), leave the old file in place; Load() then starts fresh and the cache
+	// rebuilds from live SID-trigger events. We deliberately do NOT read+copy as a
+	// fallback: it would add an os.ReadFile(variable) file-inclusion surface
+	// (gosec G304) for a non-critical, self-rebuilding cache — not worth it.
+	_ = os.Rename(oldPath, newPath)
 }
 
 // RecordTrigger records a SID trigger event
@@ -390,9 +424,9 @@ func (c *Cache) GetStats() map[string]int {
 	}
 
 	return map[string]int{
-		"sids":                 len(c.stats),
-		"max_sids":             c.maxSIDs,
-		"total_sources":        totalSources,
-		"max_sources_per_sid":  c.maxSourcesPerSID,
+		"sids":                len(c.stats),
+		"max_sids":            c.maxSIDs,
+		"total_sources":       totalSources,
+		"max_sources_per_sid": c.maxSourcesPerSID,
 	}
 }

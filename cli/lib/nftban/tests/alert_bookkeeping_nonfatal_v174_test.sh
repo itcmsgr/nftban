@@ -60,7 +60,8 @@ run_alert "$ro" "" "$WORK/nolib"
 
 echo "== Test B: WARN logged (not fatal) + throttle file NOT created under EACCES =="
 if [[ -f "$LOG" ]] && grep -q "throttle state write failed" "$LOG"; then ok "B throttle WARN logged"; else no "B throttle WARN" "missing in $LOG"; fi
-[[ ! -e "$ro/alert_throttle_nftband_service" ]] && ok "B throttle file not created (write was non-fatal)" || no "B throttle file" "unexpectedly created"
+# v1.175 ALERT-THROTTLE-FHS: throttle relocated to <data>/alerts/throttle_<svc>.
+[[ ! -e "$ro/alerts/throttle_nftband_service" ]] && ok "B throttle file not created (write was non-fatal)" || no "B throttle file" "unexpectedly created"
 
 echo "== Test C: delivery contract — recipient set + mail module absent => non-zero =="
 rw="$WORK/rw_data"; mkdir -p "$rw"
@@ -71,7 +72,8 @@ echo "== Test D: happy path — writable data dir + no recipient => exit 0 + thr
 rw2="$WORK/rw_data2"; mkdir -p "$rw2"
 run_alert "$rw2" "" "$WORK/nolib"
 [[ "$RC" -eq 0 ]] && ok "D exit 0 (RC=$RC)" || no "D exit 0" "got RC=$RC"
-[[ -f "$rw2/alert_throttle_nftband_service" ]] && ok "D throttle file persisted when writable" || no "D throttle persisted" "file missing"
+# v1.175 ALERT-THROTTLE-FHS: throttle persists under <data>/alerts/ (nftban-owned).
+[[ -f "$rw2/alerts/throttle_nftband_service" ]] && ok "D throttle file persisted when writable (under alerts/)" || no "D throttle persisted" "file missing at alerts/throttle_nftband_service"
 
 echo ""
 echo "=== RESULT: $PASS passed, $FAIL failed ==="

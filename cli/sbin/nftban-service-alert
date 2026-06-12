@@ -47,7 +47,13 @@ NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
 readonly ALERT_LOG="${NFTBAN_LOG_DIR}/service-alerts.log"
-readonly ALERT_THROTTLE_FILE="${NFTBAN_DATA_DIR}/alert_throttle_${FAILED_SERVICE//[^a-zA-Z0-9]/_}"
+# v1.175 ALERT-THROTTLE-FHS: throttle + diagnostics live under the nftban-OWNED
+# ${NFTBAN_DATA_DIR}/alerts (0750 nftban:nftban) so this worker — which runs
+# User=nftban — can actually persist them. Pre-v1.175 the throttle file sat
+# directly under root-owned 0750 ${NFTBAN_DATA_DIR} → EACCES → throttling never
+# persisted (v1.174 only made the write non-fatal; it did not fix persistence).
+readonly ALERT_STATE_DIR="${NFTBAN_DATA_DIR}/alerts"
+readonly ALERT_THROTTLE_FILE="${ALERT_STATE_DIR}/throttle_${FAILED_SERVICE//[^a-zA-Z0-9]/_}"
 readonly ALERT_THROTTLE_SECONDS="${NFTBAN_ALERT_THROTTLE_SECONDS:-3600}"
 
 # =============================================================================
@@ -84,11 +90,10 @@ should_throttle() {
 
 update_throttle() {
     mkdir -p "$(dirname "$ALERT_THROTTLE_FILE")" 2>/dev/null || true
-    # Best-effort: a throttle-state write failure (e.g. EACCES — the alert unit
-    # runs as User=nftban while the path may be root-owned 0750) returns non-zero
-    # so the caller can WARN and continue. It must NOT fail/latch the alert unit
-    # (v1.174 ALERT-THROTTLE-NONFATAL). Proper relocation to an nftban-owned dir
-    # is a separate lane (ALERT-THROTTLE-FHS).
+    # v1.175 ALERT-THROTTLE-FHS relocated this into the nftban-owned alerts dir, so
+    # the happy path now persists. The non-fatal guard is KEPT as defense-in-depth:
+    # if the write still fails (unexpected perms edge), return non-zero so the caller
+    # WARNs and continues — it must NOT fail/latch the alert unit (v1.174 contract).
     date +%s > "$ALERT_THROTTLE_FILE" 2>/dev/null
 }
 
@@ -98,7 +103,7 @@ update_throttle() {
 
 collect_diagnostics() {
     local diag_file
-    diag_file="${NFTBAN_DATA_DIR}/alerts/${FAILED_SERVICE}_$(date +%Y%m%d_%H%M%S).txt"
+    diag_file="${ALERT_STATE_DIR}/${FAILED_SERVICE}_$(date +%Y%m%d_%H%M%S).txt"
     mkdir -p "$(dirname "$diag_file")" 2>/dev/null || true
 
     {

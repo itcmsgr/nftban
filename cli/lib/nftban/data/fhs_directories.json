@@ -533,7 +533,7 @@
         "owner": "root",
         "group": "nftban-auditor",
         "description": "Auditor reports (nftban-auditor group access)",
-        "created_by": "tmpfiles"
+        "created_by": "package"
       },
       {
         "path": "/var/lib/nftban/metrics",
@@ -733,6 +733,22 @@
         "owner": "nftban",
         "group": "nftban",
         "description": "Suricata integration state",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/suricata/cache",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Suricata SID-statistics cache (sid-stats.json snapshot)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/alerts",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Service-failure alert bookkeeping (throttle timestamps + diagnostic reports)",
         "created_by": "tmpfiles"
       },
       {
