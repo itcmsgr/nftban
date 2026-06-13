@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.182.0] - 2026-06-13 — LoginMon input-state observability (HEALTH-NO-INPUT-AXIS, increment 1)
+
+**Codename:** `LOGINMON_INPUT_STATE_OBSERVABILITY` · **Scope/design:** `NFTBAN_ROADMAP/V1_182_GLOBAL_HEALTH_INPUT_AXIS_SCOPE.md`
+**PR:** [#841](https://github.com/itcmsgr/nftban/pull/841) (sq `b25ce51e`)
+
+> **Why:** the `DETECTION_INPUT_AUTHORITY` audit flagged that an enabled module reading *nothing* shows healthy. The validator's `module_health.go` derives health from the kernel ruleset + service state and never queries daemon IPC, so it cannot see watcher starvation; the daemon (root `nftband.service`) is the authority on its own watchers.
+
+### Added — LoginMon input-state observability (no new ban surface)
+- `Module.inputSources` (mu-guarded) + `recordInputState`/`inputStateSnapshot`; captured at watcher startup for **webauth** (v1.179) and **ftpauth** (v1.180) with the shared `OK`/`WARN_NO_LOGS`/`NO_LOGS` vocabulary (aligned with BotScan v1.177).
+- Surfaced via `LoginMonStatusExtra.InputSources` (json `input_sources`, `omitempty`) + `ToExtraInfo` over the existing daemon module-status IPC — **byte-equivalent wire format for existing readers when nothing captured**. An enabled-but-starved source is now observable.
+
+### Not in this release (next lane)
+Increment 2 — fold this daemon-known input-state into the validator's `ModuleHealth` as a first-class **Input axis** surfaced by `nftban health` (needs a CLI→daemon health bridge) + extend to BotGuard/other modules.
+
+### Envelope
+- Daemon `cmd/nftband` source moves **loginmon-only** (`b9a462a4`→`6fdfd975`; additive). **Schema 1.83.0 frozen. No packaging/FHS/cmd change.**
+- **Validation:** unit tests (snapshot round-trip + defensive copy, Status surfacing, omitted-when-empty); `go test -race ./...` + `go build ./...` green; CI #841 green / 0 GHAS.
+
+---
+
 ## [v1.181.0] - 2026-06-13 — auth-source dead-key cleanup + duplicate-source guard
 
 **Codename:** `AUTH_SOURCE_DEAD_KEY_AND_DUPLICATE_GUARD` (hygiene/guardrail — **no new ban surface**) · **Scope:** `NFTBAN_ROADMAP/V1_181_AUTH_SOURCE_DEAD_KEY_AND_DUPLICATE_GUARD_SCOPE.md`
