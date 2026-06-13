@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.181.0] - 2026-06-13 — auth-source dead-key cleanup + duplicate-source guard
+
+**Codename:** `AUTH_SOURCE_DEAD_KEY_AND_DUPLICATE_GUARD` (hygiene/guardrail — **no new ban surface**) · **Scope:** `NFTBAN_ROADMAP/V1_181_AUTH_SOURCE_DEAD_KEY_AND_DUPLICATE_GUARD_SCOPE.md`
+**PR:** [#839](https://github.com/itcmsgr/nftban/pull/839) (sq `88280fb5`)
+
+> **Why:** two distro-config keys (`pureftpd_log`, `exim_reject_log`) had **zero readers** — only `directadmin_login_log` / `exim_log` / `dovecot_log` are consumed via `DistroKey`; pure-ftpd has been journal facility-11 since v1.180 and exim uses `mainlog`. Real-prod sampling (v1.180) also disproved adding cphulkd/exim-reject as auth sources (duplicate/false-positive). This lane removes the dead keys and adds a CI guard so those rejected sources cannot be silently re-wired.
+
+### Added — duplicate-source guard
+- New `internal/loginmon/source_ownership_guard_test.go` fails CI if a future change wires a known duplicate/non-auth source into the LoginMon ban path without a fresh `LOG_SOURCE_OWNERSHIP_DECLARATION` + non-duplicate proof:
+  - **cphulkd `login_log` NOT in `panelLogPaths`** (duplicates cPanel access_log-401, PanelDetector-owned).
+  - **exim `rejectlog` NOT in `mailLogPaths`** (auth subset duplicates `mainlog`; unique lines are spam/RBL/HELO = `web_abuse`, not auth).
+  - **FTP file globs exclude pure-ftpd** (journal-routed) and any `rejectlog`.
+  - **journal facilities pinned to `{auth 4, authpriv 10, ftp 11}`** — extracted to `journalAuthFacilities` so the set is testable.
+
+### Removed — proven-dead config keys (zero readers)
+- `pureftpd_log` + `exim_reject_log` (and the orphaned FTP section comment) from all **21 `etc/nftban/distros/*.conf`**.
+- The same two keys from the validator `REQUIRED_FIELDS` (`cli/lib/nftban/tests/validate_distro_configs.sh`) and from `internal/loginmon/distroconf/distroconf_test.go`.
+
+### Envelope
+- Daemon `cmd/nftband` source moves **loginmon-only** (`cce992a1`→`b9a462a4`; journal-watcher arg refactor, no behavior change). **Schema 1.83.0 frozen. No packaging/FHS/cmd change.**
+- **Validation:** `go test -race ./...` + `go build ./...` green; PR #839 CI green (56 pass / 1 skip / 0 fail; 0 GHAS). `validate_distro_configs.sh` has a pre-existing rc=1 on the `NFTBAN_LOGIN_*` line-format check unrelated to this lane (diff vs main empty).
+
+---
+
 ## [v1.180.0] - 2026-06-13 — LoginMon FTP auth-input (pure-ftpd facility-11 + vsftpd/proftpd source correctness)
 
 **Codename:** `LOGINMON_FTP_AUTH_INPUT` (FTP-only) · **Record:** `NFTBAN_ROADMAP/V1_180_LOGINMON_FTP_IMPL_RECORD.md`
