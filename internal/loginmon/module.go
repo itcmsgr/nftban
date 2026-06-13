@@ -1263,6 +1263,28 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 	default:
 		log.Printf("[LOGINMON] webauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_web_stack")
 	}
+
+	// === v1.180: FTP daemon logs (auth_failure: pure-ftpd / vsftpd / proftpd
+	// authentication failures → ReasonFTPAuthFail via the existing FTPDetector).
+	// LoginMon is the sole owner + ban authority for FTP auth_failure. The journal
+	// watcher (SYSLOG_FACILITY 4/10 = auth/authpriv) does NOT carry FTP daemon logs,
+	// so the FTPDetector was unfed until now. The root daemon (CAP_DAC_OVERRIDE) reads
+	// these DIRECTLY — no collector/spool. Only started when an FTP daemon is detected.
+	// Health is journal-visible (resolved_by=discovery state=...) so zero-input never
+	// looks healthy. ===
+	if m.ftpStackDetected() {
+		ftpLogs := m.discoverFTPLogs()
+		if len(ftpLogs) > 0 {
+			log.Printf("[LOGINMON] ftpauth: state=OK resolved_by=discovery files=%d", len(ftpLogs))
+			for _, p := range ftpLogs {
+				startWatcher("ftp", p)
+			}
+		} else {
+			log.Printf("[LOGINMON] ftpauth: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=ftp_daemon_present_no_logs")
+		}
+	} else {
+		log.Printf("[LOGINMON] ftpauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_ftp_daemon")
+	}
 }
 
 // runFileWatcher SUPERVISES a tail -F watcher: it (re)spawns the child via
