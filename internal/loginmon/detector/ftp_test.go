@@ -36,15 +36,22 @@ func TestFTPDetector(t *testing.T) {
 		wantSvc   string
 	}{
 		// --- pure-ftpd auth failures (owned) ---
+		// REAL pure-ftpd syslog format: IP is in "(?@<ip>)", the only [..] brackets
+		// hold [WARNING] and the *username* — NOT the IP. Captured live from srv3.
 		{
-			"pure-ftpd auth fail IPv4",
-			`Jun 13 10:00:00 host pure-ftpd: (?@203.0.113.7) [WARNING] Authentication failed for user [bob] [203.0.113.7]`,
+			"pure-ftpd auth fail IPv4 (real format)",
+			`Jun 13 13:01:29 srv3 pure-ftpd: (?@203.0.113.7) [WARNING] Authentication failed for user [cefaloniaholidays]`,
 			true, "203.0.113.7", "pure-ftpd",
 		},
 		{
-			"pure-ftpd auth fail IPv6",
-			`Jun 13 10:00:00 host pure-ftpd: (?@2001:db8::7) [WARNING] Authentication failed for user [bob] [2001:db8::7]`,
+			"pure-ftpd auth fail IPv6 (real format)",
+			`Jun 13 13:01:29 srv3 pure-ftpd: (?@2001:db8::7) [WARNING] Authentication failed for user [someuser]`,
 			true, "2001:db8::7", "pure-ftpd",
+		},
+		{
+			"pure-ftpd auth fail IPv4 with trailing bracket-IP (alt config)",
+			`Jun 13 10:00:00 host pure-ftpd: (?@203.0.113.8) [WARNING] Authentication failed for user [bob] [203.0.113.8]`,
+			true, "203.0.113.8", "pure-ftpd",
 		},
 		// --- vsftpd auth failures (owned) ---
 		{
@@ -57,11 +64,21 @@ func TestFTPDetector(t *testing.T) {
 			`Mon Jun 13 10:00:00 2026 [pid 1234] [bob] FAIL LOGIN: Client "2001:db8::5"`,
 			true, "2001:db8::5", "vsftpd",
 		},
-		// --- proftpd auth failures (owned) ---
+		// --- proftpd auth failures (owned) — every path covered for BOTH IPv4 and IPv6 ---
 		{
 			"proftpd no such user IPv4",
 			`Jun 13 10:00:00 host proftpd[4321]: host (192.0.2.10[192.0.2.10]) - USER baduser: no such user found from 192.0.2.10 [192.0.2.10] to ::ffff:10.0.0.1:21`,
 			true, "192.0.2.10", "proftpd",
+		},
+		{
+			"proftpd no such user IPv6",
+			`Jun 13 10:00:00 host proftpd[4321]: host (?) - USER baduser: no such user found from 2001:db8::b [2001:db8::b]`,
+			true, "2001:db8::b", "proftpd",
+		},
+		{
+			"proftpd login failed bracket-IP IPv4",
+			`Jun 13 10:00:00 host proftpd[4321]: proftpd login failed for user bob [203.0.113.50]`,
+			true, "203.0.113.50", "proftpd",
 		},
 		{
 			"proftpd login failed bracket-IP IPv6",
@@ -72,6 +89,11 @@ func TestFTPDetector(t *testing.T) {
 			"proftpd authentication failed IPv4",
 			`Jun 13 10:00:00 host proftpd[4321]: SECURITY VIOLATION: authentication failed from 203.0.113.99`,
 			true, "203.0.113.99", "proftpd",
+		},
+		{
+			"proftpd authentication failed IPv6",
+			`Jun 13 10:00:00 host proftpd[4321]: SECURITY VIOLATION: authentication failed from 2001:db8::c`,
+			true, "2001:db8::c", "proftpd",
 		},
 
 		// --- NOT owned: non-auth FTP + unrelated lines (wrong-module prevention) ---

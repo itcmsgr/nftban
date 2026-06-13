@@ -62,9 +62,12 @@ func TestFTPLogGlobs_DaemonMapping(t *testing.T) {
 		return false
 	}
 
+	// pure-ftpd is journal-routed (facility 11) — it must NOT be globbed as a file
+	// (its dedicated file is stats-only). Globbing it would tail a no-auth file and
+	// risk double-counting. Verified against live fleet traffic.
 	pure := mk("pure-ftpd").ftpLogGlobs()
-	if !has(pure, "/var/log/pureftpd.log") || !has(pure, "/var/log/pure-ftpd/") {
-		t.Errorf("pure-ftpd missing expected globs: %v", pure)
+	if len(pure) != 0 {
+		t.Errorf("pure-ftpd must NOT produce file globs (journal-routed), got: %v", pure)
 	}
 	vs := mk("vsftpd").ftpLogGlobs()
 	if !has(vs, "/var/log/vsftpd.log") {
@@ -75,14 +78,38 @@ func TestFTPLogGlobs_DaemonMapping(t *testing.T) {
 		t.Errorf("proftpd missing expected glob: %v", pro)
 	}
 
-	// daemon isolation: pure-ftpd-only host must not pull vsftpd/proftpd globs
-	if has(pure, "vsftpd") || has(pure, "proftpd") {
-		t.Errorf("pure-ftpd-only host must not include other daemon globs: %v", pure)
+	// daemon isolation: vsftpd-only host must not pull proftpd globs
+	if has(vs, "proftpd") {
+		t.Errorf("vsftpd-only host must not include other daemon globs: %v", vs)
 	}
 
 	// no FTP daemon → no globs at all (zero-input path)
 	if g := mk().ftpLogGlobs(); len(g) != 0 {
 		t.Errorf("no FTP daemon should yield no globs, got: %v", g)
+	}
+}
+
+// TestFTPDaemonRouting asserts the journal-vs-file routing split that matches how
+// each daemon actually logs (verified against live fleet traffic).
+func TestFTPDaemonRouting(t *testing.T) {
+	mk := func(svc string) *Module {
+		return &Module{detectedServices: map[string]bool{svc: true}}
+	}
+	// pure-ftpd → journal facility 11, never a file watcher
+	if pf := mk("pure-ftpd"); !pf.ftpJournalDaemonDetected() || pf.ftpFileDaemonDetected() {
+		t.Errorf("pure-ftpd must be journal-routed, not file-routed")
+	}
+	// vsftpd / proftpd → file watchers, not the journal-daemon path
+	for _, svc := range []string{"vsftpd", "proftpd"} {
+		m := mk(svc)
+		if m.ftpJournalDaemonDetected() || !m.ftpFileDaemonDetected() {
+			t.Errorf("%s must be file-routed, not journal-routed", svc)
+		}
+	}
+	// no FTP daemon → neither path
+	none := &Module{detectedServices: map[string]bool{}}
+	if none.ftpJournalDaemonDetected() || none.ftpFileDaemonDetected() {
+		t.Errorf("no FTP daemon → neither routing path")
 	}
 }
 
