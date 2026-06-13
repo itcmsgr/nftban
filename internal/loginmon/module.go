@@ -938,6 +938,12 @@ func (m *Module) runJournalWatcher(ctx context.Context) {
 		"-o", "short-iso",
 		"SYSLOG_FACILITY=4",  // Auth facility
 		"SYSLOG_FACILITY=10", // Authpriv facility
+		"SYSLOG_FACILITY=11", // FTP facility (v1.180): pure-ftpd logs auth failures
+		//                       to syslog facility ftp by default (SyslogFacility ftp,
+		//                       its dedicated AltLog is stats-only). Verified against
+		//                       live srv3 traffic: the FTPDetector consumes these via
+		//                       processLine. vsftpd/proftpd that write their own files
+		//                       are covered by the FTP file watchers in startFileWatchers.
 	)
 
 	stdout, err := m.journalCmd.StdoutPipe()
@@ -1262,6 +1268,31 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 		log.Printf("[LOGINMON] webauth: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=web_stack_present_no_access_logs")
 	default:
 		log.Printf("[LOGINMON] webauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_web_stack")
+	}
+
+	// === v1.180: FTP daemon logs (auth_failure: pure-ftpd / vsftpd / proftpd
+	// authentication failures → ReasonFTPAuthFail via the existing FTPDetector).
+	// LoginMon is the sole owner + ban authority for FTP auth_failure. The root daemon
+	// (CAP_DAC_OVERRIDE) reads directly — no collector/spool. Two source paths, by how
+	// each daemon actually logs (verified against live fleet traffic):
+	//   - pure-ftpd → syslog facility ftp (11), consumed by runJournalWatcher (its
+	//     dedicated file is stats-only). No file watcher → no double-count.
+	//   - vsftpd / proftpd → their own log files, consumed by FTP file watchers below.
+	// Health is journal-visible (state=...) so an enabled-but-starved FTP source never
+	// looks healthy. ===
+	ftpFileLogs := m.discoverFTPLogs() // vsftpd/proftpd files only (pure-ftpd is journal)
+	journalCovered := m.ftpJournalDaemonDetected()
+	switch {
+	case len(ftpFileLogs) > 0 || journalCovered:
+		log.Printf("[LOGINMON] ftpauth: state=OK resolved_by=journal+files files=%d journal_ftp=%t",
+			len(ftpFileLogs), journalCovered)
+		for _, p := range ftpFileLogs {
+			startWatcher("ftp", p)
+		}
+	case m.ftpFileDaemonDetected():
+		log.Printf("[LOGINMON] ftpauth: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=ftp_file_daemon_present_no_logs")
+	default:
+		log.Printf("[LOGINMON] ftpauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_ftp_daemon")
 	}
 }
 
