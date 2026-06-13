@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.183.0] - 2026-06-13 — LoginMon input-readability finding (HEALTH-NO-INPUT-AXIS increment 2)
+
+**Codename:** `LOGINMON_INPUT_READABILITY_FINDING` · **Scope/design:** `NFTBAN_ROADMAP/V1_182_GLOBAL_HEALTH_INPUT_AXIS_SCOPE.md`
+**PR:** [#843](https://github.com/itcmsgr/nftban/pull/843)
+
+> **Why:** the `DETECTION_INPUT_AUTHORITY` audit flagged that an enabled module reading *nothing* reads healthy. Increment 1 (v1.182) made LoginMon per-source input-state observable over daemon IPC; increment 2 surfaces it through `nftban health` — **without unfreezing the M81-6 health-output schema.**
+
+### Changed — LoginMon input-readability surfaced as a warning finding (no new ban surface)
+- The validator already queries the journal (`queryJournal`). `evaluateLoginMon` (`internal/validator/module_health.go`) now reads the daemon's own `[LOGINMON] <src>: state=...` startup lines (v1.179 webauth + v1.180 ftpauth), derives an internal input-readability state (`loginMonInputState`/`parseLoginMonState`/`worseInputState`, worst-of precedence `no_logs > warn_no_logs > ok > unknown`), and emits the new `VAL-LOGINMON-002` warning finding (`CodeLoginMonNoInput`) when an enabled module's source reports no input. The daemon is the authority on its own watchers — no IPC client, no state file.
+- `types.go`: `InputState` (`ok`/`warn_no_logs`/`no_logs`/`unknown`) + `ModuleHealth.Input` as an **INTERNAL** field (`json:"-"`, drives the finding, NOT serialized; `ToJSONLegacy`/rebuild parsers + the frozen `ModuleJSON` untouched).
+
+### Schema intentionally NOT extended
+The frozen M81-6 health-output schema was deliberately left unchanged — `health_output.go`/`health_mapper.go` explicitly not extended (comments record why). A first-class JSON **Input axis** remains **deferred to the SCHEMA-UNFREEZE major.**
+
+### Envelope
+- Daemon `cmd/nftband` source moves (validator compiled in): `6fdfd975`→`dc4e1a33`. **Schema 1.83.0 frozen** (`ModuleJSON` unchanged; `health_mapper_test` schema_version assertion still 1.83.0). **No packaging/FHS/cmd change.**
+- **Validation:** parse/precedence units + starved→finding + ok→no-finding (mock journal reader); `go test ./internal/validator/...` + `go build ./...` green; CI #843 green / 0 GHAS.
+
+---
+
 ## [v1.182.0] - 2026-06-13 — LoginMon input-state observability (HEALTH-NO-INPUT-AXIS, increment 1)
 
 **Codename:** `LOGINMON_INPUT_STATE_OBSERVABILITY` · **Scope/design:** `NFTBAN_ROADMAP/V1_182_GLOBAL_HEALTH_INPUT_AXIS_SCOPE.md`
