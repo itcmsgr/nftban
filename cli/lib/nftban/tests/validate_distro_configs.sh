@@ -51,7 +51,7 @@ REQUIRED_FIELDS[package_manager]="type install_cmd update_cmd"
 # v2.1: fail2ban removed - use native login monitoring
 REQUIRED_FIELDS[packages]="nftables curl bash systemd mail golang"
 REQUIRED_FIELDS[services]="cron rsyslog nftables sshd"
-REQUIRED_FIELDS[paths]="nft systemctl journalctl auth_log maillog exim_log exim_reject_log dovecot_log pureftpd_log directadmin_login_log directadmin_security_log"
+REQUIRED_FIELDS[paths]="nft systemctl journalctl auth_log maillog exim_log dovecot_log directadmin_login_log directadmin_security_log"
 
 # BUG-19 (v1.79.3): DirectAdmin officially supports Debian and Ubuntu.
 # DA path keys are now UNIVERSAL — required on every distro family with a
