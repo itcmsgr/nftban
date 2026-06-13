@@ -238,7 +238,50 @@ func (r *EveReader) readEventsPolling(events chan<- *Event, stopChan <-chan stru
 }
 
 // drainEvents reads all available events from the reader and sends them to the channel.
+// reopenIfRotated detects log rotation of eve.json and re-syncs the reader so events
+// written after a rotate are not silently missed (SURICATA-EVE-ROTATION-MISS). Two cases:
+//   - copytruncate: same inode truncated to 0 → our offset is now past EOF → seek to start.
+//   - rename+create: r.path now resolves to a different inode → reopen and read from start
+//     (the rotated-in file is fresh, so all of its content is new and must be processed).
+//
+// Best-effort: any stat/open error leaves the current fd in place; the next tick retries.
+func (r *EveReader) reopenIfRotated() {
+	if r.file == nil {
+		return
+	}
+	cur, err := r.file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return
+	}
+	openInfo, err := r.file.Stat()
+	if err != nil {
+		return
+	}
+	// copytruncate: the open fd shrank below our read offset.
+	if openInfo.Size() < cur {
+		if _, err := r.file.Seek(0, io.SeekStart); err == nil {
+			r.reader.Reset(r.file)
+		}
+		return
+	}
+	// rename+create: the path now points at a different inode than our open fd.
+	pathInfo, err := os.Stat(r.path)
+	if err != nil {
+		return // path missing mid-rotation; keep current fd, retry next tick
+	}
+	if !os.SameFile(openInfo, pathInfo) {
+		newFile, err := os.Open(r.path) // #nosec G304 -- r.path is the configured eve.json path
+		if err != nil {
+			return
+		}
+		r.file.Close()
+		r.file = newFile
+		r.reader.Reset(r.file) // read the rotated-in file from the start
+	}
+}
+
 func (r *EveReader) drainEvents(events chan<- *Event, stopChan <-chan struct{}) {
+	r.reopenIfRotated()
 	for {
 		event, err := r.ReadEvent()
 		if err != nil {
