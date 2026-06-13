@@ -1245,6 +1245,24 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 			startWatcher(service, logPath)
 		}
 	}
+
+	// === v1.179: web access logs (auth_failure: HTTP basic-auth 401/403 + WordPress
+	// wp-login failed-credential). LoginMon owns ONLY auth_failure on these logs;
+	// web_abuse (xmlrpc/floods/scanners) stays with BotScan->BotGuard. The root daemon
+	// (CAP_DAC_OVERRIDE) reads these DIRECTLY — no collector/spool. Health is journal-
+	// visible (resolved_by=discovery state=...) so zero-input never looks healthy. ===
+	webLogs := m.discoverWebAccessLogs()
+	switch {
+	case len(webLogs) > 0:
+		log.Printf("[LOGINMON] webauth: state=OK resolved_by=discovery files=%d", len(webLogs))
+		for _, p := range webLogs {
+			startWatcher("webauth", p)
+		}
+	case m.webStackDetected():
+		log.Printf("[LOGINMON] webauth: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=web_stack_present_no_access_logs")
+	default:
+		log.Printf("[LOGINMON] webauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_web_stack")
+	}
 }
 
 // runFileWatcher SUPERVISES a tail -F watcher: it (re)spawns the child via

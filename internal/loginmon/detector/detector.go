@@ -115,6 +115,10 @@ func NewRegistry() *Registry {
 	r.Register(NewMailDetector())
 	r.Register(NewFTPDetector())
 	r.Register(NewPanelDetector())
+	// WebAuth registered AFTER Panel so cPanel /login/ 401 stays PanelDetector-owned
+	// (first-match wins). WebAuth owns only generic HTTP basic-auth 401/403 + WordPress
+	// wp-login failed-credential (auth_failure); web_abuse stays with BotScan->BotGuard.
+	r.Register(NewWebAuthDetector())
 
 	return r
 }
