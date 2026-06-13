@@ -45,16 +45,16 @@ const (
 
 // ValidationResult is the complete output of kernel validation.
 type ValidationResult struct {
-	SchemaVersion string           `json:"schema_version"`
-	Status        Status           `json:"status"`
-	Timestamp     time.Time        `json:"timestamp"`
-	Families      []FamilyResult   `json:"families"`
-	Findings      []Finding        `json:"findings"`
-	Summary       SummaryCounts    `json:"summary"`
-	ChainCount    ChainCounts      `json:"chain_counts"`
-	ServiceState  ServiceState     `json:"service_state"`
-	Modules              ModuleHealthMap  `json:"modules"`                // M81-4
-	ConsistencyOverall   string           `json:"consistency_overall"`    // v1.82: "ok" | "mismatch"
+	SchemaVersion      string          `json:"schema_version"`
+	Status             Status          `json:"status"`
+	Timestamp          time.Time       `json:"timestamp"`
+	Families           []FamilyResult  `json:"families"`
+	Findings           []Finding       `json:"findings"`
+	Summary            SummaryCounts   `json:"summary"`
+	ChainCount         ChainCounts     `json:"chain_counts"`
+	ServiceState       ServiceState    `json:"service_state"`
+	Modules            ModuleHealthMap `json:"modules"`             // M81-4
+	ConsistencyOverall string          `json:"consistency_overall"` // v1.82: "ok" | "mismatch"
 
 	// v1.89 INV-M-001/002: Expose kernel state for evidence layer.
 	// These fields are internal — not serialized to the frozen JSON schema.
@@ -152,12 +152,30 @@ const (
 	EffectivePrimed    EffectiveState = "primed"
 )
 
-// ModuleHealth holds the 4-axis health evaluation for one module.
+// InputState represents detection-source input readability (v1.183 HEALTH-NO-INPUT-AXIS
+// increment 2). It makes an enabled-but-starved module visible in `nftban health` instead
+// of reading healthy. Derived from the daemon's "[LOGINMON] <src>: state=..." journal
+// lines (the daemon is the authority on its own watchers). Omitted unless determinable.
+type InputState string
+
+const (
+	InputOK         InputState = "ok"           // a source is present + producing input
+	InputWarnNoLogs InputState = "warn_no_logs" // stack present but no logs / no recent lines
+	InputNoLogs     InputState = "no_logs"      // no source/daemon for an enabled module
+	InputUnknown    InputState = "unknown"      // no input-state evidence available
+)
+
+// ModuleHealth holds the per-module health evaluation. v1.183 adds the Input axis
+// (input-readability) as an INTERNAL field (json:"-") — it drives a findings-array signal
+// (CodeLoginMonNoInput) which is the schema-safe way to surface enabled-but-starved in
+// `nftban health`. The frozen M81-6 health-output schema (ModuleJSON) is NOT extended here;
+// promoting Input to a first-class JSON axis is deferred to the SCHEMA-UNFREEZE major.
 type ModuleHealth struct {
 	Config     ConfigState     `json:"config"`
 	Structural StructuralState `json:"structural,omitempty"`
 	Runtime    RuntimeState    `json:"runtime,omitempty"`
 	Effective  EffectiveState  `json:"effective,omitempty"`
+	Input      InputState      `json:"-"` // internal (v1.183); surfaced via CodeLoginMonNoInput finding, not the frozen schema
 }
 
 // BlacklistHealth holds the split blacklist state per M81-3 contract.
@@ -170,7 +188,7 @@ type BlacklistHealth struct {
 // BlacklistSubHealth represents a blacklist sub-source state.
 type BlacklistSubHealth struct {
 	State   string `json:"state"`             // enforcing|primed|idle|loaded|stale|disabled
-	Entries int    `json:"entries,omitempty"`  // element count (manual/feeds)
+	Entries int    `json:"entries,omitempty"` // element count (manual/feeds)
 	Drops   int64  `json:"drops,omitempty"`   // counter value (manual only — attributable)
 }
 
@@ -199,20 +217,20 @@ const (
 type ServiceState struct {
 	Nftband       RuntimeState `json:"nftband"`
 	NftbandDetail string       `json:"nftband_detail,omitempty"`
-	TimerCount    int          `json:"timer_count"`    // v1.83: active nftban-* timer count
+	TimerCount    int          `json:"timer_count"` // v1.83: active nftban-* timer count
 }
 
 // FamilyResult holds validation results for a single address family (ip/ip6).
 type FamilyResult struct {
-	Family       string       `json:"family"` // "ip" or "ip6"
-	Status       Status       `json:"status"`
-	TablePresent bool         `json:"table_present"`
-	ChainCount   int          `json:"chain_count"`
-	SetCount     int          `json:"set_count"`
-	BaseChains   ChainCheck   `json:"base_chains"`
-	HelperChains ChainCheck   `json:"helper_chains"`
-	Anchors      AnchorCheck  `json:"anchors"`
-	Sets         SetCheck     `json:"sets"`
+	Family       string      `json:"family"` // "ip" or "ip6"
+	Status       Status      `json:"status"`
+	TablePresent bool        `json:"table_present"`
+	ChainCount   int         `json:"chain_count"`
+	SetCount     int         `json:"set_count"`
+	BaseChains   ChainCheck  `json:"base_chains"`
+	HelperChains ChainCheck  `json:"helper_chains"`
+	Anchors      AnchorCheck `json:"anchors"`
+	Sets         SetCheck    `json:"sets"`
 }
 
 // ChainCheck holds chain validation results.
@@ -303,22 +321,23 @@ const (
 	CodeModuleDegraded = "VAL-MODULE-001"
 
 	// Service findings (B80-4)
-	CodeServiceDown  = "VAL-SERVICE-001" // required service not active
-	CodeTimerNone    = "VAL-TIMER-001"   // v1.83: no nftban timers active
-	CodeTimerError   = "VAL-TIMER-002"   // v1.83: timer query failed
+	CodeServiceDown = "VAL-SERVICE-001" // required service not active
+	CodeTimerNone   = "VAL-TIMER-001"   // v1.83: no nftban timers active
+	CodeTimerError  = "VAL-TIMER-002"   // v1.83: timer query failed
 
 	// Module-specific findings (M81-4)
-	CodeGeobanDBMissing     = "VAL-GEOBAN-001"   // geoip database missing/empty
-	CodeBotGuardNoEvidence  = "VAL-BOTGUARD-001" // v1.84: no recent BotGuard runtime evidence
-	CodeLoginMonNoEvidence  = "VAL-LOGINMON-001" // v1.84: no recent LoginMon runtime evidence
+	CodeGeobanDBMissing    = "VAL-GEOBAN-001"   // geoip database missing/empty
+	CodeBotGuardNoEvidence = "VAL-BOTGUARD-001" // v1.84: no recent BotGuard runtime evidence
+	CodeLoginMonNoEvidence = "VAL-LOGINMON-001" // v1.84: no recent LoginMon runtime evidence
+	CodeLoginMonNoInput    = "VAL-LOGINMON-002" // v1.183: enabled but a detection source reports no input
 
 	// Consistency findings (v1.82)
 	CodeConsistencyMismatch = "VAL-CONS-001" // config/kernel disagreement
 
 	// System findings
-	CodeNftFailed    = "VAL-SYSTEM-001"
-	CodeNftNoOutput  = "VAL-SYSTEM-002"
-	CodeParseError   = "VAL-SYSTEM-003"
+	CodeNftFailed   = "VAL-SYSTEM-001"
+	CodeNftNoOutput = "VAL-SYSTEM-002"
+	CodeParseError  = "VAL-SYSTEM-003"
 )
 
 // Required anchors in strict order.

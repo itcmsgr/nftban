@@ -318,7 +318,74 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 	// Default to idle from validator perspective.
 	h.Effective = EffectiveIdle
 
+	// Input axis (v1.183 HEALTH-NO-INPUT-AXIS increment 2): derive input-readability
+	// from the daemon's "[LOGINMON] <src>: state=..." startup lines (v1.179 webauth +
+	// v1.180 ftpauth). The daemon is the authority on its own watchers; the kernel-truth
+	// validator reads it from the journal it already queries. An enabled-but-starved
+	// source now surfaces in `nftban health` instead of reading healthy.
+	h.Input = loginMonInputState(context.Background())
+	if h.Config == ConfigEnabled && (h.Input == InputNoLogs || h.Input == InputWarnNoLogs) {
+		moduleFindings = append(moduleFindings, Finding{
+			Code:      CodeLoginMonNoInput,
+			Severity:  SeverityWarn,
+			Component: "module",
+			Message:   "LoginMon enabled but a detection source reports no input (" + string(h.Input) + ")",
+		})
+	}
+
 	return h
+}
+
+// loginMonInputState derives the worst-case input readability across LoginMon's
+// discovered sources from the daemon's "[LOGINMON] <src>: state=..." journal lines.
+// Precedence (worst wins): no_logs > warn_no_logs > ok > unknown.
+func loginMonInputState(ctx context.Context) InputState {
+	worst := InputUnknown
+	for _, src := range []string{"webauth", "ftpauth"} {
+		ev := queryJournal(ctx, JournalQuery{
+			Patterns: []string{"[LOGINMON] " + src + ": state="},
+			Since:    15 * time.Minute,
+		})
+		if ev.ErrKind != ErrNone || !ev.Found {
+			continue
+		}
+		worst = worseInputState(worst, parseLoginMonState(ev.MatchedLine))
+	}
+	return worst
+}
+
+// parseLoginMonState extracts the input-state token from a "[LOGINMON] <src>: state=<TOK> ..."
+// line and maps it to the InputState vocabulary.
+func parseLoginMonState(line string) InputState {
+	const marker = "state="
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return InputUnknown
+	}
+	tok := line[i+len(marker):]
+	if j := strings.IndexAny(tok, " \t\r\n"); j >= 0 {
+		tok = tok[:j]
+	}
+	switch tok {
+	case "OK":
+		return InputOK
+	case "WARN_NO_LOGS":
+		return InputWarnNoLogs
+	case "NO_LOGS":
+		return InputNoLogs
+	default:
+		return InputUnknown
+	}
+}
+
+// worseInputState returns the higher-severity of two input states
+// (no_logs > warn_no_logs > ok > unknown).
+func worseInputState(a, b InputState) InputState {
+	rank := map[InputState]int{InputUnknown: 0, InputOK: 1, InputWarnNoLogs: 2, InputNoLogs: 3}
+	if rank[b] > rank[a] {
+		return b
+	}
+	return a
 }
 
 // =============================================================================
