@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.184.0] - 2026-06-13 — Suricata EVE rotation fix + Train-1 detection-tail closure
+
+**Codename:** `SURICATA_EVE_ROTATION_FIX_AND_TRAIN1_DETECTION_TAIL_CLOSURE` · **Classification:** `NFTBAN_ROADMAP/TRAIN1_INPUT_AUTHORITY_DETECTION_TAIL_CLASSIFICATION.md`
+**PR:** [#845](https://github.com/itcmsgr/nftban/pull/845) (sq `d0daee92`)
+
+> **Why:** the Suricata EVE reader opened `eve.json` once and `Seek(SeekEnd)`, with no rotation handling — after logrotate it held a stale offset/fd and silently read 0 new alerts. This closes the input-authority program's detection tail. **No new ban surface, no new source.**
+
+### Fixed — SURICATA-EVE-ROTATION-MISS (correctness-when-enabled; suricata module dormant in daemon)
+- `internal/suricata/reader.go` `reopenIfRotated()` is called at the top of `drainEvents` (both inotify + polling paths funnel through it). It handles **copytruncate** (the open fd shrank below our read offset → `size < offset` → `Seek(0)` + reader reset) and **rename/create** (`os.SameFile` false → reopen the path + read the rotated-in file from the start). Best-effort: stat/open errors keep the current fd and the next tick retries.
+- Tests: copytruncate, rename+create, and a no-rotation normal-tailing guard (no spurious re-read). `go test ./internal/suricata/...` + `go build ./...` green.
+
+### Train-1 (input-authority) detection-tail closure — register-only
+- **DET-WEBAUTH** — already closed by **v1.179** (`webauth.go` parses generic apache/nginx 401; LiteSpeed shares the combined access-log format). Register-close only; no code in this release.
+- **Roundcube** — **DEFERRED** as a future new-source lane `ROUNDCUBE_WEBMAIL_AUTH_SOURCE` (NOT folded here; needs logging prereqs + parser + watcher + dedup + `LOG_SOURCE_OWNERSHIP_DECLARATION`). Direct IMAP/POP3 brute-force stays covered by dovecot. **Roundcube webmail-auth coverage is NOT claimed in this release.**
+
+### Envelope
+- **Daemon `cmd/nftband` is BYTE-IDENTICAL to v1.183 `dc4e1a33`** — the suricata EVE reader is not in the daemon import graph (suricata module dormant); the fix lands in the suricata processor path (correctness-when-enabled). **Schema 1.83.0 frozen. No packaging/FHS/cmd change.**
+- **Validation:** suricata rotation units + `go build ./...` green; PR #845 CI green (0 fail; 0 GHAS-check fail — the gosec `Close()`-unhandled advisory matches the established pre-existing baseline pattern at `reader.go:99/191`, the gosec check itself is green).
+
+---
+
 ## [v1.183.0] - 2026-06-13 — LoginMon input-readability finding (HEALTH-NO-INPUT-AXIS increment 2)
 
 **Codename:** `LOGINMON_INPUT_READABILITY_FINDING` · **Scope/design:** `NFTBAN_ROADMAP/V1_182_GLOBAL_HEALTH_INPUT_AXIS_SCOPE.md`
