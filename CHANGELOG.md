@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.180.0] - 2026-06-13 — LoginMon FTP auth-input (pure-ftpd facility-11 + vsftpd/proftpd source correctness)
+
+**Codename:** `LOGINMON_FTP_AUTH_INPUT` (FTP-only) · **Record:** `NFTBAN_ROADMAP/V1_180_LOGINMON_FTP_IMPL_RECORD.md`
+**PR:** [#837](https://github.com/itcmsgr/nftban/pull/837) (sq `999c9428`)
+
+> **Why:** the Go `FTPDetector` existed but was unfed — no FTP source reached it. Worse, production pure-ftpd (deployed fleet-wide) logs auth failures to **syslog facility ftp (11)**, which the LoginMon journal watcher did not consume (auth/authpriv only) → FTP brute-force was invisible to the daemon.
+
+### Added — LoginMon FTP auth-input (auth_failure only)
+- **pure-ftpd → journal `SYSLOG_FACILITY=11`** added to `runJournalWatcher` (the FTPDetector consumes via `processLine`). `/var/log/pureftpd.log` is stats-only/empty and is intentionally NOT treated as an auth source.
+- **vsftpd / proftpd → file watchers** (`internal/loginmon/ftpdiscovery.go`); pure-ftpd dropped from file globs to avoid double-counting.
+- Root daemon (`CAP_DAC_OVERRIDE`) reads directly — no collector/spool. Zero-input health-visible (`[LOGINMON] ftpauth: state=…`).
+
+### Event ownership (LOG_SOURCE_OWNERSHIP — one event class, one ban owner)
+- FTP authentication failures → **LoginMon `auth_failure`** (`ReasonFTPAuthFail`). No BotScan/BotGuard ownership of FTP auth.
+
+### Fixed (real-production-traffic sampling of srv1-4)
+- **vsftpd file-format gate:** `Detect()` required the `"vsftpd"` substring absent from `/var/log/vsftpd.log` (only `FAIL LOGIN: Client "<ip>"`). Real vsftpd brute from the file is now detected.
+- **pure-ftpd IP extraction:** read a trailing `[<ip>]` bracket real pure-ftpd never emits; the real format is `(?@<ip>) … Authentication failed for user [<username>]`. Added `extractParenAtIP`.
+- **IPv4/IPv6 family parity** for every detector path (16/16 cases).
+
+### Health behavior
+- pure-ftpd present → journal coverage OK even with `files=0`; vsftpd/proftpd present with missing files → `WARN_NO_LOGS`; no FTP daemon → `NO_LOGS`.
+
+### Explicitly NOT in scope (real-prod sampling disproved them)
+- **No cphulkd reader** (login_log duplicates cPanel access_log-401 ownership) · **no exim-rejectlog reader** (auth subset duplicates exim mainlog; unique lines are spam/RBL/HELO, not auth) · no Roundcube · no global `module_health` input-axis · no fleet rollout. Tracked as v1.181 (plan-only dead-key/duplicate-source guard).
+
+### Envelope
+- Daemon `cmd/nftband` source moves **loginmon-only** (`36978621`→`cce992a1`). **Schema 1.83.0 frozen. No packaging/FHS/cmd change.**
+- **Validation:** detector matrix (real pure-ftpd format, IPv4+IPv6, journal-vs-file routing, success-login control) + `go test -race` + `go build ./...` green; PR #837 CI green / 0 GHAS; **lab2 binary-swap PASS** — IPv4→v4 set + IPv6→v6 set kernel-banned (`nft list ruleset`), success-login not banned, SSH preserved, test IPs scrubbed.
+
+---
+
 ## [v1.179.0] - 2026-06-13 — LoginMon web-auth runtime (HTTP basic-auth 401 + WordPress wp-login failed-credential)
 
 **Codename:** `LOGINMON_WEB_AUTH_RUNTIME` (v1.178-B/v1.179) · **Records:** `NFTBAN_ROADMAP/V1_179_LOGINMON_WEB_AUTH_IMPL_RECORD.md`, `LOG_SOURCE_OWNERSHIP_AND_MODULE_BOUNDARY_AUDIT.md`
