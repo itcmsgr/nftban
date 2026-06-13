@@ -45,7 +45,7 @@ type FTPDetector struct {
 	sigFailLogin []byte
 
 	// ProFTPD signals
-	sigProFTPD   []byte
+	sigProFTPD    []byte
 	sigNoSuchUser []byte
 
 	// Common markers
@@ -89,8 +89,12 @@ func (d *FTPDetector) Detect(line []byte) (Verdict, bool) {
 		}
 	}
 
-	// Stage 2: vsftpd detection
-	if bytes.Contains(lineLower, d.sigVsftpd) {
+	// Stage 2: vsftpd detection.
+	// vsftpd's own log file (/var/log/vsftpd.log) does NOT contain the daemon
+	// name "vsftpd" on each line — only the distinctive `FAIL LOGIN: Client "<ip>"`.
+	// The "vsftpd" substring only appears when vsftpd logs via syslog. Gate on the
+	// daemon name OR the distinctive failure phrase so the file source is covered.
+	if bytes.Contains(lineLower, d.sigVsftpd) || bytes.Contains(line, d.sigFailLogin) {
 		if v, ok := d.detectVsftpd(line); ok {
 			return v, true
 		}
@@ -112,8 +116,16 @@ func (d *FTPDetector) detectPureFTPd(line []byte) (Verdict, bool) {
 		return Verdict{}, false
 	}
 
-	// Find IP in brackets
-	addr, ok := d.extractBracketIP(line)
+	// pure-ftpd's real syslog format carries the client IP in the connection
+	// prefix "(<logname>@<ip>)" (logname is "?" on a failed login), e.g.
+	//   pure-ftpd: (?@203.0.113.7) [WARNING] Authentication failed for user [bob]
+	// The bracketed fields are [WARNING] and the *username*, NOT the IP, so try
+	// the paren-at form first and fall back to a bracketed IP (some configs append
+	// a trailing "[<ip>]"). Validated against live srv3 traffic.
+	addr, ok := d.extractParenAtIP(line)
+	if !ok {
+		addr, ok = d.extractBracketIP(line)
+	}
 	if !ok {
 		return Verdict{}, false
 	}
@@ -124,6 +136,25 @@ func (d *FTPDetector) detectPureFTPd(line []byte) (Verdict, bool) {
 		ScoreDelta: 15,
 		Service:    "pure-ftpd",
 	}, true
+}
+
+// extractParenAtIP extracts the IP from pure-ftpd's "(<logname>@<ip>)" connection
+// prefix: the bytes between the first '@' and the following ')'. Handles IPv4 and
+// IPv6. Returns false if no parseable address is present.
+func (d *FTPDetector) extractParenAtIP(line []byte) (netip.Addr, bool) {
+	at := bytes.IndexByte(line, '@')
+	if at == -1 || at+1 >= len(line) {
+		return netip.Addr{}, false
+	}
+	rest := line[at+1:]
+	end := bytes.IndexByte(rest, ')')
+	if end <= 0 {
+		return netip.Addr{}, false
+	}
+	if addr, err := netip.ParseAddr(string(rest[:end])); err == nil {
+		return addr, true
+	}
+	return netip.Addr{}, false
 }
 
 // detectVsftpd handles "vsftpd: ... FAIL LOGIN: Client \"<ip>\""
