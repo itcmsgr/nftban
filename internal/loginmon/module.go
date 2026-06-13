@@ -121,6 +121,15 @@ type Module struct {
 	suricataAvail    bool
 	detectedServices map[string]bool
 
+	// v1.182 HEALTH-NO-INPUT-AXIS: per-source input-state captured at watcher
+	// startup so an enabled-but-starved detection source is observable instead of
+	// reading healthy. Keyed by source label (webauth/ftpauth/exim/dovecot/...),
+	// value is the state vocabulary (OK/WARN_NO_LOGS/NO_LOGS). Guarded by mu;
+	// surfaced via Status().Extra.InputSources. The daemon (root nftband.service)
+	// is the authority on its own watchers — the kernel-truth validator cannot see
+	// watcher starvation, so this is the daemon-side observability foundation.
+	inputSources map[string]string
+
 	// BUG-15: central distro config loader (single source of truth for log paths)
 	// Loaded once at Init(); nil means loader unavailable (parser falls through
 	// to authoritative tool query, then hard-coded fallback list).
@@ -157,6 +166,7 @@ func New() *Module {
 		config:           DefaultConfig(),
 		mode:             ModeAuto,
 		detectedServices: make(map[string]bool),
+		inputSources:     make(map[string]string),
 		// v1.176 watcher-respawn defaults (production): 1s → 60s, reset after 30s healthy.
 		watcherBackoffMin:   1 * time.Second,
 		watcherBackoffMax:   60 * time.Second,
@@ -500,6 +510,12 @@ type LoginMonStatusExtra struct {
 	SubnetPressureCount int64 `json:"subnet_pressure_count,omitempty"` // Cumulative observe-mode pressure events.
 	SubnetBansTotal     int64 `json:"subnet_bans_total,omitempty"`     // Cumulative CIDR bans (enforce mode).
 	SubnetWatchActive   int64 `json:"subnet_watch_active,omitempty"`   // Active prefixes being watched (gauge).
+
+	// v1.182 HEALTH-NO-INPUT-AXIS: per-source input-state (OK/WARN_NO_LOGS/NO_LOGS),
+	// keyed by source label (webauth/ftpauth/...). omitempty so the wire format stays
+	// byte-equivalent for existing readers when no input-state has been captured.
+	// Makes an enabled-but-starved detection source observable via daemon status.
+	InputSources map[string]string `json:"input_sources,omitempty"`
 }
 
 // ToExtraInfo serializes the typed struct into the module.ExtraInfo
@@ -536,6 +552,11 @@ func (e LoginMonStatusExtra) ToExtraInfo() module.ExtraInfo {
 	if e.SubnetWatchActive != 0 {
 		out["subnet_watch_active"] = e.SubnetWatchActive
 	}
+	// v1.182 HEALTH-NO-INPUT-AXIS: emit per-source input-state only when captured,
+	// keeping the wire format byte-identical for existing readers at zero.
+	if len(e.InputSources) > 0 {
+		out["input_sources"] = e.InputSources
+	}
 	return out
 }
 
@@ -569,6 +590,15 @@ func (m *Module) Status() module.Status {
 		SubnetPressureCount: stats.SubnetPressureCount,
 		SubnetBansTotal:     stats.SubnetBansTotal,
 		SubnetWatchActive:   stats.SubnetWatchActive,
+	}
+	// v1.182: copy captured input-states (we already hold m.mu.RLock here, so read
+	// m.inputSources directly rather than via inputStateSnapshot to avoid re-locking).
+	if len(m.inputSources) > 0 {
+		src := make(map[string]string, len(m.inputSources))
+		for k, v := range m.inputSources {
+			src[k] = v
+		}
+		extra.InputSources = src
 	}
 	m.status.Extra = extra.ToExtraInfo()
 
@@ -1267,13 +1297,16 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 	switch {
 	case len(webLogs) > 0:
 		log.Printf("[LOGINMON] webauth: state=OK resolved_by=discovery files=%d", len(webLogs))
+		m.recordInputState("webauth", inputStateOK)
 		for _, p := range webLogs {
 			startWatcher("webauth", p)
 		}
 	case m.webStackDetected():
 		log.Printf("[LOGINMON] webauth: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=web_stack_present_no_access_logs")
+		m.recordInputState("webauth", inputStateWarnNoLogs)
 	default:
 		log.Printf("[LOGINMON] webauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_web_stack")
+		m.recordInputState("webauth", inputStateNoLogs)
 	}
 
 	// === v1.180: FTP daemon logs (auth_failure: pure-ftpd / vsftpd / proftpd
@@ -1292,14 +1325,51 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 	case len(ftpFileLogs) > 0 || journalCovered:
 		log.Printf("[LOGINMON] ftpauth: state=OK resolved_by=journal+files files=%d journal_ftp=%t",
 			len(ftpFileLogs), journalCovered)
+		m.recordInputState("ftpauth", inputStateOK)
 		for _, p := range ftpFileLogs {
 			startWatcher("ftp", p)
 		}
 	case m.ftpFileDaemonDetected():
 		log.Printf("[LOGINMON] ftpauth: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=ftp_file_daemon_present_no_logs")
+		m.recordInputState("ftpauth", inputStateWarnNoLogs)
 	default:
 		log.Printf("[LOGINMON] ftpauth: state=NO_LOGS resolved_by=discovery files=0 reason=no_ftp_daemon")
+		m.recordInputState("ftpauth", inputStateNoLogs)
 	}
+}
+
+// input-state vocabulary (v1.182) — aligned with the BotScan (v1.177) + LoginMon
+// web/ftp (v1.179/v1.180) health line states so CLI + daemon agree.
+const (
+	inputStateOK         = "OK"
+	inputStateWarnNoLogs = "WARN_NO_LOGS"
+	inputStateNoLogs     = "NO_LOGS"
+)
+
+// recordInputState stores the input-state of a detection source (v1.182
+// HEALTH-NO-INPUT-AXIS). Surfaced via Status().Extra.InputSources so an
+// enabled-but-starved source is observable. Safe for concurrent use.
+func (m *Module) recordInputState(source, state string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.inputSources == nil {
+		m.inputSources = make(map[string]string)
+	}
+	m.inputSources[source] = state
+}
+
+// inputStateSnapshot returns a copy of the captured input-states (v1.182).
+func (m *Module) inputStateSnapshot() map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.inputSources) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m.inputSources))
+	for k, v := range m.inputSources {
+		out[k] = v
+	}
+	return out
 }
 
 // runFileWatcher SUPERVISES a tail -F watcher: it (re)spawns the child via
