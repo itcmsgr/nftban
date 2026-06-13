@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.179.0] - 2026-06-13 — LoginMon web-auth runtime (HTTP basic-auth 401 + WordPress wp-login failed-credential)
+
+**Codename:** `LOGINMON_WEB_AUTH_RUNTIME` (v1.178-B/v1.179) · **Records:** `NFTBAN_ROADMAP/V1_179_LOGINMON_WEB_AUTH_IMPL_RECORD.md`, `LOG_SOURCE_OWNERSHIP_AND_MODULE_BOUNDARY_AUDIT.md`
+**PR:** [#835](https://github.com/itcmsgr/nftban/pull/835) (sq `405a8c79`)
+
+> **Why:** Go LoginMon detected WordPress but had no web access-log watcher; apache/nginx HTTP-auth was advertised with no consumer → web/WordPress auth attacks invisible to the daemon.
+
+### Added — LoginMon web-auth runtime (auth_failure only)
+- `internal/loginmon/detector/webauth.go` + `webdiscovery.go` + a supervised (v1.176-respawn) web access-log watcher. Owns ONLY the **`auth_failure`** event class: HTTP **status 401** (generic apache/nginx → `http-auth`) + WordPress `POST /wp-login.php` status-200 failed-credential (→ `wordpress`). Panel-aware discovery (DA/cPanel/Plesk/generic), realpath-canonicalize (cPanel `domlogs` symlink chain), exclude error/compressed/rotated, bounded.
+- Root daemon (`CAP_DAC_OVERRIDE`) reads logs **directly** — no BotScan collector/spool. Zero-input health-visible (`[LOGINMON] webauth: state=…`).
+
+### Event ownership (per the LOG_SOURCE_OWNERSHIP contract — one event class, one ban owner)
+- **NOT matched** (web_abuse → BotScan→BotGuard): `/xmlrpc.php`, wp-login high-rate floods, **403 Forbidden** (authz deny/scanner/WAF), scanner/probe 404s, bad-bot UAs. cPanel `/login/` 401 stays PanelDetector-owned.
+
+### Fixed (caught by real-production-traffic sampling)
+- **status-vs-size false-ban:** loose substring matched the bytes-sent SIZE field as the status. Now **structural** (`parseRequestAndStatus`): the status is parsed as a field and method/path are matched in the request line only (kills the referer/UA false-match too).
+- **DA httpd/nginx mirror double-count:** every request logged to both dirs → counted twice. Prefer `httpd/domains`; skip the nginx mirror when httpd has logs.
+
+### Scoring — REST_401_SCORING_DECISION = CONSERVATIVE_DEFAULT
+wp-login failed-credential score **20**; generic/REST HTTP-401 score **8**; scorer TempBan threshold **45** unchanged → incidental logged-out browser/plugin REST-401s don't ban quickly; sustained probing accumulates.
+
+### Envelope
+- Daemon `cmd/nftband` source moves **loginmon-only** (`48b82663`→`36978621`). **Schema 1.83.0 frozen. No packaging/FHS/cmd change.**
+- **Validation:** unit tests incl. **real sanitized production traffic** (srv1-4/dns1-2) + size-collision + referer + DA-dedup guards; full `go test ./...` green, `-race` clean; CI green / 0 GHAS; real-prod read-only sampling + **final lab binary-swap PASS lab2 (generic) + lab4 (cPanel domlogs canonicalize)**.
+
+### New governance
+- **`LOG_SOURCE_OWNERSHIP_DECLARATION`** is now a mandatory release gate for any detector/log-source/watcher/parser/ban-path change (`LOG_SOURCE_OWNERSHIP_DECLARATION_TEMPLATE.md`).
+
+---
+
 ## [v1.178.0] - 2026-06-13 — BotScan read-authority (cap-scoped collector → nftban-readable spool)
 
 **Codename:** `BOTSCAN_READ_AUTHORITY` (v1.178-A) · **Records:** `NFTBAN_ROADMAP/BOTSCAN_READ_AUTHORITY_SCOPE.md`, `BOTSCAN_READ_AUTHORITY_IMPL_RECORD.md`, `V178A_PACKAGED_INSTALL_LAB_VALIDATION.md`, `V1_177_DIAGNOSTIC_FLEET_VALIDATION.md`
