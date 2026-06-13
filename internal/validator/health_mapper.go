@@ -99,6 +99,10 @@ func mapModule(h *ModuleHealth, daemonDependent bool) *ModuleJSON {
 		j.Effective = string(h.Effective)
 	}
 
+	// v1.183: ModuleHealth.Input is intentionally NOT projected into the frozen M81-6
+	// ModuleJSON schema. Enabled-but-starved is surfaced via the CodeLoginMonNoInput
+	// finding (open findings code set, schema-safe). First-class input axis = SCHEMA-UNFREEZE.
+
 	return j
 }
 

@@ -29,15 +29,15 @@ package validator
 // This is the canonical M81-6 schema. Fields MUST NOT be added without a
 // schema version bump. See JSON_SCHEMA_SPEC_v1.81.md Section 8.
 type HealthOutput struct {
-	SchemaVersion string              `json:"schema_version"`
-	Status        string              `json:"status"`
-	Timestamp     string              `json:"timestamp"`
-	ServiceState  ServiceStateJSON    `json:"service_state"`
-	Modules       ModulesJSON         `json:"modules"`
-	Consistency   ConsistencyJSON     `json:"consistency"`
-	Findings      []FindingJSON       `json:"findings"`
-	ChainCounts   ChainCounts         `json:"chain_counts"`
-	Summary       SummaryCounts       `json:"summary"`
+	SchemaVersion string           `json:"schema_version"`
+	Status        string           `json:"status"`
+	Timestamp     string           `json:"timestamp"`
+	ServiceState  ServiceStateJSON `json:"service_state"`
+	Modules       ModulesJSON      `json:"modules"`
+	Consistency   ConsistencyJSON  `json:"consistency"`
+	Findings      []FindingJSON    `json:"findings"`
+	ChainCounts   ChainCounts      `json:"chain_counts"`
+	Summary       SummaryCounts    `json:"summary"`
 }
 
 // ServiceStateJSON is the JSON representation of daemon and timer state.
@@ -61,10 +61,13 @@ type ModulesJSON struct {
 // ModuleJSON is the standard 4-axis module output.
 // Fields are omitted when not applicable (e.g. runtime for kernel-only modules).
 type ModuleJSON struct {
-	Config     string `json:"config"`                // enabled|disabled (always present)
-	Structural string `json:"structural,omitempty"`  // present|missing (omitted if disabled)
-	Runtime    string `json:"runtime,omitempty"`     // running|stopped (omitted if not daemon-dependent)
-	Effective  string `json:"effective,omitempty"`   // enforcing|observing|idle (omitted if disabled)
+	Config     string `json:"config"`               // enabled|disabled (always present)
+	Structural string `json:"structural,omitempty"` // present|missing (omitted if disabled)
+	Runtime    string `json:"runtime,omitempty"`    // running|stopped (omitted if not daemon-dependent)
+	Effective  string `json:"effective,omitempty"`  // enforcing|observing|idle (omitted if disabled)
+	// NOTE: the v1.183 input-readability axis is intentionally NOT a field here — the
+	// M81-6 health-output schema is frozen (1.83.0). Enabled-but-starved is surfaced via
+	// the CodeLoginMonNoInput finding instead; a first-class input axis awaits SCHEMA-UNFREEZE.
 }
 
 // BlacklistJSON is the composite blacklist module output.
@@ -77,9 +80,9 @@ type BlacklistJSON struct {
 
 // BlacklistSubJSON represents one blacklist source.
 type BlacklistSubJSON struct {
-	State   string `json:"state"`            // enforcing|primed|idle|loaded|stale|degraded|disabled
+	State   string `json:"state"`             // enforcing|primed|idle|loaded|stale|degraded|disabled
 	Entries int    `json:"entries,omitempty"` // element count (omitted if 0 or not applicable)
-	Drops   int64  `json:"drops,omitempty"`  // counter value (omitted if 0 or not attributable)
+	Drops   int64  `json:"drops,omitempty"`   // counter value (omitted if 0 or not attributable)
 }
 
 // ConsistencyJSON holds cross-source agreement status.
@@ -91,7 +94,7 @@ type ConsistencyJSON struct {
 // FindingJSON is a single validation finding in the output.
 type FindingJSON struct {
 	Code        string `json:"code"`
-	Severity    string `json:"severity"`              // info|warn|error|critical
+	Severity    string `json:"severity"` // info|warn|error|critical
 	Component   string `json:"component"`
 	Family      string `json:"family,omitempty"`
 	Message     string `json:"message"`
