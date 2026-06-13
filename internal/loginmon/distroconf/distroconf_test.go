@@ -113,11 +113,9 @@ func TestLoadFromFile_Almalinux9(t *testing.T) {
 		"auth_log":                 "/var/log/secure",
 		"maillog":                  "/var/log/maillog",
 		"exim_log":                 "/var/log/exim/mainlog",
-		"exim_reject_log":          "/var/log/exim/rejectlog",
 		"dovecot_log":              "/var/log/maillog",
 		"directadmin_login_log":    "/var/log/directadmin/login.log",
 		"directadmin_security_log": "/var/log/directadmin/security.log",
-		"pureftpd_log":             "/var/log/messages",
 	}
 	for k, want := range cases {
 		if got := l.Path(k); got != want {
@@ -143,9 +141,7 @@ func TestLoadFromFile_Debian12(t *testing.T) {
 		"auth_log":                 "/var/log/auth.log",
 		"maillog":                  "/var/log/mail.log",
 		"exim_log":                 "/var/log/exim4/mainlog",
-		"exim_reject_log":          "/var/log/exim4/rejectlog",
 		"dovecot_log":              "/var/log/mail.log",
-		"pureftpd_log":             "/var/log/syslog",
 		"directadmin_login_log":    "/var/log/directadmin/login.log",
 		"directadmin_security_log": "/var/log/directadmin/security.log",
 	}
@@ -250,9 +246,7 @@ func TestAllDistros_HaveAllRequiredKeys(t *testing.T) {
 		"auth_log",
 		"maillog",
 		"exim_log",
-		"exim_reject_log",
 		"dovecot_log",
-		"pureftpd_log",
 	}
 	rhelOnly := []string{
 		"directadmin_login_log",

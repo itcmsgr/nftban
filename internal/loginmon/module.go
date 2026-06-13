@@ -928,23 +928,29 @@ func (m *Module) detectMode() Mode {
 	}
 }
 
+// journalAuthFacilities is the exact set of syslog facilities the LoginMon journal
+// watcher consumes, by facility NAME (for the source-ownership guard) → numeric value:
+//
+//	auth (4) · authpriv (10) · ftp (11, v1.180: pure-ftpd logs auth failures here by
+//	default since SyslogFacility ftp; its dedicated AltLog is stats-only).
+//
+// Changing this set feeds new input to the detector registry → requires a
+// LOG_SOURCE_OWNERSHIP_DECLARATION (guarded by TestSourceOwnershipGuard_JournalFacilities).
+var journalAuthFacilities = []string{"4", "10", "11"}
+
 // runJournalWatcher watches journalctl for login failures
 func (m *Module) runJournalWatcher(ctx context.Context) {
 	// Build journalctl command
-	m.journalCmd = exec.CommandContext(ctx, "journalctl",
+	args := []string{
 		"-f",      // Follow mode
 		"-n", "0", // Don't show historical entries
 		"--no-pager",
 		"-o", "short-iso",
-		"SYSLOG_FACILITY=4",  // Auth facility
-		"SYSLOG_FACILITY=10", // Authpriv facility
-		"SYSLOG_FACILITY=11", // FTP facility (v1.180): pure-ftpd logs auth failures
-		//                       to syslog facility ftp by default (SyslogFacility ftp,
-		//                       its dedicated AltLog is stats-only). Verified against
-		//                       live srv3 traffic: the FTPDetector consumes these via
-		//                       processLine. vsftpd/proftpd that write their own files
-		//                       are covered by the FTP file watchers in startFileWatchers.
-	)
+	}
+	for _, f := range journalAuthFacilities {
+		args = append(args, "SYSLOG_FACILITY="+f)
+	}
+	m.journalCmd = exec.CommandContext(ctx, "journalctl", args...)
 
 	stdout, err := m.journalCmd.StdoutPipe()
 	if err != nil {
