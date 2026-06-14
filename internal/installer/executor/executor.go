@@ -162,6 +162,14 @@ type Executor interface {
 	// ServiceStop stops a systemd unit.
 	ServiceStop(unit string) error
 
+	// ServiceTryRestart restarts a systemd unit IFF it is currently active, and is a
+	// no-op if it is inactive (= `systemctl try-restart`). v1.185
+	// INSTALL-UPGRADE-NO-DAEMON-RESTART: on an upgrade over a live daemon the plain
+	// `start` is a no-op, so the OLD binary keeps running; try-restart idempotently
+	// cycles it to load the newly-installed binary without forcing a start on hosts
+	// where the unit is intentionally stopped.
+	ServiceTryRestart(unit string) error
+
 	// ServiceDisable disables a systemd unit.
 	ServiceDisable(unit string) error
 
