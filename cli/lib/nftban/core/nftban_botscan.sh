@@ -600,7 +600,8 @@ nftban_botscan_count_404_tail() {
     # Reset so the count reflects ONLY this cycle's scanned tails.
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
-    local files=("$@") n=${#files[@]}
+    local files=("$@")
+    local n=${#files[@]}
     [[ "$n" -eq 0 ]] && return 0
     # Anti-starvation rotation cursor (next cycle resumes where this one stopped).
     local rot_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/404-rotate" rot=0
