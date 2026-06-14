@@ -1309,6 +1309,31 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 		m.recordInputState("webauth", inputStateNoLogs)
 	}
 
+	// === v1.186: Roundcube webmail userlogins.log (auth_failure: interactive webmail
+	// login failures → ReasonRoundcubeAuthFail via RoundcubeDetector). DirectAdmin-only
+	// coverage claim (Gate-0 captured the real client IP in the central
+	// /var/log/roundcube/userlogins.log). cPanel (per-user log) + Plesk are DEFERRED and
+	// not discovered. The root daemon (CAP_DAC_OVERRIDE) reads the central log directly —
+	// Option A; the webapps log dir is drwx--x--- so a cap-scoped nftban-user collector
+	// cannot traverse it. The detector's mandatory public-IP-only guard keeps a proxied /
+	// non-default host that logs 127.0.0.1 a safe no-op. Health is journal-visible so an
+	// enabled-but-starved Roundcube source (log_logins off) never looks healthy. ===
+	rcLogs := m.discoverRoundcubeLogs()
+	switch {
+	case len(rcLogs) > 0:
+		log.Printf("[LOGINMON] roundcube: state=OK resolved_by=discovery files=%d", len(rcLogs))
+		m.recordInputState("roundcube", inputStateOK)
+		for _, p := range rcLogs {
+			startWatcher("roundcube", p)
+		}
+	case m.roundcubeDetected():
+		log.Printf("[LOGINMON] roundcube: state=WARN_NO_LOGS resolved_by=discovery files=0 reason=roundcube_present_log_logins_off_or_no_userlogins")
+		m.recordInputState("roundcube", inputStateWarnNoLogs)
+	default:
+		log.Printf("[LOGINMON] roundcube: state=NO_LOGS resolved_by=discovery files=0 reason=no_roundcube")
+		m.recordInputState("roundcube", inputStateNoLogs)
+	}
+
 	// === v1.180: FTP daemon logs (auth_failure: pure-ftpd / vsftpd / proftpd
 	// authentication failures → ReasonFTPAuthFail via the existing FTPDetector).
 	// LoginMon is the sole owner + ban authority for FTP auth_failure. The root daemon

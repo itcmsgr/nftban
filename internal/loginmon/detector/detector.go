@@ -52,6 +52,7 @@ const (
 	ReasonCPanelLogin          uint16 = 4002
 	ReasonWordPressXMLRPC      uint16 = 5001
 	ReasonWordPressWPLogin     uint16 = 5002
+	ReasonRoundcubeAuthFail    uint16 = 5003
 	ReasonPleskLogin           uint16 = 4003
 	ReasonGenericAuthFail      uint16 = 9001
 )
@@ -72,6 +73,7 @@ var ReasonName = map[uint16]string{
 	ReasonCPanelLogin:        "cpanel_login_fail",
 	ReasonWordPressXMLRPC:    "wordpress_xmlrpc",
 	ReasonWordPressWPLogin:   "wordpress_wp_login",
+	ReasonRoundcubeAuthFail:  "roundcube_auth_fail",
 	ReasonPleskLogin:         "plesk_login_fail",
 	ReasonGenericAuthFail:    "generic_auth_fail",
 }
@@ -119,6 +121,13 @@ func NewRegistry() *Registry {
 	// (first-match wins). WebAuth owns only generic HTTP basic-auth 401/403 + WordPress
 	// wp-login failed-credential (auth_failure); web_abuse stays with BotScan->BotGuard.
 	r.Register(NewWebAuthDetector())
+	// Roundcube webmail userlogins.log "Failed login for <user> from <IP> …" (v1.186,
+	// DirectAdmin-only coverage claim). Owns ONLY webmail interactive auth_failure on
+	// the Roundcube userlogins log; tight prefilter cannot match access/mail/ssh lines.
+	// Contains a MANDATORY public-IP-only guard (never bans loopback/RFC1918/link-local/
+	// ULA/malformed) so the fleet-wide binary is safe on proxied panels that may log
+	// 127.0.0.1, and the dovecot rip=localhost webmail mirror is auto-neutralized.
+	r.Register(NewRoundcubeDetector())
 
 	return r
 }
