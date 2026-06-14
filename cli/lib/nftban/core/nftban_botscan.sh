@@ -307,31 +307,42 @@ nftban_botscan_find_log() {
 
 # Parse access log line
 # Returns: IP|URL|METHOD|STATUS|USER_AGENT
-nftban_botscan_parse_line() {
+# v1.187.1 — NO-FORK parser. Sets the globals _BS_IP/_BS_URL/_BS_METHOD/_BS_STATUS/_BS_UA
+# and returns 0 (parsed) / 1 (no match). The hot scan loops call THIS directly so a busy
+# host no longer forks a subshell per log line (the v1.187.1 cycle-timeout fix: a 4.2 MB DA
+# log was ~123s / 5497 lines = ~22 ms/line, dominated by per-line command-substitution forks
+# — parse + match + timestamp). Regex semantics are byte-identical to the previous version.
+nftban_botscan_parse_line_g() {
     local line="$1"
-    local ip url method status ua
 
     # Combined Log Format: IP - - [date] "METHOD URL PROTO" STATUS SIZE "REFERER" "UA"
     # IPv4 and IPv6 compatible (v1.19.0, v1.19.12 bracket fix R22)
     # Handles: 192.168.1.1, 2001:db8::1, [2001:db8::1]:8080
     if [[ "$line" =~ ^\[?([0-9a-fA-F.:]+)\]?.*\"([A-Z]+)\ ([^\"\ ]+).*\"\ ([0-9]+) ]]; then
-        ip="${BASH_REMATCH[1]}"
-        method="${BASH_REMATCH[2]}"
-        url="${BASH_REMATCH[3]}"
-        status="${BASH_REMATCH[4]}"
+        _BS_IP="${BASH_REMATCH[1]}"
+        _BS_METHOD="${BASH_REMATCH[2]}"
+        _BS_URL="${BASH_REMATCH[3]}"
+        _BS_STATUS="${BASH_REMATCH[4]}"
 
         # Extract user agent
         if [[ "$line" =~ \"([^\"]+)\"$ ]]; then
-            ua="${BASH_REMATCH[1]}"
+            _BS_UA="${BASH_REMATCH[1]}"
         else
-            ua="-"
+            _BS_UA="-"
         fi
 
-        echo "${ip}|${url}|${method}|${status}|${ua}"
         return 0
     fi
 
     return 1
+}
+
+# Echo-API wrapper — UNCHANGED output contract (IP|URL|METHOD|STATUS|UA). Used by
+# cmd_botscan (emulate) and existing tests. Delegates to the no-fork parser so the two
+# can never drift.
+nftban_botscan_parse_line() {
+    nftban_botscan_parse_line_g "$1" || return 1
+    echo "${_BS_IP}|${_BS_URL}|${_BS_METHOD}|${_BS_STATUS}|${_BS_UA}"
 }
 
 # Check if IP is whitelisted — v1.19.0: IPv4/IPv6 parity
@@ -388,15 +399,19 @@ nftban_botscan_is_path_whitelisted() {
 
 # Match URL against patterns
 # Returns: matched pattern name or empty
-nftban_botscan_match_url() {
+# v1.187.1 — NO-FORK matcher. Sets _BS_MATCHED to the matched pattern name ("" if none) and
+# returns 0 (match) / 1 (no match). Same iteration order + match-type semantics as the echo
+# API; called directly from the hot path (process_entry) to drop the per-line subshell fork.
+nftban_botscan_match_url_g() {
     local url="$1"
     local method="$2"
     local status="$3"
     local ua="${4:-}"
+    _BS_MATCHED=""
 
+    local name def pattern match_type
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
-        local def="${_BOTSCAN_PATTERNS[$name]}"
-        local pattern match_type
+        def="${_BOTSCAN_PATTERNS[$name]}"
 
         IFS='|' read -r pattern match_type _ _ _ _ <<< "$def"
 
@@ -405,42 +420,34 @@ nftban_botscan_match_url() {
             url-404)
                 [[ "$status" != "404" ]] && continue
                 # Match URL pattern
-                if [[ "$url" =~ $pattern ]]; then
-                    echo "$name"
-                    return 0
-                fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
                 ;;
             url-post)
                 [[ "$method" != "POST" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then
-                    echo "$name"
-                    return 0
-                fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
                 ;;
             url-get)
                 [[ "$method" != "GET" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then
-                    echo "$name"
-                    return 0
-                fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
                 ;;
             url-any)
-                if [[ "$url" =~ $pattern ]]; then
-                    echo "$name"
-                    return 0
-                fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
                 ;;
             useragent)
                 # Match against user-agent string
-                if [[ -n "$ua" && "$ua" =~ $pattern ]]; then
-                    echo "$name"
-                    return 0
-                fi
+                if [[ -n "$ua" && "$ua" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
                 ;;
         esac
     done
 
     return 1
+}
+
+# Echo-API wrapper — UNCHANGED contract (echoes the matched pattern name, returns 1 on no
+# match). Used by cmd_botscan (emulate). Delegates to the no-fork matcher.
+nftban_botscan_match_url() {
+    nftban_botscan_match_url_g "$@" || return 1
+    echo "$_BS_MATCHED"
 }
 
 # Process log entry
@@ -450,8 +457,11 @@ nftban_botscan_process_entry() {
     local method="$3"
     local status="$4"
     local ua="$5"
+    # v1.187.1 — fork-free per-line timestamp (was now=$(nftban_timestamp_unix||date), a third
+    # subshell fork per log line). printf '%(%s)T' is a bash builtin (4.2+, all targets 5.x);
+    # falls back to the old fork only on ancient bash. Same epoch-seconds value.
     local now
-    now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
+    printf -v now '%(%s)T' -1 2>/dev/null || now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
 
     # Check whitelists
     nftban_botscan_is_whitelisted "$ip" "$ua" && return 0
@@ -463,9 +473,10 @@ nftban_botscan_process_entry() {
         [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$ip"]="$now"
     fi
 
-    # Match against patterns (URL and user-agent)
-    local matched_pattern
-    matched_pattern=$(nftban_botscan_match_url "$url" "$method" "$status" "$ua") || true
+    # Match against patterns (URL and user-agent) — v1.187.1 no-fork matcher (was a per-line
+    # command-substitution fork). errexit-safe: the && only assigns on a match.
+    local matched_pattern=""
+    nftban_botscan_match_url_g "$url" "$method" "$status" "$ua" && matched_pattern="$_BS_MATCHED"
 
     if [[ -n "$matched_pattern" ]]; then
         # Update tracking
@@ -609,7 +620,7 @@ nftban_botscan_count_404_tail() {
     [[ -r "$rot_file" ]] && IFS= read -r rot < "$rot_file" 2>/dev/null
     [[ "$rot" =~ ^[0-9]+$ ]] || rot=0
     rot=$(( rot % n ))
-    local consumed=0 covered=0 i idx f line parsed ip url method status ua
+    local consumed=0 covered=0 i idx f line
     for (( i=0; i<n; i++ )); do
         # Shared cycle soft-deadline — but always cover ≥1 file (forward 404 progress + rotation).
         if [[ "$covered" -gt 0 && "$budget" -gt 0 && $(( SECONDS - start_secs )) -ge "$budget" ]]; then break; fi
@@ -621,13 +632,12 @@ nftban_botscan_count_404_tail() {
         [[ -f "$f" && -r "$f" ]] || continue
         consumed=$(( consumed + tail_bytes ))
         while IFS= read -r line; do
-            parsed=$(nftban_botscan_parse_line "$line") || continue
-            IFS='|' read -r ip url method status ua <<< "$parsed"
-            [[ "$status" == "404" ]] || continue
-            nftban_botscan_is_whitelisted "$ip" "$ua" && continue
-            nftban_botscan_is_path_whitelisted "$url" && continue
-            _BOTSCAN_IP_404_COUNT["$ip"]=$(( ${_BOTSCAN_IP_404_COUNT[$ip]:-0} + 1 ))
-            [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$ip"]="$now"
+            nftban_botscan_parse_line_g "$line" || continue   # v1.187.1 no-fork
+            [[ "$_BS_STATUS" == "404" ]] || continue
+            nftban_botscan_is_whitelisted "$_BS_IP" "$_BS_UA" && continue
+            nftban_botscan_is_path_whitelisted "$_BS_URL" && continue
+            _BOTSCAN_IP_404_COUNT["$_BS_IP"]=$(( ${_BOTSCAN_IP_404_COUNT[$_BS_IP]:-0} + 1 ))
+            [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$_BS_IP]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$_BS_IP"]="$now"
         done < <( tail -c "$tail_bytes" -- "$f" 2>/dev/null | LC_ALL=C grep -E '" 404 | 404 ' 2>/dev/null || true )
     done
     # Persist rotation: next cycle starts after the last file covered this cycle.
@@ -769,11 +779,14 @@ nftban_botscan_process_logs() {
     local budget="${BOTSCAN_SCAN_BUDGET_SECS:-0}"
     local start_secs=$SECONDS
     local deadline_hit=0
-    # Bound each file's per-cycle read so a single whole file is always processable inside
-    # a budget slice (default 1 MiB; ~5k lines). Scoped to this scan process only — the
-    # privileged collector keeps its own (larger) cap. Only narrow it (never widen a
-    # caller-set smaller value).
-    local _scan_cap="${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-1048576}"
+    # Bound each file's per-cycle read so a single whole file is always processable inside a
+    # budget slice. v1.187.1 lowered the default 1 MiB → 256 KiB (~1.3k lines) as a cheap
+    # time backstop: combined with the no-fork parse/match path a 256 KiB slice processes in
+    # well under a second, so no single file can push the cycle toward TimeoutStartSec even on
+    # a 126-log/921 MB DA host. The rotation cursor still covers every file across cycles.
+    # Scoped to this scan process only — the privileged collector keeps its own (larger) cap.
+    # Only narrow it (never widen a caller-set smaller value).
+    local _scan_cap="${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-262144}"
     if [[ -z "${NFTBAN_HTTP_LOG_MAX_BYTES:-}" || "${NFTBAN_HTTP_LOG_MAX_BYTES}" -gt "$_scan_cap" ]]; then
         export NFTBAN_HTTP_LOG_MAX_BYTES="$_scan_cap"
     fi
@@ -814,11 +827,8 @@ nftban_botscan_process_logs() {
         idx=$(( (rot + i) % n ))
         f="${logs[$idx]}"
         while IFS= read -r line; do
-            local parsed
-            parsed=$(nftban_botscan_parse_line "$line") || continue
-            local ip url method status ua
-            IFS='|' read -r ip url method status ua <<< "$parsed"
-            nftban_botscan_process_entry "$ip" "$url" "$method" "$status" "$ua"
+            nftban_botscan_parse_line_g "$line" || continue   # v1.187.1 no-fork (was $(parse_line))
+            nftban_botscan_process_entry "$_BS_IP" "$_BS_URL" "$_BS_METHOD" "$_BS_STATUS" "$_BS_UA"
             processed=$((processed + 1))
         done < <(
             {
