@@ -487,7 +487,14 @@ nftban_botscan_analyze() {
         local ban_duration="$BOTSCAN_DEFAULT_BAN_SHORT"
         local window="$BOTSCAN_DEFAULT_WINDOW"
 
-        for pattern_name in $patterns; do
+        # Split the space-joined matched-pattern list IFS-INDEPENDENTLY. The lib sets a
+        # global IFS=$'\n\t' (no space) at source time, so an unquoted `for x in $patterns`
+        # over " NAME" keeps the leading space → key lookup misses → the pattern threshold
+        # is never applied → URL/UA pattern bans never fire (only 404-flood did). Use the
+        # same `IFS=$' \t\n' read -ra` idiom already used for the http-log override split.
+        local -a _ip_pats=()
+        IFS=$' \t\n' read -ra _ip_pats <<< "$patterns"
+        for pattern_name in "${_ip_pats[@]}"; do
             [[ -z "$pattern_name" ]] && continue
             local def="${_BOTSCAN_PATTERNS[$pattern_name]:-}"
             [[ -z "$def" ]] && continue
