@@ -84,7 +84,7 @@ for f in "$_cli"/cmd_*.sh; do
         [[ -z "$t" ]] && continue
         _is_structural "$t" && continue
         _allowlisted "$rel" "$t" && continue
-        printf '%s' "$help" | grep -qwF -- "$t" && continue
+        grep -qwF -- "$t" <<<"$help" && continue   # here-string (no upstream pipe → no SIGPIPE/141 flake under pipefail)
         residual+="$t "
     done <<< "$tokens"
     if [[ -z "$residual" ]]; then

@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests / validation
 - New hermetic `botscan_throughput_v187_test.sh` **PASS 3/3** (forward cursor no-skip across cycles; prefilter soundness / no ban regression; 404 fixed-tail independence). v185 deadline/rotation regression + v1.186.1 IFS test pass; shellcheck clean. Real-host srv2 prefilter 77% drop; bounded-by-design; cross-distro/uutils via the v1.186.1 rollout.
+- **CI determinism fix (unrelated to BotScan): help/code doctest guard** (`v130_subcommand_flag_help_code_test.sh`) — eliminated a SIGPIPE/`pipefail` flake (`printf | grep -qwF` → here-string) that intermittently mis-flagged a *matched* token as undocumented, and allowlisted the deprecated `firewall init` alias (v1.38.0 BUG-002 → rebuild) in `v134_help_code_alias_allowlist.tsv`. Now deterministic 67/0. CI-test + allowlist only; no product/daemon change.
 
 ---
 
