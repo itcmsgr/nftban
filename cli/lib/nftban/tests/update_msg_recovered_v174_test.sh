@@ -73,6 +73,12 @@ if grep -q "known transient on the" "$U"; then no "B4 misleading exporter line" 
 grep -q "may be a CURRENT failure, or a STALE pre-existing" "$U" \
   && ok "B5 DEGRADED reworded (current OR stale pre-existing)" || no "B5 DEGRADED wording" "missing"
 grep -q "nftban health" "$U" && ok "B6 DEGRADED suggests nftban health" || no "B6 health hint" "missing"
+# v1.185.1 H3: the DEGRADED remediation MUST surface reset-failed (the actual fix
+# for a stale oneshot latch — --repair alone does not clear it).
+grep -q "systemctl reset-failed nftban-botscan.service" "$U" \
+  && ok "B7 DEGRADED surfaces reset-failed for stale botscan latch (v1.185.1)" || no "B7 reset-failed hint" "missing"
+grep -q "does NOT clear a stale oneshot failed-state" "$U" \
+  && ok "B8 DEGRADED explains --repair alone is insufficient (v1.185.1)" || no "B8 repair-insufficient note" "missing"
 
 echo ""
 echo "=== RESULT: $PASS passed, $FAIL failed ==="

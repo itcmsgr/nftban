@@ -319,7 +319,10 @@ else
     _t_assert "1.6 case-block handles COMMITTED / DEGRADED / FAILED_* states" 1 "case-branches missing"
 fi
 
-if grep -q 'sudo nftban-installer --repair' "$_update_cli"; then
+# Canonical recovery path is the full-path form since v1.131.4
+# (D-DEGRADED-REMEDIATION-CMD-BROKEN); the old `sudo nftban-installer` bare form
+# was removed. v1.185.1 also adds the reset-failed step ahead of --repair.
+if grep -q '/usr/lib/nftban/bin/nftban-installer --repair' "$_update_cli"; then
     _t_assert "1.6 DEGRADED block surfaces canonical --repair recovery path" 0
 else
     _t_assert "1.6 DEGRADED block surfaces canonical --repair recovery path" 1 "--repair guidance missing"

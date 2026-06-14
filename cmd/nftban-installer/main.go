@@ -583,6 +583,14 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		log.Result("[NFTBan]   nftban support")
 		log.Result("[NFTBan] to generate a diagnostic bundle and optionally submit it for review.")
 		log.Result("")
+		// v1.185.1: a stale oneshot failed-state (e.g. nftban-botscan.service that
+		// timed out under the PREVIOUS version) latches in systemd and survives the
+		// upgrade. --repair only re-runs validation; it does NOT clear a stale failed
+		// flag, so DEGRADED persists until the operator resets it. Surface the
+		// reset-failed step ahead of --repair.
+		log.Result("[NFTBan] If a unit failed BEFORE this upgrade (stale latch), clear it first:")
+		log.Result("[NFTBan]   systemctl reset-failed nftban-botscan.service   # clear a stale pre-upgrade failure")
+		log.Result("[NFTBan]   systemctl start nftban-botscan.service          # run once now (or wait for the timer)")
 		// v1.131.4 (D-DEGRADED-REMEDIATION-CMD-BROKEN): use the full path —
 		// `nftban-installer` is not on the operator's PATH (it lives under
 		// /usr/lib/nftban/bin), so the bare form printed `command not found`.
