@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.187.0] - 2026-06-14 — BotScan throughput (Lane A): BOTSCAN-SCAN-THROUGHPUT
+
+**Codename:** `BOTSCAN_SCAN_THROUGHPUT` · **Plan:** `NFTBAN_ROADMAP/V1_187_IMPL_PLAN_CODE_CHALLENGE.md` + `V1_187_DECISION_ADDENDUM.md` · **Validation:** `V1_187_LANE_A_VALIDATION_RECORD.md`
+**PR:** [#855](https://github.com/itcmsgr/nftban/pull/855)
+
+> **What:** closes the flood-host BotScan throughput class that v1.185's per-file cap left as a documented KNOWN LIMITATION (tail-biased → dropped the majority of bytes on busy hosts). **Shell/data only.** Does NOT include bot-policy UX (Lane B, next), adaptive promotion (HOLD), FCrDNS (v1.188), or BotGuard counters (separate schema-unfreeze lane).
+
+### Changed — BotScan scan path (`nftban_botscan.sh` + `nftban_http_logs.sh`)
+- **A1 — Forward-mode per-file cursor.** `nftban_http_read_incremental` gains opt-in `NFTBAN_HTTP_LOG_READ_FORWARD`: emits the oldest unread window `[start, start+MAX)` and advances the offset by exactly what it emits → a backlog larger than the per-cycle cap drains **forward across cycles with no skipped bytes**, on a dedicated `/var/lib/nftban/botscan/proc-offsets` dir (distinct from the collector, which stays byte-identical). Per-file cap default 64 KiB → 1 MiB.
+- **A2 — Candidate prefilter.** One C-speed `grep -E -f` pass (a *sound ERE superset* of the bash matcher; GNU grep DFA → linear, cannot ReDoS-stall) drops the measured 49–90% droppable fraction before the ~55-eps per-line bash loop. srv2 (fleet high-water: 128 MB / 696,883 lines) → **77% dropped** (159,124 candidates).
+- **A3 — Regex hygiene.** Literal/regex split feeds the prefilter; no combined bash alternation.
+- **A4 — 404-window Option 1.** An independent fixed-tail re-read, **independent of the forward cursor** (never reads/rewinds its offset), preserves 404-burst detection.
+- Per-cycle wall-time stays bounded by the processor's soft deadline (`BOTSCAN_SCAN_BUDGET_SECS=180` < `TimeoutStartSec=300`) → never SIGTERM'd (v1.185 liveness preserved).
+
+### Envelope
+- Daemon `cmd/nftband` **BYTE-IDENTICAL to v1.186 (`c63d8822`)** (shell/data only); schema 1.83.0 frozen; no packaging/FHS change.
+
+### Tests / validation
+- New hermetic `botscan_throughput_v187_test.sh` **PASS 3/3** (forward cursor no-skip across cycles; prefilter soundness / no ban regression; 404 fixed-tail independence). v185 deadline/rotation regression + v1.186.1 IFS test pass; shellcheck clean. Real-host srv2 prefilter 77% drop; bounded-by-design; cross-distro/uutils via the v1.186.1 rollout.
+
+---
+
 ## [v1.186.1] - 2026-06-14 — Hotfix: BotScan URL/UA pattern-ban correctness (IFS word-split)
 
 **Codename:** `BOTSCAN_PATTERN_BAN_IFS_HOTFIX` · **Finding:** `NFTBAN_ROADMAP/V1_187_FINDING_BOTSCAN_PATTERN_BAN_IFS.md` · **Lab record:** `V1_186_1_LAB_VALIDATION_RECORD.md`
