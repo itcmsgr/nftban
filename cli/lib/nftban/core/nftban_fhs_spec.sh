@@ -147,6 +147,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/watchdog"]="0750|nftban|nftban|Watchdog reports and state"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/archive"]="0750|nftban|nftban|Archived reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/pro"]="0750|root|nftban|Pro subscription data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan"]="0750|nftban|nftban|BotScan scanner persistent state (v1.185.1): scan-rotate rotation cursor written by the unprivileged nftban-botscan.service processor (User=nftban). Must be tmpfiles/package-created — the processor runs as nftban and cannot reliably create a subdir under /var/lib/nftban (root:nftban 0750), so the in-script mkdir fails silently and the rotation cursor never persists."
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan-collector"]="0750|nftban|nftban|BotScan read-collector per-source incremental offset state (v1.178-A). Separate from the scanner's spool offsets so privileged reads only emit new bytes per cycle."
 
     # Log Directories
