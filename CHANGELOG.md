@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.187.1] - 2026-06-14 — Hotfix: BotScan cycle-timeout regression (main-loop per-line fork removal)
+
+**Codename:** `BOTSCAN_CYCLE_TIMEOUT_FORK_REMOVAL` · **Diagnosis:** `NFTBAN_ROADMAP/V1_187_1_TIMEOUT_ROOT_CAUSE_DIAGNOSIS.md` · **Validation:** `V1_187_1_SRV2_VALIDATION_RECORD.md`
+**PR:** [#858](https://github.com/itcmsgr/nftban/pull/858)
+
+> **What:** v1.187.1 fixes the BotScan processor cycle-timeout regression on high-log-count hosts by removing the main-scan per-line subshell-fork overhead, preserving the A4 404-tail bound, and lowering the per-file cap. It does NOT change Lane B, aibots, BotGuard counters, schema, daemon Go, or UX.
+
+### Fixed
+- **CORE-BOTSCAN-PROCESSOR-TIMEOUT (v1.187.0 fleet NO-GO on srv2):** the BotScan cycle SIGTERM'd at the 300s `TimeoutStartSec` on srv2 (AlmaLinux 9.8, DirectAdmin, 126 access logs/921 MB). Timing markers pinned the cost to the **main scan loop**, not A4/analyze — one 4.2 MB DA log took **123s / 5497 lines ≈ 22 ms/line**, dominated by **three per-line command-substitution forks**: `parsed=$(parse_line)`, `matched=$(match_url)` (in `process_entry`), and `now=$(nftban_timestamp_unix||date)`. The soft budget (`BOTSCAN_SCAN_BUDGET_SECS=180`) is checked between files only, so a single slow file straddling the boundary overran toward 300s; v1.187 Lane A's forward cursor (≤1 MiB ≈ 5k lines/file vs the old `tail -1000`) exposed the latent fork cost. (A4 `count_404_tail` measured 0s — its bound fires; `analyze` ~1s.)
+
+### Changed
+- `nftban_botscan_parse_line` → no-fork `nftban_botscan_parse_line_g` (fields via `_BS_IP/_BS_URL/_BS_METHOD/_BS_STATUS/_BS_UA` globals); the echo-API `parse_line` is retained as a thin wrapper delegating to `_g` (no drift for `cmd_botscan` + existing tests). Hot loops call `_g` directly.
+- `nftban_botscan_match_url` → no-fork `nftban_botscan_match_url_g` (`_BS_MATCHED` global); echo wrapper retained.
+- `process_entry` per-line timestamp → fork-free `printf -v now '%(%s)T' -1` (bash 4.2+; old fork fallback).
+- `BOTSCAN_SCAN_MAX_BYTES_PER_FILE` default 1 MiB → 256 KiB (cheap time backstop; rotation cursor still covers every file across cycles).
+- Retains the A4 404-tail budget bound (per-file soft-deadline + total-bytes backstop + `404-rotate` cursor) from this release train.
+
+### Preserved
+- Parse semantics, URL/UA match semantics (all match types), 404-flood detection, the v1.186.1 IFS pattern-ban fix, signal format, thresholds/windows/durations.
+- **Daemon `cmd/nftband` BYTE-IDENTICAL to v1.186 `c63d8822`** (shell/data only); schema 1.83.0 frozen; NO packaging/FHS change (header `meta:version` only).
+
+### Validation
+- New hermetic `botscan_nofork_parity_v1871_test.sh` (parse_line_g == echo across IPv4/IPv6/bracketed/no-UA/malformed; match_url_g == echo across every match type + no-match) + `botscan_404_tail_bound_v1871_test.sh` + v187 throughput + v185 deadline/rotation + v1.186.1 IFS + http_log_discovery_v177 regressions PASS; shellcheck `-S warning` clean.
+- **srv2 production proof 3/3** (reversible single-file swap): cycles 209s/185s/183s all `Result=success` status 0, none near 300s; throughput ~2× (13.4k → 25.6k entries/cycle); daemon active NRestarts=0, 0 nftban failed units, nft authority intact, 0 TEST-NET leak, 0 bans (no false-positive storm).
+
+---
+
 ## [v1.187.0] - 2026-06-14 — BotScan throughput (Lane A): BOTSCAN-SCAN-THROUGHPUT
 
 **Codename:** `BOTSCAN_SCAN_THROUGHPUT` · **Plan:** `NFTBAN_ROADMAP/V1_187_IMPL_PLAN_CODE_CHALLENGE.md` + `V1_187_DECISION_ADDENDUM.md` · **Validation:** `V1_187_LANE_A_VALIDATION_RECORD.md`
