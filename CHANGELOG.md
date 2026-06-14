@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.185.0] - 2026-06-14 — Installer restart-debt (Lane A) + BotScan processor timeout-at-scale (Lane B)
+
+**Codename:** `INSTALLER_CORRECTNESS_PARITY_AND_BOTSCAN_TIMEOUT_AT_SCALE` · **Scope:** `NFTBAN_ROADMAP/V1_185_INSTALLER_CORRECTNESS_PARITY_SCOPE.md`
+**PR:** [#847](https://github.com/itcmsgr/nftban/pull/847) · **Records:** `V1_185_LANE_A_INSTALLER_RESTART_VALIDATION_RECORD.md`, `V1_185_LANE_B_BOTSCAN_FLEET_VALIDATION_RECORD.md`, `CORE_BOTSCAN_PROCESSOR_TIMEOUT_AT_SCALE_FINDING.md`
+
+> **Why:** (A) on an upgrade over a live daemon the installer's `systemctl start` is a no-op, so the OLD binary kept running with the new files on disk (found on dns2 during the v1.184 fleet rollout). (B) the BotScan processor did a whole-spool single pass per cycle and on high-volume hosts could not finish within `TimeoutStartSec=300` → SIGTERM → never banned + alert every cycle.
+
+### Fixed — Lane A: INSTALL-UPGRADE-NO-DAEMON-RESTART (installer; DEB + RPM + source parity)
+- `StartDaemon` (`internal/installer/services/daemon.go`) captures `wasActive := ServiceActive("nftband.service")` before touching the unit and, **only** on the upgrade-over-live-daemon path, issues `ServiceTryRestart` (`systemctl try-restart` — cycles iff active, no-op if deliberately stopped) at the end to load the upgraded binary. Fresh installs (inactive) skip it (already a clean first-start).
+- New executor method `ServiceTryRestart` on the interface + real (`RunTimeout(90s, "systemctl", "try-restart", unit)`) + mock executors. One shared `phaseConfigure` path → identical behavior for `--deb`/`--rpm`/`--source`.
+- Tests: `TestStartDaemon_UpgradeOverLiveDaemon_TryRestarts` (pre-active → try-restart) + `TestStartDaemon_FreshInstall_NoTryRestart` (inactive → none).
+
+### Fixed — Lane B: CORE-BOTSCAN-PROCESSOR-TIMEOUT-AT-SCALE (shell; BotScan liveness/completion)
+- `nftban_botscan.sh` `nftban_botscan_process_logs` + `cli/sbin/nftban-botscan-processor`: per-file byte cap (`BOTSCAN_SCAN_MAX_BYTES_PER_FILE`, default 64 KiB, tail-biased via the shared incremental reader) + a soft deadline checked **between files** (`BOTSCAN_SCAN_BUDGET_SECS`, default 180s) that checkpoints a rotation cursor (`/var/lib/nftban/botscan/scan-rotate`) and exits rc=0 to resume next cycle → never SIGTERM'd. `analyze()` always runs.
+- CI test: `cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh`.
+- **Scope discipline (no overclaim):** this fixes the **liveness/completion** class (never-completes / SIGTERM / alert-per-cycle), NOT full-spool per-cycle coverage / fleet-health / high-throughput ban yield. It scans the newest ~64 KiB/file/cycle. **`BOTSCAN-SCAN-THROUGHPUT` remains OPEN** (v1.187 follow-up; the bash per-line matcher needs a C-speed prefilter for full-spool coverage).
+
+### Envelope
+- **Daemon `cmd/nftband` is BYTE-IDENTICAL to v1.184 `dc4e1a33`** — Lane A is in `cmd/nftban-installer` (not the daemon import graph); Lane B is shell-only. **Schema 1.83.0 frozen. No packaging/FHS/cmd change.**
+- **Validation:** Lane A lab-first — lab2 (DEB) + lab4 (RPM) + lab2 (source) all cycle the daemon on upgrade via try-restart; lab2 reboot clean; SSH + firewall preserved; no package-family divergence. Lane B real-host reversible-shell-swap across all 9 hosts — srv2/srv4/dns2/srv3 cured (SIGTERM/never-completes → rc=0/success); lab2/lab4/monitor/srv1/dns1 no regression. PR #847 CI green.
+
+---
+
 ## [v1.184.0] - 2026-06-13 — Suricata EVE rotation fix + Train-1 detection-tail closure
 
 **Codename:** `SURICATA_EVE_ROTATION_FIX_AND_TRAIN1_DETECTION_TAIL_CLOSURE` · **Classification:** `NFTBAN_ROADMAP/TRAIN1_INPUT_AUTHORITY_DETECTION_TAIL_CLASSIFICATION.md`
