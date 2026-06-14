@@ -74,6 +74,13 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_404_THRESHOLD:=50}"
     : "${BOTSCAN_404_WINDOW:=300}"
     : "${BOTSCAN_404_BAN:=3600}"
+    # v1.187 Lane A — BOTSCAN-SCAN-THROUGHPUT. Forward-cursor per-file per-cycle window
+    # (drains backlog forward instead of the v1.185 64 KiB tail-bias), a C-speed candidate
+    # prefilter before the per-line bash matcher, and an independent 404 fixed-tail re-read
+    # window (Option 1) that preserves 404-burst detection the forward cursor would fragment.
+    : "${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:=1048576}"
+    : "${BOTSCAN_SCAN_PREFILTER:=true}"
+    : "${BOTSCAN_404_TAIL_BYTES:=2097152}"
     : "${BOTSCAN_PROGRESSIVE_ENABLED:=true}"
     : "${BOTSCAN_PROGRESSIVE_MULTIPLIER:=2}"
     : "${BOTSCAN_PROGRESSIVE_MAX:=86400}"
@@ -535,6 +542,66 @@ nftban_botscan_analyze() {
     return $banned
 }
 
+# v1.187 Lane A — build a C-speed candidate prefilter (ERE) from the ENABLED patterns
+# plus a 404-status keeper, into file $1. A line is a CANDIDATE if it could match ANY
+# enabled pattern OR (when 404-tracking is on) carries a 404 status. The filter is a
+# SOUND SUPERSET of the accurate bash matcher: patterns are emitted as ERE (same engine
+# semantics as the matcher's `[[ =~ ]]`) with line-anchors (^ $) stripped so a URL/UA-
+# anchored pattern still matches its field anywhere inside the WHOLE log line (broadening
+# only). GNU grep -E is DFA-based → linear time, so this cannot ReDoS-stall (the bash
+# regex matcher then runs only on the surviving candidates). Returns non-zero (→ caller
+# skips the prefilter, no behavior change) when there is nothing to filter on.
+nftban_botscan_build_prefilter() {
+    local out="$1"
+    : > "$out" 2>/dev/null || return 1
+    local n=0 name def pat
+    for name in "${!_BOTSCAN_PATTERNS[@]}"; do
+        def="${_BOTSCAN_PATTERNS[$name]}"
+        IFS='|' read -r pat _ _ _ _ _ <<< "$def"
+        [[ -z "$pat" ]] && continue
+        pat="${pat#^}"; pat="${pat%\$}"   # strip line-anchors → match the field within the line
+        [[ -z "$pat" ]] && continue
+        printf '%s\n' "$pat" >> "$out"
+        n=$((n + 1))
+    done
+    if [[ "${BOTSCAN_404_TRACKING:-true}" == "true" ]]; then
+        # Keep every 404-status line (common/combined format: "...REQUEST..." 404 <bytes>),
+        # independent of patterns, so the 404-flood path never loses candidates.
+        printf '%s\n' '" 404 ' >> "$out"
+        printf '%s\n' ' 404 ' >> "$out"
+        n=$((n + 1))
+    fi
+    [[ "$n" -gt 0 ]]
+}
+
+# v1.187 Lane A — 404-window OPTION 1 (fixed-tail re-read), INDEPENDENT of the forward
+# processor cursor (does NOT read or advance its offset). Each cycle re-reads a bounded
+# tail of each file sized to cover the 404 window, prefilters to 404 lines (C-speed), and
+# (re)counts per-IP 404s into the analyze() arrays — preserving 404-burst detection that
+# the forward cursor (one slice/cycle) would otherwise fragment. Honors the whitelists.
+nftban_botscan_count_404_tail() {
+    [[ "${BOTSCAN_404_TRACKING:-true}" == "true" ]] || return 0
+    local now; now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
+    local tail_bytes="${BOTSCAN_404_TAIL_BYTES:-2097152}"
+    # Reset so the count reflects ONLY the current window's tail (stateless; lowest risk).
+    _BOTSCAN_IP_404_COUNT=()
+    _BOTSCAN_IP_404_FIRST_SEEN=()
+    local f line parsed ip url method status ua
+    for f in "$@"; do
+        [[ -f "$f" && -r "$f" ]] || continue
+        while IFS= read -r line; do
+            parsed=$(nftban_botscan_parse_line "$line") || continue
+            IFS='|' read -r ip url method status ua <<< "$parsed"
+            [[ "$status" == "404" ]] || continue
+            nftban_botscan_is_whitelisted "$ip" "$ua" && continue
+            nftban_botscan_is_path_whitelisted "$url" && continue
+            _BOTSCAN_IP_404_COUNT["$ip"]=$(( ${_BOTSCAN_IP_404_COUNT[$ip]:-0} + 1 ))
+            [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$ip"]="$now"
+        done < <( tail -c "$tail_bytes" -- "$f" 2>/dev/null | LC_ALL=C grep -E '" 404 | 404 ' 2>/dev/null || true )
+    done
+    return 0
+}
+
 # Write a batch signal to JSONL for Go daemon (Clock 2) consumption
 # Args: ip, score, action, reasons...
 nftban_botscan_write_signal() {
@@ -673,9 +740,23 @@ nftban_botscan_process_logs() {
     # a budget slice (default 1 MiB; ~5k lines). Scoped to this scan process only — the
     # privileged collector keeps its own (larger) cap. Only narrow it (never widen a
     # caller-set smaller value).
-    local _scan_cap="${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-65536}"
+    local _scan_cap="${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-1048576}"
     if [[ -z "${NFTBAN_HTTP_LOG_MAX_BYTES:-}" || "${NFTBAN_HTTP_LOG_MAX_BYTES}" -gt "$_scan_cap" ]]; then
         export NFTBAN_HTTP_LOG_MAX_BYTES="$_scan_cap"
+    fi
+    # v1.187 Lane A — FORWARD cursor on a DEDICATED offset dir (distinct offset semantics,
+    # and distinct from the collector's offsets) so the scanner drains a backlog FORWARD
+    # across cycles instead of tail-skipping. Auto-discovered incremental path only (an
+    # explicit pinned log_file / interactive `check` keeps the simple tail read).
+    if [[ -z "$log_file" ]]; then
+        export NFTBAN_HTTP_LOG_READ_FORWARD=true
+        export NFTBAN_HTTP_LOG_OFFSET_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets"
+    fi
+    # v1.187 Lane A — build the C-speed candidate prefilter once for this cycle.
+    local _pf=""
+    if [[ "${BOTSCAN_SCAN_PREFILTER:-true}" == "true" ]]; then
+        _pf="$(mktemp 2>/dev/null)" || _pf=""
+        [[ -n "$_pf" ]] && { nftban_botscan_build_prefilter "$_pf" || { rm -f "$_pf"; _pf=""; }; }
     fi
     # Anti-starvation rotation: persist where the last cycle stopped so a host whose
     # backlog exceeds one budget still scans EVERY file over successive cycles instead
@@ -707,9 +788,11 @@ nftban_botscan_process_logs() {
             nftban_botscan_process_entry "$ip" "$url" "$method" "$status" "$ua"
             processed=$((processed + 1))
         done < <(
-            if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
-            elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
-            else tail -1000 -- "$f" 2>/dev/null; fi
+            {
+                if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
+                elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
+                else tail -1000 -- "$f" 2>/dev/null; fi
+            } | { if [[ -n "$_pf" ]]; then LC_ALL=C grep -E -f "$_pf" 2>/dev/null || true; else cat; fi; }
         )
         files_done=$((files_done + 1))
     done
@@ -723,6 +806,12 @@ nftban_botscan_process_logs() {
     echo "Processed: $processed entries (${files_done}/${n} files this cycle)"
     [[ "$deadline_hit" -eq 1 ]] && echo "Deadline budget (${budget}s) reached — analyzing partial batch; remaining files resume next cycle"
     echo "IPs tracked: ${#_BOTSCAN_IP_HITS[@]}"
+
+    # v1.187 Lane A — 404-window OPTION 1: independent fixed-tail re-read (does NOT touch
+    # the forward cursor offset) so 404-burst detection is preserved despite the forward
+    # cursor only seeing one slice per cycle. Authoritative source for the 404 counters.
+    nftban_botscan_count_404_tail "${logs[@]}"
+    [[ -n "$_pf" ]] && rm -f "$_pf"
 
     # Analyze and ban — ALWAYS runs (even on a partial/deadline-bounded batch) so a
     # high-volume host still produces bans every cycle instead of zero.
