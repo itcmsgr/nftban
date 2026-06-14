@@ -71,3 +71,4 @@ cli/cmd_portscan.sh	restart	alias	reload
 cli/cmd_portscan.sh	sync	undocumented-subcmd	DOC-CANDIDATE: real subcmd (journalctl log sync; in error-fallback list)
 cli/cmd_sync.sh	status	undocumented-subcmd	DOC-CANDIDATE: real subcmd (nftban_sync_status)
 cli/cmd_firewall.sh	ssh-port-audit	alias	ssh-audit (OBS-SSHPORT-55000 external admin-port audit)
+cli/cmd_firewall.sh	init	deprecated	rebuild (v1.38.0 BUG-002: firewall init never implemented → alias to rebuild)
