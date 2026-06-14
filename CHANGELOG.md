@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.185.1] - 2026-06-14 — Hotfix: botscan state-dir + stale-oneshot recovery + reset-failed guidance
+
+**Codename:** `BOTSCAN_STATE_DIR_AND_STALE_ONESHOT_RECOVERY` · **Scope:** `NFTBAN_ROADMAP/V1_185_1_HOTFIX_SCOPE.md` · **User guide:** `USER_GUIDE_DEGRADED_BOTSCAN_AFTER_UPGRADE.md`
+**PR:** [#849](https://github.com/itcmsgr/nftban/pull/849)
+
+> **Why:** upgrading to v1.185 produced a false **DEGRADED** that `--repair` could not clear. Proven on monitor: the v1.185 botscan processor completes in ~6s rc=0, but a STALE v1.184 300s-timeout `failed` state latched *before* the upgrade flipped install validation to DEGRADED. Also a real persistence bug: the scanner's rotation cursor could never be written.
+
+### Fixed — H1: botscan state directory (rotation cursor persistence)
+- Added `/var/lib/nftban/botscan` (nftban:nftban 0750) to `build/fhs-spec.yaml`; regenerated `tmpfiles.d/nftban.conf`, `fhs_directories.json`, `nftban_fhs_spec.sh`. The `nftban-botscan` processor runs as `User=nftban` and could not create a subdir under `/var/lib/nftban` (root:nftban 0750) — the in-script `mkdir` failed silently and `scan-rotate` never persisted (rotation never advanced on multi-file hosts; `scan-rotate.tmp: No such file` in the journal). The dir is now created by tmpfiles/package.
+
+### Fixed — H2: stale-oneshot recovery on upgrade
+- `internal/installer/validate/systemd_payload.go`: the v1.174 stale failed-unit classification now recovers a **stale-clearable oneshot** (`nftban-botscan.service`) whose failure is strictly BEFORE the install window **without** the live-health gate — a oneshot's own `failed` latch can make the live-health probe read unclean (circular), which previously kept it from ever recovering. Real in-window failures still DEGRADE (in-window guard retained). 5 unit tests (monitor scenario, in-window-degrades, unknown-time fail-safe, non-oneshot-not-broadened, membership).
+
+### Fixed — H3: remediation guidance includes reset-failed
+- `cli/lib/nftban/cli/cmd_update.sh` + `cmd/nftban-installer/main.go` DEGRADED remediation now surfaces `systemctl reset-failed nftban-botscan.service` + a run ahead of `--repair`, noting that `--repair` alone does not clear a stale oneshot latch. (Also fixed a pre-existing stale v127 test assertion: the `sudo` form was removed in v1.131.4.)
+
+### Envelope
+- **Daemon `cmd/nftband` BYTE-IDENTICAL to v1.185 `dc4e1a33`** — installer-Go + shell + FHS-generated only. Schema 1.83.0 frozen. FHS body adds one dir (`--check` rc=0).
+- **Validation:** lab2 (DEB) + lab4 (RPM/EL9) reversible swap — H1/H1-functional/H2/H3/reboot all PASS; monitor (v1.185.0) direct — dir-present run writes scan-rotate, prior `No such file` error eliminated. srv2 rotation-advance inconclusive (host on v1.184 times out — a v1.187 throughput boundary, not a v1.185.1 failure). PR #849 CI green (69 pass / 0 fail).
+
+---
+
 ## [v1.185.0] - 2026-06-14 — Installer restart-debt (Lane A) + BotScan processor timeout-at-scale (Lane B)
 
 **Codename:** `INSTALLER_CORRECTNESS_PARITY_AND_BOTSCAN_TIMEOUT_AT_SCALE` · **Scope:** `NFTBAN_ROADMAP/V1_185_INSTALLER_CORRECTNESS_PARITY_SCOPE.md`
