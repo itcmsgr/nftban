@@ -67,8 +67,17 @@ source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh"
 # Enable batch signal mode (tells botscan to write JSONL instead of direct ban)
 export BOTSCAN_BATCH_SIGNAL_MODE="true"
 
+# v1.185 CORE-BOTSCAN-PROCESSOR-TIMEOUT-AT-SCALE: deadline-aware self-bound. The unit
+# is Type=oneshot with TimeoutStartSec (default 300s); a whole-burst scan on a high-
+# traffic host can't finish in that window and was SIGTERM'd before analyze/ban ran
+# (BotScan banned nothing). Give the scan a SOFT budget (~80% of the unit timeout) so it
+# checkpoints + exits cleanly with bans BEFORE systemd kills it. Override with
+# BOTSCAN_SCAN_BUDGET_SECS; keep it < TimeoutStartSec. The systemd timeout stays a hard
+# backstop, not the normal limiter.
+export BOTSCAN_SCAN_BUDGET_SECS="${BOTSCAN_SCAN_BUDGET_SECS:-180}"
+
 # Log startup
-echo "[botscan-processor] Clock 3 batch scan started"
+echo "[botscan-processor] Clock 3 batch scan started (soft budget=${BOTSCAN_SCAN_BUDGET_SECS}s)"
 
 # Run botscan check (processes access logs, writes batch_signals.jsonl)
 result=0
