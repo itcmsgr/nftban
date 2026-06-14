@@ -310,6 +310,14 @@ func (m *MockExecutor) ServiceStart(unit string) error {
 	return nil
 }
 
+// ServiceTryRestart records a try-restart; it cycles (keeps active) iff the unit is
+// currently active, mirroring `systemctl try-restart` (no-op when inactive). v1.185.
+func (m *MockExecutor) ServiceTryRestart(unit string) error {
+	m.recordCommand("systemctl", "try-restart", unit)
+	// active stays active (a cycle); inactive stays inactive (no-op). No state flip.
+	return nil
+}
+
 func (m *MockExecutor) ServiceStop(unit string) error {
 	m.recordCommand("systemctl", "stop", unit)
 	m.mu.Lock()

@@ -32,6 +32,14 @@ const (
 // StartDaemon enables nftband.socket and nftband.service.
 // Retries up to 3 times with 1s delay. Non-fatal — logs warnings.
 func StartDaemon(exec executor.Executor, log *logging.Logger) {
+	// v1.185 INSTALL-UPGRADE-NO-DAEMON-RESTART: capture whether the daemon was ALREADY
+	// running before we touch it. On an upgrade over a live daemon, the `start` below is
+	// a no-op (systemd won't cycle an active unit), so the OLD binary would keep running
+	// with the new files on disk (live-proven on dns2 during the v1.184 fleet rollout).
+	// If it was already active, try-restart at the end to load the new binary. Fresh
+	// installs (inactive here) just start — no redundant cycle.
+	wasActive := exec.ServiceActive("nftband.service")
+
 	// daemon-reload first to pick up any unit changes
 	if err := exec.DaemonReload(); err != nil {
 		log.Warn("daemon-reload: %v", err)
@@ -89,6 +97,19 @@ func StartDaemon(exec executor.Executor, log *logging.Logger) {
 		log.Info("nftband daemon verified active")
 	} else {
 		log.Warn("nftband.service not active after start attempts — non-fatal")
+	}
+
+	// v1.185 INSTALL-UPGRADE-NO-DAEMON-RESTART: if the daemon was already running when
+	// this phase began, the `start` above was a no-op and the OLD binary is still live.
+	// try-restart idempotently cycles it to load the freshly-installed binary. Only on
+	// the upgrade-over-live-daemon path (wasActive) — fresh installs skip it (already a
+	// clean first-start above). Non-fatal; covers DEB/RPM/source (one shared path).
+	if wasActive {
+		if err := exec.ServiceTryRestart("nftband.service"); err != nil {
+			log.Warn("try-restart nftband.service (upgrade reload): %v — non-fatal", err)
+		} else {
+			log.Info("nftband.service try-restarted to load the upgraded binary")
+		}
 	}
 
 	// Enable nftban-core.service (shell postinst parity — G5)

@@ -796,6 +796,9 @@ jobs:
       - name: BotScan read-authority collector + spool-first (v1.178-A)
         run: bash cli/lib/nftban/tests/botscan_read_authority_v178_test.sh
 
+      - name: BotScan processor deadline + rotation (v1.185 Lane B)
+        run: bash cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
