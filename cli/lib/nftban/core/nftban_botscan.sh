@@ -81,6 +81,9 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:=1048576}"
     : "${BOTSCAN_SCAN_PREFILTER:=true}"
     : "${BOTSCAN_404_TAIL_BYTES:=2097152}"
+    # v1.187.1 — per-cycle A4 404-tail total-bytes backstop (bounds budget=0/interactive runs;
+    # the shared soft-deadline bounds normal cycles). Default 32 MiB.
+    : "${BOTSCAN_404_TAIL_TOTAL_BYTES:=33554432}"
     : "${BOTSCAN_PROGRESSIVE_ENABLED:=true}"
     : "${BOTSCAN_PROGRESSIVE_MULTIPLIER:=2}"
     : "${BOTSCAN_PROGRESSIVE_MAX:=86400}"
@@ -574,21 +577,48 @@ nftban_botscan_build_prefilter() {
     [[ "$n" -gt 0 ]]
 }
 
-# v1.187 Lane A — 404-window OPTION 1 (fixed-tail re-read), INDEPENDENT of the forward
-# processor cursor (does NOT read or advance its offset). Each cycle re-reads a bounded
-# tail of each file sized to cover the 404 window, prefilters to 404 lines (C-speed), and
-# (re)counts per-IP 404s into the analyze() arrays — preserving 404-burst detection that
-# the forward cursor (one slice/cycle) would otherwise fragment. Honors the whitelists.
+# v1.187 Lane A / v1.187.1 — 404-window OPTION 1 (fixed-tail re-read), INDEPENDENT of the
+# forward processor cursor (does NOT read/advance its offset). Re-reads a bounded tail of
+# each file, prefilters to 404 lines (C-speed), counts per-IP 404s into analyze()'s arrays.
+# v1.187.1 BOUNDS this stage (v1.187.0 A4 was unbounded → srv2 126-log/131MB cycle blew past
+# TimeoutStartSec=300; `V1_187_1_BOTSCAN_404_TAIL_BOUND_HOTFIX_SCOPE.md`):
+#   (1) shares the cycle soft-deadline (start_secs + BOTSCAN_SCAN_BUDGET_SECS) — checked
+#       BETWEEN files, breaks cleanly (always processing ≥1 file so 404 coverage + rotation
+#       make forward progress even when the main loop consumed most of the budget);
+#   (2) a per-cycle total-bytes backstop (BOTSCAN_404_TAIL_TOTAL_BYTES) for budget=0 runs;
+#   (3) an anti-starvation rotation cursor (404-rotate, separate from the main scan-rotate)
+#       so every file's 404 tail is covered across successive cycles.
+# 404-flood detection is preserved: each scanned file's full tail is counted; rotation +
+# the (steady-state) freed budget cover the rest across cycles. Honors the whitelists.
+# Args: <start_secs> <budget_secs> -- <file>...
 nftban_botscan_count_404_tail() {
     [[ "${BOTSCAN_404_TRACKING:-true}" == "true" ]] || return 0
+    local start_secs="${1:-$SECONDS}" budget="${2:-0}"; shift 2
     local now; now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
     local tail_bytes="${BOTSCAN_404_TAIL_BYTES:-2097152}"
-    # Reset so the count reflects ONLY the current window's tail (stateless; lowest risk).
+    local max_total="${BOTSCAN_404_TAIL_TOTAL_BYTES:-33554432}"
+    # Reset so the count reflects ONLY this cycle's scanned tails.
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
-    local f line parsed ip url method status ua
-    for f in "$@"; do
+    local files=("$@") n=${#files[@]}
+    [[ "$n" -eq 0 ]] && return 0
+    # Anti-starvation rotation cursor (next cycle resumes where this one stopped).
+    local rot_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/404-rotate" rot=0
+    mkdir -p "${rot_file%/*}" 2>/dev/null || true
+    [[ -r "$rot_file" ]] && IFS= read -r rot < "$rot_file" 2>/dev/null
+    [[ "$rot" =~ ^[0-9]+$ ]] || rot=0
+    rot=$(( rot % n ))
+    local consumed=0 covered=0 i idx f line parsed ip url method status ua
+    for (( i=0; i<n; i++ )); do
+        # Shared cycle soft-deadline — but always cover ≥1 file (forward 404 progress + rotation).
+        if [[ "$covered" -gt 0 && "$budget" -gt 0 && $(( SECONDS - start_secs )) -ge "$budget" ]]; then break; fi
+        # Per-cycle total-bytes backstop (bounds budget=0 / interactive runs); ≥1 file always.
+        if [[ "$covered" -gt 0 && "$max_total" -gt 0 && "$consumed" -ge "$max_total" ]]; then break; fi
+        idx=$(( (rot + i) % n ))
+        f="${files[$idx]}"
+        covered=$(( covered + 1 ))
         [[ -f "$f" && -r "$f" ]] || continue
+        consumed=$(( consumed + tail_bytes ))
         while IFS= read -r line; do
             parsed=$(nftban_botscan_parse_line "$line") || continue
             IFS='|' read -r ip url method status ua <<< "$parsed"
@@ -599,6 +629,8 @@ nftban_botscan_count_404_tail() {
             [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$ip"]="$now"
         done < <( tail -c "$tail_bytes" -- "$f" 2>/dev/null | LC_ALL=C grep -E '" 404 | 404 ' 2>/dev/null || true )
     done
+    # Persist rotation: next cycle starts after the last file covered this cycle.
+    printf '%s\n' "$(( (rot + covered) % n ))" > "${rot_file}.tmp" 2>/dev/null && mv -f "${rot_file}.tmp" "$rot_file" 2>/dev/null || true
     return 0
 }
 
@@ -810,7 +842,7 @@ nftban_botscan_process_logs() {
     # v1.187 Lane A — 404-window OPTION 1: independent fixed-tail re-read (does NOT touch
     # the forward cursor offset) so 404-burst detection is preserved despite the forward
     # cursor only seeing one slice per cycle. Authoritative source for the 404 counters.
-    nftban_botscan_count_404_tail "${logs[@]}"
+    nftban_botscan_count_404_tail "$start_secs" "$budget" "${logs[@]}"
     [[ -n "$_pf" ]] && rm -f "$_pf"
 
     # Analyze and ban — ALWAYS runs (even on a partial/deadline-bounded batch) so a
