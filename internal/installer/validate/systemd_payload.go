@@ -117,6 +117,36 @@ func IsAuxiliaryUnit(basename string) bool {
 	return auxiliaryUnitStems[basename[:dot]]
 }
 
+// staleClearableOneshotStems lists nftban oneshot-processor unit stems whose
+// `failed` state is a sticky systemd latch (Type=oneshot) that does NOT clear
+// itself and does NOT reflect live protection state (the root nftband.service is
+// the protection authority). A failure of one of these strictly BEFORE the
+// install window is, by construction, a latch from the PREVIOUS version — it
+// cannot have been caused by this upgrade. Such a latch can itself make a live
+// `nftban health` probe read unclean, which is a circular block that kept the
+// general WARN_PRE_EXISTING_RECOVERED rule (which requires LiveHealthClean) from
+// ever recovering it. v1.185.1 (CORE-BOTSCAN-PROCESSOR-TIMEOUT stale-DEGRADED on
+// upgrade, proven on monitor: a v1.184 300s botscan timeout survived the v1.185
+// upgrade and neither the upgrade nor --repair could clear it).
+var staleClearableOneshotStems = map[string]bool{
+	"nftban-botscan": true,
+}
+
+// isStaleClearableOneshot reports whether an nftban unit basename is a
+// stale-clearable oneshot processor per staleClearableOneshotStems. Only the
+// processor oneshot (nftban-botscan.service, stem "nftban-botscan") matches —
+// the collector (stem "nftban-botscan-collector") does not.
+func isStaleClearableOneshot(basename string) bool {
+	if !IsNftbanUnit(basename) {
+		return false
+	}
+	dot := strings.LastIndexByte(basename, '.')
+	if dot <= 0 {
+		return false
+	}
+	return staleClearableOneshotStems[basename[:dot]]
+}
+
 // ParsedUnit is the minimum subset of a systemd unit file needed for
 // PR26.1 validation. Constructed by the host-side gatherer or by
 // tests directly.
@@ -428,7 +458,19 @@ func ValidateInstalledSystemdPayload(in SystemdPayloadInputs) SystemdPayloadVali
 		preExisting := in.InstallWindowStartKnown &&
 			f.FailureTimeKnown &&
 			f.FailureTime.Before(in.InstallWindowStart)
-		if preExisting && in.LiveHealthKnown && in.LiveHealthClean {
+		// General rule: pre-existing + clean live health = stale latch, recovered.
+		recovered := preExisting && in.LiveHealthKnown && in.LiveHealthClean
+		// v1.185.1: a stale-clearable oneshot processor (nftban-botscan.service,
+		// Type=oneshot) latches `failed` from a previous-version run; that latch can
+		// itself make the live-health probe read unclean, a circular block that left
+		// the general rule above unable to recover it. A failure strictly BEFORE the
+		// install window cannot have been caused by this upgrade, so recover it
+		// WITHOUT the live-health gate. Real in-window failures (FailureTime not
+		// before the window → preExisting=false) still fall through to IN_WINDOW.
+		if preExisting && isStaleClearableOneshot(f.Unit) {
+			recovered = true
+		}
+		if recovered {
 			entry.Classification = "WARN_PRE_EXISTING_RECOVERED"
 			res.FailedUnitsPreExistingRecovered = append(res.FailedUnitsPreExistingRecovered, entry)
 			continue
