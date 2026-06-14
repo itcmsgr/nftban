@@ -640,11 +640,58 @@ nftban_botscan_process_logs() {
     echo "Processing: ${#logs[@]} access log(s)"
     echo "Patterns loaded: ${#_BOTSCAN_PATTERNS[@]}"
 
-    # v1.177: bounded incremental read per file (offset/inode; rotation/truncation
-    # safe; capped MAX_BYTES) — no more re-scanning whole domain logs from BOF.
-    # If a single file was pinned (arg), keep the legacy bounded tail.
-    local processed=0
-    for f in "${logs[@]}"; do
+    # v1.185 CORE-BOTSCAN-PROCESSOR-TIMEOUT-AT-SCALE — DEADLINE-AWARE SELF-BOUND.
+    # Fleet-proven failure: on high-ENTRY-VOLUME hosts (srv2 120 logs 0/53, srv4 17 logs
+    # 0/46, dns2 5 logs 0/55 — VOLUME, not file count) one cycle's burst × 137-pattern
+    # matching can't finish before the systemd TimeoutStartSec SIGTERM, so analyze/ban
+    # (below) never runs and BotScan bans nothing. Fix = bound the WORK per cycle so the
+    # scan finishes and BANS cleanly before the kill, and resumes next cycle:
+    #   (1) per-file read cap (NFTBAN_HTTP_LOG_MAX_BYTES, scoped here to the botscan scan)
+    #       so each WHOLE file's chunk is bounded and always fully processed in this cycle
+    #       — the cursor's offset then correctly reflects processed bytes (no within-file
+    #       break, which would strand emitted-but-unconsumed bytes since the shared reader
+    #       commits offset=size on READ);
+    #   (2) a SOFT time budget (BOTSCAN_SCAN_BUDGET_SECS; 0 = unlimited for interactive
+    #       `botscan check`) checked BETWEEN files — stop cleanly at a file boundary;
+    #   (3) anti-starvation rotation so every file is scanned across successive cycles.
+    # KNOWN LIMITATION (follow-up, NOT v1.185 — touches the shared reader, out of locked
+    # scope): under sustained traffic exceeding the per-file cap each cycle the shared
+    # reader is tail-biased (processes newest, advances offset to size), so the oldest
+    # over-cap bytes of that cycle are not scanned. v1.185 fixes the never-completes/
+    # never-bans class; full zero-loss is a separate shared-reader lane.
+    local budget="${BOTSCAN_SCAN_BUDGET_SECS:-0}"
+    local start_secs=$SECONDS
+    local deadline_hit=0
+    # Bound each file's per-cycle read so a single whole file is always processable inside
+    # a budget slice (default 1 MiB; ~5k lines). Scoped to this scan process only — the
+    # privileged collector keeps its own (larger) cap. Only narrow it (never widen a
+    # caller-set smaller value).
+    local _scan_cap="${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-65536}"
+    if [[ -z "${NFTBAN_HTTP_LOG_MAX_BYTES:-}" || "${NFTBAN_HTTP_LOG_MAX_BYTES}" -gt "$_scan_cap" ]]; then
+        export NFTBAN_HTTP_LOG_MAX_BYTES="$_scan_cap"
+    fi
+    # Anti-starvation rotation: persist where the last cycle stopped so a host whose
+    # backlog exceeds one budget still scans EVERY file over successive cycles instead
+    # of always draining the first files and starving the tail.
+    local rot_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/scan-rotate"
+    local n=${#logs[@]} rot=0
+    if [[ -z "$log_file" && "$n" -gt 0 ]]; then
+        mkdir -p "${rot_file%/*}" 2>/dev/null || true
+        [[ -r "$rot_file" ]] && IFS= read -r rot < "$rot_file" 2>/dev/null
+        [[ "$rot" =~ ^[0-9]+$ ]] || rot=0
+        rot=$(( rot % n ))
+    fi
+
+    local processed=0 files_done=0 i idx f
+    for (( i=0; i<n; i++ )); do
+        # Deadline check BETWEEN files only (clean boundary). A whole file is always read+
+        # processed atomically so the cursor offset reflects exactly what was processed;
+        # never break mid-file (that would strand emitted-but-unconsumed bytes).
+        if [[ "$budget" -gt 0 && $(( SECONDS - start_secs )) -ge "$budget" ]]; then
+            deadline_hit=1; break
+        fi
+        idx=$(( (rot + i) % n ))
+        f="${logs[$idx]}"
         while IFS= read -r line; do
             local parsed
             parsed=$(nftban_botscan_parse_line "$line") || continue
@@ -657,12 +704,21 @@ nftban_botscan_process_logs() {
             elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
             else tail -1000 -- "$f" 2>/dev/null; fi
         )
+        files_done=$((files_done + 1))
     done
 
-    echo "Processed: $processed entries"
+    # Persist rotation cursor: next cycle starts at the first file we did NOT finish.
+    if [[ -z "$log_file" && "$n" -gt 0 ]]; then
+        printf '%s\n' "$(( (rot + files_done) % n ))" > "${rot_file}.tmp" 2>/dev/null \
+            && mv -f "${rot_file}.tmp" "$rot_file" 2>/dev/null || true
+    fi
+
+    echo "Processed: $processed entries (${files_done}/${n} files this cycle)"
+    [[ "$deadline_hit" -eq 1 ]] && echo "Deadline budget (${budget}s) reached — analyzing partial batch; remaining files resume next cycle"
     echo "IPs tracked: ${#_BOTSCAN_IP_HITS[@]}"
 
-    # Analyze and ban
+    # Analyze and ban — ALWAYS runs (even on a partial/deadline-bounded batch) so a
+    # high-volume host still produces bans every cycle instead of zero.
     local banned
     banned=$(nftban_botscan_analyze) || banned=0
     echo "Banned: $banned IPs"

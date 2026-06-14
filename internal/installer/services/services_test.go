@@ -39,6 +39,44 @@ func TestStartDaemon(t *testing.T) {
 	}
 }
 
+// hasTryRestart reports whether a `systemctl try-restart <unit>` was recorded.
+func hasTryRestart(mock *executor.MockExecutor, unit string) bool {
+	for _, cmd := range mock.Commands {
+		if cmd.Name == "systemctl" && len(cmd.Args) >= 2 && cmd.Args[0] == "try-restart" && cmd.Args[1] == unit {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStartDaemon_UpgradeOverLiveDaemon_TryRestarts — v1.185
+// INSTALL-UPGRADE-NO-DAEMON-RESTART: when nftband.service is ALREADY active before
+// StartDaemon runs (the upgrade-over-live-daemon case proven on dns2), the plain
+// `start` is a no-op so the new binary must be loaded via try-restart.
+func TestStartDaemon_UpgradeOverLiveDaemon_TryRestarts(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["nftband.service"] = true // daemon already running (upgrade)
+
+	StartDaemon(mock, newTestLogger())
+
+	if !hasTryRestart(mock, "nftband.service") {
+		t.Error("expected try-restart nftband.service on upgrade-over-live-daemon (stale-binary fix)")
+	}
+}
+
+// TestStartDaemon_FreshInstall_NoTryRestart — on a fresh install the unit is inactive
+// when StartDaemon runs, so the first-start is real and NO redundant try-restart fires.
+func TestStartDaemon_FreshInstall_NoTryRestart(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	// nftband.service inactive by default (fresh install)
+
+	StartDaemon(mock, newTestLogger())
+
+	if hasTryRestart(mock, "nftband.service") {
+		t.Error("fresh install must not issue a redundant try-restart (only first-start)")
+	}
+}
+
 // TestStartDaemon_UnmasksNftbandBeforeEnable — v1.100.4 defensive
 // belt for UPSTREAM-UNINSTALL-INCOMPLETE-001. A prior uninstall may
 // have left a phantom mask symlink at /etc/systemd/system/nftband.service

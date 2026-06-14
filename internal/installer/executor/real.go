@@ -260,6 +260,17 @@ func (r *RealExecutor) ServiceStop(unit string) error {
 	return nil
 }
 
+// ServiceTryRestart restarts the unit iff it is active (no-op if inactive).
+// v1.185 INSTALL-UPGRADE-NO-DAEMON-RESTART: loads the newly-installed binary on an
+// upgrade over a live daemon without forcing a start on a deliberately-stopped unit.
+func (r *RealExecutor) ServiceTryRestart(unit string) error {
+	res := r.RunTimeout(90*time.Second, "systemctl", "try-restart", unit)
+	if res.ExitCode != 0 {
+		return fmt.Errorf("systemctl try-restart %s: %s", unit, strings.TrimSpace(res.Stderr))
+	}
+	return nil
+}
+
 func (r *RealExecutor) ServiceDisable(unit string) error {
 	res := r.Run("systemctl", "disable", unit)
 	if res.ExitCode != 0 {
