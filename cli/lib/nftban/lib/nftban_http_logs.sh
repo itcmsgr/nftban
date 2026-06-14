@@ -325,15 +325,34 @@ nftban_http_read_incremental() {
         start="$prev_off"
     fi
 
-    # Bound the read window to MAX_BYTES (read the newest MAX_BYTES if the gap is huge).
-    if [[ $((size - start)) -gt ${NFTBAN_HTTP_LOG_MAX_BYTES} ]]; then
-        start=$((size - NFTBAN_HTTP_LOG_MAX_BYTES))
+    local new_off="$size"
+    if [[ "${NFTBAN_HTTP_LOG_READ_FORWARD:-false}" == "true" ]]; then
+        # v1.187 Lane A — FORWARD cursor: emit the OLDEST unread window
+        # [start, start+MAX_BYTES) and advance the offset by exactly what is emitted,
+        # so the next cycle resumes where this one stopped and NO bytes are ever
+        # permanently skipped (a backlog larger than MAX_BYTES is drained across
+        # successive cycles instead of tail-biased). Used by the BotScan processor with
+        # its OWN dedicated offset dir; the default tail-biased branch below is unchanged
+        # so the privileged collector is byte-identical.
+        local end="$size"
+        if [[ $((size - start)) -gt ${NFTBAN_HTTP_LOG_MAX_BYTES} ]]; then
+            end=$((start + NFTBAN_HTTP_LOG_MAX_BYTES))
+        fi
+        if [[ "$end" -gt "$start" ]]; then
+            tail -c +$((start + 1)) "$file" 2>/dev/null | head -c $((end - start))
+        fi
+        new_off="$end"
+    else
+        # Default (tail-biased): read the newest MAX_BYTES if the gap is huge; offset → size.
+        if [[ $((size - start)) -gt ${NFTBAN_HTTP_LOG_MAX_BYTES} ]]; then
+            start=$((size - NFTBAN_HTTP_LOG_MAX_BYTES))
+        fi
+        if [[ "$size" -gt "$start" ]]; then
+            tail -c +$((start + 1)) "$file" 2>/dev/null | head -c "${NFTBAN_HTTP_LOG_MAX_BYTES}"
+        fi
+        new_off="$size"
     fi
-
-    if [[ "$size" -gt "$start" ]]; then
-        tail -c +$((start + 1)) "$file" 2>/dev/null | head -c "${NFTBAN_HTTP_LOG_MAX_BYTES}"
-    fi
-    # Persist new offset = current size (atomic-ish).
-    printf '%s:%s\n' "$inode" "$size" > "${statefile}.tmp" 2>/dev/null && mv -f "${statefile}.tmp" "$statefile" 2>/dev/null
+    # Persist new offset (atomic-ish).
+    printf '%s:%s\n' "$inode" "$new_off" > "${statefile}.tmp" 2>/dev/null && mv -f "${statefile}.tmp" "$statefile" 2>/dev/null
     return 0
 }
