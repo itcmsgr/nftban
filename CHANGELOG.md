@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.186.1] - 2026-06-14 — Hotfix: BotScan URL/UA pattern-ban correctness (IFS word-split)
+
+**Codename:** `BOTSCAN_PATTERN_BAN_IFS_HOTFIX` · **Finding:** `NFTBAN_ROADMAP/V1_187_FINDING_BOTSCAN_PATTERN_BAN_IFS.md` · **Lab record:** `V1_186_1_LAB_VALIDATION_RECORD.md`
+**PR:** [#853](https://github.com/itcmsgr/nftban/pull/853)
+
+> **v1.186.1 fixes BotScan URL/UA pattern ban correctness under the production runtime IFS and restores catalog/custom pattern ban behavior.** It does NOT fix BotScan throughput (`BOTSCAN-SCAN-THROUGHPUT` remains open for v1.187) or bot-policy UX (`BOTSCAN-BOT-POLICY-UX` remains open for v1.187).
+
+### Fixed — pattern-ban IFS word-split (`nftban_botscan_analyze`)
+- The lib sets a global `IFS=$'\n\t'` (no space) at source time; the processor (`cli/sbin/nftban-botscan-processor`) inherits it. `analyze` iterated the per-IP matched-pattern list with an unquoted `for pattern_name in $patterns` over a space-joined value (`" NAME"`) → the leading space was kept → the pattern key lookup missed → the per-pattern **threshold/window/ban-duration were never applied** (defaults 5/60/1800 used instead).
+- **Effect (measured, no overclaim):** `threshold=1/2` scanner/exploit/webshell patterns (sqlmap, nikto, masscan, Log4Shell/CVE_*, webshells WS_*) failed to ban on the first/second matching hit; high-volume crawler matches still emitted a weaker default **grey** signal; the **404-flood path was unaffected**.
+- **Fix:** IFS-independent split — `IFS=$' \t\n' read -ra` — the same idiom already used for the http-log override split (`nftban_http_logs.sh`). 8 lines, no behavior change beyond applying the configured pattern tuning.
+
+### Tests
+- New hermetic `cli/lib/nftban/tests/botscan_pattern_ban_ifs_v1861_test.sh`: useragent + url-404 pattern bans fire on the first matching hit under the lib's REAL runtime IFS (404-flood disabled so the ban can only come from the pattern path). Fails pre-fix, passes post-fix. v185 regression + shellcheck clean.
+
+### Envelope
+- Shell-only → **daemon `cmd/nftband` BYTE-IDENTICAL to v1.186 (`c63d8822`)**; schema 1.83.0 frozen; no packaging/FHS change (header `meta:version` only).
+
+### Validation
+- A/B lab-first across all 9 fleet hosts (Ubuntu 22.04/24.04/26.04, CentOS Stream 10, AlmaLinux 9.8/10.1; GNU + uutils coreutils): installed=NO_BAN → fixed=BAN(pattern), 0 nftban failed units, nft authority intact. Zero install mutation, signal-only, reserved IP. (Separate follow-up: `TAIL_OBSOLETE_SYNTAX_UUTILS` — Ubuntu 26.04 uutils rejects `tail -1000` in the pinned/interactive path; production incremental reader unaffected.)
+
+---
+
 ## [v1.186.0] - 2026-06-14 — Roundcube webmail auth source (LoginMon) — DirectAdmin central /var/log/roundcube layout
 
 **Codename:** `ROUNDCUBE_WEBMAIL_AUTH_SOURCE_DA_ONLY` · **Decision:** `NFTBAN_ROADMAP/V1_186_ROUNDCUBE_DA_ONLY_DECISION.md` · **Ownership:** `ROUNDCUBE_WEBMAIL_AUTH_SOURCE_OWNERSHIP_DECLARATION.md` · **Gate-0:** `ROUNDCUBE_GATE0_CAPTURE_RECORD.md` · **Lab-first:** `V1_186_ROUNDCUBE_LABFIRST_VALIDATION_RECORD.md`
