@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.186.0] - 2026-06-14 — Roundcube webmail auth source (LoginMon) — DirectAdmin central /var/log/roundcube layout
+
+**Codename:** `ROUNDCUBE_WEBMAIL_AUTH_SOURCE_DA_ONLY` · **Decision:** `NFTBAN_ROADMAP/V1_186_ROUNDCUBE_DA_ONLY_DECISION.md` · **Ownership:** `ROUNDCUBE_WEBMAIL_AUTH_SOURCE_OWNERSHIP_DECLARATION.md` · **Gate-0:** `ROUNDCUBE_GATE0_CAPTURE_RECORD.md` · **Lab-first:** `V1_186_ROUNDCUBE_LABFIRST_VALIDATION_RECORD.md`
+**PR:** [#851](https://github.com/itcmsgr/nftban/pull/851) (squash `23600beb`)
+
+> **What:** LoginMon gains a Roundcube webmail source that owns ONLY the webmail interactive **auth_failure** event class from the central `/var/log/roundcube/userlogins.log`. **Coverage is narrow: DirectAdmin hosts using the central `/var/log/roundcube` layout.** NOT claimed: all DirectAdmin installs, cPanel, Plesk, app-local `log_dir` installs, or all webmail brute-force coverage.
+
+### Added — Roundcube webmail auth_failure source (DirectAdmin central-log)
+- `internal/loginmon/detector/roundcube.go` — parses `Failed login for <user> from <IP> in session <sid>` → `Verdict{Reason: ReasonRoundcubeAuthFail=5003, Service: "roundcube"}`. `Successful login` never verdicts (prefilter + explicit guard + test).
+- **Mandatory public-IP-only guard** (`isPublicLoginIP`): rejects loopback/RFC1918/link-local/ULA/multicast/unspecified/malformed BEFORE any score/ban — fleet-safe no-op on hosts logging 127.0.0.1; auto-neutralizes the dovecot `rip=localhost` webmail mirror.
+- `internal/loginmon/roundcubediscovery.go` — DA-only discovery of the central `/var/log/roundcube/userlogins.log` (nil unless DirectAdmin; no cPanel per-user / no Plesk glob). `WARN_NO_LOGS`/`NO_LOGS` when absent — never HEALTHY.
+- `internal/loginmon/module.go` — `[LOGINMON] roundcube: state=...` input-state wiring; root `nftband.service` (CAP_DAC_OVERRIDE) reads the `drwx--x---` webapps log directly (Option A).
+- Disjoint from BotScan (web_abuse), WebAuth (HTTP 401/wp-login), and dovecot/mail (IMAP/POP3) — distinct source `roundcube` + reason `5003`; independent ownership audit PASS.
+
+### Not claimed (deferred to v1.186.x)
+- cPanel (per-user `$HOME/logs/roundcube/` discovery), Plesk (central log, pending captured line), and app-local `log_dir` installs (config-driven `log_dir` resolution). srv4 (DA + RC 1.6.15, unset `log_dir`) is the proven app-local caveat — a safe no-op until the refinement ships.
+
+### Envelope
+- Daemon `cmd/nftband` hash **MOVES** (expected; daemon-Go) `dc4e1a33`→`c63d8822` (first daemon-Go since v1.185; canonical `CGO_ENABLED=0 go build -trimpath -buildvcs=false ./cmd/nftband` reproduces it). Schema 1.83.0 frozen. NO packaging/FHS/cmd change (release-prep header `meta:version` only).
+
+### Validation
+- Hermetic detector + discovery suites green; independent source-ownership audit PASS (`READY_FOR_MERGE=YES`).
+- Lab-first reversible daemon-swap across 9 hosts, **0 live bans**: dns1 (Ubuntu 24.04, DA 1.7.1) WARN_NO_LOGS→OK→2 public detections (IPv4+IPv6), localhost+RFC1918 rejected, `Successful login` ignored; dns2/srv1/srv2/srv3/srv4 WARN_NO_LOGS; lab2 (Plesk) + lab4 (cPanel) + monitor NO_LOGS no-op. Cross-distro: Ubuntu 22.04/24.04/26.04, CentOS Stream 9/10, AlmaLinux 9.8/10.1.
+
+---
+
 ## [v1.185.1] - 2026-06-14 — Hotfix: botscan state-dir + stale-oneshot recovery + reset-failed guidance
 
 **Codename:** `BOTSCAN_STATE_DIR_AND_STALE_ONESHOT_RECOVERY` · **Scope:** `NFTBAN_ROADMAP/V1_185_1_HOTFIX_SCOPE.md` · **User guide:** `USER_GUIDE_DEGRADED_BOTSCAN_AFTER_UPGRADE.md`
