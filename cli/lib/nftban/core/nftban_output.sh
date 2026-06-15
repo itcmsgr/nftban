@@ -270,15 +270,82 @@ nftban_render_banner() {
     esac
 }
 
-# Simple banner (one line + motto)
-nftban_render_banner_simple() {
-    local icons version motto
+# =============================================================================
+# v1.187.3 B1b — COMPACT BANNER (one shared source, two render modes)
+# =============================================================================
+# The compact one-liner is the non-dashboard render mode (watchdog, reports, and
+# every interactive command that is not version/status/health). It carries the
+# SAME identity as the full box (icons + version) PLUS a posture glyph and an
+# optional cache-only notice — so "is it working / does it need attention?" is
+# visible at a glance without forcing the full box (which would wreck scrollback
+# and pipe-ability). The full box (version/status/health) stays in
+# nftban_banner_unified and keeps the LIVE validator posture.
+
+# Cheap-FRESH posture glyph — perm-safe + no validator fork + no jq. Used ONLY by
+# the compact line (the full box pays for the live validator). Freshness beats
+# precision for a single glyph: a stale cache could paint a false 🟢, so we read
+# the daemon's CURRENT systemd state instead. ⚪ when it cannot be determined.
+nftban_posture_glyph_cheap() {
+    command -v systemctl >/dev/null 2>&1 || { printf '⚪'; return 0; }
+    local st
+    st=$(systemctl is-active nftband.service 2>/dev/null || true)
+    case "$st" in
+        active)                 printf '🟢' ;;
+        activating|reloading)   printf '🟠' ;;
+        failed)                 printf '🔴' ;;
+        inactive|deactivating)  printf '🔴' ;;
+        *)                      printf '⚪' ;;
+    esac
+    return 0
+}
+
+# Cache-ONLY update notice (NEVER hits the network — that would add latency to
+# every interactive command and break offline use). Reads the fresh-TTL
+# update_check cache written by nftban_check_updates_banner; prints the notice
+# string only when current < latest, else nothing.
+nftban_update_notice_cached() {
+    local cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_check"
+    local cache_ttl="${NFTBAN_UPDATE_TTL:-86400}"
+    [[ -f "$cache_file" ]] || return 0
+    local now age
+    now=$(date +%s)
+    age=$(( now - $(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null || echo "$now") ))
+    [[ "$age" -lt "$cache_ttl" ]] || return 0
+    local latest current cmp
+    latest="$(cat "$cache_file" 2>/dev/null || true)"
+    [[ -n "$latest" ]] || return 0
+    current="$(nftban_get_version)"
+    [[ "$latest" != "$current" ]] || return 0
+    nftban_version_compare "$current" "$latest"; cmp=$?
+    [[ "$cmp" -eq 1 ]] || return 0   # only when current < latest
+    printf '↑ v%s available — nftban update' "$latest"
+    return 0
+}
+
+# Compact one-liner: icons + posture glyph + version (+ optional cached notice).
+nftban_render_banner_compact() {
+    _v141_banner_suppressed && return 0
+    [[ "${NFTBAN_BANNER_MODE:-auto}" == "none" ]] && return 0
+    [[ "${NFTBAN_OUTPUT_JSON:-false}" == "true" ]] && return 0
+    local icons version glyph notice
     icons="$(nftban_icon_pair)"
     version="$(nftban_get_version)"
-    motto="${NFTBAN_MOTTO:-NFTBan — Open-source Linux IPS and nftables firewall manager}"
+    glyph="$(nftban_posture_glyph_cheap)"
+    notice="$(nftban_update_notice_cached || true)"
+    local bold="${NFTBAN_COLOR_BOLD}" reset="${NFTBAN_COLOR_RESET}" dim="${NFTBAN_COLOR_DIM}"
+    if [[ -n "$notice" ]]; then
+        printf '%b\n' "${icons}  ${glyph} ${bold}NFTBan v${version}${reset}${dim}  · ${notice}${reset}"
+    else
+        printf '%b\n' "${icons}  ${glyph} ${bold}NFTBan v${version}${reset}"
+    fi
+    return 0
+}
 
-    echo -e "${NFTBAN_COLOR_BOLD}${icons} NFTBan v${version}${NFTBAN_COLOR_RESET}"
-    echo -e "${NFTBAN_COLOR_DIM}${motto}${NFTBAN_COLOR_RESET}"
+# Back-compat shim — the old 2-line motto renderer is superseded by the compact
+# posture line. Kept so existing callers (`nftban_render_banner simple`, etc.)
+# converge to the one compact path instead of the orphaned motto.
+nftban_render_banner_simple() {
+    nftban_render_banner_compact
 }
 
 # =============================================================================
@@ -342,9 +409,11 @@ nftban_banner_unified() {
     # instead, so `nftban list`, `nftban firewall`, … no longer emit the full
     # box. This is the ONE banner path — known and unknown commands alike.
     case "$mode" in
-        version|status|hello|first-run|"") : ;;  # full box allowed
+        version|status|hello|first-run|"") : ;;  # full box allowed (live validator posture)
         *)
-            nftban_render_banner_simple
+            # v1.187.3 B1b — every other command gets the compact one-liner with a
+            # cheap-fresh posture glyph + optional cached notice (not the full box).
+            nftban_render_banner_compact
             return 0
             ;;
     esac
