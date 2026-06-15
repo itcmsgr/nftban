@@ -41,6 +41,65 @@ type HealthOutput struct {
 	// v1.84 SCHEMA-UNFREEZE counters contract (additive).
 	CountersPhase string        `json:"counters_phase"`     // "contract" (v1.190.0) | "populated" (v1.191.0); the anti-false-zero gate
 	Counters      *CountersJSON `json:"counters,omitempty"` // nil/ABSENT until v1.191.0 populates — absent ≠ zero (no false-zero dashboards)
+	// v1.84 NFT counting-model contract view (additive; nil/ABSENT until v1.191.0).
+	NFT *NFTCountersJSON `json:"nft,omitempty"` // interpreted JSON VIEW over existing nft named counters — NOT a new Prometheus family (SOS-2 Option A)
+}
+
+// NFTCountersJSON is the v1.84 NFT counting-model JSON view. It is an INTERPRETED
+// projection over the EXISTING nft named counters (Prometheus
+// nftban_nft_named_counter_packets_total{family,counter} / _bytes_total) — it does
+// NOT introduce a parallel Prometheus metric (SOS-2 Option A: no double-count). In
+// v1.190.0 the pointer is always nil → the "nft" object is ABSENT (omitempty);
+// population begins v1.191.0 from the same named-counter / nft-JSON source.
+type NFTCountersJSON struct {
+	Anchors []NFTAnchorJSON `json:"anchors,omitempty"` // phase-boundary view; see NFTAnchorJSON
+}
+
+// NFTAnchorJSON is one anchor phase-boundary counter (v1.84 contract).
+// Anchors (anchor_hygiene→…→anchor_final, both ip + ip6 tables, comment
+// NFTBAN_ANCHOR:*) are PHASE-BOUNDARY / pipeline-continuity counters — they answer
+// "did traffic reach this firewall phase?" They are NOT accept/drop verdict counters
+// and MUST NOT be summed into total_input_accept / total_input_drop. They do not
+// change health status in v1.190.0.
+//
+// Family is NORMALIZED per SOS-3 (OPTION_1_NORMALIZE_JSON_KEEP_PROMETHEUS_COMPAT):
+// the kernel/Prometheus family "ip"/"ip6" is mapped to JSON "ipv4"/"ipv6" so the
+// entire 1.84.0 JSON contract speaks ONE vocabulary (ipv4|ipv6|inet|unknown). The
+// Prometheus label nft_named_counter_*{family="ip"|"ip6"} is left UNCHANGED for
+// compatibility; the bridge is documented: Prometheus ip == JSON ipv4, ip6 == ipv6.
+type NFTAnchorJSON struct {
+	Family  string `json:"family"`  // ipv4|ipv6 (normalized from nft ip/ip6); anchors never inet/unknown — unknown ⇒ collection defect
+	Anchor  string `json:"anchor"`  // anchor_hygiene|anchor_trusted|anchor_ban|anchor_established|anchor_detect|anchor_service|anchor_final
+	Packets uint64 `json:"packets"` // from the named counter (real value once populated v1.191.0)
+	Bytes   uint64 `json:"bytes"`   // from the named counter
+}
+
+// NFT family-vocabulary constants — the SINGLE JSON vocabulary (SOS-3).
+// JSON output uses ONLY these; raw nft table families "ip"/"ip6" never appear in JSON.
+const (
+	FamilyIPv4    = "ipv4" // JSON; bridges Prometheus family="ip"
+	FamilyIPv6    = "ipv6" // JSON; bridges Prometheus family="ip6"
+	FamilyInet    = "inet" // table-level only (genuinely-inet rules); never fake-split
+	FamilyUnknown = "unknown"
+)
+
+// NormalizeNFTFamily maps a raw nftables table family to the canonical JSON family
+// vocabulary (SOS-3 OPTION_1). nft "ip"→"ipv4", "ip6"→"ipv6", "inet"→"inet";
+// anything else (incl. empty) → "unknown". This is the ONLY bridge between the
+// Prometheus named-counter label space (ip/ip6, unchanged for compat) and the JSON
+// 1.84.0 contract (ipv4/ipv6/inet/unknown). For per-IP/anchor counters a result of
+// "unknown" signals a classification/collection defect (v1.191 tests assert absence).
+func NormalizeNFTFamily(nftFamily string) string {
+	switch nftFamily {
+	case "ip", "ipv4":
+		return FamilyIPv4
+	case "ip6", "ipv6":
+		return FamilyIPv6
+	case "inet":
+		return FamilyInet
+	default:
+		return FamilyUnknown
+	}
 }
 
 // CountersJSON is the v1.84 counters CONTRACT. In v1.190.0 the pointer is always
@@ -62,6 +121,7 @@ type CountersJSON struct {
 //     `unknown` here signals a classification BUG (a banned IP is always v4 or v6);
 //     `inet` is NOT valid for per-IP counters.
 //   - TABLE-LEVEL counters (nft forward/output from an inet chain): use `inet`.
+//
 // Never fake-split a genuinely-inet rule into ipv4/ipv6. omitempty → absent in the
 // contract phase (no false-zero) and zero families omitted once populated.
 type FamilyCounts struct {

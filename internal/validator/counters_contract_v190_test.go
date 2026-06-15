@@ -83,11 +83,76 @@ func TestCountersContract_PopulatedShape(t *testing.T) {
 	}
 }
 
+// (6) nft.anchors[] contract: ABSENT in contract phase (no false-zero), present+typed when populated.
+func TestNFTAnchorsContract_AbsentThenPopulated(t *testing.T) {
+	// contract phase: "nft" object MUST be absent (omitempty, NFT==nil)
+	cb, _ := json.Marshal(HealthOutput{SchemaVersion: SchemaVersionCurrent, CountersPhase: CountersPhaseContract})
+	if strings.Contains(string(cb), `"nft"`) {
+		t.Errorf("nft object MUST be ABSENT in contract phase (no false-zero anchors); got: %s", cb)
+	}
+	// populated (v1.191) shape: anchors carry NORMALIZED family ipv4/ipv6
+	h := HealthOutput{
+		SchemaVersion: SchemaVersionCurrent,
+		CountersPhase: CountersPhasePopulated,
+		NFT: &NFTCountersJSON{Anchors: []NFTAnchorJSON{
+			{Family: FamilyIPv4, Anchor: "anchor_hygiene", Packets: 10, Bytes: 800},
+			{Family: FamilyIPv6, Anchor: "anchor_final", Packets: 2, Bytes: 96},
+		}},
+	}
+	b, _ := json.Marshal(h)
+	s := string(b)
+	if !strings.Contains(s, `"family":"ipv4"`) || !strings.Contains(s, `"family":"ipv6"`) {
+		t.Errorf("nft.anchors[] must use normalized ipv4/ipv6; got: %s", s)
+	}
+	if !strings.Contains(s, `"anchor":"anchor_hygiene"`) || !strings.Contains(s, `"anchor":"anchor_final"`) {
+		t.Errorf("nft.anchors[] must carry anchor name; got: %s", s)
+	}
+	// SOS-3: JSON must NEVER emit raw nft family ip/ip6
+	if strings.Contains(s, `"family":"ip"`) || strings.Contains(s, `"family":"ip6"`) {
+		t.Errorf("SOS-3 violation: JSON must NOT emit raw nft family ip/ip6; got: %s", s)
+	}
+	var rt HealthOutput
+	if err := json.Unmarshal(b, &rt); err != nil {
+		t.Fatalf("round-trip: %v", err)
+	}
+	if rt.NFT == nil || len(rt.NFT.Anchors) != 2 || rt.NFT.Anchors[0].Family != FamilyIPv4 ||
+		rt.NFT.Anchors[0].Packets != 10 || rt.NFT.Anchors[1].Family != FamilyIPv6 {
+		t.Errorf("nft.anchors[] did not round-trip: %+v", rt.NFT)
+	}
+}
+
+// (7) SOS-3 family normalization: nft ip→ipv4, ip6→ipv6; one JSON vocabulary.
+func TestNormalizeNFTFamily_SOS3(t *testing.T) {
+	cases := map[string]string{
+		"ip":    FamilyIPv4,    // nft IPv4 table → JSON ipv4 (bridges Prometheus family="ip")
+		"ipv4":  FamilyIPv4,    // already-normalized passthrough
+		"ip6":   FamilyIPv6,    // nft IPv6 table → JSON ipv6 (bridges Prometheus family="ip6")
+		"ipv6":  FamilyIPv6,    // already-normalized passthrough
+		"inet":  FamilyInet,    // genuinely table-level; never fake-split
+		"":      FamilyUnknown, // missing → unknown (defect signal on per-IP/anchor counters)
+		"bogus": FamilyUnknown,
+	}
+	for in, want := range cases {
+		if got := NormalizeNFTFamily(in); got != want {
+			t.Errorf("NormalizeNFTFamily(%q) = %q; want %q", in, got, want)
+		}
+	}
+	// the JSON vocabulary must be exactly {ipv4,ipv6,inet,unknown}
+	if FamilyIPv4 != "ipv4" || FamilyIPv6 != "ipv6" || FamilyInet != "inet" || FamilyUnknown != "unknown" {
+		t.Fatalf("JSON family vocabulary drifted: %q/%q/%q/%q", FamilyIPv4, FamilyIPv6, FamilyInet, FamilyUnknown)
+	}
+}
+
 // (5) old-consumer compat: a consumer that predates the counters fields still parses 1.84.0
 func TestCountersContract_OldConsumerCompat(t *testing.T) {
-	// emit current (1.84.0) output WITHOUT counters (contract phase)
-	cur, _ := json.Marshal(HealthOutput{SchemaVersion: SchemaVersionCurrent, Status: "protected", CountersPhase: CountersPhaseContract})
-	// a pre-unfreeze consumer struct (no counters_phase / counters fields)
+	// emit FULLY-POPULATED (v1.191-shape) 1.84.0 output incl. counters + nft.anchors[]
+	// to prove a pre-unfreeze consumer ignores ALL added fields (additive compat).
+	cur, _ := json.Marshal(HealthOutput{
+		SchemaVersion: SchemaVersionCurrent, Status: "protected", CountersPhase: CountersPhasePopulated,
+		Counters: &CountersJSON{BotScan: &BotScanCountersJSON{Bans: FamilyCounts{IPv4: 1}}},
+		NFT:      &NFTCountersJSON{Anchors: []NFTAnchorJSON{{Family: FamilyIPv4, Anchor: "anchor_ban", Packets: 1}}},
+	})
+	// a pre-unfreeze consumer struct (no counters_phase / counters / nft fields)
 	type oldHealth struct {
 		SchemaVersion string `json:"schema_version"`
 		Status        string `json:"status"`
