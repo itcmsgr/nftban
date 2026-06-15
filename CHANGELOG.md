@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.187.3] - 2026-06-15 — BotScan-train B1b: banner convergence (one compact posture line)
+
+**Codename:** `BOTSCAN_B1B_BANNER` · **PR:** [#862](https://github.com/itcmsgr/nftban/pull/862)
+
+> **What:** closes BUG-BANNER-INCONSISTENT. Presentation-only; daemon `cmd/nftband` byte-identical `c63d8822`; schema 1.83.0 frozen; no validator-Go/cmd/internal/packaging. Does NOT include the findings helper (B1b-2), B2 bad-bot UX, or counters (SCHEMA-UNFREEZE).
+
+### Changed
+- **BUG-BANNER-INCONSISTENT** — one banner path, two intentional render modes. `version`/`status`/`health` keep the **full box** (live-validator posture); every other command renders **one compact one-liner** (`nftban_render_banner_compact`) with a posture glyph + optional cached notice, replacing the old motto 2-liner (`🐧🛡️ NFTBan vX / ban · unban · protect`). `nftban_render_banner_simple` → back-compat shim.
+- Compact posture = **cheap-fresh** `systemctl is-active nftband.service` (perm-safe, no `jq`, no validator fork) → 🟢/🟠/🔴/⚪. Full box keeps the live validator. (A daily cache could paint a false 🟢 — rejected.)
+- Dynamic notice = **cache-only** `↑ vX available — nftban update` (never network).
+- Suppression unchanged (`_v141_banner_suppressed`); notices on the compact line, never inside the box.
+
+### Validation
+- New hermetic `b1b_banner_compact_v1873_test.sh` PASS A-E — incl. proof compact **ignores a bogus validator cache** (no hot-path validator fork), failed→🔴, cache-only notice, JSON/none suppression, full-box gate intact. shellcheck `-S warning` clean; v1.187.2 regression passes; daemon `c63d8822`; FHS `--check` rc=0.
+
+### Deferred (tracked)
+- **B1b-2** — shared `nftban_render_findings` helper + UX-VERBOSE-FINDINGS adoption (surface-scoping first).
+- **VAL-LOGINMON-002-UX** — validator-Go (separate lane).
+
+---
+
 ## [v1.187.2] - 2026-06-15 — BotScan-train B1: CLI/text-UX (banner tagline + update-lock friendliness)
 
 **Codename:** `BOTSCAN_B1_TEXT_UX` · **PR:** [#860](https://github.com/itcmsgr/nftban/pull/860)
