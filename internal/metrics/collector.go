@@ -253,7 +253,8 @@ func (c *Collector) writeHealthMetrics(f *os.File) error {
 // nftban_nft_rules_total is now SINGLE-OWNED by the watchdog promauto path
 // (internal/watchdog/metrics.go). The duplicate raw-textfile emit that used to live
 // here is dropped to remove the same-name dual source across exporters. Kept as a
-// no-op (callers unchanged); countNFTablesRules() remains for other callers.
+// no-op so callers are unchanged; the former rule-counting helper was removed with
+// its only caller (the canonical count is the watchdog gauge nftban_nft_rules_total).
 func (c *Collector) writeNFTablesMetrics(_ *os.File) error {
 	return nil
 }
@@ -455,26 +456,6 @@ func (c *Collector) isServiceActive(service string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(output)) == "active"
-}
-
-// countNFTablesRules counts total nftables rules
-func (c *Collector) countNFTablesRules() (int, error) {
-	cmd := exec.Command("nft", "list", "ruleset")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0, err
-	}
-
-	count := 0
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "ip ") || strings.HasPrefix(line, "ip6 ") {
-			count++
-		}
-	}
-
-	return count, nil
 }
 
 // TCPStats represents TCP protocol statistics
