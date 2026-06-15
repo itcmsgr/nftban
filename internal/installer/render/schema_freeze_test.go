@@ -54,7 +54,7 @@ import (
 // (mirrors v1.119's adjacency at internal/blacklist/schema_freeze_test.go
 // and v1.120's adjacency at internal/whitelist/schema_freeze_test.go).
 func TestSchemaVersionUnchangedByV121OperatorSafetyHardening(t *testing.T) {
-	const expectedSchema = "1.83.0"
+	const expectedSchema = "1.84.0"
 	if validator.SchemaVersionCurrent != expectedSchema {
 		t.Fatalf("SchemaVersionCurrent = %q, want %q — V121 operator-safety hardening "+
 			"MUST NOT bump schema (per V121_OPERATOR_SAFETY_HARDENING_SCHEMA_IMPACT_DECISION.md "+

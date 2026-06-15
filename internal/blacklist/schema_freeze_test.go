@@ -46,7 +46,7 @@ import (
 // site of the V119 A1 fix; placing the guard adjacent to the typed-loader
 // changes makes drift-detection blast radius local.
 func TestSchemaVersionUnchangedByManualCIDRFix(t *testing.T) {
-	const expectedSchema = "1.83.0"
+	const expectedSchema = "1.84.0"
 	if validator.SchemaVersionCurrent != expectedSchema {
 		t.Fatalf("SchemaVersionCurrent = %q, want %q — V119 A1 Manual CIDR fix MUST NOT bump schema "+
 			"(per V119_MANUAL_CIDR_SCHEMA_IMPACT_DECISION.md verdict SCHEMA_STAYS_FROZEN). "+

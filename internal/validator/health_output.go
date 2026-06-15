@@ -38,6 +38,59 @@ type HealthOutput struct {
 	Findings      []FindingJSON    `json:"findings"`
 	ChainCounts   ChainCounts      `json:"chain_counts"`
 	Summary       SummaryCounts    `json:"summary"`
+	// v1.84 SCHEMA-UNFREEZE counters contract (additive).
+	CountersPhase string        `json:"counters_phase"`     // "contract" (v1.190.0) | "populated" (v1.191.0); the anti-false-zero gate
+	Counters      *CountersJSON `json:"counters,omitempty"` // nil/ABSENT until v1.191.0 populates — absent ≠ zero (no false-zero dashboards)
+}
+
+// CountersJSON is the v1.84 counters CONTRACT. In v1.190.0 the pointer is always
+// nil → the "counters" object is ABSENT from JSON (omitempty). The contract exists
+// in the type system / schema; population begins v1.191.0 (which also flips
+// counters_phase → "populated"). Absent is deliberately NOT zero so consumers do
+// not read "nothing happened" from contract-only output.
+type CountersJSON struct {
+	BotScan   *BotScanCountersJSON   `json:"botscan,omitempty"`
+	BotGuard  *BotGuardCountersJSON  `json:"botguard,omitempty"`
+	Whitelist *WhitelistCountersJSON `json:"whitelist,omitempty"`
+}
+
+// FamilyCounts is an IP-backed counter split by address family (v1.84 contract;
+// DESIGN_AMENDMENT_V1_190_IP_FAMILY). In Prometheus this is the low-cardinality
+// label family="ipv4|ipv6|inet|unknown"; in JSON it is these omitempty sub-fields.
+// Semantics:
+//   - PER-IP counters (bans/signals/crawler_verify/etc.): use ipv4 / ipv6 only.
+//     `unknown` here signals a classification BUG (a banned IP is always v4 or v6);
+//     `inet` is NOT valid for per-IP counters.
+//   - TABLE-LEVEL counters (nft forward/output from an inet chain): use `inet`.
+// Never fake-split a genuinely-inet rule into ipv4/ipv6. omitempty → absent in the
+// contract phase (no false-zero) and zero families omitted once populated.
+type FamilyCounts struct {
+	IPv4    uint64 `json:"ipv4,omitempty"`
+	IPv6    uint64 `json:"ipv6,omitempty"`
+	Inet    uint64 `json:"inet,omitempty"`    // table-level only (e.g. inet-chain forward/output)
+	Unknown uint64 `json:"unknown,omitempty"` // last-resort; on per-IP counters indicates a classification gap
+}
+
+// BotScanCountersJSON — populated v1.191.0 (BotScan processor state).
+// IP-backed counters carry family; files_deferred is per-FILE (no IP → no family).
+type BotScanCountersJSON struct {
+	ScannedEntries FamilyCounts `json:"scanned_entries"`
+	Matched        FamilyCounts `json:"matched"`        // also by category in Prometheus
+	Signals        FamilyCounts `json:"signals"`        // also ban vs grey in Prometheus
+	Bans           FamilyCounts `json:"bans"`           // also by reason/category in Prometheus
+	CrawlerVerify  FamilyCounts `json:"crawler_verify"` // also ok/bad/timeout/cachehit in Prometheus
+	FilesDeferred  uint64       `json:"files_deferred"` // per-file rotation/budget — NOT IP-backed, no family
+}
+
+// BotGuardCountersJSON — populated v1.191.0 (counters absent in BotGuard today).
+type BotGuardCountersJSON struct {
+	Decisions     FamilyCounts `json:"decisions"`      // IP-backed (also by decision in Prometheus)
+	EventbusDrops uint64       `json:"eventbus_drops"` // not IP-backed → no family
+}
+
+// WhitelistCountersJSON — populated v1.191.0 (today only gauges exist).
+type WhitelistCountersJSON struct {
+	Changes FamilyCounts `json:"changes"` // IP-backed (also by op add/remove/expire in Prometheus)
 }
 
 // ServiceStateJSON is the JSON representation of daemon and timer state.

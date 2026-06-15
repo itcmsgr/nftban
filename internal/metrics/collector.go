@@ -249,18 +249,12 @@ func (c *Collector) writeHealthMetrics(f *os.File) error {
 	return nil
 }
 
-// writeNFTablesMetrics writes nftables-specific metrics
-func (c *Collector) writeNFTablesMetrics(f *os.File) error {
-	// Count rules efficiently
-	ruleCount, err := c.countNFTablesRules()
-	if err != nil {
-		ruleCount = 0
-	}
-
-	fmt.Fprintf(f, "# HELP nftban_nft_rules_total Total number of nftables rules\n")
-	fmt.Fprintf(f, "# TYPE nftban_nft_rules_total gauge\n")
-	fmt.Fprintf(f, "nftban_nft_rules_total %d\n\n", ruleCount)
-
+// writeNFTablesMetrics — v1.190.0 SCHEMA-UNFREEZE name-drift (G-12): the canonical
+// nftban_nft_rules_total is now SINGLE-OWNED by the watchdog promauto path
+// (internal/watchdog/metrics.go). The duplicate raw-textfile emit that used to live
+// here is dropped to remove the same-name dual source across exporters. Kept as a
+// no-op (callers unchanged); countNFTablesRules() remains for other callers.
+func (c *Collector) writeNFTablesMetrics(_ *os.File) error {
 	return nil
 }
 

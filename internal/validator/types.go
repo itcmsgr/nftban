@@ -62,9 +62,22 @@ type ValidationResult struct {
 	SetElementCounts map[string]int   `json:"-"` // "family:set" → element count
 }
 
-// SchemaVersionCurrent is the frozen schema version per M81-6.
+// SchemaVersionCurrent is the output/IPC schema version per M81-6.
 // v1.83: bumped for timer_count addition to service_state.
-const SchemaVersionCurrent = "1.83.0"
+// v1.190.0 SCHEMA-UNFREEZE: deliberate bump 1.83.0 → 1.84.0 — adds the counters
+// CONTRACT (additive, omitempty/absent until populated in v1.191.0) + the
+// counters_phase marker. Coordinated with the freeze-guard tests in
+// internal/{blacklist,whitelist,installer/render,validator}. Additive-only:
+// existing fields/types unchanged so old consumers keep parsing.
+const SchemaVersionCurrent = "1.84.0"
+
+// CountersPhaseContract / CountersPhasePopulated are the counters_phase values.
+// v1.190.0 emits "contract" (schema/fields defined, NOT populated → consumers must
+// NOT read absent/zero as real). v1.191.0 will emit "populated" once live counters move.
+const (
+	CountersPhaseContract  = "contract"
+	CountersPhasePopulated = "populated"
+)
 
 // =============================================================================
 // =============================================================================

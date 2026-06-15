@@ -74,7 +74,7 @@ func seedHappyApplyHost(mock *executor.MockExecutor) {
 	// Validator gate — success with a plausible JSON body.
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
 		ExitCode: 0,
-		Stdout:   `{"schema_version":"1.83.0","status":"protected"}`,
+		Stdout:   `{"schema_version":"1.84.0","status":"protected"}`,
 	}
 }
 
@@ -299,7 +299,7 @@ func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 	// the exit code, not the body.
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
 		ExitCode: 2,
-		Stdout:   `{"schema_version":"1.83.0","status":"protected"}`,
+		Stdout:   `{"schema_version":"1.84.0","status":"protected"}`,
 	}
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
