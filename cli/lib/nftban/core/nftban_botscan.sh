@@ -91,7 +91,7 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_WHITELIST_BOTS:=googlebot,bingbot,yandexbot,duckduckbot,slurp,facebot}"
     # v1.189 FCrDNS — verified-crawler whitelist (forward-confirmed rDNS at analyze-time).
     : "${BOTSCAN_VERIFY_CRAWLERS:=true}"   # off = legacy UA-substring blanket whitelist
-    : "${BOTSCAN_VERIFY_TIMEOUT:=1}"       # per-lookup hard timeout (s); total ≤ ~2s
+    : "${BOTSCAN_VERIFY_TIMEOUT:=2}"       # per-lookup hard timeout (s); realistic for cold rDNS, still bounded (PTR+forward ≤ ~4s/IP)
     : "${BOTSCAN_VERIFY_CACHE_DIR:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/crawler-verify}"
     : "${BOTSCAN_VERIFY_TTL_OK:=86400}"    # positive (verified) cache TTL
     : "${BOTSCAN_VERIFY_TTL_BAD:=21600}"   # negative (mismatch/NXDOMAIN) TTL (6h)
@@ -527,6 +527,16 @@ nftban_botscan_crawler_family_suffix() {
     return 0
 }
 
+# v1.189 FCrDNS — resolver selection (self-contained; botscan must NOT depend on the RBL
+# module being sourced). Prefers host (legacy parser-friendly), then dig, then nslookup.
+# Echoes the binary name, or empty if none available.
+nftban_botscan_resolver() {
+    if command -v host >/dev/null 2>&1; then echo "host"
+    elif command -v dig >/dev/null 2>&1; then echo "dig"
+    elif command -v nslookup >/dev/null 2>&1; then echo "nslookup"
+    else echo ""; fi
+}
+
 # v1.189 FCrDNS — forward-confirmed reverse DNS verification of a claimed crawler.
 # ANALYZE-TIME ONLY (per unique candidate IP) — NEVER called from the per-line hot path
 # (that path stays fork-free, v1.187.1). Returns 0 (verified real crawler) / 1 (not).
@@ -559,7 +569,7 @@ nftban_botscan_verify_crawler() {
     local lock="${cf}.lock"
     mkdir "$lock" 2>/dev/null || return 1
     local resolver to verdict="ERR" ptr="" fwd=""
-    resolver=$(nftban_rbl_resolver 2>/dev/null || echo "")
+    resolver=$(nftban_botscan_resolver)
     to="${BOTSCAN_VERIFY_TIMEOUT:-1}"
     if [[ -n "$resolver" ]]; then
         case "$resolver" in

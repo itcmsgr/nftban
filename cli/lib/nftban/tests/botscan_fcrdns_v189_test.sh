@@ -49,11 +49,10 @@ export BOTSCAN_VERIFY_CACHE_DIR="$tmp/cache" NFTBAN_DATA_DIR="$tmp/d" \
        BOTSCAN_PATTERNS_DIR="$tmp/p" NFTBAN_CONFIG_DIR="$tmp/e" BOTSCAN_STATE_FILE="$tmp/s" \
        BOTSCAN_LOG_FILE="$tmp/b.log" BOTSCAN_VERIFY_CRAWLERS=true BOTSCAN_VERIFY_TIMEOUT=1
 mkdir -p "$BOTSCAN_PATTERNS_DIR"
-# deterministic resolver selection for the test
-nftban_rbl_resolver() { echo host; }
 # shellcheck source=/dev/null
 source "$CORE"; nftban_botscan_load_config
-export -f nftban_rbl_resolver 2>/dev/null || true
+# self-contained resolver must pick the fake `host` we put first on PATH (no rbl dependency)
+[[ "$(nftban_botscan_resolver)" == "host" ]] || fail "resolver: expected self-contained selection to pick fake host"
 # (re-)assert associative typing so shellcheck knows these are not indexed arrays
 declare -gA _BOTSCAN_IP_404_COUNT _BOTSCAN_IP_404_FIRST_SEEN _BOTSCAN_IP_CRAWLER_CLAIM _BOTSCAN_IP_HITS
 
