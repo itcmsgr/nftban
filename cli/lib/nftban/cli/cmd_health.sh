@@ -512,8 +512,13 @@ nftban_health_cmd_truth() {
     fi
 
     if [[ "$json_mode" == "true" ]]; then
-        # JSON mode: pass through the frozen schema directly
-        echo "$output" | jq '{schema_version, status, service_state, modules, consistency}' 2>/dev/null
+        # JSON mode: pass through the frozen schema directly.
+        # v1.84 (v1.190.0): include the counters-contract surface — counters_phase is
+        # ALWAYS present (the anti-false-zero gate); counters/nft are added only when
+        # present so the contract-phase "absent ≠ zero" rule is preserved. Without this
+        # the view would advertise schema_version 1.84.0 while hiding its new fields.
+        echo "$output" | jq '{schema_version, status, service_state, modules, consistency, counters_phase}
+            + ({counters, nft} | with_entries(select(.value != null)))' 2>/dev/null
         return $?
     fi
 

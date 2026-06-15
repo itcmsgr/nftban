@@ -127,6 +127,18 @@ else
     no "T10b JSON family vocabulary drifted toward raw nft ip/ip6"
 fi
 
+# T13 — CONTRACT-SURFACE projection: `nftban health --json` must NOT advertise
+# schema_version 1.84.0 while stripping the 1.84 counters-contract fields. The shell
+# jq projection in cmd_health.sh must include counters_phase (the always-present gate).
+# (Found 2026-06-15 in lab-first: the projection dropped counters_phase → the surface
+# claimed 1.84.0 but hid its fields. Consumer-parse validation caught it.)
+HEALTHSH="$REPO/cli/lib/nftban/cli/cmd_health.sh"
+if grep -qE "jq '\{schema_version" "$HEALTHSH" && grep -qE 'counters_phase' "$HEALTHSH"; then
+    ok "T13 cmd_health.sh --json projection includes counters_phase (contract surface not stripped)"
+else
+    no "T13 cmd_health.sh --json projection MISSING counters_phase — surface would advertise 1.84.0 but hide its fields"
+fi
+
 # -----------------------------------------------------------------------------
 # Self-tests (positive + negative controls) for the two highest-risk checks.
 # -----------------------------------------------------------------------------
