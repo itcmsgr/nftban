@@ -165,3 +165,16 @@ func TestCountersContract_OldConsumerCompat(t *testing.T) {
 		t.Errorf("old consumer parsed wrong values: %+v", old)
 	}
 }
+
+// (8) ToJSONLegacy backward-compat path must still serialize valid JSON in 1.84.0
+// (rebuild safety checks parse the raw ValidationResult via this path).
+func TestToJSONLegacy_StillWorks(t *testing.T) {
+	b, err := (&ValidationResult{}).ToJSONLegacy()
+	if err != nil {
+		t.Fatalf("ToJSONLegacy must still work: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("ToJSONLegacy emitted invalid JSON: %v", err)
+	}
+}

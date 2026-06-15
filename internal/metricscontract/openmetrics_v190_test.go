@@ -24,6 +24,8 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
+	"github.com/itcmsgr/nftban/internal/validator"
+
 	// Import the REAL metric registrants so their package-level promauto vars
 	// register on the default registry before we gather (init-time registration).
 	_ "github.com/itcmsgr/nftban/internal/metrics"
@@ -142,5 +144,63 @@ func TestOpenMetrics_NoNewCounterSeriesInContract(t *testing.T) {
 				t.Errorf("false-zero risk: new v1.190 counter series registered before population: %s (matches %q)", name, f)
 			}
 		}
+	}
+}
+
+// (6) Naming rule: nftban_* COUNTERS end in _total; GAUGES do NOT end in _total,
+// EXCEPT the documented legacy gauges historically named _total (a global rename
+// would break shipped dashboards — rejected). New v1.190 metrics must comply.
+func TestOpenMetrics_CounterGaugeNamingRule(t *testing.T) {
+	parsed := gatherAndRoundTrip(t)
+	// BASELINE — pre-existing GAUGES historically named _total (a Prometheus
+	// anti-pattern). These shipped long before v1.190; a global rename is a BREAKING
+	// dashboard change and is OUT of v1.190 scope (and an explicit hard exclusion).
+	// They are frozen tech-debt: this rule fails only on a NEW _total gauge. v1.190's
+	// only new metric (counters_population_phase) is correctly NOT named _total.
+	legacyTotalGauges := map[string]bool{
+		"nftban_nft_rules_total":      true,
+		"nftban_cidr_current_total":   true,
+		"nftban_cidr_filter_total":    true,
+		"nftban_permanent_bans_total": true,
+		"nftban_schema_errors_total":  true,
+		"nftban_firewall_rules_total": true, // DEPRECATED alias (lazy-registered; here if present on a live scrape)
+		"nftban_suricata_rules_total": true, // distinct Suricata SID gauge (lazy-registered)
+	}
+	for name, mf := range parsed {
+		if !strings.HasPrefix(name, "nftban_") {
+			continue // scope the rule to our namespace (skip go_/process_/promhttp_)
+		}
+		switch mf.GetType() {
+		case dto.MetricType_COUNTER:
+			if !strings.HasSuffix(name, "_total") {
+				t.Errorf("counter %s must end in _total", name)
+			}
+		case dto.MetricType_GAUGE:
+			if strings.HasSuffix(name, "_total") && !legacyTotalGauges[name] {
+				t.Errorf("gauge %s must NOT be named _total (new metric); only legacy nft/firewall/suricata_rules_total are exempt", name)
+			}
+		}
+	}
+}
+
+// (7) JSON↔Prometheus mutual consistency: the JSON mapper stamps
+// counters_phase="contract" at the same time the Prometheus phase gauge reads 0.
+// The two observability surfaces must agree (a consumer reading either must reach
+// the same "population pending" conclusion).
+func TestOpenMetrics_JSONPromMutualConsistency(t *testing.T) {
+	h := validator.MapToHealthOutput(&validator.ValidationResult{})
+	if h.CountersPhase != "contract" {
+		t.Errorf("JSON counters_phase = %q; want \"contract\"", h.CountersPhase)
+	}
+	if h.SchemaVersion != "1.84.0" {
+		t.Errorf("JSON schema_version = %q; want 1.84.0", h.SchemaVersion)
+	}
+	if h.Counters != nil || h.NFT != nil {
+		t.Errorf("JSON counters/nft must be ABSENT in contract phase; got counters=%v nft=%v", h.Counters, h.NFT)
+	}
+	parsed := gatherAndRoundTrip(t)
+	mf := parsed["nftban_counters_population_phase"]
+	if mf == nil || len(mf.Metric) != 1 || mf.Metric[0].GetGauge().GetValue() != 0 {
+		t.Fatalf("Prometheus phase gauge must be 0 to mutually agree with JSON contract phase; got %v", mf)
 	}
 }

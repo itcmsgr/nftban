@@ -479,7 +479,7 @@ nftban_health_cmd_truth() {
                 --argjson rc "$validator_rc" \
                 --arg err "$summary_err" \
                 '{
-                    schema_version: "1.83.0",
+                    schema_version: "1.84.0",
                     status: "down",
                     truth: "failed",
                     validator: { binary: $bin, exit_code: $rc, stderr: $err }
@@ -506,7 +506,7 @@ nftban_health_cmd_truth() {
     # v1.83: Schema version guard
     local _schema_version
     _schema_version=$(echo "$output" | jq -r '.schema_version // empty' 2>/dev/null)
-    local _expected_schema="1.83.0"
+    local _expected_schema="1.84.0"
     if [[ -n "$_schema_version" && "$_schema_version" != "$_expected_schema" ]]; then
         echo "WARNING: validator schema $_schema_version does not match expected $_expected_schema" >&2
     fi
