@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Email Report Generator
+# NFTBan - Email Report Generator
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Generate and send HTML email reports with real firewall stats

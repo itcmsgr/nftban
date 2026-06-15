@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Output & Banner Core Module
+# NFTBan - Output & Banner Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Standardized output, banners, and formatting for all modules

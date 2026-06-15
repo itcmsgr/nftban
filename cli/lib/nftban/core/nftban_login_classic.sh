@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
-# NFTBan v1.0 - Login Monitor Classic Mode Module
+# NFTBan - Login Monitor Classic Mode Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: journalctl/log file based login monitoring

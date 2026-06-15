@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Portscan Protection Suricata Mode
+# NFTBan - Portscan Protection Suricata Mode
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_portscan_suricata"

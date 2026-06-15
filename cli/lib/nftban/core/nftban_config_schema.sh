@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Configuration Schema and Validation
+# NFTBan - Configuration Schema and Validation
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

@@ -39,7 +39,7 @@ fi
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 
-# NFTBan v1.0.0 - Port CLI Handler
+# NFTBan - Port CLI Handler
 # =============================================================================
 
 # SPDX-License-Identifier: MPL-2.0

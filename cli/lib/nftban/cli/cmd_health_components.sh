@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Health Check CLI Command - Components Module
+# NFTBan - Health Check CLI Command - Components Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Component health checks: services, modules, binaries, permissions,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Login Monitor with Auto-Ban
+# NFTBan - Login Monitor with Auto-Ban
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_login_alert"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # =============================================================================
-# NFTBan v1.0 - DDoS Protection Module - CLASSIC MODE
+# NFTBan - DDoS Protection Module - CLASSIC MODE
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Standalone DDoS protection using native nftables (no Suricata)

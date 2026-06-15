@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Self-Test Suite
+# NFTBan - Self-Test Suite
 # =============================================================================
 # meta:name="selftest"
 # meta:type="test"

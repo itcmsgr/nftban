@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - JSON Output Helper Test Suite
+# NFTBan - JSON Output Helper Test Suite
 # =============================================================================
 # meta:name="test_json_output"
 # meta:type="test"

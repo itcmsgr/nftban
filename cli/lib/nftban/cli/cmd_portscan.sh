@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Port Scan CLI Handler
+# NFTBan - Port Scan CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Polkit Authorization Validator
+# NFTBan - Polkit Authorization Validator
 # =============================================================================
 # meta:name="polkit_validator"
 # meta:type="test"

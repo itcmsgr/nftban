@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.30 - Bot Scanner CLI Handler
+# NFTBan - Bot Scanner CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

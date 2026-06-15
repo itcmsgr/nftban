@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Timers Management CLI Command
+# NFTBan - Timers Management CLI Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="cmd_timers"
