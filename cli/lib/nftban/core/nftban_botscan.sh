@@ -89,6 +89,13 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_PROGRESSIVE_MAX:=86400}"
     : "${BOTSCAN_PATTERNS_DIR:=${NFTBAN_CONFIG_DIR:-/etc/nftban}/patterns.d/botscan}"
     : "${BOTSCAN_WHITELIST_BOTS:=googlebot,bingbot,yandexbot,duckduckbot,slurp,facebot}"
+    # v1.189 FCrDNS — verified-crawler whitelist (forward-confirmed rDNS at analyze-time).
+    : "${BOTSCAN_VERIFY_CRAWLERS:=true}"   # off = legacy UA-substring blanket whitelist
+    : "${BOTSCAN_VERIFY_TIMEOUT:=1}"       # per-lookup hard timeout (s); total ≤ ~2s
+    : "${BOTSCAN_VERIFY_CACHE_DIR:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/crawler-verify}"
+    : "${BOTSCAN_VERIFY_TTL_OK:=86400}"    # positive (verified) cache TTL
+    : "${BOTSCAN_VERIFY_TTL_BAD:=21600}"   # negative (mismatch/NXDOMAIN) TTL (6h)
+    : "${BOTSCAN_VERIFY_TTL_ERR:=1800}"    # timeout/resolver-error TTL (30m)
     : "${BOTSCAN_WHITELIST_PATHS:=/robots\\.txt|/favicon\\.ico|/sitemap\\.xml|/ads\\.txt}"
     : "${BOTSCAN_USE_GLOBAL_WHITELIST:=true}"
     : "${BOTSCAN_STATE_FILE:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan-state.db}"
@@ -115,6 +122,7 @@ declare -gA _BOTSCAN_IP_LAST_SEEN   # IP -> last seen timestamp
 declare -gA _BOTSCAN_IP_404_COUNT      # IP -> 404 count
 declare -gA _BOTSCAN_IP_404_FIRST_SEEN # IP -> 404 first seen timestamp
 declare -gA _BOTSCAN_PATTERNS          # Pattern name -> pattern definition
+declare -gA _BOTSCAN_IP_CRAWLER_CLAIM  # v1.189 FCrDNS: IP -> claimed search-crawler family (UA-claimed; verified at analyze-time)
 
 # Initialize state
 nftban_botscan_init_state() {
@@ -124,6 +132,7 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_LAST_SEEN=()
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
+    _BOTSCAN_IP_CRAWLER_CLAIM=()
 }
 
 # =============================================================================
@@ -500,6 +509,80 @@ nftban_botscan_parse_line() {
 }
 
 # Check if IP is whitelisted — v1.19.0: IPv4/IPv6 parity
+# v1.189 FCrDNS — allowed PTR-suffix regex per rDNS-verifiable crawler family.
+# Echoes the suffix ERE + rc=0 for verifiable families; rc=1 for families with NO
+# documented rDNS convention (e.g. facebot) → those keep the legacy UA whitelist.
+# Provider-documented suffixes ONLY (Google/Bing forward-confirmed-rDNS method).
+nftban_botscan_crawler_family_suffix() {
+    case "${1,,}" in
+        googlebot)        echo '(^|\.)(googlebot\.com|google\.com|googleusercontent\.com)$' ;;
+        bingbot|msnbot)   echo '(^|\.)search\.msn\.com$' ;;
+        yandexbot|yandex) echo '(^|\.)(yandex\.com|yandex\.ru|yandex\.net)$' ;;
+        duckduckbot)      echo '(^|\.)duckduckgo\.com$' ;;
+        slurp)            echo '(^|\.)crawl\.yahoo\.net$' ;;
+        applebot)         echo '(^|\.)applebot\.apple\.com$' ;;
+        baiduspider)      echo '(^|\.)crawl\.baidu\.com$' ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+# v1.189 FCrDNS — forward-confirmed reverse DNS verification of a claimed crawler.
+# ANALYZE-TIME ONLY (per unique candidate IP) — NEVER called from the per-line hot path
+# (that path stays fork-free, v1.187.1). Returns 0 (verified real crawler) / 1 (not).
+# Fail-closed: no PTR / suffix mismatch / forward mismatch / timeout / resolver error ⇒ 1.
+# Cached by ip+family (positive 24h / negative 6h / error 30m); atomic in-flight guard so a
+# flood does not fan out N lookups; hard per-lookup timeouts. Reuses the RBL resolver chain.
+nftban_botscan_verify_crawler() {
+    local ip="$1" family="$2"
+    [[ "${BOTSCAN_VERIFY_CRAWLERS:-true}" == "true" ]] || return 1
+    local suffix; suffix=$(nftban_botscan_crawler_family_suffix "$family") || return 1
+    local cdir="${BOTSCAN_VERIFY_CACHE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/crawler-verify}"
+    local key cf cached now age ttl
+    key=$(printf '%s_%s' "$ip" "${family,,}" | tr -c 'A-Za-z0-9_.:-' '_')
+    cf="${cdir}/${key}"
+    if [[ -r "$cf" ]]; then
+        IFS='|' read -r cached _ < "$cf" 2>/dev/null || true
+        now=$(date +%s); age=$(( now - $(stat -c %Y "$cf" 2>/dev/null || echo "$now") ))
+        case "$cached" in
+            OK)  ttl="${BOTSCAN_VERIFY_TTL_OK:-86400}" ;;
+            BAD) ttl="${BOTSCAN_VERIFY_TTL_BAD:-21600}" ;;
+            *)   ttl="${BOTSCAN_VERIFY_TTL_ERR:-1800}" ;;
+        esac
+        if [[ "$age" -lt "$ttl" ]]; then
+            [[ "$cached" == "OK" ]] && return 0 || return 1
+        fi
+    fi
+    mkdir -p "$cdir" 2>/dev/null || true
+    # atomic in-flight guard: if another verification for this key is running, treat as
+    # unknown (=not verified) this cycle rather than fan out a second lookup.
+    local lock="${cf}.lock"
+    mkdir "$lock" 2>/dev/null || return 1
+    local resolver to verdict="ERR" ptr="" fwd=""
+    resolver=$(nftban_rbl_resolver 2>/dev/null || echo "")
+    to="${BOTSCAN_VERIFY_TIMEOUT:-1}"
+    if [[ -n "$resolver" ]]; then
+        case "$resolver" in
+            host)     ptr=$(timeout "$to" host -t PTR "$ip" 2>/dev/null | grep -oiE 'pointer [^ ]+' | awk '{print $2}' | sed 's/\.$//' | head -1) ;;
+            dig)      ptr=$(timeout "$to" dig +short -x "$ip" 2>/dev/null | sed 's/\.$//' | head -1) ;;
+            nslookup) ptr=$(timeout "$to" nslookup -type=PTR "$ip" 2>/dev/null | grep -oiE 'name = [^ ]+' | awk '{print $3}' | sed 's/\.$//' | head -1) ;;
+        esac
+        if [[ -n "$ptr" ]] && printf '%s' "$ptr" | grep -qiE "$suffix"; then
+            case "$resolver" in
+                host)     fwd=$(timeout "$to" host "$ptr" 2>/dev/null | grep -oiE 'address[: ] *[0-9a-f:.]+' | grep -oiE '[0-9a-f:.]+$') ;;
+                dig)      fwd=$({ timeout "$to" dig +short A "$ptr" 2>/dev/null; timeout "$to" dig +short AAAA "$ptr" 2>/dev/null; } | sed 's/\.$//') ;;
+                nslookup) fwd=$(timeout "$to" nslookup "$ptr" 2>/dev/null | grep -oiE 'address: [0-9a-f:.]+' | awk '{print $2}') ;;
+            esac
+            if printf '%s\n' "$fwd" | grep -qxF "$ip"; then verdict="OK"; else verdict="BAD"; fi
+        else
+            verdict="BAD"
+        fi
+    fi
+    printf '%s|%s\n' "$verdict" "$ptr" > "$cf" 2>/dev/null || true
+    rmdir "$lock" 2>/dev/null || true
+    [[ "$verdict" == "OK" ]] && return 0 || return 1
+}
+
 nftban_botscan_is_whitelisted() {
     local ip="$1"
     local ua="${2:-}"
@@ -528,6 +611,16 @@ nftban_botscan_is_whitelisted() {
         IFS=' ' read -ra _whitelist_bots <<< "${BOTSCAN_WHITELIST_BOTS//,/ }"
         for bot in "${_whitelist_bots[@]}"; do
             if [[ "${ua,,}" =~ ${bot,,} ]]; then
+                # v1.189 FCrDNS: UA is attacker-controlled. For rDNS-verifiable families,
+                # do NOT blanket-whitelist here (that is the spoofable evasion bug). Record
+                # the claim (cheap, no fork) and KEEP COUNTING; analyze() verifies per-IP and
+                # exempts ONLY verified crawlers from the 404-flood ban (fail-closed). For
+                # families with no rDNS convention (e.g. facebot), keep the legacy whitelist.
+                if [[ "${BOTSCAN_VERIFY_CRAWLERS:-true}" == "true" ]] \
+                   && nftban_botscan_crawler_family_suffix "$bot" >/dev/null 2>&1; then
+                    _BOTSCAN_IP_CRAWLER_CLAIM["$ip"]="$bot"
+                    return 1
+                fi
                 return 0
             fi
         done
@@ -701,7 +794,20 @@ nftban_botscan_analyze() {
             local first_seen="${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-$now_ts}"
             local elapsed=$(( now_ts - first_seen ))
             if [[ "$count" -ge "$BOTSCAN_404_THRESHOLD" && "$elapsed" -le "$BOTSCAN_404_WINDOW" ]]; then
-                nftban_botscan_ban_ip "$ip" "$BOTSCAN_404_BAN" "botscan-404" "404 flood: $count in ${elapsed}s"
+                # v1.189 FCrDNS — a CLAIMED search-crawler that is forward-confirmed-rDNS
+                # verified is exempt from the 404-flood ban ONLY (real crawlers legitimately
+                # hit 404s). Verification runs HERE (per unique candidate IP), never per line.
+                # Unverified / mismatch / timeout = spoofer ⇒ ban (fail-closed). This does NOT
+                # whitelist the IP from exploit/webshell/scanner URL-pattern bans (those are
+                # handled in the pattern loop above and are NEVER exempted by crawler-verify).
+                local _claim="${_BOTSCAN_IP_CRAWLER_CLAIM[$ip]:-}"
+                if [[ -n "$_claim" ]] && nftban_botscan_verify_crawler "$ip" "$_claim"; then
+                    [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] verified crawler ${_claim} (${ip}) — exempt from 404-flood" >&2
+                    continue
+                fi
+                local _reason="404 flood: $count in ${elapsed}s"
+                [[ -n "$_claim" ]] && _reason="fake_bot_ua (${_claim} unverified) — ${_reason}"
+                nftban_botscan_ban_ip "$ip" "$BOTSCAN_404_BAN" "botscan-404" "$_reason"
                 banned=$((banned + 1))
             fi
         done
