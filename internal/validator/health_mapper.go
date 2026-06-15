@@ -31,6 +31,7 @@ package validator
 func MapToHealthOutput(r *ValidationResult) HealthOutput {
 	h := HealthOutput{
 		SchemaVersion: SchemaVersionCurrent,
+		CountersPhase: CountersPhaseContract, // v1.190.0: contract only; v1.191.0 → populated
 		Status:        string(r.Status),
 		Timestamp:     r.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
 		ServiceState: ServiceStateJSON{

@@ -809,7 +809,7 @@ func TestReadConfigBoolMissing(t *testing.T) {
 // =============================================================================
 
 func TestSchemaVersion(t *testing.T) {
-	if SchemaVersionCurrent != "1.83.0" {
-		t.Errorf("schema version = %s, want 1.83.0", SchemaVersionCurrent)
+	if SchemaVersionCurrent != "1.84.0" {
+		t.Errorf("schema version = %s, want 1.84.0", SchemaVersionCurrent)
 	}
 }

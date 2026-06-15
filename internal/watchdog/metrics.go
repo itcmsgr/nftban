@@ -218,6 +218,17 @@ var (
 		Help:      "Whether nftables rules have counters (1=yes, 0=no)",
 	})
 
+	// v1.190.0 SCHEMA-UNFREEZE — counters population phase (anti-false-zero gate).
+	// 0 = contract only (schema 1.84.0 defines the counter fields/metrics but they
+	// are NOT populated; consumers must NOT read absent/zero as real). 1 = populated
+	// (v1.191.0, when live BotScan/BotGuard/whitelist/FCrDNS counters move).
+	// Initialized to 0 in init(); v1.191.0 will Set(1).
+	countersPopulationPhase = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "counters_population_phase",
+		Help:      "Counters contract phase: 0=contract-only (population pending), 1=populated",
+	})
+
 	// ==========================================================================
 	// Cost Metrics
 	// ==========================================================================
@@ -302,6 +313,13 @@ var (
 		Help:      "Cumulative OOM-kill events (per /proc/vmstat oom_kill)",
 	})
 )
+
+// v1.190.0 SCHEMA-UNFREEZE: pin the counters phase to contract-only (0). v1.191.0
+// flips this to 1 (populated) when live counters move. Set here so the gauge always
+// has a defined value (never an absent/implicit reading).
+func init() {
+	countersPopulationPhase.Set(0)
+}
 
 // MetricsExporter updates Prometheus metrics from watchdog data
 type MetricsExporter struct {

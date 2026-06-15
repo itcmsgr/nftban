@@ -49,7 +49,7 @@ import (
 // to the typed-loader changes makes drift-detection blast radius local
 // (mirrors v1.119's adjacency at internal/blacklist/schema_freeze_test.go).
 func TestSchemaVersionUnchangedByV120OperatorSessionWhitelist(t *testing.T) {
-	const expectedSchema = "1.83.0"
+	const expectedSchema = "1.84.0"
 	if validator.SchemaVersionCurrent != expectedSchema {
 		t.Fatalf("SchemaVersionCurrent = %q, want %q — V120 Operator Temp Whitelist Guard MUST NOT "+
 			"bump schema (per V120_OPERATOR_TEMP_WHITELIST_SCHEMA_IMPACT_DECISION.md verdict "+
