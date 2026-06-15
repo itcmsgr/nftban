@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.187.2] - 2026-06-15 — BotScan-train B1: CLI/text-UX (banner tagline + update-lock friendliness)
+
+**Codename:** `BOTSCAN_B1_TEXT_UX` · **PR:** [#860](https://github.com/itcmsgr/nftban/pull/860)
+
+> **What:** presentation-only CLI/text UX (two operator-requested items). **Shell/data only; daemon `cmd/nftband` byte-identical `c63d8822`; schema 1.83.0 frozen; no packaging/detection-content change.** Does NOT include B2 bad-bot/aibot UX (HOLD), banner unification (B1b, design decision), or BotScan/BotGuard counters (SCHEMA-UNFREEZE major).
+
+### Changed
+- **UX-BANNER-TEXT** — Firewall-first tagline: unified banner `Open-source Linux IPS & nftables FW` → `Open-source Linux Firewall & IPS for nftables` (`nftban_output.sh`); `NFTBAN_VERSION_NAME` `Linux IPS & nftables Firewall` → `Linux Firewall & IPS for nftables` (`version.sh`, shown in `nftban version` JSON).
+- **UX-UPDATE-LOCK** — friendlier lock-contention message (`cmd_update.sh`): best-effort names the in-progress updater (PID + start time, only when alive), points to `tail -f /var/log/nftban/update.log`, and clarifies `nftban update force` clears only a STALE lock. The flock mechanism is unchanged.
+
+### Deferred (tracked, not in this release)
+- **BUG-BANNER-INCONSISTENT** (B1b) — two banner renderers (`nftban_banner_unified` box vs `nftban_render_banner_simple` 2-line motto); needs a design decision on the single banner path.
+- **UX-VERBOSE-FINDINGS** (B1b) — which surfaces hide INFO behind `--verbose`.
+- **VAL-LOGINMON-002-UX** — validator-Go (moves daemon hash), separate Go train.
+
+### Validation
+- New hermetic `b1_text_ux_v1872_test.sh` (behavioral banner render asserts the Firewall-first tagline + `NFTBAN_VERSION_NAME` + update-lock content guards) PASS; shellcheck `-S warning` clean; daemon byte-identical `c63d8822`; FHS `--check` rc=0.
+
+---
+
 ## [v1.187.1] - 2026-06-14 — Hotfix: BotScan cycle-timeout regression (main-loop per-line fork removal)
 
 **Codename:** `BOTSCAN_CYCLE_TIMEOUT_FORK_REMOVAL` · **Diagnosis:** `NFTBAN_ROADMAP/V1_187_1_TIMEOUT_ROOT_CAUSE_DIAGNOSIS.md` · **Validation:** `V1_187_1_SRV2_VALIDATION_RECORD.md`
