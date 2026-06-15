@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.30 - Bot Scanner Core Module
+# NFTBan - Bot Scanner Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detect and block bot scanners, webshell probes, exploit attempts

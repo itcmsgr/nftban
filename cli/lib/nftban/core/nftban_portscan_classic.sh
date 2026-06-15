@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Portscan Protection Classic Mode
+# NFTBan - Portscan Protection Classic Mode
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

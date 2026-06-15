@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Mail Core Module
+# NFTBan - Mail Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Email sending mechanism for all NFTBan modules

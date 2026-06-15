@@ -24,7 +24,7 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
 fi
-# NFTBan v1.0.0 - Services CLI Handler
+# NFTBan - Services CLI Handler
 # =============================================================================
 
 # SPDX-License-Identifier: MPL-2.0
@@ -242,7 +242,7 @@ nftban_services_check_health() {
 # nftban_services_show_help - Show help message
 #
 nftban_services_show_help() {
-    nftban_banner "services" 2>/dev/null || echo "NFTBan v1.0.0"
+    nftban_banner "services" 2>/dev/null || echo "NFTBan${NFTBAN_VERSION:+ v$NFTBAN_VERSION}"
     echo ""
     echo "USAGE:"
     echo "    nftban services <command>"

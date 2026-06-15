@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - List Command
+# NFTBan - List Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: List banned IPs, whitelisted IPs, and other nftables sets

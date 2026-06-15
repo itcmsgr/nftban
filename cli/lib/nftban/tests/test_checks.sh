@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Check Functions Smoke Test
+# NFTBan - Check Functions Smoke Test
 # =============================================================================
 # meta:name="test_checks"
 # meta:type="test"

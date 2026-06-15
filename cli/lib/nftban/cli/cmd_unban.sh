@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Unban Command
+# NFTBan - Unban Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unban IP addresses using nftban-core

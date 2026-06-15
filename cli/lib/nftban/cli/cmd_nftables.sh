@@ -28,7 +28,7 @@ fi
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 
-# NFTBan v1.0.0 - NFTables Service Management CLI Handler
+# NFTBan - NFTables Service Management CLI Handler
 # =============================================================================
 
 # SPDX-License-Identifier: MPL-2.0

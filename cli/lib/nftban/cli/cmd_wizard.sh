@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Installation Wizard
+# NFTBan - Installation Wizard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive wizard for NFTBan configuration

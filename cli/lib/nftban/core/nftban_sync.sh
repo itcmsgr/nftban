@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Sync Core Module
+# NFTBan - Sync Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_sync"

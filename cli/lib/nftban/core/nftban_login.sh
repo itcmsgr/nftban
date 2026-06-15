@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
-# NFTBan v1.0 - Login Monitor Module (Dual-Mode Controller)
+# NFTBan - Login Monitor Module (Dual-Mode Controller)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Master controller for login monitoring with dual-mode support

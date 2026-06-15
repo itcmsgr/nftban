@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Interactive TUI Menu Command
+# NFTBan - Interactive TUI Menu Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive TUI menu system for NFTBan

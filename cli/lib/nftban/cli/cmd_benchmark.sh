@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Benchmark Command
+# NFTBan - Benchmark Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Performance benchmarking of NFTBan components

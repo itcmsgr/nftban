@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
-# NFTBan v1.0 - Health Render Functions Library
+# NFTBan - Health Render Functions Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Output rendering functions (terminal, JSON, summary)

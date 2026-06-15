@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Snapshot Command
+# NFTBan - Snapshot Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Create configuration and statistics snapshots

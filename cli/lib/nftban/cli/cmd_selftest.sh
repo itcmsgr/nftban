@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Self-Test Command (Extended System)
+# NFTBan - Self-Test Command (Extended System)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI wrapper for self-test suite (extended system validation)

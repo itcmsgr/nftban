@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
-# NFTBan v1.0 - Health Check Security Functions
+# NFTBan - Health Check Security Functions
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Security-related health check functions (nftables, firewalls, polkit, etc.)

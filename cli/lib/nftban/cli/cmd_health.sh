@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Health Check CLI Handler (Loader)
+# NFTBan - Health Check CLI Handler (Loader)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for system health checks and diagnostics

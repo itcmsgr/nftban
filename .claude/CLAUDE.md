@@ -57,7 +57,7 @@ ban, unban, status, whitelist, blacklist, feeds,
 watchdog, stats, health, version, install, uninstall,
 update, rebuild, login, metrics, export, portscan,
 ddos, suricata, config, service, services, timers, geoip, geoban,
-emulate, search, list, fhs, botguard, tunnel
+emulate, search, list, fhs, botguard, tunnel, sync
 ```
 
 ### Current Version

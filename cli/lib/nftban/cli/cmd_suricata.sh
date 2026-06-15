@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Suricata IDS CLI Command (Loader)
+# NFTBan - Suricata IDS CLI Command (Loader)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Easy user interface for Suricata IDS management

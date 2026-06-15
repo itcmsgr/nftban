@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Cleanup Command
+# NFTBan - Cleanup Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="cmd_cleanup"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Packet Emulation CLI Command
+# NFTBan - Packet Emulation CLI Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="cmd_emulate"
