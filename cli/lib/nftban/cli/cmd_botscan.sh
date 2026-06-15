@@ -856,22 +856,24 @@ nftban_cmd_botscan() {
             _nftban_botscan_cmd_test "$@"
             ;;
 
-        bots)
-            # v1.188 B2 — friendly category listing: bots [category] [--enabled|--disabled]
-            nftban_botscan_load_config
-            nftban_botscan_bots "$@"
-            ;;
-
-        blockbot)
-            # v1.188 B2 — enable a bot pattern (override.local; refuses never-ban tokens)
-            nftban_botscan_load_config
-            nftban_botscan_blockbot "$@"
-            ;;
-
-        allowbot)
-            # v1.188 B2 — disable a bot pattern (override.local)
-            nftban_botscan_load_config
-            nftban_botscan_allowbot "$@"
+        bots|blockbot|allowbot)
+            # v1.188 B2 — bot-policy UX. Core funcs live in the core module, which
+            # cmd_botscan only sources inside its _cmd_* wrappers (not globally) — so
+            # source it here too. Sourcing runs nftban_botscan_load_config (config) and
+            # is idempotent (core has a double-load guard).
+            if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" || return 1
+            else
+                echo "ERROR: Bot scanner core module not found" >&2
+                return 1
+            fi
+            nftban_botscan_load_config 2>/dev/null || true
+            case "$action" in
+                bots)     nftban_botscan_bots "$@" ;;
+                blockbot) nftban_botscan_blockbot "$@" ;;
+                allowbot) nftban_botscan_allowbot "$@" ;;
+            esac
             ;;
 
         help|--help|-h)
