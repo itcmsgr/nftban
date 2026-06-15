@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - System Enable/Disable CLI Handler
+# NFTBan - System Enable/Disable CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enable/disable NFTBan system (nftables + suricata + login monitor)

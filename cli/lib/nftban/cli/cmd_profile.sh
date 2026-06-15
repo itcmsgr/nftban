@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Profile CLI Handler (Wizard Redirect)
+# NFTBan - Profile CLI Handler (Wizard Redirect)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="cmd_profile"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Generic Connector CLI
+# NFTBan - Generic Connector CLI
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="cmd_connector"

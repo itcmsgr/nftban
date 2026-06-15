@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - System Whitelist CLI Handler
+# NFTBan - System Whitelist CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System IP Whitelist Management

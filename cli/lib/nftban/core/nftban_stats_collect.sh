@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Statistics Data Collection
+# NFTBan - Statistics Data Collection
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Core metrics collection functions extracted from nftban_stats.sh

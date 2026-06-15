@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Atomic File Operations Module
+# NFTBan - Atomic File Operations Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_file_ops"

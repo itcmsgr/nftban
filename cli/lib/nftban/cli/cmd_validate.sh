@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Validate Command
+# NFTBan - Validate Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Validate nftables structure against NFTBan specification

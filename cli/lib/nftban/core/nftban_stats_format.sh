@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Statistics Display & Trends
+# NFTBan - Statistics Display & Trends
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Dashboard generation, export, and trend analysis extracted from nftban_stats.sh

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Firewall Conflict Detection Library
+# NFTBan - Firewall Conflict Detection Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detect and report conflicting firewall systems

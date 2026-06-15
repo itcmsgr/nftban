@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - RBL Core Module
+# NFTBan - RBL Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Real-time Blackhole List (RBL) checking core logic

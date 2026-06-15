@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Command Testing Framework
+# NFTBan - Command Testing Framework
 # =============================================================================
 # meta:name="test_all_commands"
 # meta:type="test"

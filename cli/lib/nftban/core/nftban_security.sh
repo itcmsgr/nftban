@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Security & Capability Helper
+# NFTBan - Security & Capability Helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_security"

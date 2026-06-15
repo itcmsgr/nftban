@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
-# NFTBan v1.0 - Health Fix Functions Library
+# NFTBan - Health Fix Functions Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Auto-fix functions for health issues (permissions, directories, etc.)
@@ -844,7 +844,7 @@ nftban_health_fix_system_config() {
 #   - nftban health fix (during auto-heal)
 # =============================================================================
 
-# NFTBan v1.0 simplified 2-group model
+# NFTBan - simplified 2-group model
 NFTBAN_USER="nftban"
 NFTBAN_UID=${nftban_uid}
 NFTBAN_GROUP="nftban"

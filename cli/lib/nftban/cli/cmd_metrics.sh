@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Metrics Management (Prometheus)
+# NFTBan - Metrics Management (Prometheus)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enable/disable Prometheus metrics collection

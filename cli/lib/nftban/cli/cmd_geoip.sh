@@ -26,7 +26,7 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
 fi
-# NFTBan v1.0.0 - GeoIP CLI Handler
+# NFTBan - GeoIP CLI Handler
 # =============================================================================
 
 # SPDX-License-Identifier: MPL-2.0

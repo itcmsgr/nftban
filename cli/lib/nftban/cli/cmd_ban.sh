@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Ban Command
+# NFTBan - Ban Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Ban IP addresses using nftban-core

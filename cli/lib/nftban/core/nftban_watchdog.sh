@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - System Watchdog Module
+# NFTBan - System Watchdog Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Monitor system resources for auditing and alerting
