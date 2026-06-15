@@ -1264,7 +1264,11 @@ MONITORED SERVICES (auto-detected):
       • Dovecot           - IMAP/POP3 login failures
 
     Web/CMS:
-      • WordPress         - wp-login.php + xmlrpc.php attacks (via BotScan access-log scan)
+      • WordPress         - wp-login failed credentials = LoginMon (auth_failure).
+                            xmlrpc.php / wp-login POST-volume floods (incl. HTTP 200) =
+                            BotScan endpoint-flood detector (requires BotScan enabled).
+                            BotGuard handles HTTP burst/concurrency (L3/L4) only — it does
+                            NOT detect low-and-slow L7 floods.
       • Roundcube         - DEFERRED: no runtime watcher yet (advertised key exists; coverage planned v1.178)
 
     FTP:

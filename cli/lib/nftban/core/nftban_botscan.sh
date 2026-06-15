@@ -74,6 +74,19 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_404_THRESHOLD:=50}"
     : "${BOTSCAN_404_WINDOW:=300}"
     : "${BOTSCAN_404_BAN:=3600}"
+    # BOTSCAN-ENDPOINT-FLOOD (PROTECTION-CLAIM-MATRIX HIGH) — per-IP/per-endpoint POST
+    # volume to sensitive endpoints (xmlrpc.php / wp-login.php), STATUS-INDEPENDENT (200
+    # counts — WordPress xmlrpc brute/amplification returns 200). Owner: BotScan. NOT
+    # LoginMon (credential-failure only; cannot see the 200-body auth result) and NOT
+    # BotGuard (L3/L4 burst/concurrency only). Counted in the proven 404-tail re-read so it
+    # inherits 404-flood reliability; emitted via the batch-signal path (never the buggy
+    # direct ban_ip --duration branch, BUG-BOTSCAN-DIRECT-BAN-FLAG).
+    : "${BOTSCAN_ENDPOINT_FLOOD_ENABLED:=true}"
+    : "${BOTSCAN_ENDPOINT_FLOOD_METHOD:=POST}"
+    : "${BOTSCAN_ENDPOINT_FLOOD_THRESHOLD:=30}"   # POSTs / window / IP / endpoint (lab-tuned; well above legit Jetpack/pingback)
+    : "${BOTSCAN_ENDPOINT_FLOOD_WINDOW:=60}"
+    : "${BOTSCAN_ENDPOINT_FLOOD_BAN:=3600}"
+    : "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:=xmlrpc.php wp-login.php}"
     # v1.187 Lane A — BOTSCAN-SCAN-THROUGHPUT. Forward-cursor per-file per-cycle window
     # (drains backlog forward instead of the v1.185 64 KiB tail-bias), a C-speed candidate
     # prefilter before the per-line bash matcher, and an independent 404 fixed-tail re-read
@@ -123,6 +136,9 @@ declare -gA _BOTSCAN_IP_404_COUNT      # IP -> 404 count
 declare -gA _BOTSCAN_IP_404_FIRST_SEEN # IP -> 404 first seen timestamp
 declare -gA _BOTSCAN_PATTERNS          # Pattern name -> pattern definition
 declare -gA _BOTSCAN_IP_CRAWLER_CLAIM  # v1.189 FCrDNS: IP -> claimed search-crawler family (UA-claimed; verified at analyze-time)
+declare -gA _BOTSCAN_IP_ENDPOINT_COUNT      # BOTSCAN-ENDPOINT-FLOOD: "ip|endpoint" -> POST count (status-independent)
+declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> first seen ts (cycle-scoped, reset by count_404_tail)
+declare -ga _BOTSCAN_ENDPOINT_FLOOD_LIST    # parsed endpoint tokens (rebuilt per cycle)
 
 # Initialize state
 nftban_botscan_init_state() {
@@ -133,6 +149,12 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
     _BOTSCAN_IP_CRAWLER_CLAIM=()
+    _BOTSCAN_IP_ENDPOINT_COUNT=()
+    _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
+    _BOTSCAN_ENDPOINT_FLOOD_LIST=()
+    # IFS=' ' is REQUIRED: the module runs under strict IFS=$'\n\t' (no space) → a bare
+    # read -ra would yield ONE token "xmlrpc.php wp-login.php" that never matches (v1.186.1 class).
+    [[ "${BOTSCAN_ENDPOINT_FLOOD_ENABLED:-true}" == "true" ]] && IFS=' ' read -ra _BOTSCAN_ENDPOINT_FLOOD_LIST <<< "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:-}"
 }
 
 # =============================================================================
@@ -823,6 +845,30 @@ nftban_botscan_analyze() {
         done
     fi
 
+    # BOTSCAN-ENDPOINT-FLOOD — per-IP/per-endpoint POST-volume bans (counts populated by
+    # count_404_tail in the same proven tail re-read). Emitted via the BATCH-SIGNAL path
+    # ONLY — never nftban_botscan_ban_ip's direct branch (BUG-BOTSCAN-DIRECT-BAN-FLAG).
+    if [[ "${BOTSCAN_ENDPOINT_FLOOD_ENABLED:-true}" == "true" ]]; then
+        local now_ef _k
+        now_ef=$(date +%s)
+        for _k in "${!_BOTSCAN_IP_ENDPOINT_COUNT[@]}"; do
+            local _cnt="${_BOTSCAN_IP_ENDPOINT_COUNT[$_k]}"
+            local _fs="${_BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_k]:-$now_ef}"
+            local _el=$(( now_ef - _fs ))
+            [[ "$_cnt" -ge "$BOTSCAN_ENDPOINT_FLOOD_THRESHOLD" && "$_el" -le "$BOTSCAN_ENDPOINT_FLOOD_WINDOW" ]] || continue
+            local _efip="${_k%%|*}" _efep="${_k#*|}"
+            local _efreason="endpoint_flood ${BOTSCAN_ENDPOINT_FLOOD_METHOD} ${_efep}: ${_cnt} in ${_el}s"
+            if [[ "$BOTSCAN_ACTION_MODE" == "alert" ]]; then
+                echo "[ALERT] Would ban ${_efip} for ${BOTSCAN_ENDPOINT_FLOOD_BAN}s: ${_efreason}"
+            else
+                # batch-signal path (mirrors ban_ip's batch branch; NOT the direct branch)
+                nftban_botscan_write_signal "${_efip}" 80 "ban" "botscan-endpoint-flood" "${_efreason}"
+                echo "$(date -Iseconds)|botscan-endpoint-flood|${_efip}|${BOTSCAN_ENDPOINT_FLOOD_BAN}|SIGNAL|${_efreason}" >> "$BOTSCAN_LOG_FILE"
+            fi
+            banned=$((banned + 1))
+        done
+    fi
+
     return $banned
 }
 
@@ -873,7 +919,10 @@ nftban_botscan_build_prefilter() {
 # the (steady-state) freed budget cover the rest across cycles. Honors the whitelists.
 # Args: <start_secs> <budget_secs> -- <file>...
 nftban_botscan_count_404_tail() {
-    [[ "${BOTSCAN_404_TRACKING:-true}" == "true" ]] || return 0
+    # Runs if EITHER 404-flood OR endpoint-flood is on (both ride this proven tail re-read).
+    local _bs_404_on="${BOTSCAN_404_TRACKING:-true}"
+    local _bs_ef_on="${BOTSCAN_ENDPOINT_FLOOD_ENABLED:-true}"
+    [[ "$_bs_404_on" == "true" || "$_bs_ef_on" == "true" ]] || return 0
     local start_secs="${1:-$SECONDS}" budget="${2:-0}"; shift 2
     local now; now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
     local tail_bytes="${BOTSCAN_404_TAIL_BYTES:-2097152}"
@@ -881,6 +930,25 @@ nftban_botscan_count_404_tail() {
     # Reset so the count reflects ONLY this cycle's scanned tails.
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
+    # BOTSCAN-ENDPOINT-FLOOD — reset cycle-scoped counts + (re)parse the endpoint token list,
+    # and widen the C-speed tail grep so endpoint POST lines (any status) survive alongside
+    # 404 lines. Without widening, a POST /xmlrpc.php 200 would be filtered out before counting.
+    _BOTSCAN_IP_ENDPOINT_COUNT=()
+    _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
+    _BOTSCAN_ENDPOINT_FLOOD_LIST=()
+    # IFS=' ' REQUIRED under strict IFS=$'\n\t' (else one space-joined token; v1.186.1 class).
+    [[ "$_bs_ef_on" == "true" ]] && IFS=' ' read -ra _BOTSCAN_ENDPOINT_FLOOD_LIST <<< "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:-}"
+    local _bs_tail_grep=""
+    [[ "$_bs_404_on" == "true" ]] && _bs_tail_grep='" 404 | 404 '
+    if [[ "$_bs_ef_on" == "true" ]]; then
+        local _ept _eptok
+        for _ept in "${_BOTSCAN_ENDPOINT_FLOOD_LIST[@]}"; do
+            _eptok="${_ept//./\\.}"            # ERE-escape dots
+            [[ -n "$_bs_tail_grep" ]] && _bs_tail_grep+="|"
+            _bs_tail_grep+="$_eptok"
+        done
+    fi
+    [[ -z "$_bs_tail_grep" ]] && return 0
     local files=("$@")
     local n=${#files[@]}
     [[ "$n" -eq 0 ]] && return 0
@@ -903,12 +971,26 @@ nftban_botscan_count_404_tail() {
         consumed=$(( consumed + tail_bytes ))
         while IFS= read -r line; do
             nftban_botscan_parse_line_g "$line" || continue   # v1.187.1 no-fork
-            [[ "$_BS_STATUS" == "404" ]] || continue
             nftban_botscan_is_whitelisted "$_BS_IP" "$_BS_UA" && continue
+            # BOTSCAN-ENDPOINT-FLOOD: STATUS-INDEPENDENT POST volume to sensitive endpoints.
+            # Fork-free (builtin == only); only POSTs enter the tiny endpoint loop.
+            if [[ "$_bs_ef_on" == "true" && "$_BS_METHOD" == "$BOTSCAN_ENDPOINT_FLOOD_METHOD" ]]; then
+                local _efep
+                for _efep in "${_BOTSCAN_ENDPOINT_FLOOD_LIST[@]}"; do
+                    if [[ "$_BS_URL" == *"$_efep"* ]]; then
+                        local _efk="${_BS_IP}|${_efep}"
+                        _BOTSCAN_IP_ENDPOINT_COUNT["$_efk"]=$(( ${_BOTSCAN_IP_ENDPOINT_COUNT[$_efk]:-0} + 1 ))
+                        [[ -z "${_BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_efk]:-}" ]] && _BOTSCAN_IP_ENDPOINT_FIRST_SEEN["$_efk"]="$now"
+                        break
+                    fi
+                done
+            fi
+            # 404 flood (status-specific)
+            [[ "$_bs_404_on" == "true" && "$_BS_STATUS" == "404" ]] || continue
             nftban_botscan_is_path_whitelisted "$_BS_URL" && continue
             _BOTSCAN_IP_404_COUNT["$_BS_IP"]=$(( ${_BOTSCAN_IP_404_COUNT[$_BS_IP]:-0} + 1 ))
             [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$_BS_IP]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$_BS_IP"]="$now"
-        done < <( tail -c "$tail_bytes" -- "$f" 2>/dev/null | LC_ALL=C grep -E '" 404 | 404 ' 2>/dev/null || true )
+        done < <( tail -c "$tail_bytes" -- "$f" 2>/dev/null | LC_ALL=C grep -E "$_bs_tail_grep" 2>/dev/null || true )
     done
     # Persist rotation: next cycle starts after the last file covered this cycle.
     printf '%s\n' "$(( (rot + covered) % n ))" > "${rot_file}.tmp" 2>/dev/null && mv -f "${rot_file}.tmp" "$rot_file" 2>/dev/null || true
