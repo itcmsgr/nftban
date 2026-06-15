@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.188.0] - 2026-06-15 — BotScan-train B2: badbot/aibot easy UX + aibots category
+
+**Codename:** `BOTSCAN_B2_BADBOT_AIBOT` · **PR:** [#864](https://github.com/itcmsgr/nftban/pull/864) · **Ownership:** `B2_BOTSCAN_BADBOT_EASY_UX_OWNERSHIP_DECLARATION.md` · **Lab-first:** `B2_LAB_FIRST_VALIDATION_RECORD.md`
+
+> **What:** easy bot-policy CLI + a new `aibots` pattern category. **Shell + pattern-content + packaging-aware; daemon `cmd/nftband` byte-identical `c63d8822`; schema 1.83.0 frozen; NO counters/daemon-Go/cmd/internal/adaptive/VAL-LOGINMON/FCrDNS.** BotScan counters remain SCHEMA-UNFREEZE.
+
+### Added
+- **`aibots` category** (`etc/nftban/patterns.d/botscan/aibots.patterns`) — AI/LLM scraper UA detection, primary-doc-verified tokens.
+- **CLI** (`nftban botscan …`): `bots [category] [--enabled|--disabled]` (override-aware listing), `blockbot <name>` (enable), `allowbot <name>` (disable). Friendly token resolver; help text + `commands.registry.yml` updated.
+- **Never-ban guard** — `blockbot` refuses Google-Extended/Applebot-Extended/Googlebot/Bingbot/Applebot/facebookexternalhit/ChatGPT-User/Perplexity-User/Claude-User with an explanation (no override written).
+- **3-tier no-clobber** — loader reads `override.local` (`NAME|true|false`) which wins over the shipped `ENABLED` column without editing the config(noreplace) `*.patterns`; override.local is operator-owned (not packaged) → survives DEB/RPM upgrades.
+
+### Changed (Option A — migrate-and-preserve, zero live behavior change)
+- AI scraper tokens MOVED `badbots.patterns → aibots.patterns` with **ENABLED state preserved exactly** (GPTBot/CCBot/Bytespider stay hard-ban; ClaudeBot stays observe). One owner per token.
+- New **PerplexityBot** ships observe/disabled. **AppleBot-Extended removed** from patterns (robots.txt-only → never-ban guard only).
+
+### Packaging
+- A new `*.patterns` file is auto-packaged by the existing `%config(noreplace) /etc/nftban/patterns.d/botscan/*.patterns` glob + auto-loaded — no spec/FHS/%files change.
+
+### Validation
+- Hermetic `b2_badbot_aibot_v188_test` PASS 1-8; help↔code↔registry guards (v128/130/133/134) pass; shellcheck `-S warning` clean; daemon byte-identical `c63d8822`.
+- **Lab-first DEB (lab2) + RPM (lab4) PASS** — migration-preserves-state, override.local no-clobber (not package-owned), never-ban guard (message + no override), daemon NRestarts=0; caught + fixed a dispatch core-sourcing bug.
+
+---
+
 ## [v1.187.3] - 2026-06-15 — BotScan-train B1b: banner convergence (one compact posture line)
 
 **Codename:** `BOTSCAN_B1B_BANNER` · **PR:** [#862](https://github.com/itcmsgr/nftban/pull/862)
