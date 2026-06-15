@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.24 - Polkit Authorization Command
+# NFTBan - Polkit Authorization Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI wrapper for Polkit authorization validation

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Version Command
+# NFTBan - Version Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Display version information

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Health Check CLI Command - Core Module
+# NFTBan - Health Check CLI Command - Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Core health check commands: check, summary, json, report, fix

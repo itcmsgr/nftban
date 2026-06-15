@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Distribution Configuration Parser Test Suite
+# NFTBan - Distribution Configuration Parser Test Suite
 # =============================================================================
 # meta:name="test_distro_config"
 # meta:type="test"

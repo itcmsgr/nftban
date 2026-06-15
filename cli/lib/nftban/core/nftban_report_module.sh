@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v1.0.0 - Module Report Core Module
+# NFTBan - Module Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Module inventory scanning and reporting with validation

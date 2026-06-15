@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Test Command
+# NFTBan - Test Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Quick validation that CLI commands are working

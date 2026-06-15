@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Permission Hardening Module
+# NFTBan - Permission Hardening Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

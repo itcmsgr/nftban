@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - DDoS Protection Module - MAIN CONTROLLER
+# NFTBan - DDoS Protection Module - MAIN CONTROLLER
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Dual-mode DDoS protection with auto-detection

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Debug Command
+# NFTBan - Debug Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Debug and troubleshooting tools

@@ -24,7 +24,7 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
 fi
-# NFTBan v1.0.0 - Module CLI Handler
+# NFTBan - Module CLI Handler
 # =============================================================================
 
 # SPDX-License-Identifier: MPL-2.0

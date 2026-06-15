@@ -42,7 +42,7 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
 fi
-# NFTBan v1.0.0 - Login Alert CLI Handler
+# NFTBan - Login Alert CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Provides CLI interface for login monitoring and alerting

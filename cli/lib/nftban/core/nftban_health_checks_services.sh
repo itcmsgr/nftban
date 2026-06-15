@@ -2,7 +2,7 @@
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # shellcheck disable=SC2034  # NFTBAN_HEALTH_* arrays used by parent module that sources this
 # =============================================================================
-# NFTBan v1.0 - Health Check Services Functions
+# NFTBan - Health Check Services Functions
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Service-related health check functions (daemon, suricata, timers)

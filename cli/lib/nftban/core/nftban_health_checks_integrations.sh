@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090,SC2034  # SC1090: Dynamic paths; SC2034: Global arrays used by render module
 # =============================================================================
-# NFTBan v1.0 - Health Check Integrations Functions
+# NFTBan - Health Check Integrations Functions
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Integration-related health check functions (metrics, zabbix, connectors, pro, watchdog)

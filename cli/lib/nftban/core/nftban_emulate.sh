@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Packet Emulation Module
+# NFTBan - Packet Emulation Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_emulate"

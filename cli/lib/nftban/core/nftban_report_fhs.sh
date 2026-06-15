@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v1.0.0 - FHS Report Core Module
+# NFTBan - FHS Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: FHS directory permissions and ownership audit

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Pro Subscription CLI Handler
+# NFTBan - Pro Subscription CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Manage NFTBan Pro subscription, enrollment, and inventory

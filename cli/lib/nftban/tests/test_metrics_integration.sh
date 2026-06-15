@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Metrics Integration Test Suite
+# NFTBan - Metrics Integration Test Suite
 # =============================================================================
 # meta:name="test_metrics_integration"
 # meta:type="test"

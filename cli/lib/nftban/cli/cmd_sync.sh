@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Sync CLI Command
+# NFTBan - Sync CLI Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI command for atomic firewall reload

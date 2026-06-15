@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Check Command
+# NFTBan - Check Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Check if IP or port is allowed/blocked in nftables

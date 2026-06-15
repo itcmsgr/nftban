@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Port Scan Detection Module (Dual-Mode Controller)
+# NFTBan - Port Scan Detection Module (Dual-Mode Controller)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Path Validation & Write Security Module
+# NFTBan - Path Validation & Write Security Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_path_security"

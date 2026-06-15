@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
-# NFTBan v1.0 - Login Monitor Suricata Mode Module
+# NFTBan - Login Monitor Suricata Mode Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Suricata EVE JSON based login/auth failure monitoring
