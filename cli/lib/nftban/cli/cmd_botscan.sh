@@ -853,6 +853,24 @@ nftban_cmd_botscan() {
             _nftban_botscan_cmd_test "$@"
             ;;
 
+        bots)
+            # v1.188 B2 — friendly category listing: bots [category] [--enabled|--disabled]
+            nftban_botscan_load_config
+            nftban_botscan_bots "$@"
+            ;;
+
+        blockbot)
+            # v1.188 B2 — enable a bot pattern (override.local; refuses never-ban tokens)
+            nftban_botscan_load_config
+            nftban_botscan_blockbot "$@"
+            ;;
+
+        allowbot)
+            # v1.188 B2 — disable a bot pattern (override.local)
+            nftban_botscan_load_config
+            nftban_botscan_allowbot "$@"
+            ;;
+
         help|--help|-h)
             _nftban_botscan_help
             ;;
@@ -860,7 +878,7 @@ nftban_cmd_botscan() {
         *)
             echo "ERROR: Unknown command: $action" >&2
             echo ""
-            echo "Available commands: enable, disable, status, stats, config, check, patterns, history, test, help"
+            echo "Available commands: enable, disable, status, stats, config, check, patterns, history, test, bots, blockbot, allowbot, help"
             echo "Run 'nftban botscan help' for detailed usage information"
             return 1
             ;;
