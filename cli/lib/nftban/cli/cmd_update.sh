@@ -378,8 +378,21 @@ _cmd_update_main() {
     mkdir -p "${NFTBAN_RUN_DIR:-/run/nftban}" 2>/dev/null || true
     exec 9>"$UPDATE_LOCK_FILE"
     if ! flock -n 9; then
-        _update_log ERROR "Another update is in progress"
-        _update_log INFO "If no update is running, use 'nftban update force' to clear stale lock"
+        _update_log ERROR "Another update is already in progress — not starting a second one."
+        # Best-effort: name the running updater so the user knows what holds the lock.
+        # (Our own PID also has the lock file open via fd 9, so exclude $$.)
+        local _holder="" _hstart=""
+        if command -v fuser >/dev/null 2>&1; then
+            _holder=$(fuser "$UPDATE_LOCK_FILE" 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | grep -vx "$$" | head -1)
+        elif command -v lsof >/dev/null 2>&1; then
+            _holder=$(lsof -t "$UPDATE_LOCK_FILE" 2>/dev/null | grep -vx "$$" | head -1)
+        fi
+        if [[ -n "$_holder" ]] && kill -0 "$_holder" 2>/dev/null; then
+            _hstart=$(ps -o lstart= -p "$_holder" 2>/dev/null | sed 's/^[[:space:]]*//')
+            _update_log INFO "In-progress update: PID ${_holder}${_hstart:+ (started ${_hstart})}"
+        fi
+        _update_log INFO "Watch it finish:  tail -f ${UPDATE_LOG_FILE}"
+        _update_log INFO "Only if you are sure none is running (e.g. after a crash or reboot), 'nftban update force' clears a STALE lock."
         # We did NOT acquire the lock — a live updater holds it. Close our fd
         # but DO NOT remove the file: it belongs to the running updater.
         exec 9>&- 2>/dev/null || true

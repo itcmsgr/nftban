@@ -67,7 +67,7 @@ readonly NFTBAN_VERSION_MINOR
 readonly NFTBAN_VERSION_PATCH
 
 # Version details
-readonly NFTBAN_VERSION_NAME="Linux IPS & nftables Firewall"
+readonly NFTBAN_VERSION_NAME="Linux Firewall & IPS for nftables"
 readonly NFTBAN_VERSION_DATE="2026-03-18"
 
 # v1.151 BUG-VERSION-BUILD-DATE-RUNTIME: "Build Date" must reflect the PACKAGE

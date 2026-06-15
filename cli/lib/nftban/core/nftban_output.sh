@@ -487,7 +487,7 @@ nftban_banner_unified() {
     local emoji_offset=5
 
     # Line 1: Icon + Health + Protection + Conflicts + Version + Tagline
-    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux IPS & nftables FW${reset}"
+    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux Firewall & IPS for nftables${reset}"
     printf "${dim}|${reset} %-$((width - 2 + emoji_offset))b ${dim}|${reset}\n" "$line1"
 
     # Line 2: Host, Kernel, Uptime (no emojis, no offset)
