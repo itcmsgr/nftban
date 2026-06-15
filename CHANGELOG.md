@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.190.1] - 2026-06-15 — BotScan endpoint-flood: close advertised xmlrpc/wp-login protection gap
+
+**Codename:** `BOTSCAN_ENDPOINT_FLOOD` · **PR:** [#871](https://github.com/itcmsgr/nftban/pull/871) (merged `1f958523`) · **Lane:** PROTECTION-CLAIM-MATRIX (HIGH)
+
+> **What:** security/coverage fix — advertised WordPress/XML-RPC protection had **no runtime owner** for `POST /xmlrpc.php` (and `/wp-login.php`) **200-volume floods**, so they went unbanned fleet-wide. Adds a BotScan endpoint-flood detector. **Shell-only; daemon byte-identical `351d35df`; NFT ruleset/schema UNCHANGED; no counters (→ v1.191).**
+
+### Fixed (security/coverage)
+- **Unowned xmlrpc/wp-login 200 floods** — BotScan had only 404/URL-pattern detection (misses 200s); LoginMon owns credential-failure and cannot see the 200-body auth result; BotGuard is L3/L4 (content-blind). Confirmed unbanned on srv1–4/dns1/dns2 (10k–19k counts). Now owned by BotScan.
+
+### Added
+- **BotScan endpoint-flood detector** (`BOTSCAN_ENDPOINT_FLOOD`) — per source-IP × endpoint × window POST volume, **status-independent** (200 counts), volume-thresholded (never a single-hit URL ban → no false-ban of legit Jetpack/pingback/app xmlrpc). Initial endpoints `xmlrpc.php`, `wp-login.php`; defaults 30/60s/3600s, configurable via `main.conf(.local)`. Hooks the proven `count_404_tail` re-read (fork-free per-line); emits via the **batch-signal path only** (never the direct `ban_ip --duration` branch). Enforcement reuses the existing `anchor_ban` phase + `blacklist_manual`/`http_bot_ban` sets — **no nft schema change**.
+
+### Behavior
+- A flooding IP is banned via the existing daemon batch-signal → nft set path (IPv4 and IPv6). 404-flood and URL-pattern detection are unchanged (non-interference verified).
+
+### Fixed (internal)
+- IFS strict-mode parse of the endpoint list (`IFS=' ' read -ra`; v1.186.1 class).
+- Claim correction `cmd_login.sh:1267` — states real owners (BotScan endpoint-flood = xmlrpc/wp-login POST volume; LoginMon = credential-failure; BotGuard = L3/L4 burst only).
+
+### Validation
+- Hermetic `botscan_endpoint_flood_test.sh` 10/10 (xmlrpc/wp-login positive, status-independent 200/403/500, below-threshold negative, non-POST negative, 404 non-interference, batch-signal-not-direct, unconfigured-endpoint negative, per-endpoint independence, **IPv6**). Regressions (404-tail/nofork/fcrdns/pattern-ifs/deadline) pass; shellcheck clean.
+- **Lab-first PASS** lab2 (DEB) + lab4 (RPM): hermetic + live batch-signal integration, reversible, 0 failed units, daemon active. Pre-impl lab proved the existing batch-signal path reaches nft (srv2 `botscan-404` IPs in nft) and reproduced the gap.
+
+### Notes
+- `BUG-BOTSCAN-DIRECT-BAN-FLAG` (direct-mode `--duration` vs CLI `--timeout`) recorded separately (LOW; production unaffected — uses batch path). Counters for this detector deferred to v1.191.
+
+---
+
 ## [v1.190.0] - 2026-06-15 — SCHEMA-UNFREEZE: counters contract/scaffolding + IP-family (1.83.0→1.84.0)
 
 **Codename:** `SCHEMA_UNFREEZE_COUNTERS` · **PR:** [#868](https://github.com/itcmsgr/nftban/pull/868) (merged `bdaba785`) · **Design:** `SCHEMA_UNFREEZE_COUNTERS_DESIGN.md` · **Report:** `V1_190_0_REPORT_HUMAN.md`
