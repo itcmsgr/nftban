@@ -25,13 +25,11 @@ ZOOMINFOBOT|ZoominfoBot|useragent|30|120|3600|true|ZoomInfo scraper bot
 LINKFLUENCE|linkfluence|useragent|30|120|3600|true|Linkfluence crawler
 
 # =============================================================================
-# AI TRAINING BOTS (Content scrapers for LLM training)
+# AI TRAINING BOTS — MOVED to aibots.patterns (v1.188 B2 Option A; one owner per
+# token). GPTBot/CCBot/Bytespider/ClaudeBot migrated with state preserved.
+# AppleBot-Extended REMOVED entirely (robots.txt-only control token — has no
+# request UA, can never match; now in the CLI never-ban guard, not a pattern).
 # =============================================================================
-GPTBOT|GPTBot|useragent|10|60|7200|true|OpenAI GPTBot - AI training scraper
-CLAUDEBOT|ClaudeBot|useragent|10|60|7200|false|Anthropic ClaudeBot - AI training
-CCBOT|CCBot|useragent|20|120|3600|true|Common Crawl - mass scraper
-BYTESPIDER|Bytespider|useragent|10|60|7200|true|ByteDance AI training spider
-APPLEBOT_EXTENDED|AppleBot-Extended|useragent|30|300|1800|false|Apple extended bot
 
 # =============================================================================
 # KNOWN MALICIOUS BOTS

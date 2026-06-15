@@ -1030,6 +1030,9 @@ botscan:
     - "nftban botscan patterns list"
     - "nftban botscan history"
     - "nftban botscan test"
+    - "nftban botscan bots aibots"
+    - "nftban botscan blockbot ClaudeBot"
+    - "nftban botscan allowbot GPTBot"
   subcommands:
     enable: {description: "Enable bot scanner detection"}
     disable: {description: "Disable bot scanner detection"}
@@ -1040,6 +1043,15 @@ botscan:
       description: "Pattern management"
     history: {description: "Show detection history"}
     test: {description: "Test pattern matching against URLs or User-Agents"}
+    bots:
+      mutates: false
+      description: "List bot patterns by category (scanner/badbots/aibots/custom; --enabled|--disabled)"
+    blockbot:
+      mutates: true
+      description: "Enable banning a bot by name (writes override.local; refuses never-ban tokens)"
+    allowbot:
+      mutates: true
+      description: "Stop banning a bot by name (writes override.local)"
     config:
       mutates: false
       description: "Show botscan configuration"

@@ -1,0 +1,34 @@
+# =============================================================================
+# NFTBan Bot Scanner - AI Bots / LLM Scrapers (User-Agent Based Detection)
+# =============================================================================
+# Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+#
+# MATCH_TYPE: useragent = match against the User-Agent header.
+#
+# v1.188 B2 (Option A — migrate-and-preserve): AI training-scraper tokens were
+# MOVED here from badbots.patterns. Their ENABLED state is PRESERVED exactly as
+# it was in badbots (no live fleet behavior change): GPTBot/CCBot/Bytespider stay
+# hard-ban; ClaudeBot stays observe (off). NEW AI tokens ship observe/disabled
+# (ENABLED=false) by default — operators opt in with `nftban botscan blockbot`.
+# One owner per token: these tokens are NOT in badbots.patterns anymore.
+#
+# Token provenance: V1_187_AIBOTS_PRIMARY_DOC_TOKENS.md (primary-doc-verified).
+# Substring match, version-agnostic (GPTBot covers GPTBot/1.3, etc).
+#
+# 🚫 NEVER-BAN (NOT listed here as ban tokens — enforced by the CLI never-ban
+#    guard, `nftban botscan blockbot` refuses them):
+#    - Google-Extended, Applebot-Extended : robots.txt-only control tokens — they
+#      have NO request User-Agent, so a UA ban can never match (category error).
+#    - Googlebot, Bingbot, Applebot       : legitimate search-index UAs (banning delists).
+#    - ChatGPT-User, Perplexity-User      : user-action fetchers — a human triggered
+#      the fetch; never hard-ban (observe only).
+# =============================================================================
+
+# --- Migrated from badbots.patterns, state PRESERVED (Option A) ---
+GPTBOT|GPTBot|useragent|10|60|7200|true|OpenAI GPTBot - AI training scraper (migrated from badbots; state preserved)
+CCBOT|CCBot|useragent|20|120|3600|true|Common Crawl CCBot - mass scraper feeding AI training (migrated; state preserved)
+BYTESPIDER|Bytespider|useragent|10|60|7200|true|ByteDance Bytespider - AI data scraper (secondary-source provenance; migrated; state preserved)
+CLAUDEBOT|ClaudeBot|useragent|10|60|7200|false|Anthropic ClaudeBot - AI training crawler (migrated from badbots; observe/off preserved)
+
+# --- New AI tokens: shipped observe/disabled by default (opt in via blockbot) ---
+PERPLEXITYBOT|PerplexityBot|useragent|10|60|7200|false|Perplexity search-index crawler - observe by default (new; primary-doc-verified)
