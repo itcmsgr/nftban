@@ -33,7 +33,7 @@ RUN mkdir -p /out && \
 
 # Stage 2: Minimal runtime image
 # Pinned to SHA for OpenSSF Scorecard compliance
-FROM alpine:3.20@sha256:b0cb30c51c47cdfde647364301758b14c335dea2fddc9490d4f007d67ecb2538
+FROM alpine:3.24@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
