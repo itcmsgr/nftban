@@ -77,6 +77,9 @@ COMMANDS:
       patterns disable  Disable a pattern
     history             Show detected bots (last 24 hours)
     test                Test pattern matching against sample URLs
+    bots [category]     List bot patterns by category (--enabled|--disabled)
+    blockbot <name>     Enable banning a bot (scanner/badbots/aibots/custom)
+    allowbot <name>     Stop banning a bot (allow it)
     stats               Show detection statistics (JSON-capable)
     config              Show detection configuration
     help                Show this help message
