@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.189.0] - 2026-06-15 — BotScan FCrDNS: verified-crawler whitelist (forward-confirmed rDNS)
+
+**Codename:** `BOTSCAN_FCRDNS` · **PR:** [#866](https://github.com/itcmsgr/nftban/pull/866) · **Scope:** `BOTSCAN_VERIFIED_CRAWLER_WHITELIST_SCOPE.md`
+
+> **What:** security/evasion fix — verify claimed search-crawler UAs by forward-confirmed reverse DNS at analyze-time. **Shell-only; daemon `cmd/nftband` byte-identical `c63d8822`; schema 1.83.0 frozen; NO counters** (deferred to SCHEMA-UNFREEZE).
+
+### Fixed (security)
+- **Spoofable crawler whitelist** — `is_whitelisted` matched search crawlers by UA substring only, so `User-Agent: Googlebot` from any IP was blanket-whitelisted and evaded BotScan (404-flood + pattern bans). Now verified by forward-confirmed rDNS.
+
+### Added
+- `nftban_botscan_verify_crawler(ip,family)` — PTR must match a provider-documented family suffix (Google/Bing/Yandex/DuckDuckGo/Yahoo-slurp/Apple/Baidu), then forward-resolve to the original IP. **Fail-closed** on no-PTR/suffix-mismatch/forward-mismatch/timeout/NXDOMAIN. Runs at **analyze-time, per unique candidate IP — never per log line** (preserves the v1.187.1 fork-free hot path). Cache by `src_ip+family` (24h/6h/30m), atomic in-flight guard, hard 2s per-lookup timeouts, self-contained resolver (host→dig→nslookup). `BOTSCAN_VERIFY_CRAWLERS` toggle (default on).
+
+### Behavior
+- A **verified** crawler is exempt from the **404-flood ban ONLY** (real crawlers legitimately hit 404s). A spoofer (unverified) is banned with a `fake_bot_ua` reason. **Exploit/webshell/scanner URL-pattern bans are NEVER exempted** by crawler-verify — not a blanket IP whitelist. Unverifiable families (facebot) keep the legacy whitelist.
+
+### Validation
+- Hermetic `botscan_fcrdns_v189_test` (stubbed resolver) PASS — verify matrix, fail-closed, cache/family-separation, toggle, no-per-line-DNS, exempt-verified/ban-spoofer, structural guard. Regressions pass; shellcheck clean; daemon `c63d8822`.
+- **Lab-first real-DNS PASS** (lab2): real Googlebot `66.249.66.1` verified OK + cached; `8.8.8.8` claiming Googlebot fail-closed. Caught + fixed a resolver-dependency bug (the hermetic test had stubbed it).
+
+---
+
 ## [v1.188.0] - 2026-06-15 — BotScan-train B2: badbot/aibot easy UX + aibots category
 
 **Codename:** `BOTSCAN_B2_BADBOT_AIBOT` · **PR:** [#864](https://github.com/itcmsgr/nftban/pull/864) · **Ownership:** `B2_BOTSCAN_BADBOT_EASY_UX_OWNERSHIP_DECLARATION.md` · **Lab-first:** `B2_LAB_FIRST_VALIDATION_RECORD.md`
