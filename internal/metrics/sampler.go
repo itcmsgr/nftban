@@ -149,9 +149,12 @@ func (s *Sampler) initPrometheus() {
 	})
 
 	s.ruleCountGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		// v1.190.0 SCHEMA-UNFREEZE name-drift (G-12): DEPRECATED alias of the canonical
+		// nftban_nft_rules_total. Emits the same value through the 2-minor window
+		// (v1.190.x + v1.191.x); remove only after an explicit later gate.
 		Namespace: "nftban",
 		Name:      "firewall_rules_total",
-		Help:      "Total number of firewall rules",
+		Help:      "DEPRECATED (use nftban_nft_rules_total; removal after v1.191.x): total number of nftables rules",
 	})
 
 	// BUG-001 FIX: Aligned semantics with collector.go (0=OK, higher=worse)

@@ -242,7 +242,7 @@ _nftban_protection_state_validator() {
 
     # v1.83: Schema version guard — warn if validator schema doesn't match expected.
     # Prevents silent breakage if validator binary is from a different version.
-    local _expected_schema="1.83.0"
+    local _expected_schema="1.84.0"
     if [[ -n "$_schema_version" && "$_schema_version" != "$_expected_schema" ]]; then
         echo "WARNING: validator schema $_schema_version does not match expected $_expected_schema — binary may be outdated" >&2
     fi
