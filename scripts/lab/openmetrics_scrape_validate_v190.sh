@@ -21,7 +21,9 @@
 # meta:inventory.privileges="none (root only if reading a 0600 textfile)"
 # =============================================================================
 set -Eeuo pipefail
-IFS=$' \t\n'
+# NOTE: IFS is intentionally left at the shell default (space/tab/newline). An
+# earlier global `IFS=$' \t\n'` was redundant (it re-set the default) and tripped
+# Semgrep bash.lang.security.ifs-tampering; no IFS-dependent splitting is used here.
 
 URL="${NFTBAN_METRICS_URL:-http://127.0.0.1:9580/metrics}"
 TEXTFILE="${NFTBAN_METRICS_FILE:-/var/lib/node_exporter/textfile_collector/nftban.prom}"
