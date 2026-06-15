@@ -138,6 +138,23 @@ nftban_botscan_load_patterns() {
 
     _BOTSCAN_PATTERNS=()
 
+    # v1.188 B2 — 3-tier no-clobber precedence: shipped *.patterns (config(noreplace))
+    # are the base; operator enable/disable decisions live in override.local
+    # (NAME|true|false), which WINS over the shipped ENABLED column WITHOUT editing
+    # the shipped files. override.local is operator-created (NOT package-owned), so
+    # it survives DEB/RPM upgrades intact. Read first so per-pattern effective-enabled
+    # can consult it. It is NOT a *.patterns file, so the glob below never loads it.
+    local override_file="${patterns_dir}/override.local"
+    local -A _override=()
+    if [[ -r "$override_file" ]]; then
+        local oname ostate
+        while IFS='|' read -r oname ostate _; do
+            [[ -z "$oname" || "$oname" =~ ^# ]] && continue
+            oname="${oname// /}"; ostate="${ostate// /}"
+            [[ "$ostate" == "true" || "$ostate" == "false" ]] && _override["$oname"]="$ostate"
+        done < "$override_file"
+    fi
+
     for pattern_file in "$patterns_dir"/*.patterns; do
         [[ -f "$pattern_file" ]] || continue
 
@@ -145,8 +162,9 @@ nftban_botscan_load_patterns() {
             # Skip comments and empty lines
             [[ -z "$name" || "$name" =~ ^# ]] && continue
 
-            # Skip disabled patterns
-            [[ "$enabled" != "true" ]] && continue
+            # override.local wins over the shipped ENABLED column (no-clobber).
+            local eff_enabled="${_override[$name]:-$enabled}"
+            [[ "$eff_enabled" != "true" ]] && continue
 
             # Store pattern: name -> "pattern|match_type|threshold|window|ban|description"
             _BOTSCAN_PATTERNS["$name"]="${pattern}|${match_type}|${threshold}|${window}|${ban}|${description}"
@@ -257,6 +275,142 @@ nftban_botscan_toggle_pattern() {
     done
 
     [[ $found -eq 0 ]] && echo "ERROR: Pattern '$name' not found" >&2 && return 1
+    return 0
+}
+
+# =============================================================================
+# v1.188 B2 — BOT POLICY (bots / blockbot / allowbot) helpers
+# =============================================================================
+
+# Never-ban guard. These tokens must NEVER be hard-banned on User-Agent:
+#   robots.txt-only control tokens (Google-Extended/Applebot-Extended have NO request
+#   UA → a ban can never match; it is a category error), legitimate index UAs
+#   (Googlebot/Bingbot/Applebot — banning delists the site), and user-action fetchers
+#   (ChatGPT-User/Perplexity-User/Claude-User — a human triggered the fetch).
+# Returns 0 (guarded) / 1 (not guarded). Case-insensitive substring match.
+nftban_botscan_neverban_token() {
+    local q; q=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')
+    [[ -z "$q" ]] && return 1
+    local t
+    for t in google-extended applebot-extended googlebot bingbot applebot \
+             facebookexternalhit chatgpt-user perplexity-user claude-user; do
+        [[ "$q" == *"$t"* ]] && return 0
+    done
+    return 1
+}
+
+# Resolve a user token (pattern NAME or UA substring, case-insensitive) to the
+# canonical pattern NAME used as the override.local / loader key. Echoes NAME, or
+# nothing + rc=1 if not found. Interactive-only (blockbot/allowbot), never hot-path.
+nftban_botscan_resolve_name() {
+    local q; q=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')
+    [[ -z "$q" ]] && return 1
+    local f name pattern lc_name lc_pat
+    for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
+        [[ -f "$f" ]] || continue
+        while IFS='|' read -r name pattern _; do
+            [[ -z "$name" || "$name" =~ ^# ]] && continue
+            lc_name=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
+            lc_pat=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
+            if [[ "$q" == "$lc_name" || "$q" == "$lc_pat" ]]; then
+                printf '%s' "$name"; return 0
+            fi
+        done < "$f"
+    done
+    return 1
+}
+
+# Write an enable/disable decision to override.local (3-tier no-clobber; NEVER edits
+# the shipped config(noreplace) *.patterns). Args: NAME, state(true|false). The file
+# is operator-created (not package-owned) so DEB/RPM upgrades never clobber it.
+nftban_botscan_set_override() {
+    local name="${1:-}" state="${2:-}"
+    [[ -n "$name" && ( "$state" == "true" || "$state" == "false" ) ]] || return 2
+    local dir="${BOTSCAN_PATTERNS_DIR}"
+    local override_file="${dir}/override.local"
+    mkdir -p "$dir" 2>/dev/null || true
+    local tmp; tmp=$(mktemp "${override_file}.XXXXXX" 2>/dev/null) || return 1
+    # carry forward all OTHER entries; replace any prior line for this name
+    if [[ -r "$override_file" ]]; then
+        grep -viE "^[[:space:]]*${name}[[:space:]]*\|" "$override_file" 2>/dev/null >> "$tmp" || true
+    fi
+    printf '%s|%s\n' "$name" "$state" >> "$tmp"
+    mv -f "$tmp" "$override_file" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+    return 0
+}
+
+# blockbot <token> — enable a bot pattern (operator opt-in) via override.local.
+# Refuses never-ban tokens with an explanation. Resolves token→NAME.
+nftban_botscan_blockbot() {
+    local token="${1:-}"
+    [[ -n "$token" ]] || { echo "Usage: nftban botscan blockbot <bot-name>" >&2; return 2; }
+    if nftban_botscan_neverban_token "$token"; then
+        echo "✗ Refusing to ban '$token': it is a never-ban token." >&2
+        echo "  robots.txt-only (Google-Extended/Applebot-Extended) have no request UA to match;" >&2
+        echo "  legitimate index UAs (Googlebot/Bingbot/Applebot) would delist the site;" >&2
+        echo "  user-action fetchers (ChatGPT-User/Perplexity-User) are human-initiated. Not banned." >&2
+        return 1
+    fi
+    local name; name=$(nftban_botscan_resolve_name "$token") || {
+        echo "✗ Unknown bot '$token'. See: nftban botscan bots" >&2; return 1; }
+    nftban_botscan_set_override "$name" "true" || { echo "✗ Could not write override for $name" >&2; return 1; }
+    echo "✓ blockbot: $name enabled (override.local) — bans on next scan cycle."
+    return 0
+}
+
+# allowbot <token> — disable a bot pattern (operator allow) via override.local.
+nftban_botscan_allowbot() {
+    local token="${1:-}"
+    [[ -n "$token" ]] || { echo "Usage: nftban botscan allowbot <bot-name>" >&2; return 2; }
+    local name; name=$(nftban_botscan_resolve_name "$token") || {
+        echo "✗ Unknown bot '$token'. See: nftban botscan bots" >&2; return 1; }
+    nftban_botscan_set_override "$name" "false" || { echo "✗ Could not write override for $name" >&2; return 1; }
+    echo "✓ allowbot: $name disabled (override.local) — no longer banned."
+    return 0
+}
+
+# bots [category] [--enabled|--disabled] — friendly category listing (override-aware).
+# Shows the EFFECTIVE enabled state (shipped ENABLED column overridden by override.local).
+nftban_botscan_bots() {
+    local category="" filter="all" a
+    for a in "$@"; do
+        case "$a" in
+            --enabled)  filter="enabled" ;;
+            --disabled) filter="disabled" ;;
+            scanner|badbots|aibots|custom|webshell|exploit) category="$a" ;;
+        esac
+    done
+    # Load effective state via the override-aware loader.
+    nftban_botscan_load_patterns >/dev/null 2>&1
+    local override_file="${BOTSCAN_PATTERNS_DIR}/override.local"
+    local -A _ov=()
+    if [[ -r "$override_file" ]]; then
+        local on os
+        while IFS='|' read -r on os _; do
+            [[ -z "$on" || "$on" =~ ^# ]] && continue
+            _ov["${on// /}"]="${os// /}"
+        done < "$override_file"
+    fi
+    printf "%-22s %-9s %-9s %-10s %s\n" "NAME" "CATEGORY" "EFFECTIVE" "MATCH" "DESCRIPTION"
+    printf '%s\n' "$(printf '=%.0s' {1..92})"
+    local f cat name pattern match_type threshold window ban enabled description eff
+    for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
+        [[ -f "$f" ]] || continue
+        cat=$(basename "$f" .patterns)
+        [[ -n "$category" && "$cat" != "$category" ]] && continue
+        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
+            [[ -z "$name" || "$name" =~ ^# ]] && continue
+            eff="${_ov[$name]:-$enabled}"
+            case "$filter" in
+                enabled)  [[ "$eff" != "true" ]] && continue ;;
+                disabled) [[ "$eff" == "true" ]] && continue ;;
+            esac
+            local mark="$eff"; [[ -n "${_ov[$name]:-}" ]] && mark="${eff}*"
+            printf "%-22s %-9s %-9s %-10s %s\n" "$name" "$cat" "$mark" "$match_type" "${description:0:38}"
+        done < "$f"
+    done
+    echo ""
+    echo "  EFFECTIVE '*' = set by override.local (your blockbot/allowbot decision)."
     return 0
 }
 
