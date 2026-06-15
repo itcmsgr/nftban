@@ -11,6 +11,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.190.0] - 2026-06-15 — SCHEMA-UNFREEZE: counters contract/scaffolding + IP-family (1.83.0→1.84.0)
+
+**Codename:** `SCHEMA_UNFREEZE_COUNTERS` · **PR:** [#868](https://github.com/itcmsgr/nftban/pull/868) (merged `bdaba785`) · **Design:** `SCHEMA_UNFREEZE_COUNTERS_DESIGN.md` · **Report:** `V1_190_0_REPORT_HUMAN.md`
+
+> **What:** the **contract / scaffolding** half of the counters schema-unfreeze. Bumps the public health/observability schema **1.83.0 → 1.84.0** and defines the counter shape in the type system + Prometheus surface. **Daemon-Go (ends the `c63d8822` byte-identical train; daemon `351d35df…`); NO live counter population; no detector/ban behavior change.** Counters are deliberately **absent** (not zero), gated by `nftban_counters_population_phase = 0` and `counters_phase = "contract"` — *absent ≠ zero*. **v1.191.0 reserved for population** (phase 0→1).
+
+### Added (schema 1.84.0, additive — old consumers ignore new fields)
+- `counters_phase` (always present; `"contract"` in v1.190.0) — the anti-false-zero gate.
+- `counters` (omitempty/absent until v1.191.0): BotScan/BotGuard/Whitelist with IP-family split (`FamilyCounts{ipv4,ipv6,inet,unknown}`; per-IP counters use ipv4/ipv6, `unknown` signals a classification defect).
+- `nft.anchors[]` (omitempty/absent until v1.191.0): interpreted JSON VIEW over the existing `nftban_nft_named_counter_*{family,counter}` — **no** new `nftban_nft_anchor_*` metric (SOS-2 reuse, no double-count). Anchors are phase-boundary/pipeline-continuity counters, never accept/drop verdicts.
+- Prometheus `nftban_counters_population_phase` gauge = 0; `nftban_firewall_rules_total` documented as a DEPRECATED alias of canonical `nftban_nft_rules_total` (2-minor window); `nftban_suricata_rules_total` kept distinct.
+
+### Decisions (SOS-1..4)
+- **SOS-1:** only the validator output/health schema moves to 1.84.0; `nftban stats` (int 2), lifecycle, installer schemas untouched.
+- **SOS-2:** anchors reuse the named-counter Prometheus source; JSON view only.
+- **SOS-3:** JSON normalizes nft family `ip→ipv4`, `ip6→ipv6` (one JSON vocabulary); Prometheus label stays raw `ip/ip6` for compat (documented bridge).
+- **SOS-4:** the emitted `/metrics` text is validated as a consumer parses it.
+
+### Validators added (now guarding this contract)
+- **JSON schema** — `internal/validator/counters_contract_v190_test.go`.
+- **Prometheus/OpenMetrics** — `internal/metricscontract/openmetrics_v190_test.go` (Gather→expfmt encode→reparse; phase=0; no anchor metric; family ip/ip6; no new series; naming rule; JSON↔Prometheus mutual consistency).
+- **nft counting-model** — `cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh` (single rule-count owner; alias DEPRECATED; suricata distinct; stats schema int 2; T13 health-`--json` projection includes counters_phase).
+- **Exporter/lab scrape** — `scripts/lab/openmetrics_scrape_validate_v190.sh`.
+
+### Found & fixed before merge (five cross-surface drift bugs)
+1. Go schema 1.84.0 vs shell CLI still 1.83.0 → bumped `cmd_health.sh` + `cmd_status.sh` (CI G2-3).
+2. `go.mod`/`go.sum` drift from new parser deps → `go mod tidy` (CI tidy gate).
+3. Dead `countNFTablesRules` after the single-owner metric fix → removed (staticcheck U1000).
+4. `nftban health --json` advertised 1.84.0 but stripped `counters_phase`/`counters`/`nft` → fixed the jq projection + guard T13 (lab-first consumer-parse).
+5. Semgrep IFS-tampering in the lab script (redundant global IFS) → behavior-neutral removal (code-scanning + required conversation resolution correctly blocked the merge).
+
+### Validation
+- PR #868 CI green 69/69; post-merge main CI green. **Lab-first PASS** on lab2 (DEB) + lab4 (RPM) + monitor (DEB): `health --json` schema 1.84.0, `counters_phase=contract`, counters/nft absent, phase gauge 0, `nft_rules_total` present, no anchor metric, family ip/ip6 (no relabel), no new counter series, 0 failed units, NRestarts=0, nft authority intact, 0 TEST-NET; reversible binary-swap restored byte-identical on every host.
+
+### Open / baselined (future gates)
+- `METRIC-NAMING-TOTAL-GAUGE-DEBT` (legacy `_total` gauges) · `METRIC-FIREWALL-ALIAS-UNEXPOSED` (alias on private registry, not HTTP) · `SCHEMA-BUMP-ALL-SURFACES-CHECKLIST` · `CONTRACT-VALIDATOR-FRAMEWORK` (`CONTRACT_VALIDATOR_FRAMEWORK.md`).
+
+---
+
 ## [v1.189.0] - 2026-06-15 — BotScan FCrDNS: verified-crawler whitelist (forward-confirmed rDNS)
 
 **Codename:** `BOTSCAN_FCRDNS` · **PR:** [#866](https://github.com/itcmsgr/nftban/pull/866) · **Scope:** `BOTSCAN_VERIFIED_CRAWLER_WHITELIST_SCOPE.md`
