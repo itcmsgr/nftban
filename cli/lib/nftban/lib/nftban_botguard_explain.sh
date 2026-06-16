@@ -167,6 +167,68 @@ nftban_botguard_explain_emulate_note() {
     return 0
 }
 
+# nftban_botguard_explain_subsystem_status
+# Bounded, AGGREGATE read-only probe of the explain/cache subsystem (NO per-IP data). Echoes
+# one of: "available" | "unavailable" | "helper_missing". Uses an RFC5737 documentation
+# sentinel IP — the daemon ExplainIP is a read-only Peek, so a sentinel query only ever returns
+# present=false and never mutates. Always returns 0.
+nftban_botguard_explain_subsystem_status() {
+    if ! declare -f nft_ipc_request >/dev/null 2>&1; then
+        echo "helper_missing"; return 0
+    fi
+    local data avail
+    data=$(nftban_botguard_explain_json "192.0.2.0")   # RFC5737 TEST-NET-1 sentinel
+    avail=$(_nftban_botguard_explain_field "$data" '.cache_available' "false")
+    if [[ "$avail" == "true" ]]; then
+        echo "available"
+    else
+        echo "unavailable"
+    fi
+    return 0
+}
+
+# nftban_botguard_explain_diag_aggregate
+# Bounded, sanitized AGGREGATE diagnostic block for `nftban support` (NO full-cache dump, NO
+# per-IP listing). Read-only; degrade-safe; always returns 0.
+nftban_botguard_explain_diag_aggregate() {
+    local status
+    status=$(nftban_botguard_explain_subsystem_status)
+    echo "BotGuard temporary decision-cache diagnostics (TEMPORARY, read-only; NOT durable authority):"
+    case "$status" in
+        available)
+            echo "  explain_ip query path: available" ;;
+        helper_missing)
+            echo "  explain client: not loaded (durable nft-set checks remain authoritative)" ;;
+        *)
+            echo "  explain_ip query path: unavailable (durable nft-set checks remain authoritative)" ;;
+    esac
+    echo "  Durable authority: not_evaluated by the temporary cache"
+    echo "  Scope: aggregate only — no full-cache dump, no IP list (per-IP: nftban debug botguard <ip>)"
+    return 0
+}
+
+# nftban_botguard_health_cache_diag <enabled>
+# Emits a bounded health diagnostic line for the TEMPORARY cache. Prefixes the line with a
+# WARN/INFO token so callers can map severity. When BotGuard is DISABLED it omits entirely
+# (prints nothing) — cache-unavailable is never a warning while disabled. When ENABLED: INFO if
+# the explain path is available, WARN otherwise. NEVER per-IP, NEVER a durable-authority claim,
+# NEVER implies unprotected. Always returns 0.
+nftban_botguard_health_cache_diag() {
+    local enabled="${1:-false}"
+    [[ "$enabled" == "true" ]] || return 0   # disabled → omit (no WARN)
+    local status
+    status=$(nftban_botguard_explain_subsystem_status 2>/dev/null || echo "unavailable")
+    if [[ "$status" == "available" ]]; then
+        echo "INFO: BotGuard temporary decision-cache diagnostics: explain_ip path available (TEMPORARY, read-only; not durable authority)"
+    else
+        echo "WARN: BotGuard temporary cache diagnostics unavailable; durable nft-set checks remain authoritative (TEMPORARY read-only diagnostic; does NOT imply unprotected)"
+    fi
+    return 0
+}
+
+export -f nftban_botguard_explain_subsystem_status 2>/dev/null || true
+export -f nftban_botguard_explain_diag_aggregate 2>/dev/null || true
+export -f nftban_botguard_health_cache_diag 2>/dev/null || true
 export -f nftban_botguard_explain_json 2>/dev/null || true
 export -f nftban_botguard_explain_render 2>/dev/null || true
 export -f nftban_botguard_explain_emulate_note 2>/dev/null || true
