@@ -555,9 +555,17 @@ nftban_banner_unified() {
     # 🐧🛡️ (2 emojis) + 🟠/🟢/🔴 (1-3 status icons) = ~5 extra visual columns
     local emoji_offset=5
 
-    # Line 1: Icon + Health + Protection + Conflicts + Version + Tagline
-    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux Firewall & IPS for nftables${reset}"
+    # Line 1: Icon + Health + Protection + Conflicts + Version (emoji line).
+    # The tagline moved to its own line (below) — keeping it here overflowed the
+    # fixed-width box (line exceeded the 60-70 col border) and the emoji defeated
+    # printf's byte-based padding, breaking right-border alignment.
+    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}"
     printf "${dim}|${reset} %-$((width - 2 + emoji_offset))b ${dim}|${reset}\n" "$line1"
+
+    # Line 1b: tagline on its own line — plain ASCII (no emoji) so %-Ns padding is
+    # exact and the right border stays aligned within the fixed box width.
+    local tagline="Open-source Linux Firewall & IPS for nftables"
+    printf "${dim}|${reset} ${dim}%-$((width - 2))s${reset} ${dim}|${reset}\n" "$tagline"
 
     # Line 2: Host, Kernel, Uptime (no emojis, no offset)
     local line2="${dim}Host: ${cyan}${hostname}${reset}${dim} | Kernel: ${kernel}${reset}"
