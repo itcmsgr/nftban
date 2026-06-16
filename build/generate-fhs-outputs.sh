@@ -125,7 +125,7 @@ generate_tmpfiles() {
     # Write header (split SPDX to avoid validator detecting it as generator's own)
     {
         echo "# ============================================================================="
-        echo "# NFTBan v1.0.0 - tmpfiles.d Configuration (GENERATED)"
+        echo "# NFTBan - tmpfiles.d Configuration (GENERATED)"
         echo "# ============================================================================="
         echo "# SPDX-License-Identifier: MPL-2.0"
     } > "$TMPFILES_OUT"
@@ -202,7 +202,7 @@ generate_sysusers() {
     # Write header (split SPDX to avoid validator detecting it as generator's own)
     {
         echo "# ============================================================================="
-        echo "# NFTBan v1.0.0 - sysusers.d Configuration (GENERATED)"
+        echo "# NFTBan - sysusers.d Configuration (GENERATED)"
         echo "# ============================================================================="
         echo "# SPDX-License-Identifier: MPL-2.0"
     } > "$SYSUSERS_OUT"
@@ -739,7 +739,7 @@ generate_file_permissions() {
     {
         echo "#!/usr/bin/env bash"
         echo "# ============================================================================="
-        echo "# NFTBan v1.0.0 - FHS File Permissions (GENERATED)"
+        echo "# NFTBan - FHS File Permissions (GENERATED)"
         echo "# ============================================================================="
         echo "# SPDX-License-Identifier: MPL-2.0"
     } > "$PERMS_OUT"

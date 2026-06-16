@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.190.2] - 2026-06-16 — Low-risk shell/UX hygiene: version-literal cleanup, banner box fix, doc refresh
+
+**Codename:** `LOW_RISK_SHELL_SWEEP` · **PRs:** [#873](https://github.com/itcmsgr/nftban/pull/873) (hygiene) + [#874](https://github.com/itcmsgr/nftban/pull/874) (banner) · **Scope:** `V1_190_2_LOW_RISK_SHELL_SWEEP_SCOPE.md`
+
+> **What:** cosmetic + UX hygiene only. **Daemon byte-identical `351d35df`; NFT ruleset/schema UNCHANGED (1.84.0); no detector/ban behavior change; no counters.** A code re-challenge confirmed most of the originally-planned sweep (set-u cluster 16, H4/U3/empty-env CI guards, RBL per-run cap) was **already shipped** (largely v1.150) — those rows were debunked, not re-done.
+
+### Fixed
+- **Banner full-box overflow** — on `version`/`status` the v1.187.2 tagline was crammed onto line 1 (icons + posture + version), overflowing the fixed 60–70 col box border (multi-byte emoji + ANSI also defeat byte-based padding). The tagline now renders on its own plain-ASCII line, aligned to the border. Tagline preserved; banner guards (`cli_no_banner_v141`, `b1b_banner_compact_v1873`, `b1_text_ux_v1872`) all pass. (#874)
+
+### Changed
+- **Stale `NFTBan v1.0.x` version literals** — 113 shell-file header comments normalized to version-neutral `# NFTBan - …` (can't go stale again); `cmd_services.sh` help fallback now uses dynamic `${NFTBAN_VERSION}`. Factual since-version notes left intact. (#873)
+- **FHS generator** (`build/generate-fhs-outputs.sh`) — generated config-file headers (tmpfiles.d, sysusers.d, FHS permissions) emit version-neutral banners instead of a hardcoded `v1.0.0`; the FHS spec header still carries the project version. Removes the stale-version source; `--check` parity holds.
+- **`SECURITY.md`** — supported-versions table refreshed (1.149.x → 1.190.x; current → v1.190.2).
+- **`.claude/CLAUDE.md`** — added the real `sync` verb to the valid-CLI list (DOC-SYNC-VERB).
+
+### Notes
+- Deferred (registered, not in this release): `INSTALL-UPDATE-PROGRESS-UX` (step/total progress contract); B1b-2 shared findings renderer (needs surface-scoping); the emoji-line right-border being a few columns short (terminal emoji width can't be byte-counted in shell); orphan-module deletion (guard-coupled).
+
+---
+
 ## [v1.190.1] - 2026-06-15 — BotScan endpoint-flood: close advertised xmlrpc/wp-login protection gap
 
 **Codename:** `BOTSCAN_ENDPOINT_FLOOD` · **PR:** [#871](https://github.com/itcmsgr/nftban/pull/871) (merged `1f958523`) · **Lane:** PROTECTION-CLAIM-MATRIX (HIGH)
