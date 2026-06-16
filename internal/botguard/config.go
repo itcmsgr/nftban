@@ -99,6 +99,11 @@ type Config struct {
 	WarmupMaxDuration time.Duration // replay budget
 	WarmupMaxAccepted int           // hard cap on accepted (replayed) signals
 	WarmupMaxLineSize int           // per-line scanner buffer cap
+
+	// v1.191 8B (config-knobs) — BotScan cadence-lag advisory window. If the batch-signal file
+	// has not been touched within this window, cadence lag is *suspected* (advisory text only;
+	// never a schema field / metric / install_state input).
+	CadenceStaleAfter time.Duration
 }
 
 // Config-knob clamp ceilings — generous upper bounds that still forbid an unbounded/OOM mode.
@@ -160,6 +165,9 @@ func DefaultConfig() *Config {
 		WarmupMaxDuration: 400 * time.Millisecond,
 		WarmupMaxAccepted: 10000,
 		WarmupMaxLineSize: 256 << 10,
+		// Cadence-lag advisory window: 90 min — generous (> the worst observed 77 min BotScan
+		// cadence) so a quiet host does not falsely read "stale".
+		CadenceStaleAfter: 90 * time.Minute,
 	}
 }
 
@@ -332,6 +340,10 @@ func applyConfigKey(cfg *Config, key, value string) {
 	case "HTTP_BOT_WARMUP_MAX_LINE_SIZE":
 		if v, err := strconv.Atoi(value); err == nil && v > 0 && v <= warmupMaxLineSizeCeil {
 			cfg.WarmupMaxLineSize = v
+		}
+	case "HTTP_BOT_CADENCE_STALE_AFTER_SECONDS":
+		if v, err := strconv.Atoi(value); err == nil && v > 0 && v <= warmupMaxAgeSecCeil {
+			cfg.CadenceStaleAfter = time.Duration(v) * time.Second
 		}
 	case "HTTP_BOT_AUTO_TUNE":
 		cfg.AutoTune = parseBool(value)
