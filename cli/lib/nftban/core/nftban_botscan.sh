@@ -1024,9 +1024,22 @@ nftban_botscan_write_signal() {
     local ts
     ts=$(date +%s)
 
+    # v1.191 8B (Amendment B): additive structured fields. family derived from the IP;
+    # request_class from the optional BOTSCAN_SIGNAL_REQUEST_CLASS the caller/classifier
+    # sets (default "mixed" until the increment-3 request-class classifier populates it);
+    # confidence optional via BOTSCAN_SIGNAL_CONFIDENCE. Old consumers ignore the new keys;
+    # the Go reader uses the structured fields (never a grep of reasons).
+    local family="ipv4"; [[ "$ip" == *:* ]] && family="ipv6"
+    local request_class="${BOTSCAN_SIGNAL_REQUEST_CLASS:-mixed}"
+    local conf_json=""
+    if [[ -n "${BOTSCAN_SIGNAL_CONFIDENCE:-}" && "${BOTSCAN_SIGNAL_CONFIDENCE}" =~ ^[0-9]+$ ]]; then
+        conf_json=",\"confidence\":${BOTSCAN_SIGNAL_CONFIDENCE}"
+    fi
+
     # Atomic append (single write, no partial lines)
-    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d}\n' \
+    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d,"family":"%s","request_class":"%s"%s}\n' \
         "${ip//\"/\\\"}" "$score" "$reasons_json" "${action//\"/\\\"}" "$ts" \
+        "$family" "${request_class//\"/\\\"}" "$conf_json" \
         >> "$signal_file"
 }
 
