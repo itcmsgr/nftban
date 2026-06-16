@@ -11,6 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.191.0] - 2026-06-16 — 8B BotGuard request-class-aware tuning + bounded decision cache
+
+**Codename:** `BOTGUARD_REQUEST_CLASS_TUNING` · **PR:** [#879](https://github.com/itcmsgr/nftban/pull/879) (squash-merged `d526da6f`) · **Scope:** `V1_19X_8B_BOTGUARD_TUNING_DESIGN.md` (+ lab2/lab4/package-native/PR records)
+
+> **What:** daemon-Go + shell feature. **Daemon hash MOVED off the prior `351d35df` byte-identical baseline (8B is daemon-Go). NFT schema UNCHANGED (1.84.0). NO counter population (counters-populate lane → v1.192.0+). BotGuard default remains DISABLED fleet-wide — re-enable is a separate canary-gated decision.**
+
+Fixes the L4/request-blind browser / e-shop / gallery / WooCommerce-admin **false-positive** class (confirmed fleet-broad) without weakening abuse protection.
+
+### Added
+- Keep + **raise** the browser-safe L4 meter (suspect `100/second burst 200`; grey `25/50`; pending `50/100`).
+- Structured `family` / `request_class` fields in `batch_signals.jsonl` (additive, old-reader-safe).
+- BotScan `request_class` classifier (8-class taxonomy).
+- Temporary daemon-Go **decision cache** — 6 temporary states only, monotonic TTL, hard caps + bounded eviction, IPv6 /64 candidate accounting (no durable trust/block, no persisted writer, no shell cache).
+- Cadence-gap gate: the request-blind meter escalation only proceeds with dynamic class evidence (mid-band residual = `ACCEPT_WITH_VISIBLE_LAG`; a fast per-endpoint dynamic meter is an optional separate lane).
+- Read-only `explain_ip` IPC + `search` / `emulate` / `debug botguard` / `support` / `health` bounded observability (temporary cache shown separate from durable nft truth).
+- Bounded restart **warm-up** (tail-replay of `batch_signals.jsonl`, cache-only).
+- Operator config knobs: `HTTP_BOT_CACHE_{MAX_ENTRIES,MAX_CANDIDATES,V6_PREFIX_BITS,MAX_PER_FAMILY,MAX_PER_HOST}`, `HTTP_BOT_WARMUP_{MAX_LINES,MAX_BYTES,MAX_AGE_SECONDS,MAX_DURATION_MS,MAX_ACCEPTED,MAX_LINE_SIZE}`, `HTTP_BOT_CADENCE_STALE_AFTER_SECONDS` (invalid → safe default, no unbounded mode).
+- BotScan cadence-lag visibility (fresh / stale / unknown, text-only).
+
+### Changed
+- Browser-like batch signals (`static`/`static404`/`eshop_fanout`/`admin_ajax`) are **suppressed** (never ban/grey from class/rate alone); `dynamic_abuse`/`login_api`/`scanner` enforcement is **preserved**.
+
+### Fixed
+- BotGuard **disable orphan-chain** cleanup — `nftban botguard disable` no longer leaves an orphaned `http_bot_guard` chain or requires a manual `firewall rebuild` (validated live on lab2 + lab4).
+
+### Validation
+- inc1–8A hermetic Go/shell tests PASS (consolidated regression + synthetic scale envelope; `-race` clean).
+- lab2 DEB + lab4 RPM behavioral source-deploy `PASS_RESTORE_CLEAN`.
+- CI package-native build/install `PASS_WITH_WARNINGS_READY_FOR_PR` (RPM el9/el10 + DEB ×5 build + native install + parity; namespace-guard 9-distro matrix).
+- PR #879 CI green; post-merge main CI green.
+
+### Explicit non-goals (this release)
+- No production re-enable · no shipped-default flip · no counter population (`nftban_counters_population_phase` stays 0) · no schema bump beyond the existing 1.84.0 baseline · no FCrDNS cache-size-cap refactor · no project-wide scale-envelope work. The **counters-populate** lane (formerly tracked loosely as "v1.191 counters") moves to **v1.192.0+**.
+
+---
+
 ## [v1.190.3] - 2026-06-16 — BotScan direct-ban flag fix (BUG-BOTSCAN-DIRECT-BAN-FLAG)
 
 **Codename:** `BOTSCAN_DIRECT_BAN_FLAG` · **PR:** [#877](https://github.com/itcmsgr/nftban/pull/877) (merged `482ab32b`) · **Scope:** `V1_190_3_BOTSCAN_DIRECT_BAN_FLAG_SCOPE.md`
