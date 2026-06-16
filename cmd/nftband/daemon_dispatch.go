@@ -102,6 +102,9 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleAccessAllowRequest(req.Params)
 	case "access_revoke":
 		return d.handleAccessRevokeRequest(req.Params)
+	// v1.191.0 8B inc6A: read-only BotGuard decision-cache explain/query (no mutation verb).
+	case "explain_ip":
+		return d.handleExplainIPRequest(req.Params)
 	default:
 		return SocketResponse{
 			Success: false,

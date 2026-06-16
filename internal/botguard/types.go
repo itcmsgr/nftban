@@ -199,4 +199,10 @@ type BatchSignal struct {
 	Reasons []string `json:"reasons"` // Why flagged (e.g., "404_flood", "wp_probe")
 	Action  string   `json:"action"`  // "ban", "grey", "allow_demote", "allow_extend"
 	TS      int64    `json:"ts"`      // Unix timestamp
+	// v1.191 8B (Amendment B): structured, additive fields. Old signal lines omit them
+	// and stay valid (json omitempty + the Normalized*/Resolved* accessors default safely).
+	// The daemon MUST use these structured fields, never text-grep Reasons (see batchsignal.go).
+	Family       string `json:"family,omitempty"`        // "ipv4"|"ipv6" (fallback: derived from IP)
+	RequestClass string `json:"request_class,omitempty"` // taxonomy (default/invalid -> "mixed")
+	Confidence   int    `json:"confidence,omitempty"`    // 0-100, optional
 }

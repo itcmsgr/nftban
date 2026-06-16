@@ -963,6 +963,30 @@ nftban_health_cmd_botguard() {
         echo "                       Enable: nftban botguard enable"
     fi
 
+    # v1.191 8B inc6B2 — bounded TEMPORARY decision-cache diagnostic (read-only, aggregate, no
+    # per-IP, no schema/install_state/counter impact). WARN only when ENABLED and the explain
+    # path is unavailable/degraded; omitted entirely when DISABLED (never WARN while disabled).
+    # An EMPTY temporary cache is NOT a warning (the probe still reports available). Durable
+    # nft-set checks remain the authority — this never implies unprotected.
+    if ! declare -f nftban_botguard_health_cache_diag >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" 2>/dev/null || true
+    fi
+    if declare -f nftban_botguard_health_cache_diag >/dev/null 2>&1; then
+        local _bg_diag
+        _bg_diag=$(nftban_botguard_health_cache_diag "$enabled" 2>/dev/null || true)
+        if [[ -n "$_bg_diag" ]]; then
+            if [[ "$_bg_diag" == WARN:* ]]; then
+                echo "  Temp cache diag:     ⚠️  ${_bg_diag#WARN: }"
+                ((warnings++)) || true
+            else
+                echo "  Temp cache diag:     ✅ ${_bg_diag#INFO: }"
+            fi
+        fi
+    fi
+
     echo ""
 
     # Summary

@@ -812,7 +812,11 @@ nftban_botscan_analyze() {
 
         # Check threshold
         if [[ "$hits" -ge "$threshold" && "$time_window" -le "$window" ]]; then
+            # v1.191 8B inc3 — URL/UA pattern bans are scanner/webshell/exploit probes by
+            # definition (this module's purpose); label the signal accordingly, then clear.
+            BOTSCAN_SIGNAL_REQUEST_CLASS="$(nftban_botscan_classify_request_class "" "" "" "scanner pattern: $patterns")"
             nftban_botscan_ban_ip "$ip" "$ban_duration" "botscan" "Matched patterns: $patterns (hits: $hits)"
+            BOTSCAN_SIGNAL_REQUEST_CLASS=""
             banned=$((banned + 1))
         fi
     done
@@ -839,7 +843,11 @@ nftban_botscan_analyze() {
                 fi
                 local _reason="404 flood: $count in ${elapsed}s"
                 [[ -n "$_claim" ]] && _reason="fake_bot_ua (${_claim} unverified) — ${_reason}"
+                # v1.191 8B inc3 — fake_bot_ua → scanner; a plain 404-flood carries no path
+                # evidence here, so it stays the honest fallback (mixed), never guessed.
+                BOTSCAN_SIGNAL_REQUEST_CLASS="$(nftban_botscan_classify_request_class "GET" "" "404" "$_reason")"
                 nftban_botscan_ban_ip "$ip" "$BOTSCAN_404_BAN" "botscan-404" "$_reason"
+                BOTSCAN_SIGNAL_REQUEST_CLASS=""
                 banned=$((banned + 1))
             fi
         done
@@ -862,7 +870,10 @@ nftban_botscan_analyze() {
                 echo "[ALERT] Would ban ${_efip} for ${BOTSCAN_ENDPOINT_FLOOD_BAN}s: ${_efreason}"
             else
                 # batch-signal path (mirrors ban_ip's batch branch; NOT the direct branch)
+                # v1.191 8B inc3 — real method+endpoint evidence → dynamic_abuse.
+                BOTSCAN_SIGNAL_REQUEST_CLASS="$(nftban_botscan_classify_request_class "${BOTSCAN_ENDPOINT_FLOOD_METHOD}" "${_efep}" "" "endpoint_flood")"
                 nftban_botscan_write_signal "${_efip}" 80 "ban" "botscan-endpoint-flood" "${_efreason}"
+                BOTSCAN_SIGNAL_REQUEST_CLASS=""
                 echo "$(date -Iseconds)|botscan-endpoint-flood|${_efip}|${BOTSCAN_ENDPOINT_FLOOD_BAN}|SIGNAL|${_efreason}" >> "$BOTSCAN_LOG_FILE"
             fi
             banned=$((banned + 1))
@@ -999,6 +1010,104 @@ nftban_botscan_count_404_tail() {
 
 # Write a batch signal to JSONL for Go daemon (Clock 2) consumption
 # Args: ip, score, action, reasons...
+# v1.191 8B (Amendment B / increment 3) — PURE request-class classifier. Maps the available
+# request evidence (HTTP method, request path, response status, optional detector hint) to the
+# LOCKED request_class taxonomy carried in batch_signals.jsonl. Pure: no side effects, no global
+# reads/writes; echoes exactly ONE enum value and ALWAYS one of the eight valid classes (never
+# an invalid string → stays aligned with the increment-2 Go guard NormalizedRequestClass()).
+# Enforcement thresholds are deliberately NOT here — this only LABELS traffic; the daemon
+# cache/guard decides allow/grey/ban in a later increment, and must NOT re-derive the class by
+# text-grepping reasons.
+#
+# Ordering (CLEAR dynamic/scanner abuse wins over browser-like classes; browser-like admin/ajax
+# and static/e-shop classes win over the crude ".php means abuse" heuristic; this increment NEVER
+# classifies on request rate alone):
+#   1. scanner       — exploit/webshell/probe path OR fake_bot_ua/scanner/webshell/exploit hint
+#   2. dynamic_abuse — xmlrpc.php / wp-login.php / endpoint-flood (explicit abuse endpoints)
+#   3. login_api     — explicit login/auth-API abuse marker (narrow; distinct from generic abuse)
+#   4. admin_ajax    — admin-ajax.php / wp-json/wc-* / users/me?context=edit (browser/session)
+#   5. dynamic_abuse — generic POST/dynamic .php|/api|/wp-json loop NOT matched above
+#   6. static404     — GET/HEAD static asset with 404/410 (incl. retina/@2x/product variants)
+#   7. eshop_fanout  — GET/HEAD static asset in WooCommerce/e-shop/gallery/product/media context
+#   8. static        — GET/HEAD static asset, non-404, no e-shop context
+#   9. mixed         — fallback for unknown / ambiguous / unsupported evidence
+# Args: <method> <path> <status> [hint]
+nftban_botscan_classify_request_class() {
+    local m="${1:-}" path="${2:-}" status="${3:-}" hint="${4:-}"
+    local p h noq q ext
+    m="${m^^}"                 # method upper
+    p="${path,,}"              # path lower
+    h="${hint,,}"              # hint lower
+    noq="${p%%\?*}"            # path without query
+    q=""; [[ "$p" == *\?* ]] && q="${p#*\?}"
+    ext="${noq##*.}"           # candidate extension (query already stripped)
+
+    # ---- 1. scanner — exploit/webshell/probe paths or detector hint (highest priority) ----
+    if [[ "$h" =~ (fake_bot_ua|scanner|webshell|exploit|probe) ]]; then echo "scanner"; return 0; fi
+    if [[ "$noq" =~ (^|/)\.(env|git|aws|ssh)(/|\.|$) ]] \
+       || [[ "$noq" =~ appsettings\.json ]] \
+       || [[ "$noq" =~ wp-config\.php ]] \
+       || [[ "$noq" =~ /vendor/phpunit/ ]] \
+       || [[ "$noq" =~ eval-stdin\.php ]] \
+       || [[ "$noq" =~ /(phpmyadmin|adminer)(/|$) ]] \
+       || [[ "$noq" =~ /wp-admin/(setup-config|install)\.php ]] \
+       || [[ "$noq" =~ /(cgi-bin|actuator|solr|boaform)/ ]] \
+       || [[ "$noq" =~ shell\.php ]] \
+       || [[ "$noq" =~ /wp-content/uploads/.*\.php ]]; then
+        echo "scanner"; return 0
+    fi
+
+    # ---- 2. dynamic_abuse — explicit abuse endpoints (preserve endpoint-flood behavior) ----
+    if [[ "$h" =~ (endpoint_flood|xmlrpc|wp-login|brute) ]] \
+       || [[ "$noq" =~ /xmlrpc\.php ]] \
+       || [[ "$noq" =~ /wp-login\.php ]]; then
+        echo "dynamic_abuse"; return 0
+    fi
+
+    # ---- 3. login_api — narrow, explicit login/auth-API marker only ----
+    if [[ "$h" =~ (login_api|auth_api) ]] \
+       || [[ "$noq" =~ /(oauth|openid-connect)(/|$) ]]; then
+        echo "login_api"; return 0
+    fi
+
+    # ---- 4. admin_ajax — legitimate browser/session admin/ajax (wins over crude .php=abuse) ----
+    if [[ "$noq" =~ /wp-admin/admin-ajax\.php ]] \
+       || [[ "$noq" =~ /wp-json/wc- ]] \
+       || [[ "$noq" =~ /wp-json/wc/store/ ]] \
+       || { [[ "$noq" =~ /wp-json/wp/v2/users/me ]] && [[ "$q" =~ context=edit ]]; } \
+       || [[ "$noq" =~ /wp-admin/(index|edit|admin)\.php ]]; then
+        echo "admin_ajax"; return 0
+    fi
+
+    # ---- 5. dynamic_abuse — generic dynamic POST/.php|/api loop NOT matched above ----
+    if { [[ "$m" == POST || "$m" == PUT || "$m" == DELETE ]] && [[ "$noq" =~ \.php(/|$) ]]; } \
+       || { [[ "$m" == POST || "$m" == PUT ]] && [[ "$noq" =~ ^/(api|wp-json)/ ]]; } \
+       || [[ "$h" =~ (high_rate|php_loop|api_loop|dynamic_abuse) ]]; then
+        echo "dynamic_abuse"; return 0
+    fi
+
+    # ---- 6/7/8. static family (GET/HEAD static asset by extension) ----
+    local is_static=0
+    case "$ext" in
+        css|js|png|jpg|jpeg|webp|gif|svg|ico|woff|woff2|ttf|map|avif|eot|mp4|webm) is_static=1 ;;
+    esac
+    if [[ "$is_static" == 1 ]] && [[ "$m" == GET || "$m" == HEAD || -z "$m" ]]; then
+        # 6. static404 — any static asset returning 404/410 (retina/@2x/product variants).
+        #    Checked BEFORE e-shop fan-out so a missing retina/gallery asset never reads as abuse.
+        if [[ "$status" == 404 || "$status" == 410 ]]; then echo "static404"; return 0; fi
+        # 7. eshop_fanout — browser-like asset fan-out in e-shop/gallery/product/media context.
+        if [[ "$noq" =~ (woocommerce|/wp-content/uploads/|/product|/product-category|/shop|/cart|/gallery|/media/|lightbox|lazy|thumbnail|/zoom|-[0-9]+x[0-9]+\.|@[0-9]x\.) ]] \
+           || [[ "$q" =~ (ver=|[?\&]v=|cache) ]]; then
+            echo "eshop_fanout"; return 0
+        fi
+        # 8. static — plain static asset, non-404, no e-shop context.
+        echo "static"; return 0
+    fi
+
+    # ---- 9. mixed — unknown / ambiguous / unsupported evidence ----
+    echo "mixed"
+}
+
 nftban_botscan_write_signal() {
     local ip="$1"
     local score="$2"
@@ -1024,9 +1133,22 @@ nftban_botscan_write_signal() {
     local ts
     ts=$(date +%s)
 
+    # v1.191 8B (Amendment B): additive structured fields. family derived from the IP;
+    # request_class from the optional BOTSCAN_SIGNAL_REQUEST_CLASS the caller/classifier
+    # sets (default "mixed" until the increment-3 request-class classifier populates it);
+    # confidence optional via BOTSCAN_SIGNAL_CONFIDENCE. Old consumers ignore the new keys;
+    # the Go reader uses the structured fields (never a grep of reasons).
+    local family="ipv4"; [[ "$ip" == *:* ]] && family="ipv6"
+    local request_class="${BOTSCAN_SIGNAL_REQUEST_CLASS:-mixed}"
+    local conf_json=""
+    if [[ -n "${BOTSCAN_SIGNAL_CONFIDENCE:-}" && "${BOTSCAN_SIGNAL_CONFIDENCE}" =~ ^[0-9]+$ ]]; then
+        conf_json=",\"confidence\":${BOTSCAN_SIGNAL_CONFIDENCE}"
+    fi
+
     # Atomic append (single write, no partial lines)
-    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d}\n' \
+    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d,"family":"%s","request_class":"%s"%s}\n' \
         "${ip//\"/\\\"}" "$score" "$reasons_json" "${action//\"/\\\"}" "$ts" \
+        "$family" "${request_class//\"/\\\"}" "$conf_json" \
         >> "$signal_file"
 }
 
@@ -1060,7 +1182,7 @@ nftban_botscan_ban_ip() {
     if type -t nftban_ban &>/dev/null; then
         nftban_ban "$ip" "$duration" "$source" "$reason"
     elif [[ -x "${NFTBAN_BIN:-/usr/sbin/nftban}" ]]; then
-        "${NFTBAN_BIN:-/usr/sbin/nftban}" ban "$ip" --duration "$duration" --source "$source" --reason "$reason" 2>/dev/null
+        "${NFTBAN_BIN:-/usr/sbin/nftban}" ban "$ip" --timeout "$duration" --source "$source" --reason "$reason" 2>/dev/null
     else
         echo "[ERROR] Cannot ban $ip - nftban not available" >&2
         return 1
