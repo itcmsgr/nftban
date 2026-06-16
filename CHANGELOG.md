@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.192.0] - 2026-06-17 — Firewall transition atomicity (F-RB + F-FEED + F-GEO)
+
+**Codename:** `FIREWALL_TRANSITION_ATOMICITY` · **PR:** [#881](https://github.com/itcmsgr/nftban/pull/881) (squash-merged `c926f22e`) · **Scope:** `V1_192_FIREWALL_CONTINUITY_SCOPE.md` + audit `V1_192_AUDIT_NFTBAN_TRANSITION_CONTINUITY_BY_MODULE_AND_TIMER.md`
+
+> **What:** daemon-Go + shell fix. **Daemon hash MOVED (Go set-writer change in `internal/setsync`, linked into `nftband`). NFT schema UNCHANGED (1.84.0). `MergeStats` / IPC contracts unchanged. No counter population.**
+
+Closes the nftables **transition-atomicity class** — all three blockers reduce to one root cause: *flush + repopulate in separate transactions instead of one `nft -f`*. Every production live-object transition is now a single atomic transaction, so packets never observe an empty/partial state.
+
+### Fixed
+- **F-RB** (`D-NFTBAN-REBUILD-FLUSH-WINDOW`, fail-**CLOSED**) — `_firewall_rebuild_core` flushed the live `nftban` table (`nft flush table ip/ip6 nftban`) in a standalone step *before* a separate `nft -f`, collapsing the input chain to policy-drop with no accepts (lab repro: **19→1 rules** during rebuild, DEB + RPM). Removed the external flush; the rendered config already self-resets in one transaction (`table{}` create → `delete table` → full recreate), so `nft -f` alone is the atomic replace.
+- **F-FEED** (`D-NFTBAN-FEED-REFRESH-FAILOPEN`) + **F-GEO** (`D-NFTBAN-GEOBAN-REFRESH-FAILOPEN`), fail-**OPEN** — the daily feed / weekly geoban refresh flushed the shared `blacklist_ipv4`/`blacklist_ipv6` set then repopulated in a separate transaction, momentarily emptying it (banned IPs admitted during the window). New `replaceSetElementsViaFile` / `renderSetReplaceScript` emit `flush set` as the first statement of the *same* `nft -f` script (flush+add commit atomically; on failure the transaction rolls back and prior blocked contents are retained — fail-CLOSED). The two same-class interval split/refresh paths route through the same helper; standalone `nftFlushSet` removed.
+
+### Added (guards & tests)
+- Static CI guards `scripts/ci/check-nft-atomicity.sh` — **V-NFT-REBUILD-ATOMICITY** + **V-NFT-SET-REFRESH-ATOMICITY** (function-scoped/structural, wired into `ci-architecture.yml`; verified to FAIL on the pre-fix tree and PASS on the fix).
+- Hermetic Go unit test `internal/setsync/nft_set_refresh_atomicity_v192_test.go` (flush is the single first statement, precedes every add; no root/nft).
+- Lab-first runtime tests `rebuild_no_syn_drop_v192_test.sh` + `blacklist_refresh_no_failopen_v192_test.sh` (self-skip without root/nft).
+
+### Validation
+- **lab2 (DEB, Ubuntu 24.04) + lab4 (RPM, AlmaLinux 9.8)** reversible source+daemon deploy, restored clean. Post-fix F-RB: management floor (loopback **AND** established **AND** SSH/service accept) present in **every** sample during rebuild — breach **0/600** (lab2), **0/500** (lab4); collapse-to-1 eliminated. F-FEED/F-GEO: atomic replace never empty (min=5); discriminator confirms the pre-fix pattern hits 0. PR #881 CI green (57 pass / 1 skip / 0 fail).
+
+### Deferred / non-goals
+- **PR-B** harm-keyed health observability (`non_atomic_*` / `table_absent_while_committed` / blacklist-empty counters) → **v1.192.1** (separate).
+- F-OPQ (build-then-swap), F-DDOS (operator chain rebuild), F-LOCK (rebuild lock), `nftban_base` defense-in-depth — deferred.
+- Recovery/reset/rollback/restore/stop paths intentionally exempt (operator/by-design).
+- Residual to exercise at rollout: a **live populated** feed/geoban refresh (labs had empty `blacklist_ipv4`; daemon path proven via hermetic test + guard + kernel test).
+
+---
+
 ## [v1.191.0] - 2026-06-16 — 8B BotGuard request-class-aware tuning + bounded decision cache
 
 **Codename:** `BOTGUARD_REQUEST_CLASS_TUNING` · **PR:** [#879](https://github.com/itcmsgr/nftban/pull/879) (squash-merged `d526da6f`) · **Scope:** `V1_19X_8B_BOTGUARD_TUNING_DESIGN.md` (+ lab2/lab4/package-native/PR records)
