@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+# =============================================================================
+# NFTBan v1.192.0 - CI Gate: nftables Transition Atomicity
+# =============================================================================
+# meta:name="check-nft-atomicity"
+# meta:type="script"
+# meta:version="1.192.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Forbid flush/delete-then-repopulate-in-a-separate-transaction on live nftban tables and shared sets"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,grep,awk"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+# Closes the v1.192 transition-atomicity class
+# (D-NFTBAN-SOAK-NONATOMIC-FIREWALL-REBUILD-DROP-WINDOW and siblings F-FEED/
+# F-GEO). Two guards:
+#
+#   V-NFT-REBUILD-ATOMICITY
+#     A PRODUCTION firewall path must NOT flush/delete the live `nftban` table
+#     in a standalone `nft` call and then load the replacement in a separate
+#     `nft -f`. The rebuild must reset the table INSIDE the loaded file so
+#     `nft -f` applies it as one transaction (no fail-CLOSED drop window).
+#     Recovery/reset/rollback/restore funcs are EXEMPT (operator/by-design).
+#
+#   V-NFT-SET-REFRESH-ATOMICITY
+#     A PRODUCTION set-refresh path must NOT flush a live shared set in a
+#     standalone call and repopulate it in a separate transaction (the F-FEED/
+#     F-GEO fail-OPEN window on blacklist_*). Flush + add must go in one
+#     `nft -f` (see internal/setsync renderSetReplaceScript).
+#
+# Exit codes: 0 = clean · 1 = violation (PR must not merge)
+# =============================================================================
+
+set -Eeuo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
+
+FAIL=0
+echo "========================================"
+echo "NFTBan Architecture Check: nft Transition Atomicity"
+echo "========================================"
+echo ""
+
+# -----------------------------------------------------------------------------
+# V-NFT-REBUILD-ATOMICITY
+# -----------------------------------------------------------------------------
+# Scan cmd_firewall.sh: any literal `nft (flush|delete) table (ip|ip6|inet)
+# nftban` that lives OUTSIDE an exempt recovery function is a violation.
+# (The ghost-table cleanup uses a `$TABLE_SPEC` variable, not literal `nftban`,
+# so it is not matched.)
+FW="cli/lib/nftban/cli/cmd_firewall.sh"
+echo "[V-NFT-REBUILD-ATOMICITY] scanning $FW ..."
+
+if [[ ! -f "$FW" ]]; then
+    echo "::error::$FW not found"; exit 1
+fi
+
+# Recovery/operator funcs allowed to flush/delete the live table by design.
+REBUILD_EXEMPT='_rebuild_rollback firewall_reset _restore_from_file _restore_previous_firewall'
+
+REBUILD_VIOLATIONS="$(
+    awk -v exempt="$REBUILD_EXEMPT" '
+        BEGIN { split(exempt, e, " "); for (i in e) ex[e[i]] = 1; fn = "(top-level)" }
+        # Track the current top-level function (name() at column 0).
+        /^[a-zA-Z_][a-zA-Z0-9_]*\(\)[[:space:]]*\{?[[:space:]]*$/ {
+            f = $0; sub(/\(\).*/, "", f); fn = f; next
+        }
+        # Match a real (non-comment) standalone flush/delete of the live table.
+        /nft[[:space:]]+(flush|delete)[[:space:]]+table[[:space:]]+(ip|ip6|inet)[[:space:]]+nftban/ {
+            line = $0; sub(/^[[:space:]]+/, "", line)
+            if (line ~ /^#/) next
+            if (!(fn in ex)) printf "  %s:%d  [in %s()]  %s\n", FILENAME, NR, fn, line
+        }
+    ' "$FW"
+)"
+
+if [[ -n "$REBUILD_VIOLATIONS" ]]; then
+    echo "::error::V-NFT-REBUILD-ATOMICITY violation — standalone flush/delete of the live nftban table in a production path:"
+    echo "$REBUILD_VIOLATIONS"
+    echo "  Fix: reset the table INSIDE the loaded \$load_conf (it already begins with"
+    echo "       'table ... { }' + 'delete table ...'), so 'nft -f' applies it atomically."
+    FAIL=1
+else
+    echo "  PASS — no standalone live-table flush/delete outside recovery funcs."
+fi
+echo ""
+
+# -----------------------------------------------------------------------------
+# V-NFT-SET-REFRESH-ATOMICITY
+# -----------------------------------------------------------------------------
+# In internal/setsync, a shared-set replace must NOT use a standalone set flush
+# followed by a separate add. Two negative checks + one positive wiring check.
+echo "[V-NFT-SET-REFRESH-ATOMICITY] scanning internal/setsync ..."
+
+# (a) No standalone set-flush helper callsites (helper removed in v1.192).
+NFTFLUSH_HITS="$(grep -rnE '\bnftFlushSet[[:space:]]*\(' --include='*.go' internal/setsync 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+if [[ -n "$NFTFLUSH_HITS" ]]; then
+    echo "::error::V-NFT-SET-REFRESH-ATOMICITY violation — standalone nftFlushSet() callsite (flush in a separate transaction from the add):"
+    echo "$NFTFLUSH_HITS"
+    echo "  Fix: replace contents via replaceSetElementsViaFile() — flush+add in ONE nft -f."
+    FAIL=1
+fi
+
+# (b) No direct standalone `nft flush set` exec/runNft in setsync.
+DIRECT_FLUSH_HITS="$(grep -rnE '(runNft[A-Za-z]*\(|exec\.Command\("nft"[^)]*)[^)]*"flush"[[:space:]]*,[[:space:]]*"set"' \
+    --include='*.go' internal/setsync 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+if [[ -n "$DIRECT_FLUSH_HITS" ]]; then
+    echo "::error::V-NFT-SET-REFRESH-ATOMICITY violation — direct standalone 'nft flush set' in setsync:"
+    echo "$DIRECT_FLUSH_HITS"
+    echo "  Fix: emit 'flush set' as the first line of the nft -f script (renderSetReplaceScript)."
+    FAIL=1
+fi
+
+# (c) Positive wiring: the atomic replace path must exist and emit an in-file flush.
+if ! grep -q 'func renderSetReplaceScript' internal/setsync/nft_cli.go 2>/dev/null; then
+    echo "::error::V-NFT-SET-REFRESH-ATOMICITY: renderSetReplaceScript missing (atomic replace path absent)."
+    FAIL=1
+elif ! grep -qE '"flush set %s %s %s' internal/setsync/nft_cli.go 2>/dev/null; then
+    echo "::error::V-NFT-SET-REFRESH-ATOMICITY: renderSetReplaceScript does not emit an in-file 'flush set'."
+    FAIL=1
+fi
+if ! grep -q 'replaceSetElementsViaFile(' internal/setsync/nft_elements.go 2>/dev/null; then
+    echo "::error::V-NFT-SET-REFRESH-ATOMICITY: AddCIDRElementsWithStats no longer routes through replaceSetElementsViaFile."
+    FAIL=1
+fi
+
+if [[ "$FAIL" -eq 0 ]]; then
+    echo "  PASS — set refresh flushes+adds atomically (single nft -f), no standalone flush callsites."
+fi
+echo ""
+
+# -----------------------------------------------------------------------------
+echo "========================================"
+if [[ "$FAIL" -eq 0 ]]; then
+    echo "RESULT: PASS — transition atomicity invariants hold"
+    exit 0
+fi
+echo "RESULT: FAIL — transition atomicity violation (see ::error:: above)"
+exit 1

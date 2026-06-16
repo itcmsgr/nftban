@@ -55,6 +55,12 @@ jobs:
           # Explicit: NEVER use --warn-all in CI (would disable enforcement)
           WARN_ALL: "0"
 
+      # v1.192 transition-atomicity class (D-NFTBAN-SOAK-...-DROP-WINDOW + F-FEED/F-GEO):
+      # forbid flush/delete-then-repopulate in a separate transaction on the live
+      # nftban table (V-NFT-REBUILD-ATOMICITY) or shared sets (V-NFT-SET-REFRESH-ATOMICITY).
+      - name: Check nft transition atomicity
+        run: ./scripts/ci/check-nft-atomicity.sh
+
       - name: Check netlink import policy
         run: |
           echo "=== Checking netlink import architecture policy ==="

@@ -468,50 +468,15 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		stats.ReductionPct = float64(stats.OverlapsMerged) / float64(inputCount) * 100.0
 	}
 
-	// Flush the set first using nft CLI to avoid netlink stale connection issues
-	if err := nftFlushSet(family, set.Table.Name, set.Name); err != nil {
-		return nil, fmt.Errorf("failed to flush set: %w", err)
-	}
-
-	// Create temporary file for nft command
-	tmpfile, err := os.CreateTemp("", "nftban-cidr-*.nft")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpfile.Name())
-	defer tmpfile.Close()
-
-	// Write nft commands to file in batches to avoid memory issues
-	// For large datasets, split into multiple add element commands (10k per batch)
-	// Format: add element ip nftban blacklist_ipv4 { 10.0.0.0/8, 192.168.0.0/16, ... }
-
-	const batchSize = 10000
-	for batchStart := 0; batchStart < len(canonicalCIDRs); batchStart += batchSize {
-		batchEnd := batchStart + batchSize
-		if batchEnd > len(canonicalCIDRs) {
-			batchEnd = len(canonicalCIDRs)
-		}
-
-		batch := canonicalCIDRs[batchStart:batchEnd]
-
-		// Use strings.Builder for efficient string concatenation
-		var builder strings.Builder
-		for i, cidr := range batch {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
-			builder.WriteString(cidr)
-		}
-
-		nftCmd := fmt.Sprintf("add element %s %s %s { %s }\n", family, set.Table.Name, set.Name, builder.String())
-		if _, err := tmpfile.WriteString(nftCmd); err != nil {
-			return nil, fmt.Errorf("failed to write to temp file: %w", err)
-		}
-	}
-	tmpfile.Close()
-
-	// Execute nft -f <file> using centralized helper
-	if _, err := runNftFile(tmpfile.Name()); err != nil {
+	// Atomically replace the set contents: flush + add in ONE `nft -f`
+	// transaction (V-NFT-SET-REFRESH-ATOMICITY). Previously this flushed via a
+	// standalone `nft flush set` and repopulated in a SEPARATE `nft -f`, leaving
+	// the shared blacklist_* set transiently EMPTY between transactions — the
+	// F-FEED / F-GEO fail-open window where banned IPs were admitted during the
+	// daily feed / weekly geoban refresh. The single-transaction replace closes
+	// it; on nft failure the transaction rolls back and the prior (blocked)
+	// contents are retained (fail-CLOSED).
+	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, canonicalCIDRs); err != nil {
 		return nil, err
 	}
 
