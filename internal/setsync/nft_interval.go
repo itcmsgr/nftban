@@ -22,7 +22,6 @@ package setsync
 import (
 	"fmt"
 	"net"
-	"os"
 	"regexp"
 	"strings"
 
@@ -333,10 +332,6 @@ func (m *NFTManager) fullSetRefreshExcludingIP6(set *nftables.Set, family, exclu
 		}
 	}
 
-	if err := nftFlushSet(family, set.Table.Name, set.Name); err != nil {
-		return fmt.Errorf("failed to flush set: %w", err)
-	}
-
 	cleanElements := make([]string, 0, len(filteredElements))
 	for _, elem := range filteredElements {
 		elem = strings.TrimSpace(elem)
@@ -345,12 +340,12 @@ func (m *NFTManager) fullSetRefreshExcludingIP6(set *nftables.Set, family, exclu
 		}
 	}
 
-	if len(cleanElements) == 0 {
-		return nil
-	}
-
-	if err := nftAddElementsBatch(family, set.Table.Name, set.Name, cleanElements, 500); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: batch add partial failure: %v\n", err)
+	// Atomic flush+repopulate in one `nft -f` (V-NFT-SET-REFRESH-ATOMICITY): the
+	// shared set is never observed empty between flush and re-add. An empty
+	// cleanElements slice still flushes (the set legitimately becomes empty)
+	// atomically. On failure the transaction rolls back (fail-CLOSED).
+	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, cleanElements); err != nil {
+		return fmt.Errorf("failed to refresh set: %w", err)
 	}
 
 	return nil
@@ -518,13 +513,7 @@ func (m *NFTManager) fullSetRefreshExcludingIP(set *nftables.Set, family, exclud
 		}
 	}
 
-	// Step 4: Flush the set
-	if err := nftFlushSet(family, set.Table.Name, set.Name); err != nil {
-		return fmt.Errorf("failed to flush set: %w", err)
-	}
-
-	// Step 5: Re-add filtered elements in batches
-	// First, filter out any empty strings that may have crept in
+	// Step 4: Filter out any empty strings that may have crept in.
 	cleanElements := make([]string, 0, len(filteredElements)) // Pre-allocate
 	for _, elem := range filteredElements {
 		elem = strings.TrimSpace(elem)
@@ -533,14 +522,12 @@ func (m *NFTManager) fullSetRefreshExcludingIP(set *nftables.Set, family, exclud
 		}
 	}
 
-	if len(cleanElements) == 0 {
-		return nil // Nothing to add back
-	}
-
-	// Use centralized batch add (500 elements per batch for safety)
-	if err := nftAddElementsBatch(family, set.Table.Name, set.Name, cleanElements, 500); err != nil {
-		// Log but continue - partial success is better than full failure
-		fmt.Fprintf(os.Stderr, "Warning: batch add partial failure: %v\n", err)
+	// Step 5: Atomic flush+repopulate in one `nft -f`
+	// (V-NFT-SET-REFRESH-ATOMICITY): the set is never observed empty between
+	// flush and re-add (closes the same-class fail-open window). On failure the
+	// transaction rolls back and prior contents are retained (fail-CLOSED).
+	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, cleanElements); err != nil {
+		return fmt.Errorf("failed to refresh set: %w", err)
 	}
 
 	return nil
