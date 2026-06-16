@@ -40,9 +40,11 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/botguard/decisioncache"
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
@@ -83,18 +85,51 @@ type Module struct {
 	ips   map[netip.Addr]*IPRecord
 	ipsMu sync.RWMutex
 
+	// v1.191 8B inc5A — TEMPORARY decision cache. An OBSERVATION / state-transition layer
+	// fed by batch signals; it does NOT enforce, persist, or create durable state in this
+	// increment (interim throttling is 5B). Durable allow/deny remain the nft sets' job.
+	decisionCache *decisioncache.Cache
+
+	// v1.191 8B inc7 — last restart warm-up replay stats (internal/diagnostic only; NOT wired
+	// to schema/metrics in this increment).
+	lastWarmup WarmupStats
+
 	// Statistics
 	stats GuardStats
 }
 
 // New creates a new bot guard module.
 func New() *Module {
+	cfg := DefaultConfig()
 	return &Module{
-		status: module.NewStatus(ModuleName),
-		config: DefaultConfig(),
-		reader: NewSuspectReader(),
-		ips:    make(map[netip.Addr]*IPRecord),
+		status:        module.NewStatus(ModuleName),
+		config:        cfg,
+		reader:        NewSuspectReader(),
+		ips:           make(map[netip.Addr]*IPRecord),
+		decisionCache: decisioncache.New(decisionCacheConfigFrom(cfg)),
 	}
+}
+
+// decisionCacheConfigFrom maps operator config (v1.191 8B config-knobs) to the decision-cache
+// limits. Values are already validated/clamped at parse time; decisioncache.New() additionally
+// fills any zero with its own safe default (so there is never an unlimited cache).
+func decisionCacheConfigFrom(cfg *Config) decisioncache.Config {
+	if cfg == nil {
+		return decisioncache.DefaultConfig()
+	}
+	return decisioncache.Config{
+		MaxEntries:    cfg.CacheMaxEntries,
+		MaxCandidates: cfg.CacheMaxCandidates,
+		V6PrefixBits:  cfg.CacheV6PrefixBits,
+		PerFamilyCap:  cfg.CacheMaxPerFamily,
+		PerHostCap:    cfg.CacheMaxPerHost,
+	}
+}
+
+// rebuildDecisionCacheFromConfig (re)constructs the decision cache from the current operator
+// config. Called from Init() after the config is loaded so operator cache caps take effect.
+func (m *Module) rebuildDecisionCacheFromConfig() {
+	m.decisionCache = decisioncache.New(decisionCacheConfigFrom(m.config))
 }
 
 // Descriptor returns the module descriptor for registration.
@@ -126,6 +161,10 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 	}
 	m.config = cfg
 	m.status.Enabled = cfg.Enabled
+
+	// v1.191 8B config-knobs — (re)build the decision cache from the loaded operator config so
+	// HTTP_BOT_CACHE_* overrides take effect (New() built it from defaults before config load).
+	m.rebuildDecisionCacheFromConfig()
 
 	// Load allowed crawlers for verifier initialization
 	allowedBots, err := loadAllowedCrawlers(cfg.AllowedCrawlersFile)
@@ -174,6 +213,12 @@ func (m *Module) Start(ctx context.Context) error {
 	}
 
 	ctx, m.cancel = context.WithCancel(ctx)
+
+	// v1.191 8B inc7 — bounded warm-up: replay the recent tail of batch_signals.jsonl into the
+	// decision cache so a restart does not lose in-flight TEMPORARY classification. Bounded
+	// (bytes/lines/age/accepted/budget) — safe on 100–300-site hosts; never enforces, never
+	// persists, and cannot block startup beyond its budget. Failure degrades to a no-op.
+	m.lastWarmup = m.warmupFromBatchSignals(ctx, warmupLimitsFrom(m.config))
 
 	m.mu.Lock()
 	m.status.MarkRunning()
@@ -386,6 +431,12 @@ func (m *Module) classify(r *IPRecord) {
 
 	// Delegate to classifier
 	result := m.classifier.Classify(r, m.config)
+
+	// v1.191 8B inc5B2 — cadence-gap gate: constrain the request-blind hit-count escalation so
+	// it can only throttle/ban IPs with dynamic-endpoint class evidence. Browser-like / mixed /
+	// unknown suspects are NOT rate-banned (no browser-burst false positives); identity/verify
+	// decisions pass through unchanged. This is the ONLY change to the classification path.
+	result = m.gateInterimRateEscalation(r, result)
 
 	// Apply result to record
 	r.State = result.State
@@ -657,11 +708,212 @@ func (m *Module) processBatchSignals() {
 	}
 }
 
+// cacheStateFor maps a structured request_class (+ the signal's action) to a TEMPORARY
+// decision-cache state and its TTL. It NEVER returns a durable state, and browser-like
+// classes are never blocked from class/rate alone. ttl==0 means "use the cache default for
+// that state"; blocked_temporarily always carries a positive ban/grey TTL.
+//
+//	static / static404 / eshop_fanout / admin_ajax → legit_temporarily (browser-like; no ban)
+//	dynamic_abuse / login_api / scanner             → blocked_temporarily IFF the existing
+//	                                                   action indicates ban/block, else ambiguous
+//	mixed / unknown                                 → ambiguous (hold briefly, never block)
+func (m *Module) cacheStateFor(class, action string) (decisioncache.State, time.Duration) {
+	switch class {
+	case "static", "static404", "eshop_fanout", "admin_ajax":
+		return decisioncache.StateLegitTemporarily, 0
+	case "dynamic_abuse", "login_api", "scanner":
+		switch action {
+		case "ban":
+			return decisioncache.StateBlockedTemporarily, m.config.BanTTL
+		case "grey":
+			return decisioncache.StateBlockedTemporarily, m.config.GreyTTL
+		default:
+			// Abuse class without an explicit block action → do not fabricate a block.
+			return decisioncache.StateAmbiguous, 0
+		}
+	default:
+		// "mixed" and any unexpected/garbage class string fail safe to ambiguous.
+		return decisioncache.StateAmbiguous, 0
+	}
+}
+
+// recordDecisionTransition observes a batch signal into the temporary decision cache. It
+// uses ONLY the structured fields (NormalizedRequestClass / ResolvedFamily) — never a grep
+// of the free-text reasons. It is fully fail-safe: any cache error is logged and ignored;
+// it never enforces and never escalates a browser-like signal to a block. No durable state
+// and no on-disk/shell cache is ever created here.
+func (m *Module) recordDecisionTransition(sig *BatchSignal, ip netip.Addr) {
+	if m.decisionCache == nil {
+		return // fail safe: no cache → no-op (legacy path still runs)
+	}
+	class := sig.NormalizedRequestClass()
+	family := sig.ResolvedFamily()
+	state, ttl := m.cacheStateFor(class, sig.Action)
+
+	// v1.191 8B inc5B1 — never let a browser-like (legit) observation override an ACTIVE
+	// higher-confidence abuse block. If the IP is currently blocked_temporarily, preserve it
+	// (no downgrade to legit). The suppression early-return still prevents a NEW ban, while
+	// the existing block stays in force — durable/abuse authority is not weakened by a later
+	// browser-like signal.
+	if state == decisioncache.StateLegitTemporarily {
+		if cur, ok := m.decisionCache.Peek(ip); ok && cur.State == decisioncache.StateBlockedTemporarily {
+			return
+		}
+	}
+
+	rec := decisioncache.Record{
+		IP:              ip,
+		Family:          family,
+		RequestClass:    class,
+		State:           state,
+		Reason:          "batch_signal:" + sig.Action,
+		EvidenceSummary: strings.Join(sig.Reasons, ","),
+	}
+	if err := m.decisionCache.Put(rec, ttl); err != nil {
+		// A cache error must NEVER escalate to a block. Log and move on; the legacy
+		// enforce path (preserved below) is the only thing that can ban in inc5A.
+		log.Printf("[botguard] decision-cache put ip=%s class=%s state=%s failed (ignored): %v",
+			ip, class, state, err)
+	}
+}
+
+// isBrowserLike reports whether a structured request_class is a browser/static/admin
+// fan-out class that must never be banned from class/rate alone.
+func isBrowserLike(class string) bool {
+	switch class {
+	case "static", "static404", "eshop_fanout", "admin_ajax":
+		return true
+	}
+	return false
+}
+
+// suppressBrowserLikeBatchBan decides whether a batch signal's ban/grey enforcement should be
+// SUPPRESSED because its STRUCTURED class proves browser/static/admin fan-out. The decision
+// uses only the structured class (never the free-text reasons) and is independent of cache
+// success — so a cache error still suppresses a browser-like ban (never ban browser-like by
+// class/rate). Abuse classes (dynamic_abuse/login_api/scanner) and mixed/unknown are never
+// suppressed here. This affects ONLY the BotScan→BotGuard batch path; durable blacklist/feed/
+// manual/whitelist and the DDoS/portscan/Suricata/LoginMon paths are untouched.
+func (m *Module) suppressBrowserLikeBatchBan(sig *BatchSignal) bool {
+	if sig.Action != "ban" && sig.Action != "grey" {
+		return false
+	}
+	return isBrowserLike(sig.NormalizedRequestClass())
+}
+
+// isDynamicAbuseClass reports whether a structured request_class is a clearly dynamic
+// endpoint class that may receive the conservative interim cadence-gap posture.
+func isDynamicAbuseClass(class string) bool {
+	switch class {
+	case "dynamic_abuse", "login_api", "scanner":
+		return true
+	}
+	return false
+}
+
+// interimPosture is the v1.191 8B inc5B2 cadence-gap decision for an IP.
+type interimPosture int
+
+const (
+	interimNone           interimPosture = iota // no interim action (browser-like/mixed/unknown/legit/ambiguous)
+	interimProtectDynamic                       // dynamic class evidence → interim protection allowed
+	interimHoldBlocked                          // already a temporary block → hold, avoid reclassification
+)
+
+// interimDynamicPosture maps a cached decision record to the cadence-gap posture. It is the
+// G1 policy: only clearly dynamic endpoint classes (dynamic_abuse/login_api/scanner) in a
+// candidate/checking/blocked state earn interim protection; browser-like, mixed, unknown,
+// legit_temporarily and ambiguous never do (no browser-burst punishment).
+func (m *Module) interimDynamicPosture(rec decisioncache.Record) interimPosture {
+	switch rec.State {
+	case decisioncache.StateBlockedTemporarily:
+		// Already a temporary block. If it was a dynamic decision, protection is in force;
+		// either way, hold without re-running expensive classification while active.
+		if isDynamicAbuseClass(rec.RequestClass) {
+			return interimProtectDynamic
+		}
+		return interimHoldBlocked
+	case decisioncache.StateCandidate, decisioncache.StateChecking:
+		if isDynamicAbuseClass(rec.RequestClass) {
+			return interimProtectDynamic
+		}
+		return interimNone // browser-like / mixed / unknown candidate → no rate punishment
+	default: // legit_temporarily, ambiguous, anything else
+		return interimNone
+	}
+}
+
+// interimPostureForIP looks up the cadence-gap posture for an IP from the decision cache.
+// Fail-safe: a nil cache or a miss/expired entry yields interimNone — which, for a rate
+// escalation, means "do not rate-ban" (never bans browser-like by class/rate on cache error).
+func (m *Module) interimPostureForIP(ip netip.Addr) interimPosture {
+	if m.decisionCache == nil {
+		return interimNone
+	}
+	rec, ok := m.decisionCache.Peek(ip)
+	if !ok {
+		return interimNone
+	}
+	return m.interimDynamicPosture(rec)
+}
+
+// isRateEscalationReason reports whether a classifier decision came purely from the
+// request-blind L4 meter hit-count ladder (the original browser-burst false-positive path).
+func isRateEscalationReason(reason string) bool {
+	return reason == "repeated_suspect" || reason == "persistent_suspect"
+}
+
+// gateInterimRateEscalation is the v1.191 8B inc5B2 cadence-gap gate. It constrains the
+// request-blind hit-count escalation so it can ONLY ban/throttle IPs with dynamic-endpoint
+// class evidence in the decision cache. Identity/verification decisions (fcrdns_*, denied_bot,
+// allow, pending, enqueue) are NOT rate escalations and pass through unchanged — only the
+// "repeated_suspect"/"persistent_suspect" rate ladder is gated. With dynamic evidence the
+// escalation proceeds (interim protection during BotScan's slow cadence); without it (browser-
+// like / mixed / unknown / cache error) the escalation is HELD at the current state with no new
+// enforcement. Gross/bodyless floods remain covered by the raised L4 meter + the DDoS layer.
+func (m *Module) gateInterimRateEscalation(r *IPRecord, result ClassifyResult) ClassifyResult {
+	if !isRateEscalationReason(result.Reason) {
+		return result
+	}
+	if m.interimPostureForIP(r.IP) == interimProtectDynamic {
+		return result // dynamic-class evidence → allow the interim escalation
+	}
+	if m.config.LogDecisions {
+		log.Printf("[botguard] %s: interim_rate_escalation_held (no dynamic evidence; classifier wanted %s/%s) — not throttled/banned by rate alone",
+			r.IP, result.State, result.Reason)
+	}
+	return ClassifyResult{State: r.State, Reason: "interim_rate_escalation_held_no_dynamic_evidence"}
+}
+
 // applyBatchSignal applies a single batch signal from the shell botscan.
 func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	ip, err := netip.ParseAddr(sig.IP)
 	if err != nil {
 		log.Printf("[botguard] batch signal invalid IP %q: %v", sig.IP, err)
+		return
+	}
+
+	// v1.191 8B inc5A — record a TEMPORARY decision-cache transition from the STRUCTURED
+	// signal (request_class/family). Never grep free-text reasons; never create durable state.
+	m.recordDecisionTransition(sig, ip)
+
+	// v1.191 8B inc5B1 — cache-aware suppression of browser-like FALSE-POSITIVE batch bans.
+	// If the STRUCTURED class is browser/static/admin fan-out and the action is ban/grey, do
+	// NOT add the IP to http_bot_ban from class alone: keep the cache as legit_temporarily
+	// (recorded above) and skip the legacy enforce for THIS signal. This does NOT unban an
+	// already-enforced IP and never touches durable blacklist/feed/manual/whitelist or the
+	// DDoS/portscan/Suricata/LoginMon paths. The decision is independent of cache success, so
+	// a cache error still suppresses (fail-safe: never ban browser-like by class/rate). Abuse
+	// classes and mixed/unknown are NOT suppressed (handled by the legacy path below).
+	if m.suppressBrowserLikeBatchBan(sig) {
+		if m.config.LogDecisions {
+			log.Printf("[botguard] %s: suppressed_browser_like_signal (class=%s action=%s) — not added to http_bot_ban",
+				ip, sig.NormalizedRequestClass(), sig.Action)
+		}
+		if m.logger != nil {
+			m.logger.LogEvent("INFO", fmt.Sprintf("suppressed_browser_like_signal ip=%s class=%s action=%s",
+				ip, sig.NormalizedRequestClass(), sig.Action))
+		}
 		return
 	}
 

@@ -613,6 +613,21 @@ _display_results() {
         echo ""
     fi
 
+    # v1.191 8B inc6B1 — read-only BotGuard TEMPORARY decision-cache section. The durable
+    # nft/kernel state above remains the source of truth; this block is clearly separated and
+    # labeled TEMPORARY, is non-mutating, and degrades to "unavailable" (never implies safe).
+    if ! declare -f nftban_botguard_explain_render >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" 2>/dev/null || true
+    fi
+    if declare -f nftban_botguard_explain_render >/dev/null 2>&1; then
+        echo ""
+        nftban_botguard_explain_render "$ip"
+        echo ""
+    fi
+
     echo "═══════════════════════════════════════════════════════════════"
 }
 
