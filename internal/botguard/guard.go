@@ -40,9 +40,11 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/botguard/decisioncache"
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
@@ -83,6 +85,11 @@ type Module struct {
 	ips   map[netip.Addr]*IPRecord
 	ipsMu sync.RWMutex
 
+	// v1.191 8B inc5A — TEMPORARY decision cache. An OBSERVATION / state-transition layer
+	// fed by batch signals; it does NOT enforce, persist, or create durable state in this
+	// increment (interim throttling is 5B). Durable allow/deny remain the nft sets' job.
+	decisionCache *decisioncache.Cache
+
 	// Statistics
 	stats GuardStats
 }
@@ -90,10 +97,11 @@ type Module struct {
 // New creates a new bot guard module.
 func New() *Module {
 	return &Module{
-		status: module.NewStatus(ModuleName),
-		config: DefaultConfig(),
-		reader: NewSuspectReader(),
-		ips:    make(map[netip.Addr]*IPRecord),
+		status:        module.NewStatus(ModuleName),
+		config:        DefaultConfig(),
+		reader:        NewSuspectReader(),
+		ips:           make(map[netip.Addr]*IPRecord),
+		decisionCache: decisioncache.New(decisioncache.DefaultConfig()),
 	}
 }
 
@@ -126,6 +134,12 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 	}
 	m.config = cfg
 	m.status.Enabled = cfg.Enabled
+
+	// v1.191 8B inc5A — ensure the temporary decision cache exists (New() sets it; this is a
+	// defensive backstop for any construction path that bypasses New()).
+	if m.decisionCache == nil {
+		m.decisionCache = decisioncache.New(decisioncache.DefaultConfig())
+	}
 
 	// Load allowed crawlers for verifier initialization
 	allowedBots, err := loadAllowedCrawlers(cfg.AllowedCrawlersFile)
@@ -657,6 +671,64 @@ func (m *Module) processBatchSignals() {
 	}
 }
 
+// cacheStateFor maps a structured request_class (+ the signal's action) to a TEMPORARY
+// decision-cache state and its TTL. It NEVER returns a durable state, and browser-like
+// classes are never blocked from class/rate alone. ttl==0 means "use the cache default for
+// that state"; blocked_temporarily always carries a positive ban/grey TTL.
+//
+//	static / static404 / eshop_fanout / admin_ajax → legit_temporarily (browser-like; no ban)
+//	dynamic_abuse / login_api / scanner             → blocked_temporarily IFF the existing
+//	                                                   action indicates ban/block, else ambiguous
+//	mixed / unknown                                 → ambiguous (hold briefly, never block)
+func (m *Module) cacheStateFor(class, action string) (decisioncache.State, time.Duration) {
+	switch class {
+	case "static", "static404", "eshop_fanout", "admin_ajax":
+		return decisioncache.StateLegitTemporarily, 0
+	case "dynamic_abuse", "login_api", "scanner":
+		switch action {
+		case "ban":
+			return decisioncache.StateBlockedTemporarily, m.config.BanTTL
+		case "grey":
+			return decisioncache.StateBlockedTemporarily, m.config.GreyTTL
+		default:
+			// Abuse class without an explicit block action → do not fabricate a block.
+			return decisioncache.StateAmbiguous, 0
+		}
+	default:
+		// "mixed" and any unexpected/garbage class string fail safe to ambiguous.
+		return decisioncache.StateAmbiguous, 0
+	}
+}
+
+// recordDecisionTransition observes a batch signal into the temporary decision cache. It
+// uses ONLY the structured fields (NormalizedRequestClass / ResolvedFamily) — never a grep
+// of the free-text reasons. It is fully fail-safe: any cache error is logged and ignored;
+// it never enforces and never escalates a browser-like signal to a block. No durable state
+// and no on-disk/shell cache is ever created here.
+func (m *Module) recordDecisionTransition(sig *BatchSignal, ip netip.Addr) {
+	if m.decisionCache == nil {
+		return // fail safe: no cache → no-op (legacy path still runs)
+	}
+	class := sig.NormalizedRequestClass()
+	family := sig.ResolvedFamily()
+	state, ttl := m.cacheStateFor(class, sig.Action)
+
+	rec := decisioncache.Record{
+		IP:              ip,
+		Family:          family,
+		RequestClass:    class,
+		State:           state,
+		Reason:          "batch_signal:" + sig.Action,
+		EvidenceSummary: strings.Join(sig.Reasons, ","),
+	}
+	if err := m.decisionCache.Put(rec, ttl); err != nil {
+		// A cache error must NEVER escalate to a block. Log and move on; the legacy
+		// enforce path (preserved below) is the only thing that can ban in inc5A.
+		log.Printf("[botguard] decision-cache put ip=%s class=%s state=%s failed (ignored): %v",
+			ip, class, state, err)
+	}
+}
+
 // applyBatchSignal applies a single batch signal from the shell botscan.
 func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	ip, err := netip.ParseAddr(sig.IP)
@@ -664,6 +736,13 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 		log.Printf("[botguard] batch signal invalid IP %q: %v", sig.IP, err)
 		return
 	}
+
+	// v1.191 8B inc5A — record a TEMPORARY decision-cache transition from the STRUCTURED
+	// signal (request_class/family), before the legacy action handling below. This is an
+	// observation/state-transition layer ONLY: it never enforces, never creates durable
+	// state, and a cache error never escalates to a block. The legacy enforce path that
+	// follows is unchanged (existing BotScan→BotGuard ban behavior is preserved).
+	m.recordDecisionTransition(sig, ip)
 
 	record := m.getOrCreate(ip)
 	oldState := record.State
