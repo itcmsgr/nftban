@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.190.3] - 2026-06-16 — BotScan direct-ban flag fix (BUG-BOTSCAN-DIRECT-BAN-FLAG)
+
+**Codename:** `BOTSCAN_DIRECT_BAN_FLAG` · **PR:** [#877](https://github.com/itcmsgr/nftban/pull/877) (merged `482ab32b`) · **Scope:** `V1_190_3_BOTSCAN_DIRECT_BAN_FLAG_SCOPE.md`
+
+> **What:** shell-only correctness fix. **Daemon byte-identical `351d35df`; schema unchanged (1.84.0); no nft/detector/ownership change.**
+
+### Fixed
+- **`nftban_botscan_ban_ip` direct/legacy branch** (`nftban_botscan.sh:1063`) called `nftban ban … --duration`, but the CLI accepts **`--timeout`**, not `--duration` — and `2>/dev/null` hid the error, so on that path the IP was logged BANNED but never inserted into nft. Fixed `--duration` → `--timeout`. **Production was unaffected** (the processor forces `BOTSCAN_BATCH_SIGNAL_MODE=true` → batch-signal → daemon path); this corrects standalone/legacy/direct invocations.
+
+### Added
+- Hermetic guard `botscan_direct_ban_flag_v1903_test.sh` — stubs `NFTBAN_BIN`, forces direct mode, asserts the emitted args use `--timeout` and never `--duration`.
+
+---
+
 ## [v1.190.2] - 2026-06-16 — Low-risk shell/UX hygiene: version-literal cleanup, banner box fix, doc refresh
 
 **Codename:** `LOW_RISK_SHELL_SWEEP` · **PRs:** [#873](https://github.com/itcmsgr/nftban/pull/873) (hygiene) + [#874](https://github.com/itcmsgr/nftban/pull/874) (banner) · **Scope:** `V1_190_2_LOW_RISK_SHELL_SWEEP_SCOPE.md`
