@@ -1641,17 +1641,24 @@ nft_fragment_render_http_botguard() {
     local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
 
     # Suspect marking meter config
-    local suspect_rate="${HTTP_BOT_SUSPECT_RATE:-30/second}"
-    local suspect_burst="${HTTP_BOT_SUSPECT_BURST:-60}"
+    # v1.191 (8B FP fix): raised the blind L4 suspect meter from 30/s burst 60 to a
+    # browser-burst-safe default (100/s burst 200) so a legitimate retina/e-shop/gallery/
+    # WooCommerce page-load asset fan-out no longer auto-suspects (the confirmed FP class).
+    # The meter stays as fast gross-connection protection; BotScan does the slow
+    # request-class refinement. Lab-tuned; operator-overridable via HTTP_BOT_SUSPECT_RATE.
+    local suspect_rate="${HTTP_BOT_SUSPECT_RATE:-100/second}"
+    local suspect_burst="${HTTP_BOT_SUSPECT_BURST:-200}"
     local suspect_timeout="${HTTP_BOT_SUSPECT_TIMEOUT:-5m}"
 
-    # Grey throttle config
-    local grey_rate="${HTTP_BOT_GREY_RATE:-5/second}"
-    local grey_burst="${HTTP_BOT_GREY_BURST:-10}"
+    # Grey throttle config (v1.191: raised 5/s→25/s so a greyed browser-like client is
+    # not throttled to 5/s; sustained abuse still constrained well below normal browsing)
+    local grey_rate="${HTTP_BOT_GREY_RATE:-25/second}"
+    local grey_burst="${HTTP_BOT_GREY_BURST:-50}"
 
-    # Pending throttle config
-    local pending_rate="${HTTP_BOT_PENDING_RATE:-15/second}"
-    local pending_burst="${HTTP_BOT_PENDING_BURST:-30}"
+    # Pending throttle config (v1.191: raised 15/s→50/s so an awaiting-verify real client
+    # is not crippled while pending)
+    local pending_rate="${HTTP_BOT_PENDING_RATE:-50/second}"
+    local pending_burst="${HTTP_BOT_PENDING_BURST:-100}"
 
     nft_fragment_init || return 1
 
@@ -2040,6 +2047,19 @@ nft_fragment_disable_module() {
     # Previous behavior: flush chain only → stale jump to empty chain remained
     if [[ -n "$chain_name" ]]; then
         nft_fragment_remove_jump "$chain_name"
+        # v1.191 (BUG-BOTGUARD-DISABLE-ORPHAN-CHAIN): the cleanup fragment only
+        # FLUSHES the chain; combined with the jump removal above that leaves an
+        # empty, jumpless ORPHAN chain that nftban-validate flags (exit 1 → health
+        # DOWN) until a manual `nftban firewall rebuild`. Now that the jump is gone
+        # (chain no longer referenced), delete the chain in both families so the
+        # validator stays PASS with no manual rebuild. Safe: delete fails gracefully
+        # (|| true) if the chain is still referenced elsewhere — never worse than before.
+        local _del_fam
+        for _del_fam in "ip nftban" "ip6 nftban"; do
+            if nft list chain ${_del_fam} "$chain_name" >/dev/null 2>&1; then
+                nft delete chain ${_del_fam} "$chain_name" 2>/dev/null || true
+            fi
+        done
     fi
 
     return 0

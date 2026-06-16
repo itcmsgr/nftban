@@ -81,6 +81,9 @@ nftban_cmd_debug() {
         dump)
             nftban_debug_dump "$@"
             ;;
+        botguard)
+            nftban_debug_botguard "$@"
+            ;;
         help|--help|-h)
             nftban_cmd_debug_usage
             ;;
@@ -500,6 +503,40 @@ nftban_debug_dump() {
 }
 
 # =============================================================================
+# BOTGUARD DECISION-CACHE (read-only, single IP)
+# =============================================================================
+
+# nftban debug botguard <ip>
+# v1.191 8B inc6B1 — read-only detailed dump of ONE IP's temporary BotGuard decision-cache
+# record via the daemon explain_ip verb. Single IP only (no full-cache dump), no unrelated
+# IPs, non-mutating, degrades cleanly when the daemon/cache is unavailable.
+nftban_debug_botguard() {
+    local ip="${1:-}"
+    if [[ -z "$ip" ]]; then
+        echo "Usage: nftban debug botguard <ip>" >&2
+        echo "  Read-only: shows the temporary BotGuard decision-cache record for ONE IP." >&2
+        return 1
+    fi
+
+    if ! declare -f nftban_botguard_explain_render >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" 2>/dev/null || true
+    fi
+
+    echo "BotGuard decision-cache record (read-only, single IP): $ip"
+    echo ""
+    if declare -f nftban_botguard_explain_render >/dev/null 2>&1; then
+        nftban_botguard_explain_render "$ip"
+    else
+        echo "BotGuard temporary cache: unavailable (explain client not loaded)"
+        echo "  (cache failure does NOT imply this IP is safe or not banned)"
+    fi
+    return 0
+}
+
+# =============================================================================
 # USAGE
 # =============================================================================
 
@@ -519,6 +556,7 @@ Commands:
   trace clear [DAYS]     Rotate trace log, keep DAYS (default: 7)
   logs [TYPE] [N]        View log file (main, trace, login, bans, all)
   dump [WHAT]            Dump debug info (config, env, services, nft, all)
+  botguard <ip>          Read-only temporary BotGuard decision-cache record for one IP
 
 Examples:
   nftban debug status              # Show debug status
@@ -544,3 +582,4 @@ EOF
 # Export functions
 export -f nftban_cmd_debug
 export -f nftban_cmd_debug_usage
+export -f nftban_debug_botguard

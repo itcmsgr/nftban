@@ -1482,6 +1482,21 @@ _collect_botguard_status() {
         else
             echo "nftban not in PATH"
         fi
+
+        # v1.191 8B inc6B2 — bounded, read-only TEMPORARY decision-cache diagnostics. Aggregate
+        # only (no full-cache dump, no IP list); degrade-safe; never fails the support bundle.
+        echo ""
+        if ! declare -f nftban_botguard_explain_diag_aggregate >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+            # shellcheck source=/dev/null
+            [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_botguard_explain.sh" 2>/dev/null || true
+        fi
+        if declare -f nftban_botguard_explain_diag_aggregate >/dev/null 2>&1; then
+            nftban_botguard_explain_diag_aggregate 2>/dev/null || echo "BotGuard temporary cache diagnostics: unavailable"
+        else
+            echo "BotGuard temporary cache diagnostics: unavailable (explain client not loaded; durable nft-set checks remain authoritative)"
+        fi
     } > "$mod_dir/botguard.txt"
     _support_log OK "BotGuard module status"
 }

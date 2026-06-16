@@ -74,7 +74,7 @@ _nftban() {
     local mail_cmds="status port-status test config help"
 
     # Debug & Testing
-    local debug_cmds="status enable disable trace logs dump --json help"
+    local debug_cmds="status enable disable trace logs dump botguard --json help"
     local smoke_cmds="--json --group --module --deep help"
     local selftest_cmds="run quick all lifecycle verify config check stats trace help"
     local emulate_cmds="--proto --port --direction --json help"
