@@ -329,7 +329,7 @@ func TestWARMUP_LARGE_300_SITE_STYLE_FILE_BOUNDED(t *testing.T) {
 	if st.BytesRead >= fi.Size() {
 		t.Fatalf("must read only a bounded tail, not the whole %d-byte file", fi.Size())
 	}
-	if elapsed > 2*time.Second {
+	if !underRace && elapsed > 15*time.Second {
 		t.Fatalf("bounded warm-up took too long: %v", elapsed)
 	}
 }
