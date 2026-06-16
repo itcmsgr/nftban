@@ -100,13 +100,36 @@ type Module struct {
 
 // New creates a new bot guard module.
 func New() *Module {
+	cfg := DefaultConfig()
 	return &Module{
 		status:        module.NewStatus(ModuleName),
-		config:        DefaultConfig(),
+		config:        cfg,
 		reader:        NewSuspectReader(),
 		ips:           make(map[netip.Addr]*IPRecord),
-		decisionCache: decisioncache.New(decisioncache.DefaultConfig()),
+		decisionCache: decisioncache.New(decisionCacheConfigFrom(cfg)),
 	}
+}
+
+// decisionCacheConfigFrom maps operator config (v1.191 8B config-knobs) to the decision-cache
+// limits. Values are already validated/clamped at parse time; decisioncache.New() additionally
+// fills any zero with its own safe default (so there is never an unlimited cache).
+func decisionCacheConfigFrom(cfg *Config) decisioncache.Config {
+	if cfg == nil {
+		return decisioncache.DefaultConfig()
+	}
+	return decisioncache.Config{
+		MaxEntries:    cfg.CacheMaxEntries,
+		MaxCandidates: cfg.CacheMaxCandidates,
+		V6PrefixBits:  cfg.CacheV6PrefixBits,
+		PerFamilyCap:  cfg.CacheMaxPerFamily,
+		PerHostCap:    cfg.CacheMaxPerHost,
+	}
+}
+
+// rebuildDecisionCacheFromConfig (re)constructs the decision cache from the current operator
+// config. Called from Init() after the config is loaded so operator cache caps take effect.
+func (m *Module) rebuildDecisionCacheFromConfig() {
+	m.decisionCache = decisioncache.New(decisionCacheConfigFrom(m.config))
 }
 
 // Descriptor returns the module descriptor for registration.
@@ -139,11 +162,9 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 	m.config = cfg
 	m.status.Enabled = cfg.Enabled
 
-	// v1.191 8B inc5A — ensure the temporary decision cache exists (New() sets it; this is a
-	// defensive backstop for any construction path that bypasses New()).
-	if m.decisionCache == nil {
-		m.decisionCache = decisioncache.New(decisioncache.DefaultConfig())
-	}
+	// v1.191 8B config-knobs — (re)build the decision cache from the loaded operator config so
+	// HTTP_BOT_CACHE_* overrides take effect (New() built it from defaults before config load).
+	m.rebuildDecisionCacheFromConfig()
 
 	// Load allowed crawlers for verifier initialization
 	allowedBots, err := loadAllowedCrawlers(cfg.AllowedCrawlersFile)
@@ -197,7 +218,7 @@ func (m *Module) Start(ctx context.Context) error {
 	// decision cache so a restart does not lose in-flight TEMPORARY classification. Bounded
 	// (bytes/lines/age/accepted/budget) — safe on 100–300-site hosts; never enforces, never
 	// persists, and cannot block startup beyond its budget. Failure degrades to a no-op.
-	m.lastWarmup = m.warmupFromBatchSignals(ctx, defaultWarmupLimits())
+	m.lastWarmup = m.warmupFromBatchSignals(ctx, warmupLimitsFrom(m.config))
 
 	m.mu.Lock()
 	m.status.MarkRunning()

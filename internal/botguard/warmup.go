@@ -64,6 +64,45 @@ func defaultWarmupLimits() warmupLimits {
 	}
 }
 
+// warmupLimitsFrom builds the replay bounds from operator config (v1.191 8B config-knobs).
+// Config values are already validated/clamped at parse time and defaulted to the inc7 values;
+// any field still <=0 falls back to the conservative default here (defence in depth — there is
+// never a "read whole file" / "unbounded" mode).
+func warmupLimitsFrom(cfg *Config) warmupLimits {
+	d := defaultWarmupLimits()
+	if cfg == nil {
+		return d
+	}
+	lim := warmupLimits{
+		maxBytes:    cfg.WarmupMaxBytes,
+		maxLines:    cfg.WarmupMaxLines,
+		maxAccepted: cfg.WarmupMaxAccepted,
+		maxAge:      cfg.WarmupMaxAge,
+		budget:      cfg.WarmupMaxDuration,
+		maxLineSize: cfg.WarmupMaxLineSize,
+		now:         time.Now,
+	}
+	if lim.maxBytes <= 0 {
+		lim.maxBytes = d.maxBytes
+	}
+	if lim.maxLines <= 0 {
+		lim.maxLines = d.maxLines
+	}
+	if lim.maxAccepted <= 0 {
+		lim.maxAccepted = d.maxAccepted
+	}
+	if lim.maxAge <= 0 {
+		lim.maxAge = d.maxAge
+	}
+	if lim.budget <= 0 {
+		lim.budget = d.budget
+	}
+	if lim.maxLineSize <= 0 {
+		lim.maxLineSize = d.maxLineSize
+	}
+	return lim
+}
+
 // WarmupStats is an internal, bounded view of a replay run (for later support/health; NOT
 // wired to schema/metrics in this increment).
 type WarmupStats struct {
