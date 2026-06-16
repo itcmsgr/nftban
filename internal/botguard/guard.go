@@ -90,6 +90,10 @@ type Module struct {
 	// increment (interim throttling is 5B). Durable allow/deny remain the nft sets' job.
 	decisionCache *decisioncache.Cache
 
+	// v1.191 8B inc7 — last restart warm-up replay stats (internal/diagnostic only; NOT wired
+	// to schema/metrics in this increment).
+	lastWarmup WarmupStats
+
 	// Statistics
 	stats GuardStats
 }
@@ -188,6 +192,12 @@ func (m *Module) Start(ctx context.Context) error {
 	}
 
 	ctx, m.cancel = context.WithCancel(ctx)
+
+	// v1.191 8B inc7 — bounded warm-up: replay the recent tail of batch_signals.jsonl into the
+	// decision cache so a restart does not lose in-flight TEMPORARY classification. Bounded
+	// (bytes/lines/age/accepted/budget) — safe on 100–300-site hosts; never enforces, never
+	// persists, and cannot block startup beyond its budget. Failure degrades to a no-op.
+	m.lastWarmup = m.warmupFromBatchSignals(ctx, defaultWarmupLimits())
 
 	m.mu.Lock()
 	m.status.MarkRunning()
