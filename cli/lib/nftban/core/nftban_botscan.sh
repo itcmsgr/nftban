@@ -1060,7 +1060,7 @@ nftban_botscan_ban_ip() {
     if type -t nftban_ban &>/dev/null; then
         nftban_ban "$ip" "$duration" "$source" "$reason"
     elif [[ -x "${NFTBAN_BIN:-/usr/sbin/nftban}" ]]; then
-        "${NFTBAN_BIN:-/usr/sbin/nftban}" ban "$ip" --duration "$duration" --source "$source" --reason "$reason" 2>/dev/null
+        "${NFTBAN_BIN:-/usr/sbin/nftban}" ban "$ip" --timeout "$duration" --source "$source" --reason "$reason" 2>/dev/null
     else
         echo "[ERROR] Cannot ban $ip - nftban not available" >&2
         return 1
