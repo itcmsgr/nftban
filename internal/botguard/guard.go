@@ -401,6 +401,12 @@ func (m *Module) classify(r *IPRecord) {
 	// Delegate to classifier
 	result := m.classifier.Classify(r, m.config)
 
+	// v1.191 8B inc5B2 — cadence-gap gate: constrain the request-blind hit-count escalation so
+	// it can only throttle/ban IPs with dynamic-endpoint class evidence. Browser-like / mixed /
+	// unknown suspects are NOT rate-banned (no browser-burst false positives); identity/verify
+	// decisions pass through unchanged. This is the ONLY change to the classification path.
+	result = m.gateInterimRateEscalation(r, result)
+
 	// Apply result to record
 	r.State = result.State
 	if result.BotName != "" {
@@ -762,6 +768,90 @@ func (m *Module) suppressBrowserLikeBatchBan(sig *BatchSignal) bool {
 		return false
 	}
 	return isBrowserLike(sig.NormalizedRequestClass())
+}
+
+// isDynamicAbuseClass reports whether a structured request_class is a clearly dynamic
+// endpoint class that may receive the conservative interim cadence-gap posture.
+func isDynamicAbuseClass(class string) bool {
+	switch class {
+	case "dynamic_abuse", "login_api", "scanner":
+		return true
+	}
+	return false
+}
+
+// interimPosture is the v1.191 8B inc5B2 cadence-gap decision for an IP.
+type interimPosture int
+
+const (
+	interimNone           interimPosture = iota // no interim action (browser-like/mixed/unknown/legit/ambiguous)
+	interimProtectDynamic                       // dynamic class evidence → interim protection allowed
+	interimHoldBlocked                          // already a temporary block → hold, avoid reclassification
+)
+
+// interimDynamicPosture maps a cached decision record to the cadence-gap posture. It is the
+// G1 policy: only clearly dynamic endpoint classes (dynamic_abuse/login_api/scanner) in a
+// candidate/checking/blocked state earn interim protection; browser-like, mixed, unknown,
+// legit_temporarily and ambiguous never do (no browser-burst punishment).
+func (m *Module) interimDynamicPosture(rec decisioncache.Record) interimPosture {
+	switch rec.State {
+	case decisioncache.StateBlockedTemporarily:
+		// Already a temporary block. If it was a dynamic decision, protection is in force;
+		// either way, hold without re-running expensive classification while active.
+		if isDynamicAbuseClass(rec.RequestClass) {
+			return interimProtectDynamic
+		}
+		return interimHoldBlocked
+	case decisioncache.StateCandidate, decisioncache.StateChecking:
+		if isDynamicAbuseClass(rec.RequestClass) {
+			return interimProtectDynamic
+		}
+		return interimNone // browser-like / mixed / unknown candidate → no rate punishment
+	default: // legit_temporarily, ambiguous, anything else
+		return interimNone
+	}
+}
+
+// interimPostureForIP looks up the cadence-gap posture for an IP from the decision cache.
+// Fail-safe: a nil cache or a miss/expired entry yields interimNone — which, for a rate
+// escalation, means "do not rate-ban" (never bans browser-like by class/rate on cache error).
+func (m *Module) interimPostureForIP(ip netip.Addr) interimPosture {
+	if m.decisionCache == nil {
+		return interimNone
+	}
+	rec, ok := m.decisionCache.Peek(ip)
+	if !ok {
+		return interimNone
+	}
+	return m.interimDynamicPosture(rec)
+}
+
+// isRateEscalationReason reports whether a classifier decision came purely from the
+// request-blind L4 meter hit-count ladder (the original browser-burst false-positive path).
+func isRateEscalationReason(reason string) bool {
+	return reason == "repeated_suspect" || reason == "persistent_suspect"
+}
+
+// gateInterimRateEscalation is the v1.191 8B inc5B2 cadence-gap gate. It constrains the
+// request-blind hit-count escalation so it can ONLY ban/throttle IPs with dynamic-endpoint
+// class evidence in the decision cache. Identity/verification decisions (fcrdns_*, denied_bot,
+// allow, pending, enqueue) are NOT rate escalations and pass through unchanged — only the
+// "repeated_suspect"/"persistent_suspect" rate ladder is gated. With dynamic evidence the
+// escalation proceeds (interim protection during BotScan's slow cadence); without it (browser-
+// like / mixed / unknown / cache error) the escalation is HELD at the current state with no new
+// enforcement. Gross/bodyless floods remain covered by the raised L4 meter + the DDoS layer.
+func (m *Module) gateInterimRateEscalation(r *IPRecord, result ClassifyResult) ClassifyResult {
+	if !isRateEscalationReason(result.Reason) {
+		return result
+	}
+	if m.interimPostureForIP(r.IP) == interimProtectDynamic {
+		return result // dynamic-class evidence → allow the interim escalation
+	}
+	if m.config.LogDecisions {
+		log.Printf("[botguard] %s: interim_rate_escalation_held (no dynamic evidence; classifier wanted %s/%s) — not throttled/banned by rate alone",
+			r.IP, result.State, result.Reason)
+	}
+	return ClassifyResult{State: r.State, Reason: "interim_rate_escalation_held_no_dynamic_evidence"}
 }
 
 // applyBatchSignal applies a single batch signal from the shell botscan.
