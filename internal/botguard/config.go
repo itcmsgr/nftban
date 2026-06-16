@@ -93,8 +93,8 @@ func DefaultConfig() *Config {
 		TripConn:             200,
 		ClearConn:            150,
 		EmergencyConn:        500,
-		SuspectRate:          "30/second",
-		SuspectBurst:         60,
+		SuspectRate:          "100/second", // v1.191 8B FP fix: browser-burst-safe (was 30/s); meter stays as fast gross protection, BotScan does slow request-class refinement
+		SuspectBurst:         200,          // v1.191 8B FP fix: was 60
 		SuspectTimeout:       constants.BotguardSuspectTimeout,
 		AllowTTL:             constants.BotguardAllowTTL,
 		BanTTL:               constants.BotguardBanTTL,
