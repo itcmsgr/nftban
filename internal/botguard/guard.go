@@ -713,6 +713,17 @@ func (m *Module) recordDecisionTransition(sig *BatchSignal, ip netip.Addr) {
 	family := sig.ResolvedFamily()
 	state, ttl := m.cacheStateFor(class, sig.Action)
 
+	// v1.191 8B inc5B1 — never let a browser-like (legit) observation override an ACTIVE
+	// higher-confidence abuse block. If the IP is currently blocked_temporarily, preserve it
+	// (no downgrade to legit). The suppression early-return still prevents a NEW ban, while
+	// the existing block stays in force — durable/abuse authority is not weakened by a later
+	// browser-like signal.
+	if state == decisioncache.StateLegitTemporarily {
+		if cur, ok := m.decisionCache.Peek(ip); ok && cur.State == decisioncache.StateBlockedTemporarily {
+			return
+		}
+	}
+
 	rec := decisioncache.Record{
 		IP:              ip,
 		Family:          family,
@@ -729,6 +740,30 @@ func (m *Module) recordDecisionTransition(sig *BatchSignal, ip netip.Addr) {
 	}
 }
 
+// isBrowserLike reports whether a structured request_class is a browser/static/admin
+// fan-out class that must never be banned from class/rate alone.
+func isBrowserLike(class string) bool {
+	switch class {
+	case "static", "static404", "eshop_fanout", "admin_ajax":
+		return true
+	}
+	return false
+}
+
+// suppressBrowserLikeBatchBan decides whether a batch signal's ban/grey enforcement should be
+// SUPPRESSED because its STRUCTURED class proves browser/static/admin fan-out. The decision
+// uses only the structured class (never the free-text reasons) and is independent of cache
+// success — so a cache error still suppresses a browser-like ban (never ban browser-like by
+// class/rate). Abuse classes (dynamic_abuse/login_api/scanner) and mixed/unknown are never
+// suppressed here. This affects ONLY the BotScan→BotGuard batch path; durable blacklist/feed/
+// manual/whitelist and the DDoS/portscan/Suricata/LoginMon paths are untouched.
+func (m *Module) suppressBrowserLikeBatchBan(sig *BatchSignal) bool {
+	if sig.Action != "ban" && sig.Action != "grey" {
+		return false
+	}
+	return isBrowserLike(sig.NormalizedRequestClass())
+}
+
 // applyBatchSignal applies a single batch signal from the shell botscan.
 func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	ip, err := netip.ParseAddr(sig.IP)
@@ -738,11 +773,28 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	}
 
 	// v1.191 8B inc5A — record a TEMPORARY decision-cache transition from the STRUCTURED
-	// signal (request_class/family), before the legacy action handling below. This is an
-	// observation/state-transition layer ONLY: it never enforces, never creates durable
-	// state, and a cache error never escalates to a block. The legacy enforce path that
-	// follows is unchanged (existing BotScan→BotGuard ban behavior is preserved).
+	// signal (request_class/family). Never grep free-text reasons; never create durable state.
 	m.recordDecisionTransition(sig, ip)
+
+	// v1.191 8B inc5B1 — cache-aware suppression of browser-like FALSE-POSITIVE batch bans.
+	// If the STRUCTURED class is browser/static/admin fan-out and the action is ban/grey, do
+	// NOT add the IP to http_bot_ban from class alone: keep the cache as legit_temporarily
+	// (recorded above) and skip the legacy enforce for THIS signal. This does NOT unban an
+	// already-enforced IP and never touches durable blacklist/feed/manual/whitelist or the
+	// DDoS/portscan/Suricata/LoginMon paths. The decision is independent of cache success, so
+	// a cache error still suppresses (fail-safe: never ban browser-like by class/rate). Abuse
+	// classes and mixed/unknown are NOT suppressed (handled by the legacy path below).
+	if m.suppressBrowserLikeBatchBan(sig) {
+		if m.config.LogDecisions {
+			log.Printf("[botguard] %s: suppressed_browser_like_signal (class=%s action=%s) — not added to http_bot_ban",
+				ip, sig.NormalizedRequestClass(), sig.Action)
+		}
+		if m.logger != nil {
+			m.logger.LogEvent("INFO", fmt.Sprintf("suppressed_browser_like_signal ip=%s class=%s action=%s",
+				ip, sig.NormalizedRequestClass(), sig.Action))
+		}
+		return
+	}
 
 	record := m.getOrCreate(ip)
 	oldState := record.State
