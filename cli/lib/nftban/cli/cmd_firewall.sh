@@ -2230,10 +2230,19 @@ _firewall_rebuild_core() {
         esac
     done <<< "$ALL_TABLES"
 
-    # Step 5: Flush + load (safe — we validated above)
-    [[ "$quiet" == "false" ]] && echo "  [5/12] Flushing and loading new schema..."
-    nft flush table ip nftban 2>/dev/null || true
-    nft flush table ip6 nftban 2>/dev/null || true
+    # Step 5: Atomic load (safe — we validated above).
+    # V-NFT-REBUILD-ATOMICITY: the rendered $load_conf self-resets within a
+    # SINGLE transaction — it begins with `table ip/ip6 nftban { }` (idempotent
+    # create) then `delete table ip/ip6 nftban` (clears any orphan chains/sets)
+    # then the full table definition. `nft -f` applies the whole file as ONE
+    # atomic transaction, so packets never observe an empty/partial active
+    # ruleset. The prior standalone `nft flush table ip/ip6 nftban` here emptied
+    # the live table in a SEPARATE transaction before this reload, opening a
+    # fail-CLOSED drop window (D-NFTBAN-REBUILD-FLUSH-WINDOW: input chain
+    # collapsed to policy-drop with no accepts, 19→1 rules, until the reload
+    # completed). Do NOT reintroduce a standalone flush/delete of the active
+    # nftban table before this load — see scripts/ci/check-nft-atomicity.sh.
+    [[ "$quiet" == "false" ]] && echo "  [5/12] Loading new schema (atomic single transaction)..."
 
     if ! nft -f "$load_conf" 2>&1; then
         echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
