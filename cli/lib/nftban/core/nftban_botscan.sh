@@ -87,6 +87,19 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_ENDPOINT_FLOOD_WINDOW:=60}"
     : "${BOTSCAN_ENDPOINT_FLOOD_BAN:=3600}"
     : "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:=xmlrpc.php wp-login.php}"
+    # v1.192.2 — authenticated WordPress admin/editor context gate (BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE).
+    # A legitimate logged-in admin using Gutenberg/Elementor/wp-admin legitimately trips the WP
+    # REST/admin SCANNER patterns (the block editor fetches /wp-json/wp/v2/users → EXP_WPREST;
+    # editor calls trip WS_WPADMIN). When this IP proves a successful login THIS cycle
+    # (POST <login_path> → 302 redirect = creds accepted; a failed/probing login returns 200),
+    # suppress ONLY those WP-admin-context pattern hits for this IP in analyze(). This is a
+    # per-IP CONTEXT gate, NOT a global threshold/weight change: unauthenticated /wp-json
+    # enumeration, exploit/webshell/CVE patterns, 404-flood and endpoint-flood are UNCHANGED
+    # and still ban (mixed exploit still bans). Owner: BotScan (same access-log event class it
+    # already parses; uses the already-available status field — no new source/identity).
+    : "${BOTSCAN_WPADMIN_CONTEXT_GATE:=true}"
+    : "${BOTSCAN_WPADMIN_CONTEXT_PATTERNS:=EXP_WPREST WS_WPADMIN}"  # pattern names suppressed ONLY under proven admin session
+    : "${BOTSCAN_WPADMIN_LOGIN_PATH:=/wp-login.php}"
     # v1.187 Lane A — BOTSCAN-SCAN-THROUGHPUT. Forward-cursor per-file per-cycle window
     # (drains backlog forward instead of the v1.185 64 KiB tail-bias), a C-speed candidate
     # prefilter before the per-line bash matcher, and an independent 404 fixed-tail re-read
@@ -138,6 +151,7 @@ declare -gA _BOTSCAN_PATTERNS          # Pattern name -> pattern definition
 declare -gA _BOTSCAN_IP_CRAWLER_CLAIM  # v1.189 FCrDNS: IP -> claimed search-crawler family (UA-claimed; verified at analyze-time)
 declare -gA _BOTSCAN_IP_ENDPOINT_COUNT      # BOTSCAN-ENDPOINT-FLOOD: "ip|endpoint" -> POST count (status-independent)
 declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> first seen ts (cycle-scoped, reset by count_404_tail)
+declare -gA _BOTSCAN_IP_ADMIN_SESSION       # v1.192.2: IP -> "1" if a successful WP login (POST login_path → 302) seen this cycle (authenticated WP-admin context gate)
 declare -ga _BOTSCAN_ENDPOINT_FLOOD_LIST    # parsed endpoint tokens (rebuilt per cycle)
 
 # Initialize state
@@ -151,6 +165,7 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_CRAWLER_CLAIM=()
     _BOTSCAN_IP_ENDPOINT_COUNT=()
     _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
+    _BOTSCAN_IP_ADMIN_SESSION=()
     _BOTSCAN_ENDPOINT_FLOOD_LIST=()
     # IFS=' ' is REQUIRED: the module runs under strict IFS=$'\n\t' (no space) → a bare
     # read -ra would yield ONE token "xmlrpc.php wp-login.php" that never matches (v1.186.1 class).
@@ -746,6 +761,20 @@ nftban_botscan_process_entry() {
     nftban_botscan_is_whitelisted "$ip" "$ua" && return 0
     nftban_botscan_is_path_whitelisted "$url" && return 0
 
+    # v1.192.2 — authenticated WP-admin context signal. A successful WordPress login
+    # (POST <login_path> → 302 redirect to wp-admin) marks this IP as an authenticated
+    # admin for THIS cycle, so analyze() can context-gate the WP REST/admin scanner
+    # patterns its editor legitimately trips. 302 = credentials accepted; a failed or
+    # probing login returns 200 (the form re-rendered), so this never flags brute-force.
+    # Status field is already parsed; no new log source. The URL carries the query
+    # (e.g. /wp-login.php?redirect_to=...), so match the path prefix.
+    if [[ "${BOTSCAN_WPADMIN_CONTEXT_GATE:-true}" == "true" && "$method" == "POST" && "$status" == "302" ]]; then
+        local _bs_lp="${BOTSCAN_WPADMIN_LOGIN_PATH:-/wp-login.php}"
+        case "$url" in
+            "$_bs_lp"|"$_bs_lp"\?*) _BOTSCAN_IP_ADMIN_SESSION["$ip"]=1 ;;
+        esac
+    fi
+
     # Track 404s
     if [[ "$BOTSCAN_404_TRACKING" == "true" && "$status" == "404" ]]; then
         _BOTSCAN_IP_404_COUNT["$ip"]=$(( ${_BOTSCAN_IP_404_COUNT[$ip]:-0} + 1 ))
@@ -781,6 +810,35 @@ nftban_botscan_analyze() {
         local first_seen="${_BOTSCAN_IP_FIRST_SEEN[$ip]:-$now}"
         local time_window=$((now - first_seen))
         local patterns="${_BOTSCAN_IP_PATTERNS[$ip]:-}"
+
+        # v1.192.2 — authenticated WP-admin context gate. If this IP proved a successful
+        # login this cycle (POST <login_path> → 302; set in process_entry), drop ONLY the
+        # WP-admin-context scanner pattern hits (BOTSCAN_WPADMIN_CONTEXT_PATTERNS, default
+        # EXP_WPREST WS_WPADMIN) from its matched set and recompute hits — a real admin's
+        # Gutenberg/Elementor editor legitimately trips those. Exploit/webshell/CVE and any
+        # other scanner patterns are KEPT (mixed exploit still bans); 404-flood and
+        # endpoint-flood (separate loops below) are untouched; unauthenticated IPs (no 302)
+        # are never gated, so /wp-json enumeration still bans. Per-IP context, NOT a global
+        # pattern weakening.
+        if [[ "${BOTSCAN_WPADMIN_CONTEXT_GATE:-true}" == "true" && -n "${_BOTSCAN_IP_ADMIN_SESSION[$ip]:-}" && -n "$patterns" ]]; then
+            local -a _ctx_all=() _ctx_kept=() _ctx_supp=()
+            local _ctx_pn
+            IFS=$' \t\n' read -ra _ctx_all <<< "$patterns"
+            for _ctx_pn in "${_ctx_all[@]}"; do
+                [[ -z "$_ctx_pn" ]] && continue
+                case " ${BOTSCAN_WPADMIN_CONTEXT_PATTERNS:-EXP_WPREST WS_WPADMIN} " in
+                    *" $_ctx_pn "*) _ctx_supp+=("$_ctx_pn") ;;
+                    *) _ctx_kept+=("$_ctx_pn") ;;
+                esac
+            done
+            if [[ "${#_ctx_supp[@]}" -gt 0 ]]; then
+                patterns="${_ctx_kept[*]}"
+                hits="${#_ctx_kept[@]}"
+                [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] wp-admin context gate: $ip authenticated (wp-login 302) — suppressed ${#_ctx_supp[@]} WP-admin pattern hit(s) [${_ctx_supp[*]}], ${#_ctx_kept[@]} hit(s) remain" >&2
+                # Nothing left after suppression → no scanner-pattern ban for this IP.
+                [[ "${#_ctx_kept[@]}" -eq 0 ]] && continue
+            fi
+        fi
 
         # Get threshold from most severe matched pattern
         local threshold="$BOTSCAN_DEFAULT_THRESHOLD"
