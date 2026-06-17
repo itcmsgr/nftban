@@ -67,6 +67,8 @@ fth_record_transition rebuild 1500
 [[ "$(_fth_json_get last_rebuild_atomic)" == "true" ]] && ok "last_rebuild_atomic=true" || bad "atomic flag wrong"
 [[ "$(_fth_json_get last_trigger)" == "rebuild" ]] && ok "last_trigger=rebuild" || bad "trigger wrong"
 [[ "$(_fth_json_get last_duration_ms)" == "1500" ]] && ok "last_duration_ms=1500" || bad "duration wrong"
+[[ -z "$(_fth_json_get last_transition_anomaly_reason '')" ]] && ok "anomaly_reason empty on healthy (not \"0\")" || bad "anomaly_reason not empty: '$(_fth_json_get last_transition_anomaly_reason '')'"
+[[ -z "$(_fth_json_get last_transition_anomaly_at '')" ]] && ok "anomaly_at empty on healthy" || bad "anomaly_at not empty"
 r=$(fth_eval_health); [[ "$(code_of "$r")" == "$HEALTH_OK" ]] && ok "eval=OK on healthy" || bad "eval not OK: $r"
 
 echo "=== T4: cadence — many healthy rebuilds, still zero counters / no DEGRADED ==="

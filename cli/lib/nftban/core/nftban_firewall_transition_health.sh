@@ -80,7 +80,9 @@ _fth_classify() {
 
 # _fth_json_get <key> <default>: read a numeric/string field from the state JSON.
 _fth_json_get() {
-    local key="$1" def="${2:-0}"
+    # NB: ${2-0} (no colon) so an explicitly-passed empty default ("") is
+    # preserved — string fields (anomaly_at/reason) must be able to read back "".
+    local key="$1" def="${2-0}"
     [[ -r "$FTH_STATE_FILE" ]] || { echo "$def"; return; }
     local v
     if command -v jq >/dev/null 2>&1; then
