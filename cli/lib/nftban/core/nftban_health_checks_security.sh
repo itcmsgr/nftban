@@ -1434,6 +1434,40 @@ nftban_health_check_immutable_flags() {
     return "$status"
 }
 
+# v1.192.1 PR-B: harm-keyed firewall transition health. Reports SERVICE-PORT /
+# mgmt-FLOOR / TABLE-ABSENT-while-COMMITTED / BLACKLIST-EMPTY harm — never
+# rebuild cadence. Delegates to fth_eval_health (read-only: persisted counters +
+# fresh live-vs-effective probe). Healthy transitions produce zero harm.
+nftban_health_check_firewall_transition() {
+    local status=$HEALTH_OK
+    local issues=()
+    local _helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    if [[ -r "$_helper" ]]; then
+        # shellcheck source=/dev/null
+        source "$_helper" 2>/dev/null || true
+        if declare -f fth_eval_health >/dev/null 2>&1; then
+            local _res _code _reason
+            _res=$(fth_eval_health 2>/dev/null || echo "0|")
+            _code="${_res%%|*}"; _reason="${_res#*|}"
+            [[ "$_code" =~ ^[0-9]+$ ]] || _code=$HEALTH_OK
+            status=$_code
+            [[ -n "$_reason" ]] && issues+=("$_reason")
+        fi
+    fi
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034  # consumed by render functions externally
+        NFTBAN_HEALTH_ISSUES["firewall_transition"]="${issues[*]}"
+        if (( status >= HEALTH_ERROR )); then
+            NFTBAN_HEALTH_ERRORS+=("Firewall transition: ${issues[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("Firewall transition: ${issues[*]}")
+        fi
+    fi
+    # shellcheck disable=SC2034  # consumed by render functions externally
+    NFTBAN_HEALTH_RESULTS["firewall_transition"]=$status
+    return "$status"
+}
+
 # Export functions
 export -f nftban_health_check_immutable_flags
 export -f nftban_health_check_ruleset_fingerprint
@@ -1444,3 +1478,4 @@ export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
 export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
 export -f nftban_health_check_portscan_placement nftban_health_check_module_jump_placement
 export -f nftban_health_check_anchor_integrity nftban_health_check_kernel_parity
+export -f nftban_health_check_firewall_transition

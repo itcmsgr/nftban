@@ -262,6 +262,26 @@ _firewall_complete_service_ports() {
     return 0
 }
 
+# _firewall_record_transition_health <trigger> <t0_ms>
+# v1.192.1 PR-B: after a SUCCESSFUL transition, record harm-keyed transition
+# health (service-port / floor / table-absent breaches; never cadence). Best
+# effort — must NEVER fail or slow the firewall path.
+_firewall_record_transition_health() {
+    local trigger="${1:-rebuild}" t0="${2:-0}"
+    local helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    [[ -r "$helper" ]] || return 0
+    # shellcheck source=/dev/null
+    source "$helper" 2>/dev/null || return 0
+    declare -f fth_record_transition >/dev/null 2>&1 || return 0
+    local t1 dur=0
+    t1=$(date +%s%3N 2>/dev/null || echo 0)
+    if [[ "$t0" =~ ^[0-9]+$ && "$t1" =~ ^[0-9]+$ && "$t1" -ge "$t0" && "$t0" -gt 0 ]]; then
+        dur=$((t1 - t0))
+    fi
+    fth_record_transition "$trigger" "$dur" >/dev/null 2>&1 || true
+    return 0
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
@@ -1674,6 +1694,8 @@ firewall_reload() {
     # Reload nftables ruleset AND re-apply NFTBan rules
     # v1.23.0 FIX (P1-17): reload now re-applies NFTBan schema + syncs whitelist
     local quiet=false
+    # v1.192.1 PR-B: transition-health timing.
+    local _fth_t0; _fth_t0=$(date +%s%3N 2>/dev/null || echo 0)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1897,6 +1919,9 @@ FIREWALL_RELOAD_HELP
     # Step 6 (v1.50.1): Re-sync geoban
     [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
     timeout 120s nftban geoban sync 2>/dev/null || true
+
+    # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
+    _firewall_record_transition_health reload "$_fth_t0"
 
     if [[ "$quiet" == "false" ]]; then
         echo ""
@@ -2139,6 +2164,8 @@ _firewall_rebuild_core() {
     local force=false
     local quiet=false
     local use_new=false
+    # v1.192.1 PR-B: transition-health timing (ms epoch; harmless if date lacks %N).
+    local _fth_t0; _fth_t0=$(date +%s%3N 2>/dev/null || echo 0)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -2649,6 +2676,8 @@ _firewall_rebuild_core() {
             # v1.96: SUCCESS — clear any stale recovery marker
             # idle = structurally equivalent to protected (no traffic observed yet)
             declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear
+            # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
+            _firewall_record_transition_health rebuild "$_fth_t0"
             return 0
             ;;
         degraded)
