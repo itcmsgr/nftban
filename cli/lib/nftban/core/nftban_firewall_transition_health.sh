@@ -128,6 +128,9 @@ _fth_floor_present() { # <family ip|ip6> -> Y/N
         && printf '%s' "$c" | grep -q 'ssh_ports'; then echo Y; else echo N; fi
 }
 
+# shellcheck disable=SC2034  # FTH_EFF_*/FTH_LIVE_* are consumed via INDIRECT
+# expansion (${!eff}/${!live}) in _fth_compute_breaches — ShellCheck cannot see
+# that use and reports them as unused. Suppression scoped to this function only.
 _fth_gather() {
     local ssh_csv eff
     ssh_csv=$(_fth_ssh_ports)
