@@ -79,6 +79,7 @@ table ip nftban {
 	}
 	set udp_ports_in {
 		type inet_service
+		comment "Allowed inbound UDP ports"
 	}
 	set udp_ports_out {
 		type inet_service
@@ -109,6 +110,12 @@ modified "$c" && ok "T3 substituted configured port 993" || bad "T3 did not subs
 grep -q 'elements = { 80, 443, 993, 10051, 55000 }' "$c" && ok "T3 tcp_ports_in complete elements" || bad "T3 tcp_ports_in not complete: $(grep -m1 -A2 'set tcp_ports_in' "$c"|tr -d '\n')"
 imperative "$c" && bad "T3 emitted imperative flush/add (must be declarative)" || ok "T3 declarative (no flush/add)"
 grep -q 'set udp_ports_in {' "$c" && ok "T3 udp_ports_in present" || bad "T3 udp_ports_in missing"
+# Empty-set insert must put `elements` on its OWN line — a merged
+# `comment "..."  elements = {...}` is an nft syntax error (caught on lab4).
+if grep -qE '[^[:space:]].*elements = \{' "$c"; then
+  bad "T3 elements merged onto a non-blank line (nft syntax error): $(grep -nE '[^[:space:]].*elements = \{' "$c" | head -1)"
+else ok "T3 every elements line stands alone (udp_ports_in insert valid)"; fi
+grep -qE 'elements = \{[^}]*\b53\b' "$c" && ok "T3 udp_ports_in got 53 element" || bad "T3 udp_ports_in missing 53"
 
 echo "=== T4: SSH authority ABSENT → fail-closed (lockout guard) ==="
 stub_core 0

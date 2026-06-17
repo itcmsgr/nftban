@@ -181,7 +181,12 @@ _firewall_set_elements() {
         my $n = $ENV{NFTBAN_SET}; my $v = $ENV{NFTBAN_VAL};
         if (length $v) {
             unless (s/(set \Q$n\E \{[^{}]*?)elements = \{[^}]*\}/$1elements = { $v }/g) {
-                s/(set \Q$n\E \{[^{}]*?)(\n[ \t]*\})/$1    elements = { $v }$2/g;
+                # Empty set (no elements line, e.g. udp_ports_in which carries
+                # only a `comment` line in the template): insert elements on its
+                # OWN line before the closing brace, indented one level deeper
+                # than the brace. Merging onto the preceding (comment) line
+                # produces `comment "..."  elements = {...}` — an nft syntax error.
+                s/(set \Q$n\E \{[^{}]*?)\n([ \t]*)\}/$1\n$2\telements = { $v }\n$2}/g;
             }
         } else {
             s/(set \Q$n\E \{[^{}]*?)\n[ \t]*elements = \{[^}]*\}/$1/g;
