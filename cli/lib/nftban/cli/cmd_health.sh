@@ -609,6 +609,26 @@ nftban_health_cmd_truth() {
         fi
     fi
 
+    # v1.192.1 PR-B: harm-keyed firewall transition health as a finding (text
+    # mode only; JSON returned above). Prints ONLY when anomalous — a healthy
+    # transition / rebuild cadence emits nothing (no false alarm).
+    local _fth_helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    if [[ -r "$_fth_helper" ]]; then
+        # shellcheck source=/dev/null
+        source "$_fth_helper" 2>/dev/null || true
+        if declare -f fth_eval_health >/dev/null 2>&1; then
+            local _fth_res _fth_code _fth_reason _fth_sev
+            _fth_res=$(fth_eval_health 2>/dev/null || echo "0|")
+            _fth_code="${_fth_res%%|*}"; _fth_reason="${_fth_res#*|}"
+            if [[ "$_fth_code" =~ ^[0-9]+$ ]] && (( _fth_code >= 2 )); then
+                if (( _fth_code >= 3 )); then _fth_sev="CRITICAL"; else _fth_sev="WARN"; fi
+                echo ""
+                echo "  Firewall Transition ($_fth_sev):"
+                echo "    [$_fth_sev] FW-TRANSITION-HEALTH: ${_fth_reason}"
+            fi
+        fi
+    fi
+
     echo ""
 }
 

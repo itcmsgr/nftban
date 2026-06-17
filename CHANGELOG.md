@@ -11,6 +11,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.192.1] - 2026-06-17 — Firewall service-port transition atomicity (residual fix) + transition health
+
+**Codename:** `V192_1_FUNCTIONAL_HOTFIX` · **Branch:** `fix/v1.192.1-service-port-set-atomicity` · **Scope:** `V1_192_1_FUNCTIONAL_HOTFIX_SCOPE.md`
+
+> **What:** shell render + `nftban-core` effective-port authority + PR-B health. **NFT schema UNCHANGED (1.84.0). `nftban-core` rebuilt; daemon hash MOVED (the branch adds `internal/ports/effective.go`, linked into `nftband`) — nftband runtime behavior unchanged (sync still uses the unchanged `ports.LoadAllPorts`; no daemon path calls the new render functions).** Not "byte-identical".
+
+**v1.192.0 was PARTIAL MITIGATION.** It closed the rebuild floor-collapse (F-RB) and the blacklist refresh fail-open (F-FEED/F-GEO), but the durable nftables config still rendered **skeletal** service-port sets (`tcp_ports_in/out`, `udp_ports_in/out` = `{__SSH_PORT__,80,443}`-class) and relied on a post-load daemon sync to fill them — so a configured service port (e.g. `993`) could be momentarily **absent** from the live sets immediately after a rebuild/reload (~1.85s drop window; lab-proven cross-family, inbound). v1.192.1 closes that residual gap.
+
+### Fixed
+- **`D-V192-RESIDUAL-REBUILD-DROP`** — the firewall render now completes the service-port sets **declaratively inside the nft set blocks** (`elements = {…}`, ip + ip6) for `tcp_ports_in`, `tcp_ports_out`, `udp_ports_in`, `udp_ports_out`, computed from the **same authority the daemon uses** (`ports.LoadAllPorts` via a new `nftban-core ports render-effective`). The atomic `nft -f` therefore installs the **complete** sets in one transaction **before** any daemon sync — the configured ports never disappear. The render is declarative in-block (a post-table imperative `flush set`/`add element` fragment segfaults `nft -c` on nftables 1.0.x — caught lab-first).
+- Rebuild and reload **fail-closed** on effective-port render failure (missing `nftban-core`, render error, or no SSH-port authority) — they abort before `nft -f` and keep the existing ruleset; a skeletal service-port set is **never** applied (lockout-safe).
+
+### Added (observability — PR-B)
+- **Harm-keyed firewall transition health** in `/var/lib/nftban/state/firewall_transition_health.json` (**NOT the NFT schema**): `service_port_breach_count`, `floor_breach_count`, `table_absent_while_committed_count`, `blacklist_empty_during_refresh_count`, `non_atomic_rebuild_count` + metadata (`last_rebuild_atomic`, `last_trigger`, `last_duration_ms`, `last_transition_anomaly_at/_reason`).
+- Surfaces: a `nftban health` finding (**anomalous-only** — healthy transitions and rebuild **cadence never alarm**), a `nftban status` "FW Transition" line, and a `firewall_transition` object in `nftban status --json`. Semantics: floor / table-absent / blacklist-empty → CRITICAL; service-port / non-atomic → DEGRADED.
+
+### Added (guards & tests)
+- Static CI guard **V-NFT-SERVICE-PORTS-RENDERED-COMPLETE** in `scripts/ci/check-nft-atomicity.sh` (every production substitute-render must complete the service-port sets; FAILs on a skeletal regression).
+- Hermetic tests: `v1921_effective_port_render_failclosed_test.sh`, `firewall_transition_health_v1921_test.sh`, `firewall_transition_health_cli_v1921_test.sh`, plus `internal/ports` render-completeness/declarative tests.
+
+### Validation
+- **Functional rebuild + reload lab proof** — lab2 (DEB, Ubuntu 24.04) + lab4 (RPM, AlmaLinux 9.8): rebuild/reload rc=0; nft sampler shows the configured port (`993`) **never** leaves `tcp_ports_in` (ip + ip6) across thousands of samples; cross-host v4/v6 probes **0 excess drops**; durable config **complete before daemon sync**; daemon sync idempotent (no repair needed).
+- **PR-B health lab proof** — healthy transitions keep all harm counters **zero**; controlled missing-port injection reports the exact **set/family/port**; `health`/`status` surfaces validated; labs restored clean.
+- **DEB/RPM package-native validation PASS** (`V192_1_PACKAGE_NATIVE_PASS_READY_FOR_RELEASE_PREP`) — the real packages install the new `nftban-core` + shell helpers + health files + tests on lab2/lab4 and reproduce the runtime behavior; `nftban-core` byte-identical across RPM and DEB.
+
+### Notes
+- **NFT schema remains 1.84.0** — the transition-health counters are a state JSON, not NFT counters; no schema bump, no NFT counter population.
+- **Daemon hash moved; nftband runtime behavior unchanged** (do not describe as "byte-identical").
+
+---
+
 ## [v1.192.0] - 2026-06-17 — Firewall transition atomicity (F-RB + F-FEED + F-GEO)
 
 **Codename:** `FIREWALL_TRANSITION_ATOMICITY` · **PR:** [#881](https://github.com/itcmsgr/nftban/pull/881) (squash-merged `c926f22e`) · **Scope:** `V1_192_FIREWALL_CONTINUITY_SCOPE.md` + audit `V1_192_AUDIT_NFTBAN_TRANSITION_CONTINUITY_BY_MODULE_AND_TIMER.md`

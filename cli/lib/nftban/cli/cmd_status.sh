@@ -1212,6 +1212,36 @@ _status_section_health() {
         nftban_kv "Health" "$health_status"
     fi
 
+    # v1.192.1 PR-B: firewall transition health (harm-keyed; cadence never alarms).
+    # Reads persisted counters only (cheap, no live nft probe here).
+    local _fth_file="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json"
+    if [[ -r "$_fth_file" ]]; then
+        local _fsvc _ffloor _ftbl _fbl _fna _fatomic
+        if command -v jq >/dev/null 2>&1; then
+            _fsvc=$(jq -r '.service_port_breach_count // 0' "$_fth_file" 2>/dev/null)
+            _ffloor=$(jq -r '.floor_breach_count // 0' "$_fth_file" 2>/dev/null)
+            _ftbl=$(jq -r '.table_absent_while_committed_count // 0' "$_fth_file" 2>/dev/null)
+            _fbl=$(jq -r '.blacklist_empty_during_refresh_count // 0' "$_fth_file" 2>/dev/null)
+            _fna=$(jq -r '.non_atomic_rebuild_count // 0' "$_fth_file" 2>/dev/null)
+            _fatomic=$(jq -r 'if has("last_rebuild_atomic") then .last_rebuild_atomic else true end' "$_fth_file" 2>/dev/null)
+        else
+            _fsvc=$(sed -n 's/.*"service_port_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _ffloor=$(sed -n 's/.*"floor_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _ftbl=$(sed -n 's/.*"table_absent_while_committed_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _fbl=$(sed -n 's/.*"blacklist_empty_during_refresh_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _fna=$(sed -n 's/.*"non_atomic_rebuild_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _fatomic=$(sed -n 's/.*"last_rebuild_atomic"[: ]*\([a-z]*\).*/\1/p' "$_fth_file" | head -1)
+        fi
+        _fsvc=${_fsvc:-0}; _ffloor=${_ffloor:-0}; _ftbl=${_ftbl:-0}; _fbl=${_fbl:-0}; _fna=${_fna:-0}
+        if (( _ffloor > 0 || _ftbl > 0 || _fbl > 0 )); then
+            nftban_kv "FW Transition" "🔴 CRITICAL (floor=$_ffloor table=$_ftbl blacklist=$_fbl)"
+        elif (( _fsvc > 0 || _fna > 0 )); then
+            nftban_kv "FW Transition" "⚠️  DEGRADED (service_port_breach=$_fsvc non_atomic=$_fna)"
+        else
+            nftban_kv "FW Transition" "🟢 OK (atomic=$_fatomic)"
+        fi
+    fi
+
     # Check binary integrity (show warning if corrupted)
     local binary_warning
     binary_warning=$(_status_check_binaries 2>&1)
@@ -1982,7 +2012,14 @@ output_json() {
     echo "    \"permanent_bans\": {"
     echo "      \"total\": $json_perm_bans,"
     echo "      \"protected\": $json_perm_protected"
-    echo "    }"
+    echo "    },"
+    # v1.192.1 PR-B: harm-keyed firewall transition health.
+    local _ftf="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json"
+    if [[ -r "$_ftf" ]] && command -v jq >/dev/null 2>&1; then
+        echo "    \"firewall_transition\": $(jq -c '{service_port_breach_count,floor_breach_count,table_absent_while_committed_count,blacklist_empty_during_refresh_count,non_atomic_rebuild_count,last_rebuild_atomic,last_trigger,last_duration_ms,last_transition_anomaly_at,last_transition_anomaly_reason}' "$_ftf" 2>/dev/null || echo '{}')"
+    else
+        echo "    \"firewall_transition\": {}"
+    fi
     echo "  },"
 
     # System info for scripts/API

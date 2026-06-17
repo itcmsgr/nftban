@@ -95,6 +95,7 @@ nftban_health_render_terminal() {
         [zabbix]="Zabbix"
         [connectors]="Connectors"
         [watchdog]="Watchdog"
+        [firewall_transition]="FW Transition"
     )
 
     # v1.24.1: Use exported scalar counts from check_all() (ground truth)
@@ -114,7 +115,7 @@ nftban_health_render_terminal() {
     echo "SYSTEM CHECKS"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in binaries binary_integrity paths permissions auditor_acls services daemon timers modules config geoip geoban rbl databases nftables_security nft_schema conflicting_firewalls resources fhs nftban_bin queue_processor protection maintenance_lock login_monitor_ipc suricata suricata_capture registry cli_errors ssh_port boot_safety; do
+    for check in binaries binary_integrity paths permissions auditor_acls services daemon timers modules config geoip geoban rbl databases nftables_security nft_schema conflicting_firewalls resources fhs nftban_bin queue_processor protection maintenance_lock login_monitor_ipc suricata suricata_capture registry cli_errors ssh_port boot_safety firewall_transition; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
