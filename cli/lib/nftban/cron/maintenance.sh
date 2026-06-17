@@ -80,6 +80,28 @@ log() {
     echo "$msg" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' >> "$LOGFILE"
 }
 
+# v1.193.0 PR-B (table-absent maintenance-log noise): a single 'no-table' sample
+# from nftban_ssh_apply_state can be a TRANSIENT firewall transition window
+# (a rebuild/reload re-applying the schema) rather than a genuine absence. Before
+# emitting the noisy "table absent" WARN, re-probe the LIVE nftban table a few
+# times over a short bounded grace. If it reappears → transient → caller logs a
+# quiet INFO instead. If still absent across the grace → GENUINE table-absent
+# (e.g. while install_state COMMITTED) → caller logs the WARN (real failure kept).
+# This ONLY changes the maintenance LOG path; it does not touch the FW-transition
+# harm counter (table_absent_while_committed_count), firewall load/rebuild
+# semantics, install_state, or any set. Returns 0 = genuinely absent, 1 = transient.
+_maint_table_absent_confirmed() {
+    local _tbl="${1:-${NFTBAN_TABLE_IPV4:-ip nftban}}" _i
+    for _i in 1 2 3; do
+        sleep "${_MAINT_TABLE_RECHECK_SLEEP:-0.4}"
+        # shellcheck disable=SC2086  # $_tbl is "ip nftban" — intentional 2-token split
+        if nft list table $_tbl >/dev/null 2>&1; then
+            return 1   # reappeared → transient transition window, not a genuine absence
+        fi
+    done
+    return 0   # absent across the whole grace window → genuine
+}
+
 # =============================================================================
 # LOCKING (Prevent concurrent runs)
 # =============================================================================
@@ -176,7 +198,12 @@ main() {
                     echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
                     ;;
                 no-table)
-                    log "WARN" "nftban firewall table absent — SSH-port enforcement skipped this run (state NOT advanced). Run: nftban firewall reload"
+                    # v1.193.0 PR-B: suppress transient transition-window noise; keep genuine absence.
+                    if _maint_table_absent_confirmed "${NFTBAN_TABLE_IPV4}"; then
+                        log "WARN" "nftban firewall table absent — SSH-port enforcement skipped this run (state NOT advanced). Run: nftban firewall reload"
+                    else
+                        log "INFO" "nftban table briefly unavailable during a firewall transition (re-sample shows it present) — SSH-port enforcement deferred to next run; no action needed."
+                    fi
                     ;;
                 no-sets)
                     log "WARN" "nftban set-driven schema (tcp_ports_in/ssh_ports) not loaded — SSH-port enforcement skipped (state NOT advanced). Run: nftban firewall reload"
@@ -275,7 +302,12 @@ EOF
             elif [[ "$_autofix_state" == "no-sets" ]]; then
                 log "WARN" "nftban set-driven schema not loaded (tcp_ports_in/ssh_ports missing) — SSH port whitelisted in config but NOT applied. Run: nftban firewall reload"
             else
-                log "WARN" "nftban firewall table absent — SSH port whitelisted in config but NOT applied. Run: nftban firewall reload"
+                # v1.193.0 PR-B: suppress transient transition-window noise; keep genuine absence.
+                if _maint_table_absent_confirmed "${NFTBAN_TABLE_IPV4}"; then
+                    log "WARN" "nftban firewall table absent — SSH port whitelisted in config but NOT applied. Run: nftban firewall reload"
+                else
+                    log "INFO" "nftban table briefly unavailable during a firewall transition (re-sample shows it present) — SSH-port apply deferred to next run; no action needed."
+                fi
             fi
 
             # Alert-dedup marker (independent of apply outcome — prevents spam).
