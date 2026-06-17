@@ -158,6 +158,27 @@ _firewall_substitute_placeholders() {
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
         "$input" > "$output"
+
+    # v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): append the COMPLETE effective
+    # service-port sets from the config authority (the SAME ports.LoadAllPorts
+    # that daemon sync uses) so the single atomic `nft -f "$output"` installs
+    # complete tcp_ports_in/out + udp_ports_in/out for ip AND ip6 — no post-load
+    # gap, and the durable rendered config (this file becomes /etc/nftban/
+    # nftables.conf) is complete before any daemon sync. SSH ports are passed so
+    # the in-fragment `flush set` never drops the SSH allow (lockout guard).
+    #
+    # Safe fallback: if the authority binary is missing/fails, the skeletal
+    # template stays and daemon sync repairs post-load (prior v1.192.0 behavior,
+    # no regression). The caller's `nft -c -f` pre-validation still gates the
+    # whole rendered file (fragment included) before it is applied.
+    local _eff_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if [[ -x "$_eff_bin" && -n "$_ssh_ports_csv" ]]; then
+        local _eff_frag=""
+        if _eff_frag=$(NFTBAN_EFFECTIVE_SSH_PORTS="$_ssh_ports_csv" "$_eff_bin" ports render-effective 2>/dev/null) \
+            && [[ -n "$_eff_frag" ]]; then
+            printf '\n# v1.192.1 effective service-port sets (config authority — complete at atomic load)\n%s\n' "$_eff_frag" >> "$output"
+        fi
+    fi
 }
 
 # =============================================================================

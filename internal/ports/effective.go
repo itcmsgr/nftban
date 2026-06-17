@@ -36,7 +36,12 @@
 
 package ports
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+)
 
 // Service-port baseline floor. MUST stay byte-equivalent to the elements in
 // install/nftables/nftables.conf.tpl (guarded by TestEffectiveBaselineMatchesTemplate).
@@ -99,6 +104,55 @@ func EffectiveServicePorts(configDir string, sshPorts []int) (*EffectivePortSets
 		return nil, err
 	}
 	return ComputeEffective(all, sshPorts), nil
+}
+
+// renderEffectiveFragment emits an `nft -f` fragment that makes the four
+// service-port sets COMPLETE in the same transaction as the table load: for each
+// set, `flush set` (clears the template's skeletal defaults) followed by
+// `add element` with the complete effective ports. Applied to BOTH ip and ip6
+// (family-identical, matching daemon sync). The caller appends this to the
+// rendered nftables config AFTER the table definition and BEFORE the single
+// `nft -f`, so the atomic commit installs complete sets and the durable config
+// is complete before any post-load daemon sync.
+//
+// Emitting flush+add (rather than rewriting the template set blocks) keeps the
+// template untouched and mirrors the blacklist single-transaction replace.
+// SSH ports MUST already be folded into sets.TCPIn by the caller (lockout guard)
+// — the flush would otherwise drop the template's SSH allow.
+func renderEffectiveFragment(sets *EffectivePortSets) string {
+	if sets == nil {
+		return ""
+	}
+	var b strings.Builder
+	emit := func(name string, portList []int) {
+		for _, fam := range []string{"ip", "ip6"} {
+			fmt.Fprintf(&b, "flush set %s nftban %s\n", fam, name)
+			if len(portList) > 0 {
+				toks := make([]string, len(portList))
+				for i, p := range portList {
+					toks[i] = strconv.Itoa(p)
+				}
+				fmt.Fprintf(&b, "add element %s nftban %s { %s }\n", fam, name, strings.Join(toks, ", "))
+			}
+		}
+	}
+	emit("tcp_ports_in", sets.TCPIn)
+	emit("tcp_ports_out", sets.TCPOut)
+	emit("udp_ports_in", sets.UDPIn)
+	emit("udp_ports_out", sets.UDPOut)
+	return b.String()
+}
+
+// RenderEffectiveFragment loads the config authority (same as daemon sync) and
+// returns the nft -f fragment of complete service-port sets. sshPorts is the
+// SSH-detection authority's output (required — empty would risk an SSH-less
+// flush). This is what the rebuild render appends to load_conf.
+func RenderEffectiveFragment(configDir string, sshPorts []int) (string, error) {
+	sets, err := EffectiveServicePorts(configDir, sshPorts)
+	if err != nil {
+		return "", err
+	}
+	return renderEffectiveFragment(sets), nil
 }
 
 // normalizePortList deduplicates, drops out-of-range ports (validate), and sorts
