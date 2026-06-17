@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.192.2] - 2026-06-17 — BotScan authenticated WordPress admin/editor false-positive hotfix
+
+**Codename:** `BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE` · **PR:** [#885](https://github.com/itcmsgr/nftban/pull/885) (squash-merged `2fff7af4`) · **Scope:** `BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE_SCOPE.md`
+
+> **What:** shell-only BotScan change. **Go source byte-identical to v1.192.1** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp, not a code change). **NFT schema UNCHANGED (1.84.0).** No BotGuard change, no fleet rollout, no manual-whitelist-rebuild change.
+
+A legitimately logged-in WordPress administrator using the Gutenberg block editor / Elementor was classified `request_class=scanner` and auto-banned: the editor fetches `/wp-json/wp/v2/users` (matches `EXP_WPREST`) and editor calls match `WS_WPADMIN`, reaching score 80 → ban → escalation into the permanent blacklist (confirmed on srv4 for `customer-c.example.test`).
+
+### Added
+- **BotScan authenticated WP-admin/editor context gate** (`cli/lib/nftban/core/nftban_botscan.sh`). A successful login — `POST <login_path> → 302` (uses the already-parsed HTTP **status**; a failed/probing login returns 200, so brute-force is never treated as "admin") — marks the IP authenticated for that scan cycle. In `analyze`, an authenticated IP has **only** the configured WP admin/REST scanner pattern hits (`BOTSCAN_WPADMIN_CONTEXT_PATTERNS`, default `EXP_WPREST WS_WPADMIN`) removed from its matched set and its hit-count recomputed **before** the threshold check.
+- Operator knobs (default-on): `BOTSCAN_WPADMIN_CONTEXT_GATE`, `BOTSCAN_WPADMIN_CONTEXT_PATTERNS`, `BOTSCAN_WPADMIN_LOGIN_PATH`.
+
+### Preserved (scanner detection unchanged)
+- **Authenticated WP-admin/editor false-positives are reduced**, but this is a **per-IP context gate, not a global pattern weakening**: `EXP_WPREST`/`WS_WPADMIN` definitions, thresholds and weights are unchanged.
+- **Unauthenticated `/wp-json/wp/v2/users` REST enumeration still bans** (no successful login → not gated). Exploit/webshell/CVE patterns, the 404-flood and endpoint-flood paths, and a **non-authenticated `WS_WPADMIN`** hit all still ban. **Empty/rotating-UA scanners still ban.** A **mixed exploit** request (some admin-looking traffic + an exploit pattern) still bans. v1.189 verified-crawler semantics are unchanged.
+- LOG_SOURCE_OWNERSHIP_DECLARATION = **ACCEPTED** (same access-log event class BotScan already owns; uses the already-parsed status field — no new source/consumer/identity; zero-input behaviour unchanged).
+
+### Tests
+- New hermetic `cli/lib/nftban/tests/botscan_wpadmin_context_gate_v1922_test.sh` (8/8): authenticated admin not banned; unauthenticated enumeration / mixed exploit / no-auth `WS_WPADMIN` / empty-UA scanner all still ban; normal `admin-ajax` no ban; gate-disabled discriminator reproduces the pre-fix ban (so a suppressed FP cannot be promoted to the permanent blacklist).
+
+### Validation
+- Lab-first DEB (lab2) + RPM (lab4) full `process_logs` replay against the real `patterns.d`; **DEB/RPM package-native validation PASS** (`V192_2_PACKAGE_NATIVE_PASS_READY_FOR_PR`; `nftban_botscan.sh` + the new test shipped, RPM≡DEB parity, schema 1.84.0); existing BotScan suite green; post-merge main CI green.
+
+### Not in this release (separate lanes)
+- v1.192.1 fleet rollout · `BUG-REBUILD-DROPS-MANUAL-WHITELIST` (manual `whitelist.d` dropped by `firewall rebuild`) · BotGuard re-enable. None are addressed here.
+
+---
+
 ## [v1.192.1] - 2026-06-17 — Firewall service-port transition atomicity (residual fix) + transition health
 
 **Codename:** `V192_1_FUNCTIONAL_HOTFIX` · **Branch:** `fix/v1.192.1-service-port-set-atomicity` · **Scope:** `V1_192_1_FUNCTIONAL_HOTFIX_SCOPE.md`
