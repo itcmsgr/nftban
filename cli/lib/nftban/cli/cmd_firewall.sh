@@ -1695,7 +1695,14 @@ FIREWALL_RELOAD_HELP
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema from template..."
         local _tmp_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/.nftables.conf.tmp"
         _firewall_substitute_placeholders "$_template" "$_tmp_conf"
-        if nft -c -f "$_tmp_conf" 2>/dev/null; then
+        # v1.192.1 inc4 (D-V192-RESIDUAL-REBUILD-DROP): complete the service-port
+        # sets INSIDE this atomic reload (config authority). FAIL-CLOSED — if the
+        # effective-port render fails we do NOT apply a skeletal ruleset; the
+        # existing live ruleset is kept (reload becomes a safe no-op).
+        if ! _firewall_append_effective_ports "$_tmp_conf"; then
+            echo "Warning: effective service-port render failed — NOT applying skeletal reload; existing ruleset kept. Try: nftban firewall rebuild" >&2
+            rm -f "$_tmp_conf"
+        elif nft -c -f "$_tmp_conf" 2>/dev/null; then
             mv "$_tmp_conf" "$nftban_conf"
             chmod 640 "$nftban_conf" 2>/dev/null || true
             chown root:nftban "$nftban_conf" 2>/dev/null || true
@@ -1717,7 +1724,10 @@ FIREWALL_RELOAD_HELP
             local _tmp_conf
             _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
             _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"
-            if ! nft -f "$_tmp_conf" 2>&1; then
+            # v1.192.1 inc4: complete service-port sets (fail-closed — no skeletal apply).
+            if ! _firewall_append_effective_ports "$_tmp_conf"; then
+                echo "Warning: effective service-port render failed — NOT applying skeletal reload. Try: nftban firewall rebuild" >&2
+            elif ! nft -f "$_tmp_conf" 2>&1; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
                 echo "Try: nftban firewall rebuild" >&2
             fi
