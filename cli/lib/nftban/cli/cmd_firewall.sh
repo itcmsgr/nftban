@@ -2410,6 +2410,23 @@ _firewall_rebuild_core() {
     [[ "$quiet" == "false" ]] && echo "  [6/12] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
 
+    # Step 6b (v1.193.0 BUG-REBUILD-DROPS-MANUAL-WHITELIST): the atomic load above
+    # recreated the whitelist_* sets and `nftban whitelist sync` re-applies only
+    # auto-detected SYSTEM IPs — NOT the durable manual whitelist.d entries
+    # (operator `--static` admin IPs, e.g. 99-manual.conf) or manual blacklist
+    # entries. Without this, an explicit `firewall rebuild` dropped manual
+    # whitelist.d IPs from the live set until the next periodic sync (a transient
+    # lockout window that breaks the WL-STATIC durability promise). Reconcile them
+    # now via the daemon LoadWhitelists/LoadBlacklists path — the SAME core
+    # `sync --quick` (whitelist/blacklist only, no feeds/geoban) that firewall_reload
+    # uses (Step 3b), so rebuild and reload converge. No-op if the core binary is
+    # unavailable. Does NOT touch system/trust whitelist behaviour or feed/geoban.
+    local _rb_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if [[ -x "$_rb_reconcile" ]]; then
+        [[ "$quiet" == "false" ]] && echo "    Reconciling durable whitelist.d/blacklist.d entries..."
+        "$_rb_reconcile" sync --quick >/dev/null 2>&1 || true
+    fi
+
     # Step 7: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
     [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist from backup..."
     local restored_count=0
