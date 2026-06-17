@@ -158,27 +158,60 @@ _firewall_substitute_placeholders() {
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
         "$input" > "$output"
+}
 
-    # v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): append the COMPLETE effective
-    # service-port sets from the config authority (the SAME ports.LoadAllPorts
-    # that daemon sync uses) so the single atomic `nft -f "$output"` installs
-    # complete tcp_ports_in/out + udp_ports_in/out for ip AND ip6 — no post-load
-    # gap, and the durable rendered config (this file becomes /etc/nftban/
-    # nftables.conf) is complete before any daemon sync. SSH ports are passed so
-    # the in-fragment `flush set` never drops the SSH allow (lockout guard).
-    #
-    # Safe fallback: if the authority binary is missing/fails, the skeletal
-    # template stays and daemon sync repairs post-load (prior v1.192.0 behavior,
-    # no regression). The caller's `nft -c -f` pre-validation still gates the
-    # whole rendered file (fragment included) before it is applied.
-    local _eff_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    if [[ -x "$_eff_bin" && -n "$_ssh_ports_csv" ]]; then
-        local _eff_frag=""
-        if _eff_frag=$(NFTBAN_EFFECTIVE_SSH_PORTS="$_ssh_ports_csv" "$_eff_bin" ports render-effective 2>/dev/null) \
-            && [[ -n "$_eff_frag" ]]; then
-            printf '\n# v1.192.1 effective service-port sets (config authority — complete at atomic load)\n%s\n' "$_eff_frag" >> "$output"
-        fi
+# _firewall_append_effective_ports <conf_file>
+# v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): append the COMPLETE effective
+# service-port sets (tcp_ports_in/out + udp_ports_in/out, ip AND ip6) from the
+# config authority — the SAME ports.LoadAllPorts daemon sync uses — into the
+# rendered config so the single atomic `nft -f` installs complete sets (no
+# post-load gap; durable config complete before any daemon sync).
+#
+# FAIL-CLOSED (v1.192.1 Increment 3): returns non-zero on ANY failure (authority
+# binary missing, render error, empty output, or no SSH-port authority). The
+# rebuild caller MUST abort before `nft -f` on non-zero — it MUST NOT apply a
+# skeletal {SSH,80,443} ruleset (that is the exact residual bug class). This is
+# the production-rebuild completion path; it has no silent skeletal fallback.
+# SSH ports are passed so the in-fragment `flush set` never drops the SSH allow.
+_firewall_append_effective_ports() {
+    local conf="$1"
+    local _bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if [[ ! -x "$_bin" ]]; then
+        echo "ERROR: $_bin missing — cannot render complete service-port sets (refusing skeletal apply)" >&2
+        return 1
     fi
+
+    # SSH-port authority (fail-closed if none — never render service ports w/o SSH).
+    local _ssh_csv="" _ssh_primary=""
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    if declare -f nftban_detect_ssh_ports >/dev/null 2>&1; then
+        _ssh_csv=$(nftban_detect_ssh_ports 2>/dev/null | grep -E '^[0-9]+$' | paste -sd, - 2>/dev/null) || true
+    fi
+    if declare -f nftban_detect_ssh_primary_port >/dev/null 2>&1; then
+        _ssh_primary=$(nftban_detect_ssh_primary_port 2>/dev/null) || true
+    fi
+    [[ -z "$_ssh_csv" && -n "$_ssh_primary" ]] && _ssh_csv="$_ssh_primary"
+    if [[ -z "$_ssh_csv" ]]; then
+        local _portsd="${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/00-ssh.conf"
+        [[ -f "$_portsd" ]] && _ssh_csv=$(grep -oE '^[0-9]+' "$_portsd" 2>/dev/null | sort -un | paste -sd, - 2>/dev/null) || true
+    fi
+    if [[ -z "$_ssh_csv" ]]; then
+        echo "ERROR: no SSH-port authority — refusing to render service ports (lockout guard)" >&2
+        return 1
+    fi
+
+    local _frag=""
+    if ! _frag=$(NFTBAN_EFFECTIVE_SSH_PORTS="$_ssh_csv" "$_bin" ports render-effective 2>/dev/null); then
+        echo "ERROR: effective service-port render failed (nftban-core ports render-effective) — existing firewall preserved" >&2
+        return 1
+    fi
+    if [[ -z "$_frag" ]]; then
+        echo "ERROR: effective service-port render produced empty output — refusing skeletal apply" >&2
+        return 1
+    fi
+    printf '\n# v1.192.1 effective service-port sets (config authority — complete at atomic load)\n%s\n' "$_frag" >> "$conf" || return 1
+    return 0
 }
 
 # =============================================================================
@@ -2167,6 +2200,19 @@ _firewall_rebuild_core() {
             [[ "$quiet" == "false" ]] && echo "    Substituted placeholders (SSH port + CT limits)"
         else
             cp "$source_file" "$tmp_conf"
+        fi
+
+        # v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): complete the service-port sets
+        # INSIDE the atomic load (config authority). FAIL-CLOSED — if the
+        # effective-port render fails we ABORT before nft -f and preserve the
+        # existing firewall; we MUST NOT apply skeletal {SSH,80,443} sets (that
+        # is the exact residual bug class). No silent skeletal success path.
+        if ! _firewall_append_effective_ports "$tmp_conf"; then
+            echo "ERROR: effective service-port render FAILED — existing firewall preserved (refusing skeletal apply)!" >&2
+            echo "  Fix: ensure ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core is present and SSH port is detectable, then retry: nftban firewall rebuild" >&2
+            # PREVALIDATION_FAILED-class: no kernel mutation, no recovery marker.
+            rm -f "$tmp_conf"
+            return 1
         fi
 
         # Validate rendered config BEFORE writing to live config
