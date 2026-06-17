@@ -19,10 +19,13 @@
 # NOTE: the health checks file enables set -e on source, and the engine always
 # calls checks guarded by `|| { ((errors++)); }`. We `set +e` after sourcing and
 # mirror the engine (call with `&& rc=0 || rc=$?`).
+# shellcheck disable=SC2034  # HEALTH_*/NFTBAN_HEALTH_* are fixtures consumed by
+# the sourced check engine (nftban_health_init normally seeds them) — set here
+# for the standalone harness; ShellCheck can't see the cross-source use.
 set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-export NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
 SEC="$NFTBAN_LIB_DIR/core/nftban_health_checks_security.sh"
 RENDER="$NFTBAN_LIB_DIR/core/nftban_health_render.sh"
 ORCH="$NFTBAN_LIB_DIR/core/nftban_health.sh"

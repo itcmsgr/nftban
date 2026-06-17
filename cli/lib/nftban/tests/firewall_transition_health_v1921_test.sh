@@ -16,6 +16,9 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # =============================================================================
+# shellcheck disable=SC2034  # FTH_* fixtures (set_healthy etc.) are consumed by
+# the sourced helper via direct/indirect (${!var}) expansion — ShellCheck can't
+# see that use across the source boundary.
 set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -72,7 +75,7 @@ fth_record_transition rebuild 1500
 r=$(fth_eval_health); [[ "$(code_of "$r")" == "$HEALTH_OK" ]] && ok "eval=OK on healthy" || bad "eval not OK: $r"
 
 echo "=== T4: cadence — many healthy rebuilds, still zero counters / no DEGRADED ==="
-for i in $(seq 1 8); do fth_record_transition rebuild 900; done
+for _ in $(seq 1 8); do fth_record_transition rebuild 900; done
 [[ "$(_fth_json_get service_port_breach_count)" == "0" ]] && ok "8 healthy rebuilds => svc still 0 (no cadence alarm)" || bad "cadence inflated counter"
 r=$(fth_eval_health); [[ "$(code_of "$r")" == "$HEALTH_OK" ]] && ok "eval OK after cadence" || bad "cadence caused non-OK: $r"
 
