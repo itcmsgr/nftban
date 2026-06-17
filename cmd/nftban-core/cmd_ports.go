@@ -23,12 +23,14 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/internal/network"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/ports"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -47,9 +49,51 @@ func cmdPorts(action string, cfg *nftbanconf.Config) error {
 		return cmdPortsLoad(portsDir)
 	case "status":
 		return cmdPortsStatus(portsDir)
+	case "render-effective":
+		return cmdPortsRenderEffective(cfg)
 	default:
-		return fmt.Errorf("unknown ports action: %s\nUsage: nftban-core ports [list|load|status]", action)
+		return fmt.Errorf("unknown ports action: %s\nUsage: nftban-core ports [list|load|status|render-effective]", action)
 	}
+}
+
+// cmdPortsRenderEffective prints the COMPLETE service-port sets as declarative
+// KEY=CSV element lines (NFTBAN_SVC_TCP_IN/TCP_OUT/UDP_IN/UDP_OUT — family-
+// identical) computed from the same authority daemon sync uses
+// (ports.LoadAllPorts) plus the SSH-detection ports passed via
+// NFTBAN_EFFECTIVE_SSH_PORTS. The shell rebuild render (_firewall_complete_service_ports)
+// substitutes these CSVs DECLARATIVELY into the set blocks' `elements = {...}` of
+// the to-be-loaded conf, so the atomic `nft -f` installs complete sets in one
+// transaction (v1.192.1 / D-V192-RESIDUAL-REBUILD-DROP). It is NOT an imperative
+// flush/add fragment — that segfaults `nft -c` when combined with a declarative
+// table. SSH ports are REQUIRED — refusing without them avoids rendering a set
+// that would drop the SSH allow (lockout guard).
+func cmdPortsRenderEffective(cfg *nftbanconf.Config) error {
+	sshCSV := strings.TrimSpace(os.Getenv("NFTBAN_EFFECTIVE_SSH_PORTS"))
+	if sshCSV == "" {
+		return fmt.Errorf("render-effective: NFTBAN_EFFECTIVE_SSH_PORTS is required (refusing to render service ports without SSH ports — lockout guard)")
+	}
+	var sshPorts []int
+	for _, tok := range strings.Split(sshCSV, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		n, err := strconv.Atoi(tok)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("render-effective: invalid SSH port %q in NFTBAN_EFFECTIVE_SSH_PORTS", tok)
+		}
+		sshPorts = append(sshPorts, n)
+	}
+	if len(sshPorts) == 0 {
+		return fmt.Errorf("render-effective: no valid SSH ports in NFTBAN_EFFECTIVE_SSH_PORTS")
+	}
+
+	out, err := ports.RenderEffectiveElements(cfg.ConfigDir, sshPorts)
+	if err != nil {
+		return fmt.Errorf("render-effective: %w", err)
+	}
+	fmt.Print(out)
+	return nil
 }
 
 func cmdPortsList(portsDir string) error {
