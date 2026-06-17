@@ -106,53 +106,53 @@ func EffectiveServicePorts(configDir string, sshPorts []int) (*EffectivePortSets
 	return ComputeEffective(all, sshPorts), nil
 }
 
-// renderEffectiveFragment emits an `nft -f` fragment that makes the four
-// service-port sets COMPLETE in the same transaction as the table load: for each
-// set, `flush set` (clears the template's skeletal defaults) followed by
-// `add element` with the complete effective ports. Applied to BOTH ip and ip6
-// (family-identical, matching daemon sync). The caller appends this to the
-// rendered nftables config AFTER the table definition and BEFORE the single
-// `nft -f`, so the atomic commit installs complete sets and the durable config
-// is complete before any post-load daemon sync.
+// portCSV renders a sorted port slice as a comma-separated list ("22, 80, 443").
+func portCSV(ports []int) string {
+	toks := make([]string, len(ports))
+	for i, p := range ports {
+		toks[i] = strconv.Itoa(p)
+	}
+	return strings.Join(toks, ", ")
+}
+
+// renderEffectiveElements emits the effective service-port sets as KEY=CSV lines
+// for the shell render to substitute DECLARATIVELY into each set block's
+// `elements = { ... }`:
 //
-// Emitting flush+add (rather than rewriting the template set blocks) keeps the
-// template untouched and mirrors the blacklist single-transaction replace.
-// SSH ports MUST already be folded into sets.TCPIn by the caller (lockout guard)
-// — the flush would otherwise drop the template's SSH allow.
-func renderEffectiveFragment(sets *EffectivePortSets) string {
+//	NFTBAN_SVC_TCP_IN=22, 80, 443, 993, …
+//	NFTBAN_SVC_TCP_OUT=…
+//	NFTBAN_SVC_UDP_IN=53
+//	NFTBAN_SVC_UDP_OUT=53, 123
+//
+// This REPLACES the old imperative `flush set`+`add element` fragment, which
+// segfaulted `nft -c -f` when combined with the declarative table render
+// (lab-confirmed v1.192.1 inc6 on nftables v1.0.x, both alma9 + ubuntu). The
+// sets are family-identical (the shell applies each CSV to both ip and ip6,
+// matching daemon sync). An empty value (e.g. udp_ports_in with no configured
+// ports) means the caller renders NO `elements` line for that set (the valid
+// canonical empty-set form — never `elements = { }`). SSH ports are already
+// folded into TCPIn by the authority (lockout-safe).
+func renderEffectiveElements(sets *EffectivePortSets) string {
 	if sets == nil {
 		return ""
 	}
 	var b strings.Builder
-	emit := func(name string, portList []int) {
-		for _, fam := range []string{"ip", "ip6"} {
-			fmt.Fprintf(&b, "flush set %s nftban %s\n", fam, name)
-			if len(portList) > 0 {
-				toks := make([]string, len(portList))
-				for i, p := range portList {
-					toks[i] = strconv.Itoa(p)
-				}
-				fmt.Fprintf(&b, "add element %s nftban %s { %s }\n", fam, name, strings.Join(toks, ", "))
-			}
-		}
-	}
-	emit("tcp_ports_in", sets.TCPIn)
-	emit("tcp_ports_out", sets.TCPOut)
-	emit("udp_ports_in", sets.UDPIn)
-	emit("udp_ports_out", sets.UDPOut)
+	fmt.Fprintf(&b, "NFTBAN_SVC_TCP_IN=%s\n", portCSV(sets.TCPIn))
+	fmt.Fprintf(&b, "NFTBAN_SVC_TCP_OUT=%s\n", portCSV(sets.TCPOut))
+	fmt.Fprintf(&b, "NFTBAN_SVC_UDP_IN=%s\n", portCSV(sets.UDPIn))
+	fmt.Fprintf(&b, "NFTBAN_SVC_UDP_OUT=%s\n", portCSV(sets.UDPOut))
 	return b.String()
 }
 
-// RenderEffectiveFragment loads the config authority (same as daemon sync) and
-// returns the nft -f fragment of complete service-port sets. sshPorts is the
-// SSH-detection authority's output (required — empty would risk an SSH-less
-// flush). This is what the rebuild render appends to load_conf.
-func RenderEffectiveFragment(configDir string, sshPorts []int) (string, error) {
+// RenderEffectiveElements loads the config authority (same as daemon sync) and
+// returns the KEY=CSV element lines the shell render substitutes into the set
+// blocks. sshPorts is the SSH-detection authority's output (required upstream).
+func RenderEffectiveElements(configDir string, sshPorts []int) (string, error) {
 	sets, err := EffectiveServicePorts(configDir, sshPorts)
 	if err != nil {
 		return "", err
 	}
-	return renderEffectiveFragment(sets), nil
+	return renderEffectiveElements(sets), nil
 }
 
 // normalizePortList deduplicates, drops out-of-range ports (validate), and sorts

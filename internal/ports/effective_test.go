@@ -159,98 +159,94 @@ func TestComputeEffective_Deterministic(t *testing.T) {
 	}
 }
 
-// --- Increment 2: nft fragment renderer (pure) -----------------------------
+// --- Increment 7: declarative element emitter (pure; replaces the imperative
+// fragment that segfaulted nft -c, lab-confirmed inc6) -----------------------
 
-func TestRenderEffectiveFragment_AllFourSetsBothFamilies(t *testing.T) {
-	sets := &EffectivePortSets{
-		TCPIn:  []int{22, 80, 443, 993, 995, 10051},
-		TCPOut: []int{25, 53, 80, 443, 587, 10050},
-		UDPIn:  []int{53},
-		UDPOut: []int{53, 123},
-	}
-	frag := renderEffectiveFragment(sets)
-	// flush+add for each of the 4 sets, in both families.
-	for _, name := range []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"} {
-		for _, fam := range []string{"ip", "ip6"} {
-			if !strings.Contains(frag, "flush set "+fam+" nftban "+name) {
-				t.Errorf("fragment missing flush for %s %s\n%s", fam, name, frag)
-			}
-			if !strings.Contains(frag, "add element "+fam+" nftban "+name+" {") {
-				t.Errorf("fragment missing add element for %s %s\n%s", fam, name, frag)
-			}
+func elemLine(out, key string) (string, bool) {
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.HasPrefix(ln, key+"=") {
+			return strings.TrimPrefix(ln, key+"="), true
 		}
 	}
+	return "", false
 }
 
-func TestRenderEffectiveFragment_NonTemplatePortsPresent(t *testing.T) {
-	sets := &EffectivePortSets{
-		TCPIn:  []int{22, 80, 443, 993, 995, 10051},
-		TCPOut: []int{25, 53, 80, 443, 587, 10050},
-		UDPIn:  []int{53},
-		UDPOut: []int{53, 123},
-	}
-	frag := renderEffectiveFragment(sets)
-	// The exact gap reported on monitor: these must be present in the rendered
-	// fragment BEFORE any daemon sync (durability/completeness invariant).
-	for _, p := range []string{"993", "995", "10051", "25", "587", "10050"} {
-		if !strings.Contains(frag, p) {
-			t.Errorf("fragment missing configured port %s\n%s", p, frag)
+func TestRenderEffectiveElements_AllFourKeys(t *testing.T) {
+	out := renderEffectiveElements(&EffectivePortSets{
+		TCPIn: []int{22, 80, 443, 993, 995, 10051}, TCPOut: []int{25, 53, 80, 443, 587, 10050},
+		UDPIn: []int{53}, UDPOut: []int{53, 123},
+	})
+	for _, k := range []string{"NFTBAN_SVC_TCP_IN", "NFTBAN_SVC_TCP_OUT", "NFTBAN_SVC_UDP_IN", "NFTBAN_SVC_UDP_OUT"} {
+		if _, ok := elemLine(out, k); !ok {
+			t.Errorf("missing key %s\n%s", k, out)
 		}
 	}
-}
-
-func TestRenderEffectiveFragment_FlushPrecedesAddPerSet(t *testing.T) {
-	sets := &EffectivePortSets{TCPIn: []int{22, 993}}
-	frag := renderEffectiveFragment(sets)
-	fi := strings.Index(frag, "flush set ip nftban tcp_ports_in")
-	ai := strings.Index(frag, "add element ip nftban tcp_ports_in")
-	if fi < 0 || ai < 0 || fi > ai {
-		t.Fatalf("flush must precede add for tcp_ports_in (flush=%d add=%d)\n%s", fi, ai, frag)
+	// MUST be declarative — no imperative service-port commands (the inc6 segfault cause).
+	if strings.Contains(out, "flush set") || strings.Contains(out, "add element") {
+		t.Fatalf("output must NOT contain imperative flush/add (declarative only):\n%s", out)
 	}
 }
 
-func TestRenderEffectiveFragment_EmptyUDPInFlushOnly(t *testing.T) {
-	sets := &EffectivePortSets{TCPIn: []int{22, 80, 443}, UDPIn: []int{}}
-	frag := renderEffectiveFragment(sets)
-	if !strings.Contains(frag, "flush set ip nftban udp_ports_in") {
-		t.Errorf("empty udp_ports_in must still flush (clear stale)\n%s", frag)
+func TestRenderEffectiveElements_NonTemplatePortsPresent(t *testing.T) {
+	out := renderEffectiveElements(&EffectivePortSets{
+		TCPIn: []int{22, 80, 443, 993, 995, 10051}, TCPOut: []int{25, 53, 80, 443, 587, 10050},
+		UDPIn: []int{53}, UDPOut: []int{53, 123},
+	})
+	in, _ := elemLine(out, "NFTBAN_SVC_TCP_IN")
+	for _, p := range []string{"993", "995", "10051"} {
+		if !strings.Contains(in, p) {
+			t.Errorf("TCP_IN missing %s: %q", p, in)
+		}
 	}
-	if strings.Contains(frag, "add element ip nftban udp_ports_in {") {
-		t.Errorf("empty udp_ports_in must not emit add element\n%s", frag)
+	o, _ := elemLine(out, "NFTBAN_SVC_TCP_OUT")
+	for _, p := range []string{"25", "587", "10050"} {
+		if !strings.Contains(o, p) {
+			t.Errorf("TCP_OUT missing %s: %q", p, o)
+		}
+	}
+	if u, _ := elemLine(out, "NFTBAN_SVC_UDP_IN"); !strings.Contains(u, "53") {
+		t.Errorf("UDP_IN missing 53: %q", u)
 	}
 }
 
-// Regression: a skeletal render (template defaults only) must NOT satisfy the
-// completeness assertion — proving the test would catch the v1.192.0 gap.
-func TestRenderEffectiveFragment_SkeletalIsDetectablyIncomplete(t *testing.T) {
-	skeletal := &EffectivePortSets{TCPIn: []int{22, 80, 443}, TCPOut: []int{53, 80, 443}, UDPOut: []int{53, 123}}
-	frag := renderEffectiveFragment(skeletal)
-	if strings.Contains(frag, "993") || strings.Contains(frag, "10051") {
-		t.Fatalf("skeletal fragment unexpectedly contains configured ports — test cannot detect the gap")
+func TestRenderEffectiveElements_EmptyUDPInEmptyValue(t *testing.T) {
+	out := renderEffectiveElements(&EffectivePortSets{TCPIn: []int{22, 80, 443}, UDPIn: []int{}})
+	// empty set → empty value → caller omits the elements line (never `{ }`).
+	if v, ok := elemLine(out, "NFTBAN_SVC_UDP_IN"); !ok || strings.TrimSpace(v) != "" {
+		t.Errorf("empty udp_ports_in must emit empty value, got %q (ok=%v)", v, ok)
 	}
 }
 
-// Acceptance (Increment 2): a configured (non-template) port flows all the way
-// from the PortConfig authority (what LoadAllPorts produces) through
-// ComputeEffective into the rendered fragment — i.e., the rendered config would
-// contain it BEFORE any daemon sync. Hermetic (both functions are pure).
-func TestEffectiveChain_ConfigPortsReachFragment(t *testing.T) {
+func TestRenderEffectiveElements_SortedCSV(t *testing.T) {
+	// Sorting is the authority's job (ComputeEffective.normalizePortList); the
+	// emitter preserves that order. Exercise the real pipeline.
+	out := renderEffectiveElements(ComputeEffective(&PortConfig{TCPPortsIn: []int{443, 993}}, []int{22}))
+	in, _ := elemLine(out, "NFTBAN_SVC_TCP_IN")
+	if in != "22, 80, 443, 993" {
+		t.Errorf("TCP_IN not sorted CSV: %q", in)
+	}
+}
+
+// Acceptance: a configured non-template port flows from the PortConfig authority
+// (what LoadAllPorts produces) through ComputeEffective into the emitted element
+// CSV — present BEFORE any daemon sync. Hermetic.
+func TestEffectiveChain_ConfigPortsReachElements(t *testing.T) {
 	all := &PortConfig{
-		TCPPortsIn:  []int{25, 993, 995, 10051}, // mail + zabbix-in
-		TCPPortsOut: []int{587, 10050},          // submission + zabbix-out
+		TCPPortsIn:  []int{25, 993, 995, 10051},
+		TCPPortsOut: []int{587, 10050},
 		UDPPortsIn:  []int{53},
 	}
-	frag := renderEffectiveFragment(ComputeEffective(all, []int{55000}))
-	// tcp_ports_in add must carry the configured inbound ports + SSH.
+	out := renderEffectiveElements(ComputeEffective(all, []int{55000}))
+	in, _ := elemLine(out, "NFTBAN_SVC_TCP_IN")
 	for _, p := range []string{"25", "993", "995", "10051", "55000"} {
-		if !strings.Contains(frag, p) {
-			t.Errorf("rendered fragment missing inbound port %s (would be absent at atomic load)\n%s", p, frag)
+		if !strings.Contains(in, p) {
+			t.Errorf("TCP_IN missing configured port %s: %q", p, in)
 		}
 	}
-	// outbound configured ports present too (durable drift fix / Phase-3 proof).
+	o, _ := elemLine(out, "NFTBAN_SVC_TCP_OUT")
 	for _, p := range []string{"587", "10050"} {
-		if !strings.Contains(frag, p) {
-			t.Errorf("rendered fragment missing outbound port %s\n%s", p, frag)
+		if !strings.Contains(o, p) {
+			t.Errorf("TCP_OUT missing configured port %s: %q", p, o)
 		}
 	}
 }

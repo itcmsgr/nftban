@@ -142,15 +142,15 @@ echo ""
 # -----------------------------------------------------------------------------
 # Every PRODUCTION render path that substitutes the nftables template
 # (_firewall_substitute_placeholders <in> <out>) and then applies/persists it
-# MUST complete the service-port sets via _firewall_append_effective_ports on the
+# MUST complete the service-port sets via _firewall_complete_service_ports on the
 # SAME <out> before nft -f — otherwise it can load skeletal tcp_ports_in/out +
 # udp_ports_in/out (the D-V192-RESIDUAL-REBUILD-DROP class). This static guard
-# requires an _firewall_append_effective_ports call within a short window after
+# requires an _firewall_complete_service_ports call within a short window after
 # each production substitute-render call.
 echo "[V-NFT-SERVICE-PORTS-RENDERED-COMPLETE] scanning $FW render paths ..."
 # Per-function pairing: any function that CALLS _firewall_substitute_placeholders
 # (a production render of the nftban ruleset) must also call
-# _firewall_append_effective_ports somewhere in the same function (the append is
+# _firewall_complete_service_ports somewhere in the same function (the append is
 # placed after the render's if/else block, so a line-proximity check is wrong).
 # Allowlist = functions that render for explicitly non-production/offline use.
 SP_ALLOW='_firewall_substitute_placeholders'  # the helper's own def (contains the name, no call)
@@ -160,22 +160,22 @@ SP_VIOLATIONS="$(
         /^[a-zA-Z_][a-zA-Z0-9_]*\(\)[[:space:]]*\{?[[:space:]]*$/ {
             # entering a new function: flush the previous one
             if (have_sub && !have_app && !(fn in ex))
-                printf "  %s: function %s() renders (_firewall_substitute_placeholders) but never calls _firewall_append_effective_ports\n", FILENAME, fn
+                printf "  %s: function %s() renders (_firewall_substitute_placeholders) but never calls _firewall_complete_service_ports\n", FILENAME, fn
             f=$0; sub(/\(\).*/, "", f); fn=f; have_sub=0; have_app=0; next
         }
         /_firewall_substitute_placeholders[[:space:]]+"\$/ { l=$0; sub(/^[[:space:]]+/,"",l); if (l !~ /^#/) have_sub=1 }
-        /_firewall_append_effective_ports/ { have_app=1 }
+        /_firewall_complete_service_ports/ { have_app=1 }
         END { if (have_sub && !have_app && !(fn in ex))
-            printf "  %s: function %s() renders but never calls _firewall_append_effective_ports\n", FILENAME, fn }
+            printf "  %s: function %s() renders but never calls _firewall_complete_service_ports\n", FILENAME, fn }
     ' "$FW"
 )"
 if [[ -n "$SP_VIOLATIONS" ]]; then
     echo "::error::V-NFT-SERVICE-PORTS-RENDERED-COMPLETE violation — production render not completed with effective service-port sets (skeletal-apply risk):"
     echo "$SP_VIOLATIONS"
-    echo "  Fix: call _firewall_append_effective_ports \"\$out\" (fail-closed) before nft -f, OR move the render to an explicitly non-production/offline context."
+    echo "  Fix: call _firewall_complete_service_ports \"\$out\" (fail-closed) before nft -f, OR move the render to an explicitly non-production/offline context."
     FAIL=1
 else
-    echo "  PASS — every production substitute-render is completed by _firewall_append_effective_ports."
+    echo "  PASS — every production substitute-render is completed by _firewall_complete_service_ports."
 fi
 echo ""
 

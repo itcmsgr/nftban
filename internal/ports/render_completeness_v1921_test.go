@@ -74,27 +74,23 @@ func TestServicePortRenderCompleteness_FixtureHasAllPorts(t *testing.T) {
 	mustContainAllPorts(t, sets.UDPIn, []int{53}, "udp_ports_in")
 	mustContainAllPorts(t, sets.UDPOut, []int{53, 123}, "udp_ports_out")
 
-	// The rendered fragment carries them for BOTH families.
-	frag := renderEffectiveFragment(sets)
-	for _, fam := range []string{"ip", "ip6"} {
-		for _, want := range []struct{ set, port string }{
-			{"tcp_ports_in", "993"}, {"tcp_ports_in", "10051"},
-			{"tcp_ports_out", "10050"}, {"udp_ports_in", "53"},
-		} {
-			// the add-element line for that set+family must include the port
-			marker := "add element " + fam + " nftban " + want.set + " {"
-			idx := strings.Index(frag, marker)
-			if idx < 0 {
-				t.Errorf("fragment missing %q", marker)
-				continue
-			}
-			line := frag[idx:]
-			if nl := strings.IndexByte(line, '\n'); nl >= 0 {
-				line = line[:nl]
-			}
-			if !strings.Contains(line, want.port) {
-				t.Errorf("%s %s line missing port %s: %q", fam, want.set, want.port, line)
-			}
+	// The rendered element CSVs (declarative; applied to BOTH families by the
+	// shell) carry the configured ports BEFORE daemon sync. MUST NOT be imperative.
+	out := renderEffectiveElements(sets)
+	if strings.Contains(out, "flush set") || strings.Contains(out, "add element") {
+		t.Fatalf("render must be declarative (no imperative flush/add):\n%s", out)
+	}
+	for _, want := range []struct{ key, port string }{
+		{"NFTBAN_SVC_TCP_IN", "993"}, {"NFTBAN_SVC_TCP_IN", "10051"},
+		{"NFTBAN_SVC_TCP_OUT", "10050"}, {"NFTBAN_SVC_UDP_IN", "53"},
+	} {
+		v, ok := elemLine(out, want.key)
+		if !ok {
+			t.Errorf("missing %s line", want.key)
+			continue
+		}
+		if !strings.Contains(v, want.port) {
+			t.Errorf("%s missing port %s: %q", want.key, want.port, v)
 		}
 	}
 }

@@ -160,20 +160,48 @@ _firewall_substitute_placeholders() {
         "$input" > "$output"
 }
 
-# _firewall_append_effective_ports <conf_file>
-# v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): append the COMPLETE effective
-# service-port sets (tcp_ports_in/out + udp_ports_in/out, ip AND ip6) from the
-# config authority — the SAME ports.LoadAllPorts daemon sync uses — into the
-# rendered config so the single atomic `nft -f` installs complete sets (no
-# post-load gap; durable config complete before any daemon sync).
+# _firewall_set_elements <conf_file> <set_name> <csv>
+# v1.192.1 inc7: DECLARATIVELY set the `elements = { ... }` of a named set inside
+# the rendered nft config (both the ip and ip6 `nftban` table blocks). Non-empty
+# csv → replace the existing elements line, or insert one if the set has none
+# (e.g. udp_ports_in). Empty csv → remove any elements line (canonical empty set
+# `set X { type ... }` — never `elements = { }`). This is declarative
+# substitution INSIDE the table block, NOT a post-table imperative `flush set`/
+# `add element` fragment (that segfaults `nft -c -f` when combined with the
+# declarative table render — lab-confirmed inc6 on nftables v1.0.x).
+_firewall_set_elements() {
+    local conf="$1" name="$2" csv="$3"
+    csv="${csv#"${csv%%[![:space:]]*}"}"; csv="${csv%"${csv##*[![:space:]]}"}"  # trim
+    # Defense-in-depth: element list must be only digits/commas/spaces.
+    if [[ -n "$csv" && ! "$csv" =~ ^[0-9,\ ]+$ ]]; then
+        echo "ERROR: invalid element list for set $name: '$csv'" >&2
+        return 1
+    fi
+    NFTBAN_SET="$name" NFTBAN_VAL="$csv" perl -0pi -e '
+        my $n = $ENV{NFTBAN_SET}; my $v = $ENV{NFTBAN_VAL};
+        if (length $v) {
+            unless (s/(set \Q$n\E \{[^{}]*?)elements = \{[^}]*\}/$1elements = { $v }/g) {
+                s/(set \Q$n\E \{[^{}]*?)(\n[ \t]*\})/$1    elements = { $v }$2/g;
+            }
+        } else {
+            s/(set \Q$n\E \{[^{}]*?)\n[ \t]*elements = \{[^}]*\}/$1/g;
+        }
+    ' "$conf" || { echo "ERROR: failed to set elements for $name in $conf" >&2; return 1; }
+    return 0
+}
+
+# _firewall_complete_service_ports <conf_file>
+# v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): make the four service-port sets COMPLETE
+# in the rendered config — DECLARATIVELY, inside the table blocks — using the
+# config authority (the SAME ports.LoadAllPorts daemon sync uses). So the single
+# atomic `nft -f` installs complete tcp_ports_in/out + udp_ports_in/out (ip AND
+# ip6); no post-load gap; durable config complete before any daemon sync.
 #
-# FAIL-CLOSED (v1.192.1 Increment 3): returns non-zero on ANY failure (authority
-# binary missing, render error, empty output, or no SSH-port authority). The
-# rebuild caller MUST abort before `nft -f` on non-zero — it MUST NOT apply a
-# skeletal {SSH,80,443} ruleset (that is the exact residual bug class). This is
-# the production-rebuild completion path; it has no silent skeletal fallback.
-# SSH ports are passed so the in-fragment `flush set` never drops the SSH allow.
-_firewall_append_effective_ports() {
+# FAIL-CLOSED: returns non-zero on ANY failure (authority binary missing, render
+# error, empty output, no SSH-port authority, empty tcp_ports_in, or substitution
+# failure). The caller MUST abort before `nft -f` — never apply a skeletal
+# {SSH,80,443} ruleset (the residual bug class). No silent skeletal fallback.
+_firewall_complete_service_ports() {
     local conf="$1"
     local _bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
     if [[ ! -x "$_bin" ]]; then
@@ -201,16 +229,31 @@ _firewall_append_effective_ports() {
         return 1
     fi
 
-    local _frag=""
-    if ! _frag=$(NFTBAN_EFFECTIVE_SSH_PORTS="$_ssh_csv" "$_bin" ports render-effective 2>/dev/null); then
+    # Per-set effective element CSVs from the config authority (KEY=CSV lines).
+    local _elems=""
+    if ! _elems=$(NFTBAN_EFFECTIVE_SSH_PORTS="$_ssh_csv" "$_bin" ports render-effective 2>/dev/null); then
         echo "ERROR: effective service-port render failed (nftban-core ports render-effective) — existing firewall preserved" >&2
         return 1
     fi
-    if [[ -z "$_frag" ]]; then
+    if [[ -z "$_elems" ]]; then
         echo "ERROR: effective service-port render produced empty output — refusing skeletal apply" >&2
         return 1
     fi
-    printf '\n# v1.192.1 effective service-port sets (config authority — complete at atomic load)\n%s\n' "$_frag" >> "$conf" || return 1
+    local _tin _tout _uin _uout
+    _tin=$(printf '%s\n' "$_elems"  | sed -n 's/^NFTBAN_SVC_TCP_IN=//p')
+    _tout=$(printf '%s\n' "$_elems" | sed -n 's/^NFTBAN_SVC_TCP_OUT=//p')
+    _uin=$(printf '%s\n' "$_elems"  | sed -n 's/^NFTBAN_SVC_UDP_IN=//p')
+    _uout=$(printf '%s\n' "$_elems" | sed -n 's/^NFTBAN_SVC_UDP_OUT=//p')
+    # tcp_ports_in must be non-empty (baseline + SSH) — lockout guard.
+    if [[ -z "${_tin// /}" ]]; then
+        echo "ERROR: effective tcp_ports_in is empty — refusing (lockout guard)" >&2
+        return 1
+    fi
+
+    _firewall_set_elements "$conf" tcp_ports_in  "$_tin"  || return 1
+    _firewall_set_elements "$conf" tcp_ports_out "$_tout" || return 1
+    _firewall_set_elements "$conf" udp_ports_in  "$_uin"  || return 1
+    _firewall_set_elements "$conf" udp_ports_out "$_uout" || return 1
     return 0
 }
 
@@ -1699,7 +1742,7 @@ FIREWALL_RELOAD_HELP
         # sets INSIDE this atomic reload (config authority). FAIL-CLOSED — if the
         # effective-port render fails we do NOT apply a skeletal ruleset; the
         # existing live ruleset is kept (reload becomes a safe no-op).
-        if ! _firewall_append_effective_ports "$_tmp_conf"; then
+        if ! _firewall_complete_service_ports "$_tmp_conf"; then
             echo "Warning: effective service-port render failed — NOT applying skeletal reload; existing ruleset kept. Try: nftban firewall rebuild" >&2
             rm -f "$_tmp_conf"
         elif nft -c -f "$_tmp_conf" 2>/dev/null; then
@@ -1725,7 +1768,7 @@ FIREWALL_RELOAD_HELP
             _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
             _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"
             # v1.192.1 inc4: complete service-port sets (fail-closed — no skeletal apply).
-            if ! _firewall_append_effective_ports "$_tmp_conf"; then
+            if ! _firewall_complete_service_ports "$_tmp_conf"; then
                 echo "Warning: effective service-port render failed — NOT applying skeletal reload. Try: nftban firewall rebuild" >&2
             elif ! nft -f "$_tmp_conf" 2>&1; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
@@ -2217,7 +2260,7 @@ _firewall_rebuild_core() {
         # effective-port render fails we ABORT before nft -f and preserve the
         # existing firewall; we MUST NOT apply skeletal {SSH,80,443} sets (that
         # is the exact residual bug class). No silent skeletal success path.
-        if ! _firewall_append_effective_ports "$tmp_conf"; then
+        if ! _firewall_complete_service_ports "$tmp_conf"; then
             echo "ERROR: effective service-port render FAILED — existing firewall preserved (refusing skeletal apply)!" >&2
             echo "  Fix: ensure ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core is present and SSH port is detectable, then retry: nftban firewall rebuild" >&2
             # PREVALIDATION_FAILED-class: no kernel mutation, no recovery marker.
