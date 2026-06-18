@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.193.0] - 2026-06-17 — Post-v1.192 firewall / ops hygiene
+
+**Codename:** `V193_POST_192_FIREWALL_OPS_HYGIENE` · **PR:** [#887](https://github.com/itcmsgr/nftban/pull/887) (squash-merged `192ff5db`) · **Scope:** `V193_POST_192_FIREWALL_OPS_HYGIENE_SCOPE.md`
+
+> **What:** small, single-domain shell/observability release. **NFT schema UNCHANGED (1.84.0). No Go source change — Go runtime byte-identical to v1.192.2** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No BotGuard, no counters/schema, no CSF, no installer parity, no fleet rollout in this release.
+
+Removes two operational foot-guns surfaced during the v1.192 train.
+
+### Fixed
+- **PR-A — `BUG-REBUILD-DROPS-MANUAL-WHITELIST`** (`cli/lib/nftban/cli/cmd_firewall.sh`): an explicit `nftban firewall rebuild` dropped manual `/etc/nftban/whitelist.d/*.conf` entries (operator `--static` admin IPs) from the live whitelist set, while `firewall reload`, daemon restart, reboot, and the maintenance timer preserved them. Rebuild now reconciles durable manual `whitelist.d`/`blacklist.d` via the **same core `sync --quick` path `firewall_reload` uses** (new Step 6b, after the system whitelist sync) — so **a manual `--static` whitelist now survives `firewall rebuild`** as well as reload/restart/reboot. System + trust-provider whitelist behaviour and blacklist/feed/geoban sets are unchanged.
+
+### Changed
+- **PR-B — table-absent maintenance-log noise** (`cli/lib/nftban/cron/maintenance.sh`): the maintenance run logged ~60/day `WARN "nftban firewall table absent"` — a **sampling artifact** when it sampled the nftban table mid firewall transition (rebuild/reload re-applying the schema). A new bounded **confirmation re-sample** (`_maint_table_absent_confirmed`) now re-probes the live table over a short grace before the WARN: a **transient** transition window (table reappears) is reduced to a quiet `INFO`, while a **genuine table-absent while `install_state` COMMITTED still reports** the `WARN`. The FW-transition harm counter `table_absent_while_committed_count` is untouched and remains the authoritative signal; firewall load/rebuild semantics and `install_state` are unchanged.
+
+### Audited (no code)
+- **PR-C — monitor MED re-audit:** `OPEN_MONITOR_SOAK_TIMEOUT_ROOTCAUSE` and `BUG-UPDATE-VERDICT-DEGRADED-ON-VALIDATOR-IDLE` were re-confirmed **read-only on v1.192.2 and closed with evidence — no code**: `nftban-soak.service` now succeeds (a single earlier timeout was a one-off under fleet-rollout load), and recent updates with the validator reporting `idle` complete `SUCCESS`/`COMMITTED` (the old idle→DEGRADED mapping no longer reproduces).
+
+### Tests
+- `cli/lib/nftban/tests/whitelist_rebuild_remerge_v1930_test.sh` (5/5) — static guard that rebuild invokes the `sync --quick` reconcile after the system whitelist sync, in parity with reload; discriminates the pre-fix tree.
+- `cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh` (6/6) — transient→suppress, genuine→WARN, both WARN sites gated, no harm-counter mutation.
+
+### Validation
+- Lab-first lab2 (DEB) + lab4 (RPM): PR-A manual whitelist **survives `firewall rebuild`**; PR-B transient table-absence suppressed / genuine kept (helper vs real nft); FW Transition 🟢 with harm counters 0; labs restored clean.
+- **DEB/RPM package-native validation PASS** (`V193_PR_AB_PACKAGE_NATIVE_PASS_READY_FOR_PR`): packages ship both shell files + both tests; RPM≡DEB parity; schema 1.84.0. Post-merge main CI green.
+
+---
+
 ## [v1.192.2] - 2026-06-17 — BotScan authenticated WordPress admin/editor false-positive hotfix
 
 **Codename:** `BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE` · **PR:** [#885](https://github.com/itcmsgr/nftban/pull/885) (squash-merged `2fff7af4`) · **Scope:** `BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE_SCOPE.md`
