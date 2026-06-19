@@ -16,7 +16,7 @@
 SSH-SU-SUDO-AUTHFAIL|auth_failure|auth-log+journal-sshd-su-sudo|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-prior|ban|validated
 MAIL-AUTHFAIL|auth_failure|exim-dovecot-postfix-logs+journal|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-prior|ban|validated
 FTP-AUTHFAIL|auth_failure|vsftpd-proftpd-files+pureftpd-journal|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-v1180|ban|validated
-WPLOGIN-AUTHFAIL|auth_failure|web-access-logs|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|WARN_NO_LOGS|read-only-fleet-G3|ban|unproven
+WPLOGIN-AUTHFAIL|auth_failure|web-access-logs|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|WARN_NO_LOGS|internal/loginmon/detector/webauth_test.go|ban|validated
 HTTP-BASICAUTH-401-403|auth_failure|web-access-logs|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|WARN_NO_LOGS|read-only-fleet|ban|unproven
 ROUNDCUBE-AUTHFAIL-DA|auth_failure|var-log-roundcube-userlogins|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-v1186-DA-only|ban|validated
 DIRECTADMIN-AUTHFAIL|auth_failure|DA-login-log|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|read-only-fleet|ban|unproven
