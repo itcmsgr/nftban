@@ -19,6 +19,10 @@
 # meta:inventory.privileges=""
 # =============================================================================
 set -Eeuo pipefail
+# PARITY-GUARD-EXEMPT: ipv4-only test coverage. The WP-admin authenticated-context
+# gate is family-agnostic at runtime (per-source-IP, regardless of family).
+# Dual-family TEST coverage (an authenticated IPv6 editor case) is recorded debt
+# for v1.197. See scripts/ci/check-ipv4-ipv6-parity.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
