@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.196.0] - 2026-06-19 — LOW-risk debt sweep (test / docs / CI only)
+
+**Codename:** `V196_LOW_RISK_DEBT_SWEEP` · **PRs:** [#900](https://github.com/itcmsgr/nftban/pull/900) (`d233939f`) + [#901](https://github.com/itcmsgr/nftban/pull/901) (`f4956e7a`) + [#902](https://github.com/itcmsgr/nftban/pull/902) (`69ee41fc`) · **Plan:** `V196_197_DEBT_BURN_AND_SINGLE_ROLLOUT_PLAN.md` · **Scope:** `V196_LOW_RISK_SWEEP_SCOPE.md`
+
+> **What:** a small, low-risk cleanup release — three independent test/docs/CI-only PRs. **No product behavior change. NFT schema UNCHANGED (1.84.0). No Go/runtime source change — Go/product runtime byte-identical to v1.195.0** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No BotGuard re-enable, no counters, no CSF, no installer parity, no 8E (cPanel/Plesk), no 8G (dead-knob deletion), no v1.197 MED work; PR-E fuzz seeds skipped. Fleet rollout remains deferred to the final train target v1.197.0.
+
+### Fixed
+- **PR-A — FCrDNS broken-pipe test flake** (`cli/lib/nftban/tests/botscan_fcrdns_v189_test.sh`): a `sed … | grep -q` pipeline let `grep -q` close the pipe on first match, delivering SIGPIPE to `sed` (`couldn't flush stdout: Broken pipe`); under `pipefail` that intermittently flipped the `analyze() must call verify_crawler` assertion and red-flagged the 8C harness. Replaced with here-string capture (`grep -q … <<<"$(…)"`) — no pipe, no SIGPIPE; assertions unchanged.
+
+### Changed
+- **PR-B — stale docs/version/architecture references refreshed** (docs/text only): `SECURITY.md` supported-versions (`1.190.x`/`v1.190.1` → `1.195.x`/`v1.195.0`); `docs/ARCHITECTURE.md` IPC ban-flow diagram (`inet nftban`/`blacklist_v4` → `ip nftban`/`blacklist_ipv4`); `docs/systemd/TIMERS.md` stale `Removal Target v1.23.0` row retired; `.claude/CLAUDE.md` current-version stamp (`v1.56.0` → `v1.195.0`).
+
+### Added
+- **PR-F — IPv4/IPv6 parity static CI guard** (`scripts/ci/check-ipv4-ipv6-parity.sh`, wired into `ci-architecture.yml`): asserts both `table ip nftban` and `table ip6 nftban` are present, every `*_ipv4` set has a matching `*_ipv6` sibling (and vice-versa), and the canonical set inventories of the two table blocks match. **No runtime IPv4/IPv6 parity gap was found** — the nft data model is already fully dual-family; four IPv4-only fixtures are recorded as explicit `# PARITY-GUARD-EXEMPT` test-coverage exemptions (runtime is family-agnostic), with dual-family test coverage tracked for v1.197.
+
+### Notes
+- No schema change (1.84.0). No runtime/IPv4-IPv6 behavior change. Fleet rollout deferred to one waved hop `v1.192.2 → v1.197.0`.
+
+---
+
 ## [v1.195.0] - 2026-06-19 — wp-login Go-path validation (8D, data-only matrix flip)
 
 **Codename:** `V195_WPLOGIN_GO_PATH_PROOF` · **PR:** [#898](https://github.com/itcmsgr/nftban/pull/898) (squash-merged `e013b6fc`) · **Scope:** `V195_WPLOGIN_GO_PATH_PROOF_SCOPE.md` · **Evidence:** `V195_WPLOGIN_GOPATH_READONLY_PROOF_RECORD.md`
