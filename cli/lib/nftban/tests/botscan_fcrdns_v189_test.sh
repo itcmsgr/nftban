@@ -100,14 +100,20 @@ grep -qE "Would ban 1.2.3.4.*fake_bot_ua|fake_bot_ua.*1.2.3.4" <<<"$out" || fail
 echo "PASS A: analyze 404-flood exempts verified crawler, bans spoofer (fake_bot_ua)"
 
 # ---- (S) structural: verify ONLY in the 404-flood loop, never per-line / exploit path ----
+# Capture each function body into a variable FIRST, then match against the captured
+# text. Piping `sed ... | grep -q` lets `grep -q` close the pipe on first match, which
+# delivers SIGPIPE to `sed` ("couldn't flush stdout: Broken pipe"); under `pipefail`
+# that SIGPIPE exit (141) propagates and spuriously flips the assertion. Capturing the
+# producer output decouples it from the early-exiting consumer (no pipe, no SIGPIPE).
+_fn_body() { sed -n "/^$1() {/,/^}/p" "$CORE"; }
 # is_whitelisted must not call verify (no per-line DNS)
-sed -n '/^nftban_botscan_is_whitelisted() {/,/^}/p' "$CORE" | grep -q "nftban_botscan_verify_crawler" \
+grep -q "nftban_botscan_verify_crawler" <<<"$(_fn_body nftban_botscan_is_whitelisted)" \
     && fail "S: is_whitelisted must NOT call verify_crawler (no per-line DNS)"
 # process_entry (per-line) must not call verify
-sed -n '/^nftban_botscan_process_entry() {/,/^}/p' "$CORE" | grep -q "nftban_botscan_verify_crawler" \
+grep -q "nftban_botscan_verify_crawler" <<<"$(_fn_body nftban_botscan_process_entry)" \
     && fail "S: process_entry (per-line) must NOT call verify_crawler"
 # verify is referenced in analyze (the 404 loop)
-sed -n '/^nftban_botscan_analyze() {/,/^}/p' "$CORE" | grep -q "nftban_botscan_verify_crawler" \
+grep -q "nftban_botscan_verify_crawler" <<<"$(_fn_body nftban_botscan_analyze)" \
     || fail "S: analyze() must call verify_crawler (404-flood exemption)"
 # the pattern-ban loop in analyze must NOT gate on verify (exploit/webshell never exempted):
 # verify appears only after the '404 flood' comment, not in the hits/pattern loop.
