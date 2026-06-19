@@ -118,8 +118,8 @@ Key Principle: Single Writer Architecture
        |                          |------------------------>|                    |
        |                          |                         |                    |
        |                          |                         |  nft add element   |
-       |                          |                         |  inet nftban       |
-       |                          |                         |  blacklist_v4      |
+       |                          |                         |  ip nftban         |
+       |                          |                         |  blacklist_ipv4    |
        |                          |                         |  { 1.2.3.4 }       |
        |                          |                         |------------------->|
        |                          |                         |                    |
