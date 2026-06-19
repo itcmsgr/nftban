@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.195.0] - 2026-06-19 — wp-login Go-path validation (8D, data-only matrix flip)
+
+**Codename:** `V195_WPLOGIN_GO_PATH_PROOF` · **PR:** [#898](https://github.com/itcmsgr/nftban/pull/898) (squash-merged `e013b6fc`) · **Scope:** `V195_WPLOGIN_GO_PATH_PROOF_SCOPE.md` · **Evidence:** `V195_WPLOGIN_GOPATH_READONLY_PROOF_RECORD.md`
+
+> **What:** data-only Protection-Claim Matrix update (8D). A **read-only** fleet proof validated the `WPLOGIN-AUTHFAIL` claim **live**, so the release records the result rather than changing any product code. **No LoginMon fix required. No product behavior change. NFT schema UNCHANGED (1.84.0). No Go source change — Go/product runtime byte-identical to v1.194.0** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No cPanel/Plesk proof (8E), no dead-knob deletion (8G), no BotGuard re-enable, no counters, no CSF, no installer parity. Fleet rollout remains separate (Track A, after publish).
+
+The wp-login.php failed-credential ban path (Go LoginMon WebAuth detector) was proven live read-only on **srv1 / srv2 / srv3 / srv4** (all v1.192.2, DirectAdmin): failed `POST /wp-login.php` (HTTP `200`) → reason `wordpress_wp_login` → temp ban (900s), **IPv4 and IPv6**; `302` success-control observed and correctly **not** a ban driver. No host mutation, no synthetic traffic.
+
+### Changed
+- Protection-Claim Matrix row **`WPLOGIN-AUTHFAIL`**:
+  - `classification`: **unproven → validated**
+  - `fixture`: **read-only-fleet-G3 → `internal/loginmon/detector/webauth_test.go`** (the existing hermetic Go test — unchanged — which already asserts `POST /wp-login.php` + `200` → `ReasonWordPressWPLogin` for IPv4 and IPv6, `302` success → no verdict, and `xmlrpc`/`GET` → not owned).
+  - owner (LoginMon), event class (`auth_failure`), and ban authority (IPC → blacklist) unchanged.
+
+### Notes
+- Repo diff is one data-only line in `cli/lib/nftban/tests/protection_claim_matrix_v194.tsv`. No schema change (1.84.0). The matrix now reports 14 validated claims.
+
+---
+
 ## [v1.194.0] - 2026-06-19 — Protection-Claim Matrix harness (8C)
 
 **Codename:** `V194_PROTECTION_CLAIM_MATRIX` · **PR:** [#896](https://github.com/itcmsgr/nftban/pull/896) (squash-merged `1b961cba`) · **Scope:** `V194_PROTECTION_CLAIM_MATRIX_SCOPE.md`
