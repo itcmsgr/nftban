@@ -70,6 +70,14 @@ jobs:
       - name: Check protection-claim matrix (8C)
         run: ./scripts/ci/check-protection-claim-matrix.sh
 
+      # v1.196 (PR-F): IPv4/IPv6 parity. Fails if a family-keyed nft set/check
+      # exists for one family without the other (both ip+ip6 nftban tables; every
+      # *_ipv4 has *_ipv6 and the canonical set inventories of the two tables match),
+      # or if a family-sensitive matrix fixture silently covers only one family
+      # (without a PARITY-GUARD-EXEMPT marker).
+      - name: Check IPv4/IPv6 parity (PR-F)
+        run: ./scripts/ci/check-ipv4-ipv6-parity.sh
+
       - name: Check netlink import policy
         run: |
           echo "=== Checking netlink import architecture policy ==="
