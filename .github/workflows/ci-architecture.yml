@@ -30,6 +30,7 @@ on:
     branches: [main, master, develop]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:  # allow on-branch validation of architecture gates pre-PR
 
 concurrency:
   group: ci-arch-${{ github.ref }}
