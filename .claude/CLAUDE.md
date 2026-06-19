@@ -62,7 +62,7 @@ emulate, search, list, fhs, botguard, tunnel, sync
 
 ### Current Version
 ```
-v1.56.0 (check /VERSION file for updates)
+v1.195.0 (check /VERSION file for updates)
 ```
 
 ### NOT Supported (Common Hallucinations)
