@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.194.0] - 2026-06-19 — Protection-Claim Matrix harness (8C)
+
+**Codename:** `V194_PROTECTION_CLAIM_MATRIX` · **PR:** [#896](https://github.com/itcmsgr/nftban/pull/896) (squash-merged `1b961cba`) · **Scope:** `V194_PROTECTION_CLAIM_MATRIX_SCOPE.md`
+
+> **What:** test/CI-only validation-harness release (PR-A, 8C). **No detector/parser/daemon/CLI behavior change. NFT schema UNCHANGED (1.84.0). No Go source change — Go/product runtime byte-identical to v1.193.0** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No BotGuard re-enable, no counters population, no CSF, no installer parity. 8D/8E/8G are deferred follow-ons, NOT in this release.
+
+Turns the one-time read-only protection-claim audit into a repeatable, CI-runnable harness so an advertised protection cannot silently regress to "no runtime owner" and a known dead config knob cannot be represented as a live enforcer.
+
+### Added
+- **21-row machine-checkable Protection-Claim Matrix** (`cli/lib/nftban/tests/protection_claim_matrix_v194.tsv`) — each advertised protection claim → runtime owner, source, consumer identity, ban authority, mode, zero-input behaviour, fixture, expected result, classification. Classifications surfaced: `validated` / `unproven` / `deferred` / `unowned` / `legacy-only` / `suppress` / `observe-only` / `dead-knob`.
+- **CI guard** (`scripts/ci/check-protection-claim-matrix.sh`) — fails the build on wrong row count, missing/empty fields, invalid OWNER/MODE/CLASSIFICATION enum, a claimed-`enforce` row orphaned to `OWNER=NONE` (not `unowned`/`deferred`), or a dead knob (`WordPressXMLRPC`/`WordPressWPLogin`) represented as a live OWNER/BAN_AUTHORITY. Wired into `ci-architecture.yml` so advertised protection claims are now gated on every PR and on `main`.
+- **Harness** (`cli/lib/nftban/tests/protection_claim_matrix_v194_test.sh`) — runs the CI guard plus the existing hermetic owner fixtures referenced in the matrix (BotScan scanner/exploit, 404-flood, endpoint-flood, authenticated WP-admin suppress, FCrDNS, portscan) as the owner-actually-bans proof.
+
+### Changed
+- Installed-tree (RPM) harness behaviour: in the **source tree** it runs the strict CI guard and requires every referenced fixture to pass; in the **installed package tree** (where the CI-only `scripts/ci` guard is not shipped) it validates the shipped matrix **inline** (same invariants — still fails on matrix corruption) and **skips source-tree-only fixtures** rather than hard-failing.
+
+### Notes
+- No schema change (1.84.0). No detector behavior change. `WordPressXMLRPC`/`WordPressWPLogin` remain parsed-but-unused and are documented as dead in the matrix; their deletion (8G) is a separate gated follow-on after 8D/8E.
+
+---
+
 ## [v1.193.0] - 2026-06-17 — Post-v1.192 firewall / ops hygiene
 
 **Codename:** `V193_POST_192_FIREWALL_OPS_HYGIENE` · **PR:** [#887](https://github.com/itcmsgr/nftban/pull/887) (squash-merged `192ff5db`) · **Scope:** `V193_POST_192_FIREWALL_OPS_HYGIENE_SCOPE.md`
