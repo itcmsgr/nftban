@@ -20,6 +20,10 @@
 # meta:inventory.privileges=""
 # =============================================================================
 set -Eeuo pipefail
+# PARITY-GUARD-EXEMPT: ipv4-only test coverage. BotScan URL-pattern matching is
+# family-agnostic at runtime (keys on the source IP from the access log regardless
+# of family; bans route to blacklist_ipv4 / blacklist_ipv6, both of which exist).
+# Dual-family TEST coverage is recorded debt for v1.197. See scripts/ci/check-ipv4-ipv6-parity.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"

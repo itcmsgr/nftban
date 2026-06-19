@@ -20,6 +20,10 @@
 # meta:inventory.privileges=""
 # =============================================================================
 set -Eeuo pipefail
+# PARITY-GUARD-EXEMPT: ipv4-only test coverage. The FCrDNS resolver/cache is
+# family-aware at runtime (keyed src_ip+family; bans route to blacklist_ipv4 /
+# blacklist_ipv6, both of which exist). Dual-family TEST coverage (an IPv6
+# crawler/spoofer case) is recorded debt for v1.197. See scripts/ci/check-ipv4-ipv6-parity.sh.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
 CORE="$NFTBAN_LIB_DIR/core/nftban_botscan.sh"

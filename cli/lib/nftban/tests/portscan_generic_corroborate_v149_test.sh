@@ -27,6 +27,10 @@
 # =============================================================================
 
 set -Eeuo pipefail
+# PARITY-GUARD-EXEMPT: ipv4-only test coverage. Port-scan detection is kernel-inline
+# nft and present in BOTH table ip nftban and table ip6 nftban; this test corroborates
+# the family-neutral classifier logic. Dual-family TEST coverage is recorded debt for
+# v1.197. See scripts/ci/check-ipv4-ipv6-parity.sh.
 IFS=$'\n\t'
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
