@@ -78,6 +78,16 @@ jobs:
       - name: Check IPv4/IPv6 parity (PR-F)
         run: ./scripts/ci/check-ipv4-ipv6-parity.sh
 
+      # v1.197 (PR-LICENSE/L1): Core license-metadata gate. Fails the PR if the
+      # RPM spec generator or the rendered Core spec declares a copyleft
+      # (GPL/LGPL/AGPL) license in its License field (the historical copyleft
+      # defect), if the spec stops shipping %license LICENSE, or if a high-level
+      # public surface (README, LICENSE, NOTICE.md, TRADEMARK.md, Dockerfile OCI
+      # label) self-declares a copyleft license. Comparative or blocked-policy
+      # mentions are allowed.
+      - name: Check Core license metadata (PR-LICENSE)
+        run: ./scripts/ci/check-license-metadata.sh
+
       - name: Check netlink import policy
         run: |
           echo "=== Checking netlink import architecture policy ==="

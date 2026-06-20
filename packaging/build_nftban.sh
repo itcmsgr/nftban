@@ -293,7 +293,7 @@ Version:        ${PKG_VERSION}
 Release:        ${PKG_RELEASE}%{?dist}
 Summary:        Open-source Linux IPS and nftables firewall manager
 
-License:        GPL-3.0-or-later
+License:        MPL-2.0
 URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
 Source1:        nftban-files.inc
@@ -1433,6 +1433,8 @@ fi
 /usr/lib/nftban/health/*
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
+# MPL-2.0 license text -> /usr/share/licenses/%{name}-%{version}/LICENSE (from unpacked source root)
+%license LICENSE
 # v1.50.0: template with placeholders (always replaced on upgrade, NOT %config)
 /usr/lib/nftban/templates/nftables.conf.tpl
 # Main config files
@@ -2035,6 +2037,17 @@ build_deb() {
 
     # Copy test scripts
     find "${PROJECT_ROOT}/cli/lib/nftban/tests" -type f -name "*.sh" -exec install -m 0755 {} "${deb_root}/usr/lib/nftban/tests/" \;
+
+    # PR-LICENSE (D1): ship machine-readable license metadata. Debian policy 12.5
+    # expects /usr/share/doc/<pkg>/copyright; the DEP-5 copyright declares MPL-2.0
+    # and carries the license notice + upstream text URL. We deliberately do NOT
+    # ship a separate /usr/share/doc/nftban-core/LICENSE: minimal Debian/Ubuntu
+    # Docker images set `path-exclude=/usr/share/doc/*` with only
+    # `path-include=/usr/share/doc/*/copyright`, so a separate LICENSE would be
+    # dropped on install yet remain in md5sums -> `dpkg --verify` reports it
+    # missing. The copyright file is the canonical, path-included license surface.
+    install -D -m 0644 "${PROJECT_ROOT}/packaging/deb/copyright" \
+        "${deb_root}/usr/share/doc/nftban-core/copyright"
 
     # Create control file
     create_deb_control
