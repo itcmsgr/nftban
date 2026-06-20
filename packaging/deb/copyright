@@ -1,0 +1,20 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: nftban
+Upstream-Contact: NFTBan Project / Antonios Voulvoulis <contact@nftban.com>
+Source: https://nftban.com
+
+Files: *
+Copyright: 2024-2026 NFTBan Project / Antonios Voulvoulis
+License: MPL-2.0
+
+License: MPL-2.0
+ This Source Code Form is subject to the terms of the Mozilla Public License,
+ v. 2.0. If a copy of the MPL was not distributed with this file, You can
+ obtain one at https://mozilla.org/MPL/2.0/.
+ .
+ The full text of the Mozilla Public License 2.0 is available at
+ https://mozilla.org/MPL/2.0/ and in the LICENSE file of the upstream source.
+ .
+ Trademark rights are separate from this software license: the "nftban" name,
+ wordmark, and logo are trademarks of NFTBan Project / Antonios Voulvoulis and are not
+ granted by MPL-2.0. See /usr/share/doc/nftban-core/ and TRADEMARK.md.
