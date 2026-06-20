@@ -20,10 +20,6 @@
 # meta:inventory.privileges=""
 # =============================================================================
 set -Eeuo pipefail
-# PARITY-GUARD-EXEMPT: ipv4-only test coverage. The FCrDNS resolver/cache is
-# family-aware at runtime (keyed src_ip+family; bans route to blacklist_ipv4 /
-# blacklist_ipv6, both of which exist). Dual-family TEST coverage (an IPv6
-# crawler/spoofer case) is recorded debt for v1.197. See scripts/ci/check-ipv4-ipv6-parity.sh.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
 CORE="$NFTBAN_LIB_DIR/core/nftban_botscan.sh"
@@ -42,6 +38,10 @@ case "$*" in
   *"-t PTR 66.249.66.9"*) echo "9.66.249.66.in-addr.arpa domain name pointer crawler-x.googlebot.com." ;;
   *"crawler-x.googlebot.com"*) echo "crawler-x.googlebot.com has address 8.8.8.8" ;;                # forward mismatch
   *"-t PTR 5.5.5.5"*) sleep 5 ;;                                                                     # timeout
+  # IPv6 parity: real Googlebot v6 (ip6.arpa PTR -> googlebot suffix, AAAA forward-confirms)
+  *"-t PTR 2001:4860:4801:1::1"*) echo "1.0.0.0.1.0.0.0.1.0.8.4.0.6.8.4.1.0.0.2.ip6.arpa domain name pointer crawler-ipv6.googlebot.com." ;;
+  *"crawler-ipv6.googlebot.com"*) echo "crawler-ipv6.googlebot.com has IPv6 address 2001:4860:4801:1::1" ;;
+  *"-t PTR 2001:db8::bad"*) echo "d.a.b.0.ip6.arpa domain name pointer evil6.example.com." ;;          # IPv6 bad suffix
   *) exit 1 ;;                                                                                       # NXDOMAIN
 esac
 HOST
@@ -66,7 +66,10 @@ nftban_botscan_verify_crawler 1.2.3.4 googlebot     && fail "V2: suffix-mismatch
 nftban_botscan_verify_crawler 66.249.66.9 googlebot && fail "V3: forward-mismatch must fail closed"
 nftban_botscan_verify_crawler 5.5.5.5 googlebot     && fail "V4: timeout must fail closed"
 nftban_botscan_verify_crawler 9.9.9.9 googlebot     && fail "V5: NXDOMAIN must fail closed"
-echo "PASS V: verify OK for real crawler; fail-closed on suffix/forward/timeout/NXDOMAIN"
+# IPv4/IPv6 parity: same FCrDNS logic for an IPv6 crawler (ip6.arpa reverse + AAAA forward-confirm)
+nftban_botscan_verify_crawler 2001:4860:4801:1::1 googlebot || fail "V6: real IPv6 Googlebot must verify OK (ip6.arpa PTR + AAAA forward-confirm)"
+nftban_botscan_verify_crawler 2001:db8::bad googlebot       && fail "V7: IPv6 suffix-mismatch spoofer must fail closed"
+echo "PASS V: verify OK for real IPv4 + IPv6 crawler; fail-closed on suffix/forward/timeout/NXDOMAIN (both families)"
 
 # ---- cache: 2nd lookup must NOT call the resolver (count host invocations) ----
 calls_before=$(wc -c < "$HOSTCALLS")

@@ -19,10 +19,6 @@
 # meta:inventory.privileges=""
 # =============================================================================
 set -Eeuo pipefail
-# PARITY-GUARD-EXEMPT: ipv4-only test coverage. The WP-admin authenticated-context
-# gate is family-agnostic at runtime (per-source-IP, regardless of family).
-# Dual-family TEST coverage (an authenticated IPv6 editor case) is recorded debt
-# for v1.197. See scripts/ci/check-ipv4-ipv6-parity.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -76,6 +72,14 @@ pe 198.51.100.5 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "Mozilla/5.0 (Mac)
 pe 198.51.100.6 "/wp-admin/admin-ajax.php" POST 200 "Mozilla/5.0 (Mac) Chrome/148"
 # G = empty-UA scanner doing EXP_WPREST x5, no auth -> bans
 for _ in 1 2 3 4 5; do pe 198.51.100.7 "/wp-json/wp/v2/users" GET 200 "-"; done
+# IPv4/IPv6 parity: the per-IP context gate keys on the source IP, so it must behave
+# identically for IPv6 clients.
+# H = IPv6 AUTHENTICATED admin: 302 login + EXP_WPREST x5 + WS_WPADMIN -> suppressed -> no ban
+pe 2001:db8::1 "/wp-login.php?redirect_to=/wp-admin/" POST 302 "Mozilla/5.0 (Mac) Chrome/148"
+for _ in 1 2 3 4 5; do pe 2001:db8::1 "/wp-json/wp/v2/users/?who=authors" GET 200 "Mozilla/5.0 (Mac) Chrome/148"; done
+pe 2001:db8::1 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "Mozilla/5.0 (Mac) Chrome/148"
+# I = IPv6 UNAUTHENTICATED WS_WPADMIN (threshold 1), no login -> must ban
+pe 2001:db8::2 "/wp-admin/load.php?x=shell.php" GET 404 "Mozilla/5.0 (Mac) Chrome/148"
 analyze
 
 echo "=== gate ENABLED ==="
@@ -86,6 +90,8 @@ banned 198.51.100.4 && ok "D WS_WPADMIN no-auth STILL bans (stable UA never auto
 banned 198.51.100.5 && bad "E authenticated WS_WPADMIN-only BANNED" || ok "E authenticated admin (WS_WPADMIN only) NOT banned"
 banned 198.51.100.6 && bad "F normal admin-ajax BANNED" || ok "F normal admin-ajax (no scanner pattern) NOT banned"
 banned 198.51.100.7 && ok "G empty-UA scanner STILL bans" || bad "G empty-UA scanner not banned"
+banned 2001:db8::1 && bad "H IPv6 authenticated admin BANNED (context gate not family-neutral)" || ok "H IPv6 authenticated admin NOT banned (gate suppresses for IPv6 too)"
+banned 2001:db8::2 && ok "I IPv6 no-auth WS_WPADMIN STILL bans (enforcement family-neutral)" || bad "I IPv6 no-auth scanner not banned"
 
 # ---- discriminator: gate DISABLED -> case A bans (proves the gate is what suppresses) ----
 export BOTSCAN_WPADMIN_CONTEXT_GATE=false
