@@ -34,6 +34,21 @@ import (
 // ConfigDir is the base config directory. Overridable for testing.
 var ConfigDir = "/etc/nftban"
 
+// DataDir is the base data directory (project NFTBAN_DATA_DIR). Resolved from the
+// environment with the project-canonical default; overridable for testing.
+// Mirrors the shell rule `${NFTBAN_DATA_DIR:-/var/lib/nftban}` used by
+// cmd_geoip.sh / cmd_selftest.sh so the validator looks for the GeoIP DB in the
+// same place the geoip sync writes it (instead of a hardcoded /var/lib/nftban).
+var DataDir = resolveDataDir()
+
+// resolveDataDir honors NFTBAN_DATA_DIR when set, else the canonical default.
+func resolveDataDir() string {
+	if d := os.Getenv("NFTBAN_DATA_DIR"); d != "" {
+		return d
+	}
+	return "/var/lib/nftban"
+}
+
 // evaluateModuleHealth evaluates all modules and returns the health map.
 // Called from ValidateKernel after structural + runtime checks.
 // evaluateModuleHealth evaluates all modules and returns the health map.
@@ -323,35 +338,82 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 	// v1.180 ftpauth). The daemon is the authority on its own watchers; the kernel-truth
 	// validator reads it from the journal it already queries. An enabled-but-starved
 	// source now surfaces in `nftban health` instead of reading healthy.
-	h.Input = loginMonInputState(context.Background())
-	if h.Config == ConfigEnabled && (h.Input == InputNoLogs || h.Input == InputWarnNoLogs) {
-		moduleFindings = append(moduleFindings, Finding{
-			Code:      CodeLoginMonNoInput,
-			Severity:  SeverityWarn,
-			Component: "module",
-			Message:   "LoginMon enabled but a detection source reports no input (" + string(h.Input) + ")",
-		})
+	// VAL-LOGINMON-002-UX: classify per-source, distinguishing a benign absent
+	// input (no stack/source on this host) from real starvation (stack present
+	// but no readable logs). The daemon already separates these — NO_LOGS carries
+	// reason=no_<stack> (absent), WARN_NO_LOGS carries reason=<stack>_present_...
+	// (starved). Collapsing both into one WARN made every non-web/non-FTP host
+	// read as a warning; now an absent source is INFO (no action) while a starved
+	// source stays WARN (actionable), and the source + reason are preserved.
+	srcs := loginMonSourceStates(context.Background())
+	h.Input = InputUnknown
+	for _, s := range srcs {
+		h.Input = worseInputState(h.Input, s.State)
+	}
+	if h.Config == ConfigEnabled {
+		for _, s := range srcs {
+			switch s.State {
+			case InputWarnNoLogs:
+				// Stack/source present but produced no readable logs → actionable.
+				moduleFindings = append(moduleFindings, Finding{
+					Code:        CodeLoginMonNoInput,
+					Severity:    SeverityWarn,
+					Component:   "module",
+					Message:     "LoginMon " + s.Name + " source present but produced no readable logs" + loginMonReasonSuffix(s.Reason),
+					Remediation: "Confirm the " + s.Name + " log path is present and readable, and that the application is logging auth events",
+				})
+			case InputNoLogs:
+				// Source/stack structurally absent on this host → benign, no action.
+				moduleFindings = append(moduleFindings, Finding{
+					Code:      CodeLoginMonNoInput,
+					Severity:  SeverityInfo,
+					Component: "module",
+					Message:   "LoginMon " + s.Name + " source not present on this host" + loginMonReasonSuffix(s.Reason) + "; no action needed",
+				})
+			}
+		}
 	}
 
 	return h
 }
 
-// loginMonInputState derives the worst-case input readability across LoginMon's
-// discovered sources from the daemon's "[LOGINMON] <src>: state=..." journal lines.
-// Precedence (worst wins): no_logs > warn_no_logs > ok > unknown.
-func loginMonInputState(ctx context.Context) InputState {
-	worst := InputUnknown
-	for _, src := range []string{"webauth", "ftpauth"} {
+// loginMonSource is a per-source input-state observation parsed from a daemon
+// "[LOGINMON] <src>: state=<TOK> ... reason=<reason>" journal line.
+type loginMonSource struct {
+	Name   string
+	State  InputState
+	Reason string
+}
+
+// loginMonSourceStates returns the per-source input-state observations for
+// LoginMon's discovered sources from the daemon's "[LOGINMON] <src>: state=..."
+// journal lines. The daemon is the authority on its own watchers; the validator
+// only reads what it already emits. Sources with no journal evidence are omitted.
+func loginMonSourceStates(ctx context.Context) []loginMonSource {
+	var out []loginMonSource
+	for _, name := range []string{"webauth", "ftpauth", "roundcube"} {
 		ev := queryJournal(ctx, JournalQuery{
-			Patterns: []string{"[LOGINMON] " + src + ": state="},
+			Patterns: []string{"[LOGINMON] " + name + ": state="},
 			Since:    15 * time.Minute,
 		})
 		if ev.ErrKind != ErrNone || !ev.Found {
 			continue
 		}
-		worst = worseInputState(worst, parseLoginMonState(ev.MatchedLine))
+		out = append(out, loginMonSource{
+			Name:   name,
+			State:  parseLoginMonState(ev.MatchedLine),
+			Reason: parseLoginMonReason(ev.MatchedLine),
+		})
 	}
-	return worst
+	return out
+}
+
+// loginMonReasonSuffix renders a " (reason=<r>)" suffix, or empty when absent.
+func loginMonReasonSuffix(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return " (reason=" + reason + ")"
 }
 
 // parseLoginMonState extracts the input-state token from a "[LOGINMON] <src>: state=<TOK> ..."
@@ -376,6 +438,23 @@ func parseLoginMonState(line string) InputState {
 	default:
 		return InputUnknown
 	}
+}
+
+// parseLoginMonReason extracts the reason token from a
+// "[LOGINMON] <src>: state=<TOK> ... reason=<reason>" line, or "" if absent.
+// The reason (e.g. no_web_stack vs web_stack_present_no_access_logs) is what
+// lets an operator tell "not installed here" from "installed but unreadable".
+func parseLoginMonReason(line string) string {
+	const marker = "reason="
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return ""
+	}
+	tok := line[i+len(marker):]
+	if j := strings.IndexAny(tok, " \t\r\n"); j >= 0 {
+		tok = tok[:j]
+	}
+	return tok
 }
 
 // worseInputState returns the higher-severity of two input states
@@ -451,8 +530,10 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 		// and emits a finding for visibility. "degraded" is not in the blacklist
 		// sub-state enum (enforcing|primed|idle|loaded|stale|disabled).
 		// Canonical path: ${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb
-		// Downloaded by nftban-core-geoip.timer → nftban geoip sync
-		dbPath := "/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+		// Downloaded by nftban-core-geoip.timer → nftban geoip sync.
+		// Honor NFTBAN_DATA_DIR (via DataDir) instead of hardcoding /var/lib/nftban,
+		// matching the shell sync writer; DataDir falls back to the canonical default.
+		dbPath := filepath.Join(DataDir, "geoip", "dbip-country-lite.mmdb")
 		info, err := os.Stat(dbPath)
 		if err != nil || info.Size() == 0 {
 			bh.Geoban = BlacklistSubHealth{State: "stale"} // missing DB = stale data
