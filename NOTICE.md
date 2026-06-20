@@ -28,7 +28,7 @@ Permission to use and/or modify the image is granted provided that credit is giv
 The Tux image is used here solely for identification and representation of Linux-related functionality and does **not** imply any affiliation or endorsement by the **Linux Foundation**, **Linus Torvalds**, or any related organization.
 
 The inclusion of the Tux figure in the nftban logo follows the creator’s terms and attribution requirements.  
-See `/branding/README.md` for further details on artwork attribution and logo composition.
+See `branding/README.md` for further details on artwork attribution and logo composition.
 
 ---
 
@@ -52,7 +52,7 @@ See `/branding/README.md` for further details on artwork attribution and logo co
 
 - **Core:** Licensed under **MPL-2.0**.  
 - **Pro Components:** Licensed under the **nftban Pro Commercial License Agreement**.  
-- **Documentation & Brand Assets:** All rights reserved. See `NFTBAN-Docs.txt` and `/branding/README.md`.  
+- **Documentation & Brand Assets:** All rights reserved. See `branding/README.md`.
 - **SPDX Identifiers:** See `SPDX-HEADERS.md` for headers required in all source files.
 
 ---
