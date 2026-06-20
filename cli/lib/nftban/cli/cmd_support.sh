@@ -205,6 +205,33 @@ _collect_system() {
         fi
     } > "$sys_dir/virtualization.txt"
     _support_log OK "Virtualization detection"
+
+    # Journald disk usage (capacity-pressure diagnosis)
+    if command -v journalctl &>/dev/null; then
+        journalctl --disk-usage > "$sys_dir/journald-disk-usage.txt" 2>&1 || true
+        _support_log OK "Journald disk usage"
+    fi
+
+    # OOM-kill evidence (kernel ring buffer + journal; read-only, bounded to last 50 matches)
+    {
+        echo "# OOM-kill / out-of-memory evidence"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+        echo "=== journalctl -k (oom matches, last 50) ==="
+        if command -v journalctl &>/dev/null; then
+            journalctl -k --no-pager 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process|oom_reaper' | tail -50 || echo "(none)"
+        else
+            echo "(journalctl not available)"
+        fi
+        echo ""
+        echo "=== dmesg (oom matches, last 50) ==="
+        if command -v dmesg &>/dev/null; then
+            dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process|oom_reaper' | tail -50 || echo "(none or insufficient privilege)"
+        else
+            echo "(dmesg not available)"
+        fi
+    } > "$sys_dir/oom-evidence.txt"
+    _support_log OK "OOM-kill evidence"
 }
 
 _collect_nftables() {
@@ -377,16 +404,39 @@ _collect_services() {
         return 0
     fi
 
-    # NFTBan-related services
-    for svc in nftban nftban-webapi nftban-feeds nftban-sync nftables; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null; then
-            systemctl status "$svc" --no-pager > "$svc_dir/${svc}.txt" 2>&1 || true
-        fi
+    # All NFTBan/nftband units (dynamic — services, sockets, timers; not a fixed list).
+    # Covers nftband.service/.socket, nftban-soak, nftban-botscan, etc.
+    local units
+    units=$(systemctl list-unit-files 'nftban*' 'nftband*' 'nftables.service' --no-legend 2>/dev/null \
+            | awk '{print $1}' | grep -E '\.(service|socket|timer)$' | sort -u)
+    local nunits=0
+    for unit in $units; do
+        systemctl status "$unit" --no-pager > "$svc_dir/${unit}.txt" 2>&1 || true
+        nunits=$((nunits + 1))
     done
-    _support_log OK "Systemd service status"
+    _support_log OK "Systemd unit status ($nunits nftban/nftband units)"
+
+    # Failed units (whole-system) — DEGRADED diagnosis
+    systemctl --failed --all --no-pager > "$svc_dir/failed-units.txt" 2>&1 || true
+    _support_log OK "Failed units"
+
+    # Per-unit Result / restart / OOM properties (actionable failure signal)
+    {
+        echo "# Per-unit properties (Result / ExecMainStatus / NRestarts / OOM)"
+        echo "# Collected: $(date -Iseconds)"
+        for unit in $units; do
+            echo ""
+            echo "=== $unit ==="
+            systemctl show "$unit" \
+                -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainCode \
+                -p NRestarts -p OOMPolicy -p MemoryCurrent -p MemoryMax -p ActiveEnterTimestamp \
+                2>/dev/null || echo "(show failed)"
+        done
+    } > "$svc_dir/unit-properties.txt"
+    _support_log OK "Unit Result/OOM properties"
 
     # Timer status
-    systemctl list-timers 'nftban*' --no-pager > "$svc_dir/timers.txt" 2>&1 || true
+    systemctl list-timers 'nftban*' 'nftband*' --all --no-pager > "$svc_dir/timers.txt" 2>&1 || true
 }
 
 _collect_install_info() {
@@ -434,6 +484,22 @@ _collect_install_info() {
 
     } > "$install_dir/install-type.txt"
     _support_log OK "Install type detection"
+
+    # Machine-written install/upgrade state (INSTALL_STATE / INSTALL_VERSION /
+    # PHASE_REACHED / FAILURE_REASON / REBUILD_EXIT_CODE) — DEGRADED/upgrade diagnosis.
+    local state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
+    if [[ -f "$state_file" ]]; then
+        {
+            echo "# install_state (machine-written; do not edit)"
+            echo "# Source: $state_file"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            cat "$state_file"
+        } > "$install_dir/install_state.txt" 2>&1
+        _support_log OK "install_state"
+    else
+        _support_log SKIP "install_state (not present: $state_file)"
+    fi
 }
 
 _collect_binaries() {
