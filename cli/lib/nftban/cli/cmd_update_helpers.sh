@@ -54,6 +54,17 @@ _update_log() {
     esac
 }
 
+# v1.198 R1b-3: fixed-phase progress marker for the full `nftban update` run.
+# Emits "[n/total] <phase>[ — <hint>]" through _update_log (timestamped in the
+# log, prefixed on the terminal). Presentation only — there is NO progress bar
+# and NO dynamic state machine; it does not change update logic, ordering, or
+# the rc contract. The total is a fixed phase count for a full run.
+_NFTBAN_UPDATE_PHASE_TOTAL="${_NFTBAN_UPDATE_PHASE_TOTAL:-6}"
+_update_phase() {
+    local n="$1" name="$2" hint="${3:-}"
+    _update_log INFO "[${n}/${_NFTBAN_UPDATE_PHASE_TOTAL}] ${name}${hint:+ — ${hint}}"
+}
+
 _update_banner() {
     local current_ver
     current_ver=$(_get_current_version 2>/dev/null || echo "unknown")
