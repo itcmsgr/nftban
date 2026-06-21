@@ -787,7 +787,7 @@ FILES AND LOCATIONS:
     GeoBan config:   /etc/nftban/conf.d/geoban/main.conf
     User overrides:  *.conf.local files in same directories
     GeoBan files:    /etc/nftban/geoban.d/
-    Country IPs:     /var/cache/nftban/geoban/
+    Country IPs:     /var/lib/nftban/geoip/
     Tracking:        /var/lib/nftban/geoban/tracking/
     Logs:            ${NFTBAN_LOG_DIR}/geoip.log
 
