@@ -1214,6 +1214,60 @@ nftban_kv() {
 export -f nftban_kv 2>/dev/null || true
 
 # =============================================================================
+# SHARED VALIDATOR FINDINGS RENDERER (v1.198 R1b-1)
+# =============================================================================
+# Renders the human findings block for report-style surfaces from the Go
+# validator's --json output. Extracted verbatim from the V127 UX-1 item 1.2
+# block in cmd_health.sh::nftban_health_cmd_truth so the classification lives
+# in one place (and the R1b-2 operator-readiness summary can reuse it). Pure
+# presentation — consumes only already-emitted fields (.findings[].severity /
+# .code / .message); no new validator field, no schema change, daemon
+# byte-identical.
+#
+# Behavior (unchanged from the inline original):
+#   - Default (verbose=false): show only non-INFO findings; if INFO findings
+#     exist, append a footer with the hidden count + "use --verbose to show".
+#   - verbose=true: show ALL findings regardless of severity (no footer).
+#   - Zero visible: "Findings: none" (+ hidden-INFO footer if any INFO exist).
+# Emits a leading blank line, matching the original block's placement.
+#
+# Usage: nftban_render_findings "<validator_json>" [verbose]   # verbose: true|false (default false)
+# JSON-mode callers MUST NOT use this (the --json path passes the validator
+# output through unfiltered upstream; this renderer is text-mode only).
+nftban_render_findings() {
+    local _json="${1:-}"
+    local _verbose="${2:-false}"
+    local total_count info_count visible_count
+    total_count=$(echo "$_json" | jq '.findings | length' 2>/dev/null || echo "0")
+    info_count=$(echo "$_json" | jq '[.findings[] | select(.severity == "info" or .severity == "INFO")] | length' 2>/dev/null || echo "0")
+    if [[ "$_verbose" == "true" ]]; then
+        visible_count="$total_count"
+    else
+        visible_count=$((total_count - info_count))
+    fi
+
+    echo ""
+    if [[ "$visible_count" -gt 0 ]]; then
+        echo "  Findings ($visible_count):"
+        if [[ "$_verbose" == "true" ]]; then
+            echo "$_json" | jq -r '.findings[] | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+        else
+            echo "$_json" | jq -r '.findings[] | select(.severity != "info" and .severity != "INFO") | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+        fi
+        if [[ "$_verbose" != "true" && "$info_count" -gt 0 ]]; then
+            echo "    (${info_count} INFO finding(s) hidden — use --verbose to show)"
+        fi
+    else
+        if [[ "$info_count" -gt 0 ]]; then
+            echo "  Findings: none (${info_count} INFO finding(s) hidden — use --verbose to show)"
+        else
+            echo "  Findings: none"
+        fi
+    fi
+}
+export -f nftban_render_findings 2>/dev/null || true
+
+# =============================================================================
 # FOOTER - Debug & Module Info
 # =============================================================================
 
