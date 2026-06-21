@@ -620,7 +620,7 @@ Features:
 Notes:
   • GeoBan uses the nftban-geoip Go binary for performance
   • Changes are applied atomically to running firewall
-  • Country IP lists are cached in /var/cache/nftban/geoban/
+  • Country IP lists are stored in /var/lib/nftban/geoip/
   • Configuration files stored in /etc/nftban/geoban.d/
 
 EOF
