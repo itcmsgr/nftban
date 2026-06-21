@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.197.0] - 2026-06-21 — MED validator/observability + legal/package-metadata hygiene
+
+**Codename:** `V197_MED_TRAIN` · **PRs:** [#905](https://github.com/itcmsgr/nftban/pull/905) (`482329b7`) + [#906](https://github.com/itcmsgr/nftban/pull/906) (`8736f1d5`) + [#907](https://github.com/itcmsgr/nftban/pull/907) (`a0a7eaf2`) + [#908](https://github.com/itcmsgr/nftban/pull/908) (`9864e5f0`) + [#909](https://github.com/itcmsgr/nftban/pull/909) (`f70ffa1c`) + [#910](https://github.com/itcmsgr/nftban/pull/910) (`9aa1f1ef`) · **Plan:** `V196_197_DEBT_BURN_AND_SINGLE_ROLLOUT_PLAN.md` · **Scope:** `V197_MED_SCOPE.md`
+
+> **What:** the final debt-burn train before the single waved fleet rollout — six independent single-domain lanes. **NFT schema UNCHANGED (1.84.0).** One lane (PR-A) is daemon-Go (validator): the packaged `nftban`/`nftban-core` daemon hash **moves off the v1.192.2 baseline** (re-baseline future shell/data-only lanes). No BotGuard re-enable, no counters/schema bump, no CSF, no installer parity, no 8E (cPanel/Plesk), no 8G (dead-knob deletion). The single waved Track-A rollout `v1.192.2 → v1.197.0` follows publish.
+
+### Fixed
+- **PR-A — VAL-LOGINMON-002-UX** (validator-Go, `internal/validator/module_health.go`): LoginMon health collapsed "source absent" and "source present but starved" into one WARN, so every non-web/non-FTP host read as a warning. Now classified **per-source** — a structurally-absent source (`NO_LOGS reason=no_<stack>`) reports **INFO / no action needed**; a present-but-starved source (`WARN_NO_LOGS reason=<stack>_present_…`) stays **WARN / actionable** — with the source + reason preserved (roundcube added to checked sources). Overall `PROTECTED/DEGRADED` rollup unchanged. **Rider:** geoban health resolves the GeoIP DB at `${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb` (honoring the configured data dir, `/var/lib/nftban` fallback) instead of a hardcoded path. Lab-first lab2 (DEB) + lab4 (RPM) PASS, both restored clean.
+- **PR-LICENSE — Core package license metadata**: the generated Core RPM spec declared `License: GPL-3.0-or-later` for an MPL-2.0 project — corrected to `License: MPL-2.0`, with `%license LICENSE` now shipped and a CI guard (`scripts/ci/check-license-metadata.sh`, wired into `ci-architecture.yml`) preventing regression. Adds DEP-5 `packaging/deb/copyright`, `AI_ASSISTED_DEVELOPMENT.md`, and repairs broken `NOTICE.md` references. Copyright holder kept as the repo canon `NFTBan Project / Antonios Voulvoulis`.
+
+### Added
+- **PR-B — SUPPORT-DIAG** (shell, read-only): `nftban support` diagnostics widened to diagnose install/health DEGRADED — dynamic `nftban*`/`nftband*` unit enumeration, `systemctl --failed`, per-unit Result/OOM properties, `install_state`, journald disk-usage, and OOM-kill evidence.
+- **PR-C — dual-family test coverage**: IPv6 cases added to the four v1.196 IPv4-only fixtures (portscan, pattern-ban, wpadmin, fcrdns); the `# PARITY-GUARD-EXEMPT` markers were removed so the IPv4/IPv6 parity guard now reports 6 dual-family / 0 exempt. **No runtime family gap** — the change is test coverage only.
+
+### Changed
+- **PR-D — recovery.conf**: stale fail2ban comments removed (NFTBan has no fail2ban integration) and the required `meta:inventory` header added — config-comment/header only, no key/value/default change.
+
+### Removed
+- **GOTH orphan cleanup**: removed the tracked-but-unconsumed `install/config/allowed-gui-groups` (GUI/nftban-ui retirement). `ENABLE_GUI=0` external-compat pin kept.
+
+### Notes
+- No schema change (1.84.0). Daemon hash moves (PR-A validator-Go) off the v1.192.2 baseline; no ban/nftables/detector-ownership/installer/packaging behavior change. Fleet rollout = one waved hop `v1.192.2 → v1.197.0` (Track A), separate per-host gate after publish.
+
+---
+
 ## [v1.196.0] - 2026-06-19 — LOW-risk debt sweep (test / docs / CI only)
 
 **Codename:** `V196_LOW_RISK_DEBT_SWEEP` · **PRs:** [#900](https://github.com/itcmsgr/nftban/pull/900) (`d233939f`) + [#901](https://github.com/itcmsgr/nftban/pull/901) (`f4956e7a`) + [#902](https://github.com/itcmsgr/nftban/pull/902) (`69ee41fc`) · **Plan:** `V196_197_DEBT_BURN_AND_SINGLE_ROLLOUT_PLAN.md` · **Scope:** `V196_LOW_RISK_SWEEP_SCOPE.md`
