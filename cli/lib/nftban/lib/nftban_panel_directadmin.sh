@@ -399,8 +399,12 @@ nftban_panel_directadmin_disable() {
         echo ""
         echo "DirectAdmin ports have been removed from firewall."
         echo ""
+        # v1.198 R1a-2 (15.12): don't hardcode SSH on 22 — resolve the safety
+        # port the firewall actually preserves (mirrors the v1.150 help fix), so
+        # the message is correct on hosts that moved SSH off 22.
+        local _da_ssh_port="${NFTBAN_SSH_TEST_PORT:-${SSH_PORT:-22}}"
         echo "Preserved ports from ports.d/:"
-        echo "  • 22 (SSH - safety port)"
+        echo "  • ${_da_ssh_port} (SSH - safety port)"
         echo "  • Any custom ports you configured"
         echo ""
         return 0
