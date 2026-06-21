@@ -537,6 +537,14 @@ nftban_health_cmd_truth() {
     printf "  %-14s %s\n" "Overall:" "$(echo "$status" | tr '[:lower:]' '[:upper:]')"
     printf "  %-14s %s\n" "Daemon:" "$nftband_state"
     printf "  %-14s %s\n" "Consistency:" "$consistency"
+
+    # v1.198 R1b-2: top-level operator-readiness verdict (Operational /
+    # Upgrade readiness / Action needed + IDLE explanation), computed shell-side
+    # from the validator JSON + rc already in hand. No install_state in the
+    # health context. Shell-only; daemon byte-identical; --json path unaffected
+    # (returned above). Actionable findings reuse the R1b-1 renderer.
+    nftban_render_operator_readiness "$output" "" "$validator_rc"
+
     echo ""
     echo "  Module       Config     Structure  Runtime    Effective"
     echo "  ───────────  ─────────  ─────────  ─────────  ─────────"

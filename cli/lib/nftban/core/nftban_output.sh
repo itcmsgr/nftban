@@ -1268,6 +1268,90 @@ nftban_render_findings() {
 export -f nftban_render_findings 2>/dev/null || true
 
 # =============================================================================
+# OPERATOR-READINESS SUMMARY (v1.198 R1b-2)
+# =============================================================================
+# A concise top-level operator verdict computed ENTIRELY shell-side from the
+# Go validator's already-emitted fields (.status, .findings[].severity) plus
+# optional shell-side inputs (install_state, validator/health rc). It answers
+# the three questions an operator actually has — "is it working / is the
+# upgrade OK / must I act now" — that the raw four-axis/IDLE/DEGRADED output
+# leaves ambiguous (HEALTH-UX-OPERATOR-READINESS-SUMMARY).
+#
+# It adds NO validator JSON field, NO schema change, NO Go change (daemon
+# byte-identical) and is text-mode only (the --json path renders nothing here).
+# Actionable detail reuses the R1b-1 nftban_render_findings helper.
+#
+# Decision table (driven by existing fields):
+#   Operational      : YES if status in {protected,idle,degraded}; else NO.
+#   Upgrade readiness : FAIL if  not-operational  OR status==degraded
+#                              OR max-severity in {error,critical}
+#                              OR install_state==DEGRADED  OR rc>=2;
+#                       PASS_WITH_WARN if max-severity==warn;  else PASS.
+#   Action needed    : FAIL / WARN / NONE mirroring readiness.
+#   IDLE is explained inline ("running, no active bans currently").
+#
+# Usage: nftban_render_operator_readiness "<validator_json>" [install_state] [rc]
+nftban_render_operator_readiness() {
+    local _json="${1:-}"
+    local _install_state="${2:-}"
+    local _rc="${3:-0}"
+
+    local status max_sev
+    status=$(echo "$_json" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+    [[ -z "$status" || "$status" == "null" ]] && status="unknown"
+    # Highest finding severity present (critical>error>warn>info>none).
+    max_sev=$(echo "$_json" | jq -r '
+        [.findings[]?.severity // empty | ascii_downcase] as $s
+        | if   ($s|index("critical")) then "critical"
+          elif ($s|index("error"))    then "error"
+          elif ($s|index("warn"))     then "warn"
+          elif ($s|index("info"))     then "info"
+          else "none" end' 2>/dev/null || echo "none")
+    [[ -z "$max_sev" || "$max_sev" == "null" ]] && max_sev="none"
+
+    local operational readiness action
+    case "$status" in
+        protected|idle|degraded) operational="YES" ;;
+        *)                       operational="NO" ;;
+    esac
+
+    local _rc_fail=0
+    [[ "$_rc" =~ ^[0-9]+$ ]] && (( _rc >= 2 )) && _rc_fail=1
+
+    if [[ "$operational" == "NO" || "$status" == "degraded" \
+          || "$max_sev" == "error" || "$max_sev" == "critical" \
+          || "$_install_state" == "DEGRADED" || "$_rc_fail" -eq 1 ]]; then
+        readiness="FAIL"
+    elif [[ "$max_sev" == "warn" ]]; then
+        readiness="PASS_WITH_WARN"
+    else
+        readiness="PASS"
+    fi
+
+    case "$readiness" in
+        FAIL)           action="FAIL" ;;
+        PASS_WITH_WARN) action="WARN" ;;
+        *)              action="NONE" ;;
+    esac
+
+    local op_line="$operational"
+    [[ "$status" == "idle" ]] && op_line="YES (running, no active bans currently)"
+
+    echo ""
+    echo "  Operator readiness"
+    echo "  ─────────────────────────────────────────"
+    printf "  %-20s %s\n" "Operational:" "$op_line"
+    printf "  %-20s %s\n" "Upgrade readiness:" "$readiness"
+    printf "  %-20s %s\n" "Action needed:" "$action"
+    # When action is needed, show the actionable findings via the shared
+    # R1b-1 renderer (WARN/ERROR/CRITICAL; INFO stays hidden by default).
+    if [[ "$action" != "NONE" ]]; then
+        nftban_render_findings "$_json" false
+    fi
+}
+export -f nftban_render_operator_readiness 2>/dev/null || true
+
+# =============================================================================
 # FOOTER - Debug & Module Info
 # =============================================================================
 
