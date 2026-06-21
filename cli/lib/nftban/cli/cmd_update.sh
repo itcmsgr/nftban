@@ -472,6 +472,7 @@ _cmd_update_main_locked() {
     echo ""
 
     # Create backup (H14 fix: abort if backup fails unless --force)
+    _update_phase 1 "Backup"
     if ! _create_backup; then
         if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
             _update_log WARN "Backup failed but continuing (--force mode)"
@@ -484,6 +485,7 @@ _cmd_update_main_locked() {
     # Execute update based on source
     # V108 Item 6: when source resolves to "github" (direct package-manager path),
     # only proceed for rpm/deb install types. Reject source/mixed/unknown.
+    _update_phase 2 "Install" "package install may take up to 60s"
     local result=0
     case "$source" in
         github)
@@ -549,7 +551,7 @@ _cmd_update_main_locked() {
 
     # Restart services to load new binaries
     echo ""
-    _update_log INFO "Restarting NFTBan services..."
+    _update_phase 3 "Restart services"
     local _svc_restart_failed=0
     for _svc in nftband.service nftban-core.service; do
         if systemctl is-active --quiet "$_svc" 2>/dev/null; then
@@ -569,7 +571,7 @@ _cmd_update_main_locked() {
     echo ""
     # Invalidate stale health cache from previous version
     rm -f "${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache" 2>/dev/null || true
-    _update_log INFO "Running health check..."
+    _update_phase 4 "Health check"
     local health_output health_status
     health_output=$(nftban health check --auto-heal --cache-status 2>&1) || health_status=$?
     health_status="${health_status:-0}"
@@ -588,7 +590,7 @@ _cmd_update_main_locked() {
     local new_version
     new_version=$(_get_current_version)
     echo ""
-    _update_log INFO "Running post-update verification..."
+    _update_phase 5 "Post-update verification"
     local _verify_fail=0
 
     # V1: nftables authority — nftban table must exist
@@ -756,6 +758,7 @@ _cmd_update_main_locked() {
     # ("Go installer is the single source of truth on non-clean exits") from
     # the postinst path to the nftban update path.
     # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.6)
+    _update_phase 6 "Finalize"
     local _install_state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
     local _installer_state="COMMITTED"  # default: green if state file absent (older installs)
     if [[ -f "$_install_state_file" ]]; then
@@ -773,6 +776,21 @@ _cmd_update_main_locked() {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+
+            # v1.198 R1b-3: explicit operator-readiness line, consistent with the
+            # consolidated install_state verdict (COMMITTED = success). PASS unless
+            # the post-update health check reported issues (then PASS_WITH_WARN);
+            # never FAIL on this path (DEGRADED/FAILED emit their own blocks).
+            # Derived from the update's OWN adjudicated signals — NOT the generic
+            # nftban_render_operator_readiness helper, whose status==degraded→FAIL
+            # rule would contradict a COMMITTED verdict (non-structural degraded can
+            # be COMMITTED). One block only — no second/contradictory verdict.
+            local _rd_ready="PASS" _rd_action="NONE"
+            if [[ "${health_status:-0}" -ne 0 ]]; then _rd_ready="PASS_WITH_WARN"; _rd_action="WARN"; fi
+            printf "  %-20s %s\n" "Operational:" "YES"
+            printf "  %-20s %s\n" "Upgrade readiness:" "$_rd_ready"
+            printf "  %-20s %s\n" "Action needed:" "$_rd_action"
             echo ""
 
             # v1.174 transparency: if this run auto-recovered a PRE-EXISTING failed
@@ -816,6 +834,12 @@ _cmd_update_main_locked() {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Update completed in DEGRADED state: v$current_version → v$new_version"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            # v1.198 R1b-3: readiness line consistent with the DEGRADED verdict
+            # (install_state authoritative). Augments the single consolidated block.
+            printf "  %-20s %s\n" "Operational:" "YES (kernel firewall may be active)"
+            printf "  %-20s %s\n" "Upgrade readiness:" "FAIL"
+            printf "  %-20s %s\n" "Action needed:" "review / repair (below)"
             echo ""
             if [[ -n "$_failure_reason" ]]; then
                 echo "  Reason: $_failure_reason"
