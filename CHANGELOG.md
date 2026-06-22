@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.198.0] - 2026-06-22 — R1 LOW-risk hygiene + operator-UX sweep
+
+**Codename:** `V198_R1_SWEEP` · **PRs:** [#912](https://github.com/itcmsgr/nftban/pull/912) (`606453b6`) + [#913](https://github.com/itcmsgr/nftban/pull/913) (`8ed90112`) + [#914](https://github.com/itcmsgr/nftban/pull/914) (`fcd9c8e7`) + [#915](https://github.com/itcmsgr/nftban/pull/915) (`837bc53c`) + [#916](https://github.com/itcmsgr/nftban/pull/916) (`b0f49fef`) + [#917](https://github.com/itcmsgr/nftban/pull/917) (`871c92a9`) + [#918](https://github.com/itcmsgr/nftban/pull/918) (`eceaa859`) + [#919](https://github.com/itcmsgr/nftban/pull/919) (`8f309cd6`) · **Scope:** `V198_R1_SCOPE.md` · **Forward plan:** `V198_PLUS_FORENSIC_BURNDOWN_SEQUENCE.md`
+
+> **What:** the R1 low-risk hygiene + operator-UX sweep — ten small same-domain lanes, all shell/test/config/docs/file-cleanup. **No Go change — `nftban`/`nftban-core` daemon byte-identical to v1.197.0** (hashes move only via the embedded git-commit stamp). **NFT schema UNCHANGED (1.84.0).** No BotGuard re-enable (stays disabled fleet-wide), no counters/schema bump, no CSF, no installer parity. **Deferred (NOT in R1):** config-path drift / 3 `UNCLEAR_NO_GO` conf files · packaging-vs-install systemd-split (D-RHG, structural) · cmd_firewall renderer-dedup · RBL 11.4 / TODO-36/23.
+
+### Added
+- Operator-readiness verdict in `nftban health` (`Operational` / `Upgrade readiness` PASS·PASS_WITH_WARN·FAIL / `Action needed` + IDLE explained), computed shell-side from already-emitted validator output — no new validator field, no schema change ([#913](https://github.com/itcmsgr/nftban/pull/913)).
+- `nftban update` fixed-phase `[n/6]` progress markers + readiness verdict folded into the existing install_state verdict block (no contradictory second verdict) ([#914](https://github.com/itcmsgr/nftban/pull/914)).
+- Shared `nftban_render_findings` helper (hide-INFO default / `--verbose` all / `--json` unfiltered) extracted from `cmd_health.sh` ([#912](https://github.com/itcmsgr/nftban/pull/912)).
+- Wiki: DDoS enforcement-pipeline Mermaid diagram (published to the live wiki, corrected to code-truth — per-IP service-port SYN `25/s burst 50` vs `ddos_prefix` `100/s burst 200`).
+
+### Fixed
+- GeoIP/GeoBan help advertised the obsolete country-IP path `/var/cache/nftban/geoban/`; corrected to the real runtime path `/var/lib/nftban/geoip/` ([#915](https://github.com/itcmsgr/nftban/pull/915)).
+- DirectAdmin `panel directadmin disable` confirmation hardcoded SSH port `22`; now resolves the configured safety port (`${NFTBAN_SSH_TEST_PORT:-${SSH_PORT:-22}}`) ([#916](https://github.com/itcmsgr/nftban/pull/916)).
+- CONFIG/RHG cosmetic comments: dropped the stale `NFTBan v1.0.0` header banner from `conf.d/{services,login_alert}.conf` and the `/home/commonfolder` dev-machine path from four `scripts/ci/*.sh` comment blocks (comment-only) ([#918](https://github.com/itcmsgr/nftban/pull/918)).
+
+### Removed
+- Two proven-unshipped repo artifacts: the byte-identical shadow `cli/etc/nftban/conf.d/trust.conf` (the shipped copy `etc/nftban/conf.d/trust.conf` is untouched) and the orphan `install/pam.d/nftban-api` (PAM config for the deprecated `nftban-api.service`). No package payload change ([#919](https://github.com/itcmsgr/nftban/pull/919)).
+
+### Notes (audit-close / regression-lock — no product change)
+- `rbl check --json` TXT escaping (`"`/`\`/newline): production fix already shipped in v1.150; this lane only adds the missing regression test ([#917](https://github.com/itcmsgr/nftban/pull/917)).
+- Shell installer `[PHASE]` markers: already emitted by the Go installer (`nftban-installer`) since v1.156 — audit-close, no code.
+- LoginMon shell `UX-MSG-AUDIT`: no misleading/contradictory shell messages found — audit-close, no code.
+
+---
+
 ## [v1.197.0] - 2026-06-21 — MED validator/observability + legal/package-metadata hygiene
 
 **Codename:** `V197_MED_TRAIN` · **PRs:** [#905](https://github.com/itcmsgr/nftban/pull/905) (`482329b7`) + [#906](https://github.com/itcmsgr/nftban/pull/906) (`8736f1d5`) + [#907](https://github.com/itcmsgr/nftban/pull/907) (`a0a7eaf2`) + [#908](https://github.com/itcmsgr/nftban/pull/908) (`9864e5f0`) + [#909](https://github.com/itcmsgr/nftban/pull/909) (`f70ffa1c`) + [#910](https://github.com/itcmsgr/nftban/pull/910) (`9aa1f1ef`) · **Plan:** `V196_197_DEBT_BURN_AND_SINGLE_ROLLOUT_PLAN.md` · **Scope:** `V197_MED_SCOPE.md`
