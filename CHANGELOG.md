@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.198.3] - 2026-06-23 — Hotfix: cadence-timer inhibit during update binary-swap (`BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE`)
+
+**Codename:** `V198_3_WATCHDOG_UPDATE_SWAP_RACE` · **PR:** [#925](https://github.com/itcmsgr/nftban/pull/925) (`7d7588d5`) · **Scope:** `V1_198_3_SCOPE_WATCHDOG_UPDATE_RACE.md`
+
+> **What:** a surgical, **shell-only** lifecycle/update-window reliability hotfix. **Daemon byte-identical to v1.198.2** (zero `.go`; only git-stamp/package-metadata differs). **NFT schema UNCHANGED (1.84.0).** No systemd-unit, no firewall/nftables behavior, no BotGuard, no counters/metrics, no A2 assertion-tolerance, no v1.199 forensic-log work.
+
+### Fixed
+- **`BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE`** — `nftban-watchdog.timer` (`OnUnitActiveSec=120s`, `ExecStart=/usr/sbin/nftban watchdog run`) could fire while `nftban update` was replacing / permission-/attribute-toggling `/usr/sbin/nftban`, hitting a transient `EXEC 203 Permission denied`. That latched `nftban-watchdog.service` failed and the post-install `failed_units_postinstall_ok` assertion marked `install_state=DEGRADED` on an otherwise-healthy upgrade. **Class:** lifecycle/update-race. **Severity:** MED (reliability/lifecycle-truth) — **not** a firewall/ban/protection failure.
+
+### dns2 incident (reproduced in production)
+During the v1.198.2 fleet rollout, **dns2** finished `DEGRADED` + `failed=1` = `nftban-watchdog.service` `Failed at step EXEC spawning /usr/sbin/nftban: Permission denied` at **2026-06-22 20:23:24Z — inside the update window**, while live state was healthy (v1.198.2, validate rc0, daemon active, floor_breach=0; `/usr/sbin/nftban` `0750 root:nftban`; watchdog re-runs clean). **dns2 recovered to COMMITTED via the official `nftban update recommit`** (v1.198.1 path) — no manual edit, no `firewall reset --force`, bans intact. monitor + dns1 had passed clean; the race is timing-dependent (~120s cadence vs the ~30-45s swap), so the remaining hosts were held for this fix.
+
+### v1.198.3 A1 fix
+`cmd_update.sh` wraps the `[2/6] Install` (binary-swap) phase: `_update_inhibit_cadence_timers` transiently **stops** the active racing timers (`nftban-watchdog.timer` + defensive `nftban-maintenance.timer`); `_update_restore_cadence_timers` restores **exactly** the ones it stopped (idempotent; **never enables a disabled timer; never masks**) — explicit restore after the install case (success + handled-failure) plus a **scoped `INT/TERM` trap** (interrupt). **No `EXIT` trap** (the update-lock cleanup is return-based and must not be clobbered; the trap is cleared right after restore). `_update_verify_watchdog` runs the watchdog once post-swap and **fails only if the restored watchdog still fails** (a clean re-run clears any stale latch; never masks a genuine failure).
+
+### Notes
+- Shell-only: `cmd_update.sh` + `cmd_update_helpers.sh`. Daemon byte-identical to v1.198.2; NFT schema 1.84.0.
+- Tests: `watchdog_update_swap_race_v1983_test.sh` **20/0** (stops-only-active · restores-exactly · idempotent · failure-path · never mask/enable · watchdog-verify pos/neg · static install-phase-wiring + no-EXIT-trap guard). **Stage-1 (source/staged) lab2 (DEB) + lab4 (RPM) PASS** (real `nftban update` → COMMITTED, 0 failed, both timers restored, watchdog verification passed; ban deltas were feed-resync lag, not loss). **Pre-existing test debt** `cmd_update_lock_cleanup_v135_test.sh::static_s3` is red on clean main and this candidate identically (`PRE_EXISTING_TEST_DEBT_STATIC_S3_LOCK_CLEANUP_NOT_INTRODUCED_BY_V1_198_3`).
+- **Release gate:** this build is **NOT release-ready on Stage-1 alone** — fleet resume / publish stay blocked until **package-native Stage B** validates v1.198.3 as built DEB/RPM through the official upgrade path on lab2 + lab4.
+- Deferred (NOT in v1.198.3): A2 assertion-tolerance + broader stale-oneshot/SOAK → v1.201; installer per-run forensic logs + `nftban support` all-logs → v1.199.
+
+---
+
 ## [v1.198.2] - 2026-06-22 — Hotfix: firewall-transition health truth (clear path + verdict aggregation)
 
 **Codename:** `V198_2_FW_TRANSITION_HEALTH_TRUTH` · **PR:** [#923](https://github.com/itcmsgr/nftban/pull/923) (`7f763ca8`) · **Scope:** `V1_198_2_SCOPE_FW_TRANSITION_HEALTH_TRUTH.md`
