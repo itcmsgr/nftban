@@ -64,8 +64,23 @@ log_alert() {
     local level="$1"
     shift
     mkdir -p "$(dirname "$ALERT_LOG")" 2>/dev/null || true
-    echo "[$TIMESTAMP] [$level] $*" >> "$ALERT_LOG"
-    logger -t nftban-alert -p "user.${level,,}" "$*"
+    echo "[$TIMESTAMP] [$level] $*" >> "$ALERT_LOG" 2>/dev/null || true
+    # v1.198.1 PR-A (D-NFTBAN-ALERT-LOGGER-DEVLOG-PERMISSION): deliver to the journal
+    # via stderr — the unit sets StandardError=journal + SyslogIdentifier=nftban-alert,
+    # so this reaches the journal WITHOUT the /dev/log socket, which is EACCES under the
+    # unit sandbox (PrivateDevices=yes + User=nftban: `logger` → "socket /dev/log:
+    # Permission denied"). stderr (not stdout) avoids polluting any caller's command
+    # substitution; with the file log above it is the durable sink for this handler.
+    printf '[%s] [%s] %s\n' "$TIMESTAMP" "$level" "$*" >&2
+    # Best-effort syslog: under the sandbox `logger` fails with EACCES on /dev/log. That
+    # must NEVER fail or latch the OnFailure oneshot (it is the last command in this
+    # function, so an unguarded non-zero would become the script's exit code → the unit
+    # latches "failed" → the post-install failed-unit assertion trips → install_state
+    # DEGRADED). The journal + file sinks above already delivered the alert.
+    # cf. nftban_login.sh:412 (same /dev/log-in-sandbox suppression). This does NOT hide
+    # a real alert-DELIVERY failure: email delivery keeps its own rc contract in main().
+    logger -t nftban-alert -p "user.${level,,}" "$*" 2>/dev/null || true
+    return 0
 }
 
 # =============================================================================

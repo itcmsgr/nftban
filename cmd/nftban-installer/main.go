@@ -232,6 +232,14 @@ func systemIdentity() (hostname, osInfo string) {
 
 // run is the top-level orchestrator. Returns a process exit code.
 func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
+	// v1.198.1 PR-B (D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): restart-free
+	// recompute of a stale DEGRADED install_state. Dispatched before every
+	// install/upgrade/repair path because it neither installs nor restarts the
+	// daemon — it only re-runs the LIVE post-install assertions and re-writes
+	// install_state. Never marks COMMITTED unless every live assertion passes.
+	if cfg.revalidate {
+		return runRevalidate(ctx, exec, sf, cfg, log)
+	}
 	if cfg.repair {
 		return runRepair(ctx, exec, sf, log)
 	}
