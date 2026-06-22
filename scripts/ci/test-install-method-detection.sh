@@ -17,8 +17,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 #
-# Implements V108 Item 6 per scope artifact:
-#   /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/AUDIT_190_LIFECYCLE/
+# Implements V108 Item 6 per the project audit scope artifact:
 #   V108_ITEM6_SOURCE_INSTALL_DETECTION_SCOPE.md
 #
 # Motivating defect (dns2 v1.107.2 rollout):

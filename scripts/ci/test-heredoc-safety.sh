@@ -17,8 +17,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 #
-# Implements V108 Item 3 per scope artifact:
-#   /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/AUDIT_190_LIFECYCLE/
+# Implements V108 Item 3 per the project audit scope artifact:
 #   V108_ITEM3_HEREDOC_SAFETY_SCAN_SCOPE.md
 #
 # Motivating defect (v1.107.1 / PR #585 fixup commit da14e182):
