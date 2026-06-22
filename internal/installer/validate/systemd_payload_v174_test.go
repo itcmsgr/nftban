@@ -342,13 +342,23 @@ func TestMonitorAlertUnitV174(t *testing.T) {
 		t.Fatalf("in-window alert@: failed_units_postinstall_ok must FAIL (stays DEGRADED)")
 	}
 
-	// 3) pre-existing but live health NOT clean -> DEGRADED (fail-safe).
+	// 3) pre-existing + live health NOT clean.
+	// v1.198.1 PR-B (D-NFTBAN-ALERT-LOGGER-DEVLOG-PERMISSION /
+	// D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): nftban-alert@ is now a
+	// stale-clearable oneshot (staleClearableOneshotStems), so a latch strictly
+	// BEFORE the install window recovers WITHOUT the live-health gate — the alert
+	// latch itself can make the live-health probe read unclean (the same circular
+	// block v1.185.1 fixed for nftban-botscan, and the exact srv4 v1.198.0 case).
+	// This SUPERSEDES the original v1.174 fail-safe-to-DEGRADED expectation for
+	// this pre-existing case. An IN-WINDOW alert failure still DEGRADES (case 2),
+	// so real current failures are never masked.
 	r3 := ValidateInstalledSystemdPayload(SystemdPayloadInputs{
 		FailedNftbanUnits: []FailedUnitFinding{mk(preExisting)}, InstallWindowStart: windowStart,
 		InstallWindowStartKnown: true, LiveHealthClean: false, LiveHealthKnown: true,
 	})
-	if r3.FailedUnitsOK() {
-		t.Fatalf("pre-existing alert@ + unhealthy live health must stay DEGRADED")
+	if !r3.FailedUnitsOK() || len(r3.FailedUnitsPreExistingRecovered) != 1 || len(r3.FailedUnits) != 0 {
+		t.Fatalf("v1.198.1 PR-B: pre-existing alert@ recovers without the live-health gate; got OK=%v recovered=%d fatal=%d",
+			r3.FailedUnitsOK(), len(r3.FailedUnitsPreExistingRecovered), len(r3.FailedUnits))
 	}
 }
 

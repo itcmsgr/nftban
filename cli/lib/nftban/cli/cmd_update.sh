@@ -922,6 +922,43 @@ _cmd_update_main_locked() {
     esac
 }
 
+_cmd_update_recommit() {
+    # v1.198.1 PR-B (D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): official,
+    # restart-free recompute of a stale DEGRADED install_state. Delegates to
+    # `nftban-installer --revalidate`, which re-runs ONLY the live post-install
+    # assertions and re-writes install_state — no package install, no firewall
+    # render, no daemon restart. install_state goes COMMITTED only when every
+    # live assertion passes; a real remaining failure leaves it DEGRADED (no
+    # masking). This is the supported way to clear a stale DEGRADED marker once
+    # the underlying cause (e.g. a pre-existing systemd failed-state latch) is
+    # resolved — replacing manual edits of the machine-written state file.
+    _update_banner
+    echo ""
+
+    if [[ $EUID -ne 0 ]]; then
+        _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
+        _update_log INFO "Hint: update recommit requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
+        return 1
+    fi
+
+    local installer="/usr/lib/nftban/bin/nftban-installer"
+    if [[ ! -x "$installer" ]]; then
+        _update_log ERROR "nftban-installer not found at $installer — cannot recommit"
+        return 1
+    fi
+
+    _update_log INFO "Recomputing install_state from live post-install assertions (no install, no daemon restart)..."
+    "$installer" --revalidate
+    local rc=$?
+    case $rc in
+        0) _update_log OK "install_state recommitted: COMMITTED" ;;
+        1) _update_log WARN "install_state remains DEGRADED — live assertions still failing (see above); not masking a real failure" ;;
+        5) _update_log INFO "Nothing to recommit (state is not DEGRADED, version mismatch, or no state file) — see above" ;;
+        *) _update_log ERROR "recommit failed (installer exit $rc)" ;;
+    esac
+    return $rc
+}
+
 _cmd_update_repair() {
     # Repair a broken nftban installation
     # This is the nuclear option - fixes dpkg, removes immutable flags,
@@ -1581,6 +1618,8 @@ COMMANDS:
     force               Force reinstall/update (fixes dpkg, removes immutable flags)
     rollback            Restore previous version from backup (fixes dpkg first)
     repair              Fix broken install (dpkg state, immutable flags, restore backup)
+    recommit            Recompute a stale DEGRADED install_state from live post-install
+                        assertions (no install/restart); → COMMITTED only if all pass
     list                List available backups
     history             Show update history (last 9 updates, --json supported)
     auto [ACTION]       Manage auto-update timer (enable|disable|status)
@@ -2558,6 +2597,11 @@ nftban_cmd_update() {
             ;;
         repair|--repair|fix)
             _cmd_update_repair
+            ;;
+        recommit|--recommit|revalidate)
+            # v1.198.1 PR-B: restart-free recompute of a stale DEGRADED
+            # install_state → COMMITTED via nftban-installer --revalidate.
+            _cmd_update_recommit
             ;;
         rollback|--rollback|-r)
             # v1.139.2: pass "$@" so _do_rollback's help-guard sees --help/-h/help.

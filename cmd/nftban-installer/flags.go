@@ -31,23 +31,24 @@ import (
 
 // config holds parsed CLI flags and environment variable overrides.
 type config struct {
-	mode        string // "install" or "upgrade"
-	rpm         bool   // called from RPM %post
-	deb         bool   // called from DEB postinst
-	repair      bool   // resume from last failed phase
-	force         bool // re-run all phases ignoring state (V125 R-4 + V126 Lane A: requires --allow-recommit when state IN {COMMITTED, DEGRADED})
-	allowRecommit bool // V125 R-4 + V126 Lane A: companion to --force; explicit operator confirmation for re-running phases on a completed install state (COMMITTED or DEGRADED)
-	takeover    bool   // approve takeover of conflicting firewalls
-	dryRun      bool   // show what would happen without changes
-	verbose     bool   // full diagnostic logging
-	quiet       bool   // minimal output
-	jsonOutput  bool   // machine-readable JSON output
-	stateDir    string // override state directory
-	logPath     string // override log file path
-	showVersion bool   // print version and exit
-	lifecycle   bool   // v1.98: use canonized lifecycle flow (feature flag)
-	source      bool   // v1.98.x PR-14-pre: source install (stage payload + users from repo tree)
-	sourceDir   string // v1.98.x PR-14-pre: source tree root for --source (resolved in parseFlags)
+	mode          string // "install" or "upgrade"
+	rpm           bool   // called from RPM %post
+	deb           bool   // called from DEB postinst
+	repair        bool   // resume from last failed phase
+	force         bool   // re-run all phases ignoring state (V125 R-4 + V126 Lane A: requires --allow-recommit when state IN {COMMITTED, DEGRADED})
+	allowRecommit bool   // V125 R-4 + V126 Lane A: companion to --force; explicit operator confirmation for re-running phases on a completed install state (COMMITTED or DEGRADED)
+	revalidate    bool   // v1.198.1 PR-B (D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): recompute install_state from LIVE post-install assertions only — no install, no daemon restart. DEGRADED→COMMITTED only if all live assertions pass; never masks a real failure.
+	takeover      bool   // approve takeover of conflicting firewalls
+	dryRun        bool   // show what would happen without changes
+	verbose       bool   // full diagnostic logging
+	quiet         bool   // minimal output
+	jsonOutput    bool   // machine-readable JSON output
+	stateDir      string // override state directory
+	logPath       string // override log file path
+	showVersion   bool   // print version and exit
+	lifecycle     bool   // v1.98: use canonized lifecycle flow (feature flag)
+	source        bool   // v1.98.x PR-14-pre: source install (stage payload + users from repo tree)
+	sourceDir     string // v1.98.x PR-14-pre: source tree root for --source (resolved in parseFlags)
 	// v1.100 PR-22: uninstall scaffold flags. All plan-only in PR-22 —
 	// no mutation code consumes these; they only influence the rendered
 	// release plan.
@@ -107,6 +108,7 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.rpm, "rpm", false, "Called from RPM %post")
 	flag.BoolVar(&cfg.deb, "deb", false, "Called from DEB postinst")
 	flag.BoolVar(&cfg.repair, "repair", false, "Resume from last failed phase")
+	flag.BoolVar(&cfg.revalidate, "revalidate", false, "Recompute install_state from LIVE post-install assertions only (no install, no daemon restart). Transitions a stale DEGRADED → COMMITTED only when every live assertion passes (version match, validate clean, 0 failed nftban units, ip/ip6 tables, daemon active); otherwise leaves DEGRADED with the current live reason. Does not mask real failures.")
 	flag.BoolVar(&cfg.force, "force", false, "Re-run all phases ignoring state")
 	// V125 R-4 + V126 Lane A: companion safety flag for --force on a completed
 	// install. When install_state is COMMITTED or DEGRADED, --force alone is
@@ -210,7 +212,7 @@ func parseFlags() *config {
 		os.Exit(state.ExitFatal)
 	}
 
-	if !cfg.showVersion && !cfg.repair {
+	if !cfg.showVersion && !cfg.repair && !cfg.revalidate {
 		// v1.100 PR-24: --mode=restore — authority restoration policy
 		// decision engine (pure, no mutation). Validation rules here
 		// exist to keep the invocation surface tight per seed §2: the
