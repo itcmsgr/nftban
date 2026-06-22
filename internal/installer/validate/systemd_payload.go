@@ -130,6 +130,17 @@ func IsAuxiliaryUnit(basename string) bool {
 // upgrade and neither the upgrade nor --repair could clear it).
 var staleClearableOneshotStems = map[string]bool{
 	"nftban-botscan": true,
+	// v1.198.1 PR-B (D-NFTBAN-ALERT-LOGGER-DEVLOG-PERMISSION /
+	// D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): the OnFailure service-failure
+	// alert is Type=oneshot and latches `failed` from a past nftband restart
+	// (before PR-A made its logger sandbox-safe, the alert exited non-zero every
+	// time it fired). Its latch pre-dating the install window cannot have been
+	// caused by this upgrade, and it can itself make the live-health probe read
+	// unclean — the same circular block v1.185.1 fixed for nftban-botscan — so
+	// recover it without the live-health gate. The stem is the TEMPLATE form
+	// ("nftban-alert@"); isStaleClearableOneshot reduces instance stems
+	// ("nftban-alert@nftband.service") to it.
+	"nftban-alert@": true,
 }
 
 // isStaleClearableOneshot reports whether an nftban unit basename is a
@@ -144,7 +155,15 @@ func isStaleClearableOneshot(basename string) bool {
 	if dot <= 0 {
 		return false
 	}
-	return staleClearableOneshotStems[basename[:dot]]
+	stem := basename[:dot]
+	// v1.198.1 PR-B: a template-instance unit (nftban-alert@<instance>.service)
+	// carries an instance-specific stem (e.g. "nftban-alert@nftband.service").
+	// Reduce it to the template stem ("nftban-alert@") so one map entry matches
+	// every instance. Non-template stems are unchanged.
+	if at := strings.IndexByte(stem, '@'); at >= 0 {
+		stem = stem[:at+1]
+	}
+	return staleClearableOneshotStems[stem]
 }
 
 // ParsedUnit is the minimum subset of a systemd unit file needed for
