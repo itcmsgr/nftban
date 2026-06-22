@@ -54,21 +54,26 @@ OUT=$(nftban_render_operator_readiness '{"status":"idle","findings":[]}' "" 0)
 af "$OUT" "YES (running, no active bans currently)" "T2 idle -> IDLE explanation"
 ar "$OUT" "Upgrade readiness:[[:space:]]+PASS$"     "T2 idle -> readiness PASS"
 
-# T3: idle + WARN -> YES / PASS_WITH_WARN / WARN (+ finding shown via R1b-1 helper)
+# T3: idle + WARN -> YES / PASS_WITH_WARN / WARN. v1.198.2 PR-C: the readiness
+# block is the VERDICT surface only — it no longer re-renders the per-finding
+# detail (that duplicated the canonical "Findings:" section in cmd_health); it
+# emits a one-line pointer instead.
 OUT=$(nftban_render_operator_readiness '{"status":"idle","findings":[{"severity":"warn","code":"VAL-LOGINMON-002","message":"webauth present but starved"}]}' "" 0)
 ar "$OUT" "Upgrade readiness:[[:space:]]+PASS_WITH_WARN$" "T3 WARN -> readiness PASS_WITH_WARN"
 ar "$OUT" "Action needed:[[:space:]]+WARN$"         "T3 WARN -> action WARN"
-af "$OUT" "[WARN] VAL-LOGINMON-002:"                "T3 actionable WARN finding rendered (R1b-1 helper)"
+nf "$OUT" "[WARN] VAL-LOGINMON-002:"                "T3 PR-C: finding detail NOT re-rendered in readiness block (verdict-only)"
+ar "$OUT" "see the Findings section below"          "T3 PR-C: readiness points to the Findings section instead of duplicating"
 
 # T4a: degraded status -> FAIL
 OUT=$(nftban_render_operator_readiness '{"status":"degraded","findings":[{"severity":"warn","code":"VAL-TIMER-001","message":"x"}]}' "" 0)
 ar "$OUT" "Upgrade readiness:[[:space:]]+FAIL$"     "T4a degraded -> readiness FAIL"
 ar "$OUT" "Action needed:[[:space:]]+FAIL$"         "T4a degraded -> action FAIL"
 
-# T4b: error-severity finding (status protected) -> FAIL + finding shown
+# T4b: error-severity finding (status protected) -> FAIL. v1.198.2 PR-C: detail
+# rendered once in the canonical Findings section, not duplicated here.
 OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[{"severity":"error","code":"VAL-CHAIN-001","message":"chain missing"}]}' "" 0)
 ar "$OUT" "Upgrade readiness:[[:space:]]+FAIL$"     "T4b error finding -> readiness FAIL"
-af "$OUT" "[ERROR] VAL-CHAIN-001:"                  "T4b error finding rendered"
+nf "$OUT" "[ERROR] VAL-CHAIN-001:"                  "T4b PR-C: error finding detail NOT re-rendered in readiness block"
 
 # T5: install_state DEGRADED (update path) -> NOT PASS even when protected+clean
 OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "DEGRADED" 0)

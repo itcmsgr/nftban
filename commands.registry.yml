@@ -1535,6 +1535,13 @@ firewall:
       mutates: true
       requires_root: true
       description: "Reload nftables ruleset"
+    transition-health:
+      mutates: conditional
+      requires_root: conditional
+      description: "Report or acknowledge the firewall-transition health alarm. 'status' (default) prints the current verdict; 'ack' clears a RESOLVED alarm via the gated reset (refuses if a current breach remains; touches only state JSON, no ban loss). v1.198.2 PR-A."
+      examples:
+        - "nftban firewall transition-health"
+        - "nftban firewall transition-health ack"
     takeover:
       mutates: true
       requires_root: true

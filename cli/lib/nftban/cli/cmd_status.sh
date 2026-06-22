@@ -1206,11 +1206,26 @@ _status_section_health() {
     # authoritative posture verdict. Label it "Health" so the authoritative
     # firewall posture is stated once (in the State line), and the health
     # roll-up reads as diagnostics rather than a competing PROTECTED claim.
-    if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
-        nftban_kv "Health" "OK (info notices)"
-    else
-        nftban_kv "Health" "$health_status"
+    # v1.198.2 PR-B (BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL): read the
+    # transition harm counters BEFORE the Health roll-up so a CRITICAL alarm
+    # qualifies it — the Health line must not read clean/green beside the 🔴
+    # CRITICAL "FW Transition" line below. Cheap persisted read (sed, jq-free).
+    local _fthf="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json" _fth_crit=0
+    if [[ -r "$_fthf" ]]; then
+        local _qf _qt _qb
+        _qf=$(sed -n 's/.*"floor_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fthf" | head -1)
+        _qt=$(sed -n 's/.*"table_absent_while_committed_count"[: ]*\([0-9]*\).*/\1/p' "$_fthf" | head -1)
+        _qb=$(sed -n 's/.*"blacklist_empty_during_refresh_count"[: ]*\([0-9]*\).*/\1/p' "$_fthf" | head -1)
+        (( ${_qf:-0} > 0 || ${_qt:-0} > 0 || ${_qb:-0} > 0 )) && _fth_crit=1
     fi
+    local _health_render
+    if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
+        _health_render="OK (info notices)"
+    else
+        _health_render="$health_status"
+    fi
+    (( _fth_crit == 1 )) && _health_render="${_health_render} — ⚠ firewall-transition alarm (see FW Transition)"
+    nftban_kv "Health" "$_health_render"
 
     # v1.192.1 PR-B: firewall transition health (harm-keyed; cadence never alarms).
     # Reads persisted counters only (cheap, no live nft probe here).

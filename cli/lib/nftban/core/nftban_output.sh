@@ -1328,6 +1328,19 @@ nftban_render_operator_readiness() {
         readiness="PASS"
     fi
 
+    # v1.198.2 PR-B (BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL): an
+    # unresolved CRITICAL/ERROR firewall-transition alarm MUST flag operator
+    # readiness even when the runtime validator status is protected/idle — the
+    # headline must never read clean (PASS/NONE) while a CRITICAL transition
+    # finding is printed. $4 is the fth_eval_health severity code (3=CRITICAL,
+    # 2=ERROR, 1=WARN, 0=OK, ""=unknown/absent), passed by cmd_health. Only ever
+    # RAISE the verdict (PASS -> PASS_WITH_WARN); never mask an existing FAIL.
+    local _fth_sev="${4:-}" _fth_alarm=0
+    if [[ "$_fth_sev" == "3" || "$_fth_sev" == "2" ]]; then
+        _fth_alarm=1
+        [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
+    fi
+
     case "$readiness" in
         FAIL)           action="FAIL" ;;
         PASS_WITH_WARN) action="WARN" ;;
@@ -1336,6 +1349,8 @@ nftban_render_operator_readiness() {
 
     local op_line="$operational"
     [[ "$status" == "idle" ]] && op_line="YES (running, no active bans currently)"
+    # PR-B: qualify Operational so a transition alarm is visible on the verdict line.
+    [[ "$_fth_alarm" -eq 1 ]] && op_line="${op_line} — unresolved firewall-transition alarm"
 
     echo ""
     echo "  Operator readiness"
@@ -1343,10 +1358,15 @@ nftban_render_operator_readiness() {
     printf "  %-20s %s\n" "Operational:" "$op_line"
     printf "  %-20s %s\n" "Upgrade readiness:" "$readiness"
     printf "  %-20s %s\n" "Action needed:" "$action"
-    # When action is needed, show the actionable findings via the shared
-    # R1b-1 renderer (WARN/ERROR/CRITICAL; INFO stays hidden by default).
-    if [[ "$action" != "NONE" ]]; then
-        nftban_render_findings "$_json" false
+    # v1.198.2 PR-C (D-V198-HEALTH-FINDINGS-DOUBLE-RENDER): the readiness block is
+    # the VERDICT surface only — it no longer re-renders the per-finding detail
+    # (that duplicated the canonical "Findings:" section in cmd_health). It now
+    # emits a one-line pointer so the operator knows where the detail is.
+    if [[ "$_fth_alarm" -eq 1 ]]; then
+        printf "  %-20s %s\n" "" "→ firewall-transition alarm: see 'Firewall Transition' below (clear: nftban firewall rebuild)"
+    fi
+    if [[ "$action" != "NONE" && ( "$max_sev" == "warn" || "$max_sev" == "error" || "$max_sev" == "critical" ) ]]; then
+        printf "  %-20s %s\n" "" "→ see the Findings section below for the actionable item(s)"
     fi
 }
 export -f nftban_render_operator_readiness 2>/dev/null || true
