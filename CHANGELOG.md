@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.198.2] - 2026-06-22 — Hotfix: firewall-transition health truth (clear path + verdict aggregation)
+
+**Codename:** `V198_2_FW_TRANSITION_HEALTH_TRUTH` · **PR:** [#923](https://github.com/itcmsgr/nftban/pull/923) (`7f763ca8`) · **Scope:** `V1_198_2_SCOPE_FW_TRANSITION_HEALTH_TRUTH.md`
+
+> **What:** a surgical, **shell-only** hotfix for the firewall-transition health surface. **NFT schema UNCHANGED (1.84.0). Daemon byte-identical to v1.198.1** (zero `.go`). **No firewall/ban enforcement, detector, or BotGuard behavior change.** Surfaced during the v1.198.1 fleet rollout when lab2 showed a sticky `floor_breach=1` CRITICAL while live protection was healthy.
+
+### Added
+- **Official transition-health clear path** (`BUG-FW-TRANSITION-HEALTH-COUNTER-STICKY-NO-RESET`) — new `nftban firewall transition-health status` (report the current verdict) and `nftban firewall transition-health ack` (clear a **resolved** alarm). The ack zeroes the cumulative harm counters **only after a live probe verifies the management floor is intact** (refuses otherwise — it cannot mask a current breach), preserves the prior anomaly timestamp as audit history, and touches **only the state JSON** — no `nft`/ban-set mutation. A clean `nftban firewall rebuild` also clears a resolved alarm via the same gated logic. Registered in the CLI help, command registry, and bash-completion.
+
+### Fixed
+- **Health/status verdict aggregation** (`BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL`) — a CRITICAL firewall-transition alarm now flags the operator verdict: `nftban health` reads `Upgrade readiness: PASS_WITH_WARN` / `Action needed: WARN` with an alarm note (no longer `PASS`/`NONE`), and `nftban status` qualifies the Health roll-up. **No more green/`PASS`/`NONE` headline beside a `Firewall Transition: CRITICAL` line.** Runtime protection may still read PROTECTED — the operator-truth surface now reflects the unresolved alarm.
+- **Finding double-render** (`D-V198-HEALTH-FINDINGS-DOUBLE-RENDER`) — the operator-readiness block is now verdict-only; finding detail renders **once** in the canonical "Findings" section.
+
+### Operator example (real lab2 case — canonical)
+- **Symptom:** `nftban status` shows `FW Transition....... 🔴 CRITICAL (floor=1 table=0 blacklist=0)` while the firewall is otherwise healthy (daemon active, tables present, bans enforcing). This is a *resolved* historical transition transient whose cumulative counter never cleared.
+- **Inspect, then clear:**
+  ```
+  nftban firewall transition-health status      # CRITICAL — floor_breach=1
+  nftban firewall transition-health ack          # clears ONLY after live-floor verification
+  ```
+- **Expected result:** `floor_breach` clears to 0 **only after** the live floor is verified intact; **bans are preserved** (lab2: 343 → 343, no loss); `nftban health`/`status` become consistent; the prior anomaly timestamp is retained for audit.
+- **Do NOT** use `nftban firewall reset --force` merely to clear a resolved transition alarm — that flushes all sets and **drops every ban**. The `ack` path is the proportionate, ban-preserving way. `ack` **refuses if a current breach still exists** (restore the floor with `nftban firewall rebuild` first).
+
+### Notes
+- Shell-only: `nftban_firewall_transition_health.sh` (gated `fth_reset_transition_health`), `nftban_output.sh` (readiness), `cmd_health.sh`/`cmd_status.sh` (verdict surfaces), `cmd_firewall.sh` (verb + rebuild clear). NFT schema 1.84.0; daemon byte-identical to v1.198.1. Tests: `fw_transition_health_truth_v1982_test.sh` (16/16: reset positive/negative no-mask, no-ban-loss, verdict aggregation) + updated `nftban_operator_readiness_r1b2_test.sh` (23/0) + `firewall_transition_health_v1921_test.sh` (34/0). **Lab-first:** lab2 (DEB/Plesk) stuck-host proof PASS (real `floor_breach=1` cleared via `ack`, bans preserved) + lab4 (RPM/cPanel) clean regression PASS. **Deferred (NOT in v1.198.2):** `BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING` → a v1.199 lifecycle-forensics lane (per-run forensic logs + `nftban support` all-logs collection).
+
+---
+
 ## [v1.198.1] - 2026-06-22 — Hotfix: alert-handler /dev/log robustness + install_state recommit path
 
 **Codename:** `V198_1_ALERT_HANDLER_AND_RECOMMIT` · **PR:** [#921](https://github.com/itcmsgr/nftban/pull/921) (`260d0ad9`) · **Scope:** `V1_198_1_HOTFIX_SCOPE_ALERT_HANDLER_AND_RECOMMIT.md`
