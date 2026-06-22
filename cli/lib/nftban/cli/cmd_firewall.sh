@@ -282,6 +282,66 @@ _firewall_record_transition_health() {
     return 0
 }
 
+# _firewall_reset_transition_health [reason]
+# v1.198.2 PR-A (BUG-FW-TRANSITION-HEALTH-COUNTER-STICKY-NO-RESET): after a CLEAN
+# rebuild (post_status protected|idle, all checks passed ⇒ floor intact + atomic
+# + tables present + baseline re-recorded), clear any STALE cumulative
+# transition-health counters via the gated official reset. fth_reset_transition_health
+# self-verifies there is NO CURRENT breach before zeroing (no masking) and touches
+# ONLY the state JSON (no ban/nft mutation, no reset --force). Best effort — must
+# NEVER fail or slow the firewall path.
+_firewall_reset_transition_health() {
+    local reason="${1:-firewall rebuild: clean re-baseline}"
+    local helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    [[ -r "$helper" ]] || return 0
+    # shellcheck source=/dev/null
+    source "$helper" 2>/dev/null || return 0
+    declare -f fth_reset_transition_health >/dev/null 2>&1 || return 0
+    fth_reset_transition_health "$reason" >/dev/null 2>&1 || true
+    return 0
+}
+
+# _firewall_transition_health_cmd [status|ack|reset]
+# v1.198.2 PR-A: operator surface for the firewall-transition health alarm.
+#   status (default) — print the current CODE|reason from fth_eval_health.
+#   ack|reset        — clear a RESOLVED alarm via the gated fth_reset (refuses if a
+#                      CURRENT breach remains — no masking; state-JSON only, no ban loss).
+_firewall_transition_health_cmd() {
+    local action="${1:-status}"
+    local helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    if [[ ! -r "$helper" ]]; then echo "ERROR: transition-health module not found" >&2; return 1; fi
+    # shellcheck source=/dev/null
+    source "$helper" 2>/dev/null || { echo "ERROR: cannot load transition-health module" >&2; return 1; }
+    case "$action" in
+        status|"")
+            local res code reason
+            res=$(fth_eval_health 2>/dev/null || echo "0|"); code="${res%%|*}"; reason="${res#*|}"
+            case "$code" in
+                0) echo "Firewall transition health: OK" ;;
+                1) echo "Firewall transition health: WARNING — ${reason}" ;;
+                2) echo "Firewall transition health: ERROR — ${reason}" ;;
+                3) echo "Firewall transition health: CRITICAL — ${reason}" ;;
+                *) echo "Firewall transition health: unknown" ;;
+            esac
+            ;;
+        ack|reset|clear)
+            if ! declare -f fth_reset_transition_health >/dev/null 2>&1; then
+                echo "ERROR: reset path unavailable in this build" >&2; return 1
+            fi
+            fth_reset_transition_health "operator ack via 'nftban firewall transition-health $action'"
+            local rc=$?
+            case "$rc" in
+                0) echo "✓ Firewall-transition health alarm cleared (counters reset; live floor verified intact; audit history preserved)." ;;
+                2) echo "✗ Refused: a CURRENT firewall-transition breach still exists — restore the floor first with 'nftban firewall rebuild', then retry." >&2; return 2 ;;
+                *) echo "✗ Reset failed (state-write error)." >&2; return 1 ;;
+            esac
+            ;;
+        *)
+            echo "Usage: nftban firewall transition-health [status|ack]" >&2; return 1 ;;
+    esac
+    return 0
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
@@ -387,6 +447,11 @@ nftban_cmd_firewall() {
         record)
             shift
             firewall_record "$@"
+            ;;
+        transition-health|fw-transition-health)
+            # v1.198.2 PR-A: report or ACK/reset the firewall-transition health alarm.
+            shift
+            _firewall_transition_health_cmd "$@"
             ;;
         takeover)
             shift
@@ -2695,6 +2760,11 @@ _firewall_rebuild_core() {
             declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear
             # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
             _firewall_record_transition_health rebuild "$_fth_t0"
+            # v1.198.2 PR-A: a clean rebuild restored the floor + re-recorded the
+            # baseline atomically — clear any STALE cumulative transition-health
+            # alarm. Gated: fth_reset refuses if a CURRENT breach remains (no mask),
+            # touches only the state JSON (no ban loss).
+            _firewall_reset_transition_health "firewall rebuild: clean re-baseline (floor intact, atomic, baseline re-recorded)"
             return 0
             ;;
         degraded)
@@ -3522,6 +3592,8 @@ Validation & Diagnostics:
   logs          View and filter firewall logs
   record        Snapshot current nft schema to JSON for audit/comparison
   ssh-audit     Report sshd listeners vs ssh_ports vs declared external admin ports
+  transition-health  Report (status) or acknowledge (ack) the firewall-transition
+                health alarm; 'ack' clears a RESOLVED alarm (refuses if breached)
 
 Operations:
   init          Initialize firewall tables (alias for rebuild)
@@ -3549,6 +3621,10 @@ Examples:
 
   # SSH admin-port audit (external :55000->:22 redirect class)
   nftban firewall ssh-audit            # sshd listeners vs ssh_ports vs declared
+
+  # Firewall-transition health alarm (v1.198.2)
+  nftban firewall transition-health        # show current verdict
+  nftban firewall transition-health ack    # clear a RESOLVED alarm (gated; no ban loss)
 
   # Recovery operations
   nftban firewall rebuild              # Fix corruption

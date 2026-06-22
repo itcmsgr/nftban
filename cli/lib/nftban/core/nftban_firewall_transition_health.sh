@@ -312,3 +312,44 @@ fth_eval_health() {
     fi
     echo "${code}|${reason}"
 }
+
+# -----------------------------------------------------------------------------
+# fth_reset_transition_health [reason]
+# v1.198.2 PR-A (BUG-FW-TRANSITION-HEALTH-COUNTER-STICKY-NO-RESET): the official,
+# PROPORTIONATE clear path for a RESOLVED firewall-transition alarm. Zeroes the
+# cumulative harm counters ONLY after a fresh live probe proves there is NO
+# current breach (floor / service-port / table all clean). REFUSES (rc 2) if any
+# current breach remains — it must never mask a live condition. Preserves the
+# prior anomaly timestamp as audit history and records the reset reason.
+#
+# Touches ONLY the state JSON via the product writer (_fth_write_json) — NO nft
+# set/ban mutation, NO `firewall reset --force`, NO manual JSON edit, NO ban loss.
+# Safe-by-design: fth_eval_health re-probes the live state, so even after a reset a
+# genuinely-still-breached floor is immediately re-flagged (the reset cannot hide
+# an ongoing condition; it only clears stale historical counters).
+#
+# Returns: 0 = reset written; 2 = refused (current live breach); 1 = write error.
+# -----------------------------------------------------------------------------
+fth_reset_transition_health() {
+    local ack_reason="${1:-resolved transition alarm acknowledged}"
+    # Fresh live probe — the reset gate MUST see current kernel state regardless
+    # of any caller FTH_SKIP_GATHER optimization.
+    local _saved_skip="${FTH_SKIP_GATHER:-}"
+    FTH_SKIP_GATHER=0
+    _fth_gather
+    _fth_compute_breaches
+    FTH_SKIP_GATHER="$_saved_skip"
+    # No-mask gate: refuse if any CURRENT live breach exists.
+    if (( ${FTH_B_FLOOR:-0} > 0 || ${FTH_B_SVC:-0} > 0 || ${FTH_B_TABLE:-0} > 0 )); then
+        return 2
+    fi
+    # Preserve audit history; annotate the reset.
+    local prev_at prev_reason now note
+    prev_at=$(_fth_json_get last_transition_anomaly_at "")
+    prev_reason=$(_fth_json_get last_transition_anomaly_reason "")
+    now=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+    note="reset ${now}: ${ack_reason}"
+    [[ -n "$prev_reason" ]] && note="${note} (prior: ${prev_reason})"
+    # Zero the cumulative counters; keep the prior anomaly timestamp as history.
+    _fth_write_json 0 0 0 0 0 Y reset-ack 0 "${prev_at:-$now}" "$note"
+}

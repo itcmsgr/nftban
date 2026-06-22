@@ -35,7 +35,7 @@ _nftban() {
     local sync_cmds="full validate status --dry-run help"
 
     # Firewall & Security commands
-    local firewall_cmds="status stats validate conflicts check logs record init reload rebuild reset restore --json help"
+    local firewall_cmds="status stats validate conflicts check logs record init reload rebuild reset restore transition-health takeover ssh-audit --json help"
     local firewall_logs_cmds="enable disable status show help"
     local ban_cmds="--timeout --reason --source --json help"
     local unban_cmds="--json help"
