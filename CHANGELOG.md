@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.198.1] - 2026-06-22 — Hotfix: alert-handler /dev/log robustness + install_state recommit path
+
+**Codename:** `V198_1_ALERT_HANDLER_AND_RECOMMIT` · **PR:** [#921](https://github.com/itcmsgr/nftban/pull/921) (`260d0ad9`) · **Scope:** `V1_198_1_HOTFIX_SCOPE_ALERT_HANDLER_AND_RECOMMIT.md`
+
+> **What:** a surgical hotfix for two coupled defects surfaced during the v1.198.0 Track-A rollout (a host upgraded functionally but stuck `install_state=DEGRADED`). **NFT schema UNCHANGED (1.84.0). No firewall/ban/detector/BotGuard/counter/metrics change.** Lab-first validated (lab2 DEB 24/24 + lab4 RPM 24/24).
+
+### Fixed
+- **`D-NFTBAN-ALERT-LOGGER-DEVLOG-PERMISSION`** — the OnFailure service-failure alert oneshot (`nftban-alert@.service`, `PrivateDevices=yes` + `User=nftban`) failed with `logger: socket /dev/log: Permission denied`; because the unguarded `logger` was the last command in `log_alert()`, its non-zero exit latched the unit `failed`, which tripped the post-install failed-unit assertion (→ `install_state=DEGRADED`) and meant real service failures went unalerted. `cli/sbin/nftban-service-alert` `log_alert()` now delivers to the journal via stderr (the unit's `StandardError=journal` + `SyslogIdentifier=nftban-alert` reach the journal without `/dev/log`), keeps the file log, treats `logger` as best-effort (`2>/dev/null || true`), and returns 0. The systemd sandbox is **unchanged** (not relaxed); email **delivery** keeps its own rc contract (real delivery failures still fail the unit) — no masking.
+
+### Added
+- **`D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH`** — once `install_state` was DEGRADED, no official command recomputed it to COMMITTED on the same version after the cause was resolved (`--force`/`--repair` re-echo the stale record; `reset-failed` is defeated by the alert re-firing on the update restart), forcing manual edits of the machine-written state file. New **`nftban-installer --revalidate`** (shell verb **`nftban update recommit`**): a restart-free recompute that re-runs **only** the live post-install assertion suite and rewrites `install_state` via the official writer — no package install, no daemon restart. Transitions DEGRADED → COMMITTED **only** when every live assertion passes (version match, validator clean, 0 failed nftban units, ip/ip6 tables present, daemon active); refuses on a non-DEGRADED state / version mismatch / missing state file; otherwise leaves DEGRADED with the current live reason. Never marks COMMITTED while a real failure remains.
+- The `nftban-alert@` **template** is now a stale-clearable oneshot (`staleClearableOneshotStems`, template-aware match): a pre-existing alert latch (failure strictly before the install window) recovers without the live-health gate — the same circular-block fix v1.185.1 applied to `nftban-botscan`. In-window alert failures still DEGRADE.
+
+### Notes
+- **No product behavior change to firewall/ban/detector/BotGuard.** Go change is confined to `nftban-installer` (the `--revalidate` mode + the alert-template stale-clear classification); the `nftband` runtime daemon is otherwise unchanged. Tests: `systemd_payload_v1981_test.go`, `revalidate_test.go`, `alert_logger_devlog_sandbox_v1981_test.sh`. **Validation:** PR #921 CI green (69 pass / 0 fail) + post-merge main CI green (25 success / 0 fail); lab-first lab2 DEB + lab4 RPM 24/24 each, both restored clean.
+
+---
+
 ## [v1.198.0] - 2026-06-22 — R1 LOW-risk hygiene + operator-UX sweep
 
 **Codename:** `V198_R1_SWEEP` · **PRs:** [#912](https://github.com/itcmsgr/nftban/pull/912) (`606453b6`) + [#913](https://github.com/itcmsgr/nftban/pull/913) (`8ed90112`) + [#914](https://github.com/itcmsgr/nftban/pull/914) (`fcd9c8e7`) + [#915](https://github.com/itcmsgr/nftban/pull/915) (`837bc53c`) + [#916](https://github.com/itcmsgr/nftban/pull/916) (`b0f49fef`) + [#917](https://github.com/itcmsgr/nftban/pull/917) (`871c92a9`) + [#918](https://github.com/itcmsgr/nftban/pull/918) (`eceaa859`) + [#919](https://github.com/itcmsgr/nftban/pull/919) (`8f309cd6`) · **Scope:** `V198_R1_SCOPE.md` · **Forward plan:** `V198_PLUS_FORENSIC_BURNDOWN_SEQUENCE.md`
