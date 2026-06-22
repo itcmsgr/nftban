@@ -487,6 +487,15 @@ _cmd_update_main_locked() {
     # only proceed for rpm/deb install types. Reject source/mixed/unknown.
     _update_phase 2 "Install" "package install may take up to 60s"
     local result=0
+    # v1.198.3 PR-A (BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE): inhibit the
+    # racing cadence timers (watchdog @120s, maintenance @15m) across the binary
+    # swap so they cannot fire mid-swap, hit EXEC-203, and latch a failed unit →
+    # spurious DEGRADED. The scoped INT/TERM trap restores them on interrupt; the
+    # explicit restore after the case covers the normal + handled-failure paths.
+    # NO EXIT trap: cmd_update's lock cleanup is return-based (not trap-based) and
+    # must not be clobbered (scoped trap only, cleared right after restore).
+    _update_inhibit_cadence_timers
+    trap '_update_restore_cadence_timers' INT TERM
     case "$source" in
         github)
             case "$install_type" in
@@ -529,6 +538,11 @@ _cmd_update_main_locked() {
             result=1
             ;;
     esac
+    # v1.198.3 PR-A: binary swap complete — restore exactly the timers we stopped
+    # (covers success AND handled-failure; the failure block below returns AFTER
+    # this) and clear the scoped interrupt trap.
+    _update_restore_cadence_timers
+    trap - INT TERM
 
     if [[ $result -ne 0 ]]; then
         local _update_duration=$(( SECONDS - _update_start_seconds ))
@@ -548,6 +562,12 @@ _cmd_update_main_locked() {
         echo ""
         return $result
     fi
+
+    # v1.198.3 PR-A: confirm the watchdog runs clean on the freshly-installed
+    # binary (a clean run also clears any stale failed-latch). Log-only — a
+    # genuinely-broken watchdog is surfaced by the validator/health machinery and
+    # its next timer cycle; this must not abort an otherwise-successful update.
+    _update_verify_watchdog || true
 
     # Restart services to load new binaries
     echo ""

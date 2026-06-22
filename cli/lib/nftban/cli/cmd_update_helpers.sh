@@ -266,3 +266,72 @@ _update_write_history() {
     chmod 0640 "$history_file" 2>/dev/null || true
 }
 
+
+# =============================================================================
+# v1.198.3 PR-A (BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE)
+# -----------------------------------------------------------------------------
+# Cadence timers (nftban-watchdog.timer @120s, nftban-maintenance.timer @15m)
+# exec /usr/sbin/nftban. If one fires while `nftban update` is replacing /
+# permission/attribute-toggling the binary, systemd hits a transient EXEC-203
+# Permission-denied, latches the .service failed, and the post-install
+# failed-unit assertion marks install_state=DEGRADED on an otherwise-healthy
+# upgrade (reproduced on dns2 2026-06-22 20:23:24Z). These helpers transiently
+# STOP the racing timers for the binary-swap critical section and RESTORE exactly
+# the ones that were active — never mask, never enable a disabled timer.
+# =============================================================================
+
+# Timers that exec the nftban binary on a tight enough cadence to race the swap.
+# watchdog = the proven 120s racer; maintenance = defensive 15m sibling.
+_NFTBAN_UPDATE_CADENCE_TIMERS=("nftban-watchdog.timer" "nftban-maintenance.timer")
+# Records exactly which timers THIS run stopped (so restore only re-starts those).
+_NFTBAN_INHIBITED_TIMERS=""
+
+# _update_inhibit_cadence_timers: stop the racing cadence timers that are
+# currently active; record them for restore. Best-effort — never fail the update.
+_update_inhibit_cadence_timers() {
+    _NFTBAN_INHIBITED_TIMERS=""
+    command -v systemctl >/dev/null 2>&1 || return 0
+    local t
+    for t in "${_NFTBAN_UPDATE_CADENCE_TIMERS[@]}"; do
+        if systemctl is-active --quiet "$t" 2>/dev/null; then
+            if systemctl stop "$t" 2>/dev/null; then
+                _NFTBAN_INHIBITED_TIMERS="${_NFTBAN_INHIBITED_TIMERS:+$_NFTBAN_INHIBITED_TIMERS }$t"
+            fi
+        fi
+    done
+    [[ -n "$_NFTBAN_INHIBITED_TIMERS" ]] && _update_log INFO "Inhibited cadence timer(s) for the install window: ${_NFTBAN_INHIBITED_TIMERS}" || true
+    return 0
+}
+
+# _update_restore_cadence_timers: re-start exactly the timers this run stopped.
+# IDEMPOTENT (empty list = no-op), so it is safe to call from both the normal
+# path and a scoped INT/TERM trap. Never enables a timer that was disabled.
+_update_restore_cadence_timers() {
+    [[ -z "${_NFTBAN_INHIBITED_TIMERS:-}" ]] && return 0
+    command -v systemctl >/dev/null 2>&1 || { _NFTBAN_INHIBITED_TIMERS=""; return 0; }
+    local t
+    for t in $_NFTBAN_INHIBITED_TIMERS; do
+        systemctl start "$t" 2>/dev/null || _update_log WARN "Failed to restart inhibited timer $t — start it manually: systemctl start $t"
+    done
+    _update_log INFO "Restored cadence timer(s): ${_NFTBAN_INHIBITED_TIMERS}"
+    _NFTBAN_INHIBITED_TIMERS=""
+    return 0
+}
+
+# _update_verify_watchdog: after the swap + restore, run the watchdog oneshot
+# ONCE to confirm it is healthy on the new binary. Clears a stale failed-latch
+# only if the fresh run succeeds (never masks a genuinely-broken watchdog).
+# Returns 0 if the post-update watchdog run is clean (or systemctl/unit absent),
+# 1 if the watchdog genuinely still fails.
+_update_verify_watchdog() {
+    command -v systemctl >/dev/null 2>&1 || return 0
+    systemctl cat nftban-watchdog.service >/dev/null 2>&1 || return 0
+    systemctl reset-failed nftban-watchdog.service 2>/dev/null || true
+    systemctl start nftban-watchdog.service 2>/dev/null || true
+    if systemctl is-failed --quiet nftban-watchdog.service 2>/dev/null; then
+        _update_log WARN "post-update watchdog verification FAILED — nftban-watchdog.service still failing after the update (not a transient swap-window race)"
+        return 1
+    fi
+    _update_log OK "post-update watchdog verification passed"
+    return 0
+}
