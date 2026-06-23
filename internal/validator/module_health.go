@@ -355,13 +355,22 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 			switch s.State {
 			case InputWarnNoLogs:
 				// Stack/source present but produced no readable logs → actionable.
-				moduleFindings = append(moduleFindings, Finding{
-					Code:        CodeLoginMonNoInput,
-					Severity:    SeverityWarn,
-					Component:   "module",
-					Message:     "LoginMon " + s.Name + " source present but produced no readable logs" + loginMonReasonSuffix(s.Reason),
-					Remediation: "Confirm the " + s.Name + " log path is present and readable, and that the application is logging auth events",
-				})
+				if loginMonSourceAcked(s.Name) {
+					moduleFindings = append(moduleFindings, Finding{
+						Code:      CodeLoginMonNoInput,
+						Severity:  SeverityInfo,
+						Component: "module",
+						Message:   "LoginMon " + s.Name + " source present but produced no readable logs" + loginMonReasonSuffix(s.Reason) + " — operator-acked via LOGINMON_SOURCE_ACK (starved by design); no action needed",
+					})
+				} else {
+					moduleFindings = append(moduleFindings, Finding{
+						Code:        CodeLoginMonNoInput,
+						Severity:    SeverityWarn,
+						Component:   "module",
+						Message:     "LoginMon " + s.Name + " source present but produced no readable logs" + loginMonReasonSuffix(s.Reason),
+						Remediation: loginMonRemediation(s.Name),
+					})
+				}
 			case InputNoLogs:
 				// Source/stack structurally absent on this host → benign, no action.
 				moduleFindings = append(moduleFindings, Finding{
@@ -414,6 +423,39 @@ func loginMonReasonSuffix(reason string) string {
 		return ""
 	}
 	return " (reason=" + reason + ")"
+}
+
+// loginMonSourceAcked reports whether the operator has acknowledged a
+// starved-by-design LoginMon source via LOGINMON_SOURCE_ACK in the login module
+// config (.local override first). An acked starved source is reported as INFO
+// (still visible in findings), never silently hidden. v1.200 (VAL-LOGINMON-002).
+func loginMonSourceAcked(name string) bool {
+	ack := readKeyFromFile(filepath.Join(ConfigDir, "conf.d/login/main.conf.local"), "LOGINMON_SOURCE_ACK")
+	if ack == "" {
+		ack = readKeyFromFile(filepath.Join(ConfigDir, "conf.d/login/main.conf"), "LOGINMON_SOURCE_ACK")
+	}
+	for _, f := range strings.Fields(ack) {
+		if strings.EqualFold(strings.TrimSpace(f), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// loginMonRemediation returns the EXACT remediation for a starved LoginMon source,
+// keyed by source name. v1.200 (VAL-LOGINMON-002): turns an actionable WARN into a
+// step the operator can follow, and points at the ack knob for starved-by-design hosts.
+func loginMonRemediation(name string) string {
+	switch name {
+	case "roundcube":
+		return "Roundcube is present but login logging is off: set $config['log_logins'] = true; in the Roundcube config (config.inc.php) so credential failures are logged, then reload the webmail PHP worker. If this host intentionally does not collect Roundcube login logs, ack it: add 'roundcube' to LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local."
+	case "webauth":
+		return "The web stack is present but NFTBan reads no auth logs: confirm the web/panel access or auth log exists and is readable and that login attempts are logged there. If web login monitoring is not wanted on this host, ack it: add 'webauth' to LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local."
+	case "ftpauth":
+		return "The FTP stack is present but NFTBan reads no auth logs: confirm the FTP daemon auth log path exists and is readable and that login attempts are logged. If FTP login monitoring is not wanted on this host, ack it: add 'ftpauth' to LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local."
+	default:
+		return "Confirm the " + name + " log path is present and readable and that the application logs auth events; or ack it via LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local if starved by design."
+	}
 }
 
 // parseLoginMonState extracts the input-state token from a "[LOGINMON] <src>: state=<TOK> ..."
