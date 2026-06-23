@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.201.0] - 2026-06-23 — Stale-oneshot / SOAK / A2 assertion-tolerance reliability
+
+**Codename:** `V201_STALE_ONESHOT_SOAK_A2` · **PR:** [#932](https://github.com/itcmsgr/nftban/pull/932) (`c81c5db2`) · **Scope:** `V1_201_STALE_ONESHOT_SOAK_A2_SCOPE.md`
+
+> **What:** a transient, re-verifiable nftban oneshot latch no longer marks `install_state=DEGRADED` — while a **persistent** failure still does (strict no-mask). Closes the deferred A2 from v1.198.3 and the broader stale-oneshot/SOAK class. **Installer-validation Go only (`internal/installer/validate` → `nftban-installer`, NOT `cmd/nftband`) → `nftband` runtime daemon byte-identical. NFT schema UNCHANGED (1.84.0).**
+
+### Fixed
+- **A2 assertion-tolerance** — an owned-update-window cadence-oneshot `EXEC-203`/equivalent latch (the v1.198.3 watchdog/update-swap class) is tolerated as non-fatal **only** after a live re-verify proves it transient.
+- **Cadence-oneshot gated stale-clear** — extends the gated recovery to `nftban-watchdog` / `nftban-soak` / `nftban-maintenance` (a new `cadenceReverifiableOneshotStems` set), recovered **only** via `reset-failed` + a fresh clean `systemctl start` (host-side re-verify), in-window OR pre-window. Distinct from the existing unconditional pre-window botscan/alert@ clear (unchanged).
+- **SOAK stale-failed recovery** — a stale failed `nftban-soak` from a prior unclean cycle is reset + re-verified; a genuinely-failing soak stays visible and DEGRADES.
+
+### Strict no-mask invariant
+A cadence oneshot is reclassified `WARN_TRANSIENT_RECOVERED` (non-fatal) **only** when the re-verify was done AND the re-run was clean. A re-run that still fails, a non-cadence unit, or a unit with no re-verify stays in `FailedUnits` → **DEGRADED**. No `systemctl mask`, no unconditional allowlist, no hand-edited install_state.
+
+### Notes
+- **Schema 1.84.0 unchanged; `nftband` daemon byte-identical** (only `nftban-installer` validation moved). No LoginMon/R2 change · no BotGuard · no firewall/nftables/detector/ban-path change · no schema/counter/metrics work.
+- **v1.199 forensic integration:** the tolerate/DEGRADE decision is recorded via `installer.log` (run_id-correlated) + the `update-runs/<run_id>/` post-verify snapshot's `install_state`.
+- **Surfaces:** `systemd_payload.go` (`cadenceReverifiableOneshotStems` + `FailedUnitsTransientRecovered` bucket + gated classifier branch), `systemd_payload_gather.go` (`reverifyCadenceOneshot` host-side re-verify), `assertions.go` (`WARN_TRANSIENT_RECOVERED` surfacing). Test `cadence_oneshot_reverify_v1201_test.go` (transient→tolerated · persistent→DEGRADED · no-mask · non-cadence-DEGRADED · botscan regression intact).
+- **Release gate:** NOT release-ready on merge alone — fleet/publish stay blocked until **package-native validation** on lab2 (DEB) + lab4 (RPM) proves BOTH sides: a recoverable transient cadence-oneshot failure → clean re-run → COMMITTED, AND a persistent failure → DEGRADED; with the v1.199 `update-runs/<run_id>/` capturing the decision.
+
+---
+
 ## [v1.200.0] - 2026-06-23 — LoginMon source-visibility (R2): actionable + ack-able starved-source advisories
 
 **Codename:** `V200_LOGINMON_SOURCE_VISIBILITY` · **PR:** [#930](https://github.com/itcmsgr/nftban/pull/930) (`994998be`) · **Scope:** `V1_200_LOGINMON_SOURCE_VISIBILITY_SCOPE.md`
