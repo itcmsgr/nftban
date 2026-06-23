@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.199.0] - 2026-06-23 — Lifecycle forensics: per-run records + run-id + JSONL + support all-logs
+
+**Codename:** `V199_LIFECYCLE_FORENSICS` · **PR:** [#927](https://github.com/itcmsgr/nftban/pull/927) (`ec144cbd`) · **Scope:** `V1_199_LIFECYCLE_FORENSICS_SCOPE.md`
+
+> **What:** an observability/forensics lane so install/update lifecycle bugs are diagnosable from the host's own record + a `nftban support` bundle (no more live `journalctl`/`stat` archaeology, as the v1.198.x rollout needed). **NFT schema UNCHANGED (1.84.0). The only Go change is in `internal/installer/logging` — imported by `nftban-installer`, NOT `cmd/nftband`, so the `nftband` runtime daemon is expected byte-identical (proven at package-native Stage B).** Forensics ONLY — no reliability self-heal.
+
+### Added
+- **Per-run forensic records** (`BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING`) — each `nftban update` mints a **run_id** and writes `/var/log/nftban/update-runs/<run_id>/{run.jsonl,human.log}`. `cmd_update.sh` snapshots the lifecycle at **pre-swap / post-swap / post-verify** plus inhibit/restore events and a run-end (including on the install-fail path). **Bounded retention** (newest N, default 20 via `NFTBAN_FORENSIC_RETAIN`); pruning **logs what it drops** (no silent cap). New FHS dir `/var/log/nftban/update-runs` (0750 nftban:nftban, tmpfiles `z`-reconcile).
+- **Structured JSONL event stream + run-id correlation** (`BUG-INSTALLER-LOG-FORMAT-MIXED-JSON`) — `run.jsonl` is one parseable JSON event per line, every line carrying `run_id`; `installer.log`'s RUN header is stamped with the same run_id (`NFTBAN_RUN_ID` shared with the shell path, else `<UTC compact>-<pid>`) so installer/update logs correlate.
+- **Forensic snapshot (strict allowlist)** — binary mode/mtime/xattr (`/usr/sbin/nftban`), cadence-timer due-time + active state (`nftban-watchdog.timer`/`nftban-maintenance.timer`), failed-unit name/`Result`/`ExecMainStatus`/`ExecMainExitTimestamp`/`InactiveEnterTimestamp`, install_state. **No env, no secrets, no config dump.**
+- **`nftban support` all-logs** — collects the newest N `update-runs/<run_id>/` (`SUPPORT_UPDATE_RUNS_MAX`, default 10), redacted, size-bounded; warns when older runs are omitted.
+
+### Notes
+- **Redaction:** jq-free; values pass a secret-pattern safety-net AND a secret-named-key redaction; the snapshot is allowlisted.
+- **Schema 1.84.0 unchanged.** No stale-oneshot/A2/SOAK reliability logic (→ v1.201). No R2/LoginMon source-visibility. No schema/counter/metrics work. No BotGuard work. No firewall/nftables/detector behavior change.
+- **Surfaces:** `cmd_update.sh`/`cmd_update_helpers.sh`/`cmd_support.sh` (shell), `internal/installer/logging/logger.go` (run-id, installer-side only), `build/fhs-spec.yaml` + regenerated outputs. Tests: `lifecycle_forensics_v1199_test.sh` (18/0) + `logger_runid_test.go` + `tmpfiles_zz_v139` (11/0) + `watchdog_update_swap_race_v1983` (20/0).
+- **Release gate:** NOT release-ready on merge alone — fleet/publish stay blocked until **package-native Stage B** validates v1.199.0 as built DEB/RPM through the official upgrade path on lab2 + lab4 (the lab-first proof, since the run-id needs the built `nftban-installer` binary).
+
+---
+
 ## [v1.198.3] - 2026-06-23 — Hotfix: cadence-timer inhibit during update binary-swap (`BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE`)
 
 **Codename:** `V198_3_WATCHDOG_UPDATE_SWAP_RACE` · **PR:** [#925](https://github.com/itcmsgr/nftban/pull/925) (`7d7588d5`) · **Scope:** `V1_198_3_SCOPE_WATCHDOG_UPDATE_RACE.md`
