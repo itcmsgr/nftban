@@ -418,9 +418,13 @@ _cmd_update_main_locked() {
 
     _load_config
 
-    local install_type current_version
+    local install_type current_version _RUN_ID
     install_type=$(_detect_install_type)
     current_version=$(_get_current_version)
+
+    # v1.199 lifecycle forensics: mint a run_id + open a per-run record for this update.
+    _RUN_ID=$(_forensic_run_id)
+    _forensic_begin "$_RUN_ID" "$source" "$current_version" "pending"
 
     # v1.174: record the installer.log line count BEFORE the install so the final
     # verdict can detect a WARN_PRE_EXISTING_RECOVERED (a stale pre-existing failed
@@ -494,8 +498,10 @@ _cmd_update_main_locked() {
     # explicit restore after the case covers the normal + handled-failure paths.
     # NO EXIT trap: cmd_update's lock cleanup is return-based (not trap-based) and
     # must not be clobbered (scoped trap only, cleared right after restore).
+    _forensic_snapshot "$_RUN_ID" pre-swap
     _update_inhibit_cadence_timers
     trap '_update_restore_cadence_timers' INT TERM
+    _forensic_event "$_RUN_ID" inhibit "timers=$_NFTBAN_INHIBITED_TIMERS"
     case "$source" in
         github)
             case "$install_type" in
@@ -541,8 +547,10 @@ _cmd_update_main_locked() {
     # v1.198.3 PR-A: binary swap complete — restore exactly the timers we stopped
     # (covers success AND handled-failure; the failure block below returns AFTER
     # this) and clear the scoped interrupt trap.
+    _forensic_event "$_RUN_ID" restore "timers=$_NFTBAN_INHIBITED_TIMERS"
     _update_restore_cadence_timers
     trap - INT TERM
+    _forensic_snapshot "$_RUN_ID" post-swap
 
     if [[ $result -ne 0 ]]; then
         local _update_duration=$(( SECONDS - _update_start_seconds ))
@@ -560,6 +568,7 @@ _cmd_update_main_locked() {
         echo ""
         echo "  Log: $UPDATE_LOG_FILE"
         echo ""
+        _forensic_end "$_RUN_ID" install-fail "$result"
         return $result
     fi
 
@@ -784,6 +793,11 @@ _cmd_update_main_locked() {
     if [[ -f "$_install_state_file" ]]; then
         _installer_state=$(grep -m1 '^INSTALL_STATE=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "COMMITTED")
     fi
+
+    # v1.199 forensics: post-verify snapshot (binary swapped, timers restored,
+    # install_state resolved) + close the per-run record.
+    _forensic_snapshot "$_RUN_ID" post-verify
+    _forensic_event "$_RUN_ID" run_end "state=$_installer_state" "new_version=$new_version" "rc=0"
 
     case "$_installer_state" in
         COMMITTED)

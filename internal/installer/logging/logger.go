@@ -40,6 +40,7 @@ type Logger struct {
 	runStart   time.Time
 	phaseStart time.Time
 	logPath    string
+	runID      string // v1.199: correlates installer.log with the shell per-run record (update-runs/<run_id>/)
 
 	// v1.160 PR-A (warning truth-accounting): tally non-fatal warnings so the
 	// final operator summary can report them honestly. Before v1.160, Warn()
@@ -70,6 +71,13 @@ func New(logPath string, verbose bool) *Logger {
 		logPath:  logPath,
 	}
 
+	// v1.199: run-id from NFTBAN_RUN_ID (shared with the shell update path when
+	// invoked under `nftban update`), else generated <UTC compact>-<pid>.
+	l.runID = os.Getenv("NFTBAN_RUN_ID")
+	if l.runID == "" {
+		l.runID = fmt.Sprintf("%s-%d", l.runStart.UTC().Format("20060102T150405Z"), os.Getpid())
+	}
+
 	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(logPath), 0750); err == nil {
 		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
@@ -91,6 +99,12 @@ func (l *Logger) Close() {
 // LogPath returns the path to the log file being written.
 func (l *Logger) LogPath() string {
 	return l.logPath
+}
+
+// RunID returns the run-id correlating this installer run with the shell
+// per-run forensic record (update-runs/<run_id>/). v1.199.
+func (l *Logger) RunID() string {
+	return l.runID
 }
 
 // FileWriter returns the open log-file handle as an io.Writer, or nil if no log
@@ -120,7 +134,7 @@ func (l *Logger) RunHeader(version, mode, hostname, osInfo string) {
 	l.writeFile("", sep)
 	l.writeFile("RUN", fmt.Sprintf("nftban-installer %s — %s", version, mode))
 	l.writeFile("RUN", fmt.Sprintf("host=%s os=%s", hostname, osInfo))
-	l.writeFile("RUN", fmt.Sprintf("started=%s pid=%d", l.runStart.Format(time.RFC3339), os.Getpid()))
+	l.writeFile("RUN", fmt.Sprintf("started=%s pid=%d run_id=%s", l.runStart.Format(time.RFC3339), os.Getpid(), l.runID))
 	l.writeFile("", sep)
 }
 
