@@ -158,6 +158,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/botguard"]="0750|nftban|nftban|HTTP Bot Guard logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/metrics"]="0750|nftban|nftban|Metrics export logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/soak"]="0750|nftban|nftban|Soak validation per-run JSON + cron.log (v1.98.1)"
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/update-runs"]="0750|nftban|nftban|Per-run install/update lifecycle forensic records - JSONL + snapshot, bounded retention (v1.199)"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|suricata|nftban|Suricata EVE logs (suricata writes, nftban reads)"
 
     # Runtime Directories

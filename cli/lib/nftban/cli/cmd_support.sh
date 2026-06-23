@@ -324,6 +324,33 @@ _collect_logs() {
     if [[ -f "$NFTBAN_LOG_DIR/update.log" ]]; then
         cp "$NFTBAN_LOG_DIR/update.log" "$log_dir/update.log" 2>/dev/null || true
     fi
+
+    # v1.199: per-run lifecycle forensic records (update-runs/<run_id>/). Collect
+    # the newest N runs only (bounded bundle), each redacted via _redact_file.
+    local runs_src="$NFTBAN_LOG_DIR/update-runs"
+    if [[ -d "$runs_src" ]]; then
+        local runs_dst="$log_dir/update-runs"
+        local keep="${SUPPORT_UPDATE_RUNS_MAX:-10}"
+        mkdir -p "$runs_dst" 2>/dev/null || true
+        local run_count=0 run_dir
+        # newest-first by mtime; cap at $keep (no silent over-collect)
+        while IFS= read -r run_dir; do
+            [[ -z "$run_dir" ]] && continue
+            [[ $run_count -ge $keep ]] && break
+            local rid; rid=$(basename "$run_dir")
+            mkdir -p "$runs_dst/$rid" 2>/dev/null || continue
+            local f
+            for f in run.jsonl human.log; do
+                [[ -f "$run_dir/$f" ]] && _redact_file "$run_dir/$f" "$runs_dst/$rid/$f" 2>/dev/null || true
+            done
+            run_count=$((run_count + 1))
+        done < <(find "$runs_src" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | cut -f2-)
+        if [[ $run_count -gt 0 ]]; then
+            local total; total=$(find "$runs_src" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+            _support_log OK "Per-run forensic records ($run_count of $total collected, newest first, redacted)"
+            [[ $total -gt $run_count ]] && _support_log WARN "Per-run records capped at $keep (SUPPORT_UPDATE_RUNS_MAX); $((total - run_count)) older run(s) omitted"
+        fi
+    fi
 }
 
 _collect_health() {

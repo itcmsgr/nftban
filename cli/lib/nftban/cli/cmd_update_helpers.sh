@@ -335,3 +335,102 @@ _update_verify_watchdog() {
     _update_log OK "post-update watchdog verification passed"
     return 0
 }
+
+# =============================================================================
+# v1.199 Lifecycle Forensics (BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING +
+#                            BUG-INSTALLER-LOG-FORMAT-MIXED-JSON)
+# -----------------------------------------------------------------------------
+# Per-run forensic record under /var/log/nftban/update-runs/<run_id>/: a parseable
+# JSONL event stream (run.jsonl) + a human slice (human.log) + allowlisted
+# lifecycle snapshots at pre-swap / post-swap / post-restore. jq-free; values are
+# redaction-filtered; ONLY an explicit allowlist of fields is emitted (no env, no
+# secrets, no config dump). Bounded retention (keep newest N, prune + log the rest).
+# Forensics ONLY — no reliability/self-heal logic here.
+# =============================================================================
+FORENSIC_RUNS_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}/update-runs"
+FORENSIC_RETAIN_N="${NFTBAN_FORENSIC_RETAIN:-20}"
+FORENSIC_RUN_DIR=""; FORENSIC_JSONL=""; FORENSIC_HUMAN=""
+
+# deterministic run_id (tests/callers may pin via NFTBAN_RUN_ID)
+_forensic_run_id() { printf '%s' "${NFTBAN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null)-$$}"; }
+
+# minimal JSON string escaper (no jq dependency)
+_fx_jstr() { local s="${1-}"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; s="${s//$'\t'/ }"; s="${s//$'\r'/ }"; printf '%s' "$s"; }
+# secret redaction safety-net (the snapshot is allowlisted, but values pass this too)
+_fx_redact() { sed -E 's/(pass(word)?|secret|token|api[_-]?key|bearer|authorization)([=: ]+)[^ ",]*/\1\3<redacted>/Ig'; }
+
+# _forensic_begin <run_id> <mode> <from> <to>
+_forensic_begin() {
+    local id="$1" mode="${2:-}" from="${3:-}" to="${4:-}"
+    command -v date >/dev/null 2>&1 || return 0
+    FORENSIC_RUN_DIR="$FORENSIC_RUNS_DIR/$id"
+    mkdir -p "$FORENSIC_RUN_DIR" 2>/dev/null || { FORENSIC_RUN_DIR=""; return 0; }
+    chmod 0750 "$FORENSIC_RUN_DIR" 2>/dev/null || true
+    FORENSIC_JSONL="$FORENSIC_RUN_DIR/run.jsonl"; FORENSIC_HUMAN="$FORENSIC_RUN_DIR/human.log"
+    : > "$FORENSIC_JSONL" 2>/dev/null || true; : > "$FORENSIC_HUMAN" 2>/dev/null || true
+    chmod 0640 "$FORENSIC_JSONL" "$FORENSIC_HUMAN" 2>/dev/null || true
+    _forensic_event "$id" run_start "mode=$mode" "from=$from" "to=$to" "pid=$$"
+    _forensic_prune
+}
+
+# _forensic_event <run_id> <event> [key=value ...]  (values redacted; allowlisted callers only)
+_forensic_event() {
+    [ -n "${FORENSIC_JSONL:-}" ] || return 0
+    local id="$1" ev="$2"; shift 2 || true
+    local ts; ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '')
+    local json kv k v
+    json="{\"ts\":\"$(_fx_jstr "$ts")\",\"run_id\":\"$(_fx_jstr "$id")\",\"event\":\"$(_fx_jstr "$ev")\""
+    for kv in "$@"; do
+        k="${kv%%=*}"; v="${kv#*=}"
+        # defense-in-depth: if the KEY is secret-named, redact the whole value;
+        # otherwise run the substring redaction safety-net over the value.
+        if printf '%s' "$k" | grep -qiE '^(pass(word)?|secret|token|api[_-]?key|bearer|authorization)$'; then
+            v="<redacted>"
+        else
+            v=$(printf '%s' "$v" | _fx_redact)
+        fi
+        json="$json,\"$(_fx_jstr "$k")\":\"$(_fx_jstr "$v")\""
+    done
+    json="$json}"
+    printf '%s\n' "$json" >> "$FORENSIC_JSONL" 2>/dev/null || true
+}
+
+# _forensic_snapshot <run_id> <phase>  (allowlisted lifecycle-critical fields ONLY)
+_forensic_snapshot() {
+    [ -n "${FORENSIC_JSONL:-}" ] || return 0
+    local id="$1" ph="$2" bin="${NFTBAN_SBIN:-/usr/sbin/nftban}"
+    local mode mtime xattr ist wd_act wd_next mt_act failed u
+    mode=$(stat -c '%a' "$bin" 2>/dev/null || printf '?'); mtime=$(stat -c '%Y' "$bin" 2>/dev/null || printf '?')
+    xattr=$(lsattr "$bin" 2>/dev/null | awk '{print $1}' || printf '?')
+    ist=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2- || printf '?')
+    wd_act=$(systemctl is-active nftban-watchdog.timer 2>/dev/null || printf '?')
+    wd_next=$(systemctl show nftban-watchdog.timer -p NextElapseUSecRealtime --value 2>/dev/null || printf '?')
+    mt_act=$(systemctl is-active nftban-maintenance.timer 2>/dev/null || printf '?')
+    failed=$(systemctl --failed --no-legend 2>/dev/null | grep -iE 'nftban|nftband' | awk '{print $2}' | tr '\n' ',' || printf '')
+    _forensic_event "$id" snapshot "phase=$ph" "bin_mode=$mode" "bin_mtime=$mtime" "bin_xattr=$xattr" \
+        "install_state=$ist" "watchdog_timer=$wd_act" "watchdog_next=$wd_next" "maintenance_timer=$mt_act" "failed_units=$failed"
+    for u in $(systemctl --failed --no-legend 2>/dev/null | grep -iE 'nftban|nftband' | awk '{print $2}'); do
+        _forensic_event "$id" failed_unit "phase=$ph" "unit=$u" \
+            "result=$(systemctl show "$u" -p Result --value 2>/dev/null)" \
+            "exec_status=$(systemctl show "$u" -p ExecMainStatus --value 2>/dev/null)" \
+            "exec_exit=$(systemctl show "$u" -p ExecMainExitTimestamp --value 2>/dev/null)" \
+            "inactive_enter=$(systemctl show "$u" -p InactiveEnterTimestamp --value 2>/dev/null)"
+    done
+}
+
+# _forensic_end <run_id> <state> <rc>
+_forensic_end() { [ -n "${FORENSIC_JSONL:-}" ] || return 0; _forensic_event "$1" run_end "state=${2:-}" "rc=${3:-}"; }
+
+# _forensic_prune — keep newest N run dirs; log what is pruned (no silent cap)
+_forensic_prune() {
+    [ -d "$FORENSIC_RUNS_DIR" ] || return 0
+    # read the env at call time (operator may set NFTBAN_FORENSIC_RETAIN after source)
+    local n="${NFTBAN_FORENSIC_RETAIN:-${FORENSIC_RETAIN_N:-20}}"; [ "$n" -gt 0 ] 2>/dev/null || n=20
+    local total; total=$(find "$FORENSIC_RUNS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    [ "${total:-0}" -le "$n" ] && return 0
+    local pruned=0 d
+    while IFS= read -r d; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null && pruned=$((pruned+1)); done < <(
+        find "$FORENSIC_RUNS_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -n | head -n "$(( total - n ))" | cut -f2-)
+    [ "$pruned" -gt 0 ] && _update_log INFO "forensics: pruned $pruned old run-record(s), retained newest $n (NFTBAN_FORENSIC_RETAIN)" || true
+    return 0
+}
