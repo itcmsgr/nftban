@@ -918,6 +918,14 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
 
+    - path: /var/log/nftban/update-runs
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Per-run install/update lifecycle forensic records - JSONL + snapshot, bounded retention (v1.199)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
     - path: /var/log/nftban/suricata
       mode: "0770"
       owner: suricata

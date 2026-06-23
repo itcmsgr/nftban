@@ -89,7 +89,7 @@ WD_FAILS=1; _update_verify_watchdog && no "E broken watchdog → verify should F
 WD_FAILS=0
 
 echo "== F: static guards on cmd_update.sh (wraps the install phase; scoped trap; no EXIT trap) =="
-awk '/_update_phase 2 "Install"/{i=NR} /^    case "\$source" in/{c=NR} END{exit !(i>0 && c>i && c-i<12)}' "$CMDUPD" && ok "F inhibit sits between phase-2 and the install case" || no "F inhibit placement"
+awk '/_update_phase 2 "Install"/{i=NR} /_update_inhibit_cadence_timers/&&!h{h=NR} /^    case "\$source" in/{c=NR} END{exit !(i>0 && h>i && c>h)}' "$CMDUPD" && ok "F inhibit sits between phase-2 and the install case (order)" || no "F inhibit placement"
 grep -q "_update_inhibit_cadence_timers" "$CMDUPD" && ok "F cmd_update calls inhibit" || no "F inhibit not wired"
 grep -q "_update_restore_cadence_timers" "$CMDUPD" && ok "F cmd_update calls restore" || no "F restore not wired"
 grep -q "trap '_update_restore_cadence_timers' INT TERM" "$CMDUPD" && ok "F scoped INT/TERM trap present" || no "F scoped trap missing"
