@@ -424,7 +424,13 @@ _cmd_update_main_locked() {
 
     # v1.199 lifecycle forensics: mint a run_id + open a per-run record for this update.
     _RUN_ID=$(_forensic_run_id)
+    # EXPORT so the Go nftban-installer (invoked via the package %post during the
+    # install phase) inherits the SAME run_id and stamps it into installer.log's RUN
+    # header — correlating installer.log + update.log + update-runs/<run_id>/.
+    export NFTBAN_RUN_ID="$_RUN_ID"
     _forensic_begin "$_RUN_ID" "$source" "$current_version" "pending"
+    # stamp the shared update.log with the run_id (clear correlation delimiter).
+    _update_log INFO "lifecycle run_id=$_RUN_ID (per-run forensic record: ${FORENSIC_RUN_DIR:-n/a})"
 
     # v1.174: record the installer.log line count BEFORE the install so the final
     # verdict can detect a WARN_PRE_EXISTING_RECOVERED (a stale pre-existing failed
