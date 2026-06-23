@@ -126,6 +126,13 @@ cnt=$(find "$RDIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
 [ "$cnt" -le 3 ] && ok "E retention pruned to N=3 (now $cnt)" || no "E not pruned" "count=$cnt"
 [ -d "$RDIR/run-6" ] && [ ! -d "$RDIR/run-1" ] && ok "E newest kept (run-6), oldest pruned (run-1)" || no "E wrong dirs kept"
 
+echo "== F: run_id correlation wiring in cmd_update.sh (installer.log + update.log) =="
+CMDUPD="$REPO_ROOT/cli/lib/nftban/cli/cmd_update.sh"
+grep -qE 'export NFTBAN_RUN_ID="\$_RUN_ID"' "$CMDUPD" && ok "F exports NFTBAN_RUN_ID (Go installer inherits → installer.log correlates)" || no "F NFTBAN_RUN_ID not exported (installer.log would not correlate)"
+grep -qE '_update_log INFO "lifecycle run_id=\$_RUN_ID' "$CMDUPD" && ok "F stamps run_id into update.log (correlation delimiter)" || no "F update.log run_id stamp missing"
+# export must precede the install case (so the %post installer inherits it)
+awk '/export NFTBAN_RUN_ID/{e=NR} /^    case "\$source" in/{c=NR} END{exit !(e>0 && c>e)}' "$CMDUPD" && ok "F export precedes the install case" || no "F export after install case"
+
 echo ""
 echo "=== RESULT: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
