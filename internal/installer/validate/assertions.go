@@ -408,6 +408,21 @@ func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *loggi
 				strings.Join(rec, "; "))
 			return r
 		}
+		// v1.201 (A2 + stale-oneshot/SOAK): cadence oneshot(s) whose failed latch
+		// was a transient (the v1.198.3 watchdog/update-swap EXEC-203 class) and
+		// re-ran CLEAN under the host-side gated re-verify — non-fatal, surfaced
+		// honestly. A re-run that still failed would NOT be here (it stays in
+		// FailedUnits → DEGRADED).
+		if len(spr.FailedUnitsTransientRecovered) > 0 {
+			tr := make([]string, 0, len(spr.FailedUnitsTransientRecovered))
+			for _, f := range spr.FailedUnitsTransientRecovered {
+				tr = append(tr, f.Unit+"("+f.Detail+")")
+			}
+			r.Detail = "WARN_TRANSIENT_RECOVERED: cadence oneshot(s) re-ran clean after a transient latch — non-fatal: " + strings.Join(tr, "; ")
+			log.Warn("ASSERT failed_units_postinstall_ok: PASS — WARN_TRANSIENT_RECOVERED (cadence oneshot re-ran clean; gated re-verify): %s",
+				strings.Join(tr, "; "))
+			return r
+		}
 		// v1.135 D-EXPORTER-SETTLE-WINDOW: a failed auxiliary (metrics/
 		// observability) unit does NOT fail this assertion, but it IS
 		// surfaced as a non-fatal warning so operators still see it.
