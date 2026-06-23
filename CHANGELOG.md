@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.200.0] - 2026-06-23 — LoginMon source-visibility (R2): actionable + ack-able starved-source advisories
+
+**Codename:** `V200_LOGINMON_SOURCE_VISIBILITY` · **PR:** [#930](https://github.com/itcmsgr/nftban/pull/930) (`994998be`) · **Scope:** `V1_200_LOGINMON_SOURCE_VISIBILITY_SCOPE.md`
+
+> **What:** turns the fleet-wide `PASS_WITH_ACTIONABLE_WARN` LoginMon noise (`VAL-LOGINMON-002`) into something **actionable** (the WARN names the exact fix) and **quiet-able** (an operator can acknowledge a starved-by-design stack so it reads INFO — still visible). **Validator + config only; NFT schema UNCHANGED (1.84.0); no new JSON axis. The only `.go` change is in `internal/validator` (builds `nftban-validate`, NOT `cmd/nftband`) → the `nftband` runtime daemon is byte-identical.**
+
+### Fixed (`VAL-LOGINMON-002` / R2)
+- **Actionable remediation:** a starved source ("present but produced no readable logs") now carries the exact fix — **Roundcube** → enable `$config['log_logins'] = true;` in the Roundcube config; **webauth/ftpauth** → confirm the expected auth-log path is present + readable; default → points at the ack knob.
+- **Operator acknowledge / suppress:** new **`LOGINMON_SOURCE_ACK`** in `conf.d/login/main.conf` (`.local` override first). A starved-by-design stack listed there is reported as **INFO** instead of WARN — but **stays VISIBLE** (the finding says *operator-acked*; the code is still emitted, never silently hidden). An **unacknowledged** starved source **remains WARN**; an **absent** source stays INFO; ack matching is case-insensitive.
+
+### Notes
+- **Schema 1.84.0 unchanged**; no new JSON axis (the input axis stays internal, awaiting SCHEMA-UNFREEZE). config(noreplace) → existing hosts unchanged unless they set the knob.
+- **No `internal/loginmon` / detector / firewall / nftables / ban-path behavior change. No BotGuard. No stale-oneshot/A2/SOAK reliability logic (that is v1.201). No auto-editing of third-party (Roundcube/panel/FTP) configs.** `nftband` daemon byte-identical (only `nftban-validate` + config moved).
+- **Surfaces:** `internal/validator/module_health.go` (`loginMonSourceAcked` + `loginMonRemediation`), `etc/nftban/conf.d/login/main.conf` (the `LOGINMON_SOURCE_ACK` knob). Test `loginmon_source_ack_v1200_test.go` (unacked=WARN+remediation · acked=INFO+visible · other/empty/malformed ack does not hide · case-insensitive · per-source text).
+- **Release gate:** NOT release-ready on merge alone — fleet/publish stay blocked until **package-native validation** on DEB/RPM + at least one real starved-source host (Roundcube `log_logins` off) proves the advisory carries the fix, `LOGINMON_SOURCE_ACK` quiets to INFO visibly, and un-acking restores WARN.
+
+---
+
 ## [v1.199.0] - 2026-06-23 — Lifecycle forensics: per-run records + run-id + JSONL + support all-logs
 
 **Codename:** `V199_LIFECYCLE_FORENSICS` · **PR:** [#927](https://github.com/itcmsgr/nftban/pull/927) (`ec144cbd`) · **Scope:** `V1_199_LIFECYCLE_FORENSICS_SCOPE.md`
