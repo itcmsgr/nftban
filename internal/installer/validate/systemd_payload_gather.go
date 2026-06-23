@@ -386,9 +386,42 @@ func queryFailedNftbanUnitsOnce(exec executor.Executor, log *logging.Logger) (fi
 		// pre-existing vs in-window. Parse error => FailureTimeKnown stays
 		// false (fail closed → fatal).
 		finding.FailureTime, finding.FailureTimeKnown = queryUnitFailureTime(exec, unit, log)
+		// v1.201 (A2 + stale-oneshot/SOAK): for a cadence oneshot
+		// (watchdog/soak/maintenance) attempt the GATED live re-verify — clear the
+		// latch and run once; the latch is recoverable ONLY if that fresh run is
+		// clean (no-mask). The classifier consults OwnedWindowReverify{Done,Clean}.
+		if isCadenceReverifiableOneshot(unit) {
+			finding.OwnedWindowReverifyDone, finding.OwnedWindowReverifyClean = reverifyCadenceOneshot(exec, unit, log)
+		}
 		findings = append(findings, finding)
 	}
 	return findings, ""
+}
+
+// reverifyCadenceOneshot performs the v1.201 GATED re-verify for a cadence
+// oneshot in a failed latch: reset the failed-state, issue one fresh
+// `systemctl start`, and report clean ONLY when that run succeeds AND the unit
+// is no longer failed. This is the no-mask gate — a unit whose re-run still
+// fails returns clean=false and stays FATAL (DEGRADED). The reset-failed +
+// start are bounded to exactly the cadence-oneshot stems and are the only
+// side-effects; nothing is hidden on assumption. done=true always (attempted).
+func reverifyCadenceOneshot(exec executor.Executor, unit string, log *logging.Logger) (done, clean bool) {
+	_ = exec.ServiceResetFailed(unit) // clear the latch so the start is not blocked; non-fatal
+	startErr := exec.ServiceStart(unit)
+	// `systemctl is-failed <unit>` exits 0 when the unit is in failed state.
+	stillFailed := false
+	if r := exec.Run("systemctl", "is-failed", unit); r.ExitCode == 0 {
+		stillFailed = true
+	}
+	clean = startErr == nil && !stillFailed
+	if log != nil {
+		if clean {
+			log.Info("v1.201 re-verify: %s cadence oneshot re-ran CLEAN — transient latch recovered (reset-failed + fresh start ok)", unit)
+		} else {
+			log.Warn("v1.201 re-verify: %s cadence oneshot re-run did NOT clean (start_err=%v still_failed=%v) — keeping FATAL (no-mask)", unit, startErr, stillFailed)
+		}
+	}
+	return true, clean
 }
 
 // queryUnitFailureTime asks systemd for a unit's last-failure timestamp via
