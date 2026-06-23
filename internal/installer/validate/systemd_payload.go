@@ -166,6 +166,36 @@ func isStaleClearableOneshot(basename string) bool {
 	return staleClearableOneshotStems[stem]
 }
 
+// cadenceReverifiableOneshotStems lists nftban cadence-driven oneshot unit stems
+// whose `failed` state — whether pre-existing OR inside the owned update window —
+// is recoverable ONLY through a live re-verify (reset-failed + a fresh, clean run),
+// NEVER unconditionally. v1.201 (A2 + stale-oneshot/SOAK): the v1.198.3 watchdog/
+// update-swap race (nftban-watchdog firing EXEC-203 while the binary was mid-swap,
+// reproduced on dns2) is the canonical case — by post-install the binary is
+// executable again and the unit re-runs clean, so the in-window latch is transient,
+// not a real break. nftban-maintenance/nftban-soak share the cadence-oneshot shape.
+// DISTINCT from staleClearableOneshotStems (botscan/alert@), which clear
+// unconditionally for PRE-window latches; these clear ONLY on a proven clean re-run
+// (the gate is enforced host-side in the gatherer; the classifier consults its result).
+var cadenceReverifiableOneshotStems = map[string]bool{
+	"nftban-watchdog":    true,
+	"nftban-soak":        true,
+	"nftban-maintenance": true,
+}
+
+// isCadenceReverifiableOneshot reports whether an nftban unit basename is a
+// cadence oneshot that may be recovered ONLY via a live re-verify. v1.201.
+func isCadenceReverifiableOneshot(basename string) bool {
+	if !IsNftbanUnit(basename) {
+		return false
+	}
+	dot := strings.LastIndexByte(basename, '.')
+	if dot <= 0 {
+		return false
+	}
+	return cadenceReverifiableOneshotStems[basename[:dot]]
+}
+
 // ParsedUnit is the minimum subset of a systemd unit file needed for
 // PR26.1 validation. Constructed by the host-side gatherer or by
 // tests directly.
@@ -230,6 +260,18 @@ type FailedUnitFinding struct {
 	// (fail closed) — an unparseable timestamp can never be classified as
 	// pre-existing/recovered.
 	FailureTimeKnown bool
+
+	// OwnedWindowReverifyDone / OwnedWindowReverifyClean carry the result of
+	// the v1.201 host-side gated re-verify, performed ONLY for
+	// isCadenceReverifiableOneshot units (watchdog/soak/maintenance). The
+	// gatherer reset-failed the unit and issued a fresh `systemctl start`;
+	// Clean is true ONLY when that re-run succeeded and the unit is no longer
+	// failed. The classifier consults these to tolerate a transient
+	// (re-verified-clean) cadence-oneshot latch as non-fatal; an absent or
+	// false result keeps the unit FATAL (no-mask: a persistent failure that
+	// re-fails its run is never cleared). Zero value = no re-verify attempted.
+	OwnedWindowReverifyDone  bool
+	OwnedWindowReverifyClean bool
 }
 
 // PayloadInventory describes which paths are considered known after
@@ -383,6 +425,16 @@ type SystemdPayloadValidationResult struct {
 	// stays in FailedUnits (fatal) — fail safe toward DEGRADED.
 	FailedUnitsPreExistingRecovered []FailedUnitPostInstall
 
+	// FailedUnitsTransientRecovered holds cadence-oneshot nftban units
+	// (isCadenceReverifiableOneshot: watchdog/soak/maintenance) whose failed
+	// latch was recovered by the v1.201 host-side gated re-verify — the unit
+	// was reset-failed and a fresh `systemctl start` ran CLEAN, proving the
+	// latch was transient (the v1.198.3 watchdog/update-swap EXEC-203 class).
+	// Surfaced as WARN_TRANSIENT_RECOVERED and does NOT fail
+	// FAILED-UNIT-POSTINSTALL-001. A cadence-oneshot whose re-run still fails
+	// (or was never re-verified) stays in FailedUnits (fatal) — no-mask.
+	FailedUnitsTransientRecovered []FailedUnitPostInstall
+
 	// FailedUnitQueryError mirrors SystemdPayloadInputs.FailedUnitQueryError
 	// for the assertion-side detail message. When non-empty,
 	// FAILED-UNIT-POSTINSTALL-001 fails closed regardless of
@@ -492,6 +544,19 @@ func ValidateInstalledSystemdPayload(in SystemdPayloadInputs) SystemdPayloadVali
 		if recovered {
 			entry.Classification = "WARN_PRE_EXISTING_RECOVERED"
 			res.FailedUnitsPreExistingRecovered = append(res.FailedUnitsPreExistingRecovered, entry)
+			continue
+		}
+		// v1.201 (A2 + stale-oneshot/SOAK): a cadence oneshot (watchdog/soak/
+		// maintenance) recovered by the host-side GATED re-verify — the gatherer
+		// reset-failed it and a fresh `systemctl start` ran CLEAN — is a transient
+		// latch (the v1.198.3 watchdog/update-swap EXEC-203 class), non-fatal.
+		// Strict no-mask: requires the re-verify to have been DONE and CLEAN; a
+		// cadence oneshot whose re-run still fails (or was not re-verified) falls
+		// through to FATAL below. Applies in-window AND pre-window (a stale soak
+		// latch that re-runs clean is recoverable; one that re-fails DEGRADES).
+		if isCadenceReverifiableOneshot(f.Unit) && f.OwnedWindowReverifyDone && f.OwnedWindowReverifyClean {
+			entry.Classification = "WARN_TRANSIENT_RECOVERED"
+			res.FailedUnitsTransientRecovered = append(res.FailedUnitsTransientRecovered, entry)
 			continue
 		}
 		if preExisting {
