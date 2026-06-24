@@ -60,11 +60,34 @@ echo "== bypass: NFTBAN_IGNORE_LOCAL_CONFIG=1 skips all .local =="
 MYVAR="base"; NFTBAN_IGNORE_LOCAL_CONFIG=1 _source_local "$NFTBAN_CONFIG_DIR/conf.d/g.conf.local"
 [ "$MYVAR" = "base" ] && ok "bypass: good .local NOT sourced under NFTBAN_IGNORE_LOCAL_CONFIG=1" || no "bypass failed (MYVAR='$MYVAR')"
 
-echo "== MIGRATION GUARD: no direct 'source *.conf.local ... || true' sites remain (outside helper/tests) =="
+echo "== MIGRATION GUARD A: no LITERAL 'source .../*.conf.local' sites remain (outside helper/tests) =="
 stray="$(grep -rnE 'source[[:space:]].*\.conf\.local' "$REPO_LIB" 2>/dev/null | grep -vE '/tests/|lib/env\.sh:|_source_local|^\s*#|meta:' || true)"
-if [ -z "$stray" ]; then ok "0 direct source-.local call sites remain (all routed through _source_local)"; else no "stray direct source-.local sites:"; echo "$stray"; fi
+if [ -z "$stray" ]; then ok "0 literal source-.local sites remain (all routed through _source_local)"; else no "stray literal source-.local sites:"; echo "$stray"; fi
 
-rm -rf "$_tmproot" /tmp/cl_w1 /tmp/cl_w2 2>/dev/null || true
+echo "== MIGRATION GUARD B: no VARIABLE-INDIRECT 'source \"\$VAR\"' where VAR is a .local path (completion regression) =="
+# Closes the IMPL-1 false-pass blind spot: a var assigned a *.local path that is bare-sourced
+# (e.g. service_control.sh: source \"\$NFTBAN_SERVICES_LOCAL\"; cmd_update.sh: config_local=\"\${config_file}.local\").
+strayv=0
+while IFS= read -r f; do
+    # vars whose assignment RHS ends in .local (covers x.conf.local AND \${base}.local)
+    vars="$(grep -oE '^[[:space:]]*(local |readonly |export )?[A-Za-z_][A-Za-z0-9_]*=.*\.local"?[[:space:]]*$' "$f" 2>/dev/null \
+            | sed -E 's/^[[:space:]]*(local |readonly |export )?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/' | sort -u || true)"
+    for v in $vars; do
+        if grep -qE "(^|[[:space:]]|&&)[[:space:]]*(source|\.)[[:space:]]+\"\\\$\{?${v}\}?\"" "$f" 2>/dev/null; then
+            strayv=$((strayv+1)); echo "    STRAY: ${f#"$REPO_LIB"/} bare-sources \$$v (a .local-holding var) — must use _source_local"
+        fi
+    done
+done < <(grep -rlE 'source[[:space:]]|\. "\$' "$REPO_LIB" 2>/dev/null | grep -vE '/tests/')
+[ "$strayv" -eq 0 ] && ok "0 variable-indirected .local source sites remain (all routed through _source_local)" || no "$strayv variable-indirected .local source site(s) still bare"
+
+echo "== REGRESSION: broken .local via VARIABLE indirection — skipped whole, no leak (the false-pass class) =="
+printf 'NFTBAN_ENABLED="false"\n((( broken\n' > "$NFTBAN_CONFIG_DIR/conf.d/svc.conf.local"
+NFTBAN_ENABLED="base"; _svc_local="$NFTBAN_CONFIG_DIR/conf.d/svc.conf.local"   # var holds the .local path
+_source_local "$_svc_local" 2>/tmp/cl_w3
+[ "$NFTBAN_ENABLED" = "base" ] && ok "variable-indirected broken .local skipped whole — NFTBAN_ENABLED=false did NOT leak" || no "var-indirect partial-apply leaked (NFTBAN_ENABLED='$NFTBAN_ENABLED')"
+grep -q "skipping malformed" /tmp/cl_w3 && ok "WARN emitted for var-indirected broken .local" || no "no WARN (var-indirect)"
+
+rm -rf "$_tmproot" /tmp/cl_w1 /tmp/cl_w2 /tmp/cl_w3 2>/dev/null || true
 echo "-----------------------------------------------"
 echo "CONFIG_LOCAL IMPL-1 tests: $P passed, $F failed"
 [ "$F" -eq 0 ]

@@ -620,6 +620,8 @@ _status_section_firewall() {
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
+        # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+        declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
@@ -1127,7 +1129,7 @@ _status_section_protection() {
     local zabbix_conf="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
     local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
-    [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
+    _source_local "$zabbix_local"
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
         if _unit_is_active nftban-unified-exporter.timer; then
@@ -1149,7 +1151,7 @@ _status_section_protection() {
     local connectors_conf="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
-    [[ -f "$connectors_local" ]] && source "$connectors_local" 2>/dev/null || true
+    _source_local "$connectors_local"
 
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" == "true" ]]; then
         local connector_count=0
