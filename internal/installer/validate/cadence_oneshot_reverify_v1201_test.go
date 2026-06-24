@@ -134,3 +134,55 @@ func TestV1201BotscanPreWindowStaleClearUnchanged(t *testing.T) {
 		t.Error("botscan must NOT use the v1.201 transient bucket")
 	}
 }
+
+// Lab4 RPM regression (no-mask override): a PRE-window cadence oneshot with CLEAN
+// live health whose re-verify FAILED must DEGRADE — the v1.201 re-verify is
+// authoritative and overrides the v1.174 pre-existing+clean-health recovery. Before
+// the fix this ended COMMITTED (masked) on lab4.
+func TestV1201NoMaskOverridesPreExistingRecoveredWhenHealthClean(t *testing.T) {
+	window := time.Date(2026, 6, 23, 20, 0, 0, 0, time.UTC)
+	in := SystemdPayloadInputs{
+		FailedNftbanUnits: []FailedUnitFinding{{
+			Unit: "nftban-watchdog.service", Active: "failed", Sub: "failed", Detail: "exit-code 203",
+			FailureTime: window.Add(-time.Hour), FailureTimeKnown: true, // PRE-window
+			OwnedWindowReverifyDone: true, OwnedWindowReverifyClean: false, // re-run STILL failed
+		}},
+		InstallWindowStart: window, InstallWindowStartKnown: true,
+		LiveHealthClean: true, LiveHealthKnown: true, // clean health would have recovered it under v1.174
+	}
+	r := ValidateInstalledSystemdPayload(in)
+	if r.FailedUnitsOK() {
+		t.Fatal("pre-window cadence + clean health + FAILED re-verify must DEGRADE (v1.201 overrides v1.174) — no-mask")
+	}
+	if len(r.FailedUnitsPreExistingRecovered) != 0 {
+		t.Error("a failed-re-verify cadence oneshot must NOT be WARN_PRE_EXISTING_RECOVERED")
+	}
+	if len(r.FailedUnits) != 1 {
+		t.Errorf("FailedUnits=%d want 1 (fatal)", len(r.FailedUnits))
+	}
+}
+
+// Positive override: a PRE-window cadence oneshot with CLEAN live health whose
+// re-verify ran CLEAN is tolerated as WARN_TRANSIENT_RECOVERED (not PreExisting).
+func TestV1201PreWindowCadenceCleanReverifyTolerated(t *testing.T) {
+	window := time.Date(2026, 6, 23, 20, 0, 0, 0, time.UTC)
+	in := SystemdPayloadInputs{
+		FailedNftbanUnits: []FailedUnitFinding{{
+			Unit: "nftban-soak.service", Active: "failed", Sub: "failed", Detail: "stale",
+			FailureTime: window.Add(-time.Hour), FailureTimeKnown: true,
+			OwnedWindowReverifyDone: true, OwnedWindowReverifyClean: true,
+		}},
+		InstallWindowStart: window, InstallWindowStartKnown: true,
+		LiveHealthClean: true, LiveHealthKnown: true,
+	}
+	r := ValidateInstalledSystemdPayload(in)
+	if !r.FailedUnitsOK() {
+		t.Fatal("clean re-verify must tolerate (COMMITTED)")
+	}
+	if len(r.FailedUnitsTransientRecovered) != 1 {
+		t.Errorf("want TransientRecovered=1, got %d", len(r.FailedUnitsTransientRecovered))
+	}
+	if len(r.FailedUnitsPreExistingRecovered) != 0 {
+		t.Error("clean cadence reverify must be Transient, not PreExisting")
+	}
+}

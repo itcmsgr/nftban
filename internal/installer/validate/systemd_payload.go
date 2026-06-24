@@ -541,22 +541,28 @@ func ValidateInstalledSystemdPayload(in SystemdPayloadInputs) SystemdPayloadVali
 		if preExisting && isStaleClearableOneshot(f.Unit) {
 			recovered = true
 		}
+		// v1.201 (A2 + stale-oneshot/SOAK): a cadence oneshot (watchdog/soak/
+		// maintenance) is governed by the host-side GATED re-verify, which is
+		// AUTHORITATIVE and consulted BEFORE the generic v1.174 pre-existing+clean-
+		// health recovery. A clean re-run (reset-failed + fresh `systemctl start`
+		// succeeded) → transient latch (the v1.198.3 watchdog/update-swap EXEC-203
+		// class), non-fatal WARN_TRANSIENT_RECOVERED. A re-run that STILL FAILS →
+		// force FATAL (recovered=false) so a demonstrably-broken cadence oneshot can
+		// NEVER be masked by the older recovered branch even when live health reads
+		// clean — the no-mask invariant (lab4 RPM regression: pre-window + clean
+		// health was being recovered despite a failed re-run). Applies in-window AND
+		// pre-window. A cadence oneshot with no re-verify falls through unchanged.
+		if isCadenceReverifiableOneshot(f.Unit) && f.OwnedWindowReverifyDone {
+			if f.OwnedWindowReverifyClean {
+				entry.Classification = "WARN_TRANSIENT_RECOVERED"
+				res.FailedUnitsTransientRecovered = append(res.FailedUnitsTransientRecovered, entry)
+				continue
+			}
+			recovered = false // re-run still failed → never recover via the v1.174 path
+		}
 		if recovered {
 			entry.Classification = "WARN_PRE_EXISTING_RECOVERED"
 			res.FailedUnitsPreExistingRecovered = append(res.FailedUnitsPreExistingRecovered, entry)
-			continue
-		}
-		// v1.201 (A2 + stale-oneshot/SOAK): a cadence oneshot (watchdog/soak/
-		// maintenance) recovered by the host-side GATED re-verify — the gatherer
-		// reset-failed it and a fresh `systemctl start` ran CLEAN — is a transient
-		// latch (the v1.198.3 watchdog/update-swap EXEC-203 class), non-fatal.
-		// Strict no-mask: requires the re-verify to have been DONE and CLEAN; a
-		// cadence oneshot whose re-run still fails (or was not re-verified) falls
-		// through to FATAL below. Applies in-window AND pre-window (a stale soak
-		// latch that re-runs clean is recoverable; one that re-fails DEGRADES).
-		if isCadenceReverifiableOneshot(f.Unit) && f.OwnedWindowReverifyDone && f.OwnedWindowReverifyClean {
-			entry.Classification = "WARN_TRANSIENT_RECOVERED"
-			res.FailedUnitsTransientRecovered = append(res.FailedUnitsTransientRecovered, entry)
 			continue
 		}
 		if preExisting {
