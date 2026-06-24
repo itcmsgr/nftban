@@ -25,6 +25,9 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_LIB="$(cd "$SCRIPT_DIR/.." && pwd)"   # .../cli/lib/nftban
 export NFTBAN_LIB_DIR="$REPO_LIB"
+# Guards scan the WHOLE cli/ tree (lib + sbin/bin entry scripts), not just cli/lib/nftban —
+# the original IMPL-1 miss was cli/sbin/nftban (the dispatcher), outside cli/lib/nftban.
+SCAN_ROOT="$(cd "$REPO_LIB/../.." && pwd)"   # .../cli
 _tmproot="$(mktemp -d)"
 export NFTBAN_CONFIG_DIR="$_tmproot/etc/nftban"
 mkdir -p "$NFTBAN_CONFIG_DIR/conf.d"
@@ -61,7 +64,7 @@ MYVAR="base"; NFTBAN_IGNORE_LOCAL_CONFIG=1 _source_local "$NFTBAN_CONFIG_DIR/con
 [ "$MYVAR" = "base" ] && ok "bypass: good .local NOT sourced under NFTBAN_IGNORE_LOCAL_CONFIG=1" || no "bypass failed (MYVAR='$MYVAR')"
 
 echo "== MIGRATION GUARD A: no LITERAL 'source .../*.conf.local' sites remain (outside helper/tests) =="
-stray="$(grep -rnE 'source[[:space:]].*\.conf\.local' "$REPO_LIB" 2>/dev/null | grep -vE '/tests/|lib/env\.sh:|_source_local|^\s*#|meta:' || true)"
+stray="$(grep -rnE 'source[[:space:]].*\.conf\.local' "$SCAN_ROOT" 2>/dev/null | grep -vE '/tests/|lib/env\.sh:|_source_local|^\s*#|meta:' || true)"
 if [ -z "$stray" ]; then ok "0 literal source-.local sites remain (all routed through _source_local)"; else no "stray literal source-.local sites:"; echo "$stray"; fi
 
 echo "== MIGRATION GUARD B: no VARIABLE-INDIRECT 'source \"\$VAR\"' where VAR is a .local path (completion regression) =="
@@ -77,7 +80,7 @@ while IFS= read -r f; do
             strayv=$((strayv+1)); echo "    STRAY: ${f#"$REPO_LIB"/} bare-sources \$$v (a .local-holding var) — must use _source_local"
         fi
     done
-done < <(grep -rlE 'source[[:space:]]|\. "\$' "$REPO_LIB" 2>/dev/null | grep -vE '/tests/')
+done < <(grep -rlE 'source[[:space:]]|\. "$' "$SCAN_ROOT" 2>/dev/null | grep -vE '/tests/')
 [ "$strayv" -eq 0 ] && ok "0 variable-indirected .local source sites remain (all routed through _source_local)" || no "$strayv variable-indirected .local source site(s) still bare"
 
 echo "== REGRESSION: broken .local via VARIABLE indirection — skipped whole, no leak (the false-pass class) =="
