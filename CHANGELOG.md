@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.201.2] - 2026-06-24 — `.conf.local` recovery (IMPL-1): central `_source_local` — broken overrides no longer partial-apply
+
+**Codename:** `CONFIG_LOCAL_RECOVERY_IMPL1` · **PRs:** [#938](https://github.com/itcmsgr/nftban/pull/938) (helper + literal migration) + [#939](https://github.com/itcmsgr/nftban/pull/939) (variable-indirected completion) + [#940](https://github.com/itcmsgr/nftban/pull/940) (sbin entry-script + guard scope) → main `cd18bbf8` · **Scope:** `CONFIG_LOCAL_RECOVERY_DESIGN.md`
+
+> **What:** a syntactically-broken operator `*.conf.local` override no longer silently **partial-applies** (the old `source … || true` left variables set before the error applied, then aborted). All `.conf.local` sourcing now routes through a single helper that `bash -n`-gates the file: clean → sourced (semantics preserved); broken → **skipped whole** with one actionable WARN, non-fatal. **Shell-only; `nftband` runtime daemon byte-identical (source-proven: zero `.go`); NFT schema UNCHANGED (1.84.0).**
+
+### Fixed
+- **Central `_source_local` helper** (`lib/env.sh`): `NFTBAN_IGNORE_LOCAL_CONFIG=1` bypass (break-glass) · missing/unreadable → silent · `bash -n` clean → source · `bash -n` fail → not sourced, **no partial-apply**, warn-once, non-fatal.
+- **All `.conf.local` source sites routed through the helper** — literal paths, variable-indirected (`source "$VAR"` incl. `${base}.local` forms), and the **dispatcher entry script** `cli/sbin/nftban` (loop-`$local_override` + literal). Repo-wide bare-`.local`-source count = 0. Base-config sources unchanged.
+- **CI guard** (`config_local_source_helper_impl1_test.sh`): Guard A (literal) + Guard B (variable-indirect) scanning the whole `cli/` tree (entry scripts included) — prevents recurrence; + regression for the partial-apply class.
+
+### Notes
+- **Schema 1.84.0 unchanged; `nftband` daemon byte-identical (source-proven).** No detector/firewall/nftables/ban-path/LoginMon-behavior/BotGuard/schema/counter change. No new CLI command (registry/help untouched).
+- **Config model preserved:** base `.conf` = defaults; operator prefs = `*.conf.local` (survive upgrade).
+- **Validation:** hermetic 13/13; **package-native both families lab2(DEB) 20/0 + lab4(RPM) 20/0 via the `/usr/sbin/nftban` dispatcher path** — broken `services.conf.local` (line-1 `NFTBAN_ENABLED=false` + syntax error) skipped whole (no partial-apply → status stays ENABLED), WARN emitted, `NFTBAN_IGNORE_LOCAL_CONFIG=1` bypass, `.local` survives upgrade; labs restored clean.
+- **Deferred (separate lanes):** IMPL-2 (`config local list|validate|doctor`) · IMPL-3 (quarantine verbs) · IMPL-4 (parse-not-execute). `OPEN_RECOVERY_LEGACY_RECONCILE` / `OPEN_DRHG1_SYSTEMD_SPLIT_SCOPE` remain plan-only.
+
+---
+
 ## [v1.201.1] - 2026-06-24 — Structural hygiene: ship login_alert.conf + services.conf at their live read paths
 
 **Codename:** `STRUCTURAL_HYGIENE_PRA` · **PR:** [#936](https://github.com/itcmsgr/nftban/pull/936) (`ae687ef2`) · **Scope:** `STRUCTURAL_HYGIENE_SCOPE.md` + `STRUCTURAL_HYGIENE_INVESTIGATION_FINDINGS.md`
