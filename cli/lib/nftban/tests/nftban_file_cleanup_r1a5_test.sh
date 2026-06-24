@@ -51,18 +51,23 @@ else
     ok "pam.d/nftban-api unreferenced by packaging/installer"
 fi
 
-# (4) UNCLEAR resolution — structural-hygiene PR-A (ownership decided):
-#   login_alert + services were real SHIPPING GAPS (read live by cmd_login.sh /
-#   cmd_status.sh but never packaged) → now shipped at the live root read path
-#   /etc/nftban/conf.d/*.conf; their cli/etc shadows are removed.
-#   recovery stays UNCLEAR — it is a legacy 14-key config surface (mostly unread;
-#   real recovery contract = the rebuild_recovery.json marker) deferred to
-#   OPEN_RECOVERY_LEGACY_RECONCILE; keep it at cli/etc until that audit decides.
-for c in login_alert services; do
+# (4) UNCLEAR resolution — all three UNCLEAR cli/etc configs are now decided:
+#   login_alert + services (structural-hygiene PR-A): real SHIPPING GAPS → shipped at
+#   the live root read path /etc/nftban/conf.d/*.conf; cli/etc shadows removed.
+#   recovery (RECOVERY_LEGACY_RECONCILE, v1.201.2): phantom 14-key surface (unsourced) →
+#   trimmed to the 3 live commit-confirm knobs, SHIPPED + sourced at root recovery.conf;
+#   the 11 dead keys deprecated in schema; the unshipped cli/etc copy removed.
+for c in login_alert services recovery; do
     [[ -f "${ROOT_CONF}/${c}.conf" ]] && ok "shipped at live read path: /etc/nftban/conf.d/${c}.conf present" || bad "${c}.conf missing from shipped root conf.d (must ship at the live read path)"
     [[ ! -f "${CLI_CONF}/${c}.conf" ]] && ok "cli/etc shadow of ${c}.conf removed (now canonical in root)" || bad "${c}.conf shadow still in cli/etc (should be moved to root)"
 done
-[[ -f "${CLI_CONF}/recovery.conf" ]] && ok "UNCLEAR_NO_GO kept: cli/etc/conf.d/recovery.conf present (deferred to OPEN_RECOVERY_LEGACY_RECONCILE)" || bad "recovery.conf removed — still UNCLEAR (legacy-key audit pending), must NOT be removed before OPEN_RECOVERY_LEGACY_RECONCILE"
+# recovery.conf must be TRIMMED to only the 3 live knobs (no dead keys shipped).
+recov_keys="$(grep -cE '^NFTBAN_[A-Z_]+=' "${ROOT_CONF}/recovery.conf" 2>/dev/null || echo 0)"
+[[ "$recov_keys" -eq 3 ]] && ok "shipped recovery.conf carries exactly 3 live keys (no dead keys)" || bad "recovery.conf has $recov_keys keys (expected 3 live commit-confirm knobs)"
+for dead in NFTBAN_RECOVERY_ENABLED NFTBAN_ROLLBACK_ALERT NFTBAN_BACKUP_RULES NFTBAN_RESET_ON_BOOT NFTBAN_EMERGENCY_RESET_ENABLED; do
+    grep -qE "^${dead}=" "${ROOT_CONF}/recovery.conf" 2>/dev/null && bad "dead key ${dead} still shipped in recovery.conf" || true
+done
+ok "spot-checked dead keys absent from shipped recovery.conf"
 
 echo "-----------------------------------------------"
 printf 'R1a-5 cleanup tests: %d passed, %d failed\n' "$PASS" "$FAIL"
