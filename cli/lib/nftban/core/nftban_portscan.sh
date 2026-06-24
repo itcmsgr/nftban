@@ -123,7 +123,7 @@ nftban_portscan_load_config() {
 
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local" || true
+        _source_local "$main_local"
     fi
 
     # Set defaults

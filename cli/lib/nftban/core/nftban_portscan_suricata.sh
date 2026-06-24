@@ -62,7 +62,7 @@ nftban_portscan_suricata_load_config() {
     # Load local overrides
     if [[ -f "$local_config" ]]; then
         # shellcheck source=/dev/null
-        source "$local_config" || true
+        _source_local "$local_config"
     fi
 
     # Set defaults

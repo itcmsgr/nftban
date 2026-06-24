@@ -1127,7 +1127,7 @@ _status_section_protection() {
     local zabbix_conf="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
     local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
-    [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
+    _source_local "$zabbix_local"
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
         if _unit_is_active nftban-unified-exporter.timer; then
@@ -1149,7 +1149,7 @@ _status_section_protection() {
     local connectors_conf="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
-    [[ -f "$connectors_local" ]] && source "$connectors_local" 2>/dev/null || true
+    _source_local "$connectors_local"
 
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" == "true" ]]; then
         local connector_count=0

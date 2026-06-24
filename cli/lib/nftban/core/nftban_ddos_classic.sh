@@ -71,7 +71,7 @@ _nftban_ddos_classic_load_config() {
     # Load local overrides (BUG-003 fix: was missing .local support)
     if [[ -f "$local_config" ]]; then
         # shellcheck source=/dev/null
-        source "$local_config" || true
+        _source_local "$local_config"
     fi
 
     # Set defaults if not configured

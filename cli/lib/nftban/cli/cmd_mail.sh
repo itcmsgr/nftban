@@ -119,7 +119,7 @@ _mail_setup_show() {
     # shellcheck source=/dev/null
     [[ -f "$mail_conf" ]] && source "$mail_conf" 2>/dev/null || true
     # shellcheck source=/dev/null
-    [[ -f "$mail_conf_local" ]] && source "$mail_conf_local" 2>/dev/null || true
+    _source_local "$mail_conf_local"
 
     echo "Email Configuration Status"
     echo "=========================="
@@ -303,7 +303,7 @@ NFTBAN_MAIL_ON_LOGIN_ALERT=\"YES\""
                 echo "Sending test email..."
                 # Re-source config to pick up new settings
                 # shellcheck source=/dev/null
-                source "$conf_local" 2>/dev/null || true
+                _source_local "$conf_local"
                 nftban_mail_send_test "$email"
             fi
 

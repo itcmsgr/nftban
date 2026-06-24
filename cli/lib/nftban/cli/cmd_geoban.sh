@@ -405,7 +405,7 @@ nftban_geoban_config() {
     # shellcheck source=/dev/null
     source "$config_file" 2>/dev/null || true
     # shellcheck source=/dev/null
-    source "$config_local" 2>/dev/null || true
+    _source_local "$config_local"
 
     # Count configured countries
     local banned_count=0

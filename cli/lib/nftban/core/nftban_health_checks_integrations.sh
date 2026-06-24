@@ -193,7 +193,7 @@ nftban_health_check_metrics() {
     local metrics_conf="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
     local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
     [[ -f "$metrics_conf" ]] && source "$metrics_conf" 2>/dev/null || true
-    [[ -f "$metrics_local" ]] && source "$metrics_local" 2>/dev/null || true
+    _source_local "$metrics_local"
 
     # PROMETHEUS EXPORT CHECK (OPTIONAL - only if enabled)
     # Note: Prometheus export is OPTIONAL. NFTBan's default is nc-based unified export.
@@ -383,7 +383,7 @@ nftban_health_check_zabbix() {
     local zabbix_conf="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
     local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
-    [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
+    _source_local "$zabbix_local"
 
     # Check if Zabbix export is enabled
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" != "true" ]]; then
@@ -510,7 +510,7 @@ nftban_health_check_connectors() {
     local connectors_conf="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
-    [[ -f "$connectors_local" ]] && source "$connectors_local" 2>/dev/null || true
+    _source_local "$connectors_local"
 
     # Check if connector framework is enabled
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" != "true" ]]; then

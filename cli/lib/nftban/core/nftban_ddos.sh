@@ -129,7 +129,7 @@ _nftban_ddos_load_config() {
     # Load user overrides (takes precedence)
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local" || true
+        _source_local "$main_local"
     fi
 
     # Set defaults

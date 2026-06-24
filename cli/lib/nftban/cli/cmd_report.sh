@@ -991,7 +991,7 @@ nftban_report_cmd_run() {
         local login_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
         local login_config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
         source "$login_config" 2>/dev/null || true
-        source "$login_config_local" 2>/dev/null || true
+        _source_local "$login_config_local"
 
         local alert_mode="${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
         if [[ "$alert_mode" == "digest" ]] || [[ "$alert_mode" == "both" ]]; then
@@ -1053,13 +1053,13 @@ nftban_report_cmd_status() {
     local mail_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
     local mail_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf.local"
     [[ -f "$mail_conf" ]] && source "$mail_conf" 2>/dev/null || true
-    [[ -f "$mail_local" ]] && source "$mail_local" 2>/dev/null || true
+    _source_local "$mail_local"
 
     # Source stats config if available
     local stats_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf"
     local stats_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf.local"
     [[ -f "$stats_conf" ]] && source "$stats_conf" 2>/dev/null || true
-    [[ -f "$stats_local" ]] && source "$stats_local" 2>/dev/null || true
+    _source_local "$stats_local"
 
     if [[ $json_mode -eq 1 ]]; then
         _report_status_json

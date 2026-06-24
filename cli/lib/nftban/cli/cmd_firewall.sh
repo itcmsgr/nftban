@@ -147,7 +147,7 @@ _firewall_substitute_placeholders() {
     # shellcheck disable=SC1090  # dynamic config path
     [[ -f "$_ddos_conf" ]] && source "$_ddos_conf" 2>/dev/null || true
     # shellcheck disable=SC1090  # dynamic config path
-    [[ -f "$_ddos_local" ]] && source "$_ddos_local" 2>/dev/null || true
+    _source_local "$_ddos_local"
     # Use DDoS limits if defined, keeping base defaults as fallback
     [[ -n "${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ]] && _ct_ssh="$DDOS_CLASSIC_SSH_CONN_LIMIT"
     [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _ct_http="$DDOS_CLASSIC_HTTP_CONN_LIMIT"

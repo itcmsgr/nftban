@@ -38,7 +38,7 @@ _nftban_load_services_config() {
     # Load local overrides
     if [[ -f "$NFTBAN_SERVICES_LOCAL" ]]; then
         # shellcheck source=/dev/null
-        source "$NFTBAN_SERVICES_LOCAL" || true
+        _source_local "$NFTBAN_SERVICES_LOCAL"
     fi
 }
 
@@ -107,7 +107,7 @@ nftban_service_is_enabled() {
             fi
             if [[ -f "$login_local" ]]; then
                 # shellcheck source=/dev/null
-                source "$login_local" || true
+                _source_local "$login_local"
                 enabled="${NFTBAN_LOGIN_ALERT_ENABLED:-$enabled}"
             fi
             [[ "$enabled" == "true" ]]
