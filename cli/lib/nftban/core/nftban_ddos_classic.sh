@@ -71,7 +71,9 @@ _nftban_ddos_classic_load_config() {
     # Load local overrides (BUG-003 fix: was missing .local support)
     if [[ -f "$local_config" ]]; then
         # shellcheck source=/dev/null
-        source "$local_config" || true
+        # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+        declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+        _source_local "$local_config"
     fi
 
     # Set defaults if not configured

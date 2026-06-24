@@ -62,6 +62,8 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
+# IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
@@ -113,7 +115,7 @@ nftban_login_load_config() {
 
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local" || true
+        _source_local "$main_local"
     fi
 
     # Set defaults
@@ -144,14 +146,14 @@ nftban_login_load_mode_config() {
             local classic_local="${config_dir}/classic.conf.local"
 
             source "$classic_config" 2>/dev/null || true
-            source "$classic_local" 2>/dev/null || true
+            _source_local "$classic_local"
             ;;
         suricata)
             local suricata_config="${config_dir}/suricata.conf"
             local suricata_local="${config_dir}/suricata.conf.local"
 
             source "$suricata_config" 2>/dev/null || true
-            source "$suricata_local" 2>/dev/null || true
+            _source_local "$suricata_local"
             ;;
         hybrid)
             # Load both
@@ -165,7 +167,7 @@ nftban_login_load_mode_config() {
     local services_local="${config_dir}/services.conf.local"
 
     source "$services_config" 2>/dev/null || true
-    source "$services_local" 2>/dev/null || true
+    _source_local "$services_local"
 
     return 0
 }

@@ -42,6 +42,8 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
 
 # Load zabbix user overrides
+# IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
 # Load metrics config (needed to detect NFTBAN_METRICS_ENABLED correctly)
