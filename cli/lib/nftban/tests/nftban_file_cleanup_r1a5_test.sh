@@ -51,10 +51,18 @@ else
     ok "pam.d/nftban-api unreferenced by packaging/installer"
 fi
 
-# (4) the three UNCLEAR cli/etc configs are intentionally NOT deleted (ownership undecided)
-for c in login_alert recovery services; do
-    [[ -f "${CLI_CONF}/${c}.conf" ]] && ok "UNCLEAR_NO_GO kept: cli/etc/conf.d/${c}.conf present (not deleted)" || bad "${c}.conf was deleted — it is UNCLEAR_NO_GO, must NOT be removed without an ownership decision"
+# (4) UNCLEAR resolution — structural-hygiene PR-A (ownership decided):
+#   login_alert + services were real SHIPPING GAPS (read live by cmd_login.sh /
+#   cmd_status.sh but never packaged) → now shipped at the live root read path
+#   /etc/nftban/conf.d/*.conf; their cli/etc shadows are removed.
+#   recovery stays UNCLEAR — it is a legacy 14-key config surface (mostly unread;
+#   real recovery contract = the rebuild_recovery.json marker) deferred to
+#   OPEN_RECOVERY_LEGACY_RECONCILE; keep it at cli/etc until that audit decides.
+for c in login_alert services; do
+    [[ -f "${ROOT_CONF}/${c}.conf" ]] && ok "shipped at live read path: /etc/nftban/conf.d/${c}.conf present" || bad "${c}.conf missing from shipped root conf.d (must ship at the live read path)"
+    [[ ! -f "${CLI_CONF}/${c}.conf" ]] && ok "cli/etc shadow of ${c}.conf removed (now canonical in root)" || bad "${c}.conf shadow still in cli/etc (should be moved to root)"
 done
+[[ -f "${CLI_CONF}/recovery.conf" ]] && ok "UNCLEAR_NO_GO kept: cli/etc/conf.d/recovery.conf present (deferred to OPEN_RECOVERY_LEGACY_RECONCILE)" || bad "recovery.conf removed — still UNCLEAR (legacy-key audit pending), must NOT be removed before OPEN_RECOVERY_LEGACY_RECONCILE"
 
 echo "-----------------------------------------------"
 printf 'R1a-5 cleanup tests: %d passed, %d failed\n' "$PASS" "$FAIL"
