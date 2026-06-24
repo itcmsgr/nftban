@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.201.1] - 2026-06-24 — Structural hygiene: ship login_alert.conf + services.conf at their live read paths
+
+**Codename:** `STRUCTURAL_HYGIENE_PRA` · **PR:** [#936](https://github.com/itcmsgr/nftban/pull/936) (`ae687ef2`) · **Scope:** `STRUCTURAL_HYGIENE_SCOPE.md` + `STRUCTURAL_HYGIENE_INVESTIGATION_FINDINGS.md`
+
+> **What:** closes two config **shipping gaps** — operator configs read live but never packaged, so the runtime silently fell back to defaults. **Shell/packaging + test only; `nftband` runtime daemon byte-identical (source-proven: zero `cmd/nftband`/daemon-source change); NFT schema UNCHANGED (1.84.0).**
+
+### Fixed
+- **`login_alert.conf`** — read live by `cmd_login.sh` (`conf.d/login_alert.conf`) but absent from the shipped tree → now shipped at `etc/nftban/conf.d/login_alert.conf` (auto-ships via the `/etc/nftban/conf.d/*.conf` packaging path).
+- **`services.conf`** — `cmd_status.sh` sources `conf.d/services.conf` to honor the master switch `NFTBAN_ENABLED` (v1.150 MOD-09), but only the modular `conf.d/login/services.conf` shipped → the base master-switch never loaded (defaulted true). Now shipped at `etc/nftban/conf.d/services.conf` (distinct from the login-monitor `login/services.conf`).
+- Guard `nftban_file_cleanup_r1a5_test.sh` updated to track the ownership decision (shipped-at-root + no cli/etc shadow for the two; recovery.conf still kept).
+
+### Config model (validated)
+Base `.conf` files ship **defaults**; operator preferences live in `*.conf.local` (never shipped → survive upgrade). RPM marks base confs `%config(noreplace)`; on DEB the curated conffiles list intentionally treats most base confs as defaults (operator prefs via `.local`). Both families validated package-native: `NFTBAN_ENABLED=false` honored by `nftban status`, `.local` precedence, `.local` survives upgrade.
+
+### Deferred (separate lanes, not in this release)
+- `recovery.conf` — legacy 14-key config surface → `OPEN_RECOVERY_LEGACY_RECONCILE` (audit/deprecate before any removal). recovery.conf + `config-schema.json` UNTOUCHED here.
+- D-RHG-1 structural systemd-split → `OPEN_DRHG1_SYSTEMD_SPLIT_SCOPE` (definition-first; undefined).
+- `.conf.local` recovery/quarantine tooling → `OPEN_CONFIG_LOCAL_RECOVERY_SCOPE`.
+
+### Notes
+- **Schema 1.84.0 unchanged; `nftband` daemon byte-identical (source-proven).** No detector/firewall/nftables/ban-path/LoginMon-behavior/BotGuard/schema/counter change.
+- **Validation:** package-native both families from build `ae687ef2` — lab2 (DEB) 20/0 + lab4 (RPM) 20/0; labs restored to published fleet daemon.
+- **Build-reproducibility note:** package builds here are non-reproducible (per-build daemon/wrapper sha differs); daemon byte-identity is **source-proven** (no daemon-source change), not binary-sha compared.
+
+---
+
 ## [v1.201.0] - 2026-06-23 — Stale-oneshot / SOAK / A2 assertion-tolerance reliability
 
 **Codename:** `V201_STALE_ONESHOT_SOAK_A2` · **PR:** [#932](https://github.com/itcmsgr/nftban/pull/932) (`c81c5db2`) · **Scope:** `V1_201_STALE_ONESHOT_SOAK_A2_SCOPE.md`
