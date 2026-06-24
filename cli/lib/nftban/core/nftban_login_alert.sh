@@ -40,6 +40,8 @@ if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
     source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
+# IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # Load strict mode library

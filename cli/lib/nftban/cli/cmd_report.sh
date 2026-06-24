@@ -991,6 +991,8 @@ nftban_report_cmd_run() {
         local login_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
         local login_config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
         source "$login_config" 2>/dev/null || true
+        # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+        declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "$login_config_local"
 
         local alert_mode="${NFTBAN_LOGIN_ALERT_MODE:-realtime}"

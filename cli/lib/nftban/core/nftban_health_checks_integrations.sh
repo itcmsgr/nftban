@@ -193,6 +193,8 @@ nftban_health_check_metrics() {
     local metrics_conf="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
     local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
     [[ -f "$metrics_conf" ]] && source "$metrics_conf" 2>/dev/null || true
+    # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+    declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
     _source_local "$metrics_local"
 
     # PROMETHEUS EXPORT CHECK (OPTIONAL - only if enabled)

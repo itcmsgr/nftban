@@ -147,6 +147,8 @@ _firewall_substitute_placeholders() {
     # shellcheck disable=SC1090  # dynamic config path
     [[ -f "$_ddos_conf" ]] && source "$_ddos_conf" 2>/dev/null || true
     # shellcheck disable=SC1090  # dynamic config path
+    # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+    declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
     _source_local "$_ddos_local"
     # Use DDoS limits if defined, keeping base defaults as fallback
     [[ -n "${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ]] && _ct_ssh="$DDOS_CLASSIC_SSH_CONN_LIMIT"
