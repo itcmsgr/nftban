@@ -133,7 +133,7 @@ if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
                 # Skip if INI-style
                 if ! grep -q '^\[' "$local_override" 2>/dev/null; then
                     # shellcheck source=/dev/null
-                    source "$local_override"
+                    _source_local "$local_override"
                 fi
             fi
         fi
@@ -143,7 +143,7 @@ fi
 # Load user overrides (highest priority) if exists
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+    _source_local "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 fi
 
 # =============================================================================
