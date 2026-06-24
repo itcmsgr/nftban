@@ -1798,6 +1798,21 @@ config:
     status:
       mutates: false
       description: "Show config reload status"
+    local:
+      mutates: false
+      capability: config_view
+      introduced_in: "1.201.4"
+      description: "Read-only diagnostics for operator *.conf.local overrides (list/validate/doctor)"
+      subcommands:
+        list:
+          mutates: false
+          description: "Enumerate *.conf.local overrides (path/base/sha256/size/mtime/syntax)"
+        validate:
+          mutates: false
+          description: "bash -n syntax-check each *.conf.local (never sources/executes)"
+        doctor:
+          mutates: false
+          description: "Syntax + schema KEY=VALUE lint (OK/UNKNOWN_KEY/DEPRECATED_KEY/BAD_VALUE); read-only by design"
   allowlist:
     paths:
       - /etc/nftban/nftban.conf
