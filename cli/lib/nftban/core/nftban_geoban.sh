@@ -94,10 +94,10 @@ nftban_warn() {
 
 # Load configuration (new standard paths)
 source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local"
 # Legacy path support (deprecated - will be removed in v2.0)
 source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
 
 # =============================================================================
 # CONFIGURATION DEFAULTS (uses central config paths)

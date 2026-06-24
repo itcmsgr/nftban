@@ -620,7 +620,7 @@ _status_section_firewall() {
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" 2>/dev/null || true
+        _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
 
@@ -995,7 +995,7 @@ _status_section_protection() {
     # v1.19.0: Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
     fi
     if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
         rbl_status="ENABLED"
@@ -1036,7 +1036,7 @@ _status_section_protection() {
     # Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
     fi
     botguard_enabled="${HTTP_BOTGUARD_ENABLED:-false}"
     if [[ "$botguard_enabled" == "true" ]]; then
@@ -1067,7 +1067,7 @@ _status_section_protection() {
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     fi
     if [[ "${NFTBAN_TUNNEL_ENABLED:-NO}" == "YES" ]]; then
         local tunnel_high=0 tunnel_med=0
@@ -1866,7 +1866,7 @@ output_json() {
     local master_enabled="true"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" 2>/dev/null || true
+        _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
