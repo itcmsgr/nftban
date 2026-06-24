@@ -25,7 +25,7 @@ umask 027
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
-source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
 # GLOBALS

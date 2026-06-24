@@ -74,7 +74,7 @@ fi
 # Load user overrides (takes precedence over defaults)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local" || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local"
 fi
 
 # Set defaults if not configured

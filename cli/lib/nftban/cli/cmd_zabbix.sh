@@ -42,14 +42,14 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
 
 # Load zabbix user overrides
-source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
 # Load metrics config (needed to detect NFTBAN_METRICS_ENABLED correctly)
 source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
 
 # Load global user overrides LAST (highest priority - written by nftban config set)
-source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
 # Set bash defaults for any unset variables
 : "${NFTBAN_ZABBIX_ENABLED:=false}"
@@ -1129,7 +1129,7 @@ _cmd_zabbix_reload() {
 
     # Re-source config files to pick up changes
     source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
-    source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
     local enabled server
     enabled=$(_zabbix_config_get "NFTBAN_ZABBIX_ENABLED" "false")

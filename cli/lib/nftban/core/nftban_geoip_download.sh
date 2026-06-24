@@ -69,7 +69,7 @@ if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" ]]; then
 fi
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 fi
 
 # Load output module

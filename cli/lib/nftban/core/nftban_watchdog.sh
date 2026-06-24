@@ -61,7 +61,7 @@ fi
 # v1.19.0: Source .local override (user customizations survive package updates)
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" || true
+    _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 fi
 
 # Load watchdog-specific config (+ .local override)
@@ -71,7 +71,7 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf" ]]; then
 fi
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local" || true
+    _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local"
 fi
 
 # Watchdog defaults (can be overridden in conf.d/watchdog/main.conf.local)
