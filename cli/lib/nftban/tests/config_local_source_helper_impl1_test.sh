@@ -24,9 +24,10 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_LIB="$(cd "$SCRIPT_DIR/.." && pwd)"   # .../cli/lib/nftban
-REPO_ROOT="$(cd "$REPO_LIB/../../.." && pwd)"
 export NFTBAN_LIB_DIR="$REPO_LIB"
-export NFTBAN_CONFIG_DIR="$(mktemp -d)/etc/nftban"; mkdir -p "$NFTBAN_CONFIG_DIR/conf.d"
+_tmproot="$(mktemp -d)"
+export NFTBAN_CONFIG_DIR="$_tmproot/etc/nftban"
+mkdir -p "$NFTBAN_CONFIG_DIR/conf.d"
 P=0; F=0
 ok(){ P=$((P+1)); echo "  PASS: $1"; }
 no(){ F=$((F+1)); echo "  FAIL: $1"; }
@@ -63,7 +64,7 @@ echo "== MIGRATION GUARD: no direct 'source *.conf.local ... || true' sites rema
 stray="$(grep -rnE 'source[[:space:]].*\.conf\.local' "$REPO_LIB" 2>/dev/null | grep -vE '/tests/|lib/env\.sh:|_source_local|^\s*#|meta:' || true)"
 if [ -z "$stray" ]; then ok "0 direct source-.local call sites remain (all routed through _source_local)"; else no "stray direct source-.local sites:"; echo "$stray"; fi
 
-rm -rf "$(dirname "$NFTBAN_CONFIG_DIR")" /tmp/cl_w1 /tmp/cl_w2 2>/dev/null || true
+rm -rf "$_tmproot" /tmp/cl_w1 /tmp/cl_w2 2>/dev/null || true
 echo "-----------------------------------------------"
 echo "CONFIG_LOCAL IMPL-1 tests: $P passed, $F failed"
 [ "$F" -eq 0 ]
