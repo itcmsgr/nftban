@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.201.4] - 2026-06-24 — `config local` read-only override diagnostics (CONFIG_LOCAL_RECOVERY IMPL-2)
+
+**Codename:** `CONFIG_LOCAL_RECOVERY IMPL-2` · **PR:** [#944](https://github.com/itcmsgr/nftban/pull/944) (`334dd4fa`) · **Scope:** `CONFIG_LOCAL_RECOVERY_IMPL2_SCOPE.md`
+
+> **What:** adds read-only diagnostics for operator `*.conf.local` overrides, built on the v1.201.2 `_source_local` mechanism. **Strictly read-only — no writes, no quarantine, no mutation.** Shell-only; `nftband` daemon byte-identical (source-proven: zero `.go`); NFT `SchemaVersionCurrent` unchanged (1.84.0).
+
+### Added
+- **`nftban config local list [--json]`** — enumerate every `*.conf.local` with path · base `.conf` it overrides · sha256 · size · mtime · `bash -n` syntax status.
+- **`nftban config local validate [--json]`** — `bash -n` syntax-check each `.local` (never sources/executes); exit nonzero if any `SYNTAX_ERROR`.
+- **`nftban config local doctor [--json]`** — syntax + a schema-derived `KEY=VALUE` lint against `config-schema.json`: `OK` / `UNKNOWN_KEY` / `DEPRECATED_KEY` (flags the v1.201.3-deprecated recovery keys) / `BAD_VALUE`. Read-only by design (no mutating mode).
+
+### Notes
+- **Strictly read-only:** no file writes, no quarantine, no `disable`/`reset`/`restore`, no `config-quarantine` directory, no change to `_source_local` loading. The lint is schema-derived (single source of truth) — no second hardcoded key list.
+- Wired through the CLI contract: `commands.registry.yml` (`config.subcommands.local`, `mutates:false`, `config_view`), `config` usage, and `config local [--help]` + per-verb `--help`.
+- **`nftband` daemon byte-identical (source-proven); nft schema 1.84.0**; no daemon IPC; `recovery.conf`/`config-schema.json` not modified (read-only consumers).
+- **Validation:** hermetic 20/20 (incl. read-only + `-e`-safety proofs); **package-native both families lab2(DEB) 29/0 + lab4(RPM) 29/0** via the installed CLI — list/validate/doctor behavior, sha-compared zero mutation, no quarantine dir, registry/help green, labs restored clean.
+- **Deferred (separate lanes):** IMPL-3 (quarantine/disable/restore verbs) · IMPL-4 (parse-not-execute migration).
+
+---
+
 ## [v1.201.3] - 2026-06-24 — Recovery-config truth: trim+ship+wire recovery.conf, deprecate 11 phantom keys
 
 **Codename:** `RECOVERY_LEGACY_RECONCILE` · **PR:** [#942](https://github.com/itcmsgr/nftban/pull/942) (`d6e13dbd`) · **Findings:** `RECOVERY_LEGACY_RECONCILE_FINDINGS.md`
