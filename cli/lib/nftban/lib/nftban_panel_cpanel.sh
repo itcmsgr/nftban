@@ -564,7 +564,7 @@ nftban_panel_cpanel_report() {
     # v1.19.0: Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf.local"
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf" ]]; then
 

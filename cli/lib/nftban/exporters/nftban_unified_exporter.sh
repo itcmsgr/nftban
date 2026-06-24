@@ -77,19 +77,21 @@ fi
 
 # Load metrics configuration (unified collector settings)
 source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
+# IMPL-1: ensure _source_local helper is defined (env.sh is idempotent)
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
 
 # Load Zabbix configuration (for export_zabbix)
 source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
 # Load Connectors configuration (for export_connectors)
 source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
 
 # Load Portal configuration (for export_portal to pro.nftban.com)
 source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local"
 
 # =============================================================================
 # CONFIGURATION DEFAULTS (from metrics.conf, with fallbacks)

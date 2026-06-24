@@ -551,7 +551,7 @@ cmd_load_module_config() {
     # Load local overrides if they exist
     if [[ -f "${config_base}/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${config_base}/main.conf.local" || true
+        _source_local "${config_base}/main.conf.local"
     fi
 }
 

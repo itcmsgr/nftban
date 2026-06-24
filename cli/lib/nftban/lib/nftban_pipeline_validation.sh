@@ -31,7 +31,7 @@ fi
 # shellcheck source=/dev/null
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" 2>/dev/null || true
 # shellcheck source=/dev/null
-source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local"
 
 # Pipeline defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROM_FILE:=/var/lib/node_exporter/textfile_collector/nftban.prom}"

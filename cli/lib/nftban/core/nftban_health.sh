@@ -76,7 +76,7 @@ fi
 # shellcheck source=/dev/null
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" 2>/dev/null || true
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local"
 
 # Metrics endpoint defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROMETHEUS_ADDR:=localhost:9090}"

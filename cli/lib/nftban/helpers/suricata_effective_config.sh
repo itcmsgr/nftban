@@ -218,15 +218,17 @@ _suricata_generate_module_overlap_disables() {
 
     # Source main config
     source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
+    # IMPL-1: ensure _source_local helper is defined (env.sh is idempotent)
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+    _source_local "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
     # Source module configs
     source "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf" 2>/dev/null || true
-    source "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local" 2>/dev/null || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
     source "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf" 2>/dev/null || true
-    source "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local" 2>/dev/null || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local"
     source "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf" 2>/dev/null || true
-    source "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local" 2>/dev/null || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local"
 
     # Map to variables
     login_enabled="${NFTBAN_LOGIN_ENABLED:-$login_enabled}"

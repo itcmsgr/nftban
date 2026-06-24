@@ -40,7 +40,7 @@ if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
     source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
-source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
@@ -82,7 +82,7 @@ fi
 
 # Load local overrides (user customizations)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local" || true
+    _source_local "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 fi
 
 # Load global mail module for centralized email

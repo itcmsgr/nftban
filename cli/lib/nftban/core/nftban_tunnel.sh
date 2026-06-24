@@ -56,7 +56,7 @@ nftban_tunnel_load_config() {
     # .local override
     # shellcheck source=/dev/null
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" ]]; then
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     fi
 }
 
