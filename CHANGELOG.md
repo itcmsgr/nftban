@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.201.3] - 2026-06-24 — Recovery-config truth: trim+ship+wire recovery.conf, deprecate 11 phantom keys
+
+**Codename:** `RECOVERY_LEGACY_RECONCILE` · **PR:** [#942](https://github.com/itcmsgr/nftban/pull/942) (`d6e13dbd`) · **Findings:** `RECOVERY_LEGACY_RECONCILE_FINDINGS.md`
+
+> **What:** `recovery.conf` was a phantom config surface — unshipped + unsourced, yet `config-schema.json` documented 14 keys as living there (11 unread; 3 read by `nftban-apply` only from env / unshipped `/etc/default/nftban`). This makes the recovery config truthful: the 3 live commit-confirm knobs get a real shipped+sourced home; the 11 dead keys are deprecated. **Shell/packaging + config-schema metadata only; `nftband` runtime daemon byte-identical (source-proven: zero `.go`); NFT `SchemaVersionCurrent` UNCHANGED (1.84.0).**
+
+### Fixed (P2 operator-truth)
+- **Ship** a trimmed `/etc/nftban/conf.d/recovery.conf` with only the 3 live commit-confirm knobs (`NFTBAN_REBOOT_GRACE_PERIOD`, `NFTBAN_SSH_TEST_BEFORE_APPLY`, `NFTBAN_SSH_TEST_PORT`); the unshipped 14-key copy is removed.
+- **Wire** `nftban-apply` to source the shipped `recovery.conf` + `recovery.conf.local` (via the central `_source_local` helper, `bash -n`-gated) with explicit precedence (low→high): hardcoded < recovery.conf < `/etc/default/nftban` (legacy compat, retained) < recovery.conf.local < environment. Commit-confirm rollback behavior unchanged.
+- **Deprecate** the 11 unread keys in both `config-schema.json` copies (no longer advertised as live `conf.d/recovery.conf` config). Previously they over-promised backup-rotation / rollback-alerts / reset-on-boot that do not exist in code.
+
+### Notes
+- **`nftband` daemon byte-identical (source-proven); nft schema 1.84.0** (the `config-schema.json` change is config metadata, not the nft schema). `rebuild_recovery.json` rebuild-retry marker contract untouched (separate mechanism). No detector/firewall/ban-path/BotGuard change; no new CLI command.
+- **Validation:** hermetic 17/17; **package-native both families lab2(DEB) 25/0 + lab4(RPM) 25/0** via `nftban-apply`'s real config-resolution path — each live key in recovery.conf reflected in the effective config; `.local` overrides via `_source_local`; env > `.local`; full precedence chain deterministic; 11 dead keys deprecated; rebuild marker untouched; labs restored clean.
+- This also closes the last R1a-5 `UNCLEAR_NO_GO` (recovery.conf).
+- **Deferred (separate lanes):** config-local IMPL-2/3/4 · `OPEN_DRHG1_SYSTEMD_SPLIT_SCOPE`.
+
+---
+
 ## [v1.201.2] - 2026-06-24 — `.conf.local` recovery (IMPL-1): central `_source_local` — broken overrides no longer partial-apply
 
 **Codename:** `CONFIG_LOCAL_RECOVERY_IMPL1` · **PRs:** [#938](https://github.com/itcmsgr/nftban/pull/938) (helper + literal migration) + [#939](https://github.com/itcmsgr/nftban/pull/939) (variable-indirected completion) + [#940](https://github.com/itcmsgr/nftban/pull/940) (sbin entry-script + guard scope) → main `cd18bbf8` · **Scope:** `CONFIG_LOCAL_RECOVERY_DESIGN.md`
