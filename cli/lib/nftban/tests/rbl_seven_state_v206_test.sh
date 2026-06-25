@@ -22,6 +22,11 @@
 # =============================================================================
 set -Eeuo pipefail
 IFS=$'\n\t'
+# This harness shadows resolver/provider leaf functions (nftban_rbl_resolver,
+# dig, timeout, nftban_rbl_dns_lookup, nftban_rbl_load_providers, …) which are
+# invoked INDIRECTLY by name from the sourced module under test — shellcheck's
+# SC2329 ("never invoked") cannot see that. Disabled file-wide for the harness.
+# shellcheck disable=SC2329
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
