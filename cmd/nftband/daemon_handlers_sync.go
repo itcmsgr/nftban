@@ -195,8 +195,13 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// file-backed (operator hand-edited / persist-only) bans stop being enforced once
 	// feeds load (BUG-BLACKLIST-FILE-ENTRY-FAIL-OPEN-ON-FEED-RELOAD). Add single IPs
 	// (add-only, permanent) to the hash sets — the feed replace never touches hash
-	// sets, and periodic reconciliation adopts them. Only CIDR blacklist.d entries
-	// continue to the interval path (pending the CIDR-policy checkpoint). IPv4+IPv6.
+	// sets, so these survive feed reload. The hash entries are OWNED by this sync/load
+	// routing (re-added every sync); removal is owned by `nftban unban` (UnpersistBan +
+	// kernel delete) or explicit blacklist.d file-removal handling — NOT by passive
+	// reconciliation (which is record-only and never prunes the kernel set). A removed
+	// file-edit therefore persists until unban (over-ban / fail-closed). Only CIDR
+	// blacklist.d entries continue to the interval path (folded into the unified
+	// replace below). IPv4+IPv6.
 	blacklistIPv4Single, blacklistIPv4CIDR := partitionCIDRTokens(blacklistIPv4)
 	blacklistIPv6Single, blacklistIPv6CIDR := partitionCIDRTokens(blacklistIPv6)
 	manualV4Set, err := nft.GetOrCreateHashSet(tableIPv4, "blacklist_manual_ipv4", true)
