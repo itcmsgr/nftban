@@ -43,7 +43,8 @@ echo "v1.206.2 stats count-reconcile / freshness / labels"
 echo "==============================================="
 
 echo "[T1] freshness clarity"
-has "T1.1 UNIFIED CACHE line carries snapshot age" "UNIFIED CACHE (snapshot, collected "
+has "T1.1a Data source value stays exactly UNIFIED CACHE (v1.167 guard)" '"Data source........." "UNIFIED CACHE"'
+has "T1.1b snapshot age on sibling line" '"Snapshot............" "collected '
 has "T1.2 staleness note present" "may not appear until the next collection"
 
 echo "[T2] count reconciliation (Other/Unclass)"

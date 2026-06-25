@@ -129,7 +129,10 @@ nftban_stats_generate_dashboard() {
             local _ct; _ct=$(stat -c %Y "$NFTBAN_UNIFIED_CACHE" 2>/dev/null || echo "")
             [[ -n "$_ct" ]] && _cache_age="$(( $(date +%s) - _ct ))s ago"
         fi
-        printf "  %-20s %s\n" "Data source........." "UNIFIED CACHE (snapshot, collected ${_cache_age})"
+        # NOTE: the Data source VALUE stays exactly "UNIFIED CACHE" (v1.167 PR-2
+        # casing-consistency guard); the snapshot age is a SEPARATE sibling line.
+        printf "  %-20s %s\n" "Data source........." "UNIFIED CACHE"
+        printf "  %-20s %s\n" "Snapshot............" "collected ${_cache_age}"
         echo "    (counts are a cached snapshot; a ban added since the last collect may not appear until the next collection)"
     else
         printf "  %-20s %s\n" "Data source........." "DERIVED (cache miss; live aggregation from nftables + bans.log)"
