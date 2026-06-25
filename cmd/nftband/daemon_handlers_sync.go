@@ -217,18 +217,27 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			log.Printf("[SYNC] Warning: blacklist.d IPv6 %s -> manual hash set: %v", ip, err)
 		}
 	}
-	// The feed/geoban-owned interval sets receive ONLY blacklist.d CIDRs now (single
-	// IPs are repointed above); CIDR ownership is the next checkpoint.
-	blacklistIPv4 = blacklistIPv4CIDR
-	blacklistIPv6 = blacklistIPv6CIDR
+	// INC3 (BLACKLIST_TOPOLOGY_CLEANUP, Option A): blacklist.d CIDRs are folded into the
+	// SAME canonical replace as feeds + geoban (below) so the flush-first replace OWNS
+	// them and they survive feed reload. The interval blacklist sets are therefore NOT
+	// synced via FullSync's string diff anymore (nil below) — replaceSetElementsViaFile
+	// is the SOLE writer of blacklist_ipv4/_ipv6. Combining all CIDR sources into ONE
+	// replace also closes a pre-existing feed-vs-geoban clobber (two sequential pure
+	// replaces → last source wins). Single IPs were already repointed to the hash sets
+	// above. IPv4+IPv6.
+	_ = blacklistIPv4 // single IPs handled above; CIDRs flow through the unified replace
+	_ = blacklistIPv6
+	unifiedBlacklistV4 := append([]string(nil), blacklistIPv4CIDR...)
+	unifiedBlacklistV6 := append([]string(nil), blacklistIPv6CIDR...)
 
-	// Perform full sync
+	// Perform full sync — WHITELIST ONLY here. The interval blacklist sets are owned by
+	// the unified CIDR replace below; the manual hash sets by AddIPWithTimeout above.
 	result, err := nftsync.FullSync(
 		nft,
 		whitelistIPv4Set, whitelistIPv6Set,
-		blacklistIPv4Set, blacklistIPv6Set,
+		nil, nil,
 		whitelistIPv4, whitelistIPv6,
-		blacklistIPv4, blacklistIPv6,
+		nil, nil,
 		whitelistExpiry,
 	)
 
@@ -307,35 +316,20 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				feedsMemNeeded = estimatedFeedBytes
 				// Skip feeds but continue with sync - don't fail entirely
 			} else {
-			// v2.1: Load feeds into unified blacklist_ipv4/ipv6 sets (CIDR aggregated)
-			// All ban sources now use the same blacklist - daemon tracks source in DB
+			// INC3: queue feed CIDRs for the unified canonical replace (feeds + geoban +
+			// blacklist.d CIDRs in ONE flush-first replace; replaceSetElementsViaFile is
+			// the sole writer of the shared blacklist_ipv4/_ipv6 interval sets).
 			if len(ipv4CIDRs) > 0 {
-				feedSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
-				if err != nil {
-					log.Printf("[SYNC] Warning: Failed to get blacklist_ipv4 set: %v", err)
-				} else {
-					if stats, err := nft.AddCIDRElementsWithStats(feedSetV4, ipv4CIDRs); err != nil {
-						log.Printf("[SYNC] Warning: Failed to load feeds IPv4: %v", err)
-					} else if stats != nil {
-						feedsIPv4Loaded = stats.OutputRanges
-						log.Printf("[SYNC] Feeds IPv4: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
-					}
-				}
+				unifiedBlacklistV4 = append(unifiedBlacklistV4, ipv4CIDRs...)
+				feedsIPv4Loaded = len(ipv4CIDRs)
+				log.Printf("[SYNC] Feeds IPv4: %d input CIDRs queued for unified replace", len(ipv4CIDRs))
 			}
 
-			// Load IPv6 feeds into unified blacklist_ipv6 set
+			// IPv6 feeds → unified replace
 			if len(ipv6CIDRs) > 0 {
-				feedSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
-				if err != nil {
-					log.Printf("[SYNC] Warning: Failed to get blacklist_ipv6 set: %v", err)
-				} else {
-					if stats, err := nft.AddCIDRElementsWithStats(feedSetV6, ipv6CIDRs); err != nil {
-						log.Printf("[SYNC] Warning: Failed to load feeds IPv6: %v", err)
-					} else if stats != nil {
-						feedsIPv6Loaded = stats.OutputRanges
-						log.Printf("[SYNC] Feeds IPv6: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
-					}
-				}
+				unifiedBlacklistV6 = append(unifiedBlacklistV6, ipv6CIDRs...)
+				feedsIPv6Loaded = len(ipv6CIDRs)
+				log.Printf("[SYNC] Feeds IPv6: %d input CIDRs queued for unified replace", len(ipv6CIDRs))
 			}
 			// Memory cleanup: clear CIDR slices after loading to nftables
 			// These slices can hold 100-200MB that's no longer needed
@@ -394,35 +388,21 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 					geobanMemNeeded = estimatedGeoBytes
 					// Skip geoban but continue with sync - don't fail entirely
 				} else {
-				// v2.1: Load geoban CIDRs into unified blacklist_ipv4/ipv6 sets
-				// All ban sources now use the same blacklist - CIDR aggregation prevents duplicates
+				// INC3: queue geoban CIDRs for the unified canonical replace (feeds +
+				// geoban + blacklist.d CIDRs in ONE flush-first replace — closes the
+				// pre-existing feed-vs-geoban clobber where the second replace wiped the
+				// first). All ban sources share blacklist_ipv4/_ipv6.
 				if len(geobanData.IPv4) > 0 {
-					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
-					if err != nil {
-						log.Printf("[SYNC] Warning: Failed to get blacklist_ipv4 set: %v", err)
-					} else {
-						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4); err != nil {
-							log.Printf("[SYNC] Warning: Failed to load geoban IPv4: %v", err)
-						} else if stats != nil {
-							geobanIPv4Loaded = stats.OutputRanges
-							log.Printf("[SYNC] Geoban IPv4: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
-						}
-					}
+					unifiedBlacklistV4 = append(unifiedBlacklistV4, geobanData.IPv4...)
+					geobanIPv4Loaded = len(geobanData.IPv4)
+					log.Printf("[SYNC] Geoban IPv4: %d input CIDRs queued for unified replace", len(geobanData.IPv4))
 				}
 
-				// Load IPv6 geoban CIDRs into unified blacklist_ipv6 set
+				// IPv6 geoban → unified replace
 				if len(geobanData.IPv6) > 0 {
-					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
-					if err != nil {
-						log.Printf("[SYNC] Warning: Failed to get blacklist_ipv6 set: %v", err)
-					} else {
-						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6); err != nil {
-							log.Printf("[SYNC] Warning: Failed to load geoban IPv6: %v", err)
-						} else if stats != nil {
-							geobanIPv6Loaded = stats.OutputRanges
-							log.Printf("[SYNC] Geoban IPv6: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
-						}
-					}
+					unifiedBlacklistV6 = append(unifiedBlacklistV6, geobanData.IPv6...)
+					geobanIPv6Loaded = len(geobanData.IPv6)
+					log.Printf("[SYNC] Geoban IPv6: %d input CIDRs queued for unified replace", len(geobanData.IPv6))
 				}
 				// Memory cleanup: clear geoban data to allow garbage collection
 				// Geoban can hold 200-400MB that's no longer needed after loading
@@ -435,6 +415,30 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		}
 		} // end else ShouldSkipGeoban
 	} // end if !quickMode (geoban)
+
+	// INC3: ONE canonical replace of the interval blacklist sets with the UNION of
+	// feeds + geoban + blacklist.d CIDRs. AddCIDRElementsWithStats →
+	// replaceSetElementsViaFile (flush+add in a single nft -f) is the SOLE writer of
+	// blacklist_ipv4/_ipv6 → no feed/geoban/blacklist.d clobber, no string-diff churn,
+	// blacklist.d CIDRs survive feed reload. Skipped if a source was memory-pressure
+	// skipped (the union would be incomplete → don't partial-replace and wipe the
+	// skipped source's prior content) or in quickMode (feeds/geoban deferred). IPv4+IPv6.
+	if !quickMode && !feedsSkipped && !geobanSkipped {
+		if len(unifiedBlacklistV4) > 0 {
+			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, unifiedBlacklistV4); err != nil {
+				log.Printf("[SYNC] Warning: unified blacklist_ipv4 replace failed: %v", err)
+			} else {
+				log.Printf("[SYNC] Unified blacklist_ipv4 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV4))
+			}
+		}
+		if len(unifiedBlacklistV6) > 0 {
+			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv6Set, unifiedBlacklistV6); err != nil {
+				log.Printf("[SYNC] Warning: unified blacklist_ipv6 replace failed: %v", err)
+			} else {
+				log.Printf("[SYNC] Unified blacklist_ipv6 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV6))
+			}
+		}
+	}
 
 	// Force garbage collection after large sync to release memory immediately
 	// Without this, ~800MB-1.3GB can remain allocated until next GC cycle
@@ -469,10 +473,14 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		"whitelist_ipv4_removed": result.WhitelistIPv4.IPsRemoved,
 		"whitelist_ipv6_added":   result.WhitelistIPv6.IPsAdded,
 		"whitelist_ipv6_removed": result.WhitelistIPv6.IPsRemoved,
-		"blacklist_ipv4_added":   result.BlacklistIPv4.IPsAdded,
-		"blacklist_ipv4_removed": result.BlacklistIPv4.IPsRemoved,
-		"blacklist_ipv6_added":   result.BlacklistIPv6.IPsAdded,
-		"blacklist_ipv6_removed": result.BlacklistIPv6.IPsRemoved,
+		// INC3: interval blacklist sets are now replace-based (not string-diff via
+		// FullSync), so there are no per-sync add/removed diff counts here. result
+		// .BlacklistIPv4/IPv6 are nil (FullSync skipped them) — report 0 and rely on
+		// feeds/geoban loaded counts below + the unified replace logs.
+		"blacklist_ipv4_added":   0,
+		"blacklist_ipv4_removed": 0,
+		"blacklist_ipv6_added":   0,
+		"blacklist_ipv6_removed": 0,
 		"feeds_ipv4_loaded":      feedsIPv4Loaded,
 		"feeds_ipv6_loaded":      feedsIPv6Loaded,
 		"geoban_ipv4_loaded":     geobanIPv4Loaded,
