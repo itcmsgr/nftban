@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.204.0] - 2026-06-25 — Portscan Go-classifier migration (known-open service-port false-positive fix)
+
+**Codename:** `PORTSCAN_GO_CLASSIFIER_MIGRATION` · **PR:** [#951](https://github.com/itcmsgr/nftban/pull/951) (→ `7db54bf5`) · **Ownership:** `LOG_SOURCE_OWNERSHIP_DECLARATION_PORTSCAN.md` (ACCEPTED)
+
+> **What:** fixes a portscan false-positive where a legitimate multi-service client (panel+mail+web+SSH) was temp-banned for touching several known-open services quickly. **Minor bump (1.204.0) because the `nftband` daemon is intentionally RE-BASELINED** (`cmd/nftband/daemon_init.go` links the new `internal/portscan` package). NFT `SchemaVersionCurrent` unchanged (1.84.0).
+>
+> **⚠️ Fleet rollout is intentionally DEFERRED. Production remains v1.203.0; the portscan FP fix is NOT live fleet-wide until a separate Track-A gate (`OPEN_V204_TRACK_A_FLEET_ROLLOUT_11_HOSTS`).** v1.204.0 published ≠ fleet protected by the new classifier.
+
+### Fixed
+- **Portscan classic classifier migrated to a typed Go decision function** (`internal/portscan`). Previously the shell classifier scored ALL distinct destination ports an IP touched (including configured open services) as scan diversity → a legitimate multi-service/browser/panel client could be classified strobe/vertical and temp-banned (proven: admin `62.38.150.122`, 6 open ports).
+  - **Known-open service ports from `tcp_ports_in` no longer score as scan evidence** — they are allowed context.
+  - **Unexpected/closed-port diversity remains ban-capable** (block/vertical/horizontal/strobe scoring is on the unexpected-port count); mixed traffic scores only the unexpected ports.
+  - **IPv4/IPv6 parity validated.**
+
+### Notes
+- New `nftban-core portscan-classify` subcommand (pure decision function — does not read logs or write nft sets). Shell mode gate `PORTSCAN_CLASSIC_CLASSIFIER`: **shadow** (default — logs old-vs-new, **legacy enforcement preserved**), **go** (enforces the fixed classifier), **shell** (legacy). Single ban authority unchanged (shell → daemon IPC → `blacklist_manual_*`).
+- **`nftband` daemon RE-BASELINED** (intentional); nft schema **1.84.0** unchanged; **no whitelist/blacklist topology change; no BotGuard change**; no counters/metrics; no new nft set.
+- **Validation:** `internal/portscan` 12 table-driven tests; **lab2 (DEB) + lab4 (RPM) package-native PASS** — real `detect_scan_type` integration: go-mode known-open burst → allow (v4+v6), unexpected diversity → ban, mixed → unexpected-only, shadow preserves legacy, classifier makes no direct nft write, no whitelist/blacklist regression, no ban residue.
+
+---
+
 ## [v1.203.0] - 2026-06-25 — Blacklist topology cleanup (file-backed ban feed-reload fail-open)
 
 **Codename:** `BLACKLIST_TOPOLOGY_CLEANUP` · **PR:** [#949](https://github.com/itcmsgr/nftban/pull/949) (→ `43535fae`) · **Audit:** `BLACKLIST_TOPOLOGY_CLEANUP_INDEPENDENT_AUDIT.md` (PASS)
