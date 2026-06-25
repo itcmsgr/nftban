@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.206.1] - 2026-06-25 — Stats manual-attribution + count-clarity hotfix (reporting-only)
+
+**Codename:** `STATS_MANUAL_ATTRIBUTION` · **PR:** [#957](https://github.com/itcmsgr/nftban/pull/957) (→ `f3d6b95b`) · **Evidence:** `V206_FLEET_STATS_MANUAL_ATTRIBUTION_FINDINGS.md`
+
+> **Reporting/stats-only.** `nftban stats` displayed LoginMon persistent-offender durable bans as operator **"Manual"** (since v1.203.0 routed single-IP `blacklist.d` entries into the `blacklist_manual_*` hash set). This hotfix corrects the *attribution and labels only* — **no firewall/ban/topology behavior change, no daemon change (`nftband` byte-identical with v1.206.0), nft schema 1.84.0 unchanged, no `source_index.jsonl` rewrite.**
+
+### Fixed — manual-ban attribution
+- LoginMon persistent-offender durable bans **no longer display as operator "Manual."** The `blacklist_manual_*` set name is **not** treated as provenance by itself.
+- Provenance split (PROTECTION BREAKDOWN → "Manual-set by:"): **operator-manual** = `99-manual.conf` · **persistent/loginmon** = `30-persistent-offenders.conf` · **adopted/unknown** = remainder. Precedence: 99-manual wins; no double-count; adopted clamps ≥0.
+
+### Clarified — count semantics
+- `New bans (period)` → **`New ban events`** with a note that events include re-bans and are **not** the live-set size (distinguishes event count vs unique-IP count vs live-set count).
+- `Modules:` → **`By source (ban events, this period)`**; BANS-BY-MODULE note points to the provenance line.
+- **CURRENT ACTIVE BANS** sample now reads the **manual hash set** as well as the interval set (so a host whose only live bans are persistent-offenders no longer shows an empty sample); explicit "sample unavailable" reason otherwise.
+
+### Notes
+- Shell/stats-only (`cli/lib/nftban/core/nftban_stats_format.sh` + new test) — no `.go`/daemon change; schema 1.84.0; no firewall/ban/topology change; no `source_index` rewrite; no RBL/portscan/CLI-parity change; the updater inhibited-timer warning is parked separately (not in this release).
+- **Validation:** hermetic 16/0; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28194777988) — live smoke: lab2 `operator-manual: 0 · persistent/loginmon: 386 · adopted: 20`, lab4 `0 · 133 · 0`.
+- **No fleet rollout in this release.** Production fleet remains **v1.203.0**; unified Track-A retargeted to `v1.203.0 → v1.206.1`.
+
+---
+
 ## [v1.206.0] - 2026-06-25 — RBL state + visibility hardening (resolver/provider false-negative fix)
 
 **Codename:** `RBL_STATE_AND_VISIBILITY` · **PR:** [#955](https://github.com/itcmsgr/nftban/pull/955) (→ `fffc9712`) · **Scope:** `V206_RBL_STATE_AND_VISIBILITY_SCOPE.md`
