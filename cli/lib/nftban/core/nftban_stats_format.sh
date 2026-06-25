@@ -44,6 +44,30 @@ readonly NFTBAN_STATS_FORMAT_LOADED=1
 # DASHBOARD GENERATION
 # =============================================================================
 
+# v1.206.1 (BUG-STATS-MANUAL-MISATTRIBUTION): split the live manual-hash-set
+# population by PROVENANCE using the authoritative blacklist.d files, so LoginMon
+# / persistent-offender DURABLE bans are not displayed as operator "Manual".
+# Since v1.203.0 (INC2) single-IP blacklist.d entries (incl. 30-persistent-
+# offenders.conf, written by LoginMon for >=N bans/window) are routed into the
+# blacklist_manual_* hash set; the set NAME is a backend label, NOT provenance.
+# Echoes: "<operator_manual> <persistent_loginmon> <adopted_unknown>".
+nftban_stats_manual_provenance() {
+    local total="${1:-0}"
+    local bd="${NFTBAN_CONFIG_DIR:-/etc/nftban}/blacklist.d"
+    local op per adopted
+    # grep -c always prints a count; `|| true` swallows its exit-1 (no matches)
+    # without appending a second line (the `|| echo 0` form printed "0\n0").
+    op=$(grep -cvE '^[[:space:]]*#|^[[:space:]]*$' "$bd/99-manual.conf" 2>/dev/null || true)
+    per=$(grep -cvE '^[[:space:]]*#|^[[:space:]]*$' "$bd/30-persistent-offenders.conf" 2>/dev/null || true)
+    op=${op:-0}; per=${per:-0}
+    [[ "$op" =~ ^[0-9]+$ ]] || op=0; [[ "$per" =~ ^[0-9]+$ ]] || per=0
+    # Precedence: an IP in 99-manual is operator-manual even if also persistent
+    # (operator intent wins); adopted = live manual-set members in neither file.
+    adopted=$(( total - op - per ))
+    [ "$adopted" -lt 0 ] && adopted=0
+    printf '%s %s %s' "$op" "$per" "$adopted"
+}
+
 nftban_stats_generate_dashboard() {
     # Generate comprehensive terminal dashboard - Clean v1.0 layout
     # Usage: nftban_stats_generate_dashboard [since] [until]
@@ -200,8 +224,17 @@ nftban_stats_generate_dashboard() {
     # split on every path); `manual` is a SUBSET of total (decision: subset-of-total),
     # so it is labelled "incl. manual" to read as included-within, not additive.
     echo "  Direct Bans (nftables):"
-    printf "      %-16s %'d (perm: %'d, temp: %'d; incl. manual: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp" "$manual_v4"
-    printf "      %-16s %'d (perm: %'d, temp: %'d; incl. manual: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp" "$manual_v6"
+    printf "      %-16s %'d (perm: %'d, temp: %'d; incl. manual-set: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp" "$manual_v4"
+    printf "      %-16s %'d (perm: %'d, temp: %'d; incl. manual-set: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp" "$manual_v6"
+    # v1.206.1: provenance split of the manual-hash-set so persistent/LoginMon
+    # durable bans are not read as operator "Manual".
+    local _manual_total=$(( manual_v4 + manual_v6 ))
+    if [[ $_manual_total -gt 0 ]]; then
+        local _m_op _m_per _m_ad
+        IFS=" " read -r _m_op _m_per _m_ad <<< "$(nftban_stats_manual_provenance "$_manual_total")"
+        printf "      %-16s operator-manual: %'d · persistent/loginmon: %'d · adopted: %'d\n" "Manual-set by:" "$_m_op" "$_m_per" "$_m_ad"
+        echo "        (manual-set = blacklist_manual hash; LoginMon persistent-offenders live here too — NOT operator manual)"
+    fi
 
     # Count feeds (SINGLE SOURCE OF TRUTH from unified cache)
     local feeds_ipv4_total=0 feeds_ipv6_total=0
@@ -289,8 +322,11 @@ nftban_stats_generate_dashboard() {
     # ─────────────────────────────────────────────────────────────────────
     echo "ACTIVITY HISTORY"
     echo "───────────────────────────────────────────────────────────"
-    printf "  %-20s %s\n" "New bans (period)..." "$total_bans"
+    printf "  %-20s %s\n" "New ban events......" "$total_bans"
     printf "  %-20s %s\n" "Unique IPs banned..." "$unique_ips"
+    # v1.206.1 (BUG-STATS-COUNT-DIVERGENCE): label count semantics so operators do
+    # not expect events, unique IPs, per-source, and live-set counts to sum.
+    echo "    (ban EVENTS in period, incl. re-bans of the same IP; not the live-set size)"
 
     # Source breakdown (SINGLE SOURCE OF TRUTH via nftban_stats_ban_sources)
     local sources
@@ -304,7 +340,7 @@ nftban_stats_generate_dashboard() {
         feeds=$(echo "$sources" | jq -r '.feeds // 0')
         suricata_bans=$(echo "$sources" | jq -r '.suricata // 0')
 
-        echo "  Modules:"
+        echo "  By source (ban events, this period):"
         printf "      %-14s %s\n" "Login..........." "$login_bans"
         printf "      %-14s %s\n" "Port Scan......." "$portscan_bans"
         printf "      %-14s %s\n" "DDoS............" "$ddos_bans"
@@ -514,6 +550,11 @@ nftban_stats_generate_dashboard() {
     printf "  %-18s %'d IPs\n" "DDOS" "$ddos_count"
     printf "  %-18s %'d IPs\n" "MANUAL" "$manual_count"
     [[ "$suricata_count" -gt 0 ]] && printf "  %-18s %'d IPs\n" "SURICATA" "$suricata_count"
+    # v1.206.1: "MANUAL" here = ban events sourced manual/cli (cumulative cache).
+    # Durable LoginMon/persistent-offenders live in the manual hash SET but are
+    # shown by provenance under PROTECTION BREAKDOWN ("Manual-set by:"), not as
+    # operator manual — see that line to distinguish operator vs persistent.
+    echo "  (operator-manual vs persistent/loginmon provenance: see PROTECTION BREAKDOWN above)"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
@@ -522,10 +563,20 @@ nftban_stats_generate_dashboard() {
     if [[ $total_black -gt 0 ]]; then
         echo "CURRENT ACTIVE BANS (sample)"
         echo "───────────────────────────────────────────────────────────"
-        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
-            timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | \
-                grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | \
-                awk 'NR<=5 {print "  " $1}' 2>/dev/null || true
+        # v1.206.1 (BUG-STATS-COUNT-DIVERGENCE): sample BOTH the interval set
+        # (blacklist_ipv4: feed/geoban) AND the manual hash set
+        # (blacklist_manual_ipv4: single-IP durable incl. persistent-offenders).
+        # Previously only the interval set was sampled, so a host whose only live
+        # bans are in the manual set (e.g. a LoginMon persistent-offender, no
+        # feeds) rendered an EMPTY sample despite Blocked IPs (live) > 0.
+        local _sample
+        _sample=$( { for _s in blacklist_ipv4 blacklist_manual_ipv4; do
+                        timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" "$_s" 2>/dev/null
+                     done; } | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | awk 'NF' | sort -u | head -5 )
+        if [[ -n "$_sample" ]]; then
+            printf '  %s\n' $_sample
+        else
+            echo "  (sample unavailable — live bans may be IPv6-only or set read timed out)"
         fi
         echo ""
     fi
