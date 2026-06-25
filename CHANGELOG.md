@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.205.0] - 2026-06-25 — CLI surface parity fix (registry/completion alignment + parity guard)
+
+**Codename:** `CLI_SURFACE_PARITY_FIX` · **PR:** [#953](https://github.com/itcmsgr/nftban/pull/953) (→ `3a457c62`) · **Source audit:** `FULL_CLI_SURFACE_PARITY_AUDIT.md`
+
+> **What:** aligns the CLI command-surface metadata (registry + bash-completion) with the runtime shell dispatch (the source of truth) and adds a CI guard to keep them in sync. **Metadata/completion/CI-only — no product behavior change; the `nftband` daemon is NOT re-baselined; nft `SchemaVersionCurrent` unchanged (1.84.0).**
+
+### Fixed (command-surface truth)
+- **`commands.registry.yml` aligned with shell dispatch:** added the real `firewall` subcommands that were missing — `status`, `rebuild`, `reset`, `conflicts`, `restore` (target enum csf/fail2ban/firewalld/ufw), `record`; added top-level `export` (real dispatch arm, alias of `stats export`).
+- **Aliases/deprecated commands marked:** `trust` ← `cloudflare` (legacy top-level alias); `geoban update` ← `refresh` (same handler); `fhs check` deprecated → `status`; `port list` deprecated → `status`.
+- **bash-completion:** removed the **retired `gui`** command (retired v1.100.1b) — it was still advertised in tab-completion.
+
+### Added
+- **CI parity guard** `scripts/ci/check-cli-surface-parity.sh` (wired into `ci-architecture.yml`): validates registry ↔ bash-completion ↔ dispatch and classifies drift (MISSING_FROM_REGISTRY / STALE_IN_REGISTRY / MISSING_FROM_COMPLETION / RETIRED_IN_COMPLETION / ALIAS_NOT_MARKED / DEPRECATED_NOT_MARKED / INTERNAL_OR_TARGET_ONLY_ALLOWLISTED / PASS) + retired-command + duplicate-handler scan.
+
+### Notes
+- **No daemon change** (no `.go`/`cmd/`/`internal/` edits) → `nftband` byte-identical with v1.204.0. **nft schema 1.84.0 unchanged. No docs/website changes** (already clean). **No portscan/BotGuard/whitelist/blacklist change.**
+- **No fleet rollout** in this release. **Latest published remains v1.204.0 until v1.205.0 is tagged/published.** Production fleet remains **v1.203.0**; v1.204 Track-A rollout remains HOLD.
+
+---
+
 ## [v1.204.0] - 2026-06-25 — Portscan Go-classifier migration (known-open service-port false-positive fix)
 
 **Codename:** `PORTSCAN_GO_CLASSIFIER_MIGRATION` · **PR:** [#951](https://github.com/itcmsgr/nftban/pull/951) (→ `7db54bf5`) · **Ownership:** `LOG_SOURCE_OWNERSHIP_DECLARATION_PORTSCAN.md` (ACCEPTED)
