@@ -27,8 +27,39 @@ import (
 	"time"
 
 	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/util"
 )
+
+// computeWhitelistRangeDiff produces a RANGE-AWARE add/remove plan for the
+// whitelist interval set (WHITELIST_DURABLE_APPLY_RECONCILE Step 4). Unlike the
+// string ComputeDiff: a desired CIDR COVERED by an existing kernel interval is
+// "unchanged" (not re-added), and a kernel interval covered by the desired set is
+// "unchanged" (not removed) — so a stable Cloudflare/trust config yields 0 churn.
+// currentRanges MUST come from GetSetElementsRanges (range-preserving). Unparseable
+// desired tokens fall back to exact membership so nothing is silently dropped.
+func computeWhitelistRangeDiff(desiredIPs, currentRanges []string) *DiffResult {
+	res := netutil.CoverageDiff(desiredIPs, currentRanges, nil)
+	d := &DiffResult{ToAdd: make([]string, 0), ToRemove: make([]string, 0)}
+	d.ToAdd = append(d.ToAdd, res.MissingFromKernel...)
+	d.ToRemove = append(d.ToRemove, res.ExtraInKernel...)
+	if len(res.BadBaseline) > 0 {
+		cur := make(map[string]struct{}, len(currentRanges))
+		for _, c := range currentRanges {
+			cur[c] = struct{}{}
+		}
+		for _, b := range res.BadBaseline {
+			if _, ok := cur[b]; !ok {
+				d.ToAdd = append(d.ToAdd, b)
+			}
+		}
+	}
+	d.Unchanged = len(desiredIPs) - len(d.ToAdd)
+	if d.Unchanged < 0 {
+		d.Unchanged = 0
+	}
+	return d
+}
 
 // DiffResult is a type alias for the generic util.DiffResult[string]
 // This maintains backwards compatibility while using the optimized generic implementation
@@ -88,15 +119,19 @@ func SyncWhitelistSetToNFT(nft *NFTManager, set *nftables.Set, desiredIPs []stri
 		TotalDesired: len(desiredIPs),
 	}
 
-	currentIPs, err := nft.GetSetElements(set)
+	// Range-preserving read: the whitelist set is an auto-merge INTERVAL set, so
+	// GetSetElements would return only interval starts as bare IPs (losing the
+	// range) → a string diff would churn CIDR<->interval forever. Use the
+	// range-aware reader + diff instead (compare COVERAGE, not text).
+	currentRanges, err := nft.GetSetElementsRanges(set)
 	if err != nil {
 		stats.Error = fmt.Errorf("failed to get current elements: %w", err)
 		stats.Duration = time.Since(startTime)
 		return stats, stats.Error
 	}
-	stats.TotalCurrent = len(currentIPs)
+	stats.TotalCurrent = len(currentRanges)
 
-	diff := ComputeDiff(desiredIPs, currentIPs)
+	diff := computeWhitelistRangeDiff(desiredIPs, currentRanges)
 	stats.IPsAdded = len(diff.ToAdd)
 	stats.IPsRemoved = len(diff.ToRemove)
 	stats.IPsUnchanged = diff.Unchanged
@@ -132,6 +167,25 @@ func SyncWhitelistSetToNFT(nft *NFTManager, set *nftables.Set, desiredIPs []stri
 			stats.Error = fmt.Errorf("failed to remove elements: %w", err)
 			stats.Duration = time.Since(startTime)
 			return stats, stats.Error
+		}
+	}
+
+	// Post-apply durable-coverage verification: every PERMANENT desired entry must
+	// now be covered by the live set. If any is still absent the reconcile silently
+	// failed (the srv3 symptom) — fail LOUD instead of reporting success.
+	permanentDesired := make([]string, 0, len(desiredIPs))
+	for _, ip := range desiredIPs {
+		if _, timed := remainingTimeout(expiry, ip, now); !timed {
+			permanentDesired = append(permanentDesired, ip)
+		}
+	}
+	if len(permanentDesired) > 0 {
+		if after, rerr := nft.GetSetElementsRanges(set); rerr == nil {
+			if v := netutil.CoverageDiff(permanentDesired, after, nil); len(v.MissingFromKernel) > 0 {
+				stats.Error = fmt.Errorf("durable whitelist entries NOT live after sync (reconcile failed): %v", v.MissingFromKernel)
+				stats.Duration = time.Since(startTime)
+				return stats, stats.Error
+			}
 		}
 	}
 

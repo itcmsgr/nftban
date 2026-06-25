@@ -20,8 +20,10 @@
 package setsync
 
 import (
+	"bytes"
 	"fmt"
 	"net"
+	"sort"
 
 	"github.com/google/nftables"
 )
@@ -178,6 +180,92 @@ func (m *NFTManager) GetSetElements(set *nftables.Set) ([]string, error) {
 	}
 
 	return ips, nil
+}
+
+// decrementIP returns ip-1 (big-endian byte arithmetic). nftables interval END
+// markers are EXCLUSIVE (last_ip + 1), so the inclusive end is endKey - 1.
+func decrementIP(ip net.IP) net.IP {
+	b := make(net.IP, len(ip))
+	copy(b, ip)
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] > 0 {
+			b[i]--
+			break
+		}
+		b[i] = 0xff
+	}
+	return b
+}
+
+// GetSetElementsRanges returns one token per set entry, reconstructing interval
+// ranges as "start-end" (or a single IP when start==end). Unlike GetSetElements
+// — which returns only interval STARTS as bare IPs and drops the range — this
+// preserves CIDR/range COVERAGE so a range-aware diff can compare coverage, not
+// strings (WHITELIST_DURABLE_APPLY_RECONCILE Step 4). nftables stores an interval
+// [a,b] as a start element (a) + an interval-end marker (b+1, exclusive).
+func (m *NFTManager) GetSetElementsRanges(set *nftables.Set) ([]string, error) {
+	elements, err := m.conn.GetSetElements(set)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get set elements: %w", err)
+	}
+	return reconstructIntervalRanges(elements), nil
+}
+
+// reconstructIntervalRanges is the PURE (unit-testable) range reconstruction,
+// separated from the netlink fetch. Empirically pinned model (lab2 probe,
+// NFTABLES_INTERVAL_ELEMENT_MODEL): nftables interval sets emit, per logical
+// entry, a START (IntervalEnd=false) and an EXCLUSIVE END (IntervalEnd=true, =
+// last+1); singletons get a paired end (X → X+1); the END precedes its START in
+// the stream; and there is a trailing orphan wraparound end (0.0.0.0). Intervals
+// are disjoint (auto-merge), so we sort starts+ends and, for each start, take the
+// smallest end strictly greater than it — which skips the orphan and never
+// produces a backwards range.
+func reconstructIntervalRanges(elements []nftables.SetElement) []string {
+	var starts, ends [][]byte
+	for _, elem := range elements {
+		k := append([]byte(nil), elem.Key...)
+		if elem.IntervalEnd {
+			ends = append(ends, k)
+		} else {
+			starts = append(starts, k)
+		}
+	}
+	// Plain (non-interval) set: no end markers → each element is a single IP.
+	if len(ends) == 0 {
+		out := make([]string, 0, len(starts))
+		for _, s := range starts {
+			out = append(out, net.IP(s).String())
+		}
+		return out
+	}
+	// nftables emits interval END markers (exclusive) and STARTs not necessarily
+	// adjacent, plus a trailing wraparound end (0.0.0.0). Intervals are disjoint,
+	// so: sort both ascending and, for each start, take the SMALLEST end strictly
+	// greater than it (two-pointer). This skips the orphan wraparound end and
+	// reconstructs each [start, end-1] correctly regardless of stream order.
+	sort.Slice(starts, func(i, j int) bool { return bytes.Compare(starts[i], starts[j]) < 0 })
+	sort.Slice(ends, func(i, j int) bool { return bytes.Compare(ends[i], ends[j]) < 0 })
+	out := make([]string, 0, len(starts))
+	ei := 0
+	for _, s := range starts {
+		for ei < len(ends) && bytes.Compare(ends[ei], s) <= 0 {
+			ei++ // skip ends at/below this start (incl. the wraparound 0.0.0.0)
+		}
+		if ei >= len(ends) {
+			// No end above this start — treat as a single IP (defensive).
+			out = append(out, net.IP(s).String())
+			continue
+		}
+		startIP := net.IP(s)
+		endIncl := decrementIP(net.IP(ends[ei]))
+		ei++
+		if startIP.Equal(endIncl) {
+			out = append(out, startIP.String())
+		} else {
+			out = append(out, startIP.String()+"-"+endIncl.String())
+		}
+	}
+	return out
 }
 
 // AddSetElements adds IPs to a set (batch operation with chunking)
