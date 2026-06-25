@@ -88,6 +88,13 @@ jobs:
       - name: Check Core license metadata (PR-LICENSE)
         run: ./scripts/ci/check-license-metadata.sh
 
+      # v1.205 CLI surface parity: registry ↔ bash-completion ↔ dispatch (authority
+      # = shell dispatch). Classifies MISSING/STALE/RETIRED/ALIAS_NOT_MARKED/etc.;
+      # fails on real drift (e.g. retired 'gui' resurfacing in completion, a real
+      # dispatch command missing from the registry, an unmarked alias/deprecated verb).
+      - name: Check CLI surface parity (registry/completion/dispatch)
+        run: ./scripts/ci/check-cli-surface-parity.sh
+
       - name: Check netlink import policy
         run: |
           echo "=== Checking netlink import architecture policy ==="
