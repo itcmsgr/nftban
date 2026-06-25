@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.202.0] - 2026-06-25 — Whitelist durable-apply reconcile + range-aware verify (trusted-must-be-live)
+
+**Codename:** `WHITELIST_DURABLE_APPLY_RECONCILE` · **PR:** [#947](https://github.com/itcmsgr/nftban/pull/947) (→ `e4827ab3`) · **Audit:** `WHITELIST_DURABLE_APPLY_RECONCILE_INDEPENDENT_AUDIT.md` (PASS)
+
+> **What:** enforces the "trusted-must-be-live" invariant — a durable `whitelist.d` entry must be present in the live kernel whitelist set. **Minor bump (1.202.0) because the `nftband` daemon is RE-BASELINED** (the fix is in `internal/setsync`, which links into the daemon). NFT `SchemaVersionCurrent` unchanged (1.84.0).
+
+### Fixed (P1/P2 — whitelist trust reliability)
+- **Root cause:** the whitelist set is an `interval, auto-merge` set; the kernel coalesces adjacent CIDRs (`104.16.0.0/13 + 104.24.0.0/14 → 104.16.0.0-104.27.255.255`). The daemon's `setsync` used a **string** diff against the coalesced interval → spurious add/remove churn every sync that could drop genuinely-new durable entries (e.g. an operator/management IP written by `whitelist add --static` but not actually live). The same mismatch made `whitelist verify` report phantom Cloudflare drift.
+- **Fix (range coverage, not strings):** a range-aware coverage oracle (`internal/netutil`) now drives (a) `nftban whitelist verify` — phantom CIDR↔interval anomalies eliminated; (b) `nftban whitelist add --static` — **live read-back / loud-fail** (exits non-zero, no false "applied live"); (c) the daemon whitelist sync — a range-preserving set reader (`GetSetElementsRanges`) + range-aware diff (**0 churn** on stable CIDR sets) + **post-apply durable-coverage verification** that fails loud if any permanent durable entry is not live.
+
+### Notes
+- **`nftband` daemon RE-BASELINED** (not byte-identical with v1.201.4) — intentional; `internal/setsync`/`internal/netutil` changed. nft `SchemaVersionCurrent` stays 1.84.0 (no set-shape/schema change). No detector/firewall/portscan/BotGuard change.
+- **Validation:** netutil + setsync unit tests (incl. the nftables interval-element model pinned by `TestReconstructIntervalRanges_ObservedStructure`); go vet; **package-native lab2 (DEB) 19/0 + lab4 (RPM) 19/0** — 0-churn, clean intervals, new `--static` IP lands live, loud-fail, manual/trust/system tier reconcile, session preserved, labs restored clean.
+- **Follow-on (separate lanes):** verify-CIDR-interval-normalization is shipped here as the oracle; the standalone `WHITELIST_VERIFY_CIDR_INTERVAL_NORMALIZATION` register entry is satisfied. srv3 host reconcile + portscan Go-classifier migration remain parked (own gates).
+
+---
+
 ## [v1.201.4] - 2026-06-24 — `config local` read-only override diagnostics (CONFIG_LOCAL_RECOVERY IMPL-2)
 
 **Codename:** `CONFIG_LOCAL_RECOVERY IMPL-2` · **PR:** [#944](https://github.com/itcmsgr/nftban/pull/944) (`334dd4fa`) · **Scope:** `CONFIG_LOCAL_RECOVERY_IMPL2_SCOPE.md`
