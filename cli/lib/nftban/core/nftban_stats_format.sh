@@ -54,15 +54,22 @@ readonly NFTBAN_STATS_FORMAT_LOADED=1
 nftban_stats_manual_provenance() {
     local total="${1:-0}"
     local bd="${NFTBAN_CONFIG_DIR:-/etc/nftban}/blacklist.d"
+    # Extract the leading IP token per non-comment line (drops inline comments),
+    # deduped. IP-SET based (not raw line counts) so precedence + no-double-count
+    # are real: an IP listed in BOTH files counts ONCE, as operator (99-manual wins).
+    local op_ips per_ips
+    # awk: skip comment/blank lines, print the FIRST token (the IP; drops inline
+    # comments), then keep only IP-shaped tokens, dedup. (Avoids tr -d which would
+    # collapse newlines and mash all IPs onto one line.)
+    op_ips=$(awk '!/^[[:space:]]*#/ && NF {print $1}' "$bd/99-manual.conf" 2>/dev/null | grep -E '^[0-9A-Fa-f.:]+$' | sort -u || true)
+    per_ips=$(awk '!/^[[:space:]]*#/ && NF {print $1}' "$bd/30-persistent-offenders.conf" 2>/dev/null | grep -E '^[0-9A-Fa-f.:]+$' | sort -u || true)
     local op per adopted
-    # grep -c always prints a count; `|| true` swallows its exit-1 (no matches)
-    # without appending a second line (the `|| echo 0` form printed "0\n0").
-    op=$(grep -cvE '^[[:space:]]*#|^[[:space:]]*$' "$bd/99-manual.conf" 2>/dev/null || true)
-    per=$(grep -cvE '^[[:space:]]*#|^[[:space:]]*$' "$bd/30-persistent-offenders.conf" 2>/dev/null || true)
+    op=$(printf '%s\n' "$op_ips" | grep -c . || true)
+    # persistent EXCLUDING any IP already attributed to operator (precedence)
+    per=$(comm -23 <(printf '%s\n' "$per_ips" | sort -u) <(printf '%s\n' "$op_ips" | sort -u) 2>/dev/null | grep -c . || true)
     op=${op:-0}; per=${per:-0}
     [[ "$op" =~ ^[0-9]+$ ]] || op=0; [[ "$per" =~ ^[0-9]+$ ]] || per=0
-    # Precedence: an IP in 99-manual is operator-manual even if also persistent
-    # (operator intent wins); adopted = live manual-set members in neither file.
+    # adopted = live manual-set members in neither file (clamped >=0).
     adopted=$(( total - op - per ))
     [ "$adopted" -lt 0 ] && adopted=0
     printf '%s %s %s' "$op" "$per" "$adopted"

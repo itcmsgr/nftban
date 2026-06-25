@@ -62,6 +62,17 @@ aeq "$OP"  "0" "T2.1 no operator manual when 99-manual.conf empty"
 aeq "$PER" "3" "T2.2 persistent-offenders attributed to persistent (NOT operator)"
 aeq "$AD"  "0" "T2.3 adopted 0"
 
+# precedence + no-double-count: IP in BOTH files counts once, as operator
+printf '%s\n' '7.7.7.7' '8.8.8.8' > "$BD/99-manual.conf"          # 2 operator
+printf '%s\n' '7.7.7.7  # also persistent' '9.9.9.9' > "$BD/30-persistent-offenders.conf"  # 7.7.7.7 dup, 9.9.9.9 new
+IFS=" " read -r OP PER AD <<< "$(nftban_stats_manual_provenance 3)"
+aeq "$OP"  "2" "T3a operator = 2 (7.7.7.7, 8.8.8.8)"
+aeq "$PER" "1" "T3a persistent = 1 (9.9.9.9 only; 7.7.7.7 deduped to operator)"
+aeq "$AD"  "0" "T3a adopted = 0 (3 total = 2 op + 1 per, no double-count)"
+# restore the T1/T2 fixture for the clamp test below
+printf '%s\n' '1.1.1.1' '1.1.1.2' '1.1.1.3' '1.1.1.4 # note' '1.1.1.5' > "$BD/99-manual.conf"
+printf '%s\n' '# header comment' '2.2.2.1' '2.2.2.2' '2.2.2.3' > "$BD/30-persistent-offenders.conf"
+
 # files exceed total (stale) → adopted clamped to 0, never negative
 IFS=" " read -r OP PER AD <<< "$(nftban_stats_manual_provenance 1)"
 aeq "$AD" "0" "T3 adopted clamped >=0 when files exceed live total"
