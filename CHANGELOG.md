@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.203.0] - 2026-06-25 — Blacklist topology cleanup (file-backed ban feed-reload fail-open)
+
+**Codename:** `BLACKLIST_TOPOLOGY_CLEANUP` · **PR:** [#949](https://github.com/itcmsgr/nftban/pull/949) (→ `43535fae`) · **Audit:** `BLACKLIST_TOPOLOGY_CLEANUP_INDEPENDENT_AUDIT.md` (PASS)
+
+> **What:** fixes a fail-open where file-backed `blacklist.d` bans stopped being enforced once threat feeds loaded. **Minor bump (1.203.0) because the `nftband` daemon is intentionally RE-BASELINED** (`cmd/nftband/daemon_handlers_sync.go`). NFT `SchemaVersionCurrent` unchanged (1.84.0).
+
+### Fixed (ban-path enforcement)
+- **`BUG-BLACKLIST-FILE-ENTRY-FAIL-OPEN-ON-FEED-RELOAD`** — `blacklist_ipv4/_ipv6` are feed/geoban-owned `interval,auto-merge` sets written by a flush-first replace; the sync also string-diffed `blacklist.d` into them, so the feed/geoban replace then **wiped** those file-backed bans (operator hand-edits / persist-only entries silently un-enforced once feeds loaded).
+  - **File-backed single-IP** blacklist.d entries now survive feed reload — routed to the manual hash sets `blacklist_manual_ipv4/_ipv6` (which the feed replace never touches).
+  - **File-backed CIDR** blacklist.d entries now survive feed reload — folded into the **unified** feed/geoban canonical replace input.
+- **Feed-vs-geoban sequential-replace clobber** — feeds and geoban each did a separate full replace of the shared interval set (second source wiped the first); now **unified into one canonical replace** per family (single interval writer). `FullSync` no longer string-diffs the interval blacklist sets.
+
+### Notes
+- **`nftband` daemon RE-BASELINED** — not byte-identical with v1.202.0; intentional (daemon-only change, single file). nft `SchemaVersionCurrent` stays **1.84.0** (no set-shape/schema change; no new set). **CLI/IPC `nftban ban` unchanged; `unban` clears all live copies. IPv4/IPv6 parity maintained.**
+- **No portscan change** (the portscan Go-classifier migration is NOT part of v1.203.0; still parked). **No BotGuard change.**
+- **Whitelist topology remains validated** (`WHITELIST_TOPOLOGY_STILL_VALIDATED = PASS`) — no lane reopen; the live whitelist path has no feed/geoban flush-replace writer (trust apply is additive). A latent `load_cidrs(set_type="whitelist")` flush-replace twin is parked as a future watch-item, **not** a release blocker.
+- **Validation:** independent audit PASS (W2 comment fixed); **package-native lab2 (DEB) + lab4 (RPM) PASS** on installed packages (CI build 28161680101) — single-IP + CIDR survive feed reload, coexist with real feeds, no clobber, no malformed intervals, v4+v6; labs restored clean to v1.202.0.
+
+---
+
 ## [v1.202.0] - 2026-06-25 — Whitelist durable-apply reconcile + range-aware verify (trusted-must-be-live)
 
 **Codename:** `WHITELIST_DURABLE_APPLY_RECONCILE` · **PR:** [#947](https://github.com/itcmsgr/nftban/pull/947) (→ `e4827ab3`) · **Audit:** `WHITELIST_DURABLE_APPLY_RECONCILE_INDEPENDENT_AUDIT.md` (PASS)
