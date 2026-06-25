@@ -693,9 +693,83 @@ nftban_portscan_classic_analyze_all() {
     return 0
 }
 
+# v1.204 PORTSCAN GO-CLASSIFIER: read the live known-open service-port set
+# (tcp_ports_in) so the Go classifier can EXCLUDE those ports from scan scoring.
+# These ports are allowed context, never scan evidence.
+_nftban_portscan_classic_known_open_ports() {
+    local fam_table="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    nft list set ${fam_table} tcp_ports_in 2>/dev/null \
+        | tr ',{}' '\n' | grep -oE '[0-9]+' | sort -un | tr '\n' ' '
+}
+
+# v1.204: obtain the TYPED Go verdict for one IP. Builds the per-IP request JSON
+# (events from the tracked ports/target/timestamps + known-open set + thresholds),
+# pipes it to `nftban-core portscan-classify`, logs the old-vs-new shadow line, and
+# echoes the Go scan_type (empty when action=allow). Pure decision call — the shell
+# (root) remains the log reader; nftban-core does not read logs or write sets.
+_nftban_portscan_classic_go_verdict() {
+    local ip="$1" family="${2:-ipv4}"
+    local core_bin="${NFTBAN_CORE_BIN:-/usr/lib/nftban/bin/nftban-core}"
+    [[ -x "$core_bin" ]] || { echo ""; return 0; }
+
+    local ports="${_PORTSCAN_CLASSIC_IP_PORTS[$ip]:-}"
+    local targets="${_PORTSCAN_CLASSIC_IP_TARGETS[$ip]:-}"
+    local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]:-}"
+    local one_target; one_target=$(echo "$targets" | tr ' ' '\n' | grep -v '^$' | head -1)
+    local known_open; known_open=$(_nftban_portscan_classic_known_open_ports)
+
+    # Build events[] (pair each port with the IP's first target + a timestamp).
+    local -a parr tarr
+    IFS=$' \t\n' read -ra parr <<< "$ports"
+    IFS=$' \t\n' read -ra tarr <<< "$timestamps"
+    local events="" i=0 sep=""
+    for p in "${parr[@]}"; do
+        [[ "$p" =~ ^[0-9]+$ ]] || continue
+        local ts="${tarr[$i]:-0}"; [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
+        events+="${sep}{\"port\":${p},\"target\":\"${one_target}\",\"ts\":${ts}}"; sep=","
+        i=$((i+1))
+    done
+    local ko_json; ko_json=$(echo "$known_open" | tr ' ' '\n' | grep -E '^[0-9]+$' | paste -sd, -)
+
+    local req
+    req=$(printf '{"ip":"%s","family":"%s","known_open_ports":[%s],"block_range":%s,"vertical_ports":%s,"horizontal_targets":%s,"strobe_ports":%s,"strobe_window_sec":10,"events":[%s]}' \
+        "$ip" "$family" "${ko_json:-}" "${PORTSCAN_CLASSIC_BLOCK_RANGE:-0}" "${PORTSCAN_CLASSIC_VERTICAL_PORTS:-0}" \
+        "${PORTSCAN_CLASSIC_HORIZONTAL_TARGETS:-0}" "${PORTSCAN_CLASSIC_STROBE_PORTS:-0}" "$events")
+
+    local verdict; verdict=$(printf '%s' "$req" | "$core_bin" portscan-classify 2>/dev/null) || { echo ""; return 0; }
+    local scan_type action kc uc
+    scan_type=$(printf '%s' "$verdict" | grep -oE '"scan_type":"[^"]*"' | cut -d'"' -f4)
+    action=$(printf '%s' "$verdict" | grep -oE '"action":"[^"]*"' | cut -d'"' -f4)
+    kc=$(printf '%s' "$verdict" | grep -oE '"known_open_count":[0-9]+' | grep -oE '[0-9]+')
+    uc=$(printf '%s' "$verdict" | grep -oE '"unexpected_count":[0-9]+' | grep -oE '[0-9]+')
+
+    # Shadow line: old shell verdict (total-port-count heuristic) vs new Go verdict.
+    local old_pc; old_pc=$(echo "$ports" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+    local old_v="none"
+    [[ ${old_pc:-0} -ge ${PORTSCAN_CLASSIC_VERTICAL_PORTS:-99999} || ${old_pc:-0} -ge ${PORTSCAN_CLASSIC_STROBE_PORTS:-99999} ]] && old_v="ban-capable"
+    _nftban_portscan_classic_log "INFO" "PORTSCAN_SHADOW old=${old_v} new=${scan_type:-none} known_open_count=${kc:-0} unexpected_count=${uc:-0} family=${family} src_ip=${ip} action=${action:-allow}"
+
+    [[ "$action" == "ban" ]] && echo "$scan_type" || echo ""
+}
+
 # Detect what type of scan an IP is performing
 nftban_portscan_classic_detect_scan_type() {
     local ip="$1"
+
+    # v1.204 PORTSCAN GO-CLASSIFIER mode gate (default shadow = safe, no behavior
+    # change; 'go' enforces the typed known-open-aware verdict [the FP fix]; 'shell'
+    # = legacy). Shadow/go both emit the old-vs-new shadow audit line.
+    local classifier_mode="${PORTSCAN_CLASSIC_CLASSIFIER:-shadow}"
+    local family="ipv4"; [[ "$ip" == *:* ]] && family="ipv6"
+    if [[ "$classifier_mode" == "go" || "$classifier_mode" == "shadow" ]]; then
+        local go_scan; go_scan=$(_nftban_portscan_classic_go_verdict "$ip" "$family")
+        if [[ "$classifier_mode" == "go" ]]; then
+            # Authoritative: the Go classifier owns the verdict (known-open excluded).
+            [[ -n "$go_scan" ]] && { echo "$go_scan"; return 0; }
+            return 1
+        fi
+        # shadow: comparison logged above; legacy shell logic below still enforces.
+    fi
 
     local ports="${_PORTSCAN_CLASSIC_IP_PORTS[$ip]:-}"
     local targets="${_PORTSCAN_CLASSIC_IP_TARGETS[$ip]:-}"
