@@ -230,24 +230,3 @@ func CoverageDiff(baseline, kernel, sessions []string) CoverageResult {
 	}
 	return res
 }
-
-// IsTokenCoveredBy reports whether `needle` (IP/CIDR/interval) is fully covered
-// by the union of `haystack` tokens. Used by the --static add live read-back to
-// confirm a durable entry is actually present in the live kernel set.
-func IsTokenCoveredBy(needle string, haystack []string) (bool, error) {
-	r, err := ParseRangeToken(needle)
-	if err != nil {
-		return false, err
-	}
-	hP, _ := parseAll(haystack)
-	var hr []*IPRange
-	for _, p := range hP {
-		hr = append(hr, p.r)
-	}
-	h4, h6 := splitFamilies(hr)
-	m := h4
-	if r.V6 {
-		m = h6
-	}
-	return covered(r, m), nil
-}

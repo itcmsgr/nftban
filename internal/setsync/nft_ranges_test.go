@@ -48,6 +48,7 @@ func el(ip string, end bool) nftables.SetElement {
 //   - the END precedes its START in the stream
 //   - singletons get a paired end (X → X+1)
 //   - a trailing orphan wraparound end (0.0.0.0) is present
+//
 // Set: { 8.8.8.8, 9.9.9.9, 62.38.150.122, 65.21.157.15, 104.16.0.0-104.27.255.255, 127.0.0.1 }
 func TestReconstructIntervalRanges_ObservedStructure(t *testing.T) {
 	elems := []nftables.SetElement{

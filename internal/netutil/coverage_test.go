@@ -105,30 +105,6 @@ func TestCoverage_AdminIPMissingThenLive(t *testing.T) {
 	}
 }
 
-func TestIsTokenCoveredBy(t *testing.T) {
-	cases := []struct {
-		needle   string
-		hay      []string
-		want     bool
-	}{
-		{"62.38.150.122", []string{"62.38.150.122"}, true},
-		{"62.38.150.122", []string{"46.224.164.50"}, false},
-		{"1.2.3.4", []string{"1.2.3.0/24"}, true},
-		{"104.20.0.0/16", []string{"104.16.0.0-104.27.255.255"}, true}, // sub-range of interval
-		{"2606:4700::1", []string{"2606:4700::/32"}, true},
-		{"9.9.9.9", []string{"1.2.3.0/24", "10.0.0.0/8"}, false},
-	}
-	for _, c := range cases {
-		got, err := IsTokenCoveredBy(c.needle, c.hay)
-		if err != nil {
-			t.Fatalf("IsTokenCoveredBy(%q) err: %v", c.needle, err)
-		}
-		if got != c.want {
-			t.Fatalf("IsTokenCoveredBy(%q, %v) = %v, want %v", c.needle, c.hay, got, c.want)
-		}
-	}
-}
-
 func TestParseRangeToken_BadInput(t *testing.T) {
 	for _, bad := range []string{"", "not-an-ip", "1.2.3.4/99", "garbage-text"} {
 		if _, err := ParseRangeToken(bad); err == nil {
