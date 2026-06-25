@@ -384,6 +384,13 @@ nftban_rbl_check_ip_parallel() {
         [[ "$jobs" -gt 10 ]] && jobs=10
 
         reversed_ip=$(nftban_rbl_reverse_ip "$ip")
+        # v1.206 (TODO-1) IPv6 honesty: detect family + the operator-declared set of
+        # IPv4-only RBL zones (space-separated domains in NFTBAN_RBL_IPV4_ONLY_ZONES).
+        # For an IPv6 target: a zone with no IPv6 reputation must be SKIPPED, and an
+        # un-reversible IPv6 (no python3) is UNSUPPORTED — NEVER a silent CLEAN.
+        local _ip_family="ipv4"
+        [[ "$ip" == *:* ]] && _ip_family="ipv6"
+        local _ipv4_only_zones=" ${NFTBAN_RBL_IPV4_ONLY_ZONES:-} "
         temp_dir=$(mktemp -d)
         # shellcheck disable=SC2064  # Intentional: expand $temp_dir NOW at set time (local var)
         trap "rm -rf '$temp_dir'" EXIT
@@ -418,10 +425,17 @@ nftban_rbl_check_ip_parallel() {
             (
                 local result
                 local txt_record=""
-                result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
-
-                if [[ "$result" == "LISTED" ]]; then
-                    txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
+                # v1.206: IPv6 zone-support gating BEFORE any query — distinct
+                # degraded states, never CLEAN.
+                if [[ "$_ip_family" == "ipv6" ]] && [[ -z "$reversed_ip" ]]; then
+                    result="UNSUPPORTED_IPV6_ZONE"
+                elif [[ "$_ip_family" == "ipv6" ]] && [[ "$_ipv4_only_zones" == *" ${rbl_domain} "* ]]; then
+                    result="SKIPPED_IPV4_ONLY_ZONE"
+                else
+                    result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
+                    if [[ "$result" == "LISTED" ]]; then
+                        txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
+                    fi
                 fi
 
                 echo "${result}|${rbl_domain}|${rbl_url}|${txt_record}" > "${temp_dir}/${rbl_domain}.result"
@@ -445,6 +459,10 @@ nftban_rbl_check_ip_parallel() {
         local listed_count=0
         local clean_count=0
         local timeout_count=0
+        # v1.206 (TODO-1): degraded sub-counts. NONE of these ever count as clean.
+        local blocked_count=0     # RESOLVER_BLOCKED (Spamhaus block-code / REFUSED)
+        local skipped_count=0     # SKIPPED_IPV4_ONLY_ZONE
+        local unsupported_count=0 # UNSUPPORTED_IPV6_ZONE
 
         if [[ "$format" == "json" ]]; then
             echo "{"
@@ -476,16 +494,21 @@ nftban_rbl_check_ip_parallel() {
                     [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
                     echo "   Info: $rbl_url"
                 fi
-            elif [[ "$result" == "TIMEOUT" ]] || [[ "$result" == "ERROR" ]] || [[ "$result" == "RATE_LIMITED" ]]; then
+            elif [[ "$result" == "TIMEOUT" ]] || [[ "$result" == "ERROR" ]] || [[ "$result" == "RATE_LIMITED" ]] \
+                 || [[ "$result" == "RESOLVER_BLOCKED" ]] || [[ "$result" == "SKIPPED_IPV4_ONLY_ZONE" ]] \
+                 || [[ "$result" == "UNSUPPORTED_IPV6_ZONE" ]]; then
                 # v1.150 (11.3): ERROR/RATE_LIMITED counted as degraded, never CLEAN.
-                # v1.19.20 FIX
-                ((timeout_count++)) || true
-
+                # v1.206 (TODO-1): RESOLVER_BLOCKED / SKIPPED_IPV4_ONLY_ZONE /
+                # UNSUPPORTED_IPV6_ZONE are ALSO degraded — they mean the IP's
+                # reputation is UNKNOWN, and MUST NEVER increment clean_count.
                 local _status_lc
                 case "$result" in
-                    TIMEOUT)      _status_lc="timeout" ;;
-                    ERROR)        _status_lc="error" ;;
-                    RATE_LIMITED) _status_lc="rate_limited" ;;
+                    TIMEOUT)               _status_lc="timeout";                ((timeout_count++)) || true ;;
+                    ERROR)                 _status_lc="error";                  ((timeout_count++)) || true ;;
+                    RATE_LIMITED)          _status_lc="rate_limited";           ((timeout_count++)) || true ;;
+                    RESOLVER_BLOCKED)      _status_lc="resolver_blocked";       ((blocked_count++)) || true ;;
+                    SKIPPED_IPV4_ONLY_ZONE) _status_lc="skipped_ipv4_only_zone"; ((skipped_count++)) || true ;;
+                    UNSUPPORTED_IPV6_ZONE) _status_lc="unsupported_ipv6_zone";  ((unsupported_count++)) || true ;;
                 esac
 
                 if [[ "$format" == "json" ]]; then
@@ -493,10 +516,15 @@ nftban_rbl_check_ip_parallel() {
                     nftban_rbl_json_status_obj "$rbl_domain" "$_status_lc" "$rbl_url"
                     first=0
                 else
-                    echo "⏱️  ${result}: $rbl_domain"
+                    case "$result" in
+                        RESOLVER_BLOCKED)       echo "🚫 RESOLVER_BLOCKED: $rbl_domain (reputation UNKNOWN — not clean)" ;;
+                        SKIPPED_IPV4_ONLY_ZONE) echo "⏭️  SKIPPED (IPv4-only zone): $rbl_domain" ;;
+                        UNSUPPORTED_IPV6_ZONE)  echo "⏭️  UNSUPPORTED (no IPv6 reputation): $rbl_domain" ;;
+                        *)                      echo "⏱️  ${result}: $rbl_domain" ;;
+                    esac
                 fi
             else
-                # v1.19.20 FIX
+                # v1.19.20 FIX — reached ONLY by a genuine successful negative lookup.
                 ((clean_count++)) || true
 
                 if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
@@ -505,13 +533,22 @@ nftban_rbl_check_ip_parallel() {
             fi
         done
 
+        # v1.206: total degraded = every non-LISTED, non-CLEAN outcome. When >0
+        # the IP's reputation is NOT fully verified — callers/posture must not
+        # report "fully protected/clean".
+        local degraded_count=$(( timeout_count + blocked_count + skipped_count + unsupported_count ))
+
         if [[ "$format" == "json" ]]; then
             echo ""
             echo "  ],"
             echo "  \"summary\": {"
             echo "    \"listed\": $listed_count,"
             echo "    \"clean\": $clean_count,"
-            echo "    \"timeout\": $timeout_count"
+            echo "    \"timeout\": $timeout_count,"
+            echo "    \"resolver_blocked\": $blocked_count,"
+            echo "    \"skipped_ipv4_only_zone\": $skipped_count,"
+            echo "    \"unsupported_ipv6_zone\": $unsupported_count,"
+            echo "    \"degraded\": $degraded_count"
             echo "  }"
             echo "}"
         else
@@ -520,10 +557,16 @@ nftban_rbl_check_ip_parallel() {
             echo "  Listed: $listed_count"
             echo "  Clean: $clean_count"
             echo "  Timeout: $timeout_count"
+            [[ $blocked_count -gt 0 ]]     && echo "  Resolver-blocked: $blocked_count (reputation UNKNOWN — not clean)"
+            [[ $skipped_count -gt 0 ]]     && echo "  Skipped (IPv4-only zone): $skipped_count"
+            [[ $unsupported_count -gt 0 ]] && echo "  Unsupported (no IPv6 reputation): $unsupported_count"
+            [[ $degraded_count -gt 0 ]]    && echo "  Degraded total: $degraded_count (RBL coverage incomplete — NOT fully verified)"
         fi
 
-        # Return 1 if any listings found (subshell exit code propagates)
+        # Exit code: 1 = listed; 2 = no listings but degraded (reputation not fully
+        # verified — callers must not treat as a clean all-pass); 0 = all-clean.
         [[ $listed_count -gt 0 ]] && exit 1
+        [[ $degraded_count -gt 0 ]] && exit 2
         exit 0
     )
 }
@@ -651,8 +694,14 @@ nftban_rbl_check_ip() {
     local listed_count=0
     local clean_count=0
     local timeout_count=0
+    # v1.206 (TODO-1) degraded sub-counts — never count as clean.
+    local blocked_count=0 skipped_count=0 unsupported_count=0
 
     reversed_ip=$(nftban_rbl_reverse_ip "$ip")
+    # v1.206 IPv6 honesty (parity with parallel path)
+    local _ip_family="ipv4"
+    [[ "$ip" == *:* ]] && _ip_family="ipv6"
+    local _ipv4_only_zones=" ${NFTBAN_RBL_IPV4_ONLY_ZONES:-} "
 
     if [[ "$format" == "json" ]]; then
         echo "{"
@@ -668,7 +717,14 @@ nftban_rbl_check_ip() {
         local result
         local txt_record
 
-        result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
+        # v1.206: IPv6 zone-support gating before any query (never silent CLEAN).
+        if [[ "$_ip_family" == "ipv6" ]] && [[ -z "$reversed_ip" ]]; then
+            result="UNSUPPORTED_IPV6_ZONE"
+        elif [[ "$_ip_family" == "ipv6" ]] && [[ "$_ipv4_only_zones" == *" ${rbl_domain} "* ]]; then
+            result="SKIPPED_IPV4_ONLY_ZONE"
+        else
+            result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
+        fi
 
         if [[ "$result" == "LISTED" ]]; then
             txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
@@ -685,17 +741,19 @@ nftban_rbl_check_ip() {
                 [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
                 echo "   Info: $rbl_url"
             fi
-        elif [[ "$result" == "TIMEOUT" ]] || [[ "$result" == "ERROR" ]] || [[ "$result" == "RATE_LIMITED" ]]; then
-            # v1.150 (11.3): ERROR/RATE_LIMITED are non-clean unknowns — count
-            # them with timeouts (degraded) rather than silently as CLEAN.
-            # v1.19.20 FIX
-            ((timeout_count++)) || true
-
+        elif [[ "$result" == "TIMEOUT" ]] || [[ "$result" == "ERROR" ]] || [[ "$result" == "RATE_LIMITED" ]] \
+             || [[ "$result" == "RESOLVER_BLOCKED" ]] || [[ "$result" == "SKIPPED_IPV4_ONLY_ZONE" ]] \
+             || [[ "$result" == "UNSUPPORTED_IPV6_ZONE" ]]; then
+            # v1.150 (11.3) + v1.206 (TODO-1): all of these are non-clean unknowns
+            # (degraded) — MUST NEVER count as CLEAN.
             local _status_lc
             case "$result" in
-                TIMEOUT)      _status_lc="timeout" ;;
-                ERROR)        _status_lc="error" ;;
-                RATE_LIMITED) _status_lc="rate_limited" ;;
+                TIMEOUT)                _status_lc="timeout";                 ((timeout_count++)) || true ;;
+                ERROR)                  _status_lc="error";                   ((timeout_count++)) || true ;;
+                RATE_LIMITED)           _status_lc="rate_limited";            ((timeout_count++)) || true ;;
+                RESOLVER_BLOCKED)       _status_lc="resolver_blocked";        ((blocked_count++)) || true ;;
+                SKIPPED_IPV4_ONLY_ZONE) _status_lc="skipped_ipv4_only_zone";  ((skipped_count++)) || true ;;
+                UNSUPPORTED_IPV6_ZONE)  _status_lc="unsupported_ipv6_zone";   ((unsupported_count++)) || true ;;
             esac
 
             if [[ "$format" == "json" ]]; then
@@ -703,10 +761,15 @@ nftban_rbl_check_ip() {
                 nftban_rbl_json_status_obj "$rbl_domain" "$_status_lc" "$rbl_url"
                 first=0
             else
-                echo "⏱️  ${result}: $rbl_domain"
+                case "$result" in
+                    RESOLVER_BLOCKED)       echo "🚫 RESOLVER_BLOCKED: $rbl_domain (reputation UNKNOWN — not clean)" ;;
+                    SKIPPED_IPV4_ONLY_ZONE) echo "⏭️  SKIPPED (IPv4-only zone): $rbl_domain" ;;
+                    UNSUPPORTED_IPV6_ZONE)  echo "⏭️  UNSUPPORTED (no IPv6 reputation): $rbl_domain" ;;
+                    *)                      echo "⏱️  ${result}: $rbl_domain" ;;
+                esac
             fi
         else
-            # v1.19.20 FIX
+            # v1.19.20 FIX — reached ONLY by a genuine successful negative lookup.
             ((clean_count++)) || true
 
             if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
@@ -715,13 +778,19 @@ nftban_rbl_check_ip() {
         fi
     done < <(nftban_rbl_load_providers)
 
+    local degraded_count=$(( timeout_count + blocked_count + skipped_count + unsupported_count ))
+
     if [[ "$format" == "json" ]]; then
         echo ""
         echo "  ],"
         echo "  \"summary\": {"
         echo "    \"listed\": $listed_count,"
         echo "    \"clean\": $clean_count,"
-        echo "    \"timeout\": $timeout_count"
+        echo "    \"timeout\": $timeout_count,"
+        echo "    \"resolver_blocked\": $blocked_count,"
+        echo "    \"skipped_ipv4_only_zone\": $skipped_count,"
+        echo "    \"unsupported_ipv6_zone\": $unsupported_count,"
+        echo "    \"degraded\": $degraded_count"
         echo "  }"
         echo "}"
     else
@@ -730,7 +799,16 @@ nftban_rbl_check_ip() {
         echo "  Listed: $listed_count"
         echo "  Clean: $clean_count"
         echo "  Timeout: $timeout_count"
+        [[ $blocked_count -gt 0 ]]     && echo "  Resolver-blocked: $blocked_count (reputation UNKNOWN — not clean)"
+        [[ $skipped_count -gt 0 ]]     && echo "  Skipped (IPv4-only zone): $skipped_count"
+        [[ $unsupported_count -gt 0 ]] && echo "  Unsupported (no IPv6 reputation): $unsupported_count"
+        [[ $degraded_count -gt 0 ]]    && echo "  Degraded total: $degraded_count (RBL coverage incomplete — NOT fully verified)"
     fi
+
+    # Exit code parity with the parallel path: 1=listed, 2=degraded-only, 0=all-clean.
+    [[ $listed_count -gt 0 ]] && return 1
+    [[ $degraded_count -gt 0 ]] && return 2
+    return 0
 }
 
 # v1.150 (11.1): resolver-binary selection. `host` is preferred (its output
@@ -751,19 +829,29 @@ nftban_rbl_resolver() {
 }
 
 nftban_rbl_dns_lookup() {
-    # Perform DNS A record lookup for RBL
+    # Perform DNS A record lookup for RBL.
     # Args: $1 = reversed IP (4.3.2.1)
     #       $2 = RBL domain (zen.spamhaus.org)
-    # Output: LISTED, CLEAN, TIMEOUT, or ERROR
+    # Output (v1.206 7-state model): LISTED, CLEAN, ERROR, RESOLVER_BLOCKED,
+    #        TIMEOUT, RATE_LIMITED  (zone-skip states SKIPPED_IPV4_ONLY_ZONE /
+    #        UNSUPPORTED_IPV6_ZONE are decided by the caller before this query).
     #
-    # v1.150 (11.1/11.3): capture the resolver's real exit code (no `|| true`,
-    # which used to mask rc and make the TIMEOUT branch dead) and never collapse
-    # a resolver failure / missing binary into CLEAN.
-    #   rc==124        → TIMEOUT (the `timeout` SIGTERM exit)
-    #   rc!=0 (other)  → ERROR   (resolver failed — NOT a clean verdict)
-    #   rc==0 + empty  → CLEAN   (NXDOMAIN / not listed)
-    #   rc==0 + 127/8  → LISTED  (RFC 5782 valid response)
-    #   rc==0 + other  → CLEAN   (non-127/8 response is invalid per RFC 5782)
+    # INVARIANT (v1.206 TODO-1): CLEAN means ONLY a successful negative lookup
+    # (authoritative NXDOMAIN / RFC5782 not-listed). A resolver/provider failure
+    # or a provider block-code must NEVER collapse into CLEAN.
+    #
+    # v1.150 (11.1/11.3): capture the resolver's real rc (no `|| true`).
+    #   rc==124              → TIMEOUT
+    #   rc!=0 (other)        → ERROR (resolver/network failure — NOT clean)
+    # v1.206 classification (rc==0):
+    #   answer 127.255.255.252/.253/.254 → RESOLVER_BLOCKED (Spamhaus query-blocked
+    #        / volume-limit / wrong-query — NOT listed and NOT clean) — carved out
+    #        BEFORE the blanket 127/8 listed check.
+    #   dig status REFUSED   → RESOLVER_BLOCKED (the resolver refused the zone)
+    #   dig status SERVFAIL  → ERROR (authority/delegation failure — NOT clean)
+    #   dig status NXDOMAIN / empty 127/8-absent → CLEAN (authoritative negative)
+    #   other 127/8 answer   → LISTED (RFC 5782 valid hit)
+    #   non-127/8 answer     → CLEAN (invalid per RFC 5782)
 
     local reversed_ip="$1"
     local rbl_domain="$2"
@@ -786,23 +874,26 @@ nftban_rbl_dns_lookup() {
         return 0
     fi
 
-    # Perform DNS lookup with timeout. Capture rc WITHOUT `|| true` (which would
-    # force rc=0 and resurrect the dead-TIMEOUT bug). Use `|| rc=$?`, which is
-    # set -e-safe AND preserves the resolver's real exit code (rc==124 for the
-    # `timeout` SIGTERM, rc==1 for host NXDOMAIN/failure, etc).
-    # NOTE: `if ! cmd; then rc=$?` does NOT work here — inside the `then` branch
-    # $? reflects the negated `! cmd` result (0), not cmd's exit code.
-    local dns_result="" rc=0
+    # Perform DNS lookup with timeout. Capture rc WITHOUT `|| true` (preserves the
+    # real rc: 124 for timeout SIGTERM, etc). For dig we ALSO capture the response
+    # status (REFUSED/SERVFAIL/NXDOMAIN/NOERROR) so resolver-block and authority
+    # failures are classified honestly instead of looking empty/CLEAN.
+    local dns_result="" rc=0 dns_status=""
     case "$resolver" in
         host)
             dns_result=$(timeout "$timeout" host -t A "$lookup_host" 2>/dev/null) || rc=$?
             ;;
         dig)
-            # dig +short emits one address per line (or empty for NXDOMAIN).
-            dns_result=$(timeout "$timeout" dig +short A "$lookup_host" 2>/dev/null) || rc=$?
+            # +noall +answer +comments → answer records AND the "status:" line in
+            # one query (no extra round-trip), so REFUSED/SERVFAIL are visible.
+            local dig_full=""
+            dig_full=$(timeout "$timeout" dig +noall +answer +comments A "$lookup_host" 2>/dev/null) || rc=$?
+            dns_status=$(printf '%s\n' "$dig_full" | grep -oP 'status:\s*\K[A-Z]+' | head -1)
+            dns_result=$(printf '%s\n' "$dig_full" | awk '!/^;/ && NF {print $NF}' | grep -E '^[0-9.]+$')
             ;;
         nslookup)
             dns_result=$(timeout "$timeout" nslookup -type=A "$lookup_host" 2>/dev/null) || rc=$?
+            dns_status=$(printf '%s\n' "$dns_result" | grep -oiP '\b(REFUSED|SERVFAIL|NXDOMAIN)\b' | head -1 | tr '[:lower:]' '[:upper:]')
             ;;
     esac
 
@@ -811,27 +902,54 @@ nftban_rbl_dns_lookup() {
         return 0
     fi
 
+    # v1.206: resolver-status classification (when the resolver surfaced one).
+    # REFUSED = the resolver/provider refused to answer the zone → blocked, not clean.
+    # SERVFAIL = authority/delegation failure → ERROR, never clean.
+    case "$dns_status" in
+        REFUSED)  echo "RESOLVER_BLOCKED"; return 0 ;;
+        SERVFAIL) echo "ERROR";            return 0 ;;
+    esac
+
     if [[ $rc -ne 0 ]]; then
         # host returns rc=1 on NXDOMAIN (not listed); dig/nslookup return rc=0
         # with empty output. For `host`, distinguish "not found" (= CLEAN) from
-        # a genuine resolver/network failure (= ERROR).
+        # a genuine resolver/network failure (= ERROR). dig REFUSED/SERVFAIL were
+        # already handled above via dns_status.
         if [[ "$resolver" == "host" ]] && \
            printf '%s' "$dns_result" | grep -qi "not found\|NXDOMAIN\|has no .* record"; then
             echo "CLEAN"
+        elif [[ "$resolver" == "host" ]] && \
+             printf '%s' "$dns_result" | grep -qi "REFUSED"; then
+            echo "RESOLVER_BLOCKED"
         else
             echo "ERROR"
         fi
         return 0
     fi
 
+    # rc==0 + authoritative negative → CLEAN.
+    if [[ "$dns_status" == "NXDOMAIN" ]]; then
+        echo "CLEAN"
+        return 0
+    fi
     if [[ -z "$dns_result" ]] || printf '%s' "$dns_result" | grep -qi "not found\|NXDOMAIN"; then
         echo "CLEAN"
         return 0
     fi
 
-    # v1.19.0: RFC 5782 validation - responses must be in 127.0.0.0/8 (R23)
+    # v1.19.0: RFC 5782 validation - responses must be in 127.0.0.0/8 (R23).
     local response_ip
     response_ip=$(printf '%s' "$dns_result" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
+    # v1.206 (TODO-1): carve out Spamhaus resolver/provider BLOCK codes BEFORE the
+    # blanket 127/8 listed check — these answers do NOT mean "listed", they mean
+    # the query was blocked (open-resolver / volume-limit / use DQS) and the IP's
+    # true reputation is UNKNOWN. Must classify RESOLVER_BLOCKED, never LISTED/CLEAN.
+    case "$response_ip" in
+        127.255.255.252|127.255.255.253|127.255.255.254)
+            echo "RESOLVER_BLOCKED"
+            return 0
+            ;;
+    esac
     if [[ -n "$response_ip" ]] && [[ "$response_ip" =~ ^127\. ]]; then
         echo "LISTED"
     elif [[ -n "$response_ip" ]]; then

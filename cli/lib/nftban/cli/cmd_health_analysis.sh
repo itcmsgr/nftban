@@ -395,8 +395,13 @@ nftban_health_cmd_rbl() {
 
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
     local rbl_config="$config_dir/conf.d/rbl/main.conf"
-    local rbl_cache_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl"
+    # v1.206 (TODO-1): the AUTHORITATIVE RBL state store is the cache dir written
+    # by nftban_rbl_update_state (/var/cache/nftban/rbl), NOT /var/log. The old
+    # /var/log path was a key/state-path drift → health read a non-existent store
+    # and could report PROTECTED while the writer recorded degraded/listed.
+    local rbl_cache_dir="${NFTBAN_RBL_CACHE_DIR:-${NFTBAN_CACHE_DIR:-/var/cache/nftban}/rbl}"
     local last_check_file="$rbl_cache_dir/last_check"
+    local rbl_state_file="$rbl_cache_dir/state.dat"
 
     # Status tracking
     local overall_status="PROTECTED"
@@ -504,6 +509,21 @@ nftban_health_cmd_rbl() {
         fi
     fi
 
+    # 5. v1.206 (TODO-1): read the AUTHORITATIVE state store and surface degraded/
+    # blind RBL results. A degraded entry (resolver-blocked/timeout/error/skipped/
+    # unsupported) means reputation is UNKNOWN — posture must NOT read "fully
+    # protected" while RBL is blind.
+    local rbl_degraded_ips=0 rbl_listed_ips=0
+    if [[ -f "$rbl_state_file" ]]; then
+        rbl_degraded_ips=$(grep -c '=degraded|' "$rbl_state_file" 2>/dev/null || echo 0)
+        rbl_listed_ips=$(grep -c '=listed|' "$rbl_state_file" 2>/dev/null || echo 0)
+    fi
+    if [[ "$rbl_enabled" == "YES" ]] && [[ "${rbl_degraded_ips:-0}" -gt 0 ]] \
+       && [[ "$overall_status" == "PROTECTED" ]]; then
+        overall_status="DEGRADED"
+        status_color="\033[33m"  # Yellow — RBL blind, reputation not fully verified
+    fi
+
     # If RBL is disabled, overall status should still be OK unless there's an error
     if [[ "$rbl_enabled" == "NO" && "$overall_status" == "WARNING" ]]; then
         # Reset to OK if RBL is disabled - warnings only matter when enabled
@@ -516,14 +536,18 @@ nftban_health_cmd_rbl() {
     printf "  Timer Active:    %s\n" "$timer_active"
     printf "  Last Check:      %s\n" "$last_check_status"
     printf "  Cache Dir:       %s\n" "$cache_dir_status"
+    printf "  RBL State:       %s degraded / %s listed (authoritative: %s)\n" \
+        "${rbl_degraded_ips:-0}" "${rbl_listed_ips:-0}" "$rbl_state_file"
+    [[ "${rbl_degraded_ips:-0}" -gt 0 ]] && \
+        printf "  Note: RBL coverage DEGRADED — reputation not fully verified for %s IP(s); not 'fully protected'.\n" "${rbl_degraded_ips}"
     echo ""
     printf "  Status: %b%s%b\n" "$status_color" "$overall_status" "\033[0m"
     echo ""
 
     # Return appropriate exit code
     case "$overall_status" in
-        OK) return 0 ;;
-        WARNING) return 1 ;;
+        OK|PROTECTED) return 0 ;;
+        DEGRADED|WARNING) return 1 ;;
         ERROR) return 2 ;;
         *) return 1 ;;
     esac
