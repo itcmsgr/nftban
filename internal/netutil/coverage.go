@@ -90,7 +90,12 @@ func ParseRangeToken(tok string) (*IPRange, error) {
 		}
 		ones, bits := ipnet.Mask.Size()
 		hostBits := bits - ones
-		size := new(big.Int).Lsh(big.NewInt(1), uint(hostBits))
+		// ParseCIDR guarantees 0 <= ones <= bits, so hostBits is in [0,128]; guard
+		// the lower bound explicitly so the uint conversion cannot underflow.
+		if hostBits < 0 || hostBits > 128 {
+			return nil, fmt.Errorf("invalid CIDR mask for %q", tok)
+		}
+		size := new(big.Int).Lsh(big.NewInt(1), uint(hostBits)) //#nosec G115 -- hostBits guarded to [0,128] above
 		end := new(big.Int).Add(start, size)
 		end.Sub(end, big.NewInt(1))
 		return &IPRange{Start: start, End: end, V6: v6}, nil
