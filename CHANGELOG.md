@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.206.0] - 2026-06-25 — RBL state + visibility hardening (resolver/provider false-negative fix)
+
+**Codename:** `RBL_STATE_AND_VISIBILITY` · **PR:** [#955](https://github.com/itcmsgr/nftban/pull/955) (→ `fffc9712`) · **Scope:** `V206_RBL_STATE_AND_VISIBILITY_SCOPE.md`
+
+> **What:** fixes a P0 RBL false-negative where resolver/provider failures were folded into CLEAN, and makes degraded/blind RBL state visible to operators. **Shell-only — the `nftband` daemon is NOT re-baselined; nft `SchemaVersionCurrent` unchanged (1.84.0).**
+>
+> **No fleet rollout in this release.** Production fleet remains **v1.203.0**; v1.204 portscan + v1.205 CLI parity + v1.206 RBL are on main but **not fleet-live** until a separate unified Track-A rollout (`v1.203.0 → v1.206.0`).
+
+### Fixed — RBL 7-state resolver/provider model
+- `LISTED · CLEAN · ERROR · RESOLVER_BLOCKED · TIMEOUT · SKIPPED_IPV4_ONLY_ZONE · UNSUPPORTED_IPV6_ZONE`. **CLEAN now means a successful negative lookup ONLY** — non-CLEAN states never increment the clean count and never project as fully protected (closes the false-negative).
+- **Spamhaus block-codes `127.255.255.252/.253/.254` → `RESOLVER_BLOCKED`** (carved out before the blanket 127/8 listed check — not listed, not clean).
+- Resolver/provider classification: `REFUSED → RESOLVER_BLOCKED`, `SERVFAIL → ERROR`, `timeout → TIMEOUT`, authoritative `NXDOMAIN → CLEAN`, authority-failed/no-resolver → `ERROR` (never clean).
+- **IPv6 honesty:** un-reversible IPv6 → `UNSUPPORTED_IPV6_ZONE`; operator-declared IPv4-only zones (`NFTBAN_RBL_IPV4_ONLY_ZONES`) → `SKIPPED_IPV4_ONLY_ZONE` — distinct states, never counted clean.
+
+### Visibility
+- `nftban rbl check --json` exposes per-state counts + a `degraded` total (state, not just a clean/listed boolean); human output never says "clean" for a degraded result.
+- `nftban health rbl` reads the **authoritative** `/var/cache/nftban/rbl` state store (fixes a key/state-path drift to a stale `/var/log` reader) and surfaces **DEGRADED** / "not fully protected" when RBL is blind.
+- `rbl check` persists a 3-way state (listed/degraded/clean) — a degraded check is no longer recorded clean.
+
+### Notes
+- Shell-only (`cli/lib/nftban/core/nftban_rbl.sh`, `cli/cmd_rbl.sh`, `cli/cmd_health_analysis.sh` + new test) — no `.go`/daemon change; nft schema 1.84.0 unchanged. No portscan/CLI-parity/BotGuard change; no email/webhook/auditor/central-comms work; no RBL-timer default-enable flip.
+- **Validation:** hermetic suite 19/0 + v1.150 regression 17/0; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28185397692).
+
+---
+
 ## [v1.205.0] - 2026-06-25 — CLI surface parity fix (registry/completion alignment + parity guard)
 
 **Codename:** `CLI_SURFACE_PARITY_FIX` · **PR:** [#953](https://github.com/itcmsgr/nftban/pull/953) (→ `3a457c62`) · **Source audit:** `FULL_CLI_SURFACE_PARITY_AUDIT.md`
