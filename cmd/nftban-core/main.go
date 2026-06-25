@@ -165,6 +165,11 @@ func main() {
 		// compare to the captured baseline (--capture re-captures from the live
 		// ruleset). Custom exit codes: OK/BASELINE_MISSING=0, MISMATCH=2, NFT_UNAVAILABLE=3.
 		os.Exit(cmdVerifyRules(os.Args[2:]))
+	case "whitelist-coverage":
+		// WHITELIST_DURABLE_APPLY_RECONCILE: range-aware whitelist coverage diff
+		// (reads {baseline,kernel,sessions} JSON on stdin). CLI-only oracle for
+		// `nftban whitelist verify` + the `--static` add live read-back.
+		os.Exit(cmdWhitelistCoverage(os.Args[2:]))
 	case "feeds":
 		if len(os.Args) < 3 {
 			errorWithUsage("feeds", "feeds command requires an action")
