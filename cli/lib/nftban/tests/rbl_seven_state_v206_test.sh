@@ -131,7 +131,7 @@ R=$( nftban_rbl_resolver(){ echo ""; }; _NFTBAN_RBL_QUERY_COUNT=0
      nftban_rbl_dns_lookup "1.2.3.4" "zen.example.test" )
 assert_eq "$R" "ERROR" "T9.1 no resolver → ERROR"
 R=$( nftban_rbl_resolver(){ echo dig; }; _NFTBAN_RBL_QUERY_COUNT=999999
-     NFTBAN_RBL_MAX_QUERIES_PER_RUN=1; nftban_rbl_dns_lookup "1.2.3.4" "zen.example.test" )
+     export NFTBAN_RBL_MAX_QUERIES_PER_RUN=1; nftban_rbl_dns_lookup "1.2.3.4" "zen.example.test" )
 assert_eq "$R" "RATE_LIMITED" "T9.2 query cap → RATE_LIMITED"
 
 echo
