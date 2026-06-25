@@ -188,6 +188,40 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	whitelistIPv4, whitelistIPv6, whitelistExpiry := state.GetWhitelistSnapshotWithExpiry()
 	blacklistIPv4, blacklistIPv6 := state.GetBlacklistSnapshot()
 
+	// INC2 (BLACKLIST_TOPOLOGY_CLEANUP): blacklist.d single-IP entries belong in the
+	// manual HASH sets (blacklist_manual_*), NOT the feed/geoban-owned interval sets.
+	// Previously they were string-diffed into blacklist_ipv4/_ipv6 via FullSync, then
+	// silently WIPED by the feed/geoban flush-first replace — a fail-open where
+	// file-backed (operator hand-edited / persist-only) bans stop being enforced once
+	// feeds load (BUG-BLACKLIST-FILE-ENTRY-FAIL-OPEN-ON-FEED-RELOAD). Add single IPs
+	// (add-only, permanent) to the hash sets — the feed replace never touches hash
+	// sets, and periodic reconciliation adopts them. Only CIDR blacklist.d entries
+	// continue to the interval path (pending the CIDR-policy checkpoint). IPv4+IPv6.
+	blacklistIPv4Single, blacklistIPv4CIDR := partitionCIDRTokens(blacklistIPv4)
+	blacklistIPv6Single, blacklistIPv6CIDR := partitionCIDRTokens(blacklistIPv6)
+	manualV4Set, err := nft.GetOrCreateHashSet(tableIPv4, "blacklist_manual_ipv4", true)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create blacklist_manual_ipv4 set: " + err.Error()}
+	}
+	manualV6Set, err := nft.GetOrCreateHashSet(tableIPv6, "blacklist_manual_ipv6", false)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create blacklist_manual_ipv6 set: " + err.Error()}
+	}
+	for _, ip := range blacklistIPv4Single {
+		if err := nft.AddIPWithTimeout(manualV4Set, ip, 0); err != nil {
+			log.Printf("[SYNC] Warning: blacklist.d IPv4 %s -> manual hash set: %v", ip, err)
+		}
+	}
+	for _, ip := range blacklistIPv6Single {
+		if err := nft.AddIPWithTimeout(manualV6Set, ip, 0); err != nil {
+			log.Printf("[SYNC] Warning: blacklist.d IPv6 %s -> manual hash set: %v", ip, err)
+		}
+	}
+	// The feed/geoban-owned interval sets receive ONLY blacklist.d CIDRs now (single
+	// IPs are repointed above); CIDR ownership is the next checkpoint.
+	blacklistIPv4 = blacklistIPv4CIDR
+	blacklistIPv6 = blacklistIPv6CIDR
+
 	// Perform full sync
 	result, err := nftsync.FullSync(
 		nft,
@@ -699,6 +733,20 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		Success: true,
 		Data:    data,
 	}
+}
+
+// partitionCIDRTokens splits blacklist tokens into single IPs (no "/") and CIDRs
+// ("/"). Used by the sync handler to route blacklist.d single IPs to the manual
+// hash sets while CIDRs continue to the interval path (BLACKLIST_TOPOLOGY_CLEANUP).
+func partitionCIDRTokens(items []string) (singles, cidrs []string) {
+	for _, it := range items {
+		if strings.Contains(it, "/") {
+			cidrs = append(cidrs, it)
+		} else {
+			singles = append(singles, it)
+		}
+	}
+	return singles, cidrs
 }
 
 // handleReplaceSetRequest handles bulk replace_set operations via file
