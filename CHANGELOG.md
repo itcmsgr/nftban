@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.207.0] - 2026-06-26 — BotScan smart-adaptive (pressure/backlog/mode/health, shell-only)
+
+**Codename:** `BOTSCAN_SMART_ADAPTIVE` · **PR:** [#961](https://github.com/itcmsgr/nftban/pull/961) (→ `94b61b1b`) · **Scope:** `V207_BOTSCAN_SMART_ADAPTIVE_SCOPE.md` · **Report:** `V207_BOTSCAN_SMART_ADAPTIVE_IMPL_REPORT.md`
+
+> **Shell-only.** Makes BotScan load-aware, backlog-aware, and operator-visible without rebuilding existing machinery. **`nftband` NOT re-baselined (no `.go`/`cmd/`/`internal/` change — byte-identical with v1.206.2); nft schema 1.84.0 unchanged. No enforcement/topology/ban/RBL/portscan/BotGuard/CLI-parity/updater-timer/central-comms change.** Reuses the existing watchdog pressure trend, `/proc/loadavg`, the BotScan forward-cursor backlog, the v1.187 candidate prefilter, and the soft budget — no new collectors, no duplicate host-vitals store.
+
+### Added
+- **Smart-adaptive control loop** (`nftban_botscan_adaptive.sh`): a deterministic pressure score (load÷nproc + watchdog `load_5m/mem/iowait` + last runtime÷budget + last-run budget-hit) → `pressure_state` (NORMAL/ELEVATED/HIGH/CRITICAL); cursor-lag → `backlog_state` (DRAINING/STABLE/GROWING/STARVED); → `scan_mode` (FULL/PREFILTERED/FAIR_SHARE/SURVIVAL) that modulates the existing per-file cap (FAIR_SHARE halves, SURVIVAL quarters). FULL/PREFILTERED preserve shipped detections; only SURVIVAL reduces coverage — explicitly declared, never reported clean.
+- **Health model** (`nftban health botscan`): `OK_SCANNED_NO_BOTS`/`OK_SCANNED_BOTS_FOUND`/`WARN_PARTIAL_PROGRESS`/`DEGRADED_BUDGET_HIT`/`DEGRADED_BACKLOG_GROWING`/`DEGRADED_INPUT_BLIND`/`DEGRADED_PRESSURE_THROTTLED`/`DISABLED_BY_CONFIG`/`ERROR_RUNTIME_FAILURE`. **Invariant: 0 scanned lines is NEVER "clean"** — disabled, blind, and pressure-throttled states are all visible, not silent.
+- **Recording-discipline:** a disabled+never-run module writes NO run-state/counters (no noise); a disabled module with a prior run records `DISABLED_BY_CONFIG` (not clean); counters accumulate as `*_total` in an additive `botscan/runstate.json`. Operator advisory (incl. "primary pressure may be the web/db stack").
+
+### Notes
+- 4 additive `declare -F`-guarded seams in `nftban_botscan.sh` (no-op if the module is absent); `nftban health botscan` dispatch. IPv4/IPv6 parity preserved. Honest residuals: `lines_seen≈lines_scanned` (post-prefilter, documented); per-line already-banned-skip is a future refinement (the bounded cap already throttles the bash matcher).
+- **Validation:** hermetic 29/0 + existing BotScan regressions (nofork-parity, deadline/rotation, request-class incl. IPv4/IPv6) PASS; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28252680518) — installed controller matrix 15/15, cap modulation, recording-discipline, `nftban health botscan` live, 100k-line flood benchmark (FULL/PREFILTERED detection-equivalence). dns4 read-only busy-host confirm only (web+db 143% primary load; BotScan bounded).
+- **No fleet rollout in this release.** Production fleet remains **v1.203.0**; unified Track-A retargeted to `v1.203.0 → v1.207.0` (absorbs the held v1.206.2 hop; dns4 rolled last/deferred if still under flood).
+
 ## [v1.206.2] - 2026-06-26 — Stats count-reconcile + freshness + label hotfix (reporting-only)
 
 **Codename:** `STATS_COUNT_RECONCILE` · **PR:** [#959](https://github.com/itcmsgr/nftban/pull/959) (→ `5b1a1fe9`) · **Report:** `V206_2_STATS_COUNT_RECONCILE_IMPL_REPORT.md`
