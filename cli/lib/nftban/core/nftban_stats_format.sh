@@ -121,7 +121,19 @@ nftban_stats_generate_dashboard() {
         # v1.167 PR-2 (E): casing-consistency. The two Data source values are
         # siblings; align the cache-hit value to the all-caps convention used
         # by its sibling ("DERIVED ...") and the section headers (SYSTEM, etc.).
+        # v1.206.2 (BUG-STATS-CACHE-STALENESS): surface the cache snapshot AGE so
+        # operators know counts are a point-in-time snapshot — a ban added since the
+        # last collect (EITHER family) will not appear until the cache regenerates.
+        local _cache_age="?"
+        if [[ -f "${NFTBAN_UNIFIED_CACHE:-}" ]]; then
+            local _ct; _ct=$(stat -c %Y "$NFTBAN_UNIFIED_CACHE" 2>/dev/null || echo "")
+            [[ -n "$_ct" ]] && _cache_age="$(( $(date +%s) - _ct ))s ago"
+        fi
+        # NOTE: the Data source VALUE stays exactly "UNIFIED CACHE" (v1.167 PR-2
+        # casing-consistency guard); the snapshot age is a SEPARATE sibling line.
         printf "  %-20s %s\n" "Data source........." "UNIFIED CACHE"
+        printf "  %-20s %s\n" "Snapshot............" "collected ${_cache_age}"
+        echo "    (counts are a cached snapshot; a ban added since the last collect may not appear until the next collection)"
     else
         printf "  %-20s %s\n" "Data source........." "DERIVED (cache miss; live aggregation from nftables + bans.log)"
     fi
@@ -348,12 +360,29 @@ nftban_stats_generate_dashboard() {
         suricata_bans=$(echo "$sources" | jq -r '.suricata // 0')
 
         echo "  By source (ban events, this period):"
-        printf "      %-14s %s\n" "Login..........." "$login_bans"
-        printf "      %-14s %s\n" "Port Scan......." "$portscan_bans"
-        printf "      %-14s %s\n" "DDoS............" "$ddos_bans"
-        printf "      %-14s %s\n" "Manual.........." "$manual"
-        printf "      %-14s %s\n" "Feeds..........." "$feeds"
-        [[ "$suricata_bans" != "0" ]] && printf "      %-14s %s\n" "Suricata........" "$suricata_bans"
+        printf "      %-18s %s\n" "Login.........." "$login_bans"
+        printf "      %-18s %s\n" "Port Scan......" "$portscan_bans"
+        printf "      %-18s %s\n" "DDoS..........." "$ddos_bans"
+        # v1.206.2 (BUG-STATS labels): "Manual" here = ban EVENTS whose source was
+        # operator/CLI (manual). It is NOT the manual-hash SET (persistent-offenders
+        # live there too) — see PROTECTION BREAKDOWN "Manual-set by:" for set provenance.
+        printf "      %-18s %s\n" "Operator/CLI..." "$manual"
+        printf "      %-18s %s\n" "Feeds.........." "$feeds"
+        [[ "$suricata_bans" != "0" ]] && printf "      %-18s %s\n" "Suricata......." "$suricata_bans"
+        # v1.206.2 (BUG-STATS-COUNT-DIVERGENCE): reconcile to New ban events. The
+        # by-source breakdown is parsed from bans.log; New ban events is the activity
+        # counter. If the breakdown does not sum to the total, surface the remainder
+        # as Other/Unclassified rather than silently dropping it.
+        if [[ "$total_bans" =~ ^[0-9]+$ ]]; then
+            local _src_sum=$(( login_bans + portscan_bans + ddos_bans + manual + feeds + suricata_bans ))
+            local _other=$(( total_bans - _src_sum ))
+            if [[ $_other -gt 0 ]]; then
+                printf "      %-18s %s\n" "Other/Unclass.." "$_other"
+                echo "      (Other = New ban events − classified-by-source; events whose source token was absent/unrecognised in bans.log this window)"
+            elif [[ $_other -lt 0 ]]; then
+                echo "      (note: by-source total ${_src_sum} exceeds New ban events ${total_bans} — different source/window basis; not additive)"
+            fi
+        fi
 
         if [[ "$login_bans" == "0" ]] && [[ "$portscan_bans" == "0" ]] && [[ "$ddos_bans" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$feeds" == "0" ]] && [[ "$suricata_bans" == "0" ]]; then
             echo ""
@@ -555,13 +584,13 @@ nftban_stats_generate_dashboard() {
     printf "  %-18s %'d IPs\n" "LOGIN" "$login_count"
     printf "  %-18s %'d IPs\n" "PORTSCAN" "$portscan_count"
     printf "  %-18s %'d IPs\n" "DDOS" "$ddos_count"
-    printf "  %-18s %'d IPs\n" "MANUAL" "$manual_count"
+    # v1.206.2 (BUG-STATS labels): rename ambiguous "MANUAL" → "OPERATOR/CLI" — this
+    # is the manual/cli ban SOURCE, NOT the manual-hash SET (persistent-offenders
+    # live in the set but are NOT operator action; see PROTECTION BREAKDOWN provenance).
+    printf "  %-18s %'d IPs\n" "OPERATOR/CLI" "$manual_count"
     [[ "$suricata_count" -gt 0 ]] && printf "  %-18s %'d IPs\n" "SURICATA" "$suricata_count"
-    # v1.206.1: "MANUAL" here = ban events sourced manual/cli (cumulative cache).
-    # Durable LoginMon/persistent-offenders live in the manual hash SET but are
-    # shown by provenance under PROTECTION BREAKDOWN ("Manual-set by:"), not as
-    # operator manual — see that line to distinguish operator vs persistent.
-    echo "  (operator-manual vs persistent/loginmon provenance: see PROTECTION BREAKDOWN above)"
+    echo "  (OPERATOR/CLI = manual/cli ban source; durable persistent-offenders are in the manual-set —"
+    echo "   see PROTECTION BREAKDOWN \"Manual-set by:\" for operator-manual vs persistent/loginmon vs adopted)"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
@@ -576,14 +605,28 @@ nftban_stats_generate_dashboard() {
         # Previously only the interval set was sampled, so a host whose only live
         # bans are in the manual set (e.g. a LoginMon persistent-offender, no
         # feeds) rendered an EMPTY sample despite Blocked IPs (live) > 0.
-        local _sample
-        _sample=$( { for _s in blacklist_ipv4 blacklist_manual_ipv4; do
-                        timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" "$_s" 2>/dev/null
-                     done; } | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | awk 'NF' | sort -u | head -5 )
-        if [[ -n "$_sample" ]]; then
-            printf '  %s\n' $_sample
+        # v1.206.2: gather from BOTH families (interval + manual hash) so IPv6
+        # active bans appear; print "showing X of N" and list ALL when N is small.
+        local _all _v4 _v6 _n _show
+        _v4=$( { for _s in blacklist_ipv4 blacklist_manual_ipv4; do
+                    timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" "$_s" 2>/dev/null
+                 done; } | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' )
+        _v6=$( { for _s in blacklist_ipv6 blacklist_manual_ipv6; do
+                    timeout 10s nft list set "${NFTBAN_TABLE_IPV6:-ip6 nftban}" "$_s" 2>/dev/null
+                 done; } | grep -oiP '[0-9a-f]{0,4}:[0-9a-f:]+(/\d+)?' )
+        _all=$(printf '%s\n%s\n' "$_v4" "$_v6" | awk 'NF' | sort -u)
+        _n=$(printf '%s\n' "$_all" | awk 'NF' | wc -l)
+        if [[ "${_n:-0}" -eq 0 ]]; then
+            echo "  (sample unavailable — set read timed out or live count is in a non-enumerable set)"
         else
-            echo "  (sample unavailable — live bans may be IPv6-only or set read timed out)"
+            # list all when small (<=10); otherwise show first 10 of N
+            local _cap=10
+            if [[ "$_n" -le "$_cap" ]]; then
+                echo "  showing $_n of $_n:"; printf '%s\n' "$_all" | sed 's/^/  /'
+            else
+                _show=$(printf '%s\n' "$_all" | head -"$_cap")
+                echo "  showing $_cap of $_n:"; printf '%s\n' "$_show" | sed 's/^/  /'
+            fi
         fi
         echo ""
     fi
