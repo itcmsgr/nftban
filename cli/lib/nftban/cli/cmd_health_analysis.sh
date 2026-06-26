@@ -553,6 +553,39 @@ nftban_health_cmd_rbl() {
     esac
 }
 
+# v1.207 — BotScan health (reads the adaptive run-state; never reports 0-clean when
+# input was not scanned). rc: 0=OK/DISABLED, 1=WARN/DEGRADED, 2=ERROR.
+nftban_health_cmd_botscan() {
+    local rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+    echo ""
+    echo "BotScan Health"
+    echo "─────────────────────────────────────────"
+    if [[ ! -f "$rs" ]]; then
+        # No run-state: either never enabled+run (recording-discipline), or first boot.
+        local en="${BOTSCAN_ENABLED:-true}"
+        if [[ "$en" != "true" ]]; then
+            printf "  %-16s %s\n" "State:" "DISABLED_BY_CONFIG (not scanning; not 'clean')"
+            return 0
+        fi
+        printf "  %-16s %s\n" "State:" "NO_RUN_YET (enabled; awaiting first scan)"
+        return 1
+    fi
+    if ! command -v jq &>/dev/null; then printf "  %-16s %s\n" "State:" "(jq unavailable)"; return 1; fi
+    local hs mode pr bl scan bans dur bh
+    IFS=' ' read -r hs mode pr bl scan bans dur bh < <(jq -r '"\(.health_state//"?") \(.scan_mode//"?") \(.pressure_state//"?") \(.backlog_state//"?") \(.lines_scanned_total//0) \(.bans_emitted_total//0) \(.last_duration_sec//0) \(.last_budget_hit//0)"' "$rs" 2>/dev/null)
+    printf "  %-16s %s\n" "Health:" "$hs"
+    printf "  %-16s %s\n" "Scan mode:" "$mode"
+    printf "  %-16s %s\n" "Host pressure:" "$pr"
+    printf "  %-16s %s\n" "Backlog:" "$bl"
+    printf "  %-16s scanned=%s bans=%s last=%ss budget_hit=%s\n" "Counters:" "$scan" "$bans" "$dur" "$bh"
+    if declare -F nftban_botscan_advisory >/dev/null 2>&1; then echo ""; echo "  $(nftban_botscan_advisory)"; fi
+    case "$hs" in
+        OK_*|DISABLED_BY_CONFIG) return 0 ;;
+        ERROR_*) return 2 ;;
+        *) return 1 ;;   # WARN_*/DEGRADED_* are visible non-clean states
+    esac
+}
+
 # =============================================================================
 # COMMAND: posture
 # =============================================================================
@@ -1033,5 +1066,6 @@ nftban_health_cmd_botguard() {
 export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_config
 export -f nftban_health_cmd_rbl
+export -f nftban_health_cmd_botscan
 export -f nftban_health_cmd_botguard
 export -f nftban_health_cmd_posture
