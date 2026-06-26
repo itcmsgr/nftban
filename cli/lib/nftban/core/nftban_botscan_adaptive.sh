@@ -188,12 +188,15 @@ nftban_botscan_trend_append() {
     local -n _v="$1" 2>/dev/null || return 0
     local hs="${_v[health_state]:-OK_SCANNED_NO_BOTS}"
     mkdir -p "${_BS_TREND%/*}" 2>/dev/null || true
-    # Dedupe: a no-web host re-emits NO_INPUT_DISCOVERED every cycle — do NOT fill
-    # the trend with identical no-input records. Skip the append when this record
-    # is NO_INPUT_DISCOVERED AND the last trend line was also NO_INPUT_DISCOVERED.
-    if [[ "$hs" == "NO_INPUT_DISCOVERED" && -s "$_BS_TREND" ]]; then
+    # Dedupe consecutive identical ZERO-PROGRESS records. A no-web host (no logs →
+    # NO_INPUT_DISCOVERED) or an empty-log host (logs found, 0 scanned →
+    # DEGRADED_INPUT_BLIND) re-emits the same state every cycle — do NOT fill the
+    # trend with identical no-progress lines. Any record that scanned > 0 lines is
+    # always recorded (real signal); a state CHANGE is always recorded.
+    local _scanned="${_v[lines_scanned]:-0}"
+    if [[ "${_scanned:-0}" -eq 0 && -s "$_BS_TREND" ]]; then
         local _last; _last=$(tail -1 "$_BS_TREND" 2>/dev/null)
-        [[ "$_last" == *'"health_state":"NO_INPUT_DISCOVERED"'* ]] && return 0
+        [[ "$_last" == *"\"health_state\":\"$hs\""* ]] && return 0
     fi
     local _host; _host=$(hostname -s 2>/dev/null || echo unknown)
     local rec

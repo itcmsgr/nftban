@@ -94,6 +94,22 @@ nftban_botscan_record_runstate ts=500 dur=9 lines_scanned=100 health_state=OK_SC
 eq "$(jq -r 'has("mem_percent") or has("iowait_percent")' "$TREND" 2>/dev/null)" "false" "T6.1 no mem/iowait in trend (no dup host-vitals store)"
 eq "$(jq -r 'has("load_ratio")' "$TREND" 2>/dev/null)" "true" "T6.2 carries cheap load_ratio context"
 
+echo "[T7] generalized zero-progress dedupe (DEGRADED_INPUT_BLIND empty-log host)"
+rm -f "$TREND"
+export BOTSCAN_ENABLED=true
+# 3 consecutive empty-log scans (0 lines) → DEGRADED_INPUT_BLIND → collapse to 1
+nftban_botscan_record_runstate ts=600 dur=2 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND scan_mode=FULL backlog_state=STABLE >/dev/null 2>&1
+nftban_botscan_record_runstate ts=601 dur=2 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND scan_mode=FULL backlog_state=STABLE >/dev/null 2>&1
+nftban_botscan_record_runstate ts=602 dur=2 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND scan_mode=FULL backlog_state=STABLE >/dev/null 2>&1
+eq "$(wc -l < "$TREND" | tr -d ' ')" "1" "T7.1 consecutive DEGRADED_INPUT_BLIND(0-scanned) → ONE record (no spam)"
+# a real scan with lines>0 always records (state change / progress)
+nftban_botscan_record_runstate ts=603 dur=9 lines_scanned=120 health_state=OK_SCANNED_NO_BOTS scan_mode=FULL >/dev/null 2>&1
+eq "$(wc -l < "$TREND" | tr -d ' ')" "2" "T7.2 progress scan after blind IS recorded"
+# back to blind → recorded (state change OK→BLIND), then dedupes again
+nftban_botscan_record_runstate ts=604 dur=2 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND scan_mode=FULL >/dev/null 2>&1
+nftban_botscan_record_runstate ts=605 dur=2 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND scan_mode=FULL >/dev/null 2>&1
+eq "$(wc -l < "$TREND" | tr -d ' ')" "3" "T7.3 OK→BLIND transition records once, then dedupes"
+
 echo
 echo "================================================="
 echo "Results: $PASS passed, $FAIL failed"
