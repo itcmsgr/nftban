@@ -247,6 +247,9 @@ nftban_cmd_health() {
         rbl)
             nftban_health_cmd_rbl "${clean_args[@]}"
             ;;
+        botscan)
+            nftban_health_cmd_botscan "${clean_args[@]}"
+            ;;
         botguard)
             nftban_health_cmd_botguard "${clean_args[@]}"
             ;;

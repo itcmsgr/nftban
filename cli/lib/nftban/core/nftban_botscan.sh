@@ -43,6 +43,9 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null
 # v1.177: shared panel-aware HTTP access-log discovery (DirectAdmin/cPanel/Plesk).
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_http_logs.sh" 2>/dev/null || true
+# v1.207 — smart-adaptive controller (pressure/backlog/mode/health/recording-discipline).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_botscan_adaptive.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION
@@ -1265,6 +1268,12 @@ nftban_botscan_process_logs() {
 
     [[ "$BOTSCAN_ENABLED" != "true" ]] && {
         echo "Bot scanner is disabled"
+        # v1.207 recording-discipline: a disabled module records DISABLED_BY_CONFIG
+        # ONLY if it has a prior meaningful run-state; a disabled+never-run module
+        # writes NOTHING (no counters/noise, and never a fake "0 clean").
+        if declare -F nftban_botscan_record_runstate >/dev/null 2>&1; then
+            nftban_botscan_record_runstate ts="$(date +%s)" health_state="DISABLED_BY_CONFIG" disabled_reason="BOTSCAN_ENABLED!=true"
+        fi
         return 0
     }
 
@@ -1290,6 +1299,30 @@ nftban_botscan_process_logs() {
 
     echo "Processing: ${#logs[@]} access log(s)"
     echo "Patterns loaded: ${#_BOTSCAN_PATTERNS[@]}"
+
+    # v1.207 SMART-ADAPTIVE controller — derive pressure + scan_mode from EXISTING
+    # signals (watchdog trend + /proc/loadavg + forward-cursor backlog) and modulate
+    # the EXISTING per-file cap. REUSE only; no new collectors; no schema change.
+    local _BS_PRESSURE="NORMAL" _BS_BACKLOG="STABLE" _BS_MODE="FULL" _BS_BYTES=0
+    if declare -F nftban_botscan_select_mode >/dev/null 2>&1; then
+        local _lr _l5 _mem _io _behind _rr=0 _bh=0 _prev=0
+        _lr=$(nftban_botscan_load_ratio)
+        IFS=' ' read -r _l5 _mem _io < <(nftban_botscan_watchdog_pressure)
+        IFS=' ' read -r _BS_BYTES _behind < <(nftban_botscan_backlog "${logs[@]}")
+        if [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
+            local _ld; IFS=' ' read -r _ld _bh _prev < <(jq -r '"\(.last_duration_sec//0) \(.last_budget_hit//0) \(.backlog_bytes//0)"' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" 2>/dev/null)
+            local _bud="${BOTSCAN_SCAN_BUDGET_SECS:-180}"; [[ "$_bud" -ge 1 ]] || _bud=180
+            _rr=$(awk -v d="${_ld:-0}" -v b="$_bud" 'BEGIN{printf "%.2f",(b>0?d/b:0)}')
+        fi
+        _BS_PRESSURE=$(nftban_botscan_pressure_state "$_lr" "$_rr" "${_bh:-0}" "${_mem:-0}" "${_io:-0}")
+        _BS_BACKLOG=$(nftban_botscan_backlog_state "${_BS_BYTES:-0}" "${_prev:-0}")
+        _BS_MODE=$(nftban_botscan_select_mode "$_BS_PRESSURE" "$_BS_BACKLOG")
+        case "$_BS_MODE" in
+            FAIR_SHARE) export BOTSCAN_SCAN_MAX_BYTES_PER_FILE=$(( ${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-262144} / 2 )) ;;
+            SURVIVAL)   export BOTSCAN_SCAN_MAX_BYTES_PER_FILE=$(( ${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-262144} / 4 )); export BOTSCAN_SCAN_PREFILTER=true ;;
+        esac
+        echo "Adaptive: pressure=$_BS_PRESSURE backlog=$_BS_BACKLOG mode=$_BS_MODE (load_ratio=$_lr)"
+    fi
 
     # v1.185 CORE-BOTSCAN-PROCESSOR-TIMEOUT-AT-SCALE — DEADLINE-AWARE SELF-BOUND.
     # Fleet-proven failure: on high-ENTRY-VOLUME hosts (srv2 120 logs 0/53, srv4 17 logs
@@ -1395,6 +1428,21 @@ nftban_botscan_process_logs() {
     local banned
     banned=$(nftban_botscan_analyze) || banned=0
     echo "Banned: $banned IPs"
+
+    # v1.207 — record run-state + health (recording-discipline honored in the writer).
+    # INVARIANT: 0 scanned is NEVER "clean" — a host with input (n>0) but 0 processed
+    # is DEGRADED_INPUT_BLIND; budget-hit / growing-backlog are DEGRADED + visible.
+    if declare -F nftban_botscan_record_runstate >/dev/null 2>&1; then
+        local _dur=$(( SECONDS - start_secs )) _hasin=0 _health
+        [[ "$n" -gt 0 ]] && _hasin=1
+        _health=$(nftban_botscan_health_state "${BOTSCAN_ENABLED:-true}" "$processed" "$banned" "$deadline_hit" "$_BS_BACKLOG" "$_hasin" 0)
+        nftban_botscan_record_runstate \
+            ts="$(date +%s)" dur="$_dur" lines_seen="$processed" lines_scanned="$processed" \
+            budget_hit="$deadline_hit" backlog_bytes="${_BS_BYTES:-0}" \
+            vhosts_scanned="$files_done" vhosts_deferred="$(( n - files_done ))" \
+            bans="$banned" pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
+            backlog_state="$_BS_BACKLOG" health_state="$_health"
+    fi
 
     return 0
 }
