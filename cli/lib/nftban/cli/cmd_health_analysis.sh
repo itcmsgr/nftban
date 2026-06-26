@@ -558,7 +558,7 @@ nftban_health_cmd_rbl() {
 nftban_health_cmd_botscan() {
     # v1.208 — `nftban health botscan --history` summarizes the durable trend.
     case "${1:-}" in
-        --history|history)
+        --history)
             if ! declare -F nftban_botscan_history >/dev/null 2>&1; then
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_botscan_adaptive.sh" 2>/dev/null || true
