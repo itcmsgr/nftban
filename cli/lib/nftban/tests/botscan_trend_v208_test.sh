@@ -110,6 +110,19 @@ nftban_botscan_record_runstate ts=604 dur=2 lines_scanned=0 health_state=DEGRADE
 nftban_botscan_record_runstate ts=605 dur=2 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND scan_mode=FULL >/dev/null 2>&1
 eq "$(wc -l < "$TREND" | tr -d ' ')" "3" "T7.3 OK→BLIND transition records once, then dedupes"
 
+echo "[T8] integration: process_logs with ZERO discovered logs → NO_INPUT_DISCOVERED (+ dedupe)"
+# authoritative proof of the no-access-log path, independent of any host's log discovery.
+T8=$(NFTBAN_LIB_DIR="$NFTBAN_LIB_DIR" NFTBAN_DATA_DIR="$(mktemp -d)" bash -c '
+  export BOTSCAN_ENABLED=true
+  source "$NFTBAN_LIB_DIR/core/nftban_botscan.sh" >/dev/null 2>&1
+  nftban_botscan_discover_logs() { return 0; }   # zero logs discovered
+  for _ in 1 2 3; do nftban_botscan_process_logs "" >/dev/null 2>&1 || true; done
+  echo "hs=$(jq -r .health_state "$NFTBAN_DATA_DIR/botscan/runstate.json" 2>/dev/null)"
+  echo "trec=$(wc -l < "$NFTBAN_DATA_DIR/botscan/trend.jsonl" 2>/dev/null || echo 0)"
+' 2>/dev/null)
+eq "$(echo "$T8" | grep -oE 'hs=[A-Z_]+' | cut -d= -f2)" "NO_INPUT_DISCOVERED" "T8.1 zero-logs path records NO_INPUT_DISCOVERED (not NO_RUN_YET)"
+eq "$(echo "$T8" | grep -oE 'trec=[0-9]+' | cut -d= -f2)" "1" "T8.2 three consecutive no-logs runs → ONE trend record (deduped)"
+
 echo
 echo "================================================="
 echo "Results: $PASS passed, $FAIL failed"
