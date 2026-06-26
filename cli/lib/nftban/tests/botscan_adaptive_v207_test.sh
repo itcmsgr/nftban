@@ -70,19 +70,19 @@ eq "$(nftban_botscan_health_state true 5000 0 0 STABLE 1 0)" "OK_SCANNED_NO_BOTS
 eq "$(nftban_botscan_health_state true 0 0 0 STABLE 1 1)"   "ERROR_RUNTIME_FAILURE" "T4.7 error flag → ERROR"
 
 echo "[T5] recording-discipline guard"
-BOTSCAN_ENABLED=false
+export BOTSCAN_ENABLED=false
 nftban_botscan_record_runstate ts=1 health_state=DISABLED_BY_CONFIG >/dev/null 2>&1 || true
 eq "$([[ -f "$NFTBAN_DATA_DIR/botscan/runstate.json" ]] && echo yes || echo no)" "no" "T5.1 disabled + never-run → NO run-state file written"
-BOTSCAN_ENABLED=true
+export BOTSCAN_ENABLED=true
 nftban_botscan_record_runstate ts=2 dur=10 lines_scanned=1000 bans=2 health_state=OK_SCANNED_BOTS_FOUND pressure_state=NORMAL scan_mode=FULL >/dev/null 2>&1
 eq "$([[ -f "$NFTBAN_DATA_DIR/botscan/runstate.json" ]] && echo yes || echo no)" "yes" "T5.2 enabled run → run-state written"
 eq "$(jq -r '.bans_emitted_total' "$NFTBAN_DATA_DIR/botscan/runstate.json")" "2" "T5.3 bans_total recorded"
-BOTSCAN_ENABLED=false
+export BOTSCAN_ENABLED=false
 nftban_botscan_record_runstate ts=3 health_state=DISABLED_BY_CONFIG disabled_reason="off" >/dev/null 2>&1
 eq "$(jq -r '.health_state' "$NFTBAN_DATA_DIR/botscan/runstate.json")" "DISABLED_BY_CONFIG" "T5.4 disabled WITH prior run → records DISABLED (not clean)"
 
 echo "[T6] counters accumulate (*_total)"
-BOTSCAN_ENABLED=true
+export BOTSCAN_ENABLED=true
 nftban_botscan_record_runstate ts=4 lines_scanned=500 bans=3 health_state=OK_SCANNED_BOTS_FOUND >/dev/null 2>&1
 eq "$(jq -r '.bans_emitted_total' "$NFTBAN_DATA_DIR/botscan/runstate.json")" "5" "T6.1 bans_total accumulates (2+3)"
 eq "$(jq -r '.lines_scanned_total' "$NFTBAN_DATA_DIR/botscan/runstate.json")" "1500" "T6.2 lines_scanned_total accumulates (1000+500)"
