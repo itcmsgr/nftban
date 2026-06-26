@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.208.0] - 2026-06-26 — BotScan trend-history / reporting-truth (shell-only)
+
+**Codename:** `BOTSCAN_TREND_HISTORY` · **PR:** [#963](https://github.com/itcmsgr/nftban/pull/963) (→ `a9b5956c`) · **Scope:** `V208_BOTSCAN_PRESSURE_TREND_SCOPE.md`
+
+> **Shell-only.** Adds durable BotScan pressure/mode history without changing detection, firewall, daemon, or schema. **`nftband` NOT re-baselined (byte-identical with v1.207.0); nft schema 1.84.0 unchanged. No enforcement/topology/ban/RBL/portscan/BotGuard/CLI-parity/updater/central-comms change.** Reuses the watchdog host-vitals trend — no duplicate CPU/RAM store.
+
+### Added
+- **Durable trend** — `/var/lib/nftban/botscan/trend.jsonl`: one JSON record per meaningful run (gated by recording-discipline), bounded retention (`BOTSCAN_TREND_RETENTION`, default 500) + flock + atomic trim. Reuses the watchdog trend for host load/mem/iowait; carries only BotScan's decision + a cheap `load_ratio`.
+- **`nftban health botscan --history`** — summarizes scan-mode / health-state frequency, budget-hit hosts, backlog-GROWING hosts, last OK / last DEGRADED scan; tolerates corrupt/partial trend lines.
+- **`NO_INPUT_DISCOVERED`** health state at the "No access log found" path (fixes non-web hosts' perpetual `NO_RUN_YET`). **Zero-progress dedupe** — consecutive identical no-progress states (NO_INPUT_DISCOVERED or empty-log DEGRADED_INPUT_BLIND) collapse to one trend record (no per-cycle spam).
+
+### Notes
+- State classification: `NO_INPUT_DISCOVERED` = no log source discovered; `DEGRADED_INPUT_BLIND` = log source exists but the scan makes zero useful progress. Both are **not clean**; neither is a crash; repeated zero-progress states dedupe.
+- **Validation:** hermetic 21/0 (incl. an integration test driving `process_logs` with zero discovery → NO_INPUT_DISCOVERED + dedupe) + v207 adaptive regression 29/0 + existing BotScan regressions (nofork-parity, deadline-rotation, request-class incl IPv4/IPv6) PASS; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28262735223) — lab2 trend accrual + `--history`; lab4 no-web → not-clean, not-crash, no spam.
+- **No fleet rollout in this release.** Unified Track-A target → `v1.207.0 → v1.208.0`.
+
 ## [v1.207.0] - 2026-06-26 — BotScan smart-adaptive (pressure/backlog/mode/health, shell-only)
 
 **Codename:** `BOTSCAN_SMART_ADAPTIVE` · **PR:** [#961](https://github.com/itcmsgr/nftban/pull/961) (→ `94b61b1b`) · **Scope:** `V207_BOTSCAN_SMART_ADAPTIVE_SCOPE.md` · **Report:** `V207_BOTSCAN_SMART_ADAPTIVE_IMPL_REPORT.md`
