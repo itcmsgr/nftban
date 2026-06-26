@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.206.2] - 2026-06-26 — Stats count-reconcile + freshness + label hotfix (reporting-only)
+
+**Codename:** `STATS_COUNT_RECONCILE` · **PR:** [#959](https://github.com/itcmsgr/nftban/pull/959) (→ `5b1a1fe9`) · **Report:** `V206_2_STATS_COUNT_RECONCILE_IMPL_REPORT.md`
+
+> **Reporting/stats-only.** Completes the stats-dashboard clarity work after v1.206.1's provenance fix. **No firewall/ban/topology/daemon change (`nftband` byte-identical with v1.206.1); nft schema 1.84.0 unchanged.** An audit-suspected IPv6 producer omission was **retracted** — `nftban stats` counts IPv6 manual bans correctly after a valid collect; the "IPv6=0 right after a ban" was **cache staleness** (snapshot timing), now made explicit.
+
+### Fixed (reporting)
+- **Freshness:** the cache-hit `Data source` stays `UNIFIED CACHE` with a new **Snapshot** line (`collected Ns ago`) + an explicit note that a ban added since the last collect (either family) may not appear until the next collection.
+- **Count reconciliation:** the by-source breakdown now reconciles to `New ban events` via an **`Other/Unclass`** bucket (= total − Σ by-source); if by-source exceeds the total, a different-basis note is shown. No more unexplained `17 vs 9`.
+- **Label disambiguation:** ambiguous bare `Manual` → `Operator/CLI` (By source) and `MANUAL` → `OPERATOR/CLI` (BANS BY MODULE) — the manual/CLI ban *source*, not the manual-hash *set*; operator-manual vs persistent/loginmon vs adopted stays in the PROTECTION BREAKDOWN provenance line.
+- **Active-bans sample:** prints `showing X of N`, lists all when N≤10, and reads BOTH families (interval + manual hash, IPv4 + IPv6) so IPv6 active bans appear.
+
+### Notes
+- Shell/stats-only (`cli/lib/nftban/core/nftban_stats_format.sh` + new test). No `source_index` rewrite; no enforcement/topology/LoginMon/RBL/portscan/CLI-parity/updater-timer/central-comms change. IPv4/IPv6 enforcement remains kernel-proven (v1.206.1 audit).
+- **Validation:** hermetic 17/0 + v1.206.1 provenance regression 16/0; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28199925166) — controlled v4+v6 ban → fresh/live path → IPv6 manual-set `0`→`1` visible.
+- **No fleet rollout in this release.** Production fleet remains **v1.203.0**; unified Track-A retargeted to `v1.203.0 → v1.206.2`.
+
+---
+
 ## [v1.206.1] - 2026-06-25 — Stats manual-attribution + count-clarity hotfix (reporting-only)
 
 **Codename:** `STATS_MANUAL_ATTRIBUTION` · **PR:** [#957](https://github.com/itcmsgr/nftban/pull/957) (→ `f3d6b95b`) · **Evidence:** `V206_FLEET_STATS_MANUAL_ATTRIBUTION_FINDINGS.md`
