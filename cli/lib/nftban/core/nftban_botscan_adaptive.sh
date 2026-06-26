@@ -21,7 +21,8 @@
 # meta:inventory.privileges="root:read-metrics"
 # =============================================================================
 set -Eeuo pipefail
-IFS=$'\n\t'
+# IFS intentionally NOT set globally (codebase convention; avoids ifs-tampering).
+# Every field-splitting read sets IFS locally per-read (e.g. `IFS=' ' read ...`).
 [[ -n "${NFTBAN_BOTSCAN_ADAPTIVE_LOADED:-}" ]] && return 0
 readonly NFTBAN_BOTSCAN_ADAPTIVE_LOADED=1
 
