@@ -1289,6 +1289,14 @@ nftban_botscan_process_logs() {
             echo "ERROR: No access log found" >&2
             echo "  Hint: run 'nftban botscan logs --detect' to see candidate paths and panel detection." >&2
             echo "  Or set BOTSCAN_LOG_PATHS in /etc/nftban/conf.d/botscan/main.conf to your access-log glob(s)." >&2
+            # v1.208 — enabled but no web access logs discovered (common on non-web hosts).
+            # Record NO_INPUT_DISCOVERED (informational, NOT clean, NOT a failure) instead of
+            # leaving a perpetual NO_RUN_YET / absent run-state.
+            if declare -F nftban_botscan_record_runstate >/dev/null 2>&1; then
+                nftban_botscan_record_runstate ts="$(date +%s)" health_state="NO_INPUT_DISCOVERED" \
+                    pressure_state="NORMAL" scan_mode="NONE" backlog_state="STABLE" \
+                    disabled_reason="no access logs discovered on this host"
+            fi
             return 1
         fi
     fi
@@ -1441,7 +1449,7 @@ nftban_botscan_process_logs() {
             budget_hit="$deadline_hit" backlog_bytes="${_BS_BYTES:-0}" \
             vhosts_scanned="$files_done" vhosts_deferred="$(( n - files_done ))" \
             bans="$banned" pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
-            backlog_state="$_BS_BACKLOG" health_state="$_health"
+            backlog_state="$_BS_BACKLOG" health_state="$_health" load_ratio="${_lr:-0}"
     fi
 
     return 0

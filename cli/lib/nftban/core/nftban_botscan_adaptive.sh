@@ -30,6 +30,11 @@ readonly NFTBAN_BOTSCAN_ADAPTIVE_LOADED=1
 readonly _BS_RUNSTATE="${NFTBAN_DATA_DIR}/botscan/runstate.json"
 readonly _BS_OFFSET_DIR="${NFTBAN_DATA_DIR}/botscan/proc-offsets"
 readonly _BS_WATCHDOG_TREND="${NFTBAN_DATA_DIR}/watchdog/trend_hourly.json"
+# v1.208 — durable BotScan pressure/mode trend (append-only, bounded). REUSES the
+# watchdog trend for host load/mem/iowait; this file holds only BotScan's own
+# per-run decision + the cheap load_ratio. NO duplicate host-vitals store.
+readonly _BS_TREND="${NFTBAN_DATA_DIR}/botscan/trend.jsonl"
+: "${BOTSCAN_TREND_RETENTION:=500}"   # keep last N records (bounded)
 
 # --- cheap live load ratio (load1 / nproc) ----------------------------------
 nftban_botscan_load_ratio() {
@@ -172,6 +177,64 @@ nftban_botscan_record_runstate() {
 }
 EOF
     mv -f "${_BS_RUNSTATE}.tmp" "$_BS_RUNSTATE" 2>/dev/null || rm -f "${_BS_RUNSTATE}.tmp"
+    # v1.208 — append one durable trend record (gated by should_record above).
+    nftban_botscan_trend_append v
+    return 0
+}
+
+# --- v1.208 durable trend append (append-only, bounded, dedupe-aware) --------
+# Args: name of the assoc array `v` populated in record_runstate (passed by name).
+nftban_botscan_trend_append() {
+    local -n _v="$1" 2>/dev/null || return 0
+    local hs="${_v[health_state]:-OK_SCANNED_NO_BOTS}"
+    mkdir -p "${_BS_TREND%/*}" 2>/dev/null || true
+    # Dedupe consecutive identical ZERO-PROGRESS records. A no-web host (no logs →
+    # NO_INPUT_DISCOVERED) or an empty-log host (logs found, 0 scanned →
+    # DEGRADED_INPUT_BLIND) re-emits the same state every cycle — do NOT fill the
+    # trend with identical no-progress lines. Any record that scanned > 0 lines is
+    # always recorded (real signal); a state CHANGE is always recorded.
+    local _scanned="${_v[lines_scanned]:-0}"
+    if [[ "${_scanned:-0}" -eq 0 && -s "$_BS_TREND" ]]; then
+        local _last; _last=$(tail -1 "$_BS_TREND" 2>/dev/null)
+        [[ "$_last" == *"\"health_state\":\"$hs\""* ]] && return 0
+    fi
+    local _host; _host=$(hostname -s 2>/dev/null || echo unknown)
+    local rec
+    rec=$(printf '{"ts":%s,"host":"%s","source":"botscan","health_state":"%s","pressure_state":"%s","scan_mode":"%s","backlog_state":"%s","last_duration_sec":%s,"budget_hit":%s,"lines_scanned":%s,"bans_emitted":%s,"vhosts_scanned":%s,"vhosts_deferred":%s,"backlog_bytes":%s,"load_ratio":"%s"}' \
+        "${_v[ts]:-0}" "$_host" "$hs" "${_v[pressure_state]:-NORMAL}" "${_v[scan_mode]:-FULL}" "${_v[backlog_state]:-STABLE}" \
+        "${_v[dur]:-0}" "${_v[budget_hit]:-0}" "${_v[lines_scanned]:-0}" "${_v[bans]:-0}" \
+        "${_v[vhosts_scanned]:-0}" "${_v[vhosts_deferred]:-0}" "${_v[backlog_bytes]:-0}" "${_v[load_ratio]:-0}")
+    # atomic append under flock (processor is single-instance, but guard anyway)
+    {
+        flock -w 2 9 2>/dev/null || true
+        printf '%s\n' "$rec" >> "$_BS_TREND"
+        # bounded retention: trim to last N
+        local _n; _n=$(wc -l < "$_BS_TREND" 2>/dev/null || echo 0)
+        if [[ "${_n:-0}" -gt "${BOTSCAN_TREND_RETENTION:-500}" ]]; then
+            tail -n "${BOTSCAN_TREND_RETENTION:-500}" "$_BS_TREND" > "${_BS_TREND}.tmp" 2>/dev/null \
+                && mv -f "${_BS_TREND}.tmp" "$_BS_TREND" 2>/dev/null || rm -f "${_BS_TREND}.tmp"
+        fi
+    } 9>>"$_BS_TREND" 2>/dev/null || true
+    return 0
+}
+
+# --- v1.208 trend history summary (answers the operator questions) ----------
+nftban_botscan_history() {
+    if [[ ! -s "$_BS_TREND" ]]; then echo "No BotScan trend history yet ($_BS_TREND absent/empty)."; return 0; fi
+    command -v jq >/dev/null 2>&1 || { echo "(jq unavailable — raw tail:)"; tail -10 "$_BS_TREND"; return 0; }
+    local total; total=$(wc -l < "$_BS_TREND" 2>/dev/null)
+    echo "BotScan trend history — $total records ($_BS_TREND)"
+    echo "─────────────────────────────────────────"
+    echo "  Scan modes:"
+    jq -r '.scan_mode' "$_BS_TREND" 2>/dev/null | sort | uniq -c | awk '{printf "    %-12s %s\n", $2, $1}'
+    echo "  Health states:"
+    jq -r '.health_state' "$_BS_TREND" 2>/dev/null | sort | uniq -c | awk '{printf "    %-26s %s\n", $2, $1}'
+    local bh; bh=$(jq -r 'select(.budget_hit==1)|.host' "$_BS_TREND" 2>/dev/null | sort | uniq -c | awk '{printf "%s(%s) ", $2, $1}')
+    echo "  Budget-hit by host: ${bh:-none}"
+    local grow; grow=$(jq -r 'select(.backlog_state=="GROWING")|.host' "$_BS_TREND" 2>/dev/null | sort -u | tr '\n' ' ')
+    echo "  Backlog GROWING (any record): ${grow:-none}"
+    echo "  Last OK scan:       $(jq -rc 'select(.health_state|startswith("OK_"))|"\(.ts) \(.host) \(.scan_mode) scanned=\(.lines_scanned)"' "$_BS_TREND" 2>/dev/null | tail -1 || echo none)"
+    echo "  Last DEGRADED scan: $(jq -rc 'select(.health_state|startswith("DEGRADED_"))|"\(.ts) \(.host) \(.health_state) backlog=\(.backlog_state)"' "$_BS_TREND" 2>/dev/null | tail -1 || echo none)"
     return 0
 }
 
@@ -186,6 +249,7 @@ nftban_botscan_advisory() {
         WARN_PARTIAL_PROGRESS|DEGRADED_PRESSURE_THROTTLED) echo "BotScan: WARN — $hs (mode=$mode, pressure=$pr); coverage reduced but VISIBLE (not clean)." ;;
         DEGRADED_*)                echo "BotScan: DEGRADED — $hs (mode=$mode, pressure=$pr); NOT clean." ;;
         DISABLED_BY_CONFIG)        echo "BotScan: DISABLED (by config)." ;;
+        NO_INPUT_DISCOVERED)       echo "BotScan: NO INPUT — no web access logs found on this host (not scanning; not 'clean'). Informational on a non-web host." ;;
         *)                         echo "BotScan: $hs (mode=$mode)." ;;
     esac
     [[ "$pr" == "HIGH" || "$pr" == "CRITICAL" ]] && echo "Host pressure: $pr — primary load may be the web/db stack; consider web-layer mitigation."
