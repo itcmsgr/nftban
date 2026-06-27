@@ -120,10 +120,22 @@ for g in "${globs[@]}"; do
         count=$((count+1))
         if [[ $count -gt $MAX_FILES ]]; then audit "MAX_FILES=$MAX_FILES reached; remaining skipped"; break 2; fi
         # Privileged incremental read of NEW bytes since the last cycle.
-        new="$(nftban_http_read_incremental "$canon" 2>/dev/null)" || new=""
-        [[ -z "$new" ]] && continue
+        # v1.209.2: STREAM the read straight to the spool file instead of capturing it in a bash
+        # variable (`new="$(...)"`). The old capture materialized up to BOTSCAN_COLLECTOR_MAX_BYTES
+        # (10MB) per source as a shell string (plus a `$()` subshell copy); across 135 DirectAdmin
+        # sources the cumulative bash memory crossed the 256M cgroup cap → collector OOM. Streaming
+        # keeps the per-source footprint to a small pipe buffer. Cursor/offset is persisted INSIDE
+        # nftban_http_read_incremental (inode:offset statefile via tmp+mv), independent of where its
+        # stdout goes — so this changes MEMORY only, not cursor/rotation/crash semantics.
         spf="$SPOOL_DIR/$(printf '%s' "$canon" | tr '/' '_')"
-        if ! printf '%s\n' "$new" >> "$spf" 2>/dev/null; then audit "spool-write-failed: $spf"; continue; fi
+        _bsz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
+        if ! nftban_http_read_incremental "$canon" 2>/dev/null >> "$spf"; then audit "spool-write-failed: $spf"; continue; fi
+        sz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
+        # No NEW bytes appended this cycle → nothing collected (mirrors the old `[[ -z "$new" ]]`).
+        [[ "$sz" -le "$_bsz" ]] && continue
+        # Cycle-boundary newline (mirrors the old `printf '%s\n'`) so a MAX_BYTES mid-line cut cannot
+        # join this cycle's tail to the next cycle's head. At worst one harmless blank line.
+        printf '\n' >> "$spf" 2>/dev/null || true
         chmod 0640 "$spf" 2>/dev/null || true
         sz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
         if [[ "$sz" -gt "$SPOOL_MAX_BYTES" ]]; then
