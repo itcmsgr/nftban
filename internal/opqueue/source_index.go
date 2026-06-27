@@ -37,6 +37,10 @@ var persistSets = map[string]bool{
 	"blacklist_manual_ipv6": true,
 }
 
+// IsPersistedSet reports whether a set's element provenance is tracked/persisted (v1.209).
+// The OpQueue apply boundary uses this to decide whether to record source_index provenance.
+func IsPersistedSet(setName string) bool { return persistSets[setName] }
+
 // IndexEntry represents a persisted index entry
 type IndexEntry struct {
 	Set       string   `json:"set"`

@@ -479,6 +479,11 @@ func (d *Daemon) initOpQueue() error {
 		log.Printf("[OpQueue] Warning: failed to load source index: %v", err)
 	}
 
+	// v1.209 — wire SourceIndex into the OpQueue so the apply boundary records provenance for
+	// EVERY producer's bans (source=botscan/manual/...). Set BEFORE opQueue.Start (below) so no
+	// flush ever runs without it — lifecycle-race-free, no per-module wiring.
+	d.opQueue.SetSourceIndexer(d.sourceIndex)
+
 	// Start async workers
 	d.opQueue.Start(d.ctx)
 	go d.sourceIndex.StartBackgroundSaver(d.ctx)
