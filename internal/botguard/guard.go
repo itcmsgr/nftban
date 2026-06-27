@@ -685,8 +685,8 @@ const (
 	botscanManualSetV4   = "blacklist_manual_ipv4" // durable, drop-enforced (independent of BotGuard)
 	botscanManualSetV6   = "blacklist_manual_ipv6"
 	botscanProvenanceSrc = "botscan"
-	botscanManualBanTTL  = 24 * time.Hour // BotScan-originated blacklist_manual ban TTL (behavioral; re-confirmable)
-	botscanManualGreyTTL = 1 * time.Hour
+	botscanManualBanTTLSec  uint32 = 24 * 3600 // BotScan blacklist_manual ban TTL seconds (behavioral; re-confirmable)
+	botscanManualGreyTTLSec uint32 = 1 * 3600
 )
 
 // processBatchSignals reads a BOUNDED TAIL of batch_signals.jsonl (Clock-3 shell botscan), applies
@@ -841,15 +841,14 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	if ip.Is6() {
 		setName = botscanManualSetV6
 	}
-	ttl := botscanManualBanTTL
+	ttlSec := botscanManualBanTTLSec
 	if sig.Action == "grey" {
-		ttl = botscanManualGreyTTL
+		ttlSec = botscanManualGreyTTLSec
 	}
 	reason := botscanProvenanceSrc
 	if len(sig.Reasons) > 0 {
 		reason = botscanProvenanceSrc + ":" + sig.Reasons[0]
 	}
-	ttlSec := uint32(ttl / time.Second) // #nosec G115 -- bounded constant (<= 24h), fits uint32
 	if err := m.opQueue.EnqueueBan(setName, ip.String(), ttlSec, botscanProvenanceSrc, reason); err != nil {
 		log.Printf("[botguard] botscan blacklist_manual enqueue error for %s: %v", ip, err)
 		return false
