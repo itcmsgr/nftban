@@ -409,6 +409,7 @@ mv -f "\${yq_tmp}" yq_linux_amd64
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
+install -D -m 0755 bin/nftban-botscan-matcher %{buildroot}/usr/lib/nftban/bin/nftban-botscan-matcher
 install -D -m 0755 bin/nftban-validate %{buildroot}/usr/lib/nftban/bin/nftban-validate
 install -D -m 0755 bin/nftban-detect-ssh-ports %{buildroot}/usr/lib/nftban/bin/nftban-detect-ssh-ports
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
@@ -1846,6 +1847,7 @@ build_deb() {
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftband" "${deb_root}/usr/lib/nftban/bin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-botscan-matcher" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-validate" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-detect-ssh-ports" "${deb_root}/usr/lib/nftban/bin/"
     # NB-5: privileged binaries ship 0750 in .deb payload; postinst converges
