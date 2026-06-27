@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.209.2] - 2026-06-28 — BotScan collector gather-OOM streaming fix (shell-only)
+
+**Codename:** `BOTSCAN_COLLECTOR_GATHER_OOM` · **PR:** [#970](https://github.com/itcmsgr/nftban/pull/970) (→ `faeac35c`) · **Scope:** `BOTSCAN_COLLECTOR_GATHER_OOM_SCOPE.md`
+
+> **Shell-only; `nftband` daemon unchanged (byte-identical, source-proven). No schema change (nft 1.84.0). Preserves v1.209.0 BotScan ban-path restoration and v1.209.1 restored detection / bounded scan.** The Track-A closure layer.
+
+### Fixed
+- **Fixes BotScan collector gather OOM on heavy hosts by streaming incremental reads directly to the spool instead of storing per-source chunks in bash variables.** The gather captured each source's incremental read into a shell variable (`new="$(nftban_http_read_incremental "$canon")"`), holding up to `BOTSCAN_COLLECTOR_MAX_BYTES` per source; across many DirectAdmin sources the cumulative bash memory crossed the collector's 256 MB cgroup cap → intermittent OOM. The read now streams straight to the spool file.
+- **Preserves `nftban_http_read_incremental` cursor semantics** — the inode/offset state is persisted inside that function (statefile via tmp+mv) independent of where its stdout goes, so streaming changes memory only, not cursor/rotation/crash behavior.
+
+### Notes
+- **srv3 validation: collector peak reduced from 183–213 MB / intermittent OOM to 112 MB max across 6 successful cycles under unchanged MemoryMax=256M** (no swap added); backlog progressing; fresh BotScan ban path still applies with `source_index=botscan`; admin not banned; failed units 0.
+- **No schema change; daemon unchanged.** No MemoryMax change; no `BOTSCAN_COLLECTOR_MAX_BYTES` change; no matcher / source_index / threshold / firewall change.
+- **Validation:** hermetic `botscan_collector_gather_stream_v2092_test.sh` 15/15 (cursor advance, no-dup, no-loss across cycles, rotation, empty-safe, large-source bounded to MAX_BYTES); **lab2 (DEB) + lab4 (RPM) package-native PASS** (collector streams, gather `result=success`, helper `--check` 152 usable/3 skipped intact, validate rc0, schema 1.84.0).
+
 ## [v1.209.1] - 2026-06-27 — BotScan prefilter correctness + bounded Go matcher (helper-first)
 
 **Codename:** `BOTSCAN_GO_MATCHER` · **PR:** [#968](https://github.com/itcmsgr/nftban/pull/968) (→ `8205e23a`) · **Scope:** `BOTSCAN_GO_AHOCORASICK_MATCHER_SCOPE.md`
