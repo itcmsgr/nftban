@@ -479,6 +479,14 @@ func (d *Daemon) initOpQueue() error {
 		log.Printf("[OpQueue] Warning: failed to load source index: %v", err)
 	}
 
+	// v1.209 — wire SourceIndex to the bot guard module so consumer-applied BotScan bans record
+	// provenance source=botscan (created here, AFTER InitEnforcer's earlier module wiring).
+	if bgMod, ok := d.registry.Get(botguard.ModuleName); ok {
+		if bg, ok := bgMod.(*botguard.Module); ok {
+			bg.InitSourceIndex(d.sourceIndex)
+		}
+	}
+
 	// Start async workers
 	d.opQueue.Start(d.ctx)
 	go d.sourceIndex.StartBackgroundSaver(d.ctx)

@@ -86,6 +86,9 @@ type Module struct {
 	// route BotScan bans to the DURABLE, drop-enforced blacklist_manual_{v4,v6} sets when
 	// BotGuard classification is disabled (http_bot_ban is unenforced then). Set in InitEnforcer.
 	opQueue *opqueue.OpQueue
+	// v1.209 — daemon SourceIndex so consumer-applied BotScan bans record provenance source=botscan
+	// (EnqueueBan's Source field does NOT reach source_index; the reconcile path would tag "unknown").
+	sourceIndex *opqueue.SourceIndex
 
 	// State map: tracked IPs and their classification
 	ips   map[netip.Addr]*IPRecord
@@ -206,6 +209,12 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 func (m *Module) InitEnforcer(queue *opqueue.OpQueue) {
 	m.enforcer = NewEnforcer(queue, m.config)
 	m.opQueue = queue // v1.209: BotScan bans → blacklist_manual via the queue when BotGuard disabled
+}
+
+// InitSourceIndex wires the daemon's SourceIndex so consumer-applied BotScan bans record
+// provenance source=botscan (v1.209). Called by the daemon after the SourceIndex is created.
+func (m *Module) InitSourceIndex(si *opqueue.SourceIndex) {
+	m.sourceIndex = si
 }
 
 // Start begins the classification loop.
@@ -853,6 +862,11 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	if err := m.opQueue.EnqueueBan(setName, ip.String(), ttlSec, botscanProvenanceSrc, reason); err != nil {
 		log.Printf("[botguard] botscan blacklist_manual enqueue error for %s: %v", ip, err)
 		return false
+	}
+	// v1.209 — record provenance source=botscan (EnqueueBan's Source does NOT reach source_index;
+	// without this the reconcile path tags the element "unknown"). blacklist_manual is a persisted set.
+	if m.sourceIndex != nil {
+		m.sourceIndex.AddWithExpiry(setName, ip.String(), botscanProvenanceSrc, time.Now().Add(ttl).Unix())
 	}
 	m.mu.Lock()
 	m.stats.BanCount++
