@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.209.0] - 2026-06-27 — BotScan signal-consumer un-gate + enforced/provenanced ban path (daemon-Go)
+
+**Codename:** `BOTSCAN_SIGNAL_CONSUMER_GATING` · **PR:** [#966](https://github.com/itcmsgr/nftban/pull/966) (→ `dc2c37fc`) · **Scope:** `BOTSCAN_SIGNAL_CONSUMER_GATING_SCOPE.md`
+
+> **Daemon-Go (re-baselined).** Fixes BotScan batch-signal consumption when BotGuard is disabled, without enabling BotGuard. **nft schema 1.84.0 unchanged; no validator-JSON change. BotGuard remains disabled unless explicitly enabled. No enforcement-topology / RBL / portscan / CLI-parity / updater change.**
+
+### Fixed
+- **Fixes BotScan batch-signal consumption when BotGuard is disabled.** BotScan (Clock-3 shell) produces batch ban signals, but the only consumer lived inside BotGuard's classifier tick — which never ran when BotGuard was disabled, so BotScan bans were inert. A standalone, bounded batch-signal consumer now runs even with BotGuard classification off (no suspect-read / FCrDNS / classifier loop started).
+- **Adds stale backlog quarantine / bounded drain to prevent applying old queued BotScan signals.** A mandatory max-age cutoff + bounded tail-drain: stale signals are expired/quarantined, never flood-applied; the daemon never slurps the whole queue file.
+- **Routes fresh BotScan bans to enforced `blacklist_manual_{ipv4,ipv6}` sets with `source_index` provenance** (`source=botscan`) — rather than `http_bot_ban`, which is not drop-enforced when BotGuard is disabled. The enabled path is unchanged.
+- **OpQueue source propagation fixed at the apply boundary** — `EnqueueBan`'s source now reaches `source_index` after a successful add (for persisted blacklist sets), instead of being lost and tagged `unknown` by reconcile. Fixes provenance for every producer, not just BotScan; no module-init timing dependency.
+
+### Notes
+- **Daemon re-baselined** (Go: `internal/opqueue`, `internal/botguard`, `cmd/nftband/daemon_init.go`). No shell logic. **No schema change; BotGuard remains disabled unless explicitly enabled.**
+- **Validation:** `go test ./internal/opqueue ./internal/botguard` green (apply-boundary records `source=botscan`; route v4/v6; stale-quarantine; suppression; enabled-path regression preserved) + CI 53/53; **lab2 (DEB) + lab4 (RPM) package-native PASS** — fresh → `blacklist_manual` + kernel drop + `source_index source=botscan`, stale → quarantined, integrity (schema 1.84.0, BotGuard disabled, validate rc0).
+- **No fleet rollout in this release.** Canary srv4 first (stale backlog must expire/quarantine; only fresh signals apply), then expansion.
+
 ## [v1.208.0] - 2026-06-26 — BotScan trend-history / reporting-truth (shell-only)
 
 **Codename:** `BOTSCAN_TREND_HISTORY` · **PR:** [#963](https://github.com/itcmsgr/nftban/pull/963) (→ `a9b5956c`) · **Scope:** `V208_BOTSCAN_PRESSURE_TREND_SCOPE.md`
