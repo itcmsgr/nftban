@@ -886,9 +886,18 @@ func (m *Module) runBatchSignalConsumer(ctx context.Context) {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
+	// Brief settle before the FIRST drain: module Start() (and this goroutine) runs in daemon init
+	// BEFORE the daemon creates + wires the SourceIndex (InitSourceIndex) and starts the OpQueue.
+	// Draining immediately would apply bans with m.sourceIndex==nil → provenance recorded as
+	// "unknown". A short wait lets init finish wiring; the ticker cadence is unaffected.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(3 * time.Second):
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	m.processBatchSignals() // prompt first drain on start
+	m.processBatchSignals() // first drain (SourceIndex + OpQueue wired by now)
 	for {
 		select {
 		case <-ctx.Done():
