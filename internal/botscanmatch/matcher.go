@@ -120,15 +120,21 @@ func (m *Matcher) Filter(r io.Reader, w io.Writer) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024) // bounded line buffer (4 MiB max line)
 	bw := bufio.NewWriter(w)
-	defer bw.Flush()
 	for sc.Scan() {
 		line := sc.Bytes()
 		if m.MatchLine(line) {
-			bw.Write(line)
-			bw.WriteByte('\n')
+			if _, err := bw.Write(line); err != nil {
+				return err
+			}
+			if err := bw.WriteByte('\n'); err != nil {
+				return err
+			}
 		}
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	return bw.Flush()
 }
 
 // longestLiteral returns the longest literal substring guaranteed to appear in every string

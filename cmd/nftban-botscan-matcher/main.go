@@ -34,6 +34,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/botscanmatch"
@@ -117,7 +118,7 @@ func runFilter(patternFile string) int {
 }
 
 func loadPatterns(path string) ([]string, error) {
-	f, err := os.Open(path) // #nosec G304 -- operator-owned prefilter file from build_prefilter
+	f, err := os.Open(filepath.Clean(path)) // #nosec G304 -- operator-owned prefilter file from build_prefilter
 	if err != nil {
 		return nil, err
 	}
