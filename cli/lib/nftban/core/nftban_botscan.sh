@@ -1379,6 +1379,25 @@ nftban_botscan_process_logs() {
         _pf="$(mktemp 2>/dev/null)" || _pf=""
         [[ -n "$_pf" ]] && { nftban_botscan_build_prefilter "$_pf" || { rm -f "$_pf"; _pf=""; }; }
     fi
+    # v1.209.1 — resolve the prefilter ENGINE once. The legacy `grep -E -f "$_pf"` is rejected
+    # WHOLESALE by GNU grep (rc=2) when any pattern mis-splits on the '|' field delimiter (3 such
+    # alternation patterns ship today) → with `2>/dev/null || true` the prefilter silently returns
+    # EMPTY → process_entry never runs → pattern-based detection is dead. The bounded Go helper
+    # skips those broken patterns visibly and runs the valid corpus. Selection is fail-SAFE: any
+    # helper problem falls through to unfiltered pass-through (detection preserved), NEVER empty.
+    local _bs_pf_bin=""
+    if [[ -n "$_pf" ]]; then
+        local _cand; _cand="$(command -v nftban-botscan-matcher 2>/dev/null)"
+        [[ -z "$_cand" ]] && _cand="${NFTBAN_BIN_DIR:-/usr/lib/nftban/bin}/nftban-botscan-matcher"
+        local _chk
+        if [[ -x "$_cand" ]] && _chk="$("$_cand" --check "$_pf" 2>&1)"; then
+            _bs_pf_bin="$_cand"
+            # Visible once per cycle: usable/skipped counts (skipped = the |-delimiter-broken patterns).
+            echo "[botscan] prefilter engine: Go matcher — ${_chk##*matcher: }" >&2
+        else
+            echo "[botscan] WARN: Go prefilter helper unavailable/invalid — unfiltered pass-through (detection preserved; slower). Install nftban-botscan-matcher." >&2
+        fi
+    fi
     # Anti-starvation rotation: persist where the last cycle stopped so a host whose
     # backlog exceeds one budget still scans EVERY file over successive cycles instead
     # of always draining the first files and starving the tail.
@@ -1410,7 +1429,7 @@ nftban_botscan_process_logs() {
                 if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
                 elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
                 else tail -1000 -- "$f" 2>/dev/null; fi
-            } | { if [[ -n "$_pf" ]]; then LC_ALL=C grep -E -f "$_pf" 2>/dev/null || true; else cat; fi; }
+            } | { if [[ -n "$_bs_pf_bin" ]]; then "$_bs_pf_bin" --filter "$_pf" 2>/dev/null || cat; else cat; fi; }
         )
         files_done=$((files_done + 1))
     done

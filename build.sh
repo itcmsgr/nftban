@@ -248,6 +248,19 @@ build_validator() {
     chmod +x "$BIN_DIR/nftban-detect-ssh-ports"
     ok "Built: $BIN_DIR/nftban-detect-ssh-ports"
 
+    # v1.209.1: BotScan candidate prefilter helper — pure Go, bounded Aho-Corasick + RE2,
+    # replaces the fragile `grep -E -f` prefilter that GNU grep rejects wholesale on the
+    # |-delimiter-mis-split patterns. Shell-invoked (one process per scan file).
+    CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+        go build -trimpath -o "$BIN_DIR/nftban-botscan-matcher" \
+        -ldflags="$LDFLAGS" \
+        ./cmd/nftban-botscan-matcher || {
+        error "Failed to build nftban-botscan-matcher"
+        return 1
+    }
+    chmod +x "$BIN_DIR/nftban-botscan-matcher"
+    ok "Built: $BIN_DIR/nftban-botscan-matcher"
+
     cd "$SCRIPT_DIR"
     return 0
 }
