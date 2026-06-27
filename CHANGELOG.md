@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.209.1] - 2026-06-27 — BotScan prefilter correctness + bounded Go matcher (helper-first)
+
+**Codename:** `BOTSCAN_GO_MATCHER` · **PR:** [#968](https://github.com/itcmsgr/nftban/pull/968) (→ `8205e23a`) · **Scope:** `BOTSCAN_GO_AHOCORASICK_MATCHER_SCOPE.md`
+
+> **Helper-first; `nftband` daemon byte-identical (source-proven — `cmd/nftband` does not import the matcher).** nft schema 1.84.0 unchanged; no validator-JSON change. BotGuard remains disabled unless explicitly enabled. **Daemon ban-path behavior is unchanged from v1.209.0.**
+
+### Fixed
+- **Fixes BotScan prefilter failure caused by invalid pattern-file parsing.** The pattern file uses `|` as its field delimiter, but 3 patterns contain `|` alternation; the shell `IFS='|' read` mis-split them into invalid regex, so `grep -E -f` exited rc=2 and the prefilter (under `2>/dev/null || true`) silently returned empty — suppressing pattern-based BotScan detection where the prefilter is active.
+- **Replaces the fragile shell regex prefilter with a bounded Go hybrid matcher helper** (`nftban-botscan-matcher`: Aho-Corasick literal prefilter + RE2 confirm). Bounded memory fits the BotScan collector's `MemoryMax=256M` cgroup cap — fixes the srv3 collector OOM blocker.
+- **Restores pattern-based BotScan detection for the 152 valid patterns.** **This may increase BotScan bans because previously suppressed detections are now active.**
+- The shell falls through to **unfiltered pass-through** on any helper problem (detection preserved) — it never silently empties.
+
+### Notes
+- **Three delimiter-broken alternation patterns remain skipped visibly and are tracked under `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX`** (155 corpus → 152 active; the 3 are not activated here).
+- **No schema change; BotGuard remains disabled unless explicitly enabled.** No source_index / firewall / ban-path / threshold / action change.
+- **Validation:** `go test ./internal/botscanmatch` green (parity vs grep-equivalent on the real 152-pattern corpus, anchor extraction, RE2 fallback, skip-count, malformed handling); **lab2 (DEB) + lab4 (RPM) package-native PASS** — helper installed, `--check` reports "152 usable, 3 skipped", restoration proof (old grep rc=2/empty vs helper produces candidates), helper == grep(valid) byte-identical, validate rc0, failed units 0, schema 1.84.0, BotGuard disabled.
+
 ## [v1.209.0] - 2026-06-27 — BotScan signal-consumer un-gate + enforced/provenanced ban path (daemon-Go)
 
 **Codename:** `BOTSCAN_SIGNAL_CONSUMER_GATING` · **PR:** [#966](https://github.com/itcmsgr/nftban/pull/966) (→ `dc2c37fc`) · **Scope:** `BOTSCAN_SIGNAL_CONSUMER_GATING_SCOPE.md`
