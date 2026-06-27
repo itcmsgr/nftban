@@ -69,12 +69,18 @@ func TestBotGuardStatusExtra_ToExtraInfo(t *testing.T) {
 		"verify_verified":         int64(8),
 		"verify_failed":           int64(2),
 		"batch_signals_processed": int64(250),
+		// v1.209 — BotScan signal-consumer observability counters (default 0/false in this fixture).
+		"batch_signals_applied":        int64(0),
+		"batch_signals_expired":        int64(0),
+		"batch_signals_malformed":      int64(0),
+		"batch_consumer_runs":          int64(0),
+		"batch_consumer_stale_backlog": false,
 	}
 	got := extra.ToExtraInfo()
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ToExtraInfo() = %v, want %v", got, want)
 	}
-	if len(got) != 16 {
-		t.Errorf("ToExtraInfo() key count = %d, want 16", len(got))
+	if len(got) != 21 {
+		t.Errorf("ToExtraInfo() key count = %d, want 21", len(got))
 	}
 }

@@ -36,6 +36,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/netip"
 	"os"
@@ -80,6 +81,11 @@ type Module struct {
 	verifier   *FCrDNSVerifier
 	classifier *Classifier
 	logger     *Logger
+
+	// v1.209 — direct OpQueue handle so the standalone BotScan batch-signal consumer can
+	// route BotScan bans to the DURABLE, drop-enforced blacklist_manual_{v4,v6} sets when
+	// BotGuard classification is disabled (http_bot_ban is unenforced then). Set in InitEnforcer.
+	opQueue *opqueue.OpQueue
 
 	// State map: tracked IPs and their classification
 	ips   map[netip.Addr]*IPRecord
@@ -199,12 +205,24 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 // Called after daemon creates the OpQueue.
 func (m *Module) InitEnforcer(queue *opqueue.OpQueue) {
 	m.enforcer = NewEnforcer(queue, m.config)
+	m.opQueue = queue // v1.209: BotScan bans → blacklist_manual via the queue when BotGuard disabled
 }
 
 // Start begins the classification loop.
 func (m *Module) Start(ctx context.Context) error {
 	if !m.config.Enabled {
 		log.Printf("[botguard] Module disabled in config")
+		// v1.209 — BotScan (Clock-3 shell) writes ban signals to batch_signals.jsonl. Its only
+		// consumer used to live in the classifier tick, which never ran when BotGuard was
+		// disabled → BotScan bans were inert fleet-wide. Run a STANDALONE, bounded, age-filtered
+		// consumer that routes BotScan bans to the durable, drop-enforced blacklist_manual_{v4,v6}
+		// sets — WITHOUT enabling BotGuard classification (no suspect-read / FCrDNS / classifier).
+		// Requires the OpQueue (set unconditionally in InitEnforcer).
+		if m.config.BatchSignalFile != "" && m.opQueue != nil {
+			ctx, m.cancel = context.WithCancel(ctx)
+			go m.runBatchSignalConsumer(ctx)
+			log.Printf("[botguard] BotScan batch-signal consumer started (classification disabled; bans → blacklist_manual)")
+		}
 		return nil
 	}
 
@@ -294,6 +312,12 @@ type BotGuardStatusExtra struct {
 	VerifyVerified        int64  `json:"verify_verified"`
 	VerifyFailed          int64  `json:"verify_failed"`
 	BatchSignalsProcessed int64  `json:"batch_signals_processed"`
+	// v1.209 — BotScan signal-consumer (un-gate) observability.
+	BatchSignalsApplied       int64 `json:"batch_signals_applied"`
+	BatchSignalsExpired       int64 `json:"batch_signals_expired"`
+	BatchSignalsMalformed     int64 `json:"batch_signals_malformed"`
+	BatchConsumerRuns         int64 `json:"batch_consumer_runs"`
+	BatchConsumerStaleBacklog bool  `json:"batch_consumer_stale_backlog"`
 }
 
 // ToExtraInfo serializes the typed struct into the module.ExtraInfo
@@ -315,7 +339,12 @@ func (e BotGuardStatusExtra) ToExtraInfo() module.ExtraInfo {
 		"verify_completed":        e.VerifyCompleted,
 		"verify_verified":         e.VerifyVerified,
 		"verify_failed":           e.VerifyFailed,
-		"batch_signals_processed": e.BatchSignalsProcessed,
+		"batch_signals_processed":      e.BatchSignalsProcessed,
+		"batch_signals_applied":        e.BatchSignalsApplied,
+		"batch_signals_expired":        e.BatchSignalsExpired,
+		"batch_signals_malformed":      e.BatchSignalsMalformed,
+		"batch_consumer_runs":          e.BatchConsumerRuns,
+		"batch_consumer_stale_backlog": e.BatchConsumerStaleBacklog,
 	}
 }
 
@@ -342,6 +371,12 @@ func (m *Module) Status() module.Status {
 		VerifyVerified:        m.stats.VerifyVerified,
 		VerifyFailed:          m.stats.VerifyFailed,
 		BatchSignalsProcessed: m.stats.BatchSignalsProcessed,
+
+		BatchSignalsApplied:       m.stats.BatchSignalsApplied,
+		BatchSignalsExpired:       m.stats.BatchSignalsExpired,
+		BatchSignalsMalformed:     m.stats.BatchSignalsMalformed,
+		BatchConsumerRuns:         m.stats.BatchConsumerRuns,
+		BatchConsumerStaleBacklog: m.stats.BatchConsumerStaleBacklog,
 	}
 	m.status.Extra = extra.ToExtraInfo()
 
@@ -645,66 +680,207 @@ func (m *Module) pruneExpired() {
 	}
 }
 
-// processBatchSignals reads and processes batch_signals.jsonl from Clock 3 (shell botscan).
-// Reads all lines, applies each signal as a classification input, then truncates the file.
-// Thread-safe: only called from the classification loop goroutine.
+// v1.209 — BotScan batch-signal consumer constants.
+const (
+	botscanManualSetV4   = "blacklist_manual_ipv4" // durable, drop-enforced (independent of BotGuard)
+	botscanManualSetV6   = "blacklist_manual_ipv6"
+	botscanProvenanceSrc = "botscan"
+	botscanManualBanTTLSec  uint32 = 24 * 3600 // BotScan blacklist_manual ban TTL seconds (behavioral; re-confirmable)
+	botscanManualGreyTTLSec uint32 = 1 * 3600
+)
+
+// processBatchSignals reads a BOUNDED TAIL of batch_signals.jsonl (Clock-3 shell botscan), applies
+// only FRESH signals (within WarmupMaxAge), and truncates the file. STALE signals (older than the
+// cutoff) and any backlog beyond the tail window are QUARANTINED — discarded + counted, NEVER
+// applied — so a multi-day unconsumed backlog cannot flood-apply. Bounded by WarmupMaxBytes/Lines/
+// Accepted (never slurps the whole file → no OOM on a 24MB queue).
+//
+// Routing: when BotGuard is ENABLED, applies via the existing BotGuard path (http_bot_ban, which is
+// drop-wired then). When BotGuard is DISABLED, routes BotScan bans to the durable, drop-enforced
+// blacklist_manual_{v4,v6} sets (http_bot_ban is NOT drop-wired when BotGuard is off). Single
+// owner: the BotGuard tick when enabled, the standalone consumer when disabled — never both.
 func (m *Module) processBatchSignals() {
 	signalFile := m.config.BatchSignalFile
 	if signalFile == "" {
 		return
 	}
-
-	// Open the file for reading
 	f, err := os.Open(filepath.Clean(signalFile)) // #nosec G304 -- path from nftbanconf (trusted)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return // No signals yet — normal
+		if !os.IsNotExist(err) {
+			log.Printf("[botguard] batch signal read error: %v", err)
 		}
-		log.Printf("[botguard] batch signal read error: %v", err)
+		return // missing → normal
+	}
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		_ = f.Close()
 		return
 	}
+	size := fi.Size()
 
-	var signals []BatchSignal
-	scanner := bufio.NewScanner(f)
+	// Bounded TAIL: newest signals are appended at the end. Seek to the last maxBytes so we never
+	// read a multi-MiB backlog into memory; the un-read head is discarded by the truncate below
+	// (it is the stale backlog — intended quarantine).
+	maxBytes := m.config.WarmupMaxBytes
+	var startOff int64
+	staleBeyondWindow := false
+	if maxBytes > 0 && size > maxBytes {
+		startOff = size - maxBytes
+		staleBeyondWindow = true
+	}
+	if _, err := f.Seek(startOff, io.SeekStart); err != nil {
+		_ = f.Close()
+		return
+	}
+	reader := bufio.NewReader(f)
+	if startOff > 0 {
+		if _, err := reader.ReadString('\n'); err != nil { // drop the partial first line
+			_ = f.Close()
+			return
+		}
+	}
+
+	var cutoff int64
+	if m.config.WarmupMaxAge > 0 {
+		cutoff = time.Now().Add(-m.config.WarmupMaxAge).Unix()
+	}
+	maxLines := m.config.WarmupMaxLines
+	maxAccepted := m.config.WarmupMaxAccepted
+
+	var fresh []BatchSignal
+	var scanned, expired, malformed int
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 64<<10), 256<<10)
 	for scanner.Scan() {
+		if maxLines > 0 && scanned >= maxLines {
+			break
+		}
 		line := scanner.Bytes()
+		scanned++
 		if len(line) == 0 {
 			continue
 		}
 		var sig BatchSignal
-		if err := json.Unmarshal(line, &sig); err != nil {
-			log.Printf("[botguard] batch signal parse error: %v", err)
+		if err := json.Unmarshal(line, &sig); err != nil || sig.IP == "" {
+			malformed++
 			continue
 		}
-		signals = append(signals, sig)
+		if cutoff > 0 && sig.TS != 0 && sig.TS < cutoff {
+			expired++ // STALE → quarantine, never apply
+			continue
+		}
+		fresh = append(fresh, sig)
+		if maxAccepted > 0 && len(fresh) >= maxAccepted {
+			break
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		log.Printf("[botguard] batch signal scanner error: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		log.Printf("[botguard] batch signal file close error: %v", err)
-	}
+	_ = scanner.Err()
+	_ = f.Close()
 
-	if len(signals) == 0 {
-		return
-	}
-
-	// Truncate the file after reading (atomic: write empty file)
+	// Truncate AFTER reading (atomic empty write). Drops the un-read stale head — the quarantine.
 	if err := os.WriteFile(signalFile, nil, 0600); err != nil { // #nosec G306 -- truncate to empty
 		log.Printf("[botguard] batch signal truncate error: %v", err)
 	}
 
-	// Process each signal
-	for i := range signals {
-		m.applyBatchSignal(&signals[i])
+	toManual := !m.config.Enabled
+	applied := 0
+	for i := range fresh {
+		if toManual {
+			if m.applyBotscanBanSignal(&fresh[i]) {
+				applied++
+			}
+		} else {
+			m.applyBatchSignal(&fresh[i]) // existing BotGuard path (http_bot_ban, drop-wired when enabled)
+			applied++
+		}
 	}
 
 	m.mu.Lock()
-	m.stats.BatchSignalsProcessed += int64(len(signals))
+	m.stats.BatchSignalsProcessed += int64(scanned)
+	m.stats.BatchSignalsApplied += int64(applied)
+	m.stats.BatchSignalsExpired += int64(expired)
+	m.stats.BatchSignalsMalformed += int64(malformed)
+	m.stats.BatchConsumerRuns++
+	m.stats.BatchConsumerStaleBacklog = staleBeyondWindow || expired > 0
 	m.mu.Unlock()
 
+	if (applied > 0 || expired > 0) && m.logger != nil {
+		m.logger.LogEvent("INFO", fmt.Sprintf("batch consumer: applied=%d expired=%d malformed=%d scanned=%d stale_backlog=%v to_manual=%v",
+			applied, expired, malformed, scanned, staleBeyondWindow, toManual))
+	}
+}
+
+// applyBotscanBanSignal enforces a FRESH BotScan batch signal to the DURABLE, drop-enforced
+// blacklist_manual_{v4,v6} set (NOT http_bot_ban, which is unenforced when BotGuard is disabled).
+// Used by the standalone consumer when BotGuard classification is off. Browser-like/static/admin
+// classes are suppressed (never ban from class alone). Whitelist/admin/session safety is preserved
+// by firewall RULE ORDER (the whitelist `accept` precedes the blacklist_manual `drop`, exactly as
+// for every feed/manual ban). Provenance: source=botscan. Returns true if a ban was enqueued.
+func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
+	if m.opQueue == nil {
+		return false
+	}
+	ip, err := netip.ParseAddr(sig.IP)
+	if err != nil {
+		return false
+	}
+	if sig.Action != "ban" && sig.Action != "grey" {
+		return false // only ban/grey actions enforce; allow_demote/extend are no-ops here
+	}
+	// keep decision-cache observability consistent (harmless; never durable)
+	m.recordDecisionTransition(sig, ip)
+	// browser-like / static / e-shop / admin fan-out → never ban from class alone (fail-safe)
+	if m.suppressBrowserLikeBatchBan(sig) {
+		if m.config.LogDecisions {
+			log.Printf("[botguard] botscan: suppressed_browser_like %s class=%s action=%s",
+				ip, sig.NormalizedRequestClass(), sig.Action)
+		}
+		return false
+	}
+	setName := botscanManualSetV4
+	if ip.Is6() {
+		setName = botscanManualSetV6
+	}
+	ttlSec := botscanManualBanTTLSec
+	if sig.Action == "grey" {
+		ttlSec = botscanManualGreyTTLSec
+	}
+	reason := botscanProvenanceSrc
+	if len(sig.Reasons) > 0 {
+		reason = botscanProvenanceSrc + ":" + sig.Reasons[0]
+	}
+	if err := m.opQueue.EnqueueBan(setName, ip.String(), ttlSec, botscanProvenanceSrc, reason); err != nil {
+		log.Printf("[botguard] botscan blacklist_manual enqueue error for %s: %v", ip, err)
+		return false
+	}
+	m.mu.Lock()
+	m.stats.BanCount++
+	m.mu.Unlock()
 	if m.logger != nil {
-		m.logger.LogEvent("INFO", fmt.Sprintf("Processed %d batch signals from Clock 3", len(signals)))
+		m.logger.LogEvent("INFO", fmt.Sprintf("botscan ban → %s ip=%s ttl=%ds reason=%s", setName, ip, ttlSec, reason))
+	}
+	return true
+}
+
+// runBatchSignalConsumer drains BotScan batch signals on a ticker, INDEPENDENT of the BotGuard
+// classifier loop. Used only when BotGuard classification is disabled but BotScan (Clock-3) is
+// producing ban signals — so BotScan bans apply without enabling BotGuard. No suspect-read, no
+// FCrDNS, no classifier; only the bounded + age-filtered processBatchSignals drain.
+func (m *Module) runBatchSignalConsumer(ctx context.Context) {
+	interval := m.config.LoopInterval
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	m.processBatchSignals() // prompt first drain on start (provenance recorded at OpQueue flush boundary)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.processBatchSignals()
+		}
 	}
 }
 

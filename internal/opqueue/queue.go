@@ -595,8 +595,35 @@ type OpQueue struct {
 	// Last flush time
 	lastFlushTime atomic.Value // time.Time
 
+	// v1.209 — provenance recorder, injected once at daemon init (before Start). The apply
+	// boundary records source_index from the op's Source so every producer's bans get correct
+	// provenance (no per-module wiring, no lifecycle race). nil = no provenance recording.
+	sourceIndexer SourceIndexer
+
 	// Running state
 	running atomic.Bool
+}
+
+// SourceIndexer records element provenance at the durable apply boundary (v1.209). The OpQueue
+// depends on this interface — not on any producing module — so wiring is lifecycle-race-free.
+// *SourceIndex satisfies it.
+type SourceIndexer interface {
+	AddWithExpiry(setName, element, source string, expiresAt int64)
+}
+
+// SetSourceIndexer wires the provenance recorder. MUST be called during daemon init BEFORE
+// Start()/any flush so every apply records provenance.
+func (q *OpQueue) SetSourceIndexer(si SourceIndexer) {
+	q.mu.Lock()
+	q.sourceIndexer = si
+	q.mu.Unlock()
+}
+
+// getSourceIndexer returns the wired recorder (race-safe).
+func (q *OpQueue) getSourceIndexer() SourceIndexer {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.sourceIndexer
 }
 
 // NewOpQueue creates a new operation queue
@@ -721,7 +748,7 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 	countBefore := buf.count()
 	if countBefore > 0 {
 		// Flush pending ops first (they'll be discarded by replace anyway)
-		result := buf.flush(q.backend, q.config.MaxBatchSize)
+		result := buf.flush(q.backend, q.config.MaxBatchSize, q.getSourceIndexer())
 		q.pendingCount.Add(-int64(countBefore))
 		q.totalApplied.Add(safeconv.ToUint64OrZero(result.Applied))
 		metrics.RecordEventsApplied("fast", result.Applied)
@@ -869,7 +896,7 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 	}
 
 	// Flush returns post-barrier ops to re-enqueue
-	result := buf.flush(q.backend, q.config.MaxBatchSize)
+	result := buf.flush(q.backend, q.config.MaxBatchSize, q.getSourceIndexer())
 
 	// Release lock after kernel operations
 	if nftLock != nil {
