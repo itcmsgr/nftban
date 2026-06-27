@@ -86,9 +86,6 @@ type Module struct {
 	// route BotScan bans to the DURABLE, drop-enforced blacklist_manual_{v4,v6} sets when
 	// BotGuard classification is disabled (http_bot_ban is unenforced then). Set in InitEnforcer.
 	opQueue *opqueue.OpQueue
-	// v1.209 — daemon SourceIndex so consumer-applied BotScan bans record provenance source=botscan
-	// (EnqueueBan's Source field does NOT reach source_index; the reconcile path would tag "unknown").
-	sourceIndex *opqueue.SourceIndex
 
 	// State map: tracked IPs and their classification
 	ips   map[netip.Addr]*IPRecord
@@ -209,12 +206,6 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 func (m *Module) InitEnforcer(queue *opqueue.OpQueue) {
 	m.enforcer = NewEnforcer(queue, m.config)
 	m.opQueue = queue // v1.209: BotScan bans → blacklist_manual via the queue when BotGuard disabled
-}
-
-// InitSourceIndex wires the daemon's SourceIndex so consumer-applied BotScan bans record
-// provenance source=botscan (v1.209). Called by the daemon after the SourceIndex is created.
-func (m *Module) InitSourceIndex(si *opqueue.SourceIndex) {
-	m.sourceIndex = si
 }
 
 // Start begins the classification loop.
@@ -863,11 +854,6 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 		log.Printf("[botguard] botscan blacklist_manual enqueue error for %s: %v", ip, err)
 		return false
 	}
-	// v1.209 — record provenance source=botscan (EnqueueBan's Source does NOT reach source_index;
-	// without this the reconcile path tags the element "unknown"). blacklist_manual is a persisted set.
-	if m.sourceIndex != nil {
-		m.sourceIndex.AddWithExpiry(setName, ip.String(), botscanProvenanceSrc, time.Now().Add(ttl).Unix())
-	}
 	m.mu.Lock()
 	m.stats.BanCount++
 	m.mu.Unlock()
@@ -886,18 +872,9 @@ func (m *Module) runBatchSignalConsumer(ctx context.Context) {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
-	// Brief settle before the FIRST drain: module Start() (and this goroutine) runs in daemon init
-	// BEFORE the daemon creates + wires the SourceIndex (InitSourceIndex) and starts the OpQueue.
-	// Draining immediately would apply bans with m.sourceIndex==nil → provenance recorded as
-	// "unknown". A short wait lets init finish wiring; the ticker cadence is unaffected.
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(3 * time.Second):
-	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	m.processBatchSignals() // first drain (SourceIndex + OpQueue wired by now)
+	m.processBatchSignals() // prompt first drain on start (provenance recorded at OpQueue flush boundary)
 	for {
 		select {
 		case <-ctx.Done():

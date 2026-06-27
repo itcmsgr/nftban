@@ -32,9 +32,60 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
+
+// fakeSourceIndexer satisfies opqueue.SourceIndexer and records provenance writes so a test can
+// assert the OpQueue apply boundary recorded source=botscan for a consumer-applied ban.
+type fakeSourceIndexer struct {
+	mu   sync.Mutex
+	adds map[string][]string // set -> ["ip|source", ...]
+}
+
+func (f *fakeSourceIndexer) AddWithExpiry(setName, element, source string, _ int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.adds == nil {
+		f.adds = map[string][]string{}
+	}
+	f.adds[setName] = append(f.adds[setName], element+"|"+source)
+}
+
+func (f *fakeSourceIndexer) hasSource(set, ip, source string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, e := range f.adds[set] {
+		if e == ip+"|"+source {
+			return true
+		}
+	}
+	return false
+}
+
+// TestBOTSCAN_BAN_RECORDS_SOURCE_INDEX_BOTSCAN — the apply boundary records source=botscan for a
+// consumer-applied ban (the v1.209 provenance contract fix; race-free, no module init wiring).
+func TestBOTSCAN_BAN_RECORDS_SOURCE_INDEX_BOTSCAN(t *testing.T) {
+	m, b := newEnforcingModule(t)
+	m.config.Enabled = false
+	fsi := &fakeSourceIndexer{}
+	m.opQueue.SetSourceIndexer(fsi)
+	const ip = "45.140.17.99"
+	if !m.applyBotscanBanSignal(freshSig(ip, "scanner", "ban")) {
+		t.Fatalf("ban should enqueue")
+	}
+	if !waitBanned(b, "blacklist_manual_ipv4", ip) {
+		t.Fatalf("ban not applied to blacklist_manual_ipv4")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !fsi.hasSource("blacklist_manual_ipv4", ip, "botscan") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !fsi.hasSource("blacklist_manual_ipv4", ip, "botscan") {
+		t.Fatalf("source_index provenance not recorded as botscan; adds=%v", fsi.adds)
+	}
+}
 
 // freshSig builds a BotScan ban signal with a current timestamp (passes the age cutoff).
 func freshSig(ip, class, action string) *BatchSignal {

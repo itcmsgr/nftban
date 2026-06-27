@@ -479,13 +479,10 @@ func (d *Daemon) initOpQueue() error {
 		log.Printf("[OpQueue] Warning: failed to load source index: %v", err)
 	}
 
-	// v1.209 — wire SourceIndex to the bot guard module so consumer-applied BotScan bans record
-	// provenance source=botscan (created here, AFTER InitEnforcer's earlier module wiring).
-	if bgMod, ok := d.registry.Get(botguard.ModuleName); ok {
-		if bg, ok := bgMod.(*botguard.Module); ok {
-			bg.InitSourceIndex(d.sourceIndex)
-		}
-	}
+	// v1.209 — wire SourceIndex into the OpQueue so the apply boundary records provenance for
+	// EVERY producer's bans (source=botscan/manual/...). Set BEFORE opQueue.Start (below) so no
+	// flush ever runs without it — lifecycle-race-free, no per-module wiring.
+	d.opQueue.SetSourceIndexer(d.sourceIndex)
 
 	// Start async workers
 	d.opQueue.Start(d.ctx)
