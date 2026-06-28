@@ -524,11 +524,12 @@ nftban_botscan_find_log() {
 nftban_botscan_reap_consumed_spool() {
     local f="$1" spooldir="$2" offdir="$3"
     [[ -n "$spooldir" && "$f" == "$spooldir"/* ]] || return 1   # GATE 1: spool files only
-    local k state ino off sz
+    local k state off sz
     k="$(printf '%s' "$f" | tr '/' '_')"
     state="${offdir}/${k}"
-    ino=0; off=0
-    [[ -r "$state" ]] && IFS=':' read -r ino off < "$state" 2>/dev/null
+    off=0
+    # statefile is "inode:offset"; we only need the offset (drop the inode field).
+    [[ -r "$state" ]] && IFS=':' read -r _ off < "$state" 2>/dev/null
     [[ "$off" =~ ^[0-9]+$ ]] || off=0
     sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
     if [[ "${sz:-0}" -gt 0 && "${off:-0}" -ge "${sz:-0}" ]]; then   # GATE 2: fully consumed

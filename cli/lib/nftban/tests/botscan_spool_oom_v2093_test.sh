@@ -114,7 +114,11 @@ if grep -q 'LEGACY_SPOOL_DIR="/run/nftban/botscan"' "$COLLECTOR" \
 else no "T7 legacy cleanup"; fi
 
 # ---- Scanner reap helper (source the core, call the function directly) ----
-reap_env(){ export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban"; source "$CORE" >/dev/null 2>&1; }
+reap_env(){
+  export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban"
+  # shellcheck source=/dev/null
+  source "$CORE" >/dev/null 2>&1
+}
 
 # T8: fully-consumed spool file (offset>=size) IS reaped (file + cursor removed).
 ( reap_env
