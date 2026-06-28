@@ -850,6 +850,20 @@ directories:
       description: "BotScan scanner persistent state (v1.185.1): scan-rotate rotation cursor written by the unprivileged nftban-botscan.service processor (User=nftban). Must be tmpfiles/package-created — the processor runs as nftban and cannot reliably create a subdir under /var/lib/nftban (root:nftban 0750), so the in-script mkdir fails silently and the rotation cursor never persists."
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
+    - path: /var/lib/nftban/botscan/spool
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "BotScan disk-backed read-authority spool (v1.209.3): moved off /run tmpfs so spool pages are reclaimable page-cache rather than unevictable tmpfs pages charged to the collector's 256M cgroup (fixes collector OOM on heavy hosts). nftban:nftban access-log lines written by nftban-botscan-collector.service and read+reaped by the unprivileged nftban-botscan.service scanner; bounded by a total-dir cap + backpressure."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+    - path: /var/lib/nftban/botscan/proc-offsets
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "BotScan scanner forward-cursor offsets (v1.209.3 made explicit): per-spool-file inode:offset state the scanner advances while draining the disk-backed spool. Reaping a fully-consumed spool file removes its cursor here too, keeping cursor and spool in sync."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
     - path: /var/lib/nftban/botscan-collector
       mode: "0750"
       owner: nftban

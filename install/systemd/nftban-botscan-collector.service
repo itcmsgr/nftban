@@ -65,9 +65,12 @@ LockPersonality=true
 RestrictSUIDSGID=true
 RemoveIPC=true
 RestrictAddressFamilies=AF_UNIX
-# Writes ONLY to the spool + its own offset state — nothing else. Tightened to the
-# exact two dirs (not the whole /run/nftban); both are tmpfiles-pre-created at boot.
-ReadWritePaths=/run/nftban/botscan /var/lib/nftban/botscan-collector
+# Writes ONLY to the spool + its own offset state + the spool status file — nothing
+# else. v1.209.3: the spool moved off tmpfs to /var/lib/nftban/botscan (disk-backed,
+# reclaimable page-cache — no more OOM on heavy hosts). /run/nftban kept for the
+# shared scan lock (mutual exclusion with the scanner) and the one-time legacy-spool
+# cleanup. All paths are tmpfiles-pre-created at boot.
+ReadWritePaths=/var/lib/nftban/botscan /var/lib/nftban/botscan-collector /run/nftban
 
 # Timeout after 5 minutes (bounded read should be quick)
 TimeoutStartSec=300
