@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.209.3] - 2026-06-28 — BotScan collector spool-OOM: off-tmpfs disk-backed spool + bounded lifecycle (shell/packaging-only)
+
+**Codename:** `BOTSCAN_COLLECTOR_SPOOL_OOM` · **PR:** [#972](https://github.com/itcmsgr/nftban/pull/972) (→ `d21ca763`) · **Scope:** `V209_3_BOTSCAN_COLLECTOR_SPOOL_OOM_SCOPE.md`
+
+> **Shell/packaging-only; `nftband` daemon unchanged (byte-identical, source-proven — no `.go` change). No schema change (nft 1.84.0). `MemoryMax=256M` unchanged. Preserves v1.209.0 ban-path, v1.209.1 restored detection / bounded scan, and v1.209.2 gather streaming.**
+
+### Fixed
+- **Fixes the REMAINING BotScan collector OOM after v1.209.2.** v1.209.2 removed the bash command-substitution slurp (per-source memory), but the surviving failure was an **unbounded RAM-backed spool** under `/run/nftban/botscan`: the only cap was per spool FILE (10 MB) with **no total-directory bound**, the scanner never reaped consumed files, and `/run` is **tmpfs** — whose pages are unevictable and charged to the collector's 256 MB cgroup. On heavy hosts the summed spool crossed the cap and oom-killed the collector every cadence (srv3: 634 MB / 138 files / **121 OOM-kills in a day** on official v1.209.2).
+- **Spool moved off tmpfs to disk-backed `/var/lib/nftban/botscan/spool`** (collector + scanner). Disk pages are reclaimable page-cache the kernel drops before OOM — this removes the OOM mechanism. The legacy `/run/nftban/botscan` is cleaned up once on startup (guarded to the exact legacy path).
+- **Added a total spool-directory cap + backpressure** (`BOTSCAN_SPOOL_TOTAL_MAX_BYTES`, default 1 GiB): over-cap → the collector skips appends for the cycle **without advancing source offsets** (nothing dropped; resumes next cycle), surfaced visibly — not a silent drop.
+- **Added cursor-aware reaping** — the scanner reaps each spool file once fully consumed (offset ≥ size), gated to files under the spool dir only (never a real access log), race-free via a shared processor lock taken by both the collector and the scanner.
+- **Removed the blind per-file `tail -c` trim** that shortened a file the scanner cursor was mid-read on (cursor desync). Bounding is now total-cap + reaping — neither moves bytes under a live cursor.
+- **`nftban health botscan` now exposes spool pressure** (a `Spool:` line) and reports DEGRADED under backpressure.
+
+### Notes
+- **No daemon change** (`nftband` byte-identical, source-proven — no `.go` changed). **No schema change** (nft 1.84.0). **`MemoryMax=256M` unchanged** — the fix is off-tmpfs + bounded lifecycle, not a memory increase.
+- **Validation:** hermetic `botscan_spool_oom_v2093_test.sh` **14/14** (off-tmpfs default, total-cap backpressure, legacy cleanup, reaping with both safety gates, cursor preservation, unit/tmpfiles wiring); `botscan_read_authority_v178_test.sh` **13/13**; **lab2 (DEB) + lab4 (RPM) package-native PASS** (real collector unit `result=success` writing the disk-backed spool, `nftban health botscan` shows the `Spool:` line, validate rc0, failed units 0, schema 1.84.0). A measurement fix landed in-PR: spool footprint is summed from file content (`find -type f`) rather than `du` (which counted directory metadata and tripped a small cap on XFS).
+- **srv3 live canary runs after publish, not in release-prep.** The three `|`-delimiter-broken alternation patterns (`OPEN_BOTSCAN_PATTERN_DELIMITER_FIX`) and the admin-IP ban exemption (`OPEN_BOTSCAN_ADMIN_IP_EXEMPTION_SCOPE`) remain **separate parked lanes — NOT addressed here.**
+
 ## [v1.209.2] - 2026-06-28 — BotScan collector gather-OOM streaming fix (shell-only)
 
 **Codename:** `BOTSCAN_COLLECTOR_GATHER_OOM` · **PR:** [#970](https://github.com/itcmsgr/nftban/pull/970) (→ `faeac35c`) · **Scope:** `BOTSCAN_COLLECTOR_GATHER_OOM_SCOPE.md`
