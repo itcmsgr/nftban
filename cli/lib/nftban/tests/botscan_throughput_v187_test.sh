@@ -35,6 +35,12 @@ banned_has() { grep -q "\"ip\":\"$1\"" "$(sigfile)" 2>/dev/null; }
 # shellcheck source=/dev/null
 source "$LIB_CORE"
 
+# v1.209.3: these sections re-scan a STATIC spool across cycles to prove the forward
+# cursor drains a backlog with no skipped/duplicated bytes. Disable spool reaping so
+# the spool file persists across cycles; reaping is covered by
+# botscan_spool_oom_v2093_test.sh.
+export BOTSCAN_SPOOL_REAP="false"
+
 # ---------------------------------------------------------------------------
 # (A) FORWARD cursor — backlog > per-file cap drains across cycles, no skip
 # ---------------------------------------------------------------------------

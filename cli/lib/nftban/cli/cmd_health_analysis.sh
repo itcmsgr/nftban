@@ -591,9 +591,26 @@ nftban_health_cmd_botscan() {
     printf "  %-16s %s\n" "Host pressure:" "$pr"
     printf "  %-16s %s\n" "Backlog:" "$bl"
     printf "  %-16s scanned=%s bans=%s last=%ss budget_hit=%s\n" "Counters:" "$scan" "$bans" "$dur" "$bh"
+    # v1.209.3 — disk-backed spool pressure (written by the collector each cycle).
+    # backpressure=1 means the collector is throttling on the total-dir cap; surface
+    # it and escalate to a non-clean return even when the scan health itself is OK.
+    local _spool_degraded=0 _ss="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool.status"
+    if [[ -r "$_ss" ]]; then
+        local _sk _sv _sb=0 _scnt=0 _sbp=0 _spct=0 _sage=0
+        while IFS='=' read -r _sk _sv; do case "$_sk" in
+            total_bytes) _sb="$_sv" ;; file_count) _scnt="$_sv" ;;
+            backpressure) _sbp="$_sv" ;; cap_pct) _spct="$_sv" ;; oldest_age_sec) _sage="$_sv" ;;
+        esac; done < "$_ss"
+        if [[ "${_sbp:-0}" == "1" ]]; then
+            printf "  %-16s %s bytes / %s files / %s%% of cap  ⚠ BACKPRESSURE (collector throttled)\n" "Spool:" "${_sb:-0}" "${_scnt:-0}" "${_spct:-0}"
+            _spool_degraded=1
+        else
+            printf "  %-16s %s bytes / %s files / %s%% of cap (oldest %ss)\n" "Spool:" "${_sb:-0}" "${_scnt:-0}" "${_spct:-0}" "${_sage:-0}"
+        fi
+    fi
     if declare -F nftban_botscan_advisory >/dev/null 2>&1; then echo ""; echo "  $(nftban_botscan_advisory)"; fi
     case "$hs" in
-        OK_*|DISABLED_BY_CONFIG) return 0 ;;
+        OK_*|DISABLED_BY_CONFIG) [[ "$_spool_degraded" == "1" ]] && return 1; return 0 ;;
         ERROR_*) return 2 ;;
         *) return 1 ;;   # WARN_*/DEGRADED_* are visible non-clean states
     esac

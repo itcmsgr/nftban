@@ -39,6 +39,11 @@ export BOTSCAN_STATE_FILE="$tmp/state.db"
 export NFTBAN_HTTP_LOG_OFFSET_DIR="$tmp/offsets"
 export BOTSCAN_ENABLED="true"
 export BOTSCAN_BATCH_SIGNAL_MODE="true"
+# v1.209.3: this test re-scans a STATIC spool across cycles to prove the per-file
+# cursor is honored (cycle2 reads 0 new bytes). Disable spool reaping so the
+# consumed files persist for cycle2; reaping itself is covered by
+# botscan_spool_oom_v2093_test.sh.
+export BOTSCAN_SPOOL_REAP="false"
 mkdir -p "$NFTBAN_DATA_DIR" "$BOTSCAN_SPOOL_DIR" "$BOTSCAN_PATTERNS_DIR" "$tmp/data/botguard"
 
 # 3 spool files with a valid common-log-format line each.

@@ -68,7 +68,7 @@ nftban_botscan_load_config() {
     # auto-detect (never silently blind). Legacy single-path vars above stay honored.
     : "${BOTSCAN_LOG_PATHS:=}"
     # v1.178-A: read-authority spool produced by nftban-botscan-collector.service.
-    : "${BOTSCAN_SPOOL_DIR:=/run/nftban/botscan}"
+    : "${BOTSCAN_SPOOL_DIR:=/var/lib/nftban/botscan/spool}"
     : "${BOTSCAN_DEFAULT_THRESHOLD:=5}"
     : "${BOTSCAN_DEFAULT_WINDOW:=60}"
     : "${BOTSCAN_DEFAULT_BAN_SHORT:=1800}"
@@ -482,7 +482,7 @@ nftban_botscan_discover_logs() {
     # content the scanner cannot obtain directly on DA/cPanel/0640 hosts. If no spool
     # (collector absent/empty), fall back to direct discovery (legacy behavior; will
     # report DEGRADED on blocked hosts via the v1.177 diagnostic).
-    local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}"
+    local _spool="${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}"
     if [[ -d "$_spool" ]]; then
         local -a _sp=()
         for f in "$_spool"/*; do [[ -f "$f" && -r "$f" && -s "$f" ]] && _sp+=("$f"); done
@@ -508,6 +508,35 @@ nftban_botscan_discover_logs() {
 # the first discovered log, or "" if none.
 nftban_botscan_find_log() {
     nftban_botscan_discover_logs 2>/dev/null | head -1
+}
+
+# v1.209.3 — reap a fully-consumed collector spool file (cursor-coordinated). The
+# disk-backed spool (off tmpfs) is bounded by reaping each file once the forward
+# scanner cursor has drained it to EOF. SAFETY GATES (all must hold):
+#   1. the file is UNDER the spool dir — never deletes a real access log;
+#   2. the file is non-empty and the scanner's persisted offset (inode:offset state
+#      written by nftban_http_read_incremental) is >= the file size → fully read.
+# The caller runs only on the batch/processor path, which holds the processor lock
+# the collector also takes — so no collector append can race this delete. After
+# reaping we drop BOTH the spool file and its cursor; the next collector cycle
+# recreates the file fresh and the scanner reads it from offset 0 (collector source
+# offsets are independent) → no duplicate, no loss. Returns 0 if reaped, 1 otherwise.
+nftban_botscan_reap_consumed_spool() {
+    local f="$1" spooldir="$2" offdir="$3"
+    [[ -n "$spooldir" && "$f" == "$spooldir"/* ]] || return 1   # GATE 1: spool files only
+    local k state off sz
+    k="$(printf '%s' "$f" | tr '/' '_')"
+    state="${offdir}/${k}"
+    off=0
+    # statefile is "inode:offset"; we only need the offset (drop the inode field).
+    [[ -r "$state" ]] && IFS=':' read -r _ off < "$state" 2>/dev/null
+    [[ "$off" =~ ^[0-9]+$ ]] || off=0
+    sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+    if [[ "${sz:-0}" -gt 0 && "${off:-0}" -ge "${sz:-0}" ]]; then   # GATE 2: fully consumed
+        rm -f "$f" "$state" 2>/dev/null || true
+        return 0
+    fi
+    return 1
 }
 
 # Parse access log line
@@ -1432,6 +1461,18 @@ nftban_botscan_process_logs() {
             } | { if [[ -n "$_bs_pf_bin" ]]; then "$_bs_pf_bin" --filter "$_pf" 2>/dev/null || cat; else cat; fi; }
         )
         files_done=$((files_done + 1))
+        # v1.209.3: reap this spool file if it is now fully consumed, so the disk-backed
+        # spool does not accumulate. SAFE: only the BATCH (processor) path runs this, it
+        # holds the processor lock that the collector also takes (no append races the
+        # delete), and the helper reaps ONLY files under the spool dir (never a real log).
+        # BOTSCAN_SPOOL_REAP=false disables it (default on) — used by the cursor/rotation
+        # unit tests that re-scan a STATIC spool across cycles, and an operator safety
+        # valve (bounding then relies on the collector total-dir cap + backpressure).
+        if [[ "${BOTSCAN_BATCH_SIGNAL_MODE:-}" == "true" && -z "$log_file" && "${BOTSCAN_SPOOL_REAP:-true}" == "true" ]]; then
+            nftban_botscan_reap_consumed_spool "$f" \
+                "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
+                "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}"
+        fi
     done
 
     # Persist rotation cursor: next cycle starts at the first file we did NOT finish.
@@ -1518,7 +1559,7 @@ nftban_botscan_status() {
         nftban_http_classify_candidates "${BOTSCAN_LOG_PATHS:-}" >/dev/null 2>&1 || true
         local verdict="${_NFTBAN_HTTP_READ_VERDICT:-UNKNOWN}"
         # v1.178-A: collector spool feeds the scanner even when direct source is unreadable.
-        local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}" _spool_fed=0 _sf
+        local _spool="${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" _spool_fed=0 _sf
         if [[ -d "$_spool" ]]; then
             for _sf in "$_spool"/*; do [[ -f "$_sf" && -r "$_sf" && -s "$_sf" ]] && { _spool_fed=1; break; }; done
         fi
