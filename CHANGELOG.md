@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.210.0] - 2026-06-29 — BotScan admin/management never-ban exemption guard (F2; daemon re-baseline)
+
+**Codename:** `BOTSCAN_ADMIN_IP_EXEMPTION` · **PR:** [#974](https://github.com/itcmsgr/nftban/pull/974) (→ `30781ca9`) · **Scope:** `BOTSCAN_ADMIN_IP_EXEMPTION_SCOPE.md`
+
+> **Daemon RE-BASELINED (Go change — `nftband` is NOT byte-identical with v1.209.3; declared openly). No nft schema change (1.84.0). No MemoryMax change, no BotGuard default flip.** Establishes a new central admin/management/live-session **never-ban invariant** at the durable ban-apply boundary.
+
+### Added / Fixed
+- **New central never-ban invariant:** `Backend.Ban()` — the single choke point every ban path funnels through (BotScan batch-signal consumer, EventBus module bans, persistent escalation, manual CLI, BotGuard enforcer) — now **refuses exempt IPs before writing to the drop-enforced `blacklist_manual_{v4,v6}` sets**. Previously, admin/session safety was firewall **rule-ordering only**, not a never-ban invariant: the durable Go apply boundary had no whitelist/management guard, so BotScan/automated paths could write the admin IP into `blacklist_manual` (F2, from the post-v1.209.2 health check; observed on srv1+srv2).
+- **Exemption resolver** (`internal/nftbackend/exemption.go`): range-aware (CIDR), **v4/v6 parity**. Sources = `whitelist.d` (operator / live-session `00-session` / system `00-system`, CIDR-aware) + `safety.DetectSystemIPs` (server/gateway/dns/loopback/current-SSH) + **live established inbound SSH peers** (`/proc/net/tcp{,6}`) + optional `NFTBAN_MANAGEMENT_IPS`. TTL-cached; non-blocking initial load.
+- **Exemption does NOT widen accept/whitelist traffic** — it only prevents a DROP of the operator's own IPs; it adds no allow rule. Firewall rule order is kept as defense-in-depth (a third layer), not the primary guarantee.
+- **Scanner-side exemption list is defense-in-depth, NOT the authority:** the daemon publishes the resolved exempt list to a scanner-readable file; the unprivileged BotScan scanner consults it (exact match, no nft read) to suppress signals early. The daemon `Backend.Ban()` guard is the authoritative never-ban enforcement.
+
+### Notes
+- **Fail-safe:** a resolver failure NEVER blocks a legitimate ban (it falls back to no-exemption + rule order). Non-exempt IPs ban exactly as before; v4 and v6.
+- **Validation:** Go tests (`internal/nftbackend/exemption_test.go`) + shell (`botscan_admin_ip_exemption_test.sh`); **lab2 (DEB) + lab4 (RPM) package-native PASS** — negative control (non-exempt bot reaches `blacklist_manual` v4 and v6), positive controls (whitelisted/CIDR/management/live-session/system IPs never enter `blacklist_manual`, v4+v6), fail-safe and anti-regression (BotScan consumer alive, manual ban of non-exempt works, daemon never crashed). `nftban validate` rc0, failed units 0, BotGuard unchanged (disabled), nft schema 1.84.0.
+- **PR #974 merged cleanly** (CI green; scope = 7 files, no VERSION/schema/MemoryMax in the impl PR). Not addressed here: pattern-delimiter (remains blocked until this ships and live canary/fleet prove the invariant), spool/memory, whitelist-drift.
+
 ## [v1.209.3] - 2026-06-28 — BotScan collector spool-OOM: off-tmpfs disk-backed spool + bounded lifecycle (shell/packaging-only)
 
 **Codename:** `BOTSCAN_COLLECTOR_SPOOL_OOM` · **PR:** [#972](https://github.com/itcmsgr/nftban/pull/972) (→ `d21ca763`) · **Scope:** `V209_3_BOTSCAN_COLLECTOR_SPOOL_OOM_SCOPE.md`
