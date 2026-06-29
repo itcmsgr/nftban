@@ -154,16 +154,21 @@ func (d *Daemon) Run() error {
 		}
 
 		// Execute the ban via nftables backend
-		_, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
+		result, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
 			IP:      e.IP,
 			Timeout: timeout,
 			Reason:  reason,
 			Source:  e.Source,
 		})
-		if err != nil {
+		switch {
+		case err != nil:
 			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
 			metrics.RecordBanError(e.Source, "nft_error")
-		} else {
+		case result != nil && result.Exempt:
+			// v1.209.x F2: the never-ban guard refused this ban (admin/management/
+			// whitelist/system/live-SSH IP). Not an error, not a ban — log honestly.
+			log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", e.IP, e.Source, result.Message)
+		default:
 			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
 			// Record in stats collector
 			d.stats.RecordBan()
