@@ -80,17 +80,37 @@ type Backend struct {
 	tableIPv4Str string
 	tableIPv6Str string
 
+	// v1.209.x F2: authoritative never-ban exemption guard (admin/management/whitelist/
+	// system/live-SSH). Consulted by Ban() before any drop-set write. nil = disabled
+	// (guard not wired) → bans proceed unguarded (pre-existing rule-order behavior).
+	exempt *exemptResolver
+
 	// Statistics
 	stats Stats
 }
 
 // Stats tracks operation counts
 type Stats struct {
-	Bans      int64
-	Unbans    int64
-	Syncs     int64
-	Errors    int64
-	LastError string
+	Bans        int64
+	Unbans      int64
+	Syncs       int64
+	Errors      int64
+	ExemptSkips int64 // bans refused because the IP is never-ban exempt (F2 guard)
+	LastError   string
+}
+
+// EnableExemptionGuard wires the authoritative never-ban exemption guard. configDir is
+// the nftban config dir (for whitelist.d); scannerFile is the path the resolved exempt
+// list is published to for the unprivileged BotScan scanner ("" to skip publishing).
+// Safe to call once at daemon init. Idempotent.
+func (b *Backend) EnableExemptionGuard(configDir, scannerFile string) {
+	r := newExemptResolver(configDir, scannerFile)
+	b.mu.Lock()
+	b.exempt = r
+	b.mu.Unlock()
+	// Warm the snapshot OFF the caller's (daemon startup) path. Refresh must never
+	// block the daemon reaching READY; IsExempt lazily refreshes too.
+	go r.Refresh()
 }
 
 // New creates a new nftables backend with netlink connection
@@ -249,6 +269,7 @@ type BanResult struct {
 	IP      string
 	Set     string
 	Message string
+	Exempt  bool // true if the ban was REFUSED because the IP is never-ban exempt (F2 guard)
 }
 
 // Ban adds an IP to the appropriate blacklist set
@@ -267,6 +288,27 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 			b.stats.Errors++
 			b.stats.LastError = "invalid IP: " + req.IP
 			return nil, fmt.Errorf("invalid IP address: %s", req.IP)
+		}
+	}
+
+	// v1.209.x F2 — AUTHORITATIVE never-ban exemption guard. This is the durable apply
+	// boundary: EVERY ban path (BotScan batch-signal consumer, EventBus module bans,
+	// persistent escalation, manual CLI, BotGuard enforcer) funnels through Ban(), so
+	// enforcing the exemption HERE establishes the never-ban invariant universally —
+	// admin/management/whitelist/system/live-SSH IPs are never written to a drop set,
+	// instead of relying on firewall rule order (the pre-v1.209.x ordering-only model).
+	// Range-aware, v4+v6. Fail-safe: a nil/empty resolver never blocks a legitimate ban.
+	// Exemption ≠ accept: this only prevents a DROP of protected IPs; it adds no allow.
+	if b.exempt != nil {
+		if ok, reason := b.exempt.IsExempt(req.IP); ok {
+			b.stats.ExemptSkips++
+			log.Printf("[BAN] REFUSED (never-ban exempt: %s) ip=%s source=%s — protected admin/management/whitelist/system/live-SSH IP NOT added to blacklist", reason, req.IP, req.Source)
+			return &BanResult{
+				Success: true,
+				IP:      req.IP,
+				Exempt:  true,
+				Message: fmt.Sprintf("not banned: never-ban exempt (%s)", reason),
+			}, nil
 		}
 	}
 

@@ -678,6 +678,17 @@ nftban_botscan_is_whitelisted() {
     [[ "$ip" =~ ^[Ff][CcDd] ]] && return 0
     [[ "$ip" =~ ^[Ff][Ee]80: ]] && return 0
 
+    # v1.209.x F2: daemon-published never-ban exemption list (admin/management/whitelist/
+    # system/live-SSH). Cheap EXACT-match — no nft read needed, so it works under the
+    # unprivileged scanner (which cannot query the nft whitelist set on most hosts). This
+    # is early signal-suppression / defense-in-depth ONLY; range-aware coverage and the
+    # authoritative never-ban invariant are enforced by the daemon at the ban-apply
+    # boundary (Backend.Ban), independent of this gate.
+    local _exempt_file="${BOTSCAN_EXEMPT_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/exempt.list}"
+    if [[ -r "$_exempt_file" ]] && grep -qxF "$ip" "$_exempt_file" 2>/dev/null; then
+        return 0
+    fi
+
     # Check global whitelist
     if [[ "$BOTSCAN_USE_GLOBAL_WHITELIST" == "true" ]]; then
         if type -t nftban_is_whitelisted &>/dev/null; then
