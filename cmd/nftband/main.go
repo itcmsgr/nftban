@@ -60,7 +60,7 @@ func main() {
 	log.Printf("Safety: %s", safety.GetProfileDescription())
 
 	// Create daemon
-	_, configDir, _, _ := getDaemonPaths()
+	_, configDir, dataDir, _ := getDaemonPaths()
 	d := &Daemon{
 		bus:       eventbus.New(),
 		registry:  module.NewRegistry(),
@@ -70,6 +70,12 @@ func main() {
 		connSem:   make(chan struct{}, MaxConcurrentIPCConns),
 		startedAt: time.Now(),
 	}
+
+	// v1.209.x F2: wire the AUTHORITATIVE never-ban exemption guard at the durable apply
+	// boundary (Backend.Ban). Establishes the never-ban invariant for admin/management/
+	// whitelist/system/live-SSH IPs across ALL ban paths, and publishes the resolved
+	// exempt list for the unprivileged BotScan scanner to suppress signals cheaply.
+	d.backend.EnableExemptionGuard(configDir, dataDir+"/botscan/exempt.list")
 
 	// Initialize dynamic watchdog
 	if err := d.initWatchdog(); err != nil {
