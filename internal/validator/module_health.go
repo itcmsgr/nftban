@@ -154,10 +154,20 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 		return h
 	}
 
+	// v1.211 HEALTH-FALSE-ZERO: read enforcement-relevant sets with the 3-valued
+	// reader. A FAILED read (unknown) must NOT collapse to a false "idle"/"enforcing":
+	// a populated/empty set proves state, but a failed query proves nothing.
+	readUnknown := false
+
 	// Check enforcement sets (ban, grey, emergency)
 	enforcementSets := []string{"http_bot_ban", "http_bot_grey", "http_bot_emergency"}
 	for _, s := range enforcementSets {
-		if countSetElements("ip", s) > 0 {
+		count, _, unknown := countSetElementsState("ip", s)
+		if unknown {
+			readUnknown = true
+			continue
+		}
+		if count > 0 {
 			h.Effective = EffectiveEnforcing
 			return h
 		}
@@ -166,13 +176,26 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 	// Check observation sets (suspect, pending)
 	observationSets := []string{"http_bot_suspect", "http_bot_pending"}
 	for _, s := range observationSets {
-		if countSetElements("ip", s) > 0 {
+		count, _, unknown := countSetElementsState("ip", s)
+		if unknown {
+			readUnknown = true
+			continue
+		}
+		if count > 0 {
 			h.Effective = EffectiveObserving
 			return h
 		}
 	}
 
-	// All sets empty → idle (valid per BUG-3 lesson)
+	// A set read FAILED and no live set proved enforcing/observing → we cannot
+	// prove "empty". Degrade (WARN) instead of rendering a false idle/clean.
+	if readUnknown {
+		markEnforcementUnknown(h, "botguard")
+		return h
+	}
+
+	// All sets confirmed empty/absent → idle (valid per BUG-3 lesson; empty set on
+	// an enabled module is NEUTRAL, not noisy).
 	h.Effective = EffectiveIdle
 	return h
 }
@@ -528,12 +551,36 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	// elements > 0 + drops = 0 = PRIMED (rules loaded, no matches yet)
 	// elements = 0 = IDLE
 	// v1.85 GAP-185-9: Count both IPv4 and IPv6 manual blacklist elements.
-	manualElements := countSetElements("ip", "blacklist_manual_ipv4")
-	manualElements += countSetElements("ip6", "blacklist_manual_ipv6")
+	// v1.211 HEALTH-FALSE-ZERO: blacklist_manual is THE enforcement set. Read it with
+	// the 3-valued reader (countSetElementsState) so a FAILED read (permission/timeout/
+	// malformed) degrades to "unknown" instead of collapsing to a false "idle" ("no
+	// bans"). Sum counts ONLY from successful reads; a confirmed-empty set on both
+	// families stays neutral (idle), exactly as before.
+	mv4, _, unknownV4 := countSetElementsState("ip", "blacklist_manual_ipv4")
+	mv6, _, unknownV6 := countSetElementsState("ip6", "blacklist_manual_ipv6")
+	manualElements := 0
+	if !unknownV4 {
+		manualElements += mv4
+	}
+	if !unknownV6 {
+		manualElements += mv6
+	}
 	// Counter: check both families
 	manualDrops := doc.GetCounter("ip", "nftban", "input_blacklist_manual_drop")
 	manualDrops += doc.GetCounter("ip6", "nftban", "input_blacklist_manual_drop")
-	if manualElements > 0 && manualDrops > 0 {
+	if unknownV4 || unknownV6 {
+		// EITHER family read FAILED on THE enforcement set: we cannot prove "no bans".
+		// Degrade (WARN) instead of rendering a false idle/primed/enforcing. Mirrors the
+		// markEnforcementUnknown mechanism used for BotGuard (CodeModuleDegraded /
+		// SeverityWarn finding is the schema-safe surface; State carries "unknown").
+		bh.Manual = BlacklistSubHealth{State: "unknown", Entries: manualElements}
+		moduleFindings = append(moduleFindings, Finding{
+			Code:      CodeModuleDegraded,
+			Severity:  SeverityWarn,
+			Component: "module",
+			Message:   "blacklist_manual set read failed — enforcement state unknown (kernel set query failed; cannot confirm bans loaded vs empty)",
+		})
+	} else if manualElements > 0 && manualDrops > 0 {
 		bh.Manual = BlacklistSubHealth{State: "enforcing", Entries: manualElements, Drops: manualDrops}
 	} else if manualElements > 0 {
 		bh.Manual = BlacklistSubHealth{State: "primed", Entries: manualElements}
@@ -758,4 +805,75 @@ func countSetElementsReal(family, setName string) int {
 		}
 	}
 	return 0
+}
+
+// countSetElementsState is the 3-valued sibling of countSetElements (v1.211
+// HEALTH-FALSE-ZERO). It distinguishes a FAILED read (unknown — cannot prove
+// state) from a genuinely EMPTY set and from a CONFIRMED-ABSENT set, so a set
+// read failure on an enforcement-relevant set degrades the verdict instead of
+// rendering a false idle/clean. It mirrors internal/metrics
+// evidence_sets.go:countSetElementsJSON's contract WITHOUT importing
+// internal/metrics (that would create a package cycle).
+//
+// Returns (count, exists, unknown):
+//
+//	count>0, exists=true,  unknown=false → set present with elements
+//	count=0, exists=true,  unknown=false → set present, empty (NEUTRAL — idle ok)
+//	count=0, exists=false, unknown=false → set confirmed absent (NEUTRAL — idle ok)
+//	count=0, exists=false, unknown=true  → read failed (enforcement state UNKNOWN)
+//
+// countSetElementsStateFunc is the test seam (same indirection pattern as
+// countSetElementsFunc above).
+var countSetElementsStateFunc = countSetElementsStateReal
+
+func countSetElementsState(family, setName string) (count int, exists bool, unknown bool) {
+	return countSetElementsStateFunc(family, setName)
+}
+
+func countSetElementsStateReal(family, setName string) (count int, exists bool, unknown bool) {
+	table := "nftban"
+	out, err := exec.Command("nft", "-j", "list", "set", family, table, setName).Output()
+	if err != nil {
+		// Command failure: could be a missing set, but also a timeout/permission/
+		// exec error. Mark unknown so callers never treat failure as confirmed empty.
+		return 0, false, true
+	}
+
+	// Parse JSON: {"nftables": [{"metainfo":...}, {"set": {..., "elem": [...]}}]}
+	var result struct {
+		Nftables []struct {
+			Set *struct {
+				Elem []interface{} `json:"elem"`
+			} `json:"set,omitempty"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, false, true
+	}
+
+	for _, obj := range result.Nftables {
+		if obj.Set != nil {
+			return len(obj.Set.Elem), true, false
+		}
+	}
+	// Valid JSON, no set object for this name → confirmed absent (NEUTRAL).
+	return 0, false, false
+}
+
+// markEnforcementUnknown records that a set read FAILED for an enforcement-relevant
+// module (v1.211 HEALTH-FALSE-ZERO). The verdict MUST NOT render idle/enforcing as
+// if the set were empty, so the module's Effective axis is left UNSET (omitted from
+// the frozen M81-6 JSON via omitempty — never the false-idle "idle" token) and a
+// SeverityWarn finding is appended. The finding is the schema-safe surface that
+// makes the degraded state visible in `--json` (result.Findings) and the human
+// verdict, the same mechanism used for CodeLoginMonNoInput (see the ModuleHealth
+// note in types.go). This avoids extending the frozen ModuleHealth JSON schema.
+func markEnforcementUnknown(h *ModuleHealth, module string) {
+	h.Effective = "" // never false-idle / false-enforcing on a failed read
+	moduleFindings = append(moduleFindings, Finding{
+		Code:      CodeModuleDegraded,
+		Severity:  SeverityWarn,
+		Component: "module",
+		Message:   module + ": set read failed — enforcement state unknown (kernel set query failed; cannot confirm enforcing vs empty)",
+	})
 }
