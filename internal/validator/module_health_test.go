@@ -86,9 +86,9 @@ func TestBotGuardEnabledPresentIdle(t *testing.T) {
 	})
 	defer cleanup()
 	// Mock: all sets empty → idle (per BUG-3 lesson)
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 0 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 0, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 	// Mock journal: BotGuard startup evidence present
 	SetJournalReader(mockJournalReader{lines: []string{"module_start: botguard"}})
 	defer SetJournalReader(SystemdJournalReader{})
@@ -118,14 +118,14 @@ func TestBotGuardEnabledEnforcing(t *testing.T) {
 	})
 	defer cleanup()
 	// Mock: ban set has elements → enforcing
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, name string) int {
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, name string) (int, bool, bool) {
 		if name == "http_bot_ban" {
-			return 3
+			return 3, true, false
 		}
-		return 0
+		return 0, true, false
 	}
-	defer func() { countSetElementsFunc = old }()
+	defer func() { countSetElementsStateFunc = old }()
 	SetJournalReader(mockJournalReader{lines: []string{"module_start: botguard"}})
 	defer SetJournalReader(SystemdJournalReader{})
 
@@ -145,14 +145,14 @@ func TestBotGuardEnabledObserving(t *testing.T) {
 	})
 	defer cleanup()
 	// Mock: suspect set has elements, ban set empty → observing
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, name string) int {
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, name string) (int, bool, bool) {
 		if name == "http_bot_suspect" {
-			return 5
+			return 5, true, false
 		}
-		return 0
+		return 0, true, false
 	}
-	defer func() { countSetElementsFunc = old }()
+	defer func() { countSetElementsStateFunc = old }()
 	SetJournalReader(mockJournalReader{lines: []string{"module_start: botguard"}})
 	defer SetJournalReader(SystemdJournalReader{})
 
@@ -210,9 +210,9 @@ func TestBotGuardJournalEvidencePresent(t *testing.T) {
 		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
 	})
 	defer cleanup()
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 0 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 0, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 	SetJournalReader(mockJournalReader{lines: []string{
 		"module_start: botguard",
 	}})
@@ -237,9 +237,9 @@ func TestBotGuardJournalNoEvidence(t *testing.T) {
 		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
 	})
 	defer cleanup()
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 0 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 0, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 	// Journal has output but no BotGuard lines
 	SetJournalReader(mockJournalReader{lines: []string{
 		"some other daemon output",
@@ -273,9 +273,9 @@ func TestBotGuardJournalUnavailable(t *testing.T) {
 		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
 	})
 	defer cleanup()
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 0 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 0, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 	// Journal exec fails
 	SetJournalReader(mockJournalReader{errKind: ErrExec, err: errors.New("exec failed")})
 	defer SetJournalReader(SystemdJournalReader{})
@@ -660,10 +660,10 @@ func TestBlacklistManualIdle(t *testing.T) {
 		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
 	})
 	defer cleanup()
-	// Mock: manual set empty → idle
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 0 }
-	defer func() { countSetElementsFunc = old }()
+	// Mock: manual set empty → idle (present, 0 elements, not unknown)
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 0, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 
 	sets := []string{"blacklist_ipv4", "blacklist_manual_ipv4"}
 	doc := buildDoc(nil, sets)
@@ -689,9 +689,9 @@ func TestBlacklistManualPrimed(t *testing.T) {
 	})
 	defer cleanup()
 	// Mock: manual set has 5 entries per family → 10 total (IPv4+IPv6)
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 5 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 5, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 
 	sets := []string{"blacklist_ipv4", "blacklist_manual_ipv4"}
 	doc := buildDoc(nil, sets)
@@ -712,9 +712,9 @@ func TestBlacklistManualEnforcing(t *testing.T) {
 	})
 	defer cleanup()
 	// Mock: manual set has 3 entries
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 3 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 3, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 
 	// Build doc with manual drop counter > 0
 	objects := []NftObject{
@@ -745,9 +745,9 @@ func TestBlacklistManualPrimedZeroDrops(t *testing.T) {
 		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
 	})
 	defer cleanup()
-	old := countSetElementsFunc
-	countSetElementsFunc = func(_, _ string) int { return 2 }
-	defer func() { countSetElementsFunc = old }()
+	old := countSetElementsStateFunc
+	countSetElementsStateFunc = func(_, _ string) (int, bool, bool) { return 2, true, false }
+	defer func() { countSetElementsStateFunc = old }()
 
 	// Counter exists but zero packets
 	objects := []NftObject{
