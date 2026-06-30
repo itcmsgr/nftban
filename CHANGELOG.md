@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.211.0] - 2026-06-30 — Health-truth core: LoginMon watcher respawn + nft-read unknown contract (daemon re-baseline)
+
+**Codename:** `HEALTH_TRUTH_CORE` · **PR:** [#978](https://github.com/itcmsgr/nftban/pull/978) (→ `edb3ed87`) · **Scope:** `OPEN_STABILITY_HOTFIX_GO_HEALTHTRUTH_IMPL_SCOPE.md`
+
+> **Daemon RE-BASELINED** (Go change in `internal/loginmon` + `internal/validator` — `nftband` NOT byte-identical with v1.210.0; declared openly). **No nft schema change (1.84.0). No nft topology change. BotGuard default unchanged (disabled).** Closes the two P0 "health-truth / lies green" defects.
+
+### Fixed
+- **LoginMon journal watcher no longer dies silently** (`BUG-LOGINMON-JOURNAL-WATCHER-NO-RESPAWN`): `runJournalWatcher` is now a **bounded-backoff supervisor** (mirrors the file-watcher pattern; reuses `watcherBackoffMin/Max`/`watcherHealthyReset`, ctx-aware). When `journalctl -f` exits (journald restart, EOF, OOM), the watcher respawns — the **daemon does NOT restart**, only the watcher. Login detection no longer goes dark while status reads protected.
+- **Runtime input-source state is no longer a stale boot snapshot**: the journal source surfaces `OK` / `WATCHER_DEGRADED` (transient restart) / `WATCHER_DOWN` (≥3 consecutive short fails) / recovered, via `Status().Extra.InputSources`.
+- **Health validator no longer collapses nft set-read errors into a semantic zero** (`HEALTH_FALSE_SAFE_FIX`): a validator-local 3-valued reader `(count, exists, unknown)` (mirrors `internal/metrics/evidence_sets.go` without importing it — no package cycle) backs the BotGuard verdict and the enforcement-critical `blacklist_manual` sub-health. A failed read now surfaces **`unknown` → WARN/DEGRADED** (via a `SeverityWarn`/`CodeModuleDegraded` Finding; `Effective` unset / `State:"unknown"`) instead of a false `idle`/clean.
+- **Empty and disabled/not-installed modules remain neutral** — the `zero = NEUTRAL` rule is preserved (only a *failed read* degrades, never a genuinely-empty set).
+- Minimal health/status visibility wiring (Findings + InputSources); the full status/health truth-matrix (TODO-30/31) is NOT in this lane.
+
+### Validation
+- Go build / vet / test / `-race` GREEN (lab2). **Package-native lab2 DEB + lab4 RPM PASS** — install COMMITTED 16/16; `nftban validate` rc0; `nftban health` no false-WARN on clean hosts (blacklist_manual reads enforcing/primed, not false-unknown); `nftban status` renders; NFTBan failed units 0; nft schema 1.84.0; VERSION 1.210.0 (pre-bump); BotGuard disabled; installed daemon carries the fix.
+- **Journal-watcher kill/respawn simulation: PASS both labs** (daemon NRestarts 0, watcher respawned `WATCHER_DEGRADED → DOWN/respawn → RESPAWNED`, detection recovered). Set-read unknown behavior hermetically/`-race` proven.
+
+### Notes
+- **Explicitly out of scope** (separate lanes): Trust-Feeds label, BotScan lost-ban-signal, `SET_APPLY_SINGLE_WRITER`, pattern-delimiter, whitelist-drift, opqueue atomicity, SCDV/security-hardening, RBL/auditor/central-comms/Suricata, Aho-Corasick, MalwareGuard, docs/site/wiki.
+- PR #978 merged CI-green (53 pass / 0 fail; all 10 required contexts SUCCESS); one in-PR gosec G104 (unhandled `Kill()` at shutdown) fixed minimally.
+
 ## [v1.210.0] - 2026-06-29 — BotScan admin/management never-ban exemption guard (F2; daemon re-baseline)
 
 **Codename:** `BOTSCAN_ADMIN_IP_EXEMPTION` · **PR:** [#974](https://github.com/itcmsgr/nftban/pull/974) (→ `30781ca9`) · **Scope:** `BOTSCAN_ADMIN_IP_EXEMPTION_SCOPE.md`
