@@ -883,16 +883,27 @@ _status_section_protection() {
     echo ""
 
     # Trust Feeds (CDN whitelist - including Cloudflare)
+    # v1.211.1 STATUS_LABEL_TRUTH: resolve nftban-core at its installed path (it ships in
+    # /usr/lib/nftban/bin, NOT on $PATH, so a bare `command -v` falsely yields NOT INSTALLED),
+    # and count enabled providers from the stable `trust list --json` (`"enabled": true`) rather
+    # than grepping the human text for the word "enabled" (which false-matches the help line
+    # "...apply all enabled" and never matches the [✓]/[✗] markers).
     local trust_status="NOT INSTALLED"
-    local trust_count=0
-    if command -v nftban-core &>/dev/null; then
-        local trust_output
-        trust_output=$(nftban-core trust list 2>/dev/null) || true
-        trust_count=$(echo "$trust_output" | grep -c "enabled" 2>/dev/null) || trust_count=0
-        if [[ $trust_count -gt 0 ]]; then
-            trust_status="ENABLED ($trust_count feeds)"
+    local trust_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    [[ ! -x "$trust_core" ]] && trust_core="/usr/lib/nftban/bin/nftban-core"
+    [[ ! -x "$trust_core" ]] && trust_core=$(command -v nftban-core 2>/dev/null || echo "")
+    if [[ -n "$trust_core" ]] && [[ -x "$trust_core" ]]; then
+        local trust_json="" trust_count=0
+        trust_json=$("$trust_core" trust list --json 2>/dev/null) || trust_json=""
+        if [[ -z "$trust_json" ]] || ! printf '%s' "$trust_json" | grep -q '"trusts"'; then
+            trust_status="UNKNOWN"   # installed but trust list unreadable/malformed — not a false DISABLED
         else
-            trust_status="DISABLED"
+            trust_count=$(printf '%s\n' "$trust_json" | grep -cE '"enabled":[[:space:]]*true' || true)
+            if [[ "${trust_count:-0}" -gt 0 ]]; then
+                trust_status="ENABLED ($trust_count feeds)"
+            else
+                trust_status="DISABLED"
+            fi
         fi
     fi
     printf "  %-20s %s\n" "Trust Feeds........." "$trust_status"
