@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.211.1] - 2026-06-30 — Trust-Feeds status label truth (shell-only; daemon byte-identical)
+
+**Codename:** `STATUS_LABEL_TRUTH` · **PR:** [#980](https://github.com/itcmsgr/nftban/pull/980) (→ `3e29f913`) · **Scope:** `OPEN_TRUSTFEEDS_LABEL_SHELL_FIX_SCOPE.md`
+
+> **Shell-only** (`cli/lib/nftban/cli/cmd_status.sh` + one hermetic test). **`nftband` daemon BYTE-IDENTICAL** (source-proven — 0 `.go` change). **No daemon re-baseline. nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).**
+
+### Fixed
+- **`nftban status` no longer renders Trust-Feeds as a false `NOT INSTALLED`** when `nftban-core` is installed. The block used a bare `command -v nftban-core`, which fails because the binary ships in `/usr/lib/nftban/bin` (off `$PATH`) → the whole block was skipped → default `NOT INSTALLED`. Now resolves `${NFTBAN_LIB_DIR}/bin/nftban-core` → `/usr/lib/nftban/bin/nftban-core` → `command -v nftban-core`; genuinely absent → `NOT INSTALLED`.
+- **Enabled-count truth:** replaced `grep -c "enabled"` on the human text (which false-matched the help line "…apply all enabled" and never matched the `[✓]/[✗]` markers) with `trust list --json` counting `"enabled": true` — **0 enabled → `DISABLED`**, **N enabled → `ENABLED (N feeds)`**, **malformed/empty/unreadable JSON → `UNKNOWN`** (not a false `DISABLED`).
+
+### Validation
+- Hermetic test (`cli_trustfeeds_label_truth_v211_1_test.sh`) extracts the REAL shipped block and drives it (2→`ENABLED (2 feeds)`, 0→`DISABLED`, absent→`NOT INSTALLED`, malformed→`UNKNOWN`, no false positive from literal "enabled" text). **Package-native lab2 DEB + lab4 RPM PASS** — both now render `Trust Feeds......... DISABLED` (json enabled-count 0, agrees), `nftban validate` rc0, schema 1.84.0, BotGuard disabled, daemon carries no change.
+
+### Notes
+- Producer `cmd/nftban-core/cmd_trust.go` unchanged (`--json` already present).
+- **Explicitly out of scope** (separate lanes): BotScan lost-ban-signal, `SET_APPLY_SINGLE_WRITER`, pattern-delimiter, whitelist-drift, opqueue, SCDV/security-hardening, RBL/Suricata, Aho-Corasick, MalwareGuard.
+
 ## [v1.211.0] - 2026-06-30 — Health-truth core: LoginMon watcher respawn + nft-read unknown contract (daemon re-baseline)
 
 **Codename:** `HEALTH_TRUTH_CORE` · **PR:** [#978](https://github.com/itcmsgr/nftban/pull/978) (→ `edb3ed87`) · **Scope:** `OPEN_STABILITY_HOTFIX_GO_HEALTHTRUTH_IMPL_SCOPE.md`
