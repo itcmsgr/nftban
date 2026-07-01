@@ -388,6 +388,7 @@ _nft_ipc_sync_marker() {
 # Trigger a FULL daemon reconcile sync (quick=false), debounced + retried.
 # Usage: nft_ipc_sync [force]   (force=1 bypasses the debounce window)
 # Returns: 0 on success (or coalesced), nonzero if all IPC attempts fail.
+# shellcheck disable=SC2120  # force is an optional arg; callers may omit it (debounce path)
 nft_ipc_sync() {
     local force="${1:-0}"
     local marker
