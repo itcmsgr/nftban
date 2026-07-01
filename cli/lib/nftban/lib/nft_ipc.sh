@@ -354,6 +354,101 @@ nft_ipc_apply_ruleset() {
     fi
 }
 
+# =============================================================================
+# v1.213.0: FULL-SYNC TRIGGER (SET_APPLY_SINGLE_WRITER — Design A)
+# =============================================================================
+# The daemon's full `sync` (handleSyncRequest, quick=false) flush-replaces the
+# interval blacklist_/whitelist_ sets from the SAME durable sources the shell
+# writes (feeds /var/lib/nftban/feeds/*.txt, geoban /etc/nftban/geoban.d/*.conf,
+# trust /etc/nftban/whitelist.d/*.conf). Feeds/geoban/trust therefore write
+# their durable source and then trigger a FULL sync here, instead of pushing an
+# additive add/delete element via apply_ruleset. That makes the daemon full sync
+# the effective SOLE WRITER of those sets (no second additive writer to clobber).
+#
+# CONTRACT (all callers identical):
+#   - FULL sync only (quick=false). A quick sync SKIPS feeds/geoban/whitelist
+#     reconcile and would NOT apply the durable-source change — NEVER send quick.
+#   - Debounced: rapid successive calls inside NFTBAN_SYNC_DEBOUNCE_SECONDS
+#     coalesce into ONE sync (storm avoidance). The existing periodic reconcile
+#     timer is the trailing backstop for any coalesced (pending-marked) request.
+#   - Retries with backoff; returns nonzero if every attempt fails so the caller
+#     can fall back to the legacy additive apply (mixed-version rollout safety).
+#   - Ordering is the caller's responsibility: write the durable source FIRST,
+#     then trigger the sync (never sync-then-write).
+
+# Coalescing / retry knobs (test-overridable)
+NFTBAN_SYNC_DEBOUNCE_SECONDS="${NFTBAN_SYNC_DEBOUNCE_SECONDS:-3}"
+NFTBAN_SYNC_RETRIES="${NFTBAN_SYNC_RETRIES:-3}"
+NFTBAN_SYNC_RETRY_DELAY="${NFTBAN_SYNC_RETRY_DELAY:-1}"
+
+_nft_ipc_sync_marker() {
+    echo "${NFTBAN_RUN_DIR:-/run/nftban}/.sync_last"
+}
+
+# Trigger a FULL daemon reconcile sync (quick=false), debounced + retried.
+# Usage: nft_ipc_sync [force]   (force=1 bypasses the debounce window)
+# Returns: 0 on success (or coalesced), nonzero if all IPC attempts fail.
+nft_ipc_sync() {
+    local force="${1:-0}"
+    local marker
+    marker="$(_nft_ipc_sync_marker)"
+
+    # Debounce: coalesce rapid successive full-sync requests into one.
+    if [[ "$force" != "1" && "${NFTBAN_SYNC_DEBOUNCE_SECONDS}" -gt 0 && -f "$marker" ]]; then
+        local last now
+        last="$(cat "$marker" 2>/dev/null || echo 0)"
+        [[ "$last" =~ ^[0-9]+$ ]] || last=0
+        now="$(date +%s 2>/dev/null || echo 0)"
+        if [[ "$now" -ge "$last" && $((now - last)) -lt "${NFTBAN_SYNC_DEBOUNCE_SECONDS}" ]]; then
+            # A full sync ran within the debounce window; coalesce this request.
+            # The periodic reconcile timer flushes the pending marker as a backstop.
+            : > "${marker}.pending" 2>/dev/null || true
+            return 0
+        fi
+    fi
+
+    # FULL sync (quick=false). NEVER quick — quick skips feeds/geoban/whitelist.
+    local params='{"quick":false}'
+    local attempt=0 delay="${NFTBAN_SYNC_RETRY_DELAY}" response
+    while [[ "$attempt" -lt "${NFTBAN_SYNC_RETRIES}" ]]; do
+        response="$(nft_ipc_request "sync" "$params")"
+        if nft_ipc_success "$response"; then
+            date +%s > "$marker" 2>/dev/null || true
+            rm -f "${marker}.pending" 2>/dev/null || true
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        if [[ "$attempt" -lt "${NFTBAN_SYNC_RETRIES}" ]]; then
+            sleep "$delay" 2>/dev/null || true
+            delay=$((delay * 2))
+        fi
+    done
+    return 1
+}
+
+# Trigger a FULL sync; on IPC failure fall back to the legacy additive apply so
+# a ban/allow is not lost during the mixed-version rollout window. The daemon
+# still accepts the legacy additive apply (no reject-guard in v1.213.0).
+# Usage: nft_ipc_sync_or_apply <module_name> <fallback_nft_file>
+# Returns: 0 on success (sync OR fallback apply), nonzero on total failure.
+nft_ipc_sync_or_apply() {
+    local module="${1:-nftban}"
+    local fallback_file="${2:-}"
+
+    if nft_ipc_sync; then
+        return 0
+    fi
+
+    echo "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" >&2
+    logger -t nftban "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" 2>/dev/null || true
+
+    if [[ -n "$fallback_file" && -f "$fallback_file" ]]; then
+        nft_ipc_apply_ruleset "$fallback_file"
+        return $?
+    fi
+    return 1
+}
+
 # Check if IP is banned
 # Usage: nft_ipc_check <ip>
 # Returns: 0 if banned, 1 if not banned
@@ -626,6 +721,10 @@ nft_ipc_load_ports() {
 export NFTBAN_DAEMON_SOCKET
 export NFTBAN_IPC_TIMEOUT
 export NFTBAN_EMERGENCY_MODE
+# v1.213.0 SET_APPLY_SINGLE_WRITER coalescing/retry knobs
+export NFTBAN_SYNC_DEBOUNCE_SECONDS
+export NFTBAN_SYNC_RETRIES
+export NFTBAN_SYNC_RETRY_DELAY
 
 export -f nft_ipc_is_daemon_running
 export -f nft_ipc_request
@@ -637,6 +736,10 @@ export -f nft_ipc_add_element
 export -f nft_ipc_delete_element
 export -f nft_ipc_flush_set
 export -f nft_ipc_apply_ruleset
+# v1.213.0 SET_APPLY_SINGLE_WRITER (Design A): full-sync trigger + sync-or-apply
+export -f _nft_ipc_sync_marker
+export -f nft_ipc_sync
+export -f nft_ipc_sync_or_apply
 export -f nft_ipc_check
 export -f nft_ipc_status
 export -f nft_smart_ban

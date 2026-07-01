@@ -509,9 +509,15 @@ _trust_apply_to_nft() {
         fi
     fi
 
-    # Apply via IPC if we have elements
+    # v1.213.0 SET_APPLY_SINGLE_WRITER (Design A): the durable source
+    # (/etc/nftban/whitelist.d/30-trust-<provider>.conf) is already written
+    # upstream by _trust_write_whitelist; trigger a FULL daemon sync (which
+    # flush-replaces whitelist_ipv4/_ipv6 from whitelist.d via state.LoadWhitelists)
+    # instead of an additive add-element. The fragment is kept as the legacy
+    # IPC-failure fallback (mixed-version rollout safety). Ordering is
+    # write-durable-source-THEN-sync.
     if [[ -s "$nft_fragment" ]]; then
-        if nft_ipc_apply_ruleset "$nft_fragment" 2>/dev/null; then
+        if nft_ipc_sync_or_apply "trust" "$nft_fragment" 2>/dev/null; then
             _trust_log "INFO" "Applied ${ipv4_count} IPv4 + ${ipv6_count} IPv6 CIDRs to whitelist sets"
             rm -f "$nft_fragment"
             return 0
@@ -570,7 +576,16 @@ _trust_remove_from_nft() {
     fi
 
     if [[ -s "$nft_fragment" ]]; then
-        nft_ipc_apply_ruleset "$nft_fragment" 2>/dev/null || true
+        # v1.213.0 SET_APPLY_SINGLE_WRITER (Design A): removal is reconciled from
+        # the durable source. Remove this provider's whitelist.d conf FIRST
+        # (write-durable-source-THEN-sync ordering) so the FULL daemon sync
+        # flush-replaces whitelist_ipv4/_ipv6 WITHOUT the provider's CIDRs — a
+        # true single-writer removal, not an additive delete-element. The delete
+        # fragment (built from the still-present cache above) is kept as the
+        # legacy IPC-failure fallback (mixed-version rollout safety).
+        # _trust_clear_whitelist (called later in the disable flow) is idempotent.
+        rm -f "$(_trust_get_whitelist_file "$provider")" 2>/dev/null || true
+        nft_ipc_sync_or_apply "trust" "$nft_fragment" 2>/dev/null || true
         _trust_log "INFO" "Removed ${provider} CIDRs from whitelist sets"
     fi
 

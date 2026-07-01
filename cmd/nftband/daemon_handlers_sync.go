@@ -226,10 +226,22 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// SAME canonical replace as feeds + geoban (below) so the flush-first replace OWNS
 	// them and they survive feed reload. The interval blacklist sets are therefore NOT
 	// synced via FullSync's string diff anymore (nil below) — replaceSetElementsViaFile
-	// is the SOLE writer of blacklist_ipv4/_ipv6. Combining all CIDR sources into ONE
-	// replace also closes a pre-existing feed-vs-geoban clobber (two sequential pure
-	// replaces → last source wins). Single IPs were already repointed to the hash sets
-	// above. IPv4+IPv6.
+	// is the canonical writer of blacklist_ipv4/_ipv6 from the durable sources (feeds
+	// *.txt + geoban.d + blacklist.d CIDRs). Combining all CIDR sources into ONE replace
+	// also closes a pre-existing feed-vs-geoban clobber (two sequential pure replaces →
+	// last source wins). Single IPs were already repointed to the hash sets above.
+	// IPv4+IPv6.
+	//
+	// v1.213.0 SET_APPLY_SINGLE_WRITER (Design A) — phased writer contract:
+	//   - v1.213.0 shell (feeds/geoban/trust) writes its durable source then triggers a
+	//     FULL sync (this handler) instead of pushing an additive add/delete element, so
+	//     this replace is the effective NORMAL-PATH sole writer of the interval sets.
+	//   - For mixed-version rollout safety the daemon STILL ACCEPTS the legacy additive
+	//     apply_ruleset path (handleApplyRulesetRequest); there is intentionally NO hard
+	//     reject-guard here yet. The reject-guard that makes single-writer *enforced* is
+	//     DEFERRED to a phased follow-up after the fleet has fully converged onto the
+	//     v1.213.0 shell. So "sole writer" describes the v1.213 normal path + the target
+	//     end state, not an enforced invariant in this release.
 	_ = blacklistIPv4 // single IPs handled above; CIDRs flow through the unified replace
 	_ = blacklistIPv6
 	unifiedBlacklistV4 := append([]string(nil), blacklistIPv4CIDR...)
