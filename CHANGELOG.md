@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.212.0] - 2026-07-01 — BotScan lost-ban-signal fix (flock-guarded rename-then-consume; daemon re-baseline)
+
+**Codename:** `BOTSCAN_LOST_BAN_SIGNAL` · **Impl PR:** [#983](https://github.com/itcmsgr/nftban/pull/983) (→ `fe75ec03`) · **Scope:** `OPEN_BOTSCAN_LOST_BAN_SIGNAL_SCOPE.md`
+
+> **Daemon RE-BASELINED** (Go change in `internal/botguard`). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Closes the BotScan lost-ban-signal P0 (enforcement loss).
+
+- **The race:** the producer appended ban signals to `batch_signals.jsonl` with a bare `>>` (no lock), and the daemon consumer did `os.Open` → read → `os.WriteFile(signalFile, nil)` **truncate of the LIVE file** — a signal appended in the open→truncate window was silently destroyed, with no counter (live fleet-wide via the BotGuard-disabled standalone consumer).
+- **Producer fix** (`cli/lib/nftban/core/nftban_botscan.sh`): `nftban_botscan_write_signal()` appends under a shared `flock` on `${signal_file}.lock`; safe degrade if `flock` absent (still line-atomic; daemon rename is the primary guard); a real write failure is visible / returns nonzero — never a silent drop.
+- **Consumer fix** (`internal/botguard/guard.go`): no truncate of the live file; under the SAME flock (held only around the O(1) op) it atomically renames `batch_signals.jsonl` → `.consuming`, releases the lock, then processes `.consuming` OUTSIDE the lock (bounded-tail / max-age / max-lines quarantine + malformed + expired + idempotent apply unchanged) and removes it on success. A prior-crash `.consuming` is recovered first each cycle. Zero loss: an append is either in the renamed file (processed) or the fresh next-cycle file — the flock forbids append-during-rename.
+- **Health visibility** (`internal/botguard/types.go` + `guard.go`): new counters `BatchHandoffErrors` + `BatchStaleConsumingRecovered` (omitempty in status Extra); a broken handoff is WARN/DEGRADE-visible instead of a false PROTECTED.
+- **Validation:** Go hermetic 8/8 PASS (forced-interleave zero-loss, stale-consuming recovery, handoff-error, idempotent, bounded-tail, no-live-truncate regression guard) + `go test -race` clean; shell hermetic (concurrent-writer no-corruption, safe-degrade, visible-failure) + shellcheck clean; **package-native lab2 DEB + lab4 RPM PASS** — daemon carries the fix, schema 1.84.0, validate rc0, failed units 0, BotGuard disabled; **functional signal injection + concurrent-append no-loss proven on both distros**.
+
 ## [v1.211.1] - 2026-06-30 — Trust-Feeds status label truth (shell-only; daemon byte-identical)
 
 **Codename:** `STATUS_LABEL_TRUTH` · **PR:** [#980](https://github.com/itcmsgr/nftban/pull/980) (→ `3e29f913`) · **Scope:** `OPEN_TRUSTFEEDS_LABEL_SHELL_FIX_SCOPE.md`
