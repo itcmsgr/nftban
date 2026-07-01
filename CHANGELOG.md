@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.213.0] - 2026-07-02 — SET_APPLY_SINGLE_WRITER: route sync-owned writers through FULL sync (shell-side; daemon byte-identical)
+
+**Codename:** `SET_APPLY_SINGLE_WRITER` · **Impl PR:** [#985](https://github.com/itcmsgr/nftban/pull/985) (→ `03d6af59`) · **Docs:** `OPEN_SET_APPLY_SINGLE_WRITER_V213_{SCOPE,IMPL_SCOPE,FEED_PIPELINE_SPIKE,WRITER_SURFACE_CLASSIFICATION,IMPL_REPORT}.md`
+
+> **Daemon re-baseline: NO** — the only `cmd/nftband` change is a comment (0 logic lines); the `nftband` binary is functionally **byte-identical**. The behavior change is **shell-side** and rides the EXISTING daemon `sync` verb. **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Closes the SET_APPLY_SINGLE_WRITER P0 (sync-owned set lost-update/clobber).
+
+- **The clobber class:** the daemon `sync` flush-replaces the sync-owned interval sets from durable sources — `blacklist_ipv4/_ipv6` (feeds `/var/lib/nftban/feeds/*.txt`, geoban `/etc/nftban/geoban.d/50-ban-*.conf`) and `whitelist_ipv4/_ipv6` (trust `/etc/nftban/whitelist.d/30-trust-*.conf`) — under `syncMutex`, while the shell modules ALSO pushed additive `add/delete element` via IPC `apply_ruleset` under `backend.mu`. Two daemon-executed writers under different mutexes → a flush-replace to a stale snapshot could **drop a just-applied element** (lost-update; not a fail-open empty-set window).
+- **Affected normal-path modules:** **feeds, geoban, trust** (the writer-surface classification proved all three are the same class — SAME_SOURCE writers to sync-owned interval sets; `cmd_flush`/operator-unban = documented WATCH; `ddos_suricata`/`cmd_port`/emergency = exempt, non-sync-owned).
+- **New invariant:** the daemon full `sync` is the **authoritative writer** for sync-owned interval sets. Each module writes its durable source first, then triggers a **FULL** sync. **Quick sync is never used** (it skips feeds/geoban/whitelist reconcile). Shared shell helpers: `nft_ipc_sync` (`{"quick":false}`, debounced + retry/backoff) and `nft_ipc_sync_or_apply` (on sync-IPC failure → legacy additive apply + visible `[WARN] … fell back to legacy additive apply`).
+- **Legacy additive apply remains ONLY as an IPC-failure compatibility fallback.** The **daemon reject-guard is DEFERRED** to a later phased hardening after fleet convergence — the daemon still accepts legacy additive `apply_ruleset`, so old-shell↔new-daemon and new-shell↔old-daemon are both safe during rollout.
+- **Validation:** PR #985 merged; CI green after an in-scope SC2120 fix; hermetic shell **12/12** + grep-guard **18/18**; shellcheck `-S warning` clean; `go build`/`go vet` rc0; **package-native lab2 DEB + lab4 RPM PASS** — **trust set-level no-clobber proof** (whitelist element survives a 2nd full sync + a daemon restart, removed on source removal), feeds/geoban full-sync reconcile counter-stable, IPC-fail fallback WARN live; admin IP never banned; validate rc0; no empty-set window.
+- **Canary:** **srv4 mandatory after publish** — the live ban/allow application path changed (even though the daemon binary is byte-identical).
+
 ## [v1.212.0] - 2026-07-01 — BotScan lost-ban-signal fix (flock-guarded rename-then-consume; daemon re-baseline)
 
 **Codename:** `BOTSCAN_LOST_BAN_SIGNAL` · **Impl PR:** [#983](https://github.com/itcmsgr/nftban/pull/983) (→ `fe75ec03`) · **Scope:** `OPEN_BOTSCAN_LOST_BAN_SIGNAL_SCOPE.md`
