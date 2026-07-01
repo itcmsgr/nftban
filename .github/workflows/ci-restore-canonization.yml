@@ -84,7 +84,7 @@ jobs:
 
       - name: Set up Go (DEB only)
         if: matrix.label == 'ubuntu-24.04'
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
           # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
           # GOTOOLCHAIN=local intentionally NOT set here: the RPM matrix legs
