@@ -43,6 +43,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/botguard/decisioncache"
@@ -318,12 +319,16 @@ type BotGuardStatusExtra struct {
 	BatchSignalsMalformed     int64 `json:"batch_signals_malformed"`
 	BatchConsumerRuns         int64 `json:"batch_consumer_runs"`
 	BatchConsumerStaleBacklog bool  `json:"batch_consumer_stale_backlog"`
+	// v1.212 — lost-ban-signal handoff health (additive, omitempty → schema-safe; a nonzero
+	// value lets health WARN/DEGRADE the module instead of a false PROTECTED).
+	BatchHandoffErrors           int64 `json:"batch_handoff_errors,omitempty"`
+	BatchStaleConsumingRecovered int64 `json:"batch_stale_consuming_recovered,omitempty"`
 }
 
 // ToExtraInfo serializes the typed struct into the module.ExtraInfo
 // map[string]any contract expected by module.Status.Extra.
 func (e BotGuardStatusExtra) ToExtraInfo() module.ExtraInfo {
-	return module.ExtraInfo{
+	info := module.ExtraInfo{
 		"loop_interval":           e.LoopInterval,
 		"pressure_mode":           e.PressureMode,
 		"tracked_ips":             e.TrackedIPs,
@@ -346,6 +351,16 @@ func (e BotGuardStatusExtra) ToExtraInfo() module.ExtraInfo {
 		"batch_consumer_runs":          e.BatchConsumerRuns,
 		"batch_consumer_stale_backlog": e.BatchConsumerStaleBacklog,
 	}
+	// v1.212 — additive, omitempty: only surface the hand-off health counters when NONZERO, so a
+	// healthy consumer keeps the existing map shape and a broken hand-off becomes visible (>0 →
+	// health can WARN/DEGRADE instead of a false PROTECTED).
+	if e.BatchHandoffErrors != 0 {
+		info["batch_handoff_errors"] = e.BatchHandoffErrors
+	}
+	if e.BatchStaleConsumingRecovered != 0 {
+		info["batch_stale_consuming_recovered"] = e.BatchStaleConsumingRecovered
+	}
+	return info
 }
 
 // Status returns the current module status.
@@ -377,6 +392,9 @@ func (m *Module) Status() module.Status {
 		BatchSignalsMalformed:     m.stats.BatchSignalsMalformed,
 		BatchConsumerRuns:         m.stats.BatchConsumerRuns,
 		BatchConsumerStaleBacklog: m.stats.BatchConsumerStaleBacklog,
+
+		BatchHandoffErrors:           m.stats.BatchHandoffErrors,
+		BatchStaleConsumingRecovered: m.stats.BatchStaleConsumingRecovered,
 	}
 	m.status.Extra = extra.ToExtraInfo()
 
@@ -689,38 +707,148 @@ const (
 	botscanManualGreyTTLSec uint32 = 1 * 3600
 )
 
-// processBatchSignals reads a BOUNDED TAIL of batch_signals.jsonl (Clock-3 shell botscan), applies
-// only FRESH signals (within WarmupMaxAge), and truncates the file. STALE signals (older than the
-// cutoff) and any backlog beyond the tail window are QUARANTINED — discarded + counted, NEVER
-// applied — so a multi-day unconsumed backlog cannot flood-apply. Bounded by WarmupMaxBytes/Lines/
-// Accepted (never slurps the whole file → no OOM on a 24MB queue).
+// batchSignalConsumingSuffix is appended to the signal file to form the private, consumer-owned
+// hand-off file. Producers (nftban_botscan.sh) NEVER touch this path — only the daemon renames
+// the live signal file to it, processes it, and removes it.
+const batchSignalConsumingSuffix = ".consuming"
+
+// processBatchSignals drains BotScan batch signals (Clock-3 shell botscan) using a flock-guarded
+// ATOMIC RENAME-THEN-CONSUME hand-off (v1.212, OPEN_BOTSCAN_LOST_BAN_SIGNAL). The pre-v1.212 code
+// read the LIVE file and then truncated it to empty in place — destroying any signal the producer
+// appended in the open->truncate window (lost ban, with no counter).
 //
-// Routing: when BotGuard is ENABLED, applies via the existing BotGuard path (http_bot_ban, which is
-// drop-wired then). When BotGuard is DISABLED, routes BotScan bans to the durable, drop-enforced
-// blacklist_manual_{v4,v6} sets (http_bot_ban is NOT drop-wired when BotGuard is off). Single
-// owner: the BotGuard tick when enabled, the standalone consumer when disabled — never both.
+// New model:
+//  1. STALE .consuming recovery: if a prior crash left a `.consuming` (rename done, processing not),
+//     process + remove it FIRST so it is never orphaned; count BatchStaleConsumingRecovered. If it
+//     cannot be cleared (persists across cycles) that is a hand-off error → count + return.
+//  2. ATOMIC HAND-OFF: take a shared flock on a STABLE sibling lockfile (the producer takes the
+//     SAME lock around its append) ONLY around the O(1) os.Rename(signalFile → .consuming), then
+//     release. Append-vs-rename are now mutually exclusive: a producer append lands either in the
+//     renamed file (processed this cycle) or in a fresh signalFile (processed next cycle) — never
+//     destroyed in a gap. No truncate of a live file.
+//  3. CONSUME OUTSIDE THE LOCK: apply the `.consuming` file with the UNCHANGED bounded-tail /
+//     WarmupMaxAge / WarmupMaxLines / WarmupMaxBytes / WarmupMaxAccepted quarantine, then remove it
+//     only after a successful drain. Lock/rename/remove failures increment BatchHandoffErrors so
+//     health can WARN/DEGRADE (never a false PROTECTED when the hand-off is broken).
+//
+// Routing is unchanged: BotGuard ENABLED → http_bot_ban (drop-wired then); BotGuard DISABLED →
+// durable, drop-enforced blacklist_manual_{v4,v6}. Single owner (tick or standalone, never both).
 func (m *Module) processBatchSignals() {
 	signalFile := m.config.BatchSignalFile
 	if signalFile == "" {
 		return
 	}
-	f, err := os.Open(filepath.Clean(signalFile)) // #nosec G304 -- path from nftbanconf (trusted)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("[botguard] batch signal read error: %v", err)
+	consumingFile := signalFile + batchSignalConsumingSuffix
+
+	// BatchConsumerRuns counts once per cycle regardless of which drains run below.
+	m.mu.Lock()
+	m.stats.BatchConsumerRuns++
+	m.mu.Unlock()
+
+	// Step 1 — STALE .consuming recovery (prior-crash residue). Process it FIRST so a crashed
+	// hand-off is never orphaned or lost. The .consuming path is private to the consumer (the
+	// producer only ever appends to signalFile), so processing it outside the lock is safe.
+	if _, err := os.Stat(consumingFile); err == nil {
+		m.mu.Lock()
+		m.stats.BatchStaleConsumingRecovered++
+		m.mu.Unlock()
+		if perr := m.consumeSignalFile(consumingFile); perr != nil {
+			// Could not clear the stale .consuming (it persists across cycles) → hand-off error.
+			// Do NOT rename over it (that would risk clobbering an un-consumed hand-off); surface
+			// the broken hand-off via the counter and retry next cycle.
+			m.mu.Lock()
+			m.stats.BatchHandoffErrors++
+			m.mu.Unlock()
+			log.Printf("[botguard] batch stale .consuming recovery failed (persists): %v", perr)
+			return
 		}
-		return // missing → normal
+	}
+
+	// Step 2 — atomic hand-off: flock ONLY around the O(1) rename.
+	renamed, err := m.renameSignalForConsume(signalFile, consumingFile)
+	if err != nil {
+		m.mu.Lock()
+		m.stats.BatchHandoffErrors++
+		m.mu.Unlock()
+		log.Printf("[botguard] batch signal hand-off (lock/rename) error: %v", err)
+		return
+	}
+	if !renamed {
+		return // missing/empty source → nothing to consume this cycle (normal)
+	}
+
+	// Step 3 — process the renamed file OUTSIDE the lock (slow read/apply); remove on success.
+	if perr := m.consumeSignalFile(consumingFile); perr != nil {
+		m.mu.Lock()
+		m.stats.BatchHandoffErrors++
+		m.mu.Unlock()
+		log.Printf("[botguard] batch signal consume/cleanup error: %v", perr)
+	}
+}
+
+// renameSignalForConsume takes a shared flock on a STABLE sibling lockfile (`signalFile+".lock"`,
+// which is NEVER renamed) and, while holding it, atomically renames a NON-EMPTY signalFile to
+// consumingFile, then releases the lock. The producer (nftban_botscan.sh) takes the SAME lock
+// around its append, so an append and this rename are mutually exclusive → zero signal loss.
+// Flocking signalFile's own fd would be unsafe: the rename replaces the inode, so a producer that
+// opened the new inode would not be excluded (mirrors internal/persistence/blacklistd.go). Returns
+// (true,nil) if a file was renamed for consumption, (false,nil) if there was nothing to consume,
+// and (false,err) on a lock/stat/rename failure (a broken hand-off).
+func (m *Module) renameSignalForConsume(signalFile, consumingFile string) (bool, error) {
+	lockPath := signalFile + ".lock"
+	lockF, err := os.OpenFile(filepath.Clean(lockPath), os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return false, fmt.Errorf("open lock %s: %w", lockPath, err)
+	}
+	defer func() { _ = lockF.Close() }()
+	if err := syscall.Flock(int(lockF.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -- fd fits in int
+		return false, fmt.Errorf("flock %s: %w", lockPath, err)
+	}
+	defer func() { _ = syscall.Flock(int(lockF.Fd()), syscall.LOCK_UN) }() // #nosec G115 -- fd fits in int
+
+	fi, err := os.Stat(signalFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // nothing produced this cycle
+		}
+		return false, fmt.Errorf("stat %s: %w", signalFile, err)
+	}
+	if fi.Size() == 0 {
+		return false, nil // empty → nothing to consume
+	}
+	if err := os.Rename(signalFile, consumingFile); err != nil {
+		return false, fmt.Errorf("rename %s -> %s: %w", signalFile, consumingFile, err)
+	}
+	return true, nil
+}
+
+// consumeSignalFile applies a captured `.consuming` hand-off file using the UNCHANGED bounded-tail
+// + age-cutoff quarantine (WarmupMaxBytes/MaxAge/MaxLines/MaxAccepted), then removes it. It reads a
+// BOUNDED TAIL (never slurps the whole file → no OOM on a multi-MiB backlog); STALE signals (older
+// than WarmupMaxAge) and any backlog beyond the tail window are QUARANTINED (counted, never
+// applied). It runs OUTSIDE the flock — producers append to a fresh signalFile meanwhile. A non-nil
+// return means the file could not be cleared after a successful drain (a broken hand-off).
+func (m *Module) consumeSignalFile(path string) error {
+	f, err := os.Open(filepath.Clean(path)) // #nosec G304 -- consumer-private .consuming of a trusted nftbanconf path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // already gone → nothing to do
+		}
+		return fmt.Errorf("open %s: %w", path, err)
 	}
 	fi, err := f.Stat()
-	if err != nil || fi.Size() == 0 {
+	if err != nil {
 		_ = f.Close()
-		return
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if fi.Size() == 0 {
+		_ = f.Close()
+		return os.Remove(path) // empty hand-off → just clear it
 	}
 	size := fi.Size()
 
 	// Bounded TAIL: newest signals are appended at the end. Seek to the last maxBytes so we never
-	// read a multi-MiB backlog into memory; the un-read head is discarded by the truncate below
-	// (it is the stale backlog — intended quarantine).
+	// read a multi-MiB backlog into memory; the un-read head is the stale backlog (quarantined).
 	maxBytes := m.config.WarmupMaxBytes
 	var startOff int64
 	staleBeyondWindow := false
@@ -730,13 +858,13 @@ func (m *Module) processBatchSignals() {
 	}
 	if _, err := f.Seek(startOff, io.SeekStart); err != nil {
 		_ = f.Close()
-		return
+		return fmt.Errorf("seek %s: %w", path, err)
 	}
 	reader := bufio.NewReader(f)
 	if startOff > 0 {
 		if _, err := reader.ReadString('\n'); err != nil { // drop the partial first line
 			_ = f.Close()
-			return
+			return fmt.Errorf("read %s: %w", path, err)
 		}
 	}
 
@@ -777,11 +905,6 @@ func (m *Module) processBatchSignals() {
 	_ = scanner.Err()
 	_ = f.Close()
 
-	// Truncate AFTER reading (atomic empty write). Drops the un-read stale head — the quarantine.
-	if err := os.WriteFile(signalFile, nil, 0600); err != nil { // #nosec G306 -- truncate to empty
-		log.Printf("[botguard] batch signal truncate error: %v", err)
-	}
-
 	toManual := !m.config.Enabled
 	applied := 0
 	for i := range fresh {
@@ -800,7 +923,6 @@ func (m *Module) processBatchSignals() {
 	m.stats.BatchSignalsApplied += int64(applied)
 	m.stats.BatchSignalsExpired += int64(expired)
 	m.stats.BatchSignalsMalformed += int64(malformed)
-	m.stats.BatchConsumerRuns++
 	m.stats.BatchConsumerStaleBacklog = staleBeyondWindow || expired > 0
 	m.mu.Unlock()
 
@@ -808,6 +930,12 @@ func (m *Module) processBatchSignals() {
 		m.logger.LogEvent("INFO", fmt.Sprintf("batch consumer: applied=%d expired=%d malformed=%d scanned=%d stale_backlog=%v to_manual=%v",
 			applied, expired, malformed, scanned, staleBeyondWindow, toManual))
 	}
+
+	// Remove only AFTER a successful drain. Failure = the hand-off file persists (broken hand-off).
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove %s: %w", path, err)
+	}
+	return nil
 }
 
 // applyBotscanBanSignal enforces a FRESH BotScan batch signal to the DURABLE, drop-enforced

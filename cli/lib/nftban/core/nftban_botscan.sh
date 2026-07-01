@@ -1248,11 +1248,38 @@ nftban_botscan_write_signal() {
         conf_json=",\"confidence\":${BOTSCAN_SIGNAL_CONFIDENCE}"
     fi
 
-    # Atomic append (single write, no partial lines)
-    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d,"family":"%s","request_class":"%s"%s}\n' \
+    # v1.212 (OPEN_BOTSCAN_LOST_BAN_SIGNAL) — build the JSONL line once, then append it under a
+    # SHARED flock so the Go consumer's atomic rename-then-consume hand-off can never destroy a
+    # signal written in the read->hand-off window. The daemon takes this SAME lock only around its
+    # O(1) rename of the signal file, so an append and the rename are mutually exclusive. The lock
+    # is a STABLE sibling lockfile that is never renamed. Degrade SAFELY when flock is unavailable:
+    # still append (O_APPEND keeps the single write line-atomic; the daemon rename stays the primary
+    # guard) — NEVER silently drop the signal; a write failure is surfaced (return 1).
+    local signal_line
+    printf -v signal_line '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d,"family":"%s","request_class":"%s"%s}\n' \
         "${ip//\"/\\\"}" "$score" "$reasons_json" "${action//\"/\\\"}" "$ts" \
-        "$family" "${request_class//\"/\\\"}" "$conf_json" \
-        >> "$signal_file"
+        "$family" "${request_class//\"/\\\"}" "$conf_json"
+
+    local lock_file="${signal_file}.lock"
+    if command -v flock >/dev/null 2>&1; then
+        # Serialize concurrent write_signal callers AND cooperate with the daemon rename. `-w 5`
+        # waits briefly rather than dropping the signal; on timeout / unopenable lockfile the
+        # subshell exits non-zero and we fall through to a safe unlocked append (never a drop).
+        if (
+            flock -w 5 9 || exit 9
+            printf '%s' "$signal_line" >> "$signal_file"
+        ) 9>"$lock_file" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    # flock binary absent, lockfile unopenable, or lock timed out → safe unlocked append. A real
+    # write failure (disk full / perms) is made visible instead of silently lost.
+    if ! printf '%s' "$signal_line" >> "$signal_file"; then
+        echo "[ERROR] botscan: failed to write batch signal for ${ip}" >&2
+        return 1
+    fi
+    return 0
 }
 
 # Ban IP
