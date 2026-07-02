@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.214.0] - 2026-07-02 — BotScan pattern-delimiter fix: restore 3 regex-alternation patterns (shell-only; daemon byte-identical)
+
+**Codename:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX` · **Impl PR:** [#988](https://github.com/itcmsgr/nftban/pull/988) (→ `08b371f4`) · **Docs:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX_V214_{SCOPE,SCOPE_CHALLENGE,IMPL_REPORT,PR_REPORT}.md`
+
+> **SHELL-ONLY** (`cli/lib/nftban/core/nftban_botscan.sh` + tests). **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` binaries **byte-identical** (0 Go change, sha256-verified). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Fixes BotScan pattern-delimiter parsing; restores 3 shipped enabled patterns.
+
+- **Restored patterns (dead since v1.209.1):** `EXP_CGIBIN` (`/cgi-bin/.*\.(sh|pl|cgi)`), `EXP_SQLBACKUP` (`\.(sql|sql\.gz|sql\.zip)$`), `SCAN_BACKUP_SQL` (`\.(sql|sql\.gz)$`).
+- **Old behavior:** BotScan `.patterns` records are `NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION`; the pattern field can legally contain regex alternation `|`, but the naive `IFS='|' read` split field 2 on those `|` → corrupted the record; and the internal `_BOTSCAN_PATTERNS` re-`|`-joined representation **re-corrupted** the value downstream (hot path, threshold analyze, and the prefilter build feeding the Go matcher) → RE2 skipped 3 patterns.
+- **New behavior:** an **anchored file-record parser** (peel name from the front + the 6 constrained trailing fields from the back; pattern = middle, keeps its `|`); `_BOTSCAN_PATTERNS` now uses a **`\x1f`-safe internal representation** (ASCII Unit Separator) so the pattern's `|` survives every downstream re-split; a **validation guard** emits a visible `[WARN]` + skips malformed records (bad match_type/threshold/window/ban/enabled/empty-pattern) instead of silently corrupting.
+- **Active/skipped:** **137 active / 3 skipped → 140 active / 0 skipped** (matcher `--check` = `3 usable, 0 skipped`; full shipped prefilter `142 usable, 0 skipped`).
+- **No shipped `.patterns` format change. No Go/daemon/matcher change.** Never-ban invariants (loopback/admin/exempt/WP-admin) preserved.
+- **Validation:** hermetic BotScan suite 18/18 (incl. the load→store→hot-path→prefilter downstream-re-split gate + validation-guard WARN+skip + parity + negatives); shellcheck `-x -S warning` clean; **package-native lab2 DEB + lab4 RPM PASS** (matcher 3→0 skipped, parity MATCH, negatives NO MATCH, admin never banned, resource bounds intact, daemon+matcher byte-identical).
+- **Canary:** **srv4 mandatory after publish** — re-enabling the 3 patterns changes active detection (cgi-bin + SQL-backup probes on 404 become bannable), even though the daemon binary is byte-identical.
+
 ## [v1.213.0] - 2026-07-02 — SET_APPLY_SINGLE_WRITER: route sync-owned writers through FULL sync (shell-side; daemon byte-identical)
 
 **Codename:** `SET_APPLY_SINGLE_WRITER` · **Impl PR:** [#985](https://github.com/itcmsgr/nftban/pull/985) (→ `03d6af59`) · **Docs:** `OPEN_SET_APPLY_SINGLE_WRITER_V213_{SCOPE,IMPL_SCOPE,FEED_PIPELINE_SPIKE,WRITER_SURFACE_CLASSIFICATION,IMPL_REPORT}.md`
