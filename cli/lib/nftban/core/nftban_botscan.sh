@@ -181,6 +181,85 @@ nftban_botscan_init_state() {
 # PATTERN MANAGEMENT
 # =============================================================================
 
+# v1.214.0 OPEN_BOTSCAN_PATTERN_DELIMITER_FIX — record-parse constants.
+# The 8-field .patterns record NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+# is '|'-delimited, but the PATTERN field legally contains regex alternation '|'. A naive
+# `IFS='|' read` mis-splits any '|'-bearing pattern (3 shipped: EXP_CGIBIN/EXP_SQLBACKUP/
+# SCAN_BACKUP_SQL) → truncated regex → RE2 skips it (dead). The parser below peels the record
+# from both ends so the pattern (the middle) is preserved intact, and the INTERNAL
+# _BOTSCAN_PATTERNS representation is joined/split on ASCII Unit Separator (\x1f) — which a
+# regex can never contain — so the hot-path/threshold/prefilter re-splits never re-corrupt it.
+readonly _BS_US=$'\x1f'                                        # internal '|'-safe field delimiter
+readonly _BS_VALID_MATCH_TYPES=" url-404 url-any url-get url-post useragent "  # supported set (matcher case at match_url_g)
+
+# _botscan_parse_record <record-line> — anchored parse of ONE shipped/operator .patterns
+# record. Peels NAME from the FRONT (first '|') and the 6 constrained trailing fields from
+# the BACK (description,enabled,ban,window,threshold,match_type via repeated '##*|'/'%|*');
+# whatever remains in the middle is the pattern (may legally contain '|'). Strips CRLF '\r'.
+# On success sets globals _BSREC_{name,pattern,match_type,threshold,window,ban,enabled,
+# description} and returns 0. Returns 1 for a blank/comment line (skip silently). Returns 2
+# for a malformed record (too few fields, or a peeled constrained field fails validation —
+# e.g. a stray '|' in the free-text description shifted the trailing fields): emits a VISIBLE
+# WARN (stderr + logger) and the caller MUST skip it — NEVER store a corrupted record.
+_botscan_parse_record() {
+    local line="${1-}"
+    line="${line%$'\r'}"                                   # strip trailing CR (CRLF files)
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && return 1
+
+    # A valid record has >= 7 '|' (8 fields; a '|'-alternation pattern only adds more). Fewer
+    # => the record cannot be peeled into 8 fields → malformed.
+    local _pipes="${line//[!|]/}"
+    if [[ "${#_pipes}" -lt 7 ]]; then
+        _botscan_warn_bad_record "${line%%|*}" "too few fields (< 8)"
+        return 2
+    fi
+
+    local rest description enabled ban window threshold match_type pattern
+    _BSREC_name="${line%%|*}"; rest="${line#*|}"
+    description="${rest##*|}"; rest="${rest%|*}"
+    enabled="${rest##*|}";     rest="${rest%|*}"
+    ban="${rest##*|}";         rest="${rest%|*}"
+    window="${rest##*|}";      rest="${rest%|*}"
+    threshold="${rest##*|}";   rest="${rest%|*}"
+    match_type="${rest##*|}";  rest="${rest%|*}"
+    pattern="$rest"                                        # the middle — legally '|'-bearing
+
+    # Constrained-field validation: a stray '|' in the description would shift the trailing
+    # fields, so validate them (and a non-empty pattern) → a shifted record fails VISIBLY
+    # instead of being silently stored corrupted.
+    local why=""
+    if   [[ -z "$pattern" ]]; then why="empty pattern"
+    elif [[ "$_BS_VALID_MATCH_TYPES" != *" $match_type "* ]]; then why="unknown match_type '$match_type'"
+    elif [[ ! "$threshold" =~ ^[0-9]+$ ]]; then why="non-integer threshold '$threshold'"
+    elif [[ ! "$window"    =~ ^[0-9]+$ ]]; then why="non-integer window '$window'"
+    elif [[ ! "$ban"       =~ ^[0-9]+$ ]]; then why="non-integer ban '$ban'"
+    elif [[ "$enabled" != "true" && "$enabled" != "false" ]]; then why="non-boolean enabled '$enabled'"
+    fi
+    if [[ -n "$why" ]]; then
+        _botscan_warn_bad_record "$_BSREC_name" "$why"
+        return 2
+    fi
+
+    _BSREC_pattern="$pattern"
+    _BSREC_match_type="$match_type"
+    _BSREC_threshold="$threshold"
+    _BSREC_window="$window"
+    _BSREC_ban="$ban"
+    _BSREC_enabled="$enabled"
+    _BSREC_description="$description"
+    return 0
+}
+
+# Visible malformed-record warning (stderr + syslog, non-fatal).
+_botscan_warn_bad_record() {
+    local name="${1:-?}" why="${2:-invalid}"
+    printf "[WARN] botscan: malformed pattern record '%s' — skipped (%s)\n" "$name" "$why" >&2
+    if command -v logger >/dev/null 2>&1; then
+        logger -t nftban-botscan -p user.warning "malformed pattern record '$name' skipped ($why)" 2>/dev/null || true
+    fi
+    return 0
+}
+
 # Load patterns from file
 # Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
 nftban_botscan_load_patterns() {
@@ -209,16 +288,19 @@ nftban_botscan_load_patterns() {
     for pattern_file in "$patterns_dir"/*.patterns; do
         [[ -f "$pattern_file" ]] || continue
 
-        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
-            # Skip comments and empty lines
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            # v1.214.0 anchored parse (rc1=blank/comment skip, rc2=malformed WARN+skip).
+            _botscan_parse_record "$_bs_line" || continue
 
             # override.local wins over the shipped ENABLED column (no-clobber).
-            local eff_enabled="${_override[$name]:-$enabled}"
+            local eff_enabled="${_override[$_BSREC_name]:-$_BSREC_enabled}"
             [[ "$eff_enabled" != "true" ]] && continue
 
-            # Store pattern: name -> "pattern|match_type|threshold|window|ban|description"
-            _BOTSCAN_PATTERNS["$name"]="${pattern}|${match_type}|${threshold}|${window}|${ban}|${description}"
+            # v1.214.0 — store name -> "pattern<US>match_type<US>threshold<US>window<US>ban<US>description"
+            # with an ASCII Unit Separator join so the pattern's own '|' survives every downstream
+            # re-split (hot-path :755, threshold :906, prefilter build :1004).
+            _BOTSCAN_PATTERNS["$_BSREC_name"]="${_BSREC_pattern}${_BS_US}${_BSREC_match_type}${_BS_US}${_BSREC_threshold}${_BS_US}${_BSREC_window}${_BS_US}${_BSREC_ban}${_BS_US}${_BSREC_description}"
             pattern_count=$((pattern_count + 1))
 
         done < "$pattern_file"
@@ -246,17 +328,18 @@ nftban_botscan_list_patterns() {
             [[ "$file_category" != "$category" ]] && continue
         fi
 
-        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
 
             # Filter
             case "$filter" in
-                enabled)  [[ "$enabled" != "true" ]] && continue ;;
-                disabled) [[ "$enabled" == "true" ]] && continue ;;
+                enabled)  [[ "$_BSREC_enabled" != "true" ]] && continue ;;
+                disabled) [[ "$_BSREC_enabled" == "true" ]] && continue ;;
             esac
 
             printf "%-20s %-8s %-10s %-6s %-6s %-6s %s\n" \
-                "$name" "$enabled" "$match_type" "$threshold" "$window" "$ban" "${description:0:40}"
+                "$_BSREC_name" "$_BSREC_enabled" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" "${_BSREC_description:0:40}"
 
         done < "$pattern_file"
     done
@@ -359,8 +442,10 @@ nftban_botscan_resolve_name() {
     local f name pattern lc_name lc_pat
     for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
         [[ -f "$f" ]] || continue
-        while IFS='|' read -r name pattern _; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
+            name="$_BSREC_name"; pattern="$_BSREC_pattern"
             lc_name=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
             lc_pat=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
             if [[ "$q" == "$lc_name" || "$q" == "$lc_pat" ]]; then
@@ -444,20 +529,21 @@ nftban_botscan_bots() {
     fi
     printf "%-22s %-9s %-9s %-10s %s\n" "NAME" "CATEGORY" "EFFECTIVE" "MATCH" "DESCRIPTION"
     printf '%s\n' "$(printf '=%.0s' {1..92})"
-    local f cat name pattern match_type threshold window ban enabled description eff
+    local f cat eff
     for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
         [[ -f "$f" ]] || continue
         cat=$(basename "$f" .patterns)
         [[ -n "$category" && "$cat" != "$category" ]] && continue
-        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
-            eff="${_ov[$name]:-$enabled}"
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
+            eff="${_ov[$_BSREC_name]:-$_BSREC_enabled}"
             case "$filter" in
                 enabled)  [[ "$eff" != "true" ]] && continue ;;
                 disabled) [[ "$eff" == "true" ]] && continue ;;
             esac
-            local mark="$eff"; [[ -n "${_ov[$name]:-}" ]] && mark="${eff}*"
-            printf "%-22s %-9s %-9s %-10s %s\n" "$name" "$cat" "$mark" "$match_type" "${description:0:38}"
+            local mark="$eff"; [[ -n "${_ov[$_BSREC_name]:-}" ]] && mark="${eff}*"
+            printf "%-22s %-9s %-9s %-10s %s\n" "$_BSREC_name" "$cat" "$mark" "$_BSREC_match_type" "${_BSREC_description:0:38}"
         done < "$f"
     done
     echo ""
@@ -752,7 +838,7 @@ nftban_botscan_match_url_g() {
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
         def="${_BOTSCAN_PATTERNS[$name]}"
 
-        IFS='|' read -r pattern match_type _ _ _ _ <<< "$def"
+        IFS="$_BS_US" read -r pattern match_type _ _ _ _ <<< "$def"  # v1.214.0 '|'-safe internal split
 
         # Check match type
         case "$match_type" in
@@ -903,7 +989,7 @@ nftban_botscan_analyze() {
             [[ -z "$def" ]] && continue
 
             local p_threshold p_window p_ban
-            IFS='|' read -r _ _ p_threshold p_window p_ban _ <<< "$def"
+            IFS="$_BS_US" read -r _ _ p_threshold p_window p_ban _ <<< "$def"  # v1.214.0 '|'-safe internal split
 
             # Use lowest threshold (most sensitive)
             [[ "$p_threshold" -lt "$threshold" ]] && threshold="$p_threshold"
@@ -1001,7 +1087,7 @@ nftban_botscan_build_prefilter() {
     local n=0 name def pat
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
         def="${_BOTSCAN_PATTERNS[$name]}"
-        IFS='|' read -r pat _ _ _ _ _ <<< "$def"
+        IFS="$_BS_US" read -r pat _ _ _ _ _ <<< "$def"  # v1.214.0 '|'-safe internal split → intact regex to Go matcher
         [[ -z "$pat" ]] && continue
         pat="${pat#^}"; pat="${pat%\$}"   # strip line-anchors → match the field within the line
         [[ -z "$pat" ]] && continue
@@ -1575,10 +1661,11 @@ nftban_botscan_status() {
     local total=0 enabled=0
     for pattern_file in "$BOTSCAN_PATTERNS_DIR"/*.patterns; do
         [[ -f "$pattern_file" ]] || continue
-        while IFS='|' read -r name _ _ _ _ _ is_enabled _; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
             total=$((total + 1))
-            [[ "$is_enabled" == "true" ]] && enabled=$((enabled + 1))
+            [[ "$_BSREC_enabled" == "true" ]] && enabled=$((enabled + 1))
         done < "$pattern_file"
     done
 
