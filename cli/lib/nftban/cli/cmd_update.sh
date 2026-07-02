@@ -432,6 +432,11 @@ _cmd_update_main_locked() {
     # stamp the shared update.log with the run_id (clear correlation delimiter).
     _update_log INFO "lifecycle run_id=$_RUN_ID (per-run forensic record: ${FORENSIC_RUN_DIR:-n/a})"
 
+    # v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): up-front progress contract —
+    # announce total phases + run_id + per-run log dir so the operator knows what to expect
+    # (identical for RPM and DEB; both flow through the same phases below).
+    _update_start_banner
+
     # v1.174: record the installer.log line count BEFORE the install so the final
     # verdict can detect a WARN_PRE_EXISTING_RECOVERED (a stale pre-existing failed
     # nftban unit cleared during THIS run) scoped to this update only — not a marker
@@ -805,6 +810,15 @@ _cmd_update_main_locked() {
     _forensic_snapshot "$_RUN_ID" post-verify
     _forensic_event "$_RUN_ID" run_end "state=$_installer_state" "new_version=$new_version" "rc=0"
 
+    # v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): warnings in THIS run's
+    # installer.log slice, for the structured final summary (read once; passed to
+    # _update_final_summary in each terminal arm below).
+    local _summary_warnings=0
+    if [[ -f "$_ilog_file" ]]; then
+        _summary_warnings=$(tail -n +$((_ilog_before_lines + 1)) "$_ilog_file" 2>/dev/null | grep -c -iE 'WARN|⚠' || true)
+        _summary_warnings=${_summary_warnings//[^0-9]/}; _summary_warnings=${_summary_warnings:-0}
+    fi
+
     case "$_installer_state" in
         COMMITTED)
             # Clean success path — emit the green block (existing behavior)
@@ -854,6 +868,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "COMMITTED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "$([[ "${health_status:-0}" -eq 0 ]] && echo "PASS" || echo "PASS_WITH_WARN")"
             return 0
             ;;
 
@@ -908,6 +923,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "DEGRADED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "DEGRADED"
             return 1
             ;;
 
@@ -938,6 +954,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "FAILED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "FAILED"
             return 2
             ;;
 
@@ -957,6 +974,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "COMMITTED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "UNKNOWN"
             return 0
             ;;
     esac
