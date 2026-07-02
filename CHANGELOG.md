@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.215.0] - 2026-07-03 — Install/Update observability: progress contract + structured terminal summary (shell-only; daemon byte-identical)
+
+**Codename:** `OPEN_INSTALL_UPDATE_OBSERVABILITY` · **Impl PR:** [#995](https://github.com/itcmsgr/nftban/pull/995) (→ `b4c30976`) · **Docs:** `OPEN_INSTALL_UPDATE_OBSERVABILITY_V215_SCOPE.md`
+
+> **SHELL-ONLY** (`cli/lib/nftban/cli/cmd_update.sh` + `cmd_update_helpers.sh` + one test). **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go change). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Operator observability for `nftban update`/install — progress visibility during the run + a structured terminal summary. NOT a logging redesign. (v1.214.1 was intentionally SKIPPED — the "unbounded log / global→index" premise was false per code: installer.log/update.log are already logrotate-bounded, per-run `run.jsonl` + retention + support-bundle collection already exist.)
+
+- **Start banner (up-front progress contract):** `NFTBan update started — 6 phases expected` + `run_id` + per-run log dir, so the operator knows what to expect and where the full record lives.
+- **6 ordered `[N/6]` phase markers** — names UNCHANGED (Backup / Install / Restart services / Health check / Post-update verification / Finalize); `_update_phase` now also records the last phase reached (side-effect only — the emitted marker string is byte-identical).
+- **Structured final summary** on every terminal path (COMMITTED/DEGRADED/FAILED/fallback): Result / Version before→after (elapsed) / Warnings / Failed units / Validation / **Completed phases N/6** / Run ID / per-run Log dir / global Log path. Log path + run_id now shown on **success** too (previously failure only).
+- **No progress bar, no percentage, no fake ETA** — phase count + current phase + elapsed only. **Legacy `Updated: vX → vY` preserved verbatim.**
+- **RPM and DEB share the same phase/banner/summary flow.** `run.jsonl` format UNTOUCHED (machine-only); logrotate UNCHANGED; Go installer logger UNCHANGED; v1.199 no-JSON-on-console invariant preserved. PR-2 (human.log enrich) + PR-3 (failed-run retention) intentionally excluded.
+- **Validation:** hermetic `install_update_observability_v215_test.sh` **35/35**; `nftban_update_progress_r1b3_test` **22/22** (phase names/markers unbroken); `lifecycle_forensics_v1199_test` **21/21** (run.jsonl/forensics untouched); shellcheck `-x -S warning` clean. Package-native lab2 DEB + lab4 RPM validation at the validation gate (update-output code — prove the real package update path renders the summary).
+
 ## [v1.214.0] - 2026-07-02 — BotScan pattern-delimiter fix: restore 3 regex-alternation patterns (shell-only; daemon byte-identical)
 
 **Codename:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX` · **Impl PR:** [#988](https://github.com/itcmsgr/nftban/pull/988) (→ `08b371f4`) · **Docs:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX_V214_{SCOPE,SCOPE_CHALLENGE,IMPL_REPORT,PR_REPORT}.md`
