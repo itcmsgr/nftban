@@ -425,6 +425,35 @@ nftban_watchdog_check_conntrack() {
         WATCHDOG_RESULTS[conntrack_status]="OK"
     fi
 
+    # v1.216.0 (OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT): READ-ONLY sysctl-risk advisory.
+    # Surfaces the conntrack established-timeout / keepalive / DB-pool / file-vs-live drift /
+    # module-load-race risk. NEVER writes the kernel or a file. Elevates OK->WARNING only when
+    # the incident precondition (dead-socket risk) is present, so status can't read fully green
+    # while the risk is live.
+    if [[ "${NFTBAN_WATCHDOG_SYSCTL_RISK_ENABLED:-true}" == "true" ]]; then
+        local _reg_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban/lib}/nftban_sysctl_registry.sh"
+        [[ -f "$_reg_lib" ]] || _reg_lib="$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_sysctl_registry.sh"
+        if [[ -f "$_reg_lib" ]]; then
+            # Source + scan in a SUBSHELL so the library's `set -Eeuo pipefail` and
+            # double-load guard cannot leak into the watchdog's shell state.
+            local _risk _warns
+            # shellcheck source=/dev/null
+            _risk=$( source "$_reg_lib" 2>/dev/null && nftban_sysctl_risk_scan 2>/dev/null )
+            _warns=$(printf '%s\n' "$_risk" | grep -c '^WARN|' || true)
+            case "$_warns" in ''|*[!0-9]*) _warns=0 ;; esac
+            WATCHDOG_RESULTS[sysctl_risk_warnings]="$_warns"
+            if printf '%s\n' "$_risk" | grep -q 'dead-socket risk'; then
+                if watchdog_should_alert "sysctl_conntrack"; then
+                    watchdog_alert "WARNING" "$(printf '%s\n' "$_risk" | grep 'dead-socket risk' | head -1 | cut -d'|' -f3)"
+                fi
+                [[ $status -eq $WATCHDOG_OK ]] && status=$WATCHDOG_WARNING
+                WATCHDOG_RESULTS[sysctl_risk_status]="WARNING"
+            else
+                WATCHDOG_RESULTS[sysctl_risk_status]="OK"
+            fi
+        fi
+    fi
+
     return $status
 }
 
