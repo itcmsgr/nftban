@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.0] - 2026-07-03 — Sysctl safe-default + DEB/RPM parity + read-only conntrack visibility (shell/packaging; daemon byte-identical)
+
+**Lane:** `OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT` — the **v1.216.0 slice** of the design train (`NFTBAN_ROADMAP/OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT_V216_DESIGN_TRAIN.md`), **not** the full profile redesign. **PR:** [#997](https://github.com/itcmsgr/nftban/pull/997) → `e9126f81`.
+
+> **SHELL/PACKAGING + read-only diagnostics.** **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go change). **nft schema 1.84.0 unchanged. No live sysctl writes; no `sysctl --system`/modprobe on upgrade.** Loopback lane remains separate (v1.217.0+).
+
+- **Safe-default correction (`install/sysctl/90-nftban.conf`):** drops the unconditional `net.netfilter.nf_conntrack_tcp_timeout_established = 600` → the kernel default (432000s) now owns established-flow lifetime. A short established timeout could conntrack-evict idle-but-live local TCP flows (e.g. a persistent app→DB pool) **before** `tcp_keepalive_time` (7200s) probes them → dead sockets (the monitor Zabbix/PostgreSQL hang precondition). **Transitional attack-surface hardening preserved** (`time_wait=30`, `syn_sent=30`, `syn_recv=15` — the clearer DDoS lever). Rationale + `/etc/sysctl.d/99-local.conf` override guidance (≥ keepalive advised) + a no-auto-write note added.
+- **DEB/RPM parity (`packaging/build_nftban.sh`):** `/etc/sysctl.d/90-nftban.conf` is now declared in the DEB conffiles → dpkg preserves operator edits on upgrade, matching RPM `%config(noreplace)`.
+- **Read-only visibility:** new `cli/lib/nftban/lib/nftban_sysctl_registry.sh` — declarative 2-key registry + risk scan (dead-socket precondition [est<keepalive + local idle TCP DB pool], legacy-600-in-file, file-vs-live drift, module-load race, operator-override INFO); **never writes.** Wired read-only into the watchdog conntrack check (OK→WARNING only on the dead-socket precondition) and the support bundle (`_collect_sysctl`: files + live readback + registry + risk scan); both subshell-isolated so the lib's `set -Eeuo` can't leak.
+- **Out of scope (deferred per design train):** automatic live-kernel write; RAM-scaling `nf_conntrack_max`; `NftbanProfile` object / platform expansion; `nftban sysctl apply`; loopback-before-invalid; monitor Zabbix/PostgreSQL changes.
+- **Validation:** hermetic `sysctl_safe_default_v216_test.sh` **21/21**; shellcheck `-x -S warning` clean; regressions (v128 help-correlation, botguard_diag) green. Package-native lab2 DEB (edited `90-nftban.conf` survives upgrade) + lab4 RPM (`%config(noreplace)`) + monitor read-only + srv4 canary at the validation gate.
+
 ## [v1.215.0] - 2026-07-03 — Install/Update observability: progress contract + structured terminal summary (shell-only; daemon byte-identical)
 
 **Codename:** `OPEN_INSTALL_UPDATE_OBSERVABILITY` · **Impl PR:** [#995](https://github.com/itcmsgr/nftban/pull/995) (→ `b4c30976`) · **Docs:** `OPEN_INSTALL_UPDATE_OBSERVABILITY_V215_SCOPE.md`
