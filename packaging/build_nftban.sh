@@ -1805,6 +1805,7 @@ PRERM
 /etc/nftban/conf.d/persistent.conf
 /etc/nftban/conf.d/watchdog.conf
 /etc/nftban/conf.d/community_stats.conf.default
+/etc/sysctl.d/90-nftban.conf
 CONFFILES_EOF
 }
 
