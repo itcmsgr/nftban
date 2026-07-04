@@ -60,25 +60,25 @@ export NFTBAN_SYSCTL_FILE="$WORK/90.conf" NFTBAN_SYSCTL_LOCAL="$WORK/99.conf"
 : > "$NFTBAN_SYSCTL_FILE"
 E=net.netfilter.nf_conntrack_tcp_timeout_established
 
-# (a) incident precondition: live 600 < keepalive 7200 + DB pool -> WARN dead-socket
+# (a) incident precondition: live 600 < keepalive 7200 + LONG-IDLE DB pool -> WARN dead-socket (v1.216.1 idle-age)
 r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=600 \
-    NFTBAN_TEST_LIVE_net_ipv4_tcp_keepalive_time=7200 NFTBAN_TEST_DB_POOL=yes nftban_sysctl_risk_scan)
-grep -q "^WARN|$E|.*dead-socket risk" <<<"$r" && ok "PR3 dead-socket WARN (est<keepalive + DB pool)" || no "PR3 dead-socket"
-# (a') same but no DB pool -> INFO low risk, not a dead-socket WARN
+    NFTBAN_TEST_LIVE_net_ipv4_tcp_keepalive_time=7200 NFTBAN_TEST_POOL_COUNT=5 NFTBAN_TEST_MAXIDLE=500 nftban_sysctl_risk_scan)
+grep -q "^WARN|$E|.*dead-socket risk" <<<"$r" && ok "PR3 dead-socket WARN (est<keepalive + LONG-IDLE pool)" || no "PR3 dead-socket"
+# (a') actively-refreshed pool (idle 59s, the agent2 class) -> INFO low risk, NOT a dead-socket WARN
 r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=600 \
-    NFTBAN_TEST_LIVE_net_ipv4_tcp_keepalive_time=7200 NFTBAN_TEST_DB_POOL=no nftban_sysctl_risk_scan)
-{ grep -q "^INFO|$E|.*low risk" <<<"$r" && ! grep -q 'dead-socket risk' <<<"$r"; } && ok "PR3 no-DB-pool -> INFO low-risk only" || no "PR3 no-DB-pool"
-# (b) legacy 600 present in file -> WARN
+    NFTBAN_TEST_LIVE_net_ipv4_tcp_keepalive_time=7200 NFTBAN_TEST_POOL_COUNT=5 NFTBAN_TEST_MAXIDLE=59 nftban_sysctl_risk_scan)
+{ grep -q "^INFO|$E|.*low risk" <<<"$r" && ! grep -q 'dead-socket risk' <<<"$r"; } && ok "PR3 active pool -> INFO low-risk only" || no "PR3 active-pool"
+# (b) legacy 600 present in file -> WARN (no DB pool so dead-socket is CLEAN)
 printf '%s = 600\n' "$E" > "$NFTBAN_SYSCTL_FILE"
-r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=600 NFTBAN_TEST_DB_POOL=no nftban_sysctl_risk_scan)
+r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=600 NFTBAN_TEST_POOL_COUNT=0 nftban_sysctl_risk_scan)
 grep -q "^WARN|$E|.*legacy established=600" <<<"$r" && ok "PR3 legacy 600-in-file WARN" || no "PR3 legacy600"
 # (c)+(d) file=600 but live=432000 -> drift WARN + module-load-race WARN
-r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=432000 NFTBAN_TEST_DB_POOL=no nftban_sysctl_risk_scan)
+r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=432000 NFTBAN_TEST_POOL_COUNT=0 nftban_sysctl_risk_scan)
 grep -q "^WARN|$E|.*!= live value" <<<"$r" && ok "PR3 file-vs-live drift WARN" || no "PR3 drift"
 grep -q "^WARN|$E|.*module-load race" <<<"$r" && ok "PR3 module-load-race WARN" || no "PR3 modrace"
 # (e) operator override in 99-local -> INFO
 : > "$NFTBAN_SYSCTL_FILE"; printf '%s = 300\n' "$E" > "$NFTBAN_SYSCTL_LOCAL"
-r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=300 NFTBAN_TEST_DB_POOL=no nftban_sysctl_risk_scan)
+r=$(NFTBAN_TEST_LIVE_net_netfilter_nf_conntrack_tcp_timeout_established=300 NFTBAN_TEST_POOL_COUNT=0 nftban_sysctl_risk_scan)
 grep -q "^INFO|$E|operator override" <<<"$r" && ok "PR3 operator override INFO" || no "PR3 override"
 
 # no writes: the registry lib must not write kernel/files (no sysctl -w, no > to /proc or sysctl.d)
