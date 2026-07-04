@@ -78,18 +78,32 @@ _nftban_db_pool_count() {
     printf '%s' "$n"
 }
 
-# _nftban_db_conntrack_maxidle EST -> max idle seconds across local DB-port conntrack entries, or "UNKNOWN".
-# Hook: NFTBAN_TEST_MAXIDLE (integer or "UNKNOWN"). Uses /proc/net/nf_conntrack (remaining timeout field
-# immediately precedes "ESTABLISHED"); idle = est - remaining. No conntrack visibility -> UNKNOWN.
+# _nftban_db_idle_source -> which host-only idle-age source is usable: procfs | conntrack-tool | none.
+# v1.216.1 audit: /proc/net/nf_conntrack is present on RHEL-family (procfs=y) but absent on Debian/Ubuntu
+# (procfs=n) — where the `conntrack` userspace tool (conntrack -L) is the fallback. Hook: NFTBAN_TEST_IDLE_SOURCE
+_nftban_db_idle_source() {
+    if [ -n "${NFTBAN_TEST_IDLE_SOURCE:-}" ]; then printf '%s' "$NFTBAN_TEST_IDLE_SOURCE"; return 0; fi
+    if [ -r /proc/net/nf_conntrack ]; then echo "procfs"
+    elif command -v conntrack >/dev/null 2>&1; then echo "conntrack-tool"
+    else echo "none"; fi
+}
+
+# _nftban_db_conntrack_maxidle EST SOURCE -> max idle seconds across local DB-port conntrack entries,
+# "UNKNOWN" (source has no DB entries for this pool), or "UNKNOWN-FORMAT" (output not parseable). Hook: NFTBAN_TEST_MAXIDLE.
+# Source order: procfs (/proc/net/nf_conntrack) -> conntrack-tool (conntrack -L). Idle = est - remaining, where the
+# remaining timeout is the integer field immediately before "ESTABLISHED". Defensive: unrecognized -> UNKNOWN-FORMAT.
 _nftban_db_conntrack_maxidle() {
-    local est="$1" src=""
+    local est="$1" source="$2" raw=""
     if [ -n "${NFTBAN_TEST_MAXIDLE:-}" ]; then printf '%s' "$NFTBAN_TEST_MAXIDLE"; return 0; fi
     _nftban_is_uint "$est" || { echo "UNKNOWN"; return 0; }
-    if [ -r /proc/net/nf_conntrack ]; then
-        src=$(grep -E 'ESTABLISHED' /proc/net/nf_conntrack 2>/dev/null | grep -E '(sport|dport)=(5432|3306|6379|27017)([^0-9]|$)' | grep -E '127\.0\.0\.1|::1' || true)
-    else echo "UNKNOWN"; return 0; fi
-    [ -z "$src" ] && { echo "UNKNOWN"; return 0; }   # pool exists but no conntrack DB entries -> unmeasurable
-    printf '%s\n' "$src" | awk -v est="$est" 'BEGIN{mx=-1} {for(i=1;i<=NF;i++) if($i=="ESTABLISHED"){to=$(i-1)+0; idle=est-to; if(idle<0)idle=0; if(idle>mx)mx=idle}} END{ if(mx<0) print "UNKNOWN"; else printf "%d", mx }'
+    case "$source" in
+        procfs)         raw=$(grep -E 'ESTABLISHED' /proc/net/nf_conntrack 2>/dev/null | grep -E '(sport|dport)=(5432|3306|6379|27017)([^0-9]|$)' | grep -E '127\.0\.0\.1|::1' || true) ;;
+        conntrack-tool) raw=$(conntrack -L -p tcp 2>/dev/null | grep -E 'ESTABLISHED' | grep -E '(sport|dport)=(5432|3306|6379|27017)([^0-9]|$)' | grep -E '127\.0\.0\.1|::1' || true) ;;
+        *)              echo "UNKNOWN"; return 0 ;;
+    esac
+    [ -z "$raw" ] && { echo "UNKNOWN"; return 0; }   # source usable but no DB entries for this pool -> unmeasurable
+    # remaining timeout = the numeric field immediately preceding "ESTABLISHED"; defensive -> UNKNOWN-FORMAT.
+    printf '%s\n' "$raw" | awk -v est="$est" 'BEGIN{mx=-1; seen=0} {for(i=2;i<=NF;i++) if($i=="ESTABLISHED"){v=$(i-1); if(v ~ /^[0-9]+$/){seen=1; to=v+0; idle=est-to; if(idle<0)idle=0; if(idle>mx)mx=idle}}} END{ if(!seen) print "UNKNOWN-FORMAT"; else printf "%d", mx }'
 }
 
 # _nftban_db_pool_stable -> yes|no : is the DB pool connection-set unchanged across a bounded window?
@@ -104,31 +118,34 @@ _nftban_db_pool_stable() {
     [ "$a" = "$b" ] && echo "yes" || echo "no"
 }
 
-# nftban_db_dead_socket_classify EST KEEPALIVE -> "CLASS|pool|maxidle|reason"  (CLASS: CLEAN|INFO|WARN|UNKNOWN)
+# nftban_db_dead_socket_classify EST KEEPALIVE -> "CLASS|pool|maxidle|idle_age_source|reason"
+# CLASS: CLEAN|INFO|WARN|UNKNOWN. idle_age_source: procfs|conntrack-tool|none|unknown-format
 nftban_db_dead_socket_classify() {
-    local est="$1" keep="$2" pool mi thr st
+    local est="$1" keep="$2" pool mi thr st source
     pool=$(_nftban_db_pool_count); _nftban_is_uint "$pool" || pool=0
-    [ "$pool" -eq 0 ] && { echo "CLEAN|0|0|no local TCP DB pool"; return 0; }
+    [ "$pool" -eq 0 ] && { echo "CLEAN|0|0|none|no local TCP DB pool"; return 0; }
+    source=$(_nftban_db_idle_source)
     # established >= keepalive: keepalive probes before conntrack evicts -> no dead-socket risk regardless of idle
     if _nftban_is_uint "$est" && [ "$est" -ge "$keep" ]; then
-        echo "INFO|$pool|0|${pool} local TCP DB session(s); established timeout ${est}s >= keepalive ${keep}s (keepalive probes first) — no dead-socket risk"; return 0
+        echo "INFO|$pool|0|$source|${pool} local TCP DB session(s); established timeout ${est}s >= keepalive ${keep}s (keepalive probes first) — no dead-socket risk [idle_age_source=$source]"; return 0
     fi
-    mi=$(_nftban_db_conntrack_maxidle "$est")
-    if [ "$mi" = "UNKNOWN" ]; then
+    mi=$(_nftban_db_conntrack_maxidle "$est" "$source")
+    if [ "$mi" = "UNKNOWN" ] || [ "$mi" = "UNKNOWN-FORMAT" ]; then
+        [ "$mi" = "UNKNOWN-FORMAT" ] && source="unknown-format"
         st=$(_nftban_db_pool_stable)
         if [ "$st" = "no" ]; then
-            echo "INFO|$pool|?|${pool} local TCP DB session(s), pool churning across ${NFTBAN_SYSCTL_SAMPLE_SECS}s sample (active) — idle age unmeasurable, low risk"
+            echo "INFO|$pool|?|$source|${pool} local TCP DB session(s), pool churning across ${NFTBAN_SYSCTL_SAMPLE_SECS}s sample (active) — idle age unmeasurable, low risk [idle_age_source=$source]"
         else
-            echo "UNKNOWN|$pool|?|${pool} local TCP DB session(s) stable across sample but idle age UNMEASURABLE (conntrack unreadable) — cannot confirm safe"
+            echo "UNKNOWN|$pool|?|$source|${pool} local TCP DB session(s) exists, idle age unmeasurable, cannot confirm safe (no idle-age source; install 'conntrack' on Debian/Ubuntu) [idle_age_source=$source]"
         fi
         return 0
     fi
     _nftban_is_uint "$mi" || mi=0
     thr=$(( est * NFTBAN_SYSCTL_IDLE_WARN_PCT / 100 ))
     if [ "$mi" -ge "$thr" ]; then
-        echo "WARN|$pool|$mi|${pool} local TCP DB session(s), max idle ~${mi}s >= ${NFTBAN_SYSCTL_IDLE_WARN_PCT}% of established timeout ${est}s (< keepalive ${keep}s) — long-idle dead-socket risk"
+        echo "WARN|$pool|$mi|$source|${pool} local TCP DB session(s), max idle ~${mi}s >= ${NFTBAN_SYSCTL_IDLE_WARN_PCT}% of established timeout ${est}s (< keepalive ${keep}s) — long-idle dead-socket risk [idle_age_source=$source]"
     else
-        echo "INFO|$pool|$mi|${pool} local TCP DB session(s), actively refreshed (max idle ~${mi}s << established timeout ${est}s) — low risk"
+        echo "INFO|$pool|$mi|$source|${pool} local TCP DB session(s), actively refreshed (max idle ~${mi}s << established timeout ${est}s) — low risk [idle_age_source=$source]"
     fi
 }
 
