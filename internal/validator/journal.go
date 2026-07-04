@@ -26,10 +26,16 @@
 // - Silent: no impact on validator status, findings, or exit code
 //
 // Command shape:
-//   journalctl -u nftband --since "-15m" --no-pager -o cat -r -n 200
 //
-// Pattern matching is done in Go (substring), not journalctl --grep.
-// This avoids repeated subprocess cost and keeps matching deterministic.
+//	journalctl -u nftband --since "-15m" --no-pager -o cat -r [-g REGEX] -n 200
+//
+// v1.216.3: pattern queries are scoped SERVER-SIDE with `-g <regex>` (a
+// regexp.QuoteMeta-escaped OR of the literal patterns) so the `-n` line cap
+// bounds MATCHING lines, not all unit lines. Without this, a high-volume
+// journal (e.g. a host under auth attack emitting hundreds of [EVENT]/[BAN]
+// lines per minute) evicts low-rate evidence — the LoginMon 5-minute
+// heartbeat — from the returned window, reintroducing a false VAL-LOGINMON-001.
+// The Go-side substring scan is retained as first-match confirmation.
 // =============================================================================
 package validator
 
@@ -37,6 +43,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -80,11 +87,42 @@ type JournalReader interface {
 // SystemdJournalReader is the production implementation using journalctl.
 type SystemdJournalReader struct{}
 
+// buildJournalArgs constructs the journalctl argv for a bounded query.
+//
+// v1.216.3: when Patterns are present, a server-side `-g <regex>` is added — a
+// regexp.QuoteMeta-escaped OR of the literal patterns — placed before `-n` so the
+// line cap bounds MATCHING lines, not all unit lines. This is the fix for busy-host
+// eviction: previously `-n 200` capped total output before the Go-side match, so a
+// high-volume journal could hide low-rate evidence (the LoginMon 5m heartbeat).
+//
+// Security: every pattern is a compile-time internal constant, each is escaped with
+// regexp.QuoteMeta (so e.g. "[botguard] loaded" is a literal, not a character class),
+// and args are passed as argv to exec.Command — no shell, no injection, no overmatch.
+// Callers still get idempotent defaulting, so this is safe to unit-test standalone.
+func buildJournalArgs(q JournalQuery) []string {
+	applyDefaults(&q) // q is a value copy; local defaulting only
+	args := []string{
+		"-u", q.Unit,
+		"--since", fmt.Sprintf("-%dm", int(q.Since.Minutes())),
+		"--no-pager",
+		"-o", "cat",
+		"-r",
+	}
+	if len(q.Patterns) > 0 {
+		escaped := make([]string, len(q.Patterns))
+		for i, p := range q.Patterns {
+			escaped[i] = regexp.QuoteMeta(p)
+		}
+		args = append(args, "-g", strings.Join(escaped, "|"))
+	}
+	args = append(args, "-n", fmt.Sprintf("%d", q.MaxLines))
+	return args
+}
+
 // Query executes a bounded journalctl query and matches patterns in Go.
 //
-// Strategy: fetch bounded output once with -o cat -r -n N, then scan
-// lines for substring matches. No --grep, no shell pipes, no repeated
-// subprocess calls.
+// Strategy: fetch server-side pattern-scoped output (-g, v1.216.3) bounded by
+// -o cat -r -n N, then scan lines for substring matches (first match wins).
 func (SystemdJournalReader) Query(ctx context.Context, q JournalQuery) JournalEvidence {
 	applyDefaults(&q)
 
@@ -92,32 +130,63 @@ func (SystemdJournalReader) Query(ctx context.Context, q JournalQuery) JournalEv
 	ctx, cancel := context.WithTimeout(ctx, q.Timeout)
 	defer cancel()
 
-	// Build command: journalctl -u UNIT --since "-Xm" --no-pager -o cat -r -n N
-	sinceArg := fmt.Sprintf("-%dm", int(q.Since.Minutes()))
-	cmd := exec.CommandContext(ctx, "journalctl", // #nosec G204 -- args are bounded, not user-controlled
-		"-u", q.Unit,
-		"--since", sinceArg,
-		"--no-pager",
-		"-o", "cat",
-		"-r",
-		"-n", fmt.Sprintf("%d", q.MaxLines),
-	)
+	// Fixed binary "journalctl"; buildJournalArgs returns bounded internal constants,
+	// each pattern regexp.QuoteMeta-escaped, passed as argv (no shell, no tainted input).
+	cmd := exec.CommandContext(ctx, "journalctl", buildJournalArgs(q)...) // #nosec G204 -- args are bounded internal constants, escaped, argv-only (no shell)
 
 	out, err := cmd.Output()
+	return parseJournalResult(q, out, err, ctx.Err())
+}
+
+// parseJournalResult maps a journalctl invocation (stdout, exec error, and the
+// context error) to structured evidence. Pure and unit-testable without a live journal.
+//
+// v1.216.3 CRITICAL semantics with server-side -g: journalctl exits 1 with empty output
+// when nothing matches (grep convention, verified on systemd 252/255). For a PATTERN
+// query that is a definitive "evidence absent" result — returned as ErrNone/Found=false
+// so callers still emit their "no evidence" finding (e.g. VAL-LOGINMON-001 must still
+// fire when a module is genuinely unbound/dead). If this were classified ErrEmpty, the
+// callers' `ErrKind == ErrNone` guard would suppress the finding entirely. Real failures
+// (timeout, exec-not-found, other non-zero exit) still classify as errors so the caller
+// fails safe (no emit) rather than asserting absence it could not determine.
+func parseJournalResult(q JournalQuery, out []byte, err error, ctxErr error) JournalEvidence {
+	hasPatterns := len(q.Patterns) > 0
 	if err != nil {
-		return classifyError(ctx, err)
+		if ctxErr != nil {
+			return JournalEvidence{ErrKind: ErrTimeout, Err: err}
+		}
+		if _, ok := err.(*exec.Error); ok {
+			return JournalEvidence{ErrKind: ErrExec, Err: err} // binary missing / perm denied
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 1 {
+				// exit 1 = grep-style "no match". For a pattern query this is a
+				// successful absence, not a failure.
+				if hasPatterns {
+					return JournalEvidence{ErrKind: ErrNone, Found: false}
+				}
+				return JournalEvidence{ErrKind: ErrEmpty}
+			}
+			return JournalEvidence{ErrKind: ErrNonZero, Err: err}
+		}
+		return JournalEvidence{ErrKind: ErrExec, Err: err}
 	}
 
 	raw := strings.TrimSpace(string(out))
 	if raw == "" {
+		// Ran clean (exit 0) but no output. For a pattern query (-g) that is a
+		// definitive no-match; treat as ErrNone/Found=false (absent), same as exit 1.
+		if hasPatterns {
+			return JournalEvidence{ErrKind: ErrNone, Found: false}
+		}
 		return JournalEvidence{ErrKind: ErrEmpty}
 	}
 
 	lines := strings.Split(raw, "\n")
 	truncated := len(lines) >= q.MaxLines
 
-	// Scan for patterns (substring match, case-sensitive, first match wins)
-	if len(q.Patterns) > 0 {
+	// Scan for patterns (substring match, case-sensitive, first match wins).
+	if hasPatterns {
 		for i, line := range lines {
 			for _, pattern := range q.Patterns {
 				if strings.Contains(line, pattern) {
@@ -133,31 +202,12 @@ func (SystemdJournalReader) Query(ctx context.Context, q JournalQuery) JournalEv
 		}
 	}
 
-	// No pattern match (or no patterns specified)
+	// No pattern match (or no patterns specified).
 	return JournalEvidence{
 		Found:     false,
 		LinesRead: len(lines),
 		Truncated: truncated,
 	}
-}
-
-// classifyError maps exec errors to structured ErrKind.
-func classifyError(ctx context.Context, err error) JournalEvidence {
-	if ctx.Err() != nil {
-		return JournalEvidence{ErrKind: ErrTimeout, Err: err}
-	}
-	if _, ok := err.(*exec.Error); ok {
-		// Binary not found / permission denied
-		return JournalEvidence{ErrKind: ErrExec, Err: err}
-	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		// journalctl exits 1 on no matches with some configurations
-		if exitErr.ExitCode() == 1 {
-			return JournalEvidence{ErrKind: ErrEmpty}
-		}
-		return JournalEvidence{ErrKind: ErrNonZero, Err: err}
-	}
-	return JournalEvidence{ErrKind: ErrExec, Err: err}
 }
 
 // applyDefaults sets safe defaults for zero-value query fields.
