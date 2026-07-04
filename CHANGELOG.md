@@ -11,6 +11,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.2] - 2026-07-04 — Health-truth: LoginMon source-binding heartbeat clears false VAL-LOGINMON-001 (Go daemon + validator; daemon RE-BASELINE)
+
+**Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_WINDOW_FALSE_INFO_V216_2`. **PR:** [#1001](https://github.com/itcmsgr/nftban/pull/1001) → `b1159e2b`.
+
+> **Go daemon + validator hotfix. Daemon RE-BASELINE: YES** — `nftband` + `nftban-validate` change (NOT byte-identical; unlike the shell-only v1.215/v1.216.0/v1.216.1 lanes). **nft schema 1.84.0 unchanged.** No sysctl/nft/conntrack/loopback/profile/package change.
+
+- **Fixes recurring benign `[INFO] VAL-LOGINMON-001`** on a healthy long-running LoginMon (Overall PROTECTED, Daemon RUNNING, Runtime=running). **Root cause:** the validator proved "running+bound" from a **decaying 15-minute journal window** searching one-shot startup lines (`module_start: loginmon` + `resolved_by=`) that LoginMon logs once at Start/discovery and never refreshed → on quiet hosts (guaranteed on srv3/srv4 volatile journald) the evidence aged out and the INFO fired forever. Health-truth debt: an event log used as a state store. Not a LoginMon failure.
+- **Fix (`internal/loginmon/module.go`):** new always-on `startBindingHeartbeat` goroutine (launched from `Start()`, all modes) emits `[LOGINMON] loginmon_source_binding_heartbeat resolved_by=heartbeat sources=N state=running` every **5 min** (< the 15m validator window). Logs a **source count only** — no source paths, panel paths, usernames, domains, or secrets. When `sources=0` (running but unbound) it omits `resolved_by=` so a genuinely unbound module **still** trips the finding. No ban-logic or discovery change.
+- **Validator (`internal/validator/module_health.go`):** registration-evidence query also accepts `loginmon_source_binding_heartbeat`; binding evidence still requires `resolved_by=`. A single fresh bound heartbeat refreshes both AND-conditions. Genuine missing/starved paths intact.
+- **BotGuard sibling deferred/open:** `VAL-BOTGUARD-001` uses the identical decaying-window pattern (default-OFF, not firing on the fleet) → registered as `OPEN_HEALTH_TRUTH_BOTGUARD_JOURNAL_WINDOW_FALSE_INFO`, not in this release.
+- **Tests:** validator `TestLoginMonHeartbeatSatisfiesEvidence` + `TestLoginMonHeartbeatUnboundStillFlags`; producer `TestBindingHeartbeatLine{Bound,Unbound,NoSecrets}` + `TestBindingHeartbeatIntervalBelowJournalWindow`; existing LoginMon/journal tests green; `go test ./...` + `go vet ./...` + gofmt clean.
+
+## [v1.216.1] - 2026-07-04 — Sysctl dead-socket guard: idle-age classification + DEB conntrack fallback (shell/packaging/docs; daemon byte-identical)
+
+**Lane:** `OPEN_DEB_CONNTRACK_IDLE_AGE_OBSERVABILITY` — refines the v1.216.0 read-only dead-socket guard. **PR:** [#999](https://github.com/itcmsgr/nftban/pull/999) → `14691d96`.
+
+> **SHELL/PACKAGING/DOCS.** **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go). **nft schema 1.84.0 unchanged. No live sysctl writes.** Read-only, credential-free (no DB queries).
+
+- **Idle-age classification** replaces "warn on any local TCP DB pool": **CLEAN** (no pool) / **INFO** (pool but actively-refreshed, or `established >= keepalive`) / **WARN** (long-idle sessions ≥ 50% of the established timeout, `established < keepalive`) / **UNKNOWN** (pool exists but idle age unmeasurable). Fixes the conservative false-positive on actively-polled monitoring TCP sockets (the monitor `zabbix-agent2` PostgreSQL plugin, idle ~45–59s ≪ 600s). Watchdog elevates on **WARN** (`dead-socket risk`) only, **never UNKNOWN**.
+- **Cross-distro observability** (per the v1.216.1 audit — Debian/Ubuntu kernels ship `CONFIG_NF_CONNTRACK_PROCFS=n`): idle-age source order = **`/proc/net/nf_conntrack`** (RHEL-family, procfs) → **`conntrack -L`** (Debian/Ubuntu, optional tool) → **UNKNOWN**. Idle ≈ established_timeout − remaining; IPv4 + IPv6 loopback; DB ports 5432/3306/6379/27017; malformed output → UNKNOWN-FORMAT (never CLEAN).
+- **DEB `Recommends: conntrack`** (optional, not `Depends` — installed by default via apt, removable) so most Debian/Ubuntu installs get full classification; **RPM metadata unchanged** (procfs already full).
+- **UNKNOWN is first-class + honest** (never silent-CLEAN; advises `apt install conntrack`). **`idle_age_source`** (`procfs|conntrack-tool|none|unknown-format`) exposed in `nftban support` (`sysctl/idle-age-source.txt`) and risk-scan lines.
+- **Docs:** `docs/SYSCTL_DEAD_SOCKET_OBSERVABILITY.md` (observability matrix). **Future HOLD lane:** dependency-free nfnetlink reader (`OPEN_DEB_CONNTRACK_NFNETLINK_READER_V216_PLUS`).
+- **Validation:** hermetic `sysctl_risk_idle_age_v2161` **26/26** (matrix + conntrack-tool fallback [WARN/INFO/IPv6/malformed/empty] + `idle_age_source` + packaging asserts); `sysctl_safe_default_v216` **21/21**; shellcheck `-x -S warning` clean; **real DEB lab proof (lab2, Ubuntu 24.04)** — UNKNOWN→conntrack-tool→INFO with real `conntrack -L` parse, live sysctl unchanged.
+
+## [v1.216.0] - 2026-07-03 — Sysctl safe-default + DEB/RPM parity + read-only conntrack visibility (shell/packaging; daemon byte-identical)
+
+**Lane:** `OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT` — the **v1.216.0 slice** of the design train (`NFTBAN_ROADMAP/OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT_V216_DESIGN_TRAIN.md`), **not** the full profile redesign. **PR:** [#997](https://github.com/itcmsgr/nftban/pull/997) → `e9126f81`.
+
+> **SHELL/PACKAGING + read-only diagnostics.** **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go change). **nft schema 1.84.0 unchanged. No live sysctl writes; no `sysctl --system`/modprobe on upgrade.** Loopback lane remains separate (v1.217.0+).
+
+- **Safe-default correction (`install/sysctl/90-nftban.conf`):** drops the unconditional `net.netfilter.nf_conntrack_tcp_timeout_established = 600` → the kernel default (432000s) now owns established-flow lifetime. A short established timeout could conntrack-evict idle-but-live local TCP flows (e.g. a persistent app→DB pool) **before** `tcp_keepalive_time` (7200s) probes them → dead sockets (the monitor Zabbix/PostgreSQL hang precondition). **Transitional attack-surface hardening preserved** (`time_wait=30`, `syn_sent=30`, `syn_recv=15` — the clearer DDoS lever). Rationale + `/etc/sysctl.d/99-local.conf` override guidance (≥ keepalive advised) + a no-auto-write note added.
+- **DEB/RPM parity (`packaging/build_nftban.sh`):** `/etc/sysctl.d/90-nftban.conf` is now declared in the DEB conffiles → dpkg preserves operator edits on upgrade, matching RPM `%config(noreplace)`.
+- **Read-only visibility:** new `cli/lib/nftban/lib/nftban_sysctl_registry.sh` — declarative 2-key registry + risk scan (dead-socket precondition [est<keepalive + local idle TCP DB pool], legacy-600-in-file, file-vs-live drift, module-load race, operator-override INFO); **never writes.** Wired read-only into the watchdog conntrack check (OK→WARNING only on the dead-socket precondition) and the support bundle (`_collect_sysctl`: files + live readback + registry + risk scan); both subshell-isolated so the lib's `set -Eeuo` can't leak.
+- **Out of scope (deferred per design train):** automatic live-kernel write; RAM-scaling `nf_conntrack_max`; `NftbanProfile` object / platform expansion; `nftban sysctl apply`; loopback-before-invalid; monitor Zabbix/PostgreSQL changes.
+- **Validation:** hermetic `sysctl_safe_default_v216_test.sh` **21/21**; shellcheck `-x -S warning` clean; regressions (v128 help-correlation, botguard_diag) green. Package-native lab2 DEB (edited `90-nftban.conf` survives upgrade) + lab4 RPM (`%config(noreplace)`) + monitor read-only + srv4 canary at the validation gate.
+
+## [v1.215.0] - 2026-07-03 — Install/Update observability: progress contract + structured terminal summary (shell-only; daemon byte-identical)
+
+**Codename:** `OPEN_INSTALL_UPDATE_OBSERVABILITY` · **Impl PR:** [#995](https://github.com/itcmsgr/nftban/pull/995) (→ `b4c30976`) · **Docs:** `OPEN_INSTALL_UPDATE_OBSERVABILITY_V215_SCOPE.md`
+
+> **SHELL-ONLY** (`cli/lib/nftban/cli/cmd_update.sh` + `cmd_update_helpers.sh` + one test). **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go change). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Operator observability for `nftban update`/install — progress visibility during the run + a structured terminal summary. NOT a logging redesign. (v1.214.1 was intentionally SKIPPED — the "unbounded log / global→index" premise was false per code: installer.log/update.log are already logrotate-bounded, per-run `run.jsonl` + retention + support-bundle collection already exist.)
+
+- **Start banner (up-front progress contract):** `NFTBan update started — 6 phases expected` + `run_id` + per-run log dir, so the operator knows what to expect and where the full record lives.
+- **6 ordered `[N/6]` phase markers** — names UNCHANGED (Backup / Install / Restart services / Health check / Post-update verification / Finalize); `_update_phase` now also records the last phase reached (side-effect only — the emitted marker string is byte-identical).
+- **Structured final summary** on every terminal path (COMMITTED/DEGRADED/FAILED/fallback): Result / Version before→after (elapsed) / Warnings / Failed units / Validation / **Completed phases N/6** / Run ID / per-run Log dir / global Log path. Log path + run_id now shown on **success** too (previously failure only).
+- **No progress bar, no percentage, no fake ETA** — phase count + current phase + elapsed only. **Legacy `Updated: vX → vY` preserved verbatim.**
+- **RPM and DEB share the same phase/banner/summary flow.** `run.jsonl` format UNTOUCHED (machine-only); logrotate UNCHANGED; Go installer logger UNCHANGED; v1.199 no-JSON-on-console invariant preserved. PR-2 (human.log enrich) + PR-3 (failed-run retention) intentionally excluded.
+- **Validation:** hermetic `install_update_observability_v215_test.sh` **35/35**; `nftban_update_progress_r1b3_test` **22/22** (phase names/markers unbroken); `lifecycle_forensics_v1199_test` **21/21** (run.jsonl/forensics untouched); shellcheck `-x -S warning` clean. Package-native lab2 DEB + lab4 RPM validation at the validation gate (update-output code — prove the real package update path renders the summary).
+
 ## [v1.214.0] - 2026-07-02 — BotScan pattern-delimiter fix: restore 3 regex-alternation patterns (shell-only; daemon byte-identical)
 
 **Codename:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX` · **Impl PR:** [#988](https://github.com/itcmsgr/nftban/pull/988) (→ `08b371f4`) · **Docs:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX_V214_{SCOPE,SCOPE_CHALLENGE,IMPL_REPORT,PR_REPORT}.md`

@@ -60,9 +60,61 @@ _update_log() {
 # and NO dynamic state machine; it does not change update logic, ordering, or
 # the rc contract. The total is a fixed phase count for a full run.
 _NFTBAN_UPDATE_PHASE_TOTAL="${_NFTBAN_UPDATE_PHASE_TOTAL:-6}"
+_NFTBAN_UPDATE_PHASE_DONE=0   # v1.215.0: last phase reached (for the final "Completed phases: N/M")
 _update_phase() {
     local n="$1" name="$2" hint="${3:-}"
+    _NFTBAN_UPDATE_PHASE_DONE="$n"   # side-effect only; the emitted marker string is unchanged
     _update_log INFO "[${n}/${_NFTBAN_UPDATE_PHASE_TOTAL}] ${name}${hint:+ — ${hint}}"
+}
+
+# v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): the up-front progress contract —
+# announce the total phase count + run_id + per-run log dir at the START of the run so the
+# operator knows how many phases to expect and where the full record lives. Presentation
+# only; identical for RPM and DEB (both flow through the same _cmd_update_main phases).
+# Usage: _update_start_banner  (reads module-global _RUN_ID / FORENSIC_RUN_DIR)
+_update_start_banner() {
+    local run_id="${_RUN_ID:-${NFTBAN_RUN_ID:-n/a}}"
+    local log_dir="${FORENSIC_RUN_DIR:-n/a}"
+    echo ""
+    echo "  NFTBan update started — ${_NFTBAN_UPDATE_PHASE_TOTAL} phases expected"
+    echo "    run_id: ${run_id}"
+    echo "    Logs:   ${log_dir}"
+    echo ""
+}
+
+# v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): one structured final operator
+# summary, emitted on every terminal update path (COMMITTED/DEGRADED/FAILED/fallback).
+# PRESENTATION ONLY — additive to the existing verdict blocks; does NOT change update
+# logic, the rc contract, the per-run run.jsonl (untouched, machine-only), or the legacy
+# "Updated: vX → vY" line. No lifecycle JSON is emitted here (v1.199 invariant preserved).
+# Reads the module-global _RUN_ID / FORENSIC_RUN_DIR / UPDATE_LOG_FILE; failed-unit count
+# is read LIVE at summary time. Usage:
+#   _update_final_summary <result> <before_ver> <after_ver> <duration_s> <warnings> <validation>
+_update_final_summary() {
+    local result="${1:-UNKNOWN}" before="${2:-?}" after="${3:-?}" dur="${4:-?}"
+    local warnings="${5:-0}" validation="${6:-unavailable}"
+    local run_id="${_RUN_ID:-${NFTBAN_RUN_ID:-n/a}}"
+    local log_dir="${FORENSIC_RUN_DIR:-n/a}"
+    local log_path="${UPDATE_LOG_FILE:-/var/log/nftban/update.log}"
+    local failed_units
+    failed_units=$(systemctl --failed --no-legend 2>/dev/null | grep -c -i 'nftban' || true)
+    failed_units=${failed_units//[^0-9]/}; failed_units=${failed_units:-0}
+    [[ "$warnings" =~ ^[0-9]+$ ]] || warnings=0
+    local phases_done="${_NFTBAN_UPDATE_PHASE_DONE:-0}" phases_total="${_NFTBAN_UPDATE_PHASE_TOTAL:-6}"
+
+    echo ""
+    echo "  ┌─ Update summary ─────────────────────────────────────"
+    printf '  │ %-16s %s\n' "Result:"          "$result"
+    printf '  │ %-16s %s\n' "Version:"         "v${before} → v${after} (${dur}s)"
+    printf '  │ %-16s %s\n' "Warnings:"        "$warnings"
+    printf '  │ %-16s %s\n' "Failed units:"    "$failed_units"
+    printf '  │ %-16s %s\n' "Validation:"      "$validation"
+    printf '  │ %-16s %s\n' "Completed phases:" "${phases_done}/${phases_total}"
+    printf '  │ %-16s %s\n' "Run ID:"          "$run_id"
+    printf '  │ %-16s %s\n' "Log dir:"         "$log_dir"
+    printf '  │ %-16s %s\n' "Log:"             "$log_path"
+    echo "  └──────────────────────────────────────────────────────"
+    echo ""
 }
 
 _update_banner() {
