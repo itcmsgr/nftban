@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.3] - 2026-07-04 — Health-truth: validator journal query uses server-side grep (busy-host heartbeat eviction fix) (Go validator; daemon/tool RE-BASELINE)
+
+**Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_QUERY_LINECAP_V216_3` — the rollout-unblocking follow-up to v1.216.2. **PR:** [#1003](https://github.com/itcmsgr/nftban/pull/1003) → `88eaef80`.
+
+> **v1.216.2 was published but NOT fleet-approved** — its LoginMon heartbeat fixed the *quiet-host* false `VAL-LOGINMON-001` but package validation FAILED on lab2 (busy DEB host). v1.216.3 is **required before fleet rollout**. **Go validator hotfix. Daemon/tool RE-BASELINE: YES** (`nftban-validate` changes; `nftband` relinks `internal/validator`; NOT byte-identical). **nft schema 1.84.0 unchanged.** No sysctl/nft/conntrack/loopback/profile/package/LoginMon-producer change.
+
+- **Root cause:** the validator journal reader ran `journalctl -u nftband --since -15m -o cat -r -n 200` and matched patterns CLIENT-SIDE in Go, so the `-n 200` cap applied BEFORE matching → on a busy host (lab2, ~488 nftband lines/min of `[EVENT]`/`[BAN]` under real SSH attack) the 5-min heartbeat (2 lines/15m) was evicted from the returned window → `VAL-LOGINMON-001` still fired. Universal under high log volume.
+- **Fix (`internal/validator/journal.go` only):** extract pure `buildJournalArgs(q)` — when patterns present, add server-side **`-g <regexp.QuoteMeta(p) | …>` before `-n`** so the cap bounds MATCHING lines, not all unit lines. Patterns are compile-time constants, each `QuoteMeta`-escaped (`[botguard] loaded` stays a literal, not a char class), passed as argv (no shell). Extract pure `parseJournalResult` — **`-g` no-match exit 1 is handled as definitive absence (`ErrNone`/`Found=false`)**, so genuinely-unbound modules still emit their finding (hard failures stay errors → fail-safe). Bonus: also fixes the same eviction for the shared BotGuard evidence query.
+- **Tests:** `journal_args_test.go` (`-g` present + escaped OR + `-g`-before-`-n`, regex-escape no-overmatch, non-pattern no `-g`, bounds retained; `parseJournalResult` exit-1→absent via real `*exec.ExitError`, timeout/exec→errors); `module_health_test.go` `TestLoginMonHighVolumeHeartbeatFound`; existing journal T1–T9 + LoginMon/heartbeat/BotGuard green; `go test ./...` + `go vet ./...` + gofmt clean. gosec G204 on the fixed `journalctl` call reviewed + dismissed as a documented false positive (argv-only, escaped internal constants).
+
 ## [v1.216.2] - 2026-07-04 — Health-truth: LoginMon source-binding heartbeat clears false VAL-LOGINMON-001 (Go daemon + validator; daemon RE-BASELINE)
 
 **Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_WINDOW_FALSE_INFO_V216_2`. **PR:** [#1001](https://github.com/itcmsgr/nftban/pull/1001) → `b1159e2b`.
