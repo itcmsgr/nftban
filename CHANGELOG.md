@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.4] - 2026-07-04 — Install/update warning taxonomy + timer-restore false-warn fix (shell/UX; daemon byte-identical)
+
+**Lane:** `OPEN_INSTALL_UPDATE_WARNING_TAXONOMY_AND_DEBT_V216_4` (lane A). Completes the **v1.216.2 → v1.216.4 health/warning cleanup train** before closure. **PR:** [#1006](https://github.com/itcmsgr/nftban/pull/1006) → `daf6c63d`.
+
+> **SHELL/UX + tests only. Daemon + matcher BYTE-IDENTICAL** (0 Go, source-proven). **nft schema 1.84.0 unchanged.** No sysctl/nft/conntrack/tmpfiles/systemd/package/validator change.
+
+- **W1 timer-restore false warning FIXED** (`cmd_update_helpers.sh`): the update entrypoint sets `IFS=$'\n\t'` (space excluded), so `_update_restore_cadence_timers`' bare `for t in $_NFTBAN_INHIBITED_TIMERS` (space-joined string) did NOT split → `systemctl start "nftban-watchdog.timer nftban-maintenance.timer"` (one malformed unit) always failed → a false WARN, even though the installer's timer reconciliation left both timers active. Now splits explicitly (`IFS=' ' read -r -a`), starts each timer individually, and **verifies with `is-active`** — a WARN is emitted only if a timer is genuinely still inactive after restore; a transient start error that self-heals is a recovered advisory, not a WARN.
+- **Class-aware warning taxonomy** (`cmd_update.sh` + `cmd_update_helpers.sh`): replaced the class-blind `grep -c 'WARN|⚠'` count with `_update_classify_warnings`, bucketing installer-log warnings into **WARN_REAL / WARN_RECOVERED / WARN_ACCEPTED_SECURITY_EXCEPTION (tmpfiles firewall-validate W2+W3, deduped) / WARN_EXTERNAL_OS_ADVISORY (needrestart/kernel W4, deduped)**, skipping the installer meta self-report. Summary now prints "N action / N recovered / N accepted / N external"; **`Action needed: NONE` iff `WARN_REAL == 0`** (else "review N warning(s) requiring action").
+- **Intentionally unchanged:** the tmpfiles `/run/nftban/firewall-validate` accepted security exception (v1.175 — integrity preserved, structural `RuntimeDirectory=` redesign is a later lane) and the `VAL-LOGINMON-002` Roundcube health warning (stays a real health-surface WARN with its action text; not folded into the install-warning count).
+- **Tests:** `update_warning_taxonomy_v2164` 16/0 (W1 fix under real `IFS=$'\n\t'`, verify-before-warn, taxonomy dedup + meta-skip + Action-needed invariant); `watchdog_update_swap_race_v1983` 20/0 regression; `bash -n` + `shellcheck -x -S warning` clean.
+
 ## [v1.216.3] - 2026-07-04 — Health-truth: validator journal query uses server-side grep (busy-host heartbeat eviction fix) (Go validator; daemon/tool RE-BASELINE)
 
 **Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_QUERY_LINECAP_V216_3` — the rollout-unblocking follow-up to v1.216.2. **PR:** [#1003](https://github.com/itcmsgr/nftban/pull/1003) → `88eaef80`.
