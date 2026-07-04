@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.2] - 2026-07-04 — Health-truth: LoginMon source-binding heartbeat clears false VAL-LOGINMON-001 (Go daemon + validator; daemon RE-BASELINE)
+
+**Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_WINDOW_FALSE_INFO_V216_2`. **PR:** [#1001](https://github.com/itcmsgr/nftban/pull/1001) → `b1159e2b`.
+
+> **Go daemon + validator hotfix. Daemon RE-BASELINE: YES** — `nftband` + `nftban-validate` change (NOT byte-identical; unlike the shell-only v1.215/v1.216.0/v1.216.1 lanes). **nft schema 1.84.0 unchanged.** No sysctl/nft/conntrack/loopback/profile/package change.
+
+- **Fixes recurring benign `[INFO] VAL-LOGINMON-001`** on a healthy long-running LoginMon (Overall PROTECTED, Daemon RUNNING, Runtime=running). **Root cause:** the validator proved "running+bound" from a **decaying 15-minute journal window** searching one-shot startup lines (`module_start: loginmon` + `resolved_by=`) that LoginMon logs once at Start/discovery and never refreshed → on quiet hosts (guaranteed on srv3/srv4 volatile journald) the evidence aged out and the INFO fired forever. Health-truth debt: an event log used as a state store. Not a LoginMon failure.
+- **Fix (`internal/loginmon/module.go`):** new always-on `startBindingHeartbeat` goroutine (launched from `Start()`, all modes) emits `[LOGINMON] loginmon_source_binding_heartbeat resolved_by=heartbeat sources=N state=running` every **5 min** (< the 15m validator window). Logs a **source count only** — no source paths, panel paths, usernames, domains, or secrets. When `sources=0` (running but unbound) it omits `resolved_by=` so a genuinely unbound module **still** trips the finding. No ban-logic or discovery change.
+- **Validator (`internal/validator/module_health.go`):** registration-evidence query also accepts `loginmon_source_binding_heartbeat`; binding evidence still requires `resolved_by=`. A single fresh bound heartbeat refreshes both AND-conditions. Genuine missing/starved paths intact.
+- **BotGuard sibling deferred/open:** `VAL-BOTGUARD-001` uses the identical decaying-window pattern (default-OFF, not firing on the fleet) → registered as `OPEN_HEALTH_TRUTH_BOTGUARD_JOURNAL_WINDOW_FALSE_INFO`, not in this release.
+- **Tests:** validator `TestLoginMonHeartbeatSatisfiesEvidence` + `TestLoginMonHeartbeatUnboundStillFlags`; producer `TestBindingHeartbeatLine{Bound,Unbound,NoSecrets}` + `TestBindingHeartbeatIntervalBelowJournalWindow`; existing LoginMon/journal tests green; `go test ./...` + `go vet ./...` + gofmt clean.
+
 ## [v1.216.1] - 2026-07-04 — Sysctl dead-socket guard: idle-age classification + DEB conntrack fallback (shell/packaging/docs; daemon byte-identical)
 
 **Lane:** `OPEN_DEB_CONNTRACK_IDLE_AGE_OBSERVABILITY` — refines the v1.216.0 read-only dead-socket guard. **PR:** [#999](https://github.com/itcmsgr/nftban/pull/999) → `14691d96`.
