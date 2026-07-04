@@ -653,6 +653,36 @@ func TestLoginMonHeartbeatUnboundStillFlags(t *testing.T) {
 	}
 }
 
+// v1.216.3 end-to-end: startup evidence aged out, high volume of unrelated [EVENT]/[BAN]
+// lines, but the bound heartbeat is within the window → no VAL-LOGINMON-001. The busy-host
+// EVICTION fix itself is a command-semantics property guarded in journal_args_test.go
+// (pattern queries use server-side -g before -n); this test confirms the evaluator verdict
+// once the reader surfaces the heartbeat alongside noise, without any startup line present.
+func TestLoginMonHighVolumeHeartbeatFound(t *testing.T) {
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	lines := []string{
+		"[LOGINMON] loginmon_source_binding_heartbeat resolved_by=heartbeat sources=4 state=running",
+	}
+	for i := 0; i < 500; i++ {
+		lines = append(lines, "[EVENT] login_failed: loginmon ip=203.0.113.7 user=root ssh_preauth_disconnect")
+		lines = append(lines, "[BAN] REFUSED (never-ban exempt): 198.51.100.9")
+	}
+	SetJournalReader(mockJournalReader{lines: lines})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			t.Error("should NOT emit VAL-LOGINMON-001 when a bound heartbeat is present amid high-volume noise")
+		}
+	}
+}
+
 func TestLoginMonJournalNoEvidence(t *testing.T) {
 	// Running but no LoginMon evidence → info finding
 	cleanup := setupTestConfig(t, map[string]string{
