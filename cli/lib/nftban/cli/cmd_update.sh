@@ -818,6 +818,9 @@ _cmd_update_main_locked() {
         _summary_warnings=$(tail -n +$((_ilog_before_lines + 1)) "$_ilog_file" 2>/dev/null | grep -c -iE 'WARN|⚠' || true)
         _summary_warnings=${_summary_warnings//[^0-9]/}; _summary_warnings=${_summary_warnings:-0}
     fi
+    # v1.216.4: classify the raw warnings into action / recovered / accepted / external so
+    # the summary and operator-readiness reflect only warnings that actually need action.
+    _update_classify_warnings "$_ilog_file" "$_ilog_before_lines"
 
     case "$_installer_state" in
         COMMITTED)
@@ -842,6 +845,12 @@ _cmd_update_main_locked() {
             # be COMMITTED). One block only — no second/contradictory verdict.
             local _rd_ready="PASS" _rd_action="NONE"
             if [[ "${health_status:-0}" -ne 0 ]]; then _rd_ready="PASS_WITH_WARN"; _rd_action="WARN"; fi
+            # v1.216.4 invariant: "Action needed: NONE" iff there are ZERO warnings requiring
+            # action. Recovered/accepted/external advisories never force an action verdict —
+            # only WARN_REAL (a genuine unresolved warning) does.
+            if [[ "${_NFTBAN_WARN_REAL:-0}" -gt 0 ]]; then
+                _rd_ready="PASS_WITH_WARN"; _rd_action="review ${_NFTBAN_WARN_REAL} warning(s) requiring action"
+            fi
             printf "  %-20s %s\n" "Operational:" "YES"
             printf "  %-20s %s\n" "Upgrade readiness:" "$_rd_ready"
             printf "  %-20s %s\n" "Action needed:" "$_rd_action"
