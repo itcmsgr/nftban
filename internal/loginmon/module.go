@@ -386,6 +386,50 @@ func (m *Module) startPipelineSnapshot(ctx context.Context) {
 	}
 }
 
+// bindingHeartbeatInterval is how often the source-binding heartbeat is emitted.
+// It MUST stay below the health validator's bounded journal-evidence window
+// (internal/validator/journal.go: 15 minutes) so the evidence never ages out on a
+// quiet, long-running host. v1.216.2 health-truth hotfix.
+const bindingHeartbeatInterval = 5 * time.Minute
+
+// bindingHeartbeatLine builds the periodic heartbeat log payload. Extracted (pure,
+// no receiver state beyond the count) so it is unit-testable without a running module.
+// When sources are bound (n>0) it includes "resolved_by=" so the validator's binding
+// evidence refreshes alongside the "loginmon_source_binding_heartbeat" registration
+// marker; when n==0 it deliberately omits "resolved_by=" so a genuinely unbound module
+// still trips VAL-LOGINMON-001's binding-evidence AND-condition. Never logs secrets —
+// only a source count and running state.
+func bindingHeartbeatLine(n int) string {
+	if n > 0 {
+		return fmt.Sprintf("loginmon_source_binding_heartbeat resolved_by=heartbeat sources=%d state=running", n)
+	}
+	return "loginmon_source_binding_heartbeat sources=0 state=running"
+}
+
+// startBindingHeartbeat periodically emits the source-binding heartbeat to journald so
+// the health validator (VAL-LOGINMON-001) can confirm a quiet, long-running LoginMon is
+// still running and bound. LoginMon logs its registration ("module_start: loginmon") and
+// per-source binding ("resolved_by=...") lines only once, at Start/discovery; on a quiet
+// host they age out of the validator's bounded 15-minute journal window (guaranteed on
+// volatile-journald hosts), producing a benign-but-recurring INFO. This heartbeat keeps
+// the evidence fresh. It changes no ban behavior and performs no source discovery — it
+// only reflects the already-captured bound-source count. v1.216.2.
+func (m *Module) startBindingHeartbeat(ctx context.Context) {
+	ticker := time.NewTicker(bindingHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.mu.RLock()
+			n := len(m.inputSources)
+			m.mu.RUnlock()
+			log.Printf("[LOGINMON] %s", bindingHeartbeatLine(n))
+		}
+	}
+}
+
 // Start begins the module's background work
 func (m *Module) Start(ctx context.Context) error {
 	ctx, m.cancel = context.WithCancel(ctx)
@@ -431,6 +475,11 @@ func (m *Module) Start(ctx context.Context) error {
 
 	// Start cleanup goroutine
 	go m.runCleanup(ctx)
+
+	// v1.216.2 health-truth: periodic source-binding heartbeat so the health
+	// validator can confirm a quiet, long-running LoginMon is still running+bound
+	// without depending on one-shot startup lines aging out of its 15m journal window.
+	go m.startBindingHeartbeat(ctx)
 
 	return nil
 }
