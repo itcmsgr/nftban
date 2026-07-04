@@ -601,6 +601,58 @@ func TestLoginMonJournalOnlyRegistration(t *testing.T) {
 	}
 }
 
+// v1.216.2 health-truth: the periodic source-binding heartbeat keeps a healthy,
+// long-running LoginMon from tripping VAL-LOGINMON-001 once the one-shot startup lines
+// ("module_start: loginmon") age out of the bounded 15m window. The bound heartbeat
+// carries BOTH the registration marker and resolved_by=, so a single fresh line proves
+// running+bound.
+func TestLoginMonHeartbeatSatisfiesEvidence(t *testing.T) {
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	// No "module_start: loginmon" (aged out) — only the heartbeat.
+	SetJournalReader(mockJournalReader{lines: []string{
+		"[LOGINMON] loginmon_source_binding_heartbeat resolved_by=heartbeat sources=3 state=running",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			t.Error("should NOT emit VAL-LOGINMON-001 when a bound-source heartbeat is fresh (startup lines aged out)")
+		}
+	}
+}
+
+// v1.216.2: an unbound heartbeat (sources=0, no resolved_by=) must STILL leave the genuine
+// running-but-unbound case flagged — the fix refreshes evidence, it does not blanket-suppress.
+func TestLoginMonHeartbeatUnboundStillFlags(t *testing.T) {
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"[LOGINMON] loginmon_source_binding_heartbeat sources=0 state=running",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	found := false
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected VAL-LOGINMON-001 when heartbeat shows sources=0 (running but unbound, no resolved_by=)")
+	}
+}
+
 func TestLoginMonJournalNoEvidence(t *testing.T) {
 	// Running but no LoginMon evidence → info finding
 	cleanup := setupTestConfig(t, map[string]string{
@@ -772,7 +824,7 @@ func TestBlacklistManualPrimedZeroDrops(t *testing.T) {
 func TestReadConfigBoolLocalOverride(t *testing.T) {
 	cleanup := setupTestConfig(t, map[string]string{
 		"conf.d/botguard/main.conf":       `HTTP_BOTGUARD_ENABLED="false"`,
-		"conf.d/botguard/main.conf.local":  `HTTP_BOTGUARD_ENABLED="true"`,
+		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
 	})
 	defer cleanup()
 
