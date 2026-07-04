@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.1] - 2026-07-04 — Sysctl dead-socket guard: idle-age classification + DEB conntrack fallback (shell/packaging/docs; daemon byte-identical)
+
+**Lane:** `OPEN_DEB_CONNTRACK_IDLE_AGE_OBSERVABILITY` — refines the v1.216.0 read-only dead-socket guard. **PR:** [#999](https://github.com/itcmsgr/nftban/pull/999) → `14691d96`.
+
+> **SHELL/PACKAGING/DOCS.** **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go). **nft schema 1.84.0 unchanged. No live sysctl writes.** Read-only, credential-free (no DB queries).
+
+- **Idle-age classification** replaces "warn on any local TCP DB pool": **CLEAN** (no pool) / **INFO** (pool but actively-refreshed, or `established >= keepalive`) / **WARN** (long-idle sessions ≥ 50% of the established timeout, `established < keepalive`) / **UNKNOWN** (pool exists but idle age unmeasurable). Fixes the conservative false-positive on actively-polled monitoring TCP sockets (the monitor `zabbix-agent2` PostgreSQL plugin, idle ~45–59s ≪ 600s). Watchdog elevates on **WARN** (`dead-socket risk`) only, **never UNKNOWN**.
+- **Cross-distro observability** (per the v1.216.1 audit — Debian/Ubuntu kernels ship `CONFIG_NF_CONNTRACK_PROCFS=n`): idle-age source order = **`/proc/net/nf_conntrack`** (RHEL-family, procfs) → **`conntrack -L`** (Debian/Ubuntu, optional tool) → **UNKNOWN**. Idle ≈ established_timeout − remaining; IPv4 + IPv6 loopback; DB ports 5432/3306/6379/27017; malformed output → UNKNOWN-FORMAT (never CLEAN).
+- **DEB `Recommends: conntrack`** (optional, not `Depends` — installed by default via apt, removable) so most Debian/Ubuntu installs get full classification; **RPM metadata unchanged** (procfs already full).
+- **UNKNOWN is first-class + honest** (never silent-CLEAN; advises `apt install conntrack`). **`idle_age_source`** (`procfs|conntrack-tool|none|unknown-format`) exposed in `nftban support` (`sysctl/idle-age-source.txt`) and risk-scan lines.
+- **Docs:** `docs/SYSCTL_DEAD_SOCKET_OBSERVABILITY.md` (observability matrix). **Future HOLD lane:** dependency-free nfnetlink reader (`OPEN_DEB_CONNTRACK_NFNETLINK_READER_V216_PLUS`).
+- **Validation:** hermetic `sysctl_risk_idle_age_v2161` **26/26** (matrix + conntrack-tool fallback [WARN/INFO/IPv6/malformed/empty] + `idle_age_source` + packaging asserts); `sysctl_safe_default_v216` **21/21**; shellcheck `-x -S warning` clean; **real DEB lab proof (lab2, Ubuntu 24.04)** — UNKNOWN→conntrack-tool→INFO with real `conntrack -L` parse, live sysctl unchanged.
+
 ## [v1.216.0] - 2026-07-03 — Sysctl safe-default + DEB/RPM parity + read-only conntrack visibility (shell/packaging; daemon byte-identical)
 
 **Lane:** `OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT` — the **v1.216.0 slice** of the design train (`NFTBAN_ROADMAP/OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT_V216_DESIGN_TRAIN.md`), **not** the full profile redesign. **PR:** [#997](https://github.com/itcmsgr/nftban/pull/997) → `e9126f81`.
