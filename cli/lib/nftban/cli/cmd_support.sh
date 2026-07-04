@@ -278,6 +278,10 @@ _collect_sysctl() {
         if ( source "$reg" 2>/dev/null && nftban_sysctl_risk_scan ) > "$d/risk-scan.txt" 2>/dev/null; then
             _support_log OK "sysctl risk scan"
         fi
+        # v1.216.1: explicit idle-age observability source (procfs on RHEL / conntrack-tool on Debian-Ubuntu / none)
+        # so operators can see WHY dead-socket classification is CLEAN/INFO/WARN/UNKNOWN on this host.
+        # shellcheck source=/dev/null
+        ( source "$reg" 2>/dev/null && printf 'idle_age_source=%s\n' "$(_nftban_db_idle_source)" ) > "$d/idle-age-source.txt" 2>/dev/null || true
     fi
 }
 
