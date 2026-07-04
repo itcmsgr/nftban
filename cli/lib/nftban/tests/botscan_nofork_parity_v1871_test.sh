@@ -65,13 +65,17 @@ echo "PASS P: parse_line_g globals == parse_line echo across all formats + expli
 # ----------------------------------------------------------------------------
 # (M) match_url: echo API vs no-fork _g, every match_type + no-match
 # ----------------------------------------------------------------------------
-# def format: pattern|match_type|threshold|window|ban|desc
+# def format: pattern<US>match_type<US>threshold<US>window<US>ban<US>desc
+# v1.214.0 OPEN_BOTSCAN_PATTERN_DELIMITER_FIX — the internal _BOTSCAN_PATTERNS join/split
+# moved from '|' to ASCII Unit Separator (\x1f) so a pattern's own '|' alternation survives
+# the downstream re-splits. Build the defs with the module's _BS_US delimiter accordingly.
+_us="${_BS_US:-$'\x1f'}"
 _BOTSCAN_PATTERNS=(
-  [WP_LOGIN]='wp-login|url-404|2|60|3600|wp'
-  [XMLRPC]='xmlrpc|url-post|2|60|3600|xr'
-  [GITCFG]='\.git/config|url-get|1|60|86400|git'
-  [ANYEVIL]='/evil|url-any|1|60|3600|any'
-  [BADUA]='evilbot|useragent|1|60|3600|ua'
+  [WP_LOGIN]="wp-login${_us}url-404${_us}2${_us}60${_us}3600${_us}wp"
+  [XMLRPC]="xmlrpc${_us}url-post${_us}2${_us}60${_us}3600${_us}xr"
+  [GITCFG]="\\.git/config${_us}url-get${_us}1${_us}60${_us}86400${_us}git"
+  [ANYEVIL]="/evil${_us}url-any${_us}1${_us}60${_us}3600${_us}any"
+  [BADUA]="evilbot${_us}useragent${_us}1${_us}60${_us}3600${_us}ua"
 )
 # cases: url method status ua  -> expected match name ("" = no match)
 m_cases=(

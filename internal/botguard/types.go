@@ -195,6 +195,10 @@ type GuardStats struct {
 	BatchSignalsMalformed     int64 // malformed batch signals skipped
 	BatchConsumerRuns         int64 // batch-signal drain invocations
 	BatchConsumerStaleBacklog bool  // last drain saw a stale backlog (quarantined)
+	// v1.212 — lost-ban-signal handoff observability (flock-guarded rename-then-consume). These
+	// let health WARN/DEGRADE on a broken signal handoff instead of reading a false PROTECTED.
+	BatchHandoffErrors           int64 // lock/rename/remove handoff failures (health-degradable)
+	BatchStaleConsumingRecovered int64 // leftover .consuming files processed after a prior crash
 }
 
 // BatchSignal represents a signal from the shell botscan (Clock 3).

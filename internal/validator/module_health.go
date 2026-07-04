@@ -326,8 +326,15 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 		// Both must be present — module_start alone proves the module loaded,
 		// but sources must be bound for LoginMon to actually process events.
 		// Two separate queries with AND semantics (not OR).
+		// v1.216.2 health-truth: also accept the periodic source-binding heartbeat
+		// ("loginmon_source_binding_heartbeat", emitted every 5m while running) as
+		// registration evidence. The one-shot "module_start: loginmon" line ages out
+		// of this bounded 15m window on quiet/long-running (and volatile-journald)
+		// hosts; the heartbeat keeps a healthy running+bound module from tripping a
+		// false VAL-LOGINMON-001. When sources are bound the heartbeat also carries
+		// "resolved_by=", so the binding query below refreshes from the same line.
 		regEvidence := queryJournal(context.Background(), JournalQuery{
-			Patterns: []string{"module_start: loginmon"},
+			Patterns: []string{"module_start: loginmon", "loginmon_source_binding_heartbeat"},
 			Since:    15 * time.Minute,
 		})
 		bindEvidence := queryJournal(context.Background(), JournalQuery{

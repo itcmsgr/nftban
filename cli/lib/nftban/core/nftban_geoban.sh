@@ -319,7 +319,12 @@ nftban_geoban_apply_to_nftables() {
 
     # =========================================================================
     # 3. Add IPv4 CIDRs to blacklist_ipv4
-    # NOTE: We ADD elements. Set can be flushed on full refresh.
+    # v1.213.0 SET_APPLY_SINGLE_WRITER (Design A): the durable source
+    # (/etc/nftban/geoban.d/50-ban-*.conf) is already written upstream by the
+    # geoip ban/unban command; trigger a FULL daemon sync (reconciles
+    # blacklist_ipv4/_ipv6 from those same conf files — both additions and
+    # country removals) instead of an additive add-element. The fragment is kept
+    # as the legacy IPC-failure fallback (mixed-version rollout safety).
     # =========================================================================
 
     if [[ $cidr_count_v4 -gt 0 ]]; then
@@ -337,7 +342,7 @@ nftban_geoban_apply_to_nftables() {
         element_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_frag_XXXXXX.nft")
         echo "add element $table_v4 $set_v4 { $cidr_list_v4 }" > "$element_fragment"
 
-        if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
+        if nft_ipc_sync_or_apply "geoban" "$element_fragment" 2>/dev/null; then
             rm -f "$element_fragment" 2>/dev/null
             nftban_success "Added $cidr_count_v4 IPv4 CIDRs to $set_v4"
         else
@@ -366,7 +371,8 @@ nftban_geoban_apply_to_nftables() {
         element_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_frag_XXXXXX.nft")
         echo "add element $table_v6 $set_v6 { $cidr_list_v6 }" > "$element_fragment"
 
-        if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
+        # v1.213.0: FULL sync (durable geoban.d source) with legacy additive fallback
+        if nft_ipc_sync_or_apply "geoban" "$element_fragment" 2>/dev/null; then
             rm -f "$element_fragment" 2>/dev/null
             nftban_success "Added $cidr_count_v6 IPv6 CIDRs to $set_v6"
         else
@@ -445,7 +451,11 @@ nftban_geoban_remove_from_nftables() {
         delete_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_del_v4_XXXXXX.nft")
         echo "delete element $table_v4 $set_v4 { $cidr_list_v4 }" > "$delete_fragment"
 
-        if nft_ipc_apply_ruleset "$delete_fragment" 2>/dev/null; then
+        # v1.213.0 SET_APPLY_SINGLE_WRITER (Design A): a FULL daemon sync
+        # reconciles blacklist_ipv4/_ipv6 from the current geoban.d source (a
+        # removed country's 50-ban conf is gone → its CIDRs drop out) instead of
+        # an additive delete-element. Legacy delete kept as IPC-failure fallback.
+        if nft_ipc_sync_or_apply "geoban" "$delete_fragment" 2>/dev/null; then
             rm -f "$delete_fragment" 2>/dev/null
             nftban_success "Removed ${#cidrs_v4[@]} IPv4 CIDRs from $set_v4"
         else
@@ -468,7 +478,8 @@ nftban_geoban_remove_from_nftables() {
         delete_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_del_v6_XXXXXX.nft")
         echo "delete element $table_v6 $set_v6 { $cidr_list_v6 }" > "$delete_fragment"
 
-        if nft_ipc_apply_ruleset "$delete_fragment" 2>/dev/null; then
+        # v1.213.0: FULL sync (durable geoban.d source) with legacy delete fallback
+        if nft_ipc_sync_or_apply "geoban" "$delete_fragment" 2>/dev/null; then
             rm -f "$delete_fragment" 2>/dev/null
             nftban_success "Removed ${#cidrs_v6[@]} IPv6 CIDRs from $set_v6"
         else
