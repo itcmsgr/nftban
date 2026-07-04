@@ -234,6 +234,57 @@ _collect_system() {
     _support_log OK "OOM-kill evidence"
 }
 
+# v1.216.0 (OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT): sysctl / conntrack evidence.
+# READ-ONLY — collects the shipped + operator sysctl files, the live kernel readback for
+# the NFTBan-relevant keys, conntrack utilization, and the registry risk scan.
+_collect_sysctl() {
+    local bundle_dir="$1"
+    local d="$bundle_dir/sysctl"
+    mkdir -p "$d" || return 1
+
+    # shipped + operator override files
+    if [[ -f /etc/sysctl.d/90-nftban.conf ]]; then
+        cp /etc/sysctl.d/90-nftban.conf "$d/90-nftban.conf" 2>/dev/null && _support_log OK "sysctl 90-nftban.conf"
+    fi
+    if [[ -f /etc/sysctl.d/99-local.conf ]]; then
+        cp /etc/sysctl.d/99-local.conf "$d/99-local.conf" 2>/dev/null && _support_log OK "sysctl 99-local.conf (operator)"
+    else
+        echo "(no /etc/sysctl.d/99-local.conf)" > "$d/99-local.conf.absent"
+    fi
+
+    # live kernel readback for NFTBan-relevant keys + conntrack utilization
+    {
+        echo "# Live sysctl (NFTBan-relevant) — $(date -Iseconds 2>/dev/null)"
+        for k in net.netfilter.nf_conntrack_tcp_timeout_established \
+                 net.netfilter.nf_conntrack_tcp_timeout_time_wait \
+                 net.netfilter.nf_conntrack_tcp_timeout_syn_sent \
+                 net.netfilter.nf_conntrack_tcp_timeout_syn_recv \
+                 net.netfilter.nf_conntrack_max \
+                 net.netfilter.nf_conntrack_count \
+                 net.ipv4.tcp_keepalive_time net.ipv4.tcp_retries2; do
+            printf '%-56s = %s\n' "$k" "$(sysctl -n "$k" 2>/dev/null || echo 'n/a')"
+        done
+    } > "$d/live-sysctl.txt" 2>/dev/null && _support_log OK "live sysctl readback"
+
+    # registry + read-only risk scan
+    local reg="${NFTBAN_LIB_DIR:-/usr/lib/nftban/lib}/nftban_sysctl_registry.sh"
+    [[ -f "$reg" ]] || reg="$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_sysctl_registry.sh"
+    if [[ -f "$reg" ]]; then
+        # Source + emit in SUBSHELLS so the library's `set -Eeuo pipefail` / double-load
+        # guard cannot leak into the support-bundle shell state.
+        # shellcheck source=/dev/null
+        ( source "$reg" 2>/dev/null && nftban_sysctl_registry ) > "$d/registry.txt" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        if ( source "$reg" 2>/dev/null && nftban_sysctl_risk_scan ) > "$d/risk-scan.txt" 2>/dev/null; then
+            _support_log OK "sysctl risk scan"
+        fi
+        # v1.216.1: explicit idle-age observability source (procfs on RHEL / conntrack-tool on Debian-Ubuntu / none)
+        # so operators can see WHY dead-socket classification is CLEAN/INFO/WARN/UNKNOWN on this host.
+        # shellcheck source=/dev/null
+        ( source "$reg" 2>/dev/null && printf 'idle_age_source=%s\n' "$(_nftban_db_idle_source)" ) > "$d/idle-age-source.txt" 2>/dev/null || true
+    fi
+}
+
 _collect_nftables() {
     local bundle_dir="$1"
     local nft_dir="$bundle_dir/nftables"
@@ -1651,6 +1702,7 @@ _cmd_support_bundle() {
     # Always collect these - Core diagnostics
     _collect_version "$bundle_dir"
     _collect_system "$bundle_dir"
+    _collect_sysctl "$bundle_dir"
     _collect_install_info "$bundle_dir"
     _collect_binaries "$bundle_dir"
     _collect_distro_config "$bundle_dir"
