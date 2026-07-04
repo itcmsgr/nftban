@@ -1656,7 +1656,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, polkitd | policykit-1
-Recommends: dnsutils, mailutils, netmask, whiptail
+Recommends: dnsutils, mailutils, netmask, whiptail, conntrack
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
  NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
