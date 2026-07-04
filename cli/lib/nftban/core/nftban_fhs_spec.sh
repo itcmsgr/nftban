@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.191.0 - FHS Specification (GENERATED)
+# NFTBan v1.216.3 - FHS Specification (GENERATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
 # meta:name="nftban_fhs_spec"
 # meta:type="core"
 # meta:header="FHS Specification"
-# meta:version="1.191.0"
+# meta:version="1.216.3"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -148,6 +148,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/archive"]="0750|nftban|nftban|Archived reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/pro"]="0750|root|nftban|Pro subscription data"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan"]="0750|nftban|nftban|BotScan scanner persistent state (v1.185.1): scan-rotate rotation cursor written by the unprivileged nftban-botscan.service processor (User=nftban). Must be tmpfiles/package-created — the processor runs as nftban and cannot reliably create a subdir under /var/lib/nftban (root:nftban 0750), so the in-script mkdir fails silently and the rotation cursor never persists."
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan/spool"]="0750|nftban|nftban|BotScan disk-backed read-authority spool (v1.209.3): moved off /run tmpfs so spool pages are reclaimable page-cache rather than unevictable tmpfs pages charged to the collector's 256M cgroup (fixes collector OOM on heavy hosts). nftban:nftban access-log lines written by nftban-botscan-collector.service and read+reaped by the unprivileged nftban-botscan.service scanner; bounded by a total-dir cap + backpressure."
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan/proc-offsets"]="0750|nftban|nftban|BotScan scanner forward-cursor offsets (v1.209.3 made explicit): per-spool-file inode:offset state the scanner advances while draining the disk-backed spool. Reaping a fully-consumed spool file removes its cursor here too, keeping cursor and spool in sync."
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botscan-collector"]="0750|nftban|nftban|BotScan read-collector per-source incremental offset state (v1.178-A). Separate from the scanner's spool offsets so privileged reads only emit new bytes per cycle."
 
     # Log Directories
@@ -158,6 +160,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/botguard"]="0750|nftban|nftban|HTTP Bot Guard logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/metrics"]="0750|nftban|nftban|Metrics export logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/soak"]="0750|nftban|nftban|Soak validation per-run JSON + cron.log (v1.98.1)"
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/update-runs"]="0750|nftban|nftban|Per-run install/update lifecycle forensic records - JSONL + snapshot, bounded retention (v1.199)"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|suricata|nftban|Suricata EVE logs (suricata writes, nftban reads)"
 
     # Runtime Directories

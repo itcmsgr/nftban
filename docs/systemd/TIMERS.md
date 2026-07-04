@@ -99,9 +99,9 @@ The timer's `WantedBy=timers.target` line is intentionally commented out. Auto-e
 
 ### DEPRECATED Services
 
-| Service | Replaced By | Removal Target |
-|---------|-------------|----------------|
-| `nftban-login-monitor.service` | `nftband` loginmon module (`internal/loginmon`) | v1.23.0 |
+| Service | Replaced By | Status |
+|---------|-------------|--------|
+| ~~`nftban-login-monitor.service`~~ | `nftband` loginmon module (`internal/loginmon`) | Removed — legacy shell service, auto-disabled by package postinst since v1.21.3 |
 
 The shell-based login monitor is superseded by the Go daemon's built-in
 loginmon module. Running both simultaneously causes duplicate ban attempts

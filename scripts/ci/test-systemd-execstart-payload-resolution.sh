@@ -17,8 +17,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 #
-# Implements V108 Item 1 per scope artifact:
-#   /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/AUDIT_190_LIFECYCLE/
+# Implements V108 Item 1 per the project audit scope artifact:
 #   V108_ITEM1_EXECSTART_PAYLOAD_RESOLUTION_SCOPE.md
 #
 # Compile-time complement to runtime assertion `systemd_execstart_paths_ok`

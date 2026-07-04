@@ -418,9 +418,24 @@ _cmd_update_main_locked() {
 
     _load_config
 
-    local install_type current_version
+    local install_type current_version _RUN_ID
     install_type=$(_detect_install_type)
     current_version=$(_get_current_version)
+
+    # v1.199 lifecycle forensics: mint a run_id + open a per-run record for this update.
+    _RUN_ID=$(_forensic_run_id)
+    # EXPORT so the Go nftban-installer (invoked via the package %post during the
+    # install phase) inherits the SAME run_id and stamps it into installer.log's RUN
+    # header — correlating installer.log + update.log + update-runs/<run_id>/.
+    export NFTBAN_RUN_ID="$_RUN_ID"
+    _forensic_begin "$_RUN_ID" "$source" "$current_version" "pending"
+    # stamp the shared update.log with the run_id (clear correlation delimiter).
+    _update_log INFO "lifecycle run_id=$_RUN_ID (per-run forensic record: ${FORENSIC_RUN_DIR:-n/a})"
+
+    # v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): up-front progress contract —
+    # announce total phases + run_id + per-run log dir so the operator knows what to expect
+    # (identical for RPM and DEB; both flow through the same phases below).
+    _update_start_banner
 
     # v1.174: record the installer.log line count BEFORE the install so the final
     # verdict can detect a WARN_PRE_EXISTING_RECOVERED (a stale pre-existing failed
@@ -472,6 +487,7 @@ _cmd_update_main_locked() {
     echo ""
 
     # Create backup (H14 fix: abort if backup fails unless --force)
+    _update_phase 1 "Backup"
     if ! _create_backup; then
         if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
             _update_log WARN "Backup failed but continuing (--force mode)"
@@ -484,7 +500,19 @@ _cmd_update_main_locked() {
     # Execute update based on source
     # V108 Item 6: when source resolves to "github" (direct package-manager path),
     # only proceed for rpm/deb install types. Reject source/mixed/unknown.
+    _update_phase 2 "Install" "package install may take up to 60s"
     local result=0
+    # v1.198.3 PR-A (BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE): inhibit the
+    # racing cadence timers (watchdog @120s, maintenance @15m) across the binary
+    # swap so they cannot fire mid-swap, hit EXEC-203, and latch a failed unit →
+    # spurious DEGRADED. The scoped INT/TERM trap restores them on interrupt; the
+    # explicit restore after the case covers the normal + handled-failure paths.
+    # NO EXIT trap: cmd_update's lock cleanup is return-based (not trap-based) and
+    # must not be clobbered (scoped trap only, cleared right after restore).
+    _forensic_snapshot "$_RUN_ID" pre-swap
+    _update_inhibit_cadence_timers
+    trap '_update_restore_cadence_timers' INT TERM
+    _forensic_event "$_RUN_ID" inhibit "timers=$_NFTBAN_INHIBITED_TIMERS"
     case "$source" in
         github)
             case "$install_type" in
@@ -527,6 +555,13 @@ _cmd_update_main_locked() {
             result=1
             ;;
     esac
+    # v1.198.3 PR-A: binary swap complete — restore exactly the timers we stopped
+    # (covers success AND handled-failure; the failure block below returns AFTER
+    # this) and clear the scoped interrupt trap.
+    _forensic_event "$_RUN_ID" restore "timers=$_NFTBAN_INHIBITED_TIMERS"
+    _update_restore_cadence_timers
+    trap - INT TERM
+    _forensic_snapshot "$_RUN_ID" post-swap
 
     if [[ $result -ne 0 ]]; then
         local _update_duration=$(( SECONDS - _update_start_seconds ))
@@ -544,12 +579,19 @@ _cmd_update_main_locked() {
         echo ""
         echo "  Log: $UPDATE_LOG_FILE"
         echo ""
+        _forensic_end "$_RUN_ID" install-fail "$result"
         return $result
     fi
 
+    # v1.198.3 PR-A: confirm the watchdog runs clean on the freshly-installed
+    # binary (a clean run also clears any stale failed-latch). Log-only — a
+    # genuinely-broken watchdog is surfaced by the validator/health machinery and
+    # its next timer cycle; this must not abort an otherwise-successful update.
+    _update_verify_watchdog || true
+
     # Restart services to load new binaries
     echo ""
-    _update_log INFO "Restarting NFTBan services..."
+    _update_phase 3 "Restart services"
     local _svc_restart_failed=0
     for _svc in nftband.service nftban-core.service; do
         if systemctl is-active --quiet "$_svc" 2>/dev/null; then
@@ -569,7 +611,7 @@ _cmd_update_main_locked() {
     echo ""
     # Invalidate stale health cache from previous version
     rm -f "${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache" 2>/dev/null || true
-    _update_log INFO "Running health check..."
+    _update_phase 4 "Health check"
     local health_output health_status
     health_output=$(nftban health check --auto-heal --cache-status 2>&1) || health_status=$?
     health_status="${health_status:-0}"
@@ -588,7 +630,7 @@ _cmd_update_main_locked() {
     local new_version
     new_version=$(_get_current_version)
     echo ""
-    _update_log INFO "Running post-update verification..."
+    _update_phase 5 "Post-update verification"
     local _verify_fail=0
 
     # V1: nftables authority — nftban table must exist
@@ -756,10 +798,25 @@ _cmd_update_main_locked() {
     # ("Go installer is the single source of truth on non-clean exits") from
     # the postinst path to the nftban update path.
     # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.6)
+    _update_phase 6 "Finalize"
     local _install_state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
     local _installer_state="COMMITTED"  # default: green if state file absent (older installs)
     if [[ -f "$_install_state_file" ]]; then
         _installer_state=$(grep -m1 '^INSTALL_STATE=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "COMMITTED")
+    fi
+
+    # v1.199 forensics: post-verify snapshot (binary swapped, timers restored,
+    # install_state resolved) + close the per-run record.
+    _forensic_snapshot "$_RUN_ID" post-verify
+    _forensic_event "$_RUN_ID" run_end "state=$_installer_state" "new_version=$new_version" "rc=0"
+
+    # v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): warnings in THIS run's
+    # installer.log slice, for the structured final summary (read once; passed to
+    # _update_final_summary in each terminal arm below).
+    local _summary_warnings=0
+    if [[ -f "$_ilog_file" ]]; then
+        _summary_warnings=$(tail -n +$((_ilog_before_lines + 1)) "$_ilog_file" 2>/dev/null | grep -c -iE 'WARN|⚠' || true)
+        _summary_warnings=${_summary_warnings//[^0-9]/}; _summary_warnings=${_summary_warnings:-0}
     fi
 
     case "$_installer_state" in
@@ -773,6 +830,21 @@ _cmd_update_main_locked() {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+
+            # v1.198 R1b-3: explicit operator-readiness line, consistent with the
+            # consolidated install_state verdict (COMMITTED = success). PASS unless
+            # the post-update health check reported issues (then PASS_WITH_WARN);
+            # never FAIL on this path (DEGRADED/FAILED emit their own blocks).
+            # Derived from the update's OWN adjudicated signals — NOT the generic
+            # nftban_render_operator_readiness helper, whose status==degraded→FAIL
+            # rule would contradict a COMMITTED verdict (non-structural degraded can
+            # be COMMITTED). One block only — no second/contradictory verdict.
+            local _rd_ready="PASS" _rd_action="NONE"
+            if [[ "${health_status:-0}" -ne 0 ]]; then _rd_ready="PASS_WITH_WARN"; _rd_action="WARN"; fi
+            printf "  %-20s %s\n" "Operational:" "YES"
+            printf "  %-20s %s\n" "Upgrade readiness:" "$_rd_ready"
+            printf "  %-20s %s\n" "Action needed:" "$_rd_action"
             echo ""
 
             # v1.174 transparency: if this run auto-recovered a PRE-EXISTING failed
@@ -796,6 +868,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "COMMITTED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "$([[ "${health_status:-0}" -eq 0 ]] && echo "PASS" || echo "PASS_WITH_WARN")"
             return 0
             ;;
 
@@ -816,6 +889,12 @@ _cmd_update_main_locked() {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Update completed in DEGRADED state: v$current_version → v$new_version"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            # v1.198 R1b-3: readiness line consistent with the DEGRADED verdict
+            # (install_state authoritative). Augments the single consolidated block.
+            printf "  %-20s %s\n" "Operational:" "YES (kernel firewall may be active)"
+            printf "  %-20s %s\n" "Upgrade readiness:" "FAIL"
+            printf "  %-20s %s\n" "Action needed:" "review / repair (below)"
             echo ""
             if [[ -n "$_failure_reason" ]]; then
                 echo "  Reason: $_failure_reason"
@@ -844,6 +923,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "DEGRADED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "DEGRADED"
             return 1
             ;;
 
@@ -874,6 +954,7 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "FAILED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "FAILED"
             return 2
             ;;
 
@@ -893,9 +974,47 @@ _cmd_update_main_locked() {
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
+            _update_final_summary "COMMITTED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "UNKNOWN"
             return 0
             ;;
     esac
+}
+
+_cmd_update_recommit() {
+    # v1.198.1 PR-B (D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): official,
+    # restart-free recompute of a stale DEGRADED install_state. Delegates to
+    # `nftban-installer --revalidate`, which re-runs ONLY the live post-install
+    # assertions and re-writes install_state — no package install, no firewall
+    # render, no daemon restart. install_state goes COMMITTED only when every
+    # live assertion passes; a real remaining failure leaves it DEGRADED (no
+    # masking). This is the supported way to clear a stale DEGRADED marker once
+    # the underlying cause (e.g. a pre-existing systemd failed-state latch) is
+    # resolved — replacing manual edits of the machine-written state file.
+    _update_banner
+    echo ""
+
+    if [[ $EUID -ne 0 ]]; then
+        _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
+        _update_log INFO "Hint: update recommit requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
+        return 1
+    fi
+
+    local installer="/usr/lib/nftban/bin/nftban-installer"
+    if [[ ! -x "$installer" ]]; then
+        _update_log ERROR "nftban-installer not found at $installer — cannot recommit"
+        return 1
+    fi
+
+    _update_log INFO "Recomputing install_state from live post-install assertions (no install, no daemon restart)..."
+    "$installer" --revalidate
+    local rc=$?
+    case $rc in
+        0) _update_log OK "install_state recommitted: COMMITTED" ;;
+        1) _update_log WARN "install_state remains DEGRADED — live assertions still failing (see above); not masking a real failure" ;;
+        5) _update_log INFO "Nothing to recommit (state is not DEGRADED, version mismatch, or no state file) — see above" ;;
+        *) _update_log ERROR "recommit failed (installer exit $rc)" ;;
+    esac
+    return $rc
 }
 
 _cmd_update_repair() {
@@ -1557,6 +1676,8 @@ COMMANDS:
     force               Force reinstall/update (fixes dpkg, removes immutable flags)
     rollback            Restore previous version from backup (fixes dpkg first)
     repair              Fix broken install (dpkg state, immutable flags, restore backup)
+    recommit            Recompute a stale DEGRADED install_state from live post-install
+                        assertions (no install/restart); → COMMITTED only if all pass
     list                List available backups
     history             Show update history (last 9 updates, --json supported)
     auto [ACTION]       Manage auto-update timer (enable|disable|status)
@@ -1792,11 +1913,13 @@ _update_auto_enable() {
 
     # Load update config
     source "$config_file" 2>/dev/null || true
-    source "$config_local" 2>/dev/null || true
+    # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+    declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+    _source_local "$config_local"
 
     # Load mail config for global recipient
     source "$mail_config" 2>/dev/null || true
-    source "$mail_config_local" 2>/dev/null || true
+    _source_local "$mail_config_local"
 
     # Email resolution: override -> update config -> global mail recipient
     local notify_email="${email_override:-${NFTBAN_UPDATE_NOTIFY_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}}"
@@ -1978,7 +2101,7 @@ _update_auto_status() {
         source "$config_file" || true
     fi
     if [[ -f "$config_local" ]]; then
-        source "$config_local" || true
+        _source_local "$config_local"
     fi
 
     # Load mail config for global recipient fallback
@@ -1988,7 +2111,7 @@ _update_auto_status() {
         global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
     fi
     if [[ -f "$mail_config_local" ]]; then
-        source "$mail_config_local" || true
+        _source_local "$mail_config_local"
         global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$global_mail_recipient}"
     fi
 
@@ -2118,11 +2241,11 @@ _cmd_update_auto_run() {
 
     # Load update config
     source "$config_file" 2>/dev/null || true
-    source "$config_local" 2>/dev/null || true
+    _source_local "$config_local"
 
     # Load mail config for global email fallback
     source "$mail_config" 2>/dev/null || true
-    source "$mail_config_local" 2>/dev/null || true
+    _source_local "$mail_config_local"
 
     log_file="${NFTBAN_UPDATE_LOG_FILE:-$log_file}"
 
@@ -2534,6 +2657,11 @@ nftban_cmd_update() {
             ;;
         repair|--repair|fix)
             _cmd_update_repair
+            ;;
+        recommit|--recommit|revalidate)
+            # v1.198.1 PR-B: restart-free recompute of a stale DEGRADED
+            # install_state → COMMITTED via nftban-installer --revalidate.
+            _cmd_update_recommit
             ;;
         rollback|--rollback|-r)
             # v1.139.2: pass "$@" so _do_rollback's help-guard sees --help/-h/help.

@@ -82,15 +82,19 @@ run_collector "$ALLOW/inc.log" >/dev/null
 sf="$(spool_of "$ALLOW/inc.log")"
 [[ "$(grep -c first "$sf")" -eq 1 && "$(grep -c second "$sf")" -eq 1 ]] && ok "T5 incremental: new bytes appended once (no re-read of old)" || no "T5 incremental" "$(cat "$sf" 2>/dev/null)"
 
-# T6: spool byte cap trims.
+# T6: v1.209.3 — the per-file blind `tail -c` trim is REMOVED (it desynced the
+# scanner's byte-offset cursor). A source larger than the legacy per-file cap is now
+# spooled WITHOUT being shortened; bounding moved to the total-dir cap + reaping
+# (covered by botscan_spool_oom_v2093_test.sh). Lock in the removal: the spool keeps
+# the full source (NOT trimmed to the old 512-byte cap).
 rm -rf "$SPOOL" "$OFF"; head -c 5000 /dev/zero | tr '\0' 'x' > "$ALLOW/big.log"; printf '\n' >> "$ALLOW/big.log"
 NFTBAN_LIB_DIR="$REPO/cli/lib/nftban" BOTSCAN_SPOOL_DIR="$SPOOL" \
   NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR="$OFF" NFTBAN_BOTSCAN_COLLECTOR_ALLOW_ROOTS="$ALLOW" \
   BOTSCAN_LOG_PATHS="$ALLOW/big.log" BOTSCAN_COLLECTOR_SPOOL_MAX_BYTES=512 \
   bash "$COLLECTOR" >/dev/null 2>&1 || true
 sf="$(spool_of "$ALLOW/big.log")"
-sz="$(stat -c %s "$sf" 2>/dev/null || echo 99999)"
-[[ "$sz" -le 1024 ]] && ok "T6 spool byte cap enforced (size=$sz ≤ cap)" || no "T6 spool cap" "size=$sz"
+sz="$(stat -c %s "$sf" 2>/dev/null || echo 0)"
+[[ "$sz" -ge 5000 ]] && ok "T6 per-file blind trim removed — full source spooled (size=$sz, not cursor-desyncing trim)" || no "T6 trim-removed" "size=$sz (expected ≥5000)"
 
 # T7: spool file mode 0640.
 rm -rf "$SPOOL" "$OFF"; printf 'x\n' > "$ALLOW/mode.log"; run_collector "$ALLOW/mode.log" >/dev/null

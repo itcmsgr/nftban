@@ -293,7 +293,7 @@ Version:        ${PKG_VERSION}
 Release:        ${PKG_RELEASE}%{?dist}
 Summary:        Open-source Linux IPS and nftables firewall manager
 
-License:        GPL-3.0-or-later
+License:        MPL-2.0
 URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
 Source1:        nftban-files.inc
@@ -409,6 +409,7 @@ mv -f "\${yq_tmp}" yq_linux_amd64
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
+install -D -m 0755 bin/nftban-botscan-matcher %{buildroot}/usr/lib/nftban/bin/nftban-botscan-matcher
 install -D -m 0755 bin/nftban-validate %{buildroot}/usr/lib/nftban/bin/nftban-validate
 install -D -m 0755 bin/nftban-detect-ssh-ports %{buildroot}/usr/lib/nftban/bin/nftban-detect-ssh-ports
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
@@ -1433,6 +1434,8 @@ fi
 /usr/lib/nftban/health/*
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
+# MPL-2.0 license text -> /usr/share/licenses/%{name}-%{version}/LICENSE (from unpacked source root)
+%license LICENSE
 # v1.50.0: template with placeholders (always replaced on upgrade, NOT %config)
 /usr/lib/nftban/templates/nftables.conf.tpl
 # Main config files
@@ -1653,7 +1656,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, polkitd | policykit-1
-Recommends: dnsutils, mailutils, netmask, whiptail
+Recommends: dnsutils, mailutils, netmask, whiptail, conntrack
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
  NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
@@ -1802,6 +1805,7 @@ PRERM
 /etc/nftban/conf.d/persistent.conf
 /etc/nftban/conf.d/watchdog.conf
 /etc/nftban/conf.d/community_stats.conf.default
+/etc/sysctl.d/90-nftban.conf
 CONFFILES_EOF
 }
 
@@ -1844,6 +1848,7 @@ build_deb() {
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftband" "${deb_root}/usr/lib/nftban/bin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-botscan-matcher" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-validate" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-detect-ssh-ports" "${deb_root}/usr/lib/nftban/bin/"
     # NB-5: privileged binaries ship 0750 in .deb payload; postinst converges
@@ -2035,6 +2040,17 @@ build_deb() {
 
     # Copy test scripts
     find "${PROJECT_ROOT}/cli/lib/nftban/tests" -type f -name "*.sh" -exec install -m 0755 {} "${deb_root}/usr/lib/nftban/tests/" \;
+
+    # PR-LICENSE (D1): ship machine-readable license metadata. Debian policy 12.5
+    # expects /usr/share/doc/<pkg>/copyright; the DEP-5 copyright declares MPL-2.0
+    # and carries the license notice + upstream text URL. We deliberately do NOT
+    # ship a separate /usr/share/doc/nftban-core/LICENSE: minimal Debian/Ubuntu
+    # Docker images set `path-exclude=/usr/share/doc/*` with only
+    # `path-include=/usr/share/doc/*/copyright`, so a separate LICENSE would be
+    # dropped on install yet remain in md5sums -> `dpkg --verify` reports it
+    # missing. The copyright file is the canonical, path-included license surface.
+    install -D -m 0644 "${PROJECT_ROOT}/packaging/deb/copyright" \
+        "${deb_root}/usr/share/doc/nftban-core/copyright"
 
     # Create control file
     create_deb_control

@@ -11,6 +11,843 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.216.3] - 2026-07-04 — Health-truth: validator journal query uses server-side grep (busy-host heartbeat eviction fix) (Go validator; daemon/tool RE-BASELINE)
+
+**Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_QUERY_LINECAP_V216_3` — the rollout-unblocking follow-up to v1.216.2. **PR:** [#1003](https://github.com/itcmsgr/nftban/pull/1003) → `88eaef80`.
+
+> **v1.216.2 was published but NOT fleet-approved** — its LoginMon heartbeat fixed the *quiet-host* false `VAL-LOGINMON-001` but package validation FAILED on lab2 (busy DEB host). v1.216.3 is **required before fleet rollout**. **Go validator hotfix. Daemon/tool RE-BASELINE: YES** (`nftban-validate` changes; `nftband` relinks `internal/validator`; NOT byte-identical). **nft schema 1.84.0 unchanged.** No sysctl/nft/conntrack/loopback/profile/package/LoginMon-producer change.
+
+- **Root cause:** the validator journal reader ran `journalctl -u nftband --since -15m -o cat -r -n 200` and matched patterns CLIENT-SIDE in Go, so the `-n 200` cap applied BEFORE matching → on a busy host (lab2, ~488 nftband lines/min of `[EVENT]`/`[BAN]` under real SSH attack) the 5-min heartbeat (2 lines/15m) was evicted from the returned window → `VAL-LOGINMON-001` still fired. Universal under high log volume.
+- **Fix (`internal/validator/journal.go` only):** extract pure `buildJournalArgs(q)` — when patterns present, add server-side **`-g <regexp.QuoteMeta(p) | …>` before `-n`** so the cap bounds MATCHING lines, not all unit lines. Patterns are compile-time constants, each `QuoteMeta`-escaped (`[botguard] loaded` stays a literal, not a char class), passed as argv (no shell). Extract pure `parseJournalResult` — **`-g` no-match exit 1 is handled as definitive absence (`ErrNone`/`Found=false`)**, so genuinely-unbound modules still emit their finding (hard failures stay errors → fail-safe). Bonus: also fixes the same eviction for the shared BotGuard evidence query.
+- **Tests:** `journal_args_test.go` (`-g` present + escaped OR + `-g`-before-`-n`, regex-escape no-overmatch, non-pattern no `-g`, bounds retained; `parseJournalResult` exit-1→absent via real `*exec.ExitError`, timeout/exec→errors); `module_health_test.go` `TestLoginMonHighVolumeHeartbeatFound`; existing journal T1–T9 + LoginMon/heartbeat/BotGuard green; `go test ./...` + `go vet ./...` + gofmt clean. gosec G204 on the fixed `journalctl` call reviewed + dismissed as a documented false positive (argv-only, escaped internal constants).
+
+## [v1.216.2] - 2026-07-04 — Health-truth: LoginMon source-binding heartbeat clears false VAL-LOGINMON-001 (Go daemon + validator; daemon RE-BASELINE)
+
+**Lane:** `OPEN_HEALTH_TRUTH_LOGINMON_JOURNAL_WINDOW_FALSE_INFO_V216_2`. **PR:** [#1001](https://github.com/itcmsgr/nftban/pull/1001) → `b1159e2b`.
+
+> **Go daemon + validator hotfix. Daemon RE-BASELINE: YES** — `nftband` + `nftban-validate` change (NOT byte-identical; unlike the shell-only v1.215/v1.216.0/v1.216.1 lanes). **nft schema 1.84.0 unchanged.** No sysctl/nft/conntrack/loopback/profile/package change.
+
+- **Fixes recurring benign `[INFO] VAL-LOGINMON-001`** on a healthy long-running LoginMon (Overall PROTECTED, Daemon RUNNING, Runtime=running). **Root cause:** the validator proved "running+bound" from a **decaying 15-minute journal window** searching one-shot startup lines (`module_start: loginmon` + `resolved_by=`) that LoginMon logs once at Start/discovery and never refreshed → on quiet hosts (guaranteed on srv3/srv4 volatile journald) the evidence aged out and the INFO fired forever. Health-truth debt: an event log used as a state store. Not a LoginMon failure.
+- **Fix (`internal/loginmon/module.go`):** new always-on `startBindingHeartbeat` goroutine (launched from `Start()`, all modes) emits `[LOGINMON] loginmon_source_binding_heartbeat resolved_by=heartbeat sources=N state=running` every **5 min** (< the 15m validator window). Logs a **source count only** — no source paths, panel paths, usernames, domains, or secrets. When `sources=0` (running but unbound) it omits `resolved_by=` so a genuinely unbound module **still** trips the finding. No ban-logic or discovery change.
+- **Validator (`internal/validator/module_health.go`):** registration-evidence query also accepts `loginmon_source_binding_heartbeat`; binding evidence still requires `resolved_by=`. A single fresh bound heartbeat refreshes both AND-conditions. Genuine missing/starved paths intact.
+- **BotGuard sibling deferred/open:** `VAL-BOTGUARD-001` uses the identical decaying-window pattern (default-OFF, not firing on the fleet) → registered as `OPEN_HEALTH_TRUTH_BOTGUARD_JOURNAL_WINDOW_FALSE_INFO`, not in this release.
+- **Tests:** validator `TestLoginMonHeartbeatSatisfiesEvidence` + `TestLoginMonHeartbeatUnboundStillFlags`; producer `TestBindingHeartbeatLine{Bound,Unbound,NoSecrets}` + `TestBindingHeartbeatIntervalBelowJournalWindow`; existing LoginMon/journal tests green; `go test ./...` + `go vet ./...` + gofmt clean.
+
+## [v1.216.1] - 2026-07-04 — Sysctl dead-socket guard: idle-age classification + DEB conntrack fallback (shell/packaging/docs; daemon byte-identical)
+
+**Lane:** `OPEN_DEB_CONNTRACK_IDLE_AGE_OBSERVABILITY` — refines the v1.216.0 read-only dead-socket guard. **PR:** [#999](https://github.com/itcmsgr/nftban/pull/999) → `14691d96`.
+
+> **SHELL/PACKAGING/DOCS.** **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go). **nft schema 1.84.0 unchanged. No live sysctl writes.** Read-only, credential-free (no DB queries).
+
+- **Idle-age classification** replaces "warn on any local TCP DB pool": **CLEAN** (no pool) / **INFO** (pool but actively-refreshed, or `established >= keepalive`) / **WARN** (long-idle sessions ≥ 50% of the established timeout, `established < keepalive`) / **UNKNOWN** (pool exists but idle age unmeasurable). Fixes the conservative false-positive on actively-polled monitoring TCP sockets (the monitor `zabbix-agent2` PostgreSQL plugin, idle ~45–59s ≪ 600s). Watchdog elevates on **WARN** (`dead-socket risk`) only, **never UNKNOWN**.
+- **Cross-distro observability** (per the v1.216.1 audit — Debian/Ubuntu kernels ship `CONFIG_NF_CONNTRACK_PROCFS=n`): idle-age source order = **`/proc/net/nf_conntrack`** (RHEL-family, procfs) → **`conntrack -L`** (Debian/Ubuntu, optional tool) → **UNKNOWN**. Idle ≈ established_timeout − remaining; IPv4 + IPv6 loopback; DB ports 5432/3306/6379/27017; malformed output → UNKNOWN-FORMAT (never CLEAN).
+- **DEB `Recommends: conntrack`** (optional, not `Depends` — installed by default via apt, removable) so most Debian/Ubuntu installs get full classification; **RPM metadata unchanged** (procfs already full).
+- **UNKNOWN is first-class + honest** (never silent-CLEAN; advises `apt install conntrack`). **`idle_age_source`** (`procfs|conntrack-tool|none|unknown-format`) exposed in `nftban support` (`sysctl/idle-age-source.txt`) and risk-scan lines.
+- **Docs:** `docs/SYSCTL_DEAD_SOCKET_OBSERVABILITY.md` (observability matrix). **Future HOLD lane:** dependency-free nfnetlink reader (`OPEN_DEB_CONNTRACK_NFNETLINK_READER_V216_PLUS`).
+- **Validation:** hermetic `sysctl_risk_idle_age_v2161` **26/26** (matrix + conntrack-tool fallback [WARN/INFO/IPv6/malformed/empty] + `idle_age_source` + packaging asserts); `sysctl_safe_default_v216` **21/21**; shellcheck `-x -S warning` clean; **real DEB lab proof (lab2, Ubuntu 24.04)** — UNKNOWN→conntrack-tool→INFO with real `conntrack -L` parse, live sysctl unchanged.
+
+## [v1.216.0] - 2026-07-03 — Sysctl safe-default + DEB/RPM parity + read-only conntrack visibility (shell/packaging; daemon byte-identical)
+
+**Lane:** `OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT` — the **v1.216.0 slice** of the design train (`NFTBAN_ROADMAP/OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT_V216_DESIGN_TRAIN.md`), **not** the full profile redesign. **PR:** [#997](https://github.com/itcmsgr/nftban/pull/997) → `e9126f81`.
+
+> **SHELL/PACKAGING + read-only diagnostics.** **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go change). **nft schema 1.84.0 unchanged. No live sysctl writes; no `sysctl --system`/modprobe on upgrade.** Loopback lane remains separate (v1.217.0+).
+
+- **Safe-default correction (`install/sysctl/90-nftban.conf`):** drops the unconditional `net.netfilter.nf_conntrack_tcp_timeout_established = 600` → the kernel default (432000s) now owns established-flow lifetime. A short established timeout could conntrack-evict idle-but-live local TCP flows (e.g. a persistent app→DB pool) **before** `tcp_keepalive_time` (7200s) probes them → dead sockets (the monitor Zabbix/PostgreSQL hang precondition). **Transitional attack-surface hardening preserved** (`time_wait=30`, `syn_sent=30`, `syn_recv=15` — the clearer DDoS lever). Rationale + `/etc/sysctl.d/99-local.conf` override guidance (≥ keepalive advised) + a no-auto-write note added.
+- **DEB/RPM parity (`packaging/build_nftban.sh`):** `/etc/sysctl.d/90-nftban.conf` is now declared in the DEB conffiles → dpkg preserves operator edits on upgrade, matching RPM `%config(noreplace)`.
+- **Read-only visibility:** new `cli/lib/nftban/lib/nftban_sysctl_registry.sh` — declarative 2-key registry + risk scan (dead-socket precondition [est<keepalive + local idle TCP DB pool], legacy-600-in-file, file-vs-live drift, module-load race, operator-override INFO); **never writes.** Wired read-only into the watchdog conntrack check (OK→WARNING only on the dead-socket precondition) and the support bundle (`_collect_sysctl`: files + live readback + registry + risk scan); both subshell-isolated so the lib's `set -Eeuo` can't leak.
+- **Out of scope (deferred per design train):** automatic live-kernel write; RAM-scaling `nf_conntrack_max`; `NftbanProfile` object / platform expansion; `nftban sysctl apply`; loopback-before-invalid; monitor Zabbix/PostgreSQL changes.
+- **Validation:** hermetic `sysctl_safe_default_v216_test.sh` **21/21**; shellcheck `-x -S warning` clean; regressions (v128 help-correlation, botguard_diag) green. Package-native lab2 DEB (edited `90-nftban.conf` survives upgrade) + lab4 RPM (`%config(noreplace)`) + monitor read-only + srv4 canary at the validation gate.
+
+## [v1.215.0] - 2026-07-03 — Install/Update observability: progress contract + structured terminal summary (shell-only; daemon byte-identical)
+
+**Codename:** `OPEN_INSTALL_UPDATE_OBSERVABILITY` · **Impl PR:** [#995](https://github.com/itcmsgr/nftban/pull/995) (→ `b4c30976`) · **Docs:** `OPEN_INSTALL_UPDATE_OBSERVABILITY_V215_SCOPE.md`
+
+> **SHELL-ONLY** (`cli/lib/nftban/cli/cmd_update.sh` + `cmd_update_helpers.sh` + one test). **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` byte-identical (0 Go change). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Operator observability for `nftban update`/install — progress visibility during the run + a structured terminal summary. NOT a logging redesign. (v1.214.1 was intentionally SKIPPED — the "unbounded log / global→index" premise was false per code: installer.log/update.log are already logrotate-bounded, per-run `run.jsonl` + retention + support-bundle collection already exist.)
+
+- **Start banner (up-front progress contract):** `NFTBan update started — 6 phases expected` + `run_id` + per-run log dir, so the operator knows what to expect and where the full record lives.
+- **6 ordered `[N/6]` phase markers** — names UNCHANGED (Backup / Install / Restart services / Health check / Post-update verification / Finalize); `_update_phase` now also records the last phase reached (side-effect only — the emitted marker string is byte-identical).
+- **Structured final summary** on every terminal path (COMMITTED/DEGRADED/FAILED/fallback): Result / Version before→after (elapsed) / Warnings / Failed units / Validation / **Completed phases N/6** / Run ID / per-run Log dir / global Log path. Log path + run_id now shown on **success** too (previously failure only).
+- **No progress bar, no percentage, no fake ETA** — phase count + current phase + elapsed only. **Legacy `Updated: vX → vY` preserved verbatim.**
+- **RPM and DEB share the same phase/banner/summary flow.** `run.jsonl` format UNTOUCHED (machine-only); logrotate UNCHANGED; Go installer logger UNCHANGED; v1.199 no-JSON-on-console invariant preserved. PR-2 (human.log enrich) + PR-3 (failed-run retention) intentionally excluded.
+- **Validation:** hermetic `install_update_observability_v215_test.sh` **35/35**; `nftban_update_progress_r1b3_test` **22/22** (phase names/markers unbroken); `lifecycle_forensics_v1199_test` **21/21** (run.jsonl/forensics untouched); shellcheck `-x -S warning` clean. Package-native lab2 DEB + lab4 RPM validation at the validation gate (update-output code — prove the real package update path renders the summary).
+
+## [v1.214.0] - 2026-07-02 — BotScan pattern-delimiter fix: restore 3 regex-alternation patterns (shell-only; daemon byte-identical)
+
+**Codename:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX` · **Impl PR:** [#988](https://github.com/itcmsgr/nftban/pull/988) (→ `08b371f4`) · **Docs:** `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX_V214_{SCOPE,SCOPE_CHALLENGE,IMPL_REPORT,PR_REPORT}.md`
+
+> **SHELL-ONLY** (`cli/lib/nftban/core/nftban_botscan.sh` + tests). **Daemon re-baseline: NO** — `nftband` + `nftban-botscan-matcher` binaries **byte-identical** (0 Go change, sha256-verified). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Fixes BotScan pattern-delimiter parsing; restores 3 shipped enabled patterns.
+
+- **Restored patterns (dead since v1.209.1):** `EXP_CGIBIN` (`/cgi-bin/.*\.(sh|pl|cgi)`), `EXP_SQLBACKUP` (`\.(sql|sql\.gz|sql\.zip)$`), `SCAN_BACKUP_SQL` (`\.(sql|sql\.gz)$`).
+- **Old behavior:** BotScan `.patterns` records are `NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION`; the pattern field can legally contain regex alternation `|`, but the naive `IFS='|' read` split field 2 on those `|` → corrupted the record; and the internal `_BOTSCAN_PATTERNS` re-`|`-joined representation **re-corrupted** the value downstream (hot path, threshold analyze, and the prefilter build feeding the Go matcher) → RE2 skipped 3 patterns.
+- **New behavior:** an **anchored file-record parser** (peel name from the front + the 6 constrained trailing fields from the back; pattern = middle, keeps its `|`); `_BOTSCAN_PATTERNS` now uses a **`\x1f`-safe internal representation** (ASCII Unit Separator) so the pattern's `|` survives every downstream re-split; a **validation guard** emits a visible `[WARN]` + skips malformed records (bad match_type/threshold/window/ban/enabled/empty-pattern) instead of silently corrupting.
+- **Active/skipped:** **137 active / 3 skipped → 140 active / 0 skipped** (matcher `--check` = `3 usable, 0 skipped`; full shipped prefilter `142 usable, 0 skipped`).
+- **No shipped `.patterns` format change. No Go/daemon/matcher change.** Never-ban invariants (loopback/admin/exempt/WP-admin) preserved.
+- **Validation:** hermetic BotScan suite 18/18 (incl. the load→store→hot-path→prefilter downstream-re-split gate + validation-guard WARN+skip + parity + negatives); shellcheck `-x -S warning` clean; **package-native lab2 DEB + lab4 RPM PASS** (matcher 3→0 skipped, parity MATCH, negatives NO MATCH, admin never banned, resource bounds intact, daemon+matcher byte-identical).
+- **Canary:** **srv4 mandatory after publish** — re-enabling the 3 patterns changes active detection (cgi-bin + SQL-backup probes on 404 become bannable), even though the daemon binary is byte-identical.
+
+## [v1.213.0] - 2026-07-02 — SET_APPLY_SINGLE_WRITER: route sync-owned writers through FULL sync (shell-side; daemon byte-identical)
+
+**Codename:** `SET_APPLY_SINGLE_WRITER` · **Impl PR:** [#985](https://github.com/itcmsgr/nftban/pull/985) (→ `03d6af59`) · **Docs:** `OPEN_SET_APPLY_SINGLE_WRITER_V213_{SCOPE,IMPL_SCOPE,FEED_PIPELINE_SPIKE,WRITER_SURFACE_CLASSIFICATION,IMPL_REPORT}.md`
+
+> **Daemon re-baseline: NO** — the only `cmd/nftband` change is a comment (0 logic lines); the `nftband` binary is functionally **byte-identical**. The behavior change is **shell-side** and rides the EXISTING daemon `sync` verb. **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Closes the SET_APPLY_SINGLE_WRITER P0 (sync-owned set lost-update/clobber).
+
+- **The clobber class:** the daemon `sync` flush-replaces the sync-owned interval sets from durable sources — `blacklist_ipv4/_ipv6` (feeds `/var/lib/nftban/feeds/*.txt`, geoban `/etc/nftban/geoban.d/50-ban-*.conf`) and `whitelist_ipv4/_ipv6` (trust `/etc/nftban/whitelist.d/30-trust-*.conf`) — under `syncMutex`, while the shell modules ALSO pushed additive `add/delete element` via IPC `apply_ruleset` under `backend.mu`. Two daemon-executed writers under different mutexes → a flush-replace to a stale snapshot could **drop a just-applied element** (lost-update; not a fail-open empty-set window).
+- **Affected normal-path modules:** **feeds, geoban, trust** (the writer-surface classification proved all three are the same class — SAME_SOURCE writers to sync-owned interval sets; `cmd_flush`/operator-unban = documented WATCH; `ddos_suricata`/`cmd_port`/emergency = exempt, non-sync-owned).
+- **New invariant:** the daemon full `sync` is the **authoritative writer** for sync-owned interval sets. Each module writes its durable source first, then triggers a **FULL** sync. **Quick sync is never used** (it skips feeds/geoban/whitelist reconcile). Shared shell helpers: `nft_ipc_sync` (`{"quick":false}`, debounced + retry/backoff) and `nft_ipc_sync_or_apply` (on sync-IPC failure → legacy additive apply + visible `[WARN] … fell back to legacy additive apply`).
+- **Legacy additive apply remains ONLY as an IPC-failure compatibility fallback.** The **daemon reject-guard is DEFERRED** to a later phased hardening after fleet convergence — the daemon still accepts legacy additive `apply_ruleset`, so old-shell↔new-daemon and new-shell↔old-daemon are both safe during rollout.
+- **Validation:** PR #985 merged; CI green after an in-scope SC2120 fix; hermetic shell **12/12** + grep-guard **18/18**; shellcheck `-S warning` clean; `go build`/`go vet` rc0; **package-native lab2 DEB + lab4 RPM PASS** — **trust set-level no-clobber proof** (whitelist element survives a 2nd full sync + a daemon restart, removed on source removal), feeds/geoban full-sync reconcile counter-stable, IPC-fail fallback WARN live; admin IP never banned; validate rc0; no empty-set window.
+- **Canary:** **srv4 mandatory after publish** — the live ban/allow application path changed (even though the daemon binary is byte-identical).
+
+## [v1.212.0] - 2026-07-01 — BotScan lost-ban-signal fix (flock-guarded rename-then-consume; daemon re-baseline)
+
+**Codename:** `BOTSCAN_LOST_BAN_SIGNAL` · **Impl PR:** [#983](https://github.com/itcmsgr/nftban/pull/983) (→ `fe75ec03`) · **Scope:** `OPEN_BOTSCAN_LOST_BAN_SIGNAL_SCOPE.md`
+
+> **Daemon RE-BASELINED** (Go change in `internal/botguard`). **nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).** Closes the BotScan lost-ban-signal P0 (enforcement loss).
+
+- **The race:** the producer appended ban signals to `batch_signals.jsonl` with a bare `>>` (no lock), and the daemon consumer did `os.Open` → read → `os.WriteFile(signalFile, nil)` **truncate of the LIVE file** — a signal appended in the open→truncate window was silently destroyed, with no counter (live fleet-wide via the BotGuard-disabled standalone consumer).
+- **Producer fix** (`cli/lib/nftban/core/nftban_botscan.sh`): `nftban_botscan_write_signal()` appends under a shared `flock` on `${signal_file}.lock`; safe degrade if `flock` absent (still line-atomic; daemon rename is the primary guard); a real write failure is visible / returns nonzero — never a silent drop.
+- **Consumer fix** (`internal/botguard/guard.go`): no truncate of the live file; under the SAME flock (held only around the O(1) op) it atomically renames `batch_signals.jsonl` → `.consuming`, releases the lock, then processes `.consuming` OUTSIDE the lock (bounded-tail / max-age / max-lines quarantine + malformed + expired + idempotent apply unchanged) and removes it on success. A prior-crash `.consuming` is recovered first each cycle. Zero loss: an append is either in the renamed file (processed) or the fresh next-cycle file — the flock forbids append-during-rename.
+- **Health visibility** (`internal/botguard/types.go` + `guard.go`): new counters `BatchHandoffErrors` + `BatchStaleConsumingRecovered` (omitempty in status Extra); a broken handoff is WARN/DEGRADE-visible instead of a false PROTECTED.
+- **Validation:** Go hermetic 8/8 PASS (forced-interleave zero-loss, stale-consuming recovery, handoff-error, idempotent, bounded-tail, no-live-truncate regression guard) + `go test -race` clean; shell hermetic (concurrent-writer no-corruption, safe-degrade, visible-failure) + shellcheck clean; **package-native lab2 DEB + lab4 RPM PASS** — daemon carries the fix, schema 1.84.0, validate rc0, failed units 0, BotGuard disabled; **functional signal injection + concurrent-append no-loss proven on both distros**.
+
+## [v1.211.1] - 2026-06-30 — Trust-Feeds status label truth (shell-only; daemon byte-identical)
+
+**Codename:** `STATUS_LABEL_TRUTH` · **PR:** [#980](https://github.com/itcmsgr/nftban/pull/980) (→ `3e29f913`) · **Scope:** `OPEN_TRUSTFEEDS_LABEL_SHELL_FIX_SCOPE.md`
+
+> **Shell-only** (`cli/lib/nftban/cli/cmd_status.sh` + one hermetic test). **`nftband` daemon BYTE-IDENTICAL** (source-proven — 0 `.go` change). **No daemon re-baseline. nft schema 1.84.0 unchanged. BotGuard default unchanged (disabled).**
+
+### Fixed
+- **`nftban status` no longer renders Trust-Feeds as a false `NOT INSTALLED`** when `nftban-core` is installed. The block used a bare `command -v nftban-core`, which fails because the binary ships in `/usr/lib/nftban/bin` (off `$PATH`) → the whole block was skipped → default `NOT INSTALLED`. Now resolves `${NFTBAN_LIB_DIR}/bin/nftban-core` → `/usr/lib/nftban/bin/nftban-core` → `command -v nftban-core`; genuinely absent → `NOT INSTALLED`.
+- **Enabled-count truth:** replaced `grep -c "enabled"` on the human text (which false-matched the help line "…apply all enabled" and never matched the `[✓]/[✗]` markers) with `trust list --json` counting `"enabled": true` — **0 enabled → `DISABLED`**, **N enabled → `ENABLED (N feeds)`**, **malformed/empty/unreadable JSON → `UNKNOWN`** (not a false `DISABLED`).
+
+### Validation
+- Hermetic test (`cli_trustfeeds_label_truth_v211_1_test.sh`) extracts the REAL shipped block and drives it (2→`ENABLED (2 feeds)`, 0→`DISABLED`, absent→`NOT INSTALLED`, malformed→`UNKNOWN`, no false positive from literal "enabled" text). **Package-native lab2 DEB + lab4 RPM PASS** — both now render `Trust Feeds......... DISABLED` (json enabled-count 0, agrees), `nftban validate` rc0, schema 1.84.0, BotGuard disabled, daemon carries no change.
+
+### Notes
+- Producer `cmd/nftban-core/cmd_trust.go` unchanged (`--json` already present).
+- **Explicitly out of scope** (separate lanes): BotScan lost-ban-signal, `SET_APPLY_SINGLE_WRITER`, pattern-delimiter, whitelist-drift, opqueue, SCDV/security-hardening, RBL/Suricata, Aho-Corasick, MalwareGuard.
+
+## [v1.211.0] - 2026-06-30 — Health-truth core: LoginMon watcher respawn + nft-read unknown contract (daemon re-baseline)
+
+**Codename:** `HEALTH_TRUTH_CORE` · **PR:** [#978](https://github.com/itcmsgr/nftban/pull/978) (→ `edb3ed87`) · **Scope:** `OPEN_STABILITY_HOTFIX_GO_HEALTHTRUTH_IMPL_SCOPE.md`
+
+> **Daemon RE-BASELINED** (Go change in `internal/loginmon` + `internal/validator` — `nftband` NOT byte-identical with v1.210.0; declared openly). **No nft schema change (1.84.0). No nft topology change. BotGuard default unchanged (disabled).** Closes the two P0 "health-truth / lies green" defects.
+
+### Fixed
+- **LoginMon journal watcher no longer dies silently** (`BUG-LOGINMON-JOURNAL-WATCHER-NO-RESPAWN`): `runJournalWatcher` is now a **bounded-backoff supervisor** (mirrors the file-watcher pattern; reuses `watcherBackoffMin/Max`/`watcherHealthyReset`, ctx-aware). When `journalctl -f` exits (journald restart, EOF, OOM), the watcher respawns — the **daemon does NOT restart**, only the watcher. Login detection no longer goes dark while status reads protected.
+- **Runtime input-source state is no longer a stale boot snapshot**: the journal source surfaces `OK` / `WATCHER_DEGRADED` (transient restart) / `WATCHER_DOWN` (≥3 consecutive short fails) / recovered, via `Status().Extra.InputSources`.
+- **Health validator no longer collapses nft set-read errors into a semantic zero** (`HEALTH_FALSE_SAFE_FIX`): a validator-local 3-valued reader `(count, exists, unknown)` (mirrors `internal/metrics/evidence_sets.go` without importing it — no package cycle) backs the BotGuard verdict and the enforcement-critical `blacklist_manual` sub-health. A failed read now surfaces **`unknown` → WARN/DEGRADED** (via a `SeverityWarn`/`CodeModuleDegraded` Finding; `Effective` unset / `State:"unknown"`) instead of a false `idle`/clean.
+- **Empty and disabled/not-installed modules remain neutral** — the `zero = NEUTRAL` rule is preserved (only a *failed read* degrades, never a genuinely-empty set).
+- Minimal health/status visibility wiring (Findings + InputSources); the full status/health truth-matrix (TODO-30/31) is NOT in this lane.
+
+### Validation
+- Go build / vet / test / `-race` GREEN (lab2). **Package-native lab2 DEB + lab4 RPM PASS** — install COMMITTED 16/16; `nftban validate` rc0; `nftban health` no false-WARN on clean hosts (blacklist_manual reads enforcing/primed, not false-unknown); `nftban status` renders; NFTBan failed units 0; nft schema 1.84.0; VERSION 1.210.0 (pre-bump); BotGuard disabled; installed daemon carries the fix.
+- **Journal-watcher kill/respawn simulation: PASS both labs** (daemon NRestarts 0, watcher respawned `WATCHER_DEGRADED → DOWN/respawn → RESPAWNED`, detection recovered). Set-read unknown behavior hermetically/`-race` proven.
+
+### Notes
+- **Explicitly out of scope** (separate lanes): Trust-Feeds label, BotScan lost-ban-signal, `SET_APPLY_SINGLE_WRITER`, pattern-delimiter, whitelist-drift, opqueue atomicity, SCDV/security-hardening, RBL/auditor/central-comms/Suricata, Aho-Corasick, MalwareGuard, docs/site/wiki.
+- PR #978 merged CI-green (53 pass / 0 fail; all 10 required contexts SUCCESS); one in-PR gosec G104 (unhandled `Kill()` at shutdown) fixed minimally.
+
+## [v1.210.0] - 2026-06-29 — BotScan admin/management never-ban exemption guard (F2; daemon re-baseline)
+
+**Codename:** `BOTSCAN_ADMIN_IP_EXEMPTION` · **PR:** [#974](https://github.com/itcmsgr/nftban/pull/974) (→ `30781ca9`) · **Scope:** `BOTSCAN_ADMIN_IP_EXEMPTION_SCOPE.md`
+
+> **Daemon RE-BASELINED (Go change — `nftband` is NOT byte-identical with v1.209.3; declared openly). No nft schema change (1.84.0). No MemoryMax change, no BotGuard default flip.** Establishes a new central admin/management/live-session **never-ban invariant** at the durable ban-apply boundary.
+
+### Added / Fixed
+- **New central never-ban invariant:** `Backend.Ban()` — the single choke point every ban path funnels through (BotScan batch-signal consumer, EventBus module bans, persistent escalation, manual CLI, BotGuard enforcer) — now **refuses exempt IPs before writing to the drop-enforced `blacklist_manual_{v4,v6}` sets**. Previously, admin/session safety was firewall **rule-ordering only**, not a never-ban invariant: the durable Go apply boundary had no whitelist/management guard, so BotScan/automated paths could write the admin IP into `blacklist_manual` (F2, from the post-v1.209.2 health check; observed on srv1+srv2).
+- **Exemption resolver** (`internal/nftbackend/exemption.go`): range-aware (CIDR), **v4/v6 parity**. Sources = `whitelist.d` (operator / live-session `00-session` / system `00-system`, CIDR-aware) + `safety.DetectSystemIPs` (server/gateway/dns/loopback/current-SSH) + **live established inbound SSH peers** (`/proc/net/tcp{,6}`) + optional `NFTBAN_MANAGEMENT_IPS`. TTL-cached; non-blocking initial load.
+- **Exemption does NOT widen accept/whitelist traffic** — it only prevents a DROP of the operator's own IPs; it adds no allow rule. Firewall rule order is kept as defense-in-depth (a third layer), not the primary guarantee.
+- **Scanner-side exemption list is defense-in-depth, NOT the authority:** the daemon publishes the resolved exempt list to a scanner-readable file; the unprivileged BotScan scanner consults it (exact match, no nft read) to suppress signals early. The daemon `Backend.Ban()` guard is the authoritative never-ban enforcement.
+
+### Notes
+- **Fail-safe:** a resolver failure NEVER blocks a legitimate ban (it falls back to no-exemption + rule order). Non-exempt IPs ban exactly as before; v4 and v6.
+- **Validation:** Go tests (`internal/nftbackend/exemption_test.go`) + shell (`botscan_admin_ip_exemption_test.sh`); **lab2 (DEB) + lab4 (RPM) package-native PASS** — negative control (non-exempt bot reaches `blacklist_manual` v4 and v6), positive controls (whitelisted/CIDR/management/live-session/system IPs never enter `blacklist_manual`, v4+v6), fail-safe and anti-regression (BotScan consumer alive, manual ban of non-exempt works, daemon never crashed). `nftban validate` rc0, failed units 0, BotGuard unchanged (disabled), nft schema 1.84.0.
+- **PR #974 merged cleanly** (CI green; scope = 7 files, no VERSION/schema/MemoryMax in the impl PR). Not addressed here: pattern-delimiter (remains blocked until this ships and live canary/fleet prove the invariant), spool/memory, whitelist-drift.
+
+## [v1.209.3] - 2026-06-28 — BotScan collector spool-OOM: off-tmpfs disk-backed spool + bounded lifecycle (shell/packaging-only)
+
+**Codename:** `BOTSCAN_COLLECTOR_SPOOL_OOM` · **PR:** [#972](https://github.com/itcmsgr/nftban/pull/972) (→ `d21ca763`) · **Scope:** `V209_3_BOTSCAN_COLLECTOR_SPOOL_OOM_SCOPE.md`
+
+> **Shell/packaging-only; `nftband` daemon unchanged (byte-identical, source-proven — no `.go` change). No schema change (nft 1.84.0). `MemoryMax=256M` unchanged. Preserves v1.209.0 ban-path, v1.209.1 restored detection / bounded scan, and v1.209.2 gather streaming.**
+
+### Fixed
+- **Fixes the REMAINING BotScan collector OOM after v1.209.2.** v1.209.2 removed the bash command-substitution slurp (per-source memory), but the surviving failure was an **unbounded RAM-backed spool** under `/run/nftban/botscan`: the only cap was per spool FILE (10 MB) with **no total-directory bound**, the scanner never reaped consumed files, and `/run` is **tmpfs** — whose pages are unevictable and charged to the collector's 256 MB cgroup. On heavy hosts the summed spool crossed the cap and oom-killed the collector every cadence (srv3: 634 MB / 138 files / **121 OOM-kills in a day** on official v1.209.2).
+- **Spool moved off tmpfs to disk-backed `/var/lib/nftban/botscan/spool`** (collector + scanner). Disk pages are reclaimable page-cache the kernel drops before OOM — this removes the OOM mechanism. The legacy `/run/nftban/botscan` is cleaned up once on startup (guarded to the exact legacy path).
+- **Added a total spool-directory cap + backpressure** (`BOTSCAN_SPOOL_TOTAL_MAX_BYTES`, default 1 GiB): over-cap → the collector skips appends for the cycle **without advancing source offsets** (nothing dropped; resumes next cycle), surfaced visibly — not a silent drop.
+- **Added cursor-aware reaping** — the scanner reaps each spool file once fully consumed (offset ≥ size), gated to files under the spool dir only (never a real access log), race-free via a shared processor lock taken by both the collector and the scanner.
+- **Removed the blind per-file `tail -c` trim** that shortened a file the scanner cursor was mid-read on (cursor desync). Bounding is now total-cap + reaping — neither moves bytes under a live cursor.
+- **`nftban health botscan` now exposes spool pressure** (a `Spool:` line) and reports DEGRADED under backpressure.
+
+### Notes
+- **No daemon change** (`nftband` byte-identical, source-proven — no `.go` changed). **No schema change** (nft 1.84.0). **`MemoryMax=256M` unchanged** — the fix is off-tmpfs + bounded lifecycle, not a memory increase.
+- **Validation:** hermetic `botscan_spool_oom_v2093_test.sh` **14/14** (off-tmpfs default, total-cap backpressure, legacy cleanup, reaping with both safety gates, cursor preservation, unit/tmpfiles wiring); `botscan_read_authority_v178_test.sh` **13/13**; **lab2 (DEB) + lab4 (RPM) package-native PASS** (real collector unit `result=success` writing the disk-backed spool, `nftban health botscan` shows the `Spool:` line, validate rc0, failed units 0, schema 1.84.0). A measurement fix landed in-PR: spool footprint is summed from file content (`find -type f`) rather than `du` (which counted directory metadata and tripped a small cap on XFS).
+- **srv3 live canary runs after publish, not in release-prep.** The three `|`-delimiter-broken alternation patterns (`OPEN_BOTSCAN_PATTERN_DELIMITER_FIX`) and the admin-IP ban exemption (`OPEN_BOTSCAN_ADMIN_IP_EXEMPTION_SCOPE`) remain **separate parked lanes — NOT addressed here.**
+
+## [v1.209.2] - 2026-06-28 — BotScan collector gather-OOM streaming fix (shell-only)
+
+**Codename:** `BOTSCAN_COLLECTOR_GATHER_OOM` · **PR:** [#970](https://github.com/itcmsgr/nftban/pull/970) (→ `faeac35c`) · **Scope:** `BOTSCAN_COLLECTOR_GATHER_OOM_SCOPE.md`
+
+> **Shell-only; `nftband` daemon unchanged (byte-identical, source-proven). No schema change (nft 1.84.0). Preserves v1.209.0 BotScan ban-path restoration and v1.209.1 restored detection / bounded scan.** The Track-A closure layer.
+
+### Fixed
+- **Fixes BotScan collector gather OOM on heavy hosts by streaming incremental reads directly to the spool instead of storing per-source chunks in bash variables.** The gather captured each source's incremental read into a shell variable (`new="$(nftban_http_read_incremental "$canon")"`), holding up to `BOTSCAN_COLLECTOR_MAX_BYTES` per source; across many DirectAdmin sources the cumulative bash memory crossed the collector's 256 MB cgroup cap → intermittent OOM. The read now streams straight to the spool file.
+- **Preserves `nftban_http_read_incremental` cursor semantics** — the inode/offset state is persisted inside that function (statefile via tmp+mv) independent of where its stdout goes, so streaming changes memory only, not cursor/rotation/crash behavior.
+
+### Notes
+- **srv3 validation: collector peak reduced from 183–213 MB / intermittent OOM to 112 MB max across 6 successful cycles under unchanged MemoryMax=256M** (no swap added); backlog progressing; fresh BotScan ban path still applies with `source_index=botscan`; admin not banned; failed units 0.
+- **No schema change; daemon unchanged.** No MemoryMax change; no `BOTSCAN_COLLECTOR_MAX_BYTES` change; no matcher / source_index / threshold / firewall change.
+- **Validation:** hermetic `botscan_collector_gather_stream_v2092_test.sh` 15/15 (cursor advance, no-dup, no-loss across cycles, rotation, empty-safe, large-source bounded to MAX_BYTES); **lab2 (DEB) + lab4 (RPM) package-native PASS** (collector streams, gather `result=success`, helper `--check` 152 usable/3 skipped intact, validate rc0, schema 1.84.0).
+
+## [v1.209.1] - 2026-06-27 — BotScan prefilter correctness + bounded Go matcher (helper-first)
+
+**Codename:** `BOTSCAN_GO_MATCHER` · **PR:** [#968](https://github.com/itcmsgr/nftban/pull/968) (→ `8205e23a`) · **Scope:** `BOTSCAN_GO_AHOCORASICK_MATCHER_SCOPE.md`
+
+> **Helper-first; `nftband` daemon byte-identical (source-proven — `cmd/nftband` does not import the matcher).** nft schema 1.84.0 unchanged; no validator-JSON change. BotGuard remains disabled unless explicitly enabled. **Daemon ban-path behavior is unchanged from v1.209.0.**
+
+### Fixed
+- **Fixes BotScan prefilter failure caused by invalid pattern-file parsing.** The pattern file uses `|` as its field delimiter, but 3 patterns contain `|` alternation; the shell `IFS='|' read` mis-split them into invalid regex, so `grep -E -f` exited rc=2 and the prefilter (under `2>/dev/null || true`) silently returned empty — suppressing pattern-based BotScan detection where the prefilter is active.
+- **Replaces the fragile shell regex prefilter with a bounded Go hybrid matcher helper** (`nftban-botscan-matcher`: Aho-Corasick literal prefilter + RE2 confirm). Bounded memory fits the BotScan collector's `MemoryMax=256M` cgroup cap — fixes the srv3 collector OOM blocker.
+- **Restores pattern-based BotScan detection for the 152 valid patterns.** **This may increase BotScan bans because previously suppressed detections are now active.**
+- The shell falls through to **unfiltered pass-through** on any helper problem (detection preserved) — it never silently empties.
+
+### Notes
+- **Three delimiter-broken alternation patterns remain skipped visibly and are tracked under `OPEN_BOTSCAN_PATTERN_DELIMITER_FIX`** (155 corpus → 152 active; the 3 are not activated here).
+- **No schema change; BotGuard remains disabled unless explicitly enabled.** No source_index / firewall / ban-path / threshold / action change.
+- **Validation:** `go test ./internal/botscanmatch` green (parity vs grep-equivalent on the real 152-pattern corpus, anchor extraction, RE2 fallback, skip-count, malformed handling); **lab2 (DEB) + lab4 (RPM) package-native PASS** — helper installed, `--check` reports "152 usable, 3 skipped", restoration proof (old grep rc=2/empty vs helper produces candidates), helper == grep(valid) byte-identical, validate rc0, failed units 0, schema 1.84.0, BotGuard disabled.
+
+## [v1.209.0] - 2026-06-27 — BotScan signal-consumer un-gate + enforced/provenanced ban path (daemon-Go)
+
+**Codename:** `BOTSCAN_SIGNAL_CONSUMER_GATING` · **PR:** [#966](https://github.com/itcmsgr/nftban/pull/966) (→ `dc2c37fc`) · **Scope:** `BOTSCAN_SIGNAL_CONSUMER_GATING_SCOPE.md`
+
+> **Daemon-Go (re-baselined).** Fixes BotScan batch-signal consumption when BotGuard is disabled, without enabling BotGuard. **nft schema 1.84.0 unchanged; no validator-JSON change. BotGuard remains disabled unless explicitly enabled. No enforcement-topology / RBL / portscan / CLI-parity / updater change.**
+
+### Fixed
+- **Fixes BotScan batch-signal consumption when BotGuard is disabled.** BotScan (Clock-3 shell) produces batch ban signals, but the only consumer lived inside BotGuard's classifier tick — which never ran when BotGuard was disabled, so BotScan bans were inert. A standalone, bounded batch-signal consumer now runs even with BotGuard classification off (no suspect-read / FCrDNS / classifier loop started).
+- **Adds stale backlog quarantine / bounded drain to prevent applying old queued BotScan signals.** A mandatory max-age cutoff + bounded tail-drain: stale signals are expired/quarantined, never flood-applied; the daemon never slurps the whole queue file.
+- **Routes fresh BotScan bans to enforced `blacklist_manual_{ipv4,ipv6}` sets with `source_index` provenance** (`source=botscan`) — rather than `http_bot_ban`, which is not drop-enforced when BotGuard is disabled. The enabled path is unchanged.
+- **OpQueue source propagation fixed at the apply boundary** — `EnqueueBan`'s source now reaches `source_index` after a successful add (for persisted blacklist sets), instead of being lost and tagged `unknown` by reconcile. Fixes provenance for every producer, not just BotScan; no module-init timing dependency.
+
+### Notes
+- **Daemon re-baselined** (Go: `internal/opqueue`, `internal/botguard`, `cmd/nftband/daemon_init.go`). No shell logic. **No schema change; BotGuard remains disabled unless explicitly enabled.**
+- **Validation:** `go test ./internal/opqueue ./internal/botguard` green (apply-boundary records `source=botscan`; route v4/v6; stale-quarantine; suppression; enabled-path regression preserved) + CI 53/53; **lab2 (DEB) + lab4 (RPM) package-native PASS** — fresh → `blacklist_manual` + kernel drop + `source_index source=botscan`, stale → quarantined, integrity (schema 1.84.0, BotGuard disabled, validate rc0).
+- **No fleet rollout in this release.** Canary srv4 first (stale backlog must expire/quarantine; only fresh signals apply), then expansion.
+
+## [v1.208.0] - 2026-06-26 — BotScan trend-history / reporting-truth (shell-only)
+
+**Codename:** `BOTSCAN_TREND_HISTORY` · **PR:** [#963](https://github.com/itcmsgr/nftban/pull/963) (→ `a9b5956c`) · **Scope:** `V208_BOTSCAN_PRESSURE_TREND_SCOPE.md`
+
+> **Shell-only.** Adds durable BotScan pressure/mode history without changing detection, firewall, daemon, or schema. **`nftband` NOT re-baselined (byte-identical with v1.207.0); nft schema 1.84.0 unchanged. No enforcement/topology/ban/RBL/portscan/BotGuard/CLI-parity/updater/central-comms change.** Reuses the watchdog host-vitals trend — no duplicate CPU/RAM store.
+
+### Added
+- **Durable trend** — `/var/lib/nftban/botscan/trend.jsonl`: one JSON record per meaningful run (gated by recording-discipline), bounded retention (`BOTSCAN_TREND_RETENTION`, default 500) + flock + atomic trim. Reuses the watchdog trend for host load/mem/iowait; carries only BotScan's decision + a cheap `load_ratio`.
+- **`nftban health botscan --history`** — summarizes scan-mode / health-state frequency, budget-hit hosts, backlog-GROWING hosts, last OK / last DEGRADED scan; tolerates corrupt/partial trend lines.
+- **`NO_INPUT_DISCOVERED`** health state at the "No access log found" path (fixes non-web hosts' perpetual `NO_RUN_YET`). **Zero-progress dedupe** — consecutive identical no-progress states (NO_INPUT_DISCOVERED or empty-log DEGRADED_INPUT_BLIND) collapse to one trend record (no per-cycle spam).
+
+### Notes
+- State classification: `NO_INPUT_DISCOVERED` = no log source discovered; `DEGRADED_INPUT_BLIND` = log source exists but the scan makes zero useful progress. Both are **not clean**; neither is a crash; repeated zero-progress states dedupe.
+- **Validation:** hermetic 21/0 (incl. an integration test driving `process_logs` with zero discovery → NO_INPUT_DISCOVERED + dedupe) + v207 adaptive regression 29/0 + existing BotScan regressions (nofork-parity, deadline-rotation, request-class incl IPv4/IPv6) PASS; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28262735223) — lab2 trend accrual + `--history`; lab4 no-web → not-clean, not-crash, no spam.
+- **No fleet rollout in this release.** Unified Track-A target → `v1.207.0 → v1.208.0`.
+
+## [v1.207.0] - 2026-06-26 — BotScan smart-adaptive (pressure/backlog/mode/health, shell-only)
+
+**Codename:** `BOTSCAN_SMART_ADAPTIVE` · **PR:** [#961](https://github.com/itcmsgr/nftban/pull/961) (→ `94b61b1b`) · **Scope:** `V207_BOTSCAN_SMART_ADAPTIVE_SCOPE.md` · **Report:** `V207_BOTSCAN_SMART_ADAPTIVE_IMPL_REPORT.md`
+
+> **Shell-only.** Makes BotScan load-aware, backlog-aware, and operator-visible without rebuilding existing machinery. **`nftband` NOT re-baselined (no `.go`/`cmd/`/`internal/` change — byte-identical with v1.206.2); nft schema 1.84.0 unchanged. No enforcement/topology/ban/RBL/portscan/BotGuard/CLI-parity/updater-timer/central-comms change.** Reuses the existing watchdog pressure trend, `/proc/loadavg`, the BotScan forward-cursor backlog, the v1.187 candidate prefilter, and the soft budget — no new collectors, no duplicate host-vitals store.
+
+### Added
+- **Smart-adaptive control loop** (`nftban_botscan_adaptive.sh`): a deterministic pressure score (load÷nproc + watchdog `load_5m/mem/iowait` + last runtime÷budget + last-run budget-hit) → `pressure_state` (NORMAL/ELEVATED/HIGH/CRITICAL); cursor-lag → `backlog_state` (DRAINING/STABLE/GROWING/STARVED); → `scan_mode` (FULL/PREFILTERED/FAIR_SHARE/SURVIVAL) that modulates the existing per-file cap (FAIR_SHARE halves, SURVIVAL quarters). FULL/PREFILTERED preserve shipped detections; only SURVIVAL reduces coverage — explicitly declared, never reported clean.
+- **Health model** (`nftban health botscan`): `OK_SCANNED_NO_BOTS`/`OK_SCANNED_BOTS_FOUND`/`WARN_PARTIAL_PROGRESS`/`DEGRADED_BUDGET_HIT`/`DEGRADED_BACKLOG_GROWING`/`DEGRADED_INPUT_BLIND`/`DEGRADED_PRESSURE_THROTTLED`/`DISABLED_BY_CONFIG`/`ERROR_RUNTIME_FAILURE`. **Invariant: 0 scanned lines is NEVER "clean"** — disabled, blind, and pressure-throttled states are all visible, not silent.
+- **Recording-discipline:** a disabled+never-run module writes NO run-state/counters (no noise); a disabled module with a prior run records `DISABLED_BY_CONFIG` (not clean); counters accumulate as `*_total` in an additive `botscan/runstate.json`. Operator advisory (incl. "primary pressure may be the web/db stack").
+
+### Notes
+- 4 additive `declare -F`-guarded seams in `nftban_botscan.sh` (no-op if the module is absent); `nftban health botscan` dispatch. IPv4/IPv6 parity preserved. Honest residuals: `lines_seen≈lines_scanned` (post-prefilter, documented); per-line already-banned-skip is a future refinement (the bounded cap already throttles the bash matcher).
+- **Validation:** hermetic 29/0 + existing BotScan regressions (nofork-parity, deadline/rotation, request-class incl. IPv4/IPv6) PASS; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28252680518) — installed controller matrix 15/15, cap modulation, recording-discipline, `nftban health botscan` live, 100k-line flood benchmark (FULL/PREFILTERED detection-equivalence). dns4 read-only busy-host confirm only (web+db 143% primary load; BotScan bounded).
+- **No fleet rollout in this release.** Production fleet remains **v1.203.0**; unified Track-A retargeted to `v1.203.0 → v1.207.0` (absorbs the held v1.206.2 hop; dns4 rolled last/deferred if still under flood).
+
+## [v1.206.2] - 2026-06-26 — Stats count-reconcile + freshness + label hotfix (reporting-only)
+
+**Codename:** `STATS_COUNT_RECONCILE` · **PR:** [#959](https://github.com/itcmsgr/nftban/pull/959) (→ `5b1a1fe9`) · **Report:** `V206_2_STATS_COUNT_RECONCILE_IMPL_REPORT.md`
+
+> **Reporting/stats-only.** Completes the stats-dashboard clarity work after v1.206.1's provenance fix. **No firewall/ban/topology/daemon change (`nftband` byte-identical with v1.206.1); nft schema 1.84.0 unchanged.** An audit-suspected IPv6 producer omission was **retracted** — `nftban stats` counts IPv6 manual bans correctly after a valid collect; the "IPv6=0 right after a ban" was **cache staleness** (snapshot timing), now made explicit.
+
+### Fixed (reporting)
+- **Freshness:** the cache-hit `Data source` stays `UNIFIED CACHE` with a new **Snapshot** line (`collected Ns ago`) + an explicit note that a ban added since the last collect (either family) may not appear until the next collection.
+- **Count reconciliation:** the by-source breakdown now reconciles to `New ban events` via an **`Other/Unclass`** bucket (= total − Σ by-source); if by-source exceeds the total, a different-basis note is shown. No more unexplained `17 vs 9`.
+- **Label disambiguation:** ambiguous bare `Manual` → `Operator/CLI` (By source) and `MANUAL` → `OPERATOR/CLI` (BANS BY MODULE) — the manual/CLI ban *source*, not the manual-hash *set*; operator-manual vs persistent/loginmon vs adopted stays in the PROTECTION BREAKDOWN provenance line.
+- **Active-bans sample:** prints `showing X of N`, lists all when N≤10, and reads BOTH families (interval + manual hash, IPv4 + IPv6) so IPv6 active bans appear.
+
+### Notes
+- Shell/stats-only (`cli/lib/nftban/core/nftban_stats_format.sh` + new test). No `source_index` rewrite; no enforcement/topology/LoginMon/RBL/portscan/CLI-parity/updater-timer/central-comms change. IPv4/IPv6 enforcement remains kernel-proven (v1.206.1 audit).
+- **Validation:** hermetic 17/0 + v1.206.1 provenance regression 16/0; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28199925166) — controlled v4+v6 ban → fresh/live path → IPv6 manual-set `0`→`1` visible.
+- **No fleet rollout in this release.** Production fleet remains **v1.203.0**; unified Track-A retargeted to `v1.203.0 → v1.206.2`.
+
+---
+
+## [v1.206.1] - 2026-06-25 — Stats manual-attribution + count-clarity hotfix (reporting-only)
+
+**Codename:** `STATS_MANUAL_ATTRIBUTION` · **PR:** [#957](https://github.com/itcmsgr/nftban/pull/957) (→ `f3d6b95b`) · **Evidence:** `V206_FLEET_STATS_MANUAL_ATTRIBUTION_FINDINGS.md`
+
+> **Reporting/stats-only.** `nftban stats` displayed LoginMon persistent-offender durable bans as operator **"Manual"** (since v1.203.0 routed single-IP `blacklist.d` entries into the `blacklist_manual_*` hash set). This hotfix corrects the *attribution and labels only* — **no firewall/ban/topology behavior change, no daemon change (`nftband` byte-identical with v1.206.0), nft schema 1.84.0 unchanged, no `source_index.jsonl` rewrite.**
+
+### Fixed — manual-ban attribution
+- LoginMon persistent-offender durable bans **no longer display as operator "Manual."** The `blacklist_manual_*` set name is **not** treated as provenance by itself.
+- Provenance split (PROTECTION BREAKDOWN → "Manual-set by:"): **operator-manual** = `99-manual.conf` · **persistent/loginmon** = `30-persistent-offenders.conf` · **adopted/unknown** = remainder. Precedence: 99-manual wins; no double-count; adopted clamps ≥0.
+
+### Clarified — count semantics
+- `New bans (period)` → **`New ban events`** with a note that events include re-bans and are **not** the live-set size (distinguishes event count vs unique-IP count vs live-set count).
+- `Modules:` → **`By source (ban events, this period)`**; BANS-BY-MODULE note points to the provenance line.
+- **CURRENT ACTIVE BANS** sample now reads the **manual hash set** as well as the interval set (so a host whose only live bans are persistent-offenders no longer shows an empty sample); explicit "sample unavailable" reason otherwise.
+
+### Notes
+- Shell/stats-only (`cli/lib/nftban/core/nftban_stats_format.sh` + new test) — no `.go`/daemon change; schema 1.84.0; no firewall/ban/topology change; no `source_index` rewrite; no RBL/portscan/CLI-parity change; the updater inhibited-timer warning is parked separately (not in this release).
+- **Validation:** hermetic 16/0; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28194777988) — live smoke: lab2 `operator-manual: 0 · persistent/loginmon: 386 · adopted: 20`, lab4 `0 · 133 · 0`.
+- **No fleet rollout in this release.** Production fleet remains **v1.203.0**; unified Track-A retargeted to `v1.203.0 → v1.206.1`.
+
+---
+
+## [v1.206.0] - 2026-06-25 — RBL state + visibility hardening (resolver/provider false-negative fix)
+
+**Codename:** `RBL_STATE_AND_VISIBILITY` · **PR:** [#955](https://github.com/itcmsgr/nftban/pull/955) (→ `fffc9712`) · **Scope:** `V206_RBL_STATE_AND_VISIBILITY_SCOPE.md`
+
+> **What:** fixes a P0 RBL false-negative where resolver/provider failures were folded into CLEAN, and makes degraded/blind RBL state visible to operators. **Shell-only — the `nftband` daemon is NOT re-baselined; nft `SchemaVersionCurrent` unchanged (1.84.0).**
+>
+> **No fleet rollout in this release.** Production fleet remains **v1.203.0**; v1.204 portscan + v1.205 CLI parity + v1.206 RBL are on main but **not fleet-live** until a separate unified Track-A rollout (`v1.203.0 → v1.206.0`).
+
+### Fixed — RBL 7-state resolver/provider model
+- `LISTED · CLEAN · ERROR · RESOLVER_BLOCKED · TIMEOUT · SKIPPED_IPV4_ONLY_ZONE · UNSUPPORTED_IPV6_ZONE`. **CLEAN now means a successful negative lookup ONLY** — non-CLEAN states never increment the clean count and never project as fully protected (closes the false-negative).
+- **Spamhaus block-codes `127.255.255.252/.253/.254` → `RESOLVER_BLOCKED`** (carved out before the blanket 127/8 listed check — not listed, not clean).
+- Resolver/provider classification: `REFUSED → RESOLVER_BLOCKED`, `SERVFAIL → ERROR`, `timeout → TIMEOUT`, authoritative `NXDOMAIN → CLEAN`, authority-failed/no-resolver → `ERROR` (never clean).
+- **IPv6 honesty:** un-reversible IPv6 → `UNSUPPORTED_IPV6_ZONE`; operator-declared IPv4-only zones (`NFTBAN_RBL_IPV4_ONLY_ZONES`) → `SKIPPED_IPV4_ONLY_ZONE` — distinct states, never counted clean.
+
+### Visibility
+- `nftban rbl check --json` exposes per-state counts + a `degraded` total (state, not just a clean/listed boolean); human output never says "clean" for a degraded result.
+- `nftban health rbl` reads the **authoritative** `/var/cache/nftban/rbl` state store (fixes a key/state-path drift to a stale `/var/log` reader) and surfaces **DEGRADED** / "not fully protected" when RBL is blind.
+- `rbl check` persists a 3-way state (listed/degraded/clean) — a degraded check is no longer recorded clean.
+
+### Notes
+- Shell-only (`cli/lib/nftban/core/nftban_rbl.sh`, `cli/cmd_rbl.sh`, `cli/cmd_health_analysis.sh` + new test) — no `.go`/daemon change; nft schema 1.84.0 unchanged. No portscan/CLI-parity/BotGuard change; no email/webhook/auditor/central-comms work; no RBL-timer default-enable flip.
+- **Validation:** hermetic suite 19/0 + v1.150 regression 17/0; **lab2 (DEB) + lab4 (RPM) package-native PASS** (build 28185397692).
+
+---
+
+## [v1.205.0] - 2026-06-25 — CLI surface parity fix (registry/completion alignment + parity guard)
+
+**Codename:** `CLI_SURFACE_PARITY_FIX` · **PR:** [#953](https://github.com/itcmsgr/nftban/pull/953) (→ `3a457c62`) · **Source audit:** `FULL_CLI_SURFACE_PARITY_AUDIT.md`
+
+> **What:** aligns the CLI command-surface metadata (registry + bash-completion) with the runtime shell dispatch (the source of truth) and adds a CI guard to keep them in sync. **Metadata/completion/CI-only — no product behavior change; the `nftband` daemon is NOT re-baselined; nft `SchemaVersionCurrent` unchanged (1.84.0).**
+
+### Fixed (command-surface truth)
+- **`commands.registry.yml` aligned with shell dispatch:** added the real `firewall` subcommands that were missing — `status`, `rebuild`, `reset`, `conflicts`, `restore` (target enum csf/fail2ban/firewalld/ufw), `record`; added top-level `export` (real dispatch arm, alias of `stats export`).
+- **Aliases/deprecated commands marked:** `trust` ← `cloudflare` (legacy top-level alias); `geoban update` ← `refresh` (same handler); `fhs check` deprecated → `status`; `port list` deprecated → `status`.
+- **bash-completion:** removed the **retired `gui`** command (retired v1.100.1b) — it was still advertised in tab-completion.
+
+### Added
+- **CI parity guard** `scripts/ci/check-cli-surface-parity.sh` (wired into `ci-architecture.yml`): validates registry ↔ bash-completion ↔ dispatch and classifies drift (MISSING_FROM_REGISTRY / STALE_IN_REGISTRY / MISSING_FROM_COMPLETION / RETIRED_IN_COMPLETION / ALIAS_NOT_MARKED / DEPRECATED_NOT_MARKED / INTERNAL_OR_TARGET_ONLY_ALLOWLISTED / PASS) + retired-command + duplicate-handler scan.
+
+### Notes
+- **No daemon change** (no `.go`/`cmd/`/`internal/` edits) → `nftband` byte-identical with v1.204.0. **nft schema 1.84.0 unchanged. No docs/website changes** (already clean). **No portscan/BotGuard/whitelist/blacklist change.**
+- **No fleet rollout** in this release. **Latest published remains v1.204.0 until v1.205.0 is tagged/published.** Production fleet remains **v1.203.0**; v1.204 Track-A rollout remains HOLD.
+
+---
+
+## [v1.204.0] - 2026-06-25 — Portscan Go-classifier migration (known-open service-port false-positive fix)
+
+**Codename:** `PORTSCAN_GO_CLASSIFIER_MIGRATION` · **PR:** [#951](https://github.com/itcmsgr/nftban/pull/951) (→ `7db54bf5`) · **Ownership:** `LOG_SOURCE_OWNERSHIP_DECLARATION_PORTSCAN.md` (ACCEPTED)
+
+> **What:** fixes a portscan false-positive where a legitimate multi-service client (panel+mail+web+SSH) was temp-banned for touching several known-open services quickly. **Minor bump (1.204.0) because the `nftband` daemon is intentionally RE-BASELINED** (`cmd/nftband/daemon_init.go` links the new `internal/portscan` package). NFT `SchemaVersionCurrent` unchanged (1.84.0).
+>
+> **⚠️ Fleet rollout is intentionally DEFERRED. Production remains v1.203.0; the portscan FP fix is NOT live fleet-wide until a separate Track-A gate (`OPEN_V204_TRACK_A_FLEET_ROLLOUT_11_HOSTS`).** v1.204.0 published ≠ fleet protected by the new classifier.
+
+### Fixed
+- **Portscan classic classifier migrated to a typed Go decision function** (`internal/portscan`). Previously the shell classifier scored ALL distinct destination ports an IP touched (including configured open services) as scan diversity → a legitimate multi-service/browser/panel client could be classified strobe/vertical and temp-banned (proven: admin `62.38.150.122`, 6 open ports).
+  - **Known-open service ports from `tcp_ports_in` no longer score as scan evidence** — they are allowed context.
+  - **Unexpected/closed-port diversity remains ban-capable** (block/vertical/horizontal/strobe scoring is on the unexpected-port count); mixed traffic scores only the unexpected ports.
+  - **IPv4/IPv6 parity validated.**
+
+### Notes
+- New `nftban-core portscan-classify` subcommand (pure decision function — does not read logs or write nft sets). Shell mode gate `PORTSCAN_CLASSIC_CLASSIFIER`: **shadow** (default — logs old-vs-new, **legacy enforcement preserved**), **go** (enforces the fixed classifier), **shell** (legacy). Single ban authority unchanged (shell → daemon IPC → `blacklist_manual_*`).
+- **`nftband` daemon RE-BASELINED** (intentional); nft schema **1.84.0** unchanged; **no whitelist/blacklist topology change; no BotGuard change**; no counters/metrics; no new nft set.
+- **Validation:** `internal/portscan` 12 table-driven tests; **lab2 (DEB) + lab4 (RPM) package-native PASS** — real `detect_scan_type` integration: go-mode known-open burst → allow (v4+v6), unexpected diversity → ban, mixed → unexpected-only, shadow preserves legacy, classifier makes no direct nft write, no whitelist/blacklist regression, no ban residue.
+
+---
+
+## [v1.203.0] - 2026-06-25 — Blacklist topology cleanup (file-backed ban feed-reload fail-open)
+
+**Codename:** `BLACKLIST_TOPOLOGY_CLEANUP` · **PR:** [#949](https://github.com/itcmsgr/nftban/pull/949) (→ `43535fae`) · **Audit:** `BLACKLIST_TOPOLOGY_CLEANUP_INDEPENDENT_AUDIT.md` (PASS)
+
+> **What:** fixes a fail-open where file-backed `blacklist.d` bans stopped being enforced once threat feeds loaded. **Minor bump (1.203.0) because the `nftband` daemon is intentionally RE-BASELINED** (`cmd/nftband/daemon_handlers_sync.go`). NFT `SchemaVersionCurrent` unchanged (1.84.0).
+
+### Fixed (ban-path enforcement)
+- **`BUG-BLACKLIST-FILE-ENTRY-FAIL-OPEN-ON-FEED-RELOAD`** — `blacklist_ipv4/_ipv6` are feed/geoban-owned `interval,auto-merge` sets written by a flush-first replace; the sync also string-diffed `blacklist.d` into them, so the feed/geoban replace then **wiped** those file-backed bans (operator hand-edits / persist-only entries silently un-enforced once feeds loaded).
+  - **File-backed single-IP** blacklist.d entries now survive feed reload — routed to the manual hash sets `blacklist_manual_ipv4/_ipv6` (which the feed replace never touches).
+  - **File-backed CIDR** blacklist.d entries now survive feed reload — folded into the **unified** feed/geoban canonical replace input.
+- **Feed-vs-geoban sequential-replace clobber** — feeds and geoban each did a separate full replace of the shared interval set (second source wiped the first); now **unified into one canonical replace** per family (single interval writer). `FullSync` no longer string-diffs the interval blacklist sets.
+
+### Notes
+- **`nftband` daemon RE-BASELINED** — not byte-identical with v1.202.0; intentional (daemon-only change, single file). nft `SchemaVersionCurrent` stays **1.84.0** (no set-shape/schema change; no new set). **CLI/IPC `nftban ban` unchanged; `unban` clears all live copies. IPv4/IPv6 parity maintained.**
+- **No portscan change** (the portscan Go-classifier migration is NOT part of v1.203.0; still parked). **No BotGuard change.**
+- **Whitelist topology remains validated** (`WHITELIST_TOPOLOGY_STILL_VALIDATED = PASS`) — no lane reopen; the live whitelist path has no feed/geoban flush-replace writer (trust apply is additive). A latent `load_cidrs(set_type="whitelist")` flush-replace twin is parked as a future watch-item, **not** a release blocker.
+- **Validation:** independent audit PASS (W2 comment fixed); **package-native lab2 (DEB) + lab4 (RPM) PASS** on installed packages (CI build 28161680101) — single-IP + CIDR survive feed reload, coexist with real feeds, no clobber, no malformed intervals, v4+v6; labs restored clean to v1.202.0.
+
+---
+
+## [v1.202.0] - 2026-06-25 — Whitelist durable-apply reconcile + range-aware verify (trusted-must-be-live)
+
+**Codename:** `WHITELIST_DURABLE_APPLY_RECONCILE` · **PR:** [#947](https://github.com/itcmsgr/nftban/pull/947) (→ `e4827ab3`) · **Audit:** `WHITELIST_DURABLE_APPLY_RECONCILE_INDEPENDENT_AUDIT.md` (PASS)
+
+> **What:** enforces the "trusted-must-be-live" invariant — a durable `whitelist.d` entry must be present in the live kernel whitelist set. **Minor bump (1.202.0) because the `nftband` daemon is RE-BASELINED** (the fix is in `internal/setsync`, which links into the daemon). NFT `SchemaVersionCurrent` unchanged (1.84.0).
+
+### Fixed (P1/P2 — whitelist trust reliability)
+- **Root cause:** the whitelist set is an `interval, auto-merge` set; the kernel coalesces adjacent CIDRs (`104.16.0.0/13 + 104.24.0.0/14 → 104.16.0.0-104.27.255.255`). The daemon's `setsync` used a **string** diff against the coalesced interval → spurious add/remove churn every sync that could drop genuinely-new durable entries (e.g. an operator/management IP written by `whitelist add --static` but not actually live). The same mismatch made `whitelist verify` report phantom Cloudflare drift.
+- **Fix (range coverage, not strings):** a range-aware coverage oracle (`internal/netutil`) now drives (a) `nftban whitelist verify` — phantom CIDR↔interval anomalies eliminated; (b) `nftban whitelist add --static` — **live read-back / loud-fail** (exits non-zero, no false "applied live"); (c) the daemon whitelist sync — a range-preserving set reader (`GetSetElementsRanges`) + range-aware diff (**0 churn** on stable CIDR sets) + **post-apply durable-coverage verification** that fails loud if any permanent durable entry is not live.
+
+### Notes
+- **`nftband` daemon RE-BASELINED** (not byte-identical with v1.201.4) — intentional; `internal/setsync`/`internal/netutil` changed. nft `SchemaVersionCurrent` stays 1.84.0 (no set-shape/schema change). No detector/firewall/portscan/BotGuard change.
+- **Validation:** netutil + setsync unit tests (incl. the nftables interval-element model pinned by `TestReconstructIntervalRanges_ObservedStructure`); go vet; **package-native lab2 (DEB) 19/0 + lab4 (RPM) 19/0** — 0-churn, clean intervals, new `--static` IP lands live, loud-fail, manual/trust/system tier reconcile, session preserved, labs restored clean.
+- **Follow-on (separate lanes):** verify-CIDR-interval-normalization is shipped here as the oracle; the standalone `WHITELIST_VERIFY_CIDR_INTERVAL_NORMALIZATION` register entry is satisfied. srv3 host reconcile + portscan Go-classifier migration remain parked (own gates).
+
+---
+
+## [v1.201.4] - 2026-06-24 — `config local` read-only override diagnostics (CONFIG_LOCAL_RECOVERY IMPL-2)
+
+**Codename:** `CONFIG_LOCAL_RECOVERY IMPL-2` · **PR:** [#944](https://github.com/itcmsgr/nftban/pull/944) (`334dd4fa`) · **Scope:** `CONFIG_LOCAL_RECOVERY_IMPL2_SCOPE.md`
+
+> **What:** adds read-only diagnostics for operator `*.conf.local` overrides, built on the v1.201.2 `_source_local` mechanism. **Strictly read-only — no writes, no quarantine, no mutation.** Shell-only; `nftband` daemon byte-identical (source-proven: zero `.go`); NFT `SchemaVersionCurrent` unchanged (1.84.0).
+
+### Added
+- **`nftban config local list [--json]`** — enumerate every `*.conf.local` with path · base `.conf` it overrides · sha256 · size · mtime · `bash -n` syntax status.
+- **`nftban config local validate [--json]`** — `bash -n` syntax-check each `.local` (never sources/executes); exit nonzero if any `SYNTAX_ERROR`.
+- **`nftban config local doctor [--json]`** — syntax + a schema-derived `KEY=VALUE` lint against `config-schema.json`: `OK` / `UNKNOWN_KEY` / `DEPRECATED_KEY` (flags the v1.201.3-deprecated recovery keys) / `BAD_VALUE`. Read-only by design (no mutating mode).
+
+### Notes
+- **Strictly read-only:** no file writes, no quarantine, no `disable`/`reset`/`restore`, no `config-quarantine` directory, no change to `_source_local` loading. The lint is schema-derived (single source of truth) — no second hardcoded key list.
+- Wired through the CLI contract: `commands.registry.yml` (`config.subcommands.local`, `mutates:false`, `config_view`), `config` usage, and `config local [--help]` + per-verb `--help`.
+- **`nftband` daemon byte-identical (source-proven); nft schema 1.84.0**; no daemon IPC; `recovery.conf`/`config-schema.json` not modified (read-only consumers).
+- **Validation:** hermetic 20/20 (incl. read-only + `-e`-safety proofs); **package-native both families lab2(DEB) 29/0 + lab4(RPM) 29/0** via the installed CLI — list/validate/doctor behavior, sha-compared zero mutation, no quarantine dir, registry/help green, labs restored clean.
+- **Deferred (separate lanes):** IMPL-3 (quarantine/disable/restore verbs) · IMPL-4 (parse-not-execute migration).
+
+---
+
+## [v1.201.3] - 2026-06-24 — Recovery-config truth: trim+ship+wire recovery.conf, deprecate 11 phantom keys
+
+**Codename:** `RECOVERY_LEGACY_RECONCILE` · **PR:** [#942](https://github.com/itcmsgr/nftban/pull/942) (`d6e13dbd`) · **Findings:** `RECOVERY_LEGACY_RECONCILE_FINDINGS.md`
+
+> **What:** `recovery.conf` was a phantom config surface — unshipped + unsourced, yet `config-schema.json` documented 14 keys as living there (11 unread; 3 read by `nftban-apply` only from env / unshipped `/etc/default/nftban`). This makes the recovery config truthful: the 3 live commit-confirm knobs get a real shipped+sourced home; the 11 dead keys are deprecated. **Shell/packaging + config-schema metadata only; `nftband` runtime daemon byte-identical (source-proven: zero `.go`); NFT `SchemaVersionCurrent` UNCHANGED (1.84.0).**
+
+### Fixed (P2 operator-truth)
+- **Ship** a trimmed `/etc/nftban/conf.d/recovery.conf` with only the 3 live commit-confirm knobs (`NFTBAN_REBOOT_GRACE_PERIOD`, `NFTBAN_SSH_TEST_BEFORE_APPLY`, `NFTBAN_SSH_TEST_PORT`); the unshipped 14-key copy is removed.
+- **Wire** `nftban-apply` to source the shipped `recovery.conf` + `recovery.conf.local` (via the central `_source_local` helper, `bash -n`-gated) with explicit precedence (low→high): hardcoded < recovery.conf < `/etc/default/nftban` (legacy compat, retained) < recovery.conf.local < environment. Commit-confirm rollback behavior unchanged.
+- **Deprecate** the 11 unread keys in both `config-schema.json` copies (no longer advertised as live `conf.d/recovery.conf` config). Previously they over-promised backup-rotation / rollback-alerts / reset-on-boot that do not exist in code.
+
+### Notes
+- **`nftband` daemon byte-identical (source-proven); nft schema 1.84.0** (the `config-schema.json` change is config metadata, not the nft schema). `rebuild_recovery.json` rebuild-retry marker contract untouched (separate mechanism). No detector/firewall/ban-path/BotGuard change; no new CLI command.
+- **Validation:** hermetic 17/17; **package-native both families lab2(DEB) 25/0 + lab4(RPM) 25/0** via `nftban-apply`'s real config-resolution path — each live key in recovery.conf reflected in the effective config; `.local` overrides via `_source_local`; env > `.local`; full precedence chain deterministic; 11 dead keys deprecated; rebuild marker untouched; labs restored clean.
+- This also closes the last R1a-5 `UNCLEAR_NO_GO` (recovery.conf).
+- **Deferred (separate lanes):** config-local IMPL-2/3/4 · `OPEN_DRHG1_SYSTEMD_SPLIT_SCOPE`.
+
+---
+
+## [v1.201.2] - 2026-06-24 — `.conf.local` recovery (IMPL-1): central `_source_local` — broken overrides no longer partial-apply
+
+**Codename:** `CONFIG_LOCAL_RECOVERY_IMPL1` · **PRs:** [#938](https://github.com/itcmsgr/nftban/pull/938) (helper + literal migration) + [#939](https://github.com/itcmsgr/nftban/pull/939) (variable-indirected completion) + [#940](https://github.com/itcmsgr/nftban/pull/940) (sbin entry-script + guard scope) → main `cd18bbf8` · **Scope:** `CONFIG_LOCAL_RECOVERY_DESIGN.md`
+
+> **What:** a syntactically-broken operator `*.conf.local` override no longer silently **partial-applies** (the old `source … || true` left variables set before the error applied, then aborted). All `.conf.local` sourcing now routes through a single helper that `bash -n`-gates the file: clean → sourced (semantics preserved); broken → **skipped whole** with one actionable WARN, non-fatal. **Shell-only; `nftband` runtime daemon byte-identical (source-proven: zero `.go`); NFT schema UNCHANGED (1.84.0).**
+
+### Fixed
+- **Central `_source_local` helper** (`lib/env.sh`): `NFTBAN_IGNORE_LOCAL_CONFIG=1` bypass (break-glass) · missing/unreadable → silent · `bash -n` clean → source · `bash -n` fail → not sourced, **no partial-apply**, warn-once, non-fatal.
+- **All `.conf.local` source sites routed through the helper** — literal paths, variable-indirected (`source "$VAR"` incl. `${base}.local` forms), and the **dispatcher entry script** `cli/sbin/nftban` (loop-`$local_override` + literal). Repo-wide bare-`.local`-source count = 0. Base-config sources unchanged.
+- **CI guard** (`config_local_source_helper_impl1_test.sh`): Guard A (literal) + Guard B (variable-indirect) scanning the whole `cli/` tree (entry scripts included) — prevents recurrence; + regression for the partial-apply class.
+
+### Notes
+- **Schema 1.84.0 unchanged; `nftband` daemon byte-identical (source-proven).** No detector/firewall/nftables/ban-path/LoginMon-behavior/BotGuard/schema/counter change. No new CLI command (registry/help untouched).
+- **Config model preserved:** base `.conf` = defaults; operator prefs = `*.conf.local` (survive upgrade).
+- **Validation:** hermetic 13/13; **package-native both families lab2(DEB) 20/0 + lab4(RPM) 20/0 via the `/usr/sbin/nftban` dispatcher path** — broken `services.conf.local` (line-1 `NFTBAN_ENABLED=false` + syntax error) skipped whole (no partial-apply → status stays ENABLED), WARN emitted, `NFTBAN_IGNORE_LOCAL_CONFIG=1` bypass, `.local` survives upgrade; labs restored clean.
+- **Deferred (separate lanes):** IMPL-2 (`config local list|validate|doctor`) · IMPL-3 (quarantine verbs) · IMPL-4 (parse-not-execute). `OPEN_RECOVERY_LEGACY_RECONCILE` / `OPEN_DRHG1_SYSTEMD_SPLIT_SCOPE` remain plan-only.
+
+---
+
+## [v1.201.1] - 2026-06-24 — Structural hygiene: ship login_alert.conf + services.conf at their live read paths
+
+**Codename:** `STRUCTURAL_HYGIENE_PRA` · **PR:** [#936](https://github.com/itcmsgr/nftban/pull/936) (`ae687ef2`) · **Scope:** `STRUCTURAL_HYGIENE_SCOPE.md` + `STRUCTURAL_HYGIENE_INVESTIGATION_FINDINGS.md`
+
+> **What:** closes two config **shipping gaps** — operator configs read live but never packaged, so the runtime silently fell back to defaults. **Shell/packaging + test only; `nftband` runtime daemon byte-identical (source-proven: zero `cmd/nftband`/daemon-source change); NFT schema UNCHANGED (1.84.0).**
+
+### Fixed
+- **`login_alert.conf`** — read live by `cmd_login.sh` (`conf.d/login_alert.conf`) but absent from the shipped tree → now shipped at `etc/nftban/conf.d/login_alert.conf` (auto-ships via the `/etc/nftban/conf.d/*.conf` packaging path).
+- **`services.conf`** — `cmd_status.sh` sources `conf.d/services.conf` to honor the master switch `NFTBAN_ENABLED` (v1.150 MOD-09), but only the modular `conf.d/login/services.conf` shipped → the base master-switch never loaded (defaulted true). Now shipped at `etc/nftban/conf.d/services.conf` (distinct from the login-monitor `login/services.conf`).
+- Guard `nftban_file_cleanup_r1a5_test.sh` updated to track the ownership decision (shipped-at-root + no cli/etc shadow for the two; recovery.conf still kept).
+
+### Config model (validated)
+Base `.conf` files ship **defaults**; operator preferences live in `*.conf.local` (never shipped → survive upgrade). RPM marks base confs `%config(noreplace)`; on DEB the curated conffiles list intentionally treats most base confs as defaults (operator prefs via `.local`). Both families validated package-native: `NFTBAN_ENABLED=false` honored by `nftban status`, `.local` precedence, `.local` survives upgrade.
+
+### Deferred (separate lanes, not in this release)
+- `recovery.conf` — legacy 14-key config surface → `OPEN_RECOVERY_LEGACY_RECONCILE` (audit/deprecate before any removal). recovery.conf + `config-schema.json` UNTOUCHED here.
+- D-RHG-1 structural systemd-split → `OPEN_DRHG1_SYSTEMD_SPLIT_SCOPE` (definition-first; undefined).
+- `.conf.local` recovery/quarantine tooling → `OPEN_CONFIG_LOCAL_RECOVERY_SCOPE`.
+
+### Notes
+- **Schema 1.84.0 unchanged; `nftband` daemon byte-identical (source-proven).** No detector/firewall/nftables/ban-path/LoginMon-behavior/BotGuard/schema/counter change.
+- **Validation:** package-native both families from build `ae687ef2` — lab2 (DEB) 20/0 + lab4 (RPM) 20/0; labs restored to published fleet daemon.
+- **Build-reproducibility note:** package builds here are non-reproducible (per-build daemon/wrapper sha differs); daemon byte-identity is **source-proven** (no daemon-source change), not binary-sha compared.
+
+---
+
+## [v1.201.0] - 2026-06-23 — Stale-oneshot / SOAK / A2 assertion-tolerance reliability
+
+**Codename:** `V201_STALE_ONESHOT_SOAK_A2` · **PR:** [#932](https://github.com/itcmsgr/nftban/pull/932) (`c81c5db2`) · **Scope:** `V1_201_STALE_ONESHOT_SOAK_A2_SCOPE.md`
+
+> **What:** a transient, re-verifiable nftban oneshot latch no longer marks `install_state=DEGRADED` — while a **persistent** failure still does (strict no-mask). Closes the deferred A2 from v1.198.3 and the broader stale-oneshot/SOAK class. **Installer-validation Go only (`internal/installer/validate` → `nftban-installer`, NOT `cmd/nftband`) → `nftband` runtime daemon byte-identical. NFT schema UNCHANGED (1.84.0).**
+
+### Fixed
+- **A2 assertion-tolerance** — an owned-update-window cadence-oneshot `EXEC-203`/equivalent latch (the v1.198.3 watchdog/update-swap class) is tolerated as non-fatal **only** after a live re-verify proves it transient.
+- **Cadence-oneshot gated stale-clear** — extends the gated recovery to `nftban-watchdog` / `nftban-soak` / `nftban-maintenance` (a new `cadenceReverifiableOneshotStems` set), recovered **only** via `reset-failed` + a fresh clean `systemctl start` (host-side re-verify), in-window OR pre-window. Distinct from the existing unconditional pre-window botscan/alert@ clear (unchanged).
+- **SOAK stale-failed recovery** — a stale failed `nftban-soak` from a prior unclean cycle is reset + re-verified; a genuinely-failing soak stays visible and DEGRADES.
+
+### Strict no-mask invariant
+A cadence oneshot is reclassified `WARN_TRANSIENT_RECOVERED` (non-fatal) **only** when the re-verify was done AND the re-run was clean. A re-run that still fails, a non-cadence unit, or a unit with no re-verify stays in `FailedUnits` → **DEGRADED**. No `systemctl mask`, no unconditional allowlist, no hand-edited install_state.
+
+### Notes
+- **Schema 1.84.0 unchanged; `nftband` daemon byte-identical** (only `nftban-installer` validation moved). No LoginMon/R2 change · no BotGuard · no firewall/nftables/detector/ban-path change · no schema/counter/metrics work.
+- **v1.199 forensic integration:** the tolerate/DEGRADE decision is recorded via `installer.log` (run_id-correlated) + the `update-runs/<run_id>/` post-verify snapshot's `install_state`.
+- **Surfaces:** `systemd_payload.go` (`cadenceReverifiableOneshotStems` + `FailedUnitsTransientRecovered` bucket + gated classifier branch), `systemd_payload_gather.go` (`reverifyCadenceOneshot` host-side re-verify), `assertions.go` (`WARN_TRANSIENT_RECOVERED` surfacing). Test `cadence_oneshot_reverify_v1201_test.go` (transient→tolerated · persistent→DEGRADED · no-mask · non-cadence-DEGRADED · botscan regression intact).
+- **Release gate:** NOT release-ready on merge alone — fleet/publish stay blocked until **package-native validation** on lab2 (DEB) + lab4 (RPM) proves BOTH sides: a recoverable transient cadence-oneshot failure → clean re-run → COMMITTED, AND a persistent failure → DEGRADED; with the v1.199 `update-runs/<run_id>/` capturing the decision.
+
+---
+
+## [v1.200.0] - 2026-06-23 — LoginMon source-visibility (R2): actionable + ack-able starved-source advisories
+
+**Codename:** `V200_LOGINMON_SOURCE_VISIBILITY` · **PR:** [#930](https://github.com/itcmsgr/nftban/pull/930) (`994998be`) · **Scope:** `V1_200_LOGINMON_SOURCE_VISIBILITY_SCOPE.md`
+
+> **What:** turns the fleet-wide `PASS_WITH_ACTIONABLE_WARN` LoginMon noise (`VAL-LOGINMON-002`) into something **actionable** (the WARN names the exact fix) and **quiet-able** (an operator can acknowledge a starved-by-design stack so it reads INFO — still visible). **Validator + config only; NFT schema UNCHANGED (1.84.0); no new JSON axis. The only `.go` change is in `internal/validator` (builds `nftban-validate`, NOT `cmd/nftband`) → the `nftband` runtime daemon is byte-identical.**
+
+### Fixed (`VAL-LOGINMON-002` / R2)
+- **Actionable remediation:** a starved source ("present but produced no readable logs") now carries the exact fix — **Roundcube** → enable `$config['log_logins'] = true;` in the Roundcube config; **webauth/ftpauth** → confirm the expected auth-log path is present + readable; default → points at the ack knob.
+- **Operator acknowledge / suppress:** new **`LOGINMON_SOURCE_ACK`** in `conf.d/login/main.conf` (`.local` override first). A starved-by-design stack listed there is reported as **INFO** instead of WARN — but **stays VISIBLE** (the finding says *operator-acked*; the code is still emitted, never silently hidden). An **unacknowledged** starved source **remains WARN**; an **absent** source stays INFO; ack matching is case-insensitive.
+
+### Notes
+- **Schema 1.84.0 unchanged**; no new JSON axis (the input axis stays internal, awaiting SCHEMA-UNFREEZE). config(noreplace) → existing hosts unchanged unless they set the knob.
+- **No `internal/loginmon` / detector / firewall / nftables / ban-path behavior change. No BotGuard. No stale-oneshot/A2/SOAK reliability logic (that is v1.201). No auto-editing of third-party (Roundcube/panel/FTP) configs.** `nftband` daemon byte-identical (only `nftban-validate` + config moved).
+- **Surfaces:** `internal/validator/module_health.go` (`loginMonSourceAcked` + `loginMonRemediation`), `etc/nftban/conf.d/login/main.conf` (the `LOGINMON_SOURCE_ACK` knob). Test `loginmon_source_ack_v1200_test.go` (unacked=WARN+remediation · acked=INFO+visible · other/empty/malformed ack does not hide · case-insensitive · per-source text).
+- **Release gate:** NOT release-ready on merge alone — fleet/publish stay blocked until **package-native validation** on DEB/RPM + at least one real starved-source host (Roundcube `log_logins` off) proves the advisory carries the fix, `LOGINMON_SOURCE_ACK` quiets to INFO visibly, and un-acking restores WARN.
+
+---
+
+## [v1.199.0] - 2026-06-23 — Lifecycle forensics: per-run records + run-id + JSONL + support all-logs
+
+**Codename:** `V199_LIFECYCLE_FORENSICS` · **PR:** [#927](https://github.com/itcmsgr/nftban/pull/927) (`ec144cbd`) · **Scope:** `V1_199_LIFECYCLE_FORENSICS_SCOPE.md`
+
+> **What:** an observability/forensics lane so install/update lifecycle bugs are diagnosable from the host's own record + a `nftban support` bundle (no more live `journalctl`/`stat` archaeology, as the v1.198.x rollout needed). **NFT schema UNCHANGED (1.84.0). The only Go change is in `internal/installer/logging` — imported by `nftban-installer`, NOT `cmd/nftband`, so the `nftband` runtime daemon is expected byte-identical (proven at package-native Stage B).** Forensics ONLY — no reliability self-heal.
+
+### Added
+- **Per-run forensic records** (`BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING`) — each `nftban update` mints a **run_id** and writes `/var/log/nftban/update-runs/<run_id>/{run.jsonl,human.log}`. `cmd_update.sh` snapshots the lifecycle at **pre-swap / post-swap / post-verify** plus inhibit/restore events and a run-end (including on the install-fail path). **Bounded retention** (newest N, default 20 via `NFTBAN_FORENSIC_RETAIN`); pruning **logs what it drops** (no silent cap). New FHS dir `/var/log/nftban/update-runs` (0750 nftban:nftban, tmpfiles `z`-reconcile).
+- **Structured JSONL event stream + run-id correlation** (`BUG-INSTALLER-LOG-FORMAT-MIXED-JSON`) — `run.jsonl` is one parseable JSON event per line, every line carrying `run_id`; `installer.log`'s RUN header is stamped with the same run_id (`NFTBAN_RUN_ID` shared with the shell path, else `<UTC compact>-<pid>`) so installer/update logs correlate.
+- **Forensic snapshot (strict allowlist)** — binary mode/mtime/xattr (`/usr/sbin/nftban`), cadence-timer due-time + active state (`nftban-watchdog.timer`/`nftban-maintenance.timer`), failed-unit name/`Result`/`ExecMainStatus`/`ExecMainExitTimestamp`/`InactiveEnterTimestamp`, install_state. **No env, no secrets, no config dump.**
+- **`nftban support` all-logs** — collects the newest N `update-runs/<run_id>/` (`SUPPORT_UPDATE_RUNS_MAX`, default 10), redacted, size-bounded; warns when older runs are omitted.
+
+### Notes
+- **Redaction:** jq-free; values pass a secret-pattern safety-net AND a secret-named-key redaction; the snapshot is allowlisted.
+- **Schema 1.84.0 unchanged.** No stale-oneshot/A2/SOAK reliability logic (→ v1.201). No R2/LoginMon source-visibility. No schema/counter/metrics work. No BotGuard work. No firewall/nftables/detector behavior change.
+- **Surfaces:** `cmd_update.sh`/`cmd_update_helpers.sh`/`cmd_support.sh` (shell), `internal/installer/logging/logger.go` (run-id, installer-side only), `build/fhs-spec.yaml` + regenerated outputs. Tests: `lifecycle_forensics_v1199_test.sh` (18/0) + `logger_runid_test.go` + `tmpfiles_zz_v139` (11/0) + `watchdog_update_swap_race_v1983` (20/0).
+- **Release gate:** NOT release-ready on merge alone — fleet/publish stay blocked until **package-native Stage B** validates v1.199.0 as built DEB/RPM through the official upgrade path on lab2 + lab4 (the lab-first proof, since the run-id needs the built `nftban-installer` binary).
+
+---
+
+## [v1.198.3] - 2026-06-23 — Hotfix: cadence-timer inhibit during update binary-swap (`BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE`)
+
+**Codename:** `V198_3_WATCHDOG_UPDATE_SWAP_RACE` · **PR:** [#925](https://github.com/itcmsgr/nftban/pull/925) (`7d7588d5`) · **Scope:** `V1_198_3_SCOPE_WATCHDOG_UPDATE_RACE.md`
+
+> **What:** a surgical, **shell-only** lifecycle/update-window reliability hotfix. **Daemon byte-identical to v1.198.2** (zero `.go`; only git-stamp/package-metadata differs). **NFT schema UNCHANGED (1.84.0).** No systemd-unit, no firewall/nftables behavior, no BotGuard, no counters/metrics, no A2 assertion-tolerance, no v1.199 forensic-log work.
+
+### Fixed
+- **`BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE`** — `nftban-watchdog.timer` (`OnUnitActiveSec=120s`, `ExecStart=/usr/sbin/nftban watchdog run`) could fire while `nftban update` was replacing / permission-/attribute-toggling `/usr/sbin/nftban`, hitting a transient `EXEC 203 Permission denied`. That latched `nftban-watchdog.service` failed and the post-install `failed_units_postinstall_ok` assertion marked `install_state=DEGRADED` on an otherwise-healthy upgrade. **Class:** lifecycle/update-race. **Severity:** MED (reliability/lifecycle-truth) — **not** a firewall/ban/protection failure.
+
+### dns2 incident (reproduced in production)
+During the v1.198.2 fleet rollout, **dns2** finished `DEGRADED` + `failed=1` = `nftban-watchdog.service` `Failed at step EXEC spawning /usr/sbin/nftban: Permission denied` at **2026-06-22 20:23:24Z — inside the update window**, while live state was healthy (v1.198.2, validate rc0, daemon active, floor_breach=0; `/usr/sbin/nftban` `0750 root:nftban`; watchdog re-runs clean). **dns2 recovered to COMMITTED via the official `nftban update recommit`** (v1.198.1 path) — no manual edit, no `firewall reset --force`, bans intact. monitor + dns1 had passed clean; the race is timing-dependent (~120s cadence vs the ~30-45s swap), so the remaining hosts were held for this fix.
+
+### v1.198.3 A1 fix
+`cmd_update.sh` wraps the `[2/6] Install` (binary-swap) phase: `_update_inhibit_cadence_timers` transiently **stops** the active racing timers (`nftban-watchdog.timer` + defensive `nftban-maintenance.timer`); `_update_restore_cadence_timers` restores **exactly** the ones it stopped (idempotent; **never enables a disabled timer; never masks**) — explicit restore after the install case (success + handled-failure) plus a **scoped `INT/TERM` trap** (interrupt). **No `EXIT` trap** (the update-lock cleanup is return-based and must not be clobbered; the trap is cleared right after restore). `_update_verify_watchdog` runs the watchdog once post-swap and **fails only if the restored watchdog still fails** (a clean re-run clears any stale latch; never masks a genuine failure).
+
+### Notes
+- Shell-only: `cmd_update.sh` + `cmd_update_helpers.sh`. Daemon byte-identical to v1.198.2; NFT schema 1.84.0.
+- Tests: `watchdog_update_swap_race_v1983_test.sh` **20/0** (stops-only-active · restores-exactly · idempotent · failure-path · never mask/enable · watchdog-verify pos/neg · static install-phase-wiring + no-EXIT-trap guard). **Stage-1 (source/staged) lab2 (DEB) + lab4 (RPM) PASS** (real `nftban update` → COMMITTED, 0 failed, both timers restored, watchdog verification passed; ban deltas were feed-resync lag, not loss). **Pre-existing test debt** `cmd_update_lock_cleanup_v135_test.sh::static_s3` is red on clean main and this candidate identically (`PRE_EXISTING_TEST_DEBT_STATIC_S3_LOCK_CLEANUP_NOT_INTRODUCED_BY_V1_198_3`).
+- **Release gate:** this build is **NOT release-ready on Stage-1 alone** — fleet resume / publish stay blocked until **package-native Stage B** validates v1.198.3 as built DEB/RPM through the official upgrade path on lab2 + lab4.
+- Deferred (NOT in v1.198.3): A2 assertion-tolerance + broader stale-oneshot/SOAK → v1.201; installer per-run forensic logs + `nftban support` all-logs → v1.199.
+
+---
+
+## [v1.198.2] - 2026-06-22 — Hotfix: firewall-transition health truth (clear path + verdict aggregation)
+
+**Codename:** `V198_2_FW_TRANSITION_HEALTH_TRUTH` · **PR:** [#923](https://github.com/itcmsgr/nftban/pull/923) (`7f763ca8`) · **Scope:** `V1_198_2_SCOPE_FW_TRANSITION_HEALTH_TRUTH.md`
+
+> **What:** a surgical, **shell-only** hotfix for the firewall-transition health surface. **NFT schema UNCHANGED (1.84.0). Daemon byte-identical to v1.198.1** (zero `.go`). **No firewall/ban enforcement, detector, or BotGuard behavior change.** Surfaced during the v1.198.1 fleet rollout when lab2 showed a sticky `floor_breach=1` CRITICAL while live protection was healthy.
+
+### Added
+- **Official transition-health clear path** (`BUG-FW-TRANSITION-HEALTH-COUNTER-STICKY-NO-RESET`) — new `nftban firewall transition-health status` (report the current verdict) and `nftban firewall transition-health ack` (clear a **resolved** alarm). The ack zeroes the cumulative harm counters **only after a live probe verifies the management floor is intact** (refuses otherwise — it cannot mask a current breach), preserves the prior anomaly timestamp as audit history, and touches **only the state JSON** — no `nft`/ban-set mutation. A clean `nftban firewall rebuild` also clears a resolved alarm via the same gated logic. Registered in the CLI help, command registry, and bash-completion.
+
+### Fixed
+- **Health/status verdict aggregation** (`BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL`) — a CRITICAL firewall-transition alarm now flags the operator verdict: `nftban health` reads `Upgrade readiness: PASS_WITH_WARN` / `Action needed: WARN` with an alarm note (no longer `PASS`/`NONE`), and `nftban status` qualifies the Health roll-up. **No more green/`PASS`/`NONE` headline beside a `Firewall Transition: CRITICAL` line.** Runtime protection may still read PROTECTED — the operator-truth surface now reflects the unresolved alarm.
+- **Finding double-render** (`D-V198-HEALTH-FINDINGS-DOUBLE-RENDER`) — the operator-readiness block is now verdict-only; finding detail renders **once** in the canonical "Findings" section.
+
+### Operator example (real lab2 case — canonical)
+- **Symptom:** `nftban status` shows `FW Transition....... 🔴 CRITICAL (floor=1 table=0 blacklist=0)` while the firewall is otherwise healthy (daemon active, tables present, bans enforcing). This is a *resolved* historical transition transient whose cumulative counter never cleared.
+- **Inspect, then clear:**
+  ```
+  nftban firewall transition-health status      # CRITICAL — floor_breach=1
+  nftban firewall transition-health ack          # clears ONLY after live-floor verification
+  ```
+- **Expected result:** `floor_breach` clears to 0 **only after** the live floor is verified intact; **bans are preserved** (lab2: 343 → 343, no loss); `nftban health`/`status` become consistent; the prior anomaly timestamp is retained for audit.
+- **Do NOT** use `nftban firewall reset --force` merely to clear a resolved transition alarm — that flushes all sets and **drops every ban**. The `ack` path is the proportionate, ban-preserving way. `ack` **refuses if a current breach still exists** (restore the floor with `nftban firewall rebuild` first).
+
+### Notes
+- Shell-only: `nftban_firewall_transition_health.sh` (gated `fth_reset_transition_health`), `nftban_output.sh` (readiness), `cmd_health.sh`/`cmd_status.sh` (verdict surfaces), `cmd_firewall.sh` (verb + rebuild clear). NFT schema 1.84.0; daemon byte-identical to v1.198.1. Tests: `fw_transition_health_truth_v1982_test.sh` (16/16: reset positive/negative no-mask, no-ban-loss, verdict aggregation) + updated `nftban_operator_readiness_r1b2_test.sh` (23/0) + `firewall_transition_health_v1921_test.sh` (34/0). **Lab-first:** lab2 (DEB/Plesk) stuck-host proof PASS (real `floor_breach=1` cleared via `ack`, bans preserved) + lab4 (RPM/cPanel) clean regression PASS. **Deferred (NOT in v1.198.2):** `BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING` → a v1.199 lifecycle-forensics lane (per-run forensic logs + `nftban support` all-logs collection).
+
+---
+
+## [v1.198.1] - 2026-06-22 — Hotfix: alert-handler /dev/log robustness + install_state recommit path
+
+**Codename:** `V198_1_ALERT_HANDLER_AND_RECOMMIT` · **PR:** [#921](https://github.com/itcmsgr/nftban/pull/921) (`260d0ad9`) · **Scope:** `V1_198_1_HOTFIX_SCOPE_ALERT_HANDLER_AND_RECOMMIT.md`
+
+> **What:** a surgical hotfix for two coupled defects surfaced during the v1.198.0 Track-A rollout (a host upgraded functionally but stuck `install_state=DEGRADED`). **NFT schema UNCHANGED (1.84.0). No firewall/ban/detector/BotGuard/counter/metrics change.** Lab-first validated (lab2 DEB 24/24 + lab4 RPM 24/24).
+
+### Fixed
+- **`D-NFTBAN-ALERT-LOGGER-DEVLOG-PERMISSION`** — the OnFailure service-failure alert oneshot (`nftban-alert@.service`, `PrivateDevices=yes` + `User=nftban`) failed with `logger: socket /dev/log: Permission denied`; because the unguarded `logger` was the last command in `log_alert()`, its non-zero exit latched the unit `failed`, which tripped the post-install failed-unit assertion (→ `install_state=DEGRADED`) and meant real service failures went unalerted. `cli/sbin/nftban-service-alert` `log_alert()` now delivers to the journal via stderr (the unit's `StandardError=journal` + `SyslogIdentifier=nftban-alert` reach the journal without `/dev/log`), keeps the file log, treats `logger` as best-effort (`2>/dev/null || true`), and returns 0. The systemd sandbox is **unchanged** (not relaxed); email **delivery** keeps its own rc contract (real delivery failures still fail the unit) — no masking.
+
+### Added
+- **`D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH`** — once `install_state` was DEGRADED, no official command recomputed it to COMMITTED on the same version after the cause was resolved (`--force`/`--repair` re-echo the stale record; `reset-failed` is defeated by the alert re-firing on the update restart), forcing manual edits of the machine-written state file. New **`nftban-installer --revalidate`** (shell verb **`nftban update recommit`**): a restart-free recompute that re-runs **only** the live post-install assertion suite and rewrites `install_state` via the official writer — no package install, no daemon restart. Transitions DEGRADED → COMMITTED **only** when every live assertion passes (version match, validator clean, 0 failed nftban units, ip/ip6 tables present, daemon active); refuses on a non-DEGRADED state / version mismatch / missing state file; otherwise leaves DEGRADED with the current live reason. Never marks COMMITTED while a real failure remains.
+- The `nftban-alert@` **template** is now a stale-clearable oneshot (`staleClearableOneshotStems`, template-aware match): a pre-existing alert latch (failure strictly before the install window) recovers without the live-health gate — the same circular-block fix v1.185.1 applied to `nftban-botscan`. In-window alert failures still DEGRADE.
+
+### Notes
+- **No product behavior change to firewall/ban/detector/BotGuard.** Go change is confined to `nftban-installer` (the `--revalidate` mode + the alert-template stale-clear classification); the `nftband` runtime daemon is otherwise unchanged. Tests: `systemd_payload_v1981_test.go`, `revalidate_test.go`, `alert_logger_devlog_sandbox_v1981_test.sh`. **Validation:** PR #921 CI green (69 pass / 0 fail) + post-merge main CI green (25 success / 0 fail); lab-first lab2 DEB + lab4 RPM 24/24 each, both restored clean.
+
+---
+
+## [v1.198.0] - 2026-06-22 — R1 LOW-risk hygiene + operator-UX sweep
+
+**Codename:** `V198_R1_SWEEP` · **PRs:** [#912](https://github.com/itcmsgr/nftban/pull/912) (`606453b6`) + [#913](https://github.com/itcmsgr/nftban/pull/913) (`8ed90112`) + [#914](https://github.com/itcmsgr/nftban/pull/914) (`fcd9c8e7`) + [#915](https://github.com/itcmsgr/nftban/pull/915) (`837bc53c`) + [#916](https://github.com/itcmsgr/nftban/pull/916) (`b0f49fef`) + [#917](https://github.com/itcmsgr/nftban/pull/917) (`871c92a9`) + [#918](https://github.com/itcmsgr/nftban/pull/918) (`eceaa859`) + [#919](https://github.com/itcmsgr/nftban/pull/919) (`8f309cd6`) · **Scope:** `V198_R1_SCOPE.md` · **Forward plan:** `V198_PLUS_FORENSIC_BURNDOWN_SEQUENCE.md`
+
+> **What:** the R1 low-risk hygiene + operator-UX sweep — ten small same-domain lanes, all shell/test/config/docs/file-cleanup. **No Go change — `nftban`/`nftban-core` daemon byte-identical to v1.197.0** (hashes move only via the embedded git-commit stamp). **NFT schema UNCHANGED (1.84.0).** No BotGuard re-enable (stays disabled fleet-wide), no counters/schema bump, no CSF, no installer parity. **Deferred (NOT in R1):** config-path drift / 3 `UNCLEAR_NO_GO` conf files · packaging-vs-install systemd-split (D-RHG, structural) · cmd_firewall renderer-dedup · RBL 11.4 / TODO-36/23.
+
+### Added
+- Operator-readiness verdict in `nftban health` (`Operational` / `Upgrade readiness` PASS·PASS_WITH_WARN·FAIL / `Action needed` + IDLE explained), computed shell-side from already-emitted validator output — no new validator field, no schema change ([#913](https://github.com/itcmsgr/nftban/pull/913)).
+- `nftban update` fixed-phase `[n/6]` progress markers + readiness verdict folded into the existing install_state verdict block (no contradictory second verdict) ([#914](https://github.com/itcmsgr/nftban/pull/914)).
+- Shared `nftban_render_findings` helper (hide-INFO default / `--verbose` all / `--json` unfiltered) extracted from `cmd_health.sh` ([#912](https://github.com/itcmsgr/nftban/pull/912)).
+- Wiki: DDoS enforcement-pipeline Mermaid diagram (published to the live wiki, corrected to code-truth — per-IP service-port SYN `25/s burst 50` vs `ddos_prefix` `100/s burst 200`).
+
+### Fixed
+- GeoIP/GeoBan help advertised the obsolete country-IP path `/var/cache/nftban/geoban/`; corrected to the real runtime path `/var/lib/nftban/geoip/` ([#915](https://github.com/itcmsgr/nftban/pull/915)).
+- DirectAdmin `panel directadmin disable` confirmation hardcoded SSH port `22`; now resolves the configured safety port (`${NFTBAN_SSH_TEST_PORT:-${SSH_PORT:-22}}`) ([#916](https://github.com/itcmsgr/nftban/pull/916)).
+- CONFIG/RHG cosmetic comments: dropped the stale `NFTBan v1.0.0` header banner from `conf.d/{services,login_alert}.conf` and the `/home/commonfolder` dev-machine path from four `scripts/ci/*.sh` comment blocks (comment-only) ([#918](https://github.com/itcmsgr/nftban/pull/918)).
+
+### Removed
+- Two proven-unshipped repo artifacts: the byte-identical shadow `cli/etc/nftban/conf.d/trust.conf` (the shipped copy `etc/nftban/conf.d/trust.conf` is untouched) and the orphan `install/pam.d/nftban-api` (PAM config for the deprecated `nftban-api.service`). No package payload change ([#919](https://github.com/itcmsgr/nftban/pull/919)).
+
+### Notes (audit-close / regression-lock — no product change)
+- `rbl check --json` TXT escaping (`"`/`\`/newline): production fix already shipped in v1.150; this lane only adds the missing regression test ([#917](https://github.com/itcmsgr/nftban/pull/917)).
+- Shell installer `[PHASE]` markers: already emitted by the Go installer (`nftban-installer`) since v1.156 — audit-close, no code.
+- LoginMon shell `UX-MSG-AUDIT`: no misleading/contradictory shell messages found — audit-close, no code.
+
+---
+
+## [v1.197.0] - 2026-06-21 — MED validator/observability + legal/package-metadata hygiene
+
+**Codename:** `V197_MED_TRAIN` · **PRs:** [#905](https://github.com/itcmsgr/nftban/pull/905) (`482329b7`) + [#906](https://github.com/itcmsgr/nftban/pull/906) (`8736f1d5`) + [#907](https://github.com/itcmsgr/nftban/pull/907) (`a0a7eaf2`) + [#908](https://github.com/itcmsgr/nftban/pull/908) (`9864e5f0`) + [#909](https://github.com/itcmsgr/nftban/pull/909) (`f70ffa1c`) + [#910](https://github.com/itcmsgr/nftban/pull/910) (`9aa1f1ef`) · **Plan:** `V196_197_DEBT_BURN_AND_SINGLE_ROLLOUT_PLAN.md` · **Scope:** `V197_MED_SCOPE.md`
+
+> **What:** the final debt-burn train before the single waved fleet rollout — six independent single-domain lanes. **NFT schema UNCHANGED (1.84.0).** One lane (PR-A) is daemon-Go (validator): the packaged `nftban`/`nftban-core` daemon hash **moves off the v1.192.2 baseline** (re-baseline future shell/data-only lanes). No BotGuard re-enable, no counters/schema bump, no CSF, no installer parity, no 8E (cPanel/Plesk), no 8G (dead-knob deletion). The single waved Track-A rollout `v1.192.2 → v1.197.0` follows publish.
+
+### Fixed
+- **PR-A — VAL-LOGINMON-002-UX** (validator-Go, `internal/validator/module_health.go`): LoginMon health collapsed "source absent" and "source present but starved" into one WARN, so every non-web/non-FTP host read as a warning. Now classified **per-source** — a structurally-absent source (`NO_LOGS reason=no_<stack>`) reports **INFO / no action needed**; a present-but-starved source (`WARN_NO_LOGS reason=<stack>_present_…`) stays **WARN / actionable** — with the source + reason preserved (roundcube added to checked sources). Overall `PROTECTED/DEGRADED` rollup unchanged. **Rider:** geoban health resolves the GeoIP DB at `${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb` (honoring the configured data dir, `/var/lib/nftban` fallback) instead of a hardcoded path. Lab-first lab2 (DEB) + lab4 (RPM) PASS, both restored clean.
+- **PR-LICENSE — Core package license metadata**: the generated Core RPM spec declared `License: GPL-3.0-or-later` for an MPL-2.0 project — corrected to `License: MPL-2.0`, with `%license LICENSE` now shipped and a CI guard (`scripts/ci/check-license-metadata.sh`, wired into `ci-architecture.yml`) preventing regression. Adds DEP-5 `packaging/deb/copyright`, `AI_ASSISTED_DEVELOPMENT.md`, and repairs broken `NOTICE.md` references. Copyright holder kept as the repo canon `NFTBan Project / Antonios Voulvoulis`.
+
+### Added
+- **PR-B — SUPPORT-DIAG** (shell, read-only): `nftban support` diagnostics widened to diagnose install/health DEGRADED — dynamic `nftban*`/`nftband*` unit enumeration, `systemctl --failed`, per-unit Result/OOM properties, `install_state`, journald disk-usage, and OOM-kill evidence.
+- **PR-C — dual-family test coverage**: IPv6 cases added to the four v1.196 IPv4-only fixtures (portscan, pattern-ban, wpadmin, fcrdns); the `# PARITY-GUARD-EXEMPT` markers were removed so the IPv4/IPv6 parity guard now reports 6 dual-family / 0 exempt. **No runtime family gap** — the change is test coverage only.
+
+### Changed
+- **PR-D — recovery.conf**: stale fail2ban comments removed (NFTBan has no fail2ban integration) and the required `meta:inventory` header added — config-comment/header only, no key/value/default change.
+
+### Removed
+- **GOTH orphan cleanup**: removed the tracked-but-unconsumed `install/config/allowed-gui-groups` (GUI/nftban-ui retirement). `ENABLE_GUI=0` external-compat pin kept.
+
+### Notes
+- No schema change (1.84.0). Daemon hash moves (PR-A validator-Go) off the v1.192.2 baseline; no ban/nftables/detector-ownership/installer/packaging behavior change. Fleet rollout = one waved hop `v1.192.2 → v1.197.0` (Track A), separate per-host gate after publish.
+
+---
+
+## [v1.196.0] - 2026-06-19 — LOW-risk debt sweep (test / docs / CI only)
+
+**Codename:** `V196_LOW_RISK_DEBT_SWEEP` · **PRs:** [#900](https://github.com/itcmsgr/nftban/pull/900) (`d233939f`) + [#901](https://github.com/itcmsgr/nftban/pull/901) (`f4956e7a`) + [#902](https://github.com/itcmsgr/nftban/pull/902) (`69ee41fc`) · **Plan:** `V196_197_DEBT_BURN_AND_SINGLE_ROLLOUT_PLAN.md` · **Scope:** `V196_LOW_RISK_SWEEP_SCOPE.md`
+
+> **What:** a small, low-risk cleanup release — three independent test/docs/CI-only PRs. **No product behavior change. NFT schema UNCHANGED (1.84.0). No Go/runtime source change — Go/product runtime byte-identical to v1.195.0** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No BotGuard re-enable, no counters, no CSF, no installer parity, no 8E (cPanel/Plesk), no 8G (dead-knob deletion), no v1.197 MED work; PR-E fuzz seeds skipped. Fleet rollout remains deferred to the final train target v1.197.0.
+
+### Fixed
+- **PR-A — FCrDNS broken-pipe test flake** (`cli/lib/nftban/tests/botscan_fcrdns_v189_test.sh`): a `sed … | grep -q` pipeline let `grep -q` close the pipe on first match, delivering SIGPIPE to `sed` (`couldn't flush stdout: Broken pipe`); under `pipefail` that intermittently flipped the `analyze() must call verify_crawler` assertion and red-flagged the 8C harness. Replaced with here-string capture (`grep -q … <<<"$(…)"`) — no pipe, no SIGPIPE; assertions unchanged.
+
+### Changed
+- **PR-B — stale docs/version/architecture references refreshed** (docs/text only): `SECURITY.md` supported-versions (`1.190.x`/`v1.190.1` → `1.195.x`/`v1.195.0`); `docs/ARCHITECTURE.md` IPC ban-flow diagram (`inet nftban`/`blacklist_v4` → `ip nftban`/`blacklist_ipv4`); `docs/systemd/TIMERS.md` stale `Removal Target v1.23.0` row retired; `.claude/CLAUDE.md` current-version stamp (`v1.56.0` → `v1.195.0`).
+
+### Added
+- **PR-F — IPv4/IPv6 parity static CI guard** (`scripts/ci/check-ipv4-ipv6-parity.sh`, wired into `ci-architecture.yml`): asserts both `table ip nftban` and `table ip6 nftban` are present, every `*_ipv4` set has a matching `*_ipv6` sibling (and vice-versa), and the canonical set inventories of the two table blocks match. **No runtime IPv4/IPv6 parity gap was found** — the nft data model is already fully dual-family; four IPv4-only fixtures are recorded as explicit `# PARITY-GUARD-EXEMPT` test-coverage exemptions (runtime is family-agnostic), with dual-family test coverage tracked for v1.197.
+
+### Notes
+- No schema change (1.84.0). No runtime/IPv4-IPv6 behavior change. Fleet rollout deferred to one waved hop `v1.192.2 → v1.197.0`.
+
+---
+
+## [v1.195.0] - 2026-06-19 — wp-login Go-path validation (8D, data-only matrix flip)
+
+**Codename:** `V195_WPLOGIN_GO_PATH_PROOF` · **PR:** [#898](https://github.com/itcmsgr/nftban/pull/898) (squash-merged `e013b6fc`) · **Scope:** `V195_WPLOGIN_GO_PATH_PROOF_SCOPE.md` · **Evidence:** `V195_WPLOGIN_GOPATH_READONLY_PROOF_RECORD.md`
+
+> **What:** data-only Protection-Claim Matrix update (8D). A **read-only** fleet proof validated the `WPLOGIN-AUTHFAIL` claim **live**, so the release records the result rather than changing any product code. **No LoginMon fix required. No product behavior change. NFT schema UNCHANGED (1.84.0). No Go source change — Go/product runtime byte-identical to v1.194.0** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No cPanel/Plesk proof (8E), no dead-knob deletion (8G), no BotGuard re-enable, no counters, no CSF, no installer parity. Fleet rollout remains separate (Track A, after publish).
+
+The wp-login.php failed-credential ban path (Go LoginMon WebAuth detector) was proven live read-only on **srv1 / srv2 / srv3 / srv4** (all v1.192.2, DirectAdmin): failed `POST /wp-login.php` (HTTP `200`) → reason `wordpress_wp_login` → temp ban (900s), **IPv4 and IPv6**; `302` success-control observed and correctly **not** a ban driver. No host mutation, no synthetic traffic.
+
+### Changed
+- Protection-Claim Matrix row **`WPLOGIN-AUTHFAIL`**:
+  - `classification`: **unproven → validated**
+  - `fixture`: **read-only-fleet-G3 → `internal/loginmon/detector/webauth_test.go`** (the existing hermetic Go test — unchanged — which already asserts `POST /wp-login.php` + `200` → `ReasonWordPressWPLogin` for IPv4 and IPv6, `302` success → no verdict, and `xmlrpc`/`GET` → not owned).
+  - owner (LoginMon), event class (`auth_failure`), and ban authority (IPC → blacklist) unchanged.
+
+### Notes
+- Repo diff is one data-only line in `cli/lib/nftban/tests/protection_claim_matrix_v194.tsv`. No schema change (1.84.0). The matrix now reports 14 validated claims.
+
+---
+
+## [v1.194.0] - 2026-06-19 — Protection-Claim Matrix harness (8C)
+
+**Codename:** `V194_PROTECTION_CLAIM_MATRIX` · **PR:** [#896](https://github.com/itcmsgr/nftban/pull/896) (squash-merged `1b961cba`) · **Scope:** `V194_PROTECTION_CLAIM_MATRIX_SCOPE.md`
+
+> **What:** test/CI-only validation-harness release (PR-A, 8C). **No detector/parser/daemon/CLI behavior change. NFT schema UNCHANGED (1.84.0). No Go source change — Go/product runtime byte-identical to v1.193.0** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No BotGuard re-enable, no counters population, no CSF, no installer parity. 8D/8E/8G are deferred follow-ons, NOT in this release.
+
+Turns the one-time read-only protection-claim audit into a repeatable, CI-runnable harness so an advertised protection cannot silently regress to "no runtime owner" and a known dead config knob cannot be represented as a live enforcer.
+
+### Added
+- **21-row machine-checkable Protection-Claim Matrix** (`cli/lib/nftban/tests/protection_claim_matrix_v194.tsv`) — each advertised protection claim → runtime owner, source, consumer identity, ban authority, mode, zero-input behaviour, fixture, expected result, classification. Classifications surfaced: `validated` / `unproven` / `deferred` / `unowned` / `legacy-only` / `suppress` / `observe-only` / `dead-knob`.
+- **CI guard** (`scripts/ci/check-protection-claim-matrix.sh`) — fails the build on wrong row count, missing/empty fields, invalid OWNER/MODE/CLASSIFICATION enum, a claimed-`enforce` row orphaned to `OWNER=NONE` (not `unowned`/`deferred`), or a dead knob (`WordPressXMLRPC`/`WordPressWPLogin`) represented as a live OWNER/BAN_AUTHORITY. Wired into `ci-architecture.yml` so advertised protection claims are now gated on every PR and on `main`.
+- **Harness** (`cli/lib/nftban/tests/protection_claim_matrix_v194_test.sh`) — runs the CI guard plus the existing hermetic owner fixtures referenced in the matrix (BotScan scanner/exploit, 404-flood, endpoint-flood, authenticated WP-admin suppress, FCrDNS, portscan) as the owner-actually-bans proof.
+
+### Changed
+- Installed-tree (RPM) harness behaviour: in the **source tree** it runs the strict CI guard and requires every referenced fixture to pass; in the **installed package tree** (where the CI-only `scripts/ci` guard is not shipped) it validates the shipped matrix **inline** (same invariants — still fails on matrix corruption) and **skips source-tree-only fixtures** rather than hard-failing.
+
+### Notes
+- No schema change (1.84.0). No detector behavior change. `WordPressXMLRPC`/`WordPressWPLogin` remain parsed-but-unused and are documented as dead in the matrix; their deletion (8G) is a separate gated follow-on after 8D/8E.
+
+---
+
+## [v1.193.0] - 2026-06-17 — Post-v1.192 firewall / ops hygiene
+
+**Codename:** `V193_POST_192_FIREWALL_OPS_HYGIENE` · **PR:** [#887](https://github.com/itcmsgr/nftban/pull/887) (squash-merged `192ff5db`) · **Scope:** `V193_POST_192_FIREWALL_OPS_HYGIENE_SCOPE.md`
+
+> **What:** small, single-domain shell/observability release. **NFT schema UNCHANGED (1.84.0). No Go source change — Go runtime byte-identical to v1.192.2** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp). No BotGuard, no counters/schema, no CSF, no installer parity, no fleet rollout in this release.
+
+Removes two operational foot-guns surfaced during the v1.192 train.
+
+### Fixed
+- **PR-A — `BUG-REBUILD-DROPS-MANUAL-WHITELIST`** (`cli/lib/nftban/cli/cmd_firewall.sh`): an explicit `nftban firewall rebuild` dropped manual `/etc/nftban/whitelist.d/*.conf` entries (operator `--static` admin IPs) from the live whitelist set, while `firewall reload`, daemon restart, reboot, and the maintenance timer preserved them. Rebuild now reconciles durable manual `whitelist.d`/`blacklist.d` via the **same core `sync --quick` path `firewall_reload` uses** (new Step 6b, after the system whitelist sync) — so **a manual `--static` whitelist now survives `firewall rebuild`** as well as reload/restart/reboot. System + trust-provider whitelist behaviour and blacklist/feed/geoban sets are unchanged.
+
+### Changed
+- **PR-B — table-absent maintenance-log noise** (`cli/lib/nftban/cron/maintenance.sh`): the maintenance run logged ~60/day `WARN "nftban firewall table absent"` — a **sampling artifact** when it sampled the nftban table mid firewall transition (rebuild/reload re-applying the schema). A new bounded **confirmation re-sample** (`_maint_table_absent_confirmed`) now re-probes the live table over a short grace before the WARN: a **transient** transition window (table reappears) is reduced to a quiet `INFO`, while a **genuine table-absent while `install_state` COMMITTED still reports** the `WARN`. The FW-transition harm counter `table_absent_while_committed_count` is untouched and remains the authoritative signal; firewall load/rebuild semantics and `install_state` are unchanged.
+
+### Audited (no code)
+- **PR-C — monitor MED re-audit:** `OPEN_MONITOR_SOAK_TIMEOUT_ROOTCAUSE` and `BUG-UPDATE-VERDICT-DEGRADED-ON-VALIDATOR-IDLE` were re-confirmed **read-only on v1.192.2 and closed with evidence — no code**: `nftban-soak.service` now succeeds (a single earlier timeout was a one-off under fleet-rollout load), and recent updates with the validator reporting `idle` complete `SUCCESS`/`COMMITTED` (the old idle→DEGRADED mapping no longer reproduces).
+
+### Tests
+- `cli/lib/nftban/tests/whitelist_rebuild_remerge_v1930_test.sh` (5/5) — static guard that rebuild invokes the `sync --quick` reconcile after the system whitelist sync, in parity with reload; discriminates the pre-fix tree.
+- `cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh` (6/6) — transient→suppress, genuine→WARN, both WARN sites gated, no harm-counter mutation.
+
+### Validation
+- Lab-first lab2 (DEB) + lab4 (RPM): PR-A manual whitelist **survives `firewall rebuild`**; PR-B transient table-absence suppressed / genuine kept (helper vs real nft); FW Transition 🟢 with harm counters 0; labs restored clean.
+- **DEB/RPM package-native validation PASS** (`V193_PR_AB_PACKAGE_NATIVE_PASS_READY_FOR_PR`): packages ship both shell files + both tests; RPM≡DEB parity; schema 1.84.0. Post-merge main CI green.
+
+---
+
+## [v1.192.2] - 2026-06-17 — BotScan authenticated WordPress admin/editor false-positive hotfix
+
+**Codename:** `BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE` · **PR:** [#885](https://github.com/itcmsgr/nftban/pull/885) (squash-merged `2fff7af4`) · **Scope:** `BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE_SCOPE.md`
+
+> **What:** shell-only BotScan change. **Go source byte-identical to v1.192.1** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp, not a code change). **NFT schema UNCHANGED (1.84.0).** No BotGuard change, no fleet rollout, no manual-whitelist-rebuild change.
+
+A legitimately logged-in WordPress administrator using the Gutenberg block editor / Elementor was classified `request_class=scanner` and auto-banned: the editor fetches `/wp-json/wp/v2/users` (matches `EXP_WPREST`) and editor calls match `WS_WPADMIN`, reaching score 80 → ban → escalation into the permanent blacklist (confirmed on srv4 for `nafpliotisbros.gr`).
+
+### Added
+- **BotScan authenticated WP-admin/editor context gate** (`cli/lib/nftban/core/nftban_botscan.sh`). A successful login — `POST <login_path> → 302` (uses the already-parsed HTTP **status**; a failed/probing login returns 200, so brute-force is never treated as "admin") — marks the IP authenticated for that scan cycle. In `analyze`, an authenticated IP has **only** the configured WP admin/REST scanner pattern hits (`BOTSCAN_WPADMIN_CONTEXT_PATTERNS`, default `EXP_WPREST WS_WPADMIN`) removed from its matched set and its hit-count recomputed **before** the threshold check.
+- Operator knobs (default-on): `BOTSCAN_WPADMIN_CONTEXT_GATE`, `BOTSCAN_WPADMIN_CONTEXT_PATTERNS`, `BOTSCAN_WPADMIN_LOGIN_PATH`.
+
+### Preserved (scanner detection unchanged)
+- **Authenticated WP-admin/editor false-positives are reduced**, but this is a **per-IP context gate, not a global pattern weakening**: `EXP_WPREST`/`WS_WPADMIN` definitions, thresholds and weights are unchanged.
+- **Unauthenticated `/wp-json/wp/v2/users` REST enumeration still bans** (no successful login → not gated). Exploit/webshell/CVE patterns, the 404-flood and endpoint-flood paths, and a **non-authenticated `WS_WPADMIN`** hit all still ban. **Empty/rotating-UA scanners still ban.** A **mixed exploit** request (some admin-looking traffic + an exploit pattern) still bans. v1.189 verified-crawler semantics are unchanged.
+- LOG_SOURCE_OWNERSHIP_DECLARATION = **ACCEPTED** (same access-log event class BotScan already owns; uses the already-parsed status field — no new source/consumer/identity; zero-input behaviour unchanged).
+
+### Tests
+- New hermetic `cli/lib/nftban/tests/botscan_wpadmin_context_gate_v1922_test.sh` (8/8): authenticated admin not banned; unauthenticated enumeration / mixed exploit / no-auth `WS_WPADMIN` / empty-UA scanner all still ban; normal `admin-ajax` no ban; gate-disabled discriminator reproduces the pre-fix ban (so a suppressed FP cannot be promoted to the permanent blacklist).
+
+### Validation
+- Lab-first DEB (lab2) + RPM (lab4) full `process_logs` replay against the real `patterns.d`; **DEB/RPM package-native validation PASS** (`V192_2_PACKAGE_NATIVE_PASS_READY_FOR_PR`; `nftban_botscan.sh` + the new test shipped, RPM≡DEB parity, schema 1.84.0); existing BotScan suite green; post-merge main CI green.
+
+### Not in this release (separate lanes)
+- v1.192.1 fleet rollout · `BUG-REBUILD-DROPS-MANUAL-WHITELIST` (manual `whitelist.d` dropped by `firewall rebuild`) · BotGuard re-enable. None are addressed here.
+
+---
+
+## [v1.192.1] - 2026-06-17 — Firewall service-port transition atomicity (residual fix) + transition health
+
+**Codename:** `V192_1_FUNCTIONAL_HOTFIX` · **Branch:** `fix/v1.192.1-service-port-set-atomicity` · **Scope:** `V1_192_1_FUNCTIONAL_HOTFIX_SCOPE.md`
+
+> **What:** shell render + `nftban-core` effective-port authority + PR-B health. **NFT schema UNCHANGED (1.84.0). `nftban-core` rebuilt; daemon hash MOVED (the branch adds `internal/ports/effective.go`, linked into `nftband`) — nftband runtime behavior unchanged (sync still uses the unchanged `ports.LoadAllPorts`; no daemon path calls the new render functions).** Not "byte-identical".
+
+**v1.192.0 was PARTIAL MITIGATION.** It closed the rebuild floor-collapse (F-RB) and the blacklist refresh fail-open (F-FEED/F-GEO), but the durable nftables config still rendered **skeletal** service-port sets (`tcp_ports_in/out`, `udp_ports_in/out` = `{__SSH_PORT__,80,443}`-class) and relied on a post-load daemon sync to fill them — so a configured service port (e.g. `993`) could be momentarily **absent** from the live sets immediately after a rebuild/reload (~1.85s drop window; lab-proven cross-family, inbound). v1.192.1 closes that residual gap.
+
+### Fixed
+- **`D-V192-RESIDUAL-REBUILD-DROP`** — the firewall render now completes the service-port sets **declaratively inside the nft set blocks** (`elements = {…}`, ip + ip6) for `tcp_ports_in`, `tcp_ports_out`, `udp_ports_in`, `udp_ports_out`, computed from the **same authority the daemon uses** (`ports.LoadAllPorts` via a new `nftban-core ports render-effective`). The atomic `nft -f` therefore installs the **complete** sets in one transaction **before** any daemon sync — the configured ports never disappear. The render is declarative in-block (a post-table imperative `flush set`/`add element` fragment segfaults `nft -c` on nftables 1.0.x — caught lab-first).
+- Rebuild and reload **fail-closed** on effective-port render failure (missing `nftban-core`, render error, or no SSH-port authority) — they abort before `nft -f` and keep the existing ruleset; a skeletal service-port set is **never** applied (lockout-safe).
+
+### Added (observability — PR-B)
+- **Harm-keyed firewall transition health** in `/var/lib/nftban/state/firewall_transition_health.json` (**NOT the NFT schema**): `service_port_breach_count`, `floor_breach_count`, `table_absent_while_committed_count`, `blacklist_empty_during_refresh_count`, `non_atomic_rebuild_count` + metadata (`last_rebuild_atomic`, `last_trigger`, `last_duration_ms`, `last_transition_anomaly_at/_reason`).
+- Surfaces: a `nftban health` finding (**anomalous-only** — healthy transitions and rebuild **cadence never alarm**), a `nftban status` "FW Transition" line, and a `firewall_transition` object in `nftban status --json`. Semantics: floor / table-absent / blacklist-empty → CRITICAL; service-port / non-atomic → DEGRADED.
+
+### Added (guards & tests)
+- Static CI guard **V-NFT-SERVICE-PORTS-RENDERED-COMPLETE** in `scripts/ci/check-nft-atomicity.sh` (every production substitute-render must complete the service-port sets; FAILs on a skeletal regression).
+- Hermetic tests: `v1921_effective_port_render_failclosed_test.sh`, `firewall_transition_health_v1921_test.sh`, `firewall_transition_health_cli_v1921_test.sh`, plus `internal/ports` render-completeness/declarative tests.
+
+### Validation
+- **Functional rebuild + reload lab proof** — lab2 (DEB, Ubuntu 24.04) + lab4 (RPM, AlmaLinux 9.8): rebuild/reload rc=0; nft sampler shows the configured port (`993`) **never** leaves `tcp_ports_in` (ip + ip6) across thousands of samples; cross-host v4/v6 probes **0 excess drops**; durable config **complete before daemon sync**; daemon sync idempotent (no repair needed).
+- **PR-B health lab proof** — healthy transitions keep all harm counters **zero**; controlled missing-port injection reports the exact **set/family/port**; `health`/`status` surfaces validated; labs restored clean.
+- **DEB/RPM package-native validation PASS** (`V192_1_PACKAGE_NATIVE_PASS_READY_FOR_RELEASE_PREP`) — the real packages install the new `nftban-core` + shell helpers + health files + tests on lab2/lab4 and reproduce the runtime behavior; `nftban-core` byte-identical across RPM and DEB.
+
+### Notes
+- **NFT schema remains 1.84.0** — the transition-health counters are a state JSON, not NFT counters; no schema bump, no NFT counter population.
+- **Daemon hash moved; nftband runtime behavior unchanged** (do not describe as "byte-identical").
+
+---
+
+## [v1.192.0] - 2026-06-17 — Firewall transition atomicity (F-RB + F-FEED + F-GEO)
+
+**Codename:** `FIREWALL_TRANSITION_ATOMICITY` · **PR:** [#881](https://github.com/itcmsgr/nftban/pull/881) (squash-merged `c926f22e`) · **Scope:** `V1_192_FIREWALL_CONTINUITY_SCOPE.md` + audit `V1_192_AUDIT_NFTBAN_TRANSITION_CONTINUITY_BY_MODULE_AND_TIMER.md`
+
+> **What:** daemon-Go + shell fix. **Daemon hash MOVED (Go set-writer change in `internal/setsync`, linked into `nftband`). NFT schema UNCHANGED (1.84.0). `MergeStats` / IPC contracts unchanged. No counter population.**
+
+Closes the nftables **transition-atomicity class** — all three blockers reduce to one root cause: *flush + repopulate in separate transactions instead of one `nft -f`*. Every production live-object transition is now a single atomic transaction, so packets never observe an empty/partial state.
+
+### Fixed
+- **F-RB** (`D-NFTBAN-REBUILD-FLUSH-WINDOW`, fail-**CLOSED**) — `_firewall_rebuild_core` flushed the live `nftban` table (`nft flush table ip/ip6 nftban`) in a standalone step *before* a separate `nft -f`, collapsing the input chain to policy-drop with no accepts (lab repro: **19→1 rules** during rebuild, DEB + RPM). Removed the external flush; the rendered config already self-resets in one transaction (`table{}` create → `delete table` → full recreate), so `nft -f` alone is the atomic replace.
+- **F-FEED** (`D-NFTBAN-FEED-REFRESH-FAILOPEN`) + **F-GEO** (`D-NFTBAN-GEOBAN-REFRESH-FAILOPEN`), fail-**OPEN** — the daily feed / weekly geoban refresh flushed the shared `blacklist_ipv4`/`blacklist_ipv6` set then repopulated in a separate transaction, momentarily emptying it (banned IPs admitted during the window). New `replaceSetElementsViaFile` / `renderSetReplaceScript` emit `flush set` as the first statement of the *same* `nft -f` script (flush+add commit atomically; on failure the transaction rolls back and prior blocked contents are retained — fail-CLOSED). The two same-class interval split/refresh paths route through the same helper; standalone `nftFlushSet` removed.
+
+### Added (guards & tests)
+- Static CI guards `scripts/ci/check-nft-atomicity.sh` — **V-NFT-REBUILD-ATOMICITY** + **V-NFT-SET-REFRESH-ATOMICITY** (function-scoped/structural, wired into `ci-architecture.yml`; verified to FAIL on the pre-fix tree and PASS on the fix).
+- Hermetic Go unit test `internal/setsync/nft_set_refresh_atomicity_v192_test.go` (flush is the single first statement, precedes every add; no root/nft).
+- Lab-first runtime tests `rebuild_no_syn_drop_v192_test.sh` + `blacklist_refresh_no_failopen_v192_test.sh` (self-skip without root/nft).
+
+### Validation
+- **lab2 (DEB, Ubuntu 24.04) + lab4 (RPM, AlmaLinux 9.8)** reversible source+daemon deploy, restored clean. Post-fix F-RB: management floor (loopback **AND** established **AND** SSH/service accept) present in **every** sample during rebuild — breach **0/600** (lab2), **0/500** (lab4); collapse-to-1 eliminated. F-FEED/F-GEO: atomic replace never empty (min=5); discriminator confirms the pre-fix pattern hits 0. PR #881 CI green (57 pass / 1 skip / 0 fail).
+
+### Deferred / non-goals
+- **PR-B** harm-keyed health observability (`non_atomic_*` / `table_absent_while_committed` / blacklist-empty counters) → **v1.192.1** (separate).
+- F-OPQ (build-then-swap), F-DDOS (operator chain rebuild), F-LOCK (rebuild lock), `nftban_base` defense-in-depth — deferred.
+- Recovery/reset/rollback/restore/stop paths intentionally exempt (operator/by-design).
+- Residual to exercise at rollout: a **live populated** feed/geoban refresh (labs had empty `blacklist_ipv4`; daemon path proven via hermetic test + guard + kernel test).
+
+---
+
 ## [v1.191.0] - 2026-06-16 — 8B BotGuard request-class-aware tuning + bounded decision cache
 
 **Codename:** `BOTGUARD_REQUEST_CLASS_TUNING` · **PR:** [#879](https://github.com/itcmsgr/nftban/pull/879) (squash-merged `d526da6f`) · **Scope:** `V1_19X_8B_BOTGUARD_TUNING_DESIGN.md` (+ lab2/lab4/package-native/PR records)

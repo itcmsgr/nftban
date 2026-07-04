@@ -76,7 +76,9 @@ fi
 # shellcheck source=/dev/null
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" 2>/dev/null || true
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
+# IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local"
 
 # Metrics endpoint defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROMETHEUS_ADDR:=localhost:9090}"
@@ -524,6 +526,7 @@ nftban_health_check_all() {
     nftban_health_check_module_jump_placement || { ((errors++)) || true; }
     nftban_health_check_anchor_integrity || { ((errors++)) || true; }
     nftban_health_check_kernel_parity || { ((errors++)) || true; }
+    nftban_health_check_firewall_transition || { ((errors++)) || true; }
 
     # Run service checks
     nftban_health_check_services || { ((warnings++)) || true; }

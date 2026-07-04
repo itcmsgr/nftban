@@ -46,7 +46,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
           # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
           # GOTOOLCHAIN=local intentionally NOT set: this job installs the
@@ -95,7 +95,7 @@ jobs:
           fi
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
         if: always()
         with:
           sarif_file: osv-results.sarif

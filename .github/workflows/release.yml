@@ -61,7 +61,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
           # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
           go-version: '1.25.11'
@@ -671,7 +671,7 @@ jobs:
         # - verify-release job will: download with retry, verify checksums,
         #   generate final SHA256SUMS, then publish the release
         # NOTE: nftban-core is uploaded by SLSA workflow with provenance.
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           files: |
             dist/packages/*.rpm

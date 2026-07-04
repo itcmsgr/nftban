@@ -8,9 +8,9 @@
 # meta:type="worker"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-12"
-# meta:description="Separate minimal privileged read-collector for BotScan read-authority (B1). Runs as User=nftban with AmbientCapabilities=CAP_DAC_READ_SEARCH (read+traverse only) on its OWN hardened unit — NOT a child of the unprivileged nftban-botscan.service (which stays User=nftban, NoNewPrivileges, RestrictSUIDSGID). Reads ONLY allowlisted access-log roots, canonicalizes every path with realpath, re-validates the canonical path remains inside an allowlisted root (rejects symlink escape), regular files only, bounded by max-files/max-bytes, and appends only NEW bytes (incremental per-source offset, rotation/truncation safe) to an nftban:nftban 0640 spool under /run/nftban/botscan. The scanner then reads the spool — solving both fleet blocker shapes (DA drwx--x--- apache:root parent traversal AND generic 0640 root:adm file-read) uniformly without weakening the scanner. Audits every source read to the journal. No network. No shell evaluation of log content."
+# meta:description="Separate minimal privileged read-collector for BotScan read-authority (B1). Runs as User=nftban with AmbientCapabilities=CAP_DAC_READ_SEARCH (read+traverse only) on its OWN hardened unit — NOT a child of the unprivileged nftban-botscan.service (which stays User=nftban, NoNewPrivileges, RestrictSUIDSGID). Reads ONLY allowlisted access-log roots, canonicalizes every path with realpath, re-validates the canonical path remains inside an allowlisted root (rejects symlink escape), regular files only, bounded by max-files/max-bytes, and appends only NEW bytes (incremental per-source offset, rotation/truncation safe) to an nftban:nftban 0640 spool under /var/lib/nftban/botscan/spool (v1.209.3: disk-backed, off tmpfs — pages are reclaimable, no longer charged to the 256M cgroup as unevictable tmpfs). The scanner then reads + reaps the spool — solving both fleet blocker shapes (DA drwx--x--- apache:root parent traversal AND generic 0640 root:adm file-read) uniformly without weakening the scanner. Audits every source read to the journal. No network. No shell evaluation of log content."
 # meta:input="allowlisted access logs (DA /var/log/httpd/domains, generic /var/log/{apache2,nginx}, cPanel domlogs, Plesk vhost logs)"
-# meta:output="nftban:nftban 0640 spool files under /run/nftban/botscan (consumed by nftban-botscan-processor)"
+# meta:output="nftban:nftban 0640 spool files under /var/lib/nftban/botscan/spool (v1.209.3: disk-backed, off tmpfs) + spool.status; consumed+reaped by nftban-botscan-processor"
 # meta:depends="bash,realpath,stat,tail,nftban_http_logs.sh"
 # meta:trigger="systemd-timer"
 # meta:systemd_timer="nftban-botscan-collector.timer"
@@ -18,7 +18,7 @@
 #
 # meta:inventory.files="nftban_http_logs.sh"
 # meta:inventory.binaries="realpath,stat,tail"
-# meta:inventory.env_vars="NFTBAN_LIB_DIR,BOTSCAN_SPOOL_DIR,NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR,BOTSCAN_COLLECTOR_MAX_FILES,BOTSCAN_COLLECTOR_MAX_BYTES,BOTSCAN_COLLECTOR_SPOOL_MAX_BYTES,BOTSCAN_LOG_PATHS"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,BOTSCAN_SPOOL_DIR,BOTSCAN_SPOOL_STATUS_FILE,BOTSCAN_SCAN_LOCK_FILE,BOTSCAN_SPOOL_TOTAL_MAX_BYTES,NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR,BOTSCAN_COLLECTOR_MAX_FILES,BOTSCAN_COLLECTOR_MAX_BYTES,BOTSCAN_LOG_PATHS"
 # meta:inventory.config_files="/etc/nftban/conf.d/botscan/main.conf"
 # meta:inventory.systemd_units="nftban-botscan-collector.timer,nftban-botscan-collector.service"
 # meta:inventory.network=""
@@ -31,11 +31,25 @@
 set -Eeuo pipefail
 
 readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-SPOOL_DIR="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}"
+# v1.209.3: spool moved OFF tmpfs (/run) to disk-backed /var/lib. tmpfs pages have no
+# backing store so the kernel CANNOT evict them under cgroup pressure → the 256M
+# MemoryMax oom-killed the collector once the summed spool crossed it (srv3: 138
+# sources × per-file cap ≫ 256M). A disk-backed spool is reclaimable page-cache the
+# kernel drops before OOM. The legacy /run path is reaped once on startup.
+SPOOL_DIR="${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}"
+LEGACY_SPOOL_DIR="/run/nftban/botscan"
+SPOOL_STATUS_FILE="${BOTSCAN_SPOOL_STATUS_FILE:-/var/lib/nftban/botscan/spool.status}"
+SCAN_LOCK_FILE="${BOTSCAN_SCAN_LOCK_FILE:-/run/nftban/botscan-processor.lock}"
 OFFSET_DIR="${NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR:-/var/lib/nftban/botscan-collector}"
 MAX_FILES="${BOTSCAN_COLLECTOR_MAX_FILES:-500}"
 MAX_BYTES="${BOTSCAN_COLLECTOR_MAX_BYTES:-10485760}"          # per source per cycle
-SPOOL_MAX_BYTES="${BOTSCAN_COLLECTOR_SPOOL_MAX_BYTES:-10485760}"  # per spool file cap
+# v1.209.3: TOTAL spool-directory cap (disk safety). The old SPOOL_MAX_BYTES was a
+# PER-FILE cap enforced with a blind `tail -c` that also DESYNCED the scanner's
+# byte-offset cursor (it shortened a file the scanner was mid-read on). It is removed.
+# Bounding is now: total-dir cap (this var) + scanner reaping of fully-consumed files.
+# Over-cap → BACKPRESSURE (skip appends this cycle, no source-offset advance, visible
+# DEGRADED) instead of unbounded growth or a cursor-desyncing trim.
+SPOOL_TOTAL_MAX_BYTES="${BOTSCAN_SPOOL_TOTAL_MAX_BYTES:-1073741824}"  # 1 GiB total dir cap
 
 # Allowlisted access-log roots = the security boundary. A discovered candidate is
 # read ONLY if its CANONICAL path stays inside one of these (after realpath). This
@@ -96,6 +110,46 @@ if ! mkdir -p "$SPOOL_DIR" "$OFFSET_DIR" 2>/dev/null; then
 fi
 chmod 0750 "$SPOOL_DIR" 2>/dev/null || true
 
+# v1.209.3: mutual exclusion with the scanner. nftban-botscan-processor holds THIS
+# same lock for its whole run; taking it here means collector and scanner never run
+# concurrently, which makes the scanner's spool reaping race-free against our appends
+# (no append can interleave a delete). If a scan is in progress we SKIP this collect
+# cycle — source offsets are untouched so nothing is lost (resumes next cycle), and
+# the skip doubles as natural backpressure. flock -n: never blocks. Fail-SAFE: if the
+# lock file cannot even be opened (e.g. hermetic test with no /run), we proceed
+# WITHOUT the lock rather than skip — we never wedge collection on a lock problem.
+if ( : > "$SCAN_LOCK_FILE" ) 2>/dev/null; then
+    exec 9>"$SCAN_LOCK_FILE"
+    if ! flock -n 9 2>/dev/null; then
+        audit "scan in progress (lock held) — skipping collect cycle"
+        exit 0
+    fi
+else
+    audit "WARN: cannot open scan lock ($SCAN_LOCK_FILE) — proceeding without scanner mutual-exclusion"
+fi
+
+# v1.209.3: one-time reclaim of the legacy tmpfs spool. Once we write the new disk
+# spool, anything under the old /run path is dead weight pinned in RAM (tmpfs) until
+# reboot — drop it. Guarded to the exact legacy dir; never touches the active spool.
+if [[ "$SPOOL_DIR" != "$LEGACY_SPOOL_DIR" && -d "$LEGACY_SPOOL_DIR" ]]; then
+    rm -f "$LEGACY_SPOOL_DIR"/* 2>/dev/null || true
+fi
+
+# v1.209.3: total-dir cap gate. If the spool already exceeds the cap, enter
+# BACKPRESSURE for this cycle — do NOT append (source offsets stay put → nothing
+# lost) and surface it via the status file. The scanner reaps consumed files every
+# run, so the total drains back under cap and backpressure self-clears.
+# Sum spool FILE content bytes only. NOT `du` — du counts the directory's own
+# metadata (4096 on XFS/el9 even when empty), which is filesystem-dependent and would
+# trip a small cap on an empty spool. This is the true spool footprint we bound.
+_spool_total() { find "$SPOOL_DIR" -type f -printf '%s\n' 2>/dev/null | awk '{s+=$1} END{print s+0}'; }
+backpressure=0
+_cur_total="$(_spool_total)"
+if [[ "${_cur_total:-0}" -gt "$SPOOL_TOTAL_MAX_BYTES" ]]; then
+    backpressure=1
+    audit "BACKPRESSURE: spool ${_cur_total}B > cap ${SPOOL_TOTAL_MAX_BYTES}B — skipping appends this cycle (no source-offset advance)"
+fi
+
 # Build candidate globs (panel-aware + generic + operator override).
 panel="$(nftban_http_detect_panel)"
 globs=()
@@ -119,22 +173,51 @@ for g in "${globs[@]}"; do
         seen[$canon]=1
         count=$((count+1))
         if [[ $count -gt $MAX_FILES ]]; then audit "MAX_FILES=$MAX_FILES reached; remaining skipped"; break 2; fi
+        # v1.209.3: under backpressure (spool over total cap) do NOT read/append — leave
+        # the source offset untouched so this cycle's bytes are collected once the scanner
+        # has reaped consumed files and the total falls back under cap. Nothing is lost.
+        if [[ "$backpressure" -eq 1 ]]; then skipped=$((skipped+1)); continue; fi
         # Privileged incremental read of NEW bytes since the last cycle.
-        new="$(nftban_http_read_incremental "$canon" 2>/dev/null)" || new=""
-        [[ -z "$new" ]] && continue
+        # v1.209.2: STREAM the read straight to the spool file instead of capturing it in a bash
+        # variable (`new="$(...)"`). The old capture materialized up to BOTSCAN_COLLECTOR_MAX_BYTES
+        # (10MB) per source as a shell string (plus a `$()` subshell copy); across 135 DirectAdmin
+        # sources the cumulative bash memory crossed the 256M cgroup cap → collector OOM. Streaming
+        # keeps the per-source footprint to a small pipe buffer. Cursor/offset is persisted INSIDE
+        # nftban_http_read_incremental (inode:offset statefile via tmp+mv), independent of where its
+        # stdout goes — so this changes MEMORY only, not cursor/rotation/crash semantics.
         spf="$SPOOL_DIR/$(printf '%s' "$canon" | tr '/' '_')"
-        if ! printf '%s\n' "$new" >> "$spf" 2>/dev/null; then audit "spool-write-failed: $spf"; continue; fi
-        chmod 0640 "$spf" 2>/dev/null || true
+        _bsz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
+        if ! nftban_http_read_incremental "$canon" 2>/dev/null >> "$spf"; then audit "spool-write-failed: $spf"; continue; fi
         sz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
-        if [[ "$sz" -gt "$SPOOL_MAX_BYTES" ]]; then
-            if tail -c "$SPOOL_MAX_BYTES" "$spf" > "$spf.trim" 2>/dev/null; then
-                mv -f "$spf.trim" "$spf" 2>/dev/null || true
-                chmod 0640 "$spf" 2>/dev/null || true
-            fi
-        fi
+        # No NEW bytes appended this cycle → nothing collected (mirrors the old `[[ -z "$new" ]]`).
+        [[ "$sz" -le "$_bsz" ]] && continue
+        # Cycle-boundary newline (mirrors the old `printf '%s\n'`) so a MAX_BYTES mid-line cut cannot
+        # join this cycle's tail to the next cycle's head. At worst one harmless blank line.
+        printf '\n' >> "$spf" 2>/dev/null || true
+        chmod 0640 "$spf" 2>/dev/null || true
+        # v1.209.3: the per-file blind `tail -c SPOOL_MAX_BYTES` trim was REMOVED. It
+        # shortened a file the scanner's byte-offset cursor was mid-read on → cursor
+        # desync (skipped or duplicated lines). Per-file growth is now bounded by the
+        # total-dir cap + backpressure above, and by the scanner reaping each file once
+        # it is fully consumed — neither of which moves bytes under a live cursor.
         collected=$((collected+1))
     done < <(compgen -G "$g" 2>/dev/null || true)
 done
 
-audit "panel=${panel:-none} sources=$count collected=$collected skipped=$skipped spool=$SPOOL_DIR"
+# v1.209.3: publish spool pressure so `nftban health botscan` can surface it (and
+# escalate to DEGRADED under backpressure). Written every cycle, atomic via tmp+mv.
+_post_total="$(_spool_total)"
+_fcount="$(find "$SPOOL_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l)"
+_now="$(date +%s 2>/dev/null || echo 0)"
+_oldest="$(find "$SPOOL_DIR" -maxdepth 1 -type f -printf '%T@\n' 2>/dev/null | sort -n | head -1)"
+_oldest_age=0; [[ "${_oldest:-}" =~ ^[0-9] ]] && _oldest_age=$(( _now - ${_oldest%.*} ))
+_pct=0; [[ "$SPOOL_TOTAL_MAX_BYTES" -gt 0 ]] && _pct=$(( ${_post_total:-0} * 100 / SPOOL_TOTAL_MAX_BYTES ))
+if mkdir -p "${SPOOL_STATUS_FILE%/*}" 2>/dev/null; then
+    {
+        printf 'total_bytes=%s\nfile_count=%s\noldest_age_sec=%s\ncap_bytes=%s\ncap_pct=%s\nbackpressure=%s\nspool_dir=%s\nts=%s\n' \
+            "${_post_total:-0}" "${_fcount:-0}" "${_oldest_age:-0}" "$SPOOL_TOTAL_MAX_BYTES" "${_pct:-0}" "$backpressure" "$SPOOL_DIR" "${_now:-0}"
+    } > "${SPOOL_STATUS_FILE}.tmp" 2>/dev/null && mv -f "${SPOOL_STATUS_FILE}.tmp" "$SPOOL_STATUS_FILE" 2>/dev/null || true
+fi
+
+audit "panel=${panel:-none} sources=$count collected=$collected skipped=$skipped backpressure=$backpressure spool_bytes=${_post_total:-0} spool=$SPOOL_DIR"
 exit 0

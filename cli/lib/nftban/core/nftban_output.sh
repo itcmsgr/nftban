@@ -1214,6 +1214,164 @@ nftban_kv() {
 export -f nftban_kv 2>/dev/null || true
 
 # =============================================================================
+# SHARED VALIDATOR FINDINGS RENDERER (v1.198 R1b-1)
+# =============================================================================
+# Renders the human findings block for report-style surfaces from the Go
+# validator's --json output. Extracted verbatim from the V127 UX-1 item 1.2
+# block in cmd_health.sh::nftban_health_cmd_truth so the classification lives
+# in one place (and the R1b-2 operator-readiness summary can reuse it). Pure
+# presentation — consumes only already-emitted fields (.findings[].severity /
+# .code / .message); no new validator field, no schema change, daemon
+# byte-identical.
+#
+# Behavior (unchanged from the inline original):
+#   - Default (verbose=false): show only non-INFO findings; if INFO findings
+#     exist, append a footer with the hidden count + "use --verbose to show".
+#   - verbose=true: show ALL findings regardless of severity (no footer).
+#   - Zero visible: "Findings: none" (+ hidden-INFO footer if any INFO exist).
+# Emits a leading blank line, matching the original block's placement.
+#
+# Usage: nftban_render_findings "<validator_json>" [verbose]   # verbose: true|false (default false)
+# JSON-mode callers MUST NOT use this (the --json path passes the validator
+# output through unfiltered upstream; this renderer is text-mode only).
+nftban_render_findings() {
+    local _json="${1:-}"
+    local _verbose="${2:-false}"
+    local total_count info_count visible_count
+    total_count=$(echo "$_json" | jq '.findings | length' 2>/dev/null || echo "0")
+    info_count=$(echo "$_json" | jq '[.findings[] | select(.severity == "info" or .severity == "INFO")] | length' 2>/dev/null || echo "0")
+    if [[ "$_verbose" == "true" ]]; then
+        visible_count="$total_count"
+    else
+        visible_count=$((total_count - info_count))
+    fi
+
+    echo ""
+    if [[ "$visible_count" -gt 0 ]]; then
+        echo "  Findings ($visible_count):"
+        if [[ "$_verbose" == "true" ]]; then
+            echo "$_json" | jq -r '.findings[] | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+        else
+            echo "$_json" | jq -r '.findings[] | select(.severity != "info" and .severity != "INFO") | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+        fi
+        if [[ "$_verbose" != "true" && "$info_count" -gt 0 ]]; then
+            echo "    (${info_count} INFO finding(s) hidden — use --verbose to show)"
+        fi
+    else
+        if [[ "$info_count" -gt 0 ]]; then
+            echo "  Findings: none (${info_count} INFO finding(s) hidden — use --verbose to show)"
+        else
+            echo "  Findings: none"
+        fi
+    fi
+}
+export -f nftban_render_findings 2>/dev/null || true
+
+# =============================================================================
+# OPERATOR-READINESS SUMMARY (v1.198 R1b-2)
+# =============================================================================
+# A concise top-level operator verdict computed ENTIRELY shell-side from the
+# Go validator's already-emitted fields (.status, .findings[].severity) plus
+# optional shell-side inputs (install_state, validator/health rc). It answers
+# the three questions an operator actually has — "is it working / is the
+# upgrade OK / must I act now" — that the raw four-axis/IDLE/DEGRADED output
+# leaves ambiguous (HEALTH-UX-OPERATOR-READINESS-SUMMARY).
+#
+# It adds NO validator JSON field, NO schema change, NO Go change (daemon
+# byte-identical) and is text-mode only (the --json path renders nothing here).
+# Actionable detail reuses the R1b-1 nftban_render_findings helper.
+#
+# Decision table (driven by existing fields):
+#   Operational      : YES if status in {protected,idle,degraded}; else NO.
+#   Upgrade readiness : FAIL if  not-operational  OR status==degraded
+#                              OR max-severity in {error,critical}
+#                              OR install_state==DEGRADED  OR rc>=2;
+#                       PASS_WITH_WARN if max-severity==warn;  else PASS.
+#   Action needed    : FAIL / WARN / NONE mirroring readiness.
+#   IDLE is explained inline ("running, no active bans currently").
+#
+# Usage: nftban_render_operator_readiness "<validator_json>" [install_state] [rc]
+nftban_render_operator_readiness() {
+    local _json="${1:-}"
+    local _install_state="${2:-}"
+    local _rc="${3:-0}"
+
+    local status max_sev
+    status=$(echo "$_json" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+    [[ -z "$status" || "$status" == "null" ]] && status="unknown"
+    # Highest finding severity present (critical>error>warn>info>none).
+    max_sev=$(echo "$_json" | jq -r '
+        [.findings[]?.severity // empty | ascii_downcase] as $s
+        | if   ($s|index("critical")) then "critical"
+          elif ($s|index("error"))    then "error"
+          elif ($s|index("warn"))     then "warn"
+          elif ($s|index("info"))     then "info"
+          else "none" end' 2>/dev/null || echo "none")
+    [[ -z "$max_sev" || "$max_sev" == "null" ]] && max_sev="none"
+
+    local operational readiness action
+    case "$status" in
+        protected|idle|degraded) operational="YES" ;;
+        *)                       operational="NO" ;;
+    esac
+
+    local _rc_fail=0
+    [[ "$_rc" =~ ^[0-9]+$ ]] && (( _rc >= 2 )) && _rc_fail=1
+
+    if [[ "$operational" == "NO" || "$status" == "degraded" \
+          || "$max_sev" == "error" || "$max_sev" == "critical" \
+          || "$_install_state" == "DEGRADED" || "$_rc_fail" -eq 1 ]]; then
+        readiness="FAIL"
+    elif [[ "$max_sev" == "warn" ]]; then
+        readiness="PASS_WITH_WARN"
+    else
+        readiness="PASS"
+    fi
+
+    # v1.198.2 PR-B (BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL): an
+    # unresolved CRITICAL/ERROR firewall-transition alarm MUST flag operator
+    # readiness even when the runtime validator status is protected/idle — the
+    # headline must never read clean (PASS/NONE) while a CRITICAL transition
+    # finding is printed. $4 is the fth_eval_health severity code (3=CRITICAL,
+    # 2=ERROR, 1=WARN, 0=OK, ""=unknown/absent), passed by cmd_health. Only ever
+    # RAISE the verdict (PASS -> PASS_WITH_WARN); never mask an existing FAIL.
+    local _fth_sev="${4:-}" _fth_alarm=0
+    if [[ "$_fth_sev" == "3" || "$_fth_sev" == "2" ]]; then
+        _fth_alarm=1
+        [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
+    fi
+
+    case "$readiness" in
+        FAIL)           action="FAIL" ;;
+        PASS_WITH_WARN) action="WARN" ;;
+        *)              action="NONE" ;;
+    esac
+
+    local op_line="$operational"
+    [[ "$status" == "idle" ]] && op_line="YES (running, no active bans currently)"
+    # PR-B: qualify Operational so a transition alarm is visible on the verdict line.
+    [[ "$_fth_alarm" -eq 1 ]] && op_line="${op_line} — unresolved firewall-transition alarm"
+
+    echo ""
+    echo "  Operator readiness"
+    echo "  ─────────────────────────────────────────"
+    printf "  %-20s %s\n" "Operational:" "$op_line"
+    printf "  %-20s %s\n" "Upgrade readiness:" "$readiness"
+    printf "  %-20s %s\n" "Action needed:" "$action"
+    # v1.198.2 PR-C (D-V198-HEALTH-FINDINGS-DOUBLE-RENDER): the readiness block is
+    # the VERDICT surface only — it no longer re-renders the per-finding detail
+    # (that duplicated the canonical "Findings:" section in cmd_health). It now
+    # emits a one-line pointer so the operator knows where the detail is.
+    if [[ "$_fth_alarm" -eq 1 ]]; then
+        printf "  %-20s %s\n" "" "→ firewall-transition alarm: see 'Firewall Transition' below (clear: nftban firewall rebuild)"
+    fi
+    if [[ "$action" != "NONE" && ( "$max_sev" == "warn" || "$max_sev" == "error" || "$max_sev" == "critical" ) ]]; then
+        printf "  %-20s %s\n" "" "→ see the Findings section below for the actionable item(s)"
+    fi
+}
+export -f nftban_render_operator_readiness 2>/dev/null || true
+
+# =============================================================================
 # FOOTER - Debug & Module Info
 # =============================================================================
 

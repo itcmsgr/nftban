@@ -17,8 +17,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 #
-# Implements V108 Item 2 per scope artifact:
-#   /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/AUDIT_190_LIFECYCLE/
+# Implements V108 Item 2 per the project audit scope artifact:
 #   V108_ITEM2_IMMUTABLE_LIFECYCLE_MATRIX_SCOPE.md
 #
 # Motivating defect (v1.107.2 / PR #585):

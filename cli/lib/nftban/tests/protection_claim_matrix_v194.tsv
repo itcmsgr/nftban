@@ -1,0 +1,36 @@
+# NFTBan v1.194.0 (8C) — Protection-Claim Matrix (data-driven; consumed by
+# protection_claim_matrix_v194_test.sh + scripts/ci/check-protection-claim-matrix.sh)
+# =============================================================================
+# Each advertised protection claim → runtime owner + ban authority + proof.
+# Format (pipe-delimited, 11 fields, NO embedded '|'):
+#   CLAIM_ID|EVENT_CLASS|SOURCE|OWNER|CONSUMER_IDENTITY|BAN_AUTHORITY|MODE|ZERO_INPUT|FIXTURE|EXPECTED|CLASSIFICATION
+# OWNER          ∈ BotScan LoginMon BotGuard DDoS/kernel Portscan/kernel Feeds/GeoBan Suricata NONE
+# MODE           ∈ enforce suppress observe-only
+# CLASSIFICATION ∈ validated false-claim dead-knob unowned legacy-only unproven deferred observe-only suppress
+# FIXTURE        = a tests/*.sh hermetic proof (run by the harness), or a non-hermetic descriptor
+#                  (lab-validated-* / read-only-fleet-* / kernel-inline / mode-dependent / none).
+# DEAD_KNOBS (parsed-never-used, must NEVER appear as a live OWNER/BAN_AUTHORITY below;
+#   internal/loginmon/module.go:764-771 + types.go:186-187,273-274 — 8G deletion candidate):
+#   WordPressXMLRPC WordPressWPLogin
+# =============================================================================
+SSH-SU-SUDO-AUTHFAIL|auth_failure|auth-log+journal-sshd-su-sudo|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-prior|ban|validated
+MAIL-AUTHFAIL|auth_failure|exim-dovecot-postfix-logs+journal|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-prior|ban|validated
+FTP-AUTHFAIL|auth_failure|vsftpd-proftpd-files+pureftpd-journal|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-v1180|ban|validated
+WPLOGIN-AUTHFAIL|auth_failure|web-access-logs|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|WARN_NO_LOGS|internal/loginmon/detector/webauth_test.go|ban|validated
+HTTP-BASICAUTH-401-403|auth_failure|web-access-logs|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|WARN_NO_LOGS|read-only-fleet|ban|unproven
+ROUNDCUBE-AUTHFAIL-DA|auth_failure|var-log-roundcube-userlogins|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|lab-validated-v1186-DA-only|ban|validated
+DIRECTADMIN-AUTHFAIL|auth_failure|DA-login-log|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|read-only-fleet|ban|unproven
+CPANEL-AUTHFAIL|auth_failure|cpanel-access-log|LoginMon|root-daemon-CAP_DAC_OVERRIDE|IPC-blacklist|enforce|health-visible|read-only-fleet-G4|ban|legacy-only
+PLESK-AUTHFAIL|auth_failure|plesk-deferred|NONE|none|none|enforce|n/a|none|out-of-scope|deferred
+WP-SCANNER-EXPLOIT-URL|web_abuse|web-access-logs-via-collector-spool|BotScan|nftban-collector+capless-scanner|IPC-blacklist|enforce|health-visible|botscan_pattern_ban_ifs_v1861_test.sh|ban|validated
+404-FLOOD|web_abuse|web-access-logs-404-count|BotScan|nftban-collector+capless-scanner|IPC-blacklist|enforce|health-visible|botscan_pattern_ban_ifs_v1861_test.sh|ban|validated
+ENDPOINT-FLOOD-XMLRPC-WPLOGIN|web_abuse|web-access-logs-POST-endpoint-count|BotScan|nftban-collector+capless-scanner|endpoint-flood-signal|enforce|health-visible|botscan_endpoint_flood_test.sh|ban|validated
+WPADMIN-AUTHENTICATED-SUPPRESS|web_abuse-context|web-access-logs-wplogin-302|BotScan|nftban-collector+capless-scanner|context-gate|suppress|health-visible|botscan_wpadmin_context_gate_v1922_test.sh|no-ban|suppress
+BADBOT-AIBOT-FCRDNS|web_abuse|web-access-logs-UA+forward-confirmed-rDNS|BotScan|nftban-collector+capless-scanner|IPC-blacklist|enforce|health-visible|botscan_fcrdns_v189_test.sh|ban-or-exempt|validated
+HTTP-RATE-30S|l4_rate|nft-meter-http_bot_meter|BotGuard|kernel|kernel-set-http_bot|enforce|disabled-visible|lab-validated-burst-FLEET-DISABLED|ban|validated
+HTTP-CONN-200-500|l4_conn|nft-conn-count|BotGuard|kernel|kernel-set-http_bot|enforce|disabled-visible|lab-validated-burst-FLEET-DISABLED|ban|validated
+LOW-AND-SLOW-L7|l7_low_slow|under-BotGuard-rate-no-L7-bridge|NONE|none|none|enforce|n/a|none|out-of-scope|unowned
+VOLUMETRIC-SYN-FLOOD|l3l4_flood|nft-rate-meters|DDoS/kernel|kernel|kernel-set-drop|enforce|kernel-na|kernel-inline|drop|validated
+PORT-SCAN|portscan|nft-inline|Portscan/kernel|kernel|kernel-set-drop|enforce|kernel-na|portscan_generic_corroborate_v149_test.sh|drop|validated
+THREATFEED-GEOBAN-COUNTRY|threat_intel|feed-files+GeoIP|Feeds/GeoBan|timer-oneshot|sets-blacklist-geoban|enforce|health-visible|lab-validated-sets|block|validated
+SURICATA-SID-WEB|ids_sid|NFQUEUE-af-packet|Suricata|suricata-svc|mode-dependent|observe-only|svc-visible|mode-dependent|mode-dependent|observe-only

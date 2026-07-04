@@ -154,16 +154,21 @@ func (d *Daemon) Run() error {
 		}
 
 		// Execute the ban via nftables backend
-		_, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
+		result, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
 			IP:      e.IP,
 			Timeout: timeout,
 			Reason:  reason,
 			Source:  e.Source,
 		})
-		if err != nil {
+		switch {
+		case err != nil:
 			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
 			metrics.RecordBanError(e.Source, "nft_error")
-		} else {
+		case result != nil && result.Exempt:
+			// v1.209.x F2: the never-ban guard refused this ban (admin/management/
+			// whitelist/system/live-SSH IP). Not an error, not a ban — log honestly.
+			log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", e.IP, e.Source, result.Message)
+		default:
 			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
 			// Record in stats collector
 			d.stats.RecordBan()
@@ -478,6 +483,11 @@ func (d *Daemon) initOpQueue() error {
 	if err := d.sourceIndex.LoadFromDisk(); err != nil {
 		log.Printf("[OpQueue] Warning: failed to load source index: %v", err)
 	}
+
+	// v1.209 — wire SourceIndex into the OpQueue so the apply boundary records provenance for
+	// EVERY producer's bans (source=botscan/manual/...). Set BEFORE opQueue.Start (below) so no
+	// flush ever runs without it — lifecycle-race-free, no per-module wiring.
+	d.opQueue.SetSourceIndexer(d.sourceIndex)
 
 	// Start async workers
 	d.opQueue.Start(d.ctx)

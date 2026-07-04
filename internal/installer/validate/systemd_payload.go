@@ -130,6 +130,17 @@ func IsAuxiliaryUnit(basename string) bool {
 // upgrade and neither the upgrade nor --repair could clear it).
 var staleClearableOneshotStems = map[string]bool{
 	"nftban-botscan": true,
+	// v1.198.1 PR-B (D-NFTBAN-ALERT-LOGGER-DEVLOG-PERMISSION /
+	// D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): the OnFailure service-failure
+	// alert is Type=oneshot and latches `failed` from a past nftband restart
+	// (before PR-A made its logger sandbox-safe, the alert exited non-zero every
+	// time it fired). Its latch pre-dating the install window cannot have been
+	// caused by this upgrade, and it can itself make the live-health probe read
+	// unclean — the same circular block v1.185.1 fixed for nftban-botscan — so
+	// recover it without the live-health gate. The stem is the TEMPLATE form
+	// ("nftban-alert@"); isStaleClearableOneshot reduces instance stems
+	// ("nftban-alert@nftband.service") to it.
+	"nftban-alert@": true,
 }
 
 // isStaleClearableOneshot reports whether an nftban unit basename is a
@@ -144,7 +155,45 @@ func isStaleClearableOneshot(basename string) bool {
 	if dot <= 0 {
 		return false
 	}
-	return staleClearableOneshotStems[basename[:dot]]
+	stem := basename[:dot]
+	// v1.198.1 PR-B: a template-instance unit (nftban-alert@<instance>.service)
+	// carries an instance-specific stem (e.g. "nftban-alert@nftband.service").
+	// Reduce it to the template stem ("nftban-alert@") so one map entry matches
+	// every instance. Non-template stems are unchanged.
+	if at := strings.IndexByte(stem, '@'); at >= 0 {
+		stem = stem[:at+1]
+	}
+	return staleClearableOneshotStems[stem]
+}
+
+// cadenceReverifiableOneshotStems lists nftban cadence-driven oneshot unit stems
+// whose `failed` state — whether pre-existing OR inside the owned update window —
+// is recoverable ONLY through a live re-verify (reset-failed + a fresh, clean run),
+// NEVER unconditionally. v1.201 (A2 + stale-oneshot/SOAK): the v1.198.3 watchdog/
+// update-swap race (nftban-watchdog firing EXEC-203 while the binary was mid-swap,
+// reproduced on dns2) is the canonical case — by post-install the binary is
+// executable again and the unit re-runs clean, so the in-window latch is transient,
+// not a real break. nftban-maintenance/nftban-soak share the cadence-oneshot shape.
+// DISTINCT from staleClearableOneshotStems (botscan/alert@), which clear
+// unconditionally for PRE-window latches; these clear ONLY on a proven clean re-run
+// (the gate is enforced host-side in the gatherer; the classifier consults its result).
+var cadenceReverifiableOneshotStems = map[string]bool{
+	"nftban-watchdog":    true,
+	"nftban-soak":        true,
+	"nftban-maintenance": true,
+}
+
+// isCadenceReverifiableOneshot reports whether an nftban unit basename is a
+// cadence oneshot that may be recovered ONLY via a live re-verify. v1.201.
+func isCadenceReverifiableOneshot(basename string) bool {
+	if !IsNftbanUnit(basename) {
+		return false
+	}
+	dot := strings.LastIndexByte(basename, '.')
+	if dot <= 0 {
+		return false
+	}
+	return cadenceReverifiableOneshotStems[basename[:dot]]
 }
 
 // ParsedUnit is the minimum subset of a systemd unit file needed for
@@ -211,6 +260,18 @@ type FailedUnitFinding struct {
 	// (fail closed) — an unparseable timestamp can never be classified as
 	// pre-existing/recovered.
 	FailureTimeKnown bool
+
+	// OwnedWindowReverifyDone / OwnedWindowReverifyClean carry the result of
+	// the v1.201 host-side gated re-verify, performed ONLY for
+	// isCadenceReverifiableOneshot units (watchdog/soak/maintenance). The
+	// gatherer reset-failed the unit and issued a fresh `systemctl start`;
+	// Clean is true ONLY when that re-run succeeded and the unit is no longer
+	// failed. The classifier consults these to tolerate a transient
+	// (re-verified-clean) cadence-oneshot latch as non-fatal; an absent or
+	// false result keeps the unit FATAL (no-mask: a persistent failure that
+	// re-fails its run is never cleared). Zero value = no re-verify attempted.
+	OwnedWindowReverifyDone  bool
+	OwnedWindowReverifyClean bool
 }
 
 // PayloadInventory describes which paths are considered known after
@@ -364,6 +425,16 @@ type SystemdPayloadValidationResult struct {
 	// stays in FailedUnits (fatal) — fail safe toward DEGRADED.
 	FailedUnitsPreExistingRecovered []FailedUnitPostInstall
 
+	// FailedUnitsTransientRecovered holds cadence-oneshot nftban units
+	// (isCadenceReverifiableOneshot: watchdog/soak/maintenance) whose failed
+	// latch was recovered by the v1.201 host-side gated re-verify — the unit
+	// was reset-failed and a fresh `systemctl start` ran CLEAN, proving the
+	// latch was transient (the v1.198.3 watchdog/update-swap EXEC-203 class).
+	// Surfaced as WARN_TRANSIENT_RECOVERED and does NOT fail
+	// FAILED-UNIT-POSTINSTALL-001. A cadence-oneshot whose re-run still fails
+	// (or was never re-verified) stays in FailedUnits (fatal) — no-mask.
+	FailedUnitsTransientRecovered []FailedUnitPostInstall
+
 	// FailedUnitQueryError mirrors SystemdPayloadInputs.FailedUnitQueryError
 	// for the assertion-side detail message. When non-empty,
 	// FAILED-UNIT-POSTINSTALL-001 fails closed regardless of
@@ -469,6 +540,25 @@ func ValidateInstalledSystemdPayload(in SystemdPayloadInputs) SystemdPayloadVali
 		// before the window → preExisting=false) still fall through to IN_WINDOW.
 		if preExisting && isStaleClearableOneshot(f.Unit) {
 			recovered = true
+		}
+		// v1.201 (A2 + stale-oneshot/SOAK): a cadence oneshot (watchdog/soak/
+		// maintenance) is governed by the host-side GATED re-verify, which is
+		// AUTHORITATIVE and consulted BEFORE the generic v1.174 pre-existing+clean-
+		// health recovery. A clean re-run (reset-failed + fresh `systemctl start`
+		// succeeded) → transient latch (the v1.198.3 watchdog/update-swap EXEC-203
+		// class), non-fatal WARN_TRANSIENT_RECOVERED. A re-run that STILL FAILS →
+		// force FATAL (recovered=false) so a demonstrably-broken cadence oneshot can
+		// NEVER be masked by the older recovered branch even when live health reads
+		// clean — the no-mask invariant (lab4 RPM regression: pre-window + clean
+		// health was being recovered despite a failed re-run). Applies in-window AND
+		// pre-window. A cadence oneshot with no re-verify falls through unchanged.
+		if isCadenceReverifiableOneshot(f.Unit) && f.OwnedWindowReverifyDone {
+			if f.OwnedWindowReverifyClean {
+				entry.Classification = "WARN_TRANSIENT_RECOVERED"
+				res.FailedUnitsTransientRecovered = append(res.FailedUnitsTransientRecovered, entry)
+				continue
+			}
+			recovered = false // re-run still failed → never recover via the v1.174 path
 		}
 		if recovered {
 			entry.Classification = "WARN_PRE_EXISTING_RECOVERED"

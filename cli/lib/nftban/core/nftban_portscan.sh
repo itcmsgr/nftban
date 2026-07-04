@@ -55,7 +55,9 @@ readonly PORTSCAN_MODULE_DESCRIPTION="Port Scan Detection Module (Dual-Mode)"
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
-source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
+# IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 readonly NFTBAN_PORTSCAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR}/conf.d/portscan"
 readonly NFTBAN_PORTSCAN_DATA_DIR="${PORTSCAN_DATA_DIR:-${NFTBAN_DATA_DIR}/portscan}"
@@ -123,7 +125,7 @@ nftban_portscan_load_config() {
 
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local" || true
+        _source_local "$main_local"
     fi
 
     # Set defaults

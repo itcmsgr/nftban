@@ -38,6 +38,10 @@ case "$*" in
   *"-t PTR 66.249.66.9"*) echo "9.66.249.66.in-addr.arpa domain name pointer crawler-x.googlebot.com." ;;
   *"crawler-x.googlebot.com"*) echo "crawler-x.googlebot.com has address 8.8.8.8" ;;                # forward mismatch
   *"-t PTR 5.5.5.5"*) sleep 5 ;;                                                                     # timeout
+  # IPv6 parity: real Googlebot v6 (ip6.arpa PTR -> googlebot suffix, AAAA forward-confirms)
+  *"-t PTR 2001:4860:4801:1::1"*) echo "1.0.0.0.1.0.0.0.1.0.8.4.0.6.8.4.1.0.0.2.ip6.arpa domain name pointer crawler-ipv6.googlebot.com." ;;
+  *"crawler-ipv6.googlebot.com"*) echo "crawler-ipv6.googlebot.com has IPv6 address 2001:4860:4801:1::1" ;;
+  *"-t PTR 2001:db8::bad"*) echo "d.a.b.0.ip6.arpa domain name pointer evil6.example.com." ;;          # IPv6 bad suffix
   *) exit 1 ;;                                                                                       # NXDOMAIN
 esac
 HOST
@@ -62,7 +66,10 @@ nftban_botscan_verify_crawler 1.2.3.4 googlebot     && fail "V2: suffix-mismatch
 nftban_botscan_verify_crawler 66.249.66.9 googlebot && fail "V3: forward-mismatch must fail closed"
 nftban_botscan_verify_crawler 5.5.5.5 googlebot     && fail "V4: timeout must fail closed"
 nftban_botscan_verify_crawler 9.9.9.9 googlebot     && fail "V5: NXDOMAIN must fail closed"
-echo "PASS V: verify OK for real crawler; fail-closed on suffix/forward/timeout/NXDOMAIN"
+# IPv4/IPv6 parity: same FCrDNS logic for an IPv6 crawler (ip6.arpa reverse + AAAA forward-confirm)
+nftban_botscan_verify_crawler 2001:4860:4801:1::1 googlebot || fail "V6: real IPv6 Googlebot must verify OK (ip6.arpa PTR + AAAA forward-confirm)"
+nftban_botscan_verify_crawler 2001:db8::bad googlebot       && fail "V7: IPv6 suffix-mismatch spoofer must fail closed"
+echo "PASS V: verify OK for real IPv4 + IPv6 crawler; fail-closed on suffix/forward/timeout/NXDOMAIN (both families)"
 
 # ---- cache: 2nd lookup must NOT call the resolver (count host invocations) ----
 calls_before=$(wc -c < "$HOSTCALLS")
@@ -100,14 +107,20 @@ grep -qE "Would ban 1.2.3.4.*fake_bot_ua|fake_bot_ua.*1.2.3.4" <<<"$out" || fail
 echo "PASS A: analyze 404-flood exempts verified crawler, bans spoofer (fake_bot_ua)"
 
 # ---- (S) structural: verify ONLY in the 404-flood loop, never per-line / exploit path ----
+# Capture each function body into a variable FIRST, then match against the captured
+# text. Piping `sed ... | grep -q` lets `grep -q` close the pipe on first match, which
+# delivers SIGPIPE to `sed` ("couldn't flush stdout: Broken pipe"); under `pipefail`
+# that SIGPIPE exit (141) propagates and spuriously flips the assertion. Capturing the
+# producer output decouples it from the early-exiting consumer (no pipe, no SIGPIPE).
+_fn_body() { sed -n "/^$1() {/,/^}/p" "$CORE"; }
 # is_whitelisted must not call verify (no per-line DNS)
-sed -n '/^nftban_botscan_is_whitelisted() {/,/^}/p' "$CORE" | grep -q "nftban_botscan_verify_crawler" \
+grep -q "nftban_botscan_verify_crawler" <<<"$(_fn_body nftban_botscan_is_whitelisted)" \
     && fail "S: is_whitelisted must NOT call verify_crawler (no per-line DNS)"
 # process_entry (per-line) must not call verify
-sed -n '/^nftban_botscan_process_entry() {/,/^}/p' "$CORE" | grep -q "nftban_botscan_verify_crawler" \
+grep -q "nftban_botscan_verify_crawler" <<<"$(_fn_body nftban_botscan_process_entry)" \
     && fail "S: process_entry (per-line) must NOT call verify_crawler"
 # verify is referenced in analyze (the 404 loop)
-sed -n '/^nftban_botscan_analyze() {/,/^}/p' "$CORE" | grep -q "nftban_botscan_verify_crawler" \
+grep -q "nftban_botscan_verify_crawler" <<<"$(_fn_body nftban_botscan_analyze)" \
     || fail "S: analyze() must call verify_crawler (404-flood exemption)"
 # the pattern-ban loop in analyze must NOT gate on verify (exploit/webshell never exempted):
 # verify appears only after the '404 flood' comment, not in the hits/pattern loop.

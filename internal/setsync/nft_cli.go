@@ -26,6 +26,7 @@ package setsync
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -140,10 +141,74 @@ func nftDeleteElement(family, table, setName, elements string) error {
 	return runNftIgnoring([]string{ErrElementNotExist, ErrNoSuchFile}, args...)
 }
 
-// nftFlushSet flushes all elements from a set
-func nftFlushSet(family, table, setName string) error {
-	_, err := runNft("flush", "set", family, table, setName)
-	return err
+// replaceSetElementsViaFile atomically replaces the full contents of a set by
+// emitting `flush set` followed by batched `add element` into ONE `nft -f`
+// transaction. The flush is the FIRST statement inside the loaded file — never a
+// standalone `nft flush set` call — so the kernel commits flush+repopulate as a
+// single transaction and readers never observe the set empty or partial.
+//
+// This closes the F-FEED / F-GEO fail-open window on the shared blacklist_*
+// sets (a standalone `nft flush set` followed by a separate `nft -f` add left
+// the set transiently EMPTY, admitting banned IPs during feed/geoban refresh),
+// and the same-class window in the interval split/refresh paths
+// (V-NFT-SET-REFRESH-ATOMICITY).
+//
+// On `nft -f` failure the whole transaction rolls back, so the set retains its
+// prior (blocked) contents — fail-CLOSED, never fail-open. Elements must already
+// be canonicalized / non-overlapping by the caller.
+func replaceSetElementsViaFile(family, table, setName string, elements []string) error {
+	tmpfile, err := os.CreateTemp("", "nftban-setrepl-*.nft")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	defer tmpfile.Close()
+
+	if _, err := tmpfile.WriteString(renderSetReplaceScript(family, table, setName, elements)); err != nil {
+		return fmt.Errorf("failed to write set-replace script: %w", err)
+	}
+
+	if err := tmpfile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if _, err := runNftFile(tmpfile.Name()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// renderSetReplaceScript builds the `nft -f` script that atomically replaces a
+// set's contents: a SINGLE `flush set` first, then batched `add element` lines.
+// Kept pure (no I/O) so the flush-before-add ordering — the core of the
+// atomicity guarantee — is unit-testable without nft or root. The adds are
+// batched (10k per `add element`) to bound line length on large feed sets.
+func renderSetReplaceScript(family, table, setName string, elements []string) string {
+	var script strings.Builder
+
+	// Flush FIRST, inside the same script → one atomic transaction with the adds.
+	script.WriteString(fmt.Sprintf("flush set %s %s %s\n", family, table, setName))
+
+	const batchSize = 10000
+	for batchStart := 0; batchStart < len(elements); batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > len(elements) {
+			batchEnd = len(elements)
+		}
+
+		var builder strings.Builder
+		for i, e := range elements[batchStart:batchEnd] {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+			builder.WriteString(e)
+		}
+
+		script.WriteString(fmt.Sprintf("add element %s %s %s { %s }\n", family, table, setName, builder.String()))
+	}
+
+	return script.String()
 }
 
 // NftListSet lists elements of a set (exported for emulate command)
@@ -228,4 +293,3 @@ func nftFamily(ipv4 bool) string {
 	}
 	return "ip6"
 }
-

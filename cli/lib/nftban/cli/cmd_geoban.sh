@@ -405,7 +405,9 @@ nftban_geoban_config() {
     # shellcheck source=/dev/null
     source "$config_file" 2>/dev/null || true
     # shellcheck source=/dev/null
-    source "$config_local" 2>/dev/null || true
+    # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+    declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+    _source_local "$config_local"
 
     # Count configured countries
     local banned_count=0
@@ -620,7 +622,7 @@ Features:
 Notes:
   • GeoBan uses the nftban-geoip Go binary for performance
   • Changes are applied atomically to running firewall
-  • Country IP lists are cached in /var/cache/nftban/geoban/
+  • Country IP lists are stored in /var/lib/nftban/geoip/
   • Configuration files stored in /etc/nftban/geoban.d/
 
 EOF

@@ -205,6 +205,84 @@ _collect_system() {
         fi
     } > "$sys_dir/virtualization.txt"
     _support_log OK "Virtualization detection"
+
+    # Journald disk usage (capacity-pressure diagnosis)
+    if command -v journalctl &>/dev/null; then
+        journalctl --disk-usage > "$sys_dir/journald-disk-usage.txt" 2>&1 || true
+        _support_log OK "Journald disk usage"
+    fi
+
+    # OOM-kill evidence (kernel ring buffer + journal; read-only, bounded to last 50 matches)
+    {
+        echo "# OOM-kill / out-of-memory evidence"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+        echo "=== journalctl -k (oom matches, last 50) ==="
+        if command -v journalctl &>/dev/null; then
+            journalctl -k --no-pager 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process|oom_reaper' | tail -50 || echo "(none)"
+        else
+            echo "(journalctl not available)"
+        fi
+        echo ""
+        echo "=== dmesg (oom matches, last 50) ==="
+        if command -v dmesg &>/dev/null; then
+            dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process|oom_reaper' | tail -50 || echo "(none or insufficient privilege)"
+        else
+            echo "(dmesg not available)"
+        fi
+    } > "$sys_dir/oom-evidence.txt"
+    _support_log OK "OOM-kill evidence"
+}
+
+# v1.216.0 (OPEN_UNIFIED_PROFILE_SYSCTL_SAFE_DEFAULT): sysctl / conntrack evidence.
+# READ-ONLY — collects the shipped + operator sysctl files, the live kernel readback for
+# the NFTBan-relevant keys, conntrack utilization, and the registry risk scan.
+_collect_sysctl() {
+    local bundle_dir="$1"
+    local d="$bundle_dir/sysctl"
+    mkdir -p "$d" || return 1
+
+    # shipped + operator override files
+    if [[ -f /etc/sysctl.d/90-nftban.conf ]]; then
+        cp /etc/sysctl.d/90-nftban.conf "$d/90-nftban.conf" 2>/dev/null && _support_log OK "sysctl 90-nftban.conf"
+    fi
+    if [[ -f /etc/sysctl.d/99-local.conf ]]; then
+        cp /etc/sysctl.d/99-local.conf "$d/99-local.conf" 2>/dev/null && _support_log OK "sysctl 99-local.conf (operator)"
+    else
+        echo "(no /etc/sysctl.d/99-local.conf)" > "$d/99-local.conf.absent"
+    fi
+
+    # live kernel readback for NFTBan-relevant keys + conntrack utilization
+    {
+        echo "# Live sysctl (NFTBan-relevant) — $(date -Iseconds 2>/dev/null)"
+        for k in net.netfilter.nf_conntrack_tcp_timeout_established \
+                 net.netfilter.nf_conntrack_tcp_timeout_time_wait \
+                 net.netfilter.nf_conntrack_tcp_timeout_syn_sent \
+                 net.netfilter.nf_conntrack_tcp_timeout_syn_recv \
+                 net.netfilter.nf_conntrack_max \
+                 net.netfilter.nf_conntrack_count \
+                 net.ipv4.tcp_keepalive_time net.ipv4.tcp_retries2; do
+            printf '%-56s = %s\n' "$k" "$(sysctl -n "$k" 2>/dev/null || echo 'n/a')"
+        done
+    } > "$d/live-sysctl.txt" 2>/dev/null && _support_log OK "live sysctl readback"
+
+    # registry + read-only risk scan
+    local reg="${NFTBAN_LIB_DIR:-/usr/lib/nftban/lib}/nftban_sysctl_registry.sh"
+    [[ -f "$reg" ]] || reg="$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_sysctl_registry.sh"
+    if [[ -f "$reg" ]]; then
+        # Source + emit in SUBSHELLS so the library's `set -Eeuo pipefail` / double-load
+        # guard cannot leak into the support-bundle shell state.
+        # shellcheck source=/dev/null
+        ( source "$reg" 2>/dev/null && nftban_sysctl_registry ) > "$d/registry.txt" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        if ( source "$reg" 2>/dev/null && nftban_sysctl_risk_scan ) > "$d/risk-scan.txt" 2>/dev/null; then
+            _support_log OK "sysctl risk scan"
+        fi
+        # v1.216.1: explicit idle-age observability source (procfs on RHEL / conntrack-tool on Debian-Ubuntu / none)
+        # so operators can see WHY dead-socket classification is CLEAN/INFO/WARN/UNKNOWN on this host.
+        # shellcheck source=/dev/null
+        ( source "$reg" 2>/dev/null && printf 'idle_age_source=%s\n' "$(_nftban_db_idle_source)" ) > "$d/idle-age-source.txt" 2>/dev/null || true
+    fi
 }
 
 _collect_nftables() {
@@ -297,6 +375,33 @@ _collect_logs() {
     if [[ -f "$NFTBAN_LOG_DIR/update.log" ]]; then
         cp "$NFTBAN_LOG_DIR/update.log" "$log_dir/update.log" 2>/dev/null || true
     fi
+
+    # v1.199: per-run lifecycle forensic records (update-runs/<run_id>/). Collect
+    # the newest N runs only (bounded bundle), each redacted via _redact_file.
+    local runs_src="$NFTBAN_LOG_DIR/update-runs"
+    if [[ -d "$runs_src" ]]; then
+        local runs_dst="$log_dir/update-runs"
+        local keep="${SUPPORT_UPDATE_RUNS_MAX:-10}"
+        mkdir -p "$runs_dst" 2>/dev/null || true
+        local run_count=0 run_dir
+        # newest-first by mtime; cap at $keep (no silent over-collect)
+        while IFS= read -r run_dir; do
+            [[ -z "$run_dir" ]] && continue
+            [[ $run_count -ge $keep ]] && break
+            local rid; rid=$(basename "$run_dir")
+            mkdir -p "$runs_dst/$rid" 2>/dev/null || continue
+            local f
+            for f in run.jsonl human.log; do
+                [[ -f "$run_dir/$f" ]] && _redact_file "$run_dir/$f" "$runs_dst/$rid/$f" 2>/dev/null || true
+            done
+            run_count=$((run_count + 1))
+        done < <(find "$runs_src" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | cut -f2-)
+        if [[ $run_count -gt 0 ]]; then
+            local total; total=$(find "$runs_src" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+            _support_log OK "Per-run forensic records ($run_count of $total collected, newest first, redacted)"
+            [[ $total -gt $run_count ]] && _support_log WARN "Per-run records capped at $keep (SUPPORT_UPDATE_RUNS_MAX); $((total - run_count)) older run(s) omitted"
+        fi
+    fi
 }
 
 _collect_health() {
@@ -377,16 +482,39 @@ _collect_services() {
         return 0
     fi
 
-    # NFTBan-related services
-    for svc in nftban nftban-webapi nftban-feeds nftban-sync nftables; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null; then
-            systemctl status "$svc" --no-pager > "$svc_dir/${svc}.txt" 2>&1 || true
-        fi
+    # All NFTBan/nftband units (dynamic — services, sockets, timers; not a fixed list).
+    # Covers nftband.service/.socket, nftban-soak, nftban-botscan, etc.
+    local units
+    units=$(systemctl list-unit-files 'nftban*' 'nftband*' 'nftables.service' --no-legend 2>/dev/null \
+            | awk '{print $1}' | grep -E '\.(service|socket|timer)$' | sort -u)
+    local nunits=0
+    for unit in $units; do
+        systemctl status "$unit" --no-pager > "$svc_dir/${unit}.txt" 2>&1 || true
+        nunits=$((nunits + 1))
     done
-    _support_log OK "Systemd service status"
+    _support_log OK "Systemd unit status ($nunits nftban/nftband units)"
+
+    # Failed units (whole-system) — DEGRADED diagnosis
+    systemctl --failed --all --no-pager > "$svc_dir/failed-units.txt" 2>&1 || true
+    _support_log OK "Failed units"
+
+    # Per-unit Result / restart / OOM properties (actionable failure signal)
+    {
+        echo "# Per-unit properties (Result / ExecMainStatus / NRestarts / OOM)"
+        echo "# Collected: $(date -Iseconds)"
+        for unit in $units; do
+            echo ""
+            echo "=== $unit ==="
+            systemctl show "$unit" \
+                -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainCode \
+                -p NRestarts -p OOMPolicy -p MemoryCurrent -p MemoryMax -p ActiveEnterTimestamp \
+                2>/dev/null || echo "(show failed)"
+        done
+    } > "$svc_dir/unit-properties.txt"
+    _support_log OK "Unit Result/OOM properties"
 
     # Timer status
-    systemctl list-timers 'nftban*' --no-pager > "$svc_dir/timers.txt" 2>&1 || true
+    systemctl list-timers 'nftban*' 'nftband*' --all --no-pager > "$svc_dir/timers.txt" 2>&1 || true
 }
 
 _collect_install_info() {
@@ -434,6 +562,22 @@ _collect_install_info() {
 
     } > "$install_dir/install-type.txt"
     _support_log OK "Install type detection"
+
+    # Machine-written install/upgrade state (INSTALL_STATE / INSTALL_VERSION /
+    # PHASE_REACHED / FAILURE_REASON / REBUILD_EXIT_CODE) — DEGRADED/upgrade diagnosis.
+    local state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
+    if [[ -f "$state_file" ]]; then
+        {
+            echo "# install_state (machine-written; do not edit)"
+            echo "# Source: $state_file"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            cat "$state_file"
+        } > "$install_dir/install_state.txt" 2>&1
+        _support_log OK "install_state"
+    else
+        _support_log SKIP "install_state (not present: $state_file)"
+    fi
 }
 
 _collect_binaries() {
@@ -1558,6 +1702,7 @@ _cmd_support_bundle() {
     # Always collect these - Core diagnostics
     _collect_version "$bundle_dir"
     _collect_system "$bundle_dir"
+    _collect_sysctl "$bundle_dir"
     _collect_install_info "$bundle_dir"
     _collect_binaries "$bundle_dir"
     _collect_distro_config "$bundle_dir"

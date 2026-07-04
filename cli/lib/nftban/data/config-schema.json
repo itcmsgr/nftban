@@ -10029,8 +10029,9 @@
       "description": "Number of backup generations to keep",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_BACKUP_RULES": {
       "type": "string",
@@ -10039,8 +10040,9 @@
       "description": "Backup ruleset location",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_BASELINE_RULES": {
       "type": "string",
@@ -10049,8 +10051,9 @@
       "description": "Minimal safe ruleset for emergency recovery",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_EMERGENCY_RESET_ENABLED": {
       "type": "string",
@@ -10059,8 +10062,9 @@
       "description": "Enable emergency rule reset",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_REBOOT_AUTO_APPLY": {
       "type": "string",
@@ -10069,8 +10073,9 @@
       "description": "Auto-apply rules after reboot",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_REBOOT_GRACE_PERIOD": {
       "type": "string",
@@ -10089,8 +10094,9 @@
       "description": "Enable commit-confirm safety system",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_RESET_ON_BOOT": {
       "type": "string",
@@ -10099,8 +10105,9 @@
       "description": "Auto-reset firewall rules on boot",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_ROLLBACK_ALERT": {
       "type": "string",
@@ -10109,8 +10116,9 @@
       "description": "Send alert on rollback",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_ROLLBACK_ALERT_EMAIL": {
       "type": "string",
@@ -10118,8 +10126,9 @@
       "description": "Alert email for recovery events",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_ROLLBACK_CHECK_INTERVAL": {
       "type": "string",
@@ -10128,8 +10137,9 @@
       "description": "How often timer checks rollback deadline",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_ROLLBACK_FLAG": {
       "type": "string",
@@ -10138,8 +10148,9 @@
       "description": "Rollback flag file location",
       "introduced_in": "1.3.0",
       "category": "security",
-      "config_file": "conf.d/recovery.conf",
-      "active_when": "always"
+      "config_file": null,
+      "active_when": "always",
+      "deprecated": true
     },
     "NFTBAN_SSH_TEST_BEFORE_APPLY": {
       "type": "string",
@@ -14479,6 +14490,72 @@
       "removed_in": null,
       "replaced_by": null,
       "message": "Fail2ban integration removed in v1.0; use Suricata mode instead"
+    },
+    "NFTBAN_BACKUP_GENERATIONS": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_BACKUP_RULES": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_BASELINE_RULES": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_EMERGENCY_RESET_ENABLED": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_REBOOT_AUTO_APPLY": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_RECOVERY_ENABLED": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_RESET_ON_BOOT": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_ROLLBACK_ALERT": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_ROLLBACK_ALERT_EMAIL": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_ROLLBACK_CHECK_INTERVAL": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
+    },
+    "NFTBAN_ROLLBACK_FLAG": {
+      "deprecated_in": "1.201.2",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Documented in recovery.conf historically but never read by code (RECOVERY_LEGACY_RECONCILE). The commit-confirm rollback feature uses hardcoded paths + the 3 live knobs (NFTBAN_REBOOT_GRACE_PERIOD / NFTBAN_SSH_TEST_BEFORE_APPLY / NFTBAN_SSH_TEST_PORT). Removed from the shipped recovery.conf in v1.201.2."
     }
   },
   "renamed": {

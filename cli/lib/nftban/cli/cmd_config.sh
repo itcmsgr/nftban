@@ -66,6 +66,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_doctor.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_config_doctor.sh" || return 1
 fi
 
+# Load config local (read-only .conf.local diagnostics) module — CONFIG_LOCAL_RECOVERY IMPL-2
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_local.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/core/nftban_config_local.sh" || return 1
+fi
+
 # Load IPC library for reload verification
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]]; then
     # shellcheck source=/dev/null
@@ -95,6 +101,11 @@ CONFIGURATION COMMANDS:
   reset <module> KEY               Remove single override
   reset-all <module>               Remove all module overrides
 
+LOCAL OVERRIDE DIAGNOSTICS (read-only):
+  local list [--json]              Enumerate *.conf.local (path/base/sha256/size/mtime/syntax)
+  local validate [--json]          bash -n syntax-check each *.conf.local (never sources)
+  local doctor [--json]            Syntax + schema KEY=VALUE lint (OK/UNKNOWN_KEY/DEPRECATED_KEY/BAD_VALUE)
+
 SERVICE COMMANDS:
   apply [module]                   Apply config to running services
   status                           Show config reload status
@@ -113,6 +124,8 @@ EXAMPLES:
   nftban config get portscan --json   # Module config in JSON
   nftban config set portscan PORTSCAN_BAN_THRESHOLD=15
   nftban config apply portscan   # Apply to running service
+  nftban config local list            # List operator *.conf.local overrides
+  nftban config local doctor --json   # Lint overrides against schema (read-only)
 
 EXIT CODES:
   0   Success — command completed and (if applicable) data emitted
@@ -829,6 +842,11 @@ nftban_cmd_config() {
             nftban_cmd_config_doctor "$@"
             ;;
 
+        local)
+            # CONFIG_LOCAL_RECOVERY IMPL-2 — read-only *.conf.local diagnostics
+            nftban_cmd_config_local "$@"
+            ;;
+
         show)
             nftban_cmd_config_show "$@"
             ;;
@@ -857,7 +875,7 @@ nftban_cmd_config() {
             # full show_usage block — explicit user request, not error.
             _v144_error_with_hint \
                 "Unknown command: $subcommand" \
-                "Valid subcommands: get, set, defaults, overrides, reset, reset-all, audit, validate, doctor, show, diff, status, apply" \
+                "Valid subcommands: get, set, defaults, overrides, reset, reset-all, audit, validate, doctor, local, show, diff, status, apply" \
                 "nftban config help"
             return $?
             ;;

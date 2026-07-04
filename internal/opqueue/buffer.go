@@ -178,7 +178,7 @@ func (buf *SetBuffer) countLocked() int {
 
 // flush extracts and applies pending ops, returns post-barrier ops for re-enqueue
 // This is called by the worker goroutine
-func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int) FlushResult {
+func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int, si SourceIndexer) FlushResult {
 	buf.mu.Lock()
 
 	// Snapshot all state
@@ -236,7 +236,7 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int) FlushResul
 
 	// Apply pending individual ops
 	if len(pending) > 0 {
-		adds, deletes := buf.applyPendingCounted(backend, table, setName, pending, maxBatchSize)
+		adds, deletes := buf.applyPendingCounted(backend, table, setName, pending, maxBatchSize, si)
 		result.Applied += adds + deletes
 		result.Adds += adds
 		result.Deletes += deletes
@@ -289,10 +289,14 @@ func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string
 }
 
 // applyPendingCounted applies individual add/delete operations and returns separate counts
-func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName string, pending map[string]*PendingOp, maxBatchSize int) (adds, deletes int) {
+func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName string, pending map[string]*PendingOp, maxBatchSize int, si SourceIndexer) (adds, deletes int) {
 	isIPv6 := strings.HasSuffix(setName, "_ipv6")
 
 	var toAdd, toDelete []SetElement
+	// v1.209 — keep the PendingOps parallel to toAdd so provenance (op.Source) can be recorded
+	// at the apply boundary after a successful add. Provenance only for persisted blacklist sets.
+	recordProv := si != nil && IsPersistedSet(setName)
+	var toAddOps []*PendingOp
 
 	for _, op := range pending {
 		elem := SetElement{
@@ -303,6 +307,9 @@ func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName
 		switch op.Type {
 		case OpAdd:
 			toAdd = append(toAdd, elem)
+			if recordProv {
+				toAddOps = append(toAddOps, op)
+			}
 		case OpDelete:
 			toDelete = append(toDelete, elem)
 		}
@@ -331,6 +338,21 @@ func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName
 			log.Printf("[opqueue] add %s batch failed: %v", setName, err)
 		} else {
 			adds += end - i
+			// v1.209 — record provenance ONLY after the nft add succeeded (apply boundary).
+			// Without a source we leave the reconcile path's "unknown" fallback untouched.
+			if recordProv {
+				now := time.Now().Unix()
+				for _, pop := range toAddOps[i:end] {
+					if pop.Source == "" {
+						continue
+					}
+					var exp int64
+					if pop.TTL > 0 {
+						exp = now + int64(pop.TTL)
+					}
+					si.AddWithExpiry(setName, pop.Element, pop.Source, exp)
+				}
+			}
 		}
 	}
 

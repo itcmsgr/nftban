@@ -147,7 +147,9 @@ _firewall_substitute_placeholders() {
     # shellcheck disable=SC1090  # dynamic config path
     [[ -f "$_ddos_conf" ]] && source "$_ddos_conf" 2>/dev/null || true
     # shellcheck disable=SC1090  # dynamic config path
-    [[ -f "$_ddos_local" ]] && source "$_ddos_local" 2>/dev/null || true
+    # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+    declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+    _source_local "$_ddos_local"
     # Use DDoS limits if defined, keeping base defaults as fallback
     [[ -n "${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ]] && _ct_ssh="$DDOS_CLASSIC_SSH_CONN_LIMIT"
     [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _ct_http="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
@@ -158,6 +160,188 @@ _firewall_substitute_placeholders() {
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
         "$input" > "$output"
+}
+
+# _firewall_set_elements <conf_file> <set_name> <csv>
+# v1.192.1 inc7: DECLARATIVELY set the `elements = { ... }` of a named set inside
+# the rendered nft config (both the ip and ip6 `nftban` table blocks). Non-empty
+# csv → replace the existing elements line, or insert one if the set has none
+# (e.g. udp_ports_in). Empty csv → remove any elements line (canonical empty set
+# `set X { type ... }` — never `elements = { }`). This is declarative
+# substitution INSIDE the table block, NOT a post-table imperative `flush set`/
+# `add element` fragment (that segfaults `nft -c -f` when combined with the
+# declarative table render — lab-confirmed inc6 on nftables v1.0.x).
+_firewall_set_elements() {
+    local conf="$1" name="$2" csv="$3"
+    csv="${csv#"${csv%%[![:space:]]*}"}"; csv="${csv%"${csv##*[![:space:]]}"}"  # trim
+    # Defense-in-depth: element list must be only digits/commas/spaces.
+    if [[ -n "$csv" && ! "$csv" =~ ^[0-9,\ ]+$ ]]; then
+        echo "ERROR: invalid element list for set $name: '$csv'" >&2
+        return 1
+    fi
+    NFTBAN_SET="$name" NFTBAN_VAL="$csv" perl -0pi -e '
+        my $n = $ENV{NFTBAN_SET}; my $v = $ENV{NFTBAN_VAL};
+        if (length $v) {
+            unless (s/(set \Q$n\E \{[^{}]*?)elements = \{[^}]*\}/$1elements = { $v }/g) {
+                # Empty set (no elements line, e.g. udp_ports_in which carries
+                # only a `comment` line in the template): insert elements on its
+                # OWN line before the closing brace, indented one level deeper
+                # than the brace. Merging onto the preceding (comment) line
+                # produces `comment "..."  elements = {...}` — an nft syntax error.
+                s/(set \Q$n\E \{[^{}]*?)\n([ \t]*)\}/$1\n$2\telements = { $v }\n$2}/g;
+            }
+        } else {
+            s/(set \Q$n\E \{[^{}]*?)\n[ \t]*elements = \{[^}]*\}/$1/g;
+        }
+    ' "$conf" || { echo "ERROR: failed to set elements for $name in $conf" >&2; return 1; }
+    return 0
+}
+
+# _firewall_complete_service_ports <conf_file>
+# v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): make the four service-port sets COMPLETE
+# in the rendered config — DECLARATIVELY, inside the table blocks — using the
+# config authority (the SAME ports.LoadAllPorts daemon sync uses). So the single
+# atomic `nft -f` installs complete tcp_ports_in/out + udp_ports_in/out (ip AND
+# ip6); no post-load gap; durable config complete before any daemon sync.
+#
+# FAIL-CLOSED: returns non-zero on ANY failure (authority binary missing, render
+# error, empty output, no SSH-port authority, empty tcp_ports_in, or substitution
+# failure). The caller MUST abort before `nft -f` — never apply a skeletal
+# {SSH,80,443} ruleset (the residual bug class). No silent skeletal fallback.
+_firewall_complete_service_ports() {
+    local conf="$1"
+    local _bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if [[ ! -x "$_bin" ]]; then
+        echo "ERROR: $_bin missing — cannot render complete service-port sets (refusing skeletal apply)" >&2
+        return 1
+    fi
+
+    # SSH-port authority (fail-closed if none — never render service ports w/o SSH).
+    local _ssh_csv="" _ssh_primary=""
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    if declare -f nftban_detect_ssh_ports >/dev/null 2>&1; then
+        _ssh_csv=$(nftban_detect_ssh_ports 2>/dev/null | grep -E '^[0-9]+$' | paste -sd, - 2>/dev/null) || true
+    fi
+    if declare -f nftban_detect_ssh_primary_port >/dev/null 2>&1; then
+        _ssh_primary=$(nftban_detect_ssh_primary_port 2>/dev/null) || true
+    fi
+    [[ -z "$_ssh_csv" && -n "$_ssh_primary" ]] && _ssh_csv="$_ssh_primary"
+    if [[ -z "$_ssh_csv" ]]; then
+        local _portsd="${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/00-ssh.conf"
+        [[ -f "$_portsd" ]] && _ssh_csv=$(grep -oE '^[0-9]+' "$_portsd" 2>/dev/null | sort -un | paste -sd, - 2>/dev/null) || true
+    fi
+    if [[ -z "$_ssh_csv" ]]; then
+        echo "ERROR: no SSH-port authority — refusing to render service ports (lockout guard)" >&2
+        return 1
+    fi
+
+    # Per-set effective element CSVs from the config authority (KEY=CSV lines).
+    local _elems=""
+    if ! _elems=$(NFTBAN_EFFECTIVE_SSH_PORTS="$_ssh_csv" "$_bin" ports render-effective 2>/dev/null); then
+        echo "ERROR: effective service-port render failed (nftban-core ports render-effective) — existing firewall preserved" >&2
+        return 1
+    fi
+    if [[ -z "$_elems" ]]; then
+        echo "ERROR: effective service-port render produced empty output — refusing skeletal apply" >&2
+        return 1
+    fi
+    local _tin _tout _uin _uout
+    _tin=$(printf '%s\n' "$_elems"  | sed -n 's/^NFTBAN_SVC_TCP_IN=//p')
+    _tout=$(printf '%s\n' "$_elems" | sed -n 's/^NFTBAN_SVC_TCP_OUT=//p')
+    _uin=$(printf '%s\n' "$_elems"  | sed -n 's/^NFTBAN_SVC_UDP_IN=//p')
+    _uout=$(printf '%s\n' "$_elems" | sed -n 's/^NFTBAN_SVC_UDP_OUT=//p')
+    # tcp_ports_in must be non-empty (baseline + SSH) — lockout guard.
+    if [[ -z "${_tin// /}" ]]; then
+        echo "ERROR: effective tcp_ports_in is empty — refusing (lockout guard)" >&2
+        return 1
+    fi
+
+    _firewall_set_elements "$conf" tcp_ports_in  "$_tin"  || return 1
+    _firewall_set_elements "$conf" tcp_ports_out "$_tout" || return 1
+    _firewall_set_elements "$conf" udp_ports_in  "$_uin"  || return 1
+    _firewall_set_elements "$conf" udp_ports_out "$_uout" || return 1
+    return 0
+}
+
+# _firewall_record_transition_health <trigger> <t0_ms>
+# v1.192.1 PR-B: after a SUCCESSFUL transition, record harm-keyed transition
+# health (service-port / floor / table-absent breaches; never cadence). Best
+# effort — must NEVER fail or slow the firewall path.
+_firewall_record_transition_health() {
+    local trigger="${1:-rebuild}" t0="${2:-0}"
+    local helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    [[ -r "$helper" ]] || return 0
+    # shellcheck source=/dev/null
+    source "$helper" 2>/dev/null || return 0
+    declare -f fth_record_transition >/dev/null 2>&1 || return 0
+    local t1 dur=0
+    t1=$(date +%s%3N 2>/dev/null || echo 0)
+    if [[ "$t0" =~ ^[0-9]+$ && "$t1" =~ ^[0-9]+$ && "$t1" -ge "$t0" && "$t0" -gt 0 ]]; then
+        dur=$((t1 - t0))
+    fi
+    fth_record_transition "$trigger" "$dur" >/dev/null 2>&1 || true
+    return 0
+}
+
+# _firewall_reset_transition_health [reason]
+# v1.198.2 PR-A (BUG-FW-TRANSITION-HEALTH-COUNTER-STICKY-NO-RESET): after a CLEAN
+# rebuild (post_status protected|idle, all checks passed ⇒ floor intact + atomic
+# + tables present + baseline re-recorded), clear any STALE cumulative
+# transition-health counters via the gated official reset. fth_reset_transition_health
+# self-verifies there is NO CURRENT breach before zeroing (no masking) and touches
+# ONLY the state JSON (no ban/nft mutation, no reset --force). Best effort — must
+# NEVER fail or slow the firewall path.
+_firewall_reset_transition_health() {
+    local reason="${1:-firewall rebuild: clean re-baseline}"
+    local helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    [[ -r "$helper" ]] || return 0
+    # shellcheck source=/dev/null
+    source "$helper" 2>/dev/null || return 0
+    declare -f fth_reset_transition_health >/dev/null 2>&1 || return 0
+    fth_reset_transition_health "$reason" >/dev/null 2>&1 || true
+    return 0
+}
+
+# _firewall_transition_health_cmd [status|ack|reset]
+# v1.198.2 PR-A: operator surface for the firewall-transition health alarm.
+#   status (default) — print the current CODE|reason from fth_eval_health.
+#   ack|reset        — clear a RESOLVED alarm via the gated fth_reset (refuses if a
+#                      CURRENT breach remains — no masking; state-JSON only, no ban loss).
+_firewall_transition_health_cmd() {
+    local action="${1:-status}"
+    local helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    if [[ ! -r "$helper" ]]; then echo "ERROR: transition-health module not found" >&2; return 1; fi
+    # shellcheck source=/dev/null
+    source "$helper" 2>/dev/null || { echo "ERROR: cannot load transition-health module" >&2; return 1; }
+    case "$action" in
+        status|"")
+            local res code reason
+            res=$(fth_eval_health 2>/dev/null || echo "0|"); code="${res%%|*}"; reason="${res#*|}"
+            case "$code" in
+                0) echo "Firewall transition health: OK" ;;
+                1) echo "Firewall transition health: WARNING — ${reason}" ;;
+                2) echo "Firewall transition health: ERROR — ${reason}" ;;
+                3) echo "Firewall transition health: CRITICAL — ${reason}" ;;
+                *) echo "Firewall transition health: unknown" ;;
+            esac
+            ;;
+        ack|reset|clear)
+            if ! declare -f fth_reset_transition_health >/dev/null 2>&1; then
+                echo "ERROR: reset path unavailable in this build" >&2; return 1
+            fi
+            fth_reset_transition_health "operator ack via 'nftban firewall transition-health $action'"
+            local rc=$?
+            case "$rc" in
+                0) echo "✓ Firewall-transition health alarm cleared (counters reset; live floor verified intact; audit history preserved)." ;;
+                2) echo "✗ Refused: a CURRENT firewall-transition breach still exists — restore the floor first with 'nftban firewall rebuild', then retry." >&2; return 2 ;;
+                *) echo "✗ Reset failed (state-write error)." >&2; return 1 ;;
+            esac
+            ;;
+        *)
+            echo "Usage: nftban firewall transition-health [status|ack]" >&2; return 1 ;;
+    esac
+    return 0
 }
 
 # =============================================================================
@@ -265,6 +449,11 @@ nftban_cmd_firewall() {
         record)
             shift
             firewall_record "$@"
+            ;;
+        transition-health|fw-transition-health)
+            # v1.198.2 PR-A: report or ACK/reset the firewall-transition health alarm.
+            shift
+            _firewall_transition_health_cmd "$@"
             ;;
         takeover)
             shift
@@ -1572,6 +1761,8 @@ firewall_reload() {
     # Reload nftables ruleset AND re-apply NFTBan rules
     # v1.23.0 FIX (P1-17): reload now re-applies NFTBan schema + syncs whitelist
     local quiet=false
+    # v1.192.1 PR-B: transition-health timing.
+    local _fth_t0; _fth_t0=$(date +%s%3N 2>/dev/null || echo 0)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1641,7 +1832,14 @@ FIREWALL_RELOAD_HELP
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema from template..."
         local _tmp_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/.nftables.conf.tmp"
         _firewall_substitute_placeholders "$_template" "$_tmp_conf"
-        if nft -c -f "$_tmp_conf" 2>/dev/null; then
+        # v1.192.1 inc4 (D-V192-RESIDUAL-REBUILD-DROP): complete the service-port
+        # sets INSIDE this atomic reload (config authority). FAIL-CLOSED — if the
+        # effective-port render fails we do NOT apply a skeletal ruleset; the
+        # existing live ruleset is kept (reload becomes a safe no-op).
+        if ! _firewall_complete_service_ports "$_tmp_conf"; then
+            echo "Warning: effective service-port render failed — NOT applying skeletal reload; existing ruleset kept. Try: nftban firewall rebuild" >&2
+            rm -f "$_tmp_conf"
+        elif nft -c -f "$_tmp_conf" 2>/dev/null; then
             mv "$_tmp_conf" "$nftban_conf"
             chmod 640 "$nftban_conf" 2>/dev/null || true
             chown root:nftban "$nftban_conf" 2>/dev/null || true
@@ -1663,7 +1861,10 @@ FIREWALL_RELOAD_HELP
             local _tmp_conf
             _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
             _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"
-            if ! nft -f "$_tmp_conf" 2>&1; then
+            # v1.192.1 inc4: complete service-port sets (fail-closed — no skeletal apply).
+            if ! _firewall_complete_service_ports "$_tmp_conf"; then
+                echo "Warning: effective service-port render failed — NOT applying skeletal reload. Try: nftban firewall rebuild" >&2
+            elif ! nft -f "$_tmp_conf" 2>&1; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
                 echo "Try: nftban firewall rebuild" >&2
             fi
@@ -1785,6 +1986,9 @@ FIREWALL_RELOAD_HELP
     # Step 6 (v1.50.1): Re-sync geoban
     [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
     timeout 120s nftban geoban sync 2>/dev/null || true
+
+    # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
+    _firewall_record_transition_health reload "$_fth_t0"
 
     if [[ "$quiet" == "false" ]]; then
         echo ""
@@ -2027,6 +2231,8 @@ _firewall_rebuild_core() {
     local force=false
     local quiet=false
     local use_new=false
+    # v1.192.1 PR-B: transition-health timing (ms epoch; harmless if date lacks %N).
+    local _fth_t0; _fth_t0=$(date +%s%3N 2>/dev/null || echo 0)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -2148,6 +2354,19 @@ _firewall_rebuild_core() {
             cp "$source_file" "$tmp_conf"
         fi
 
+        # v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): complete the service-port sets
+        # INSIDE the atomic load (config authority). FAIL-CLOSED — if the
+        # effective-port render fails we ABORT before nft -f and preserve the
+        # existing firewall; we MUST NOT apply skeletal {SSH,80,443} sets (that
+        # is the exact residual bug class). No silent skeletal success path.
+        if ! _firewall_complete_service_ports "$tmp_conf"; then
+            echo "ERROR: effective service-port render FAILED — existing firewall preserved (refusing skeletal apply)!" >&2
+            echo "  Fix: ensure ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core is present and SSH port is detectable, then retry: nftban firewall rebuild" >&2
+            # PREVALIDATION_FAILED-class: no kernel mutation, no recovery marker.
+            rm -f "$tmp_conf"
+            return 1
+        fi
+
         # Validate rendered config BEFORE writing to live config
         [[ "$quiet" == "false" ]] && echo "  [3/12] Validating new schema (dry-run)..."
         local validate_output
@@ -2230,10 +2449,19 @@ _firewall_rebuild_core() {
         esac
     done <<< "$ALL_TABLES"
 
-    # Step 5: Flush + load (safe — we validated above)
-    [[ "$quiet" == "false" ]] && echo "  [5/12] Flushing and loading new schema..."
-    nft flush table ip nftban 2>/dev/null || true
-    nft flush table ip6 nftban 2>/dev/null || true
+    # Step 5: Atomic load (safe — we validated above).
+    # V-NFT-REBUILD-ATOMICITY: the rendered $load_conf self-resets within a
+    # SINGLE transaction — it begins with `table ip/ip6 nftban { }` (idempotent
+    # create) then `delete table ip/ip6 nftban` (clears any orphan chains/sets)
+    # then the full table definition. `nft -f` applies the whole file as ONE
+    # atomic transaction, so packets never observe an empty/partial active
+    # ruleset. The prior standalone `nft flush table ip/ip6 nftban` here emptied
+    # the live table in a SEPARATE transaction before this reload, opening a
+    # fail-CLOSED drop window (D-NFTBAN-REBUILD-FLUSH-WINDOW: input chain
+    # collapsed to policy-drop with no accepts, 19→1 rules, until the reload
+    # completed). Do NOT reintroduce a standalone flush/delete of the active
+    # nftban table before this load — see scripts/ci/check-nft-atomicity.sh.
+    [[ "$quiet" == "false" ]] && echo "  [5/12] Loading new schema (atomic single transaction)..."
 
     if ! nft -f "$load_conf" 2>&1; then
         echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
@@ -2248,6 +2476,23 @@ _firewall_rebuild_core() {
     # Step 6: Re-sync system whitelist
     [[ "$quiet" == "false" ]] && echo "  [6/12] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
+
+    # Step 6b (v1.193.0 BUG-REBUILD-DROPS-MANUAL-WHITELIST): the atomic load above
+    # recreated the whitelist_* sets and `nftban whitelist sync` re-applies only
+    # auto-detected SYSTEM IPs — NOT the durable manual whitelist.d entries
+    # (operator `--static` admin IPs, e.g. 99-manual.conf) or manual blacklist
+    # entries. Without this, an explicit `firewall rebuild` dropped manual
+    # whitelist.d IPs from the live set until the next periodic sync (a transient
+    # lockout window that breaks the WL-STATIC durability promise). Reconcile them
+    # now via the daemon LoadWhitelists/LoadBlacklists path — the SAME core
+    # `sync --quick` (whitelist/blacklist only, no feeds/geoban) that firewall_reload
+    # uses (Step 3b), so rebuild and reload converge. No-op if the core binary is
+    # unavailable. Does NOT touch system/trust whitelist behaviour or feed/geoban.
+    local _rb_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if [[ -x "$_rb_reconcile" ]]; then
+        [[ "$quiet" == "false" ]] && echo "    Reconciling durable whitelist.d/blacklist.d entries..."
+        "$_rb_reconcile" sync --quick >/dev/null 2>&1 || true
+    fi
 
     # Step 7: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
     [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist from backup..."
@@ -2515,6 +2760,13 @@ _firewall_rebuild_core() {
             # v1.96: SUCCESS — clear any stale recovery marker
             # idle = structurally equivalent to protected (no traffic observed yet)
             declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear
+            # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
+            _firewall_record_transition_health rebuild "$_fth_t0"
+            # v1.198.2 PR-A: a clean rebuild restored the floor + re-recorded the
+            # baseline atomically — clear any STALE cumulative transition-health
+            # alarm. Gated: fth_reset refuses if a CURRENT breach remains (no mask),
+            # touches only the state JSON (no ban loss).
+            _firewall_reset_transition_health "firewall rebuild: clean re-baseline (floor intact, atomic, baseline re-recorded)"
             return 0
             ;;
         degraded)
@@ -3342,6 +3594,8 @@ Validation & Diagnostics:
   logs          View and filter firewall logs
   record        Snapshot current nft schema to JSON for audit/comparison
   ssh-audit     Report sshd listeners vs ssh_ports vs declared external admin ports
+  transition-health  Report (status) or acknowledge (ack) the firewall-transition
+                health alarm; 'ack' clears a RESOLVED alarm (refuses if breached)
 
 Operations:
   init          Initialize firewall tables (alias for rebuild)
@@ -3369,6 +3623,10 @@ Examples:
 
   # SSH admin-port audit (external :55000->:22 redirect class)
   nftban firewall ssh-audit            # sshd listeners vs ssh_ports vs declared
+
+  # Firewall-transition health alarm (v1.198.2)
+  nftban firewall transition-health        # show current verdict
+  nftban firewall transition-health ack    # clear a RESOLVED alarm (gated; no ban loss)
 
   # Recovery operations
   nftban firewall rebuild              # Fix corruption

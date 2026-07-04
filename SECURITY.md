@@ -28,11 +28,11 @@ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall ma
 
 | Version | Support Status |
 |---------|----------------|
-| 1.190.x | **Current** - Full support (security fixes, bug fixes, features) |
-| 1.189.x | Security fixes only |
-| < 1.189 | **Not supported** - upgrade immediately |
+| 1.195.x | **Current** - Full support (security fixes, bug fixes, features) |
+| 1.194.x | Security fixes only |
+| < 1.194 | **Not supported** - upgrade immediately |
 
-**Recommendation:** Always run the latest stable release (currently v1.190.1) for optimal security and performance.
+**Recommendation:** Always run the latest stable release (currently v1.195.0) for optimal security and performance.
 
 ### Supported Platforms by Tier
 

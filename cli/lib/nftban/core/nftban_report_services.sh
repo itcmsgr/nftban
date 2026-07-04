@@ -25,7 +25,9 @@ umask 027
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
-source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
+# IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+_source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
 # GLOBALS

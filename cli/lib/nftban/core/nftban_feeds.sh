@@ -1064,8 +1064,13 @@ EOF
         echo "}" >> "$nft_file"
     fi
 
-    # Atomic reload using IPC
-    if nft_ipc_apply_ruleset "$nft_file" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
+    # v1.213.0 SET_APPLY_SINGLE_WRITER (Design A): the durable per-feed source
+    # (/var/lib/nftban/feeds/*.txt) is already written upstream; trigger a FULL
+    # daemon sync (which reconciles blacklist_ipv4/_ipv6 from those same durable
+    # files) instead of pushing an additive add-element. On IPC failure fall back
+    # to the legacy additive apply of "$nft_file" (mixed-version rollout safety),
+    # emitting a visible WARN. Ordering is write-durable-source-THEN-sync.
+    if nft_ipc_sync_or_apply "feeds" "$nft_file" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
         nftban_feeds_log INFO "Sync complete: $ipv4_count IPv4, $ipv6_count IPv6 (CIDRs merged)"
     else
         nftban_feeds_log ERROR "Atomic reload failed"

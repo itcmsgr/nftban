@@ -30,6 +30,7 @@ on:
     branches: [main, master, develop]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:  # allow on-branch validation of architecture gates pre-PR
 
 concurrency:
   group: ci-arch-${{ github.ref }}
@@ -54,6 +55,45 @@ jobs:
         env:
           # Explicit: NEVER use --warn-all in CI (would disable enforcement)
           WARN_ALL: "0"
+
+      # v1.192 transition-atomicity class (D-NFTBAN-SOAK-...-DROP-WINDOW + F-FEED/F-GEO):
+      # forbid flush/delete-then-repopulate in a separate transaction on the live
+      # nftban table (V-NFT-REBUILD-ATOMICITY) or shared sets (V-NFT-SET-REFRESH-ATOMICITY).
+      - name: Check nft transition atomicity
+        run: ./scripts/ci/check-nft-atomicity.sh
+
+      # v1.194 (8C): protection-claim matrix gate. Fails the PR if the matrix
+      # regresses — wrong row count, missing/empty fields, invalid OWNER/MODE/
+      # CLASSIFICATION enum, a claimed-enforce row orphaned to owner=NONE
+      # (not unowned/deferred), or a dead knob (WordPressXMLRPC/WordPressWPLogin)
+      # represented as a live ban authority.
+      - name: Check protection-claim matrix (8C)
+        run: ./scripts/ci/check-protection-claim-matrix.sh
+
+      # v1.196 (PR-F): IPv4/IPv6 parity. Fails if a family-keyed nft set/check
+      # exists for one family without the other (both ip+ip6 nftban tables; every
+      # *_ipv4 has *_ipv6 and the canonical set inventories of the two tables match),
+      # or if a family-sensitive matrix fixture silently covers only one family
+      # (without a PARITY-GUARD-EXEMPT marker).
+      - name: Check IPv4/IPv6 parity (PR-F)
+        run: ./scripts/ci/check-ipv4-ipv6-parity.sh
+
+      # v1.197 (PR-LICENSE/L1): Core license-metadata gate. Fails the PR if the
+      # RPM spec generator or the rendered Core spec declares a copyleft
+      # (GPL/LGPL/AGPL) license in its License field (the historical copyleft
+      # defect), if the spec stops shipping %license LICENSE, or if a high-level
+      # public surface (README, LICENSE, NOTICE.md, TRADEMARK.md, Dockerfile OCI
+      # label) self-declares a copyleft license. Comparative or blocked-policy
+      # mentions are allowed.
+      - name: Check Core license metadata (PR-LICENSE)
+        run: ./scripts/ci/check-license-metadata.sh
+
+      # v1.205 CLI surface parity: registry ↔ bash-completion ↔ dispatch (authority
+      # = shell dispatch). Classifies MISSING/STALE/RETIRED/ALIAS_NOT_MARKED/etc.;
+      # fails on real drift (e.g. retired 'gui' resurfacing in completion, a real
+      # dispatch command missing from the registry, an unmarked alias/deprecated verb).
+      - name: Check CLI surface parity (registry/completion/dispatch)
+        run: ./scripts/ci/check-cli-surface-parity.sh
 
       - name: Check netlink import policy
         run: |
@@ -490,6 +530,12 @@ jobs:
       # G2-3: Schema version guard — Go source matches CLI expectations
       - name: Schema version guard (G2-3)
         run: bash cli/lib/nftban/tests/test_schema_version_guard.sh
+
+      # v1.194 (8C): protection-claim matrix harness — runs the static guard
+      # (source tree) + the per-claim hermetic owner-bans fixtures referenced in
+      # the matrix FIXTURE column. Complements the standalone guard step above.
+      - name: Protection-claim matrix harness (8C)
+        run: bash cli/lib/nftban/tests/protection_claim_matrix_v194_test.sh
 
       # =====================================================================
       # v1.85 M85-3: Module Completeness Gates

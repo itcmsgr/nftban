@@ -1332,7 +1332,8 @@ tunnel:
 
 trust:
   category: active_protection
-  description: "Trusted provider IP ranges (CDN, cloud)"
+  aliases: ["cloudflare"]
+  description: "Trusted provider IP ranges (CDN, cloud). NOTE: 'cloudflare' is a legacy top-level alias of 'trust' (sbin/nftban dispatch); kept for discovery/back-compat."
   risk: advanced
   audience: [cli]
   capability: policy_change
@@ -1473,7 +1474,8 @@ geoban:
         --json: {type: bool, description: "Output in JSON format"}
     update:
       mutates: true
-      description: "Update all active countries"
+      aliases: [refresh]
+      description: "Update all active countries ('refresh' is an alias — same dispatch arm/handler)"
     config:
       mutates: false
       description: "Show GeoBan configuration"
@@ -1535,6 +1537,49 @@ firewall:
       mutates: true
       requires_root: true
       description: "Reload nftables ruleset"
+    status:
+      mutates: false
+      description: "Show firewall structure/authority status"
+    rebuild:
+      mutates: true
+      requires_root: true
+      capability: enforcement
+      description: "Atomically rebuild the live nftables ruleset from rendered config (single nft -f transaction)"
+    reset:
+      mutates: true
+      requires_root: true
+      capability: enforcement
+      description: "Reset the nftban firewall to a clean baseline (DESTRUCTIVE to current live ruleset state)"
+    conflicts:
+      mutates: false
+      description: "Detect conflicting external firewalls (fail2ban, ufw, firewalld, csf) — delegates to health conflicts"
+    restore:
+      mutates: true
+      requires_root: true
+      capability: enforcement
+      description: "Re-arm a previously-disarmed external firewall (reverse of takeover). Target required."
+      examples:
+        - "nftban firewall restore csf"
+        - "nftban firewall restore fail2ban"
+        - "nftban firewall restore firewalld"
+        - "nftban firewall restore ufw"
+      arguments:
+        target:
+          type: enum
+          values: [csf, fail2ban, firewalld, ufw]
+          required: true
+          description: "External firewall to re-arm/unmask (the takeover target)"
+    record:
+      mutates: true
+      requires_root: true
+      description: "Record/refresh the firewall ruleset fingerprint baseline (SEC-RULEFP)"
+    transition-health:
+      mutates: conditional
+      requires_root: conditional
+      description: "Report or acknowledge the firewall-transition health alarm. 'status' (default) prints the current verdict; 'ack' clears a RESOLVED alarm via the gated reset (refuses if a current breach remains; touches only state JSON, no ban loss). v1.198.2 PR-A."
+      examples:
+        - "nftban firewall transition-health"
+        - "nftban firewall transition-health ack"
     takeover:
       mutates: true
       requires_root: true
@@ -1791,6 +1836,21 @@ config:
     status:
       mutates: false
       description: "Show config reload status"
+    local:
+      mutates: false
+      capability: config_view
+      introduced_in: "1.201.4"
+      description: "Read-only diagnostics for operator *.conf.local overrides (list/validate/doctor)"
+      subcommands:
+        list:
+          mutates: false
+          description: "Enumerate *.conf.local overrides (path/base/sha256/size/mtime/syntax)"
+        validate:
+          mutates: false
+          description: "bash -n syntax-check each *.conf.local (never sources/executes)"
+        doctor:
+          mutates: false
+          description: "Syntax + schema KEY=VALUE lint (OK/UNKNOWN_KEY/DEPRECATED_KEY/BAD_VALUE); read-only by design"
   allowlist:
     paths:
       - /etc/nftban/nftban.conf
@@ -1833,6 +1893,10 @@ port:
       notes:
         - "Shows which ports are listening and which are allowed in firewall"
         - "Compares active listeners against nftables whitelist rules"
+    list:
+      mutates: false
+      deprecated: true
+      description: "DEPRECATED alias of 'status' (dispatch arm 'status|list' maps to the same handler)"
     detailed:
       mutates: false
       description: "Show detailed status with BIND address and PROCESS columns"
@@ -3242,6 +3306,23 @@ module:
     - "nftban module status"
     - "nftban module --json"
 
+export:
+  category: intelligence_reporting
+  aliases: ["stats-export"]
+  description: "Export a stats snapshot — convenience top-level alias of 'nftban stats export' (sbin dispatch)."
+  risk: core
+  audience: [cli]
+  capability: report_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban export"
+    - "nftban export --json"
+
 fhs:
   category: developer_sysadmin
   description: "Filesystem Hierarchy Standard compliance check"
@@ -3255,8 +3336,16 @@ fhs:
   output_modes: [json, text]
   has_json: true
   examples:
-    - "nftban fhs check"
+    - "nftban fhs status"
     - "nftban fhs status --json"
+  subcommands:
+    status:
+      mutates: false
+      description: "Show FHS compliance status (paths/ownership/permissions)"
+    check:
+      mutates: false
+      deprecated: true
+      description: "DEPRECATED alias of 'status' (dispatch maps 'check' → status)"
 
 timers:
   category: developer_sysadmin

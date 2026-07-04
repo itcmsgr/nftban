@@ -43,6 +43,9 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null
 # v1.177: shared panel-aware HTTP access-log discovery (DirectAdmin/cPanel/Plesk).
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_http_logs.sh" 2>/dev/null || true
+# v1.207 — smart-adaptive controller (pressure/backlog/mode/health/recording-discipline).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_botscan_adaptive.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION
@@ -65,7 +68,7 @@ nftban_botscan_load_config() {
     # auto-detect (never silently blind). Legacy single-path vars above stay honored.
     : "${BOTSCAN_LOG_PATHS:=}"
     # v1.178-A: read-authority spool produced by nftban-botscan-collector.service.
-    : "${BOTSCAN_SPOOL_DIR:=/run/nftban/botscan}"
+    : "${BOTSCAN_SPOOL_DIR:=/var/lib/nftban/botscan/spool}"
     : "${BOTSCAN_DEFAULT_THRESHOLD:=5}"
     : "${BOTSCAN_DEFAULT_WINDOW:=60}"
     : "${BOTSCAN_DEFAULT_BAN_SHORT:=1800}"
@@ -87,6 +90,19 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_ENDPOINT_FLOOD_WINDOW:=60}"
     : "${BOTSCAN_ENDPOINT_FLOOD_BAN:=3600}"
     : "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:=xmlrpc.php wp-login.php}"
+    # v1.192.2 — authenticated WordPress admin/editor context gate (BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE).
+    # A legitimate logged-in admin using Gutenberg/Elementor/wp-admin legitimately trips the WP
+    # REST/admin SCANNER patterns (the block editor fetches /wp-json/wp/v2/users → EXP_WPREST;
+    # editor calls trip WS_WPADMIN). When this IP proves a successful login THIS cycle
+    # (POST <login_path> → 302 redirect = creds accepted; a failed/probing login returns 200),
+    # suppress ONLY those WP-admin-context pattern hits for this IP in analyze(). This is a
+    # per-IP CONTEXT gate, NOT a global threshold/weight change: unauthenticated /wp-json
+    # enumeration, exploit/webshell/CVE patterns, 404-flood and endpoint-flood are UNCHANGED
+    # and still ban (mixed exploit still bans). Owner: BotScan (same access-log event class it
+    # already parses; uses the already-available status field — no new source/identity).
+    : "${BOTSCAN_WPADMIN_CONTEXT_GATE:=true}"
+    : "${BOTSCAN_WPADMIN_CONTEXT_PATTERNS:=EXP_WPREST WS_WPADMIN}"  # pattern names suppressed ONLY under proven admin session
+    : "${BOTSCAN_WPADMIN_LOGIN_PATH:=/wp-login.php}"
     # v1.187 Lane A — BOTSCAN-SCAN-THROUGHPUT. Forward-cursor per-file per-cycle window
     # (drains backlog forward instead of the v1.185 64 KiB tail-bias), a C-speed candidate
     # prefilter before the per-line bash matcher, and an independent 404 fixed-tail re-read
@@ -119,7 +135,9 @@ nftban_botscan_load_config() {
     # shellcheck source=/dev/null
     source "$config_file" 2>/dev/null || true
     # shellcheck source=/dev/null
-    source "$config_local" 2>/dev/null || true
+    # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+    declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+    _source_local "$config_local"
     return 0
 }
 
@@ -138,6 +156,7 @@ declare -gA _BOTSCAN_PATTERNS          # Pattern name -> pattern definition
 declare -gA _BOTSCAN_IP_CRAWLER_CLAIM  # v1.189 FCrDNS: IP -> claimed search-crawler family (UA-claimed; verified at analyze-time)
 declare -gA _BOTSCAN_IP_ENDPOINT_COUNT      # BOTSCAN-ENDPOINT-FLOOD: "ip|endpoint" -> POST count (status-independent)
 declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> first seen ts (cycle-scoped, reset by count_404_tail)
+declare -gA _BOTSCAN_IP_ADMIN_SESSION       # v1.192.2: IP -> "1" if a successful WP login (POST login_path → 302) seen this cycle (authenticated WP-admin context gate)
 declare -ga _BOTSCAN_ENDPOINT_FLOOD_LIST    # parsed endpoint tokens (rebuilt per cycle)
 
 # Initialize state
@@ -151,6 +170,7 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_CRAWLER_CLAIM=()
     _BOTSCAN_IP_ENDPOINT_COUNT=()
     _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
+    _BOTSCAN_IP_ADMIN_SESSION=()
     _BOTSCAN_ENDPOINT_FLOOD_LIST=()
     # IFS=' ' is REQUIRED: the module runs under strict IFS=$'\n\t' (no space) → a bare
     # read -ra would yield ONE token "xmlrpc.php wp-login.php" that never matches (v1.186.1 class).
@@ -160,6 +180,85 @@ nftban_botscan_init_state() {
 # =============================================================================
 # PATTERN MANAGEMENT
 # =============================================================================
+
+# v1.214.0 OPEN_BOTSCAN_PATTERN_DELIMITER_FIX — record-parse constants.
+# The 8-field .patterns record NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+# is '|'-delimited, but the PATTERN field legally contains regex alternation '|'. A naive
+# `IFS='|' read` mis-splits any '|'-bearing pattern (3 shipped: EXP_CGIBIN/EXP_SQLBACKUP/
+# SCAN_BACKUP_SQL) → truncated regex → RE2 skips it (dead). The parser below peels the record
+# from both ends so the pattern (the middle) is preserved intact, and the INTERNAL
+# _BOTSCAN_PATTERNS representation is joined/split on ASCII Unit Separator (\x1f) — which a
+# regex can never contain — so the hot-path/threshold/prefilter re-splits never re-corrupt it.
+readonly _BS_US=$'\x1f'                                        # internal '|'-safe field delimiter
+readonly _BS_VALID_MATCH_TYPES=" url-404 url-any url-get url-post useragent "  # supported set (matcher case at match_url_g)
+
+# _botscan_parse_record <record-line> — anchored parse of ONE shipped/operator .patterns
+# record. Peels NAME from the FRONT (first '|') and the 6 constrained trailing fields from
+# the BACK (description,enabled,ban,window,threshold,match_type via repeated '##*|'/'%|*');
+# whatever remains in the middle is the pattern (may legally contain '|'). Strips CRLF '\r'.
+# On success sets globals _BSREC_{name,pattern,match_type,threshold,window,ban,enabled,
+# description} and returns 0. Returns 1 for a blank/comment line (skip silently). Returns 2
+# for a malformed record (too few fields, or a peeled constrained field fails validation —
+# e.g. a stray '|' in the free-text description shifted the trailing fields): emits a VISIBLE
+# WARN (stderr + logger) and the caller MUST skip it — NEVER store a corrupted record.
+_botscan_parse_record() {
+    local line="${1-}"
+    line="${line%$'\r'}"                                   # strip trailing CR (CRLF files)
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && return 1
+
+    # A valid record has >= 7 '|' (8 fields; a '|'-alternation pattern only adds more). Fewer
+    # => the record cannot be peeled into 8 fields → malformed.
+    local _pipes="${line//[!|]/}"
+    if [[ "${#_pipes}" -lt 7 ]]; then
+        _botscan_warn_bad_record "${line%%|*}" "too few fields (< 8)"
+        return 2
+    fi
+
+    local rest description enabled ban window threshold match_type pattern
+    _BSREC_name="${line%%|*}"; rest="${line#*|}"
+    description="${rest##*|}"; rest="${rest%|*}"
+    enabled="${rest##*|}";     rest="${rest%|*}"
+    ban="${rest##*|}";         rest="${rest%|*}"
+    window="${rest##*|}";      rest="${rest%|*}"
+    threshold="${rest##*|}";   rest="${rest%|*}"
+    match_type="${rest##*|}";  rest="${rest%|*}"
+    pattern="$rest"                                        # the middle — legally '|'-bearing
+
+    # Constrained-field validation: a stray '|' in the description would shift the trailing
+    # fields, so validate them (and a non-empty pattern) → a shifted record fails VISIBLY
+    # instead of being silently stored corrupted.
+    local why=""
+    if   [[ -z "$pattern" ]]; then why="empty pattern"
+    elif [[ "$_BS_VALID_MATCH_TYPES" != *" $match_type "* ]]; then why="unknown match_type '$match_type'"
+    elif [[ ! "$threshold" =~ ^[0-9]+$ ]]; then why="non-integer threshold '$threshold'"
+    elif [[ ! "$window"    =~ ^[0-9]+$ ]]; then why="non-integer window '$window'"
+    elif [[ ! "$ban"       =~ ^[0-9]+$ ]]; then why="non-integer ban '$ban'"
+    elif [[ "$enabled" != "true" && "$enabled" != "false" ]]; then why="non-boolean enabled '$enabled'"
+    fi
+    if [[ -n "$why" ]]; then
+        _botscan_warn_bad_record "$_BSREC_name" "$why"
+        return 2
+    fi
+
+    _BSREC_pattern="$pattern"
+    _BSREC_match_type="$match_type"
+    _BSREC_threshold="$threshold"
+    _BSREC_window="$window"
+    _BSREC_ban="$ban"
+    _BSREC_enabled="$enabled"
+    _BSREC_description="$description"
+    return 0
+}
+
+# Visible malformed-record warning (stderr + syslog, non-fatal).
+_botscan_warn_bad_record() {
+    local name="${1:-?}" why="${2:-invalid}"
+    printf "[WARN] botscan: malformed pattern record '%s' — skipped (%s)\n" "$name" "$why" >&2
+    if command -v logger >/dev/null 2>&1; then
+        logger -t nftban-botscan -p user.warning "malformed pattern record '$name' skipped ($why)" 2>/dev/null || true
+    fi
+    return 0
+}
 
 # Load patterns from file
 # Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
@@ -189,16 +288,19 @@ nftban_botscan_load_patterns() {
     for pattern_file in "$patterns_dir"/*.patterns; do
         [[ -f "$pattern_file" ]] || continue
 
-        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
-            # Skip comments and empty lines
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            # v1.214.0 anchored parse (rc1=blank/comment skip, rc2=malformed WARN+skip).
+            _botscan_parse_record "$_bs_line" || continue
 
             # override.local wins over the shipped ENABLED column (no-clobber).
-            local eff_enabled="${_override[$name]:-$enabled}"
+            local eff_enabled="${_override[$_BSREC_name]:-$_BSREC_enabled}"
             [[ "$eff_enabled" != "true" ]] && continue
 
-            # Store pattern: name -> "pattern|match_type|threshold|window|ban|description"
-            _BOTSCAN_PATTERNS["$name"]="${pattern}|${match_type}|${threshold}|${window}|${ban}|${description}"
+            # v1.214.0 — store name -> "pattern<US>match_type<US>threshold<US>window<US>ban<US>description"
+            # with an ASCII Unit Separator join so the pattern's own '|' survives every downstream
+            # re-split (hot-path :755, threshold :906, prefilter build :1004).
+            _BOTSCAN_PATTERNS["$_BSREC_name"]="${_BSREC_pattern}${_BS_US}${_BSREC_match_type}${_BS_US}${_BSREC_threshold}${_BS_US}${_BSREC_window}${_BS_US}${_BSREC_ban}${_BS_US}${_BSREC_description}"
             pattern_count=$((pattern_count + 1))
 
         done < "$pattern_file"
@@ -226,17 +328,18 @@ nftban_botscan_list_patterns() {
             [[ "$file_category" != "$category" ]] && continue
         fi
 
-        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
 
             # Filter
             case "$filter" in
-                enabled)  [[ "$enabled" != "true" ]] && continue ;;
-                disabled) [[ "$enabled" == "true" ]] && continue ;;
+                enabled)  [[ "$_BSREC_enabled" != "true" ]] && continue ;;
+                disabled) [[ "$_BSREC_enabled" == "true" ]] && continue ;;
             esac
 
             printf "%-20s %-8s %-10s %-6s %-6s %-6s %s\n" \
-                "$name" "$enabled" "$match_type" "$threshold" "$window" "$ban" "${description:0:40}"
+                "$_BSREC_name" "$_BSREC_enabled" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" "${_BSREC_description:0:40}"
 
         done < "$pattern_file"
     done
@@ -339,8 +442,10 @@ nftban_botscan_resolve_name() {
     local f name pattern lc_name lc_pat
     for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
         [[ -f "$f" ]] || continue
-        while IFS='|' read -r name pattern _; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
+            name="$_BSREC_name"; pattern="$_BSREC_pattern"
             lc_name=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
             lc_pat=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
             if [[ "$q" == "$lc_name" || "$q" == "$lc_pat" ]]; then
@@ -424,20 +529,21 @@ nftban_botscan_bots() {
     fi
     printf "%-22s %-9s %-9s %-10s %s\n" "NAME" "CATEGORY" "EFFECTIVE" "MATCH" "DESCRIPTION"
     printf '%s\n' "$(printf '=%.0s' {1..92})"
-    local f cat name pattern match_type threshold window ban enabled description eff
+    local f cat eff
     for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
         [[ -f "$f" ]] || continue
         cat=$(basename "$f" .patterns)
         [[ -n "$category" && "$cat" != "$category" ]] && continue
-        while IFS='|' read -r name pattern match_type threshold window ban enabled description; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
-            eff="${_ov[$name]:-$enabled}"
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
+            eff="${_ov[$_BSREC_name]:-$_BSREC_enabled}"
             case "$filter" in
                 enabled)  [[ "$eff" != "true" ]] && continue ;;
                 disabled) [[ "$eff" == "true" ]] && continue ;;
             esac
-            local mark="$eff"; [[ -n "${_ov[$name]:-}" ]] && mark="${eff}*"
-            printf "%-22s %-9s %-9s %-10s %s\n" "$name" "$cat" "$mark" "$match_type" "${description:0:38}"
+            local mark="$eff"; [[ -n "${_ov[$_BSREC_name]:-}" ]] && mark="${eff}*"
+            printf "%-22s %-9s %-9s %-10s %s\n" "$_BSREC_name" "$cat" "$mark" "$_BSREC_match_type" "${_BSREC_description:0:38}"
         done < "$f"
     done
     echo ""
@@ -462,7 +568,7 @@ nftban_botscan_discover_logs() {
     # content the scanner cannot obtain directly on DA/cPanel/0640 hosts. If no spool
     # (collector absent/empty), fall back to direct discovery (legacy behavior; will
     # report DEGRADED on blocked hosts via the v1.177 diagnostic).
-    local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}"
+    local _spool="${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}"
     if [[ -d "$_spool" ]]; then
         local -a _sp=()
         for f in "$_spool"/*; do [[ -f "$f" && -r "$f" && -s "$f" ]] && _sp+=("$f"); done
@@ -488,6 +594,35 @@ nftban_botscan_discover_logs() {
 # the first discovered log, or "" if none.
 nftban_botscan_find_log() {
     nftban_botscan_discover_logs 2>/dev/null | head -1
+}
+
+# v1.209.3 — reap a fully-consumed collector spool file (cursor-coordinated). The
+# disk-backed spool (off tmpfs) is bounded by reaping each file once the forward
+# scanner cursor has drained it to EOF. SAFETY GATES (all must hold):
+#   1. the file is UNDER the spool dir — never deletes a real access log;
+#   2. the file is non-empty and the scanner's persisted offset (inode:offset state
+#      written by nftban_http_read_incremental) is >= the file size → fully read.
+# The caller runs only on the batch/processor path, which holds the processor lock
+# the collector also takes — so no collector append can race this delete. After
+# reaping we drop BOTH the spool file and its cursor; the next collector cycle
+# recreates the file fresh and the scanner reads it from offset 0 (collector source
+# offsets are independent) → no duplicate, no loss. Returns 0 if reaped, 1 otherwise.
+nftban_botscan_reap_consumed_spool() {
+    local f="$1" spooldir="$2" offdir="$3"
+    [[ -n "$spooldir" && "$f" == "$spooldir"/* ]] || return 1   # GATE 1: spool files only
+    local k state off sz
+    k="$(printf '%s' "$f" | tr '/' '_')"
+    state="${offdir}/${k}"
+    off=0
+    # statefile is "inode:offset"; we only need the offset (drop the inode field).
+    [[ -r "$state" ]] && IFS=':' read -r _ off < "$state" 2>/dev/null
+    [[ "$off" =~ ^[0-9]+$ ]] || off=0
+    sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+    if [[ "${sz:-0}" -gt 0 && "${off:-0}" -ge "${sz:-0}" ]]; then   # GATE 2: fully consumed
+        rm -f "$f" "$state" 2>/dev/null || true
+        return 0
+    fi
+    return 1
 }
 
 # Parse access log line
@@ -629,6 +764,17 @@ nftban_botscan_is_whitelisted() {
     [[ "$ip" =~ ^[Ff][CcDd] ]] && return 0
     [[ "$ip" =~ ^[Ff][Ee]80: ]] && return 0
 
+    # v1.209.x F2: daemon-published never-ban exemption list (admin/management/whitelist/
+    # system/live-SSH). Cheap EXACT-match — no nft read needed, so it works under the
+    # unprivileged scanner (which cannot query the nft whitelist set on most hosts). This
+    # is early signal-suppression / defense-in-depth ONLY; range-aware coverage and the
+    # authoritative never-ban invariant are enforced by the daemon at the ban-apply
+    # boundary (Backend.Ban), independent of this gate.
+    local _exempt_file="${BOTSCAN_EXEMPT_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/exempt.list}"
+    if [[ -r "$_exempt_file" ]] && grep -qxF "$ip" "$_exempt_file" 2>/dev/null; then
+        return 0
+    fi
+
     # Check global whitelist
     if [[ "$BOTSCAN_USE_GLOBAL_WHITELIST" == "true" ]]; then
         if type -t nftban_is_whitelisted &>/dev/null; then
@@ -692,7 +838,7 @@ nftban_botscan_match_url_g() {
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
         def="${_BOTSCAN_PATTERNS[$name]}"
 
-        IFS='|' read -r pattern match_type _ _ _ _ <<< "$def"
+        IFS="$_BS_US" read -r pattern match_type _ _ _ _ <<< "$def"  # v1.214.0 '|'-safe internal split
 
         # Check match type
         case "$match_type" in
@@ -746,6 +892,20 @@ nftban_botscan_process_entry() {
     nftban_botscan_is_whitelisted "$ip" "$ua" && return 0
     nftban_botscan_is_path_whitelisted "$url" && return 0
 
+    # v1.192.2 — authenticated WP-admin context signal. A successful WordPress login
+    # (POST <login_path> → 302 redirect to wp-admin) marks this IP as an authenticated
+    # admin for THIS cycle, so analyze() can context-gate the WP REST/admin scanner
+    # patterns its editor legitimately trips. 302 = credentials accepted; a failed or
+    # probing login returns 200 (the form re-rendered), so this never flags brute-force.
+    # Status field is already parsed; no new log source. The URL carries the query
+    # (e.g. /wp-login.php?redirect_to=...), so match the path prefix.
+    if [[ "${BOTSCAN_WPADMIN_CONTEXT_GATE:-true}" == "true" && "$method" == "POST" && "$status" == "302" ]]; then
+        local _bs_lp="${BOTSCAN_WPADMIN_LOGIN_PATH:-/wp-login.php}"
+        case "$url" in
+            "$_bs_lp"|"$_bs_lp"\?*) _BOTSCAN_IP_ADMIN_SESSION["$ip"]=1 ;;
+        esac
+    fi
+
     # Track 404s
     if [[ "$BOTSCAN_404_TRACKING" == "true" && "$status" == "404" ]]; then
         _BOTSCAN_IP_404_COUNT["$ip"]=$(( ${_BOTSCAN_IP_404_COUNT[$ip]:-0} + 1 ))
@@ -782,6 +942,35 @@ nftban_botscan_analyze() {
         local time_window=$((now - first_seen))
         local patterns="${_BOTSCAN_IP_PATTERNS[$ip]:-}"
 
+        # v1.192.2 — authenticated WP-admin context gate. If this IP proved a successful
+        # login this cycle (POST <login_path> → 302; set in process_entry), drop ONLY the
+        # WP-admin-context scanner pattern hits (BOTSCAN_WPADMIN_CONTEXT_PATTERNS, default
+        # EXP_WPREST WS_WPADMIN) from its matched set and recompute hits — a real admin's
+        # Gutenberg/Elementor editor legitimately trips those. Exploit/webshell/CVE and any
+        # other scanner patterns are KEPT (mixed exploit still bans); 404-flood and
+        # endpoint-flood (separate loops below) are untouched; unauthenticated IPs (no 302)
+        # are never gated, so /wp-json enumeration still bans. Per-IP context, NOT a global
+        # pattern weakening.
+        if [[ "${BOTSCAN_WPADMIN_CONTEXT_GATE:-true}" == "true" && -n "${_BOTSCAN_IP_ADMIN_SESSION[$ip]:-}" && -n "$patterns" ]]; then
+            local -a _ctx_all=() _ctx_kept=() _ctx_supp=()
+            local _ctx_pn
+            IFS=$' \t\n' read -ra _ctx_all <<< "$patterns"
+            for _ctx_pn in "${_ctx_all[@]}"; do
+                [[ -z "$_ctx_pn" ]] && continue
+                case " ${BOTSCAN_WPADMIN_CONTEXT_PATTERNS:-EXP_WPREST WS_WPADMIN} " in
+                    *" $_ctx_pn "*) _ctx_supp+=("$_ctx_pn") ;;
+                    *) _ctx_kept+=("$_ctx_pn") ;;
+                esac
+            done
+            if [[ "${#_ctx_supp[@]}" -gt 0 ]]; then
+                patterns="${_ctx_kept[*]}"
+                hits="${#_ctx_kept[@]}"
+                [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] wp-admin context gate: $ip authenticated (wp-login 302) — suppressed ${#_ctx_supp[@]} WP-admin pattern hit(s) [${_ctx_supp[*]}], ${#_ctx_kept[@]} hit(s) remain" >&2
+                # Nothing left after suppression → no scanner-pattern ban for this IP.
+                [[ "${#_ctx_kept[@]}" -eq 0 ]] && continue
+            fi
+        fi
+
         # Get threshold from most severe matched pattern
         local threshold="$BOTSCAN_DEFAULT_THRESHOLD"
         local ban_duration="$BOTSCAN_DEFAULT_BAN_SHORT"
@@ -800,7 +989,7 @@ nftban_botscan_analyze() {
             [[ -z "$def" ]] && continue
 
             local p_threshold p_window p_ban
-            IFS='|' read -r _ _ p_threshold p_window p_ban _ <<< "$def"
+            IFS="$_BS_US" read -r _ _ p_threshold p_window p_ban _ <<< "$def"  # v1.214.0 '|'-safe internal split
 
             # Use lowest threshold (most sensitive)
             [[ "$p_threshold" -lt "$threshold" ]] && threshold="$p_threshold"
@@ -898,7 +1087,7 @@ nftban_botscan_build_prefilter() {
     local n=0 name def pat
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
         def="${_BOTSCAN_PATTERNS[$name]}"
-        IFS='|' read -r pat _ _ _ _ _ <<< "$def"
+        IFS="$_BS_US" read -r pat _ _ _ _ _ <<< "$def"  # v1.214.0 '|'-safe internal split → intact regex to Go matcher
         [[ -z "$pat" ]] && continue
         pat="${pat#^}"; pat="${pat%\$}"   # strip line-anchors → match the field within the line
         [[ -z "$pat" ]] && continue
@@ -1145,11 +1334,38 @@ nftban_botscan_write_signal() {
         conf_json=",\"confidence\":${BOTSCAN_SIGNAL_CONFIDENCE}"
     fi
 
-    # Atomic append (single write, no partial lines)
-    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d,"family":"%s","request_class":"%s"%s}\n' \
+    # v1.212 (OPEN_BOTSCAN_LOST_BAN_SIGNAL) — build the JSONL line once, then append it under a
+    # SHARED flock so the Go consumer's atomic rename-then-consume hand-off can never destroy a
+    # signal written in the read->hand-off window. The daemon takes this SAME lock only around its
+    # O(1) rename of the signal file, so an append and the rename are mutually exclusive. The lock
+    # is a STABLE sibling lockfile that is never renamed. Degrade SAFELY when flock is unavailable:
+    # still append (O_APPEND keeps the single write line-atomic; the daemon rename stays the primary
+    # guard) — NEVER silently drop the signal; a write failure is surfaced (return 1).
+    local signal_line
+    printf -v signal_line '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d,"family":"%s","request_class":"%s"%s}\n' \
         "${ip//\"/\\\"}" "$score" "$reasons_json" "${action//\"/\\\"}" "$ts" \
-        "$family" "${request_class//\"/\\\"}" "$conf_json" \
-        >> "$signal_file"
+        "$family" "${request_class//\"/\\\"}" "$conf_json"
+
+    local lock_file="${signal_file}.lock"
+    if command -v flock >/dev/null 2>&1; then
+        # Serialize concurrent write_signal callers AND cooperate with the daemon rename. `-w 5`
+        # waits briefly rather than dropping the signal; on timeout / unopenable lockfile the
+        # subshell exits non-zero and we fall through to a safe unlocked append (never a drop).
+        if (
+            flock -w 5 9 || exit 9
+            printf '%s' "$signal_line" >> "$signal_file"
+        ) 9>"$lock_file" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    # flock binary absent, lockfile unopenable, or lock timed out → safe unlocked append. A real
+    # write failure (disk full / perms) is made visible instead of silently lost.
+    if ! printf '%s' "$signal_line" >> "$signal_file"; then
+        echo "[ERROR] botscan: failed to write batch signal for ${ip}" >&2
+        return 1
+    fi
+    return 0
 }
 
 # Ban IP
@@ -1205,6 +1421,12 @@ nftban_botscan_process_logs() {
 
     [[ "$BOTSCAN_ENABLED" != "true" ]] && {
         echo "Bot scanner is disabled"
+        # v1.207 recording-discipline: a disabled module records DISABLED_BY_CONFIG
+        # ONLY if it has a prior meaningful run-state; a disabled+never-run module
+        # writes NOTHING (no counters/noise, and never a fake "0 clean").
+        if declare -F nftban_botscan_record_runstate >/dev/null 2>&1; then
+            nftban_botscan_record_runstate ts="$(date +%s)" health_state="DISABLED_BY_CONFIG" disabled_reason="BOTSCAN_ENABLED!=true"
+        fi
         return 0
     }
 
@@ -1220,6 +1442,14 @@ nftban_botscan_process_logs() {
             echo "ERROR: No access log found" >&2
             echo "  Hint: run 'nftban botscan logs --detect' to see candidate paths and panel detection." >&2
             echo "  Or set BOTSCAN_LOG_PATHS in /etc/nftban/conf.d/botscan/main.conf to your access-log glob(s)." >&2
+            # v1.208 — enabled but no web access logs discovered (common on non-web hosts).
+            # Record NO_INPUT_DISCOVERED (informational, NOT clean, NOT a failure) instead of
+            # leaving a perpetual NO_RUN_YET / absent run-state.
+            if declare -F nftban_botscan_record_runstate >/dev/null 2>&1; then
+                nftban_botscan_record_runstate ts="$(date +%s)" health_state="NO_INPUT_DISCOVERED" \
+                    pressure_state="NORMAL" scan_mode="NONE" backlog_state="STABLE" \
+                    disabled_reason="no access logs discovered on this host"
+            fi
             return 1
         fi
     fi
@@ -1230,6 +1460,30 @@ nftban_botscan_process_logs() {
 
     echo "Processing: ${#logs[@]} access log(s)"
     echo "Patterns loaded: ${#_BOTSCAN_PATTERNS[@]}"
+
+    # v1.207 SMART-ADAPTIVE controller — derive pressure + scan_mode from EXISTING
+    # signals (watchdog trend + /proc/loadavg + forward-cursor backlog) and modulate
+    # the EXISTING per-file cap. REUSE only; no new collectors; no schema change.
+    local _BS_PRESSURE="NORMAL" _BS_BACKLOG="STABLE" _BS_MODE="FULL" _BS_BYTES=0
+    if declare -F nftban_botscan_select_mode >/dev/null 2>&1; then
+        local _lr _l5 _mem _io _behind _rr=0 _bh=0 _prev=0
+        _lr=$(nftban_botscan_load_ratio)
+        IFS=' ' read -r _l5 _mem _io < <(nftban_botscan_watchdog_pressure)
+        IFS=' ' read -r _BS_BYTES _behind < <(nftban_botscan_backlog "${logs[@]}")
+        if [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
+            local _ld; IFS=' ' read -r _ld _bh _prev < <(jq -r '"\(.last_duration_sec//0) \(.last_budget_hit//0) \(.backlog_bytes//0)"' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" 2>/dev/null)
+            local _bud="${BOTSCAN_SCAN_BUDGET_SECS:-180}"; [[ "$_bud" -ge 1 ]] || _bud=180
+            _rr=$(awk -v d="${_ld:-0}" -v b="$_bud" 'BEGIN{printf "%.2f",(b>0?d/b:0)}')
+        fi
+        _BS_PRESSURE=$(nftban_botscan_pressure_state "$_lr" "$_rr" "${_bh:-0}" "${_mem:-0}" "${_io:-0}")
+        _BS_BACKLOG=$(nftban_botscan_backlog_state "${_BS_BYTES:-0}" "${_prev:-0}")
+        _BS_MODE=$(nftban_botscan_select_mode "$_BS_PRESSURE" "$_BS_BACKLOG")
+        case "$_BS_MODE" in
+            FAIR_SHARE) export BOTSCAN_SCAN_MAX_BYTES_PER_FILE=$(( ${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-262144} / 2 )) ;;
+            SURVIVAL)   export BOTSCAN_SCAN_MAX_BYTES_PER_FILE=$(( ${BOTSCAN_SCAN_MAX_BYTES_PER_FILE:-262144} / 4 )); export BOTSCAN_SCAN_PREFILTER=true ;;
+        esac
+        echo "Adaptive: pressure=$_BS_PRESSURE backlog=$_BS_BACKLOG mode=$_BS_MODE (load_ratio=$_lr)"
+    fi
 
     # v1.185 CORE-BOTSCAN-PROCESSOR-TIMEOUT-AT-SCALE — DEADLINE-AWARE SELF-BOUND.
     # Fleet-proven failure: on high-ENTRY-VOLUME hosts (srv2 120 logs 0/53, srv4 17 logs
@@ -1278,6 +1532,25 @@ nftban_botscan_process_logs() {
         _pf="$(mktemp 2>/dev/null)" || _pf=""
         [[ -n "$_pf" ]] && { nftban_botscan_build_prefilter "$_pf" || { rm -f "$_pf"; _pf=""; }; }
     fi
+    # v1.209.1 — resolve the prefilter ENGINE once. The legacy `grep -E -f "$_pf"` is rejected
+    # WHOLESALE by GNU grep (rc=2) when any pattern mis-splits on the '|' field delimiter (3 such
+    # alternation patterns ship today) → with `2>/dev/null || true` the prefilter silently returns
+    # EMPTY → process_entry never runs → pattern-based detection is dead. The bounded Go helper
+    # skips those broken patterns visibly and runs the valid corpus. Selection is fail-SAFE: any
+    # helper problem falls through to unfiltered pass-through (detection preserved), NEVER empty.
+    local _bs_pf_bin=""
+    if [[ -n "$_pf" ]]; then
+        local _cand; _cand="$(command -v nftban-botscan-matcher 2>/dev/null)"
+        [[ -z "$_cand" ]] && _cand="${NFTBAN_BIN_DIR:-/usr/lib/nftban/bin}/nftban-botscan-matcher"
+        local _chk
+        if [[ -x "$_cand" ]] && _chk="$("$_cand" --check "$_pf" 2>&1)"; then
+            _bs_pf_bin="$_cand"
+            # Visible once per cycle: usable/skipped counts (skipped = the |-delimiter-broken patterns).
+            echo "[botscan] prefilter engine: Go matcher — ${_chk##*matcher: }" >&2
+        else
+            echo "[botscan] WARN: Go prefilter helper unavailable/invalid — unfiltered pass-through (detection preserved; slower). Install nftban-botscan-matcher." >&2
+        fi
+    fi
     # Anti-starvation rotation: persist where the last cycle stopped so a host whose
     # backlog exceeds one budget still scans EVERY file over successive cycles instead
     # of always draining the first files and starving the tail.
@@ -1309,9 +1582,21 @@ nftban_botscan_process_logs() {
                 if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
                 elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
                 else tail -1000 -- "$f" 2>/dev/null; fi
-            } | { if [[ -n "$_pf" ]]; then LC_ALL=C grep -E -f "$_pf" 2>/dev/null || true; else cat; fi; }
+            } | { if [[ -n "$_bs_pf_bin" ]]; then "$_bs_pf_bin" --filter "$_pf" 2>/dev/null || cat; else cat; fi; }
         )
         files_done=$((files_done + 1))
+        # v1.209.3: reap this spool file if it is now fully consumed, so the disk-backed
+        # spool does not accumulate. SAFE: only the BATCH (processor) path runs this, it
+        # holds the processor lock that the collector also takes (no append races the
+        # delete), and the helper reaps ONLY files under the spool dir (never a real log).
+        # BOTSCAN_SPOOL_REAP=false disables it (default on) — used by the cursor/rotation
+        # unit tests that re-scan a STATIC spool across cycles, and an operator safety
+        # valve (bounding then relies on the collector total-dir cap + backpressure).
+        if [[ "${BOTSCAN_BATCH_SIGNAL_MODE:-}" == "true" && -z "$log_file" && "${BOTSCAN_SPOOL_REAP:-true}" == "true" ]]; then
+            nftban_botscan_reap_consumed_spool "$f" \
+                "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
+                "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}"
+        fi
     done
 
     # Persist rotation cursor: next cycle starts at the first file we did NOT finish.
@@ -1335,6 +1620,21 @@ nftban_botscan_process_logs() {
     local banned
     banned=$(nftban_botscan_analyze) || banned=0
     echo "Banned: $banned IPs"
+
+    # v1.207 — record run-state + health (recording-discipline honored in the writer).
+    # INVARIANT: 0 scanned is NEVER "clean" — a host with input (n>0) but 0 processed
+    # is DEGRADED_INPUT_BLIND; budget-hit / growing-backlog are DEGRADED + visible.
+    if declare -F nftban_botscan_record_runstate >/dev/null 2>&1; then
+        local _dur=$(( SECONDS - start_secs )) _hasin=0 _health
+        [[ "$n" -gt 0 ]] && _hasin=1
+        _health=$(nftban_botscan_health_state "${BOTSCAN_ENABLED:-true}" "$processed" "$banned" "$deadline_hit" "$_BS_BACKLOG" "$_hasin" 0)
+        nftban_botscan_record_runstate \
+            ts="$(date +%s)" dur="$_dur" lines_seen="$processed" lines_scanned="$processed" \
+            budget_hit="$deadline_hit" backlog_bytes="${_BS_BYTES:-0}" \
+            vhosts_scanned="$files_done" vhosts_deferred="$(( n - files_done ))" \
+            bans="$banned" pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
+            backlog_state="$_BS_BACKLOG" health_state="$_health" load_ratio="${_lr:-0}"
+    fi
 
     return 0
 }
@@ -1361,10 +1661,11 @@ nftban_botscan_status() {
     local total=0 enabled=0
     for pattern_file in "$BOTSCAN_PATTERNS_DIR"/*.patterns; do
         [[ -f "$pattern_file" ]] || continue
-        while IFS='|' read -r name _ _ _ _ _ is_enabled _; do
-            [[ -z "$name" || "$name" =~ ^# ]] && continue
+        local _bs_line
+        while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
+            _botscan_parse_record "$_bs_line" || continue
             total=$((total + 1))
-            [[ "$is_enabled" == "true" ]] && enabled=$((enabled + 1))
+            [[ "$_BSREC_enabled" == "true" ]] && enabled=$((enabled + 1))
         done < "$pattern_file"
     done
 
@@ -1383,7 +1684,7 @@ nftban_botscan_status() {
         nftban_http_classify_candidates "${BOTSCAN_LOG_PATHS:-}" >/dev/null 2>&1 || true
         local verdict="${_NFTBAN_HTTP_READ_VERDICT:-UNKNOWN}"
         # v1.178-A: collector spool feeds the scanner even when direct source is unreadable.
-        local _spool="${BOTSCAN_SPOOL_DIR:-/run/nftban/botscan}" _spool_fed=0 _sf
+        local _spool="${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" _spool_fed=0 _sf
         if [[ -d "$_spool" ]]; then
             for _sf in "$_spool"/*; do [[ -f "$_sf" && -r "$_sf" && -s "$_sf" ]] && { _spool_fed=1; break; }; done
         fi

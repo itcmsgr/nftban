@@ -514,7 +514,9 @@ nftban_panel_plesk_report() {
     # v1.19.0: Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local" || true
+        # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+        declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+        _source_local "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local"
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
         echo "   TCP INPUT:  ${NFTBAN_PLESK_TCP_IN:-Not configured}"

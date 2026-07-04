@@ -379,6 +379,30 @@ MANUAL_HEADER_EOF
 
 # Add a permanent (no-expiry) entry to 99-manual.conf + apply live. Idempotent
 # (refresh: a prior line for the same IP is dropped before re-append).
+# Read-back: is `$1` (IP/CIDR) actually covered by the LIVE kernel whitelist set
+# (either family), range-aware via the oracle? rc: 0=live, 1=not-live, 2=cannot-determine.
+_nftban_wl_static_is_live() {
+    local ip="$1" core_bin="${NFTBAN_CORE_BIN:-/usr/lib/nftban/bin/nftban-core}"
+    local k4 k6 t; local -a ktoks=()
+    k4="$(_nftban_wl_read_kernel_set "ip nftban" "whitelist_ipv4" 2>/dev/null)" || true
+    k6="$(_nftban_wl_read_kernel_set "ip6 nftban" "whitelist_ipv6" 2>/dev/null)" || true
+    while IFS= read -r t; do [[ -n "$t" ]] && ktoks+=("$t"); done <<< "$k4"
+    while IFS= read -r t; do [[ -n "$t" ]] && ktoks+=("$t"); done <<< "$k6"
+    if [[ -x "$core_bin" ]]; then
+        local req out nmiss
+        req="{\"baseline\":$(_nftban_wl_json_arr "$ip"),\"kernel\":$(_nftban_wl_json_arr "${ktoks[@]}"),\"sessions\":[]}"
+        out="$(printf '%s' "$req" | "$core_bin" whitelist-coverage 2>/dev/null)"
+        if printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
+            nmiss="$(printf '%s' "$out" | jq -r '.missing_from_kernel | length' 2>/dev/null)"
+            [[ "$nmiss" == "0" ]] && return 0 || return 1
+        fi
+    fi
+    # Oracle unavailable → best-effort exact membership (cannot resolve CIDR coverage).
+    local kk
+    for kk in "${ktoks[@]}"; do [[ "$kk" == "$ip" ]] && return 0; done
+    return 2
+}
+
 nftban_whitelist_add_static_ip() {
     local ip="$1"
 
@@ -410,17 +434,31 @@ nftban_whitelist_add_static_ip() {
     chmod 0640 "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
     chown root:nftban "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
 
-    echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) and applied it live — durable: survives firewall reload, daemon restart, and reboot."
-
-    # Apply live immediately via a FULL sync. `nftban sync` runs the daemon
-    # whitelist loader (LoadWhitelists → reconciles whitelist.d/*.conf, incl. this
-    # file, into the live nft set). `firewall reload` alone does NOT apply it — its
-    # whitelist step is system-IP auto-detection, not the whitelist.d loader
-    # (lab-proven on v1.148.0). Fall back to reload if `sync` is unavailable.
+    # Durable file write succeeded. Now apply live via a FULL sync, then READ BACK
+    # the live kernel set to confirm the element is actually present — no false
+    # "applied live" success (WHITELIST_DURABLE_APPLY_RECONCILE Step 3).
     if command -v nftban >/dev/null 2>&1; then
         nftban sync >/dev/null 2>&1 || nftban firewall reload >/dev/null 2>&1 || true
     fi
-    return 0
+
+    _nftban_wl_static_is_live "$ip"
+    case $? in
+        0)
+            echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) and confirmed it is LIVE in the kernel whitelist set — durable: survives firewall reload, daemon restart, and reboot."
+            return 0
+            ;;
+        2)
+            # Could not verify (oracle unavailable + not an exact literal match).
+            echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH). Durable entry written; LIVE application could NOT be verified (coverage oracle unavailable). Run 'nftban whitelist verify' to confirm." >&2
+            return 0
+            ;;
+        *)
+            echo "ERROR: $ip was written to the durable whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) but is NOT present in the live kernel whitelist set after sync." >&2
+            echo "       The durable entry persists (survives rebuild), but LIVE protection is NOT active — this IP can still be banned now." >&2
+            echo "       Whitelist apply/reconcile drift: see 'nftban whitelist verify'. (WHITELIST_DURABLE_APPLY_RECONCILE)" >&2
+            return 3
+            ;;
+    esac
 }
 
 # Remove a permanent entry from 99-manual.conf AND the live set, so a rebuild
@@ -731,6 +769,39 @@ _nftban_wl_read_sessions() {
 # family via the named-by-convention globals below (bash can't return ints >255
 # cleanly, and we want a precise count). Sets _NFTBAN_WL_VERIFY_ANOM.
 # $1 = family label (IPv4/IPv6), $2 = "4"/"6", $3 = table words, $4 = set name.
+# Exact string-match fallback (used ONLY when the range-aware oracle binary is
+# absent). Args: anom-counter var name, kernel array name, baseline array name,
+# sessions array name (passed by name for namerefs).
+_nftban_wl_verify_family_exact() {
+    local -n _anom="$1" _kernel="$2" _baseline="$3" _sessions="$4"
+    local b kk found is_session
+    for kk in "${_kernel[@]}"; do
+        found=false
+        for b in "${_baseline[@]}"; do [[ "$kk" == "$b" ]] && { found=true; break; }; done
+        [[ "$found" == "true" ]] && continue
+        is_session=false
+        for b in "${_sessions[@]}"; do [[ "$kk" == "$b" ]] && { is_session=true; break; }; done
+        if [[ "$is_session" == "true" ]]; then
+            echo "    [info]    $kk — active session whitelist (unexpired); not an anomaly"
+        else
+            echo "    [ANOMALY] $kk — IN-KERNEL-NOT-IN-BASELINE (present in live set, not in durable whitelist.d; possible injection)"
+            _anom=$(( _anom + 1 ))
+        fi
+    done
+    for b in "${_baseline[@]}"; do
+        found=false
+        for kk in "${_kernel[@]}"; do [[ "$b" == "$kk" ]] && { found=true; break; }; done
+        [[ "$found" == "false" ]] && { echo "    [ANOMALY] $b — IN-BASELINE-NOT-IN-KERNEL (durable whitelist.d entry not applied to live set; drift)"; _anom=$(( _anom + 1 )); }
+    done
+}
+
+# Build a JSON array from shell args (IP/CIDR/interval tokens are quote-safe).
+_nftban_wl_json_arr() {
+    local first=1 x; printf '['
+    for x in "$@"; do [[ $first -eq 1 ]] && first=0 || printf ','; printf '"%s"' "$x"; done
+    printf ']'
+}
+
 _nftban_wl_verify_family() {
     local label="$1" fam="$2" table="$3" set_name="$4"
     local -a kernel=() baseline=() sessions=()
@@ -752,36 +823,38 @@ _nftban_wl_verify_family() {
     while IFS= read -r k; do [[ -n "$k" ]] && sessions+=("$k"); done < <(_nftban_wl_read_sessions "$fam")
 
     local anom=0 b kk found
+    local core_bin="${NFTBAN_CORE_BIN:-/usr/lib/nftban/bin/nftban-core}"
 
     echo "  ${label} (set ${set_name}):"
 
-    # IN-KERNEL-NOT-IN-BASELINE: kernel keys absent from durable baseline.
-    for kk in "${kernel[@]}"; do
-        found=false
-        for b in "${baseline[@]}"; do [[ "$kk" == "$b" ]] && { found=true; break; }; done
-        if [[ "$found" == "true" ]]; then continue; fi
-        # Not baseline — is it a current session? (informational, not anomaly)
-        local is_session=false
-        for b in "${sessions[@]}"; do [[ "$kk" == "$b" ]] && { is_session=true; break; }; done
-        if [[ "$is_session" == "true" ]]; then
-            echo "    [info]    $kk — active session whitelist (unexpired 00-session.conf); not an anomaly"
+    if [[ -x "$core_bin" ]]; then
+        # Range-aware oracle (CIDR<->interval coverage). nft coalesces adjacent
+        # CIDRs into intervals; compare COVERAGE, not strings, so e.g.
+        # 104.16.0.0/13 + 104.24.0.0/14 == 104.16.0.0-104.27.255.255 is NOT drift.
+        local req out m
+        req="{\"baseline\":$(_nftban_wl_json_arr "${baseline[@]}"),\"kernel\":$(_nftban_wl_json_arr "${kernel[@]}"),\"sessions\":$(_nftban_wl_json_arr "${sessions[@]}")}"
+        out="$(printf '%s' "$req" | "$core_bin" whitelist-coverage 2>/dev/null)"
+        if [[ -n "$out" ]] && printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
+            while IFS= read -r m; do
+                [[ -z "$m" ]] && continue
+                echo "    [ANOMALY] $m — IN-BASELINE-NOT-IN-KERNEL (durable whitelist.d entry not covered by live set; drift)"
+                anom=$(( anom + 1 ))
+            done < <(printf '%s' "$out" | jq -r '.missing_from_kernel[]?' 2>/dev/null)
+            while IFS= read -r m; do
+                [[ -z "$m" ]] && continue
+                echo "    [ANOMALY] $m — IN-KERNEL-NOT-IN-BASELINE (present in live set, not in durable whitelist.d/sessions; possible injection)"
+                anom=$(( anom + 1 ))
+            done < <(printf '%s' "$out" | jq -r '.extra_in_kernel[]?' 2>/dev/null)
+            while IFS= read -r m; do [[ -n "$m" ]] && echo "    [info]    unparseable kernel token (ignored): $m"; done < <(printf '%s' "$out" | jq -r '.bad_kernel[]?' 2>/dev/null)
         else
-            echo "    [ANOMALY] $kk — IN-KERNEL-NOT-IN-BASELINE (present in live set, not in durable whitelist.d; possible injection)"
-            anom=$(( anom + 1 ))
+            echo "    [warn] range-aware oracle unavailable — falling back to exact-match (may over-report CIDR/interval)"
+            _nftban_wl_verify_family_exact anom kernel baseline sessions
         fi
-    done
+    else
+        _nftban_wl_verify_family_exact anom kernel baseline sessions
+    fi
 
-    # IN-BASELINE-NOT-IN-KERNEL: durable baseline keys missing from the kernel.
-    for b in "${baseline[@]}"; do
-        found=false
-        for kk in "${kernel[@]}"; do [[ "$b" == "$kk" ]] && { found=true; break; }; done
-        if [[ "$found" == "false" ]]; then
-            echo "    [ANOMALY] $b — IN-BASELINE-NOT-IN-KERNEL (durable whitelist.d entry not applied to live set; drift)"
-            anom=$(( anom + 1 ))
-        fi
-    done
-
-    [[ "$anom" -eq 0 ]] && echo "    OK — kernel matches durable baseline (sessions informational)."
+    [[ "$anom" -eq 0 ]] && echo "    OK — kernel matches durable baseline (range-aware; sessions informational)."
 
     _NFTBAN_WL_VERIFY_ANOM=$(( ${_NFTBAN_WL_VERIFY_ANOM:-0} + anom ))
     return 0

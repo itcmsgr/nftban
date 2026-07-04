@@ -247,6 +247,9 @@ nftban_cmd_health() {
         rbl)
             nftban_health_cmd_rbl "${clean_args[@]}"
             ;;
+        botscan)
+            nftban_health_cmd_botscan "${clean_args[@]}"
+            ;;
         botguard)
             nftban_health_cmd_botguard "${clean_args[@]}"
             ;;
@@ -537,6 +540,31 @@ nftban_health_cmd_truth() {
     printf "  %-14s %s\n" "Overall:" "$(echo "$status" | tr '[:lower:]' '[:upper:]')"
     printf "  %-14s %s\n" "Daemon:" "$nftband_state"
     printf "  %-14s %s\n" "Consistency:" "$consistency"
+
+    # v1.198.2 PR-B (BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL): compute
+    # firewall-transition health ONCE here, BEFORE the readiness verdict, so an
+    # unresolved CRITICAL/ERROR transition alarm flags operator readiness (no
+    # green/clean headline beside a CRITICAL transition line). Reused by the
+    # "Firewall Transition" detail block below (single probe).
+    local _fth_code=0 _fth_reason=""
+    local _fth_helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+    if [[ -r "$_fth_helper" ]]; then
+        # shellcheck source=/dev/null
+        source "$_fth_helper" 2>/dev/null || true
+        if declare -f fth_eval_health >/dev/null 2>&1; then
+            local _fth_res; _fth_res=$(fth_eval_health 2>/dev/null || echo "0|")
+            _fth_code="${_fth_res%%|*}"; _fth_reason="${_fth_res#*|}"
+            [[ "$_fth_code" =~ ^[0-9]+$ ]] || _fth_code=0
+        fi
+    fi
+
+    # v1.198 R1b-2 / v1.198.2 PR-B: top-level operator-readiness verdict
+    # (Operational / Upgrade readiness / Action needed + IDLE explanation),
+    # computed shell-side from the validator JSON + rc, now FW-transition-aware
+    # (4th arg = fth severity code). Shell-only; daemon byte-identical; --json
+    # path unaffected (returned above).
+    nftban_render_operator_readiness "$output" "" "$validator_rc" "$_fth_code"
+
     echo ""
     echo "  Module       Config     Structure  Runtime    Effective"
     echo "  ───────────  ─────────  ─────────  ─────────  ─────────"
@@ -571,42 +599,24 @@ nftban_health_cmd_truth() {
         printf "  %-11s  %-9s  %s\n" "$sub" "$state" "$entries"
     done
 
-    # Render findings (V127 UX-1 item 1.2: filter by severity).
-    #
-    # Default (verbose_mode=false): emit only WARN / ERROR findings. If zero remain,
-    # print "Findings: none" instead of an alarming "Findings (1):" header. If INFO
-    # findings exist, mention the count + how to surface them (--verbose). This makes
-    # `nftban health` usable as a fleet-wide signal on healthy idle hosts where the
-    # INFO-only state was reading as "something is wrong" pre-V127.
-    #
-    # Verbose (verbose_mode=true OR called from json|--json branch): emit all findings
-    # regardless of severity. JSON consumers always see the full array.
-    local total_count info_count visible_count
-    total_count=$(echo "$output" | jq '.findings | length' 2>/dev/null || echo "0")
-    info_count=$(echo "$output" | jq '[.findings[] | select(.severity == "info" or .severity == "INFO")] | length' 2>/dev/null || echo "0")
-    if [[ "$verbose_mode" == "true" ]]; then
-        visible_count="$total_count"
-    else
-        visible_count=$((total_count - info_count))
-    fi
+    # Render findings via the shared helper (v1.198 R1b-1). Behavior is
+    # unchanged from the inline V127 UX-1 item 1.2 block: default hides INFO
+    # (footer with hidden count + "--verbose to show"), --verbose shows all,
+    # zero-visible prints "Findings: none". Extracted to
+    # core/nftban_output.sh::nftban_render_findings so the classification is
+    # single-sourced and the R1b-2 operator-readiness summary can reuse it.
+    # (JSON mode returns above — this is the text path only.)
+    nftban_render_findings "$output" "$verbose_mode"
 
-    echo ""
-    if [[ "$visible_count" -gt 0 ]]; then
-        echo "  Findings ($visible_count):"
-        if [[ "$verbose_mode" == "true" ]]; then
-            echo "$output" | jq -r '.findings[] | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
-        else
-            echo "$output" | jq -r '.findings[] | select(.severity != "info" and .severity != "INFO") | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
-        fi
-        if [[ "$verbose_mode" != "true" && "$info_count" -gt 0 ]]; then
-            echo "    (${info_count} INFO finding(s) hidden — use --verbose to show)"
-        fi
-    else
-        if [[ "$info_count" -gt 0 ]]; then
-            echo "  Findings: none (${info_count} INFO finding(s) hidden — use --verbose to show)"
-        else
-            echo "  Findings: none"
-        fi
+    # v1.192.1 PR-B: harm-keyed firewall transition health detail (text mode
+    # only; JSON returned above). v1.198.2: reuse the single fth eval computed
+    # above the readiness verdict (no second live probe). Prints ONLY when
+    # anomalous (code>=2) — a healthy transition emits nothing.
+    if [[ "$_fth_code" =~ ^[0-9]+$ ]] && (( _fth_code >= 2 )); then
+        local _fth_sev; if (( _fth_code >= 3 )); then _fth_sev="CRITICAL"; else _fth_sev="WARN"; fi
+        echo ""
+        echo "  Firewall Transition ($_fth_sev):"
+        echo "    [$_fth_sev] FW-TRANSITION-HEALTH: ${_fth_reason}"
     fi
 
     echo ""

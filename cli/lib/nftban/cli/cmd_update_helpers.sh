@@ -54,6 +54,69 @@ _update_log() {
     esac
 }
 
+# v1.198 R1b-3: fixed-phase progress marker for the full `nftban update` run.
+# Emits "[n/total] <phase>[ — <hint>]" through _update_log (timestamped in the
+# log, prefixed on the terminal). Presentation only — there is NO progress bar
+# and NO dynamic state machine; it does not change update logic, ordering, or
+# the rc contract. The total is a fixed phase count for a full run.
+_NFTBAN_UPDATE_PHASE_TOTAL="${_NFTBAN_UPDATE_PHASE_TOTAL:-6}"
+_NFTBAN_UPDATE_PHASE_DONE=0   # v1.215.0: last phase reached (for the final "Completed phases: N/M")
+_update_phase() {
+    local n="$1" name="$2" hint="${3:-}"
+    _NFTBAN_UPDATE_PHASE_DONE="$n"   # side-effect only; the emitted marker string is unchanged
+    _update_log INFO "[${n}/${_NFTBAN_UPDATE_PHASE_TOTAL}] ${name}${hint:+ — ${hint}}"
+}
+
+# v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): the up-front progress contract —
+# announce the total phase count + run_id + per-run log dir at the START of the run so the
+# operator knows how many phases to expect and where the full record lives. Presentation
+# only; identical for RPM and DEB (both flow through the same _cmd_update_main phases).
+# Usage: _update_start_banner  (reads module-global _RUN_ID / FORENSIC_RUN_DIR)
+_update_start_banner() {
+    local run_id="${_RUN_ID:-${NFTBAN_RUN_ID:-n/a}}"
+    local log_dir="${FORENSIC_RUN_DIR:-n/a}"
+    echo ""
+    echo "  NFTBan update started — ${_NFTBAN_UPDATE_PHASE_TOTAL} phases expected"
+    echo "    run_id: ${run_id}"
+    echo "    Logs:   ${log_dir}"
+    echo ""
+}
+
+# v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): one structured final operator
+# summary, emitted on every terminal update path (COMMITTED/DEGRADED/FAILED/fallback).
+# PRESENTATION ONLY — additive to the existing verdict blocks; does NOT change update
+# logic, the rc contract, the per-run run.jsonl (untouched, machine-only), or the legacy
+# "Updated: vX → vY" line. No lifecycle JSON is emitted here (v1.199 invariant preserved).
+# Reads the module-global _RUN_ID / FORENSIC_RUN_DIR / UPDATE_LOG_FILE; failed-unit count
+# is read LIVE at summary time. Usage:
+#   _update_final_summary <result> <before_ver> <after_ver> <duration_s> <warnings> <validation>
+_update_final_summary() {
+    local result="${1:-UNKNOWN}" before="${2:-?}" after="${3:-?}" dur="${4:-?}"
+    local warnings="${5:-0}" validation="${6:-unavailable}"
+    local run_id="${_RUN_ID:-${NFTBAN_RUN_ID:-n/a}}"
+    local log_dir="${FORENSIC_RUN_DIR:-n/a}"
+    local log_path="${UPDATE_LOG_FILE:-/var/log/nftban/update.log}"
+    local failed_units
+    failed_units=$(systemctl --failed --no-legend 2>/dev/null | grep -c -i 'nftban' || true)
+    failed_units=${failed_units//[^0-9]/}; failed_units=${failed_units:-0}
+    [[ "$warnings" =~ ^[0-9]+$ ]] || warnings=0
+    local phases_done="${_NFTBAN_UPDATE_PHASE_DONE:-0}" phases_total="${_NFTBAN_UPDATE_PHASE_TOTAL:-6}"
+
+    echo ""
+    echo "  ┌─ Update summary ─────────────────────────────────────"
+    printf '  │ %-16s %s\n' "Result:"          "$result"
+    printf '  │ %-16s %s\n' "Version:"         "v${before} → v${after} (${dur}s)"
+    printf '  │ %-16s %s\n' "Warnings:"        "$warnings"
+    printf '  │ %-16s %s\n' "Failed units:"    "$failed_units"
+    printf '  │ %-16s %s\n' "Validation:"      "$validation"
+    printf '  │ %-16s %s\n' "Completed phases:" "${phases_done}/${phases_total}"
+    printf '  │ %-16s %s\n' "Run ID:"          "$run_id"
+    printf '  │ %-16s %s\n' "Log dir:"         "$log_dir"
+    printf '  │ %-16s %s\n' "Log:"             "$log_path"
+    echo "  └──────────────────────────────────────────────────────"
+    echo ""
+}
+
 _update_banner() {
     local current_ver
     current_ver=$(_get_current_version 2>/dev/null || echo "unknown")
@@ -255,3 +318,171 @@ _update_write_history() {
     chmod 0640 "$history_file" 2>/dev/null || true
 }
 
+
+# =============================================================================
+# v1.198.3 PR-A (BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE)
+# -----------------------------------------------------------------------------
+# Cadence timers (nftban-watchdog.timer @120s, nftban-maintenance.timer @15m)
+# exec /usr/sbin/nftban. If one fires while `nftban update` is replacing /
+# permission/attribute-toggling the binary, systemd hits a transient EXEC-203
+# Permission-denied, latches the .service failed, and the post-install
+# failed-unit assertion marks install_state=DEGRADED on an otherwise-healthy
+# upgrade (reproduced on dns2 2026-06-22 20:23:24Z). These helpers transiently
+# STOP the racing timers for the binary-swap critical section and RESTORE exactly
+# the ones that were active — never mask, never enable a disabled timer.
+# =============================================================================
+
+# Timers that exec the nftban binary on a tight enough cadence to race the swap.
+# watchdog = the proven 120s racer; maintenance = defensive 15m sibling.
+_NFTBAN_UPDATE_CADENCE_TIMERS=("nftban-watchdog.timer" "nftban-maintenance.timer")
+# Records exactly which timers THIS run stopped (so restore only re-starts those).
+_NFTBAN_INHIBITED_TIMERS=""
+
+# _update_inhibit_cadence_timers: stop the racing cadence timers that are
+# currently active; record them for restore. Best-effort — never fail the update.
+_update_inhibit_cadence_timers() {
+    _NFTBAN_INHIBITED_TIMERS=""
+    command -v systemctl >/dev/null 2>&1 || return 0
+    local t
+    for t in "${_NFTBAN_UPDATE_CADENCE_TIMERS[@]}"; do
+        if systemctl is-active --quiet "$t" 2>/dev/null; then
+            if systemctl stop "$t" 2>/dev/null; then
+                _NFTBAN_INHIBITED_TIMERS="${_NFTBAN_INHIBITED_TIMERS:+$_NFTBAN_INHIBITED_TIMERS }$t"
+            fi
+        fi
+    done
+    [[ -n "$_NFTBAN_INHIBITED_TIMERS" ]] && _update_log INFO "Inhibited cadence timer(s) for the install window: ${_NFTBAN_INHIBITED_TIMERS}" || true
+    return 0
+}
+
+# _update_restore_cadence_timers: re-start exactly the timers this run stopped.
+# IDEMPOTENT (empty list = no-op), so it is safe to call from both the normal
+# path and a scoped INT/TERM trap. Never enables a timer that was disabled.
+_update_restore_cadence_timers() {
+    [[ -z "${_NFTBAN_INHIBITED_TIMERS:-}" ]] && return 0
+    command -v systemctl >/dev/null 2>&1 || { _NFTBAN_INHIBITED_TIMERS=""; return 0; }
+    local t
+    for t in $_NFTBAN_INHIBITED_TIMERS; do
+        systemctl start "$t" 2>/dev/null || _update_log WARN "Failed to restart inhibited timer $t — start it manually: systemctl start $t"
+    done
+    _update_log INFO "Restored cadence timer(s): ${_NFTBAN_INHIBITED_TIMERS}"
+    _NFTBAN_INHIBITED_TIMERS=""
+    return 0
+}
+
+# _update_verify_watchdog: after the swap + restore, run the watchdog oneshot
+# ONCE to confirm it is healthy on the new binary. Clears a stale failed-latch
+# only if the fresh run succeeds (never masks a genuinely-broken watchdog).
+# Returns 0 if the post-update watchdog run is clean (or systemctl/unit absent),
+# 1 if the watchdog genuinely still fails.
+_update_verify_watchdog() {
+    command -v systemctl >/dev/null 2>&1 || return 0
+    systemctl cat nftban-watchdog.service >/dev/null 2>&1 || return 0
+    systemctl reset-failed nftban-watchdog.service 2>/dev/null || true
+    systemctl start nftban-watchdog.service 2>/dev/null || true
+    if systemctl is-failed --quiet nftban-watchdog.service 2>/dev/null; then
+        _update_log WARN "post-update watchdog verification FAILED — nftban-watchdog.service still failing after the update (not a transient swap-window race)"
+        return 1
+    fi
+    _update_log OK "post-update watchdog verification passed"
+    return 0
+}
+
+# =============================================================================
+# v1.199 Lifecycle Forensics (BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING +
+#                            BUG-INSTALLER-LOG-FORMAT-MIXED-JSON)
+# -----------------------------------------------------------------------------
+# Per-run forensic record under /var/log/nftban/update-runs/<run_id>/: a parseable
+# JSONL event stream (run.jsonl) + a human slice (human.log) + allowlisted
+# lifecycle snapshots at pre-swap / post-swap / post-restore. jq-free; values are
+# redaction-filtered; ONLY an explicit allowlist of fields is emitted (no env, no
+# secrets, no config dump). Bounded retention (keep newest N, prune + log the rest).
+# Forensics ONLY — no reliability/self-heal logic here.
+# =============================================================================
+FORENSIC_RUNS_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}/update-runs"
+FORENSIC_RETAIN_N="${NFTBAN_FORENSIC_RETAIN:-20}"
+FORENSIC_RUN_DIR=""; FORENSIC_JSONL=""; FORENSIC_HUMAN=""
+
+# deterministic run_id (tests/callers may pin via NFTBAN_RUN_ID)
+_forensic_run_id() { printf '%s' "${NFTBAN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null)-$$}"; }
+
+# minimal JSON string escaper (no jq dependency)
+_fx_jstr() { local s="${1-}"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; s="${s//$'\t'/ }"; s="${s//$'\r'/ }"; printf '%s' "$s"; }
+# secret redaction safety-net (the snapshot is allowlisted, but values pass this too)
+_fx_redact() { sed -E 's/(pass(word)?|secret|token|api[_-]?key|bearer|authorization)([=: ]+)[^ ",]*/\1\3<redacted>/Ig'; }
+
+# _forensic_begin <run_id> <mode> <from> <to>
+_forensic_begin() {
+    local id="$1" mode="${2:-}" from="${3:-}" to="${4:-}"
+    command -v date >/dev/null 2>&1 || return 0
+    FORENSIC_RUN_DIR="$FORENSIC_RUNS_DIR/$id"
+    mkdir -p "$FORENSIC_RUN_DIR" 2>/dev/null || { FORENSIC_RUN_DIR=""; return 0; }
+    chmod 0750 "$FORENSIC_RUN_DIR" 2>/dev/null || true
+    FORENSIC_JSONL="$FORENSIC_RUN_DIR/run.jsonl"; FORENSIC_HUMAN="$FORENSIC_RUN_DIR/human.log"
+    : > "$FORENSIC_JSONL" 2>/dev/null || true; : > "$FORENSIC_HUMAN" 2>/dev/null || true
+    chmod 0640 "$FORENSIC_JSONL" "$FORENSIC_HUMAN" 2>/dev/null || true
+    _forensic_event "$id" run_start "mode=$mode" "from=$from" "to=$to" "pid=$$"
+    _forensic_prune
+}
+
+# _forensic_event <run_id> <event> [key=value ...]  (values redacted; allowlisted callers only)
+_forensic_event() {
+    [ -n "${FORENSIC_JSONL:-}" ] || return 0
+    local id="$1" ev="$2"; shift 2 || true
+    local ts; ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '')
+    local json kv k v
+    json="{\"ts\":\"$(_fx_jstr "$ts")\",\"run_id\":\"$(_fx_jstr "$id")\",\"event\":\"$(_fx_jstr "$ev")\""
+    for kv in "$@"; do
+        k="${kv%%=*}"; v="${kv#*=}"
+        # defense-in-depth: if the KEY is secret-named, redact the whole value;
+        # otherwise run the substring redaction safety-net over the value.
+        if printf '%s' "$k" | grep -qiE '^(pass(word)?|secret|token|api[_-]?key|bearer|authorization)$'; then
+            v="<redacted>"
+        else
+            v=$(printf '%s' "$v" | _fx_redact)
+        fi
+        json="$json,\"$(_fx_jstr "$k")\":\"$(_fx_jstr "$v")\""
+    done
+    json="$json}"
+    printf '%s\n' "$json" >> "$FORENSIC_JSONL" 2>/dev/null || true
+}
+
+# _forensic_snapshot <run_id> <phase>  (allowlisted lifecycle-critical fields ONLY)
+_forensic_snapshot() {
+    [ -n "${FORENSIC_JSONL:-}" ] || return 0
+    local id="$1" ph="$2" bin="${NFTBAN_SBIN:-/usr/sbin/nftban}"
+    local mode mtime xattr ist wd_act wd_next mt_act failed u
+    mode=$(stat -c '%a' "$bin" 2>/dev/null || printf '?'); mtime=$(stat -c '%Y' "$bin" 2>/dev/null || printf '?')
+    xattr=$(lsattr "$bin" 2>/dev/null | awk '{print $1}' || printf '?')
+    ist=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2- || printf '?')
+    wd_act=$(systemctl is-active nftban-watchdog.timer 2>/dev/null || printf '?')
+    wd_next=$(systemctl show nftban-watchdog.timer -p NextElapseUSecRealtime --value 2>/dev/null || printf '?')
+    mt_act=$(systemctl is-active nftban-maintenance.timer 2>/dev/null || printf '?')
+    failed=$(systemctl --failed --no-legend 2>/dev/null | grep -iE 'nftban|nftband' | awk '{print $2}' | tr '\n' ',' || printf '')
+    _forensic_event "$id" snapshot "phase=$ph" "bin_mode=$mode" "bin_mtime=$mtime" "bin_xattr=$xattr" \
+        "install_state=$ist" "watchdog_timer=$wd_act" "watchdog_next=$wd_next" "maintenance_timer=$mt_act" "failed_units=$failed"
+    for u in $(systemctl --failed --no-legend 2>/dev/null | grep -iE 'nftban|nftband' | awk '{print $2}'); do
+        _forensic_event "$id" failed_unit "phase=$ph" "unit=$u" \
+            "result=$(systemctl show "$u" -p Result --value 2>/dev/null)" \
+            "exec_status=$(systemctl show "$u" -p ExecMainStatus --value 2>/dev/null)" \
+            "exec_exit=$(systemctl show "$u" -p ExecMainExitTimestamp --value 2>/dev/null)" \
+            "inactive_enter=$(systemctl show "$u" -p InactiveEnterTimestamp --value 2>/dev/null)"
+    done
+}
+
+# _forensic_end <run_id> <state> <rc>
+_forensic_end() { [ -n "${FORENSIC_JSONL:-}" ] || return 0; _forensic_event "$1" run_end "state=${2:-}" "rc=${3:-}"; }
+
+# _forensic_prune — keep newest N run dirs; log what is pruned (no silent cap)
+_forensic_prune() {
+    [ -d "$FORENSIC_RUNS_DIR" ] || return 0
+    # read the env at call time (operator may set NFTBAN_FORENSIC_RETAIN after source)
+    local n="${NFTBAN_FORENSIC_RETAIN:-${FORENSIC_RETAIN_N:-20}}"; [ "$n" -gt 0 ] 2>/dev/null || n=20
+    local total; total=$(find "$FORENSIC_RUNS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    [ "${total:-0}" -le "$n" ] && return 0
+    local pruned=0 d
+    while IFS= read -r d; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null && pruned=$((pruned+1)); done < <(
+        find "$FORENSIC_RUNS_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -n | head -n "$(( total - n ))" | cut -f2-)
+    [ "$pruned" -gt 0 ] && _update_log INFO "forensics: pruned $pruned old run-record(s), retained newest $n (NFTBAN_FORENSIC_RETAIN)" || true
+    return 0
+}

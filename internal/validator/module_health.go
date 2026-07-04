@@ -34,6 +34,21 @@ import (
 // ConfigDir is the base config directory. Overridable for testing.
 var ConfigDir = "/etc/nftban"
 
+// DataDir is the base data directory (project NFTBAN_DATA_DIR). Resolved from the
+// environment with the project-canonical default; overridable for testing.
+// Mirrors the shell rule `${NFTBAN_DATA_DIR:-/var/lib/nftban}` used by
+// cmd_geoip.sh / cmd_selftest.sh so the validator looks for the GeoIP DB in the
+// same place the geoip sync writes it (instead of a hardcoded /var/lib/nftban).
+var DataDir = resolveDataDir()
+
+// resolveDataDir honors NFTBAN_DATA_DIR when set, else the canonical default.
+func resolveDataDir() string {
+	if d := os.Getenv("NFTBAN_DATA_DIR"); d != "" {
+		return d
+	}
+	return "/var/lib/nftban"
+}
+
 // evaluateModuleHealth evaluates all modules and returns the health map.
 // Called from ValidateKernel after structural + runtime checks.
 // evaluateModuleHealth evaluates all modules and returns the health map.
@@ -139,10 +154,20 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 		return h
 	}
 
+	// v1.211 HEALTH-FALSE-ZERO: read enforcement-relevant sets with the 3-valued
+	// reader. A FAILED read (unknown) must NOT collapse to a false "idle"/"enforcing":
+	// a populated/empty set proves state, but a failed query proves nothing.
+	readUnknown := false
+
 	// Check enforcement sets (ban, grey, emergency)
 	enforcementSets := []string{"http_bot_ban", "http_bot_grey", "http_bot_emergency"}
 	for _, s := range enforcementSets {
-		if countSetElements("ip", s) > 0 {
+		count, _, unknown := countSetElementsState("ip", s)
+		if unknown {
+			readUnknown = true
+			continue
+		}
+		if count > 0 {
 			h.Effective = EffectiveEnforcing
 			return h
 		}
@@ -151,13 +176,26 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 	// Check observation sets (suspect, pending)
 	observationSets := []string{"http_bot_suspect", "http_bot_pending"}
 	for _, s := range observationSets {
-		if countSetElements("ip", s) > 0 {
+		count, _, unknown := countSetElementsState("ip", s)
+		if unknown {
+			readUnknown = true
+			continue
+		}
+		if count > 0 {
 			h.Effective = EffectiveObserving
 			return h
 		}
 	}
 
-	// All sets empty → idle (valid per BUG-3 lesson)
+	// A set read FAILED and no live set proved enforcing/observing → we cannot
+	// prove "empty". Degrade (WARN) instead of rendering a false idle/clean.
+	if readUnknown {
+		markEnforcementUnknown(h, "botguard")
+		return h
+	}
+
+	// All sets confirmed empty/absent → idle (valid per BUG-3 lesson; empty set on
+	// an enabled module is NEUTRAL, not noisy).
 	h.Effective = EffectiveIdle
 	return h
 }
@@ -288,8 +326,15 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 		// Both must be present — module_start alone proves the module loaded,
 		// but sources must be bound for LoginMon to actually process events.
 		// Two separate queries with AND semantics (not OR).
+		// v1.216.2 health-truth: also accept the periodic source-binding heartbeat
+		// ("loginmon_source_binding_heartbeat", emitted every 5m while running) as
+		// registration evidence. The one-shot "module_start: loginmon" line ages out
+		// of this bounded 15m window on quiet/long-running (and volatile-journald)
+		// hosts; the heartbeat keeps a healthy running+bound module from tripping a
+		// false VAL-LOGINMON-001. When sources are bound the heartbeat also carries
+		// "resolved_by=", so the binding query below refreshes from the same line.
 		regEvidence := queryJournal(context.Background(), JournalQuery{
-			Patterns: []string{"module_start: loginmon"},
+			Patterns: []string{"module_start: loginmon", "loginmon_source_binding_heartbeat"},
 			Since:    15 * time.Minute,
 		})
 		bindEvidence := queryJournal(context.Background(), JournalQuery{
@@ -323,35 +368,124 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 	// v1.180 ftpauth). The daemon is the authority on its own watchers; the kernel-truth
 	// validator reads it from the journal it already queries. An enabled-but-starved
 	// source now surfaces in `nftban health` instead of reading healthy.
-	h.Input = loginMonInputState(context.Background())
-	if h.Config == ConfigEnabled && (h.Input == InputNoLogs || h.Input == InputWarnNoLogs) {
-		moduleFindings = append(moduleFindings, Finding{
-			Code:      CodeLoginMonNoInput,
-			Severity:  SeverityWarn,
-			Component: "module",
-			Message:   "LoginMon enabled but a detection source reports no input (" + string(h.Input) + ")",
-		})
+	// VAL-LOGINMON-002-UX: classify per-source, distinguishing a benign absent
+	// input (no stack/source on this host) from real starvation (stack present
+	// but no readable logs). The daemon already separates these — NO_LOGS carries
+	// reason=no_<stack> (absent), WARN_NO_LOGS carries reason=<stack>_present_...
+	// (starved). Collapsing both into one WARN made every non-web/non-FTP host
+	// read as a warning; now an absent source is INFO (no action) while a starved
+	// source stays WARN (actionable), and the source + reason are preserved.
+	srcs := loginMonSourceStates(context.Background())
+	h.Input = InputUnknown
+	for _, s := range srcs {
+		h.Input = worseInputState(h.Input, s.State)
+	}
+	if h.Config == ConfigEnabled {
+		for _, s := range srcs {
+			switch s.State {
+			case InputWarnNoLogs:
+				// Stack/source present but produced no readable logs → actionable.
+				if loginMonSourceAcked(s.Name) {
+					moduleFindings = append(moduleFindings, Finding{
+						Code:      CodeLoginMonNoInput,
+						Severity:  SeverityInfo,
+						Component: "module",
+						Message:   "LoginMon " + s.Name + " source present but produced no readable logs" + loginMonReasonSuffix(s.Reason) + " — operator-acked via LOGINMON_SOURCE_ACK (starved by design); no action needed",
+					})
+				} else {
+					moduleFindings = append(moduleFindings, Finding{
+						Code:        CodeLoginMonNoInput,
+						Severity:    SeverityWarn,
+						Component:   "module",
+						Message:     "LoginMon " + s.Name + " source present but produced no readable logs" + loginMonReasonSuffix(s.Reason),
+						Remediation: loginMonRemediation(s.Name),
+					})
+				}
+			case InputNoLogs:
+				// Source/stack structurally absent on this host → benign, no action.
+				moduleFindings = append(moduleFindings, Finding{
+					Code:      CodeLoginMonNoInput,
+					Severity:  SeverityInfo,
+					Component: "module",
+					Message:   "LoginMon " + s.Name + " source not present on this host" + loginMonReasonSuffix(s.Reason) + "; no action needed",
+				})
+			}
+		}
 	}
 
 	return h
 }
 
-// loginMonInputState derives the worst-case input readability across LoginMon's
-// discovered sources from the daemon's "[LOGINMON] <src>: state=..." journal lines.
-// Precedence (worst wins): no_logs > warn_no_logs > ok > unknown.
-func loginMonInputState(ctx context.Context) InputState {
-	worst := InputUnknown
-	for _, src := range []string{"webauth", "ftpauth"} {
+// loginMonSource is a per-source input-state observation parsed from a daemon
+// "[LOGINMON] <src>: state=<TOK> ... reason=<reason>" journal line.
+type loginMonSource struct {
+	Name   string
+	State  InputState
+	Reason string
+}
+
+// loginMonSourceStates returns the per-source input-state observations for
+// LoginMon's discovered sources from the daemon's "[LOGINMON] <src>: state=..."
+// journal lines. The daemon is the authority on its own watchers; the validator
+// only reads what it already emits. Sources with no journal evidence are omitted.
+func loginMonSourceStates(ctx context.Context) []loginMonSource {
+	var out []loginMonSource
+	for _, name := range []string{"webauth", "ftpauth", "roundcube"} {
 		ev := queryJournal(ctx, JournalQuery{
-			Patterns: []string{"[LOGINMON] " + src + ": state="},
+			Patterns: []string{"[LOGINMON] " + name + ": state="},
 			Since:    15 * time.Minute,
 		})
 		if ev.ErrKind != ErrNone || !ev.Found {
 			continue
 		}
-		worst = worseInputState(worst, parseLoginMonState(ev.MatchedLine))
+		out = append(out, loginMonSource{
+			Name:   name,
+			State:  parseLoginMonState(ev.MatchedLine),
+			Reason: parseLoginMonReason(ev.MatchedLine),
+		})
 	}
-	return worst
+	return out
+}
+
+// loginMonReasonSuffix renders a " (reason=<r>)" suffix, or empty when absent.
+func loginMonReasonSuffix(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return " (reason=" + reason + ")"
+}
+
+// loginMonSourceAcked reports whether the operator has acknowledged a
+// starved-by-design LoginMon source via LOGINMON_SOURCE_ACK in the login module
+// config (.local override first). An acked starved source is reported as INFO
+// (still visible in findings), never silently hidden. v1.200 (VAL-LOGINMON-002).
+func loginMonSourceAcked(name string) bool {
+	ack := readKeyFromFile(filepath.Join(ConfigDir, "conf.d/login/main.conf.local"), "LOGINMON_SOURCE_ACK")
+	if ack == "" {
+		ack = readKeyFromFile(filepath.Join(ConfigDir, "conf.d/login/main.conf"), "LOGINMON_SOURCE_ACK")
+	}
+	for _, f := range strings.Fields(ack) {
+		if strings.EqualFold(strings.TrimSpace(f), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// loginMonRemediation returns the EXACT remediation for a starved LoginMon source,
+// keyed by source name. v1.200 (VAL-LOGINMON-002): turns an actionable WARN into a
+// step the operator can follow, and points at the ack knob for starved-by-design hosts.
+func loginMonRemediation(name string) string {
+	switch name {
+	case "roundcube":
+		return "Roundcube is present but login logging is off: set $config['log_logins'] = true; in the Roundcube config (config.inc.php) so credential failures are logged, then reload the webmail PHP worker. If this host intentionally does not collect Roundcube login logs, ack it: add 'roundcube' to LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local."
+	case "webauth":
+		return "The web stack is present but NFTBan reads no auth logs: confirm the web/panel access or auth log exists and is readable and that login attempts are logged there. If web login monitoring is not wanted on this host, ack it: add 'webauth' to LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local."
+	case "ftpauth":
+		return "The FTP stack is present but NFTBan reads no auth logs: confirm the FTP daemon auth log path exists and is readable and that login attempts are logged. If FTP login monitoring is not wanted on this host, ack it: add 'ftpauth' to LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local."
+	default:
+		return "Confirm the " + name + " log path is present and readable and that the application logs auth events; or ack it via LOGINMON_SOURCE_ACK in conf.d/login/main.conf.local if starved by design."
+	}
 }
 
 // parseLoginMonState extracts the input-state token from a "[LOGINMON] <src>: state=<TOK> ..."
@@ -376,6 +510,23 @@ func parseLoginMonState(line string) InputState {
 	default:
 		return InputUnknown
 	}
+}
+
+// parseLoginMonReason extracts the reason token from a
+// "[LOGINMON] <src>: state=<TOK> ... reason=<reason>" line, or "" if absent.
+// The reason (e.g. no_web_stack vs web_stack_present_no_access_logs) is what
+// lets an operator tell "not installed here" from "installed but unreadable".
+func parseLoginMonReason(line string) string {
+	const marker = "reason="
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return ""
+	}
+	tok := line[i+len(marker):]
+	if j := strings.IndexAny(tok, " \t\r\n"); j >= 0 {
+		tok = tok[:j]
+	}
+	return tok
 }
 
 // worseInputState returns the higher-severity of two input states
@@ -407,12 +558,36 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	// elements > 0 + drops = 0 = PRIMED (rules loaded, no matches yet)
 	// elements = 0 = IDLE
 	// v1.85 GAP-185-9: Count both IPv4 and IPv6 manual blacklist elements.
-	manualElements := countSetElements("ip", "blacklist_manual_ipv4")
-	manualElements += countSetElements("ip6", "blacklist_manual_ipv6")
+	// v1.211 HEALTH-FALSE-ZERO: blacklist_manual is THE enforcement set. Read it with
+	// the 3-valued reader (countSetElementsState) so a FAILED read (permission/timeout/
+	// malformed) degrades to "unknown" instead of collapsing to a false "idle" ("no
+	// bans"). Sum counts ONLY from successful reads; a confirmed-empty set on both
+	// families stays neutral (idle), exactly as before.
+	mv4, _, unknownV4 := countSetElementsState("ip", "blacklist_manual_ipv4")
+	mv6, _, unknownV6 := countSetElementsState("ip6", "blacklist_manual_ipv6")
+	manualElements := 0
+	if !unknownV4 {
+		manualElements += mv4
+	}
+	if !unknownV6 {
+		manualElements += mv6
+	}
 	// Counter: check both families
 	manualDrops := doc.GetCounter("ip", "nftban", "input_blacklist_manual_drop")
 	manualDrops += doc.GetCounter("ip6", "nftban", "input_blacklist_manual_drop")
-	if manualElements > 0 && manualDrops > 0 {
+	if unknownV4 || unknownV6 {
+		// EITHER family read FAILED on THE enforcement set: we cannot prove "no bans".
+		// Degrade (WARN) instead of rendering a false idle/primed/enforcing. Mirrors the
+		// markEnforcementUnknown mechanism used for BotGuard (CodeModuleDegraded /
+		// SeverityWarn finding is the schema-safe surface; State carries "unknown").
+		bh.Manual = BlacklistSubHealth{State: "unknown", Entries: manualElements}
+		moduleFindings = append(moduleFindings, Finding{
+			Code:      CodeModuleDegraded,
+			Severity:  SeverityWarn,
+			Component: "module",
+			Message:   "blacklist_manual set read failed — enforcement state unknown (kernel set query failed; cannot confirm bans loaded vs empty)",
+		})
+	} else if manualElements > 0 && manualDrops > 0 {
 		bh.Manual = BlacklistSubHealth{State: "enforcing", Entries: manualElements, Drops: manualDrops}
 	} else if manualElements > 0 {
 		bh.Manual = BlacklistSubHealth{State: "primed", Entries: manualElements}
@@ -451,8 +626,10 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 		// and emits a finding for visibility. "degraded" is not in the blacklist
 		// sub-state enum (enforcing|primed|idle|loaded|stale|disabled).
 		// Canonical path: ${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb
-		// Downloaded by nftban-core-geoip.timer → nftban geoip sync
-		dbPath := "/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+		// Downloaded by nftban-core-geoip.timer → nftban geoip sync.
+		// Honor NFTBAN_DATA_DIR (via DataDir) instead of hardcoding /var/lib/nftban,
+		// matching the shell sync writer; DataDir falls back to the canonical default.
+		dbPath := filepath.Join(DataDir, "geoip", "dbip-country-lite.mmdb")
 		info, err := os.Stat(dbPath)
 		if err != nil || info.Size() == 0 {
 			bh.Geoban = BlacklistSubHealth{State: "stale"} // missing DB = stale data
@@ -635,4 +812,75 @@ func countSetElementsReal(family, setName string) int {
 		}
 	}
 	return 0
+}
+
+// countSetElementsState is the 3-valued sibling of countSetElements (v1.211
+// HEALTH-FALSE-ZERO). It distinguishes a FAILED read (unknown — cannot prove
+// state) from a genuinely EMPTY set and from a CONFIRMED-ABSENT set, so a set
+// read failure on an enforcement-relevant set degrades the verdict instead of
+// rendering a false idle/clean. It mirrors internal/metrics
+// evidence_sets.go:countSetElementsJSON's contract WITHOUT importing
+// internal/metrics (that would create a package cycle).
+//
+// Returns (count, exists, unknown):
+//
+//	count>0, exists=true,  unknown=false → set present with elements
+//	count=0, exists=true,  unknown=false → set present, empty (NEUTRAL — idle ok)
+//	count=0, exists=false, unknown=false → set confirmed absent (NEUTRAL — idle ok)
+//	count=0, exists=false, unknown=true  → read failed (enforcement state UNKNOWN)
+//
+// countSetElementsStateFunc is the test seam (same indirection pattern as
+// countSetElementsFunc above).
+var countSetElementsStateFunc = countSetElementsStateReal
+
+func countSetElementsState(family, setName string) (count int, exists bool, unknown bool) {
+	return countSetElementsStateFunc(family, setName)
+}
+
+func countSetElementsStateReal(family, setName string) (count int, exists bool, unknown bool) {
+	table := "nftban"
+	out, err := exec.Command("nft", "-j", "list", "set", family, table, setName).Output()
+	if err != nil {
+		// Command failure: could be a missing set, but also a timeout/permission/
+		// exec error. Mark unknown so callers never treat failure as confirmed empty.
+		return 0, false, true
+	}
+
+	// Parse JSON: {"nftables": [{"metainfo":...}, {"set": {..., "elem": [...]}}]}
+	var result struct {
+		Nftables []struct {
+			Set *struct {
+				Elem []interface{} `json:"elem"`
+			} `json:"set,omitempty"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, false, true
+	}
+
+	for _, obj := range result.Nftables {
+		if obj.Set != nil {
+			return len(obj.Set.Elem), true, false
+		}
+	}
+	// Valid JSON, no set object for this name → confirmed absent (NEUTRAL).
+	return 0, false, false
+}
+
+// markEnforcementUnknown records that a set read FAILED for an enforcement-relevant
+// module (v1.211 HEALTH-FALSE-ZERO). The verdict MUST NOT render idle/enforcing as
+// if the set were empty, so the module's Effective axis is left UNSET (omitted from
+// the frozen M81-6 JSON via omitempty — never the false-idle "idle" token) and a
+// SeverityWarn finding is appended. The finding is the schema-safe surface that
+// makes the degraded state visible in `--json` (result.Findings) and the human
+// verdict, the same mechanism used for CodeLoginMonNoInput (see the ModuleHealth
+// note in types.go). This avoids extending the frozen ModuleHealth JSON schema.
+func markEnforcementUnknown(h *ModuleHealth, module string) {
+	h.Effective = "" // never false-idle / false-enforcing on a failed read
+	moduleFindings = append(moduleFindings, Finding{
+		Code:      CodeModuleDegraded,
+		Severity:  SeverityWarn,
+		Component: "module",
+		Message:   module + ": set read failed — enforcement state unknown (kernel set query failed; cannot confirm enforcing vs empty)",
+	})
 }

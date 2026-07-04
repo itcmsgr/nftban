@@ -560,23 +560,36 @@ nftban_cmd_rbl_check() {
             # Output results
             echo "$results"
 
-            # Check if listed and send alert if requested
-            if [[ $alert -eq 1 ]] && echo "$results" | grep -q "LISTED"; then
-                any_listed=1
-                # Extract first RBL and reason for alert
-                local first_rbl
-                local first_reason
-                first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}' || true)
-                first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //' || true)
+            # v1.206 (TODO-1): 3-way state — listed / degraded / clean. A degraded
+            # result (resolver-blocked, timeout, error, skipped, unsupported) means
+            # the IP's reputation is UNKNOWN and MUST NOT be persisted as "clean".
+            local _rbl_state="clean"
+            if echo "$results" | grep -qE 'LISTED:|"listed": *[1-9]'; then
+                _rbl_state="listed"
+            elif echo "$results" | grep -qE 'RESOLVER_BLOCKED|Degraded total:|"degraded": *[1-9]|"resolver_blocked": *[1-9]|⏱️|SKIPPED \(IPv4-only|UNSUPPORTED \(no IPv6'; then
+                _rbl_state="degraded"
+            fi
 
-                if [[ "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:-YES}" == "YES" ]]; then
-                    if nftban_rbl_check_new_listing "$check_ip" "listed"; then
-                        nftban_rbl_send_alert "$check_ip" "$first_rbl" "$first_reason" "$ip_tag"
+            if [[ "$_rbl_state" == "listed" ]]; then
+                any_listed=1
+                if [[ $alert -eq 1 ]]; then
+                    # Extract first RBL and reason for alert
+                    local first_rbl
+                    local first_reason
+                    first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}' || true)
+                    first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //' || true)
+                    if [[ "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:-YES}" == "YES" ]]; then
+                        if nftban_rbl_check_new_listing "$check_ip" "listed"; then
+                            nftban_rbl_send_alert "$check_ip" "$first_rbl" "$first_reason" "$ip_tag"
+                        fi
                     fi
                 fi
-
-                # Update state
                 nftban_rbl_update_state "$check_ip" "listed"
+            elif [[ "$_rbl_state" == "degraded" ]]; then
+                # Persist degraded — NEVER clean. Posture/health must not show
+                # "fully protected" when the lookup could not be completed.
+                [[ $quiet -eq 0 ]] && echo "⚠️  RBL result DEGRADED for $check_ip — reputation NOT fully verified (not marked clean)"
+                nftban_rbl_update_state "$check_ip" "degraded"
             else
                 nftban_rbl_update_state "$check_ip" "clean"
             fi

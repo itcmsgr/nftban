@@ -45,6 +45,11 @@ mkdir -p "$NFTBAN_DATA_DIR/botguard" "$BOTSCAN_SPOOL_DIR" "$BOTSCAN_PATTERNS_DIR
 {
   printf '198.51.100.10 - - [14/Jun/2026:10:00:00 +0000] "GET /a HTTP/1.1" 200 9 "-" "BadCrawler/1.0"\n'
   printf '198.51.100.11 - - [14/Jun/2026:10:00:00 +0000] "GET /wp-login HTTP/1.1" 404 9 "-" "Mozilla/5.0"\n'
+  # IPv4/IPv6 parity: the same UA + url-404 patterns from IPv6 source addresses
+  # (Apache/nginx log an IPv6 client as the first field). Proves BotScan's per-line
+  # source-IP extraction + pattern ban are family-neutral.
+  printf '2001:db8::10 - - [14/Jun/2026:10:00:00 +0000] "GET /a HTTP/1.1" 200 9 "-" "BadCrawler/1.0"\n'
+  printf '2001:db8::11 - - [14/Jun/2026:10:00:00 +0000] "GET /wp-login HTTP/1.1" 404 9 "-" "Mozilla/5.0"\n'
 } > "$BOTSCAN_SPOOL_DIR/a.log"
 
 # shellcheck source=/dev/null
@@ -55,5 +60,7 @@ nftban_botscan_process_logs "" 60 >/dev/null 2>&1 || fail "process_logs rc!=0"
 
 banned_has "198.51.100.10" || fail "useragent pattern ban did not fire under runtime IFS (IFS word-split defect)"
 banned_has "198.51.100.11" || fail "url-404 pattern ban did not fire under runtime IFS (IFS word-split defect)"
+banned_has "2001:db8::10" || fail "IPv6 useragent pattern ban did not fire (BotScan source-IP extraction must be family-neutral)"
+banned_has "2001:db8::11" || fail "IPv6 url-404 pattern ban did not fire (BotScan source-IP extraction must be family-neutral)"
 
-echo "PASS: BotScan pattern bans (useragent + url-404) fire under the lib's runtime IFS"
+echo "PASS: BotScan pattern bans (useragent + url-404) fire for IPv4 AND IPv6 under the lib's runtime IFS"

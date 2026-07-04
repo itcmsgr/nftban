@@ -620,7 +620,9 @@ _status_section_firewall() {
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" 2>/dev/null || true
+        # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
+        declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+        _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
 
@@ -881,16 +883,27 @@ _status_section_protection() {
     echo ""
 
     # Trust Feeds (CDN whitelist - including Cloudflare)
+    # v1.211.1 STATUS_LABEL_TRUTH: resolve nftban-core at its installed path (it ships in
+    # /usr/lib/nftban/bin, NOT on $PATH, so a bare `command -v` falsely yields NOT INSTALLED),
+    # and count enabled providers from the stable `trust list --json` (`"enabled": true`) rather
+    # than grepping the human text for the word "enabled" (which false-matches the help line
+    # "...apply all enabled" and never matches the [✓]/[✗] markers).
     local trust_status="NOT INSTALLED"
-    local trust_count=0
-    if command -v nftban-core &>/dev/null; then
-        local trust_output
-        trust_output=$(nftban-core trust list 2>/dev/null) || true
-        trust_count=$(echo "$trust_output" | grep -c "enabled" 2>/dev/null) || trust_count=0
-        if [[ $trust_count -gt 0 ]]; then
-            trust_status="ENABLED ($trust_count feeds)"
+    local trust_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    [[ ! -x "$trust_core" ]] && trust_core="/usr/lib/nftban/bin/nftban-core"
+    [[ ! -x "$trust_core" ]] && trust_core=$(command -v nftban-core 2>/dev/null || echo "")
+    if [[ -n "$trust_core" ]] && [[ -x "$trust_core" ]]; then
+        local trust_json="" trust_count=0
+        trust_json=$("$trust_core" trust list --json 2>/dev/null) || trust_json=""
+        if [[ -z "$trust_json" ]] || ! printf '%s' "$trust_json" | grep -q '"trusts"'; then
+            trust_status="UNKNOWN"   # installed but trust list unreadable/malformed — not a false DISABLED
         else
-            trust_status="DISABLED"
+            trust_count=$(printf '%s\n' "$trust_json" | grep -cE '"enabled":[[:space:]]*true' || true)
+            if [[ "${trust_count:-0}" -gt 0 ]]; then
+                trust_status="ENABLED ($trust_count feeds)"
+            else
+                trust_status="DISABLED"
+            fi
         fi
     fi
     printf "  %-20s %s\n" "Trust Feeds........." "$trust_status"
@@ -995,7 +1008,7 @@ _status_section_protection() {
     # v1.19.0: Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
     fi
     if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
         rbl_status="ENABLED"
@@ -1036,7 +1049,7 @@ _status_section_protection() {
     # Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
     fi
     botguard_enabled="${HTTP_BOTGUARD_ENABLED:-false}"
     if [[ "$botguard_enabled" == "true" ]]; then
@@ -1067,7 +1080,7 @@ _status_section_protection() {
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" || true
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     fi
     if [[ "${NFTBAN_TUNNEL_ENABLED:-NO}" == "YES" ]]; then
         local tunnel_high=0 tunnel_med=0
@@ -1127,7 +1140,7 @@ _status_section_protection() {
     local zabbix_conf="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
     local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
-    [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
+    _source_local "$zabbix_local"
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
         if _unit_is_active nftban-unified-exporter.timer; then
@@ -1149,7 +1162,7 @@ _status_section_protection() {
     local connectors_conf="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
-    [[ -f "$connectors_local" ]] && source "$connectors_local" 2>/dev/null || true
+    _source_local "$connectors_local"
 
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" == "true" ]]; then
         local connector_count=0
@@ -1206,10 +1219,55 @@ _status_section_health() {
     # authoritative posture verdict. Label it "Health" so the authoritative
     # firewall posture is stated once (in the State line), and the health
     # roll-up reads as diagnostics rather than a competing PROTECTED claim.
+    # v1.198.2 PR-B (BUG-HEALTH-VERDICT-IGNORES-FW-TRANSITION-CRITICAL): read the
+    # transition harm counters BEFORE the Health roll-up so a CRITICAL alarm
+    # qualifies it — the Health line must not read clean/green beside the 🔴
+    # CRITICAL "FW Transition" line below. Cheap persisted read (sed, jq-free).
+    local _fthf="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json" _fth_crit=0
+    if [[ -r "$_fthf" ]]; then
+        local _qf _qt _qb
+        _qf=$(sed -n 's/.*"floor_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fthf" | head -1)
+        _qt=$(sed -n 's/.*"table_absent_while_committed_count"[: ]*\([0-9]*\).*/\1/p' "$_fthf" | head -1)
+        _qb=$(sed -n 's/.*"blacklist_empty_during_refresh_count"[: ]*\([0-9]*\).*/\1/p' "$_fthf" | head -1)
+        (( ${_qf:-0} > 0 || ${_qt:-0} > 0 || ${_qb:-0} > 0 )) && _fth_crit=1
+    fi
+    local _health_render
     if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
-        nftban_kv "Health" "OK (info notices)"
+        _health_render="OK (info notices)"
     else
-        nftban_kv "Health" "$health_status"
+        _health_render="$health_status"
+    fi
+    (( _fth_crit == 1 )) && _health_render="${_health_render} — ⚠ firewall-transition alarm (see FW Transition)"
+    nftban_kv "Health" "$_health_render"
+
+    # v1.192.1 PR-B: firewall transition health (harm-keyed; cadence never alarms).
+    # Reads persisted counters only (cheap, no live nft probe here).
+    local _fth_file="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json"
+    if [[ -r "$_fth_file" ]]; then
+        local _fsvc _ffloor _ftbl _fbl _fna _fatomic
+        if command -v jq >/dev/null 2>&1; then
+            _fsvc=$(jq -r '.service_port_breach_count // 0' "$_fth_file" 2>/dev/null)
+            _ffloor=$(jq -r '.floor_breach_count // 0' "$_fth_file" 2>/dev/null)
+            _ftbl=$(jq -r '.table_absent_while_committed_count // 0' "$_fth_file" 2>/dev/null)
+            _fbl=$(jq -r '.blacklist_empty_during_refresh_count // 0' "$_fth_file" 2>/dev/null)
+            _fna=$(jq -r '.non_atomic_rebuild_count // 0' "$_fth_file" 2>/dev/null)
+            _fatomic=$(jq -r 'if has("last_rebuild_atomic") then .last_rebuild_atomic else true end' "$_fth_file" 2>/dev/null)
+        else
+            _fsvc=$(sed -n 's/.*"service_port_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _ffloor=$(sed -n 's/.*"floor_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _ftbl=$(sed -n 's/.*"table_absent_while_committed_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _fbl=$(sed -n 's/.*"blacklist_empty_during_refresh_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _fna=$(sed -n 's/.*"non_atomic_rebuild_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
+            _fatomic=$(sed -n 's/.*"last_rebuild_atomic"[: ]*\([a-z]*\).*/\1/p' "$_fth_file" | head -1)
+        fi
+        _fsvc=${_fsvc:-0}; _ffloor=${_ffloor:-0}; _ftbl=${_ftbl:-0}; _fbl=${_fbl:-0}; _fna=${_fna:-0}
+        if (( _ffloor > 0 || _ftbl > 0 || _fbl > 0 )); then
+            nftban_kv "FW Transition" "🔴 CRITICAL (floor=$_ffloor table=$_ftbl blacklist=$_fbl)"
+        elif (( _fsvc > 0 || _fna > 0 )); then
+            nftban_kv "FW Transition" "⚠️  DEGRADED (service_port_breach=$_fsvc non_atomic=$_fna)"
+        else
+            nftban_kv "FW Transition" "🟢 OK (atomic=$_fatomic)"
+        fi
     fi
 
     # Check binary integrity (show warning if corrupted)
@@ -1821,7 +1879,7 @@ output_json() {
     local master_enabled="true"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" 2>/dev/null || true
+        _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
@@ -1982,7 +2040,14 @@ output_json() {
     echo "    \"permanent_bans\": {"
     echo "      \"total\": $json_perm_bans,"
     echo "      \"protected\": $json_perm_protected"
-    echo "    }"
+    echo "    },"
+    # v1.192.1 PR-B: harm-keyed firewall transition health.
+    local _ftf="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json"
+    if [[ -r "$_ftf" ]] && command -v jq >/dev/null 2>&1; then
+        echo "    \"firewall_transition\": $(jq -c '{service_port_breach_count,floor_breach_count,table_absent_while_committed_count,blacklist_empty_during_refresh_count,non_atomic_rebuild_count,last_rebuild_atomic,last_trigger,last_duration_ms,last_transition_anomaly_at,last_transition_anomaly_reason}' "$_ftf" 2>/dev/null || echo '{}')"
+    else
+        echo "    \"firewall_transition\": {}"
+    fi
     echo "  },"
 
     # System info for scripts/API

@@ -161,6 +161,15 @@ echo; echo "[T9] handle_detection(generic) bans (corroborated path intact)"
 T9=$(handle 9.9.9.9 "generic")
 assert_contains "$T9" "BAN_CALLED 9.9.9.9" "T9.1 corroborated generic still bans"
 
+# T10: IPv4/IPv6 parity. The classifier + handler are family-neutral (they key on the
+# source-IP string + port/target counts, never parse the address), so an IPv6 source
+# classifies + bans identically to the IPv4 corroborated-generic path (mirrors T2/T9).
+echo; echo "[T10] IPv6 source — corroborated generic classifies + bans (family parity)"
+T10C=$(classify 2001:db8::99 "1 2 3 4 5 6 7 8 9 10 11 12" "2001:db8::1 2001:db8::2" "$TS_SLOW")
+assert_eq "$T10C" "generic" "T10.1 IPv6 corroborated generic classifies (parity with T2)"
+T10H=$(handle 2001:db8::99 "generic")
+assert_contains "$T10H" "BAN_CALLED 2001:db8::99" "T10.2 IPv6 corroborated generic bans (parity with T9)"
+
 echo; echo "================================================="
 echo "Results: PASS=$PASS  FAIL=$FAIL"
 if [[ $FAIL -gt 0 ]]; then

@@ -148,7 +148,12 @@ type Module struct {
 	// child (tail -F) that dies while ctx is alive is respawned with bounded
 	// exponential backoff so a detection source never silently goes dark.
 	// newWatcherCmd is overridable in tests; nil → the default tail -F builder.
-	newWatcherCmd       func(ctx context.Context, logPath string) *exec.Cmd
+	newWatcherCmd func(ctx context.Context, logPath string) *exec.Cmd
+	// v1.211 LOGINMON-JOURNAL-NO-RESPAWN: journal watcher is now supervised with
+	// the same bounded-backoff respawn loop as the file watcher (it previously ran
+	// `journalctl -f` once and went dark on EOF/error). newJournalCmd is overridable
+	// in tests; nil → the default `journalctl -f` builder.
+	newJournalCmd       func(ctx context.Context) *exec.Cmd
 	watcherBackoffMin   time.Duration
 	watcherBackoffMax   time.Duration
 	watcherHealthyReset time.Duration // a run lasting ≥ this resets backoff to min
@@ -381,6 +386,50 @@ func (m *Module) startPipelineSnapshot(ctx context.Context) {
 	}
 }
 
+// bindingHeartbeatInterval is how often the source-binding heartbeat is emitted.
+// It MUST stay below the health validator's bounded journal-evidence window
+// (internal/validator/journal.go: 15 minutes) so the evidence never ages out on a
+// quiet, long-running host. v1.216.2 health-truth hotfix.
+const bindingHeartbeatInterval = 5 * time.Minute
+
+// bindingHeartbeatLine builds the periodic heartbeat log payload. Extracted (pure,
+// no receiver state beyond the count) so it is unit-testable without a running module.
+// When sources are bound (n>0) it includes "resolved_by=" so the validator's binding
+// evidence refreshes alongside the "loginmon_source_binding_heartbeat" registration
+// marker; when n==0 it deliberately omits "resolved_by=" so a genuinely unbound module
+// still trips VAL-LOGINMON-001's binding-evidence AND-condition. Never logs secrets —
+// only a source count and running state.
+func bindingHeartbeatLine(n int) string {
+	if n > 0 {
+		return fmt.Sprintf("loginmon_source_binding_heartbeat resolved_by=heartbeat sources=%d state=running", n)
+	}
+	return "loginmon_source_binding_heartbeat sources=0 state=running"
+}
+
+// startBindingHeartbeat periodically emits the source-binding heartbeat to journald so
+// the health validator (VAL-LOGINMON-001) can confirm a quiet, long-running LoginMon is
+// still running and bound. LoginMon logs its registration ("module_start: loginmon") and
+// per-source binding ("resolved_by=...") lines only once, at Start/discovery; on a quiet
+// host they age out of the validator's bounded 15-minute journal window (guaranteed on
+// volatile-journald hosts), producing a benign-but-recurring INFO. This heartbeat keeps
+// the evidence fresh. It changes no ban behavior and performs no source discovery — it
+// only reflects the already-captured bound-source count. v1.216.2.
+func (m *Module) startBindingHeartbeat(ctx context.Context) {
+	ticker := time.NewTicker(bindingHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.mu.RLock()
+			n := len(m.inputSources)
+			m.mu.RUnlock()
+			log.Printf("[LOGINMON] %s", bindingHeartbeatLine(n))
+		}
+	}
+}
+
 // Start begins the module's background work
 func (m *Module) Start(ctx context.Context) error {
 	ctx, m.cancel = context.WithCancel(ctx)
@@ -427,6 +476,11 @@ func (m *Module) Start(ctx context.Context) error {
 	// Start cleanup goroutine
 	go m.runCleanup(ctx)
 
+	// v1.216.2 health-truth: periodic source-binding heartbeat so the health
+	// validator can confirm a quiet, long-running LoginMon is still running+bound
+	// without depending on one-shot startup lines aging out of its 15m journal window.
+	go m.startBindingHeartbeat(ctx)
+
 	return nil
 }
 
@@ -443,9 +497,14 @@ func (m *Module) Stop() error {
 		}
 	}
 
-	// Clean up journal command if running
-	if m.journalCmd != nil && m.journalCmd.Process != nil {
-		m.journalCmd.Process.Kill()
+	// Clean up journal command if running. Snapshot under the lock — the journal
+	// supervisor (runJournalWatcherOnce) reassigns m.journalCmd on each respawn.
+	// ctx cancellation already stops respawns; this reaps any child still live.
+	m.mu.Lock()
+	journalCmd := m.journalCmd
+	m.mu.Unlock()
+	if journalCmd != nil && journalCmd.Process != nil {
+		_ = journalCmd.Process.Kill() // best-effort reap at shutdown; ctx already stopped respawns
 	}
 
 	// v1.48.0 / v1.176: Clean up file watcher commands. Snapshot under the lock —
@@ -968,42 +1027,133 @@ func (m *Module) detectMode() Mode {
 // LOG_SOURCE_OWNERSHIP_DECLARATION (guarded by TestSourceOwnershipGuard_JournalFacilities).
 var journalAuthFacilities = []string{"4", "10", "11"}
 
-// runJournalWatcher watches journalctl for login failures
+// runJournalWatcher SUPERVISES the journalctl follow watcher: it (re)spawns the
+// child via runJournalWatcherOnce and, if the child dies while ctx is still alive,
+// respawns it with bounded exponential backoff. Without this, a `journalctl -f`
+// child that ends (EOF, abnormal stream end, error) would leave the journal-based
+// detection sources (auth/authpriv/ftp facilities) DARK until daemon restart — a
+// silent detection-availability hole (v1.211 LOGINMON-JOURNAL-NO-RESPAWN; mirrors
+// the v1.176 file-watcher supervisor in runFileWatcher).
+//
+// It also keeps the "journal" input-source state observable + non-stale via
+// recordInputState: OK while a run is healthy, WATCHER_DEGRADED on a transient
+// restart, WATCHER_DOWN after repeated short-lived failures. On ctx cancellation
+// (clean shutdown) it returns without respawning.
 func (m *Module) runJournalWatcher(ctx context.Context) {
-	// Build journalctl command
-	args := []string{
-		"-f",      // Follow mode
-		"-n", "0", // Don't show historical entries
-		"--no-pager",
-		"-o", "short-iso",
-	}
-	for _, f := range journalAuthFacilities {
-		args = append(args, "SYSLOG_FACILITY="+f)
-	}
-	m.journalCmd = exec.CommandContext(ctx, "journalctl", args...)
+	// Record OK initially when the watcher first starts a run (optimistic; the
+	// failure path below flips it to DEGRADED/DOWN, and a healthy run re-affirms OK).
+	m.recordInputState("journal", inputStateOK)
 
-	stdout, err := m.journalCmd.StdoutPipe()
+	backoff := m.watcherBackoffMin
+	consecutiveShortFails := 0
+	for attempt := 0; ; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+		start := time.Now()
+		// A run that survives to the healthy-reset threshold is "healthy" → mark OK
+		// from inside the run (so OK only ever appears for a genuinely healthy run,
+		// never flickering on a doomed short respawn).
+		healthyTimer := time.AfterFunc(m.watcherHealthyReset, func() {
+			if ctx.Err() == nil {
+				m.recordInputState("journal", inputStateOK)
+			}
+		})
+		err := m.runJournalWatcherOnce(ctx, attempt)
+		healthyTimer.Stop()
+		// Clean shutdown → do not respawn.
+		if ctx.Err() != nil {
+			return
+		}
+		// A run that lasted long enough is "healthy" → reset backoff + fail streak.
+		if time.Since(start) >= m.watcherHealthyReset {
+			backoff = m.watcherBackoffMin
+			consecutiveShortFails = 0
+		} else {
+			consecutiveShortFails++
+		}
+		// Input-state: transient restart → WATCHER_DEGRADED; repeated short-lived
+		// failures (>=3 runs that never reached healthy-reset) → WATCHER_DOWN.
+		state := inputStateWatcherDegraded
+		if consecutiveShortFails >= 3 {
+			state = inputStateWatcherDown
+		}
+		m.recordInputState("journal", state)
+		m.status.RecordError(fmt.Errorf("journal watcher exited (ran %s): %v — respawning in %s",
+			time.Since(start).Round(time.Millisecond), err, backoff))
+		log.Printf("[LOGINMON] journal: state=%s reason=watcher_respawn ran=%s err=%v",
+			state, time.Since(start).Round(time.Millisecond), err)
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventError, ModuleName).
+			WithMessage(fmt.Sprintf("Journal watcher DOWN (state=%s) — respawning in %s", state, backoff)))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff *= 2; backoff > m.watcherBackoffMax {
+			backoff = m.watcherBackoffMax
+		}
+	}
+}
+
+// runJournalWatcherOnce runs a single `journalctl -f` child and feeds its lines
+// through the detector pipeline until the child dies or ctx is cancelled. Returns
+// the reason the run ended (nil on clean ctx cancellation). The child cmd builder
+// is overridable in tests via m.newJournalCmd.
+func (m *Module) runJournalWatcherOnce(ctx context.Context, attempt int) error {
+	var cmd *exec.Cmd
+	if m.newJournalCmd != nil {
+		cmd = m.newJournalCmd(ctx)
+	} else {
+		// Build journalctl command
+		args := []string{
+			"-f",      // Follow mode
+			"-n", "0", // Don't show historical entries
+			"--no-pager",
+			"-o", "short-iso",
+		}
+		for _, f := range journalAuthFacilities {
+			args = append(args, "SYSLOG_FACILITY="+f)
+		}
+		cmd = exec.CommandContext(ctx, "journalctl", args...)
+	}
+	// Publish the journalctl child reference for Stop() to reap (guarded).
+	m.mu.Lock()
+	m.journalCmd = cmd
+	m.mu.Unlock()
+
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		m.status.RecordError(err)
-		return
+		return fmt.Errorf("pipe: %w", err)
 	}
 	// CRITICAL: Close stdout pipe on exit to prevent FD/memory leak
 	defer stdout.Close()
 
-	if err := m.journalCmd.Start(); err != nil {
-		m.status.RecordError(err)
-		return
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start: %w", err)
 	}
+
+	verb := "started"
+	if attempt > 0 {
+		verb = "RESPAWNED"
+	}
+	m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, ModuleName).
+		WithMessage(fmt.Sprintf("Journal watcher %s", verb)))
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		default:
 			m.processLine(scanner.Bytes())
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scan: %w", err)
+	}
+	_ = cmd.Wait()
+	return fmt.Errorf("journal stream ended (child exited)")
 }
 
 // panelLogPaths maps detected panel services to their log file paths.
@@ -1369,6 +1519,11 @@ const (
 	inputStateOK         = "OK"
 	inputStateWarnNoLogs = "WARN_NO_LOGS"
 	inputStateNoLogs     = "NO_LOGS"
+	// v1.211 LOGINMON-JOURNAL-NO-RESPAWN: watcher-supervision states for a
+	// detection source whose child watcher is being respawned. healthy=OK,
+	// transient restart=WATCHER_DEGRADED, repeated-failure/dead=WATCHER_DOWN.
+	inputStateWatcherDegraded = "WATCHER_DEGRADED"
+	inputStateWatcherDown     = "WATCHER_DOWN"
 )
 
 // recordInputState stores the input-state of a detection source (v1.182
