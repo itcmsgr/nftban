@@ -73,7 +73,7 @@ nftban_mail_detect_mta() {
     # If user explicitly set a method, use it (after checking availability)
     if [[ -n "${NFTBAN_MAIL_METHOD:-}" ]]; then
         case "${NFTBAN_MAIL_METHOD}" in
-            postfix|sendmail|exim|msmtp|curl|mailx)
+            postfix|sendmail|exim|msmtp|curl|mailx|emulate)
                 # Verify the requested method is available
                 if _nftban_mail_method_available "${NFTBAN_MAIL_METHOD}"; then
                     echo "${NFTBAN_MAIL_METHOD}"
@@ -171,10 +171,32 @@ _nftban_mail_method_available() {
         mailx)
             [[ -x "$NFTBAN_MAILX_BIN" ]] || [[ -x "$NFTBAN_MAILX_ALT_BIN" ]]
             ;;
+        emulate)
+            # A1b: the emulated transport is always available (no binary, no network) —
+            # it records the delivery attempt to a sink for CI/lab validation.
+            return 0
+            ;;
         *)
             return 1
             ;;
     esac
+}
+
+# A1b central-comms emulation: record a delivery ATTEMPT to a sink instead of sending.
+# Same central flow, minus the real transport and the network. NEVER writes secrets.
+# Sink: $NFTBAN_MAIL_EMULATE_SINK, else <data>/mail/test-delivery.jsonl.
+_mail_emulate_record() {
+    local recipient="${1:-}" subject="${2:-}" result="${3:-emulated}"
+    local sink="${NFTBAN_MAIL_EMULATE_SINK:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mail/test-delivery.jsonl}"
+    local dir; dir=$(dirname "$sink")
+    mkdir -p "$dir" 2>/dev/null || true
+    # JSON line — transport=emulate; explicitly NO SMTP password / secret fields.
+    local esc_subj="${subject//\"/\\\"}"; esc_subj="${esc_subj//$'\n'/ }"
+    printf '{"ts":"%s","transport":"emulate","module":"%s","recipient":"%s","subject":"%s","result":"%s"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
+        "${NFTBAN_MAIL_MODULE:-unknown}" "$recipient" "$esc_subj" "$result" \
+        >> "$sink" 2>/dev/null || true
+    return 0
 }
 
 # =============================================================================
@@ -640,6 +662,16 @@ nftban_mail_send() {
 
     # Send email using detected MTA
     case "$mta" in
+        emulate)
+            # A1b: full central flow (recipient already resolved above) minus the real
+            # transport — record the attempt to the sink, no sendmail/mailx/curl, no network.
+            if [[ "${NFTBAN_MAIL_DEBUG:-false}" == "true" ]]; then
+                echo "[DEBUG] EMULATE: would send to $recipient — Subject: $subject (no real transport)"
+            fi
+            _mail_emulate_record "$recipient" "$subject" "emulated"
+            return 0
+            ;;
+
         postfix|sendmail)
             # Use sendmail command
             if [[ "${NFTBAN_MAIL_DEBUG:-false}" == "true" ]]; then
@@ -827,6 +859,29 @@ CURLEOF
 # =============================================================================
 # SEND TEST EMAIL
 # =============================================================================
+
+# A1b: validate the comms config WITHOUT sending or recording (dry-run = validate only).
+# Reports recipient resolution, selected transport, and transport prerequisites. Returns
+# 0 if the config could deliver, 1 otherwise. Never invokes a transport, never writes a sink.
+nftban_mail_test_dryrun() {
+    local override="${1:-}" rc=0 recipient mta
+    echo "Mail config dry-run (validate only — NOT sent):"
+    if recipient="$(nftban_mail_resolve_recipient "$override")"; then
+        echo "  Recipient: ${recipient} (resolved)"
+    else
+        echo "  Recipient: MISSING — set NFTBAN_MAIL_RECIPIENT or pass a recipient"; rc=1
+    fi
+    mta="$(nftban_mail_detect_mta)"
+    echo "  Transport: ${mta}"
+    if [[ "$mta" == "none" ]]; then
+        echo "  ERROR: no usable transport (no local MTA and no curl + NFTBAN_SMTP_HOST)"; rc=1
+    elif [[ "$mta" == "curl" ]]; then
+        [[ -n "${NFTBAN_SMTP_HOST:-}" ]] || { echo "  ERROR: curl-SMTP selected but NFTBAN_SMTP_HOST is unset"; rc=1; }
+        command -v curl >/dev/null 2>&1 || { echo "  ERROR: curl-SMTP selected but curl is not installed"; rc=1; }
+    fi
+    if [[ $rc -eq 0 ]]; then echo "  Result: OK (config valid; nothing was sent)"; else echo "  Result: INVALID (see errors; nothing was sent)"; fi
+    return $rc
+}
 
 nftban_mail_send_test() {
     # Send test email
