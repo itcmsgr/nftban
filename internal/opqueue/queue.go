@@ -596,6 +596,12 @@ type OpQueue struct {
 	// intended (partial/fail-open apply). A non-zero value is a degraded signal — the set
 	// is short of what was requested. Surfaced via QueueStats / sync-status JSON.
 	replacePartialFailures atomic.Uint64
+	// L3b: never-ban invariant on the opqueue ban path. exemptCheck (injected by the
+	// daemon) reports whether adding ip to set would violate never-ban (enforcement set +
+	// exempt single IP). nil = no guard (fail-safe: never blocks a legitimate ban).
+	// enqueueBanExemptSkips counts EnqueueBan calls refused for an exempt IP.
+	exemptCheck           func(set, ip string) (bool, string)
+	enqueueBanExemptSkips atomic.Uint64
 
 	// Last flush time
 	lastFlushTime atomic.Value // time.Time
@@ -651,6 +657,24 @@ func (q *OpQueue) SetOnFlush(fn func(setName string, applied int, opType string)
 	q.onFlush = fn
 }
 
+// SetExemptResolver injects the L3b never-ban guard. fn reports (exempt, reason) for
+// adding ip into set; it should combine the enforcement-set classifier with the
+// authoritative IsExempt resolver (same one backend.Ban / L3a use). Safe to call once at
+// daemon init. nil disables the guard (fail-safe).
+func (q *OpQueue) SetExemptResolver(fn func(set, ip string) (bool, string)) {
+	q.exemptCheck = fn
+}
+
+// CheckExempt reports whether adding ip into set would violate the never-ban invariant,
+// using the injected resolver. Nil-safe (no resolver → not exempt). Exposed so ban-path
+// callers (e.g. the BotGuard enforcer) can pre-check and skip with a clear log.
+func (q *OpQueue) CheckExempt(set, ip string) (bool, string) {
+	if q.exemptCheck == nil {
+		return false, ""
+	}
+	return q.exemptCheck(set, ip)
+}
+
 // Start begins the async flush worker
 func (q *OpQueue) Start(ctx context.Context) {
 	if q.running.Load() {
@@ -685,12 +709,22 @@ func (q *OpQueue) Stats() QueueStats {
 		TotalApplied:           q.totalApplied.Load(),
 		TotalDropped:           q.totalDropped.Load(),
 		ReplacePartialFailures: q.replacePartialFailures.Load(),
+		EnqueueBanExemptSkips:  q.enqueueBanExemptSkips.Load(),
 		LastFlushTime:          lastFlush,
 	}
 }
 
 // EnqueueBan adds a ban operation (async, non-blocking)
 func (q *OpQueue) EnqueueBan(setName string, element string, ttl uint32, source, reason string) error {
+	// L3b — never-ban invariant on the opqueue ban path (backstop). BotGuard state-set
+	// bans are still bans: an exempt single IP must never enter a DROP/enforcement set,
+	// regardless of queue path or a caller forgetting to pre-check. Skip (not an error) —
+	// exempt = safe no-op, mirroring backend.Ban. Nil resolver never blocks a legit ban.
+	if exempt, reasonWhy := q.CheckExempt(setName, element); exempt {
+		q.enqueueBanExemptSkips.Add(1)
+		log.Printf("[opqueue] EnqueueBan REFUSED (never-ban exempt: %s) set=%s ip=%s source=%s reason=%s — protected admin/management/whitelist/system/live-SSH IP NOT added to enforcement set", reasonWhy, setName, element, source, reason)
+		return nil
+	}
 	op := &SetOp{
 		Type:    OpAdd,
 		Element: element,

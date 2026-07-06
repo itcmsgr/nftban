@@ -977,6 +977,12 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	if len(sig.Reasons) > 0 {
 		reason = botscanProvenanceSrc + ":" + sig.Reasons[0]
 	}
+	// L3b — never-ban pre-check before the opqueue ban (the EnqueueBan guard is the
+	// backstop). Skip an exempt IP with a clear log; not counted as a ban.
+	if exempt, why := m.opQueue.CheckExempt(setName, ip.String()); exempt {
+		log.Printf("[botguard] never-ban exempt (%s): %s NOT added to %s", why, ip, setName)
+		return false
+	}
 	if err := m.opQueue.EnqueueBan(setName, ip.String(), ttlSec, botscanProvenanceSrc, reason); err != nil {
 		log.Printf("[botguard] botscan blacklist_manual enqueue error for %s: %v", ip, err)
 		return false

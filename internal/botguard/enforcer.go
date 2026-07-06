@@ -81,6 +81,16 @@ func (e *Enforcer) Apply(ip netip.Addr, oldState, newState IPState, reason strin
 
 	ttl := e.ttlSeconds(newState)
 
+	// L3b — never-ban pre-check: a BotGuard state-set ban is still a ban. Skip (with a
+	// clear log) before enqueuing an exempt admin/management/whitelist/system/live-SSH IP
+	// into a drop/enforcement set. The opqueue EnqueueBan guard is the backstop.
+	if exempt, why := e.queue.CheckExempt(newSet, ipStr); exempt {
+		if e.config.LogDecisions {
+			log.Printf("[botguard] never-ban exempt (%s): %s NOT added to %s", why, ipStr, newSet)
+		}
+		return nil
+	}
+
 	if err := e.queue.EnqueueBan(newSet, ipStr, ttl, enforcerSource, reason); err != nil {
 		return fmt.Errorf("add %s to %s: %w", ipStr, newSet, err)
 	}
