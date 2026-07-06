@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.217.0] - 2026-07-06 — Defensive nft rule-order: loopback accept before invalid-state drop (nft data-plane; daemon byte-identical)
+
+**Lane:** `OPEN_LOOPBACK_BEFORE_INVALID_V217_0`. **PR:** [#1009](https://github.com/itcmsgr/nftban/pull/1009) → `96b74b5b`.
+
+> **nft DATA-PLANE SEMANTIC CHANGE** (input-chain rule order) — but the **nft schema *contract* version remains 1.84.0** (no set/chain/table added/renamed/restructured; only rule ordering + a validator assertion). **Daemon + matcher BYTE-IDENTICAL** (0 Go, source-proven; input-chain order is template-driven, `internal/nftbackend/exemption.go` loopback fail-safe unchanged). Single-defect defensive release.
+
+- **Fix:** `iif "lo" accept` now precedes `ct state invalid drop` in **both the IPv4 and IPv6 `nftban input` chains**. Previously invalid-drop was emitted first, so a loopback packet the kernel marks INVALID could be dropped before the loopback-accept rule protects it (latent — masked by `tcp_loose=1` + no long-idle off-monitor local-TCP pool; not observed firing, but a fleet-wide rule-order landmine). External INVALID traffic is still dropped — the rule simply follows the loopback carve-out. Output chains (`oif lo` first) unchanged.
+- **Surfaces:** template `nftables.conf.tpl` (v4+v6) + rendered `nftables.conf` + `nftables-safe.conf` reordered.
+- **Validator/regression guard:** `nftban_nft_validate_rule_order` (`cli/lib/nftban/lib/nft_schema.sh`) gains a **CRITICAL loopback<invalid assertion** for `ip`+`ip6`; new regression test `nft_loopback_before_invalid_v217_test.sh` (22/0) asserts rendered/template/safe order (v4+v6), output chains unchanged, no rule dropped, anchors intact, and that the header/doc order tables teach loopback-first.
+- **Doc-order blockers D-1/D-2/D-3 cleared:** the rendered-conf header comment (`nftables.conf:43-44`), the `docs/NFT-Schema-Validation.md` rule-order table, and `docs/ANCHOR_CONTRACT.md` Phase-0 description now all teach loopback-before-invalid (guarded by the regression test).
+- **Deferred (not this release):** the broad docs/CLI truth debt from the v1.217 audit (SECURITY.md "no network listeners", THREAT_MODEL volumetric wording, `search`/`validate` registry overclaims, SystemCallFilter, Quick-Start whitelist, missing-docs) → `OPEN_DOCS_TRUTH_CLI_SCHEMA_FOLLOWUP`.
+
 ## [v1.216.4] - 2026-07-04 — Install/update warning taxonomy + timer-restore false-warn fix (shell/UX; daemon byte-identical)
 
 **Lane:** `OPEN_INSTALL_UPDATE_WARNING_TAXONOMY_AND_DEBT_V216_4` (lane A). Completes the **v1.216.2 → v1.216.4 health/warning cleanup train** before closure. **PR:** [#1006](https://github.com/itcmsgr/nftban/pull/1006) → `daf6c63d`.
