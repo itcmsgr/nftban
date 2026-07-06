@@ -426,6 +426,58 @@ _collect_status() {
     _safe_cmd "$bundle_dir/status.txt" "NFTBan status" nftban status
 }
 
+# A2c: narrow, LOCAL redaction for the comms summary — SECRET_PATTERNS + comms-specific
+# fields (SMTP user, full recipient local-part). This is intentionally minimal; full
+# support-bundle redaction (SEC-P1-2) remains a separate open lane.
+_redact_comms() {
+    local t; t=$(_redact_secrets "$1")
+    t=$(printf '%s' "$t" | sed -E \
+        -e 's/([Aa]uth [Uu]ser:[[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
+        -e 's/([Ss][Mm][Tt][Pp]_?[Uu][Ss][Ee][Rr][[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
+        -e 's/([Nn][Ff][Tt][Bb][Aa][Nn]_[Ss][Mm][Tt][Pp]_[Pp][Aa][Ss][Ss][[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
+        -e 's/(Recipient:[[:space:]]*)[^@[:space:]]+@([^[:space:]]+)/\1[redacted]@\2/g')
+    printf '%s' "$t"
+}
+
+# A2c: sanitized central-comms + RBL observe-only summary. Reuses the existing redactor;
+# includes the A2a delivery-log tail (already recipient-redacted, secret-free) and the A2r
+# RBL honesty label. No secrets, no NFTBAN_SMTP_PASS, recipient redacted.
+_collect_communications() {
+    local bundle_dir="$1"
+    local out="$bundle_dir/communications.txt"
+    if ! command -v nftban &>/dev/null; then
+        _support_log SKIP "Communication summary (nftban not in PATH)"
+        return 0
+    fi
+    {
+        echo "=== Communication (central-comms) — sanitized ==="
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+    } > "$out"
+    _redact_comms "$(nftban mail status 2>&1 || echo '(mail status unavailable)')" >> "$out"
+    echo "" >> "$out"
+
+    echo "=== Delivery-log tail (last 50, sanitized) ===" >> "$out"
+    local dlog="${NFTBAN_MAIL_DELIVERY_LOG:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mail/delivery.jsonl}"
+    if [[ -f "$dlog" ]]; then
+        _redact_comms "$(tail -n 50 "$dlog" 2>/dev/null)" >> "$out"
+    else
+        echo "(no delivery log yet)" >> "$out"
+    fi
+    echo "" >> "$out"
+
+    {
+        echo "=== RBL (observe-only advisory reputation) ==="
+        echo "Note: RBL is advisory reputation monitoring, not firewall blocking."
+        echo "      A DNSBL check cannot determine a provider-specific Proofpoint/iCloud bounce."
+        echo ""
+    } >> "$out"
+    _redact_comms "$(nftban rbl status 2>&1 || echo '(rbl status unavailable)')" >> "$out"
+
+    _support_log OK "Communication + RBL summary (sanitized)"
+    return 0
+}
+
 _collect_update_info() {
     local bundle_dir="$1"
     local update_dir="$bundle_dir/update"
@@ -1714,6 +1766,7 @@ _cmd_support_bundle() {
     _collect_logs "$bundle_dir"
     _collect_health "$bundle_dir"
     _collect_status "$bundle_dir"
+    _collect_communications "$bundle_dir"
     _collect_daemon_status "$bundle_dir"
     _collect_recent_activity "$bundle_dir"
     _collect_update_info "$bundle_dir"
