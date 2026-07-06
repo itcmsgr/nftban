@@ -1426,6 +1426,22 @@ _status_section_health() {
     echo ""
 }
 
+_status_section_communication() {
+    # A2b: read-only central-comms summary from A2a-produced state (sends nothing).
+    if ! declare -F nftban_mail_status_summary >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
+    fi
+    declare -F nftban_mail_status_summary >/dev/null 2>&1 || return 0
+    local transport; transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    echo ""
+    echo "COMMUNICATION"
+    printf "  %-21s %s\n" "Transport............" "$transport"
+    # recipient / spool depth+age / last success / last failure (all A2a state, sanitized)
+    nftban_mail_status_summary 2>/dev/null
+    return 0
+}
+
 _status_section_activity() {
     # ─────────────────────────────────────────────────────────────────────
     # RECENT ACTIVITY
@@ -1710,6 +1726,7 @@ output_terminal() {
     _status_section_authority
     _status_section_services
     _status_section_protection "$quiet_mode"
+    _status_section_communication
     _status_section_health "$protection_state" "$quiet_mode"
     _status_section_activity
     _status_section_timers "$quiet_mode"

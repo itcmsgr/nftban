@@ -102,6 +102,23 @@ fi
 # SUBCOMMAND: BRIEF (v1.37.1)
 # =============================================================================
 
+nftban_stats_cmd_comms() {
+    # A2b: central-comms counters from A2a-produced mail.prom (read-only; no new source).
+    local prom="${NFTBAN_MAIL_METRICS_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/mail.prom}"
+    echo "Communication (central-comms) counters:"
+    if [[ ! -f "$prom" ]]; then
+        echo "  (no mail metrics yet — ${prom} not found)"
+        return 0
+    fi
+    local m
+    for m in nftban_mail_send_success_total nftban_mail_send_failures_total \
+             nftban_mail_spool_depth nftban_mail_spool_oldest_age_seconds \
+             nftban_mail_last_failure_timestamp nftban_mail_transport_selected; do
+        grep -E "^${m}([{ ])" "$prom" 2>/dev/null | sed 's/^/  /' || true
+    done
+    return 0
+}
+
 nftban_stats_cmd_brief() {
     # v1.37.1: One-line stats output for scripts/monitoring
     # Output: "75 banned | 9 whitelisted | 40 dropped | 1463 bans today"
@@ -163,6 +180,10 @@ nftban_cmd_stats() {
             ;;
         --brief|-b)
             nftban_stats_cmd_brief
+            return $?
+            ;;
+        comms)
+            nftban_stats_cmd_comms
             return $?
             ;;
         dashboard|summary|"")
@@ -1314,6 +1335,7 @@ USAGE:
 COMMANDS:
     dashboard | summary    Show comprehensive statistics dashboard (default)
     trend                  Show 7-day trend analysis with averages
+    comms                  Show central-comms delivery counters (read-only)
     top <type> [N]         Show top lists (ips, countries, filters)
     ip <IP>                Show ban history for specific IP
     recent [N]             Show recent ban activity
