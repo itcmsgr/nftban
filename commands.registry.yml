@@ -1215,7 +1215,7 @@ rbl:
       mutates: false
       description: "Alert system management"
       subcommands:
-        test: {mutates: false, description: "Send test alert email"}
+        test: {mutates: false, description: "Send test alert email (or --dry-run to validate mail config without sending)"}
     critical:
       mutates: conditional
       description: "Manage critical IPs for monitoring"
