@@ -20,6 +20,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,16 @@ func (d *Daemon) handleAddElementRequest(params map[string]any) SocketResponse {
 	}
 	if !validNFTBanSet(set) {
 		return SocketResponse{Success: false, Error: "invalid set: " + set}
+	}
+
+	// L3a — never-ban invariant on the generic add path (handler-level reject for clear
+	// operator/API feedback). The backend enforces the same as defense-in-depth, so this
+	// is a UX layer, not the sole guard. Enforcement sets + single exempt IP only.
+	if nftbackend.IsEnforcementSet(set) {
+		if exempt, reason := d.backend.IsExempt(element); exempt {
+			log.Printf("[ADD_ELEMENT] REFUSED (never-ban exempt: %s) set=%s ip=%s — protected IP NOT added to enforcement set", reason, set, element)
+			return SocketResponse{Success: false, Error: fmt.Sprintf("refused: never-ban exempt (%s) — %s not added to enforcement set %s", reason, element, set)}
+		}
 	}
 
 	timeout := 0
