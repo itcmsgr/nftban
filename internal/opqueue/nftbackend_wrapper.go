@@ -114,27 +114,41 @@ func (w *NFTBackendWrapper) FlushSet(tableName, setName string) error {
 	return w.nft.FlushSet(set)
 }
 
-// AddElements adds elements to a set (batched)
-func (w *NFTBackendWrapper) AddElements(tableName, setName string, elements []SetElement) error {
+// AddElements adds elements to a set (batched). L2b (OPQUEUE_PER_ELEMENT_APPLY_RESULT):
+// truth-bearing — returns the count ACTUALLY applied and, if any element failed, a
+// non-nil error carrying the applied/total shortfall + the first failure. Previously this
+// swallowed per-element failures and returned nil (success-shaped), which hid partial
+// replace_set applies from the caller. It still continues past a single bad element (so one
+// bad IP does not abort the whole batch), but no longer reports that as full success.
+func (w *NFTBackendWrapper) AddElements(tableName, setName string, elements []SetElement) (int, error) {
 	if len(elements) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	set, err := w.getSet(setName)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Convert to string IPs for NFTManager
+	applied := 0
+	var firstErr error
 	for _, elem := range elements {
 		timeout := time.Duration(elem.TTL) * time.Second
 		if err := w.nft.AddIPWithTimeout(set, elem.Value, timeout); err != nil {
-			// Log but continue - don't fail batch for individual errors
+			// Continue past a single bad element, but remember the first failure.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("add %q to %s: %w", elem.Value, setName, err)
+			}
 			continue
 		}
+		applied++
 	}
 
-	return nil
+	if applied < len(elements) {
+		return applied, fmt.Errorf("applied %d of %d to %s: %w", applied, len(elements), setName, firstErr)
+	}
+	return applied, nil
 }
 
 // DeleteElements removes elements from a set (batched)
