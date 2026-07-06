@@ -143,8 +143,8 @@ The `nftband` daemon uses **Unix socket IPC** for CLI communication:
 | Authentication | `SO_PEERCRED` credential verification |
 
 **Security Properties:**
-- **No network listeners:** The daemon does not bind to any network interface
-- **Local-only access:** Communication restricted to local Unix socket
+- **No remote listeners:** The daemon's control/IPC path is a local Unix socket only — it does not accept IPC from any network interface. Its only network binding is a localhost-only HTTP metrics/health endpoint on `127.0.0.1:9580` (loopback; not reachable from remote networks unless explicitly reconfigured).
+- **Local-only access:** IPC restricted to the local Unix socket
 - **Group-based ACL:** Only `nftban` group members can communicate with daemon
 - **Credential verification:** Client UID/GID verified via socket peer credentials
 
@@ -186,10 +186,11 @@ All nftables rule changes are **atomic via nftables transactions**:
 
 ## systemd Service Hardening
 
-All NFTBan services implement comprehensive systemd sandboxing:
+NFTBan services apply a baseline of systemd sandboxing, with additional syscall
+filtering on selected services:
 
 ```ini
-# Applied to all services
+# Baseline directives applied broadly across NFTBan units
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -201,9 +202,15 @@ RestrictNamespaces=true
 LockPersonality=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
-SystemCallFilter=@system-service
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
+
+# SystemCallFilter is applied to a subset of units (currently the shorter-lived
+# helper services: nftban-core-feeds, nftban-core-geoip, nftban-firewall-init,
+# nftban-firewall-validate). It is NOT currently set on the long-running nftband
+# daemon unit; see the MemoryDenyWriteExecute trade-off note below for why some
+# hardening directives are applied selectively rather than uniformly.
+SystemCallFilter=@system-service   # (selected services only, not nftband.service)
 ```
 
 ### MemoryDenyWriteExecute Trade-off

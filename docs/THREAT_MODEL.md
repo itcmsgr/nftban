@@ -12,7 +12,7 @@ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall ma
 
 - **Login monitoring** - Detects brute-force attacks against SSH, mail, FTP, and web services
 - **Portscan detection** - Identifies network reconnaissance activity
-- **DDoS protection** - Mitigates volumetric and application-layer attacks
+- **Host-level DoS mitigation** - Per-IP SYN/connection rate limiting and syncookies enforced at the nftables layer (host-local); not volumetric DDoS scrubbing or upstream/provider-scale absorption, which require network-capacity mitigation
 - **Threat feed integration** - Blocks known malicious IPs from community and commercial feeds
 - **Geographic blocking** - Country-based access control via GeoIP
 
