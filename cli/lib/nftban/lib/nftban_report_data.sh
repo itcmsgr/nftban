@@ -571,11 +571,11 @@ _collect_rbl_info() {
             _rdata[RBL_LAST_CHECK]="Never"
         fi
 
-        # Activity summary
+        # Activity summary — RBL is advisory reputation monitoring (observe-only), NOT blocking.
         if [[ $listed_count -gt 0 ]]; then
-            _rdata[MODULE_RBL_ACTIVITY]="${listed_count} IPs blacklisted!"
+            _rdata[MODULE_RBL_ACTIVITY]="${listed_count} IP(s) listed on reputation lists (advisory — not blocked)"
         else
-            _rdata[MODULE_RBL_ACTIVITY]="${clean_count} IPs clean"
+            _rdata[MODULE_RBL_ACTIVITY]="${clean_count} IPs clean (advisory reputation monitoring)"
         fi
     else
         _rdata[MODULE_RBL_STATUS]="Disabled"

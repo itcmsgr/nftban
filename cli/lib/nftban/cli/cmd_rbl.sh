@@ -336,6 +336,10 @@ nftban_cmd_rbl_config() {
     echo "  Cache TTL:      ${NFTBAN_RBL_CACHE_TTL:-24} hours"
     echo "  Alert Email:    ${NFTBAN_RBL_ALERT_EMAIL:-(not set)}"
     echo ""
+    echo "Scope:"
+    echo "  RBL is advisory reputation monitoring (observe-only), not firewall blocking."
+    echo "  A DNSBL check cannot determine a provider-specific Proofpoint/iCloud bounce."
+    echo ""
     echo "To override settings, create/edit: $config_local"
 }
 
