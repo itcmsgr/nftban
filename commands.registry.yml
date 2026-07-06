@@ -2164,6 +2164,7 @@ stats:
   output_modes: [json, text]
   has_json: true
   subcommands:
+    comms: {mutates: false, description: "Show central-comms delivery counters (success/failures/spool/oldest-age/last-failure/transport)"}
     dashboard:
       mutates: false
       description: "Show dashboard overview"

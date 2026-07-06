@@ -64,7 +64,7 @@ _nftban() {
 
     # Monitoring & Reporting
     local metrics_cmds="status enable disable help"
-    local stats_cmds="summary dashboard top export monitor cleanup trend --json help"
+    local stats_cmds="summary dashboard top export monitor cleanup trend comms --json help"
     local report_cmds="generate run schedule email email-setup list status --json help"
     local fhs_cmds="check status --json help"
     local module_cmds="list status --json help"

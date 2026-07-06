@@ -551,6 +551,7 @@ nftban_health_check_all() {
     nftban_health_check_geoip 2>/dev/null || true
     nftban_health_check_geoban 2>/dev/null || true
     nftban_health_check_rbl 2>/dev/null || true
+    nftban_health_check_communication 2>/dev/null || true
     nftban_health_check_botguard 2>/dev/null || true
     nftban_health_check_tunnel 2>/dev/null || true
     nftban_health_check_databases 2>/dev/null || true
