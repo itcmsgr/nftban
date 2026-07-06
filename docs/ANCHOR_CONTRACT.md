@@ -11,8 +11,8 @@ NFTBan's input chain has a fixed 7-phase structure. Each phase boundary is marke
 ```
 Phase  Anchor                   Purpose
 ─────  ───────────────────────  ─────────────────────────────────
-  0    ANCHOR_HYGIENE           ct state invalid drop
-  1    ANCHOR_TRUSTED           loopback accept, whitelist accept
+  0    ANCHOR_HYGIENE           loopback accept, then ct state invalid drop (v1.217.0: iif lo BEFORE invalid-drop)
+  1    ANCHOR_TRUSTED           whitelist accept
   2    ANCHOR_BAN               blacklist drop, per-IP port access
   3    ANCHOR_ESTABLISHED       ct state established,related accept
   4    ANCHOR_DETECT            CT limits, SYN meter, portscan

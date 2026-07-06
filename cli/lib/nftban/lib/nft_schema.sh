@@ -57,8 +57,8 @@ readonly NFTBAN_NFT_SCHEMA_LOADED=1
 #
 # Priority  | Rule                          | Reason
 # ----------|-------------------------------|----------------------------------
-# 1.        | ct state invalid → drop       | Malformed packets
-# 2.        | iif lo → accept               | Loopback always allowed
+# 1.        | iif lo → accept               | Loopback always allowed (BEFORE invalid-drop, v1.217.0)
+# 2.        | ct state invalid → drop       | Malformed packets (after loopback carve-out)
 # 3.        | whitelist → accept            | Trusted IPs bypass all checks
 # 4.        | blacklist → drop              | ⚠️ BEFORE established! (permanent + temporary with timeout)
 # 5.        | ct state established → accept | ✅ NOW SAFE (after all bans)
@@ -1114,6 +1114,23 @@ nftban_nft_validate_rule_order() {
                 echo "WARNING: ${family} nftban: port_allow should come BEFORE 'ct state established'" >&2
             fi
         fi
+
+        # v1.217.0 LOOPBACK_BEFORE_INVALID: the loopback accept (iif lo) MUST precede the
+        # invalid-state drop, so local loopback traffic the kernel marks INVALID is never
+        # dropped. External INVALID traffic is still dropped (the rule just moves after the
+        # loopback carve-out). Handle order: iif "lo" accept < ct state invalid drop.
+        local loopback_handle=0 invalid_handle=0
+        loopback_handle=$(echo "$rules" | grep -E 'iif "?lo"?.*accept' | grep -oP 'handle \K[0-9]+' | head -1 || true)
+        [[ -z "$loopback_handle" ]] && loopback_handle=0
+        invalid_handle=$(echo "$rules" | grep -E 'ct state invalid.*drop' | grep -oP 'handle \K[0-9]+' | head -1 || true)
+        [[ -z "$invalid_handle" ]] && invalid_handle=0
+        if [[ $loopback_handle -gt 0 && $invalid_handle -gt 0 ]]; then
+            if [[ $loopback_handle -gt $invalid_handle ]]; then
+                echo "CRITICAL: ${family} nftban: Loopback (iif lo) MUST come BEFORE 'ct state invalid' drop!" >&2
+                echo "  Current order can drop local loopback traffic marked INVALID (v1.217.0 LOOPBACK_BEFORE_INVALID)." >&2
+                status=1
+            fi
+        fi
     done
 
     return $status
@@ -1241,7 +1258,7 @@ nftban_nft_validate_full() {
     echo ""
     echo "5. Rule Order Security (IPv4 + IPv6):"
     if output=$(nftban_nft_validate_rule_order 2>&1); then
-        echo "   ✅ Rule order is correct (blacklist before established)"
+        echo "   ✅ Rule order is correct (loopback before invalid, blacklist before established)"
     else
         echo "   ❌ SECURITY ISSUE: Rule order incorrect!"
         echo "$output" | sed 's/^/      /'
