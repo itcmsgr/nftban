@@ -2163,6 +2163,19 @@ _fw_restore_timed_set() {
     echo "$restored $skipped $expired"
 }
 
+# _fw_count_dump_elems <nft-set-dump-file> — count elements in a `nft list set`
+# dump (multiline-safe). Echoes an integer (0 if file missing/empty). Used by the
+# L2c blacklist-empty-during-refresh fail-open detector.
+_fw_count_dump_elems() {
+    local f="$1" blob commas
+    [[ -f "$f" ]] || { echo 0; return 0; }
+    blob=$(tr '\n\t' '  ' < "$f" 2>/dev/null | grep -oP 'elements = \{\s*\K[^}]+' || true)
+    blob="${blob// /}"
+    [[ -z "$blob" ]] && { echo 0; return 0; }
+    commas="${blob//[^,]/}"
+    echo $(( ${#commas} + 1 ))
+}
+
 _rebuild_rollback() {
     # Restore from snapshot
     # Args: $1 = snapshot directory
@@ -2570,7 +2583,7 @@ _firewall_rebuild_core() {
     # mechanism) and re-apply with the REMAINING ttl (expires), fixing the old parser's
     # per-line/wrapped-output and timeout/expires-rejection defects at the same time.
     [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist + manual bans from snapshot (TTL-preserving)..."
-    local _rs_total=0 _rs_skip=0 _rs_exp=0
+    local _rs_total=0 _rs_skip=0 _rs_exp=0 _bl_before=0
     local _set _fam _dump _counts _r _s _e
     for _set in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6; do
         case "$_set" in
@@ -2579,12 +2592,29 @@ _firewall_rebuild_core() {
             *) continue ;;
         esac
         _dump="$snapshot_dir/sets/${_set}.nft"
+        # L2c: pre-rebuild element count (from the snapshot) = "had bans before"
+        _bl_before=$((_bl_before + $(_fw_count_dump_elems "$_dump")))
         _counts=$(_fw_restore_timed_set "$_dump" "$_fam" "$_set" "$quiet")
         IFS=' ' read -r _r _s _e <<<"$_counts"
         _rs_total=$((_rs_total + _r)); _rs_skip=$((_rs_skip + _s)); _rs_exp=$((_rs_exp + _e))
         [[ "$quiet" == "false" && "$_r" -gt 0 ]] && echo "    Restored $_r into $_set (skipped=$_s expired=$_e)"
     done
     [[ "$quiet" == "false" ]] && echo "    Blacklist restore: $_rs_total restored, $_rs_skip skipped, $_rs_exp expired"
+
+    # L2c (TRANSITION-FAIL-OPEN-UNOBSERVED): if the blacklist held bans before the
+    # rebuild but is completely empty after restore, a fail-open window persisted —
+    # record it as a harm-keyed CRITICAL in the transition-health counter (the
+    # function self-guards before>0). With L2a working this should never fire; it is
+    # a regression detector for any future break of the snapshot-restore path.
+    if [[ "$_bl_before" -gt 0 && "$_rs_total" -eq 0 ]]; then
+        local _fth_helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
+        if [[ -f "$_fth_helper" ]]; then
+            # shellcheck source=/dev/null
+            source "$_fth_helper" 2>/dev/null || true
+            declare -f fth_note_blacklist_empty >/dev/null 2>&1 && fth_note_blacklist_empty "$_bl_before" || true
+        fi
+        [[ "$quiet" == "false" ]] && echo "    WARNING: blacklist empty after rebuild (had $_bl_before before) — recorded transition-health CRITICAL"
+    fi
 
     # Step 8 (v1.50.1): Re-apply DDoS protection if enabled
     # Preflight: module re-enable requires daemon IPC. If daemon is down
@@ -2728,9 +2758,12 @@ _firewall_rebuild_core() {
         fi
 
         # BotGuard: check for botguard helper chain
-        # Actual chain name: botguard_filter
+        # L2d: the real rendered chain is http_bot_guard (BOTGUARD_NFT_CHAIN override,
+        # nft_fragment.sh:1641); the previous `botguard_filter` name never exists, so
+        # this check always downgraded an enabled BotGuard to INCOMPLETE.
+        local _bg_chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
         if _firewall_botguard_is_enabled 2>/dev/null && [[ "$_REBUILD_MODULE_BOTGUARD" == "$MR_OK" ]]; then
-            if nft list chain ip nftban botguard_filter &>/dev/null; then
+            if nft list chain ip nftban "$_bg_chain" &>/dev/null; then
                 [[ "$quiet" == "false" ]] && echo "    BotGuard: chain verified (Level 1+2)"
             else
                 _rebuild_classify_module_result "botguard" "$MR_INCOMPLETE"
