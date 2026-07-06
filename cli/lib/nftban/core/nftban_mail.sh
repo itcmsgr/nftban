@@ -86,6 +86,16 @@ nftban_mail_detect_mta() {
         esac
     fi
 
+    # A1 central-comms (prefer-explicit-SMTP): if the operator configured an SMTP relay
+    # (NFTBAN_SMTP_HOST) and did NOT force a method, prefer daemonless curl-SMTP over an
+    # incidentally-present local MTA. This gives predictable delivery via the operator's
+    # chosen relay instead of e.g. a panel's local postfix/greylisting. Explicit
+    # NFTBAN_MAIL_METHOD still wins (handled above). Honors NO_LOCAL_MAIL_DAEMON_REQUIREMENT.
+    if [[ -z "${NFTBAN_MAIL_METHOD:-}" && -n "${NFTBAN_SMTP_HOST:-}" ]] && command -v curl &>/dev/null; then
+        echo "curl"
+        return 0
+    fi
+
     # Auto-detect: Check Postfix (highest priority - local MTA)
     if [[ -x "$NFTBAN_POSTFIX_BIN" ]]; then
         if systemctl is-active postfix &>/dev/null 2>&1 || pgrep -x master &>/dev/null; then
@@ -518,6 +528,36 @@ nftban_mail_template_replace() {
 # SEND EMAIL (MAIN FUNCTION)
 # =============================================================================
 
+# A1 central-comms: single recipient-resolution choke point. Model: module override →
+# global NFTBAN_MAIL_RECIPIENT. Prints the resolved recipient (stdout) and returns 0, or
+# returns 1 with no output when neither is set (missing recipient = explicit error, never a
+# silent no-op). Every module send-path must terminate here.
+nftban_mail_resolve_recipient() {
+    local override="${1:-}"
+    local recip="${override:-${NFTBAN_MAIL_RECIPIENT:-}}"
+    [[ -z "$recip" ]] && return 1
+    printf '%s' "$recip"
+    return 0
+}
+
+# A1 central-comms: the ONLY entry a module should use to emit an alert. Modules submit a
+# payload (subject + body [+ optional recipient override]); central owns recipient
+# resolution, transport, retry, and spool. On a missing recipient or an unavailable central
+# authority it returns non-zero WITHOUT any direct-send side channel (the caller logs a
+# degraded event). Never invokes a transport primitive itself.
+nftban_mail_alert() {
+    local subject="${1:-NFTBan Alert}" body="${2:-}" override="${3:-}"
+    local recipient
+    recipient="$(nftban_mail_resolve_recipient "$override")" || {
+        echo "Error: no mail recipient configured (set NFTBAN_MAIL_RECIPIENT)" >&2
+        return 1
+    }
+    # Prepend a Subject header only if the body doesn't already carry one.
+    local content="$body"
+    [[ "$body" == Subject:* ]] || content=$(printf 'Subject: %s\n\n%s' "$subject" "$body")
+    nftban_mail_send_with_retry "$content" "$recipient" "$subject"
+}
+
 nftban_mail_send() {
     # Send email with content
     # Args: $1 = content (text or file path)
@@ -712,8 +752,15 @@ EOF
             # v1.19.0: Add SMTP auth via netrc file to avoid credential exposure in process args (R23)
             local _smtp_netrc=""
             if [[ -n "${NFTBAN_SMTP_USER:-}" ]]; then
+                # A1: SMTP password lands in a temp netrc (never argv). Harden the lifecycle —
+                # umask 077 so it is created 0600 even before chmod, and a signal-safe trap so
+                # the credential file is removed on EXIT/INT/TERM/HUP/QUIT, not only after curl.
+                local _old_umask; _old_umask=$(umask); umask 077
                 _smtp_netrc=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-smtp-netrc.XXXXXX")
+                umask "$_old_umask"
                 chmod 600 "$_smtp_netrc"
+                # shellcheck disable=SC2064  # expand path now so the trap cleans this exact file
+                trap "rm -f '$_smtp_netrc' 2>/dev/null || true" EXIT INT TERM HUP QUIT
                 local _smtp_host
                 _smtp_host=$(echo "${NFTBAN_SMTP_SERVER:-localhost}" | cut -d: -f1)
                 echo "machine $_smtp_host login ${NFTBAN_SMTP_USER} password ${NFTBAN_SMTP_PASS:-}" > "$_smtp_netrc"

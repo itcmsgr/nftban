@@ -667,22 +667,27 @@ _tunnel_maybe_alert() {
     # Record alert time
     echo "$ts" > "${cooldown_file}.tmp" 2>/dev/null && mv -f "${cooldown_file}.tmp" "$cooldown_file" 2>/dev/null || true
 
-    # Try to send alert email
-    local alert_email="${NFTBAN_TUNNEL_ALERT_EMAIL:-}"
-    [[ -z "$alert_email" ]] && alert_email="${NFTBAN_ALERT_EMAIL:-}"
-    if [[ -n "$alert_email" ]]; then
+    # A1 central-comms: submit the alert to the central authority (never a direct sendmail).
+    # Module override NFTBAN_TUNNEL_ALERT_EMAIL → global NFTBAN_MAIL_RECIPIENT. On missing
+    # recipient / unavailable authority the central path no-ops or spools; no side channel.
+    local tun_override="${NFTBAN_TUNNEL_ALERT_EMAIL:-${NFTBAN_ALERT_EMAIL:-}}"
+    if ! declare -F nftban_mail_alert >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_mail_alert >/dev/null 2>&1; then
         local hostname
         hostname=$(hostname -f 2>/dev/null || hostname)
-        {
-            echo "Subject: [NFTBan] DNS Tunnel Suspicion — $high_count HIGH on $hostname"
-            echo ""
-            echo "NFTBan Tunnel Suspicion Module detected $high_count HIGH-suspicion source(s)."
-            echo "This is advisory-only — no IPs have been blocked."
-            echo ""
-            echo "Run 'nftban tunnel top' on $hostname for details."
-            echo ""
-            echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-        } | sendmail "$alert_email" 2>/dev/null || true
+        local subject="[NFTBan] DNS Tunnel Suspicion — $high_count HIGH on $hostname"
+        local body
+        body=$(printf '%s\n' \
+            "NFTBan Tunnel Suspicion Module detected $high_count HIGH-suspicion source(s)." \
+            "This is advisory-only — no IPs have been blocked." \
+            "" \
+            "Run 'nftban tunnel top' on $hostname for details." \
+            "" \
+            "Time: $(date '+%Y-%m-%d %H:%M:%S')")
+        nftban_mail_alert "$subject" "$body" "$tun_override" || true
     fi
 }
 
