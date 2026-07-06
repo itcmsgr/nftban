@@ -1369,9 +1369,15 @@ Full Report: nftban rbl check --verbose
 EOF
 )
 
-    # Send via NFTBan unified mail mechanism
-    nftban_mail_send "$body" "$email" 2>/dev/null || \
-        echo "Warning: Failed to send RBL alert email" >&2
+    # A2r: submit to the central authority so the attempt lands in the A2a delivery-log /
+    # last-failure / spool (observable via 'nftban stats comms'). No direct transport.
+    if declare -F nftban_mail_alert >/dev/null 2>&1; then
+        nftban_mail_alert "$subject" "$body" "$email" || \
+            echo "Warning: RBL alert not delivered (spooled/degraded — see 'nftban stats comms')" >&2
+    else
+        nftban_mail_send "$body" "$email" 2>/dev/null || \
+            echo "Warning: Failed to send RBL alert email" >&2
+    fi
 }
 
 nftban_rbl_send_degraded_alert() {
@@ -1438,9 +1444,14 @@ Run manually: nftban rbl check --fresh --verbose
 EOF
 )
 
-    # Send via NFTBan unified mail mechanism
-    nftban_mail_send "$body" "$email" 2>/dev/null || \
-        echo "Warning: Failed to send degraded alert email" >&2
+    # A2r: submit to the central authority (delivery-log / last-failure / spool via A2a).
+    if declare -F nftban_mail_alert >/dev/null 2>&1; then
+        nftban_mail_alert "[NFTBan] RBL monitoring degraded" "$body" "$email" || \
+            echo "Warning: RBL degraded alert not delivered (spooled/degraded)" >&2
+    else
+        nftban_mail_send "$body" "$email" 2>/dev/null || \
+            echo "Warning: Failed to send degraded alert email" >&2
+    fi
 }
 
 # =============================================================================
@@ -1574,6 +1585,9 @@ nftban_rbl_status() {
             echo "  Blacklisted:  0"
         fi
         echo "  Cache:        $cache_count entries (${NFTBAN_RBL_CACHE_TTL}h TTL)"
+        echo ""
+        echo "  Scope:        advisory reputation monitoring (observe-only), not firewall blocking"
+        echo "                a DNSBL check cannot determine a provider-specific Proofpoint/iCloud bounce"
     fi
 }
 

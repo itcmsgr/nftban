@@ -320,7 +320,7 @@ nftban_health_check_rbl() {
         rbl_issues+=("RBL monitoring disabled (optional)")
         # Not an error - just informational
         NFTBAN_HEALTH_RESULTS["rbl"]=$HEALTH_OK
-        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring disabled (enable in $rbl_config)"
+        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring disabled (optional; advisory reputation monitoring, not blocking)"
         return $HEALTH_OK
     fi
 

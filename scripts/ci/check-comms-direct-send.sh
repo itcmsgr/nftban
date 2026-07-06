@@ -44,7 +44,7 @@ COMMS_SEND_PATTERN='(\|[[:space:]]*("?\$\{?mail_cmd\}?|(/usr/s?bin/)?(sendmail|m
 # to the central authority and REMOVED from the allowlist — a future direct send in any of
 # them now fails CI. (cmd_report.sh was already compliant and never allowlisted.)
 # -----------------------------------------------------------------------------
-ALLOWED_REGEX='^(cli/lib/nftban/core/nftban_mail\.sh|cli/lib/nftban/tests/selftest\.sh|cli/lib/nftban/tests/comms_no_direct_send_guard_a0_test\.sh|cli/lib/nftban/tests/comms_a1_centralization_test\.sh|scripts/ci/)'
+ALLOWED_REGEX='^(cli/lib/nftban/core/nftban_mail\.sh|cli/lib/nftban/tests/selftest\.sh|cli/lib/nftban/tests/comms_no_direct_send_guard_a0_test\.sh|cli/lib/nftban/tests/comms_a1_centralization_test\.sh|cli/lib/nftban/tests/comms_a2r_rbl_visibility_test\.sh|scripts/ci/)'
 
 # Historical A0 debt files — burndown display only (all migrated in A1; expect 0).
 DEBT_REGEX='nftban_tunnel\.sh|maintenance\.sh|cmd_update\.sh|cmd_support\.sh'
