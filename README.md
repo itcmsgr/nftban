@@ -278,10 +278,13 @@ These invariants are enforced by validation logic and CI gates.
 
 ## Metrics and Observability
 
-The daemon exposes runtime metrics on `http://127.0.0.1:9580/metrics`
-(localhost only, Prometheus text exposition format). This is the canonical
-runtime metrics surface. As of v1.89, the evidence layer reads all kernel
-data from the validator — no duplicate nft queries.
+The daemon serves runtime metrics at `http://127.0.0.1:9580/metrics`
+(the `/metrics` endpoint is loopback-restricted; Prometheus text exposition
+format). This is the canonical runtime metrics surface. Note that the daemon's
+`:9580` listener binds all interfaces and its `/health` and `/api/v1/*`
+endpoints are not loopback-restricted — firewall `:9580` to trusted sources.
+As of v1.89, the evidence layer reads all kernel data from the validator — no
+duplicate nft queries.
 
 The watchdog subsystem provides adaptive resource control. It monitors
 process, Go runtime, and kernel metrics, and adjusts operating mode
