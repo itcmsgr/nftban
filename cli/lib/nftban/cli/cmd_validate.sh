@@ -102,6 +102,22 @@ nftban_cmd_validate() {
 
     # Run validation
     validate_structure "$json_output"
+    local _vrc=$?
+
+    # A2a: communication (central-comms) config validation — produce-side surface. Reported as
+    # its own section; does NOT change the nft-structure validation rc (which this command owns).
+    if [[ "$json_output" != "true" ]]; then
+        if ! declare -F nftban_mail_test_dryrun >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
+        fi
+        if declare -F nftban_mail_test_dryrun >/dev/null 2>&1; then
+            echo ""
+            echo "── Communication (central-comms) ──"
+            nftban_mail_test_dryrun "" || true
+        fi
+    fi
+    return $_vrc
 }
 
 nftban_cmd_validate_help() {
