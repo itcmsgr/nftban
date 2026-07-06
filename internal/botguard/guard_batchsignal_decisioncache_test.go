@@ -260,13 +260,13 @@ type recBackend struct {
 }
 
 func (b *recBackend) FlushSet(table, set string) error { return nil }
-func (b *recBackend) AddElements(table, set string, els []opqueue.SetElement) error {
+func (b *recBackend) AddElements(table, set string, els []opqueue.SetElement) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, e := range els {
 		b.adds[set] = append(b.adds[set], e.Value)
 	}
-	return nil
+	return len(els), nil
 }
 func (b *recBackend) DeleteElements(table, set string, els []opqueue.SetElement) error { return nil }
 func (b *recBackend) GetSetElements(table, set string) ([]string, error)               { return nil, nil }
