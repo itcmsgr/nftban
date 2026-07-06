@@ -2095,6 +2095,74 @@ _rebuild_snapshot_full() {
     echo "$snapshot_dir"
 }
 
+# _fw_restore_timed_set — restore a blacklist set from a `nft list set` dump,
+# preserving REMAINING ttl (expires) for timeout-bearing elements. Multiline-safe.
+# Skips expired/unparseable elements with a WARN rather than emitting invalid nft.
+# Args: $1=dump_file  $2=table_family ("ip nftban"|"ip6 nftban")  $3=set_name  $4=quiet
+# Echoes: "<restored> <skipped> <expired>"
+_fw_restore_timed_set() {
+    local dump_file="$1" table_family="$2" set_name="$3" quiet="${4:-true}"
+    local restored=0 skipped=0 expired=0
+    [[ -f "$dump_file" ]] || { echo "0 0 0"; return 0; }
+
+    # Flatten newlines/tabs, then extract the single `elements = { ... }` block.
+    # The block has no nested braces, so [^}]+ is safe once flattened — this is the
+    # fix for the pre-L2a per-line grep that silently dropped wrapped nft output.
+    local blob
+    blob=$(tr '\n\t' '  ' < "$dump_file" 2>/dev/null | grep -oP 'elements = \{\s*\K[^}]+' || true)
+    [[ -z "${blob// /}" ]] && { echo "0 0 0"; return 0; }
+
+    local -a re_add=()
+    local raw addr rest expires
+    local old_ifs="$IFS"
+    IFS=','
+    for raw in $blob; do
+        raw="${raw#"${raw%%[![:space:]]*}"}"   # ltrim
+        raw="${raw%"${raw##*[![:space:]]}"}"    # rtrim
+        [[ -z "$raw" ]] && continue
+        addr="${raw%% *}"                        # first token = ip / ip6 / cidr
+        if ! [[ "$addr" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?$ ]]; then
+            skipped=$((skipped + 1))
+            [[ "$quiet" == "false" ]] && echo "      WARN: $set_name: skip unparseable element '$raw'" >&2
+            continue
+        fi
+        if [[ "$raw" == *" expires "* ]]; then
+            # timeout-bearing → re-apply with REMAINING ttl (expires), not original timeout
+            rest="${raw##* expires }"
+            expires="${rest%% *}"                # drop any trailing comment "..."
+            if [[ -z "$expires" || "$expires" == "0s" || "$expires" == "expired" ]]; then
+                expired=$((expired + 1)); continue
+            fi
+            re_add+=("$addr timeout $expires")
+        else
+            re_add+=("$addr")                    # permanent (no timeout) element
+        fi
+        restored=$((restored + 1))
+    done
+    IFS="$old_ifs"
+
+    if [[ ${#re_add[@]} -gt 0 ]]; then
+        local joined
+        joined=$(IFS=','; echo "${re_add[*]}")
+        # one batched add; on failure fall back per-element so a single bad element
+        # cannot drop the whole set
+        # shellcheck disable=SC2086  # table_family is intentionally two words
+        if ! nft add element $table_family "$set_name" "{ $joined }" 2>/dev/null; then
+            restored=0
+            local e
+            for e in "${re_add[@]}"; do
+                # shellcheck disable=SC2086
+                if nft add element $table_family "$set_name" "{ $e }" 2>/dev/null; then
+                    restored=$((restored + 1))
+                else
+                    skipped=$((skipped + 1))
+                fi
+            done
+        fi
+    fi
+    echo "$restored $skipped $expired"
+}
+
 _rebuild_rollback() {
     # Restore from snapshot
     # Args: $1 = snapshot directory
@@ -2494,41 +2562,29 @@ _firewall_rebuild_core() {
         "$_rb_reconcile" sync --quick >/dev/null 2>&1 || true
     fi
 
-    # Step 7: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
-    [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist from backup..."
-    local restored_count=0
-    for backup_file in "$backup_dir/blacklist_ipv4_$timestamp.txt" "$backup_dir/blacklist_ipv6_$timestamp.txt"; do
-        [[ -f "$backup_file" ]] || continue
-        # Extract elements from backup (format: elements = { ip1, ip2, ... })
-        local elements
-        # v1.19.20 FIX: Prevent pipefail exit 1 when grep finds no match
-        elements=$(grep -oP 'elements = \{ \K[^}]+' "$backup_file" 2>/dev/null | tr -d '\n\t' | sed 's/  */ /g' || true)
-        [[ -z "$elements" ]] && continue
-
-        # v1.19.27 SECURITY: Validate elements contain only safe characters (defense-in-depth)
-        # Allow: digits, dots, colons (IPv6), slashes (CIDR), commas, spaces, 'timeout', 's/m/h/d'
-        if [[ ! "$elements" =~ ^[0-9a-fA-F.:,/[:space:]timeouts]+$ ]]; then
-            [[ "$quiet" == "false" ]] && echo "    WARNING: Skipping backup with invalid characters: $backup_file"
-            continue
-        fi
-
-        # Determine table and set from filename
-        local table_family set_name
-        if [[ "$backup_file" == *ipv4* ]]; then
-            table_family="ip nftban"
-            set_name="blacklist_ipv4"
-        else
-            table_family="ip6 nftban"
-            set_name="blacklist_ipv6"
-        fi
-        # Add elements back to set
-        if nft add element $table_family $set_name "{ $elements }" 2>/dev/null; then
-            # v1.19.20 FIX
-            ((restored_count++)) || true
-            [[ "$quiet" == "false" ]] && echo "    Restored: $set_name" || true
-        fi
+    # Step 7 (L2a): Restore blacklist + blacklist_manual from the pre-rebuild snapshot,
+    # preserving remaining TTL. blacklist_manual_* holds detector TTL bans
+    # (LoginMon/Portscan/DDoS/Suricata + manual) — it was previously never backed up or
+    # restored, so every rebuild silently dropped active timed bans. We consume the
+    # per-set snapshot that _rebuild_snapshot_full already wrote (no second backup
+    # mechanism) and re-apply with the REMAINING ttl (expires), fixing the old parser's
+    # per-line/wrapped-output and timeout/expires-rejection defects at the same time.
+    [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist + manual bans from snapshot (TTL-preserving)..."
+    local _rs_total=0 _rs_skip=0 _rs_exp=0
+    local _set _fam _dump _counts _r _s _e
+    for _set in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6; do
+        case "$_set" in
+            *_ipv4) _fam="ip nftban" ;;
+            *_ipv6) _fam="ip6 nftban" ;;
+            *) continue ;;
+        esac
+        _dump="$snapshot_dir/sets/${_set}.nft"
+        _counts=$(_fw_restore_timed_set "$_dump" "$_fam" "$_set" "$quiet")
+        IFS=' ' read -r _r _s _e <<<"$_counts"
+        _rs_total=$((_rs_total + _r)); _rs_skip=$((_rs_skip + _s)); _rs_exp=$((_rs_exp + _e))
+        [[ "$quiet" == "false" && "$_r" -gt 0 ]] && echo "    Restored $_r into $_set (skipped=$_s expired=$_e)"
     done
-    [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
+    [[ "$quiet" == "false" ]] && echo "    Blacklist restore: $_rs_total restored, $_rs_skip skipped, $_rs_exp expired"
 
     # Step 8 (v1.50.1): Re-apply DDoS protection if enabled
     # Preflight: module re-enable requires daemon IPC. If daemon is down
