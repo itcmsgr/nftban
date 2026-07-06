@@ -270,6 +270,33 @@ nftban_mail_check_status() {
     fi
 
     echo "✓ Mail System: $mta (ready)"
+
+    # A2a: communication truth summary (recipient / spool / last outcome).
+    nftban_mail_status_summary
+    return 0
+}
+
+# A2a: produce-side status summary — recipient state, transport, spool depth + oldest age,
+# last send result / last failure (sanitized). Reads state written by the retry path; sends
+# nothing. Safe to call from mail status and (later) nftban status.
+nftban_mail_status_summary() {
+    local recipient spool_dir spool_depth=0 oldest_age=0 last_succ last_fail_ts last_fail_reason
+    recipient="$(nftban_mail_resolve_recipient "" 2>/dev/null || echo "")"
+    if [[ -n "$recipient" ]]; then echo "  Recipient: ${recipient}"; else echo "  Recipient: (none configured)"; fi
+    spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mailspool}"
+    if [[ -d "$spool_dir" ]]; then
+        spool_depth=$(find "$spool_dir" -name "*.mail" -type f 2>/dev/null | wc -l)
+        local _m; _m=$(find "$spool_dir" -name "*.mail" -type f -printf '%T@\n' 2>/dev/null | sort -n | head -n1)
+        [[ -n "$_m" ]] && oldest_age=$(( $(date +%s) - ${_m%.*} ))
+    fi
+    echo "  Spool: depth=${spool_depth} oldest_age_s=${oldest_age}"
+    last_succ=$(cat "${MAIL_COUNTERS_DIR}/mail_last_success_ts" 2>/dev/null || echo "0")
+    last_fail_ts=$(cat "${MAIL_COUNTERS_DIR}/mail_last_failure_ts" 2>/dev/null || echo "0")
+    last_fail_reason=$(cat "${MAIL_COUNTERS_DIR}/mail_last_failure_reason" 2>/dev/null || echo "")
+    echo "  Last success ts: ${last_succ}"
+    if [[ "${last_fail_ts}" != "0" ]]; then
+        echo "  Last failure: ts=${last_fail_ts} reason=$(_mail_sanitize "${last_fail_reason}")"
+    fi
     return 0
 }
 
@@ -878,7 +905,24 @@ nftban_mail_test_dryrun() {
     elif [[ "$mta" == "curl" ]]; then
         [[ -n "${NFTBAN_SMTP_HOST:-}" ]] || { echo "  ERROR: curl-SMTP selected but NFTBAN_SMTP_HOST is unset"; rc=1; }
         command -v curl >/dev/null 2>&1 || { echo "  ERROR: curl-SMTP selected but curl is not installed"; rc=1; }
+        # SMTP completeness: an SMTP user without a password cannot authenticate.
+        if [[ -n "${NFTBAN_SMTP_USER:-}" && -z "${NFTBAN_SMTP_PASS:-}" ]]; then
+            echo "  ERROR: SMTP incomplete — NFTBAN_SMTP_USER set but NFTBAN_SMTP_PASS is empty"; rc=1
+        fi
+        [[ -n "${NFTBAN_MAIL_FROM:-${NFTBAN_SENDER:-}}" ]] || echo "  WARN: no NFTBAN_MAIL_FROM/NFTBAN_SENDER set (a default will be derived)"
     fi
+    # A2a: a forced method that is not actually available (detect fell back).
+    if [[ -n "${NFTBAN_MAIL_METHOD:-}" ]] && ! _nftban_mail_method_available "${NFTBAN_MAIL_METHOD}"; then
+        echo "  WARN: NFTBAN_MAIL_METHOD='${NFTBAN_MAIL_METHOD}' is not available — auto-detected '${mta}' instead"
+    fi
+    # A2a: fragmented/legacy recipient keys that diverge from the central recipient.
+    local _rk
+    for _rk in NFTBAN_ALERT_EMAIL NFTBAN_TUNNEL_ALERT_EMAIL; do
+        local _v="${!_rk:-}"
+        if [[ -n "$_v" && -n "${NFTBAN_MAIL_RECIPIENT:-}" && "$_v" != "${NFTBAN_MAIL_RECIPIENT}" ]]; then
+            echo "  WARN: legacy recipient key ${_rk} diverges from NFTBAN_MAIL_RECIPIENT (fragmentation)"
+        fi
+    done
     if [[ $rc -eq 0 ]]; then echo "  Result: OK (config valid; nothing was sent)"; else echo "  Result: INVALID (see errors; nothing was sent)"; fi
     return $rc
 }
@@ -1065,6 +1109,19 @@ _mail_write_metrics() {
         spool_depth=$(find "$spool_dir" -name "*.mail" -type f 2>/dev/null | wc -l)
     fi
 
+    # A2a: age (seconds) of the oldest spooled mail, and the currently selected transport.
+    local spool_oldest_age=0
+    if [[ -d "$spool_dir" ]]; then
+        local _oldest_mtime _now
+        _oldest_mtime=$(find "$spool_dir" -name "*.mail" -type f -printf '%T@\n' 2>/dev/null | sort -n | head -n1)
+        if [[ -n "$_oldest_mtime" ]]; then
+            _now=$(date +%s 2>/dev/null || echo 0)
+            spool_oldest_age=$(( _now - ${_oldest_mtime%.*} ))
+            [[ "$spool_oldest_age" -lt 0 ]] && spool_oldest_age=0
+        fi
+    fi
+    local transport_selected; transport_selected="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+
     cat > "${MAIL_METRICS_FILE}.tmp" <<EOF
 # HELP nftban_mail_send_attempts_total Total mail send attempts
 # TYPE nftban_mail_send_attempts_total counter
@@ -1100,6 +1157,18 @@ nftban_mail_spool_depth $spool_depth
 # HELP nftban_mail_last_success_timestamp Unix timestamp of last successful send
 # TYPE nftban_mail_last_success_timestamp gauge
 nftban_mail_last_success_timestamp $(cat "${MAIL_COUNTERS_DIR}/mail_last_success_ts" 2>/dev/null || echo "0")
+
+# HELP nftban_mail_last_failure_timestamp Unix timestamp of last failed send (A2a)
+# TYPE nftban_mail_last_failure_timestamp gauge
+nftban_mail_last_failure_timestamp $(cat "${MAIL_COUNTERS_DIR}/mail_last_failure_ts" 2>/dev/null || echo "0")
+
+# HELP nftban_mail_spool_oldest_age_seconds Age of the oldest spooled mail in seconds (A2a)
+# TYPE nftban_mail_spool_oldest_age_seconds gauge
+nftban_mail_spool_oldest_age_seconds ${spool_oldest_age}
+
+# HELP nftban_mail_transport_selected Currently selected mail transport (1=selected) (A2a)
+# TYPE nftban_mail_transport_selected gauge
+nftban_mail_transport_selected{transport="${transport_selected}"} 1
 EOF
 
     mv "${MAIL_METRICS_FILE}.tmp" "$MAIL_METRICS_FILE" 2>/dev/null || true
@@ -1119,6 +1188,48 @@ _mail_log() {
 
     mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
     echo "[$timestamp] [$level] $*" >> "$log_file"
+}
+
+# =============================================================================
+# A2a — DELIVERY TRUTH (produce): delivery-log + last-failure state
+# =============================================================================
+
+# Sanitize a short reason/label for a log line: collapse whitespace, strip quotes, bound
+# length. We only ever pass our own short reason codes here; this is defence-in-depth so a
+# secret can never ride into the delivery-log.
+_mail_sanitize() {
+    local s="${1:-}"
+    s="${s//$'\n'/ }"; s="${s//$'\t'/ }"; s="${s//\"/}"; s="${s//\\/}"
+    printf '%s' "${s:0:200}"
+}
+
+# Central delivery-log — ONE JSONL line per send OUTCOME (success|failed|spooled), reusing the
+# A1b sink shape. Recipient is REDACTED to local-part@…; reason is sanitized; NEVER a secret /
+# NFTBAN_SMTP_PASS. Bounded to NFTBAN_MAIL_DELIVERY_LOG_MAX lines (default 500).
+_mail_delivery_log() {
+    local result="${1:-unknown}" transport="${2:-unknown}" recipient="${3:-}" reason="${4:-}"
+    local logf="${NFTBAN_MAIL_DELIVERY_LOG:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mail/delivery.jsonl}"
+    local maxl="${NFTBAN_MAIL_DELIVERY_LOG_MAX:-500}"
+    mkdir -p "$(dirname "$logf")" 2>/dev/null || true
+    local red=""; [[ -n "$recipient" ]] && red="${recipient%%@*}@…"
+    printf '{"ts":"%s","transport":"%s","recipient":"%s","result":"%s","reason":"%s"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
+        "$(_mail_sanitize "$transport")" "$red" "$(_mail_sanitize "$result")" "$(_mail_sanitize "$reason")" \
+        >> "$logf" 2>/dev/null || true
+    local lines; lines=$(wc -l < "$logf" 2>/dev/null || echo 0)
+    if [[ "${lines:-0}" -gt "$maxl" ]]; then
+        tail -n "$maxl" "$logf" > "${logf}.tmp" 2>/dev/null && mv -f "${logf}.tmp" "$logf" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# Persist last-failure {ts, reason(sanitized)} alongside the existing mail_last_success_ts.
+_mail_record_last_failure() {
+    local reason="${1:-}"
+    mkdir -p "$MAIL_COUNTERS_DIR" 2>/dev/null || true
+    { if type nftban_timestamp_unix &>/dev/null; then nftban_timestamp_unix; else date +%s; fi; } \
+        > "${MAIL_COUNTERS_DIR}/mail_last_failure_ts" 2>/dev/null || true
+    _mail_sanitize "$reason" > "${MAIL_COUNTERS_DIR}/mail_last_failure_reason" 2>/dev/null || true
 }
 
 # =============================================================================
@@ -1149,6 +1260,8 @@ nftban_mail_send_with_retry() {
 
     if [[ "$mta" == "none" ]]; then
         _mail_log "ERROR" "No mail system available, spooling for later"
+        _mail_record_last_failure "no_transport_available"
+        _mail_delivery_log "spooled" "none" "$recipient" "no_transport_available"
         _mail_spool_enqueue "$content_arg" "$recipient" "$subject"
         return 1
     fi
@@ -1174,6 +1287,7 @@ nftban_mail_send_with_retry() {
                 echo "$(date +%s)" > "${MAIL_COUNTERS_DIR}/mail_last_success_ts"
             fi
             _mail_log "INFO" "MAIL_SEND_RESULT task_id=inline status=success transport=$mta attempt=$attempt"
+            _mail_delivery_log "success" "$mta" "$recipient" ""
             _mail_write_metrics
             return 0
         else
@@ -1194,9 +1308,12 @@ nftban_mail_send_with_retry() {
     # All retries exhausted - spool for later
     _mail_counter_inc "failures" "$mta"
     _mail_log "ERROR" "MAIL_SEND_RESULT task_id=inline status=failed transport=$mta retries=$max_retries last_error=$last_error"
+    _mail_record_last_failure "$last_error"
+    _mail_delivery_log "failed" "$mta" "$recipient" "$last_error"
     _mail_write_metrics
 
-    # Enqueue to mail spool (uses queue system)
+    # Enqueue to mail spool (uses queue system) — record the spooled outcome too
+    _mail_delivery_log "spooled" "$mta" "$recipient" "after_${max_retries}_retries"
     _mail_spool_enqueue "$content_arg" "$recipient" "$subject"
 
     return 1
