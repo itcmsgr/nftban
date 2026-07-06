@@ -318,14 +318,7 @@ validate:
   has_json: true
   examples:
     - "nftban validate"
-    - "nftban validate all"
-    - "nftban validate firewall"
     - "nftban validate --json"
-  subcommands:
-    - all
-    - firewall
-    - config
-    - permissions
 
 sync:
   category: setup_discovery
@@ -496,10 +489,10 @@ check:
 
 search:
   category: immediate_action
-  description: "Search for IP across all sets and logs"
+  description: "Search for an IP across nftables sets, threat feeds, ports and GeoIP (does not search logs)"
   risk: core
   audience: [cli, auditor, panel]
-  capability: logs_read
+  capability: status_read
   mutates: false
   supports_dry_run: false
   requires_root: false
@@ -1529,7 +1522,7 @@ firewall:
       description: "Validate nftables structure"
     check:
       mutates: false
-      description: "Check if IP or port is blocked/allowed"
+      description: "Check if IP or port is blocked/allowed (alias of the top-level 'nftban check')"
     stats:
       mutates: false
       description: "Show firewall statistics"

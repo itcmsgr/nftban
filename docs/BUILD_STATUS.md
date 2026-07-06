@@ -3,8 +3,8 @@
 > **Policy:** Main branch is always green. Failed CI blocks merge.
 > No exceptions, no manual overrides for truth-critical checks.
 
-**Current version:** v1.88.0
-**Last audit:** 2026-04-16
+**Current version:** see [`/VERSION`](../VERSION) — sourced per commit, not hardcoded here.
+**Last audit:** see the [CHANGELOG](../CHANGELOG.md) and GitHub release notes for the current release.
 
 ---
 
