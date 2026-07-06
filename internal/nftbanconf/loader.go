@@ -636,7 +636,7 @@ func defaultConfig() *Config {
 		SuricataEnabled:         false,
 		GUIEnabled:              false,
 		GUIAddr:                 "127.0.0.1:3940",
-		APIAddr:                 ":9580",
+		APIAddr:                 "127.0.0.1:9580", // SEC-P1-3a: loopback by default (was ":9580" = all interfaces, unauthenticated). Non-loopback needs NFTBAN_API_ALLOW_INSECURE_BIND=YES.
 		PortscanEnabled:         false,
 		DDoSEnabled:             false,
 		LoginMonitorEnabled:     false,

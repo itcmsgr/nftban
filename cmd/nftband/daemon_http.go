@@ -25,11 +25,61 @@ import (
 	"net"
 	"net/http"
 	nethttpprof "net/http/pprof" // BUG-H4 FIX: explicit import instead of blank import to avoid polluting DefaultServeMux
+	"os"
+	"strings"
 
 	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// isLoopbackAPIBind reports whether addr binds only the loopback interface. An empty
+// host (e.g. ":9580"), "0.0.0.0", "::", a hostname, or a routable IP are all NON-loopback
+// (exposed). "localhost", 127.0.0.0/8, and ::1 are loopback.
+func isLoopbackAPIBind(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr // no port form — evaluate as-is
+	}
+	if host == "" {
+		return false // ":9580" = all interfaces
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false // hostname → conservative: treat as non-loopback
+	}
+	return ip.IsLoopback()
+}
+
+// apiInsecureBindAcked reports whether the operator explicitly acknowledged a non-loopback
+// (unauthenticated) HTTP API bind via NFTBAN_API_ALLOW_INSECURE_BIND. Auth/token is SEC-P1-3b.
+func apiInsecureBindAcked() bool {
+	switch strings.ToUpper(strings.TrimSpace(os.Getenv("NFTBAN_API_ALLOW_INSECURE_BIND"))) {
+	case "YES", "TRUE", "1":
+		return true
+	default:
+		return false
+	}
+}
+
+// resolveAPIBind applies the SEC-P1-3a guard: loopback binds pass through; a non-loopback
+// bind is honored ONLY with an explicit ack (loud warning), otherwise it is refused and
+// falls back to the loopback default (loud error) so an unsafe config never exposes the
+// unauthenticated API. Returns the address the daemon will actually bind.
+func resolveAPIBind(addr string) string {
+	if isLoopbackAPIBind(addr) {
+		return addr
+	}
+	if apiInsecureBindAcked() {
+		log.Printf("[SECURITY][WARN] HTTP API is bound non-loopback (%s) without authentication; expose only behind firewall/reverse-proxy. Token/auth is SEC-P1-3b.", addr)
+		return addr
+	}
+	log.Printf("[SECURITY][ERROR] HTTP API configured to bind non-loopback (%s) without NFTBAN_API_ALLOW_INSECURE_BIND=YES — refusing unsafe bind, falling back to loopback %s. Set the ack to expose deliberately (auth is SEC-P1-3b).", addr, DefaultHTTPAddr)
+	return DefaultHTTPAddr
+}
 
 // startHTTP starts the HTTP API server
 func (d *Daemon) startHTTP() error {
@@ -82,7 +132,11 @@ func (d *Daemon) startHTTP() error {
 	// TODO: Mount existing internal/api handlers here
 	// mux.Handle("/api/v1/", api.NewRouter())
 
-	addr := getAPIAddr()
+	// SEC-P1-3a: default is loopback; a non-loopback bind is refused (→ loopback) unless
+	// explicitly acknowledged. This closes the live all-interfaces unauthenticated exposure
+	// and fences the future-mutator amplifier.
+	addr := resolveAPIBind(getAPIAddr())
+	log.Printf("[nftband] HTTP API binding %s (loopback=%t)", addr, isLoopbackAPIBind(addr))
 
 	// v1.52.0: Pre-check if port is available — if not, skip HTTP API gracefully
 	// This prevents noisy errors when Apache/DA/cPanel/nginx is on the same port
