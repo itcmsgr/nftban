@@ -79,7 +79,7 @@ func benchmarkNetlinkAddElements(b *testing.B, batchSize int) {
 		_ = backend.FlushSet(table, setName)
 
 		// Measure AddElements
-		if err := backend.AddElements(table, setName, elements); err != nil {
+		if _, err := backend.AddElements(table, setName, elements); err != nil {
 			b.Fatalf("AddElements failed: %v", err)
 		}
 	}
@@ -131,7 +131,7 @@ func benchmarkNetlinkFlushSet(b *testing.B, setSize int) {
 			if end > setSize {
 				end = setSize
 			}
-			_ = backend.AddElements(table, setName, elements[j:end])
+			_, _ = backend.AddElements(table, setName, elements[j:end])
 		}
 		b.StartTimer()
 

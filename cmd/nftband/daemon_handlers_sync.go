@@ -914,12 +914,13 @@ func (d *Daemon) handleQueueStatusRequest() SocketResponse {
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"pending_count":   stats.PendingCount,
-			"total_queued":    stats.TotalQueued,
-			"total_applied":   stats.TotalApplied,
-			"total_dropped":   stats.TotalDropped,
-			"last_flush_time": stats.LastFlushTime.Format(time.RFC3339),
-			"queue_depth":     d.opQueue.QueueDepth(),
+			"pending_count":            stats.PendingCount,
+			"total_queued":             stats.TotalQueued,
+			"total_applied":            stats.TotalApplied,
+			"total_dropped":            stats.TotalDropped,
+			"replace_partial_failures": stats.ReplacePartialFailures,
+			"last_flush_time":          stats.LastFlushTime.Format(time.RFC3339),
+			"queue_depth":              d.opQueue.QueueDepth(),
 		},
 	}
 }

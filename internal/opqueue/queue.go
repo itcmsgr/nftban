@@ -262,7 +262,8 @@ func (s *Scheduler) applyFastBatch(batch []FastOp) {
 				}
 				// R75: Use retry with exponential backoff (v1.19.12)
 				if s.retryWithBackoff("fast add "+setName, func() error {
-					return s.backend.AddElements(table, setName, []SetElement{elem})
+					_, addErr := s.backend.AddElements(table, setName, []SetElement{elem})
+					return addErr
 				}) {
 					applied++
 				}
@@ -390,10 +391,10 @@ func (s *Scheduler) processBulkJob(ctx context.Context, job BulkJob) {
 			})
 		}
 
-		if err := s.backend.AddElements(table, setName, batch); err != nil {
-			log.Printf("[scheduler] bulk add %s batch %d failed: %v", setName, i/s.config.MaxBatchSize, err)
-		} else {
-			applied += len(batch)
+		n, addErr := s.backend.AddElements(table, setName, batch)
+		applied += n // L2b: true applied count
+		if addErr != nil {
+			log.Printf("[scheduler] bulk add %s batch %d failed (%d/%d): %v", setName, i/s.config.MaxBatchSize, n, len(batch), addErr)
 		}
 	}
 
@@ -462,10 +463,10 @@ func (s *Scheduler) processBulkJobDirect(job BulkJob) {
 			})
 		}
 
-		if err := s.backend.AddElements(table, setName, batch); err != nil {
-			log.Printf("[scheduler] bulk add %s batch %d failed: %v", setName, i/s.config.MaxBatchSize, err)
-		} else {
-			applied += len(batch)
+		n, addErr := s.backend.AddElements(table, setName, batch)
+		applied += n // L2b: true applied count
+		if addErr != nil {
+			log.Printf("[scheduler] bulk add %s batch %d failed (%d/%d): %v", setName, i/s.config.MaxBatchSize, n, len(batch), addErr)
 		}
 	}
 
@@ -535,11 +536,11 @@ func (s *Scheduler) EnqueueBulkFromFile(ctx context.Context, setName, filePath, 
 		}
 
 		// Add batch to set
-		if err := s.backend.AddElements(table, setName, elements); err != nil {
-			log.Printf("[scheduler] streaming bulk %s batch %d failed: %v", setName, batchNum, err)
+		n, addErr := s.backend.AddElements(table, setName, elements)
+		totalApplied += n // L2b: true applied count
+		if addErr != nil {
+			log.Printf("[scheduler] streaming bulk %s batch %d failed (%d/%d): %v", setName, batchNum, n, len(elements), addErr)
 			// Continue with other batches
-		} else {
-			totalApplied += len(elements)
 		}
 		return nil
 	})
@@ -591,6 +592,10 @@ type OpQueue struct {
 	totalQueued  atomic.Uint64
 	totalApplied atomic.Uint64
 	totalDropped atomic.Uint64
+	// L2b: count of replace_set operations that flushed then applied fewer elements than
+	// intended (partial/fail-open apply). A non-zero value is a degraded signal — the set
+	// is short of what was requested. Surfaced via QueueStats / sync-status JSON.
+	replacePartialFailures atomic.Uint64
 
 	// Last flush time
 	lastFlushTime atomic.Value // time.Time
@@ -675,11 +680,12 @@ func (q *OpQueue) QueueDepth() int64 {
 func (q *OpQueue) Stats() QueueStats {
 	lastFlush, _ := q.lastFlushTime.Load().(time.Time)
 	return QueueStats{
-		PendingCount:  q.pendingCount.Load(),
-		TotalQueued:   q.totalQueued.Load(),
-		TotalApplied:  q.totalApplied.Load(),
-		TotalDropped:  q.totalDropped.Load(),
-		LastFlushTime: lastFlush,
+		PendingCount:           q.pendingCount.Load(),
+		TotalQueued:            q.totalQueued.Load(),
+		TotalApplied:           q.totalApplied.Load(),
+		TotalDropped:           q.totalDropped.Load(),
+		ReplacePartialFailures: q.replacePartialFailures.Load(),
+		LastFlushTime:          lastFlush,
 	}
 }
 
@@ -765,6 +771,8 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 	// Step 2: Stream elements from file and add in batches
 	isIPv6 := isIPv6Set(setName)
 	totalApplied := 0
+	totalIntended := 0
+	var partialErr error // L2b: first per-batch failure in this streaming replace
 
 	err = reader.StreamElements(func(batch []string, batchNum int) error {
 		// Convert to SetElement
@@ -777,18 +785,30 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 			}
 		}
 
-		// Add batch to set
-		if err := q.backend.AddElements(table, setName, elements); err != nil {
-			log.Printf("[opqueue] streaming replace_set %s batch %d failed: %v", setName, batchNum, err)
-			// Continue with other batches
-		} else {
-			totalApplied += len(elements)
+		// Add batch to set — L2b: sum the TRUE applied count and remember shortfall.
+		totalIntended += len(elements)
+		n, addErr := q.backend.AddElements(table, setName, elements)
+		totalApplied += n
+		if addErr != nil {
+			log.Printf("[opqueue] streaming replace_set %s batch %d failed (%d/%d): %v", setName, batchNum, n, len(elements), addErr)
+			if partialErr == nil {
+				partialErr = addErr
+			}
+			// Continue with other batches (do not fail-close the sync)
 		}
 		return nil
 	})
 
 	if err != nil {
 		return totalApplied, err
+	}
+
+	// L2b: a streaming replace that flushed then lost elements is a partial (fail-open)
+	// window — surface it as a degraded counter + log, without fail-closing the caller.
+	if partialErr != nil || totalApplied < totalIntended {
+		q.replacePartialFailures.Add(1)
+		log.Printf("[opqueue] streaming replace_set %s: PARTIAL apply %d/%d (degraded, fail-open) — %v",
+			setName, totalApplied, totalIntended, partialErr)
 	}
 
 	// Update stats
@@ -936,6 +956,14 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 
 	if result.Err != nil {
 		log.Printf("[opqueue] Flush %s failed: %v", setName, result.Err)
+		// L2b: a replace that flushed then applied fewer than intended is a degraded
+		// (fail-open) apply — record it so health/status can see it. The success onFlush
+		// callback above is guarded by result.Err == nil, so it did NOT fire with the
+		// wrong short count.
+		if result.WasReplace && (result.Intended == 0 || result.Applied < result.Intended) {
+			q.replacePartialFailures.Add(1)
+			log.Printf("[opqueue] replace_set %s degraded: applied %d of %d (fail-open)", setName, result.Applied, result.Intended)
+		}
 	}
 }
 
