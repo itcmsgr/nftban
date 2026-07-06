@@ -1839,24 +1839,13 @@ EOF
                     echo "    cat $output_file | base64 > bundle.b64"
                 fi
             else
-                # Fallback: try mutt or mail with attachment
-                if command -v mutt &>/dev/null; then
-                    echo "$email_body" | mutt -s "[NFTBan] Support Bundle - $hostname_val" \
-                        -a "$output_file" -- "$email_recipient" 2>/dev/null && \
-                        _support_log OK "Bundle sent via mutt to: $email_recipient" || \
-                        _support_log WARN "mutt failed - bundle saved locally"
-                elif command -v mail &>/dev/null; then
-                    # Some mail implementations support -A for attachments
-                    echo "$email_body" | mail -s "[NFTBan] Support Bundle - $hostname_val" \
-                        -A "$output_file" "$email_recipient" 2>/dev/null && \
-                        _support_log OK "Bundle sent via mail to: $email_recipient" || \
-                        _support_log WARN "mail attachment failed - bundle saved locally"
-                else
-                    _support_log WARN "No mail client available - bundle saved locally"
-                    echo ""
-                    echo "  Transfer manually using:"
-                    echo "    scp $output_file user@remote:/path/"
-                fi
+                # A1 central-comms: no direct mutt/mail side channel. If the central mail
+                # authority is unavailable, the bundle is saved locally and the operator is
+                # shown a manual transfer path.
+                _support_log WARN "Central mail authority unavailable - bundle saved locally (no direct fallback)"
+                echo ""
+                echo "  Transfer manually using:"
+                echo "    scp $output_file user@remote:/path/"
             fi
             echo ""
         fi

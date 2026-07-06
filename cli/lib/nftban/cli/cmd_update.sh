@@ -2466,44 +2466,22 @@ To rollback:
         source "$mail_lib" 2>/dev/null || true
     fi
 
-    # Try to send email using nftban mail module
-    if declare -f nftban_mail_send &>/dev/null; then
-        # Use plain text for update notifications
+    # A1 central-comms: send via the central authority's spool/retry variant. On failure the
+    # notice is SPOOLED for later delivery — there is NO direct sendmail/mail side channel.
+    if declare -f nftban_mail_send_with_retry &>/dev/null; then
         local old_html="${NFTBAN_MAIL_USE_HTML:-}"
         NFTBAN_MAIL_USE_HTML="NO"
-
-        echo "$body" | nftban_mail_send "$body" "$recipient" 2>/dev/null && {
+        if nftban_mail_send_with_retry "$body" "$recipient" "$subject" 2>/dev/null; then
             _update_log INFO "Notification sent to: $recipient"
             NFTBAN_MAIL_USE_HTML="$old_html"
             return 0
-        }
+        fi
         NFTBAN_MAIL_USE_HTML="$old_html"
+        _update_log WARN "Central mail send failed for $recipient — spooled for retry (no direct fallback)"
+        return 0
     fi
 
-    # Fallback: try sendmail directly
-    if command -v sendmail &>/dev/null; then
-        {
-            echo "From: nftban@$hostname_val"
-            echo "To: $recipient"
-            echo "Subject: $subject"
-            echo "Content-Type: text/plain; charset=UTF-8"
-            echo ""
-            echo "$body"
-        } | sendmail -t 2>/dev/null && {
-            _update_log INFO "Notification sent to: $recipient (via sendmail)"
-            return 0
-        }
-    fi
-
-    # Fallback: try mail command
-    if command -v mail &>/dev/null; then
-        echo "$body" | mail -s "$subject" "$recipient" 2>/dev/null && {
-            _update_log INFO "Notification sent to: $recipient (via mail)"
-            return 0
-        }
-    fi
-
-    _update_log WARN "Could not send email notification (no mail system available)"
+    _update_log WARN "Central mail authority unavailable — update notification not sent (no direct fallback)"
     return 1
 }
 
