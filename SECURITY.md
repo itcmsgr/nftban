@@ -143,7 +143,8 @@ The `nftband` daemon uses **Unix socket IPC** for CLI communication:
 | Authentication | `SO_PEERCRED` credential verification |
 
 **Security Properties:**
-- **No remote listeners:** The daemon's control/IPC path is a local Unix socket only — it does not accept IPC from any network interface. Its only network binding is a localhost-only HTTP metrics/health endpoint on `127.0.0.1:9580` (loopback; not reachable from remote networks unless explicitly reconfigured).
+- **IPC is local-only:** The daemon's control/IPC path is a local Unix socket (`SO_PEERCRED`, `root:nftban` `0660`) — it does not accept IPC from any network interface.
+- **HTTP surface (`:9580`) is network-reachable — hardening tracked:** The daemon also serves an HTTP metrics/health/status surface that, by default, **binds `:9580` on all interfaces** (not loopback-only). The `/metrics` endpoint enforces a loopback source check (localhost only), but **`/health`, `/api/v1/status`, and `/api/v1/modules` are unauthenticated and reachable from remote networks** (information disclosure). Binding this surface to loopback and/or adding authentication is a planned hardening item; **until it ships, operators should firewall `:9580` to trusted sources** (e.g. allow only the local monitoring host).
 - **Local-only access:** IPC restricted to the local Unix socket
 - **Group-based ACL:** Only `nftban` group members can communicate with daemon
 - **Credential verification:** Client UID/GID verified via socket peer credentials
