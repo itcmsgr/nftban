@@ -111,7 +111,10 @@ type QueueStats struct {
 	// L2b: number of replace_set applies that flushed then applied fewer elements than
 	// intended (partial/fail-open). Non-zero = degraded; the set is short of requested.
 	ReplacePartialFailures uint64
-	LastFlushTime          time.Time
+	// L3b: number of EnqueueBan calls refused because a single exempt IP targeted an
+	// enforcement/drop set (never-ban invariant on the opqueue ban path).
+	EnqueueBanExemptSkips uint64
+	LastFlushTime         time.Time
 }
 
 // FlushResult contains the outcome of a buffer flush
