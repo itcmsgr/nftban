@@ -58,17 +58,29 @@ grep -q '_fw_count_dump_elems()' "$FN" && ok "extracted _fw_count_dump_elems()" 
 # shellcheck source=/dev/null
 source "$FN"
 
-D="$WORK/set.nft"
-printf 'table ip nftban {\n\tset blacklist_manual_ipv4 {\n\t\telements = { 1.2.3.4 timeout 1h expires 59m,\n\t\t\t5.6.7.8 timeout 2h expires 1h,\n\t\t\t9.9.9.9 timeout 30m expires 5m }\n\t}\n}\n' > "$D"
-c=$(_fw_count_dump_elems "$D")
-[[ "$c" == "3" ]] && ok "counts 3 elements in a wrapped/multiline dump" || no "wrong element count" "got=$c want=3"
+# cnt <label> <expected> <printf-body> — count the dumped elements block and assert.
+cnt() { local lbl="$1" exp="$2" body="$3" got; printf '%b' "$body" > "$WORK/c.nft"; got=$(_fw_count_dump_elems "$WORK/c.nft"); [[ "$got" == "$exp" ]] && ok "count: $lbl = $exp" || no "count: $lbl" "got=$got want=$exp"; }
 
-printf 'table ip nftban {\n\tset blacklist_ipv4 {\n\t\telements = { 10.0.0.0/8 }\n\t}\n}\n' > "$WORK/one.nft"
-[[ "$(_fw_count_dump_elems "$WORK/one.nft")" == "1" ]] && ok "counts 1 (single CIDR)" || no "single-element count wrong"
-
-printf 'table ip nftban {\n\tset blacklist_ipv4 {\n\t\ttype ipv4_addr\n\t}\n}\n' > "$WORK/empty.nft"
-[[ "$(_fw_count_dump_elems "$WORK/empty.nft")" == "0" ]] && ok "counts 0 (no elements block)" || no "empty-set count wrong"
-[[ "$(_fw_count_dump_elems "$WORK/missing.nft")" == "0" ]] && ok "counts 0 (missing file)" || no "missing-file count wrong"
+# IPv4
+cnt "IPv4 host single-line x3"   3 'elements = { 1.2.3.4, 5.6.7.8, 9.9.9.9 }'
+cnt "IPv4 wrapped/multiline x3"  3 'elements = { 1.2.3.4 timeout 1h expires 59m,\n\t5.6.7.8 timeout 2h expires 1h,\n\t9.9.9.9 timeout 30m expires 5m }'
+cnt "IPv4 CIDR/interval x1"      1 'elements = { 10.0.0.0/8 }'
+# IPv6 (was the coverage gap)
+cnt "IPv6 host x2"               2 'elements = { 2001:db8::1, 2001:db8::2 }'
+cnt "IPv6 CIDR/interval x2"      2 'elements = { 2001:db8::/32, fe80::/10 }'
+cnt "IPv6 timeout+expires x2"    2 'elements = { 2001:db8::1 timeout 1h expires 55m,\n\tfd00::5 timeout 30m expires 12m }'
+cnt "IPv6 range (dash) x1"       1 'elements = { 2001:db8::1-2001:db8::ff }'
+cnt "mixed v4+v6 x3"             3 'elements = { 1.2.3.4, 2001:db8::1, 10.0.0.0/8 }'
+# empty / missing
+cnt "empty braces { }"          0 'elements = { }'
+cnt "empty braces {}"           0 'elements = {}'
+cnt "no elements block"         0 'type ipv4_addr\n\tflags interval,timeout'
+[[ "$(_fw_count_dump_elems "$WORK/does_not_exist.nft")" == "0" ]] && ok "count: missing file = 0" || no "count: missing file"
+# hardening: comments (may hold commas) + trailing comma must not inflate the count
+cnt "comment with comma x1"     1 'elements = { 1.2.3.4 comment "a,b,c" }'
+cnt "comment no comma x1"       1 'elements = { 1.2.3.4 comment "loginmon" }'
+cnt "timed elem + comment x2"   2 'elements = { 1.2.3.4 timeout 1h expires 5m comment "x,y", 5.6.7.8 }'
+cnt "trailing comma tolerated"  2 'elements = { 1.2.3.4, 5.6.7.8, }'
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"

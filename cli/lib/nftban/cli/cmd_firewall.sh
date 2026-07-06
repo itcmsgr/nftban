@@ -2170,7 +2170,11 @@ _fw_count_dump_elems() {
     local f="$1" blob commas
     [[ -f "$f" ]] || { echo 0; return 0; }
     blob=$(tr '\n\t' '  ' < "$f" 2>/dev/null | grep -oP 'elements = \{\s*\K[^}]+' || true)
+    # Ignore nft element comments (may contain commas) BEFORE stripping spaces,
+    # so `comment "a,b,c"` is not miscounted as 3 elements.
+    blob=$(printf '%s' "$blob" | sed 's/comment "[^"]*"//g')
     blob="${blob// /}"
+    blob="${blob%,}"                       # tolerate a trailing comma
     [[ -z "$blob" ]] && { echo 0; return 0; }
     commas="${blob//[^,]/}"
     echo $(( ${#commas} + 1 ))
