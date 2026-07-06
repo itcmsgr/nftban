@@ -774,8 +774,25 @@ func partitionCIDRTokens(items []string) (singles, cidrs []string) {
 	return singles, cidrs
 }
 
-// handleReplaceSetRequest handles bulk replace_set operations via file
-// This is for feeds/geoban that need atomic flush+bulk-add
+// intervalSetsOwnedByAtomicSync are the protection-critical interval blacklist sets
+// whose ONLY writer is the atomic FULL-sync path (nftsync.FullSync →
+// replaceSetElementsViaFile, a single `nft -f` flush+add transaction). The legacy,
+// non-atomic opqueue replace_set path (buffer.applyReplace: flush THEN add, separate
+// netlink transactions) would re-introduce a transient empty-set fail-open window on a
+// protection set. L2e fences it here (reject-guard); it is unreachable from the shipped
+// shell today (no nft_ipc_replace_set producer), so this only denies a latent surface.
+var intervalSetsOwnedByAtomicSync = map[string]bool{
+	"blacklist_ipv4": true,
+	"blacklist_ipv6": true,
+}
+
+// handleReplaceSetRequest handles the legacy bulk replace_set IPC verb.
+//
+// NOTE: this is NOT the feed/geoban writer. Since v1.213.0 SET_APPLY_SINGLE_WRITER the
+// interval blacklist sets are written atomically by the FULL-sync path (setsync). This
+// legacy verb is retained only for mixed-version IPC acceptance and has no shipped shell
+// producer; full retirement is SET_APPLY_SINGLE_WRITER phase-2. L2e denies it the
+// atomic-owned protection interval sets so the non-atomic path can never touch them.
 func (d *Daemon) handleReplaceSetRequest(params map[string]any) SocketResponse {
 	if d.opQueue == nil {
 		return SocketResponse{Success: false, Error: "OpQueue not initialized"}
@@ -791,6 +808,11 @@ func (d *Daemon) handleReplaceSetRequest(params map[string]any) SocketResponse {
 	}
 	if !validNFTBanSet(setName) {
 		return SocketResponse{Success: false, Error: "invalid set: " + setName}
+	}
+	// L2e reject-guard: deny the legacy non-atomic replace_set on the atomic-owned
+	// interval sets. These are the sole domain of the FULL-sync atomic writer.
+	if intervalSetsOwnedByAtomicSync[setName] {
+		return SocketResponse{Success: false, Error: "replace_set blocked for interval/protection set " + setName + ": owned by the atomic FULL sync path (setsync) — use sync, not replace_set"}
 	}
 	if filePath == "" {
 		return SocketResponse{Success: false, Error: "missing file parameter"}
