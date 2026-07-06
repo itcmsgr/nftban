@@ -85,6 +85,15 @@ ti=$(grep -nE '^#[[:space:]]*[0-9]+\.[[:space:]]*ct state invalid drop' "$TPL" |
 sl=$(grep -nE 'iif lo → accept' "$SCHEMA" | grep -oE '^[0-9]+' | head -1 || true)
 si=$(grep -nE 'ct state invalid → drop' "$SCHEMA" | grep -oE '^[0-9]+' | head -1 || true)
 { [[ -n "$sl" && -n "$si" && "$sl" -lt "$si" ]]; } && ok "nft_schema header table: loopback($sl) before invalid($si)" || no "nft_schema header table order" "lo=$sl inv=$si"
+# v1.217.0 doc-order guards (D-1/D-2): the RENDERED conf header comment and the schema-doc
+# rule-order table must also teach loopback-before-invalid (these regressed in the initial pass).
+rl=$(grep -nE '^#[[:space:]]*[0-9]+\.[[:space:]]*loopback accept' "$CONF" | grep -oE '^[0-9]+' | head -1 || true)
+ri=$(grep -nE '^#[[:space:]]*[0-9]+\.[[:space:]]*ct state invalid drop' "$CONF" | grep -oE '^[0-9]+' | head -1 || true)
+{ [[ -n "$rl" && -n "$ri" && "$rl" -lt "$ri" ]]; } && ok "rendered nftables.conf header comment: loopback($rl) before invalid($ri)" || no "rendered conf header comment order" "lo=$rl inv=$ri"
+NSV="$ROOT/docs/NFT-Schema-Validation.md"
+dl=$(grep -nE '^1[[:space:]]*\|[[:space:]]*iif lo accept' "$NSV" | grep -oE '^[0-9]+' | head -1 || true)
+di=$(grep -nE '^2[[:space:]]*\|[[:space:]]*ct state invalid drop' "$NSV" | grep -oE '^[0-9]+' | head -1 || true)
+{ [[ -n "$dl" && -n "$di" && "$dl" -lt "$di" ]]; } && ok "docs/NFT-Schema-Validation table: loopback(row1) before invalid(row2)" || no "NFT-Schema-Validation table order" "lo=$dl inv=$di"
 
 echo "== validator carries the loopback<invalid CRITICAL assertion =="
 grep -q 'LOOPBACK_BEFORE_INVALID' "$SCHEMA" && grep -qE 'Loopback \(iif lo\) MUST come BEFORE .ct state invalid' "$SCHEMA" && ok "validator has loopback<invalid CRITICAL check" || no "validator assertion missing"
