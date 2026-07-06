@@ -82,6 +82,7 @@ nftban_health_render_terminal() {
         [boot_safety]="Boot Safety"
         [cli_errors]="CLI Errors"
         [rbl]="RBL"
+        [communication]="Communication"
         [timers]="Timers"
         [fhs]="FHS Layout"
         [nftban_bin]="NFTBan Binary"
@@ -152,7 +153,7 @@ nftban_health_render_terminal() {
     echo "OPTIONAL FEATURES"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in systemd_hardening memory_protection metrics zabbix connectors watchdog gui polkit bash_completion portscan_prefix v030_helpers pro; do
+    for check in systemd_hardening memory_protection metrics zabbix connectors watchdog communication gui polkit bash_completion portscan_prefix v030_helpers pro; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text

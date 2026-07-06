@@ -718,6 +718,84 @@ nftban_health_check_tunnel() {
 }
 
 # Export functions
+# A2b: communication (central-comms) health — CONSUME A2a delivery-truth. Reads state only
+# (recipient/transport + spool + last-failure); sends nothing. CLEAN when alerting is not
+# configured OR recipient+transport are valid; WARN on enabled-but-unusable / backlog /
+# unresolved last-failure; ERROR only for a very old spool backlog. Does not harden the
+# overall contract — advisory/offline mail never becomes a false critical.
+nftban_health_check_communication() {
+    local status=$HEALTH_OK
+    local issues=()
+    local spool_warn_depth="${NFTBAN_MAIL_SPOOL_WARN_DEPTH:-1}"
+    local spool_oldest_error="${NFTBAN_MAIL_SPOOL_OLDEST_ERROR_S:-86400}"
+    local lastfail_warn_age="${NFTBAN_MAIL_LASTFAIL_WARN_S:-86400}"
+
+    if ! declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" 2>/dev/null || true
+    fi
+
+    local recipient="" mail_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 && \
+        recipient="$(nftban_mail_resolve_recipient "" 2>/dev/null || echo "")"
+
+    # Alerting considered enabled if a recipient is configured OR a mail.conf exists.
+    if [[ -z "$recipient" && ! -f "$mail_conf" ]]; then
+        NFTBAN_HEALTH_RESULTS["communication"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["communication"]="Communication alerting not configured (optional)"
+        return $HEALTH_OK
+    fi
+
+    if [[ -z "$recipient" ]]; then
+        issues+=("COMMUNICATION_CONFIG_MISSING_RECIPIENT: alerting configured but no recipient resolves")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    local transport="none"
+    declare -F nftban_mail_detect_mta >/dev/null 2>&1 && transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    if [[ "$transport" == "none" ]]; then
+        issues+=("COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mailspool}"
+    local depth=0 oldest_age=0
+    if [[ -d "$spool_dir" ]]; then
+        depth=$(find "$spool_dir" -name "*.mail" -type f 2>/dev/null | wc -l)
+        local _m; _m=$(find "$spool_dir" -name "*.mail" -type f -printf '%T@\n' 2>/dev/null | sort -n | head -n1)
+        [[ -n "$_m" ]] && oldest_age=$(( $(date +%s) - ${_m%.*} ))
+    fi
+    if [[ "${depth:-0}" -ge "$spool_warn_depth" && "${depth:-0}" -gt 0 ]]; then
+        issues+=("COMMUNICATION_SPOOL_BACKLOG: ${depth} spooled, oldest ${oldest_age}s")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        [[ "$oldest_age" -ge "$spool_oldest_error" ]] && status=$HEALTH_ERROR
+    fi
+
+    local counters="${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/counters"
+    local lf_ts ls_ts
+    lf_ts=$(cat "${counters}/mail_last_failure_ts" 2>/dev/null || echo 0)
+    ls_ts=$(cat "${counters}/mail_last_success_ts" 2>/dev/null || echo 0)
+    if [[ "${lf_ts:-0}" -gt 0 && "${lf_ts:-0}" -ge "${ls_ts:-0}" ]]; then
+        local age=$(( $(date +%s) - lf_ts ))
+        if [[ "$age" -le "$lastfail_warn_age" ]]; then
+            issues+=("COMMUNICATION_LAST_SEND_FAILED: last send failed ${age}s ago (unresolved)")
+            issues+=("COMMUNICATION_SEND_FAILURE: see delivery log")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["communication"]=$status
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        local _joined; printf -v _joined '%s; ' "${issues[@]}"; _joined="${_joined%; }"
+        NFTBAN_HEALTH_ISSUES["communication"]="$_joined"
+        [[ $status -eq $HEALTH_ERROR ]] && NFTBAN_HEALTH_ERRORS+=("Communication: ${issues[0]}")
+    else
+        NFTBAN_HEALTH_ISSUES["communication"]="Communication OK (recipient + transport valid)"
+    fi
+    return $status
+}
+
+export -f nftban_health_check_communication
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
 export -f nftban_health_check_rbl nftban_health_check_portscan_prefix
