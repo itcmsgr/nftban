@@ -184,7 +184,12 @@ nftban health
 # Check validator output directly
 nftban-validate --json
 
-# Enable modules
+# SAFETY FIRST — whitelist your management/SSH IP before enabling enforcement,
+# so a detection rule can never lock you out of your own host:
+nftban whitelist add YOUR.MANAGEMENT.IP        # your admin/SSH source IP
+nftban check YOUR.MANAGEMENT.IP                # confirm it is whitelisted, not banned
+
+# Enable modules (only after your admin IP is whitelisted)
 nftban ddos enable
 nftban portscan enable
 nftban botguard enable
