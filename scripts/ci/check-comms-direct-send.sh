@@ -32,24 +32,21 @@ set -Eeuo pipefail
 COMMS_SEND_PATTERN='(\|[[:space:]]*("?\$\{?mail_cmd\}?|(/usr/s?bin/)?(sendmail|mailx|msmtp)([[:space:]]|$)))|(\bsendmail[[:space:]]+-t\b)|(\bmail[[:space:]]+-s[[:space:]])|(--mail-rcpt)'
 
 # -----------------------------------------------------------------------------
-# ALLOWED — the central authority + annotated A0 DEBT allowlist (A1 removes each).
+# ALLOWED — the central authority + test-only surfaces.
 #   AUTHORITY:
-#     core/nftban_mail.sh        — the sole intended transport owner (nftban_mail_send)
-#   DEBT (A1 closes → route through nftban_mail_send_with_retry, then delete entry):
-#     core/nftban_tunnel.sh      — Tunnel direct `sendmail` (CENTRAL_COMMS_BYPASS_TUNNEL)
-#     cron/maintenance.sh        — IP-change `mail -s … root` (CENTRAL_COMMS_BYPASS_MAINTENANCE_CRON)
-#     cli/cmd_update.sh          — update notify direct fallback (sendmail/mail)
-#     cli/cmd_support.sh         — support-bundle direct `mail -s`
-#   (NOTE: cmd_report.sh is COMPLIANT — sends via nftban_mail_send; the audit's
-#    'report direct fallback' was empirically disproven by this guard.)
+#     core/nftban_mail.sh        — the sole transport owner (nftban_mail_send / *_with_retry)
 #   TEST-ONLY:
 #     tests/selftest.sh          — self-test report send (never production)
+#     tests/comms_no_direct_send_guard_a0_test.sh — planted-violation fixtures
+#     scripts/ci/                — this gate (carries the pattern string)
+#
+# A1 BURNDOWN COMPLETE (0/4): Tunnel, Maintenance-cron, cmd_update, cmd_support were migrated
+# to the central authority and REMOVED from the allowlist — a future direct send in any of
+# them now fails CI. (cmd_report.sh was already compliant and never allowlisted.)
 # -----------------------------------------------------------------------------
-# TEST-ONLY / this gate itself: scripts/ci/ (the gate carries the pattern string) and
-# the A0 self-test (carries planted-violation fixtures) are not runtime senders.
-ALLOWED_REGEX='^(cli/lib/nftban/core/nftban_mail\.sh|cli/lib/nftban/core/nftban_tunnel\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/cli/cmd_update\.sh|cli/lib/nftban/cli/cmd_support\.sh|cli/lib/nftban/tests/selftest\.sh|cli/lib/nftban/tests/comms_no_direct_send_guard_a0_test\.sh|scripts/ci/)'
+ALLOWED_REGEX='^(cli/lib/nftban/core/nftban_mail\.sh|cli/lib/nftban/tests/selftest\.sh|cli/lib/nftban/tests/comms_no_direct_send_guard_a0_test\.sh|cli/lib/nftban/tests/comms_a1_centralization_test\.sh|scripts/ci/)'
 
-# Files in the DEBT allowlist that A1 must burn down (excludes AUTHORITY + TEST).
+# Historical A0 debt files — burndown display only (all migrated in A1; expect 0).
 DEBT_REGEX='nftban_tunnel\.sh|maintenance\.sh|cmd_update\.sh|cmd_support\.sh'
 
 echo "========================================"
@@ -78,8 +75,9 @@ fi
 
 # Burndown: how many DEBT files still carry a direct send (A1 target). The {…|| true}
 # guards against set -e when nothing matches (e.g. an empty sandbox in the self-test).
-debt_remaining=$( { grep -rlE "$COMMS_SEND_PATTERN" --include="*.sh" cli/ 2>/dev/null \
-  | grep -E "$DEBT_REGEX" || true; } | sort -u | wc -l | tr -d ' ')
+debt_remaining=$( { grep -rnE "$COMMS_SEND_PATTERN" --include="*.sh" cli/ 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -oE '^[^:]+' | grep -E "$DEBT_REGEX" || true; } \
+  | sort -u | wc -l | tr -d ' ')
 echo "✅ PASS: no un-allowlisted direct mail sends."
 echo "   A0 ratchet: $debt_remaining/4 DEBT bypass files remaining (A1 burns these down)."
 exit 0

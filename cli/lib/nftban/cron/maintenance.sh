@@ -92,6 +92,27 @@ log() {
 # This ONLY changes the maintenance LOG path; it does not touch the FW-transition
 # harm counter (table_absent_while_committed_count), firewall load/rebuild
 # semantics, install_state, or any set. Returns 0 = genuinely absent, 1 = transient.
+# A1 central-comms: emit a system IP-change notice through the CENTRAL mail authority
+# instead of a direct root mailer (which silently failed on daemonless/minimal hosts and
+# hardcoded the root recipient). INFO-severity operational notice; recipient terminates at
+# NFTBAN_MAIL_RECIPIENT. No direct transport, no hardcoded recipient.
+_maint_ipchange_alert() {
+    local family="$1" ip="$2"
+    if ! declare -F nftban_mail_alert >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" 2>/dev/null || true
+    fi
+    if ! declare -F nftban_mail_alert >/dev/null 2>&1; then
+        log "WARN" "central mail authority unavailable — ${family} change notice not sent (no direct fallback)"
+        return 0
+    fi
+    local host; host=$(hostname 2>/dev/null)
+    nftban_mail_alert \
+        "[NFTBan] ${family} Address Auto-Updated on ${host}" \
+        "NFTBan info (INFO/operational): system ${family} changed to ${ip}, auto-whitelisted and firewall reloaded on ${host} at $(date)." \
+        "" || true
+}
+
 _maint_table_absent_confirmed() {
     local _tbl="${1:-${NFTBAN_TABLE_IPV4:-ip nftban}}" _i
     for _i in 1 2 3; do
@@ -563,11 +584,8 @@ EOF
                 mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
                 echo "$current_ipv4 $(date)" >> "$IP_ALERT_STATE"
 
-                # Send email alert if configured (ONLY ONCE)
-                if command -v mail &>/dev/null && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
-                    echo "NFTBan Security Alert: System IPv4 changed to $current_ipv4, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
-                        mail -s "[NFTBan] IP Address Auto-Updated on $(hostname)" root 2>/dev/null || true
-                fi
+                # Send IP-change notice via the central mail authority (ONLY ONCE)
+                _maint_ipchange_alert "IPv4" "$current_ipv4"
             fi
         fi
 
@@ -607,11 +625,8 @@ EOF
                 mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
                 echo "$current_ipv6 $(date)" >> "$IP_ALERT_STATE"
 
-                # Email alert
-                if command -v mail &>/dev/null && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
-                    echo "NFTBan Security Alert: System IPv6 changed to $current_ipv6, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
-                        mail -s "[NFTBan] IPv6 Address Auto-Updated on $(hostname)" root 2>/dev/null || true
-                fi
+                # Send IPv6-change notice via the central mail authority (ONLY ONCE)
+                _maint_ipchange_alert "IPv6" "$current_ipv6"
             fi
         fi
 
