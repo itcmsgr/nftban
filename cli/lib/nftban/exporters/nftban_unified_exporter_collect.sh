@@ -528,9 +528,17 @@ collect_all_metrics() {
             if [[ -f "$daemon_stats" ]]; then
                 goroutines=$(jq -r '.goroutines // 0' "$daemon_stats" 2>/dev/null || echo "0")
             fi
-            # Fallback: use thread count as approximation if goroutines not available
+            # Fallback: use thread count as approximation if goroutines not available.
+            # NOTE: this value feeds the JSON stats cache further below (the
+            # "goroutines" field), NOT the Prometheus .prom output.
             [[ "$goroutines" == "0" || -z "$goroutines" ]] && goroutines=$threads
-            metrics+="nftban_runtime_goroutines $goroutines $timestamp\n"
+            # L1 fix (2026-07-06, EXPORTER-GOROUTINES-DUP): nftban_runtime_goroutines is
+            # emitted EXACTLY ONCE, from the authoritative live-IPC path below
+            # (`nftban watchdog stats --json` -> .runtime.goroutines). It is deliberately
+            # NOT emitted here — on a healthy daemon this proc/stats-file path and the
+            # live-IPC path both fired into the same .prom, producing a duplicate series
+            # that node_exporter/promtool reject (blanking all NFTBan metrics).
+            # nftban_threads (emitted above) already covers the thread-count use case.
 
             # --- Memory Leak Detection Metrics ---
             # Calculate memory growth rate (MB/hour) for leak detection
