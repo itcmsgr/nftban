@@ -48,7 +48,13 @@ readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 # Load main config (sets readonly paths)
 source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
-# Patterns for secret redaction
+# SEC-P1-2 P2a: shared redaction authority (single source of truth for secret scrubbing).
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]] && \
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+
+# Patterns for secret redaction (LEGACY FALLBACK only — used iff the shared redactor lib
+# above is unavailable; the shared registry is the authoritative, broader set).
 readonly -a SECRET_PATTERNS=(
     's/([Aa][Pp][Ii][-_]?[Kk][Ee][Yy]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
     's/([Tt][Oo][Kk][Ee][Nn]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
@@ -84,13 +90,17 @@ _support_banner() {
 }
 
 _redact_secrets() {
-    local input="$1"
-    local output="$input"
-
+    # SEC-P1-2 P2a: delegate to the shared redaction authority (broader coverage: *_PASS,
+    # connector/pro/portal creds, Bearer, URL creds, netrc). Legacy SECRET_PATTERNS loop is
+    # kept ONLY as a fallback for when the shared lib is unavailable (coverage never weaker).
+    if declare -F nftban_redact_string >/dev/null 2>&1; then
+        nftban_redact_string "${1:-}"
+        return
+    fi
+    local output="${1:-}"
     for pattern in "${SECRET_PATTERNS[@]}"; do
         output=$(echo "$output" | sed -E "$pattern" 2>/dev/null) || true
     done
-
     echo "$output"
 }
 
@@ -430,6 +440,13 @@ _collect_status() {
 # fields (SMTP user, full recipient local-part). This is intentionally minimal; full
 # support-bundle redaction (SEC-P1-2) remains a separate open lane.
 _redact_comms() {
+    # SEC-P1-2 P2a: the shared registry now covers SMTP Auth User / *_PASS / SMTP_USER and
+    # the Recipient: local-part (A2c behaviour preserved + broadened), so delegate wholesale.
+    if declare -F nftban_redact_string >/dev/null 2>&1; then
+        nftban_redact_string "${1:-}"
+        return
+    fi
+    # Fallback (shared lib unavailable): the original A2c narrow set.
     local t; t=$(_redact_secrets "$1")
     t=$(printf '%s' "$t" | sed -E \
         -e 's/([Aa]uth [Uu]ser:[[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
