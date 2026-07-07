@@ -49,7 +49,7 @@ r0=$(bash -c "source '$RFN'; set +e; nftban_render_operator_readiness '$CLEAN_JS
 echo "$r0" | grep -qE 'Upgrade readiness:[[:space:]]+PASS$' && ok "clean comms -> readiness PASS" || no_fail "clean comms not PASS: $(echo "$r0"|grep -i readiness)"
 r1=$(bash -c "source '$RFN'; set +e; nftban_render_operator_readiness '$CLEAN_JSON' '' 0 '' 1")
 echo "$r1" | grep -qE 'Upgrade readiness:[[:space:]]+PASS_WITH_WARN' && ok "comms WARN raises verdict -> PASS_WITH_WARN" || no_fail "comms WARN did not raise: $(echo "$r1"|grep -i readiness)"
-echo "$r1" | grep -q 'communication degraded' && ok "comms degraded pointer emitted" || no_fail "comms pointer missing"
+echo "$r1" | grep -qE 'communication (degraded|needs setup)' && ok "comms pointer emitted" || no_fail "comms pointer missing"
 # never forces FAIL from comms (comms ERROR on an otherwise-clean run stays PASS_WITH_WARN, not FAIL)
 r2=$(bash -c "source '$RFN'; set +e; nftban_render_operator_readiness '$CLEAN_JSON' '' 0 '' 2")
 echo "$r2" | grep -qE 'Upgrade readiness:[[:space:]]+PASS_WITH_WARN' && ok "comms ERROR does not force FAIL (advisory)" || no_fail "comms ERROR wrongly changed verdict: $(echo "$r2"|grep -i readiness)"
@@ -87,15 +87,30 @@ _health_eval_communication_component c l r
 echo \"CODE=\$c\"; echo \"LINE=\$l\"")
 echo "$ev_info" | grep -q 'CODE=0' && echo "$ev_info" | grep -qi 'Communication:.*INFO' && echo "$ev_info" | grep -q 'NOT CONFIGURED' && ok "eval: no config + no producer -> INFO/NOT CONFIGURED (code0, no verdict raise)" || no_fail "eval info wrong: $ev_info"
 
-# v1.218.1 policy: NOT configured but an alert PRODUCER is enabled -> WARN
+# v1.218.1 policy: NOT configured but an alert PRODUCER is enabled -> WARN.
+# UX slice: auto-reports is a producer only when configured for EMAIL delivery
+# (NFTBAN_MAIL_REPORT_RECIPIENT set), NOT merely because the reports dir exists.
 ev_warn_prod=$(bash -c "$(prelude)
 rm -rf \"\$NFTBAN_DATA_DIR/mailspool\" \"\$NFTBAN_DATA_DIR/metrics\"
 unset NFTBAN_MAIL_RECIPIENT
-mkdir -p \"\$NFTBAN_DATA_DIR/reports\"
+export NFTBAN_MAIL_REPORT_RECIPIENT='reports@test.example'
 nftban_mail_detect_mta() { echo none; }
 _health_eval_communication_component c l r
 echo \"CODE=\$c\"; echo \"LINE=\$l\"")
 echo "$ev_warn_prod" | grep -q 'CODE=1' && echo "$ev_warn_prod" | grep -qi 'Communication:.*WARN' && echo "$ev_warn_prod" | grep -qE 'MISSING_RECIPIENT|TRANSPORT_UNAVAILABLE' && echo "$ev_warn_prod" | grep -q 'auto-reports' && ok "eval: not-configured + producer enabled -> WARN (names the producer)" || no_fail "eval warn-producer wrong: $ev_warn_prod"
+# UX slice: the WARN must carry an actionable Fix/Verify remediation
+echo "$ev_warn_prod" | grep -q 'nftban mail setup' && echo "$ev_warn_prod" | grep -q 'Verify: nftban mail test' && ok "eval: WARN carries Fix/Verify remediation" || no_fail "no remediation in WARN: $ev_warn_prod"
+
+# UX slice: DISK-ONLY reports (reports dir exists, NO email config) must NOT WARN -> INFO
+ev_disk=$(bash -c "$(prelude)
+rm -rf \"\$NFTBAN_DATA_DIR/mailspool\" \"\$NFTBAN_DATA_DIR/metrics\"
+unset NFTBAN_MAIL_RECIPIENT NFTBAN_MAIL_REPORT_RECIPIENT
+mkdir -p \"\$NFTBAN_DATA_DIR/reports\"
+systemctl() { return 1; }   # no report-email timer
+nftban_mail_detect_mta() { echo none; }
+_health_eval_communication_component c l r
+echo \"CODE=\$c\"; echo \"LINE=\$l\"")
+echo "$ev_disk" | grep -q 'CODE=0' && echo "$ev_disk" | grep -qi 'Communication:.*INFO' && echo "$ev_disk" | grep -q 'no action required' && ok "eval: disk-only reports -> INFO/no-action (no false WARN)" || no_fail "disk-only reports wrongly WARNed: $ev_disk"
 
 # --- prior suites unaffected ---
 out=$( cd "$REPO" && bash scripts/ci/check-comms-direct-send.sh 2>&1 )

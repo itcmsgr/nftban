@@ -97,7 +97,7 @@ c=0; for m in nftban_mail_send_success_total nftban_mail_send_failures_total nft
 [[ "$c" -eq 6 ]] && ok "stats comms shows all 6 counters" || no "stats comms only $c/6 counters"
 # stats comms: graceful when mail.prom missing
 sm=$(bash -c "source '$SFN'; NFTBAN_MAIL_METRICS_FILE='$WORK/nope.prom' nftban_stats_cmd_comms 2>/dev/null")
-echo "$sm" | grep -q 'no mail metrics yet' && ok "stats comms graceful on missing mail.prom" || no "stats comms not graceful: $sm"
+echo "$sm" | grep -qE 'no (mail|delivery) metrics yet' && ok "stats comms graceful on missing mail.prom" || no "stats comms not graceful: $sm"
 
 # render: communication surfaces in the OPTIONAL FEATURES terminal render (live path via
 # cmd_health_core.sh) when a result is set.
