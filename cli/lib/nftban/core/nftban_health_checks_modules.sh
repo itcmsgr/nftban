@@ -763,30 +763,57 @@ nftban_health_check_communication() {
     local _se="${STATS_EMAIL_ENABLED:-}"; [[ "${_se,,}" =~ ^(yes|true|1|on)$ ]] && _stats_email_on=1
     [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]] && _report_rcpt="${STATS_EMAIL_RECIPIENTS}"
     [[ "$_stats_email_on" -eq 1 ]] && producers+=("auto-reports")
-    local _general_producer=0
+    # rbl-alerts and tunnel-alerts have their OWN recipient (with a general fallback), just like
+    # auto-reports — RBL delivers to NFTBAN_RBL_ALERT_EMAIL (else general — nftban_rbl.sh:1303),
+    # tunnel delivers to NFTBAN_TUNNEL_ALERT_EMAIL/NFTBAN_ALERT_EMAIL (else general). Capture each so
+    # the deliverability check credits the producer's own recipient (no false MISSING_RECIPIENT when
+    # only the producer-specific recipient is set).
+    local _rbl_on=0 _rbl_rcpt="" _tunnel_on=0 _tunnel_rcpt="" _mail_on=0
     local _rbl_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
-    [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null && { producers+=("rbl-alerts"); _general_producer=1; }
-    [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]] && { producers+=("tunnel-alerts"); _general_producer=1; }
-    [[ -f "$mail_conf" ]] && grep -q 'MAIL_ENABLED=true' "$mail_conf" 2>/dev/null && { producers+=("mail-enabled"); _general_producer=1; }
+    if [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null; then
+        _rbl_on=1; producers+=("rbl-alerts")
+        _rbl_rcpt="${NFTBAN_RBL_ALERT_EMAIL:-}"
+        [[ -z "$_rbl_rcpt" ]] && _rbl_rcpt=$(grep -E '^[[:space:]]*NFTBAN_RBL_ALERT_EMAIL=' "$_rbl_conf" 2>/dev/null | head -n1 \
+            | sed -E 's/^[[:space:]]*NFTBAN_RBL_ALERT_EMAIL=//; s/^"//; s/"$//')
+    fi
+    if [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]]; then
+        _tunnel_on=1; producers+=("tunnel-alerts"); _tunnel_rcpt="${NFTBAN_TUNNEL_ALERT_EMAIL:-${NFTBAN_ALERT_EMAIL:-}}"
+    fi
+    [[ -f "$mail_conf" ]] && grep -q 'MAIL_ENABLED=true' "$mail_conf" 2>/dev/null && { _mail_on=1; producers+=("mail-enabled"); }
     local producer_enabled=0; [[ ${#producers[@]} -gt 0 ]] && producer_enabled=1
 
     # Per-producer deliverability — a producer WARNs when IT SPECIFICALLY cannot deliver, judged by
-    # its OWN recipient. Scheduled reports (auto-reports) deliver ONLY to STATS_EMAIL_RECIPIENTS
-    # (cmd_report.sh:984 has no general fallback), so a general recipient does not make reports
-    # deliverable, and a stray STATS_EMAIL_RECIPIENTS does not make the general producers deliverable.
-    # General producers (rbl/tunnel/mail) deliver via nftban_mail_resolve_recipient = NFTBAN_MAIL_RECIPIENT.
+    # its OWN recipient (with the general NFTBAN_MAIL_RECIPIENT as a shared fallback). A producer's
+    # own recipient satisfies ONLY that producer (no cross-masking: a stray RBL/tunnel/report recipient
+    # never makes another producer deliverable). Transport-none is undeliverable for any producer.
     local _undeliverable=0 _why=""
+    # auto-reports: delivers ONLY to STATS_EMAIL_RECIPIENTS (cmd_report.sh:984 has NO general fallback);
+    # enabled with no report recipient is a misconfiguration (nothing sends).
     if [[ "$_stats_email_on" -eq 1 ]]; then
         if [[ -z "$_report_rcpt" ]]; then
-            # Design choice B: email reports enabled but no report recipient is a MISCONFIGURATION
-            # (nothing sends — cmd_report.sh:984 never fires without STATS_EMAIL_RECIPIENTS), NOT a
-            # delivery failure. Word it so, regardless of any general recipient.
             _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: email reports enabled but no recipient configured"
         elif [[ "$transport" == "none" ]]; then
             _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
         fi
     fi
-    if [[ "$_undeliverable" -eq 0 && "$_general_producer" -eq 1 ]]; then
+    # rbl-alerts: own recipient NFTBAN_RBL_ALERT_EMAIL, else general.
+    if [[ "$_undeliverable" -eq 0 && "$_rbl_on" -eq 1 ]]; then
+        if [[ -z "$_rbl_rcpt" && -z "$recipient" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # tunnel-alerts: own recipient NFTBAN_TUNNEL_ALERT_EMAIL/NFTBAN_ALERT_EMAIL, else general.
+    if [[ "$_undeliverable" -eq 0 && "$_tunnel_on" -eq 1 ]]; then
+        if [[ -z "$_tunnel_rcpt" && -z "$recipient" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # mail-enabled: no own recipient — delivers via the general NFTBAN_MAIL_RECIPIENT only.
+    if [[ "$_undeliverable" -eq 0 && "$_mail_on" -eq 1 ]]; then
         if [[ -z "$recipient" ]]; then
             _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
         elif [[ "$transport" == "none" ]]; then
