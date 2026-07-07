@@ -349,6 +349,14 @@ _collect_configs() {
     fi
 }
 
+# SEC-P1-2 P2b-1: scrub SECRET material (credentials/tokens/keys/Bearer/netrc/URL creds)
+# from a stream. Attacker IPs and usernames are deliberately NOT touched here — they are
+# forensic evidence (identifier-privacy is a separate opt-in mode, P2b-2). Degrades to `cat`
+# if the shared redactor lib is unavailable.
+_support_scrub_stream() {
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then nftban_redact_stream; else cat; fi
+}
+
 _collect_logs() {
     local bundle_dir="$1"
     local log_dir="$bundle_dir/logs"
@@ -357,33 +365,33 @@ _collect_logs() {
     local since_time
     since_time=$(date -d "$SUPPORT_LOG_HOURS hours ago" '+%Y-%m-%d %H:%M' 2>/dev/null || date '+%Y-%m-%d %H:%M')
 
-    # journalctl logs for nftban
+    # journalctl logs for nftban (secret-scrubbed; attacker IPs/usernames preserved)
     if command -v journalctl &>/dev/null; then
         journalctl -u nftban -u nftban-webapi -u nftban-feeds \
-            --since "$since_time" --no-pager \
-            > "$log_dir/journalctl-nftban.txt" 2>&1 || true
-        _support_log OK "Systemd journal logs (last ${SUPPORT_LOG_HOURS}h)"
+            --since "$since_time" --no-pager 2>&1 \
+            | _support_scrub_stream > "$log_dir/journalctl-nftban.txt" || true
+        _support_log OK "Systemd journal logs (last ${SUPPORT_LOG_HOURS}h, secrets redacted)"
     fi
 
-    # File-based logs
+    # File-based logs (secret-scrubbed; identifiers preserved)
     if [[ -d "$NFTBAN_LOG_DIR" ]]; then
         local log_count=0
         while IFS= read -r -d '' log_file; do
             local basename
             basename=$(basename "$log_file")
             # Only get last 500 lines to keep bundle size reasonable
-            tail -500 "$log_file" > "$log_dir/$basename" 2>/dev/null || true
+            tail -500 "$log_file" 2>/dev/null | _support_scrub_stream > "$log_dir/$basename" || true
             log_count=$((log_count + 1))
         done < <(find "$NFTBAN_LOG_DIR" -maxdepth 1 -name "*.log" -type f -print0 2>/dev/null)
 
         if [[ $log_count -gt 0 ]]; then
-            _support_log OK "Log files ($log_count files, last 500 lines each)"
+            _support_log OK "Log files ($log_count files, last 500 lines each, secrets redacted)"
         fi
     fi
 
-    # Update log specifically
+    # Update log specifically (secret-scrubbed)
     if [[ -f "$NFTBAN_LOG_DIR/update.log" ]]; then
-        cp "$NFTBAN_LOG_DIR/update.log" "$log_dir/update.log" 2>/dev/null || true
+        _support_scrub_stream < "$NFTBAN_LOG_DIR/update.log" > "$log_dir/update.log" 2>/dev/null || true
     fi
 
     # v1.199: per-run lifecycle forensic records (update-runs/<run_id>/). Collect

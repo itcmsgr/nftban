@@ -571,7 +571,19 @@ _cmd_connector_show() {
     local config_file
     config_file=$(_connector_config_path "$name")
 
-    grep -v "^#" "$config_file" | grep -v "^$"
+    # SEC-P1-2 P2b-1: this printed the RAW connector config — including WEBHOOK_TOKEN/SECRET/
+    # PASS/API_KEY. Route the display through the shared redactor so credentials are masked
+    # (non-secret fields — URL/index/brokers/type — remain visible). Display-only; runtime
+    # unchanged. Falls back to the raw grep only if the shared redactor lib is unavailable.
+    if ! declare -F nftban_redact_stream >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        grep -v "^#" "$config_file" | grep -v "^$" | nftban_redact_stream
+    else
+        grep -v "^#" "$config_file" | grep -v "^$"
+    fi
     echo ""
 }
 
