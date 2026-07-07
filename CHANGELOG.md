@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.4] - 2026-07-07 — Redactor durability: fail closed when the shared redactor is unavailable (shell-only; daemon byte-identical)
+
+**Lane:** `OPEN_DUPLICATE_REDACTOR_RETIREMENT` (P-retire-2). **PR:** [#1040](https://github.com/itcmsgr/nftban/pull/1040) `d47ef64e`.
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go source; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Finalizes the SEC-P1-2 shared-redactor consolidation after v1.218.3 shipped the debug fix fleet-wide. central-comms A2 remains **CLOSED**. No RBLMON, no RBL P0, no privacy mode, no webhook, no A3, no finding-registry.
+
+### Security — redaction fails closed on a broken install
+
+Before this release, if `lib/nftban_redact.sh` failed to load (broken/partial install), the secret-redaction wrappers fell back to either a **weak keyword sed** that missed `*_PASS`, or — worse — **`cat`, a silent full passthrough** of raw journal/log/debug content. A broken install could therefore emit raw secrets with a false sense of redaction.
+
+- **Removed every weak/passthrough fallback redactor:** the `SECRET_PATTERNS` array, the weak sed fallbacks in `_fx_redact` / `_redact_comms`, and the two `else cat` passthroughs in `_support_scrub_stream` / `_debug_scrub_stream`. No duplicate/fallback redaction authority remains.
+- **All six wrappers now FAIL LOUD / FAIL CLOSED** when the shared authority is unavailable — stream wrappers drain and discard stdin; all emit `[REDACTION-UNAVAILABLE: do not share]` to stdout (into the collected artifact) and `[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed` to stderr, and return 0 so `nftban support` / `nftban debug` / update artifacts still generate with clearly-marked sections. **No hard crash, no weak fallback, no raw passthrough.**
+- **Install verification:** `install/verify_installation.sh` now asserts `/usr/lib/nftban/lib/nftban_redact.sh` exists **and is usable** (sources it, asserts `nftban_redact_string`), so a missing/broken redaction authority is caught at install rather than failing closed silently in the field.
+- Thin wrapper functions and the non-secret sanitizers (shell/sql/html/log, path, mail) are unchanged; redaction coverage only grows.
+
+### Scope & validation
+
+- **Shell-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.**
+- **Tests:** `comms_redact_failloud_p_retire2` 13/13 (every wrapper fail-loud: marker, no secret, no passthrough, stderr alarm, rc0; no `else cat`/`SECRET_PATTERNS`; installer asserts the lib; no coverage shrink with the lib present) · P2a 30/30 · P2b-1 18/18 · debug-redaction 11/11 · A2a 18/18 · A2b 16/16 · A2c 15/15 · A2r 11/11 · producer_signal_accuracy 9/9 · v2181 17/17 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. lab2 DEB + lab4 RPM: fail-loud spot-check emits the marker, shipped wrappers carry 0 `else cat` / 0 `SECRET_PATTERNS`, `verify_installation` passes with the redactor present, daemon active, `nftban validate` rc0, 0 new failed units, no real mail.
+
+---
+
 ## [v1.218.3] - 2026-07-07 — Communication producer-signal accuracy + debug redaction via the shared authority (shell-only; daemon byte-identical)
 
 **Lanes:** `OPEN_PRODUCER_SIGNAL_ACCURACY` + `OPEN_DUPLICATE_REDACTOR_RETIREMENT` (P-retire-1). **PRs:** [#1037](https://github.com/itcmsgr/nftban/pull/1037) `d0c3d231` / [#1038](https://github.com/itcmsgr/nftban/pull/1038) `b0c79f6b`.
