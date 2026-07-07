@@ -63,7 +63,7 @@ out=$(red "  Recipient: alice@example.com")
 echo "$out" | grep -q '\[redacted\]@example.com' && ! echo "$out" | grep -q 'alice@example.com' && ok "Recipient local-part redacted (domain kept)" || no "recipient: $out"
 
 # --- benign survival (must NOT be redacted) ---
-for b in "NFTBAN_CONNECTOR_KAFKA_PARTITION_KEY=part-abc" "bypass_count=5" "NFTBAN_RBL_ENABLED=YES" "admin_user_id=42"; do
+for b in "NFTBAN_CONNECTOR_KAFKA_PARTITION_KEY=part-abc" "bypass_count=5" "bypass=5" "surpass=1" "NFTBAN_RBL_ENABLED=YES" "admin_user_id=42"; do
   out=$(red "$b"); v="${b#*=}"
   echo "$out" | grep -q "$v" && ok "benign survives: $b" || no "over-redacted benign: $b → $out"
 done

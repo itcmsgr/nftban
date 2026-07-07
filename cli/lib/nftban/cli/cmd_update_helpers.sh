@@ -473,7 +473,19 @@ _forensic_run_id() { printf '%s' "${NFTBAN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/
 # minimal JSON string escaper (no jq dependency)
 _fx_jstr() { local s="${1-}"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; s="${s//$'\t'/ }"; s="${s//$'\r'/ }"; printf '%s' "$s"; }
 # secret redaction safety-net (the snapshot is allowlisted, but values pass this too)
-_fx_redact() { sed -E 's/(pass(word)?|secret|token|api[_-]?key|bearer|authorization)([=: ]+)[^ ",]*/\1\3<redacted>/Ig'; }
+_fx_redact() {
+    # SEC-P1-2 P2b-1: delegate to the shared redaction authority (broader coverage: *_PASS,
+    # connector/pro/portal creds, URL creds, netrc). Legacy sed is a fallback only.
+    if ! declare -F nftban_redact_stream >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        sed -E 's/(pass(word)?|secret|token|api[_-]?key|bearer|authorization)([=: ]+)[^ ",]*/\1\3<redacted>/Ig'
+    fi
+}
 
 # _forensic_begin <run_id> <mode> <from> <to>
 _forensic_begin() {
