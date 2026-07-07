@@ -11,7 +11,7 @@
 # meta:description="Central-comms new-user remediation UX: every Communication WARN/ERROR in nftban health renders an actionable Fix (nftban mail setup <email>) + Verify path; the no-local-MTA case adds the SMTP note; an INFO state (no producer) states an explicit no-action-required outcome. The auto-reports producer heuristic no longer fires on a disk-only reports directory (only when report email delivery is configured). nftban stats comms no-metrics path shows recipient/transport state + remediation instead of a dead end, and keeps counters when mail.prom exists. The readiness pointer points to the fix. Hermetic: isolated tempdir, no real mail, no network."
 # meta:inventory.files=""
 # meta:inventory.binaries="bash,grep,awk"
-# meta:inventory.env_vars="NFTBAN_MAIL_RECIPIENT,NFTBAN_MAIL_REPORT_RECIPIENT"
+# meta:inventory.env_vars="NFTBAN_MAIL_RECIPIENT,STATS_EMAIL_ENABLED,STATS_EMAIL_RECIPIENTS"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -55,30 +55,30 @@ EOF
 
 # 1. missing recipient + local MTA present (transport ok) -> WARN + Fix/Verify, NO no-MTA note
 r=$(bash -c "$(prelude)
-unset NFTBAN_MAIL_RECIPIENT; export NFTBAN_MAIL_REPORT_RECIPIENT='r@test.example'
+unset NFTBAN_MAIL_RECIPIENT STATS_EMAIL_RECIPIENTS; export STATS_EMAIL_ENABLED=true
 nftban_mail_detect_mta() { echo sendmail; }
 _health_eval_communication_component c l r; printf '%s\n' \"\$l\"")
 echo "$r" | grep -q 'MISSING_RECIPIENT' && echo "$r" | grep -q 'Fix:    nftban mail setup' && echo "$r" | grep -q 'Verify: nftban mail test' && ok "missing recipient + local MTA -> WARN with Fix/Verify" || no "case1: $r"
 echo "$r" | grep -q 'no local mail transport' && no "case1 wrongly showed no-MTA note (MTA present)" || ok "missing recipient + MTA present -> no spurious no-MTA note"
 
-# 2. missing recipient + NO transport -> WARN + no-MTA SMTP note
+# 2. producer WITH a recipient but NO transport -> WARN TRANSPORT_UNAVAILABLE + no-MTA SMTP note
 r=$(bash -c "$(prelude)
-unset NFTBAN_MAIL_RECIPIENT; export NFTBAN_MAIL_REPORT_RECIPIENT='r@test.example'
+unset NFTBAN_MAIL_RECIPIENT; export STATS_EMAIL_ENABLED=true STATS_EMAIL_RECIPIENTS='r@test.example'
 nftban_mail_detect_mta() { echo none; }
 _health_eval_communication_component c l r; printf '%s\n' \"\$l\"")
-echo "$r" | grep -qE 'MISSING_RECIPIENT|TRANSPORT_UNAVAILABLE' && echo "$r" | grep -q 'nftban mail setup' && echo "$r" | grep -q 'no local mail transport' && ok "missing recipient + no transport -> WARN with no-MTA SMTP note" || no "case2: $r"
+echo "$r" | grep -q 'TRANSPORT_UNAVAILABLE' && echo "$r" | grep -q 'nftban mail setup' && echo "$r" | grep -q 'no local mail transport' && ok "producer + recipient + no transport -> WARN with no-MTA SMTP note" || no "case2: $r"
 
 # 3. disk-only reports (dir exists, NO email config) -> INFO/no-action (NO false WARN)
 r=$(bash -c "$(prelude)
-unset NFTBAN_MAIL_RECIPIENT NFTBAN_MAIL_REPORT_RECIPIENT
+unset NFTBAN_MAIL_RECIPIENT STATS_EMAIL_ENABLED STATS_EMAIL_RECIPIENTS
 mkdir -p \"\$NFTBAN_DATA_DIR/reports\"
 nftban_mail_detect_mta() { echo none; }
 _health_eval_communication_component c l r; echo \"CODE=\$c\"; printf '%s\n' \"\$l\"")
 echo "$r" | grep -q 'CODE=0' && echo "$r" | grep -qi 'INFO' && echo "$r" | grep -q 'no action required' && ok "disk-only reports -> INFO/no-action (false-positive WARN removed)" || no "case3: $r"
 
-# 4. real email producer (REPORT_RECIPIENT) + missing recipient -> WARN (names auto-reports)
+# 4. real email producer (STATS_EMAIL_ENABLED) + missing recipient -> WARN (names auto-reports)
 r=$(bash -c "$(prelude)
-unset NFTBAN_MAIL_RECIPIENT; export NFTBAN_MAIL_REPORT_RECIPIENT='r@test.example'
+unset NFTBAN_MAIL_RECIPIENT STATS_EMAIL_RECIPIENTS; export STATS_EMAIL_ENABLED=true
 mkdir -p \"\$NFTBAN_DATA_DIR/reports\"
 nftban_mail_detect_mta() { echo none; }
 _health_eval_communication_component c l r; echo \"CODE=\$c\"; printf '%s\n' \"\$l\"")
