@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.2] - 2026-07-07 — Security redaction hardening + central-comms new-user remediation UX (shell/docs-only; daemon byte-identical)
+
+**Lanes:** `OPEN_SEC_P1_2_SHARED_REDACTOR` (P2a + P2b-1) + `OPEN_CENTRAL_COMMS_NEW_USER_REMEDIATION_UX`. **PRs:** [#1033](https://github.com/itcmsgr/nftban/pull/1033) `5d5ab87e` / [#1034](https://github.com/itcmsgr/nftban/pull/1034) `9069b810` / [#1035](https://github.com/itcmsgr/nftban/pull/1035) `ac74ca25`.
+
+> **SHELL/DOCS-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go source; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** A post-v1.218.1 hardening/UX batch — the central-comms A2 architecture remains **CLOSED** (post-closure polish, not a reopen). No RBLMON, no RBL P0, no privacy mode, no webhook, no A3, no telemetry/exporter/Zabbix refactor, no event router.
+
+### Security — one shared redaction authority (SEC-P1-2)
+
+- **Shared redactor introduced** — `cli/lib/nftban/lib/nftban_redact.sh`, a single declarative pattern registry (`nftban_redact_string` / `_stream` / `_file`) covering `*_PASS`/`*_PASSWORD`/`*_SECRET`/`*_TOKEN`/`*_API_KEY`/`*_AUTH`/`*_LICENSE_KEY`/`*_SASL_PASS` assignments, Bearer tokens, URL credentials (`scheme://user:pass@host`), netrc password material, SMTP `Auth User`, and the `Recipient:` local-part. The sensitive key-suffix must be the whole key or a `_`-delimited segment, so benign keys (`KAFKA_PARTITION_KEY`, `bypass=`, `surpass=`) are not false-redacted.
+- **Support-bundle config-secret leak closed (P2a)** — the support bundle collects every `conf.d/*.conf` through what was a keyword-only redactor that missed `*_PASS`; `NFTBAN_SMTP_PASS` and connector `*_PASS` could be copied unredacted. `_redact_secrets`/`_redact_comms`/`_redact_file` now delegate to the shared authority (legacy patterns retained only as a fallback, so coverage never shrinks).
+- **Remaining secret-bearing outputs migrated (P2b-1):**
+  - **Update forensics** (`_fx_redact`) delegate to the shared redactor.
+  - **Support-bundle journal/log streams** (`journalctl -u nftban`, `*.log`, `update.log`) are secret-scrubbed. **Attacker IPs and usernames are deliberately preserved** — they are forensic evidence, not credentials. Identifier privacy remains a separate, deferred decision (P2b-2 / HOLD_DECISION).
+  - **`nftban connector show`** previously printed the raw connector config (`WEBHOOK_TOKEN`/`SECRET`/`PASS`/`API_KEY`); it now masks credentials while keeping non-secret fields (URL/type). Connector runtime is unchanged.
+
+### Communication — actionable new-user remediation
+
+- **`nftban health`** — a Communication WARN/ERROR now renders **Impact**, **`Fix: nftban mail setup <email>`**, and **`Verify: nftban mail test` then `nftban health`**; when no local transport is detected it adds a note that **no local MTA is required — SMTP via curl is supported**. An **INFO** state states an explicit *no-action-required* outcome.
+- **`nftban stats comms`** — the no-metrics path is no longer a dead end: it shows **Recipient** (configured / not configured) and **Transport**, plus the same Fix/Verify remediation when the recipient is missing; counters are preserved when `mail.prom` exists.
+- **Readiness pointer** points to the fix (`nftban mail setup <email>`), not only `nftban stats comms`.
+- **Disk-only scheduled-report false WARN fixed** — auto-reports counts as an email alert producer only when reports are actually configured for **email delivery** (an explicit report recipient, or a report timer whose service runs with `--email`). The default scheduled report is disk-only, so hosts that only generate reports to disk now correctly read **INFO / no action** instead of a false WARN.
+- **Onboarding docs** — `docs/operator/NOTIFICATIONS_SETUP.md` (why the warning appears, one-command setup, verification, the no-MTA/curl-SMTP case, the disk-only no-action case).
+
+### Scope & validation
+
+- **Shell/docs-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.** Advisory only — never alters firewall/security posture (this batch changes fleet health *output*: disk-only hosts move WARN→INFO).
+- **Tests:** `comms_redact_p2a_noleak` 30/30 · `comms_redact_p2b1` 18/18 · `comms_new_user_remediation_ux` 13/13 · `comms_health_render_v2181` 17/17 · A2b 16/16 · A2c 15/15 · A2r 11/11 · A2a 18/18 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. lab2 DEB + lab4 RPM: real support-bundle planted-secret → 0 leaks with identifiers preserved, `connector show` masked, Communication WARN renders Fix/Verify, `stats comms` remediation visible, disk-only host → INFO, daemon active, `nftban validate` rc0, 0 new failed units, no real mail.
+
+---
+
 ## [v1.218.1] - 2026-07-07 — Communication rendered in live `nftban health` readiness output, producer-aware (shell-only hotfix; daemon byte-identical)
 
 **Lane:** `OPEN_V218_1_COMMUNICATION_HEALTH_RENDER_PATCH`. **PR:** [#1031](https://github.com/itcmsgr/nftban/pull/1031) → `afccf03a`.
