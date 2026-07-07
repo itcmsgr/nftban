@@ -106,8 +106,41 @@ nftban_stats_cmd_comms() {
     # A2b: central-comms counters from A2a-produced mail.prom (read-only; no new source).
     local prom="${NFTBAN_MAIL_METRICS_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/mail.prom}"
     echo "Communication (central-comms) counters:"
+
+    # New-user remediation UX: always show recipient/transport state so the no-metrics path is
+    # not a dead end. Resolve via the central authority (no recipient VALUE is printed). Each
+    # resolution runs in an ISOLATED subshell so sourcing the mail lib (which enables
+    # `set -Eeuo pipefail`) cannot contaminate this function's shell or leak a non-zero exit.
+    local _mail_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh"
+    local _recipient _transport
+    _recipient=$(
+        set +e +o pipefail
+        declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 || \
+            { [[ -r "$_mail_lib" ]] && { # shellcheck source=/dev/null
+                source "$_mail_lib" >/dev/null 2>&1; }; }
+        set +e +o pipefail
+        declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 && nftban_mail_resolve_recipient "" 2>/dev/null || true
+    )
+    _transport=$(
+        set +e +o pipefail
+        declare -F nftban_mail_detect_mta >/dev/null 2>&1 || \
+            { [[ -r "$_mail_lib" ]] && { # shellcheck source=/dev/null
+                source "$_mail_lib" >/dev/null 2>&1; }; }
+        set +e +o pipefail
+        declare -F nftban_mail_detect_mta >/dev/null 2>&1 && nftban_mail_detect_mta 2>/dev/null || true
+    )
+    [[ -z "$_transport" ]] && _transport="none"
+    if [[ -n "$_recipient" ]]; then
+        echo "  Recipient: configured"
+    else
+        echo "  Recipient: not configured"
+        echo "  Fix:       nftban mail setup <your-email>"
+        echo "  Verify:    nftban mail test   then   nftban health"
+    fi
+    echo "  Transport: ${_transport}"
+
     if [[ ! -f "$prom" ]]; then
-        echo "  (no mail metrics yet — ${prom} not found)"
+        echo "  (no delivery metrics yet — ${prom} not found; counters appear after the first send attempt)"
         return 0
     fi
     local m

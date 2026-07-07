@@ -746,7 +746,23 @@ nftban_health_check_communication() {
     # (a path that generates outbound notifications). Otherwise it is INFO/NOT CONFIGURED —
     # declared, never a false critical, and never fails firewall/security posture.
     local producers=()
-    [[ -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports" ]] && producers+=("auto-reports")
+    # auto-reports counts as an EMAIL producer only when reports are actually configured to be
+    # EMAILED — NOT merely written to disk. The default scheduled report service ExecStart is
+    # disk-only (`nftban report run <freq>`, no --email), so the reports directory or an enabled
+    # timer alone must NOT create a false Communication WARN. Signal: an explicit report email
+    # recipient, or a report timer whose service ExecStart carries --email.
+    local _reports_email=0
+    [[ -n "${NFTBAN_MAIL_REPORT_RECIPIENT:-}" ]] && _reports_email=1
+    if [[ "$_reports_email" -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
+        local _rt
+        for _rt in daily weekly monthly; do
+            systemctl is-enabled "nftban-report-${_rt}.timer" >/dev/null 2>&1 || continue
+            if systemctl cat "nftban-report-${_rt}.service" 2>/dev/null | grep -qE '^ExecStart=.*--email'; then
+                _reports_email=1; break
+            fi
+        done
+    fi
+    [[ "$_reports_email" -eq 1 ]] && producers+=("auto-reports")
     local _rbl_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
     [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null && producers+=("rbl-alerts")
     [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]] && producers+=("tunnel-alerts")
@@ -846,6 +862,30 @@ _health_eval_communication_component() {
     else
         _out_line=$(printf "  %-20s %s" "Communication:" "$_state")
     fi
+    # New-user remediation UX: every WARN/ERROR must give an immediate fix + verify path; an
+    # INFO state (no producer needs email) states an explicit no-action-required outcome. Wording
+    # only — no recipient/secret is ever printed.
+    local _rl
+    case "$_state" in
+        WARN|ERROR)
+            if [[ "$_reason" == *"MISSING_RECIPIENT"* || "$_reason" == *"TRANSPORT_UNAVAILABLE"* ]]; then
+                _rl=$(printf "  %-20s %s" "" "Impact: alert notifications are generated but cannot be delivered.")
+                _out_line+=$'\n'"$_rl"
+                _rl=$(printf "  %-20s %s" "" "Fix:    nftban mail setup <your-email>")
+                _out_line+=$'\n'"$_rl"
+                _rl=$(printf "  %-20s %s" "" "Verify: nftban mail test   then   nftban health")
+                _out_line+=$'\n'"$_rl"
+                if [[ "$_reason" == *"TRANSPORT_UNAVAILABLE"* ]]; then
+                    _rl=$(printf "  %-20s %s" "" "Note:   no local mail transport — 'mail setup' can use SMTP (curl); no local MTA required.")
+                    _out_line+=$'\n'"$_rl"
+                fi
+            fi
+            ;;
+        INFO)
+            _rl=$(printf "  %-20s %s" "" "(no action required — no enabled alert producer needs email delivery)")
+            _out_line+=$'\n'"$_rl"
+            ;;
+    esac
 }
 
 export -f nftban_health_check_communication _health_eval_communication_component

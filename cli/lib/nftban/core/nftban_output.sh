@@ -1375,7 +1375,7 @@ nftban_render_operator_readiness() {
         printf "  %-20s %s\n" "" "→ firewall-transition alarm: see 'Firewall Transition' below (clear: nftban firewall rebuild)"
     fi
     if [[ "$_comms_alarm" -eq 1 ]]; then
-        printf "  %-20s %s\n" "" "→ communication degraded: see the Communication component below ('nftban stats comms')"
+        printf "  %-20s %s\n" "" "→ communication needs setup: see the Communication component below (fix: nftban mail setup <email>)"
     fi
     if [[ "$action" != "NONE" && ( "$max_sev" == "warn" || "$max_sev" == "error" || "$max_sev" == "critical" ) ]]; then
         printf "  %-20s %s\n" "" "→ see the Findings section below for the actionable item(s)"
