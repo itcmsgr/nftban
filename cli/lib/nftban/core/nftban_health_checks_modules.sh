@@ -746,31 +746,56 @@ nftban_health_check_communication() {
     # (a path that generates outbound notifications). Otherwise it is INFO/NOT CONFIGURED —
     # declared, never a false critical, and never fails firewall/security posture.
     local producers=()
-    # auto-reports counts as an EMAIL producer only when reports are actually configured to be
-    # EMAILED — NOT merely written to disk. The default scheduled report service ExecStart is
-    # disk-only (`nftban report run <freq>`, no --email), so the reports directory or an enabled
-    # timer alone must NOT create a false Communication WARN. Signal: an explicit report email
-    # recipient, or a report timer whose service ExecStart carries --email.
-    local _reports_email=0
-    [[ -n "${NFTBAN_MAIL_REPORT_RECIPIENT:-}" ]] && _reports_email=1
-    if [[ "$_reports_email" -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
-        local _rt
-        for _rt in daily weekly monthly; do
-            systemctl is-enabled "nftban-report-${_rt}.timer" >/dev/null 2>&1 || continue
-            if systemctl cat "nftban-report-${_rt}.service" 2>/dev/null | grep -qE '^ExecStart=.*--email'; then
-                _reports_email=1; break
-            fi
-        done
+    # auto-reports is an EMAIL producer only when scheduled reports are actually configured to be
+    # EMAILED. The canonical signal is STATS_EMAIL_ENABLED truthy (conf.d/stats.conf, or the
+    # environment) — that is exactly what the default `nftban report run` timer checks before
+    # emailing (cmd_report.sh:984, with NO --email flag), and STATS_EMAIL_RECIPIENTS is the report's
+    # own recipient. Disk-only reports (STATS_EMAIL_ENABLED false/unset) never produce a
+    # Communication WARN. (Supersedes the v1.218.2 NFTBAN_MAIL_REPORT_RECIPIENT / timer-`--email`
+    # gate, which keyed on signals the scheduled report path does not use — NFTBAN_MAIL_REPORT_RECIPIENT
+    # is only a fallback for the on-demand `module/fhs/port` report emails, not a standing producer.)
+    local _stats_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf" _stats_email_on=0 _report_rcpt=""
+    if [[ -f "$_stats_conf" ]]; then
+        grep -qiE '^[[:space:]]*STATS_EMAIL_ENABLED="?(yes|true|1|on)"?[[:space:]]*$' "$_stats_conf" 2>/dev/null && _stats_email_on=1
+        _report_rcpt=$(grep -E '^[[:space:]]*STATS_EMAIL_RECIPIENTS=' "$_stats_conf" 2>/dev/null | head -n1 \
+            | sed -E 's/^[[:space:]]*STATS_EMAIL_RECIPIENTS=//; s/^"//; s/"$//')
     fi
-    [[ "$_reports_email" -eq 1 ]] && producers+=("auto-reports")
+    local _se="${STATS_EMAIL_ENABLED:-}"; [[ "${_se,,}" =~ ^(yes|true|1|on)$ ]] && _stats_email_on=1
+    [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]] && _report_rcpt="${STATS_EMAIL_RECIPIENTS}"
+    [[ "$_stats_email_on" -eq 1 ]] && producers+=("auto-reports")
+    local _general_producer=0
     local _rbl_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
-    [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null && producers+=("rbl-alerts")
-    [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]] && producers+=("tunnel-alerts")
-    [[ -f "$mail_conf" ]] && grep -q 'MAIL_ENABLED=true' "$mail_conf" 2>/dev/null && producers+=("mail-enabled")
+    [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null && { producers+=("rbl-alerts"); _general_producer=1; }
+    [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]] && { producers+=("tunnel-alerts"); _general_producer=1; }
+    [[ -f "$mail_conf" ]] && grep -q 'MAIL_ENABLED=true' "$mail_conf" 2>/dev/null && { producers+=("mail-enabled"); _general_producer=1; }
     local producer_enabled=0; [[ ${#producers[@]} -gt 0 ]] && producer_enabled=1
 
-    local comms_usable=1
-    [[ -z "$recipient" || "$transport" == "none" ]] && comms_usable=0
+    # Per-producer deliverability — a producer WARNs when IT SPECIFICALLY cannot deliver, judged by
+    # its OWN recipient. Scheduled reports (auto-reports) deliver ONLY to STATS_EMAIL_RECIPIENTS
+    # (cmd_report.sh:984 has no general fallback), so a general recipient does not make reports
+    # deliverable, and a stray STATS_EMAIL_RECIPIENTS does not make the general producers deliverable.
+    # General producers (rbl/tunnel/mail) deliver via nftban_mail_resolve_recipient = NFTBAN_MAIL_RECIPIENT.
+    local _undeliverable=0 _why=""
+    if [[ "$_stats_email_on" -eq 1 ]]; then
+        if [[ -z "$_report_rcpt" ]]; then
+            # Design choice B: email reports enabled but no report recipient is a MISCONFIGURATION
+            # (nothing sends — cmd_report.sh:984 never fires without STATS_EMAIL_RECIPIENTS), NOT a
+            # delivery failure. Word it so, regardless of any general recipient.
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: email reports enabled but no recipient configured"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    if [[ "$_undeliverable" -eq 0 && "$_general_producer" -eq 1 ]]; then
+        if [[ -z "$recipient" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # Is the general comms path configured at all? (drives the INFO/NOT-CONFIGURED terminal.)
+    local _config_unusable=0
+    [[ -z "$recipient" || "$transport" == "none" ]] && _config_unusable=1
 
     local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mailspool}"
     local depth=0 oldest_age=0
@@ -798,22 +823,17 @@ nftban_health_check_communication() {
         fi
     fi
 
-    # v1.218.1: producer-aware config/usability verdict. A degraded/backlogged delivery state
-    # (spool / last-failure, gathered above) is always WARN/ERROR. An UNUSABLE comms config is
-    # WARN only if an alert producer is enabled; if nothing needs it and there is no delivery
-    # evidence, declare INFO/NOT CONFIGURED (severity OK, but named — not silent).
-    if [[ "$comms_usable" -eq 0 ]]; then
-        local _why=""
-        [[ -z "$recipient" ]] && _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
-        [[ "$transport" == "none" ]] && _why="${_why:+$_why; }COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
-        if [[ "$producer_enabled" -eq 1 ]]; then
-            issues+=("${_why} (alert producers enabled: ${producers[*]}; notifications generated but not deliverable)")
-            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-        elif [[ ${#issues[@]} -eq 0 ]]; then
-            NFTBAN_HEALTH_RESULTS["communication"]=$HEALTH_OK
-            NFTBAN_HEALTH_ISSUES["communication"]="NOT CONFIGURED — no outbound alert transport configured; no enabled alert producer currently requires it"
-            return $HEALTH_OK
-        fi
+    # Producer-aware verdict. A degraded/backlogged delivery state (spool / last-failure, gathered
+    # above) is always WARN/ERROR. Any enabled producer that cannot deliver (reason computed above)
+    # is WARN. If nothing needs email and the general comms path is not configured — and there is no
+    # other delivery evidence — declare INFO/NOT CONFIGURED (severity OK, but named — not silent).
+    if [[ "$_undeliverable" -eq 1 ]]; then
+        issues+=("${_why} (alert producers enabled: ${producers[*]})")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    elif [[ "$producer_enabled" -eq 0 && "$_config_unusable" -eq 1 && ${#issues[@]} -eq 0 ]]; then
+        NFTBAN_HEALTH_RESULTS["communication"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["communication"]="NOT CONFIGURED — no outbound alert transport configured; no enabled alert producer currently requires it"
+        return $HEALTH_OK
     fi
 
     NFTBAN_HEALTH_RESULTS["communication"]=$status
