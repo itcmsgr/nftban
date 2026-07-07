@@ -62,12 +62,13 @@ echo \"RC=\$rc ISSUE=\${NFTBAN_HEALTH_ISSUES[communication]:-}\""; }
 # health: CLEAN when recipient + emulate transport
 r=$(hprobe "export NFTBAN_MAIL_METHOD=emulate NFTBAN_MAIL_RECIPIENT='rcpt@test.example'")
 echo "$r" | grep -q '^RC=0 ' && ok "health CLEAN (recipient + transport)" || no "health not clean: $r"
-# health: missing recipient while alerting enabled (mail.conf present)
-r=$(hprobe "unset NFTBAN_MAIL_RECIPIENT; export NFTBAN_MAIL_METHOD=emulate; : > \"\$NFTBAN_CONFIG_DIR/conf.d/mail.conf\"")
-echo "$r" | grep -q 'COMMUNICATION_CONFIG_MISSING_RECIPIENT' && [[ "$r" != RC=0* ]] && ok "health WARN: missing recipient" || no "missing recipient not flagged: $r"
-# health: transport unavailable while enabled
-r=$(hprobe "export NFTBAN_MAIL_RECIPIENT='rcpt@test.example'; $NONE_BINS")
-echo "$r" | grep -q 'COMMUNICATION_TRANSPORT_UNAVAILABLE' && ok "health WARN: transport unavailable" || no "transport-unavailable not flagged: $r"
+# health: missing recipient while an ALERT PRODUCER is enabled (v1.218.1 policy → WARN).
+# (mail.conf with MAIL_ENABLED=true is a producer; without a producer this is INFO, tested in the v1.218.1 suite.)
+r=$(hprobe "unset NFTBAN_MAIL_RECIPIENT; export NFTBAN_MAIL_METHOD=emulate; printf 'MAIL_ENABLED=true\n' > \"\$NFTBAN_CONFIG_DIR/conf.d/mail.conf\"")
+echo "$r" | grep -q 'COMMUNICATION_CONFIG_MISSING_RECIPIENT' && [[ "$r" != RC=0* ]] && ok "health WARN: missing recipient (producer enabled)" || no "missing recipient not flagged: $r"
+# health: transport unavailable while an alert producer is enabled → WARN
+r=$(hprobe "export NFTBAN_MAIL_RECIPIENT='rcpt@test.example'; printf 'MAIL_ENABLED=true\n' > \"\$NFTBAN_CONFIG_DIR/conf.d/mail.conf\"; $NONE_BINS")
+echo "$r" | grep -q 'COMMUNICATION_TRANSPORT_UNAVAILABLE' && ok "health WARN: transport unavailable (producer enabled)" || no "transport-unavailable not flagged: $r"
 # health: spool backlog
 r=$(hprobe "export NFTBAN_MAIL_METHOD=emulate NFTBAN_MAIL_RECIPIENT='rcpt@test.example'; mkdir -p \"\$NFTBAN_DATA_DIR/mailspool\"; : > \"\$NFTBAN_DATA_DIR/mailspool/x.mail\"")
 echo "$r" | grep -q 'COMMUNICATION_SPOOL_BACKLOG' && ok "health WARN: spool backlog" || no "spool backlog not flagged: $r"

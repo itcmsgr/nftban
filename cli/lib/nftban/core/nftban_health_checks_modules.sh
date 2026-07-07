@@ -739,24 +739,22 @@ nftban_health_check_communication() {
     declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 && \
         recipient="$(nftban_mail_resolve_recipient "" 2>/dev/null || echo "")"
 
-    # Alerting considered enabled if a recipient is configured OR a mail.conf exists.
-    if [[ -z "$recipient" && ! -f "$mail_conf" ]]; then
-        NFTBAN_HEALTH_RESULTS["communication"]=$HEALTH_OK
-        NFTBAN_HEALTH_ISSUES["communication"]="Communication alerting not configured (optional)"
-        return $HEALTH_OK
-    fi
-
-    if [[ -z "$recipient" ]]; then
-        issues+=("COMMUNICATION_CONFIG_MISSING_RECIPIENT: alerting configured but no recipient resolves")
-        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-    fi
-
     local transport="none"
     declare -F nftban_mail_detect_mta >/dev/null 2>&1 && transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
-    if [[ "$transport" == "none" ]]; then
-        issues+=("COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport")
-        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-    fi
+
+    # v1.218.1 policy: missing comms config is only WARN when an alert PRODUCER is enabled
+    # (a path that generates outbound notifications). Otherwise it is INFO/NOT CONFIGURED —
+    # declared, never a false critical, and never fails firewall/security posture.
+    local producers=()
+    [[ -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports" ]] && producers+=("auto-reports")
+    local _rbl_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null && producers+=("rbl-alerts")
+    [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]] && producers+=("tunnel-alerts")
+    [[ -f "$mail_conf" ]] && grep -q 'MAIL_ENABLED=true' "$mail_conf" 2>/dev/null && producers+=("mail-enabled")
+    local producer_enabled=0; [[ ${#producers[@]} -gt 0 ]] && producer_enabled=1
+
+    local comms_usable=1
+    [[ -z "$recipient" || "$transport" == "none" ]] && comms_usable=0
 
     local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mailspool}"
     local depth=0 oldest_age=0
@@ -784,6 +782,24 @@ nftban_health_check_communication() {
         fi
     fi
 
+    # v1.218.1: producer-aware config/usability verdict. A degraded/backlogged delivery state
+    # (spool / last-failure, gathered above) is always WARN/ERROR. An UNUSABLE comms config is
+    # WARN only if an alert producer is enabled; if nothing needs it and there is no delivery
+    # evidence, declare INFO/NOT CONFIGURED (severity OK, but named — not silent).
+    if [[ "$comms_usable" -eq 0 ]]; then
+        local _why=""
+        [[ -z "$recipient" ]] && _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        [[ "$transport" == "none" ]] && _why="${_why:+$_why; }COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        if [[ "$producer_enabled" -eq 1 ]]; then
+            issues+=("${_why} (alert producers enabled: ${producers[*]}; notifications generated but not deliverable)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        elif [[ ${#issues[@]} -eq 0 ]]; then
+            NFTBAN_HEALTH_RESULTS["communication"]=$HEALTH_OK
+            NFTBAN_HEALTH_ISSUES["communication"]="NOT CONFIGURED — no outbound alert transport configured; no enabled alert producer currently requires it"
+            return $HEALTH_OK
+        fi
+    fi
+
     NFTBAN_HEALTH_RESULTS["communication"]=$status
     if [[ ${#issues[@]} -gt 0 ]]; then
         local _joined; printf -v _joined '%s; ' "${issues[@]}"; _joined="${_joined%; }"
@@ -795,7 +811,44 @@ nftban_health_check_communication() {
     return $status
 }
 
-export -f nftban_health_check_communication
+# v1.218.1: evaluate the communication component for the LIVE health render. The
+# `nftban health check` four-axis table is validator-JSON-driven and does not include
+# central-comms; this runs the A2b shell check and returns, via namerefs, a severity code
+# (0=CLEAN,1=WARN,2=ERROR) and a named "Communication: STATE (reason)" display line so the
+# check surfaces as a named operator-visible component AND can raise the readiness verdict.
+# Reason is the COMMUNICATION_* issue text (no secrets, no recipient). Shell-only.
+_health_eval_communication_component() {
+    local -n _out_code="$1" _out_line="$2" _out_reason="$3"
+    if ! declare -F nftban_health_check_communication >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health.sh" ]] && \
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health.sh" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks_modules.sh" ]] && \
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks_modules.sh" 2>/dev/null || true
+    fi
+    declare -p NFTBAN_HEALTH_RESULTS >/dev/null 2>&1 || declare -gA NFTBAN_HEALTH_RESULTS NFTBAN_HEALTH_ISSUES
+    declare -p NFTBAN_HEALTH_ERRORS  >/dev/null 2>&1 || declare -ga NFTBAN_HEALTH_ERRORS
+    : "${HEALTH_OK:=0}" "${HEALTH_WARNING:=1}" "${HEALTH_ERROR:=2}"
+    declare -F nftban_health_check_communication >/dev/null 2>&1 && \
+        nftban_health_check_communication >/dev/null 2>&1 || true
+    local _res="${NFTBAN_HEALTH_RESULTS[communication]:-}" _reason="${NFTBAN_HEALTH_ISSUES[communication]:-}" _state
+    case "$_res" in
+        0)   if [[ "$_reason" == *"NOT CONFIGURED"* ]]; then _state="INFO"; else _state="CLEAN"; fi ;;
+        1)   _state="WARN"  ;;
+        2|3) _state="ERROR" ;;
+        *)   _state="UNKNOWN"; _res=0 ;;
+    esac
+    _out_code="$_res"
+    _out_reason="$_reason"
+    if [[ -n "$_reason" && "$_state" != "CLEAN" ]]; then
+        _out_line=$(printf "  %-20s %s  (%s)" "Communication:" "$_state" "$_reason")
+    else
+        _out_line=$(printf "  %-20s %s" "Communication:" "$_state")
+    fi
+}
+
+export -f nftban_health_check_communication _health_eval_communication_component
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
 export -f nftban_health_check_rbl nftban_health_check_portscan_prefix
