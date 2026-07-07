@@ -55,7 +55,16 @@ _debug_scrub_stream() {
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
     fi
-    if declare -F nftban_redact_stream >/dev/null 2>&1; then nftban_redact_stream; else cat; fi
+    # SEC-P1-2 P-retire-2: FAIL-CLOSED — never `cat` raw config/env through when the redactor is
+    # unavailable (that was a silent full-leak of debug output). Drain+discard stdin, emit marker.
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        cat >/dev/null 2>&1
+        printf '%s\n' '[REDACTION-UNAVAILABLE: do not share]'
+        echo '[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed' >&2
+    fi
+    return 0
 }
 
 # =============================================================================

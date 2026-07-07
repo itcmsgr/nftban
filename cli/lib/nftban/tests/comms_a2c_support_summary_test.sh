@@ -53,7 +53,7 @@ printf '%s\n' '{"ts":"2026-07-07T00:00:00Z","transport":"emulate","recipient":"b
 # Extract the self-containable functions (sourcing the whole CLI file has heavy load-time deps).
 FN="$WORK/fns.sh"
 {
-  awk '/^readonly -a SECRET_PATTERNS=\(/{f=1} f{print} f&&/^\)/{exit}' "$SUPPORT"
+  awk '/^_redact_unavailable\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$SUPPORT"
   awk '/^_redact_secrets\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$SUPPORT"
   awk '/^_redact_comms\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$SUPPORT"
   awk '/^_collect_communications\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$SUPPORT"
@@ -64,6 +64,7 @@ grep -q '_collect_communications' "$FN" && ok "extracted _collect_communications
 # run _collect_communications with the stub in PATH
 bash -c "
 export PATH='$WORK/bin:'\$PATH NFTBAN_MAIL_DELIVERY_LOG='$DLOG' NFTBAN_DATA_DIR='$WORK/data'
+source '$REPO/cli/lib/nftban/lib/nftban_redact.sh' >/dev/null 2>&1 || true
 source '$FN' >/dev/null 2>&1 || true
 set +e; set +o pipefail
 _collect_communications '$BDIR'

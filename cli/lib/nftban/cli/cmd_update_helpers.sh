@@ -474,17 +474,21 @@ _forensic_run_id() { printf '%s' "${NFTBAN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/
 _fx_jstr() { local s="${1-}"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; s="${s//$'\t'/ }"; s="${s//$'\r'/ }"; printf '%s' "$s"; }
 # secret redaction safety-net (the snapshot is allowlisted, but values pass this too)
 _fx_redact() {
-    # SEC-P1-2 P2b-1: delegate to the shared redaction authority (broader coverage: *_PASS,
-    # connector/pro/portal creds, URL creds, netrc). Legacy sed is a fallback only.
+    # SEC-P1-2 P2b-1/P-retire-2: delegate to the shared redaction authority (the ONLY secret path).
     if ! declare -F nftban_redact_stream >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
     fi
+    # FAIL-CLOSED — the legacy weak sed (missed *_PASS) is RETIRED. If the authority is unavailable,
+    # drain+discard stdin and emit the marker; never weak-redact, never raw passthrough.
     if declare -F nftban_redact_stream >/dev/null 2>&1; then
         nftban_redact_stream
     else
-        sed -E 's/(pass(word)?|secret|token|api[_-]?key|bearer|authorization)([=: ]+)[^ ",]*/\1\3<redacted>/Ig'
+        cat >/dev/null 2>&1
+        printf '%s\n' '[REDACTION-UNAVAILABLE: do not share]'
+        echo '[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed' >&2
     fi
+    return 0
 }
 
 # _forensic_begin <run_id> <mode> <from> <to>
