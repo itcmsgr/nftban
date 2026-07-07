@@ -89,11 +89,11 @@ echo "$ev_info" | grep -q 'CODE=0' && echo "$ev_info" | grep -qi 'Communication:
 
 # v1.218.1 policy: NOT configured but an alert PRODUCER is enabled -> WARN.
 # UX slice: auto-reports is a producer only when configured for EMAIL delivery
-# (NFTBAN_MAIL_REPORT_RECIPIENT set), NOT merely because the reports dir exists.
+# (STATS_EMAIL_ENABLED=true — the real scheduled-report email signal), NOT the reports dir or NFTBAN_MAIL_REPORT_RECIPIENT.
 ev_warn_prod=$(bash -c "$(prelude)
 rm -rf \"\$NFTBAN_DATA_DIR/mailspool\" \"\$NFTBAN_DATA_DIR/metrics\"
 unset NFTBAN_MAIL_RECIPIENT
-export NFTBAN_MAIL_REPORT_RECIPIENT='reports@test.example'
+export STATS_EMAIL_ENABLED=true; unset STATS_EMAIL_RECIPIENTS
 nftban_mail_detect_mta() { echo none; }
 _health_eval_communication_component c l r
 echo \"CODE=\$c\"; echo \"LINE=\$l\"")
@@ -104,7 +104,7 @@ echo "$ev_warn_prod" | grep -q 'nftban mail setup' && echo "$ev_warn_prod" | gre
 # UX slice: DISK-ONLY reports (reports dir exists, NO email config) must NOT WARN -> INFO
 ev_disk=$(bash -c "$(prelude)
 rm -rf \"\$NFTBAN_DATA_DIR/mailspool\" \"\$NFTBAN_DATA_DIR/metrics\"
-unset NFTBAN_MAIL_RECIPIENT NFTBAN_MAIL_REPORT_RECIPIENT
+unset NFTBAN_MAIL_RECIPIENT STATS_EMAIL_ENABLED STATS_EMAIL_RECIPIENTS
 mkdir -p \"\$NFTBAN_DATA_DIR/reports\"
 systemctl() { return 1; }   # no report-email timer
 nftban_mail_detect_mta() { echo none; }
