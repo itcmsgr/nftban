@@ -1215,6 +1215,58 @@ nftban_rbl_update_state() {
     _nftban_rbl_state_to_json > "$state_json"
 }
 
+nftban_rbl_prune_state() {
+    # v1.218.5 (§4.2, AGE-BASED): remove state.dat lines whose last-update timestamp is older than the
+    # state-retention TTL. This is NOT based on the current enumerated IP set — so it is immune to
+    # transient enumeration misses, floating/VRRP movement, DHCP renewal, IPv6 privacy-address
+    # rotation, and scheduled-vs-server path mismatch. A currently-monitored IP has its timestamp
+    # refreshed by nftban_rbl_update_state at least every cache-TTL (default 24h — on cache expiry;
+    # cache-served scans do not rewrite state.dat), far inside the retention window, so it is
+    # effectively always fresh and can NEVER be pruned; a transiently-absent IP keeps its transition
+    # baseline until it has been absent for the FULL TTL.
+    # RISK GUARDS:
+    #   - A line whose timestamp is UNPARSEABLE is KEPT (never prune on ambiguity).
+    #   - A non-numeric / zero TTL disables pruning entirely (fail-safe: keep everything).
+    #   - The effective TTL is FLOORED to max(48h, 2x cache-TTL): a sub-floor override can never prune a
+    #     live cache-served IP, so "a live IP is never pruned" holds unconditionally, not just at default.
+    #   - Retained lines are copied VERBATIM (transition baseline byte-identical — no alert-once reset).
+    #   - Comments/blank lines kept. Pure file op — no network, no DNSBL, no alert, no enumeration.
+    # State retention default = 30d, internal (NFTBAN_RBL_STATE_TTL override; NOT in the conf template).
+    # The RBL cache TTL (24h, result freshness) is intentionally NOT reused as the window — too short.
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
+    [[ -f "$state_file" ]] || return 0
+    local _ttl="${NFTBAN_RBL_STATE_TTL:-2592000}"
+    [[ "$_ttl" =~ ^[0-9]+$ ]] && [[ "$_ttl" -gt 0 ]] || return 0
+    # Floor the window so a mis-set tiny TTL can never prune a still-live (cache-served) IP.
+    local _cache_ttl_h="${NFTBAN_RBL_CACHE_TTL:-24}"
+    [[ "$_cache_ttl_h" =~ ^[0-9]+$ ]] && [[ "$_cache_ttl_h" -gt 0 ]] || _cache_ttl_h=24
+    local _min_ttl=$(( _cache_ttl_h * 7200 ))         # 2x cache-TTL, in seconds
+    [[ "$_min_ttl" -lt 172800 ]] && _min_ttl=172800   # hard floor 48h
+    [[ "$_ttl" -lt "$_min_ttl" ]] && _ttl="$_min_ttl"
+    local _now _cutoff
+    _now=$(date +%s 2>/dev/null) || return 0
+    [[ "$_now" =~ ^[0-9]+$ ]] || return 0
+    _cutoff=$(( _now - _ttl ))
+    local _tmp="${state_file}.prune.$$"
+    : > "$_tmp" || return 0
+    local _line _ts _ts_epoch
+    while IFS= read -r _line || [[ -n "$_line" ]]; do
+        if [[ -z "$_line" || "$_line" == \#* ]]; then printf '%s\n' "$_line" >> "$_tmp"; continue; fi
+        # format: IP=status|timestamp|prev_status|prev_timestamp — extract field-2 (last-update ts).
+        _ts="${_line#*=}"; _ts="${_ts#*|}"; _ts="${_ts%%|*}"
+        _ts_epoch=$(date -d "$_ts" +%s 2>/dev/null || echo "")
+        if [[ -z "$_ts_epoch" || ! "$_ts_epoch" =~ ^[0-9]+$ ]]; then
+            # unparseable timestamp -> KEEP (never prune on ambiguity)
+            printf '%s\n' "$_line" >> "$_tmp"; continue
+        fi
+        # keep if within retention window (fresh); prune only if strictly older than the cutoff.
+        [[ "$_ts_epoch" -ge "$_cutoff" ]] && printf '%s\n' "$_line" >> "$_tmp"
+    done < "$state_file"
+    mv "$_tmp" "$state_file" 2>/dev/null || { rm -f "$_tmp"; return 0; }
+    _nftban_rbl_state_to_json > "${NFTBAN_RBL_CACHE_DIR}/state.json" 2>/dev/null || true
+    return 0
+}
+
 _nftban_rbl_state_to_json() {
     # Convert state.dat to state.json for API compatibility
     local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
@@ -1690,6 +1742,7 @@ export -f nftban_rbl_send_degraded_alert
 export -f nftban_rbl_check_new_listing
 export -f nftban_rbl_check_delisting
 export -f nftban_rbl_update_state
+export -f nftban_rbl_prune_state
 export -f nftban_rbl_get_state
 export -f nftban_rbl_watchlist_get
 export -f nftban_rbl_watchlist_add

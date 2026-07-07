@@ -324,6 +324,27 @@ nftban_health_check_rbl() {
         return $HEALTH_OK
     fi
 
+    # v1.218.5 (§4.3): RBL is ENABLED but may have NO effective watch targets — that must surface as a
+    # config advisory, not a silent effective-CLEAN. Determination is CONFIG-ONLY (no discovery run, no
+    # DNSBL/network, no mail): auto-discovery supplies the server's own IPs at runtime, so only when it
+    # is OFF do explicit targets (NFTBAN_RBL_CRITICAL_IPS or a non-empty watchlist file) matter.
+    local _rbl_autodisc _rbl_critical _rbl_watchlist
+    # grep fallbacks use `|| echo ""` so a no-match under `set -o pipefail` yields empty (never aborts
+    # the function mid-body) — matching the line-316 idiom.
+    _rbl_autodisc="${NFTBAN_RBL_AUTO_DISCOVER_IPS:-}"
+    [[ -z "$_rbl_autodisc" && -f "$rbl_config" ]] && _rbl_autodisc=$(grep -E "^NFTBAN_RBL_AUTO_DISCOVER_IPS=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "")
+    _rbl_autodisc="${_rbl_autodisc:-YES}"
+    _rbl_critical="${NFTBAN_RBL_CRITICAL_IPS:-}"
+    [[ -z "$_rbl_critical" && -f "$rbl_config" ]] && _rbl_critical=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "")
+    _rbl_watchlist="${NFTBAN_RBL_WATCHLIST_FILE:-}"
+    [[ -z "$_rbl_watchlist" && -f "$rbl_config" ]] && _rbl_watchlist=$(grep -E "^NFTBAN_RBL_WATCHLIST_FILE=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "")
+    local _rbl_watchlist_has=0
+    [[ -n "$_rbl_watchlist" && -f "$_rbl_watchlist" ]] && grep -qvE '^[[:space:]]*(#|$)' "$_rbl_watchlist" 2>/dev/null && _rbl_watchlist_has=1
+    if [[ "$_rbl_autodisc" != "YES" && -z "$_rbl_critical" && "$_rbl_watchlist_has" -eq 0 ]]; then
+        rbl_issues+=("RBL enabled but no watch targets configured — nothing is being monitored (advisory reputation monitoring, not firewall blocking; set NFTBAN_RBL_CRITICAL_IPS, add a watchlist, or enable auto-discovery)")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
     # Check last check time
     local last_check_file="${rbl_cache_dir}/last_check"
     if [[ -f "$last_check_file" ]]; then
