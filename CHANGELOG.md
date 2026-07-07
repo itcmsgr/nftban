@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.3] - 2026-07-07 — Communication producer-signal accuracy + debug redaction via the shared authority (shell-only; daemon byte-identical)
+
+**Lanes:** `OPEN_PRODUCER_SIGNAL_ACCURACY` + `OPEN_DUPLICATE_REDACTOR_RETIREMENT` (P-retire-1). **PRs:** [#1037](https://github.com/itcmsgr/nftban/pull/1037) `d0c3d231` / [#1038](https://github.com/itcmsgr/nftban/pull/1038) `b0c79f6b`.
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go source; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Two already-merged post-v1.218.2 correctness/security fixes — the central-comms A2 architecture remains **CLOSED**. No RBLMON, no RBL P0, no privacy mode, no webhook, no A3, no finding registry, no P-retire-2, no telemetry/exporter/Zabbix refactor.
+
+### Communication — producer-signal accuracy (false-green fix)
+
+- **Scheduled report-email producer detection now keys on `STATS_EMAIL_ENABLED`** (read from `conf.d/stats.conf` + environment) — the real signal the default `nftban report run` timer checks (`cmd_report.sh`), replacing the earlier `NFTBAN_MAIL_REPORT_RECIPIENT` / timer-`--email` heuristics that the scheduled path never used.
+- **Per-producer deliverability:** each producer is judged by its own recipient — auto-reports by `STATS_EMAIL_RECIPIENTS`, general producers (RBL/tunnel/mail) by `NFTBAN_MAIL_RECIPIENT` — so a general recipient can't mask a missing report recipient and a stray report recipient can't mask a missing general recipient (two cross-producer false-CLEANs, caught by adversarial verification and regression-tested).
+- **`STATS_EMAIL_ENABLED=true` with no report recipient is a WARN misconfiguration** ("email reports enabled but no recipient configured") — not framed as a delivery failure, since no report email fires without a recipient.
+- **Disk-only reports remain INFO / no action** (the v1.218.2 fix is preserved).
+
+### Debug — redaction via the shared authority (secret-leak fix)
+
+- **`nftban debug config` and `nftban debug env`** now scrub secrets through the shared redaction authority (`nftban_redact_stream`), replacing a divergent raw sed.
+- **Closes a `*_PASS` debug leak class:** the old sed matched `PASSWORD` but not `PASS`, printing `NFTBAN_SMTP_PASS` / connector `*_PASS` in cleartext; these are now redacted (coverage also gains Bearer, URL credentials, netrc, Auth-User).
+- **Fixes over-redaction** of benign routing keys such as `KAFKA_PARTITION_KEY`.
+- **P-retire-2 remains deferred** (dead-fallback deletion, fail-loud lib-missing behaviour, installer verification).
+
+### Scope & validation
+
+- **Shell-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.**
+- **Tests:** `comms_producer_signal_accuracy` 9/9 · `comms_redact_debug_p_retire1` 11/11 · P2a 30/30 · P2b-1 18/18 · v2181 17/17 · UX 13/13 · A2b 16/16 · A2c 15/15 · A2r 11/11 · A2a 18/18 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. lab2 DEB + lab4 RPM (per-PR): producer-signal WARN/CLEAN/INFO matrix + debug scrub validated; daemon active, `nftban validate` rc0, 0 new failed units, no real mail.
+
+---
+
 ## [v1.218.2] - 2026-07-07 — Security redaction hardening + central-comms new-user remediation UX (shell/docs-only; daemon byte-identical)
 
 **Lanes:** `OPEN_SEC_P1_2_SHARED_REDACTOR` (P2a + P2b-1) + `OPEN_CENTRAL_COMMS_NEW_USER_REMEDIATION_UX`. **PRs:** [#1033](https://github.com/itcmsgr/nftban/pull/1033) `5d5ab87e` / [#1034](https://github.com/itcmsgr/nftban/pull/1034) `9069b810` / [#1035](https://github.com/itcmsgr/nftban/pull/1035) `ac74ca25`.
