@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.1] - 2026-07-07 — Communication rendered in live `nftban health` readiness output, producer-aware (shell-only hotfix; daemon byte-identical)
+
+**Lane:** `OPEN_V218_1_COMMUNICATION_HEALTH_RENDER_PATCH`. **PR:** [#1031](https://github.com/itcmsgr/nftban/pull/1031) → `afccf03a`.
+
+> **SHELL-ONLY hotfix. Daemon + matcher BYTE-IDENTICAL** (0 Go source, source-proven; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Narrow fleet-candidate fix for the v1.218.0 hold — no RBLMON, no RBL P0, no SEC, no A3, no telemetry/exporter/Zabbix refactor, no event router.
+
+**v1.218.0 was functionally valid but fleet-held:** package-native lab2/lab4 found that the A2b communication check contributed to the health *verdict* but was **not rendered as a named operator-visible component** in the live `nftban health` / `health check` output (that output is the Go validator's four-axis truth table, which is validator-JSON-driven and did not list shell optional-feature checks by name). v1.218.1 closes that acceptance gap.
+
+- **Named component:** `nftban health` now renders a named **`Communication (central-comms)`** line, and folds its severity into the operator-readiness verdict (`PASS → PASS_WITH_WARN`, raise-only — never masks a FAIL, **never forces FAIL**).
+- **Producer-aware severity policy** — missing email is *not* automatically a warning:
+  - **INFO / NOT CONFIGURED** — no transport configured **and no enabled alert producer** requires it (declared, not silent, no verdict raise).
+  - **WARN** — an alert producer is enabled (auto-reports / RBL / tunnel / `MAIL_ENABLED=true`) but delivery isn't configured; or a spool backlog / recent send failure exists.
+  - **ERROR** — spool oldest-age beyond threshold.
+  - **Never:** an absent local MTA alone is never WARN/ERROR; a Communication WARN never hard-fails firewall/security posture; email absence never blocks the daemon.
+- **Daemonless central-comms (invariant, confirmed code-true):** NFTBan's central communication plane is **daemonless by design**. Alert delivery does **not** require Postfix, Exim, Sendmail, or any local mail daemon. **curl-SMTP is a first-class transport** for minimal hosts, containers, ARM systems, and IoT-style deployments (curl is a hard package dependency; explicit `NFTBAN_SMTP_HOST` is preferred over incidental local-MTA discovery). Existing local MTA paths remain supported as **optional compatibility backends**. Health evaluates communication *capability*, not the presence of a mail daemon.
+- **Tests:** `comms_health_render_v2181` 15/15 (verdict raise clean→PASS / WARN→PASS_WITH_WARN + pointer / ERROR→not-FAIL; INFO vs WARN by producer; spool→WARN; no secret/recipient leak); A2b 16/16 / A2r 11/11 / A2c 15/15 / A0 guard 0/4; shellcheck + `bash -n` + doctest + CLI-parity clean. Package-native lab2 DEB + lab4 RPM: named Communication component renders; producer-aware WARN on hosts with auto-reports enabled + no recipient; daemon active; `nftban validate` rc0; 0 new failed units.
+
 ## [v1.218.0] - 2026-07-07 — Central communication plane: enforced · centralized · testable · observable · support-visible; RBL observe-only surfaced with a DNSBL-only honesty label (shell-only; daemon byte-identical)
 
 **Lane:** `OPEN_CENTRAL_COMMUNICATION_AUTHORITY_UNIFICATION` (A0 → A1 → A1b → A2a → A2b → A2r → A2c). **PRs:** [#1022](https://github.com/itcmsgr/nftban/pull/1022) `630765af`, [#1023](https://github.com/itcmsgr/nftban/pull/1023) `baca89a1`, [#1024](https://github.com/itcmsgr/nftban/pull/1024) `cbc58204`, [#1025](https://github.com/itcmsgr/nftban/pull/1025) `1c29bace`, [#1027](https://github.com/itcmsgr/nftban/pull/1027) `33730bd2`, [#1028](https://github.com/itcmsgr/nftban/pull/1028) `0721af29`, [#1029](https://github.com/itcmsgr/nftban/pull/1029) `b026a9d7`.
