@@ -563,7 +563,19 @@ nftban_health_cmd_truth() {
     # computed shell-side from the validator JSON + rc, now FW-transition-aware
     # (4th arg = fth severity code). Shell-only; daemon byte-identical; --json
     # path unaffected (returned above).
-    nftban_render_operator_readiness "$output" "" "$validator_rc" "$_fth_code"
+    # v1.218.1: evaluate the central-comms component (A2b shell check) so it surfaces as a
+    # NAMED component in this live four-axis output AND folds into the readiness verdict
+    # (5th arg, raise-only). The validator JSON does not carry comms; this is shell-side.
+    local _comms_code=0 _comms_line="" _comms_reason=""
+    if ! declare -F _health_eval_communication_component >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks_modules.sh" ]] && \
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks_modules.sh" 2>/dev/null || true
+    fi
+    if declare -F _health_eval_communication_component >/dev/null 2>&1; then
+        _health_eval_communication_component _comms_code _comms_line _comms_reason
+    fi
+    nftban_render_operator_readiness "$output" "" "$validator_rc" "$_fth_code" "$_comms_code"
 
     echo ""
     echo "  Module       Config     Structure  Runtime    Effective"
@@ -607,6 +619,15 @@ nftban_health_cmd_truth() {
     # single-sourced and the R1b-2 operator-readiness summary can reuse it.
     # (JSON mode returns above — this is the text path only.)
     nftban_render_findings "$output" "$verbose_mode"
+
+    # v1.218.1: named Communication component line (shell A2b check; not in the validator
+    # JSON four-axis). CLEAN/WARN/ERROR/UNKNOWN + COMMUNICATION_* reason; no secrets/recipient.
+    if [[ -n "$_comms_line" ]]; then
+        echo ""
+        echo "  Communication (central-comms)"
+        echo "  ─────────────────────────────────────────"
+        printf '%s\n' "$_comms_line"
+    fi
 
     # v1.192.1 PR-B: harm-keyed firewall transition health detail (text mode
     # only; JSON returned above). v1.198.2: reuse the single fth eval computed
