@@ -53,16 +53,15 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]] && \
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
 
-# Patterns for secret redaction (LEGACY FALLBACK only — used iff the shared redactor lib
-# above is unavailable; the shared registry is the authoritative, broader set).
-readonly -a SECRET_PATTERNS=(
-    's/([Aa][Pp][Ii][-_]?[Kk][Ee][Yy]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/([Tt][Oo][Kk][Ee][Nn]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/([Ss][Ee][Cc][Rr][Ee][Tt]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/(Bearer\s+)[A-Za-z0-9._-]+/\1[REDACTED]/g'
-    's/([Aa][Uu][Tt][Hh]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-)
+# SEC-P1-2 P-retire-2: FAIL-LOUD when the shared redaction authority is unavailable. The legacy
+# SECRET_PATTERNS fallback (weak keyword sed that missed *_PASS) is RETIRED — a broken/partial
+# install must NEVER silently weak-redact or pass raw content through. Emit an explicit marker to
+# stdout (into the collected artifact) + a loud [SECURITY][ERROR] to stderr; callers all use
+# `… || true` / capture, so returning 0 keeps the bundle generating with clearly-marked sections.
+_redact_unavailable() {
+    printf '%s\n' '[REDACTION-UNAVAILABLE: do not share]'
+    echo '[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed' >&2
+}
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -90,18 +89,15 @@ _support_banner() {
 }
 
 _redact_secrets() {
-    # SEC-P1-2 P2a: delegate to the shared redaction authority (broader coverage: *_PASS,
-    # connector/pro/portal creds, Bearer, URL creds, netrc). Legacy SECRET_PATTERNS loop is
-    # kept ONLY as a fallback for when the shared lib is unavailable (coverage never weaker).
+    # SEC-P1-2 P2a/P-retire-2: delegate to the shared redaction authority (the ONLY secret-redaction
+    # path). If it is unavailable, FAIL LOUD — return the marker in place of the content, never the
+    # raw string and never a weak fallback.
     if declare -F nftban_redact_string >/dev/null 2>&1; then
         nftban_redact_string "${1:-}"
-        return
+        return 0
     fi
-    local output="${1:-}"
-    for pattern in "${SECRET_PATTERNS[@]}"; do
-        output=$(echo "$output" | sed -E "$pattern" 2>/dev/null) || true
-    done
-    echo "$output"
+    _redact_unavailable
+    return 0
 }
 
 _redact_file() {
@@ -354,7 +350,16 @@ _collect_configs() {
 # forensic evidence (identifier-privacy is a separate opt-in mode, P2b-2). Degrades to `cat`
 # if the shared redactor lib is unavailable.
 _support_scrub_stream() {
-    if declare -F nftban_redact_stream >/dev/null 2>&1; then nftban_redact_stream; else cat; fi
+    # SEC-P1-2 P-retire-2: FAIL-CLOSED — never `cat` raw stdin through when the redactor is
+    # unavailable (that was a silent full-leak of journal/log content). Drain+discard stdin and
+    # emit the marker instead.
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        cat >/dev/null 2>&1
+        _redact_unavailable
+    fi
+    return 0
 }
 
 _collect_logs() {
@@ -444,24 +449,19 @@ _collect_status() {
     _safe_cmd "$bundle_dir/status.txt" "NFTBan status" nftban status
 }
 
-# A2c: narrow, LOCAL redaction for the comms summary — SECRET_PATTERNS + comms-specific
-# fields (SMTP user, full recipient local-part). This is intentionally minimal; full
-# support-bundle redaction (SEC-P1-2) remains a separate open lane.
+# A2c: sanitized comms summary. `_redact_comms` now delegates wholesale to the shared redaction
+# authority (SMTP Auth User / *_PASS / SMTP_USER / Recipient local-part all covered), and fails
+# closed with [REDACTION-UNAVAILABLE] if the authority is missing (SEC-P1-2 P-retire-2).
 _redact_comms() {
-    # SEC-P1-2 P2a: the shared registry now covers SMTP Auth User / *_PASS / SMTP_USER and
-    # the Recipient: local-part (A2c behaviour preserved + broadened), so delegate wholesale.
+    # SEC-P1-2 P2a/P-retire-2: the shared registry covers SMTP Auth User / *_PASS / SMTP_USER and
+    # the Recipient: local-part, so delegate wholesale. If the authority is unavailable, FAIL LOUD —
+    # never the original narrow sed fallback (which missed the broader field set).
     if declare -F nftban_redact_string >/dev/null 2>&1; then
         nftban_redact_string "${1:-}"
-        return
+        return 0
     fi
-    # Fallback (shared lib unavailable): the original A2c narrow set.
-    local t; t=$(_redact_secrets "$1")
-    t=$(printf '%s' "$t" | sed -E \
-        -e 's/([Aa]uth [Uu]ser:[[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
-        -e 's/([Ss][Mm][Tt][Pp]_?[Uu][Ss][Ee][Rr][[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
-        -e 's/([Nn][Ff][Tt][Bb][Aa][Nn]_[Ss][Mm][Tt][Pp]_[Pp][Aa][Ss][Ss][[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1[REDACTED]/g' \
-        -e 's/(Recipient:[[:space:]]*)[^@[:space:]]+@([^[:space:]]+)/\1[redacted]@\2/g')
-    printf '%s' "$t"
+    _redact_unavailable
+    return 0
 }
 
 # A2c: sanitized central-comms + RBL observe-only summary. Reuses the existing redactor;
