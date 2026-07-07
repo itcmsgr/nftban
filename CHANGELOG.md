@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.5] - 2026-07-08 — RBLMON enable-readiness: producer-recipient truth + safe state retention + config advisory (shell-only; daemon byte-identical)
+
+**Lane:** `OPEN_RBLMON_ENABLE_READINESS_HARDENING`. **PRs:** [#1042](https://github.com/itcmsgr/nftban/pull/1042) `1dbdd0cd` (§4.1), [#1043](https://github.com/itcmsgr/nftban/pull/1043) `7890de18` (§4.2/§4.3).
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Hardens the already-shipped observe-only RBL reputation monitor so it is enable-ready without false health truth. **RBL remains observe-only and disabled by default; 0 nft writes, 0 bans.** This release does **not** build RBLMON (the substrate shipped with central-comms A2r). No RBL P0 / Proofpoint / provider-bounce ingestion, no MailGuard, no inbound blocking, no RBL fleet enablement.
+
+### §4.1 — producer-recipient deliverability truth (Communication health)
+
+Central-comms deliverability now credits each producer's **own** recipient, with the general `NFTBAN_MAIL_RECIPIENT` preserved as a shared fallback — closing a false `COMMUNICATION_CONFIG_MISSING_RECIPIENT` WARN when a producer is configured with only its producer-specific recipient:
+
+- `rbl-alerts` ↔ `NFTBAN_RBL_ALERT_EMAIL`
+- `tunnel-alerts` ↔ `NFTBAN_TUNNEL_ALERT_EMAIL` / `NFTBAN_ALERT_EMAIL`
+- `auto-reports` ↔ `STATS_EMAIL_RECIPIENTS`
+- `mail-enabled` ↔ general recipient only
+
+A producer-specific recipient satisfies **only** that producer (no cross-producer masking); a producer WARNs only when both its own and the general recipient are unset while it is enabled.
+
+### §4.2 — age-based `state.dat` retention
+
+Bounds the RBL transition-state file safely. Prunes only lines whose **last-update timestamp** is older than a retention TTL (default 30 days, internal `NFTBAN_RBL_STATE_TTL`) — **not** by current-enumerated-set membership, so a transient enumeration miss (floating/VRRP IP, DHCP renewal, IPv6 privacy-address rotation, scheduled-vs-server path difference) can never reset a still-monitored IP's transition baseline and re-fire a "new listing" alert. Guards: unparseable timestamp is kept; a non-numeric/zero TTL keeps everything; the effective TTL is floored to `max(48h, 2×cache-TTL)` so a mis-set tiny override cannot prune a live cache-served IP; retained lines are byte-verbatim. Mirrors the existing `nftban_rbl_cache_purge --expired` precedent.
+
+### §4.3 — enabled-empty-watchlist advisory
+
+`nftban health` now surfaces a config advisory (**WARN**, observe-only wording, never ERROR, never a firewall/security hard-fail) when RBL is **enabled** but has no effective watch targets (auto-discover off **and** no `NFTBAN_RBL_CRITICAL_IPS` **and** an empty/absent watchlist) — instead of a silent effective-CLEAN. The determination is config-only: no discovery run, no DNSBL/network query, no mail.
+
+### Scope & validation
+
+- **Shell-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.** §4.4 degraded-persistence remains **HOLD**.
+- **Tests:** `rbl_enable_readiness` 22/22 (age-based retention incl. TTL-floor cases + enabled-empty-watchlist advisory + strict-mode) · `comms_rbl_tunnel_producer_recipient` 14/14 · producer_signal_accuracy 9/9 · A2a 18/18 · A2b 16/16 · A2c 15/15 · A2r 11/11 · v2181 17/17 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. Two adversarial-deputy passes on §4.2 (set-membership rejected → age-based verified safe). RBL nft/ban writes 0; no real mail; no DNSBL network queries.
+
+---
+
 ## [v1.218.4] - 2026-07-07 — Redactor durability: fail closed when the shared redactor is unavailable (shell-only; daemon byte-identical)
 
 **Lane:** `OPEN_DUPLICATE_REDACTOR_RETIREMENT` (P-retire-2). **PR:** [#1040](https://github.com/itcmsgr/nftban/pull/1040) `d47ef64e`.
