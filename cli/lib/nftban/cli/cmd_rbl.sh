@@ -607,6 +607,13 @@ nftban_cmd_rbl_check() {
     # Prune expired cache entries (v1.46.0 — prevent unbounded cache growth)
     nftban_rbl_cache_purge --expired 2>/dev/null || true
 
+    # v1.218.5 (§4.2): bound state.dat by AGE — drop lines not refreshed within the state-retention
+    # TTL. Age-based (not set-membership), so it never removes a currently-monitored IP (its timestamp
+    # is refreshed above via nftban_rbl_update_state) and a transiently-absent IP survives until it has
+    # been gone for the full TTL. Safe on any path — a single-IP check leaves other IPs' fresh lines
+    # untouched — so no monitored-set and no full-scan guard are needed.
+    nftban_rbl_prune_state 2>/dev/null || true
+
     # Return exit code based on listings
     return $any_listed
 }
