@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.7] - 2026-07-08 — SSH operator-leak hygiene: scrub operator-identifying test/comment fixtures (daemon byte-identical)
+
+**Lane:** `OPEN_SSH_TEST_OPERATOR_LEAK_SCRUB` + `OPEN_SSH_GO_COMMENT_SCRUB`. **PRs:** [#1047](https://github.com/itcmsgr/nftban/pull/1047) `9fd5f3b4`, [#1048](https://github.com/itcmsgr/nftban/pull/1048) `3f6f5b04`.
+
+> **Security-hygiene only. DAEMON + matcher BYTE-IDENTICAL** (test-only + comment-only changes; the Go compiler strips comments and `_test.go` is not compiled into the binary). **nft schema 1.84.0 unchanged; no runtime behavior change.** Removes operator-identifying fixture data from the SSH multi-port detection sources.
+
+### Fixed (security hygiene)
+
+- **`internal/installer/detect/ssh_test.go` (#1047):** replaced a real routable operator peer IP (`192.0.2.122`) with the RFC5737 documentation address `203.0.113.10`, the real external admin port (`55000`) with the neutral fixture port `50000`, and genericized the real fleet host-class labels in comments. Test intent, assertions, and coverage (multi-port detection, primary-selection, dedup) are preserved — mock inputs and their assertions were replaced together.
+- **`internal/installer/detect/ssh.go` (#1048):** comment-only scrub of the same class — `dns2-class` → `multi-port-class` and the `:55000` example port → `50000` in the SSH-detection explanatory comments, keeping the examples technically equivalent. No code, no logic, no behavior change.
+
+Operator-identifying data is now absent from both SSH-detection files (`dns2`, `55000`, `192.0.2.122` → 0). `go test ./internal/installer/detect/` passes; gofmt + go vet clean.
+
+---
+
 ## [v1.218.6] - 2026-07-08 — Operator documentation: recovery, forensics, baseline, and metrics contracts (docs-only; daemon byte-identical)
 
 **Lane:** `OPEN_DOCS_TRUTH_CLI_SCHEMA_FOLLOWUP` (R2b). **PR:** [#1045](https://github.com/itcmsgr/nftban/pull/1045) `b05c4ba8`.
