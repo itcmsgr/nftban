@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.8] - 2026-07-08 — Pro/stats community telemetry v3 Phase-0 client (opt-in, default-off; daemon byte-identical)
+
+**Lane:** `OPEN_PRO_STATS_TRIAL_V3_COLLECTOR` (Phase-0). **PR:** [#1050](https://github.com/itcmsgr/nftban/pull/1050) `bdf3706d`.
+
+> **SHELL/DOCS/TESTS ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go). **nft schema 1.84.0 unchanged. Runtime/security behavior unchanged.** Ships the **Phase-0 client only** for a private, opt-in community telemetry trial. **No telemetry is enabled** — the client is dormant unless the operator explicitly opts in. **No receiver/DB/portal work is included** (those are the separate `nftbanpro_cms` project's lanes), and **no public launch or paid Pro-feature is implied.**
+
+### Added — opt-in `schema_version 3` community telemetry client
+
+Adds a v1.218.7-aware **`schema_version 3`** community telemetry payload for private internal analysis. The legacy **`schema_version 2`** payload (designed against v1.95) is left **frozen and byte-identical** — it is not wrong, just legacy; v3 represents the current module/health reality (BotGuard, BotScan, Suricata, RBL/RBLMon, Tunnel, central-comms).
+
+- `cli/lib/nftban/lib/nftban_pro.sh` — `nftban_community_build_payload_v3()` emits **only** buckets / class-labels / booleans: version, OS/CPU/RAM buckets, 15 per-module state classes, validator health summary, and class-only communication/API/RBL/Suricata summaries. New CLI: `nftban pro community show-v3` (local preview), `send-test` (send one payload, refuses unless enabled), and `enable` now requires a typed confirmation. **Default OFF; no automatic sends; `/install-result` not sent without opt-in.** The v2 builder is unchanged.
+- `docs/telemetry/COMMUNITY_TRIAL_V3.md` — the v3 contract: payload schema, consent model, privacy invariants, the receiver contract for the portal project, and the gated (Phase 0 → 1 → 2) rollout.
+
+### Scope & validation
+
+- **Shell/docs/tests only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged; no nft/ban writes; opt-in/default-off (no behavior change for existing installs).**
+- **Privacy invariant (test-enforced, verified on a real lab install):** the payload never contains an IP, hostname, domain, email, username, token, admin port, ban list, raw log, raw Suricata event, or raw RBL/provider result. `anonymous_install_id` is a random UUID (not machine-id/hostname/IP/MAC-derived). Network failure is non-fatal, bounded-timeout, no retry storm, and cannot affect firewall/security operation.
+- **Tests:** `community_trial_v3` 13/13 (valid JSON · schema 3 · trial flags · 15 module state-classes · payload_hash · class-only summaries · privacy gate · no forbidden field names · v2 frozen · enable-requires-yes · send-test-refuses-when-disabled); shellcheck + `bash -n` clean; GitGuardian + Semgrep clean.
+- **Not in this release:** telemetry enablement, periodic/fleet enablement, receiver/DB/portal, repo hygiene, public-site copy, paid-feature claims. Phase-1 lab-fleet enablement requires a separate gate.
+
+---
+
 ## [v1.218.7] - 2026-07-08 — SSH operator-leak hygiene: scrub operator-identifying test/comment fixtures (daemon byte-identical)
 
 **Lane:** `OPEN_SSH_TEST_OPERATOR_LEAK_SCRUB` + `OPEN_SSH_GO_COMMENT_SCRUB`. **PRs:** [#1047](https://github.com/itcmsgr/nftban/pull/1047) `9fd5f3b4`, [#1048](https://github.com/itcmsgr/nftban/pull/1048) `3f6f5b04`.
