@@ -78,10 +78,10 @@ jobs:
       actions: read
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
-      # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`) so the SLSA
+      # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.12`) so the SLSA
       # builder selects the same toolchain patch. GOTOOLCHAIN cannot be injected
       # into this third-party reusable workflow, so it is left to the builder.
-      go-version: "1.25.11"
+      go-version: "1.25.12"
       # Config file specifies build parameters
       config-file: .github/slsa/nftban-core.yml
       evaluated-envs: "VERSION:${{ needs.get-tag.outputs.tag }}"
