@@ -1070,7 +1070,29 @@ _status_section_protection() {
             botguard_status="ENABLED (sets not loaded)"
         fi
     fi
-    printf "  %-20s %s\n" "Bot Guard..........." "$botguard_status"
+    printf "  %-20s %s\n" "HTTP Guard.........." "$botguard_status"
+
+    # HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (v1.218.11 operator-truth).
+    # INDEPENDENT of BotGuard: BotScan can enforce bans via blacklist_manual_* even when BotGuard is OFF.
+    local botscan_status="DISABLED" botscan_enabled="false" botscan_mode="both"
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf" || true
+    fi
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf.local"
+    fi
+    botscan_enabled="${BOTSCAN_ENABLED:-false}"
+    botscan_mode="${BOTSCAN_ACTION_MODE:-both}"
+    if [[ "$botscan_enabled" == "true" ]]; then
+        local botscan_timer="stopped"
+        systemctl is-active nftban-botscan.timer &>/dev/null && botscan_timer="active"
+        botscan_status="ENABLED (action=${botscan_mode}, timer ${botscan_timer})"
+    fi
+    printf "  %-20s %s\n" "HTTP Exploit Scan..." "$botscan_status"
+    echo "    (HTTP Guard = BotGuard, live request-time guard; HTTP Exploit Scan = BotScan, periodic"
+    echo "     access-log scanner — can ban via the manual blacklist. BotGuard disabled != BotScan disabled.)"
 
     # Tunnel Suspicion (v1.30.0)
     local tunnel_status="DISABLED"

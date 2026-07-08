@@ -367,8 +367,10 @@ _nftban_botscan_cmd_config() {
         return 0
     fi
 
-    echo "Bot Scanner Configuration"
-    echo "========================="
+    echo "HTTP Exploit Scanner (BotScan) — Configuration"
+    echo "=============================================="
+    echo "  Periodic access-log exploit scanner. INDEPENDENT of BotGuard (HTTP Guard) —"
+    echo "  can enforce bans via the manual blacklist even when BotGuard is disabled."
     echo ""
     echo "  Config File:    $config_file"
     echo "  Override File:  $config_local"
@@ -380,6 +382,7 @@ _nftban_botscan_cmd_config() {
     echo ""
     echo "Settings:"
     echo "  Enabled:        ${BOTSCAN_ENABLED:-false}"
+    echo "  Timer:          $(systemctl is-active nftban-botscan.timer 2>/dev/null || echo inactive) (nftban-botscan.timer)"
     echo "  Action Mode:    ${BOTSCAN_ACTION_MODE:-both}"
     echo "  Threshold:      ${BOTSCAN_DEFAULT_THRESHOLD:-5} hits"
     echo "  Time Window:    ${BOTSCAN_DEFAULT_WINDOW:-60} seconds"
