@@ -33,8 +33,8 @@ func TestSSHPort_FromListener(t *testing.T) {
 	mock.RunResults["ss:-tlnp"] = executor.Result{
 		ExitCode: 0,
 		Stdout: `State  Recv-Q  Send-Q  Local Address:Port   Peer Address:Port  Process
-LISTEN 0       128     0.0.0.0:55000         0.0.0.0:*          users:(("sshd",pid=1234,fd=3))
-LISTEN 0       128     [::]:55000            [::]:*             users:(("sshd",pid=1234,fd=4))
+LISTEN 0       128     0.0.0.0:50000         0.0.0.0:*          users:(("sshd",pid=1234,fd=3))
+LISTEN 0       128     [::]:50000            [::]:*             users:(("sshd",pid=1234,fd=4))
 `,
 	}
 
@@ -42,8 +42,8 @@ LISTEN 0       128     [::]:55000            [::]:*             users:(("sshd",p
 	if err != nil {
 		t.Fatalf("SSHPort: %v", err)
 	}
-	if port != 55000 {
-		t.Errorf("port = %d, want 55000", port)
+	if port != 50000 {
+		t.Errorf("port = %d, want 50000", port)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestValidatePort(t *testing.T) {
 		want  int
 	}{
 		{"22", 22},
-		{"55000", 55000},
+		{"50000", 50000},
 		{"65535", 65535},
 		{"1", 1},
 		{"0", 0},
@@ -170,9 +170,9 @@ func TestValidatePort(t *testing.T) {
 // =============================================================================
 // v1.125 R-1: SSH multi-port detection + render
 // =============================================================================
-// Tests for the multi-port-aware detection path that closes the dns2-class
+// Tests for the multi-port-aware detection path that closes the multi-port-class
 // lockout vector where a host's sshd listens on multiple ports (e.g.,
-// internal :22 + external :55000) and the pre-v1.125 detector returned only
+// internal :22 + external :50000) and the pre-v1.125 detector returned only
 // the first listener. The new DetectSSHPorts returns all listeners + a
 // SSH_CLIENT-aware primary; the new RenderNftablesConfMultiPort renders the
 // full allow-set so operators connecting on any listener port survive a
@@ -180,7 +180,7 @@ func TestValidatePort(t *testing.T) {
 //
 // Scope per AUDIT_190_LIFECYCLE/V125_INSTALL_ROBUSTNESS_SCOPE.md §3.1 R-1:
 //   - single-port listener (backward compat — no behavior change)
-//   - multi-port listener :22 + :55000 (dns2-class)
+//   - multi-port listener :22 + :50000 (multi-port-class)
 //   - SSH_CLIENT primary-port preference
 //   - render-side: tcp_ports_in carries all ports
 //   - legacy single-port SSH_PORT path still works
@@ -212,8 +212,8 @@ LISTEN 0       128     [::]:22               [::]:*             users:(("sshd",p
 }
 
 func TestDetectSSHPorts_MultiPort_Dns2Class(t *testing.T) {
-	// Reproduces the dns2 host topology: sshd listens on both :22 (internal)
-	// and :55000 (external/operator port). Pre-v1.125 detector returned :22
+	// Reproduces the multi-port host topology: sshd listens on both :22 (internal)
+	// and :50000 (external admin port). Pre-v1.125 detector returned :22
 	// only; v1.125 R-1 returns both.
 	mock := executor.NewMockExecutor()
 	mock.RunResults["ss:-tlnp"] = executor.Result{
@@ -221,8 +221,8 @@ func TestDetectSSHPorts_MultiPort_Dns2Class(t *testing.T) {
 		Stdout: `State  Recv-Q  Send-Q  Local Address:Port   Peer Address:Port  Process
 LISTEN 0       128     0.0.0.0:22            0.0.0.0:*          users:(("sshd",pid=1234,fd=3))
 LISTEN 0       128     [::]:22               [::]:*             users:(("sshd",pid=1234,fd=4))
-LISTEN 0       128     0.0.0.0:55000         0.0.0.0:*          users:(("sshd",pid=1234,fd=5))
-LISTEN 0       128     [::]:55000            [::]:*             users:(("sshd",pid=1234,fd=6))
+LISTEN 0       128     0.0.0.0:50000         0.0.0.0:*          users:(("sshd",pid=1234,fd=5))
+LISTEN 0       128     [::]:50000            [::]:*             users:(("sshd",pid=1234,fd=6))
 `,
 	}
 
@@ -235,11 +235,11 @@ LISTEN 0       128     [::]:55000            [::]:*             users:(("sshd",p
 		t.Fatalf("DetectSSHPorts: %v", err)
 	}
 	if len(ports) != 2 {
-		t.Fatalf("len(ports) = %d, want 2 (deduped :22 + :55000); ports=%v", len(ports), ports)
+		t.Fatalf("len(ports) = %d, want 2 (deduped :22 + :50000); ports=%v", len(ports), ports)
 	}
-	// Order = first-occurrence in `ss` output. :22 appears before :55000.
-	if ports[0] != 22 || ports[1] != 55000 {
-		t.Errorf("ports = %v, want [22, 55000]", ports)
+	// Order = first-occurrence in `ss` output. :22 appears before :50000.
+	if ports[0] != 22 || ports[1] != 50000 {
+		t.Errorf("ports = %v, want [22, 50000]", ports)
 	}
 	// Without SSH_CLIENT, primary defaults to the first detected listener.
 	if primary != 22 {
@@ -248,8 +248,8 @@ LISTEN 0       128     [::]:55000            [::]:*             users:(("sshd",p
 }
 
 func TestDetectSSHPorts_SSHClient_PrimaryPreference(t *testing.T) {
-	// dns2 topology, but the operator is connected on :55000. The primary
-	// MUST come back as :55000 so the rendered firewall and the operator's
+	// multi-port topology, but the client is connected on :50000. The primary
+	// MUST come back as :50000 so the rendered firewall and the operator's
 	// session port stay aligned.
 	//
 	// v1.125 R-1 contract (primary-first): the returned ports slice MUST
@@ -264,13 +264,13 @@ func TestDetectSSHPorts_SSHClient_PrimaryPreference(t *testing.T) {
 		ExitCode: 0,
 		Stdout: `State  Recv-Q  Send-Q  Local Address:Port   Peer Address:Port  Process
 LISTEN 0       128     0.0.0.0:22            0.0.0.0:*          users:(("sshd",pid=1234,fd=3))
-LISTEN 0       128     0.0.0.0:55000         0.0.0.0:*          users:(("sshd",pid=1234,fd=5))
+LISTEN 0       128     0.0.0.0:50000         0.0.0.0:*          users:(("sshd",pid=1234,fd=5))
 `,
 	}
 	// SSH_CLIENT format: "<peer-ip> <peer-port> <local-port>"
-	// 192.0.2.122 is the dns2 operator peer; the third field 55000 is the
+	// 203.0.113.10 is the example SSH client peer; the third field 50000 is the
 	// destination port on this host (the port the operator's session is on).
-	t.Setenv("SSH_CLIENT", "192.0.2.122 51234 55000")
+	t.Setenv("SSH_CLIENT", "203.0.113.10 51234 50000")
 
 	ports, primary, err := DetectSSHPorts(mock, newTestLogger())
 	if err != nil {
@@ -279,14 +279,14 @@ LISTEN 0       128     0.0.0.0:55000         0.0.0.0:*          users:(("sshd",p
 	if len(ports) != 2 {
 		t.Fatalf("len(ports) = %d, want 2", len(ports))
 	}
-	if primary != 55000 {
-		t.Errorf("primary = %d, want 55000 (SSH_CLIENT destination port preferred)", primary)
+	if primary != 50000 {
+		t.Errorf("primary = %d, want 50000 (SSH_CLIENT destination port preferred)", primary)
 	}
-	// v1.125 R-1 primary-first contract: primary (55000) MUST be at index 0;
+	// v1.125 R-1 primary-first contract: primary (50000) MUST be at index 0;
 	// the additional listener (22, detected first in `ss -tlnp`) goes to
 	// index 1.
-	if ports[0] != 55000 || ports[1] != 22 {
-		t.Errorf("ports = %v, want [55000, 22] (primary-first ordering per v1.125 R-1 contract)", ports)
+	if ports[0] != 50000 || ports[1] != 22 {
+		t.Errorf("ports = %v, want [50000, 22] (primary-first ordering per v1.125 R-1 contract)", ports)
 	}
 }
 
@@ -300,7 +300,7 @@ func TestDetectSSHPorts_PrimaryFirst_NoSSHClient_PreservesDetectionOrder(t *test
 	mock.RunResults["ss:-tlnp"] = executor.Result{
 		ExitCode: 0,
 		Stdout: `LISTEN 0 128 0.0.0.0:22    0.0.0.0:* users:(("sshd",pid=1,fd=3))
-LISTEN 0 128 0.0.0.0:55000 0.0.0.0:* users:(("sshd",pid=1,fd=4))
+LISTEN 0 128 0.0.0.0:50000 0.0.0.0:* users:(("sshd",pid=1,fd=4))
 `,
 	}
 	ports, primary, err := DetectSSHPorts(mock, newTestLogger())
@@ -313,8 +313,8 @@ LISTEN 0 128 0.0.0.0:55000 0.0.0.0:* users:(("sshd",pid=1,fd=4))
 	if primary != 22 {
 		t.Errorf("primary = %d, want 22 (no SSH_CLIENT → first listener)", primary)
 	}
-	if ports[0] != 22 || ports[1] != 55000 {
-		t.Errorf("ports = %v, want [22, 55000] (detection order preserved when SSH_CLIENT absent)", ports)
+	if ports[0] != 22 || ports[1] != 50000 {
+		t.Errorf("ports = %v, want [22, 50000] (detection order preserved when SSH_CLIENT absent)", ports)
 	}
 }
 
@@ -330,13 +330,13 @@ func TestPrimaryFirstPorts(t *testing.T) {
 		want    []int
 	}{
 		{"empty in", []int{}, 22, []int{}},
-		{"primary=0 (no selection)", []int{22, 55000}, 0, []int{22, 55000}},
-		{"primary already first", []int{22, 55000}, 22, []int{22, 55000}},
-		{"primary at index 1 → moved to 0", []int{22, 55000}, 55000, []int{55000, 22}},
-		{"primary at index 2 of 3 → moved to 0", []int{22, 2222, 55000}, 55000, []int{55000, 22, 2222}},
-		{"primary not in list (defensive)", []int{22, 55000}, 9999, []int{9999, 22, 55000}},
+		{"primary=0 (no selection)", []int{22, 50000}, 0, []int{22, 50000}},
+		{"primary already first", []int{22, 50000}, 22, []int{22, 50000}},
+		{"primary at index 1 → moved to 0", []int{22, 50000}, 50000, []int{50000, 22}},
+		{"primary at index 2 of 3 → moved to 0", []int{22, 2222, 50000}, 50000, []int{50000, 22, 2222}},
+		{"primary not in list (defensive)", []int{22, 50000}, 9999, []int{9999, 22, 50000}},
 		{"single port already first", []int{22}, 22, []int{22}},
-		{"single port + different primary (defensive)", []int{22}, 55000, []int{55000, 22}},
+		{"single port + different primary (defensive)", []int{22}, 50000, []int{50000, 22}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -382,7 +382,7 @@ func TestSSHClientLocalPort(t *testing.T) {
 		want   int
 	}{
 		{"unset", "", 0},
-		{"valid 3-field", "192.0.2.122 51234 55000", 55000},
+		{"valid 3-field", "203.0.113.10 51234 50000", 50000},
 		{"valid IPv6 peer", "2001:db8::1 51234 22", 22},
 		{"port too high", "10.0.0.1 51234 99999", 0},
 		{"port zero", "10.0.0.1 51234 0", 0},
@@ -411,12 +411,12 @@ func TestSelectPrimarySSHPort(t *testing.T) {
 		{"empty", []int{}, 0, 0},
 		{"single port no client", []int{22}, 0, 22},
 		{"single port client matches", []int{22}, 22, 22},
-		{"single port client mismatches → first", []int{22}, 55000, 22},
-		{"multi-port no client → first", []int{22, 55000}, 0, 22},
-		{"multi-port client matches second", []int{22, 55000}, 55000, 55000},
-		{"multi-port client matches first", []int{22, 55000}, 22, 22},
-		{"multi-port client not in list → first", []int{22, 55000}, 9999, 22},
-		{"three ports client matches third", []int{22, 2222, 55000}, 55000, 55000},
+		{"single port client mismatches → first", []int{22}, 50000, 22},
+		{"multi-port no client → first", []int{22, 50000}, 0, 22},
+		{"multi-port client matches second", []int{22, 50000}, 50000, 50000},
+		{"multi-port client matches first", []int{22, 50000}, 22, 22},
+		{"multi-port client not in list → first", []int{22, 50000}, 9999, 22},
+		{"three ports client matches third", []int{22, 2222, 50000}, 50000, 50000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -468,10 +468,10 @@ func TestSSHPort_LegacySinglePortPathStillWorks(t *testing.T) {
 	mock1 := executor.NewMockExecutor()
 	mock1.RunResults["ss:-tlnp"] = executor.Result{
 		ExitCode: 0,
-		Stdout:   `LISTEN 0 128 0.0.0.0:55000 0.0.0.0:* users:(("sshd",pid=1,fd=3))`,
+		Stdout:   `LISTEN 0 128 0.0.0.0:50000 0.0.0.0:* users:(("sshd",pid=1,fd=3))`,
 	}
-	if port, err := SSHPort(mock1, newTestLogger()); err != nil || port != 55000 {
-		t.Errorf("SSHPort source=ss: port=%d err=%v, want 55000 nil", port, err)
+	if port, err := SSHPort(mock1, newTestLogger()); err != nil || port != 50000 {
+		t.Errorf("SSHPort source=ss: port=%d err=%v, want 50000 nil", port, err)
 	}
 
 	// Source 2: sshd_config
@@ -512,9 +512,9 @@ func TestListenAddressPort_Forms(t *testing.T) {
 		want int
 	}{
 		{"ListenAddress 0.0.0.0:22", 22},
-		{"ListenAddress 192.0.2.10:55000", 55000},
+		{"ListenAddress 192.0.2.10:50000", 50000},
 		{"ListenAddress [::]:22", 22},
-		{"ListenAddress [2001:db8::10]:55000", 55000},
+		{"ListenAddress [2001:db8::10]:50000", 50000},
 		{"  ListenAddress 0.0.0.0:2222  ", 2222},
 		{"listenaddress 10.0.0.1:443", 443}, // case-insensitive
 		{"ListenAddress 0.0.0.0", 0},        // no port
@@ -538,9 +538,9 @@ func TestParseSSHConfig_ListenAddressFallback(t *testing.T) {
 		t.Errorf("Port should win: got %d, want 22", got)
 	}
 	// ListenAddress-only config falls back to the ListenAddress port.
-	mock.Files["/etc/ssh/la"] = []byte("# no Port line\nListenAddress [::]:55000\n")
-	if got := parseSSHConfig(mock, "/etc/ssh/la"); got != 55000 {
-		t.Errorf("ListenAddress fallback: got %d, want 55000", got)
+	mock.Files["/etc/ssh/la"] = []byte("# no Port line\nListenAddress [::]:50000\n")
+	if got := parseSSHConfig(mock, "/etc/ssh/la"); got != 50000 {
+		t.Errorf("ListenAddress fallback: got %d, want 50000", got)
 	}
 }
 
@@ -574,8 +574,8 @@ func TestDetectSSHPortsUnion(t *testing.T) {
 		},
 		{
 			name: "Port only multi",
-			sshd: "Port 22\nPort 55000\n",
-			want: []int{22, 55000},
+			sshd: "Port 22\nPort 50000\n",
+			want: []int{22, 50000},
 		},
 		{
 			name: "ListenAddress only IPv4",
@@ -584,13 +584,13 @@ func TestDetectSSHPortsUnion(t *testing.T) {
 		},
 		{
 			name: "ListenAddress only IPv6",
-			sshd: "ListenAddress [::]:55000\n",
-			want: []int{55000},
+			sshd: "ListenAddress [::]:50000\n",
+			want: []int{50000},
 		},
 		{
 			name: "mixed IPv4/IPv6 ListenAddress",
-			sshd: "ListenAddress 0.0.0.0:22\nListenAddress [::]:55000\n",
-			want: []int{22, 55000},
+			sshd: "ListenAddress 0.0.0.0:22\nListenAddress [::]:50000\n",
+			want: []int{22, 50000},
 		},
 		{
 			name: "AddressFamily inet + Port",
@@ -599,8 +599,8 @@ func TestDetectSSHPortsUnion(t *testing.T) {
 		},
 		{
 			name: "AddressFamily inet6 + ListenAddress",
-			sshd: "AddressFamily inet6\nListenAddress [2001:db8::10]:55000\n",
-			want: []int{55000},
+			sshd: "AddressFamily inet6\nListenAddress [2001:db8::10]:50000\n",
+			want: []int{50000},
 		},
 		{
 			name: "bare IPv6 no port is not detected",
@@ -612,17 +612,17 @@ func TestDetectSSHPortsUnion(t *testing.T) {
 			ss: `State Recv-Q Send-Q Local:Port Peer Process
 LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))
 `,
-			sshd: "Port 55000\nListenAddress 0.0.0.0:22\n", // 22 duplicated across ss+config
-			want: []int{22, 55000},
+			sshd: "Port 50000\nListenAddress 0.0.0.0:22\n", // 22 duplicated across ss+config
+			want: []int{22, 50000},
 		},
 		{
 			name: "ss dual-stack",
 			ss: `State Recv-Q Send-Q Local:Port Peer Process
 LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))
-LISTEN 0 128 [::]:55000 [::]:* users:(("sshd",pid=1,fd=4))
+LISTEN 0 128 [::]:50000 [::]:* users:(("sshd",pid=1,fd=4))
 `,
 			sshd: "",
-			want: []int{22, 55000},
+			want: []int{22, 50000},
 		},
 	}
 	for _, c := range cases {
