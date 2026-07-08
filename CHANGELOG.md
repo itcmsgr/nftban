@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.6] - 2026-07-08 — Operator documentation: recovery, forensics, baseline, and metrics contracts (docs-only; daemon byte-identical)
+
+**Lane:** `OPEN_DOCS_TRUTH_CLI_SCHEMA_FOLLOWUP` (R2b). **PR:** [#1045](https://github.com/itcmsgr/nftban/pull/1045) `b05c4ba8`.
+
+> **DOCS-ONLY.** No code, no shell, no Go, no tests. **Daemon + matcher byte-identical; nft schema 1.84.0 unchanged; no runtime behavior change.** Adds four versioned `/docs/operator/` contract pages under the accepted documentation source-of-truth policy (`/docs` = versioned code/release contract; wiki carries human explanation; registers/scopes stay engineering evidence).
+
+### Added
+
+- `docs/operator/EMERGENCY_RECOVERY_AND_ROLLBACK.md` — `nftban update rollback / repair / recommit`, the real backup path `/var/lib/nftban/update-backups/`, `nftban firewall rebuild` (atomic validate-before-apply; the bare `nftban rebuild` is an inert stub), emergency mode + flush, daemon recovery, self-lockout recovery, uninstall.
+- `docs/operator/BAN_FORENSICS.md` — `bans.log` format (`DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS`), query commands, set→origin mapping (`blacklist_manual_*` vs `blacklist_*`), journal evidence, kernel-truth `nft list set` proofs.
+- `docs/operator/PRODUCTION_BASELINE.md` — version/health/status/validate baseline, the `OK/WARNING/ERROR` and `PROTECTED/IDLE/DEGRADED/DOWN` vocabularies, expected nftban tables/chains/sets, and the default matrix (BotGuard off, RBL off, GeoBan enabled-but-IDLE).
+- `docs/operator/METRICS_TRUTH.md` — `stats.json` contract, `nftban stats export` (json/csv) vs `nftban metrics`, the single `nftban.prom`, the `:9580` loopback-by-default-and-enforced bind rule, the CLI-is-a-report and `/health`-always-ok caveats. Exporter defects are cross-referenced and routed to the metrics lane, not fixed here.
+
+### Scope
+
+- **Docs-only; 0 code/Go/shell; nft schema 1.84.0 unchanged; runtime behavior unchanged.** Every page stamped "Last verified: v1.218.5"; claims are code-cited; no register/scope history is duplicated into docs; example IPs use RFC5737 ranges. The R2c wiki truth pass, the register WK-6/WK-8 correction, the `ssh_test.go` operator-leak scrub, and the public-site truth pass remain separate lanes.
+
+---
+
 ## [v1.218.5] - 2026-07-08 — RBLMON enable-readiness: producer-recipient truth + safe state retention + config advisory (shell-only; daemon byte-identical)
 
 **Lane:** `OPEN_RBLMON_ENABLE_READINESS_HARDENING`. **PRs:** [#1042](https://github.com/itcmsgr/nftban/pull/1042) `1dbdd0cd` (§4.1), [#1043](https://github.com/itcmsgr/nftban/pull/1043) `7890de18` (§4.2/§4.3).
