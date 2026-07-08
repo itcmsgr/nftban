@@ -26,13 +26,16 @@ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall ma
 
 ## Supported Versions
 
-| Version | Support Status |
-|---------|----------------|
-| 1.195.x | **Current** - Full support (security fixes, bug fixes, features) |
-| 1.194.x | Security fixes only |
-| < 1.194 | **Not supported** - upgrade immediately |
+NFTBan follows a rolling support policy tied to the latest release. The authoritative
+current version is the [`VERSION`](VERSION) file; see [GitHub Releases](https://github.com/itcmsgr/nftban/releases).
 
-**Recommendation:** Always run the latest stable release (currently v1.195.0) for optimal security and performance.
+| Release | Support Status |
+|---------|----------------|
+| Latest released minor (current `VERSION`) | **Current** — full support (security + bug fixes) |
+| Immediately preceding minor | **Security fixes only** |
+| Older | **Not supported** — upgrade to the latest release |
+
+**Recommendation:** Always run the latest stable release for security and correctness fixes.
 
 ### Supported Platforms by Tier
 
@@ -52,19 +55,33 @@ We take security seriously and follow responsible disclosure practices. If you d
 
 ### How to Report
 
-**DO NOT report security vulnerabilities through public GitHub issues.**
+**DO NOT report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
 
-Report security vulnerabilities via:
+Report privately, in order of preference:
 
-1. **Email:** [security@nftban.com](mailto:security@nftban.com)
-2. **Subject Line:** Include `[SECURITY]` prefix
-3. **Required Information:**
+1. **GitHub private Security Advisory (preferred):** open a report via
+   **Security → Advisories → Report a vulnerability** on the
+   [nftban repository](https://github.com/itcmsgr/nftban/security/advisories/new).
+   This channel is private and encrypted in transit.
+2. **Email (fallback):** [security@itcms.gr](mailto:security@itcms.gr) with a `[SECURITY]` subject prefix.
+
+**Encrypted contact:** a PGP key for encrypted email reports is **pending publication**;
+until then, prefer the GitHub private Security Advisory path.
+
+**Confidentiality (TLP):** reports are handled **TLP:RED** by default (named recipients only)
+until a coordinated-disclosure classification is agreed with the reporter.
+
+**Please include:**
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact assessment
    - Affected versions
    - Suggested fix (if available)
    - Your contact information for follow-up
+
+**Coordination expected:** please do **not** publish exploit code, proof-of-concept, or
+reproduction details before a fix is released and the coordinated-disclosure window (below)
+has elapsed. We commit to the timeline below and to crediting reporters who follow this process.
 
 ### Response Timeline
 
@@ -91,6 +108,23 @@ NFTBan follows a **90-day coordinated disclosure policy**:
 - Complex issues may require timeline extension (with reporter agreement)
 - Reporters will be kept informed throughout the process
 
+### Security-response model
+
+NFTBan follows a **coordinated vulnerability disclosure** model and is designed to be
+compatible with industry security-response practices — **CVE, CVSS, CWE, TLP, and VEX** —
+and confidential remediation workflows. See:
+
+- [`docs/security/COORDINATED_DISCLOSURE.md`](docs/security/COORDINATED_DISCLOSURE.md) — intake → triage → fix → embargo → advisory
+- [`docs/security/SECURITY_ADVISORY_PROCESS.md`](docs/security/SECURITY_ADVISORY_PROCESS.md) — GHSA/CVE/CVSS/CWE/VEX publication flow
+- [`docs/security/VULNERABILITY_CLASSES.md`](docs/security/VULNERABILITY_CLASSES.md) — NFTBan-specific (firewall/IPS) vulnerability classes
+- [`docs/security/CVE_CVSS_CWE_GUIDE.md`](docs/security/CVE_CVSS_CWE_GUIDE.md) — severity-scoring rubric
+- [`docs/security/VEX_POLICY.md`](docs/security/VEX_POLICY.md) — dependency-CVE exploitability statements
+
+> **No external affiliation.** NFTBan is not affiliated with, certified by, endorsed by, or
+> protected by Akrites or any other external security body. NFTBan maintains its own coordinated
+> vulnerability disclosure process and is designed to be compatible with modern security-response
+> practices such as confidential intake, coordinated disclosure, CVE, CVSS, CWE, TLP, and VEX.
+
 ### Credit to Security Researchers
 
 We publicly acknowledge security researchers who responsibly disclose vulnerabilities:
@@ -106,7 +140,7 @@ We publicly acknowledge security researchers who responsibly disclose vulnerabil
 1. **Verification:** We confirm and reproduce the vulnerability
 2. **Severity Assessment:** CVSS scoring and impact analysis
 3. **Patch Development:** Create, review, and test fix
-4. **Private Disclosure:** Notify enterprise users before public release
+4. **Coordinated Disclosure:** Notify affected parties via the published GitHub Security Advisory and release notes at public release (a dedicated security-announcement channel is planned, not yet available)
 5. **Public Release:** Publish patched version with security advisory
 6. **CVE Assignment:** Request CVE identifier if applicable
 7. **Post-Incident Review:** Document lessons learned
@@ -365,9 +399,12 @@ We recognize security researchers who responsibly disclose vulnerabilities:
 
 | Channel | Address | Use For |
 |---------|---------|---------|
-| **Security Email** | [security@nftban.com](mailto:security@nftban.com) | Vulnerability reports |
-| **GitHub Issues** | [github.com/nftban/nftban/issues](https://github.com/nftban/nftban/issues) | Non-security bugs only |
-| **Discussions** | [github.com/nftban/nftban/discussions](https://github.com/nftban/nftban/discussions) | General questions |
+| **Security (vulnerabilities)** | GitHub private Security Advisory (preferred) · [security@itcms.gr](mailto:security@itcms.gr) (fallback) | Confidential vulnerability reports |
+| **Support** | [support@nftban.com](mailto:support@nftban.com) | Install/config help, troubleshooting, false positives (no secrets/PoC) |
+| **General / business** | [contact@nftban.com](mailto:contact@nftban.com) | Project, partnership, non-security contact |
+| **Legal** | [legal@itcms.gr](mailto:legal@itcms.gr) | Licensing, copyright, trademark, formal notices |
+| **GitHub Issues** | [github.com/itcmsgr/nftban/issues](https://github.com/itcmsgr/nftban/issues) | Non-security bugs only |
+| **Discussions** | [github.com/itcmsgr/nftban/discussions](https://github.com/itcmsgr/nftban/discussions) | General questions |
 
 ---
 
@@ -442,12 +479,10 @@ All security tools upload findings to GitHub Security tab in SARIF format for un
 
 ### Vulnerability Response SLA
 
-| Severity | Detection → Fix SLA |
-|----------|---------------------|
-| **Critical** | 24-48 hours |
-| **High** | 7 days |
-| **Medium** | 30 days |
-| **Low** | Next release |
+The project keeps a **single authoritative SLA**, defined under
+[Response Timeline](#response-timeline) above: acknowledgment within 48 hours; fix targets
+Critical 7 days, High 14 days, Medium 30 days, Low next release. (Internally-detected issues
+follow the same fix targets.)
 
 ---
 
