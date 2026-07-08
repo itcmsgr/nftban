@@ -80,7 +80,9 @@ USAGE:
     nftban flush <target> [options]
 
 TARGETS:
-    blacklist           Flush ALL IPs from blacklist_ipv4/ipv6 sets
+    blacklist [SCOPE]   Flush blacklist bans. SCOPE: all (default; feed+GeoBan AND
+                        manual+botscan) | feeds (blacklist_ipv4/ipv6) | manual
+                        (blacklist_manual_ipv4/ipv6). Whitelist preserved.
     whitelist           Flush whitelist sets (system whitelist auto-restored)
     feeds               Flush only feed-sourced IPs from blacklist
     geoban              Flush only geoban-sourced IPs from blacklist
@@ -355,64 +357,102 @@ _apply_file_via_ipc() {
 # =============================================================================
 
 # Flush entire blacklist sets
+# Count kernel elements in one set (grep 'N elements' header, fallback to comma-split).
+_flush_setcount() {
+    local table="$1" set="$2" c
+    c=$(timeout 10s nft list set "$table" "$set" 2>/dev/null | grep -oP '\d+(?= elements)' | head -1 || echo "")
+    if [[ -z "$c" ]]; then
+        c=$(timeout 10s nft list set "$table" "$set" 2>/dev/null | tr ',' '\n' | grep -cE '^[[:space:]]*[0-9a-fA-F]' || true)
+    fi
+    echo "${c:-0}"
+}
+
+# v1.218.10 BLACKLIST_FLUSH_TRUTH: bare `flush blacklist` clears ALL 4 real blacklist
+# sets, not just the feed interval sets. Scope ∈ {all(default),feeds,manual}.
+#   feeds  = blacklist_ipv4/ipv6      (feed + GeoBan interval CIDRs — shared set)
+#   manual = blacklist_manual_ipv4/ipv6 (admin + botscan + portscan/login/ddos-escalated)
+#   all    = both (what "blacklist flush" means to an operator)
+# No new sets. Whitelist/port-allow sets untouched. Kernel-only (blacklist.d re-adds on reconcile).
 _flush_blacklist() {
     local skip_confirm="${1:-false}"
     local dry_run="${2:-false}"
+    local scope="${3:-all}"
+    [[ -z "$scope" ]] && scope="all"
+    case "$scope" in
+        feeds|manual|all) ;;
+        *) echo "Unknown blacklist flush scope: '$scope' (valid: feeds | manual | all)"; return 2 ;;
+    esac
 
-    echo "Flush target: blacklist (blacklist_ipv4 + blacklist_ipv6)"
+    # Count all four real blacklist sets by authority.
+    local fc4 fc6 mc4 mc6
+    fc4=$(_flush_setcount "$NFTBAN_TABLE_IPV4" blacklist_ipv4)
+    fc6=$(_flush_setcount "$NFTBAN_TABLE_IPV6" blacklist_ipv6)
+    mc4=$(_flush_setcount "$NFTBAN_TABLE_IPV4" blacklist_manual_ipv4)
+    mc6=$(_flush_setcount "$NFTBAN_TABLE_IPV6" blacklist_manual_ipv6)
+    local feed_total=$((fc4 + fc6)) manual_total=$((mc4 + mc6))
+    local grand=$((feed_total + manual_total)) removed=0
+
+    echo "Flush target: blacklist (scope: $scope)"
+    echo ""
+    echo "Current blacklist (kernel sets):"
+    echo "  Feed + GeoBan     IPv4: $fc4   IPv6: $fc6   (blacklist_ipv4/ipv6 — interval CIDRs)"
+    echo "  Manual + BotScan  IPv4: $mc4   IPv6: $mc6   (blacklist_manual_ipv4/ipv6 — incl. portscan/login/ddos-escalated)"
+    echo "  Total kernel:     $grand"
     echo ""
 
-    # Count current elements
-    local count_v4 count_v6
-    count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" blacklist_ipv4 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
-    count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
+    # Sets to flush for this scope (existing sets only — no new sets created).
+    local -a sets=()
+    case "$scope" in
+        feeds)  sets=("$NFTBAN_TABLE_IPV4|blacklist_ipv4" "$NFTBAN_TABLE_IPV6|blacklist_ipv6"); removed=$feed_total ;;
+        manual) sets=("$NFTBAN_TABLE_IPV4|blacklist_manual_ipv4" "$NFTBAN_TABLE_IPV6|blacklist_manual_ipv6"); removed=$manual_total ;;
+        all)    sets=("$NFTBAN_TABLE_IPV4|blacklist_ipv4" "$NFTBAN_TABLE_IPV6|blacklist_ipv6" \
+                      "$NFTBAN_TABLE_IPV4|blacklist_manual_ipv4" "$NFTBAN_TABLE_IPV6|blacklist_manual_ipv6"); removed=$grand ;;
+    esac
 
-    # Fallback count method
-    [[ "$count_v4" == "0" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || true)
-    count_v4=${count_v4:-0}
-    [[ "$count_v6" == "0" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || true)
-    count_v6=${count_v6:-0}
-
-    echo "Current blacklist:"
-    echo "  IPv4: ~$count_v4 entries"
-    echo "  IPv6: ~$count_v6 entries"
+    echo "This will remove:"
+    [[ "$scope" != manual ]] && echo "  - feed + GeoBan interval blacklist entries (blacklist_ipv4/ipv6)"
+    [[ "$scope" != feeds  ]] && echo "  - manual/admin + botscan blacklist entries (blacklist_manual_ipv4/ipv6)"
+    echo ""
+    echo "WARNING:"
+    echo "  - Flushes KERNEL blacklist sets only; persistent blacklist.d/*.conf entries"
+    echo "    may be re-added on the next reconcile/reload."
+    echo "  - Whitelist and port-allow sets are PRESERVED."
+    [[ "$scope" != manual ]] && echo "  - feeds and GeoBan share the interval set — this also clears GeoBan country blocks (repopulate via feeds/geoban refresh)."
 
     if [[ "$dry_run" == "true" ]]; then
         echo ""
         echo "[DRY-RUN] Would flush:"
-        echo "  - flush set $NFTBAN_TABLE_IPV4 blacklist_ipv4"
-        echo "  - flush set $NFTBAN_TABLE_IPV6 blacklist_ipv6"
+        local s
+        for s in "${sets[@]}"; do echo "  - flush set ${s%%|*} ${s##*|}"; done
         return 0
     fi
 
     # Confirm
-    _confirm_flush "blacklist" "$count_v4" "$count_v6" "$skip_confirm" || return 1
+    if [[ "$skip_confirm" != "true" ]]; then
+        echo ""
+        read -r -p "Proceed? [y/N] " response
+        case "$response" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; return 1 ;; esac
+    fi
 
     # v1.19.0: Check daemon or emergency gate (R20)
     _flush_check_daemon || return 1
 
-    # Execute flush via IPC
     echo ""
-    echo "Flushing blacklist sets..."
-
-    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "blacklist_ipv4"; then
-        echo "  [OK] Flushed blacklist_ipv4"
-    else
-        echo "  [WARN] Failed to flush blacklist_ipv4"
-    fi
-
-    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "blacklist_ipv6"; then
-        echo "  [OK] Flushed blacklist_ipv6"
-    else
-        echo "  [WARN] Failed to flush blacklist_ipv6"
-    fi
+    echo "Flushing blacklist sets (scope: $scope)..."
+    local s tbl name
+    for s in "${sets[@]}"; do
+        tbl="${s%%|*}"; name="${s##*|}"
+        if _flush_set_via_ipc "$tbl" "$name"; then
+            echo "  [OK] Flushed $name"
+        else
+            echo "  [WARN] Failed to flush $name"
+        fi
+    done
 
     echo ""
-    echo "Blacklist flush complete:"
-    echo "  - Removed ~$count_v4 IPv4 entries"
-    echo "  - Removed ~$count_v6 IPv6 entries"
-    echo "  - System whitelist: preserved (in whitelist set)"
-
+    echo "Blacklist flush complete (scope: $scope):"
+    echo "  - Removed ~$removed kernel entries (feed+geoban: $feed_total, manual+botscan: $manual_total)"
+    echo "  - Whitelist: preserved"
     return 0
 }
 
@@ -781,10 +821,11 @@ _flush_all() {
     echo "=========================================="
     echo ""
     echo "WARNING: This will flush:"
-    echo "  - blacklist_ipv4 / blacklist_ipv6"
+    echo "  - blacklist_ipv4 / blacklist_ipv6 (feed + GeoBan)"
+    echo "  - blacklist_manual_ipv4 / blacklist_manual_ipv6 (manual + botscan)"
     echo "  - whitelist_ipv4 / whitelist_ipv6 (then restored)"
-    echo "  - ddos_blocked (if exists)"
-    echo "  - portscan_blocked (if exists)"
+    echo "  - ddos_blocked / portscan_blocked (if present)"
+    echo "  NOTE: persistent blacklist.d/*.conf entries re-add on reconcile/reload."
     echo ""
     echo "System whitelist will be IMMEDIATELY restored after flush."
     echo ""
@@ -811,6 +852,10 @@ _flush_all() {
     # v1.19.0: Flush all sets via IPC (batched sequential requests)
     _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "blacklist_ipv4" && echo "[OK] Flushed blacklist_ipv4"
     _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "blacklist_ipv6" && echo "[OK] Flushed blacklist_ipv6"
+
+    # v1.218.10: manual/botscan bans live here — MUST be flushed by "all" too.
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "blacklist_manual_ipv4" && echo "[OK] Flushed blacklist_manual_ipv4"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "blacklist_manual_ipv6" && echo "[OK] Flushed blacklist_manual_ipv6"
 
     # Flush whitelist
     _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "whitelist_ipv4" && echo "[OK] Flushed whitelist_ipv4"
@@ -852,6 +897,7 @@ nftban_cmd_flush() {
     # Parse options
     local skip_confirm=false
     local dry_run=false
+    local subtarget=""   # optional scope for 'blacklist' (feeds|manual|all)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -866,9 +912,14 @@ nftban_cmd_flush() {
                 return 0
                 ;;
             *)
-                echo "Unknown option: $1"
-                _nftban_flush_help
-                return 2
+                # First bare positional = subtarget (e.g. `flush blacklist manual`).
+                if [[ -z "$subtarget" ]]; then
+                    subtarget="$1"
+                else
+                    echo "Unknown option: $1"
+                    _nftban_flush_help
+                    return 2
+                fi
                 ;;
         esac
         shift
@@ -876,7 +927,7 @@ nftban_cmd_flush() {
 
     case "$target" in
         blacklist)
-            _flush_blacklist "$skip_confirm" "$dry_run"
+            _flush_blacklist "$skip_confirm" "$dry_run" "$subtarget"
             ;;
         whitelist)
             _flush_whitelist "$skip_confirm" "$dry_run"
