@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.9] - 2026-07-08 — Coordinated vulnerability disclosure & security-response substrate (Lane 1; docs/process only)
+
+**Lane:** security-response / coordinated disclosure (Lane 1). **PR:** [#1052](https://github.com/itcmsgr/nftban/pull/1052) `3013b3c0`. **Wiki:** `nftban.wiki` `bf8a98f`.
+
+> **DOCS/PROCESS ONLY. Daemon BYTE-IDENTICAL** (0 Go). **nft schema 1.84.0 unchanged. No runtime, daemon, firewall, CI, workflow, package, signing, or provenance behavior changed.** Adds the Lane-1 coordinated vulnerability disclosure (CVD) and security-response substrate. **No public "CVD-ready"/security-response badge added** (deferred to a later lane). **NFTBan claims no membership, certification, or protection by Akrites or any external body — Akrites is referenced only as a non-affiliation disclaimer.**
+
+### Added / Changed — security-response substrate
+
+- `SECURITY.md` reconciled to the current supported-version policy (tied to `VERSION`; removes the stale "1.195.0" table); single authoritative SLA.
+- **GitHub private Security Advisory** documented as the primary vulnerability-reporting path; **`security@itcms.gr`** set as the sole vulnerability-reporting email; PGP pending; TLP:RED default; explicit "do not publish exploit/PoC before coordination."
+- Public security issue form removed to prevent accidental public disclosure (reports route to the private advisory).
+- New `docs/security/`: `COORDINATED_DISCLOSURE.md`, `SECURITY_ADVISORY_PROCESS.md`, `VULNERABILITY_CLASSES.md`, `CVE_CVSS_CWE_GUIDE.md`, `VEX_POLICY.md`.
+- `GOVERNANCE.md` + `MAINTAINERS` — founder-led governance and maintainer ownership documented (bus-factor-1; backup maintainer TODO).
+- `RELEASE-CHECKLIST.md` — embargoed security-release lane added.
+- Wiki aligned (`nftban.wiki` `bf8a98f`): vulnerability-reporting path, legal contact (`legal@itcms.gr`), SLSA scope honesty (provenance covers `nftban-core` only; packages/daemon/checksums not signed), and stale version text.
+
+### Contacts
+
+- Vulnerabilities: GitHub private Security Advisory (preferred) or `security@itcms.gr`. Support: `support@nftban.com`. General/business: `contact@nftban.com`. Legal: `legal@itcms.gr`.
+
+---
+
 ## [v1.218.8] - 2026-07-08 — Pro/stats community telemetry v3 Phase-0 client (opt-in, default-off; daemon byte-identical)
 
 **Lane:** `OPEN_PRO_STATS_TRIAL_V3_COLLECTOR` (Phase-0). **PR:** [#1050](https://github.com/itcmsgr/nftban/pull/1050) `bdf3706d`.
