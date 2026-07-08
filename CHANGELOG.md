@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.10] - 2026-07-08 — Emergency safety train: management whitelist tier · EXP_REVSLIDER false-positive · blacklist flush truth · Go 1.25.12 OSV
+
+**Consolidated emergency/safety release (four merged lanes). nft schema 1.84.0 unchanged; telemetry default-OFF. Go binaries RECOMPILED under go1.25.12 (from the OSV toolchain bump). Not Akrites / opqueue / update-path stale-cache/rollback / RBL / webhook / CI-hardening / badge / docs-wiki.**
+
+- **Management whitelist tier** ([#1054](https://github.com/itcmsgr/nftban/pull/1054) `2aff4e9a`) — durable, never-expiring, never-pruned `/etc/nftban/whitelist.d/99-management.conf` via `nftban whitelist management add|remove|list|status`. Closes the Scenario-A lockout where an expired session whitelist + absent permanent entry could lock out a management IP. **Shell-only / 0-Go-source** (auto-consumed by the existing whitelist.d glob + never-ban exemption resolver).
+- **BotScan EXP_REVSLIDER false-positive fix** ([#1056](https://github.com/itcmsgr/nftban/pull/1056) `a097ad99`) — narrowed the signature from the bare substring `revslider` to exploit-specific tokens (`revslider_show_image`, `client_action=get_captions_css|update_plugin`) so **legitimate RevSlider static asset loads no longer trigger BotScan bans** (they were banning real visitors — ~288 fleet IPs). Pattern/data + test only.
+- **Blacklist flush truth** ([#1057](https://github.com/itcmsgr/nftban/pull/1057) `1068c1d1`) — `nftban blacklist flush` now **includes the manual/botscan blacklist sets** (`blacklist_manual_ipv4/ipv6`), not just feed sets; adds `feeds|manual|all` subtargets and an **authority-breakdown prompt** (feed+GeoBan / manual+botscan / total) with a persistent-`blacklist.d` warning; `nftban flush all` includes the manual sets. Fixes the emergency-recovery path that silently left manual bans active while wiping feed protection. Shell-only.
+- **Go 1.25.12 OSV toolchain-security bump** ([#1055](https://github.com/itcmsgr/nftban/pull/1055) `31bb5a35`) — bumps the `go` directive + all CI/SLSA `setup-go` pins 1.25.11→1.25.12, closing GO-2026-4970 (`os.Root` symlink escape) + GO-2026-5856 (`crypto/tls` ECH). **Recompiles the shipped Go binaries under go1.25.12.**
+
+Discovered during the 2026-07-08 live RevSlider false-positive incident (a new operator-truth + recovery-path defect class). Fast-follow lanes (NOT in this release): BotScan/BotGuard operator-truth + naming (HTTP Guard / HTTP Exploit Scanner), `nftban search` kernel-authoritative truth, `feeds update` rc0 false-success, flush phantom-set cleanup, SINGLE_DASH audit.
+
 ## [v1.218.9] - 2026-07-08 — Coordinated vulnerability disclosure & security-response substrate (Lane 1; docs/process only)
 
 **Lane:** security-response / coordinated disclosure (Lane 1). **PR:** [#1052](https://github.com/itcmsgr/nftban/pull/1052) `3013b3c0`. **Wiki:** `nftban.wiki` `bf8a98f`.
