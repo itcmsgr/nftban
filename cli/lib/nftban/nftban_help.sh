@@ -111,7 +111,10 @@ PROTECTION MODULES:
   ⚡ ddos          DDoS protection (enable/disable/status)
   ⚡ portscan      Port scan detection (enable/disable/status)
   ⚡ login         Login monitor — SSH brute-force protection
-  ⚡ botguard      HTTP bot guard (enable/disable/status/list)
+  ⚡ botguard      HTTP Guard — live request-time HTTP bot guard (enable/disable/status/list)
+  🔍 botscan       HTTP Exploit Scanner — periodic access-log exploit scanner (status/enable/disable)
+                   NOTE: BotScan is independent of BotGuard — it can ban via the manual blacklist
+                   even when BotGuard is disabled.
   ⚡ geoban        Geographic IP blocking (enable/disable/list)
 
 SYSTEM:
@@ -154,7 +157,8 @@ CORE COMMANDS:
 
 PROTECTION MODULES:
   ddos        DDoS protection management
-  botguard    HTTP bot guard management
+  botguard    HTTP Guard — live request-time bot guard management
+  botscan     HTTP Exploit Scanner — periodic access-log exploit scanner (independent of BotGuard)
   portscan    Port scan detection
   geoban      Geographic IP blocking
   geoip       GeoIP database management
