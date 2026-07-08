@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.11] - 2026-07-09 — BotScan operator-truth V1: surface HTTP Exploit Scanner beside HTTP Guard
+
+**Operator-truth / module-visibility release. SHELL-ONLY · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no behavior/enforcement change · no pattern change · no enablement change.**
+
+First release applying the post-v1.218.10 operator-truth principle: **"Any component that can enforce bans must be first-class in operator surfaces."** BotScan (the periodic HTTP-log exploit scanner) can enforce bans via `blacklist_manual_*`, yet during the 2026-07-08 RevSlider incident `nftban status` showed only `Bot Guard: DISABLED` while BotScan was enabled and banning — hiding the active enforcer. This surfaces BotScan (display shell-only):
+
+- **`nftban status`** — new **HTTP Exploit Scan** (BotScan) row beside **HTTP Guard** (BotGuard): enabled/disabled (`BOTSCAN_ENABLED`), `nftban-botscan.timer` state, action mode (`BOTSCAN_ACTION_MODE`), + explicit note *"BotGuard disabled != BotScan disabled — they are independent."*
+- **`nftban help`** — exposes `botscan` (ESSENTIAL + CORE) with the HTTP-Guard-vs-HTTP-Exploit-Scanner distinction + independence caveat.
+- **`nftban botscan status`** — HTTP Exploit Scanner label + timer-state line (read-only, behavior unchanged).
+
+PR [#1061](https://github.com/itcmsgr/nftban/pull/1061) `63e8450b`. Test `botscan_operator_truth_v218_11_test.sh` 14/14. **v1.218.11 closes the 1.218 line; thereafter one minor bump per release (v1.219, v1.220, …).** **Does NOT include** the Go health/search truth work — that is **v1.219** (Go re-baseline: BotScan health identity modelling the shell scanner + the `internal/botguard` batch-signal consumer as one health module; kernel-authoritative `search`; cache-only ≠ BANNED). **v1.220** = management/testability (`http-guard`/`http-exploits` aliases; `botscan test-url`; pattern-quality gate); **v1.221–v1.228** = the bug-burndown (feeds-rc0, flush-phantom, SINGLE_DASH, stale-cache guard, opqueue atomicity, interactive-update rollback, auth-boundary tests, P1/P2). The BotScan Go / Aho-Corasick matcher (`OPEN_BOTSCAN_GO_AHOCORASICK_MATCHER_SCOPE`) is **deferred to v1.229+** (engine modernization, after the burndown). Not Suricata / MalwareGuard (separate/optional).
+
 ## [v1.218.10] - 2026-07-08 — Emergency safety train: management whitelist tier · EXP_REVSLIDER false-positive · blacklist flush truth · Go 1.25.12 OSV
 
 **Consolidated emergency/safety release (four merged lanes). nft schema 1.84.0 unchanged; telemetry default-OFF. Go binaries RECOMPILED under go1.25.12 (from the OSV toolchain bump). Not Akrites / opqueue / update-path stale-cache/rollback / RBL / webhook / CI-hardening / badge / docs-wiki.**
