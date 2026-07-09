@@ -85,7 +85,7 @@ func (m *Module) writeBotscanConsumerStatus() {
 	}
 	b = append(b, '\n')
 	// Durable atomic write via the project's fsync-before-rename safety writer (v1.176 idiom).
-	_ = safety.SafeWriteFile(filepath.Join(dir, botscanConsumerStatusName), b, 0o640)
+	_ = safety.SafeWriteFile(filepath.Join(dir, botscanConsumerStatusName), b, 0o600)
 }
 
 // appendBotscanEvidence appends a bounded durable evidence record for an ENFORCED BotScan ban.
@@ -120,7 +120,7 @@ func (m *Module) appendBotscanEvidence(sig *BatchSignal, setName string, ttlSec 
 	}
 	// Append-only bounded JSONL log; path is internally derived from the trusted config
 	// (BatchSignalFile dir), never user input.
-	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640) // #nosec G304 -- path from trusted config (DataDir/botguard)
+	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- path from trusted config (DataDir/botguard)
 	if err != nil {
 		return
 	}
@@ -143,5 +143,5 @@ func trimBotscanEvidence(path string) {
 		tail = tail[i+1:] // drop the partial first line so records stay whole
 	}
 	// Durable atomic replace via the project's fsync-before-rename safety writer (v1.176 idiom).
-	_ = safety.SafeWriteFile(path, tail, 0o640)
+	_ = safety.SafeWriteFile(path, tail, 0o600)
 }
