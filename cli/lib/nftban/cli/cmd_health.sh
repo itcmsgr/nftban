@@ -598,6 +598,13 @@ nftban_health_cmd_truth() {
         printf "  %-11s  %-9s  %-9s  %-9s  %s\n" "$mod" "$config" "$structural" "$runtime" "$effective"
     done
 
+    # v1.219.0 — HTTP Exploit Scanner (BotScan) health block. Shell-side, CHEAP-READ ONLY
+    # (config + timer + spool stat + runstate.json). NEVER scans access-log content — see the
+    # log-read-at-init blow-up history (v1.187.1 cycle-timeout, v1.209.3 spool-OOM). BotScan can
+    # ban via blacklist_manual_* independently of BotGuard, so it is surfaced as first-class here.
+    # The Go four-axis module (frozen ModulesJSON) is deferred to v1.220+; handoff-error truth to PR-B.
+    _nftban_health_render_botscan
+
     # Render blacklist (composite)
     echo ""
     echo "  Blacklist    State      Entries"

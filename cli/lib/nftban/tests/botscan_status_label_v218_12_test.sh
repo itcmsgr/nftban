@@ -32,7 +32,7 @@ CMD="$REPO/cli/lib/nftban/cli/cmd_botscan.sh"
 PASS=0; FAIL=0; FAILED=()
 ok(){ printf "  [PASS] %s\n" "$1"; PASS=$((PASS+1)); }
 no(){ printf "  [FAIL] %s\n" "$1"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
-has(){ printf '%s' "$1" | grep -Fq -- "$2"; }
+has(){ [[ "$1" == *"$2"* ]]; }
 
 echo "=== v1.218.12 botscan status label/timer hotfix ==="
 

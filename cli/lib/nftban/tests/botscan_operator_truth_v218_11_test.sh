@@ -34,7 +34,7 @@ SANDBOX=$(mktemp -d); trap 'rm -rf "$SANDBOX"' EXIT
 PASS=0; FAIL=0; FAILED=()
 ok(){ printf "  [PASS] %s\n" "$1"; PASS=$((PASS+1)); }
 no(){ printf "  [FAIL] %s\n" "$1"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
-has(){ printf '%s' "$1" | grep -Fq -- "$2"; }
+has(){ [[ "$1" == *"$2"* ]]; }
 
 # Extract the BotScan render block from cmd_status.sh.
 awk '/# HTTP Exploit Scanner \(BotScan\)/{c=1} c{print} /BotGuard disabled != BotScan disabled/{exit}' "$STATUS" > "$SANDBOX/block.sh"

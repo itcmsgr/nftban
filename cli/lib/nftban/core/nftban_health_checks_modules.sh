@@ -956,6 +956,90 @@ _health_eval_communication_component() {
     esac
 }
 
+# =============================================================================
+# HTTP EXPLOIT SCANNER (BotScan) — cheap-read health (v1.219.0)
+# =============================================================================
+# CHEAP-READ ONLY: config source, systemctl timer, stat spool dir, jq runstate.json.
+# MUST NOT scan/read access-log CONTENT synchronously (log-read-at-init blow-up guard:
+# v1.187.1 cycle-timeout, v1.209.3 spool-OOM). BotScan can ban via blacklist_manual_*
+# independently of BotGuard. Go four-axis module (frozen ModulesJSON) deferred to v1.220+;
+# consumer handoff-error truth to PR-B.
+_nftban_health_botscan_facts() {
+    # Emits: enabled|mode|timer|health_state|last_ago|bans|spool_state  (all cheap)
+    local cfgdir="${NFTBAN_CONFIG_DIR:-/etc/nftban}" conf
+    conf="$cfgdir/conf.d/botscan/main.conf"
+    local enabled="false" mode="both"
+    if [[ -f "$conf" ]]; then
+        enabled=$(grep -m1 '^BOTSCAN_ENABLED=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo false)
+        mode=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo both)
+        local lconf="$conf.local" le lm
+        if [[ -f "$lconf" ]]; then
+            le=$(grep -m1 '^BOTSCAN_ENABLED=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$le" ]] && enabled="$le"
+            lm=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$lm" ]] && mode="$lm"
+        fi
+    fi
+    local timer="inactive"
+    systemctl is-active nftban-botscan.timer &>/dev/null && timer="active"
+    local rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+    local hs="UNKNOWN" last="-" bans="-"
+    if [[ -r "$rs" ]] && command -v jq &>/dev/null; then
+        hs=$(jq -r '.health_state//"UNKNOWN"' "$rs" 2>/dev/null)
+        local lt; lt=$(jq -r '.last_run_ts//0' "$rs" 2>/dev/null)
+        [[ "$lt" =~ ^[0-9]+$ && "$lt" -gt 0 ]] && last="$(( $(date +%s) - lt ))s"
+        bans=$(jq -r '.bans_emitted_total//0' "$rs" 2>/dev/null)
+    fi
+    local spool="${BOTSCAN_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool}" spool_state="absent"
+    [[ -d "$spool" ]] && { spool_state="present"; [[ -r "$spool" ]] || spool_state="present/UNREADABLE"; }
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state"
+}
+
+_nftban_health_render_botscan() {
+    echo ""
+    echo "  HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (bans via blacklist_manual)"
+    echo "  ────────────────────────────────────────────────────────────────────────────────────────────"
+    local enabled mode timer hs last bans spool
+    IFS='|' read -r enabled mode timer hs last bans spool < <(_nftban_health_botscan_facts)
+    local mode_note="enforces via blacklist_manual"
+    [[ "$mode" == "alert" ]] && mode_note="DETECT-ONLY (does not ban)"
+    local verdict
+    if [[ "$enabled" != "true" ]]; then
+        verdict="DISABLED (not scanning; no bans)"
+    elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
+        verdict="ENABLED but ${hs} — NOT currently enforcing (scanner blind/degraded)"
+    elif [[ "$timer" != "active" ]]; then
+        verdict="ENABLED but timer ${timer} — not scanning on schedule"
+    else
+        verdict="ENABLED + timer active — ${mode_note}"
+    fi
+    printf "  %-11s  %s\n" "State:" "$verdict"
+    printf "  %-11s  enabled=%s · action=%s (%s) · timer=%s\n" "Config:" "$enabled" "$mode" "$mode_note" "$timer"
+    printf "  %-11s  health_state=%s · last_scan=%s · bans_emitted=%s · spool=%s\n" "Runtime:" "$hs" "${last:+${last} ago}" "$bans" "$spool"
+    printf "  %-11s  consumer handoff-error truth not available until v1.219.0 PR-B (daemon status surface)\n" "Handoff:"
+    echo "  (BotGuard disabled does NOT disable BotScan — they are independent. HTTP Guard = BotGuard.)"
+}
+
+# Shell health-check entrypoint (cheap-read; populates NFTBAN_HEALTH_RESULTS like the others).
+nftban_health_check_botscan() {
+    local enabled mode timer hs last bans spool status=$HEALTH_OK
+    IFS='|' read -r enabled mode timer hs last bans spool < <(_nftban_health_botscan_facts)
+    if [[ "$enabled" == "true" ]]; then
+        if [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but ${hs} — NOT currently enforcing (blind/degraded)"
+            status=$HEALTH_WARNING
+        elif [[ "$timer" != "active" ]]; then
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but timer ${timer}"
+            status=$HEALTH_WARNING
+        else
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner enabled (action=${mode}, timer active)"
+        fi
+    else
+        NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner installed (disabled)"
+    fi
+    NFTBAN_HEALTH_RESULTS["botscan"]=$status
+    return "$status"
+}
+
+export -f _nftban_health_botscan_facts _nftban_health_render_botscan nftban_health_check_botscan
 export -f nftban_health_check_communication _health_eval_communication_component
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases

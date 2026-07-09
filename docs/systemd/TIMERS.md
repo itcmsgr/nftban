@@ -41,7 +41,7 @@ included in core reconciliation.
 
 | Timer | Schedule | Module | Purpose |
 |-------|----------|--------|---------|
-| `nftban-botscan.timer` | Every 10min | botguard | Clock 3: access log pattern matching |
+| `nftban-botscan.timer` | Every 10min | botscan | Clock 3: HTTP Exploit Scanner (BotScan) access-log pattern matching. Runs on `BOTSCAN_ENABLED`, **independent of BotGuard** — not owned by or conditional on the BotGuard module. |
 | `nftban-suricata-update.timer` | Weekly Sun 03:40 | suricata | Suricata rule updates |
 
 ### OPTIONAL Timers (opt-in)
@@ -167,10 +167,11 @@ nftban-core-geoip.timer         ← CORE (weekly)
 nftban-unified-exporter.timer   ← CORE (60s)
 ```
 
-With botguard enabled, also:
+With `BOTSCAN_ENABLED=true` (the default; **independent of BotGuard**), also:
 ```
-nftban-botscan.timer            ← CONDITIONAL (10min)
+nftban-botscan.timer            ← HTTP Exploit Scanner (BotScan), 10min
 ```
+Note: `nftban-botscan.timer` is gated by `BOTSCAN_ENABLED`, NOT by BotGuard. BotGuard being disabled does not disable BotScan.
 
 With suricata enabled, also:
 ```
