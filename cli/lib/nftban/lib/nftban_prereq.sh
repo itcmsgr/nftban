@@ -111,9 +111,10 @@ nftban_prereq_require_any_cmd() {
     # whitespace word-splitting, so restore a whitespace IFS locally. Without this, a caller's
     # IFS=$'\n\t' makes `for bin in $binaries_str` iterate ONCE over the whole joined string
     # ("host dig nslookup") → false-MISSING even when a tool exists (the RBL enable hard-block).
-    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- intentional & safe: this RESTORES
-    # the DEFAULT whitespace IFS, `local`-scoped (auto-restored on return), to make word-splitting
-    # correct regardless of a strict-mode caller's IFS=$'\n\t'. It is the opposite of tampering.
+    # SAFE, not tampering: this RESTORES the DEFAULT whitespace IFS, `local`-scoped (auto-restored on
+    # return), so a strict-mode caller's IFS=$'\n\t' cannot break word-splitting — the opposite of
+    # tampering. nosemgrep must sit on the line IMMEDIATELY preceding the statement it suppresses:
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering
     local IFS=$' \t\n'
 
     # Check each binary
