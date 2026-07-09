@@ -1088,9 +1088,35 @@ _status_section_protection() {
     if [[ "$botscan_enabled" == "true" ]]; then
         local botscan_timer="stopped"
         systemctl is-active nftban-botscan.timer &>/dev/null && botscan_timer="active"
-        botscan_status="ENABLED (action=${botscan_mode}, timer ${botscan_timer})"
+        # v1.219.0 action-mode honesty: alert = detect-only (no ban); ban == both (enforce).
+        local _bs_mode_note=""
+        case "$botscan_mode" in
+            alert) _bs_mode_note=" — DETECT-ONLY, does not ban" ;;
+            ban|both) _bs_mode_note=" — enforces via blacklist_manual" ;;
+        esac
+        botscan_status="ENABLED (action=${botscan_mode}${_bs_mode_note}, timer ${botscan_timer})"
+        # v1.219.0 operator-truth: a scanner that is enabled but BLIND/DEGRADED is not enforcing.
+        # Cheap read only — runstate.json (health_state / last cycle), NEVER an access-log content scan.
+        local _bs_rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+        if [[ -r "$_bs_rs" ]] && command -v jq &>/dev/null; then
+            local _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips
+            IFS='|' read -r _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips < <(jq -r '"\(.health_state//"UNKNOWN")|\(.last_run_ts//0)|\(.budget_hit_total//0)|\(.bans_emitted_total//0)|\(.unique_ips_flagged_last//0)"' "$_bs_rs" 2>/dev/null)
+            if [[ "$_bs_hs" == DEGRADED_* || "$_bs_hs" == NO_INPUT_* ]]; then
+                botscan_status="ENABLED but ${_bs_hs} — NOT currently enforcing (scanner blind/degraded), action=${botscan_mode}, timer ${botscan_timer}"
+            fi
+        fi
     fi
     printf "  %-20s %s\n" "HTTP Exploit Scan..." "$botscan_status"
+    if [[ "$botscan_enabled" == "true" && -r "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
+        local _r="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+        printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
+            "$(( $(date +%s) - $(jq -r '.last_run_ts//0' "$_r" 2>/dev/null) ))" \
+            "$(jq -r '.last_duration_sec//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.bans_emitted_total//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.signals_emitted_total//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.budget_hit_total//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.health_state//"UNKNOWN"' "$_r" 2>/dev/null)"
+    fi
     echo "    (HTTP Guard = BotGuard, live request-time guard; HTTP Exploit Scan = BotScan, periodic"
     echo "     access-log scanner — can ban via the manual blacklist. BotGuard disabled != BotScan disabled.)"
 

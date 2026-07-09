@@ -138,7 +138,7 @@ nftban_botscan_should_record() {
 nftban_botscan_record_runstate() {
     # k=v pairs on argv: ts dur lines_seen lines_scanned lines_prefiltered
     #   lines_skipped_pressure backlog_bytes backlog_lines vhosts_scanned
-    #   vhosts_deferred signals bans already_banned_skipped pressure_state
+    #   vhosts_deferred signals unique_ips bans already_banned_skipped pressure_state
     #   scan_mode backlog_state health_state disabled_reason
     local -A v=(); local kv
     for kv in "$@"; do v["${kv%%=*}"]="${kv#*=}"; done
@@ -160,11 +160,13 @@ nftban_botscan_record_runstate() {
   "lines_seen_total": $(( p_seen + ${v[lines_seen]:-0} )),
   "lines_scanned_total": $(( p_scan + ${v[lines_scanned]:-0} )),
   "lines_prefiltered_total": $(( p_pf + ${v[lines_prefiltered]:-0} )),
+  "lines_prefiltered_status": "RESERVED_NO_PRODUCER",
   "lines_skipped_pressure_total": $(( p_skip + ${v[lines_skipped_pressure]:-0} )),
   "backlog_bytes": ${v[backlog_bytes]:-0},
   "backlog_lines": ${v[backlog_lines]:-0},
   "vhosts_scanned": ${v[vhosts_scanned]:-0},
   "vhosts_deferred": ${v[vhosts_deferred]:-0},
+  "unique_ips_flagged_last": ${v[unique_ips]:-0},
   "signals_emitted_total": $(( p_sig + ${v[signals]:-0} )),
   "bans_emitted_total": $(( p_ban + ${v[bans]:-0} )),
   "already_banned_skipped_total": $(( p_abs + ${v[already_banned_skipped]:-0} )),

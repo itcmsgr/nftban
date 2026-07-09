@@ -89,7 +89,8 @@ Interpretation rules:
 | Module | Layer | Evidence | Daemon |
 |---|---|---|---|
 | **DDoS Protection** | L3/L4 | 5 dedicated kernel counters | NO |
-| **BotGuard** | L7 HTTP | 6 dedicated kernel sets | YES |
+| **BotGuard** (HTTP Guard) | L7 HTTP | 6 dedicated kernel sets | YES |
+| **BotScan** (HTTP Exploit Scanner) | L7 HTTP | Access-log pattern scan → `blacklist_manual_*` | Timer + daemon consumer |
 | **Portscan Detection** | L3/L4 | Structure only (no counter) | NO |
 | **Login Monitoring** | L2 Auth | Journal + shared sets | YES |
 | **Blacklist & Feeds** | L1 IP | Shared sets + counters | Partial |

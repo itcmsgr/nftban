@@ -147,6 +147,7 @@ nftban_botscan_load_config() {
 
 # Associative arrays for tracking
 declare -gA _BOTSCAN_IP_HITS        # IP -> hit count
+declare -gi _BOTSCAN_SIGNALS_EMITTED=0   # v1.219.0 truth-fix: batch signals emitted this cycle
 declare -gA _BOTSCAN_IP_PATTERNS    # IP -> matched patterns
 declare -gA _BOTSCAN_IP_FIRST_SEEN  # IP -> first seen timestamp
 declare -gA _BOTSCAN_IP_LAST_SEEN   # IP -> last seen timestamp
@@ -164,6 +165,7 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_HITS=()
     _BOTSCAN_IP_PATTERNS=()
     _BOTSCAN_IP_FIRST_SEEN=()
+    _BOTSCAN_SIGNALS_EMITTED=0   # v1.219.0 truth-fix: real per-cycle batch-signal count (was always 0)
     _BOTSCAN_IP_LAST_SEEN=()
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
@@ -1304,6 +1306,9 @@ nftban_botscan_write_signal() {
     shift 3
     local reasons=("$@")
 
+    # v1.219.0 truth-fix: count every emitted batch signal for signals_emitted_total.
+    _BOTSCAN_SIGNALS_EMITTED=$(( ${_BOTSCAN_SIGNALS_EMITTED:-0} + 1 ))
+
     local signal_file="${BOTSCAN_BATCH_SIGNAL_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/batch_signals.jsonl}"
 
     # Build JSON reasons array
@@ -1632,7 +1637,9 @@ nftban_botscan_process_logs() {
             ts="$(date +%s)" dur="$_dur" lines_seen="$processed" lines_scanned="$processed" \
             budget_hit="$deadline_hit" backlog_bytes="${_BS_BYTES:-0}" \
             vhosts_scanned="$files_done" vhosts_deferred="$(( n - files_done ))" \
-            bans="$banned" pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
+            bans="$banned" signals="${_BOTSCAN_SIGNALS_EMITTED:-0}" \
+            unique_ips="${#_BOTSCAN_IP_HITS[@]}" \
+            pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
             backlog_state="$_BS_BACKLOG" health_state="$_health" load_ratio="${_lr:-0}"
     fi
 

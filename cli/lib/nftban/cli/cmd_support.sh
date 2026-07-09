@@ -1098,7 +1098,33 @@ _collect_module_status() {
             nftban login status 2>&1 || echo "Command failed"
         } > "$mod_dir/login.txt"
 
-        _support_log OK "Module status (6 modules)"
+        # HTTP Exploit Scanner (BotScan) — v1.219.0: BotScan can ban via blacklist_manual_*,
+        # so its config/timer/runstate/pattern-inventory must be in the bundle for forensics.
+        # Read-only, cheap surfaces only (no access-log content scan). Redaction applies to configs below.
+        {
+            echo "# HTTP Exploit Scanner (BotScan) Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban botscan status 2>&1 || echo "Command failed"
+            echo ""
+            echo "## botscan config"
+            nftban botscan config 2>&1 || echo "Command failed"
+            echo ""
+            echo "## runstate.json"
+            cat "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" 2>/dev/null || echo "(no runstate.json)"
+            echo ""
+            echo "## pattern inventory (enabled/total per file; names + match_type only, no request data)"
+            for pf in "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns; do
+                [[ -f "$pf" ]] || continue
+                local _en _tot
+                _tot=$(grep -cE '^[A-Za-z]' "$pf" 2>/dev/null || echo 0)
+                _en=$(grep -cE '\|true\|[^|]*$' "$pf" 2>/dev/null || echo 0)
+                echo "$(basename "$pf"): ${_en} enabled / ${_tot} records"
+                awk -F'|' '/^[A-Za-z]/{print "    "$1" ["$(NF-5)"]"}' "$pf" 2>/dev/null | head -60
+            done
+        } > "$mod_dir/botscan.txt"
+
+        _support_log OK "Module status (7 modules incl. BotScan)"
     else
         _support_log SKIP "Module status (nftban not in PATH)"
     fi
@@ -2025,7 +2051,7 @@ OUTPUT:
     - update/             Update check and backup list
     - services/           Systemd service/timer status
     - network/            Network info (if --network)
-    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login,
+    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login, botscan,
                           botguard, suricata)
     - mail/               Mail system status and configuration
     - stats-summary.txt   Current statistics and top IPs
