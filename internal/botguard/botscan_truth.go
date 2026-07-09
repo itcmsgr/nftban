@@ -41,6 +41,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 const (
@@ -82,12 +84,8 @@ func (m *Module) writeBotscanConsumerStatus() {
 		return
 	}
 	b = append(b, '\n')
-	path := filepath.Join(dir, botscanConsumerStatusName)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o640); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, path) // atomic replace
+	// Durable atomic write via the project's fsync-before-rename safety writer (v1.176 idiom).
+	_ = safety.SafeWriteFile(filepath.Join(dir, botscanConsumerStatusName), b, 0o640)
 }
 
 // appendBotscanEvidence appends a bounded durable evidence record for an ENFORCED BotScan ban.
@@ -120,7 +118,9 @@ func (m *Module) appendBotscanEvidence(sig *BatchSignal, setName string, ttlSec 
 	if fi, serr := os.Stat(path); serr == nil && fi.Size() > botscanEvidenceMaxBytes {
 		trimBotscanEvidence(path)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+	// Append-only bounded JSONL log; path is internally derived from the trusted config
+	// (BatchSignalFile dir), never user input.
+	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640) // #nosec G304 -- path from trusted config (DataDir/botguard)
 	if err != nil {
 		return
 	}
@@ -130,7 +130,7 @@ func (m *Module) appendBotscanEvidence(sig *BatchSignal, setName string, ttlSec 
 
 // trimBotscanEvidence keeps the most-recent line-aligned tail of the evidence log. Best-effort.
 func trimBotscanEvidence(path string) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- path from trusted config (DataDir/botguard)
 	if err != nil {
 		return
 	}
@@ -142,8 +142,6 @@ func trimBotscanEvidence(path string) {
 	if i := bytes.IndexByte(tail, '\n'); i >= 0 && i+1 <= len(tail) {
 		tail = tail[i+1:] // drop the partial first line so records stay whole
 	}
-	tmp := path + ".tmp"
-	if werr := os.WriteFile(tmp, tail, 0o640); werr == nil {
-		_ = os.Rename(tmp, path)
-	}
+	// Durable atomic replace via the project's fsync-before-rename safety writer (v1.176 idiom).
+	_ = safety.SafeWriteFile(path, tail, 0o640)
 }
