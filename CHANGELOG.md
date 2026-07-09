@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.13] - 2026-07-09 — BotScan EXP_RFI false-positive narrowing (RevSlider-class live FP)
+
+**Emergency pattern-data-only hotfix. Daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no Go · no threshold/window/ban/action-mode/enablement change.**
+
+The `EXP_RFI` BotScan signature was the bare `=https?://` (`url-any`, threshold 2), which matched **any** request whose query carried a URL-valued parameter — legitimate OAuth `redirect_uri=`, `return_url=`, `next=`, share `url=`, `utm_source=`, and CDN image-proxy `src=` — and banned real visitors mid-flow. This is the same defect class as the v1.218.10 EXP_REVSLIDER false-positive and was live on the fleet (BotScan `action=both`). Narrowed to real RFI shapes only:
+
+- PHP/stream wrappers: `(php|data|expect|zip|phar|glob|input)://`
+- Remote raw-payload-file inclusion: `=(https?|ftp)://…(.txt|.log|.dat|.bin|.phtml)`
+- Null-byte truncation: `%00`
+
+`url-any / 2 / 60 / 7200 / true` unchanged. Image extensions (`gif/jpg/png`) deliberately excluded to avoid image-proxy false positives; residual polyglot RFI is covered by webshell/upload patterns and the v1.222.0 pattern-quality lint. **Legitimate URL-valued query parameters no longer match; real RFI probes (remote `.txt` inclusion, `php://filter`, `data://`, `expect://`, `%00`, ftp payloads) still match.** PR [#1065](https://github.com/itcmsgr/nftban/pull/1065) `31bbdf42`; test `botscan_exp_rfi_fp_v218_13_test.sh` 12/12 (8 legit no-match + OLD-matched proof, 8 RFI match, parser round-trip); regressions `botscan_pattern_delimiter_v214` + `botscan_revslider_fp_v218_10` PASS. Scope: **EXP_RFI only** — `EXP_REDIS`/`EXP_TIMTHUMB` deferred to the v1.222.0 pattern-quality lane; v1.219.0 BotScan operator-truth contract begins only after this closes.
+
 ## [v1.218.12] - 2026-07-09 — BotScan status heading/timer corrective hotfix (supersedes v1.218.11 for fleet)
 
 **Corrective operator-truth hotfix. SHELL-ONLY · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no pattern/enforcement/enablement change.**
