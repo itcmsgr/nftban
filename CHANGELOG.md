@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.218.12] - 2026-07-09 — BotScan status heading/timer corrective hotfix (supersedes v1.218.11 for fleet)
+
+**Corrective operator-truth hotfix. SHELL-ONLY · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no pattern/enforcement/enablement change.**
+
+v1.218.11 shipped the BotScan operator-truth surfacing, but package-native lab2/lab4 validation found one explicit v1.218.11 acceptance item missed: `nftban botscan status` still headed `Bot Scanner Status` with no timer line — the label/timer polish had landed on the `botscan config` render instead of the actual status render (`core/nftban_botscan.sh:nftban_botscan_status`, reached via `cmd_botscan.sh:808`). This corrects it in the real render:
+
+- **`nftban botscan status`** heading `Bot Scanner Status` → **`HTTP Exploit Scanner (BotScan) Status`**.
+- **`nftban botscan status`** now shows a **`Timer:`** line for `nftban-botscan.timer`.
+- Enabled / Action Mode / Patterns Dir preserved; the already-correct `botscan config` label left intact.
+
+**Carries all v1.218.11 operator-truth work** (from #1061): `nftban status` shows HTTP Guard + HTTP Exploit Scan independently with the "BotGuard disabled != BotScan disabled" note; `nftban help` exposes botscan. PR [#1063](https://github.com/itcmsgr/nftban/pull/1063) `12dd1579`; test `botscan_status_label_v218_12_test.sh` 10/10; v1.218.11 test 14/14; status_consistency 15/0. **v1.218.12 is the fleet candidate; v1.218.11 remains published but superseded before fleet rollout.** Next lanes stay separate (v1.219.0 BotScan health/search truth, etc.).
+
 ## [v1.218.11] - 2026-07-09 — BotScan operator-truth V1: surface HTTP Exploit Scanner beside HTTP Guard
 
 **Operator-truth / module-visibility release. SHELL-ONLY · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no behavior/enforcement change · no pattern change · no enablement change.**
