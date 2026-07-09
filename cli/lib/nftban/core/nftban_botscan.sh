@@ -1649,10 +1649,11 @@ nftban_botscan_check() {
 nftban_botscan_status() {
     nftban_botscan_load_config
 
-    echo "Bot Scanner Status"
-    echo "=================="
+    echo "HTTP Exploit Scanner (BotScan) Status"
+    echo "====================================="
     echo ""
     echo "Enabled:        $BOTSCAN_ENABLED"
+    echo "Timer:          $(systemctl is-active nftban-botscan.timer 2>/dev/null || echo inactive) (nftban-botscan.timer)"
     echo "Action Mode:    $BOTSCAN_ACTION_MODE"
     echo "Patterns Dir:   $BOTSCAN_PATTERNS_DIR"
     echo ""
