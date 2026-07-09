@@ -66,7 +66,7 @@ nftban_prereq_require_cmd() {
     # Returns: 0 if binary found, 1 if missing
     #
     # Example: nftban_prereq_require_cmd "suricata" "suricata" "IDS engine"
-    #          nftban_prereq_require_cmd "host" "bind_utils" "DNS lookup"
+    #          nftban_prereq_require_cmd "host" "dns_utils" "DNS lookup"
 
     local binary="$1"
     local pkg_key="$2"
@@ -105,6 +105,13 @@ nftban_prereq_require_any_cmd() {
     local binaries_str="$1"
     local pkg_keys_str="$2"
     local description="${3:-transport}"
+
+    # CONTRACT (v1.219.1): prereq helpers MUST be safe when sourced by strict-mode callers
+    # that set IFS=$'\n\t' (e.g. cmd_rbl.sh). The space-separated "b1 b2 b3" args below rely on
+    # whitespace word-splitting, so restore a whitespace IFS locally. Without this, a caller's
+    # IFS=$'\n\t' makes `for bin in $binaries_str` iterate ONCE over the whole joined string
+    # ("host dig nslookup") → false-MISSING even when a tool exists (the RBL enable hard-block).
+    local IFS=$' \t\n'
 
     # Check each binary
     local bin
@@ -267,7 +274,7 @@ nftban_prereq_check_rbl() {
     nftban_prereq_init
     nftban_prereq_require_any_cmd \
         "host dig nslookup" \
-        "bind_utils bind_utils bind_utils" \
+        "dns_utils dns_utils dns_utils" \
         "DNS lookup tool" || true
 }
 
