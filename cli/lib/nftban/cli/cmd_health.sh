@@ -602,7 +602,7 @@ nftban_health_cmd_truth() {
     # (config + timer + spool stat + runstate.json). NEVER scans access-log content — see the
     # log-read-at-init blow-up history (v1.187.1 cycle-timeout, v1.209.3 spool-OOM). BotScan can
     # ban via blacklist_manual_* independently of BotGuard, so it is surfaced as first-class here.
-    # The Go four-axis module (frozen ModulesJSON) is deferred to v1.220+; handoff-error truth to PR-B.
+    # The Go four-axis module (frozen ModulesJSON) is deferred to v1.220+; handoff-error truth via botscan_consumer_status.json (PR-B).
     _nftban_health_render_botscan
 
     # Render blacklist (composite)

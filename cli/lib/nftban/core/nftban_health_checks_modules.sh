@@ -963,7 +963,7 @@ _health_eval_communication_component() {
 # MUST NOT scan/read access-log CONTENT synchronously (log-read-at-init blow-up guard:
 # v1.187.1 cycle-timeout, v1.209.3 spool-OOM). BotScan can ban via blacklist_manual_*
 # independently of BotGuard. Go four-axis module (frozen ModulesJSON) deferred to v1.220+;
-# consumer handoff-error truth to PR-B.
+# consumer hand-off truth now wired (v1.219.0 PR-B botscan_consumer_status.json).
 _nftban_health_botscan_facts() {
     # Emits: enabled|mode|timer|health_state|last_ago|bans|spool_state  (all cheap)
     local cfgdir="${NFTBAN_CONFIG_DIR:-/etc/nftban}" conf
@@ -990,20 +990,35 @@ _nftban_health_botscan_facts() {
     fi
     local spool="${BOTSCAN_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool}" spool_state="absent"
     [[ -d "$spool" ]] && { spool_state="present"; [[ -r "$spool" ]] || spool_state="present/UNREADABLE"; }
-    printf '%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state"
+    # v1.219.0 PR-B — consumer hand-off truth from the daemon status snapshot (cheap jq read).
+    # handoff=UNKNOWN when the daemon hasn't written it yet (honest, never assumed-healthy).
+    local cs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_consumer_status.json"
+    local handoff="UNKNOWN" stale="UNKNOWN"
+    if [[ -r "$cs" ]] && command -v jq &>/dev/null; then
+        handoff=$(jq -r '.batch_handoff_errors//0' "$cs" 2>/dev/null)
+        stale=$(jq -r '.batch_consumer_stale_backlog//false' "$cs" 2>/dev/null)
+    fi
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state" "$handoff" "$stale"
 }
 
 _nftban_health_render_botscan() {
     echo ""
     echo "  HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (bans via blacklist_manual)"
     echo "  ────────────────────────────────────────────────────────────────────────────────────────────"
-    local enabled mode timer hs last bans spool
-    IFS='|' read -r enabled mode timer hs last bans spool < <(_nftban_health_botscan_facts)
+    local enabled mode timer hs last bans spool handoff stale
+    IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
     local mode_note="enforces via blacklist_manual"
     [[ "$mode" == "alert" ]] && mode_note="DETECT-ONLY (does not ban)"
+    # v1.219.0 PR-B — a broken consumer hand-off (batch signals not draining to the kernel)
+    # must NOT read as healthy/enforcing: the scanner produces bans but they are not applied.
+    local broken_handoff="no"
+    [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
+    [[ "$stale" == "true" ]] && broken_handoff="yes"
     local verdict
     if [[ "$enabled" != "true" ]]; then
         verdict="DISABLED (not scanning; no bans)"
+    elif [[ "$broken_handoff" == "yes" ]]; then
+        verdict="ENABLED but CONSUMER HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
     elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
         verdict="ENABLED but ${hs} — NOT currently enforcing (scanner blind/degraded)"
     elif [[ "$timer" != "active" ]]; then
@@ -1011,19 +1026,30 @@ _nftban_health_render_botscan() {
     else
         verdict="ENABLED + timer active — ${mode_note}"
     fi
+    local handoff_line
+    case "$handoff" in
+        UNKNOWN) handoff_line="handoff=UNKNOWN (daemon status not yet written)" ;;
+        *)       handoff_line="handoff_errors=${handoff} · stale_backlog=${stale}$([[ "$broken_handoff" == yes ]] && echo ' · BROKEN — bans not applied')" ;;
+    esac
     printf "  %-11s  %s\n" "State:" "$verdict"
     printf "  %-11s  enabled=%s · action=%s (%s) · timer=%s\n" "Config:" "$enabled" "$mode" "$mode_note" "$timer"
     printf "  %-11s  health_state=%s · last_scan=%s · bans_emitted=%s · spool=%s\n" "Runtime:" "$hs" "${last:+${last} ago}" "$bans" "$spool"
-    printf "  %-11s  consumer handoff-error truth not available until v1.219.0 PR-B (daemon status surface)\n" "Handoff:"
+    printf "  %-11s  %s\n" "Handoff:" "$handoff_line"
     echo "  (BotGuard disabled does NOT disable BotScan — they are independent. HTTP Guard = BotGuard.)"
 }
 
 # Shell health-check entrypoint (cheap-read; populates NFTBAN_HEALTH_RESULTS like the others).
 nftban_health_check_botscan() {
-    local enabled mode timer hs last bans spool status=$HEALTH_OK
-    IFS='|' read -r enabled mode timer hs last bans spool < <(_nftban_health_botscan_facts)
+    local enabled mode timer hs last bans spool handoff stale status=$HEALTH_OK
+    IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
+    local broken_handoff="no"
+    [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
+    [[ "$stale" == "true" ]] && broken_handoff="yes"
     if [[ "$enabled" == "true" ]]; then
-        if [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
+        if [[ "$broken_handoff" == "yes" ]]; then
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner consumer HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+            status=$HEALTH_WARNING
+        elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but ${hs} — NOT currently enforcing (blind/degraded)"
             status=$HEALTH_WARNING
         elif [[ "$timer" != "active" ]]; then
