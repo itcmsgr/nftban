@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.219.0] - 2026-07-09 — BotScan authoritative-truth / operator-honesty contract
+
+**First lane of the post-v1.218.x train.** BotScan (HTTP Exploit Scanner) is made first-class across the operator surfaces under the principle *"operator truth is security"*: a component that can ban must never present as enforced/healthy/protected when it isn't. Shell/docs/tests + minimal Go. **Daemon changed (PR-B Go) → daemon re-baseline required.** nft schema **1.84.0 unchanged**; **`ModulesJSON` untouched**; telemetry default-OFF; **no enablement/action-mode/threshold change; no pattern edits.**
+
+**Four acceptance guarantees closed:**
+- **DEGRADED/blind ≠ enforced/protected** — `nftban status`/`health` render a blind/degraded scanner as "NOT currently enforcing", never healthy.
+- **cache-only ≠ BANNED** — `nftban search` top-level `BANNED` is kernel-authoritative; the BotGuard decision-cache renders "CACHE ONLY — not currently enforced" and never flips the verdict (locked by test).
+- **broken handoff ≠ healthy** — the daemon publishes `botscan_consumer_status.json`; `nftban health` renders a broken consumer hand-off (handoff-errors/stale-backlog) as "CONSUMER HAND-OFF BROKEN — bans NOT reaching the kernel", never healthy; missing → honest UNKNOWN.
+- **ban evidence survives consume** — the daemon writes a durable `botscan_ban_evidence.jsonl` side-record (ts/source=botscan/ip/action/family/request_class/reasons/set/ttl) **before** `batch_signals.jsonl` is consumed/deleted, so the "why" survives for forensics.
+
+Also: BotScan counter truth-fixes (`signals_emitted_total` wired; unique-IPs recorded; `lines_prefiltered` marked RESERVED not faked); config honesty (4 dead keys marked non-functional; action-mode trio explained; budget knobs documented); help BotGuard-vs-BotScan distinction; support-bundle includes BotScan (config/runstate/pattern inventory); docs (`TIMERS.md` timer no longer attributed to BotGuard; README BotScan row; `docs/operator/BOTGUARD_VS_BOTSCAN.md` + `FALSE_POSITIVE_AND_RECOVERY_DRILL.md`). Cheap-read invariant enforced: status/health never scan access-log content (log-read-at-init guard).
+
+PR-A [#1067](https://github.com/itcmsgr/nftban/pull/1067) `aa8dc5ff` (shell/docs/tests, daemon byte-identical) + PR-B [#1068](https://github.com/itcmsgr/nftban/pull/1068) `3c105f9d` (minimal Go daemon-truth; writers routed through `safety.SafeWriteFile`, files 0600). Tests: `botscan_operator_truth_contract_v219_0` 32/32, `botscan_daemon_truth_v219_0` 11/11, Go `botscan_truth_v219_test` 4/4; full botguard suite + v218_11/12 + exp_rfi_fp green.
+
+**Explicit non-goals (deferred lanes, do NOT bundle):** v1.220+ Go four-axis BotScan health module (frozen `ModulesJSON`); v1.222.0 pattern-quality CI lint / `botscan test-url` / `http-guard`·`http-exploits` aliases / matched-URL producer enrichment (evidence `url` reserved) / EXP_REDIS·EXP_TIMTHUMB narrowing; v1.229.0+ BotScan Go/Aho-Corasick matcher; `OPEN_RPM_PATTERN_CONFIG_DRIFT_RECONCILE_GUARD`.
+
 ## [v1.218.13] - 2026-07-09 — BotScan EXP_RFI false-positive narrowing (RevSlider-class live FP)
 
 **Emergency pattern-data-only hotfix. Daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no Go · no threshold/window/ban/action-mode/enablement change.**
