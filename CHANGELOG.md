@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.0] - 2026-07-10 — Shared host-address inventory authority + IPv6-safe RBL truth (PR-B)
+
+**RBL truth train — PR-B. Shell/core/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · RBL stays observe-only (no bans/nft writes, not enabled).**
+
+Establishes one neutral host-address inventory authority and migrates RBL onto it, structurally removing the IPv6 false-clean and degraded-as-clean defects (reproduced live on the fleet: `nftban rbl server check` showed `Checking: 2a01 (source: 4f8:…)` with 23 errors, yet a final "✅ All IPs are clean"). Principle: **DISCOVER ONCE · CLASSIFY ONCE · PROJECT PER CONSUMER.**
+
+**New authority — `core/nftban_hostaddr.sh`** (read-only; no nft/whitelist/RBL/network writes; safe under strict caller IFS): `nftban_hostaddr_inventory [--json]` emits a classified TSV record `address<TAB>family<TAB>scope<TAB>iface<TAB>state<TAB>source` (no `ip:tag`). Scope classification fixes the legacy gaps — ULA `fc00::/7` (was literal `fc00:`/`fd00:` only, missing `fd12:`/`fcab:`), CGNAT `100.64.0.0/10`, documentation nets, multicast, unspecified, reserved. Projections: `project_rbl` (public + preferred + up-interface, full addresses, deduped), `project_whitelist` (never-ban parity), `project_status` (== `project_rbl`).
+
+**RBL migration.** `nftban_rbl_get_public_ips` → `project_rbl`; `nftban_rbl_is_public_ip` → the authority (classify once); status monitored-count → `project_rbl`; the inline `ip … addr show` self-IP blocks are retired. The `"$ip:ipv6"` encoding + first-colon self-IP split (which truncated `2a01:…` to `2a01` in **both** the server-check and scheduled paths) are deleted — entries are TAB-delimited (a TAB cannot appear in an IP). Critical IPs gain an IPv6-safe `ip|tag` format with legacy IPv4 `ip:tag` read-compat (one-time warn); an IPv6 address is never split into a tag.
+
+**False-clean fix.** A three-way per-IP verdict (listed / degraded / clean) now covers **both** the cache and fresh paths — the legacy code counted only the fresh branch, so cached degraded results scored 0/0 and printed the false "All IPs are clean". `✅ All IPs are clean` is emitted only when there are no listings, zero degraded/timeout/error, every intended address was checked, and the inventory succeeded; a degraded run or an empty inventory never renders or persists as clean. Return-code contract: **0 = fully-verified clean, 1 = listed, 2 = degraded/not-fully-verified.** `nftban-rbl-check.service` gains `SuccessExitStatus=1 2` so listed/degraded outcomes (alerting stays in-band via `--alert`) are not misclassified as systemd unit failures.
+
+**Whitelist.** `nftban_get_interface_ips` delegates to `project_whitelist`; the accepted never-ban set is byte-identical (parity-tested), with a legacy inline fallback. The management whitelist (`99-management.conf`) is untouched.
+
+PR-B [#1073](https://github.com/itcmsgr/nftban/pull/1073) `36703517`. Test `rbl_shared_address_authority_v220_0_test.sh` 32/32 incl. anti-duplication source guards G1–G5 (no inline `ip … addr show` in RBL, no `$ip:ipv6`, shared projection, no watchlist mutation, authority read-only); regressions green (`rbl_false_clean_v150`, `rbl_seven_state_v206`, `rbl_enable_readiness`, `rbl_prereq_ifs_dns_utils_v219_1`, whitelist suites). Lab-validated read-only on lab2 (DEB) + lab4 (RPM): full public IPv4 + IPv6 discovered intact, whitelist parity unchanged, RBL disabled.
+
+**Explicit non-goals (deferred, do NOT bundle):** PR-C hostname/public-DNS-loopback truth · operator-facing self-IP status rendering · watchlist wording · PTR/FCrDNS (owner decision). The broad consumer consolidation (`OPEN_HOST_ADDRESS_INVENTORY_CONSUMER_CONSOLIDATION`) stays blocked until v1.220.0 fleet closure. No RBL fleet enablement; provider-bounce/Proofpoint ingestion and RBLMON §4.4 remain separate.
+
 ## [v1.219.1] - 2026-07-10 — RBL enable-prereq IFS-safety + dns_utils package map
 
 **Prerequisite-unblock hotfix. Shell/config/tests only · daemon byte-identical · 0 Go · nft schema 1.84.0 unchanged · telemetry default-OFF · no RBL scan-behavior change · RBL NOT enabled.**
