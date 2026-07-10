@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.219.1] - 2026-07-10 — RBL enable-prereq IFS-safety + dns_utils package map
+
+**Prerequisite-unblock hotfix. Shell/config/tests only · daemon byte-identical · 0 Go · nft schema 1.84.0 unchanged · telemetry default-OFF · no RBL scan-behavior change · RBL NOT enabled.**
+
+`nftban rbl enable` was hard-blocked on **every** host since 2025-12-31 (`e6998e26` shellcheck sweep). `cmd_rbl.sh` runs under strict mode (`IFS=$'\n\t'`); the shared `nftban_prereq_require_any_cmd` helper split its space-separated binary list (`host dig nslookup`) with `for bin in $binaries_str` + `read -a`, which under `IFS=$'\n\t'` iterated **once** over the whole joined string instead of the three tools — so the DNS-tool prerequisite always reported MISSING even when `host`/`dig`/`nslookup` were installed, and `rbl enable` refused to proceed. Two fixes:
+
+- **IFS-safe prereq contract** — `nftban_prereq_require_any_cmd` now sets a `local IFS=$' \t\n'` (auto-restored on return) so a strict-mode caller's IFS can no longer break whitespace word-splitting. This RESTORES the default whitespace IFS in a `local` scope — it is not IFS tampering (annotated for the Semgrep `ifs-tampering` rule). The latent same-class `check_zabbix` path (no live caller) is fixed by the same helper change.
+- **Valid `dns_utils` package key** — the RBL prereq referenced an unmapped, invalid `bind_utils` package key. Replaced with a real `dns_utils` key, added to the central per-distro package maps for **all 21** `etc/nftban/distros/*.conf` `[packages]` sections, resolving to `bind9-dnsutils` on apt distros (Debian 11–14, Ubuntu 22–26) and `bind-utils` on dnf distros (AlmaLinux/Rocky/CentOS/CentOS-Stream 8–10, Fedora) — verified empirically per distro/release.
+
+**Scope: PR-A of the RBL truth cluster ONLY** — the enable prerequisite. **No** IPv6 colon-split fix, degraded-vs-clean verdict, self-IP monitoring, `rbl status`/watchlist truth, hostname-loopback, or PTR/FCrDNS work — those remain the deferred v1.220.0 RBL truth train. RBL stays observe-only; this release does not enable RBL or change any scan/ban/nft behavior. PR-A [#1071](https://github.com/itcmsgr/nftban/pull/1071) `9eaf3dc3` (23 files: prereq lib + 21 distro confs + test; 0 Go, no `cmd_rbl.sh`/`nftban_rbl.sh` scan logic). Test: `rbl_prereq_ifs_dns_utils_v219_1_test.sh` 10/10 (strict-IFS positive returns 0, negative hint lists host/dig/nslookup split, IFS contract present, `dns_utils` key used never `bind_utils`, exact per-distro package value in all 21 confs).
+
+**Explicit non-goals (deferred to v1.220.0 RBL truth train — do NOT bundle):** IPv6-safe server check + scheduled check + critical-IP encoding; degraded results must not read as "All IPs are clean"; self-IP IPv4/IPv6 auto-discovery + monitoring + `rbl status` truth; watchlist-vs-self distinction; hostname loopback WARN; PTR/FCrDNS advisory (owner decision); docs. Provider-bounce/Proofpoint/iCloud ingestion, RBL fleet-enablement ops gate, and RBLMON §4.4 stay separate/OPEN after v1.220.0.
+
 ## [v1.219.0] - 2026-07-09 — BotScan authoritative-truth / operator-honesty contract
 
 **First lane of the post-v1.218.x train.** BotScan (HTTP Exploit Scanner) is made first-class across the operator surfaces under the principle *"operator truth is security"*: a component that can ban must never present as enforced/healthy/protected when it isn't. Shell/docs/tests + minimal Go. **Daemon changed (PR-B Go) → daemon re-baseline required.** nft schema **1.84.0 unchanged**; **`ModulesJSON` untouched**; telemetry default-OFF; **no enablement/action-mode/threshold change; no pattern edits.**
