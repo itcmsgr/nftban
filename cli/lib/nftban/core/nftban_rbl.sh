@@ -43,6 +43,14 @@ readonly NFTBAN_RBL_CORE_LOADED=1
 # Determine library path
 _NFTBAN_RBL_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 
+# v1.220.0: shared host-address inventory authority (DISCOVER ONCE / CLASSIFY ONCE /
+# PROJECT PER CONSUMER). RBL self-IP discovery + public classification route through
+# this; RBL never re-implements `ip … addr show` self-IP discovery.
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/core/nftban_hostaddr.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/core/nftban_hostaddr.sh" || return 1
+fi
+
 # Load timestamp library (for nftban_timestamp, nftban_timestamp_unix)
 if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/dev/null
@@ -120,69 +128,67 @@ nftban_rbl_log() {
 # =============================================================================
 
 nftban_rbl_get_public_ips() {
-    # Auto-discover public IPs from network interfaces
-    # Output: One IP per line
-
-    local ips=()
-
-    # Get all IPv4 addresses from interfaces (excluding loopback)
-    while IFS= read -r ip; do
-        if nftban_rbl_is_public_ip "$ip"; then
-            ips+=("$ip")
-        fi
-    done < <(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.')
-
-    # Get all IPv6 addresses if enabled (excluding link-local and loopback)
+    # Auto-discover public routable self IPs (IPv4 + IPv6) for RBL self-monitoring.
+    # v1.220.0: single source of truth — the host-address inventory authority's RBL
+    # projection (public + preferred + up-interface, full addresses, deduped). No
+    # inline `ip … addr show` here. IPv6 gate honored: drop v6 records when disabled.
+    # Output: one full address per line.
     if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
-        while IFS= read -r ip; do
-            if nftban_rbl_is_public_ip "$ip"; then
-                ips+=("$ip")
-            fi
-        done < <(ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:')
+        nftban_hostaddr_project_rbl
+    else
+        # IPv4 only: exclude any address containing ':'
+        nftban_hostaddr_project_rbl | grep -v ':'
     fi
-
-    # Remove duplicates and output
-    printf '%s\n' "${ips[@]}" | sort -u
 }
 
 nftban_rbl_get_critical_ips() {
-    # Get critical IPs from configuration
-    # Format: NFTBAN_RBL_CRITICAL_IPS="1.2.3.4:mail,5.6.7.8:web"
-    # Output: IP:tag (one per line)
-
+    # Get operator-configured critical IPs. v1.220.0: IPv6-SAFE parsing.
+    #   Canonical (new):  NFTBAN_RBL_CRITICAL_IPS="2a01:...::1|mail,203.0.113.5|web"
+    #   Legacy (v4-only): NFTBAN_RBL_CRITICAL_IPS="1.2.3.4:mail,5.6.7.8:web"
+    # Output: "<ip>\t<tag>" (one per line; tag may be empty). NEVER splits an IPv6
+    # address at a colon. Legacy IPv4 "ip:tag" is still read (with a one-time warn);
+    # malformed entries are passed through as a bare IP (not silently reinterpreted).
     if [[ -z "${NFTBAN_RBL_CRITICAL_IPS:-}" ]]; then
         return 0
     fi
 
-    # Split by comma and output
-    echo "$NFTBAN_RBL_CRITICAL_IPS" | tr ',' '\n' | grep -v '^$'
+    local _legacy_seen=0 entry ip tag
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering
+    local IFS=','
+    for entry in ${NFTBAN_RBL_CRITICAL_IPS}; do
+        # trim surrounding whitespace
+        entry="${entry#"${entry%%[![:space:]]*}"}"
+        entry="${entry%"${entry##*[![:space:]]}"}"
+        [[ -z "$entry" ]] && continue
+        if [[ "$entry" == *"|"* ]]; then
+            # New IPv6-safe format: ip|tag (ip may be IPv6 with colons)
+            ip="${entry%%|*}"
+            tag="${entry#*|}"
+        elif [[ "$entry" == *:*:* ]]; then
+            # Two or more colons → an IPv6 address with NO tag. Do NOT split.
+            ip="$entry"; tag=""
+        elif [[ "$entry" == *:* ]]; then
+            # Exactly one colon: legacy IPv4 "ip:tag".
+            ip="${entry%%:*}"; tag="${entry#*:}"
+            _legacy_seen=1
+        else
+            ip="$entry"; tag=""
+        fi
+        printf '%s\t%s\n' "$ip" "$tag"
+    done
+
+    if [[ $_legacy_seen -eq 1 ]]; then
+        nftban_rbl_log "WARN" "NFTBAN_RBL_CRITICAL_IPS uses the legacy IPv4 'ip:tag' format; migrate to the IPv6-safe 'ip|tag' format (colon-tag cannot hold an IPv6 address)." 2>/dev/null || true
+    fi
 }
 
 nftban_rbl_is_public_ip() {
-    # Check if IP is public (not private/loopback)
-    # Args: $1 = IP address (IPv4 or IPv6)
-    # Return: 0 if public, 1 if private
-
-    local ip="$1"
-
-    # IPv4 private ranges
-    if [[ "$ip" =~ ^10\. ]] ||              # 10.0.0.0/8
-       [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] ||  # 172.16.0.0/12
-       [[ "$ip" =~ ^192\.168\. ]] ||        # 192.168.0.0/16
-       [[ "$ip" =~ ^127\. ]] ||             # 127.0.0.0/8 (loopback)
-       [[ "$ip" =~ ^169\.254\. ]]; then     # 169.254.0.0/16 (link-local)
-        return 1
-    fi
-
-    # IPv6 private/special ranges
-    if [[ "$ip" =~ ^::1$ ]] ||              # Loopback
-       [[ "$ip" =~ ^fe80: ]] ||             # Link-local
-       [[ "$ip" =~ ^fc00: ]] ||             # Unique local (ULA)
-       [[ "$ip" =~ ^fd00: ]]; then          # Unique local (ULA)
-        return 1
-    fi
-
-    return 0
+    # Check if IP is public routable (not private/loopback/special).
+    # v1.220.0: CLASSIFY ONCE — delegate to the host-address inventory authority so
+    # RBL and every other consumer share identical scope classification (fixes the
+    # legacy ULA fc00::/7 gap + adds CGNAT/doc/multicast/reserved).
+    # Args: $1 = IP address (IPv4 or IPv6). Return: 0 if public, 1 otherwise.
+    nftban_hostaddr_is_public "$1"
 }
 
 nftban_rbl_reverse_ip() {
@@ -1557,13 +1563,20 @@ nftban_rbl_status() {
         timer_status="disabled"
     fi
 
-    # Count monitored IPs (auto-discovered)
+    # Count monitored IPs (auto-discovered). v1.220.0: the EXACT scheduled-check
+    # input — the status projection == the RBL projection == what the timer checks.
+    # No separate status discoverer, no inline `ip … addr show`.
     local monitored_ipv4=0 monitored_ipv6=0
     if [[ "${NFTBAN_RBL_ENABLED}" == "YES" ]]; then
-        monitored_ipv4=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | sort -u | wc -l)
-        if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
-            monitored_ipv6=$(ip -6 addr show 2>/dev/null | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:' | grep -v '^fc00:' | grep -v '^fd00:' | sort -u | wc -l)
-        fi
+        local _mon_ip
+        while IFS= read -r _mon_ip; do
+            [[ -z "$_mon_ip" ]] && continue
+            if [[ "$_mon_ip" == *:* ]]; then
+                monitored_ipv6=$((monitored_ipv6 + 1))
+            else
+                monitored_ipv4=$((monitored_ipv4 + 1))
+            fi
+        done < <(nftban_rbl_get_public_ips)
     fi
     local monitored_total=$((monitored_ipv4 + monitored_ipv6))
 
