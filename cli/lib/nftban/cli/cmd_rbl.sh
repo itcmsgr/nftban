@@ -511,20 +511,25 @@ nftban_cmd_rbl_check() {
     # Get IPs to check
     local ips_to_check=()
 
+    # v1.220.0: entries are TAB-delimited "<ip>\t<tag>" (tag may be empty). A TAB
+    # can never appear inside an IP address, so full IPv6 addresses survive intact
+    # (the legacy ":"-split truncated 2a01:... to "2a01").
     if [[ -n "$ip" ]]; then
         # Check specific IP
-        ips_to_check+=("$ip")
+        ips_to_check+=("$ip"$'\t')
     else
-        # Auto-discover IPs
+        # Auto-discover IPs (public routable self v4+v6 via the inventory authority)
         if [[ "${NFTBAN_RBL_AUTO_DISCOVER_IPS:-YES}" == "YES" ]]; then
             while IFS= read -r discovered_ip; do
-                ips_to_check+=("$discovered_ip")
+                [[ -z "$discovered_ip" ]] && continue
+                ips_to_check+=("$discovered_ip"$'\t')
             done < <(nftban_rbl_get_public_ips)
         fi
 
-        # Add critical IPs
-        while IFS=: read -r critical_ip tag; do
-            ips_to_check+=("$critical_ip:$tag")
+        # Add operator critical IPs (IPv6-safe: get_critical_ips emits "<ip>\t<tag>")
+        while IFS=$'\t' read -r critical_ip tag; do
+            [[ -z "$critical_ip" ]] && continue
+            ips_to_check+=("$critical_ip"$'\t'"$tag")
         done < <(nftban_rbl_get_critical_ips)
     fi
 
@@ -535,10 +540,12 @@ nftban_cmd_rbl_check() {
 
     # Check each IP
     local any_listed=0
+    local any_degraded=0
     for ip_entry in "${ips_to_check[@]}"; do
-        local check_ip="${ip_entry%%:*}"
-        local ip_tag="${ip_entry#*:}"
-        [[ "$ip_tag" == "$check_ip" ]] && ip_tag=""
+        # TAB split — preserves full IPv6 addresses (no first-colon truncation).
+        local check_ip="${ip_entry%%$'\t'*}"
+        local ip_tag="${ip_entry#*$'\t'}"
+        [[ "$ip_tag" == "$ip_entry" ]] && ip_tag=""
 
         [[ $quiet -eq 0 ]] && echo ""
         [[ $quiet -eq 0 ]] && [[ -n "$ip_tag" ]] && echo "Checking: $check_ip (tag: $ip_tag)"
@@ -592,6 +599,7 @@ nftban_cmd_rbl_check() {
             elif [[ "$_rbl_state" == "degraded" ]]; then
                 # Persist degraded — NEVER clean. Posture/health must not show
                 # "fully protected" when the lookup could not be completed.
+                any_degraded=1
                 [[ $quiet -eq 0 ]] && echo "⚠️  RBL result DEGRADED for $check_ip — reputation NOT fully verified (not marked clean)"
                 nftban_rbl_update_state "$check_ip" "degraded"
             else
@@ -614,8 +622,12 @@ nftban_cmd_rbl_check() {
     # untouched — so no monitored-set and no full-scan guard are needed.
     nftban_rbl_prune_state 2>/dev/null || true
 
-    # Return exit code based on listings
-    return $any_listed
+    # Return-code contract (v1.220.0): 1 = listed; 2 = degraded/not-fully-verified
+    # (no listing but coverage incomplete); 0 = fully-verified clean. A degraded run
+    # is NEVER rc0 — automation must be able to tell "clean" from "could not verify".
+    [[ $any_listed -eq 1 ]] && return 1
+    [[ $any_degraded -eq 1 ]] && return 2
+    return 0
 }
 
 nftban_cmd_rbl_server() {
@@ -685,113 +697,139 @@ nftban_cmd_rbl_server() {
     [[ $quiet -eq 0 ]] && echo "Server: $hostname"
     [[ $quiet -eq 0 ]] && echo ""
 
-    # Collect all IPs
+    # Collect self IPs via the shared host-address inventory authority (DISCOVER
+    # ONCE / CLASSIFY ONCE). Entries are TAB-delimited "<address>\t<source>" — a TAB
+    # cannot appear inside an IP, so full IPv6 addresses survive intact (the legacy
+    # "$ip:ipv6" + first-colon split truncated 2a01:… to "2a01"). Display lists every
+    # local address with its scope; ONLY public routable addresses are checked.
     local all_ips=()
+    local _addr _fam _scope _iface _state _src
 
-    # 1. Auto-discovered IPv4
-    [[ $quiet -eq 0 ]] && echo "━━━ IPv4 Addresses ━━━"
-    local ipv4_count=0
-    while IFS= read -r ip; do
-        all_ips+=("$ip:ipv4")
-        # v1.19.20 FIX
-        ((ipv4_count++)) || true
-        [[ $quiet -eq 0 ]] && echo "  ✓ $ip"
-    done < <(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | sort -u)
-    [[ $quiet -eq 0 ]] && [[ $ipv4_count -eq 0 ]] && echo "  (none found)"
-    [[ $quiet -eq 0 ]] && echo ""
-
-    # 2. Auto-discovered IPv6 (if enabled)
-    if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
-        [[ $quiet -eq 0 ]] && echo "━━━ IPv6 Addresses ━━━"
-        local ipv6_count=0
-        while IFS= read -r ip; do
-            all_ips+=("$ip:ipv6")
-            # v1.19.20 FIX
-            ((ipv6_count++)) || true
-            [[ $quiet -eq 0 ]] && echo "  ✓ $ip"
-        done < <(ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:' | grep -v '^fc00:' | grep -v '^fd00:' | sort -u)
-        [[ $quiet -eq 0 ]] && [[ $ipv6_count -eq 0 ]] && echo "  (none found)"
-        [[ $quiet -eq 0 ]] && echo "" || true
+    if [[ $quiet -eq 0 ]]; then
+        echo "━━━ IPv4 Addresses ━━━"
+        local _shown4=0
+        while IFS=$'\t' read -r _addr _fam _scope _iface _state _src; do
+            [[ "$_fam" == "ipv4" ]] || continue
+            echo "  • $_addr ($_scope, $_iface, $_state)"; _shown4=1
+        done < <(nftban_hostaddr_inventory)
+        [[ $_shown4 -eq 0 ]] && echo "  (none found)"
+        echo ""
+        if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
+            echo "━━━ IPv6 Addresses ━━━"
+            local _shown6=0
+            while IFS=$'\t' read -r _addr _fam _scope _iface _state _src; do
+                [[ "$_fam" == "ipv6" ]] || continue
+                echo "  • $_addr ($_scope, $_iface, $_state)"; _shown6=1
+            done < <(nftban_hostaddr_inventory)
+            [[ $_shown6 -eq 0 ]] && echo "  (none found)"
+            echo ""
+        fi
     fi
 
-    # 3. Hostname resolution
+    # Checkable set: public routable self IPs only (project_rbl; honors IPv6 gate,
+    # excludes private/ULA/CGNAT/link-local/loopback + tentative/deprecated + down).
+    while IFS= read -r _addr; do
+        [[ -z "$_addr" ]] && continue
+        all_ips+=("$_addr"$'\t'"self")
+    done < <(nftban_rbl_get_public_ips)
+
+    # Hostname-resolution leg (behavior unchanged; PR-C refines loopback/public-DNS
+    # truth). TAB-delimited source; no colon encoding.
     [[ $quiet -eq 0 ]] && echo "━━━ Hostname Resolution ━━━"
     while IFS= read -r ip; do
-        all_ips+=("$ip:hostname")
+        all_ips+=("$ip"$'\t'"hostname")
         [[ $quiet -eq 0 ]] && echo "  ✓ $hostname → $ip"
     done < <(host "$hostname" 2>/dev/null | grep "has address" | awk '{print $NF}')
     [[ $quiet -eq 0 ]] && echo ""
 
-    if [[ ${#all_ips[@]} -eq 0 ]]; then
-        echo "ERROR: No IPs found to check" >&2
-        return 1
+    # Dedup by address — same IP from multiple sources yields ONE RBL check.
+    local -a _uniq_ips=()
+    local -A _seen_ips=()
+    local _e _a
+    for _e in "${all_ips[@]:-}"; do
+        [[ -z "$_e" ]] && continue
+        _a="${_e%%$'\t'*}"
+        [[ -n "${_seen_ips[$_a]:-}" ]] && continue
+        _seen_ips[$_a]=1
+        _uniq_ips+=("$_e")
+    done
+    all_ips=("${_uniq_ips[@]:-}")
+
+    if [[ ${#all_ips[@]} -eq 0 || -z "${all_ips[0]:-}" ]]; then
+        # Inventory produced nothing checkable — reputation is UNKNOWN, never clean.
+        [[ $quiet -eq 0 ]] && echo "⚠️  No self IPs available to check — RBL coverage UNKNOWN (not verified, not clean)" >&2
+        return 2
     fi
 
     [[ $quiet -eq 0 ]] && echo "━━━ RBL Checks ━━━"
     [[ $quiet -eq 0 ]] && echo "Total IPs to check: ${#all_ips[@]}"
     [[ $quiet -eq 0 ]] && echo ""
 
-    # Check each IP
+    # Check each IP. v1.220.0 3-way truth (mirrors the scheduled path): every
+    # checked address is LISTED / DEGRADED / CLEAN. A timeout/error/degraded result
+    # NEVER increments clean and NEVER persists clean — covering BOTH the cache and
+    # fresh paths (the legacy code counted only the fresh branch, so cached degraded
+    # results scored 0/0 and the summary printed the false "All IPs are clean").
     local any_listed=0
     local total_listed=0
     local total_clean=0
+    local total_degraded=0
+    local total_checked=0
 
     for ip_entry in "${all_ips[@]}"; do
-        local check_ip="${ip_entry%%:*}"
-        local ip_source="${ip_entry#*:}"
-
-        # Filter public IPs only
-        if ! nftban_rbl_is_public_ip "$check_ip"; then
-            [[ $quiet -eq 0 ]] && echo "⚠️  Skipping private IP: $check_ip ($ip_source)"
-            continue
-        fi
+        # TAB split — preserves full IPv6 addresses.
+        local check_ip="${ip_entry%%$'\t'*}"
+        local ip_source="${ip_entry#*$'\t'}"
+        [[ "$ip_source" == "$ip_entry" ]] && ip_source="self"
 
         [[ $quiet -eq 0 ]] && echo "─────────────────────────────────────────────────────────────"
         [[ $quiet -eq 0 ]] && echo "Checking: $check_ip (source: $ip_source)"
         [[ $quiet -eq 0 ]] && echo ""
 
-        # Check cache if not fresh
-        local cache_file
+        # Obtain results from cache (if fresh not forced) or a live check.
+        local results="" cache_file
         if [[ $fresh -eq 0 ]] && cache_file=$(nftban_rbl_cache_get "$check_ip"); then
             [[ $quiet -eq 0 ]] && echo "(Using cached results)"
-            cat "$cache_file"
+            results="$(cat "$cache_file")"
         else
-            # Perform fresh check (parallel DNS by default)
-            local results
             if [[ $sequential -eq 1 ]]; then
                 results=$(nftban_rbl_check_ip "$check_ip" "$format")
             else
                 results=$(nftban_rbl_check_ip_parallel "$check_ip" "$format")
             fi
-
-            # Cache results
             echo "$results" | nftban_rbl_cache_set "$check_ip"
+        fi
+        [[ $quiet -eq 0 ]] && printf '%s\n' "$results"
 
-            # Output results
-            echo "$results"
+        total_checked=$((total_checked + 1))
 
-            # Track statistics
-            if echo "$results" | grep -q "LISTED"; then
-                any_listed=1
-                # v1.19.20 FIX
-                ((total_listed++)) || true
+        # Aggregate 3-way classification of this IP's result.
+        local _srv_state="clean"
+        if echo "$results" | grep -qE 'LISTED:|"listed": *[1-9]'; then
+            _srv_state="listed"
+        elif echo "$results" | grep -qE 'RESOLVER_BLOCKED|Degraded total:|"degraded": *[1-9]|"resolver_blocked": *[1-9]|⏱️|SKIPPED \(IPv4-only|UNSUPPORTED \(no IPv6'; then
+            _srv_state="degraded"
+        fi
 
-                # Send alert if requested
-                if [[ $alert -eq 1 ]] && [[ "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:-YES}" == "YES" ]]; then
-                    if nftban_rbl_check_new_listing "$check_ip" "listed"; then
-                        local first_rbl
-                        local first_reason
-                        first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}' || true)
-                        first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //' || true)
-                        nftban_rbl_send_alert "$check_ip" "$first_rbl" "$first_reason" "$ip_source"
-                    fi
+        if [[ "$_srv_state" == "listed" ]]; then
+            any_listed=1
+            total_listed=$((total_listed + 1))
+            if [[ $alert -eq 1 ]] && [[ "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:-YES}" == "YES" ]]; then
+                if nftban_rbl_check_new_listing "$check_ip" "listed"; then
+                    local first_rbl first_reason
+                    first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}' || true)
+                    first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //' || true)
+                    nftban_rbl_send_alert "$check_ip" "$first_rbl" "$first_reason" "$ip_source"
                 fi
-                nftban_rbl_update_state "$check_ip" "listed"
-            else
-                # v1.19.20 FIX
-                ((total_clean++)) || true
-                nftban_rbl_update_state "$check_ip" "clean"
             fi
+            nftban_rbl_update_state "$check_ip" "listed"
+        elif [[ "$_srv_state" == "degraded" ]]; then
+            total_degraded=$((total_degraded + 1))
+            [[ $quiet -eq 0 ]] && echo "⚠️  DEGRADED for $check_ip — reputation NOT fully verified (not marked clean)"
+            nftban_rbl_update_state "$check_ip" "degraded"
+        else
+            total_clean=$((total_clean + 1))
+            nftban_rbl_update_state "$check_ip" "clean"
         fi
 
         [[ $quiet -eq 0 ]] && echo "" || true
@@ -802,23 +840,35 @@ nftban_cmd_rbl_server() {
     [[ $quiet -eq 0 ]] && echo "Server RBL Check Summary"
     [[ $quiet -eq 0 ]] && echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     [[ $quiet -eq 0 ]] && echo "Server: $hostname"
-    [[ $quiet -eq 0 ]] && echo "IPs Checked: ${#all_ips[@]}"
+    [[ $quiet -eq 0 ]] && echo "IPs Checked: $total_checked"
     [[ $quiet -eq 0 ]] && echo "Listed: $total_listed"
-    [[ $quiet -eq 0 ]] && echo "Clean: $total_clean"
+    [[ $quiet -eq 0 ]] && echo "Clean (fully verified): $total_clean"
+    [[ $quiet -eq 0 ]] && echo "Degraded (not fully verified): $total_degraded"
     [[ $quiet -eq 0 ]] && echo ""
 
+    # v1.220.0 verdict truth: "All IPs are clean" is allowed ONLY when there are no
+    # listings, ZERO degraded/timeout/error, and every intended address was checked.
+    # A degraded result never reads as clean; no-listings-but-degraded is distinct.
     if [[ $total_listed -gt 0 ]]; then
         [[ $quiet -eq 0 ]] && echo "⚠️  WARNING: Server has $total_listed IP(s) on RBL blacklists!"
+    elif [[ $total_degraded -gt 0 || $total_checked -eq 0 ]]; then
+        [[ $quiet -eq 0 ]] && echo "⚠️  No listings found, but RBL coverage is degraded — NOT fully verified"
     else
-        [[ $quiet -eq 0 ]] && echo "✅ All IPs are clean (not blacklisted)" || true
+        [[ $quiet -eq 0 ]] && echo "✅ All IPs are clean (fully verified, not blacklisted)"
     fi
 
     # Update last check timestamp
     mkdir -p "${NFTBAN_RBL_CACHE_DIR}" || return 1
     date -Iseconds > "${NFTBAN_RBL_CACHE_DIR}/last_check"
 
-    # Return exit code based on listings
-    return $any_listed
+    # Return-code contract (v1.220.0): 1 = listed; 2 = degraded/not-fully-verified;
+    # 0 = fully-verified clean.
+    if [[ $any_listed -eq 1 ]]; then
+        return 1
+    elif [[ $total_degraded -gt 0 || $total_checked -eq 0 ]]; then
+        return 2
+    fi
+    return 0
 }
 
 nftban_cmd_rbl_status() {
