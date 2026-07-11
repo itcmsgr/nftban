@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.4] - 2026-07-11 — Version Release-Date authority (per-release `VERSION_DATE`; honest Build Date)
+
+**Shell/packaging only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only, provider data unchanged · no RBL/runtime behavior change.**
+
+`nftban version` printed a stale **`Release Date: 2026-03-18`** — a frozen compile-time constant (`lib/version.sh` `NFTBAN_VERSION_DATE`) never bumped on release — and a weak **`Build Date: unknown`**. Both are now truthful.
+
+- **Release Date** (`lib/version.sh` `_nftban_read_version_date`) resolves from a per-release `VERSION_DATE` artifact: (1) packaged `/usr/lib/nftban/VERSION_DATE`, (2) source-tree `VERSION_DATE`, (3) explicit `unknown` fallback only when neither exists or the value is not strict ISO `YYYY-MM-DD`. Search paths mirror the `VERSION` resolver.
+- **Build Date** (`_nftban_resolve_build_date`) returns `""` when no authoritative build metadata exists (a `.build_date` stamp or rpm BUILDTIME); the render **omits the field** rather than printing `unknown`. Reproducible-build semantics preserved — never `$(date)`-now, no invented timestamp.
+- **Packaging** (`packaging/build_nftban.sh`) ships `VERSION_DATE` alongside `VERSION` (RPM source tarball + `%install` + `%files`; DEB install) and **fails the build** on an empty/malformed release-date carrier.
+- **Release-prep carrier** (`scripts/bump-version.sh`) stamps `VERSION_DATE` (today UTC, or a `VERSION_DATE=YYYY-MM-DD` override for reproducible re-cuts) whenever it bumps `VERSION`.
+
+PR [#1083](https://github.com/itcmsgr/nftban/pull/1083) `c10620f6`. Tests: `version_release_date_authority_test.sh` 11/11 (source-tree / packaged / missing / malformed→fallback / strict-ISO / Build-Date omit-when-empty, show-when-stamped); `version_build_date_v151_test.sh` updated to the empty-not-`unknown` contract (8/8); `shellcheck -S warning` clean.
+
+**Deferred (next lane, separate GO):** `GO_SCOPE_RBL_PROVIDER_REGISTRY` — typed provider registry + curation (needs external access/terms verification).
+
 ## [v1.220.3] - 2026-07-11 — RBL CLI correctness cluster (blank provider, empty-watchlist crash, help/completion truth)
 
 **Shell/completion only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only (no bans/nft writes, NOT enabled) · `rbls.conf` provider data unchanged.**
