@@ -1614,7 +1614,7 @@ build_rpm() {
         --transform "s,^,nftban-core-${PKG_VERSION}/," \
         -C "${PROJECT_ROOT}" \
         bin/ cli/ cmd/ pkg/ install/ etc/ internal/ packaging/ scripts/ docs/ \
-        VERSION go.mod go.sum LICENSE README.md commands.registry.yml; then
+        VERSION VERSION_DATE go.mod go.sum LICENSE README.md commands.registry.yml; then
         log_error "Failed to create source tarball"
         log_error "tar command failed with exit code $?"
         return 1
