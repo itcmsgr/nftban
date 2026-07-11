@@ -47,6 +47,16 @@ PKG_VERSION=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null || echo "unknown
 readonly PKG_VERSION
 readonly PKG_RELEASE="1"
 
+# Per-release date artifact — shipped alongside VERSION so `nftban version` shows
+# a truthful Release Date instead of a frozen constant. FAIL the build rather
+# than silently ship an empty/malformed VERSION_DATE (strict ISO YYYY-MM-DD).
+PKG_VERSION_DATE=$(cat "${BASH_SOURCE[0]%/*}/../VERSION_DATE" 2>/dev/null | tr -d '[:space:]' || echo "")
+if ! [[ "$PKG_VERSION_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "FATAL: VERSION_DATE missing or not strict ISO YYYY-MM-DD: '${PKG_VERSION_DATE}'" >&2
+    exit 1
+fi
+readonly PKG_VERSION_DATE
+
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -431,6 +441,9 @@ install -m 0755 cli/sbin/nftban-botscan-collector %{buildroot}/usr/lib/nftban/sb
 
 # Version file
 install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
+
+# Per-release date artifact (authoritative Release Date at runtime)
+install -D -m 0644 VERSION_DATE %{buildroot}/usr/lib/nftban/VERSION_DATE
 
 # Build target file (distro detection at install time)
 if [ -f /etc/os-release ]; then
@@ -1421,6 +1434,7 @@ fi
 /usr/lib/nftban/bin/*
 /usr/lib/nftban/sbin/*
 /usr/lib/nftban/VERSION
+/usr/lib/nftban/VERSION_DATE
 /usr/lib/nftban/BUILD_TARGET
 /usr/lib/nftban/cli/*
 /usr/lib/nftban/core/*
@@ -1905,6 +1919,16 @@ build_deb() {
         echo "${PKG_VERSION}" > "${deb_root}/usr/lib/nftban/VERSION"
         chmod 0644 "${deb_root}/usr/lib/nftban/VERSION"
         log_warn "VERSION file was empty, wrote PKG_VERSION=${PKG_VERSION}"
+    fi
+
+    # Copy the per-release date artifact. PKG_VERSION_DATE was already validated
+    # as strict ISO at the top of the build (the build aborts on empty/malformed),
+    # so a missing/empty source here is a hard error, not a silent ship.
+    if [[ -s "${PROJECT_ROOT}/VERSION_DATE" ]]; then
+        install -m 0644 "${PROJECT_ROOT}/VERSION_DATE" "${deb_root}/usr/lib/nftban/VERSION_DATE"
+    else
+        echo "FATAL: VERSION_DATE missing/empty for DEB build" >&2
+        return 1
     fi
 
     # Write BUILD_TARGET from the build container's OS (distro detection at install time)
