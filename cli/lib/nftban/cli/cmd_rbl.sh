@@ -733,13 +733,27 @@ nftban_cmd_rbl_server() {
         all_ips+=("$_addr"$'\t'"self")
     done < <(nftban_rbl_get_public_ips)
 
-    # Hostname-resolution leg (behavior unchanged; PR-C refines loopback/public-DNS
-    # truth). TAB-delimited source; no colon encoding.
+    # Hostname-resolution leg. v1.220.1: hostname-derived addresses are a SELF-identity
+    # source and MUST pass the SAME shared classifier as self-interface IPs before
+    # entering the RBL candidate set (DISCOVER → CLASSIFY ONCE → PROJECT PER CONSUMER).
+    # Admit only public routable addresses; keep every resolved address VISIBLE with an
+    # explicit exclusion reason otherwise (e.g. a local resolver answering the hostname
+    # with 127.0.1.1 must be shown but NOT RBL-checked). Dedup vs self happens below.
     [[ $quiet -eq 0 ]] && echo "━━━ Hostname Resolution ━━━"
-    while IFS= read -r ip; do
-        all_ips+=("$ip"$'\t'"hostname")
-        [[ $quiet -eq 0 ]] && echo "  ✓ $hostname → $ip"
-    done < <(host "$hostname" 2>/dev/null | grep "has address" | awk '{print $NF}')
+    local _hn_ip _hn_scope
+    while IFS= read -r _hn_ip; do
+        [[ -z "$_hn_ip" ]] && continue
+        if nftban_hostaddr_is_public "$_hn_ip"; then
+            all_ips+=("$_hn_ip"$'\t'"hostname")
+            [[ $quiet -eq 0 ]] && echo "  ✓ $hostname → $_hn_ip"
+        else
+            _hn_scope="$(nftban_hostaddr_scope "$_hn_ip")"
+            [[ $quiet -eq 0 ]] && echo "  $hostname → $_hn_ip"
+            [[ $quiet -eq 0 ]] && echo "  ⚠ excluded from RBL checks: ${_hn_scope}/non-public"
+            # Drop any stale cache entry for a candidate that is no longer admitted.
+            nftban_rbl_cache_purge "$_hn_ip" >/dev/null 2>&1 || true
+        fi
+    done < <(host "$hostname" 2>/dev/null | grep -E "has (IPv6 )?address" | awk '{print $NF}')
     [[ $quiet -eq 0 ]] && echo ""
 
     # Dedup by address — same IP from multiple sources yields ONE RBL check.
