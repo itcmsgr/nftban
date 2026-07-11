@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/itcmsgr/nftban/internal/netutil"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
 )
 
@@ -67,8 +68,8 @@ type Backend struct {
 	nft *nftsync.NFTManager
 
 	// Cached tables and sets for performance
-	tableIPv4 *nftables.Table
-	tableIPv6 *nftables.Table
+	tableIPv4              *nftables.Table
+	tableIPv6              *nftables.Table
 	setBlacklistIPv4       *nftables.Set // interval set for feeds/geoban
 	setBlacklistIPv6       *nftables.Set
 	setBlacklistManualIPv4 *nftables.Set // hash set for manual/auto-detect (v1.33.0)
@@ -261,7 +262,7 @@ func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set,
 // BanRequest contains parameters for banning an IP
 type BanRequest struct {
 	IP      string
-	Timeout int    // seconds, 0 = permanent
+	Timeout int // seconds, 0 = permanent
 	Reason  string
 	Source  string
 }
@@ -302,6 +303,24 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 	// instead of relying on firewall rule order (the pre-v1.209.x ordering-only model).
 	// Range-aware, v4+v6. Fail-safe: a nil/empty resolver never blocks a legitimate ban.
 	// Exemption ≠ accept: this only prevents a DROP of protected IPs; it adds no allow.
+	// v1.220.2 F3: absolute address-class reject BEFORE the membership exemption.
+	// The exemption resolver is membership-based (whitelist/system/SSH IPs) and
+	// fail-open — so 0.0.0.0/::/multicast/loopback and other non-public classes could
+	// slip into a drop set if not in any list. This class guard is non-overridable for
+	// loopback/unspecified/multicast and default-reject for the other non-public
+	// classes, independent of exemption state. Design rule: parse -> absolute-class
+	// reject -> self/host-owned (exemption) reject -> apply.
+	if reject, reason := netutil.EnforcementClassReject(req.IP); reject {
+		b.stats.ExemptSkips++
+		log.Printf("[BAN] REFUSED (non-bannable address class: %s) ip=%s source=%s — non-public/non-routable address NOT added to blacklist", reason, req.IP, req.Source)
+		return &BanResult{
+			Success: true,
+			IP:      req.IP,
+			Exempt:  true,
+			Message: fmt.Sprintf("not banned: non-bannable address class (%s)", reason),
+		}, nil
+	}
+
 	if b.exempt != nil {
 		if ok, reason := b.exempt.IsExempt(req.IP); ok {
 			b.stats.ExemptSkips++
@@ -569,7 +588,16 @@ func (b *Backend) IsExempt(ip string) (bool, string) {
 // decision is unit-testable without netlink/root. IsExempt returns false for CIDR/range
 // and non-single-IP inputs, so feed/interval CIDR adds are naturally unaffected.
 func (b *Backend) exemptAddRejection(set, element string) (bool, string) {
-	if b.exempt == nil || !IsEnforcementSet(set) {
+	if !IsEnforcementSet(set) {
+		return false, ""
+	}
+	// v1.220.2 F3: absolute address-class reject on any enforcement-set add, before
+	// (and independent of) the fail-open membership exemption — loopback/unspecified/
+	// multicast + non-public classes can never enter a drop set via AddElement either.
+	if reject, reason := netutil.EnforcementClassReject(element); reject {
+		return true, "non-bannable-class:" + reason
+	}
+	if b.exempt == nil {
 		return false, ""
 	}
 	return b.exempt.IsExempt(element)

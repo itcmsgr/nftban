@@ -143,7 +143,7 @@ func TestPersistentOffenders_ConcurrentNoClobber(t *testing.T) {
 	want := make(map[string]bool, n)
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
-		ip := fmt.Sprintf("10.20.%d.%d", i/256, i%256)
+		ip := fmt.Sprintf("45.33.%d.%d", i/256, i%256)
 		want[ip] = true
 		wg.Add(1)
 		go func(i int, ip string) {
@@ -180,7 +180,7 @@ func TestPersistentOffenders_ConcurrentSameIPDedup(t *testing.T) {
 	}
 	confPath := filepath.Join(configDir, "blacklist.d", "30-persistent-offenders.conf")
 
-	const ip = "203.0.113.7"
+	const ip = "45.33.32.7"
 	var wg sync.WaitGroup
 	for i := 0; i < 30; i++ {
 		wg.Add(1)

@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/itcmsgr/nftban/internal/netutil"
 )
 
 // Result indicates the outcome of a persistence operation
@@ -84,6 +86,15 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 		if err != nil {
 			return "", "", fmt.Errorf("invalid IP address: %s", ip)
 		}
+	}
+
+	// v1.220.2 F2: never persist a non-public / absolute-non-bannable address into a
+	// blacklist file. Loopback/unspecified/multicast (and by-default RFC1918/ULA/
+	// link-local/CGNAT/doc/reserved) have no hostile-source meaning; persisting them
+	// lets the file->kernel full-sync re-materialize them into a drop set. Bare IPs
+	// only — public feed CIDRs pass (EnforcementClassReject returns false for CIDR).
+	if reject, reason := netutil.EnforcementClassReject(ip); reject {
+		return "", "", fmt.Errorf("refusing to persist non-public/non-bannable address %s to blacklist (%s)", ip, reason)
 	}
 
 	// Determine target file
