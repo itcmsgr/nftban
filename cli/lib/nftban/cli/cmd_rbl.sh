@@ -515,10 +515,14 @@ nftban_cmd_rbl_check() {
     # can never appear inside an IP address, so full IPv6 addresses survive intact
     # (the legacy ":"-split truncated 2a01:... to "2a01").
     if [[ -n "$ip" ]]; then
-        # Check specific IP
-        ips_to_check+=("$ip"$'\t')
+        # F-RBL-2: manual --ip must be classified before lookup — a non-public
+        # address never reaches a DNSBL, a stale cache read, or the counts.
+        if nftban_rbl_admit_candidate "$ip" "$quiet"; then
+            ips_to_check+=("$ip"$'\t')
+        fi
     else
-        # Auto-discover IPs (public routable self v4+v6 via the inventory authority)
+        # Auto-discover IPs (public routable self v4+v6 via the inventory authority —
+        # project_rbl is already public-only, so no re-admission needed here).
         if [[ "${NFTBAN_RBL_AUTO_DISCOVER_IPS:-YES}" == "YES" ]]; then
             while IFS= read -r discovered_ip; do
                 [[ -z "$discovered_ip" ]] && continue
@@ -526,16 +530,21 @@ nftban_cmd_rbl_check() {
             done < <(nftban_rbl_get_public_ips)
         fi
 
-        # Add operator critical IPs (IPv6-safe: get_critical_ips emits "<ip>\t<tag>")
+        # F-RBL-1: operator critical IPs (IPv6-safe "<ip>\t<tag>") — classify EACH at
+        # consumption (the unattended timer path); never trust config an older release
+        # accepted. Non-public entries are excluded (shown + stale cache purged).
         while IFS=$'\t' read -r critical_ip tag; do
             [[ -z "$critical_ip" ]] && continue
-            ips_to_check+=("$critical_ip"$'\t'"$tag")
+            if nftban_rbl_admit_candidate "$critical_ip" "$quiet"; then
+                ips_to_check+=("$critical_ip"$'\t'"$tag")
+            fi
         done < <(nftban_rbl_get_critical_ips)
     fi
 
     if [[ ${#ips_to_check[@]} -eq 0 ]]; then
-        echo "ERROR: No IPs to check" >&2
-        return 1
+        # Either no sources, or every candidate was non-public (rejected above).
+        [[ $quiet -eq 0 ]] && echo "No RBL-eligible (public) IPs to check." >&2
+        return 2
     fi
 
     # Check each IP
@@ -733,13 +742,27 @@ nftban_cmd_rbl_server() {
         all_ips+=("$_addr"$'\t'"self")
     done < <(nftban_rbl_get_public_ips)
 
-    # Hostname-resolution leg (behavior unchanged; PR-C refines loopback/public-DNS
-    # truth). TAB-delimited source; no colon encoding.
+    # Hostname-resolution leg. v1.220.1: hostname-derived addresses are a SELF-identity
+    # source and MUST pass the SAME shared classifier as self-interface IPs before
+    # entering the RBL candidate set (DISCOVER → CLASSIFY ONCE → PROJECT PER CONSUMER).
+    # Admit only public routable addresses; keep every resolved address VISIBLE with an
+    # explicit exclusion reason otherwise (e.g. a local resolver answering the hostname
+    # with 127.0.1.1 must be shown but NOT RBL-checked). Dedup vs self happens below.
     [[ $quiet -eq 0 ]] && echo "━━━ Hostname Resolution ━━━"
-    while IFS= read -r ip; do
-        all_ips+=("$ip"$'\t'"hostname")
-        [[ $quiet -eq 0 ]] && echo "  ✓ $hostname → $ip"
-    done < <(host "$hostname" 2>/dev/null | grep "has address" | awk '{print $NF}')
+    local _hn_ip _hn_scope
+    while IFS= read -r _hn_ip; do
+        [[ -z "$_hn_ip" ]] && continue
+        if nftban_hostaddr_is_public "$_hn_ip"; then
+            all_ips+=("$_hn_ip"$'\t'"hostname")
+            [[ $quiet -eq 0 ]] && echo "  ✓ $hostname → $_hn_ip"
+        else
+            _hn_scope="$(nftban_hostaddr_scope "$_hn_ip")"
+            [[ $quiet -eq 0 ]] && echo "  $hostname → $_hn_ip"
+            [[ $quiet -eq 0 ]] && echo "  ⚠ excluded from RBL checks: ${_hn_scope}/non-public"
+            # Drop any stale cache entry for a candidate that is no longer admitted.
+            nftban_rbl_cache_purge "$_hn_ip" >/dev/null 2>&1 || true
+        fi
+    done < <(host "$hostname" 2>/dev/null | grep -E "has (IPv6 )?address" | awk '{print $NF}')
     [[ $quiet -eq 0 ]] && echo ""
 
     # Dedup by address — same IP from multiple sources yields ONE RBL check.
@@ -1251,6 +1274,15 @@ EOF
                 return 1
             fi
 
+            # F-RBL-1 (validate at config boundary): RBL/DNSBL reputation applies only
+            # to public routable addresses — refuse a non-public critical IP at add time.
+            if declare -F nftban_hostaddr_is_public >/dev/null 2>&1 && ! nftban_hostaddr_is_public "$ip"; then
+                local _cs="non-public"
+                declare -F nftban_hostaddr_scope >/dev/null 2>&1 && _cs="$(nftban_hostaddr_scope "$ip" 2>/dev/null || echo non-public)"
+                echo "ERROR: refusing non-public critical IP: $ip (${_cs}) — DNSBL reputation applies only to public routable addresses." >&2
+                return 1
+            fi
+
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (modify configuration)" >&2
@@ -1452,10 +1484,18 @@ nftban_cmd_rbl_watchlist() {
             # Check each watchlist entry
             while IFS='|' read -r ip description tags notify_email; do
                 [[ -z "$ip" ]] && continue
+
+                echo "─────────────────────────────────────────────────────────────"
+                # F-RBL-3: classify every watchlist entry before lookup. A non-public
+                # entry stays inspectable (config is NOT deleted) but is never RBL-checked.
+                if ! nftban_rbl_admit_candidate "$ip" 0; then
+                    echo "Watchlist entry: ${ip}${description:+ — $description} — retained; not RBL-checked (non-public)"
+                    echo ""
+                    continue
+                fi
                 # v1.19.20 FIX
                 ((total_checked++)) || true
 
-                echo "─────────────────────────────────────────────────────────────"
                 echo "Checking: $ip"
                 [[ -n "$description" ]] && echo "Description: $description"
                 [[ -n "$tags" ]] && echo "Tags: $tags"
