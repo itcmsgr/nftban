@@ -27,8 +27,14 @@ set -Eeuo pipefail
 set +eE
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO=$(cd "$SCRIPT_DIR/../../../.." && pwd)
-export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban"
+# Resolve lib root for BOTH the repo tree (cli/lib/nftban/tests) and an installed FHS
+# tree (/usr/lib/nftban/tests): tests/ and core/ are always siblings.
+if [[ -f "$SCRIPT_DIR/../core/nftban_hostaddr.sh" ]]; then
+    NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)/cli/lib/nftban"
+fi
+export NFTBAN_LIB_DIR
 HOSTADDR="$NFTBAN_LIB_DIR/core/nftban_hostaddr.sh"
 RBL_CORE="$NFTBAN_LIB_DIR/core/nftban_rbl.sh"
 CMD_RBL="$NFTBAN_LIB_DIR/cli/cmd_rbl.sh"

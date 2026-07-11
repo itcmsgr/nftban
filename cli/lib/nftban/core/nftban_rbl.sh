@@ -370,6 +370,49 @@ nftban_rbl_watchlist_list() {
 # PARALLEL DNS FUNCTIONS
 # =============================================================================
 
+# =============================================================================
+# v1.220.1: NON-PUBLIC ADDRESS ADMISSION (classify once; RBL is public-only)
+# =============================================================================
+# RBL/DNSBL reputation applies ONLY to public routable addresses. Every RBL
+# candidate source (self-interface, hostname, critical/configured, manual --ip,
+# watchlist, cache) MUST pass this admission before it can reach a DNSBL query,
+# the cache, or the listed/clean/degraded counts. Loopback/private/ULA/link-local/
+# CGNAT/unspecified/multicast/documentation/reserved/invalid are rejected.
+
+nftban_rbl_admit_candidate() {
+    # Args: $1 = IP · $2 = quiet (1 = suppress the exclusion line)
+    # Returns 0 if admissible (public); 1 if rejected. On reject: renders an explicit
+    # exclusion reason (unless quiet) and purges any stale cache entry.
+    local ip="$1" quiet="${2:-0}"
+    if declare -F nftban_hostaddr_is_public >/dev/null 2>&1; then
+        nftban_hostaddr_is_public "$ip" && return 0
+    else
+        # Authority unavailable — fall back to the RBL classifier (defence in depth).
+        nftban_rbl_is_public_ip "$ip" && return 0
+    fi
+    local _scope="non-public"
+    declare -F nftban_hostaddr_scope >/dev/null 2>&1 && _scope="$(nftban_hostaddr_scope "$ip" 2>/dev/null || echo non-public)"
+    [[ "$quiet" -eq 0 ]] && echo "  ⚠ excluded from RBL checks: ${ip} (${_scope}/non-public — external reputation N/A)"
+    nftban_rbl_cache_purge "$ip" >/dev/null 2>&1 || true
+    return 1
+}
+
+_nftban_rbl_emit_not_eligible() {
+    # Emit a NON-public backstop result: never clean, never listed. Matches the
+    # degraded regex so any legacy caller treats it as not-verified (not clean).
+    local ip="$1" format="${2:-text}"
+    if [[ "$format" == "json" ]]; then
+        printf '{\n  "ip": %s,\n  "results": [],\n  "summary": { "listed": 0, "clean": 0, "timeout": 0, "degraded": 1, "not_eligible": 1, "reason": "non-public" }\n}\n' "$(_nftban_rbl_json_str "$ip")"
+    else
+        echo "🚫 NOT_ELIGIBLE (non-public — no external reputation): $ip"
+        echo "─────────────────────────────────────────────────────────"
+        echo "Summary:"
+        echo "  Listed: 0"
+        echo "  Clean: 0"
+        echo "  Degraded total: 1 (non-public — not RBL-eligible)"
+    fi
+}
+
 nftban_rbl_check_ip_parallel() {
     # Check single IP against all RBL providers using parallel DNS queries
     # Args: $1 = IP address
@@ -379,6 +422,14 @@ nftban_rbl_check_ip_parallel() {
 
     local ip="$1"
     local format="${2:-text}"
+
+    # v1.220.1 F-RBL-0 (defence in depth): never query a DNSBL for a non-public
+    # address, whatever the caller. Admission sites exclude these upstream; this is
+    # the last-resort choke point so no current/future caller can leak one through.
+    if declare -F nftban_hostaddr_is_public >/dev/null 2>&1 && ! nftban_hostaddr_is_public "$ip"; then
+        _nftban_rbl_emit_not_eligible "$ip" "$format"
+        return 2
+    fi
 
     # Run entire parallel block in subshell to scope the EXIT trap (P0.3 fix)
     (
@@ -694,6 +745,13 @@ nftban_rbl_check_ip() {
 
     local ip="$1"
     local format="${2:-text}"
+
+    # v1.220.1 F-RBL-0 (defence in depth): never query a DNSBL for a non-public address.
+    if declare -F nftban_hostaddr_is_public >/dev/null 2>&1 && ! nftban_hostaddr_is_public "$ip"; then
+        _nftban_rbl_emit_not_eligible "$ip" "$format"
+        return 2
+    fi
+
     local reversed_ip
     # shellcheck disable=SC2034  # Reserved for detailed RBL results
     local results=()
