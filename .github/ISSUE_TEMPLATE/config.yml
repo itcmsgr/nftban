@@ -8,4 +8,4 @@ contact_links:
     about: "Questions, feedback, proposals, and community discussions"
   - name: "🔐 Report a security vulnerability (private)"
     url: "https://github.com/itcmsgr/nftban/security/advisories/new"
-    about: "Report privately via GitHub Security Advisory (preferred). Fallback: email security@itcms.gr. Do NOT open a public issue, discussion, or PR for security matters — see SECURITY.md."
+    about: "Report privately via GitHub Security Advisory (preferred). Fallback: email security@nftban.com. Do NOT open a public issue, discussion, or PR for security matters — see SECURITY.md."

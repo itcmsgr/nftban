@@ -86,7 +86,7 @@
 **By submitting this pull request, I confirm that:**
 1. My contribution is made under the MPL-2.0 license
 2. I have signed off my commits with the DCO (Developer Certificate of Origin)
-3. I have read and agree to follow the [Code of Conduct](../CODE_OF_CONDUCT.md)
+3. I have read and agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md)
 4. I understand this may be reviewed, modified, or rejected
 
 **Thank you for contributing to NFTBan! 🎉**
