@@ -31,6 +31,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/internal/geoban"
 	"github.com/itcmsgr/nftban/internal/metrics"
+	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/opqueue"
 	"github.com/itcmsgr/nftban/internal/ports"
 	"github.com/itcmsgr/nftban/internal/runtime"
@@ -212,12 +213,34 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to get/create blacklist_manual_ipv6 set: " + err.Error()}
 	}
+	// v1.220.2 F1: the file->kernel full-sync previously inserted every blacklist.d
+	// entry via raw nft.AddIPWithTimeout, bypassing the never-ban invariant enforced on
+	// backend.Ban/AddElement. Apply the SAME guards here so a persisted loopback/self/
+	// non-public address (e.g. from an older release, or a hand-edited blacklist.d) can
+	// never be re-materialized into a drop set: absolute address-class reject, then the
+	// membership exemption (whitelist/system/live-SSH/host-owned).
 	for _, ip := range blacklistIPv4Single {
+		if reject, reason := netutil.EnforcementClassReject(ip); reject {
+			log.Printf("[SYNC] SKIP blacklist.d IPv4 %s -> manual set: non-bannable class (%s)", ip, reason)
+			continue
+		}
+		if ok, reason := d.backend.IsExempt(ip); ok {
+			log.Printf("[SYNC] SKIP blacklist.d IPv4 %s -> manual set: never-ban exempt (%s)", ip, reason)
+			continue
+		}
 		if err := nft.AddIPWithTimeout(manualV4Set, ip, 0); err != nil {
 			log.Printf("[SYNC] Warning: blacklist.d IPv4 %s -> manual hash set: %v", ip, err)
 		}
 	}
 	for _, ip := range blacklistIPv6Single {
+		if reject, reason := netutil.EnforcementClassReject(ip); reject {
+			log.Printf("[SYNC] SKIP blacklist.d IPv6 %s -> manual set: non-bannable class (%s)", ip, reason)
+			continue
+		}
+		if ok, reason := d.backend.IsExempt(ip); ok {
+			log.Printf("[SYNC] SKIP blacklist.d IPv6 %s -> manual set: never-ban exempt (%s)", ip, reason)
+			continue
+		}
 		if err := nft.AddIPWithTimeout(manualV6Set, ip, 0); err != nil {
 			log.Printf("[SYNC] Warning: blacklist.d IPv6 %s -> manual hash set: %v", ip, err)
 		}
@@ -279,88 +302,88 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			log.Printf("[SYNC] Memory pressure %s: skipping feeds", safety.GetMemoryPressureLevel())
 			feedsSkipped = true
 		} else {
-		_, _, dataDir, _ := getDaemonPaths()
-		feedsDir := dataDir + "/feeds"
+			_, _, dataDir, _ := getDaemonPaths()
+			feedsDir := dataDir + "/feeds"
 
-		// Check if feeds directory exists and has .txt files
-		if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
-		// Load all feeds
-		ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
-		if feedErr == nil {
-			// Pre-allocate slices with exact capacity to avoid reallocation overhead
-			// With 15,000+ CIDRs, this prevents ~14 slice doublings
-			ipv4CIDRs := make([]string, 0, len(ipv4Set)+len(ipv4CIDRSet))
-			ipv6CIDRs := make([]string, 0, len(ipv6Set)+len(ipv6CIDRSet))
-			for ip := range ipv4Set {
-				ipv4CIDRs = append(ipv4CIDRs, ip+"/32")
-			}
-			for cidr := range ipv4CIDRSet {
-				ipv4CIDRs = append(ipv4CIDRs, cidr)
-			}
-			for ip := range ipv6Set {
-				ipv6CIDRs = append(ipv6CIDRs, ip+"/128")
-			}
-			for cidr := range ipv6CIDRSet {
-				ipv6CIDRs = append(ipv6CIDRs, cidr)
-			}
+			// Check if feeds directory exists and has .txt files
+			if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
+				// Load all feeds
+				ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
+				if feedErr == nil {
+					// Pre-allocate slices with exact capacity to avoid reallocation overhead
+					// With 15,000+ CIDRs, this prevents ~14 slice doublings
+					ipv4CIDRs := make([]string, 0, len(ipv4Set)+len(ipv4CIDRSet))
+					ipv6CIDRs := make([]string, 0, len(ipv6Set)+len(ipv6CIDRSet))
+					for ip := range ipv4Set {
+						ipv4CIDRs = append(ipv4CIDRs, ip+"/32")
+					}
+					for cidr := range ipv4CIDRSet {
+						ipv4CIDRs = append(ipv4CIDRs, cidr)
+					}
+					for ip := range ipv6Set {
+						ipv6CIDRs = append(ipv6CIDRs, ip+"/128")
+					}
+					for cidr := range ipv6CIDRSet {
+						ipv6CIDRs = append(ipv6CIDRs, cidr)
+					}
 
-			// v1.35.0: Global feed entry cap — reject feeds that would exceed limit
-			const maxFeedEntries = 1_000_000 // Safety cap: 1M total CIDRs
-			totalFeedCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
-			if totalFeedCIDRs > maxFeedEntries {
-				log.Printf("[SYNC] WARNING: Feed total %d exceeds cap %d — truncating to cap",
-					totalFeedCIDRs, maxFeedEntries)
-				if len(ipv4CIDRs) > maxFeedEntries {
-					ipv4CIDRs = ipv4CIDRs[:maxFeedEntries]
+					// v1.35.0: Global feed entry cap — reject feeds that would exceed limit
+					const maxFeedEntries = 1_000_000 // Safety cap: 1M total CIDRs
+					totalFeedCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
+					if totalFeedCIDRs > maxFeedEntries {
+						log.Printf("[SYNC] WARNING: Feed total %d exceeds cap %d — truncating to cap",
+							totalFeedCIDRs, maxFeedEntries)
+						if len(ipv4CIDRs) > maxFeedEntries {
+							ipv4CIDRs = ipv4CIDRs[:maxFeedEntries]
+						}
+						remaining := maxFeedEntries - len(ipv4CIDRs)
+						if len(ipv6CIDRs) > remaining {
+							ipv6CIDRs = ipv6CIDRs[:remaining]
+						}
+						totalFeedCIDRs = len(ipv4CIDRs) + len(ipv6CIDRs)
+					}
+
+					// Memory safety check before loading feeds into nftables
+					// CIDR merging can use 3x memory temporarily
+					const bytesPerCIDR = 300 // conservative estimate
+					estimatedFeedBytes := int64(totalFeedCIDRs) * bytesPerCIDR
+					if !safety.CanAllocate(estimatedFeedBytes) {
+						log.Printf("[SYNC] Warning: Skipping feeds - insufficient memory for %d CIDRs (need ~%s)",
+							totalFeedCIDRs, safety.FormatBytes(estimatedFeedBytes))
+						// Track protection trigger for visibility
+						feedsSkipped = true
+						feedsCIDRCount = totalFeedCIDRs
+						feedsMemNeeded = estimatedFeedBytes
+						// Skip feeds but continue with sync - don't fail entirely
+					} else {
+						// INC3: queue feed CIDRs for the unified canonical replace (feeds + geoban +
+						// blacklist.d CIDRs in ONE flush-first replace; replaceSetElementsViaFile is
+						// the sole writer of the shared blacklist_ipv4/_ipv6 interval sets).
+						if len(ipv4CIDRs) > 0 {
+							unifiedBlacklistV4 = append(unifiedBlacklistV4, ipv4CIDRs...)
+							feedsIPv4Loaded = len(ipv4CIDRs)
+							log.Printf("[SYNC] Feeds IPv4: %d input CIDRs queued for unified replace", len(ipv4CIDRs))
+						}
+
+						// IPv6 feeds → unified replace
+						if len(ipv6CIDRs) > 0 {
+							unifiedBlacklistV6 = append(unifiedBlacklistV6, ipv6CIDRs...)
+							feedsIPv6Loaded = len(ipv6CIDRs)
+							log.Printf("[SYNC] Feeds IPv6: %d input CIDRs queued for unified replace", len(ipv6CIDRs))
+						}
+						// Memory cleanup: clear CIDR slices after loading to nftables
+						// These slices can hold 100-200MB that's no longer needed
+						ipv4CIDRs = nil
+						ipv6CIDRs = nil
+					} // end else CanAllocate
+					// Memory cleanup: clear feed maps to allow garbage collection
+					// These maps can hold 400-800MB and are no longer needed after conversion
+					ipv4Set = nil
+					ipv6Set = nil
+					ipv4CIDRSet = nil
+					ipv6CIDRSet = nil
 				}
-				remaining := maxFeedEntries - len(ipv4CIDRs)
-				if len(ipv6CIDRs) > remaining {
-					ipv6CIDRs = ipv6CIDRs[:remaining]
-				}
-				totalFeedCIDRs = len(ipv4CIDRs) + len(ipv6CIDRs)
 			}
-
-			// Memory safety check before loading feeds into nftables
-			// CIDR merging can use 3x memory temporarily
-			const bytesPerCIDR = 300 // conservative estimate
-			estimatedFeedBytes := int64(totalFeedCIDRs) * bytesPerCIDR
-			if !safety.CanAllocate(estimatedFeedBytes) {
-				log.Printf("[SYNC] Warning: Skipping feeds - insufficient memory for %d CIDRs (need ~%s)",
-					totalFeedCIDRs, safety.FormatBytes(estimatedFeedBytes))
-				// Track protection trigger for visibility
-				feedsSkipped = true
-				feedsCIDRCount = totalFeedCIDRs
-				feedsMemNeeded = estimatedFeedBytes
-				// Skip feeds but continue with sync - don't fail entirely
-			} else {
-			// INC3: queue feed CIDRs for the unified canonical replace (feeds + geoban +
-			// blacklist.d CIDRs in ONE flush-first replace; replaceSetElementsViaFile is
-			// the sole writer of the shared blacklist_ipv4/_ipv6 interval sets).
-			if len(ipv4CIDRs) > 0 {
-				unifiedBlacklistV4 = append(unifiedBlacklistV4, ipv4CIDRs...)
-				feedsIPv4Loaded = len(ipv4CIDRs)
-				log.Printf("[SYNC] Feeds IPv4: %d input CIDRs queued for unified replace", len(ipv4CIDRs))
-			}
-
-			// IPv6 feeds → unified replace
-			if len(ipv6CIDRs) > 0 {
-				unifiedBlacklistV6 = append(unifiedBlacklistV6, ipv6CIDRs...)
-				feedsIPv6Loaded = len(ipv6CIDRs)
-				log.Printf("[SYNC] Feeds IPv6: %d input CIDRs queued for unified replace", len(ipv6CIDRs))
-			}
-			// Memory cleanup: clear CIDR slices after loading to nftables
-			// These slices can hold 100-200MB that's no longer needed
-			ipv4CIDRs = nil
-			ipv6CIDRs = nil
-			} // end else CanAllocate
-			// Memory cleanup: clear feed maps to allow garbage collection
-			// These maps can hold 400-800MB and are no longer needed after conversion
-			ipv4Set = nil
-			ipv6Set = nil
-			ipv4CIDRSet = nil
-			ipv6CIDRSet = nil
-		}
-		}
 		} // end else ShouldSkipFeeds
 	} // end if !quickMode (feeds)
 
@@ -375,61 +398,61 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			log.Printf("[SYNC] Memory pressure %s: skipping geoban", safety.GetMemoryPressureLevel())
 			geobanSkipped = true
 		} else {
-		geobanDir := configDir + "/geoban.d"
+			geobanDir := configDir + "/geoban.d"
 
-		// Check if geoban directory exists and has ban files (50-ban-*.conf)
-		if entries, err := os.ReadDir(geobanDir); err == nil {
-		hasBanFiles := false
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "50-ban-") && strings.HasSuffix(e.Name(), ".conf") {
-				hasBanFiles = true
-				break
-			}
-		}
-
-		if hasBanFiles {
-			// Load all geoban countries
-			geobanData, geoErr := geoban.Build(geobanDir, nil) // nil = load all
-			if geoErr == nil && geobanData != nil {
-				// Memory safety check before loading geoban into nftables
-				// Geoban can have 20K+ CIDRs per country (CN, RU, etc.)
-				const bytesPerCIDR = 300 // conservative estimate
-				totalGeoCIDRs := len(geobanData.IPv4) + len(geobanData.IPv6)
-				estimatedGeoBytes := int64(totalGeoCIDRs) * bytesPerCIDR
-				if !safety.CanAllocate(estimatedGeoBytes) {
-					log.Printf("[SYNC] Warning: Skipping geoban - insufficient memory for %d CIDRs (need ~%s)",
-						totalGeoCIDRs, safety.FormatBytes(estimatedGeoBytes))
-					// Track protection trigger for visibility
-					geobanSkipped = true
-					geobanCIDRCount = totalGeoCIDRs
-					geobanMemNeeded = estimatedGeoBytes
-					// Skip geoban but continue with sync - don't fail entirely
-				} else {
-				// INC3: queue geoban CIDRs for the unified canonical replace (feeds +
-				// geoban + blacklist.d CIDRs in ONE flush-first replace — closes the
-				// pre-existing feed-vs-geoban clobber where the second replace wiped the
-				// first). All ban sources share blacklist_ipv4/_ipv6.
-				if len(geobanData.IPv4) > 0 {
-					unifiedBlacklistV4 = append(unifiedBlacklistV4, geobanData.IPv4...)
-					geobanIPv4Loaded = len(geobanData.IPv4)
-					log.Printf("[SYNC] Geoban IPv4: %d input CIDRs queued for unified replace", len(geobanData.IPv4))
+			// Check if geoban directory exists and has ban files (50-ban-*.conf)
+			if entries, err := os.ReadDir(geobanDir); err == nil {
+				hasBanFiles := false
+				for _, e := range entries {
+					if strings.HasPrefix(e.Name(), "50-ban-") && strings.HasSuffix(e.Name(), ".conf") {
+						hasBanFiles = true
+						break
+					}
 				}
 
-				// IPv6 geoban → unified replace
-				if len(geobanData.IPv6) > 0 {
-					unifiedBlacklistV6 = append(unifiedBlacklistV6, geobanData.IPv6...)
-					geobanIPv6Loaded = len(geobanData.IPv6)
-					log.Printf("[SYNC] Geoban IPv6: %d input CIDRs queued for unified replace", len(geobanData.IPv6))
+				if hasBanFiles {
+					// Load all geoban countries
+					geobanData, geoErr := geoban.Build(geobanDir, nil) // nil = load all
+					if geoErr == nil && geobanData != nil {
+						// Memory safety check before loading geoban into nftables
+						// Geoban can have 20K+ CIDRs per country (CN, RU, etc.)
+						const bytesPerCIDR = 300 // conservative estimate
+						totalGeoCIDRs := len(geobanData.IPv4) + len(geobanData.IPv6)
+						estimatedGeoBytes := int64(totalGeoCIDRs) * bytesPerCIDR
+						if !safety.CanAllocate(estimatedGeoBytes) {
+							log.Printf("[SYNC] Warning: Skipping geoban - insufficient memory for %d CIDRs (need ~%s)",
+								totalGeoCIDRs, safety.FormatBytes(estimatedGeoBytes))
+							// Track protection trigger for visibility
+							geobanSkipped = true
+							geobanCIDRCount = totalGeoCIDRs
+							geobanMemNeeded = estimatedGeoBytes
+							// Skip geoban but continue with sync - don't fail entirely
+						} else {
+							// INC3: queue geoban CIDRs for the unified canonical replace (feeds +
+							// geoban + blacklist.d CIDRs in ONE flush-first replace — closes the
+							// pre-existing feed-vs-geoban clobber where the second replace wiped the
+							// first). All ban sources share blacklist_ipv4/_ipv6.
+							if len(geobanData.IPv4) > 0 {
+								unifiedBlacklistV4 = append(unifiedBlacklistV4, geobanData.IPv4...)
+								geobanIPv4Loaded = len(geobanData.IPv4)
+								log.Printf("[SYNC] Geoban IPv4: %d input CIDRs queued for unified replace", len(geobanData.IPv4))
+							}
+
+							// IPv6 geoban → unified replace
+							if len(geobanData.IPv6) > 0 {
+								unifiedBlacklistV6 = append(unifiedBlacklistV6, geobanData.IPv6...)
+								geobanIPv6Loaded = len(geobanData.IPv6)
+								log.Printf("[SYNC] Geoban IPv6: %d input CIDRs queued for unified replace", len(geobanData.IPv6))
+							}
+							// Memory cleanup: clear geoban data to allow garbage collection
+							// Geoban can hold 200-400MB that's no longer needed after loading
+							geobanData.IPv4 = nil
+							geobanData.IPv6 = nil
+							geobanData = nil
+						} // end else CanAllocate
+					}
 				}
-				// Memory cleanup: clear geoban data to allow garbage collection
-				// Geoban can hold 200-400MB that's no longer needed after loading
-				geobanData.IPv4 = nil
-				geobanData.IPv6 = nil
-				geobanData = nil
-				} // end else CanAllocate
 			}
-		}
-		}
 		} // end else ShouldSkipGeoban
 	} // end if !quickMode (geoban)
 
