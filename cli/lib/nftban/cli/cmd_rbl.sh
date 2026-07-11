@@ -94,10 +94,13 @@ fi
 nftban_cmd_rbl_help() {
     # Show RBL command help
 
+    # v1.220.3 (BUG-RBL-HELP-STALE-VERSION): render the real running version in
+    # the banner instead of the frozen literal "v1.0.0". The body stays a quoted
+    # heredoc so ${NFTBAN_LOG_DIR} etc. remain literal documentation.
+    printf '╔══════════════════════════════════════════════════════════════════╗\n'
+    printf '║%-66s║\n' "         NFTBan v${NFTBAN_VERSION:-?} - RBL Monitoring"
+    printf '╚══════════════════════════════════════════════════════════════════╝\n'
     cat <<'EOF'
-╔══════════════════════════════════════════════════════════════════╗
-║         NFTBan v1.0.0 - RBL Monitoring                          ║
-╚══════════════════════════════════════════════════════════════════╝
 
 USAGE:
   nftban rbl <subcommand> [options]
@@ -191,8 +194,9 @@ CACHE LOCATION:
   ${NFTBAN_LOG_DIR}/rbl/{IP}.cache       Cached results per IP
 
 PERFORMANCE:
-  Parallel DNS queries (default): ~10-15 seconds for 41 RBLs
-  Sequential DNS queries: ~2-3 minutes for 41 RBLs
+  Parallel DNS queries (default): seconds for the configured providers
+  Sequential DNS queries: minutes for the configured providers
+  (see `nftban rbl list` for the effective provider set)
 
 For more information: https://nftban.com/docs/rbl
 EOF

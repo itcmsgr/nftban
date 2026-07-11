@@ -104,7 +104,7 @@ _nftban() {
     local polkit_cmds="validate static runtime status groups rules test help"
     local pro_cmds="status enroll disable token inventory license-check community help"
     local queue_cmds="status list process dlq metrics help"
-    local rbl_cmds="check server status list enable disable cache alert critical watchlist help"
+    local rbl_cmds="check server status list enable disable cache alert critical watchlist config stats test help"
     local support_cmds="--network help"
     local suricata_cmds="install enable disable status eve rules profile scan services sid category local custom recommend iface help"
     local update_cmds="check status github git local force repair rollback list history auto preflight verify auto-apply help"
