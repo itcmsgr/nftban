@@ -68,7 +68,38 @@ readonly NFTBAN_VERSION_PATCH
 
 # Version details
 readonly NFTBAN_VERSION_NAME="Linux Firewall & IPS for nftables"
-readonly NFTBAN_VERSION_DATE="2026-03-18"
+
+# Release date resolved from a per-release VERSION_DATE artifact — NEVER a frozen
+# compile-time constant (the old hardcoded March-2026 date went stale on every
+# release). Resolution order (mirrors _nftban_read_version's paths):
+#   1. packaged /usr/lib/nftban/VERSION_DATE (authoritative on installed hosts)
+#   2. source-tree VERSION_DATE (running from a checkout)
+#   3. explicit "unknown" fallback — ONLY when neither exists or the artifact is
+#      not a strict ISO YYYY-MM-DD date.
+_nftban_read_version_date() {
+    local date_file="" path d
+    for path in \
+        "/usr/lib/nftban/VERSION_DATE" \
+        "${BASH_SOURCE[0]%/*}/../../../../../VERSION_DATE" \
+        "${NFTBAN_ROOT:-}/VERSION_DATE" \
+        "$PWD/VERSION_DATE"; do
+        if [[ -f "$path" ]]; then
+            date_file="$path"
+            break
+        fi
+    done
+    if [[ -n "$date_file" && -f "$date_file" ]]; then
+        d=$(tr -d '[:space:]' < "$date_file" 2>/dev/null)
+        # strict ISO date only; anything else falls through to the fallback
+        if [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            printf '%s' "$d"
+            return 0
+        fi
+    fi
+    printf 'unknown'
+}
+NFTBAN_VERSION_DATE="$(_nftban_read_version_date)"
+readonly NFTBAN_VERSION_DATE
 
 # v1.151 BUG-VERSION-BUILD-DATE-RUNTIME: "Build Date" must reflect the PACKAGE
 # build, not the current clock. The old `$(date)` here made `nftban version`
@@ -76,7 +107,9 @@ readonly NFTBAN_VERSION_DATE="2026-03-18"
 # tracking). Resolution order — NEVER the current clock:
 #   1. a build-written stamp file (forward-compat; future packaging may write it)
 #   2. the package manager's recorded BUILD time (rpm) — real on RPM hosts
-#   3. "unknown" — honest fallback (source builds / DEB without a stamp)
+#   3. "" (empty) — no authoritative build metadata. The caller OMITS the
+#      "Build Date" field entirely rather than printing "unknown" (v1.220.x:
+#      honest omission under reproducible-build, per the release-date lane).
 _nftban_resolve_build_date() {
     local _stamp="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/.build_date" _d _t
     if [[ -r "$_stamp" ]]; then
@@ -90,7 +123,7 @@ _nftban_resolve_build_date() {
             [[ -n "$_d" ]] && { printf '%s' "$_d"; return 0; }
         fi
     fi
-    printf 'unknown'
+    printf ''
 }
 NFTBAN_BUILD_DATE="$(_nftban_resolve_build_date)"
 readonly NFTBAN_BUILD_DATE
@@ -196,7 +229,11 @@ nftban_version_info() {
 Version:        ${NFTBAN_VERSION}
 Name:           ${NFTBAN_VERSION_NAME}
 Release Date:   ${NFTBAN_VERSION_DATE}
-Build Date:     ${NFTBAN_BUILD_DATE}
+EOF
+    # Build Date: render ONLY when authoritative build metadata exists; omit the
+    # field entirely otherwise (no "unknown", no invented timestamp).
+    [[ -n "${NFTBAN_BUILD_DATE}" ]] && printf 'Build Date:     %s\n' "${NFTBAN_BUILD_DATE}"
+    cat <<EOF
 
 Components:
   CLI:          ${NFTBAN_CLI_VERSION}
