@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.1] - 2026-07-11 — RBL non-public address admission hotfix (corrective for the held v1.220.0 rollout)
+
+**Corrective hotfix for the held v1.220.0 fleet rollout. Shell/core/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · RBL observe-only (no bans/nft writes, not enabled).**
+
+v1.220.0 published + package-native lab2/lab4 PASS + canary monitor/dns1/srv1 3/3, but canary exposed a **hostname-derived loopback RBL-admission defect**: `host <fqdn>` returning the local `127.0.1.1` was RBL-queried and `Total IPs to check` was inflated. A read-only forensic audit (`NFTBAN_NONPUBLIC_ADDRESS_ACTION_POLICY_AUDIT.md`) then proved the hostname leg was only one of several RBL sources that admit non-public addresses. **DNSBL reputation applies only to public routable addresses; every RBL candidate source must now classify via the shared host-address authority before a DNSBL query, a cache read, or the listed/clean/degraded counts.** Invariant: `read → normalize → classify → reject non-public → deduplicate → cache-policy → DNSBL`.
+
+- **F-RBL-HOSTNAME** — `rbl server check` hostname answers (A + AAAA) are classified; only public admitted; rejected answers shown with reason; deduped vs self; rejected-address cache purged; `Total IPs to check` counts only admitted unique public.
+- **F-RBL-0** (defence in depth) — `nftban_rbl_check_ip` **and** `nftban_rbl_check_ip_parallel` reject a non-public IP up front (`NOT_ELIGIBLE`, never clean/listed) before any provider load / DNSBL query, so no current or future caller can leak one through.
+- **F-RBL-1** — operator critical IPs are classified at consumption on the **unattended scheduled timer** (`rbl check --quiet --alert`) **and** refused at the config boundary (`rbl critical add`); a `NFTBAN_RBL_CRITICAL_IPS="127.0.0.1|mail"` is never queried, and config an older release accepted is not trusted.
+- **F-RBL-2** — `rbl check --ip <non-public>` is excluded with an explicit reason, returns a non-success rc, performs no DNSBL query, and reads no stale cache.
+- **F-RBL-3** — RBL watchlist entries are classified; a non-public entry stays inspectable (config is **not** deleted) but is never RBL-checked.
+- **F-RBL-4** — stale non-public cache (incl. a v1.220.0-created `127.0.1.1.cache`) is purged and never served; non-public never reaches the cache read because admission excludes it first.
+
+New shared shell helpers `nftban_rbl_admit_candidate` (classify → admit/reject + purge) and `_nftban_rbl_emit_not_eligible` (backstop result). Public IPv4/IPv6 behavior and the degraded/listed/clean rc contract are unchanged for eligible addresses. Commits `60172acd` (hostname) + `6d9e4306` (F-RBL-0/1/2/3/4) + `29fc32ee` (test portability) on PR [#1076](https://github.com/itcmsgr/nftban/pull/1076) `a08aea53`. Test `rbl_nonpublic_admission_v220_1_test.sh` 13/13 + `rbl_hostname_admission_v220_1` 16/16; regressions green (`rbl_shared_address_authority_v220_0` 31, `rbl_seven_state_v206` 19, `rbl_false_clean_v150`, `rbl_enable_readiness`). Also test-only/doc: installed-layout test-path fix; `rbl_seven_state_v206` IPv6 fixtures moved off the documentation range (now correctly rejected) + case-block made EL9 bash 5.1 parseable (a pre-existing defect); the v1.220.0 CHANGELOG count corrected 32/32 → 31/31.
+
+**v1.220.1 becomes the required fleet baseline; v1.220.0 + v1.220.1 close as ONE corrective rollout train** (v1.220.0 publication/canary exposed the defect; v1.220.1 is the fleet-approved baseline). Preserve each host's pre-existing RBL state (monitor remains the pre-existing RBL-enabled testbed; no RBL enablement elsewhere).
+
+**Explicit non-goals (deferred, do NOT bundle):** the enforcement-integrity hotfix (`OPEN_NONPUBLIC_ADDRESS_ENFORCEMENT_INTEGRITY_HOTFIX` — blacklist persistence / full-sync / exemption class-guard; Go/daemon; separate ladder, after this train); PR-C (hostname/PTR/status-UX/watchlist wording); consumer consolidation; detector-source parity + whitelist/report hardening (all registered).
+
 ## [v1.220.0] - 2026-07-10 — Shared host-address inventory authority + IPv6-safe RBL truth (PR-B)
 
 **RBL truth train — PR-B. Shell/core/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · RBL stays observe-only (no bans/nft writes, not enabled).**
