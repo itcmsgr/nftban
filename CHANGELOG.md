@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.3] - 2026-07-11 — RBL CLI correctness cluster (blank provider, empty-watchlist crash, help/completion truth)
+
+**Shell/completion only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only (no bans/nft writes, NOT enabled) · `rbls.conf` provider data unchanged.**
+
+Four self-contained RBL CLI correctness defects surfaced from live monitor output. Pure display/parse/UX fixes — no scan behavior, no provider-set change.
+
+- **B1 — blank/invalid provider admission** (`core/nftban_rbl.sh` `nftban_rbl_load_providers`): a numbered empty provider (`1.`) appeared in `rbl list` and as a phantom zero-domain query. Root cause: `"${enabled_rbls[@]:-}"` on an unset custom-enable array expands to one empty string, which was appended and floated to the top by `sort -u`. The loader now trims whitespace, skips blank/comment rows, **rejects malformed (dot-less) DNS names — reporting the source file and line to stderr**, de-duplicates, and guards the empty-array element. The stock `rbls.conf` now loads its true **23** unique providers (was a phantom 24).
+- **B3 — empty watchlist false error** (`core/nftban_rbl.sh` `nftban_rbl_watchlist_get`): `nftban rbl watchlist` printed a spurious `ERROR: Script failed … grep '|' Exit 1` before the real "(No IPs in watchlist)". The trailing `grep '|'` returns 1 when there are no data rows, tripping the ERR trap. No match is not an error → the function now returns rc 0 with no output; non-empty watchlist behavior is unchanged.
+- **B4a — frozen help version + stale count** (`cli/cmd_rbl.sh` `nftban_cmd_rbl_help`): the banner rendered the frozen literal `NFTBan v1.0.0`; it now renders the running `${NFTBAN_VERSION}` (body stays a quoted heredoc so `${NFTBAN_LOG_DIR}` etc. remain literal documentation). The stale `41 RBLs` performance count was removed.
+- **B4b — completion drift** (`install/bash-completion/nftban`): the `nftban rbl` completion list was missing `config`, `stats`, and `test` — all real dispatcher + help subcommands. Completion now matches the dispatcher.
+
+PR [#1080](https://github.com/itcmsgr/nftban/pull/1080) `7713c8d0` (4 files). Regression test `rbl_cli_correctness_v220_3_test.sh` (11/11) locks: unset array → zero entries · blank/comment ignored · whitespace trimmed · duplicates collapse · malformed dot-less rejected with `file:line` · effective count 23 · empty watchlist rc 0 without ERR-trap noise · non-empty watchlist unchanged · help renders the installed version dynamically · no frozen provider count · completion parity for `config/stats/test`. Existing RBL suites green (`false_clean` 17, `seven_state`, `nonpublic`/`hostname` admission, `shared_address_authority`); `shellcheck -S warning` clean.
+
+**Explicit non-goals (deferred, separate GO-gated lanes, NOT in this diff):** provider-set curation + the typed provider-registry redesign (`GO_SCOPE_RBL_PROVIDER_REGISTRY` — needs external access/terms verification per provider); the stale version Release-Date resolution (`GO_VERSION_RELEASE_DATE_FIX` — version/packaging/release-prep architecture). Order: release-date fix first, then the registry redesign.
+
 ## [v1.220.2] - 2026-07-11 — Enforcement-integrity: non-public/self addresses can never enter a drop set
 
 **Enforcement-integrity hotfix (Go/daemon — DAEMON RE-BASELINE; daemon NOT byte-identical). nft schema 1.84.0 unchanged; telemetry default-OFF; RBL untouched (this is NOT RBL-enablement).**
