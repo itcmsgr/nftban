@@ -51,7 +51,7 @@ func TestExemptAddRejection_L3a(t *testing.T) {
 		{"persistent_offenders_ipv6", "2001:db8::9", true}, // persistent-offenders drop set: REJECT
 		{"bogon_ipv4", "10.0.0.5", true},               // bogon drop set: REJECT
 		{"whitelist_ipv4", "10.0.0.5", false},          // whitelist add of exempt IP: ALLOW
-		{"blacklist_manual_ipv4", "203.0.113.9", false}, // normal public IP: ALLOW
+		{"blacklist_manual_ipv4", "45.33.32.156", false},  // normal public IP: ALLOW
 		{"blacklist_ipv4", "10.0.0.0/8", false},        // CIDR input (IsExempt=false): ALLOW
 		{"ssh_ports", "10.0.0.5", false},               // port set (not enforcement): ALLOW
 	}

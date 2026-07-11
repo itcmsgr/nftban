@@ -206,7 +206,7 @@ func TestPersistBan_NoReason(t *testing.T) {
 func TestPersistBan_IPv6(t *testing.T) {
 	dir := setupTestDir(t)
 
-	result, _, err := PersistBan(dir, "2001:db8::1", "ipv6 test", "manual")
+	result, _, err := PersistBan(dir, "2a01:4f8:c014:5ee1::1", "ipv6 test", "manual")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestPersistBan_Header(t *testing.T) {
 func TestPersistBan_MultipleIPs(t *testing.T) {
 	dir := setupTestDir(t)
 
-	ips := []string{"1.2.3.4", "5.6.7.8", "10.0.0.1"}
+	ips := []string{"1.2.3.4", "5.6.7.8", "9.9.9.9"}
 	for _, ip := range ips {
 		result, _, err := PersistBan(dir, ip, "test", "manual")
 		if err != nil {

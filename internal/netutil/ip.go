@@ -29,9 +29,77 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 )
+
+// =============================================================================
+// v1.220.2: enforcement address-class guard (shared, pure, no netlink).
+// RBL/reputation is public-only (shell side); ENFORCEMENT (blacklist persistence,
+// ban/drop-set insertion) must likewise reject non-public / non-routable classes so
+// loopback, the unspecified address, multicast, and non-public ranges can never enter
+// a hostile drop set. Reused by internal/persistence, internal/nftbackend, and the
+// daemon full-sync handler so no writer can bypass it.
+// =============================================================================
+
+// enforcementRejectPrefixes: classes with no direct netip predicate.
+var enforcementRejectPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),   // CGNAT / shared address space (RFC6598)
+	netip.MustParsePrefix("192.0.2.0/24"),    // documentation TEST-NET-1
+	netip.MustParsePrefix("198.51.100.0/24"), // documentation TEST-NET-2
+	netip.MustParsePrefix("203.0.113.0/24"),  // documentation TEST-NET-3
+	netip.MustParsePrefix("198.18.0.0/15"),   // benchmarking
+	netip.MustParsePrefix("240.0.0.0/4"),     // reserved / future use
+	netip.MustParsePrefix("2001:db8::/32"),   // documentation (IPv6)
+}
+
+// IsAbsolutelyNonBannable reports whether ip must NEVER enter a hostile enforcement/drop
+// set under any circumstance (non-overridable): loopback, unspecified, or multicast.
+// These address classes have no hostile-source meaning. A non-bare-IP token returns false
+// (callers validate CIDR/range separately).
+func IsAbsolutelyNonBannable(ipStr string) bool {
+	a, err := netip.ParseAddr(strings.TrimSpace(ipStr))
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	return a.IsLoopback() || a.IsUnspecified() || a.IsMulticast() ||
+		a.IsInterfaceLocalMulticast() || a.IsLinkLocalMulticast()
+}
+
+// EnforcementClassReject reports whether ip should be rejected from a hostile enforcement
+// action by ADDRESS CLASS. Absolute classes (loopback/unspecified/multicast) are always
+// rejected — non-overridable. Non-public classes (RFC1918, ULA, link-local, CGNAT,
+// documentation, reserved/benchmark) are rejected by DEFAULT, pending an explicit
+// private-network enforcement feature that does not exist today (and must never be
+// inferred from a raw ban). Public routable addresses return (false, ""). A non-bare-IP
+// token (CIDR/range/blank) returns (false, "") so legitimate public feed CIDRs pass.
+func EnforcementClassReject(ipStr string) (bool, string) {
+	a, err := netip.ParseAddr(strings.TrimSpace(ipStr))
+	if err != nil {
+		return false, "" // not a bare IP — caller handles CIDR/range/format
+	}
+	a = a.Unmap()
+	switch {
+	case a.IsLoopback():
+		return true, "loopback"
+	case a.IsUnspecified():
+		return true, "unspecified"
+	case a.IsMulticast() || a.IsInterfaceLocalMulticast() || a.IsLinkLocalMulticast():
+		return true, "multicast"
+	case a.IsLinkLocalUnicast():
+		return true, "link-local"
+	case a.IsPrivate(): // RFC1918 + ULA fc00::/7
+		return true, "private-or-ula"
+	}
+	for _, p := range enforcementRejectPrefixes {
+		if p.Contains(a) {
+			return true, "reserved-doc-or-cgnat"
+		}
+	}
+	return false, "" // public routable
+}
 
 // =============================================================================
 // Client IP Extraction
