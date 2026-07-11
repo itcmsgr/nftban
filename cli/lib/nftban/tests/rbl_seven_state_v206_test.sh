@@ -97,9 +97,16 @@ echo; echo "[T6] aggregation: non-CLEAN NEVER counts clean + valid JSON (the P0 
 # 4 providers → listed / resolver_blocked / timeout / clean. clean MUST be 1.
 T6=$(
     nftban_rbl_load_providers(){ printf '%s\n' "listed.test:u1" "blocked.test:u2" "tmo.test:u3" "clean.test:u4"; }
-    nftban_rbl_dns_lookup(){ case "$2" in
-        listed.test) echo LISTED ;; blocked.test) echo RESOLVER_BLOCKED ;;
-        tmo.test) echo TIMEOUT ;; *) echo CLEAN ;; esac; }
+    nftban_rbl_dns_lookup(){
+        # one case-branch per line — bash 5.1 (EL9) rejects multiple "pat) cmd ;;"
+        # on a single physical line inside a function inside $(...).
+        case "$2" in
+            listed.test) echo LISTED ;;
+            blocked.test) echo RESOLVER_BLOCKED ;;
+            tmo.test) echo TIMEOUT ;;
+            *) echo CLEAN ;;
+        esac
+    }
     nftban_rbl_get_txt_record(){ echo "test"; }
     nftban_rbl_check_ip "1.2.3.4" "json"
 ) || true
