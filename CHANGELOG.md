@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.2] - 2026-07-11 — Enforcement-integrity: non-public/self addresses can never enter a drop set
+
+**Enforcement-integrity hotfix (Go/daemon — DAEMON RE-BASELINE; daemon NOT byte-identical). nft schema 1.84.0 unchanged; telemetry default-OFF; RBL untouched (this is NOT RBL-enablement).**
+
+The separate Go lane from the non-public-address action-policy audit (`NFTBAN_NONPUBLIC_ADDRESS_ACTION_POLICY_AUDIT.md` → `SEPARATE_ENFORCEMENT_HOTFIX_REQUIRED`). Loopback / the unspecified address / multicast / non-public ranges could reach an active nftables drop set via two paths that bypassed the never-ban invariant enforced on `Backend.Ban`/`AddElement`. This closes them and makes the policy structural.
+
+New shared guard `internal/netutil`: `EnforcementClassReject` + `IsAbsolutelyNonBannable` (pure, no netlink; `netip` predicates + explicit prefixes; IPv4-mapped normalized; IPv4/IPv6 symmetric):
+- **Absolute (non-overridable):** loopback, unspecified, multicast.
+- **Default-reject** (pending an explicit, non-existent LAN-enforcement feature — never inferred from a raw ban): RFC1918, ULA, link-local, CGNAT `100.64.0.0/10`, documentation, reserved/benchmark.
+- Public routable addresses pass; CIDR/blank pass (public feed CIDRs unaffected).
+
+Applied at **every enforcement writer** (no path left exposed):
+- **F1** — `cmd/nftband/daemon_handlers_sync.go:handleSyncRequest`: the `blacklist.d`→drop-set single-IP loops now apply the class guard **and** `d.backend.IsExempt` (self/host/whitelist/live-SSH) before `nft.AddIPWithTimeout` — closing the file→kernel full-sync bypass (the `GUARD-VERB-SCOPE` "FullSync-from-`blacklist.d`" watch-edge).
+- **F2** — `internal/persistence/blacklistd.go:PersistBan`: refuse a non-public/non-bannable bare IP **before** the file write (so the full-sync cannot re-materialize it).
+- **F3** — `internal/nftbackend/backend.go`: `Backend.Ban` rejects the class **before** the fail-open membership exemption; `exemptAddRejection` (the `AddElement` path) gains the same class reject. So `0.0.0.0`/`::`/multicast/loopback are structurally non-bannable **even when the exemption resolver is nil/unloaded**.
+
+Design rule: `parse → normalize → absolute-class reject → self/host-owned (exemption) reject → persist/apply`. Runtime severity was bounded before (the `iif "lo" accept` rule spares loopback; a self-public IP was spared only if whitelisted) — this makes it structural. PR [#1078](https://github.com/itcmsgr/nftban/pull/1078) `315e0ec7` (10 Go files). Tests: `netutil/enforcement_class` (all classes, IPv4/IPv6 symmetric, mapped, CIDR/blank), `persistence/blacklistd_classguard` (non-public refused + not written; public persists), `nftbackend/classguard` (nil-exempt fail-safe for absolute classes; public allowed; non-enforcement sets unaffected); `go build ./...` + `go vet` + `-race` clean; enforcement-adjacent suites green. Three pre-existing tests that used RFC5737/RFC1918 addresses as public "attacker" fixtures were corrected to real public IPs (the addresses are now, correctly, non-bannable).
+
+**Explicit non-goals (deferred, registered, NOT bundled):** detector-source parity (`OPEN_NONPUBLIC_ADDR_DETECTOR_SOURCE_PARITY` — LoginMon-Go/Suricata/Portscan-Go producer-side guards; centrally contained by these choke points, not closed here); an explicit private-network enforcement feature (`OPEN_PRIVATE_NETWORK_ENFORCEMENT_POLICY_DECISION`); PR-C; consumer consolidation; whitelist/report hardening. No RBL enablement.
+
 ## [v1.220.1] - 2026-07-11 — RBL non-public address admission hotfix (corrective for the held v1.220.0 rollout)
 
 **Corrective hotfix for the held v1.220.0 fleet rollout. Shell/core/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · RBL observe-only (no bans/nft writes, not enabled).**
