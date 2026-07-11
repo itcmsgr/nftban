@@ -245,8 +245,12 @@ nftban_rbl_watchlist_get() {
         return 0
     fi
 
-    # Read entries, skip comments and empty lines
-    grep -v '^#' "$watchlist_file" 2>/dev/null | grep -v '^$' | grep '|'
+    # Read entries, skip comments and empty lines.
+    # v1.220.3 (BUG-RBL-WATCHLIST-EMPTY-GREP): the trailing `grep '|'` returns 1
+    # when the watchlist has no data rows, which tripped the ERR trap and printed
+    # a spurious "Script failed" before the real "(No IPs in watchlist)" message.
+    # An empty watchlist is not an error — no match must yield no output, rc 0.
+    grep -v '^#' "$watchlist_file" 2>/dev/null | grep -v '^$' | grep '|' || true
 }
 
 nftban_rbl_watchlist_add() {
@@ -655,37 +659,54 @@ nftban_rbl_load_providers() {
         done < "$NFTBAN_RBL_CUSTOM_FILE"
     fi
 
-    # Load main RBL list
+    # Load main RBL list.
+    # v1.220.3 (BUG-RBL-BLANK-PROVIDER): trim whitespace, skip blank/comment
+    # rows, reject malformed DNS names (reporting file:line to stderr), and never
+    # emit an empty provider. Previously a blank/whitespace row, or the empty
+    # expansion of an unset enabled-list, produced a numbered empty provider
+    # ("1. ") in `rbl list` and a phantom zero-domain query in the checker.
     if [[ -f "$NFTBAN_RBL_PROVIDERS_FILE" ]]; then
+        local _lineno=0
         while IFS= read -r line; do
+            _lineno=$((_lineno + 1))
+            # Trim leading/trailing whitespace
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
             # Skip comments and empty lines
-            [[ "$line" =~ ^#.*$ ]] && continue
             [[ -z "$line" ]] && continue
+            [[ "$line" == \#* ]] && continue
 
-            # Extract domain (before colon)
+            # Extract + trim the domain (before the first colon)
             local domain="${line%%:*}"
+            domain="${domain#"${domain%%[![:space:]]*}"}"
+            domain="${domain%"${domain##*[![:space:]]}"}"
+
+            # Reject malformed DNS names (must be a dotted hostname)
+            if ! [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)+$ ]]; then
+                printf 'nftban: rbl: ignoring invalid provider "%s" (%s:%d)\n' \
+                    "$domain" "$NFTBAN_RBL_PROVIDERS_FILE" "$_lineno" >&2
+                continue
+            fi
 
             # Check if disabled
             local is_disabled=0
             for disabled in "${disabled_rbls[@]:-}"; do
-                if [[ "$domain" == "$disabled" ]]; then
-                    is_disabled=1
-                    break
-                fi
+                [[ -n "$disabled" && "$domain" == "$disabled" ]] && { is_disabled=1; break; }
             done
 
-            if [[ $is_disabled -eq 0 ]]; then
-                providers+=("$line")
-            fi
+            [[ $is_disabled -eq 0 ]] && providers+=("$line")
         done < "$NFTBAN_RBL_PROVIDERS_FILE"
     fi
 
-    # Add enabled custom RBLs
+    # Add enabled custom RBLs. Guard the empty element that an unset array yields
+    # under `"${enabled_rbls[@]:-}"` — that empty string was the root cause of the
+    # blank provider surfacing first after `sort -u`.
     for enabled in "${enabled_rbls[@]:-}"; do
-        providers+=("$enabled")
+        [[ -n "$enabled" ]] && providers+=("$enabled")
     done
 
-    # Output unique providers
+    # Output unique, non-empty providers
+    [[ ${#providers[@]} -eq 0 ]] && return 0
     printf '%s\n' "${providers[@]}" | sort -u
 }
 
