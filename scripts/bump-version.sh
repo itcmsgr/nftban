@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Automatically bumps version number in the VERSION file"
-# meta:inventory.files="VERSION"
+# meta:inventory.files="VERSION, VERSION_DATE"
 # meta:inventory.binaries="bash"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -27,6 +27,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION_FILE="$SCRIPT_DIR/../VERSION"
+VERSION_DATE_FILE="$SCRIPT_DIR/../VERSION_DATE"
 
 # Read current version
 CURRENT=$(cat "$VERSION_FILE" | tr -d '[:space:]')
@@ -61,6 +62,17 @@ echo "Bumping version: $CURRENT → $NEW_VERSION"
 echo "$NEW_VERSION" > "$VERSION_FILE"
 
 echo "✅ VERSION file updated to $NEW_VERSION"
+
+# Update the per-release date artifact (strict ISO YYYY-MM-DD). Defaults to the
+# actual release day (UTC); pass VERSION_DATE=YYYY-MM-DD to pin it for a
+# reproducible re-cut. This is the RELEASE date, not a build timestamp.
+NEW_VERSION_DATE="${VERSION_DATE:-$(date -u +%F)}"
+if ! [[ "$NEW_VERSION_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "FATAL: VERSION_DATE override is not strict ISO YYYY-MM-DD: '$NEW_VERSION_DATE'" >&2
+    exit 1
+fi
+echo "$NEW_VERSION_DATE" > "$VERSION_DATE_FILE"
+echo "✅ VERSION_DATE updated to $NEW_VERSION_DATE"
 echo ""
 echo "Next steps:"
 echo "  1. Review changes: git diff VERSION"

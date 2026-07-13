@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-06"
-# meta:description="Verifies _nftban_resolve_build_date in lib/version.sh never returns the current clock. Resolution order: (1) build-stamp file ${NFTBAN_LIB_DIR}/.build_date, (2) rpm BUILDTIME of nftban-core, (3) literal 'unknown'. Asserts the stamp wins, the rpm path formats the real build epoch (UTC, not today), and the absent path is 'unknown' — never \$(date)-now. Hermetic: temp NFTBAN_LIB_DIR + rpm() stub; no host/nft/IPC."
+# meta:description="Verifies _nftban_resolve_build_date in lib/version.sh never returns the current clock. Resolution order: (1) build-stamp file ${NFTBAN_LIB_DIR}/.build_date, (2) rpm BUILDTIME of nftban-core, (3) EMPTY string (v1.220.x: the caller omits the Build Date field entirely — no 'unknown', no invented timestamp). Asserts the stamp wins, the rpm path formats the real build epoch (UTC, not today), and the absent/non-numeric path is empty — never \$(date)-now. Hermetic: temp NFTBAN_LIB_DIR + rpm() stub; no host/nft/IPC."
 # meta:input="None (self-contained)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,date,grep"
@@ -66,17 +66,19 @@ out="$(resolve "NFTBAN_LIB_DIR='$D2'; rpm() { echo $EPOCH; }")"
 [[ "$out" != "$TODAY"* ]] && ok "rpm path is NOT today's date" || no "rpm-today regression" "$out"
 rm -rf "$D2"
 
-echo "=== 3. no stamp + package-absent rpm → 'unknown' (safe fallback, never now) ==="
+# v1.220.x: no authoritative build metadata now returns EMPTY (the caller omits
+# the "Build Date" field entirely — no "unknown", no invented timestamp).
+echo "=== 3. no stamp + package-absent rpm → '' (empty; field omitted, never now) ==="
 D3="$(mktemp -d)"
 out="$(resolve "NFTBAN_LIB_DIR='$D3'; rpm() { return 1; }")"
-[[ "$out" == "unknown" ]] && ok "absent → 'unknown'" || no "unknown fallback" "$out"
+[[ -z "$out" ]] && ok "absent → '' (empty)" || no "empty fallback" "$out"
 [[ "$out" != "$TODAY"* ]] && ok "fallback is NOT today's date (no \$(date)-now leak)" || no "fallback-today regression" "$out"
 rm -rf "$D3"
 
-echo "=== 4. rpm emits non-numeric → 'unknown' (no bogus date) ==="
+echo "=== 4. rpm emits non-numeric → '' (empty; no bogus date) ==="
 D4="$(mktemp -d)"
 out="$(resolve "NFTBAN_LIB_DIR='$D4'; rpm() { echo 'not-installed'; }")"
-[[ "$out" == "unknown" ]] && ok "non-numeric BUILDTIME → 'unknown'" || no "non-numeric" "$out"
+[[ -z "$out" ]] && ok "non-numeric BUILDTIME → '' (empty)" || no "non-numeric" "$out"
 rm -rf "$D4"
 
 echo ""
