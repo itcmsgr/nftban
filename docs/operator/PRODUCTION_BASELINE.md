@@ -51,7 +51,7 @@ Two components matter for baseline truth on v1.218.5:
 nftban health check
 ```
 
-This view is driven by the Go validator (`nftban-validate --json`); the CLI only presents its output.
+This view is driven by the Go validator (`nftban validate --json`); the CLI only presents its output.
 It reports **Config, Structure, Runtime, Effective** axes for the `botguard`, `ddos`, `portscan`, and
 `loginmon` modules, plus a `Blacklist` composite. It expects the validator `schema_version` to be
 **1.84.0** and warns on a mismatch. (This `schema_version` is the validator's JSON contract version —

@@ -13,12 +13,14 @@ how a report moves from intake to public advisory. The canonical policy is
 ## 1. Intake
 
 - **Preferred:** GitHub private Security Advisory — *Security → Advisories → Report a vulnerability*.
-- **Fallback:** email **security@itcms.gr** with a `[SECURITY]` subject prefix.
+- **Fallback:** email **security@nftban.com** with a `[SECURITY]` subject prefix.
 - **Do not** use public issues, discussions, or pull requests.
 - **Encrypted contact:** a PGP key for encrypted email is **pending publication**; until then,
   prefer the private Security Advisory (encrypted in transit).
-- **Confidentiality:** reports are handled **TLP:RED** by default (named recipients only) until a
-  classification is agreed with the reporter.
+- **Confidentiality:** reports are treated as confidential and shared only with the people needed
+  for triage and remediation. A TLP classification may be agreed with the reporter where useful; it
+  is not assigned automatically. (A specific advisory may be held **TLP:RED** during an active
+  embargo — that is a per-advisory decision, not a blanket default.)
 
 ## 2. Acknowledgement
 
