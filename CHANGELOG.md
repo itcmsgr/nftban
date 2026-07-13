@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.6] - 2026-07-13 — RBL provider-registry read-only `providers` CLI + coverage rendering (slice 2)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical · no curation / no change to the active 23-provider set.**
+
+Slice 2 of the typed RBL provider registry (`OPEN_SCOPE_RBL_PROVIDER_REGISTRY_SCOPE.md`) — **READ-ONLY inspection surfaces** over the slice-1 substrate. New `nftban rbl providers` command group:
+- **list** — typed table (ID · Zone · Type · State) + effective count + "no curation / module-only" notes.
+- **validate** — validate a registry data file if present (deterministic errors); none ⇒ legacy `rbls.conf` authoritative (23).
+- **test [`<id>`|`--all`]** — live RFC5782 reachability probe from this host's resolver, classified into the current result vocabulary (`CLEAN` / `LISTED_TESTPOINT` / `REACHABLE_NOANSWER` / `TIMEOUT` / `REFUSED` / `SERVFAIL` — a timeout and an NXDOMAIN are never conflated) + a truthful coverage render + OK/DEGRADED verdict. Read-only: changes no state, issues no ban.
+- **explain `<id>`** — full typed record.
+
+**Mutation is DEFERRED:** `providers enable|disable` return a non-mutating deferred error (rc2) and change nothing — the registry is still an additive compatibility substrate, not an authoritative data source. The live loader `nftban_rbl_load_providers`, the legacy `rbl list`, query execution, cache keys, timeouts, verdict logic, timers, and enablement are unchanged; no change to which providers are queried; no weighting, grouping, or default-profile migration.
+
+PR [#1089](https://github.com/itcmsgr/nftban/pull/1089) `b26597b8`; test `rbl_provider_registry_slice2_test.sh` 18/18 (dig stubbed — no real network); existing RBL suites green; shellcheck clean.
+
+**Deferred (separate GO): the enable/disable mutation sub-slice (after the registry becomes authoritative) → slice 3 (live provider audit + data curation, externally verified) → slice 4 (default-profile migration) → slice 5 (`rbls.conf` retirement).**
+
 ## [v1.220.5] - 2026-07-13 — RBL provider-registry substrate + flat-list compatibility (slice 1)
 
 **Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical · no curation / provider-policy assignment.**
