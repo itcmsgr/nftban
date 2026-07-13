@@ -1,0 +1,26 @@
+{
+  "snapshot_at": "2026-07-13T21:44:12Z",
+  "platforms": [
+    "Ubuntu 22.04",
+    "Ubuntu 24.04",
+    "Ubuntu 26.04",
+    "Debian 12",
+    "Debian 13",
+    "EL9",
+    "EL10",
+    "Fedora 42",
+    "Fedora 43"
+  ],
+  "unclassified_legacy": [
+    {
+      "name": "nftban-core_1.0.0_amd64.deb",
+      "downloads": 2,
+      "tag": "v1.0.0"
+    },
+    {
+      "name": "nftban-x86_64.rpm",
+      "downloads": 2,
+      "tag": "v1.0.0"
+    }
+  ]
+}

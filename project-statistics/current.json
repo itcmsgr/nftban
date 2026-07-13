@@ -1,0 +1,36 @@
+{
+  "snapshot_at": "2026-07-13T21:44:12Z",
+  "snapshot_date": "2026-07-13",
+  "disclosure": "Package downloads count GitHub requests for installable NFTBan DEB and RPM assets. Clone, visitor, and download statistics do not represent unique users, successful installations, active systems, mirrors, CI jobs, or fleet size.",
+  "package_downloads": 6446,
+  "package_delta": 0,
+  "deb_downloads": 4331,
+  "rpm_downloads": 2115,
+  "standalone_binary_downloads": 694,
+  "metadata_downloads": 3533,
+  "all_release_asset_downloads": 11084,
+  "per_platform": {
+    "Ubuntu 22.04": 776,
+    "Ubuntu 24.04": 1899,
+    "Ubuntu 26.04": 215,
+    "Debian 12": 726,
+    "Debian 13": 715,
+    "EL9": 1101,
+    "EL10": 962,
+    "Fedora 42": 26,
+    "Fedora 43": 26
+  },
+  "releases_measured": 460,
+  "assets_scanned": 6185,
+  "stars": 7,
+  "forks": 0,
+  "open_issues": 10,
+  "rolling_14d": {
+    "clones": 19011,
+    "unique_cloners": 603,
+    "views": 425,
+    "unique_visitors": 216
+  },
+  "traffic_auth": "PASS",
+  "reconciles": true
+}
