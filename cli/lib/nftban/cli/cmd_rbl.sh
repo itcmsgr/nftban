@@ -119,6 +119,7 @@ SUBCOMMANDS:
   config      Show RBL configuration
   stats       Show RBL statistics
   test        Test RBL configuration/connectivity
+  providers   Inspect the typed provider registry (list/validate/test/explain)
 
 CHECK OPTIONS:
   --ip IP           Check specific IP address
@@ -259,6 +260,9 @@ nftban_cmd_rbl() {
             ;;
         watchlist)
             nftban_cmd_rbl_watchlist "$@"
+            ;;
+        providers)
+            nftban_cmd_rbl_providers "$@"
             ;;
         *)
             echo "ERROR: Unknown subcommand: $subcommand" >&2
@@ -1585,8 +1589,163 @@ nftban_cmd_rbl_watchlist() {
     esac
 }
 
+# =============================================================================
+# PROVIDERS — typed provider-registry inspection (slice 2, READ-ONLY)
+# =============================================================================
+# `nftban rbl providers {list,validate,test,explain}`. Read-only inspection over
+# the additive registry substrate (slice 1). Does NOT change which providers are
+# queried, does NOT curate/weight/group, and does NOT mutate state — enable/
+# disable are deferred to a later sub-slice (the registry is still an additive
+# compatibility layer, not yet an authoritative data source).
+
+_nftban_rbl_providers_help() {
+    cat <<'EOF'
+Usage: nftban rbl providers <subcommand>
+
+  list                 Typed provider table (ID · Zone · Type · State) + counts
+  validate             Validate the registry data file (if any); report errors
+  test [<id>|--all]    Live RFC5782 reachability probe from this host's resolver
+                       (read-only; classifies each zone; changes NO state)
+  explain <id>         Full typed record for one provider
+  help                 This help
+
+Read-only. rbls.conf remains authoritative; no provider is curated, weighted,
+grouped, enabled, or disabled by these commands.
+EOF
+}
+
+# Split a TSV registry record into the named fields (empty-column-safe).
+_nftban_rbl_prov_read() { # $1=record; sets id/zone/qt/scope/family/access/weight/role/group/state/url
+    IFS=$'\x1f' read -r id zone qt scope family access weight role group state url \
+        <<< "${1//$'\t'/$'\x1f'}"
+}
+
+_nftban_rbl_providers_list() {
+    local id zone qt scope family access weight role group state url n=0
+    printf 'RBL Providers — effective configuration (registry substrate, slice 1)\n'
+    printf -- '─────────────────────────────────────────────────────────────────────\n'
+    printf '%-24s %-30s %-9s %-8s\n' "ID" "Zone" "Type" "State"
+    while IFS= read -r rec; do
+        [[ -z "$rec" ]] && continue
+        _nftban_rbl_prov_read "$rec"
+        printf '%-24s %-30s %-9s %-8s\n' "$id" "$zone" "$qt" "$state"
+        n=$((n+1))
+    done < <(nftban_rbl_registry_records)
+    printf -- '─────────────────────────────────────────────────────────────────────\n'
+    printf 'Effective IP providers: %s   (rbls.conf authoritative; no curation)\n' "$n"
+    if [[ ! -f "${NFTBAN_RBL_REGISTRY_FILE:-}" ]]; then
+        printf 'Registry data file: none (module-only) — legacy flat list projected.\n'
+    fi
+    return 0
+}
+
+_nftban_rbl_providers_validate() {
+    local rf="${NFTBAN_RBL_REGISTRY_FILE:-}"
+    if [[ -z "$rf" || ! -f "$rf" ]]; then
+        printf 'No registry data file present (module-only substrate).\n'
+        printf 'Legacy rbls.conf is authoritative — %s effective providers.\n' \
+            "$(nftban_rbl_load_providers 2>/dev/null | grep -c .)"
+        return 0
+    fi
+    printf 'Validating registry: %s\n' "$rf"
+    if nftban_rbl_registry_validate "$rf"; then
+        printf '✅ registry valid\n'; return 0
+    else
+        printf '❌ registry INVALID — the legacy rbls.conf set remains authoritative.\n' >&2
+        return 1
+    fi
+}
+
+_nftban_rbl_providers_explain() {
+    local want="${1:-}"
+    [[ -z "$want" ]] && { echo "ERROR: usage: nftban rbl providers explain <id>" >&2; return 1; }
+    local rec id zone qt scope family access weight role group state url
+    rec="$(nftban_rbl_registry_get "$want")" || { echo "ERROR: no provider with id '$want' (see 'rbl providers list')" >&2; return 1; }
+    _nftban_rbl_prov_read "$rec"
+    cat <<EOF
+Provider:     ${id}
+  Zone:       ${zone}
+  Query type: ${qt}
+  Scope:      ${scope}
+  Family:     ${family}
+  Access:     ${access}
+  Weight:     ${weight:-(none)}
+  Role:       ${role}
+  Group:      ${group}
+  State:      ${state}
+  Info:       ${url:-—}
+EOF
+    return 0
+}
+
+_nftban_rbl_providers_test() {
+    local target="${1:---all}" recs
+    recs="$(nftban_rbl_registry_records)"
+    local id zone qt scope family access weight role group state url
+    local queried=0 clean=0 listed=0 timeout=0 refused=0 servfail=0 reach=0 other=0
+    printf 'Provider reachability test (RFC5782 test point, this host'\''s resolver)\n'
+    printf -- '─────────────────────────────────────────────────────────────────────\n'
+    while IFS= read -r rec; do
+        [[ -z "$rec" ]] && continue
+        _nftban_rbl_prov_read "$rec"
+        [[ "$qt" == "IP_DNSBL" ]] || continue          # IP checker probes IP_DNSBL only
+        if [[ "$target" != "--all" && "$id" != "$target" ]]; then continue; fi
+        local res; res="$(nftban_rbl_registry_test_zone "$zone")"
+        queried=$((queried+1))
+        case "$res" in
+            CLEAN)              clean=$((clean+1)) ;;
+            LISTED_TESTPOINT)   listed=$((listed+1)) ;;
+            REACHABLE_NOANSWER) reach=$((reach+1)) ;;
+            TIMEOUT)            timeout=$((timeout+1)) ;;
+            REFUSED)            refused=$((refused+1)) ;;
+            SERVFAIL)           servfail=$((servfail+1)) ;;
+            *)                  other=$((other+1)) ;;
+        esac
+        printf '%-24s %-30s %s\n' "$id" "$zone" "$res"
+    done <<< "$recs"
+    [[ "$queried" -eq 0 ]] && { echo "No IP_DNSBL provider matched '$target'." >&2; return 1; }
+    printf -- '─────────────────────────────────────────────────────────────────────\n'
+    printf 'Provider coverage:\n'
+    printf '  Queried:              %s\n' "$queried"
+    printf '  Clean (NXDOMAIN):     %s\n' "$clean"
+    printf '  Listed (test point):  %s\n' "$listed"
+    printf '  Reachable/no-answer:  %s\n' "$reach"
+    printf '  Timeout:              %s\n' "$timeout"
+    printf '  Refused:              %s\n' "$refused"
+    printf '  SERVFAIL:             %s\n' "$servfail"
+    [[ "$other" -gt 0 ]] && printf '  Other:                %s\n' "$other"
+    local authoritative=$((clean+listed+reach))
+    if [[ "$authoritative" -eq "$queried" ]]; then
+        printf 'Verdict: OK — all %s providers returned an authoritative result.\n' "$queried"
+    else
+        printf 'Verdict: DEGRADED — %s/%s providers did not return an authoritative result.\n' \
+            "$((queried-authoritative))" "$queried"
+    fi
+    return 0
+}
+
+nftban_cmd_rbl_providers() {
+    local sub="${1:-list}"; [[ $# -gt 0 ]] && shift
+    case "$sub" in
+        list)          _nftban_rbl_providers_list "$@" ;;
+        validate)      _nftban_rbl_providers_validate "$@" ;;
+        test)          _nftban_rbl_providers_test "$@" ;;
+        explain)       _nftban_rbl_providers_explain "$@" ;;
+        enable|disable)
+            echo "ERROR: 'rbl providers $sub' is deferred to a later registry sub-slice." >&2
+            echo "       The registry is an additive compatibility substrate, not yet an" >&2
+            echo "       authoritative data source; provider state cannot be mutated here." >&2
+            return 2 ;;
+        help|--help|-h) _nftban_rbl_providers_help ;;
+        *) echo "ERROR: Unknown providers subcommand: $sub" >&2; _nftban_rbl_providers_help; return 1 ;;
+    esac
+}
+
 # Export main function and subcommands
 export -f nftban_cmd_rbl
+export -f nftban_cmd_rbl_providers
+export -f _nftban_rbl_providers_help _nftban_rbl_prov_read _nftban_rbl_providers_list
+export -f _nftban_rbl_providers_validate _nftban_rbl_providers_explain _nftban_rbl_providers_test
 export -f nftban_cmd_rbl_alert
 export -f nftban_cmd_rbl_cache
 export -f nftban_cmd_rbl_check
