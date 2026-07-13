@@ -97,7 +97,7 @@ Before tagging a release:
 For a coordinated-disclosure fix (see [`docs/security/COORDINATED_DISCLOSURE.md`](docs/security/COORDINATED_DISCLOSURE.md)
 and [`SECURITY.md`](SECURITY.md)):
 
-- [ ] Report received privately (GitHub Security Advisory or security@itcms.gr); handled TLP:RED
+- [ ] Report received privately (GitHub Security Advisory or security@nftban.com); handled TLP:RED
 - [ ] Fix developed on a private/embargo branch (or GHSA private fork)
 - [ ] Validation: full CI + relevant install/runtime-truth/canonization gates + a regression test for the vulnerability class
 - [ ] Packages built via the normal pipeline (signing applies once package signing exists — see roadmap Lane 2; not yet available)
