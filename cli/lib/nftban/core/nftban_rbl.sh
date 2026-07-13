@@ -51,6 +51,16 @@ if [[ -f "${_NFTBAN_RBL_LIB_DIR}/core/nftban_hostaddr.sh" ]]; then
     source "${_NFTBAN_RBL_LIB_DIR}/core/nftban_hostaddr.sh" || return 1
 fi
 
+# v1.220.x (OPEN_SCOPE_RBL_PROVIDER_REGISTRY slice 1): additive typed-provider
+# registry substrate. Functions-only, no side effects; the live check path is
+# UNCHANGED — nftban_rbl_load_providers stays authoritative (rbls.conf). The
+# registry projects/validates typed records for later slices; sourcing it does
+# not alter provider membership, order, or count.
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/core/nftban_rbl_registry.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/core/nftban_rbl_registry.sh" || return 1
+fi
+
 # Load timestamp library (for nftban_timestamp, nftban_timestamp_unix)
 if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/dev/null
