@@ -1,0 +1,66 @@
+# =============================================================================
+# NFTBan - Project Statistics (internal-first download & traffic snapshots)
+# =============================================================================
+# Daily. Collects GitHub Release asset download counts (classified per distro),
+# repository traffic (clone/view per-day + rolling 14d), and basic counters.
+# Commits generated data ONLY to the orphan `stats` branch. Never touches
+# runtime code, VERSION, CHANGELOG, tags, releases, or website files.
+#
+# Traffic endpoints are NOT readable by the default GITHUB_TOKEN
+# ("Resource not accessible by integration"). Provide a fine-grained PAT with
+# repository "Administration: Read" as the secret STATS_TRAFFIC_TOKEN. Without
+# it, release/star data still collects and traffic auth is recorded as FAIL.
+# =============================================================================
+name: Project Statistics
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # daily 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-statistics
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main (collector)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: main
+          path: repo
+          persist-credentials: false
+
+      - name: Checkout stats branch (existing data)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: stats
+          path: stats
+
+      - name: Collect statistics snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATS_TRAFFIC_TOKEN: ${{ secrets.STATS_TRAFFIC_TOKEN }}
+        run: |
+          mkdir -p stats/project-statistics
+          python3 repo/scripts/project_statistics.py --out stats/project-statistics
+
+      - name: Commit and push to stats branch
+        working-directory: stats
+        run: |
+          git config user.name  "nftban-stats-bot"
+          git config user.email "stats-bot@users.noreply.github.com"
+          git add project-statistics
+          if git diff --cached --quiet; then
+            echo "No statistics change; nothing to commit."
+            exit 0
+          fi
+          git commit -m "stats: daily snapshot $(date -u +%F)"
+          git push origin HEAD:stats
