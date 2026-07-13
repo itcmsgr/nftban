@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.5] - 2026-07-13 — RBL provider-registry substrate + flat-list compatibility (slice 1)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical · no curation / provider-policy assignment.**
+
+Slice 1 of the typed RBL provider registry (`OPEN_SCOPE_RBL_PROVIDER_REGISTRY_SCOPE.md`) — **additive substrate only**. New `core/nftban_rbl_registry.sh` (sourced by `nftban_rbl.sh`, **not wired into the live check path**):
+- Typed record model (11-col TSV `id/zone/query_type/scope/family/access/weight/role/group/state/info_url`) with fixed enum vocabularies.
+- Conservative projection of a legacy bare `zone:url` → `IP_DNSBL / MAIL_REPUTATION / IPV4_IPV6 / PUBLIC / no-weight / PRIMARY / own-group / enabled` (no weighting, grouping, or reclassification).
+- INI-block parser that is **never sourced/evaled** — **no runtime YAML**.
+- Deterministic validator: duplicate id, duplicate zone, invalid enum, invalid zone name, structural malformation, and unsafe shell content each **fail**.
+- `nftban_rbl_registry_effective` is the flat-list-compatibility bridge — membership always comes from the authoritative legacy loader, so it is **byte-identical** to `nftban_rbl_load_providers`. A present-but-invalid registry is **warned and ignored** — it can never yield an empty or altered provider set.
+
+**Slice 1 ships the registry *module*, not a registry *data* file** (registry-absent = current behavior). The live loader `nftban_rbl_load_providers`, query execution, result vocabulary, cache keys, timeout handling, verdict logic, timers, and enablement are unchanged. No `rbl providers` operator CLI. PR [#1085](https://github.com/itcmsgr/nftban/pull/1085) `2922aec9`; test `rbl_provider_registry_slice1_test.sh` 20/20; existing RBL suites green; shellcheck clean.
+
+**Deferred (separate GO): slice 2** (`rbl providers` CLI + truthful coverage rendering) → **slice 3** (live provider audit + data curation, externally verified) → slice 4 (default-profile migration) → slice 5 (`rbls.conf` retirement).
+
 ## [v1.220.4] - 2026-07-11 — Version Release-Date authority (per-release `VERSION_DATE`; honest Build Date)
 
 **Shell/packaging only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only, provider data unchanged · no RBL/runtime behavior change.**
