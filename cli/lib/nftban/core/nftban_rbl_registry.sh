@@ -198,6 +198,44 @@ nftban_rbl_registry_effective() {
     nftban_rbl_load_providers
 }
 
+# ---- slice 2 (read-only inspection helpers; no state change) ----------------
+
+# Echo the typed record (TSV) for a given id from the current effective set.
+# Returns non-zero if the id is not found.
+nftban_rbl_registry_get() {
+    local want="$1" line
+    while IFS= read -r line; do
+        [[ "${line%%$'\t'*}" == "$want" ]] && { printf '%s\n' "$line"; return 0; }
+    done < <(nftban_rbl_registry_records)
+    return 1
+}
+
+# Live RFC5782 reachability probe of a DNSBL zone, FROM the operator's resolver.
+# Read-only diagnostic — changes NO state, issues NO ban, touches NO provider.
+# Classifies into the current RBL result vocabulary; a timeout and an NXDOMAIN
+# are NEVER conflated.
+nftban_rbl_registry_test_zone() {
+    local zone="$1" timeout="${NFTBAN_RBL_TIMEOUT:-4}" out st
+    command -v dig >/dev/null 2>&1 || { printf 'NO_RESOLVER_TOOL'; return 0; }
+    out="$(dig +time="$timeout" +tries=1 A "2.0.0.127.${zone}" 2>/dev/null)"
+    [[ -z "$out" ]] && { printf 'TIMEOUT'; return 0; }
+    st="$(printf '%s\n' "$out" | sed -n 's/.*status: \([A-Z]*\),.*/\1/p' | head -1)"
+    case "$st" in
+        NOERROR)
+            if printf '%s\n' "$out" | grep -qE '[[:space:]]IN[[:space:]]+A[[:space:]]+127\.'; then
+                printf 'LISTED_TESTPOINT'
+            else
+                printf 'REACHABLE_NOANSWER'
+            fi ;;
+        NXDOMAIN) printf 'CLEAN' ;;
+        REFUSED)  printf 'REFUSED' ;;
+        SERVFAIL) printf 'SERVFAIL' ;;
+        "")       printf 'TIMEOUT' ;;
+        *)        printf '%s' "$st" ;;
+    esac
+}
+
+export -f nftban_rbl_registry_get nftban_rbl_registry_test_zone 2>/dev/null || true
 export -f _nftban_rbl_reg_in _nftban_rbl_reg_safe _nftban_rbl_reg_is_dnsname _nftban_rbl_reg_trim 2>/dev/null || true
 export -f nftban_rbl_registry_legacy_record nftban_rbl_registry_parse nftban_rbl_registry_validate 2>/dev/null || true
 export -f nftban_rbl_registry_records nftban_rbl_registry_effective 2>/dev/null || true
