@@ -32,7 +32,7 @@ Present in both `ip nftban` and `ip6 nftban` input chains (14 markers total).
 
 | Module | Subchain | Anchor | Phase |
 |--------|----------|--------|-------|
-| ddos_sanity | ddos_sanity | ANCHOR_TRUSTED | 1 |
+| ddos_sanity | ddos_sanity | ANCHOR_HYGIENE | 0 |
 | ddos_ban_enforce | ddos_ban_enforce | ANCHOR_BAN | 2 |
 | ddos_penalty | ddos_penalty | ANCHOR_ESTABLISHED | 3 |
 | ddos_synproxy | ddos_synproxy | ANCHOR_ESTABLISHED | 3 |

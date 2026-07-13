@@ -20,7 +20,7 @@ that does not exist.
 
 - Vulnerability intake, triage, and coordinated disclosure are owned by the maintainer
   (see [`SECURITY.md`](SECURITY.md) and [`docs/security/`](docs/security/)).
-- Confidential reports: GitHub private Security Advisory (preferred) or **security@itcms.gr**.
+- Confidential reports: GitHub private Security Advisory (preferred) or **security@nftban.com**.
 
 ## Decision-making
 

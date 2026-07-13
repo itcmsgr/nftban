@@ -5,7 +5,7 @@ These rules define how the system works. They are enforced by CI.
 ## Truth Authority
 
 1. **Kernel** (`nft list ruleset`) is the only enforcement authority.
-2. **Go validator** (`nftban-validate`) is the only health/truth interpreter.
+2. **Go validator** (`nftban validate`) is the only health/truth interpreter.
 3. **CLI** (`nftban`) presents validator output only — never derives truth.
 4. **Config** expresses operator intent, not runtime state.
 
