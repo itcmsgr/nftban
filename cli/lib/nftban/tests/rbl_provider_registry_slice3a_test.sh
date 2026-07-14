@@ -97,7 +97,10 @@ E1="$(xget uceprotect_l1)"; E2="$(xget uceprotect_l2)"; E3="$(xget uceprotect_l3
 E="$(xget tor_dan)"; { chk _ "$E" 'Scope:.*TOR_EXIT' && chk _ "$E" 'Role:.*CLASSIFICATION'; } && ok "C6 tor.dan = TOR_EXIT/CLASSIFICATION" || no "C6 tor"
 E="$(xget barracuda_brbl)"; chk _ "$E" 'Access:.*REGISTERED_RESOLVER' && ok "C7 Barracuda = REGISTERED_RESOLVER" || no "C7 barracuda"
 E="$(xget spamrats)"; { chk _ "$E" 'Access:.*CREDENTIALED' && chk _ "$E" 'State.*conditional'; } && ok "C8 SpamRATS = CREDENTIALED/conditional" || no "C8 spamrats"
-E="$(xget dronebl)"; { chk _ "$E" 'Replacement:.*EXTERNAL:dnsbl.dronebl.org' && chk _ "$E" 'State.*disabled'; } && ok "C9 DroneBL zone-defect replacement=EXTERNAL:dnsbl.dronebl.org" || no "C9 dronebl"
+# 3A locked the zone-defect replacement metadata (stable); Slice 3C owns the state
+# (dronebl activated disabled→enabled at the corrected zone). Lock the persistent
+# 3A invariant (replacement=EXTERNAL:dnsbl.dronebl.org); state is asserted by slice3c.
+E="$(xget dronebl)"; chk _ "$E" 'Replacement:.*EXTERNAL:dnsbl.dronebl.org' && ok "C9 DroneBL zone-defect replacement=EXTERNAL:dnsbl.dronebl.org" || no "C9 dronebl"
 
 # --------------------------------------------------------------------------
 # D — lifecycle: dead=retired; anti-spam.org.cn separates status from semantics;
