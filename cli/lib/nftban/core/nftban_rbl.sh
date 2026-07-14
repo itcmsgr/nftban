@@ -470,7 +470,7 @@ nftban_rbl_check_ip_parallel() {
         local rbl_list=()
         while IFS=: read -r rbl_domain rbl_url; do
             rbl_list+=("${rbl_domain}:${rbl_url}")
-        done < <(nftban_rbl_load_providers)
+        done < <(nftban_rbl_effective_providers)
 
         # v1.150 (11.5): enforce the per-run query cap in the PARENT, before
         # fan-out. The per-query _NFTBAN_RBL_QUERY_COUNT increment lives inside
@@ -871,7 +871,7 @@ nftban_rbl_check_ip() {
                 echo "✅ CLEAN: $rbl_domain"
             fi
         fi
-    done < <(nftban_rbl_load_providers)
+    done < <(nftban_rbl_effective_providers)
 
     local degraded_count=$(( timeout_count + blocked_count + skipped_count + unsupported_count ))
 

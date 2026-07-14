@@ -51,8 +51,11 @@ COMMON='export NFTBAN_RBL_PROVIDERS_FILE="'"$REAL_RBLS"'" NFTBAN_RBL_CUSTOM_FILE
 outA="$( ( eval "$COMMON"; source "$CMD_RBL" 2>/dev/null || true; set +eE; nftban_cmd_rbl_providers list ) 2>&1 )"
 [[ "$(printf '%s\n' "$outA" | grep -cE '[[:space:]]IP_DNSBL[[:space:]]')" -eq 23 ]] && ok "A1 list shows 23 IP_DNSBL rows" || no "A1 list rows ($(printf '%s\n' "$outA" | grep -cE 'IP_DNSBL'))"
 printf '%s\n' "$outA" | grep -q 'Records: 23' && ok "A2 list record count 23" || no "A2 count"
-printf '%s\n' "$outA" | grep -qi 'legacy projection' && ok "A3 list states conservative legacy projection" || no "A3 no-curation note"
-printf '%s\n' "$outA" | grep -qi 'Registry data file: none' && ok "A4 list notes no registry data file" || no "A4 module-only note"
+# Slice 3C: with no registry present the list reports the LEGACY projection source
+# and that the registry is not authoritative (the pre-3C "module-only / no curation"
+# wording was replaced when the registry became the projection authority).
+printf '%s\n' "$outA" | grep -qi 'Projection source: LEGACY' && ok "A3 list states LEGACY projection source" || no "A3 legacy-source note"
+printf '%s\n' "$outA" | grep -qi 'legacy rbls.conf projection' && ok "A4 list notes registry not authoritative (legacy in effect)" || no "A4 legacy-in-effect note"
 
 # --------------------------------------------------------------------------
 # B — providers validate (no registry, then invalid registry)

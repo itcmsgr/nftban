@@ -90,7 +90,10 @@ nftban_rbl_registry_parse() {
     }
     while IFS= read -r line || [[ -n "$line" ]]; do
         lineno=$((lineno+1))
-        line="$(_nftban_rbl_reg_trim "$line")"
+        # inline trim (no per-line fork): a $(_nftban_rbl_reg_trim) command-sub
+        # per field made a 23-record parse cost ~700 forks (~1s); the projection
+        # engine re-parses, so keep parse fork-free. Same result as the helper.
+        line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" == \#* ]] && continue
         if [[ "$line" =~ ^\[([A-Za-z0-9_]+)\]$ ]]; then
             _flush; cur_id="${BASH_REMATCH[1]}"; _reset; continue
@@ -99,8 +102,8 @@ nftban_rbl_registry_parse() {
             printf 'nftban: rbl registry: malformed line %d: %q (%s)\n' "$lineno" "$line" "$file" >&2; rc=1; continue
         fi
         local key val
-        key="$(_nftban_rbl_reg_trim "${line%%=*}")"
-        val="$(_nftban_rbl_reg_trim "${line#*=}")"
+        key="${line%%=*}"; key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
+        val="${line#*=}";  val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
         if [[ -z "$cur_id" ]]; then
             printf 'nftban: rbl registry: key %q outside any [id] block (%s:%d)\n' "$key" "$file" "$lineno" >&2; rc=1; continue
         fi
@@ -255,6 +258,194 @@ nftban_rbl_registry_test_zone() {
     esac
 }
 
+# ============================================================================
+# SLICE 3C — CURATED PROJECTION (registry becomes the effective-set authority)
+# ============================================================================
+# Ratified parameters (owner 2026-07-14):
+: "${RBL_PROJECTION_AUTHORITY:=REGISTRY}"          # REGISTRY | LEGACY
+: "${RBL_LEGACY_FALLBACK:=VALIDATION_FAILURE_ONLY}" # fallback ONLY on parse/validate/admit failure
+: "${RBL_MIN_VOTING_PROVIDERS:=2}"
+: "${BARRACUDA_DEFAULT_POLICY:=CONDITIONAL_OFF_BY_DEFAULT}"
+
+# Scopes that are informational-only (never an ordinary spam vote).
+_NFTBAN_RBL_INFO_SCOPES="TOR_EXIT NETWORK_ALLOCATION ASN_REPUTATION"
+
+# The effective query zone for a record: a voting record with a replacement
+# (EXTERNAL:<zone>) is queried at the CORRECTED zone; otherwise its own zone.
+_nftban_rbl_effzone() { # $1 zone $2 replacement
+    case "$2" in EXTERNAL:*) printf '%s' "${2#EXTERNAL:}" ;; *) printf '%s' "$1" ;; esac
+}
+
+# --------------------------------------------------------------------------
+# Projection engine — impl/wrapper split (re-entrancy + strict-mode safety)
+#
+# The CLI runs under `set -Eeuo pipefail` with a global ERR trap whose handler
+# calls exit. The projection derivation contains pipelines that return a benign
+# non-zero as normal control flow (`uniq -d` with no dups, `grep -c` with zero
+# matches). Under that trap those non-zeros would fire the handler; and nesting
+# per-function trap-clearing subshells DEADLOCKS on repeated invocation.
+#
+# Rule: the `_impl` helpers below hold ALL logic and NEVER manipulate traps or
+# spawn a guard subshell — they call each other directly (ordinary `$(...)` only).
+# Each PUBLIC function is a thin wrapper that opens EXACTLY ONE subshell with
+# errexit + ERR neutralised. One wrapper level → no nesting → no deadlock, and no
+# benign internal non-zero can ever reach the caller's ERR handler.
+# --------------------------------------------------------------------------
+
+# Emit "class<TAB>id<TAB>eff_zone<TAB>info_url" for every registry record, where
+# class ∈ voting | informational | conditional | excluded | retired.
+# Deterministic (sorted by eff_zone). Reads the CURRENT registry (valid or not).
+_nftban_rbl_proj_table_impl() {
+    # Parse the registry AT MOST ONCE per public operation: the wrapper seeds
+    # $_NFTBAN_RBL_RECS (parsed records) and every impl below reads it, so a
+    # single `rbl providers projection` triggers one parse, not a dozen. (The
+    # legacy parser accumulates state under the RBL runtime IFS and must not be
+    # re-run in a tight loop.) Falls back to a direct parse if unseeded.
+    local recs
+    if [[ -n "${_NFTBAN_RBL_RECS+x}" ]]; then recs="$_NFTBAN_RBL_RECS"
+    else recs="$(nftban_rbl_registry_parse "$NFTBAN_RBL_REGISTRY_FILE" 2>/dev/null)"; fi
+    local id zone qt scope family access weight role group state op repl audit conf lic url line ez cls
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        IFS=$'\x1f' read -r id zone qt scope family access weight role group state op repl audit conf lic url \
+            <<< "${line//$'\t'/$'\x1f'}"
+        [[ -z "$id" ]] && continue
+        ez="$(_nftban_rbl_effzone "$zone" "$repl")"
+        case "$state" in
+            retired)   cls=retired ;;
+            excluded)  cls=excluded ;;
+            conditional) cls=conditional ;;
+            enabled)
+                if [[ "$qt" == "IP_DNSBL" ]] && ! _nftban_rbl_reg_in "$scope" "$_NFTBAN_RBL_INFO_SCOPES" \
+                   && [[ "$role" != "COMPONENT" && "$role" != "CLASSIFICATION" ]]; then
+                    cls=voting
+                else
+                    cls=informational
+                fi ;;
+            *) cls=excluded ;;
+        esac
+        printf '%s\t%s\t%s\t%s\n' "$cls" "$id" "$ez" "$url"
+    done <<< "$recs" | sort -t$'\t' -k3,3
+}
+
+_nftban_rbl_proj_class_impl() { # $1 = class
+    _nftban_rbl_proj_table_impl | awk -F'\t' -v c="$1" '$1==c{print $2"\t"$3"\t"$4}'
+}
+
+# Admission predicate: registry may become the projection authority ONLY if it
+# parses, validates, and the derived VOTING set is admissible. return 1 + reason
+# token on stderr otherwise. Fail-closed.
+_nftban_rbl_admit_impl() {
+    [[ -f "$NFTBAN_RBL_REGISTRY_FILE" ]] || { echo "NO_REGISTRY_FILE" >&2; return 1; }
+    nftban_rbl_registry_validate "$NFTBAN_RBL_REGISTRY_FILE" >/dev/null 2>&1 || { echo "VALIDATION_FAILURE" >&2; return 1; }
+    local vote n dupz vids vgroups dupg
+    vote="$(_nftban_rbl_proj_class_impl voting)"
+    n="$(printf '%s\n' "$vote" | grep -c . || true)"
+    [[ "$n" -lt "${RBL_MIN_VOTING_PROVIDERS:-2}" ]] && { echo "BELOW_MIN_VOTING:$n<${RBL_MIN_VOTING_PROVIDERS:-2}" >&2; return 1; }
+    # duplicate voting zone
+    dupz="$(printf '%s\n' "$vote" | awk -F'\t' '{print $2}' | sort | uniq -d)"
+    [[ -n "$dupz" ]] && { echo "DUPLICATE_VOTING_ZONE:${dupz%%$'\n'*}" >&2; return 1; }
+    # no aggregate AND its component both voting (group-dedup): reject if two
+    # voting rows share an evidence-group. Single-pass join of the voting id set
+    # against the parsed id→group column (col 1 → col 9).
+    vids="$(_nftban_rbl_proj_class_impl voting | awk -F'\t' '{print $1}')"
+    local recs
+    if [[ -n "${_NFTBAN_RBL_RECS+x}" ]]; then recs="$_NFTBAN_RBL_RECS"
+    else recs="$(nftban_rbl_registry_parse "$NFTBAN_RBL_REGISTRY_FILE" 2>/dev/null)"; fi
+    vgroups="$(printf '%s\n' "$recs" \
+        | awk -F'\t' -v ids="$vids" 'BEGIN{n=split(ids,a,"\n");for(i=1;i<=n;i++)if(a[i]!="")V[a[i]]=1}
+                                     V[$1] && $9!=""{print $9}')"
+    dupg="$(printf '%s\n' "$vgroups" | grep -v '^$' | sort | uniq -d)"
+    [[ -n "$dupg" ]] && { echo "DUPLICATE_VOTING_GROUP:${dupg%%$'\n'*}" >&2; return 1; }
+    return 0
+}
+
+# Which source is authoritative: REGISTRY (curated) or LEGACY (23). LEGACY-due-to-
+# failure emits the reason on stderr. A valid smaller projection NEVER falls back.
+_nftban_rbl_source_impl() {
+    [[ "${RBL_PROJECTION_AUTHORITY:-REGISTRY}" == "LEGACY" ]] && { echo LEGACY; return 0; }
+    local reason
+    if reason="$(_nftban_rbl_admit_impl 2>&1 1>/dev/null)"; then
+        echo REGISTRY
+    else
+        printf 'DEGRADED_LEGACY_FALLBACK:%s\n' "${reason:-VALIDATION_FAILURE}" >&2
+        echo LEGACY
+    fi
+}
+
+# THE effective queried set. REGISTRY → VOTING set (domain:url) with corrected
+# zones; LEGACY → nftban_rbl_load_providers (byte-identical historical 23).
+_nftban_rbl_effective_impl() {
+    local src; src="$(_nftban_rbl_source_impl)"
+    if [[ "$src" == "REGISTRY" ]]; then
+        _nftban_rbl_proj_class_impl voting | awk -F'\t' '{print $2":"$3}'
+    else
+        nftban_rbl_load_providers
+    fi
+}
+
+_nftban_rbl_hash_impl() {
+    local body
+    body="$(_nftban_rbl_source_impl 2>/dev/null; _nftban_rbl_effective_impl 2>/dev/null | cut -d: -f1 | sort)"
+    printf '%s\n' "$body" | sha256sum | awk '{print $1}'
+}
+
+_nftban_rbl_report_impl() {
+    local src hash legacy curated
+    src="$(_nftban_rbl_source_impl 2>/dev/null)"; hash="$(_nftban_rbl_hash_impl 2>/dev/null)"
+    legacy="$(nftban_rbl_load_providers | cut -d: -f1 | sort)"
+    curated="$(_nftban_rbl_effective_impl | cut -d: -f1 | sort)"
+    printf 'Projection source: %s\n' "$src"
+    printf 'Projection hash:   %s\n' "$hash"
+    printf 'Voting: %s   Informational: %s   Conditional: %s   Excluded: %s   Retired: %s\n' \
+        "$(_nftban_rbl_proj_class_impl voting|grep -c . || true)" \
+        "$(_nftban_rbl_proj_class_impl informational|grep -c . || true)" \
+        "$(_nftban_rbl_proj_class_impl conditional|grep -c . || true)" \
+        "$(_nftban_rbl_proj_class_impl excluded|grep -c . || true)" \
+        "$(_nftban_rbl_proj_class_impl retired|grep -c . || true)"
+    printf -- '── diff vs legacy 23 (- removed from live queries / + added) ──\n'
+    comm -23 <(printf '%s\n' "$legacy") <(printf '%s\n' "$curated") | sed 's/^/- /'
+    comm -13 <(printf '%s\n' "$legacy") <(printf '%s\n' "$curated") | sed 's/^/+ /'
+}
+
+# ---- PUBLIC wrappers ----
+# Each opens EXACTLY ONE errexit/ERR-neutralised subshell and seeds the parsed
+# registry ONCE into $_NFTBAN_RBL_RECS (dynamic-scope visible to every impl it
+# calls), so the whole operation parses the registry a single time.
+_nftban_rbl_seed_recs() { nftban_rbl_registry_parse "$NFTBAN_RBL_REGISTRY_FILE" 2>/dev/null; }
+nftban_rbl_registry_projection_table() { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_proj_table_impl ); }
+nftban_rbl_registry_class()             { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_proj_class_impl "$@" ); }
+nftban_rbl_registry_admit()             { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_admit_impl ); }
+nftban_rbl_projection_source()          { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_source_impl ); }
+nftban_rbl_effective_providers()        { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_effective_impl ); }
+nftban_rbl_projection_hash()            { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_hash_impl ); }
+nftban_rbl_projection_report()          { ( set +e; trap - ERR; local _NFTBAN_RBL_RECS; _NFTBAN_RBL_RECS="$(_nftban_rbl_seed_recs)"; _nftban_rbl_report_impl ); }
+
+# Live listed+clean RFC5782 qualification of a replacement target — MUST pass
+# before a corrected zone is considered activated. Read-only. Echoes PASS|FAIL.
+nftban_rbl_registry_qualify_replacement() { # $1 = id
+  ( set +e; trap - ERR
+    local rec repl z listed clean out
+    rec="$(nftban_rbl_registry_get "$1")" || { echo "FAIL:NO_RECORD"; exit 1; }
+    repl="$(printf '%s' "$rec" | awk -F'\t' '{print $12}')"
+    case "$repl" in EXTERNAL:*) z="${repl#EXTERNAL:}" ;; *) echo "FAIL:NO_EXTERNAL_REPLACEMENT"; exit 1 ;; esac
+    listed="$(nftban_rbl_registry_test_zone "$z")"
+    clean=""
+    if command -v dig >/dev/null 2>&1; then
+        out="$(dig +time="${NFTBAN_RBL_TIMEOUT:-4}" +tries=1 A "1.0.0.127.$z" 2>/dev/null)"
+        clean="$(printf '%s' "$out" | sed -n 's/.*status: \([A-Z]*\),.*/\1/p' | head -1)"
+    fi
+    if { [[ "$listed" == LISTED_TESTPOINT || "$listed" == REACHABLE_NOANSWER ]]; } && [[ "$clean" == NXDOMAIN ]]; then
+        echo "PASS:$z"; exit 0
+    fi
+    echo "FAIL:listed=$listed clean=${clean:-TIMEOUT}"; exit 1 )
+}
+
+export -f _nftban_rbl_effzone nftban_rbl_registry_projection_table nftban_rbl_registry_class 2>/dev/null || true
+export -f nftban_rbl_registry_admit nftban_rbl_projection_source nftban_rbl_effective_providers 2>/dev/null || true
+export -f nftban_rbl_projection_hash nftban_rbl_registry_qualify_replacement nftban_rbl_projection_report 2>/dev/null || true
+export -f _nftban_rbl_proj_table_impl _nftban_rbl_proj_class_impl _nftban_rbl_admit_impl 2>/dev/null || true
+export -f _nftban_rbl_source_impl _nftban_rbl_effective_impl _nftban_rbl_hash_impl _nftban_rbl_report_impl 2>/dev/null || true
 export -f nftban_rbl_registry_get nftban_rbl_registry_test_zone 2>/dev/null || true
 export -f nftban_rbl_registry_legacy_record nftban_rbl_registry_parse nftban_rbl_registry_validate 2>/dev/null || true
 export -f nftban_rbl_registry_records nftban_rbl_registry_effective 2>/dev/null || true
