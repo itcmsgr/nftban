@@ -114,6 +114,10 @@ access = PUBLIC
 role = PRIMARY
 group = spamhaus
 state = enabled
+operational_status = USABLE_PUBLIC
+audit_date = 2026-07-13
+confidence = HIGH
+license = UNVERIFIED
 info_url = https://www.spamhaus.org/zen/
 
 [barracuda]
@@ -121,6 +125,10 @@ zone = b.barracudacentral.org
 query_type = IP_DNSBL
 access = CREDENTIALED
 state = conditional
+operational_status = UNUSABLE_FROM_TESTED_RESOLVER
+audit_date = 2026-07-13
+confidence = HIGH
+license = UNVERIFIED
 EOF
 grep -q 'rc=0' <<<"$(runval "$VALID")" && ok "C1 valid registry validates (rc0)" || no "C1 valid rejected"
 

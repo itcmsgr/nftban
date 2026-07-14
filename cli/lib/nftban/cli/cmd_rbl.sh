@@ -1615,26 +1615,29 @@ EOF
 }
 
 # Split a TSV registry record into the named fields (empty-column-safe).
-_nftban_rbl_prov_read() { # $1=record; sets id/zone/qt/scope/family/access/weight/role/group/state/url
-    IFS=$'\x1f' read -r id zone qt scope family access weight role group state url \
-        <<< "${1//$'\t'/$'\x1f'}"
+_nftban_rbl_prov_read() { # $1=record; sets the 16 typed-record fields
+    IFS=$'\x1f' read -r id zone qt scope family access weight role group state \
+        op repl audit conf lic url <<< "${1//$'\t'/$'\x1f'}"
 }
 
 _nftban_rbl_providers_list() {
-    local id zone qt scope family access weight role group state url n=0
-    printf 'RBL Providers — effective configuration (registry substrate, slice 1)\n'
-    printf -- '─────────────────────────────────────────────────────────────────────\n'
-    printf '%-24s %-30s %-9s %-8s\n' "ID" "Zone" "Type" "State"
+    local id zone qt scope family access weight role group state op repl audit conf lic url n=0
+    printf 'RBL Providers — typed metadata (state = PROPOSED; effective query set unchanged)\n'
+    printf -- '─────────────────────────────────────────────────────────────────────────────\n'
+    printf '%-22s %-28s %-12s %-10s\n' "ID" "Zone" "Type" "State"
     while IFS= read -r rec; do
         [[ -z "$rec" ]] && continue
         _nftban_rbl_prov_read "$rec"
-        printf '%-24s %-30s %-9s %-8s\n' "$id" "$zone" "$qt" "$state"
+        printf '%-22s %-28s %-12s %-10s\n' "$id" "$zone" "$qt" "$state"
         n=$((n+1))
     done < <(nftban_rbl_registry_records)
-    printf -- '─────────────────────────────────────────────────────────────────────\n'
-    printf 'Effective IP providers: %s   (rbls.conf authoritative; no curation)\n' "$n"
-    if [[ ! -f "${NFTBAN_RBL_REGISTRY_FILE:-}" ]]; then
-        printf 'Registry data file: none (module-only) — legacy flat list projected.\n'
+    printf -- '─────────────────────────────────────────────────────────────────────────────\n'
+    printf 'Records: %s   Effective queried set: all %s zones in rbls.conf order (authoritative).\n' "$n" "$n"
+    if [[ -f "${NFTBAN_RBL_REGISTRY_FILE:-}" ]]; then
+        printf 'State/scope/access are metadata from the 2026-07-13 audit; NO provider is curated,\n'
+        printf 'enabled, disabled, or skipped — curation is a later slice. rbls.conf is unchanged.\n'
+    else
+        printf 'Registry data file: none — conservative legacy projection (all IP_DNSBL/enabled).\n'
     fi
     return 0
 }
@@ -1659,21 +1662,26 @@ _nftban_rbl_providers_validate() {
 _nftban_rbl_providers_explain() {
     local want="${1:-}"
     [[ -z "$want" ]] && { echo "ERROR: usage: nftban rbl providers explain <id>" >&2; return 1; }
-    local rec id zone qt scope family access weight role group state url
+    local rec id zone qt scope family access weight role group state op repl audit conf lic url
     rec="$(nftban_rbl_registry_get "$want")" || { echo "ERROR: no provider with id '$want' (see 'rbl providers list')" >&2; return 1; }
     _nftban_rbl_prov_read "$rec"
     cat <<EOF
-Provider:     ${id}
-  Zone:       ${zone}
-  Query type: ${qt}
-  Scope:      ${scope}
-  Family:     ${family}
-  Access:     ${access}
-  Weight:     ${weight:-(none)}
-  Role:       ${role}
-  Group:      ${group}
-  State:      ${state}
-  Info:       ${url:-—}
+Provider:            ${id}
+  Zone:              ${zone}
+  Query type:        ${qt}
+  Scope:             ${scope}
+  Family:            ${family}
+  Access:            ${access}
+  Weight:            ${weight:-(none)}
+  Role:              ${role}
+  Group:             ${group}
+  State (proposed):  ${state}
+  Operational:       ${op:-UNVERIFIED}
+  Replacement:       ${repl:-—}
+  Audit date:        ${audit:-—}
+  Confidence:        ${conf:-—}
+  License:           ${lic:-UNVERIFIED}
+  Info:              ${url:-—}
 EOF
     return 0
 }

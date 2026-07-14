@@ -50,9 +50,9 @@ COMMON='export NFTBAN_RBL_PROVIDERS_FILE="'"$REAL_RBLS"'" NFTBAN_RBL_CUSTOM_FILE
 # --------------------------------------------------------------------------
 outA="$( ( eval "$COMMON"; source "$CMD_RBL" 2>/dev/null || true; set +eE; nftban_cmd_rbl_providers list ) 2>&1 )"
 [[ "$(printf '%s\n' "$outA" | grep -cE '[[:space:]]IP_DNSBL[[:space:]]')" -eq 23 ]] && ok "A1 list shows 23 IP_DNSBL rows" || no "A1 list rows ($(printf '%s\n' "$outA" | grep -cE 'IP_DNSBL'))"
-printf '%s\n' "$outA" | grep -q 'Effective IP providers: 23' && ok "A2 list effective count 23" || no "A2 count"
-printf '%s\n' "$outA" | grep -qi 'no curation' && ok "A3 list states 'no curation'" || no "A3 no-curation note"
-printf '%s\n' "$outA" | grep -qi 'module-only' && ok "A4 list notes module-only (no registry data)" || no "A4 module-only note"
+printf '%s\n' "$outA" | grep -q 'Records: 23' && ok "A2 list record count 23" || no "A2 count"
+printf '%s\n' "$outA" | grep -qi 'legacy projection' && ok "A3 list states conservative legacy projection" || no "A3 no-curation note"
+printf '%s\n' "$outA" | grep -qi 'Registry data file: none' && ok "A4 list notes no registry data file" || no "A4 module-only note"
 
 # --------------------------------------------------------------------------
 # B — providers validate (no registry, then invalid registry)
@@ -68,7 +68,7 @@ outBi="$( ( eval "$COMMON"; RF="$(mktemp)"; printf '[x]\nzone = a.example.net\n[
 # C — providers explain
 # --------------------------------------------------------------------------
 outC="$( ( eval "$COMMON"; source "$CMD_RBL" 2>/dev/null || true; set +eE; nftban_cmd_rbl_providers explain zen_spamhaus_org ) 2>&1 )"
-{ printf '%s\n' "$outC" | grep -q 'Zone:.*zen.spamhaus.org' && printf '%s\n' "$outC" | grep -q 'Query type:.*IP_DNSBL' && printf '%s\n' "$outC" | grep -q 'State:.*enabled'; } \
+{ printf '%s\n' "$outC" | grep -q 'Zone:.*zen.spamhaus.org' && printf '%s\n' "$outC" | grep -q 'Query type:.*IP_DNSBL' && printf '%s\n' "$outC" | grep -q 'State.*enabled'; } \
   && ok "C1 explain <id> shows the typed record" || no "C1 explain ($outC)"
 outCe="$( ( eval "$COMMON"; source "$CMD_RBL" 2>/dev/null || true; set +eE; nftban_cmd_rbl_providers explain no_such_id; echo "RC=$?" ) 2>&1 )"
 { printf '%s\n' "$outCe" | grep -qi 'no provider with id' && ! printf '%s\n' "$outCe" | grep -q 'RC=0'; } \
