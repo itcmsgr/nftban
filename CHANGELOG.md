@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.8] - 2026-07-14 — RBL provider-registry curated projection (slice 3C)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` retained byte-identical (rollback carrier, NOT retired).**
+
+RBL provider-registry **Slice 3C — the first behavior-changing provider slice.** `etc/nftban/conf.d/rbl/registry.conf` becomes the **projection authority** for the effective RBL queried set; `rbls.conf` is retained as the rollback/compatibility carrier (retirement is Slice 5). RBL stays **observe-only**; ban authority unchanged.
+
+- **Deterministic curated classes** derived from the typed records: VOTING **4** (`psbl.surriel.com`, `bl.spamcop.net`, `dnsbl-1.uceprotect.net`, corrected `dnsbl.dronebl.org`), INFORMATIONAL **3** (`tor.dan.me.uk`, `dnsbl-2.uceprotect.net`, `dnsbl-3.uceprotect.net` — typed signals that never contribute an ordinary vote), CONDITIONAL off-by-default **3** (`zen.spamhaus.org`, `b.barracudacentral.org`, `spam.spamrats.com`), EXCLUDED **6**, RETIRED **7**.
+- **Ratified parameters:** `RBL_PROJECTION_AUTHORITY=REGISTRY`, `RBL_LEGACY_FALLBACK=VALIDATION_FAILURE_ONLY`, `RBL_MIN_VOTING_PROVIDERS=2`, `BARRACUDA_DEFAULT_POLICY=CONDITIONAL_OFF_BY_DEFAULT`.
+- **Single source-selection** `nftban_rbl_projection_source` → `REGISTRY | LEGACY` — never a blend of `rbls.conf` + registry. Legacy fallback is permitted **only** on registry parse/validate/admit failure and emits a prominent `DEGRADED_LEGACY_FALLBACK` warning; a valid *smaller* projection never silently falls back.
+- **Admission gate:** ≥2 voting (`RBL_MIN_VOTING_PROVIDERS`), duplicate-zone + duplicate-evidence-group rejection, IP_DNSBL-only voting, no aggregate/component double-counting; informational/conditional/broad-network/Tor scopes cannot vote.
+- **Corrected DroneBL** activated at `dnsbl.dronebl.org` (the configured `dnsbl-1.dronebl.org` was an NXDOMAIN zone defect) after a live listed(`2.0.0.127`)+clean(`1.0.0.127`) RFC5782 qualification.
+- The **live check path** (`nftban_rbl_check_ip` parallel + serial) consumes `nftban_rbl_effective_providers` — the curated voting set when REGISTRY is authoritative; **byte-identical to the historical 23 zones** when LEGACY (rollback via `RBL_PROJECTION_AUTHORITY=LEGACY` or an invalid/removed registry).
+- New CLI **`nftban rbl providers projection`** (projection source · reproducible hash · per-class counts · before/after diff vs legacy 23) and a **Class column** in `providers list`.
+- `registry.conf` ratified states: `dronebl`/`uceprotect_l2`/`uceprotect_l3` → `enabled`, `cbl_abuseat` → `excluded`.
+- Latent fix: inlined the per-field trim in `core/nftban_rbl_registry.sh:nftban_rbl_registry_parse`, removing ~700 command-substitution forks per parse (~1 s → instant; identical output) — required because the projection engine re-reads the registry.
+
+Invariants: schema **1.84.0** unchanged; **0 Go**; daemon **byte-identical**; `rbls.conf` **byte-identical**; registry **parsed, never sourced/evaled**. PR [#1095](https://github.com/itcmsgr/nftban/pull/1095) `fe7026ac`; test `rbl_provider_registry_slice3c_test` **33/33** (exact class membership + counts, corrected-DroneBL in / defective out, no retired/excluded/informational/conditional zone queried, deterministic projection hash, before/after diff, LEGACY rollback byte-for-byte 23, malformed → degraded fallback, valid-smaller no-fallback, check-path wiring, registry-not-sourced, `rbls.conf` retained); `slice2` A3/A4 + `slice3a` C9 updated for the 3C projection reality; full RBL + update/install suites green; shellcheck clean.
+
+---
+
 ## [v1.220.7] - 2026-07-14 — RBL provider-registry typed provider metadata (slice 3A)
 
 **Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical.**
