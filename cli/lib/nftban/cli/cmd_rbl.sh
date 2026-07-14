@@ -1602,40 +1602,63 @@ _nftban_rbl_providers_help() {
     cat <<'EOF'
 Usage: nftban rbl providers <subcommand>
 
-  list                 Typed provider table (ID · Zone · Type · State) + counts
+  list                 Typed provider table (ID · Zone · Type · State · Class) + counts
+  projection           Effective projection: source · hash · class counts · diff vs legacy 23
   validate             Validate the registry data file (if any); report errors
   test [<id>|--all]    Live RFC5782 reachability probe from this host's resolver
                        (read-only; classifies each zone; changes NO state)
   explain <id>         Full typed record for one provider
   help                 This help
 
-Read-only. rbls.conf remains authoritative; no provider is curated, weighted,
-grouped, enabled, or disabled by these commands.
+Read-only. When a valid registry is present it is the projection authority
+(curated voting set); rbls.conf is retained as the rollback carrier. These
+commands never mutate provider state — curation is fixed by the registry data.
 EOF
 }
 
 # Split a TSV registry record into the named fields (empty-column-safe).
-_nftban_rbl_prov_read() { # $1=record; sets id/zone/qt/scope/family/access/weight/role/group/state/url
-    IFS=$'\x1f' read -r id zone qt scope family access weight role group state url \
-        <<< "${1//$'\t'/$'\x1f'}"
+_nftban_rbl_prov_read() { # $1=record; sets the 16 typed-record fields
+    IFS=$'\x1f' read -r id zone qt scope family access weight role group state \
+        op repl audit conf lic url <<< "${1//$'\t'/$'\x1f'}"
 }
 
 _nftban_rbl_providers_list() {
-    local id zone qt scope family access weight role group state url n=0
-    printf 'RBL Providers — effective configuration (registry substrate, slice 1)\n'
-    printf -- '─────────────────────────────────────────────────────────────────────\n'
-    printf '%-24s %-30s %-9s %-8s\n' "ID" "Zone" "Type" "State"
+    local id zone qt scope family access weight role group state op repl audit conf lic url n=0
+    # id→projection-class map (voting/informational/conditional/excluded/retired)
+    declare -A _cls=()
+    while IFS=$'\t' read -r c cid _cz _cu; do [[ -n "$cid" ]] && _cls[$cid]="$c"; done \
+        < <(nftban_rbl_registry_projection_table 2>/dev/null)
+    local src; src="$(nftban_rbl_projection_source 2>/dev/null)"
+    printf 'RBL Providers — typed registry (class = effective projection role)\n'
+    printf -- '─────────────────────────────────────────────────────────────────────────────\n'
+    printf '%-20s %-26s %-11s %-11s %-11s\n' "ID" "Zone" "Type" "State" "Class"
     while IFS= read -r rec; do
         [[ -z "$rec" ]] && continue
         _nftban_rbl_prov_read "$rec"
-        printf '%-24s %-30s %-9s %-8s\n' "$id" "$zone" "$qt" "$state"
+        printf '%-20s %-26s %-11s %-11s %-11s\n' "$id" "$zone" "$qt" "$state" "${_cls[$id]:-—}"
         n=$((n+1))
     done < <(nftban_rbl_registry_records)
-    printf -- '─────────────────────────────────────────────────────────────────────\n'
-    printf 'Effective IP providers: %s   (rbls.conf authoritative; no curation)\n' "$n"
-    if [[ ! -f "${NFTBAN_RBL_REGISTRY_FILE:-}" ]]; then
-        printf 'Registry data file: none (module-only) — legacy flat list projected.\n'
+    printf -- '─────────────────────────────────────────────────────────────────────────────\n'
+    printf 'Records: %s   Projection source: %s\n' "$n" "$src"
+    if [[ "$src" == "REGISTRY" ]]; then
+        printf 'Voting: %s   Informational: %s   Conditional: %s   Excluded: %s   Retired: %s\n' \
+            "$(nftban_rbl_registry_class voting|grep -c .)" "$(nftban_rbl_registry_class informational|grep -c .)" \
+            "$(nftban_rbl_registry_class conditional|grep -c .)" "$(nftban_rbl_registry_class excluded|grep -c .)" \
+            "$(nftban_rbl_registry_class retired|grep -c .)"
+        printf 'Effective queried (voting) set = curated registry projection. See '\''providers projection'\''.\n'
+        printf 'rbls.conf retained as rollback carrier (RBL_PROJECTION_AUTHORITY=LEGACY restores 23 zones).\n'
+    else
+        printf 'Registry not authoritative — legacy rbls.conf projection (%s zones) in effect.\n' \
+            "$(nftban_rbl_load_providers 2>/dev/null | grep -c .)"
     fi
+    return 0
+}
+
+_nftban_rbl_providers_projection() {
+    if ! declare -F nftban_rbl_projection_report >/dev/null 2>&1; then
+        echo "ERROR: projection layer unavailable (registry module not loaded)" >&2; return 1
+    fi
+    nftban_rbl_projection_report
     return 0
 }
 
@@ -1659,21 +1682,26 @@ _nftban_rbl_providers_validate() {
 _nftban_rbl_providers_explain() {
     local want="${1:-}"
     [[ -z "$want" ]] && { echo "ERROR: usage: nftban rbl providers explain <id>" >&2; return 1; }
-    local rec id zone qt scope family access weight role group state url
+    local rec id zone qt scope family access weight role group state op repl audit conf lic url
     rec="$(nftban_rbl_registry_get "$want")" || { echo "ERROR: no provider with id '$want' (see 'rbl providers list')" >&2; return 1; }
     _nftban_rbl_prov_read "$rec"
     cat <<EOF
-Provider:     ${id}
-  Zone:       ${zone}
-  Query type: ${qt}
-  Scope:      ${scope}
-  Family:     ${family}
-  Access:     ${access}
-  Weight:     ${weight:-(none)}
-  Role:       ${role}
-  Group:      ${group}
-  State:      ${state}
-  Info:       ${url:-—}
+Provider:            ${id}
+  Zone:              ${zone}
+  Query type:        ${qt}
+  Scope:             ${scope}
+  Family:            ${family}
+  Access:            ${access}
+  Weight:            ${weight:-(none)}
+  Role:              ${role}
+  Group:             ${group}
+  State (proposed):  ${state}
+  Operational:       ${op:-UNVERIFIED}
+  Replacement:       ${repl:-—}
+  Audit date:        ${audit:-—}
+  Confidence:        ${conf:-—}
+  License:           ${lic:-UNVERIFIED}
+  Info:              ${url:-—}
 EOF
     return 0
 }
@@ -1728,6 +1756,7 @@ nftban_cmd_rbl_providers() {
     local sub="${1:-list}"; [[ $# -gt 0 ]] && shift
     case "$sub" in
         list)          _nftban_rbl_providers_list "$@" ;;
+        projection)    _nftban_rbl_providers_projection "$@" ;;
         validate)      _nftban_rbl_providers_validate "$@" ;;
         test)          _nftban_rbl_providers_test "$@" ;;
         explain)       _nftban_rbl_providers_explain "$@" ;;
@@ -1745,6 +1774,7 @@ nftban_cmd_rbl_providers() {
 export -f nftban_cmd_rbl
 export -f nftban_cmd_rbl_providers
 export -f _nftban_rbl_providers_help _nftban_rbl_prov_read _nftban_rbl_providers_list
+export -f _nftban_rbl_providers_projection
 export -f _nftban_rbl_providers_validate _nftban_rbl_providers_explain _nftban_rbl_providers_test
 export -f nftban_cmd_rbl_alert
 export -f nftban_cmd_rbl_cache
