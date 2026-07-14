@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.7] - 2026-07-14 — RBL provider-registry typed provider metadata (slice 3A)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical.**
+
+RBL provider-registry **Slice 3A adds typed provider metadata only.** No runtime provider curation is applied:
+- the active queried set remains the existing **23 zones**;
+- legacy **order is unchanged**;
+- `rbls.conf` remains **authoritative**;
+- **no provider is added, removed, enabled, disabled, skipped, or replaced**;
+- the **DroneBL corrected zone remains metadata-only** (`replacement=EXTERNAL:dnsbl.dronebl.org`; the queried zone stays `dnsbl-1.dronebl.org`);
+- **aggregate/component relationships are informational only** (no vote-counting change);
+- `providers enable|disable` remain **non-mutating (rc2)**;
+- **Slice 3B (resolver qualification) and Slice 3C (curated projection) remain deferred**;
+- RBL remains **observe-only**; daemon **byte-identical**; nft schema remains **1.84.0**.
+
+Ships `etc/nftban/conf.d/rbl/registry.conf` — 23 typed records (one per configured zone) sourced from the 2026-07-13 external audit (`RBL_PROVIDER_REGISTRY_SLICE_3_EXTERNAL_AUDIT_2026_07_13.md`), encoding `query_type/scope/family/access/role/group/state/operational_status/replacement/audit_date/confidence/license`. `core/nftban_rbl_registry.sh` extends the schema to 16 columns with a deterministic validator (requires ISO audit_date + confidence + operational_status + license — UNVERIFIED first-class; replacement resolves to a declared record or `EXTERNAL:<dnsname>`; cyclic replacement chains rejected) and OVERLAYS metadata onto the legacy zones without changing membership. `providers list`/`explain` expose the metadata (states are PROPOSED). PR [#1092](https://github.com/itcmsgr/nftban/pull/1092) `80c42cbb`; test `rbl_provider_registry_slice3a_test` 27/27; slice1/slice2 20/20 + 18/18; full RBL suite green; shellcheck clean; live loader byte-identical with/without the registry.
+
 ## [v1.220.6] - 2026-07-13 — RBL provider-registry read-only `providers` CLI + coverage rendering (slice 2)
 
 **Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical · no curation / no change to the active 23-provider set.**
