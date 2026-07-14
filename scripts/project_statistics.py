@@ -243,9 +243,31 @@ def main():
     # 7) current.json
     current = {
         "snapshot_at": snap_at, "snapshot_date": snap_date,
-        "disclosure": ("Package downloads count GitHub requests for installable NFTBan DEB and RPM "
-                       "assets. Clone, visitor, and download statistics do not represent unique users, "
-                       "successful installations, active systems, mirrors, CI jobs, or fleet size."),
+        "disclosure": (
+            "GitHub Release asset download requests and repository traffic counters. These INCLUDE "
+            "NFTBan-operated infrastructure: an ~11-host fleet (dns1-4, srv1-4, monitor, lab2, lab4) "
+            "self-updates by downloading DEB/RPM assets from GitHub Releases, and package-native "
+            "validation downloads official assets too. GitHub exposes aggregate counts only, with no "
+            "downloader identity or IP, so NFTBan-owned traffic cannot be identified or removed and "
+            "historical counts are NOT retroactively adjusted. Do not read raw package downloads or "
+            "clones as purely external adoption, or as unique users, installations, active systems, "
+            "mirrors, CI jobs, or fleet size. Unique visitors are substantially less fleet-contaminated "
+            "(automated hosts do not browse the repository web UI); non-release-day package-download "
+            "deltas are the cleanest external-interest signal. A typical release-day internal baseline "
+            "is approximately 11 fleet hosts plus validation downloads -- this is an ESTIMATE and is "
+            "never subtracted from the reported counts. Future mirror routing of fleet updates can "
+            "reduce this contamination prospectively (see OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE)."),
+        "fleet_contamination": {
+            "raw_counts_include_nftban_infrastructure": True,
+            "fleet_hosts_approx": 11,
+            "fleet_hosts": ["dns1", "dns2", "dns3", "dns4", "srv1", "srv2", "srv3", "srv4",
+                            "monitor", "lab2", "lab4"],
+            "exact_deduplication_possible": False,
+            "reason": "GitHub exposes aggregate counters only; no downloader identity/IP.",
+            "release_day_internal_baseline_estimate": "~11 fleet hosts + package-native validation (ESTIMATE, not subtracted)",
+            "cleaner_external_signals": ["unique_visitors", "non_release_day_package_delta"],
+            "historical_counts_retroactively_adjusted": False,
+            "fabricated_fleet_excluded_metric": False},
         "package_downloads": rel["package_downloads"], "package_delta": delta,
         "deb_downloads": rel["deb_downloads"], "rpm_downloads": rel["rpm_downloads"],
         "standalone_binary_downloads": rel["standalone_binary_downloads"],
