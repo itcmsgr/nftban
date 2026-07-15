@@ -1,0 +1,43 @@
+# NFTBan — Portscan Trusted-Monitoring-Flow Exclusion (EXAMPLE / TEMPLATE)
+# =============================================================================
+# Copy to  /etc/nftban/conf.d/portscan/trusted-flows.conf  and edit to activate.
+# The live file ships ABSENT — suppression is OPT-IN and PER-HOST. With no live
+# file, nothing is suppressed.
+#
+# This file is PARSED, never sourced or evaluated.
+#
+# WHAT THIS DOES (and does NOT):
+#   • Suppresses portscan EVENT GENERATION (no event, no spool/state entry) for
+#     an exactly-declared, within-rate trusted monitoring flow — e.g. a Zabbix
+#     agent poll to tcp/10050. This removes the analyzer CPU + spool churn AT
+#     THE SOURCE.
+#   • Does NOT change firewall acceptance, ban authority, whitelist/exemption
+#     sets, the Go classifier verdict, RBL, or BotScan.
+#   • Any packet that does NOT match every declared dimension — a different
+#     destination port, port fan-out, different protocol, unexpected
+#     destination, or a rate ABOVE the declared bound — generates the normal
+#     portscan event. Abnormal behaviour from the trusted source stays VISIBLE.
+#
+# ROW FORMAT (exactly five | -delimited columns):
+#   source_cidr | protocol | destination_port | destination_selector | rate_limit
+#
+#   source_cidr           IPv4/IPv6 CIDR or bare IP (bare = /32 or /128).
+#                         0.0.0.0/0 and ::/0 are REJECTED. No wildcard source.
+#   protocol              tcp | udp  (exact; no wildcard).
+#   destination_port      single port 1-65535 (no ranges, no 0, no all-port).
+#   destination_selector  * (any local destination) OR a specific local IP.
+#   rate_limit            N/min  — positive integer events per minute. Matching
+#                         events beyond N within a 60s window are NOT suppressed
+#                         (they stay visible). Zero/negative/missing/unbounded
+#                         are REJECTED.
+#
+# EXAMPLES (commented — copy + adapt per host; declare only flows you verified):
+#   # Zabbix server (IPv6) polling this host's Zabbix agent, ~1 poll/5s:
+#   # 2a01:4f8:c014:5ee1::1/128|tcp|10050|*|12/min
+#   # Zabbix server (IPv4) polling a specific local address:
+#   # 192.0.2.10/32|tcp|10050|192.0.2.20|12/min
+#
+# Use * ONLY for the destination selector. Do not wildcard source, protocol,
+# port, or rate. Duplicate or overlapping (same source+proto+port) rows are
+# rejected. Malformed rows are skipped (fail-safe: never suppressed) and counted
+# under trusted_flow_parse_errors — see `nftban portscan status`.
