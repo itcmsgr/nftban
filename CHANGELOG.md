@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.9] - 2026-07-15 — Portscan trusted-monitoring-flow exclusion
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · RBL untouched · firewall/ban/whitelist authority unchanged.**
+
+Suppresses portscan **event generation only** for an exactly-declared, within-rate trusted monitoring flow tuple (e.g. a Zabbix agent poll to `tcp/10050`), removing the analyzer CPU + spool churn at its source on busy hosts. Firewall acceptance, ban authority, whitelist/exemption sets, the Go classifier verdict, RBL, and BotScan are untouched.
+
+- **Suppression point = shell emit:** the filter runs in `nftban_portscan_classic_process_logs` after the whitelist gate and **before** `_nftban_portscan_emit_event` + `record_connection` — a matched, within-rate flow produces **no event and no spool/state entry**. The Go classifier needs no change; the daemon stays **byte-identical**.
+- **Exact contract:** suppress only when source ∈ declared CIDR **and** protocol exact **and** destination port exact **and** destination selector (`*` or exact IP) **and** observed rate ≤ bound. Any dimension mismatch — or a matching flow **above** the rate bound — generates the normal event, so undeclared ports, port fan-out, wrong protocol, unexpected destinations, over-rate bursts, and malformed config all stay **fully visible**.
+- **Config** `/etc/nftban/conf.d/portscan/trusted-flows.conf` — parsed, never sourced/evaled; ships **absent** (empty, **opt-in, per-host**). Row: `source_cidr|protocol|destination_port|destination_selector|rate_limit`, rate `N/min` (fixed 60s window). Strict validator rejects `0.0.0.0/0`, `::/0`, wildcard source/protocol/port/rate, non-tcp/udp, port 0/ranges/all-port, malformed CIDR, unsafe characters, extra columns, and duplicate/overlapping tuples (malformed rows are skipped fail-safe and counted).
+- **Observability (never silent):** `portscan status` renders `trusted_flow_declarations`, `trusted_flow_suppressed_total`, `trusted_flow_suppressed_by_rule`, `trusted_flow_over_rate_total`, and `trusted_flow_parse_errors`, and states that only event generation is affected — firewall and ban behaviour are unchanged.
+
+New `core/nftban_portscan_trusted_flow.sh` (self-contained IPv4+IPv6 CIDR matcher). Ships `trusted-flows.conf.example` template; the live file is not shipped (opt-in). PR [#1097](https://github.com/itcmsgr/nftban/pull/1097) `f49301c9`; test `portscan_trusted_flow_test` 30/30; existing portscan suite green; shellcheck clean; DEB/RPM + FHS green. Independent of the RBL registry lane; no default trusted-flow declaration is active after install.
+
+---
+
 ## [v1.220.8] - 2026-07-14 — RBL provider-registry curated projection (slice 3C)
 
 **Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` retained byte-identical (rollback carrier, NOT retired).**
