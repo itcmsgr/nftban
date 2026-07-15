@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.10] - 2026-07-15 — Portscan trusted-flow IPv6 destination canonicalization (hotfix)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · firewall/ban/whitelist authority unchanged.**
+
+Fixes two portable product defects in the v1.220.9 portscan trusted-flow exclusion (all distributions, both DEB and RPM — the same shell module; **not** a package-family, distro-age, or nftables defect), surfaced by the srv3 exact-IPv6 canary. The failure mode was **fail-safe (under-suppression)** — declared exact-IPv6-destination flows were not suppressed and their events stayed visible; nothing was over-suppressed or hidden.
+
+- **`BUG_PORTSCAN_TRUSTED_FLOW_IPV6_DST_NOTATION_SENSITIVE_MATCH`** — the destination selector was compared by raw string equality. The kernel/log parser delivers the runtime destination in **expanded** IPv6 form (`2a01:04f8:c014:f4da:0000:0000:0000:0001`) while configuration authors use **compressed** form (`2001:db8:c014:f4da::1`); these are the same address, but string equality treated them as different, so an exact IPv6 destination never matched. The destination now uses the notation-independent IP-equivalence matcher (the same canonicalization the source field already used).
+- **`BUG_PORTSCAN_TRUSTED_FLOW_DST_SINGLE_HOST_CIDR_REJECTED`** — the destination selector accepted only `*` or a bare IP, rejecting the documented `<destination>/128` form. `/32` and `/128` single-host selectors now normalize to the bare host; broader destination CIDRs remain rejected, preserving the exact-single-destination semantics.
+
+Not affected: IPv4 exact destination, `dst=*`, source CIDR matching, rate enforcement, malformed-config fail-safe, rollback, firewall/ban/whitelist, the Go classifier, BotScan, RBL, and ordinary portscan visibility. The gap was input-representation coverage, not package-family: regression tests now exercise expanded and compressed runtime IPv6 destinations, `/128` and `/32` normalization, and a genuinely different IPv6 destination remaining visible. Test `portscan_trusted_flow_test` 34/34; shellcheck clean. No `dst=*` workaround was used.
+
+---
+
 ## [v1.220.9] - 2026-07-15 — Portscan trusted-monitoring-flow exclusion
 
 **Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · RBL untouched · firewall/ban/whitelist authority unchanged.**
