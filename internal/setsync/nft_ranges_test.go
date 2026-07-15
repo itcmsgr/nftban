@@ -49,20 +49,20 @@ func el(ip string, end bool) nftables.SetElement {
 //   - singletons get a paired end (X → X+1)
 //   - a trailing orphan wraparound end (0.0.0.0) is present
 //
-// Set: { 8.8.8.8, 9.9.9.9, 62.38.150.122, 65.21.157.15, 104.16.0.0-104.27.255.255, 127.0.0.1 }
+// Set: { 8.8.8.8, 9.9.9.9, 192.0.2.122, 198.51.100.15, 104.16.0.0-104.27.255.255, 127.0.0.1 }
 func TestReconstructIntervalRanges_ObservedStructure(t *testing.T) {
 	elems := []nftables.SetElement{
 		el("127.0.0.2", true), el("127.0.0.1", false),
 		el("104.28.0.0", true), el("104.16.0.0", false),
-		el("65.21.157.16", true), el("65.21.157.15", false),
-		el("62.38.150.123", true), el("62.38.150.122", false),
+		el("198.51.100.16", true), el("198.51.100.15", false),
+		el("192.0.2.123", true), el("192.0.2.122", false),
 		el("9.9.9.10", true), el("9.9.9.9", false),
 		el("8.8.8.9", true), el("8.8.8.8", false),
 		el("0.0.0.0", true), // orphan wraparound end
 	}
 	got := reconstructIntervalRanges(elems)
 	want := []string{
-		"8.8.8.8", "9.9.9.9", "62.38.150.122", "65.21.157.15",
+		"8.8.8.8", "9.9.9.9", "192.0.2.122", "198.51.100.15",
 		"104.16.0.0-104.27.255.255", "127.0.0.1",
 	}
 	sort.Strings(got)

@@ -47,7 +47,7 @@ func TestPersistBanRejectsNonPublic(t *testing.T) {
 }
 
 func TestPersistBanAllowsPublic(t *testing.T) {
-	public := []string{"8.8.4.4", "46.225.150.67", "2a01:4f8:c014:5ee1::1", "2606:4700:4700::1111"}
+	public := []string{"8.8.4.4", "1.1.1.1", "2001:4860:4860::8888", "2606:4700:4700::1111"}
 	for _, ip := range public {
 		dir := t.TempDir()
 		if _, _, err := PersistBan(dir, ip, "test", "manual"); err != nil {

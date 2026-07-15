@@ -53,11 +53,11 @@ func TestComputeWhitelistRangeDiff_CloudflareNoChurn(t *testing.T) {
 }
 
 func TestComputeWhitelistRangeDiff_NewSingleIPOnCIDRHost(t *testing.T) {
-	desired := []string{"104.16.0.0/13", "104.24.0.0/14", "62.38.150.122"}
+	desired := []string{"104.16.0.0/13", "104.24.0.0/14", "192.0.2.122"}
 	current := []string{"104.16.0.0-104.27.255.255"}
 	d := computeWhitelistRangeDiff(desired, current)
-	if !sortedEq(d.ToAdd, []string{"62.38.150.122"}) {
-		t.Fatalf("expected ToAdd=[62.38.150.122], got %v", d.ToAdd)
+	if !sortedEq(d.ToAdd, []string{"192.0.2.122"}) {
+		t.Fatalf("expected ToAdd=[192.0.2.122], got %v", d.ToAdd)
 	}
 	if len(d.ToRemove) != 0 {
 		t.Fatalf("expected no removals, got %v", d.ToRemove)

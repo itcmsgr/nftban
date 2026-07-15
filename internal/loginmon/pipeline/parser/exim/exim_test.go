@@ -11,7 +11,7 @@
 // meta:package="exim"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-09"
-// meta:description="Phase C: Exim parser tests against real srv2/srv3 fixtures"
+// meta:description="Phase C: Exim parser tests against sanitized sample fixtures"
 //
 // meta:inventory.files="exim_test.go"
 // meta:inventory.binaries=""
@@ -51,16 +51,16 @@ func mkLine(raw string) event.RawLine {
 
 func TestParse_AuthFailure(t *testing.T) {
 	p := New()
-	line := mkLine(`2026-04-09 04:28:42 login authenticator failed for H=([92.118.39.211]) [92.118.39.211]: 535 Incorrect authentication data (set_id=admin@kostaskorakas.gr)`)
+	line := mkLine(`2026-04-09 04:28:42 login authenticator failed for H=([203.0.113.211]) [203.0.113.211]: 535 Incorrect authentication data (set_id=admin@example.test)`)
 	r := p.Parse(line)
 
 	if r.Outcome != event.ParseMatched {
 		t.Fatalf("Outcome: got %v, want ParseMatched", r.Outcome)
 	}
-	if r.Event.SrcIP != netip.MustParseAddr("92.118.39.211") {
+	if r.Event.SrcIP != netip.MustParseAddr("203.0.113.211") {
 		t.Errorf("SrcIP: got %v", r.Event.SrcIP)
 	}
-	if r.Event.Username != "admin@kostaskorakas.gr" {
+	if r.Event.Username != "admin@example.test" {
 		t.Errorf("Username: got %q", r.Event.Username)
 	}
 	if r.Event.Reason != event.ReasonEximAuthFail {
@@ -157,7 +157,7 @@ func TestName(t *testing.T) {
 }
 
 // =============================================================================
-// Fixture replay — real srv2 + srv3 exim mainlog
+// Fixture replay — sanitized sample exim mainlog
 // =============================================================================
 
 func testFixture(t *testing.T, path string, minMatched int) {
@@ -208,20 +208,20 @@ func testFixture(t *testing.T, path string, minMatched int) {
 	}
 }
 
-func TestFixture_Srv2(t *testing.T) {
-	// srv2 fixture: 30 lines, all "authenticator failed" — all should match
-	testFixture(t, fixtureDir+"/srv2_auth_failures.log", 30)
+func TestFixture_SampleA(t *testing.T) {
+	// sample-A fixture: 30 lines, all "authenticator failed" — all should match
+	testFixture(t, fixtureDir+"/auth_failures_a.log", 30)
 }
 
-func TestFixture_Srv3(t *testing.T) {
-	// srv3 fixture: 30 lines, all "authenticator failed"
-	testFixture(t, fixtureDir+"/srv3_auth_failures.log", 30)
+func TestFixture_SampleB(t *testing.T) {
+	// sample-B fixture: 30 lines, all "authenticator failed"
+	testFixture(t, fixtureDir+"/auth_failures_b.log", 30)
 }
 
-// TestFixture_Srv2_StealthworkerCluster asserts the well-known 92.118.39.x
-// attacker cluster appears in the srv2 fixture (reality check).
-func TestFixture_Srv2_StealthworkerCluster(t *testing.T) {
-	f, err := os.Open(fixtureDir + "/srv2_auth_failures.log")
+// TestFixture_StealthworkerCluster asserts the well-known 203.0.113.x
+// attacker cluster appears in the sample-A fixture (reality check).
+func TestFixture_StealthworkerCluster(t *testing.T) {
+	f, err := os.Open(fixtureDir + "/auth_failures_a.log")
 	if err != nil {
 		t.Skipf("fixture not available: %v", err)
 	}
@@ -234,13 +234,13 @@ func TestFixture_Srv2_StealthworkerCluster(t *testing.T) {
 		r := p.Parse(mkLine(scanner.Text()))
 		if r.Outcome == event.ParseMatched {
 			ip := r.Event.SrcIP.String()
-			if len(ip) > 10 && ip[:10] == "92.118.39." {
+			if len(ip) > 10 && ip[:10] == "203.0.113." {
 				stealthworkerCount++
 			}
 		}
 	}
 	if stealthworkerCount == 0 {
-		t.Error("expected at least one 92.118.39.x IP in srv2 fixture (Stealthworker cluster)")
+		t.Error("expected at least one 203.0.113.x IP in sample-A fixture (Stealthworker cluster)")
 	}
-	t.Logf("92.118.39.x count: %d", stealthworkerCount)
+	t.Logf("203.0.113.x count: %d", stealthworkerCount)
 }

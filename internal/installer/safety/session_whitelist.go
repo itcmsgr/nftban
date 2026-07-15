@@ -132,7 +132,7 @@ const sessionWhitelistHeader = `# ==============================================
 #   <ip-or-cidr>  # EXPIRES_AT=<RFC3339>  REASON=<short-text>  ADDED_BY=<source>
 #
 # Example:
-#   62.38.150.122  # EXPIRES_AT=2026-05-18T10:13:32Z  REASON=v120-update-session  ADDED_BY=nftban-update
+#   192.0.2.122  # EXPIRES_AT=2026-05-18T10:13:32Z  REASON=v120-update-session  ADDED_BY=nftban-update
 #
 # Permanent operator entries belong in 99-manual.conf (NOT this file).
 # Static host-interface entries belong in 00-system.conf (NOT this file).

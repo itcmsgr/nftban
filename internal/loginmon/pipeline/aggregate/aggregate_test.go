@@ -130,7 +130,7 @@ func TestAggregator_DistributedSpraySignature(t *testing.T) {
 
 	target := "info@victim.gr"
 	for i := 0; i < 12; i++ {
-		ip := "92.118.39." + intToStr(220+i)
+		ip := "1.2.3." + intToStr(220+i)
 		a.Ingest(mkEvent("dovecot", ip, target, clock))
 	}
 

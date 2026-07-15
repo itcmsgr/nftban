@@ -20,8 +20,8 @@ package detector
 
 import "testing"
 
-// real captured DA line shape (dns1 2026-06-14), public IP.
-const rcFailedPublic = `[14-Jun-2026 10:54:37 +0000]: <8b84adea> Failed login for user@example.gr from 62.38.150.122 in session 8b84adea7d5ff1df (error: 0)`
+// sample DA line shape (2026-06-14), public IP.
+const rcFailedPublic = `[14-Jun-2026 10:54:37 +0000]: <0a1b2c3d> Failed login for user@example.gr from 192.0.2.122 in session 0a1b2c3d4e5f6789 (error: 0)`
 
 func TestRoundcube_FailedPublic_Match(t *testing.T) {
 	d := NewRoundcubeDetector()
@@ -35,8 +35,8 @@ func TestRoundcube_FailedPublic_Match(t *testing.T) {
 	if v.Service != "roundcube" {
 		t.Errorf("service = %q, want roundcube", v.Service)
 	}
-	if v.IP.String() != "62.38.150.122" {
-		t.Errorf("ip = %s, want 62.38.150.122", v.IP)
+	if v.IP.String() != "192.0.2.122" {
+		t.Errorf("ip = %s, want 192.0.2.122", v.IP)
 	}
 	if v.User != "user@example.gr" {
 		t.Errorf("user = %q, want user@example.gr", v.User)
@@ -48,9 +48,9 @@ func TestRoundcube_FailedPublic_Match(t *testing.T) {
 
 func TestRoundcube_IPv6Public_Match(t *testing.T) {
 	d := NewRoundcubeDetector()
-	line := `[14-Jun-2026 10:54:37 +0000]: <s> Failed login for u@d from 2a01:4f8:c012:57::99 in session abcd (error: 0)`
+	line := `[14-Jun-2026 10:54:37 +0000]: <s> Failed login for u@d from 2001:db8:c012:57::99 in session abcd (error: 0)`
 	v, ok := d.Detect([]byte(line))
-	if !ok || v.IP.String() != "2a01:4f8:c012:57::99" {
+	if !ok || v.IP.String() != "2001:db8:c012:57::99" {
 		t.Fatalf("expected IPv6 public match, got ok=%v ip=%s", ok, v.IP)
 	}
 }
@@ -58,7 +58,7 @@ func TestRoundcube_IPv6Public_Match(t *testing.T) {
 // HARD STOP: a "Successful login" line must NEVER produce a verdict.
 func TestRoundcube_SuccessfulLogin_NoVerdict(t *testing.T) {
 	d := NewRoundcubeDetector()
-	line := `[14-Jun-2026 10:55:01 +0000]: <s> Successful login for user@example.gr (ID: 1) from 62.38.150.122 in session deadbeef`
+	line := `[14-Jun-2026 10:55:01 +0000]: <s> Successful login for user@example.gr (ID: 1) from 192.0.2.122 in session deadbeef`
 	if _, ok := d.Detect([]byte(line)); ok {
 		t.Fatal("HARD STOP VIOLATION: success line produced a verdict")
 	}
@@ -94,10 +94,10 @@ func TestRoundcube_PublicIPGuard(t *testing.T) {
 // A username containing " from " must not derail IP extraction (anchor on " in session").
 func TestRoundcube_UserWithFromWord(t *testing.T) {
 	d := NewRoundcubeDetector()
-	line := `[14-Jun-2026 10:54:37 +0000]: <s> Failed login for weird from user@d from 62.38.150.122 in session abcd (error: 0)`
+	line := `[14-Jun-2026 10:54:37 +0000]: <s> Failed login for weird from user@d from 192.0.2.122 in session abcd (error: 0)`
 	v, ok := d.Detect([]byte(line))
-	if !ok || v.IP.String() != "62.38.150.122" {
-		t.Fatalf("expected IP 62.38.150.122 despite 'from' in username, got ok=%v ip=%s", ok, v.IP)
+	if !ok || v.IP.String() != "192.0.2.122" {
+		t.Fatalf("expected IP 192.0.2.122 despite 'from' in username, got ok=%v ip=%s", ok, v.IP)
 	}
 }
 
@@ -105,8 +105,8 @@ func TestRoundcube_UserWithFromWord(t *testing.T) {
 func TestRoundcube_ForeignLines_NoMatch(t *testing.T) {
 	d := NewRoundcubeDetector()
 	foreign := []string{
-		`62.38.150.122 - - [14/Jun/2026:04:37:53 +0000] "POST /wp-login.php HTTP/1.1" 200 1141 "-" "-"`,
-		`Jun 14 10:00:00 host sshd[1]: Failed password for root from 62.38.150.122 port 2222 ssh2`,
+		`192.0.2.122 - - [14/Jun/2026:04:37:53 +0000] "POST /wp-login.php HTTP/1.1" 200 1141 "-" "-"`,
+		`Jun 14 10:00:00 host sshd[1]: Failed password for root from 192.0.2.122 port 2222 ssh2`,
 		``,
 	}
 	for _, line := range foreign {

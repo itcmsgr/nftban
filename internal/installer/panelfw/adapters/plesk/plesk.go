@@ -101,7 +101,7 @@ const (
 //
 // PR26.7.1 calibration: the original adapter probed `plesk.service`
 // alone, which does NOT exist on Ubuntu Plesk Obsidian — verified by
-// the read-only audit on 178.105.74.229 (frozen evidence sha256
+// the read-only audit on 192.0.2.229 (frozen evidence sha256
 // c1a72266e2eb3489768a188d40d4cebcd242e1ed2bb3ba45ad0d316b549b21c3).
 // Real Ubuntu Plesk units:
 //

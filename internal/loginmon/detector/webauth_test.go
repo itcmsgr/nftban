@@ -101,7 +101,7 @@ func TestWebAuthOwnershipOrdering(t *testing.T) {
 }
 
 // TestWebAuthRealTraffic locks ownership behavior against REAL sanitized production
-// access-log lines sampled read-only from srv1-4/dns1-2 (client IPs masked to doc
+// access-log lines sampled read-only from multiple production hosts (client IPs masked to doc
 // ranges; request shape preserved). Proves the detector owns auth_failure only and
 // ignores the live web_abuse traffic (xmlrpc flood, 403/404 scanners, bad bots).
 func TestWebAuthRealTraffic(t *testing.T) {
@@ -122,7 +122,7 @@ func TestWebAuthRealTraffic(t *testing.T) {
 		{"wp-login POST 302 success", `203.0.113.1 - - [13/Jun/2026:07:59:12 +0000] "POST /wp-login.php HTTP/1.1" 302 264 "http://x/wp-login.php" "Firefox/118.0"`, false, 0},
 		{"wp-login POST 503 rate-limited", `203.0.113.1 - - [13/Jun/2026:01:00:00 +0000] "POST /wp-login.php HTTP/1.1" 503 200 "-" "Mozilla/5.0"`, false, 0},
 		{"status 200 with size 401 not a 401 auth", `203.0.113.5 - - [13/Jun/2026:01:00:00 +0000] "GET /x HTTP/1.1" 200 401 "-" "Mozilla/5.0"`, false, 0},
-		{"xmlrpc POST 200 jetpack/forged", `203.0.113.4 - - [13/Jun/2026:02:03:53 +0000] "POST /xmlrpc.php HTTP/1.1" 200 938 "-" "Jetpack/12.0; WordPress/6.1; http://site23614003.com"`, false, 0},
+		{"xmlrpc POST 200 jetpack/forged", `203.0.113.4 - - [13/Jun/2026:02:03:53 +0000] "POST /xmlrpc.php HTTP/1.1" 200 938 "-" "Jetpack/12.0; WordPress/6.1; http://example.com"`, false, 0},
 		{"xmlrpc GET 405", `203.0.113.1 - - [13/Jun/2026:00:33:46 +0000] "GET /xmlrpc.php HTTP/1.1" 405 641 "-" "Safari/604.1"`, false, 0},
 		{"xmlrpc GET 403", `203.0.113.1 - - [13/Jun/2026:06:53:30 +0000] "GET /xmlrpc.php HTTP/1.1" 403 343 "-" "Safari/604.1"`, false, 0},
 		{"403 webshell probe", `203.0.113.1 - - [13/Jun/2026:04:53:04 +0000] "GET /wp-content/plugins/fix/up.php HTTP/2" 403 0 "-" "Chrome/85.0.4183.102"`, false, 0},

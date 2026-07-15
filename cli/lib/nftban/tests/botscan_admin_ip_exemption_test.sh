@@ -28,7 +28,7 @@ no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 EXEMPT="$WORK/exempt.list"
-printf '# generated\n203.0.113.7\n62.38.150.122\n2001:db8::1\n' > "$EXEMPT"
+printf '# generated\n203.0.113.7\n192.0.2.122\n2001:db8::1\n' > "$EXEMPT"
 
 echo "=== F2 BotScan scanner exemption gate ==="
 # shellcheck source=/dev/null
@@ -36,7 +36,7 @@ echo "=== F2 BotScan scanner exemption gate ==="
   source "$CORE" >/dev/null 2>&1
 
   # T1: exact-listed exempt IP (the F2 admin IP) → suppressed (rc0 = whitelisted/exempt)
-  if nftban_botscan_is_whitelisted "62.38.150.122" ""; then echo T1ok; fi
+  if nftban_botscan_is_whitelisted "192.0.2.122" ""; then echo T1ok; fi
   # T2: another exact-listed exempt IP → suppressed
   if nftban_botscan_is_whitelisted "203.0.113.7" ""; then echo T2ok; fi
   # T3: exempt v6 → suppressed
@@ -44,7 +44,7 @@ echo "=== F2 BotScan scanner exemption gate ==="
   # T4: NON-exempt IP → NOT suppressed (must remain bannable)
   if nftban_botscan_is_whitelisted "198.51.100.9" ""; then echo T4bad; else echo T4ok; fi
   # T5: partial/substring must NOT match (exact-line only)
-  if nftban_botscan_is_whitelisted "62.38.150.12" ""; then echo T5bad; else echo T5ok; fi
+  if nftban_botscan_is_whitelisted "192.0.2.130" ""; then echo T5bad; else echo T5ok; fi
 ) > "$WORK/out" 2>&1
 
 grep -q T1ok "$WORK/out" && ok "T1 exempt admin IP suppressed" || no "T1"

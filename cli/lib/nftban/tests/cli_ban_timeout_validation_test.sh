@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-28"
-# meta:description="v1.141 PR-A — asserts that `nftban ban X --timeout VALUE` rejects every non-positive-integer VALUE at parse time with rc=1 and a clear ERROR message, and accepts every positive integer (parse-time only — downstream daemon IPC is out of scope for this test). Prior to v1.141, the --timeout arm at cli/lib/nftban/cli/cmd_ban.sh:86-89 had no validation; values like 'abc' / '-5' / '0' / '' / '1.5' propagated to nftban-core which interpreted invalid values as permanent ban — operator surprise reproduced live in the cruel-judge review on monitor.mywebhost.gr. Hermetic — runs against the source tree."
+# meta:description="v1.141 PR-A — asserts that `nftban ban X --timeout VALUE` rejects every non-positive-integer VALUE at parse time with rc=1 and a clear ERROR message, and accepts every positive integer (parse-time only — downstream daemon IPC is out of scope for this test). Prior to v1.141, the --timeout arm at cli/lib/nftban/cli/cmd_ban.sh:86-89 had no validation; values like 'abc' / '-5' / '0' / '' / '1.5' propagated to nftban-core which interpreted invalid values as permanent ban — operator surprise reproduced live in the cruel-judge review on observability-node-01.example.test. Hermetic — runs against the source tree."
 # meta:input="cli/lib/nftban/cli/cmd_ban.sh + cli/sbin/nftban"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep"

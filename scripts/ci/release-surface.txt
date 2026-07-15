@@ -1,0 +1,80 @@
+# =============================================================================
+# NFTBan release / publication surface manifest  (SEC-INFRA Gate A input)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# The RELEASE SURFACE is everything a user RECEIVES or READS: the files that
+# ship inside the published binary packages, the source that compiles INTO the
+# shipped binaries, and the public documents rendered on the release/repo page.
+# `privacy-scan.py --scope release` scans exactly the tracked files matching a
+# glob below (INCLUSION model — this is stronger than "ignore tests": a path is
+# release-scoped only if it is provably shipped/read, not merely "not a test").
+#
+# PROVENANCE: each block cites the authority that puts it on the surface —
+# `packaging/build_nftban.sh` (RPM %install + build_deb) or the public repo page.
+# Published assets are the binary `.deb`/`.rpm` + SHA256SUMS only (see
+# .github/workflows/release.yml create-release) — NO source tarball / SRPM is
+# published, so `internal|cmd|pkg` reach users ONLY as compiled binaries; their
+# `*_test.go` do not ship and are repository-advisory, not release-scoped.
+#
+# Glob syntax: `*` = any run within a path segment; `**` = any run across
+# segments; `?` = one char. Matched against tracked repo-relative paths.
+# =============================================================================
+
+# --- Binary-package payload: cli tree (build_nftban.sh:461 `cp -r cli/lib/nftban/*`
+#     + :604 tests install; %files :1446 `/usr/lib/nftban/tests/*`). Ships whole
+#     cli/lib incl. the shell test fixtures under tests/ (classified TEST_FIXTURE). ---
+cli/lib/nftban/**
+cli/sbin/*
+
+# --- Binary-package payload: config + templates + policy (build_nftban.sh %install
+#     and build_deb 1848+; RPM Source2 install list). ---
+commands.registry.yml
+VERSION
+VERSION_DATE
+etc/nftban/conf.d/**
+etc/nftban/patterns.d/**
+etc/nftban/suricata/**
+etc/nftban/distros/**
+etc/nftban/blacklist.d/99-manual.conf
+etc/nftban/whitelist.d/99-manual.conf
+install/config/*
+install/nftables/*
+install/bash-completion/*
+install/helpers/*
+install/selinux/*
+install/apparmor/*
+install/sysctl/*
+install/systemd/**
+install/share/nftban/**
+install/packaging/**
+packaging/polkit-1/rules.d/*
+packaging/deb/*
+packaging/systemd/*
+
+# --- Binary-package payload: the four repo scripts staged into /usr/lib/nftban
+#     (build_nftban.sh install lines for generate-help / generate-wiki-* / soak). ---
+scripts/generate-help.sh
+scripts/generate-wiki-auditor.sh
+scripts/generate-wiki-operator.sh
+scripts/nftban-soak-check.sh
+
+# --- Compiled-in source: internal|cmd|pkg reach users as the shipped binaries
+#     (bin/nftban-core, nftband, ...). Non-test `.go` string literals land in the
+#     binary; `*_test.go` do NOT compile in and are excluded by classification
+#     (TEST_FIXTURE_SYNTHETIC_IP), not by dir. ---
+internal/**
+cmd/**
+pkg/**
+
+# --- Public documents users read on the release / repository page. ---
+README.md
+SECURITY.md
+LICENSE
+NOTICE.md
+TRADEMARK.md
+AI_ASSISTED_DEVELOPMENT.md
+CODE_OF_CONDUCT.md
+CHANGELOG.md
+STATUS.md
+docs/**

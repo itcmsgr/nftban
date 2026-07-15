@@ -32,7 +32,7 @@ const declRef = "requires a LOG_SOURCE_OWNERSHIP_DECLARATION + non-duplicate pro
 
 // TestSourceOwnershipGuard_NoCphulkdLoginLog asserts cphulkd's login_log is not wired as a
 // panel ban source: cPanel WHM/cPanel login failures are already owned by the PanelDetector
-// via access_log 401 on POST /login/ (v1.180 real-prod proof: lab4 login_log = whostmgrd/
+// via access_log 401 on POST /login/ (v1.180 real-prod proof: a sample host login_log = whostmgrd/
 // cpaneld only). Adding login_log double-counts the same events.
 func TestSourceOwnershipGuard_NoCphulkdLoginLog(t *testing.T) {
 	for svc, paths := range panelLogPaths {

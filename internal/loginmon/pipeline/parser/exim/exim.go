@@ -24,14 +24,14 @@
 
 // Package exim implements a Parser for Exim mainlog auth-failure lines.
 //
-// Exim mainlog format (from real srv2/srv3 fixtures):
+// Exim mainlog format (a sanitized sample line):
 //
-//	2026-04-09 04:28:42 login authenticator failed for H=([92.118.39.211]) [92.118.39.211]: 535 Incorrect authentication data (set_id=admin@kostaskorakas.gr)
+//	2026-04-09 04:28:42 login authenticator failed for H=([203.0.113.211]) [203.0.113.211]: 535 Incorrect authentication data (set_id=admin@example.test)
 //
 // The parser matches lines containing "authenticator" + "failed" and
 // extracts:
 //
-//   - IP: first valid bracket-enclosed IP using forward scan ([92.118.39.211])
+//   - IP: first valid bracket-enclosed IP using forward scan ([203.0.113.211])
 //   - Username: value inside "(set_id=...)" if present
 //   - Timestamp: first 19 chars as YYYY-MM-DD HH:MM:SS
 //

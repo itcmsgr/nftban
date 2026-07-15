@@ -47,8 +47,8 @@ func TestEnforcementClassReject(t *testing.T) {
 		{"198.18.0.1", true, "benchmark"},
 		// public routable — MUST pass
 		{"8.8.4.4", false, "public IPv4"},
-		{"46.225.150.67", false, "public IPv4"},
-		{"2a01:4f8:c014:5ee1::1", false, "public IPv6"},
+		{"1.1.1.1", false, "public IPv4"},
+		{"2001:4860:4860::8888", false, "public IPv6"},
 		{"2606:4700:4700::1111", false, "public IPv6"},
 		// IPv4-mapped IPv6 loopback normalizes to loopback
 		{"::ffff:127.0.0.1", true, "IPv4-mapped loopback"},
@@ -78,7 +78,7 @@ func TestIsAbsolutelyNonBannable(t *testing.T) {
 	}
 	// non-public-but-not-absolute (private/ULA/etc) are NOT absolute — they are only
 	// default-reject (a future explicit LAN feature could opt in).
-	notAbsolute := []string{"10.0.0.5", "fc00::1", "169.254.1.2", "100.64.0.1", "8.8.4.4", "2a01:4f8::1", "1.2.3.0/24", ""}
+	notAbsolute := []string{"10.0.0.5", "fc00::1", "169.254.1.2", "100.64.0.1", "8.8.4.4", "2001:db8::1", "1.2.3.0/24", ""}
 	for _, ip := range notAbsolute {
 		if IsAbsolutelyNonBannable(ip) {
 			t.Errorf("IsAbsolutelyNonBannable(%q)=true, want false", ip)

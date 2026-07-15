@@ -30,7 +30,7 @@ import (
 func TestIsExcludedWebLog(t *testing.T) {
 	excluded := []string{
 		"/var/log/httpd/domains/example.com.error_log",
-		"/var/log/httpd/domains/cakeart.gr.error.log",
+		"/var/log/httpd/domains/example.gr.error.log",
 		"/var/log/nginx/error.log",
 		"/var/log/httpd/domains/example.com-error.log",
 		"/var/log/apache2/access.log.gz",

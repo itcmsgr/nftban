@@ -34,8 +34,8 @@ import (
 // These are the numeric criteria that distinguish ACTIVE from DEGRADED from
 // FAILING. Derived from real soak data:
 //
-//   srv2 dovecot 24h: 683 events / 43 bans = 6.3% → DEGRADED
-//   srv3 dovecot 24h: 868 events / 132 bans = 15.2% → ACTIVE
+//   host-a dovecot 24h: 683 events / 43 bans = 6.3% → DEGRADED
+//   host-b dovecot 24h: 868 events / 132 bans = 15.2% → ACTIVE
 //
 // The thresholds are conservative: only flag DEGRADED when there is
 // sufficient volume AND diversity AND weak enforcement. Low volume stays

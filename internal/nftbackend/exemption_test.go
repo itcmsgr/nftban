@@ -40,14 +40,14 @@ func snapshot(exact []string, cidrs []string) *exemptResolver {
 
 func TestIsExempt_ExactAndCIDR_V4V6(t *testing.T) {
 	r := snapshot(
-		[]string{"62.38.150.122", "2001:db8::1"},
+		[]string{"192.0.2.122", "2001:db8::1"},
 		[]string{"10.0.0.0/8", "2001:db8:abcd::/48"},
 	)
 	cases := []struct {
 		ip   string
 		want bool
 	}{
-		{"62.38.150.122", true},        // exact v4 (the F2 admin IP)
+		{"192.0.2.122", true},        // exact v4 (the F2 admin IP)
 		{"10.5.6.7", true},             // inside v4 CIDR
 		{"10.0.0.1", true},             // inside v4 CIDR
 		{"2001:db8::1", true},          // exact v6

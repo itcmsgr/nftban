@@ -83,7 +83,7 @@ type ScorerConfig struct {
 	// =========================================================================
 	// v1.113 SUBNET AGGREGATION (D-LOGINMON-EXIM-SUBNET-ROTATION-GAP)
 	// =========================================================================
-	// Driven by srv1 production incident 2026-05-13: rotating /24 SMTP brute
+	// Driven by a production incident 2026-05-13: rotating /24 SMTP brute
 	// force where each IP made 1-2 attempts, scoring 15-30 pts per IP — below
 	// the 45-pt temp-ban threshold. Detection worked; aggregation was missing.
 	// Opt-in default-false; observe-then-enforce maturity progression.
@@ -178,7 +178,7 @@ type Scorer struct {
 	// Track recently banned IPs to prevent duplicate ban storms (exponential backoff)
 	recentBans map[netip.Addr]*recentBanEntry
 
-	// v1.113: subnet-aggregation map keyed by prefix (e.g., 81.30.98.0/24).
+	// v1.113: subnet-aggregation map keyed by prefix (e.g., 203.0.113.0/24).
 	// Guarded by the same mutex `mu` as the per-IP map for simplicity; the
 	// subnet path runs under write-lock during RecordVerdict.
 	subnets map[netip.Prefix]*SubnetState
@@ -605,7 +605,7 @@ func (s *Scorer) TrackedIPs() int {
 // =============================================================================
 // v1.113 SUBNET AGGREGATION
 // =============================================================================
-// Closes D-LOGINMON-EXIM-SUBNET-ROTATION-GAP from srv1 production incident
+// Closes D-LOGINMON-EXIM-SUBNET-ROTATION-GAP from a production incident
 // 2026-05-13. Operator-locked design:
 //   - 8 config knobs (ENABLED + MODE + WINDOW + UNIQUE_IPS + MIN_TOTAL_EVENTS
 //     + IPV4_PREFIX + IPV6_PREFIX + ACTION)
