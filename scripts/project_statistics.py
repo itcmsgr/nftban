@@ -233,8 +233,14 @@ def main():
     write_csv(os.path.join(args.out, "platform-totals.csv"),
               [{"platform": k, "downloads": v} for k, v in rel["per_platform"].items()],
               ["platform", "downloads"])
+    # Version-aware sort so releases order semantically (v1.9.0 < v1.10.0 <
+    # v1.220.8) and the newest release lands at the end — NOT lexical, which
+    # buried v1.220.x mid-file between v1.22 and v1.23.
+    def _relkey(item):
+        return tuple(int(p) for p in re.findall(r"\d+", item[0]))
     write_csv(os.path.join(args.out, "release-totals.csv"),
-              [{"tag": t, "asset_downloads": n} for t, n in sorted(rel["per_release"].items())],
+              [{"tag": t, "asset_downloads": n}
+               for t, n in sorted(rel["per_release"].items(), key=_relkey)],
               ["tag", "asset_downloads"])
     json.dump({"snapshot_at": snap_at, "platforms": [n for n, _, _ in PLATFORMS],
                "unclassified_legacy": rel["unclassified"]},
