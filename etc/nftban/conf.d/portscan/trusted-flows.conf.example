@@ -33,7 +33,7 @@
 #
 # EXAMPLES (commented — copy + adapt per host; declare only flows you verified):
 #   # Zabbix server (IPv6) polling this host's Zabbix agent, ~1 poll/5s:
-#   # 2a01:4f8:c014:5ee1::1/128|tcp|10050|*|12/min
+#   # 2001:db8:c014:5ee1::1/128|tcp|10050|*|12/min
 #   # Zabbix server (IPv4) polling a specific local address:
 #   # 192.0.2.10/32|tcp|10050|192.0.2.20|12/min
 #

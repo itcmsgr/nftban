@@ -64,7 +64,7 @@ func TestAddSessionWhitelist_CreatesFileWithHeaderOnFirstAdd(t *testing.T) {
 	defer log.Close()
 
 	entry := SessionWhitelistEntry{
-		IP:        "62.38.150.122",
+		IP:        "192.0.2.122",
 		ExpiresAt: time.Date(2026, 5, 18, 10, 13, 32, 0, time.UTC),
 		Reason:    "v120-update-session",
 		AddedBy:   "nftban-update",
@@ -82,7 +82,7 @@ func TestAddSessionWhitelist_CreatesFileWithHeaderOnFirstAdd(t *testing.T) {
 	if !strings.Contains(content, "NFTBan Session Whitelist (managed by nftban; do not hand-edit)") {
 		t.Errorf("header missing from new file:\n%s", content)
 	}
-	if !strings.Contains(content, "62.38.150.122") {
+	if !strings.Contains(content, "192.0.2.122") {
 		t.Errorf("entry IP missing:\n%s", content)
 	}
 	if !strings.Contains(content, "EXPIRES_AT=2026-05-18T10:13:32Z") {
@@ -104,7 +104,7 @@ func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 	defer log.Close()
 
 	first := SessionWhitelistEntry{
-		IP:        "62.38.150.122",
+		IP:        "192.0.2.122",
 		ExpiresAt: time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC),
 		Reason:    "first-add",
 		AddedBy:   "nftban-update",
@@ -114,7 +114,7 @@ func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 	}
 
 	second := SessionWhitelistEntry{
-		IP:        "62.38.150.122",
+		IP:        "192.0.2.122",
 		ExpiresAt: time.Date(2026, 5, 18, 11, 0, 0, 0, time.UTC),
 		Reason:    "second-add",
 		AddedBy:   "nftban-firewall-whitelist-session",
@@ -131,12 +131,12 @@ func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 	// T-1 fix (V120_PR_637_CI_AND_DIFF_VERIFICATION §3): count only DATA
 	// lines whose first whitespace-delimited token equals the IP. A naive
 	// strings.Count over the raw content double-counts the example
-	// occurrence inside the file header (`# 62.38.150.122 # EXPIRES_AT=...
+	// occurrence inside the file header (`# 192.0.2.122 # EXPIRES_AT=...
 	// REASON=v120-update-session ADDED_BY=nftban-update`). Skip blank and
 	// `#`-prefixed comment lines so the header example is not counted.
-	occurrences := countDataLinesForIP(content, "62.38.150.122")
+	occurrences := countDataLinesForIP(content, "192.0.2.122")
 	if occurrences != 1 {
-		t.Errorf("expected exactly 1 data-line occurrence of 62.38.150.122 after refresh, got %d:\n%s",
+		t.Errorf("expected exactly 1 data-line occurrence of 192.0.2.122 after refresh, got %d:\n%s",
 			occurrences, content)
 	}
 	if !strings.Contains(content, "REASON=second-add") {
@@ -316,10 +316,10 @@ func TestCaptureSSHPeerIP_PrefersExplicitEnvMirror(t *testing.T) {
 // the explicit env-mirror is empty.
 func TestCaptureSSHPeerIP_FallsBackToSSHClient(t *testing.T) {
 	t.Setenv("NFTBAN_OPERATOR_SESSION_IP", "")
-	t.Setenv("SSH_CLIENT", "62.38.150.122 51234 22")
+	t.Setenv("SSH_CLIENT", "192.0.2.122 51234 22")
 
-	if got := CaptureSSHPeerIP(); got != "62.38.150.122" {
-		t.Errorf("CaptureSSHPeerIP = %q, want 62.38.150.122", got)
+	if got := CaptureSSHPeerIP(); got != "192.0.2.122" {
+		t.Errorf("CaptureSSHPeerIP = %q, want 192.0.2.122", got)
 	}
 }
 

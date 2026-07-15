@@ -30,7 +30,7 @@ Each fixture directory may also contain a fixture-scoped allowlist file.
 ## Running fixtures
 
 ```bash
-cd /home/gituser/github/nftban
+cd "$(git rev-parse --show-toplevel)"
 for f in scripts/ci/fixtures/heredoc-safety/*.sh \
          scripts/ci/fixtures/heredoc-safety/*.shfix; do
     [[ -f "$f" ]] || continue

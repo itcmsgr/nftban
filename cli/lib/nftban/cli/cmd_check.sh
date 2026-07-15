@@ -151,7 +151,7 @@ EXAMPLES:
   nftban check 3940
 
   # JSON output for scripting
-  nftban check 62.38.150.122 --json
+  nftban check 192.0.2.122 --json
 
 OUTPUT:
   Human-readable format shows:

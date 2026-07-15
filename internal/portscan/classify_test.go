@@ -44,7 +44,7 @@ func ev(host string, ts int64, ports ...int) []Event {
 
 func TestClassify_KnownOpenOnlyBurst_Allow(t *testing.T) {
 	// Panel+mail+web+SSH+more — 6 known-open services in 1s (the proven FP).
-	in := base("ipv4", "62.38.150.122", ev("203.0.113.10", 1000, 22, 2222, 25, 80, 443, 993))
+	in := base("ipv4", "192.0.2.122", ev("203.0.113.10", 1000, 22, 2222, 25, 80, 443, 993))
 	v := Classify(in)
 	if v.Action != "allow" || v.ScanType != "" {
 		t.Fatalf("known-open-only burst must ALLOW, got %+v", v)
@@ -110,7 +110,7 @@ func TestClassify_IPv4UnexpectedDiversity_BanCapable(t *testing.T) {
 }
 
 func TestClassify_IPv6UnexpectedDiversity_BanCapable(t *testing.T) {
-	in := base("ipv6", "2a01:4f8::99", ev("2606:4700:4700::1", 1000, 1111, 3333, 4444, 5555, 6666))
+	in := base("ipv6", "2001:db8::99", ev("2606:4700:4700::1", 1000, 1111, 3333, 4444, 5555, 6666))
 	if v := Classify(in); v.Action != "ban" {
 		t.Fatalf("v6 unexpected diversity must be ban-capable, got %+v", v)
 	}

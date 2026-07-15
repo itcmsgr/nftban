@@ -777,7 +777,7 @@ Optional:
   --reason <text>        Short description (default: "operator-explicit").
 
 Examples:
-  nftban firewall whitelist-session add 62.38.150.122 --ttl 30m
+  nftban firewall whitelist-session add 192.0.2.122 --ttl 30m
   nftban firewall whitelist-session add 192.168.1.0/24 --ttl 1h --reason "office VPN"
 HELP_EOF
 }

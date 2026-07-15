@@ -28,7 +28,7 @@ func TestWriteEntry_NewFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "update-history.json")
 
-	entry := NewEntry("1.72.0", "1.73.0", StatusSuccess, "rpm", 45, "lab4.mywebhost.gr")
+	entry := NewEntry("1.72.0", "1.73.0", StatusSuccess, "rpm", 45, "rpm-lab-01.example.test")
 	if err := WriteEntry(path, entry); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}
@@ -61,8 +61,8 @@ func TestWriteEntry_NewFile(t *testing.T) {
 	if entries[0].DurationS != 45 {
 		t.Errorf("DurationS = %d, want 45", entries[0].DurationS)
 	}
-	if entries[0].Host != "lab4.mywebhost.gr" {
-		t.Errorf("Host = %s, want lab4.mywebhost.gr", entries[0].Host)
+	if entries[0].Host != "rpm-lab-01.example.test" {
+		t.Errorf("Host = %s, want rpm-lab-01.example.test", entries[0].Host)
 	}
 }
 
@@ -71,13 +71,13 @@ func TestWriteEntry_Prepend(t *testing.T) {
 	path := filepath.Join(dir, "update-history.json")
 
 	// Write first entry
-	e1 := NewEntry("1.71.0", "1.72.0", StatusSuccess, "rpm", 30, "lab.mywebhost.gr")
+	e1 := NewEntry("1.71.0", "1.72.0", StatusSuccess, "rpm", 30, "rpm-lab-02.example.test")
 	if err := WriteEntry(path, e1); err != nil {
 		t.Fatalf("WriteEntry 1: %v", err)
 	}
 
 	// Write second entry (should be prepended)
-	e2 := NewEntry("1.72.0", "1.73.0", StatusVerifyFail, "rpm", 55, "lab4.mywebhost.gr")
+	e2 := NewEntry("1.72.0", "1.73.0", StatusVerifyFail, "rpm", 55, "rpm-lab-01.example.test")
 	if err := WriteEntry(path, e2); err != nil {
 		t.Fatalf("WriteEntry 2: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestWriteEntry_ShellCompatibleJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "update-history.json")
 
-	e := NewEntry("1.72.0", "1.73.0", "success", "rpm", 45, "lab4.mywebhost.gr")
+	e := NewEntry("1.72.0", "1.73.0", "success", "rpm", 45, "rpm-lab-01.example.test")
 	if err := WriteEntry(path, e); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}

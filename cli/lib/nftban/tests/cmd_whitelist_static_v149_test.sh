@@ -102,7 +102,7 @@ echo "================================================="
 # ---------------------------------------------------------------------------
 echo; echo "[T1] add --static creates durable file with NO EXPIRES_AT"
 rm -f "$MANUAL_FILE"
-T1_OUT=$(call_add_static 62.38.150.122 2>&1)
+T1_OUT=$(call_add_static 192.0.2.122 2>&1)
 assert_contains "$T1_OUT" "PERMANENT whitelist"                       "T1.1 stdout confirms permanent"
 assert_contains "$T1_OUT" "applied it live"                          "T1.2 live-apply stated"
 assert_contains "$T1_OUT" "survives firewall reload"                 "T1.2b durability stated (BUG-2: survives reload)"
@@ -110,7 +110,7 @@ assert_contains "$T1_OUT" "survives firewall reload"                 "T1.2b dura
                         || { printf "  [FAIL] %s\n" "T1.3 file created"; FAIL=$((FAIL+1)); FAILED_TESTS+=("T1.3"); }
 T1C=$(cat "$MANUAL_FILE" 2>/dev/null || true)
 assert_contains "$T1C" "Permanent Whitelist (99-manual.conf)"         "T1.4 header present"
-assert_contains "$T1C" "62.38.150.122"                               "T1.5 IP present"
+assert_contains "$T1C" "192.0.2.122"                               "T1.5 IP present"
 assert_contains "$T1C" "ADDED_BY=nftban-whitelist-static"            "T1.6 traceability tag"
 assert_not_contains "$T1C" "EXPIRES_AT"                              "T1.7 NO EXPIRES_AT (durable — loader keeps it across rebuild)"
 
@@ -118,7 +118,7 @@ assert_not_contains "$T1C" "EXPIRES_AT"                              "T1.7 NO EX
 # T2: re-add same IP → refresh (exactly one entry, no duplicate)
 # ---------------------------------------------------------------------------
 echo; echo "[T2] re-add same IP → refresh (no duplicate)"
-call_add_static 62.38.150.122 >/dev/null 2>&1 || true
+call_add_static 192.0.2.122 >/dev/null 2>&1 || true
 T2C=$(cat "$MANUAL_FILE" 2>/dev/null || true)
 T2N=$(printf '%s\n' "$T2C" | grep -c "^62\.38\.150\.122" || true)
 assert_eq "$T2N" "1"                                                 "T2.1 exactly one entry for IP"
@@ -147,10 +147,10 @@ assert_not_contains "$T4C" "not-an-ip"                               "T4.2 garba
 # T5: remove --static drops the durable line (not resurrected on reload)
 # ---------------------------------------------------------------------------
 echo; echo "[T5] remove --static drops the durable entry"
-T5_OUT=$(call_remove_static 62.38.150.122 2>&1)
-assert_contains "$T5_OUT" "Removed 62.38.150.122 from the PERMANENT" "T5.1 stdout confirms removal"
+T5_OUT=$(call_remove_static 192.0.2.122 2>&1)
+assert_contains "$T5_OUT" "Removed 192.0.2.122 from the PERMANENT" "T5.1 stdout confirms removal"
 T5C=$(cat "$MANUAL_FILE" 2>/dev/null || true)
-assert_not_contains "$T5C" "62.38.150.122"                          "T5.2 durable line gone (won't resurrect on rebuild)"
+assert_not_contains "$T5C" "192.0.2.122"                          "T5.2 durable line gone (won't resurrect on rebuild)"
 assert_contains "$T5C" "2001:db8::1"                                "T5.3 other entries untouched"
 
 # ---------------------------------------------------------------------------

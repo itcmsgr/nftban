@@ -137,8 +137,8 @@ func TestSieve_DAOverlapClassicCase(t *testing.T) {
 	s := NewSieve(SieveOptions{Window: 5 * time.Second})
 	base := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 
-	fromLogin := mkEvent(event.ReasonDirectAdminFail, "62.38.150.122", "admin", base)
-	fromSecurity := mkEvent(event.ReasonDirectAdminFail, "62.38.150.122", "admin", base.Add(time.Second))
+	fromLogin := mkEvent(event.ReasonDirectAdminFail, "192.0.2.122", "admin", base)
+	fromSecurity := mkEvent(event.ReasonDirectAdminFail, "192.0.2.122", "admin", base.Add(time.Second))
 
 	if !s.Admit(fromLogin) {
 		t.Error("login.log event must admit")

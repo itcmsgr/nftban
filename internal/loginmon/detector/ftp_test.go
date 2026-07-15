@@ -37,15 +37,15 @@ func TestFTPDetector(t *testing.T) {
 	}{
 		// --- pure-ftpd auth failures (owned) ---
 		// REAL pure-ftpd syslog format: IP is in "(?@<ip>)", the only [..] brackets
-		// hold [WARNING] and the *username* — NOT the IP. Captured live from srv3.
+		// hold [WARNING] and the *username* — NOT the IP. Sample line shape.
 		{
 			"pure-ftpd auth fail IPv4 (real format)",
-			`Jun 13 13:01:29 srv3 pure-ftpd: (?@203.0.113.7) [WARNING] Authentication failed for user [cefaloniaholidays]`,
+			`Jun 13 13:01:29 host pure-ftpd: (?@203.0.113.7) [WARNING] Authentication failed for user [sampleuser]`,
 			true, "203.0.113.7", "pure-ftpd",
 		},
 		{
 			"pure-ftpd auth fail IPv6 (real format)",
-			`Jun 13 13:01:29 srv3 pure-ftpd: (?@2001:db8::7) [WARNING] Authentication failed for user [someuser]`,
+			`Jun 13 13:01:29 host pure-ftpd: (?@2001:db8::7) [WARNING] Authentication failed for user [someuser]`,
 			true, "2001:db8::7", "pure-ftpd",
 		},
 		{

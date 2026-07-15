@@ -167,8 +167,8 @@ assert_contains "$T2C_OUT" "NOT supported in v1.120"                 "T2.5 -j sh
 echo
 echo "[T3] add creates file with header on first call"
 reset_session_file
-T3_OUT=$(call_firewall_whitelist_session add 62.38.150.122 --ttl 30m --reason test-reason 2>&1)
-assert_contains "$T3_OUT" "Added: 62.38.150.122"                     "T3.1 stdout confirms add"
+T3_OUT=$(call_firewall_whitelist_session add 192.0.2.122 --ttl 30m --reason test-reason 2>&1)
+assert_contains "$T3_OUT" "Added: 192.0.2.122"                     "T3.1 stdout confirms add"
 if [[ -f "$SESSION_FILE" ]]; then
     printf "  [PASS] %s\n" "T3.2 session file created"
     PASS=$((PASS + 1))
@@ -179,7 +179,7 @@ else
 fi
 T3_CONTENT=$(cat "$SESSION_FILE" 2>/dev/null || true)
 assert_contains "$T3_CONTENT" "Session Whitelist (managed by nftban" "T3.3 header present"
-assert_contains "$T3_CONTENT" "62.38.150.122"                        "T3.4 IP present"
+assert_contains "$T3_CONTENT" "192.0.2.122"                        "T3.4 IP present"
 assert_contains "$T3_CONTENT" "EXPIRES_AT="                          "T3.5 EXPIRES_AT marker"
 assert_contains "$T3_CONTENT" "REASON=test-reason"                   "T3.6 REASON propagated"
 assert_contains "$T3_CONTENT" "ADDED_BY=nftban-firewall-whitelist-session" "T3.7 ADDED_BY tag"
@@ -189,8 +189,8 @@ assert_contains "$T3_CONTENT" "ADDED_BY=nftban-firewall-whitelist-session" "T3.7
 # ---------------------------------------------------------------------------
 echo
 echo "[T4] re-add same IP → refresh (no duplicate)"
-# (T3 already added 62.38.150.122; re-add with different reason)
-call_firewall_whitelist_session add 62.38.150.122 --ttl 1h --reason refreshed >/dev/null 2>&1 || true
+# (T3 already added 192.0.2.122; re-add with different reason)
+call_firewall_whitelist_session add 192.0.2.122 --ttl 1h --reason refreshed >/dev/null 2>&1 || true
 T4_CONTENT=$(cat "$SESSION_FILE" 2>/dev/null || true)
 T4_COUNT=$(printf '%s\n' "$T4_CONTENT" | grep -c "^62\.38\.150\.122" || true)
 assert_eq "$T4_COUNT" "1"                                            "T4.1 exactly one entry for IP"
@@ -219,7 +219,7 @@ assert_contains "$T6_OUT" "required"                                 "T6.1 missi
 echo
 echo "[T7] list shows active entries with TTL-remaining"
 T7_OUT=$(call_firewall_whitelist_session list 2>&1)
-assert_contains "$T7_OUT" "62.38.150.122"                            "T7.1 active IP listed"
+assert_contains "$T7_OUT" "192.0.2.122"                            "T7.1 active IP listed"
 assert_contains "$T7_OUT" "REASON"                                   "T7.2 REASON column header"
 assert_contains "$T7_OUT" "active session whitelist entries"         "T7.3 footer count"
 
@@ -228,8 +228,8 @@ assert_contains "$T7_OUT" "active session whitelist entries"         "T7.3 foote
 # ---------------------------------------------------------------------------
 echo
 echo "[T8] remove drops the entry"
-T8_OUT=$(call_firewall_whitelist_session remove 62.38.150.122 2>&1)
-assert_contains "$T8_OUT" "Removed: 62.38.150.122"                   "T8.1 stdout confirms remove"
+T8_OUT=$(call_firewall_whitelist_session remove 192.0.2.122 2>&1)
+assert_contains "$T8_OUT" "Removed: 192.0.2.122"                   "T8.1 stdout confirms remove"
 T8_CONTENT=$(cat "$SESSION_FILE" 2>/dev/null || true)
 assert_not_contains "$T8_CONTENT" "^62\.38\.150\.122"                "T8.2 entry gone from file"
 

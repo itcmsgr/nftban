@@ -176,7 +176,7 @@ func (d *PanelDetector) detectDirectAdmin(line []byte) (Verdict, bool) {
 }
 
 // detectDANativeFormat handles DA's native login.log format:
-// "'62.38.150.122' 1 failed login attempts. Account 'admin'"
+// "'192.0.2.122' 1 failed login attempts. Account 'admin'"
 func (d *PanelDetector) detectDANativeFormat(line []byte) (Verdict, bool) {
 	// Look for pattern: '<ip>' ... failed login
 	// Find first single quote
@@ -309,7 +309,7 @@ func (d *PanelDetector) detectCPanel(line, lineLower []byte) (Verdict, bool) {
 }
 
 // detectPlesk handles Plesk authentication failures
-// Real format: "[Action Log] Failed login attempt with login 'user' from IP 62.38.150.122"
+// Real format: "[Action Log] Failed login attempt with login 'user' from IP 192.0.2.122"
 func (d *PanelDetector) detectPlesk(line, lineLower []byte) (Verdict, bool) {
 	// Must contain failure indicator
 	hasFailure := bytes.Contains(lineLower, []byte("failed")) ||

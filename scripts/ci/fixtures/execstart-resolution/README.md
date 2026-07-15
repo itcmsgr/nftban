@@ -48,7 +48,7 @@ Each fixture directory contains:
 
 ```bash
 # Single fixture
-cd /home/gituser/github/nftban
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/ci/test-systemd-execstart-payload-resolution.sh validate \
   --rpm-payload=scripts/ci/fixtures/execstart-resolution/pass-clean/rpm \
   --deb-payload=scripts/ci/fixtures/execstart-resolution/pass-clean/deb \

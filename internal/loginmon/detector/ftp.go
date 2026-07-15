@@ -121,7 +121,7 @@ func (d *FTPDetector) detectPureFTPd(line []byte) (Verdict, bool) {
 	//   pure-ftpd: (?@203.0.113.7) [WARNING] Authentication failed for user [bob]
 	// The bracketed fields are [WARNING] and the *username*, NOT the IP, so try
 	// the paren-at form first and fall back to a bracketed IP (some configs append
-	// a trailing "[<ip>]"). Validated against live srv3 traffic.
+	// a trailing "[<ip>]"). Validated against sample traffic.
 	addr, ok := d.extractParenAtIP(line)
 	if !ok {
 		addr, ok = d.extractBracketIP(line)

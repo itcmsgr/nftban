@@ -117,7 +117,7 @@ TS_SLOW="1000 1020"
 
 # T1: 6 distinct ports, 1 target, non-rapid → generic-observe (the admin/NAT profile)
 echo; echo "[T1] 6 ports / 1 target / non-rapid → generic-observe (not banned)"
-T1=$(classify 62.38.150.122 "22 80 443 25 110 143" "10.0.0.1" "$TS_SLOW")
+T1=$(classify 192.0.2.122 "22 80 443 25 110 143" "10.0.0.1" "$TS_SLOW")
 assert_eq "$T1" "generic-observe" "T1.1 uncorroborated generic downgraded to observe"
 
 # T2: 12 distinct ports across 2 targets, non-rapid → corroborated generic (bans)
@@ -153,7 +153,7 @@ assert_eq "$T7" "" "T7.1 <5 ports → no scan type emitted"
 
 # T8: handler NEVER bans on generic-observe (even with ACTION=block)
 echo; echo "[T8] handle_detection(generic-observe) does not ban"
-T8=$(handle 62.38.150.122 "generic-observe")
+T8=$(handle 192.0.2.122 "generic-observe")
 assert_not_contains "$T8" "BAN_CALLED" "T8.1 generic-observe is never banned (ACTION=block)"
 
 # T9: handler DOES ban on corroborated generic (regression guard)

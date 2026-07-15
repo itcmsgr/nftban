@@ -11,12 +11,12 @@
 // meta:package="directadmin"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-09"
-// meta:description="Phase B: DirectAdmin parser tests against real srv3 fixtures"
+// meta:description="Phase B: DirectAdmin parser tests against real sample-B fixtures"
 //
 // meta:inventory.files="directadmin_test.go"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
-// meta:inventory.config_files="../../testdata/directadmin/srv3_login.log"
+// meta:inventory.config_files="../../testdata/directadmin/login_sample.log"
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
 // meta:inventory.privileges="none"
@@ -52,13 +52,13 @@ func mkLine(raw string) event.RawLine {
 
 func TestParse_FailedLogin(t *testing.T) {
 	p := New()
-	line := mkLine("2026:04:04-12:21:12: '62.38.150.122' 1 failed login attempts. Account 'admin'")
+	line := mkLine("2026:04:04-12:21:12: '192.0.2.122' 1 failed login attempts. Account 'admin'")
 	r := p.Parse(line)
 
 	if r.Outcome != event.ParseMatched {
 		t.Fatalf("Outcome: got %v, want ParseMatched", r.Outcome)
 	}
-	if r.Event.SrcIP != netip.MustParseAddr("62.38.150.122") {
+	if r.Event.SrcIP != netip.MustParseAddr("192.0.2.122") {
 		t.Errorf("SrcIP: got %v", r.Event.SrcIP)
 	}
 	if r.Event.Username != "admin" {
@@ -90,7 +90,7 @@ func TestParse_Timestamp(t *testing.T) {
 
 func TestParse_SuccessfulLogin_Skipped(t *testing.T) {
 	p := New()
-	line := mkLine("2026:04:04-12:21:21: '62.38.150.122' successful login to 'srv3admin'")
+	line := mkLine("2026:04:04-12:21:21: '192.0.2.122' successful login to 'reseller_admin'")
 	r := p.Parse(line)
 	if r.Outcome != event.ParseSkipped {
 		t.Errorf("successful login: got %v, want ParseSkipped", r.Outcome)
@@ -99,7 +99,7 @@ func TestParse_SuccessfulLogin_Skipped(t *testing.T) {
 
 func TestParse_SuccessfulLoginVia_Skipped(t *testing.T) {
 	p := New()
-	line := mkLine("2026:04:05-08:34:51: '62.38.150.122' successful login to 'avrabook' via 'srv3admin'")
+	line := mkLine("2026:04:05-08:34:51: '192.0.2.122' successful login to 'customer_account' via 'reseller_admin'")
 	r := p.Parse(line)
 	if r.Outcome != event.ParseSkipped {
 		t.Errorf("successful login via: got %v, want ParseSkipped", r.Outcome)
@@ -151,12 +151,12 @@ func TestParse_NoAccount_StillMatches(t *testing.T) {
 func TestParse_MultipleAttempts(t *testing.T) {
 	// "3 failed login attempts" should still be one event.
 	p := New()
-	line := mkLine("2026:04:06-15:38:39: '62.38.150.122' 3 failed login attempts. Account 'admin'")
+	line := mkLine("2026:04:06-15:38:39: '192.0.2.122' 3 failed login attempts. Account 'admin'")
 	r := p.Parse(line)
 	if r.Outcome != event.ParseMatched {
 		t.Fatalf("multiple attempts: got %v", r.Outcome)
 	}
-	if r.Event.SrcIP.String() != "62.38.150.122" {
+	if r.Event.SrcIP.String() != "192.0.2.122" {
 		t.Errorf("SrcIP: %v", r.Event.SrcIP)
 	}
 }
@@ -181,11 +181,11 @@ func TestName(t *testing.T) {
 }
 
 // =============================================================================
-// Fixture replay — real srv3 login.log
+// Fixture replay — sample login.log
 // =============================================================================
 
-func TestFixture_Srv3LoginLog(t *testing.T) {
-	path := fixtureDir + "/srv3_login.log"
+func TestFixture_LoginSample(t *testing.T) {
+	path := fixtureDir + "/login_sample.log"
 	f, err := os.Open(path)
 	if err != nil {
 		t.Skipf("fixture not available: %v", err)
@@ -227,7 +227,7 @@ func TestFixture_Srv3LoginLog(t *testing.T) {
 		t.Fatalf("scan: %v", err)
 	}
 
-	t.Logf("srv3_login.log: %d total, %d matched, %d skipped, %d malformed",
+	t.Logf("login_sample.log: %d total, %d matched, %d skipped, %d malformed",
 		totalLines, matched, skipped, malformed)
 
 	// From the fixture: 30 lines total. 10 are "failed login", 20 are
@@ -246,11 +246,11 @@ func TestFixture_Srv3LoginLog(t *testing.T) {
 	}
 }
 
-// TestFixture_Srv3_Parity asserts that the Go parser extracts the same
+// TestFixture_LoginParity asserts that the Go parser extracts the same
 // (IP, User) pairs as the legacy parser would. This is the parity gate:
 // if this test fails, the Go parser is not ready for dual-run.
-func TestFixture_Srv3_Parity(t *testing.T) {
-	path := fixtureDir + "/srv3_login.log"
+func TestFixture_LoginParity(t *testing.T) {
+	path := fixtureDir + "/login_sample.log"
 	f, err := os.Open(path)
 	if err != nil {
 		t.Skipf("fixture not available: %v", err)
@@ -260,9 +260,9 @@ func TestFixture_Srv3_Parity(t *testing.T) {
 	p := New()
 	scanner := bufio.NewScanner(f)
 
-	// Expected: every failed-login line in the fixture has IP 62.38.150.122
-	// and account "admin" (same attacker, same target on srv3).
-	expectedIP := netip.MustParseAddr("62.38.150.122")
+	// Expected: every failed-login line in the fixture has IP 192.0.2.122
+	// and account "admin" (same attacker, same target on the sample host).
+	expectedIP := netip.MustParseAddr("192.0.2.122")
 	expectedUser := "admin"
 
 	lineNo := 0

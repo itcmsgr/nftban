@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Fixes two portable product defects in the v1.220.9 portscan trusted-flow exclusion (all distributions, both DEB and RPM — the same shell module; **not** a package-family, distro-age, or nftables defect), surfaced by the srv3 exact-IPv6 canary. The failure mode was **fail-safe (under-suppression)** — declared exact-IPv6-destination flows were not suppressed and their events stayed visible; nothing was over-suppressed or hidden.
 
-- **`BUG_PORTSCAN_TRUSTED_FLOW_IPV6_DST_NOTATION_SENSITIVE_MATCH`** — the destination selector was compared by raw string equality. The kernel/log parser delivers the runtime destination in **expanded** IPv6 form (`2a01:04f8:c014:f4da:0000:0000:0000:0001`) while configuration authors use **compressed** form (`2a01:4f8:c014:f4da::1`); these are the same address, but string equality treated them as different, so an exact IPv6 destination never matched. The destination now uses the notation-independent IP-equivalence matcher (the same canonicalization the source field already used).
+- **`BUG_PORTSCAN_TRUSTED_FLOW_IPV6_DST_NOTATION_SENSITIVE_MATCH`** — the destination selector was compared by raw string equality. The kernel/log parser delivers the runtime destination in **expanded** IPv6 form (`2001:0db8:c014:f4da:0000:0000:0000:0001`) while configuration authors use **compressed** form (`2001:db8:c014:f4da::1`); these are the same address, but string equality treated them as different, so an exact IPv6 destination never matched. The destination now uses the notation-independent IP-equivalence matcher (the same canonicalization the source field already used).
 - **`BUG_PORTSCAN_TRUSTED_FLOW_DST_SINGLE_HOST_CIDR_REJECTED`** — the destination selector accepted only `*` or a bare IP, rejecting the documented `<destination>/128` form. `/32` and `/128` single-host selectors now normalize to the bare host; broader destination CIDRs remain rejected, preserving the exact-single-destination semantics.
 
 Not affected: IPv4 exact destination, `dst=*`, source CIDR matching, rate enforcement, malformed-config fail-safe, rollback, firewall/ban/whitelist, the Go classifier, BotScan, RBL, and ordinary portscan visibility. The gap was input-representation coverage, not package-family: regression tests now exercise expanded and compressed runtime IPv6 destinations, `/128` and `/32` normalization, and a genuinely different IPv6 destination remaining visible. Test `portscan_trusted_flow_test` 34/34; shellcheck clean. No `dst=*` workaround was used.
@@ -322,10 +322,10 @@ Adds a v1.218.7-aware **`schema_version 3`** community telemetry payload for pri
 
 ### Fixed (security hygiene)
 
-- **`internal/installer/detect/ssh_test.go` (#1047):** replaced a real routable operator peer IP (`62.38.150.122`) with the RFC5737 documentation address `203.0.113.10`, the real external admin port (`55000`) with the neutral fixture port `50000`, and genericized the real fleet host-class labels in comments. Test intent, assertions, and coverage (multi-port detection, primary-selection, dedup) are preserved — mock inputs and their assertions were replaced together.
+- **`internal/installer/detect/ssh_test.go` (#1047):** replaced a real routable operator peer IP (`192.0.2.122`) with the RFC5737 documentation address `203.0.113.10`, the real external admin port (`55000`) with the neutral fixture port `50000`, and genericized the real fleet host-class labels in comments. Test intent, assertions, and coverage (multi-port detection, primary-selection, dedup) are preserved — mock inputs and their assertions were replaced together.
 - **`internal/installer/detect/ssh.go` (#1048):** comment-only scrub of the same class — `dns2-class` → `multi-port-class` and the `:55000` example port → `50000` in the SSH-detection explanatory comments, keeping the examples technically equivalent. No code, no logic, no behavior change.
 
-Operator-identifying data is now absent from both SSH-detection files (`dns2`, `55000`, `62.38.150.122` → 0). `go test ./internal/installer/detect/` passes; gofmt + go vet clean.
+Operator-identifying data is now absent from both SSH-detection files (`dns2`, `55000`, `192.0.2.122` → 0). `go test ./internal/installer/detect/` passes; gofmt + go vet clean.
 
 ---
 
@@ -866,7 +866,7 @@ NFTBan's outbound communication is now a single, enforced, observable plane. The
 > **⚠️ Fleet rollout is intentionally DEFERRED. Production remains v1.203.0; the portscan FP fix is NOT live fleet-wide until a separate Track-A gate (`OPEN_V204_TRACK_A_FLEET_ROLLOUT_11_HOSTS`).** v1.204.0 published ≠ fleet protected by the new classifier.
 
 ### Fixed
-- **Portscan classic classifier migrated to a typed Go decision function** (`internal/portscan`). Previously the shell classifier scored ALL distinct destination ports an IP touched (including configured open services) as scan diversity → a legitimate multi-service/browser/panel client could be classified strobe/vertical and temp-banned (proven: admin `62.38.150.122`, 6 open ports).
+- **Portscan classic classifier migrated to a typed Go decision function** (`internal/portscan`). Previously the shell classifier scored ALL distinct destination ports an IP touched (including configured open services) as scan diversity → a legitimate multi-service/browser/panel client could be classified strobe/vertical and temp-banned (proven: admin `192.0.2.122`, 6 open ports).
   - **Known-open service ports from `tcp_ports_in` no longer score as scan evidence** — they are allowed context.
   - **Unexpected/closed-port diversity remains ban-capable** (block/vertical/horizontal/strobe scoring is on the unexpected-port count); mixed traffic scores only the unexpected ports.
   - **IPv4/IPv6 parity validated.**
@@ -1273,7 +1273,7 @@ Removes two operational foot-guns surfaced during the v1.192 train.
 
 > **What:** shell-only BotScan change. **Go source byte-identical to v1.192.1** (packaged `nftban-core`/`nftband` hashes move only via the embedded git-commit stamp, not a code change). **NFT schema UNCHANGED (1.84.0).** No BotGuard change, no fleet rollout, no manual-whitelist-rebuild change.
 
-A legitimately logged-in WordPress administrator using the Gutenberg block editor / Elementor was classified `request_class=scanner` and auto-banned: the editor fetches `/wp-json/wp/v2/users` (matches `EXP_WPREST`) and editor calls match `WS_WPADMIN`, reaching score 80 → ban → escalation into the permanent blacklist (confirmed on srv4 for `nafpliotisbros.gr`).
+A legitimately logged-in WordPress administrator using the Gutenberg block editor / Elementor was classified `request_class=scanner` and auto-banned: the editor fetches `/wp-json/wp/v2/users` (matches `EXP_WPREST`) and editor calls match `WS_WPADMIN`, reaching score 80 → ban → escalation into the permanent blacklist (confirmed on srv4 for `customer-site.example.test`).
 
 ### Added
 - **BotScan authenticated WP-admin/editor context gate** (`cli/lib/nftban/core/nftban_botscan.sh`). A successful login — `POST <login_path> → 302` (uses the already-parsed HTTP **status**; a failed/probing login returns 200, so brute-force is never treated as "admin") — marks the IP authenticated for that scan cycle. In `analyze`, an authenticated IP has **only** the configured WP admin/REST scanner pattern hits (`BOTSCAN_WPADMIN_CONTEXT_PATTERNS`, default `EXP_WPREST WS_WPADMIN`) removed from its matched set and its hit-count recomputed **before** the threshold check.
@@ -3195,7 +3195,7 @@ Standard 4 files only: `VERSION` (1.140.0 → 1.141.0), `STATUS.md` (banner + la
 
 ### Lab validation evidence (`NFTBAN_ROADMAP/V140_172_LAB_VALIDATION_RECORD.md`)
 
-Verdict `V140_172_LAB_VALIDATION_PARTIAL_PASS_B`. **Set B `49.12.220.155` Ubuntu 26.04 LTS — FULL PASS** on every §5.1–§5.7 step:
+Verdict `V140_172_LAB_VALIDATION_PARTIAL_PASS_B`. **Set B `192.0.2.155` Ubuntu 26.04 LTS — FULL PASS** on every §5.1–§5.7 step:
 - Candidate DEB built natively (sha256 `5981afc5ebfd34ef19f97f8d1a97da68ec27a56af341753003c5d2dddaa89251`, 13.6 MB).
 - Install reached `INSTALL_STATE=COMMITTED` via standard `apt-get install` + `NFTBAN_TAKEOVER=1 nftban-installer --repair`.
 - 16/16 install assertions PASS.
@@ -3292,7 +3292,7 @@ Only allowed files touched in this release-prep PR: `VERSION`, `STATUS.md`, `CHA
 
 ### Validation
 - Verified `V1_139_1_HOTFIX_VERIFY_PASS_DEB_AND_RPM` on **lab2** (Ubuntu 24.04 DEB / Go 1.25 / shellcheck 0.9 / mikefarah yq v4.44.1) + **lab4** (AlmaLinux 9.8 EL9 RPM / Go 1.25 / shellcheck 0.10): `bash -n` + `shellcheck` clean; 10/10 test PASS; `generate-fhs-outputs.sh --check` rc=0 (v1.139 FHS gates intact); `go vet`/`go build`/`go test ./internal/nftbanconf/...` PASS (PR-B parity test intact); `staticcheck@v0.7.0 ./...` clean; `gosec -nosec ./...` 0 new findings; DEB + EL9 RPM still-build (12 MB each); PATH-shadow runtime proofs all 3 patterns confirmed.
-- Verified `V1_139_1_HOTFIX_UBUNTU26_VERIFY_PASS` on **Ubuntu 26.04 LTS "resolute"** (`49.12.220.155`, Hetzner FSN1 fresh VPS, systemd 259, nftables 1.1.6) via the CI-built `nftban-ubuntu24.04-amd64.deb` (md5 `1df7e45deb75ea793f829f1977d3c129`): standard `apt-get install` + `NFTBAN_TAKEOVER=1 nftban-installer --repair` reached `INSTALL_STATE=COMMITTED` / `AUTHORITY=TAKEOVER` with 16/16 install assertions PASS; hotfix test 10/10 PASS on the host; exporter ran twice clean (rc=0); `/var/cache/nftban/metrics/stats.json.hostname = "ubuntu-4gb-fsn1-1"` correctly populated via T1; idempotency cycle (apt purge → reinstall) reached COMMITTED again. 5 Ubuntu-26-specific findings recorded as inputs to the v1.140.0 lane (missing `ubuntu-26.conf`/`ubuntu.conf` generic, `nftban uninstall` CLI wrapper absent, Ubuntu's default `inet filter` table blocks reinstall idempotency, systemd 259 path-transition warnings non-fatal, `mailutils` pulled via Recommends).
+- Verified `V1_139_1_HOTFIX_UBUNTU26_VERIFY_PASS` on **Ubuntu 26.04 LTS "resolute"** (`192.0.2.155`, Hetzner FSN1 fresh VPS, systemd 259, nftables 1.1.6) via the CI-built `nftban-ubuntu24.04-amd64.deb` (md5 `1df7e45deb75ea793f829f1977d3c129`): standard `apt-get install` + `NFTBAN_TAKEOVER=1 nftban-installer --repair` reached `INSTALL_STATE=COMMITTED` / `AUTHORITY=TAKEOVER` with 16/16 install assertions PASS; hotfix test 10/10 PASS on the host; exporter ran twice clean (rc=0); `/var/cache/nftban/metrics/stats.json.hostname = "ubuntu-4gb-fsn1-1"` correctly populated via T1; idempotency cycle (apt purge → reinstall) reached COMMITTED again. 5 Ubuntu-26-specific findings recorded as inputs to the v1.140.0 lane (missing `ubuntu-26.conf`/`ubuntu.conf` generic, `nftban uninstall` CLI wrapper absent, Ubuntu's default `inet filter` table blocks reinstall idempotency, systemd 259 path-transition warnings non-fatal, `mailutils` pulled via Recommends).
 - PR #720 CI: **50 / 2-skip / 0-fail** after one infrastructure-flake rerun on `Build NFTBan Packages` (artifact-upload intermediary 403 on `Build DEB (ubuntu22.04)` — same class as the documented container-runtime-125 flake; single `gh run rerun --failed` cleared; matches prior v1.137/v1.139 rerun precedents). All downstream test-install jobs PASS (debian12/13, ubuntu22.04/24.04, alma9, rocky9, centos-stream9, centos-stream10).
 
 ### Out of scope (deferred)
@@ -4396,7 +4396,7 @@ changes. No host contact** during release-prep construction.
 **Lane C — re-apply trust providers in `firewall_reload` — PR #660 (sq `af904f43`).**
 Closes `D-FIREWALL-RELOAD-DOES-NOT-REMERGE-TRUST-PROVIDERS` (P2,
 fleet-wide latent). Empirical reproduction on srv3 (v1.121.0, 2026-05-22):
-a single `nftban firewall whitelist-session add 62.38.150.122 --ttl 30m`
+a single `nftban firewall whitelist-session add 192.0.2.122 --ttl 30m`
 invocation called `firewall_reload` internally, which re-applied
 DDoS / portscan / botguard / feeds / geoban — but missed trust
 providers — silently dropping 14 Cloudflare CIDR ranges from kernel
@@ -7089,7 +7089,7 @@ opened only if a v1.114.0 defect surfaces).
 
 V113 single-PR feature release on top of v1.112.2. Closes
 `D-LOGINMON-EXIM-SUBNET-ROTATION-GAP` from the srv1 production incident on
-2026-05-13: a distributed `81.30.98.0/24` SMTP brute force where each
+2026-05-13: a distributed `203.0.113.0/24` SMTP brute force where each
 individual IP made only 1-2 attempts (15-30 points each) and never crossed
 the per-IP LoginMon 45-point temp-ban threshold. Per-IP scoring could not
 defeat the /24 rotation; this release adds a per-prefix tracking primitive
@@ -7103,7 +7103,7 @@ remains frozen.** **No Prometheus emission added.**
 ### Closes
 
 - `D-LOGINMON-EXIM-SUBNET-ROTATION-GAP` (srv1 production incident
-  2026-05-13: distributed `81.30.98.0/24` exim brute force; ~5 manual /27
+  2026-05-13: distributed `203.0.113.0/24` exim brute force; ~5 manual /27
   bans deployed as temporary mitigation before this release).
 
 ### Files touched (the entire envelope)
@@ -7285,10 +7285,10 @@ Each item separately gated:
 ### Acceptance plan (separately gated)
 
 `EXECUTE_V113_VALIDATE_SRV1 = GO` — enable observe mode on srv1
-(which still has the 81.30.98.x attack pattern that motivated this
+(which still has the 203.0.113.x attack pattern that motivated this
 feature) → verify `subnet_pressure_count` increments under live
 traffic → switch to enforce mode → verify CIDR ban fires for
-`81.30.98.0/24` → confirm coexistence with the 5 existing manual /27
+`203.0.113.0/24` → confirm coexistence with the 5 existing manual /27
 bans on srv1.
 
 v1.113.x hotfix slot **not authorized** (latent reservation only —
@@ -9263,7 +9263,7 @@ decommission is gated on per-function `MIGRATION_COVERAGE.md` (H3.1+).
 | Panel | Status | Evidence |
 |---|---|---|
 | **DirectAdmin** | adapter merged + live destructive evidence | dns2 PR26.4+26.5+26.6 retry SUCCESS + PR26.6.1 watchdog hotfix verified live |
-| **Plesk** | adapter merged + live read-only reality audit | 178.105.74.229 (Ubuntu 24.04 + Obsidian 18.0.76); lab2 H2 supplementary baseline (Ubuntu 24.04 + Plesk) |
+| **Plesk** | adapter merged + live read-only reality audit | 192.0.2.229 (Ubuntu 24.04 + Obsidian 18.0.76); lab2 H2 supplementary baseline (Ubuntu 24.04 + Plesk) |
 | **cPanel** | adapter merged + live read-only reality audit | lab4 (AlmaLinux 9.7 + cPanel 11.132.0.19); lab4 H2 supplementary baseline |
 | CyberPanel / CWP / InterWorx / Vesta / Generic | DEFERRED | gated on licensed clean evidence hosts |
 
@@ -9925,7 +9925,7 @@ DEB and RPM lab victims.
 - **CLI shell surface**: 34/34 commands × `help` across DEB + RPM,
   0 crashes, 0 version.sh regressions.
 - **Detection pipeline**: SSH abuse → `[BAN] Successfully banned
-  46.225.157.122 (timeout=900s, source=loginmon)` in <4 seconds on both
+  192.0.2.67 (timeout=900s, source=loginmon)` in <4 seconds on both
   Ubuntu24-DEB and AlmaLinux9-RPM. Kernel blacklist set populated.
 - Evidence bundle: `/tmp/v1.98.1-audit/` (installation/, runtime/,
   binaries/, session-logs/).

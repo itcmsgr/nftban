@@ -12,8 +12,8 @@
 // meta:created_date="2026-06-14"
 // meta:description="Signal-based Roundcube webmail interactive auth-failure detection from the Roundcube userlogins.log (log_logins=true). OWNS ONLY the webmail auth_failure event class on that log (source=roundcube, reason 5003) — disjoint from dovecot IMAP/POP3 brute (which logs webmail-proxied logins as rip=localhost = wrong IP), from WebAuth (HTTP 401/wp-login), and from BotScan web_abuse. Matches ONLY 'Failed login for ... from <IP> ...'; 'Successful login ...' never produces a verdict. Contains a MANDATORY public-IP-only guard: never bans loopback/RFC1918/link-local/ULA/multicast/unspecified/malformed IPs, so the fleet-wide binary is safe on proxied panels (cPanel/Plesk) that may log 127.0.0.1, and the dovecot rip=localhost webmail mirror is auto-neutralized. v1.186 claims DirectAdmin/OpenLiteSpeed coverage only (Gate-0 captured); cPanel (per-user log discovery) and Plesk are deferred."
 //
-// Captured DA format (real, dns1 2026-06-14):
-//   [14-Jun-2026 10:54:37 +0000]: <8b84adea> Failed login for user@dom from 62.38.150.122 in session 8b84adea7d5ff1df (error: 0)
+// Captured DA sample format (2026-06-14):
+//   [14-Jun-2026 10:54:37 +0000]: <0a1b2c3d> Failed login for user@dom from 192.0.2.122 in session 0a1b2c3d4e5f6789 (error: 0)
 //   Successful variant (NEVER matched): Successful login for user (ID: 1) from <IP> in session <sid>
 //
 // meta:inventory.files="roundcube.go"

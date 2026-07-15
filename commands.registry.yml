@@ -1598,9 +1598,9 @@ firewall:
       requires_root: true
       description: "Manage time-bounded operator-session whitelist entries (D-UPDATE-OPERATOR-SELF-BAN-GAP-001; v1.120)"
       examples:
-        - "nftban firewall whitelist-session add 62.38.150.122 --ttl 30m"
+        - "nftban firewall whitelist-session add 192.0.2.122 --ttl 30m"
         - "nftban firewall whitelist-session list"
-        - "nftban firewall whitelist-session remove 62.38.150.122"
+        - "nftban firewall whitelist-session remove 192.0.2.122"
         - "nftban firewall whitelist-session cleanup"
       subcommands:
         add:

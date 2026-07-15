@@ -43,7 +43,7 @@ no(){ printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
 has(){ [[ "$1" == *"$2"* ]]; }
 
 # Self-interface fixture: eth0 (up) has one public v4 + one public v6; lo loopback.
-# => project_rbl (self) = { 46.225.150.67, 2a01:4f8:c014:5ee1::1 } (2 addresses).
+# => project_rbl (self) = { 192.0.2.67, 2001:db8:c014:5ee1::1 } (2 addresses).
 _ip_stub() {
   cat <<'STUB'
 ip() {
@@ -55,8 +55,8 @@ ip() {
     printf '%s\n' \
       "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever" \
       "1: lo    inet6 ::1/128 scope host \\       valid_lft forever preferred_lft forever" \
-      "2: eth0    inet 46.225.150.67/24 scope global eth0\\       valid_lft forever preferred_lft forever" \
-      "2: eth0    inet6 2a01:4f8:c014:5ee1::1/64 scope global \\       valid_lft forever preferred_lft forever"
+      "2: eth0    inet 192.0.2.67/24 scope global eth0\\       valid_lft forever preferred_lft forever" \
+      "2: eth0    inet6 2001:db8:c014:5ee1::1/64 scope global \\       valid_lft forever preferred_lft forever"
     return 0
   fi
   return 0
@@ -122,7 +122,7 @@ o="$(run_server "host.example has IPv6 address fe80::1")"
 { has "$o" "excluded from RBL checks" && { ! printf '%s\n' "$o" | grep -qE '^Checking: fe80::1'; }; } && ok "T4 link-local IPv6 excluded" || no "T4 link-local checked"
 
 # 5. hostname -> the same public self IPv4 => admitted, deduped (Total stays 2)
-o="$(run_server "host.example has address 46.225.150.67")"
+o="$(run_server "host.example has address 192.0.2.67")"
 [[ "$(total_line "$o")" == "2" ]] && ok "T5 hostname==self public dedups to one (Total=2)" || no "T5 dedup failed ($(total_line "$o"))"
 [[ "$(checked "$o" | grep -c '^46\.225\.150\.67$')" == "1" ]] && ok "T5b self public checked exactly once" || no "T5b duplicate check"
 

@@ -79,7 +79,7 @@ func TestCanonicalize_SplitsUserDomain(t *testing.T) {
 		{"info@example.gr", "", "info@example.gr", "example.gr"},
 		{"info", "", "info", ""},
 		{"", "", "", ""},
-		{"info", "manual.gr", "info", "manual.gr"},          // explicit domain preserved
+		{"info", "example.gr", "info", "example.gr"},          // explicit domain preserved
 		{"info@a@b", "", "info@a@b", "b"},                    // last @ wins
 	}
 	for _, c := range cases {
