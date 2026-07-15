@@ -18,7 +18,7 @@
 # Missing/denied traffic auth is RECORDED, never silently omitted.
 # =============================================================================
 import os, re, sys, json, csv, subprocess, argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 OWNER_REPO = "itcmsgr/nftban"
 
@@ -151,6 +151,132 @@ def merge_daily_traffic(outdir, clones, views, report):
     return len(rows), len(set(r["date"] for r in rows))
 
 
+# ---------------------------------------------------------------------------
+# Interest-trend model (windowed, honest). Preserves ALL raw counters; adds
+# classifications only. NEVER subtracts guessed fleet/CI traffic. Correlation /
+# lag between visitors and downloads is NOT computed until >=30 complete daily
+# observations, and even then is reported as association, not proven conversion.
+# ---------------------------------------------------------------------------
+def _valid_date(s):
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _median(vals):
+    s = sorted(vals)
+    n = len(s)
+    if n == 0:
+        return 0
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def release_dates_from(pages):
+    """UTC dates (YYYY-MM-DD) on which a non-draft release was published — used to
+    mark release days, whose download deltas are fleet-self-update dominated."""
+    dates = set()
+    for page in pages:
+        for r in page:
+            if r.get("draft"):
+                continue
+            ca = r.get("created_at") or r.get("published_at")
+            if ca:
+                dates.add(ca[:10])
+    return dates
+
+
+def detect_asset_outliers(pages):
+    """Flag individual installable-package assets whose LIFETIME download_count is a
+    statistical outlier (e.g. one old asset hammered by automation/scrapers).
+    Raw counts are PRESERVED; this is an annotation, never a deletion, and the
+    requester identity is NOT claimed — labelled suspected_automation_or_outlier."""
+    pkg = []
+    for page in pages:
+        for r in page:
+            if r.get("draft"):
+                continue
+            for a in r.get("assets", []):
+                if a["name"].endswith((".deb", ".rpm")):
+                    pkg.append((r.get("tag_name"), a["name"], a["download_count"]))
+    counts = [c for _, _, c in pkg]
+    med = _median(counts)
+    thr = max(50, med * 10)  # far above median AND above an absolute floor
+    flagged = [{"tag": t, "name": n, "downloads": c,
+                "classification": "suspected_automation_or_outlier",
+                "anomaly_reason": (f"lifetime downloads {c} >> median {med:g} (threshold {thr:g}); "
+                                   "likely automation/scraper/direct-link — requester identity unproven")}
+               for t, n, c in pkg if c > thr]
+    return {"median_installable_asset_downloads": med, "outlier_threshold": thr,
+            "flagged_assets": sorted(flagged, key=lambda x: -x["downloads"])}
+
+
+def compute_windows(snaps, snap_date, release_dates):
+    """Trailing 7d/14d installable-package download windows from snapshot deltas.
+    headline_total EXCLUDES release-day deltas (day-level exclusion of fleet-update-
+    dominated days — NOT a guessed fleet subtraction). Windows are marked partial
+    when snapshot days are missing (no fabricated fill)."""
+    today = datetime.strptime(snap_date, "%Y-%m-%d").date()
+
+    def window(days):
+        start = today - timedelta(days=days - 1)
+        present = {}
+        for d, row in snaps.items():
+            if not _valid_date(d):
+                continue
+            dt = datetime.strptime(d, "%Y-%m-%d").date()
+            if start <= dt <= today:
+                present[dt] = row
+        raw = sum(int(r.get("package_delta", 0) or 0) for r in present.values())
+        headline = sum(int(r.get("package_delta", 0) or 0)
+                       for dt, r in present.items() if dt.isoformat() not in release_dates)
+        suspected = raw - headline
+        complete = len(present) >= days
+        return {"raw_delta_total": raw, "suspected_automation_delta": suspected,
+                "headline_window_delta": headline, "days_present": len(present),
+                "days_expected": days, "complete": complete,
+                "note": "" if complete else "partial: missing snapshot day(s) — treat as lower bound"}
+
+    return {"d7": window(7), "d14": window(14),
+            "complete_daily_observations": len([d for d in snaps if _valid_date(d)])}
+
+
+def build_interest_trend(outdir, snaps, release_dates):
+    """interest-trend.csv — the PRIMARY human-scale daily view: unique visitors +
+    unique cloners (from github-traffic-daily) joined with the day's package-download
+    delta (from snapshots). Raw clone_count is deliberately excluded (automation)."""
+    daily = {r["date"]: r for r in read_csv(os.path.join(outdir, "github-traffic-daily.csv"))}
+    dates = sorted(set(daily) | set(d for d in snaps if _valid_date(d)))
+    rows = []
+    for d in dates:
+        t, s = daily.get(d, {}), snaps.get(d, {})
+        rel_day = d in release_dates
+        raw_delta = (int(s.get("package_delta", 0) or 0) if s else "")
+        rows.append({
+            "date": d,
+            "unique_visitors": t.get("unique_visitors", ""),
+            "unique_cloners": t.get("unique_cloners", ""),
+            "package_delta_raw": raw_delta,
+            "is_release_day": "yes" if rel_day else "no",
+            "package_delta_non_release_day": (raw_delta if (s and not rel_day) else ""),
+            "stars": s.get("stars", ""),
+        })
+    write_csv(os.path.join(outdir, "interest-trend.csv"), rows,
+              ["date", "unique_visitors", "unique_cloners", "package_delta_raw",
+               "is_release_day", "package_delta_non_release_day", "stars"])
+    return len(rows)
+
+
+# Timeline milestones (fill dates when they occur; None = not yet).
+TIMELINE_EVENTS = {
+    "website_publication": None,
+    "webhostingtalk_publication": None,
+    "reddit_publication": None,
+    "fleet_update_mirror_transition": None,  # OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE
+}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -170,6 +296,12 @@ def main():
         if pages is None:
             print(f"FATAL: cannot fetch releases: {err}", file=sys.stderr); sys.exit(2)
     rel = classify_releases(pages)
+    release_dates = release_dates_from(pages)
+    outliers = detect_asset_outliers(pages)
+    if outliers["flagged_assets"]:
+        report.append(f"asset_outliers_flagged={len(outliers['flagged_assets'])} "
+                      f"(top {outliers['flagged_assets'][0]['downloads']} dl, "
+                      f"median {outliers['median_installable_asset_downloads']:g}) — annotated, NOT removed")
     report.append(f"releases_measured={rel['releases_measured']} assets={rel['assets_scanned']} "
                   f"package={rel['package_downloads']} unclassified_legacy={len(rel['unclassified'])}")
 
@@ -220,6 +352,16 @@ def main():
                    "rolling_14d_views", "rolling_14d_unique_visitors"]
     write_csv(snap_path, [snaps[d] for d in sorted(snaps)], snap_fields)
 
+    # 4b) windowed trend (primary directional signal) + daily interest-trend view
+    windows = compute_windows(snaps, snap_date, release_dates)
+    n_trend = build_interest_trend(args.out, snaps, release_dates)
+    obs = windows["complete_daily_observations"]
+    report.append(f"windows: d7 headline={windows['d7']['headline_window_delta']} "
+                  f"(raw {windows['d7']['raw_delta_total']}, {'complete' if windows['d7']['complete'] else 'PARTIAL'}); "
+                  f"d14 headline={windows['d14']['headline_window_delta']} "
+                  f"(raw {windows['d14']['raw_delta_total']}, {'complete' if windows['d14']['complete'] else 'PARTIAL'}); "
+                  f"daily_obs={obs}/30 for association")
+
     # 5) package-history.csv (per-snapshot cumulative totals for the weekly-new trend)
     ph_path = os.path.join(args.out, "package-history.csv")
     ph = {r["snapshot_date"]: r for r in read_csv(ph_path)}
@@ -243,7 +385,8 @@ def main():
                for t, n in sorted(rel["per_release"].items(), key=_relkey)],
               ["tag", "asset_downloads"])
     json.dump({"snapshot_at": snap_at, "platforms": [n for n, _, _ in PLATFORMS],
-               "unclassified_legacy": rel["unclassified"]},
+               "unclassified_legacy": rel["unclassified"],
+               "asset_anomalies": outliers},
               open(os.path.join(args.out, "asset-classification.json"), "w"), indent=2)
 
     # 7) current.json
@@ -288,13 +431,56 @@ def main():
                         "unique_visitors": views["uniques"] if views else None},
         "traffic_auth": "PASS" if traffic_ok else "FAIL",
         "reconciles": recon,
+        # --- interest-trend model (PRIMARY signal; see interest-trend.csv) ---
+        "recent_activity": {
+            "note": ("PRIMARY directional signal. Trailing installable-package download windows "
+                     "from snapshot deltas; headline_window_delta EXCLUDES release-day deltas "
+                     "(fleet-self-update dominated) — a transparent day-level exclusion, NOT a "
+                     "guessed fleet subtraction. Windows marked partial are lower bounds."),
+            "d7": windows["d7"], "d14": windows["d14"],
+            "daily_trend_csv": "interest-trend.csv", "daily_rows": n_trend,
+        },
+        "asset_anomalies": outliers,
+        "interest_association": {
+            "status": ("insufficient_history" if obs < 30 else "ready_for_association"),
+            "complete_daily_observations": obs, "required": 30,
+            "note": ("Visitor↔download association and lag are NOT computed until >=30 complete "
+                     "daily observations; even then reported as ASSOCIATION, not proven conversion. "
+                     "Evaluate same-day + 1/2-day lag, release vs non-release days, pre/post website "
+                     "and WebHostingTalk publication, missing-data days, outlier sensitivity."),
+        },
+        "timeline_events": TIMELINE_EVENTS,
+        "metric_roles": {
+            "primary_directional": ["unique_visitors", "unique_cloners",
+                                    "recent_package_delta_non_release_day", "stars"],
+            "context_only_do_not_headline": ["raw_clone_count", "cumulative_package_downloads",
+                                             "all_release_asset_downloads", "metadata_downloads"],
+        },
+        "internal_conclusion": (
+            "NFTBan currently shows modest but measurable and apparently increasing external "
+            "interest. Unique visitors, unique cloners and recent package-download requests are "
+            "the primary directional signals. These metrics do NOT prove installations or "
+            "production use."),
+        "public_presentation": (
+            "Recent project activity shows growing technical evaluation, measured through "
+            "repository visitors, unique cloners and package-download requests. These are traffic "
+            "indicators, not unique-user or installation counts."),
+        "do_not_publish": ("Do NOT publish the cumulative package-download total as an adoption "
+                           "headline — it is contaminated by fleet/CI/validation traffic and "
+                           "historical per-asset outliers."),
     }
     json.dump(current, open(os.path.join(args.out, "current.json"), "w"), indent=2)
 
-    # 8) badge (hand-rendered SVG, no external scripts) — package downloads
-    badge = package_badge(rel["package_downloads"])
+    # 8) badges (hand-rendered SVG, no external scripts). PRIMARY badge = recent
+    # windowed external-leaning activity (cumulative demoted to a context badge).
     os.makedirs(os.path.join(args.out, "badges"), exist_ok=True)
-    open(os.path.join(args.out, "badges", "package-downloads.svg"), "w").write(badge)
+    d14 = windows["d14"]
+    recent_label = "downloads (14d)" + ("*" if not d14["complete"] else "")
+    open(os.path.join(args.out, "badges", "recent-downloads.svg"), "w").write(
+        package_badge(f"{d14['headline_window_delta']:,}", recent_label))
+    # cumulative kept for context only — NOT an adoption headline
+    open(os.path.join(args.out, "badges", "package-downloads.svg"), "w").write(
+        package_badge(f"{rel['package_downloads']:,}", "all-time requests"))
 
     report.append(f"snapshot_date={snap_date} package_delta={delta} traffic_daily_rows={ndaily} dup_dates={dup_dates}")
     open(os.path.join(args.out, "collection-report.txt"), "w").write("\n".join(report) + "\n")
@@ -304,9 +490,9 @@ def main():
           f"dup_dates={dup_dates} unclassified_pkg_alarm={len(rel['unclassified'])}")
 
 
-def package_badge(total):
-    label, value = "package downloads", f"{total:,}"
-    lw, vw = 118, 8 + len(value) * 7
+def package_badge(value, label):
+    value = str(value)
+    lw, vw = 12 + len(label) * 6, 8 + len(value) * 7
     w = lw + vw
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="20" role="img" '
             f'aria-label="{label}: {value}"><linearGradient id="s" x2="0" y2="100%">'
