@@ -279,6 +279,18 @@ _nftban_portscan_load_modules() {
         fi
     fi
 
+    # Load trusted-monitoring-flow exclusion module (event-emit suppression only;
+    # empty/opt-in default). Sourced alongside classic so the emit filter is
+    # available in nftban_portscan_classic_process_logs.
+    local tflow_module=""
+    for path in "${core_dir}/nftban_portscan_trusted_flow.sh" "${dev_core_dir}/nftban_portscan_trusted_flow.sh"; do
+        if [[ -f "$path" ]]; then tflow_module="$path"; break; fi
+    done
+    if [[ -n "$tflow_module" ]]; then
+        # shellcheck source=/dev/null
+        source "$tflow_module" || true
+    fi
+
     # Load suricata module
     local suricata_module=""
     for path in "${core_dir}/nftban_portscan_suricata.sh" "${dev_core_dir}/nftban_portscan_suricata.sh"; do
@@ -808,6 +820,12 @@ nftban_portscan_status() {
     echo ""
     echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
     echo ""
+
+    # Trusted-monitoring-flow exclusion (event-generation suppression only)
+    if type -t nftban_portscan_trusted_flow_render &>/dev/null; then
+        nftban_portscan_trusted_flow_render
+        echo ""
+    fi
 
     # ==========================================================================
     # v1.19.20 (B8): OPEN PORTS VISIBILITY
