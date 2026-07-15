@@ -623,6 +623,16 @@ mkdir -p %{buildroot}/var/log/nftban/botguard
 mkdir -p %{buildroot}/var/cache/nftban
 mkdir -p %{buildroot}/run/nftban
 
+# SEC-INFRA Gate A (staging): scan the CONCRETE staged RPM payload (the build
+# root) for unapproved private identifiers before packaging. BLOCKING — a nonzero
+# exit aborts the install stage and fails the build. Binaries are skipped
+# (NUL-byte detection); synthetic/test/approved-infra findings stay advisory.
+# Degrades safely if the scanner or python3 is unavailable in the build env.
+if command -v python3 >/dev/null 2>&1 && [ -f scripts/ci/privacy-scan.py ]; then
+    echo "[NFTBan build] SEC-INFRA: scanning staged RPM payload for private-identifier disclosure..."
+    python3 scripts/ci/privacy-scan.py --scope staging --root %{buildroot} --strict
+fi
+
 %pretrans -p <lua>
 -- Remove immutable flag before upgrade (runs FIRST, before old pkg scripts)
 -- The nft_schema.sh file is protected with chattr +i for security.
@@ -2124,6 +2134,19 @@ build_deb() {
     done < "$nftban_dir_attrs"
     log_info "DEB build-time chmod convergence: ${_chmod_count} dirs chmod'd, ${_chmod_skipped} skipped (missing in deb_root)"
     unset _chmod_count _chmod_skipped _mc_path _mc_mode _mc_owner _mc_group _mc_target
+
+    # SEC-INFRA Gate A (staging): scan the CONCRETE staged DEB payload for
+    # unapproved private identifiers immediately before archive generation.
+    # BLOCKING — catches packaging-only files, generated metadata, and any stray
+    # staging addition not represented in the source manifest. Binaries are
+    # skipped (NUL-byte detection); synthetic/test/approved-infra stay advisory.
+    if command -v python3 >/dev/null 2>&1 && [[ -f "${PROJECT_ROOT}/scripts/ci/privacy-scan.py" ]]; then
+        log_info "SEC-INFRA: scanning staged DEB payload for private-identifier disclosure..."
+        if ! python3 "${PROJECT_ROOT}/scripts/ci/privacy-scan.py" --scope staging --root "${deb_root}" --strict; then
+            log_error "SEC-INFRA: staged DEB payload contains unapproved private identifiers — refusing to package"
+            return 1
+        fi
+    fi
 
     log_info "Building DEB with root:root archive metadata (postinst converges ownership)..."
     local deb_out="${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"

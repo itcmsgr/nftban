@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan privacy pre-commit hook (SEC-INFRA Guard 1 — freeze disclosure growth)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="pre-commit-privacy"
+# meta:type="hook"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-07-16"
+# meta:description="SEC-INFRA Guard 1 git pre-commit hook: blocks a commit that ADDS a private-infrastructure identifier (real public IP, personal home path, or a privacy-forbidden.txt deny-pattern hit) while tolerating the existing backlog — it scans only the staged ADDED lines via scripts/ci/privacy-scan.py --strict. Findings are REDACTED. Install: ln -s ../../scripts/ci/hooks/pre-commit-privacy .git/hooks/pre-commit (or chain from an existing pre-commit)."
+# meta:input="Staged git diff (git diff --cached)"
+# meta:output="Exit 0 if no new private identifier; exit 1 (blocking) with redacted findings otherwise"
+# meta:depends="bash,git,python3,mktemp,grep"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,git,python3,mktemp,grep"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="scripts/ci/privacy-scan.py"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+# It calls the shared scanner with --strict, which blocks only on the
+# release-blocking categories (REAL_OPERATOR_IDENTIFIER / SHIPPED_PUBLIC_SURFACE);
+# synthetic test IPs, historical docs, and approved infrastructure stay advisory.
+# =============================================================================
+set -Eeuo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+scanner="${repo_root}/scripts/ci/privacy-scan.py"
+[ -f "$scanner" ] || exit 0   # scanner absent (older tree) — do not block
+
+# Collect only the added text of the staged diff (drop the +++ header lines).
+added_file="$(mktemp -t nftban-staged-add.XXXXXX)"
+trap 'rm -f "$added_file"' EXIT
+git diff --cached -U0 --no-color | grep '^+' | grep -v '^+++' > "$added_file" || true
+
+if ! python3 "$scanner" --strict --paths "$added_file" >/dev/null 2>&1; then
+  echo "PRIVACY GUARD: staged change adds a private infrastructure identifier — aborting commit." >&2
+  echo "Inspect: python3 scripts/ci/privacy-scan.py --show   (local only)" >&2
+  python3 "$scanner" --strict --paths "$added_file" >&2 || true
+  exit 1
+fi
+exit 0

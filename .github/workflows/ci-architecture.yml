@@ -101,6 +101,35 @@ jobs:
       - name: Check CLI surface parity (registry/completion/dispatch)
         run: ./scripts/ci/check-cli-surface-parity.sh
 
+      # SEC-INFRA dual-scope privacy gates (GO_IMPLEMENT_SEC_INFRA_DUAL_SCOPE_PRIVACY_GATES).
+      #
+      # Gate A (BLOCKING): the publication surface only — files a user RECEIVES or
+      # READS, enumerated from scripts/ci/release-surface.txt (binary-package
+      # payload + compiled-in source + public docs). Fails the build on any
+      # UNAPPROVED REAL identifier (REAL_OPERATOR_IDENTIFIER / SHIPPED_PUBLIC_SURFACE)
+      # reaching users. Synthetic attacker/example IPs in test fixtures classify as
+      # advisory and do NOT block. Findings are REDACTED (no raw secrets in logs).
+      # This gate enforces NFTBAN_RELEASE_PUBLICATION = BLOCKED at the source tree;
+      # the release job must also run it over the package staging tree before publish.
+      - name: Check privacy — RELEASE surface (SEC-INFRA Gate A, BLOCKING)
+        run: python3 scripts/ci/privacy-scan.py --scope release --strict
+
+      # Gate B (ADVISORY): the full tracked tree, categorized. Surfaces the
+      # remaining privacy debt (synthetic test-fixture IPs, pseudonymous dev paths,
+      # historical documentation) without failing the build — the debt is
+      # classified, never silently excluded. Flip to blocking once the test-fixture
+      # remediation is validated on a Go-capable host.
+      - name: Check privacy — REPOSITORY debt (SEC-INFRA Gate B, advisory)
+        continue-on-error: true
+        run: python3 scripts/ci/privacy-scan.py --scope repository --report
+
+      # SEC-INFRA Guard 7: the support bundle is an intentionally-EXPORTED
+      # artifact, so its redaction contract is release-blocking. Drives the real
+      # _support_scrub_stream entrypoint over synthetic sensitive fixtures and
+      # asserts secrets are scrubbed while forensic identifiers survive.
+      - name: Support-bundle redaction (SEC-INFRA Guard 7)
+        run: bash cli/lib/nftban/tests/support_bundle_redaction_test.sh
+
       - name: Check netlink import policy
         run: |
           echo "=== Checking netlink import architecture policy ==="
