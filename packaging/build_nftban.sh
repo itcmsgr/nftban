@@ -1491,6 +1491,10 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/ddos/*.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/login/*.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
+# trusted-flows.conf.example is a documentation template (not operator config):
+# ship it plain so upgrades refresh it. The live trusted-flows.conf is opt-in and
+# is NOT shipped (operator copies + edits the example to activate).
+%attr(640,root,nftban) /etc/nftban/conf.d/portscan/*.conf.example
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/suricata/interfaces.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/tunnel/main.conf
