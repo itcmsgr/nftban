@@ -43,6 +43,24 @@ readonly NFTBAN_RBL_CORE_LOADED=1
 # Determine library path
 _NFTBAN_RBL_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 
+# v1.220.0: shared host-address inventory authority (DISCOVER ONCE / CLASSIFY ONCE /
+# PROJECT PER CONSUMER). RBL self-IP discovery + public classification route through
+# this; RBL never re-implements `ip … addr show` self-IP discovery.
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/core/nftban_hostaddr.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/core/nftban_hostaddr.sh" || return 1
+fi
+
+# v1.220.x (OPEN_SCOPE_RBL_PROVIDER_REGISTRY slice 1): additive typed-provider
+# registry substrate. Functions-only, no side effects; the live check path is
+# UNCHANGED — nftban_rbl_load_providers stays authoritative (rbls.conf). The
+# registry projects/validates typed records for later slices; sourcing it does
+# not alter provider membership, order, or count.
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/core/nftban_rbl_registry.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/core/nftban_rbl_registry.sh" || return 1
+fi
+
 # Load timestamp library (for nftban_timestamp, nftban_timestamp_unix)
 if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/dev/null
@@ -120,69 +138,67 @@ nftban_rbl_log() {
 # =============================================================================
 
 nftban_rbl_get_public_ips() {
-    # Auto-discover public IPs from network interfaces
-    # Output: One IP per line
-
-    local ips=()
-
-    # Get all IPv4 addresses from interfaces (excluding loopback)
-    while IFS= read -r ip; do
-        if nftban_rbl_is_public_ip "$ip"; then
-            ips+=("$ip")
-        fi
-    done < <(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.')
-
-    # Get all IPv6 addresses if enabled (excluding link-local and loopback)
+    # Auto-discover public routable self IPs (IPv4 + IPv6) for RBL self-monitoring.
+    # v1.220.0: single source of truth — the host-address inventory authority's RBL
+    # projection (public + preferred + up-interface, full addresses, deduped). No
+    # inline `ip … addr show` here. IPv6 gate honored: drop v6 records when disabled.
+    # Output: one full address per line.
     if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
-        while IFS= read -r ip; do
-            if nftban_rbl_is_public_ip "$ip"; then
-                ips+=("$ip")
-            fi
-        done < <(ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:')
+        nftban_hostaddr_project_rbl
+    else
+        # IPv4 only: exclude any address containing ':'
+        nftban_hostaddr_project_rbl | grep -v ':'
     fi
-
-    # Remove duplicates and output
-    printf '%s\n' "${ips[@]}" | sort -u
 }
 
 nftban_rbl_get_critical_ips() {
-    # Get critical IPs from configuration
-    # Format: NFTBAN_RBL_CRITICAL_IPS="1.2.3.4:mail,5.6.7.8:web"
-    # Output: IP:tag (one per line)
-
+    # Get operator-configured critical IPs. v1.220.0: IPv6-SAFE parsing.
+    #   Canonical (new):  NFTBAN_RBL_CRITICAL_IPS="2a01:...::1|mail,203.0.113.5|web"
+    #   Legacy (v4-only): NFTBAN_RBL_CRITICAL_IPS="1.2.3.4:mail,5.6.7.8:web"
+    # Output: "<ip>\t<tag>" (one per line; tag may be empty). NEVER splits an IPv6
+    # address at a colon. Legacy IPv4 "ip:tag" is still read (with a one-time warn);
+    # malformed entries are passed through as a bare IP (not silently reinterpreted).
     if [[ -z "${NFTBAN_RBL_CRITICAL_IPS:-}" ]]; then
         return 0
     fi
 
-    # Split by comma and output
-    echo "$NFTBAN_RBL_CRITICAL_IPS" | tr ',' '\n' | grep -v '^$'
+    local _legacy_seen=0 entry ip tag
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering
+    local IFS=','
+    for entry in ${NFTBAN_RBL_CRITICAL_IPS}; do
+        # trim surrounding whitespace
+        entry="${entry#"${entry%%[![:space:]]*}"}"
+        entry="${entry%"${entry##*[![:space:]]}"}"
+        [[ -z "$entry" ]] && continue
+        if [[ "$entry" == *"|"* ]]; then
+            # New IPv6-safe format: ip|tag (ip may be IPv6 with colons)
+            ip="${entry%%|*}"
+            tag="${entry#*|}"
+        elif [[ "$entry" == *:*:* ]]; then
+            # Two or more colons → an IPv6 address with NO tag. Do NOT split.
+            ip="$entry"; tag=""
+        elif [[ "$entry" == *:* ]]; then
+            # Exactly one colon: legacy IPv4 "ip:tag".
+            ip="${entry%%:*}"; tag="${entry#*:}"
+            _legacy_seen=1
+        else
+            ip="$entry"; tag=""
+        fi
+        printf '%s\t%s\n' "$ip" "$tag"
+    done
+
+    if [[ $_legacy_seen -eq 1 ]]; then
+        nftban_rbl_log "WARN" "NFTBAN_RBL_CRITICAL_IPS uses the legacy IPv4 'ip:tag' format; migrate to the IPv6-safe 'ip|tag' format (colon-tag cannot hold an IPv6 address)." 2>/dev/null || true
+    fi
 }
 
 nftban_rbl_is_public_ip() {
-    # Check if IP is public (not private/loopback)
-    # Args: $1 = IP address (IPv4 or IPv6)
-    # Return: 0 if public, 1 if private
-
-    local ip="$1"
-
-    # IPv4 private ranges
-    if [[ "$ip" =~ ^10\. ]] ||              # 10.0.0.0/8
-       [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] ||  # 172.16.0.0/12
-       [[ "$ip" =~ ^192\.168\. ]] ||        # 192.168.0.0/16
-       [[ "$ip" =~ ^127\. ]] ||             # 127.0.0.0/8 (loopback)
-       [[ "$ip" =~ ^169\.254\. ]]; then     # 169.254.0.0/16 (link-local)
-        return 1
-    fi
-
-    # IPv6 private/special ranges
-    if [[ "$ip" =~ ^::1$ ]] ||              # Loopback
-       [[ "$ip" =~ ^fe80: ]] ||             # Link-local
-       [[ "$ip" =~ ^fc00: ]] ||             # Unique local (ULA)
-       [[ "$ip" =~ ^fd00: ]]; then          # Unique local (ULA)
-        return 1
-    fi
-
-    return 0
+    # Check if IP is public routable (not private/loopback/special).
+    # v1.220.0: CLASSIFY ONCE — delegate to the host-address inventory authority so
+    # RBL and every other consumer share identical scope classification (fixes the
+    # legacy ULA fc00::/7 gap + adds CGNAT/doc/multicast/reserved).
+    # Args: $1 = IP address (IPv4 or IPv6). Return: 0 if public, 1 otherwise.
+    nftban_hostaddr_is_public "$1"
 }
 
 nftban_rbl_reverse_ip() {
@@ -239,8 +255,12 @@ nftban_rbl_watchlist_get() {
         return 0
     fi
 
-    # Read entries, skip comments and empty lines
-    grep -v '^#' "$watchlist_file" 2>/dev/null | grep -v '^$' | grep '|'
+    # Read entries, skip comments and empty lines.
+    # v1.220.3 (BUG-RBL-WATCHLIST-EMPTY-GREP): the trailing `grep '|'` returns 1
+    # when the watchlist has no data rows, which tripped the ERR trap and printed
+    # a spurious "Script failed" before the real "(No IPs in watchlist)" message.
+    # An empty watchlist is not an error — no match must yield no output, rc 0.
+    grep -v '^#' "$watchlist_file" 2>/dev/null | grep -v '^$' | grep '|' || true
 }
 
 nftban_rbl_watchlist_add() {
@@ -364,6 +384,49 @@ nftban_rbl_watchlist_list() {
 # PARALLEL DNS FUNCTIONS
 # =============================================================================
 
+# =============================================================================
+# v1.220.1: NON-PUBLIC ADDRESS ADMISSION (classify once; RBL is public-only)
+# =============================================================================
+# RBL/DNSBL reputation applies ONLY to public routable addresses. Every RBL
+# candidate source (self-interface, hostname, critical/configured, manual --ip,
+# watchlist, cache) MUST pass this admission before it can reach a DNSBL query,
+# the cache, or the listed/clean/degraded counts. Loopback/private/ULA/link-local/
+# CGNAT/unspecified/multicast/documentation/reserved/invalid are rejected.
+
+nftban_rbl_admit_candidate() {
+    # Args: $1 = IP · $2 = quiet (1 = suppress the exclusion line)
+    # Returns 0 if admissible (public); 1 if rejected. On reject: renders an explicit
+    # exclusion reason (unless quiet) and purges any stale cache entry.
+    local ip="$1" quiet="${2:-0}"
+    if declare -F nftban_hostaddr_is_public >/dev/null 2>&1; then
+        nftban_hostaddr_is_public "$ip" && return 0
+    else
+        # Authority unavailable — fall back to the RBL classifier (defence in depth).
+        nftban_rbl_is_public_ip "$ip" && return 0
+    fi
+    local _scope="non-public"
+    declare -F nftban_hostaddr_scope >/dev/null 2>&1 && _scope="$(nftban_hostaddr_scope "$ip" 2>/dev/null || echo non-public)"
+    [[ "$quiet" -eq 0 ]] && echo "  ⚠ excluded from RBL checks: ${ip} (${_scope}/non-public — external reputation N/A)"
+    nftban_rbl_cache_purge "$ip" >/dev/null 2>&1 || true
+    return 1
+}
+
+_nftban_rbl_emit_not_eligible() {
+    # Emit a NON-public backstop result: never clean, never listed. Matches the
+    # degraded regex so any legacy caller treats it as not-verified (not clean).
+    local ip="$1" format="${2:-text}"
+    if [[ "$format" == "json" ]]; then
+        printf '{\n  "ip": %s,\n  "results": [],\n  "summary": { "listed": 0, "clean": 0, "timeout": 0, "degraded": 1, "not_eligible": 1, "reason": "non-public" }\n}\n' "$(_nftban_rbl_json_str "$ip")"
+    else
+        echo "🚫 NOT_ELIGIBLE (non-public — no external reputation): $ip"
+        echo "─────────────────────────────────────────────────────────"
+        echo "Summary:"
+        echo "  Listed: 0"
+        echo "  Clean: 0"
+        echo "  Degraded total: 1 (non-public — not RBL-eligible)"
+    fi
+}
+
 nftban_rbl_check_ip_parallel() {
     # Check single IP against all RBL providers using parallel DNS queries
     # Args: $1 = IP address
@@ -373,6 +436,14 @@ nftban_rbl_check_ip_parallel() {
 
     local ip="$1"
     local format="${2:-text}"
+
+    # v1.220.1 F-RBL-0 (defence in depth): never query a DNSBL for a non-public
+    # address, whatever the caller. Admission sites exclude these upstream; this is
+    # the last-resort choke point so no current/future caller can leak one through.
+    if declare -F nftban_hostaddr_is_public >/dev/null 2>&1 && ! nftban_hostaddr_is_public "$ip"; then
+        _nftban_rbl_emit_not_eligible "$ip" "$format"
+        return 2
+    fi
 
     # Run entire parallel block in subshell to scope the EXIT trap (P0.3 fix)
     (
@@ -399,7 +470,7 @@ nftban_rbl_check_ip_parallel() {
         local rbl_list=()
         while IFS=: read -r rbl_domain rbl_url; do
             rbl_list+=("${rbl_domain}:${rbl_url}")
-        done < <(nftban_rbl_load_providers)
+        done < <(nftban_rbl_effective_providers)
 
         # v1.150 (11.5): enforce the per-run query cap in the PARENT, before
         # fan-out. The per-query _NFTBAN_RBL_QUERY_COUNT increment lives inside
@@ -598,37 +669,54 @@ nftban_rbl_load_providers() {
         done < "$NFTBAN_RBL_CUSTOM_FILE"
     fi
 
-    # Load main RBL list
+    # Load main RBL list.
+    # v1.220.3 (BUG-RBL-BLANK-PROVIDER): trim whitespace, skip blank/comment
+    # rows, reject malformed DNS names (reporting file:line to stderr), and never
+    # emit an empty provider. Previously a blank/whitespace row, or the empty
+    # expansion of an unset enabled-list, produced a numbered empty provider
+    # ("1. ") in `rbl list` and a phantom zero-domain query in the checker.
     if [[ -f "$NFTBAN_RBL_PROVIDERS_FILE" ]]; then
+        local _lineno=0
         while IFS= read -r line; do
+            _lineno=$((_lineno + 1))
+            # Trim leading/trailing whitespace
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
             # Skip comments and empty lines
-            [[ "$line" =~ ^#.*$ ]] && continue
             [[ -z "$line" ]] && continue
+            [[ "$line" == \#* ]] && continue
 
-            # Extract domain (before colon)
+            # Extract + trim the domain (before the first colon)
             local domain="${line%%:*}"
+            domain="${domain#"${domain%%[![:space:]]*}"}"
+            domain="${domain%"${domain##*[![:space:]]}"}"
+
+            # Reject malformed DNS names (must be a dotted hostname)
+            if ! [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)+$ ]]; then
+                printf 'nftban: rbl: ignoring invalid provider "%s" (%s:%d)\n' \
+                    "$domain" "$NFTBAN_RBL_PROVIDERS_FILE" "$_lineno" >&2
+                continue
+            fi
 
             # Check if disabled
             local is_disabled=0
             for disabled in "${disabled_rbls[@]:-}"; do
-                if [[ "$domain" == "$disabled" ]]; then
-                    is_disabled=1
-                    break
-                fi
+                [[ -n "$disabled" && "$domain" == "$disabled" ]] && { is_disabled=1; break; }
             done
 
-            if [[ $is_disabled -eq 0 ]]; then
-                providers+=("$line")
-            fi
+            [[ $is_disabled -eq 0 ]] && providers+=("$line")
         done < "$NFTBAN_RBL_PROVIDERS_FILE"
     fi
 
-    # Add enabled custom RBLs
+    # Add enabled custom RBLs. Guard the empty element that an unset array yields
+    # under `"${enabled_rbls[@]:-}"` — that empty string was the root cause of the
+    # blank provider surfacing first after `sort -u`.
     for enabled in "${enabled_rbls[@]:-}"; do
-        providers+=("$enabled")
+        [[ -n "$enabled" ]] && providers+=("$enabled")
     done
 
-    # Output unique providers
+    # Output unique, non-empty providers
+    [[ ${#providers[@]} -eq 0 ]] && return 0
     printf '%s\n' "${providers[@]}" | sort -u
 }
 
@@ -688,6 +776,13 @@ nftban_rbl_check_ip() {
 
     local ip="$1"
     local format="${2:-text}"
+
+    # v1.220.1 F-RBL-0 (defence in depth): never query a DNSBL for a non-public address.
+    if declare -F nftban_hostaddr_is_public >/dev/null 2>&1 && ! nftban_hostaddr_is_public "$ip"; then
+        _nftban_rbl_emit_not_eligible "$ip" "$format"
+        return 2
+    fi
+
     local reversed_ip
     # shellcheck disable=SC2034  # Reserved for detailed RBL results
     local results=()
@@ -776,7 +871,7 @@ nftban_rbl_check_ip() {
                 echo "✅ CLEAN: $rbl_domain"
             fi
         fi
-    done < <(nftban_rbl_load_providers)
+    done < <(nftban_rbl_effective_providers)
 
     local degraded_count=$(( timeout_count + blocked_count + skipped_count + unsupported_count ))
 
@@ -1215,6 +1310,58 @@ nftban_rbl_update_state() {
     _nftban_rbl_state_to_json > "$state_json"
 }
 
+nftban_rbl_prune_state() {
+    # v1.218.5 (§4.2, AGE-BASED): remove state.dat lines whose last-update timestamp is older than the
+    # state-retention TTL. This is NOT based on the current enumerated IP set — so it is immune to
+    # transient enumeration misses, floating/VRRP movement, DHCP renewal, IPv6 privacy-address
+    # rotation, and scheduled-vs-server path mismatch. A currently-monitored IP has its timestamp
+    # refreshed by nftban_rbl_update_state at least every cache-TTL (default 24h — on cache expiry;
+    # cache-served scans do not rewrite state.dat), far inside the retention window, so it is
+    # effectively always fresh and can NEVER be pruned; a transiently-absent IP keeps its transition
+    # baseline until it has been absent for the FULL TTL.
+    # RISK GUARDS:
+    #   - A line whose timestamp is UNPARSEABLE is KEPT (never prune on ambiguity).
+    #   - A non-numeric / zero TTL disables pruning entirely (fail-safe: keep everything).
+    #   - The effective TTL is FLOORED to max(48h, 2x cache-TTL): a sub-floor override can never prune a
+    #     live cache-served IP, so "a live IP is never pruned" holds unconditionally, not just at default.
+    #   - Retained lines are copied VERBATIM (transition baseline byte-identical — no alert-once reset).
+    #   - Comments/blank lines kept. Pure file op — no network, no DNSBL, no alert, no enumeration.
+    # State retention default = 30d, internal (NFTBAN_RBL_STATE_TTL override; NOT in the conf template).
+    # The RBL cache TTL (24h, result freshness) is intentionally NOT reused as the window — too short.
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
+    [[ -f "$state_file" ]] || return 0
+    local _ttl="${NFTBAN_RBL_STATE_TTL:-2592000}"
+    [[ "$_ttl" =~ ^[0-9]+$ ]] && [[ "$_ttl" -gt 0 ]] || return 0
+    # Floor the window so a mis-set tiny TTL can never prune a still-live (cache-served) IP.
+    local _cache_ttl_h="${NFTBAN_RBL_CACHE_TTL:-24}"
+    [[ "$_cache_ttl_h" =~ ^[0-9]+$ ]] && [[ "$_cache_ttl_h" -gt 0 ]] || _cache_ttl_h=24
+    local _min_ttl=$(( _cache_ttl_h * 7200 ))         # 2x cache-TTL, in seconds
+    [[ "$_min_ttl" -lt 172800 ]] && _min_ttl=172800   # hard floor 48h
+    [[ "$_ttl" -lt "$_min_ttl" ]] && _ttl="$_min_ttl"
+    local _now _cutoff
+    _now=$(date +%s 2>/dev/null) || return 0
+    [[ "$_now" =~ ^[0-9]+$ ]] || return 0
+    _cutoff=$(( _now - _ttl ))
+    local _tmp="${state_file}.prune.$$"
+    : > "$_tmp" || return 0
+    local _line _ts _ts_epoch
+    while IFS= read -r _line || [[ -n "$_line" ]]; do
+        if [[ -z "$_line" || "$_line" == \#* ]]; then printf '%s\n' "$_line" >> "$_tmp"; continue; fi
+        # format: IP=status|timestamp|prev_status|prev_timestamp — extract field-2 (last-update ts).
+        _ts="${_line#*=}"; _ts="${_ts#*|}"; _ts="${_ts%%|*}"
+        _ts_epoch=$(date -d "$_ts" +%s 2>/dev/null || echo "")
+        if [[ -z "$_ts_epoch" || ! "$_ts_epoch" =~ ^[0-9]+$ ]]; then
+            # unparseable timestamp -> KEEP (never prune on ambiguity)
+            printf '%s\n' "$_line" >> "$_tmp"; continue
+        fi
+        # keep if within retention window (fresh); prune only if strictly older than the cutoff.
+        [[ "$_ts_epoch" -ge "$_cutoff" ]] && printf '%s\n' "$_line" >> "$_tmp"
+    done < "$state_file"
+    mv "$_tmp" "$state_file" 2>/dev/null || { rm -f "$_tmp"; return 0; }
+    _nftban_rbl_state_to_json > "${NFTBAN_RBL_CACHE_DIR}/state.json" 2>/dev/null || true
+    return 0
+}
+
 _nftban_rbl_state_to_json() {
     # Convert state.dat to state.json for API compatibility
     local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
@@ -1369,9 +1516,15 @@ Full Report: nftban rbl check --verbose
 EOF
 )
 
-    # Send via NFTBan unified mail mechanism
-    nftban_mail_send "$body" "$email" 2>/dev/null || \
-        echo "Warning: Failed to send RBL alert email" >&2
+    # A2r: submit to the central authority so the attempt lands in the A2a delivery-log /
+    # last-failure / spool (observable via 'nftban stats comms'). No direct transport.
+    if declare -F nftban_mail_alert >/dev/null 2>&1; then
+        nftban_mail_alert "$subject" "$body" "$email" || \
+            echo "Warning: RBL alert not delivered (spooled/degraded — see 'nftban stats comms')" >&2
+    else
+        nftban_mail_send "$body" "$email" 2>/dev/null || \
+            echo "Warning: Failed to send RBL alert email" >&2
+    fi
 }
 
 nftban_rbl_send_degraded_alert() {
@@ -1438,9 +1591,14 @@ Run manually: nftban rbl check --fresh --verbose
 EOF
 )
 
-    # Send via NFTBan unified mail mechanism
-    nftban_mail_send "$body" "$email" 2>/dev/null || \
-        echo "Warning: Failed to send degraded alert email" >&2
+    # A2r: submit to the central authority (delivery-log / last-failure / spool via A2a).
+    if declare -F nftban_mail_alert >/dev/null 2>&1; then
+        nftban_mail_alert "[NFTBan] RBL monitoring degraded" "$body" "$email" || \
+            echo "Warning: RBL degraded alert not delivered (spooled/degraded)" >&2
+    else
+        nftban_mail_send "$body" "$email" 2>/dev/null || \
+            echo "Warning: Failed to send degraded alert email" >&2
+    fi
 }
 
 # =============================================================================
@@ -1494,13 +1652,20 @@ nftban_rbl_status() {
         timer_status="disabled"
     fi
 
-    # Count monitored IPs (auto-discovered)
+    # Count monitored IPs (auto-discovered). v1.220.0: the EXACT scheduled-check
+    # input — the status projection == the RBL projection == what the timer checks.
+    # No separate status discoverer, no inline `ip … addr show`.
     local monitored_ipv4=0 monitored_ipv6=0
     if [[ "${NFTBAN_RBL_ENABLED}" == "YES" ]]; then
-        monitored_ipv4=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | sort -u | wc -l)
-        if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
-            monitored_ipv6=$(ip -6 addr show 2>/dev/null | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:' | grep -v '^fc00:' | grep -v '^fd00:' | sort -u | wc -l)
-        fi
+        local _mon_ip
+        while IFS= read -r _mon_ip; do
+            [[ -z "$_mon_ip" ]] && continue
+            if [[ "$_mon_ip" == *:* ]]; then
+                monitored_ipv6=$((monitored_ipv6 + 1))
+            else
+                monitored_ipv4=$((monitored_ipv4 + 1))
+            fi
+        done < <(nftban_rbl_get_public_ips)
     fi
     local monitored_total=$((monitored_ipv4 + monitored_ipv6))
 
@@ -1574,6 +1739,9 @@ nftban_rbl_status() {
             echo "  Blacklisted:  0"
         fi
         echo "  Cache:        $cache_count entries (${NFTBAN_RBL_CACHE_TTL}h TTL)"
+        echo ""
+        echo "  Scope:        advisory reputation monitoring (observe-only), not firewall blocking"
+        echo "                a DNSBL check cannot determine a provider-specific Proofpoint/iCloud bounce"
     fi
 }
 
@@ -1676,6 +1844,7 @@ export -f nftban_rbl_send_degraded_alert
 export -f nftban_rbl_check_new_listing
 export -f nftban_rbl_check_delisting
 export -f nftban_rbl_update_state
+export -f nftban_rbl_prune_state
 export -f nftban_rbl_get_state
 export -f nftban_rbl_watchlist_get
 export -f nftban_rbl_watchlist_add

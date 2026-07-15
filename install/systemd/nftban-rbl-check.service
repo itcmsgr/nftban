@@ -33,6 +33,12 @@ Group=nftban
 # Run RBL check with quiet mode and alert
 ExecStart=/usr/sbin/nftban rbl check --quiet --alert
 
+# v1.220.0 RBL rc contract: 0=fully-verified-clean, 1=listed, 2=degraded/not-fully-
+# verified. Listed and degraded are valid informational outcomes (new listings are
+# alerted in-band via --alert), NOT unit failures — so the timer is not marked failed
+# on a listing or a transient DNSBL timeout. Only an unexpected rc (>2) fails the unit.
+SuccessExitStatus=1 2
+
 # Logging
 StandardOutput=journal
 StandardError=journal

@@ -89,8 +89,8 @@ var portRe = regexp.MustCompile(`:(\d+)\s*$`)
 
 // sshAllListeners parses `ss -tlnp` and returns ALL sshd listening ports
 // found in the output, deduplicated and ordered by first-occurrence in the
-// `ss` output. v1.125 R-1: closes the dns2-class lockout vector where a
-// host listens on multiple ports (e.g. :22 internal + :55000 external) but
+// `ss` output. v1.125 R-1: closes the multi-port-class lockout vector where a
+// host listens on multiple ports (e.g. :22 internal + :50000 external) but
 // the installer rendered only the first detected port into the firewall
 // allow-set.
 func sshAllListeners(exec executor.Executor) []int {
@@ -104,7 +104,7 @@ func sshAllListeners(exec executor.Executor) []int {
 		if !strings.Contains(line, "sshd") {
 			continue
 		}
-		// Extract port from LISTEN address column (e.g., *:22 or 0.0.0.0:55000)
+		// Extract port from LISTEN address column (e.g., *:22 or 0.0.0.0:50000)
 		m := portRe.FindStringSubmatch(safeField(line, 3))
 		if m == nil {
 			continue
@@ -167,9 +167,9 @@ func selectPrimarySSHPort(ports []int, sshClientPort int) int {
 // phaseData.sshPorts field, RenderNftablesConfMultiPort) rely on sshPorts[0]
 // being the SSH_CLIENT-aware primary so the rendered `__SSH_PORT__` template
 // substitution applies to the right port for the per-IP SSH rate-limit rule.
-// Without this reorder, a dns2-class host with sshd on :22+:55000 and
-// SSH_CLIENT=55000 would render the rate-limit rule against :22 because
-// selectPrimarySSHPort returns 55000 but ports[0] is still 22.
+// Without this reorder, a multi-port-class host with sshd on :22+:50000 and
+// SSH_CLIENT=50000 would render the rate-limit rule against :22 because
+// selectPrimarySSHPort returns 50000 but ports[0] is still 22.
 func primaryFirstPorts(ports []int, primary int) []int {
 	if len(ports) == 0 || primary == 0 || ports[0] == primary {
 		return ports
@@ -207,8 +207,8 @@ func DetectSSHPorts(exec executor.Executor, log *logging.Logger) (ports []int, p
 		// this reorder, callers reading sshPorts[0] (e.g.,
 		// RenderNftablesConfMultiPort which uses sshPorts[0] for the
 		// __SSH_PORT__ template substitution) would diverge from the
-		// SSH_CLIENT-aware primary on multi-port hosts. dns2-class
-		// regression: ports=[22,55000] + SSH_CLIENT=55000 → primary=55000
+		// SSH_CLIENT-aware primary on multi-port hosts. multi-port-class
+		// regression: ports=[22,50000] + SSH_CLIENT=50000 → primary=50000
 		// but ports[0]=22 → rate-limit rule applied to wrong port.
 		ports = primaryFirstPorts(ports, primary)
 		log.Detect("ssh", "source", "ss-listener")
@@ -272,7 +272,7 @@ var portLineRe = regexp.MustCompile(`(?i)^\s*Port\s+(\d+)`)
 // directive. listenAddrBracketRe captures the port of the IPv6 bracketed form
 // `[addr]:port`. v1.145 PR-B: the historical detector parsed only `Port`
 // lines; a sshd_config that declares ports solely via `ListenAddress`
-// (`0.0.0.0:22`, `[::]:55000`, `192.0.2.10:22`, `[2001:db8::10]:55000`) was
+// (`0.0.0.0:22`, `[::]:50000`, `192.0.2.10:22`, `[2001:db8::10]:50000`) was
 // invisible to the config sources.
 var listenAddrLineRe = regexp.MustCompile(`(?i)^\s*ListenAddress\s+(\S+)`)
 var listenAddrBracketRe = regexp.MustCompile(`^\[.*\]:(\d+)$`)
@@ -360,7 +360,7 @@ func parseSSHConfigPorts(exec executor.Executor, path string) []int {
 // v1.145 PR-B2: the render must seed EVERY detected SSH port into tcp_ports_in
 // AND ssh_ports, not just the `ss`-listener subset that DetectSSHPorts returns.
 // On a multi-port host where `ss` detection is partial/ordered, DetectSSHPorts
-// could return a subset (observed: 22+55000 but not 2222), leaving the missing
+// could return a subset (observed: 22+50000 but not 2222), leaving the missing
 // port out of the kernel sets → externally DROPPED → lockout for an operator
 // using it. DetectSSHPortsUnion is the authoritative multi-source detector
 // (ss + sshd_config Port + ListenAddress + state + conf.local); this wraps it

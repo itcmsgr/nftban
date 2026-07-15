@@ -37,6 +37,11 @@ readonly NFTBAN_SYSTEM_IP_LOADED=1
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" || return 1
 fi
+# v1.220.0: shared host-address inventory authority — the whitelist discovery source
+# routes through its whitelist projection (DISCOVER ONCE). No behavior change.
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_hostaddr.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/core/nftban_hostaddr.sh" || return 1
+fi
 # v1.18.0: IPC library for daemon communication
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
@@ -142,8 +147,17 @@ nftban_get_current_user_ip() {
 # =============================================================================
 
 nftban_get_interface_ips() {
-    # Get all IPv4 and IPv6 addresses from all interfaces
-    # Excludes 127.0.0.1 and ::1 (handled separately)
+    # Get all IPv4 and IPv6 addresses from all interfaces (excludes loopback).
+    # v1.220.0: DISCOVER ONCE — delegate to the host-address inventory authority's
+    # whitelist projection (never-ban/server-identity: every interface address except
+    # loopback, including private/ULA/link-local, deduped, deterministic). Behavior is
+    # byte-identical to the legacy `ip -o addr show | awk … | grep -v 127/::1 | sort -u`
+    # (parity-locked by test). Loopback + session are added by the caller, as before.
+    if declare -F nftban_hostaddr_project_whitelist >/dev/null 2>&1; then
+        nftban_hostaddr_project_whitelist
+        return
+    fi
+    # Fallback (authority unavailable): legacy inline discovery, unchanged.
     ip -o addr show 2>/dev/null | \
         awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | \
         grep -v "^127\." | \

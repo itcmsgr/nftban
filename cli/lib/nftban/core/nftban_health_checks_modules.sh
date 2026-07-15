@@ -320,8 +320,29 @@ nftban_health_check_rbl() {
         rbl_issues+=("RBL monitoring disabled (optional)")
         # Not an error - just informational
         NFTBAN_HEALTH_RESULTS["rbl"]=$HEALTH_OK
-        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring disabled (enable in $rbl_config)"
+        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring disabled (optional; advisory reputation monitoring, not blocking)"
         return $HEALTH_OK
+    fi
+
+    # v1.218.5 (§4.3): RBL is ENABLED but may have NO effective watch targets — that must surface as a
+    # config advisory, not a silent effective-CLEAN. Determination is CONFIG-ONLY (no discovery run, no
+    # DNSBL/network, no mail): auto-discovery supplies the server's own IPs at runtime, so only when it
+    # is OFF do explicit targets (NFTBAN_RBL_CRITICAL_IPS or a non-empty watchlist file) matter.
+    local _rbl_autodisc _rbl_critical _rbl_watchlist
+    # grep fallbacks use `|| echo ""` so a no-match under `set -o pipefail` yields empty (never aborts
+    # the function mid-body) — matching the line-316 idiom.
+    _rbl_autodisc="${NFTBAN_RBL_AUTO_DISCOVER_IPS:-}"
+    [[ -z "$_rbl_autodisc" && -f "$rbl_config" ]] && _rbl_autodisc=$(grep -E "^NFTBAN_RBL_AUTO_DISCOVER_IPS=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "")
+    _rbl_autodisc="${_rbl_autodisc:-YES}"
+    _rbl_critical="${NFTBAN_RBL_CRITICAL_IPS:-}"
+    [[ -z "$_rbl_critical" && -f "$rbl_config" ]] && _rbl_critical=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "")
+    _rbl_watchlist="${NFTBAN_RBL_WATCHLIST_FILE:-}"
+    [[ -z "$_rbl_watchlist" && -f "$rbl_config" ]] && _rbl_watchlist=$(grep -E "^NFTBAN_RBL_WATCHLIST_FILE=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "")
+    local _rbl_watchlist_has=0
+    [[ -n "$_rbl_watchlist" && -f "$_rbl_watchlist" ]] && grep -qvE '^[[:space:]]*(#|$)' "$_rbl_watchlist" 2>/dev/null && _rbl_watchlist_has=1
+    if [[ "$_rbl_autodisc" != "YES" && -z "$_rbl_critical" && "$_rbl_watchlist_has" -eq 0 ]]; then
+        rbl_issues+=("RBL enabled but no watch targets configured — nothing is being monitored (advisory reputation monitoring, not firewall blocking; set NFTBAN_RBL_CRITICAL_IPS, add a watchlist, or enable auto-discovery)")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 
     # Check last check time
@@ -718,6 +739,334 @@ nftban_health_check_tunnel() {
 }
 
 # Export functions
+# A2b: communication (central-comms) health — CONSUME A2a delivery-truth. Reads state only
+# (recipient/transport + spool + last-failure); sends nothing. CLEAN when alerting is not
+# configured OR recipient+transport are valid; WARN on enabled-but-unusable / backlog /
+# unresolved last-failure; ERROR only for a very old spool backlog. Does not harden the
+# overall contract — advisory/offline mail never becomes a false critical.
+nftban_health_check_communication() {
+    local status=$HEALTH_OK
+    local issues=()
+    local spool_warn_depth="${NFTBAN_MAIL_SPOOL_WARN_DEPTH:-1}"
+    local spool_oldest_error="${NFTBAN_MAIL_SPOOL_OLDEST_ERROR_S:-86400}"
+    local lastfail_warn_age="${NFTBAN_MAIL_LASTFAIL_WARN_S:-86400}"
+
+    if ! declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" 2>/dev/null || true
+    fi
+
+    local recipient="" mail_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    declare -F nftban_mail_resolve_recipient >/dev/null 2>&1 && \
+        recipient="$(nftban_mail_resolve_recipient "" 2>/dev/null || echo "")"
+
+    local transport="none"
+    declare -F nftban_mail_detect_mta >/dev/null 2>&1 && transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+
+    # v1.218.1 policy: missing comms config is only WARN when an alert PRODUCER is enabled
+    # (a path that generates outbound notifications). Otherwise it is INFO/NOT CONFIGURED —
+    # declared, never a false critical, and never fails firewall/security posture.
+    local producers=()
+    # auto-reports is an EMAIL producer only when scheduled reports are actually configured to be
+    # EMAILED. The canonical signal is STATS_EMAIL_ENABLED truthy (conf.d/stats.conf, or the
+    # environment) — that is exactly what the default `nftban report run` timer checks before
+    # emailing (cmd_report.sh:984, with NO --email flag), and STATS_EMAIL_RECIPIENTS is the report's
+    # own recipient. Disk-only reports (STATS_EMAIL_ENABLED false/unset) never produce a
+    # Communication WARN. (Supersedes the v1.218.2 NFTBAN_MAIL_REPORT_RECIPIENT / timer-`--email`
+    # gate, which keyed on signals the scheduled report path does not use — NFTBAN_MAIL_REPORT_RECIPIENT
+    # is only a fallback for the on-demand `module/fhs/port` report emails, not a standing producer.)
+    local _stats_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf" _stats_email_on=0 _report_rcpt=""
+    if [[ -f "$_stats_conf" ]]; then
+        grep -qiE '^[[:space:]]*STATS_EMAIL_ENABLED="?(yes|true|1|on)"?[[:space:]]*$' "$_stats_conf" 2>/dev/null && _stats_email_on=1
+        _report_rcpt=$(grep -E '^[[:space:]]*STATS_EMAIL_RECIPIENTS=' "$_stats_conf" 2>/dev/null | head -n1 \
+            | sed -E 's/^[[:space:]]*STATS_EMAIL_RECIPIENTS=//; s/^"//; s/"$//')
+    fi
+    local _se="${STATS_EMAIL_ENABLED:-}"; [[ "${_se,,}" =~ ^(yes|true|1|on)$ ]] && _stats_email_on=1
+    [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]] && _report_rcpt="${STATS_EMAIL_RECIPIENTS}"
+    [[ "$_stats_email_on" -eq 1 ]] && producers+=("auto-reports")
+    # rbl-alerts and tunnel-alerts have their OWN recipient (with a general fallback), just like
+    # auto-reports — RBL delivers to NFTBAN_RBL_ALERT_EMAIL (else general — nftban_rbl.sh:1303),
+    # tunnel delivers to NFTBAN_TUNNEL_ALERT_EMAIL/NFTBAN_ALERT_EMAIL (else general). Capture each so
+    # the deliverability check credits the producer's own recipient (no false MISSING_RECIPIENT when
+    # only the producer-specific recipient is set).
+    local _rbl_on=0 _rbl_rcpt="" _tunnel_on=0 _tunnel_rcpt="" _mail_on=0
+    local _rbl_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    if [[ -f "$_rbl_conf" ]] && grep -qE '^[[:space:]]*NFTBAN_RBL_ENABLED="?YES' "$_rbl_conf" 2>/dev/null; then
+        _rbl_on=1; producers+=("rbl-alerts")
+        _rbl_rcpt="${NFTBAN_RBL_ALERT_EMAIL:-}"
+        [[ -z "$_rbl_rcpt" ]] && _rbl_rcpt=$(grep -E '^[[:space:]]*NFTBAN_RBL_ALERT_EMAIL=' "$_rbl_conf" 2>/dev/null | head -n1 \
+            | sed -E 's/^[[:space:]]*NFTBAN_RBL_ALERT_EMAIL=//; s/^"//; s/"$//')
+    fi
+    if [[ -n "${NFTBAN_TUNNEL_ALERT_EMAIL:-}${NFTBAN_ALERT_EMAIL:-}" ]]; then
+        _tunnel_on=1; producers+=("tunnel-alerts"); _tunnel_rcpt="${NFTBAN_TUNNEL_ALERT_EMAIL:-${NFTBAN_ALERT_EMAIL:-}}"
+    fi
+    [[ -f "$mail_conf" ]] && grep -q 'MAIL_ENABLED=true' "$mail_conf" 2>/dev/null && { _mail_on=1; producers+=("mail-enabled"); }
+    local producer_enabled=0; [[ ${#producers[@]} -gt 0 ]] && producer_enabled=1
+
+    # Per-producer deliverability — a producer WARNs when IT SPECIFICALLY cannot deliver, judged by
+    # its OWN recipient (with the general NFTBAN_MAIL_RECIPIENT as a shared fallback). A producer's
+    # own recipient satisfies ONLY that producer (no cross-masking: a stray RBL/tunnel/report recipient
+    # never makes another producer deliverable). Transport-none is undeliverable for any producer.
+    local _undeliverable=0 _why=""
+    # auto-reports: delivers ONLY to STATS_EMAIL_RECIPIENTS (cmd_report.sh:984 has NO general fallback);
+    # enabled with no report recipient is a misconfiguration (nothing sends).
+    if [[ "$_stats_email_on" -eq 1 ]]; then
+        if [[ -z "$_report_rcpt" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: email reports enabled but no recipient configured"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # rbl-alerts: own recipient NFTBAN_RBL_ALERT_EMAIL, else general.
+    if [[ "$_undeliverable" -eq 0 && "$_rbl_on" -eq 1 ]]; then
+        if [[ -z "$_rbl_rcpt" && -z "$recipient" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # tunnel-alerts: own recipient NFTBAN_TUNNEL_ALERT_EMAIL/NFTBAN_ALERT_EMAIL, else general.
+    if [[ "$_undeliverable" -eq 0 && "$_tunnel_on" -eq 1 ]]; then
+        if [[ -z "$_tunnel_rcpt" && -z "$recipient" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # mail-enabled: no own recipient — delivers via the general NFTBAN_MAIL_RECIPIENT only.
+    if [[ "$_undeliverable" -eq 0 && "$_mail_on" -eq 1 ]]; then
+        if [[ -z "$recipient" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_CONFIG_MISSING_RECIPIENT: no recipient resolves"
+        elif [[ "$transport" == "none" ]]; then
+            _undeliverable=1; _why="COMMUNICATION_TRANSPORT_UNAVAILABLE: no usable mail transport"
+        fi
+    fi
+    # Is the general comms path configured at all? (drives the INFO/NOT-CONFIGURED terminal.)
+    local _config_unusable=0
+    [[ -z "$recipient" || "$transport" == "none" ]] && _config_unusable=1
+
+    local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mailspool}"
+    local depth=0 oldest_age=0
+    if [[ -d "$spool_dir" ]]; then
+        depth=$(find "$spool_dir" -name "*.mail" -type f 2>/dev/null | wc -l)
+        local _m; _m=$(find "$spool_dir" -name "*.mail" -type f -printf '%T@\n' 2>/dev/null | sort -n | head -n1)
+        [[ -n "$_m" ]] && oldest_age=$(( $(date +%s) - ${_m%.*} ))
+    fi
+    if [[ "${depth:-0}" -ge "$spool_warn_depth" && "${depth:-0}" -gt 0 ]]; then
+        issues+=("COMMUNICATION_SPOOL_BACKLOG: ${depth} spooled, oldest ${oldest_age}s")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        [[ "$oldest_age" -ge "$spool_oldest_error" ]] && status=$HEALTH_ERROR
+    fi
+
+    local counters="${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/counters"
+    local lf_ts ls_ts
+    lf_ts=$(cat "${counters}/mail_last_failure_ts" 2>/dev/null || echo 0)
+    ls_ts=$(cat "${counters}/mail_last_success_ts" 2>/dev/null || echo 0)
+    if [[ "${lf_ts:-0}" -gt 0 && "${lf_ts:-0}" -ge "${ls_ts:-0}" ]]; then
+        local age=$(( $(date +%s) - lf_ts ))
+        if [[ "$age" -le "$lastfail_warn_age" ]]; then
+            issues+=("COMMUNICATION_LAST_SEND_FAILED: last send failed ${age}s ago (unresolved)")
+            issues+=("COMMUNICATION_SEND_FAILURE: see delivery log")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Producer-aware verdict. A degraded/backlogged delivery state (spool / last-failure, gathered
+    # above) is always WARN/ERROR. Any enabled producer that cannot deliver (reason computed above)
+    # is WARN. If nothing needs email and the general comms path is not configured — and there is no
+    # other delivery evidence — declare INFO/NOT CONFIGURED (severity OK, but named — not silent).
+    if [[ "$_undeliverable" -eq 1 ]]; then
+        issues+=("${_why} (alert producers enabled: ${producers[*]})")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    elif [[ "$producer_enabled" -eq 0 && "$_config_unusable" -eq 1 && ${#issues[@]} -eq 0 ]]; then
+        NFTBAN_HEALTH_RESULTS["communication"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["communication"]="NOT CONFIGURED — no outbound alert transport configured; no enabled alert producer currently requires it"
+        return $HEALTH_OK
+    fi
+
+    NFTBAN_HEALTH_RESULTS["communication"]=$status
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        local _joined; printf -v _joined '%s; ' "${issues[@]}"; _joined="${_joined%; }"
+        NFTBAN_HEALTH_ISSUES["communication"]="$_joined"
+        [[ $status -eq $HEALTH_ERROR ]] && NFTBAN_HEALTH_ERRORS+=("Communication: ${issues[0]}")
+    else
+        NFTBAN_HEALTH_ISSUES["communication"]="Communication OK (recipient + transport valid)"
+    fi
+    return $status
+}
+
+# v1.218.1: evaluate the communication component for the LIVE health render. The
+# `nftban health check` four-axis table is validator-JSON-driven and does not include
+# central-comms; this runs the A2b shell check and returns, via namerefs, a severity code
+# (0=CLEAN,1=WARN,2=ERROR) and a named "Communication: STATE (reason)" display line so the
+# check surfaces as a named operator-visible component AND can raise the readiness verdict.
+# Reason is the COMMUNICATION_* issue text (no secrets, no recipient). Shell-only.
+_health_eval_communication_component() {
+    local -n _out_code="$1" _out_line="$2" _out_reason="$3"
+    if ! declare -F nftban_health_check_communication >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health.sh" ]] && \
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health.sh" 2>/dev/null || true
+        # shellcheck source=/dev/null
+        [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks_modules.sh" ]] && \
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks_modules.sh" 2>/dev/null || true
+    fi
+    declare -p NFTBAN_HEALTH_RESULTS >/dev/null 2>&1 || declare -gA NFTBAN_HEALTH_RESULTS NFTBAN_HEALTH_ISSUES
+    declare -p NFTBAN_HEALTH_ERRORS  >/dev/null 2>&1 || declare -ga NFTBAN_HEALTH_ERRORS
+    : "${HEALTH_OK:=0}" "${HEALTH_WARNING:=1}" "${HEALTH_ERROR:=2}"
+    declare -F nftban_health_check_communication >/dev/null 2>&1 && \
+        nftban_health_check_communication >/dev/null 2>&1 || true
+    local _res="${NFTBAN_HEALTH_RESULTS[communication]:-}" _reason="${NFTBAN_HEALTH_ISSUES[communication]:-}" _state
+    case "$_res" in
+        0)   if [[ "$_reason" == *"NOT CONFIGURED"* ]]; then _state="INFO"; else _state="CLEAN"; fi ;;
+        1)   _state="WARN"  ;;
+        2|3) _state="ERROR" ;;
+        *)   _state="UNKNOWN"; _res=0 ;;
+    esac
+    _out_code="$_res"
+    _out_reason="$_reason"
+    if [[ -n "$_reason" && "$_state" != "CLEAN" ]]; then
+        _out_line=$(printf "  %-20s %s  (%s)" "Communication:" "$_state" "$_reason")
+    else
+        _out_line=$(printf "  %-20s %s" "Communication:" "$_state")
+    fi
+    # New-user remediation UX: every WARN/ERROR must give an immediate fix + verify path; an
+    # INFO state (no producer needs email) states an explicit no-action-required outcome. Wording
+    # only — no recipient/secret is ever printed.
+    local _rl
+    case "$_state" in
+        WARN|ERROR)
+            if [[ "$_reason" == *"MISSING_RECIPIENT"* || "$_reason" == *"TRANSPORT_UNAVAILABLE"* ]]; then
+                _rl=$(printf "  %-20s %s" "" "Impact: alert notifications are generated but cannot be delivered.")
+                _out_line+=$'\n'"$_rl"
+                _rl=$(printf "  %-20s %s" "" "Fix:    nftban mail setup <your-email>")
+                _out_line+=$'\n'"$_rl"
+                _rl=$(printf "  %-20s %s" "" "Verify: nftban mail test   then   nftban health")
+                _out_line+=$'\n'"$_rl"
+                if [[ "$_reason" == *"TRANSPORT_UNAVAILABLE"* ]]; then
+                    _rl=$(printf "  %-20s %s" "" "Note:   no local mail transport — 'mail setup' can use SMTP (curl); no local MTA required.")
+                    _out_line+=$'\n'"$_rl"
+                fi
+            fi
+            ;;
+        INFO)
+            _rl=$(printf "  %-20s %s" "" "(no action required — no enabled alert producer needs email delivery)")
+            _out_line+=$'\n'"$_rl"
+            ;;
+    esac
+}
+
+# =============================================================================
+# HTTP EXPLOIT SCANNER (BotScan) — cheap-read health (v1.219.0)
+# =============================================================================
+# CHEAP-READ ONLY: config source, systemctl timer, stat spool dir, jq runstate.json.
+# MUST NOT scan/read access-log CONTENT synchronously (log-read-at-init blow-up guard:
+# v1.187.1 cycle-timeout, v1.209.3 spool-OOM). BotScan can ban via blacklist_manual_*
+# independently of BotGuard. Go four-axis module (frozen ModulesJSON) deferred to v1.220+;
+# consumer hand-off truth now wired (v1.219.0 PR-B botscan_consumer_status.json).
+_nftban_health_botscan_facts() {
+    # Emits: enabled|mode|timer|health_state|last_ago|bans|spool_state  (all cheap)
+    local cfgdir="${NFTBAN_CONFIG_DIR:-/etc/nftban}" conf
+    conf="$cfgdir/conf.d/botscan/main.conf"
+    local enabled="false" mode="both"
+    if [[ -f "$conf" ]]; then
+        enabled=$(grep -m1 '^BOTSCAN_ENABLED=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo false)
+        mode=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo both)
+        local lconf="$conf.local" le lm
+        if [[ -f "$lconf" ]]; then
+            le=$(grep -m1 '^BOTSCAN_ENABLED=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$le" ]] && enabled="$le"
+            lm=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$lm" ]] && mode="$lm"
+        fi
+    fi
+    local timer="inactive"
+    systemctl is-active nftban-botscan.timer &>/dev/null && timer="active"
+    local rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+    local hs="UNKNOWN" last="-" bans="-"
+    if [[ -r "$rs" ]] && command -v jq &>/dev/null; then
+        hs=$(jq -r '.health_state//"UNKNOWN"' "$rs" 2>/dev/null)
+        local lt; lt=$(jq -r '.last_run_ts//0' "$rs" 2>/dev/null)
+        [[ "$lt" =~ ^[0-9]+$ && "$lt" -gt 0 ]] && last="$(( $(date +%s) - lt ))s"
+        bans=$(jq -r '.bans_emitted_total//0' "$rs" 2>/dev/null)
+    fi
+    local spool="${BOTSCAN_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool}" spool_state="absent"
+    [[ -d "$spool" ]] && { spool_state="present"; [[ -r "$spool" ]] || spool_state="present/UNREADABLE"; }
+    # v1.219.0 PR-B — consumer hand-off truth from the daemon status snapshot (cheap jq read).
+    # handoff=UNKNOWN when the daemon hasn't written it yet (honest, never assumed-healthy).
+    local cs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_consumer_status.json"
+    local handoff="UNKNOWN" stale="UNKNOWN"
+    if [[ -r "$cs" ]] && command -v jq &>/dev/null; then
+        handoff=$(jq -r '.batch_handoff_errors//0' "$cs" 2>/dev/null)
+        stale=$(jq -r '.batch_consumer_stale_backlog//false' "$cs" 2>/dev/null)
+    fi
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state" "$handoff" "$stale"
+}
+
+_nftban_health_render_botscan() {
+    echo ""
+    echo "  HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (bans via blacklist_manual)"
+    echo "  ────────────────────────────────────────────────────────────────────────────────────────────"
+    local enabled mode timer hs last bans spool handoff stale
+    IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
+    local mode_note="enforces via blacklist_manual"
+    [[ "$mode" == "alert" ]] && mode_note="DETECT-ONLY (does not ban)"
+    # v1.219.0 PR-B — a broken consumer hand-off (batch signals not draining to the kernel)
+    # must NOT read as healthy/enforcing: the scanner produces bans but they are not applied.
+    local broken_handoff="no"
+    [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
+    [[ "$stale" == "true" ]] && broken_handoff="yes"
+    local verdict
+    if [[ "$enabled" != "true" ]]; then
+        verdict="DISABLED (not scanning; no bans)"
+    elif [[ "$broken_handoff" == "yes" ]]; then
+        verdict="ENABLED but CONSUMER HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+    elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
+        verdict="ENABLED but ${hs} — NOT currently enforcing (scanner blind/degraded)"
+    elif [[ "$timer" != "active" ]]; then
+        verdict="ENABLED but timer ${timer} — not scanning on schedule"
+    else
+        verdict="ENABLED + timer active — ${mode_note}"
+    fi
+    local handoff_line
+    case "$handoff" in
+        UNKNOWN) handoff_line="handoff=UNKNOWN (daemon status not yet written)" ;;
+        *)       handoff_line="handoff_errors=${handoff} · stale_backlog=${stale}$([[ "$broken_handoff" == yes ]] && echo ' · BROKEN — bans not applied')" ;;
+    esac
+    printf "  %-11s  %s\n" "State:" "$verdict"
+    printf "  %-11s  enabled=%s · action=%s (%s) · timer=%s\n" "Config:" "$enabled" "$mode" "$mode_note" "$timer"
+    printf "  %-11s  health_state=%s · last_scan=%s · bans_emitted=%s · spool=%s\n" "Runtime:" "$hs" "${last:+${last} ago}" "$bans" "$spool"
+    printf "  %-11s  %s\n" "Handoff:" "$handoff_line"
+    echo "  (BotGuard disabled does NOT disable BotScan — they are independent. HTTP Guard = BotGuard.)"
+}
+
+# Shell health-check entrypoint (cheap-read; populates NFTBAN_HEALTH_RESULTS like the others).
+nftban_health_check_botscan() {
+    local enabled mode timer hs last bans spool handoff stale status=$HEALTH_OK
+    IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
+    local broken_handoff="no"
+    [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
+    [[ "$stale" == "true" ]] && broken_handoff="yes"
+    if [[ "$enabled" == "true" ]]; then
+        if [[ "$broken_handoff" == "yes" ]]; then
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner consumer HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+            status=$HEALTH_WARNING
+        elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but ${hs} — NOT currently enforcing (blind/degraded)"
+            status=$HEALTH_WARNING
+        elif [[ "$timer" != "active" ]]; then
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but timer ${timer}"
+            status=$HEALTH_WARNING
+        else
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner enabled (action=${mode}, timer active)"
+        fi
+    else
+        NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner installed (disabled)"
+    fi
+    NFTBAN_HEALTH_RESULTS["botscan"]=$status
+    return "$status"
+}
+
+export -f _nftban_health_botscan_facts _nftban_health_render_botscan nftban_health_check_botscan
+export -f nftban_health_check_communication _health_eval_communication_component
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
 export -f nftban_health_check_rbl nftban_health_check_portscan_prefix

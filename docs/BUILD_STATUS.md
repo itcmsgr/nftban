@@ -113,7 +113,7 @@ These require a deployed system and are not part of PR CI:
 
 ```bash
 # On any deployed host:
-nftban-validate --json | jq '.status'          # Kernel truth
+nftban validate --json | jq '.status'          # Kernel truth
 nftban health --json | jq '.status'            # CLI agrees
 nftban metrics evidence                         # Evidence snapshot
 nftban metrics evidence-json | jq '.correlation' # Correlation diagnostic

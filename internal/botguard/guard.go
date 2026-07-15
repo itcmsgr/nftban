@@ -329,21 +329,21 @@ type BotGuardStatusExtra struct {
 // map[string]any contract expected by module.Status.Extra.
 func (e BotGuardStatusExtra) ToExtraInfo() module.ExtraInfo {
 	info := module.ExtraInfo{
-		"loop_interval":           e.LoopInterval,
-		"pressure_mode":           e.PressureMode,
-		"tracked_ips":             e.TrackedIPs,
-		"total_ticks":             e.TotalTicks,
-		"suspects_found":          e.SuspectsFound,
-		"classified":              e.Classified,
-		"allow_count":             e.AllowCount,
-		"grey_count":              e.GreyCount,
-		"ban_count":               e.BanCount,
-		"emergency_count":         e.EmergencyCount,
-		"last_tick_duration":      e.LastTickDuration,
-		"verify_enqueued":         e.VerifyEnqueued,
-		"verify_completed":        e.VerifyCompleted,
-		"verify_verified":         e.VerifyVerified,
-		"verify_failed":           e.VerifyFailed,
+		"loop_interval":                e.LoopInterval,
+		"pressure_mode":                e.PressureMode,
+		"tracked_ips":                  e.TrackedIPs,
+		"total_ticks":                  e.TotalTicks,
+		"suspects_found":               e.SuspectsFound,
+		"classified":                   e.Classified,
+		"allow_count":                  e.AllowCount,
+		"grey_count":                   e.GreyCount,
+		"ban_count":                    e.BanCount,
+		"emergency_count":              e.EmergencyCount,
+		"last_tick_duration":           e.LastTickDuration,
+		"verify_enqueued":              e.VerifyEnqueued,
+		"verify_completed":             e.VerifyCompleted,
+		"verify_verified":              e.VerifyVerified,
+		"verify_failed":                e.VerifyFailed,
 		"batch_signals_processed":      e.BatchSignalsProcessed,
 		"batch_signals_applied":        e.BatchSignalsApplied,
 		"batch_signals_expired":        e.BatchSignalsExpired,
@@ -700,9 +700,9 @@ func (m *Module) pruneExpired() {
 
 // v1.209 — BotScan batch-signal consumer constants.
 const (
-	botscanManualSetV4   = "blacklist_manual_ipv4" // durable, drop-enforced (independent of BotGuard)
-	botscanManualSetV6   = "blacklist_manual_ipv6"
-	botscanProvenanceSrc = "botscan"
+	botscanManualSetV4             = "blacklist_manual_ipv4" // durable, drop-enforced (independent of BotGuard)
+	botscanManualSetV6             = "blacklist_manual_ipv6"
+	botscanProvenanceSrc           = "botscan"
 	botscanManualBanTTLSec  uint32 = 24 * 3600 // BotScan blacklist_manual ban TTL seconds (behavioral; re-confirmable)
 	botscanManualGreyTTLSec uint32 = 1 * 3600
 )
@@ -738,6 +738,10 @@ func (m *Module) processBatchSignals() {
 	if signalFile == "" {
 		return
 	}
+	// v1.219.0 PR-B — publish the consumer/hand-off truth on EVERY cycle (incl. the error
+	// return paths below) so the shell health check can render a broken hand-off as
+	// WARN/DEGRADED rather than healthy/protected.
+	defer m.writeBotscanConsumerStatus()
 	consumingFile := signalFile + batchSignalConsumingSuffix
 
 	// BatchConsumerRuns counts once per cycle regardless of which drains run below.
@@ -987,6 +991,9 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 		log.Printf("[botguard] botscan blacklist_manual enqueue error for %s: %v", ip, err)
 		return false
 	}
+	// v1.219.0 PR-B — durable ban-evidence side-record BEFORE the batch_signals.jsonl consume
+	// removes the hand-off file, so the "why" (reasons/pattern) survives for forensics.
+	m.appendBotscanEvidence(sig, setName, ttlSec)
 	m.mu.Lock()
 	m.stats.BanCount++
 	m.mu.Unlock()

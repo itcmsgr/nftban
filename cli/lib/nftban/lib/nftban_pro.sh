@@ -595,13 +595,17 @@ nftban_pro_cmd_community() {
     shift || true
 
     case "$action" in
-        enable)  nftban_community_enable ;;
-        disable) nftban_community_disable ;;
-        show)    nftban_community_show ;;
-        status)  nftban_community_status ;;
-        submit)  nftban_community_submit ;;
+        enable)   nftban_community_enable "$@" ;;
+        disable)  nftban_community_disable ;;
+        show)     nftban_community_show ;;
+        show-v3)  nftban_community_show_v3 ;;
+        send-test) nftban_community_send_test "$@" ;;
+        status)   nftban_community_status ;;
+        submit)   nftban_community_submit ;;
         help|--help|-h)
-            echo "Usage: nftban pro community {enable|disable|show|status|submit}"
+            echo "Usage: nftban pro community {enable|disable|show|show-v3|send-test|status|submit}"
+            echo "  show-v3    Preview the v3 trial telemetry payload (opt-in, private, minimal)"
+            echo "  send-test  Send ONE v3 trial payload and print the server response (requires enable)"
             echo ""
             echo "  enable   - Opt in to anonymous community stats"
             echo "  disable  - Opt out of community stats"
@@ -617,6 +621,19 @@ nftban_pro_cmd_community() {
 }
 
 nftban_community_enable() {
+    # NON-NEGOTIABLE: explicit opt-in, no silent enablement. Require a typed 'yes'
+    # unless --yes/-y is passed (for controlled automation).
+    local _assume_yes=0 _a
+    for _a in "$@"; do [[ "$_a" == "--yes" || "$_a" == "-y" ]] && _assume_yes=1; done
+    if [[ "$_assume_yes" -eq 0 ]]; then
+        echo "About to ENABLE anonymous community telemetry (opt-in, private, internal analysis)."
+        echo "  Sends ONLY: NFTBan version, OS/CPU/RAM buckets, per-module/health CLASS, an anonymous id."
+        echo "  NEVER sends: IPs, hostnames, domains, emails, usernames, logs, tokens, config, ban lists."
+        echo "  Preview the exact payload first:  nftban pro community show-v3"
+        printf "Type 'yes' to enable (anything else cancels): "
+        local _reply; read -r _reply || true
+        if [[ "$_reply" != "yes" ]]; then echo "Cancelled — nothing enabled, nothing sent."; return 1; fi
+    fi
     # Create config from default if not exists
     if [[ ! -f "$NFTBAN_COMMUNITY_CONF" ]]; then
         local default_conf="/usr/lib/nftban/install/config/conf.d/community_stats.conf.default"
@@ -671,6 +688,34 @@ nftban_community_show() {
     nftban_community_build_payload
     echo ""
     echo "NOTE: No hostname, IP addresses, logs, or PII included."
+}
+
+nftban_community_show_v3() {
+    echo "Community TRIAL Payload (schema_version 3) — exactly what send-test would transmit:"
+    echo "================================================================================="
+    nftban_community_build_payload_v3
+    echo ""
+    echo "opt-in · private · internal-analysis-only. No hostname/IP/domain/email/log/token/ban-list."
+    echo "Full contract: docs/telemetry/COMMUNITY_TRIAL_V3.md"
+}
+
+nftban_community_send_test() {
+    # Send exactly ONE v3 trial payload and print the server response. Requires opt-in.
+    # shellcheck source=/dev/null
+    [[ -f "$NFTBAN_COMMUNITY_CONF" ]] && source "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true
+    if [[ "${COMMUNITY_STATS_ENABLED:-no}" != "yes" ]]; then
+        echo "Community telemetry is DISABLED — run 'nftban pro community enable' first (opt-in)." >&2
+        echo "Nothing sent." >&2; return 1
+    fi
+    local url="${COMMUNITY_STATS_TRIAL_URL:-${COMMUNITY_STATS_URL:-https://stats.nftban.com/api/v1/community}}"
+    local payload; payload=$(nftban_community_build_payload_v3)
+    echo "Sending ONE v3 trial payload to: $url"
+    echo "--- payload ---"; echo "$payload"; echo "--- end payload ---"
+    if ! command -v curl >/dev/null 2>&1; then echo "curl not available — cannot send." >&2; return 1; fi
+    local resp
+    resp=$(curl -sS -m "${NFTBAN_PRO_TIMEOUT:-30}" -X POST -H 'Content-Type: application/json' \
+        --data-binary "$payload" "$url" -w '\nHTTP %{http_code}' 2>&1 || echo "(send error)")
+    echo "Server response:"; echo "$resp"
 }
 
 nftban_community_status() {
@@ -816,6 +861,197 @@ nftban_community_build_payload() {
 JSONEOF
 }
 
+# ============================================================================
+# v3 TRIAL community payload (schema_version 3) — current-state (v1.218.7)
+# telemetry. v2 above is FROZEN LEGACY and untouched. See
+# docs/telemetry/COMMUNITY_TRIAL_V3.md. PRIVACY INVARIANT: this payload emits
+# ONLY buckets / class labels / booleans — NEVER an IP, hostname, domain,
+# email, username, token, admin port, ban list, raw log, or config value.
+# ============================================================================
+
+# Classify one module into a v3 state class from validator JSON + a config flag.
+# Args: $1=module key in validator JSON (may be empty), $2=enabled-flag (yes/no/""),
+#       $3=available (1/0). Echoes: unavailable|installed_disabled|enabled_ok|
+#       enabled_warn|enabled_degraded|enabled_fatal|unknown
+_nftban_v3_module_state() {
+    local vstatus="$1" enabled="$2" avail="$3"
+    [[ "$avail" != "1" ]] && { echo "unavailable"; return; }
+    if [[ "$enabled" == "no" || "$enabled" == "false" || "$enabled" == "NO" ]]; then
+        echo "installed_disabled"; return
+    fi
+    case "$(echo "${vstatus:-}" | tr '[:upper:]' '[:lower:]')" in
+        ok|pass|protected|active|clean|enabled) echo "enabled_ok" ;;
+        warn|warning|degraded_warn)              echo "enabled_warn" ;;
+        degraded)                                echo "enabled_degraded" ;;
+        fatal|error|down|critical)               echo "enabled_fatal" ;;
+        *) [[ "$enabled" == "yes" || "$enabled" == "true" || "$enabled" == "YES" ]] && echo "enabled_ok" || echo "unknown" ;;
+    esac
+}
+
+nftban_community_build_payload_v3() {
+  # Collection is best-effort; isolate set +e in a subshell so it can never
+  # contaminate the caller's errexit, and so a failed probe just yields unknown.
+  ( set +e; set +o pipefail
+    # --- reusable privacy-safe primitives (recomputed; v2 fn is frozen) ---
+    local os_family distro distro_version kernel_mm arch cpu_bucket ram_bucket container
+    distro=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}" || echo "unknown")
+    distro_version=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-unknown}" || echo "unknown")
+    case "$distro" in debian|ubuntu) os_family=debian ;; rhel|centos|almalinux|rocky|fedora) os_family=rhel ;; *) os_family=unknown ;; esac
+    kernel_mm=$(uname -r 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+' || echo "unknown")
+    arch=$(uname -m 2>/dev/null || echo "unknown")
+    local cpu_count; cpu_count=$(nproc 2>/dev/null || echo 0)
+    if   [[ "$cpu_count" -le 1 ]]; then cpu_bucket=1
+    elif [[ "$cpu_count" -le 2 ]]; then cpu_bucket=2
+    elif [[ "$cpu_count" -le 4 ]]; then cpu_bucket=2-4
+    elif [[ "$cpu_count" -le 8 ]]; then cpu_bucket=4-8
+    elif [[ "$cpu_count" -le 16 ]]; then cpu_bucket=8-16
+    else cpu_bucket=16+; fi
+    local ram_mb; ram_mb=$(awk '/MemTotal/{printf "%d",$2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+    if   [[ "$ram_mb" -le 1024 ]]; then ram_bucket="<=1GB"
+    elif [[ "$ram_mb" -le 2048 ]]; then ram_bucket="1-2GB"
+    elif [[ "$ram_mb" -le 4096 ]]; then ram_bucket="2-4GB"
+    elif [[ "$ram_mb" -le 8192 ]]; then ram_bucket="4-8GB"
+    elif [[ "$ram_mb" -le 16384 ]]; then ram_bucket="8-16GB"
+    elif [[ "$ram_mb" -le 32768 ]]; then ram_bucket="16-32GB"
+    else ram_bucket="32GB+"; fi
+    container=unknown
+    { [[ -f /.dockerenv ]] || grep -qaE 'docker|containerd|lxc|kubepods' /proc/1/cgroup 2>/dev/null; } && container=true
+    [[ "$container" == unknown ]] && [[ -d /proc/1 ]] && container=false
+
+    local nftban_version=""
+    [[ -z "$nftban_version" ]] && nftban_version=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '\n')
+    [[ -z "$nftban_version" ]] && nftban_version=$(cat /VERSION 2>/dev/null | tr -d '\n')
+    [[ -z "$nftban_version" ]] && nftban_version="unknown"
+    local package_type=unknown
+    if command -v dpkg >/dev/null 2>&1 && dpkg -l nftban-core >/dev/null 2>&1; then package_type=deb
+    elif command -v rpm >/dev/null 2>&1 && rpm -q nftban-core >/dev/null 2>&1; then package_type=rpm
+    elif [[ -f /usr/lib/nftban/VERSION ]]; then package_type=source; fi
+    [[ "$container" == true && "$package_type" == unknown ]] && package_type=docker
+    local install_id=""
+    [[ -f "$NFTBAN_COMMUNITY_CONF" ]] && install_id=$(grep -oP 'COMMUNITY_STATS_ID="\K[^"]+' "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true)
+    [[ -z "$install_id" ]] && install_id="unset"
+
+    # --- health summary from the validator (kernel-truth), no values ---
+    local vjson vstatus vschema ok_c=0 warn_c=0 deg_c=0 fatal_c=0
+    vjson=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null || echo '')
+    if [[ -n "$vjson" ]] && command -v jq >/dev/null 2>&1; then
+        vstatus=$(echo "$vjson" | jq -r '.status // "UNKNOWN"' 2>/dev/null | tr '[:lower:]' '[:upper:]')
+        vschema=$(echo "$vjson" | jq -r '.schema_version // "unknown"' 2>/dev/null)
+        ok_c=$(echo "$vjson"  | jq '[.. | .status? // empty | ascii_upcase | select(.=="OK" or .=="PASS" or .=="PROTECTED")] | length' 2>/dev/null || echo 0)
+        warn_c=$(echo "$vjson"| jq '[.. | .status? // empty | ascii_upcase | select(.=="WARN" or .=="WARNING")] | length' 2>/dev/null || echo 0)
+        deg_c=$(echo "$vjson" | jq '[.. | .status? // empty | ascii_upcase | select(.=="DEGRADED")] | length' 2>/dev/null || echo 0)
+        fatal_c=$(echo "$vjson"| jq '[.. | .status? // empty | ascii_upcase | select(.=="FATAL" or .=="DOWN" or .=="ERROR")] | length' 2>/dev/null || echo 0)
+    else
+        vstatus=UNKNOWN; vschema=unknown
+    fi
+    local overall
+    case "$vstatus" in PROTECTED|IDLE|OK) overall=OK ;; DEGRADED) overall=DEGRADED ;; DOWN|FATAL) overall=FATAL ;; WARN*) overall=WARN ;; *) overall=UNKNOWN ;; esac
+    local daemon_active=unknown nft_present=unknown failed_units=0 validate_age=unknown
+    systemctl is-active nftband >/dev/null 2>&1 && daemon_active=true || { systemctl list-unit-files 2>/dev/null | grep -q nftband && daemon_active=false; }
+    if command -v nft >/dev/null 2>&1; then nft list tables 2>/dev/null | grep -q 'table .* nftban' && nft_present=true || nft_present=false; fi
+    failed_units=$(systemctl --failed --no-legend 2>/dev/null | grep -c nftban 2>/dev/null); failed_units=${failed_units//[^0-9]/}; failed_units=${failed_units:-0}
+
+    # --- config-flag helpers (read enable state only; never send values) ---
+    local cdir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d"
+    _flag() { grep -hoE "^[[:space:]]*$2=\"?(yes|no|true|false|YES|NO)" "$1" 2>/dev/null | grep -oE '(yes|no|true|false|YES|NO)$' | head -1; }
+    local rbl_en rblmon_en botguard_en geoban_en
+    rbl_en=$(_flag "$cdir/rbl/main.conf" NFTBAN_RBL_ENABLED); rbl_en=${rbl_en:-unknown}
+    botguard_en=$(_flag "$cdir/botguard/main.conf" HTTP_BOTGUARD_ENABLED); botguard_en=${botguard_en:-unknown}
+    geoban_en=$(_flag "$cdir/geoban/main.conf" GEOBAN_ENABLED); geoban_en=${geoban_en:-unknown}
+    # rblmon = rbl monitor timer present + rbl enabled (observe-only); watchlist-empty (bool, no IPs)
+    rblmon_en=$( [[ "$rbl_en" =~ ^(yes|YES|true)$ ]] && systemctl list-unit-files 2>/dev/null | grep -q nftban-rbl-check.timer && echo true || echo false )
+    local wl_empty=unknown
+    [[ "$rbl_en" =~ ^(yes|YES|true)$ ]] && wl_empty=true  # default empty unless a non-empty watchlist proven (no IPs read)
+
+    # --- comms transport CLASS only (no recipients/addresses) ---
+    local mail_on=false webhook_on=false
+    grep -q 'MAIL_ENABLED=true' "$cdir/mail.conf" 2>/dev/null && mail_on=true
+    grep -rqE '^[[:space:]]*NFTBAN_WEBHOOK_URL=' "$cdir" 2>/dev/null && webhook_on=true
+    local transport_class=none
+    if   [[ "$mail_on" == true && "$webhook_on" == true ]]; then transport_class=mixed
+    elif [[ "$mail_on" == true ]]; then transport_class=email
+    elif [[ "$webhook_on" == true ]]; then transport_class=webhook; fi
+
+    # --- api bind CLASS only (classify config value; never send the address) ---
+    local api_bind_class=unknown api_enabled=unknown
+    local apiaddr; apiaddr=$(grep -rhoE '^[[:space:]]*APIAddr[=: ]+"?[^"]+' "${NFTBAN_CONFIG_DIR:-/etc/nftban}" 2>/dev/null | grep -oE '[0-9a-fA-F:.]+:[0-9]+|/[^" ]+\.sock' | head -1)
+    if   [[ -z "$apiaddr" ]]; then api_bind_class=loopback; api_enabled=true   # code default 127.0.0.1:9580
+    elif [[ "$apiaddr" == /*.sock ]]; then api_bind_class=unix_socket; api_enabled=true
+    elif [[ "$apiaddr" =~ ^127\.|^\[::1\]|^::1 ]]; then api_bind_class=loopback; api_enabled=true
+    elif [[ "$apiaddr" =~ ^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[01])\. ]]; then api_bind_class=private_lan; api_enabled=true
+    elif [[ "$apiaddr" =~ ^0\.0\.0\.0|^\[::\]|^:: ]]; then api_bind_class=public_or_all_interfaces; api_enabled=true
+    else api_bind_class=public_or_all_interfaces; api_enabled=true; fi
+    local metrics_avail=unknown
+    [[ -f /var/cache/nftban/metrics/stats.json ]] && metrics_avail=true
+
+    # --- suricata CLASS only (no EVE/signatures/IPs) ---
+    local suri_avail=false suri_enabled=unknown eve_visible=false
+    { [[ -f "$cdir/suricata/main.conf" ]] || command -v suricata >/dev/null 2>&1; } && suri_avail=true
+    [[ -f /var/log/nftban/suricata/eve-alerts.json ]] && eve_visible=true
+    [[ "$suri_avail" == true ]] && suri_enabled=$(systemctl is-active nftban-suricata >/dev/null 2>&1 && echo true || echo false)
+
+    # --- per-module state classes ---
+    local m_ddos m_ps m_lm m_geo m_feeds m_bg m_bs m_suri m_rbl m_rblmon m_tun m_comm m_wd m_metrics m_api
+    local a1=1  # core modules considered available on any install
+    m_ddos=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_ps=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_lm=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_feeds=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_geo=$(_nftban_v3_module_state "" "$geoban_en" "$a1")
+    m_bg=$(_nftban_v3_module_state "" "$botguard_en" "$a1")
+    m_bs=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_rbl=$(_nftban_v3_module_state "" "$rbl_en" "$a1")
+    m_rblmon=$(_nftban_v3_module_state "" "$( [[ "$rblmon_en" == true ]] && echo yes || echo no )" "$a1")
+    m_suri=$(_nftban_v3_module_state "" "$suri_enabled" "$( [[ "$suri_avail" == true ]] && echo 1 || echo 0 )")
+    m_tun=$(_nftban_v3_module_state "" "$( [[ "$transport_class" =~ webhook|mixed|email ]] && echo yes || echo unknown )" "$a1")
+    m_comm=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_wd=$(_nftban_v3_module_state "$overall" "" "$a1")
+    m_metrics=$(_nftban_v3_module_state "" "$( [[ "$metrics_avail" == true ]] && echo yes || echo unknown )" "$a1")
+    m_api=$(_nftban_v3_module_state "" "$api_enabled" "$a1")
+
+    local now; now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local body
+    body=$(cat <<JSONV3
+{
+  "schema_version": 3,
+  "trial_mode": true,
+  "internal_analysis_only": true,
+  "consent_version": "1",
+  "nftban_version": "$nftban_version",
+  "payload_created_at": "$now",
+  "anonymous_install_id": "$install_id",
+  "package_type": "$package_type",
+  "update_channel": "unknown",
+  "platform": {
+    "os_family": "$os_family", "distro": "$distro", "distro_version": "$distro_version",
+    "kernel_major_minor": "$kernel_mm", "architecture": "$arch",
+    "cpu_count_bucket": "$cpu_bucket", "ram_bucket": "$ram_bucket", "container": "$container"
+  },
+  "modules": {
+    "ddos": "$m_ddos", "portscan": "$m_ps", "loginmon": "$m_lm", "geoban": "$m_geo",
+    "feeds": "$m_feeds", "botguard": "$m_bg", "botscan": "$m_bs", "suricata": "$m_suri",
+    "rbl": "$m_rbl", "rblmon": "$m_rblmon", "tunnel": "$m_tun", "communication": "$m_comm",
+    "watchdog": "$m_wd", "metrics": "$m_metrics", "api": "$m_api"
+  },
+  "health": {
+    "validator_schema_version": "$vschema", "overall_status": "$overall",
+    "ok_count": ${ok_c:-0}, "warn_count": ${warn_c:-0}, "degraded_count": ${deg_c:-0}, "fatal_count": ${fatal_c:-0},
+    "daemon_active": "$daemon_active", "nft_table_present": "$nft_present",
+    "failed_nftban_units_count": ${failed_units:-0}, "last_validate_age_bucket": "$validate_age"
+  },
+  "communication": { "central_comms_available": "true", "alert_transport_classes": "$transport_class" },
+  "api_metrics": { "api_enabled": "$api_enabled", "api_bind_class": "$api_bind_class", "metrics_available": "$metrics_avail" },
+  "rbl": { "rbl_enabled": "$rbl_en", "rblmon_enabled": "$rblmon_en", "rblmon_watchlist_empty": "$wl_empty" },
+  "suricata": { "suricata_available": "$suri_avail", "suricata_enabled": "$suri_enabled", "eve_source_visible": "$eve_visible" },
+  "last_send_result": "none"
+JSONV3
+)
+    # payload_hash = sha256 of the payload body (integrity/change marker); appended as the final field.
+    local phash; phash=$(printf '%s' "$body" | sha256sum 2>/dev/null | cut -d' ' -f1)
+    printf '%s,\n  "payload_hash": "%s"\n}\n' "$body" "$phash"
+  )
+}
+
 nftban_community_submit() {
     # Read config
     if [[ ! -f "$NFTBAN_COMMUNITY_CONF" ]]; then
@@ -949,6 +1185,10 @@ export -f nftban_community_disable
 export -f nftban_community_show
 export -f nftban_community_status
 export -f nftban_community_build_payload
+export -f nftban_community_build_payload_v3
+export -f nftban_community_send_test
+export -f nftban_community_show_v3
+export -f _nftban_v3_module_state
 export -f nftban_community_submit
 
 export -f nftban_pro_ensure_server_id

@@ -2,102 +2,171 @@
 
 ## Our Pledge
 
-We as members, contributors, and leaders pledge to make participation in the NFTBan community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+We, as members, contributors, maintainers, and community participants, pledge to make participation in the NFTBan community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity or expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, sexual identity, or sexual orientation.
 
-We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, and healthy community.
+We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, professional, and healthy community.
 
 ## Our Standards
 
-### Examples of behavior that contributes to a positive environment:
+Examples of behavior that contributes to a positive community include:
 
 * Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
+* Treating others with respect
+* Respecting differing viewpoints and experiences
+* Giving and accepting constructive technical criticism
+* Focusing discussion on the project, its users, and its community
+* Showing empathy toward other community members
 * Helping others learn and grow
 * Acknowledging and learning from mistakes
+* Respecting project boundaries, maintainer time, and support processes
 
-### Examples of unacceptable behavior:
+Examples of unacceptable behavior include:
 
-* The use of sexualized language or imagery, and sexual attention or advances of any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as physical or email addresses, without explicit permission
-* Other conduct which could reasonably be considered inappropriate in a professional setting
-* Spam, advertising, or off-topic posts
-* Repeatedly demanding help or attention in an inappropriate manner
+* Sexualized language or imagery, sexual attention, or unwanted advances
+* Trolling, insults, derogatory comments, or personal attacks
+* Harassment in public or private
+* Threats, intimidation, stalking, or sustained disruptive behavior
+* Discrimination or disparagement directed at an individual or group
+* Publishing another person’s private information, including physical addresses, email addresses, credentials, or identifying information, without explicit permission
+* Deliberate disruption of project discussions, reviews, or community processes
+* Spam, unsolicited advertising, or persistently off-topic content
+* Repeatedly demanding help, access, responses, or attention in an inappropriate or abusive manner
+* Retaliation against a person who makes a good-faith report or assists with an investigation
+* Other conduct that could reasonably be considered inappropriate in a professional community
+
+Technical disagreement, critical review, and rejection of a contribution are not themselves harassment when expressed professionally and based on the project’s technical, security, quality, or maintenance requirements.
 
 ## Enforcement Responsibilities
 
-Community leaders are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any behavior that they deem inappropriate, threatening, offensive, or harmful.
+NFTBan project maintainers and designated moderators are responsible for clarifying and enforcing these standards.
 
-Community leaders have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, and will communicate reasons for moderation decisions when appropriate.
+They may take appropriate and proportionate corrective action in response to behavior they determine to be inappropriate, threatening, abusive, disruptive, or harmful.
+
+Project maintainers and moderators may remove, edit, reject, or restrict comments, commits, code, pull requests, issues, discussions, wiki edits, documentation, and other contributions that do not comply with this Code of Conduct.
+
+When appropriate and reasonably possible, the reason for a moderation or enforcement decision will be communicated to the affected participant.
+
+Enforcement decisions may consider:
+
+* The nature and severity of the conduct
+* Its actual or reasonably foreseeable impact
+* Whether the behavior was repeated
+* Previous warnings or enforcement actions
+* Whether the participant accepted responsibility and corrected the behavior
+* Risks to reporters, maintainers, users, or the wider community
 
 ## Scope
 
-This Code of Conduct applies within all community spaces, including:
+This Code of Conduct applies in all NFTBan community spaces, including:
 
-* GitHub repositories (issues, pull requests, discussions)
-* Official communication channels
-* Project documentation
-* Community events (online or offline)
-* Representing the project in public spaces
+* GitHub repositories
+* Issues, pull requests, code reviews, and discussions
+* Official communication and support channels
+* Project documentation and wiki contributions
+* Project-managed websites and services
+* Online or in-person community events
+* Private communications related to project participation
+* Public representation of the NFTBan project or community
 
-## Enforcement
+Conduct outside official project spaces may be considered when it creates a credible risk to community members, materially disrupts the project, or directly affects participation in the NFTBan community.
 
-### Reporting
+## Reporting
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at:
+Instances of abusive, harassing, threatening, or otherwise unacceptable behavior may be reported privately to:
 
-**security@nftban.com**
+**[security@nftban.com](mailto:security@nftban.com)** — for Code of Conduct / community-conduct reports.
 
-All complaints will be reviewed and investigated promptly and fairly.
+**Security vulnerabilities follow a different, private process — do not disclose them in a public issue or mix them into a conduct report.** Report vulnerabilities per `SECURITY.md`: a **private GitHub Security Advisory** (preferred), or email `security@nftban.com` with a `[SECURITY]` subject prefix. (Conduct and vulnerability reports may reach the same mailbox but are handled by different processes — the Security Advisory keeps vulnerability details confidential.)
 
-All community leaders are obligated to respect the privacy and security of the reporter of any incident.
+Reports should include, where available:
 
-### Enforcement Guidelines
+* A description of what occurred
+* Relevant dates or approximate times
+* Links, screenshots, or other supporting evidence
+* The community spaces or participants involved
+* Any immediate safety or confidentiality concerns
 
-Community leaders will follow these Community Impact Guidelines in determining the consequences for any action they deem in violation of this Code of Conduct:
+Anonymous or incomplete reports may still be reviewed, although limited evidence may restrict the actions available to maintainers.
 
-#### 1. Correction
+Reports will be reviewed as promptly, impartially, and confidentially as reasonably possible.
 
-**Community Impact**: Use of inappropriate language or other behavior deemed unprofessional or unwelcome in the community.
+Information will be shared only with people who need it to evaluate the report, protect affected participants, or enforce this policy.
 
-**Consequence**: A private, written warning from community leaders, providing clarity around the nature of the violation and an explanation of why the behavior was inappropriate. A public apology may be requested.
+Project maintainers and moderators must protect the privacy and security of reporters, witnesses, and affected participants to the extent reasonably possible.
 
-#### 2. Warning
+Good-faith reports will not result in retaliation.
 
-**Community Impact**: A violation through a single incident or series of actions.
+Knowingly submitting a materially false report, fabricating evidence, or using the reporting process to harass another person may itself violate this Code of Conduct. A report that cannot be substantiated is not, by itself, a false or malicious report.
 
-**Consequence**: A warning with consequences for continued behavior. No interaction with the people involved, including unsolicited interaction with those enforcing the Code of Conduct, for a specified period of time. This includes avoiding interactions in community spaces as well as external channels like social media. Violating these terms may lead to a temporary or permanent ban.
+## Enforcement Guidelines
 
-#### 3. Temporary Ban
+Project maintainers and designated moderators will use the following Community Impact Guidelines when determining appropriate consequences.
 
-**Community Impact**: A serious violation of community standards, including sustained inappropriate behavior.
+These levels are guidelines rather than automatic penalties. Depending on severity, context, risk, or prior conduct, enforcement may begin at any appropriate level.
 
-**Consequence**: A temporary ban from any sort of interaction or public communication with the community for a specified period of time. No public or private interaction with the people involved, including unsolicited interaction with those enforcing the Code of Conduct, is allowed during this period. Violating these terms may lead to a permanent ban.
+### 1. Correction
 
-#### 4. Permanent Ban
+**Community impact:** Use of inappropriate language or other conduct considered unprofessional or unwelcome.
 
-**Community Impact**: Demonstrating a pattern of violation of community standards, including sustained inappropriate behavior, harassment of an individual, or aggression toward or disparagement of classes of individuals.
+**Possible consequence:** A private written correction or warning explaining the nature of the issue and the expected change in behavior. A clarification, correction, or public apology may be requested when appropriate.
 
-**Consequence**: A permanent ban from any sort of public interaction within the community.
+### 2. Warning
+
+**Community impact:** A violation involving a single significant incident or a series of inappropriate actions.
+
+**Possible consequence:** A formal warning with stated consequences for continued behavior. The participant may be instructed not to contact specified individuals or interact in specified community spaces for a defined period.
+
+Failure to comply may result in a temporary or permanent ban.
+
+### 3. Temporary Ban
+
+**Community impact:** A serious violation, sustained inappropriate behavior, repeated violations, retaliation, or failure to comply with a previous warning.
+
+**Possible consequence:** A temporary restriction from some or all forms of participation and public communication within the NFTBan community.
+
+During the restriction period, the participant must not attempt to circumvent the restriction or initiate prohibited public or private contact with the people involved.
+
+Circumvention or further violations may result in a permanent ban.
+
+### 4. Permanent Ban
+
+**Community impact:** A pattern of serious violations, sustained harassment, threats, aggression, retaliation, deliberate circumvention of enforcement, or conduct that creates an unacceptable risk to the community.
+
+**Possible consequence:** Permanent exclusion from public participation and interaction within NFTBan-managed community spaces.
+
+## Appeals
+
+A person subject to an enforcement action may submit one concise appeal through the reporting channel.
+
+An appeal should identify:
+
+* The decision being challenged
+* Any material factual error
+* Relevant context that was not previously considered
+* The requested resolution
+
+An appeal does not suspend an active restriction unless the project maintainers explicitly state otherwise.
+
+Where practical, an appeal should be reviewed by someone who was not the sole decision-maker in the original action. When the project does not have an independent moderator available, the project maintainer’s decision may be final.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1, available at https://www.contributor-covenant.org/version/2/1/code_of_conduct.html.
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1.
 
-Community Impact Guidelines were inspired by [Mozilla's code of conduct enforcement ladder](https://github.com/mozilla/diversity).
+The Community Impact Guidelines were inspired by the Contributor Covenant enforcement guidelines and Mozilla’s community participation and enforcement practices.
 
-For answers to common questions about this code of conduct, see the FAQ at https://www.contributor-covenant.org/faq. Translations are available at https://www.contributor-covenant.org/translations.
+The Contributor Covenant FAQ and translations are available from the Contributor Covenant project.
 
-## Questions?
+## Questions
 
-If you have questions about this Code of Conduct, please contact us at security@nftban.com.
+Questions about this Code of Conduct may be sent to:
+
+**[security@nftban.com](mailto:security@nftban.com)**
+
+Do not use public issues or discussions to disclose confidential reports or personal information.
 
 ---
 
-**NFTBan Project** - Building a welcoming, inclusive community.
+**NFTBan Project — Building a welcoming, inclusive, and professional community.**
 
-Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis
+Copyright © 2024–2026 NFTBan Project / Antonios Voulvoulis

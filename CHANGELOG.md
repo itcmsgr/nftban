@@ -11,6 +11,461 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.220.8] - 2026-07-14 — RBL provider-registry curated projection (slice 3C)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` retained byte-identical (rollback carrier, NOT retired).**
+
+RBL provider-registry **Slice 3C — the first behavior-changing provider slice.** `etc/nftban/conf.d/rbl/registry.conf` becomes the **projection authority** for the effective RBL queried set; `rbls.conf` is retained as the rollback/compatibility carrier (retirement is Slice 5). RBL stays **observe-only**; ban authority unchanged.
+
+- **Deterministic curated classes** derived from the typed records: VOTING **4** (`psbl.surriel.com`, `bl.spamcop.net`, `dnsbl-1.uceprotect.net`, corrected `dnsbl.dronebl.org`), INFORMATIONAL **3** (`tor.dan.me.uk`, `dnsbl-2.uceprotect.net`, `dnsbl-3.uceprotect.net` — typed signals that never contribute an ordinary vote), CONDITIONAL off-by-default **3** (`zen.spamhaus.org`, `b.barracudacentral.org`, `spam.spamrats.com`), EXCLUDED **6**, RETIRED **7**.
+- **Ratified parameters:** `RBL_PROJECTION_AUTHORITY=REGISTRY`, `RBL_LEGACY_FALLBACK=VALIDATION_FAILURE_ONLY`, `RBL_MIN_VOTING_PROVIDERS=2`, `BARRACUDA_DEFAULT_POLICY=CONDITIONAL_OFF_BY_DEFAULT`.
+- **Single source-selection** `nftban_rbl_projection_source` → `REGISTRY | LEGACY` — never a blend of `rbls.conf` + registry. Legacy fallback is permitted **only** on registry parse/validate/admit failure and emits a prominent `DEGRADED_LEGACY_FALLBACK` warning; a valid *smaller* projection never silently falls back.
+- **Admission gate:** ≥2 voting (`RBL_MIN_VOTING_PROVIDERS`), duplicate-zone + duplicate-evidence-group rejection, IP_DNSBL-only voting, no aggregate/component double-counting; informational/conditional/broad-network/Tor scopes cannot vote.
+- **Corrected DroneBL** activated at `dnsbl.dronebl.org` (the configured `dnsbl-1.dronebl.org` was an NXDOMAIN zone defect) after a live listed(`2.0.0.127`)+clean(`1.0.0.127`) RFC5782 qualification.
+- The **live check path** (`nftban_rbl_check_ip` parallel + serial) consumes `nftban_rbl_effective_providers` — the curated voting set when REGISTRY is authoritative; **byte-identical to the historical 23 zones** when LEGACY (rollback via `RBL_PROJECTION_AUTHORITY=LEGACY` or an invalid/removed registry).
+- New CLI **`nftban rbl providers projection`** (projection source · reproducible hash · per-class counts · before/after diff vs legacy 23) and a **Class column** in `providers list`.
+- `registry.conf` ratified states: `dronebl`/`uceprotect_l2`/`uceprotect_l3` → `enabled`, `cbl_abuseat` → `excluded`.
+- Latent fix: inlined the per-field trim in `core/nftban_rbl_registry.sh:nftban_rbl_registry_parse`, removing ~700 command-substitution forks per parse (~1 s → instant; identical output) — required because the projection engine re-reads the registry.
+
+Invariants: schema **1.84.0** unchanged; **0 Go**; daemon **byte-identical**; `rbls.conf` **byte-identical**; registry **parsed, never sourced/evaled**. PR [#1095](https://github.com/itcmsgr/nftban/pull/1095) `fe7026ac`; test `rbl_provider_registry_slice3c_test` **33/33** (exact class membership + counts, corrected-DroneBL in / defective out, no retired/excluded/informational/conditional zone queried, deterministic projection hash, before/after diff, LEGACY rollback byte-for-byte 23, malformed → degraded fallback, valid-smaller no-fallback, check-path wiring, registry-not-sourced, `rbls.conf` retained); `slice2` A3/A4 + `slice3a` C9 updated for the 3C projection reality; full RBL + update/install suites green; shellcheck clean.
+
+---
+
+## [v1.220.7] - 2026-07-14 — RBL provider-registry typed provider metadata (slice 3A)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical.**
+
+RBL provider-registry **Slice 3A adds typed provider metadata only.** No runtime provider curation is applied:
+- the active queried set remains the existing **23 zones**;
+- legacy **order is unchanged**;
+- `rbls.conf` remains **authoritative**;
+- **no provider is added, removed, enabled, disabled, skipped, or replaced**;
+- the **DroneBL corrected zone remains metadata-only** (`replacement=EXTERNAL:dnsbl.dronebl.org`; the queried zone stays `dnsbl-1.dronebl.org`);
+- **aggregate/component relationships are informational only** (no vote-counting change);
+- `providers enable|disable` remain **non-mutating (rc2)**;
+- **Slice 3B (resolver qualification) and Slice 3C (curated projection) remain deferred**;
+- RBL remains **observe-only**; daemon **byte-identical**; nft schema remains **1.84.0**.
+
+Ships `etc/nftban/conf.d/rbl/registry.conf` — 23 typed records (one per configured zone) sourced from the 2026-07-13 external audit (`RBL_PROVIDER_REGISTRY_SLICE_3_EXTERNAL_AUDIT_2026_07_13.md`), encoding `query_type/scope/family/access/role/group/state/operational_status/replacement/audit_date/confidence/license`. `core/nftban_rbl_registry.sh` extends the schema to 16 columns with a deterministic validator (requires ISO audit_date + confidence + operational_status + license — UNVERIFIED first-class; replacement resolves to a declared record or `EXTERNAL:<dnsname>`; cyclic replacement chains rejected) and OVERLAYS metadata onto the legacy zones without changing membership. `providers list`/`explain` expose the metadata (states are PROPOSED). PR [#1092](https://github.com/itcmsgr/nftban/pull/1092) `80c42cbb`; test `rbl_provider_registry_slice3a_test` 27/27; slice1/slice2 20/20 + 18/18; full RBL suite green; shellcheck clean; live loader byte-identical with/without the registry.
+
+## [v1.220.6] - 2026-07-13 — RBL provider-registry read-only `providers` CLI + coverage rendering (slice 2)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical · no curation / no change to the active 23-provider set.**
+
+Slice 2 of the typed RBL provider registry (`OPEN_SCOPE_RBL_PROVIDER_REGISTRY_SCOPE.md`) — **READ-ONLY inspection surfaces** over the slice-1 substrate. New `nftban rbl providers` command group:
+- **list** — typed table (ID · Zone · Type · State) + effective count + "no curation / module-only" notes.
+- **validate** — validate a registry data file if present (deterministic errors); none ⇒ legacy `rbls.conf` authoritative (23).
+- **test [`<id>`|`--all`]** — live RFC5782 reachability probe from this host's resolver, classified into the current result vocabulary (`CLEAN` / `LISTED_TESTPOINT` / `REACHABLE_NOANSWER` / `TIMEOUT` / `REFUSED` / `SERVFAIL` — a timeout and an NXDOMAIN are never conflated) + a truthful coverage render + OK/DEGRADED verdict. Read-only: changes no state, issues no ban.
+- **explain `<id>`** — full typed record.
+
+**Mutation is DEFERRED:** `providers enable|disable` return a non-mutating deferred error (rc2) and change nothing — the registry is still an additive compatibility substrate, not an authoritative data source. The live loader `nftban_rbl_load_providers`, the legacy `rbl list`, query execution, cache keys, timeouts, verdict logic, timers, and enablement are unchanged; no change to which providers are queried; no weighting, grouping, or default-profile migration.
+
+PR [#1089](https://github.com/itcmsgr/nftban/pull/1089) `b26597b8`; test `rbl_provider_registry_slice2_test.sh` 18/18 (dig stubbed — no real network); existing RBL suites green; shellcheck clean.
+
+**Deferred (separate GO): the enable/disable mutation sub-slice (after the registry becomes authoritative) → slice 3 (live provider audit + data curation, externally verified) → slice 4 (default-profile migration) → slice 5 (`rbls.conf` retirement).**
+
+## [v1.220.5] - 2026-07-13 — RBL provider-registry substrate + flat-list compatibility (slice 1)
+
+**Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only · `rbls.conf` authoritative and byte-identical · no curation / provider-policy assignment.**
+
+Slice 1 of the typed RBL provider registry (`OPEN_SCOPE_RBL_PROVIDER_REGISTRY_SCOPE.md`) — **additive substrate only**. New `core/nftban_rbl_registry.sh` (sourced by `nftban_rbl.sh`, **not wired into the live check path**):
+- Typed record model (11-col TSV `id/zone/query_type/scope/family/access/weight/role/group/state/info_url`) with fixed enum vocabularies.
+- Conservative projection of a legacy bare `zone:url` → `IP_DNSBL / MAIL_REPUTATION / IPV4_IPV6 / PUBLIC / no-weight / PRIMARY / own-group / enabled` (no weighting, grouping, or reclassification).
+- INI-block parser that is **never sourced/evaled** — **no runtime YAML**.
+- Deterministic validator: duplicate id, duplicate zone, invalid enum, invalid zone name, structural malformation, and unsafe shell content each **fail**.
+- `nftban_rbl_registry_effective` is the flat-list-compatibility bridge — membership always comes from the authoritative legacy loader, so it is **byte-identical** to `nftban_rbl_load_providers`. A present-but-invalid registry is **warned and ignored** — it can never yield an empty or altered provider set.
+
+**Slice 1 ships the registry *module*, not a registry *data* file** (registry-absent = current behavior). The live loader `nftban_rbl_load_providers`, query execution, result vocabulary, cache keys, timeout handling, verdict logic, timers, and enablement are unchanged. No `rbl providers` operator CLI. PR [#1085](https://github.com/itcmsgr/nftban/pull/1085) `2922aec9`; test `rbl_provider_registry_slice1_test.sh` 20/20; existing RBL suites green; shellcheck clean.
+
+**Deferred (separate GO): slice 2** (`rbl providers` CLI + truthful coverage rendering) → **slice 3** (live provider audit + data curation, externally verified) → slice 4 (default-profile migration) → slice 5 (`rbls.conf` retirement).
+
+## [v1.220.4] - 2026-07-11 — Version Release-Date authority (per-release `VERSION_DATE`; honest Build Date)
+
+**Shell/packaging only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only, provider data unchanged · no RBL/runtime behavior change.**
+
+`nftban version` printed a stale **`Release Date: 2026-03-18`** — a frozen compile-time constant (`lib/version.sh` `NFTBAN_VERSION_DATE`) never bumped on release — and a weak **`Build Date: unknown`**. Both are now truthful.
+
+- **Release Date** (`lib/version.sh` `_nftban_read_version_date`) resolves from a per-release `VERSION_DATE` artifact: (1) packaged `/usr/lib/nftban/VERSION_DATE`, (2) source-tree `VERSION_DATE`, (3) explicit `unknown` fallback only when neither exists or the value is not strict ISO `YYYY-MM-DD`. Search paths mirror the `VERSION` resolver.
+- **Build Date** (`_nftban_resolve_build_date`) returns `""` when no authoritative build metadata exists (a `.build_date` stamp or rpm BUILDTIME); the render **omits the field** rather than printing `unknown`. Reproducible-build semantics preserved — never `$(date)`-now, no invented timestamp.
+- **Packaging** (`packaging/build_nftban.sh`) ships `VERSION_DATE` alongside `VERSION` (RPM source tarball + `%install` + `%files`; DEB install) and **fails the build** on an empty/malformed release-date carrier.
+- **Release-prep carrier** (`scripts/bump-version.sh`) stamps `VERSION_DATE` (today UTC, or a `VERSION_DATE=YYYY-MM-DD` override for reproducible re-cuts) whenever it bumps `VERSION`.
+
+PR [#1083](https://github.com/itcmsgr/nftban/pull/1083) `c10620f6`. Tests: `version_release_date_authority_test.sh` 11/11 (source-tree / packaged / missing / malformed→fallback / strict-ISO / Build-Date omit-when-empty, show-when-stamped); `version_build_date_v151_test.sh` updated to the empty-not-`unknown` contract (8/8); `shellcheck -S warning` clean.
+
+**Deferred (next lane, separate GO):** `GO_SCOPE_RBL_PROVIDER_REGISTRY` — typed provider registry + curation (needs external access/terms verification).
+
+## [v1.220.3] - 2026-07-11 — RBL CLI correctness cluster (blank provider, empty-watchlist crash, help/completion truth)
+
+**Shell/completion only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · `ModulesJSON` untouched · telemetry default-OFF · RBL observe-only (no bans/nft writes, NOT enabled) · `rbls.conf` provider data unchanged.**
+
+Four self-contained RBL CLI correctness defects surfaced from live monitor output. Pure display/parse/UX fixes — no scan behavior, no provider-set change.
+
+- **B1 — blank/invalid provider admission** (`core/nftban_rbl.sh` `nftban_rbl_load_providers`): a numbered empty provider (`1.`) appeared in `rbl list` and as a phantom zero-domain query. Root cause: `"${enabled_rbls[@]:-}"` on an unset custom-enable array expands to one empty string, which was appended and floated to the top by `sort -u`. The loader now trims whitespace, skips blank/comment rows, **rejects malformed (dot-less) DNS names — reporting the source file and line to stderr**, de-duplicates, and guards the empty-array element. The stock `rbls.conf` now loads its true **23** unique providers (was a phantom 24).
+- **B3 — empty watchlist false error** (`core/nftban_rbl.sh` `nftban_rbl_watchlist_get`): `nftban rbl watchlist` printed a spurious `ERROR: Script failed … grep '|' Exit 1` before the real "(No IPs in watchlist)". The trailing `grep '|'` returns 1 when there are no data rows, tripping the ERR trap. No match is not an error → the function now returns rc 0 with no output; non-empty watchlist behavior is unchanged.
+- **B4a — frozen help version + stale count** (`cli/cmd_rbl.sh` `nftban_cmd_rbl_help`): the banner rendered the frozen literal `NFTBan v1.0.0`; it now renders the running `${NFTBAN_VERSION}` (body stays a quoted heredoc so `${NFTBAN_LOG_DIR}` etc. remain literal documentation). The stale `41 RBLs` performance count was removed.
+- **B4b — completion drift** (`install/bash-completion/nftban`): the `nftban rbl` completion list was missing `config`, `stats`, and `test` — all real dispatcher + help subcommands. Completion now matches the dispatcher.
+
+PR [#1080](https://github.com/itcmsgr/nftban/pull/1080) `7713c8d0` (4 files). Regression test `rbl_cli_correctness_v220_3_test.sh` (11/11) locks: unset array → zero entries · blank/comment ignored · whitespace trimmed · duplicates collapse · malformed dot-less rejected with `file:line` · effective count 23 · empty watchlist rc 0 without ERR-trap noise · non-empty watchlist unchanged · help renders the installed version dynamically · no frozen provider count · completion parity for `config/stats/test`. Existing RBL suites green (`false_clean` 17, `seven_state`, `nonpublic`/`hostname` admission, `shared_address_authority`); `shellcheck -S warning` clean.
+
+**Explicit non-goals (deferred, separate GO-gated lanes, NOT in this diff):** provider-set curation + the typed provider-registry redesign (`GO_SCOPE_RBL_PROVIDER_REGISTRY` — needs external access/terms verification per provider); the stale version Release-Date resolution (`GO_VERSION_RELEASE_DATE_FIX` — version/packaging/release-prep architecture). Order: release-date fix first, then the registry redesign.
+
+## [v1.220.2] - 2026-07-11 — Enforcement-integrity: non-public/self addresses can never enter a drop set
+
+**Enforcement-integrity hotfix (Go/daemon — DAEMON RE-BASELINE; daemon NOT byte-identical). nft schema 1.84.0 unchanged; telemetry default-OFF; RBL untouched (this is NOT RBL-enablement).**
+
+The separate Go lane from the non-public-address action-policy audit (`NFTBAN_NONPUBLIC_ADDRESS_ACTION_POLICY_AUDIT.md` → `SEPARATE_ENFORCEMENT_HOTFIX_REQUIRED`). Loopback / the unspecified address / multicast / non-public ranges could reach an active nftables drop set via two paths that bypassed the never-ban invariant enforced on `Backend.Ban`/`AddElement`. This closes them and makes the policy structural.
+
+New shared guard `internal/netutil`: `EnforcementClassReject` + `IsAbsolutelyNonBannable` (pure, no netlink; `netip` predicates + explicit prefixes; IPv4-mapped normalized; IPv4/IPv6 symmetric):
+- **Absolute (non-overridable):** loopback, unspecified, multicast.
+- **Default-reject** (pending an explicit, non-existent LAN-enforcement feature — never inferred from a raw ban): RFC1918, ULA, link-local, CGNAT `100.64.0.0/10`, documentation, reserved/benchmark.
+- Public routable addresses pass; CIDR/blank pass (public feed CIDRs unaffected).
+
+Applied at **every enforcement writer** (no path left exposed):
+- **F1** — `cmd/nftband/daemon_handlers_sync.go:handleSyncRequest`: the `blacklist.d`→drop-set single-IP loops now apply the class guard **and** `d.backend.IsExempt` (self/host/whitelist/live-SSH) before `nft.AddIPWithTimeout` — closing the file→kernel full-sync bypass (the `GUARD-VERB-SCOPE` "FullSync-from-`blacklist.d`" watch-edge).
+- **F2** — `internal/persistence/blacklistd.go:PersistBan`: refuse a non-public/non-bannable bare IP **before** the file write (so the full-sync cannot re-materialize it).
+- **F3** — `internal/nftbackend/backend.go`: `Backend.Ban` rejects the class **before** the fail-open membership exemption; `exemptAddRejection` (the `AddElement` path) gains the same class reject. So `0.0.0.0`/`::`/multicast/loopback are structurally non-bannable **even when the exemption resolver is nil/unloaded**.
+
+Design rule: `parse → normalize → absolute-class reject → self/host-owned (exemption) reject → persist/apply`. Runtime severity was bounded before (the `iif "lo" accept` rule spares loopback; a self-public IP was spared only if whitelisted) — this makes it structural. PR [#1078](https://github.com/itcmsgr/nftban/pull/1078) `315e0ec7` (10 Go files). Tests: `netutil/enforcement_class` (all classes, IPv4/IPv6 symmetric, mapped, CIDR/blank), `persistence/blacklistd_classguard` (non-public refused + not written; public persists), `nftbackend/classguard` (nil-exempt fail-safe for absolute classes; public allowed; non-enforcement sets unaffected); `go build ./...` + `go vet` + `-race` clean; enforcement-adjacent suites green. Three pre-existing tests that used RFC5737/RFC1918 addresses as public "attacker" fixtures were corrected to real public IPs (the addresses are now, correctly, non-bannable).
+
+**Explicit non-goals (deferred, registered, NOT bundled):** detector-source parity (`OPEN_NONPUBLIC_ADDR_DETECTOR_SOURCE_PARITY` — LoginMon-Go/Suricata/Portscan-Go producer-side guards; centrally contained by these choke points, not closed here); an explicit private-network enforcement feature (`OPEN_PRIVATE_NETWORK_ENFORCEMENT_POLICY_DECISION`); PR-C; consumer consolidation; whitelist/report hardening. No RBL enablement.
+
+## [v1.220.1] - 2026-07-11 — RBL non-public address admission hotfix (corrective for the held v1.220.0 rollout)
+
+**Corrective hotfix for the held v1.220.0 fleet rollout. Shell/core/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · RBL observe-only (no bans/nft writes, not enabled).**
+
+v1.220.0 published + package-native lab2/lab4 PASS + canary monitor/dns1/srv1 3/3, but canary exposed a **hostname-derived loopback RBL-admission defect**: `host <fqdn>` returning the local `127.0.1.1` was RBL-queried and `Total IPs to check` was inflated. A read-only forensic audit (`NFTBAN_NONPUBLIC_ADDRESS_ACTION_POLICY_AUDIT.md`) then proved the hostname leg was only one of several RBL sources that admit non-public addresses. **DNSBL reputation applies only to public routable addresses; every RBL candidate source must now classify via the shared host-address authority before a DNSBL query, a cache read, or the listed/clean/degraded counts.** Invariant: `read → normalize → classify → reject non-public → deduplicate → cache-policy → DNSBL`.
+
+- **F-RBL-HOSTNAME** — `rbl server check` hostname answers (A + AAAA) are classified; only public admitted; rejected answers shown with reason; deduped vs self; rejected-address cache purged; `Total IPs to check` counts only admitted unique public.
+- **F-RBL-0** (defence in depth) — `nftban_rbl_check_ip` **and** `nftban_rbl_check_ip_parallel` reject a non-public IP up front (`NOT_ELIGIBLE`, never clean/listed) before any provider load / DNSBL query, so no current or future caller can leak one through.
+- **F-RBL-1** — operator critical IPs are classified at consumption on the **unattended scheduled timer** (`rbl check --quiet --alert`) **and** refused at the config boundary (`rbl critical add`); a `NFTBAN_RBL_CRITICAL_IPS="127.0.0.1|mail"` is never queried, and config an older release accepted is not trusted.
+- **F-RBL-2** — `rbl check --ip <non-public>` is excluded with an explicit reason, returns a non-success rc, performs no DNSBL query, and reads no stale cache.
+- **F-RBL-3** — RBL watchlist entries are classified; a non-public entry stays inspectable (config is **not** deleted) but is never RBL-checked.
+- **F-RBL-4** — stale non-public cache (incl. a v1.220.0-created `127.0.1.1.cache`) is purged and never served; non-public never reaches the cache read because admission excludes it first.
+
+New shared shell helpers `nftban_rbl_admit_candidate` (classify → admit/reject + purge) and `_nftban_rbl_emit_not_eligible` (backstop result). Public IPv4/IPv6 behavior and the degraded/listed/clean rc contract are unchanged for eligible addresses. Commits `60172acd` (hostname) + `6d9e4306` (F-RBL-0/1/2/3/4) + `29fc32ee` (test portability) on PR [#1076](https://github.com/itcmsgr/nftban/pull/1076) `a08aea53`. Test `rbl_nonpublic_admission_v220_1_test.sh` 13/13 + `rbl_hostname_admission_v220_1` 16/16; regressions green (`rbl_shared_address_authority_v220_0` 31, `rbl_seven_state_v206` 19, `rbl_false_clean_v150`, `rbl_enable_readiness`). Also test-only/doc: installed-layout test-path fix; `rbl_seven_state_v206` IPv6 fixtures moved off the documentation range (now correctly rejected) + case-block made EL9 bash 5.1 parseable (a pre-existing defect); the v1.220.0 CHANGELOG count corrected 32/32 → 31/31.
+
+**v1.220.1 becomes the required fleet baseline; v1.220.0 + v1.220.1 close as ONE corrective rollout train** (v1.220.0 publication/canary exposed the defect; v1.220.1 is the fleet-approved baseline). Preserve each host's pre-existing RBL state (monitor remains the pre-existing RBL-enabled testbed; no RBL enablement elsewhere).
+
+**Explicit non-goals (deferred, do NOT bundle):** the enforcement-integrity hotfix (`OPEN_NONPUBLIC_ADDRESS_ENFORCEMENT_INTEGRITY_HOTFIX` — blacklist persistence / full-sync / exemption class-guard; Go/daemon; separate ladder, after this train); PR-C (hostname/PTR/status-UX/watchlist wording); consumer consolidation; detector-source parity + whitelist/report hardening (all registered).
+
+## [v1.220.0] - 2026-07-10 — Shared host-address inventory authority + IPv6-safe RBL truth (PR-B)
+
+**RBL truth train — PR-B. Shell/core/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · RBL stays observe-only (no bans/nft writes, not enabled).**
+
+Establishes one neutral host-address inventory authority and migrates RBL onto it, structurally removing the IPv6 false-clean and degraded-as-clean defects (reproduced live on the fleet: `nftban rbl server check` showed `Checking: 2a01 (source: 4f8:…)` with 23 errors, yet a final "✅ All IPs are clean"). Principle: **DISCOVER ONCE · CLASSIFY ONCE · PROJECT PER CONSUMER.**
+
+**New authority — `core/nftban_hostaddr.sh`** (read-only; no nft/whitelist/RBL/network writes; safe under strict caller IFS): `nftban_hostaddr_inventory [--json]` emits a classified TSV record `address<TAB>family<TAB>scope<TAB>iface<TAB>state<TAB>source` (no `ip:tag`). Scope classification fixes the legacy gaps — ULA `fc00::/7` (was literal `fc00:`/`fd00:` only, missing `fd12:`/`fcab:`), CGNAT `100.64.0.0/10`, documentation nets, multicast, unspecified, reserved. Projections: `project_rbl` (public + preferred + up-interface, full addresses, deduped), `project_whitelist` (never-ban parity), `project_status` (== `project_rbl`).
+
+**RBL migration.** `nftban_rbl_get_public_ips` → `project_rbl`; `nftban_rbl_is_public_ip` → the authority (classify once); status monitored-count → `project_rbl`; the inline `ip … addr show` self-IP blocks are retired. The `"$ip:ipv6"` encoding + first-colon self-IP split (which truncated `2a01:…` to `2a01` in **both** the server-check and scheduled paths) are deleted — entries are TAB-delimited (a TAB cannot appear in an IP). Critical IPs gain an IPv6-safe `ip|tag` format with legacy IPv4 `ip:tag` read-compat (one-time warn); an IPv6 address is never split into a tag.
+
+**False-clean fix.** A three-way per-IP verdict (listed / degraded / clean) now covers **both** the cache and fresh paths — the legacy code counted only the fresh branch, so cached degraded results scored 0/0 and printed the false "All IPs are clean". `✅ All IPs are clean` is emitted only when there are no listings, zero degraded/timeout/error, every intended address was checked, and the inventory succeeded; a degraded run or an empty inventory never renders or persists as clean. Return-code contract: **0 = fully-verified clean, 1 = listed, 2 = degraded/not-fully-verified.** `nftban-rbl-check.service` gains `SuccessExitStatus=1 2` so listed/degraded outcomes (alerting stays in-band via `--alert`) are not misclassified as systemd unit failures.
+
+**Whitelist.** `nftban_get_interface_ips` delegates to `project_whitelist`; the accepted never-ban set is byte-identical (parity-tested), with a legacy inline fallback. The management whitelist (`99-management.conf`) is untouched.
+
+PR-B [#1073](https://github.com/itcmsgr/nftban/pull/1073) `36703517`. Test `rbl_shared_address_authority_v220_0_test.sh` 31/31 incl. anti-duplication source guards G1–G5 (no inline `ip … addr show` in RBL, no `$ip:ipv6`, shared projection, no watchlist mutation, authority read-only); regressions green (`rbl_false_clean_v150`, `rbl_seven_state_v206`, `rbl_enable_readiness`, `rbl_prereq_ifs_dns_utils_v219_1`, whitelist suites). Lab-validated read-only on lab2 (DEB) + lab4 (RPM): full public IPv4 + IPv6 discovered intact, whitelist parity unchanged, RBL disabled.
+
+**Explicit non-goals (deferred, do NOT bundle):** PR-C hostname/public-DNS-loopback truth · operator-facing self-IP status rendering · watchlist wording · PTR/FCrDNS (owner decision). The broad consumer consolidation (`OPEN_HOST_ADDRESS_INVENTORY_CONSUMER_CONSOLIDATION`) stays blocked until v1.220.0 fleet closure. No RBL fleet enablement; provider-bounce/Proofpoint ingestion and RBLMON §4.4 remain separate.
+
+## [v1.219.1] - 2026-07-10 — RBL enable-prereq IFS-safety + dns_utils package map
+
+**Prerequisite-unblock hotfix. Shell/config/tests only · daemon byte-identical · 0 Go · nft schema 1.84.0 unchanged · telemetry default-OFF · no RBL scan-behavior change · RBL NOT enabled.**
+
+`nftban rbl enable` was hard-blocked on **every** host since 2025-12-31 (`e6998e26` shellcheck sweep). `cmd_rbl.sh` runs under strict mode (`IFS=$'\n\t'`); the shared `nftban_prereq_require_any_cmd` helper split its space-separated binary list (`host dig nslookup`) with `for bin in $binaries_str` + `read -a`, which under `IFS=$'\n\t'` iterated **once** over the whole joined string instead of the three tools — so the DNS-tool prerequisite always reported MISSING even when `host`/`dig`/`nslookup` were installed, and `rbl enable` refused to proceed. Two fixes:
+
+- **IFS-safe prereq contract** — `nftban_prereq_require_any_cmd` now sets a `local IFS=$' \t\n'` (auto-restored on return) so a strict-mode caller's IFS can no longer break whitespace word-splitting. This RESTORES the default whitespace IFS in a `local` scope — it is not IFS tampering (annotated for the Semgrep `ifs-tampering` rule). The latent same-class `check_zabbix` path (no live caller) is fixed by the same helper change.
+- **Valid `dns_utils` package key** — the RBL prereq referenced an unmapped, invalid `bind_utils` package key. Replaced with a real `dns_utils` key, added to the central per-distro package maps for **all 21** `etc/nftban/distros/*.conf` `[packages]` sections, resolving to `bind9-dnsutils` on apt distros (Debian 11–14, Ubuntu 22–26) and `bind-utils` on dnf distros (AlmaLinux/Rocky/CentOS/CentOS-Stream 8–10, Fedora) — verified empirically per distro/release.
+
+**Scope: PR-A of the RBL truth cluster ONLY** — the enable prerequisite. **No** IPv6 colon-split fix, degraded-vs-clean verdict, self-IP monitoring, `rbl status`/watchlist truth, hostname-loopback, or PTR/FCrDNS work — those remain the deferred v1.220.0 RBL truth train. RBL stays observe-only; this release does not enable RBL or change any scan/ban/nft behavior. PR-A [#1071](https://github.com/itcmsgr/nftban/pull/1071) `9eaf3dc3` (23 files: prereq lib + 21 distro confs + test; 0 Go, no `cmd_rbl.sh`/`nftban_rbl.sh` scan logic). Test: `rbl_prereq_ifs_dns_utils_v219_1_test.sh` 10/10 (strict-IFS positive returns 0, negative hint lists host/dig/nslookup split, IFS contract present, `dns_utils` key used never `bind_utils`, exact per-distro package value in all 21 confs).
+
+**Explicit non-goals (deferred to v1.220.0 RBL truth train — do NOT bundle):** IPv6-safe server check + scheduled check + critical-IP encoding; degraded results must not read as "All IPs are clean"; self-IP IPv4/IPv6 auto-discovery + monitoring + `rbl status` truth; watchlist-vs-self distinction; hostname loopback WARN; PTR/FCrDNS advisory (owner decision); docs. Provider-bounce/Proofpoint/iCloud ingestion, RBL fleet-enablement ops gate, and RBLMON §4.4 stay separate/OPEN after v1.220.0.
+
+## [v1.219.0] - 2026-07-09 — BotScan authoritative-truth / operator-honesty contract
+
+**First lane of the post-v1.218.x train.** BotScan (HTTP Exploit Scanner) is made first-class across the operator surfaces under the principle *"operator truth is security"*: a component that can ban must never present as enforced/healthy/protected when it isn't. Shell/docs/tests + minimal Go. **Daemon changed (PR-B Go) → daemon re-baseline required.** nft schema **1.84.0 unchanged**; **`ModulesJSON` untouched**; telemetry default-OFF; **no enablement/action-mode/threshold change; no pattern edits.**
+
+**Four acceptance guarantees closed:**
+- **DEGRADED/blind ≠ enforced/protected** — `nftban status`/`health` render a blind/degraded scanner as "NOT currently enforcing", never healthy.
+- **cache-only ≠ BANNED** — `nftban search` top-level `BANNED` is kernel-authoritative; the BotGuard decision-cache renders "CACHE ONLY — not currently enforced" and never flips the verdict (locked by test).
+- **broken handoff ≠ healthy** — the daemon publishes `botscan_consumer_status.json`; `nftban health` renders a broken consumer hand-off (handoff-errors/stale-backlog) as "CONSUMER HAND-OFF BROKEN — bans NOT reaching the kernel", never healthy; missing → honest UNKNOWN.
+- **ban evidence survives consume** — the daemon writes a durable `botscan_ban_evidence.jsonl` side-record (ts/source=botscan/ip/action/family/request_class/reasons/set/ttl) **before** `batch_signals.jsonl` is consumed/deleted, so the "why" survives for forensics.
+
+Also: BotScan counter truth-fixes (`signals_emitted_total` wired; unique-IPs recorded; `lines_prefiltered` marked RESERVED not faked); config honesty (4 dead keys marked non-functional; action-mode trio explained; budget knobs documented); help BotGuard-vs-BotScan distinction; support-bundle includes BotScan (config/runstate/pattern inventory); docs (`TIMERS.md` timer no longer attributed to BotGuard; README BotScan row; `docs/operator/BOTGUARD_VS_BOTSCAN.md` + `FALSE_POSITIVE_AND_RECOVERY_DRILL.md`). Cheap-read invariant enforced: status/health never scan access-log content (log-read-at-init guard).
+
+PR-A [#1067](https://github.com/itcmsgr/nftban/pull/1067) `aa8dc5ff` (shell/docs/tests, daemon byte-identical) + PR-B [#1068](https://github.com/itcmsgr/nftban/pull/1068) `3c105f9d` (minimal Go daemon-truth; writers routed through `safety.SafeWriteFile`, files 0600). Tests: `botscan_operator_truth_contract_v219_0` 32/32, `botscan_daemon_truth_v219_0` 11/11, Go `botscan_truth_v219_test` 4/4; full botguard suite + v218_11/12 + exp_rfi_fp green.
+
+**Explicit non-goals (deferred lanes, do NOT bundle):** v1.220+ Go four-axis BotScan health module (frozen `ModulesJSON`); v1.222.0 pattern-quality CI lint / `botscan test-url` / `http-guard`·`http-exploits` aliases / matched-URL producer enrichment (evidence `url` reserved) / EXP_REDIS·EXP_TIMTHUMB narrowing; v1.229.0+ BotScan Go/Aho-Corasick matcher; `OPEN_RPM_PATTERN_CONFIG_DRIFT_RECONCILE_GUARD`.
+
+## [v1.218.13] - 2026-07-09 — BotScan EXP_RFI false-positive narrowing (RevSlider-class live FP)
+
+**Emergency pattern-data-only hotfix. Daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no Go · no threshold/window/ban/action-mode/enablement change.**
+
+The `EXP_RFI` BotScan signature was the bare `=https?://` (`url-any`, threshold 2), which matched **any** request whose query carried a URL-valued parameter — legitimate OAuth `redirect_uri=`, `return_url=`, `next=`, share `url=`, `utm_source=`, and CDN image-proxy `src=` — and banned real visitors mid-flow. This is the same defect class as the v1.218.10 EXP_REVSLIDER false-positive and was live on the fleet (BotScan `action=both`). Narrowed to real RFI shapes only:
+
+- PHP/stream wrappers: `(php|data|expect|zip|phar|glob|input)://`
+- Remote raw-payload-file inclusion: `=(https?|ftp)://…(.txt|.log|.dat|.bin|.phtml)`
+- Null-byte truncation: `%00`
+
+`url-any / 2 / 60 / 7200 / true` unchanged. Image extensions (`gif/jpg/png`) deliberately excluded to avoid image-proxy false positives; residual polyglot RFI is covered by webshell/upload patterns and the v1.222.0 pattern-quality lint. **Legitimate URL-valued query parameters no longer match; real RFI probes (remote `.txt` inclusion, `php://filter`, `data://`, `expect://`, `%00`, ftp payloads) still match.** PR [#1065](https://github.com/itcmsgr/nftban/pull/1065) `31bbdf42`; test `botscan_exp_rfi_fp_v218_13_test.sh` 12/12 (8 legit no-match + OLD-matched proof, 8 RFI match, parser round-trip); regressions `botscan_pattern_delimiter_v214` + `botscan_revslider_fp_v218_10` PASS. Scope: **EXP_RFI only** — `EXP_REDIS`/`EXP_TIMTHUMB` deferred to the v1.222.0 pattern-quality lane; v1.219.0 BotScan operator-truth contract begins only after this closes.
+
+## [v1.218.12] - 2026-07-09 — BotScan status heading/timer corrective hotfix (supersedes v1.218.11 for fleet)
+
+**Corrective operator-truth hotfix. SHELL-ONLY · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no pattern/enforcement/enablement change.**
+
+v1.218.11 shipped the BotScan operator-truth surfacing, but package-native lab2/lab4 validation found one explicit v1.218.11 acceptance item missed: `nftban botscan status` still headed `Bot Scanner Status` with no timer line — the label/timer polish had landed on the `botscan config` render instead of the actual status render (`core/nftban_botscan.sh:nftban_botscan_status`, reached via `cmd_botscan.sh:808`). This corrects it in the real render:
+
+- **`nftban botscan status`** heading `Bot Scanner Status` → **`HTTP Exploit Scanner (BotScan) Status`**.
+- **`nftban botscan status`** now shows a **`Timer:`** line for `nftban-botscan.timer`.
+- Enabled / Action Mode / Patterns Dir preserved; the already-correct `botscan config` label left intact.
+
+**Carries all v1.218.11 operator-truth work** (from #1061): `nftban status` shows HTTP Guard + HTTP Exploit Scan independently with the "BotGuard disabled != BotScan disabled" note; `nftban help` exposes botscan. PR [#1063](https://github.com/itcmsgr/nftban/pull/1063) `12dd1579`; test `botscan_status_label_v218_12_test.sh` 10/10; v1.218.11 test 14/14; status_consistency 15/0. **v1.218.12 is the fleet candidate; v1.218.11 remains published but superseded before fleet rollout.** Next lanes stay separate (v1.219.0 BotScan health/search truth, etc.).
+
+## [v1.218.11] - 2026-07-09 — BotScan operator-truth V1: surface HTTP Exploit Scanner beside HTTP Guard
+
+**Operator-truth / module-visibility release. SHELL-ONLY · daemon byte-identical · nft schema 1.84.0 unchanged · telemetry default-OFF · no behavior/enforcement change · no pattern change · no enablement change.**
+
+First release applying the post-v1.218.10 operator-truth principle: **"Any component that can enforce bans must be first-class in operator surfaces."** BotScan (the periodic HTTP-log exploit scanner) can enforce bans via `blacklist_manual_*`, yet during the 2026-07-08 RevSlider incident `nftban status` showed only `Bot Guard: DISABLED` while BotScan was enabled and banning — hiding the active enforcer. This surfaces BotScan (display shell-only):
+
+- **`nftban status`** — new **HTTP Exploit Scan** (BotScan) row beside **HTTP Guard** (BotGuard): enabled/disabled (`BOTSCAN_ENABLED`), `nftban-botscan.timer` state, action mode (`BOTSCAN_ACTION_MODE`), + explicit note *"BotGuard disabled != BotScan disabled — they are independent."*
+- **`nftban help`** — exposes `botscan` (ESSENTIAL + CORE) with the HTTP-Guard-vs-HTTP-Exploit-Scanner distinction + independence caveat.
+- **`nftban botscan status`** — HTTP Exploit Scanner label + timer-state line (read-only, behavior unchanged).
+
+PR [#1061](https://github.com/itcmsgr/nftban/pull/1061) `63e8450b`. Test `botscan_operator_truth_v218_11_test.sh` 14/14. **v1.218.11 closes the 1.218 line; thereafter one minor bump per release (v1.219, v1.220, …).** **Does NOT include** the Go health/search truth work — that is **v1.219** (Go re-baseline: BotScan health identity modelling the shell scanner + the `internal/botguard` batch-signal consumer as one health module; kernel-authoritative `search`; cache-only ≠ BANNED). **v1.220** = management/testability (`http-guard`/`http-exploits` aliases; `botscan test-url`; pattern-quality gate); **v1.221–v1.228** = the bug-burndown (feeds-rc0, flush-phantom, SINGLE_DASH, stale-cache guard, opqueue atomicity, interactive-update rollback, auth-boundary tests, P1/P2). The BotScan Go / Aho-Corasick matcher (`OPEN_BOTSCAN_GO_AHOCORASICK_MATCHER_SCOPE`) is **deferred to v1.229+** (engine modernization, after the burndown). Not Suricata / MalwareGuard (separate/optional).
+
+## [v1.218.10] - 2026-07-08 — Emergency safety train: management whitelist tier · EXP_REVSLIDER false-positive · blacklist flush truth · Go 1.25.12 OSV
+
+**Consolidated emergency/safety release (four merged lanes). nft schema 1.84.0 unchanged; telemetry default-OFF. Go binaries RECOMPILED under go1.25.12 (from the OSV toolchain bump). Not Akrites / opqueue / update-path stale-cache/rollback / RBL / webhook / CI-hardening / badge / docs-wiki.**
+
+- **Management whitelist tier** ([#1054](https://github.com/itcmsgr/nftban/pull/1054) `2aff4e9a`) — durable, never-expiring, never-pruned `/etc/nftban/whitelist.d/99-management.conf` via `nftban whitelist management add|remove|list|status`. Closes the Scenario-A lockout where an expired session whitelist + absent permanent entry could lock out a management IP. **Shell-only / 0-Go-source** (auto-consumed by the existing whitelist.d glob + never-ban exemption resolver).
+- **BotScan EXP_REVSLIDER false-positive fix** ([#1056](https://github.com/itcmsgr/nftban/pull/1056) `a097ad99`) — narrowed the signature from the bare substring `revslider` to exploit-specific tokens (`revslider_show_image`, `client_action=get_captions_css|update_plugin`) so **legitimate RevSlider static asset loads no longer trigger BotScan bans** (they were banning real visitors — ~288 fleet IPs). Pattern/data + test only.
+- **Blacklist flush truth** ([#1057](https://github.com/itcmsgr/nftban/pull/1057) `1068c1d1`) — `nftban blacklist flush` now **includes the manual/botscan blacklist sets** (`blacklist_manual_ipv4/ipv6`), not just feed sets; adds `feeds|manual|all` subtargets and an **authority-breakdown prompt** (feed+GeoBan / manual+botscan / total) with a persistent-`blacklist.d` warning; `nftban flush all` includes the manual sets. Fixes the emergency-recovery path that silently left manual bans active while wiping feed protection. Shell-only.
+- **Go 1.25.12 OSV toolchain-security bump** ([#1055](https://github.com/itcmsgr/nftban/pull/1055) `31bb5a35`) — bumps the `go` directive + all CI/SLSA `setup-go` pins 1.25.11→1.25.12, closing GO-2026-4970 (`os.Root` symlink escape) + GO-2026-5856 (`crypto/tls` ECH). **Recompiles the shipped Go binaries under go1.25.12.**
+
+Discovered during the 2026-07-08 live RevSlider false-positive incident (a new operator-truth + recovery-path defect class). Fast-follow lanes (NOT in this release): BotScan/BotGuard operator-truth + naming (HTTP Guard / HTTP Exploit Scanner), `nftban search` kernel-authoritative truth, `feeds update` rc0 false-success, flush phantom-set cleanup, SINGLE_DASH audit.
+
+## [v1.218.9] - 2026-07-08 — Coordinated vulnerability disclosure & security-response substrate (Lane 1; docs/process only)
+
+**Lane:** security-response / coordinated disclosure (Lane 1). **PR:** [#1052](https://github.com/itcmsgr/nftban/pull/1052) `3013b3c0`. **Wiki:** `nftban.wiki` `bf8a98f`.
+
+> **DOCS/PROCESS ONLY. Daemon BYTE-IDENTICAL** (0 Go). **nft schema 1.84.0 unchanged. No runtime, daemon, firewall, CI, workflow, package, signing, or provenance behavior changed.** Adds the Lane-1 coordinated vulnerability disclosure (CVD) and security-response substrate. **No public "CVD-ready"/security-response badge added** (deferred to a later lane). **NFTBan claims no membership, certification, or protection by Akrites or any external body — Akrites is referenced only as a non-affiliation disclaimer.**
+
+### Added / Changed — security-response substrate
+
+- `SECURITY.md` reconciled to the current supported-version policy (tied to `VERSION`; removes the stale "1.195.0" table); single authoritative SLA.
+- **GitHub private Security Advisory** documented as the primary vulnerability-reporting path; **`security@itcms.gr`** set as the sole vulnerability-reporting email; PGP pending; TLP:RED default; explicit "do not publish exploit/PoC before coordination."
+- Public security issue form removed to prevent accidental public disclosure (reports route to the private advisory).
+- New `docs/security/`: `COORDINATED_DISCLOSURE.md`, `SECURITY_ADVISORY_PROCESS.md`, `VULNERABILITY_CLASSES.md`, `CVE_CVSS_CWE_GUIDE.md`, `VEX_POLICY.md`.
+- `GOVERNANCE.md` + `MAINTAINERS` — founder-led governance and maintainer ownership documented (bus-factor-1; backup maintainer TODO).
+- `RELEASE-CHECKLIST.md` — embargoed security-release lane added.
+- Wiki aligned (`nftban.wiki` `bf8a98f`): vulnerability-reporting path, legal contact (`legal@itcms.gr`), SLSA scope honesty (provenance covers `nftban-core` only; packages/daemon/checksums not signed), and stale version text.
+
+### Contacts
+
+- Vulnerabilities: GitHub private Security Advisory (preferred) or `security@itcms.gr`. Support: `support@nftban.com`. General/business: `contact@nftban.com`. Legal: `legal@itcms.gr`.
+
+---
+
+## [v1.218.8] - 2026-07-08 — Pro/stats community telemetry v3 Phase-0 client (opt-in, default-off; daemon byte-identical)
+
+**Lane:** `OPEN_PRO_STATS_TRIAL_V3_COLLECTOR` (Phase-0). **PR:** [#1050](https://github.com/itcmsgr/nftban/pull/1050) `bdf3706d`.
+
+> **SHELL/DOCS/TESTS ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go). **nft schema 1.84.0 unchanged. Runtime/security behavior unchanged.** Ships the **Phase-0 client only** for a private, opt-in community telemetry trial. **No telemetry is enabled** — the client is dormant unless the operator explicitly opts in. **No receiver/DB/portal work is included** (those are the separate `nftbanpro_cms` project's lanes), and **no public launch or paid Pro-feature is implied.**
+
+### Added — opt-in `schema_version 3` community telemetry client
+
+Adds a v1.218.7-aware **`schema_version 3`** community telemetry payload for private internal analysis. The legacy **`schema_version 2`** payload (designed against v1.95) is left **frozen and byte-identical** — it is not wrong, just legacy; v3 represents the current module/health reality (BotGuard, BotScan, Suricata, RBL/RBLMon, Tunnel, central-comms).
+
+- `cli/lib/nftban/lib/nftban_pro.sh` — `nftban_community_build_payload_v3()` emits **only** buckets / class-labels / booleans: version, OS/CPU/RAM buckets, 15 per-module state classes, validator health summary, and class-only communication/API/RBL/Suricata summaries. New CLI: `nftban pro community show-v3` (local preview), `send-test` (send one payload, refuses unless enabled), and `enable` now requires a typed confirmation. **Default OFF; no automatic sends; `/install-result` not sent without opt-in.** The v2 builder is unchanged.
+- `docs/telemetry/COMMUNITY_TRIAL_V3.md` — the v3 contract: payload schema, consent model, privacy invariants, the receiver contract for the portal project, and the gated (Phase 0 → 1 → 2) rollout.
+
+### Scope & validation
+
+- **Shell/docs/tests only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged; no nft/ban writes; opt-in/default-off (no behavior change for existing installs).**
+- **Privacy invariant (test-enforced, verified on a real lab install):** the payload never contains an IP, hostname, domain, email, username, token, admin port, ban list, raw log, raw Suricata event, or raw RBL/provider result. `anonymous_install_id` is a random UUID (not machine-id/hostname/IP/MAC-derived). Network failure is non-fatal, bounded-timeout, no retry storm, and cannot affect firewall/security operation.
+- **Tests:** `community_trial_v3` 13/13 (valid JSON · schema 3 · trial flags · 15 module state-classes · payload_hash · class-only summaries · privacy gate · no forbidden field names · v2 frozen · enable-requires-yes · send-test-refuses-when-disabled); shellcheck + `bash -n` clean; GitGuardian + Semgrep clean.
+- **Not in this release:** telemetry enablement, periodic/fleet enablement, receiver/DB/portal, repo hygiene, public-site copy, paid-feature claims. Phase-1 lab-fleet enablement requires a separate gate.
+
+---
+
+## [v1.218.7] - 2026-07-08 — SSH operator-leak hygiene: scrub operator-identifying test/comment fixtures (daemon byte-identical)
+
+**Lane:** `OPEN_SSH_TEST_OPERATOR_LEAK_SCRUB` + `OPEN_SSH_GO_COMMENT_SCRUB`. **PRs:** [#1047](https://github.com/itcmsgr/nftban/pull/1047) `9fd5f3b4`, [#1048](https://github.com/itcmsgr/nftban/pull/1048) `3f6f5b04`.
+
+> **Security-hygiene only. DAEMON + matcher BYTE-IDENTICAL** (test-only + comment-only changes; the Go compiler strips comments and `_test.go` is not compiled into the binary). **nft schema 1.84.0 unchanged; no runtime behavior change.** Removes operator-identifying fixture data from the SSH multi-port detection sources.
+
+### Fixed (security hygiene)
+
+- **`internal/installer/detect/ssh_test.go` (#1047):** replaced a real routable operator peer IP (`62.38.150.122`) with the RFC5737 documentation address `203.0.113.10`, the real external admin port (`55000`) with the neutral fixture port `50000`, and genericized the real fleet host-class labels in comments. Test intent, assertions, and coverage (multi-port detection, primary-selection, dedup) are preserved — mock inputs and their assertions were replaced together.
+- **`internal/installer/detect/ssh.go` (#1048):** comment-only scrub of the same class — `dns2-class` → `multi-port-class` and the `:55000` example port → `50000` in the SSH-detection explanatory comments, keeping the examples technically equivalent. No code, no logic, no behavior change.
+
+Operator-identifying data is now absent from both SSH-detection files (`dns2`, `55000`, `62.38.150.122` → 0). `go test ./internal/installer/detect/` passes; gofmt + go vet clean.
+
+---
+
+## [v1.218.6] - 2026-07-08 — Operator documentation: recovery, forensics, baseline, and metrics contracts (docs-only; daemon byte-identical)
+
+**Lane:** `OPEN_DOCS_TRUTH_CLI_SCHEMA_FOLLOWUP` (R2b). **PR:** [#1045](https://github.com/itcmsgr/nftban/pull/1045) `b05c4ba8`.
+
+> **DOCS-ONLY.** No code, no shell, no Go, no tests. **Daemon + matcher byte-identical; nft schema 1.84.0 unchanged; no runtime behavior change.** Adds four versioned `/docs/operator/` contract pages under the accepted documentation source-of-truth policy (`/docs` = versioned code/release contract; wiki carries human explanation; registers/scopes stay engineering evidence).
+
+### Added
+
+- `docs/operator/EMERGENCY_RECOVERY_AND_ROLLBACK.md` — `nftban update rollback / repair / recommit`, the real backup path `/var/lib/nftban/update-backups/`, `nftban firewall rebuild` (atomic validate-before-apply; the bare `nftban rebuild` is an inert stub), emergency mode + flush, daemon recovery, self-lockout recovery, uninstall.
+- `docs/operator/BAN_FORENSICS.md` — `bans.log` format (`DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS`), query commands, set→origin mapping (`blacklist_manual_*` vs `blacklist_*`), journal evidence, kernel-truth `nft list set` proofs.
+- `docs/operator/PRODUCTION_BASELINE.md` — version/health/status/validate baseline, the `OK/WARNING/ERROR` and `PROTECTED/IDLE/DEGRADED/DOWN` vocabularies, expected nftban tables/chains/sets, and the default matrix (BotGuard off, RBL off, GeoBan enabled-but-IDLE).
+- `docs/operator/METRICS_TRUTH.md` — `stats.json` contract, `nftban stats export` (json/csv) vs `nftban metrics`, the single `nftban.prom`, the `:9580` loopback-by-default-and-enforced bind rule, the CLI-is-a-report and `/health`-always-ok caveats. Exporter defects are cross-referenced and routed to the metrics lane, not fixed here.
+
+### Scope
+
+- **Docs-only; 0 code/Go/shell; nft schema 1.84.0 unchanged; runtime behavior unchanged.** Every page stamped "Last verified: v1.218.5"; claims are code-cited; no register/scope history is duplicated into docs; example IPs use RFC5737 ranges. The R2c wiki truth pass, the register WK-6/WK-8 correction, the `ssh_test.go` operator-leak scrub, and the public-site truth pass remain separate lanes.
+
+---
+
+## [v1.218.5] - 2026-07-08 — RBLMON enable-readiness: producer-recipient truth + safe state retention + config advisory (shell-only; daemon byte-identical)
+
+**Lane:** `OPEN_RBLMON_ENABLE_READINESS_HARDENING`. **PRs:** [#1042](https://github.com/itcmsgr/nftban/pull/1042) `1dbdd0cd` (§4.1), [#1043](https://github.com/itcmsgr/nftban/pull/1043) `7890de18` (§4.2/§4.3).
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Hardens the already-shipped observe-only RBL reputation monitor so it is enable-ready without false health truth. **RBL remains observe-only and disabled by default; 0 nft writes, 0 bans.** This release does **not** build RBLMON (the substrate shipped with central-comms A2r). No RBL P0 / Proofpoint / provider-bounce ingestion, no MailGuard, no inbound blocking, no RBL fleet enablement.
+
+### §4.1 — producer-recipient deliverability truth (Communication health)
+
+Central-comms deliverability now credits each producer's **own** recipient, with the general `NFTBAN_MAIL_RECIPIENT` preserved as a shared fallback — closing a false `COMMUNICATION_CONFIG_MISSING_RECIPIENT` WARN when a producer is configured with only its producer-specific recipient:
+
+- `rbl-alerts` ↔ `NFTBAN_RBL_ALERT_EMAIL`
+- `tunnel-alerts` ↔ `NFTBAN_TUNNEL_ALERT_EMAIL` / `NFTBAN_ALERT_EMAIL`
+- `auto-reports` ↔ `STATS_EMAIL_RECIPIENTS`
+- `mail-enabled` ↔ general recipient only
+
+A producer-specific recipient satisfies **only** that producer (no cross-producer masking); a producer WARNs only when both its own and the general recipient are unset while it is enabled.
+
+### §4.2 — age-based `state.dat` retention
+
+Bounds the RBL transition-state file safely. Prunes only lines whose **last-update timestamp** is older than a retention TTL (default 30 days, internal `NFTBAN_RBL_STATE_TTL`) — **not** by current-enumerated-set membership, so a transient enumeration miss (floating/VRRP IP, DHCP renewal, IPv6 privacy-address rotation, scheduled-vs-server path difference) can never reset a still-monitored IP's transition baseline and re-fire a "new listing" alert. Guards: unparseable timestamp is kept; a non-numeric/zero TTL keeps everything; the effective TTL is floored to `max(48h, 2×cache-TTL)` so a mis-set tiny override cannot prune a live cache-served IP; retained lines are byte-verbatim. Mirrors the existing `nftban_rbl_cache_purge --expired` precedent.
+
+### §4.3 — enabled-empty-watchlist advisory
+
+`nftban health` now surfaces a config advisory (**WARN**, observe-only wording, never ERROR, never a firewall/security hard-fail) when RBL is **enabled** but has no effective watch targets (auto-discover off **and** no `NFTBAN_RBL_CRITICAL_IPS` **and** an empty/absent watchlist) — instead of a silent effective-CLEAN. The determination is config-only: no discovery run, no DNSBL/network query, no mail.
+
+### Scope & validation
+
+- **Shell-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.** §4.4 degraded-persistence remains **HOLD**.
+- **Tests:** `rbl_enable_readiness` 22/22 (age-based retention incl. TTL-floor cases + enabled-empty-watchlist advisory + strict-mode) · `comms_rbl_tunnel_producer_recipient` 14/14 · producer_signal_accuracy 9/9 · A2a 18/18 · A2b 16/16 · A2c 15/15 · A2r 11/11 · v2181 17/17 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. Two adversarial-deputy passes on §4.2 (set-membership rejected → age-based verified safe). RBL nft/ban writes 0; no real mail; no DNSBL network queries.
+
+---
+
+## [v1.218.4] - 2026-07-07 — Redactor durability: fail closed when the shared redactor is unavailable (shell-only; daemon byte-identical)
+
+**Lane:** `OPEN_DUPLICATE_REDACTOR_RETIREMENT` (P-retire-2). **PR:** [#1040](https://github.com/itcmsgr/nftban/pull/1040) `d47ef64e`.
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go source; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Finalizes the SEC-P1-2 shared-redactor consolidation after v1.218.3 shipped the debug fix fleet-wide. central-comms A2 remains **CLOSED**. No RBLMON, no RBL P0, no privacy mode, no webhook, no A3, no finding-registry.
+
+### Security — redaction fails closed on a broken install
+
+Before this release, if `lib/nftban_redact.sh` failed to load (broken/partial install), the secret-redaction wrappers fell back to either a **weak keyword sed** that missed `*_PASS`, or — worse — **`cat`, a silent full passthrough** of raw journal/log/debug content. A broken install could therefore emit raw secrets with a false sense of redaction.
+
+- **Removed every weak/passthrough fallback redactor:** the `SECRET_PATTERNS` array, the weak sed fallbacks in `_fx_redact` / `_redact_comms`, and the two `else cat` passthroughs in `_support_scrub_stream` / `_debug_scrub_stream`. No duplicate/fallback redaction authority remains.
+- **All six wrappers now FAIL LOUD / FAIL CLOSED** when the shared authority is unavailable — stream wrappers drain and discard stdin; all emit `[REDACTION-UNAVAILABLE: do not share]` to stdout (into the collected artifact) and `[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed` to stderr, and return 0 so `nftban support` / `nftban debug` / update artifacts still generate with clearly-marked sections. **No hard crash, no weak fallback, no raw passthrough.**
+- **Install verification:** `install/verify_installation.sh` now asserts `/usr/lib/nftban/lib/nftban_redact.sh` exists **and is usable** (sources it, asserts `nftban_redact_string`), so a missing/broken redaction authority is caught at install rather than failing closed silently in the field.
+- Thin wrapper functions and the non-secret sanitizers (shell/sql/html/log, path, mail) are unchanged; redaction coverage only grows.
+
+### Scope & validation
+
+- **Shell-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.**
+- **Tests:** `comms_redact_failloud_p_retire2` 13/13 (every wrapper fail-loud: marker, no secret, no passthrough, stderr alarm, rc0; no `else cat`/`SECRET_PATTERNS`; installer asserts the lib; no coverage shrink with the lib present) · P2a 30/30 · P2b-1 18/18 · debug-redaction 11/11 · A2a 18/18 · A2b 16/16 · A2c 15/15 · A2r 11/11 · producer_signal_accuracy 9/9 · v2181 17/17 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. lab2 DEB + lab4 RPM: fail-loud spot-check emits the marker, shipped wrappers carry 0 `else cat` / 0 `SECRET_PATTERNS`, `verify_installation` passes with the redactor present, daemon active, `nftban validate` rc0, 0 new failed units, no real mail.
+
+---
+
+## [v1.218.3] - 2026-07-07 — Communication producer-signal accuracy + debug redaction via the shared authority (shell-only; daemon byte-identical)
+
+**Lanes:** `OPEN_PRODUCER_SIGNAL_ACCURACY` + `OPEN_DUPLICATE_REDACTOR_RETIREMENT` (P-retire-1). **PRs:** [#1037](https://github.com/itcmsgr/nftban/pull/1037) `d0c3d231` / [#1038](https://github.com/itcmsgr/nftban/pull/1038) `b0c79f6b`.
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go source; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Two already-merged post-v1.218.2 correctness/security fixes — the central-comms A2 architecture remains **CLOSED**. No RBLMON, no RBL P0, no privacy mode, no webhook, no A3, no finding registry, no P-retire-2, no telemetry/exporter/Zabbix refactor.
+
+### Communication — producer-signal accuracy (false-green fix)
+
+- **Scheduled report-email producer detection now keys on `STATS_EMAIL_ENABLED`** (read from `conf.d/stats.conf` + environment) — the real signal the default `nftban report run` timer checks (`cmd_report.sh`), replacing the earlier `NFTBAN_MAIL_REPORT_RECIPIENT` / timer-`--email` heuristics that the scheduled path never used.
+- **Per-producer deliverability:** each producer is judged by its own recipient — auto-reports by `STATS_EMAIL_RECIPIENTS`, general producers (RBL/tunnel/mail) by `NFTBAN_MAIL_RECIPIENT` — so a general recipient can't mask a missing report recipient and a stray report recipient can't mask a missing general recipient (two cross-producer false-CLEANs, caught by adversarial verification and regression-tested).
+- **`STATS_EMAIL_ENABLED=true` with no report recipient is a WARN misconfiguration** ("email reports enabled but no recipient configured") — not framed as a delivery failure, since no report email fires without a recipient.
+- **Disk-only reports remain INFO / no action** (the v1.218.2 fix is preserved).
+
+### Debug — redaction via the shared authority (secret-leak fix)
+
+- **`nftban debug config` and `nftban debug env`** now scrub secrets through the shared redaction authority (`nftban_redact_stream`), replacing a divergent raw sed.
+- **Closes a `*_PASS` debug leak class:** the old sed matched `PASSWORD` but not `PASS`, printing `NFTBAN_SMTP_PASS` / connector `*_PASS` in cleartext; these are now redacted (coverage also gains Bearer, URL credentials, netrc, Auth-User).
+- **Fixes over-redaction** of benign routing keys such as `KAFKA_PARTITION_KEY`.
+- **P-retire-2 remains deferred** (dead-fallback deletion, fail-loud lib-missing behaviour, installer verification).
+
+### Scope & validation
+
+- **Shell-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.**
+- **Tests:** `comms_producer_signal_accuracy` 9/9 · `comms_redact_debug_p_retire1` 11/11 · P2a 30/30 · P2b-1 18/18 · v2181 17/17 · UX 13/13 · A2b 16/16 · A2c 15/15 · A2r 11/11 · A2a 18/18 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. lab2 DEB + lab4 RPM (per-PR): producer-signal WARN/CLEAN/INFO matrix + debug scrub validated; daemon active, `nftban validate` rc0, 0 new failed units, no real mail.
+
+---
+
+## [v1.218.2] - 2026-07-07 — Security redaction hardening + central-comms new-user remediation UX (shell/docs-only; daemon byte-identical)
+
+**Lanes:** `OPEN_SEC_P1_2_SHARED_REDACTOR` (P2a + P2b-1) + `OPEN_CENTRAL_COMMS_NEW_USER_REMEDIATION_UX`. **PRs:** [#1033](https://github.com/itcmsgr/nftban/pull/1033) `5d5ab87e` / [#1034](https://github.com/itcmsgr/nftban/pull/1034) `9069b810` / [#1035](https://github.com/itcmsgr/nftban/pull/1035) `ac74ca25`.
+
+> **SHELL/DOCS-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go source; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** A post-v1.218.1 hardening/UX batch — the central-comms A2 architecture remains **CLOSED** (post-closure polish, not a reopen). No RBLMON, no RBL P0, no privacy mode, no webhook, no A3, no telemetry/exporter/Zabbix refactor, no event router.
+
+### Security — one shared redaction authority (SEC-P1-2)
+
+- **Shared redactor introduced** — `cli/lib/nftban/lib/nftban_redact.sh`, a single declarative pattern registry (`nftban_redact_string` / `_stream` / `_file`) covering `*_PASS`/`*_PASSWORD`/`*_SECRET`/`*_TOKEN`/`*_API_KEY`/`*_AUTH`/`*_LICENSE_KEY`/`*_SASL_PASS` assignments, Bearer tokens, URL credentials (`scheme://user:pass@host`), netrc password material, SMTP `Auth User`, and the `Recipient:` local-part. The sensitive key-suffix must be the whole key or a `_`-delimited segment, so benign keys (`KAFKA_PARTITION_KEY`, `bypass=`, `surpass=`) are not false-redacted.
+- **Support-bundle config-secret leak closed (P2a)** — the support bundle collects every `conf.d/*.conf` through what was a keyword-only redactor that missed `*_PASS`; `NFTBAN_SMTP_PASS` and connector `*_PASS` could be copied unredacted. `_redact_secrets`/`_redact_comms`/`_redact_file` now delegate to the shared authority (legacy patterns retained only as a fallback, so coverage never shrinks).
+- **Remaining secret-bearing outputs migrated (P2b-1):**
+  - **Update forensics** (`_fx_redact`) delegate to the shared redactor.
+  - **Support-bundle journal/log streams** (`journalctl -u nftban`, `*.log`, `update.log`) are secret-scrubbed. **Attacker IPs and usernames are deliberately preserved** — they are forensic evidence, not credentials. Identifier privacy remains a separate, deferred decision (P2b-2 / HOLD_DECISION).
+  - **`nftban connector show`** previously printed the raw connector config (`WEBHOOK_TOKEN`/`SECRET`/`PASS`/`API_KEY`); it now masks credentials while keeping non-secret fields (URL/type). Connector runtime is unchanged.
+
+### Communication — actionable new-user remediation
+
+- **`nftban health`** — a Communication WARN/ERROR now renders **Impact**, **`Fix: nftban mail setup <email>`**, and **`Verify: nftban mail test` then `nftban health`**; when no local transport is detected it adds a note that **no local MTA is required — SMTP via curl is supported**. An **INFO** state states an explicit *no-action-required* outcome.
+- **`nftban stats comms`** — the no-metrics path is no longer a dead end: it shows **Recipient** (configured / not configured) and **Transport**, plus the same Fix/Verify remediation when the recipient is missing; counters are preserved when `mail.prom` exists.
+- **Readiness pointer** points to the fix (`nftban mail setup <email>`), not only `nftban stats comms`.
+- **Disk-only scheduled-report false WARN fixed** — auto-reports counts as an email alert producer only when reports are actually configured for **email delivery** (an explicit report recipient, or a report timer whose service runs with `--email`). The default scheduled report is disk-only, so hosts that only generate reports to disk now correctly read **INFO / no action** instead of a false WARN.
+- **Onboarding docs** — `docs/operator/NOTIFICATIONS_SETUP.md` (why the warning appears, one-command setup, verification, the no-MTA/curl-SMTP case, the disk-only no-action case).
+
+### Scope & validation
+
+- **Shell/docs-only; 0 Go; daemon byte-identical; nft schema 1.84.0 unchanged.** Advisory only — never alters firewall/security posture (this batch changes fleet health *output*: disk-only hosts move WARN→INFO).
+- **Tests:** `comms_redact_p2a_noleak` 30/30 · `comms_redact_p2b1` 18/18 · `comms_new_user_remediation_ux` 13/13 · `comms_health_render_v2181` 17/17 · A2b 16/16 · A2c 15/15 · A2r 11/11 · A2a 18/18 · A0 direct-send guard 0/4; shellcheck + `bash -n` clean; GitGuardian + Semgrep clean. lab2 DEB + lab4 RPM: real support-bundle planted-secret → 0 leaks with identifiers preserved, `connector show` masked, Communication WARN renders Fix/Verify, `stats comms` remediation visible, disk-only host → INFO, daemon active, `nftban validate` rc0, 0 new failed units, no real mail.
+
+---
+
+## [v1.218.1] - 2026-07-07 — Communication rendered in live `nftban health` readiness output, producer-aware (shell-only hotfix; daemon byte-identical)
+
+**Lane:** `OPEN_V218_1_COMMUNICATION_HEALTH_RENDER_PATCH`. **PR:** [#1031](https://github.com/itcmsgr/nftban/pull/1031) → `afccf03a`.
+
+> **SHELL-ONLY hotfix. Daemon + matcher BYTE-IDENTICAL** (0 Go source, source-proven; only the ldflags version stamp differs on rebuild). **nft schema 1.84.0 unchanged.** Narrow fleet-candidate fix for the v1.218.0 hold — no RBLMON, no RBL P0, no SEC, no A3, no telemetry/exporter/Zabbix refactor, no event router.
+
+**v1.218.0 was functionally valid but fleet-held:** package-native lab2/lab4 found that the A2b communication check contributed to the health *verdict* but was **not rendered as a named operator-visible component** in the live `nftban health` / `health check` output (that output is the Go validator's four-axis truth table, which is validator-JSON-driven and did not list shell optional-feature checks by name). v1.218.1 closes that acceptance gap.
+
+- **Named component:** `nftban health` now renders a named **`Communication (central-comms)`** line, and folds its severity into the operator-readiness verdict (`PASS → PASS_WITH_WARN`, raise-only — never masks a FAIL, **never forces FAIL**).
+- **Producer-aware severity policy** — missing email is *not* automatically a warning:
+  - **INFO / NOT CONFIGURED** — no transport configured **and no enabled alert producer** requires it (declared, not silent, no verdict raise).
+  - **WARN** — an alert producer is enabled (auto-reports / RBL / tunnel / `MAIL_ENABLED=true`) but delivery isn't configured; or a spool backlog / recent send failure exists.
+  - **ERROR** — spool oldest-age beyond threshold.
+  - **Never:** an absent local MTA alone is never WARN/ERROR; a Communication WARN never hard-fails firewall/security posture; email absence never blocks the daemon.
+- **Daemonless central-comms (invariant, confirmed code-true):** NFTBan's central communication plane is **daemonless by design**. Alert delivery does **not** require Postfix, Exim, Sendmail, or any local mail daemon. **curl-SMTP is a first-class transport** for minimal hosts, containers, ARM systems, and IoT-style deployments (curl is a hard package dependency; explicit `NFTBAN_SMTP_HOST` is preferred over incidental local-MTA discovery). Existing local MTA paths remain supported as **optional compatibility backends**. Health evaluates communication *capability*, not the presence of a mail daemon.
+- **Tests:** `comms_health_render_v2181` 15/15 (verdict raise clean→PASS / WARN→PASS_WITH_WARN + pointer / ERROR→not-FAIL; INFO vs WARN by producer; spool→WARN; no secret/recipient leak); A2b 16/16 / A2r 11/11 / A2c 15/15 / A0 guard 0/4; shellcheck + `bash -n` + doctest + CLI-parity clean. Package-native lab2 DEB + lab4 RPM: named Communication component renders; producer-aware WARN on hosts with auto-reports enabled + no recipient; daemon active; `nftban validate` rc0; 0 new failed units.
+
+## [v1.218.0] - 2026-07-07 — Central communication plane: enforced · centralized · testable · observable · support-visible; RBL observe-only surfaced with a DNSBL-only honesty label (shell-only; daemon byte-identical)
+
+**Lane:** `OPEN_CENTRAL_COMMUNICATION_AUTHORITY_UNIFICATION` (A0 → A1 → A1b → A2a → A2b → A2r → A2c). **PRs:** [#1022](https://github.com/itcmsgr/nftban/pull/1022) `630765af`, [#1023](https://github.com/itcmsgr/nftban/pull/1023) `baca89a1`, [#1024](https://github.com/itcmsgr/nftban/pull/1024) `cbc58204`, [#1025](https://github.com/itcmsgr/nftban/pull/1025) `1c29bace`, [#1027](https://github.com/itcmsgr/nftban/pull/1027) `33730bd2`, [#1028](https://github.com/itcmsgr/nftban/pull/1028) `0721af29`, [#1029](https://github.com/itcmsgr/nftban/pull/1029) `b026a9d7`.
+
+> **SHELL-ONLY. Daemon + matcher BYTE-IDENTICAL** (0 Go across all 7 slices, source-proven). **nft schema 1.84.0 unchanged** (no set/chain/table/topology change). **No real mail** in any validation — behaviour is proven through the A1b emulate transport. Every slice validated package-native on lab2 (DEB) + lab4 (RPM). RBL remains **observe-only** — no RBLMON, no provider-bounce ingestion, no new DNSBL probes/zones, no RBL bans, no nft writes.
+
+NFTBan's outbound communication is now a single, enforced, observable plane. The central authority `nftban_mail_send()` already owned transport selection (incl. daemonless curl-SMTP), retry, and spool; this release makes that authority **mandatory, testable, and visible**, and routes RBL's advisory alerts through it.
+
+- **A0 — no-direct-send CI ratchet** (`#1022`): `scripts/ci/check-comms-direct-send.sh` fails any new direct `sendmail`/`mail -s`/`mailx`/`msmtp`/curl-SMTP outside `core/nftban_mail.sh`. Empirically corrected the audit — the true direct-send debt was **4 files**, and `cmd_report.sh` was already compliant.
+- **A1 — shell centralization** (`#1023`): migrated the 4 differentials (Tunnel, Maintenance-cron, update, support) to the central authority; **allowlist burned 4/4 → 0/4**. New `nftban_mail_resolve_recipient` (override → `NFTBAN_MAIL_RECIPIENT`, missing = explicit error) + `nftban_mail_alert`; prefer-explicit-SMTP; netrc lifecycle hardening (umask 077 + signal-safe trap; password never in argv/logs). Maintenance IP-change notices no longer hardcode root and now deliver on daemonless hosts.
+- **A1b — emulate transport + dry-run** (`#1024`): `NFTBAN_MAIL_METHOD=emulate` runs the full central flow minus the real transport, recording a delivery attempt to a sink (no network, no secret in sink); `nftban mail test --dry-run` validates config only. This is the substrate that makes A2 provable without sending mail.
+- **A2a — delivery truth (produce)** (`#1025`): a central **delivery-log** (JSONL: ts/transport/recipient-redacted/result/reason; bounded retention), persisted **last-failure** state, new `mail.prom` metrics (`mail_spool_oldest_age_seconds`, `nftban_mail_last_failure_timestamp`, `nftban_mail_transport_selected`), a `nftban validate` comms section (nft-structure rc contract preserved), and an enriched `nftban mail status` summary.
+- **A2b — operator surfacing (consume)** (`#1027`): `nftban_health_check_communication` (registered in `nftban_health_check_all`, affects the verdict) with 5 `COMMUNICATION_*` keys and an OPTIONAL-FEATURES render line; `nftban status` communication section; `nftban stats comms` counters.
+- **A2r — RBL observe-only visibility** (`#1028`): the **DNSBL-only honesty label** — *"RBL is advisory reputation monitoring, not firewall blocking; a DNSBL check cannot determine a provider-specific Proofpoint/iCloud bounce"* — in `nftban rbl status`; report/health wording aligned (no block claim); both RBL alert paths routed through `nftban_mail_alert` so failures land in the delivery-log/spool.
+- **A2c — support-bundle summary** (`#1029`): a sanitized `communications.txt` (comms summary + delivery-log tail + RBL observe-only summary + honesty label) via `_collect_communications`, reusing the existing redactor plus a narrow local `_redact_comms` (strips `NFTBAN_SMTP_PASS`/SMTP Auth User/recipient local-part). **Full support-bundle redaction (SEC-P1-2) remains a separate open lane.**
+- **Tests:** A0 guard 0/4 + self-test 5/5 · A1 15/15 · A1b 11/11 · A2a 18/18 · A2b 16/16 · A2r 11/11 · A2c 15/15; shellcheck + `bash -n` + doctest + CLI-surface parity clean.
+- **Deferred (not this release):** RBLMON, RBL P0 (provider-bounce/Proofpoint ingestion), SEC-P1-2 (full support-bundle redaction), SEC-P1-3b (API token/auth), A3 (docs/wiki/template authority), Watchdog syslog-only reconciliation.
+
 ## [v1.217.0] - 2026-07-06 — Defensive nft rule-order: loopback accept before invalid-state drop (nft data-plane; daemon byte-identical)
 
 **Lane:** `OPEN_LOOPBACK_BEFORE_INVALID_V217_0`. **PR:** [#1009](https://github.com/itcmsgr/nftban/pull/1009) → `96b74b5b`.
