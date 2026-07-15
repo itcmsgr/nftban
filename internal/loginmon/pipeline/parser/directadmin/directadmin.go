@@ -25,10 +25,10 @@
 // Package directadmin implements a Parser for DirectAdmin's login.log format.
 //
 // Phase B scope: parse login.log only. security.log is empty on the production
-// fleet as of 2026-04-09 (srv3 verified); it will be added when real security.log
+// fleet as of 2026-04-09 (verified); it will be added when real security.log
 // samples become available.
 //
-// DA login.log line format (from real srv3 fixture):
+// DA login.log line format (a sanitized sample line):
 //
 //	2026:04:04-12:21:12: '192.0.2.122' 1 failed login attempts. Account 'admin'
 //	2026:04:04-12:21:21: '192.0.2.122' successful login to 'reseller_admin'
@@ -55,7 +55,7 @@
 //	legacy.ReasonNames[legacy.Reason]  == string(pipeline.Reason)
 //	legacy.User                        == pipeline.Username
 //
-// The parity test in directadmin_test.go asserts this on the real srv3 fixture.
+// The parity test in directadmin_test.go asserts this on the sanitized sample fixture.
 package directadmin
 
 import (

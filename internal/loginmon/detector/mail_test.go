@@ -11,9 +11,9 @@
 // meta:description="Unit tests and benchmarks for Mail detector"
 //
 // Fixtures sourced from real production logs:
-// - srv2 (AlmaLinux 9, DirectAdmin): Exim mainlog + /var/log/secure
-// - lab4 (AlmaLinux 9, cPanel): /var/log/maillog + /var/log/secure
-// - lab2 (Ubuntu 24.04, Plesk): /var/log/maillog + /var/log/auth.log
+// - host (AlmaLinux 9, DirectAdmin): Exim mainlog + /var/log/secure
+// - a sample host (AlmaLinux 9, cPanel): /var/log/maillog + /var/log/secure
+// - host (Ubuntu 24.04, Plesk): /var/log/maillog + /var/log/auth.log
 //
 // meta:inventory.files="mail_test.go"
 // meta:inventory.binaries=""
@@ -46,28 +46,28 @@ func TestMailDetector_DovecotNative(t *testing.T) {
 	}{
 		{
 			name:       "dovecot auth failed IPv4",
-			line:       "Apr 03 14:22:01 srv2 dovecot: imap-login: auth failed, rip=185.234.72.10, lip=10.0.0.1, user=<admin>, method=PLAIN",
-			wantIP:     "185.234.72.10",
+			line:       "Apr 03 14:22:01 host dovecot: imap-login: auth failed, rip=203.0.113.10, lip=10.0.0.1, user=<admin>, method=PLAIN",
+			wantIP:     "203.0.113.10",
 			wantReason: ReasonDovecotAuthFail,
 			wantMatch:  true,
 		},
 		{
 			name:       "dovecot auth failed with auth failed signal",
-			line:       "Apr 03 14:22:01 srv2 dovecot: auth failed, rip=203.0.113.42, lip=10.0.0.1",
+			line:       "Apr 03 14:22:01 host dovecot: auth failed, rip=203.0.113.42, lip=10.0.0.1",
 			wantIP:     "203.0.113.42",
 			wantReason: ReasonDovecotAuthFail,
 			wantMatch:  true,
 		},
 		{
 			name:       "dovecot auth failed IPv6",
-			line:       "Apr 03 14:22:01 srv2 dovecot: auth failed, rip=2001:db8::dead:beef, lip=::1",
+			line:       "Apr 03 14:22:01 host dovecot: auth failed, rip=2001:db8::dead:beef, lip=::1",
 			wantIP:     "2001:db8::dead:beef",
 			wantReason: ReasonDovecotAuthFail,
 			wantMatch:  true,
 		},
 		{
 			name:      "dovecot unrelated line",
-			line:      "Apr 03 14:22:01 srv2 dovecot: master: Dovecot v2.3.21 starting up",
+			line:      "Apr 03 14:22:01 host dovecot: master: Dovecot v2.3.21 starting up",
 			wantMatch: false,
 		},
 	}
@@ -112,10 +112,10 @@ func TestMailDetector_DovecotPam(t *testing.T) {
 		wantMatch  bool
 	}{
 		{
-			// Real format from lab4 /var/log/secure
+			// Sample format from a host /var/log/secure
 			name:       "PAM dovecot auth failure with user",
-			line:       "Apr  3 10:15:22 lab4 dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot ruser=admin rhost=185.234.72.10 user=admin",
-			wantIP:     "185.234.72.10",
+			line:       "Apr  3 10:15:22 host dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot ruser=admin rhost=203.0.113.10 user=admin",
+			wantIP:     "203.0.113.10",
 			wantReason: ReasonDovecotPamFail,
 			wantUser:   "admin",
 			wantMatch:  true,
@@ -123,8 +123,8 @@ func TestMailDetector_DovecotPam(t *testing.T) {
 		{
 			// PAM without user field
 			name:       "PAM dovecot auth failure without user",
-			line:       "Apr  3 10:15:22 srv2 dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot rhost=91.200.12.33",
-			wantIP:     "91.200.12.33",
+			line:       "Apr  3 10:15:22 host dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot rhost=203.0.113.33",
+			wantIP:     "203.0.113.33",
 			wantReason: ReasonDovecotPamFail,
 			wantUser:   "",
 			wantMatch:  true,
@@ -132,7 +132,7 @@ func TestMailDetector_DovecotPam(t *testing.T) {
 		{
 			// IPv6 PAM
 			name:       "PAM dovecot auth failure IPv6",
-			line:       "Apr  3 10:15:22 lab2 dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot rhost=2001:db8:c17:abcd::1 user=test",
+			line:       "Apr  3 10:15:22 host dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot rhost=2001:db8:c17:abcd::1 user=test",
 			wantIP:     "2001:db8:c17:abcd::1",
 			wantReason: ReasonDovecotPamFail,
 			wantUser:   "test",
@@ -141,7 +141,7 @@ func TestMailDetector_DovecotPam(t *testing.T) {
 		{
 			// Not dovecot PAM — sshd PAM should NOT match
 			name:      "PAM sshd should not match",
-			line:      "Apr  3 10:15:22 srv2 sshd[1234]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh rhost=10.0.0.1 user=root",
+			line:      "Apr  3 10:15:22 host sshd[1234]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh rhost=10.0.0.1 user=root",
 			wantMatch: false,
 		},
 	}
@@ -189,28 +189,28 @@ func TestMailDetector_Postfix(t *testing.T) {
 	}{
 		{
 			name:       "postfix SASL LOGIN failure",
-			line:       "Apr  3 12:00:01 lab2 postfix/smtpd[54321]: warning: unknown[185.234.72.10]: SASL LOGIN authentication failed: authentication failure",
-			wantIP:     "185.234.72.10",
+			line:       "Apr  3 12:00:01 host postfix/smtpd[54321]: warning: unknown[203.0.113.10]: SASL LOGIN authentication failed: authentication failure",
+			wantIP:     "203.0.113.10",
 			wantReason: ReasonPostfixSASL,
 			wantMatch:  true,
 		},
 		{
 			name:       "postfix SASL PLAIN failure",
-			line:       "Apr  3 12:00:01 lab2 postfix/smtpd[54321]: warning: unknown[93.184.216.34]: SASL PLAIN authentication failed: UGFzc3dvcmQ=",
-			wantIP:     "93.184.216.34",
+			line:       "Apr  3 12:00:01 host postfix/smtpd[54321]: warning: unknown[203.0.113.34]: SASL PLAIN authentication failed: UGFzc3dvcmQ=",
+			wantIP:     "203.0.113.34",
 			wantReason: ReasonPostfixSASL,
 			wantMatch:  true,
 		},
 		{
 			name:       "postfix SASL with IPv6",
-			line:       "Apr  3 12:00:01 lab2 postfix/smtpd[54321]: warning: unknown[2001:db8::1]: SASL LOGIN authentication failed: generic failure",
+			line:       "Apr  3 12:00:01 host postfix/smtpd[54321]: warning: unknown[2001:db8::1]: SASL LOGIN authentication failed: generic failure",
 			wantIP:     "2001:db8::1",
 			wantReason: ReasonPostfixSASL,
 			wantMatch:  true,
 		},
 		{
 			name:      "postfix non-auth line",
-			line:      "Apr  3 12:00:01 lab2 postfix/smtpd[54321]: connect from unknown[185.234.72.10]",
+			line:      "Apr  3 12:00:01 host postfix/smtpd[54321]: connect from unknown[203.0.113.10]",
 			wantMatch: false,
 		},
 	}
@@ -256,10 +256,10 @@ func TestMailDetector_Exim(t *testing.T) {
 		wantMatch  bool
 	}{
 		{
-			// Real srv2 format: dual-IP with H=(claimed) [real_tcp_peer]
-			name:       "exim dual-IP auth failure (srv2 real format)",
-			line:       `2026-04-03 08:12:33 dovecot_plain authenticator failed for (User) [185.234.72.10]:58023 H=([10.0.0.99]) [185.234.72.10] I=[10.0.0.1]:465: 535 Incorrect authentication data (set_id=admin@example.com)`,
-			wantIP:     "185.234.72.10",
+			// Real host format: dual-IP with H=(claimed) [real_tcp_peer]
+			name:       "exim dual-IP auth failure (host real format)",
+			line:       `2026-04-03 08:12:33 dovecot_plain authenticator failed for (User) [203.0.113.10]:58023 H=([10.0.0.99]) [203.0.113.10] I=[10.0.0.1]:465: 535 Incorrect authentication data (set_id=admin@example.com)`,
+			wantIP:     "203.0.113.10",
 			wantReason: ReasonEximAuthFail,
 			wantMatch:  true,
 		},
@@ -282,15 +282,15 @@ func TestMailDetector_Exim(t *testing.T) {
 		{
 			// Syslog-routed Exim format (contains "exim" prefix)
 			name:       "exim syslog format auth failure",
-			line:       "Apr  3 08:12:33 srv2 exim[1234]: dovecot_plain authenticator failed for (User) [185.234.72.10]:58023 I=[10.0.0.1]:465",
-			wantIP:     "185.234.72.10",
+			line:       "Apr  3 08:12:33 host exim[1234]: dovecot_plain authenticator failed for (User) [203.0.113.10]:58023 I=[10.0.0.1]:465",
+			wantIP:     "203.0.113.10",
 			wantReason: ReasonEximAuthFail,
 			wantMatch:  true,
 		},
 		{
 			// Exim connection log — no authenticator keyword
 			name:      "exim connection log no match",
-			line:      `2026-04-03 08:12:33 SMTP connection from [185.234.72.10]:58023 I=[10.0.0.1]:25`,
+			line:      `2026-04-03 08:12:33 SMTP connection from [203.0.113.10]:58023 I=[10.0.0.1]:25`,
 			wantMatch: false,
 		},
 	}
@@ -340,7 +340,7 @@ func TestMailDetector_ExtractBracketIP(t *testing.T) {
 		{
 			// Backward scan: returns last valid bracket IP
 			name:   "dual bracket IP returns last (backward scan)",
-			line:   "from [185.234.72.10] to [10.0.0.1] done",
+			line:   "from [203.0.113.10] to [10.0.0.1] done",
 			wantIP: "10.0.0.1",
 			wantOK: true,
 		},
@@ -406,8 +406,8 @@ func TestMailDetector_ExtractFirstBracketIP(t *testing.T) {
 		{
 			// Exim dual-IP: first valid IP is attacker, not local I= interface
 			name:   "Exim format returns first (attacker) IP",
-			line:   `[185.234.72.10]:58023 H=([10.0.0.99]) [185.234.72.10] I=[10.0.0.1]:465`,
-			wantIP: "185.234.72.10",
+			line:   `[203.0.113.10]:58023 H=([10.0.0.99]) [203.0.113.10] I=[10.0.0.1]:465`,
+			wantIP: "203.0.113.10",
 			wantOK: true,
 		},
 		{
@@ -448,9 +448,9 @@ func TestMailDetector_NoMatch(t *testing.T) {
 	d := NewMailDetector()
 
 	noMatchLines := []string{
-		"Apr  3 10:15:22 srv2 sshd[1234]: Failed password for root from 10.0.0.1 port 22 ssh2",
-		"Apr  3 10:15:22 srv2 systemd[1]: Started Daily apt upgrade and clean activities.",
-		"Apr  3 10:15:22 srv2 kernel: [UFW BLOCK] IN=eth0",
+		"Apr  3 10:15:22 host sshd[1234]: Failed password for root from 10.0.0.1 port 22 ssh2",
+		"Apr  3 10:15:22 host systemd[1]: Started Daily apt upgrade and clean activities.",
+		"Apr  3 10:15:22 host kernel: [UFW BLOCK] IN=eth0",
 		"",
 		"random garbage",
 	}
@@ -469,7 +469,7 @@ func TestMailDetector_NoMatch(t *testing.T) {
 
 func BenchmarkMailDetector_DovecotNative(b *testing.B) {
 	d := NewMailDetector()
-	line := []byte("Apr 03 14:22:01 srv2 dovecot: auth failed, rip=185.234.72.10, lip=10.0.0.1")
+	line := []byte("Apr 03 14:22:01 host dovecot: auth failed, rip=203.0.113.10, lip=10.0.0.1")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -479,7 +479,7 @@ func BenchmarkMailDetector_DovecotNative(b *testing.B) {
 
 func BenchmarkMailDetector_DovecotPam(b *testing.B) {
 	d := NewMailDetector()
-	line := []byte("Apr  3 10:15:22 lab4 dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot ruser=admin rhost=185.234.72.10 user=admin")
+	line := []byte("Apr  3 10:15:22 host dovecot: pam_unix(dovecot:auth): authentication failure; logname= uid=0 euid=0 tty=dovecot ruser=admin rhost=203.0.113.10 user=admin")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -489,7 +489,7 @@ func BenchmarkMailDetector_DovecotPam(b *testing.B) {
 
 func BenchmarkMailDetector_EximDualIP(b *testing.B) {
 	d := NewMailDetector()
-	line := []byte(`2026-04-03 08:12:33 dovecot_plain authenticator failed for (User) [185.234.72.10]:58023 H=([10.0.0.99]) [185.234.72.10] I=[10.0.0.1]:465: 535 Incorrect authentication data (set_id=admin@example.com)`)
+	line := []byte(`2026-04-03 08:12:33 dovecot_plain authenticator failed for (User) [203.0.113.10]:58023 H=([10.0.0.99]) [203.0.113.10] I=[10.0.0.1]:465: 535 Incorrect authentication data (set_id=admin@example.com)`)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -499,7 +499,7 @@ func BenchmarkMailDetector_EximDualIP(b *testing.B) {
 
 func BenchmarkMailDetector_NoMatch(b *testing.B) {
 	d := NewMailDetector()
-	line := []byte("Apr  3 10:15:22 srv2 sshd[1234]: Accepted publickey for admin from 10.0.0.1 port 22 ssh2")
+	line := []byte("Apr  3 10:15:22 host sshd[1234]: Accepted publickey for admin from 10.0.0.1 port 22 ssh2")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

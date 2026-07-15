@@ -47,8 +47,8 @@ func TestEnforcementClassReject(t *testing.T) {
 		{"198.18.0.1", true, "benchmark"},
 		// public routable — MUST pass
 		{"8.8.4.4", false, "public IPv4"},
-		{"198.51.100.67", false, "public IPv4"},
-		{"2001:db8:c014:5ee1::1", false, "public IPv6"},
+		{"1.1.1.1", false, "public IPv4"},
+		{"2001:4860:4860::8888", false, "public IPv6"},
 		{"2606:4700:4700::1111", false, "public IPv6"},
 		// IPv4-mapped IPv6 loopback normalizes to loopback
 		{"::ffff:127.0.0.1", true, "IPv4-mapped loopback"},

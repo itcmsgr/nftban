@@ -830,7 +830,7 @@ func (m *Module) parseShellConfig(content string) {
 			m.config.WordPressWPLogin = safeconv.ToInt16OrDefault(v, 10)
 
 		// v1.113 subnet-aggregation knobs (D-LOGINMON-EXIM-SUBNET-ROTATION-GAP).
-		// Closes the rotating-/24 brute-force blindspot exposed by the srv1
+		// Closes the rotating-/24 brute-force blindspot exposed by a production incident
 		// production incident 2026-05-13. Opt-in default-false.
 		case "LOGINMON_EXIM_SUBNET_AGG_ENABLED":
 			m.config.SubnetAggEnabled = strings.EqualFold(value, "true")
@@ -1158,7 +1158,7 @@ func (m *Module) runJournalWatcherOnce(ctx context.Context, attempt int) error {
 
 // panelLogPaths maps detected panel services to their log file paths.
 // These services log to their own files, NOT to journalctl/syslog.
-// v1.48.0: Verified against real servers (srv2=DA, lab4=cPanel, lab2=Plesk)
+// v1.48.0: Verified against real servers (DirectAdmin, cPanel, and Plesk hosts)
 var panelLogPaths = map[string][]string{
 	"directadmin": {"/var/log/directadmin/login.log"},
 	"cpanel":      {"/usr/local/cpanel/logs/access_log"}, // 401 on POST /login/
@@ -1167,9 +1167,9 @@ var panelLogPaths = map[string][]string{
 
 // mailLogPaths maps mail services to their log file paths.
 // Mail services (Exim, Dovecot, Postfix) log to plain files, NOT journalctl.
-// v1.69.0: Verified against lab (Debian 13), lab2 (Ubuntu 24.04/Plesk),
+// v1.69.0: Verified against Debian 13, Ubuntu 24.04/Plesk,
 //
-//	lab4 (AlmaLinux 9/cPanel), srv2 (AlmaLinux 9/DirectAdmin).
+//	AlmaLinux 9/cPanel, AlmaLinux 9/DirectAdmin.
 //
 // Zero journal entries for SYSLOG_FACILITY=4+10 from mail on all 4 servers.
 var mailLogPaths = map[string][]string{
@@ -1696,7 +1696,7 @@ func (m *Module) processLine(line []byte) {
 // triggerBan initiates a ban based on scorer decision.
 //
 // v1.113: when action.IsSubnet is true, the ban target is action.Prefix
-// (e.g., 81.30.98.0/24) rather than action.IP. The triggering IP stays in
+// (e.g., 203.0.113.0/24) rather than action.IP. The triggering IP stays in
 // action.IP for audit-log attribution; downstream ban executor accepts CIDR
 // strings via the canonical .WithIP() field per same path as manual
 // `nftban ban <CIDR>`.

@@ -89,7 +89,7 @@ nftban_cmd_ban() {
                 # nft mutation. Prior to v1.141, "abc" / "-5" / "0" / "" / "1.5"
                 # silently propagated to nftban-core which then defaulted to
                 # permanent ban — operator surprise reproduced live in the
-                # cruel-judge review on monitor.example.test.
+                # cruel-judge review on observability-node-01.example.test.
                 if [[ ! "${2:-}" =~ ^[1-9][0-9]*$ ]]; then
                     echo "ERROR: --timeout requires a positive integer (seconds); got: '${2:-(missing)}'" >&2
                     echo "Hint:  nftban ban <ip> --timeout 3600" >&2

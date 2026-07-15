@@ -4,7 +4,7 @@ Captured from production hosts during v1.79.x soak (2026-04-08/09).
 
 ## srv3_login.log
 
-- **Source:** `root@srv3.example.test:/var/log/directadmin/login.log`
+- **Source:** `root@app-node-03.example.test:/var/log/directadmin/login.log`
 - **Captured:** 2026-04-09
 - **Host:** Ubuntu 22.04 + DirectAdmin
 - **Lines:** 30 (9 failed login, 21 successful login)
@@ -19,6 +19,6 @@ This fixture exercises:
 
 ## security.log
 
-Not captured — empty (0 bytes) on srv3 as of 2026-04-09. DA's BFM
+Not captured — empty (0 bytes) on a sample host as of 2026-04-09. DA's BFM
 (Brute Force Manager) is either not configured to write here or the log
 was rotated. Will be added when a real sample becomes available.

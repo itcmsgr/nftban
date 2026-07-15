@@ -12,7 +12,7 @@
 // meta:package="loginmon"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-06-13"
-// meta:description="Discovers FILE-logging FTP daemon logs (vsftpd /var/log/vsftpd.log, proftpd /var/log/proftpd/*.log + auth.log) for the LoginMon FTPDetector. pure-ftpd is intentionally NOT globbed here: it logs auth failures to syslog facility ftp (11) by default (its dedicated AltLog is stats-only), so it is consumed by runJournalWatcher (SYSLOG_FACILITY=11) — excluding it from files avoids tailing a no-auth file and double-counting clf-configured hosts. Verified against live fleet traffic (srv1-4 run pure-ftpd; pureftpd.log empty/stats while '(?@<ip>) Authentication failed' appears at journal facility 11). The LoginMon module runs inside the root nftband.service (CAP_DAC_OVERRIDE) so it reads these directly — NOT via a collector/spool. Owns ONLY the auth_failure event class (ReasonFTPAuthFail); no other module bans FTP auth failures. Existence + regular-file filter, excludes rotated/.gz, dedups on the canonical path, bounds to the most-recently-modified files (one tail -F per file, reusing discoverFromGlobs). Mirrors the v1.179 web discovery pattern."
+// meta:description="Discovers FILE-logging FTP daemon logs (vsftpd /var/log/vsftpd.log, proftpd /var/log/proftpd/*.log + auth.log) for the LoginMon FTPDetector. pure-ftpd is intentionally NOT globbed here: it logs auth failures to syslog facility ftp (11) by default (its dedicated AltLog is stats-only), so it is consumed by runJournalWatcher (SYSLOG_FACILITY=11) — excluding it from files avoids tailing a no-auth file and double-counting clf-configured hosts. Verified against live fleet traffic (the fleet hosts run pure-ftpd; pureftpd.log empty/stats while '(?@<ip>) Authentication failed' appears at journal facility 11). The LoginMon module runs inside the root nftband.service (CAP_DAC_OVERRIDE) so it reads these directly — NOT via a collector/spool. Owns ONLY the auth_failure event class (ReasonFTPAuthFail); no other module bans FTP auth failures. Existence + regular-file filter, excludes rotated/.gz, dedups on the canonical path, bounds to the most-recently-modified files (one tail -F per file, reusing discoverFromGlobs). Mirrors the v1.179 web discovery pattern."
 //
 // meta:inventory.files="ftpdiscovery.go"
 // meta:inventory.binaries=""
@@ -38,7 +38,7 @@ func (m *Module) ftpStackDetected() bool {
 // pure-ftpd logs auth failures to syslog facility ftp (11) by default — NOT to a
 // dedicated auth file (its AltLog is stats-only) — so it is consumed via the journal
 // watcher (SYSLOG_FACILITY=11), not a file watcher. Verified against live fleet
-// traffic (srv1-4 all run pure-ftpd; /var/log/pureftpd.log is stats/empty while the
+// traffic (the fleet hosts all run pure-ftpd; /var/log/pureftpd.log is stats/empty while the
 // "(?@<ip>) Authentication failed" lines appear at journal facility 11).
 func (m *Module) ftpJournalDaemonDetected() bool {
 	return m.detectedServices["pure-ftpd"]

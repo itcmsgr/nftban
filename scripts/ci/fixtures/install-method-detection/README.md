@@ -46,7 +46,7 @@ Exit-code legend (per `_classify_for_pkg_mgr_update` in `cli/lib/nftban/cli/cmd_
 ## Running the suite
 
 ```bash
-cd /home/gituser/github/nftban
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/ci/test-install-method-detection.sh suite
 ```
 

@@ -40,8 +40,8 @@ func TestEvaluateWindow_NoEvents_Active(t *testing.T) {
 	}
 }
 
-// Reproduces the srv2 dovecot 24h soak data from Day 1 audit.
-// srv2: 683 events / 43 bans = 6.3% → should be DEGRADED
+// Reproduces the host-a dovecot 24h soak data from Day 1 audit.
+// host-a: 683 events / 43 bans = 6.3% → should be DEGRADED
 func TestEvaluateWindow_Srv2_Degraded(t *testing.T) {
 	ws := WindowSnapshot{
 		Window:     1 * time.Hour,
@@ -51,15 +51,15 @@ func TestEvaluateWindow_Srv2_Degraded(t *testing.T) {
 	}
 	es := EvaluateWindow(ws, "dovecot")
 	if es.State != EffectiveDegraded {
-		t.Errorf("srv2 dovecot: got %v, want DEGRADED", es.State)
+		t.Errorf("host-a dovecot: got %v, want DEGRADED", es.State)
 	}
 	if es.Ratio < 0.06 || es.Ratio > 0.07 {
 		t.Errorf("ratio: got %v, want ~0.063", es.Ratio)
 	}
 }
 
-// Reproduces the srv3 dovecot 24h soak data from Day 1 audit.
-// srv3: 868 events / 132 bans = 15.2% → should be ACTIVE (ratio > 10%)
+// Reproduces the host-b dovecot 24h soak data from Day 1 audit.
+// host-b: 868 events / 132 bans = 15.2% → should be ACTIVE (ratio > 10%)
 func TestEvaluateWindow_Srv3_Active(t *testing.T) {
 	ws := WindowSnapshot{
 		Window:     1 * time.Hour,
@@ -69,7 +69,7 @@ func TestEvaluateWindow_Srv3_Active(t *testing.T) {
 	}
 	es := EvaluateWindow(ws, "dovecot")
 	if es.State != EffectiveActive {
-		t.Errorf("srv3 dovecot: got %v, want ACTIVE", es.State)
+		t.Errorf("host-b dovecot: got %v, want ACTIVE", es.State)
 	}
 }
 

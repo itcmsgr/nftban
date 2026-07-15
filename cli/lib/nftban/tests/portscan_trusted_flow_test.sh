@@ -76,7 +76,7 @@ eq "3" "$(g TOT)"  "A5 suppressed_total incremented once per suppressed event (3
 
 # --------------------------------------------------------------------------
 # A6 — exact IPv6 destination is NOTATION-ROBUST: the kernel/parse_line dst arrives
-# EXPANDED (2a01:04f8:...:0001) while a config uses compressed (2001:db8:...::1),
+# EXPANDED (2001:0db8:...:0001) while a config uses compressed (2001:db8:...::1),
 # and /128 on the destination selector is accepted (normalised to the bare IP).
 # --------------------------------------------------------------------------
 reset_state
@@ -84,9 +84,9 @@ printf '2001:db8:c014:5ee1::1/128|tcp|10050|2001:db8:c014:f4da::1/128|120/min\n'
 out6="$( source "$MOD" 2>/dev/null; set +eE
   nftban_portscan_trusted_flow_load
   echo "DECL=$_PTF_DECLARATIONS PERR=$_PTF_PARSE_ERRORS DST=${_PTF_DST[0]}"
-  nftban_portscan_trusted_flow_suppress 2a01:04f8:c014:5ee1:0000:0000:0000:0001 2a01:04f8:c014:f4da:0000:0000:0000:0001 10050 tcp; echo "EXP=$?"
+  nftban_portscan_trusted_flow_suppress 2001:0db8:c014:5ee1:0000:0000:0000:0001 2001:0db8:c014:f4da:0000:0000:0000:0001 10050 tcp; echo "EXP=$?"
   nftban_portscan_trusted_flow_suppress 2001:db8:c014:5ee1::1 2001:db8:c014:f4da::1 10050 tcp; echo "CMP=$?"
-  nftban_portscan_trusted_flow_suppress 2a01:04f8:c014:5ee1:0000:0000:0000:0001 2a01:04f8:c014:ffff:0000:0000:0000:0009 10050 tcp; echo "WRONG=$?" )"
+  nftban_portscan_trusted_flow_suppress 2001:0db8:c014:5ee1:0000:0000:0000:0001 2001:0db8:c014:ffff:0000:0000:0000:0009 10050 tcp; echo "WRONG=$?" )"
 k(){ printf '%s\n' "$out6" | sed -n "s/^$1=//p"; }
 eq "DECL=1 PERR=0 DST=2001:db8:c014:f4da::1" "$(printf '%s\n' "$out6"|grep -E '^DECL=')" "A6a /128 destination accepted + normalised to bare IP, parses clean"
 eq "0" "$(k EXP)" "A6b exact IPv6 dst matches EXPANDED runtime notation (kernel-log form) → suppressed"

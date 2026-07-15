@@ -49,7 +49,7 @@ bash scripts/ci/test-immutable-lifecycle-matrix.sh scan \
 A simple runner iterates the fixtures and compares actual vs expected:
 
 ```bash
-cd /home/gituser/github/nftban
+cd "$(git rev-parse --show-toplevel)"
 FIX=scripts/ci/fixtures/immutable-lifecycle-matrix
 for d in "$FIX"/*/; do
     name=$(basename "$d")

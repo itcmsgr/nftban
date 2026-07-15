@@ -40,7 +40,7 @@ func newTestLogger() *logging.Logger {
 // seedPlesk populates the mock with strong-confidence Plesk evidence
 // in the Ubuntu-realistic shape: install dir, marker binary,
 // sw-cp-server.service active (the canonical panel-listener daemon
-// per the 203.0.113.229 audit; sha256 c1a72266e2eb...), and TCP
+// per the 192.0.2.229 audit; sha256 c1a72266e2eb...), and TCP
 // <port> in LISTEN state.
 //
 // PR26.7.1 calibration: the original seedPlesk activated
@@ -182,7 +182,7 @@ func TestDetect_ServiceOnly_Weak(t *testing.T) {
 
 // PR26.7.1 — Ubuntu Plesk Obsidian realistic strong-detect path.
 //
-// Real-world Ubuntu Plesk (per the 203.0.113.229 audit, sha256
+// Real-world Ubuntu Plesk (per the 192.0.2.229 audit, sha256
 // c1a72266e2eb...) has:
 //   /usr/local/psa            present (symlink → /opt/psa)
 //   httpdmng                  present (symlink → ../sbin/wrapper)
@@ -595,7 +595,7 @@ func TestRequiredPorts_RealLoader_ControlPortAndSurfaceSize(t *testing.T) {
 	}
 	// PR26.7.1 — TCP 4190 (Sieve/managesieve, RFC 5804) MUST be in
 	// the surface. Confirmed listening on real Plesk Obsidian 18.0.76
-	// by the 203.0.113.229 audit; required for dovecot-managed mail
+	// by the 192.0.2.229 audit; required for dovecot-managed mail
 	// filter rules from external clients.
 	if !containsInt(tcp, 4190) {
 		t.Errorf("TCP_IN must include managesieve port 4190 (RFC 5804); got len=%d — "+

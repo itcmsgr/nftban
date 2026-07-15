@@ -20,7 +20,7 @@ package detector
 
 import "testing"
 
-// real captured DA line shape (dns1 2026-06-14), public IP.
+// sample DA line shape (2026-06-14), public IP.
 const rcFailedPublic = `[14-Jun-2026 10:54:37 +0000]: <0a1b2c3d> Failed login for user@example.gr from 192.0.2.122 in session 0a1b2c3d4e5f6789 (error: 0)`
 
 func TestRoundcube_FailedPublic_Match(t *testing.T) {

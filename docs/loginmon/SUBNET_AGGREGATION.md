@@ -1,6 +1,6 @@
 # LoginMon Subnet Aggregation (v1.113)
 
-> Closes **`D-LOGINMON-EXIM-SUBNET-ROTATION-GAP`** from the srv1 production incident on 2026-05-13: a distributed `81.30.98.0/24` SMTP brute force where each individual IP made only 1-2 attempts and never crossed the per-IP ban threshold.
+> Closes **`D-LOGINMON-EXIM-SUBNET-ROTATION-GAP`** from the srv1 production incident on 2026-05-13: a distributed `203.0.113.0/24` SMTP brute force where each individual IP made only 1-2 attempts and never crossed the per-IP ban threshold.
 
 ## What it does
 
@@ -46,7 +46,7 @@ Six guards must ALL pass before a trigger fires:
 
 ## What gets banned
 
-When `MODE=enforce` and all guards pass, LoginMon publishes a `EventBan` event with `WithIP(<prefix>)` set to the CIDR (e.g., `81.30.98.0/24`). The downstream ban executor accepts CIDR strings via the same path as the canonical `nftban ban <CIDR>` CLI. The ban is recorded in `/etc/nftban/blacklist.d/99-manual.conf` with reason `exim_auth_fail_subnet`.
+When `MODE=enforce` and all guards pass, LoginMon publishes a `EventBan` event with `WithIP(<prefix>)` set to the CIDR (e.g., `203.0.113.0/24`). The downstream ban executor accepts CIDR strings via the same path as the canonical `nftban ban <CIDR>` CLI. The ban is recorded in `/etc/nftban/blacklist.d/99-manual.conf` with reason `exim_auth_fail_subnet`.
 
 The triggering IP (the IP whose event tripped the threshold) is preserved in the event data field `trigger_ip` for audit attribution.
 

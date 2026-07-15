@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan Lab Deployment Gate — Server Configuration
+# NFTBan Lab Deployment Gate — Server Configuration (EXAMPLE TEMPLATE)
 # =============================================================================
 # meta:name="lab-deploy-servers"
 # meta:type="config"
 # meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Server list for lab deployment gate testing"
+# meta:owner="NFTBan maintainers <contact@nftban.com>"
+# meta:description="Server list for lab deployment gate testing (example template)"
 # meta:inventory.files="scripts/lab-deploy-servers.conf"
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -15,6 +15,10 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # =============================================================================
+# Copy this file to scripts/lab-deploy-servers.conf and fill in your own hosts.
+# The real file is gitignored and MUST NOT be committed — it contains private
+# lab/fleet infrastructure (hostnames, IPs, ports, OS/panel assignments).
+#
 # Format: ALIAS|HOST|PORT|OS_FAMILY|GATE_LIST|ENABLED
 #   ALIAS      — short name for output
 #   HOST       — SSH hostname or IP
@@ -32,18 +36,18 @@
 #   G6 = Installer log validation
 # =============================================================================
 
-# DEB servers
-lab2|lab2.example.test|22|deb|G1,G5,G6|1
-monitor|monitor.example.test|55000|deb|G2,G5,G6|1
+# DEB servers (documentation examples — replace with your own)
+deb-lab-01|deb-lab-01.example.test|22|deb|G1,G5,G6|1
+observability-node-01|observability-node-01.example.test|55000|deb|G2,G5,G6|1
 
 # RPM servers
-lab4|lab4.example.test|22|rpm|G4,G5,G6|1
-lab|lab.example.test|22|rpm|G4,G5,G6|1
-89server|192.0.2.224|22|rpm|G4,G5,G6|1
+rpm-lab-01|rpm-lab-01.example.test|22|rpm|G4,G5,G6|1
+rpm-lab-02|rpm-lab-02.example.test|22|rpm|G4,G5,G6|1
+rpm-host-ip|192.0.2.89|22|rpm|G4,G5,G6|1
 
-srv2|srv2.example.test|55000|rpm|G4,G5,G6|1
+app-node-02|app-node-02.example.test|55000|rpm|G4,G5,G6|1
 
-# DEB takeover (CSF+DirectAdmin, Ubuntu 22.04)
-srv3|srv3.example.test|22|deb|G3,G5,G6|1
+# DEB takeover (CSF + control panel host)
+app-node-03|app-node-03.example.test|22|deb|G3,G5,G6|1
 
-# G3 (takeover) needs server with CSF — srv3 is the candidate
+# G3 (takeover) needs a host with CSF installed

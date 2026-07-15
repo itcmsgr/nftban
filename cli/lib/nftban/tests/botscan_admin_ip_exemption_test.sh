@@ -44,7 +44,7 @@ echo "=== F2 BotScan scanner exemption gate ==="
   # T4: NON-exempt IP → NOT suppressed (must remain bannable)
   if nftban_botscan_is_whitelisted "198.51.100.9" ""; then echo T4bad; else echo T4ok; fi
   # T5: partial/substring must NOT match (exact-line only)
-  if nftban_botscan_is_whitelisted "192.0.2.12" ""; then echo T5bad; else echo T5ok; fi
+  if nftban_botscan_is_whitelisted "192.0.2.130" ""; then echo T5bad; else echo T5ok; fi
 ) > "$WORK/out" 2>&1
 
 grep -q T1ok "$WORK/out" && ok "T1 exempt admin IP suppressed" || no "T1"

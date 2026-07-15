@@ -745,7 +745,7 @@ EXAMPLES:
     nftban search 192.0.2.100 --json
 
 OUTPUT:
-    IP: 185.220.101.1
+    IP: 203.0.113.1
     Country: DE (Germany)
     Status: FOUND IN FEEDS
     Feeds: tor-exit-nodes, firehol_level1

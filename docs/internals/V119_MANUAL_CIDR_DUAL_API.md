@@ -22,11 +22,11 @@ attempted to insert into the kernel nft set:
   `flags timeout`. The `timeout` flag is incompatible with `interval`
   in nft kernel-set semantics — meaning the set can only hold single
   IPs, not CIDR prefixes.
-- A `/27` line like `81.30.98.32/27` would attempt insertion, fail
-  silently (or get treated as the bare address `81.30.98.32`, losing
+- A `/27` line like `203.0.113.32/27` would attempt insertion, fail
+  silently (or get treated as the bare address `203.0.113.32`, losing
   the prefix), and **the /27 range as a whole was not enforced**.
 
-The result: operator entries like `81.30.98.32/27` (a 32-address
+The result: operator entries like `203.0.113.32/27` (a 32-address
 exim-bruteforce block) were durably present in the file but
 operationally inert. Connections from the other 31 addresses in the
 /27 were not blocked by the manual-blacklist code path.
@@ -87,7 +87,7 @@ directly. It does not exercise the Go daemon's `IsIPInBlacklistFile()`
 helper. Consequently:
 
 ```
-$ nftban firewall check 81.30.98.35
+$ nftban firewall check 203.0.113.35
 ...
 Status: ❌ BLOCKED
 Matched Rule:

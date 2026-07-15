@@ -94,12 +94,12 @@ func TestCoverage_IPv6(t *testing.T) {
 
 func TestCoverage_AdminIPMissingThenLive(t *testing.T) {
 	// The srv3 scenario: durable single IP absent from live kernel set.
-	res := CoverageDiff([]string{"192.0.2.122"}, []string{"46.224.164.50"}, nil)
+	res := CoverageDiff([]string{"192.0.2.122"}, []string{"198.51.100.50"}, nil)
 	if len(res.MissingFromKernel) != 1 || res.MissingFromKernel[0] != "192.0.2.122" {
 		t.Fatalf("expected admin IP missing, got %v", res.MissingFromKernel)
 	}
 	// after it is live:
-	res2 := CoverageDiff([]string{"192.0.2.122"}, []string{"46.224.164.50", "192.0.2.122"}, nil)
+	res2 := CoverageDiff([]string{"192.0.2.122"}, []string{"198.51.100.50", "192.0.2.122"}, nil)
 	if len(res2.MissingFromKernel) != 0 {
 		t.Fatalf("admin IP should be covered now, got %v", res2.MissingFromKernel)
 	}

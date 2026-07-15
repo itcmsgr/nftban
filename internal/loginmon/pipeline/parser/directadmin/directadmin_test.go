@@ -11,12 +11,12 @@
 // meta:package="directadmin"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-09"
-// meta:description="Phase B: DirectAdmin parser tests against real srv3 fixtures"
+// meta:description="Phase B: DirectAdmin parser tests against real sample-B fixtures"
 //
 // meta:inventory.files="directadmin_test.go"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
-// meta:inventory.config_files="../../testdata/directadmin/srv3_login.log"
+// meta:inventory.config_files="../../testdata/directadmin/login_sample.log"
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
 // meta:inventory.privileges="none"
@@ -181,11 +181,11 @@ func TestName(t *testing.T) {
 }
 
 // =============================================================================
-// Fixture replay — real srv3 login.log
+// Fixture replay — sample login.log
 // =============================================================================
 
-func TestFixture_Srv3LoginLog(t *testing.T) {
-	path := fixtureDir + "/srv3_login.log"
+func TestFixture_LoginSample(t *testing.T) {
+	path := fixtureDir + "/login_sample.log"
 	f, err := os.Open(path)
 	if err != nil {
 		t.Skipf("fixture not available: %v", err)
@@ -227,7 +227,7 @@ func TestFixture_Srv3LoginLog(t *testing.T) {
 		t.Fatalf("scan: %v", err)
 	}
 
-	t.Logf("srv3_login.log: %d total, %d matched, %d skipped, %d malformed",
+	t.Logf("login_sample.log: %d total, %d matched, %d skipped, %d malformed",
 		totalLines, matched, skipped, malformed)
 
 	// From the fixture: 30 lines total. 10 are "failed login", 20 are
@@ -246,11 +246,11 @@ func TestFixture_Srv3LoginLog(t *testing.T) {
 	}
 }
 
-// TestFixture_Srv3_Parity asserts that the Go parser extracts the same
+// TestFixture_LoginParity asserts that the Go parser extracts the same
 // (IP, User) pairs as the legacy parser would. This is the parity gate:
 // if this test fails, the Go parser is not ready for dual-run.
-func TestFixture_Srv3_Parity(t *testing.T) {
-	path := fixtureDir + "/srv3_login.log"
+func TestFixture_LoginParity(t *testing.T) {
+	path := fixtureDir + "/login_sample.log"
 	f, err := os.Open(path)
 	if err != nil {
 		t.Skipf("fixture not available: %v", err)
@@ -261,7 +261,7 @@ func TestFixture_Srv3_Parity(t *testing.T) {
 	scanner := bufio.NewScanner(f)
 
 	// Expected: every failed-login line in the fixture has IP 192.0.2.122
-	// and account "admin" (same attacker, same target on srv3).
+	// and account "admin" (same attacker, same target on the sample host).
 	expectedIP := netip.MustParseAddr("192.0.2.122")
 	expectedUser := "admin"
 

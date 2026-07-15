@@ -25,9 +25,9 @@
 // Package dovecot implements a Parser for Dovecot imap-login/pop3-login
 // auth-failed lines.
 //
-// Dovecot log format (from real srv2/srv3 fixtures):
+// Dovecot log format (a sanitized sample line):
 //
-//	Apr  9 03:01:45 srv2 dovecot[3767044]: imap-login: Login aborted: Connection closed (auth failed, 1 attempts in 3 secs) (auth_failed): user=<contact@customer-a.example.test>, method=PLAIN, rip=34.138.135.178, lip=46.224.164.97, TLS, session=<21JEPP5Ozskiioey>
+//	Apr  9 03:01:45 mail01 dovecot[1234]: imap-login: Login aborted: Connection closed (auth failed, 1 attempts in 3 secs) (auth_failed): user=<contact@example.test>, method=PLAIN, rip=203.0.113.178, lip=192.0.2.97, TLS, session=<synthetic-session>
 //
 // The parser matches lines containing "dovecot" + "auth failed" and extracts:
 //

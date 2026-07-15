@@ -42,7 +42,7 @@ func TestExemptAddRejectionClassGuard(t *testing.T) {
 	}
 
 	// public routable: NOT rejected by class (would then hit membership exemption, nil here).
-	for _, ip := range []string{"8.8.4.4", "198.51.100.67", "2001:db8:c014:5ee1::1"} {
+	for _, ip := range []string{"8.8.4.4", "1.1.1.1", "2001:4860:4860::8888"} {
 		if reject, _ := b.exemptAddRejection(enfSet, ip); reject {
 			t.Errorf("exemptAddRejection(%s, %q)=true, want public address allowed", enfSet, ip)
 		}
