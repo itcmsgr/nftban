@@ -141,7 +141,14 @@ nftban_portscan_trusted_flow_load() {
         # destination port: single 1-65535 (no ranges, no 0, no all-port)
         if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port<1 || port>65535 )); then _ptf_perr "$lineno" "invalid destination port (single 1-65535; no ranges/0/all)"; continue; fi
         # destination selector: * or a valid IP (interface selectors unsupported this release)
-        if [[ "$dst" != "*" ]] && ! _ptf_is_ipv4 "$dst" && ! _ptf_is_ipv6 "$dst"; then _ptf_perr "$lineno" "destination selector must be * or a valid IP"; continue; fi
+        # destination selector: * | bare IP | single-host CIDR (/32 or /128 → normalised to the IP)
+        if [[ "$dst" != "*" ]]; then
+            case "$dst" in
+                */32)  _ptf_is_ipv4 "${dst%/32}"  && dst="${dst%/32}" ;;
+                */128) _ptf_is_ipv6 "${dst%/128}" && dst="${dst%/128}" ;;
+            esac
+            if ! _ptf_is_ipv4 "$dst" && ! _ptf_is_ipv6 "$dst"; then _ptf_perr "$lineno" "destination selector must be * , a valid IP, or a /32|/128 single host"; continue; fi
+        fi
         # rate: mandatory N/min, N>=1 (no 0, negative, missing, or unbounded)
         if [[ ! "$rate" =~ ^[1-9][0-9]*/min$ ]]; then _ptf_perr "$lineno" "rate must be a positive integer with /min suffix"; continue; fi
         key="${src}_${proto}_${port}_${dst}"
@@ -206,7 +213,9 @@ nftban_portscan_trusted_flow_suppress() { # src dst dport proto
     for ((i=0;i<n;i++)); do
         [[ "$proto" == "${_PTF_PROTO[$i]}" ]] || continue
         [[ "$dport" == "${_PTF_PORT[$i]}" ]] || continue
-        [[ "${_PTF_DST[$i]}" == "*" || "$dst" == "${_PTF_DST[$i]}" ]] || continue
+        # destination match: * (any) or IP-equivalence — notation-robust (the runtime
+        # dst arrives from the kernel log in EXPANDED IPv6 form, a config may be compressed).
+        if [[ "${_PTF_DST[$i]}" != "*" ]]; then _ptf_ip_in_cidr "$dst" "${_PTF_DST[$i]}" || continue; fi
         _ptf_ip_in_cidr "$src" "${_PTF_SRC[$i]}" || continue
         # matched tuple — apply rate bound
         if [[ "$(_ptf_rate_check "${_PTF_KEY[$i]}" "${_PTF_RATE[$i]}")" == "OK" ]]; then
