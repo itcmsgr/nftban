@@ -52,6 +52,17 @@ node_modules/
 *.log
 *.bak
 
+# SEC-INFRA: sanitized SYNTHETIC parser fixtures (reserved values only — RFC5737/
+# RFC3849 IPs + *.example.test domains; NO real customer/operator data). Tracked
+# so parser tests get real coverage in CI. Real production logs must NEVER live
+# under the repo tree (even gitignored) — sanitize to a synthetic fixture, then
+# delete the source. Only these exact sanitized files are un-ignored:
+!internal/loginmon/pipeline/testdata/exim/auth_failures_a.log
+!internal/loginmon/pipeline/testdata/exim/auth_failures_b.log
+!internal/loginmon/pipeline/testdata/dovecot/auth_failures_a.log
+!internal/loginmon/pipeline/testdata/dovecot/auth_failures_b.log
+!internal/loginmon/pipeline/testdata/directadmin/login_sample.log
+
 # Package artifacts
 *.rpm
 *.deb
@@ -84,3 +95,8 @@ repomix*.xml
 #   /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/PR25_EVIDENCE_4B4/
 evidence/
 pr25-evidence/
+
+# Private lab/fleet infrastructure map — never commit (use .example template)
+scripts/lab-deploy-servers.conf
+# Private exact host/IP patterns for privacy-scan (never commit)
+scripts/ci/privacy-forbidden.txt
