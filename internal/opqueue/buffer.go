@@ -11,7 +11,7 @@
 package opqueue
 
 import (
-	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -216,13 +216,15 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int, si SourceI
 	// 2. Else if flush pending: just flush
 	// 3. Apply pending adds/deletes
 	if replaceOp != nil {
-		result.Applied = buf.applyReplace(backend, table, setName, replaceOp, maxBatchSize)
-		if result.Applied < 0 {
-			result.Err = errors.New("replace_set failed")
-			result.Applied = 0
-		} else {
-			result.WasReplace = true
-			result.Adds = result.Applied
+		// L2b truth-bearing: applied == actually_applied; err set on flush failure OR
+		// partial apply (applied < intended). WasReplace stays true even on partial.
+		applied, intended, replErr := buf.applyReplace(backend, table, setName, replaceOp, maxBatchSize)
+		result.Applied = applied
+		result.Intended = intended
+		result.Adds = applied
+		result.WasReplace = true
+		if replErr != nil {
+			result.Err = replErr
 		}
 	} else if flushPending {
 		if err := backend.FlushSet(table, setName); err != nil {
@@ -245,17 +247,28 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int, si SourceI
 	return result
 }
 
-// applyReplace applies a replace_set operation: flush + bulk add
-func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string, op *SetOp, maxBatchSize int) int {
+// applyReplace applies a replace_set operation: flush + bulk add.
+//
+// L2b truth-bearing contract. Returns:
+//   - applied:  the count ACTUALLY applied (summed from the backend's real per-batch counts).
+//   - intended: len(op.Elements) — what the replace meant to apply.
+//   - err:      non-nil on flush failure, or when applied < intended (partial apply).
+//
+// Invariant: reported_applied == actually_applied, and partial_apply != success. A flush that
+// succeeds followed by a lost add batch leaves the set partially populated; we now report that
+// as an error instead of a success-shaped short count. We do NOT abort on the first bad batch
+// (later batches still attempt), and we do NOT fail-close the caller — surfacing is the job.
+func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string, op *SetOp, maxBatchSize int) (applied int, intended int, err error) {
 	// Step 1: Flush existing
-	if err := backend.FlushSet(table, setName); err != nil {
-		log.Printf("[opqueue] replace_set flush %s failed: %v", setName, err)
-		return -1
+	if ferr := backend.FlushSet(table, setName); ferr != nil {
+		log.Printf("[opqueue] replace_set flush %s failed: %v", setName, ferr)
+		return 0, 0, fmt.Errorf("replace_set flush %s: %w", setName, ferr)
 	}
 
 	if len(op.Elements) == 0 {
-		return 0
+		return 0, 0, nil
 	}
+	intended = len(op.Elements)
 
 	// Step 2: Bulk add in batches
 	isIPv6 := strings.HasSuffix(setName, "_ipv6")
@@ -268,8 +281,8 @@ func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string
 		})
 	}
 
-	// Batch by maxBatchSize
-	applied := 0
+	// Batch by maxBatchSize — sum the TRUE applied count from each batch.
+	var firstErr error
 	for i := 0; i < len(elements); i += maxBatchSize {
 		end := i + maxBatchSize
 		if end > len(elements) {
@@ -277,15 +290,26 @@ func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string
 		}
 		batch := elements[i:end]
 
-		if err := backend.AddElements(table, setName, batch); err != nil {
-			log.Printf("[opqueue] replace_set add %s batch %d failed: %v", setName, i/maxBatchSize, err)
-		} else {
-			applied += len(batch)
+		n, addErr := backend.AddElements(table, setName, batch)
+		applied += n
+		if addErr != nil {
+			log.Printf("[opqueue] replace_set add %s batch %d failed (%d/%d): %v", setName, i/maxBatchSize, n, len(batch), addErr)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("replace_set add %s batch %d: %w", setName, i/maxBatchSize, addErr)
+			}
 		}
 	}
 
+	if applied < intended {
+		if firstErr == nil {
+			firstErr = fmt.Errorf("replace_set %s: applied %d of %d (partial)", setName, applied, intended)
+		}
+		log.Printf("[opqueue] replace_set %s: PARTIAL apply %d/%d — %v", setName, applied, intended, firstErr)
+		return applied, intended, firstErr
+	}
+
 	log.Printf("[opqueue] replace_set %s: %d elements applied", setName, applied)
-	return applied
+	return applied, intended, nil
 }
 
 // applyPendingCounted applies individual add/delete operations and returns separate counts
@@ -334,11 +358,12 @@ func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName
 		if end > len(toAdd) {
 			end = len(toAdd)
 		}
-		if err := backend.AddElements(table, setName, toAdd[i:end]); err != nil {
-			log.Printf("[opqueue] add %s batch failed: %v", setName, err)
+		n, addErr := backend.AddElements(table, setName, toAdd[i:end])
+		adds += n // L2b: true applied count (n), not the batch size
+		if addErr != nil {
+			log.Printf("[opqueue] add %s batch failed (%d/%d): %v", setName, n, end-i, addErr)
 		} else {
-			adds += end - i
-			// v1.209 — record provenance ONLY after the nft add succeeded (apply boundary).
+			// v1.209 — record provenance ONLY after the nft add fully succeeded (apply boundary).
 			// Without a source we leave the reconcile path's "unknown" fallback untouched.
 			if recordProv {
 				now := time.Now().Unix()

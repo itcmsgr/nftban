@@ -1070,7 +1070,55 @@ _status_section_protection() {
             botguard_status="ENABLED (sets not loaded)"
         fi
     fi
-    printf "  %-20s %s\n" "Bot Guard..........." "$botguard_status"
+    printf "  %-20s %s\n" "HTTP Guard.........." "$botguard_status"
+
+    # HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (v1.218.11 operator-truth).
+    # INDEPENDENT of BotGuard: BotScan can enforce bans via blacklist_manual_* even when BotGuard is OFF.
+    local botscan_status="DISABLED" botscan_enabled="false" botscan_mode="both"
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf" || true
+    fi
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf.local"
+    fi
+    botscan_enabled="${BOTSCAN_ENABLED:-false}"
+    botscan_mode="${BOTSCAN_ACTION_MODE:-both}"
+    if [[ "$botscan_enabled" == "true" ]]; then
+        local botscan_timer="stopped"
+        systemctl is-active nftban-botscan.timer &>/dev/null && botscan_timer="active"
+        # v1.219.0 action-mode honesty: alert = detect-only (no ban); ban == both (enforce).
+        local _bs_mode_note=""
+        case "$botscan_mode" in
+            alert) _bs_mode_note=" — DETECT-ONLY, does not ban" ;;
+            ban|both) _bs_mode_note=" — enforces via blacklist_manual" ;;
+        esac
+        botscan_status="ENABLED (action=${botscan_mode}${_bs_mode_note}, timer ${botscan_timer})"
+        # v1.219.0 operator-truth: a scanner that is enabled but BLIND/DEGRADED is not enforcing.
+        # Cheap read only — runstate.json (health_state / last cycle), NEVER an access-log content scan.
+        local _bs_rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+        if [[ -r "$_bs_rs" ]] && command -v jq &>/dev/null; then
+            local _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips
+            IFS='|' read -r _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips < <(jq -r '"\(.health_state//"UNKNOWN")|\(.last_run_ts//0)|\(.budget_hit_total//0)|\(.bans_emitted_total//0)|\(.unique_ips_flagged_last//0)"' "$_bs_rs" 2>/dev/null)
+            if [[ "$_bs_hs" == DEGRADED_* || "$_bs_hs" == NO_INPUT_* ]]; then
+                botscan_status="ENABLED but ${_bs_hs} — NOT currently enforcing (scanner blind/degraded), action=${botscan_mode}, timer ${botscan_timer}"
+            fi
+        fi
+    fi
+    printf "  %-20s %s\n" "HTTP Exploit Scan..." "$botscan_status"
+    if [[ "$botscan_enabled" == "true" && -r "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
+        local _r="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+        printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
+            "$(( $(date +%s) - $(jq -r '.last_run_ts//0' "$_r" 2>/dev/null) ))" \
+            "$(jq -r '.last_duration_sec//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.bans_emitted_total//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.signals_emitted_total//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.budget_hit_total//0' "$_r" 2>/dev/null)" \
+            "$(jq -r '.health_state//"UNKNOWN"' "$_r" 2>/dev/null)"
+    fi
+    echo "    (HTTP Guard = BotGuard, live request-time guard; HTTP Exploit Scan = BotScan, periodic"
+    echo "     access-log scanner — can ban via the manual blacklist. BotGuard disabled != BotScan disabled.)"
 
     # Tunnel Suspicion (v1.30.0)
     local tunnel_status="DISABLED"
@@ -1426,6 +1474,22 @@ _status_section_health() {
     echo ""
 }
 
+_status_section_communication() {
+    # A2b: read-only central-comms summary from A2a-produced state (sends nothing).
+    if ! declare -F nftban_mail_status_summary >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
+    fi
+    declare -F nftban_mail_status_summary >/dev/null 2>&1 || return 0
+    local transport; transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    echo ""
+    echo "COMMUNICATION"
+    printf "  %-21s %s\n" "Transport............" "$transport"
+    # recipient / spool depth+age / last success / last failure (all A2a state, sanitized)
+    nftban_mail_status_summary 2>/dev/null
+    return 0
+}
+
 _status_section_activity() {
     # ─────────────────────────────────────────────────────────────────────
     # RECENT ACTIVITY
@@ -1710,6 +1774,7 @@ output_terminal() {
     _status_section_authority
     _status_section_services
     _status_section_protection "$quiet_mode"
+    _status_section_communication
     _status_section_health "$protection_state" "$quiet_mode"
     _status_section_activity
     _status_section_timers "$quiet_mode"

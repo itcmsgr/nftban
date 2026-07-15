@@ -56,6 +56,12 @@ jobs:
           # Explicit: NEVER use --warn-all in CI (would disable enforcement)
           WARN_ALL: "0"
 
+      # Central-comms Lane A0 ratchet: mail transport primitives only inside
+      # core/nftban_mail.sh; current known bypasses are allowlisted as DEBT (A1
+      # burns them down). Any NEW direct send fails the PR.
+      - name: Check comms no-direct-send policy
+        run: ./scripts/ci/check-comms-direct-send.sh
+
       # v1.192 transition-atomicity class (D-NFTBAN-SOAK-...-DROP-WINDOW + F-FEED/F-GEO):
       # forbid flush/delete-then-repopulate in a separate transaction on the live
       # nftban table (V-NFT-REBUILD-ATOMICITY) or shared sets (V-NFT-SET-REFRESH-ATOMICITY).

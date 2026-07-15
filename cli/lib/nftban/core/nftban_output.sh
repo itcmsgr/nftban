@@ -1341,6 +1341,15 @@ nftban_render_operator_readiness() {
         [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
     fi
 
+    # v1.218.1: 5th arg = communication component severity (0=CLEAN,1=WARN,2=ERROR). A degraded
+    # comms state RAISES the verdict (PASS -> PASS_WITH_WARN) — never masks an existing FAIL, and
+    # never forces FAIL (comms is advisory; A2b: offline/unconfigured mail is not a false critical).
+    local _comms_sev="${5:-}" _comms_alarm=0
+    if [[ "$_comms_sev" =~ ^[0-9]+$ ]] && (( _comms_sev >= 1 )); then
+        _comms_alarm=1
+        [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
+    fi
+
     case "$readiness" in
         FAIL)           action="FAIL" ;;
         PASS_WITH_WARN) action="WARN" ;;
@@ -1364,6 +1373,9 @@ nftban_render_operator_readiness() {
     # emits a one-line pointer so the operator knows where the detail is.
     if [[ "$_fth_alarm" -eq 1 ]]; then
         printf "  %-20s %s\n" "" "→ firewall-transition alarm: see 'Firewall Transition' below (clear: nftban firewall rebuild)"
+    fi
+    if [[ "$_comms_alarm" -eq 1 ]]; then
+        printf "  %-20s %s\n" "" "→ communication needs setup: see the Communication component below (fix: nftban mail setup <email>)"
     fi
     if [[ "$action" != "NONE" && ( "$max_sev" == "warn" || "$max_sev" == "error" || "$max_sev" == "critical" ) ]]; then
         printf "  %-20s %s\n" "" "→ see the Findings section below for the actionable item(s)"

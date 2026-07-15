@@ -91,7 +91,7 @@ nftban_botguard_explain_render() {
     data=$(nftban_botguard_explain_json "$ip")
     avail=$(_nftban_botguard_explain_field "$data" '.cache_available' "false")
 
-    echo "BotGuard temporary decision-cache (TEMPORARY — not durable nft/kernel state):"
+    echo "BotGuard decision-cache — CACHE ONLY — not currently enforced (not durable nft/kernel state; the kernel-set verdict above is authoritative):"
     echo "───────────────────────────────────────────────────────────────"
     if [[ "$avail" != "true" ]]; then
         echo "  BotGuard temporary cache: unavailable"
@@ -140,7 +140,7 @@ nftban_botguard_explain_emulate_note() {
     data=$(nftban_botguard_explain_json "$ip")
     avail=$(_nftban_botguard_explain_field "$data" '.cache_available' "false")
 
-    echo "BotGuard temporary decision-cache (read-only; does NOT change the decision above):"
+    echo "BotGuard decision-cache — CACHE ONLY — not currently enforced (read-only; does NOT change the kernel-authoritative verdict above):"
     echo "───────────────────────────────────────────────────────────────"
     if [[ "$avail" != "true" ]]; then
         echo "  BotGuard temporary cache: unavailable (durable decision above is unaffected)"

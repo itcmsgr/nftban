@@ -48,15 +48,20 @@ readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 # Load main config (sets readonly paths)
 source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
-# Patterns for secret redaction
-readonly -a SECRET_PATTERNS=(
-    's/([Aa][Pp][Ii][-_]?[Kk][Ee][Yy]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/([Tt][Oo][Kk][Ee][Nn]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/([Ss][Ee][Cc][Rr][Ee][Tt]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-    's/(Bearer\s+)[A-Za-z0-9._-]+/\1[REDACTED]/g'
-    's/([Aa][Uu][Tt][Hh]\s*[=:]\s*)["\x27]?[^"\x27\s]+["\x27]?/\1[REDACTED]/g'
-)
+# SEC-P1-2 P2a: shared redaction authority (single source of truth for secret scrubbing).
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]] && \
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+
+# SEC-P1-2 P-retire-2: FAIL-LOUD when the shared redaction authority is unavailable. The legacy
+# SECRET_PATTERNS fallback (weak keyword sed that missed *_PASS) is RETIRED — a broken/partial
+# install must NEVER silently weak-redact or pass raw content through. Emit an explicit marker to
+# stdout (into the collected artifact) + a loud [SECURITY][ERROR] to stderr; callers all use
+# `… || true` / capture, so returning 0 keeps the bundle generating with clearly-marked sections.
+_redact_unavailable() {
+    printf '%s\n' '[REDACTION-UNAVAILABLE: do not share]'
+    echo '[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed' >&2
+}
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -84,14 +89,15 @@ _support_banner() {
 }
 
 _redact_secrets() {
-    local input="$1"
-    local output="$input"
-
-    for pattern in "${SECRET_PATTERNS[@]}"; do
-        output=$(echo "$output" | sed -E "$pattern" 2>/dev/null) || true
-    done
-
-    echo "$output"
+    # SEC-P1-2 P2a/P-retire-2: delegate to the shared redaction authority (the ONLY secret-redaction
+    # path). If it is unavailable, FAIL LOUD — return the marker in place of the content, never the
+    # raw string and never a weak fallback.
+    if declare -F nftban_redact_string >/dev/null 2>&1; then
+        nftban_redact_string "${1:-}"
+        return 0
+    fi
+    _redact_unavailable
+    return 0
 }
 
 _redact_file() {
@@ -339,6 +345,23 @@ _collect_configs() {
     fi
 }
 
+# SEC-P1-2 P2b-1: scrub SECRET material (credentials/tokens/keys/Bearer/netrc/URL creds)
+# from a stream. Attacker IPs and usernames are deliberately NOT touched here — they are
+# forensic evidence (identifier-privacy is a separate opt-in mode, P2b-2). Degrades to `cat`
+# if the shared redactor lib is unavailable.
+_support_scrub_stream() {
+    # SEC-P1-2 P-retire-2: FAIL-CLOSED — never `cat` raw stdin through when the redactor is
+    # unavailable (that was a silent full-leak of journal/log content). Drain+discard stdin and
+    # emit the marker instead.
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        cat >/dev/null 2>&1
+        _redact_unavailable
+    fi
+    return 0
+}
+
 _collect_logs() {
     local bundle_dir="$1"
     local log_dir="$bundle_dir/logs"
@@ -347,33 +370,33 @@ _collect_logs() {
     local since_time
     since_time=$(date -d "$SUPPORT_LOG_HOURS hours ago" '+%Y-%m-%d %H:%M' 2>/dev/null || date '+%Y-%m-%d %H:%M')
 
-    # journalctl logs for nftban
+    # journalctl logs for nftban (secret-scrubbed; attacker IPs/usernames preserved)
     if command -v journalctl &>/dev/null; then
         journalctl -u nftban -u nftban-webapi -u nftban-feeds \
-            --since "$since_time" --no-pager \
-            > "$log_dir/journalctl-nftban.txt" 2>&1 || true
-        _support_log OK "Systemd journal logs (last ${SUPPORT_LOG_HOURS}h)"
+            --since "$since_time" --no-pager 2>&1 \
+            | _support_scrub_stream > "$log_dir/journalctl-nftban.txt" || true
+        _support_log OK "Systemd journal logs (last ${SUPPORT_LOG_HOURS}h, secrets redacted)"
     fi
 
-    # File-based logs
+    # File-based logs (secret-scrubbed; identifiers preserved)
     if [[ -d "$NFTBAN_LOG_DIR" ]]; then
         local log_count=0
         while IFS= read -r -d '' log_file; do
             local basename
             basename=$(basename "$log_file")
             # Only get last 500 lines to keep bundle size reasonable
-            tail -500 "$log_file" > "$log_dir/$basename" 2>/dev/null || true
+            tail -500 "$log_file" 2>/dev/null | _support_scrub_stream > "$log_dir/$basename" || true
             log_count=$((log_count + 1))
         done < <(find "$NFTBAN_LOG_DIR" -maxdepth 1 -name "*.log" -type f -print0 2>/dev/null)
 
         if [[ $log_count -gt 0 ]]; then
-            _support_log OK "Log files ($log_count files, last 500 lines each)"
+            _support_log OK "Log files ($log_count files, last 500 lines each, secrets redacted)"
         fi
     fi
 
-    # Update log specifically
+    # Update log specifically (secret-scrubbed)
     if [[ -f "$NFTBAN_LOG_DIR/update.log" ]]; then
-        cp "$NFTBAN_LOG_DIR/update.log" "$log_dir/update.log" 2>/dev/null || true
+        _support_scrub_stream < "$NFTBAN_LOG_DIR/update.log" > "$log_dir/update.log" 2>/dev/null || true
     fi
 
     # v1.199: per-run lifecycle forensic records (update-runs/<run_id>/). Collect
@@ -424,6 +447,60 @@ _collect_status() {
     fi
 
     _safe_cmd "$bundle_dir/status.txt" "NFTBan status" nftban status
+}
+
+# A2c: sanitized comms summary. `_redact_comms` now delegates wholesale to the shared redaction
+# authority (SMTP Auth User / *_PASS / SMTP_USER / Recipient local-part all covered), and fails
+# closed with [REDACTION-UNAVAILABLE] if the authority is missing (SEC-P1-2 P-retire-2).
+_redact_comms() {
+    # SEC-P1-2 P2a/P-retire-2: the shared registry covers SMTP Auth User / *_PASS / SMTP_USER and
+    # the Recipient: local-part, so delegate wholesale. If the authority is unavailable, FAIL LOUD —
+    # never the original narrow sed fallback (which missed the broader field set).
+    if declare -F nftban_redact_string >/dev/null 2>&1; then
+        nftban_redact_string "${1:-}"
+        return 0
+    fi
+    _redact_unavailable
+    return 0
+}
+
+# A2c: sanitized central-comms + RBL observe-only summary. Reuses the existing redactor;
+# includes the A2a delivery-log tail (already recipient-redacted, secret-free) and the A2r
+# RBL honesty label. No secrets, no NFTBAN_SMTP_PASS, recipient redacted.
+_collect_communications() {
+    local bundle_dir="$1"
+    local out="$bundle_dir/communications.txt"
+    if ! command -v nftban &>/dev/null; then
+        _support_log SKIP "Communication summary (nftban not in PATH)"
+        return 0
+    fi
+    {
+        echo "=== Communication (central-comms) — sanitized ==="
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+    } > "$out"
+    _redact_comms "$(nftban mail status 2>&1 || echo '(mail status unavailable)')" >> "$out"
+    echo "" >> "$out"
+
+    echo "=== Delivery-log tail (last 50, sanitized) ===" >> "$out"
+    local dlog="${NFTBAN_MAIL_DELIVERY_LOG:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/mail/delivery.jsonl}"
+    if [[ -f "$dlog" ]]; then
+        _redact_comms "$(tail -n 50 "$dlog" 2>/dev/null)" >> "$out"
+    else
+        echo "(no delivery log yet)" >> "$out"
+    fi
+    echo "" >> "$out"
+
+    {
+        echo "=== RBL (observe-only advisory reputation) ==="
+        echo "Note: RBL is advisory reputation monitoring, not firewall blocking."
+        echo "      A DNSBL check cannot determine a provider-specific Proofpoint/iCloud bounce."
+        echo ""
+    } >> "$out"
+    _redact_comms "$(nftban rbl status 2>&1 || echo '(rbl status unavailable)')" >> "$out"
+
+    _support_log OK "Communication + RBL summary (sanitized)"
+    return 0
 }
 
 _collect_update_info() {
@@ -1021,7 +1098,33 @@ _collect_module_status() {
             nftban login status 2>&1 || echo "Command failed"
         } > "$mod_dir/login.txt"
 
-        _support_log OK "Module status (6 modules)"
+        # HTTP Exploit Scanner (BotScan) — v1.219.0: BotScan can ban via blacklist_manual_*,
+        # so its config/timer/runstate/pattern-inventory must be in the bundle for forensics.
+        # Read-only, cheap surfaces only (no access-log content scan). Redaction applies to configs below.
+        {
+            echo "# HTTP Exploit Scanner (BotScan) Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban botscan status 2>&1 || echo "Command failed"
+            echo ""
+            echo "## botscan config"
+            nftban botscan config 2>&1 || echo "Command failed"
+            echo ""
+            echo "## runstate.json"
+            cat "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" 2>/dev/null || echo "(no runstate.json)"
+            echo ""
+            echo "## pattern inventory (enabled/total per file; names + match_type only, no request data)"
+            for pf in "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns; do
+                [[ -f "$pf" ]] || continue
+                local _en _tot
+                _tot=$(grep -cE '^[A-Za-z]' "$pf" 2>/dev/null || echo 0)
+                _en=$(grep -cE '\|true\|[^|]*$' "$pf" 2>/dev/null || echo 0)
+                echo "$(basename "$pf"): ${_en} enabled / ${_tot} records"
+                awk -F'|' '/^[A-Za-z]/{print "    "$1" ["$(NF-5)"]"}' "$pf" 2>/dev/null | head -60
+            done
+        } > "$mod_dir/botscan.txt"
+
+        _support_log OK "Module status (7 modules incl. BotScan)"
     else
         _support_log SKIP "Module status (nftban not in PATH)"
     fi
@@ -1714,6 +1817,7 @@ _cmd_support_bundle() {
     _collect_logs "$bundle_dir"
     _collect_health "$bundle_dir"
     _collect_status "$bundle_dir"
+    _collect_communications "$bundle_dir"
     _collect_daemon_status "$bundle_dir"
     _collect_recent_activity "$bundle_dir"
     _collect_update_info "$bundle_dir"
@@ -1839,24 +1943,13 @@ EOF
                     echo "    cat $output_file | base64 > bundle.b64"
                 fi
             else
-                # Fallback: try mutt or mail with attachment
-                if command -v mutt &>/dev/null; then
-                    echo "$email_body" | mutt -s "[NFTBan] Support Bundle - $hostname_val" \
-                        -a "$output_file" -- "$email_recipient" 2>/dev/null && \
-                        _support_log OK "Bundle sent via mutt to: $email_recipient" || \
-                        _support_log WARN "mutt failed - bundle saved locally"
-                elif command -v mail &>/dev/null; then
-                    # Some mail implementations support -A for attachments
-                    echo "$email_body" | mail -s "[NFTBan] Support Bundle - $hostname_val" \
-                        -A "$output_file" "$email_recipient" 2>/dev/null && \
-                        _support_log OK "Bundle sent via mail to: $email_recipient" || \
-                        _support_log WARN "mail attachment failed - bundle saved locally"
-                else
-                    _support_log WARN "No mail client available - bundle saved locally"
-                    echo ""
-                    echo "  Transfer manually using:"
-                    echo "    scp $output_file user@remote:/path/"
-                fi
+                # A1 central-comms: no direct mutt/mail side channel. If the central mail
+                # authority is unavailable, the bundle is saved locally and the operator is
+                # shown a manual transfer path.
+                _support_log WARN "Central mail authority unavailable - bundle saved locally (no direct fallback)"
+                echo ""
+                echo "  Transfer manually using:"
+                echo "    scp $output_file user@remote:/path/"
             fi
             echo ""
         fi
@@ -1958,7 +2051,7 @@ OUTPUT:
     - update/             Update check and backup list
     - services/           Systemd service/timer status
     - network/            Network info (if --network)
-    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login,
+    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login, botscan,
                           botguard, suricata)
     - mail/               Mail system status and configuration
     - stats-summary.txt   Current statistics and top IPs

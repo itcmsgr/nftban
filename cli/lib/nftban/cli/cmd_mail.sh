@@ -102,6 +102,7 @@ cmd_mail_help() {
     echo "  nftban mail setup admin@example.com --all --test"
     echo "  nftban mail setup --show"
     echo "  nftban mail test"
+    echo "  nftban mail test --dry-run   # validate mail config (recipient + transport) without sending"
 }
 
 # =============================================================================
@@ -183,14 +184,26 @@ nftban_cmd_mail() {
             ;;
 
         test)
-            # Send test email
-            local recipient="${1:-}"
+            # Send (or --dry-run validate) a test email
+            local recipient="" dry_run=false _a
+            for _a in "$@"; do
+                case "$_a" in
+                    --dry-run) dry_run=true ;;
+                    -*) ;;  # ignore other flags
+                    *) [[ -z "$recipient" ]] && recipient="$_a" ;;
+                esac
+            done
             # Auto-detect from panel if not provided
             if [[ -z "$recipient" ]] && declare -f nftban_panel_get_admin_email &>/dev/null; then
                 recipient=$(nftban_panel_get_admin_email 2>/dev/null) || true
-                if [[ -n "$recipient" ]]; then
+                if [[ -n "$recipient" && "$dry_run" == false ]]; then
                     echo "[INFO] Using panel admin email: $recipient"
                 fi
+            fi
+            # A1b: --dry-run validates config only (never sends, never records).
+            if [[ "$dry_run" == true ]]; then
+                nftban_mail_test_dryrun "$recipient"
+                return $?
             fi
             nftban_mail_send_test "$recipient"
             return $?

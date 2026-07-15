@@ -96,9 +96,9 @@ jobs:
     needs: validate-dependencies
     name: Build Go binaries
     runs-on: ubuntu-latest
-    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.11); this job
+    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.12); this job
     # only runs ./build.sh (go build of our module), so GOTOOLCHAIN=local avoids
-    # a redundant toolchain re-download. Compiler version unchanged (1.25.11),
+    # a redundant toolchain re-download. Compiler version unchanged (1.25.12),
     # so binary output stays byte-reproducible.
     env:
       GOTOOLCHAIN: local
@@ -111,8 +111,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
-          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
-          go-version: '1.25.11'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.12`).
+          go-version: '1.25.12'
 
       - name: Build binaries
         run: |

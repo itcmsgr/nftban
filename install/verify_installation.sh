@@ -82,6 +82,17 @@ echo "Checking NEW Files (2025-11-28)..."
 check_file "/usr/lib/nftban/lib/nftban_metrics.sh"        # NEW: Shared metrics library
 check_file "/usr/lib/nftban/cli/cmd_metrics.sh"           # NEW: Metrics command
 
+# SEC-P1-2: the shared redaction authority MUST be present and usable, otherwise support/debug
+# output fails closed ([REDACTION-UNAVAILABLE]). Assert the file AND that its API is loadable.
+check_file "/usr/lib/nftban/lib/nftban_redact.sh"         # SEC-P1-2: shared redaction authority
+TOTAL=$((TOTAL + 1))
+if bash -c 'source /usr/lib/nftban/lib/nftban_redact.sh >/dev/null 2>&1 && declare -F nftban_redact_string >/dev/null 2>&1'; then
+    PRESENT=$((PRESENT + 1))
+    [[ "$VERBOSE" == true ]] && echo -e "  \033[0;32m✓\033[0m nftban_redact.sh usable (nftban_redact_string defined)"
+else
+    echo -e "  \033[0;31m✖\033[0m nftban_redact.sh NOT usable — redaction authority missing/broken; support/debug will fail closed"
+fi
+
 # ==============================================================================
 # Updated Files - Modified 2025-11-28
 # ==============================================================================

@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/itcmsgr/nftban/internal/netutil"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
 )
 
@@ -67,8 +68,8 @@ type Backend struct {
 	nft *nftsync.NFTManager
 
 	// Cached tables and sets for performance
-	tableIPv4 *nftables.Table
-	tableIPv6 *nftables.Table
+	tableIPv4              *nftables.Table
+	tableIPv6              *nftables.Table
 	setBlacklistIPv4       *nftables.Set // interval set for feeds/geoban
 	setBlacklistIPv6       *nftables.Set
 	setBlacklistManualIPv4 *nftables.Set // hash set for manual/auto-detect (v1.33.0)
@@ -96,7 +97,10 @@ type Stats struct {
 	Syncs       int64
 	Errors      int64
 	ExemptSkips int64 // bans refused because the IP is never-ban exempt (F2 guard)
-	LastError   string
+	// L3a: add_element requests refused because a single exempt IP targeted an
+	// enforcement set (never-ban invariant enforced on the generic add path too).
+	AddElementExemptSkips int64
+	LastError             string
 }
 
 // EnableExemptionGuard wires the authoritative never-ban exemption guard. configDir is
@@ -258,7 +262,7 @@ func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set,
 // BanRequest contains parameters for banning an IP
 type BanRequest struct {
 	IP      string
-	Timeout int    // seconds, 0 = permanent
+	Timeout int // seconds, 0 = permanent
 	Reason  string
 	Source  string
 }
@@ -299,6 +303,24 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 	// instead of relying on firewall rule order (the pre-v1.209.x ordering-only model).
 	// Range-aware, v4+v6. Fail-safe: a nil/empty resolver never blocks a legitimate ban.
 	// Exemption ≠ accept: this only prevents a DROP of protected IPs; it adds no allow.
+	// v1.220.2 F3: absolute address-class reject BEFORE the membership exemption.
+	// The exemption resolver is membership-based (whitelist/system/SSH IPs) and
+	// fail-open — so 0.0.0.0/::/multicast/loopback and other non-public classes could
+	// slip into a drop set if not in any list. This class guard is non-overridable for
+	// loopback/unspecified/multicast and default-reject for the other non-public
+	// classes, independent of exemption state. Design rule: parse -> absolute-class
+	// reject -> self/host-owned (exemption) reject -> apply.
+	if reject, reason := netutil.EnforcementClassReject(req.IP); reject {
+		b.stats.ExemptSkips++
+		log.Printf("[BAN] REFUSED (non-bannable address class: %s) ip=%s source=%s — non-public/non-routable address NOT added to blacklist", reason, req.IP, req.Source)
+		return &BanResult{
+			Success: true,
+			IP:      req.IP,
+			Exempt:  true,
+			Message: fmt.Sprintf("not banned: non-bannable address class (%s)", reason),
+		}, nil
+	}
+
 	if b.exempt != nil {
 		if ok, reason := b.exempt.IsExempt(req.IP); ok {
 			b.stats.ExemptSkips++
@@ -512,9 +534,88 @@ func isPortSet(setName string) bool { return portSets[setName] }
 
 // AddElement adds an element to any set
 // This is the ONLY authorized add element implementation
+// ErrNeverBanExempt is returned by AddElement when a single exempt IP is refused entry
+// into an enforcement (drop) set. Callers can errors.Is() it to give a clear message.
+var ErrNeverBanExempt = errors.New("never-ban exempt: refused add to enforcement set")
+
+// enforcementSets are the drop/block sets where inserting a single exempt IP would
+// violate the never-ban invariant. Never-ban is a target-set + element property, so this
+// must cover EVERY add_element-reachable enforcement/drop set — not only the sets named in
+// the original L3a scope. Whitelist/port/metadata sets are intentionally excluded (adding
+// an admin IP to whitelist/ssh_ports is correct).
+//
+// add_element-reachable (validNFTBanSet) drop sets: blacklist_ipv4/6, geoban_ipv4/6,
+// persistent_offenders_ipv4/6, bogon_ipv4/6, and the BotGuard drop states
+// http_bot_ban{,6}/http_bot_emergency{,6}. blacklist_manual_* and ddos_blocked are NOT
+// add_element-reachable today but are kept as backend defense-in-depth. The live opqueue
+// EnqueueBan path that writes the BotGuard sets is a separate lane (L3b).
+var enforcementSets = map[string]bool{
+	"blacklist_ipv4":            true,
+	"blacklist_ipv6":            true,
+	"geoban_ipv4":               true,
+	"geoban_ipv6":               true,
+	"persistent_offenders_ipv4": true,
+	"persistent_offenders_ipv6": true,
+	"bogon_ipv4":                true,
+	"bogon_ipv6":                true,
+	"http_bot_ban":              true,
+	"http_bot_ban6":             true,
+	"http_bot_emergency":        true,
+	"http_bot_emergency6":       true,
+	// defense-in-depth (not add_element-reachable via validNFTBanSet today):
+	"blacklist_manual_ipv4": true,
+	"blacklist_manual_ipv6": true,
+	"ddos_blocked":          true,
+}
+
+// IsEnforcementSet reports whether set is a drop/block set subject to the never-ban
+// invariant on element add. Never-ban is a target-set + element property, not a verb
+// property — so the generic add path must consult this, not only the ban verb.
+func IsEnforcementSet(set string) bool { return enforcementSets[set] }
+
+// IsExempt reports whether ip must never be banned (admin/management/whitelist/system/
+// live-SSH), delegating to the authoritative resolver. Nil-safe: no resolver → not exempt
+// (fail-safe; never blocks a legitimate operation). Exposed so handlers can pre-check.
+func (b *Backend) IsExempt(ip string) (bool, string) {
+	if b.exempt == nil {
+		return false, ""
+	}
+	return b.exempt.IsExempt(ip)
+}
+
+// exemptAddRejection reports whether adding element to set must be refused by the
+// never-ban invariant: enforcement set AND a single exempt IP. Pure (no nft I/O), so the
+// decision is unit-testable without netlink/root. IsExempt returns false for CIDR/range
+// and non-single-IP inputs, so feed/interval CIDR adds are naturally unaffected.
+func (b *Backend) exemptAddRejection(set, element string) (bool, string) {
+	if !IsEnforcementSet(set) {
+		return false, ""
+	}
+	// v1.220.2 F3: absolute address-class reject on any enforcement-set add, before
+	// (and independent of) the fail-open membership exemption — loopback/unspecified/
+	// multicast + non-public classes can never enter a drop set via AddElement either.
+	if reject, reason := netutil.EnforcementClassReject(element); reject {
+		return true, "non-bannable-class:" + reason
+	}
+	if b.exempt == nil {
+		return false, ""
+	}
+	return b.exempt.IsExempt(element)
+}
+
 func (b *Backend) AddElement(ctx context.Context, req AddElementRequest) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// L3a — AUTHORITATIVE never-ban guard on the GENERIC add path (defense-in-depth).
+	// backend.Ban guards its verb; without this an exempt admin/session/system/live-SSH
+	// IP could be inserted into a drop set via add_element, bypassing the F2 invariant.
+	// Enforcement sets + single exempt IP only; CIDR/whitelist/port adds pass. Fail-safe.
+	if reject, reason := b.exemptAddRejection(req.Set, req.Element); reject {
+		b.stats.AddElementExemptSkips++
+		log.Printf("[ADDELEMENT] REFUSED (never-ban exempt: %s) set=%s ip=%s — protected admin/management/whitelist/system/live-SSH IP NOT added to enforcement set", reason, req.Set, req.Element)
+		return fmt.Errorf("%w: %s (%s)", ErrNeverBanExempt, req.Element, reason)
+	}
 
 	// Ensure netlink connection
 	if err := b.ensureNetlink(); err != nil {

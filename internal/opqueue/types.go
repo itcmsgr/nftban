@@ -108,19 +108,28 @@ type QueueStats struct {
 	TotalQueued   uint64
 	TotalApplied  uint64
 	TotalDropped  uint64
-	LastFlushTime time.Time
+	// L2b: number of replace_set applies that flushed then applied fewer elements than
+	// intended (partial/fail-open). Non-zero = degraded; the set is short of requested.
+	ReplacePartialFailures uint64
+	// L3b: number of EnqueueBan calls refused because a single exempt IP targeted an
+	// enforcement/drop set (never-ban invariant on the opqueue ban path).
+	EnqueueBanExemptSkips uint64
+	LastFlushTime         time.Time
 }
 
 // FlushResult contains the outcome of a buffer flush
 type FlushResult struct {
 	SetName     string
-	Applied     int
+	Applied     int      // TRUE count of elements actually applied (== actually_applied)
+	Intended    int      // L2b: elements the replace/flush intended to apply (diagnostic; 0 if N/A)
 	Adds        int      // Count of add operations applied (v1.32.0)
 	Deletes     int      // Count of delete operations applied (v1.32.0)
 	WasReplace  bool     // True if this was a replace_set operation (v1.32.0)
 	WasFlush    bool     // True if this was a flush_set operation (v1.32.0)
 	PostBarrier []*SetOp // Ops to re-enqueue after flush
-	Err         error
+	// Err is set when the operation did not fully succeed. L2b invariant:
+	// a partial replace (Applied < Intended) is NOT success — Err is non-nil.
+	Err error
 }
 
 // SetElement represents an element to add/delete from nftables
@@ -135,8 +144,11 @@ type NetlinkBackend interface {
 	// FlushSet clears all elements from a set
 	FlushSet(table, set string) error
 
-	// AddElements adds elements to a set (batched)
-	AddElements(table, set string, elements []SetElement) error
+	// AddElements adds elements to a set (batched). L2b: truth-bearing contract —
+	// returns the count ACTUALLY applied and a non-nil error if any element failed
+	// (applied < len(elements)). The returned count MUST equal what was really applied;
+	// callers rely on partial_apply != success.
+	AddElements(table, set string, elements []SetElement) (applied int, err error)
 
 	// DeleteElements removes elements from a set (batched)
 	DeleteElements(table, set string, elements []SetElement) error

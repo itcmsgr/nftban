@@ -90,6 +90,40 @@ _update_start_banner() {
 # Reads the module-global _RUN_ID / FORENSIC_RUN_DIR / UPDATE_LOG_FILE; failed-unit count
 # is read LIVE at summary time. Usage:
 #   _update_final_summary <result> <before_ver> <after_ver> <duration_s> <warnings> <validation>
+
+# _update_classify_warnings: bucket the WARN/⚠ lines in THIS run's installer.log slice
+# into operator-meaningful classes (v1.216.4) so a clean upgrade does not report generic
+# scary warnings. Sets module globals used by _update_final_summary:
+#   _NFTBAN_WARN_REAL      — warnings that require operator action
+#   _NFTBAN_WARN_RECOVERED — transients that self-healed (e.g. a recovered timer restore)
+#   _NFTBAN_WARN_ACCEPTED  — deliberate register-tracked exceptions (tmpfiles firewall-validate, v1.175)
+#   _NFTBAN_WARN_EXTERNAL  — OS/package-manager advisories (needrestart, pending kernel) — not NFTBan
+# W2 (tmpfiles exit 73) + W3 (unsafe path transition) are the SAME tmpfiles event → deduped to
+# ONE accepted exception; needrestart/kernel lines dedup to one external advisory.
+# Usage: _update_classify_warnings <installer_log> <before_line_count>
+_update_classify_warnings() {
+    local ilog="${1:-}" before="${2:-0}"
+    _NFTBAN_WARN_REAL=0; _NFTBAN_WARN_RECOVERED=0; _NFTBAN_WARN_ACCEPTED=0; _NFTBAN_WARN_EXTERNAL=0
+    [[ -f "$ilog" ]] || return 0
+    # Classify by SIGNATURE first (accepted/external lines often lack a WARN tag), skipping
+    # the installer's own meta self-report; only genuinely warn-tagged remainder = REAL.
+    # Order matters: specific signatures are matched before the generic WARN/non-fatal catch.
+    local line _tmpfiles=0 _external=0
+    while IFS= read -r line; do
+        case "$line" in
+            *"recovered — verified active"*)                                             _NFTBAN_WARN_RECOVERED=$((_NFTBAN_WARN_RECOVERED + 1)); continue ;;
+            *"exit 73"*|*"unsafe path transition"*|*"firewall-validate"*)                 _tmpfiles=1; continue ;;                                       # W2/W3 accepted (deduped)
+            *"Pending kernel"*|*needrestart*|*"deferred"*|*"Restarting services"*|*"outdated binaries"*) _external=1; continue ;;                        # W4 external (deduped)
+            *"still inactive after restore"*)                                            _NFTBAN_WARN_REAL=$((_NFTBAN_WARN_REAL + 1)); continue ;;      # W1 real
+            *", with "*"warning"*|*" warning — non-fatal"*|*"non-fatal"*)                 continue ;;                                                    # installer meta self-report — skip
+            *"WARN"*|*"⚠"*)                                                              _NFTBAN_WARN_REAL=$((_NFTBAN_WARN_REAL + 1)); continue ;;      # any other warn-tagged line = real
+        esac
+    done < <(tail -n +$((before + 1)) "$ilog" 2>/dev/null)
+    [[ "$_tmpfiles" -eq 1 ]] && _NFTBAN_WARN_ACCEPTED=1
+    [[ "$_external" -eq 1 ]] && _NFTBAN_WARN_EXTERNAL=1
+    return 0
+}
+
 _update_final_summary() {
     local result="${1:-UNKNOWN}" before="${2:-?}" after="${3:-?}" dur="${4:-?}"
     local warnings="${5:-0}" validation="${6:-unavailable}"
@@ -106,7 +140,13 @@ _update_final_summary() {
     echo "  ┌─ Update summary ─────────────────────────────────────"
     printf '  │ %-16s %s\n' "Result:"          "$result"
     printf '  │ %-16s %s\n' "Version:"         "v${before} → v${after} (${dur}s)"
-    printf '  │ %-16s %s\n' "Warnings:"        "$warnings"
+    # v1.216.4: class-aware warning breakdown so a clean upgrade doesn't show a scary
+    # generic count. Falls back to the plain count if warnings were not classified.
+    if [[ -n "${_NFTBAN_WARN_REAL:-}" ]]; then
+        printf '  │ %-16s %s\n' "Warnings:" "${_NFTBAN_WARN_REAL} action / ${_NFTBAN_WARN_RECOVERED:-0} recovered / ${_NFTBAN_WARN_ACCEPTED:-0} accepted / ${_NFTBAN_WARN_EXTERNAL:-0} external"
+    else
+        printf '  │ %-16s %s\n' "Warnings:" "$warnings"
+    fi
     printf '  │ %-16s %s\n' "Failed units:"    "$failed_units"
     printf '  │ %-16s %s\n' "Validation:"      "$validation"
     printf '  │ %-16s %s\n' "Completed phases:" "${phases_done}/${phases_total}"
@@ -361,11 +401,35 @@ _update_inhibit_cadence_timers() {
 _update_restore_cadence_timers() {
     [[ -z "${_NFTBAN_INHIBITED_TIMERS:-}" ]] && return 0
     command -v systemctl >/dev/null 2>&1 || { _NFTBAN_INHIBITED_TIMERS=""; return 0; }
-    local t
-    for t in $_NFTBAN_INHIBITED_TIMERS; do
-        systemctl start "$t" 2>/dev/null || _update_log WARN "Failed to restart inhibited timer $t — start it manually: systemctl start $t"
+    # v1.216.4 BUG-UPDATE-INHIBITED-TIMER-FALSE-WARN: _NFTBAN_INHIBITED_TIMERS is a
+    # space-joined string, but the update entrypoint sets IFS=$'\n\t' (space excluded),
+    # so a bare `for t in $var` did NOT split it — systemctl was handed both timers as
+    # ONE malformed unit name and always "failed", emitting a false WARN even though the
+    # installer's timer reconciliation left them active. Split on space explicitly (scoped
+    # IFS on the read), start each timer individually, then VERIFY with is-active: warn
+    # ONLY if a timer is genuinely still inactive after restore (a transient start failure
+    # that self-heals is a recovered advisory, not a real warning).
+    local t transient=0
+    local -a _timers_arr=() restored=() still_inactive=()
+    IFS=' ' read -r -a _timers_arr <<< "$_NFTBAN_INHIBITED_TIMERS"
+    for t in "${_timers_arr[@]}"; do
+        [[ -n "$t" ]] || continue
+        systemctl start "$t" 2>/dev/null || transient=1
+        if systemctl is-active --quiet "$t" 2>/dev/null; then
+            restored+=("$t")
+        else
+            still_inactive+=("$t")
+        fi
     done
-    _update_log INFO "Restored cadence timer(s): ${_NFTBAN_INHIBITED_TIMERS}"
+    if [[ ${#still_inactive[@]} -gt 0 ]]; then
+        # WARN_REAL: a cadence timer is actually down after restore — operator action needed.
+        _update_log WARN "cadence timer(s) still inactive after restore: ${still_inactive[*]} — start manually: systemctl start ${still_inactive[*]}"
+    elif [[ "$transient" -eq 1 ]]; then
+        # WARN_RECOVERED: start returned non-zero but is-active confirms recovery (no action).
+        _update_log INFO "Restored cadence timer(s): ${restored[*]} (recovered — verified active after a transient start error)"
+    else
+        _update_log INFO "Restored cadence timer(s): ${restored[*]} (verified active)"
+    fi
     _NFTBAN_INHIBITED_TIMERS=""
     return 0
 }
@@ -409,7 +473,23 @@ _forensic_run_id() { printf '%s' "${NFTBAN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/
 # minimal JSON string escaper (no jq dependency)
 _fx_jstr() { local s="${1-}"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; s="${s//$'\t'/ }"; s="${s//$'\r'/ }"; printf '%s' "$s"; }
 # secret redaction safety-net (the snapshot is allowlisted, but values pass this too)
-_fx_redact() { sed -E 's/(pass(word)?|secret|token|api[_-]?key|bearer|authorization)([=: ]+)[^ ",]*/\1\3<redacted>/Ig'; }
+_fx_redact() {
+    # SEC-P1-2 P2b-1/P-retire-2: delegate to the shared redaction authority (the ONLY secret path).
+    if ! declare -F nftban_redact_stream >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+    fi
+    # FAIL-CLOSED — the legacy weak sed (missed *_PASS) is RETIRED. If the authority is unavailable,
+    # drain+discard stdin and emit the marker; never weak-redact, never raw passthrough.
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        cat >/dev/null 2>&1
+        printf '%s\n' '[REDACTION-UNAVAILABLE: do not share]'
+        echo '[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed' >&2
+    fi
+    return 0
+}
 
 # _forensic_begin <run_id> <mode> <from> <to>
 _forensic_begin() {

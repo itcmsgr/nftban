@@ -123,8 +123,8 @@ The order of rules in the input chain is **non-negotiable**.
 ```
 Priority | Rule                            | Purpose
 ---------|----------------------------------|---------------------------
-1        | ct state invalid drop           | Malformed packets
-2        | iif lo accept                   | Loopback always allowed
+1        | iif lo accept                   | Loopback first — local traffic never hit by invalid-drop (v1.217.0)
+2        | ct state invalid drop           | Malformed packets (external INVALID still dropped, after loopback)
 3        | whitelist accept                | Trusted IPs bypass checks
 4        | blacklist drop                  | ⚠️ BEFORE established!
 5        | ct state established accept     | ✅ NOW safe (after bans)

@@ -818,6 +818,9 @@ _cmd_update_main_locked() {
         _summary_warnings=$(tail -n +$((_ilog_before_lines + 1)) "$_ilog_file" 2>/dev/null | grep -c -iE 'WARN|⚠' || true)
         _summary_warnings=${_summary_warnings//[^0-9]/}; _summary_warnings=${_summary_warnings:-0}
     fi
+    # v1.216.4: classify the raw warnings into action / recovered / accepted / external so
+    # the summary and operator-readiness reflect only warnings that actually need action.
+    _update_classify_warnings "$_ilog_file" "$_ilog_before_lines"
 
     case "$_installer_state" in
         COMMITTED)
@@ -842,6 +845,12 @@ _cmd_update_main_locked() {
             # be COMMITTED). One block only — no second/contradictory verdict.
             local _rd_ready="PASS" _rd_action="NONE"
             if [[ "${health_status:-0}" -ne 0 ]]; then _rd_ready="PASS_WITH_WARN"; _rd_action="WARN"; fi
+            # v1.216.4 invariant: "Action needed: NONE" iff there are ZERO warnings requiring
+            # action. Recovered/accepted/external advisories never force an action verdict —
+            # only WARN_REAL (a genuine unresolved warning) does.
+            if [[ "${_NFTBAN_WARN_REAL:-0}" -gt 0 ]]; then
+                _rd_ready="PASS_WITH_WARN"; _rd_action="review ${_NFTBAN_WARN_REAL} warning(s) requiring action"
+            fi
             printf "  %-20s %s\n" "Operational:" "YES"
             printf "  %-20s %s\n" "Upgrade readiness:" "$_rd_ready"
             printf "  %-20s %s\n" "Action needed:" "$_rd_action"
@@ -2457,44 +2466,22 @@ To rollback:
         source "$mail_lib" 2>/dev/null || true
     fi
 
-    # Try to send email using nftban mail module
-    if declare -f nftban_mail_send &>/dev/null; then
-        # Use plain text for update notifications
+    # A1 central-comms: send via the central authority's spool/retry variant. On failure the
+    # notice is SPOOLED for later delivery — there is NO direct sendmail/mail side channel.
+    if declare -f nftban_mail_send_with_retry &>/dev/null; then
         local old_html="${NFTBAN_MAIL_USE_HTML:-}"
         NFTBAN_MAIL_USE_HTML="NO"
-
-        echo "$body" | nftban_mail_send "$body" "$recipient" 2>/dev/null && {
+        if nftban_mail_send_with_retry "$body" "$recipient" "$subject" 2>/dev/null; then
             _update_log INFO "Notification sent to: $recipient"
             NFTBAN_MAIL_USE_HTML="$old_html"
             return 0
-        }
+        fi
         NFTBAN_MAIL_USE_HTML="$old_html"
+        _update_log WARN "Central mail send failed for $recipient — spooled for retry (no direct fallback)"
+        return 0
     fi
 
-    # Fallback: try sendmail directly
-    if command -v sendmail &>/dev/null; then
-        {
-            echo "From: nftban@$hostname_val"
-            echo "To: $recipient"
-            echo "Subject: $subject"
-            echo "Content-Type: text/plain; charset=UTF-8"
-            echo ""
-            echo "$body"
-        } | sendmail -t 2>/dev/null && {
-            _update_log INFO "Notification sent to: $recipient (via sendmail)"
-            return 0
-        }
-    fi
-
-    # Fallback: try mail command
-    if command -v mail &>/dev/null; then
-        echo "$body" | mail -s "$subject" "$recipient" 2>/dev/null && {
-            _update_log INFO "Notification sent to: $recipient (via mail)"
-            return 0
-        }
-    fi
-
-    _update_log WARN "Could not send email notification (no mail system available)"
+    _update_log WARN "Central mail authority unavailable — update notification not sent (no direct fallback)"
     return 1
 }
 

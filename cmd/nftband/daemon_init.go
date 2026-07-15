@@ -457,6 +457,17 @@ func (d *Daemon) initOpQueue() error {
 	// Create OpQueue with default config
 	d.opQueue = opqueue.NewOpQueue(wrapper, opqueue.DefaultQueueConfig())
 
+	// L3b — inject the never-ban guard into the opqueue ban path. BotGuard state-set bans
+	// (opqueue.EnqueueBan) bypass backend.Ban and the L3a backend.AddElement guard; this
+	// makes the invariant hold there too. The closure combines the enforcement-set
+	// classifier with the SAME authoritative resolver backend.Ban / L3a use.
+	d.opQueue.SetExemptResolver(func(set, ip string) (bool, string) {
+		if nftbackend.IsEnforcementSet(set) {
+			return d.backend.IsExempt(ip)
+		}
+		return false, ""
+	})
+
 	// v1.32.0: Initialize set element counters for huge set management
 	runDir, _, _, _ := getDaemonPaths()
 	d.setCounters = stats.NewSetCounters(runDir)

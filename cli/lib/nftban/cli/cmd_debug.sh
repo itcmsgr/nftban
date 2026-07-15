@@ -47,6 +47,26 @@ fi
 [[ -n "${CMD_DEBUG_LOADED:-}" ]] && return 0
 readonly CMD_DEBUG_LOADED=1
 
+# SEC-P1-2 (duplicate-redactor retirement, P-retire-1): scrub secrets from debug output through the
+# SHARED redaction authority, not a local sed. The previous raw sed matched PASSWORD but not PASS
+# (leaking NFTBAN_SMTP_PASS / connector *_PASS) and matched bare KEY (over-redacting KAFKA_PARTITION_KEY).
+_debug_scrub_stream() {
+    if ! declare -F nftban_redact_stream >/dev/null 2>&1 && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+    fi
+    # SEC-P1-2 P-retire-2: FAIL-CLOSED — never `cat` raw config/env through when the redactor is
+    # unavailable (that was a silent full-leak of debug output). Drain+discard stdin, emit marker.
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        cat >/dev/null 2>&1
+        printf '%s\n' '[REDACTION-UNAVAILABLE: do not share]'
+        echo '[SECURITY][ERROR] nftban_redact.sh unavailable — redaction skipped, content suppressed' >&2
+    fi
+    return 0
+}
+
 # =============================================================================
 # COMMAND HANDLER
 # =============================================================================
@@ -461,17 +481,17 @@ nftban_debug_dump() {
         config)
             echo "=== Configuration ==="
             if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-                # v1.19.0: Filter secrets from debug output (R42)
+                # Filter secrets from debug output via the shared redaction authority (R42).
                 grep -v '^#' "${NFTBAN_CONFIG_DIR}/nftban.conf" | grep -v '^$' \
-                    | sed -E 's/(TOKEN|PASSWORD|SECRET|KEY|APIKEY|API_KEY)=.*/\1=***REDACTED***/i'
+                    | _debug_scrub_stream
             fi
             ;;
 
         env)
             echo "=== Environment Variables ==="
-            # v1.19.0: Filter secret-like env vars from debug output (R42)
+            # Filter secret-like env vars from debug output via the shared redaction authority (R42).
             env | grep -E '^NFTBAN_' | sort \
-                | sed -E 's/(TOKEN|PASSWORD|SECRET|KEY|APIKEY|API_KEY)=.*/\1=***REDACTED***/i'
+                | _debug_scrub_stream
             ;;
 
         services)

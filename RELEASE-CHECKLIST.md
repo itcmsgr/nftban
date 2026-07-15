@@ -92,4 +92,22 @@ Before tagging a release:
 
 ---
 
+## Embargoed Security Release
+
+For a coordinated-disclosure fix (see [`docs/security/COORDINATED_DISCLOSURE.md`](docs/security/COORDINATED_DISCLOSURE.md)
+and [`SECURITY.md`](SECURITY.md)):
+
+- [ ] Report received privately (GitHub Security Advisory or security@nftban.com); handled TLP:RED
+- [ ] Fix developed on a private/embargo branch (or GHSA private fork)
+- [ ] Validation: full CI + relevant install/runtime-truth/canonization gates + a regression test for the vulnerability class
+- [ ] Packages built via the normal pipeline (signing applies once package signing exists — see roadmap Lane 2; not yet available)
+- [ ] Advisory drafted: CVSS vector, CWE, affected/fixed versions, VEX if dependency-related
+- [ ] **Coordinated release timing** — publish the fixed version and the GitHub Security Advisory together at the agreed time
+- [ ] Backport the fix to the "security-fixes-only" prior minor per the supported-versions policy
+- [ ] Operator notice via GitHub Security Advisory + release notes (a security-announcement list is planned, not yet available)
+- [ ] Post-release: public disclosure + reporter credit; short postmortem + regression guard
+- [ ] Rollback: if the hotfix regresses, use the documented rollback/commit-confirm path and re-issue under the same embargo discipline
+
+---
+
 *This checklist is frozen for 2026.*
