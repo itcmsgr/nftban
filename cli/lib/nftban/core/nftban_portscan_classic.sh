@@ -525,6 +525,16 @@ nftban_portscan_classic_process_logs() {
                 continue
             fi
 
+            # Trusted-monitoring-flow exclusion: suppress EVENT GENERATION (no event,
+            # no spool/state entry) ONLY for an exactly-declared, within-rate trusted
+            # flow tuple. Any dimension mismatch or an over-rate matching flow falls
+            # through to the normal emit+record path (abnormal behaviour stays visible).
+            # Firewall acceptance, ban authority, whitelist, and the classifier are unchanged.
+            if type -t nftban_portscan_trusted_flow_suppress &>/dev/null \
+               && nftban_portscan_trusted_flow_suppress "$src_ip" "$dst_ip" "$dst_port" "$proto"; then
+                continue
+            fi
+
             # Emit micro-event for stealth aggregation (uses original log timestamp)
             local log_ts
             log_ts=$(_nftban_portscan_extract_timestamp "$line")
@@ -548,6 +558,16 @@ nftban_portscan_classic_process_logs() {
 
             # Skip whitelisted IPs - HARD GATE (no state accumulation)
             if nftban_portscan_classic_is_whitelisted "$src_ip"; then
+                continue
+            fi
+
+            # Trusted-monitoring-flow exclusion: suppress EVENT GENERATION (no event,
+            # no spool/state entry) ONLY for an exactly-declared, within-rate trusted
+            # flow tuple. Any dimension mismatch or an over-rate matching flow falls
+            # through to the normal emit+record path (abnormal behaviour stays visible).
+            # Firewall acceptance, ban authority, whitelist, and the classifier are unchanged.
+            if type -t nftban_portscan_trusted_flow_suppress &>/dev/null \
+               && nftban_portscan_trusted_flow_suppress "$src_ip" "$dst_ip" "$dst_port" "$proto"; then
                 continue
             fi
 
