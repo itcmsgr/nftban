@@ -68,6 +68,12 @@ jobs:
       - name: Check nft transition atomicity
         run: ./scripts/ci/check-nft-atomicity.sh
 
+      # Build provenance: the packaging build must never silently package a stale
+      # bin/* artifact. Source builds rebuild+verify; prebuilt packaging is explicit
+      # and manifest-verified. Runs the hermetic provenance test suite.
+      - name: Check build provenance (anti-stale-prebuilt)
+        run: ./scripts/ci/check-build-provenance.sh
+
       # v1.194 (8C): protection-claim matrix gate. Fails the PR if the matrix
       # regresses — wrong row count, missing/empty fields, invalid OWNER/MODE/
       # CLASSIFICATION enum, a claimed-enforce row orphaned to owner=NONE
