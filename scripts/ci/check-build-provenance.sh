@@ -102,6 +102,22 @@ else
 fi
 rm -f "$_neg"
 
+# 8) Downstream SLSA contract: nftban-core-linux-amd64 (+ .intoto.jsonl provenance)
+#    are the TWO assets the release intentionally splits to the SLSA workflow, which
+#    runs only after a SUCCESSFUL Release Packages run. Guards that this gating stays
+#    intact so the final 15-asset set is not silently reduced (the release.yml dry-run
+#    only certifies the pre-SLSA 13; these 2 come from here).
+SLSA=".github/workflows/slsa-go-releaser.yml"
+if [[ -f "$SLSA" ]]; then
+    echo "[slsa-contract] $SLSA"
+    grep -q 'workflows: \["Release Packages"\]' "$SLSA" || { echo "::error::SLSA must trigger on the 'Release Packages' workflow_run"; FAIL=1; }
+    grep -qE "workflow_run\.conclusion == 'success'" "$SLSA" || { echo "::error::SLSA must gate on Release Packages conclusion == success"; FAIL=1; }
+    grep -q 'nftban-core' "$SLSA" || { echo "::error::SLSA must build/upload nftban-core"; FAIL=1; }
+    grep -qiE 'builder_go_slsa3|slsa-github-generator' "$SLSA" || { echo "::error::SLSA must use the slsa-github-generator (provenance) builder"; FAIL=1; }
+else
+    echo "::error::$SLSA missing — the downstream nftban-core provenance assets would be absent from releases"; FAIL=1
+fi
+
 echo "========================================"
 if [[ "$FAIL" -eq 0 ]]; then echo "RESULT: PASS — build provenance guard holds"; exit 0; fi
 echo "RESULT: FAIL — stale-prebuilt guard violated (see ::error:: above)"; exit 1

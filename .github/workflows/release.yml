@@ -700,35 +700,57 @@ jobs:
       # authoritative dry-run evidence). Proves 7 packages + binary + supply-chain
       # files exist and that the DEB and RPM package byte-identical daemons.
       - name: Verify assembled release directory
+        # Verifies the PRE-SLSA asset set that this workflow (Release Packages) owns.
+        # nftban-core-linux-amd64 + its .intoto.jsonl are produced by the DOWNSTREAM
+        # SLSA workflow (gated on a successful Release Packages run) and are NOT
+        # expected here. The final SHA256SUMS is produced by verify-release at publish;
+        # on a dry-run we compute it over the checksummable assets to prove the set is
+        # complete and checksummable. (v1.221.1)
         env:
           EVENT_NAME: ${{ github.event_name }}
           PUBLISH: ${{ inputs.publish }}
         run: |
           sudo apt-get update && sudo apt-get install -y rpm2cpio cpio >/dev/null 2>&1 || true
           cd dist/packages
-          DEB_COUNT=$(ls -1 *.deb 2>/dev/null | wc -l)
-          RPM_COUNT=$(ls -1 *.rpm 2>/dev/null | wc -l)
-          BINARY_COUNT=$(ls -1 nftband-linux-amd64 2>/dev/null | wc -l)
-          echo "DEB_COUNT=$DEB_COUNT"; echo "RPM_COUNT=$RPM_COUNT"
-          echo "PACKAGE_COUNT=$((DEB_COUNT + RPM_COUNT))"; echo "BINARY_COUNT=$BINARY_COUNT"
-          for f in SHA256SUMS.build MANIFEST.txt VERIFY.txt sbom.spdx.json; do
-            if [ -f "$f" ]; then echo "$f=PRESENT"; else echo "::error::$f MISSING"; exit 1; fi
+          IS_DRYRUN=0
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$PUBLISH" != "true" ]; then IS_DRYRUN=1; fi
+          DEB_COUNT=$(ls -1 ./*.deb 2>/dev/null | wc -l)
+          RPM_COUNT=$(ls -1 ./*.rpm 2>/dev/null | wc -l)
+          echo "DRY_RUN_DEB_COUNT=$DEB_COUNT"; echo "DRY_RUN_RPM_COUNT=$RPM_COUNT"
+          echo "DRY_RUN_PACKAGE_COUNT=$((DEB_COUNT + RPM_COUNT))"
+          # Standalone binaries: create-release owns only nftband; nftban-core is a
+          # downstream SLSA (provenance) asset — NOT produced here by design.
+          test -f nftband-linux-amd64 && echo "DRY_RUN_NFTBAND_PRESENT=YES" || { echo "::error::nftband-linux-amd64 missing"; exit 1; }
+          echo "DRY_RUN_NFTBAN_CORE_PRESENT=NOT_APPLICABLE_DOWNSTREAM_SLSA"
+          echo "DRY_RUN_PRE_SLSA_BINARY_COUNT=1"
+          for f in sbom.spdx.json SHA256SUMS.build MANIFEST.txt VERIFY.txt; do
+            test -f "$f" && echo "${f}_PRESENT=YES" || { echo "::error::$f MISSING"; exit 1; }
           done
-          # DEB/RPM daemon byte parity (same build-binaries artifact → must match)
-          rm -rf /tmp/px && mkdir -p /tmp/px/deb /tmp/px/rpm
-          dpkg-deb -x nftban-ubuntu24.04-amd64.deb /tmp/px/deb
-          rpm2cpio nftban-el9-x86_64.rpm | (cd /tmp/px/rpm && cpio -idm --quiet)
-          DEB_SHA=$(sha256sum /tmp/px/deb/usr/lib/nftban/bin/nftband | awk '{print $1}')
-          RPM_SHA=$(sha256sum /tmp/px/rpm/usr/lib/nftban/bin/nftband | awk '{print $1}')
+          # Prove the pre-SLSA checksum inventory is generatable over the checksummed
+          # release assets (packages + nftband) — mirrors what verify-release publishes.
+          if [ "$IS_DRYRUN" = 1 ]; then
+            sha256sum ./*.rpm ./*.deb nftband-linux-amd64 > SHA256SUMS
+            echo "DRY_RUN_SHA256SUMS_PRESENT=YES (covers $(wc -l < SHA256SUMS) release assets: packages + nftband)"
+          fi
+          # DEB/RPM daemon byte parity (same build-binaries artifact → must match).
+          rm -rf "$RUNNER_TEMP/px" && mkdir -p "$RUNNER_TEMP/px/deb" "$RUNNER_TEMP/px/rpm"
+          dpkg-deb -x nftban-ubuntu24.04-amd64.deb "$RUNNER_TEMP/px/deb"
+          rpm2cpio nftban-el9-x86_64.rpm | (cd "$RUNNER_TEMP/px/rpm" && cpio -idm --quiet)
+          DEB_SHA=$(sha256sum "$RUNNER_TEMP/px/deb/usr/lib/nftban/bin/nftband" | awk '{print $1}')
+          RPM_SHA=$(sha256sum "$RUNNER_TEMP/px/rpm/usr/lib/nftban/bin/nftband" | awk '{print $1}')
           echo "DEB_DAEMON_SHA=$DEB_SHA"; echo "RPM_DAEMON_SHA=$RPM_SHA"
-          echo "PUBLISHED_EMBEDDED_COMMIT=$(/tmp/px/deb/usr/lib/nftban/bin/nftband --version 2>/dev/null | grep -oE 'git [0-9a-f]+' || echo unknown)"
+          echo "PUBLISHED_EMBEDDED_COMMIT=$("$RUNNER_TEMP/px/deb/usr/lib/nftban/bin/nftband" --version 2>/dev/null | grep -oE 'git [0-9a-f]+' || echo unknown)"
           [ "$DEB_COUNT" = 5 ] || { echo "::error::expected DEB_COUNT=5, got $DEB_COUNT"; exit 1; }
           [ "$RPM_COUNT" = 2 ] || { echo "::error::expected RPM_COUNT=2, got $RPM_COUNT"; exit 1; }
           [ "$DEB_SHA" = "$RPM_SHA" ] || { echo "::error::DEB_RPM_DAEMON_BYTE_IDENTICAL=NO"; exit 1; }
           echo "DEB_RPM_DAEMON_BYTE_IDENTICAL=YES"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$PUBLISH" != "true" ]; then
-            echo "RELEASE_UPLOAD_EXECUTED=NO (dry-run)"
-          fi
+          # Pre-SLSA asset inventory: 7 packages + nftband + sbom + SHA256SUMS.build +
+          # MANIFEST + VERIFY (+ generated SHA256SUMS on dry-run) = 13; +2 downstream
+          # SLSA (nftban-core-linux-amd64 + .intoto.jsonl) = 15 final.
+          PRE_SLSA=$(ls -1 ./*.rpm ./*.deb nftband-linux-amd64 sbom.spdx.json SHA256SUMS.build MANIFEST.txt VERIFY.txt SHA256SUMS 2>/dev/null | wc -l)
+          echo "DRY_RUN_PRE_SLSA_ASSET_COUNT=$PRE_SLSA"
+          echo "FINAL_EXPECTED_ASSET_COUNT=15 (13 pre-SLSA + nftban-core-linux-amd64 + nftban-core-linux-amd64.intoto.jsonl)"
+          [ "$IS_DRYRUN" = 1 ] && echo "DRY_RUN_RELEASE_UPLOAD_EXECUTED=NO"
 
       - name: Upload assembled release directory (artifact, for dry-run inspection)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
