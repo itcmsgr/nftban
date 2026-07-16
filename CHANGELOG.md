@@ -11,6 +11,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.221.0] - 2026-07-16 — Atomic Enforcement, Build Provenance, and Daemon Lifecycle Observability
+
+**RELEASE CANDIDATE — implementation merged to `main`; metadata prepared; pending Stage-B (package-native lab2 DEB + lab4 RPM). NOT yet tagged, NOT yet published, NOT yet deployed to the fleet.** The published/fleet baseline remains **v1.220.10** (11/11) until this train passes Stage-B and is published. nft schema **1** unchanged; validator/status schema **1.84.0** unchanged. Daemon Go source changed (opqueue + lifecycle) → **daemon re-baseline** for v1.221.0.
+
+### Highlights
+- First minor release since the v1.220.x patch line — it changes enforcement mechanics, packaging guarantees, and daemon startup/readiness observability, not just corrective maintenance.
+- Three engineering pillars: **enforcement integrity** (atomic set replacement), **build & supply-chain integrity** (provenance-verified packaging), and **operational observability** (daemon startup lifecycle + readiness truth).
+
+### Enforcement integrity (PR #1107)
+- nftables set replacement is now a **single netlink transaction** (`FlushSet` + batched `SetAddElements` + exactly one `Flush()`): the kernel set holds either the old or the new contents, never a transient empty state.
+- Authoritative **non-creating** live-set resolution (family derived from the real `set.KeyType`, not a name suffix — fixes `http_bot_ban6` mis-resolution).
+- Large replacements batch at **1000 elements within one commit** (fixes oversized-message silent partial commits).
+- Fail-closed on invalid input / transaction failure; extended `internal/opqueue` CI atomicity guard.
+
+### Build and provenance (PR #1108)
+- Packaging no longer silently reuses a stale gitignored prebuilt binary. Default builds clean + rebuild all six packaged Go binaries and verify embedded source identity.
+- Explicit **verified-prebuilt** mode (`--use-prebuilt --prebuilt-manifest`, all-six SHA + anchor-commit + set-completeness) and a **conditional offline** source-build mode (`GOPROXY=off`/`GOSUMDB=off`/`GOTOOLCHAIN=local` with an explicit local dependency source; fail-closed with no network).
+- Source identity bound to Git HEAD or a `SOURCE_COMMIT` file; package **SHA-chain** verification (`BUILT==STAGED==PACKAGE_EXTRACTED`); CI build-artifact manifest handoff (commit- + checksum-bound).
+
+### Daemon startup and readiness (PR #1109)
+- One canonical, concurrency-safe **startup lifecycle** with 14 journal-visible phases (`PROCESS_START`…`SHUTDOWN_COMPLETE`) and structured `event=startup_phase` logs.
+- Explicit **readiness prerequisites** gate `READY=1`; degradable components (nft/opqueue/watchdog) are surfaced (`degraded_components`), never hidden.
+- **systemd-vs-direct-run notification semantics**: under a `Type=notify` unit, a failed/undelivered `READY=1` is now **fatal** (no silent `activating`-until-timeout); a direct terminal run without `NOTIFY_SOCKET` remains supported and non-fatal.
+- Bounded one-shot **`event=startup_pending`** diagnostic (default 60 s, before the 90 s systemd start timeout) naming the blocked phase.
+- Additive **`lifecycle`** object in the status IPC (existing fields unchanged); IPC *bound* is distinguished from IPC *accepting*.
+- Daemon-launched child processes no longer inherit the daemon's systemd notification variables (`NOTIFY_SOCKET`/`WATCHDOG_USEC`/`WATCHDOG_PID`) — only the main process may notify systemd.
+
+### Privacy and repository hygiene (PR #1106)
+- Private infrastructure identifiers were scrubbed from the tracked tree and **blocking privacy gates** were added to CI and the build (release-scope + staging scans). Daemon behavior is unchanged. Current + future release surface scans clean.
+
+### Operator-visible changes
+- New structured startup logs and a `lifecycle` status object (additive; existing status fields unchanged).
+- systemd `StatusText` reflects the live startup phase and `NFTBan ready` at steady state.
+- New Wiki operator page **Startup Lifecycle & Readiness** (revision `5d2eb18`).
+
+### Compatibility
+- **nft schema 1** and **validator/status schema 1.84.0** unchanged; no persisted-state format change.
+- Status IPC additions are **additive** — existing consumers are unaffected.
+- Direct (non-systemd) daemon execution remains supported.
+- **Behavior change to be aware of:** under systemd `Type=notify`, a readiness-notification failure is now fatal (previously the process could keep running while systemd stayed `activating`).
+
+### Validation
+- Whole-repo `go test ./...` and `go vet` clean; lifecycle/procenv unit + race tests pass.
+- Package-native Stage-B (lab2 DEB Ubuntu 24.04, lab4 RPM AlmaLinux 9) is **pending** for this release candidate; earlier per-PR lab validations passed and both labs were restored to the official v1.220.10 daemon (`bc9650be`).
+
+### Known limitations and carried-forward debt (non-blocking for publication unless new evidence appears)
+- `WATCH_OPQUEUE_DORMANT_BULK_REPLACE_ATOMICITY` — four dormant, zero-caller bulk/file replacement paths still flush-then-add; atomic routing is mandatory before any caller is introduced.
+- `OPEN_OFFLINE_BUILD_DEPENDENCY_AND_KIT` — offline source builds require **locally provisioned modules** (vendor/ or `--module-cache`); manifest signing and offline-kit generation remain deferred.
+- `OPEN_REPRODUCIBLE_BUILD_DATE_AND_SOURCE_EPOCH` — `build.sh` uses a wall-clock `BUILD_DATE`, so daemon binaries are not byte-reproducible across builds (provenance binds via GitCommit, not SHA); reproducible timestamps remain open.
+- `WATCH_SOURCED_LIBRARY_STRICT_MODE_HEADER_POLICY` — header policy forces top-level strict mode on sourced libraries (tooling debt; currently safe).
+- `HISTORICAL_PULL_REF_RESIDUAL` — GitHub-managed immutable `refs/pull/*` still expose pre-rewrite commits; a GitHub Support request is drafted. Independent of this release; not a publication blocker unless GitHub Support identifies a new direct risk.
+
+### Upgrade and rollback
+- Upgrade is a standard package upgrade (DEB/RPM). No configuration migration and no firewall rebuild are required (schema unchanged).
+- Rollback to v1.220.10 is supported from the preserved official release assets (daemon `bc9650be`): `dpkg -i nftban-*_1.220.10_*.deb` or `rpm -U --force nftban-core-1.220.10*.rpm`; the nft schema is compatible, so no firewall rebuild is needed on downgrade.
+
+---
+
 ## [v1.220.10] - 2026-07-15 — Portscan trusted-flow IPv6 destination canonicalization (hotfix)
 
 **Shell/config/tests only · 0 Go · daemon byte-identical · nft schema 1.84.0 unchanged · firewall/ban/whitelist authority unchanged.**
