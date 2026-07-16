@@ -25,10 +25,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // ConfigDir is the base config directory. Overridable for testing.
@@ -789,7 +790,7 @@ func countSetElements(family, setName string) int {
 // manual blacklist). The cost is one nft command per set query.
 func countSetElementsReal(family, setName string) int {
 	table := "nftban"
-	out, err := exec.Command("nft", "-j", "list", "set", family, table, setName).Output()
+	out, err := procenv.Command("nft", "-j", "list", "set", family, table, setName).Output()
 	if err != nil {
 		return 0
 	}
@@ -839,7 +840,7 @@ func countSetElementsState(family, setName string) (count int, exists bool, unkn
 
 func countSetElementsStateReal(family, setName string) (count int, exists bool, unknown bool) {
 	table := "nftban"
-	out, err := exec.Command("nft", "-j", "list", "set", family, table, setName).Output()
+	out, err := procenv.Command("nft", "-j", "list", "set", family, table, setName).Output()
 	if err != nil {
 		// Command failure: could be a missing set, but also a timeout/permission/
 		// exec error. Mark unknown so callers never treat failure as confirmed empty.

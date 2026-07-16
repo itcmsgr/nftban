@@ -26,23 +26,23 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/itcmsgr/nftban/internal/procenv"
 	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // PanelConfig represents a control panel's port configuration
 type PanelConfig struct {
-	Name      string   // Panel name (directadmin, cpanel, plesk)
-	Enabled   bool     // Whether panel is enabled
-	ConfigFile string  // Path to panel config file
-	TCPIn     []int    // TCP input ports
-	TCPOut    []int    // TCP output ports (for OUTPUT chain)
-	UDPIn     []int    // UDP input ports
-	UDPOut    []int    // UDP output ports (for OUTPUT chain)
+	Name       string // Panel name (directadmin, cpanel, plesk)
+	Enabled    bool   // Whether panel is enabled
+	ConfigFile string // Path to panel config file
+	TCPIn      []int  // TCP input ports
+	TCPOut     []int  // TCP output ports (for OUTPUT chain)
+	UDPIn      []int  // UDP input ports
+	UDPOut     []int  // UDP output ports (for OUTPUT chain)
 }
 
 // PanelStateFile location
@@ -196,7 +196,7 @@ func LoadPanelConfig(configDir, panelName string) (*PanelConfig, error) {
 	for varName, portList := range varNames {
 		// VULN-20: quote path via $1 to prevent injection
 		bashCmd := fmt.Sprintf("source \"$1\" && echo \"${%s:-}\"", varName)
-		cmd := exec.Command("bash", "-c", bashCmd, "_", panelConfigPath)
+		cmd := procenv.Command("bash", "-c", bashCmd, "_", panelConfigPath)
 		output, err := cmd.Output()
 		if err != nil {
 			// Variable might not be defined - that's OK, skip it

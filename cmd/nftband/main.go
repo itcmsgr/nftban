@@ -25,6 +25,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
@@ -69,7 +70,22 @@ func main() {
 		configDir: configDir,
 		connSem:   make(chan struct{}, MaxConcurrentIPCConns),
 		startedAt: time.Now(),
+		lifecycle: newStartupLifecycle(os.Getpid()),
 	}
+
+	// Wire the canonical lifecycle to systemd sd_notify (READY=1 / STATUS=). Only
+	// the main process participates in the notification contract (NotifyAccess=main).
+	// NFTBAN_DEBUG_FAIL_READY is a bounded, test-only seam (empty/unset in
+	// production; no unit/package sets it): with a real NOTIFY_SOCKET present it
+	// forces the READY=1 delivery to fail so the fatal systemd-mode path can be
+	// proven WITHOUT touching the real /run/systemd/notify socket.
+	failReady := os.Getenv("NFTBAN_DEBUG_FAIL_READY") != ""
+	d.lifecycle.setNotifier(func(state string) (bool, error) {
+		if failReady && state == "READY=1" {
+			return false, fmt.Errorf("debug: forced READY failure (NFTBAN_DEBUG_FAIL_READY)")
+		}
+		return daemon.SdNotify(false, state)
+	})
 
 	// v1.209.x F2: wire the AUTHORITATIVE never-ban exemption guard at the durable apply
 	// boundary (Backend.Ban). Establishes the never-ban invariant for admin/management/

@@ -27,9 +27,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // =============================================================================
@@ -74,7 +75,7 @@ func runNftWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "nft", args...)
+	cmd := procenv.CommandContext(ctx, "nft", args...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

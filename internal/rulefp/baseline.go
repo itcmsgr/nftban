@@ -27,9 +27,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // VerifyStatus is the outcome of a verify-rules check.
@@ -139,14 +140,14 @@ func LiveRuleset(ctx context.Context) (string, error) {
 	var firstErr error
 	got := false
 
-	if out, err := exec.CommandContext(ctx, "nft", "list", "table", "ip", "nftban").Output(); err == nil {
+	if out, err := procenv.CommandContext(ctx, "nft", "list", "table", "ip", "nftban").Output(); err == nil {
 		combined += "# family ip\n" + string(out) + "\n"
 		got = true
 	} else {
 		firstErr = err
 	}
 
-	if out, err := exec.CommandContext(ctx, "nft", "list", "table", "ip6", "nftban").Output(); err == nil {
+	if out, err := procenv.CommandContext(ctx, "nft", "list", "table", "ip6", "nftban").Output(); err == nil {
 		combined += "# family ip6\n" + string(out) + "\n"
 		got = true
 	} else if firstErr == nil {

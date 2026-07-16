@@ -66,6 +66,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/procenv"
 	"github.com/itcmsgr/nftban/internal/safeconv"
 )
 
@@ -945,7 +946,7 @@ func (m *Module) detectServices() {
 // serviceExists checks if a service is installed
 func (m *Module) serviceExists(name string) bool {
 	// Check systemd
-	cmd := exec.Command("systemctl", "list-unit-files", name+".service")
+	cmd := procenv.Command("systemctl", "list-unit-files", name+".service")
 	if output, err := cmd.Output(); err == nil && strings.Contains(string(output), name) {
 		return true
 	}
@@ -982,7 +983,7 @@ func (m *Module) checkSuricataAvailable() bool {
 	}
 
 	// Check if service is running
-	cmd := exec.Command("systemctl", "is-active", "suricata")
+	cmd := procenv.Command("systemctl", "is-active", "suricata")
 	if err := cmd.Run(); err == nil {
 		score++
 	}
@@ -1115,7 +1116,7 @@ func (m *Module) runJournalWatcherOnce(ctx context.Context, attempt int) error {
 		for _, f := range journalAuthFacilities {
 			args = append(args, "SYSLOG_FACILITY="+f)
 		}
-		cmd = exec.CommandContext(ctx, "journalctl", args...)
+		cmd = procenv.CommandContext(ctx, "journalctl", args...)
 	}
 	// Publish the journalctl child reference for Stop() to reap (guarded).
 	m.mu.Lock()
@@ -1319,7 +1320,7 @@ func queryEximLogPath() (string, error) {
 	}
 	// #nosec G204 -- exim path comes from PATH lookup, not user input.
 	// Arguments are hard-coded constants. This is a system tool query, not user dispatch.
-	cmd := exec.Command(exim, "-bP", "log_file_path")
+	cmd := procenv.Command(exim, "-bP", "log_file_path")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("exim -bP failed: %w", err)
@@ -1351,7 +1352,7 @@ func queryPostfixMaillogPath() (string, error) {
 	}
 	// #nosec G204 -- postconf path comes from PATH lookup, not user input.
 	// Arguments are hard-coded constants. This is a system tool query, not user dispatch.
-	cmd := exec.Command(postconf, "-h", "maillog_file")
+	cmd := procenv.Command(postconf, "-h", "maillog_file")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("postconf -h maillog_file failed: %w", err)
@@ -1599,7 +1600,7 @@ func (m *Module) runFileWatcherOnce(ctx context.Context, service, logPath string
 	if m.newWatcherCmd != nil {
 		cmd = m.newWatcherCmd(ctx, logPath)
 	} else {
-		cmd = exec.CommandContext(ctx, "tail", "-F", "-n", "0", logPath)
+		cmd = procenv.CommandContext(ctx, "tail", "-F", "-n", "0", logPath)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

@@ -22,16 +22,18 @@ package metrics
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // ChainInfo holds presence information for a kernel chain.
 // Three states:
-//   Exists=true, Unknown=false → confirmed present
-//   Exists=false, Unknown=false → confirmed absent
-//   Unknown=true → collection failure; absence not known
+//
+//	Exists=true, Unknown=false → confirmed present
+//	Exists=false, Unknown=false → confirmed absent
+//	Unknown=true → collection failure; absence not known
 type ChainInfo struct {
 	Exists  bool `json:"exists"`
 	Unknown bool `json:"unknown,omitempty"`
@@ -98,9 +100,9 @@ func listChains(ctx context.Context, family string) (map[string]bool, bool) {
 func nftListTableText(ctx context.Context, family string) ([]byte, error) {
 	switch family {
 	case "ip":
-		return exec.CommandContext(ctx, "nft", "list", "table", "ip", "nftban").Output() // #nosec G204
+		return procenv.CommandContext(ctx, "nft", "list", "table", "ip", "nftban").Output() // #nosec G204
 	case "ip6":
-		return exec.CommandContext(ctx, "nft", "list", "table", "ip6", "nftban").Output() // #nosec G204
+		return procenv.CommandContext(ctx, "nft", "list", "table", "ip6", "nftban").Output() // #nosec G204
 	default:
 		return nil, nil
 	}

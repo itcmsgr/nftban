@@ -80,6 +80,10 @@ func (d *Daemon) handleSignals(pidFile string) {
 
 // gracefulShutdown performs orderly shutdown of all daemon components
 func (d *Daemon) gracefulShutdown() {
+	// Record the shutdown phases in the canonical lifecycle (also cancels the
+	// startup-pending diagnostic and pushes a STATUS= line).
+	d.lifecycle.beginShutdown()
+
 	// Notify systemd we are stopping (v1.29.1)
 	_, _ = daemon.SdNotify(false, daemon.SdNotifyStopping)
 
@@ -125,31 +129,36 @@ func (d *Daemon) gracefulShutdown() {
 	d.bgWg.Wait()
 
 	log.Println("nftband stopped")
+	d.lifecycle.completeShutdown()
 }
 
-// waitForShutdown blocks until the signal handler completes shutdown
-func (d *Daemon) waitForShutdown() {
+// waitForShutdown evaluates the readiness contract, sends systemd READY=1 exactly
+// once, then blocks until the signal handler completes shutdown. It returns a fatal
+// error when a mandatory readiness prerequisite is unmet — in that case READY=1 is
+// NOT sent and the caller (Run) propagates the error so startup fails cleanly.
+func (d *Daemon) waitForShutdown() error {
 	// Mark startup as complete so signal handler does graceful shutdown
 	d.sigMu.Lock()
 	d.startupComplete = true
 	d.sigMu.Unlock()
 
-	// Notify systemd that daemon is ready (v1.29.1)
-	sent, err := daemon.SdNotify(false, daemon.SdNotifyReady)
-	if err != nil {
-		log.Printf("sd_notify READY failed: %v", err)
-	} else if sent {
-		log.Println("sd_notify READY sent")
+	// Readiness gate + systemd READY=1 (exactly once, main process). A failed
+	// SdNotify is material but non-fatal (handled inside SendReady, prior
+	// semantics); a mandatory-prerequisite failure is fatal and returns here.
+	if err := d.lifecycle.SendReady(); err != nil {
+		return fmt.Errorf("daemon not ready: %w", err)
 	}
 
-	// Start watchdog heartbeat goroutine (WatchdogSec=30s, notify every 15s)
+	// Start watchdog heartbeat goroutine (WatchdogSec=120s, notify every 15s)
 	go d.watchdogHeartbeat()
 
+	d.lifecycle.enterRunning()
 	log.Println("Startup complete, waiting for shutdown signal...")
 
 	// Block until gracefulShutdown() is called by handleSignals
 	// We wait on the context which is cancelled during gracefulShutdown
 	<-d.ctx.Done()
+	return nil
 }
 
 // watchdogHeartbeat sends sd_notify WATCHDOG=1 every 15s (half of WatchdogSec=30s).

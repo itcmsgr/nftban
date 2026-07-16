@@ -26,13 +26,16 @@ import (
 	"encoding/json"
 	"os/exec"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // SetInfo holds element count for a kernel set.
 // Three states:
-//   Exists=true, Count>=0, Unknown=false → collected successfully
-//   Exists=false, Count=0, Unknown=false → confirmed absent
-//   Unknown=true → collection failure/timeout/parse error; absence not known
+//
+//	Exists=true, Count>=0, Unknown=false → collected successfully
+//	Exists=false, Count=0, Unknown=false → confirmed absent
+//	Unknown=true → collection failure/timeout/parse error; absence not known
 type SetInfo struct {
 	Exists  bool `json:"exists"`
 	Count   int  `json:"count"`
@@ -71,10 +74,11 @@ func CollectSetElements(ctx context.Context) map[string]SetInfo {
 
 // countSetElementsJSON counts elements in a set using nft JSON output.
 // Returns (count, exists, unknown):
-//   count>0, exists=true, unknown=false → set present with elements
-//   count=0, exists=true, unknown=false → set present, empty
-//   count=0, exists=false, unknown=false → set confirmed absent
-//   count=0, exists=false, unknown=true → collection failed
+//
+//	count>0, exists=true, unknown=false → set present with elements
+//	count=0, exists=true, unknown=false → set present, empty
+//	count=0, exists=false, unknown=false → set confirmed absent
+//	count=0, exists=false, unknown=true → collection failed
 func countSetElementsJSON(ctx context.Context, family, name string) (count int, exists bool, unknown bool) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -102,9 +106,9 @@ func nftListSet(ctx context.Context, family, name string) ([]byte, error) {
 	var cmd *exec.Cmd
 	switch family {
 	case "ip":
-		cmd = exec.CommandContext(ctx, "nft", "-j", "list", "set", "ip", "nftban", name) // #nosec G204
+		cmd = procenv.CommandContext(ctx, "nft", "-j", "list", "set", "ip", "nftban", name) // #nosec G204
 	case "ip6":
-		cmd = exec.CommandContext(ctx, "nft", "-j", "list", "set", "ip6", "nftban", name) // #nosec G204
+		cmd = procenv.CommandContext(ctx, "nft", "-j", "list", "set", "ip6", "nftban", name) // #nosec G204
 	default:
 		return nil, nil
 	}
@@ -113,8 +117,9 @@ func nftListSet(ctx context.Context, family, name string) ([]byte, error) {
 
 // parseSetElementCount extracts element count from nft JSON set output.
 // Returns (count, found):
-//   found=true → a set object was present in the JSON
-//   found=false → no set object found (set absent or parse mismatch)
+//
+//	found=true → a set object was present in the JSON
+//	found=false → no set object found (set absent or parse mismatch)
 func parseSetElementCount(data []byte) (int, bool) {
 	var result struct {
 		NFTables []json.RawMessage `json:"nftables"`

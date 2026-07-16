@@ -57,9 +57,17 @@ func (d *Daemon) Run() error {
 	// Create context for lifecycle management
 	d.ctx, d.cancel = context.WithCancel(context.Background())
 	defer d.cancel()
+	d.lifecycle.CompletePhase(PhaseProcessStart)
+
+	// Arm the startup-pending diagnostic: if READY=1 is not sent before the systemd
+	// start deadline, one structured `event=startup_pending` line names the blocked
+	// phase in the journal. Cancelled automatically on ready/failure/shutdown.
+	d.lifecycle.startPendingWatch(resolveStartupPendingDelay())
 
 	// Ensure directories exist
+	d.lifecycle.BeginPhase(PhaseRuntimePathsInit, "paths")
 	if err := d.ensureDirectories(); err != nil {
+		d.lifecycle.FailPhase(PhaseRuntimePathsInit, err)
 		return fmt.Errorf("failed to create directories: %w", err)
 	}
 
@@ -70,8 +78,11 @@ func (d *Daemon) Run() error {
 
 	// Write PID file
 	if err := d.writePidFile(); err != nil {
+		d.lifecycle.FailPhase(PhaseRuntimePathsInit, err)
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
+	d.lifecycle.setRuntimePathsReady(true)
+	d.lifecycle.CompletePhase(PhaseRuntimePathsInit)
 
 	// Set up signal handler IMMEDIATELY after PID file creation to ensure cleanup
 	// even if a signal arrives during initialization. The handler checks startupComplete
@@ -93,13 +104,17 @@ func (d *Daemon) Run() error {
 		os.Remove(pidFile)
 	}()
 
-	// Initialize OpQueue and SourceIndex (v1.13.0 async IPC)
+	// Initialize OpQueue and SourceIndex (v1.13.0 async IPC). NFT_MANAGER_INIT and
+	// OPQUEUE_INIT phases are recorded inside initOpQueue at their real boundaries;
+	// both are DEGRADABLE (async operations disabled if they fail).
 	if err := d.initOpQueue(); err != nil {
 		log.Printf("Warning: OpQueue init failed: %v (async operations disabled)", err)
 	}
 
 	// Initialize config hash for reload tracking (v1.13.12)
+	d.lifecycle.BeginPhase(PhaseConfigLoad, "config")
 	d.initConfigHash()
+	d.lifecycle.CompletePhase(PhaseConfigLoad)
 
 	// BUG-008 FIX: Set CIDR limit metric based on server tier at startup
 	cidrLimit, cidrTier := safety.GetMaxCIDRsHardWithTier()
@@ -107,13 +122,17 @@ func (d *Daemon) Run() error {
 	log.Printf("Server tier: %s (max CIDRs: %d)", cidrTier, cidrLimit)
 
 	// Register modules
+	d.lifecycle.BeginPhase(PhaseModulesInit, "registry")
 	d.registerModules()
 
 	// Initialize all modules with event bus
 	log.Println("Initializing modules...")
 	if err := d.registry.InitAll(d.bus); err != nil {
+		d.lifecycle.FailPhase(PhaseModulesInit, err)
 		return fmt.Errorf("failed to initialize modules: %w", err)
 	}
+	d.lifecycle.setModulesInitialized(true)
+	d.lifecycle.CompletePhase(PhaseModulesInit)
 
 	// Wire OpQueue to bot guard module (needs OpQueue for set enforcement)
 	if bgMod, ok := d.registry.Get(botguard.ModuleName); ok {
@@ -227,15 +246,21 @@ func (d *Daemon) Run() error {
 
 	// Start Unix socket
 	log.Println("Starting Unix socket...")
+	d.lifecycle.BeginPhase(PhaseIPCSocketInit, "ipc")
 	if err := d.startSocket(); err != nil {
+		d.lifecycle.FailPhase(PhaseIPCSocketInit, err)
 		return fmt.Errorf("failed to start socket: %w", err)
 	}
 	// v1.147: guard the deferred close against a nil listener. Under MAC
 	// confinement a systemd-passed socket fd can be mediated to nil (AppArmor
 	// "disconnected path"); degrade gracefully instead of nil-panicking here.
 	if d.socketLn == nil {
-		return fmt.Errorf("socket listener is nil after startSocket (socket activation may have been blocked by MAC confinement)")
+		err := fmt.Errorf("socket listener is nil after startSocket (socket activation may have been blocked by MAC confinement)")
+		d.lifecycle.FailPhase(PhaseIPCSocketInit, err)
+		return err
 	}
+	// startSocket set ipc_bound + ipc_accepting (accept loop reached serving state).
+	d.lifecycle.CompletePhase(PhaseIPCSocketInit)
 	defer func() {
 		if d.socketLn != nil {
 			_ = d.socketLn.Close() // best-effort close at shutdown; nothing actionable on error
@@ -244,9 +269,13 @@ func (d *Daemon) Run() error {
 
 	// Start HTTP server
 	log.Println("Starting HTTP API...")
+	d.lifecycle.BeginPhase(PhaseHTTPInit, "http")
 	if err := d.startHTTP(); err != nil {
+		d.lifecycle.FailPhase(PhaseHTTPInit, err)
 		return fmt.Errorf("failed to start HTTP: %w", err)
 	}
+	d.lifecycle.setHTTPReady(true)
+	d.lifecycle.CompletePhase(PhaseHTTPInit)
 
 	// Start pprof server if profiling enabled
 	if profileEnabled {
@@ -256,9 +285,12 @@ func (d *Daemon) Run() error {
 
 	// Start all modules
 	log.Println("Starting modules...")
+	d.lifecycle.BeginPhase(PhaseWorkersStart, "modules")
 	if err := d.registry.StartAll(d.ctx); err != nil {
+		d.lifecycle.FailPhase(PhaseWorkersStart, err)
 		return fmt.Errorf("failed to start modules: %w", err)
 	}
+	d.lifecycle.setRequiredModulesStarted(true)
 
 	// Initialize server info for stats
 	hostname, _ := os.Hostname()
@@ -286,11 +318,15 @@ func (d *Daemon) Run() error {
 	log.Println("Starting stats collector...")
 	d.stats.Start(d.ctx)
 
-	// Start dynamic watchdog
+	// Start dynamic watchdog. The watchdog is DEGRADABLE — if init failed earlier
+	// (d.watchdog == nil) the daemon still reaches readiness, and the lifecycle
+	// records it as a degraded component rather than blocking.
 	if d.watchdog != nil {
 		log.Println("Starting dynamic watchdog...")
 		go d.watchdog.Run(d.ctx)
+		d.lifecycle.setWatchdogReady(true)
 	}
+	d.lifecycle.CompletePhase(PhaseWorkersStart)
 
 	// Publish startup event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, "nftband").
@@ -331,10 +367,10 @@ func (d *Daemon) Run() error {
 		}
 	}()
 
-	// Wait for shutdown signal
-	d.waitForShutdown()
-
-	return nil
+	// Evaluate the readiness contract, send READY=1, then wait for shutdown. A
+	// fatal readiness-prerequisite failure returns here WITHOUT READY=1 having been
+	// sent, so systemd sees a start failure rather than a false "ready".
+	return d.waitForShutdown()
 }
 
 // ensureDirectories creates required directories
@@ -440,18 +476,29 @@ func (d *Daemon) initWatchdog() error {
 	return nil
 }
 
-// initOpQueue initializes the async operation queue (v1.13.0)
+// initOpQueue initializes the async operation queue (v1.13.0). It records the
+// NFT_MANAGER_INIT and OPQUEUE_INIT lifecycle phases at their real boundaries; both
+// are DEGRADABLE — a failure returns an error that Run() treats as non-fatal
+// (async operations disabled) and the lifecycle marks the component degraded.
 func (d *Daemon) initOpQueue() error {
 	// Get NFTManager from backend for shared netlink connection
+	d.lifecycle.BeginPhase(PhaseNFTManagerInit, "nftbackend")
 	nft := d.backend.GetNFTManager()
 	if nft == nil {
-		return fmt.Errorf("nftbackend has no NFTManager")
+		err := fmt.Errorf("nftbackend has no NFTManager")
+		d.lifecycle.DegradePhase(PhaseNFTManagerInit, "nft", err)
+		return err
 	}
+	d.lifecycle.setNFTReady(true)
+	d.lifecycle.CompletePhase(PhaseNFTManagerInit)
 
 	// Create backend wrapper for opqueue
+	d.lifecycle.BeginPhase(PhaseOpQueueInit, "opqueue")
 	wrapper, err := opqueue.NewNFTBackendWrapper(nft)
 	if err != nil {
-		return fmt.Errorf("failed to create NFTBackendWrapper: %w", err)
+		err = fmt.Errorf("failed to create NFTBackendWrapper: %w", err)
+		d.lifecycle.DegradePhase(PhaseOpQueueInit, "opqueue", err)
+		return err
 	}
 
 	// Create OpQueue with default config
@@ -523,6 +570,8 @@ func (d *Daemon) initOpQueue() error {
 		d.startPeriodicReconciliation(wrapper)
 	}()
 
+	d.lifecycle.setOpQueueReady(true)
+	d.lifecycle.CompletePhase(PhaseOpQueueInit)
 	log.Println("[OpQueue] Async operation queue initialized")
 	return nil
 }

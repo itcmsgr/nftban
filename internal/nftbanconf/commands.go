@@ -30,8 +30,8 @@ package nftbanconf
 //
 // Usage:
 //   cmd := nftbanconf.Commands()
-//   exec.Command(cmd.Bin, "status")  // Uses NFTBAN_BIN from config
-//   exec.Command(cmd.CoreBin, "sync") // Uses NFTBAN_CORE_BIN from config
+//   procenv.Command(cmd.Bin, "status")  // Uses NFTBAN_BIN from config
+//   procenv.Command(cmd.CoreBin, "sync") // Uses NFTBAN_CORE_BIN from config
 // =============================================================================
 
 import (

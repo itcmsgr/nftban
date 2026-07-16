@@ -38,11 +38,11 @@ import (
 	"fmt"
 	"log"
 	"net/netip"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/nftlock"
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // SuspectReader reads kernel-populated suspect sets.
@@ -106,7 +106,7 @@ func (r *SuspectReader) readSet(ctx context.Context, table, setName string) ([]n
 	args := append([]string{"list", "set"}, strings.Fields(table)...)
 	args = append(args, setName)
 
-	cmd := exec.CommandContext(ctx, "nft", args...) // #nosec G204 -- args built from trusted constants (table name + set name)
+	cmd := procenv.CommandContext(ctx, "nft", args...) // #nosec G204 -- args built from trusted constants (table name + set name)
 	output, err := cmd.CombinedOutput()
 
 	// Release lock immediately after kernel read
