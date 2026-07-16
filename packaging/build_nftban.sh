@@ -64,6 +64,73 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly PROJECT_ROOT
 readonly BUILD_DIR="${PROJECT_ROOT}/build/packages"
 
+# Build-provenance / anti-stale-prebuilt guard (shared with build.sh).
+# shellcheck source=packaging/lib/provenance.sh
+source "${SCRIPT_DIR}/lib/provenance.sh"
+
+# Build-mode globals (set by parse_build_flags):
+#   PROV_MODE=source|prebuilt   PROV_OFFLINE=0|1
+#   PROV_PREBUILT_MANIFEST=<path>   PROV_MODULE_CACHE=<path>
+PROV_MODE="source"
+PROV_OFFLINE=0
+PROV_PREBUILT_MANIFEST=""
+PROV_MODULE_CACHE=""
+BUILT_DAEMON_SHA=""   # captured after build_binaries; asserted through the package chain
+
+PROV_YQ_VERSION="4.44.1"
+PROV_YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
+
+# provision_yq <dest> — place a SHA-verified yq_linux_amd64 at <dest>.
+# OFFLINE: copy a locally-supplied yq (NFTBAN_OFFLINE_YQ or offline/yq_linux_amd64),
+#   verify sha, FAIL-CLOSED if absent — NEVER curl/wget. ONLINE: fetch_verified.
+provision_yq() {
+    local dest="$1" src
+    if [[ "$PROV_OFFLINE" == "1" ]]; then
+        src="${NFTBAN_OFFLINE_YQ:-${PROJECT_ROOT}/offline/yq_linux_amd64}"
+        if [[ ! -f "$src" ]]; then
+            log_error "OFFLINE: yq not provisioned locally (NFTBAN_OFFLINE_YQ / offline/yq_linux_amd64 absent)."
+            log_error "Supply a SHA-pinned yq_linux_amd64 for offline packaging. FAIL-CLOSED (no download)."
+            return 1
+        fi
+        echo "${PROV_YQ_SHA256}  ${src}" | sha256sum -c - >/dev/null 2>&1 || {
+            log_error "OFFLINE: local yq sha256 mismatch (expected ${PROV_YQ_SHA256})"; return 1; }
+        install -m 0755 "$src" "$dest"
+        log_success "OFFLINE: bundled local yq (sha verified, no network)"
+        return 0
+    fi
+    # shellcheck source=packaging/lib/fetch_verified.sh
+    . "${SCRIPT_DIR}/lib/fetch_verified.sh"
+    fetch_verified \
+        "https://github.com/mikefarah/yq/releases/download/v${PROV_YQ_VERSION}/yq_linux_amd64" \
+        "${PROV_YQ_SHA256}" "$dest" || return 1
+    return 0
+}
+
+# parse_build_flags <build_type> [flags...] — populate the mode globals; fail-closed.
+parse_build_flags() {
+    shift  # drop build_type
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --offline)          PROV_OFFLINE=1 ;;
+            --use-prebuilt)     PROV_MODE="prebuilt" ;;
+            --prebuilt-manifest) PROV_PREBUILT_MANIFEST="${2:?--prebuilt-manifest needs a path}"; shift ;;
+            --module-cache)     PROV_MODULE_CACHE="${2:?--module-cache needs a path}"; shift ;;
+            *) log_error "Unknown flag: $1"; return 1 ;;
+        esac
+        shift
+    done
+    # Mode 3 requires BOTH the flag and the manifest; never inferred from Go absence.
+    if [[ "$PROV_MODE" == "prebuilt" && -z "$PROV_PREBUILT_MANIFEST" ]]; then
+        log_error "--use-prebuilt requires --prebuilt-manifest <path> (no silent prebuilt fallback)"
+        return 1
+    fi
+    if [[ -n "$PROV_PREBUILT_MANIFEST" && "$PROV_MODE" != "prebuilt" ]]; then
+        log_error "--prebuilt-manifest requires --use-prebuilt"
+        return 1
+    fi
+    return 0
+}
+
 # Functions
 log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 log_success() { echo -e "${GREEN}[✓]${NC} $*"; }
@@ -75,20 +142,20 @@ check_dependencies() {
     local missing=()
     local fatal=0
 
-    # Check Go - required ONLY if pre-built binaries don't exist
-    # CI downloads pre-built binaries, so Go is not needed in container
-    # Use -f (file exists) not -x (executable) - Docker volume mounts may lose +x
-    if [[ -f "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -f "${PROJECT_ROOT}/bin/nftband" ]]; then
-        log_success "Pre-built binaries found in bin/ - Go not required"
+    # Go toolchain: REQUIRED to build from source (Mode 1/2). The mere presence of
+    # ELF files in bin/ MUST NOT suppress this check — that is the stale-prebuilt
+    # footgun (a February binary would be packaged as-is). Only EXPLICIT verified-
+    # prebuilt packaging (Mode 3, --use-prebuilt) skips Go, and it needs jq.
+    if [[ "$PROV_MODE" == "prebuilt" ]]; then
+        log_info "Mode 3 (verified prebuilt): Go not required — provenance manifest will be verified"
+        command -v jq >/dev/null 2>&1 || { log_error "jq is required for --use-prebuilt manifest verification"; fatal=1; }
     elif ! command -v go >/dev/null 2>&1; then
         log_error "╔══════════════════════════════════════════════════════════════════╗"
-        log_error "║  FATAL: Go is NOT installed - CANNOT build nftband binaries!    ║"
-        log_error "╠══════════════════════════════════════════════════════════════════╣"
-        log_error "║  Either:                                                          ║"
-        log_error "║    1. Install Go 1.21+:                                           ║"
-        log_error "║       Fedora/RHEL: sudo dnf install golang                        ║"
-        log_error "║       Debian/Ubuntu: sudo apt install golang-go                   ║"
-        log_error "║    2. Or place pre-built binaries in bin/ directory               ║"
+        log_error "║  FATAL: Go is required to build from source and is NOT installed. ║"
+        log_error "║  Install Go 1.21+, OR use EXPLICIT verified-prebuilt packaging:   ║"
+        log_error "║    build_nftban.sh <deb|rpm> --use-prebuilt \\                     ║"
+        log_error "║        --prebuilt-manifest /path/build-manifest.json             ║"
+        log_error "║  A stale bin/* is NEVER packaged implicitly.                      ║"
         log_error "╚══════════════════════════════════════════════════════════════════╝"
         fatal=1
     else
@@ -116,7 +183,8 @@ check_dependencies() {
     # MANDATORY tools (must match CI requirements)
     # CI: dnf install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
     # CI: apt install dpkg-dev build-essential file curl
-    command -v curl >/dev/null || missing+=("curl")
+    # curl is only needed to FETCH yq online; --offline uses a local SHA-pinned yq.
+    [[ "$PROV_OFFLINE" == "1" ]] || command -v curl >/dev/null || missing+=("curl")
     command -v tar >/dev/null || missing+=("tar")
     command -v gzip >/dev/null || missing+=("gzip")
     command -v file >/dev/null || missing+=("file")
@@ -180,69 +248,92 @@ validate_binary() {
 
 build_binaries() {
     local bin_dir="${PROJECT_ROOT}/bin"
-    local nftban_core="${bin_dir}/nftban-core"
-    local nftband="${bin_dir}/nftband"
-    local nftban_validate="${bin_dir}/nftban-validate"
-    local nftban_installer="${bin_dir}/nftban-installer"
 
-    # Debug: Show what we're looking for
-    log_info "Checking for pre-built binaries in: ${bin_dir}"
-    if [[ -d "$bin_dir" ]]; then
-        log_info "bin/ directory exists, contents:"
-        ls -la "$bin_dir" || true
-    else
-        log_info "bin/ directory does not exist"
+    # ---- Mode 3: EXPLICIT verified prebuilt (no rebuild; --use-prebuilt only) ----
+    if [[ "$PROV_MODE" == "prebuilt" ]]; then
+        log_info "Mode 3: verifying prebuilt bundle against ${PROV_PREBUILT_MANIFEST}"
+        if ! prov_verify_prebuilt "$PROJECT_ROOT" "$bin_dir" "$PROV_PREBUILT_MANIFEST"; then
+            log_error "Prebuilt provenance verification FAILED — refusing to package"
+            return 1
+        fi
+        BUILT_DAEMON_SHA="$(prov_sha256 "$bin_dir/nftband")"
+        log_success "Verified prebuilt bundle: all ${#PROV_BINARIES[@]} binaries (nftband ${BUILT_DAEMON_SHA:0:16}…)"
+        return 0
     fi
 
-    # Check if pre-built binaries exist (from CI)
-    # Use -f (file exists) not -x (executable) - Docker volume mounts may lose +x
-    if [[ -f "$nftban_core" ]] && [[ -f "$nftband" ]] && [[ -f "$nftban_validate" ]] && [[ -f "$nftban_installer" ]]; then
-        log_info "Found pre-built binaries, validating..."
+    # ---- Mode 1/2: SOURCE build. NEVER reuse existing bin/*. ----
+    # Clean the allowlisted generated binaries FIRST so a stale artifact (e.g. an
+    # old bin/nftband left from a prior build) can never survive into the package.
+    log_info "Source build: removing allowlisted generated bin/* before rebuild"
+    if ! prov_clean_generated_bins "$PROJECT_ROOT"; then
+        log_error "Generated-bin cleanup failed (refusing to risk a stale artifact)"
+        return 1
+    fi
 
-        # Ensure binaries are executable (might be lost in Docker volume mount)
-        chmod +x "$nftban_core" "$nftband" "$nftban_validate" "$nftban_installer" 2>/dev/null || true
-
-        # Validate pre-built binaries are valid ELF files
-        if validate_binary "$nftban_core" && validate_binary "$nftband" && validate_binary "$nftban_validate" && validate_binary "$nftban_installer"; then
-            log_success "Using pre-built binaries from bin/ - skipping rebuild"
-            # Record SHA256 hashes for debugging
-            log_info "nftban-core SHA256: $(sha256sum "$nftban_core" | cut -d' ' -f1)"
-            log_info "nftband SHA256: $(sha256sum "$nftband" | cut -d' ' -f1)"
-            log_info "nftban-validate SHA256: $(sha256sum "$nftban_validate" | cut -d' ' -f1)"
-            log_info "nftban-installer SHA256: $(sha256sum "$nftban_installer" | cut -d' ' -f1)"
-            return 0
+    local -a goenv=()
+    if [[ "$PROV_OFFLINE" == "1" ]]; then
+        log_info "Mode 2 (offline): GOPROXY=off, GOTOOLCHAIN=local, no module/tool/toolchain downloads"
+        # GOTOOLCHAIN=local forbids any toolchain download (a network access). If the
+        # installed Go is older than go.mod requires, the build fails CLOSED with a
+        # clear message rather than reaching for the network.
+        goenv+=("GOPROXY=off" "GOSUMDB=off" "GOTOOLCHAIN=local" "NFTBAN_SKIP_MOD_TIDY=1")
+        if [[ -d "${PROJECT_ROOT}/vendor" ]]; then
+            goenv+=("GOFLAGS=-mod=vendor")
+            log_info "  dependency source: vendor/ (deterministic)"
+        elif [[ -n "$PROV_MODULE_CACHE" ]]; then
+            [[ -d "$PROV_MODULE_CACHE" ]] || { log_error "OFFLINE: --module-cache not found: $PROV_MODULE_CACHE"; return 1; }
+            goenv+=("GOMODCACHE=${PROV_MODULE_CACHE}")
+            log_info "  dependency source: isolated module cache ${PROV_MODULE_CACHE}"
         else
-            log_warn "Pre-built binaries failed validation, will rebuild"
+            log_error "OFFLINE build has no local dependency source (no vendor/ and no --module-cache)."
+            log_error "Provision dependencies locally, then retry. FAIL-CLOSED (no network fallback)."
+            return 1
         fi
     fi
 
-    # No valid pre-built binaries - need to build
-    log_info "Building binaries from source..."
-
-    # Check Go is available
-    if ! command -v go >/dev/null 2>&1; then
-        log_error "Go is not installed and no pre-built binaries found"
-        log_error "Either install Go or provide pre-built binaries in bin/"
+    log_info "Building all ${#PROV_BINARIES[@]} binaries from source..."
+    if ! ( cd "${PROJECT_ROOT}" && env "${goenv[@]}" ./build.sh ); then
+        log_error "Source build failed"
         return 1
     fi
 
-    cd "${PROJECT_ROOT}"
-    ./build.sh || {
-        log_error "Build failed"
+    # Independently verify all 6 embed the resolved source commit (build.sh also
+    # verifies + writes the manifest; this is defense-in-depth at the package layer).
+    if ! prov_verify_source_build "$PROJECT_ROOT" "$bin_dir"; then
+        log_error "Post-build provenance verification failed"
         return 1
-    }
+    fi
+    BUILT_DAEMON_SHA="$(prov_sha256 "$bin_dir/nftband")"
+    log_success "Built + verified all ${#PROV_BINARIES[@]} binaries (nftband ${BUILT_DAEMON_SHA:0:16}…)"
+    return 0
+}
 
-    # Validate built binaries
-    validate_binary "$nftban_core" || return 1
-    validate_binary "$nftband" || return 1
-    validate_binary "$nftban_validate" || return 1
-    validate_binary "$nftban_installer" || return 1
-
-    log_success "Binaries built successfully"
-    log_info "nftban-core SHA256: $(sha256sum "$nftban_core" | cut -d' ' -f1)"
-    log_info "nftband SHA256: $(sha256sum "$nftband" | cut -d' ' -f1)"
-    log_info "nftban-validate SHA256: $(sha256sum "$nftban_validate" | cut -d' ' -f1)"
-    log_info "nftban-installer SHA256: $(sha256sum "$nftban_installer" | cut -d' ' -f1)"
+# assert BUILT == PACKAGE_EXTRACTED daemon sha for a produced package (STAGED is
+# copied unchanged between; SOURCE→PACKAGED→INSTALLED is proven in lab validation).
+verify_package_sha_chain() {
+    local pkg_type="$1" pkg extracted td rc=0 psha
+    [[ -n "$BUILT_DAEMON_SHA" ]] || { log_error "no BUILT sha recorded"; return 1; }
+    td="$(mktemp -d)"   # explicit cleanup below — no RETURN trap (it would leak globally)
+    if [[ "$pkg_type" == "deb" ]]; then
+        pkg="$(ls "${BUILD_DIR}"/nftban-core_*.deb 2>/dev/null | head -1)"
+        [[ -f "$pkg" ]] && dpkg-deb -x "$pkg" "$td" 2>/dev/null
+    else
+        pkg="$(ls "${BUILD_DIR}"/RPMS/*/nftban-core-*.rpm 2>/dev/null | head -1)"
+        [[ -f "$pkg" ]] && ( cd "$td" && rpm2cpio "$pkg" | cpio -idm 2>/dev/null )
+    fi
+    extracted="$td/usr/lib/nftban/bin/nftband"
+    if [[ ! -f "$extracted" ]]; then
+        log_error "SHA-chain($pkg_type): daemon not found in package"
+        rm -rf "$td"; return 1
+    fi
+    psha="$(prov_sha256 "$extracted")"
+    if [[ "$psha" == "$BUILT_DAEMON_SHA" ]]; then
+        log_success "SHA-chain($pkg_type): BUILT==STAGED==PACKAGE_EXTRACTED (${BUILT_DAEMON_SHA:0:16}…)"
+    else
+        log_error "SHA-chain($pkg_type): packaged ${psha:0:16} != built ${BUILT_DAEMON_SHA:0:16}"; rc=1
+    fi
+    rm -rf "$td"
+    return $rc
 }
 
 # shellcheck disable=SC2120  # $1 in heredoc is RPM scriptlet argument, not bash
@@ -396,25 +487,9 @@ while IFS= read -r dir_line; do
     esac
 done < %{_sourcedir}/nftban-files.inc
 
-# Download yq at BUILD time (supply-chain safe - not at install time)
-# SHA256 verified before bundling in package.
-# v1.157 PR-A: hardened fetch (retry + fail-fast + bounded timeouts + atomic
-# write + checksum verify). Identical behaviour to packaging/lib/fetch_verified.sh
-# but inlined here because this runs inside the rpmbuild install scriptlet where the
-# helper file is not staged/sourceable. A transient blip no longer leaves a
-# bad/partial body that the SHA pin then hard-fails on.
-YQ_VERSION="4.44.1"
-YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
-echo "Downloading yq v\${YQ_VERSION} for bundling..."
-yq_tmp=\$(mktemp ./.yq_fetch.XXXXXX)
-curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \\
-     --connect-timeout 10 --max-time 120 -sS \\
-     -o "\${yq_tmp}" \\
-     "https://github.com/mikefarah/yq/releases/download/v\${YQ_VERSION}/yq_linux_amd64" \\
-     || { echo "yq download failed!"; rm -f "\${yq_tmp}"; exit 1; }
-echo "\${YQ_SHA256}  \${yq_tmp}" | sha256sum -c - \\
-     || { echo "yq checksum verification failed!"; rm -f "\${yq_tmp}"; exit 1; }
-mv -f "\${yq_tmp}" yq_linux_amd64
+# yq is provisioned + SHA256-verified by build_rpm (bash, offline-aware) and staged
+# into the source dir as yq_linux_amd64 — the rpmbuild install scriptlet NEVER
+# touches the network (so --offline is honoured). Installed from the source dir below.
 
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
@@ -423,7 +498,7 @@ install -D -m 0755 bin/nftban-botscan-matcher %{buildroot}/usr/lib/nftban/bin/nf
 install -D -m 0755 bin/nftban-validate %{buildroot}/usr/lib/nftban/bin/nftban-validate
 install -D -m 0755 bin/nftban-detect-ssh-ports %{buildroot}/usr/lib/nftban/bin/nftban-detect-ssh-ports
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
-install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
+install -D -m 0755 %{_sourcedir}/yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
 # NB-5: privileged binaries ship 0750 (root:nftban), not 0755 (root:root).
 # Canonical ownership set declaratively via %attr() in the files manifest below.
 install -D -m 0750 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
@@ -1662,6 +1737,14 @@ build_rpm() {
     cp "$systemd_list_src" "${BUILD_DIR}/SOURCES/nftban-systemd-install.list"
     log_success "Staged nftban-systemd-install.list ($(grep -cvE '^#|^$' "${BUILD_DIR}/SOURCES/nftban-systemd-install.list") units)"
 
+    # Provision yq into SOURCES/ (offline-aware, SHA-verified) so the rpmbuild
+    # install scriptlet installs it from the source dir and never touches the network.
+    provision_yq "${BUILD_DIR}/SOURCES/yq_linux_amd64" || {
+        log_error "yq provisioning failed (offline: supply NFTBAN_OFFLINE_YQ / offline/yq_linux_amd64)"
+        return 1
+    }
+    log_success "Staged yq_linux_amd64 into SOURCES/"
+
     # Build RPM (version from VERSION file)
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
         --define "pkg_version ${PKG_VERSION}" \
@@ -1891,18 +1974,10 @@ build_deb() {
     # v1.157 PR-A: use the shared fetch_verified helper (retry + fail-fast +
     # atomic write + checksum verify) so a transient blip no longer leaves a
     # bad/partial body that the SHA pin then hard-fails on.
-    local YQ_VERSION="4.44.1"
-    local YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
-    log_info "Downloading yq v${YQ_VERSION} for bundling..."
-    # shellcheck source=packaging/lib/fetch_verified.sh
-    . "${SCRIPT_DIR}/lib/fetch_verified.sh"
-    fetch_verified \
-        "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
-        "${YQ_SHA256}" \
-        "${BUILD_DIR}/yq_linux_amd64" \
-        || { log_error "yq checksum verification failed!"; exit 1; }
+    log_info "Provisioning yq v${PROV_YQ_VERSION} for bundling (offline-aware)..."
+    provision_yq "${BUILD_DIR}/yq_linux_amd64" || { log_error "yq provisioning failed"; exit 1; }
     install -m 0755 "${BUILD_DIR}/yq_linux_amd64" "${deb_root}/usr/lib/nftban/bin/yq"
-    log_info "yq v${YQ_VERSION} bundled (SHA256 verified)"
+    log_info "yq v${PROV_YQ_VERSION} bundled (SHA256 verified)"
 
     # Copy helper scripts to /usr/lib/nftban/sbin/
     # CRITICAL: These scripts are executed by systemd services and MUST have 755 permissions
@@ -2189,11 +2264,15 @@ main() {
     # Validate
     if [[ ! "$build_type" =~ ^(deb|rpm|both)$ ]]; then
         log_error "Invalid argument: $build_type"
-        echo "Usage: $0 [deb|rpm|both]"
+        echo "Usage: $0 [deb|rpm|both] [--offline] [--module-cache DIR] [--use-prebuilt --prebuilt-manifest FILE]"
         exit 1
     fi
 
-    # Check dependencies
+    # Parse build-mode flags (--offline / --use-prebuilt / --prebuilt-manifest / --module-cache)
+    parse_build_flags "$@" || exit 1
+    log_info "Build mode: ${PROV_MODE}$([[ "$PROV_OFFLINE" == 1 ]] && echo ' (offline)')"
+
+    # Check dependencies (Go required for source builds; jq for prebuilt)
     check_dependencies "$build_type" || exit 1
 
     # Build binaries first
@@ -2211,6 +2290,7 @@ main() {
             log_error "RPM build failed"
             exit 1
         }
+        verify_package_sha_chain rpm || exit 1
         echo ""
     fi
 
@@ -2219,6 +2299,7 @@ main() {
             log_error "DEB build failed"
             exit 1
         }
+        verify_package_sha_chain deb || exit 1
         echo ""
     fi
 
@@ -2233,4 +2314,7 @@ main() {
     echo "  RPM: sudo rpm -ivh ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
 }
 
-main "$@"
+# Run main only when executed directly (allows sourcing for unit tests).
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

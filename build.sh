@@ -109,7 +109,17 @@ VERSION=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "dev")
 # commit + build wall-clock). Both fall back to the pkg/version
 # defaults ("dev" / "unknown") when run outside a git checkout, so
 # release tooling can detect uninjected builds.
-GIT_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo "dev")
+# Source identity via the provenance precedence (SOURCE_COMMIT file | git HEAD),
+# full 40-char sha, FAIL-CLOSED — never silently embed "dev". An exported source
+# bundle without .git must carry a SOURCE_COMMIT file written at archive time.
+# shellcheck source=packaging/lib/provenance.sh
+source "$SCRIPT_DIR/packaging/lib/provenance.sh"
+if ! prov_resolve_source_identity "$SCRIPT_DIR"; then
+    error "Cannot resolve source identity: not a git checkout and no SOURCE_COMMIT file."
+    error "For an offline/exported source bundle, write bin/../SOURCE_COMMIT (full 40-hex) at archive time."
+    exit 1
+fi
+GIT_COMMIT="$PROV_SOURCE_COMMIT"
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS="-s -w \
@@ -133,6 +143,13 @@ fi
 # Ensure go.mod dependencies are up to date
 fix_dependencies() {
     local module_dir="$1"
+    # Offline builds must not attempt a network module resolve. build_nftban.sh
+    # sets NFTBAN_SKIP_MOD_TIDY=1 (with GOPROXY=off) for --offline; also skip when
+    # the caller has pinned GOPROXY=off directly.
+    if [[ "${NFTBAN_SKIP_MOD_TIDY:-0}" == "1" || "${GOPROXY:-}" == "off" ]]; then
+        warn "Skipping 'go mod tidy' (offline / GOPROXY=off)"
+        return 0
+    fi
     if [[ -f "$module_dir/go.mod" ]]; then
         log "Updating dependencies in $module_dir..."
         (cd "$module_dir" && go mod tidy -v 2>/dev/null) || true
@@ -326,10 +343,21 @@ case "$COMPONENT" in
         build_validator || exit 1
         echo ""
 
+        # Provenance: prove all 6 embed the resolved source commit, then emit the
+        # build manifest (consumed by verified-prebuilt packaging + CI provenance).
+        prov_verify_source_build "$SCRIPT_DIR" "$BIN_DIR" || {
+            error "Source-build provenance verification failed"
+            exit 1
+        }
+        prov_write_manifest "$SCRIPT_DIR" "$BIN_DIR" "$BIN_DIR/build-manifest.json" || {
+            error "Failed to write build manifest"
+            exit 1
+        }
+
         log "Build Summary:"
         ls -lh "$BIN_DIR"/ 2>/dev/null || true
         echo ""
-        ok "All components built successfully!"
+        ok "All components built successfully! (manifest: bin/build-manifest.json @ ${GIT_COMMIT})"
         ;;
 
     core)
