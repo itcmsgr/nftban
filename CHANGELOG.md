@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.221.1] - 2026-07-16 — Release workflow Mode-3 publication hotfix
+
+**Publication-workflow hotfix. No daemon source change · no nft schema change (schema 1) · no validator/status schema change (1.84.0). Same product code as v1.221.0.** Supersedes the incomplete v1.221.0 publication.
+
+**Why:** v1.221.0 was tagged (`a9ab66b2`) and its Docker images published to `ghcr.io`, but the **GitHub release did not publish** — its package jobs failed. Root cause: the build-provenance hardening (v1.221.0 / #1108) made source-mode the default (Go required) and removed silent stale-prebuilt reuse, updating `build-packages.yml` to the explicit verified-prebuilt path, but **`release.yml` was not updated**. Its DEB/RPM containers have no Go, so the bare `build_nftban.sh deb|rpm` invocations correctly failed closed ("Go is required") rather than package an unverified binary. So: **v1.221.0 = valid product code, incomplete publication** (Docker present; GitHub release packages, checksums, SBOM and SLSA absent).
+
+**Fix:** `release.yml` package jobs now explicitly use the verified **Mode-3** prebuilt path — `build_nftban.sh rpm|deb --use-prebuilt --prebuilt-manifest /workspace/bin/build-manifest.json` — consuming the single `go-binaries` artifact built once by the existing `build-binaries` job (no Go installed in the package containers, so DEB and RPM package byte-identical daemons by construction). Adds a manual **dry-run** surface (`workflow_dispatch`, `publish=false`) that runs the full build→package→assemble path and verifies the release directory (7 packages, SBOM, checksums, MANIFEST, VERIFY, DEB/RPM daemon parity) **without publishing**. Adds a CI regression guard (`scripts/ci/check-build-provenance.sh`) that fails if either `release.yml` or `build-packages.yml` reintroduces a bare package invocation, with a negative self-test.
+
+**v1.221.0 identity is preserved and never rewritten:** the annotated tag `v1.221.0 → a9ab66b2`, its Docker images, and the failure evidence remain as-is. v1.221.1 is a new patch that publishes correctly.
+
+- No `internal/`, `cmd/`, `pkg/`, or packaging *behavior* change; the daemon binary source is identical to v1.221.0. Official v1.221.1 daemon bytes may differ from the v1.221.0 candidate only because of the wall-clock `BUILD_DATE`; DEB/RPM parity within the release holds.
+
+---
+
 ## [v1.221.0] - 2026-07-16 — Atomic Enforcement, Build Provenance, and Daemon Lifecycle Observability
 
 **RELEASE CANDIDATE — implementation merged to `main`; metadata prepared; pending Stage-B (package-native lab2 DEB + lab4 RPM). NOT yet tagged, NOT yet published, NOT yet deployed to the fleet.** The published/fleet baseline remains **v1.220.10** (11/11) until this train passes Stage-B and is published. nft schema **1** unchanged; validator/status schema **1.84.0** unchanged. Daemon Go source changed (opqueue + lifecycle) → **daemon re-baseline** for v1.221.0.
