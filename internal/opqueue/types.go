@@ -150,6 +150,16 @@ type NetlinkBackend interface {
 	// callers rely on partial_apply != success.
 	AddElements(table, set string, elements []SetElement) (applied int, err error)
 
+	// ReplaceSet atomically replaces the ENTIRE contents of a set in ONE netlink
+	// transaction (flush + add + single commit). It is the atomic primitive for the
+	// replace_set / flush_source paths: on any failure NOTHING commits and the set
+	// retains its prior contents (fail-CLOSED), never the transient-empty fail-OPEN
+	// of a standalone FlushSet()-then-AddElements(). Elements are validated before
+	// the connection is mutated; an empty slice is an explicit atomic flush. Callers
+	// MUST route replacement through this and MUST NOT call FlushSet()+AddElements()
+	// separately for a replacement.
+	ReplaceSet(table, set string, elements []SetElement) error
+
 	// DeleteElements removes elements from a set (batched)
 	DeleteElements(table, set string, elements []SetElement) error
 

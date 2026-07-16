@@ -23,6 +23,7 @@ func (l3bStubBackend) AddElements(table, set string, e []SetElement) (int, error
 }
 func (l3bStubBackend) DeleteElements(table, set string, e []SetElement) error { return nil }
 func (l3bStubBackend) GetSetElements(table, set string) ([]string, error)     { return nil, nil }
+func (l3bStubBackend) ReplaceSet(table, set string, e []SetElement) error     { return nil }
 
 // resolver mirroring the daemon closure: enforcement set + exempt single IP → refuse.
 func l3bResolver(set, ip string) (bool, string) {

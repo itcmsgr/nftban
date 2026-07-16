@@ -27,6 +27,7 @@ func (stubReplaceBackend) AddElements(table, set string, e []opqueue.SetElement)
 }
 func (stubReplaceBackend) DeleteElements(table, set string, e []opqueue.SetElement) error { return nil }
 func (stubReplaceBackend) GetSetElements(table, set string) ([]string, error)             { return nil, nil }
+func (stubReplaceBackend) ReplaceSet(table, set string, e []opqueue.SetElement) error     { return nil }
 
 const l2eBlockedMsg = "blocked for interval/protection set"
 

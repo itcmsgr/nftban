@@ -218,7 +218,7 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int, si SourceI
 	if replaceOp != nil {
 		// L2b truth-bearing: applied == actually_applied; err set on flush failure OR
 		// partial apply (applied < intended). WasReplace stays true even on partial.
-		applied, intended, replErr := buf.applyReplace(backend, table, setName, replaceOp, maxBatchSize)
+		applied, intended, replErr := buf.applyReplace(backend, table, setName, replaceOp)
 		result.Applied = applied
 		result.Intended = intended
 		result.Adds = applied
@@ -227,13 +227,23 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int, si SourceI
 			result.Err = replErr
 		}
 	} else if flushPending {
-		if err := backend.FlushSet(table, setName); err != nil {
-			log.Printf("[opqueue] Flush %s failed: %v", setName, err)
-			result.Err = err
+		// Atomic flush == atomic replacement with the intended post-flush add set.
+		// The barrier model routes post-flush adds to postBarrier (re-enqueued), so
+		// `pending` is normally empty here → an explicit atomic empty flush. Any
+		// pending ADDs are folded into the SAME transaction; pending DELETEs are
+		// no-ops against the emptied set and are dropped. This replaces the former
+		// standalone committed backend.FlushSet(), removing the fail-OPEN window.
+		finalAdds := pendingAddSetElements(pending)
+		if rerr := backend.ReplaceSet(table, setName, finalAdds); rerr != nil {
+			log.Printf("[opqueue] flush_source %s: atomic flush failed, prior contents preserved: %v", setName, rerr)
+			result.Err = rerr
 		} else {
-			result.Applied = 1
 			result.WasFlush = true
+			result.Applied = 1 + len(finalAdds)
+			result.Adds = len(finalAdds)
 		}
+		// Consumed atomically above — prevent the incremental path below from re-applying.
+		pending = nil
 	}
 
 	// Apply pending individual ops
@@ -258,58 +268,49 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int, si SourceI
 // succeeds followed by a lost add batch leaves the set partially populated; we now report that
 // as an error instead of a success-shaped short count. We do NOT abort on the first bad batch
 // (later batches still attempt), and we do NOT fail-close the caller — surfacing is the job.
-func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string, op *SetOp, maxBatchSize int) (applied int, intended int, err error) {
-	// Step 1: Flush existing
-	if ferr := backend.FlushSet(table, setName); ferr != nil {
-		log.Printf("[opqueue] replace_set flush %s failed: %v", setName, ferr)
-		return 0, 0, fmt.Errorf("replace_set flush %s: %w", setName, ferr)
-	}
-
-	if len(op.Elements) == 0 {
-		return 0, 0, nil
-	}
+func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string, op *SetOp) (applied int, intended int, err error) {
 	intended = len(op.Elements)
 
-	// Step 2: Bulk add in batches
-	isIPv6 := strings.HasSuffix(setName, "_ipv6")
+	// Route the FULL element set through the atomic primitive — ONE netlink
+	// transaction (flush + add + single commit). We MUST NOT call
+	// backend.FlushSet()/AddElements() separately here: a standalone committed
+	// flush reintroduces the transient-empty fail-OPEN window this lane removes.
+	// Family is derived from the set's KeyType inside ReplaceSet, never from the
+	// name (so http_bot_*6 etc. are handled correctly). op.TTL applies to every
+	// element (0 = permanent, e.g. feeds/geoban).
 	elements := make([]SetElement, 0, len(op.Elements))
 	for _, e := range op.Elements {
 		elements = append(elements, SetElement{
-			Value:  e,
-			TTL:    0, // Feeds/geoban are permanent
-			IsIPv6: isIPv6,
+			Value: e,
+			TTL:   op.TTL,
 		})
 	}
 
-	// Batch by maxBatchSize — sum the TRUE applied count from each batch.
-	var firstErr error
-	for i := 0; i < len(elements); i += maxBatchSize {
-		end := i + maxBatchSize
-		if end > len(elements) {
-			end = len(elements)
-		}
-		batch := elements[i:end]
-
-		n, addErr := backend.AddElements(table, setName, batch)
-		applied += n
-		if addErr != nil {
-			log.Printf("[opqueue] replace_set add %s batch %d failed (%d/%d): %v", setName, i/maxBatchSize, n, len(batch), addErr)
-			if firstErr == nil {
-				firstErr = fmt.Errorf("replace_set add %s batch %d: %w", setName, i/maxBatchSize, addErr)
-			}
-		}
+	if rerr := backend.ReplaceSet(table, setName, elements); rerr != nil {
+		// Atomic all-or-nothing: nothing committed, prior (blocked) contents kept.
+		log.Printf("[opqueue] replace_set %s: atomic replace failed, prior contents preserved: %v", setName, rerr)
+		return 0, intended, fmt.Errorf("replace_set %s: %w", setName, rerr)
 	}
 
-	if applied < intended {
-		if firstErr == nil {
-			firstErr = fmt.Errorf("replace_set %s: applied %d of %d (partial)", setName, applied, intended)
-		}
-		log.Printf("[opqueue] replace_set %s: PARTIAL apply %d/%d — %v", setName, applied, intended, firstErr)
-		return applied, intended, firstErr
-	}
+	log.Printf("[opqueue] replace_set %s: %d elements atomically replaced", setName, intended)
+	return intended, intended, nil
+}
 
-	log.Printf("[opqueue] replace_set %s: %d elements applied", setName, applied)
-	return applied, intended, nil
+// pendingAddSetElements extracts the ADD ops from a pending map as SetElements for
+// an atomic replacement. DELETE ops are omitted: after an atomic flush the set is
+// empty, so a delete is a no-op. Used to fold the flush_source path into a single
+// atomic ReplaceSet transaction.
+func pendingAddSetElements(pending map[string]*PendingOp) []SetElement {
+	if len(pending) == 0 {
+		return nil
+	}
+	out := make([]SetElement, 0, len(pending))
+	for _, p := range pending {
+		if p.Type == OpAdd {
+			out = append(out, SetElement{Value: p.Element, TTL: p.TTL})
+		}
+	}
+	return out
 }
 
 // applyPendingCounted applies individual add/delete operations and returns separate counts

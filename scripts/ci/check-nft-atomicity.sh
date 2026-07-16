@@ -138,6 +138,68 @@ fi
 echo ""
 
 # -----------------------------------------------------------------------------
+# V-OPQUEUE-REPLACE-ATOMICITY (netlink replace_set / flush_source)
+# -----------------------------------------------------------------------------
+# The opqueue replace_set + flush_source apply paths run over the SHARED netlink
+# connection. A standalone backend.FlushSet() that COMMITS before the adds leaves
+# the kernel set transiently EMPTY (fail-OPEN on enforcement sets — the sibling of
+# F-FEED/F-GEO on the netlink side, invisible to the setsync/shell scans above).
+# They MUST route through the atomic backend.ReplaceSet() primitive (one netlink
+# transaction: flush + add + single commit); the primitive must commit EXACTLY
+# once per replace. (Incremental backend.AddElements() for ban/unban is fine — a
+# committed flush is not.)
+BUF="internal/opqueue/buffer.go"
+PRIM="internal/setsync/nft_replace_atomic.go"
+echo "[V-OPQUEUE-REPLACE-ATOMICITY] scanning $BUF + $PRIM ..."
+OPQ_FAIL=0
+# drop `grep -n` lines (LINE:content) whose content is a // or * comment
+nocomment() { grep -vE '^[0-9]+:[[:space:]]*(//|\*)'; }
+
+# (a) NEGATIVE: no standalone committed backend.FlushSet() anywhere in buffer.go.
+BUF_FLUSH_HITS="$(grep -nE 'backend\.FlushSet\(' "$BUF" 2>/dev/null | nocomment || true)"
+if [[ -n "$BUF_FLUSH_HITS" ]]; then
+    echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — standalone backend.FlushSet() in $BUF (use backend.ReplaceSet for an atomic flush/replace):"
+    echo "$BUF_FLUSH_HITS"
+    OPQ_FAIL=1; FAIL=1
+fi
+
+# (b) POSITIVE: applyReplace routes through backend.ReplaceSet and does NOT call
+#     the separately-committing FlushSet()/AddElements() in its body.
+APPLY_BODY="$(awk '/func \(buf \*SetBuffer\) applyReplace\(/{p=1} p{print} p&&/^}/{exit}' "$BUF")"
+if ! grep -qE 'backend\.ReplaceSet\(' <<<"$APPLY_BODY"; then
+    echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — applyReplace does not call backend.ReplaceSet()."
+    OPQ_FAIL=1; FAIL=1
+fi
+if grep -vE '^[[:space:]]*//' <<<"$APPLY_BODY" | grep -qE 'backend\.(FlushSet|AddElements)\('; then
+    echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — applyReplace still calls the separately-committing FlushSet()/AddElements()."
+    OPQ_FAIL=1; FAIL=1
+fi
+
+# (c) POSITIVE: the flush_source branch is folded into the atomic primitive.
+if ! grep -qE '\} else if flushPending \{' "$BUF" || ! grep -qE 'pendingAddSetElements\(' "$BUF"; then
+    echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — flush_source path not folded into the atomic ReplaceSet primitive."
+    OPQ_FAIL=1; FAIL=1
+fi
+
+# (d) POSITIVE: the primitive exists and commits EXACTLY ONCE per replace.
+if [[ ! -f "$PRIM" ]]; then
+    echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — atomic primitive $PRIM missing."
+    OPQ_FAIL=1; FAIL=1
+else
+    PRIM_BODY="$(awk '/func replaceSetElementsOnConn\(/{p=1} p{print} p&&/^}/{exit}' "$PRIM")"
+    FLUSH_COMMITS="$(grep -cE 'conn\.Flush\(\)' <<<"$PRIM_BODY" || true)"
+    if [[ "$FLUSH_COMMITS" != "1" ]]; then
+        echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — replaceSetElementsOnConn must commit exactly once (conn.Flush()); found $FLUSH_COMMITS."
+        OPQ_FAIL=1; FAIL=1
+    fi
+fi
+
+if [[ "$OPQ_FAIL" -eq 0 ]]; then
+    echo "  PASS — opqueue replace_set/flush_source route through the single-transaction atomic ReplaceSet."
+fi
+echo ""
+
+# -----------------------------------------------------------------------------
 # V-NFT-SERVICE-PORTS-RENDERED-COMPLETE (static, v1.192.1)
 # -----------------------------------------------------------------------------
 # Every PRODUCTION render path that substitutes the nftables template
