@@ -46,6 +46,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // JournalQuery defines a bounded journal search.
@@ -132,7 +134,7 @@ func (SystemdJournalReader) Query(ctx context.Context, q JournalQuery) JournalEv
 
 	// Fixed binary "journalctl"; buildJournalArgs returns bounded internal constants,
 	// each pattern regexp.QuoteMeta-escaped, passed as argv (no shell, no tainted input).
-	cmd := exec.CommandContext(ctx, "journalctl", buildJournalArgs(q)...) // #nosec G204 -- args are bounded internal constants, escaped, argv-only (no shell)
+	cmd := procenv.CommandContext(ctx, "journalctl", buildJournalArgs(q)...) // #nosec G204 -- args are bounded internal constants, escaped, argv-only (no shell)
 
 	out, err := cmd.Output()
 	return parseJournalResult(q, out, err, ctx.Err())

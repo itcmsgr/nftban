@@ -22,9 +22,10 @@ package validator
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // ServiceChecker abstracts service-state queries so unit tests can mock
@@ -43,7 +44,7 @@ type SystemdChecker struct{}
 // CheckUnit queries systemd for the unit's active state.
 // This is a read-only query — zero side effects.
 func (SystemdChecker) CheckUnit(unit string) (RuntimeState, string) {
-	out, err := exec.Command("systemctl", "is-active", unit).Output()
+	out, err := procenv.Command("systemctl", "is-active", unit).Output()
 	detail := strings.TrimSpace(string(out))
 	if err != nil {
 		if detail == "" {
@@ -88,7 +89,7 @@ type SystemdTimerChecker struct{}
 // CountActiveTimers queries systemd for active nftban-* timers.
 // Read-only — zero side effects.
 func (SystemdTimerChecker) CountActiveTimers() (int, error) {
-	out, err := exec.Command("systemctl", "list-timers", "nftban-*", "--no-legend").Output()
+	out, err := procenv.Command("systemctl", "list-timers", "nftban-*", "--no-legend").Output()
 	if err != nil {
 		return 0, err
 	}

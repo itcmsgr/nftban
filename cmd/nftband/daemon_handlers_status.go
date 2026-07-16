@@ -42,12 +42,45 @@ func (d *Daemon) handleStatusRequest() SocketResponse {
 			"uptime":         time.Since(d.startedAt).Truncate(time.Second).String(),
 			"uptime_seconds": int(time.Since(d.startedAt).Seconds()),
 			"modules":        len(d.registry.All()),
-			"events_total":  stats.Published,
-			"subscriptions": stats.Subscriptions,
+			"events_total":   stats.Published,
+			"subscriptions":  stats.Subscriptions,
 			// v1.13.12: Config reload tracking
 			"config_hash":   configHash,
 			"config_loaded": lastReload.Format(time.RFC3339),
+			// Startup lifecycle observability: additive rendering of the ONE
+			// canonical lifecycle snapshot (readiness, phase, degraded components).
+			// Existing fields above are unchanged for backward compatibility.
+			"lifecycle": d.lifecycleStatus(),
 		},
+	}
+}
+
+// lifecycleStatus renders the canonical startup-lifecycle snapshot as a stable,
+// additive object for the status IPC. Nil-safe so status never panics if the
+// lifecycle was not wired (e.g. degraded construction paths / tests).
+func (d *Daemon) lifecycleStatus() map[string]any {
+	if d.lifecycle == nil {
+		return map[string]any{"available": false}
+	}
+	s := d.lifecycle.Snapshot()
+	return map[string]any{
+		"phase":                    string(s.Phase),
+		"last_completed_phase":     string(s.LastCompletedPhase),
+		"state":                    s.State,
+		"ready":                    s.Ready,
+		"ready_attempted":          s.ReadyAttempted,
+		"ready_sent":               s.ReadySent,
+		"notify_expected":          s.NotifyExpected,
+		"shutdown_started":         s.ShutdownStarted,
+		"ipc_bound":                s.IPCBound,
+		"ipc_accepting":            s.IPCAccepting,
+		"nft_ready":                s.NFTReady,
+		"opqueue_ready":            s.OpQueueReady,
+		"modules_initialized":      s.ModulesInitialized,
+		"required_modules_started": s.RequiredModulesStarted,
+		"http_ready":               s.HTTPReady,
+		"watchdog_ready":           s.WatchdogReady,
+		"degraded_components":      s.DegradedComponents,
 	}
 }
 

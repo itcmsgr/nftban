@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
+	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"golang.org/x/sys/unix"
 )
@@ -56,6 +57,11 @@ func init() {
 func (d *Daemon) startSocket() error {
 	socketPath := getSocketPath()
 
+	// Accept-loop serving acknowledgment (closed by acceptSocketConnections when
+	// the loop reaches its serving state). Lets us mark ipc_accepting only when the
+	// loop is genuinely serving, not merely because the goroutine was launched.
+	d.acceptReady = make(chan struct{})
+
 	// Check for systemd socket activation first
 	listeners, err := activation.Listeners()
 	if err != nil {
@@ -66,9 +72,9 @@ func (d *Daemon) startSocket() error {
 		// Systemd socket activation - use the pre-configured socket
 		// Socket permissions (0660 root:nftban) are set by nftband.socket unit
 		d.socketLn = listeners[0]
+		d.lifecycle.setIPCBound(true)
 		log.Printf("Using systemd socket activation (socket from nftband.socket)")
-		go d.acceptSocketConnections()
-		return nil
+		return d.launchAcceptAndWait()
 	}
 	// v1.147: if activation reported listeners but the fd was mediated to nil
 	// under MAC confinement, fall through to manual socket creation rather than
@@ -88,6 +94,7 @@ func (d *Daemon) startSocket() error {
 		return err
 	}
 	d.socketLn = ln
+	d.lifecycle.setIPCBound(true)
 
 	// Set permissions: 0660 = owner+group read/write
 	// Socket owned by root:nftban so CLI users in nftban group can connect
@@ -102,9 +109,27 @@ func (d *Daemon) startSocket() error {
 	}
 
 	// Handle connections
-	go d.acceptSocketConnections()
+	return d.launchAcceptAndWait()
+}
 
-	return nil
+// acceptReadyTimeout bounds how long startSocket waits for the accept loop to reach
+// its serving state before treating the socket as not-serving. It is a package var
+// so tests can shorten it; production keeps the daemon-startup wait.
+var acceptReadyTimeout = constants.DaemonStartupWait
+
+// launchAcceptAndWait starts the accept loop and blocks (bounded) until the loop
+// signals it reached its serving state, then marks ipc_accepting. A socket that is
+// bound but never reaches serving state is a real defect: return a clear error
+// rather than an unbounded wait or a false "accepting".
+func (d *Daemon) launchAcceptAndWait() error {
+	go d.acceptSocketConnections()
+	select {
+	case <-d.acceptReady:
+		d.lifecycle.setIPCAccepting(true)
+		return nil
+	case <-time.After(acceptReadyTimeout):
+		return fmt.Errorf("IPC accept loop did not reach serving state within %s", acceptReadyTimeout)
+	}
 }
 
 // setSocketGroup sets the group ownership of a file
@@ -177,6 +202,12 @@ func validatePeerCredentials(conn net.Conn) (uint32, uint32, error) {
 
 // acceptSocketConnections handles incoming socket connections
 func (d *Daemon) acceptSocketConnections() {
+	// Signal that the accept loop reached its serving state (once). startSocket
+	// blocks on this before marking ipc_accepting, so a bound-but-not-serving
+	// socket is never reported as accepting.
+	if d.acceptReady != nil {
+		d.acceptReadyOnce.Do(func() { close(d.acceptReady) })
+	}
 	for {
 		conn, err := d.socketLn.Accept()
 		acceptTime := time.Now()

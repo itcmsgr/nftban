@@ -182,36 +182,36 @@ func getAutoSyncDelay() time.Duration {
 type Daemon struct {
 	bus       *eventbus.Bus
 	registry  *module.Registry
-	backend   *nftbackend.Backend // AUTHORITATIVE nft writer
-	stats     *stats.Collector    // Runtime stats collector
-	watchdog  *watchdog.Watchdog  // Dynamic watchdog
+	backend   *nftbackend.Backend       // AUTHORITATIVE nft writer
+	stats     *stats.Collector          // Runtime stats collector
+	watchdog  *watchdog.Watchdog        // Dynamic watchdog
 	wdMetrics *watchdog.MetricsExporter // Watchdog metrics exporter
 	ctx       context.Context
 	cancel    context.CancelFunc
 	socketLn  net.Listener
 	httpSrv   *http.Server
-	configDir string             // Config directory for whitelist loading
+	configDir string // Config directory for whitelist loading
 
 	// v1.13.0: Async IPC operation queue
 	opQueue     *opqueue.OpQueue     // Async operation queue for batched netlink
 	sourceIndex *opqueue.SourceIndex // Source tracking for shared sets
 
 	// v1.32.0: In-memory set element counters (huge set management)
-	setCounters *stats.SetCounters   // Per-set element counts (O(1) reads)
-	bgWg        sync.WaitGroup       // Tracks background goroutines for clean shutdown
+	setCounters *stats.SetCounters // Per-set element counts (O(1) reads)
+	bgWg        sync.WaitGroup     // Tracks background goroutines for clean shutdown
 
 	// v1.13.12: Config reload tracking
-	configHash    string       // SHA256 of loaded config files
-	lastReloadTs  time.Time    // When config was last loaded/reloaded
-	reloadMu      sync.RWMutex // Protects config reload operations
+	configHash   string       // SHA256 of loaded config files
+	lastReloadTs time.Time    // When config was last loaded/reloaded
+	reloadMu     sync.RWMutex // Protects config reload operations
 
 	// IPC rate limiting
 	connSem chan struct{} // Semaphore for limiting concurrent IPC connections
 
 	// IPC metrics tracking
-	activeConns     int64      // Current active connections (atomic)
-	peakConns       int64      // Peak connections since reset (atomic)
-	activeConnsMu   sync.Mutex // Protects peak calculation
+	activeConns   int64      // Current active connections (atomic)
+	peakConns     int64      // Peak connections since reset (atomic)
+	activeConnsMu sync.Mutex // Protects peak calculation
 
 	// v1.33.0: Daemon start time for uptime calculation
 	startedAt time.Time // Set when daemon starts
@@ -220,6 +220,18 @@ type Daemon struct {
 	sigCh           chan os.Signal // Signal channel for shutdown
 	startupComplete bool           // True when initialization is complete
 	sigMu           sync.Mutex     // Protects startupComplete
+
+	// Startup lifecycle observability: ONE canonical, concurrency-safe state that
+	// records startup phases, gates the systemd READY=1 notification on mandatory
+	// prerequisites, and is rendered by the journal, sd_notify STATUS=, and status
+	// IPC. See daemon_startup_lifecycle.go.
+	lifecycle *startupLifecycle
+
+	// IPC accept-loop serving acknowledgment: closed by acceptSocketConnections
+	// when the loop reaches its serving state, so startSocket can distinguish
+	// "socket bound" from "socket actually accepting" without an unbounded wait.
+	acceptReady     chan struct{}
+	acceptReadyOnce sync.Once
 
 	// v1.41.0: Ban correlation ID tracking (IP → banID for BAN→UNBAN linking)
 	banIDMap sync.Map // key: string (IP), value: string (banID)

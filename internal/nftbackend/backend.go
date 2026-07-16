@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/itcmsgr/nftban/internal/netutil"
+	"github.com/itcmsgr/nftban/internal/procenv"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
 )
 
@@ -837,9 +838,9 @@ func (b *Backend) ApplyRuleset(ctx context.Context, req ApplyRulesetRequest) err
 
 	var cmd *exec.Cmd
 	if req.Check {
-		cmd = exec.CommandContext(ctx, "nft", "-c", "-f", req.FilePath)
+		cmd = procenv.CommandContext(ctx, "nft", "-c", "-f", req.FilePath)
 	} else {
-		cmd = exec.CommandContext(ctx, "nft", "-f", req.FilePath)
+		cmd = procenv.CommandContext(ctx, "nft", "-f", req.FilePath)
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -941,7 +942,7 @@ func (b *Backend) checkIPCLI(ctx context.Context, ip string, isIPv6 bool) (bool,
 		set = "blacklist_ipv4"
 	}
 
-	cmd := exec.CommandContext(ctx, "nft", "list", "set", table, set)
+	cmd := procenv.CommandContext(ctx, "nft", "list", "set", table, set)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, "", fmt.Errorf("nft list set failed: %w", err)
@@ -969,7 +970,7 @@ func (b *Backend) HealthCheck(ctx context.Context) error {
 	}
 
 	// Fall back to CLI
-	cmd := exec.CommandContext(ctx, "nft", "list", "tables")
+	cmd := procenv.CommandContext(ctx, "nft", "list", "tables")
 	_, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("nftables not operational: %w", err)

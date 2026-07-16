@@ -24,6 +24,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // NftRuleset represents the top-level nft -j list ruleset output.
@@ -45,9 +47,9 @@ type NftObject struct {
 
 // NftMetainfo holds nft version info.
 type NftMetainfo struct {
-	Version    string `json:"version"`
-	ReleaseName string `json:"release_name"`
-	JsonSchemaVersion int `json:"json_schema_version"`
+	Version           string `json:"version"`
+	ReleaseName       string `json:"release_name"`
+	JsonSchemaVersion int    `json:"json_schema_version"`
 }
 
 // NftTable represents an nftables table.
@@ -132,7 +134,7 @@ func LoadRulesetJSON(ctx context.Context) (*NftRuleset, error) {
 		defer cancel()
 	}
 
-	cmd := exec.CommandContext(ctx, "nft", "-j", "list", "ruleset")
+	cmd := procenv.CommandContext(ctx, "nft", "-j", "list", "ruleset")
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

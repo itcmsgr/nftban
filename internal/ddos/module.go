@@ -22,7 +22,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 const (
@@ -93,8 +93,8 @@ type Module struct {
 	suricataAvail bool
 
 	// IP tracking for ban decisions
-	ipTrackers    map[string]*ipTracker
-	bannedIPs     map[string]time.Time
+	ipTrackers map[string]*ipTracker
+	bannedIPs  map[string]time.Time
 }
 
 // New creates a new DDoS protection module
@@ -107,11 +107,11 @@ func New() *Module {
 		config: ddosConfig{
 			Enabled:           true,
 			Mode:              "auto",
-			EscalateThreshold: 3,                    // Default: 3 detections
-			BanDurationShort:  5 * time.Minute,     // Default: 5 min ban (first)
-			BanDurationMedium: 30 * time.Minute,    // Default: 30 min ban (repeat)
-			BanDurationLong:   1 * time.Hour,       // Default: 1 hour (persistent)
-			TrackWindow:       1 * time.Minute,     // Default: 1 min window
+			EscalateThreshold: 3,                // Default: 3 detections
+			BanDurationShort:  5 * time.Minute,  // Default: 5 min ban (first)
+			BanDurationMedium: 30 * time.Minute, // Default: 30 min ban (repeat)
+			BanDurationLong:   1 * time.Hour,    // Default: 1 hour (persistent)
+			TrackWindow:       1 * time.Minute,  // Default: 1 min window
 		},
 	}
 	// Load config from files (will override defaults)
@@ -333,7 +333,7 @@ func (m *Module) Status() module.Status {
 func (m *Module) detectMode() {
 	scriptPath := getDDOSScript()
 	// VULN-20: quote path via $1
-	out, err := exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_get_mode", "_", scriptPath).Output()
+	out, err := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_get_mode", "_", scriptPath).Output()
 	if err != nil {
 		m.mode = "classic" // Default fallback
 		return
@@ -341,19 +341,19 @@ func (m *Module) detectMode() {
 	m.mode = strings.TrimSpace(string(out))
 
 	// Check Suricata availability
-	out, _ = exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_suricata_available && echo yes || echo no", "_", scriptPath).Output()
+	out, _ = procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_suricata_available && echo yes || echo no", "_", scriptPath).Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 
 // enable enables DDoS protection
 func (m *Module) enable() error {
-	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_enable", "_", getDDOSScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_enable", "_", getDDOSScript())
 	return cmd.Run()
 }
 
 // disable disables DDoS protection
 func (m *Module) disable() error {
-	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_disable", "_", getDDOSScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_disable", "_", getDDOSScript())
 	return cmd.Run()
 }
 
@@ -438,7 +438,7 @@ func (m *Module) handleDDoSEvent(e eventbus.Event) {
 	if shouldBan && m.bus != nil {
 		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
-			WithMessage("Banning " + e.IP + ": DDoS threshold exceeded").
+			WithMessage("Banning "+e.IP+": DDoS threshold exceeded").
 			WithSeverity(eventbus.SeverityCritical).
 			WithData("duration", banDuration.String()).
 			WithData("reason", "ddos_protection").

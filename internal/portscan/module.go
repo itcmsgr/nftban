@@ -22,7 +22,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,6 +32,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 const (
@@ -93,8 +93,8 @@ type Module struct {
 	scansDetected int64
 
 	// IP tracking for ban decisions
-	ipTrackers    map[string]*ipTracker
-	bannedIPs     map[string]time.Time // Track recently banned to avoid duplicates
+	ipTrackers map[string]*ipTracker
+	bannedIPs  map[string]time.Time // Track recently banned to avoid duplicates
 }
 
 // New creates a new portscan detection module
@@ -107,9 +107,9 @@ func New() *Module {
 		config: portscanConfig{
 			Enabled:      true,
 			Mode:         "auto",
-			BanThreshold: 3,                    // Default: 3 detections
-			BanDuration:  constants.PortscanBanDuration,  // Default: 30 min ban
-			TrackWindow:  constants.PortscanTrackWindow,  // Default: 5 min window
+			BanThreshold: 3,                             // Default: 3 detections
+			BanDuration:  constants.PortscanBanDuration, // Default: 30 min ban
+			TrackWindow:  constants.PortscanTrackWindow, // Default: 5 min window
 		},
 	}
 	// Load config from files (will override defaults)
@@ -325,7 +325,7 @@ func (m *Module) Status() module.Status {
 func (m *Module) detectMode() {
 	scriptPath := getPortscanScript()
 	// Source the script and get mode (VULN-20: quote path via $1)
-	out, err := exec.Command("bash", "-c",
+	out, err := procenv.Command("bash", "-c",
 		"source \"$1\" 2>/dev/null && nftban_portscan_load_config && _nftban_portscan_detect_mode", "_", scriptPath).Output()
 	if err != nil {
 		m.mode = "classic" // Default fallback
@@ -334,20 +334,20 @@ func (m *Module) detectMode() {
 	m.mode = strings.TrimSpace(string(out))
 
 	// Check Suricata availability
-	out, _ = exec.Command("bash", "-c",
+	out, _ = procenv.Command("bash", "-c",
 		"source \"$1\" 2>/dev/null && _nftban_portscan_suricata_is_available && echo yes || echo no", "_", scriptPath).Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 
 // enable enables portscan detection
 func (m *Module) enable() error {
-	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_enable", "_", getPortscanScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_enable", "_", getPortscanScript())
 	return cmd.Run()
 }
 
 // disable disables portscan detection
 func (m *Module) disable() error {
-	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_disable", "_", getPortscanScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_disable", "_", getPortscanScript())
 	return cmd.Run()
 }
 
@@ -369,7 +369,7 @@ func (m *Module) runDetectionCycle(ctx context.Context) {
 // runCycle runs a single detection cycle
 func (m *Module) runCycle() {
 	// Run the bash detection script
-	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_run", "_", getPortscanScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_run", "_", getPortscanScript())
 	err := cmd.Run()
 
 	m.mu.Lock()
@@ -434,7 +434,7 @@ func (m *Module) handlePortscanEvent(e eventbus.Event) {
 	if shouldBan && m.bus != nil {
 		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
-			WithMessage("Banning " + e.IP + ": portscan threshold exceeded").
+			WithMessage("Banning "+e.IP+": portscan threshold exceeded").
 			WithSeverity(eventbus.SeverityCritical).
 			WithData("duration", banDuration.String()).
 			WithData("reason", "portscan_detection").

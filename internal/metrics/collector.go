@@ -29,11 +29,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/procenv"
 	"github.com/itcmsgr/nftban/internal/safety"
 )
 
@@ -303,7 +303,7 @@ func (c *Collector) writeExporterMetrics(f *os.File, startTime time.Time) error 
 
 // getNFTablesSets retrieves all nftables sets in one efficient JSON call
 func (c *Collector) getNFTablesSets() (map[string]interface{}, error) {
-	cmd := exec.Command("nft", "-j", "list", "ruleset")
+	cmd := procenv.Command("nft", "-j", "list", "ruleset")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("nft list ruleset: %w", err)
@@ -322,7 +322,7 @@ func (c *Collector) countSetElements(nftSets map[string]interface{}, family, tab
 	// This is a simplified implementation - actual implementation would parse
 	// the JSON structure from nft -j output
 	// For now, fall back to direct nft command (still better than bash grep/awk)
-	cmd := exec.Command("nft", "list", "set", family, table, setName)
+	cmd := procenv.Command("nft", "list", "set", family, table, setName)
 	output, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -376,7 +376,7 @@ func (c *Collector) getNetworkInterfaces() ([]string, error) {
 
 		// Skip loopback and virtual interfaces
 		if iface == "lo" || strings.HasPrefix(iface, "docker") ||
-		   strings.HasPrefix(iface, "veth") || strings.HasPrefix(iface, "br-") {
+			strings.HasPrefix(iface, "veth") || strings.HasPrefix(iface, "br-") {
 			continue
 		}
 
@@ -450,7 +450,7 @@ func (c *Collector) getHealthStatus(component string) int {
 
 // isServiceActive checks if a systemd service is active
 func (c *Collector) isServiceActive(service string) bool {
-	cmd := exec.Command("systemctl", "is-active", service)
+	cmd := procenv.Command("systemctl", "is-active", service)
 	output, err := cmd.Output()
 	if err != nil {
 		return false

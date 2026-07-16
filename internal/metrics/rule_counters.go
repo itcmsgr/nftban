@@ -22,11 +22,11 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/procenv"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -205,16 +205,16 @@ func parseNamedCountersJSONFiltered(data []byte, family string) (map[string]Coun
 // on fleet nftables versions (v1.0.2-v1.1.1). Global listing works everywhere.
 // Filtering by family and table happens in parseNamedCountersJSON().
 func nftListAllCountersJSON(ctx context.Context) ([]byte, error) {
-	return exec.CommandContext(ctx, "nft", "-j", "list", "counters").Output() // #nosec G204
+	return procenv.CommandContext(ctx, "nft", "-j", "list", "counters").Output() // #nosec G204
 }
 
 // nftListTable runs nft -j list table for a specific family.
 func nftListTable(family string) ([]byte, error) {
 	switch family {
 	case "ip":
-		return exec.Command("nft", "-j", "list", "table", "ip", "nftban").Output() // #nosec G204
+		return procenv.Command("nft", "-j", "list", "table", "ip", "nftban").Output() // #nosec G204
 	case "ip6":
-		return exec.Command("nft", "-j", "list", "table", "ip6", "nftban").Output() // #nosec G204
+		return procenv.Command("nft", "-j", "list", "table", "ip6", "nftban").Output() // #nosec G204
 	default:
 		return nil, nil
 	}

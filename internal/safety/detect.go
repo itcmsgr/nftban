@@ -26,17 +26,18 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // SystemIPs holds all critical IPs that must NEVER be blocked
 type SystemIPs struct {
-	ServerIPs     []net.IP     // All server interface IPs
-	CurrentUserIP net.IP       // IP of current SSH connection
-	GatewayIPs    []net.IP     // Default gateway
-	DNSServers    []net.IP     // DNS servers from /etc/resolv.conf
-	LoopbackCIDRs []net.IPNet  // 127.0.0.0/8, ::1/128
+	ServerIPs     []net.IP    // All server interface IPs
+	CurrentUserIP net.IP      // IP of current SSH connection
+	GatewayIPs    []net.IP    // Default gateway
+	DNSServers    []net.IP    // DNS servers from /etc/resolv.conf
+	LoopbackCIDRs []net.IPNet // 127.0.0.0/8, ::1/128
 }
 
 // DetectSystemIPs auto-detects all critical IPs that must be whitelisted
@@ -77,8 +78,8 @@ func DetectSystemIPs() (*SystemIPs, error) {
 
 	// 5. Add loopback ranges (always whitelist!)
 	sys.LoopbackCIDRs = []net.IPNet{
-		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},  // 127.0.0.0/8
-		{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},   // ::1/128
+		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)}, // 127.0.0.0/8
+		{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},  // ::1/128
 	}
 
 	return sys, nil
@@ -156,7 +157,7 @@ func detectCurrentUserIP() (net.IP, error) {
 	}
 
 	// Method 3: Parse output of 'who' command
-	cmd := exec.Command("who", "-u")
+	cmd := procenv.Command("who", "-u")
 	output, err := cmd.Output()
 	if err == nil {
 		lines := strings.Split(string(output), "\n")
@@ -177,7 +178,7 @@ func detectCurrentUserIP() (net.IP, error) {
 	}
 
 	// Method 4: Parse output of 'w' command
-	cmd = exec.Command("w", "-h")
+	cmd = procenv.Command("w", "-h")
 	output, err = cmd.Output()
 	if err == nil {
 		lines := strings.Split(string(output), "\n")
@@ -202,7 +203,7 @@ func detectGatewayIPs() ([]net.IP, error) {
 	var ips []net.IP
 
 	// Method 1: Parse 'ip route' output
-	cmd := exec.Command("ip", "route", "show", "default")
+	cmd := procenv.Command("ip", "route", "show", "default")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err

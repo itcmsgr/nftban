@@ -30,13 +30,13 @@ import (
 	"bufio"
 	"log"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/procenv"
 	"github.com/itcmsgr/nftban/internal/state"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -50,58 +50,58 @@ func getMetricsPaths() (configDir, dataDir string) {
 
 // Sample represents a single metrics snapshot
 type Sample struct {
-	Timestamp    time.Time              `json:"timestamp"`
-	Version      string                 `json:"version"`
-	BlockedIPs   int                    `json:"blocked_ips"`
-	RuleCount    int                    `json:"rule_count"`
-	HealthOK     bool                   `json:"health_ok"`
-	FeedsActive  int                    `json:"feeds_active"`
-	NetworkRxMbps float64               `json:"network_rx_mbps"`
-	NetworkTxMbps float64               `json:"network_tx_mbps"`
-	RawData      map[string]interface{} `json:"raw_data,omitempty"`
+	Timestamp     time.Time              `json:"timestamp"`
+	Version       string                 `json:"version"`
+	BlockedIPs    int                    `json:"blocked_ips"`
+	RuleCount     int                    `json:"rule_count"`
+	HealthOK      bool                   `json:"health_ok"`
+	FeedsActive   int                    `json:"feeds_active"`
+	NetworkRxMbps float64                `json:"network_rx_mbps"`
+	NetworkTxMbps float64                `json:"network_tx_mbps"`
+	RawData       map[string]interface{} `json:"raw_data,omitempty"`
 }
 
 // Sampler manages global metrics collection
 type Sampler struct {
-	mu              sync.RWMutex
-	running         bool
-	metricsEnabled  bool
-	activeSessions  int
-	period          time.Duration
-	maxSamples      int
-	samples         []Sample
-	lastSample      time.Time
-	stopChan        chan struct{}
-	ticker          *time.Ticker
+	mu             sync.RWMutex
+	running        bool
+	metricsEnabled bool
+	activeSessions int
+	period         time.Duration
+	maxSamples     int
+	samples        []Sample
+	lastSample     time.Time
+	stopChan       chan struct{}
+	ticker         *time.Ticker
 
 	// Prometheus metrics
-	registry          *prometheus.Registry
-	blockedIPsGauge   prometheus.Gauge
-	ruleCountGauge    prometheus.Gauge
-	healthGauge       prometheus.Gauge
-	feedsActiveGauge  prometheus.Gauge
+	registry           *prometheus.Registry
+	blockedIPsGauge    prometheus.Gauge
+	ruleCountGauge     prometheus.Gauge
+	healthGauge        prometheus.Gauge
+	feedsActiveGauge   prometheus.Gauge
 	feedsTotalIPsGauge prometheus.Gauge
-	sessionCountGauge prometheus.Gauge
-	uptimeGauge       prometheus.Gauge
-	networkRxGauge    prometheus.Gauge
-	networkTxGauge    prometheus.Gauge
+	sessionCountGauge  prometheus.Gauge
+	uptimeGauge        prometheus.Gauge
+	networkRxGauge     prometheus.Gauge
+	networkTxGauge     prometheus.Gauge
 
 	// Additional comprehensive metrics
 	// Removed: fail2ban gauges (v1.0 migration to Suricata)
-	geobanCountriesGauge    prometheus.Gauge
-	geobanRangesGauge       prometheus.Gauge
-	blacklistIPsGauge       prometheus.Gauge
-	whitelistIPsGauge       prometheus.Gauge
-	portscanBlocksGauge     prometheus.Gauge
-	ddosBlocksGauge         prometheus.Gauge
-	nftablesActiveGauge     prometheus.Gauge
+	geobanCountriesGauge prometheus.Gauge
+	geobanRangesGauge    prometheus.Gauge
+	blacklistIPsGauge    prometheus.Gauge
+	whitelistIPsGauge    prometheus.Gauge
+	portscanBlocksGauge  prometheus.Gauge
+	ddosBlocksGauge      prometheus.Gauge
+	nftablesActiveGauge  prometheus.Gauge
 	// Removed: fail2banActiveGauge (v1.0 migration to Suricata)
 
-	startTime        time.Time
+	startTime time.Time
 
 	// Network traffic tracking
-	lastRxBytes uint64
-	lastTxBytes uint64
+	lastRxBytes  uint64
+	lastTxBytes  uint64
 	lastNetCheck time.Time
 }
 
@@ -359,14 +359,14 @@ func (s *Sampler) GetStatus() map[string]interface{} {
 	defer s.mu.RUnlock()
 
 	return map[string]interface{}{
-		"running":          s.running,
-		"metrics_enabled":  s.metricsEnabled,
-		"active_sessions":  s.activeSessions,
-		"period_seconds":   s.period.Seconds(),
-		"samples_stored":   len(s.samples),
-		"max_samples":      s.maxSamples,
-		"last_sample":      s.lastSample,
-		"uptime_seconds":   time.Since(s.startTime).Seconds(),
+		"running":         s.running,
+		"metrics_enabled": s.metricsEnabled,
+		"active_sessions": s.activeSessions,
+		"period_seconds":  s.period.Seconds(),
+		"samples_stored":  len(s.samples),
+		"max_samples":     s.maxSamples,
+		"last_sample":     s.lastSample,
+		"uptime_seconds":  time.Since(s.startTime).Seconds(),
 	}
 }
 
@@ -508,8 +508,9 @@ func (s *Sampler) getNetworkStats() (rxMbps, txMbps float64) {
 
 // takeSample collects a single metrics snapshot
 // TWO-TIER COLLECTION:
-//   BASIC tier (always): reads from shared state (NO CLI calls)
-//   FULL tier (when metricsEnabled): adds geoban, portscan, ddos via file/CLI
+//
+//	BASIC tier (always): reads from shared state (NO CLI calls)
+//	FULL tier (when metricsEnabled): adds geoban, portscan, ddos via file/CLI
 func (s *Sampler) takeSample() {
 	start := time.Now()
 
@@ -676,7 +677,7 @@ func (s *Sampler) collectFeedStalenessMetrics() {
 
 // collectPortscanMetrics gets portscan blocks from stats
 func (s *Sampler) collectPortscanMetrics() int {
-	cmd := exec.Command("nftban", "portscan", "stats")
+	cmd := procenv.Command("nftban", "portscan", "stats")
 	output, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -699,7 +700,7 @@ func (s *Sampler) collectPortscanMetrics() int {
 
 // collectDDoSMetrics gets DDoS protection blocks
 func (s *Sampler) collectDDoSMetrics() int {
-	cmd := exec.Command("nftban", "ddos", "stats")
+	cmd := procenv.Command("nftban", "ddos", "stats")
 	output, err := cmd.Output()
 	if err != nil {
 		return 0

@@ -26,27 +26,28 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // JournalEvidenceResult holds journal-based evidence for metrics.
 type JournalEvidenceResult struct {
-	LoginMonActive bool   `json:"loginmon_active"`         // recent ban/login_failed events found
-	LoginMonBans   int    `json:"loginmon_bans"`            // ban event count in window
-	LoginMonEvents int    `json:"loginmon_events"`          // login_failed event count in window
-	Unknown        bool   `json:"unknown,omitempty"`        // collection failed
+	LoginMonActive bool `json:"loginmon_active"`   // recent ban/login_failed events found
+	LoginMonBans   int  `json:"loginmon_bans"`     // ban event count in window
+	LoginMonEvents int  `json:"loginmon_events"`   // login_failed event count in window
+	Unknown        bool `json:"unknown,omitempty"` // collection failed
 }
 
 // DataFreshnessResult holds freshness checks for data pipeline artifacts.
 type DataFreshnessResult struct {
-	FeedFresh    bool   `json:"feed_fresh"`              // feed data files < 7 days old
-	FeedAge      string `json:"feed_age,omitempty"`      // human-readable age of newest feed
-	GeoIPFresh   bool   `json:"geoip_fresh"`             // GeoIP DB < 45 days old
-	GeoIPAge     string `json:"geoip_age,omitempty"`     // human-readable age
-	Unknown      bool   `json:"unknown,omitempty"`        // collection failed
+	FeedFresh  bool   `json:"feed_fresh"`          // feed data files < 7 days old
+	FeedAge    string `json:"feed_age,omitempty"`  // human-readable age of newest feed
+	GeoIPFresh bool   `json:"geoip_fresh"`         // GeoIP DB < 45 days old
+	GeoIPAge   string `json:"geoip_age,omitempty"` // human-readable age
+	Unknown    bool   `json:"unknown,omitempty"`   // collection failed
 }
 
 // CollectJournalEvidence queries nftband journal for LoginMon activity.
@@ -55,7 +56,7 @@ func CollectJournalEvidence(ctx context.Context) *JournalEvidenceResult {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	output, err := exec.CommandContext(ctx,
+	output, err := procenv.CommandContext(ctx,
 		"journalctl", "-u", "nftband", "--since", "-15m",
 		"--no-pager", "-o", "cat", "-n", "500",
 	).Output() // #nosec G204
