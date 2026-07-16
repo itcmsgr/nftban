@@ -71,6 +71,26 @@ func (m *mockPartialBackend) AddElements(table, set string, els []SetElement) (i
 func (m *mockPartialBackend) DeleteElements(table, set string, els []SetElement) error { return nil }
 func (m *mockPartialBackend) GetSetElements(table, set string) ([]string, error)        { return nil, nil }
 
+// ReplaceSet models the ATOMIC contract: it applies either ALL elements or NONE.
+// A configured flush failure, or an inability to accept every element (acceptLimit
+// exceeded), records nothing and returns an error — never a partial state. This
+// mirrors the single-transaction netlink primitive (flush+add+one commit).
+func (m *mockPartialBackend) ReplaceSet(table, set string, els []SetElement) error {
+	if m.flushErr != nil {
+		return m.flushErr
+	}
+	if m.acceptLimit >= 0 && len(els) > m.acceptLimit {
+		return fmt.Errorf("simulated atomic replace failure: cannot accept %d elements (limit %d)", len(els), m.acceptLimit)
+	}
+	m.flushed = true
+	m.accepted = len(els)
+	m.added = m.added[:0]
+	for _, e := range els {
+		m.added = append(m.added, e.Value)
+	}
+	return nil
+}
+
 func replaceElements(n int) []string {
 	els := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -86,9 +106,11 @@ func flushReplace(backend NetlinkBackend, setName string, n, batchSize int) Flus
 	return buf.flush(backend, batchSize, nil)
 }
 
-// --- Invariant 1: reported_applied == actually_applied (on a partial) ---
+// --- Invariant 1: reported_applied == actually_applied (atomic → 0 on failure) ---
+// Under the atomic netlink primitive a replacement is all-or-nothing, so a backend
+// that cannot accept every element applies NOTHING; reported still equals actual.
 func TestReplaceApplyTruth_ReportedAppliedEqualsActuallyApplied(t *testing.T) {
-	m := &mockPartialBackend{acceptLimit: 150}
+	m := &mockPartialBackend{acceptLimit: 150} // < 250 → atomic replace applies none
 	res := flushReplace(m, "blacklist_ipv4", 250, 100)
 
 	if res.Applied != m.accepted {
@@ -97,27 +119,30 @@ func TestReplaceApplyTruth_ReportedAppliedEqualsActuallyApplied(t *testing.T) {
 	if res.Applied != len(m.added) {
 		t.Fatalf("reported_applied(%d) != len(added)(%d)", res.Applied, len(m.added))
 	}
-	if res.Applied != 150 {
-		t.Fatalf("expected 150 actually applied, got %d", res.Applied)
+	if res.Applied != 0 {
+		t.Fatalf("atomic replace on a rejecting backend must apply 0, got %d", res.Applied)
+	}
+	if res.Err == nil {
+		t.Fatal("atomic replace that could not commit must report Err (no success-shaped result)")
 	}
 }
 
-// --- Invariant 2: partial_apply != success ---
+// --- Invariant 2: a failed replace is NOT success and leaves NO partial state ---
 func TestReplaceApplyTruth_PartialApplyIsNotSuccess(t *testing.T) {
 	m := &mockPartialBackend{acceptLimit: 150}
 	res := flushReplace(m, "blacklist_ipv4", 250, 100)
 
 	if res.Err == nil {
-		t.Fatal("partial apply reported success (Err == nil) — this is the L2b fail-open bug")
+		t.Fatal("failed replace reported success (Err == nil) — this is the fail-open bug")
 	}
 	if res.Intended != 250 {
 		t.Fatalf("Intended=%d, want 250", res.Intended)
 	}
-	if res.Applied >= res.Intended {
-		t.Fatalf("Applied(%d) should be < Intended(%d) on a partial", res.Applied, res.Intended)
+	if res.Applied != 0 {
+		t.Fatalf("atomic replace is all-or-nothing: Applied(%d) must be 0 on failure", res.Applied)
 	}
 	if !res.WasReplace {
-		t.Fatal("WasReplace must stay true even on a partial replace")
+		t.Fatal("WasReplace must stay true even on a failed replace")
 	}
 }
 

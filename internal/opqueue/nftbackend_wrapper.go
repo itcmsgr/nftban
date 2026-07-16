@@ -151,6 +151,49 @@ func (w *NFTBackendWrapper) AddElements(tableName, setName string, elements []Se
 	return applied, nil
 }
 
+// resolveExistingSet finds the set in the LIVE kernel tables (ip6 then ip),
+// returning its authoritative *nftables.Set (real address family + Interval flag).
+// It does NOT infer the family from the set name and does NOT create the set: a
+// replacement targets an existing enforcement set, so a missing set is an error
+// (fail-closed) rather than a silently-fabricated bogus interval set. This is the
+// resolution step the replace path uses instead of the name-suffix getTable()
+// (which mis-resolves names like http_bot_ban6 that do not end in _ipv6).
+func (w *NFTBackendWrapper) resolveExistingSet(setName string) (*nftables.Set, error) {
+	for _, tbl := range []*nftables.Table{w.tableIPv6, w.tableIPv4} {
+		s, err := w.nft.FindSetInTable(tbl, setName)
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("replace_set: set %s not found in ip or ip6 nftban table", setName)
+}
+
+// ReplaceSet atomically replaces the entire contents of a set in ONE netlink
+// transaction, delegating to the shared NFTManager connection. It does NOT call
+// the separately-committing FlushSet()/AddElements() methods — flush + add +
+// commit happen as a single transaction, so the set is never transiently empty
+// (fail-CLOSED on failure). The address family is derived from the resolved set's
+// KeyType inside ReplaceSetElements, never from setName.
+func (w *NFTBackendWrapper) ReplaceSet(tableName, setName string, elements []SetElement) error {
+	set, err := w.resolveExistingSet(setName)
+	if err != nil {
+		return err
+	}
+
+	inputs := make([]nftsync.SetElementInput, 0, len(elements))
+	for _, e := range elements {
+		inputs = append(inputs, nftsync.SetElementInput{
+			Value:   e.Value,
+			Timeout: time.Duration(e.TTL) * time.Second,
+		})
+	}
+
+	return w.nft.ReplaceSetElements(set, inputs)
+}
+
 // DeleteElements removes elements from a set (batched)
 func (w *NFTBackendWrapper) DeleteElements(tableName, setName string, elements []SetElement) error {
 	if len(elements) == 0 {

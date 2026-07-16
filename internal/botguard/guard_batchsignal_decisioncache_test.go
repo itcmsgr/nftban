@@ -270,6 +270,7 @@ func (b *recBackend) AddElements(table, set string, els []opqueue.SetElement) (i
 }
 func (b *recBackend) DeleteElements(table, set string, els []opqueue.SetElement) error { return nil }
 func (b *recBackend) GetSetElements(table, set string) ([]string, error)               { return nil, nil }
+func (b *recBackend) ReplaceSet(table, set string, els []opqueue.SetElement) error     { return nil }
 func (b *recBackend) has(set, ip string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
