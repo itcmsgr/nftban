@@ -94,7 +94,8 @@ func StripSystemdVars(env []string) []string {
 // dangerous-exec-command finding on the pass-through below is a wrapper false
 // positive (gosec G204 does not flag it); suppressed with justification.
 func Command(name string, arg ...string) *exec.Cmd {
-	c := exec.Command(name, arg...) // #nosec G204 -- trusted caller-supplied command; wrapper adds no injection surface // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, arg...) // #nosec G204 -- trusted caller-supplied command; wrapper adds no injection surface
 	c.Env = SanitizedSystemdEnv()
 	return c
 }
@@ -102,7 +103,8 @@ func Command(name string, arg ...string) *exec.Cmd {
 // CommandContext is the context-aware counterpart of Command. Same security
 // boundary as Command: input-safety lives at the call sites.
 func CommandContext(ctx context.Context, name string, arg ...string) *exec.Cmd {
-	c := exec.CommandContext(ctx, name, arg...) // #nosec G204 -- trusted caller-supplied command; wrapper adds no injection surface // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.CommandContext(ctx, name, arg...) // #nosec G204 -- trusted caller-supplied command; wrapper adds no injection surface
 	c.Env = SanitizedSystemdEnv()
 	return c
 }
