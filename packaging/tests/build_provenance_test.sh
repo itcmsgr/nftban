@@ -127,6 +127,33 @@ grep -q 'provision_yq "${BUILD_DIR}/SOURCES/yq_linux_amd64"' "$BNF" && ok "build
 # curl is not a hard build dep in offline mode
 grep -q 'PROV_OFFLINE.*==.*"1".*|| command -v curl' "$BNF" && ok "curl optional under --offline" || bad "curl still hard-required offline"
 
+echo "== sourced-library strict-mode contract =="
+# The header policy (tools/validate-headers.sh) forces a top-level `set -Eeuo
+# pipefail` in provenance.sh even though it is a SOURCED library. That enables
+# errexit/nounset/pipefail in the caller at source time. Guard: every shipped
+# caller MUST already be strict BEFORE sourcing it, so the library never SILENTLY
+# changes an unrelated caller's shell contract.
+for caller in build.sh packaging/build_nftban.sh; do
+	se="$(grep -n '^set -Eeuo pipefail' "$ROOT/$caller" | head -1 | cut -d: -f1)"
+	sr="$(grep -n 'lib/provenance.sh' "$ROOT/$caller" | head -1 | cut -d: -f1)"
+	if [[ -n "$se" && -n "$sr" && "$se" -lt "$sr" ]]; then ok "$caller is strict before sourcing provenance.sh"; else bad "$caller sources provenance.sh without prior strict mode"; fi
+done
+# Functional: a controlled NON-strict caller can source the library and its
+# functions still fail-closed correctly (they use explicit return codes, not
+# reliance on errexit) — proving the sourced-strict-mode does not break callers.
+tmpc="$(mktemp)"
+cat > "$tmpc" <<CALLER
+#!/usr/bin/env bash
+# deliberately NOT strict before sourcing
+source "$ROOT/packaging/lib/provenance.sh"
+prov_resolve_source_identity /nonexistent-root-xyz && echo UNEXPECTED_OK || echo FAILCLOSED
+echo CALLER_CONTINUED
+CALLER
+out="$(bash "$tmpc" 2>/dev/null)"; rm -f "$tmpc"
+grep -q FAILCLOSED <<<"$out" && grep -q CALLER_CONTINUED <<<"$out" \
+	&& ok "sourced from a controlled caller: functions fail-closed, caller continues" \
+	|| bad "sourced-caller contract broken ($out)"
+
 echo ""
 echo "RESULT: PASS=$PASS FAIL=$FAIL"
 [[ "$FAIL" -eq 0 ]]
