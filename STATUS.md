@@ -13,9 +13,11 @@
 | Field | State |
 |-------|-------|
 | Product implementation | MERGED (`main` f51ec2ec — #1106 privacy, #1107 opqueue, #1108 build-provenance, #1109 lifecycle) |
-| Workflow hotfix (release.yml Mode-3 + dry-run + CI guard) | PREPARED (this PR) |
+| Workflow hotfix (release.yml Mode-3 + dry-run + CI guard) | MERGED (#1111 → `main` f4fbb859) |
 | Metadata prepared (1.221.1) | YES |
-| Dry-run validation (release.yml workflow_dispatch publish=false) | PENDING |
+| First dry-run (workflow_dispatch publish=false, run 29592139901) | FAILED — Mode-3 containers lacked `jq`; 0 package/release uploads |
+| jq-prerequisite fix (release.yml + CI-guard, aligned to build-packages.yml) | PREPARED (this PR) — no version bump; unreleased v1.221.1 train |
+| Second dry-run validation (mandatory before publication) | PENDING |
 | Stage-B (workflow-generated DEB/RPM on lab2/lab4) | PENDING |
 | Tag v1.221.1 | NOT CREATED |
 | Release | NOT PUBLISHED |
