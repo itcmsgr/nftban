@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.221.2] - 2026-07-16 — Release workflow publication-path hotfix (assembly verifier)
+
+**Publication-workflow hotfix. No daemon source change · no nft schema change (schema 1) · no validator/status schema change (1.84.0). Same product code as v1.221.0/v1.221.1.** Supersedes the incomplete v1.221.1 publication.
+
+**Why:** the v1.221.1 tag pushed and its Docker images published, but the **GitHub release did not publish** — the "Create GitHub Release" job failed. Root cause: the "Verify assembled release directory" step's **last** statement was a bare `[ "$IS_DRYRUN" = 1 ] && echo …`. On a real tag push (`IS_DRYRUN=0`) the test returns non-zero, the `&&` short-circuits, and — as the block's final command — that non-zero becomes the step's exit code, failing the job. The dry-run (`IS_DRYRUN=1`) took the other branch and passed, so the footgun was never exercised until a real push. The package builds themselves (Mode-3 + `jq`) were correct: build-once + all 7 package jobs succeeded.
+
+**Fix:** all release-directory verification now lives in one shared, mode-aware script — `scripts/ci/verify-release-assembly.sh --mode {dry-run|push} --dist-dir dist/packages` — invoked identically by both the dry-run and the tag-push paths, so there is no push-only verification branch. It uses explicit `if`/return-code checks (never relies on `set -e` or a trailing conditional), computes **mode-specific** expected counts (push assembly = 12, dry-run assembly = 13; published pre-SLSA = 13; final = 15), verifies DEB↔RPM `nftban-core`/`nftband` byte parity and the embedded release commit, and always ends in `exit 0`. It never publishes. Hermetic tests (`scripts/ci/tests/verify-release-assembly_test.sh`) prove both modes exit 0 (the regression) and that missing assets / wrong counts / a premature `SHA256SUMS` on the push path / parity failure all fail closed. The build-provenance CI guard now (a) requires release.yml to delegate to the shared verifier, (b) runs those tests, and (c) adds a supplemental static check rejecting any release.yml `run:` block that ends on a bare false-exit conditional.
+
+**v1.221.1 identity is preserved and never rewritten:** the annotated tag `v1.221.1 → 1f274b7b`, its Docker images, and the failure evidence remain as-is. v1.221.2 is a new patch whose tag-push path is now proven by both the shared verifier's tests and the dispatch dry-run.
+
+- No `internal/`, `cmd/`, `pkg/`, or packaging *behavior* change; the daemon binary source is identical to v1.221.0. Only the release automation (verification/publication control path) changed.
+
 ## [v1.221.1] - 2026-07-16 — Release workflow Mode-3 publication hotfix
 
 **Publication-workflow hotfix. No daemon source change · no nft schema change (schema 1) · no validator/status schema change (1.84.0). Same product code as v1.221.0.** Supersedes the incomplete v1.221.0 publication.

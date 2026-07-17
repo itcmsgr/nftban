@@ -714,48 +714,20 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PUBLISH: ${{ inputs.publish }}
+          EXPECT_COMMIT: ${{ github.sha }}
         run: |
+          # v1.221.2: delegate ALL assembly verification to one shared, mode-aware,
+          # explicitly-exiting script invoked identically on BOTH the dry-run and the
+          # tag-push paths. This removes the v1.221.1 push-path regression where the
+          # inline step's trailing bare "test && echo" conditional returned non-zero
+          # on a real tag push and failed the step. The script computes the
+          # mode-specific expected counts (push=12, dry-run=13) and never publishes.
           sudo apt-get update && sudo apt-get install -y rpm2cpio cpio >/dev/null 2>&1 || true
-          cd dist/packages
-          IS_DRYRUN=0
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$PUBLISH" != "true" ]; then IS_DRYRUN=1; fi
-          DEB_COUNT=$(ls -1 ./*.deb 2>/dev/null | wc -l)
-          RPM_COUNT=$(ls -1 ./*.rpm 2>/dev/null | wc -l)
-          echo "DRY_RUN_DEB_COUNT=$DEB_COUNT"; echo "DRY_RUN_RPM_COUNT=$RPM_COUNT"
-          echo "DRY_RUN_PACKAGE_COUNT=$((DEB_COUNT + RPM_COUNT))"
-          # Standalone binaries: create-release owns only nftband; nftban-core is a
-          # downstream SLSA (provenance) asset — NOT produced here by design.
-          test -f nftband-linux-amd64 && echo "DRY_RUN_NFTBAND_PRESENT=YES" || { echo "::error::nftband-linux-amd64 missing"; exit 1; }
-          echo "DRY_RUN_NFTBAN_CORE_PRESENT=NOT_APPLICABLE_DOWNSTREAM_SLSA"
-          echo "DRY_RUN_PRE_SLSA_BINARY_COUNT=1"
-          for f in sbom.spdx.json SHA256SUMS.build MANIFEST.txt VERIFY.txt; do
-            test -f "$f" && echo "${f}_PRESENT=YES" || { echo "::error::$f MISSING"; exit 1; }
-          done
-          # Prove the pre-SLSA checksum inventory is generatable over the checksummed
-          # release assets (packages + nftband) — mirrors what verify-release publishes.
-          if [ "$IS_DRYRUN" = 1 ]; then
-            sha256sum ./*.rpm ./*.deb nftband-linux-amd64 > SHA256SUMS
-            echo "DRY_RUN_SHA256SUMS_PRESENT=YES (covers $(wc -l < SHA256SUMS) release assets: packages + nftband)"
-          fi
-          # DEB/RPM daemon byte parity (same build-binaries artifact → must match).
-          rm -rf "$RUNNER_TEMP/px" && mkdir -p "$RUNNER_TEMP/px/deb" "$RUNNER_TEMP/px/rpm"
-          dpkg-deb -x nftban-ubuntu24.04-amd64.deb "$RUNNER_TEMP/px/deb"
-          rpm2cpio nftban-el9-x86_64.rpm | (cd "$RUNNER_TEMP/px/rpm" && cpio -idm --quiet)
-          DEB_SHA=$(sha256sum "$RUNNER_TEMP/px/deb/usr/lib/nftban/bin/nftband" | awk '{print $1}')
-          RPM_SHA=$(sha256sum "$RUNNER_TEMP/px/rpm/usr/lib/nftban/bin/nftband" | awk '{print $1}')
-          echo "DEB_DAEMON_SHA=$DEB_SHA"; echo "RPM_DAEMON_SHA=$RPM_SHA"
-          echo "PUBLISHED_EMBEDDED_COMMIT=$("$RUNNER_TEMP/px/deb/usr/lib/nftban/bin/nftband" --version 2>/dev/null | grep -oE 'git [0-9a-f]+' || echo unknown)"
-          [ "$DEB_COUNT" = 5 ] || { echo "::error::expected DEB_COUNT=5, got $DEB_COUNT"; exit 1; }
-          [ "$RPM_COUNT" = 2 ] || { echo "::error::expected RPM_COUNT=2, got $RPM_COUNT"; exit 1; }
-          [ "$DEB_SHA" = "$RPM_SHA" ] || { echo "::error::DEB_RPM_DAEMON_BYTE_IDENTICAL=NO"; exit 1; }
-          echo "DEB_RPM_DAEMON_BYTE_IDENTICAL=YES"
-          # Pre-SLSA asset inventory: 7 packages + nftband + sbom + SHA256SUMS.build +
-          # MANIFEST + VERIFY (+ generated SHA256SUMS on dry-run) = 13; +2 downstream
-          # SLSA (nftban-core-linux-amd64 + .intoto.jsonl) = 15 final.
-          PRE_SLSA=$(ls -1 ./*.rpm ./*.deb nftband-linux-amd64 sbom.spdx.json SHA256SUMS.build MANIFEST.txt VERIFY.txt SHA256SUMS 2>/dev/null | wc -l)
-          echo "DRY_RUN_PRE_SLSA_ASSET_COUNT=$PRE_SLSA"
-          echo "FINAL_EXPECTED_ASSET_COUNT=15 (13 pre-SLSA + nftban-core-linux-amd64 + nftban-core-linux-amd64.intoto.jsonl)"
-          [ "$IS_DRYRUN" = 1 ] && echo "DRY_RUN_RELEASE_UPLOAD_EXECUTED=NO"
+          MODE=push
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$PUBLISH" != "true" ]; then MODE=dry-run; fi
+          echo "verify mode resolved: EVENT=$EVENT_NAME PUBLISH=${PUBLISH:-} -> MODE=$MODE"
+          chmod +x scripts/ci/verify-release-assembly.sh
+          scripts/ci/verify-release-assembly.sh --mode "$MODE" --dist-dir dist/packages --expect-commit "$EXPECT_COMMIT"
 
       - name: Upload assembled release directory (artifact, for dry-run inspection)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

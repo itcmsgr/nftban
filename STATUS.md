@@ -2,32 +2,32 @@
 
 **Status:** ⚠️ Warning
 **Last Updated:** 2026-07-16 06:28:05 UTC
-**Version:** v1.221.1 Development Branch
+**Version:** v1.221.2 Development Branch
 
 ---
 
 ## Active Release Train
 
-**v1.221.1 — RELEASE WORKFLOW HOTFIX / DRY-RUN VALIDATION PENDING** — *publication-workflow Mode-3 repair; same product code as v1.221.0.*
+**v1.221.2 — RELEASE WORKFLOW PUBLICATION-PATH HOTFIX** — *release-automation repair only; same product code as v1.221.0/v1.221.1.*
 
 | Field | State |
 |-------|-------|
 | Product implementation | MERGED (`main` f51ec2ec — #1106 privacy, #1107 opqueue, #1108 build-provenance, #1109 lifecycle) |
-| Workflow hotfix (release.yml Mode-3 + dry-run + CI guard) | MERGED (#1111 → `main` f4fbb859) |
-| Metadata prepared (1.221.1) | YES |
-| First dry-run (workflow_dispatch publish=false, run 29592139901) | FAILED — Mode-3 containers lacked `jq`; 0 package/release uploads |
-| jq-prerequisite fix (release.yml + CI-guard, aligned to build-packages.yml) | PREPARED (this PR) — no version bump; unreleased v1.221.1 train |
-| Second dry-run validation (mandatory before publication) | PENDING |
-| Stage-B (workflow-generated DEB/RPM on lab2/lab4) | PENDING |
-| Tag v1.221.1 | NOT CREATED |
+| Workflow Mode-3 + jq prerequisite | MERGED (#1111 f4fbb859, #1114 1f274b7b) — dry-run + Stage-B (lab2/lab4) PASSED |
+| Publication-path fix (shared assembly verifier + CI guard) | PREPARED (this PR) — no daemon change; v1.221.x train |
+| v1.221.1 publication | FAILED — "Create GitHub Release" step's trailing `[..]&&echo` returned non-zero on tag push (push-only footgun); Docker published, GitHub release ABSENT |
+| Re-validation (dispatch dry-run + shared-verifier tests) | PENDING (post-merge) |
+| Tag v1.221.2 | NOT CREATED |
 | Release | NOT PUBLISHED |
 | Fleet | NOT DEPLOYED |
 
-**v1.221.0 (superseded — incomplete publication):** tag `v1.221.0 → a9ab66b2` PUBLISHED · Docker images PUBLISHED · GitHub release ABSENT · packages/checksums/SBOM/SLSA ABSENT · fleet NOT DEPLOYED. The tag and Docker images are preserved and never rewritten; v1.221.1 supersedes it.
+**Superseded, incomplete publications (both preserved, never rewritten):**
+- **v1.221.0** — tag `→ a9ab66b2` · Docker PUBLISHED · GitHub release ABSENT (release.yml called bare `build_nftban.sh`; no `jq`).
+- **v1.221.1** — tag `→ 1f274b7b` · Docker PUBLISHED · GitHub release ABSENT (assembly-verify step's trailing bare conditional failed the push path). Both Docker image sets + failure evidence retained.
 
-Register state: each product pillar stays `CLOSED_BY=<merge commit>` · `TARGET_RELEASE=v1.221.1` · `RELEASE_STATE=UNRELEASED` (flips to `SHIPPED_IN=v1.221.1` only after the v1.221.1 release publishes + all assets verify). The workflow defect is tracked as `OPEN_RELEASE_YML_MODE3_PREBUILT_GAP`. Wiki evidence: `Startup-Lifecycle-and-Readiness` @ `5d2eb18` (banner unchanged until publication).
+Register state: each product pillar stays `CLOSED_BY=<merge commit>` · `TARGET_RELEASE=v1.221.2` · `RELEASE_STATE=UNRELEASED` (flips to `SHIPPED_IN=v1.221.2` only after the v1.221.2 release publishes + all 15 assets verify). Publication defects tracked as `OPEN_RELEASE_YML_MODE3_PREBUILT_GAP`, `OPEN_RELEASE_YML_MODE3_JQ_PREREQUISITE_GAP`, `OPEN_RELEASE_YML_PUSH_PATH_ASSEMBLY_VERIFY_FOOTGUN`.
 
-**Current published / fleet baseline: v1.220.10** — managed fleet 11/11 (production 9/9, labs 2/2), daemon `bc9650be`, nft schema 1, validator/status schema 1.84.0. Neither v1.221.0 nor v1.221.1 is the baseline until published and rolled out.
+**Current published / fleet baseline: v1.220.10** — managed fleet 11/11 (production 9/9, labs 2/2), daemon `bc9650be`, nft schema 1, validator/status schema 1.84.0. None of v1.221.0/.1/.2 is the baseline until published and rolled out.
 
 ---
 
