@@ -186,12 +186,24 @@ case "$1" in
         ;;
 
     remove)
-        # v1.38.0: On non-purge remove, flush nft rules but keep tables
-        # This prevents orphaned rules that block traffic with no daemon to manage them
+        # v1.221.3: On non-purge remove, DELETE the NFTBan tables (do NOT merely
+        # flush them). The pre-v1.221.3 code flushed `table ip nftban` /
+        # `table ip6 nftban` but KEPT the tables — leaving the base `input` chain
+        # with `type filter hook input priority filter; policy drop;` and ZERO
+        # accept rules. With the daemon gone, that empty drop-policy chain silently
+        # dropped ALL inbound traffic (SSH, ping) until a reboot tore down the
+        # ruleset — the CONFIRMED uninstall-connectivity defect that could lock an
+        # administrator out of a remote host. Deleting the tables removes the
+        # drop-policy chain entirely: connectivity is preserved and NO reboot is
+        # needed. Config under /etc/nftban IS still retained for reinstall
+        # (deleting runtime nftables objects is NOT deleting configuration);
+        # reinstall re-renders the tables from config. Absent tables = success.
+        # INVARIANT: package removal must never leave an NFTBan base chain with
+        # policy drop after its accept rules are gone.
         if command -v nft >/dev/null 2>&1; then
-            nft flush table ip nftban 2>/dev/null || true
-            nft flush table ip6 nftban 2>/dev/null || true
-            echo "nftban: Firewall rules flushed (tables preserved for reinstall)."
+            nft delete table ip nftban 2>/dev/null || true
+            nft delete table ip6 nftban 2>/dev/null || true
+            echo "nftban: Firewall tables removed (no drop-policy chain left behind)."
             echo "nftban: Config preserved in /etc/nftban/. Purge with: apt remove --purge nftban-core"
         fi
 
