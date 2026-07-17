@@ -173,6 +173,71 @@ else
     echo "::error::$SLSA missing — the downstream nftban-core provenance assets would be absent from releases"; FAIL=1
 fi
 
+# 9) Shared release-assembly verifier contract (regression guard for the v1.221.1
+#    PUBLICATION failure). release.yml must delegate assembly verification to the
+#    ONE shared script invoked with an explicit --mode, so the dry-run and tag-push
+#    paths run identical logic (no push-only verification branch). The script's own
+#    hermetic tests (both modes exit 0 + negatives fail closed) must pass.
+VRA="scripts/ci/verify-release-assembly.sh"
+VRA_TEST="scripts/ci/tests/verify-release-assembly_test.sh"
+echo "[release-assembly-verifier] $VRA"
+if [[ -f "$VRA" ]]; then
+    grep -q -- '--mode' "$VRA" || { echo "::error::$VRA must accept an explicit --mode"; FAIL=1; }
+    grep -qE 'mode.*(dry-run|push)' "$VRA" || { echo "::error::$VRA must support dry-run and push modes"; FAIL=1; }
+    grep -qE '^\s*exit 0' "$VRA" || { echo "::error::$VRA must end verification with an explicit exit 0"; FAIL=1; }
+    # release.yml must CALL the shared verifier (not re-inline verification logic).
+    grep -q 'verify-release-assembly.sh --mode' .github/workflows/release.yml || { echo "::error::release.yml must invoke verify-release-assembly.sh --mode (shared verifier)"; FAIL=1; }
+    grep -q 'IS_DRYRUN' .github/workflows/release.yml && { echo "::error::release.yml still contains the inline IS_DRYRUN verification branch — must delegate to the shared verifier"; FAIL=1; }
+    if [[ -f "$VRA_TEST" ]]; then
+        echo "[hermetic] $VRA_TEST"
+        if bash "$VRA_TEST" >/tmp/_vra_test.log 2>&1; then
+            echo "  PASS ($(grep -c '\[PASS\]' /tmp/_vra_test.log) assertions)"
+        else
+            echo "::error::verify-release-assembly tests failed:"; tail -20 /tmp/_vra_test.log; FAIL=1
+        fi
+        rm -f /tmp/_vra_test.log
+    else
+        echo "::error::$VRA_TEST missing — the shared verifier must have hermetic both-mode tests"; FAIL=1
+    fi
+else
+    echo "::error::$VRA missing — release assembly verification must live in the shared script"; FAIL=1
+fi
+
+# 10) Supplemental static guard (NOT the sole containment): no run: block in
+#     release.yml may END on a bare false-exit conditional (`[ … ] && cmd`,
+#     `cmd && cmd`, `cmd || cmd`) — as the block's last statement its non-zero
+#     return becomes the step exit code (the exact v1.221.1 footgun). This
+#     complements, and does not replace, the shared-verifier refactor.
+echo "[run-block-last-line] .github/workflows/release.yml"
+python3 - <<'PY' || FAIL=1
+import re,sys
+lines=open('.github/workflows/release.yml').read().split('\n')
+bad=[]; i=0; n=len(lines)
+while i<n:
+    m=re.match(r'^(\s*)run:\s*\|?\s*$', lines[i])
+    if m:
+        ind=len(m.group(1)); body=[]; k=i+1
+        while k<n:
+            lk=lines[k]
+            if lk.strip()=='' : body.append(''); k+=1; continue
+            if (len(lk)-len(lk.lstrip()))<=ind and lk.strip(): break
+            body.append(lk); k+=1
+        # last non-empty, non-comment line
+        last=''
+        for ln in reversed(body):
+            s=ln.strip()
+            if s and not s.startswith('#'): last=s; break
+        if re.search(r'\]\s*&&', last) or re.match(r'^(test|\[).*&&', last) \
+           or (re.search(r'&&', last) and not re.search(r'\|\|', last) and re.match(r'^(test|\[|grep|diff|cmp)\b', last)):
+            bad.append((i+1,last))
+        i=k; continue
+    i+=1
+if bad:
+    for ln,s in bad: print(f"::error::release.yml:{ln} run: block ends on a false-exit conditional (last-line footgun): {s}")
+    sys.exit(1)
+print("  OK: no run: block ends on a bare false-exit conditional")
+PY
+
 echo "========================================"
 if [[ "$FAIL" -eq 0 ]]; then echo "RESULT: PASS — build provenance guard holds"; exit 0; fi
 echo "RESULT: FAIL — stale-prebuilt guard violated (see ::error:: above)"; exit 1
