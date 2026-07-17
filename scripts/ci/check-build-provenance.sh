@@ -114,6 +114,9 @@ if [[ -f "$SLSA" ]]; then
     grep -qE "workflow_run\.conclusion == 'success'" "$SLSA" || { echo "::error::SLSA must gate on Release Packages conclusion == success"; FAIL=1; }
     grep -q 'nftban-core' "$SLSA" || { echo "::error::SLSA must build/upload nftban-core"; FAIL=1; }
     grep -qiE 'builder_go_slsa3|slsa-github-generator' "$SLSA" || { echo "::error::SLSA must use the slsa-github-generator (provenance) builder"; FAIL=1; }
+    # dry-run safety: SLSA must only publish for a real tag PUSH, never for a
+    # successful manual Release Packages dry-run (workflow_dispatch).
+    grep -qE "workflow_run\.event == 'push'" "$SLSA" || { echo "::error::SLSA must require workflow_run.event=='push' (a Release Packages dry-run must not trigger SLSA publication)"; FAIL=1; }
 else
     echo "::error::$SLSA missing — the downstream nftban-core provenance assets would be absent from releases"; FAIL=1
 fi

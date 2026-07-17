@@ -50,8 +50,13 @@ jobs:
   get-tag:
     name: Get Release Tag
     runs-on: ubuntu-latest
-    # Only run if Release Packages succeeded (for workflow_run trigger)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Only run if Release Packages succeeded AND was a tag push (for workflow_run
+    # trigger). v1.221.1: the `event == 'push'` guard ensures a successful manual
+    # Release Packages DRY-RUN (workflow_dispatch, publish=false) does NOT trigger
+    # SLSA publication — SLSA provenance + nftban-core upload happen only for real
+    # tag releases. A manual SLSA re-run (this workflow's own workflow_dispatch) is
+    # still allowed.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     outputs:
       tag: ${{ steps.get-tag.outputs.tag }}
     steps:
