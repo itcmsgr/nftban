@@ -65,6 +65,62 @@ else
 fi
 rm -f /tmp/_prov_test.log
 
+# 7) Release + package workflows must use the explicit Mode-3 verified-prebuilt
+#    contract (regression guard for OPEN_RELEASE_YML_MODE3_PREBUILT_GAP — v1.221.0
+#    shipped incomplete because release.yml called bare build_nftban.sh deb|rpm
+#    while build-packages.yml was already Mode-3). Semantic (tolerant of YAML
+#    formatting): every build_nftban.sh deb|rpm invocation must carry BOTH
+#    --use-prebuilt and --prebuilt-manifest within its command window; the package
+#    jobs must build binaries once (build-binaries) and download the go-binaries
+#    artifact. Checks a 3-line window so a multiline command cannot bypass it.
+check_workflow_mode3() {
+    local wf="$1" rc=0
+    grep -qE '^[[:space:]]+build-binaries:' "$wf" || { echo "::error::$wf missing build-binaries job (build-once)"; rc=1; }
+    grep -q 'name: go-binaries' "$wf" || { echo "::error::$wf missing the go-binaries artifact (build-once manifest handoff)"; rc=1; }
+    grep -q 'needs: build-binaries' "$wf" || { echo "::error::$wf package jobs must 'needs: build-binaries'"; rc=1; }
+    local ln block
+    while IFS= read -r ln; do
+        [[ -z "$ln" ]] && continue
+        block="$(sed -n "${ln},$((ln + 2))p" "$wf")"
+        if ! { grep -q -- '--use-prebuilt' <<<"$block" && grep -q -- '--prebuilt-manifest' <<<"$block"; }; then
+            echo "::error::$wf:$ln bare 'build_nftban.sh deb|rpm' — missing Mode-3 --use-prebuilt/--prebuilt-manifest"; rc=1
+        fi
+    done < <(grep -nE 'build_nftban\.sh (deb|rpm)' "$wf" | cut -d: -f1)
+    return $rc
+}
+for wf in .github/workflows/release.yml .github/workflows/build-packages.yml; do
+    echo "[workflow-mode3] $wf"
+    check_workflow_mode3 "$wf" || FAIL=1
+done
+# Negative self-test: strip one Mode-3 argument → the guard MUST catch it.
+_neg="$(mktemp)"
+sed '0,/--use-prebuilt --prebuilt-manifest/s/--use-prebuilt --prebuilt-manifest [^ ]*//' .github/workflows/release.yml > "$_neg"
+if check_workflow_mode3 "$_neg" >/dev/null 2>&1; then
+    echo "::error::NEGATIVE SELF-TEST FAILED — guard did not catch a stripped Mode-3 argument"; FAIL=1
+else
+    echo "  OK: negative self-test — guard catches a stripped Mode-3 argument"
+fi
+rm -f "$_neg"
+
+# 8) Downstream SLSA contract: nftban-core-linux-amd64 (+ .intoto.jsonl provenance)
+#    are the TWO assets the release intentionally splits to the SLSA workflow, which
+#    runs only after a SUCCESSFUL Release Packages run. Guards that this gating stays
+#    intact so the final 15-asset set is not silently reduced (the release.yml dry-run
+#    only certifies the pre-SLSA 13; these 2 come from here).
+SLSA=".github/workflows/slsa-go-releaser.yml"
+if [[ -f "$SLSA" ]]; then
+    echo "[slsa-contract] $SLSA"
+    grep -q 'workflows: \["Release Packages"\]' "$SLSA" || { echo "::error::SLSA must trigger on the 'Release Packages' workflow_run"; FAIL=1; }
+    grep -qE "workflow_run\.conclusion == 'success'" "$SLSA" || { echo "::error::SLSA must gate on Release Packages conclusion == success"; FAIL=1; }
+    grep -q 'nftban-core' "$SLSA" || { echo "::error::SLSA must build/upload nftban-core"; FAIL=1; }
+    grep -qiE 'builder_go_slsa3|slsa-github-generator' "$SLSA" || { echo "::error::SLSA must use the slsa-github-generator (provenance) builder"; FAIL=1; }
+    # dry-run safety: SLSA must only publish for a real tag PUSH, never for a
+    # successful manual Release Packages dry-run (workflow_dispatch).
+    grep -qE "workflow_run\.event == 'push'" "$SLSA" || { echo "::error::SLSA must require workflow_run.event=='push' (a Release Packages dry-run must not trigger SLSA publication)"; FAIL=1; }
+else
+    echo "::error::$SLSA missing — the downstream nftban-core provenance assets would be absent from releases"; FAIL=1
+fi
+
 echo "========================================"
 if [[ "$FAIL" -eq 0 ]]; then echo "RESULT: PASS — build provenance guard holds"; exit 0; fi
 echo "RESULT: FAIL — stale-prebuilt guard violated (see ::error:: above)"; exit 1
