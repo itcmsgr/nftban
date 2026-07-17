@@ -61,6 +61,11 @@ parse_args() {
     if [ -z "$DIST_DIR" ] || [ ! -d "$DIST_DIR" ]; then
         echo "::error::--dist-dir must be an existing directory (got '${DIST_DIR}')" >&2; exit 2
     fi
+    # Absolutize: verify_parity cd's into a temp workdir and then extracts packages
+    # by "$DIST_DIR/<pkg>". A RELATIVE --dist-dir (how release.yml invokes it:
+    # `--dist-dir dist/packages`) would break after that cd. Resolve to an absolute
+    # path once, up front, so every later reference survives an inner cd.
+    DIST_DIR="$(cd "$DIST_DIR" && pwd)"
 }
 
 # verify_inventory DIR MODE  — file/count/mode assertions over the assembled dir.

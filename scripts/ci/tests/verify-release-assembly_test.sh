@@ -65,6 +65,23 @@ run_case dry-run "$d" 0
 [ -f "$d/SHA256SUMS" ] && ok "dry-run mode: SHA256SUMS actually written" || bad "dry-run SHA256SUMS not written"
 rm -rf "$d"
 
+# --- Positive: RELATIVE --dist-dir (how release.yml invokes it) must work ---
+# (regression guard: verify_parity cd's into a temp dir; a relative dist-dir would
+#  break package extraction after that cd. The workflow passes `--dist-dir dist/packages`.)
+d="$(mkfixture)"
+parent="$(dirname "$d")"; sub="$(basename "$d")"
+RC=0
+out="$(
+    cd "$parent" || exit 3
+    # shellcheck disable=SC1090
+    source "$SCRIPT" 2>/dev/null || true
+    verify_parity() { echo "EVIDENCE_PARITY=STUBBED"; return 0; }
+    main --mode push --dist-dir "$sub"
+)" || RC=$?
+{ [ "$RC" = 0 ] && grep -q 'PASS (mode=push)' <<<"$out"; } \
+  && ok "relative --dist-dir resolves (regression: parity path survives inner cd)" || bad "relative --dist-dir (RC=$RC)"
+rm -rf "$d"
+
 # --- Negative: missing asset (drop a DEB) ---
 d="$(mkfixture)"; rm -f "$d/nftban-debian12-amd64.deb"
 run_case push "$d" 0
