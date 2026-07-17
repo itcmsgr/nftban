@@ -8,26 +8,30 @@
 
 ## Active Release Train
 
-**v1.221.2 — RELEASE WORKFLOW PUBLICATION-PATH HOTFIX** — *release-automation repair only; same product code as v1.221.0/v1.221.1.*
+**v1.221.2 — PUBLISHED · ARTIFACTS_VERIFIED · LOCAL_QUALIFICATION_PENDING · FLEET_PENDING** — *release-automation repair only; same product code as v1.221.0/v1.221.1 (no daemon/nft-schema change).*
 
 | Field | State |
 |-------|-------|
-| Product implementation | MERGED (`main` f51ec2ec — #1106 privacy, #1107 opqueue, #1108 build-provenance, #1109 lifecycle) |
-| Workflow Mode-3 + jq prerequisite | MERGED (#1111 f4fbb859, #1114 1f274b7b) — dry-run + Stage-B (lab2/lab4) PASSED |
-| Publication-path fix (shared assembly verifier + CI guard) | PREPARED (this PR) — no daemon change; v1.221.x train |
-| v1.221.1 publication | FAILED — "Create GitHub Release" step's trailing `[..]&&echo` returned non-zero on tag push (push-only footgun); Docker published, GitHub release ABSENT |
-| Re-validation (dispatch dry-run + shared-verifier tests) | PENDING (post-merge) |
-| Tag v1.221.2 | NOT CREATED |
-| Release | NOT PUBLISHED |
-| Fleet | NOT DEPLOYED |
+| Product implementation | MERGED (#1106 privacy, #1107 opqueue, #1108 build-provenance, #1109 lifecycle) |
+| Workflow Mode-3 + jq prerequisite | MERGED (#1111 f4fbb859, #1114 1f274b7b) |
+| Publication-path fix (shared assembly verifier + CI guard) | MERGED (#1115 d47416b2) |
+| Relative `--dist-dir` verifier fix | MERGED (#1116 → `main` 536db592) |
+| **Tag v1.221.2** | **CREATED** — object `1188d650` → target `536db592919d7d5dc3c77d6526678fbcd948a0b9` |
+| **Release** | **PUBLISHED** (non-draft, non-prerelease) · Release Packages 29618953508 ✅ · Docker 29618953526 ✅ · SLSA 29619105199 ✅ |
+| **Assets** | **15/15, 0 duplicates** (5 DEB + 2 RPM + nftband + nftban-core + .intoto.jsonl + sbom + SHA256SUMS + SHA256SUMS.build + MANIFEST + VERIFY) |
+| **Checksums** | SHA256SUMS ✅ == SHA256SUMS.build ✅ (8 entries: packages+nftband; nftban-core via SLSA intoto) · DEB↔RPM parity ✅ (nftban-core, nftband) · embedded commit `536db592` |
+| **SLSA provenance** | VERIFIED — intoto subject sha256 matches `nftban-core-linux-amd64` (slsa.dev/provenance/v0.2) |
+| **Docker tags** | `v1.221.2` · `1.221.2` · `1.221` · `sha-536db592` |
+| Local KVM qualification | PENDING (Phase-4 matrix on official assets) |
+| Remote lab / canary / fleet | PENDING |
 
 **Superseded, incomplete publications (both preserved, never rewritten):**
 - **v1.221.0** — tag `→ a9ab66b2` · Docker PUBLISHED · GitHub release ABSENT (release.yml called bare `build_nftban.sh`; no `jq`).
 - **v1.221.1** — tag `→ 1f274b7b` · Docker PUBLISHED · GitHub release ABSENT (assembly-verify step's trailing bare conditional failed the push path). Both Docker image sets + failure evidence retained.
 
-Register state: each product pillar stays `CLOSED_BY=<merge commit>` · `TARGET_RELEASE=v1.221.2` · `RELEASE_STATE=UNRELEASED` (flips to `SHIPPED_IN=v1.221.2` only after the v1.221.2 release publishes + all 15 assets verify). Publication defects tracked as `OPEN_RELEASE_YML_MODE3_PREBUILT_GAP`, `OPEN_RELEASE_YML_MODE3_JQ_PREREQUISITE_GAP`, `OPEN_RELEASE_YML_PUSH_PATH_ASSEMBLY_VERIFY_FOOTGUN`.
+Register state: publication defects `OPEN_RELEASE_YML_MODE3_PREBUILT_GAP`, `OPEN_RELEASE_YML_MODE3_JQ_PREREQUISITE_GAP`, `OPEN_RELEASE_YML_PUSH_PATH_ASSEMBLY_VERIFY_FOOTGUN` are `SHIPPED_IN=v1.221.2` (the repaired release workflow is now published + asset-verified). NOT closed as a train: local KVM qualification, remote-lab, canary, and fleet rollout remain; validation-dependent findings (`SUSPECTED_NFTBAN_UNINSTALL_TRANSIENT_CONNECTIVITY_DROP`, `OPEN_SLSA_STANDALONE_BINARY_VERSION_LDFLAGS`) stay OPEN. The v1.221.2 release train is NOT closed.
 
-**Current published / fleet baseline: v1.220.10** — managed fleet 11/11 (production 9/9, labs 2/2), daemon `bc9650be`, nft schema 1, validator/status schema 1.84.0. None of v1.221.0/.1/.2 is the baseline until published and rolled out.
+**Current published / fleet baseline: v1.220.10** — managed fleet 11/11 (production 9/9, labs 2/2), daemon `bc9650be`, nft schema 1, validator/status schema 1.84.0. v1.221.2 is PUBLISHED but not yet the fleet baseline (rollout pending qualification).
 
 ---
 
