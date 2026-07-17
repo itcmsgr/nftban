@@ -8,7 +8,18 @@
 
 ## Active Release Train
 
-**v1.221.2 — PUBLISHED · ARTIFACTS_VERIFIED · LOCAL_QUALIFICATION_PENDING · FLEET_PENDING** — *release-automation repair only; same product code as v1.221.0/v1.221.1 (no daemon/nft-schema change).*
+**v1.221.3 — P1 UNINSTALL FIREWALL-SAFETY HOTFIX (in prep)** — *packaging-only; no daemon/nft-schema change. Supersedes v1.221.2 for deployment.*
+
+| Field | State |
+|-------|-------|
+| Defect | **CONFIRMED_V1_221_2_PACKAGE_NATIVE_UNINSTALL_CONNECTIVITY_DEFECT** — DEB `remove)` flushed `ip/ip6 nftban` but kept the `policy drop` input chain (0 accept rules) → dropped all inbound (SSH/ping) until reboot; iface/IP/route/sshd stayed healthy. Runtime + serial-console proven on published v1.221.2. Old (v1.38.0-era) path; not an RBL/release-workflow regression. |
+| Fix | `packaging/deb/postrm` `remove)` now **deletes** `ip/ip6 nftban` tables (matches safe purge/RPM-erase); config retained; no reboot needed |
+| Guard | NEW `scripts/ci/check-uninstall-firewall-safety.sh` (wired into ci-architecture.yml) — rejects flush-without-delete + negative self-test |
+| Status | PR in prep (this hotfix) |
+| v1.221.2 | PUBLISHED but **DEPLOYMENT_BLOCKED** by this defect (preserved, not rewritten) |
+| Rollout | lab2 DEB + lab4 RPM full uninstall-lifecycle re-validation → canary → fleet, all PENDING |
+
+**v1.221.2 — PUBLISHED · ARTIFACTS_VERIFIED · DEPLOYMENT_BLOCKED (uninstall defect) · superseded by v1.221.3 for deployment** — *release-automation repair only; same product code as v1.221.0/v1.221.1 (no daemon/nft-schema change).*
 
 | Field | State |
 |-------|-------|

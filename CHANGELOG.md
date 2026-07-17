@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.221.3] - 2026-07-18 — P1 uninstall firewall-safety hotfix (no drop-policy chain after removal)
+
+**Package-lifecycle safety hotfix. No daemon source change · no nft schema change (schema 1) · no validator/status schema change (1.84.0).** Fixes a confirmed, long-standing (present since v1.38.0) **standard-uninstall connectivity defect** in the DEB packages. Supersedes v1.221.2 for deployment; v1.221.2 remains published but was DEPLOYMENT_BLOCKED by this defect.
+
+**Defect (CONFIRMED on the published v1.221.2 DEB, runtime + serial-console evidence):** the non-purge `apt remove` path (`packaging/deb/postrm` `remove)` case) ran `nft flush table ip nftban` / `nft flush table ip6 nftban` but did **not delete** the tables. NFTBan's `ip nftban` `input` chain is `type filter hook input priority filter; policy drop;`; flushing removed its accept rules but **kept the chain at `policy drop` with zero accept rules**, so — with the daemon gone — nftables silently dropped **all inbound traffic (SSH, ping)** while the interface, IP, default route, and sshd all remained healthy. Connectivity was lost until a reboot tore down the stale ruleset. This could lock an administrator out of a remote host on a routine `apt remove`. Not introduced by the RBL or v1.221 release-workflow work — an old lifecycle path that survived because standard uninstall was never tested under continuous external connectivity monitoring. (`apt remove --purge` and RPM erase were already safe — they `delete` the tables.)
+
+**Fix:** the DEB `remove)` path now **deletes** `table ip nftban` and `table ip6 nftban` (matching the already-safe purge and RPM-erase paths) instead of merely flushing them — removing the drop-policy chain entirely, with **no reboot needed** and connectivity preserved. Configuration under `/etc/nftban/` is still retained for reinstall (deleting runtime nftables objects is not deleting configuration). Absent tables are treated as success.
+
+**Permanent guard + invariant:** new CI gate `scripts/ci/check-uninstall-firewall-safety.sh` (wired into `ci-architecture.yml`) rejects any DEB/RPM maintainer-script `nft flush table ip[6]? nftban` that is not paired with a matching `nft delete table`, asserts the `remove)` path deletes the tables, and carries a negative self-test proving it catches the reverted defect. The standing invariant: **package removal must never leave an NFTBan base chain with `policy drop` after its accept rules are gone.**
+
+- No `internal/`, `cmd/`, `pkg/` change; daemon binary source identical to v1.221.2/v1.221.0. Packaging-only (DEB `postrm`) + CI-guard change. Full DEB/RPM package-native uninstall lifecycle re-validation (lab2 DEB, lab4 RPM: UPGRADE→VALIDATE→UNINSTALL→CONNECTIVITY→PURGE→CLEAN INSTALL→REBOOT→VALIDATE) is required before rollout.
+
 ## [v1.221.2] - 2026-07-16 — Release workflow publication-path hotfix (assembly verifier)
 
 **Publication-workflow hotfix. No daemon source change · no nft schema change (schema 1) · no validator/status schema change (1.84.0). Same product code as v1.221.0/v1.221.1.** Supersedes the incomplete v1.221.1 publication.

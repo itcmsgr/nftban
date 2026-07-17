@@ -74,6 +74,14 @@ jobs:
       - name: Check build provenance (anti-stale-prebuilt)
         run: ./scripts/ci/check-build-provenance.sh
 
+      # Uninstall firewall safety: package removal must never leave an NFTBan base
+      # chain with policy drop and no accept rules (the v1.221.2 uninstall-
+      # connectivity defect — a bare `nft flush table ip nftban` on non-purge
+      # remove kept the drop-policy input chain and locked out inbound SSH/ping
+      # until reboot). Rejects flush-without-delete in DEB/RPM maintainer scripts.
+      - name: Check uninstall firewall safety (no drop-policy chain after removal)
+        run: ./scripts/ci/check-uninstall-firewall-safety.sh
+
       # v1.194 (8C): protection-claim matrix gate. Fails the PR if the matrix
       # regresses — wrong row count, missing/empty fields, invalid OWNER/MODE/
       # CLASSIFICATION enum, a claimed-enforce row orphaned to owner=NONE
