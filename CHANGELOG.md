@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.221.4] - 2026-07-18 — BotScan HTTP log-source validity & health truth (R22A)
+
+**Detection source-validity + operator-truth fix. Shell-only · daemon binary source identical to v1.221.3 (no `internal/`/`cmd/`/`pkg/` change) · no nft schema change (1.84.0) · no config-schema change · no enforcement-policy change.** Makes the BotScan HTTP-exploit scanner accept only valid HTTP access logs as sources and report source health truthfully on cPanel / Plesk / generic layouts, while preserving DirectAdmin behavior.
+
+**Defect:** BotScan discovery **and** the privileged read-authority collector accepted any readable file and reported source health `OK` for any readable candidate. On cPanel a bare `domlogs/*` glob bound FTP transfer logs and bandwidth offset/byte-count state files; on Plesk/generic an empty `access.log` was accepted — both reported healthy while zero HTTP was ever scanned (false-healthy). Production DirectAdmin was unaffected; cPanel/Plesk were exposed.
+
+**Fix (evaluated as the `nftban` service account):**
+- **Class exclusion** (shared, applied in both discovery and the collector): non-HTTP filenames — FTP transfer logs (`ftpxferlog`, `-ftp_log`), bandwidth/offset/byte-count state files (`.offset`, `.bytes`, `.stats`, ...), mail logs (`-imap_log`, `-pop3_log`), error/rotated/compressed — can no longer be selected.
+- **Content validity:** a non-empty file must carry an HTTP request signature (tolerant of the nginx JSON escaped-slash form) to be bound/scanned; otherwise it is `SOURCE_INVALID`. Validation is bounded to the capped selected set (cheap on multi-vhost hosts) and applied in the collector before spooling.
+- **Truthful source-health states:** `SOURCE_ACTIVE` / `SOURCE_VALID_QUIET` (valid, healthy — a temporarily quiet log is never falsely `DEGRADED`) / `NEVER_OBSERVED` (a valid but empty log — bound, no data yet; not a false OK and not DEGRADED) / `INVALID_SOURCE` (readable but non-HTTP — never healthy). The aggregate health verdict is `OK` only for a genuinely valid source.
+- **DirectAdmin behavior preserved:** `<domain>.log` access logs are still discovered; `<domain>.error.log` is excluded.
+
+**Validation:** shell unit/static + hermetic cPanel/Plesk/generic/DirectAdmin fixtures; package-native DEB (lab2/Plesk) + RPM (lab4/cPanel) proving the false-healthy is eliminated at the collector source; production canary on a DirectAdmin node (srv2, 186 domains) proving no over-exclusion (`collected=12 skipped=0`, verdict `OK`, no `WARN_NO_LOGS` regression), `nftban validate` rc0, daemon active, schema 1.84.0, management connectivity preserved.
+
+- No nftables schema, firewall-rule, ban-path, threshold, single-port-flood ownership, or enforcement-policy change. `cli/lib/nftban/lib/nftban_http_logs.sh` + `cli/sbin/nftban-botscan-collector` (shell) + BotScan status renderers + tests only.
+
 ## [v1.221.3] - 2026-07-18 — P1 uninstall firewall-safety hotfix (no drop-policy chain after removal)
 
 **Package-lifecycle safety hotfix. No daemon source change · no nft schema change (schema 1) · no validator/status schema change (1.84.0).** Fixes a confirmed, long-standing (present since v1.38.0) **standard-uninstall connectivity defect** in the DEB packages. Supersedes v1.221.2 for deployment; v1.221.2 remains published but was DEPLOYMENT_BLOCKED by this defect.
