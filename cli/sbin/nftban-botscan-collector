@@ -164,7 +164,7 @@ count=0 collected=0 skipped=0
 for g in "${globs[@]}"; do
     while IFS= read -r f; do
         [[ -f "$f" ]] || continue
-        case "$f" in *error_log|*error.log|*-error*|*_error*|*.gz|*.[0-9]) continue ;; esac
+        _nftban_http_is_nonaccess_name "$f" && continue   # R22A: exclude ftp/offset/bytes/mail/state/error/rotated (shared class filter)
         # SECURITY: canonicalize then re-validate inside an allowlisted root.
         canon="$(realpath -- "$f" 2>/dev/null)" || { skipped=$((skipped+1)); audit "skip realpath-failed: $f"; continue; }
         [[ -f "$canon" && ! -L "$canon" ]] || { skipped=$((skipped+1)); audit "skip not-regular: $f"; continue; }
@@ -177,6 +177,13 @@ for g in "${globs[@]}"; do
         # the source offset untouched so this cycle's bytes are collected once the scanner
         # has reaped consumed files and the total falls back under cap. Nothing is lost.
         if [[ "$backpressure" -eq 1 ]]; then skipped=$((skipped+1)); continue; fi
+        # R22A CONTENT validity: never spool a non-empty file that is not an HTTP
+        # access log (a state/foreign file that slipped the name filter — e.g. a
+        # cPanel ftpxferlog offset). An empty valid access log has no new bytes to
+        # append anyway, so it is harmless to skip the content gate here.
+        if [[ -s "$canon" ]] && ! _nftban_http_looks_like_access_log "$canon"; then
+            skipped=$((skipped+1)); audit "skip non-access-content: $canon"; continue
+        fi
         # Privileged incremental read of NEW bytes since the last cycle.
         # v1.209.2: STREAM the read straight to the spool file instead of capturing it in a bash
         # variable (`new="$(...)"`). The old capture materialized up to BOTSCAN_COLLECTOR_MAX_BYTES
