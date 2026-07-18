@@ -1,14 +1,26 @@
 # NFTBan Development Project Health Status
 
 **Status:** ⚠️ Warning
-**Last Updated:** 2026-07-16 06:28:05 UTC
-**Version:** v1.221.2 Development Branch
+**Last Updated:** 2026-07-18 20:44:36 UTC
+**Version:** v1.221.4 Development Branch (release-prep)
 
 ---
 
 ## Active Release Train
 
-**v1.221.3 — P1 UNINSTALL FIREWALL-SAFETY HOTFIX (in prep)** — *packaging-only; no daemon/nft-schema change. Supersedes v1.221.2 for deployment.*
+**v1.221.4 — BotScan HTTP log-source validity & health truth (R22A) — RELEASE-PREP** — *shell-only; daemon binary source identical to v1.221.3; no nft schema change (1.84.0); no config-schema change; no enforcement-policy change.*
+
+| Field | State |
+|-------|-------|
+| Scope | cPanel/Plesk/generic HTTP-log **source validity**: class-exclude FTP/offset/bandwidth/state/mail/non-HTTP files (in discovery **and** the privileged collector) + content-signature validation; truthful source-health states (`SOURCE_ACTIVE`/`SOURCE_VALID_QUIET`/`NEVER_OBSERVED`/`INVALID_SOURCE`); DirectAdmin behavior preserved |
+| Files | `cli/lib/nftban/lib/nftban_http_logs.sh` + `cli/sbin/nftban-botscan-collector` (shell) + BotScan status renderers + tests |
+| Product PR | **MERGED** #1120 → `main` `d713c3b7` (CI green) |
+| Validation | package-native DEB lab2/Plesk + RPM lab4/cPanel (false-healthy eliminated at the collector source); **production canary srv2 (DirectAdmin, 186 domains) PASS** — no over-exclusion (`collected=12 skipped=0`), verdict OK, no `WARN_NO_LOGS` regression, validate rc0, schema 1.84.0, connectivity preserved |
+| Daemon change class | **NONE** (shell-only; daemon byte-source identical) |
+| Tag / Publication | **NOT_CREATED / NOT_STARTED** (release-prep only; TAG/PUBLISH + FLEET on HOLD pending explicit GO) |
+| Canary/labs note | srv2 + lab2 + lab4 temporarily run R22A code labeled `1.221.3`; the official `1.221.4` package normalizes package identity during the later fleet rollout |
+
+**v1.221.3 — P1 UNINSTALL FIREWALL-SAFETY HOTFIX — RELEASED, fleet-live 11/11** — *packaging-only; no daemon/nft-schema change. Supersedes v1.221.2 for deployment.*
 
 | Field | State |
 |-------|-------|
