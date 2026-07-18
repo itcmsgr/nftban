@@ -786,10 +786,30 @@ _nftban_botscan_cmd_logs() {
             echo "  Verdict: UNKNOWN — cannot test readability as service account '${svc}' from this context."
             echo "    Re-run as root (so it can drop to '${svc}' via runuser) for an authoritative result."
             return 0 ;;
-        *)
-            echo "  Verdict: OK — ${_NFTBAN_HTTP_READ_COUNT_READABLE} of ${n} access log(s) readable by service account '${svc}'; BotScan will scan them."
-            [[ ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} -gt 0 ]] && echo "  Note: ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} discovered log(s) are NOT readable by '${svc}' and will be skipped."
+        INVALID_SOURCE)
+            echo "  Verdict: INVALID-SOURCE — ${n} file(s) matched but NONE are valid HTTP access logs."
+            echo "  They are readable by '${svc}' but their content is not HTTP access-log data (e.g. FTP"
+            echo "  transfer logs, bandwidth offset/byte-count state files, or other non-HTTP files)."
+            echo "  BotScan is NOT effectively scanning web traffic on this host."
+            if [[ ${#_NFTBAN_HTTP_LAST_INVALID[@]} -gt 0 ]]; then
+                echo "  Bound but not access logs:"; printf '    %s\n' "${_NFTBAN_HTTP_LAST_INVALID[@]}"
+            fi
+            echo "  Remediation: set BOTSCAN_LOG_PATHS to your real access-log glob(s) in"
+            echo "    /etc/nftban/conf.d/botscan/main.conf, then re-run."
+            return 2 ;;
+        NEVER_OBSERVED)
+            echo "  Verdict: NEVER-OBSERVED — ${_NFTBAN_HTTP_COUNT_NEVER} valid access log(s) are bound and readable by"
+            echo "  '${svc}', but empty (no HTTP request logged yet). The source is correct; there is simply"
+            echo "  no traffic to scan yet. This is NOT a failure and NOT degraded."
             return 0 ;;
+        OK)
+            echo "  Verdict: OK — ${_NFTBAN_HTTP_COUNT_VALID} valid access log(s) readable by service account '${svc}'; BotScan will scan them."
+            [[ ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} -gt 0 ]] && echo "  Note: ${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} discovered log(s) are NOT readable by '${svc}' and will be skipped."
+            [[ ${_NFTBAN_HTTP_COUNT_INVALID} -gt 0 ]] && echo "  Note: ${_NFTBAN_HTTP_COUNT_INVALID} matched file(s) are not HTTP access logs and were ignored."
+            return 0 ;;
+        *)
+            echo "  Verdict: ${verdict} — unrecognized source-health state; treating as NOT healthy (fail-safe)."
+            return 2 ;;
     esac
 }
 

@@ -52,7 +52,7 @@ spool_of(){ printf '%s/%s' "$SPOOL" "$(realpath -- "$1" | tr '/' '_')"; }
 echo "=== v1.178-A BotScan read-authority (collector + spool-first) ==="
 
 # T1: collector reads an allowlisted fixture → spool file with content.
-printf 'l1 GET /a\nl2 POST /xmlrpc.php\n' > "$ALLOW/site.log"
+printf '203.0.113.7 - - [x] "GET /a HTTP/1.1" 200 1\n203.0.113.7 - - [x] "POST /xmlrpc.php HTTP/1.1" 200 1\n' > "$ALLOW/site.log"
 run_collector "$ALLOW/*.log" >/dev/null
 sf="$(spool_of "$ALLOW/site.log")"
 [[ -f "$sf" ]] && grep -q 'xmlrpc.php' "$sf" && ok "T1 collector reads allowlisted source → spool populated" || no "T1 collect→spool" "sf=$sf"
@@ -75,9 +75,9 @@ run_collector "$ALLOW/fifo.log" >/dev/null
 rm -f "$ALLOW/fifo.log"
 
 # T5: incremental — second run emits only NEW bytes.
-rm -rf "$SPOOL" "$OFF"; printf 'first\n' > "$ALLOW/inc.log"
+rm -rf "$SPOOL" "$OFF"; printf '203.0.113.7 - - [x] "GET /first HTTP/1.1" 200 1\n' > "$ALLOW/inc.log"
 run_collector "$ALLOW/inc.log" >/dev/null
-printf 'second\n' >> "$ALLOW/inc.log"
+printf '203.0.113.7 - - [x] "GET /second HTTP/1.1" 200 1\n' >> "$ALLOW/inc.log"
 run_collector "$ALLOW/inc.log" >/dev/null
 sf="$(spool_of "$ALLOW/inc.log")"
 [[ "$(grep -c first "$sf")" -eq 1 && "$(grep -c second "$sf")" -eq 1 ]] && ok "T5 incremental: new bytes appended once (no re-read of old)" || no "T5 incremental" "$(cat "$sf" 2>/dev/null)"
@@ -87,7 +87,8 @@ sf="$(spool_of "$ALLOW/inc.log")"
 # spooled WITHOUT being shortened; bounding moved to the total-dir cap + reaping
 # (covered by botscan_spool_oom_v2093_test.sh). Lock in the removal: the spool keeps
 # the full source (NOT trimmed to the old 512-byte cap).
-rm -rf "$SPOOL" "$OFF"; head -c 5000 /dev/zero | tr '\0' 'x' > "$ALLOW/big.log"; printf '\n' >> "$ALLOW/big.log"
+rm -rf "$SPOOL" "$OFF"; yes '203.0.113.7 - - [x] "GET / HTTP/1.1" 200 1' 2>/dev/null | head -c 5200 > "$ALLOW/big.log" || true   # head closes → yes SIGPIPE; pipefail-safe
+printf '\n' >> "$ALLOW/big.log"
 NFTBAN_LIB_DIR="$REPO/cli/lib/nftban" BOTSCAN_SPOOL_DIR="$SPOOL" \
   NFTBAN_BOTSCAN_COLLECTOR_OFFSET_DIR="$OFF" NFTBAN_BOTSCAN_COLLECTOR_ALLOW_ROOTS="$ALLOW" \
   BOTSCAN_LOG_PATHS="$ALLOW/big.log" BOTSCAN_COLLECTOR_SPOOL_MAX_BYTES=512 \
@@ -97,12 +98,12 @@ sz="$(stat -c %s "$sf" 2>/dev/null || echo 0)"
 [[ "$sz" -ge 5000 ]] && ok "T6 per-file blind trim removed — full source spooled (size=$sz, not cursor-desyncing trim)" || no "T6 trim-removed" "size=$sz (expected ≥5000)"
 
 # T7: spool file mode 0640.
-rm -rf "$SPOOL" "$OFF"; printf 'x\n' > "$ALLOW/mode.log"; run_collector "$ALLOW/mode.log" >/dev/null
+rm -rf "$SPOOL" "$OFF"; printf '203.0.113.7 - - [x] "GET / HTTP/1.1" 200 1\n' > "$ALLOW/mode.log"; run_collector "$ALLOW/mode.log" >/dev/null
 m="$(stat -c %a "$(spool_of "$ALLOW/mode.log")" 2>/dev/null || echo '')"
 [[ "$m" == "640" ]] && ok "T7 spool file mode 0640" || no "T7 spool mode" "mode=$m"
 
 # T8: scanner SPOOL-FIRST — discover returns spool files when spool populated.
-rm -rf "$SPOOL" "$OFF"; printf 'x\n' > "$ALLOW/s1.log"; run_collector "$ALLOW/s1.log" >/dev/null
+rm -rf "$SPOOL" "$OFF"; printf '203.0.113.7 - - [x] "GET / HTTP/1.1" 200 1\n' > "$ALLOW/s1.log"; run_collector "$ALLOW/s1.log" >/dev/null
 # shellcheck source=/dev/null
 ( export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban" BOTSCAN_SPOOL_DIR="$SPOOL"
   # shellcheck source=/dev/null
@@ -123,7 +124,7 @@ rm -rf "$SPOOL"; mkdir -p "$SPOOL"
 ) && ok "T9 scanner fallback when spool empty (no stale spool paths)" || no "T9 fallback"
 
 # T10: MAX_FILES cap.
-rm -rf "$SPOOL" "$OFF"; for i in 1 2 3 4; do printf 'x\n' > "$ALLOW/m$i.log"; done
+rm -rf "$SPOOL" "$OFF"; for i in 1 2 3 4; do printf '203.0.113.7 - - [x] "GET / HTTP/1.1" 200 1\n' > "$ALLOW/m$i.log"; done
 out="$(run_collector "$ALLOW/m*.log" 2)"
 echo "$out" | grep -q 'MAX_FILES=2' && ok "T10 MAX_FILES cap enforced + audited" || no "T10 max-files" "$out"
 
@@ -138,7 +139,7 @@ if grep -q '^User=nftban' "$COLLECTOR_UNIT" && grep -q '^AmbientCapabilities=CAP
 else no "T12 collector unit invariants"; fi
 
 # T13: audit trail emitted (read-authority observability).
-rm -rf "$SPOOL" "$OFF"; printf 'x\n' > "$ALLOW/audit.log"
+rm -rf "$SPOOL" "$OFF"; printf '203.0.113.7 - - [x] "GET / HTTP/1.1" 200 1\n' > "$ALLOW/audit.log"
 out="$(run_collector "$ALLOW/audit.log")"
 echo "$out" | grep -qE 'botscan-collector.*(collected|sources=)' && ok "T13 collector emits audit trail" || no "T13 audit" "$out"
 

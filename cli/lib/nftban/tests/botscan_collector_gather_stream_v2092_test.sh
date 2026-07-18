@@ -101,5 +101,16 @@ rc=0; gather_one "$LOG3" "$BSPF" || rc=$?
 appended=$(stat -c %s "$BSPF")
 [[ "$rc" == 0 && "$appended" -le $((NFTBAN_HTTP_LOG_MAX_BYTES + 16)) ]] && ok "T6 large source bounded to MAX_BYTES ($appended B), streamed not slurped" || no "T6 large source append=$appended"
 
+# T7 (R22A): the collector applies the SHARED class filter (not the old bare case)
+# so cPanel ftpxferlog/.offset/.bytes/mail/state files are never spooled.
+grep -qE '_nftban_http_is_nonaccess_name "\$f" && continue' "$COLLECTOR" \
+  && ok "T7 collector uses shared _nftban_http_is_nonaccess_name class filter (R22A)" || no "T7 collector missing shared class filter"
+if grep -qE 'case "\$f" in \*error_log.*\*\.\[0-9\]\) continue' "$COLLECTOR"; then
+  no "T7 collector still uses the old insufficient bare-case exclusion"
+else ok "T7 old insufficient bare-case exclusion removed from collector"; fi
+# T8 (R22A): the collector content-gates a non-empty non-HTTP file before spooling.
+grep -qE '_nftban_http_looks_like_access_log "\$canon"' "$COLLECTOR" \
+  && ok "T8 collector content-validates (skips non-empty non-HTTP before spool)" || no "T8 collector missing content gate"
+
 echo "=== gather-stream: $PASS passed, $FAIL failed ==="
 [[ "$FAIL" == 0 ]]
