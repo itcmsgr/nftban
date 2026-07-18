@@ -38,15 +38,19 @@ _NFTBAN_HTTP_LAST_SKIPPED=()   # "path: reason"
 # Last-classification diagnostics (populated by nftban_http_classify_candidates).
 # These describe SERVICE-ACCOUNT readability, used by the diagnostic/health surfaces
 # only — NOT the hot scan path.
-_NFTBAN_HTTP_LAST_CANDIDATES=()      # existing, non-excluded candidate access logs (pre-readability)
+_NFTBAN_HTTP_LAST_CANDIDATES=()      # existing, class-valid candidate access logs (pre-readability)
 _NFTBAN_HTTP_LAST_UNREADABLE=()      # candidates the service account cannot read
-_NFTBAN_HTTP_READ_VERDICT=""         # OK | DEGRADED | WARN_NO_LOGS | NO_LOGS | UNKNOWN
+_NFTBAN_HTTP_LAST_INVALID=()         # readable candidates whose CONTENT is not an HTTP access log
+_NFTBAN_HTTP_READ_VERDICT=""         # OK | NEVER_OBSERVED | INVALID_SOURCE | DEGRADED | UNKNOWN | WARN_NO_LOGS | NO_LOGS
 _NFTBAN_HTTP_READ_PERSPECTIVE=""     # how readability was evaluated (honest reporting)
 _NFTBAN_HTTP_READ_STACK=""           # detected web stack at classification time
 _NFTBAN_HTTP_READ_COUNT_TOTAL=0
 _NFTBAN_HTTP_READ_COUNT_READABLE=0
 _NFTBAN_HTTP_READ_COUNT_UNREADABLE=0
 _NFTBAN_HTTP_READ_COUNT_UNKNOWN=0
+_NFTBAN_HTTP_COUNT_VALID=0           # readable + content is a valid HTTP access log (active/quiet)
+_NFTBAN_HTTP_COUNT_NEVER=0           # readable + class-valid + empty (NEVER_OBSERVED)
+_NFTBAN_HTTP_COUNT_INVALID=0         # readable + non-empty + not an HTTP access log (SOURCE_INVALID)
 
 # --- panel / stack detection -------------------------------------------------
 nftban_http_detect_panel() {
@@ -84,6 +88,45 @@ nftban_http_candidate_globs() {
         '/usr/local/lsws/logs/*access*'
 }
 
+# --- source-validity contract (R22A) ----------------------------------------
+# CLASS: reject non-HTTP-access filenames (panel-independent, name-based) so a
+# bare panel glob (e.g. cPanel /usr/local/apache/domlogs/*) cannot select FTP
+# transfer logs, bandwidth offset/byte-count state files, mail logs, or
+# error/rotated/compressed logs. Returns 0 if the name MUST be excluded.
+_nftban_http_is_nonaccess_name() {
+    case "$1" in
+        *error_log|*error.log|*-error*|*_error*)                       return 0 ;;  # error logs
+        *.gz|*.bz2|*.xz|*.zip|*.[0-9]|*.[0-9][0-9]|*.rotated|*.processed) return 0 ;;  # compressed/rotated
+        *ftpxferlog*|*-ftp_log|*_ftp_log|*-ftpxfer*|*ftp.log)          return 0 ;;  # cPanel/panel FTP logs
+        *-imap_log|*_imap_log|*-pop3_log|*_pop3_log|*-smtp_log|*_smtp_log) return 0 ;;  # mail logs
+        *.offset|*.bytes|*.stats|*.db|*.lock|*.pid|*.tmp|*.bak|*.bkup) return 0 ;;  # state/byte-count/aux (NOT .json — an access log may be JSON-formatted)
+    esac
+    return 1
+}
+
+# CONTENT: a non-empty file is a valid HTTP access log only if a sampled line
+# carries an HTTP request signature. Prevents a non-empty non-HTTP file (e.g. a
+# binary state file that slipped the name filter) from being accepted/scanned.
+# Tolerant of the escaped-slash form (nginx JSON access logs: "GET \/ HTTP\/1.1").
+_nftban_http_looks_like_access_log() {
+    tail -n 50 "$1" 2>/dev/null | grep -Eq '"(GET|POST|HEAD|PUT|DELETE|OPTIONS|PATCH|PROPFIND|CONNECT|TRACE|BREW|LINK|UNLINK|MKCOL|COPY|MOVE|LOCK|PROPPATCH|REPORT|SEARCH) [^"]* HTTP\\?/[0-9]'
+}
+
+# STATE: classify one existing, CLASS-valid file by content + activity.
+# Echoes: SOURCE_ACTIVE | SOURCE_VALID_QUIET | NEVER_OBSERVED | SOURCE_INVALID
+#   empty (0 bytes)        -> NEVER_OBSERVED  (valid path/class, no data yet)
+#   non-empty, HTTP lines  -> SOURCE_ACTIVE (recent mtime) | SOURCE_VALID_QUIET
+#   non-empty, no HTTP     -> SOURCE_INVALID (never healthy, never scanned)
+_nftban_http_source_content_state() {
+    local f="$1"
+    [[ -s "$f" ]] || { echo "NEVER_OBSERVED"; return 0; }
+    _nftban_http_looks_like_access_log "$f" || { echo "SOURCE_INVALID"; return 0; }
+    local now mt win
+    now="$(date +%s 2>/dev/null || echo 0)"; mt="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+    win="${NFTBAN_HTTP_ACTIVITY_WINDOW_SEC:-86400}"
+    if [[ "$now" -gt 0 && $((now - mt)) -le "$win" ]]; then echo "SOURCE_ACTIVE"; else echo "SOURCE_VALID_QUIET"; fi
+}
+
 # Internal: expand a single glob and append existing readable non-error access
 # files to the global _NFTBAN_HTTP_FOUND; unreadable matches go to
 # _NFTBAN_HTTP_LAST_SKIPPED. Runs in the CURRENT shell (no subshell) so the
@@ -95,11 +138,11 @@ _nftban_http_collect_glob() {
     mapfile -t matches < <(compgen -G "$g" 2>/dev/null || true)
     for f in "${matches[@]}"; do
         [[ -f "$f" ]] || continue
-        case "$f" in
-            *error_log|*error.log|*-error*|*_error*|*.gz|*.[0-9]) continue ;;  # skip error/rotated/compressed
-        esac
+        if _nftban_http_is_nonaccess_name "$f"; then
+            _NFTBAN_HTTP_LAST_SKIPPED+=("$f: non-access file (excluded)"); continue
+        fi
         if [[ -r "$f" ]]; then
-            _NFTBAN_HTTP_FOUND+=("$f")
+            _NFTBAN_HTTP_FOUND+=("$f")   # CONTENT validity deferred to post-cap (see discover) — keep the hot glob cheap
         else
             _NFTBAN_HTTP_LAST_SKIPPED+=("$f: unreadable")
         fi
@@ -163,6 +206,23 @@ nftban_http_discover_access_logs() {
         _NFTBAN_HTTP_LAST_SELECTED=("${uniq[@]}")
     fi
 
+    # CONTENT validity — bounded to the capped SELECTED set (≤MAX_FILES), NOT the
+    # full pre-cap glob, so discovery stays cheap on multi-vhost hosts. Drop a
+    # non-empty file that is not an HTTP access log (state/foreign file that slipped
+    # the name filter); KEEP an empty valid access log (NEVER_OBSERVED — no data yet).
+    if [[ ${#_NFTBAN_HTTP_LAST_SELECTED[@]} -gt 0 ]]; then
+        local -a _valid=(); local s
+        for s in "${_NFTBAN_HTTP_LAST_SELECTED[@]}"; do
+            if [[ -s "$s" ]] && ! _nftban_http_looks_like_access_log "$s"; then
+                _NFTBAN_HTTP_LAST_SKIPPED+=("$s: not an HTTP access log (invalid content)")
+            else
+                _valid+=("$s")
+            fi
+        done
+        _NFTBAN_HTTP_LAST_SELECTED=("${_valid[@]}")
+    fi
+    [[ ${#_NFTBAN_HTTP_LAST_SELECTED[@]} -eq 0 ]] && return 1
+
     printf '%s\n' "${_NFTBAN_HTTP_LAST_SELECTED[@]}"
     return 0
 }
@@ -214,9 +274,7 @@ _nftban_http_collect_candidate_glob() {
     mapfile -t matches < <(compgen -G "$g" 2>/dev/null || true)
     for f in "${matches[@]}"; do
         [[ -f "$f" ]] || continue
-        case "$f" in
-            *error_log|*error.log|*-error*|*_error*|*.gz|*.[0-9]) continue ;;  # access logs only
-        esac
+        _nftban_http_is_nonaccess_name "$f" && continue   # access-log names only (content judged at classify)
         _NFTBAN_HTTP_CAND+=("$f")
     done
 }
@@ -236,9 +294,10 @@ nftban_http_classify_candidates() {
     local panel stack
     panel="$(nftban_http_detect_panel)"; stack="$(nftban_http_detect_stack)"
     _NFTBAN_HTTP_READ_STACK="$stack"
-    _NFTBAN_HTTP_LAST_CANDIDATES=(); _NFTBAN_HTTP_LAST_UNREADABLE=()
+    _NFTBAN_HTTP_LAST_CANDIDATES=(); _NFTBAN_HTTP_LAST_UNREADABLE=(); _NFTBAN_HTTP_LAST_INVALID=()
     _NFTBAN_HTTP_READ_COUNT_TOTAL=0; _NFTBAN_HTTP_READ_COUNT_READABLE=0
     _NFTBAN_HTTP_READ_COUNT_UNREADABLE=0; _NFTBAN_HTTP_READ_COUNT_UNKNOWN=0
+    _NFTBAN_HTTP_COUNT_VALID=0; _NFTBAN_HTTP_COUNT_NEVER=0; _NFTBAN_HTTP_COUNT_INVALID=0
 
     _NFTBAN_HTTP_CAND=()
     local g
@@ -270,20 +329,41 @@ nftban_http_classify_candidates() {
         _NFTBAN_HTTP_READ_PERSPECTIVE="indeterminate (caller=$me, not root/$svc)"
     fi
 
-    local rc
+    local rc state
     for f in "${uniq[@]}"; do
         rc=0; nftban_http_service_can_read "$f" || rc=$?
         case "$rc" in
-            0) _NFTBAN_HTTP_READ_COUNT_READABLE=$((_NFTBAN_HTTP_READ_COUNT_READABLE+1)) ;;
+            0)
+                _NFTBAN_HTTP_READ_COUNT_READABLE=$((_NFTBAN_HTTP_READ_COUNT_READABLE+1))
+                # Readable → judge CONTENT as the service account can (we already
+                # confirmed it is readable-as-service). Validity, not mere readability.
+                state="$(_nftban_http_source_content_state "$f")"
+                case "$state" in
+                    SOURCE_ACTIVE|SOURCE_VALID_QUIET) _NFTBAN_HTTP_COUNT_VALID=$((_NFTBAN_HTTP_COUNT_VALID+1)) ;;
+                    NEVER_OBSERVED)                   _NFTBAN_HTTP_COUNT_NEVER=$((_NFTBAN_HTTP_COUNT_NEVER+1)) ;;
+                    SOURCE_INVALID)                   _NFTBAN_HTTP_COUNT_INVALID=$((_NFTBAN_HTTP_COUNT_INVALID+1)); _NFTBAN_HTTP_LAST_INVALID+=("$f") ;;
+                esac
+                ;;
             1) _NFTBAN_HTTP_READ_COUNT_UNREADABLE=$((_NFTBAN_HTTP_READ_COUNT_UNREADABLE+1)); _NFTBAN_HTTP_LAST_UNREADABLE+=("$f") ;;
             *) _NFTBAN_HTTP_READ_COUNT_UNKNOWN=$((_NFTBAN_HTTP_READ_COUNT_UNKNOWN+1)) ;;
         esac
     done
 
+    # Validity-aware verdict (R22A). A readable source is "healthy" (OK) ONLY when
+    # its content is a valid HTTP access log (SOURCE_ACTIVE or SOURCE_VALID_QUIET —
+    # a temporarily quiet valid log is NOT DEGRADED). A valid-but-empty source is
+    # NEVER_OBSERVED (bound, no data yet — not a false OK, not DEGRADED). Readable
+    # candidates that are ALL invalid content (state files / non-HTTP) →
+    # INVALID_SOURCE (never healthy — this is the false-healthy fix). Class-valid
+    # names that are all unreadable-as-service → DEGRADED (real permission failure).
     if [[ ${_NFTBAN_HTTP_READ_COUNT_TOTAL} -eq 0 ]]; then
         if [[ -n "$stack" ]]; then _NFTBAN_HTTP_READ_VERDICT="WARN_NO_LOGS"; else _NFTBAN_HTTP_READ_VERDICT="NO_LOGS"; fi
-    elif [[ ${_NFTBAN_HTTP_READ_COUNT_READABLE} -ge 1 ]]; then
+    elif [[ ${_NFTBAN_HTTP_COUNT_VALID} -ge 1 ]]; then
         _NFTBAN_HTTP_READ_VERDICT="OK"
+    elif [[ ${_NFTBAN_HTTP_COUNT_NEVER} -ge 1 ]]; then
+        _NFTBAN_HTTP_READ_VERDICT="NEVER_OBSERVED"
+    elif [[ ${_NFTBAN_HTTP_COUNT_INVALID} -ge 1 ]]; then
+        _NFTBAN_HTTP_READ_VERDICT="INVALID_SOURCE"
     elif [[ ${_NFTBAN_HTTP_READ_COUNT_UNKNOWN} -ge 1 ]]; then
         _NFTBAN_HTTP_READ_VERDICT="UNKNOWN"
     else

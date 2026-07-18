@@ -1699,11 +1699,17 @@ nftban_botscan_status() {
         if [[ "$_spool_fed" -eq 1 && ( "$verdict" == "DEGRADED" || "$verdict" == "UNKNOWN" ) ]]; then
             echo "Readability:    OK via collector spool (direct source ${verdict} for ${svc}; collector feeding ${_spool})"
         else
-            echo "Readability:    ${verdict} (${_NFTBAN_HTTP_READ_COUNT_READABLE}/${_NFTBAN_HTTP_READ_COUNT_TOTAL} readable by ${svc})"
-            if [[ "$verdict" == "DEGRADED" ]]; then
-                echo "                BOTSCAN_READ_AUTHORITY open: access logs discovered but unreadable by the"
-                echo "                service account — install/enable nftban-botscan-collector.service (read-authority)."
-            fi
+            echo "Log source:     ${verdict} (valid:${_NFTBAN_HTTP_COUNT_VALID} never-observed:${_NFTBAN_HTTP_COUNT_NEVER} invalid:${_NFTBAN_HTTP_COUNT_INVALID} unreadable:${_NFTBAN_HTTP_READ_COUNT_UNREADABLE} of ${_NFTBAN_HTTP_READ_COUNT_TOTAL} as ${svc})"
+            case "$verdict" in
+                DEGRADED)
+                    echo "                BOTSCAN_READ_AUTHORITY open: access logs discovered but unreadable by the"
+                    echo "                service account — install/enable nftban-botscan-collector.service (read-authority)." ;;
+                INVALID_SOURCE)
+                    echo "                Bound file(s) are NOT HTTP access logs (FTP/offset/byte-count/state files) —"
+                    echo "                BotScan is not scanning web traffic. Set BOTSCAN_LOG_PATHS to the real access-log glob(s)." ;;
+                NEVER_OBSERVED)
+                    echo "                Valid access log(s) bound but empty — no HTTP request logged yet (not a failure, not degraded)." ;;
+            esac
         fi
     fi
 

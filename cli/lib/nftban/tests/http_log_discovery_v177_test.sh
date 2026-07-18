@@ -55,7 +55,9 @@ gen="$(nftban_http_candidate_globs '')"
 # -----------------------------------------------------------------------------
 # Build hermetic fixture trees mimicking each layout.
 # -----------------------------------------------------------------------------
-mk(){ mkdir -p "$(dirname "$1")"; printf '%s\n' "${2:-line}" > "$1"; }
+# R22A: fixtures that should be DISCOVERED must contain a VALID HTTP access-log line
+# (R22A validates sampled format before binding). The label becomes the request path.
+mk(){ mkdir -p "$(dirname "$1")"; printf '%s\n' "203.0.113.7 - - [01/Jan/2026:12:00:00 +0000] \"GET /${2:-x} HTTP/1.1\" 200 128 \"-\" \"r22a\"" > "$1"; }
 mk "$WORK/da/httpd/domains/example.com.log"      'DA apache'
 mk "$WORK/da/nginx/domains/example.com.log"      'DA nginx'
 mk "$WORK/cpanel/domlogs/example.com"            'cpanel'
@@ -113,7 +115,7 @@ else
 fi
 
 # T7: many-log bounded scan + skip-reason.
-mkdir -p "$WORK/many"; for i in $(seq 1 6); do printf 'x\n' > "$WORK/many/d$i.log"; done
+mkdir -p "$WORK/many"; for i in $(seq 1 6); do printf '203.0.113.7 - - [01/Jan/2026:12:00:00 +0000] "GET /d%s HTTP/1.1" 200 1\n' "$i" > "$WORK/many/d$i.log"; done
 NFTBAN_HTTP_LOG_MAX_FILES=3 disc "$WORK/many/*.log" >/dev/null 2>&1 || true
 if [[ "${#_NFTBAN_HTTP_LAST_SELECTED[@]}" -eq 3 ]] && printf '%s\n' "${_NFTBAN_HTTP_LAST_SKIPPED[@]}" | grep -q 'over MAX_FILES'; then
     ok "T7 many-log bounded to MAX_FILES=3 + skip-reason recorded"
