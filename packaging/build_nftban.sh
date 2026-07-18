@@ -1562,6 +1562,10 @@ if [ \$1 -eq 0 ]; then
     rm -rf /usr/share/nftban 2>/dev/null || true
 
     echo "[NFTBan] Complete removal finished."
+    echo "[NFTBan] NFTBan-owned nftables tables and enforcement rules were deleted — NFTBan is no longer protecting this system."
+    echo "[NFTBan] Other firewall rules managed by the OS, firewalld, ufw, Docker, libvirt, cloud tooling, or the administrator were NOT modified and may still be active."
+    echo "[NFTBan] You are now responsible for the host firewall state. Review it before exposing services:  sudo nft list ruleset"
+    echo "[NFTBan] To restore NFTBan protection, reinstall/start NFTBan and validate the rebuilt firewall policy."
     echo "[NFTBan] Config backup at: \${BACKUP_DIR}"
     echo "[NFTBan] User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
 fi
