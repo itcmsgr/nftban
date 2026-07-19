@@ -29,7 +29,7 @@ const DefaultConfPath = "/etc/nftban/conf.d/logs.conf"
 // The result is validated; invalid values return an error (no silent fallback).
 func LoadOverrides(path string) (Overrides, error) {
 	var o Overrides
-	data, err := os.ReadFile(path) //nolint:gosec // operator config path
+	data, err := os.ReadFile(path) // #nosec G304 -- operator config path (conf.d/logs.conf), fixed by DefaultConfPath
 	if err != nil {
 		if os.IsNotExist(err) {
 			return o, nil

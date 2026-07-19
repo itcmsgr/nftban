@@ -938,6 +938,13 @@ EOF
     # changes are reflected within one maintenance cycle).
     local _lr_core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
     if [[ -x "$_lr_core_bin" ]]; then
+        # Z1: FIRST complete/undo any activation interrupted by a crash, so the
+        # on-disk policy set is uniform before the system logrotate timer can
+        # consume it and before we (possibly) skip regeneration for unchanged
+        # inputs. Deterministic + idempotent (no-op when nothing is pending).
+        if "$_lr_core_bin" logretention recover >/dev/null 2>&1; then
+            :
+        fi
         if "$_lr_core_bin" logretention generate timer >/dev/null 2>&1; then
             log "INFO" "Log-retention policy: regenerated (OK)"
         else

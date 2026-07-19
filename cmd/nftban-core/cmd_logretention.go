@@ -56,6 +56,8 @@ func cmdLogRetention(args []string) int {
 		return lrStatusCmd(args[1:])
 	case "generate":
 		return lrGenerateCmd(args[1:])
+	case "recover":
+		return lrRecoverCmd(args[1:])
 	case "help", "-h", "--help":
 		return lrUsage()
 	default:
@@ -68,6 +70,7 @@ func lrUsage() int {
 	fmt.Println("Usage:")
 	fmt.Println("  nftban-core logretention status [--json]   Report the effective log-retention policy")
 	fmt.Println("  nftban-core logretention generate [reason] Regenerate the effective logrotate policy")
+	fmt.Println("  nftban-core logretention recover           Complete/undo an interrupted activation (crash-safe)")
 	return 2
 }
 
@@ -77,14 +80,19 @@ func lrUsage() int {
 // surfaced, never assumed from the frozen record), and detected != effective
 // profile are reported separately.
 type retentionStatus struct {
-	// overall state machine (R9): NOT_GENERATED | STATE_UNREADABLE |
-	// STATE_UNPARSEABLE | POLICY_MISSING | CAPACITY_CONFLICT | ACTIVE_DRIFT |
-	// STALE_STATE | ACTIVE_MATCH | GENERATION_FAILED
+	// overall state machine (R9/Z1): INTERRUPTED_ACTIVATION | NOT_GENERATED |
+	// STATE_UNREADABLE | STATE_UNPARSEABLE | POLICY_MISSING | CAPACITY_CONFLICT |
+	// ACTIVE_DRIFT | STALE_STATE | ACTIVE_MATCH | GENERATION_FAILED
 	OverallState     string `json:"overall_state"`
 	StateAvailable   bool   `json:"state_available"`
 	StateStale       bool   `json:"state_stale"`
 	StaleReason      string `json:"stale_reason,omitempty"`
 	ValidationStatus string `json:"validation_status"`
+
+	// Z1: an activation journal is present -> a prior generation was interrupted
+	// and the on-disk policy set may be split until `logretention recover` (or the
+	// next generate) runs. While true, status NEVER reports ACTIVE_MATCH.
+	InterruptedActivation bool `json:"interrupted_activation"`
 
 	// policy facts (from generated state)
 	PolicyVersion          string            `json:"policy_version"`
@@ -164,6 +172,11 @@ func buildStatus() retentionStatus {
 	s.OperatorOverrides = liveOverrides
 	s.PolicyMode = liveOverridesMode(liveOverrides)
 
+	// Z1: detect an interrupted activation up front (read-only). It overrides
+	// every coherent verdict below so status can never claim ACTIVE_MATCH (or even
+	// NOT_GENERATED) over a policy set that may be split mid-activation.
+	s.InterruptedActivation = lr.PendingActivation(lrMainPath())
+
 	// policy facts from the authoritative generated-state record
 	data, err := os.ReadFile(lrStatePath())
 	if err != nil {
@@ -172,11 +185,17 @@ func buildStatus() retentionStatus {
 		} else {
 			s.ValidationStatus, s.OverallState = "STATE_UNREADABLE", "STATE_UNREADABLE"
 		}
+		if s.InterruptedActivation {
+			s.OverallState = "INTERRUPTED_ACTIVATION"
+		}
 		return s
 	}
 	var gs lr.GeneratedState
 	if err := json.Unmarshal(data, &gs); err != nil {
 		s.ValidationStatus, s.OverallState = "STATE_UNPARSEABLE", "STATE_UNPARSEABLE"
+		if s.InterruptedActivation {
+			s.OverallState = "INTERRUPTED_ACTIVATION"
+		}
 		return s
 	}
 
@@ -244,8 +263,12 @@ func buildStatus() retentionStatus {
 		s.StaleReason = "operator config changed since last generation"
 	}
 
-	// R9 overall state machine (most-severe first).
+	// R9 overall state machine (most-severe first). Z1: an interrupted activation
+	// is the most severe — the on-disk set may be split, so no coherent verdict
+	// (least of all ACTIVE_MATCH) may be reported until recovery runs.
 	switch {
+	case s.InterruptedActivation:
+		s.OverallState = "INTERRUPTED_ACTIVATION"
 	case !gs.ValidationOK:
 		s.OverallState = "GENERATION_FAILED"
 	case anyMissing:
@@ -263,7 +286,7 @@ func buildStatus() retentionStatus {
 }
 
 func fileSHA256(path string) string {
-	data, err := os.ReadFile(path) //nolint:gosec // status reads generator-owned policy paths
+	data, err := os.ReadFile(path) // #nosec G304 -- status reads generator-owned policy/state paths (NFTBAN_LR_* or fixed defaults)
 	if err != nil {
 		return ""
 	}
@@ -339,6 +362,9 @@ func printStatusHuman(s retentionStatus) {
 				human(f.WorstCaseBytes), f.AuthorityRole, f.WriterStrategy)
 		}
 	}
+	if s.InterruptedActivation {
+		fmt.Println("\n  WARNING: a prior policy generation was interrupted (activation journal present). The on-disk policy set may be split. Run `nftban-core logretention recover` (or wait for the next maintenance cycle) — status will not report a coherent state until then.")
+	}
 	if s.OverallState == "ACTIVE_DRIFT" {
 		fmt.Println("\n  NOTE: an activated policy file was edited by hand (content drift). Overrides belong in /etc/nftban/conf.d/logs.conf; the generated file is derived state.")
 	}
@@ -399,6 +425,25 @@ func lrGenerateCmd(args []string) int {
 	}
 	fmt.Printf("Generated effective log-retention policy: profile=%s budget=%s theoretical-max=%s fit=%s unbounded=%d\n",
 		st.Profile.Name, human(st.BudgetBytes), human(st.TheoreticalMaxBytes), st.FitVerdict, st.UnboundedCount)
+	return 0
+}
+
+// lrRecoverCmd deterministically completes or unwinds an interrupted activation.
+// It is the explicit entry point for startup and for the maintenance step that
+// runs BEFORE logrotate, so a crash never leaves a split policy set to be fixed
+// only by the next full regeneration.
+func lrRecoverCmd(_ []string) int {
+	res, err := lr.Recover(lrMainPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: log-retention recovery failed: %v\n", err)
+		return 1
+	}
+	if !res.JournalFound {
+		fmt.Println("Log-retention: no interrupted activation pending (nothing to recover).")
+		return 0
+	}
+	fmt.Printf("Log-retention: recovered an interrupted activation (from=%s action=%s targets=%v).\n",
+		res.FromState, res.Action, res.Targets)
 	return 0
 }
 

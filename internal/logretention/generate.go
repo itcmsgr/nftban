@@ -3,7 +3,7 @@
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-07-19"
-// meta:description="Phase-5 generated-policy transaction (Model B). Treats the logrotate files as DERIVED STATE, never operator config. Acquires an exclusive generation lock; renders all candidates into the target filesystem; validates the COMBINED effective policy with `logrotate -d --state <tmp>` (debug=no rotation; temp state=real state untouched; explicit file args=active policy never co-loaded); then a two-file ATOMIC activation with explicit ROLLBACK (no split-brain: if either file fails to activate, BOTH previous files are restored); writes the generated-state record only after a fully successful activation; preserves the previous valid policy on any failure; removes temporaries; records prior+active SHA-256 hashes."
+// meta:description="Phase-5 generated-policy transaction (Model B). Treats the logrotate files as DERIVED STATE, never operator config. Acquires an exclusive generation lock; renders all candidates into the target filesystem; validates the COMBINED effective policy with `logrotate -d --state <tmp>` (debug=no rotation; temp state=real state untouched; explicit file args=active policy never co-loaded); writes a DURABLE activation journal (candidate+backup paths, prev+candidate hashes) BEFORE touching any target; then a two-file ATOMIC activation with in-process ROLLBACK on error; writes the generated-state record only after a fully successful activation; preserves the previous valid policy on any failure; removes temporaries; records prior+active SHA-256 hashes. Z1: a crash between the per-file renames is NOT left to the next regeneration — Recover() (recover.go) deterministically rolls the set forward or back to a uniform state at every consumer (generate, status, maintenance-before-logrotate)."
 // meta:depends="crypto/sha256,encoding/json,os,os/exec,syscall"
 // meta:inventory.files="internal/logretention/generate.go"
 // meta:inventory.env_vars=""
@@ -33,6 +33,20 @@ import (
 const GeneratorVersion = "1"
 
 const prevSuffix = ".nftban-prev"
+
+// stagingDirFor is the dot-subdir of the target directory holding candidates,
+// backups, and the activation journal. It is NEVER scanned by the system
+// logrotate (logrotate's `include` reads regular files directly in the dir and
+// does not recurse), yet lives on the SAME filesystem as the targets so every
+// activation rename is atomic. Activator and recoverer derive it identically.
+func stagingDirFor(mainPath string) string {
+	return filepath.Join(filepath.Dir(mainPath), ".nftban-logrotate-staging")
+}
+
+// journalPathIn is the fixed activation-journal path inside a staging dir.
+func journalPathIn(stagingDir string) string {
+	return filepath.Join(stagingDir, "activation.journal")
+}
 
 // Validator validates one or more candidate logrotate files TOGETHER without
 // executing any rotation and without touching the real logrotate state or the
@@ -70,7 +84,7 @@ func DefaultValidator(candidatePaths []string) (string, error) {
 	}
 	cmdStr := "logrotate -d --state <temp> " + strings.Join(bases, " ")
 	args := append([]string{"-d", "--state", stateName}, candidatePaths...)
-	out, err := exec.Command(lr, args...).CombinedOutput() //nolint:gosec // fixed flags, candidate paths are generator-owned
+	out, err := exec.Command(lr, args...).CombinedOutput() // #nosec G204 -- fixed logrotate flags; candidate paths are generator-owned staging files
 	if err != nil {
 		return cmdStr, fmt.Errorf("logretention: candidate failed logrotate validation: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
@@ -207,16 +221,19 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 	// nothing here is ever parsed by the system logrotate (no duplicate-stanza
 	// error, no crash-poisoning), while staying on the SAME filesystem as the
 	// targets so the activation renames are atomic.
-	stagingDir := filepath.Join(filepath.Dir(opts.MainPath), ".nftban-logrotate-staging")
+	stagingDir := stagingDirFor(opts.MainPath)
 	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
 		return GeneratedState{}, fmt.Errorf("logretention: staging dir: %w", err)
 	}
-	journalPath := filepath.Join(stagingDir, "activation.journal")
-	// R5: a leftover journal means a prior generation crashed mid-activation.
-	// Because generation is deterministic, this run regenerates + re-activates
-	// both files cleanly (self-healing) — we note it and clear stale staging.
-	if _, err := os.Stat(journalPath); err == nil {
-		fmt.Fprintln(os.Stderr, "logretention: recovering from an interrupted prior generation (stale activation journal); regenerating deterministically")
+	journalPath := journalPathIn(stagingDir)
+	// Z1: a leftover journal means a prior generation crashed mid-activation.
+	// DETERMINISTICALLY complete (roll-forward) or undo (roll-back) that
+	// transaction NOW so the on-disk set is uniform before we start a fresh one —
+	// never leave it split for "the next regeneration" to fix.
+	if rr, rerr := Recover(opts.MainPath); rerr != nil {
+		return GeneratedState{}, fmt.Errorf("logretention: pre-generation recovery of an interrupted activation failed: %w", rerr)
+	} else if rr.JournalFound {
+		fmt.Fprintf(os.Stderr, "logretention: recovered an interrupted prior activation (%s) before regenerating\n", rr.Action)
 	}
 	cleanStaging := func() { _ = removeDirContents(stagingDir) }
 	cleanStaging()
@@ -249,7 +266,7 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 	for _, t := range targets {
 		prevHashes[filepath.Base(t.path)] = hashFileOrEmpty(t.path)
 	}
-	if err := writeActivationJournal(journalPath, targets, candidates); err != nil {
+	if err := writeActivationJournal(journalPath, now.Format(time.RFC3339), targets, candidates, stagingDir); err != nil {
 		cleanStaging()
 		return GeneratedState{}, err
 	}
@@ -332,7 +349,7 @@ func activateWithRollback(targets []genTarget, candidates map[string]string, sta
 	for _, t := range targets {
 		u := undo{path: t.path}
 		if _, err := os.Stat(t.path); err == nil {
-			bak := filepath.Join(stagingDir, filepath.Base(t.path)+prevSuffix)
+			bak := backupPathFor(stagingDir, t.path)
 			if err := os.Rename(t.path, bak); err != nil {
 				rollback()
 				return fmt.Errorf("logretention: backup %s: %w", t.path, err)
@@ -383,19 +400,56 @@ func writeStaged(stagingDir, targetBase, content string) (string, error) {
 	return name, nil
 }
 
-// writeActivationJournal records the intended activation (target -> candidate
-// SHA-256) so a crash mid-activation is DETECTABLE on the next run; recovery is
-// the next deterministic regeneration.
-func writeActivationJournal(path string, targets []genTarget, candidates map[string]string) error {
-	j := map[string]string{}
+// activationJournal is the durable record of an in-flight two-phase activation.
+// It carries EVERYTHING recovery needs to reach a uniform all-new or all-old
+// state after a crash at any rename boundary: the staged candidate (roll-forward
+// source), the deterministic backup path (roll-back source), and both hashes so
+// the current on-disk file can be classified NEW vs OLD without re-deriving the
+// policy. Written + fsync'd BEFORE the first target is touched; removed only
+// after the whole set is activated and the target dir is fsync'd.
+type activationJournal struct {
+	Version   int            `json:"version"`
+	CreatedAt string         `json:"created_at"`
+	Entries   []journalEntry `json:"entries"`
+}
+
+type journalEntry struct {
+	Target        string `json:"target"`
+	CandidatePath string `json:"candidate_path"` // staged temp — roll-forward source
+	CandidateHash string `json:"candidate_hash"` // == NEW on-disk hash
+	BackupPath    string `json:"backup_path"`    // deterministic staging/*.prev — roll-back source
+	PrevHash      string `json:"prev_hash"`      // == OLD on-disk hash; "" if target did not exist
+}
+
+const activationJournalVersion = 1
+
+// backupPathFor is the deterministic backup location for a target during
+// activation (a dot-subdir sibling, never scanned by logrotate). Both the
+// activator and the recoverer compute the same path, so recovery can find the
+// pre-image without guessing.
+func backupPathFor(stagingDir, target string) string {
+	return filepath.Join(stagingDir, filepath.Base(target)+prevSuffix)
+}
+
+// writeActivationJournal records the intended activation durably so a crash
+// mid-activation is both DETECTABLE and REPAIRABLE (see Recover) on the next
+// entry into any consumer — not merely on the next full regeneration.
+func writeActivationJournal(path, createdAt string, targets []genTarget, candidates map[string]string, stagingDir string) error {
+	j := activationJournal{Version: activationJournalVersion, CreatedAt: createdAt}
 	for _, t := range targets {
-		j[t.path] = hashFileOrEmpty(candidates[t.path])
+		j.Entries = append(j.Entries, journalEntry{
+			Target:        t.path,
+			CandidatePath: candidates[t.path],
+			CandidateHash: hashFileOrEmpty(candidates[t.path]),
+			BackupPath:    backupPathFor(stagingDir, t.path),
+			PrevHash:      hashFileOrEmpty(t.path),
+		})
 	}
 	data, err := json.MarshalIndent(j, "", "  ")
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // staging-owned path
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- staging path is generator-owned under the fixed staging dir
 	if err != nil {
 		return fmt.Errorf("logretention: activation journal: %w", err)
 	}
@@ -425,7 +479,7 @@ func removeDirContents(dir string) error {
 // fsyncDir best-effort fsyncs a directory so a rename into it is durable across a
 // crash (silently ignored on filesystems that reject directory fsync).
 func fsyncDir(dir string) {
-	d, err := os.Open(dir) //nolint:gosec // generator-owned dir
+	d, err := os.Open(dir) // #nosec G304 -- generator-owned directory path for fsync
 	if err != nil {
 		return
 	}
@@ -440,7 +494,7 @@ func acquireLock(lockPath string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return nil, fmt.Errorf("logretention: lock dir: %w", err)
 	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644) //nolint:gosec // generator-owned lock path
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304 -- generator-owned lock path derived from MainPath dir
 	if err != nil {
 		return nil, fmt.Errorf("logretention: open lock: %w", err)
 	}
@@ -533,7 +587,7 @@ func writeStateAtomic(path string, state GeneratedState) error {
 }
 
 func hashFileOrEmpty(path string) string {
-	data, err := os.ReadFile(path) //nolint:gosec // generator-owned path
+	data, err := os.ReadFile(path) // #nosec G304 -- generator-owned policy/state path
 	if err != nil {
 		return ""
 	}

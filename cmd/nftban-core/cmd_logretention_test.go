@@ -180,3 +180,51 @@ func TestStatusActiveDriftAndLiveFacts(t *testing.T) {
 		t.Errorf("main policy drift not detected: %v", s2.ActivePolicyDrift)
 	}
 }
+
+// Z1: while an activation journal is present, status must NEVER report a coherent
+// verdict (least of all ACTIVE_MATCH) — it must surface INTERRUPTED_ACTIVATION.
+func TestStatusInterruptedActivationOverridesMatch(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "nftban")
+	suri := filepath.Join(dir, "nftban-suricata")
+	state := filepath.Join(dir, "state.json")
+	if _, err := lr.Generate(lr.GenerateOptions{
+		MainPath: main, SuricataPath: suri, StatePath: state,
+		Disk:      lr.DiskFacts{TotalBytes: 50 * lr.GiB, AvailBytes: 30 * lr.GiB},
+		Validator: func([]string) (string, error) { return "stub", nil },
+		Now:       time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(dir, "logs.conf")
+	_ = os.WriteFile(conf, []byte(`LOG_RETENTION_MODE="auto"`+"\n"), 0o644)
+	t.Setenv("NFTBAN_LR_STATE", state)
+	t.Setenv("NFTBAN_LR_MAIN", main)
+	t.Setenv("NFTBAN_LR_SURICATA", suri)
+	t.Setenv("NFTBAN_LR_LOGDIR", os.TempDir())
+	t.Setenv("NFTBAN_LR_NFTBANLOG", dir)
+	t.Setenv("NFTBAN_LR_CONF", conf)
+
+	// baseline: clean generation is ACTIVE_MATCH.
+	if s := buildStatus(); s.OverallState != "ACTIVE_MATCH" {
+		t.Fatalf("baseline should be ACTIVE_MATCH, got %s", s.OverallState)
+	}
+
+	// drop an activation journal (as a crash mid-activation would leave) into the
+	// staging dir Recover/status derive from the main path.
+	staging := filepath.Join(dir, ".nftban-logrotate-staging")
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "activation.journal"), []byte(`{"version":1,"entries":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := buildStatus()
+	if !s.InterruptedActivation {
+		t.Error("InterruptedActivation flag not set with a journal present")
+	}
+	if s.OverallState != "INTERRUPTED_ACTIVATION" {
+		t.Errorf("journal present must force INTERRUPTED_ACTIVATION, got %s", s.OverallState)
+	}
+}
