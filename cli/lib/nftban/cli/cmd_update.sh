@@ -579,6 +579,7 @@ _cmd_update_main_locked() {
         echo ""
         echo "  Log: $UPDATE_LOG_FILE"
         echo ""
+        _forensic_installer_slice "$_RUN_ID"
         _forensic_end "$_RUN_ID" install-fail "$result"
         return $result
     fi
@@ -808,6 +809,7 @@ _cmd_update_main_locked() {
     # v1.199 forensics: post-verify snapshot (binary swapped, timers restored,
     # install_state resolved) + close the per-run record.
     _forensic_snapshot "$_RUN_ID" post-verify
+    _forensic_installer_slice "$_RUN_ID"
     _forensic_event "$_RUN_ID" run_end "state=$_installer_state" "new_version=$new_version" "rc=0"
 
     # v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): warnings in THIS run's
