@@ -301,37 +301,17 @@ nftban_audit_summary() {
 }
 
 # =============================================================================
-# AUDIT LOG ROTATION
+# AUDIT LOG ROTATION — RETIRED (Gate B, v1.199 lifecycle-log lane)
 # =============================================================================
-
-# Rotate audit log if too large
-# Usage: nftban_audit_rotate [max_size_mb]
-nftban_audit_rotate() {
-    local max_size_mb="${1:-50}"  # Default 50MB
-
-    [[ ! -f "$NFTBAN_AUDIT_LOG" ]] && return 0
-
-    local size_bytes
-    size_bytes=$(stat -f%z "$NFTBAN_AUDIT_LOG" 2>/dev/null || stat -c%s "$NFTBAN_AUDIT_LOG" 2>/dev/null || echo "0")
-    local size_mb=$((size_bytes / 1024 / 1024))
-
-    if ((size_mb >= max_size_mb)); then
-        # Rotate with timestamp
-        local backup
-        backup="${NFTBAN_AUDIT_LOG}.$(nftban_timestamp_file)"
-        mv "$NFTBAN_AUDIT_LOG" "$backup"
-        touch "$NFTBAN_AUDIT_LOG"
-        chown nftban:nftban "$NFTBAN_AUDIT_LOG" 2>/dev/null || true
-        chmod 640 "$NFTBAN_AUDIT_LOG" 2>/dev/null || true
-
-        # Compress old audit log
-        if command -v gzip &>/dev/null; then
-            gzip "$backup" &
-        fi
-
-        nftban_audit_log "audit_rotate" "$backup" "size_exceeded:${size_mb}MB"
-    fi
-}
+# `nftban_audit_rotate` was removed. It was DEAD CODE: it had zero callers
+# anywhere in the tree (no direct call, no dynamic/generated dispatch, no timer,
+# service, cron, or maintainer-script invocation, no documented operator use, and
+# no test relied on it as an API), yet its presence + the logrotate comment
+# implied an active "in-code 50MB rotation" that never ran and would have fought
+# logrotate's copytruncate over the same inode. `logrotate` (/etc/logrotate.d/nftban,
+# installed identically on DEB and RPM) is the SINGLE rotation authority for
+# nftban-actions.log + audit.log. Do not reintroduce an in-code rotator — a
+# static guard test asserts this symbol does not return.
 
 # =============================================================================
 # EXPORT FUNCTIONS
@@ -353,7 +333,6 @@ export -f nftban_audit_search
 export -f nftban_audit_search_target
 export -f nftban_audit_search_user
 export -f nftban_audit_summary
-export -f nftban_audit_rotate
 
 # =============================================================================
 # MODULE LOADED

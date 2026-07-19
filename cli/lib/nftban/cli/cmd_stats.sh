@@ -1053,7 +1053,10 @@ nftban_stats_cmd_recent() {
         # v1.150 LOG-04: bans.log schema is DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
         # (not the 7-field Fail2Ban shape). Map the read fields to that schema.
         # shellcheck disable=SC2034  # Structured log parsing - only some fields used
-        tail -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}" | while IFS='|' read -r ban_date ban_time source ip country status reason; do
+        # Gate B: bans.log rotates via rename+create — follow by NAME (tail -F) so
+        # the live view re-opens the freshly-created file instead of clinging to the
+        # rotated-away inode and going silent after a rotation.
+        tail -F "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}" | while IFS='|' read -r ban_date ban_time source ip country status reason; do
             printf "[%s] %s %s | %-16s | %-12s | %s\n" \
                 "$(date +%H:%M:%S)" "$ban_date" "$ban_time" "$ip" "$status" "$source"
         done

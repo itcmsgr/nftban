@@ -1,6 +1,16 @@
 # NFTBan Log Rotation Configuration
 # Install to: /etc/logrotate.d/nftban
 #
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ SHIPPED BASELINE POLICY.                                                  │
+# │ On a host with the capacity-derived retention feature active, this file  │
+# │ is REGENERATED as the effective policy (see `nftban logs retention       │
+# │ status`); operators must NOT hand-edit it — overrides live in            │
+# │ /etc/nftban/conf.d/logs.conf. This baseline is the conservative fallback │
+# │ applied at install and if generation fails: it is bounded (every stanza  │
+# │ has a size trigger) but not capacity-tailored.                           │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
 # Rotates (this file enumerates EXACT paths, not a *.log wildcard — every
 # nftban-owned log must be listed in an explicit stanza below or it is NOT
 # rotated; the logs.go LogInventory() + drift-test is the bridge that proves
@@ -14,21 +24,34 @@
 # stanza (it would double-rotate the exact-path stanzas and silently mask a
 # missing inventory entry). Add new logs as explicit stanzas + a logs.go entry.
 #
-# Policy: Compress old files, keep reasonable history
+# Policy (Gate B — disk-safety):
+# - Every stanza carries a `size`/`maxsize` trigger so no log can grow unbounded
+#   between cadence runs (UNBOUNDED_STANZAS = 0).
+# - `delaycompress` is used ONLY where a writer may still hold the rotated-away
+#   inode for one cycle (rename+create writers: bans.log; Suricata eve-* via
+#   USR2). copytruncate stanzas do NOT use delaycompress — the rotated copy is a
+#   static snapshot and is compressed immediately (removing the prior waste of a
+#   permanently-uncompressed active + .1 pair on the high-volume 100M logs).
+# - copytruncate is retained for plaintext shell appenders and held-fd daemon
+#   writers (their reader/writer contract is not yet migration-tested; tracked as
+#   OPEN_COPYTRUNCATE_SAFE_PLAINTEXT_MIGRATION). Only the record-corruption cases
+#   (Suricata eve-alerts/eve-audit JSON) and the metrics source-of-truth
+#   (bans.log) move to rename+create in this release.
 
 # Main application logs
-# v1.137 (B-05): use copytruncate — these files have multiple writers
-# (daemon, watchdog, various scripts) that do NOT all reopen on a single
-# service reload, so the prior rename+create+reload approach left non-
-# login-monitor writers appending to the rotated-away inode. copytruncate
-# truncates in place so every writer keeps writing to the live file.
+# copytruncate retained here conservatively: nftban.log/login-monitor.log/
+# service-alerts.log have multiple plaintext appenders (each opens-appends-closes
+# per message, so they are technically rename+create-safe, but the full
+# reader/writer contract is not yet migration-tested — see
+# OPEN_COPYTRUNCATE_SAFE_PLAINTEXT_MIGRATION). Truncate-in-place keeps every
+# writer on the live inode with no reload.
 /var/log/nftban/nftban.log
 /var/log/nftban/login-monitor.log
 /var/log/nftban/service-alerts.log {
     weekly
     rotate 4
+    size 50M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -40,45 +63,46 @@
 # =============================================================================
 # bans.log is the SINGLE SOURCE OF TRUTH for ban activity history.
 # Used by: nftban_unified_exporter.sh, nftban_stats.sh
-# Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+# Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS
 #
-# Use copytruncate: Processes hold open file handles during reads.
-# The mv approach (used in nftban_stats_cleanup_logs) can cause data loss.
+# Gate B: rename+create (NOT copytruncate). The Go writer (internal/banlog)
+# opens O_APPEND and closes per entry under a mutex, so it re-resolves the path
+# on the next entry and lands in the freshly-created file — copytruncate's
+# copy→truncate loss window (a dropped line = a lost ban metric) is eliminated.
+# `delaycompress` is kept because a rename can momentarily precede the writer's
+# next open; the .1 stays uncompressed for one cycle so no in-flight entry is
+# compressed away. All readers use path-following (tail -F, or whole-file re-read).
 /var/log/nftban/bans.log {
     weekly
     rotate 12
+    size 10M
     compress
     delaycompress
     missingok
     notifempty
-    copytruncate
-    size 10M
     create 0640 nftban nftban
 }
 
 # Mail, queue, and maintenance logs - bash scripts appending via >>
-# Use copytruncate: safer for transient appenders, no reload needed
+# copytruncate: safe for transient appenders, no reload needed
 /var/log/nftban/mail.log
 /var/log/nftban/queue.log
 /var/log/nftban/maintenance.log {
     weekly
     rotate 4
+    size 20M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
+    create 0640 nftban nftban
 }
 
 # =============================================================================
 # Module-specific logs (DDoS, Login, Portscan, Trust)
 # =============================================================================
-# These can grow rapidly during attacks - daily rotation with size trigger
-# Use copytruncate for bash scripts appending via >>
-# v1.137: ddos.log + portscan.log are the live module operational/detection logs
-# (nftban_ddos.sh _nftban_ddos_log, nftban_portscan.sh) — previously matched by
-# no stanza (the split -classic/-suricata variants were covered, these were not)
-# → unbounded. Same policy class as the other module logs.
+# These can grow rapidly during attacks - daily rotation with size trigger.
+# copytruncate for bash appenders; no delaycompress (snapshot compresses now).
 /var/log/nftban/ddos.log
 /var/log/nftban/ddos-classic.log
 /var/log/nftban/ddos-suricata.log
@@ -89,19 +113,17 @@
 /var/log/nftban/trust.log {
     daily
     rotate 30
+    size 100M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
-    size 100M
     create 0640 nftban nftban
 }
 
 # =============================================================================
 # Additional module logs (Feeds, GeoBan, Botscan, etc.)
 # =============================================================================
-# These modules write logs that were previously missing from rotation
 /var/log/nftban/feeds.log
 /var/log/nftban/geoban.log
 /var/log/nftban/botscan.log
@@ -111,8 +133,8 @@
 /var/log/nftban/rbl.log {
     weekly
     rotate 12
+    size 50M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -122,15 +144,12 @@
 # =============================================================================
 # Security audit log (v1.150 — LOG-01)
 # =============================================================================
-# Writer: nftban_path_security.sh appends path-security audit events to
-# ${NFTBAN_LOG_DIR}/security-audit.log. Was previously matched by NO stanza
-# (this file enumerates exact paths, no *.log wildcard) → unbounded growth.
-# Same policy class as the other weekly audit/module logs.
+# Writer: nftban_path_security.sh appends path-security audit events (per-msg).
 /var/log/nftban/security-audit.log {
     weekly
     rotate 12
+    size 20M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -140,19 +159,16 @@
 # =============================================================================
 # Portscan events log (v1.150 — LOG-02)
 # =============================================================================
-# Writer: nftban_portscan_classic.sh appends per-event scan records to
-# ${NFTBAN_LOG_DIR}/portscan-events.log. High volume during an active scan and
-# was previously matched by NO stanza → unbounded growth. Daily + size cap,
-# same policy class as the other module operational logs.
+# Writer: nftban_portscan_classic.sh appends per-event scan records. High volume
+# during an active scan — daily + size cap.
 /var/log/nftban/portscan-events.log {
     daily
     rotate 30
+    size 100M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
-    size 100M
     create 0640 nftban nftban
 }
 
@@ -170,8 +186,8 @@
 /var/log/nftban/tunnel.log {
     weekly
     rotate 12
+    size 20M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -181,31 +197,32 @@
 # =============================================================================
 # Bot Guard logs (v1.20.0 — HTTP crawler detection)
 # =============================================================================
-# Bot Guard Go daemon writes classification decisions and suspect tracking
+# Bot Guard Go daemon holds these fds open for its lifetime with no reopen
+# handler → copytruncate is mandatory (rename+create would strand the daemon on
+# the rotated-away inode). Migrating this requires a daemon Reopen()+signal path
+# (tracked separately, not in this release).
 /var/log/nftban/botguard/botguard.log
 /var/log/nftban/botguard/decisions.log {
     daily
     rotate 30
+    size 100M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
-    size 100M
     create 0640 nftban nftban
 }
 
 # =============================================================================
 # Watchdog subdirectory logs (alerts, stats, profiles)
 # =============================================================================
-# These are in a subdirectory of /var/log/nftban/ and need separate rotation
 /var/log/nftban/watchdog/alerts.log
 /var/log/nftban/watchdog/stats.log
 /var/log/nftban/watchdog/profiles.log {
     weekly
     rotate 4
+    size 20M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -215,36 +232,35 @@
 # =============================================================================
 # Audit trail logs (actions + PAM audit)
 # =============================================================================
-# JSON-structured audit entries — ban/unban/config/whitelist actions + PAM events
-# Has in-code rotation at 50MB (nftban_audit_rotate) but needs logrotate as safety net
+# JSON-structured audit entries — ban/unban/config/whitelist actions + PAM events.
+# logrotate is the SINGLE rotation authority for these files (the historical
+# in-code rotator nftban_audit_rotate was dead code and has been retired — Gate B).
+# Writer opens-appends-closes per message; copytruncate retained pending the
+# plaintext/JSONL migration (OPEN_COPYTRUNCATE_SAFE_PLAINTEXT_MIGRATION).
 /var/log/nftban/nftban-actions.log
 /var/log/nftban/audit.log {
     daily
     rotate 90
+    size 50M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
-    size 50M
     create 0640 nftban nftban
 }
 
 # =============================================================================
 # Health & diagnostic logs (v1.44.0 — quality tracking)
 # =============================================================================
-# health-incidents.log: Structured hung-process incidents, auto-heal actions
-# cli-errors.log: CLI error traces from strict mode
-# debug_trace.log: Debug trace entries (can be large)
-# watchdog.log: Watchdog check results
+# debug_trace.log can be large — now bounded by the size trigger.
 /var/log/nftban/health-incidents.log
 /var/log/nftban/cli-errors.log
 /var/log/nftban/debug_trace.log
 /var/log/nftban/watchdog.log {
     weekly
     rotate 12
+    size 50M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -254,32 +270,31 @@
 # =============================================================================
 # Suricata Events Log (v1.46.0 — nftban's own suricata event processing log)
 # =============================================================================
-# This is NFTBan's suricata event processing log, NOT suricata's own logs.
-# Suricata's native logs are rotated by /etc/logrotate.d/nftban-suricata.
+# NFTBan's Go suricata daemon holds this fd open for its lifetime with no reopen
+# handler → copytruncate is mandatory (same constraint as botguard).
 /var/log/nftban/suricata-events.log {
     daily
     rotate 30
+    size 100M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
-    size 100M
     create 0640 nftban nftban
 }
 
 # =============================================================================
 # Installer + update lifecycle logs (v1.137 — B-09)
 # =============================================================================
-# Written by short-lived processes (nftban-installer, `nftban update`); were
-# previously matched by NO stanza (this file enumerates paths, no *.log
-# wildcard) → unbounded growth. copytruncate is safe for append-then-exit writers.
+# Short-lived processes (nftban-installer, `nftban update`). The Go installer
+# logger holds a single fd for the process lifetime (append-then-exit) →
+# copytruncate is the safe choice.
 /var/log/nftban/installer.log
 /var/log/nftban/update.log {
     weekly
     rotate 8
+    size 20M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
@@ -289,28 +304,26 @@
 # =============================================================================
 # Permissions audit log (v1.150 — LOG-11)
 # =============================================================================
-# Writer: nftban_permissions.sh appends permission-enforcement audit entries to
-# ${NFTBAN_VAR_DIR:-/var/lib/nftban}/permissions_audit.log. NOTE: this log lives
-# under /var/lib (the data dir), NOT /var/log — it is intentionally outside the
-# usual log directory, so it gets its own explicit stanza here. Low volume but
-# previously had no rotation → unbounded.
+# Under /var/lib (the data dir), NOT /var/log — its own explicit stanza.
 /var/lib/nftban/permissions_audit.log {
     weekly
     rotate 12
+    size 10M
     compress
-    delaycompress
     missingok
     notifempty
     copytruncate
     create 0640 nftban nftban
 }
 
-# Generated reports - monthly rotation, keep 3 months
+# Generated reports - monthly rotation, keep 3 months.
+# Report files are written whole (not appended) so they are bounded per file by
+# their generator; `maxsize` is a backstop against a pathologically large report.
 /var/lib/nftban/reports/*.html /var/lib/nftban/reports/*.txt /var/lib/nftban/reports/*.json {
     monthly
     rotate 3
+    maxsize 50M
     compress
-    delaycompress
     missingok
     notifempty
     olddir /var/lib/nftban/reports/archive
@@ -321,8 +334,8 @@
 /var/lib/nftban/reports/daily/*.html /var/lib/nftban/reports/daily/*.txt {
     monthly
     rotate 3
+    maxsize 20M
     compress
-    delaycompress
     missingok
     notifempty
 }

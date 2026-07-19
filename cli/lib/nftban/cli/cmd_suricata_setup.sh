@@ -184,7 +184,7 @@ cmd_suricata_install() {
     echo "Next steps:"
     echo "  1. Enable and start: nftban suricata enable"
     echo "  2. Check status:     nftban suricata status"
-    echo "  3. View alerts:      tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json"
+    echo "  3. View alerts:      tail -F ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json"
     echo ""
 }
 
@@ -468,7 +468,7 @@ cmd_suricata_enable() {
     echo "  Manual update: nftban suricata rules update"
     echo ""
     echo "Monitor alerts:"
-    echo "  tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
+    echo "  tail -F ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
     echo ""
     echo "Check status:"
     echo "  nftban suricata status"

@@ -7,50 +7,63 @@
 #
 # If Suricata is not installed, this file should NOT be present.
 # Remove with: rm /etc/logrotate.d/nftban-suricata
+#
+# Gate B (disk-safety):
+# - eve-alerts.json / eve-audit.json are JSON — copytruncate can truncate a
+#   partial JSON record. They already carry a `postrotate` USR2 signal (Suricata
+#   reopens its eve outputs on USR2), so they move to rename+create + USR2.
+#   `delaycompress` is REQUIRED here: USR2 reopen is asynchronous, so between the
+#   rename and Suricata processing the signal it keeps writing to the rotated-away
+#   inode; delaying compression one cycle prevents compressing a file still being
+#   written.
+# - eve-stats.json / fast.log / stats.log keep copytruncate for now (no USR2
+#   reopen wired; folded into OPEN_COPYTRUNCATE_SAFE_PLAINTEXT_MIGRATION) but gain
+#   a `size` bound so no stanza is unbounded.
 
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only
 # Ownership: suricata:nftban (Suricata writes, nftban reads)
+# rename+create + USR2 reopen (JSON record-integrity); delaycompress required.
 /var/log/nftban/suricata/eve-alerts.json {
     su suricata nftban
     daily
     rotate 7
+    size 50M
     compress
     delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
-    copytruncate
-    size 50M
     postrotate
-        # Signal Suricata to reopen log file
+        # Signal Suricata to reopen its eve outputs on the freshly-created file
         systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
     endscript
 }
 
 # Suricata eve-audit.json (optional, higher volume when enabled)
+# rename+create + USR2 reopen (JSON record-integrity); delaycompress required.
 /var/log/nftban/suricata/eve-audit.json {
     su suricata nftban
     daily
     rotate 3
+    size 100M
     compress
     delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
-    copytruncate
-    size 100M
     postrotate
         systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
     endscript
 }
 
 # Suricata eve-stats.json (optional, for capacity planning)
+# copytruncate retained (no USR2 reopen wired); size-bounded.
 /var/log/nftban/suricata/eve-stats.json {
     su suricata nftban
     weekly
     rotate 2
+    size 50M
     compress
-    delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
@@ -62,8 +75,8 @@
     su suricata nftban
     weekly
     rotate 4
+    size 50M
     compress
-    delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
@@ -75,8 +88,8 @@
     su suricata nftban
     weekly
     rotate 4
+    size 20M
     compress
-    delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
