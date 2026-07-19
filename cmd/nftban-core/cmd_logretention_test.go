@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	lr "github.com/itcmsgr/nftban/internal/logretention"
 )
@@ -127,4 +128,55 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestStatusActiveDriftAndLiveFacts(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "nftban")
+	suri := filepath.Join(dir, "nftban-suricata")
+	state := filepath.Join(dir, "state.json")
+	if _, err := lr.Generate(lr.GenerateOptions{
+		MainPath: main, SuricataPath: suri, StatePath: state,
+		Disk:      lr.DiskFacts{TotalBytes: 50 * lr.GiB, AvailBytes: 30 * lr.GiB},
+		Validator: func([]string) (string, error) { return "stub", nil },
+		Now:       time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(dir, "logs.conf")
+	_ = os.WriteFile(conf, []byte(`LOG_RETENTION_MODE="auto"`+"\n"), 0o644)
+	t.Setenv("NFTBAN_LR_STATE", state)
+	t.Setenv("NFTBAN_LR_MAIN", main)
+	t.Setenv("NFTBAN_LR_SURICATA", suri)
+	t.Setenv("NFTBAN_LR_LOGDIR", os.TempDir())
+	t.Setenv("NFTBAN_LR_NFTBANLOG", dir)
+	t.Setenv("NFTBAN_LR_CONF", conf)
+
+	// clean generation -> ACTIVE_MATCH, live fit computed, detected profile set, semantic classes present
+	s := buildStatus()
+	if s.OverallState != "ACTIVE_MATCH" {
+		t.Errorf("clean state should be ACTIVE_MATCH, got %s", s.OverallState)
+	}
+	if s.LiveFitVerdict == "" || s.DetectedProfile == "" {
+		t.Error("live fit / detected profile not populated")
+	}
+	var sawEnforcement bool
+	for _, f := range s.PerFamilyPolicy {
+		if f.SemanticClass == "ENFORCEMENT_AUDIT" {
+			sawEnforcement = true
+		}
+	}
+	if !sawEnforcement {
+		t.Error("per-family semantic class not surfaced (no ENFORCEMENT_AUDIT)")
+	}
+
+	// hand-edit the activated main policy -> content drift must be DETECTED (live re-hash)
+	_ = os.WriteFile(main, []byte("# operator hand-edit\n"), 0o644)
+	s2 := buildStatus()
+	if s2.OverallState != "ACTIVE_DRIFT" {
+		t.Errorf("hand-edit should surface ACTIVE_DRIFT, got %s", s2.OverallState)
+	}
+	if s2.ActivePolicyDrift["nftban"] != "drift" {
+		t.Errorf("main policy drift not detected: %v", s2.ActivePolicyDrift)
+	}
 }

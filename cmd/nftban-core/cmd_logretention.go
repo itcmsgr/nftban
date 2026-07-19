@@ -17,6 +17,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -69,41 +71,54 @@ func lrUsage() int {
 	return 2
 }
 
-// retentionStatus is the reported view. Fields marked as live are read at report
-// time; policy fields come from the authoritative generated-state record.
+// retentionStatus is the reported view. LIVE fields are read at report time;
+// policy fields come from the authoritative generated-state record. R9: fit is
+// RECOMPUTED from live available space, active files are RE-HASHED live (drift is
+// surfaced, never assumed from the frozen record), and detected != effective
+// profile are reported separately.
 type retentionStatus struct {
+	// overall state machine (R9): NOT_GENERATED | STATE_UNREADABLE |
+	// STATE_UNPARSEABLE | POLICY_MISSING | CAPACITY_CONFLICT | ACTIVE_DRIFT |
+	// STALE_STATE | ACTIVE_MATCH | GENERATION_FAILED
+	OverallState     string `json:"overall_state"`
 	StateAvailable   bool   `json:"state_available"`
 	StateStale       bool   `json:"state_stale"`
 	StaleReason      string `json:"stale_reason,omitempty"`
 	ValidationStatus string `json:"validation_status"`
 
 	// policy facts (from generated state)
-	PolicyVersion        string            `json:"policy_version"`
-	GeneratorVersion     string            `json:"generator_version"`
-	SourceVersion        string            `json:"source_version"`
-	PolicyMode           string            `json:"policy_mode"`
-	PolicySource         string            `json:"policy_source"`
-	DetectedProfile      string            `json:"detected_profile"`
-	EffectiveProfile     string            `json:"effective_profile"`
-	EffectiveBudgetBytes uint64            `json:"effective_budget_bytes"`
-	TheoreticalMaxBytes  uint64            `json:"theoretical_max_bytes"`
-	FitVerdict           string            `json:"fit_verdict"`
-	UnboundedStanzas     int               `json:"unbounded_stanzas"`
-	GeneratedAt          string            `json:"generated_at"`
-	GenerationReason     string            `json:"generation_reason"`
-	ActivePolicyHashes   map[string]string `json:"active_policy_hashes"`
-	PerFamilyPolicy      []lr.FamilyPolicy `json:"per_family_policy"`
+	PolicyVersion          string            `json:"policy_version"`
+	GeneratorVersion       string            `json:"generator_version"`
+	SourceVersion          string            `json:"source_version"`
+	PolicyMode             string            `json:"policy_mode"`
+	PolicySource           string            `json:"policy_source"`
+	DetectedProfile        string            `json:"detected_profile"`  // LIVE, disk-only classification NOW
+	EffectiveProfile       string            `json:"effective_profile"` // what the ACTIVE policy was generated with
+	EffectiveBudgetBytes   uint64            `json:"effective_budget_bytes"`
+	RequestedBudgetBytes   uint64            `json:"requested_budget_bytes"`
+	MinimumAchievableBytes uint64            `json:"minimum_achievable_bytes"`
+	TheoreticalMaxBytes    uint64            `json:"theoretical_max_bytes_uncompressed"`
+	ForensicFloorKind      string            `json:"forensic_floor_kind"`
+	FitVerdictAtGeneration string            `json:"fit_verdict_at_generation"`
+	LiveFitVerdict         string            `json:"live_fit_verdict"` // recomputed vs CURRENT available space
+	CapacityVerdict        string            `json:"capacity_verdict"`
+	Achievable             bool              `json:"achievable"`
+	UnboundedStanzas       int               `json:"unbounded_stanzas"`
+	GeneratedAt            string            `json:"generated_at"`
+	GenerationReason       string            `json:"generation_reason"`
+	ActivePolicyHashes     map[string]string `json:"active_policy_hashes"` // hashes recorded at generation
+	ActivePolicyDrift      map[string]string `json:"active_policy_drift"`  // path -> match|drift|missing (LIVE re-hash)
+	PerFamilyPolicy        []lr.FamilyPolicy `json:"per_family_policy"`
 
 	// live facts (read at report time)
-	OperatorOverrides        lr.Overrides `json:"operator_overrides"`
-	FilesystemPath           string       `json:"filesystem_path"`
-	FilesystemTotalBytes     uint64       `json:"filesystem_total_bytes"`
-	FilesystemAvailableBytes uint64       `json:"filesystem_available_bytes"`
-	FilesystemUsedBytes      uint64       `json:"filesystem_used_bytes"`
-	NftbanLogUsageBytes      uint64       `json:"nftban_log_usage_bytes"`
+	OperatorOverrides           lr.Overrides `json:"operator_overrides"`
+	FilesystemPath              string       `json:"filesystem_path"`
+	FilesystemTotalBytes        uint64       `json:"filesystem_total_bytes"`
+	FilesystemNonRootAvailBytes uint64       `json:"filesystem_nonroot_available_bytes"`
+	FilesystemUsedReservedBytes uint64       `json:"filesystem_used_or_reserved_bytes"` // total - non-root-avail
+	NftbanLogUsageBytes         uint64       `json:"nftban_log_usage_bytes"`
 
-	// Timer fields are intentionally OMITTED until a regeneration timer is wired
-	// (Phase 8); reporting them now would not be authoritative. bytes_reclaimed /
+	// Timer fields OMITTED until a regeneration timer is wired; bytes_reclaimed /
 	// last_cleanup_success are never reported (no durable runtime record exists).
 }
 
@@ -131,34 +146,37 @@ func lrStatusCmd(args []string) int {
 func buildStatus() retentionStatus {
 	var s retentionStatus
 
-	// live facts first (always available even without a generated state)
+	// LIVE facts first (always available even without a generated state).
 	s.FilesystemPath = lrLogDir()
+	var liveDisk lr.DiskFacts
 	if disk, err := lr.DetectDiskFacts(lrLogDir()); err == nil {
+		liveDisk = disk
 		s.FilesystemTotalBytes = disk.TotalBytes
-		s.FilesystemAvailableBytes = disk.AvailBytes
+		s.FilesystemNonRootAvailBytes = disk.AvailBytes
 		if disk.TotalBytes >= disk.AvailBytes {
-			s.FilesystemUsedBytes = disk.TotalBytes - disk.AvailBytes
+			s.FilesystemUsedReservedBytes = disk.TotalBytes - disk.AvailBytes
 		}
+		// detected profile is the LIVE disk-only classification right now.
+		s.DetectedProfile = lr.ClassifyProfile(disk, false, "").Name
 	}
 	s.NftbanLogUsageBytes = dirUsageBytes(lrNftbanLog())
 	liveOverrides, _ := lr.LoadOverrides(lrConfPath())
 	s.OperatorOverrides = liveOverrides
+	s.PolicyMode = liveOverridesMode(liveOverrides)
 
 	// policy facts from the authoritative generated-state record
 	data, err := os.ReadFile(lrStatePath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			s.ValidationStatus = "NOT_GENERATED"
+			s.ValidationStatus, s.OverallState = "NOT_GENERATED", "NOT_GENERATED"
 		} else {
-			s.ValidationStatus = "STATE_UNREADABLE"
+			s.ValidationStatus, s.OverallState = "STATE_UNREADABLE", "STATE_UNREADABLE"
 		}
-		s.PolicyMode = liveOverridesMode(liveOverrides)
 		return s
 	}
 	var gs lr.GeneratedState
 	if err := json.Unmarshal(data, &gs); err != nil {
-		s.ValidationStatus = "STATE_UNPARSEABLE"
-		s.PolicyMode = liveOverridesMode(liveOverrides)
+		s.ValidationStatus, s.OverallState = "STATE_UNPARSEABLE", "STATE_UNPARSEABLE"
 		return s
 	}
 
@@ -168,11 +186,24 @@ func buildStatus() retentionStatus {
 	s.SourceVersion = gs.SourceVersion
 	s.PolicyMode = liveOverridesMode(gs.Overrides)
 	s.PolicySource = gs.PolicySource
-	s.DetectedProfile = gs.Profile.Name
 	s.EffectiveProfile = gs.Profile.Name
+	if s.DetectedProfile == "" {
+		s.DetectedProfile = gs.Profile.Name
+	}
 	s.EffectiveBudgetBytes = gs.BudgetBytes
+	s.RequestedBudgetBytes = gs.RequestedBudgetBytes
+	s.MinimumAchievableBytes = gs.MinimumAchievableBytes
 	s.TheoreticalMaxBytes = gs.TheoreticalMaxBytes
-	s.FitVerdict = gs.FitVerdict
+	s.ForensicFloorKind = gs.ForensicFloorKind
+	s.FitVerdictAtGeneration = gs.FitVerdict
+	// R9: recompute fit against CURRENT available space (the frozen record may lie).
+	if liveDisk.TotalBytes > 0 {
+		s.LiveFitVerdict = lr.FitVerdictFor(gs.TheoreticalMaxBytes, liveDisk.AvailBytes)
+	} else {
+		s.LiveFitVerdict = gs.FitVerdict
+	}
+	s.CapacityVerdict = gs.CapacityVerdict
+	s.Achievable = gs.Achievable
 	s.UnboundedStanzas = gs.UnboundedCount
 	s.GeneratedAt = gs.GeneratedAt
 	s.GenerationReason = gs.Reason
@@ -184,14 +215,60 @@ func buildStatus() retentionStatus {
 		s.ValidationStatus = "UNVALIDATED"
 	}
 
-	// staleness: the live operator config differs from what generated the active
-	// policy → the active policy predates a config change (a regeneration is due).
-	// Compare normalized (""=="auto") so no spurious stale flag.
+	// R9: LIVE re-hash of the activated policy files vs the recorded hashes →
+	// surface content drift (a hand-edit of the generated file is otherwise
+	// invisible) and missing files.
+	s.ActivePolicyDrift = map[string]string{}
+	anyDrift, anyMissing := false, false
+	for base, recorded := range gs.ActivePolicyHashes {
+		path := lrMainPath()
+		if base == "nftban-suricata" {
+			path = lrSuriPath()
+		}
+		live := fileSHA256(path)
+		switch {
+		case live == "":
+			s.ActivePolicyDrift[base] = "missing"
+			anyMissing = true
+		case live == recorded:
+			s.ActivePolicyDrift[base] = "match"
+		default:
+			s.ActivePolicyDrift[base] = "drift"
+			anyDrift = true
+		}
+	}
+
+	// staleness: live operator config differs from what generated the active policy.
 	if normalizeOverrides(liveOverrides) != normalizeOverrides(gs.Overrides) {
 		s.StateStale = true
 		s.StaleReason = "operator config changed since last generation"
 	}
+
+	// R9 overall state machine (most-severe first).
+	switch {
+	case !gs.ValidationOK:
+		s.OverallState = "GENERATION_FAILED"
+	case anyMissing:
+		s.OverallState = "POLICY_MISSING"
+	case !gs.Achievable:
+		s.OverallState = "CAPACITY_CONFLICT"
+	case anyDrift:
+		s.OverallState = "ACTIVE_DRIFT"
+	case s.StateStale:
+		s.OverallState = "STALE_STATE"
+	default:
+		s.OverallState = "ACTIVE_MATCH"
+	}
 	return s
+}
+
+func fileSHA256(path string) string {
+	data, err := os.ReadFile(path) //nolint:gosec // status reads generator-owned policy paths
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func normalizeOverrides(o lr.Overrides) lr.Overrides {
@@ -231,42 +308,60 @@ func dirUsageBytes(root string) uint64 {
 func printStatusHuman(s retentionStatus) {
 	fmt.Println("NFTBan Log Retention — Effective Policy")
 	fmt.Println("=======================================")
-	fmt.Printf("  State:            %s%s\n", s.ValidationStatus, staleSuffix(s))
+	fmt.Printf("  Status:           %s\n", s.OverallState)
 	if s.StateAvailable {
+		fmt.Printf("  Validation:       %s\n", s.ValidationStatus)
 		fmt.Printf("  Policy version:   %s (generator %s)\n", s.PolicyVersion, s.GeneratorVersion)
 		fmt.Printf("  Source version:   %s\n", orDash(s.SourceVersion))
 		fmt.Printf("  Mode / source:    %s / %s\n", s.PolicyMode, s.PolicySource)
-		fmt.Printf("  Profile:          %s\n", s.EffectiveProfile)
+		fmt.Printf("  Profile:          effective=%s  detected-now=%s\n", s.EffectiveProfile, s.DetectedProfile)
 		fmt.Printf("  Generated at:     %s (reason: %s)\n", s.GeneratedAt, orDash(s.GenerationReason))
 	} else {
 		fmt.Printf("  Mode:             %s (no active generated policy yet)\n", s.PolicyMode)
 	}
 	fmt.Println("  --- filesystem (live) ---")
-	fmt.Printf("  %-18s %s\n", s.FilesystemPath+":", human(s.FilesystemTotalBytes)+" total, "+human(s.FilesystemAvailableBytes)+" avail, "+human(s.FilesystemUsedBytes)+" used")
+	fmt.Printf("  %-18s %s total, %s non-root-avail, %s used+reserved\n", s.FilesystemPath+":",
+		human(s.FilesystemTotalBytes), human(s.FilesystemNonRootAvailBytes), human(s.FilesystemUsedReservedBytes))
 	fmt.Printf("  /var/log/nftban:   %s in use (live)\n", human(s.NftbanLogUsageBytes))
 	if s.StateAvailable {
 		fmt.Println("  --- budget (from generated state) ---")
-		fmt.Printf("  Effective budget:  %s\n", human(s.EffectiveBudgetBytes))
-		fmt.Printf("  Theoretical max:   %s\n", human(s.TheoreticalMaxBytes))
-		fmt.Printf("  Fit verdict:       %s\n", s.FitVerdict)
-		fmt.Printf("  Unbounded stanzas: %d\n", s.UnboundedStanzas)
-		fmt.Printf("  Active hashes:     %s\n", hashSummary(s.ActivePolicyHashes))
-		fmt.Println("  --- per-family (rotate / size / retention / forensic-floor) ---")
+		fmt.Printf("  Requested / effective budget: %s / %s\n", human(s.RequestedBudgetBytes), human(s.EffectiveBudgetBytes))
+		fmt.Printf("  Min achievable (floor):       %s\n", human(s.MinimumAchievableBytes))
+		fmt.Printf("  Theoretical max (uncompressed worst-case, NOT expected disk use): %s\n", human(s.TheoreticalMaxBytes))
+		fmt.Printf("  Capacity verdict:  %s (achievable=%v)\n", s.CapacityVerdict, s.Achievable)
+		fmt.Printf("  Fit (at generation / LIVE now): %s / %s\n", s.FitVerdictAtGeneration, s.LiveFitVerdict)
+		fmt.Printf("  Forensic floor:    %s (day figures are TARGETS; size pressure may shorten elapsed days)\n", s.ForensicFloorKind)
+		fmt.Printf("  Active policy:     %s\n", driftSummary(s.ActivePolicyDrift))
+		fmt.Println("  --- per-family (class | rotate=generations / size / target-days / floor / writer) ---")
 		for _, f := range s.PerFamilyPolicy {
-			fmt.Printf("    %-18s rotate=%-3d size=%-6s ret=%-3dd floor=%-3dd worst=%s\n",
-				f.Key, f.RotateCount, human(f.SizeCapBytes), f.RetentionDays, f.ForensicFloorDays, human(f.WorstCaseBytes))
+			fmt.Printf("    %-18s %-18s rotate=%-3d size=%-6s target=%-3dd floor=%-3dd worst=%-6s %s/%s\n",
+				f.Key, f.SemanticClass, f.RotateCount, human(f.SizeCapBytes), f.RetentionDays, f.ForensicFloorDays,
+				human(f.WorstCaseBytes), f.AuthorityRole, f.WriterStrategy)
 		}
 	}
+	if s.OverallState == "ACTIVE_DRIFT" {
+		fmt.Println("\n  NOTE: an activated policy file was edited by hand (content drift). Overrides belong in /etc/nftban/conf.d/logs.conf; the generated file is derived state.")
+	}
 	if s.StateStale {
-		fmt.Printf("\n  NOTE: %s — run `nftban logs retention generate` (or wait for the next scheduled regeneration).\n", s.StaleReason)
+		fmt.Printf("\n  NOTE: %s — regenerated on the next maintenance cycle.\n", s.StaleReason)
+	}
+	if s.OverallState == "CAPACITY_CONFLICT" {
+		fmt.Println("\n  WARNING: the forensic floor exceeds the filesystem capacity — the active policy may be a preserved prior policy. Add capacity or lower LOG_RETENTION_MIN_DAYS.")
 	}
 }
 
-func staleSuffix(s retentionStatus) string {
-	if s.StateStale {
-		return " (STALE — config changed since generation)"
+func driftSummary(m map[string]string) string {
+	if len(m) == 0 {
+		return "-"
 	}
-	return ""
+	out := ""
+	for k, v := range m {
+		if out != "" {
+			out += ", "
+		}
+		out += k + "=" + v
+	}
+	return out
 }
 
 func lrGenerateCmd(args []string) int {
@@ -326,22 +421,4 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
-}
-
-func hashSummary(m map[string]string) string {
-	if len(m) == 0 {
-		return "-"
-	}
-	out := ""
-	for k, v := range m {
-		short := v
-		if len(short) > 12 {
-			short = short[:12]
-		}
-		if out != "" {
-			out += ", "
-		}
-		out += k + "=" + short
-	}
-	return out
 }

@@ -306,6 +306,13 @@ func ceilingDaysForVolume(v VolumeClass) int {
 	}
 }
 
+// FitVerdictFor recomputes the headroom fit verdict from a LIVE available-space
+// reading. The CLI uses this so `status` reflects the CURRENT filesystem, not the
+// (possibly stale) value frozen into the generated-state record.
+func FitVerdictFor(theoreticalMax, availBytes uint64) string {
+	return fitVerdict(theoreticalMax, availBytes)
+}
+
 func authorityRole(primary bool) string {
 	if primary {
 		return "authoritative"
