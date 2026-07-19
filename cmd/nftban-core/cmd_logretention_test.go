@@ -181,6 +181,90 @@ func TestStatusActiveDriftAndLiveFacts(t *testing.T) {
 	}
 }
 
+// Z7: when statfs fails, status must NOT present frozen state facts as live — the
+// disk-derived live fields become UNAVAILABLE and the overall state is
+// DEGRADED_VISIBILITY (never a false ACTIVE_MATCH built on frozen data).
+func TestStatusDegradedVisibilityOnStatfsFailure(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "nftban")
+	suri := filepath.Join(dir, "nftban-suricata")
+	state := filepath.Join(dir, "state.json")
+	if _, err := lr.Generate(lr.GenerateOptions{
+		MainPath: main, SuricataPath: suri, StatePath: state,
+		Disk:      lr.DiskFacts{TotalBytes: 50 * lr.GiB, AvailBytes: 30 * lr.GiB},
+		Validator: func([]string) (string, error) { return "stub", nil },
+		Now:       time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(dir, "logs.conf")
+	_ = os.WriteFile(conf, []byte(`LOG_RETENTION_MODE="auto"`+"\n"), 0o644)
+	t.Setenv("NFTBAN_LR_STATE", state)
+	t.Setenv("NFTBAN_LR_MAIN", main)
+	t.Setenv("NFTBAN_LR_SURICATA", suri)
+	// point the LIVE filesystem at a path that does not exist -> statfs fails.
+	t.Setenv("NFTBAN_LR_LOGDIR", filepath.Join(dir, "no-such-mount"))
+	t.Setenv("NFTBAN_LR_NFTBANLOG", dir)
+	t.Setenv("NFTBAN_LR_CONF", conf)
+
+	s := buildStatus()
+	if s.LiveDiskStatus != "UNAVAILABLE" {
+		t.Errorf("LiveDiskStatus = %q, want UNAVAILABLE", s.LiveDiskStatus)
+	}
+	if s.DetectedProfile != "UNAVAILABLE" {
+		t.Errorf("DetectedProfile = %q, want UNAVAILABLE (must not fall back to frozen)", s.DetectedProfile)
+	}
+	if s.LiveFitVerdict != "UNAVAILABLE" {
+		t.Errorf("LiveFitVerdict = %q, want UNAVAILABLE (must not fall back to frozen)", s.LiveFitVerdict)
+	}
+	// the frozen profile is still reported AS frozen, but never leaked into the live field.
+	if s.EffectiveProfile == "" || s.DetectedProfile == s.EffectiveProfile {
+		t.Errorf("frozen EffectiveProfile leaked into DetectedProfile: eff=%q det=%q", s.EffectiveProfile, s.DetectedProfile)
+	}
+	if s.OverallState != "DEGRADED_VISIBILITY" {
+		t.Errorf("OverallState = %q, want DEGRADED_VISIBILITY", s.OverallState)
+	}
+}
+
+// Z7 companion: when live disk IS readable, detected profile and live fit are
+// real (non-UNAVAILABLE) live values.
+func TestStatusLiveFactsWhenDiskReadable(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "nftban")
+	suri := filepath.Join(dir, "nftban-suricata")
+	state := filepath.Join(dir, "state.json")
+	if _, err := lr.Generate(lr.GenerateOptions{
+		MainPath: main, SuricataPath: suri, StatePath: state,
+		Disk:      lr.DiskFacts{TotalBytes: 50 * lr.GiB, AvailBytes: 30 * lr.GiB},
+		Validator: func([]string) (string, error) { return "stub", nil },
+		Now:       time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(dir, "logs.conf")
+	_ = os.WriteFile(conf, []byte(`LOG_RETENTION_MODE="auto"`+"\n"), 0o644)
+	t.Setenv("NFTBAN_LR_STATE", state)
+	t.Setenv("NFTBAN_LR_MAIN", main)
+	t.Setenv("NFTBAN_LR_SURICATA", suri)
+	t.Setenv("NFTBAN_LR_LOGDIR", os.TempDir()) // a real, statfs-able filesystem
+	t.Setenv("NFTBAN_LR_NFTBANLOG", dir)
+	t.Setenv("NFTBAN_LR_CONF", conf)
+
+	s := buildStatus()
+	if s.LiveDiskStatus != "OK" {
+		t.Errorf("LiveDiskStatus = %q, want OK", s.LiveDiskStatus)
+	}
+	if s.DetectedProfile == "" || s.DetectedProfile == "UNAVAILABLE" {
+		t.Errorf("DetectedProfile should be a live value, got %q", s.DetectedProfile)
+	}
+	if s.LiveFitVerdict == "" || s.LiveFitVerdict == "UNAVAILABLE" {
+		t.Errorf("LiveFitVerdict should be a live value, got %q", s.LiveFitVerdict)
+	}
+	if s.OverallState != "ACTIVE_MATCH" {
+		t.Errorf("OverallState = %q, want ACTIVE_MATCH", s.OverallState)
+	}
+}
+
 // Z1: while an activation journal is present, status must NEVER report a coherent
 // verdict (least of all ACTIVE_MATCH) — it must surface INTERRUPTED_ACTIVATION.
 func TestStatusInterruptedActivationOverridesMatch(t *testing.T) {

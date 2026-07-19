@@ -80,9 +80,10 @@ func lrUsage() int {
 // surfaced, never assumed from the frozen record), and detected != effective
 // profile are reported separately.
 type retentionStatus struct {
-	// overall state machine (R9/Z1): INTERRUPTED_ACTIVATION | NOT_GENERATED |
+	// overall state machine (R9/Z1/Z7): INTERRUPTED_ACTIVATION | NOT_GENERATED |
 	// STATE_UNREADABLE | STATE_UNPARSEABLE | POLICY_MISSING | CAPACITY_CONFLICT |
-	// ACTIVE_DRIFT | STALE_STATE | ACTIVE_MATCH | GENERATION_FAILED
+	// ACTIVE_DRIFT | STALE_STATE | DEGRADED_VISIBILITY | ACTIVE_MATCH |
+	// GENERATION_FAILED
 	OverallState     string `json:"overall_state"`
 	StateAvailable   bool   `json:"state_available"`
 	StateStale       bool   `json:"state_stale"`
@@ -121,6 +122,13 @@ type retentionStatus struct {
 	// Z6: self-bounded (non-logrotate) logs and their semantic class — surfaced so
 	// the classification is observable, not just internal. Static (host-independent).
 	SelfBoundedLogs []lr.SelfBoundedLog `json:"self_bounded_logs"`
+
+	// Z7: whether the LIVE filesystem facts could actually be read at report time.
+	// On statfs failure this is UNAVAILABLE and the disk-derived live fields
+	// (detected profile, live fit, total/avail) are reported as UNAVAILABLE rather
+	// than silently falling back to the FROZEN state record — status must never
+	// present frozen data as live.
+	LiveDiskStatus string `json:"live_disk_status"` // OK | UNAVAILABLE
 
 	// live facts (read at report time)
 	OperatorOverrides           lr.Overrides `json:"operator_overrides"`
@@ -161,8 +169,11 @@ func buildStatus() retentionStatus {
 	// LIVE facts first (always available even without a generated state).
 	s.FilesystemPath = lrLogDir()
 	var liveDisk lr.DiskFacts
+	liveDiskOK := false
 	if disk, err := lr.DetectDiskFacts(lrLogDir()); err == nil {
+		liveDiskOK = true
 		liveDisk = disk
+		s.LiveDiskStatus = "OK"
 		s.FilesystemTotalBytes = disk.TotalBytes
 		s.FilesystemNonRootAvailBytes = disk.AvailBytes
 		if disk.TotalBytes >= disk.AvailBytes {
@@ -170,6 +181,13 @@ func buildStatus() retentionStatus {
 		}
 		// detected profile is the LIVE disk-only classification right now.
 		s.DetectedProfile = lr.ClassifyProfile(disk, false, "").Name
+	} else {
+		// Z7: statfs failed (permission, gone mount, etc.). Report the disk-derived
+		// LIVE fields as UNAVAILABLE — never fall back to the frozen record and
+		// present it as "now".
+		s.LiveDiskStatus = "UNAVAILABLE"
+		s.DetectedProfile = liveUnavailable
+		s.LiveFitVerdict = liveUnavailable
 	}
 	s.NftbanLogUsageBytes = dirUsageBytes(lrNftbanLog())
 	s.SelfBoundedLogs = lr.SelfBoundedForensicLogs()
@@ -211,20 +229,20 @@ func buildStatus() retentionStatus {
 	s.PolicyMode = liveOverridesMode(gs.Overrides)
 	s.PolicySource = gs.PolicySource
 	s.EffectiveProfile = gs.Profile.Name
-	if s.DetectedProfile == "" {
-		s.DetectedProfile = gs.Profile.Name
-	}
+	// Z7: DetectedProfile is either the LIVE classification (set above) or
+	// UNAVAILABLE on statfs failure — it is NEVER backfilled from the frozen
+	// record, which would misrepresent a stale profile as "detected now".
 	s.EffectiveBudgetBytes = gs.BudgetBytes
 	s.RequestedBudgetBytes = gs.RequestedBudgetBytes
 	s.MinimumAchievableBytes = gs.MinimumAchievableBytes
 	s.TheoreticalMaxBytes = gs.TheoreticalMaxBytes
 	s.ForensicFloorKind = gs.ForensicFloorKind
 	s.FitVerdictAtGeneration = gs.FitVerdict
-	// R9: recompute fit against CURRENT available space (the frozen record may lie).
-	if liveDisk.TotalBytes > 0 {
+	// R9/Z7: recompute fit against CURRENT available space (the frozen record may
+	// lie). If live disk facts are unavailable, LiveFitVerdict stays UNAVAILABLE
+	// (set in the statfs-failure branch) — never the frozen FitVerdict.
+	if liveDiskOK {
 		s.LiveFitVerdict = lr.FitVerdictFor(gs.TheoreticalMaxBytes, liveDisk.AvailBytes)
-	} else {
-		s.LiveFitVerdict = gs.FitVerdict
 	}
 	s.CapacityVerdict = gs.CapacityVerdict
 	s.Achievable = gs.Achievable
@@ -284,11 +302,20 @@ func buildStatus() retentionStatus {
 		s.OverallState = "ACTIVE_DRIFT"
 	case s.StateStale:
 		s.OverallState = "STALE_STATE"
+	case !liveDiskOK:
+		// Z7: everything checkable without the disk is consistent, but statfs
+		// failed — we cannot confirm live fit/profile, so we must not claim a clean
+		// ACTIVE_MATCH. Report degraded visibility instead of a false green.
+		s.OverallState = "DEGRADED_VISIBILITY"
 	default:
 		s.OverallState = "ACTIVE_MATCH"
 	}
 	return s
 }
+
+// liveUnavailable marks a disk-derived LIVE field that could not be read at
+// report time (statfs failure) — used instead of a frozen fallback (Z7).
+const liveUnavailable = "UNAVAILABLE"
 
 func fileSHA256(path string) string {
 	data, err := os.ReadFile(path) // #nosec G304 -- status reads generator-owned policy/state paths (NFTBAN_LR_* or fixed defaults)
@@ -348,8 +375,12 @@ func printStatusHuman(s retentionStatus) {
 		fmt.Printf("  Mode:             %s (no active generated policy yet)\n", s.PolicyMode)
 	}
 	fmt.Println("  --- filesystem (live) ---")
-	fmt.Printf("  %-18s %s total, %s non-root-avail, %s used+reserved\n", s.FilesystemPath+":",
-		human(s.FilesystemTotalBytes), human(s.FilesystemNonRootAvailBytes), human(s.FilesystemUsedReservedBytes))
+	if s.LiveDiskStatus == liveUnavailable {
+		fmt.Printf("  %-18s UNAVAILABLE (statfs failed — live disk facts, profile, and fit cannot be read)\n", s.FilesystemPath+":")
+	} else {
+		fmt.Printf("  %-18s %s total, %s non-root-avail, %s used+reserved\n", s.FilesystemPath+":",
+			human(s.FilesystemTotalBytes), human(s.FilesystemNonRootAvailBytes), human(s.FilesystemUsedReservedBytes))
+	}
 	fmt.Printf("  /var/log/nftban:   %s in use (live)\n", human(s.NftbanLogUsageBytes))
 	if s.StateAvailable {
 		fmt.Println("  --- budget (from generated state) ---")
@@ -366,6 +397,9 @@ func printStatusHuman(s retentionStatus) {
 				f.Key, f.SemanticClass, f.RotateCount, human(f.SizeCapBytes), f.RetentionDays, f.ForensicFloorDays,
 				human(f.WorstCaseBytes), f.AuthorityRole, f.WriterStrategy)
 		}
+	}
+	if s.OverallState == "DEGRADED_VISIBILITY" {
+		fmt.Println("\n  NOTE: DEGRADED_VISIBILITY — the active policy's recorded checks are consistent, but live filesystem facts could not be read (statfs failed), so live fit and detected profile are UNAVAILABLE and a clean ACTIVE_MATCH cannot be confirmed. Frozen values are NOT substituted for live ones.")
 	}
 	if s.InterruptedActivation {
 		fmt.Println("\n  WARNING: a prior policy generation was interrupted (activation journal present). The on-disk policy set may be split. Run `nftban-core logretention recover` (or wait for the next maintenance cycle) — status will not report a coherent state until then.")
