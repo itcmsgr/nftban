@@ -1366,6 +1366,20 @@ _nftban_rpmnew_quarantine() (
 )
 _nftban_rpmnew_quarantine || true
 
+# --- v1.222.0 R2: generate the capacity-derived effective logrotate policy ---
+# The shipped /etc/logrotate.d/nftban is a bounded static baseline; regenerate it
+# into the profile/capacity-tailored effective policy + generated-state record.
+# NON-FATAL and fail-safe: on any failure (unachievable policy, logrotate
+# validation, etc.) the transaction preserves the previous valid policy (the
+# shipped baseline) and the package install continues.
+if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+    if /usr/lib/nftban/bin/nftban-core logretention generate install >/dev/null 2>&1; then
+        echo "[NFTBan] v1.222.0: effective log-retention policy generated (nftban logs retention status)."
+    else
+        echo "[NFTBan] WARN: log-retention policy generation skipped; the shipped bounded baseline remains active."
+    fi
+fi
+
 # Send minimal anonymous install result (fire-and-forget, one-time)
 # Reuses nftban_pro.sh infrastructure. Failure is silent.
 # INVARIANT: this is a MINIMAL signal, NOT enrollment. See state-separation invariant.
@@ -1540,7 +1554,15 @@ fi
 # Main config files
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
-%config(noreplace) /etc/logrotate.d/nftban
+# /etc/logrotate.d/nftban is GENERATED DERIVED STATE (v1.222.0), NOT operator
+# config: the shipped file is a conservative bounded baseline that %post
+# regenerates into the capacity-derived effective policy. It must NOT be
+# %config(noreplace) (that would FREEZE a stale policy on RPM while DEB refreshes
+# it — the drift the audit flagged). A plain %files entry means RPM overwrites the
+# baseline on upgrade (matching DEB's non-conffile install), then %post
+# regenerates. `rpm -V` reporting this file "modified" is expected — it is
+# regenerated at runtime; operators override retention via conf.d/logs.conf.
+/etc/logrotate.d/nftban
 %config(noreplace) /etc/sysctl.d/90-nftban.conf
 /usr/lib/tmpfiles.d/nftban.conf
 # Systemd unit globs (Layer 1 — MFST-C1 will replace these with nftban-systemd-install.inc)

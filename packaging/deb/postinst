@@ -449,6 +449,21 @@ case "$1" in
         )
         _nftban_dpkg_quarantine || true
 
+        # --- v1.222.0 R2: generate the capacity-derived effective logrotate policy ---
+        # Symmetric with the RPM %post. The shipped /etc/logrotate.d/nftban is a
+        # bounded static baseline; regenerate it into the profile/capacity-tailored
+        # effective policy + generated-state record. NON-FATAL and fail-safe: on any
+        # failure (unachievable policy, logrotate validation, etc.) the transaction
+        # preserves the previous valid policy (the shipped baseline) and the install
+        # continues. Deterministic render -> DEB and RPM produce equivalent policy.
+        if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+            if /usr/lib/nftban/bin/nftban-core logretention generate install >/dev/null 2>&1; then
+                log_info "v1.222.0: effective log-retention policy generated (nftban logs retention status)."
+            else
+                log_warn "v1.222.0: log-retention policy generation skipped; the shipped bounded baseline remains active."
+            fi
+        fi
+
         ;;
 esac
 
