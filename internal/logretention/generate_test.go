@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -89,6 +90,74 @@ func TestGenerateActivatesAndWritesState(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "state", "nftban-effective.state.json")); err != nil {
 		t.Errorf("state file not written: %v", err)
 	}
+}
+
+// Z3: a second generation with identical inputs must rewrite NOTHING — the policy
+// file keeps its inode + mtime (no churn), the state file keeps its mtime, and
+// Generate reports Unchanged. This is the 15-minute maintenance-timer case.
+func TestGenerateUnchangedIsNoWrite(t *testing.T) {
+	dir := t.TempDir()
+	mainPath := filepath.Join(dir, "logrotate.d", "nftban")
+	statePath := filepath.Join(dir, "state", "nftban-effective.state.json")
+
+	first, err := Generate(baseOpts(dir))
+	if err != nil {
+		t.Fatalf("first Generate: %v", err)
+	}
+	if first.Unchanged {
+		t.Fatal("first generation must not be reported Unchanged")
+	}
+	inoA, mtimeA := inodeMtime(t, mainPath)
+	stMtimeA := statMtime(t, statePath)
+
+	// identical inputs, later wall clock — must still be a no-op.
+	opts := baseOpts(dir)
+	opts.Now = fixedNow.Add(30 * time.Minute)
+	second, err := Generate(opts)
+	if err != nil {
+		t.Fatalf("second Generate: %v", err)
+	}
+	if !second.Unchanged {
+		t.Error("second generation with identical inputs must be Unchanged (no rewrite)")
+	}
+	inoB, mtimeB := inodeMtime(t, mainPath)
+	if inoA != inoB {
+		t.Errorf("policy inode changed on unchanged run: %d -> %d (file was rewritten)", inoA, inoB)
+	}
+	if !mtimeA.Equal(mtimeB) {
+		t.Errorf("policy mtime changed on unchanged run: %v -> %v", mtimeA, mtimeB)
+	}
+	if stMtimeB := statMtime(t, statePath); !stMtimeA.Equal(stMtimeB) {
+		t.Errorf("state file mtime changed on unchanged run: %v -> %v (state churn)", stMtimeA, stMtimeB)
+	}
+
+	// staging must be clean (no leftover temps/journal from the skipped run).
+	staging := filepath.Join(dir, "logrotate.d", ".nftban-logrotate-staging")
+	if se, _ := os.ReadDir(staging); len(se) != 0 {
+		t.Errorf("staging not clean after unchanged run: %d entries", len(se))
+	}
+}
+
+func inodeMtime(t *testing.T, path string) (uint64, time.Time) {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("inode not available on this platform")
+	}
+	return st.Ino, fi.ModTime()
+}
+
+func statMtime(t *testing.T, path string) time.Time {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.ModTime()
 }
 
 func TestGenerateFailSafeOnInvalidCandidate(t *testing.T) {

@@ -423,6 +423,13 @@ func lrGenerateCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: log-retention generation failed (previous policy preserved): %v\n", err)
 		return 1
 	}
+	if st.Unchanged {
+		// Z3: the effective policy already matches the active files — nothing was
+		// rewritten (no inode/mtime churn). This is the common maintenance-timer case.
+		fmt.Printf("Log-retention policy unchanged (no rewrite): profile=%s budget=%s theoretical-max=%s\n",
+			st.Profile.Name, human(st.BudgetBytes), human(st.TheoreticalMaxBytes))
+		return 0
+	}
 	fmt.Printf("Generated effective log-retention policy: profile=%s budget=%s theoretical-max=%s fit=%s unbounded=%d\n",
 		st.Profile.Name, human(st.BudgetBytes), human(st.TheoreticalMaxBytes), st.FitVerdict, st.UnboundedCount)
 	return 0

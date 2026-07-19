@@ -138,6 +138,10 @@ type GeneratedState struct {
 	ValidationOK           bool              `json:"validation_ok"`
 	ActivePolicyHashes     map[string]string `json:"active_policy_hashes"`
 	PreviousPolicyHashes   map[string]string `json:"previous_policy_hashes"`
+
+	// Unchanged is a RETURN-ONLY signal (never persisted): Generate set it when it
+	// detected the effective policy was already active and skipped all writes.
+	Unchanged bool `json:"-"`
 }
 
 // Generate runs the full transaction and returns the resulting state. On any
@@ -208,11 +212,18 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 			policy.CapacityVerdict, humanBytes(policy.MinimumAchievableBytes), humanBytes(policy.Disk.TotalBytes))
 	}
 
-	header := renderHeader(policy, now, opts.SourceVersion)
+	header := renderHeader(policy)
 
 	targets := []genTarget{{opts.MainPath, "main"}}
 	if opts.SuricataPath != "" {
 		targets = append(targets, genTarget{opts.SuricataPath, "suricata"})
+	}
+
+	// Render the candidate content for every target up front (a pure function of
+	// the effective policy — no volatile facts).
+	contents := make(map[string]string, len(targets))
+	for _, t := range targets {
+		contents[t.path] = header + "\n" + RenderFile(policy, opts.Families, t.file)
 	}
 
 	// R4: stage candidates + backups + the activation journal in a dot-SUBDIR of
@@ -238,12 +249,21 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 	cleanStaging := func() { _ = removeDirContents(stagingDir) }
 	cleanStaging()
 
+	// Z3: after any recovery, if EVERY active target already holds byte-identical
+	// content, the effective policy is UNCHANGED — skip the whole transaction (no
+	// rewrite, no rename, no fsync, no state churn), so a 15-minute maintenance
+	// run with unchanged inputs leaves inode/hash/mtime untouched. Requires an
+	// existing, readable, consistent state record so `status` keeps an
+	// authoritative view; otherwise we fall through and write exactly once.
+	if prev, ok := unchangedState(contents, opts.StatePath); ok {
+		return prev, nil
+	}
+
 	// 2. Render + write all candidate temps into the STAGING dir.
 	candidates := make(map[string]string, len(targets)) // targetPath -> staged temp
 	candidatePaths := make([]string, 0, len(targets))
 	for _, t := range targets {
-		content := header + "\n" + RenderFile(policy, opts.Families, t.file)
-		tmp, err := writeStaged(stagingDir, filepath.Base(t.path), content)
+		tmp, err := writeStaged(stagingDir, filepath.Base(t.path), contents[t.path])
 		if err != nil {
 			cleanStaging()
 			return GeneratedState{}, err
@@ -508,24 +528,24 @@ func acquireLock(lockPath string) (func(), error) {
 	}, nil
 }
 
-func renderHeader(p EffectivePolicy, now time.Time, src string) string {
+// renderHeader builds the STABLE file header. Z3: it contains ONLY fields that
+// are a pure function of the effective retention policy — NO generated-at
+// timestamp, NO available-bytes, NO live fit verdict, NO source version — so
+// identical inputs render a BYTE-IDENTICAL file. That is what lets the 15-minute
+// maintenance run detect "unchanged" and rewrite nothing (no inode/mtime churn,
+// no rpm/AIDE noise). Volatile facts (generated-at, available bytes, live fit,
+// source version) live ONLY in the generated-state JSON record under /var/lib,
+// which is not a packaged/verified file.
+func renderHeader(p EffectivePolicy) string {
 	var b strings.Builder
 	b.WriteString("# NFTBan log rotation — GENERATED EFFECTIVE POLICY. DO NOT EDIT.\n")
-	fmt.Fprintf(&b, "# generated=%s policy-version=%s generator-version=%s source=%s profile=%s policy-source=%s\n",
-		now.Format(time.RFC3339), p.PolicyVersion, GeneratorVersion, orNA(src), p.Profile.Name, p.PolicySource)
-	fmt.Fprintf(&b, "# basis: /var/log capacity=%s avail=%s | budget=%s theoretical-max=%s fit=%s unbounded=%d\n",
-		humanBytes(p.Disk.TotalBytes), humanBytes(p.Disk.AvailBytes),
-		humanBytes(p.BudgetBytes), humanBytes(p.TheoreticalMaxBytes), p.FitVerdict, p.UnboundedCount)
+	fmt.Fprintf(&b, "# policy-version=%s generator-version=%s profile=%s policy-source=%s\n",
+		p.PolicyVersion, GeneratorVersion, p.Profile.Name, p.PolicySource)
+	fmt.Fprintf(&b, "# capacity=%s budget=%s theoretical-max=%s unbounded=%d\n",
+		humanBytes(p.Disk.TotalBytes), humanBytes(p.BudgetBytes), humanBytes(p.TheoreticalMaxBytes), p.UnboundedCount)
 	b.WriteString("# Operator overrides live in /etc/nftban/conf.d/logs.conf. Edits to THIS file are\n")
 	b.WriteString("# lost on the next regeneration. See `nftban logs retention status`.\n")
 	return b.String()
-}
-
-func orNA(s string) string {
-	if s == "" {
-		return "n/a"
-	}
-	return s
 }
 
 func humanBytes(b uint64) string {
@@ -593,4 +613,38 @@ func hashFileOrEmpty(path string) string {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// hashString returns the SHA-256 hex of s, matching hashFileOrEmpty so a
+// candidate's in-memory content can be compared to the active file's bytes.
+func hashString(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// unchangedState reports whether EVERY target already holds byte-identical
+// content AND a readable, parseable prior state record exists — i.e. the
+// effective policy is unchanged and no write is needed (Z3). It returns that
+// prior state marked Unchanged so callers report accurately. If the state record
+// is absent/unreadable/unparseable it returns ok=false, so Generate writes
+// exactly once (status must always have an authoritative record).
+func unchangedState(contents map[string]string, statePath string) (GeneratedState, bool) {
+	if statePath == "" {
+		return GeneratedState{}, false
+	}
+	for path, content := range contents {
+		if hashFileOrEmpty(path) != hashString(content) {
+			return GeneratedState{}, false
+		}
+	}
+	data, err := os.ReadFile(statePath) // #nosec G304 -- generator-owned state path
+	if err != nil {
+		return GeneratedState{}, false
+	}
+	var gs GeneratedState
+	if err := json.Unmarshal(data, &gs); err != nil {
+		return GeneratedState{}, false
+	}
+	gs.Unchanged = true
+	return gs, true
 }
