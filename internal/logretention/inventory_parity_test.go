@@ -30,11 +30,18 @@ type stanzaPolicy struct {
 	sizeBytes     uint64
 	copytruncate  bool
 	delaycompress bool
+	su            string // Z5: "su <user> <group>" args ("" = absent)
+	create        string // "create <mode> <user> <group>" args ("" = absent)
+	olddir        string // "olddir <dir>" arg ("" = absent)
+	createolddir  string // "createolddir <mode> <user> <group>" args ("" = absent)
+	postrotate    bool   // Z5: a postrotate block is present (USR2 reintroduction vector)
 }
 
 var reStanza = regexp.MustCompile(`(?s)([^{}]*?)\{([^{}]*)\}`)
 
-// parseLogrotate parses a logrotate file into path -> stanzaPolicy.
+// parseLogrotate parses a logrotate file into path -> stanzaPolicy. Z5: parsing
+// is LINE-BASED so multi-argument directives (su/create/olddir) keep their
+// argument boundaries, and postrotate blocks are detected directly.
 func parseLogrotate(t *testing.T, path string) map[string]stanzaPolicy {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -54,18 +61,38 @@ func parseLogrotate(t *testing.T, path string) map[string]stanzaPolicy {
 	for _, m := range reStanza.FindAllStringSubmatch(clean.String(), -1) {
 		header, body := m[1], m[2]
 		sp := stanzaPolicy{}
-		for _, f := range strings.Fields(body) {
-			switch f {
+		for _, line := range strings.Split(body, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			switch fields[0] {
 			case "daily", "weekly", "monthly":
-				sp.cadence = f
+				sp.cadence = fields[0]
 			case "copytruncate":
 				sp.copytruncate = true
 			case "delaycompress":
 				sp.delaycompress = true
+			case "postrotate":
+				sp.postrotate = true
+			case "rotate":
+				if len(fields) > 1 {
+					sp.rotate, _ = strconv.Atoi(fields[1])
+				}
+			case "size", "maxsize":
+				if len(fields) > 1 {
+					sp.sizeBytes = parseSizeToken(fields[1])
+				}
+			case "su":
+				sp.su = strings.Join(fields[1:], " ")
+			case "create":
+				sp.create = strings.Join(fields[1:], " ")
+			case "olddir":
+				sp.olddir = strings.Join(fields[1:], " ")
+			case "createolddir":
+				sp.createolddir = strings.Join(fields[1:], " ")
 			}
 		}
-		sp.rotate = intDirective(body, "rotate")
-		sp.sizeBytes = sizeDirective(body)
 		for _, p := range strings.Fields(header) {
 			if strings.HasPrefix(p, "/var/") {
 				out[p] = sp
@@ -73,28 +100,6 @@ func parseLogrotate(t *testing.T, path string) map[string]stanzaPolicy {
 		}
 	}
 	return out
-}
-
-func intDirective(body, key string) int {
-	fields := strings.Fields(body)
-	for i, f := range fields {
-		if f == key && i+1 < len(fields) {
-			if n, err := strconv.Atoi(fields[i+1]); err == nil {
-				return n
-			}
-		}
-	}
-	return 0
-}
-
-func sizeDirective(body string) uint64 {
-	fields := strings.Fields(body)
-	for i, f := range fields {
-		if (f == "size" || f == "maxsize") && i+1 < len(fields) {
-			return parseSizeToken(fields[i+1])
-		}
-	}
-	return 0
 }
 
 func parseSizeToken(s string) uint64 {
@@ -188,6 +193,24 @@ func TestInventoryParityFamiliesVsTemplates(t *testing.T) {
 			}
 			if sp.delaycompress != f.Delaycompress {
 				t.Errorf("%s: delaycompress template=%v family=%v", p, sp.delaycompress, f.Delaycompress)
+			}
+			// Z5: bind su/create/olddir/createolddir and the postrotate block, so a
+			// template can never drift from the generator on the mechanism fields —
+			// in particular a reintroduced Suricata USR2 postrotate block would fail.
+			if sp.su != f.Su {
+				t.Errorf("%s: su template=%q family=%q", p, sp.su, f.Su)
+			}
+			if sp.create != f.Create {
+				t.Errorf("%s: create template=%q family=%q", p, sp.create, f.Create)
+			}
+			if sp.olddir != f.Olddir {
+				t.Errorf("%s: olddir template=%q family=%q", p, sp.olddir, f.Olddir)
+			}
+			if sp.createolddir != f.CreateOlddir {
+				t.Errorf("%s: createolddir template=%q family=%q", p, sp.createolddir, f.CreateOlddir)
+			}
+			if sp.postrotate != f.PostrotateUSR2 {
+				t.Errorf("%s: postrotate template=%v family.PostrotateUSR2=%v (Suricata USR2 reintroduction?)", p, sp.postrotate, f.PostrotateUSR2)
 			}
 		}
 	}
