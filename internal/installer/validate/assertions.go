@@ -296,15 +296,19 @@ func assertPayloadInventory(exec executor.Executor, log *logging.Logger) Asserti
 var readinessValidator lr.Validator
 
 func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
-	main := os.Getenv("NFTBAN_LR_MAIN")
-	if main == "" {
-		main = "/etc/logrotate.d/nftban"
+	envOr := func(k, def string) string {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+		return def
 	}
-	state := os.Getenv("NFTBAN_LR_STATE")
-	if state == "" {
-		state = "/var/lib/nftban/generated/logrotate/nftban-effective.state.json"
-	}
-	res := lr.Readiness(lr.ReadinessOptions{MainPath: main, StatePath: state, Validator: readinessValidator})
+	res := lr.Readiness(lr.ReadinessOptions{
+		MainPath:     envOr("NFTBAN_LR_MAIN", "/etc/logrotate.d/nftban"),
+		SuricataPath: envOr("NFTBAN_LR_SURICATA", "/etc/logrotate.d/nftban-suricata"),
+		StatePath:    envOr("NFTBAN_LR_STATE", "/var/lib/nftban/generated/logrotate/nftban-effective.state.json"),
+		TemplatePath: envOr("NFTBAN_LR_TEMPLATE", "/etc/nftban/templates/nftban.logrotate"),
+		Validator:    readinessValidator,
+	})
 	r := AssertionResult{Name: "logretention_policy_ready", Passed: res.Ready()}
 	if res.Ready() {
 		r.Detail = fmt.Sprintf("%s (source=%s)", res.Verdict, res.PolicySource)

@@ -18,6 +18,9 @@
 package validate
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,18 +36,28 @@ func newTestLogger() *logging.Logger {
 
 // seedReadyLogretention makes the logretention_policy_ready assertion PASS in a
 // mock-executor test: it points NFTBAN_LR_MAIN at a valid non-empty 0644 policy
-// (no state -> READY_FALLBACK, which is a passing verdict) and stubs the logrotate
-// validator so the check does not require logrotate. Restored on cleanup.
+// with a matching generated-state record (=> READY_GENERATED, no suricata key so
+// suricata is not applicable) and stubs the logrotate validator so the check does
+// not require logrotate. Restored on cleanup.
 func seedReadyLogretention(t *testing.T) {
 	t.Helper()
 	d := t.TempDir()
 	p := filepath.Join(d, "nftban")
-	if err := os.WriteFile(p, []byte("/var/log/nftban/bans.log {\n    daily\n}\n"), 0o644); err != nil {
+	body := "/var/log/nftban/bans.log {\n    daily\n    rotate 7\n    size 10M\n}\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.Chmod(p, 0o644) // defeat umask so the mode==0644 readiness check holds
+	sum := sha256.Sum256([]byte(body))
+	st := fmt.Sprintf(`{"active_policy_hashes":{"nftban":%q}}`, hex.EncodeToString(sum[:]))
+	s := filepath.Join(d, "state.json")
+	if err := os.WriteFile(s, []byte(st), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("NFTBAN_LR_MAIN", p)
-	t.Setenv("NFTBAN_LR_STATE", filepath.Join(d, "absent-state.json"))
+	t.Setenv("NFTBAN_LR_STATE", s)
+	t.Setenv("NFTBAN_LR_SURICATA", filepath.Join(d, "absent-suricata")) // not applicable
+	t.Setenv("NFTBAN_LR_TEMPLATE", filepath.Join(d, "absent-template"))
 	old := readinessValidator
 	readinessValidator = func([]string) (string, error) { return "ok", nil }
 	t.Cleanup(func() { readinessValidator = old })

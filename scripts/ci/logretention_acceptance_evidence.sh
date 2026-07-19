@@ -74,8 +74,11 @@ collect_status(){
     # bounded fallback). `readiness` exits non-zero on NOT_READY but still emits json.
     if [ -x "$CORE_BIN" ]; then
         "$CORE_BIN" logretention readiness --json >"$READY_JSON" 2>/dev/null || true
-        kv "READINESS_VERDICT" "$(json_field verdict "$READY_JSON")"
-        kv "READINESS_SOURCE"  "$(json_field policy_source "$READY_JSON")"
+        kv "READINESS_VERDICT"           "$(json_field verdict "$READY_JSON")"
+        kv "READINESS_SOURCE"            "$(json_field policy_source "$READY_JSON")"
+        kv "READINESS_FALLBACK_IDENTITY" "$(json_field fallback_identity_match "$READY_JSON")"
+        kv "READINESS_UNBOUNDED"         "$(json_field unbounded_stanzas "$READY_JSON")"
+        kv "READINESS_SURICATA_MATCH"    "$(json_field suricata_hash_match "$READY_JSON")"
     fi
 }
 
@@ -224,7 +227,11 @@ if [ "$CLI_PRESENT" = "1" ]; then
                 *) note "OVERALL_STATE" "must be ACTIVE_MATCH for a generated policy (got ${FIELDS[OVERALL_STATE]:-?})"; fail=1 ;;
             esac ;;
         READY_FALLBACK)
-            note "READINESS" "READY_FALLBACK (bounded template fallback active — VALID but self-heal pending)" ;;
+            note "READINESS" "READY_FALLBACK (approved bounded template fallback active — self-heal pending)"
+            # DELTA-L2: the fallback must be the EXACT approved template AND bounded,
+            # not merely syntactically valid.
+            [ "${FIELDS[READINESS_FALLBACK_IDENTITY]:-}" = "true" ] || { note "FALLBACK_IDENTITY" "must be the approved shipped template (got ${FIELDS[READINESS_FALLBACK_IDENTITY]:-?})"; fail=1; }
+            [ "${FIELDS[READINESS_UNBOUNDED]:-1}" = "0" ]          || { note "FALLBACK_UNBOUNDED" "must be 0 unbounded stanzas (got ${FIELDS[READINESS_UNBOUNDED]:-?})"; fail=1; } ;;
         *)
             note "READINESS" "must be READY_GENERATED or READY_FALLBACK (got ${FIELDS[READINESS_VERDICT]:-?}) — no valid active policy"; fail=1 ;;
     esac

@@ -3,32 +3,37 @@
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-07-19"
-// meta:description="DELTA-L1 post-generation policy-readiness invariant. After the install-time generation + fallback handling, an install may report COMMITTED ONLY if a VALID ACTIVE retention policy exists — either the generated policy (state hash matches the live file => READY_GENERATED) or a valid bounded fallback (file validates but no matching generated state => READY_FALLBACK). Anything else (missing / not-regular / empty / unreadable / wrong mode / logrotate -d invalid / unresolved activation journal / state present but hash-drifted) is NOT_READY and must drive the installer verdict to DEGRADED, never a false-clean COMMITTED. This is the derived-state OWNERSHIP boundary the static payload inventory used to (incorrectly) approximate: static payload verification -> generation/fallback -> POSTCONDITION verification (this) -> truthful install verdict. Pure + deterministic given an injected Validator; the installer assertion and the CLI both call Readiness()."
-// meta:depends="crypto/sha256,encoding/json,os,syscall"
+// meta:description="DELTA-L1/L2/L3 post-generation policy-readiness invariant. After install-time generation + fallback handling, an install may report COMMITTED ONLY if a VALID ACTIVE policy exists: the generated set (every applicable target's live hash matches the generated-state transaction => READY_GENERATED) OR the APPROVED BOUNDED fallback (the active main policy is BYTE-IDENTICAL to the shipped template and bounded, with no generated-state claim => READY_FALLBACK). DELTA-L2: READY_FALLBACK is NOT syntax-only — it requires sha256(active)==sha256(shipped template) (the fallback is a verbatim template copy) AND unbounded_stanzas==0, so an arbitrary/unbounded/hand-edited valid policy can never masquerade as the fallback. DELTA-L3: READY_GENERATED covers the WHOLE generated set — when the state records a suricata policy (applicability = authoritative state key), the live /etc/logrotate.d/nftban-suricata must exist, validate, and hash-match state; a missing/drifted/stale suricata policy => NOT_READY. Single authority: the CLI, the installer assertion, and the acceptance collector all consume one Readiness() result. Pure + deterministic given an injected Validator."
+// meta:depends="crypto/sha256,encoding/hex,encoding/json,os,strings"
 // meta:inventory.files="internal/logretention/readiness.go"
 // meta:inventory.env_vars=""
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
 // meta:inventory.binaries="logrotate"
-// meta:inventory.config_files="/etc/logrotate.d/nftban,/var/lib/nftban/generated/logrotate/nftban-effective.state.json"
-// meta:inventory.privileges="reads the generated policy + state (root in the install path)"
+// meta:inventory.config_files="/etc/logrotate.d/nftban,/etc/logrotate.d/nftban-suricata,/etc/nftban/templates/nftban.logrotate,/var/lib/nftban/generated/logrotate/nftban-effective.state.json"
+// meta:inventory.privileges="reads the generated policies + state + template (root in the install path)"
 package logretention
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
+	"strings"
 )
 
 // ReadinessVerdict is the install-readiness classification of the active policy.
 type ReadinessVerdict string
 
 const (
-	ReadyGenerated ReadinessVerdict = "READY_GENERATED" // generated policy active + state hash matches
-	ReadyFallback  ReadinessVerdict = "READY_FALLBACK"  // valid bounded fallback active (self-heal pending)
+	ReadyGenerated ReadinessVerdict = "READY_GENERATED" // whole generated set matches state
+	ReadyFallback  ReadinessVerdict = "READY_FALLBACK"  // active main == approved bounded template
 	NotReady       ReadinessVerdict = "NOT_READY"       // no valid active policy — install must be DEGRADED
 )
 
-// ReadinessResult is the structured, durable outcome of the readiness check.
+// ReadinessResult is the structured, durable outcome; every consumer (CLI,
+// installer assertion, acceptance collector) reads these fields so no consumer
+// re-implements a weaker check.
 type ReadinessResult struct {
 	Verdict          ReadinessVerdict `json:"verdict"`
 	PolicySource     string           `json:"policy_source"` // "generated" | "fallback" | "none"
@@ -36,28 +41,84 @@ type ReadinessResult struct {
 	FileMode         string           `json:"file_mode"`
 	FileBytes        int64            `json:"file_bytes"`
 	ValidationResult string           `json:"validation_result"` // "valid" | error text | "not_run"
-	Reason           string           `json:"reason,omitempty"`  // why NOT_READY
-	JournalRecovered string           `json:"journal_recovered,omitempty"`
-	Remediation      string           `json:"remediation,omitempty"`
-	SelfHealPending  bool             `json:"self_heal_pending"` // true for READY_FALLBACK
+
+	// main policy
+	ActiveMainHash   string `json:"active_main_hash"`
+	ExpectedMainHash string `json:"expected_main_hash,omitempty"` // from state (generated) or template (fallback)
+	MainHashMatch    bool   `json:"main_hash_match"`
+
+	// DELTA-L2: fallback identity + boundedness
+	FallbackIdentityMatch bool   `json:"fallback_identity_match"`
+	FallbackTemplateHash  string `json:"fallback_template_hash,omitempty"`
+	UnboundedStanzas      int    `json:"unbounded_stanzas"`
+
+	// DELTA-L3: suricata generated policy (part of the generated set)
+	SuricataApplicable bool   `json:"suricata_applicable"`
+	ActiveSuricataHash string `json:"active_suricata_hash,omitempty"`
+	ExpSuricataHash    string `json:"expected_suricata_hash,omitempty"`
+	SuricataHashMatch  bool   `json:"suricata_hash_match"`
+
+	JournalRecovered string `json:"journal_recovered,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	Remediation      string `json:"remediation,omitempty"`
+	SelfHealPending  bool   `json:"self_heal_pending"` // true for READY_FALLBACK
 }
 
 // ReadinessOptions parameterizes the check (paths + injectable validator).
 type ReadinessOptions struct {
-	MainPath  string    // active generated policy (required)
-	StatePath string    // generated-state record (may be absent -> fallback)
-	Validator Validator // nil -> DefaultValidator (real logrotate -d)
+	MainPath     string    // active generated main policy (required)
+	SuricataPath string    // active generated suricata policy ("" if not installed)
+	StatePath    string    // generated-state record (may be absent -> fallback)
+	TemplatePath string    // shipped bounded fallback template (identity source for READY_FALLBACK)
+	Validator    Validator // nil -> DefaultValidator (real logrotate -d)
 }
 
 const readinessRemediation = "run `nftban logs retention status`, then `nftban-core logretention generate install` (or restore the template), validate with `logrotate -d`, then rerun `nftban validate`"
 
-// Readiness computes the post-generation policy-readiness verdict. It is the
-// single authority both the CLI (`logretention readiness`) and the installer
-// (`logretention_policy_ready` assertion) use, so their verdicts cannot diverge.
+func sha256Hex(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
+
+// countUnboundedStanzas counts logrotate stanzas ({...} blocks) with NO `rotate`
+// directive — an unbounded stanza defeats the disk-fill guarantee. NFTBan's
+// generator and shipped template emit `rotate N` on every stanza, so a bounded
+// policy has 0. Comments are stripped so a `#` before a brace/rotate cannot fool
+// the count.
+func countUnboundedStanzas(content string) int {
+	n, depth, hasRotate := 0, 0, false
+	for _, raw := range strings.Split(content, "\n") {
+		line := raw
+		if i := strings.Index(line, "#"); i >= 0 {
+			line = line[:i]
+		}
+		if strings.Contains(line, "{") {
+			depth, hasRotate = depth+1, false
+			continue
+		}
+		if strings.Contains(line, "}") {
+			if depth > 0 {
+				if !hasRotate {
+					n++
+				}
+				depth--
+			}
+			continue
+		}
+		if depth > 0 {
+			for _, f := range strings.Fields(line) {
+				if f == "rotate" {
+					hasRotate = true
+				}
+			}
+		}
+	}
+	return n
+}
+
+// Readiness computes the post-generation policy-readiness verdict — the single
+// authority for the CLI, the installer assertion, and the acceptance collector.
 func Readiness(opts ReadinessOptions) ReadinessResult {
 	r := ReadinessResult{PolicyPath: opts.MainPath, PolicySource: "none", ValidationResult: "not_run", Remediation: readinessRemediation}
 
-	// 1. The active policy file must exist, be a regular readable non-empty file
+	// 1. The active main policy must exist, be a regular readable non-empty file
 	//    with mode 0644 (what the generator + template fail-safe produce).
 	fi, err := os.Stat(opts.MainPath)
 	if err != nil {
@@ -74,22 +135,30 @@ func Readiness(opts ReadinessOptions) ReadinessResult {
 		r.Verdict, r.Reason = NotReady, "policy file is empty"
 		return r
 	}
-	if f, e := os.Open(opts.MainPath); e != nil { // #nosec G304 -- generator-owned policy path
-		r.Verdict, r.Reason = NotReady, "policy file unreadable: "+e.Error()
+	mainBytes, rerr := os.ReadFile(opts.MainPath) // #nosec G304 -- generator-owned policy path
+	if rerr != nil {
+		r.Verdict, r.Reason = NotReady, "policy file unreadable: "+rerr.Error()
 		return r
-	} else {
-		_ = f.Close()
 	}
 	if fi.Mode().Perm() != 0o644 {
 		r.Verdict, r.Reason = NotReady, "policy file mode "+fi.Mode().Perm().String()+" != 0644"
 		return r
 	}
+	r.ActiveMainHash = sha256Hex(mainBytes)
+	r.UnboundedStanzas = countUnboundedStanzas(string(mainBytes))
 
-	// 2. No unresolved activation journal may remain — attempt deterministic
-	//    recovery first, then require it to be resolved.
+	// 2. No unresolved activation journal may remain — recover first, then require
+	//    resolution BEFORE any hash classification (hashes are meaningless over a
+	//    half-activated set).
 	if PendingActivation(opts.MainPath) {
-		if res, rerr := Recover(opts.MainPath); rerr == nil {
+		if res, recErr := Recover(opts.MainPath); recErr == nil {
 			r.JournalRecovered = res.Action
+			// the active bytes may have changed under recovery — re-read.
+			if b, e := os.ReadFile(opts.MainPath); e == nil { // #nosec G304 -- generator-owned policy path
+				mainBytes = b
+				r.ActiveMainHash = sha256Hex(mainBytes)
+				r.UnboundedStanzas = countUnboundedStanzas(string(mainBytes))
+			}
 		}
 		if PendingActivation(opts.MainPath) {
 			r.Verdict, r.Reason = NotReady, "unresolved activation journal (interrupted generation)"
@@ -97,7 +166,7 @@ func Readiness(opts ReadinessOptions) ReadinessResult {
 		}
 	}
 
-	// 3. The active policy must validate with logrotate -d (isolated temp state).
+	// 3. The active main policy must validate with logrotate -d (isolated temp state).
 	validator := opts.Validator
 	if validator == nil {
 		validator = DefaultValidator
@@ -109,31 +178,116 @@ func Readiness(opts ReadinessOptions) ReadinessResult {
 	}
 	r.ValidationResult = "valid"
 
-	// 4. Source: a matching generated-state record => GENERATED; no state (fallback
-	//    was used, which clears stale state) => FALLBACK; state present but the file
-	//    hash DRIFTED from it => real drift => NOT_READY (never masquerade as ready).
+	// 4. Classify by source.
 	data, serr := os.ReadFile(opts.StatePath) // #nosec G304 -- generator-owned state path
-	if serr != nil {
-		r.Verdict, r.PolicySource, r.SelfHealPending = ReadyFallback, "fallback", true
-		return r
-	}
 	var gs GeneratedState
-	if json.Unmarshal(data, &gs) != nil {
-		// State unparseable but the file itself is valid -> treat as fallback
-		// (bounded valid policy active), self-heal pending.
-		r.Verdict, r.PolicySource, r.SelfHealPending = ReadyFallback, "fallback", true
+	haveState := serr == nil && json.Unmarshal(data, &gs) == nil && len(gs.ActivePolicyHashes) > 0
+	if !haveState {
+		return r.classifyFallback(opts)
+	}
+	return r.classifyGenerated(opts, gs)
+}
+
+// classifyGenerated (DELTA-L3): READY_GENERATED requires EVERY applicable
+// generated target to match the same state transaction — main always, and
+// suricata when the state records it.
+func (r ReadinessResult) classifyGenerated(opts ReadinessOptions, gs GeneratedState) ReadinessResult {
+	r.PolicySource = "generated"
+	r.ExpectedMainHash = gs.ActivePolicyHashes["nftban"]
+	r.MainHashMatch = r.ActiveMainHash == r.ExpectedMainHash
+	if !r.MainHashMatch {
+		r.Verdict, r.Reason = NotReady, "active main policy hash drifted from generated state"
 		return r
 	}
-	if hashFileOrEmpty(opts.MainPath) == gs.ActivePolicyHashes["nftban"] {
-		r.Verdict, r.PolicySource = ReadyGenerated, "generated"
+
+	suriExpected, suriRecorded := gs.ActivePolicyHashes["nftban-suricata"]
+	suriFileExists := false
+	if opts.SuricataPath != "" {
+		if _, e := os.Stat(opts.SuricataPath); e == nil {
+			suriFileExists = true
+		}
+	}
+	// Applicability = the state recorded a suricata policy (authoritative — it is
+	// exactly what the generation transaction produced).
+	r.SuricataApplicable = suriRecorded
+	switch {
+	case suriRecorded:
+		r.ExpSuricataHash = suriExpected
+		if opts.SuricataPath == "" || !suriFileExists {
+			r.Verdict, r.Reason = NotReady, "generated state records a suricata policy but /etc/logrotate.d/nftban-suricata is missing"
+			return r
+		}
+		fi, err := os.Stat(opts.SuricataPath)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 {
+			r.Verdict, r.Reason = NotReady, "suricata policy not a valid regular non-empty file"
+			return r
+		}
+		if fi.Mode().Perm() != 0o644 {
+			r.Verdict, r.Reason = NotReady, "suricata policy mode "+fi.Mode().Perm().String()+" != 0644"
+			return r
+		}
+		validator := opts.Validator
+		if validator == nil {
+			validator = DefaultValidator
+		}
+		if _, verr := validator([]string{opts.SuricataPath}); verr != nil {
+			r.Verdict, r.Reason = NotReady, "suricata policy failed logrotate validation"
+			return r
+		}
+		sb, _ := os.ReadFile(opts.SuricataPath) // #nosec G304 -- generator-owned policy path
+		r.ActiveSuricataHash = sha256Hex(sb)
+		r.SuricataHashMatch = r.ActiveSuricataHash == suriExpected
+		if !r.SuricataHashMatch {
+			r.Verdict, r.Reason = NotReady, "active suricata policy hash drifted from generated state"
+			return r
+		}
+	case suriFileExists:
+		// State did NOT generate a suricata policy but a live suricata policy file
+		// exists — a stale/unmanaged policy. Do not silently ignore it.
+		r.Verdict, r.Reason = NotReady, "stale suricata policy present but not part of the generated state"
 		return r
 	}
-	r.Verdict, r.Reason = NotReady, "active policy hash drifted from generated state"
+	r.Verdict = ReadyGenerated
 	return r
 }
 
-// Ready reports whether the verdict allows a COMMITTED install (generated or
-// valid fallback). Only NOT_READY blocks COMMITTED.
+// classifyFallback (DELTA-L2): READY_FALLBACK requires the active main policy be
+// BYTE-IDENTICAL to the approved shipped template (the fallback is a verbatim
+// copy) AND bounded. A valid-syntax-but-not-the-template policy is NOT the
+// approved fallback -> NOT_READY.
+func (r ReadinessResult) classifyFallback(opts ReadinessOptions) ReadinessResult {
+	r.PolicySource = "fallback"
+	if opts.TemplatePath == "" {
+		r.Verdict, r.Reason = NotReady, "no generated state and no fallback template path to verify identity"
+		return r
+	}
+	tb, terr := os.ReadFile(opts.TemplatePath) // #nosec G304 -- packaged template path
+	if terr != nil {
+		r.Verdict, r.Reason = NotReady, "fallback template missing/unreadable: "+terr.Error()
+		return r
+	}
+	if len(tb) == 0 {
+		r.Verdict, r.Reason = NotReady, "fallback template is empty (malformed)"
+		return r
+	}
+	r.FallbackTemplateHash = sha256Hex(tb)
+	r.ExpectedMainHash = r.FallbackTemplateHash
+	r.FallbackIdentityMatch = r.ActiveMainHash == r.FallbackTemplateHash
+	r.MainHashMatch = r.FallbackIdentityMatch
+	if !r.FallbackIdentityMatch {
+		r.Verdict, r.Reason = NotReady, "FALLBACK_IDENTITY_MISMATCH: active policy is valid but is not the approved shipped bounded template"
+		return r
+	}
+	if r.UnboundedStanzas != 0 {
+		r.Verdict, r.Reason = NotReady, "fallback template contains unbounded stanzas"
+		return r
+	}
+	r.Verdict, r.SelfHealPending = ReadyFallback, true
+	return r
+}
+
+// Ready reports whether the verdict allows a COMMITTED install (generated or a
+// verified bounded fallback). Only NOT_READY blocks COMMITTED.
 func (r ReadinessResult) Ready() bool {
 	return r.Verdict == ReadyGenerated || r.Verdict == ReadyFallback
 }

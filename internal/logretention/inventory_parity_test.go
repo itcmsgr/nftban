@@ -303,6 +303,22 @@ func TestMatchTemplateStanzaNoLiteralEscape(t *testing.T) {
 // SECURITY_EVENT sets are frozen (a downgrade to a weaker class or a deletion
 // fails), and the self-bounded update-run logs (run.jsonl/human.log/installer.log)
 // are classified LIFECYCLE_FORENSICS.
+// DELTA-L2: the shipped fallback templates MUST be bounded (every stanza has a
+// rotate count). READY_FALLBACK is defined as byte-identity to these templates,
+// so their boundedness is what makes the fallback path safe.
+func TestShippedTemplatesAreBounded(t *testing.T) {
+	root := repoRoot(t)
+	for _, f := range []string{"install/config/nftban.logrotate", "install/config/nftban-suricata.logrotate"} {
+		data, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		if n := countUnboundedStanzas(string(data)); n != 0 {
+			t.Errorf("%s has %d unbounded stanza(s) — a fallback template must be bounded (every stanza needs `rotate`)", f, n)
+		}
+	}
+}
+
 func TestSemanticClassMapCompleteAndPinned(t *testing.T) {
 	fams := DefaultFamilies()
 	classMap := semanticClassMap()

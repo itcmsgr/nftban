@@ -39,6 +39,9 @@ func lrSuriPath() string  { return envOr("NFTBAN_LR_SURICATA", "/etc/logrotate.d
 func lrLogDir() string    { return envOr("NFTBAN_LR_LOGDIR", "/var/log") }
 func lrNftbanLog() string { return envOr("NFTBAN_LR_NFTBANLOG", "/var/log/nftban") }
 func lrConfPath() string  { return envOr("NFTBAN_LR_CONF", "/etc/nftban/conf.d/logs.conf") }
+func lrTemplatePath() string {
+	return envOr("NFTBAN_LR_TEMPLATE", "/etc/nftban/templates/nftban.logrotate")
+}
 
 func envOr(env, def string) string {
 	if v := os.Getenv(env); v != "" {
@@ -489,7 +492,12 @@ func lrReadinessCmd(args []string) int {
 			asJSON = true
 		}
 	}
-	r := lr.Readiness(lr.ReadinessOptions{MainPath: lrMainPath(), StatePath: lrStatePath()})
+	r := lr.Readiness(lr.ReadinessOptions{
+		MainPath:     lrMainPath(),
+		SuricataPath: lrSuriPath(),
+		StatePath:    lrStatePath(),
+		TemplatePath: lrTemplatePath(),
+	})
 	if asJSON {
 		b, err := json.MarshalIndent(r, "", "  ")
 		if err != nil {
