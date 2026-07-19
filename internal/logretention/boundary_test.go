@@ -15,7 +15,10 @@ package logretention
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func assertInvariants(t *testing.T, p EffectivePolicy) {
@@ -150,6 +153,75 @@ func TestSumOfFloorsNearCap(t *testing.T) {
 		if p.BudgetBytes < floor {
 			t.Errorf("budget %d dropped below the forensic floor %d (cap=%d)", p.BudgetBytes, floor, cap)
 		}
+	}
+}
+
+func TestCapacityVerdictFloorExceedsCapacity(t *testing.T) {
+	// A disk smaller than the sum of forensic floors is UNACHIEVABLE — the
+	// calculator must flag it, not silently emit a "fits" policy (R7).
+	disk := DiskFacts{TotalBytes: 500 * MiB, AvailBytes: 400 * MiB}
+	p := mustCalc(t, disk, ClassifyProfile(disk, false, ""), Overrides{})
+	if p.Achievable {
+		t.Error("tiny disk below Σfloors should be unachievable")
+	}
+	if p.CapacityVerdict != CapFloorOverCapacity {
+		t.Errorf("verdict = %s, want %s", p.CapacityVerdict, CapFloorOverCapacity)
+	}
+	if p.MinimumAchievableBytes <= disk.TotalBytes {
+		t.Errorf("min-achievable %d should exceed capacity %d for this case", p.MinimumAchievableBytes, disk.TotalBytes)
+	}
+}
+
+func TestGenerateRefusesUnachievablePolicy(t *testing.T) {
+	dir := t.TempDir()
+	_, err := Generate(GenerateOptions{
+		MainPath:  filepath.Join(dir, "nftban"),
+		StatePath: filepath.Join(dir, "state.json"),
+		Disk:      DiskFacts{TotalBytes: 500 * MiB, AvailBytes: 400 * MiB},
+		Validator: func([]string) (string, error) { return "stub", nil },
+		Now:       time.Now(),
+	})
+	if err == nil {
+		t.Fatal("Generate must refuse an unachievable (FLOOR_EXCEEDS_CAPACITY) policy")
+	}
+	if _, e := os.Stat(filepath.Join(dir, "state.json")); !os.IsNotExist(e) {
+		t.Error("no state should be written for a refused policy")
+	}
+	if _, e := os.Stat(filepath.Join(dir, "nftban")); !os.IsNotExist(e) {
+		t.Error("no policy file should be activated for a refused policy")
+	}
+}
+
+func TestOperatorCapExceededVerdict(t *testing.T) {
+	disk := DiskFacts{TotalBytes: 50 * GiB, AvailBytes: 40 * GiB}
+	p := mustCalc(t, disk, ClassifyProfile(disk, false, ""), Overrides{MaxBytes: 100 * MiB})
+	if !p.OperatorCapExceeded || p.CapacityVerdict != CapFloorOverOpCap {
+		t.Errorf("MaxBytes below floor: opCapExceeded=%v verdict=%s", p.OperatorCapExceeded, p.CapacityVerdict)
+	}
+	// still achievable (floor fits the big disk) and still bounded
+	if !p.Achievable {
+		t.Error("policy should be achievable on a 50G disk")
+	}
+	assertInvariants(t, p)
+}
+
+func TestForensicFloorKindAndSizeTriggered(t *testing.T) {
+	disk := DiskFacts{TotalBytes: 50 * GiB, AvailBytes: 40 * GiB}
+	p := mustCalc(t, disk, ClassifyProfile(disk, false, ""), Overrides{})
+	if p.ForensicFloorKind != "generations_and_bytes" {
+		t.Errorf("forensic floor kind = %q, want generations_and_bytes (R6)", p.ForensicFloorKind)
+	}
+	for _, f := range p.Families {
+		if !f.SizeTriggered {
+			t.Errorf("family %s not marked size-triggered (all families are size-capped)", f.Key)
+		}
+		// hard floor = generations x size = worst-case bytes
+		if uint64(f.RotateCount)*f.SizeCapBytes != f.WorstCaseBytes {
+			t.Errorf("family %s: rotate*size != worst-case (%d*%d != %d)", f.Key, f.RotateCount, f.SizeCapBytes, f.WorstCaseBytes)
+		}
+	}
+	if p.CapacityVerdict != CapAchievable {
+		t.Errorf("normal disk verdict = %s, want ACHIEVABLE", p.CapacityVerdict)
 	}
 }
 

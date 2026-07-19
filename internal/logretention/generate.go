@@ -99,24 +99,31 @@ type GenerateOptions struct {
 
 // GeneratedState is the evidence record written after a successful activation.
 type GeneratedState struct {
-	PolicyVersion        string            `json:"policy_version"`
-	GeneratorVersion     string            `json:"generator_version"`
-	GeneratedAt          string            `json:"generated_at"`
-	SourceVersion        string            `json:"source_version"`
-	Reason               string            `json:"generation_reason"`
-	Profile              Profile           `json:"profile"`
-	Disk                 DiskFacts         `json:"filesystem"`
-	Overrides            Overrides         `json:"operator_overrides"`
-	PolicySource         string            `json:"policy_source"`
-	BudgetBytes          uint64            `json:"budget_bytes"`
-	TheoreticalMaxBytes  uint64            `json:"theoretical_max_bytes"`
-	UnboundedCount       int               `json:"unbounded_stanzas"`
-	FitVerdict           string            `json:"fit_verdict"`
-	Families             []FamilyPolicy    `json:"families"` // each carries ForensicFloorDays + CeilingDays
-	ValidationCmd        string            `json:"validation_cmd"`
-	ValidationOK         bool              `json:"validation_ok"`
-	ActivePolicyHashes   map[string]string `json:"active_policy_hashes"`
-	PreviousPolicyHashes map[string]string `json:"previous_policy_hashes"`
+	PolicyVersion          string            `json:"policy_version"`
+	GeneratorVersion       string            `json:"generator_version"`
+	GeneratedAt            string            `json:"generated_at"`
+	SourceVersion          string            `json:"source_version"`
+	Reason                 string            `json:"generation_reason"`
+	Profile                Profile           `json:"profile"`
+	Disk                   DiskFacts         `json:"filesystem"`
+	Overrides              Overrides         `json:"operator_overrides"`
+	PolicySource           string            `json:"policy_source"`
+	BudgetBytes            uint64            `json:"budget_bytes"`
+	RequestedBudgetBytes   uint64            `json:"requested_budget_bytes"`
+	MinimumAchievableBytes uint64            `json:"minimum_achievable_bytes"`
+	TheoreticalMaxBytes    uint64            `json:"theoretical_max_bytes_uncompressed"`
+	UnboundedCount         int               `json:"unbounded_stanzas"`
+	FitVerdict             string            `json:"fit_verdict"`
+	CapacityVerdict        string            `json:"capacity_verdict"`
+	Achievable             bool              `json:"achievable"`
+	CapRaisedForFloor      bool              `json:"cap_raised_for_floor"`
+	OperatorCapExceeded    bool              `json:"operator_cap_exceeded"`
+	ForensicFloorKind      string            `json:"forensic_floor_kind"`
+	Families               []FamilyPolicy    `json:"families"` // each carries ForensicFloorDays + CeilingDays
+	ValidationCmd          string            `json:"validation_cmd"`
+	ValidationOK           bool              `json:"validation_ok"`
+	ActivePolicyHashes     map[string]string `json:"active_policy_hashes"`
+	PreviousPolicyHashes   map[string]string `json:"previous_policy_hashes"`
 }
 
 // Generate runs the full transaction and returns the resulting state. On any
@@ -179,6 +186,13 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 	if policy.TheoreticalMaxBytes > policy.BudgetBytes {
 		return GeneratedState{}, fmt.Errorf("logretention: theoretical max %d exceeds budget %d", policy.TheoreticalMaxBytes, policy.BudgetBytes)
 	}
+	// R7: never silently activate an impossible policy. If even the minimum
+	// forensic floor exceeds the filesystem capacity, refuse and preserve the
+	// previous valid policy — the operator must add capacity or lower floors.
+	if !policy.Achievable {
+		return GeneratedState{}, fmt.Errorf("logretention: refusing to activate an unachievable policy (%s): minimum floor %s exceeds filesystem capacity %s (raise capacity or lower LOG_RETENTION_MIN_DAYS)",
+			policy.CapacityVerdict, humanBytes(policy.MinimumAchievableBytes), humanBytes(policy.Disk.TotalBytes))
+	}
 
 	header := renderHeader(policy, now, opts.SourceVersion)
 
@@ -229,24 +243,31 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 	}
 
 	state := GeneratedState{
-		PolicyVersion:        policy.PolicyVersion,
-		GeneratorVersion:     GeneratorVersion,
-		GeneratedAt:          now.Format(time.RFC3339),
-		SourceVersion:        opts.SourceVersion,
-		Reason:               opts.Reason,
-		Profile:              prof,
-		Disk:                 disk,
-		Overrides:            opts.Overrides,
-		PolicySource:         policy.PolicySource,
-		BudgetBytes:          policy.BudgetBytes,
-		TheoreticalMaxBytes:  policy.TheoreticalMaxBytes,
-		UnboundedCount:       policy.UnboundedCount,
-		FitVerdict:           policy.FitVerdict,
-		Families:             policy.Families,
-		ValidationCmd:        validationCmd,
-		ValidationOK:         true,
-		ActivePolicyHashes:   activeHashes,
-		PreviousPolicyHashes: prevHashes,
+		PolicyVersion:          policy.PolicyVersion,
+		GeneratorVersion:       GeneratorVersion,
+		GeneratedAt:            now.Format(time.RFC3339),
+		SourceVersion:          opts.SourceVersion,
+		Reason:                 opts.Reason,
+		Profile:                prof,
+		Disk:                   disk,
+		Overrides:              opts.Overrides,
+		PolicySource:           policy.PolicySource,
+		BudgetBytes:            policy.BudgetBytes,
+		RequestedBudgetBytes:   policy.RequestedBudgetBytes,
+		MinimumAchievableBytes: policy.MinimumAchievableBytes,
+		TheoreticalMaxBytes:    policy.TheoreticalMaxBytes,
+		UnboundedCount:         policy.UnboundedCount,
+		FitVerdict:             policy.FitVerdict,
+		CapacityVerdict:        policy.CapacityVerdict,
+		Achievable:             policy.Achievable,
+		CapRaisedForFloor:      policy.CapRaisedForFloor,
+		OperatorCapExceeded:    policy.OperatorCapExceeded,
+		ForensicFloorKind:      policy.ForensicFloorKind,
+		Families:               policy.Families,
+		ValidationCmd:          validationCmd,
+		ValidationOK:           true,
+		ActivePolicyHashes:     activeHashes,
+		PreviousPolicyHashes:   prevHashes,
 	}
 	if opts.StatePath != "" {
 		if err := writeStateAtomic(opts.StatePath, state); err != nil {

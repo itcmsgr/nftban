@@ -146,29 +146,57 @@ func (o Overrides) Validate() error {
 	return nil
 }
 
-// FamilyPolicy is the calculated effective policy for one log family.
+// FamilyPolicy is the calculated effective policy for one log family. The HARD
+// forensic floor is RotateCount generations x SizeCapBytes = WorstCaseBytes; the
+// day figures are TARGETS (best-case at/under the size cap), NOT guaranteed
+// elapsed retention when size-triggered rotation fires before the cadence.
 type FamilyPolicy struct {
 	Key               string `json:"key"`
-	RotateCount       int    `json:"rotate_count"`
+	RotateCount       int    `json:"rotate_count"` // retained generations (hard floor in generations)
 	SizeCapBytes      uint64 `json:"size_cap_bytes"`
-	RetentionDays     int    `json:"retention_days"`
-	WorstCaseBytes    uint64 `json:"worst_case_bytes"` // RotateCount * SizeCapBytes (bounded)
-	ForensicFloorDays int    `json:"forensic_floor_days"`
+	RetentionDays     int    `json:"target_retention_days"`      // best-case elapsed days; size pressure may reduce actual days
+	WorstCaseBytes    uint64 `json:"worst_case_bytes"`           // RotateCount * SizeCapBytes = hard byte floor (uncompressed)
+	ForensicFloorDays int    `json:"forensic_floor_target_days"` // TARGET floor (NOT guaranteed under size pressure)
 	CeilingDays       int    `json:"ceiling_days"`
+	SizeTriggered     bool   `json:"size_triggered"` // a size cap exists -> may rotate before cadence
 }
 
 // EffectivePolicy is the calculator's full output.
 type EffectivePolicy struct {
-	BudgetBytes         uint64
-	TheoreticalMaxBytes uint64
+	BudgetBytes         uint64 // effective budget (may be raised to the min-achievable floor)
+	TheoreticalMaxBytes uint64 // UNCOMPRESSED worst-case retained bytes (compression not modeled — conservative upper bound, not expected disk use)
 	UnboundedCount      int
-	FitVerdict          string
+	FitVerdict          string // headroom vs live available space (FITS/TIGHT/OVER_HEADROOM) — volatile
 	Families            []FamilyPolicy
 	Profile             Profile
 	Disk                DiskFacts
 	PolicySource        string // "automatic" | "operator-override"
 	PolicyVersion       string
+
+	// R7 capacity/achievability (structural, vs total capacity + operator cap):
+	RequestedBudgetBytes   uint64 // capacity*pct capped by MaxBytes, BEFORE the floor raise
+	MinimumAchievableBytes uint64 // sum of per-family forensic floors (generations x minSize) + fixed worst-case
+	CapRaisedForFloor      bool   // the forensic floor forced the budget above the requested budget
+	OperatorCapExceeded    bool   // MaxBytes set but the min-achievable floor exceeds it
+	Achievable             bool   // false => the minimum policy does not fit the filesystem
+	CapacityVerdict        string // ACHIEVABLE | CAP_RAISED_FOR_FLOOR | FLOOR_EXCEEDS_OPERATOR_CAP | INSUFFICIENT_HEADROOM | FLOOR_EXCEEDS_CAPACITY
+
+	// R6 forensic-floor honesty: the hard floor is expressed in GENERATIONS +
+	// BYTES per family (rotate count x size cap). Elapsed retention DAYS are a
+	// target/best-case only — under size-triggered rotation a busy log rotates
+	// before its cadence, so real elapsed days can be shorter while the
+	// generation/byte floor still holds.
+	ForensicFloorKind string // "generations_and_bytes"
 }
+
+// Capacity verdicts (structural achievability, distinct from the headroom FitVerdict).
+const (
+	CapAchievable        = "ACHIEVABLE"
+	CapRaisedForFloor    = "CAP_RAISED_FOR_FLOOR"
+	CapFloorOverOpCap    = "FLOOR_EXCEEDS_OPERATOR_CAP"
+	CapInsufficientHead  = "INSUFFICIENT_HEADROOM"
+	CapFloorOverCapacity = "FLOOR_EXCEEDS_CAPACITY"
+)
 
 // cadenceDays returns the number of days one rotation cycle covers.
 func cadenceDays(cadence string) int {
@@ -300,13 +328,17 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 	}
 
 	// Budget from CAPACITY (stable basis), capped by an absolute override + sanity.
-	budget := disk.TotalBytes / 100 * uint64(pct)
-	if o.MaxBytes != 0 && o.MaxBytes < budget {
-		budget = o.MaxBytes
+	// `requested` is the capacity-derived budget BEFORE any forensic-floor raise
+	// (R7 — so we can report REQUESTED vs EFFECTIVE and whether the floor forced
+	// the budget up / past an operator cap / past the filesystem).
+	requested := disk.TotalBytes / 100 * uint64(pct)
+	if o.MaxBytes != 0 && o.MaxBytes < requested {
+		requested = o.MaxBytes
 	}
-	if budget > maxBudgetBytes {
-		budget = maxBudgetBytes
+	if requested > maxBudgetBytes {
+		requested = maxBudgetBytes
 	}
+	budget := requested
 
 	// Retention window + rotate come FIRST, because the minimum achievable
 	// worst-case (the floor that budget must cover) depends on the actual rotate
@@ -349,8 +381,11 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		totalWeight += f.Weight
 		work = append(work, famWork{f: f, retDays: retDays, rotate: rotate, floorDays: effMin, ceilDays: ceil})
 	}
-	if hardFloor := nonFixedFloor + fixedWorst; budget < hardFloor {
-		budget = hardFloor
+	minAchievable := nonFixedFloor + fixedWorst
+	capRaised := false
+	if budget < minAchievable {
+		budget = minAchievable // preserve the forensic floor
+		capRaised = true
 	}
 
 	distributable := budget
@@ -408,6 +443,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 			WorstCaseBytes:    worst,
 			ForensicFloorDays: w.floorDays,
 			CeilingDays:       w.ceilDays,
+			SizeTriggered:     w.size > 0, // every family is size-capped -> may rotate before cadence
 		})
 	}
 
@@ -416,16 +452,40 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		source = "operator-override"
 	}
 
+	// R7 capacity verdict (structural achievability, most-severe applicable).
+	opCapExceeded := o.MaxBytes != 0 && minAchievable > o.MaxBytes
+	achievable := true
+	capVerdict := CapAchievable
+	switch {
+	case minAchievable > disk.TotalBytes:
+		// even the minimum policy does not fit the whole filesystem — impossible.
+		achievable = false
+		capVerdict = CapFloorOverCapacity
+	case fitVerdict(theoretical, disk.AvailBytes) == FitOverHeadroom:
+		capVerdict = CapInsufficientHead
+	case opCapExceeded:
+		capVerdict = CapFloorOverOpCap
+	case capRaised:
+		capVerdict = CapRaisedForFloor
+	}
+
 	return EffectivePolicy{
-		BudgetBytes:         budget,
-		TheoreticalMaxBytes: theoretical,
-		UnboundedCount:      unbounded,
-		FitVerdict:          fitVerdict(theoretical, disk.AvailBytes),
-		Families:            families,
-		Profile:             prof,
-		Disk:                disk,
-		PolicySource:        source,
-		PolicyVersion:       PolicyVersion,
+		BudgetBytes:            budget,
+		TheoreticalMaxBytes:    theoretical,
+		UnboundedCount:         unbounded,
+		FitVerdict:             fitVerdict(theoretical, disk.AvailBytes),
+		Families:               families,
+		Profile:                prof,
+		Disk:                   disk,
+		PolicySource:           source,
+		PolicyVersion:          PolicyVersion,
+		RequestedBudgetBytes:   requested,
+		MinimumAchievableBytes: minAchievable,
+		CapRaisedForFloor:      capRaised,
+		OperatorCapExceeded:    opCapExceeded,
+		Achievable:             achievable,
+		CapacityVerdict:        capVerdict,
+		ForensicFloorKind:      "generations_and_bytes",
 	}, nil
 }
 
