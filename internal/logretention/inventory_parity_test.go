@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -293,6 +294,79 @@ func TestMatchTemplateStanzaNoLiteralEscape(t *testing.T) {
 	// ...but a glob must NOT match a different extension in the same dir.
 	if _, key, _ := matchTemplateStanza(stanzas, "/var/lib/nftban/reports/*.json"); key == "/var/lib/nftban/reports/2026-07.txt" {
 		t.Error("glob *.json incorrectly matched a .txt sibling (loose prefix, not precise Match)")
+	}
+}
+
+// Z6: the semantic class map must be COMPLETE and PINNED. Every family is
+// classified explicitly (no silent OPERATIONAL default), every map key
+// corresponds to a real family (no orphan keys), the ENFORCEMENT_AUDIT and
+// SECURITY_EVENT sets are frozen (a downgrade to a weaker class or a deletion
+// fails), and the self-bounded update-run logs (run.jsonl/human.log/installer.log)
+// are classified LIFECYCLE_FORENSICS.
+func TestSemanticClassMapCompleteAndPinned(t *testing.T) {
+	fams := DefaultFamilies()
+	classMap := semanticClassMap()
+
+	famKeys := map[string]bool{}
+	for _, f := range fams {
+		famKeys[f.Key] = true
+	}
+
+	// completeness: every family is explicitly classified (no silent default).
+	for _, f := range fams {
+		if _, ok := classMap[f.Key]; !ok {
+			t.Errorf("family %q is not explicitly classified in semanticClassMap (silent OPERATIONAL default)", f.Key)
+		}
+	}
+	// no orphan keys: every map key corresponds to a real family.
+	for k := range classMap {
+		if !famKeys[k] {
+			t.Errorf("semanticClassMap has orphan key %q (no such family)", k)
+		}
+	}
+
+	// PINNED sets — a downgrade (class change) or deletion (silent default) moves a
+	// key out of these sets and fails. Update these deliberately when the inventory
+	// legitimately changes.
+	got := map[string][]string{}
+	for k, c := range classMap {
+		got[c.class] = append(got[c.class], k)
+	}
+	assertSet(t, "ENFORCEMENT_AUDIT", got[ClassEnforcementAudit], []string{"audit", "bans"})
+	assertSet(t, "SECURITY_EVENT", got[ClassSecurityEvent], []string{
+		"permissions-audit", "security-audit", "suri-eve-alerts", "suri-eve-audit", "suri-fast", "suricata-events",
+	})
+
+	// self-bounded update-run logs are classified LIFECYCLE_FORENSICS.
+	want := map[string]bool{"run.jsonl": false, "human.log": false, "installer.log": false}
+	for _, sb := range SelfBoundedForensicLogs() {
+		if sb.SemanticClass != ClassLifecycle {
+			t.Errorf("self-bounded %s class=%s, want LIFECYCLE_FORENSICS", sb.Path, sb.SemanticClass)
+		}
+		if sb.BoundedBy == "" {
+			t.Errorf("self-bounded %s missing BoundedBy mechanism", sb.Path)
+		}
+		for name := range want {
+			if strings.HasSuffix(sb.Path, "/"+name) {
+				want[name] = true
+			}
+		}
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Errorf("update-run forensic log %q not classified in SelfBoundedForensicLogs", name)
+		}
+	}
+}
+
+func assertSet(t *testing.T, label string, got, want []string) {
+	t.Helper()
+	gs := append([]string(nil), got...)
+	ws := append([]string(nil), want...)
+	sort.Strings(gs)
+	sort.Strings(ws)
+	if strings.Join(gs, ",") != strings.Join(ws, ",") {
+		t.Errorf("%s set drift:\n  got=  %v\n  want= %v", label, gs, ws)
 	}
 }
 

@@ -118,6 +118,10 @@ type retentionStatus struct {
 	ActivePolicyDrift      map[string]string `json:"active_policy_drift"`  // path -> match|drift|missing (LIVE re-hash)
 	PerFamilyPolicy        []lr.FamilyPolicy `json:"per_family_policy"`
 
+	// Z6: self-bounded (non-logrotate) logs and their semantic class — surfaced so
+	// the classification is observable, not just internal. Static (host-independent).
+	SelfBoundedLogs []lr.SelfBoundedLog `json:"self_bounded_logs"`
+
 	// live facts (read at report time)
 	OperatorOverrides           lr.Overrides `json:"operator_overrides"`
 	FilesystemPath              string       `json:"filesystem_path"`
@@ -168,6 +172,7 @@ func buildStatus() retentionStatus {
 		s.DetectedProfile = lr.ClassifyProfile(disk, false, "").Name
 	}
 	s.NftbanLogUsageBytes = dirUsageBytes(lrNftbanLog())
+	s.SelfBoundedLogs = lr.SelfBoundedForensicLogs()
 	liveOverrides, _ := lr.LoadOverrides(lrConfPath())
 	s.OperatorOverrides = liveOverrides
 	s.PolicyMode = liveOverridesMode(liveOverrides)

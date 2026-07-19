@@ -117,15 +117,38 @@ func DefaultFamilies() []LogFamily {
 			Paths: []string{"/var/log/nftban/suricata/stats.log"}},
 	}
 
-	// R11: semantic class + authority role per family. The class is the
-	// most-sensitive class of the family's member logs (it justifies the forensic
-	// floor and is surfaced by the CLI). Anything not listed defaults to
-	// OPERATIONAL/primary below.
-	type cls struct {
-		class   string
-		primary bool
+	// R11/Z6: semantic class + authority role per family, from the AUTHORITATIVE
+	// package-level map. Every family MUST be classified there (the completeness
+	// test forbids silent defaulting); the OPERATIONAL/primary fallback here is a
+	// runtime safety net that the test guarantees is never exercised.
+	classes := semanticClassMap()
+	for i := range fams {
+		c, ok := classes[fams[i].Key]
+		if !ok {
+			c = semClass{ClassOperational, true}
+		}
+		fams[i].SemanticClass = c.class
+		fams[i].Primary = c.primary
 	}
-	classes := map[string]cls{
+	return fams
+}
+
+// semClass is a family's semantic class + authority role (primary source vs
+// projection).
+type semClass struct {
+	class   string
+	primary bool
+}
+
+// semanticClassMap is the AUTHORITATIVE family -> (semantic class, authority
+// role) mapping. The class is the most-sensitive class of the family's member
+// logs (it justifies the forensic floor and is surfaced by the CLI). Z6: the
+// completeness test binds this map both ways — every family key here must
+// correspond to a real family (no orphans) and every family must be listed here
+// (no silent default) — and pins the exact ENFORCEMENT_AUDIT and SECURITY_EVENT
+// sets so a downgrade or deletion fails.
+func semanticClassMap() map[string]semClass {
+	return map[string]semClass{
 		"bans":              {ClassEnforcementAudit, true}, // durable/temporary ban source-of-truth
 		"audit":             {ClassEnforcementAudit, true}, // ban/unban/config/whitelist + PAM audit actions
 		"security-audit":    {ClassSecurityEvent, true},    // path-security audit events
@@ -149,13 +172,32 @@ func DefaultFamilies() []LogFamily {
 		"reports-daily":     {ClassOperational, true},
 		"health-diag":       {ClassDebug, true}, // health-incidents/cli-errors/debug_trace/watchdog
 	}
-	for i := range fams {
-		c, ok := classes[fams[i].Key]
-		if !ok {
-			c = cls{ClassOperational, true}
-		}
-		fams[i].SemanticClass = c.class
-		fams[i].Primary = c.primary
+}
+
+// SelfBoundedLog is a log NOT rotated by logrotate: it is bounded by its own
+// writer/pruner. Z6 classifies these too, so the semantic-class coverage is
+// complete across ALL nftban logs, not only the logrotate-managed families —
+// the retention MECHANISM differs (prune vs rotate) but the SIEM/forensic class
+// is still declared.
+type SelfBoundedLog struct {
+	Path          string // may contain <run_id> for per-run records
+	SemanticClass string
+	BoundedBy     string // the mechanism that bounds it (not logrotate)
+}
+
+// SelfBoundedForensicLogs returns the self-bounded (non-logrotate) nftban logs
+// with their semantic class. The per-update-run record under
+// /var/log/nftban/update-runs/<run_id>/ — run.jsonl (machine JSONL stream),
+// human.log (operator slice), installer.log (per-run installer copy) — is
+// LIFECYCLE_FORENSICS, bounded by _forensic_prune (keeps a fixed number of
+// recent runs) rather than logrotate. Classifying them here closes the Z6 gap
+// where these logs had no semantic class.
+func SelfBoundedForensicLogs() []SelfBoundedLog {
+	const boundedBy = "_forensic_prune (retains a fixed number of recent update-runs)"
+	base := "/var/log/nftban/update-runs/<run_id>/"
+	return []SelfBoundedLog{
+		{base + "run.jsonl", ClassLifecycle, boundedBy},
+		{base + "human.log", ClassLifecycle, boundedBy},
+		{base + "installer.log", ClassLifecycle, boundedBy},
 	}
-	return fams
 }
