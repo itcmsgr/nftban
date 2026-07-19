@@ -159,6 +159,13 @@ type FamilyPolicy struct {
 	ForensicFloorDays int    `json:"forensic_floor_target_days"` // TARGET floor (NOT guaranteed under size pressure)
 	CeilingDays       int    `json:"ceiling_days"`
 	SizeTriggered     bool   `json:"size_triggered"` // a size cap exists -> may rotate before cadence
+
+	// R11 semantic classification (surfaced by the CLI so enforcement/security
+	// records are distinguishable from ordinary operational/debug logs).
+	SemanticClass  string `json:"semantic_class"`
+	AuthorityRole  string `json:"authority_role"`  // "authoritative" | "projection"
+	WriterStrategy string `json:"writer_strategy"` // "copytruncate" | "rename+create"
+	ReaderStrategy string `json:"reader_strategy"` // "same-inode" | "path-following"
 }
 
 // EffectivePolicy is the calculator's full output.
@@ -297,6 +304,27 @@ func ceilingDaysForVolume(v VolumeClass) int {
 	default:
 		return 120
 	}
+}
+
+func authorityRole(primary bool) string {
+	if primary {
+		return "authoritative"
+	}
+	return "projection"
+}
+
+func writerStrategy(copytruncate bool) string {
+	if copytruncate {
+		return "copytruncate"
+	}
+	return "rename+create"
+}
+
+func readerStrategy(copytruncate bool) string {
+	if copytruncate {
+		return "same-inode"
+	}
+	return "path-following"
 }
 
 // Calculate derives the effective, bounded retention policy. It is a pure
@@ -444,6 +472,10 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 			ForensicFloorDays: w.floorDays,
 			CeilingDays:       w.ceilDays,
 			SizeTriggered:     w.size > 0, // every family is size-capped -> may rotate before cadence
+			SemanticClass:     w.f.SemanticClass,
+			AuthorityRole:     authorityRole(w.f.Primary),
+			WriterStrategy:    writerStrategy(w.f.Copytruncate),
+			ReaderStrategy:    readerStrategy(w.f.Copytruncate),
 		})
 	}
 

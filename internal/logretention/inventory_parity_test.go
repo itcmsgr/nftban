@@ -216,3 +216,44 @@ func TestInventoryParityFamiliesVsLogInventory(t *testing.T) {
 		}
 	}
 }
+
+func TestSemanticClassificationAndEnforcementFloor(t *testing.T) {
+	valid := map[string]bool{
+		ClassEnforcementAudit: true, ClassSecurityEvent: true, ClassModuleHighVolume: true,
+		ClassLifecycle: true, ClassOperational: true, ClassDebug: true,
+	}
+	for _, f := range DefaultFamilies() {
+		if !valid[f.SemanticClass] {
+			t.Errorf("family %s has invalid/empty semantic class %q", f.Key, f.SemanticClass)
+		}
+	}
+	// bans + audit are the enforcement source-of-truth
+	byKey := map[string]LogFamily{}
+	for _, f := range DefaultFamilies() {
+		byKey[f.Key] = f
+	}
+	for _, k := range []string{"bans", "audit"} {
+		if byKey[k].SemanticClass != ClassEnforcementAudit || !byKey[k].Primary {
+			t.Errorf("%s should be ENFORCEMENT_AUDIT + authoritative, got %s primary=%v", k, byKey[k].SemanticClass, byKey[k].Primary)
+		}
+	}
+
+	// R11/ENFORCEMENT_FORENSIC_FLOOR: enforcement + security families keep their
+	// forensic floor even under an aggressively low operator MaxDays.
+	disk := DiskFacts{TotalBytes: 100 * GiB, AvailBytes: 80 * GiB}
+	p, err := Calculate(disk, ClassifyProfile(disk, false, ""), Overrides{MaxDays: 3}, DefaultFamilies())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fp := range p.Families {
+		lf := byKey[fp.Key]
+		if lf.SemanticClass == ClassEnforcementAudit || lf.SemanticClass == ClassSecurityEvent {
+			if fp.RetentionDays < lf.FloorDays {
+				t.Errorf("%s (%s): MaxDays=3 cut retention %dd below forensic floor %dd", fp.Key, lf.SemanticClass, fp.RetentionDays, lf.FloorDays)
+			}
+			if fp.SemanticClass != lf.SemanticClass {
+				t.Errorf("%s: FamilyPolicy semantic class %q != family %q", fp.Key, fp.SemanticClass, lf.SemanticClass)
+			}
+		}
+	}
+}

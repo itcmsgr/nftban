@@ -39,7 +39,24 @@ type LogFamily struct {
 	CreateOlddir   string // e.g. "0750 nftban nftban" ("" = omit)
 	UseMaxsize     bool   // emit `maxsize` instead of `size` (report documents)
 	PostrotateUSR2 bool   // emit the Suricata USR2 postrotate reopen block
+
+	// R11 (firewall-logs vs general-logs authority — Stream J minimum).
+	SemanticClass string // ENFORCEMENT_AUDIT | SECURITY_EVENT | MODULE_HIGH_VOLUME | LIFECYCLE_FORENSICS | OPERATIONAL | DEBUG
+	Primary       bool   // true = authoritative record; false = a projection/derived surface
 }
+
+// Semantic classes (R11). The most-sensitive class of a family's member logs
+// drives its treatment; it is surfaced in `nftban logs retention status` so the
+// operator can see which retention families are enforcement/security records vs
+// ordinary operational/debug logs.
+const (
+	ClassEnforcementAudit = "ENFORCEMENT_AUDIT"
+	ClassSecurityEvent    = "SECURITY_EVENT"
+	ClassModuleHighVolume = "MODULE_HIGH_VOLUME"
+	ClassLifecycle        = "LIFECYCLE_FORENSICS"
+	ClassOperational      = "OPERATIONAL"
+	ClassDebug            = "DEBUG"
+)
 
 // DefaultFamilies returns the canonical family inventory mirroring the corrected
 // shipped baseline templates (Gate B Phase 1).
@@ -47,7 +64,7 @@ func DefaultFamilies() []LogFamily {
 	const nft = "0640 nftban nftban"
 	const suri = "suricata nftban"
 	const suriCreate = "0640 suricata nftban"
-	return []LogFamily{
+	fams := []LogFamily{
 		{Key: "main-app", File: "main", Cadence: "weekly", Volume: VolumeMedium, Weight: 6, FloorDays: 14, BaseRotate: 4, BaseSizeBytes: 50 * MiB, Copytruncate: true, Create: nft,
 			Paths: []string{"/var/log/nftban/nftban.log", "/var/log/nftban/login-monitor.log", "/var/log/nftban/service-alerts.log"}},
 		{Key: "bans", File: "main", Cadence: "weekly", Volume: VolumeMedium, Weight: 4, FloorDays: 30, BaseRotate: 12, BaseSizeBytes: 10 * MiB, Delaycompress: true, Create: nft,
@@ -99,4 +116,46 @@ func DefaultFamilies() []LogFamily {
 		{Key: "suri-stats", File: "suricata", Cadence: "weekly", Volume: VolumeLow, Weight: 1, FloorDays: 14, BaseRotate: 4, BaseSizeBytes: 20 * MiB, Copytruncate: true, Su: suri, Create: suriCreate,
 			Paths: []string{"/var/log/nftban/suricata/stats.log"}},
 	}
+
+	// R11: semantic class + authority role per family. The class is the
+	// most-sensitive class of the family's member logs (it justifies the forensic
+	// floor and is surfaced by the CLI). Anything not listed defaults to
+	// OPERATIONAL/primary below.
+	type cls struct {
+		class   string
+		primary bool
+	}
+	classes := map[string]cls{
+		"bans":              {ClassEnforcementAudit, true}, // durable/temporary ban source-of-truth
+		"audit":             {ClassEnforcementAudit, true}, // ban/unban/config/whitelist + PAM audit actions
+		"security-audit":    {ClassSecurityEvent, true},    // path-security audit events
+		"permissions-audit": {ClassSecurityEvent, true},    // permission-enforcement audit
+		"module-daily":      {ClassModuleHighVolume, true}, // ddos/portscan/trust operational+enforcement
+		"portscan-events":   {ClassModuleHighVolume, true}, // per-event scan records
+		"botguard":          {ClassModuleHighVolume, true}, // Go daemon classification/decisions
+		"suricata-events":   {ClassSecurityEvent, true},    // NFTBan's suricata event processing log
+		"suri-eve-alerts":   {ClassSecurityEvent, true},    // Suricata alert eve JSON
+		"suri-eve-audit":    {ClassSecurityEvent, true},    // Suricata audit eve JSON
+		"suri-fast":         {ClassSecurityEvent, false},   // fast.log = projection of alerts
+		"suri-eve-stats":    {ClassOperational, false},     // stats projection
+		"suri-stats":        {ClassOperational, false},     // stats projection
+		"installer-update":  {ClassLifecycle, true},        // installer + update lifecycle
+		"feeds-group":       {ClassOperational, true},      // feeds/geoban/botscan/rbl/login_alert/cron
+		"main-app":          {ClassOperational, true},      // nftban/login-monitor/service-alerts
+		"mail-queue-maint":  {ClassOperational, true},
+		"tunnel":            {ClassOperational, true}, // advisory-only DNS-tunnel scoring
+		"watchdog-subdir":   {ClassOperational, true},
+		"reports":           {ClassOperational, true},
+		"reports-daily":     {ClassOperational, true},
+		"health-diag":       {ClassDebug, true}, // health-incidents/cli-errors/debug_trace/watchdog
+	}
+	for i := range fams {
+		c, ok := classes[fams[i].Key]
+		if !ok {
+			c = cls{ClassOperational, true}
+		}
+		fams[i].SemanticClass = c.class
+		fams[i].Primary = c.primary
+	}
+	return fams
 }
