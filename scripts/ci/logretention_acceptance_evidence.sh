@@ -88,13 +88,25 @@ kv "ACTIVE_POLICY_HASH_SURICATA" "$(policy_hash "$SURI_POLICY")"
 echo "--- authoritative status (status --json) ---"
 collect_status
 
-# Required in BOTH modes.
-for f in HOST FILESYSTEM_TOTAL_BYTES FILESYSTEM_AVAILABLE_BYTES NFTBAN_LOG_BYTES \
-         OVERALL_STATE CAPACITY_VERDICT ACHIEVABLE UNBOUNDED_STANZAS \
-         LIVE_DISK_STATUS INTERRUPTED_ACTIVATION EFFECTIVE_BUDGET_BYTES \
-         THEORETICAL_MAX_BYTES ACTIVE_POLICY_HASH_MAIN POLICY_VISIBILITY_RESULT; do
+# Baseline evidence required in BOTH modes (works on the OLD build too, which has
+# no logretention CLI — 'pre' must PASS on the pre-upgrade version).
+for f in HOST FILESYSTEM_TOTAL_BYTES FILESYSTEM_AVAILABLE_BYTES NFTBAN_LOG_BYTES; do
     require "$f"
 done
+# The status-machine fields exist only once the v1.222.0 CLI is installed. They
+# are REQUIRED whenever the CLI is present, and their absence is a hard FAIL in
+# 'post' (a post-upgrade host MUST expose the authoritative status).
+CLI_PRESENT=0
+[ "${FIELDS[POLICY_VISIBILITY_RESULT]:-}" = "OK" ] && CLI_PRESENT=1
+if [ "$CLI_PRESENT" = "1" ]; then
+    for f in OVERALL_STATE CAPACITY_VERDICT ACHIEVABLE UNBOUNDED_STANZAS \
+             LIVE_DISK_STATUS INTERRUPTED_ACTIVATION EFFECTIVE_BUDGET_BYTES \
+             THEORETICAL_MAX_BYTES ACTIVE_POLICY_HASH_MAIN; do
+        require "$f"
+    done
+elif [ "$MODE" = "post" ]; then
+    MISSING="$MISSING logretention-cli(status --json unavailable post-upgrade)"
+fi
 
 if [ "$MODE" != "post" ]; then
     finalize(){ :; }
@@ -179,14 +191,19 @@ if [ -n "$MISSING" ]; then
 else
     note "REQUIRED_EVIDENCE" "complete"
 fi
-# 2. authoritative state invariants.
-[ "${FIELDS[ACHIEVABLE]:-}" = "true" ]            || { note "ACHIEVABLE" "must be true (got ${FIELDS[ACHIEVABLE]:-?})"; fail=1; }
-[ "${FIELDS[UNBOUNDED_STANZAS]:-1}" = "0" ]       || { note "UNBOUNDED_STANZAS" "must be 0 (got ${FIELDS[UNBOUNDED_STANZAS]:-?})"; fail=1; }
-[ "${FIELDS[INTERRUPTED_ACTIVATION]:-true}" = "false" ] || { note "INTERRUPTED_ACTIVATION" "must be false (got ${FIELDS[INTERRUPTED_ACTIVATION]:-?})"; fail=1; }
-case "${FIELDS[OVERALL_STATE]:-}" in
-    ACTIVE_MATCH) note "OVERALL_STATE" "ACTIVE_MATCH" ;;
-    *) note "OVERALL_STATE" "must be ACTIVE_MATCH (got ${FIELDS[OVERALL_STATE]:-?})"; fail=1 ;;
-esac
+# 2. authoritative state invariants (only when the v1.222.0 CLI is present; the
+#    pre-upgrade baseline on the old build has no logretention subsystem).
+if [ "$CLI_PRESENT" = "1" ]; then
+    [ "${FIELDS[ACHIEVABLE]:-}" = "true" ]            || { note "ACHIEVABLE" "must be true (got ${FIELDS[ACHIEVABLE]:-?})"; fail=1; }
+    [ "${FIELDS[UNBOUNDED_STANZAS]:-1}" = "0" ]       || { note "UNBOUNDED_STANZAS" "must be 0 (got ${FIELDS[UNBOUNDED_STANZAS]:-?})"; fail=1; }
+    [ "${FIELDS[INTERRUPTED_ACTIVATION]:-true}" = "false" ] || { note "INTERRUPTED_ACTIVATION" "must be false (got ${FIELDS[INTERRUPTED_ACTIVATION]:-?})"; fail=1; }
+    case "${FIELDS[OVERALL_STATE]:-}" in
+        ACTIVE_MATCH) note "OVERALL_STATE" "ACTIVE_MATCH" ;;
+        *) note "OVERALL_STATE" "must be ACTIVE_MATCH (got ${FIELDS[OVERALL_STATE]:-?})"; fail=1 ;;
+    esac
+else
+    note "STATUS_MACHINE" "skipped (logretention CLI not present — pre-upgrade baseline)"
+fi
 if [ "$MODE" = "post" ]; then
     case "${FIELDS[WRITER_REOPEN_RESULT]:-}" in FAILED) note "WRITER_REOPEN_RESULT" "writer stranded"; fail=1 ;; esac
     case "${FIELDS[JSONL_INTEGRITY_RESULT]:-}" in FAIL*) note "JSONL_INTEGRITY_RESULT" "malformed JSONL"; fail=1 ;; esac
