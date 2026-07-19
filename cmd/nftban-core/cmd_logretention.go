@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 
 	lr "github.com/itcmsgr/nftban/internal/logretention"
+	"github.com/itcmsgr/nftban/internal/safeconv"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -358,7 +359,7 @@ func dirUsageBytes(root string) uint64 {
 		}
 		if d.Type().IsRegular() {
 			if info, e := d.Info(); e == nil && info.Size() > 0 {
-				total += uint64(info.Size())
+				total += safeconv.Int64ToUint64OrZero(info.Size())
 			}
 		}
 		return nil

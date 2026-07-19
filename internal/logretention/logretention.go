@@ -32,6 +32,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/itcmsgr/nftban/internal/safeconv"
 )
 
 // Byte-size units.
@@ -388,7 +390,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		if f.Fixed {
 			rd := f.BaseRotate * cadenceDays(f.Cadence)
 			w := famWork{f: f, rotate: f.BaseRotate, retDays: rd, size: f.BaseSizeBytes, fixed: true, floorDays: rd, ceilDays: rd}
-			fixedWorst += uint64(w.rotate) * w.size
+			fixedWorst += safeconv.ToUint64OrZero(w.rotate) * w.size
 			work = append(work, w)
 			continue
 		}
@@ -412,7 +414,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		}
 		retDays := clampInt(defaultRetentionDays(f.Volume, prof), effMin, ceil)
 		rotate := rotationsForDays(f.Cadence, retDays)
-		nonFixedFloor += uint64(rotate) * minFamilySizeBytes
+		nonFixedFloor += safeconv.ToUint64OrZero(rotate) * minFamilySizeBytes
 		totalWeight += f.Weight
 		work = append(work, famWork{f: f, retDays: retDays, rotate: rotate, floorDays: effMin, ceilDays: ceil})
 	}
@@ -440,8 +442,8 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		if w.fixed {
 			continue
 		}
-		w.share = distributable / uint64(totalWeight) * uint64(w.f.Weight)
-		size := w.share / uint64(w.rotate)
+		w.share = distributable / safeconv.ToUint64OrZero(totalWeight) * safeconv.ToUint64OrZero(w.f.Weight)
+		size := w.share / safeconv.ToUint64OrZero(w.rotate)
 		if size < minFamilySizeBytes {
 			size = minFamilySizeBytes
 		}
@@ -465,7 +467,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 	families := make([]FamilyPolicy, 0, len(work))
 	unbounded := 0
 	for _, w := range work {
-		worst := uint64(w.rotate) * w.size
+		worst := safeconv.ToUint64OrZero(w.rotate) * w.size
 		theoretical += worst
 		if w.size == 0 {
 			unbounded++
@@ -546,7 +548,7 @@ func trimToBudget(work []famWork, budget uint64) {
 	sum := func() uint64 {
 		var t uint64
 		for _, w := range work {
-			t += uint64(w.rotate) * w.size
+			t += safeconv.ToUint64OrZero(w.rotate) * w.size
 		}
 		return t
 	}
@@ -558,8 +560,8 @@ func trimToBudget(work []famWork, budget uint64) {
 		}
 	}
 	sort.SliceStable(idx, func(a, b int) bool {
-		wa := uint64(work[idx[a]].rotate) * work[idx[a]].size
-		wb := uint64(work[idx[b]].rotate) * work[idx[b]].size
+		wa := safeconv.ToUint64OrZero(work[idx[a]].rotate) * work[idx[a]].size
+		wb := safeconv.ToUint64OrZero(work[idx[b]].rotate) * work[idx[b]].size
 		if wa != wb {
 			return wa > wb
 		}

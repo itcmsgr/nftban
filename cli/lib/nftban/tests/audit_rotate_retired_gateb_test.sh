@@ -34,6 +34,9 @@ grep -Eq '^[[:space:]]*nftban_audit_rotate[[:space:]]*\(\)' "$AUDIT" && no "defi
 grep -Eq '^[[:space:]]*export -f[[:space:]]+nftban_audit_rotate\b' "$AUDIT" && no "export -f still present" || ok "no export -f nftban_audit_rotate"
 
 echo "== runtime: symbol does not resolve after sourcing the audit helper =="
+# H3-safe: capture the subshell exit INLINE with `|| rc=$?` so `set -e` cannot
+# kill the script on the subshell's signalling non-zero exit before capture.
+rc=0
 ( set +e
   # sandbox: stub the audit helper's expected env so sourcing is side-effect-free
   export NFTBAN_AUDIT_LOG="/tmp/_nftban_audit_guard_$$.log"
@@ -43,8 +46,7 @@ echo "== runtime: symbol does not resolve after sourcing the audit helper =="
   # the surviving audit API must still be present (we only removed the rotator)
   declare -F nftban_audit_log >/dev/null 2>&1 || exit 3
   exit 0
-)
-rc=$?
+) || rc=$?
 case "$rc" in
   0) ok "nftban_audit_rotate unresolved after source; nftban_audit_log preserved" ;;
   2) no "nftban_audit_rotate STILL resolves after sourcing" ;;
