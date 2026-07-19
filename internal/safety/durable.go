@@ -110,18 +110,51 @@ func WriteFileDurable(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-// DurableRename renames oldpath to newpath and fsyncs the destination directory
-// so the rename survives a power loss. Both paths must be on the same filesystem
-// (rename is atomic only within a filesystem). Used by the logretention
-// activation/rollback/recovery so every target and staging mutation is durable.
-func DurableRename(oldpath, newpath string) error {
-	if err := os.Rename(oldpath, newpath); err != nil {
-		return fmt.Errorf("durable rename %s -> %s: %w", oldpath, newpath, err)
+// RenameOutcome reports precisely what DurableRenameResult achieved, so a caller
+// can reconcile a post-rename durability failure without guessing whether the
+// rename landed.
+type RenameOutcome int
+
+const (
+	// RenameFailed: the rename did not happen — src is intact, dst unchanged.
+	RenameFailed RenameOutcome = iota
+	// RenameLandedNotDurable: the rename happened (dst now holds src's content and
+	// src is gone) but the destination-directory fsync failed, so the new
+	// directory entry is not yet durable. The returned error is the fsync error.
+	RenameLandedNotDurable
+	// RenameDurable: the rename happened and the destination directory was fsync'd.
+	RenameDurable
+)
+
+// DurableRenameResult renames src to dst and fsyncs the destination directory,
+// reporting exactly what was achieved. os.Rename+FsyncDir is NOT atomic: the
+// rename can land and the subsequent dir fsync still fail. Callers that must
+// never lose src's pre-image (e.g. a backup rename inside a transaction) MUST
+// inspect the outcome — on RenameLandedNotDurable the file is already at dst, so
+// recovering src means moving dst back; the error alone does NOT mean "nothing
+// moved". Both paths must be on the same filesystem (rename is atomic only within
+// a filesystem).
+func DurableRenameResult(src, dst string) (RenameOutcome, error) {
+	if err := os.Rename(src, dst); err != nil {
+		return RenameFailed, fmt.Errorf("durable rename %s -> %s: %w", src, dst, err)
 	}
-	if err := FsyncDir(filepath.Dir(newpath)); err != nil {
-		return fmt.Errorf("durable rename: fsync dest dir: %w", err)
+	if err := FsyncDir(filepath.Dir(dst)); err != nil {
+		return RenameLandedNotDurable, fmt.Errorf("durable rename: fsync dest dir %s: %w", filepath.Dir(dst), err)
 	}
-	return nil
+	return RenameDurable, nil
+}
+
+// DurableRename renames src to dst and fsyncs the destination directory. It is a
+// convenience wrapper over DurableRenameResult for callers where a post-rename
+// fsync failure is benign (the content has landed; a later re-run re-fsyncs).
+//
+// WARNING — non-atomic error semantics: a non-nil error may be returned AFTER the
+// rename has already landed (see RenameLandedNotDurable). Callers that must
+// preserve src's pre-image on failure MUST use DurableRenameResult and reconcile
+// against the reported outcome; DurableRename alone is unsafe for that case.
+func DurableRename(src, dst string) error {
+	_, err := DurableRenameResult(src, dst)
+	return err
 }
 
 // StageFile writes data as a fresh candidate file inside dir (a trusted staging

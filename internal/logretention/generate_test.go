@@ -221,7 +221,7 @@ func TestActivateWithRollbackRestoresBoth(t *testing.T) {
 		suriPath: filepath.Join(staging, "does-not-exist-temp"), // rename will fail
 	}
 	targets := []genTarget{{mainPath, "main"}, {suriPath, "suricata"}}
-	if err := activateWithRollback(targets, candidates, staging); err == nil {
+	if _, err := activateWithRollback(targets, candidates, staging); err == nil {
 		t.Fatal("expected activation failure on broken second candidate")
 	}
 	if got := readFile(t, mainPath); got != mSent {

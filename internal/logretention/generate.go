@@ -40,9 +40,16 @@ const prevSuffix = ".nftban-prev"
 // to safety.FsyncDir) ONLY so tests can spy on the explicit directory-fsync
 // barriers the activation/recovery paths place (staging before activation, target
 // after activation, staging after journal removal). Production always uses
-// safety.FsyncDir. (The per-rename dir fsyncs inside safety.DurableRename are
-// separate and not routed through this seam.)
+// safety.FsyncDir. (The per-rename dir fsyncs inside safety.DurableRenameResult
+// are captured through the durableRename seam below, not this one.)
 var fsyncDir = safety.FsyncDir
+
+// durableRename is the result-aware rename primitive used by the activation and
+// rollback paths. It is a package variable (bound to safety.DurableRenameResult)
+// ONLY so tests can observe rename ordering and inject a post-rename fsync
+// failure (RenameLandedNotDurable) to prove the pre-image is never lost.
+// Production always uses safety.DurableRenameResult.
+var durableRename = safety.DurableRenameResult
 
 // stagingDirFor is the dot-subdir of the target directory holding candidates,
 // backups, and the activation journal. It is NEVER scanned by the system
@@ -305,15 +312,31 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 	// journal that Recover() can actually find (its directory entry survives, not
 	// just its data). Without this the "DURABLE activation journal" guarantee only
 	// holds for the file content, not its existence, across power loss.
-	_ = fsyncDir(stagingDir)
-	if err := activateWithRollback(targets, candidates, stagingDir); err != nil {
+	//
+	// T1-B: this barrier is LOAD-BEARING — if it fails we must NOT proceed to rename
+	// any target (recovery could not rely on the journal). FsyncDir already absorbs
+	// the benign EINVAL "dir fsync unsupported" case, so a returned error is a real
+	// failure: abort before any target is touched, leaving the previous policy and
+	// state untouched (nothing has been renamed yet; dropping the journal is a
+	// roll-back to the untouched set).
+	if err := fsyncDir(stagingDir); err != nil {
 		cleanStaging()
-		return GeneratedState{}, err // both previous files restored
+		return GeneratedState{}, fmt.Errorf("logretention: staging fsync before activation: %w", err)
+	}
+	// T1-A: activateWithRollback reconciles non-atomic rename errors. On failure it
+	// tells us whether the staging/journal evidence must be PRESERVED for Recover()
+	// (a pre-image that could not be restored in-line) — in that case we must NOT
+	// clean staging, or we would destroy the only surviving previous policy.
+	if preserve, aerr := activateWithRollback(targets, candidates, stagingDir); aerr != nil {
+		if !preserve {
+			cleanStaging()
+		}
+		return GeneratedState{}, aerr // previous policy restored in-line, or preserved for Recover()
 	}
 	// Target dir fsync makes the activated policy renames durable. (Each rename in
-	// activateWithRollback already routes through safety.DurableRename, which
-	// fsyncs its destination dir; this is the explicit final barrier before we drop
-	// the journal.)
+	// activateWithRollback already routes through durableRename, which fsyncs its
+	// destination dir; this is the explicit final barrier before we drop the
+	// journal. It is redundant with the per-rename fsyncs, so it stays best-effort.)
 	_ = fsyncDir(filepath.Dir(opts.MainPath))
 	_ = os.Remove(journalPath)
 	// Make the journal REMOVAL durable too: after this fsync a re-crash sees no
@@ -369,56 +392,87 @@ type genTarget struct {
 
 // activateWithRollback backs up each existing target (rename -> stagingDir/*.prev,
 // OUT of the logrotate scan dir), renames each validated candidate into place, and
-// if ANY step fails restores every backed-up file — so the outcome is all-new or
+// if ANY step fails restores every backed-up file so the outcome is all-new or
 // all-old, never split-brain across a returned error.
-func activateWithRollback(targets []genTarget, candidates map[string]string, stagingDir string) error {
+//
+// The staged renames go through durableRename, whose error semantics are
+// NON-ATOMIC: a rename can LAND and its directory fsync still fail
+// (RenameLandedNotDurable). So on every error this reconciles against the
+// reported outcome rather than assuming "error => nothing moved". The invariant
+// is absolute: a backup durability error must NEVER leave the previous active
+// policy as the only copy sitting in staging that cleanup would then delete
+// (finding T1-A). When a target's pre-image cannot be restored, it returns
+// preserveStaging=true so the caller leaves the journal + staging intact for
+// Recover() to finish (equivalent to a crash at that point) instead of destroying
+// the recovery evidence.
+func activateWithRollback(targets []genTarget, candidates map[string]string, stagingDir string) (preserveStaging bool, err error) {
 	type undo struct {
 		path      string
-		bak       string
-		activated bool
+		bak       string // pre-image location if the target was backed up ("" if it did not exist)
+		activated bool   // the new candidate landed on the target
 	}
 	var done []undo
 
-	rollback := func() {
-		for _, u := range done {
+	// rollback restores every recorded target to its pre-image, newest first. It
+	// returns true if any target could NOT be restored — meaning the pre-image now
+	// survives only in staging/journal and must be preserved for Recover().
+	rollback := func() (mustPreserve bool) {
+		for i := len(done) - 1; i >= 0; i-- {
+			u := done[i]
 			if u.activated {
-				_ = os.Remove(u.path)
+				if rmErr := os.Remove(u.path); rmErr != nil && !os.IsNotExist(rmErr) {
+					mustPreserve = true // target state uncertain; keep evidence
+				}
 			}
 			if u.bak != "" {
-				_ = safety.DurableRename(u.bak, u.path)
+				// Restore the pre-image. The restore is itself non-atomic, but a
+				// RenameLandedNotDurable restore still means the content is back at
+				// u.path; only an outright RenameFailed leaves the pre-image solely at
+				// u.bak, which then must be preserved for Recover().
+				if o, rErr := durableRename(u.bak, u.path); rErr != nil && o == safety.RenameFailed {
+					mustPreserve = true
+				}
 			}
 		}
+		return mustPreserve
 	}
 
 	for _, t := range targets {
 		u := undo{path: t.path}
-		if _, err := os.Stat(t.path); err == nil {
+		if _, statErr := os.Stat(t.path); statErr == nil {
 			bak := backupPathFor(stagingDir, t.path)
-			// Durable backup into the staging dir (fsyncs the staging dir) so the
-			// roll-back pre-image survives a crash during the split window.
-			if err := safety.DurableRename(t.path, bak); err != nil {
-				rollback()
-				return fmt.Errorf("logretention: backup %s: %w", t.path, err)
+			// Durable backup into the staging dir. Record the pre-image location the
+			// moment the rename may have LANDED (any outcome but RenameFailed), BEFORE
+			// handling the error, so rollback/preserve can never lose it (T1-A).
+			o, rErr := durableRename(t.path, bak)
+			if o != safety.RenameFailed {
+				u.bak = bak
 			}
-			u.bak = bak
-		}
-		// Durable activation into the target dir (fsyncs the target dir).
-		if err := safety.DurableRename(candidates[t.path], t.path); err != nil {
-			if u.bak != "" {
-				_ = safety.DurableRename(u.bak, t.path)
+			done = append(done, u)
+			if rErr != nil {
+				return rollback(), fmt.Errorf("logretention: backup %s: %w", t.path, rErr)
 			}
-			rollback()
-			return fmt.Errorf("logretention: activate %s: %w", t.path, err)
+		} else {
+			done = append(done, u) // target did not exist; track for candidate undo
 		}
-		u.activated = true
-		done = append(done, u)
+
+		// Durable activation of the candidate into the target dir.
+		o2, aErr := durableRename(candidates[t.path], t.path)
+		if o2 != safety.RenameFailed {
+			done[len(done)-1].activated = true
+		}
+		if aErr != nil {
+			return rollback(), fmt.Errorf("logretention: activate %s: %w", t.path, aErr)
+		}
 	}
+
+	// Success: drop the backups (pre-images no longer needed).
 	for _, u := range done {
 		if u.bak != "" {
 			_ = os.Remove(u.bak)
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // writeStaged writes content to a durably-staged candidate file in stagingDir (a
