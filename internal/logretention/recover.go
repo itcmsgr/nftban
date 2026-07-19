@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // Recovery action strings (stable; asserted by tests and surfaced in status).
@@ -181,12 +183,12 @@ func rollForward(j activationJournal) error {
 			// An old target is present (candidate never landed) — preserve its
 			// pre-image if we haven't already, then replace it.
 			if hashFileOrEmpty(e.BackupPath) != e.PrevHash {
-				_ = os.Rename(e.Target, e.BackupPath)
+				_ = safety.DurableRename(e.Target, e.BackupPath)
 			} else {
 				_ = os.Remove(e.Target)
 			}
 		}
-		if err := os.Rename(e.CandidatePath, e.Target); err != nil {
+		if err := safety.DurableRename(e.CandidatePath, e.Target); err != nil {
 			return fmt.Errorf("logretention: roll-forward %s: %w", e.Target, err)
 		}
 	}
@@ -206,23 +208,27 @@ func rollBack(j activationJournal) error {
 			}
 			continue
 		}
-		if err := os.Rename(e.BackupPath, e.Target); err != nil {
+		if err := safety.DurableRename(e.BackupPath, e.Target); err != nil {
 			return fmt.Errorf("logretention: roll-back restore %s: %w", e.Target, err)
 		}
 	}
 	return nil
 }
 
-// finalizeRecovery removes the journal + staging contents and fsyncs the target
-// directory so the recovered uniform state is durable.
+// finalizeRecovery removes the journal + staging contents and fsyncs both the
+// target directory and the staging directory so the recovered uniform state —
+// and the journal's removal — are durable across a re-crash (F1 mirror of the
+// generate path).
 func finalizeRecovery(stagingDir, journalPath string, j activationJournal) error {
 	// Drop the journal first: once removed, a re-crash sees no pending activation.
 	if err := os.Remove(journalPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("logretention: clear journal: %w", err)
 	}
 	if len(j.Entries) > 0 {
-		fsyncDir(filepath.Dir(j.Entries[0].Target))
+		_ = fsyncDir(filepath.Dir(j.Entries[0].Target))
 	}
+	// Make the journal removal + staging cleanup durable too.
+	_ = fsyncDir(stagingDir)
 	_ = removeDirContents(stagingDir)
 	return nil
 }

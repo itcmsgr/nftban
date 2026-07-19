@@ -147,64 +147,13 @@ func SafeOpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
 	return os.OpenFile(path, flag, perm)
 }
 
-// SafeWriteFile writes data to a file with TOCTOU protection
-// Uses atomic write pattern: write to temp, then rename
+// SafeWriteFile writes data to a file with TOCTOU protection using an atomic,
+// power-loss-durable write pattern: write to a temp file in the same directory,
+// fsync it, chmod, atomically rename into place, then fsync the parent directory
+// so the replacement survives a crash. It delegates to WriteFileDurable so every
+// caller of SafeWriteFile gets the parent-directory fsync (the v1.222 F2 fix).
 func SafeWriteFile(path string, data []byte, perm os.FileMode) error {
-	// Validate the path
-	if err := ValidatePath(path); err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(path)
-
-	// Validate parent directory
-	if err := ValidateDirectory(dir); err != nil {
-		return err
-	}
-
-	// Create temp file in same directory (for atomic rename)
-	tmpFile, err := os.CreateTemp(dir, ".nftban-safe-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-
-	// Ensure cleanup on failure
-	success := false
-	defer func() {
-		if !success {
-			os.Remove(tmpPath)
-		}
-	}()
-
-	// Write data
-	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to write data: %w", err)
-	}
-
-	// Sync to disk
-	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to sync: %w", err)
-	}
-
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close: %w", err)
-	}
-
-	// Set permissions
-	if err := os.Chmod(tmpPath, perm); err != nil {
-		return fmt.Errorf("failed to chmod: %w", err)
-	}
-
-	// Atomic rename
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("failed to rename: %w", err)
-	}
-
-	success = true
-	return nil
+	return WriteFileDurable(path, data, perm)
 }
 
 // SafeAppendFile appends data to a file with TOCTOU protection

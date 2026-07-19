@@ -26,6 +26,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // GeneratorVersion is the version of the generation transaction/state writer,
@@ -33,6 +35,14 @@ import (
 const GeneratorVersion = "1"
 
 const prevSuffix = ".nftban-prev"
+
+// fsyncDir makes a directory's entries durable. It is a package variable (bound
+// to safety.FsyncDir) ONLY so tests can spy on the explicit directory-fsync
+// barriers the activation/recovery paths place (staging before activation, target
+// after activation, staging after journal removal). Production always uses
+// safety.FsyncDir. (The per-rename dir fsyncs inside safety.DurableRename are
+// separate and not routed through this seam.)
+var fsyncDir = safety.FsyncDir
 
 // stagingDirFor is the dot-subdir of the target directory holding candidates,
 // backups, and the activation journal. It is NEVER scanned by the system
@@ -290,12 +300,26 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 		cleanStaging()
 		return GeneratedState{}, err
 	}
+	// F1: make the STAGING dir entries (candidates + backups-to-be + journal)
+	// durable BEFORE the first target rename, so a crash mid-activation leaves a
+	// journal that Recover() can actually find (its directory entry survives, not
+	// just its data). Without this the "DURABLE activation journal" guarantee only
+	// holds for the file content, not its existence, across power loss.
+	_ = fsyncDir(stagingDir)
 	if err := activateWithRollback(targets, candidates, stagingDir); err != nil {
 		cleanStaging()
 		return GeneratedState{}, err // both previous files restored
 	}
-	fsyncDir(filepath.Dir(opts.MainPath))
+	// Target dir fsync makes the activated policy renames durable. (Each rename in
+	// activateWithRollback already routes through safety.DurableRename, which
+	// fsyncs its destination dir; this is the explicit final barrier before we drop
+	// the journal.)
+	_ = fsyncDir(filepath.Dir(opts.MainPath))
 	_ = os.Remove(journalPath)
+	// Make the journal REMOVAL durable too: after this fsync a re-crash sees no
+	// pending activation (a crash before it is harmless — Recover finds an
+	// all-new set and simply finalizes).
+	_ = fsyncDir(stagingDir)
 
 	activeHashes := map[string]string{}
 	for _, t := range targets {
@@ -361,7 +385,7 @@ func activateWithRollback(targets []genTarget, candidates map[string]string, sta
 				_ = os.Remove(u.path)
 			}
 			if u.bak != "" {
-				_ = os.Rename(u.bak, u.path)
+				_ = safety.DurableRename(u.bak, u.path)
 			}
 		}
 	}
@@ -370,15 +394,18 @@ func activateWithRollback(targets []genTarget, candidates map[string]string, sta
 		u := undo{path: t.path}
 		if _, err := os.Stat(t.path); err == nil {
 			bak := backupPathFor(stagingDir, t.path)
-			if err := os.Rename(t.path, bak); err != nil {
+			// Durable backup into the staging dir (fsyncs the staging dir) so the
+			// roll-back pre-image survives a crash during the split window.
+			if err := safety.DurableRename(t.path, bak); err != nil {
 				rollback()
 				return fmt.Errorf("logretention: backup %s: %w", t.path, err)
 			}
 			u.bak = bak
 		}
-		if err := os.Rename(candidates[t.path], t.path); err != nil {
+		// Durable activation into the target dir (fsyncs the target dir).
+		if err := safety.DurableRename(candidates[t.path], t.path); err != nil {
 			if u.bak != "" {
-				_ = os.Rename(u.bak, t.path)
+				_ = safety.DurableRename(u.bak, t.path)
 			}
 			rollback()
 			return fmt.Errorf("logretention: activate %s: %w", t.path, err)
@@ -394,29 +421,16 @@ func activateWithRollback(targets []genTarget, candidates map[string]string, sta
 	return nil
 }
 
-// writeStaged writes content to a fsync'd temp file in stagingDir (a dot-subdir
-// of the target directory — same filesystem, not scanned by logrotate).
+// writeStaged writes content to a durably-staged candidate file in stagingDir (a
+// dot-subdir of the target directory — same filesystem, not scanned by
+// logrotate). It routes through safety.StageFile so the candidate's data AND its
+// directory entry are fsync'd before it can become an activation source, and so
+// generate.go holds no hand-rolled temp writer of its own.
 func writeStaged(stagingDir, targetBase, content string) (string, error) {
-	f, err := os.CreateTemp(stagingDir, targetBase+".gen-*")
+	name, err := safety.StageFile(stagingDir, targetBase+".gen-*", []byte(content), 0o644)
 	if err != nil {
 		return "", fmt.Errorf("logretention: staged temp in %s: %w", stagingDir, err)
 	}
-	name := f.Name()
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(name)
-		return "", err
-	}
-	_ = os.Chmod(name, 0o644)
 	return name, nil
 }
 
@@ -496,17 +510,6 @@ func removeDirContents(dir string) error {
 	return nil
 }
 
-// fsyncDir best-effort fsyncs a directory so a rename into it is durable across a
-// crash (silently ignored on filesystems that reject directory fsync).
-func fsyncDir(dir string) {
-	d, err := os.Open(dir) // #nosec G304 -- generator-owned directory path for fsync
-	if err != nil {
-		return
-	}
-	_ = d.Sync()
-	_ = d.Close()
-}
-
 // acquireLock takes an exclusive, non-blocking flock on lockPath. A held lock
 // means another generation is in progress and the call fails (rather than
 // racing). The returned func releases the lock.
@@ -559,49 +562,20 @@ func humanBytes(b uint64) string {
 	}
 }
 
-// writeTemp writes content to a temp file in the SAME directory as target (so a
-// later os.Rename is atomic on the same filesystem), fsyncs it, and returns its
-// path. The caller validates then renames or removes it.
-func writeTemp(target, content string) (string, error) {
-	dir := filepath.Dir(target)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("logretention: mkdir %s: %w", dir, err)
-	}
-	f, err := os.CreateTemp(dir, "."+filepath.Base(target)+".gen-*")
-	if err != nil {
-		return "", fmt.Errorf("logretention: temp in %s: %w", dir, err)
-	}
-	name := f.Name()
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(name)
-		return "", err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(name)
-		return "", err
-	}
-	_ = os.Chmod(name, 0o644)
-	return name, nil
-}
-
+// writeStateAtomic writes the generated-state JSON durably: an atomic
+// temp+fsync+rename PLUS a fsync of the state's parent directory (F2), routed
+// through safety.WriteFileDurable so no hand-rolled temp+rename writer remains in
+// this file.
 func writeStateAtomic(path string, state GeneratedState) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := writeTemp(path, string(data)+"\n")
-	if err != nil {
-		return err
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("logretention: state dir %s: %w", filepath.Dir(path), err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
+	if err := safety.WriteFileDurable(path, []byte(string(data)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("logretention: write state: %w", err)
 	}
 	return nil
 }
