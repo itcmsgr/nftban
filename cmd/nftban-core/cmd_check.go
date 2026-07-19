@@ -30,8 +30,8 @@ import (
 	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/whitelist"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // getCheckPaths returns config and data directories from passed config

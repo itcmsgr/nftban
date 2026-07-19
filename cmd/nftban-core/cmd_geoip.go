@@ -59,7 +59,7 @@ func loadGeoIPConfig(cfg *nftbanconf.Config) geoipConfig {
 		cfg.ConfigDir + "/conf.d/geoip/main.conf.local",
 		cfg.ConfigDir + "/conf.d/nftban-go.conf",       // Legacy (deprecated)
 		cfg.ConfigDir + "/conf.d/nftban-go.conf.local", // Legacy (deprecated)
-		cfg.ConfigDir + "/nftban.conf.local",            // Central override (highest priority)
+		cfg.ConfigDir + "/nftban.conf.local",           // Central override (highest priority)
 	}
 
 	for _, configFile := range configFiles {
@@ -274,9 +274,9 @@ func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 
 	// Try databases in order of preference
 	dbFiles := []string{
-		dbDir + "/dbip-country-lite.mmdb",  // Default: DB-IP Country
-		dbDir + "/GeoLite2-City.mmdb",      // Legacy: MaxMind City
-		dbDir + "/GeoLite2-Country.mmdb",   // Legacy: MaxMind Country
+		dbDir + "/dbip-country-lite.mmdb", // Default: DB-IP Country
+		dbDir + "/GeoLite2-City.mmdb",     // Legacy: MaxMind City
+		dbDir + "/GeoLite2-Country.mmdb",  // Legacy: MaxMind Country
 	}
 
 	var dbFile string
@@ -330,8 +330,8 @@ func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 	// Performance test
 	fmt.Println("Performance Test (10 lookups):")
 	testIPs := [][]byte{
-		{8, 8, 8, 8},       // Google DNS
-		{1, 1, 1, 1},       // Cloudflare DNS
+		{8, 8, 8, 8},        // Google DNS
+		{1, 1, 1, 1},        // Cloudflare DNS
 		{208, 67, 222, 222}, // OpenDNS
 	}
 
@@ -374,9 +374,9 @@ func cmdGeoipLookup(cfg *nftbanconf.Config, ipStr string, jsonOutput bool) error
 
 	// Try databases in order of preference
 	dbFiles := []string{
-		dbDir + "/dbip-country-lite.mmdb",  // Default: DB-IP Country
-		dbDir + "/GeoLite2-City.mmdb",      // Legacy: MaxMind City
-		dbDir + "/GeoLite2-Country.mmdb",   // Legacy: MaxMind Country
+		dbDir + "/dbip-country-lite.mmdb", // Default: DB-IP Country
+		dbDir + "/GeoLite2-City.mmdb",     // Legacy: MaxMind City
+		dbDir + "/GeoLite2-Country.mmdb",  // Legacy: MaxMind Country
 	}
 
 	var db *maxminddb.Reader

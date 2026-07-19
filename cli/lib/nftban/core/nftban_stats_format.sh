@@ -841,9 +841,11 @@ nftban_stats_cleanup_logs() {
         echo "[INFO] Cleaning up logs older than ${days} days..."
     fi
 
-    # NOTE: bans.log rotation handled exclusively by logrotate (copytruncate).
-    # The previous mv-based rotation here conflicted with copytruncate and could
-    # cause data loss when processes hold open file handles. Removed in v1.46.0.
+    # NOTE: bans.log rotation is handled exclusively by logrotate. As of v1.222.0
+    # it uses rename+create (the Go banlog writer opens O_APPEND and closes per
+    # entry, so it re-resolves the path on the next entry — zero-loss for the
+    # metrics source-of-truth). The previous in-module mv-based rotation was
+    # removed in v1.46.0; do not reintroduce any in-code rotation here.
 
     # Delete old compressed logs
     find "$(dirname "$NFTBAN_BAN_LOG")" -name "*.log.gz" -mtime +"${days}" -type f -delete 2>/dev/null || true

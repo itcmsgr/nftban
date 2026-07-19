@@ -61,8 +61,11 @@ func TestGenerateActivatesAndWritesState(t *testing.T) {
 		t.Error("suricata stanza leaked into main file")
 	}
 	suri := readFile(t, filepath.Join(dir, "logrotate.d", "nftban-suricata"))
-	if !strings.Contains(suri, "eve-alerts.json") || !strings.Contains(suri, "USR2") {
-		t.Error("suricata policy missing eve-alerts/USR2")
+	if !strings.Contains(suri, "eve-alerts.json") || !strings.Contains(suri, "copytruncate") {
+		t.Error("suricata policy missing eve-alerts/copytruncate")
+	}
+	if strings.Contains(suri, "USR2") {
+		t.Error("R1 regression: eve must NOT use USR2 (rule reload != log reopen)")
 	}
 	if st.UnboundedCount != 0 || st.TheoreticalMaxBytes > st.BudgetBytes {
 		t.Errorf("state invariant broken: unbounded=%d max=%d budget=%d", st.UnboundedCount, st.TheoreticalMaxBytes, st.BudgetBytes)

@@ -3,7 +3,7 @@
 // meta:type="cli"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-07-19"
-// meta:description="nftban-core logretention subcommand (Gate B Phase 7): `status [--json]` reports the effective log-retention policy from the AUTHORITATIVE generated-state record + LIVE filesystem/usage/override facts (fabricating nothing — no bytes-reclaimed/last-cleanup guesses); `generate` runs the atomic generated-policy transaction (used by install/timer/config-change hooks). This imports internal/logretention, so the nftban-core binary changes; the nftband daemon does NOT import it."
+// meta:description="nftban-core logretention subcommand (Gate B / v1.222.0): `status [--json]` reports the effective log-retention policy from the AUTHORITATIVE generated-state record + LIVE filesystem/usage/override facts (fabricating nothing — no bytes-reclaimed/last-cleanup guesses); `generate` runs the atomic generated-policy transaction (INTENDED to be invoked by install/%post + timer + config-change hooks — that wiring is pending audit R2; today it is a manual/root entrypoint). This imports internal/logretention, so the nftban-core binary changes; the nftband daemon does NOT import it."
 // meta:input="generated-state JSON, statfs(/var/log), du(/var/log/nftban), conf.d/logs.conf"
 // meta:output="human or JSON status; generation transaction"
 // meta:depends="github.com/itcmsgr/nftban/internal/logretention,github.com/itcmsgr/nftban/pkg/version"

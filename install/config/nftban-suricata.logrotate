@@ -8,52 +8,52 @@
 # If Suricata is not installed, this file should NOT be present.
 # Remove with: rm /etc/logrotate.d/nftban-suricata
 #
-# Gate B (disk-safety):
-# - eve-alerts.json / eve-audit.json are JSON — copytruncate can truncate a
-#   partial JSON record. They already carry a `postrotate` USR2 signal (Suricata
-#   reopens its eve outputs on USR2), so they move to rename+create + USR2.
-#   `delaycompress` is REQUIRED here: USR2 reopen is asynchronous, so between the
-#   rename and Suricata processing the signal it keeps writing to the rotated-away
-#   inode; delaying compression one cycle prevents compressing a file still being
-#   written.
-# - eve-stats.json / fast.log / stats.log keep copytruncate for now (no USR2
-#   reopen wired; folded into OPEN_COPYTRUNCATE_SAFE_PLAINTEXT_MIGRATION) but gain
-#   a `size` bound so no stanza is unbounded.
+# Gate B (disk-safety), v1.222.0 R1:
+# - ALL Suricata eve/fast/stats logs use copytruncate. Suricata holds these fds
+#   open for its process lifetime and has no logrotate-driven log-reopen wired
+#   here. USR2 is a live RULE reload, NOT a log reopen, so a rename+create+USR2
+#   form would strand Suricata on the rotated-away inode (empty new file, silent
+#   telemetry loss). copytruncate truncates in place — the daemon keeps writing
+#   the live file with no reopen needed. Switching eve to rename+create + a
+#   PROVEN log-reopen signal (e.g. SIGHUP on supported Suricata versions), with a
+#   behavioral rotate-then-write test, is a deliberate future lane — not shipped
+#   speculatively here.
+# - Every stanza carries a `size` bound (no unbounded stanza); no `delaycompress`
+#   (copytruncate snapshots compress immediately).
 
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only
 # Ownership: suricata:nftban (Suricata writes, nftban reads)
-# rename+create + USR2 reopen (JSON record-integrity); delaycompress required.
+# copytruncate (v1.222.0 R1): Suricata holds the eve fd open for its lifetime.
+# The prior rename+create+USR2 form was a REGRESSION — USR2 triggers a live RULE
+# reload, NOT a log-file reopen, so Suricata would keep writing the rotated-away
+# inode and the freshly-created eve file would stay empty (silent alert loss).
+# copytruncate truncates in place so the daemon keeps writing the live file with
+# no reopen needed. A future lane may switch to rename+create + a PROVEN
+# log-reopen signal (SIGHUP on supported versions) with a behavioral rotate test.
 /var/log/nftban/suricata/eve-alerts.json {
     su suricata nftban
     daily
     rotate 7
     size 50M
     compress
-    delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
-    postrotate
-        # Signal Suricata to reopen its eve outputs on the freshly-created file
-        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
-    endscript
+    copytruncate
 }
 
 # Suricata eve-audit.json (optional, higher volume when enabled)
-# rename+create + USR2 reopen (JSON record-integrity); delaycompress required.
+# copytruncate (v1.222.0 R1): same held-fd constraint as eve-alerts.
 /var/log/nftban/suricata/eve-audit.json {
     su suricata nftban
     daily
     rotate 3
     size 100M
     compress
-    delaycompress
     missingok
     notifempty
     create 0640 suricata nftban
-    postrotate
-        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
-    endscript
+    copytruncate
 }
 
 # Suricata eve-stats.json (optional, for capacity planning)

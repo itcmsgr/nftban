@@ -50,24 +50,24 @@ type EmulateReason struct {
 
 // EmulateNftables contains nftables-specific info
 type EmulateNftables struct {
-	Family string `json:"family"`
-	Table  string `json:"table"`
-	Chain  string `json:"chain"`
+	Family  string `json:"family"`
+	Table   string `json:"table"`
+	Chain   string `json:"chain"`
 	SetName string `json:"set_name,omitempty"`
 }
 
 // EmulateResult represents the emulation result
 type EmulateResult struct {
-	Query       EmulateQuery      `json:"query"`
-	Result      EmulateDecision   `json:"result"`
+	Query  EmulateQuery    `json:"query"`
+	Result EmulateDecision `json:"result"`
 }
 
 // EmulateDecision contains the decision details
 type EmulateDecision struct {
-	Decision    string           `json:"decision"`
-	Reason      EmulateReason    `json:"reason"`
-	Nftables    EmulateNftables  `json:"nftables"`
-	Explanation string           `json:"explanation"`
+	Decision    string          `json:"decision"`
+	Reason      EmulateReason   `json:"reason"`
+	Nftables    EmulateNftables `json:"nftables"`
+	Explanation string          `json:"explanation"`
 }
 
 // cmdEmulate implements the emulate command
@@ -278,13 +278,14 @@ func checkIPInSet(family, table, setName, ipStr string) (bool, string) {
 
 // parseSetElements extracts elements from nft list set output
 // Example input:
-//   table ip nftban {
-//     set blacklist_ipv4 {
-//       type ipv4_addr
-//       flags interval
-//       elements = { 1.2.3.4, 10.0.0.0/8, 192.168.1.100 timeout 3600s }
-//     }
-//   }
+//
+//	table ip nftban {
+//	  set blacklist_ipv4 {
+//	    type ipv4_addr
+//	    flags interval
+//	    elements = { 1.2.3.4, 10.0.0.0/8, 192.168.1.100 timeout 3600s }
+//	  }
+//	}
 func parseSetElements(nftOutput string) []string {
 	var elements []string
 

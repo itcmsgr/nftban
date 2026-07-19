@@ -36,8 +36,8 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/feeds"
-	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

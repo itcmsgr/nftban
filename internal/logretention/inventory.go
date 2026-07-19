@@ -83,11 +83,14 @@ func DefaultFamilies() []LogFamily {
 		{Key: "reports-daily", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 20 * MiB, UseMaxsize: true, FloorDays: 90,
 			Paths: []string{"/var/lib/nftban/reports/daily/*.html", "/var/lib/nftban/reports/daily/*.txt"}},
 
-		// Suricata-native (separate file, su suricata nftban). eve-alerts/eve-audit
-		// = rename+create + USR2 (JSON record-integrity); delaycompress required.
-		{Key: "suri-eve-alerts", File: "suricata", Cadence: "daily", Volume: VolumeMedium, Weight: 4, FloorDays: 7, BaseRotate: 7, BaseSizeBytes: 50 * MiB, Delaycompress: true, Su: suri, Create: suriCreate, PostrotateUSR2: true,
+		// Suricata-native (separate file, su suricata nftban). v1.222.0 R1: ALL eve
+		// logs use copytruncate — Suricata holds the fd open and USR2 is a rule
+		// reload, not a log reopen (rename+create+USR2 was a regression). A future
+		// lane may switch to rename+create + a proven SIGHUP reopen with a
+		// behavioral test.
+		{Key: "suri-eve-alerts", File: "suricata", Cadence: "daily", Volume: VolumeMedium, Weight: 4, FloorDays: 7, BaseRotate: 7, BaseSizeBytes: 50 * MiB, Copytruncate: true, Su: suri, Create: suriCreate,
 			Paths: []string{"/var/log/nftban/suricata/eve-alerts.json"}},
-		{Key: "suri-eve-audit", File: "suricata", Cadence: "daily", Volume: VolumeHigh, Weight: 4, FloorDays: 3, BaseRotate: 3, BaseSizeBytes: 100 * MiB, Delaycompress: true, Su: suri, Create: suriCreate, PostrotateUSR2: true,
+		{Key: "suri-eve-audit", File: "suricata", Cadence: "daily", Volume: VolumeHigh, Weight: 4, FloorDays: 3, BaseRotate: 3, BaseSizeBytes: 100 * MiB, Copytruncate: true, Su: suri, Create: suriCreate,
 			Paths: []string{"/var/log/nftban/suricata/eve-audit.json"}},
 		{Key: "suri-eve-stats", File: "suricata", Cadence: "weekly", Volume: VolumeLow, Weight: 1, FloorDays: 7, BaseRotate: 2, BaseSizeBytes: 50 * MiB, Copytruncate: true, Su: suri, Create: suriCreate,
 			Paths: []string{"/var/log/nftban/suricata/eve-stats.json"}},

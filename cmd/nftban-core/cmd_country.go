@@ -223,12 +223,12 @@ func cmdCountryStatus(configPath string) error {
 		output := map[string]interface{}{
 			"success": true,
 			"data": map[string]interface{}{
-				"enabled":          config.Enabled,
-				"mode":             config.Mode,
-				"blocked_count":    len(config.Blocked),
-				"blocked":          config.Blocked,
+				"enabled":           config.Enabled,
+				"mode":              config.Mode,
+				"blocked_count":     len(config.Blocked),
+				"blocked":           config.Blocked,
 				"whitelisted_count": len(config.Whitelisted),
-				"whitelisted":      config.Whitelisted,
+				"whitelisted":       config.Whitelisted,
 			},
 		}
 		data, _ := json.MarshalIndent(output, "", "  ")

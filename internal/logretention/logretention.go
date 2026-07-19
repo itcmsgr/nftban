@@ -19,11 +19,13 @@
 // meta:inventory.privileges="none"
 // =============================================================================
 //
-// SCOPE (Gate B, Phases 4-5): this package establishes the calculator +
-// generated-policy contract ONLY. It is NOT yet imported by any shipped binary,
-// exposes NO public LOG_RETENTION_* config keys, and wires NO packaging/CLI. The
-// Overrides model is passed in directly; reading it from conf.d/logs.conf and the
-// config schema is a later, separately-reviewed phase.
+// SCOPE (Gate B / v1.222.0): the calculator + generated-policy contract. As of
+// Phase 6-7 this package IS imported by the nftban-core CLI (nftban logs
+// retention status), reads operator overrides from conf.d/logs.conf
+// (LoadOverrides), and the LOG_RETENTION_* keys are declared in config-schema.json.
+// It is NOT imported by the nftband daemon. Runtime PACKAGING wiring of the
+// generator (install/%post + timer + config-change) is pending (audit R2); until
+// then the shipped static install/config/nftban.logrotate is the active authority.
 package logretention
 
 import (
