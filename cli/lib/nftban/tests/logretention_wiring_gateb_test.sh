@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-07-19"
-# meta:description="Static guard proving the v1.222.0 log-retention generator is wired symmetrically into the package lifecycle and that RPM no longer freezes the generated policy. Asserts: RPM %post and DEB postinst both invoke `nftban-core logretention generate install`; the maintenance service regenerates periodically (`generate timer`); /etc/logrotate.d/nftban is a PLAIN %files entry on RPM (NOT %config(noreplace) — the freeze the audit flagged) matching DEB's non-conffile install; and the maintenance service can write /etc/logrotate.d. Deterministic render (proven by the Go TestDeterministicByteEquivalence) makes the DEB and RPM effective policy equivalent for identical inputs."
+# meta:description="Static guard proving the v1.222.0 log-retention generator is wired symmetrically into the package lifecycle and that RPM no longer freezes the generated policy. Asserts: RPM %post and DEB postinst both invoke `nftban-core logretention generate install`; the maintenance service regenerates periodically (`generate timer`); /etc/logrotate.d/nftban is DERIVED STATE — %ghost on RPM (not %config(noreplace), not a plain tracked file) and not shipped in the DEB payload, so neither rpm -V nor dpkg --verify report it; both scriptlets fail-safe by copying the shipped template baseline; and the maintenance service can write /etc/logrotate.d. Deterministic render (proven by the Go TestDeterministicByteEquivalence) makes the DEB and RPM effective policy equivalent for identical inputs."
 # meta:input="packaging/build_nftban.sh, packaging/deb/postinst, cron/maintenance.sh, systemd/nftban-maintenance.service"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
 # meta:depends="bash,grep"
@@ -43,13 +43,21 @@ if grep -Eq '%config\(noreplace\)[[:space:]]+/etc/logrotate\.d/nftban($|[[:space
 else
     ok "RPM does NOT freeze the generated logrotate policy (no %config(noreplace))"
 fi
-grep -Eq '^/etc/logrotate\.d/nftban$' "$BUILD" && ok "RPM ships /etc/logrotate.d/nftban as a plain %files entry (overwrites on upgrade)" || no "RPM %files entry for the generated policy missing"
+# Z2: the generated policy is now DERIVED STATE — declared %ghost (RPM owns the
+# path for cleanup, records no digest, `rpm -V` never flags it), not a tracked
+# payload file. A plain (tracked) %files entry would re-introduce verify noise.
+grep -Eq '^%ghost[[:space:]]+/etc/logrotate\.d/nftban[[:space:]]*$' "$BUILD" && ok "RPM declares /etc/logrotate.d/nftban as %ghost (derived state, no rpm -V noise)" || no "RPM %ghost entry for the generated policy missing"
+grep -Eq '^/etc/logrotate\.d/nftban[[:space:]]*$' "$BUILD" && no "RPM %files still has a PLAIN tracked /etc/logrotate.d/nftban entry (verify noise)" || ok "RPM %files has no plain tracked entry for the generated policy"
 
 echo "== maintenance service can write the generated policy =="
 grep -E "^ReadWritePaths=" "$SVC" | grep -q "/etc/logrotate.d" && ok "nftban-maintenance.service ReadWritePaths includes /etc/logrotate.d" || no "maintenance service cannot write /etc/logrotate.d"
 
 echo "== generation is fail-safe + non-fatal in both installers =="
-grep -q "baseline remains active" "$BUILD" && grep -q "baseline remains active" "$DEBPI" && ok "both installers report a non-fatal fallback to the shipped baseline" || no "installer fallback message missing"
+# Z2: on generation failure both scriptlets install the shipped TEMPLATE baseline
+# verbatim (the active policy is derived state, no longer shipped to that path).
+_fb='cp -f /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban'
+grep -qF "$_fb" "$BUILD" && grep -qF "$_fb" "$DEBPI" && ok "both installers fail-safe by copying the template baseline" || no "installer template-baseline fallback missing"
+grep -qi "template baseline" "$BUILD" && grep -qi "template baseline" "$DEBPI" && ok "both installers report the non-fatal template-baseline fallback" || no "installer fallback message missing"
 
 echo
 echo "======================================================================"
