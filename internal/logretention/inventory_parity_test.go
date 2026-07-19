@@ -123,6 +123,33 @@ func parseSizeToken(s string) uint64 {
 	return n * mult
 }
 
+// isGlobPath reports whether the final path element contains a glob metacharacter.
+func isGlobPath(p string) bool {
+	return strings.ContainsAny(filepath.Base(p), "*?[")
+}
+
+// matchTemplateStanza finds the template stanza owning a family path, returning
+// the covered template key. Z4: a LITERAL (non-glob) family path requires an
+// EXACT template stanza — there is NO same-directory fallback, so a literal path
+// can never be silently satisfied by an unrelated sibling stanza (which would
+// mask real drift). Only a GLOB family path (e.g. reports/*.html) may match a
+// concrete enumerated template key, and then only via a precise filepath.Match —
+// never a loose directory prefix.
+func matchTemplateStanza(stanzas map[string]stanzaPolicy, p string) (stanzaPolicy, string, bool) {
+	if sp, ok := stanzas[p]; ok { // exact (works for literals AND for glob==glob templates)
+		return sp, p, true
+	}
+	if !isGlobPath(p) {
+		return stanzaPolicy{}, "", false // literal path: exact-or-nothing
+	}
+	for tp, tsp := range stanzas {
+		if ok, err := filepath.Match(p, tp); err == nil && ok {
+			return tsp, tp, true
+		}
+	}
+	return stanzaPolicy{}, "", false
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	wd, _ := os.Getwd() // .../internal/logretention
@@ -141,25 +168,12 @@ func TestInventoryParityFamiliesVsTemplates(t *testing.T) {
 			stanzas = suri
 		}
 		for _, p := range f.Paths {
-			// glob report paths in the template are not enumerated per-file; match by prefix
-			sp, ok := stanzas[p]
+			sp, key, ok := matchTemplateStanza(stanzas, p)
 			if !ok {
-				// report globs use "*.html" etc — match a template key with the same dir prefix
-				matched := false
-				for tp, tsp := range stanzas {
-					if strings.HasPrefix(tp, filepath.Dir(p)+"/") {
-						sp, matched = tsp, true
-						covered[tp] = true
-						break
-					}
-				}
-				if !matched {
-					t.Errorf("family %s path %s has NO logrotate stanza", f.Key, p)
-					continue
-				}
-			} else {
-				covered[p] = true
+				t.Errorf("family %s path %s has NO matching logrotate stanza", f.Key, p)
+				continue
 			}
+			covered[key] = true
 			if sp.cadence != f.Cadence {
 				t.Errorf("%s: cadence template=%s family=%s", p, sp.cadence, f.Cadence)
 			}
@@ -214,6 +228,48 @@ func TestInventoryParityFamiliesVsLogInventory(t *testing.T) {
 		if f.BaseRotate != lp.Retain {
 			t.Errorf("%s: rotate family=%d LogInventory.Retain=%d", abs, f.BaseRotate, lp.Retain)
 		}
+	}
+}
+
+// Z4: the parity matcher must not let a literal family path be satisfied by an
+// unrelated same-directory sibling (the old prefix-fallback escape), and ghost
+// paths must never match. Glob paths still match a concrete enumeration precisely.
+func TestMatchTemplateStanzaNoLiteralEscape(t *testing.T) {
+	stanzas := map[string]stanzaPolicy{
+		"/var/log/nftban/bans.log":             {cadence: "daily", rotate: 7},
+		"/var/log/nftban/audit.log":            {cadence: "daily", rotate: 30},
+		"/var/lib/nftban/reports/2026-07.html": {cadence: "monthly", rotate: 3},
+		"/var/lib/nftban/reports/2026-07.txt":  {cadence: "monthly", rotate: 3},
+	}
+
+	// exact literal -> matched on its own key.
+	if sp, key, ok := matchTemplateStanza(stanzas, "/var/log/nftban/bans.log"); !ok || key != "/var/log/nftban/bans.log" || sp.rotate != 7 {
+		t.Errorf("exact literal match failed: ok=%v key=%s", ok, key)
+	}
+
+	// literal with NO exact stanza but a same-dir sibling present -> MUST NOT match
+	// (this is the Z4 escape being closed).
+	if _, _, ok := matchTemplateStanza(stanzas, "/var/log/nftban/ghost.log"); ok {
+		t.Error("literal ghost path was matched by a same-dir sibling (Z4 prefix-escape not closed)")
+	}
+
+	// a set of randomized ghost literal paths in the same dirs must all miss.
+	for _, ghost := range []string{
+		"/var/log/nftban/x1.log", "/var/log/nftban/portscan-x.log",
+		"/var/lib/nftban/reports/notaglob.md", "/var/log/nftban/audit.log.1",
+	} {
+		if _, _, ok := matchTemplateStanza(stanzas, ghost); ok {
+			t.Errorf("ghost literal %q must not match any stanza", ghost)
+		}
+	}
+
+	// glob path matches a concrete enumeration precisely (fallback still works)...
+	if _, key, ok := matchTemplateStanza(stanzas, "/var/lib/nftban/reports/*.html"); !ok || key != "/var/lib/nftban/reports/2026-07.html" {
+		t.Errorf("glob path should match the concrete .html enumeration, got ok=%v key=%s", ok, key)
+	}
+	// ...but a glob must NOT match a different extension in the same dir.
+	if _, key, _ := matchTemplateStanza(stanzas, "/var/lib/nftban/reports/*.json"); key == "/var/lib/nftban/reports/2026-07.txt" {
+		t.Error("glob *.json incorrectly matched a .txt sibling (loose prefix, not precise Match)")
 	}
 }
 
