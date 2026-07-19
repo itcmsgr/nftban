@@ -41,9 +41,23 @@ _update_log() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    # Log to file
+    # v1.199 GATE-A (BUG-INSTALLER-PER-RUN-FORENSIC-LOG-MISSING / human.log-empty):
+    # construct the canonical formatted line ONCE, then project it to every file
+    # sink so the aggregate log and the per-run human slice can never drift in
+    # format. The terminal keeps its own icon-decorated projection below.
+    local _line="[$timestamp] [$level] $msg"
+
+    # Aggregate lifecycle log (unchanged destination/behavior).
     mkdir -p "$(dirname "$UPDATE_LOG_FILE")" 2>/dev/null || true
-    echo "[$timestamp] [$level] $msg" >> "$UPDATE_LOG_FILE" 2>/dev/null || true
+    printf '%s\n' "$_line" >> "$UPDATE_LOG_FILE" 2>/dev/null || true
+
+    # Active per-run human slice (update-runs/<run_id>/human.log). Only while a
+    # forensic run is active (FORENSIC_HUMAN set by _forensic_begin). Fail-safe
+    # and non-blocking: a per-run append failure must never break an update,
+    # rollback, or install (mirrors the aggregate-log `|| true` posture).
+    if [[ -n "${FORENSIC_HUMAN:-}" ]]; then
+        printf '%s\n' "$_line" >> "$FORENSIC_HUMAN" 2>/dev/null || true
+    fi
 
     # Output to terminal
     case "$level" in
@@ -466,6 +480,11 @@ _update_verify_watchdog() {
 FORENSIC_RUNS_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}/update-runs"
 FORENSIC_RETAIN_N="${NFTBAN_FORENSIC_RETAIN:-20}"
 FORENSIC_RUN_DIR=""; FORENSIC_JSONL=""; FORENSIC_HUMAN=""
+# v1.199 GATE-A: per-run installer.log slice (self-contained record). The aggregate
+# installer.log path + its pre-install line count are captured at run start; the
+# slice for THIS run is extracted at run end (run_id-delimited PRIMARY, line-count
+# delta FALLBACK). FORENSIC_ILOG_BEFORE is the fallback lower boundary only.
+FORENSIC_INSTALLER=""; FORENSIC_ILOG_FILE=""; FORENSIC_ILOG_BEFORE=0
 
 # deterministic run_id (tests/callers may pin via NFTBAN_RUN_ID)
 _forensic_run_id() { printf '%s' "${NFTBAN_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null)-$$}"; }
@@ -499,8 +518,23 @@ _forensic_begin() {
     mkdir -p "$FORENSIC_RUN_DIR" 2>/dev/null || { FORENSIC_RUN_DIR=""; return 0; }
     chmod 0750 "$FORENSIC_RUN_DIR" 2>/dev/null || true
     FORENSIC_JSONL="$FORENSIC_RUN_DIR/run.jsonl"; FORENSIC_HUMAN="$FORENSIC_RUN_DIR/human.log"
+    # v1.199 GATE-A: stable 3-file record set — installer.log is created up front so
+    # the record shape is predictable (support-bundle + tooling) even if the run
+    # dies before the installer child runs; it is filled at run end by
+    # _forensic_installer_slice (empty-but-present is truthful, tracked in run.jsonl).
+    FORENSIC_INSTALLER="$FORENSIC_RUN_DIR/installer.log"
     : > "$FORENSIC_JSONL" 2>/dev/null || true; : > "$FORENSIC_HUMAN" 2>/dev/null || true
-    chmod 0640 "$FORENSIC_JSONL" "$FORENSIC_HUMAN" 2>/dev/null || true
+    : > "$FORENSIC_INSTALLER" 2>/dev/null || true
+    chmod 0640 "$FORENSIC_JSONL" "$FORENSIC_HUMAN" "$FORENSIC_INSTALLER" 2>/dev/null || true
+    # Capture the aggregate installer.log lower boundary for the line-count FALLBACK
+    # (the run_id-delimited extraction is primary and does not need this).
+    FORENSIC_ILOG_FILE="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+    if [[ -f "$FORENSIC_ILOG_FILE" ]]; then
+        FORENSIC_ILOG_BEFORE=$(wc -l < "$FORENSIC_ILOG_FILE" 2>/dev/null || echo 0)
+        FORENSIC_ILOG_BEFORE=${FORENSIC_ILOG_BEFORE//[^0-9]/}; FORENSIC_ILOG_BEFORE=${FORENSIC_ILOG_BEFORE:-0}
+    else
+        FORENSIC_ILOG_BEFORE=0
+    fi
     _forensic_event "$id" run_start "mode=$mode" "from=$from" "to=$to" "pid=$$"
     _forensic_prune
 }
@@ -552,6 +586,73 @@ _forensic_snapshot() {
 
 # _forensic_end <run_id> <state> <rc>
 _forensic_end() { [ -n "${FORENSIC_JSONL:-}" ] || return 0; _forensic_event "$1" run_end "state=${2:-}" "rc=${3:-}"; }
+
+# _forensic_installer_slice <run_id>
+# v1.199 GATE-A (A2): extract THIS run's slice of the aggregate installer.log into
+# the per-run record (update-runs/<run_id>/installer.log) so the record is
+# self-contained. Boundary hierarchy (owner-approved): (1) run_id-delimited from the
+# installer RUN header (logger.go RunHeader stamps `... run_id=<id>`) through the
+# next RUN header / EOF — robust to rotation and concurrency; (2) line-count delta
+# from FORENSIC_ILOG_BEFORE as fallback/cross-check. Never mutates/truncates the
+# aggregate installer.log. Fully fail-safe: any failure leaves the (already-created)
+# empty per-run installer.log in place and never breaks the update. Records an
+# `installer_slice` event in run.jsonl describing method/bytes/reason (no silent cap).
+_forensic_installer_slice() {
+    [ -n "${FORENSIC_INSTALLER:-}" ] || return 0
+    local id="$1" ilog="${FORENSIC_ILOG_FILE:-}"
+    local method="none" reason="" bytes=0 lines=0
+
+    if [[ -z "$ilog" || ! -f "$ilog" ]]; then
+        _forensic_event "$id" installer_slice "method=none" "bytes=0" "reason=installer_log_absent"
+        return 0
+    fi
+
+    local total; total=$(wc -l < "$ilog" 2>/dev/null || echo 0)
+    total=${total//[^0-9]/}; total=${total:-0}
+
+    # PRIMARY: run_id-delimited extraction (last RUN header carrying this run_id).
+    local hdr_ln; hdr_ln=$(grep -Fn "run_id=${id}" "$ilog" 2>/dev/null | tail -1 | cut -d: -f1)
+    hdr_ln=${hdr_ln//[^0-9]/}
+    if [[ -n "$hdr_ln" && "$hdr_ln" -ge 1 ]]; then
+        # include the leading separator/header lines (run_id line is the 3rd RUN line)
+        local start_ln=$(( hdr_ln - 3 )); [ "$start_ln" -lt 1 ] && start_ln=1
+        # end boundary = next installer RUN header after this one, else EOF
+        local rel end_ln
+        rel=$(tail -n +"$(( hdr_ln + 1 ))" "$ilog" 2>/dev/null | grep -nF "[RUN] nftban-installer " | head -1 | cut -d: -f1)
+        rel=${rel//[^0-9]/}
+        if [[ -n "$rel" && "$rel" -ge 1 ]]; then end_ln=$(( hdr_ln + rel - 1 )); else end_ln="$total"; fi
+        [ "$end_ln" -ge "$start_ln" ] 2>/dev/null && \
+            sed -n "${start_ln},${end_ln}p" "$ilog" > "$FORENSIC_INSTALLER" 2>/dev/null || true
+        method="run_id_delimited"
+    else
+        # FALLBACK: line-count delta vs the pre-install boundary.
+        local before="${FORENSIC_ILOG_BEFORE:-0}"; before=${before//[^0-9]/}; before=${before:-0}
+        if [[ "$total" -lt "$before" ]]; then
+            # aggregate shrank → rotated/truncated during the run: do NOT copy
+            # unrelated historical content; record the condition honestly.
+            method="none"; reason="truncated_or_rotated"
+        elif [[ "$total" -eq "$before" ]]; then
+            method="none"; reason="no_installer_output"
+        else
+            tail -n +"$(( before + 1 ))" "$ilog" > "$FORENSIC_INSTALLER" 2>/dev/null || true
+            method="line_count_delta"
+        fi
+    fi
+
+    chmod 0640 "$FORENSIC_INSTALLER" 2>/dev/null || true
+    if [[ -s "$FORENSIC_INSTALLER" ]]; then
+        bytes=$(wc -c < "$FORENSIC_INSTALLER" 2>/dev/null || echo 0); bytes=${bytes//[^0-9]/}; bytes=${bytes:-0}
+        lines=$(wc -l < "$FORENSIC_INSTALLER" 2>/dev/null || echo 0); lines=${lines//[^0-9]/}; lines=${lines:-0}
+    else
+        [ -z "$reason" ] && reason="empty"
+    fi
+    if [[ -n "$reason" ]]; then
+        _forensic_event "$id" installer_slice "method=$method" "bytes=$bytes" "lines=$lines" "reason=$reason"
+    else
+        _forensic_event "$id" installer_slice "method=$method" "bytes=$bytes" "lines=$lines"
+    fi
+    return 0
+}
 
 # _forensic_prune — keep newest N run dirs; log what is pruned (no silent cap)
 _forensic_prune() {

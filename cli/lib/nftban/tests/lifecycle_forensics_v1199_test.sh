@@ -14,7 +14,7 @@
 # meta:depends="bash,python3,find,sort"
 # meta:inventory.files="cli/lib/nftban/cli/cmd_update_helpers.sh"
 # meta:inventory.binaries="bash,python3"
-# meta:inventory.env_vars="NFTBAN_RUN_ID,NFTBAN_LOG_DIR,NFTBAN_DATA_DIR,NFTBAN_FORENSIC_RETAIN,NFTBAN_SBIN"
+# meta:inventory.env_vars="NFTBAN_RUN_ID,NFTBAN_LOG_DIR,NFTBAN_DATA_DIR,NFTBAN_FORENSIC_RETAIN,NFTBAN_SBIN,NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="nftban-watchdog.timer,nftban-maintenance.timer"
 # meta:inventory.network=""
@@ -24,6 +24,13 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
 HELPERS="$REPO_ROOT/cli/lib/nftban/cli/cmd_update_helpers.sh"
+# v1.199 GATE-A harness fix: point _fx_redact at the real redaction authority in the
+# repo tree. Production resolves it under /usr/lib/nftban, which is absent in the test
+# sandbox → _fx_redact fails CLOSED to a marker and corrupts the allowlisted snapshot
+# field assertions (bin_mode / watchdog_timer / install_state / failed-unit). This is
+# a test-PATH correction only; section G below proves redaction still fails closed when
+# the authority is genuinely unavailable, so no assertion is weakened.
+export NFTBAN_LIB_DIR="$REPO_ROOT/cli/lib/nftban"
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  PASS: %s\n' "$1"; }
 no(){ FAIL=$((FAIL+1)); printf '  FAIL: %s\n' "$1${2:+ — $2}"; }
@@ -132,6 +139,14 @@ grep -qE 'export NFTBAN_RUN_ID="\$_RUN_ID"' "$CMDUPD" && ok "F exports NFTBAN_RU
 grep -qE '_update_log INFO "lifecycle run_id=\$_RUN_ID' "$CMDUPD" && ok "F stamps run_id into update.log (correlation delimiter)" || no "F update.log run_id stamp missing"
 # export must precede the install case (so the %post installer inherits it)
 awk '/export NFTBAN_RUN_ID/{e=NR} /^    case "\$source" in/{c=NR} END{exit !(e>0 && c>e)}' "$CMDUPD" && ok "F export precedes the install case" || no "F export after install case"
+
+echo "== G: redaction fails CLOSED when the authority is unavailable (assertion-strength guard) =="
+# Proves the NFTBAN_LIB_DIR harness fix did NOT weaken redaction: with the stream fn
+# undefined AND the lib path unreachable, _fx_redact must SUPPRESS content and emit the
+# fail-closed marker (never weak-redact, never raw passthrough).
+g_out=$( unset -f nftban_redact_stream 2>/dev/null; NFTBAN_LIB_DIR="$WORK/no-such-lib"; printf 'topsecretvalue' | _fx_redact )
+echo "$g_out" | grep -q 'REDACTION-UNAVAILABLE' && ok "G fail-closed marker emitted when redaction unavailable" || no "G no fail-closed marker" "$g_out"
+echo "$g_out" | grep -q 'topsecretvalue' && no "G raw content leaked under unavailable redaction" || ok "G raw content suppressed (no passthrough)"
 
 echo ""
 echo "=== RESULT: $PASS passed, $FAIL failed ==="

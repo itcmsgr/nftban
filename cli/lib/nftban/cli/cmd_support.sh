@@ -414,7 +414,7 @@ _collect_logs() {
             local rid; rid=$(basename "$run_dir")
             mkdir -p "$runs_dst/$rid" 2>/dev/null || continue
             local f
-            for f in run.jsonl human.log; do
+            for f in run.jsonl human.log installer.log; do
                 [[ -f "$run_dir/$f" ]] && _redact_file "$run_dir/$f" "$runs_dst/$rid/$f" 2>/dev/null || true
             done
             run_count=$((run_count + 1))
