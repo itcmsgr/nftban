@@ -156,8 +156,12 @@ func VerifyInventory(exec executor.Executor) (ok bool, missing []string) {
 		"/etc/nftban/nftban.conf",
 		"/etc/nftban/nftables.conf",
 
-		// Canonical logrotate (addresses source-install drift)
-		"/etc/logrotate.d/nftban",
+		// NOTE (v1.222.0 Z2): /etc/logrotate.d/nftban is DERIVED STATE, generated
+		// by the log-retention generator (postinst/%post) or copied from the shipped
+		// template as a fail-safe — it is NOT a shipped payload and is produced
+		// LATER than this mid-install assertion, so it is intentionally NOT required
+		// here. Its presence + validity is the log-retention subsystem's own
+		// authority: `nftban logs retention status` reports POLICY_MISSING if absent.
 	}
 
 	for _, p := range required {
