@@ -117,11 +117,18 @@ func TestGenerateFailSafeOnInvalidCandidate(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "state", "nftban-effective.state.json")); !os.IsNotExist(err) {
 		t.Error("state record written despite failure")
 	}
+	// R4: the logrotate SCAN dir must never contain scratch (temp/backup/journal);
+	// those live only in the .nftban-logrotate-staging subdir, which is cleaned on
+	// failure.
 	entries, _ := os.ReadDir(filepath.Dir(mainPath))
 	for _, e := range entries {
-		if strings.Contains(e.Name(), ".gen-") || strings.HasSuffix(e.Name(), prevSuffix) {
-			t.Errorf("leftover temp/backup: %s", e.Name())
+		if strings.Contains(e.Name(), ".gen-") || strings.HasSuffix(e.Name(), prevSuffix) || e.Name() == "activation.journal" {
+			t.Errorf("scratch leaked into the logrotate scan dir: %s", e.Name())
 		}
+	}
+	staging := filepath.Join(filepath.Dir(mainPath), ".nftban-logrotate-staging")
+	if se, _ := os.ReadDir(staging); len(se) != 0 {
+		t.Errorf("staging dir not cleaned after failure: %d entries", len(se))
 	}
 }
 
@@ -135,13 +142,17 @@ func TestActivateWithRollbackRestoresBoth(t *testing.T) {
 	_ = os.WriteFile(mainPath, []byte(mSent), 0o644)
 	_ = os.WriteFile(suriPath, []byte(sSent), 0o644)
 
-	goodTmp, _ := writeTemp(mainPath, "NEW-MAIN\n")
+	staging := filepath.Join(dir, ".staging")
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	goodTmp, _ := writeStaged(staging, "nftban", "NEW-MAIN\n")
 	candidates := map[string]string{
 		mainPath: goodTmp,
-		suriPath: filepath.Join(dir, "does-not-exist-temp"), // rename will fail
+		suriPath: filepath.Join(staging, "does-not-exist-temp"), // rename will fail
 	}
 	targets := []genTarget{{mainPath, "main"}, {suriPath, "suricata"}}
-	if err := activateWithRollback(targets, candidates); err == nil {
+	if err := activateWithRollback(targets, candidates, staging); err == nil {
 		t.Fatal("expected activation failure on broken second candidate")
 	}
 	if got := readFile(t, mainPath); got != mSent {
@@ -150,14 +161,64 @@ func TestActivateWithRollbackRestoresBoth(t *testing.T) {
 	if got := readFile(t, suriPath); got != sSent {
 		t.Errorf("suricata NOT preserved: %q", got)
 	}
-	// no .prev backups left dangling
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), prevSuffix) {
-			t.Errorf("dangling backup after rollback: %s", e.Name())
+	// backups live in staging (NOT the logrotate scan dir); none dangling after rollback
+	for _, d := range []string{dir, staging} {
+		entries, _ := os.ReadDir(d)
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), prevSuffix) {
+				t.Errorf("dangling backup after rollback in %s: %s", d, e.Name())
+			}
 		}
 	}
 	_ = os.Remove(goodTmp)
+}
+
+func TestGenerateScanDirCleanAndStaged(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Generate(baseOpts(dir)); err != nil {
+		t.Fatal(err)
+	}
+	scan := filepath.Join(dir, "logrotate.d")
+	entries, _ := os.ReadDir(scan)
+	names := map[string]bool{}
+	for _, e := range entries {
+		names[e.Name()] = true
+		if strings.Contains(e.Name(), ".gen-") || strings.HasSuffix(e.Name(), prevSuffix) || e.Name() == "activation.journal" {
+			t.Errorf("R4: scratch in the logrotate scan dir: %s", e.Name())
+		}
+	}
+	if !names["nftban"] || !names["nftban-suricata"] {
+		t.Error("activated policy files missing from scan dir")
+	}
+	// staging is a dot-subdir (not a regular file logrotate would parse) and empty
+	staging := filepath.Join(scan, ".nftban-logrotate-staging")
+	if se, _ := os.ReadDir(staging); len(se) != 0 {
+		t.Errorf("staging not cleaned after success: %d entries", len(se))
+	}
+}
+
+func TestGenerateRecoversFromLeftoverJournal(t *testing.T) {
+	dir := t.TempDir()
+	staging := filepath.Join(dir, "logrotate.d", ".nftban-logrotate-staging")
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// simulate a crash mid-activation: a stale journal + a stale staged temp
+	_ = os.WriteFile(filepath.Join(staging, "activation.journal"), []byte(`{"x":"y"}`), 0o600)
+	_ = os.WriteFile(filepath.Join(staging, "nftban.gen-STALE"), []byte("junk"), 0o644)
+	if _, err := Generate(baseOpts(dir)); err != nil {
+		t.Fatalf("Generate should self-heal from a leftover journal: %v", err)
+	}
+	// journal + stale temp cleared; policy activated
+	if _, err := os.Stat(filepath.Join(staging, "activation.journal")); !os.IsNotExist(err) {
+		t.Error("stale journal not cleared after recovery")
+	}
+	if se, _ := os.ReadDir(staging); len(se) != 0 {
+		t.Errorf("staging not clean after recovery: %d entries", len(se))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "logrotate.d", "nftban")); err != nil {
+		t.Error("policy not activated after recovery")
+	}
 }
 
 func TestConcurrentGeneratorLock(t *testing.T) {

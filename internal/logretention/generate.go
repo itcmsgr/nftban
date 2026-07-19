@@ -201,41 +201,64 @@ func Generate(opts GenerateOptions) (GeneratedState, error) {
 		targets = append(targets, genTarget{opts.SuricataPath, "suricata"})
 	}
 
-	// 2. Render + write all candidate temps into their target directories.
-	candidates := make(map[string]string, len(targets))
-	cleanupTemps := func() {
-		for _, tmp := range candidates {
-			_ = os.Remove(tmp)
-		}
+	// R4: stage candidates + backups + the activation journal in a dot-SUBDIR of
+	// the target directory. logrotate's `include` reads only regular files
+	// directly in /etc/logrotate.d and does NOT recurse into subdirectories, so
+	// nothing here is ever parsed by the system logrotate (no duplicate-stanza
+	// error, no crash-poisoning), while staying on the SAME filesystem as the
+	// targets so the activation renames are atomic.
+	stagingDir := filepath.Join(filepath.Dir(opts.MainPath), ".nftban-logrotate-staging")
+	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
+		return GeneratedState{}, fmt.Errorf("logretention: staging dir: %w", err)
 	}
+	journalPath := filepath.Join(stagingDir, "activation.journal")
+	// R5: a leftover journal means a prior generation crashed mid-activation.
+	// Because generation is deterministic, this run regenerates + re-activates
+	// both files cleanly (self-healing) — we note it and clear stale staging.
+	if _, err := os.Stat(journalPath); err == nil {
+		fmt.Fprintln(os.Stderr, "logretention: recovering from an interrupted prior generation (stale activation journal); regenerating deterministically")
+	}
+	cleanStaging := func() { _ = removeDirContents(stagingDir) }
+	cleanStaging()
+
+	// 2. Render + write all candidate temps into the STAGING dir.
+	candidates := make(map[string]string, len(targets)) // targetPath -> staged temp
 	candidatePaths := make([]string, 0, len(targets))
 	for _, t := range targets {
 		content := header + "\n" + RenderFile(policy, opts.Families, t.file)
-		tmp, err := writeTemp(t.path, content)
+		tmp, err := writeStaged(stagingDir, filepath.Base(t.path), content)
 		if err != nil {
-			cleanupTemps()
+			cleanStaging()
 			return GeneratedState{}, err
 		}
 		candidates[t.path] = tmp
 		candidatePaths = append(candidatePaths, tmp)
 	}
 
-	// 3. Validate the COMBINED effective policy (all candidates together).
+	// 3. Validate the COMBINED effective policy (all staged candidates together).
 	validationCmd, verr := opts.Validator(candidatePaths)
 	if verr != nil {
-		cleanupTemps()
+		cleanStaging()
 		return GeneratedState{}, verr // previous policy untouched; no state written
 	}
 
-	// 4. Two-file ATOMIC activation with explicit rollback (no split-brain).
+	// 4. Record prior hashes, write the activation journal, then two-file ATOMIC
+	// activation (backups + rollback in staging), fsync the target directory, and
+	// only then drop the journal.
 	prevHashes := map[string]string{}
 	for _, t := range targets {
 		prevHashes[filepath.Base(t.path)] = hashFileOrEmpty(t.path)
 	}
-	if err := activateWithRollback(targets, candidates); err != nil {
-		cleanupTemps()
+	if err := writeActivationJournal(journalPath, targets, candidates); err != nil {
+		cleanStaging()
+		return GeneratedState{}, err
+	}
+	if err := activateWithRollback(targets, candidates, stagingDir); err != nil {
+		cleanStaging()
 		return GeneratedState{}, err // both previous files restored
 	}
+	fsyncDir(filepath.Dir(opts.MainPath))
+	_ = os.Remove(journalPath)
 
 	activeHashes := map[string]string{}
 	for _, t := range targets {
@@ -283,10 +306,11 @@ type genTarget struct {
 	file string
 }
 
-// activateWithRollback backs up each existing target (rename -> .prev), renames
-// each validated candidate into place, and if ANY step fails restores every
-// backed-up file — so the outcome is all-new or all-old, never split-brain.
-func activateWithRollback(targets []genTarget, candidates map[string]string) error {
+// activateWithRollback backs up each existing target (rename -> stagingDir/*.prev,
+// OUT of the logrotate scan dir), renames each validated candidate into place, and
+// if ANY step fails restores every backed-up file — so the outcome is all-new or
+// all-old, never split-brain across a returned error.
+func activateWithRollback(targets []genTarget, candidates map[string]string, stagingDir string) error {
 	type undo struct {
 		path      string
 		bak       string
@@ -295,7 +319,6 @@ func activateWithRollback(targets []genTarget, candidates map[string]string) err
 	var done []undo
 
 	rollback := func() {
-		// remove any newly-activated files, then restore backups
 		for _, u := range done {
 			if u.activated {
 				_ = os.Remove(u.path)
@@ -309,7 +332,7 @@ func activateWithRollback(targets []genTarget, candidates map[string]string) err
 	for _, t := range targets {
 		u := undo{path: t.path}
 		if _, err := os.Stat(t.path); err == nil {
-			bak := t.path + prevSuffix
+			bak := filepath.Join(stagingDir, filepath.Base(t.path)+prevSuffix)
 			if err := os.Rename(t.path, bak); err != nil {
 				rollback()
 				return fmt.Errorf("logretention: backup %s: %w", t.path, err)
@@ -317,7 +340,6 @@ func activateWithRollback(targets []genTarget, candidates map[string]string) err
 			u.bak = bak
 		}
 		if err := os.Rename(candidates[t.path], t.path); err != nil {
-			// this target failed to activate: undo its own backup first, then all prior
 			if u.bak != "" {
 				_ = os.Rename(u.bak, t.path)
 			}
@@ -327,13 +349,88 @@ func activateWithRollback(targets []genTarget, candidates map[string]string) err
 		u.activated = true
 		done = append(done, u)
 	}
-	// success: drop backups
 	for _, u := range done {
 		if u.bak != "" {
 			_ = os.Remove(u.bak)
 		}
 	}
 	return nil
+}
+
+// writeStaged writes content to a fsync'd temp file in stagingDir (a dot-subdir
+// of the target directory — same filesystem, not scanned by logrotate).
+func writeStaged(stagingDir, targetBase, content string) (string, error) {
+	f, err := os.CreateTemp(stagingDir, targetBase+".gen-*")
+	if err != nil {
+		return "", fmt.Errorf("logretention: staged temp in %s: %w", stagingDir, err)
+	}
+	name := f.Name()
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	_ = os.Chmod(name, 0o644)
+	return name, nil
+}
+
+// writeActivationJournal records the intended activation (target -> candidate
+// SHA-256) so a crash mid-activation is DETECTABLE on the next run; recovery is
+// the next deterministic regeneration.
+func writeActivationJournal(path string, targets []genTarget, candidates map[string]string) error {
+	j := map[string]string{}
+	for _, t := range targets {
+		j[t.path] = hashFileOrEmpty(candidates[t.path])
+	}
+	data, err := json.MarshalIndent(j, "", "  ")
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // staging-owned path
+	if err != nil {
+		return fmt.Errorf("logretention: activation journal: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// removeDirContents deletes the contents of dir (keeping dir itself).
+func removeDirContents(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
+	return nil
+}
+
+// fsyncDir best-effort fsyncs a directory so a rename into it is durable across a
+// crash (silently ignored on filesystems that reject directory fsync).
+func fsyncDir(dir string) {
+	d, err := os.Open(dir) //nolint:gosec // generator-owned dir
+	if err != nil {
+		return
+	}
+	_ = d.Sync()
+	_ = d.Close()
 }
 
 // acquireLock takes an exclusive, non-blocking flock on lockPath. A held lock
