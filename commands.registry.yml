@@ -1496,6 +1496,26 @@ geoban:
 # GROUP 3: INFRASTRUCTURE
 # =============================================================================
 
+logs:
+  category: infrastructure
+  description: "Log-retention visibility: effective policy, budget, and per-family retention"
+  risk: core
+  audience: [cli, auditor]
+  capability: logs_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban logs retention status"
+    - "nftban logs retention status --json"
+  subcommands:
+    retention:
+      mutates: false
+      description: "Show the effective log-retention policy (status [--json]); read-only"
+
 firewall:
   category: infrastructure
   description: "Firewall structure validation, statistics, and log analysis"

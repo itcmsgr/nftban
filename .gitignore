@@ -100,3 +100,4 @@ pr25-evidence/
 scripts/lab-deploy-servers.conf
 # Private exact host/IP patterns for privacy-scan (never commit)
 scripts/ci/privacy-forbidden.txt
+/nftban-core

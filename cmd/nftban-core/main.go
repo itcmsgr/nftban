@@ -276,6 +276,8 @@ func main() {
 		os.Exit(cmdSmoke(os.Args[2:]))
 	case "lifecycle":
 		os.Exit(cmdLifecycle(os.Args[2:]))
+	case "logretention":
+		os.Exit(cmdLogRetention(os.Args[2:]))
 	case "version":
 		fmt.Println(version.Line(version.CoreEngineName))
 	case "help", "--help", "-h":

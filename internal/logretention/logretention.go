@@ -146,13 +146,13 @@ func (o Overrides) Validate() error {
 
 // FamilyPolicy is the calculated effective policy for one log family.
 type FamilyPolicy struct {
-	Key               string
-	RotateCount       int
-	SizeCapBytes      uint64
-	RetentionDays     int
-	WorstCaseBytes    uint64 // RotateCount * SizeCapBytes (bounded — never unbounded)
-	ForensicFloorDays int    // hard minimum retention preserved for this family
-	CeilingDays       int    // per-family safety ceiling applied to retention
+	Key               string `json:"key"`
+	RotateCount       int    `json:"rotate_count"`
+	SizeCapBytes      uint64 `json:"size_cap_bytes"`
+	RetentionDays     int    `json:"retention_days"`
+	WorstCaseBytes    uint64 `json:"worst_case_bytes"` // RotateCount * SizeCapBytes (bounded)
+	ForensicFloorDays int    `json:"forensic_floor_days"`
+	CeilingDays       int    `json:"ceiling_days"`
 }
 
 // EffectivePolicy is the calculator's full output.

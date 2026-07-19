@@ -199,6 +199,7 @@ nftban_complete() {
         # FIREWALL & SECURITY
         echo "firewall"
         echo "firewall-logs"
+        echo "logs"
         echo "ban"
         echo "unban"
         echo "search"
@@ -639,6 +640,10 @@ nftban_complete() {
                 echo "rebuild"
                 echo "reset"
                 echo "restore"
+                echo "help"
+                ;;
+            logs)
+                echo "retention"
                 echo "help"
                 ;;
             list)
