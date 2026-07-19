@@ -47,7 +47,7 @@ else
 fi
 
 echo "== derived-state: RPM %files declares it %ghost =="
-if grep -Eq '^%ghost[[:space:]]+/etc/logrotate\.d/nftban[[:space:]]*$' "$SPEC"; then
+if grep -Eq '^%ghost[[:space:]].*/etc/logrotate\.d/nftban[[:space:]]*$' "$SPEC"; then
     ok "RPM %files: %ghost /etc/logrotate.d/nftban"
 else
     no "RPM %files must declare %ghost /etc/logrotate.d/nftban"

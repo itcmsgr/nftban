@@ -1571,7 +1571,7 @@ fi
 # `logretention generate` (or, on generation failure, copied verbatim from the
 # shipped template as a fail-safe). Operators override retention via
 # conf.d/logs.conf; edits to this file are lost on the next regeneration.
-%ghost /etc/logrotate.d/nftban
+%ghost %attr(0644,root,root) /etc/logrotate.d/nftban
 %config(noreplace) /etc/sysctl.d/90-nftban.conf
 /usr/lib/tmpfiles.d/nftban.conf
 # Systemd unit globs (Layer 1 — MFST-C1 will replace these with nftban-systemd-install.inc)

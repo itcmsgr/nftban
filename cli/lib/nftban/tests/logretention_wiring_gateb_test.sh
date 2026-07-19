@@ -46,7 +46,7 @@ fi
 # Z2: the generated policy is now DERIVED STATE — declared %ghost (RPM owns the
 # path for cleanup, records no digest, `rpm -V` never flags it), not a tracked
 # payload file. A plain (tracked) %files entry would re-introduce verify noise.
-grep -Eq '^%ghost[[:space:]]+/etc/logrotate\.d/nftban[[:space:]]*$' "$BUILD" && ok "RPM declares /etc/logrotate.d/nftban as %ghost (derived state, no rpm -V noise)" || no "RPM %ghost entry for the generated policy missing"
+grep -Eq '^%ghost[[:space:]].*/etc/logrotate\.d/nftban[[:space:]]*$' "$BUILD" && ok "RPM declares /etc/logrotate.d/nftban as %ghost (derived state, no rpm -V noise)" || no "RPM %ghost entry for the generated policy missing"
 grep -Eq '^/etc/logrotate\.d/nftban[[:space:]]*$' "$BUILD" && no "RPM %files still has a PLAIN tracked /etc/logrotate.d/nftban entry (verify noise)" || ok "RPM %files has no plain tracked entry for the generated policy"
 
 echo "== maintenance service can write the generated policy =="
