@@ -306,6 +306,45 @@ case "$1" in
             INSTALL_MODE="install"
         fi
 
+        # --- v1.222.0 DELTA-L1: generate the effective log-retention policy (or the
+        # bounded template fallback) BEFORE the installer's validate phase, so its
+        # logretention_policy_ready assertion gates the COMMITTED/DEGRADED verdict on
+        # a genuinely-present, valid, active policy. NON-FATAL to dpkg — a failure
+        # here surfaces as DEGRADED via that assertion, never a hard package error.
+        _nftban_generate_logretention() {
+            local core=/usr/lib/nftban/bin/nftban-core
+            local tmpl=/etc/nftban/templates/nftban.logrotate
+            local active=/etc/logrotate.d/nftban
+            local state=/var/lib/nftban/generated/logrotate/nftban-effective.state.json
+            [ -x "$core" ] || { log_warn "v1.222.0: nftban-core absent; log-retention policy not generated."; return 0; }
+            if "$core" logretention generate install >/dev/null 2>&1; then
+                log_info "v1.222.0: effective log-retention policy generated (nftban logs retention status)."
+                return 0
+            fi
+            # Generation failed -> install the shipped template verbatim as the bounded
+            # fallback, and CLEAR any stale generated-state so readiness reports
+            # FALLBACK (valid, self-heal pending), not a hash-drift failure.
+            rm -f "$state" 2>/dev/null || true
+            if [ -f "$tmpl" ] && cp -f "$tmpl" "$active" 2>/dev/null && chmod 0644 "$active" 2>/dev/null; then
+                log_warn "v1.222.0: log-retention generation failed; bounded template fallback active (self-heal pending)."
+                return 0
+            fi
+            # Generation AND fallback both failed -> structured, durable error. The
+            # readiness assertion will drive the install verdict to DEGRADED.
+            {
+                echo "[NFTBan][ERROR] LOG_RETENTION_POLICY_UNAVAILABLE (generation AND fallback failed)"
+                echo "  generation_result = FAILED"
+                echo "  fallback_result   = FAILED"
+                echo "  policy_path        = $active"
+                echo "  template_source    = $tmpl"
+                echo "  validator          = logrotate -d $active"
+                echo "  maintenance_timer  = $(systemctl is-active nftban-maintenance.timer 2>/dev/null || echo unknown)"
+                echo "  remediation        = nftban logs retention status; $core logretention generate install; logrotate -d $active; nftban validate"
+            } | tee -a /var/log/nftban/installer.log >&2 2>/dev/null || true
+            return 0
+        }
+        _nftban_generate_logretention || true
+
         if [ -x "$NFTBAN_INSTALLER" ]; then
             log_info "Running nftban-installer --deb (mode=$INSTALL_MODE)..."
 
@@ -448,24 +487,6 @@ case "$1" in
             fi
         )
         _nftban_dpkg_quarantine || true
-
-        # --- v1.222.0 R2: generate the capacity-derived effective logrotate policy ---
-        # Symmetric with the RPM %post. Z2/Z3: /etc/logrotate.d/nftban is DERIVED
-        # STATE (not shipped in the payload, not a conffile), so `dpkg --verify`
-        # never flags it. Generate it into the profile/capacity-tailored effective
-        # policy + state record. NON-FATAL and fail-safe: on any generation failure
-        # install the shipped template verbatim so a bounded policy is ALWAYS
-        # present. Deterministic render -> DEB and RPM produce equivalent policy.
-        if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-            if /usr/lib/nftban/bin/nftban-core logretention generate install >/dev/null 2>&1; then
-                log_info "v1.222.0: effective log-retention policy generated (nftban logs retention status)."
-            else
-                if [ ! -f /etc/logrotate.d/nftban ] && [ -f /etc/nftban/templates/nftban.logrotate ]; then
-                    cp -f /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || true
-                fi
-                log_warn "v1.222.0: log-retention policy generation skipped; installed the bounded template baseline."
-            fi
-        fi
 
         ;;
 esac

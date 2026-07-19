@@ -58,6 +58,8 @@ func cmdLogRetention(args []string) int {
 		return lrGenerateCmd(args[1:])
 	case "recover":
 		return lrRecoverCmd(args[1:])
+	case "readiness":
+		return lrReadinessCmd(args[1:])
 	case "help", "-h", "--help":
 		return lrUsage()
 	default:
@@ -71,6 +73,7 @@ func lrUsage() int {
 	fmt.Println("  nftban-core logretention status [--json]   Report the effective log-retention policy")
 	fmt.Println("  nftban-core logretention generate [reason] Regenerate the effective logrotate policy")
 	fmt.Println("  nftban-core logretention recover           Complete/undo an interrupted activation (crash-safe)")
+	fmt.Println("  nftban-core logretention readiness [--json] Post-generation policy-readiness gate (exit 1 if NOT_READY)")
 	return 2
 }
 
@@ -471,6 +474,45 @@ func lrGenerateCmd(args []string) int {
 	}
 	fmt.Printf("Generated effective log-retention policy: profile=%s budget=%s theoretical-max=%s fit=%s unbounded=%d\n",
 		st.Profile.Name, human(st.BudgetBytes), human(st.TheoreticalMaxBytes), st.FitVerdict, st.UnboundedCount)
+	return 0
+}
+
+// lrReadinessCmd is the DELTA-L1 post-generation policy-readiness gate. It exits
+// non-zero when NO valid active retention policy exists (NOT_READY) so the
+// installer's `logretention_policy_ready` assertion drives the verdict to
+// DEGRADED instead of a false-clean COMMITTED. READY_GENERATED / READY_FALLBACK
+// exit 0 (a valid bounded fallback is an acceptable, self-heal-pending state).
+func lrReadinessCmd(args []string) int {
+	asJSON := false
+	for _, a := range args {
+		if a == "--json" {
+			asJSON = true
+		}
+	}
+	r := lr.Readiness(lr.ReadinessOptions{MainPath: lrMainPath(), StatePath: lrStatePath()})
+	if asJSON {
+		b, err := json.MarshalIndent(r, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Println(string(b))
+	} else {
+		fmt.Printf("Log-retention readiness: %s (source=%s, policy=%s, validation=%s)\n",
+			r.Verdict, r.PolicySource, r.PolicyPath, r.ValidationResult)
+		if r.JournalRecovered != "" {
+			fmt.Printf("  recovered interrupted activation: %s\n", r.JournalRecovered)
+		}
+		if r.Verdict == lr.ReadyFallback {
+			fmt.Println("  NOTE: bounded fallback policy active (generation self-heals on the next maintenance cycle).")
+		}
+		if r.Verdict == lr.NotReady {
+			fmt.Fprintf(os.Stderr, "  NOT READY: %s\n  Remediation: %s\n", r.Reason, r.Remediation)
+		}
+	}
+	if !r.Ready() {
+		return 1
+	}
 	return 0
 }
 

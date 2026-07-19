@@ -20,6 +20,7 @@ package validate
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -27,6 +28,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/panelfw"
 	"github.com/itcmsgr/nftban/internal/installer/payload"
+	lr "github.com/itcmsgr/nftban/internal/logretention"
 )
 
 // AssertionResult holds the outcome of a single assertion.
@@ -100,6 +102,7 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	results = append(results, assertInstallStateFile(exec, log))
 	results = append(results, assertPayloadInventory(exec, log))
 	results = append(results, assertConfigIntegrity(exec, log))
+	results = append(results, assertLogretentionPolicyReady(log))
 
 	// PR26.1: systemd-payload invariants. One gather call feeds four
 	// assertions so we don't walk the unit dirs (or call systemctl)
@@ -273,6 +276,49 @@ func assertPayloadInventory(exec executor.Executor, log *logging.Logger) Asserti
 			len(missing), strings.Join(missing, ", "))
 	} else {
 		log.Debug("ASSERT payload_inventory_ok: PASS")
+	}
+	return r
+}
+
+// assertLogretentionPolicyReady (v1.222.0 DELTA-L1): the POST-GENERATION
+// readiness invariant. /etc/logrotate.d/nftban is derived state (removed from the
+// static payload inventory), so its presence is NOT proved by
+// payload_inventory_ok. This assertion closes the gap: after generation + the
+// fail-safe template copy have run, an install may only be COMMITTED when a VALID
+// ACTIVE policy exists — the generated policy (state hash matches => generated) OR
+// a valid bounded fallback (validates, self-heal pending). A missing / empty /
+// invalid / hash-drifted / journal-stuck policy fails here => DEGRADED, never a
+// false-clean COMMITTED. Paths are the fixed production defaults (env-overridable
+// for tests via NFTBAN_LR_MAIN / NFTBAN_LR_STATE).
+// readinessValidator is nil in production — lr.Readiness then uses the real
+// logrotate DefaultValidator. Tests set it to a stub so the assertion is
+// exercisable without logrotate installed.
+var readinessValidator lr.Validator
+
+func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
+	main := os.Getenv("NFTBAN_LR_MAIN")
+	if main == "" {
+		main = "/etc/logrotate.d/nftban"
+	}
+	state := os.Getenv("NFTBAN_LR_STATE")
+	if state == "" {
+		state = "/var/lib/nftban/generated/logrotate/nftban-effective.state.json"
+	}
+	res := lr.Readiness(lr.ReadinessOptions{MainPath: main, StatePath: state, Validator: readinessValidator})
+	r := AssertionResult{Name: "logretention_policy_ready", Passed: res.Ready()}
+	if res.Ready() {
+		r.Detail = fmt.Sprintf("%s (source=%s)", res.Verdict, res.PolicySource)
+		if res.Verdict == lr.ReadyFallback {
+			// truthful COMMITTED_WITH_WARNING: policy present + valid, but it is the
+			// bounded fallback, not the generated one — self-heal pending.
+			log.Warn("ASSERT logretention_policy_ready: PASS (FALLBACK) — bounded template policy active; generation self-heals on the next maintenance cycle")
+		} else {
+			log.Debug("ASSERT logretention_policy_ready: PASS — %s", r.Detail)
+		}
+	} else {
+		r.Detail = fmt.Sprintf("%s: %s", res.Verdict, res.Reason)
+		log.Warn("ASSERT logretention_policy_ready: FAIL — %s (validation=%s); remediation: %s",
+			r.Detail, res.ValidationResult, res.Remediation)
 	}
 	return r
 }

@@ -30,11 +30,11 @@ import (
 // the FakePanelAdapter from panelfw_test.go (which is _test-scoped
 // to that package).
 type fakeAdapter struct {
-	id        panelfw.PanelID
-	detected  bool
-	tcp       []int
-	rpErr     error
-	reachErr  error
+	id       panelfw.PanelID
+	detected bool
+	tcp      []int
+	rpErr    error
+	reachErr error
 }
 
 func (f fakeAdapter) ID() panelfw.PanelID { return f.id }
@@ -98,6 +98,7 @@ func TestRunAssertions_PanelSurvival_BlocksStateCommitted(t *testing.T) {
 // Operator-disabled (--no-panel) flips a failing adapter to non-fatal:
 // the assertion still runs (diagnostic) but does not block StateCommitted.
 func TestRunAssertions_PanelSurvival_OperatorDisabled_DoesNotBlock(t *testing.T) {
+	seedReadyLogretention(t)
 	mock := executor.NewMockExecutor()
 	mock.Services["nftables"] = true
 	mock.Services["nftband.service"] = true
@@ -131,6 +132,7 @@ func TestRunAssertions_PanelSurvival_OperatorDisabled_DoesNotBlock(t *testing.T)
 // policy → assertion is a no-op pass. Verifies existing callers stay
 // source-compatible.
 func TestRunAssertions_DefaultPath_PanelSurvivalPasses(t *testing.T) {
+	seedReadyLogretention(t)
 	mock := executor.NewMockExecutor()
 	mock.Services["nftables"] = true
 	mock.Services["nftband.service"] = true

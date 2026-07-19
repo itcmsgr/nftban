@@ -18,6 +18,8 @@
 package validate
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/authority"
@@ -27,6 +29,25 @@ import (
 
 func newTestLogger() *logging.Logger {
 	return logging.New("/dev/null", false)
+}
+
+// seedReadyLogretention makes the logretention_policy_ready assertion PASS in a
+// mock-executor test: it points NFTBAN_LR_MAIN at a valid non-empty 0644 policy
+// (no state -> READY_FALLBACK, which is a passing verdict) and stubs the logrotate
+// validator so the check does not require logrotate. Restored on cleanup.
+func seedReadyLogretention(t *testing.T) {
+	t.Helper()
+	d := t.TempDir()
+	p := filepath.Join(d, "nftban")
+	if err := os.WriteFile(p, []byte("/var/log/nftban/bans.log {\n    daily\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chmod(p, 0o644) // defeat umask so the mode==0644 readiness check holds
+	t.Setenv("NFTBAN_LR_MAIN", p)
+	t.Setenv("NFTBAN_LR_STATE", filepath.Join(d, "absent-state.json"))
+	old := readinessValidator
+	readinessValidator = func([]string) (string, error) { return "ok", nil }
+	t.Cleanup(func() { readinessValidator = old })
 }
 
 // seedNftbanConfContent returns a byte slice that satisfies PR-P2-6
@@ -95,6 +116,7 @@ func seedCompletePayloadInventory(mock *executor.MockExecutor) {
 }
 
 func TestRunAssertions_AllPass(t *testing.T) {
+	seedReadyLogretention(t)
 	mock := executor.NewMockExecutor()
 	mock.Services["nftables"] = true
 	mock.Services["nftband.service"] = true
@@ -110,6 +132,47 @@ func TestRunAssertions_AllPass(t *testing.T) {
 	if !AllPassed(results) {
 		failed := FailedNames(results)
 		t.Errorf("expected all assertions to pass, failed: %v", failed)
+	}
+}
+
+// TestRunAssertions_LogretentionPolicyNotReady_Fails (v1.222.0 DELTA-L1):
+// a clean install where generation AND the template fallback both failed leaves
+// no active policy. Everything else passes, but logretention_policy_ready must
+// FAIL so the verdict is DEGRADED, never a false-clean COMMITTED.
+func TestRunAssertions_LogretentionPolicyNotReady_Fails(t *testing.T) {
+	d := t.TempDir()
+	t.Setenv("NFTBAN_LR_MAIN", filepath.Join(d, "no-such-policy")) // absent -> NOT_READY
+	t.Setenv("NFTBAN_LR_STATE", filepath.Join(d, "no-state"))
+	old := readinessValidator
+	readinessValidator = func([]string) (string, error) { return "ok", nil }
+	t.Cleanup(func() { readinessValidator = old })
+
+	mock := executor.NewMockExecutor()
+	mock.Services["nftables"] = true
+	mock.Services["nftband.service"] = true
+	mock.NftTables["ip:nftban"] = true
+	mock.NftTables["ip6:nftban"] = true
+	mock.RunResults["nft:list:chain:ip:nftban:input"] = executor.Result{ExitCode: 0}
+	mock.NftSets["ip:nftban:tcp_ports_in"] = "elements = { 22, 80, 443 }"
+	mock.Files["/var/lib/nftban/state/install_state"] = []byte("COMMITTED")
+	seedCompletePayloadInventory(mock)
+
+	results := RunAssertions(mock, 22, newTestLogger())
+
+	if AllPassed(results) {
+		t.Fatal("expected DEGRADED: logretention_policy_ready must fail when no active policy exists")
+	}
+	var found bool
+	for _, r := range results {
+		if r.Name == "logretention_policy_ready" {
+			found = true
+			if r.Passed {
+				t.Error("logretention_policy_ready should NOT pass with a missing policy")
+			}
+		}
+	}
+	if !found {
+		t.Error("logretention_policy_ready assertion not present in the suite")
 	}
 }
 

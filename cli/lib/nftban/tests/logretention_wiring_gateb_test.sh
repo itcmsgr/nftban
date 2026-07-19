@@ -52,12 +52,27 @@ grep -Eq '^/etc/logrotate\.d/nftban[[:space:]]*$' "$BUILD" && no "RPM %files sti
 echo "== maintenance service can write the generated policy =="
 grep -E "^ReadWritePaths=" "$SVC" | grep -q "/etc/logrotate.d" && ok "nftban-maintenance.service ReadWritePaths includes /etc/logrotate.d" || no "maintenance service cannot write /etc/logrotate.d"
 
-echo "== generation is fail-safe + non-fatal in both installers =="
-# Z2: on generation failure both scriptlets install the shipped TEMPLATE baseline
-# verbatim (the active policy is derived state, no longer shipped to that path).
-_fb='cp -f /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban'
-grep -qF "$_fb" "$BUILD" && grep -qF "$_fb" "$DEBPI" && ok "both installers fail-safe by copying the template baseline" || no "installer template-baseline fallback missing"
-grep -qi "template baseline" "$BUILD" && grep -qi "template baseline" "$DEBPI" && ok "both installers report the non-fatal template-baseline fallback" || no "installer fallback message missing"
+echo "== generation is fail-safe + non-fatal, and runs BEFORE installer validate (DELTA-L1) =="
+# DELTA-L1: both scriptlets define _nftban_generate_logretention (generate +
+# template fallback + structured error) and CALL it before the nftban-installer
+# invocation, so the logretention_policy_ready assertion gates the verdict.
+for _f in "$BUILD" "$DEBPI"; do
+    _n=$(basename "$_f")
+    grep -q '_nftban_generate_logretention' "$_f" && grep -q 'logretention generate install' "$_f" \
+        && ok "$_n defines the generation function + calls generate install" \
+        || no "$_n missing _nftban_generate_logretention / generate install"
+    grep -q 'LOG_RETENTION_POLICY_UNAVAILABLE' "$_f" \
+        && ok "$_n emits a structured durable error when generation AND fallback fail" \
+        || no "$_n missing structured LOG_RETENTION_POLICY_UNAVAILABLE error"
+done
+# generation must PRECEDE the installer invocation so the readiness assertion sees it.
+_gen_line=$(grep -n '_nftban_generate_logretention || true' "$DEBPI" | head -1 | cut -d: -f1)
+_inst_line=$(grep -n 'if \[ -x "\$NFTBAN_INSTALLER" \]' "$DEBPI" | head -1 | cut -d: -f1)
+if [ -n "$_gen_line" ] && [ -n "$_inst_line" ] && [ "$_gen_line" -lt "$_inst_line" ]; then
+    ok "DEB: generation runs BEFORE the installer invocation (readiness gate sees the policy)"
+else
+    no "DEB: generation must precede the installer (gen=$_gen_line inst=$_inst_line)"
+fi
 
 echo
 echo "======================================================================"

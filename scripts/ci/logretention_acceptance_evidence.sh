@@ -52,7 +52,7 @@ json_field(){
     sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" "$2" 2>/dev/null | head -1
 }
 
-STATUS_JSON="$(mktemp)"; trap 'rm -f "$STATUS_JSON"' EXIT
+STATUS_JSON="$(mktemp)"; READY_JSON="$(mktemp)"; trap 'rm -f "$STATUS_JSON" "$READY_JSON"' EXIT
 collect_status(){
     if [ -x "$CORE_BIN" ] && "$CORE_BIN" logretention status --json >"$STATUS_JSON" 2>/dev/null; then
         kv "OVERALL_STATE"          "$(json_field overall_state "$STATUS_JSON")"
@@ -69,6 +69,14 @@ collect_status(){
         FIELDS["POLICY_VISIBILITY_RESULT"]="CORE_ABSENT"
     fi
     printf '%-36s %s\n' "POLICY_VISIBILITY_RESULT" "${FIELDS[POLICY_VISIBILITY_RESULT]}"
+    # DELTA-L1: the authoritative install-readiness verdict (exit code + json). It
+    # is the acceptance gate: a valid ACTIVE policy must exist (generated or a valid
+    # bounded fallback). `readiness` exits non-zero on NOT_READY but still emits json.
+    if [ -x "$CORE_BIN" ]; then
+        "$CORE_BIN" logretention readiness --json >"$READY_JSON" 2>/dev/null || true
+        kv "READINESS_VERDICT" "$(json_field verdict "$READY_JSON")"
+        kv "READINESS_SOURCE"  "$(json_field policy_source "$READY_JSON")"
+    fi
 }
 
 echo "===== NFTBan v1.222.0 log-retention acceptance evidence ($MODE) ====="
@@ -99,11 +107,19 @@ done
 CLI_PRESENT=0
 [ "${FIELDS[POLICY_VISIBILITY_RESULT]:-}" = "OK" ] && CLI_PRESENT=1
 if [ "$CLI_PRESENT" = "1" ]; then
-    for f in OVERALL_STATE CAPACITY_VERDICT ACHIEVABLE UNBOUNDED_STANZAS \
-             LIVE_DISK_STATUS INTERRUPTED_ACTIVATION EFFECTIVE_BUDGET_BYTES \
-             THEORETICAL_MAX_BYTES ACTIVE_POLICY_HASH_MAIN; do
+    # Always-present once the CLI is installed (hold for generated AND fallback).
+    for f in OVERALL_STATE LIVE_DISK_STATUS INTERRUPTED_ACTIVATION READINESS_VERDICT; do
         require "$f"
     done
+    # Generated-policy numeric fields exist only when a generated policy is active
+    # (READY_GENERATED). A valid bounded fallback (READY_FALLBACK) has no state
+    # record, so these are legitimately absent and not required.
+    if [ "${FIELDS[READINESS_VERDICT]:-}" = "READY_GENERATED" ]; then
+        for f in CAPACITY_VERDICT ACHIEVABLE UNBOUNDED_STANZAS \
+                 EFFECTIVE_BUDGET_BYTES THEORETICAL_MAX_BYTES ACTIVE_POLICY_HASH_MAIN; do
+            require "$f"
+        done
+    fi
 elif [ "$MODE" = "post" ]; then
     MISSING="$MISSING logretention-cli(status --json unavailable post-upgrade)"
 fi
@@ -193,13 +209,24 @@ else
 fi
 # 2. authoritative state invariants (only when the v1.222.0 CLI is present; the
 #    pre-upgrade baseline on the old build has no logretention subsystem).
+#    DELTA-L1: the acceptance gate is the readiness verdict — a valid ACTIVE policy
+#    must exist (generated, or a valid bounded fallback). A generated policy
+#    additionally enforces the full status-machine.
 if [ "$CLI_PRESENT" = "1" ]; then
-    [ "${FIELDS[ACHIEVABLE]:-}" = "true" ]            || { note "ACHIEVABLE" "must be true (got ${FIELDS[ACHIEVABLE]:-?})"; fail=1; }
-    [ "${FIELDS[UNBOUNDED_STANZAS]:-1}" = "0" ]       || { note "UNBOUNDED_STANZAS" "must be 0 (got ${FIELDS[UNBOUNDED_STANZAS]:-?})"; fail=1; }
     [ "${FIELDS[INTERRUPTED_ACTIVATION]:-true}" = "false" ] || { note "INTERRUPTED_ACTIVATION" "must be false (got ${FIELDS[INTERRUPTED_ACTIVATION]:-?})"; fail=1; }
-    case "${FIELDS[OVERALL_STATE]:-}" in
-        ACTIVE_MATCH) note "OVERALL_STATE" "ACTIVE_MATCH" ;;
-        *) note "OVERALL_STATE" "must be ACTIVE_MATCH (got ${FIELDS[OVERALL_STATE]:-?})"; fail=1 ;;
+    case "${FIELDS[READINESS_VERDICT]:-}" in
+        READY_GENERATED)
+            note "READINESS" "READY_GENERATED (active generated policy verified)"
+            [ "${FIELDS[ACHIEVABLE]:-}" = "true" ]      || { note "ACHIEVABLE" "must be true (got ${FIELDS[ACHIEVABLE]:-?})"; fail=1; }
+            [ "${FIELDS[UNBOUNDED_STANZAS]:-1}" = "0" ] || { note "UNBOUNDED_STANZAS" "must be 0 (got ${FIELDS[UNBOUNDED_STANZAS]:-?})"; fail=1; }
+            case "${FIELDS[OVERALL_STATE]:-}" in
+                ACTIVE_MATCH) note "OVERALL_STATE" "ACTIVE_MATCH" ;;
+                *) note "OVERALL_STATE" "must be ACTIVE_MATCH for a generated policy (got ${FIELDS[OVERALL_STATE]:-?})"; fail=1 ;;
+            esac ;;
+        READY_FALLBACK)
+            note "READINESS" "READY_FALLBACK (bounded template fallback active — VALID but self-heal pending)" ;;
+        *)
+            note "READINESS" "must be READY_GENERATED or READY_FALLBACK (got ${FIELDS[READINESS_VERDICT]:-?}) — no valid active policy"; fail=1 ;;
     esac
 else
     note "STATUS_MACHINE" "skipped (logretention CLI not present — pre-upgrade baseline)"

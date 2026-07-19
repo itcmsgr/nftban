@@ -1219,6 +1219,47 @@ if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
 fi
 
 # =============================================================================
+# STEP 0b (v1.222.0 DELTA-L1): generate the effective log-retention policy (or the
+# bounded template fallback) BEFORE the installer's validate phase, so its
+# logretention_policy_ready assertion gates the COMMITTED/DEGRADED verdict on a
+# genuinely-present, valid, active policy. NON-FATAL to rpm — a failure here
+# surfaces as DEGRADED via that assertion, never a hard scriptlet error.
+# =============================================================================
+_nftban_generate_logretention() {
+    _lr_core=/usr/lib/nftban/bin/nftban-core
+    _lr_tmpl=/etc/nftban/templates/nftban.logrotate
+    _lr_active=/etc/logrotate.d/nftban
+    _lr_state=/var/lib/nftban/generated/logrotate/nftban-effective.state.json
+    [ -x "\$_lr_core" ] || { echo "[NFTBan] WARN: nftban-core absent; log-retention policy not generated."; return 0; }
+    if "\$_lr_core" logretention generate install >/dev/null 2>&1; then
+        echo "[NFTBan] v1.222.0: effective log-retention policy generated (nftban logs retention status)."
+        return 0
+    fi
+    # Generation failed -> install the shipped template verbatim as the bounded
+    # fallback, and CLEAR stale generated-state so readiness reports FALLBACK
+    # (valid, self-heal pending), not a hash-drift failure.
+    rm -f "\$_lr_state" 2>/dev/null || true
+    if [ -f "\$_lr_tmpl" ] && cp -f "\$_lr_tmpl" "\$_lr_active" 2>/dev/null && chmod 0644 "\$_lr_active" 2>/dev/null; then
+        echo "[NFTBan] WARN: log-retention generation failed; bounded template fallback active (self-heal pending)."
+        return 0
+    fi
+    # Generation AND fallback both failed -> structured durable error; the
+    # readiness assertion will drive the install verdict to DEGRADED.
+    {
+        echo "[NFTBan][ERROR] LOG_RETENTION_POLICY_UNAVAILABLE (generation AND fallback failed)"
+        echo "  generation_result = FAILED"
+        echo "  fallback_result   = FAILED"
+        echo "  policy_path        = \$_lr_active"
+        echo "  template_source    = \$_lr_tmpl"
+        echo "  validator          = logrotate -d \$_lr_active"
+        echo "  maintenance_timer  = \$(systemctl is-active nftban-maintenance.timer 2>/dev/null || echo unknown)"
+        echo "  remediation        = nftban logs retention status; \$_lr_core logretention generate install; logrotate -d \$_lr_active; nftban validate"
+    } | tee -a /var/log/nftban/installer.log >&2 2>/dev/null || true
+    return 0
+}
+_nftban_generate_logretention || true
+
+# =============================================================================
 # STEP 1: Run Go-based installer
 # =============================================================================
 if [ -x "\$NFTBAN_INSTALLER" ]; then
@@ -1370,25 +1411,9 @@ _nftban_rpmnew_quarantine() (
 )
 _nftban_rpmnew_quarantine || true
 
-# --- v1.222.0 R2: generate the capacity-derived effective logrotate policy ---
-# The shipped /etc/logrotate.d/nftban is a bounded static baseline; regenerate it
-# into the profile/capacity-tailored effective policy + generated-state record.
-# NON-FATAL and fail-safe: on any failure (unachievable policy, logrotate
-# validation, etc.) the transaction preserves the previous valid policy (the
-# shipped baseline) and the package install continues.
-if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-    if /usr/lib/nftban/bin/nftban-core logretention generate install >/dev/null 2>&1; then
-        echo "[NFTBan] v1.222.0: effective log-retention policy generated (nftban logs retention status)."
-    else
-        # Fail-safe: the active policy is derived state (not packaged), so on any
-        # generation failure install the shipped template verbatim — there is
-        # ALWAYS a bounded /etc/logrotate.d/nftban present after install.
-        if [ ! -f /etc/logrotate.d/nftban ] && [ -f /etc/nftban/templates/nftban.logrotate ]; then
-            cp -f /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || true
-        fi
-        echo "[NFTBan] WARN: log-retention policy generation skipped; installed the bounded template baseline."
-    fi
-fi
+# (v1.222.0 DELTA-L1) Log-retention policy generation moved to STEP 0b — it now
+# runs BEFORE the installer's validate phase so logretention_policy_ready gates
+# the COMMITTED/DEGRADED verdict. See _nftban_generate_logretention above.
 
 # Send minimal anonymous install result (fire-and-forget, one-time)
 # Reuses nftban_pro.sh infrastructure. Failure is silent.

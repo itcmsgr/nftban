@@ -78,17 +78,22 @@ else
     no "RPM must mark conf.d/*.conf as %config(noreplace) (logs.conf parity)"
 fi
 
-echo "== both scriptlets fail-safe to the template on generation failure =="
-if grep -q 'cp -f /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban' "$SPEC"; then
-    ok "RPM %post copies the template baseline as a fail-safe"
-else
-    no "RPM %post must copy the template baseline when generation fails"
-fi
-if grep -q 'cp -f /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban' "$POSTINST"; then
-    ok "DEB postinst copies the template baseline as a fail-safe"
-else
-    no "DEB postinst must copy the template baseline when generation fails"
-fi
+echo "== both scriptlets fail-safe to the template on generation failure (DELTA-L1 fn) =="
+# DELTA-L1: generation + fallback live in _nftban_generate_logretention, which
+# runs BEFORE the installer's validate phase; the fallback copies the shipped
+# template (referenced via a variable) when generation fails.
+_check_fallback(){ # $1=file $2=label
+    if grep -q '_nftban_generate_logretention' "$1" \
+       && grep -q 'logretention generate install' "$1" \
+       && grep -q '/etc/nftban/templates/nftban.logrotate' "$1" \
+       && grep -q 'cp -f' "$1"; then
+        ok "$2 generates then fail-safe-copies the template baseline (pre-installer)"
+    else
+        no "$2 must generate + fail-safe copy the template before the installer validate"
+    fi
+}
+_check_fallback "$SPEC" "RPM %post"
+_check_fallback "$POSTINST" "DEB postinst"
 
 echo
 echo "======================================================================"
