@@ -14482,6 +14482,74 @@
       "description": "Suricata last candidates",
       "introduced_in": "1.43.0",
       "module": "suricata"
+    },
+    "LOG_RETENTION_MODE": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "fixed"
+      ],
+      "default": "auto",
+      "description": "Log retention mode: auto (capacity/profile-derived, recommended) or fixed (honor explicit overrides).",
+      "introduced_in": "1.222.0",
+      "category": "system",
+      "config_file": "conf.d/logs.conf",
+      "active_when": "always"
+    },
+    "LOG_RETENTION_MAX_PERCENT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "15",
+      "description": "Max share of /var/log filesystem capacity the NFTBan log budget may use, percent (1-90).",
+      "introduced_in": "1.222.0",
+      "category": "system",
+      "config_file": "conf.d/logs.conf",
+      "active_when": "always"
+    },
+    "LOG_RETENTION_MAX_BYTES": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "0",
+      "description": "Absolute cap on total NFTBan log budget in bytes (0 = percentage-based; a cap below the forensic floor is raised to the floor).",
+      "introduced_in": "1.222.0",
+      "category": "system",
+      "config_file": "conf.d/logs.conf",
+      "active_when": "always"
+    },
+    "LOG_RETENTION_MIN_DAYS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "7",
+      "description": "Per-family minimum retention in days (forensic floor); a family's own floor still wins if higher.",
+      "introduced_in": "1.222.0",
+      "category": "system",
+      "config_file": "conf.d/logs.conf",
+      "active_when": "always"
+    },
+    "LOG_RETENTION_MAX_DAYS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "90",
+      "description": "Per-family maximum retention in days (ceiling); never reduces a family below its forensic floor.",
+      "introduced_in": "1.222.0",
+      "category": "system",
+      "config_file": "conf.d/logs.conf",
+      "active_when": "always"
+    },
+    "LOG_RETENTION_PROFILE": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "small",
+        "standard",
+        "high-volume"
+      ],
+      "default": "auto",
+      "description": "Force retention profile instead of auto-detecting from disk capacity.",
+      "introduced_in": "1.222.0",
+      "category": "system",
+      "config_file": "conf.d/logs.conf",
+      "active_when": "always"
     }
   },
   "deprecated": {

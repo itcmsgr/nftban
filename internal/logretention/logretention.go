@@ -123,9 +123,9 @@ type Overrides struct {
 // validation; it does not silently fall back).
 func (o Overrides) Validate() error {
 	switch o.Mode {
-	case "", "auto", "manual":
+	case "", "auto", "fixed":
 	default:
-		return fmt.Errorf("logretention: invalid LOG_RETENTION_MODE %q (want auto|manual)", o.Mode)
+		return fmt.Errorf("logretention: invalid LOG_RETENTION_MODE %q (want auto|fixed)", o.Mode)
 	}
 	switch o.Profile {
 	case "", "auto", "small", "standard", "high-volume":
@@ -410,7 +410,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 	}
 
 	source := "automatic"
-	if o.Mode == "manual" || o.MaxPercent != 0 || o.MaxBytes != 0 || o.MinDays != 0 || o.MaxDays != 0 || (o.Profile != "" && o.Profile != "auto") {
+	if o.Mode == "fixed" || o.MaxPercent != 0 || o.MaxBytes != 0 || o.MinDays != 0 || o.MaxDays != 0 || (o.Profile != "" && o.Profile != "auto") {
 		source = "operator-override"
 	}
 
