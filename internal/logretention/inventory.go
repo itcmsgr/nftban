@@ -3,7 +3,7 @@
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-07-19"
-// meta:description="Canonical NFTBan log-family inventory for the retention calculator + generated-policy renderer. Mirrors the shipped baseline install/config/nftban.logrotate + nftban-suricata.logrotate (grouping, cadence, rotation mechanism). BaseSizeBytes/BaseRotate are the ceilings the calculator will not exceed; the calculator scales the effective size/rotate down to fit the capacity budget. A Phase-8 drift test asserts this table stays in sync with the shipped templates and logs.go LogInventory()."
+// meta:description="Canonical NFTBan log-family inventory for the retention calculator + generated-policy renderer. Mirrors the shipped baseline install/config/nftban.logrotate + nftban-suricata.logrotate (grouping, cadence, rotation mechanism). BaseSizeBytes/BaseRotate are the ceilings the calculator will not exceed; the calculator scales the effective size/rotate down to fit the capacity budget. A parity test (inventory_parity_test.go) asserts this table stays in sync with the shipped templates and logs.go LogInventory()."
 // meta:depends="none (stdlib)"
 // meta:inventory.files="internal/logretention/inventory.go"
 // meta:inventory.binaries=""
