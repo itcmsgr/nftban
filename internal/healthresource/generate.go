@@ -25,12 +25,43 @@ const (
 type State string
 
 const (
-	StateAbsent        State = "ABSENT"          // no drop-in on disk
-	StateReadyGen      State = "READY_GENERATED" // written/updated this run
-	StateActiveMatch   State = "ACTIVE_MATCH"    // on-disk bytes already equal desired
-	StateStaleMismatch State = "STALE_MISMATCH"  // on-disk differs from desired (pre-write)
-	StateInvalid       State = "INVALID"         // computed policy failed validation
+	StateAbsent           State = "ABSENT"             // no drop-in on disk
+	StateReadyGen         State = "READY_GENERATED"    // written/updated this run
+	StateActiveMatch      State = "ACTIVE_MATCH"       // effective systemd == calculated (protection ACTIVE)
+	StateStaleMismatch    State = "STALE_MISMATCH"     // on-disk differs from desired (pre-write)
+	StateInvalid          State = "INVALID"            // computed policy failed validation
+	StateFallbackMatch    State = "FALLBACK_MATCH"     // no effective drop-in, but packaged fallback >= calculated (small host: OK)
+	StateFallbackUnder    State = "FALLBACK_UNDERSIZED" // effective < calculated (medium/large: DEGRADED, protection NOT active)
+	StateGenerationFailed State = "GENERATION_FAILED"  // policy valid but drop-in could not be written
+	StateActivationFailed State = "ACTIVATION_FAILED"  // written but daemon-reload / effective verification failed
 )
+
+// ProtectionActive reports whether the health-OOM protection is effectively in
+// force for a given state. Only ACTIVE_MATCH (drop-in effective) and
+// FALLBACK_MATCH (small host where the packaged fallback already meets the
+// calculated budget) count as protected; every other terminal state means the
+// medium/large host is running under the proven-defective fallback.
+func (s State) ProtectionActive() bool {
+	return s == StateActiveMatch || s == StateFallbackMatch
+}
+
+// ClassifyEffective compares the host's LIVE systemd effective limits against the
+// calculated policy and returns the operational state. This is the authority for
+// "is the profile-derived protection actually active", independent of whether a
+// file merely exists — the owner rule: do not trust file presence alone.
+//
+//   - effective == calculated (drop-in loaded)        → ACTIVE_MATCH (protected)
+//   - effective >= calculated (no drop-in needed)     → FALLBACK_MATCH (small host, protected by fallback)
+//   - effective <  calculated                         → FALLBACK_UNDERSIZED (medium/large, NOT protected)
+func ClassifyEffective(calc safety.HealthResourceProfile, effHigh, effMax int64, dropinLoaded bool) State {
+	if dropinLoaded && effHigh == calc.MemoryHigh && effMax == calc.MemoryMax {
+		return StateActiveMatch
+	}
+	if effMax >= calc.MemoryMax && effHigh >= calc.MemoryHigh {
+		return StateFallbackMatch
+	}
+	return StateFallbackUnder
+}
 
 // Test seams (mirrors the logretention pattern) — overridden in unit tests.
 var (

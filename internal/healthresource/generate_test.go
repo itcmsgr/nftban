@@ -80,6 +80,48 @@ func TestValidateRejectsBadPolicy(t *testing.T) {
 	}
 }
 
+func tierProfile(totalRAM int64) safety.HealthResourceProfile {
+	p := safety.ServerProfile{TotalRAM: totalRAM, AvailRAM: totalRAM / 2, CPUCores: 4}
+	return safety.HealthServiceMemoryLimitsFor(p, safety.ClassifyResourceTier(p))
+}
+
+// The core owner rule: effective (not file presence) decides protection, and the
+// packaged fallback (192/256 MiB) is FALLBACK_MATCH for small but UNDERSIZED for
+// medium/large.
+func TestClassifyEffectiveFallbackSemantics(t *testing.T) {
+	const MiB = int64(1) << 20
+	fbHigh, fbMax := 192*MiB, 256*MiB // packaged fallback
+
+	small := tierProfile(2 << 30)  // calc 192/256
+	medium := tierProfile(6 << 30) // calc 256/384
+	large := tierProfile(16 << 30) // calc 384/512
+
+	// Small: fallback already meets calc → FALLBACK_MATCH (protected), even w/o drop-in.
+	if s := ClassifyEffective(small, fbHigh, fbMax, false); s != StateFallbackMatch || !s.ProtectionActive() {
+		t.Errorf("small fallback: got %s protected=%v want FALLBACK_MATCH/true", s, s.ProtectionActive())
+	}
+	// Small with the drop-in loaded at calc values → ACTIVE_MATCH.
+	if s := ClassifyEffective(small, small.MemoryHigh, small.MemoryMax, true); s != StateActiveMatch {
+		t.Errorf("small active: got %s want ACTIVE_MATCH", s)
+	}
+	// Medium under the packaged fallback → FALLBACK_UNDERSIZED (NOT protected).
+	if s := ClassifyEffective(medium, fbHigh, fbMax, false); s != StateFallbackUnder || s.ProtectionActive() {
+		t.Errorf("medium fallback: got %s protected=%v want FALLBACK_UNDERSIZED/false", s, s.ProtectionActive())
+	}
+	// Medium with the drop-in effective at calc values → ACTIVE_MATCH (protected).
+	if s := ClassifyEffective(medium, medium.MemoryHigh, medium.MemoryMax, true); s != StateActiveMatch || !s.ProtectionActive() {
+		t.Errorf("medium active: got %s want ACTIVE_MATCH/protected", s)
+	}
+	// Large under the packaged fallback → FALLBACK_UNDERSIZED.
+	if s := ClassifyEffective(large, fbHigh, fbMax, false); s != StateFallbackUnder {
+		t.Errorf("large fallback: got %s want FALLBACK_UNDERSIZED", s)
+	}
+	// A drop-in present but effective values stale/below calc (activation failed) → not ACTIVE_MATCH.
+	if s := ClassifyEffective(large, fbHigh, fbMax, true); s.ProtectionActive() {
+		t.Errorf("large drop-in-loaded-but-ineffective must NOT be protected, got %s", s)
+	}
+}
+
 func TestClassifyStates(t *testing.T) {
 	d := Render(mediumProfile(), "1.222.1")
 	if Classify(nil, d) != StateAbsent {
