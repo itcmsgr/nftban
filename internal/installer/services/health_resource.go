@@ -196,9 +196,16 @@ func verifyLiveWithProfile(exec executor.Executor, sf *state.StateFile, log *log
 		finishHealthResource(exec, sf, log, &v)
 		return v
 	}
-	// on-disk generated state (read-only; NO write)
+	// on-disk generated state (read-only; NO write). dropInOnDisk drives the
+	// "we expect our drop-in loaded" classify input — matching the read-only CLI
+	// (cmd_resources passes svc.Dropin.OnDisk). If the drop-in is absent we are on
+	// the packaged fallback (FALLBACK_MATCH/UNDERSIZED); if present-but-not-loaded
+	// it is EXPECTED_DROPIN_NOT_LOADED. reconcileWithProfile hardcodes true because
+	// it has just WRITTEN the drop-in; a read-only verify must not assume that.
 	desired := healthresource.Render(p, sourceVersion)
+	dropInOnDisk := false
 	if existing, rerr := exec.ReadFile(healthresource.DropinFile); rerr == nil {
+		dropInOnDisk = true
 		v.GeneratedState = healthresource.Classify(existing, desired)
 	} else {
 		v.GeneratedState = healthresource.StateAbsent
@@ -226,7 +233,7 @@ func verifyLiveWithProfile(exec executor.Executor, sf *state.StateFile, log *log
 			otherDropins++
 		}
 	}
-	v.EffectiveState = healthresource.ClassifyEffectiveDetailed(p, effHigh, effMax, v.DropInLoaded, otherDropins, true)
+	v.EffectiveState = healthresource.ClassifyEffectiveDetailed(p, effHigh, effMax, v.DropInLoaded, otherDropins, dropInOnDisk)
 	if v.EffectiveState == healthresource.StateExternalConflict && v.ValidationError == "" {
 		v.ValidationError = "external systemd drop-in overrides health-service memory limits: " + strings.Join(dropins, " ")
 	}
