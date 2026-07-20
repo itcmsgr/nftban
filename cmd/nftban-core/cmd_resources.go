@@ -34,8 +34,8 @@ type resourcesReport struct {
 	} `json:"host"`
 	Service resourcesServiceReport `json:"services_health"`
 	// PersistedState mirrors the installer's last reconciliation (history/failure detail).
-	Persisted resourcesPersisted `json:"persisted_installer_state"`
-	OverallState string          `json:"overall_state"`
+	Persisted    resourcesPersisted `json:"persisted_installer_state"`
+	OverallState string             `json:"overall_state"`
 }
 
 type resourcesServiceReport struct {
@@ -341,11 +341,6 @@ func yesNo(b bool) string {
 		return "yes"
 	}
 	return "no"
-}
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }
 
 func containsStr(ss []string, want string) bool {
