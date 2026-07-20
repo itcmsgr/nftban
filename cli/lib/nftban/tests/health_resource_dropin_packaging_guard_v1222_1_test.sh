@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # meta:name="health_resource_dropin_packaging_guard_v1222_1_test.sh"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -7,7 +8,6 @@ set -u
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 BUILD="$ROOT/packaging/build_nftban.sh"
 DEB_POSTRM="$ROOT/packaging/deb/postrm"
-DROPIN="/etc/systemd/system/nftban-health.service.d/20-nftban-resource-profile.conf"
 fail=0
 ok()  { echo "PASS: $1"; }
 bad() { echo "FAIL: $1"; fail=1; }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="failed_units.go"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # meta:name="health_resources_cli_registration_v1222_1_test.sh"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

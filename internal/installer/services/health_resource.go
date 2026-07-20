@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="health_resource.go"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
