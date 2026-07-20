@@ -109,6 +109,16 @@ func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.Stat
 		return sf.State.ExitCode()
 	}
 
+	// 3b. v1.222.1 HEALTH-OOM Lane 2: remove the generated health-resource
+	// systemd drop-in. It is generated state (NOT package payload), so the
+	// package %postrm/%postun does not own it — the installer does. Administrator
+	// sibling drop-ins are left untouched. Non-fatal.
+	if changed, err := services.RemoveHealthResourceDropin(exec, log); err != nil {
+		log.Warn("uninstall apply: health-resource drop-in cleanup: %v (non-fatal)", err)
+	} else if changed {
+		log.Info("uninstall apply: removed generated health-resource drop-in + daemon-reload")
+	}
+
 	// 4. Apply the mutation sequence.
 	//
 	// Mode comes from the operator's --purge / --force-delete-operator-config

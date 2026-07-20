@@ -128,12 +128,12 @@ func TestClassifyEffectiveDetailed(t *testing.T) {
 	h, mx := med.MemoryHigh, med.MemoryMax
 	const MiB = int64(1) << 20
 	cases := []struct {
-		name                 string
-		effHigh, effMax      int64
-		ourLoaded            bool
-		otherDropins         int
-		weExpect             bool
-		want                 State
+		name            string
+		effHigh, effMax int64
+		ourLoaded       bool
+		otherDropins    int
+		weExpect        bool
+		want            State
 	}{
 		{"active", h, mx, true, 0, true, StateActiveMatch},
 		{"small-fallback-meets", h, mx, false, 0, false, StateFallbackMatch},

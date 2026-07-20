@@ -36,9 +36,9 @@ const (
 	StateActivationFailed State = "ACTIVATION_FAILED"   // written but daemon-reload / effective verification failed
 
 	// v1.222.1 Lane 2 lifecycle: conflict / mismatch states.
-	StateExternalConflict     State = "EXTERNAL_OVERRIDE_CONFLICT" // a non-NFTBan drop-in overrides the effective values
-	StateExpectedNotLoaded    State = "EXPECTED_DROPIN_NOT_LOADED"  // our drop-in on disk but not in systemd DropInPaths
-	StateEffectiveMismatch    State = "EFFECTIVE_VALUES_MISMATCH"   // our drop-in loaded but effective != calculated (reload lag / stale)
+	StateExternalConflict  State = "EXTERNAL_OVERRIDE_CONFLICT" // a non-NFTBan drop-in overrides the effective values
+	StateExpectedNotLoaded State = "EXPECTED_DROPIN_NOT_LOADED" // our drop-in on disk but not in systemd DropInPaths
+	StateEffectiveMismatch State = "EFFECTIVE_VALUES_MISMATCH"  // our drop-in loaded but effective != calculated (reload lag / stale)
 )
 
 // ProtectionActive reports whether the health-OOM protection is effectively in

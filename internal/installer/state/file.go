@@ -90,22 +90,22 @@ type StateFile struct {
 	// v1.222.1 HEALTH-OOM hotfix (Lane 2): profile-derived health-service
 	// resource reconciliation result. All optional/backward-compatible — an old
 	// state file without these keys parses to zero values. No volatile timestamp.
-	HealthResourceState        string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
-	HealthResourceProfile      string // resource tier: small/medium/large
-	HealthResourceAuthority    string // always internal/safety
-	HealthResourceReason       string // tier-selection reason
-	HealthResourceProtection   bool   // true iff profile-derived OOM protection is effectively active
-	HealthMemHighCalculated    int64
-	HealthMemMaxCalculated     int64
-	HealthMemHighEffective     int64
-	HealthMemMaxEffective      int64
-	HealthTasksMaxEffective    int64
-	HealthResourceDropin       string // canonical generated drop-in path
-	HealthResourceDropinLoaded bool
+	HealthResourceState         string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
+	HealthResourceProfile       string // resource tier: small/medium/large
+	HealthResourceAuthority     string // always internal/safety
+	HealthResourceReason        string // tier-selection reason
+	HealthResourceProtection    bool   // true iff profile-derived OOM protection is effectively active
+	HealthMemHighCalculated     int64
+	HealthMemMaxCalculated      int64
+	HealthMemHighEffective      int64
+	HealthMemMaxEffective       int64
+	HealthTasksMaxEffective     int64
+	HealthResourceDropin        string // canonical generated drop-in path
+	HealthResourceDropinLoaded  bool
 	HealthResourceLoadedDropins string // space-separated ALL loaded DropInPaths (conflict evidence)
-	HealthResourceSourceVer    string
-	HealthResourceGenerated    string // file-level generated state
-	HealthResourceError        string // last reconciliation error (cleared on success)
+	HealthResourceSourceVer     string
+	HealthResourceGenerated     string // file-level generated state
+	HealthResourceError         string // last reconciliation error (cleared on success)
 
 	// DryRun, when true, makes Transition update in-memory fields only
 	// and skip the atomic file write. PR-22B introduced this so that
