@@ -14,8 +14,8 @@
 package main
 
 import (
-	coresafety "github.com/itcmsgr/nftban/internal/safety"
 	lr "github.com/itcmsgr/nftban/internal/logretention"
+	coresafety "github.com/itcmsgr/nftban/internal/safety"
 
 	"github.com/itcmsgr/nftban/internal/installer/validate"
 )
