@@ -220,6 +220,22 @@ func detectControlPanel() (panelType string, hasPanel bool) {
 }
 
 
+// daemonMaxBudgetForTier maps the canonical RAM tier to the daemon memory-budget
+// cap in bytes. Daemon-DOMAIN policy (tier → cap); values are unchanged from the
+// pre-v1.222.1 inline switch (small 440MB / medium 590MB / large 1.15GB). It does
+// NOT re-derive the RAM tier — that is ClassifyResourceTier's single job.
+func daemonMaxBudgetForTier(tier ResourceTier) int64 {
+	const MB = 1024 * 1024
+	switch tier {
+	case ResourceTierSmall:
+		return 440 * MB // 440MB for small servers (+15%)
+	case ResourceTierMedium:
+		return 590 * MB // 590MB for medium (+15%)
+	default: // ResourceTierLarge
+		return 1178 * MB // 1.15GB for large (+15%)
+	}
+}
+
 // GetResourceLimits calculates appropriate resource limits based on server profile
 // Returns memory budget and max concurrent workers
 func GetResourceLimits() (memBudget int64, maxWorkers int) {
@@ -240,21 +256,11 @@ func GetResourceLimits() (memBudget int64, maxWorkers int) {
 
 	memBudget = (profile.AvailRAM * budgetPercent) / 100
 
-	// Apply caps based on total RAM (increased 15% from original for CIDR loading headroom)
-	// Small servers (<=4GB): max 440MB (was 384MB)
-	// Medium servers (4-8GB): max 590MB (was 512MB)
-	// Large servers (>8GB): max 1.15GB (was 1GB)
-	const GB = 1024 * 1024 * 1024
-	var maxBudget int64
-
-	switch {
-	case profile.TotalRAM <= 4*GB:
-		maxBudget = 440 * 1024 * 1024 // 440MB for small servers (+15%)
-	case profile.TotalRAM <= 8*GB:
-		maxBudget = 590 * 1024 * 1024 // 590MB for medium (+15%)
-	default:
-		maxBudget = 1178 * 1024 * 1024 // 1.15GB for large (+15%)
-	}
+	// Apply caps based on the canonical RAM tier (increased 15% from original for
+	// CIDR loading headroom). Tier→cap is daemon-DOMAIN policy; the RAM→tier
+	// threshold table lives once in ClassifyResourceTier (resource_tier.go).
+	// Small (<=4GB): 440MB · Medium (4-8GB): 590MB · Large (>8GB): 1.15GB.
+	maxBudget := daemonMaxBudgetForTier(ClassifyResourceTier(profile))
 
 	if memBudget > maxBudget {
 		memBudget = maxBudget

@@ -19,20 +19,20 @@
 // This dispatcher is the ONLY entry into uninstall mutation. Reached
 // only when:
 //
-//   cfg.mode             == "uninstall"  AND
-//   cfg.confirmMutation  == true         AND
-//   cfg.dryRun           == false
+//	cfg.mode             == "uninstall"  AND
+//	cfg.confirmMutation  == true         AND
+//	cfg.dryRun           == false
 //
 // (flags.go rejects any other combination at parse time.)
 //
 // Responsibilities:
 //
-//   1. Detect SSH port (reused from install-side detect package).
-//   2. Classify current authority (via uninstall.Classify).
-//   3. Preflight refusal for non-recoverable states; proceed for
-//      AuthorityNFTBan or recoverable AuthorityAmbiguous+OrphanNFTBan.
-//   4. Invoke uninstall.Apply for the mutation sequence.
-//   5. Transition the state file to the Apply result's terminal state.
+//  1. Detect SSH port (reused from install-side detect package).
+//  2. Classify current authority (via uninstall.Classify).
+//  3. Preflight refusal for non-recoverable states; proceed for
+//     AuthorityNFTBan or recoverable AuthorityAmbiguous+OrphanNFTBan.
+//  4. Invoke uninstall.Apply for the mutation sequence.
+//  5. Transition the state file to the Apply result's terminal state.
 //
 // Emergency SSH: Apply handles the entire inject/validate/remove cycle
 // internally. The dispatcher never touches the kernel directly.
@@ -54,6 +54,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/services"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/installer/uninstall"
 )
@@ -107,6 +108,16 @@ func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.Stat
 		fmt.Fprintln(os.Stderr, "uninstall apply: preflight refused — "+refuseReason)
 		_ = sf.Transition(state.StateFailedAbort, state.PhaseDetect, refuseReason)
 		return sf.State.ExitCode()
+	}
+
+	// 3b. v1.222.1 HEALTH-OOM Lane 2: remove the generated health-resource
+	// systemd drop-in. It is generated state (NOT package payload), so the
+	// package %postrm/%postun does not own it — the installer does. Administrator
+	// sibling drop-ins are left untouched. Non-fatal.
+	if changed, err := services.RemoveHealthResourceDropin(exec, log); err != nil {
+		log.Warn("uninstall apply: health-resource drop-in cleanup: %v (non-fatal)", err)
+	} else if changed {
+		log.Info("uninstall apply: removed generated health-resource drop-in + daemon-reload")
 	}
 
 	// 4. Apply the mutation sequence.

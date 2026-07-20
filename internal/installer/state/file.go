@@ -86,6 +86,31 @@ type StateFile struct {
 	RebuildDurationMs int64
 	ServicesEnabled   string
 	ServicesFailed    string
+	// v1.222.1 Lane 4: structured failed-unit attribution companions to
+	// SERVICES_FAILED (canonical, comma-separated nftban unit names). Backward-
+	// compatible — absent in old state files → empty.
+	ServicesFailedPreexisting string
+	ServicesFailedInWindow    string
+
+	// v1.222.1 HEALTH-OOM hotfix (Lane 2): profile-derived health-service
+	// resource reconciliation result. All optional/backward-compatible — an old
+	// state file without these keys parses to zero values. No volatile timestamp.
+	HealthResourceState         string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
+	HealthResourceProfile       string // resource tier: small/medium/large
+	HealthResourceAuthority     string // always internal/safety
+	HealthResourceReason        string // tier-selection reason
+	HealthResourceProtection    bool   // true iff profile-derived OOM protection is effectively active
+	HealthMemHighCalculated     int64
+	HealthMemMaxCalculated      int64
+	HealthMemHighEffective      int64
+	HealthMemMaxEffective       int64
+	HealthTasksMaxEffective     int64
+	HealthResourceDropin        string // canonical generated drop-in path
+	HealthResourceDropinLoaded  bool
+	HealthResourceLoadedDropins string // space-separated ALL loaded DropInPaths (conflict evidence)
+	HealthResourceSourceVer     string
+	HealthResourceGenerated     string // file-level generated state
+	HealthResourceError         string // last reconciliation error (cleared on success)
 
 	// DryRun, when true, makes Transition update in-memory fields only
 	// and skip the atomic file write. PR-22B introduced this so that
@@ -230,6 +255,24 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "REBUILD_DURATION_MS=%d\n", sf.RebuildDurationMs)
 	fmt.Fprintf(w, "SERVICES_ENABLED=%s\n", sf.ServicesEnabled)
 	fmt.Fprintf(w, "SERVICES_FAILED=%s\n", sf.ServicesFailed)
+	fmt.Fprintf(w, "SERVICES_FAILED_PREEXISTING=%s\n", sf.ServicesFailedPreexisting)
+	fmt.Fprintf(w, "SERVICES_FAILED_IN_WINDOW=%s\n", sf.ServicesFailedInWindow)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_STATE=%s\n", sf.HealthResourceState)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_PROFILE=%s\n", sf.HealthResourceProfile)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_AUTHORITY=%s\n", sf.HealthResourceAuthority)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_REASON=%s\n", sf.HealthResourceReason)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_PROTECTION_ACTIVE=%s\n", fmtBool(sf.HealthResourceProtection))
+	fmt.Fprintf(w, "HEALTH_MEMORY_HIGH_CALCULATED=%d\n", sf.HealthMemHighCalculated)
+	fmt.Fprintf(w, "HEALTH_MEMORY_MAX_CALCULATED=%d\n", sf.HealthMemMaxCalculated)
+	fmt.Fprintf(w, "HEALTH_MEMORY_HIGH_EFFECTIVE=%d\n", sf.HealthMemHighEffective)
+	fmt.Fprintf(w, "HEALTH_MEMORY_MAX_EFFECTIVE=%d\n", sf.HealthMemMaxEffective)
+	fmt.Fprintf(w, "HEALTH_TASKS_MAX_EFFECTIVE=%d\n", sf.HealthTasksMaxEffective)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_DROPIN=%s\n", sf.HealthResourceDropin)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_DROPIN_LOADED=%s\n", fmtBool(sf.HealthResourceDropinLoaded))
+	fmt.Fprintf(w, "HEALTH_RESOURCE_LOADED_DROPINS=%s\n", sf.HealthResourceLoadedDropins)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_SOURCE_VERSION=%s\n", sf.HealthResourceSourceVer)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_GENERATED=%s\n", sf.HealthResourceGenerated)
+	fmt.Fprintf(w, "HEALTH_RESOURCE_ERROR=%s\n", sf.HealthResourceError)
 
 	if err := w.Flush(); err != nil {
 		f.Close()
@@ -297,6 +340,42 @@ func (sf *StateFile) Read() error {
 			sf.ServicesEnabled = val
 		case "SERVICES_FAILED":
 			sf.ServicesFailed = val
+		case "SERVICES_FAILED_PREEXISTING":
+			sf.ServicesFailedPreexisting = val
+		case "SERVICES_FAILED_IN_WINDOW":
+			sf.ServicesFailedInWindow = val
+		case "HEALTH_RESOURCE_STATE":
+			sf.HealthResourceState = val
+		case "HEALTH_RESOURCE_PROFILE":
+			sf.HealthResourceProfile = val
+		case "HEALTH_RESOURCE_AUTHORITY":
+			sf.HealthResourceAuthority = val
+		case "HEALTH_RESOURCE_REASON":
+			sf.HealthResourceReason = val
+		case "HEALTH_RESOURCE_PROTECTION_ACTIVE":
+			sf.HealthResourceProtection = (val == "1" || val == "true")
+		case "HEALTH_MEMORY_HIGH_CALCULATED":
+			sf.HealthMemHighCalculated, _ = strconv.ParseInt(val, 10, 64)
+		case "HEALTH_MEMORY_MAX_CALCULATED":
+			sf.HealthMemMaxCalculated, _ = strconv.ParseInt(val, 10, 64)
+		case "HEALTH_MEMORY_HIGH_EFFECTIVE":
+			sf.HealthMemHighEffective, _ = strconv.ParseInt(val, 10, 64)
+		case "HEALTH_MEMORY_MAX_EFFECTIVE":
+			sf.HealthMemMaxEffective, _ = strconv.ParseInt(val, 10, 64)
+		case "HEALTH_TASKS_MAX_EFFECTIVE":
+			sf.HealthTasksMaxEffective, _ = strconv.ParseInt(val, 10, 64)
+		case "HEALTH_RESOURCE_DROPIN":
+			sf.HealthResourceDropin = val
+		case "HEALTH_RESOURCE_DROPIN_LOADED":
+			sf.HealthResourceDropinLoaded = (val == "1" || val == "true")
+		case "HEALTH_RESOURCE_LOADED_DROPINS":
+			sf.HealthResourceLoadedDropins = val
+		case "HEALTH_RESOURCE_SOURCE_VERSION":
+			sf.HealthResourceSourceVer = val
+		case "HEALTH_RESOURCE_GENERATED":
+			sf.HealthResourceGenerated = val
+		case "HEALTH_RESOURCE_ERROR":
+			sf.HealthResourceError = val
 		}
 	}
 	return scanner.Err()

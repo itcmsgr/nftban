@@ -172,37 +172,32 @@ const (
 	BanAgeThresholdDays = 30
 )
 
-// GetMaxCIDRsHard returns the dynamic CIDR limit based on server tier
-// Small servers (≤4GB): 75,000 max CIDRs
-// Medium servers (4-8GB): 100,000 max CIDRs
-// Large servers (>8GB): 150,000 max CIDRs
-func GetMaxCIDRsHard() int {
-	profile := DetectServerProfile()
-	const GB = 1024 * 1024 * 1024
-
-	switch {
-	case profile.TotalRAM <= 4*GB:
+// maxCIDRsForTier maps the canonical RAM tier to the CIDR hard cap. This is
+// CIDR-DOMAIN policy (tier → cap); it does NOT re-derive the RAM tier — the
+// single RAM→tier threshold table lives in ClassifyResourceTier (resource_tier.go).
+func maxCIDRsForTier(tier ResourceTier) int {
+	switch tier {
+	case ResourceTierSmall:
 		return 75000 // Small servers: conservative limit
-	case profile.TotalRAM <= 8*GB:
+	case ResourceTierMedium:
 		return 100000 // Medium servers: standard limit
-	default:
+	default: // ResourceTierLarge
 		return 150000 // Large servers: higher limit
 	}
 }
 
+// GetMaxCIDRsHard returns the dynamic CIDR limit based on the canonical server tier
+// Small servers (≤4GB): 75,000 max CIDRs
+// Medium servers (4-8GB): 100,000 max CIDRs
+// Large servers (>8GB): 150,000 max CIDRs
+func GetMaxCIDRsHard() int {
+	return maxCIDRsForTier(CurrentResourceTier())
+}
+
 // GetMaxCIDRsHardWithTier returns both the limit and tier name for logging
 func GetMaxCIDRsHardWithTier() (limit int, tier string) {
-	profile := DetectServerProfile()
-	const GB = 1024 * 1024 * 1024
-
-	switch {
-	case profile.TotalRAM <= 4*GB:
-		return 75000, "small"
-	case profile.TotalRAM <= 8*GB:
-		return 100000, "medium"
-	default:
-		return 150000, "large"
-	}
+	t := CurrentResourceTier()
+	return maxCIDRsForTier(t), string(t)
 }
 
 // CIDRLoadResult describes the result of ValidateCIDRLoad

@@ -244,6 +244,25 @@ nftban_cmd_health() {
         config)
             nftban_health_cmd_config "${clean_args[@]}"
             ;;
+        resources)
+            # v1.222.1 Lane 3: READ-ONLY resource diagnostics. Delegates to the
+            # canonical Go renderer (nftban-core resources) — the shell performs NO
+            # RAM/tier/memory-policy calculation. Shows detected hardware, the
+            # calculated health-service policy, effective systemd limits, runtime
+            # peak/headroom, and the protection verdict. --json flows through.
+            local _hr_core
+            _hr_core="$(cmd_get_core_binary)"
+            if [[ ! -x "$_hr_core" ]]; then
+                echo "nftban health resources: core binary not found ($_hr_core)" >&2
+                return 1
+            fi
+            local _hr_args=("${clean_args[@]}")
+            if [[ "$json_mode" == "true" ]]; then
+                _hr_args+=(--json)
+            fi
+            "$_hr_core" resources "${_hr_args[@]}"
+            return $?
+            ;;
         rbl)
             nftban_health_cmd_rbl "${clean_args[@]}"
             ;;
@@ -342,6 +361,10 @@ DIAGNOSTICS:
     install, verify         Verify installation completeness
     conflicts [--fix]       Detect/remove conflicting firewalls
     config [--verbose]      Show module and config status
+    resources [--json]      Show detected hardware and effective NFTBan resource limits
+                            Compares calculated health-service policy with effective
+                            systemd limits, runtime peak, headroom, and protection state
+                            Read-only; does not regenerate or change resource settings
     posture, security       Check security posture (low noise)
     botguard                Check BotGuard module status
     rbl                     Check RBL (DNS blocklist) health

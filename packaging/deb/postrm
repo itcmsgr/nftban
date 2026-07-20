@@ -186,6 +186,18 @@ case "$1" in
         ;;
 
     remove)
+        # v1.222.1 HEALTH-OOM Lane 2 BACKSTOP: remove the NFTBan-generated
+        # health-resource systemd drop-in (generated state, NOT payload; primary
+        # owner is the Go installer's uninstall path). Path-only — NO RAM/tier/policy
+        # calculation. Administrator sibling drop-ins are preserved. Must match the
+        # RPM %postun ($1 -eq 0) STEP 2b snippet.
+        _nftban_hr_dropin=/etc/systemd/system/nftban-health.service.d/20-nftban-resource-profile.conf
+        if [ -f "$_nftban_hr_dropin" ]; then
+            rm -f "$_nftban_hr_dropin" 2>/dev/null || true
+            rmdir /etc/systemd/system/nftban-health.service.d 2>/dev/null || true
+            systemctl daemon-reload 2>/dev/null || true
+        fi
+
         # v1.221.3: On non-purge remove, DELETE the NFTBan tables (do NOT merely
         # flush them). The pre-v1.221.3 code flushed `table ip nftban` /
         # `table ip6 nftban` but KEPT the tables — leaving the base `input` chain

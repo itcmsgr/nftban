@@ -73,10 +73,18 @@ if grep -q "known transient on the" "$U"; then no "B4 misleading exporter line" 
 grep -q "may be a CURRENT failure, or a STALE pre-existing" "$U" \
   && ok "B5 DEGRADED reworded (current OR stale pre-existing)" || no "B5 DEGRADED wording" "missing"
 grep -q "nftban health" "$U" && ok "B6 DEGRADED suggests nftban health" || no "B6 health hint" "missing"
-# v1.185.1 H3: the DEGRADED remediation MUST surface reset-failed (the actual fix
-# for a stale oneshot latch — --repair alone does not clear it).
-grep -q "systemctl reset-failed nftban-botscan.service" "$U" \
-  && ok "B7 DEGRADED surfaces reset-failed for stale botscan latch (v1.185.1)" || no "B7 reset-failed hint" "missing"
+# v1.222.1 Lane 4: the DEGRADED remediation MUST surface reset-failed, now rendered
+# PER STRUCTURED FAILED UNIT from install_state (SERVICES_FAILED), NOT a hardcoded
+# nftban-botscan.service (BUG-INSTALLER-FAILED-UNIT-REMEDIATION-HARDCODED-BOTSCAN).
+grep -qF 'systemctl reset-failed $_u' "$U" \
+  && ok "B7 DEGRADED surfaces structured per-unit reset-failed (v1.222.1)" || no "B7 structured reset-failed" "missing"
+grep -qF 'SERVICES_FAILED=' "$U" \
+  && ok "B7a DEGRADED reads structured SERVICES_FAILED" || no "B7a SERVICES_FAILED read" "missing"
+if grep -q "systemctl reset-failed nftban-botscan.service" "$U"; then
+  no "B7b hardcoded botscan remediation removed" "still present"
+else
+  ok "B7b no hardcoded nftban-botscan.service remediation (v1.222.1 Lane 4)"
+fi
 grep -q "does NOT clear a stale oneshot failed-state" "$U" \
   && ok "B8 DEGRADED explains --repair alone is insufficient (v1.185.1)" || no "B8 repair-insufficient note" "missing"
 

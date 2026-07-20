@@ -265,6 +265,11 @@ health:
           type: bool
           alias: "-v"
           description: "Include config paths"
+    resources:
+      mutates: false
+      description: "Show detected hardware and effective NFTBan resource limits"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
     analysis:
       mutates: false
       description: "Run deep health analysis with recommendations"

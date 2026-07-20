@@ -917,14 +917,35 @@ _cmd_update_main_locked() {
             echo ""
             echo "  Verify and re-validate:"
             echo "      nftban health                                   # check live four-axis health"
-            echo "      systemctl reset-failed nftban-botscan.service   # clear a STALE pre-upgrade failed-state"
-            echo "      systemctl start nftban-botscan.service          # run once now (or wait for the timer)"
+            # v1.222.1 Lane 4 (BUG-INSTALLER-FAILED-UNIT-REMEDIATION-HARDCODED-BOTSCAN):
+            # render the ACTUAL failed unit(s) from the STRUCTURED install_state
+            # (SERVICES_FAILED + attribution), never a hardcoded nftban-botscan.service.
+            local _svc_failed _svc_pre _u _pre
+            local -a _units
+            _svc_failed=$(grep -m1 '^SERVICES_FAILED=' "$_install_state_file" 2>/dev/null | cut -d= -f2-)
+            _svc_pre=$(grep -m1 '^SERVICES_FAILED_PREEXISTING=' "$_install_state_file" 2>/dev/null | cut -d= -f2-)
+            if [[ -n "$_svc_failed" ]]; then
+                IFS=',' read -ra _units <<< "$_svc_failed"
+                for _u in "${_units[@]}"; do
+                    [[ -n "$_u" ]] || continue
+                    # Only render injection-safe canonical nftban unit names.
+                    [[ "$_u" =~ ^nftband?[A-Za-z0-9@._-]*\.(service|timer|socket|target|path)$ ]] || continue
+                    _pre="NO"; case ",$_svc_pre," in *",$_u,"*) _pre="YES";; esac
+                    echo "      # Failed unit: $_u  (predates this upgrade: $_pre)"
+                    [[ "$_pre" == "YES" ]] && echo "      systemctl reset-failed $_u   # clear the confirmed stale latch"
+                    echo "      systemctl start $_u          # run once now (or wait for the timer)"
+                    echo "      systemctl status $_u --no-pager"
+                done
+            else
+                echo "      # structured failed-unit list unavailable — do NOT guess a unit; inspect:"
+                echo "      systemctl --failed 'nftban-*'"
+            fi
             echo "      /usr/lib/nftban/bin/nftban-installer --repair   # re-run post-install validation"
             echo "      nftban support                                  # capture diagnostic bundle (optional)"
             echo ""
             echo "  Note: --repair re-runs validation but does NOT clear a stale oneshot failed-state;"
-            echo "        reset-failed is required when the failure pre-dates this upgrade (e.g. an old"
-            echo "        nftban-botscan timeout). A fresh run that still fails is a REAL failure — capture support."
+            echo "        reset-failed is required only when the failure PRE-DATES this upgrade (predates=YES"
+            echo "        above). A fresh run that still fails is a REAL failure — capture support."
             echo ""
             echo "  Kernel-state verification (trust but verify):"
             echo "      nft list tables"

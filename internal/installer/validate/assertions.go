@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
@@ -64,6 +65,19 @@ type AssertionOpts struct {
 	// decide between caller-provided and DefaultPolicy(). Exposed
 	// via WithPanelPolicy.
 	panelPolicySet bool
+
+	// HealthResource is the v1.222.1 health-resource reconciliation verdict
+	// produced in phaseConfigure. When non-nil, the health_resource_policy_active
+	// assertion consumes it (single policy path — no recomputation). Nil in
+	// contexts that did not run the reconciler (assertion is skipped/PASS).
+	HealthResource *healthresource.Verdict
+
+	// FailedUnitsOut, when non-nil, receives the FINAL-pass FATAL failed-unit set
+	// (spr.FailedUnits) so the caller (phaseValidate) can propagate the STRUCTURED
+	// names into install_state SERVICES_FAILED — the v1.222.1 Lane 4 fix for
+	// BUG-INSTALLER-FAILED-UNITS-STRUCTURED-STATE-NOT-POPULATED. Recovered/auxiliary
+	// units are excluded (only fatal, DEGRADED-causing units).
+	FailedUnitsOut *[]FailedUnitPostInstall
 }
 
 // WithPanelPolicy returns a copy of opts with PanelPolicy set and the
@@ -113,6 +127,11 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// pass a populated set in production.
 	in, _ := GatherSystemdPayloadInputs(exec, log, defaultInventoryPaths())
 	spr := ValidateInstalledSystemdPayload(in)
+	// v1.222.1 Lane 4: hand the FATAL failed-unit set back to the caller so the
+	// STRUCTURED names reach install_state (single source of truth for remediation).
+	if opts.FailedUnitsOut != nil {
+		*opts.FailedUnitsOut = append((*opts.FailedUnitsOut)[:0], spr.FailedUnits...)
+	}
 	results = append(results,
 		assertSystemdExecStartPaths(spr, log),
 		assertSystemdTimerPair(spr, log),
@@ -132,6 +151,7 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// adapters and produces a Fatal verdict per policy; failure
 	// blocks StateCommitted via the existing AllPassed gate.
 	results = append(results, assertPanelSurvival(exec, log, opts))
+	results = append(results, assertHealthResourcePolicyActive(opts, log))
 
 	passed := 0
 	for _, r := range results {
@@ -324,6 +344,42 @@ func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
 		log.Warn("ASSERT logretention_policy_ready: FAIL — %s (validation=%s); remediation: %s",
 			r.Detail, res.ValidationResult, res.Remediation)
 	}
+	return r
+}
+
+// assertHealthResourcePolicyActive (v1.222.1 HEALTH-OOM Lane 2) is a DEDICATED
+// assertion — it is deliberately NOT folded into failed_units_postinstall_ok
+// (different defect class). It consumes the structured reconciliation verdict
+// stashed by phaseConfigure (opts.HealthResource, single policy path — no
+// recomputation) and enforces the host-class contract: small → FALLBACK_MATCH or
+// ACTIVE_MATCH passes; medium/large → ACTIVE_MATCH required because the packaged
+// fallback (256M hard) is the proven-defective limit there.
+func assertHealthResourcePolicyActive(opts AssertionOpts, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "health_resource_policy_active", Passed: true}
+	v := opts.HealthResource
+	if v == nil {
+		r.Detail = "not evaluated (no reconciliation verdict in this context)"
+		log.Debug("ASSERT health_resource_policy_active: SKIP — no verdict")
+		return r
+	}
+	if v.Acceptable() {
+		r.Detail = fmt.Sprintf("%s tier=%s effective=%d/%d protection_active=%t",
+			v.EffectiveState, v.Profile.Tier, v.EffectiveHigh, v.EffectiveMax, v.ProtectionActive)
+		log.Debug("ASSERT health_resource_policy_active: PASS — %s", r.Detail)
+		return r
+	}
+	r.Passed = false
+	suffix := ""
+	if v.ValidationError != "" {
+		suffix = " error=" + v.ValidationError
+	}
+	r.Detail = fmt.Sprintf("profile=%s state=%s protection NOT active: calculated %d/%d effective %d/%d (dropins=%s)%s",
+		v.Profile.Tier, v.EffectiveState, v.CalculatedHigh, v.CalculatedMax,
+		v.EffectiveHigh, v.EffectiveMax, strings.Join(v.LoadedDropIns, " "), suffix)
+	log.Warn("ASSERT health_resource_policy_active: FAIL — health resource policy calculated for profile %s but the profile-derived OOM protection is NOT active (state=%s)",
+		v.Profile.Tier, v.EffectiveState)
+	log.Warn("  expected MemoryHigh=%d MemoryMax=%d; effective MemoryHigh=%d MemoryMax=%d",
+		v.CalculatedHigh, v.CalculatedMax, v.EffectiveHigh, v.EffectiveMax)
 	return r
 }
 

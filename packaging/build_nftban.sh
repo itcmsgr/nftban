@@ -1483,6 +1483,18 @@ if [ \$1 -eq 0 ]; then
     # STEP 2: Remove runtime directories
     rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
+    # STEP 2b: v1.222.1 HEALTH-OOM Lane 2 — BACKSTOP cleanup of the NFTBan-generated
+    # health-resource systemd drop-in. Generated state (NOT payload); primary owner
+    # is the Go installer (runUninstallApply). This backstop covers full-erase cases
+    # where that path did not run. Path-only — NO RAM/tier/policy calculation here.
+    # Cleans ONLY the NFTBan-owned file; administrator sibling drop-ins are preserved.
+    _nftban_hr_dropin=/etc/systemd/system/nftban-health.service.d/20-nftban-resource-profile.conf
+    if [ -f "\$_nftban_hr_dropin" ]; then
+        rm -f "\$_nftban_hr_dropin" 2>/dev/null || true
+        rmdir /etc/systemd/system/nftban-health.service.d 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+
     # STEP 3: Remove NFTBan include from nftables.conf BEFORE table deletion
     # v1.146 Phase-D fenced remover — drift-checked twin of
     # packaging/deb/postrm:_nftban_strip_conf_include and Go

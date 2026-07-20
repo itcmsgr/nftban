@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
 	"github.com/itcmsgr/nftban/internal/installer/detect"
@@ -40,6 +41,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/users"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // phaseData holds state accumulated across phases (detect→prepare→switch etc.)
@@ -74,6 +76,10 @@ type phaseData struct {
 	// phaseConfigure's AddSessionWhitelist call to bound the auto-seeded
 	// operator SSH peer entry.
 	sessionWhitelistTTL time.Duration
+	// v1.222.1 HEALTH-OOM Lane 2: the structured health-resource reconciliation
+	// verdict produced in phaseConfigure and consumed by the phaseValidate
+	// health_resource_policy_active assertion (single policy path).
+	healthResource healthresource.Verdict
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -108,6 +114,20 @@ func phaseStartMarker(log *logging.Logger, name string) {
 
 func phaseEndMarker(log *logging.Logger, name string) {
 	log.Info("[PHASE] %s end", name)
+}
+
+// persistFailedUnits (v1.222.1 Lane 4) writes the STRUCTURED, canonical,
+// injection-safe fatal failed-unit set into install_state (SERVICES_FAILED +
+// pre-existing/in-window attribution). Called after EACH assertion pass so the
+// FINAL pass wins — a unit recovered by the bounded auto-fix clears
+// SERVICES_FAILED (no stale failure persists). This is the single source of
+// truth the installer + update remediation renderers consume (no prose parsing,
+// no hardcoded unit).
+func persistFailedUnits(sf *state.StateFile, units []validate.FailedUnitPostInstall) {
+	all, pre, inWindow := validate.NormalizeFailedUnits(units)
+	sf.ServicesFailed = strings.Join(all, ",")
+	sf.ServicesFailedPreexisting = strings.Join(pre, ",")
+	sf.ServicesFailedInWindow = strings.Join(inWindow, ",")
 }
 
 // phaseDetect discovers SSH port, panel, conflicts, distro, authority decision.
@@ -553,6 +573,14 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 	// 6. Restart polkit (picks up new/removed polkit rules)
 	services.RestartPolkit(exec, log)
 
+	// 7. v1.222.1 HEALTH-OOM Lane 2: reconcile the profile-derived
+	// nftban-health.service memory drop-in (generate → daemon-reload-if-changed
+	// → verify effective systemd properties → classify). The verdict is stashed
+	// for the phaseValidate health_resource_policy_active assertion, which turns
+	// a medium/large FALLBACK_UNDERSIZED into installer DEGRADED. Runs BEFORE
+	// phaseValidate. Non-fatal to this phase; the assertion owns the verdict.
+	pd.healthResource = services.ReconcileHealthResource(exec, sf, log, version.Version)
+
 	log.PhaseEnd("Configure")
 	phaseEndMarker(log, "configure")
 	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
@@ -596,7 +624,15 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	policy := panelfw.DefaultPolicy()
 	policy.OperatorDisabled = pd.noPanel
 	opts := validate.AssertionOpts{}.WithPanelPolicy(policy)
+	// v1.222.1 HEALTH-OOM Lane 2: feed the phaseConfigure reconciliation verdict
+	// to the health_resource_policy_active assertion (single policy path).
+	opts.HealthResource = &pd.healthResource
+	// v1.222.1 Lane 4: capture the FATAL failed-unit set and propagate the
+	// STRUCTURED names into install_state (SERVICES_FAILED + attribution).
+	var failedUnits []validate.FailedUnitPostInstall
+	opts.FailedUnitsOut = &failedUnits
 	results := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
+	persistFailedUnits(sf, failedUnits)
 
 	// 4. Set immutable flags on security-critical files (G8)
 	validate.SetImmutableFlags(exec, log)
@@ -644,6 +680,7 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 
 	// v1.98 INV-I-013: Re-run assertions (VALIDATE_2) — only this result counts
 	results2 := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
+	persistFailedUnits(sf, failedUnits) // final-pass semantics: recovered units clear SERVICES_FAILED
 
 	if validate.AllPassed(results2) {
 		log.Info("VALIDATE_2: all assertions passed after safe auto-fix — COMMITTED")

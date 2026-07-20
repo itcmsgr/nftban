@@ -408,6 +408,7 @@ nftban_complete() {
                 echo "install"
                 echo "verify"
                 echo "conflicts"
+                echo "resources"
                 echo "config"
                 echo "rbl"
                 echo "botguard"
