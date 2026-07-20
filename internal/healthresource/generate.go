@@ -34,6 +34,11 @@ const (
 	StateFallbackUnder    State = "FALLBACK_UNDERSIZED" // effective < calculated (medium/large: DEGRADED, protection NOT active)
 	StateGenerationFailed State = "GENERATION_FAILED"   // policy valid but drop-in could not be written
 	StateActivationFailed State = "ACTIVATION_FAILED"   // written but daemon-reload / effective verification failed
+
+	// v1.222.1 Lane 2 lifecycle: conflict / mismatch states.
+	StateExternalConflict     State = "EXTERNAL_OVERRIDE_CONFLICT" // a non-NFTBan drop-in overrides the effective values
+	StateExpectedNotLoaded    State = "EXPECTED_DROPIN_NOT_LOADED"  // our drop-in on disk but not in systemd DropInPaths
+	StateEffectiveMismatch    State = "EFFECTIVE_VALUES_MISMATCH"   // our drop-in loaded but effective != calculated (reload lag / stale)
 )
 
 // ProtectionActive reports whether the health-OOM protection is effectively in
@@ -56,6 +61,44 @@ func (s State) ProtectionActive() bool {
 func ClassifyEffective(calc safety.HealthResourceProfile, effHigh, effMax int64, dropinLoaded bool) State {
 	if dropinLoaded && effHigh == calc.MemoryHigh && effMax == calc.MemoryMax {
 		return StateActiveMatch
+	}
+	if effMax >= calc.MemoryMax && effHigh >= calc.MemoryHigh {
+		return StateFallbackMatch
+	}
+	return StateFallbackUnder
+}
+
+// ClassifyEffectiveDetailed extends ClassifyEffective with drop-in-conflict
+// awareness. ourLoaded = our drop-in path is in systemd's DropInPaths;
+// otherDropinCount = count of loaded drop-ins that are NOT ours (external /
+// administrator overrides); weExpectLoaded = we wrote/have our drop-in this run.
+//
+//	effective == calc & our drop-in loaded   → ACTIVE_MATCH
+//	effective == calc & no drop-in            → FALLBACK_MATCH (small: fallback meets calc)
+//	effective != calc & external drop-in(s)   → EXTERNAL_OVERRIDE_CONFLICT (never silently accept; operator review)
+//	effective != calc & we expected ours but it isn't loaded → EXPECTED_DROPIN_NOT_LOADED
+//	effective != calc & ours IS loaded        → EFFECTIVE_VALUES_MISMATCH (reload lag / stale)
+//	effective >= calc & no conflict           → FALLBACK_MATCH
+//	otherwise                                 → FALLBACK_UNDERSIZED
+func ClassifyEffectiveDetailed(calc safety.HealthResourceProfile, effHigh, effMax int64, ourLoaded bool, otherDropinCount int, weExpectLoaded bool) State {
+	match := effHigh == calc.MemoryHigh && effMax == calc.MemoryMax
+	if match {
+		if ourLoaded {
+			return StateActiveMatch
+		}
+		return StateFallbackMatch
+	}
+	// effective != calculated.
+	if otherDropinCount > 0 {
+		// A non-NFTBan drop-in is shaping the effective values. Do NOT silently
+		// accept even if larger — surface for operator review.
+		return StateExternalConflict
+	}
+	if weExpectLoaded && !ourLoaded {
+		return StateExpectedNotLoaded
+	}
+	if ourLoaded {
+		return StateEffectiveMismatch
 	}
 	if effMax >= calc.MemoryMax && effHigh >= calc.MemoryHigh {
 		return StateFallbackMatch

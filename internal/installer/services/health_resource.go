@@ -100,8 +100,18 @@ func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logg
 	v.LoadedDropIns = dropins
 	v.DropInLoaded = containsPath(dropins, healthresource.DropinFile)
 
-	// 5. Classify effective protection state.
-	v.EffectiveState = healthresource.ClassifyEffective(p, effHigh, effMax, v.DropInLoaded)
+	// 5. Classify effective protection state, conflict-aware. Any loaded drop-in
+	// that is not ours is an external/administrator override.
+	otherDropins := 0
+	for _, dp := range dropins {
+		if dp != healthresource.DropinFile {
+			otherDropins++
+		}
+	}
+	v.EffectiveState = healthresource.ClassifyEffectiveDetailed(p, effHigh, effMax, v.DropInLoaded, otherDropins, true)
+	if v.EffectiveState == healthresource.StateExternalConflict && v.ValidationError == "" {
+		v.ValidationError = "external systemd drop-in overrides health-service memory limits: " + strings.Join(dropins, " ")
+	}
 	v.ProtectionActive = v.EffectiveState.ProtectionActive()
 	finishHealthResource(exec, sf, log, &v)
 	return v
@@ -113,13 +123,17 @@ func finishHealthResource(_ executor.Executor, sf *state.StateFile, log *logging
 	if sf != nil {
 		sf.HealthResourceState = string(v.EffectiveState)
 		sf.HealthResourceProfile = string(v.Profile.Tier)
+		sf.HealthResourceAuthority = v.Authority
+		sf.HealthResourceReason = v.Profile.Reason
 		sf.HealthResourceProtection = v.ProtectionActive
 		sf.HealthMemHighCalculated = v.CalculatedHigh
 		sf.HealthMemMaxCalculated = v.CalculatedMax
 		sf.HealthMemHighEffective = v.EffectiveHigh
 		sf.HealthMemMaxEffective = v.EffectiveMax
 		sf.HealthTasksMaxEffective = v.EffectiveTasksMax
+		sf.HealthResourceDropin = v.DropInPath
 		sf.HealthResourceDropinLoaded = v.DropInLoaded
+		sf.HealthResourceLoadedDropins = strings.Join(v.LoadedDropIns, " ")
 		sf.HealthResourceSourceVer = v.SourceVersion
 		sf.HealthResourceGenerated = string(v.GeneratedState)
 		sf.HealthResourceError = v.ValidationError // cleared ("") on success → no stale error retained
@@ -201,6 +215,35 @@ func parseSystemdBytes(s string) (int64, error) {
 		return math.MaxInt64, nil
 	}
 	return strconv.ParseInt(s, 10, 64)
+}
+
+// RemoveHealthResourceDropin removes the NFTBan-generated health-resource drop-in
+// (rollback to a release that does not own it, and uninstall/purge). It is the
+// GENERATED_DROPIN_OWNER cleanup path — Executor-based so DEB/RPM removal
+// scriptlets and the installer uninstall mode share one implementation. It NEVER
+// touches administrator-owned sibling drop-ins (only the exact NFTBan path).
+// Idempotent: absent → (false, nil). changed=true means daemon-reload happened.
+func RemoveHealthResourceDropin(exec executor.Executor, log *logging.Logger) (changed bool, err error) {
+	if !exec.FileExists(healthresource.DropinFile) {
+		if log != nil {
+			log.Debug("health-resource: drop-in already absent (%s) — nothing to remove", healthresource.DropinFile)
+		}
+		return false, nil
+	}
+	if err := exec.Remove(healthresource.DropinFile); err != nil {
+		return false, fmt.Errorf("remove health-resource drop-in %s: %w", healthresource.DropinFile, err)
+	}
+	// Best-effort remove the drop-in dir if it is now empty (ignore ENOTEMPTY:
+	// an administrator sibling drop-in must survive).
+	_ = exec.Remove(healthresource.DropinDir)
+	if err := exec.DaemonReload(); err != nil {
+		// Removal succeeded; a failed reload is reported but the file is gone.
+		return true, fmt.Errorf("health-resource drop-in removed but daemon-reload failed: %w", err)
+	}
+	if log != nil {
+		log.Info("health-resource: removed generated drop-in %s + daemon-reload (rollback/uninstall)", healthresource.DropinFile)
+	}
+	return true, nil
 }
 
 func containsPath(paths []string, want string) bool {
