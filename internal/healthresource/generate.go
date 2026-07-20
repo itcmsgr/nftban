@@ -42,8 +42,9 @@ var (
 
 // Result is the outcome of Generate.
 type Result struct {
+	// Changed is true if the file was written/updated (caller must daemon-reload).
 	State       State
-	Changed     bool                        // true if the file was written/updated (caller must daemon-reload)
+	Changed     bool
 	Profile     safety.HealthResourceProfile
 	DesiredPath string
 }
