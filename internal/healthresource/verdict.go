@@ -32,6 +32,16 @@ type Verdict struct {
 	DaemonReloaded   bool
 	ProtectionActive bool
 	ValidationError  string
+
+	// ResolvedFrom records WHICH precedence branch of ResolveHealthResourceVerdict
+	// produced this verdict: "current" (phaseConfigure reconciliation reused this
+	// process), "live" (read-only systemd verify), "persisted" (cautious
+	// install_state reconstruction), or "unavailable" (no live read + no persisted
+	// evidence). v1.223.0: a resolution-source marker so tests can PROVE a fresh
+	// per-pass live read happened (VALIDATE_2 must not reuse a mutated cache). It is
+	// diagnostic only and is DELIBERATELY IGNORED by IsZero — a resolved verdict is
+	// non-zero on its substantive fields regardless of this marker.
+	ResolvedFrom string
 }
 
 // ProtectionRequired reports whether an ACTIVE effective drop-in is MANDATORY for

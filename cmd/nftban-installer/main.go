@@ -165,6 +165,9 @@ func main() {
 	// session whitelist TTL. Default safety.DefaultSessionWhitelistTTL (30m)
 	// already applied in parseFlags when --session-whitelist-ttl is unset.
 	globalPhaseData.sessionWhitelistTTL = cfg.sessionWhitelistTTL
+	// v1.223.0 verdict-truth: propagate the DATA test-injection carrier (nil in
+	// production → default behavior byte-identical). Consumed by phaseValidate.
+	globalPhaseData.inject = cfg.inject
 
 	exitCode := run(ctx, exec, sf, cfg, log)
 
@@ -241,7 +244,7 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 		return runRevalidate(ctx, exec, sf, cfg, log)
 	}
 	if cfg.repair {
-		return runRepair(ctx, exec, sf, log)
+		return runRepair(ctx, exec, sf, cfg, log)
 	}
 	// v1.100 PR-22 / PR-23 uninstall dispatch.
 	//
@@ -461,7 +464,12 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 }
 
 // runRepair reads the state file and resumes from the last failed phase.
-func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) int {
+//
+// v1.223.0 verdict-truth: takes *config so a DIRECT test call propagates the DATA
+// test-injection carrier into globalPhaseData (production cfg.inject is nil, so
+// this is a no-op assignment on every real run — behavior unchanged).
+func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
+	globalPhaseData.inject = cfg.inject
 	log.Info("repair mode: current state is %s", sf.State)
 	log.Debug("previous failure: %s (phase=%s)", sf.FailureReason, sf.PhaseReached)
 

@@ -6,6 +6,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/healthresource"
@@ -15,14 +16,22 @@ import (
 
 func nolog() *logging.Logger { return logging.New("/dev/null", false) }
 
-// CORE regression: a zero verdict must SKIP (Passed), never a fabricated 0/0 FAIL.
-func TestAssertHealthZeroVerdictSkipsNotFail(t *testing.T) {
+// CORE regression (v1.223.0 owner-locked): a NON-NIL pointer to a ZERO verdict must
+// FAIL CLOSED — every validation entry point resolves a real verdict first
+// (services.ResolveHealthResourceVerdict), so a zero struct reaching the assertion
+// means the wiring regressed. It must NOT silently pass unverified protection (the
+// inverse of BUG-REPAIR-HEALTH-VERDICT-EMPTY) and must NOT fabricate a 0/0 message.
+func TestAssertHealthZeroVerdictFailsClosed(t *testing.T) {
 	r := assertHealthResourcePolicyActive(AssertionOpts{HealthResource: &healthresource.Verdict{}}, nolog())
-	if !r.Passed {
-		t.Fatalf("zero verdict must SKIP (pass), got FAIL: %s", r.Detail)
+	if r.Passed {
+		t.Fatalf("zero verdict must FAIL CLOSED, got PASS: %s", r.Detail)
+	}
+	if strings.Contains(r.Detail, "0/0") {
+		t.Fatalf("must NOT fabricate a 0/0 policy-failure message; got %q", r.Detail)
 	}
 }
 
+// A truly nil verdict (this caller does not evaluate health) is a legitimate SKIP.
 func TestAssertHealthNilVerdictSkips(t *testing.T) {
 	r := assertHealthResourcePolicyActive(AssertionOpts{HealthResource: nil}, nolog())
 	if !r.Passed {

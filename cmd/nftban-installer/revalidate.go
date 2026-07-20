@@ -99,13 +99,17 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	policy := panelfw.DefaultPolicy()
 	policy.OperatorDisabled = cfg.noPanel
 	opts := validate.AssertionOpts{}.WithPanelPolicy(policy)
+	// v1.223.0 verdict-truth: systemd-payload assertion inputs from real host
+	// (nil) or the DATA test-injection carrier (nil-safe).
+	opts.SystemdPayloadInputs = cfg.inject.payload()
 	// v1.223.0 verdict-truth (BUG-REVALIDATE-MASKS-HEALTH-DEGRADE): revalidate never
 	// runs phaseConfigure, so without this it left opts.HealthResource nil → the
 	// health_resource_policy_active assertion SKIPped and a genuinely OOM-unprotected
 	// medium/large host was silently recommitted to COMMITTED. Resolve the LIVE
 	// verdict read-only (no zero verdict) so a real FALLBACK_UNDERSIZED keeps the
-	// host DEGRADED and an ACTIVE_MATCH truthfully recommits.
-	resolvedHealth := services.ResolveHealthResourceVerdict(exec, sf, log, healthresource.Verdict{}, version.Version)
+	// host DEGRADED and an ACTIVE_MATCH truthfully recommits. The optional injected
+	// profile forces a deterministic tier for execution-path tests (nil → /proc).
+	resolvedHealth := services.ResolveHealthResourceVerdict(exec, sf, log, healthresource.Verdict{}, version.Version, cfg.inject.profile())
 	opts.HealthResource = &resolvedHealth
 	results := validate.RunAssertionsWithOpts(exec, sshPort, log, opts)
 

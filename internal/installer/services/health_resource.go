@@ -136,28 +136,42 @@ func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logg
 // COMMIT on revalidate. Precedence (owner scope §5): live systemd effective policy
 // > current calculated canonical policy > cautious persisted reconstruction >
 // explicit UNAVAILABLE. It NEVER returns an unmarked zero-value verdict.
-func ResolveHealthResourceVerdict(exec executor.Executor, sf *state.StateFile, log *logging.Logger, current healthresource.Verdict, sourceVersion string) healthresource.Verdict {
-	// Split from resolveWithProfile so tests inject a fixture tier (mirrors
-	// ReconcileHealthResource/reconcileWithProfile). Canonical facts read /proc.
-	return resolveWithProfile(exec, sf, log, current, sourceVersion, safety.HealthServiceMemoryLimits())
+// ResolveHealthResourceVerdict resolves ONE authoritative verdict. The optional
+// profile is DATA dependency-injection (no global seam): PRODUCTION passes nil and
+// the canonical safety.HealthServiceMemoryLimits (DetectServerProfile →
+// ClassifyResourceTier → the single RAM-tier authority) is used; execution-path
+// tests pass a fixture *HealthResourceProfile to force a deterministic tier on any
+// host. No new classifier, no new threshold table, no mutable package global.
+func ResolveHealthResourceVerdict(exec executor.Executor, sf *state.StateFile, log *logging.Logger, current healthresource.Verdict, sourceVersion string, profile *safety.HealthResourceProfile) healthresource.Verdict {
+	p := safety.HealthServiceMemoryLimits()
+	if profile != nil {
+		p = *profile
+	}
+	// Split from resolveWithProfile (the unexported DI helper).
+	return resolveWithProfile(exec, sf, log, current, sourceVersion, p)
 }
 
 func resolveWithProfile(exec executor.Executor, sf *state.StateFile, log *logging.Logger, current healthresource.Verdict, sourceVersion string, p safety.HealthResourceProfile) healthresource.Verdict {
 	// 1. Current reconciliation verdict when available (phaseConfigure ran this
 	//    process → the verdict already reflects live systemd).
 	if !current.IsZero() {
+		current.ResolvedFrom = "current"
 		return current
 	}
 	// 2. No verdict this process → VERIFY live systemd read-only (no write, no
 	//    reload) with the canonical policy. Authoritative current truth for
 	//    repair/revalidate/update-force. Persists the resolved truth so a stale
-	//    persisted ACTIVE_MATCH cannot override a live mismatch.
+	//    persisted ACTIVE_MATCH cannot override a live mismatch. Re-run per
+	//    validation pass (owner ruling): the extra read-only `systemctl show` on a
+	//    DEGRADED retry is accepted so VALIDATE_2 reflects CURRENT live truth.
 	live := verifyLiveWithProfile(exec, sf, log, sourceVersion, p)
 	if live.EffectiveState != healthresource.StateUnavailable {
+		live.ResolvedFrom = "live"
 		return live
 	}
 	// 3. Live read impossible → reconstruct cautiously from persisted evidence.
 	if persisted, ok := reconstructHealthResourceFromPersisted(sf, sourceVersion); ok {
+		persisted.ResolvedFrom = "persisted"
 		if log != nil {
 			log.Warn("health-resource: live systemd read failed; reconstructed verdict from persisted install_state (state=%s) — evidence, not live truth", persisted.EffectiveState)
 		}
@@ -171,6 +185,7 @@ func resolveWithProfile(exec executor.Executor, sf *state.StateFile, log *loggin
 		Authority:       "internal/safety",
 		SourceVersion:   sourceVersion,
 		EffectiveState:  healthresource.StateUnavailable,
+		ResolvedFrom:    "unavailable",
 		ValidationError: "health-resource verdict unavailable: live systemctl show failed and no persisted evidence",
 	}
 }

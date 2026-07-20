@@ -37,6 +37,19 @@ type MockExecutor struct {
 	// If a command is not in RunResults, it returns exit 0 with empty output.
 	RunResults map[string]Result
 
+	// RunResultSeq maps a command key ("name:arg1:arg2") to an ORDERED list of
+	// Results; each Run of that exact key returns the next element in sequence.
+	// TEST-ONLY (v1.223.0 verdict-truth): lets a test model live systemd state
+	// CHANGING between two internal validation passes (e.g. VALIDATE_1
+	// FALLBACK_UNDERSIZED then VALIDATE_2 ACTIVE_MATCH). When a key's sequence is
+	// EXHAUSTED, Run returns a LOUD sentinel error Result (exit 255 + a marker on
+	// Stderr) and still records the command, so an unexpected extra call is
+	// detectable — it never silently falls back. Keys NOT present here fall through
+	// to the existing static RunResults behavior EXACTLY (all other tests unchanged).
+	// No production code path consults this map.
+	RunResultSeq map[string][]Result
+	seqCursor    map[string]int
+
 	// Files maps path -> content for ReadFile/FileExists.
 	Files map[string][]byte
 
@@ -147,10 +160,43 @@ func (m *MockExecutor) Run(name string, args ...string) Result {
 	if hasCb && cb != nil {
 		cb()
 	}
+	// TEST-ONLY sequential responses take precedence over static RunResults for
+	// keys explicitly populated in RunResultSeq (v1.223.0). Absent keys are
+	// untouched and fall through to the static behavior below.
+	if r, ok := m.nextSeqResult(name, args...); ok {
+		return r
+	}
 	if r, ok := m.lookupResult(name, args...); ok {
 		return r
 	}
 	return Result{ExitCode: 0}
+}
+
+// nextSeqResult returns the next ordered Result for a command key registered in
+// RunResultSeq, advancing that key's cursor. ok=false when the key is not
+// registered (caller falls through to static RunResults). When the sequence is
+// exhausted it returns a LOUD sentinel error Result (ok=true) so the test detects
+// an unexpected extra call rather than silently getting a static/zero result.
+func (m *MockExecutor) nextSeqResult(name string, args ...string) (Result, bool) {
+	key := name + ":" + strings.Join(args, ":")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seq, ok := m.RunResultSeq[key]
+	if !ok {
+		return Result{}, false
+	}
+	if m.seqCursor == nil {
+		m.seqCursor = make(map[string]int)
+	}
+	i := m.seqCursor[key]
+	if i >= len(seq) {
+		return Result{
+			ExitCode: 255,
+			Stderr:   "MockExecutor: RunResultSeq exhausted for key " + key + " (unexpected extra call)",
+		}, true
+	}
+	m.seqCursor[key]++
+	return seq[i], true
 }
 
 func (m *MockExecutor) RunContext(_ context.Context, name string, args ...string) Result {
