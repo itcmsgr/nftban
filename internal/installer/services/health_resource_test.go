@@ -287,8 +287,8 @@ func TestReconcileDaemonReloadFailure(t *testing.T) {
 // Step 2/3: MemoryMax=infinity → ACTIVATION_FAILED (INVALID, not "safe").
 func TestReconcileInfinityRejected(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		high, max     string
+		name      string
+		high, max string
 	}{
 		{"max-infinity", "268435456", "infinity"},
 		{"high-infinity", "infinity", "402653184"},
