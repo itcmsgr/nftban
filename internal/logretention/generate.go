@@ -1,0 +1,678 @@
+// SPDX-License-Identifier: MPL-2.0
+// meta:name="logretention-generate"
+// meta:type="lib"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-07-19"
+// meta:description="Phase-5 generated-policy transaction (Model B). Treats the logrotate files as DERIVED STATE, never operator config. Acquires an exclusive generation lock; renders all candidates into the target filesystem; validates the COMBINED effective policy with `logrotate -d --state <tmp>` (debug=no rotation; temp state=real state untouched; explicit file args=active policy never co-loaded); writes a DURABLE activation journal (candidate+backup paths, prev+candidate hashes) BEFORE touching any target; then a two-file ATOMIC activation with in-process ROLLBACK on error; writes the generated-state record only after a fully successful activation; preserves the previous valid policy on any failure; removes temporaries; records prior+active SHA-256 hashes. Z1: a crash between the per-file renames is NOT left to the next regeneration — Recover() (recover.go) deterministically rolls the set forward or back to a uniform state at every consumer (generate, status, maintenance-before-logrotate)."
+// meta:depends="crypto/sha256,encoding/json,os,os/exec,syscall"
+// meta:inventory.files="internal/logretention/generate.go"
+// meta:inventory.env_vars=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.binaries="logrotate"
+// meta:inventory.config_files="install/config/nftban.logrotate,install/config/nftban-suricata.logrotate"
+// meta:inventory.privileges="root (writes /etc/logrotate.d + /var/lib/nftban/generated)"
+package logretention
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/itcmsgr/nftban/internal/safety"
+)
+
+// GeneratorVersion is the version of the generation transaction/state writer,
+// distinct from PolicyVersion (the rendered-policy + state schema version).
+const GeneratorVersion = "1"
+
+const prevSuffix = ".nftban-prev"
+
+// fsyncDir makes a directory's entries durable. It is a package variable (bound
+// to safety.FsyncDir) ONLY so tests can spy on the explicit directory-fsync
+// barriers the activation/recovery paths place (staging before activation, target
+// after activation, staging after journal removal). Production always uses
+// safety.FsyncDir. (The per-rename dir fsyncs inside safety.DurableRenameResult
+// are captured through the durableRename seam below, not this one.)
+var fsyncDir = safety.FsyncDir
+
+// durableRename is the result-aware rename primitive used by the activation and
+// rollback paths. It is a package variable (bound to safety.DurableRenameResult)
+// ONLY so tests can observe rename ordering and inject a post-rename fsync
+// failure (RenameLandedNotDurable) to prove the pre-image is never lost.
+// Production always uses safety.DurableRenameResult.
+var durableRename = safety.DurableRenameResult
+
+// stagingDirFor is the dot-subdir of the target directory holding candidates,
+// backups, and the activation journal. It is NEVER scanned by the system
+// logrotate (logrotate's `include` reads regular files directly in the dir and
+// does not recurse), yet lives on the SAME filesystem as the targets so every
+// activation rename is atomic. Activator and recoverer derive it identically.
+func stagingDirFor(mainPath string) string {
+	return filepath.Join(filepath.Dir(mainPath), ".nftban-logrotate-staging")
+}
+
+// journalPathIn is the fixed activation-journal path inside a staging dir.
+func journalPathIn(stagingDir string) string {
+	return filepath.Join(stagingDir, "activation.journal")
+}
+
+// Validator validates one or more candidate logrotate files TOGETHER without
+// executing any rotation and without touching the real logrotate state or the
+// active policy. It returns the exact command string (for the state record) and
+// an error if any candidate is invalid or logrotate is unavailable.
+type Validator func(candidatePaths []string) (cmd string, err error)
+
+// DefaultValidator runs `logrotate -d --state <temp> <candidate>...`:
+//   - `-d` (debug): parse + simulate only, no file is rotated.
+//   - `--state <temp>`: a throwaway state file, so /var/lib/logrotate/logrotate.status
+//     is never read or written — the real logrotate state is untouched.
+//   - explicit candidate paths as the config args: logrotate reads ONLY those
+//     files and does not pull in /etc/logrotate.d/* (no `include` in our
+//     candidates), so the active policy is never co-loaded. Passing all
+//     candidates together validates the combined effective policy.
+//
+// Missing logrotate returns an error → the caller fails safe and keeps the
+// previous policy.
+func DefaultValidator(candidatePaths []string) (string, error) {
+	lr, err := exec.LookPath("logrotate")
+	if err != nil {
+		return "", fmt.Errorf("logretention: logrotate not found (cannot validate candidate): %w", err)
+	}
+	stateFile, err := os.CreateTemp("", "nftban-lr-validate-state-*")
+	if err != nil {
+		return "", fmt.Errorf("logretention: temp state: %w", err)
+	}
+	stateName := stateFile.Name()
+	_ = stateFile.Close()
+	defer func() { _ = os.Remove(stateName) }()
+
+	bases := make([]string, len(candidatePaths))
+	for i, p := range candidatePaths {
+		bases[i] = filepath.Base(p)
+	}
+	cmdStr := "logrotate -d --state <temp> " + strings.Join(bases, " ")
+	args := append([]string{"-d", "--state", stateName}, candidatePaths...)
+	out, err := exec.Command(lr, args...).CombinedOutput() // #nosec G204 -- fixed logrotate flags; candidate paths are generator-owned staging files
+	if err != nil {
+		return cmdStr, fmt.Errorf("logretention: candidate failed logrotate validation: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	return cmdStr, nil
+}
+
+// GenerateOptions parameterizes the transaction. Target paths are absolute; the
+// temp/rename happens in each target's own directory so each rename is atomic on
+// the same filesystem.
+type GenerateOptions struct {
+	LogDir        string // filesystem whose capacity backs the budget (default /var/log)
+	MainPath      string // e.g. /etc/logrotate.d/nftban (required)
+	SuricataPath  string // e.g. /etc/logrotate.d/nftban-suricata ("" to skip)
+	StatePath     string // generated-state JSON path
+	LockPath      string // exclusive generation lock ("" -> derived next to StatePath/MainPath)
+	Families      []LogFamily
+	Overrides     Overrides
+	Disk          DiskFacts // if zero-value, DetectDiskFacts(LogDir) is used
+	Profile       Profile   // if empty Name, ClassifyProfile is used
+	PanelPresent  bool      // input to profile classification when Profile is auto
+	SourceVersion string    // NFTBan version/commit stamped into the state record
+	Reason        string    // "install" | "config-change" | "timer" | "manual"
+	Now           time.Time // injected clock (zero -> time.Now().UTC())
+	Validator     Validator // injectable (nil -> DefaultValidator)
+}
+
+// GeneratedState is the evidence record written after a successful activation.
+type GeneratedState struct {
+	PolicyVersion          string            `json:"policy_version"`
+	GeneratorVersion       string            `json:"generator_version"`
+	GeneratedAt            string            `json:"generated_at"`
+	SourceVersion          string            `json:"source_version"`
+	Reason                 string            `json:"generation_reason"`
+	Profile                Profile           `json:"profile"`
+	Disk                   DiskFacts         `json:"filesystem"`
+	Overrides              Overrides         `json:"operator_overrides"`
+	PolicySource           string            `json:"policy_source"`
+	BudgetBytes            uint64            `json:"budget_bytes"`
+	RequestedBudgetBytes   uint64            `json:"requested_budget_bytes"`
+	MinimumAchievableBytes uint64            `json:"minimum_achievable_bytes"`
+	TheoreticalMaxBytes    uint64            `json:"theoretical_max_bytes_uncompressed"`
+	UnboundedCount         int               `json:"unbounded_stanzas"`
+	FitVerdict             string            `json:"fit_verdict"`
+	CapacityVerdict        string            `json:"capacity_verdict"`
+	Achievable             bool              `json:"achievable"`
+	CapRaisedForFloor      bool              `json:"cap_raised_for_floor"`
+	OperatorCapExceeded    bool              `json:"operator_cap_exceeded"`
+	ForensicFloorKind      string            `json:"forensic_floor_kind"`
+	Families               []FamilyPolicy    `json:"families"` // each carries ForensicFloorDays + CeilingDays
+	ValidationCmd          string            `json:"validation_cmd"`
+	ValidationOK           bool              `json:"validation_ok"`
+	ActivePolicyHashes     map[string]string `json:"active_policy_hashes"`
+	PreviousPolicyHashes   map[string]string `json:"previous_policy_hashes"`
+
+	// Unchanged is a RETURN-ONLY signal (never persisted): Generate set it when it
+	// detected the effective policy was already active and skipped all writes.
+	Unchanged bool `json:"-"`
+}
+
+// Generate runs the full transaction and returns the resulting state. On any
+// error it guarantees the previously-active policy files are left intact (both
+// files — no split-brain) and no state record is written.
+func Generate(opts GenerateOptions) (GeneratedState, error) {
+	if opts.MainPath == "" {
+		return GeneratedState{}, errors.New("logretention: MainPath required")
+	}
+	if opts.LogDir == "" {
+		opts.LogDir = DefaultLogDir
+	}
+	if opts.Families == nil {
+		opts.Families = DefaultFamilies()
+	}
+	if opts.Validator == nil {
+		opts.Validator = DefaultValidator
+	}
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	// 1. Exclusive generation lock (prevents concurrent generators / split writes).
+	lockPath := opts.LockPath
+	if lockPath == "" {
+		base := opts.StatePath
+		if base == "" {
+			base = opts.MainPath
+		}
+		lockPath = filepath.Join(filepath.Dir(base), ".nftban-logrotate.gen.lock")
+	}
+	unlock, err := acquireLock(lockPath)
+	if err != nil {
+		return GeneratedState{}, err
+	}
+	defer unlock()
+
+	disk := opts.Disk
+	if disk.TotalBytes == 0 {
+		d, err := DetectDiskFacts(opts.LogDir)
+		if err != nil {
+			return GeneratedState{}, err
+		}
+		disk = d
+	}
+	prof := opts.Profile
+	if prof.Name == "" {
+		prof = ClassifyProfile(disk, opts.PanelPresent, opts.Overrides.Profile)
+	}
+
+	policy, err := Calculate(disk, prof, opts.Overrides, opts.Families)
+	if err != nil {
+		return GeneratedState{}, err
+	}
+	// Hard invariant guard: never activate an unbounded or over-budget policy.
+	if policy.UnboundedCount != 0 {
+		return GeneratedState{}, fmt.Errorf("logretention: refusing to activate policy with %d unbounded stanzas", policy.UnboundedCount)
+	}
+	if policy.TheoreticalMaxBytes > policy.BudgetBytes {
+		return GeneratedState{}, fmt.Errorf("logretention: theoretical max %d exceeds budget %d", policy.TheoreticalMaxBytes, policy.BudgetBytes)
+	}
+	// R7: never silently activate an impossible policy. If even the minimum
+	// forensic floor exceeds the filesystem capacity, refuse and preserve the
+	// previous valid policy — the operator must add capacity or lower floors.
+	if !policy.Achievable {
+		return GeneratedState{}, fmt.Errorf("logretention: refusing to activate an unachievable policy (%s): minimum floor %s exceeds filesystem capacity %s (raise capacity or lower LOG_RETENTION_MIN_DAYS)",
+			policy.CapacityVerdict, humanBytes(policy.MinimumAchievableBytes), humanBytes(policy.Disk.TotalBytes))
+	}
+
+	header := renderHeader(policy)
+
+	targets := []genTarget{{opts.MainPath, "main"}}
+	if opts.SuricataPath != "" {
+		targets = append(targets, genTarget{opts.SuricataPath, "suricata"})
+	}
+
+	// Render the candidate content for every target up front (a pure function of
+	// the effective policy — no volatile facts).
+	contents := make(map[string]string, len(targets))
+	for _, t := range targets {
+		contents[t.path] = header + "\n" + RenderFile(policy, opts.Families, t.file)
+	}
+
+	// R4: stage candidates + backups + the activation journal in a dot-SUBDIR of
+	// the target directory. logrotate's `include` reads only regular files
+	// directly in /etc/logrotate.d and does NOT recurse into subdirectories, so
+	// nothing here is ever parsed by the system logrotate (no duplicate-stanza
+	// error, no crash-poisoning), while staying on the SAME filesystem as the
+	// targets so the activation renames are atomic.
+	stagingDir := stagingDirFor(opts.MainPath)
+	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
+		return GeneratedState{}, fmt.Errorf("logretention: staging dir: %w", err)
+	}
+	journalPath := journalPathIn(stagingDir)
+	// Z1: a leftover journal means a prior generation crashed mid-activation.
+	// DETERMINISTICALLY complete (roll-forward) or undo (roll-back) that
+	// transaction NOW so the on-disk set is uniform before we start a fresh one —
+	// never leave it split for "the next regeneration" to fix.
+	if rr, rerr := Recover(opts.MainPath); rerr != nil {
+		return GeneratedState{}, fmt.Errorf("logretention: pre-generation recovery of an interrupted activation failed: %w", rerr)
+	} else if rr.JournalFound {
+		fmt.Fprintf(os.Stderr, "logretention: recovered an interrupted prior activation (%s) before regenerating\n", rr.Action)
+	}
+	cleanStaging := func() { _ = removeDirContents(stagingDir) }
+	cleanStaging()
+
+	// Z3: after any recovery, if EVERY active target already holds byte-identical
+	// content, the effective policy is UNCHANGED — skip the whole transaction (no
+	// rewrite, no rename, no fsync, no state churn), so a 15-minute maintenance
+	// run with unchanged inputs leaves inode/hash/mtime untouched. Requires an
+	// existing, readable, consistent state record so `status` keeps an
+	// authoritative view; otherwise we fall through and write exactly once.
+	if prev, ok := unchangedState(contents, opts.StatePath); ok {
+		return prev, nil
+	}
+
+	// 2. Render + write all candidate temps into the STAGING dir.
+	candidates := make(map[string]string, len(targets)) // targetPath -> staged temp
+	candidatePaths := make([]string, 0, len(targets))
+	for _, t := range targets {
+		tmp, err := writeStaged(stagingDir, filepath.Base(t.path), contents[t.path])
+		if err != nil {
+			cleanStaging()
+			return GeneratedState{}, err
+		}
+		candidates[t.path] = tmp
+		candidatePaths = append(candidatePaths, tmp)
+	}
+
+	// 3. Validate the COMBINED effective policy (all staged candidates together).
+	validationCmd, verr := opts.Validator(candidatePaths)
+	if verr != nil {
+		cleanStaging()
+		return GeneratedState{}, verr // previous policy untouched; no state written
+	}
+
+	// 4. Record prior hashes, write the activation journal, then two-file ATOMIC
+	// activation (backups + rollback in staging), fsync the target directory, and
+	// only then drop the journal.
+	prevHashes := map[string]string{}
+	for _, t := range targets {
+		prevHashes[filepath.Base(t.path)] = hashFileOrEmpty(t.path)
+	}
+	if err := writeActivationJournal(journalPath, now.Format(time.RFC3339), targets, candidates, stagingDir); err != nil {
+		cleanStaging()
+		return GeneratedState{}, err
+	}
+	// F1: make the STAGING dir entries (candidates + backups-to-be + journal)
+	// durable BEFORE the first target rename, so a crash mid-activation leaves a
+	// journal that Recover() can actually find (its directory entry survives, not
+	// just its data). Without this the "DURABLE activation journal" guarantee only
+	// holds for the file content, not its existence, across power loss.
+	//
+	// T1-B: this barrier is LOAD-BEARING — if it fails we must NOT proceed to rename
+	// any target (recovery could not rely on the journal). FsyncDir already absorbs
+	// the benign EINVAL "dir fsync unsupported" case, so a returned error is a real
+	// failure: abort before any target is touched, leaving the previous policy and
+	// state untouched (nothing has been renamed yet; dropping the journal is a
+	// roll-back to the untouched set).
+	if err := fsyncDir(stagingDir); err != nil {
+		cleanStaging()
+		return GeneratedState{}, fmt.Errorf("logretention: staging fsync before activation: %w", err)
+	}
+	// T1-A: activateWithRollback reconciles non-atomic rename errors. On failure it
+	// tells us whether the staging/journal evidence must be PRESERVED for Recover()
+	// (a pre-image that could not be restored in-line) — in that case we must NOT
+	// clean staging, or we would destroy the only surviving previous policy.
+	if preserve, aerr := activateWithRollback(targets, candidates, stagingDir); aerr != nil {
+		if !preserve {
+			cleanStaging()
+		}
+		return GeneratedState{}, aerr // previous policy restored in-line, or preserved for Recover()
+	}
+	// Target dir fsync makes the activated policy renames durable. (Each rename in
+	// activateWithRollback already routes through durableRename, which fsyncs its
+	// destination dir; this is the explicit final barrier before we drop the
+	// journal. It is redundant with the per-rename fsyncs, so it stays best-effort.)
+	_ = fsyncDir(filepath.Dir(opts.MainPath))
+	_ = os.Remove(journalPath)
+	// Make the journal REMOVAL durable too: after this fsync a re-crash sees no
+	// pending activation (a crash before it is harmless — Recover finds an
+	// all-new set and simply finalizes).
+	_ = fsyncDir(stagingDir)
+
+	activeHashes := map[string]string{}
+	for _, t := range targets {
+		activeHashes[filepath.Base(t.path)] = hashFileOrEmpty(t.path)
+	}
+
+	state := GeneratedState{
+		PolicyVersion:          policy.PolicyVersion,
+		GeneratorVersion:       GeneratorVersion,
+		GeneratedAt:            now.Format(time.RFC3339),
+		SourceVersion:          opts.SourceVersion,
+		Reason:                 opts.Reason,
+		Profile:                prof,
+		Disk:                   disk,
+		Overrides:              opts.Overrides,
+		PolicySource:           policy.PolicySource,
+		BudgetBytes:            policy.BudgetBytes,
+		RequestedBudgetBytes:   policy.RequestedBudgetBytes,
+		MinimumAchievableBytes: policy.MinimumAchievableBytes,
+		TheoreticalMaxBytes:    policy.TheoreticalMaxBytes,
+		UnboundedCount:         policy.UnboundedCount,
+		FitVerdict:             policy.FitVerdict,
+		CapacityVerdict:        policy.CapacityVerdict,
+		Achievable:             policy.Achievable,
+		CapRaisedForFloor:      policy.CapRaisedForFloor,
+		OperatorCapExceeded:    policy.OperatorCapExceeded,
+		ForensicFloorKind:      policy.ForensicFloorKind,
+		Families:               policy.Families,
+		ValidationCmd:          validationCmd,
+		ValidationOK:           true,
+		ActivePolicyHashes:     activeHashes,
+		PreviousPolicyHashes:   prevHashes,
+	}
+	if opts.StatePath != "" {
+		if err := writeStateAtomic(opts.StatePath, state); err != nil {
+			return state, fmt.Errorf("logretention: policy activated but state write failed: %w", err)
+		}
+	}
+	return state, nil
+}
+
+// genTarget is one generated policy file (path + which render "file" group).
+type genTarget struct {
+	path string
+	file string
+}
+
+// activateWithRollback backs up each existing target (rename -> stagingDir/*.prev,
+// OUT of the logrotate scan dir), renames each validated candidate into place, and
+// if ANY step fails restores every backed-up file so the outcome is all-new or
+// all-old, never split-brain across a returned error.
+//
+// The staged renames go through durableRename, whose error semantics are
+// NON-ATOMIC: a rename can LAND and its directory fsync still fail
+// (RenameLandedNotDurable). So on every error this reconciles against the
+// reported outcome rather than assuming "error => nothing moved". The invariant
+// is absolute: a backup durability error must NEVER leave the previous active
+// policy as the only copy sitting in staging that cleanup would then delete
+// (finding T1-A). When a target's pre-image cannot be restored, it returns
+// preserveStaging=true so the caller leaves the journal + staging intact for
+// Recover() to finish (equivalent to a crash at that point) instead of destroying
+// the recovery evidence.
+func activateWithRollback(targets []genTarget, candidates map[string]string, stagingDir string) (preserveStaging bool, err error) {
+	type undo struct {
+		path      string
+		bak       string // pre-image location if the target was backed up ("" if it did not exist)
+		activated bool   // the new candidate landed on the target
+	}
+	var done []undo
+
+	// rollback restores every recorded target to its pre-image, newest first. It
+	// returns true if any target could NOT be restored — meaning the pre-image now
+	// survives only in staging/journal and must be preserved for Recover().
+	rollback := func() (mustPreserve bool) {
+		for i := len(done) - 1; i >= 0; i-- {
+			u := done[i]
+			if u.activated {
+				if rmErr := os.Remove(u.path); rmErr != nil && !os.IsNotExist(rmErr) {
+					mustPreserve = true // target state uncertain; keep evidence
+				}
+			}
+			if u.bak != "" {
+				// Restore the pre-image. The restore is itself non-atomic, but a
+				// RenameLandedNotDurable restore still means the content is back at
+				// u.path; only an outright RenameFailed leaves the pre-image solely at
+				// u.bak, which then must be preserved for Recover().
+				if o, rErr := durableRename(u.bak, u.path); rErr != nil && o == safety.RenameFailed {
+					mustPreserve = true
+				}
+			}
+		}
+		return mustPreserve
+	}
+
+	for _, t := range targets {
+		u := undo{path: t.path}
+		if _, statErr := os.Stat(t.path); statErr == nil {
+			bak := backupPathFor(stagingDir, t.path)
+			// Durable backup into the staging dir. Record the pre-image location the
+			// moment the rename may have LANDED (any outcome but RenameFailed), BEFORE
+			// handling the error, so rollback/preserve can never lose it (T1-A).
+			o, rErr := durableRename(t.path, bak)
+			if o != safety.RenameFailed {
+				u.bak = bak
+			}
+			done = append(done, u)
+			if rErr != nil {
+				return rollback(), fmt.Errorf("logretention: backup %s: %w", t.path, rErr)
+			}
+		} else {
+			done = append(done, u) // target did not exist; track for candidate undo
+		}
+
+		// Durable activation of the candidate into the target dir.
+		o2, aErr := durableRename(candidates[t.path], t.path)
+		if o2 != safety.RenameFailed {
+			done[len(done)-1].activated = true
+		}
+		if aErr != nil {
+			return rollback(), fmt.Errorf("logretention: activate %s: %w", t.path, aErr)
+		}
+	}
+
+	// Success: drop the backups (pre-images no longer needed).
+	for _, u := range done {
+		if u.bak != "" {
+			_ = os.Remove(u.bak)
+		}
+	}
+	return false, nil
+}
+
+// writeStaged writes content to a durably-staged candidate file in stagingDir (a
+// dot-subdir of the target directory — same filesystem, not scanned by
+// logrotate). It routes through safety.StageFile so the candidate's data AND its
+// directory entry are fsync'd before it can become an activation source, and so
+// generate.go holds no hand-rolled temp writer of its own.
+func writeStaged(stagingDir, targetBase, content string) (string, error) {
+	name, err := safety.StageFile(stagingDir, targetBase+".gen-*", []byte(content), 0o644)
+	if err != nil {
+		return "", fmt.Errorf("logretention: staged temp in %s: %w", stagingDir, err)
+	}
+	return name, nil
+}
+
+// activationJournal is the durable record of an in-flight two-phase activation.
+// It carries EVERYTHING recovery needs to reach a uniform all-new or all-old
+// state after a crash at any rename boundary: the staged candidate (roll-forward
+// source), the deterministic backup path (roll-back source), and both hashes so
+// the current on-disk file can be classified NEW vs OLD without re-deriving the
+// policy. Written + fsync'd BEFORE the first target is touched; removed only
+// after the whole set is activated and the target dir is fsync'd.
+type activationJournal struct {
+	Version   int            `json:"version"`
+	CreatedAt string         `json:"created_at"`
+	Entries   []journalEntry `json:"entries"`
+}
+
+type journalEntry struct {
+	Target        string `json:"target"`
+	CandidatePath string `json:"candidate_path"` // staged temp — roll-forward source
+	CandidateHash string `json:"candidate_hash"` // == NEW on-disk hash
+	BackupPath    string `json:"backup_path"`    // deterministic staging/*.prev — roll-back source
+	PrevHash      string `json:"prev_hash"`      // == OLD on-disk hash; "" if target did not exist
+}
+
+const activationJournalVersion = 1
+
+// backupPathFor is the deterministic backup location for a target during
+// activation (a dot-subdir sibling, never scanned by logrotate). Both the
+// activator and the recoverer compute the same path, so recovery can find the
+// pre-image without guessing.
+func backupPathFor(stagingDir, target string) string {
+	return filepath.Join(stagingDir, filepath.Base(target)+prevSuffix)
+}
+
+// writeActivationJournal records the intended activation durably so a crash
+// mid-activation is both DETECTABLE and REPAIRABLE (see Recover) on the next
+// entry into any consumer — not merely on the next full regeneration.
+func writeActivationJournal(path, createdAt string, targets []genTarget, candidates map[string]string, stagingDir string) error {
+	j := activationJournal{Version: activationJournalVersion, CreatedAt: createdAt}
+	for _, t := range targets {
+		j.Entries = append(j.Entries, journalEntry{
+			Target:        t.path,
+			CandidatePath: candidates[t.path],
+			CandidateHash: hashFileOrEmpty(candidates[t.path]),
+			BackupPath:    backupPathFor(stagingDir, t.path),
+			PrevHash:      hashFileOrEmpty(t.path),
+		})
+	}
+	data, err := json.MarshalIndent(j, "", "  ")
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- staging path is generator-owned under the fixed staging dir
+	if err != nil {
+		return fmt.Errorf("logretention: activation journal: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// removeDirContents deletes the contents of dir (keeping dir itself).
+func removeDirContents(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
+	return nil
+}
+
+// acquireLock takes an exclusive, non-blocking flock on lockPath. A held lock
+// means another generation is in progress and the call fails (rather than
+// racing). The returned func releases the lock.
+func acquireLock(lockPath string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return nil, fmt.Errorf("logretention: lock dir: %w", err)
+	}
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304 -- generator-owned lock path derived from MainPath dir
+	if err != nil {
+		return nil, fmt.Errorf("logretention: open lock: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("logretention: another generation is in progress (lock held): %w", err)
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
+}
+
+// renderHeader builds the STABLE file header. Z3: it contains ONLY fields that
+// are a pure function of the effective retention policy — NO generated-at
+// timestamp, NO available-bytes, NO live fit verdict, NO source version — so
+// identical inputs render a BYTE-IDENTICAL file. That is what lets the 15-minute
+// maintenance run detect "unchanged" and rewrite nothing (no inode/mtime churn,
+// no rpm/AIDE noise). Volatile facts (generated-at, available bytes, live fit,
+// source version) live ONLY in the generated-state JSON record under /var/lib,
+// which is not a packaged/verified file.
+func renderHeader(p EffectivePolicy) string {
+	var b strings.Builder
+	b.WriteString("# NFTBan log rotation — GENERATED EFFECTIVE POLICY. DO NOT EDIT.\n")
+	fmt.Fprintf(&b, "# policy-version=%s generator-version=%s profile=%s policy-source=%s\n",
+		p.PolicyVersion, GeneratorVersion, p.Profile.Name, p.PolicySource)
+	fmt.Fprintf(&b, "# capacity=%s budget=%s theoretical-max=%s unbounded=%d\n",
+		humanBytes(p.Disk.TotalBytes), humanBytes(p.BudgetBytes), humanBytes(p.TheoreticalMaxBytes), p.UnboundedCount)
+	b.WriteString("# Operator overrides live in /etc/nftban/conf.d/logs.conf. Edits to THIS file are\n")
+	b.WriteString("# lost on the next regeneration. See `nftban logs retention status`.\n")
+	return b.String()
+}
+
+func humanBytes(b uint64) string {
+	switch {
+	case b >= GiB:
+		return fmt.Sprintf("%.1fG", float64(b)/float64(GiB))
+	case b >= MiB:
+		return fmt.Sprintf("%dM", b/MiB)
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
+}
+
+// writeStateAtomic writes the generated-state JSON durably: an atomic
+// temp+fsync+rename PLUS a fsync of the state's parent directory (F2), routed
+// through safety.WriteFileDurable so no hand-rolled temp+rename writer remains in
+// this file.
+func writeStateAtomic(path string, state GeneratedState) error {
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("logretention: state dir %s: %w", filepath.Dir(path), err)
+	}
+	if err := safety.WriteFileDurable(path, []byte(string(data)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("logretention: write state: %w", err)
+	}
+	return nil
+}
+
+func hashFileOrEmpty(path string) string {
+	data, err := os.ReadFile(path) // #nosec G304 -- generator-owned policy/state path
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// hashString returns the SHA-256 hex of s, matching hashFileOrEmpty so a
+// candidate's in-memory content can be compared to the active file's bytes.
+func hashString(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// unchangedState reports whether EVERY target already holds byte-identical
+// content AND a readable, parseable prior state record exists — i.e. the
+// effective policy is unchanged and no write is needed (Z3). It returns that
+// prior state marked Unchanged so callers report accurately. If the state record
+// is absent/unreadable/unparseable it returns ok=false, so Generate writes
+// exactly once (status must always have an authoritative record).
+func unchangedState(contents map[string]string, statePath string) (GeneratedState, bool) {
+	if statePath == "" {
+		return GeneratedState{}, false
+	}
+	for path, content := range contents {
+		if hashFileOrEmpty(path) != hashString(content) {
+			return GeneratedState{}, false
+		}
+	}
+	data, err := os.ReadFile(statePath) // #nosec G304 -- generator-owned state path
+	if err != nil {
+		return GeneratedState{}, false
+	}
+	var gs GeneratedState
+	if err := json.Unmarshal(data, &gs); err != nil {
+		return GeneratedState{}, false
+	}
+	gs.Unchanged = true
+	return gs, true
+}

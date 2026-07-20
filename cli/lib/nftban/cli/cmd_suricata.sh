@@ -447,7 +447,7 @@ EXAMPLES:
     nftban suricata rules rollback 20260202-120000
 
     # View live alerts
-    tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
+    tail -F ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
 
 REQUIREMENTS:
     - Elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)

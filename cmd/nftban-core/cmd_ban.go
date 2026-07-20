@@ -33,15 +33,15 @@ import (
 	"github.com/itcmsgr/nftban/internal/analytics"
 	"github.com/itcmsgr/nftban/internal/banlog"
 	"github.com/itcmsgr/nftban/internal/blacklist"
+	"github.com/itcmsgr/nftban/internal/escalation"
 	"github.com/itcmsgr/nftban/internal/geoip"
-	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
-	"github.com/itcmsgr/nftban/internal/escalation"
 	"github.com/itcmsgr/nftban/internal/timeutil"
-	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/whitelist"
+	"github.com/itcmsgr/nftban/pkg/ipc"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // getBanConfigDir returns the config directory from passed config
@@ -256,7 +256,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	spinChars := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
 	spinIdx := 0
 
-	waitLoop:
+waitLoop:
 	for {
 		select {
 		case <-done:

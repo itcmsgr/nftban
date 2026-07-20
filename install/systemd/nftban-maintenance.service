@@ -70,7 +70,7 @@ LockPersonality=true
 # /etc/nftban: firewall reload/rebuild writes .nftables.conf.tmp + rendered nftables.conf
 # /etc/nftban/ports.d and /etc/nftban/whitelist.d: SSH lockout prevention
 # /var/lib/nftban, /var/log/nftban, /var/cache/nftban, /run/nftban: normal state
-ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d /etc/logrotate.d
 
 # Network access (IPC socket + curl for SSH port detection)
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

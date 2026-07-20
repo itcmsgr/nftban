@@ -929,6 +929,30 @@ EOF
     fi
 
     # ==========================================================================
+    # 9b. Log-retention effective-policy regeneration (v1.222.0 R2)
+    # ==========================================================================
+    # Picks up filesystem-capacity changes and operator conf.d/logs.conf edits by
+    # regenerating /etc/logrotate.d/nftban. Deterministic + fail-safe: identical
+    # inputs render byte-identically (idempotent no-op), and any failure preserves
+    # the previous valid policy. This is the standing regeneration path (config
+    # changes are reflected within one maintenance cycle).
+    local _lr_core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    if [[ -x "$_lr_core_bin" ]]; then
+        # Z1: FIRST complete/undo any activation interrupted by a crash, so the
+        # on-disk policy set is uniform before the system logrotate timer can
+        # consume it and before we (possibly) skip regeneration for unchanged
+        # inputs. Deterministic + idempotent (no-op when nothing is pending).
+        if "$_lr_core_bin" logretention recover >/dev/null 2>&1; then
+            :
+        fi
+        if "$_lr_core_bin" logretention generate timer >/dev/null 2>&1; then
+            log "INFO" "Log-retention policy: regenerated (OK)"
+        else
+            log "INFO" "Log-retention policy: regeneration skipped (previous policy retained)"
+        fi
+    fi
+
+    # ==========================================================================
     # 10. Complete
     # ==========================================================================
     log "INFO" "[10/10] NFTBan Maintenance Complete"

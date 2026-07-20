@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

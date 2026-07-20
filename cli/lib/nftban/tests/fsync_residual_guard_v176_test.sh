@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-12"
-# meta:description="Locks the v1.176 FSYNC-RESIDUAL class: any hand-rolled temp+rename state writer in Go (os.Rename + CreateTemp/.tmp) OUTSIDE internal/safety must be either routed through safety.SafeWriteFile OR explicitly baselined here. FAILS on a NEW unguarded temp+rename writer (and on a regression of the v1.176-fixed set_counters.go / rebuild/marker.go, which are intentionally absent from the baseline). Pre-existing writers (13) are baselined as separate tech-debt, NOT v1.176 scope. Includes a positive-control self-test (a fixture bad file must be detected) and a negative self-test (a SafeWriteFile-style file must not)."
+# meta:description="Locks the v1.176 FSYNC-RESIDUAL class: any hand-rolled temp+rename state writer in Go (os.Rename + CreateTemp/.tmp) OUTSIDE internal/safety must be either routed through the internal/safety durable primitives OR explicitly baselined here. FAILS on a NEW unguarded temp+rename writer (and on a regression of the v1.176-fixed set_counters.go / rebuild/marker.go, which are intentionally absent from the baseline). Pre-existing writers (14) baselined as separate tech-debt. internal/logretention/generate.go is NOT baselined: its Z1 crash-consistent two-file staged activation routes every staged write and coordinated rename through internal/safety (StageFile / WriteFileDurable / DurableRename), so it holds no raw os.Rename+CreateTemp writer and passes structurally. Includes a positive-control self-test (a fixture bad file must be detected) and a negative self-test (a SafeWriteFile-style file must not)."
 # meta:input="repo Go tree (read-only)"
 # meta:output="pass/fail; exit 0 all-pass, 1 on a new unguarded writer"
 # meta:depends="bash,grep,find,sort,comm"
@@ -47,9 +47,20 @@ scan_temp_rename_writers() {
 }
 
 # -----------------------------------------------------------------------------
-# BASELINE — pre-existing hand-rolled temp+rename writers (2026-06-12).
-# These are SEPARATE tech debt (the "three durability idioms" sprawl), NOT in
-# v1.176 scope. Adding a NEW file here requires review (prefer safety.SafeWriteFile).
+# BASELINE — hand-rolled temp+rename writers that legitimately cannot route
+# through the single-file safety.SafeWriteFile.
+#
+# The first 14 (2026-06-12) are SEPARATE tech debt (the "three durability idioms"
+# sprawl), NOT in v1.176 scope.
+#
+# internal/logretention/generate.go is DELIBERATELY ABSENT (v1.222.0 Gate B):
+# its Z1 crash-consistent two-file activation routes every staged write and
+# coordinated rename through the internal/safety durable primitives
+# (StageFile / WriteFileDurable / DurableRename), which are exempt from this scan.
+# It therefore holds no raw os.Rename+CreateTemp writer of its own and passes
+# structurally — so if it reappears in the scan it is a REGRESSION and this guard
+# fails, exactly like the two files below.
+#
 # NOTE: internal/stats/set_counters.go and internal/rebuild/marker.go are
 # DELIBERATELY ABSENT — v1.176 routed them through safety.SafeWriteFile, so if
 # either reappears in the scan it is a REGRESSION and this guard fails.

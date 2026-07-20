@@ -52,6 +52,7 @@ func healthyMock() *executor.MockExecutor {
 
 // NB-6 Test 1: VALIDATE_1 passes → no fix needed → success
 func TestRevalidate_V1Passes_NoFix(t *testing.T) {
+	seedReadyLogretention(t)
 	mock := healthyMock()
 	log := newTestLogger()
 
@@ -75,6 +76,7 @@ func TestRevalidate_V1Passes_NoFix(t *testing.T) {
 
 // NB-6 Test 2: VALIDATE_1 fails → fix runs → VALIDATE_2 passes
 func TestRevalidate_V1Fails_FixSucceeds_V2Passes(t *testing.T) {
+	seedReadyLogretention(t)
 	mock := healthyMock()
 	// Break daemon assertion for V1, but make it "fixable"
 	mock.Services["nftband.service"] = false
