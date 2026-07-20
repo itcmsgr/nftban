@@ -297,6 +297,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  nftban-core init                 Initialize NFTBan with safety checks")
 	fmt.Println("  nftban-core status               Show current firewall status")
+	fmt.Println("  nftban-core resources [--json]   Show hardware + effective health-service resource limits")
 	fmt.Println("  nftban-core sync                 Sync config files to nftables (differential)")
 	fmt.Println("  nftban-core ban <IP> [reason]    Ban an IP address")
 	fmt.Println("  nftban-core unban <IP>           Unban an IP address")
