@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.222.1] - 2026-07-20 — HEALTH-OOM hotfix: health-service memory + structured failed-unit truth
+
+Patch hotfix for four confirmed defects present in v1.222.0. No daemon/firewall behavior change; no nft-schema change
+(1.84.0); no config-schema change.
+
+### Fixed
+- **`nftban-health.service` cgroup OOM** (`BUG-HEALTH-SERVICE-MEMORYMAX-256M-UNDERSIZED`). The unit's static
+  `MemoryMax=256M` was too low for the Go validator's `nft -j list ruleset`/`list set` buffer on medium/large hosts
+  (unit-level cgroup OOM while host memory was ample). Replaced with a **hardware-aware, profile-derived** MemoryHigh/
+  MemoryMax generated systemd drop-in — small 192/256 MiB, medium 256/384 MiB, large 384/512 MiB, clamped to a safe
+  fraction of total RAM. One canonical `internal/safety` resource-tier authority now feeds CIDR, daemon budget, and
+  health policy (no duplicate classifiers). Packaged unit keeps a safe 192/256 MiB fallback; the installer generates the
+  effective drop-in (no-churn; effective-`systemctl show` verified) and cleans it on rollback/uninstall (RPM `%postun` /
+  DEB `postrm` backstop).
+- **Structured failed-unit remediation** (`BUG-INSTALLER-FAILED-UNITS-STRUCTURED-STATE-NOT-POPULATED`,
+  `BUG-INSTALLER-FAILED-UNIT-REMEDIATION-HARDCODED-BOTSCAN`, `UX-FAILED-UNIT-PREEXISTENCE-NOT-CORRELATED`). The installer
+  now populates `SERVICES_FAILED` from the validator's structured failed-unit set (injection-safe, deduped, final-pass);
+  the installer + update-summary remediation render the **actual** failed unit(s) with pre-existing/new attribution —
+  the hardcoded `nftban-botscan.service` fallback is gone (safe diagnostic fallback when the structured list is absent).
+
+### Added
+- Read-only diagnostics: `nftban health resources` / `nftban-core resources [--json]` — detected hardware, calculated
+  vs effective health-service limits, last MemoryPeak/headroom, and the protection verdict.
+
+### Deferred
+- `PERF-VALIDATOR-NFT-JSON-OVERFETCH` (validator over-fetch reduction) — fast-follow.
+
 ## [v1.222.0] - 2026-07-20 — Lifecycle forensic-log correctness & bounded log-retention/rotation safety
 
 **One combined release, two serial gates (Gate A then Gate B), both merged to `main`. VERSION-only release-prep.** Shell + Go (`internal/logretention`, `internal/safety`, consumed only by `nftban-core`). **The `nftband` daemon binary source is unchanged (no shipped binary imports `internal/logretention`) — daemon byte-identical; `nftban-core` gains the log-retention surface.** No nft schema change (1.84.0). No config-schema change (1.1.0 / `schema_version` 1).
