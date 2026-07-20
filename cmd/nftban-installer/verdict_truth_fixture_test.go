@@ -149,7 +149,7 @@ func newAllAssertionsPassFixture(t *testing.T) (*assertionTestInjection, *execut
 	writeMode0644(t, tmplPath, body)
 	t.Setenv("NFTBAN_LR_MAIN", mainPath)
 	t.Setenv("NFTBAN_LR_TEMPLATE", tmplPath)
-	t.Setenv("NFTBAN_LR_STATE", d+"/nonexistent-state.json") // forces the fallback path
+	t.Setenv("NFTBAN_LR_STATE", d+"/nonexistent-state.json")  // forces the fallback path
 	t.Setenv("NFTBAN_LR_SURICATA", d+"/nonexistent-suricata") // absent → skipped in fallback
 
 	// 7. systemd-payload assertions: inject a valid EMPTY input set (zero units, zero
