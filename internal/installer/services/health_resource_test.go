@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	miB       = int64(1) << 20
+	miB        = int64(1) << 20
 	verFixture = "1.222.1"
 )
 
