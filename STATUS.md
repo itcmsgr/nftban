@@ -1,14 +1,16 @@
 # NFTBan Development Project Health Status
 
 **Status:** ⚠️ Warning
-**Last Updated:** 2026-07-20 06:40:00 UTC
-**Version:** v1.222.0 Development Branch (release-prep)
+**Last Updated:** 2026-07-20 15:15:00 UTC
+**Version:** v1.222.1 Development Branch (release-prep)
 
 ---
 
 ## Active Release Train
 
-**v1.222.0 — Lifecycle forensic-log correctness & bounded log-retention/rotation safety — RELEASE-PREP (FLEET CANDIDATE)** — *one combined release, two serial gates (Gate A + Gate B), both merged to `main`; VERSION-only release-prep; shell + Go (`internal/logretention`, `internal/safety`, consumed only by `nftban-core`); `nftband` daemon binary source unchanged (daemon byte-identical); no nft schema change (1.84.0); no config-schema change (1.1.0 / schema_version 1).*
+**v1.222.1 — HEALTH-OOM hotfix: health-service memory + structured failed-unit truth — RELEASE-PREP (FLEET CANDIDATE)** — *patch hotfix on `main` (#1126, squash `cf772724`); fixes 4 confirmed v1.222.0 defects — health-service cgroup-OOM (profile-derived MemoryHigh/MemoryMax drop-in via one canonical resource-tier authority) + structured failed-unit `SERVICES_FAILED` propagation with per-unit attribution (hardcoded botscan removed) + read-only `nftban health resources` diagnostics. No daemon/firewall behavior change; no nft schema change (1.84.0); no config-schema change. Deferred fast-follow: `PERF-VALIDATOR-NFT-JSON-OVERFETCH`. v1.222.0 demoted to RELEASED below.*
+
+**v1.222.0 — Lifecycle forensic-log correctness & bounded log-retention/rotation safety — RELEASED (superseded by v1.222.1)** — *one combined release, two serial gates (Gate A + Gate B), both merged to `main`; VERSION-only release-prep; shell + Go (`internal/logretention`, `internal/safety`, consumed only by `nftban-core`); `nftband` daemon binary source unchanged (daemon byte-identical); no nft schema change (1.84.0); no config-schema change (1.1.0 / schema_version 1).*
 
 | Field | State |
 |-------|-------|
