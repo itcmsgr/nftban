@@ -624,9 +624,14 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	policy := panelfw.DefaultPolicy()
 	policy.OperatorDisabled = pd.noPanel
 	opts := validate.AssertionOpts{}.WithPanelPolicy(policy)
-	// v1.222.1 HEALTH-OOM Lane 2: feed the phaseConfigure reconciliation verdict
-	// to the health_resource_policy_active assertion (single policy path).
-	opts.HealthResource = &pd.healthResource
+	// v1.223.0 verdict-truth: resolve ONE authoritative health verdict for the
+	// health_resource_policy_active assertion. When phaseConfigure ran this process
+	// pd.healthResource is populated and used as-is; on a repair/resume that begins
+	// at PhaseValidate (phaseConfigure SKIPPED) pd.healthResource is the zero struct,
+	// so the resolver verifies LIVE systemd read-only instead of feeding a zero
+	// verdict into the assertion (BUG-REPAIR-HEALTH-VERDICT-EMPTY).
+	resolvedHealth := services.ResolveHealthResourceVerdict(exec, sf, log, pd.healthResource, version.Version)
+	opts.HealthResource = &resolvedHealth
 	// v1.222.1 Lane 4: capture the FATAL failed-unit set and propagate the
 	// STRUCTURED names into install_state (SERVICES_FAILED + attribution).
 	var failedUnits []validate.FailedUnitPostInstall

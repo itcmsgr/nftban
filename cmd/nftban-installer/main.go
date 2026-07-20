@@ -596,7 +596,13 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		// (SERVICES_FAILED + attribution) — the exact failed unit(s), never a
 		// hardcoded nftban-botscan.service. A stale oneshot latch survives an
 		// upgrade and --repair does NOT clear it, so surface reset-failed first.
-		renderFailedUnitRemediation(sf, log)
+		// v1.223.0 (BUG-DEGRADED-REPORT-FALSE-FAILED-UNIT-CLAIM): only when a unit
+		// ACTUALLY failed. A resource-policy/verdict DEGRADED
+		// (health_resource_policy_active) has an empty SERVICES_FAILED and must NOT
+		// print "A failed NFTBan unit was detected" — that misdirects remediation.
+		if len(splitUnits(sf.ServicesFailed)) > 0 {
+			renderFailedUnitRemediation(sf, log)
+		}
 		// v1.131.4 (D-DEGRADED-REMEDIATION-CMD-BROKEN): use the full path —
 		// `nftban-installer` is not on the operator's PATH (it lives under
 		// /usr/lib/nftban/bin), so the bare form printed `command not found`.

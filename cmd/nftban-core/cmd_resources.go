@@ -200,7 +200,12 @@ func assembleReport(calc safety.HealthResourceProfile, sf *state.StateFile, pers
 	}
 	st := healthresource.ClassifyEffectiveDetailed(calc, effHigh, effMax, svc.Dropin.Loaded, otherDropins, svc.Dropin.OnDisk)
 	svc.State = string(st)
-	svc.ProtectionActive = st.ProtectionActive()
+	// v1.223.0 (BUG-RESOURCES-VERDICT-TIER-BLIND): decide "protected" via the SHARED
+	// tier-aware predicate — same as the installer's Verdict.Acceptable — so the CLI
+	// and installer never contradict. Previously used the tier-blind
+	// State.ProtectionActive(), which reported a medium/large FALLBACK_MATCH host as
+	// protected while the installer marked it DEGRADED.
+	svc.ProtectionActive = healthresource.AcceptableFor(calc.Tier, st)
 	if svc.ProtectionActive {
 		svc.Validation = "PASS"
 	} else {

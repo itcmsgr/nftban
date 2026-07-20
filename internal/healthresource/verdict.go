@@ -41,16 +41,40 @@ func ProtectionRequired(tier safety.ResourceTier) bool {
 	return tier == safety.ResourceTierMedium || tier == safety.ResourceTierLarge
 }
 
-// Acceptable reports whether the verdict satisfies the host-class policy:
+// AcceptableFor is the SINGLE tier-aware protection predicate:
 //   - any tier + ACTIVE_MATCH            → acceptable
 //   - small     + FALLBACK_MATCH         → acceptable (fallback meets calc)
 //   - medium/large + anything-but-active → NOT acceptable (installer DEGRADED)
-func (v Verdict) Acceptable() bool {
-	if v.EffectiveState == StateActiveMatch {
+//
+// v1.223.0: extracted so the installer verdict (Verdict.Acceptable), the
+// repair/revalidate resolution, AND the read-only CLI (nftban health resources)
+// all consume ONE predicate — INSTALLER_ACCEPTABLE == CLI_PROTECTION_ACTIVE ==
+// REVALIDATE_ACCEPTABLE. Closes RESOURCES-VERDICT-TIER-BLIND (the CLI previously
+// decided "protected" via the tier-blind State.ProtectionActive()).
+func AcceptableFor(tier safety.ResourceTier, eff State) bool {
+	if eff == StateActiveMatch {
 		return true
 	}
-	if !ProtectionRequired(v.Profile.Tier) && v.EffectiveState == StateFallbackMatch {
+	if !ProtectionRequired(tier) && eff == StateFallbackMatch {
 		return true
 	}
 	return false
+}
+
+// Acceptable reports whether the verdict satisfies the host-class policy via the
+// shared AcceptableFor predicate.
+func (v Verdict) Acceptable() bool {
+	return AcceptableFor(v.Profile.Tier, v.EffectiveState)
+}
+
+// IsZero reports whether the verdict was never populated (a zero struct — e.g. a
+// validate-only entry point that skipped phaseConfigure). v1.223.0: validation
+// paths MUST resolve a real verdict (services.ResolveHealthResourceVerdict) rather
+// than pass a zero struct into the assertion; the assertion treats a zero verdict
+// as UNRESOLVED (honest skip-with-warning), NEVER as a fabricated 0/0 policy
+// failure and NEVER as silently protected.
+func (v Verdict) IsZero() bool {
+	return v.Profile.Tier == "" && v.EffectiveState == "" &&
+		v.CalculatedHigh == 0 && v.CalculatedMax == 0 &&
+		v.EffectiveHigh == 0 && v.EffectiveMax == 0
 }

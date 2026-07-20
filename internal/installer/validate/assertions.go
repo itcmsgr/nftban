@@ -357,9 +357,21 @@ func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
 func assertHealthResourcePolicyActive(opts AssertionOpts, log *logging.Logger) AssertionResult {
 	r := AssertionResult{Name: "health_resource_policy_active", Passed: true}
 	v := opts.HealthResource
-	if v == nil {
-		r.Detail = "not evaluated (no reconciliation verdict in this context)"
-		log.Debug("ASSERT health_resource_policy_active: SKIP — no verdict")
+	// v1.223.0 verdict-truth: a nil OR zero-value verdict means "not resolved in
+	// this context" — the caller MUST resolve one (services.ResolveHealthResourceVerdict)
+	// before validation. Treat unresolved as an honest SKIP: never fabricate a 0/0
+	// policy failure (BUG-REPAIR-HEALTH-VERDICT-EMPTY) and never claim protection.
+	if v == nil || v.IsZero() {
+		r.Detail = "not evaluated (no verdict resolved in this context)"
+		log.Debug("ASSERT health_resource_policy_active: SKIP — unresolved verdict")
+		return r
+	}
+	// v1.223.0: resolution genuinely could not read live systemd AND had no
+	// persisted evidence → UNVERIFIABLE. Advisory, NOT DEGRADED: we cannot prove a
+	// failure, so we must not fabricate one; but we also do not claim protection.
+	if v.EffectiveState == healthresource.StateUnavailable {
+		r.Detail = "health-resource protection UNVERIFIABLE: " + v.ValidationError
+		log.Warn("ASSERT health_resource_policy_active: UNVERIFIABLE (advisory, not DEGRADED) — %s", v.ValidationError)
 		return r
 	}
 	if v.Acceptable() {

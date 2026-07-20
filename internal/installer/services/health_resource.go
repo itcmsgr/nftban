@@ -127,6 +127,135 @@ func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logg
 	return v
 }
 
+// ResolveHealthResourceVerdict returns ONE authoritative health-resource verdict
+// for validation, regardless of which installer entry point is running. v1.223.0
+// (BUG-REPAIR-HEALTH-VERDICT-EMPTY + BUG-REVALIDATE-MASKS-HEALTH-DEGRADE): the
+// verdict previously existed only as transient phaseConfigure output, so
+// configure-skipping paths (repair-resume-at-validate, revalidate, update force)
+// fed a ZERO verdict into the assertion — a false DEGRADED on repair and a false
+// COMMIT on revalidate. Precedence (owner scope §5): live systemd effective policy
+// > current calculated canonical policy > cautious persisted reconstruction >
+// explicit UNAVAILABLE. It NEVER returns an unmarked zero-value verdict.
+func ResolveHealthResourceVerdict(exec executor.Executor, sf *state.StateFile, log *logging.Logger, current healthresource.Verdict, sourceVersion string) healthresource.Verdict {
+	// 1. Current reconciliation verdict when available (phaseConfigure ran this
+	//    process → the verdict already reflects live systemd).
+	if !current.IsZero() {
+		return current
+	}
+	// 2. No verdict this process → VERIFY live systemd read-only (no write, no
+	//    reload) with the canonical policy. Authoritative current truth for
+	//    repair/revalidate/update-force. Persists the resolved truth so a stale
+	//    persisted ACTIVE_MATCH cannot override a live mismatch.
+	live := verifyLiveHealthResource(exec, sf, log, sourceVersion)
+	if live.EffectiveState != healthresource.StateUnavailable {
+		return live
+	}
+	// 3. Live read impossible → reconstruct cautiously from persisted evidence.
+	if persisted, ok := reconstructHealthResourceFromPersisted(sf, sourceVersion); ok {
+		if log != nil {
+			log.Warn("health-resource: live systemd read failed; reconstructed verdict from persisted install_state (state=%s) — evidence, not live truth", persisted.EffectiveState)
+		}
+		return persisted
+	}
+	// 4. Explicit, MARKED unavailable — never a silent zero.
+	if log != nil {
+		log.Warn("health-resource: verdict UNAVAILABLE — no live systemd read and no persisted evidence; assertion reports UNVERIFIABLE (advisory, not DEGRADED)")
+	}
+	return healthresource.Verdict{
+		Authority:       "internal/safety",
+		SourceVersion:   sourceVersion,
+		EffectiveState:  healthresource.StateUnavailable,
+		ValidationError: "health-resource verdict unavailable: live systemctl show failed and no persisted evidence",
+	}
+}
+
+// verifyLiveHealthResource computes the canonical policy and classifies the LIVE
+// systemd effective state WITHOUT writing/reloading (read-only). It persists the
+// resolved truth to install_state (owner scope §5: persisted must not override a
+// live mismatch). Returns EffectiveState == StateUnavailable when systemd cannot
+// be read (the caller then falls back to persisted reconstruction).
+func verifyLiveHealthResource(exec executor.Executor, sf *state.StateFile, log *logging.Logger, sourceVersion string) healthresource.Verdict {
+	p := safety.HealthServiceMemoryLimits()
+	v := healthresource.Verdict{
+		Profile:        p,
+		Authority:      "internal/safety",
+		CalculatedHigh: p.MemoryHigh,
+		CalculatedMax:  p.MemoryMax,
+		DropInPath:     healthresource.DropinFile,
+		SourceVersion:  sourceVersion,
+	}
+	if err := healthresource.Validate(p); err != nil {
+		v.GeneratedState = healthresource.StateInvalid
+		v.EffectiveState = healthresource.StateActivationFailed
+		v.ValidationError = "policy invalid: " + err.Error()
+		finishHealthResource(exec, sf, log, &v)
+		return v
+	}
+	// on-disk generated state (read-only; NO write)
+	desired := healthresource.Render(p, sourceVersion)
+	if existing, rerr := exec.ReadFile(healthresource.DropinFile); rerr == nil {
+		v.GeneratedState = healthresource.Classify(existing, desired)
+	} else {
+		v.GeneratedState = healthresource.StateAbsent
+	}
+	effHigh, effMax, effTasks, dropins, err := queryEffectiveHealth(exec)
+	if err != nil {
+		// cannot read live systemd → MARK unavailable; do NOT persist a false state.
+		v.EffectiveState = healthresource.StateUnavailable
+		v.ValidationError = "systemctl show: " + err.Error()
+		return v
+	}
+	v.EffectiveHigh, v.EffectiveMax, v.EffectiveTasksMax = effHigh, effMax, effTasks
+	v.LoadedDropIns = dropins
+	v.DropInLoaded = containsPath(dropins, healthresource.DropinFile)
+	if effHigh == healthresource.InfinityBytes || effMax == healthresource.InfinityBytes {
+		v.EffectiveState = healthresource.StateActivationFailed
+		v.ValidationError = "unbounded effective memory limit (infinity) violates bounded policy"
+		v.ProtectionActive = false
+		finishHealthResource(exec, sf, log, &v)
+		return v
+	}
+	otherDropins := 0
+	for _, dp := range dropins {
+		if dp != healthresource.DropinFile {
+			otherDropins++
+		}
+	}
+	v.EffectiveState = healthresource.ClassifyEffectiveDetailed(p, effHigh, effMax, v.DropInLoaded, otherDropins, true)
+	if v.EffectiveState == healthresource.StateExternalConflict && v.ValidationError == "" {
+		v.ValidationError = "external systemd drop-in overrides health-service memory limits: " + strings.Join(dropins, " ")
+	}
+	v.ProtectionActive = v.EffectiveState.ProtectionActive()
+	finishHealthResource(exec, sf, log, &v)
+	return v
+}
+
+// reconstructHealthResourceFromPersisted rebuilds a verdict from the persisted
+// HEALTH_RESOURCE_* install_state fields — a CAUTIOUS last resort used ONLY when
+// live systemd cannot be read. Persisted state is evidence, not live authority.
+func reconstructHealthResourceFromPersisted(sf *state.StateFile, sourceVersion string) (healthresource.Verdict, bool) {
+	if sf == nil || strings.TrimSpace(sf.HealthResourceState) == "" {
+		return healthresource.Verdict{}, false
+	}
+	v := healthresource.Verdict{
+		Profile:           safety.HealthResourceProfile{Tier: safety.ResourceTier(sf.HealthResourceProfile), Reason: sf.HealthResourceReason},
+		Authority:         "internal/safety",
+		CalculatedHigh:    sf.HealthMemHighCalculated,
+		CalculatedMax:     sf.HealthMemMaxCalculated,
+		EffectiveHigh:     sf.HealthMemHighEffective,
+		EffectiveMax:      sf.HealthMemMaxEffective,
+		EffectiveTasksMax: sf.HealthTasksMaxEffective,
+		DropInPath:        healthresource.DropinFile,
+		DropInLoaded:      sf.HealthResourceDropinLoaded,
+		GeneratedState:    healthresource.State(sf.HealthResourceGenerated),
+		EffectiveState:    healthresource.State(sf.HealthResourceState),
+		SourceVersion:     sourceVersion,
+		ProtectionActive:  sf.HealthResourceProtection,
+		ValidationError:   sf.HealthResourceError,
+	}
+	return v, true
+}
+
 // finishHealthResource persists the verdict to install_state and logs it.
 func finishHealthResource(_ executor.Executor, sf *state.StateFile, log *logging.Logger, v *healthresource.Verdict) {
 	v.ProtectionActive = v.EffectiveState.ProtectionActive()
