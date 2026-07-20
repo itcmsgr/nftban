@@ -41,9 +41,13 @@ func ParseMemBytes(s string) (v int64, infinity bool, ok bool) {
 	case "infinity", "[not set]":
 		return InfinityBytes, true, true
 	}
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0, false, false
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, false, true
 	}
-	return n, false, true
+	// Older systemd prints infinity as the numeric uint64 max (18446744073709551615)
+	// rather than the word — treat that as infinity too, not as unparseable.
+	if u, err := strconv.ParseUint(s, 10, 64); err == nil && u == math.MaxUint64 {
+		return InfinityBytes, true, true
+	}
+	return 0, false, false
 }
