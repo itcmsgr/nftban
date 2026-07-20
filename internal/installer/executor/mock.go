@@ -121,6 +121,7 @@ var _ Executor = (*MockExecutor)(nil)
 func NewMockExecutor() *MockExecutor {
 	return &MockExecutor{
 		RunResults:       make(map[string]Result),
+		RunResultSeq:     make(map[string][]Result),
 		Files:            make(map[string][]byte),
 		FileStats:        make(map[string]FileMeta),
 		WrittenFiles:     make(map[string][]byte),
