@@ -37,8 +37,8 @@ func TestResolveUsesCurrentWhenNonZero(t *testing.T) {
 	}
 }
 
-// 2. REPAIR-RESUME regression: zero current, medium host, live drop-in ACTIVE_MATCH
-//    → resolves ACTIVE_MATCH, acceptable, NO false DEGRADED, never a zero verdict.
+//  2. REPAIR-RESUME regression: zero current, medium host, live drop-in ACTIVE_MATCH
+//     → resolves ACTIVE_MATCH, acceptable, NO false DEGRADED, never a zero verdict.
 func TestResolveZeroMediumLiveActiveMatch(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 * 1024 * miB) // medium 256/384
@@ -56,8 +56,8 @@ func TestResolveZeroMediumLiveActiveMatch(t *testing.T) {
 	}
 }
 
-// 3. A genuinely underprotected medium host (live effective < calc) must REMAIN
-//    not-acceptable — the fix must not mask real underprotection.
+//  3. A genuinely underprotected medium host (live effective < calc) must REMAIN
+//     not-acceptable — the fix must not mask real underprotection.
 func TestResolveZeroMediumLiveUndersizedStaysDegraded(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 * 1024 * miB) // medium calc 256/384
