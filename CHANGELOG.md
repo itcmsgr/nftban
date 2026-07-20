@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.222.0] - 2026-07-20 — Lifecycle forensic-log correctness & bounded log-retention/rotation safety
+
+**One combined release, two serial gates (Gate A then Gate B), both merged to `main`. VERSION-only release-prep.** Shell + Go (`internal/logretention`, `internal/safety`, consumed only by `nftban-core`). **The `nftband` daemon binary source is unchanged (no shipped binary imports `internal/logretention`) — daemon byte-identical; `nftban-core` gains the log-retention surface.** No nft schema change (1.84.0). No config-schema change (1.1.0 / `schema_version` 1).
+
+### Gate A — lifecycle forensic-log correctness (update path)
+- Fixes the per-run update forensic record whose human-readable `human.log` was created but never written (empty/incomplete on every update run).
+- Preserves correlated per-run lifecycle evidence: the human orchestrator narrative and the installer-child slice are written into the same `update-runs/<run_id>/` record as the machine `run.jsonl`.
+- Keeps the structured and human forensic records aligned (a single canonical line projected to the aggregate log, the per-run human slice, and the terminal); the support bundle collects the complete 3-file record.
+
+### Gate B — bounded log-retention & rotation safety
+- Introduces profile/capacity-derived **bounded** retention-policy generation (a pure calculator → a generated effective logrotate policy).
+- Adds operator-visible effective retention status: `nftban logs retention status [--json]` (read-only).
+- Preserves operator configuration across DEB/RPM upgrades (`conf.d/logs.conf` is the sole operator authority; DEB conffile / RPM `%config(noreplace)`).
+- Treats the generated `/etc/logrotate.d/nftban{,-suricata}` policy as **derived state** (RPM `%ghost`, not in the DEB payload) — no `rpm -V` / dpkg-verify / AIDE noise.
+- Provides DEB/RPM policy parity (deterministic render; byte-equivalent across package types).
+- Validates the active generated policy **and** an approved bounded fallback through **one readiness authority** (`Readiness()`), consumed identically by the CLI, the installer assertion, and the acceptance collector.
+- Gates the installer `COMMITTED` verdict on a valid active retention policy (else `DEGRADED`) — a fresh install can no longer report success with no valid active policy.
+- Validates the whole applicable generated set, including Suricata (per the authoritative generated-state key; missing/drift/stale → `NOT_READY`).
+- Adds crash-consistent multi-file activation with a durable activation journal and deterministic roll-forward/roll-back recovery (power-loss-durable: staging/target/state directory fsyncs; result-aware rename reconciliation preserves the previous active policy on any error).
+- Rejects an unbounded fallback classification (byte-identity to the shipped bounded template **and** zero unbounded stanzas required for `READY_FALLBACK`).
+- Adds numeric rollout-acceptance evidence (fail-closed collector: disk usage, files removed, writer-reopen, JSONL integrity).
+- Fixes rotation authority and held-writer behavior, validated in Gate B (rename+create / copytruncate correctness; readers follow the pathname).
+- Preserves config-schema and nft-schema versions.
+
+**Explicit non-goals (not in this release, not claimed):** no active disk-pressure auto-deletion (watchdog stays alert-only); no mutating retention CLI (`retention set`); no time-first retention redesign; no single-policy-file simplification; no event-driven regeneration redesign; no fleet deployment yet; no canary result yet.
+
+**Validation to date:** `go test ./internal/... ./cmd/...` 84/0 on lab2 (DEB/Ubuntu 24.04) and lab4 (RPM/AlmaLinux 9.8/el9); Gate B shell guards green; package-native DEB + RPM builds (SHA-chain verified). Independent transaction-safety audits (F1/F2/F3 + T1-A/T1-B/T1-C) closed with zero open findings. Package-native lab install, production canary, and fleet rollout remain HOLD behind separate gates.
+
 ## [v1.221.4] - 2026-07-18 — BotScan HTTP log-source validity & health truth (R22A)
 
 **Detection source-validity + operator-truth fix. Shell-only · daemon binary source identical to v1.221.3 (no `internal/`/`cmd/`/`pkg/` change) · no nft schema change (1.84.0) · no config-schema change · no enforcement-policy change.** Makes the BotScan HTTP-exploit scanner accept only valid HTTP access logs as sources and report source health truthfully on cPanel / Plesk / generic layouts, while preserving DirectAdmin behavior.
