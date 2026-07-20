@@ -21,7 +21,7 @@ const (
 	verFixture = "1.222.1"
 )
 
-func showKey() string {
+func healthShowKey() string {
 	return strings.Join([]string{
 		"systemctl", "show", healthUnit,
 		"-p", "MemoryHigh", "-p", "MemoryMax", "-p", "TasksMax", "-p", "DropInPaths", "-p", "FragmentPath",
@@ -52,9 +52,9 @@ func reloadCount(m *executor.MockExecutor) int {
 func TestReconcileFreshMediumActiveMatch(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 << 30) // medium: 256/384 MiB
-	m.RunResults[showKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, healthresource.DropinFile)}
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, healthresource.DropinFile)}
 	sf := &state.StateFile{}
-	v := reconcileWithProfile(m, sf, logging.NewNoop(), verFixture, p)
+	v := reconcileWithProfile(m, sf, logging.New("/dev/null", false), verFixture, p)
 
 	if v.Profile.Tier != safety.ResourceTierMedium {
 		t.Fatalf("tier=%s want medium", v.Profile.Tier)
@@ -84,8 +84,8 @@ func TestReconcileNoChurn(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 << 30)
 	m.Files[healthresource.DropinFile] = healthresource.Render(p, verFixture) // pre-seed identical
-	m.RunResults[showKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, healthresource.DropinFile)}
-	v := reconcileWithProfile(m, &state.StateFile{}, logging.NewNoop(), verFixture, p)
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, healthresource.DropinFile)}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
 	if v.Changed || v.DaemonReloaded {
 		t.Errorf("no-churn: Changed=%v DaemonReloaded=%v want false/false", v.Changed, v.DaemonReloaded)
 	}
@@ -105,9 +105,9 @@ func TestReconcileMediumFallbackUndersized(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 << 30)
 	// systemd shows the packaged fallback (drop-in not effective), no drop-in loaded.
-	m.RunResults[showKey()] = executor.Result{Stdout: showOut(192*miB, 256*miB, 64, "")}
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(192*miB, 256*miB, 64, "")}
 	sf := &state.StateFile{}
-	v := reconcileWithProfile(m, sf, logging.NewNoop(), verFixture, p)
+	v := reconcileWithProfile(m, sf, logging.New("/dev/null", false), verFixture, p)
 	if v.EffectiveState != healthresource.StateFallbackUnder || v.ProtectionActive || v.Acceptable() {
 		t.Errorf("medium fallback: state=%s protection=%v acceptable=%v want FALLBACK_UNDERSIZED/false/false",
 			v.EffectiveState, v.ProtectionActive, v.Acceptable())
@@ -121,8 +121,8 @@ func TestReconcileMediumFallbackUndersized(t *testing.T) {
 func TestReconcileSmallFallbackMatch(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(2 << 30) // small: 192/256
-	m.RunResults[showKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, "")}
-	v := reconcileWithProfile(m, &state.StateFile{}, logging.NewNoop(), verFixture, p)
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, "")}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
 	if v.Profile.Tier != safety.ResourceTierSmall {
 		t.Fatalf("tier=%s want small", v.Profile.Tier)
 	}
@@ -136,8 +136,8 @@ func TestReconcileSmallFallbackMatch(t *testing.T) {
 func TestReconcileMalformedShow(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 << 30)
-	m.RunResults[showKey()] = executor.Result{Stdout: "garbage-without-memory-keys\n"}
-	v := reconcileWithProfile(m, &state.StateFile{}, logging.NewNoop(), verFixture, p)
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: "garbage-without-memory-keys\n"}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
 	if v.EffectiveState != healthresource.StateActivationFailed || v.Acceptable() {
 		t.Errorf("malformed show: state=%s acceptable=%v want ACTIVATION_FAILED/false", v.EffectiveState, v.Acceptable())
 	}
@@ -150,8 +150,8 @@ func TestReconcileMalformedShow(t *testing.T) {
 func TestReconcileShowExecFailure(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(16 << 30)
-	m.RunResults[showKey()] = executor.Result{ExitCode: 1, Stderr: "unit not loaded"}
-	v := reconcileWithProfile(m, &state.StateFile{}, logging.NewNoop(), verFixture, p)
+	m.RunResults[healthShowKey()] = executor.Result{ExitCode: 1, Stderr: "unit not loaded"}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
 	if v.EffectiveState != healthresource.StateActivationFailed || v.Acceptable() {
 		t.Errorf("show exec fail: state=%s acceptable=%v want ACTIVATION_FAILED/false", v.EffectiveState, v.Acceptable())
 	}
@@ -162,8 +162,8 @@ func TestReconcileLargeEffectiveMismatch(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(16 << 30) // large: 384/512
 	// drop-in "loaded" but effective max stale/below calc → not ACTIVE_MATCH.
-	m.RunResults[showKey()] = executor.Result{Stdout: showOut(384*miB, 256*miB, 64, healthresource.DropinFile)}
-	v := reconcileWithProfile(m, &state.StateFile{}, logging.NewNoop(), verFixture, p)
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(384*miB, 256*miB, 64, healthresource.DropinFile)}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
 	if v.Acceptable() {
 		t.Errorf("large mismatch must not be acceptable, got state=%s", v.EffectiveState)
 	}
