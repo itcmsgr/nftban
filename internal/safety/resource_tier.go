@@ -20,10 +20,10 @@ const (
 // classifier so the threshold table exists in exactly one place.
 const resourceTierGiB = int64(1) << 30
 
-// resourceTierSmallMax and resourceTierMediumMax are the ONLY RAM-tier
-// boundaries in the codebase. Every historical inline `profile.TotalRAM <= 4*GB`
-// / `<= 8*GB` switch (GetMaxCIDRsHard, GetMaxCIDRsHardWithTier, GetResourceLimits)
-// is replaced by ClassifyResourceTier so this table is never duplicated.
+// resourceTierSmallMaxBytes and resourceTierMediumMaxBytes are the ONLY RAM-tier
+// boundaries in the codebase. Every historical inline 4 GiB / 8 GiB total-RAM tier
+// switch (GetMaxCIDRsHard, GetMaxCIDRsHardWithTier, GetResourceLimits) is replaced
+// by ClassifyResourceTier so this table is never duplicated.
 const (
 	resourceTierSmallMaxBytes  = 4 * resourceTierGiB
 	resourceTierMediumMaxBytes = 8 * resourceTierGiB
