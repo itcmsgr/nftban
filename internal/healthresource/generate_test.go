@@ -122,6 +122,40 @@ func TestClassifyEffectiveFallbackSemantics(t *testing.T) {
 	}
 }
 
+// Conflict-aware classifier: every distinct lifecycle state.
+func TestClassifyEffectiveDetailed(t *testing.T) {
+	med := tierProfile(6 << 30) // 256/384
+	h, mx := med.MemoryHigh, med.MemoryMax
+	const MiB = int64(1) << 20
+	cases := []struct {
+		name                 string
+		effHigh, effMax      int64
+		ourLoaded            bool
+		otherDropins         int
+		weExpect             bool
+		want                 State
+	}{
+		{"active", h, mx, true, 0, true, StateActiveMatch},
+		{"small-fallback-meets", h, mx, false, 0, false, StateFallbackMatch},
+		{"external-conflict", 300 * MiB, 700 * MiB, true, 1, true, StateExternalConflict},
+		{"external-conflict-larger", 999 * MiB, 999 * MiB, false, 2, true, StateExternalConflict},
+		{"expected-not-loaded", 192 * MiB, 256 * MiB, false, 0, true, StateExpectedNotLoaded},
+		{"effective-mismatch", 384 * MiB, 256 * MiB, true, 0, true, StateEffectiveMismatch},
+		{"fallback-undersized", 192 * MiB, 256 * MiB, false, 0, false, StateFallbackUnder},
+	}
+	for _, c := range cases {
+		got := ClassifyEffectiveDetailed(med, c.effHigh, c.effMax, c.ourLoaded, c.otherDropins, c.weExpect)
+		if got != c.want {
+			t.Errorf("%s: got %s want %s", c.name, got, c.want)
+		}
+		// Only ACTIVE_MATCH and FALLBACK_MATCH are protected.
+		wantProt := c.want == StateActiveMatch || c.want == StateFallbackMatch
+		if got.ProtectionActive() != wantProt {
+			t.Errorf("%s: ProtectionActive=%v want %v", c.name, got.ProtectionActive(), wantProt)
+		}
+	}
+}
+
 func TestClassifyStates(t *testing.T) {
 	d := Render(mediumProfile(), "1.222.1")
 	if Classify(nil, d) != StateAbsent {

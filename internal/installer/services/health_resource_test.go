@@ -100,20 +100,40 @@ func TestReconcileNoChurn(t *testing.T) {
 	}
 }
 
-// 17. Medium under packaged fallback (effective 192/256) → FALLBACK_UNDERSIZED, not acceptable.
-func TestReconcileMediumFallbackUndersized(t *testing.T) {
+// 17/14. Medium: reconciler wrote the drop-in but systemd shows the packaged
+// fallback with our drop-in NOT loaded → EXPECTED_DROPIN_NOT_LOADED (precise
+// activation diagnosis), not protected, not acceptable → medium DEGRADES.
+func TestReconcileMediumDropinNotLoaded(t *testing.T) {
 	m := executor.NewMockExecutor()
 	p := profFor(6 << 30)
-	// systemd shows the packaged fallback (drop-in not effective), no drop-in loaded.
 	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(192*miB, 256*miB, 64, "")}
 	sf := &state.StateFile{}
 	v := reconcileWithProfile(m, sf, logging.New("/dev/null", false), verFixture, p)
-	if v.EffectiveState != healthresource.StateFallbackUnder || v.ProtectionActive || v.Acceptable() {
-		t.Errorf("medium fallback: state=%s protection=%v acceptable=%v want FALLBACK_UNDERSIZED/false/false",
+	if v.EffectiveState != healthresource.StateExpectedNotLoaded || v.ProtectionActive || v.Acceptable() {
+		t.Errorf("medium not-loaded: state=%s protection=%v acceptable=%v want EXPECTED_DROPIN_NOT_LOADED/false/false",
 			v.EffectiveState, v.ProtectionActive, v.Acceptable())
 	}
 	if sf.HealthResourceProtection {
 		t.Error("state must persist protection=false")
+	}
+}
+
+// External administrator drop-in overrides effective values → EXTERNAL_OVERRIDE_CONFLICT,
+// never silently accepted, DEGRADES, and records the conflicting paths.
+func TestReconcileExternalOverrideConflict(t *testing.T) {
+	m := executor.NewMockExecutor()
+	p := profFor(6 << 30) // medium calc 256/384
+	external := "/etc/systemd/system/nftban-health.service.d/99-admin.conf"
+	// Our drop-in + an admin drop-in both loaded; effective differs from calc (admin wins).
+	m.RunResults[healthShowKey()] = executor.Result{
+		Stdout: showOut(300*miB, 700*miB, 64, healthresource.DropinFile+" "+external)}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
+	if v.EffectiveState != healthresource.StateExternalConflict || v.ProtectionActive || v.Acceptable() {
+		t.Errorf("external conflict: state=%s protection=%v acceptable=%v want EXTERNAL_OVERRIDE_CONFLICT/false/false",
+			v.EffectiveState, v.ProtectionActive, v.Acceptable())
+	}
+	if !strings.Contains(v.ValidationError, external) {
+		t.Errorf("conflict must name the external drop-in; error=%q", v.ValidationError)
 	}
 }
 
@@ -166,5 +186,49 @@ func TestReconcileLargeEffectiveMismatch(t *testing.T) {
 	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
 	if v.Acceptable() {
 		t.Errorf("large mismatch must not be acceptable, got state=%s", v.EffectiveState)
+	}
+}
+
+// Profile transition (e.g. small→medium after a RAM change): stale drop-in bytes
+// differ from desired → exactly one rewrite + one daemon-reload.
+func TestReconcileProfileTransitionRewritesOnce(t *testing.T) {
+	m := executor.NewMockExecutor()
+	small := profFor(2 << 30)
+	medium := profFor(6 << 30)
+	m.Files[healthresource.DropinFile] = healthresource.Render(small, verFixture) // stale small drop-in
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(medium.MemoryHigh, medium.MemoryMax, 64, healthresource.DropinFile)}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, medium)
+	if !v.Changed || reloadCount(m) != 1 {
+		t.Errorf("transition: Changed=%v reloads=%d want true/1", v.Changed, reloadCount(m))
+	}
+	if v.EffectiveState != healthresource.StateActiveMatch {
+		t.Errorf("transition end state=%s want ACTIVE_MATCH", v.EffectiveState)
+	}
+}
+
+// Rollback/uninstall removal primitive: present → removed + daemon-reload;
+// absent → idempotent no-op; administrator sibling drop-ins untouched.
+func TestRemoveHealthResourceDropin(t *testing.T) {
+	m := executor.NewMockExecutor()
+	m.Files[healthresource.DropinFile] = []byte("[Service]\nMemoryMax=402653184\n")
+	admin := "/etc/systemd/system/nftban-health.service.d/99-admin.conf"
+	m.Files[admin] = []byte("[Service]\nCPUQuota=50%\n")
+	changed, err := RemoveHealthResourceDropin(m, logging.New("/dev/null", false))
+	if err != nil || !changed {
+		t.Fatalf("remove present: changed=%v err=%v want true/nil", changed, err)
+	}
+	if _, ok := m.Files[healthresource.DropinFile]; ok {
+		t.Error("drop-in not removed")
+	}
+	if _, ok := m.Files[admin]; !ok {
+		t.Error("administrator sibling drop-in must NOT be removed")
+	}
+	if reloadCount(m) != 1 {
+		t.Errorf("remove reloads=%d want 1", reloadCount(m))
+	}
+	// Idempotent second removal.
+	changed, err = RemoveHealthResourceDropin(m, logging.New("/dev/null", false))
+	if err != nil || changed {
+		t.Errorf("remove absent: changed=%v err=%v want false/nil", changed, err)
 	}
 }
