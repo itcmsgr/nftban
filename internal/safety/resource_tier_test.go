@@ -17,12 +17,12 @@ func TestClassifyResourceTierBoundaries(t *testing.T) {
 		ram  int64
 		want ResourceTier
 	}{
-		{0, ResourceTierSmall},        // unknown/zero → conservative default
+		{0, ResourceTierSmall},
 		{1 * GB, ResourceTierSmall},
-		{4 * GB, ResourceTierSmall},   // boundary: <=4G is small
+		{4 * GB, ResourceTierSmall},
 		{4*GB + 1, ResourceTierMedium},
-		{int64(7.7 * float64(GB)), ResourceTierMedium}, // dns1/dns2
-		{8 * GB, ResourceTierMedium},  // boundary: <=8G is medium
+		{GB * 77 / 10, ResourceTierMedium},
+		{8 * GB, ResourceTierMedium},
 		{8*GB + 1, ResourceTierLarge},
 		{16 * GB, ResourceTierLarge},
 	}
