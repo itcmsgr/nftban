@@ -6,8 +6,6 @@ package services
 
 import (
 	"fmt"
-	"math"
-	"strconv"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/healthresource"
@@ -103,7 +101,7 @@ func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logg
 	// 4b. Infinity (systemd's "unset limit") is INVALID for this bounded hotfix:
 	// an unlimited hard ceiling violates the design; NEVER read it as "safe
 	// because larger than calculated". Effective values must MATCH the policy.
-	if effHigh == math.MaxInt64 || effMax == math.MaxInt64 {
+	if effHigh == healthresource.InfinityBytes || effMax == healthresource.InfinityBytes {
 		v.EffectiveState = healthresource.StateActivationFailed
 		v.ValidationError = "unbounded effective memory limit (infinity) violates bounded v1.222.1 policy"
 		v.ProtectionActive = false
@@ -176,56 +174,25 @@ func queryEffectiveHealth(exec executor.Executor) (high, max, tasks int64, dropi
 	if res.ExitCode != 0 {
 		return 0, 0, 0, nil, fmt.Errorf("exit %d: %s", res.ExitCode, strings.TrimSpace(res.Stderr))
 	}
-	props := parseSystemctlShow(res.Stdout)
+	props := healthresource.ShowProps(res.Stdout)
 	hs, hok := props["MemoryHigh"]
 	ms, mok := props["MemoryMax"]
 	if !hok || !mok {
 		return 0, 0, 0, nil, fmt.Errorf("missing MemoryHigh/MemoryMax in systemctl show output")
 	}
-	high, err = parseSystemdBytes(hs)
-	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("parse MemoryHigh=%q: %w", hs, err)
-	}
-	max, err = parseSystemdBytes(ms)
-	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("parse MemoryMax=%q: %w", ms, err)
+	var okh, okm bool
+	high, _, okh = healthresource.ParseMemBytes(hs)
+	max, _, okm = healthresource.ParseMemBytes(ms)
+	if !okh || !okm {
+		return 0, 0, 0, nil, fmt.Errorf("unparseable MemoryHigh=%q / MemoryMax=%q", hs, ms)
 	}
 	if ts, ok := props["TasksMax"]; ok {
-		tasks, _ = parseSystemdBytes(ts) // infinity/blank tolerated
+		tasks, _, _ = healthresource.ParseMemBytes(ts) // infinity/blank tolerated
 	}
 	if dp, ok := props["DropInPaths"]; ok && strings.TrimSpace(dp) != "" {
 		dropins = strings.Fields(dp)
 	}
 	return high, max, tasks, dropins, nil
-}
-
-// parseSystemctlShow splits `KEY=VALUE` lines (order-independent, tolerant of
-// blank lines and values containing '=').
-func parseSystemctlShow(out string) map[string]string {
-	m := make(map[string]string)
-	for _, ln := range strings.Split(out, "\n") {
-		ln = strings.TrimRight(ln, "\r")
-		if ln == "" {
-			continue
-		}
-		if i := strings.IndexByte(ln, '='); i > 0 {
-			m[ln[:i]] = ln[i+1:]
-		}
-	}
-	return m
-}
-
-// parseSystemdBytes parses a systemd memory/tasks property value. Bare integers
-// are bytes; "infinity" maps to math.MaxInt64; empty maps to 0.
-func parseSystemdBytes(s string) (int64, error) {
-	s = strings.TrimSpace(s)
-	switch s {
-	case "":
-		return 0, nil
-	case "infinity", "[not set]":
-		return math.MaxInt64, nil
-	}
-	return strconv.ParseInt(s, 10, 64)
 }
 
 // RemoveHealthResourceDropin removes the NFTBan-generated health-resource drop-in

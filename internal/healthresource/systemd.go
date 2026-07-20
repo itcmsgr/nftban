@@ -1,0 +1,49 @@
+// meta:name="systemd.go"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="v1.222.1 shared `systemctl show` property parser for the health-resource surface. ONE parser used by both the installer reconciler (internal/installer/services) and the read-only `nftban-core resources` CLI — no duplicate parser. Machine-readable properties only (never human `systemctl status`)."
+package healthresource
+
+import (
+	"math"
+	"strconv"
+	"strings"
+)
+
+// InfinityBytes is the sentinel for systemd's "infinity" (unset) memory limit.
+// The v1.222.1 bounded policy treats it as INVALID, never as "large and safe".
+const InfinityBytes = math.MaxInt64
+
+// ShowProps parses `systemctl show` KEY=VALUE output into a map. Order-independent,
+// tolerant of blank lines and values that themselves contain '='.
+func ShowProps(out string) map[string]string {
+	m := make(map[string]string)
+	for _, ln := range strings.Split(out, "\n") {
+		ln = strings.TrimRight(ln, "\r")
+		if ln == "" {
+			continue
+		}
+		if i := strings.IndexByte(ln, '='); i > 0 {
+			m[ln[:i]] = ln[i+1:]
+		}
+	}
+	return m
+}
+
+// ParseMemBytes parses a systemd memory/tasks property value. Bare integers are
+// bytes; "infinity"/"[not set]" → (InfinityBytes, true); "" → (0, false). A
+// non-numeric non-infinity value returns (0, false) with ok=false.
+func ParseMemBytes(s string) (v int64, infinity bool, ok bool) {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "":
+		return 0, false, true
+	case "infinity", "[not set]":
+		return InfinityBytes, true, true
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, false, false
+	}
+	return n, false, true
+}
