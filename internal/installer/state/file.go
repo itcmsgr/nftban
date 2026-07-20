@@ -86,6 +86,11 @@ type StateFile struct {
 	RebuildDurationMs int64
 	ServicesEnabled   string
 	ServicesFailed    string
+	// v1.222.1 Lane 4: structured failed-unit attribution companions to
+	// SERVICES_FAILED (canonical, comma-separated nftban unit names). Backward-
+	// compatible — absent in old state files → empty.
+	ServicesFailedPreexisting string
+	ServicesFailedInWindow    string
 
 	// v1.222.1 HEALTH-OOM hotfix (Lane 2): profile-derived health-service
 	// resource reconciliation result. All optional/backward-compatible — an old
@@ -250,6 +255,8 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "REBUILD_DURATION_MS=%d\n", sf.RebuildDurationMs)
 	fmt.Fprintf(w, "SERVICES_ENABLED=%s\n", sf.ServicesEnabled)
 	fmt.Fprintf(w, "SERVICES_FAILED=%s\n", sf.ServicesFailed)
+	fmt.Fprintf(w, "SERVICES_FAILED_PREEXISTING=%s\n", sf.ServicesFailedPreexisting)
+	fmt.Fprintf(w, "SERVICES_FAILED_IN_WINDOW=%s\n", sf.ServicesFailedInWindow)
 	fmt.Fprintf(w, "HEALTH_RESOURCE_STATE=%s\n", sf.HealthResourceState)
 	fmt.Fprintf(w, "HEALTH_RESOURCE_PROFILE=%s\n", sf.HealthResourceProfile)
 	fmt.Fprintf(w, "HEALTH_RESOURCE_AUTHORITY=%s\n", sf.HealthResourceAuthority)
@@ -333,6 +340,10 @@ func (sf *StateFile) Read() error {
 			sf.ServicesEnabled = val
 		case "SERVICES_FAILED":
 			sf.ServicesFailed = val
+		case "SERVICES_FAILED_PREEXISTING":
+			sf.ServicesFailedPreexisting = val
+		case "SERVICES_FAILED_IN_WINDOW":
+			sf.ServicesFailedInWindow = val
 		case "HEALTH_RESOURCE_STATE":
 			sf.HealthResourceState = val
 		case "HEALTH_RESOURCE_PROFILE":

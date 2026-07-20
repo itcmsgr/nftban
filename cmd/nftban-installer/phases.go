@@ -116,6 +116,20 @@ func phaseEndMarker(log *logging.Logger, name string) {
 	log.Info("[PHASE] %s end", name)
 }
 
+// persistFailedUnits (v1.222.1 Lane 4) writes the STRUCTURED, canonical,
+// injection-safe fatal failed-unit set into install_state (SERVICES_FAILED +
+// pre-existing/in-window attribution). Called after EACH assertion pass so the
+// FINAL pass wins — a unit recovered by the bounded auto-fix clears
+// SERVICES_FAILED (no stale failure persists). This is the single source of
+// truth the installer + update remediation renderers consume (no prose parsing,
+// no hardcoded unit).
+func persistFailedUnits(sf *state.StateFile, units []validate.FailedUnitPostInstall) {
+	all, pre, inWindow := validate.NormalizeFailedUnits(units)
+	sf.ServicesFailed = strings.Join(all, ",")
+	sf.ServicesFailedPreexisting = strings.Join(pre, ",")
+	sf.ServicesFailedInWindow = strings.Join(inWindow, ",")
+}
+
 // phaseDetect discovers SSH port, panel, conflicts, distro, authority decision.
 //
 // V125 R-3: honors ctx cancellation at the phase entry and before the final
@@ -613,7 +627,12 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// v1.222.1 HEALTH-OOM Lane 2: feed the phaseConfigure reconciliation verdict
 	// to the health_resource_policy_active assertion (single policy path).
 	opts.HealthResource = &pd.healthResource
+	// v1.222.1 Lane 4: capture the FATAL failed-unit set and propagate the
+	// STRUCTURED names into install_state (SERVICES_FAILED + attribution).
+	var failedUnits []validate.FailedUnitPostInstall
+	opts.FailedUnitsOut = &failedUnits
 	results := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
+	persistFailedUnits(sf, failedUnits)
 
 	// 4. Set immutable flags on security-critical files (G8)
 	validate.SetImmutableFlags(exec, log)
@@ -661,6 +680,7 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 
 	// v1.98 INV-I-013: Re-run assertions (VALIDATE_2) — only this result counts
 	results2 := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
+	persistFailedUnits(sf, failedUnits) // final-pass semantics: recovered units clear SERVICES_FAILED
 
 	if validate.AllPassed(results2) {
 		log.Info("VALIDATE_2: all assertions passed after safe auto-fix — COMMITTED")

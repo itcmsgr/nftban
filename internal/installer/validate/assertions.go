@@ -71,6 +71,13 @@ type AssertionOpts struct {
 	// assertion consumes it (single policy path — no recomputation). Nil in
 	// contexts that did not run the reconciler (assertion is skipped/PASS).
 	HealthResource *healthresource.Verdict
+
+	// FailedUnitsOut, when non-nil, receives the FINAL-pass FATAL failed-unit set
+	// (spr.FailedUnits) so the caller (phaseValidate) can propagate the STRUCTURED
+	// names into install_state SERVICES_FAILED — the v1.222.1 Lane 4 fix for
+	// BUG-INSTALLER-FAILED-UNITS-STRUCTURED-STATE-NOT-POPULATED. Recovered/auxiliary
+	// units are excluded (only fatal, DEGRADED-causing units).
+	FailedUnitsOut *[]FailedUnitPostInstall
 }
 
 // WithPanelPolicy returns a copy of opts with PanelPolicy set and the
@@ -120,6 +127,11 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// pass a populated set in production.
 	in, _ := GatherSystemdPayloadInputs(exec, log, defaultInventoryPaths())
 	spr := ValidateInstalledSystemdPayload(in)
+	// v1.222.1 Lane 4: hand the FATAL failed-unit set back to the caller so the
+	// STRUCTURED names reach install_state (single source of truth for remediation).
+	if opts.FailedUnitsOut != nil {
+		*opts.FailedUnitsOut = append((*opts.FailedUnitsOut)[:0], spr.FailedUnits...)
+	}
 	results = append(results,
 		assertSystemdExecStartPaths(spr, log),
 		assertSystemdTimerPair(spr, log),
