@@ -270,7 +270,16 @@ func runSystemctlShow() (map[string]string, error) {
 func resourcesExitCode(rep resourcesReport) int {
 	svc := rep.Service
 	if !svc.Effective.Available {
-		return 1 // incomplete evidence
+		// v1.223.0 verdict-truth (locked UNAVAILABLE policy): the live read could
+		// not be verified. A protection-REQUIRED tier (medium/large) is FAIL-CLOSED
+		// → exit 2, matching the installer's UNAVAILABLE→DEGRADED — the CLI and
+		// installer share the same acceptability stance and must not report a host
+		// whose REQUIRED protection cannot be verified as merely "incomplete". A
+		// non-required tier (small) stays exit 1 (incomplete evidence).
+		if healthresource.ProtectionRequired(safety.ResourceTier(rep.Host.ResourceTier)) {
+			return 2
+		}
+		return 1
 	}
 	if svc.ProtectionActive {
 		return 0

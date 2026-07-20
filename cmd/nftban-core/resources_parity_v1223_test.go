@@ -124,17 +124,20 @@ func TestResourcesTierStateParity(t *testing.T) {
 	}
 }
 
-// The live-unreadable path (systemctl show failed) is INCOMPLETE evidence → exit 1
-// per resourcesExitCode, on any tier. This is the CLI "protection unverifiable"
-// alignment point (distinct from the installer assertion, which for a
-// protection-REQUIRED tier turns an unverifiable live read into DEGRADED).
-func TestResourcesLiveUnreadable_IncompleteExit1(t *testing.T) {
-	calc := calcFor(6 << 30) // medium
-	rep := assembleReport(calc, nil, false, nil, errors.New("systemctl show: unit not loaded"), false)
-	if rep.Service.Effective.Available {
+// The live-unreadable path (systemctl show failed) is unverifiable. LOCKED v1.223.0
+// policy: a protection-REQUIRED tier (medium/large) FAIL-CLOSES → exit 2 — the SAME
+// stance as the installer's UNAVAILABLE→DEGRADED (CLI and installer agree). A
+// non-required tier (small) is incomplete evidence → exit 1.
+func TestResourcesLiveUnreadable_TierAware(t *testing.T) {
+	medium := assembleReport(calcFor(6<<30), nil, false, nil, errors.New("systemctl show: unit not loaded"), false)
+	if medium.Service.Effective.Available {
 		t.Fatal("live read failed → Effective.Available must be false")
 	}
-	if got := resourcesExitCode(rep); got != 1 {
-		t.Errorf("live-unreadable exit=%d want 1 (incomplete evidence)", got)
+	if got := resourcesExitCode(medium); got != 2 {
+		t.Errorf("medium live-unreadable exit=%d want 2 (required-protection fail-closed)", got)
+	}
+	small := assembleReport(calcFor(2<<30), nil, false, nil, errors.New("systemctl show: unit not loaded"), false)
+	if got := resourcesExitCode(small); got != 1 {
+		t.Errorf("small live-unreadable exit=%d want 1 (incomplete evidence)", got)
 	}
 }
