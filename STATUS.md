@@ -1,14 +1,26 @@
 # NFTBan Development Project Health Status
 
 **Status:** ⚠️ Warning
-**Last Updated:** 2026-07-18 20:44:36 UTC
-**Version:** v1.221.4 Development Branch (release-prep)
+**Last Updated:** 2026-07-20 06:40:00 UTC
+**Version:** v1.222.0 Development Branch (release-prep)
 
 ---
 
 ## Active Release Train
 
-**v1.221.4 — BotScan HTTP log-source validity & health truth (R22A) — RELEASE-PREP** — *shell-only; daemon binary source identical to v1.221.3; no nft schema change (1.84.0); no config-schema change; no enforcement-policy change.*
+**v1.222.0 — Lifecycle forensic-log correctness & bounded log-retention/rotation safety — RELEASE-PREP (FLEET CANDIDATE)** — *one combined release, two serial gates (Gate A + Gate B), both merged to `main`; VERSION-only release-prep; shell + Go (`internal/logretention`, `internal/safety`, consumed only by `nftban-core`); `nftband` daemon binary source unchanged (daemon byte-identical); no nft schema change (1.84.0); no config-schema change (1.1.0 / schema_version 1).*
+
+| Field | State |
+|-------|-------|
+| Scope | **Gate A** — per-run update forensic record correctness (human.log written; installer-child slice; aligned structured+human evidence). **Gate B** — profile/capacity-derived **bounded** retention-policy generation; read-only `nftban logs retention status [--json]`; operator config preserved across DEB/RPM upgrades; generated logrotate = derived state (`%ghost`/not-in-DEB-payload); single `Readiness()` authority (generated + bounded fallback); installer `COMMITTED` gated on a valid active policy; whole-set incl. Suricata; crash-consistent durable multi-file activation + recovery; numeric rollout-acceptance evidence |
+| Files | Gate A: `cli/lib/nftban/cli/cmd_update_helpers.sh` + support bundle (shell). Gate B: `internal/logretention/*`, `internal/safety/{file,durable}.go`, `cmd/nftban-core/cmd_logretention.go`, `cli/lib/nftban/cli/cmd_logs.sh`, packaging (`build_nftban.sh`, `deb/postinst`), `conf.d/logs.conf`, config-schema keys, guards + tests |
+| Product PRs | Gate A **MERGED** #1122 → `main` `526b83f3`; Gate B **MERGED** #1123 → `main` `42af7fea` (squash; both CI-green) |
+| Validation | `go test ./internal/... ./cmd/...` 84/0 on lab2 (DEB/Ubuntu 24.04) + lab4 (RPM/Alma 9.8/el9); Gate B shell guards green; package-native DEB + RPM builds SHA-chain verified; independent transaction-safety audits (F1/F2/F3 + T1-A/B/C) closed, 0 open findings |
+| Daemon change class | **NONE** (`nftband` daemon binary source identical; only `nftban-core` gains the log-retention surface) |
+| Explicit non-goals | no active disk-pressure auto-deletion (watchdog alert-only); no mutating retention CLI; no time-first redesign; no single-policy-file simplification; no event-driven regen redesign; **no fleet deployment yet; no canary result yet** |
+| Tag / Publication | **NOT_CREATED / NOT_STARTED** (release-prep only; TAG/PUBLISH + package-native lab validation + canary + FLEET on HOLD pending explicit GOs) |
+
+**v1.221.4 — BotScan HTTP log-source validity & health truth (R22A) — RELEASED (Latest; tag `v1.221.4`)** — *shell-only; daemon binary source identical to v1.221.3; no nft schema change (1.84.0); no config-schema change; no enforcement-policy change. Superseded as the active release-prep candidate by v1.222.0 above.*
 
 | Field | State |
 |-------|-------|
@@ -17,7 +29,7 @@
 | Product PR | **MERGED** #1120 → `main` `d713c3b7` (CI green) |
 | Validation | package-native DEB lab2/Plesk + RPM lab4/cPanel (false-healthy eliminated at the collector source); **production canary srv2 (DirectAdmin, 186 domains) PASS** — no over-exclusion (`collected=12 skipped=0`), verdict OK, no `WARN_NO_LOGS` regression, validate rc0, schema 1.84.0, connectivity preserved |
 | Daemon change class | **NONE** (shell-only; daemon byte-source identical) |
-| Tag / Publication | **NOT_CREATED / NOT_STARTED** (release-prep only; TAG/PUBLISH + FLEET on HOLD pending explicit GO) |
+| Tag / Publication | **CREATED / PUBLISHED** — tag `v1.221.4` (GitHub release, Latest, 2026-07-18) |
 | Canary/labs note | srv2 + lab2 + lab4 temporarily run R22A code labeled `1.221.3`; the official `1.221.4` package normalizes package identity during the later fleet rollout |
 
 **v1.221.3 — P1 UNINSTALL FIREWALL-SAFETY HOTFIX — RELEASED, fleet-live 11/11** — *packaging-only; no daemon/nft-schema change. Supersedes v1.221.2 for deployment.*
