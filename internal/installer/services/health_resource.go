@@ -137,6 +137,12 @@ func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logg
 // > current calculated canonical policy > cautious persisted reconstruction >
 // explicit UNAVAILABLE. It NEVER returns an unmarked zero-value verdict.
 func ResolveHealthResourceVerdict(exec executor.Executor, sf *state.StateFile, log *logging.Logger, current healthresource.Verdict, sourceVersion string) healthresource.Verdict {
+	// Split from resolveWithProfile so tests inject a fixture tier (mirrors
+	// ReconcileHealthResource/reconcileWithProfile). Canonical facts read /proc.
+	return resolveWithProfile(exec, sf, log, current, sourceVersion, safety.HealthServiceMemoryLimits())
+}
+
+func resolveWithProfile(exec executor.Executor, sf *state.StateFile, log *logging.Logger, current healthresource.Verdict, sourceVersion string, p safety.HealthResourceProfile) healthresource.Verdict {
 	// 1. Current reconciliation verdict when available (phaseConfigure ran this
 	//    process → the verdict already reflects live systemd).
 	if !current.IsZero() {
@@ -146,7 +152,7 @@ func ResolveHealthResourceVerdict(exec executor.Executor, sf *state.StateFile, l
 	//    reload) with the canonical policy. Authoritative current truth for
 	//    repair/revalidate/update-force. Persists the resolved truth so a stale
 	//    persisted ACTIVE_MATCH cannot override a live mismatch.
-	live := verifyLiveHealthResource(exec, sf, log, sourceVersion)
+	live := verifyLiveWithProfile(exec, sf, log, sourceVersion, p)
 	if live.EffectiveState != healthresource.StateUnavailable {
 		return live
 	}
@@ -169,13 +175,12 @@ func ResolveHealthResourceVerdict(exec executor.Executor, sf *state.StateFile, l
 	}
 }
 
-// verifyLiveHealthResource computes the canonical policy and classifies the LIVE
+// verifyLiveWithProfile classifies the LIVE
 // systemd effective state WITHOUT writing/reloading (read-only). It persists the
 // resolved truth to install_state (owner scope §5: persisted must not override a
 // live mismatch). Returns EffectiveState == StateUnavailable when systemd cannot
 // be read (the caller then falls back to persisted reconstruction).
-func verifyLiveHealthResource(exec executor.Executor, sf *state.StateFile, log *logging.Logger, sourceVersion string) healthresource.Verdict {
-	p := safety.HealthServiceMemoryLimits()
+func verifyLiveWithProfile(exec executor.Executor, sf *state.StateFile, log *logging.Logger, sourceVersion string, p safety.HealthResourceProfile) healthresource.Verdict {
 	v := healthresource.Verdict{
 		Profile:        p,
 		Authority:      "internal/safety",
