@@ -100,6 +100,17 @@ func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logg
 	v.LoadedDropIns = dropins
 	v.DropInLoaded = containsPath(dropins, healthresource.DropinFile)
 
+	// 4b. Infinity (systemd's "unset limit") is INVALID for this bounded hotfix:
+	// an unlimited hard ceiling violates the design; NEVER read it as "safe
+	// because larger than calculated". Effective values must MATCH the policy.
+	if effHigh == math.MaxInt64 || effMax == math.MaxInt64 {
+		v.EffectiveState = healthresource.StateActivationFailed
+		v.ValidationError = "unbounded effective memory limit (infinity) violates bounded v1.222.1 policy"
+		v.ProtectionActive = false
+		finishHealthResource(exec, sf, log, &v)
+		return v
+	}
+
 	// 5. Classify effective protection state, conflict-aware. Any loaded drop-in
 	// that is not ours is an external/administrator override.
 	otherDropins := 0

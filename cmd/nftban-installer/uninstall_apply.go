@@ -19,20 +19,20 @@
 // This dispatcher is the ONLY entry into uninstall mutation. Reached
 // only when:
 //
-//   cfg.mode             == "uninstall"  AND
-//   cfg.confirmMutation  == true         AND
-//   cfg.dryRun           == false
+//	cfg.mode             == "uninstall"  AND
+//	cfg.confirmMutation  == true         AND
+//	cfg.dryRun           == false
 //
 // (flags.go rejects any other combination at parse time.)
 //
 // Responsibilities:
 //
-//   1. Detect SSH port (reused from install-side detect package).
-//   2. Classify current authority (via uninstall.Classify).
-//   3. Preflight refusal for non-recoverable states; proceed for
-//      AuthorityNFTBan or recoverable AuthorityAmbiguous+OrphanNFTBan.
-//   4. Invoke uninstall.Apply for the mutation sequence.
-//   5. Transition the state file to the Apply result's terminal state.
+//  1. Detect SSH port (reused from install-side detect package).
+//  2. Classify current authority (via uninstall.Classify).
+//  3. Preflight refusal for non-recoverable states; proceed for
+//     AuthorityNFTBan or recoverable AuthorityAmbiguous+OrphanNFTBan.
+//  4. Invoke uninstall.Apply for the mutation sequence.
+//  5. Transition the state file to the Apply result's terminal state.
 //
 // Emergency SSH: Apply handles the entire inject/validate/remove cycle
 // internally. The dispatcher never touches the kernel directly.

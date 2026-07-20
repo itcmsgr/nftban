@@ -85,6 +85,12 @@ type MockExecutor struct {
 	ServiceUnmaskErr      error
 	ServiceResetFailedErr error
 	RenameErr             error
+	// v1.222.1 Lane 2 edge tests: inject FS/systemd failures. When non-nil the
+	// corresponding method returns the error (and performs no state change).
+	WriteFileAtomicErr error
+	MkdirAllErr        error
+	DaemonReloadErr    error
+	RemoveErr          error
 
 	// callbacks maps "name:args" -> function to call when command is executed.
 	callbacks map[string]func()
@@ -168,6 +174,9 @@ func (m *MockExecutor) ReadFile(path string) ([]byte, error) {
 func (m *MockExecutor) WriteFileAtomic(path string, data []byte, _ os.FileMode) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.WriteFileAtomicErr != nil {
+		return m.WriteFileAtomicErr // no partial write recorded (atomic contract)
+	}
 	m.WrittenFiles[path] = data
 	m.Files[path] = data
 	return nil
@@ -187,6 +196,9 @@ func (m *MockExecutor) FileExists(path string) bool {
 func (m *MockExecutor) MkdirAll(path string, _ os.FileMode) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.MkdirAllErr != nil {
+		return m.MkdirAllErr
+	}
 	m.Dirs[path] = true
 	return nil
 }
@@ -197,6 +209,9 @@ func (m *MockExecutor) Chmod(_ string, _ os.FileMode) error { return nil }
 func (m *MockExecutor) Remove(path string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.RemoveErr != nil {
+		return m.RemoveErr
+	}
 	delete(m.Files, path)
 	delete(m.Dirs, path)
 	return nil
@@ -357,7 +372,7 @@ func (m *MockExecutor) ServiceResetFailed(unit string) error {
 
 func (m *MockExecutor) DaemonReload() error {
 	m.recordCommand("systemctl", "daemon-reload")
-	return nil
+	return m.DaemonReloadErr
 }
 
 // --- System ---

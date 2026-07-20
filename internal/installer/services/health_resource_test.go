@@ -5,6 +5,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -230,5 +231,105 @@ func TestRemoveHealthResourceDropin(t *testing.T) {
 	changed, err = RemoveHealthResourceDropin(m, logging.New("/dev/null", false))
 	if err != nil || changed {
 		t.Errorf("remove absent: changed=%v err=%v want false/nil", changed, err)
+	}
+}
+
+// Step 1: mkdir failure → GENERATION_FAILED, no drop-in written, exact op+path.
+func TestReconcileMkdirFailure(t *testing.T) {
+	m := executor.NewMockExecutor()
+	m.MkdirAllErr = errors.New("permission denied")
+	p := profFor(6 << 30)
+	sf := &state.StateFile{}
+	v := reconcileWithProfile(m, sf, logging.New("/dev/null", false), verFixture, p)
+	if v.GeneratedState != healthresource.StateGenerationFailed || v.ProtectionActive {
+		t.Errorf("mkdir fail: generated=%s protection=%v want GENERATION_FAILED/false", v.GeneratedState, v.ProtectionActive)
+	}
+	if len(m.WrittenFiles) != 0 {
+		t.Error("mkdir fail must leave no partial drop-in")
+	}
+	if !strings.Contains(v.ValidationError, "mkdir") || sf.HealthResourceError == "" {
+		t.Errorf("must record mkdir op+path; error=%q state.err=%q", v.ValidationError, sf.HealthResourceError)
+	}
+}
+
+// Step 1: durable write failure → GENERATION_FAILED, atomic (no partial file).
+func TestReconcileWriteFailure(t *testing.T) {
+	m := executor.NewMockExecutor()
+	m.WriteFileAtomicErr = errors.New("no space left on device")
+	p := profFor(6 << 30)
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
+	if v.GeneratedState != healthresource.StateGenerationFailed || v.Acceptable() {
+		t.Errorf("write fail: generated=%s acceptable=%v want GENERATION_FAILED/false", v.GeneratedState, v.Acceptable())
+	}
+	if _, ok := m.WrittenFiles[healthresource.DropinFile]; ok {
+		t.Error("write fail must not record a partial final drop-in")
+	}
+	if !strings.Contains(v.ValidationError, "write") {
+		t.Errorf("must record write op; error=%q", v.ValidationError)
+	}
+}
+
+// Step 2: daemon-reload failure after a changed write → ACTIVATION_FAILED.
+func TestReconcileDaemonReloadFailure(t *testing.T) {
+	m := executor.NewMockExecutor()
+	m.DaemonReloadErr = errors.New("failed to reload")
+	p := profFor(6 << 30)
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, healthresource.DropinFile)}
+	v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
+	if v.EffectiveState != healthresource.StateActivationFailed || v.ProtectionActive {
+		t.Errorf("reload fail: state=%s protection=%v want ACTIVATION_FAILED/false", v.EffectiveState, v.ProtectionActive)
+	}
+	if !strings.Contains(v.ValidationError, "daemon-reload") {
+		t.Errorf("must record daemon-reload failure; error=%q", v.ValidationError)
+	}
+}
+
+// Step 2/3: MemoryMax=infinity → ACTIVATION_FAILED (INVALID, not "safe").
+func TestReconcileInfinityRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		high, max     string
+	}{
+		{"max-infinity", "268435456", "infinity"},
+		{"high-infinity", "infinity", "402653184"},
+		{"both-infinity", "infinity", "infinity"},
+	} {
+		m := executor.NewMockExecutor()
+		p := profFor(6 << 30)
+		m.RunResults[healthShowKey()] = executor.Result{
+			Stdout: fmt.Sprintf("MemoryHigh=%s\nMemoryMax=%s\nTasksMax=64\nDropInPaths=%s\n", tc.high, tc.max, healthresource.DropinFile)}
+		v := reconcileWithProfile(m, &state.StateFile{}, logging.New("/dev/null", false), verFixture, p)
+		if v.EffectiveState != healthresource.StateActivationFailed || v.Acceptable() {
+			t.Errorf("%s: state=%s acceptable=%v want ACTIVATION_FAILED/false", tc.name, v.EffectiveState, v.Acceptable())
+		}
+		if !strings.Contains(v.ValidationError, "infinity") {
+			t.Errorf("%s: must reject infinity; error=%q", tc.name, v.ValidationError)
+		}
+	}
+}
+
+// Step 6: a failed run persists the error; a later successful repair clears it,
+// restores ACTIVE_MATCH, and does not double-write.
+func TestReconcileRetryClearsStaleError(t *testing.T) {
+	m := executor.NewMockExecutor()
+	p := profFor(6 << 30)
+	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(p.MemoryHigh, p.MemoryMax, 64, healthresource.DropinFile)}
+	sf := &state.StateFile{}
+
+	// Run 1: write fails → GENERATION_FAILED, error persisted.
+	m.WriteFileAtomicErr = errors.New("transient EIO")
+	v1 := reconcileWithProfile(m, sf, logging.New("/dev/null", false), verFixture, p)
+	if v1.GeneratedState != healthresource.StateGenerationFailed || sf.HealthResourceError == "" {
+		t.Fatalf("run1: generated=%s persisted-err=%q want GENERATION_FAILED/non-empty", v1.GeneratedState, sf.HealthResourceError)
+	}
+
+	// Run 2: failure cleared → succeeds, stale error cleared, ACTIVE_MATCH.
+	m.WriteFileAtomicErr = nil
+	v2 := reconcileWithProfile(m, sf, logging.New("/dev/null", false), verFixture, p)
+	if v2.EffectiveState != healthresource.StateActiveMatch || !v2.ProtectionActive {
+		t.Errorf("run2: state=%s protection=%v want ACTIVE_MATCH/true", v2.EffectiveState, v2.ProtectionActive)
+	}
+	if sf.HealthResourceError != "" {
+		t.Errorf("run2 must clear stale error, got %q", sf.HealthResourceError)
 	}
 }
