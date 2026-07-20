@@ -21,7 +21,7 @@ func healthFor(totalRAM, availRAM int64, cores int) HealthResourceProfile {
 func TestHealthBudgetInvariants(t *testing.T) {
 	rams := []int64{
 		256 * healthMemMB, 512 * healthMemMB, 1 * testGiB, 2 * testGiB, 4 * testGiB,
-		int64(7.7 * float64(testGiB)), 8 * testGiB, 16 * testGiB, 64 * testGiB,
+		testGiB * 77 / 10, 8 * testGiB, 16 * testGiB, 64 * testGiB,
 	}
 	floor := int64(healthFloorMaxMB) * healthMemMB
 	for _, ram := range rams {
@@ -63,7 +63,7 @@ func TestHealthBudgetTinyVPSClamped(t *testing.T) {
 // P3 — dns2-class host (medium tier, 7.7 GiB): must exceed the pre-hotfix 256M so
 // the observed 256M+ peak fits, and stay well under RAM/4.
 func TestHealthBudgetMediumRaisesAbovePreHotfix(t *testing.T) {
-	p := healthFor(int64(7.7*float64(testGiB)), 4*testGiB, 4)
+	p := healthFor(testGiB*77/10, 4*testGiB, 4) // 7.7 GiB
 	if p.Tier != ResourceTierMedium {
 		t.Fatalf("7.7G tier=%q want medium", p.Tier)
 	}
