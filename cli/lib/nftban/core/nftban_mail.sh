@@ -983,7 +983,8 @@ EOF
     # message is labeled "Test Email" (matching the subject we printed above) rather
     # than the generic "Report" subject nftban_mail_send uses by default. (Bug fix:
     # the on-screen subject said "Test Email" but the sent subject was "Report".)
-    local NFTBAN_MAIL_SUBJECT_OVERRIDE="${NFTBAN_MAIL_SUBJECT_PREFIX:-[NFTBan]} Test Email from $(hostname -f)"
+    local NFTBAN_MAIL_SUBJECT_OVERRIDE
+    NFTBAN_MAIL_SUBJECT_OVERRIDE="${NFTBAN_MAIL_SUBJECT_PREFIX:-[NFTBan]} Test Email from $(hostname -f)"
     nftban_mail_send "$test_content" "$recipient"
 }
 

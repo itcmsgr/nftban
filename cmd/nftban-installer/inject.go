@@ -15,6 +15,7 @@ package main
 
 import (
 	coresafety "github.com/itcmsgr/nftban/internal/safety"
+	lr "github.com/itcmsgr/nftban/internal/logretention"
 
 	"github.com/itcmsgr/nftban/internal/installer/validate"
 )
@@ -37,6 +38,10 @@ type assertionTestInjection struct {
 	// ResolveHealthResourceVerdict so execution-path tests are host-independent.
 	// nil → the canonical safety.HealthServiceMemoryLimits() (real /proc facts).
 	healthProfile *coresafety.HealthResourceProfile
+	// logRetentionValidator, when non-nil, overrides the logrotate policy validator
+	// for the logretention_policy_ready assertion so execution-path tests do not
+	// depend on the `logrotate` binary (absent in CI). nil → real `logrotate -d`.
+	logRetentionValidator lr.Validator
 }
 
 // payload returns the injected systemd-payload input (nil-safe on a nil carrier).
@@ -53,4 +58,12 @@ func (i *assertionTestInjection) profile() *coresafety.HealthResourceProfile {
 		return nil
 	}
 	return i.healthProfile
+}
+
+// logValidator returns the injected logrotate validator (nil-safe on a nil carrier).
+func (i *assertionTestInjection) logValidator() lr.Validator {
+	if i == nil {
+		return nil
+	}
+	return i.logRetentionValidator
 }

@@ -83,6 +83,14 @@ type AssertionOpts struct {
 	// query-error fail-closed) still fire on injected inputs that warrant them.
 	SystemdPayloadInputs *SystemdPayloadInputs
 
+	// LogRetentionValidator, when non-nil, overrides the logrotate policy validator
+	// used by the logretention_policy_ready assertion. v1.223.0 verdict-truth: nil in
+	// production (the assertion then uses the package readinessValidator → the real
+	// `logrotate -d`); execution-path tests inject a deterministic validator so the
+	// assertion does NOT depend on the `logrotate` binary being installed (it is
+	// absent in CI containers). Bounded DI, mirrors SystemdPayloadInputs.
+	LogRetentionValidator lr.Validator
+
 	// FailedUnitsOut, when non-nil, receives the FINAL-pass FATAL failed-unit set
 	// (spr.FailedUnits) so the caller (phaseValidate) can propagate the STRUCTURED
 	// names into install_state SERVICES_FAILED — the v1.222.1 Lane 4 fix for
@@ -127,7 +135,7 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	results = append(results, assertInstallStateFile(exec, log))
 	results = append(results, assertPayloadInventory(exec, log))
 	results = append(results, assertConfigIntegrity(exec, log))
-	results = append(results, assertLogretentionPolicyReady(log))
+	results = append(results, assertLogretentionPolicyReady(opts, log))
 
 	// PR26.1: systemd-payload invariants. One gather call feeds four
 	// assertions so we don't walk the unit dirs (or call systemctl)
@@ -335,19 +343,25 @@ func assertPayloadInventory(exec executor.Executor, log *logging.Logger) Asserti
 // exercisable without logrotate installed.
 var readinessValidator lr.Validator
 
-func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
+func assertLogretentionPolicyReady(opts AssertionOpts, log *logging.Logger) AssertionResult {
 	envOr := func(k, def string) string {
 		if v := os.Getenv(k); v != "" {
 			return v
 		}
 		return def
 	}
+	// v1.223.0: prefer the caller-injected validator (execution-path tests); nil in
+	// production → the package readinessValidator (itself nil → real `logrotate -d`).
+	validator := opts.LogRetentionValidator
+	if validator == nil {
+		validator = readinessValidator
+	}
 	res := lr.Readiness(lr.ReadinessOptions{
 		MainPath:     envOr("NFTBAN_LR_MAIN", "/etc/logrotate.d/nftban"),
 		SuricataPath: envOr("NFTBAN_LR_SURICATA", "/etc/logrotate.d/nftban-suricata"),
 		StatePath:    envOr("NFTBAN_LR_STATE", "/var/lib/nftban/generated/logrotate/nftban-effective.state.json"),
 		TemplatePath: envOr("NFTBAN_LR_TEMPLATE", "/etc/nftban/templates/nftban.logrotate"),
-		Validator:    readinessValidator,
+		Validator:    validator,
 	})
 	r := AssertionResult{Name: "logretention_policy_ready", Passed: res.Ready()}
 	if res.Ready() {

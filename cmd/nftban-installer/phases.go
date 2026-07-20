@@ -632,6 +632,7 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// v1.223.0 verdict-truth: systemd-payload assertion inputs come from the real
 	// host by default (nil), or from a DATA test-injection carrier (nil-safe).
 	opts.SystemdPayloadInputs = pd.inject.payload()
+	opts.LogRetentionValidator = pd.inject.logValidator()
 	// v1.222.1 Lane 4: capture the FATAL failed-unit set and propagate the
 	// STRUCTURED names into install_state (SERVICES_FAILED + attribution).
 	var failedUnits []validate.FailedUnitPostInstall

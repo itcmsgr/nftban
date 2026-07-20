@@ -139,8 +139,9 @@ func newAllAssertionsPassFixture(t *testing.T) (*assertionTestInjection, *execut
 	m.Files["/etc/nftban/nftables.conf"] = []byte(nft)
 
 	// 6. logretention: real temp policy identical to the fallback template so
-	//    lr.Readiness (which uses the REAL filesystem + real logrotate validator)
-	//    returns READY_FALLBACK. mode 0644 is mandatory (Perm()==0o644 check).
+	//    lr.Readiness returns READY_FALLBACK. mode 0644 is mandatory (Perm()==0o644
+	//    check). The logrotate VALIDATOR is injected below (deterministic pass) so the
+	//    assertion does not depend on the `logrotate` binary — absent in CI containers.
 	d := t.TempDir()
 	body := []byte("/var/log/nftban/bans.log {\n    daily\n    rotate 7\n    size 10M\n}\n")
 	mainPath := d + "/nftban"
@@ -155,7 +156,12 @@ func newAllAssertionsPassFixture(t *testing.T) (*assertionTestInjection, *execut
 	// 7. systemd-payload assertions: inject a valid EMPTY input set (zero units, zero
 	//    failed units, no query error) → all four pass (fail-safe preserved: this is
 	//    the same verdict the pure validator gives an empty gather).
-	inj := &assertionTestInjection{systemdPayload: &validate.SystemdPayloadInputs{}}
+	inj := &assertionTestInjection{
+		systemdPayload: &validate.SystemdPayloadInputs{},
+		// Deterministic logrotate validator → logretention_policy_ready passes on any
+		// host (no `logrotate` binary needed; CI containers lack it).
+		logRetentionValidator: func([]string) (string, error) { return "logrotate", nil },
+	}
 
 	return inj, m, func() {}
 }

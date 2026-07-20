@@ -102,6 +102,7 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// v1.223.0 verdict-truth: systemd-payload assertion inputs from real host
 	// (nil) or the DATA test-injection carrier (nil-safe).
 	opts.SystemdPayloadInputs = cfg.inject.payload()
+	opts.LogRetentionValidator = cfg.inject.logValidator()
 	// v1.223.0 verdict-truth (BUG-REVALIDATE-MASKS-HEALTH-DEGRADE): revalidate never
 	// runs phaseConfigure, so without this it left opts.HealthResource nil → the
 	// health_resource_policy_active assertion SKIPped and a genuinely OOM-unprotected
