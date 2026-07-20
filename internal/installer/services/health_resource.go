@@ -12,8 +12,8 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
-	"github.com/itcmsgr/nftban/internal/logging"
 	"github.com/itcmsgr/nftban/internal/safety"
 )
 
