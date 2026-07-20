@@ -35,13 +35,13 @@ func TestNormalizeFailedUnitsCanonicalDedupSort(t *testing.T) {
 
 func TestNormalizeFailedUnitsRejectsUnsafe(t *testing.T) {
 	in := []FailedUnitPostInstall{
-		fu("nftban-health.service; rm -rf /", "IN_WINDOW"),          // shell injection
-		fu("../../etc/passwd", "IN_WINDOW"),                          // path traversal
-		fu("nftban health.service", "IN_WINDOW"),                    // whitespace
-		fu("sshd.service", "IN_WINDOW"),                             // not nftban-owned
-		fu("$(reboot)", "IN_WINDOW"),                                // command subst
-		fu("nftban-health.service\nMemoryMax=0", "IN_WINDOW"),       // newline
-		fu("nftban-real.service", "IN_WINDOW"),                      // valid → survives
+		fu("nftban-health.service; rm -rf /", "IN_WINDOW"),    // shell injection
+		fu("../../etc/passwd", "IN_WINDOW"),                   // path traversal
+		fu("nftban health.service", "IN_WINDOW"),              // whitespace
+		fu("sshd.service", "IN_WINDOW"),                       // not nftban-owned
+		fu("$(reboot)", "IN_WINDOW"),                          // command subst
+		fu("nftban-health.service\nMemoryMax=0", "IN_WINDOW"), // newline
+		fu("nftban-real.service", "IN_WINDOW"),                // valid → survives
 	}
 	all, _, _ := NormalizeFailedUnits(in)
 	if !reflect.DeepEqual(all, []string{"nftban-real.service"}) {
