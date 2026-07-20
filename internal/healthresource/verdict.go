@@ -26,11 +26,11 @@ type Verdict struct {
 	GeneratedState State // file-level: ABSENT/READY_GENERATED/ACTIVE_MATCH/STALE_MISMATCH/INVALID/GENERATION_FAILED
 	EffectiveState State // systemd-level: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/ACTIVATION_FAILED
 
-	SourceVersion   string
-	Changed         bool
-	DaemonReloaded  bool
+	SourceVersion    string
+	Changed          bool
+	DaemonReloaded   bool
 	ProtectionActive bool
-	ValidationError string
+	ValidationError  string
 }
 
 // ProtectionRequired reports whether an ACTIVE effective drop-in is MANDATORY for

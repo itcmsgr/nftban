@@ -34,8 +34,10 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/payload"
 	"github.com/itcmsgr/nftban/internal/installer/preflight"
 	"github.com/itcmsgr/nftban/internal/installer/render"
+	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/safety"
 	"github.com/itcmsgr/nftban/internal/installer/services"
+	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/users"
@@ -74,6 +76,10 @@ type phaseData struct {
 	// phaseConfigure's AddSessionWhitelist call to bound the auto-seeded
 	// operator SSH peer entry.
 	sessionWhitelistTTL time.Duration
+	// v1.222.1 HEALTH-OOM Lane 2: the structured health-resource reconciliation
+	// verdict produced in phaseConfigure and consumed by the phaseValidate
+	// health_resource_policy_active assertion (single policy path).
+	healthResource healthresource.Verdict
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -553,6 +559,14 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 	// 6. Restart polkit (picks up new/removed polkit rules)
 	services.RestartPolkit(exec, log)
 
+	// 7. v1.222.1 HEALTH-OOM Lane 2: reconcile the profile-derived
+	// nftban-health.service memory drop-in (generate → daemon-reload-if-changed
+	// → verify effective systemd properties → classify). The verdict is stashed
+	// for the phaseValidate health_resource_policy_active assertion, which turns
+	// a medium/large FALLBACK_UNDERSIZED into installer DEGRADED. Runs BEFORE
+	// phaseValidate. Non-fatal to this phase; the assertion owns the verdict.
+	pd.healthResource = services.ReconcileHealthResource(exec, sf, log, version.Version)
+
 	log.PhaseEnd("Configure")
 	phaseEndMarker(log, "configure")
 	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
@@ -596,6 +610,9 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	policy := panelfw.DefaultPolicy()
 	policy.OperatorDisabled = pd.noPanel
 	opts := validate.AssertionOpts{}.WithPanelPolicy(policy)
+	// v1.222.1 HEALTH-OOM Lane 2: feed the phaseConfigure reconciliation verdict
+	// to the health_resource_policy_active assertion (single policy path).
+	opts.HealthResource = &pd.healthResource
 	results := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
 
 	// 4. Set immutable flags on security-critical files (G8)
