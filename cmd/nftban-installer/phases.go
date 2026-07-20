@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
 	"github.com/itcmsgr/nftban/internal/installer/detect"
@@ -34,14 +35,13 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/payload"
 	"github.com/itcmsgr/nftban/internal/installer/preflight"
 	"github.com/itcmsgr/nftban/internal/installer/render"
-	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/safety"
 	"github.com/itcmsgr/nftban/internal/installer/services"
-	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/users"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // phaseData holds state accumulated across phases (detect→prepare→switch etc.)

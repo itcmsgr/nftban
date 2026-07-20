@@ -25,7 +25,14 @@ const healthUnit = "nftban-health.service"
 // the phase itself — the phaseValidate assertion turns an unacceptable verdict
 // into installer DEGRADED (medium/large fallback) per contract.
 func ReconcileHealthResource(exec executor.Executor, sf *state.StateFile, log *logging.Logger, sourceVersion string) healthresource.Verdict {
-	p := safety.HealthServiceMemoryLimits()
+	// Facts + tier + policy come from the canonical safety authority (reads
+	// /proc). Split from reconcileWithProfile so tests inject a fixture tier.
+	return reconcileWithProfile(exec, sf, log, sourceVersion, safety.HealthServiceMemoryLimits())
+}
+
+// reconcileWithProfile is the profile-parameterized core (unit-testable with a
+// fixture HealthResourceProfile + a MockExecutor).
+func reconcileWithProfile(exec executor.Executor, sf *state.StateFile, log *logging.Logger, sourceVersion string, p safety.HealthResourceProfile) healthresource.Verdict {
 	v := healthresource.Verdict{
 		Profile:        p,
 		Authority:      "internal/safety",
