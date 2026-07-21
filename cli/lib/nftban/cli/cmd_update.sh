@@ -408,6 +408,70 @@ _cmd_update_main() {
     return $_update_rc
 }
 
+# _render_degraded_failed_units <install_state_file>
+# Renders the failed-NFTBan-unit remediation lines for a DEGRADED update, from the
+# STRUCTURED install_state (SERVICES_FAILED + attribution) — never a hardcoded unit.
+# Read-only; NEVER rewrites install_state. Output on stdout (caller supplies surrounding text).
+# LOCAL render helper only — NOT a general state-file parsing authority.
+#
+# Reachability: this runs only inside the DEGRADED branch, entered only after INSTALL_STATE
+# was read as "DEGRADED" from a readable file (a missing/unreadable state file defaults to
+# COMMITTED upstream — see out-of-scope UPDATE-STATE-READ-FAILURE-DEFAULTS-COMMITTED), so
+# file-missing / file-unreadable CANNOT reach here — those cases are not handled here.
+#
+# E1a (BUG-V1_222_1-UPDATE-STATEFILE-GREP-UNGUARDED): a bare `x=$(grep '^KEY=' file | cut ...)`
+#   aborts the renderer under `set -Eeuo pipefail` when KEY is ABSENT (grep rc=1 → pipefail →
+#   assignment rc=1 → errexit). Presence is tested with `grep -q` (rc=1 = key absent, benign in
+#   an `if` condition); the value is extracted with a single `sed` (first key authoritative,
+#   matching the prior `grep -m1` contract) — no strict-mode-aborting bare pipeline.
+# E1b (BUG-V1_222_1-UPDATE-DEGRADED-ALL-UNITS-FILTERED-NO-HINT): if the raw SERVICES_FAILED
+#   field is non-empty but every token is filtered as non-canonical, the loop renders nothing;
+#   emit a truthful hint that distinguishes "recorded-but-all-filtered" from "no list recorded".
+#   Never claims health/recovery; the DEGRADED verdict is owned by the caller and is unchanged.
+_render_degraded_failed_units() {
+    local _sf=$1
+    # Original inline variable names preserved (true move, not rewrite) so existing static
+    # source guards (e.g. `grep -qF 'systemctl reset-failed $_u'`) keep matching.
+    local _svc_failed="" _svc_pre="" _u _pre _rendered=0
+    local -a _units
+    # File readability is guaranteed here (the DEGRADED branch is entered only from a readable
+    # state file; a missing/unreadable file defaults to COMMITTED upstream — the accepted
+    # reachability). So a single `sed` per key cannot abort under `set -Eeuo pipefail` (sed rc=0
+    # on a readable file, head rc=0). No `grep -q` presence test is needed — a redundant second
+    # read whose only value is guarding the *unreachable* missing-file case; the render treats
+    # absent-key and present-empty identically. `head -n1` = first key authoritative (preserves
+    # the prior `grep -m1` contract for the machine-written state file).
+    _svc_failed=$(sed -n 's/^SERVICES_FAILED=//p' "$_sf" | head -n1)
+    _svc_pre=$(sed -n 's/^SERVICES_FAILED_PREEXISTING=//p' "$_sf" | head -n1)
+    if [[ -n "$_svc_failed" ]]; then
+        IFS=',' read -ra _units <<< "$_svc_failed"
+        for _u in "${_units[@]}"; do
+            [[ -n "$_u" ]] || continue
+            # Only render injection-safe canonical nftban unit names.
+            [[ "$_u" =~ ^nftband?[A-Za-z0-9@._-]*\.(service|timer|socket|target|path)$ ]] || continue
+            _pre="NO"; case ",$_svc_pre," in *",$_u,"*) _pre="YES";; esac
+            echo "      # Failed unit: $_u  (predates this upgrade: $_pre)"
+            [[ "$_pre" == "YES" ]] && echo "      systemctl reset-failed $_u   # clear the confirmed stale latch"
+            echo "      systemctl start $_u          # run once now (or wait for the timer)"
+            echo "      systemctl status $_u --no-pager"
+            _rendered=$((_rendered + 1))
+        done
+    fi
+    if [[ "$_rendered" -eq 0 ]]; then
+        if [[ -n "$_svc_failed" ]]; then
+            # Non-empty evidence, but every token filtered as non-canonical/non-actionable.
+            echo "      # Failed-unit evidence was recorded, but no canonical actionable NFTBan unit"
+            echo "      # remained after filtering. Review the raw state and systemd failed units:"
+            echo "      cat /var/lib/nftban/state/install_state"
+            echo "      systemctl --failed 'nftban-*'"
+        else
+            # No recorded failed-service list (key empty or absent).
+            echo "      # structured failed-unit list unavailable — do NOT guess a unit; inspect:"
+            echo "      systemctl --failed 'nftban-*'"
+        fi
+    fi
+}
+
 _cmd_update_main_locked() {
     # Update body — runs while the caller (_cmd_update_main) holds the exclusive
     # flock on fd 9. Every terminal `return` here propagates to the wrapper,
@@ -920,26 +984,8 @@ _cmd_update_main_locked() {
             # v1.222.1 Lane 4 (BUG-INSTALLER-FAILED-UNIT-REMEDIATION-HARDCODED-BOTSCAN):
             # render the ACTUAL failed unit(s) from the STRUCTURED install_state
             # (SERVICES_FAILED + attribution), never a hardcoded nftban-botscan.service.
-            local _svc_failed _svc_pre _u _pre
-            local -a _units
-            _svc_failed=$(grep -m1 '^SERVICES_FAILED=' "$_install_state_file" 2>/dev/null | cut -d= -f2-)
-            _svc_pre=$(grep -m1 '^SERVICES_FAILED_PREEXISTING=' "$_install_state_file" 2>/dev/null | cut -d= -f2-)
-            if [[ -n "$_svc_failed" ]]; then
-                IFS=',' read -ra _units <<< "$_svc_failed"
-                for _u in "${_units[@]}"; do
-                    [[ -n "$_u" ]] || continue
-                    # Only render injection-safe canonical nftban unit names.
-                    [[ "$_u" =~ ^nftband?[A-Za-z0-9@._-]*\.(service|timer|socket|target|path)$ ]] || continue
-                    _pre="NO"; case ",$_svc_pre," in *",$_u,"*) _pre="YES";; esac
-                    echo "      # Failed unit: $_u  (predates this upgrade: $_pre)"
-                    [[ "$_pre" == "YES" ]] && echo "      systemctl reset-failed $_u   # clear the confirmed stale latch"
-                    echo "      systemctl start $_u          # run once now (or wait for the timer)"
-                    echo "      systemctl status $_u --no-pager"
-                done
-            else
-                echo "      # structured failed-unit list unavailable — do NOT guess a unit; inspect:"
-                echo "      systemctl --failed 'nftban-*'"
-            fi
+            # Strict-mode-safe (E1a) + all-filtered truthful hint (E1b) — see helper above.
+            _render_degraded_failed_units "$_install_state_file"
             echo "      /usr/lib/nftban/bin/nftban-installer --repair   # re-run post-install validation"
             echo "      nftban support                                  # capture diagnostic bundle (optional)"
             echo ""
