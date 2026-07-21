@@ -11,6 +11,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.224.0] - 2026-07-21 — Health-resource parser & classifier truth hardening
+
+Maintenance release that hardens the health-resource **parser, classifier and tier predicate** against invalid,
+unbounded and externally-overridden inputs. The corrected conditions are edge and authority-truth cases — proven live
+through deterministic regression tests — not a fleet-wide safety defect in v1.223.0. `nftban-core` and the installer are
+rebuilt; the **`nftband` daemon binary is byte-identical to v1.223.0** (it does not link the changed package). No
+resource-tier calculation, memory-budget, reconciliation, nft-schema (1.84.0) or config-schema (1.1.0) change.
+
+### Fixed
+- **Invalid systemd memory values are rejected** (`PARSEMEMBYTES-EMPTY-OK-TRUE`, `PARSEMEMBYTES-NEGATIVE-ACCEPTED`).
+  `ParseMemBytes` now reports empty, whitespace-only and negative inputs as invalid (`ok=false`) instead of a silent
+  zero. Recognized `infinity` / `[not set]` / decimal forms are unchanged.
+- **Invalid live values can no longer become a fabricated zero-sized verdict** (`RESOURCES-PARSEMEMBYTES-OK-DISCARDED`).
+  `nftban health resources` report assembly now honors the parser's validity flag — an unparseable live MemoryHigh/
+  MemoryMax yields an explicit unavailable/invalid state with a tier-aware exit, never a fabricated `0/0` sized result.
+- **External/admin drop-in authority is identified before ordinary numeric-match classification**
+  (`CLASSIFY-EXTERNAL-OVERRIDE-MATCH-MISLABEL`). A loaded non-NFTBan drop-in on `nftban-health.service` is now surfaced
+  as `EXTERNAL_OVERRIDE_CONFLICT` for operator review even when its effective values coincide with NFTBan policy — a
+  numeric match no longer launders external authority into an NFTBan-owned `ACTIVE_MATCH`.
+- **Direct infinity/unbounded values are rejected at the classifier boundary** (`CLASSIFY-NO-INFINITY-SELF-DEFENSE`).
+  `ClassifyEffectiveDetailed` self-defends against an unbounded effective limit independent of caller normalization
+  (defense-in-depth alongside the existing report/installer guards); an unbounded ceiling is never accepted as adequate.
+- **Unknown / empty resource tier fails closed** (`PROTECTIONREQUIRED-LENIENT-DEFAULT`). A mis-detected or empty tier now
+  defaults to protection-required (fail-safe) rather than silently advisory.
+
+### Notes
+- Known-tier behavior is preserved: **small** stays advisory, **medium/large** stay required-protection, and NFTBan-only
+  known-tier hosts remain `ACTIVE_MATCH`. A read-only scan of all 9 production hosts at release time showed known tier,
+  NFTBan-only health drop-in and `ACTIVE_MATCH` on every host — no current fleet host changes verdict under this release
+  (point-in-time evidence; the dns2 medium canary still gates rollout).
+- Lane D arithmetic hardening (`AVAILRAM-BUDGET-OVERFLOW`, sentinel mismatch) is **not** included — it is daemon-linked
+  with a separate binary and rollback domain and remains a separate future release lane.
+
+---
+
 ## [v1.223.0] - 2026-07-21 — Verdict-truth stabilization: authoritative health-resource verdict across all validation paths
 
 Urgent stabilization release that supersedes the halted v1.222.1 fleet rollout. It **preserves the verified v1.222.1
