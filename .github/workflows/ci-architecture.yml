@@ -867,6 +867,19 @@ jobs:
       - name: update messaging recovered + DEGRADED (v1.174)
         run: bash cli/lib/nftban/tests/update_msg_recovered_v174_test.sh
 
+      # v1.225.0 PR-A: DEGRADED render truth — strict-mode-safe absent SERVICES_FAILED
+      # (E1a) + all-filtered truthful hint (E1b). cli/lib/nftban/cli/cmd_update.sh.
+      # Hermetic (sources the file, drives the render helper in a subprocess; no host).
+      - name: update DEGRADED render truth (v1.225.0 PR-A)
+        run: bash cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh
+
+      # v1.223.0 mail recipient/subject/help guard — was UNWIRED on main (executed in zero
+      # workflows) despite being merged in #1131; this is the OPEN_TEST_SUITE_SINGLE_AUTHORITY
+      # Phase-A carve-out that closes the same gap-class that let the mail bug slip. Hermetic
+      # static grep guard (no host/root/network); belongs in Policy Gates.
+      - name: mail recipient/subject/help guard (v1.223.0)
+        run: bash cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh
+
       # v1.175 FHS lane: (T1) GENERIC guard — no root-owned tmpfiles entry under a
       # non-root declared parent (the systemd-tmpfiles exit-73 "unsafe path transition"
       # class — structural BUG-TMPFILES regression lock); auditors→package +
