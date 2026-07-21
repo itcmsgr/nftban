@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.223.0] - 2026-07-21 — Verdict-truth stabilization: authoritative health-resource verdict across all validation paths
+
+Urgent stabilization release that supersedes the halted v1.222.1 fleet rollout. It **preserves the verified v1.222.1
+health-service OOM correction and structured failed-unit truth**, and restores authoritative health-resource verdict
+resolution so every installer validation entry point evaluates one live verdict. No daemon/firewall behavior change; no
+nft-schema change (1.84.0); no config-schema change.
+
+### Fixed
+- **Health-resource verdict truth across every validation path** (`BUG-REPAIR-HEALTH-VERDICT-EMPTY`,
+  `BUG-REVALIDATE-MASKS-HEALTH-DEGRADE`). The health verdict previously existed only as transient `phaseConfigure`
+  output, so validation entry points that skip it — repair-resume-at-Validate, `--revalidate`, `update force` — evaluated
+  a zero verdict: a **false DEGRADED** on `--repair` and a **false COMMITTED** on `--revalidate`. A single
+  `ResolveHealthResourceVerdict` now resolves one authoritative verdict everywhere (current reconciliation → read-only
+  live systemd verify → cautious persisted reconstruction → explicit UNAVAILABLE; never a zero verdict), **re-resolved
+  independently per validation pass**. Live truth always wins over stale persisted state — neither a persisted success
+  nor a persisted failure can mask the live result.
+- **Fail-closed for unverifiable required protection.** On a protection-required host (medium/large) whose live health
+  state cannot be verified, both the installer assertion and the read-only CLI now fail closed (DEGRADED / exit 2)
+  instead of reporting a fabricated pass — preventing false success from missing evidence. Small hosts remain advisory.
+- **CLI and installer protection verdicts aligned** (`BUG-RESOURCES-VERDICT-TIER-BLIND`). `nftban health resources` and
+  the installer now consume one shared tier-aware acceptability predicate, so they can no longer contradict.
+- **Resource-policy DEGRADED no longer claims a failed unit** (`BUG-DEGRADED-REPORT-FALSE-FAILED-UNIT-CLAIM`). A DEGRADED
+  caused by a resource-policy/verdict assertion (empty `SERVICES_FAILED`) no longer prints a "failed NFTBan unit"
+  message or unit-reset guidance.
+- **Mail UX** (bundled). `nftban mail test` honors the configured `NFTBAN_MAIL_RECIPIENT` over the panel admin email
+  (panel hosts no longer silently misroute the test); the test subject is labeled "Test Email" to match the on-screen
+  subject; `nftban mail help` no longer aborts with a SIGPIPE (exit 141); `setup --show` expands the Sender host. **No
+  change to mail delivery authority; no direct module send path added.**
+
+### Notes
+- v1.222.1's primary health-OOM correction and structured failed-unit work were verified and are preserved — v1.222.1 is
+  superseded operationally, **not retracted**. Its fleet rollout was halted by the verdict-propagation defect fixed here.
+
 ## [v1.222.1] - 2026-07-20 — HEALTH-OOM hotfix: health-service memory + structured failed-unit truth
 
 Patch hotfix for four confirmed defects present in v1.222.0. No daemon/firewall behavior change; no nft-schema change
