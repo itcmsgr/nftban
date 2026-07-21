@@ -3,6 +3,13 @@
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="v1.222.1 shared `systemctl show` property parser for the health-resource surface. ONE parser used by both the installer reconciler (internal/installer/services) and the read-only `nftban-core resources` CLI — no duplicate parser. Machine-readable properties only (never human `systemctl status`)."
+// meta:inventory.files="internal/healthresource/systemd.go"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 package healthresource
 
 import (
@@ -38,11 +45,18 @@ func ParseMemBytes(s string) (v int64, infinity bool, ok bool) {
 	s = strings.TrimSpace(s)
 	switch s {
 	case "":
-		return 0, false, true
+		// PARSEMEMBYTES-EMPTY-OK-TRUE: empty / whitespace-only is MISSING evidence, not
+		// a valid 0-byte limit. ok=false so callers distinguish "unset" from a real value.
+		return 0, false, false
 	case "infinity", "[not set]":
 		return InfinityBytes, true, true
 	}
 	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		// PARSEMEMBYTES-NEGATIVE-ACCEPTED: systemd never emits a negative memory limit;
+		// a negative parse is malformed. Reject rather than clamp or use as a sentinel.
+		if n < 0 {
+			return 0, false, false
+		}
 		return n, false, true
 	}
 	// Older systemd prints infinity as the numeric uint64 max (18446744073709551615)
