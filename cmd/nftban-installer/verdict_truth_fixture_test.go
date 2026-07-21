@@ -38,9 +38,7 @@ func profileForRAM(totalRAM int64) coresafety.HealthResourceProfile {
 	p := coresafety.ServerProfile{TotalRAM: totalRAM, AvailRAM: totalRAM / 2, CPUCores: 4}
 	return coresafety.HealthServiceMemoryLimitsFor(p, coresafety.ClassifyResourceTier(p))
 }
-func smallProfile() coresafety.HealthResourceProfile  { return profileForRAM(2 << 30) } // 192/256
 func mediumProfile() coresafety.HealthResourceProfile { return profileForRAM(6 << 30) } // 256/384
-func largeProfile() coresafety.HealthResourceProfile  { return profileForRAM(16 << 30) }
 
 // ---- health systemctl-show seams (mirror internal/installer/services test helpers) ----
 
@@ -68,13 +66,6 @@ func setHealthActiveMatch(m *executor.MockExecutor, p coresafety.HealthResourceP
 // the calculated policy, no drop-in loaded → resolver yields FALLBACK_UNDERSIZED.
 func setHealthFallbackUndersized(m *executor.MockExecutor) {
 	m.RunResults[healthShowKey()] = executor.Result{Stdout: showOut(192*miB, 256*miB, 64, "")}
-	delete(m.Files, healthresource.DropinFile)
-}
-
-// setHealthShowFails makes the LIVE read fail (systemctl show exit!=0) → resolver
-// falls to persisted reconstruction or explicit UNAVAILABLE.
-func setHealthShowFails(m *executor.MockExecutor) {
-	m.RunResults[healthShowKey()] = executor.Result{ExitCode: 1, Stderr: "unit not loaded"}
 	delete(m.Files, healthresource.DropinFile)
 }
 
