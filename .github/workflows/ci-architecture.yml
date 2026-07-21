@@ -82,6 +82,13 @@ jobs:
       - name: Check uninstall firewall safety (no drop-policy chain after removal)
         run: ./scripts/ci/check-uninstall-firewall-safety.sh
 
+      # v1.225.0 PR-C: operator firewall-ownership uninstall message — DEB remove branch
+      # (once, not duplicated on purge) + RPM [ $1 -eq 0 ] final-erase branch; required
+      # semantics present, forbidden over-claims absent, cleanup precedes message, no
+      # uninstall behavior change. Hermetic static package-script inspection.
+      - name: uninstall firewall-ownership message (v1.225.0 PR-C)
+        run: bash cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh
+
       # v1.194 (8C): protection-claim matrix gate. Fails the PR if the matrix
       # regresses — wrong row count, missing/empty fields, invalid OWNER/MODE/
       # CLASSIFICATION enum, a claimed-enforce row orphaned to owner=NONE
