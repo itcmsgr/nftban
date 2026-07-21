@@ -12,6 +12,11 @@
 # meta:output="pass/fail; exit 0 all-pass, 1 on a regressed fix"
 # meta:depends="bash,grep"
 # meta:inventory.files="cli/lib/nftban/cli/cmd_mail.sh,cli/lib/nftban/core/nftban_mail.sh"
+# meta:inventory.binaries="bash,grep"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
 # meta:inventory.privileges="none"
 # =============================================================================
 set -Eeuo pipefail
@@ -51,7 +56,7 @@ else
 fi
 
 # T3: send_test sets the override to a 'Test Email' subject before delivering.
-if grep -qE 'local NFTBAN_MAIL_SUBJECT_OVERRIDE=.*Test Email' "$NM"; then
+if grep -qE 'NFTBAN_MAIL_SUBJECT_OVERRIDE="?\$\{NFTBAN_MAIL_SUBJECT_PREFIX.*Test Email' "$NM"; then
     ok "T3 send_test labels the delivered message 'Test Email'"
 else
     no "T3 send_test does NOT set the Test Email subject override"
