@@ -183,6 +183,7 @@ func passOpts(inj *assertionTestInjection, health *healthresource.Verdict) valid
 	o := validate.AssertionOpts{}.WithPanelPolicy(panelfw.DefaultPolicy())
 	o.PanelAdapters = []panelfw.PanelAdapter{}
 	o.SystemdPayloadInputs = inj.payload()
+	o.LogRetentionValidator = inj.logValidator()
 	o.HealthResource = health
 	return o
 }
@@ -206,8 +207,8 @@ func TestAllAssertionsPassFixture_OnlyAllowlistedCommands(t *testing.T) {
 
 	// Allow-list: RunAssertionsWithOpts issues exactly one recorded Run command —
 	// the nftban input-chain probe. Everything else is a typed method (no record),
-	// the injected payload (no gather), the real-fs logretention validator (os/exec,
-	// not the mock), and the empty panel-adapter slice.
+	// the injected payload (no gather), the injected logretention validator (no
+	// os/exec, no mock command), and the empty panel-adapter slice.
 	allowed := map[string]bool{
 		"nft list chain ip nftban input": true,
 	}
