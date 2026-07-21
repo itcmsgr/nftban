@@ -40,6 +40,12 @@ const (
 	StateExternalConflict  State = "EXTERNAL_OVERRIDE_CONFLICT" // a non-NFTBan drop-in overrides the effective values
 	StateExpectedNotLoaded State = "EXPECTED_DROPIN_NOT_LOADED" // our drop-in on disk but not in systemd DropInPaths
 	StateEffectiveMismatch State = "EFFECTIVE_VALUES_MISMATCH"  // our drop-in loaded but effective != calculated (reload lag / stale)
+
+	// v1.223.0 verdict-truth: the resolver could not determine live protection
+	// state (systemctl show failed AND no persisted evidence). MARKED, never a
+	// silent zero: not protected, but not a fabricated policy failure either —
+	// the assertion surfaces it as UNVERIFIABLE (advisory), not DEGRADED.
+	StateUnavailable State = "UNAVAILABLE"
 )
 
 // ProtectionActive reports whether the health-OOM protection is effectively in

@@ -131,7 +131,7 @@ _mail_setup_show() {
     echo "  Enabled:   ${NFTBAN_MAIL_ENABLED:-NO}"
     echo "  Recipient: ${NFTBAN_MAIL_RECIPIENT:-(not set)}"
     echo "  Method:    ${NFTBAN_MAIL_METHOD:-auto-detect}"
-    echo "  Sender:    ${NFTBAN_SENDER:-nftban@\$(hostname)}"
+    echo "  Sender:    ${NFTBAN_SENDER:-nftban@$(hostname -f)}"
     echo ""
     echo "Notification Triggers:"
     echo "  Health Critical: ${NFTBAN_MAIL_ON_HEALTH_CRITICAL:-NO}"
@@ -193,8 +193,12 @@ nftban_cmd_mail() {
                     *) [[ -z "$recipient" ]] && recipient="$_a" ;;
                 esac
             done
-            # Auto-detect from panel if not provided
-            if [[ -z "$recipient" ]] && declare -f nftban_panel_get_admin_email &>/dev/null; then
+            # Auto-detect from panel ONLY when neither a CLI arg NOR the configured
+            # global recipient is set. Precedence MUST be: CLI arg > NFTBAN_MAIL_RECIPIENT
+            # > panel admin. (Bug fix: the panel admin email previously overrode a
+            # configured NFTBAN_MAIL_RECIPIENT, so `mail test` silently misrouted every
+            # test to the panel admin on cPanel/Plesk/DirectAdmin hosts.)
+            if [[ -z "$recipient" && -z "${NFTBAN_MAIL_RECIPIENT:-}" ]] && declare -f nftban_panel_get_admin_email &>/dev/null; then
                 recipient=$(nftban_panel_get_admin_email 2>/dev/null) || true
                 if [[ -n "$recipient" && "$dry_run" == false ]]; then
                     echo "[INFO] Using panel admin email: $recipient"

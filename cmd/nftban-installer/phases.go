@@ -80,6 +80,11 @@ type phaseData struct {
 	// verdict produced in phaseConfigure and consumed by the phaseValidate
 	// health_resource_policy_active assertion (single policy path).
 	healthResource healthresource.Verdict
+	// v1.223.0 verdict-truth: per-call DATA test-injection carrier (nil in
+	// production; never set by flag parsing). Propagated from cfg.inject in main().
+	// phaseValidate consults it (nil-safe) to source the systemd-payload assertion
+	// inputs and to force a deterministic health-resource tier for the resolver.
+	inject *assertionTestInjection
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -624,13 +629,24 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	policy := panelfw.DefaultPolicy()
 	policy.OperatorDisabled = pd.noPanel
 	opts := validate.AssertionOpts{}.WithPanelPolicy(policy)
-	// v1.222.1 HEALTH-OOM Lane 2: feed the phaseConfigure reconciliation verdict
-	// to the health_resource_policy_active assertion (single policy path).
-	opts.HealthResource = &pd.healthResource
+	// v1.223.0 verdict-truth: systemd-payload assertion inputs come from the real
+	// host by default (nil), or from a DATA test-injection carrier (nil-safe).
+	opts.SystemdPayloadInputs = pd.inject.payload()
+	opts.LogRetentionValidator = pd.inject.logValidator()
 	// v1.222.1 Lane 4: capture the FATAL failed-unit set and propagate the
 	// STRUCTURED names into install_state (SERVICES_FAILED + attribution).
 	var failedUnits []validate.FailedUnitPostInstall
 	opts.FailedUnitsOut = &failedUnits
+	// v1.223.0 verdict-truth (owner ruling: per-pass resolution): VALIDATE_1
+	// resolves ONE authoritative health verdict for the health_resource_policy_active
+	// assertion. When phaseConfigure ran this process pd.healthResource is populated
+	// and reused ("current"); on a repair/resume that begins at PhaseValidate
+	// (phaseConfigure SKIPPED) pd.healthResource is the zero struct, so the resolver
+	// verifies LIVE systemd read-only ("live") instead of feeding a zero verdict into
+	// the assertion (BUG-REPAIR-HEALTH-VERDICT-EMPTY). The optional injected profile
+	// forces a deterministic tier for execution-path tests (nil → canonical /proc).
+	resolved1 := services.ResolveHealthResourceVerdict(exec, sf, log, pd.healthResource, version.Version, pd.inject.profile())
+	opts.HealthResource = &resolved1
 	results := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
 	persistFailedUnits(sf, failedUnits)
 
@@ -677,6 +693,16 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	} else {
 		log.Warn("permissions enforce returned exit %d — re-validating anyway", fixRes.ExitCode)
 	}
+
+	// v1.223.0 verdict-truth (owner ruling: per-pass resolution): re-resolve the
+	// health verdict FRESH before VALIDATE_2 so it reflects CURRENT live truth (e.g.
+	// a drop-in that only becomes effective after the daemon-reload the retry may
+	// have triggered), NOT a cached VALIDATE_1 verdict. The extra read-only
+	// `systemctl show` happens ONLY on this DEGRADED retry path — accepted. The
+	// verdict-truth invariant belongs to validation, not to the permissions-enforce
+	// retry step.
+	resolved2 := services.ResolveHealthResourceVerdict(exec, sf, log, pd.healthResource, version.Version, pd.inject.profile())
+	opts.HealthResource = &resolved2
 
 	// v1.98 INV-I-013: Re-run assertions (VALIDATE_2) — only this result counts
 	results2 := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)

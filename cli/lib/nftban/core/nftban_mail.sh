@@ -665,8 +665,13 @@ nftban_mail_send() {
     local sender="${NFTBAN_SENDER:-nftban@$(hostname -f)}"
     local from_name="${NFTBAN_FROM_NAME:-NFTBan Security System}"
     local subject_prefix="${NFTBAN_MAIL_SUBJECT_PREFIX:-[NFTBan]}"
+    # Subject: a caller may set NFTBAN_MAIL_SUBJECT_OVERRIDE (a dynamically-scoped
+    # local, e.g. from nftban_mail_send_test) to label the message accurately;
+    # otherwise the generic "Report" subject is used. NOTE: the subject is NOT a
+    # positional arg — $3 is reserved by existing callers (e.g. attachment path in
+    # cmd_support.sh), so it must not be repurposed.
     local subject
-    subject="${subject_prefix} Report from $(hostname -f)"
+    subject="${NFTBAN_MAIL_SUBJECT_OVERRIDE:-${subject_prefix} Report from $(hostname -f)}"
 
     # C5 fix: Sanitize email headers to prevent CRLF injection
     sender="${sender//$'\r'/}"
@@ -974,7 +979,12 @@ nftban_mail_send_test() {
 EOF
 )
 
-    # Send using main send function
+    # Send using main send function. Set the subject override so the DELIVERED
+    # message is labeled "Test Email" (matching the subject we printed above) rather
+    # than the generic "Report" subject nftban_mail_send uses by default. (Bug fix:
+    # the on-screen subject said "Test Email" but the sent subject was "Report".)
+    local NFTBAN_MAIL_SUBJECT_OVERRIDE
+    NFTBAN_MAIL_SUBJECT_OVERRIDE="${NFTBAN_MAIL_SUBJECT_PREFIX:-[NFTBan]} Test Email from $(hostname -f)"
     nftban_mail_send "$test_content" "$recipient"
 }
 
@@ -994,13 +1004,21 @@ nftban_mail_show_help() {
     local mta
     mta="$(nftban_mail_detect_mta)"
 
+    # Precompute the status' first line WITHOUT a pipe. A `... | head -1` inside the
+    # heredoc below makes nftban_mail_check_status receive SIGPIPE under
+    # `set -o pipefail` (exit 141), which the ERR trap reports as a failure and aborts
+    # `nftban mail` help. Slice the first line via parameter expansion instead.
+    local mail_status_line
+    mail_status_line="$(nftban_mail_check_status 2>&1)"
+    mail_status_line="${mail_status_line%%$'\n'*}"
+
     cat <<EOF
 
 Smart Mail Adapter - Auto-detects best available method
 ========================================================
 
 Current Method: $mta
-Status: $(nftban_mail_check_status 2>&1 | head -1)
+Status: ${mail_status_line}
 
 Supported Methods (auto-detected in priority order):
   postfix   - Local Postfix MTA (fastest)

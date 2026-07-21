@@ -94,8 +94,15 @@ func TestResourcesShowUnavailable(t *testing.T) {
 	if rep.Service.Effective.Available {
 		t.Error("show-unavailable must set Effective.Available=false")
 	}
-	if resourcesExitCode(rep) != 1 {
-		t.Errorf("show-unavailable exit=%d want 1 (incomplete evidence, never guessed active)", resourcesExitCode(rep))
+	// v1.223.0 locked: medium (protection-required) unverifiable → FAIL-CLOSED exit 2
+	// (matches the installer's UNAVAILABLE→DEGRADED). Never guessed active.
+	if resourcesExitCode(rep) != 2 {
+		t.Errorf("medium show-unavailable exit=%d want 2 (required-protection fail-closed)", resourcesExitCode(rep))
+	}
+	// small (not protection-required) unverifiable → exit 1 (incomplete evidence).
+	repSmall := assembleReport(calcFor(2<<30), nil, false, nil, errors.New("Failed to connect to bus"), true)
+	if resourcesExitCode(repSmall) != 1 {
+		t.Errorf("small show-unavailable exit=%d want 1 (incomplete evidence)", resourcesExitCode(repSmall))
 	}
 	if rep.Service.ProtectionActive {
 		t.Error("must never report protection active when systemctl is unavailable")

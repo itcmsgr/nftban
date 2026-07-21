@@ -72,6 +72,25 @@ type AssertionOpts struct {
 	// contexts that did not run the reconciler (assertion is skipped/PASS).
 	HealthResource *healthresource.Verdict
 
+	// SystemdPayloadInputs, when non-nil, is used VERBATIM by RunAssertionsWithOpts
+	// in place of GatherSystemdPayloadInputs(real host). v1.223.0 verdict-truth:
+	// DATA-only dependency-injection so the systemd-payload assertions are
+	// exercisable off-host WITHOUT a mutable package global or var-func seam.
+	// Production leaves it nil → the real host gather runs (byte-identical default).
+	// Fail-safe is PRESERVED: an empty/zero injected value is fed to
+	// ValidateInstalledSystemdPayload exactly like an empty real gather — there is
+	// NO nil/empty→PASS shortcut, so PAYLOAD-INVENTORY-001 (and the failed-unit
+	// query-error fail-closed) still fire on injected inputs that warrant them.
+	SystemdPayloadInputs *SystemdPayloadInputs
+
+	// LogRetentionValidator, when non-nil, overrides the logrotate policy validator
+	// used by the logretention_policy_ready assertion. v1.223.0 verdict-truth: nil in
+	// production (the assertion then uses the package readinessValidator → the real
+	// `logrotate -d`); execution-path tests inject a deterministic validator so the
+	// assertion does NOT depend on the `logrotate` binary being installed (it is
+	// absent in CI containers). Bounded DI, mirrors SystemdPayloadInputs.
+	LogRetentionValidator lr.Validator
+
 	// FailedUnitsOut, when non-nil, receives the FINAL-pass FATAL failed-unit set
 	// (spr.FailedUnits) so the caller (phaseValidate) can propagate the STRUCTURED
 	// names into install_state SERVICES_FAILED — the v1.222.1 Lane 4 fix for
@@ -116,7 +135,7 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	results = append(results, assertInstallStateFile(exec, log))
 	results = append(results, assertPayloadInventory(exec, log))
 	results = append(results, assertConfigIntegrity(exec, log))
-	results = append(results, assertLogretentionPolicyReady(log))
+	results = append(results, assertLogretentionPolicyReady(opts, log))
 
 	// PR26.1: systemd-payload invariants. One gather call feeds four
 	// assertions so we don't walk the unit dirs (or call systemctl)
@@ -125,7 +144,16 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// fails closed when nothing is supplied (every nftban-owned
 	// referenced path becomes "unknown"), so the gatherer SHOULD
 	// pass a populated set in production.
-	in, _ := GatherSystemdPayloadInputs(exec, log, defaultInventoryPaths())
+	// v1.223.0: use the injected inputs verbatim when supplied (tests), else gather
+	// from the real host (production default). Substitution ONLY — the validator and
+	// its fail-safe semantics are unchanged: an empty injected value validates the
+	// same as an empty real gather.
+	var in SystemdPayloadInputs
+	if opts.SystemdPayloadInputs != nil {
+		in = *opts.SystemdPayloadInputs
+	} else {
+		in, _ = GatherSystemdPayloadInputs(exec, log, defaultInventoryPaths())
+	}
 	spr := ValidateInstalledSystemdPayload(in)
 	// v1.222.1 Lane 4: hand the FATAL failed-unit set back to the caller so the
 	// STRUCTURED names reach install_state (single source of truth for remediation).
@@ -315,19 +343,25 @@ func assertPayloadInventory(exec executor.Executor, log *logging.Logger) Asserti
 // exercisable without logrotate installed.
 var readinessValidator lr.Validator
 
-func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
+func assertLogretentionPolicyReady(opts AssertionOpts, log *logging.Logger) AssertionResult {
 	envOr := func(k, def string) string {
 		if v := os.Getenv(k); v != "" {
 			return v
 		}
 		return def
 	}
+	// v1.223.0: prefer the caller-injected validator (execution-path tests); nil in
+	// production → the package readinessValidator (itself nil → real `logrotate -d`).
+	validator := opts.LogRetentionValidator
+	if validator == nil {
+		validator = readinessValidator
+	}
 	res := lr.Readiness(lr.ReadinessOptions{
 		MainPath:     envOr("NFTBAN_LR_MAIN", "/etc/logrotate.d/nftban"),
 		SuricataPath: envOr("NFTBAN_LR_SURICATA", "/etc/logrotate.d/nftban-suricata"),
 		StatePath:    envOr("NFTBAN_LR_STATE", "/var/lib/nftban/generated/logrotate/nftban-effective.state.json"),
 		TemplatePath: envOr("NFTBAN_LR_TEMPLATE", "/etc/nftban/templates/nftban.logrotate"),
-		Validator:    readinessValidator,
+		Validator:    validator,
 	})
 	r := AssertionResult{Name: "logretention_policy_ready", Passed: res.Ready()}
 	if res.Ready() {
@@ -357,9 +391,38 @@ func assertLogretentionPolicyReady(log *logging.Logger) AssertionResult {
 func assertHealthResourcePolicyActive(opts AssertionOpts, log *logging.Logger) AssertionResult {
 	r := AssertionResult{Name: "health_resource_policy_active", Passed: true}
 	v := opts.HealthResource
+	// nil = this caller does not evaluate the health verdict (e.g. a context that
+	// never wires it) → legitimate SKIP.
 	if v == nil {
-		r.Detail = "not evaluated (no reconciliation verdict in this context)"
-		log.Debug("ASSERT health_resource_policy_active: SKIP — no verdict")
+		r.Detail = "not evaluated (health verdict not supplied in this context)"
+		log.Debug("ASSERT health_resource_policy_active: SKIP — no verdict supplied")
+		return r
+	}
+	// v1.223.0: a zero STRUCT must NEVER reach the assertion — every validation
+	// entry point resolves a real verdict first (services.ResolveHealthResourceVerdict).
+	// If one does, the wiring regressed: FAIL CLOSED. Never silently pass unverified
+	// protection (the inverse of BUG-REPAIR-HEALTH-VERDICT-EMPTY) and never fabricate
+	// the misleading 0/0 policy failure.
+	if v.IsZero() {
+		r.Passed = false
+		r.Detail = "health verdict UNRESOLVED (resolver did not run for this path) — failing closed rather than committing unverified protection"
+		log.Error("ASSERT health_resource_policy_active: FAIL-CLOSED — a zero verdict reached validation; ResolveHealthResourceVerdict must run before the assertion")
+		return r
+	}
+	// v1.223.0 LOCKED UNAVAILABLE policy: live protection genuinely could not be
+	// verified (no systemd read AND no persisted evidence). A protection-REQUIRED
+	// tier (medium/large) must NOT commit unverified → FAIL (prevents the inverse
+	// bug: false SUCCESS from missing truth). A non-required tier (small) is
+	// advisory only. UNAVAILABLE is never a silent COMMIT path for medium/large.
+	if v.EffectiveState == healthresource.StateUnavailable {
+		if healthresource.ProtectionRequired(v.Profile.Tier) {
+			r.Passed = false
+			r.Detail = fmt.Sprintf("OOM protection REQUIRED (tier=%s) but UNVERIFIABLE: %s", v.Profile.Tier, v.ValidationError)
+			log.Warn("ASSERT health_resource_policy_active: FAIL — required OOM protection UNVERIFIABLE on %s: %s", v.Profile.Tier, v.ValidationError)
+			return r
+		}
+		r.Detail = fmt.Sprintf("protection UNVERIFIABLE but not required (tier=%s): %s", v.Profile.Tier, v.ValidationError)
+		log.Warn("ASSERT health_resource_policy_active: advisory UNVERIFIABLE (tier not protection-required) — %s", v.ValidationError)
 		return r
 	}
 	if v.Acceptable() {

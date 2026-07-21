@@ -99,6 +99,11 @@ type config struct {
 	// auto-seed for the current run (operator can still use
 	// `nftban firewall whitelist-session add` explicitly).
 	sessionWhitelistTTL time.Duration // --session-whitelist-ttl: TTL for auto-seeded operator session entries
+	// v1.223.0 verdict-truth: DATA test-injection carrier. NIL in production and
+	// NEVER set by flag parsing — tests construct it directly on a *config to force
+	// a deterministic health-resource tier and a fixture systemd-payload input
+	// through the validation path (no mutable package global, no var-func seam).
+	inject *assertionTestInjection
 }
 
 func parseFlags() *config {
