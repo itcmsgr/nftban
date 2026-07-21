@@ -3,6 +3,13 @@
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="v1.222.1 HEALTH-OOM hotfix Lane 2: installer-generated systemd drop-in that applies the profile-derived nftban-health.service memory budget. CONSUMES the canonical safety.HealthServiceMemoryLimits() (which consumes safety.ClassifyResourceTier) — it defines NO RAM thresholds, no size parser, no CPU parser. Renders a deterministic /etc/systemd/system/nftban-health.service.d/20-nftban-resource-profile.conf, classifies state (ABSENT/READY_GENERATED/ACTIVE_MATCH/STALE_MISMATCH/INVALID), writes atomically+durably only when content changes (no-churn), and reports whether a daemon-reload is required. Mirrors the log-retention generated-state/no-churn contract; reuses safety.WriteFileDurable rather than re-implementing durable writes. systemd rendering lives HERE, not in the generic internal/safety inventory package."
+// meta:inventory.files="internal/healthresource/generate.go"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/systemd/system/nftban-health.service.d/20-nftban-resource-profile.conf"
+// meta:inventory.systemd_units="nftban-health.service"
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 package healthresource
 
 import (
@@ -88,19 +95,28 @@ func ClassifyEffective(calc safety.HealthResourceProfile, effHigh, effMax int64,
 //	effective >= calc & no conflict           → FALLBACK_MATCH
 //	otherwise                                 → FALLBACK_UNDERSIZED
 func ClassifyEffectiveDetailed(calc safety.HealthResourceProfile, effHigh, effMax int64, ourLoaded bool, otherDropinCount int, weExpectLoaded bool) State {
+	// CLASSIFY-NO-INFINITY-SELF-DEFENSE: reject unbounded effective inputs at the
+	// classifier boundary, independent of caller-side normalization. An unlimited
+	// ceiling is never "safe because larger" — it violates the bounded policy. (Both
+	// production callers also pre-guard; this closes the boundary against future ones.)
+	if effHigh == InfinityBytes || effMax == InfinityBytes {
+		return StateActivationFailed
+	}
 	match := effHigh == calc.MemoryHigh && effMax == calc.MemoryMax
+	// CLASSIFY-EXTERNAL-OVERRIDE-MATCH-MISLABEL: a loaded non-NFTBan drop-in is
+	// external/administrator authority shaping the unit. Surface it for operator review
+	// BEFORE any ordinary ACTIVE_MATCH/FALLBACK_MATCH — a coincidental numeric match
+	// must not launder external authority into NFTBan-owned active reconciliation.
+	if otherDropinCount > 0 {
+		return StateExternalConflict
+	}
 	if match {
 		if ourLoaded {
 			return StateActiveMatch
 		}
 		return StateFallbackMatch
 	}
-	// effective != calculated.
-	if otherDropinCount > 0 {
-		// A non-NFTBan drop-in is shaping the effective values. Do NOT silently
-		// accept even if larger — surface for operator review.
-		return StateExternalConflict
-	}
+	// effective != calculated (no external drop-in in play).
 	if weExpectLoaded && !ourLoaded {
 		return StateExpectedNotLoaded
 	}

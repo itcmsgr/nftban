@@ -3,6 +3,13 @@
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="v1.222.1 Lane 3: `nftban-core resources [--json]` — READ-ONLY diagnostics for the health-service resource policy. Reports host facts (canonical safety), the CALCULATED policy (safety.HealthServiceMemoryLimits), the persisted installer HEALTH_RESOURCE_* state, and the LIVE systemd effective values (systemctl show, read-only), then classifies protection via the shared healthresource.ClassifyEffectiveDetailed. Live systemd is authoritative for the current verdict. NO new RAM/tier classifier, NO /proc parser, NO mutation (no write/reload/reset). The public `nftban health resources` shell command delegates here."
+// meta:inventory.files="cmd/nftban-core/cmd_resources.go"
+// meta:inventory.binaries="systemctl"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units="nftban-health.service"
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 package main
 
 import (
@@ -169,10 +176,25 @@ func assembleReport(calc safety.HealthResourceProfile, sf *state.StateFile, pers
 		rep.OverallState = svc.State
 		return rep
 	}
-	svc.Effective.Available = true
-	effHigh, hInf, _ := healthresource.ParseMemBytes(props["MemoryHigh"])
-	effMax, mInf, _ := healthresource.ParseMemBytes(props["MemoryMax"])
+	effHigh, hInf, hOK := healthresource.ParseMemBytes(props["MemoryHigh"])
+	effMax, mInf, mOK := healthresource.ParseMemBytes(props["MemoryMax"])
 	effTasks, _, _ := healthresource.ParseMemBytes(props["TasksMax"])
+	// RESOURCES-PARSEMEMBYTES-OK-DISCARDED: an unparseable live memory limit is
+	// missing/invalid evidence — NOT a legitimate 0-byte ceiling. Fail into the SAME
+	// explicit live-invalid/unavailable family as a failed systemctl show (tier-aware
+	// exit via the shared predicate), never a fabricated effMax=0 that would classify
+	// as a sized FALLBACK_UNDERSIZED verdict. ("infinity"/"[not set]" are ok=true and
+	// handled by the infinity branch below.)
+	if !hOK || !mOK {
+		svc.Effective.Available = false
+		svc.Effective.Note = "systemctl show returned an unparseable memory limit (MemoryHigh/MemoryMax)"
+		svc.State = "STATE_UNAVAILABLE_LIVE_INVALID"
+		svc.Validation = "UNKNOWN"
+		svc.Error = svc.Effective.Note
+		rep.OverallState = svc.State
+		return rep
+	}
+	svc.Effective.Available = true
 	svc.Effective.MemoryHighBytes = effHigh
 	svc.Effective.MemoryMaxBytes = effMax
 	svc.Effective.TasksMax = effTasks

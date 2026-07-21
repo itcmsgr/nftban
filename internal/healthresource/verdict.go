@@ -3,6 +3,13 @@
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="v1.222.1 Lane 2 wiring: the structured reconciliation Verdict returned by the installer health-resource reconciler and consumed by the phaseValidate assertion. Lives in the leaf healthresource package so the installer services producer and the validate consumer share ONE type with no import cycle and no second policy path."
+// meta:inventory.files="internal/healthresource/verdict.go"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 package healthresource
 
 import "github.com/itcmsgr/nftban/internal/safety"
@@ -48,7 +55,18 @@ type Verdict struct {
 // this tier. Medium and large require it; small is satisfied by the packaged
 // fallback (FALLBACK_MATCH) because the fallback already meets the small budget.
 func ProtectionRequired(tier safety.ResourceTier) bool {
-	return tier == safety.ResourceTierMedium || tier == safety.ResourceTierLarge
+	switch tier {
+	case safety.ResourceTierSmall:
+		// small: the packaged fallback already meets the small budget → advisory.
+		return false
+	case safety.ResourceTierMedium, safety.ResourceTierLarge:
+		return true
+	default:
+		// PROTECTIONREQUIRED-LENIENT-DEFAULT: an unknown/empty/mis-detected tier must
+		// fail SAFE (treat protection as required), never silently downgrade. This is a
+		// fail-safe default, NOT a new tier — known small stays advisory above.
+		return true
+	}
 }
 
 // AcceptableFor is the SINGLE tier-aware protection predicate:
