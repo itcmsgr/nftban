@@ -115,6 +115,13 @@ jobs:
       - name: Check CLI surface parity (registry/completion/dispatch)
         run: ./scripts/ci/check-cli-surface-parity.sh
 
+      # v1.225.0 PR-B: health-resources bash-completion parity — `resources` exported +
+      # completion-visible + runtime `nftban health <TAB>` offers it, and no exported health
+      # subcommand is silently unclassified (visible or explicit known-gap). Hermetic
+      # (static parse + isolated-subprocess completion invocation; no host).
+      - name: health resources completion parity (v1.225.0 PR-B)
+        run: bash cli/lib/nftban/tests/health_resources_completion_parity_v225_test.sh
+
       # SEC-INFRA dual-scope privacy gates (GO_IMPLEMENT_SEC_INFRA_DUAL_SCOPE_PRIVACY_GATES).
       #
       # Gate A (BLOCKING): the publication surface only — files a user RECEIVES or

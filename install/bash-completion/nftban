@@ -29,7 +29,7 @@ _nftban() {
 
     # Core commands
     local status_cmds="--json help"
-    local health_cmds="check summary json fix enforce binaries geoip pro registries install verify conflicts config posture security --auto-heal --json help"
+    local health_cmds="check summary json fix enforce binaries geoip pro registries install verify conflicts config resources posture security --auto-heal --json help"
     local validate_cmds="all firewall config permissions --json help"
     local config_cmds="validate audit doctor diff show get defaults overrides set reset reset-all apply status help"
     local sync_cmds="full validate status --dry-run help"
