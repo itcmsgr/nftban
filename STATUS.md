@@ -1,14 +1,16 @@
 # NFTBan Development Project Health Status
 
 **Status:** ⚠️ Warning
-**Last Updated:** 2026-07-20 15:15:00 UTC
-**Version:** v1.222.1 Development Branch (release-prep)
+**Last Updated:** 2026-07-21 UTC
+**Version:** v1.223.0 Development Branch (release-prep)
 
 ---
 
 ## Active Release Train
 
-**v1.222.1 — HEALTH-OOM hotfix: health-service memory + structured failed-unit truth — RELEASE-PREP (FLEET CANDIDATE)** — *patch hotfix on `main` (#1126, squash `cf772724`); fixes 4 confirmed v1.222.0 defects — health-service cgroup-OOM (profile-derived MemoryHigh/MemoryMax drop-in via one canonical resource-tier authority) + structured failed-unit `SERVICES_FAILED` propagation with per-unit attribution (hardcoded botscan removed) + read-only `nftban health resources` diagnostics. No daemon/firewall behavior change; no nft schema change (1.84.0); no config-schema change. Deferred fast-follow: `PERF-VALIDATOR-NFT-JSON-OVERFETCH`. v1.222.0 demoted to RELEASED below.*
+**v1.223.0 — Verdict-truth stabilization: authoritative health-resource verdict across all validation paths — RELEASE-PREP (FLEET CANDIDATE)** — *verdict-truth fix on `main` (#1129, squash `13d06f29`); supersedes the halted v1.222.1 fleet rollout and preserves its verified health-OOM correction + structured failed-unit truth. One `ResolveHealthResourceVerdict` resolves an authoritative verdict in every validation entry point (install/upgrade/repair/resume/revalidate/update-force/validation-retry), re-resolved per pass — fixes false-DEGRADED on `--repair` (`BUG-REPAIR-HEALTH-VERDICT-EMPTY`) and false-COMMITTED on `--revalidate` (`BUG-REVALIDATE-MASKS-HEALTH-DEGRADE`); live truth wins over stale persisted state; UNAVAILABLE fail-closed for required tiers; CLI==installer predicate (`BUG-RESOURCES-VERDICT-TIER-BLIND`); resource-policy DEGRADED no longer claims a failed unit. Bundles approved mail recipient/subject/help UX (no delivery-authority change; no direct module send). No daemon/firewall behavior change; no nft schema change (1.84.0); no config-schema change. Deferred: v1.224.0 debt (cgroup-tier-desync, classify-external-override, infinity self-defense, parse cleanup, `PERF-VALIDATOR-NFT-JSON-OVERFETCH`).*
+
+**v1.222.1 — HEALTH-OOM hotfix: health-service memory + structured failed-unit truth — PUBLISHED (fleet rollout halted; superseded by v1.223.0)** — *patch hotfix on `main` (#1126, squash `cf772724`; tag `v1.222.1`); fixes 4 confirmed v1.222.0 defects — health-service cgroup-OOM (profile-derived MemoryHigh/MemoryMax drop-in via one canonical resource-tier authority) + structured failed-unit `SERVICES_FAILED` propagation with per-unit attribution (hardcoded botscan removed) + read-only `nftban health resources` diagnostics. Primary OOM fix + structured failed-unit work VERIFIED on the dns2 medium canary; the fleet rollout was halted by a health-verdict-propagation defect (repair/revalidate false verdicts) fixed in v1.223.0. No daemon/firewall behavior change; no nft schema change (1.84.0); no config-schema change.*
 
 **v1.222.0 — Lifecycle forensic-log correctness & bounded log-retention/rotation safety — RELEASED (superseded by v1.222.1)** — *one combined release, two serial gates (Gate A + Gate B), both merged to `main`; VERSION-only release-prep; shell + Go (`internal/logretention`, `internal/safety`, consumed only by `nftban-core`); `nftband` daemon binary source unchanged (daemon byte-identical); no nft schema change (1.84.0); no config-schema change (1.1.0 / schema_version 1).*
 
