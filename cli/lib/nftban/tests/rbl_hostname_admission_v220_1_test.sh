@@ -124,7 +124,7 @@ o="$(run_server "host.example has IPv6 address fe80::1")"
 # 5. hostname -> the same public self IPv4 => admitted, deduped (Total stays 2)
 o="$(run_server "host.example has address 192.0.2.67")"
 [[ "$(total_line "$o")" == "2" ]] && ok "T5 hostname==self public dedups to one (Total=2)" || no "T5 dedup failed ($(total_line "$o"))"
-[[ "$(checked "$o" | grep -c '^46\.225\.150\.67$')" == "1" ]] && ok "T5b self public checked exactly once" || no "T5b duplicate check"
+[[ "$(checked "$o" | grep -c '^192\.0\.2\.251$')" == "1" ]] && ok "T5b self public checked exactly once" || no "T5b duplicate check"
 
 # 6. hostname -> mixed public-new + loopback => only public admitted (Total=3)
 o="$(run_server "$(printf '%s\n' 'host.example has address 8.8.8.8' 'host.example has address 127.0.1.1')")"

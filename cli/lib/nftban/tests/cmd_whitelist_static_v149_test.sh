@@ -120,7 +120,7 @@ assert_not_contains "$T1C" "EXPIRES_AT"                              "T1.7 NO EX
 echo; echo "[T2] re-add same IP → refresh (no duplicate)"
 call_add_static 192.0.2.122 >/dev/null 2>&1 || true
 T2C=$(cat "$MANUAL_FILE" 2>/dev/null || true)
-T2N=$(printf '%s\n' "$T2C" | grep -c "^62\.38\.150\.122" || true)
+T2N=$(printf '%s\n' "$T2C" | grep -c "^192\.0\.2\.250" || true)
 assert_eq "$T2N" "1"                                                 "T2.1 exactly one entry for IP"
 
 # ---------------------------------------------------------------------------

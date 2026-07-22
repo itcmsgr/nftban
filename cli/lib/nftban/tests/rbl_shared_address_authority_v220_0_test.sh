@@ -123,7 +123,7 @@ hasline "$RBL" "2001:db8:c014:5ee1::2" && ok "T3 second distinct IPv6 preserved"
 { ! hasline "$RBL" "2001:db8:c014:5ee1::beef" && ! hasline "$RBL" "2001:db8:c014:5ee1::dead" && ! hasline "$RBL" "8.8.4.4"; } && ok "T8 tentative/temporary/down-iface excluded" || no "T8 excluded-state leaked into RBL"
 
 # T9 duplicate address (eth0+eth1) -> single RBL entry
-[[ "$(printf '%s\n' "$RBL" | grep -c '^46\.225\.150\.67$')" == "1" ]] && ok "T9 duplicate address deduped to one" || no "T9 duplicate not deduped"
+[[ "$(printf '%s\n' "$RBL" | grep -c '^192\.0\.2\.251$')" == "1" ]] && ok "T9 duplicate address deduped to one" || no "T9 duplicate not deduped"
 
 # T10 no ip:tag / colon-tag serialization in any projection line
 { ! has "$RBL" ":ipv4" && ! has "$RBL" ":ipv6"; } && ok "T10 no :ipv4/:ipv6 tag encoding" || no "T10 colon-tag encoding present"
