@@ -101,3 +101,6 @@ scripts/lab-deploy-servers.conf
 # Private exact host/IP patterns for privacy-scan (never commit)
 scripts/ci/privacy-forbidden.txt
 /nftban-core
+
+# v1.226.0 PR-C: ci-bash informational runner manifest (CI runtime artifact)
+ci-bash-manifest.txt
