@@ -499,7 +499,10 @@ def _scan_changed_lines(base, strict, show):
         print("changed-lines: FAIL-CLOSED — base %r does not resolve to a commit "
               "(malformed, unknown, or not fetched)" % base, file=sys.stderr)
         return 2
-    diff = subprocess.run(["git", "-C", REPO, "diff", "--unified=0", "%s...HEAD" % base],
+    # Two-dot (base HEAD) diff: a direct tree comparison that needs NO merge-base, so it
+    # works on shallow PR checkouts where the parent objects are absent. For added-line
+    # scanning this is equivalent to (and safer than) three-dot.
+    diff = subprocess.run(["git", "-C", REPO, "diff", "--unified=0", base, "HEAD"],
                           capture_output=True, text=True)
     if diff.returncode != 0:
         print("changed-lines: FAIL-CLOSED — git diff failed for base %r" % base, file=sys.stderr)

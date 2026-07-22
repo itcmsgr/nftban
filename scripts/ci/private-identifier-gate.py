@@ -222,7 +222,8 @@ def scan_changed_lines(root, base, deny):
     if subprocess.run(["git", "rev-parse", "--verify", "--quiet", "%s^{commit}" % base],
                       cwd=root, capture_output=True).returncode != 0:
         raise RuntimeError("base does not resolve to a commit")
-    diff = subprocess.run(["git", "diff", "--unified=0", "%s...HEAD" % base],
+    # Two-dot (base HEAD): direct tree comparison, no merge-base — works on shallow checkouts.
+    diff = subprocess.run(["git", "diff", "--unified=0", base, "HEAD"],
                           cwd=root, capture_output=True, text=True)
     if diff.returncode != 0:
         raise RuntimeError("git diff failed for base %r" % base)
