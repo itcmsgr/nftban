@@ -74,14 +74,14 @@ if grep -q 'BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool' "$COLLECTOR" \
 else no "T1 off-tmpfs default"; fi
 
 # T2: collector writes to the configured spool + emits a status file.
-printf 'l1 GET /a\nl2 POST /xmlrpc.php\n' > "$ALLOW/site.log"
+printf '203.0.113.5 - - [28/Jun/2026:10:00:00 +0000] "GET /a HTTP/1.1" 200 9 "-" "ua"\n203.0.113.5 - - [28/Jun/2026:10:00:01 +0000] "POST /xmlrpc.php HTTP/1.1" 200 9 "-" "ua"\n' > "$ALLOW/site.log"
 run_collector "$ALLOW/*.log" >/dev/null
 sf="$(spool_of "$ALLOW/site.log")"
 [[ -f "$sf" && -f "$STATUS" && "$(status_val backpressure)" == "0" ]] \
   && ok "T2 collect→disk spool + spool.status written (backpressure=0)" || no "T2 collect+status" "sf=$sf status=$(cat "$STATUS" 2>/dev/null)"
 
 # T3: per-file blind trim REMOVED — a big source is spooled in full (not shortened).
-rm -rf "$SPOOL" "$OFF" "$STATUS"; head -c 6000 /dev/zero | tr '\0' 'x' > "$ALLOW/big.log"; printf '\n' >> "$ALLOW/big.log"
+rm -rf "$SPOOL" "$OFF" "$STATUS"; head -c 6000 /dev/zero | tr '\0' 'x' > "$ALLOW/big.log"; printf '\n203.0.113.5 - - [28/Jun/2026:10:00:00 +0000] "GET /a HTTP/1.1" 200 9 "-" "ua"\n' >> "$ALLOW/big.log"
 run_collector "$ALLOW/big.log" >/dev/null
 sf="$(spool_of "$ALLOW/big.log")"; sz="$(stat -c %s "$sf" 2>/dev/null || echo 0)"
 [[ "$sz" -ge 6000 ]] && ok "T3 per-file blind trim removed (full $sz B spooled; no cursor desync)" || no "T3 trim removed" "size=$sz"
@@ -91,7 +91,7 @@ grep -q 'tail -c "\$SPOOL_MAX_BYTES"' "$COLLECTOR" && no "T3b trim code still pr
 # T4: total-dir cap → BACKPRESSURE: pre-fill spool over a tiny cap, then collect.
 rm -rf "$SPOOL" "$OFF" "$STATUS"; mkdir -p "$SPOOL"
 head -c 4096 /dev/zero | tr '\0' 'y' > "$SPOOL/_preexisting_blob"   # > cap below
-printf 'newline GET /x\n' > "$ALLOW/bp.log"
+printf '203.0.113.5 - - [28/Jun/2026:10:00:00 +0000] "GET /x HTTP/1.1" 200 9 "-" "ua"\n' > "$ALLOW/bp.log"
 out="$(run_collector "$ALLOW/bp.log" 1024)"   # cap = 1024 < 4096 already present
 bpf="$(spool_of "$ALLOW/bp.log")"
 if [[ "$(status_val backpressure)" == "1" ]] && [[ ! -f "$bpf" ]] && echo "$out" | grep -q 'BACKPRESSURE'; then

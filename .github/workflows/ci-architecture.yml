@@ -82,34 +82,34 @@ jobs:
       - name: Check uninstall firewall safety (no drop-policy chain after removal)
         run: ./scripts/ci/check-uninstall-firewall-safety.sh
 
-      # ── v1.226.0 PR-C: index-driven shell-test execution ─────────────────────
+      # ── v1.226.0 PR-D: index-driven shell-test execution, STRICT ENFORCEMENT ──
       #   The canonical authority index (scripts/ci/test-authority-index.tsv) DRIVES
-      #   execution. The 46 policy-gates shell tests formerly invoked as individual
-      #   curated steps (with per-lane rationale) are now selected + executed by the
-      #   runner; provenance/rationale lives in each test file and the index columns.
-      #   The ci-bash class is added as INFORMATIONAL_BASELINE (non-blocking): it
-      #   surfaced 19 pre-existing failures — see scripts/ci/ci-bash-red-baseline-audit.md.
-      - name: Shell-test runner + integrity self-tests (v1.226.0 PR-C, BLOCKING)
+      #   execution. policy-gates AND ci-bash are BLOCKING. PR-C's informational
+      #   ci-bash baseline is retired: PR-D challenged all 19 exposed failures — 15
+      #   were stale/obsolete test expectations corrected test-only (product
+      #   unchanged); 4 remain under an audited, expiring quarantine (still executed +
+      #   reported, excluded from the blocking tally only via valid metadata + matched
+      #   failure pattern). See scripts/ci/ci-bash-red-baseline-audit.md (dispositions).
+      - name: Shell-test runner + strict/quarantine self-tests (v1.226.0 PR-D, BLOCKING)
         run: |
           bash scripts/ci/run-test-suite-selftest.sh
-          bash scripts/ci/check-ci-bash-baseline-selftest.sh
-      - name: Policy Gates shell-test suite — index-driven (v1.226.0 PR-C, BLOCKING)
+          bash scripts/ci/pr-d-strict-selftest.sh
+      - name: Quarantine registry validity (v1.226.0 PR-D, BLOCKING)
+        run: bash scripts/ci/check-quarantine-registry.sh
+      - name: Policy Gates shell-test suite — index-driven (v1.226.0 PR-D, BLOCKING)
         run: bash scripts/ci/run-test-suite.sh run --gate policy-gates
+      # ci-bash: BLOCKING. Every non-quarantined ci-bash test must pass; the 4
+      # quarantined tests still execute + report but are bound to their registered
+      # failure pattern (a pass, a category change, disappearance, or an over-ceiling
+      # count all BLOCK). CI green here means all non-quarantined required shell tests
+      # passed — not that failures were hidden.
+      - name: CI-bash suite — BLOCKING with audited quarantine (v1.226.0 PR-D)
+        run: bash scripts/ci/run-test-suite.sh run --gate ci-bash --quarantine scripts/ci/ci-bash-quarantine.tsv
       # deferred + lab-manual: visible, never executed, never counted PASS
-      - name: Deferred / lab-manual shell tests — report-only (v1.226.0 PR-C)
+      - name: Deferred / lab-manual shell tests — report-only (v1.226.0 PR-D)
         run: |
           bash scripts/ci/run-test-suite.sh report --gate deferred
           bash scripts/ci/run-test-suite.sh report --gate lab-manual
-      # ci-bash: INFORMATIONAL_BASELINE — non-blocking BY EXPLICIT TEMPORARY POLICY.
-      # Executes all 184 classified ci-bash tests for visibility; 19 are pre-existing
-      # newly-exposed failures, triaged under PR-D. Writes a manifest consumed by the
-      # BLOCKING integrity gate below (one shared execution). Never renders the 19 as
-      # success; CI_BASH_ENFORCEMENT = INFORMATIONAL_BASELINE (not final enforcement).
-      - name: CI-bash observation — INFORMATIONAL_BASELINE (v1.226.0 PR-C, non-blocking)
-        continue-on-error: true
-        run: bash scripts/ci/run-test-suite.sh run --gate ci-bash --manifest ci-bash-manifest.txt
-      - name: CI-bash baseline integrity (v1.226.0 PR-C, BLOCKING)
-        run: bash scripts/ci/check-ci-bash-baseline.sh ci-bash-manifest.txt
 
       # v1.194 (8C): protection-claim matrix gate. Fails the PR if the matrix
       # regresses — wrong row count, missing/empty fields, invalid OWNER/MODE/
@@ -160,8 +160,8 @@ jobs:
       # Schema: scripts/ci/test-authority-schema.md
       - name: Shell-test authority — self-tests (v1.226.0 PR-A)
         run: python3 scripts/ci/test-authority-selftest.py
-      - name: Shell-test authority — validate metadata (transition, v1.226.0 PR-A)
-        run: python3 scripts/ci/test-authority.py validate --mode transition
+      - name: Shell-test authority — validate metadata (STRICT zero-unclassified, v1.226.0 PR-D)
+        run: python3 scripts/ci/test-authority.py validate --mode strict
       - name: Shell-test authority — index freshness (v1.226.0 PR-A)
         run: python3 scripts/ci/test-authority.py check
 

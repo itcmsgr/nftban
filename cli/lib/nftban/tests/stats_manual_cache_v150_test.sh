@@ -80,7 +80,7 @@ have "$FMT" '.blacklist_manual.ipv4' "cache-hit reads .blacklist_manual.ipv4"
 have "$FMT" '.blacklist_manual.ipv6' "cache-hit reads .blacklist_manual.ipv6"
 have "$FMT" 'manual_v4=${v4m_count:-0}' "cache-miss sets manual_v4 from kernel count"
 have "$FMT" 'manual_v6=${v6m_count:-0}' "cache-miss sets manual_v6 from kernel count"
-have "$FMT" 'manual: %'"'"'d).*IPv4\|IPv4.*manual: %'"'"'d' "display: IPv4 shows manual:"
+have "$FMT" 'manual-set: %'"'"'d).*IPv4\|IPv4.*manual-set: %'"'"'d' "display: IPv4 shows manual:"
 grep -q '"IPv6............" "\$black_v6" "\$black_v6_perm" "\$black_v6_temp" "\$manual_v6"' "$FMT" \
     && ok "display: IPv6 shows manual (symmetric)" || no "display: IPv6 manual"
 

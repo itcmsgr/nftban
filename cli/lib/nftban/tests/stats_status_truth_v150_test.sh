@@ -235,7 +235,7 @@ assert_contains "$FMT_CODE" "blacklist_manual_ipv6" "T8.2 fallback queries black
 echo; echo "[T9] MOD-09 base services.conf sourced (NFTBAN_ENABLED=false honored)"
 STATUS_CODE=$(cat "$STATUS_SRC")
 assert_contains "$STATUS_CODE" 'source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf"' "T9.1 base services.conf sourced"
-assert_contains "$STATUS_CODE" 'source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"' "T9.2 .local override still sourced"
+assert_contains "$STATUS_CODE" '_source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"' "T9.2 .local override still sourced"
 
 # ===========================================================================
 # T10: CLI-02 — unknown-option hint lists only real flags

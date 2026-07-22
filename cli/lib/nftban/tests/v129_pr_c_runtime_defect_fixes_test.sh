@@ -178,7 +178,7 @@ fi
 echo "--- D6.B: polkit-aware wording on permission denied ---"
 
 # CLI shell tree must never contain the forbidden V128 PR-A.1 wording.
-_root_hits=$(grep -rln "you must be root" "${NFTBAN_LIB_DIR}" 2>/dev/null | grep -v -E '/tests/|/V129_' || true)
+_root_hits=$(grep -rlnP '(?<!\()you must be root' "${NFTBAN_LIB_DIR}" 2>/dev/null | grep -v -E '/tests/|/V129_' || true)
 if [[ -z "$_root_hits" ]]; then
     _t_assert "D6.B: no 'you must be root' wording in cli/lib/nftban/ (non-test)" 0
 else

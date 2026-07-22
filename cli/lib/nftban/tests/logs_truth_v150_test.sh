@@ -163,7 +163,7 @@ assert_contains "$T3_BLK" "rotate 12"  "T3.3 rotate 12"
 # ---------------------------------------------------------------------------
 echo; echo "[T4] LOG-10 header reflects exact-path enumeration (no false *.log claim)"
 T4_HEADER=$(sed -n '1,20p' "$LOGROTATE_FILE")
-assert_contains    "$T4_HEADER" "exact"                              "T4.1 header mentions exact-path enumeration"
+assert_contains    "$T4_HEADER" "EXACT"                              "T4.1 header mentions exact-path enumeration"
 assert_not_contains "$T4_HEADER" "- /var/log/nftban/*.log (weekly"   "T4.2 stale '*.log (weekly, 4 weeks)' claim removed"
 
 # ---------------------------------------------------------------------------

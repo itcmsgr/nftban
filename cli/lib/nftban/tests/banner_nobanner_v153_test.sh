@@ -59,6 +59,7 @@ route() {
         export NFTBAN_LIB_DIR='$NFTBAN_LIB_DIR'
         source '$OUTPUT' 2>/dev/null || true
         nftban_render_banner_simple() { echo 'PATH:SIMPLE'; }
+        nftban_render_banner_compact() { echo 'PATH:SIMPLE'; }
         nftban_render_banner_full()   { echo 'PATH:FULL'; }
         # Replace the heavy full-box body so we observe the gate decision only:
         # the gate runs BEFORE the box body, so if we reach the body we mark FULL.

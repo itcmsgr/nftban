@@ -1,48 +1,66 @@
-# ci-bash INFORMATIONAL_BASELINE — 19 pre-existing newly-exposed failures
+# ci-bash disposition record — v1.226.0 PR-D (all 19 challenged)
 
-**Lane:** v1.226.0 PR-C (index-driven runner). **State:** `CI_BASH_ENFORCEMENT = INFORMATIONAL_BASELINE` (non-blocking).
-**Classification:** `PRE_EXISTING_NEWLY_EXPOSED_TEST_FAILURES` — not PR-C regressions.
+PR-C exposed 19 failing `ci-bash` tests (`PRE_EXISTING_NEWLY_EXPOSED_TEST_FAILURES`). PR-D challenged
+every one against current source (evidence-based, per-test, `file:line` cited). Outcome: **15 were stale
+or obsolete test expectations, corrected test-only (no product change); 4 remain quarantined** (still
+executed + reported, excluded from the blocking tally only via valid metadata + a matched failure pattern).
 
-Executing the previously-unenforced `ci-bash` class through the authority runner exposed 19 failing
-tests. All 19 reproduce under direct `bash <test>` invocation from the repository root (runner-caused
-failures = 0; harness mismatch = 0). They are recorded here as evidence and carried as a bounded,
-non-increasing baseline (`scripts/ci/ci-bash-informational-baseline.tsv`). They **must not** be
-silently changed to PASS, skipped, or deleted. PR-D owns triage and the transition to blocking
-enforcement; product defects, if confirmed, split into their own failure-domain lanes.
+Enforcement after PR-D: `ci-bash` is **BLOCKING**. The informational 184/165/19 baseline is retired.
+Quarantine ceiling = **4** (`scripts/ci/ci-bash-quarantine.tsv`). `CONFIRMED_PRODUCT_DEFECT` entries are
+registered for a separate failure-domain lane and are **not** fixed in PR-D.
 
-Baseline (this PR-C head): SELECTED=184 · PASS=165 · FAIL=19 · TIMEOUT=0.
+## Disposition summary
 
-Buckets: source/spec drift = 12 · behavior/regression investigation = 4 · RBL fixture debt = 1 · spool/timing investigation = 2.
+| disposition | count |
+|---|---|
+| TEST_EXPECTATION_STALE | 13 |
+| FALSE_OR_OBSOLETE_TEST | 2 |
+| PR_E_RBL_FIXTURE | 1 (quarantined) |
+| ENVIRONMENT_SENSITIVE | 1 (quarantined) |
+| CONFIRMED_PRODUCT_DEFECT | 2 (quarantined) |
+| **total** | **19** |
 
-| # | ta.id | path (repo-relative, `cli/lib/nftban/tests/…`) | gate | bucket | observed (concise) | serial repro | provisional disposition | finding handle |
-|---|-------|-----|------|--------|--------------------|--------------|-------------------------|----------------|
-| 1 | banner_nobanner_v153_test | banner_nobanner_v153_test.sh | ci-bash | source-spec-drift | subcommands not routed to one-line header — `PATH:NONE-OR-FULLBODY` (10P/6F) | fails | challenge test vs current banner routing source | V1226-CIBASH-DRIFT-01 |
-| 2 | b2_badbot_aibot_v188_test | b2_badbot_aibot_v188_test.sh | ci-bash | source-spec-drift | spec must ship `*.patterns` as `config(noreplace)` glob | fails | challenge test vs current RPM spec | V1226-CIBASH-DRIFT-02 |
-| 3 | botguard_diag_6b2_test | botguard_diag_6b2_test.sh | ci-bash | source-spec-drift | botguard diag surface assertion drift | fails | challenge test vs current botguard diag | V1226-CIBASH-DRIFT-03 |
-| 4 | botguard_explain_shell_6b1_test | botguard_explain_shell_6b1_test.sh | ci-bash | source-spec-drift | render must label section TEMPORARY/not-durable | fails | challenge test vs current explain render | V1226-CIBASH-DRIFT-04 |
-| 5 | logs_truth_v150_test | logs_truth_v150_test.sh | ci-bash | source-spec-drift | T4.1 header exact-path enumeration wording | fails | challenge test vs current logs header | V1226-CIBASH-DRIFT-05 |
-| 6 | stats_manual_cache_v150_test | stats_manual_cache_v150_test.sh | ci-bash | source-spec-drift | display: IPv4 `manual:` label | fails | challenge test vs current stats display | V1226-CIBASH-DRIFT-06 |
-| 7 | stats_producer_reconcile_v152_test | stats_producer_reconcile_v152_test.sh | ci-bash | source-spec-drift | consumer manual-subset label missing | fails | challenge test vs current stats producer | V1226-CIBASH-DRIFT-07 |
-| 8 | stats_status_truth_v150_test | stats_status_truth_v150_test.sh | ci-bash | source-spec-drift | T9.2 `.local` override still sourced | fails | challenge test vs current stats status | V1226-CIBASH-DRIFT-08 |
-| 9 | v127_ux4_suricata_desurfacing_test | v127_ux4_suricata_desurfacing_test.sh | ci-bash | source-spec-drift | E1: scope-creep `levenshtein\|edit_distance` now present in nftban | fails | challenge test vs intentional current surface | V1226-CIBASH-DRIFT-09 |
-| 10 | v127_ux6_help_cleanup_test | v127_ux6_help_cleanup_test.sh | ci-bash | source-spec-drift | F3/F4 help REQUIRES-section polkit-aware wording | fails | challenge test vs current help blocks | V1226-CIBASH-DRIFT-10 |
-| 11 | v128_help_code_correlation_test | v128_help_code_correlation_test.sh | ci-bash | source-spec-drift | C4: 1 `cmd_<X>.sh` has no canonical-command match | fails | challenge test vs current command registry | V1226-CIBASH-DRIFT-11 |
-| 12 | v128_polkit_aware_wording_sweep_test | v128_polkit_aware_wording_sweep_test.sh | ci-bash | source-spec-drift | A3/A4: `requires root`/`must run as root` strings present in CLI | fails | challenge test vs current CLI wording policy | V1226-CIBASH-DRIFT-12 |
-| 13 | cmd_firewall_takeover_test | cmd_firewall_takeover_test.sh | ci-bash | behavior-regression-investigation | T6.1 non-root refusal | fails | runtime reachability + env-sensitivity analysis | V1226-CIBASH-BEHAV-01 |
-| 14 | cmd_firewall_trust_remerge_test | cmd_firewall_trust_remerge_test.sh | ci-bash | behavior-regression-investigation | missing warning: `Failed to re-apply trust providers…` | fails | confirm defect vs stale expectation | V1226-CIBASH-BEHAV-02 |
-| 15 | cmd_update_lock_cleanup_v135_test | cmd_update_lock_cleanup_v135_test.sh | ci-bash | behavior-regression-investigation | S3 contention path removes holders file (`unsafe`) | fails | confirm defect vs stale expectation | V1226-CIBASH-BEHAV-03 |
-| 16 | v129_pr_c_runtime_defect_fixes_test | v129_pr_c_runtime_defect_fixes_test.sh | ci-bash | behavior-regression-investigation | 1 assertion failing | fails | confirm defect vs stale expectation | V1226-CIBASH-BEHAV-04 |
-| 17 | rbl_seven_state_v206_test | rbl_seven_state_v206_test.sh | ci-bash | rbl-fixture-debt-PR-E | T7.1 unsupported_ipv6_zone, T8.1 skipped_ipv4_only_zone | fails | **assigned to PR-E** synthetic-public fixture correction | V1226-CIBASH-RBL-01 (→ PR-E) |
-| 18 | botscan_spool_oom_v2093_test | botscan_spool_oom_v2093_test.sh | ci-bash | spool-timing-investigation | T2/T3/T6 spool byte/size = 0 (`/tmp` spool) | fails | inspect fixed `/tmp` names, isolation, timing, real-log deps | V1226-CIBASH-SPOOL-01 |
-| 19 | botscan_throughput_v187_test | botscan_throughput_v187_test.sh | ci-bash | spool-timing-investigation | prefilter kept 2 candidates, expected 1 | fails | inspect prefilter counting, isolation, timing | V1226-CIBASH-SPOOL-02 |
+**Fixed test-only (15):** product behavior verified correct; the test tracked drifted wording/structure.
 
-## PR-D responsibilities (not "fix all 19")
+| # | ta.id | disposition | test-only correction (product unchanged) |
+|---|-------|-------------|------------------------------------------|
+| 1 | banner_nobanner_v153_test | TEST_EXPECTATION_STALE | stub `nftban_render_banner_compact` (renderer renamed v1.187.3) |
+| 2 | b2_badbot_aibot_v188_test | TEST_EXPECTATION_STALE | assert against the RPM-spec generator (`packaging/build_nftban.sh`), not a build artifact |
+| 3 | botguard_explain_shell_6b1_test | TEST_EXPECTATION_STALE | bind stable substring of the reworded v1.219.0 cache-only header |
+| 4 | botguard_diag_6b2_test | TEST_EXPECTATION_STALE | recovers transitively once #3 passes (no edit) |
+| 5 | logs_truth_v150_test | TEST_EXPECTATION_STALE | header "exact"→"EXACT" (v1.222.0 banner shifted the line) |
+| 6 | stats_manual_cache_v150_test | TEST_EXPECTATION_STALE | label "manual:"→"manual-set:" (v1.206.1 relabel) |
+| 7 | stats_producer_reconcile_v152_test | TEST_EXPECTATION_STALE | label "incl. manual:"→"incl. manual-set:" (v1.206.1) |
+| 8 | stats_status_truth_v150_test | TEST_EXPECTATION_STALE | `source`→`_source_local` (config-local-recovery helper migration) |
+| 9 | cmd_firewall_takeover_test | TEST_EXPECTATION_STALE + harness | needle "requires root"→"insufficient privileges" (polkit wording, #675); **also** gated the T9 git-ref scope guard (`git diff main` errored → spurious SCOPE VIOLATION on shallow CI checkouts with no local `main` ref → now SKIPs unless `main` resolves) + declared git/unshare deps in metadata |
+| 10 | cmd_firewall_trust_remerge_test | TEST_EXPECTATION_STALE | needle → current v1.126.1 warning wording |
+| 11 | cmd_update_lock_cleanup_v135_test | TEST_EXPECTATION_STALE | awk anchor "in progress"→"already in progress" |
+| 12 | v129_pr_c_runtime_defect_fixes_test | FALSE_OR_OBSOLETE_TEST | exclude the A15 scrub form (lookbehind) — grep false positive |
+| 13 | botscan_spool_oom_v2093_test | TEST_EXPECTATION_STALE | fixture content → valid access-log lines (R22A content gate, v1.221.4) |
+| 14 | v127_ux4_suricata_desurfacing_test | FALSE_OR_OBSOLETE_TEST | remove obsolete E1 cross-PR scope-guard (UX-5 shipped) |
+| 15 | v127_ux6_help_cleanup_test | TEST_EXPECTATION_STALE + harness | drop superseded "site-approved privilege method" requirement (v1.128 canonical); **also** HARNESS_DEFECT_FIXED — 17 `awk … \| grep -q` pipelines rewritten to capture-to-var `grep -q <<< "$(awk …)"` to kill a `pipefail`+SIGPIPE(141) race that intermittently failed a *varying* assertion (19/20 → 100/100 direct + 100/100 runner + 30/30 parallel; pipefail kept; mutation-proven; no assertion weakened) |
 
-PR-D is authority-enforcement policy, not a bulk product-fix lane. For each of the 19 it must determine
-whether the **product** is wrong, the **test expectation** is stale, the test is **environment-sensitive**,
-the test **belongs to PR-E**, the test is **flaky**, or the **classification** is wrong — then introduce a
-justified temporary quarantine/deferred mechanism (owner + reason + finding handle + review condition),
-activate blocking `ci-bash` for all non-quarantined tests, and add zero-unclassified / execution-completeness
-blockers. Any product change requires its own failure-domain GO. The RBL row stays with PR-E. If runner
-concurrency is ever shown to cause a spool/timing failure, the runner is fixed; serial reproduction (as
-recorded above) means the failure is genuine test/timing debt, handled separately.
+All 15 verified: direct `bash <test>` PASS, product tree unchanged, a meaningful regression assertion retained.
+
+**Quarantined (4)** — see `scripts/ci/ci-bash-quarantine.tsv` for owner/reason/finding/expiry/pattern:
+
+| ta.id | disposition | expected_failure_class | finding | remediation lane |
+|-------|-------------|------------------------|---------|------------------|
+| rbl_seven_state_v206_test | PR_E_RBL_FIXTURE | RBL_FIXTURE_NONPUBLIC_IPV6 | V1226-CIBASH-RBL-01 | PR-E |
+| botscan_throughput_v187_test | ENVIRONMENT_SENSITIVE | MISSING_MATCHER_BINARY | V1226-CIBASH-ENV-01 | OPEN_BOTSCAN_MATCHER_CI_PROVISIONING |
+| v128_help_code_correlation_test | CONFIRMED_PRODUCT_DEFECT | CANONICAL_COMMAND_REGISTRY_DRIFT | V1226-CIBASH-PRODDEF-01 | OPEN_CANONICAL_LOGS_REGISTRATION |
+| v128_polkit_aware_wording_sweep_test | CONFIRMED_PRODUCT_DEFECT | POLKIT_WORDING_DRIFT | V1226-CIBASH-PRODDEF-02 | OPEN_POLKIT_WORDING_REWORD |
+
+### The two confirmed product defects (registered, NOT fixed in PR-D)
+
+- **V1226-CIBASH-PRODDEF-01** — `nftban logs` (`cmd_logs.sh`, shipped v1.222.0) is routed and shown in
+  completion but is absent from `_nftban_canonical_commands()`. The test correctly detects canonical-registry
+  drift. Product-side registration required in `OPEN_CANONICAL_LOGS_REGISTRATION`. (This test also carries a
+  stale `D2` PR-diff-size assertion; both are reconciled in that lane.)
+- **V1226-CIBASH-PRODDEF-02** — 5 operator-facing CLI surfaces (`cmd_common.sh`, `cmd_whitelist.sh`,
+  `cmd_botscan.sh`, `cmd_permissions.sh`, …) reintroduced root/sudo wording after the v1.133 polkit sweep,
+  undetected while this test was unwired. Product-side reword to the nftban-group/PolicyKit model (or a
+  targeted allowlist for genuine root file-write paths) required in `OPEN_POLKIT_WORDING_REWORD`.
+
+Neither product defect is changed in PR-D (scope: authority enforcement only). Both remain quarantined,
+visible, and executed, with a hard review date of 2026-10-31.

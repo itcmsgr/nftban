@@ -1,0 +1,26 @@
+# NFTBan ci-bash quarantine registry — v1.226.0 PR-D.
+#
+# The ci-bash class is BLOCKING: every non-quarantined ci-bash test must pass. A
+# quarantined test STILL EXECUTES and is REPORTED, but is excluded from the
+# blocking tally under this audited, expiring policy. Enforced by:
+#   * scripts/ci/check-quarantine-registry.sh (metadata validity, BLOCKING)
+#   * scripts/ci/run-test-suite.sh --quarantine (execution + failure-pattern binding)
+#
+# The runner binds each quarantined failure to expected_failure_pattern (a NORMALIZED
+# category substring, matched with grep -F — NOT a raw error string, so paths / line
+# numbers / timing / tool versions may vary). It BLOCKS if a quarantined test passes
+# (needs reconciliation), its failure category changes (pattern absent), it disappears
+# from execution, or the count exceeds the ceiling. A new failure cannot silently enter
+# quarantine — raising the ceiling is an explicit, reviewable edit here.
+#
+# Origin: PR-C exposed 19 ci-bash failures. PR-D challenged all 19 → 15 were stale/
+# obsolete test expectations, corrected test-only (product unchanged); 4 remain, below.
+# CONFIRMED_PRODUCT_DEFECT entries are quarantined + registered for a separate
+# failure-domain lane; they are NOT fixed in PR-D.
+#
+# Columns: QT id path owner reason finding introduced review_or_expiry disposition expected_failure_class remediation_lane expected_failure_pattern
+QUARANTINE_CEILING=4
+QT	rbl_seven_state_v206_test	cli/lib/nftban/tests/rbl_seven_state_v206_test.sh	nftban-maintainers	fixture IPv6 is a non-public documentation address rejected by the v1.220.1 F-RBL-0 eligibility backstop before zone classification	V1226-CIBASH-RBL-01	2026-07-22	2026-10-31	PR_E_RBL_FIXTURE	RBL_FIXTURE_NONPUBLIC_IPV6	PR-E	unsupported_ipv6_zone
+QT	botscan_throughput_v187_test	cli/lib/nftban/tests/botscan_throughput_v187_test.sh	nftban-maintainers	prefilter-count invariant requires the Go nftban-botscan-matcher binary which is not built in the hermetic ci-bash environment; the pass-through fallback processes 2 not 1	V1226-CIBASH-ENV-01	2026-07-22	2026-10-31	ENVIRONMENT_SENSITIVE	MISSING_MATCHER_BINARY	OPEN_BOTSCAN_MATCHER_CI_PROVISIONING	prefilter must keep ONLY the candidate
+QT	v128_help_code_correlation_test	cli/lib/nftban/tests/v128_help_code_correlation_test.sh	nftban-maintainers	confirmed product defect: nftban logs (cmd_logs.sh shipped v1.222.0) is routed and completion-listed but absent from _nftban_canonical_commands()	V1226-CIBASH-PRODDEF-01	2026-07-22	2026-10-31	CONFIRMED_PRODUCT_DEFECT	CANONICAL_COMMAND_REGISTRY_DRIFT	OPEN_CANONICAL_LOGS_REGISTRATION	no canonical-command match
+QT	v128_polkit_aware_wording_sweep_test	cli/lib/nftban/tests/v128_polkit_aware_wording_sweep_test.sh	nftban-maintainers	confirmed product defect: 5 operator-facing CLI surfaces reintroduced root/sudo wording after the v1.133 polkit sweep, undetected while this test was unwired from CI	V1226-CIBASH-PRODDEF-02	2026-07-22	2026-10-31	CONFIRMED_PRODUCT_DEFECT	POLKIT_WORDING_DRIFT	OPEN_POLKIT_WORDING_REWORD	requires root [privileges]' in CLI surfaces

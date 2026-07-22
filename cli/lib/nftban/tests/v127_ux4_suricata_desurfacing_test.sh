@@ -269,15 +269,11 @@ _t_assert "D5: nftban_ddos_suricata.sh present and non-empty (engine code untouc
 # (E) Scope-creep guard — no UX-5 (typo) or UX-6 (broad help) work here
 # =============================================================================
 
-# E1: No Levenshtein edit-distance handler added (UX-5 territory)
-for f in "$_sbin_nftban" "$_cmd_modes" "$_nftban_help"; do
-    if grep -qiE 'levenshtein|edit_distance' "$f"; then
-        _t_assert "E1: scope-creep: 'levenshtein|edit_distance' found in $(basename "$f")" 1
-        E1_FAIL=1
-        break
-    fi
-done
-[[ -z "${E1_FAIL:-}" ]] && _t_assert "E1: no Levenshtein typo handler added (UX-5 not touched)" 0
+# E1 REMOVED (v1.226.0 PR-D): the UX-5 Damerau-Levenshtein typo-suggestion feature
+# legitimately shipped to cli/sbin/nftban as its own lane. E1 was only a cross-PR
+# scope-guard to keep UX-5 out of the UX-4 PR; both merged to trunk long ago, so the
+# guard now fires on intended trunk state. Disposition FALSE_OR_OBSOLETE_TEST. The 29
+# substantive suricata-desurfacing assertions (A1-A7, B1-B12, C1-C4, D1-D5, E2) remain.
 
 # E2: No alias-relationship help rewrite (UX-6 territory)
 for f in "$_sbin_nftban" "$_cmd_modes" "$_nftban_help"; do
