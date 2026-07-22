@@ -940,6 +940,15 @@ _whitelist_session_cleanup() {
     _whitelist_session_ensure_lock
     local removed
     removed=$(
+        # v1.226.0 (PR-E1): open the lock fd INSIDE this command substitution. A
+        # `) 9>LOCK` redirect on the enclosing `removed=$(...)` ASSIGNMENT is applied
+        # to the assignment's environment, not to this substitution subshell — so
+        # `flock 9` here ran with fd 9 unopened ("Bad file descriptor") and cleanup
+        # could never acquire the lock (broken since v1.173/#822: expired session
+        # entries were never pruned). Opening fd 9 with `exec` in the same shell
+        # execution context that flocks and closes it (on subshell exit) fixes it,
+        # matching the plain-subshell `( ... ) 9>LOCK` form used by add/remove.
+        exec 9>"$_NFTBAN_SESSION_WL_LOCK" || { echo "ERROR: could not open session-whitelist lock" >&2; exit 1; }
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
 
         local now_unix
@@ -980,7 +989,7 @@ _whitelist_session_cleanup() {
         mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
         chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
         echo "$_rm"
-    ) 9>"$_NFTBAN_SESSION_WL_LOCK" || return 1
+    ) || return 1
     removed=${removed//[^0-9]/}; removed=${removed:-0}
 
     if [[ "$removed" -gt 0 ]]; then
