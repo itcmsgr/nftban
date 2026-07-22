@@ -152,6 +152,20 @@ DOMAIN_RE = re.compile(
     re.IGNORECASE)
 IPV4_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 IPV6_RE = re.compile(r"(?<![\w:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![\w:])")
+
+# Backslash-escaped-dot normalization (v1.226.0 privacy hotfix). Shell grep patterns
+# write dotted-quads with escaped dots (e.g. ^62\.38\.150\.122$ or "62\\.38\\.150\\.122"),
+# which the literal-dot IPV4_RE cannot see — a confirmed blocking-gate bypass. We collapse
+# one-or-more backslashes before a dot to a single literal dot and re-scan a COPY of the
+# line for detection only. This is DATA-ONLY: the normalized text is never executed,
+# sourced, or compiled as a regex/command — it is fed only to the same read-only detectors.
+_ESCAPED_DOT_RE = re.compile(r"\\+\.")
+
+
+def deescape_dots(s):
+    """Detection-only: `\\.`/`\\\\.` -> `.` so escaped dotted-quads are visible to IPV4_RE.
+    Never used to execute or reinterpret the string; purely to widen text detection."""
+    return _ESCAPED_DOT_RE.sub(".", s)
 # Real operator personal identity (username/name). gituser/commonfolder are
 # PSEUDONYMOUS dev accounts (separate, lower category); avoulvou* is the real
 # maintainer identity and is a REAL_OPERATOR_IDENTIFIER wherever it appears.
@@ -374,10 +388,20 @@ def scan_line(line, path=""):
     # allowlist, doc-range, placeholder, or version-context rule. Values matched
     # here are skipped by the detectors below so they are not double-counted.
     denied = []
+    # Deny authority is also escape-aware: a privacy-forbidden.txt entry for a real
+    # identifier must catch its backslash-escaped grep-pattern form, not just the literal.
+    _dn = deescape_dots(line)
+    _deny_sources = (line,) if _dn == line else (line, _dn)
+    _seen_deny = set()
     for pat in _PRIV_PATTERNS:
-        for m in pat.finditer(line):
-            denied.append(m.group(0))
-            yield ("PRIVATE", m.group(0), REAL_OPERATOR_IDENTIFIER)
+        for _s in _deny_sources:
+            for m in pat.finditer(_s):
+                g = m.group(0)
+                if g in _seen_deny:
+                    continue
+                _seen_deny.add(g)
+                denied.append(g)
+                yield ("PRIVATE", g, REAL_OPERATOR_IDENTIFIER)
     if not any(path.startswith(p) or p in path for p in PRODUCT_DOMAIN_SKIP):
         for m in DOMAIN_RE.finditer(line):
             if m.group(0) in denied:
@@ -393,18 +417,30 @@ def scan_line(line, path=""):
             continue
         yield ("PATH", m.group(0), classify("PATH", m.group(0), path))
     version_ctx = bool(VERSION_CONTEXT_RE.search(line))
-    for m in IPV4_RE.finditer(line):
-        v = m.group(0)
-        if v in denied:
-            continue
-        # Version-context reinterpretation: excuse a dotted-quad only when the
-        # line is a version context AND the value is not a known-real identifier
-        # (a real operator IP is never excused by context).
-        if version_ctx and not _priv_match(v):
-            continue
-        finding, hint = ip_class(v)
-        if finding:
-            yield ("IPV4", v, classify("IPV4", v, path, hint))
+    # Scan the raw line AND a detection-only de-escaped copy, so escaped-dot dotted-quads
+    # inside grep patterns cannot bypass the gate. Dedup by value so an unescaped IP that
+    # also survives normalization is reported once.
+    _sources = [line]
+    _norm = deescape_dots(line)
+    if _norm != line:
+        _sources.append(_norm)
+    _seen_ipv4 = set()
+    for _src in _sources:
+        for m in IPV4_RE.finditer(_src):
+            v = m.group(0)
+            if v in _seen_ipv4:
+                continue
+            _seen_ipv4.add(v)
+            if v in denied:
+                continue
+            # Version-context reinterpretation: excuse a dotted-quad only when the
+            # line is a version context AND the value is not a known-real identifier
+            # (a real operator IP is never excused by context).
+            if version_ctx and not _priv_match(v):
+                continue
+            finding, hint = ip_class(v)
+            if finding:
+                yield ("IPV4", v, classify("IPV4", v, path, hint))
     for m in IPV6_RE.finditer(line):
         v = m.group(0)
         if v in denied or v.count(":") < 2:
