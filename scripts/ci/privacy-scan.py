@@ -166,13 +166,16 @@ def deescape_dots(s):
     """Detection-only: `\\.`/`\\\\.` -> `.` so escaped dotted-quads are visible to IPV4_RE.
     Never used to execute or reinterpret the string; purely to widen text detection."""
     return _ESCAPED_DOT_RE.sub(".", s)
-# Real operator personal identity (username/name). gituser/commonfolder are
-# PSEUDONYMOUS dev accounts (separate, lower category); avoulvou* is the real
-# maintainer identity and is a REAL_OPERATOR_IDENTIFIER wherever it appears.
-REAL_IDENTITY_RE = re.compile(r"/home/avoulvou\w*\b|\bavoulvou(lis)?\b", re.IGNORECASE)
+# Personal-path detection. gituser/commonfolder are PSEUDONYMOUS dev accounts
+# (advisory, lower category). The public scanner deliberately holds NO real operator
+# username literal (v1.226.0 defense-in-depth: no real identifier — nor any reversible
+# encoding of one — may live in tracked source). The real maintainer identity is carried
+# by the gitignored privacy-forbidden.txt deny file and the secret-provided private
+# identifier gate (private-identifier-gate.py), both of which classify it as
+# REAL_OPERATOR_IDENTIFIER. classify() checks the deny authority (_priv_match) FIRST, so a
+# known-real identity still wins over any context.
 PSEUDONYMOUS_PATH_RE = re.compile(r"/home/(?:gituser|commonfolder)\b", re.IGNORECASE)
-PERSONAL_PATH_RE = re.compile(
-    r"/home/(?:gituser|commonfolder|avoulvou\w*)\b|\bavoulvou(lis)?\b", re.IGNORECASE)
+PERSONAL_PATH_RE = re.compile(r"/home/(?:gituser|commonfolder)\w*\b", re.IGNORECASE)
 
 ALLOWED_DOMAINS = {
     "example.com", "example.net", "example.org", "example.test",
@@ -186,40 +189,54 @@ ALLOWED_DOMAINS = {
 ALLOWED_DOMAIN_SUFFIXES = (".example.test", ".example.com", ".example.net",
                            ".example.org", ".nftban.com")
 
-# Optional PRIVATE, gitignored exact-pattern file (one regex/literal per line).
-# Lets the owner add exact private hostnames/IPs WITHOUT committing the secret.
-# Any match here is a KNOWN-REAL identifier → REAL_OPERATOR_IDENTIFIER (BLOCKING).
+# Deny patterns come from TWO files, both loaded as REAL_OPERATOR_IDENTIFIER (BLOCKING):
+#   1. privacy-forbidden-public.txt  — COMMITTED, repository-safe GENERIC patterns only
+#      (placeholder mistakes, synthetic canary tokens, doc-policy violations). Runs on
+#      every PR. Must never contain a real identifier or a reversible encoding of one.
+#   2. privacy-forbidden.txt         — gitignored PRIVATE exact patterns (never committed).
+# The independent private-identifier-gate.py additionally consumes a secret-provided
+# denylist for real identifiers on trusted runs.
 _PRIV_PATTERNS = []
-_priv_file = os.path.join(HERE, "privacy-forbidden.txt")
-if os.path.exists(_priv_file):
-    with open(_priv_file, "r", encoding="utf-8", errors="ignore") as _pf:
-        for _ln in _pf:
-            _ln = _ln.strip()
-            if _ln and not _ln.startswith("#"):
-                try:
-                    _PRIV_PATTERNS.append(re.compile(_ln, re.IGNORECASE))
-                except re.error:
-                    pass
+for _pfname in ("privacy-forbidden-public.txt", "privacy-forbidden.txt"):
+    _priv_file = os.path.join(HERE, _pfname)
+    if os.path.exists(_priv_file):
+        with open(_priv_file, "r", encoding="utf-8", errors="ignore") as _pf:
+            for _ln in _pf:
+                _ln = _ln.strip()
+                if _ln and not _ln.startswith("#"):
+                    try:
+                        _PRIV_PATTERNS.append(re.compile(_ln, re.IGNORECASE))
+                    except re.error:
+                        pass
 
 BINARY_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".ico",
               ".mmdb", ".tar", ".gz", ".zip", ".woff", ".woff2", ".ttf"}
 
 # Files whose PURPOSE is to detect/guard these very patterns: the string literals
 # they contain are SEARCH PATTERNS, not leaks (same rationale as the old SELF_SKIP).
+# v1.226.0 privacy defense-in-depth: NO whole-file self-exemption for the scanner or its
+# self-tests — a real identifier accidentally placed in this file (as happened in a comment)
+# must be caught. Both privacy-scan.py and privacy-scan-selftest.py are now scanned like any
+# tracked source; they may only contain documentation-range / synthetic values, which classify
+# non-blocking on their own. The remaining entries are STRUCTURAL non-identifier files (a path
+# manifest and the gitignored private-pattern file) that carry no addresses. For the narrow
+# case where a source line must hold a synthetic value the classifier would otherwise treat as
+# a public surface, use the delimited block markers below — which NEVER downgrade a
+# REAL_OPERATOR_IDENTIFIER (deny authority is not exemptible).
 SELF_TEST_FILES = {
-    "scripts/ci/privacy-scan.py":
-        "the scanner itself defines the detection patterns",
     "scripts/ci/release-surface.txt":
         "release-surface manifest (path globs, not identifiers)",
     "scripts/ci/privacy-forbidden.txt":
         "gitignored private-pattern file (never committed)",
-    "scripts/ci/hooks/pre-commit-privacy":
-        "Guard-1 hook wraps the scanner",
-    "cli/lib/nftban/tests/nftban_config_rhg_cosmetic_r1a6_test.sh":
-        "guard test greps for /home/commonfolder to assert its ABSENCE from CI scripts",
-    "cli/lib/nftban/tests/support_bundle_redaction_test.sh":
-        "Guard-7 support-bundle redaction test (synthetic sensitive fixtures)",
 }
+
+# Narrow, line-scoped synthetic-fixture exemption (replaces whole-file self-skip).
+# A single trailing `# privacy-allow-synthetic` marks one line; a
+# `# privacy-allow-synthetic-begin` / `# privacy-allow-synthetic-end` pair marks a block.
+# Exemption downgrades ONLY non-deny findings on those lines (used for canary/self-test data).
+SYNTH_BEGIN = "# privacy-allow-synthetic-begin"
+SYNTH_END = "# privacy-allow-synthetic-end"
+SYNTH_LINE = "# privacy-allow-synthetic"
 # Product-config / provider paths where real third-party service domains are
 # LEGITIMATE (RBL zones, feed source URLs, trust providers) — domain check off.
 PRODUCT_DOMAIN_SKIP = (
@@ -315,9 +332,11 @@ def ip_class(text):
             return (False, None)
         if int(ip) < (1 << 32):
             return (False, None)
+        # privacy-allow-synthetic-begin
         # Global unicast is 2000::/3 → the leading hextet is always >=3 hex
         # digits. A match whose largest hextet is <3 digits (`f::A1`, `a::b`)
         # is a code/annotation artifact, not a real address.
+        # privacy-allow-synthetic-end
         if max((len(h) for h in text.split(":") if h), default=0) < 3:
             return (False, None)
     for net, _reason in _PLACEHOLDER_NET_OBJS:
@@ -338,8 +357,8 @@ def classify(kind, value, path, ip_hint=None):
     if _priv_match(value):
         return REAL_OPERATOR_IDENTIFIER
     if kind == "PATH":
-        if REAL_IDENTITY_RE.search(value):
-            return REAL_OPERATOR_IDENTIFIER
+        # Real operator identity is no longer hardcoded here; the deny authority
+        # (_priv_match, checked above) and the private identifier gate own it.
         if path in SELF_TEST_FILES:
             return SCANNER_SELF_TEST
         if is_claude_path(path):
@@ -466,6 +485,59 @@ def tracked_files():
     return out.stdout.splitlines()
 
 
+def _scan_changed_lines(base, strict, show):
+    """Generic changed-line gate: scan only ADDED lines of the diff vs BASE. Blocking
+    findings (with --strict) exit 1. Honors the single-line synthetic-allow marker.
+    FAIL-CLOSED: a missing/blank base, a base that cannot be resolved, or a git-diff error
+    all exit 2 — never a skipped or advisory pass."""
+    if not base or not base.strip():
+        print("changed-lines: FAIL-CLOSED — missing/blank base ref", file=sys.stderr)
+        return 2
+    # Base must resolve to a real commit object (guards malformed/unknown/unfetched SHAs).
+    if subprocess.run(["git", "-C", REPO, "rev-parse", "--verify", "--quiet", "%s^{commit}" % base],
+                      capture_output=True).returncode != 0:
+        print("changed-lines: FAIL-CLOSED — base %r does not resolve to a commit "
+              "(malformed, unknown, or not fetched)" % base, file=sys.stderr)
+        return 2
+    # Two-dot (base HEAD) diff: a direct tree comparison that needs NO merge-base, so it
+    # works on shallow PR checkouts where the parent objects are absent. For added-line
+    # scanning this is equivalent to (and safer than) three-dot.
+    diff = subprocess.run(["git", "-C", REPO, "diff", "--unified=0", base, "HEAD"],
+                          capture_output=True, text=True)
+    if diff.returncode != 0:
+        print("changed-lines: FAIL-CLOSED — git diff failed for base %r" % base, file=sys.stderr)
+        return 2
+    cur, lineno, blocking, total = None, 0, 0, 0
+    hunk = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+    for ln in diff.stdout.split("\n"):
+        if ln.startswith("+++ b/"):
+            cur = ln[6:]
+            continue
+        m = hunk.match(ln)
+        if m:
+            lineno = int(m.group(1))
+            continue
+        if ln.startswith("+") and not ln.startswith("+++"):
+            body = ln[1:]
+            exempt = body.rstrip().endswith(SYNTH_LINE)
+            for kind, value, cat in scan_line(body, cur or "?"):
+                if exempt and cat != REAL_OPERATOR_IDENTIFIER:
+                    cat = SCANNER_SELF_TEST
+                total += 1
+                is_block = cat in RELEASE_BLOCKING_CATEGORIES
+                if is_block:
+                    blocking += 1
+                shown = value if show else redact(kind, value)
+                print("%s:%s: %s %s %s%s" % (cur, lineno, cat, kind, shown,
+                                             " [BLOCKING]" if is_block else ""))
+            lineno += 1
+    print("--- changed-lines base=%s findings=%d (release-blocking: %d)" % (base, total, blocking),
+          file=sys.stderr)
+    if strict and blocking:
+        return 1
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--scope", choices=("release", "repository", "staging"),
@@ -486,7 +558,13 @@ def main():
     ap.add_argument("--show", action="store_true",
                     help="print raw matches (LOCAL ONLY, never in CI logs)")
     ap.add_argument("--paths", nargs="*", help="limit to these paths")
+    ap.add_argument("--changed-lines", metavar="BASE",
+                    help="scan only ADDED lines of `git diff --unified=0 BASE...HEAD` "
+                         "(supplements, never replaces, the whole-tree/release scans)")
     args = ap.parse_args()
+
+    if args.changed_lines is not None:
+        return _scan_changed_lines(args.changed_lines, args.strict, args.show)
 
     staging_root = None
     if args.scope == "staging":
@@ -531,8 +609,21 @@ def main():
             continue
         try:
             with open(fpath, "r", encoding="utf-8", errors="ignore") as fh:
+                in_synth = False
                 for n, line in enumerate(fh, 1):
+                    stripped = line.strip()
+                    if stripped == SYNTH_BEGIN:
+                        in_synth = True
+                        continue
+                    if stripped == SYNTH_END:
+                        in_synth = False
+                        continue
+                    line_exempt = in_synth or line.rstrip().endswith(SYNTH_LINE)
                     for kind, value, cat in scan_line(line, rel):
+                        # Narrow exemption downgrades ONLY non-deny synthetic findings;
+                        # REAL_OPERATOR_IDENTIFIER (deny authority) can never be exempted.
+                        if line_exempt and cat != REAL_OPERATOR_IDENTIFIER:
+                            cat = SCANNER_SELF_TEST
                         total += 1
                         by_cat[cat] += 1
                         is_block = cat in RELEASE_BLOCKING_CATEGORIES

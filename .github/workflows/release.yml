@@ -71,6 +71,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # v1.226.0 privacy defense-in-depth: publication is FAIL-CLOSED on the private
+      # identifier gate. Without the maintainer-provided denylist + fingerprint-key
+      # secrets, or if a known-real identifier is present in the tree, the release is
+      # BLOCKED (exit 2/1). The secret is a maintainer action to provision before a
+      # release; until then, publication cannot proceed — which is the intended state.
+      - name: Private-identifier deny gate — whole tree (PUBLICATION, FAIL-CLOSED)
+        env:
+          NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
+          NFTBAN_PRIVACY_FP_KEY: ${{ secrets.NFTBAN_PRIVACY_FP_KEY }}
+        run: python3 scripts/ci/private-identifier-gate.py --whole-tree --mode publication
+      - name: Generic release-surface + whole-tree privacy scan (BLOCKING)
+        run: |
+          python3 scripts/ci/privacy-scan.py --scope release --strict
+          python3 scripts/ci/privacy-scan.py --scope repository --strict
+          python3 scripts/ci/privacy-scan-selftest.py
+          python3 scripts/ci/private-identifier-gate-selftest.py
+
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
