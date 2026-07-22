@@ -82,12 +82,34 @@ jobs:
       - name: Check uninstall firewall safety (no drop-policy chain after removal)
         run: ./scripts/ci/check-uninstall-firewall-safety.sh
 
-      # v1.225.0 PR-C: operator firewall-ownership uninstall message — DEB remove branch
-      # (once, not duplicated on purge) + RPM [ $1 -eq 0 ] final-erase branch; required
-      # semantics present, forbidden over-claims absent, cleanup precedes message, no
-      # uninstall behavior change. Hermetic static package-script inspection.
-      - name: uninstall firewall-ownership message (v1.225.0 PR-C)
-        run: bash cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh
+      # ── v1.226.0 PR-C: index-driven shell-test execution ─────────────────────
+      #   The canonical authority index (scripts/ci/test-authority-index.tsv) DRIVES
+      #   execution. The 46 policy-gates shell tests formerly invoked as individual
+      #   curated steps (with per-lane rationale) are now selected + executed by the
+      #   runner; provenance/rationale lives in each test file and the index columns.
+      #   The ci-bash class is added as INFORMATIONAL_BASELINE (non-blocking): it
+      #   surfaced 19 pre-existing failures — see scripts/ci/ci-bash-red-baseline-audit.md.
+      - name: Shell-test runner + integrity self-tests (v1.226.0 PR-C, BLOCKING)
+        run: |
+          bash scripts/ci/run-test-suite-selftest.sh
+          bash scripts/ci/check-ci-bash-baseline-selftest.sh
+      - name: Policy Gates shell-test suite — index-driven (v1.226.0 PR-C, BLOCKING)
+        run: bash scripts/ci/run-test-suite.sh run --gate policy-gates
+      # deferred + lab-manual: visible, never executed, never counted PASS
+      - name: Deferred / lab-manual shell tests — report-only (v1.226.0 PR-C)
+        run: |
+          bash scripts/ci/run-test-suite.sh report --gate deferred
+          bash scripts/ci/run-test-suite.sh report --gate lab-manual
+      # ci-bash: INFORMATIONAL_BASELINE — non-blocking BY EXPLICIT TEMPORARY POLICY.
+      # Executes all 184 classified ci-bash tests for visibility; 19 are pre-existing
+      # newly-exposed failures, triaged under PR-D. Writes a manifest consumed by the
+      # BLOCKING integrity gate below (one shared execution). Never renders the 19 as
+      # success; CI_BASH_ENFORCEMENT = INFORMATIONAL_BASELINE (not final enforcement).
+      - name: CI-bash observation — INFORMATIONAL_BASELINE (v1.226.0 PR-C, non-blocking)
+        continue-on-error: true
+        run: bash scripts/ci/run-test-suite.sh run --gate ci-bash --manifest ci-bash-manifest.txt
+      - name: CI-bash baseline integrity (v1.226.0 PR-C, BLOCKING)
+        run: bash scripts/ci/check-ci-bash-baseline.sh ci-bash-manifest.txt
 
       # v1.194 (8C): protection-claim matrix gate. Fails the PR if the matrix
       # regresses — wrong row count, missing/empty fields, invalid OWNER/MODE/
@@ -121,13 +143,6 @@ jobs:
       # dispatch command missing from the registry, an unmarked alias/deprecated verb).
       - name: Check CLI surface parity (registry/completion/dispatch)
         run: ./scripts/ci/check-cli-surface-parity.sh
-
-      # v1.225.0 PR-B: health-resources bash-completion parity — `resources` exported +
-      # completion-visible + runtime `nftban health <TAB>` offers it, and no exported health
-      # subcommand is silently unclassified (visible or explicit known-gap). Hermetic
-      # (static parse + isolated-subprocess completion invocation; no host).
-      - name: health resources completion parity (v1.225.0 PR-B)
-        run: bash cli/lib/nftban/tests/health_resources_completion_parity_v225_test.sh
 
       # v1.226.0 PR-A (Test-Suite Single Authority, Phase B substrate): the
       # canonical governance of a shell test (owner / execution class / gate /
@@ -212,13 +227,6 @@ jobs:
       - name: Check privacy — REPOSITORY debt (SEC-INFRA Gate B, advisory)
         continue-on-error: true
         run: python3 scripts/ci/privacy-scan.py --scope repository --report
-
-      # SEC-INFRA Guard 7: the support bundle is an intentionally-EXPORTED
-      # artifact, so its redaction contract is release-blocking. Drives the real
-      # _support_scrub_stream entrypoint over synthetic sensitive fixtures and
-      # asserts secrets are scrubbed while forensic identifiers survive.
-      - name: Support-bundle redaction (SEC-INFRA Guard 7)
-        run: bash cli/lib/nftban/tests/support_bundle_redaction_test.sh
 
       - name: Check netlink import policy
         run: |
@@ -656,12 +664,6 @@ jobs:
       - name: Schema version guard (G2-3)
         run: bash cli/lib/nftban/tests/test_schema_version_guard.sh
 
-      # v1.194 (8C): protection-claim matrix harness — runs the static guard
-      # (source tree) + the per-claim hermetic owner-bans fixtures referenced in
-      # the matrix FIXTURE column. Complements the standalone guard step above.
-      - name: Protection-claim matrix harness (8C)
-        run: bash cli/lib/nftban/tests/protection_claim_matrix_v194_test.sh
-
       # =====================================================================
       # v1.85 M85-3: Module Completeness Gates
       # =====================================================================
@@ -669,119 +671,6 @@ jobs:
       # G8-4 is a runtime smoke test — skips gracefully in CI (no validator binary)
       - name: Module smoke test (G8-4)
         run: bash cli/lib/nftban/tests/test_module_selftest.sh
-
-      # =====================================================================
-      # v1.134 PR-D: help/code subcommand correlation gates
-      # =====================================================================
-      # Doctest guard: every primary-dispatch subcommand a command accepts must
-      # be documented in help, declared in the intentional-alias allowlist, or
-      # structural. Catches NEW undocumented subcommands (the drift class that
-      # produced D-05..D-11). Unparseable families are SKIPPED, never failed.
-      - name: Help/code doctest guard (v1.134 PR-D)
-        run: bash cli/lib/nftban/tests/v130_subcommand_flag_help_code_test.sh
-
-      # Allowlist integrity + D-26 (health rbl/fhs documented) + D-28 (metrics
-      # error-usage complete); fails if an allowlisted token is not actually
-      # dispatched (no phantom allowlist entries).
-      - name: Alias allowlist integrity (v1.134 PR-D P3)
-        run: bash cli/lib/nftban/tests/v134_pr_d_p3_alias_allowlist_test.sh
-
-      # =====================================================================
-      # v1.139.2 hotfix: CLI safety + truth-telling gates
-      # =====================================================================
-      # Rollback help-guard: `nftban rollback --help` MUST show help text and
-      # MUST NOT trigger a real rollback. Prior to v1.139.2 the dispatcher
-      # invoked _do_rollback without parsing --help; a CLI-audit invocation
-      # downgraded a host. Defense-in-depth guard is at _do_rollback's entry
-      # so every current and future caller is safe.
-      - name: Rollback --help guard (v1.139.2)
-        run: bash cli/lib/nftban/tests/rollback_help_guard_v1_139_2_test.sh
-
-      # CLI exit-code contract: bogus subcommand, ban (no arg), ban (invalid
-      # IP), and update --dry-run MUST return rc>=1 (declared by `nftban --help`
-      # itself: "0 Success / 1 Error / 2 Warning"). Locks the current correct
-      # behavior so a future PR cannot regress to silently swallowing errors
-      # in `nftban X || alert`-style automation.
-      - name: CLI exit-code contract (v1.139.2)
-        run: bash cli/lib/nftban/tests/cli_error_rc_contract_v1_139_2_test.sh
-
-      # =====================================================================
-      # v1.144.0 PR-D: D-UXV-13 runtime-hint reachability guard (class-killer)
-      # =====================================================================
-      # Reverse-direction guard for the doctest pair at lines 510 + 516 above:
-      # the v130 forward guard checks that every dispatched subcommand is
-      # documented; this v144 reverse guard checks that every echo/printf
-      # 'nftban X Y' literal in cli/sbin/nftban + cli/lib/nftban/cli/cmd_*.sh
-      # resolves to a reachable command. Catches the drift class that
-      # produced D-UXV-14 (cmd_connector.sh:234 'nftban connector edit' —
-      # no edit arm) and D-UXV-15 (cmd_port.sh four sites 'nftban reload' /
-      # 'nftban port reload' — neither command exists; canonical is
-      # 'nftban firewall reload'). Would also have caught the 2026-06-01
-      # audit's incorrect-by-half proposed replacement.
-      #
-      # T3-3/4/5 inside the test are the HARD pass criteria (would-have-
-      # caught the 3 historical broken hints). T3-2 reports legacy
-      # parser-heuristic drift as a v1.145.x sweep candidate (does not
-      # block CI). New broken hints introduced in any future PR will
-      # surface as additional violations and require explicit fix or
-      # allowlist entry with `reason` field.
-      - name: Runtime-hint reachability guard (v1.144.0 PR-D D-UXV-13)
-        run: bash cli/lib/nftban/tests/cli_runtime_hint_reachability_v144_test.sh
-
-      # Companion that locks the allowlist's `reason` field requirement +
-      # restates the would-have-caught hypotheticals as defense-in-depth.
-      - name: Help-block reachability companion (v1.144.0 PR-D)
-        run: bash cli/lib/nftban/tests/cli_help_block_reachability_v144_test.sh
-
-      # =====================================================================
-      # v1.145 SSH-port lifecycle guards (PR-A/PR-B/PR-C2 + PR-G wiring)
-      # =====================================================================
-      # These static guards lock the set-driven SSH brute-force rate-limit
-      # (`tcp dport @ssh_ports ct count`): the ssh_ports set in every template,
-      # its presence in the schema inventory (both families), both-set
-      # (tcp_ports_in + ssh_ports) runtime parity, union detection, and the
-      # apply-path hardening. They existed since v1.145 but were never wired
-      # into CI (v1.145 PR-G audit finding); without these `run:` steps the
-      # guards provided zero regression protection.
-      - name: SSH ssh_ports template set-driven guard (v1.145 PR-A)
-        run: bash cli/lib/nftban/tests/v145_ssh_port_template_set_driven_static_test.sh
-
-      - name: SSH union detection guard (v1.145 PR-B)
-        run: bash cli/lib/nftban/tests/v145_ssh_port_detect_test.sh
-
-      - name: SSH both-set parity runtime guard (v1.145 PR-B)
-        run: bash cli/lib/nftban/tests/v145_pr_b_runtime_static_guard_test.sh
-
-      - name: SSH apply-path hardening guard (v1.145 PR-C2)
-        run: bash cli/lib/nftban/tests/v145_pr_c2_apply_hardening_test.sh
-
-      - name: ssh_ports systemic-alignment invariants (v1.145 PR-G)
-        run: bash cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
-
-      # External admin SSH-port guard (OBS-SSHPORT-55000-FAMILY): warn-only +
-      # lockout-net. Asserts the guard warns on an external :55000->:22 redirect,
-      # session-whitelists the admin IP via the IPC whitelist-session path only
-      # (no direct nft write), keeps ssh_ports = {22} (REJECT import), and is a
-      # no-op off-session / on dry-run / on opt-out / on re-entry.
-      - name: External admin SSH-port guard (OBS-SSHPORT-55000)
-        run: bash cli/lib/nftban/tests/ssh_admin_port_guard_v150_test.sh
-
-      # v1.155 PR-1 (item 3.2): socket-activated sshd port-mismatch warning.
-      # Asserts the guard warns ONLY when configured (sshd -T) != listening (ss)
-      # AND sshd is socket-activated, prints the exact remediation hint
-      # (`systemctl daemon-reload && systemctl restart ssh.socket`), and is
-      # silent when ports match or on a plain sshd.service. Hermetic.
-      - name: Socket-activated SSH port-mismatch warning (v1.155 PR-1)
-        run: bash cli/lib/nftban/tests/ssh_socket_port_mismatch_v155_test.sh
-
-      # v1.155 PR-2 (item 3.3): SSH-port-change lifecycle validator invariants.
-      # Exercises tools/validation/ssh_port_change_lifecycle_validate.sh against a
-      # good rendered-ruleset fixture (exit 0) and four injected drifts (listener
-      # not in ssh_ports / not in tcp_ports_in; literal `tcp dport 22 ct count`
-      # instead of @ssh_ports; missing @ssh_ports rule), each failing with the
-      # right invariant message. Hermetic (inputs injected via env).
-      - name: SSH-port-change lifecycle validator (v1.155 PR-2)
-        run: bash cli/lib/nftban/tests/ssh_port_change_lifecycle_v155_test.sh
 
       # v1.161: default-enabled-timer first-run guard (geoban lesson, v1.156->v1.159).
       # Enumerates the installer's auto-enabled timers (coreTimers in
@@ -814,174 +703,10 @@ jobs:
       - name: Static nftables fallback is set-driven (v1.162 PR-B)
         run: bash cli/lib/nftban/tests/static_nftables_ssh_set_driven_v162.sh
 
-      # v1.165 PR-A: generated-spec comment-macro lint. rpm 4.16 (EL9/EL10)
-      # parses a bare unescaped %install token in a SPEC COMMENT as a second
-      # %install section (`error: second %install`) and fails Build RPM
-      # el9/el10 deterministically — this bit twice (v1.157 FIX_V157_PR_A,
-      # v1.164 PR-C revert) because rpm 4.18 (lab2) + rpm 6.x are lenient and
-      # miss it. This hermetic static guard catches the class BEFORE the
-      # expensive el9/el10 rpmbuild: zero %install outside the single section
-      # header, and no bare RPM section macro in any generated-spec comment.
-      - name: RPM spec has no section macro in a comment (v1.165 PR-A)
-        run: bash cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh
-
-      # v1.165 PR-B: the %files section both %include nftban-files.inc (which
-      # %dir-owns every /usr/lib/nftban payload dir) and used to repeat those
-      # dirs as bare payload paths, so strict rpm 4.16 warned "File listed
-      # twice". PR-B lists the 12 lib dirs as <dir>/* (inc keeps sole %dir
-      # ownership) and strips dotfiles in %install so the /* glob (which skips
-      # dotfiles) does not orphan tests/.gitkeep. This static guard asserts the
-      # dedup shape + the dotfile strip; the full no-double-listing / no-orphan
-      # parse is confirmed by Build RPM el9/el10.
-      - name: RPM %files lib-dir dedup (no double dir listing) (v1.165 PR-B)
-        run: bash cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v165_test.sh
-
-      # v1.166 PR-C: templates %files dedup via FHS-generator correction. The
-      # bare /usr/share/nftban/templates line both double-listed the generator
-      # %dir-owned dirs and solely owned the email/+partials/ staged .html (no
-      # inc %dir), so it could not be dropped naively. PR-C adds %dir for
-      # templates/email + templates/partials to build/fhs-spec.yaml (regenerated
-      # into nftban-files.inc), lists the 4 content subdirs as <dir>/*, keeps
-      # zabbix as an empty %dir, and strips dotfiles in %install. This guard
-      # asserts the dedup shape + generator ownership; the no-orphan/no-double
-      # parse is confirmed by Build RPM el9/el10. (FHS body changes by design —
-      # the "FHS spec generated files check" gate enforces generator parity.)
-      - name: RPM %files templates dedup (FHS-generator correction) (v1.166 PR-C)
-        run: bash cli/lib/nftban/tests/rpm_files_templates_dedup_v166_test.sh
-
-      # v1.167 UX-residual lane guards (were merged un-wired; wired here as part
-      # of the v1.167 blocker fix so future regressions are caught in CI).
-      - name: Feed-counter unification (v1.167 PR-1, BUG-CtCount-feeds)
-        run: bash cli/lib/nftban/tests/feed_counters_unify_v167_test.sh
-      - name: CLI output-truth + flag-parity (v1.167 PR-2)
-        run: bash cli/lib/nftban/tests/cli_output_truth_v167_test.sh
-      - name: No re-introduced orphan modules (v1.167 PR-3)
-        run: bash cli/lib/nftban/tests/no_reintroduced_orphan_modules_v167_test.sh
-      # v1.167 SHIP-BLOCKER guard: `nftban update --dry-run` must return rc=1 with
-      # the 3-line hint (NOT command-not-found rc=127). Also asserts the dispatcher
-      # sources cmd_common.sh so the 6 CLI-BUG-1 sibling error paths are reachable.
-      - name: update --dry-run hint rc=1 + CLI-BUG-1 reachability (v1.167)
-        run: bash cli/lib/nftban/tests/cli_update_dry_run_hint_v167_test.sh
-
-      # v1.168 CLI-BUG-2 whitelist-TTL lane guards: the 4 whitelist set decls
-      # must carry interval,timeout (render prereq) AND the DEB/RPM upgrade path
-      # must re-activate timeout-capable sets (GetOrCreateIntervalSet reuses
-      # existing flagless sets). The TTL-survives-FullSync invariant is a Go test
-      # (internal/setsync) run by ci-go.yml.
-      - name: Whitelist sets carry timeout flag (v1.168 render prereq)
-        run: bash cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh
-      - name: Whitelist-TTL upgrade activation backstop (v1.168 deb+rpm)
-        run: bash cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh
-
-      # v1.169 CLI-BUG-3: `whitelist list` labels timed/session vs durable entries.
-      - name: Whitelist list timed/session label (v1.169 CLI-BUG-3)
-        run: bash cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh
-
-      # v1.169 CI-TEST-GAP: wire 6 substantive guards that shipped with their
-      # lanes (v1.158–v1.163) but were never added to any workflow. Each is
-      # hermetic (no host/root) — they only catch a future regression once run.
-      - name: MAC posture advisory surface (v1.158)
-        run: bash cli/lib/nftban/tests/mac_posture_v158_test.sh
-      - name: Geoban-refresh ExecCondition skip-not-fail (v1.159)
-        run: bash cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh
       - name: Firewall-pkg state-aware wording (v1.160)
         run: bash cli/lib/nftban/tests/firewall_pkg_wording_v160.sh
       - name: Permissions optional-module skip (v1.160)
         run: bash cli/lib/nftban/tests/permissions_optional_module_skip_v160.sh
-      - name: Whitelist verify read-only (v1.163)
-        run: bash cli/lib/nftban/tests/whitelist_verify_v163_test.sh
-      - name: Immutable-flag health verify (v1.163)
-        run: bash cli/lib/nftban/tests/immutable_health_verify_v163_test.sh
-
-      # v1.170 BUG-STATS-IP-HISTORY: `nftban stats ip <IP>` must single-emit (no
-      # pipefail double-`[]` arith crash for zero-record IPs) AND read compressed/
-      # rotated bans.log archives (zgrep); + gzip dep stays declared.
-      - name: stats ip history pipefail + compressed-log fix (v1.170)
-        run: bash cli/lib/nftban/tests/stats_ip_history_v170_test.sh
-
-      # v1.171 §4.2/§4.3/§3.6: daemon state writes are atomic (route through
-      # safety.SafeWriteFile); ssh_ports counter seeded. The atomic mechanism
-      # itself is proven by Go test internal/safety/atomic_write_v171_test.go.
-      - name: state-write atomicity call-site lock (v1.171)
-        run: bash cli/lib/nftban/tests/state_write_atomicity_v171_test.sh
-
-      # v1.172 CLI-PIPEFAIL-ARITH sweep: zero-match grep / SIGPIPE / jq-parse failures
-      # under set -Eeuo pipefail must not double-emit a numeric ("0\n0") that crashes a
-      # downstream [[ -eq/-gt ]] / jq tonumber. Behavioral single-emit checks + static
-      # lint that the previously-broken arith-fed sites no longer carry the unsafe forms.
-      - name: CLI pipefail-arith sweep (v1.172)
-        run: bash cli/lib/nftban/tests/cli_pipefail_arith_sweep_v172_test.sh
-
-      # v1.173 §4.1 session-whitelist flock (shell side): each of the 3
-      # cmd_firewall.sh session RMW funcs serializes its read-modify-write under
-      # flock(9) on the shared cross-language lock /run/nftban/session_whitelist.lock
-      # (same path the Go installer flock(2)s). Go side is covered by
-      # internal/installer/safety/session_whitelist_flock_v173_test.go.
-      - name: session-whitelist flock shell-side (v1.173)
-        run: bash cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh
-
-      # v1.174 HEALTH-OOM-JOURNALCTL: every actual journalctl invocation on the
-      # nftban-health.service health-check path is bounded (-n/--since), and the
-      # unit's MemoryMax is raised 128M->256M for the validator + concurrent-
-      # children RSS on large journals. The Go validator read is already bounded
-      # (internal/validator/journal.go --since -15m -n 200). The stale failed-
-      # unit classification half is covered by Go test
-      # internal/installer/validate/systemd_payload_v174_test.go.
-      - name: health journalctl bounded + MemoryMax 256M (v1.174)
-        run: bash cli/lib/nftban/tests/health_journalctl_bounded_v174_test.sh
-
-      # v1.174 ALERT-THROTTLE-NONFATAL: a state-write (throttle/diagnostics/
-      # failure-metric) permission failure must NOT fail/latch nftban-alert@*.service
-      # (monitor root cause), but a real alert DELIVERY failure still follows the rc
-      # contract. cli/sbin/nftban-service-alert.
-      - name: alert bookkeeping non-fatal, delivery keeps rc (v1.174)
-        run: bash cli/lib/nftban/tests/alert_bookkeeping_nonfatal_v174_test.sh
-
-      # v1.174 update-summary messaging: surface an auto-recovered pre-existing
-      # failed unit to the operator (transparency) + fix the misleading DEGRADED
-      # "known transient on the exporter" wording. cli/lib/nftban/cli/cmd_update.sh.
-      - name: update messaging recovered + DEGRADED (v1.174)
-        run: bash cli/lib/nftban/tests/update_msg_recovered_v174_test.sh
-
-      # v1.225.0 PR-A: DEGRADED render truth — strict-mode-safe absent SERVICES_FAILED
-      # (E1a) + all-filtered truthful hint (E1b). cli/lib/nftban/cli/cmd_update.sh.
-      # Hermetic (sources the file, drives the render helper in a subprocess; no host).
-      - name: update DEGRADED render truth (v1.225.0 PR-A)
-        run: bash cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh
-
-      # v1.223.0 mail recipient/subject/help guard — was UNWIRED on main (executed in zero
-      # workflows) despite being merged in #1131; this is the OPEN_TEST_SUITE_SINGLE_AUTHORITY
-      # Phase-A carve-out that closes the same gap-class that let the mail bug slip. Hermetic
-      # static grep guard (no host/root/network); belongs in Policy Gates.
-      - name: mail recipient/subject/help guard (v1.223.0)
-        run: bash cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh
-
-      # v1.175 FHS lane: (T1) GENERIC guard — no root-owned tmpfiles entry under a
-      # non-root declared parent (the systemd-tmpfiles exit-73 "unsafe path transition"
-      # class — structural BUG-TMPFILES regression lock); auditors→package +
-      # firewall-validate→ExecStartPre out of tmpfiles; ALERT-THROTTLE-FHS alerts dir;
-      # FHS-SMELL-SIDSTATS cache.go DataDir relocation + migration.
-      - name: FHS lane invariants — tmpfiles transition guard + relocations (v1.175)
-        run: bash cli/lib/nftban/tests/fhs_lane_v175_test.sh
-
-      # v1.176 DAEMON RELIABILITY: FSYNC-RESIDUAL durability-idiom class lock —
-      # no NEW hand-rolled temp+rename Go state writer outside internal/safety
-      # (route through safety.SafeWriteFile); regression-guards the F-1/F-2 fixes.
-      - name: FSYNC-RESIDUAL durability-idiom guard (v1.176)
-        run: bash cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh
-
-      # v1.177 HTTP LOG DISCOVERY: panel-aware access-log discovery helper —
-      # DirectAdmin/cPanel/Plesk/generic/LiteSpeed globs, multi-log, dedup,
-      # error/rotated exclusion, MAX_FILES bound, IPv6 parse, incremental offset
-      # + rotation/copytruncate, and the legacy-miss vs new-find regression.
-      - name: HTTP log discovery + BotScan panel paths (v1.177)
-        run: bash cli/lib/nftban/tests/http_log_discovery_v177_test.sh
-
-      - name: BotScan read-authority collector + spool-first (v1.178-A)
-        run: bash cli/lib/nftban/tests/botscan_read_authority_v178_test.sh
-
-      - name: BotScan processor deadline + rotation (v1.185 Lane B)
-        run: bash cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh
 
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
