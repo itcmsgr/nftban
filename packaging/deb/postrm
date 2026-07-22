@@ -215,7 +215,11 @@ case "$1" in
         if command -v nft >/dev/null 2>&1; then
             nft delete table ip nftban 2>/dev/null || true
             nft delete table ip6 nftban 2>/dev/null || true
-            echo "nftban: Firewall tables removed (no drop-policy chain left behind)."
+            echo "nftban: NFTBan has been removed."
+            echo "nftban: NFTBan-owned nftables tables and enforcement rules were deleted — NFTBan is no longer protecting this system."
+            echo "nftban: Other firewall rules managed by the OS, firewalld, ufw, Docker, libvirt, cloud tooling, or the administrator were NOT modified and may still be active."
+            echo "nftban: You are now responsible for the host firewall state. Review it before exposing services:  sudo nft list ruleset"
+            echo "nftban: To restore NFTBan protection, reinstall/start NFTBan and validate the rebuilt firewall policy."
             echo "nftban: Config preserved in /etc/nftban/. Purge with: apt remove --purge nftban-core"
         fi
 
