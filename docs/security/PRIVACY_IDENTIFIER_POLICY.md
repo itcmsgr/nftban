@@ -68,6 +68,33 @@ malformed denylist, a missing fingerprint key, or any scan error BLOCKS the rele
 publication cannot proceed without private validation. Provisioning `NFTBAN_PRIVACY_DENYLIST`
 and `NFTBAN_PRIVACY_FP_KEY` as repository secrets is a maintainer prerequisite before releasing.
 
+## Trusted merge gate (protected main)
+
+The PR/push private-gate step is **advisory** so untrusted fork PRs (which receive no
+secrets) never block on it. That is safe for fork execution but insufficient by itself to
+keep privacy-contaminated code out of protected `main`. Therefore, before an internal PR may
+merge, **one trusted execution must run against the exact PR-head SHA**:
+
+- `.github/workflows/privacy-trusted-merge-gate.yml` (`workflow_dispatch`, protected
+  environment `privacy-gate`). A maintainer triggers it **from the default branch**,
+  supplying the approved PR-head SHA.
+- It checks out the **trusted gate implementation from the workflow's own ref** (not the PR)
+  and the **PR-head content into a separate directory that is only scanned as data** (via
+  `--selftest-root`, never executed). The secret is present only in the trusted-gate step.
+- On completion it posts a commit status `privacy/trusted-private-gate` bound to the exact
+  PR-head SHA. **Branch protection requires that status context**, so a merge cannot proceed
+  without a trusted PASS on that exact head.
+
+Security properties: fork/PR code is never executed with secrets; a PR-modified gate or
+workflow is never the code that runs (the trusted ref supplies it); the checkout SHA is
+explicit; the result binds to the exact head; `pull_request_target` and privileged
+`workflow_run`-over-fork-code are not used.
+
+**Enforcement activation (maintainer, after secret provisioning):** add
+`privacy/trusted-private-gate` to `main`'s required status checks. Do this only after the
+secrets are provisioned and this workflow exists on `main`; enabling it earlier would
+deadlock all merges (the required check would never be produced).
+
 ## Historical residuals ≠ current-tree cleanliness
 
 A clean current tree does not mean history is clean. The pre-existing test-fixture residue in

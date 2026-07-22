@@ -1,0 +1,97 @@
+# Trusted private-identifier merge gate (v1.226.0 privacy defense-in-depth).
+#
+# SECURITY MODEL — before an internal PR may merge into protected main, one TRUSTED
+# execution of the private-identifier deny gate must run against the EXACT PR-head SHA,
+# with the maintainer secret, WITHOUT ever executing untrusted PR code:
+#
+#   * The gate IMPLEMENTATION is taken from the TRUSTED ref this workflow runs on
+#     (the maintainer dispatches from the default branch), NOT from the PR branch.
+#   * The PR-head content is checked out into a SEPARATE directory and is only ever
+#     SCANNED AS DATA — never executed, sourced, or compiled.
+#   * The secret is scoped to a PROTECTED environment (maintainer approval) and is only
+#     present in the step that runs the trusted script; no PR-controlled code runs here.
+#   * The result is bound to the exact PR-head SHA via a commit status; branch protection
+#     requires that status context, so the merge cannot proceed without a trusted PASS.
+#
+# This is NOT pull_request_target and NOT workflow_run over fork code. A maintainer
+# triggers it (workflow_dispatch) FROM THE DEFAULT BRANCH, supplying the approved PR-head
+# SHA. Never dispatch this workflow from a PR branch (that would run a PR-modified
+# workflow definition); GitHub uses the workflow file from the selected ref, so always
+# select the trusted default branch.
+name: Privacy trusted merge gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_head_sha:
+        description: "Exact approved PR-head SHA to scan (full 40-char commit SHA)"
+        required: true
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: privacy-trusted-gate-${{ github.event.inputs.pr_head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  trusted-private-gate:
+    name: Trusted private-identifier gate
+    runs-on: ubuntu-latest
+    # Protected environment: requires maintainer approval and scopes the private secrets.
+    # The secrets NFTBAN_PRIVACY_DENYLIST / NFTBAN_PRIVACY_FP_KEY are configured on this
+    # environment (or repository) by the maintainer; their values never appear in the
+    # repo, workflow inputs, artifacts, caches, or job summaries.
+    environment: privacy-gate
+    steps:
+      - name: Validate PR-head SHA input shape
+        run: |
+          case "${{ github.event.inputs.pr_head_sha }}" in
+            *[!0-9a-fA-F]* | "" ) echo "::error::pr_head_sha must be a hex commit SHA"; exit 1 ;;
+          esac
+          [ "${#SHA}" -ge 7 ] || { echo "::error::pr_head_sha too short"; exit 1; }
+        env:
+          SHA: ${{ github.event.inputs.pr_head_sha }}
+
+      # (1) TRUSTED gate implementation — from THIS workflow's ref (the default branch the
+      #     maintainer dispatched from), never from the PR.
+      - name: Checkout TRUSTED gate implementation
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.ref }}
+          path: trusted
+          persist-credentials: false
+
+      # (2) PR-head content — DATA ONLY. Never executed. Checked out into a separate path.
+      - name: Checkout PR-head content (scanned as data only)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.inputs.pr_head_sha }}
+          path: pr-head
+          persist-credentials: false
+
+      # (3) Run the TRUSTED gate over the PR-head tree with the secret (publication /
+      #     fail-closed). The executed script is trusted/…; pr-head is only read.
+      - name: Trusted private-identifier gate over PR-head (publication, fail-closed)
+        id: gate
+        env:
+          NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
+          NFTBAN_PRIVACY_FP_KEY: ${{ secrets.NFTBAN_PRIVACY_FP_KEY }}
+        run: |
+          cd trusted
+          python3 scripts/ci/private-identifier-gate.py \
+            --whole-tree --mode publication \
+            --selftest-root "$GITHUB_WORKSPACE/pr-head"
+
+      # (4) Bind the result to the exact PR-head SHA so branch protection can require it.
+      - name: Publish commit status on the exact PR-head SHA
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ steps.gate.outcome == 'success' && 'success' || 'failure' }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.event.inputs.pr_head_sha }}" \
+            -f state="$STATE" \
+            -f context="privacy/trusted-private-gate" \
+            -f description="Trusted private-identifier gate (publication, fail-closed) bound to this SHA"
