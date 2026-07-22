@@ -167,6 +167,33 @@ jobs:
       # fixtures only; no real identifier is present. Runs before the release-surface gate.
       - name: Privacy scanner self-tests + escaped-IPv4 bypass regression (BLOCKING)
         run: python3 scripts/ci/privacy-scan-selftest.py
+      # v1.226.0 privacy defense-in-depth. Generic gates need no secret and always block.
+      # The independent private deny gate auto-activates when the maintainer secret is present
+      # and is advisory/NOT_RUN otherwise — fork PRs get no secrets, so it never blocks
+      # untrusted contributors while the generic gates always do. This workflow uses
+      # `pull_request` (NOT pull_request_target): fork code runs read-only, no secrets.
+      - name: Private-identifier gate self-tests (BLOCKING)
+        run: python3 scripts/ci/private-identifier-gate-selftest.py
+      - name: Generic whole-tree privacy scan — includes scanner source (BLOCKING)
+        run: python3 scripts/ci/privacy-scan.py --scope repository --strict
+      - name: Generic changed-line privacy scan (BLOCKING, PRs)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
+          python3 scripts/ci/privacy-scan.py --changed-lines "origin/${{ github.base_ref }}" --strict
+      - name: Private-identifier deny gate — whole tree (advisory; auto-activates with secret)
+        env:
+          NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
+          NFTBAN_PRIVACY_FP_KEY: ${{ secrets.NFTBAN_PRIVACY_FP_KEY }}
+        run: python3 scripts/ci/private-identifier-gate.py --whole-tree --mode advisory
+      - name: Private-identifier deny gate — changed lines (advisory; auto-activates with secret)
+        if: github.event_name == 'pull_request'
+        env:
+          NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
+          NFTBAN_PRIVACY_FP_KEY: ${{ secrets.NFTBAN_PRIVACY_FP_KEY }}
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
+          python3 scripts/ci/private-identifier-gate.py --changed-lines "origin/${{ github.base_ref }}" --mode advisory
 
       - name: Check privacy — RELEASE surface (SEC-INFRA Gate A, BLOCKING)
         run: python3 scripts/ci/privacy-scan.py --scope release --strict

@@ -1,0 +1,18 @@
+# Public generic forbidden registry (v1.226.0 privacy defense-in-depth).
+#
+# REPOSITORY-SAFE, COMMITTED. One Python regex (or literal) per line, '#' = comment.
+# This file holds ONLY generic, non-sensitive patterns. It must NEVER contain a real
+# operator/customer identifier or any reversible encoding of one — those belong in the
+# secret-provided private denylist (private-identifier-gate.py), never here.
+#
+# Purpose: catch known placeholder mistakes, documentation-policy violations, and the
+# synthetic canary tokens used by the scanner/gate regression tests, on EVERY PR
+# (no secret required). Matches classify as REAL_OPERATOR_IDENTIFIER (blocking).
+#
+# --- forbidden host-role naming stems (generic scheme, not real hostnames) ---
+#     (also covered by FORBIDDEN_HOST_RE; listed here for the public-registry contract)
+# \b(?:dns[1-4]|srv[1-4])\b
+#
+# (No entries are active by default: real identifiers are handled by the private gate,
+#  and generic role-stems by FORBIDDEN_HOST_RE. Add generic synthetic-canary or
+#  placeholder-mistake patterns here as needed — never a real value.)

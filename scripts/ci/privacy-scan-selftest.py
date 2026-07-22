@@ -132,10 +132,34 @@ def test_false_positive_controls():
         check(not blk, "no blocking finding: %s" % name, "unexpected=%r" % blk)
 
 
+def test_no_whole_file_self_exemption():
+    print("test_no_whole_file_self_exemption")
+    # v1.226.0 defense-in-depth: the scanner and its self-tests must NOT be whole-file exempt.
+    check("scripts/ci/privacy-scan.py" not in ps.SELF_TEST_FILES, "privacy-scan.py not whole-file exempt")
+    check("scripts/ci/privacy-scan-selftest.py" not in ps.SELF_TEST_FILES, "privacy-scan-selftest.py not whole-file exempt")
+
+
+def test_scanner_source_canary_generic():
+    print("test_scanner_source_canary_generic")
+    # A deny-listed token placed in the scanner's OWN source path must still block — i.e. the
+    # classifier does not grant the scanner file a self-exemption (deny authority wins by path too).
+    saved = ps._PRIV_PATTERNS
+    try:
+        import re as _re
+        ps._PRIV_PATTERNS = [_re.compile(r"233\.252\.0\.42")]
+        got = list(ps.scan_line(r"# canary example 233\.252\.0\.42", path="scripts/ci/privacy-scan.py"))
+        blk = [c for (k, v, c) in got if c in BLOCKING]
+        check(ps.REAL_OPERATOR_IDENTIFIER in blk,
+              "deny-listed token in scanner-source path still blocks (no self-exemption)")
+    finally:
+        ps._PRIV_PATTERNS = saved
+
+
 def main():
     for t in (test_deescape, test_escaped_detected,
               test_deny_authority_escaped_bypass_closed,
-              test_deny_precedence_over_allowlist, test_false_positive_controls):
+              test_deny_precedence_over_allowlist, test_false_positive_controls,
+              test_no_whole_file_self_exemption, test_scanner_source_canary_generic):
         t()
     print()
     if _fail:
