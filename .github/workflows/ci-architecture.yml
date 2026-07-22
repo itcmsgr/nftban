@@ -129,6 +129,27 @@ jobs:
       - name: health resources completion parity (v1.225.0 PR-B)
         run: bash cli/lib/nftban/tests/health_resources_completion_parity_v225_test.sh
 
+      # v1.226.0 PR-A (Test-Suite Single Authority, Phase B substrate): the
+      # canonical governance of a shell test (owner / execution class / gate /
+      # environment requirements) lives in per-test `# meta:ta.*` headers; the
+      # tracked index (test-authority-index.tsv) is a GENERATED, non-authoritative
+      # projection. These three steps are BLOCKING:
+      #   1. self-tests   — the tool's own fixture suite (parsing, validation,
+      #                      exit codes, determinism); no live corpus dependency.
+      #   2. validate     — TRANSITION mode: fails on malformed metadata / duplicate
+      #                      id|path / invalid values on migrated files. Legacy
+      #                      (un-migrated) tests are permitted — PR-A does NOT
+      #                      activate the strict unclassified-test gate (that is PR-D).
+      #   3. check        — the generated index must be fresh (regenerate on any
+      #                      header change). Hermetic; no root, network, or package.
+      # Schema: scripts/ci/test-authority-schema.md
+      - name: Shell-test authority — self-tests (v1.226.0 PR-A)
+        run: python3 scripts/ci/test-authority-selftest.py
+      - name: Shell-test authority — validate metadata (transition, v1.226.0 PR-A)
+        run: python3 scripts/ci/test-authority.py validate --mode transition
+      - name: Shell-test authority — index freshness (v1.226.0 PR-A)
+        run: python3 scripts/ci/test-authority.py check
+
       # SEC-INFRA dual-scope privacy gates (GO_IMPLEMENT_SEC_INFRA_DUAL_SCOPE_PRIVACY_GATES).
       #
       # Gate A (BLOCKING): the publication surface only — files a user RECEIVES or
