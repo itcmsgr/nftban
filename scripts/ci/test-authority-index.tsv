@@ -117,10 +117,10 @@ fw_l2cd_transition_counter_botguard_chain_test	cli/lib/nftban/tests/fw_l2cd_tran
 fw_rebuild_preserve_timed_bans_l2a_test	cli/lib/nftban/tests/fw_rebuild_preserve_timed_bans_l2a_test.sh		test			unassigned								
 fw_transition_health_truth_v1982_test	cli/lib/nftban/tests/fw_transition_health_truth_v1982_test.sh		test			unassigned								
 geoban_refresh_execcondition_v159_test	cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh		test			unassigned								
-health_failed_unit_remediation_v1222_1_test	cli/lib/nftban/tests/health_failed_unit_remediation_v1222_1_test.sh		test			unassigned								
+health_failed_unit_remediation_v1222_1_test	cli/lib/nftban/tests/health_failed_unit_remediation_v1222_1_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false		
 health_journalctl_bounded_v174_test	cli/lib/nftban/tests/health_journalctl_bounded_v174_test.sh		test			unassigned								
-health_resource_dropin_packaging_guard_v1222_1_test	cli/lib/nftban/tests/health_resource_dropin_packaging_guard_v1222_1_test.sh		test			unassigned								
-health_resources_cli_registration_v1222_1_test	cli/lib/nftban/tests/health_resources_cli_registration_v1222_1_test.sh		test			unassigned								
+health_resource_dropin_packaging_guard_v1222_1_test	cli/lib/nftban/tests/health_resource_dropin_packaging_guard_v1222_1_test.sh	packaging	test	packaging	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false		
+health_resources_cli_registration_v1222_1_test	cli/lib/nftban/tests/health_resources_cli_registration_v1222_1_test.sh	cli	test	health-resources	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false		
 health_resources_completion_parity_v225_test	cli/lib/nftban/tests/health_resources_completion_parity_v225_test.sh	cli	test	cli	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false		
 health_timers_truth_v150_test	cli/lib/nftban/tests/health_timers_truth_v150_test.sh		test			unassigned								
 help_verb_icons_v153_test	cli/lib/nftban/tests/help_verb_icons_v153_test.sh		test			unassigned								
