@@ -46,13 +46,13 @@ jobs:
     environment: privacy-gate
     steps:
       - name: Validate PR-head SHA input shape
+        env:
+          SHA: ${{ github.event.inputs.pr_head_sha }}
         run: |
-          case "${{ github.event.inputs.pr_head_sha }}" in
+          case "$SHA" in
             *[!0-9a-fA-F]* | "" ) echo "::error::pr_head_sha must be a hex commit SHA"; exit 1 ;;
           esac
           [ "${#SHA}" -ge 7 ] || { echo "::error::pr_head_sha too short"; exit 1; }
-        env:
-          SHA: ${{ github.event.inputs.pr_head_sha }}
 
       # (1) TRUSTED gate implementation — from THIS workflow's ref (the default branch the
       #     maintainer dispatched from), never from the PR.
@@ -90,8 +90,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           STATE: ${{ steps.gate.outcome == 'success' && 'success' || 'failure' }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.inputs.pr_head_sha }}
         run: |
-          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.event.inputs.pr_head_sha }}" \
+          gh api -X POST "repos/$REPO/statuses/$SHA" \
             -f state="$STATE" \
             -f context="privacy/trusted-private-gate" \
             -f description="Trusted private-identifier gate (publication, fail-closed) bound to this SHA"

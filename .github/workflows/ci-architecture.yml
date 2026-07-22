@@ -176,11 +176,16 @@ jobs:
         run: python3 scripts/ci/private-identifier-gate-selftest.py
       - name: Generic whole-tree privacy scan — includes scanner source (BLOCKING)
         run: python3 scripts/ci/privacy-scan.py --scope repository --strict
+      # Inputs pass via env (never interpolated into the shell) — avoids run-step injection.
+      # The diff uses the PR base SHA (a parent of the checked-out merge commit), fetched
+      # shallowly so the three-dot diff has its merge-base.
       - name: Generic changed-line privacy scan (BLOCKING, PRs)
         if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
-          python3 scripts/ci/privacy-scan.py --changed-lines "origin/${{ github.base_ref }}" --strict
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          python3 scripts/ci/privacy-scan.py --changed-lines "$BASE_SHA" --strict
       - name: Private-identifier deny gate — whole tree (advisory; auto-activates with secret)
         env:
           NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
@@ -191,9 +196,10 @@ jobs:
         env:
           NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
           NFTBAN_PRIVACY_FP_KEY: ${{ secrets.NFTBAN_PRIVACY_FP_KEY }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
-          python3 scripts/ci/private-identifier-gate.py --changed-lines "origin/${{ github.base_ref }}" --mode advisory
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          python3 scripts/ci/private-identifier-gate.py --changed-lines "$BASE_SHA" --mode advisory
 
       - name: Check privacy — RELEASE surface (SEC-INFRA Gate A, BLOCKING)
         run: python3 scripts/ci/privacy-scan.py --scope release --strict
