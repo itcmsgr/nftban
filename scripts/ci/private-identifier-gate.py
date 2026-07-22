@@ -215,6 +215,13 @@ def scan_whole_tree(root, deny):
 
 
 def scan_changed_lines(root, base, deny):
+    # FAIL-CLOSED: a missing/blank base or one that does not resolve to a commit
+    # (malformed / unknown / unfetched) is an error, not an empty pass.
+    if not base or not base.strip():
+        raise RuntimeError("missing/blank base ref")
+    if subprocess.run(["git", "rev-parse", "--verify", "--quiet", "%s^{commit}" % base],
+                      cwd=root, capture_output=True).returncode != 0:
+        raise RuntimeError("base does not resolve to a commit")
     diff = subprocess.run(["git", "diff", "--unified=0", "%s...HEAD" % base],
                           cwd=root, capture_output=True, text=True)
     if diff.returncode != 0:

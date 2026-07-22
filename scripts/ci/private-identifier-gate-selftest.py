@@ -142,6 +142,11 @@ def test_changed_lines_mode():
     subprocess.run(["git", "-C", root2, "commit", "-aqm", "rm"], check=True)
     rc, out, _ = run(root2, ["--changed-lines", base2, "--mode", "publication"])
     check(rc == 0, "changed-lines scans ADDED lines only (removal of a token does not fail)", out)
+    # FAIL-CLOSED on a bad base: missing/blank, malformed, and unknown SHA must all exit 2.
+    for label, bad in (("blank", ""), ("malformed", "not-a-sha"),
+                       ("unknown-sha", "0" * 40)):
+        rc, _, err = run(root, ["--changed-lines", bad, "--mode", "publication"])
+        check(rc == 2, "changed-lines fail-closed on %s base" % label, "rc=%d %s" % (rc, err.strip()[:80]))
 
 
 def test_scanner_source_canary():

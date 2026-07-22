@@ -487,11 +487,22 @@ def tracked_files():
 
 def _scan_changed_lines(base, strict, show):
     """Generic changed-line gate: scan only ADDED lines of the diff vs BASE. Blocking
-    findings (with --strict) exit 1. Honors the single-line synthetic-allow marker."""
+    findings (with --strict) exit 1. Honors the single-line synthetic-allow marker.
+    FAIL-CLOSED: a missing/blank base, a base that cannot be resolved, or a git-diff error
+    all exit 2 — never a skipped or advisory pass."""
+    if not base or not base.strip():
+        print("changed-lines: FAIL-CLOSED — missing/blank base ref", file=sys.stderr)
+        return 2
+    # Base must resolve to a real commit object (guards malformed/unknown/unfetched SHAs).
+    if subprocess.run(["git", "-C", REPO, "rev-parse", "--verify", "--quiet", "%s^{commit}" % base],
+                      capture_output=True).returncode != 0:
+        print("changed-lines: FAIL-CLOSED — base %r does not resolve to a commit "
+              "(malformed, unknown, or not fetched)" % base, file=sys.stderr)
+        return 2
     diff = subprocess.run(["git", "-C", REPO, "diff", "--unified=0", "%s...HEAD" % base],
                           capture_output=True, text=True)
     if diff.returncode != 0:
-        print("changed-lines: git diff failed for base %r" % base, file=sys.stderr)
+        print("changed-lines: FAIL-CLOSED — git diff failed for base %r" % base, file=sys.stderr)
         return 2
     cur, lineno, blocking, total = None, 0, 0, 0
     hunk = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
