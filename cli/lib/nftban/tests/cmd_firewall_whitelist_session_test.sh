@@ -135,6 +135,11 @@ call_firewall_whitelist_session() {
         eval "$extracted"
         # Redirect the file path to the sandbox.
         _NFTBAN_SESSION_WHITELIST_PATH="$SESSION_FILE"
+        # Redirect the advisory lock to the sandbox too: the product default is
+        # /run/nftban/session_whitelist.lock, which a non-root test user cannot
+        # open, so add/remove/cleanup's `9>"$_NFTBAN_SESSION_WL_LOCK"` (and the
+        # v1.226.0 in-subshell `exec 9>`) would fail. (Product v1.173 §4.1 lock.)
+        _NFTBAN_SESSION_WL_LOCK="${SESSION_FILE}.lock"
         # Suppress chmod/chown failures (sandbox path likely fails ownership).
         firewall_whitelist_session "$@"
     )
@@ -205,7 +210,7 @@ echo "[T4] re-add same IP → refresh (no duplicate)"
 # (T3 already added 192.0.2.122; re-add with different reason)
 call_firewall_whitelist_session add 192.0.2.122 --ttl 1h --reason refreshed >/dev/null 2>&1 || true
 T4_CONTENT=$(cat "$SESSION_FILE" 2>/dev/null || true)
-T4_COUNT=$(printf '%s\n' "$T4_CONTENT" | grep -c "^192\.0\.2\.250" || true)
+T4_COUNT=$(printf '%s\n' "$T4_CONTENT" | grep -c "^192\.0\.2\.122" || true)
 assert_eq "$T4_COUNT" "1"                                            "T4.1 exactly one entry for IP"
 assert_contains "$T4_CONTENT" "REASON=refreshed"                     "T4.2 newer REASON present"
 assert_not_contains "$T4_CONTENT" "REASON=test-reason"               "T4.3 older REASON dropped"
@@ -244,7 +249,7 @@ echo "[T8] remove drops the entry"
 T8_OUT=$(call_firewall_whitelist_session remove 192.0.2.122 2>&1)
 assert_contains "$T8_OUT" "Removed: 192.0.2.122"                   "T8.1 stdout confirms remove"
 T8_CONTENT=$(cat "$SESSION_FILE" 2>/dev/null || true)
-assert_not_contains "$T8_CONTENT" "^192\.0\.2\.250"                "T8.2 entry gone from file"
+assert_not_contains "$T8_CONTENT" "^192\.0\.2\.122"                "T8.2 entry gone from file"
 
 # ---------------------------------------------------------------------------
 # T9: cleanup drops expired but keeps active
