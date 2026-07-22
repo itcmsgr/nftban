@@ -77,7 +77,7 @@ pass "SHELL_EXPLAIN_HELPER_MALFORMED_JSON_DEGRADES"
 # === SEARCH_PRESERVES_DURABLE_SET_TRUTH_WITH_CACHE_AVAILABLE ===
 ok_resp blocked_temporarily scanner
 out=$(nftban_botguard_explain_render 1.2.3.4)
-grep -q "TEMPORARY — not durable" <<<"$out" || fail "render must label section TEMPORARY/not-durable"
+grep -qE "CACHE ONLY — not currently enforced|not durable nft/kernel state" <<<"$out" || fail "render must label section as cache-only/not-durable"
 grep -qi "STATUS: BANNED\|WHITELISTED" <<<"$out" && fail "cache section must not emit durable verdicts"
 pass "SEARCH_PRESERVES_DURABLE_SET_TRUTH_WITH_CACHE_AVAILABLE"
 

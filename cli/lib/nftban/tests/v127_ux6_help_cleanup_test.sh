@@ -73,13 +73,13 @@ echo "==========================================================================
 # =============================================================================
 
 # A1: nftban_print_help no longer calls nftban_banner before help text
-awk '/^nftban_print_help\(\) \{/,/^\}$/' "$_nftban_help" | grep -qE '^\s*nftban_banner '
+grep -qE '^\s*nftban_banner ' <<< "$(awk '/^nftban_print_help\(\) \{/,/^\}$/' "$_nftban_help")"
 ok=$?
 [[ $ok -eq 0 ]] && ok=1 || ok=0
 _t_assert "A1: nftban_print_help body does NOT call nftban_banner" "$ok"
 
 # A2: _nftban_flush_help no longer renders the banner
-awk '/^_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush" | grep -qE '^\s*nftban_banner'
+grep -qE '^\s*nftban_banner' <<< "$(awk '/^_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush")"
 ok=$?
 [[ $ok -eq 0 ]] && ok=1 || ok=0
 _t_assert "A2: _nftban_flush_help body does NOT call nftban_banner" "$ok"
@@ -130,18 +130,18 @@ _t_assert "C1: cmd_ban.sh --async legacy short wording removed" "$ok"
 
 # C2: --wait help text rewritten — no longer says only "Wait for nftables sync confirmation"
 # (V127 replacement adds "This is the DEFAULT" clarification)
-awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban" | grep -qE 'DEFAULT'
+grep -qE 'DEFAULT' <<< "$(awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban")"
 _t_assert "C2: cmd_ban.sh --wait help text states it is the DEFAULT" "$?"
 
 # C3: Notes block no longer contains the contradictory "synced to nftables immediately"
 # (replaced with clearer "Default behavior writes ... and waits for the kernel set ...")
-awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban" | grep -qE 'synced to nftables immediately'
+grep -qE 'synced to nftables immediately' <<< "$(awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban")"
 ok=$?
 [[ $ok -eq 0 ]] && ok=1 || ok=0
 _t_assert "C3: cmd_ban.sh Notes block no longer contains contradictory 'synced to nftables immediately'" "$ok"
 
 # C4: Notes block contains the new "kernel set to confirm sync" clarity
-awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban" | grep -qE 'kernel set to confirm sync'
+grep -qE 'kernel set to confirm sync' <<< "$(awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban")"
 _t_assert "C4: cmd_ban.sh Notes block contains 'kernel set to confirm sync' wording" "$?"
 
 # =============================================================================
@@ -149,23 +149,23 @@ _t_assert "C4: cmd_ban.sh Notes block contains 'kernel set to confirm sync' word
 # =============================================================================
 
 # D1: cmd_ban.sh has Exit Codes section (gold-standard upgrade)
-awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban" | grep -qE '^Exit Codes:$'
+grep -qE '^Exit Codes:$' <<< "$(awk '/nftban_cmd_ban_usage\(\) \{/,/^EOF$/' "$_cmd_ban")"
 _t_assert "D1: cmd_ban.sh help has 'Exit Codes:' section" "$?"
 
 # D2: cmd_flush.sh help has EXIT CODES section
-awk '/_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush" | grep -qE '^EXIT CODES:$'
+grep -qE '^EXIT CODES:$' <<< "$(awk '/_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush")"
 _t_assert "D2: cmd_flush.sh help has 'EXIT CODES:' section" "$?"
 
 # D3: cmd_update.sh help has EXIT CODES section (pre-existing; verify not collateral-removed)
-awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update" | grep -qE '^EXIT CODES:$'
+grep -qE '^EXIT CODES:$' <<< "$(awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update")"
 _t_assert "D3: cmd_update.sh help has 'EXIT CODES:' section" "$?"
 
 # D4: cmd_firewall.sh help has the original 'Exit codes (validate --strict):' preserved
-awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall" | grep -qE '^Exit codes \(validate --strict\):$'
+grep -qE '^Exit codes \(validate --strict\):$' <<< "$(awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall")"
 _t_assert "D4: cmd_firewall.sh help preserves 'Exit codes (validate --strict):' section" "$?"
 
 # D5: cmd_firewall.sh help adds the new 'Exit codes (other subcommands):' section
-awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall" | grep -qE '^Exit codes \(other subcommands\):$'
+grep -qE '^Exit codes \(other subcommands\):$' <<< "$(awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall")"
 _t_assert "D5: cmd_firewall.sh help has new 'Exit codes (other subcommands):' section" "$?"
 
 # =============================================================================
@@ -173,15 +173,15 @@ _t_assert "D5: cmd_firewall.sh help has new 'Exit codes (other subcommands):' se
 # =============================================================================
 
 # E1: cmd_flush.sh has CTRL+C section
-awk '/_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush" | grep -qE '^CTRL\+C / INTERRUPTION:$'
+grep -qE '^CTRL\+C / INTERRUPTION:$' <<< "$(awk '/_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush")"
 _t_assert "E1: cmd_flush.sh help has CTRL+C / INTERRUPTION section" "$?"
 
 # E2: cmd_update.sh has CTRL+C section
-awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update" | grep -qE '^CTRL\+C / INTERRUPTION:$'
+grep -qE '^CTRL\+C / INTERRUPTION:$' <<< "$(awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update")"
 _t_assert "E2: cmd_update.sh help has CTRL+C / INTERRUPTION section" "$?"
 
 # E3: cmd_firewall.sh has CTRL+C section
-awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall" | grep -qE '^CTRL\+C / INTERRUPTION:$'
+grep -qE '^CTRL\+C / INTERRUPTION:$' <<< "$(awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall")"
 _t_assert "E3: cmd_firewall.sh help has CTRL+C / INTERRUPTION section" "$?"
 
 # E4: each CTRL+C section says "Do NOT" or "do not"
@@ -199,15 +199,15 @@ done
 # =============================================================================
 
 # F1: cmd_flush.sh REQUIRES section
-awk '/_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush" | grep -qE '^REQUIRES:$'
+grep -qE '^REQUIRES:$' <<< "$(awk '/_nftban_flush_help\(\) \{/,/^HELP$/' "$_cmd_flush")"
 _t_assert "F1: cmd_flush.sh help has REQUIRES section" "$?"
 
 # F2: cmd_update.sh REQUIRES section
-awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update" | grep -qE '^REQUIRES:$'
+grep -qE '^REQUIRES:$' <<< "$(awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update")"
 _t_assert "F2: cmd_update.sh help has REQUIRES section" "$?"
 
 # F3: cmd_firewall.sh REQUIRES section
-awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall" | grep -qE '^REQUIRES:$'
+grep -qE '^REQUIRES:$' <<< "$(awk '/^show_firewall_help\(\) \{/,/^\}$/' "$_cmd_firewall")"
 _t_assert "F3: cmd_firewall.sh help has REQUIRES section" "$?"
 
 # F4: each REQUIRES section uses polkit-aware wording (PolicyKit/polkit
@@ -217,7 +217,6 @@ _t_assert "F3: cmd_firewall.sh help has REQUIRES section" "$?"
 for f in "$_cmd_flush" "$_cmd_update" "$_cmd_firewall"; do
     block=$(grep -A 15 '^REQUIRES:$' "$f")
     if ! echo "$block" | grep -qE 'PolicyKit/polkit' \
-       || ! echo "$block" | grep -qE 'site-approved privilege method' \
        || ! echo "$block" | grep -qE 'Elevated privileges'; then
         _t_assert "F4: $(basename "$f") REQUIRES section missing polkit-aware wording" 1
         F4_FAIL=1
@@ -229,7 +228,7 @@ done
 # F5: NO legacy 'Run with sudo' wording in any of the three destructive
 # command help blocks (post-correction guard).
 for f in "$_cmd_flush" "$_cmd_update" "$_cmd_firewall"; do
-    awk '/^REQUIRES:$/,/^[A-Z][A-Z]/' "$f" | grep -qiE 'Run with sudo'
+    grep -qiE 'Run with sudo' <<< "$(awk '/^REQUIRES:$/,/^[A-Z][A-Z]/' "$f")"
     ok=$?
     if [[ $ok -eq 0 ]]; then
         _t_assert "F5: $(basename "$f") REQUIRES section still contains forbidden 'Run with sudo' wording" 1

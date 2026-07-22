@@ -117,7 +117,7 @@ assert_contains "$CMD_BODY" \
     "regression_guard_non_quiet_progress_message_present"
 
 assert_contains "$CMD_BODY" \
-    "Warning: Failed to re-apply trust providers. Run: nftban trust load" \
+    "Warning: trust providers enabled but not loadable. Run: nftban trust enable" \
     "regression_guard_subprocess_failure_warning_present"
 
 # ---------------------------------------------------------------------------

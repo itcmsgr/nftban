@@ -43,6 +43,8 @@ EXECUTABLE_GATES="policy-gates ci-bash"     # run in ordinary CI
 PACKAGE_GATES="package-build"               # only under --allow-package
 KNOWN_GATES="policy-gates ci-bash package-build package-native-deb package-native-rpm lab-manual canary fleet manual-forensic excluded deferred unassigned"
 MANIFEST=""                                 # optional --manifest FILE: machine-readable run record
+QUARANTINE_FILE=""                          # optional --quarantine FILE: ci-bash quarantine registry
+declare -A QID QPAT                          # quarantined id set + expected_failure_pattern (binding)
 
 die_usage() { printf 'run-test-suite: %s\n' "$1" >&2; exit 2; }
 log()       { printf '%s\n' "$1" >&2; }
@@ -107,8 +109,10 @@ select_rows() {
 # --- run one test as an isolated subprocess with a bounded timeout -------------
 # The path is validated (prefix + realpath inside repo) and passed as a single
 # quoted argument. Never sourced, never eval'd. Returns PASS/FAIL/TIMEOUT.
+# Optional 4th arg = a capture file: when set, the test's combined output is
+# written there (used to compute a quarantined test's failure signature).
 run_one() {
-    local root="$1" path="$2" tmo="$3"
+    local root="$1" path="$2" tmo="$3" cap="${4:-}"
     local abs="$root/$path"
     case "$path" in
         "$TESTS_PREFIX"*_test.sh) ;;
@@ -119,10 +123,36 @@ run_one() {
     case "$real" in "$root"/*) ;; *) printf 'SAFETY'; return ;; esac
     [ "$tmo" -gt 0 ] 2>/dev/null || tmo="$DEFAULT_TIMEOUT"
     local rc=0
-    timeout -k 5 "$tmo" bash -- "$abs" </dev/null >/dev/null 2>&1 || rc=$?
+    if [ -n "$cap" ]; then
+        timeout -k 5 "$tmo" bash -- "$abs" </dev/null >"$cap" 2>&1 || rc=$?
+    else
+        timeout -k 5 "$tmo" bash -- "$abs" </dev/null >/dev/null 2>&1 || rc=$?
+    fi
     if [ "$rc" -eq 0 ]; then printf 'PASS'
     elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then printf 'TIMEOUT'
     else printf 'FAIL'; fi
+}
+
+# --- load the quarantine registry (id -> expected_failure_pattern) -------------
+# Only id + expected_failure_pattern are consumed here; full metadata validity is
+# enforced by scripts/ci/check-quarantine-registry.sh (a separate BLOCKING gate).
+# A registry row is (tab-separated, QT-tagged):
+#   QT id path owner reason finding introduced review_or_expiry disposition \
+#      expected_failure_class remediation_lane expected_failure_pattern
+# The runner binds a quarantined failure to expected_failure_pattern (a NORMALIZED
+# classification substring, e.g. "matcher binary unavailable"), NOT a raw error
+# string — so paths/line-numbers/timing/tool-versions may vary but a CHANGED
+# failure category is still not silently accepted. An empty pattern binds outcome
+# only (any failure of that test is accepted while quarantined).
+load_quarantine() {
+    local file="$1" id pat
+    [ -f "$file" ] || die_usage "quarantine registry not found: $file"
+    while IFS=$'\t' read -r tag id _p _o _r _f _i _rv _d _c _l pat; do
+        [ "$tag" = "QT" ] || continue
+        [ -n "$id" ] || continue
+        QID["$id"]=1
+        QPAT["$id"]="$pat"
+    done < "$file"
 }
 
 cmd_run() {
@@ -154,30 +184,80 @@ cmd_run() {
         [ -n "$MANIFEST" ] && printf 'SELECTED\t0\nPASS\t0\nFAIL\t0\nTIMEOUT\t0\n' >> "$MANIFEST"
         return 0
     fi
-    local pass=0 fail=0 tmoc=0 total=0 failed_ids="" manifest_rows=""
-    # deterministic order: sort by id
+    # quarantine registry (optional): a quarantined ci-bash test STILL EXECUTES and
+    # its failure is REPORTED, but it is excluded from the BLOCKING tally only when
+    # its metadata is valid (checked separately) AND its failure signature matches
+    # the registered one. Everything non-quarantined must pass.
+    [ -n "$QUARANTINE_FILE" ] && load_quarantine "$QUARANTINE_FILE"
+    local pass=0 fail=0 tmoc=0 quar=0 sigmis=0 quarpass=0 total=0
+    local failed_ids="" sigmis_ids="" quarpass_ids="" manifest_rows=""
+    local -A qseen
+    local capdir; capdir="$(mktemp -d)"
     while IFS=$'\t' read -r id path tmo; do
         [ -n "$id" ] || continue
         total=$((total+1))
-        local res; res="$(run_one "$root" "$path" "${tmo:-0}")"
-        case "$res" in
-            PASS)    pass=$((pass+1)) ;;
-            TIMEOUT) tmoc=$((tmoc+1)); failed_ids="$failed_ids $id(TIMEOUT)" ;;
-            *)       fail=$((fail+1)); failed_ids="$failed_ids $id($res)" ;;
-        esac
-        printf '  %-8s %s\n' "$res" "$id" >&2
-        manifest_rows="${manifest_rows}TEST	${res}	${id}"$'\n'
+        # Always capture output so a non-quarantined FAIL/TIMEOUT can print a
+        # diagnostic tail (CI otherwise discards it) and a quarantined failure can
+        # be matched against its expected pattern.
+        local res status cap="$capdir/out"
+        [ -n "${QID[$id]:-}" ] && qseen["$id"]=1
+        res="$(run_one "$root" "$path" "${tmo:-0}" "$cap")"
+        if [ -n "${QID[$id]:-}" ]; then
+            # quarantined: STILL EXECUTES + is REPORTED. A pass BLOCKS (needs
+            # reconciliation / de-quarantine). A failure is accepted only if it
+            # matches the registered expected_failure_pattern (category unchanged).
+            if [ "$res" = "PASS" ]; then
+                pass=$((pass+1)); status="QUAR-PASS"
+                quarpass=$((quarpass+1)); quarpass_ids="$quarpass_ids $id"
+            else
+                local pat="${QPAT[$id]:-}"
+                if [ -z "$pat" ] || grep -qF -- "$pat" "$cap" 2>/dev/null; then
+                    quar=$((quar+1)); status="QUARANTINED"
+                else
+                    sigmis=$((sigmis+1)); sigmis_ids="$sigmis_ids $id(pattern-absent)"; status="SIG-MISMATCH"
+                fi
+            fi
+        else
+            case "$res" in
+                PASS)    pass=$((pass+1)); status="PASS" ;;
+                TIMEOUT) tmoc=$((tmoc+1)); failed_ids="$failed_ids $id(TIMEOUT)"; status="TIMEOUT" ;;
+                *)       fail=$((fail+1)); failed_ids="$failed_ids $id($res)"; status="$res" ;;
+            esac
+        fi
+        printf '  %-12s %s\n' "$status" "$id" >&2
+        # diagnostic: on a BLOCKING (non-quarantined) failure, surface the test's
+        # own failing lines + output tail so CI shows WHY without a re-run. The whole
+        # block is `{ …; } || true` so a no-match grep cannot trip set -e / pipefail.
+        if [ "$status" = "FAIL" ] || [ "$status" = "TIMEOUT" ]; then
+            {
+                grep -aE '✗|✘|✖|\[FAIL\]|FAIL(ED)?:|not ok' "$cap" 2>/dev/null | grep -avE '\[PASS\]|  PASS| ok ' | head -6 | sed 's/^/        · /'
+                printf '        ---- %s output tail ----\n' "$id"
+                tail -8 "$cap" 2>/dev/null | sed 's/^/        | /'
+            } >&2 || true
+        fi
+        manifest_rows="${manifest_rows}TEST	${status}	${id}"$'\n'
+        : > "$cap"
     done < <(printf '%s\n' "$sel" | sort -t$'\t' -k1,1)
-    printf 'RESULT gate=%s total=%d pass=%d fail=%d timeout=%d\n' "${gates[*]}" "$total" "$pass" "$fail" "$tmoc"
+    rm -rf "$capdir"
+    # disappearance: every quarantined id must have appeared in the selected set
+    local vanished="" qid
+    for qid in "${!QID[@]}"; do
+        [ -n "${qseen[$qid]:-}" ] || vanished="$vanished $qid"
+    done
+    printf 'RESULT gate=%s total=%d pass=%d fail=%d timeout=%d quarantined=%d sig_mismatch=%d quar_now_pass=%d\n' \
+        "${gates[*]}" "$total" "$pass" "$fail" "$tmoc" "$quar" "$sigmis" "$quarpass"
     if [ -n "$MANIFEST" ]; then
-        printf 'SELECTED\t%d\nPASS\t%d\nFAIL\t%d\nTIMEOUT\t%d\n' "$total" "$pass" "$fail" "$tmoc" >> "$MANIFEST"
+        printf 'SELECTED\t%d\nPASS\t%d\nFAIL\t%d\nTIMEOUT\t%d\nQUARANTINED\t%d\nSIG_MISMATCH\t%d\nQUAR_NOW_PASS\t%d\n' \
+            "$total" "$pass" "$fail" "$tmoc" "$quar" "$sigmis" "$quarpass" >> "$MANIFEST"
         printf '%s' "$manifest_rows" >> "$MANIFEST"
     fi
-    if [ "$fail" -gt 0 ] || [ "$tmoc" -gt 0 ]; then
-        log "run-test-suite: FAILED tests:${failed_ids}"
-        return 1
-    fi
-    return 0
+    local rc=0
+    [ "$fail" -gt 0 ]     && { log "run-test-suite: BLOCKING non-quarantined failures:${failed_ids}"; rc=1; }
+    [ "$tmoc" -gt 0 ]     && { log "run-test-suite: BLOCKING timeouts:${failed_ids}"; rc=1; }
+    [ "$sigmis" -gt 0 ]   && { log "run-test-suite: BLOCKING quarantine signature mismatch:${sigmis_ids}"; rc=1; }
+    [ "$quarpass" -gt 0 ] && { log "run-test-suite: BLOCKING quarantined test(s) now PASSING — reconcile/de-quarantine:${quarpass_ids}"; rc=1; }
+    [ -n "$vanished" ]    && { log "run-test-suite: BLOCKING quarantined test(s) not executed (disappeared):${vanished}"; rc=1; }
+    return "$rc"
 }
 
 cmd_report() {
@@ -210,6 +290,7 @@ main() {
         case "$1" in
             --gate) shift; [ $# -ge 1 ] || die_usage "--gate needs a value"; gates+=("$1") ;;
             --manifest) shift; [ $# -ge 1 ] || die_usage "--manifest needs a value"; MANIFEST="$1" ;;
+            --quarantine) shift; [ $# -ge 1 ] || die_usage "--quarantine needs a value"; QUARANTINE_FILE="$1" ;;
             --allow-package) allow_package=1 ;;
             *) die_usage "unknown argument: $1" ;;
         esac

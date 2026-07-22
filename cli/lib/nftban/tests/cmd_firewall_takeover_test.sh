@@ -13,7 +13,7 @@
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep"
 # meta:inventory.files=""
-# meta:inventory.binaries="bash,grep,python3"
+# meta:inventory.binaries="bash,grep,python3,git,unshare"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_INSTALLER_BIN"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -268,7 +268,7 @@ echo "[T6] root gate"
 if [[ $EUID -ne 0 ]]; then
     reset_installer_log
     T6_OUT=$(call_firewall_takeover --panel-auto-takeover 2>&1 || true)
-    assert_contains "$T6_OUT" "requires root"                        "T6.1 non-root refusal"
+    assert_contains "$T6_OUT" "insufficient privileges"              "T6.1 non-root refusal"
     [[ ! -s "$INSTALLER_LOG" ]] && {
         printf "  [PASS] %s\n" "T6.2 installer not invoked (non-root)"
         PASS=$((PASS + 1))
@@ -408,9 +408,14 @@ fi
 # ---------------------------------------------------------------------------
 echo
 echo "[T9] Installer flags.go regression guard"
-if command -v git >/dev/null 2>&1 && [[ -d "$REPO_ROOT/.git" ]]; then
-    cd "$REPO_ROOT"
-    if git diff --quiet main -- cmd/nftban-installer/flags.go 2>/dev/null; then
+# This scope guard needs a LOCAL 'main' ref to diff against. Ordinary CI does a
+# shallow single-branch checkout of the PR head, so 'main' is absent — without the
+# ref-existence gate, `git diff --quiet main` errors and its nonzero exit was
+# misread as "flags.go modified" (spurious SCOPE VIOLATION). Gate on the git-ref
+# dependency: run only when 'main' actually resolves; SKIP cleanly otherwise.
+if command -v git >/dev/null 2>&1 && [[ -d "$REPO_ROOT/.git" ]] \
+   && git -C "$REPO_ROOT" rev-parse --verify --quiet main >/dev/null 2>&1; then
+    if git -C "$REPO_ROOT" diff --quiet main -- cmd/nftban-installer/flags.go 2>/dev/null; then
         printf "  [PASS] %s\n" "T9.1 cmd/nftban-installer/flags.go byte-unchanged vs main"
         PASS=$((PASS + 1))
     else
@@ -418,9 +423,8 @@ if command -v git >/dev/null 2>&1 && [[ -d "$REPO_ROOT/.git" ]]; then
         FAIL=$((FAIL + 1))
         FAILED_TESTS+=("T9.1")
     fi
-    cd - >/dev/null
 else
-    echo "  [SKIP] T9 — not in git repo or git unavailable"
+    echo "  [SKIP] T9 — git unavailable or local 'main' ref not present (git-ref scope guard needs it)"
 fi
 
 echo

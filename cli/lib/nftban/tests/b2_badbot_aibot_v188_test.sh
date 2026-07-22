@@ -102,7 +102,7 @@ nftban_botscan_load_patterns
 echo "PASS 7: override.local decisions survive a simulated package upgrade"
 
 # ---- (8) packaging no-clobber: spec ships *.patterns config(noreplace), NOT override.local ----
-SPEC="$REPO_ROOT/build/packages/SPECS/nftban-core.spec"
+SPEC="$REPO_ROOT/packaging/build_nftban.sh"
 grep -qE "%config\(noreplace\) /etc/nftban/patterns.d/botscan/\*\.patterns" "$SPEC" \
     || fail "8: spec must ship *.patterns as config(noreplace) glob (covers aibots.patterns)"
 grep -q "override.local" "$SPEC" && fail "8: spec must NOT package override.local (operator-owned; would clobber on upgrade)"

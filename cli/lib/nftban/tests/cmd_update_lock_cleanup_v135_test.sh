@@ -165,7 +165,7 @@ fi
 # s3: lock-contention path closes fd but does NOT call _release_update_lock
 #     (must not remove a live updater's file). Verify the contention branch
 #     uses `exec 9>&-` and not `_release_update_lock`.
-contention_block=$(awk '/Another update is in progress/{f=1} f{print} /return 1/{if(f){exit}}' "$CMD_UPDATE")
+contention_block=$(awk '/Another update is already in progress/{f=1} f{print} /return 1/{if(f){exit}}' "$CMD_UPDATE")
 if grep -q "exec 9>&-" <<<"$contention_block" \
    && ! grep -q "_release_update_lock" <<<"$contention_block"; then
     assert_eq "safe" "safe" "static_s3_contention_path_does_not_remove_holders_file"

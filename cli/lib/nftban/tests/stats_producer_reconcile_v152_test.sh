@@ -50,7 +50,7 @@ grep -qE "jq -r '\.permanent\.ipv4 // 0'" "$PROD" && no "legacy branch STILL rea
 grep -qE 'v1\.152 \(13\.10\)' "$PROD" && ok "producer carries the v1.152 (13.10) reconciliation fix" || no "13.10 fix marker missing"
 
 echo "=== shipped consumer: manual labelled as subset (incl.), not additive ==="
-grep -qE 'incl\. manual: ' "$FMT" && ok "stats_format labels 'incl. manual' (subset)" || no "consumer manual-subset label missing"
+grep -qE 'incl\. manual-set: ' "$FMT" && ok "stats_format labels 'incl. manual' (subset)" || no "consumer manual-subset label missing"
 
 # ---- reconciliation math mirrors each producer branch (total = perm + temp; manual ⊆ total) ----
 chk() { # $1 label  $2 total  $3 perm  $4 temp  $5 manual
