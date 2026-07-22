@@ -53,7 +53,7 @@ EXECUTION_CLASSES = {
 GATES = {
     "policy-gates", "ci-bash", "package-build", "package-native-deb",
     "package-native-rpm", "lab-manual", "canary", "fleet", "manual-forensic",
-    "excluded", "unassigned",
+    "excluded", "deferred", "unassigned",
 }
 BOOL_TRUE, BOOL_FALSE = "true", "false"
 PLACEHOLDER_REASONS = {"", "todo", "tbd", "none", "n/a", "na", "-"}
@@ -74,6 +74,7 @@ INDEX_COLS = [
     "id", "path", "owner", "type", "module", "execution_class", "gate",
     "hermetic", "requires_root", "requires_network", "requires_systemd",
     "requires_nftables", "requires_package", "timeout", "exclusion_reason",
+    "activation_condition",
 ]
 
 
@@ -188,6 +189,7 @@ def validate_one(rel, keys, mode, errors):
     ec = keys.get("ta.execution_class")
     gate = keys.get("ta.gate")
     reason = keys.get("ta.exclusion_reason")
+    activation = keys.get("ta.activation_condition")
 
     # exclusion_reason contract
     needs_reason = (gate == "excluded") or (ec == "HISTORICAL_ONLY")
@@ -196,6 +198,20 @@ def validate_one(rel, keys, mode, errors):
             err("ta.exclusion_reason", "required and must be meaningful when gate=excluded or execution_class=HISTORICAL_ONLY")
     if gate == "unassigned" and reason is not None and reason.strip() != "":
         err("ta.exclusion_reason", "must not be set when gate=unassigned")
+
+    # deferred contract: a test correctly classified for future execution but
+    # withheld from a live gate now (e.g. a known-failing fixture pending repair).
+    # It must carry a real reason AND a concrete activation condition, and its
+    # true execution_class must not itself be HISTORICAL_ONLY (that is 'excluded').
+    if gate == "deferred":
+        if reason is None or reason.strip().lower() in PLACEHOLDER_REASONS:
+            err("ta.exclusion_reason", "gate=deferred requires a meaningful ta.exclusion_reason (why it is withheld now)")
+        if activation is None or activation.strip().lower() in PLACEHOLDER_REASONS:
+            err("ta.activation_condition", "gate=deferred requires a concrete ta.activation_condition (what re-enables it)")
+        if ec == "HISTORICAL_ONLY":
+            err("ta.gate", "HISTORICAL_ONLY belongs to gate=excluded, not deferred")
+    elif activation is not None and activation.strip() != "":
+        err("ta.activation_condition", "ta.activation_condition is only valid when gate=deferred")
 
     # cross-field contradictions (owner-declared metadata authoritative, checked for consistency)
     def is_true(f):
@@ -261,6 +277,7 @@ def collect(root):
             "requires_package": keys.get("ta.requires_package", ""),
             "timeout": keys.get("ta.timeout", ""),
             "exclusion_reason": keys.get("ta.exclusion_reason", ""),
+            "activation_condition": keys.get("ta.activation_condition", ""),
             "_keys": keys,
         }
         records.append(rec)

@@ -21,6 +21,17 @@
 # meta:inventory.privileges="none"
 # meta:created_date="2026-07-03"
 # meta:updated_date="2026-07-03"
+# meta:ta.id="install_update_observability_v215_test"
+# meta:ta.owner="update"
+# meta:ta.module="update-observability"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

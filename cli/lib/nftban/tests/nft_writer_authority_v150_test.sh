@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="nft_writer_authority_v150_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="nft-writer-authority"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Self-contained; no host contact; no root; no nft/IPC. Static source reads +
 # a copied-logic harness with a drift-guard so the real code can't diverge

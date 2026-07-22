@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="health_timers_truth_v150_test"
+# meta:ta.owner="health"
+# meta:ta.module="health-timers"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Self-contained sandbox; no host contact; no root required. We extract the
 # target functions from the source files by name, stub `systemctl` as a bash

@@ -16,6 +16,17 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # meta:description="V131 PR-A.2 regression guard. The bug class fixed in PR-A (CB-1/CB-3) is `VAR=$(... grep -c ... || echo \"0\")`: grep -c prints \"0\" AND exits 1 on no-match, so `|| echo \"0\"` appends a SECOND \"0\", producing \"0\\n0\" which breaks `$((... + VAR))` arithmetic and `printf %d`. PR-A.2 swept the remaining ~41 sites across 23 files, replacing `|| echo \"0\"` with `|| true` (grep -c's own \"0\" is preserved; errexit suppressed; no concat). This test asserts (a) ZERO `grep -c ... || echo \"0\"` sites remain in executable (non-comment) shell code under cli/lib/nftban/, and (b) every shell file under cli/lib/nftban/ still parses with `bash -n`. Comment lines are excluded from (a) because they legitimately DOCUMENT the old pattern."
+# meta:ta.id="v131_pr_a_2_double_zero_sweep_test"
+# meta:ta.owner="cross-cutting"
+# meta:ta.module="shell-hygiene"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -uo pipefail
 

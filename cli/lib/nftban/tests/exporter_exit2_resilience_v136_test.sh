@@ -20,6 +20,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="exporter_exit2_resilience_v136_test"
+# meta:ta.owner="metrics"
+# meta:ta.module="exporter-exit2"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Lane:       V1_136_EXPORTER_EXIT2_RESILIENCE_SCOPE.md (Phase 1)
 # Origin:     EXPORTER_EXIT2_TRIAGE_READONLY_REPORT.md + EXPORTER_EXIT2_MUTATING_REPRO_REPORT.md

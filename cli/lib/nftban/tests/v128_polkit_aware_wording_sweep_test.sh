@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="v128_polkit_aware_wording_sweep_test"
+# meta:ta.owner="security"
+# meta:ta.module="polkit-wording"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 #
 # Scope: AUDIT_190_LIFECYCLE/V128_CLI_TEXT_AUTHORITY_ALIGNMENT_SCOPE.md (PR-A lane)
 # Architecture: memory/reference_nftban_group_and_polkit_architecture.md

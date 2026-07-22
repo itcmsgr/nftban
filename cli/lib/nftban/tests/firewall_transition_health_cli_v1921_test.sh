@@ -15,6 +15,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="firewall_transition_health_cli_v1921_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="firewall-transition-health"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # NOTE: the health checks file enables set -e on source, and the engine always
 # calls checks guarded by `|| { ((errors++)); }`. We `set +e` after sourcing and

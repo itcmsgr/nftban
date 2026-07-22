@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="http_log_discovery_v177_test"
+# meta:ta.owner="botscan"
+# meta:ta.module="http-logs"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="policy-gates"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 IFS=$'\n\t'

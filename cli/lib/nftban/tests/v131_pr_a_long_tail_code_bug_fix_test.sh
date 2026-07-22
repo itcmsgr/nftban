@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="v131_pr_a_long_tail_code_bug_fix_test"
+# meta:ta.owner="cross-cutting"
+# meta:ta.module="code-bug-fix"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 #
 # Scope: AUDIT_190_LIFECYCLE/V130_PR_C_LONG_TAIL_BATTERY_REPORT_DEB.md §3
 # =============================================================================

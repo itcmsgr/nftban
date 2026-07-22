@@ -19,6 +19,19 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="cmd_whitelist_static_v149_test"
+# meta:ta.owner="whitelist"
+# meta:ta.module="whitelist-static"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="deferred"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# meta:ta.exclusion_reason="known-failing: a stale real-IP grep pattern is privacy-scrub residue that the added synthetic documentation-range IP never matches, so the duplicate-count assertion fails"
+# meta:ta.activation_condition="re-enable after PR-E corrects the stale grep pattern to the synthetic fixture IP, then wire to ci-bash"
 # =============================================================================
 # Self-contained sandbox; no host contact; no root required. We extract the
 # v1.149 --static functions (+ dispatcher) from cmd_whitelist.sh by name, patch

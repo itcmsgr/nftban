@@ -21,6 +21,17 @@
 # meta:inventory.privileges="none"
 # meta:created_date="2026-07-05"
 # meta:updated_date="2026-07-05"
+# meta:ta.id="nft_loopback_before_invalid_v217_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="nft-schema-rule-order"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

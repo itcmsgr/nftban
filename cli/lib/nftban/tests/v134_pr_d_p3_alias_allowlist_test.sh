@@ -16,6 +16,17 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # meta:description="V134 PR-D P3 Lane 1 guard. (1) D-26: health 'rbl'/'fhs' are documented in cmd_health.sh help. (2) D-28: cmd_metrics.sh error-usage string now includes evidence/evidence-json. (3) The intentional-alias allowlist manifest (v134_help_code_alias_allowlist.tsv) is well-formed (4 tab fields, valid class) and every allowlisted (cmd_file, token) pair is actually PRESENT in that command file — so the allowlist (basis for the Lane-2 doctest guard) can never silently allowlist a phantom/removed token. The rigorous per-family help<->dispatch correlation is Lane 2's doctest guard; this guard locks the allowlist basis + the two Lane-1 code fixes."
+# meta:ta.id="v134_pr_d_p3_alias_allowlist_test"
+# meta:ta.owner="cli"
+# meta:ta.module="cli-alias-allowlist"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="policy-gates"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 

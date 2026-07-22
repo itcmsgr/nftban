@@ -40,7 +40,7 @@ All values are double-quoted: `# meta:ta.<field>="<value>"`.
 | `ta.owner` | yes | one of the controlled owner vocabulary (subsystem, e.g. `update`, `mail`, `packaging`, `cli`, `rbl`, …). |
 | `ta.module` | yes | subsystem/module label; non-blank (`cross-cutting` allowed). |
 | `ta.execution_class` | yes | `CI_STATIC`, `CI_HERMETIC_SHELL`, `PACKAGE_BUILD`, `PACKAGE_NATIVE_DEB`, `PACKAGE_NATIVE_RPM`, `ROOT_LAB`, `NETWORK_LAB`, `LIVE_CANARY`, `FLEET_RECONCILIATION`, `MANUAL_FORENSIC`, `HISTORICAL_ONLY`. |
-| `ta.gate` | yes | `policy-gates`, `ci-bash`, `package-build`, `package-native-deb`, `package-native-rpm`, `lab-manual`, `canary`, `fleet`, `manual-forensic`, `excluded`, `unassigned`. |
+| `ta.gate` | yes | `policy-gates`, `ci-bash`, `package-build`, `package-native-deb`, `package-native-rpm`, `lab-manual`, `canary`, `fleet`, `manual-forensic`, `excluded`, `deferred`, `unassigned`. |
 | `ta.hermetic` | yes | `true` / `false`. |
 | `ta.requires_root` | yes | `true` / `false`. |
 | `ta.requires_network` | yes | `true` / `false`. |
@@ -48,7 +48,21 @@ All values are double-quoted: `# meta:ta.<field>="<value>"`.
 | `ta.requires_nftables` | yes | `true` / `false`. |
 | `ta.requires_package` | yes | `true` / `false`. |
 | `ta.timeout` | optional | free text (e.g. `60s`); projected to the index as-is. |
-| `ta.exclusion_reason` | conditional | required and meaningful when `gate=excluded` or `execution_class=HISTORICAL_ONLY`; must be absent/empty when `gate=unassigned`. Placeholders (`TODO`, `TBD`, `none`, `n/a`, `-`) are rejected. |
+| `ta.exclusion_reason` | conditional | required and meaningful when `gate=excluded`, `gate=deferred`, or `execution_class=HISTORICAL_ONLY`; must be absent/empty when `gate=unassigned`. Placeholders (`TODO`, `TBD`, `none`, `n/a`, `-`) are rejected. |
+| `ta.activation_condition` | conditional | required and meaningful when `gate=deferred` (what re-enables the test); must be absent/empty for any other gate. |
+
+### The `deferred` gate (v1.226.0 PR-B)
+
+`deferred` represents a test that is **correctly classified for future execution** but
+is **withheld from a live gate right now** — the canonical case is a test whose true
+nature is hermetic CI but which currently *fails* on a known, separately-tracked defect
+(e.g. a stale fixture), so it must not block CI until the defect is repaired in a later
+PR. It is distinct from `excluded` (intentionally never executed) and must never be
+represented with `unassigned`. The validator enforces all three of: an accountable
+`ta.owner` (always required for a migrated test), a meaningful `ta.exclusion_reason`
+(why it is withheld), and a concrete `ta.activation_condition` (what re-enables it). A
+`deferred` test still declares its real `execution_class` (which must not be
+`HISTORICAL_ONLY`).
 
 ## Cross-field rules (consistency, not guesswork)
 

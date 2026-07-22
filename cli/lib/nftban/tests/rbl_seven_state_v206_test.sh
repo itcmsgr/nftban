@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="rbl_seven_state_v206_test"
+# meta:ta.owner="rbl"
+# meta:ta.module="rbl-result-states"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # This harness shadows resolver/provider leaf functions (nftban_rbl_resolver,
 # dig, timeout, nftban_rbl_dns_lookup, nftban_rbl_load_providers, …) which are
