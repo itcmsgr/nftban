@@ -20,6 +20,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="rbl_false_clean_v150_test"
+# meta:ta.owner="rbl"
+# meta:ta.module="rbl-resolver-false-clean"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Self-contained sandbox; no host contact; no root required. We source the real
 # nftban_rbl.sh core module into subshells, then override resolver-related

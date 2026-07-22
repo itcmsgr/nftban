@@ -19,6 +19,19 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="rbl_shared_address_authority_v220_0_test"
+# meta:ta.owner="rbl"
+# meta:ta.module="rbl-shared-address-authority"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="deferred"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# meta:ta.exclusion_reason="known-failing fixture OPEN_RBL_V220_0_TEST_DOCRANGE_FIXTURE_ROT: the privacy scrub (3752f68a) replaced real self-IPs with documentation-range placeholders that classify as non-public, so the shared-address/public-admit assertions cannot hold, and a stale real-IP grep residue never matches"
+# meta:ta.activation_condition="re-enable after PR-E re-scrubs the RBL fixtures with genuinely-public placeholder IPs and removes the stale grep residue, then wire to ci-bash"
 # =============================================================================
 
 # Coding-standard header requires this line; the harness itself runs lenient (set +eE

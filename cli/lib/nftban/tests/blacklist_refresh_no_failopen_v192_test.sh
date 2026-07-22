@@ -15,6 +15,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
+# meta:ta.id="blacklist_refresh_no_failopen_v192_test"
+# meta:ta.owner="blacklist"
+# meta:ta.module="blacklist-refresh-atomicity"
+# meta:ta.execution_class="ROOT_LAB"
+# meta:ta.gate="lab-manual"
+# meta:ta.hermetic="false"
+# meta:ta.requires_root="true"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="true"
+# meta:ta.requires_package="false"
 # =============================================================================
 # F-FEED / F-GEO (D-NFTBAN-{FEED,GEOBAN}-REFRESH-FAILOPEN) runtime regression.
 #

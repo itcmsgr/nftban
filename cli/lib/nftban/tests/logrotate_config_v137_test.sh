@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="logrotate_config_v137_test"
+# meta:ta.owner="packaging"
+# meta:ta.module="logrotate"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Lane:    NFTBAN_ROADMAP/V1_137_LOG_DURABILITY_SCOPE.md (PR-A)
 # Gate:    OPEN_V1_137_PR_A_LOGROTATE_CONFIG_AND_PACKAGING

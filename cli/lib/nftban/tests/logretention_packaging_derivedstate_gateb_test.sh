@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none (reads repo files)"
+# meta:ta.id="logretention_packaging_derivedstate_gateb_test"
+# meta:ta.owner="packaging"
+# meta:ta.module="logretention"
+# meta:ta.execution_class="PACKAGE_BUILD"
+# meta:ta.gate="package-build"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 PASS=0; FAIL=0

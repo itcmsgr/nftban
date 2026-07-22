@@ -16,6 +16,17 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # meta:description="V132 PR-C behavior-truth regression guard. Static assertions that the displayed CLI text matches actual code behavior after the PR-C truth-alignment fixes: C1 (version --json emits no raw sentinel line), C2 (flush no longer advertises an unimplemented --json), C3 (flush returns rc=2 for invalid target/option and help no longer documents a non-existent rc=3 polkit branch), C5 (stale fail2ban-era 'jails' top-type replaced by 'filters' backed by the real nftban_stats_top_sources; no dead top_jails key; no bogus 'nftban migrate fail2ban' command; no 'Protected with fail2ban' claim), C7 (firewall validate --strict help documents the reachable exit codes 1 and 40), C8 (validate shim returns 3 — not 2 — for a missing/unreachable validator so rc=2 means DOWN only). Pure static + bash -n; no host contact, no build, no privileges."
+# meta:ta.id="v132_pr_c_behavior_truth_test"
+# meta:ta.owner="cli"
+# meta:ta.module="cli"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 

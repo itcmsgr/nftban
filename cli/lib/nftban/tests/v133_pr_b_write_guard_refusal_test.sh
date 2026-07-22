@@ -16,6 +16,17 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # meta:description="V133 PR-B regression guard for A12–A15: operator-facing privileged-write/read paths must emit the canonical polkit-aware refusal instead of leaking a raw OS error. A15 (get_live_ruleset) is deterministic — a stubbed failing nft printing 'Operation not permitted (you must be root)' must be reframed to a polkit/CAP_NET_ADMIN-aware JSON error with NO 'you must be root' substring. A12 (nftban_pro), A13 (cmd_snapshot), A14 (nftban_report_module) get static structural assertions (EUID guard + '! -w' + canonical message present) always, plus a non-root behavioral refusal (rc=1 + polkit stderr + no raw 'Permission denied') that SKIPs under root (CI runners are root; real non-root proof is lab/local)."
+# meta:ta.id="v133_pr_b_write_guard_refusal_test"
+# meta:ta.owner="security"
+# meta:ta.module="polkit-write-refusal"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 

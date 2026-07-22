@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="v131_1_d13_option_c_output_capture_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="firewall-validate"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 #
 # Scope: gate OPEN_V1_131_1_D13_OPTION_C_OUTPUT_CAPTURE_FIX (D13 only).
 # =============================================================================

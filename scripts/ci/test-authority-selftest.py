@@ -165,6 +165,16 @@ NEGATIVES = [
      ta_with(execution_class="PACKAGE_NATIVE_DEB", gate="package-native-deb",
              hermetic="false", requires_package="false"),
      "requires requires_package=true"),
+    # deferred contract (v1.226.0 PR-B extension)
+    ("deferred_needs_reason",
+     ta_with(gate="deferred", activation_condition="fixed after PR-E"),
+     "gate=deferred requires a meaningful ta.exclusion_reason"),
+    ("deferred_needs_activation",
+     ta_with(gate="deferred", exclusion_reason="known-failing fixture"),
+     "gate=deferred requires a concrete ta.activation_condition"),
+    ("activation_only_when_deferred",
+     ta_with(gate="ci-bash", activation_condition="someday"),
+     "only valid when gate=deferred"),
 ]
 
 
@@ -174,6 +184,20 @@ def test_negatives():
         root = make_repo({name + "_test.sh": header})
         rc, _, err = run(root, "validate", "--mode", "transition")
         expect(rc == 1 and needle in err, "reject: %s" % name, "rc=%d err=%s" % (rc, err.strip()[:160]))
+
+
+def test_deferred_valid():
+    print("test_deferred_valid")
+    # A correctly-classified hermetic test withheld from a live gate: reason + activation.
+    hdr = ta_with(gate="deferred",
+                  exclusion_reason="known-failing fixture OPEN_EXAMPLE_FIXTURE_ROT",
+                  activation_condition="re-enable once the fixture is repaired in a later PR")
+    root = make_repo({"good_test.sh": hdr})
+    rc, out, err = run(root, "validate", "--mode", "strict")
+    expect(rc == 0, "valid deferred entry (reason+activation) passes strict", err)
+    rc, _, _ = run(root, "generate")
+    rc, out, _ = run(root, "check")
+    expect(rc == 0 and "INDEX_FRESH = YES" in out, "deferred entry generates a fresh index", out)
 
 
 def test_duplicate_id():
@@ -218,9 +242,9 @@ def main():
         _die("tool not found: %s" % TOOL)
     tests = [
         test_happy_path, test_transition_allows_legacy, test_determinism,
-        test_stale_index_detected, test_negatives, test_duplicate_id,
-        test_duplicate_key_in_file, test_header_region_stops_at_code,
-        test_tool_failure_exit2,
+        test_stale_index_detected, test_negatives, test_deferred_valid,
+        test_duplicate_id, test_duplicate_key_in_file,
+        test_header_region_stops_at_code, test_tool_failure_exit2,
     ]
     for t in tests:
         t()

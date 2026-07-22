@@ -15,6 +15,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network="loopback test listener"
 # meta:inventory.privileges="root"
+# meta:ta.id="rebuild_no_syn_drop_v192_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="firewall-rebuild"
+# meta:ta.execution_class="ROOT_LAB"
+# meta:ta.gate="lab-manual"
+# meta:ta.hermetic="false"
+# meta:ta.requires_root="true"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="true"
+# meta:ta.requires_package="false"
 # =============================================================================
 # F-RB / D-NFTBAN-REBUILD-FLUSH-WINDOW runtime regression.
 #

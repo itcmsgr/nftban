@@ -18,6 +18,19 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="set_apply_single_writer_v213_grep_guard_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="set-apply-single-writer"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="deferred"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# meta:ta.exclusion_reason="known-failing: a stale point-in-time assertion pins an old VERSION value while the repo has advanced; its behavioral companion set_apply_single_writer_v213_test is healthy"
+# meta:ta.activation_condition="re-enable after the stale VERSION pin is dropped or refreshed, then wire to ci-bash"
 # =============================================================================
 
 set -Eeuo pipefail

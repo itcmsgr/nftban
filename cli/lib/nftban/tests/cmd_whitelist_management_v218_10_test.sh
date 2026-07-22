@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="cmd_whitelist_management_v218_10_test"
+# meta:ta.owner="whitelist"
+# meta:ta.module="whitelist-management"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Self-contained sandbox; no host contact; no root required. We extract the
 # v1.218.10 management functions (+ shared helpers) from cmd_whitelist.sh by name,

@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="cmd_blacklist_list_test"
+# meta:ta.owner="blacklist"
+# meta:ta.module="blacklist"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Purpose: Cover the v1.119 A1 D2 fix in cli/lib/nftban/cli/cmd_blacklist.sh
 #   nftban_blacklist_list — query both blacklist_ipv4 (interval, CIDRs from

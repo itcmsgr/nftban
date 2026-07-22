@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="panel_group_retirement_v137_test"
+# meta:ta.owner="security"
+# meta:ta.module="panel-group-retirement"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Lane:    v1.137 PR — nftban-panel authorization GROUP retirement
 # Gate:    OPEN_V1_137_BLOCKER_PANEL_GROUP_RETIREMENT

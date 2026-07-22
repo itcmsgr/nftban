@@ -16,6 +16,17 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # meta:description="V133 PR-D P2 targeted help/code-drift guard. Asserts the previously-undocumented dispatched subcommands are now documented in their command's help (D-05 status pending/queue; D-06 rbl config/stats/test; D-07 feeds config/stats/test; D-08 botscan stats/config + error fallback; D-09 geoban stats/test; D-10 login config/install; D-11 module duplicates) and that the stale references are gone tree-wide (D-01 'nftban gui', D-03 'emulate --out', D-04 'nftban profile select' — the latter allowed only in cmd_profile.sh which documents it as deprecated). NOT the comprehensive doctest guard or P3 alias allowlist (those are v1.134). D-02 was resolved in v1.132.0 PR-C and is not re-checked here."
+# meta:ta.id="v133_pr_d_p2_help_code_drift_test"
+# meta:ta.owner="cli"
+# meta:ta.module="cli-help-code-drift"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 

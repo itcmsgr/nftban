@@ -19,6 +19,17 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
+# meta:ta.id="cmd_update_detection_v126_test"
+# meta:ta.owner="update"
+# meta:ta.module="update-detection"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 # Defect closed:  D-DNS2-MIXED-HISTORY-AUTODETECT-FALSE-BLOCK
 # Scope file:     AUDIT_190_LIFECYCLE/V126_UPDATE_HISTORY_MIXED_INSTALL_DETECTOR_SCOPE.md

@@ -16,6 +16,17 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # meta:description="V134 PR-D doctest guard (Lane 2). Per command family, asserts the HIGH-VALUE invariant: every token the primary dispatch case accepts is either (a) documented in the command's help text, (b) declared in the intentional-alias allowlist (v134_help_code_alias_allowlist.tsv), or (c) a structural token (* / -h / --help / help / empty). This catches help<->code drift (a NEW undocumented subcommand) while letting genuine aliases/internal/universal-flag/deprecated tokens through via the allowlist. Deliberately single-direction + conservative: a family whose primary dispatch case OR help text cannot be confidently parsed is SKIPPED (reported, not failed) rather than producing the prose-extraction false positives that sank the v1.128 PR-B prototype. The reverse direction (advertised-but-unreachable) and exhaustive flag-level coverage are future hardening. Static scan; no host, no runtime, no privileges."
+# meta:ta.id="v130_subcommand_flag_help_code_test"
+# meta:ta.owner="cli"
+# meta:ta.module="cli-help-code-doctest"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="policy-gates"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
 
