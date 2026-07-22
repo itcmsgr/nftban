@@ -160,6 +160,14 @@ jobs:
       # advisory and do NOT block. Findings are REDACTED (no raw secrets in logs).
       # This gate enforces NFTBAN_RELEASE_PUBLICATION = BLOCKED at the source tree;
       # the release job must also run it over the package staging tree before publish.
+      # v1.226.0 privacy hotfix: the scanner's own self-tests are BLOCKING — they prove
+      # the escaped-dot IPv4 bypass stays closed (a real dotted-quad written as a shell
+      # grep pattern with backslash-escaped dots must not evade the deny-authority or the
+      # IPv4 detector) and that the hardening introduces no false positives. Synthetic
+      # fixtures only; no real identifier is present. Runs before the release-surface gate.
+      - name: Privacy scanner self-tests + escaped-IPv4 bypass regression (BLOCKING)
+        run: python3 scripts/ci/privacy-scan-selftest.py
+
       - name: Check privacy — RELEASE surface (SEC-INFRA Gate A, BLOCKING)
         run: python3 scripts/ci/privacy-scan.py --scope release --strict
 
