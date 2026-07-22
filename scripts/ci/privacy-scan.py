@@ -154,7 +154,7 @@ IPV4_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 IPV6_RE = re.compile(r"(?<![\w:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![\w:])")
 
 # Backslash-escaped-dot normalization (v1.226.0 privacy hotfix). Shell grep patterns
-# write dotted-quads with escaped dots (e.g. ^62\.38\.150\.122$ or "62\\.38\\.150\\.122"),
+# write dotted-quads with escaped dots (e.g. ^203\.0\.113\.5$ or "203\\.0\\.113\\.5"),
 # which the literal-dot IPV4_RE cannot see — a confirmed blocking-gate bypass. We collapse
 # one-or-more backslashes before a dot to a single literal dot and re-scan a COPY of the
 # line for detection only. This is DATA-ONLY: the normalized text is never executed,
