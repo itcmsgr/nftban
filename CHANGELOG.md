@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.225.0] - 2026-07-22 — Update-render truth, completion parity & uninstall firewall-ownership message
+
+Shell / packaging / test-infrastructure maintenance. **No Go product code changed** — `nftband`, `nftban-core` and
+`nftban-installer` are byte-identical to v1.224.0 when built with identical build metadata; no nftables, daemon,
+nft-schema (1.84.0) or config-schema (1.1.0) behavior changed.
+
+### Fixed
+- **Update degraded-state rendering truth** (`BUG-V1_222_1-UPDATE-STATEFILE-GREP-UNGUARDED`,
+  `BUG-V1_222_1-UPDATE-DEGRADED-ALL-UNITS-FILTERED-NO-HINT`). An absent `SERVICES_FAILED` key no longer aborts the
+  DEGRADED renderer under strict shell mode (`set -Eeuo pipefail`); explicitly-empty and absent fields use the intended
+  no-list fallback; a non-empty failed-unit field whose tokens are all filtered as non-canonical now prints an explicit
+  "evidence recorded but no canonical actionable unit remained" message instead of an empty block. The DEGRADED verdict
+  **remains DEGRADED** — no install-state mutation, rollback, update-sequencing, timer, or package-selection change.
+- **Completion parity** (`BUG-V1_222_1-RESOURCES-MISSING-FROM-BASH-COMPLETION`). `nftban health resources` (already a
+  shipped, dispatched subcommand) is now offered in Bash completion; a focused runtime completion-parity guard executes
+  in blocking CI. This is **not** full completion parity — the following authoritative `nftban health` subcommands
+  remain known-open gaps under `OPEN_CLI_RENDERING_AND_EXPORT_PARITY`: `diagnostics`, `rbl`, `botguard`, `fhs`.
+- **Uninstall firewall-ownership message** (`OPEN_UNINSTALL_HELP_MESSAGE_OPERATOR_OWNS_FIREWALL`). DEB ordinary removal
+  (`postrm remove`) and RPM final erase (`%postun`, `$1 -eq 0`) now explain that NFTBan-owned nftables tables and
+  enforcement were deleted, that other firewall authorities (OS/firewalld/ufw/Docker/libvirt/cloud/admin) were **not**
+  modified and may still be active, that the operator now owns the remaining firewall state (`sudo nft list ruleset`),
+  and how to restore protection. **No uninstall behavior changed** (message-only); the RPM upgrade path does not emit it.
+
+### Notes
+- **Test execution:** four specifically identified hermetic regression guards now execute in blocking Policy Gates
+  (update degraded-render, mail recipient/subject/help, health-resources completion parity, uninstall message). This is
+  a targeted correction — it does **not** mean the repository-wide test suite is fully manifested, governed, or
+  CI-executed (`OPEN_TEST_SUITE_SINGLE_AUTHORITY` remains open).
+- The previously registered installed RBL launcher debt (`OPEN_INSTALLED_RBL_TEST_PATH_LAUNCHER`) was forensically
+  verified as **already fixed in v1.220.1**; no v1.225.0 product change was required.
+- History-rewrite residual: the GitHub-managed immutable `refs/pull/*` residual from the earlier privacy remediation
+  remains open with GitHub Support and is **not** closed; the current tree, packages and public docs are clean.
+
 ## [v1.224.0] - 2026-07-21 — Health-resource parser & classifier truth hardening
 
 Maintenance release that hardens the health-resource **parser, classifier and tier predicate** against invalid,
