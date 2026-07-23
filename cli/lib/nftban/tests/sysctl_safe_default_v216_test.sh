@@ -55,7 +55,9 @@ grep -qiE 'keepalive|dead socket|dead-socket' "$CONF" && ok "PR1 rationale comme
 grep -qiE 'NO automatic live-kernel|no automatic live' "$CONF" && ok "PR1 no-auto-write note" || no "PR1 no-auto-write note"
 
 # ---- PR-2: packaging parity ----
-grep -qxF '/etc/sysctl.d/90-nftban.conf' <(sed -n '/DEBIAN\/conffiles/,/CONFFILES_EOF/p' "$BUILD") && ok "PR2 DEB conffiles declares sysctl" || no "PR2 DEB conffile"
+# v1.227 MAIL-F8: the DEB conffiles is now GENERATED from the staged tree (no CONFFILES_EOF
+# heredoc). Assert the generator emits the sysctl drop-in into DEBIAN/conffiles.
+grep -qE 'etc/sysctl\.d/90-nftban\.conf.*>>?.*conffiles|-f etc/sysctl\.d/90-nftban\.conf.*echo etc/sysctl\.d/90-nftban\.conf|echo etc/sysctl\.d/90-nftban\.conf' "$BUILD" && ok "PR2 DEB conffiles declares sysctl" || no "PR2 DEB conffile"
 grep -qE '%config\(noreplace\)\s+/etc/sysctl.d/90-nftban.conf' "$BUILD" && ok "PR2 RPM %config(noreplace) kept" || no "PR2 RPM noreplace"
 
 # ---- PR-3: registry + risk scan ----
