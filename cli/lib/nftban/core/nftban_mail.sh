@@ -871,7 +871,7 @@ CURLEOF
     local send_result=$?
 
     if (( send_result == 0 )); then
-        echo "✓ Email sent successfully to: $recipient"
+        echo "✓ Email submitted to transport for: $recipient (delivery not confirmed)"
 
         # Save sent email if debugging
         if [[ -n "${NFTBAN_MAIL_SAVE_SENT:-}" ]] && [[ -d "${NFTBAN_MAIL_SAVE_SENT}" ]]; then
