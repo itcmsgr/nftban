@@ -376,7 +376,7 @@ NFTBAN_MAIL_ON_LOGIN_ALERT=\"YES\""
                 return 1
             fi
 
-            nftban_mail_send "$content" "$recipient"
+            NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Notification" nftban_mail_send "$content" "$recipient"
             return $?
             ;;
     esac
