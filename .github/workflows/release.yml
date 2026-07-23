@@ -59,6 +59,11 @@ jobs:
   build-binaries:
     name: Build Go binaries
     runs-on: ubuntu-latest
+    # v1.226.0: this job runs the fail-closed publication privacy gate, whose
+    # secrets (NFTBAN_PRIVACY_DENYLIST / NFTBAN_PRIVACY_FP_KEY) live ONLY on the
+    # protected `privacy-gate` environment (not repo-level, by design). Declare the
+    # environment so they resolve here — preserving maintainer approval + scoping.
+    environment: privacy-gate
     # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.12); a single
     # unconditional setup-go feeds the build, so GOTOOLCHAIN=local avoids a
     # redundant toolchain re-download. Compiler version is unchanged (1.25.12),
