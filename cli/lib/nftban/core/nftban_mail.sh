@@ -826,7 +826,12 @@ EOF
                 # shellcheck disable=SC2064  # expand path now so the trap cleans this exact file
                 trap "rm -f '$_smtp_netrc' 2>/dev/null || true" EXIT INT TERM HUP QUIT
                 local _smtp_host
-                _smtp_host=$(echo "${NFTBAN_SMTP_SERVER:-localhost}" | cut -d: -f1)
+                # v1.227 MAIL-F1: the netrc "machine" MUST equal the host curl actually connects
+                # to (NFTBAN_SMTP_HOST, used by smtp_url above and guarded non-empty by the curl-SMTP
+                # dispatch). The prior code read NFTBAN_SMTP_SERVER — a variable set NOWHERE — so it
+                # defaulted to "localhost"; curl matches netrc creds by machine=host, so localhost
+                # never matched the real host and curl sent NO credentials while status showed "(ready)".
+                _smtp_host=$(echo "${NFTBAN_SMTP_HOST}" | cut -d: -f1)
                 echo "machine $_smtp_host login ${NFTBAN_SMTP_USER} password ${NFTBAN_SMTP_PASS:-}" > "$_smtp_netrc"
                 curl_args+=(--netrc-file "$_smtp_netrc")
             fi

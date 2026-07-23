@@ -140,6 +140,7 @@ logrotate_behavioral_gateb_test	cli/lib/nftban/tests/logrotate_behavioral_gateb_
 logrotate_config_v137_test	cli/lib/nftban/tests/logrotate_config_v137_test.sh	packaging	test	logrotate	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logs_truth_v150_test	cli/lib/nftban/tests/logs_truth_v150_test.sh	health	test	log-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 mac_posture_v158_test	cli/lib/nftban/tests/mac_posture_v158_test.sh	security	test	mac-posture	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+mail_netrc_auth_transport_v1227_test	cli/lib/nftban/tests/mail_netrc_auth_transport_v1227_test.sh	mail	test	mail-smtp-netrc	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 mail_recipient_subject_help_v1223_test	cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh	mail	test	mail	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 maint_table_absent_noise_v1930_test	cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh	firewall	test	maintenance-table-probe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_counting_model_guard_v190_test	cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
