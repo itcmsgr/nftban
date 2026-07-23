@@ -237,7 +237,7 @@ nftban_cmd_fhs() {
                     return 1
                 fi
                 echo "Sending FHS report to $recipient..."
-                nftban_mail_send "$report_path" "$recipient"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan FHS Report" nftban_mail_send "$report_path" "$recipient"
                 return $?
             else
                 # Generate report and mail it
@@ -247,7 +247,7 @@ nftban_cmd_fhs() {
                 if [[ $? -eq 0 && -f "$report_file" ]]; then
                     echo "✓ Report generated: $report_file"
                     echo "Sending via email..."
-                    nftban_mail_send "$report_file" "$recipient"
+                    NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan FHS Report" nftban_mail_send "$report_file" "$recipient"
                     return $?
                 else
                     echo "ERROR: Failed to generate HTML report" >&2

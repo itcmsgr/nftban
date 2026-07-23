@@ -533,7 +533,7 @@ nftban_report_email_generate() {
     # ==========================================================================
 
     # Send via NFTBan unified mail mechanism (subject embedded in HTML)
-    if nftban_mail_send "$html" "$recipient" 2>/dev/null; then
+    if NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Statistics Report" nftban_mail_send "$html" "$recipient" 2>/dev/null; then
         echo "[SUCCESS] Report sent to ${recipient}"
         return 0
     else

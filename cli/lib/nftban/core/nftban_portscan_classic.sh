@@ -1016,7 +1016,7 @@ nftban_portscan_classic_send_alert() {
     if [[ "${PORTSCAN_NOTIFY_EMAIL:-false}" == "true" ]]; then
         local recipient="${PORTSCAN_NOTIFY_EMAIL_TO:-${NFTBAN_MAIL_RECIPIENT:-}}"
         if [[ -n "$recipient" ]]; then
-            nftban_mail_send "$message" "$recipient" 2>/dev/null || true
+            NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Port Scan Alert" nftban_mail_send "$message" "$recipient" 2>/dev/null || true
         fi
     fi
 

@@ -398,7 +398,7 @@ EOF
 )
 
         # nftban_mail_send signature: content, recipient (optional)
-        if ! nftban_mail_send "$body" "$recipient"; then
+        if ! NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Statistics Report" nftban_mail_send "$body" "$recipient"; then
             echo "ERROR: Failed to send email" >&2
             rm -rf "$temp_dir"
             return 1

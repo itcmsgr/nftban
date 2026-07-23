@@ -209,7 +209,7 @@ nftban_cmd_module() {
                 if [[ -z "$save_to_file" ]]; then
                     nftban_module_report_status > "$report_file"
                 fi
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ Report emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Report" nftban_mail_send "$report_file" "$email_to" && echo "✓ Report emailed to: $email_to"
             fi
             
             return $result
@@ -231,7 +231,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-summary-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && echo "$output" > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ Summary emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Summary" nftban_mail_send "$report_file" "$email_to" && echo "✓ Summary emailed to: $email_to"
             fi
 
             return $result
@@ -252,7 +252,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" && $result -eq 0 ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-report-XXXXXX.json)}"
                 [[ -z "$save_to_file" ]] && nftban_module_report_json > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ JSON emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Report (JSON)" nftban_mail_send "$report_file" "$email_to" && echo "✓ JSON emailed to: $email_to"
             fi
 
             return $result
@@ -277,7 +277,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" && $result -eq 0 ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-validation-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_validate_metadata > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ Validation emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Validation Report" nftban_mail_send "$report_file" "$email_to" && echo "✓ Validation emailed to: $email_to"
             fi
 
             return $result
@@ -302,7 +302,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" && $result -eq 0 ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-license-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_check_license > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ License report emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module License Report" nftban_mail_send "$report_file" "$email_to" && echo "✓ License report emailed to: $email_to"
             fi
 
             return $result
@@ -327,7 +327,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" && $result -eq 0 ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-duplicates-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_check_duplicates > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ Duplicate check report emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Duplicate-Check Report" nftban_mail_send "$report_file" "$email_to" && echo "✓ Duplicate check report emailed to: $email_to"
             fi
 
             return $result
@@ -352,7 +352,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" && $result -eq 0 ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-author-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_check_author > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ Author report emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Author Report" nftban_mail_send "$report_file" "$email_to" && echo "✓ Author report emailed to: $email_to"
             fi
 
             return $result
@@ -376,7 +376,7 @@ nftban_cmd_module() {
             if [[ -n "$email_to" && $result -eq 0 ]]; then
                 local report_file="${save_to_file:-$(mktemp -t nftban-module-depends-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_analyze_dependencies > "$report_file"
-                nftban_mail_send "$report_file" "$email_to" && echo "✓ Dependency analysis emailed to: $email_to"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Dependency Report" nftban_mail_send "$report_file" "$email_to" && echo "✓ Dependency analysis emailed to: $email_to"
             fi
 
             return $result
@@ -400,7 +400,7 @@ nftban_cmd_module() {
                 
                 # If --email specified, send it
                 if [[ -n "$email_to" ]]; then
-                    nftban_mail_send "$report_file" "$email_to" && echo "✓ HTML report emailed to: $email_to"
+                    NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Report (HTML)" nftban_mail_send "$report_file" "$email_to" && echo "✓ HTML report emailed to: $email_to"
                 fi
                 
                 echo
@@ -452,7 +452,7 @@ nftban_cmd_module() {
                     return 1
                 fi
                 echo "Sending module report to $recipient..."
-                nftban_mail_send "$report_path" "$recipient"
+                NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Report" nftban_mail_send "$report_path" "$recipient"
                 return $?
             else
                 # Generate report and mail it
@@ -466,7 +466,7 @@ nftban_cmd_module() {
                     [[ -n "$save_to_file" ]] && cp "$report_file" "$save_to_file" && echo "✓ Saved to: $save_to_file"
                     
                     echo "Sending via email..."
-                    nftban_mail_send "$report_file" "$recipient"
+                    NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Module Report" nftban_mail_send "$report_file" "$recipient"
                     return $?
                 else
                     echo "ERROR: Failed to generate HTML report" >&2
