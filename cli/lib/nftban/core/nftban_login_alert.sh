@@ -563,7 +563,7 @@ EOF
 
     # Send via NFTBan unified mail mechanism
     if nftban_mail_send "$html" 2>/dev/null; then
-        nftban_login_alert_log "Login digest sent successfully ($count alerts)"
+        nftban_login_alert_log "Login digest submitted ($count alerts; delivery not confirmed)"
         # Clear digest after successful send
         nftban_login_digest_clear
         return 0

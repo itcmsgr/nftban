@@ -378,7 +378,7 @@ nftban_report_cmd_email() {
         if type -t nftban_print_status >/dev/null 2>&1; then
             nftban_print_status "success" "Report emailed to ${recipient}"
         else
-            echo "[SUCCESS] Email sent to ${recipient}"
+            echo "[SUCCESS] Email submitted to ${recipient} (delivery not confirmed)"
         fi
     elif declare -f nftban_mail_send >/dev/null 2>&1; then
         # Fallback: Use mail module with basic content
@@ -407,7 +407,7 @@ EOF
         if type -t nftban_print_status >/dev/null 2>&1; then
             nftban_print_status "success" "Report emailed to ${recipient}"
         else
-            echo "[SUCCESS] Email sent to ${recipient}"
+            echo "[SUCCESS] Email submitted to ${recipient} (delivery not confirmed)"
         fi
     else
         echo ""
