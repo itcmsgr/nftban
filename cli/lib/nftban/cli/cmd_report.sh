@@ -1285,7 +1285,9 @@ nftban_report_generate_html() {
     local until="$3"
     local theme="${4:-dark}"
 
-    local template="/usr/share/nftban/templates/reports/stats_dashboard.html"
+    # Default template ships under /usr/share; NFTBAN_REPORT_TEMPLATE overrides it for
+    # testability (production default unchanged).
+    local template="${NFTBAN_REPORT_TEMPLATE:-/usr/share/nftban/templates/reports/stats_dashboard.html}"
 
     if [[ ! -f "$template" ]]; then
         echo "ERROR: HTML template not found: $template" >&2
@@ -1305,8 +1307,34 @@ nftban_report_generate_html() {
     local json_data
     json_data=$(cat "$temp_json")
 
-    # Inject data into template (replace placeholder)
-    html_content="${html_content//window.__NFTBAN_DATA__ = {            \/\/ Placeholder - will be replaced        }/window.__NFTBAN_DATA__ = ${json_data}}"
+    # v1.227 MAIL-F4: this JSON is injected into a <script> block. jq escapes quotes for JSON
+    # validity but does NOT neutralize characters the HTML parser acts on — a data value
+    # containing </script> (or <!--, ]]>, U+2028/U+2029) breaks out of the <script> element
+    # regardless of JS-string context, because the HTML tokenizer closes the tag on the literal
+    # </script>. \u-escape the HTML-significant characters INSIDE the compact JSON: they only
+    # occur inside string values, so this stays valid JSON and the browser decodes them back to
+    # the same text (identical render). This is NOT HTML-entity escaping (&lt; etc. would corrupt
+    # the JS). The replacement strings contain no <, >, or &, so escape order is immaterial.
+    json_data="${json_data//&/\\u0026}"
+    json_data="${json_data//</\\u003c}"
+    json_data="${json_data//>/\\u003e}"
+    json_data="${json_data//$'\u2028'/\\u2028}"
+    json_data="${json_data//$'\u2029'/\\u2029}"
+
+    # Inject data into template (replace the placeholder line).
+    # v1.227 MAIL-F4: the prior `${html_content//… = {  …  }/… = ${json_data}}` form was fragile —
+    # the literal `}` inside the substitution PATTERN prematurely closed bash's ${…} parse, so the
+    # data was mis-injected and the document was malformed (delimiter/replacement text leaked). Use
+    # awk keyed on the unique placeholder comment, with the (already \u-escaped) JSON passed via the
+    # ENVIRONMENT so neither the shell nor awk performs escape processing on the \uXXXX sequences and
+    # the JSON braces cannot perturb any brace parser.
+    html_content="$(NFTBAN_REPORT_JSON="$json_data" awk '
+        /window\.__NFTBAN_DATA__ = \{.*Placeholder - will be replaced/ {
+            print "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"]
+            next
+        }
+        { print }
+    ' "$template")"
 
     # Write final HTML
     echo "$html_content" > "$output"
