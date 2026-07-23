@@ -11,6 +11,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.227.0] - 2026-07-24 — Mail/reporting Lane-1: SMTP auth, secret redaction, report XSS-safety, subject truth, DEB conffile parity & honest delivery wording
+
+Mail and reporting correctness/security release (Lane-1). **No Go product code changed** — `nftband`, `nftban-core`
+and `nftban-installer` are byte-identical to v1.226.0 when built with identical build metadata; no daemon,
+nftables, nft-schema (1.84.0) or config-schema (1.1.0) *behavior* changed (the schema gains additive `sensitive`
+value annotations only). Six independent shell/packaging fixes, each with a governed hermetic regression test.
+
+### Fixed — mail transport & security
+
+- **SMTP authentication was silently disabled (MAIL-F1).** The curl `--netrc-file` `machine` line was built from an
+  undefined variable (`NFTBAN_SMTP_SERVER`), so it defaulted to `localhost`; curl matches netrc credentials by the
+  host it connects to (`NFTBAN_SMTP_HOST`), so authenticated SMTP sent **no credentials** while `mail status`
+  reported `(ready)`. The netrc machine is now derived from `NFTBAN_SMTP_HOST`. (`cli/lib/nftban/core/nftban_mail.sh`)
+- **`config show` leaked credential values.** `NFTBAN_SMTP_PASS` and connector secrets rendered in cleartext (text
+  and `--json`). Credential *values* are now redacted (`[REDACTED]`) by a schema-authoritative classifier
+  (`"sensitive": true` on the eight shipped credential keys) plus a suffix fail-safe for schema-unknown keys; both
+  render paths share one classification. In-schema non-secrets such as `NFTBAN_COLLECT_LOG_SINGLE_PASS` and header
+  *names* (`…_API_KEY_HEADER`) are shown, not masked. Scope: `config show` only.
+- **HTML report `<script>` breakout (report XSS-safety).** Stats data injected into the report `<script>` block
+  could break out of the element if a value contained `</script>` (or `<!--`, `]]>`, U+2028/U+2029). The compact JSON
+  is now `\uXXXX`-escaped for the HTML-significant characters (valid JSON the browser decodes identically; not
+  HTML-entity escaping). The same change replaces a fragile brace-sensitive placeholder substitution with a robust
+  `awk` injection, fixing malformed output on the default `report generate --format html` path.
+  (`cli/lib/nftban/cli/cmd_report.sh`)
+
+### Fixed — mail reporting truth
+
+- **Report emails were mislabeled "Report" (MAIL-F2).** ~20 report/alert producers called the mailer with no subject,
+  defaulting to a generic subject. Each producer now sets an honest, path-specific subject
+  (FHS / module / port / statistics / port-scan) via the existing dynamically-scoped override; no mailer interface
+  change, recipient and transport authority unchanged.
+- **False "sent successfully" claims (claims-truth).** Paths that only knew the transport returned `0` claimed the
+  mail was *delivered*. A `0` exit means submitted/accepted, not delivered — five such strings now read
+  "submitted … (delivery not confirmed)". String-only; no control-flow or exit-code change.
+
+### Fixed — packaging (DEB upgrade-preservation)
+
+- **Operator configs were overwritten on `apt upgrade` (MAIL-F8).** The DEB `conffiles` list was hand-maintained and
+  had drifted — it omitted real shipped configs (`mail.conf`, `nftables.conf`, `stats.conf`, `login_alert.conf`,
+  `connectors.conf`, panel configs, …) that RPM's `%config(noreplace)` wildcard preserved. `conffiles` is now
+  **generated** from the staged config set (every `/etc/nftban` `*.conf` + `conf.d` profiles + the sysctl drop-in;
+  excluding defaults/examples/`.local`), so DEB↔RPM parity holds automatically and cannot drift (23 → 51 entries).
+  RPM packaging unchanged. (`packaging/build_nftban.sh`)
+
+### Notes
+
+Every fix ships a hermetic, index-governed regression test (original-failure + fixed + mutation proofs). Package-native
+upgrade-preservation for the DEB conffile change is validated on the release candidate (lab2 DEB edit→upgrade→preserve,
+lab4 RPM regression) prior to publication. Fleet deployment is a separate decision from publication.
+
 ## [v1.226.0] - 2026-07-23 — Test execution authority, strict ci-bash enforcement & whitelist-session cleanup fix
 
 Test-authority, enforcement, fixture-reconciliation and one whitelist-session runtime defect fix. **No Go product code
