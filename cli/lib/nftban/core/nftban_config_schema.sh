@@ -291,6 +291,55 @@ nftban_schema_get_renamed() {
     jq -r '.renamed // {}' "$schema_file" 2>/dev/null || true
 }
 
+# v1.227 MAIL-F3: secret-value classification for redaction in `config show`.
+# AUTHORITY = schema "sensitive": true (a credential VALUE). A schema key WITHOUT
+# sensitive:true is NEVER redacted — so in-schema flags/settings that merely end in
+# _PASS (e.g. NFTBAN_COLLECT_LOG_SINGLE_PASS) or name a header (…_API_KEY_HEADER) are
+# shown, not masked. A suffix fail-safe applies ONLY to keys ABSENT from the schema,
+# so an unknown FOO_TOKEN is still masked rather than leaked.
+# Returns 0 (sensitive) / 1 (not).
+nftban_config_key_is_sensitive() {
+    local key="$1"
+    local schema_file="${2:-$NFTBAN_SCHEMA_FILE}"
+    if [[ -f "$schema_file" ]]; then
+        local flagged known
+        flagged=$(jq -r --arg k "$key" '.properties[$k].sensitive // false' "$schema_file" 2>/dev/null || echo false)
+        [[ "$flagged" == "true" ]] && return 0
+        known=$(jq -r --arg k "$key" 'if (.properties | has($k)) then "yes" else "no" end' "$schema_file" 2>/dev/null || echo no)
+        [[ "$known" == "yes" ]] && return 1   # in-schema but not sensitive → never redact
+    fi
+    # schema-unknown key → suffix fail-safe
+    [[ "$key" =~ (PASS|PASSWORD|SECRET|TOKEN|API_KEY)$ ]] && return 0
+    return 1
+}
+
+# v1.227 MAIL-F3: emit the JSON array of keys to redact for a given effective-config
+# JSON object, so `config show` text AND --json share ONE classification (no drift).
+# = (schema sensitive keys) ∪ (effective keys absent from schema that match the
+# credential suffix). With no argument, returns just the schema sensitive keys.
+nftban_config_sensitive_keys_json() {
+    local effective_json="${1:-}"
+    local schema_file="${2:-$NFTBAN_SCHEMA_FILE}"
+    local schema_sensitive="[]" schema_keys="[]"
+    if [[ -f "$schema_file" ]]; then
+        schema_sensitive=$(jq -c '[.properties | to_entries[] | select(.value.sensitive == true) | .key]' "$schema_file" 2>/dev/null || echo '[]')
+        schema_keys=$(jq -c '[.properties | keys[]]' "$schema_file" 2>/dev/null || echo '[]')
+    fi
+    if [[ -z "$effective_json" ]]; then
+        printf '%s' "$schema_sensitive"
+        return 0
+    fi
+    printf '%s' "$effective_json" | jq -c \
+        --argjson sens "$schema_sensitive" \
+        --argjson known "$schema_keys" '
+        ([keys[] | select(
+            (. as $k | $known | index($k) | not) and
+            (test("(PASS|PASSWORD|SECRET|TOKEN|API_KEY)$"))
+        )]) as $suffix
+        | ($sens + $suffix) | unique
+    ' 2>/dev/null || printf '%s' "$schema_sensitive"
+}
+
 # =============================================================================
 # CONFIG LOADING AND MERGING
 # =============================================================================

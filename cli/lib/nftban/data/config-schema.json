@@ -5802,7 +5802,8 @@
       "introduced_in": "1.0.0",
       "category": "notifications",
       "config_file": "conf.d/mail.conf",
-      "active_when": "always"
+      "active_when": "always",
+      "sensitive": true
     },
     "NFTBAN_SMTP_PORT": {
       "type": "string",
@@ -12790,7 +12791,8 @@
       "type": "string",
       "description": "Nftban connector elasticsearch api key",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_ELASTICSEARCH_AUTH": {
       "type": "string",
@@ -12830,7 +12832,8 @@
       "type": "string",
       "description": "Nftban connector elasticsearch pass",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_ELASTICSEARCH_TLS": {
       "type": "string",
@@ -12864,7 +12867,8 @@
       "type": "string",
       "description": "Nftban connector es api key",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_ES_INDEX_PATTERN": {
       "type": "string",
@@ -12877,7 +12881,8 @@
       "type": "string",
       "description": "Nftban connector es password",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_ES_TLS_SKIP_VERIFY": {
       "type": "string",
@@ -12971,13 +12976,15 @@
       "type": "string",
       "description": "Nftban connector kafka sasl pass",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_KAFKA_SASL_PASSWORD": {
       "type": "string",
       "description": "Nftban connector kafka sasl password",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_KAFKA_SASL_USER": {
       "type": "string",
@@ -13044,7 +13051,8 @@
       "type": "string",
       "description": "Nftban connector webhook api key",
       "introduced_in": "1.43.0",
-      "module": "connectors"
+      "module": "connectors",
+      "sensitive": true
     },
     "NFTBAN_CONNECTOR_WEBHOOK_API_KEY_HEADER": {
       "type": "string",

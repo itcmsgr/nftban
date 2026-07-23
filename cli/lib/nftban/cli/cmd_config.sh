@@ -267,8 +267,18 @@ nftban_cmd_config_show() {
     local effective
     effective=$(nftban_config_load_effective)
 
+    # v1.227 MAIL-F3: redact credential VALUES (schema "sensitive": true, plus a suffix
+    # fail-safe for schema-unknown keys). ONE classification drives both renders so text
+    # and --json never diverge. Non-sensitive keys — including in-schema *_SINGLE_PASS —
+    # render their real value.
+    local _sensitive_keys="[]"
+    if command -v nftban_config_sensitive_keys_json >/dev/null 2>&1; then
+        _sensitive_keys=$(nftban_config_sensitive_keys_json "$effective")
+    fi
+
     if [[ "$json_mode" == "--json" || "$json_mode" == "1" ]]; then
-        echo "$effective" | jq '.'
+        echo "$effective" | jq --argjson s "$_sensitive_keys" \
+            'with_entries(if (.key as $k | $s | index($k)) then .value = "[REDACTED]" else . end)'
     else
         echo "Effective Configuration (all sources merged)"
         echo "════════════════════════════════════════════════════════════"
@@ -276,9 +286,9 @@ nftban_cmd_config_show() {
 
         # OPTIMIZED: Single jq call, sorted alphabetically
         # Category grouping removed for performance (was causing 100+ jq calls)
-        echo "$effective" | jq -r '
+        echo "$effective" | jq -r --argjson s "$_sensitive_keys" '
             to_entries | sort_by(.key) | .[] |
-            "  \(.key)\("                                   "[0:35-(.key|length)]) = \(.value)"
+            "  \(.key)\("                                   "[0:35-(.key|length)]) = \((.key as $k | $s | index($k)) as $sec | if $sec then "[REDACTED]" else .value end)"
         '
 
         # v1.43.0 P3-35: Divergence explanation footer
