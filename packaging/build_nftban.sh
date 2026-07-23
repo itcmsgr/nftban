@@ -1961,36 +1961,31 @@ PRERM
         chmod 755 "${BUILD_DIR}/deb/DEBIAN/postrm"
     fi
 
-    # BUG-L52 FIX: Reduced conffiles to only base config files that ship with
-    # defaults. User-managed files (whitelist/blacklist) removed to avoid
-    # interactive prompts during non-interactive upgrades.
-    # Users should customize via .local override files (e.g., main.conf.local).
-    cat > "${BUILD_DIR}/deb/DEBIAN/conffiles" <<'CONFFILES_EOF'
-/etc/nftban/nftban.conf
-/etc/nftban/conf.d/feeds.conf
-/etc/nftban/conf.d/rbl/main.conf
-/etc/nftban/conf.d/rbl/rbls.conf
-/etc/nftban/conf.d/rbl/custom.conf
-/etc/nftban/conf.d/ddos/main.conf
-/etc/nftban/conf.d/portscan/main.conf
-/etc/nftban/conf.d/login/main.conf
-/etc/nftban/conf.d/suricata/interfaces.conf
-/etc/nftban/conf.d/botscan/main.conf
-/etc/nftban/conf.d/botguard/main.conf
-/etc/nftban/conf.d/botguard/allowed_crawlers.conf
-/etc/nftban/conf.d/botguard/denied_crawlers.conf
-/etc/nftban/conf.d/botguard/profiles/generic.yaml
-/etc/nftban/conf.d/botguard/profiles/wordpress.yaml
-/etc/nftban/conf.d/tunnel/main.conf
-/etc/nftban/conf.d/geoban/main.conf
-/etc/nftban/conf.d/geoip/main.conf
-/etc/nftban/conf.d/metrics.conf
-/etc/nftban/conf.d/persistent.conf
-/etc/nftban/conf.d/logs.conf
-/etc/nftban/conf.d/watchdog.conf
-/etc/nftban/conf.d/community_stats.conf.default
-/etc/sysctl.d/90-nftban.conf
-CONFFILES_EOF
+    # v1.227 MAIL-F8: GENERATE the DEB conffiles from the actually-staged config set instead
+    # of a hand-maintained list. dpkg has no %config wildcard (unlike the RPM spec), so the
+    # prior explicit list silently drifted — it omitted real shipped operator configs
+    # (mail.conf, stats.conf, login_alert.conf, nftables.conf, panels/*, connectors.conf, …),
+    # so those edits were OVERWRITTEN on `apt upgrade` while RPM's %config(noreplace) wildcard
+    # preserved them. Enumerating the staged tree (create_deb_control runs AFTER config staging)
+    # keeps DEB↔RPM parity automatically and makes future configs drift-proof.
+    #   protected = every operator-editable config under /etc/nftban:
+    #     - all *.conf (covers /etc/nftban/nftables.conf + every conf.d/**/*.conf)
+    #     - the botguard crawler profiles (conf.d/**/*.yaml|*.yml)
+    #     - the sysctl drop-in (/etc/sysctl.d/90-nftban.conf)
+    #   excluded = shipped references, never operator-owned-in-place:
+    #     - *.default / *.example (always-replaced templates)
+    #     - *.local (operator override files, dpkg must never touch)
+    #   NOT protected = shipped runtime templates outside conf.d (e.g. suricata/profiles/*.yaml)
+    {
+        (
+            cd "${BUILD_DIR}/deb" 2>/dev/null || exit 0
+            find etc/nftban -type f -name '*.conf' \
+                 ! -name '*.default' ! -name '*.example' ! -name '*.local' 2>/dev/null
+            find etc/nftban/conf.d -type f \( -name '*.yaml' -o -name '*.yml' \) \
+                 ! -name '*.default' ! -name '*.example' ! -name '*.local' 2>/dev/null
+            [ -f etc/sysctl.d/90-nftban.conf ] && echo etc/sysctl.d/90-nftban.conf
+        ) | sed 's,^,/,' | LC_ALL=C sort -u
+    } > "${BUILD_DIR}/deb/DEBIAN/conffiles"
 }
 
 build_deb() {

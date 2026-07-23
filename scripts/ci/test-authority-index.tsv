@@ -102,6 +102,7 @@ community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	te
 config_local_impl2_test	cli/lib/nftban/tests/config_local_impl2_test.sh	core	test	config-local	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_source_helper_impl1_test	cli/lib/nftban/tests/config_local_source_helper_impl1_test.sh	core	test	config-local-source	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_show_secret_redaction_v1227_test	cli/lib/nftban/tests/config_show_secret_redaction_v1227_test.sh	mail	test	config-secret-redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+deb_conffile_parity_v1227_test	cli/lib/nftban/tests/deb_conffile_parity_v1227_test.sh	mail	test	deb-conffile-parity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 error_text_3line_v153_test	cli/lib/nftban/tests/error_text_3line_v153_test.sh	cli	test	cli-ux	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_exit2_phase2_scale_guard_v1361_test	cli/lib/nftban/tests/exporter_exit2_phase2_scale_guard_v1361_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_exit2_resilience_v136_test	cli/lib/nftban/tests/exporter_exit2_resilience_v136_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
