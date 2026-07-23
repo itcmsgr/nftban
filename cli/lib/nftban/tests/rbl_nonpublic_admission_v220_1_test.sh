@@ -23,15 +23,13 @@
 # meta:ta.owner="rbl"
 # meta:ta.module="rbl-nonpublic-admission"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
-# meta:ta.gate="deferred"
+# meta:ta.gate="ci-bash"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:ta.exclusion_reason="known-failing collateral of OPEN_RBL_V220_0_TEST_DOCRANGE_FIXTURE_ROT: the PUBLIC4/PUBLIC6 controls are documentation-range so nftban_hostaddr_is_public rejects them and the public-admit cases fail (the public-DNS control cases still pass)"
-# meta:ta.activation_condition="re-enable after PR-E re-scrubs the RBL fixtures with genuinely-public placeholder IPs, then wire to ci-bash"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -53,8 +51,8 @@ no(){ printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
 has(){ [[ "$1" == *"$2"* ]]; }
 
 NONPUBLIC=(127.0.0.1 127.0.1.1 ::1 10.0.0.5 192.168.1.10 169.254.1.1 fe80::1 100.64.0.1 fc00::1 0.0.0.0 :: 224.0.0.1 ff02::1 192.0.2.1 2001:db8::1 240.0.0.1)
-PUBLIC4=192.0.2.67
-PUBLIC6=2001:db8:c014:5ee1::1
+PUBLIC4=198.18.0.1
+PUBLIC6=2001:2::1
 
 echo "=== v1.220.1 RBL non-public admission (F-RBL-0/1/2/3/4) ==="
 
@@ -125,7 +123,7 @@ run_cmd() { # $1 = shell snippet run after stubs; prints output + "CHECKED:<ip>"
     export NFTBAN_RBL_CACHE_DIR; NFTBAN_RBL_CACHE_DIR="$(mktemp -d)"
     REC="$NFTBAN_RBL_CACHE_DIR/checked.rec"; : > "$REC"
     # self-discovery: one public v4 + v6
-    nftban_rbl_get_public_ips() { printf '%s\n' "192.0.2.67" "2001:db8:c014:5ee1::1"; }
+    nftban_rbl_get_public_ips() { printf '%s\n' "198.18.0.1" "2001:2::1"; }
     # RECORDING checkers (admission must exclude non-public BEFORE these are called)
     nftban_rbl_check_ip_parallel() { echo "$1" >> "$REC"; printf '%s\n' "Summary:" "  Listed: 0" "  Clean: 24"; }
     nftban_rbl_check_ip() { nftban_rbl_check_ip_parallel "$1"; }
@@ -150,24 +148,24 @@ no_nonpublic_checked() { # $1 output -> 0 if NO known non-public probe was check
 }
 
 # C1 scheduled critical IPs — mixed public + non-public
-o="$(run_cmd 'NFTBAN_RBL_CRITICAL_IPS="203.0.113.9|x" ; NFTBAN_RBL_CRITICAL_IPS="8.8.4.4|web,127.0.0.1|mail,10.0.0.5|db,::1|x" nftban_cmd_rbl_check --quiet 2>&1')"
+o="$(run_cmd 'NFTBAN_RBL_CRITICAL_IPS="203.0.113.9|x" ; NFTBAN_RBL_CRITICAL_IPS="198.19.100.50|web,127.0.0.1|mail,10.0.0.5|db,::1|x" nftban_cmd_rbl_check --quiet 2>&1')"
 { ! printf '%s\n' "$o" | grep -q '^CHECKED:127.0.0.1$' && ! printf '%s\n' "$o" | grep -q '^CHECKED:10.0.0.5$' && ! printf '%s\n' "$o" | grep -q '^CHECKED:::1$'; } && ok "C1 scheduled: non-public critical IPs NOT checked (timer path protected)" || { no "C1 non-public critical checked"; printf '%s\n' "$o" | grep '^CHECKED:'; }
-printf '%s\n' "$o" | grep -q '^CHECKED:8.8.4.4$' && ok "C1b public critical IP IS checked" || no "C1b public critical not checked"
+printf '%s\n' "$o" | grep -q '^CHECKED:198.19.100.50$' && ok "C1b public critical IP IS checked" || no "C1b public critical not checked"
 
 # C2 manual --ip non-public → rc2, not checked
 o="$(run_cmd 'nftban_cmd_rbl_check --ip 127.0.0.1 2>&1; echo RC=$?')"
 { has "$o" "RC=2" && ! printf '%s\n' "$o" | grep -q '^CHECKED:127.0.0.1$'; } && ok "C2 manual --ip loopback → rc2, no DNSBL" || no "C2 manual --ip non-public checked ($(printf '%s' "$o"|grep RC=))"
-o="$(run_cmd 'nftban_cmd_rbl_check --ip 8.8.4.4 2>&1')"
-printf '%s\n' "$o" | grep -q '^CHECKED:8.8.4.4$' && ok "C2b manual --ip public IS checked" || no "C2b manual --ip public not checked"
+o="$(run_cmd 'nftban_cmd_rbl_check --ip 198.19.100.50 2>&1')"
+printf '%s\n' "$o" | grep -q '^CHECKED:198.19.100.50$' && ok "C2b manual --ip public IS checked" || no "C2b manual --ip public not checked"
 
 # C3 dedup: same public IP via self + critical → one check
-o="$(run_cmd 'NFTBAN_RBL_CRITICAL_IPS="192.0.2.67|dup" nftban_cmd_rbl_check --quiet 2>&1')"
-n="$(printf '%s\n' "$o" | grep -c '^CHECKED:192.0.2.67$' || true)"
+o="$(run_cmd 'NFTBAN_RBL_CRITICAL_IPS="198.18.0.1|dup" nftban_cmd_rbl_check --quiet 2>&1')"
+n="$(printf '%s\n' "$o" | grep -c '^CHECKED:198.18.0.1$' || true)"
 [[ "$n" -le 1 ]] && ok "C3 duplicate public (self+critical) checked once" || no "C3 dup checked $n times"
 
 # C4 only-public invariant across the mixed scheduled run
-o="$(run_cmd 'NFTBAN_RBL_CRITICAL_IPS="8.8.4.4|web,192.168.1.10|lan,fe80::1|ll,224.0.0.1|mc" nftban_cmd_rbl_check --quiet 2>&1')"
-{ no_nonpublic_checked "$o" && printf '%s\n' "$o" | grep -qxF 'CHECKED:8.8.4.4'; } && ok "C4 scheduled: only public checked (8.8.4.4 in; 192.168/fe80/224 out)" || { no "C4 non-public reached checker"; printf '%s\n' "$o" | grep '^CHECKED:'; }
+o="$(run_cmd 'NFTBAN_RBL_CRITICAL_IPS="198.19.100.50|web,192.168.1.10|lan,fe80::1|ll,224.0.0.1|mc" nftban_cmd_rbl_check --quiet 2>&1')"
+{ no_nonpublic_checked "$o" && printf '%s\n' "$o" | grep -qxF 'CHECKED:198.19.100.50'; } && ok "C4 scheduled: only public checked (198.19.100.50 in; 192.168/fe80/224 out)" || { no "C4 non-public reached checker"; printf '%s\n' "$o" | grep '^CHECKED:'; }
 
 echo
 echo "=== RESULTS: $PASS passed, $FAIL failed ==="

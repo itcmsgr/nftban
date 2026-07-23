@@ -24,15 +24,13 @@
 # meta:ta.owner="rbl"
 # meta:ta.module="rbl-hostname-admission"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
-# meta:ta.gate="deferred"
+# meta:ta.gate="ci-bash"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:ta.exclusion_reason="known-failing collateral of OPEN_RBL_V220_0_TEST_DOCRANGE_FIXTURE_ROT: the doc-range self-IP fixture classifies as non-public and a stale real-IP grep residue never matches"
-# meta:ta.activation_condition="re-enable after PR-E re-scrubs the RBL fixtures with genuinely-public placeholder IPs and removes the stale residue, then wire to ci-bash"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -56,7 +54,7 @@ no(){ printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
 has(){ [[ "$1" == *"$2"* ]]; }
 
 # Self-interface fixture: eth0 (up) has one public v4 + one public v6; lo loopback.
-# => project_rbl (self) = { 192.0.2.67, 2001:db8:c014:5ee1::1 } (2 addresses).
+# => project_rbl (self) = { 198.18.0.1, 2001:2::1 } (2 addresses).
 _ip_stub() {
   cat <<'STUB'
 ip() {
@@ -68,8 +66,8 @@ ip() {
     printf '%s\n' \
       "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever" \
       "1: lo    inet6 ::1/128 scope host \\       valid_lft forever preferred_lft forever" \
-      "2: eth0    inet 192.0.2.67/24 scope global eth0\\       valid_lft forever preferred_lft forever" \
-      "2: eth0    inet6 2001:db8:c014:5ee1::1/64 scope global \\       valid_lft forever preferred_lft forever"
+      "2: eth0    inet 198.18.0.1/24 scope global eth0\\       valid_lft forever preferred_lft forever" \
+      "2: eth0    inet6 2001:2::1/64 scope global \\       valid_lft forever preferred_lft forever"
     return 0
   fi
   return 0
@@ -135,13 +133,13 @@ o="$(run_server "host.example has IPv6 address fe80::1")"
 { has "$o" "excluded from RBL checks" && { ! printf '%s\n' "$o" | grep -qE '^Checking: fe80::1'; }; } && ok "T4 link-local IPv6 excluded" || no "T4 link-local checked"
 
 # 5. hostname -> the same public self IPv4 => admitted, deduped (Total stays 2)
-o="$(run_server "host.example has address 192.0.2.67")"
+o="$(run_server "host.example has address 198.18.0.1")"
 [[ "$(total_line "$o")" == "2" ]] && ok "T5 hostname==self public dedups to one (Total=2)" || no "T5 dedup failed ($(total_line "$o"))"
-[[ "$(checked "$o" | grep -c '^192\.0\.2\.251$')" == "1" ]] && ok "T5b self public checked exactly once" || no "T5b duplicate check"
+[[ "$(checked "$o" | grep -c '^198\.18\.0\.1$')" == "1" ]] && ok "T5b self public checked exactly once" || no "T5b duplicate check"
 
 # 6. hostname -> mixed public-new + loopback => only public admitted (Total=3)
-o="$(run_server "$(printf '%s\n' 'host.example has address 8.8.8.8' 'host.example has address 127.0.1.1')")"
-printf '%s\n' "$o" | grep -qE '^Checking: 8\.8\.8\.8' && ok "T6 new public hostname IP admitted+checked" || no "T6 public hostname IP not checked"
+o="$(run_server "$(printf '%s\n' 'host.example has address 198.19.100.50' 'host.example has address 127.0.1.1')")"
+printf '%s\n' "$o" | grep -qE '^Checking: 198\.19\.100\.50' && ok "T6 new public hostname IP admitted+checked" || no "T6 public hostname IP not checked"
 ! printf '%s\n' "$o" | grep -qE '^Checking: 127\.0\.1\.1' && ok "T6b loopback still excluded in mixed set" || no "T6b loopback checked in mixed set"
 [[ "$(total_line "$o")" == "3" ]] && ok "T6c Total = 3 (2 self + 1 admitted hostname)" || no "T6c Total wrong ($(total_line "$o"))"
 

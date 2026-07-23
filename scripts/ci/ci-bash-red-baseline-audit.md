@@ -6,7 +6,7 @@ or obsolete test expectations, corrected test-only (no product change); 4 remain
 executed + reported, excluded from the blocking tally only via valid metadata + a matched failure pattern).
 
 Enforcement after PR-D: `ci-bash` is **BLOCKING**. The informational 184/165/19 baseline is retired.
-Quarantine ceiling = **4** (`scripts/ci/ci-bash-quarantine.tsv`). `CONFIRMED_PRODUCT_DEFECT` entries are
+Quarantine ceiling was **4** (now **3** after PR-E2) (`scripts/ci/ci-bash-quarantine.tsv`). `CONFIRMED_PRODUCT_DEFECT` entries are
 registered for a separate failure-domain lane and are **not** fixed in PR-D.
 
 ## Disposition summary
@@ -64,3 +64,5 @@ All 15 verified: direct `bash <test>` PASS, product tree unchanged, a meaningful
 
 Neither product defect is changed in PR-D (scope: authority enforcement only). Both remain quarantined,
 visible, and executed, with a hard review date of 2026-10-31.
+
+> **PR-E2 update (2026-07-23):** `rbl_seven_state_v206` fixture repaired (benchmarking IPv6) + **de-quarantined** (quarantine 4→3); the 5 RBL/whitelist deferred tests + `cmd_firewall_whitelist_session` (product-fixed in PR-E1) **activated** to `ci-bash` (deferred 6→0). RBL suite 31/31. The whitelist-session cleanup fd-9 **product defect** was fixed in PR-E1 (#1149), not here.

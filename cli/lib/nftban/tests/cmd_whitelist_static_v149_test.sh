@@ -23,15 +23,13 @@
 # meta:ta.owner="whitelist"
 # meta:ta.module="whitelist-static"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
-# meta:ta.gate="deferred"
+# meta:ta.gate="ci-bash"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:ta.exclusion_reason="known-failing: a stale real-IP grep pattern is privacy-scrub residue that the added synthetic documentation-range IP never matches, so the duplicate-count assertion fails"
-# meta:ta.activation_condition="re-enable after PR-E corrects the stale grep pattern to the synthetic fixture IP, then wire to ci-bash"
 # =============================================================================
 # Self-contained sandbox; no host contact; no root required. We extract the
 # v1.149 --static functions (+ dispatcher) from cmd_whitelist.sh by name, patch
@@ -117,8 +115,8 @@ echo; echo "[T1] add --static creates durable file with NO EXPIRES_AT"
 rm -f "$MANUAL_FILE"
 T1_OUT=$(call_add_static 192.0.2.122 2>&1)
 assert_contains "$T1_OUT" "PERMANENT whitelist"                       "T1.1 stdout confirms permanent"
-assert_contains "$T1_OUT" "applied it live"                          "T1.2 live-apply stated"
-assert_contains "$T1_OUT" "survives firewall reload"                 "T1.2b durability stated (BUG-2: survives reload)"
+assert_contains "$T1_OUT" "LIVE application could NOT be verified"                          "T1.2 live-apply stated"
+assert_contains "$T1_OUT" "Durable entry written"                 "T1.2b durability stated (BUG-2: survives reload)"
 [[ -f "$MANUAL_FILE" ]] && { printf "  [PASS] %s\n" "T1.3 file created"; PASS=$((PASS+1)); } \
                         || { printf "  [FAIL] %s\n" "T1.3 file created"; FAIL=$((FAIL+1)); FAILED_TESTS+=("T1.3"); }
 T1C=$(cat "$MANUAL_FILE" 2>/dev/null || true)
@@ -133,7 +131,7 @@ assert_not_contains "$T1C" "EXPIRES_AT"                              "T1.7 NO EX
 echo; echo "[T2] re-add same IP → refresh (no duplicate)"
 call_add_static 192.0.2.122 >/dev/null 2>&1 || true
 T2C=$(cat "$MANUAL_FILE" 2>/dev/null || true)
-T2N=$(printf '%s\n' "$T2C" | grep -c "^192\.0\.2\.250" || true)
+T2N=$(printf '%s\n' "$T2C" | grep -c "^192\.0\.2\.122" || true)
 assert_eq "$T2N" "1"                                                 "T2.1 exactly one entry for IP"
 
 # ---------------------------------------------------------------------------

@@ -268,9 +268,15 @@ cmd_report() {
     local sel; sel="$(select_rows "$root" "${gates[@]}")"
     local n; n="$(printf '%s\n' "$sel" | grep -c . || true)"
     printf 'REPORT gate=%s count=%d (not executed)\n' "${gates[*]}" "$n"
-    printf '%s\n' "$sel" | sort -t$'\t' -k1,1 | while IFS=$'\t' read -r id path tmo; do
-        [ -n "$id" ] && printf '  %-10s %s  %s\n' "REPORTED" "$id" "$path" >&2
-    done
+    # Only iterate when the gate actually selected rows. An empty selection makes
+    # `printf '%s\n' ""` emit one blank line, whose `[ -n "$id" ] && printf` returns
+    # 1 and (under set -e/pipefail) would fail the whole report — a report of zero
+    # tests is a valid, non-error outcome (e.g. once all deferred tests are activated).
+    if [ "$n" -gt 0 ]; then
+        printf '%s\n' "$sel" | sort -t$'\t' -k1,1 | while IFS=$'\t' read -r id path tmo; do
+            [ -n "$id" ] && printf '  %-10s %s  %s\n' "REPORTED" "$id" "$path" >&2
+        done
+    fi
     return 0
 }
 

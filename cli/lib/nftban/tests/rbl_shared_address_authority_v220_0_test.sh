@@ -23,15 +23,13 @@
 # meta:ta.owner="rbl"
 # meta:ta.module="rbl-shared-address-authority"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
-# meta:ta.gate="deferred"
+# meta:ta.gate="ci-bash"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:ta.exclusion_reason="known-failing fixture OPEN_RBL_V220_0_TEST_DOCRANGE_FIXTURE_ROT: the privacy scrub (3752f68a) replaced real self-IPs with documentation-range placeholders that classify as non-public, so the shared-address/public-admit assertions cannot hold, and a stale real-IP grep residue never matches"
-# meta:ta.activation_condition="re-enable after PR-E re-scrubs the RBL fixtures with genuinely-public placeholder IPs and removes the stale grep residue, then wire to ci-bash"
 # =============================================================================
 
 # Coding-standard header requires this line; the harness itself runs lenient (set +eE
@@ -82,17 +80,17 @@ EOF
     cat <<'EOF'
 1: lo    inet 127.0.0.1/8 scope host lo\       valid_lft forever preferred_lft forever
 1: lo    inet6 ::1/128 scope host \       valid_lft forever preferred_lft forever
-2: eth0    inet 192.0.2.67/24 brd 192.0.2.67 scope global eth0\       valid_lft forever preferred_lft forever
+2: eth0    inet 198.18.0.1/24 brd 198.18.0.1 scope global eth0\       valid_lft forever preferred_lft forever
 2: eth0    inet 10.0.0.5/24 scope global eth0\       valid_lft forever preferred_lft forever
 2: eth0    inet 100.64.0.9/10 scope global eth0\       valid_lft forever preferred_lft forever
-2: eth0    inet6 2001:db8:c014:5ee1::1/64 scope global \       valid_lft forever preferred_lft forever
-2: eth0    inet6 2001:db8:c014:5ee1::2/64 scope global \       valid_lft forever preferred_lft forever
+2: eth0    inet6 2001:2::1/64 scope global \       valid_lft forever preferred_lft forever
+2: eth0    inet6 2001:2::2/64 scope global \       valid_lft forever preferred_lft forever
 2: eth0    inet6 fd12::9/64 scope global \       valid_lft forever preferred_lft forever
 2: eth0    inet6 fe80::1/64 scope link \       valid_lft forever preferred_lft forever
-2: eth0    inet6 2001:db8:c014:5ee1::dead/64 scope global temporary dynamic \       valid_lft 600sec preferred_lft 600sec
-2: eth0    inet6 2001:db8:c014:5ee1::beef/64 scope global tentative \       valid_lft forever preferred_lft forever
-4: eth1    inet 192.0.2.67/24 scope global eth1\       valid_lft forever preferred_lft forever
-3: down0    inet 8.8.4.4/24 scope global down0\       valid_lft forever preferred_lft forever
+2: eth0    inet6 2001:2::dead/64 scope global temporary dynamic \       valid_lft 600sec preferred_lft 600sec
+2: eth0    inet6 2001:2::beef/64 scope global tentative \       valid_lft forever preferred_lft forever
+4: eth1    inet 198.18.0.1/24 scope global eth1\       valid_lft forever preferred_lft forever
+3: down0    inet 198.19.100.50/24 scope global down0\       valid_lft forever preferred_lft forever
 EOF
     return 0
   fi
@@ -111,14 +109,14 @@ WL="$(nftban_hostaddr_project_whitelist)"
 STATUS="$(nftban_hostaddr_project_status)"
 
 # T1 public IPv4 selected
-hasline "$RBL" "192.0.2.67" && ok "T1 public IPv4 in RBL projection" || no "T1 public IPv4 missing"
+hasline "$RBL" "198.18.0.1" && ok "T1 public IPv4 in RBL projection" || no "T1 public IPv4 missing"
 
 # T2 full compressed IPv6 preserved intact (no 2a01 truncation)
-hasline "$RBL" "2001:db8:c014:5ee1::1" && ok "T2 full IPv6 preserved (::1)" || no "T2 IPv6 ::1 truncated/missing"
+hasline "$RBL" "2001:2::1" && ok "T2 full IPv6 preserved (::1)" || no "T2 IPv6 ::1 truncated/missing"
 { ! hasline "$RBL" "2a01"; } && ok "T2b no '2a01' truncation" || no "T2b IPv6 truncated to 2a01"
 
 # T3 multiple distinct IPv6 preserved
-hasline "$RBL" "2001:db8:c014:5ee1::2" && ok "T3 second distinct IPv6 preserved" || no "T3 second IPv6 missing"
+hasline "$RBL" "2001:2::2" && ok "T3 second distinct IPv6 preserved" || no "T3 second IPv6 missing"
 
 # T4 private IPv4 excluded from RBL, retained by whitelist
 { ! hasline "$RBL" "10.0.0.5"; } && hasline "$WL" "10.0.0.5" && ok "T4 private v4: RBL-excluded, whitelist-kept" || no "T4 private v4 policy wrong"
@@ -133,10 +131,10 @@ hasline "$RBL" "2001:db8:c014:5ee1::2" && ok "T3 second distinct IPv6 preserved"
 { ! hasline "$RBL" "127.0.0.1" && ! hasline "$RBL" "::1" && ! hasline "$RBL" "fe80::1"; } && ok "T7 loopback+link-local excluded from RBL" || no "T7 loopback/link-local leaked"
 
 # T8 tentative / temporary / down-interface excluded from RBL
-{ ! hasline "$RBL" "2001:db8:c014:5ee1::beef" && ! hasline "$RBL" "2001:db8:c014:5ee1::dead" && ! hasline "$RBL" "8.8.4.4"; } && ok "T8 tentative/temporary/down-iface excluded" || no "T8 excluded-state leaked into RBL"
+{ ! hasline "$RBL" "2001:2::beef" && ! hasline "$RBL" "2001:2::dead" && ! hasline "$RBL" "198.19.100.50"; } && ok "T8 tentative/temporary/down-iface excluded" || no "T8 excluded-state leaked into RBL"
 
 # T9 duplicate address (eth0+eth1) -> single RBL entry
-[[ "$(printf '%s\n' "$RBL" | grep -c '^192\.0\.2\.251$')" == "1" ]] && ok "T9 duplicate address deduped to one" || no "T9 duplicate not deduped"
+[[ "$(printf '%s\n' "$RBL" | grep -c '^198\.18\.0\.1$')" == "1" ]] && ok "T9 duplicate address deduped to one" || no "T9 duplicate not deduped"
 
 # T10 no ip:tag / colon-tag serialization in any projection line
 { ! has "$RBL" ":ipv4" && ! has "$RBL" ":ipv6"; } && ok "T10 no :ipv4/:ipv6 tag encoding" || no "T10 colon-tag encoding present"
@@ -150,7 +148,7 @@ LEGACY="$(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print
 
 # scope classification spot-checks
 _scope_ok=1
-for pair in "192.0.2.67=public" "2001:db8::1=public" "10.0.0.5=private" "100.64.0.9=cgnat" \
+for pair in "198.18.0.1=public" "2001:2::1=public" "10.0.0.5=private" "100.64.0.9=cgnat" \
             "fd12::9=ula" "fcab::1=ula" "fe80::1=link-local" "169.254.1.1=link-local" \
             "::1=loopback" "127.0.0.1=loopback" "ff02::1=multicast" "224.0.0.1=multicast" \
             "192.0.2.9=documentation" "2001:db8::5=documentation"; do
@@ -167,7 +165,7 @@ snap_after="$(ls -la /tmp 2>/dev/null | wc -l)"
 
 # JSON projection carries same addresses
 J="$(nftban_hostaddr_inventory --json)"
-has "$J" '"address":"2001:db8:c014:5ee1::1"' && has "$J" '"scope":"public"' && ok "JSON inventory carries full fields" || no "JSON inventory malformed"
+has "$J" '"address":"2001:2::1"' && has "$J" '"scope":"public"' && ok "JSON inventory carries full fields" || no "JSON inventory malformed"
 
 # ---------------------------------------------------------------------------
 # Critical-IP IPv6-safe parsing (source RBL core; keep the stubbed ip)
@@ -181,18 +179,18 @@ out="$(NFTBAN_RBL_CRITICAL_IPS='1.2.3.4:mail,5.6.7.8:web' nftban_rbl_get_critica
 has "$out" $'1.2.3.4\tmail' && has "$out" $'5.6.7.8\tweb' && ok "T18 legacy IPv4 ip:tag critical config still read" || no "T18 legacy critical parse broke ($out)"
 
 # T19 IPv6-safe new format round-trip (never split IPv6 at colon)
-out="$(NFTBAN_RBL_CRITICAL_IPS='2001:db8:c014:5ee1::1|mail,203.0.113.5|web' nftban_rbl_get_critical_ips)"
-has "$out" $'2001:db8:c014:5ee1::1\tmail' && ok "T19 new ip|tag preserves full IPv6" || no "T19 new IPv6 critical parse wrong ($out)"
-out="$(NFTBAN_RBL_CRITICAL_IPS='2001:db8:c014:5ee1::1' nftban_rbl_get_critical_ips)"
-has "$out" $'2001:db8:c014:5ee1::1\t' && ! has "$out" $'2a01\t' && ok "T19b bare IPv6 critical not split at colon" || no "T19b bare IPv6 split ($out)"
+out="$(NFTBAN_RBL_CRITICAL_IPS='2001:2::1|mail,203.0.113.5|web' nftban_rbl_get_critical_ips)"
+has "$out" $'2001:2::1\tmail' && ok "T19 new ip|tag preserves full IPv6" || no "T19 new IPv6 critical parse wrong ($out)"
+out="$(NFTBAN_RBL_CRITICAL_IPS='2001:2::1' nftban_rbl_get_critical_ips)"
+has "$out" $'2001:2::1\t' && ! has "$out" $'2a01\t' && ok "T19b bare IPv6 critical not split at colon" || no "T19b bare IPv6 split ($out)"
 
 # is_public delegates to authority (classify once)
-nftban_rbl_is_public_ip 192.0.2.67 && ! nftban_rbl_is_public_ip fd12::9 && ok "is_public delegates to authority" || no "is_public delegation wrong"
+nftban_rbl_is_public_ip 198.18.0.1 && ! nftban_rbl_is_public_ip fd12::9 && ok "is_public delegates to authority" || no "is_public delegation wrong"
 
 # get_public_ips (RBL projection) honors IPv6 gate
 g6="$(NFTBAN_RBL_CHECK_IPV6=YES nftban_rbl_get_public_ips)"
 g4="$(NFTBAN_RBL_CHECK_IPV6=NO  nftban_rbl_get_public_ips)"
-has "$g6" "2001:db8:c014:5ee1::1" && ! has "$g4" ":" && has "$g4" "192.0.2.67" && ok "get_public_ips honors IPv6 gate" || no "get_public_ips IPv6 gate wrong"
+has "$g6" "2001:2::1" && ! has "$g4" ":" && has "$g4" "198.18.0.1" && ok "get_public_ips honors IPv6 gate" || no "get_public_ips IPv6 gate wrong"
 
 # ---------------------------------------------------------------------------
 # T13/T14/T15 false-clean fix — drive nftban_cmd_rbl_server with stubbed checker
@@ -224,23 +222,23 @@ run_server() { # $1 = results string the checker returns ; prints verdict output
 }
 
 # T14 mixed clean + timeout => degraded verdict, never "All IPs are clean"
-DEG=$'RBL Check Results for: 192.0.2.67\n⏱️  TIMEOUT: dnsbl.inps.de\nSummary:\n  Listed: 0\n  Clean: 21\n  Timeout: 1\n  Degraded total: 1 (RBL coverage incomplete — NOT fully verified)'
+DEG=$'RBL Check Results for: 198.18.0.1\n⏱️  TIMEOUT: dnsbl.inps.de\nSummary:\n  Listed: 0\n  Clean: 21\n  Timeout: 1\n  Degraded total: 1 (RBL coverage incomplete — NOT fully verified)'
 o="$(run_server "$DEG")"
 { has "$o" "NOT fully verified" && ! has "$o" "All IPs are clean (fully verified"; } && ok "T14 degraded verdict, no false 'All IPs are clean'" || no "T14 false-clean not fixed ($(echo "$o" | tail -3 | tr '\n' '|'))"
 has "$o" "RC=2" && ok "T14b degraded rc=2" || no "T14b degraded rc not 2 ($(echo "$o" | tail -1))"
 
 # T13 all-error => not clean, rc=2
-ERR=$'RBL Check Results for: 192.0.2.67\n⏱️  ERROR: zen.spamhaus.org\nSummary:\n  Listed: 0\n  Clean: 0\n  Timeout: 1\n  Degraded total: 1 (RBL coverage incomplete — NOT fully verified)'
+ERR=$'RBL Check Results for: 198.18.0.1\n⏱️  ERROR: zen.spamhaus.org\nSummary:\n  Listed: 0\n  Clean: 0\n  Timeout: 1\n  Degraded total: 1 (RBL coverage incomplete — NOT fully verified)'
 o="$(run_server "$ERR")"
 { ! has "$o" "All IPs are clean" && has "$o" "RC=2"; } && ok "T13 all-error => not clean, rc=2" || no "T13 all-error mishandled"
 
 # fully-verified clean => allowed, rc=0
-CLEAN=$'RBL Check Results for: 192.0.2.67\nSummary:\n  Listed: 0\n  Clean: 23\n  Timeout: 0'
+CLEAN=$'RBL Check Results for: 198.18.0.1\nSummary:\n  Listed: 0\n  Clean: 23\n  Timeout: 0'
 o="$(run_server "$CLEAN")"
 { has "$o" "All IPs are clean (fully verified" && has "$o" "RC=0"; } && ok "fully-verified clean => rc=0 + clean verdict" || no "clean path wrong ($(echo "$o" | tail -2 | tr '\n' '|'))"
 
 # listed => warning + rc=1
-LISTED=$'RBL Check Results for: 192.0.2.67\nLISTED: zen.spamhaus.org\nSummary:\n  Listed: 1\n  Clean: 22'
+LISTED=$'RBL Check Results for: 198.18.0.1\nLISTED: zen.spamhaus.org\nSummary:\n  Listed: 1\n  Clean: 22'
 o="$(run_server "$LISTED")"
 { has "$o" "on RBL blacklists" && has "$o" "RC=1"; } && ok "listed => warning + rc=1" || no "listed path wrong"
 
