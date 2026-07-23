@@ -7,7 +7,7 @@
 # meta:type="test"
 # meta:version="1.213.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Static drift-guard: feeds/geoban/trust normal path routes through nft_ipc_sync_or_apply (FULL sync), no longer invokes nft_ipc_apply_ruleset as the PRIMARY writer (only the shared fallback in nft_ipc.sh does); no quick-sync on that path; no new daemon reject-guard; SchemaVersionCurrent stays 1.84.0; VERSION stays 1.212.0"
+# meta:description="Static drift-guard: feeds/geoban/trust normal path routes through nft_ipc_sync_or_apply (FULL sync), no longer invokes nft_ipc_apply_ruleset as the PRIMARY writer (only the shared fallback in nft_ipc.sh does); no quick-sync on that path; no new daemon reject-guard; SchemaVersionCurrent stays 1.84.0; VERSION is present and valid semver (version-agnostic; no exact-release pin)"
 # meta:input="None (reads repo source read-only)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep"
@@ -130,10 +130,16 @@ if grep -q 'SchemaVersionCurrent = "1.84.0"' "$TYPES_GO"; then
 else
     bad "SchemaVersionCurrent changed"
 fi
-if [[ "$(tr -d '[:space:]' < "$VER")" == "1.225.0" ]]; then
-    ok "VERSION is 1.225.0"
+# VERSION sanity — durable, version-AGNOSTIC. This routing guard must not pin an
+# exact release value (a point-in-time pin re-breaks on every version bump; it is
+# not the invariant this test guards). Assert only that the VERSION file exists,
+# is non-empty and is well-formed semver; exact-release validation belongs in the
+# release-version consistency checks, not this behavioral test.
+_setapply_ver="$(tr -d '[:space:]' < "$VER")"
+if [[ -s "$VER" && "$_setapply_ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ok "VERSION file present and valid semver ($_setapply_ver)"
 else
-    bad "VERSION changed (got $(cat "$VER"))"
+    bad "VERSION file missing/empty or not semver (got '$_setapply_ver')"
 fi
 
 echo ""
