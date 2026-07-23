@@ -11,6 +11,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.226.0] - 2026-07-23 — Test execution authority, strict ci-bash enforcement & whitelist-session cleanup fix
+
+Test-authority, enforcement, fixture-reconciliation and one whitelist-session runtime defect fix. **No Go product code
+changed** — `nftband`, `nftban-core` and `nftban-installer` are byte-identical to v1.225.0 when built with identical
+build metadata; no nftables, daemon, nft-schema (1.84.0) or config-schema behavior changed. The only product change is
+one shell fix in `cli/lib/nftban/cli/cmd_firewall.sh` (whitelist-session cleanup, below).
+
+NFTBan v1.226.0 strengthens test execution authority and release confidence. All tracked shell tests are classified,
+required non-quarantined CI tests are blocking, deferred test debt is closed, and unresolved quarantined tests remain
+executed, visible and explicitly governed.
+
+### Added — test execution authority
+- Canonical metadata-driven **authority index** (`scripts/ci/test-authority-index.tsv`, generated from per-test
+  `meta:ta.*` headers) and an **index-driven shell-test runner** (`scripts/ci/run-test-suite.sh`): tests are selected by
+  classification, never by filesystem glob, and executed in isolated bounded subprocesses.
+- Migration of the curated Policy-Gates shell-test invocations into the runner (parity-proven); non-indexed scripts
+  retained.
+- **Strict zero-unclassified enforcement**, **execution-completeness** enforcement, duplicate-ID/path/execution
+  prevention, and **stale-index fail-closed** behavior.
+- An **auditable quarantine registry** (`scripts/ci/ci-bash-quarantine.tsv`) with per-entry owner/reason/finding/
+  review-date/disposition/expected-failure binding, plus runner failure diagnostics. The temporary informational
+  `ci-bash` baseline used during the migration step is retired.
+
+### Fixed — whitelist-session cleanup (product)
+- Fixed `firewall whitelist-session cleanup` failing with an invalid fd-9 flock context, which prevented expired
+  session-whitelist entries from being pruned. fd 9 is now opened in the command-substitution shell where `flock`
+  executes; expired entries are pruned correctly, cleanup is idempotent, and lock release/reacquisition is validated.
+  (Latent since v1.173/#822.) This is a narrow lock-lifecycle fix — **not** a firewall-policy or permanent-whitelist
+  redesign.
+
+### Fixed — test harness & fixtures (test-only, no product behavior change)
+- Enforcing the previously-unenforced `ci-bash` class exposed 19 pre-existing test failures — **not product
+  regressions**. Each was individually challenged: **15 were repaired** through test-expectation, fixture or harness
+  corrections — including shallow-checkout Git-reference handling in `cmd_firewall_takeover` (the guard still catches a
+  genuine scope violation where a comparison ref exists), and a deterministic removal of a `pipefail` + `grep -q`
+  SIGPIPE race in `v127_ux6_help_cleanup` (assertions preserved, mutation-proven). Unresolved items remain **explicitly
+  quarantined, executed and visible**; this release does **not** claim quarantined defects are fixed.
+- **RBL / deferred-suite closure:** invalid positive-admission fixtures (documentation-range placeholders the product
+  correctly rejects as non-public) were repaired to accepted synthetic benchmarking values; documentation/private ranges
+  remain in the negative rejection tests. The RBL suite is now **31/31**, six deferred tests were activated (deferred
+  count now **zero**), and the `rbl_seven_state` quarantine was removed. **No RBL admission behavior was weakened.**
+
+### Notes — evidence truth
+- Strict authority inventory **241/241/0**; non-quarantined shell tests are blocking; the three remaining quarantined
+  tests continue to execute and report and are governed as open findings (two confirmed product defects registered for
+  separate implementation lanes, one environment-sensitive) — **none is fixed in this release**. Privacy/trusted gates
+  completed successfully throughout the train.
+- This does **not** claim zero known defects, zero quarantined tests, that all tests pass without qualification, that
+  every environment is covered, or that all 241 tracked tests are ordinary blocking `ci-bash` tests — they span the
+  policy-gates, ci-bash, package-build, lab-manual and quarantine classes.
+- The GitHub-managed immutable `refs/pull/*` residual from the earlier privacy remediation remains open with GitHub
+  Support and is **not** closed; the current tree, packages and public docs are clean.
+
+---
+
 ## [v1.225.0] - 2026-07-22 — Update-render truth, completion parity & uninstall firewall-ownership message
 
 Shell / packaging / test-infrastructure maintenance. **No Go product code changed** — `nftband`, `nftban-core` and
