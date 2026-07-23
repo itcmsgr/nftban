@@ -23,15 +23,13 @@
 # meta:ta.owner="firewall"
 # meta:ta.module="whitelist-session"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
-# meta:ta.gate="deferred"
+# meta:ta.gate="ci-bash"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:ta.exclusion_reason="known-failing: stale real-IP grep patterns are privacy-scrub residue; the session test adds a synthetic documentation-range IP so the count and negative assertions fail"
-# meta:ta.activation_condition="re-enable after PR-E corrects the stale grep patterns to the synthetic fixture IP, then wire to ci-bash"
 # =============================================================================
 # Purpose: Cover the v1.120 whitelist-session CLI surface introduced in
 # cli/lib/nftban/cli/cmd_firewall.sh:

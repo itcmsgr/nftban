@@ -133,7 +133,7 @@ T7=$(
     nftban_rbl_reverse_ip(){ echo ""; }   # simulate no-python3 IPv6 reverse
     nftban_rbl_load_providers(){ printf '%s\n' "zen.test:u1"; }
     nftban_rbl_dns_lookup(){ echo "SHOULD_NOT_BE_CALLED"; }
-    nftban_rbl_check_ip "2001:db8:c014:5ee1::1" "json"
+    nftban_rbl_check_ip "2001:2::1" "json"
 ) || true
 assert_eq "$(echo "$T7" | jq -r '.summary.unsupported_ipv6_zone')" "1" "T7.1 unsupported_ipv6_zone = 1"
 assert_eq "$(echo "$T7" | jq -r '.summary.clean')" "0"                 "T7.2 clean = 0 (not a silent clean)"
@@ -144,7 +144,7 @@ T8=$(
     nftban_rbl_reverse_ip(){ echo "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2"; }
     nftban_rbl_load_providers(){ printf '%s\n' "v4only.test:u1"; }
     nftban_rbl_dns_lookup(){ echo CLEAN; }   # would falsely say clean if not skipped
-    nftban_rbl_check_ip "2001:db8:c014:5ee1::1" "json"
+    nftban_rbl_check_ip "2001:2::1" "json"
 ) || true
 assert_eq "$(echo "$T8" | jq -r '.summary.skipped_ipv4_only_zone')" "1" "T8.1 skipped_ipv4_only_zone = 1"
 assert_eq "$(echo "$T8" | jq -r '.summary.clean')" "0"                  "T8.2 clean = 0 (IPv4-only zone not counted clean for IPv6)"

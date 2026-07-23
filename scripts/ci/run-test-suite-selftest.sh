@@ -184,6 +184,14 @@ test_false_green_mutation() {
     [ $base -eq 0 ] && [ $mut -eq 1 ] && ok "false-green mutation: runner fails when a required test is broken" || bad "mutation base=$base mut=$mut"
     rm -rf "$r"
 }
+test_report_empty_gate() {
+    echo test_report_empty_gate
+    local r; r="$(mkrepo)"; addtest "$r" a_test.sh 'exit 0'
+    mkindex "$r" <<< "$(row a_test ci-bash)"          # 0 deferred -> report must exit 0
+    local rc=0; runr "$r" report --gate deferred >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] && ok "report on an empty gate exits 0 (0 tests is not an error)" || bad "report_empty" "rc=$rc"
+    rm -rf "$r"
+}
 test_missing_index_fail_closed() {
     echo test_missing_index_fail_closed
     local r; r="$(mkrepo)"; rm -f "$r/scripts/ci/test-authority-index.tsv"
@@ -194,7 +202,7 @@ test_missing_index_fail_closed() {
 for t in test_valid_run test_fail_propagates test_timeout_propagates test_deferred_not_executed \
          test_lab_manual_and_package test_reject_unknown_gate test_reject_dupes_and_missing \
          test_reject_traversal test_injection_inert test_isolation test_no_double_exec \
-         test_empty_and_deterministic test_false_green_mutation test_missing_index_fail_closed; do
+         test_empty_and_deterministic test_report_empty_gate test_false_green_mutation test_missing_index_fail_closed; do
     "$t"
 done
 echo
