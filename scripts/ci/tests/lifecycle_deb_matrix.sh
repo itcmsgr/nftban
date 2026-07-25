@@ -992,6 +992,10 @@ case_L7() {
     local scripts="${WORKDIR}/L7_scripts"
     rm -rf "$scripts"; mkdir -p "$scripts"
     dpkg-deb -e "$CANDIDATE_DEB" "$scripts" >/dev/null 2>&1 || true
+    # Plant the fixture HERE rather than inheriting it from L2: a case that only
+    # passes when an earlier case happened to run is not independently meaningful,
+    # and reports a false product failure when run alone. plant is idempotent.
+    plant_operator_config
     snapshot "L7 pre"
 
     local out="${WORKDIR}/L7_remove.txt" rc t0
@@ -1199,6 +1203,12 @@ case_L9() {
 
 case_L10() {
     case_begin L10 "interrupted/failed uninstall protection"
+    if [[ "$(dpkg_status)" != "ii" ]]; then
+        # Establish the precondition rather than skipping: run alone, L10 would
+        # otherwise always skip and silently contribute no coverage at all.
+        reset_to_absent
+        pkg_install "$CANDIDATE_DEB" "${WORKDIR}/L10_pre_install.txt" >/dev/null
+    fi
     if [[ "$(dpkg_status)" != "ii" ]]; then
         case_skip "L10 needs an installed package; dpkg status is $(dpkg_status)"
         return 0
