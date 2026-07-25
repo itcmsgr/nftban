@@ -83,6 +83,9 @@ Every release must pass this checklist.
 
 Before tagging a release:
 
+- [ ] **Repository authority confirmed** (`./tools/repo-authority-guard.sh`) — the clone is the
+      canonical repository on the post-rewrite history epoch, with no borrowed object store and
+      full tag parity. Releasing from a wrong-epoch clone would ship pre-rewrite sources.
 - [ ] VERSION file updated
 - [ ] CHANGELOG.md updated with release notes
 - [ ] All generated files regenerated (`./build/generate-fhs-outputs.sh`)
