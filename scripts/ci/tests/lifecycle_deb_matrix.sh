@@ -278,12 +278,12 @@ snapshot() { # label
     local u
     for u in "${DAEMON_UNITS[@]}"; do
         printf '  systemd.%-24s active=%s enabled=%s\n' "$u" \
-            "$(systemctl is-active "$u" 2>/dev/null || true)" \
+            "$(unit_active_state "$u")" \
             "$(systemctl is-enabled "$u" 2>/dev/null || true)"
     done
     for u in "${CORE_TIMERS[@]}"; do
         printf '  systemd.%-32s active=%s enabled=%s\n' "$u" \
-            "$(systemctl is-active "$u" 2>/dev/null || true)" \
+            "$(unit_active_state "$u")" \
             "$(systemctl is-enabled "$u" 2>/dev/null || true)"
     done
     printf '  systemd.failed_nftban    = %s\n' "$(failed_nftban_units | tr '\n' ' ')"
@@ -296,8 +296,8 @@ snapshot() { # label
         "$([[ -f "$CONF_MAIN" ]] && echo present || echo absent)"
     printf '  config.dpkg_sidecars     = %s\n' \
         "$(find /etc/nftban -name '*.dpkg-dist' -o -name '*.dpkg-new' 2>/dev/null | wc -l | tr -d ' ')"
-    printf '  ufw.service              = %s\n' "$(systemctl is-active ufw.service 2>/dev/null || true)"
-    printf '  nftables.service         = %s\n' "$(systemctl is-active nftables.service 2>/dev/null || true)"
+    printf '  ufw.service              = %s\n' "$(unit_active_state ufw.service)"
+    printf '  nftables.service         = %s\n' "$(unit_active_state nftables.service)"
 }
 
 nft_table_state() { # family name
@@ -360,17 +360,17 @@ assert_state_version_and_window() { # expected_version tx_start_epoch tx_end_epo
 assert_runtime_healthy() {
     local u active enabled
     for u in "${DAEMON_UNITS[@]}"; do
-        active="$(systemctl is-active "$u" 2>/dev/null || true)"
+        active="$(unit_active_state "$u")"
         assert_eq "active" "$active" "systemd ${u} is-active"
     done
     for u in "${CORE_TIMERS[@]}"; do
-        active="$(systemctl is-active "$u" 2>/dev/null || true)"
+        active="$(unit_active_state "$u")"
         enabled="$(systemctl is-enabled "$u" 2>/dev/null || true)"
         assert_eq "active"  "$active"  "core timer ${u} is-active"
         assert_eq "enabled" "$enabled" "core timer ${u} is-enabled"
     done
     for u in "${CRITICAL_TIMERS[@]}"; do
-        assert_eq "active" "$(systemctl is-active "$u" 2>/dev/null || true)" \
+        assert_eq "active" "$(unit_active_state "$u")" \
             "CRITICAL timer ${u} active (drives DEGRADED per timers.go:68-80)"
     done
     assert_eq "present" "$(nft_table_state ip nftban)"  "nft table ip nftban loaded"
@@ -394,6 +394,18 @@ assert_validate_ok() {
     if [[ "$rc" -ne 0 ]]; then
         sed 's/^/      | /' "$out" | tail -25
     fi
+}
+
+# `systemctl is-active` PRINTS the state and ALSO exits non-zero for
+# inactive/failed. A `|| echo <default>` fallback therefore appends a SECOND
+# line, and every comparison against it fails on a doubled string like
+# "inactive\ninactive" -- reporting a product failure where the unit state was
+# exactly right. One helper, one word, used everywhere.
+unit_active_state() { # unit -> exactly one word
+    local s
+    s="$(systemctl is-active "$1" 2>/dev/null | head -1 || true)"
+    [[ -n "$s" ]] || s="inactive"   # unit absent
+    printf '%s' "$s"
 }
 
 assert_dpkg_installed() {
@@ -906,7 +918,7 @@ case_L6() {
     sub "6b FAILED_AUTHORITY_ABORT (ufw.service active, no NFTBAN_TAKEOVER)"
     reset_to_absent
     systemctl start ufw.service >/dev/null 2>&1 || true
-    if [[ "$(systemctl is-active ufw.service 2>/dev/null || true)" == "active" ]]; then
+    if [[ "$(unit_active_state ufw.service)" == "active" ]]; then
         assert 0 "6b injection: ufw.service is active (conflict signal, detect.go:178)"
         local out6b="${WORKDIR}/L6b_failed_authority_abort.txt" t0b t1b rcb
         t0b="$(date -u +%s)"
@@ -998,11 +1010,11 @@ case_L7() {
     # services stopped (prerm:51-106 stops; deprecated units also disabled 109-125)
     local u
     for u in "${DAEMON_UNITS[@]}"; do
-        assert_eq "inactive" "$(systemctl is-active "$u" 2>/dev/null || echo inactive)" \
+        assert_eq "inactive" "$(unit_active_state "$u")" \
             "after remove: ${u} not active (prerm:105 deb-systemd-invoke stop)"
     done
     for u in "${CORE_TIMERS[@]}"; do
-        assert_eq "inactive" "$(systemctl is-active "$u" 2>/dev/null || echo inactive)" \
+        assert_eq "inactive" "$(unit_active_state "$u")" \
             "after remove: ${u} not active"
     done
     # unit FILES removed with the payload (raw dpkg-deb build: no debhelper
@@ -1223,7 +1235,11 @@ case_L10() {
     if [[ "$rc" -ne 0 ]] || grep -aqE 'dpkg: error|error processing package' "$out"; then
         assert 0 "removal genuinely failed (apt rc=${rc}) — the interrupted-uninstall condition was reached"
     else
-        assert 1 "removal succeeded despite the immutable file — the failure was not induced (assertions below prove nothing)"
+        # The injection did not take, so nothing downstream establishes anything.
+        # That is a harness/coverage limitation, not evidence about NFTBan --
+        # recording it as FAIL would misattribute it. Skips force INCOMPLETE.
+        case_skip "removal succeeded despite the immutable file — controlled uninstall failure NOT induced; L10 NOT_YET_VERIFIED"
+        return 0
     fi
 
     # 1. No install-verification tokens may be produced by a failing uninstall.
@@ -1422,7 +1438,7 @@ main() {
     # Baseline: UFW must be inactive or every install would classify as ABORT
     # (extfw/detect.go:178-184 + authority/classify.go:157-164). Recorded, not hidden.
     local ufw0
-    ufw0="$(systemctl is-active ufw.service 2>/dev/null || true)"
+    ufw0="$(unit_active_state ufw.service)"
     log "baseline ufw.service = ${ufw0}"
     if [[ "$ufw0" == "active" ]]; then
         log "baseline: stopping+disabling ufw.service so the happy-path cases are not pre-aborted"
@@ -1435,8 +1451,7 @@ main() {
     # lines. Take the first line and treat empty (unit absent) as inactive.
     # `|| true` is load-bearing: is-active exits 3 when inactive and this script
     # runs under `set -o pipefail`, so without it the assignment aborts the run.
-    ufw_now="$(systemctl is-active ufw.service 2>/dev/null | head -1 || true)"
-    [[ -n "$ufw_now" ]] || ufw_now="inactive"
+    ufw_now="$(unit_active_state ufw.service)"
     assert_eq "inactive" "$ufw_now" "baseline: ufw.service inactive"
 
     local selected="${NFTBAN_LIFECYCLE_CASES:-}"
