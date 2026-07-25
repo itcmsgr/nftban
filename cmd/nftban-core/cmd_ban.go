@@ -297,11 +297,26 @@ waitLoop:
 	}
 
 	// v1.33.0: Post-ban verification — confirm element is in kernel set (P0-8)
+	//
+	// v1.228.0: membership alone is NOT enforcement. This check answers "is the
+	// address in the set"; it cannot answer "is the set applied to traffic". A
+	// failure here is now fatal rather than a warning printed above a success
+	// banner — see cmd_ban_enforcement.go for why.
 	if verifyErr := verifyBanInKernel(normalizedIP, targetSet, isIPv4); verifyErr != nil {
-		fmt.Printf("  ⚠️  Verification: %v\n", verifyErr)
-	} else {
-		fmt.Printf("  ✓  Verified: %s is in %s\n", normalizedIP, targetSet)
+		fmt.Println()
+		return reportBanNotEnforced(normalizedIP, targetSet, verifyErr.Error(), banVerificationFailed)
 	}
+	fmt.Printf("  ✓  Verified: %s is in %s\n", normalizedIP, targetSet)
+
+	// v1.228.0 P0: prove the set is actually enforced before claiming the address
+	// is blocked. Requires a rule referencing this exact set, in a chain reachable
+	// from a base chain with an active hook, reaching an enforcing verdict.
+	enfClass, enfDetail := evaluateBanEnforcement(targetSet, isIPv4)
+	if enfClass != banEnforced {
+		fmt.Println()
+		return reportBanNotEnforced(normalizedIP, targetSet, enfDetail, enfClass)
+	}
+	fmt.Printf("  ✓  Enforced: %s\n", enfDetail)
 	fmt.Println()
 
 	// ════════════════════════════════════════════════════════════
@@ -356,7 +371,9 @@ waitLoop:
 	fmt.Printf("  Event type:    %s\n", footerEventType)
 	fmt.Printf("  Total bans:    %d (across all blacklist sets)\n", totalBans)
 	fmt.Println()
-	fmt.Println("The IP is now blocked by the firewall.")
+	// v1.228.0: reachable only when evaluateBanEnforcement returned banEnforced —
+	// this sentence is now a verified statement about the kernel, not an assumption.
+	fmt.Println("The IP is now blocked by the firewall (enforcement verified).")
 	if !alreadyBanned && timeoutSeconds == 0 {
 		// Show correct file based on source
 		savedFile := "99-manual.conf"
