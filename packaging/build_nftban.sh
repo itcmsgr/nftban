@@ -1282,8 +1282,49 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     #   - Post-install assertions (8 checks)
     #   - Authority + history file writes
     #   - Full installer log at /var/log/nftban/installer.log
+    # --- v1.228.0 Item 2: post-install outcome truth -----------------------------
+    # The package manager reports success when the payload unpacks, NOT when the
+    # installer succeeds. On stock enforcing EL9 the installer aborts
+    # FAILED_NO_FIREWALL, the firewall never loads, and the transaction still
+    # reports Complete!.
+    #
+    # Capture the transaction start IMMEDIATELY before the mutating invocation —
+    # not at scriptlet start. Anything earlier widens the window in which a previous
+    # transaction's state would look fresh.
+    PACKAGE_SCRIPT_START_UTC="\$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')"
+
     "\$NFTBAN_INSTALLER" --rpm --mode="\$INSTALL_MODE"
     INSTALLER_EXIT=\$?
+
+    # Run the read-only verifier UNCONDITIONALLY, after EVERY installer outcome.
+    #
+    # Running it only on failure would miss a stale COMMITTED after a lock-contention
+    # exit 75; running it only on success would miss the case the gate exists for.
+    # The verifier takes no lock and writes nothing, so it works even when the
+    # mutating installer never started.
+    #
+    # Bash supplies execution context only (expected version, transaction start,
+    # state dir). The installer remains the sole authority on state interpretation —
+    # the eight canonical state/verdict tokens are emitted by it, never duplicated
+    # here.
+    NFTBAN_PKG_VERSION="\$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo unknown)"
+    VERIFY_EXIT=0
+    "\$NFTBAN_INSTALLER" \
+        --verify-install-state \
+        --expected-version "\$NFTBAN_PKG_VERSION" \
+        --not-before "\$PACKAGE_SCRIPT_START_UTC" \
+        --state-dir "/var/lib/nftban/state" || VERIFY_EXIT=\$?
+
+    # Execution context summary. VERIFIED is derived ONLY from the verifier: a
+    # successful package transaction is not evidence of a verified installation.
+    echo "NFTBAN_PACKAGE_INSTALLER_EXIT=\${INSTALLER_EXIT}"
+    echo "NFTBAN_PACKAGE_VERIFY_EXIT=\${VERIFY_EXIT}"
+    if [ "\${VERIFY_EXIT}" -eq 0 ]; then
+        echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=YES"
+    else
+        echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO"
+    fi
+    # --- end Item 2 --------------------------------------------------------------
 
     if [ \$INSTALLER_EXIT -eq 0 ]; then
         echo "[NFTBan] ========================================"
