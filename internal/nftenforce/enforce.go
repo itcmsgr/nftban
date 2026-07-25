@@ -39,6 +39,18 @@
 //	  → the rule's chain is reachable from a base chain with an active hook
 //	  → the rule's verdict actually enforces (drop/reject)
 //
+// # PARSER AUTHORITY
+//
+// The nft JSON decode types come from internal/validator, which has carried a
+// complete typed model (NftRuleset / NftObject / NftChain including Hook /
+// NftRule) since v1.109. This package deliberately adds NO decode types of its
+// own — only reachability semantics, which did not exist anywhere.
+//
+// The tree still holds several other ad-hoc `json:"nftables"` decodes (two in
+// internal/metrics, two more in internal/validator/module_health.go). Those
+// predate this package and consolidating them is a separate failure domain;
+// this package simply does not add to the count.
+//
 // FAIL CLOSED. Anything this package cannot model — an unknown verdict on a
 // referencing rule, a jump to a chain that does not exist, a malformed ruleset —
 // is reported as ambiguity, never as enforcement. It is better to tell an
@@ -50,7 +62,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/itcmsgr/nftban/internal/nftjson"
+	"github.com/itcmsgr/nftban/internal/validator"
 )
 
 // Outcome is the result of an enforcement evaluation.
@@ -94,7 +106,7 @@ type Result struct {
 const maxTraversalDepth = 128
 
 // ErrNoRuleset is returned when the input contains no nftables array at all.
-var ErrNoRuleset = errors.New("nftjson: input contains no nftables ruleset")
+var ErrNoRuleset = errors.New("nft json: input contains no nftables ruleset")
 
 // chainKey identifies a chain uniquely. Family and table are part of the key
 // because the same chain name legitimately exists in both ip and ip6.
@@ -112,27 +124,24 @@ func (k chainKey) String() string { return fmt.Sprintf("%s %s %s", k.family, k.t
 // rather than this package shelling out, so the evaluator stays pure and its
 // fixtures need no root, no kernel and no nft binary.
 func Evaluate(rulesetJSON []byte, family, table, setName string) Result {
-	var rs nftjson.Ruleset
+	var rs validator.NftRuleset
 	if err := json.Unmarshal(rulesetJSON, &rs); err != nil {
 		return Result{Outcome: ParserFailure, Detail: "cannot decode nft JSON: " + err.Error()}
 	}
-	if len(rs.NFTables) == 0 {
+	if len(rs.Nftables) == 0 {
 		return Result{Outcome: ParserFailure, Detail: ErrNoRuleset.Error()}
 	}
 
-	chains := map[chainKey]*nftjson.Chain{}
-	rulesByChain := map[chainKey][]*nftjson.Rule{}
+	chains := map[chainKey]*validator.NftChain{}
+	rulesByChain := map[chainKey][]*validator.NftRule{}
 
-	for _, raw := range rs.NFTables {
-		var cw nftjson.ChainWrapper
-		if err := json.Unmarshal(raw, &cw); err == nil && cw.Chain != nil {
-			c := cw.Chain
+	for i := range rs.Nftables {
+		obj := &rs.Nftables[i]
+		if c := obj.Chain; c != nil {
 			chains[chainKey{c.Family, c.Table, c.Name}] = c
 			continue
 		}
-		var rw nftjson.RuleWrapper
-		if err := json.Unmarshal(raw, &rw); err == nil && rw.Rule != nil {
-			r := rw.Rule
+		if r := obj.Rule; r != nil {
 			k := chainKey{r.Family, r.Table, r.Chain}
 			rulesByChain[k] = append(rulesByChain[k], r)
 		}
@@ -280,29 +289,39 @@ const (
 	verdictAccepting
 )
 
+// exprObject narrows one entry of NftRule.Expr to its object form.
+// validator.NftRule.Expr is []interface{}, so expressions arrive already
+// decoded — no second unmarshal, and no second decode type.
+func exprObject(e interface{}) (map[string]interface{}, bool) {
+	m, ok := e.(map[string]interface{})
+	return m, ok
+}
+
 // jumpTargets returns the chains this rule transfers control to.
 // An expression this evaluator does not recognise is NOT an error here: rules
 // contain many expressions that cannot redirect control flow. Only a jump/goto
 // whose target cannot be read is an error.
-func jumpTargets(r *nftjson.Rule) ([]string, error) {
+func jumpTargets(r *validator.NftRule) ([]string, error) {
 	var out []string
 	for _, e := range r.Expr {
-		var m map[string]json.RawMessage
-		if err := json.Unmarshal(e, &m); err != nil {
+		m, ok := exprObject(e)
+		if !ok {
 			continue
 		}
 		for _, key := range []string{"jump", "goto"} {
-			raw, ok := m[key]
-			if !ok {
+			raw, present := m[key]
+			if !present {
 				continue
 			}
-			var t struct {
-				Target string `json:"target"`
-			}
-			if err := json.Unmarshal(raw, &t); err != nil || t.Target == "" {
+			obj, ok := exprObject(raw)
+			if !ok {
 				return nil, fmt.Errorf("%s expression has no readable target", key)
 			}
-			out = append(out, t.Target)
+			target, _ := obj["target"].(string)
+			if target == "" {
+				return nil, fmt.Errorf("%s expression has no readable target", key)
+			}
+			out = append(out, target)
 		}
 	}
 	return out, nil
@@ -313,40 +332,31 @@ func jumpTargets(r *nftjson.Rule) ([]string, error) {
 // Exact match is the point: "@blacklist_manual_ipv4_old" must not satisfy a
 // query for "blacklist_manual_ipv4". Substring matching here would silently
 // convert an unenforced ban into a claimed one.
-func referencesSet(r *nftjson.Rule, setName string) (bool, error) {
+func referencesSet(r *validator.NftRule, setName string) (bool, error) {
 	want := "@" + setName
-	var walk func(json.RawMessage) (bool, error)
-	walk = func(raw json.RawMessage) (bool, error) {
-		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
-			return s == want, nil
-		}
-		var arr []json.RawMessage
-		if err := json.Unmarshal(raw, &arr); err == nil {
-			for _, it := range arr {
-				ok, err := walk(it)
-				if err != nil || ok {
-					return ok, err
+	var walk func(v interface{}) bool
+	walk = func(v interface{}) bool {
+		switch t := v.(type) {
+		case string:
+			return t == want
+		case []interface{}:
+			for _, it := range t {
+				if walk(it) {
+					return true
 				}
 			}
-			return false, nil
-		}
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &obj); err == nil {
-			for _, v := range obj {
-				ok, err := walk(v)
-				if err != nil || ok {
-					return ok, err
+		case map[string]interface{}:
+			for _, vv := range t {
+				if walk(vv) {
+					return true
 				}
 			}
-			return false, nil
 		}
-		return false, nil // numbers, bools, null: cannot be a set reference
+		return false // numbers, bools, null: cannot be a set reference
 	}
 	for _, e := range r.Expr {
-		ok, err := walk(e)
-		if err != nil || ok {
-			return ok, err
+		if walk(e) {
+			return true, nil
 		}
 	}
 	return false, nil
@@ -357,11 +367,11 @@ func referencesSet(r *nftjson.Rule, setName string) (bool, error) {
 // A rule that references the target set but carries no verdict this evaluator
 // recognises is an error, not a silent "non-enforcing" — the caller must fail
 // closed rather than guess.
-func ruleVerdict(r *nftjson.Rule) (verdictKind, error) {
+func ruleVerdict(r *validator.NftRule) (verdictKind, error) {
 	kind := verdictNone
 	for _, e := range r.Expr {
-		var m map[string]json.RawMessage
-		if err := json.Unmarshal(e, &m); err != nil {
+		m, ok := exprObject(e)
+		if !ok {
 			continue
 		}
 		for k := range m {
@@ -389,11 +399,11 @@ func ruleVerdict(r *nftjson.Rule) (verdictKind, error) {
 // isUnconditionalAccept reports whether a rule accepts every packet reaching it,
 // which shadows anything later in the same chain. Deliberately narrow: only a
 // rule whose expressions are exactly accept (optionally with a counter) counts.
-func isUnconditionalAccept(r *nftjson.Rule) bool {
+func isUnconditionalAccept(r *validator.NftRule) bool {
 	sawAccept := false
 	for _, e := range r.Expr {
-		var m map[string]json.RawMessage
-		if err := json.Unmarshal(e, &m); err != nil {
+		m, ok := exprObject(e)
+		if !ok {
 			return false
 		}
 		for k := range m {
