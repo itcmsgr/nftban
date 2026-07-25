@@ -5,6 +5,10 @@
 # Purpose: Enforce architecture invariants and code policy gates
 #
 # Checks:
+#   - Repository authority / history epoch (v1.227.1): the checkout must BE the
+#     canonical repository — resolved toplevel identity (not a --git-dir success,
+#     which walks upward into any ancestor repo), no borrowed alternates,
+#     canonical origin, post-rewrite epoch ancestry, tag parity
 #   - nft write policy (single-writer via daemon)
 #   - Netlink import boundary (CLI must use IPC)
 #   - Public API surface guard (only pkg/ipc + pkg/version)
@@ -45,6 +49,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # v1.227.1 PR-H1: the repository-authority gate evaluates history-epoch
+          # ancestry and local/remote tag parity. Both are meaningless in the
+          # default shallow, tagless checkout — a shallow clone cannot answer
+          # "does HEAD descend from the post-rewrite anchor". The gate refuses to
+          # guess (A4 fails closed), so full history and tags are REQUIRED here.
+          fetch-depth: 0
+          fetch-tags: true
+
+      # =====================================================================
+      # REPOSITORY AUTHORITY (must run first — every check below assumes the
+      # checkout is the canonical repository and the correct history epoch)
+      # =====================================================================
+
+      - name: Check repository authority and history epoch
+        run: ./scripts/ci/check-repo-authority.sh --mode ci
+
+      - name: Repository authority — hermetic negative tests
+        # Proves the gate REJECTS known-bad repositories (ancestor-walk trap,
+        # borrowed alternates, wrong epoch, stale main, shallow, tag drift).
+        # A gate never exercised against bad input is an unverified claim.
+        run: ./scripts/ci/tests/check-repo-authority_test.sh
 
       # =====================================================================
       # EXISTING CHECKS

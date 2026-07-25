@@ -202,5 +202,25 @@ for f in $STAGED_FILES; do
     fi
 done
 
+# -----------------------------------------------------------------------------
+# 9) Repository authority (v1.227.1) — never commit into a clone that is not the
+#    canonical development authority. The retired pre-rewrite tree accepted
+#    commits happily while sitting on an abandoned history epoch; this is the
+#    cheapest point to catch that. Offline: tag parity is checked in CI, not here.
+# -----------------------------------------------------------------------------
+if [[ -f "$REPO_ROOT/scripts/ci/check-repo-authority.sh" ]]; then
+    auth_rc=0
+    # --allow-fork-origin: a contributor working from a fork must still be able to
+    # commit. Identity, object-store, epoch, ancestry and branch-base checks all
+    # remain blocking; only the origin URL is downgraded to a notice. CI refuses
+    # this flag, so the canonical-origin requirement is still enforced on merge.
+    auth_out="$(bash "$REPO_ROOT/scripts/ci/check-repo-authority.sh" \
+                    --mode local --skip-network --allow-fork-origin 2>&1)" || auth_rc=$?
+    if [[ "$auth_rc" -ne 0 ]]; then
+        printf '%s\n' "$auth_out" | sed 's/^/    /'
+        fail "Repository authority check failed (exit $auth_rc). This clone is not the canonical development authority — see tools/repo-authority-guard.sh for remediation."
+    fi
+fi
+
 echo -e "${GREEN}[OK]${NC} All pre-commit policy checks passed"
 exit 0

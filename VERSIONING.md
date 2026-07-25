@@ -169,7 +169,43 @@ We follow [SemVer](https://semver.org/):
 
 - **MAJOR** (1.x.x): Breaking changes
 - **MINOR** (x.1.x): New features (backward compatible)
-- **PATCH** (x.x.1): Bug fixes
+- **PATCH** (x.x.1): Backward-compatible corrections. This covers more than product bug fixes:
+  - product bug fixes;
+  - release, build and test-infrastructure corrections;
+  - development-authority and repository-lifecycle tooling;
+  - documentation and metadata corrections.
+
+  A PATCH must introduce **no** intentional runtime feature and **no** incompatible schema or CLI
+  contract change. Do **not** take a MINOR bump merely because the work is development
+  infrastructure — the axis is compatibility, not subject matter.
+
+### Release category
+
+Orthogonal to the SemVer level, every release declares what kind of change it carries. The level
+answers *"can this break a consumer?"*; the category answers *"what was changed?"*.
+
+| `RELEASE_CATEGORY` | Meaning |
+|---|---|
+| `PRODUCT_FIX` | Defect in shipped runtime behaviour |
+| `SECURITY_FIX` | Security-relevant correction |
+| `MAINTENANCE_TOOLING` | Build, CI, test or development-lifecycle tooling |
+| `PACKAGING` | DEB/RPM packaging, install layout, unit files |
+| `DOCUMENTATION` | Documentation or metadata only |
+| `HOTFIX` | Expedited correction of a released defect |
+
+The two axes are independent, and the category must not drag the level upward: development-infrastructure
+work is still `PATCH` when it is backward compatible.
+
+**A worked example of the level changing with the evidence.** A maintenance train was originally scoped
+as `PATCH` + `MAINTENANCE_TOOLING` — repository-authority and workspace-lifecycle guards, no runtime,
+daemon, nft schema or config schema change. Clean-environment validation then exposed release-relevant
+runtime and packaging defects, which meant the eventual release would carry runtime correction as well as
+tooling. The planned patch was **not published**; the work was reclassified into the next minor train as
+`SECURITY_AND_INSTALL_CORRECTNESS`.
+
+The rule that produced that outcome: **classify from the change set that will actually ship, not from the
+one that was planned.** If validation changes the change set, reclassify before publishing — never
+publish under a level the contents no longer justify.
 
 ## Quick Reference
 

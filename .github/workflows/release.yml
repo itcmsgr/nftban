@@ -389,6 +389,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # v1.227.1 PR-H1: full history + tags are required by the repository
+          # authority gate below (epoch ancestry and tag parity cannot be
+          # evaluated in a shallow, tagless checkout).
+          fetch-depth: 0
+          fetch-tags: true
+
+      # v1.227.1 PR-H1: never publish from a repository that is not the canonical
+      # authority. A release assembled from a wrong-epoch object store would ship
+      # artifacts built from pre-rewrite sources, including scrubbed private data.
+      # This runs BEFORE assembly verification: authority first, contents second.
+      - name: Verify repository authority and history epoch
+        run: ./scripts/ci/check-repo-authority.sh --mode ci
 
       # v1.221.1: resolve the release version from the tag on a real publish, or from
       # the VERSION file on a manual dry-run (no tag). REF is v-prefixed, VER is not.
