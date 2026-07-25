@@ -495,11 +495,29 @@ drop_emergency_table() {
 }
 
 release_lock_holder() {
-    if [[ -n "$LOCK_HOLDER_PID" ]] && kill -0 "$LOCK_HOLDER_PID" 2>/dev/null; then
-        kill "$LOCK_HOLDER_PID" 2>/dev/null || true
+    # The lock is held by an inherited file descriptor, not by the flock process,
+    # so signalling only the parent leaves the orphaned child holding it. That
+    # defect made a later case inherit L4's contention and report exit 75 for a
+    # completely different injection -- a case that "ran" while testing nothing.
+    if [[ -n "$LOCK_HOLDER_PID" ]]; then
+        kill -TERM -"$LOCK_HOLDER_PID" 2>/dev/null || kill -TERM "$LOCK_HOLDER_PID" 2>/dev/null || true
         wait "$LOCK_HOLDER_PID" 2>/dev/null || true
+        kill -KILL -"$LOCK_HOLDER_PID" 2>/dev/null || true
     fi
     LOCK_HOLDER_PID=""
+
+    # VERIFY the release. A lock that is still held silently poisons every
+    # downstream case, and "we sent a signal" is not evidence that it is free.
+    if [[ -e "$LOCK_FILE" ]]; then
+        local i
+        for i in $(seq 1 20); do
+            if flock -n -x "$LOCK_FILE" -c true 2>/dev/null; then return 0; fi
+            sleep 1
+        done
+        log "WARNING: ${LOCK_FILE} is STILL HELD after release — downstream cases would inherit lock contention"
+        return 1
+    fi
+    return 0
 }
 
 # Full teardown to a known-clean ABSENT baseline. Idempotent.
@@ -701,7 +719,11 @@ case_L4() {
     # Controlled injection: hold the installer's own flock so the mutating run
     # exits 75 BEFORE any StateFile write (main.go:107-115). No kill, no panic.
     mkdir -p "$STATE_DIR"
-    flock -x "$LOCK_FILE" -c 'sleep 900' &
+    # setsid so the holder gets its own process group: `sleep` INHERITS the open
+    # lock descriptor, so killing flock alone leaves the lock held by the orphaned
+    # child. Releasing therefore has to signal the whole group -- see
+    # release_lock_holder, which also VERIFIES the release instead of assuming it.
+    setsid bash -c 'flock -x 9; sleep 900' 9>"$LOCK_FILE" &
     LOCK_HOLDER_PID=$!
     sleep 2
     if ! kill -0 "$LOCK_HOLDER_PID" 2>/dev/null; then
