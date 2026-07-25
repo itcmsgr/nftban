@@ -249,7 +249,14 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "INSTALL_STATE=%s\n", sf.State)
 	fmt.Fprintf(w, "INSTALL_MODE=%s\n", sf.Mode)
 	fmt.Fprintf(w, "INSTALL_VERSION=%s\n", sf.Version)
-	fmt.Fprintf(w, "INSTALL_TIMESTAMP=%s\n", sf.Timestamp.Format(time.RFC3339))
+	// RFC3339Nano, not RFC3339. v1.228.0 Item 2 made this field verdict-bearing:
+	// the post-install gate compares it against a --not-before stamp that carries
+	// nanoseconds (date %N). Whole-second precision floors the write time, so a
+	// transaction that commits inside the same second it began reads as older than
+	// its own start and is reported STALE_STATE. It fails closed, so it produces a
+	// false alarm rather than a false success — but it is still a wrong verdict.
+	// The reader parses with the RFC3339 layout, which accepts the fractional part.
+	fmt.Fprintf(w, "INSTALL_TIMESTAMP=%s\n", sf.Timestamp.UTC().Format(time.RFC3339Nano))
 	fmt.Fprintf(w, "SSH_PORT=%d\n", sf.SSHPort)
 	fmt.Fprintf(w, "AUTHORITY=%s\n", sf.Authority)
 	fmt.Fprintf(w, "PANEL=%s\n", sf.Panel)

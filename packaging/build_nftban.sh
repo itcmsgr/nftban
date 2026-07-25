@@ -1416,6 +1416,20 @@ else
     echo "[NFTBan ERROR] Installer binary not found: \$NFTBAN_INSTALLER"
     echo "[NFTBan ERROR] Package may be corrupt. Try reinstalling."
     echo "[NFTBan] Files have been installed but firewall is NOT active."
+    # --- v1.228.0 Item 2: no-installer path --------------------------------------
+    # The boundary must answer on EVERY path. Left silent, a missing or
+    # non-executable installer produces a transaction dnf reports as Complete!
+    # carrying NO machine-readable result at all — indistinguishable from a
+    # pre-Item-2 package. Absence is not a verdict, and this branch is precisely
+    # the "files unpacked, firewall never came up" case the gate exists for.
+    #
+    # 127 is the shell's command-not-found convention. The installer never ran, so
+    # there is no persisted state to interpret and no canonical state token to emit
+    # here — only execution context, exactly as on the normal path.
+    echo "NFTBAN_PACKAGE_INSTALLER_EXIT=127"
+    echo "NFTBAN_PACKAGE_VERIFY_EXIT=127"
+    echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO"
+    # --- end Item 2 no-installer -------------------------------------------------
 fi
 
 # Final cache ownership fix (must be after installer runs)

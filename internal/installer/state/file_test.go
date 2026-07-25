@@ -19,6 +19,7 @@ package state
 
 import (
 	"testing"
+	"time"
 )
 
 // V108 Item 5 — apply hygiene rule when transitioning to terminal success
@@ -270,5 +271,44 @@ func TestTransitionToDegradedPreservesReason(t *testing.T) {
 	// terminal hygiene still applies (PreflightPassed forced true).
 	if !sf.PreflightPassed {
 		t.Errorf("PreflightPassed: want true on terminal, got false")
+	}
+}
+
+// TestInstallTimestampSurvivesSubSecondRoundTrip locks the v1.228.0 Item 2
+// precision fix. The post-install gate compares INSTALL_TIMESTAMP against a
+// --not-before stamp carrying nanoseconds (date %N). While this field was
+// written with time.RFC3339 it was floored to the whole second, so a
+// transaction that committed inside the second it began read as older than its
+// own start and was reported STALE_STATE — a wrong verdict on a healthy
+// install. Whole-second truncation here is the bug, so the assertion is on the
+// sub-second component specifically; a test comparing only to the second would
+// have passed against the defect.
+func TestInstallTimestampSurvivesSubSecondRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+
+	sf := NewStateFile(dir)
+	sf.State = StateCommitted
+	sf.Version = "1.228.0"
+	// 123456789ns is deliberately not a round fraction: a writer that truncated
+	// to milliseconds would also have to be caught.
+	want := time.Date(2026, 7, 25, 12, 0, 0, 123456789, time.UTC)
+	sf.Timestamp = want
+
+	if err := sf.WriteAtomic(); err != nil {
+		t.Fatalf("WriteAtomic: %v", err)
+	}
+
+	got := NewStateFile(dir)
+	if err := got.Read(); err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if !got.Timestamp.Equal(want) {
+		t.Errorf("INSTALL_TIMESTAMP round-trip = %s; want %s",
+			got.Timestamp.Format(time.RFC3339Nano), want.Format(time.RFC3339Nano))
+	}
+	if got.Timestamp.Nanosecond() == 0 {
+		t.Errorf("sub-second component was lost (nanosecond=0) — the field is floored to the second, "+
+			"which makes a same-second transaction verify as STALE_STATE; got %s",
+			got.Timestamp.Format(time.RFC3339Nano))
 	}
 }

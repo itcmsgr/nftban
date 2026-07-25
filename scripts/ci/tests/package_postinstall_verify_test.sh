@@ -150,6 +150,45 @@ for f in "${FAMILIES[@]}"; do
         || bad "static/${f}: a family flag leaked into the VERIFICATION invocation"
 done
 
+# 1c-bis. THE BOUNDARY MUST ANSWER ON EVERY PATH.
+#     The Item 2 block is nested inside `if [ -x "$NFTBAN_INSTALLER" ]`. The else
+#     branch — missing or non-executable installer, i.e. files unpacked and the
+#     firewall never up — must ALSO emit the package-context keys. Left silent it
+#     produces a transaction the package manager calls success carrying no
+#     machine-readable result at all, indistinguishable from a pre-Item-2 package.
+#     Absence is not a verdict.
+#
+#     Extracted from its OWN markers: the main block is extracted from inside the
+#     guard and therefore structurally cannot see this path. That blind spot is
+#     how this defect survived the first version of this suite.
+pred_noinst_answers() { # file
+    [[ -s "$1" ]] || return 1
+    local k
+    for k in NFTBAN_PACKAGE_INSTALLER_EXIT NFTBAN_PACKAGE_VERIFY_EXIT NFTBAN_PACKAGE_POSTINSTALL_VERIFIED; do
+        grep -q "^echo \"${k}=" "$1" || return 1
+    done
+    grep -q 'NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO' "$1" || return 1
+    # the installer never ran, so there is no persisted state to interpret here
+    ! grep -Eq 'NFTBAN_(PERSISTED|EXPECTED|NOT_BEFORE|INSTALL_ATTEMPT|INSTALL_VERIFIED)' "$1"
+}
+
+for f in "${FAMILIES[@]}"; do
+    src="packaging/deb/postinst"; [[ "$f" == "rpm" ]] && src="packaging/build_nftban.sh"
+    awk '/# --- v1\.228\.0 Item 2: no-installer path/,/# --- end Item 2 no-installer/' \
+        "$src" | sed 's/^[[:space:]]*//; s/\\\$/$/g' > "$WORK/${f}_noinst.sh"
+    pred_noinst_answers "$WORK/${f}_noinst.sh" \
+        && ok  "static/${f}: no-installer path answers with VERIFIED=NO instead of staying silent" \
+        || bad "static/${f}: no-installer path stays silent or is malformed — a corrupt package would report success with no machine-readable result"
+done
+
+# negative control: the pre-fix behaviour (human text only) must be caught
+printf '%s\n' 'echo "[NFTBan ERROR] Installer binary not found: $NFTBAN_INSTALLER"' \
+              'echo "[NFTBan] Files have been installed but firewall is NOT active."' \
+              > "$WORK/mutant_noinst.sh"
+pred_noinst_answers "$WORK/mutant_noinst.sh" \
+    && bad "negative-control: human-text-only no-installer mutant PASSED — the answers-on-every-path check is decorative" \
+    || ok  "negative-control: human-text-only no-installer mutant correctly fails the answers-on-every-path check"
+
 # 1d. Both families must emit the same package-context keys in the same order.
 pkg_keys(){ grep -oE 'NFTBAN_PACKAGE_[A-Z_]+=' "$1" | sed 's/=$//' | awk '!seen[$0]++'; }
 if diff -u <(pkg_keys "$WORK/deb_block.sh") <(pkg_keys "$WORK/rpm_block.sh") > "$WORK/keydiff" 2>&1; then
