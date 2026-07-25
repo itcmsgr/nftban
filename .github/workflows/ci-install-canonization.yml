@@ -26,6 +26,12 @@ on:
     paths:
       - 'cmd/nftban-installer/**'
       - 'internal/installer/state/**'
+      - 'internal/installer/postinstall/**'
+      # v1.228.0 Item 2: the package-level gate extracts these two files
+      # verbatim, so a scriptlet edit must re-run it.
+      - 'packaging/deb/postinst'
+      - 'packaging/build_nftban.sh'
+      - 'scripts/ci/tests/package_postinstall_verify_test.sh'
       - '.github/workflows/ci-install-canonization.yml'
   push:
     branches: [main]
@@ -85,6 +91,24 @@ jobs:
           mkdir -p bin
           go build -trimpath -o bin/nftban-installer ./cmd/nftban-installer/
           test -x bin/nftban-installer
+
+      # ------------------------------------------------------------------
+      # v1.228.0 Item 2 — package-level post-install verification gate.
+      #
+      # The unit fixtures prove the verifier; this proves the PACKAGE
+      # BOUNDARY, which is where the defect lives: apt/dnf report success
+      # when the payload unpacks, not when the installer succeeds.
+      #
+      # NFTBAN_REQUIRE_REAL=1 makes a missing binary a failure rather than
+      # a skip — without it a green run would only mean the structural
+      # tiers ran, and would read as package-level proof.
+      # ------------------------------------------------------------------
+      - name: Package post-install verification gate (T8 + DEB/RPM parity)
+        shell: bash
+        env:
+          NFTBAN_INSTALLER_BIN: ${{ github.workspace }}/bin/nftban-installer
+          NFTBAN_REQUIRE_REAL: '1'
+        run: ./scripts/ci/tests/package_postinstall_verify_test.sh
 
       - name: Prepare minimal host state
         shell: bash

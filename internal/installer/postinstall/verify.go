@@ -229,17 +229,12 @@ func Verify(opt Options) Result {
 	return res
 }
 
-// ExitCode maps a verdict to the process exit code.
-//
-//	0  this transaction committed
-//	1  anything else that is a real, determined negative
-//	2  usage / undeterminable input (handled by the caller before Verify)
-func (v Verdict) ExitCode() int {
-	if v == CurrentCommitted {
-		return 0
-	}
-	return 1
-}
+// There is deliberately no Verdict.ExitCode() here. The process exit code is
+// owned by the caller (cmd/nftban-installer/verify_mode.go), which maps a
+// non-verified verdict to state.ExitFailed=2 so it stays aligned with the
+// installer's established 0/2/4 scheme. A second mapping in this package would
+// be a competing authority: it returned 1 for STALE_STATE while the shipped
+// binary returned 2, and nothing called it.
 
 // Tokens renders the stable machine-readable fields.
 //

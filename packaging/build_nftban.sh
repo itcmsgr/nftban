@@ -1293,8 +1293,13 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # transaction's state would look fresh.
     PACKAGE_SCRIPT_START_UTC="\$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')"
 
-    "\$NFTBAN_INSTALLER" --rpm --mode="\$INSTALL_MODE"
-    INSTALLER_EXIT=\$?
+    # Capture the exit code in a condition context, exactly as the DEB postinst
+    # does. RPM supplies the scriptlet interpreter's flags, not this file — under
+    # an errexit interpreter the bare-call-then-\$? form would abort the scriptlet
+    # here and the verifier below would never run, which is precisely the failure
+    # this gate exists to expose.
+    INSTALLER_EXIT=0
+    "\$NFTBAN_INSTALLER" --rpm --mode="\$INSTALL_MODE" || INSTALLER_EXIT=\$?
 
     # Run the read-only verifier UNCONDITIONALLY, after EVERY installer outcome.
     #
