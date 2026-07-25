@@ -51,6 +51,16 @@ const globalTimeout = 300 * time.Second
 func main() {
 	cfg := parseFlags()
 
+	// v1.228.0 Item 2 — READ-ONLY post-install verification, terminal.
+	//
+	// Placed here deliberately: before logging.New() (which opens the installer
+	// log, making a nominally read-only mode a writer) and before lock.Acquire()
+	// (a verifier that took the mutation lock could not report STALE_STATE
+	// during lock contention — the case it exists for).
+	if cfg.verifyInstallState {
+		os.Exit(runInstallStateVerification(cfg))
+	}
+
 	if cfg.showVersion {
 		fmt.Println(version.Line("nftban-installer"))
 		os.Exit(0)

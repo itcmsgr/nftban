@@ -86,6 +86,12 @@ const (
 	// DryRunNotApplied means the caller asked about a dry run, which by contract
 	// never mutates authoritative state.
 	DryRunNotApplied Verdict = "DRY_RUN_NOT_APPLIED"
+	// StateReadError means the state file could not be accessed. Distinct from
+	// MissingState: "unreadable" is not "never installed".
+	StateReadError Verdict = "STATE_READ_ERROR"
+	// InvalidInvocation means the verification mode itself was called wrongly.
+	// Emitted with the same token set so callers never special-case it.
+	InvalidInvocation Verdict = "INVALID_INVOCATION"
 )
 
 // Verified reports whether the verdict permits claiming the install committed.
