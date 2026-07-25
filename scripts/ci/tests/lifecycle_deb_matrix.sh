@@ -1341,6 +1341,19 @@ main() {
     if [[ "$(id -u)" -ne 0 ]]; then
         log "ERROR: must run as root"; exit 2
     fi
+
+    # SINGLE INSTANCE, enforced rather than assumed. This harness purges,
+    # reinstalls and masks units; two concurrent runs mutate the same host and
+    # interleave into the same log, so every assertion from both becomes void
+    # while still printing as PASS. That has already happened once: a name-based
+    # kill silently matched nothing (the script name exceeds pgrep's 15-char
+    # comm limit) and a second run was started over the first.
+    exec 9>"/var/lock/nftban-lifecycle-matrix.lock"
+    if ! flock -n 9; then
+        log "ERROR: another lifecycle matrix run holds /var/lock/nftban-lifecycle-matrix.lock."
+        log "       This harness is destructive; refusing to run a second copy against the same host."
+        exit 2
+    fi
     local missing=() b
     for b in dpkg dpkg-deb dpkg-query apt-get systemctl nft flock date find awk grep sed; do
         command -v "$b" >/dev/null 2>&1 || missing+=("$b")
