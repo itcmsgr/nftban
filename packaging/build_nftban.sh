@@ -1291,7 +1291,16 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # Capture the transaction start IMMEDIATELY before the mutating invocation —
     # not at scriptlet start. Anything earlier widens the window in which a previous
     # transaction's state would look fresh.
-    PACKAGE_SCRIPT_START_UTC="\$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')"
+    # Every %% is DOUBLED because this text is written into an RPM spec, where
+    # rpmbuild expands macros before the shell ever sees the line -- INCLUDING
+    # inside comments, which is why this comment doubles them too. A %%S followed
+    # by a non-alphanumeric character (here the '.' before %%N) terminates the
+    # macro name, so rpm resolves %%S as a parametric macro and the whole build
+    # dies with "%%S: argument expected" -- no package at all, not a bad package.
+    # The pre-existing +%%Y%%m%%dT%%H%%M%%SZ elsewhere in this file survives only
+    # by accident: %%SZ reads as one undefined macro name and is left alone.
+    # Do not rely on that.
+    PACKAGE_SCRIPT_START_UTC="\$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%S.%%NZ')"
 
     # Capture the exit code in a condition context, exactly as the DEB postinst
     # does. RPM supplies the scriptlet interpreter's flags, not this file — under

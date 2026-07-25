@@ -189,6 +189,33 @@ pred_noinst_answers "$WORK/mutant_noinst.sh" \
     && bad "negative-control: human-text-only no-installer mutant PASSED — the answers-on-every-path check is decorative" \
     || ok  "negative-control: human-text-only no-installer mutant correctly fails the answers-on-every-path check"
 
+# 1c-ter. THE RPM BLOCK MUST SURVIVE rpmbuild's MACRO EXPANSION.
+#     The RPM text is written into a spec file, and rpmbuild expands macros before
+#     the shell ever sees the line. A `%S` followed by a non-alphanumeric character
+#     terminates the macro name, so rpm resolves it as a parametric macro and the
+#     ENTIRE BUILD dies with "%S: argument expected" — no package at all.
+#
+#     This shipped: Item 2's `date -u +'%Y-...%S.%NZ'` broke the RPM build outright
+#     and stayed invisible because nothing built an RPM between the plumbing
+#     landing and the first EL9 build. Percent signs in the RPM block must be
+#     doubled; the DEB block, which is not macro-expanded, must NOT be.
+raw_rpm_block="$WORK/rpm_block_raw.sh"
+awk '/# --- v1\.228\.0 Item 2: post-install outcome truth/,/# --- end Item 2/' \
+    packaging/build_nftban.sh > "$raw_rpm_block"
+if grep -qE '(^|[^%])%[A-Za-z]' "$raw_rpm_block"; then
+    bad "static/rpm: un-doubled % in the spec-bound block — rpmbuild will expand it as a macro and can fail the whole build:"
+    grep -nE '(^|[^%])%[A-Za-z]' "$raw_rpm_block" | sed 's/^/        /' | head -3
+else
+    ok "static/rpm: every % in the spec-bound block is doubled — survives rpmbuild macro expansion"
+fi
+# negative control: the exact form that broke the build must be caught
+printf '%s\n' "PACKAGE_SCRIPT_START_UTC=\"\\\$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')\"" > "$WORK/pct_mutant.sh"
+if grep -qE '(^|[^%])%[A-Za-z]' "$WORK/pct_mutant.sh"; then
+    ok "negative-control: the un-doubled %S form that broke the RPM build is detected"
+else
+    bad "negative-control: un-doubled %S form NOT detected — the macro-expansion check is decorative"
+fi
+
 # 1d. Both families must emit the same package-context keys in the same order.
 pkg_keys(){ grep -oE 'NFTBAN_PACKAGE_[A-Z_]+=' "$1" | sed 's/=$//' | awk '!seen[$0]++'; }
 if diff -u <(pkg_keys "$WORK/deb_block.sh") <(pkg_keys "$WORK/rpm_block.sh") > "$WORK/keydiff" 2>&1; then
