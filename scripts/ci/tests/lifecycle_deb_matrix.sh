@@ -826,7 +826,13 @@ case_L5() {
     # Distinguish L5 from L4: this must NOT be lock contention.
     local iexit; iexit="$(tok "$out" NFTBAN_PACKAGE_INSTALLER_EXIT)"
     if [[ "$iexit" == "75" ]]; then
-        assert 1 "installer exited 75 — this reproduced L4's lock contention, not the T9 class"
+        # A COVERAGE GAP, not a product defect: the run degenerated into L4's
+        # mechanism, so it establishes nothing about the pre-Transition class.
+        # Recording it as FAIL would misattribute a missing injection hook to
+        # NFTBan; recording it as PASS would be worse. It skips, which forces
+        # NFTBAN_MATRIX_VERDICT=INCOMPLETE and rc=2.
+        case_skip "installer exited 75 — degenerated into L4 lock contention; T9 package class NOT_YET_VERIFIED (no shipped pre-Transition injection hook)"
+        return 0
     else
         assert 0 "installer exit ${iexit:-<absent>} is not 75 — a distinct mechanism from L4"
     fi
