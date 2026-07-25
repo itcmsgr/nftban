@@ -19,7 +19,7 @@
 // Package postinstall answers one question a package manager cannot: did THIS
 // transaction actually commit?
 //
-// WHY THIS EXISTS
+// # WHY THIS EXISTS
 //
 // `dnf install` and `apt-get install` report success when the package payload
 // is unpacked. They do not report the installer's outcome. On a stock enforcing
@@ -31,7 +31,7 @@
 // The installer already records the truth — StateFile.Transition persists a
 // terminal state with a UTC timestamp. The gap is on the READING side.
 //
-// STATE PRESENCE IS NOT STATE FRESHNESS
+// # STATE PRESENCE IS NOT STATE FRESHNESS
 //
 // Three termination classes run BEFORE the StateFile exists (main.go:125):
 // flag/usage errors, --version, and lock contention (os.Exit(75)); a panic is a
@@ -61,6 +61,10 @@ import (
 
 // Verdict is the outcome of a post-install verification.
 type Verdict string
+
+// unknownField is emitted instead of a blank so every token line is always
+// present and parseable, on every path including failures.
+const unknownField = "UNKNOWN"
 
 const (
 	// CurrentCommitted is the ONLY verdict that means "this transaction committed".
@@ -127,8 +131,10 @@ type Options struct {
 func Verify(opt Options) Result {
 	if opt.NotBefore.IsZero() {
 		return Result{
-			Verdict: InvalidState,
-			Detail:  "no transaction start timestamp supplied — freshness cannot be established",
+			Verdict:          InvalidState,
+			PersistedState:   unknownField,
+			PersistedVersion: unknownField,
+			Detail:           "no transaction start timestamp supplied — freshness cannot be established",
 		}
 	}
 
@@ -137,8 +143,23 @@ func Verify(opt Options) Result {
 		// Distinguish "never installed" from "cannot be trusted". Both fail, but
 		// an operator needs to know which.
 		return Result{
-			Verdict: MissingState,
-			Detail:  fmt.Sprintf("cannot read install state at %s: %v", sf.Path(), err),
+			Verdict:          MissingState,
+			PersistedState:   unknownField,
+			PersistedVersion: unknownField,
+			Detail:           fmt.Sprintf("cannot read install state at %s: %v", sf.Path(), err),
+		}
+	}
+
+	// PROVENANCE FIRST. NewStateFile seeds State with a constructor default, so a
+	// non-empty sf.State does NOT prove the value came from disk. Reading the
+	// default as persisted evidence would report a fabricated state for a file
+	// that never carried one — checking sf.State == "" alone cannot detect it.
+	if !sf.StateFieldPresent() {
+		return Result{
+			Verdict:          InvalidState,
+			PersistedState:   unknownField,
+			PersistedVersion: unknownField,
+			Detail:           fmt.Sprintf("install state file %s carries no INSTALL_STATE field", sf.Path()),
 		}
 	}
 
@@ -150,7 +171,8 @@ func Verify(opt Options) Result {
 
 	if sf.State == "" {
 		res.Verdict = InvalidState
-		res.Detail = "install state file carries no state value"
+		res.PersistedState = unknownField
+		res.Detail = "install state file carries an empty INSTALL_STATE value"
 		return res
 	}
 
@@ -219,17 +241,34 @@ func (v Verdict) ExitCode() int {
 // fields. Printing a bare NFTBAN_INSTALL_STATE=COMMITTED on a path where the
 // state predates the attempt is exactly the misrepresentation this package
 // exists to prevent.
-func (r Result) Tokens(installerExit int) []string {
-	ts := ""
+func (r Result) Tokens(opt Options, installerExit int) []string {
+	ts := unknownField
 	if !r.PersistedTimestamp.IsZero() {
 		ts = r.PersistedTimestamp.Format(time.RFC3339Nano)
 	}
+	ps, pv := r.PersistedState, r.PersistedVersion
+	if ps == "" {
+		ps = unknownField
+	}
+	if pv == "" {
+		pv = unknownField
+	}
+	nb := unknownField
+	if !opt.NotBefore.IsZero() {
+		nb = opt.NotBefore.UTC().Format(time.RFC3339Nano)
+	}
+	ev := opt.ExpectedVersion
+	if ev == "" {
+		ev = unknownField
+	}
 	return []string{
-		"NFTBAN_PERSISTED_INSTALL_STATE=" + r.PersistedState,
-		"NFTBAN_PERSISTED_STATE_VERSION=" + r.PersistedVersion,
+		"NFTBAN_PERSISTED_INSTALL_STATE=" + ps,
+		"NFTBAN_PERSISTED_STATE_VERSION=" + pv,
 		"NFTBAN_PERSISTED_STATE_TIMESTAMP=" + ts,
+		"NFTBAN_EXPECTED_VERSION=" + ev,
+		"NFTBAN_NOT_BEFORE=" + nb,
 		"NFTBAN_INSTALL_ATTEMPT_VERDICT=" + string(r.Verdict),
-		fmt.Sprintf("NFTBAN_INSTALL_VERIFIED=%s", boolWord(r.Verdict.Verified())),
+		"NFTBAN_INSTALL_VERIFIED=" + boolWord(r.Verdict.Verified()),
 		fmt.Sprintf("NFTBAN_INSTALLER_EXIT=%d", installerExit),
 	}
 }
