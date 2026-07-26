@@ -52,45 +52,18 @@ Both are instances of the standing rule: **PASS ≠ INJECTION PROVEN**.
 
 ---
 
-## Register entry — ready for transcription
+## Tracking
 
-The authoritative open-work register is owned elsewhere; this entry is recorded here for
-transcription rather than edited in directly.
+Open work for this standard is tracked **only** in the master register:
 
 ```
-TODO-SHELL-INPUT-PARSING-AUTHORITY
-
-Problem:
-Several shell paths may parse comma-separated or externally supplied values by
-temporarily assigning IFS. Repository security policy flags IFS-based input
-splitting because parsing behaviour can become implicit, difficult to audit, or
-accidentally leak into adjacent code.
-
-Required action:
-- inventory IFS assignments used for external/config/CLI input parsing;
-- distinguish local bounded uses from persistent/global IFS mutation;
-- replace policy-violating cases with explicit parsers;
-- validate parsed tokens against a strict allowlist;
-- reject empty, unknown, duplicated or malformed values where appropriate;
-- prohibit `... || true` from hiding parser failures;
-- add positive, malformed-input and mutation tests;
-- verify no behaviour change for valid existing input.
-
-Acceptance:
-- repository security scanner passes;
-- valid comma-separated values parse identically;
-- whitespace around tokens is accepted;
-- empty and unknown tokens fail deterministically;
-- no parsing state leaks after the parser returns;
-- negative control proves the guard detects reintroduced IFS-based parsing.
-
-Disposition:
-LOW / defense-in-depth / CI-compliance hygiene.
-Do not describe as a confirmed vulnerability unless an actual state-leak or
-input-confusion exploit is reproduced.
+NFTBAN_ROADMAP/NFTBAN_PENDINGS_AND_BUGS_CURRENT.md  →  TODO-SHELL-INPUT-PARSING-AUTHORITY
 ```
 
-**Known population (not yet triaged):** the scanner reports pre-existing `ifs-tampering` findings on
-`main` in `cli/lib/nftban/cli/cmd_logs.sh`, `cli/lib/nftban/core/nftban_rbl.sh` and
-`cli/lib/nftban/core/nftban_hostaddr.sh`. Those are a **triage population, not a defect count** —
-each needs the local-versus-global distinction applied before any claim.
+This file is the *standard* (how to write the parser). It is not a TODO list and must not grow one —
+there is one master register, and duplicate trackers drift.
+
+**Known scanner population (not yet triaged):** pre-existing `ifs-tampering` findings on `main` in
+`cli/lib/nftban/cli/cmd_logs.sh`, `cli/lib/nftban/core/nftban_rbl.sh` and
+`cli/lib/nftban/core/nftban_hostaddr.sh`. That is a **triage population, not a defect count** — each
+needs the local-versus-global distinction applied before any claim.
