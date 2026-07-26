@@ -979,6 +979,13 @@ case_L6() {
 
 case_L7() {
     case_begin L7 "uninstall (apt-get remove — config preserved by policy)"
+    # Establish the precondition rather than skipping. Run alone, or after any
+    # case that leaves dpkg in 'rc', L7 would otherwise skip and contribute no
+    # coverage while still looking like a clean run.
+    if [[ "$(dpkg_status)" != "ii" ]]; then
+        reset_to_absent
+        pkg_install "$CANDIDATE_DEB" "${WORKDIR}/L7_pre_install.txt" >/dev/null
+    fi
     if [[ "$(dpkg_status)" != "ii" ]]; then
         case_skip "L7 needs an installed package; dpkg status is $(dpkg_status)"
         return 0
