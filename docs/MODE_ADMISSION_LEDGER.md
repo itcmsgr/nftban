@@ -50,5 +50,35 @@ reaches it.
 
 ## Standing rule for `BROKEN`
 
-A `BROKEN` mode must be hidden from help, rejected at config validation, or explicitly marked
-`unavailable` in status. It must never be silently selectable.
+A `BROKEN` mode **must be rejected at configuration validation or explicitly marked
+`unavailable`**. It must not be selectable as an operational mode. Hiding it from help alone is
+insufficient — an existing configuration file would keep selecting it silently.
+
+## OPEN runtime-lane defect — validation is not module × mode aware
+
+**Status: confirmed, not fixed in v1.228.0.** Flagged by the static guard.
+
+`cli/lib/nftban/helpers/nftban_mode.sh:32` declares a single global vocabulary:
+
+```
+NFTBAN_VALID_MODES="auto classic suricata hybrid"
+```
+
+This is the configuration-validation accept-list. It accepts modes this ledger marks `BROKEN`, so
+the validator still admits a mode that must not be operationally selectable.
+
+**This is a runtime-lane product defect, not a documentation defect.** The interim behaviour must
+be chosen explicitly:
+
+| Option | Behaviour |
+|---|---|
+| **A** | reject specifically `BROKEN` module × mode combinations |
+| **B** | accept syntax, fail semantic validation as unavailable |
+| **C** | preserve parsing compatibility, refuse activation, and report `CONFIGURED_MODE=<value>` / `EFFECTIVE_MODE=unavailable` / `MODE_REASON=<stable reason>` |
+
+**Constraint:** do **not** remove `suricata` or `hybrid` globally from the shared vocabulary.
+PortScan and LoginMon do not share an admission state with DDoS — PortScan/suricata is
+`STATICALLY_REACHABLE` while DDoS/suricata is `BROKEN`. Validation must be **module × mode aware**,
+not a global four-word allowlist.
+
+Until this is resolved, the guard reports these rows as `MUST_FIX` / `BLOCKED_FROM_ADMISSION`.

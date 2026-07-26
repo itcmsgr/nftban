@@ -58,6 +58,9 @@ RUN_CONTROLS=1
 VERBOSE=0
 
 FAIL_ON="${FAIL_ON:-all}"
+# label used for BROKEN-row findings: a real FAIL under --fail-on all, known
+# non-blocking debt under --fail-on drift.
+MUSTFIX_LABEL="MUST_FIX"
 
 usage() {
     cat <<'EOF'
@@ -197,7 +200,7 @@ record() {
     if [[ "${KNOWN_DISP[${key}]}" == "MUST_FIX" ]]; then
         CHECK_MUSTFIX["${check}"]=$(( ${CHECK_MUSTFIX[${check}]:-0} + 1 ))
         MUSTFIX_TOTAL=$(( MUSTFIX_TOTAL + 1 ))
-        say "  MUST_FIX       ${key}"
+        say "  ${MUSTFIX_LABEL}       ${key}"
         say "                 ledger=${KNOWN_STATUS[${key}]} — ${detail}"
         return
     fi
@@ -736,6 +739,8 @@ say "  scope note   : static only. Static reachability is 1 of the 6 promotion"
 say "                 requirements in MODE_ADMISSION_LEDGER.md. A clean run of this"
 say "                 guard never promotes a ledger row."
 
+[[ "${FAIL_ON}" == "drift" ]] && MUSTFIX_LABEL="KNOWN_MUST_FIX"
+
 head2 "CONTROLS (each check must be seen to fail before its result is trusted)"
 if [[ ${RUN_CONTROLS} -eq 1 ]]; then
     IN_CONTROL=1
@@ -800,14 +805,20 @@ for c in SILENT_NO_OP ORPHAN_ENTRYPOINT LEDGER_CONSISTENCY MARKRUNNING_LIVENESS;
         result="FAIL"
         RC=1
     elif [[ "${mustfix}" -gt 0 ]]; then
-        # MUST_FIX = a violation whose ledger row is BROKEN. In `all` (default)
-        # it blocks, which is the contract's end state. In `drift` it is still
-        # printed as FAIL and still counted — it just does not gate unrelated
-        # PRs while the obligation is open. It is never downgraded to PASS and
-        # never silently accepted: that would be the exact failure this guard
-        # exists to prevent.
-        result="FAIL"
-        [[ "${FAIL_ON}" == "all" ]] && RC=1
+        # MUST_FIX = a violation whose ledger row is BROKEN.
+        #
+        # Under `all` it blocks and is a genuine FAIL. Under `drift` the job
+        # itself passes, so calling it "FAIL" would print a failure beside a
+        # green workflow — a truth mismatch of exactly the kind this guard
+        # exists to prevent. It is classified KNOWN_MUST_FIX instead: known
+        # release debt, blocked from admission, non-blocking in this mode.
+        # It is never downgraded to PASS and never silently accepted.
+        if [[ "${FAIL_ON}" == "all" ]]; then
+            result="FAIL"
+            RC=1
+        else
+            result="KNOWN_MUST_FIX"
+        fi
     else
         result="PASS"
     fi
@@ -825,5 +836,19 @@ printf 'MODE_AUTHORITY_FAIL_ON=%s\n' "${FAIL_ON}"
 # does not gate. It is never downgraded to PASS.
 if [[ ${NEW_TOTAL} -gt 0 || ${STALE} -gt 0 ]]; then RC=1; fi
 if [[ ${MUSTFIX_TOTAL} -gt 0 && "${FAIL_ON}" == "all" ]]; then RC=1; fi
-printf 'MODE_AUTHORITY_RESULT=%s\n' "$([[ ${RC} -eq 0 ]] && echo PASS || echo FAIL)"
+# Admission is a SEPARATE axis from the CI verdict. A ratchet run can be green
+# (no new drift) while admission is still blocked by known BROKEN rows.
+if [[ ${MUSTFIX_TOTAL} -gt 0 ]]; then
+    printf 'MODE_AUTHORITY_ADMISSION=BLOCKED_FROM_ADMISSION\n'
+else
+    printf 'MODE_AUTHORITY_ADMISSION=ELIGIBLE\n'
+fi
+if [[ ${RC} -ne 0 ]]; then
+    printf 'MODE_AUTHORITY_RESULT=FAIL\n'
+elif [[ ${MUSTFIX_TOTAL} -gt 0 ]]; then
+    # green build, but do not call it a clean PASS
+    printf 'MODE_AUTHORITY_RESULT=CI_RATCHET_NONBLOCKING\n'
+else
+    printf 'MODE_AUTHORITY_RESULT=PASS\n'
+fi
 exit "${RC}"

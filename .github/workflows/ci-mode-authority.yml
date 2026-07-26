@@ -84,17 +84,46 @@ jobs:
       # a synthetic bad tree and must FLAG it, and to a clean tree and must NOT.
       # A check whose control does not fire reports NOT_YET_VERIFIED, never PASS.
       # This is what stops the gate from passing decoratively.
-      - name: Mode authority guard (blocking on NEW drift)
+      # TWO GATES, per the ratchet policy:
+      #
+      #   ordinary PR CI                        --fail-on drift
+      #   runtime-lane / release-prep / trusted --fail-on all   (STRICT, MANDATORY)
+      #
+      # Strict is MANDATORY wherever the change claims to fix or admit a mode, and
+      # at release admission. Ratchet must never let a release ship a BROKEN
+      # selectable mode merely because the defect predates the PR.
+      - name: Select gate mode
+        id: mode
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -Eeuo pipefail
+          mode="drift"; why="ordinary PR CI"
+          # the fix lane: any change to the module runtimes themselves must clear
+          # its targeted MUST_FIX rows before it can merge
+          if git diff --name-only "origin/${BASE_REF:-main}...HEAD" 2>/dev/null \
+               | grep -qE '^internal/(ddos|portscan|loginmon)/'; then
+            mode="all"; why="runtime-lane change (internal/{ddos,portscan,loginmon})"
+          fi
+          case "${HEAD_REF}" in
+            *runtime-mode*|*mode-authority*|*release-prep*|release/*)
+              mode="all"; why="runtime-lane or release-prep branch" ;;
+          esac
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.strict }}" == "true" ]]; then
+            mode="all"; why="operator requested strict"
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          echo "Gate mode: --fail-on ${mode}  (${why})"
+
+      - name: Mode authority guard
         id: guard
         shell: bash
         run: |
           set -Eeuo pipefail
-          mode="drift"
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.strict }}" == "true" ]]; then
-            mode="all"
-          fi
-          echo "running with --fail-on ${mode}"
-          ./scripts/ci/check-mode-authority.sh --fail-on "${mode}" | tee /tmp/mode-authority.txt
+          ./scripts/ci/check-mode-authority.sh --fail-on "${{ steps.mode.outputs.mode }}" \
+            | tee /tmp/mode-authority.txt
 
       - name: Publish open MUST_FIX debt to the job summary
         if: always()
