@@ -92,9 +92,16 @@ detection, banning, health, or status.  Delete this whole section only if none a
 Authority: docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md  ·  ADR-0001
 AN UNANSWERED FIELD BLOCKS MERGE. "N/A" is an answer; blank is not.
 
-Presence != readiness.      Started != running.        Defined != reachable.
-Enabled != detecting.       Detected != banned.        Set membership != enforcement.
-Status text != runtime truth.   Test PASS != injection proven.
+A feature is not merely code that exists. A feature is a complete production path that is
+REACHABLE, OBSERVABLE, ENFORCEABLE, TESTABLE and RECOVERABLE.
+
+  DEFINED        != REACHABLE
+  CONFIGURED     != EFFECTIVE
+  ENABLED        != DETECTING
+  RUNNING        != RECEIVING INPUT
+  DETECTED       != ENFORCED
+  SET MEMBERSHIP != FIREWALL BLOCK
+  PASS           != INJECTION PROVEN
 -->
 
 - **MODULE:**

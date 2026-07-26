@@ -3,6 +3,24 @@
 A standing contributor and auditor contract. This is not a forensic report and does not
 expire with a release.
 
+## What a feature is
+
+A feature is not merely code that exists. **A feature is a complete production path that is
+reachable, observable, enforceable, testable and recoverable.**
+
+For NFTBan that means all five, not a subset:
+
+| Property | Requirement |
+|---|---|
+| **REACHABLE** | the shipped runtime actually calls it |
+| **OBSERVABLE** | logs, health and status expose its real state |
+| **ENFORCEABLE** | detection reaches the authoritative ban/firewall path |
+| **TESTABLE** | positive, negative **and mutation** fixtures prove it |
+| **RECOVERABLE** | disable, unban, restart, rebuild and reboot behave correctly |
+
+Code that satisfies four of the five is not a feature. It is an unfinished path that will be
+reported as working.
+
 ## The invariant
 
 ```
@@ -13,17 +31,30 @@ configuration → resolution → dispatcher → detector
               → decision → enforcement → health → recovery
 ```
 
-A feature is not the code that exists. **A feature is the complete production path that can be
-reached, observed, verified and recovered.**
+## The compact standing rule
 
-## The failure pattern this exists to stop
+This is the canonical short form. Quote it verbatim; do not paraphrase it.
 
 ```
-configured name  ≠  runtime reachability  ≠  active detection
-                 ≠  effective enforcement ≠  truthful health
+DEFINED         ≠  REACHABLE
+CONFIGURED      ≠  EFFECTIVE
+ENABLED         ≠  DETECTING
+RUNNING         ≠  RECEIVING INPUT
+DETECTED        ≠  ENFORCED
+SET MEMBERSHIP  ≠  FIREWALL BLOCK
+PASS            ≠  INJECTION PROVEN
 ```
 
-Every one of those inequalities has been observed in this product. They are not hypothetical.
+**Every one of these has been observed in this product.** They are not hypothetical:
+a defined-but-uncalled Suricata processor; `auto` resolving to a mode whose source is absent;
+a module RUNNING with its only watcher exited; a ban present in a set that no hooked chain
+referenced; and harness cases that printed PASS while asserting nothing.
+
+## Scope
+
+This governs **DDoS, PortScan, LoginMon, Suricata, BotScan, ban/unban, package lifecycle, health,
+reporting — and every future module.** It is not limited to the modules that happened to surface
+the defects.
 
 ## Position in architecture
 

@@ -26,6 +26,10 @@ A further hazard is structural: the PortScan dispatcher guards each branch with
 
 ## Decision
 
+**A feature is a complete production path that is REACHABLE, OBSERVABLE, ENFORCEABLE, TESTABLE and
+RECOVERABLE — not merely code that exists.** This governs DDoS, PortScan, LoginMon, Suricata,
+BotScan, ban/unban, package lifecycle, health, reporting, and every future module.
+
 **NFTBan treats each module mode as an independently admitted runtime implementation.**
 
 A configured mode is not supported until its production path, source readiness, health semantics,
