@@ -55,7 +55,13 @@ UNLESS ITS EFFECTIVE RUNTIME CHAIN IS PROVEN END TO END
 - Hybrid requires a deduplication authority before it may be called supported.
 - Silent fallback and silent no-op are prohibited: a selected mode with a missing entrypoint is
   `FAILED` or `DEGRADED` with a machine-readable reason, never rc0.
-- Broken modes are hidden, rejected at validation, or explicitly marked unavailable.
+- **A broken mode must be rejected at configuration validation or explicitly marked unavailable.
+  It must not be selectable as an operational mode. Hiding it from help alone is insufficient** —
+  an existing configuration file would otherwise keep selecting it silently.
+- **The mode declaration and admission ledger are specification and admission authorities, not
+  runtime truth.** Runtime enforcement authority remains the nftables kernel; health interpretation
+  remains the validator; configuration records operator intent. The ledger never replaces
+  kernel/validator truth.
 - Health must test the path the effective mode selected, and must be able to report failure —
   distinguishing `ACTIVE_ZERO_INPUT` from `ACTIVE_AND_RECEIVING`.
 - Threshold retuning is blocked until reachability and ownership are proven, and may not reuse one
@@ -69,6 +75,22 @@ architectural — a missing admission boundary — not three unrelated bugs.
 
 **Keep the contract only in agent/assistant memory.** Rejected by the owner. Institutional
 knowledge must live in the repository where contributors, auditors and CI can enforce it.
+
+## Revisit criteria
+
+This ADR may be superseded only if NFTBan adopts a different runtime-mode architecture that
+preserves equivalent or stronger guarantees for:
+
+- configured versus effective mode separation
+- source readiness
+- production-path reachability
+- enforcement authority
+- health truth
+- negative and cross-VM validation
+- recovery and deduplication
+
+A refactor that removes the admission model without providing equivalent guarantees does not
+supersede this ADR; it violates it.
 
 ## Compliance
 

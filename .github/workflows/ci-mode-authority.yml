@@ -1,0 +1,120 @@
+# =============================================================================
+# NFTBan — CI: Runtime Mode Authority Gate
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Enforces docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md (ADR-0001) statically.
+#
+# WHAT THIS GATE CAN AND CANNOT DO
+#   Static analysis cannot prove a mode operates. Static reachability is ONE of
+#   the six promotion requirements in docs/MODE_ADMISSION_LEDGER.md. A green run
+#   here NEVER promotes a ledger row — cross-VM traffic, enforcement proof and
+#   clean recovery are proven by the lifecycle and attack matrices, not here.
+#
+# TWO-STAGE ENFORCEMENT (deliberate)
+#   Stage 1 (blocking, now): --fail-on drift. Any NEW violation, or a stale
+#     allowlist row, fails the build. This makes the gate do real work from day
+#     one without gating unrelated PRs on pre-existing debt.
+#   Stage 2 (the end state): drop --fail-on drift so MUST_FIX also blocks. The
+#     exit criterion is discharging the BROKEN rows in the ledger — chiefly
+#     DDoS/suricata, whose processor has no reachable caller, and LoginMon/auto,
+#     whose readiness is resolved from presence rather than produced input.
+#
+#   MUST_FIX debt is NEVER downgraded to PASS and never silently allowlisted —
+#   it is printed in full on every run and re-published in the job summary.
+#   Hiding it would be the exact failure this gate exists to prevent.
+# =============================================================================
+
+name: Runtime Mode Authority Gate
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'internal/ddos/**'
+      - 'internal/portscan/**'
+      - 'internal/loginmon/**'
+      - 'internal/botguard/**'
+      - 'cli/lib/nftban/core/nftban_ddos*.sh'
+      - 'cli/lib/nftban/core/nftban_portscan*.sh'
+      - 'cli/lib/nftban/core/nftban_login*.sh'
+      - 'cli/lib/nftban/helpers/nftban_mode.sh'
+      - 'cli/lib/nftban/cli/cmd_modes.sh'
+      - 'cli/lib/nftban/cli/cmd_ddos.sh'
+      - 'cli/lib/nftban/cli/cmd_portscan.sh'
+      - 'docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md'
+      - 'docs/MODE_ADMISSION_LEDGER.md'
+      - 'docs/adr/ADR-0001-runtime-mode-authority.md'
+      - 'scripts/ci/check-mode-authority.sh'
+      - 'scripts/ci/mode-authority-known.txt'
+      - '.github/workflows/ci-mode-authority.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: 'Fail on MUST_FIX debt as well as new drift'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-mode-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mode-authority:
+    name: Mode Authority (static)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Shellcheck the guard itself
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          shellcheck -S error scripts/ci/check-mode-authority.sh
+
+      # The guard runs its own negative controls first: each check is applied to
+      # a synthetic bad tree and must FLAG it, and to a clean tree and must NOT.
+      # A check whose control does not fire reports NOT_YET_VERIFIED, never PASS.
+      # This is what stops the gate from passing decoratively.
+      - name: Mode authority guard (blocking on NEW drift)
+        id: guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mode="drift"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.strict }}" == "true" ]]; then
+            mode="all"
+          fi
+          echo "running with --fail-on ${mode}"
+          ./scripts/ci/check-mode-authority.sh --fail-on "${mode}" | tee /tmp/mode-authority.txt
+
+      - name: Publish open MUST_FIX debt to the job summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "## Runtime Mode Authority"
+            echo
+            grep -E '^MODE_AUTHORITY_' /tmp/mode-authority.txt 2>/dev/null | sed 's/^/    /' || true
+            echo
+            if grep -q 'MODE_AUTHORITY_MUST_FIX_VIOLATIONS=0' /tmp/mode-authority.txt 2>/dev/null; then
+              echo "No open MUST_FIX debt — this gate can be flipped to \`--fail-on all\`."
+            else
+              echo "### Open MUST_FIX debt (ledger row is BROKEN)"
+              echo
+              grep -A1 'MUST_FIX ' /tmp/mode-authority.txt 2>/dev/null | sed 's/^/    /' || true
+              echo
+              echo "These do not block today. They are tracked in \`scripts/ci/mode-authority-known.txt\`"
+              echo "and in \`docs/MODE_ADMISSION_LEDGER.md\`. A BROKEN mode must be rejected at config"
+              echo "validation or explicitly marked unavailable — hiding it from help is insufficient."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -18,8 +18,8 @@ For NFTBan that means all five, not a subset:
 | **TESTABLE** | positive, negative **and mutation** fixtures prove it |
 | **RECOVERABLE** | disable, unban, restart, rebuild and reboot behave correctly |
 
-Code that satisfies four of the five is not a feature. It is an unfinished path that will be
-reported as working.
+Code that satisfies four of the five is not an **admitted** feature. Without these gates, it risks
+being reported as working despite an incomplete production path.
 
 ## The invariant
 
@@ -254,8 +254,16 @@ modes:
     dedup_authority: REQUIRED
 ```
 
-Format may be YAML, Go metadata or a registry. The principle is fixed: the declaration is the
-authority, and CI checks the code against it.
+Format may be YAML, Go metadata or a registry. The principle is fixed:
+
+> The machine-readable declaration is the canonical **mode inventory and specification authority**.
+> It is **not runtime truth**. Runtime enforcement authority remains the **kernel**, and runtime
+> health interpretation remains the **validator**. CI checks implementation and documentation
+> against the declaration.
+
+This preserves the established hierarchy — kernel enforces, validator interprets, CLI renders,
+config records intent — and deliberately does not create a second runtime truth source or compete
+with `ModuleHealthMap`.
 
 ---
 
