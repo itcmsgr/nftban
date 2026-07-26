@@ -1,0 +1,45 @@
+# =============================================================================
+# Mode Authority Gate — repository policy declaration
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Authority: docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md · docs/adr/ADR-0001-runtime-mode-authority.md
+#
+# THIS FILE IS THE DECLARATION. Branch names are not authoritative — they are
+# mutable and inconsistently used. A PR that claims to close mode-authority debt
+# must say so explicitly, either here or via workflow_dispatch input, and the
+# guard then VERIFIES that the declared scope covers every authority surface the
+# change actually touches.
+#
+# policy:
+#   drift     block NEW + STALE. Report existing MUST_FIX / ACCEPTED_DEBT.
+#             CI may pass; global admission stays BLOCKED.
+#   targeted  additionally block unresolved MUST_FIX rows INSIDE `scope`.
+#             Unrelated pre-existing debt is reported only.
+#             Requires `scope`. Grants admission for the declared scope ONLY.
+#   all       block ANY MUST_FIX. Reserved for a milestone claiming complete
+#             closure, a global mode-admission release, or an operator request.
+# =============================================================================
+
+policy: drift
+
+# Modules whose mode-authority debt this repository state claims to close.
+# Empty under `drift`: v1.228.0 explicitly does NOT claim runtime-mode repair.
+scope: []
+
+# v1.228.0 defers the confirmed runtime-mode defects to the runtime lane. The
+# authority for that deferral — the ledger rows and the release statement — must
+# remain present and must continue to describe the findings as OPEN. The release
+# gate verifies these files rather than trusting the claim.
+deferred_must_fix_authority:
+  - docs/MODE_ADMISSION_LEDGER.md
+  - docs/releases/V1_228_0_VALIDATION_AUTHORITY_STATEMENT.md
+
+# Phrases that must NEVER appear in the deferred-authority documents while the
+# corresponding rows are still MUST_FIX. A release may not claim a repair it did
+# not perform.
+forbidden_release_claims:
+  - "runtime-mode defects corrected"
+  - "runtime mode defects fixed"
+  - "all modes admitted"
+  - "DDoS suricata fixed"

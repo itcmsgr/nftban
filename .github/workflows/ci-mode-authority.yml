@@ -52,10 +52,15 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      strict:
-        description: 'Fail on MUST_FIX debt as well as new drift'
-        type: boolean
-        default: false
+      policy:
+        description: 'Gate policy (declaration, not inference)'
+        type: choice
+        options: [drift, targeted, all]
+        default: drift
+      scope:
+        description: 'Modules this run claims to close, e.g. ddos or ddos,portscan (required for targeted)'
+        type: string
+        default: ''
 
 concurrency:
   group: ci-mode-authority-${{ github.ref }}
@@ -92,38 +97,79 @@ jobs:
       # Strict is MANDATORY wherever the change claims to fix or admit a mode, and
       # at release admission. Ratchet must never let a release ship a BROKEN
       # selectable mode merely because the defect predates the PR.
-      - name: Select gate mode
+      # POLICY IS DECLARED, NOT INFERRED. Branch names are mutable and are NOT
+      # authoritative. Precedence: workflow_dispatch input > repository manifest
+      # (.github/mode-authority-gate.yml) > drift. Changed paths are evidence
+      # used to VERIFY the declaration, never to select it.
+      - name: Resolve declared policy
         id: mode
         shell: bash
         env:
-          HEAD_REF: ${{ github.head_ref }}
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -Eeuo pipefail
-          mode="drift"; why="ordinary PR CI"
-          # the fix lane: any change to the module runtimes themselves must clear
-          # its targeted MUST_FIX rows before it can merge
-          if git diff --name-only "origin/${BASE_REF:-main}...HEAD" 2>/dev/null \
-               | grep -qE '^internal/(ddos|portscan|loginmon)/'; then
-            mode="all"; why="runtime-lane change (internal/{ddos,portscan,loginmon})"
+          man=".github/mode-authority-gate.yml"
+          policy="drift"; scope=""; why="default"
+          if [[ -r "${man}" ]]; then
+            p="$(grep -E '^policy:' "${man}" | head -1 | awk '{print $2}' || true)"
+            [[ -n "${p}" ]] && { policy="${p}"; why="manifest ${man}"; }
+            scope="$(sed -n '/^scope:/,/^[a-z_]*:/p' "${man}" \
+                     | grep -oE '^\s*-\s*[a-z]+' | awk '{print $2}' | paste -sd, - || true)"
           fi
-          case "${HEAD_REF}" in
-            *runtime-mode*|*mode-authority*|*release-prep*|release/*)
-              mode="all"; why="runtime-lane or release-prep branch" ;;
-          esac
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.strict }}" == "true" ]]; then
-            mode="all"; why="operator requested strict"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            [[ -n "${{ inputs.policy }}" ]] && { policy="${{ inputs.policy }}"; why="operator input"; }
+            [[ -n "${{ inputs.scope }}"  ]] && scope="${{ inputs.scope }}"
           fi
-          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
-          echo "Gate mode: --fail-on ${mode}  (${why})"
+          git diff --name-only "origin/${BASE_REF:-main}...HEAD" > /tmp/changed.txt 2>/dev/null || : > /tmp/changed.txt
+          echo "policy=${policy}" >> "$GITHUB_OUTPUT"
+          echo "scope=${scope}"   >> "$GITHUB_OUTPUT"
+          echo "Declared policy: ${policy}  scope='${scope}'  (source: ${why})"
+          echo "Changed paths under evaluation: $(wc -l < /tmp/changed.txt)"
 
       - name: Mode authority guard
         id: guard
         shell: bash
         run: |
           set -Eeuo pipefail
-          ./scripts/ci/check-mode-authority.sh --fail-on "${{ steps.mode.outputs.mode }}" \
-            | tee /tmp/mode-authority.txt
+          args=(--policy "${{ steps.mode.outputs.policy }}" --changed-paths /tmp/changed.txt)
+          [[ -n "${{ steps.mode.outputs.scope }}" ]] && args+=(--scope "${{ steps.mode.outputs.scope }}")
+          ./scripts/ci/check-mode-authority.sh "${args[@]}" | tee /tmp/mode-authority.txt
+
+      # A deferred defect must stay visible and must never be described as fixed.
+      # This is what stops a release from silently absorbing the runtime lane's
+      # obligations by editing prose instead of code.
+      - name: Deferred-authority consistency
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          man=".github/mode-authority-gate.yml"
+          rc=0
+          while IFS= read -r f; do
+            [[ -n "${f}" ]] || continue
+            if [[ ! -r "${f}" ]]; then
+              echo "::error::deferred-authority document missing: ${f}"; rc=1; continue
+            fi
+            echo "deferred authority present: ${f}"
+          done < <(sed -n '/^deferred_must_fix_authority:/,/^[a-z_]*:/p' "${man}" \
+                   | grep -oE '^\s*-\s*\S+' | awk '{print $2}')
+          while IFS= read -r claim; do
+            [[ -n "${claim}" ]] || continue
+            while IFS= read -r f; do
+              [[ -r "${f}" ]] || continue
+              if grep -qiF "${claim}" "${f}"; then
+                echo "::error::${f} claims '${claim}' while MUST_FIX rows remain open"; rc=1
+              fi
+            done < <(sed -n '/^deferred_must_fix_authority:/,/^[a-z_]*:/p' "${man}" \
+                     | grep -oE '^\s*-\s*\S+' | awk '{print $2}')
+          done < <(sed -n '/^forbidden_release_claims:/,$p' "${man}" \
+                   | grep -oE '^\s*-\s*".*"' | sed 's/^[^"]*"//; s/"$//')
+          # the ledger must still record the open rows
+          if ! grep -q 'BROKEN' docs/MODE_ADMISSION_LEDGER.md; then
+            echo "::error::no BROKEN row remains in the ledger — a deferred finding vanished without evidence"; rc=1
+          fi
+          [[ ${rc} -eq 0 ]] && echo "deferred-authority consistency PASS"
+          exit ${rc}
 
       - name: Publish open MUST_FIX debt to the job summary
         if: always()

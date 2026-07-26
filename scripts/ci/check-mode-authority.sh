@@ -57,7 +57,9 @@ KNOWN_FILE="${SCRIPT_DIR}/mode-authority-known.txt"
 RUN_CONTROLS=1
 VERBOSE=0
 
-FAIL_ON="${FAIL_ON:-all}"
+POLICY="${POLICY:-all}"
+SCOPE_RAW="${SCOPE_RAW:-}"
+CHANGED_FILE="${CHANGED_FILE:-}"
 # label used for BROKEN-row findings: a real FAIL under --fail-on all, known
 # non-blocking debt under --fail-on drift.
 MUSTFIX_LABEL="MUST_FIX"
@@ -70,10 +72,17 @@ Usage: check-mode-authority.sh [--root DIR] [--known FILE] [--no-controls] [-v]
   --known FILE    allowlist of accepted violations
                   (default: scripts/ci/mode-authority-known.txt)
   --no-controls   skip the negative/positive controls (NOT for CI)
-  --fail-on MODE  drift  : fail on NEW violations only; MUST_FIX debt is
-                           reported loudly but does not block (ratchet mode)
-                  all    : fail on NEW *and* MUST_FIX (default; the end state
-                           once the BROKEN ledger rows are discharged)
+  --policy P      drift    : block NEW + STALE. Report MUST_FIX/ACCEPTED_DEBT.
+                             CI may pass; admission stays blocked.
+                  targeted : also block unresolved MUST_FIX rows INSIDE the
+                             declared --scope. Unrelated debt is reported only.
+                  all      : block ANY MUST_FIX, NEW or STALE. Global admission.
+  --scope LIST    comma-separated modules the change DECLARES it closes
+                  (ddos,portscan,loginmon). Required for --policy targeted.
+  --changed-paths FILE
+                  file of changed paths (one per line). Used to VERIFY that the
+                  declared scope covers every mode-authority surface touched.
+  --fail-on MODE  deprecated alias: drift|all -> --policy
   -v              print every violation line, including known ones
 EOF
 }
@@ -85,10 +94,18 @@ while [[ $# -gt 0 ]]; do
         --no-controls) RUN_CONTROLS=0; shift ;;
         --fail-on)
             case "$2" in
-                drift|all) FAIL_ON="$2" ;;
+                drift|all) POLICY="$2" ;;
                 *) echo "--fail-on expects 'drift' or 'all'" >&2; exit 2 ;;
             esac
             shift 2 ;;
+        --policy)
+            case "$2" in
+                drift|targeted|all) POLICY="$2" ;;
+                *) echo "--policy expects drift|targeted|all" >&2; exit 2 ;;
+            esac
+            shift 2 ;;
+        --scope)        SCOPE_RAW="$2"; shift 2 ;;
+        --changed-paths) CHANGED_FILE="$2"; shift 2 ;;
         -v|--verbose) VERBOSE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -148,6 +165,8 @@ declare -A KNOWN_HIT=()
 NEW_TOTAL=0
 KNOWN_TOTAL=0
 MUSTFIX_TOTAL=0
+MUSTFIX_IN_SCOPE=0
+SCOPE_VALIDATION=PASS
 NYV_TOTAL=0
 IN_CONTROL=0
 declare -A CHECK_NEW=()
@@ -200,6 +219,9 @@ record() {
     if [[ "${KNOWN_DISP[${key}]}" == "MUST_FIX" ]]; then
         CHECK_MUSTFIX["${check}"]=$(( ${CHECK_MUSTFIX[${check}]:-0} + 1 ))
         MUSTFIX_TOTAL=$(( MUSTFIX_TOTAL + 1 ))
+        if [[ "${POLICY}" == "targeted" ]] && in_scope "${key}"; then
+            MUSTFIX_IN_SCOPE=$(( MUSTFIX_IN_SCOPE + 1 ))
+        fi
         say "  ${MUSTFIX_LABEL}       ${key}"
         say "                 ledger=${KNOWN_STATUS[${key}]} — ${detail}"
         return
@@ -739,7 +761,49 @@ say "  scope note   : static only. Static reachability is 1 of the 6 promotion"
 say "                 requirements in MODE_ADMISSION_LEDGER.md. A clean run of this"
 say "                 guard never promotes a ledger row."
 
-[[ "${FAIL_ON}" == "drift" ]] && MUSTFIX_LABEL="KNOWN_MUST_FIX"
+FAIL_ON="${POLICY}"
+[[ "${POLICY}" != "all" ]] && MUSTFIX_LABEL="KNOWN_MUST_FIX"
+
+# --- scope model -------------------------------------------------------------
+# A MUST_FIX key carries its module either in field 2 (ORPHAN_ENTRYPOINT,
+# LEDGER_BROKEN_ADVERTISED) or inside a path (MARKRUNNING_LIVENESS).
+key_module() { # key -> ddos|portscan|loginmon|unknown
+    local k="$1" f2
+    f2="$(cut -d"|" -f2 <<<"${k}")"
+    case "${f2}" in
+        ddos|portscan|loginmon) printf "%s" "${f2}"; return ;;
+    esac
+    case "${k}" in
+        *ddos*)              printf "ddos" ;;
+        *portscan*)          printf "portscan" ;;
+        *loginmon*|*login*)  printf "loginmon" ;;
+        *)                   printf "unknown" ;;
+    esac
+}
+# a changed path -> the module authority surface(s) it touches
+path_modules() { # path -> zero or more modules, one per line
+    local p="$1"
+    case "${p}" in
+        internal/ddos/*|*nftban_ddos*|*cmd_ddos*)             echo ddos ;;
+        internal/portscan/*|*nftban_portscan*|*cmd_portscan*) echo portscan ;;
+        internal/loginmon/*|*nftban_login*|*cmd_login*)       echo loginmon ;;
+        # SHARED mode surfaces: a change here touches every module that
+        # currently carries a MUST_FIX row referencing the file. Declaring one
+        # module while editing shared authority code must not pass.
+        *helpers/nftban_mode.sh|*cmd_modes.sh)
+            grep -oE "^[A-Z_]+\|(ddos|portscan|loginmon)\|" "${KNOWN_FILE}" 2>/dev/null \
+                | cut -d"|" -f2 | sort -u ;;
+    esac
+}
+declare -A SCOPE_SET=()
+if [[ -n "${SCOPE_RAW}" ]]; then
+    IFS="," read -r -a _sc <<<"${SCOPE_RAW}"
+    for _m in "${_sc[@]}"; do
+        _m="$(tr -d "[:space:]" <<<"${_m}")"
+        [[ -n "${_m}" ]] && SCOPE_SET["${_m}"]=1
+    done
+fi
+in_scope() { [[ -n "${SCOPE_SET[$(key_module "$1")]:-}" ]]; }
 
 head2 "CONTROLS (each check must be seen to fail before its result is trusted)"
 if [[ ${RUN_CONTROLS} -eq 1 ]]; then
@@ -790,6 +854,50 @@ done
 [[ ${STALE} -eq 0 ]] && say "  no stale rows (${#KNOWN_KEYS[@]}/${#KNOWN_KEYS[@]} accepted rows still reproduce)"
 
 # -----------------------------------------------------------------------------
+# Scope validation — the PR must DECLARE what it claims to close.
+#
+# Changed paths are evidence, never the declaration. A PR touching a module's
+# authority code while declaring a different (or no) scope must fail: otherwise
+# "targeted" would silently grant admission for surfaces nobody claimed.
+#   required:  declared scope  ⊇  modules whose authority surfaces were touched
+# -----------------------------------------------------------------------------
+if [[ "${POLICY}" == "targeted" ]]; then
+    head2 "SCOPE VALIDATION"
+    if [[ ${#SCOPE_SET[@]} -eq 0 ]]; then
+        say "  FAIL   --policy targeted requires an explicit --scope"
+        SCOPE_VALIDATION=FAIL
+    else
+        say "  declared scope: ${SCOPE_RAW}"
+    fi
+    if [[ -n "${CHANGED_FILE}" && -r "${CHANGED_FILE}" ]]; then
+        declare -A TOUCHED=()
+        while IFS= read -r _p; do
+            [[ -n "${_p}" ]] || continue
+            while IFS= read -r _m; do
+                [[ -n "${_m}" ]] && TOUCHED["${_m}"]=1
+            done < <(path_modules "${_p}")
+        done < "${CHANGED_FILE}"
+        if [[ ${#TOUCHED[@]} -eq 0 ]]; then
+            say "  no mode-authority surface touched by the changed paths"
+        else
+            say "  touched authority surfaces: ${!TOUCHED[*]}"
+            for _m in "${!TOUCHED[@]}"; do
+                if [[ -z "${SCOPE_SET[${_m}]:-}" ]]; then
+                    say "  FAIL   '${_m}' authority code is modified but NOT in the declared scope"
+                    say "         declared scope must cover every touched surface, or the change"
+                    say "         must not touch it. Expand --scope or split the PR."
+                    SCOPE_VALIDATION=FAIL
+                fi
+            done
+        fi
+    else
+        not_yet_verified "declared scope was not verified against changed paths" \
+            "pass --changed-paths <(git diff --name-only origin/main...HEAD)"
+    fi
+    [[ "${SCOPE_VALIDATION}" == "PASS" ]] && say "  scope validation PASS — declaration covers every touched surface"
+fi
+
+# -----------------------------------------------------------------------------
 # Machine-readable summary
 # -----------------------------------------------------------------------------
 head2 "MACHINE-READABLE SUMMARY"
@@ -834,21 +942,47 @@ printf 'MODE_AUTHORITY_FAIL_ON=%s\n' "${FAIL_ON}"
 # NEW drift and a stale allowlist always block. MUST_FIX blocks only under the
 # default --fail-on all; under --fail-on drift it stays visible and counted but
 # does not gate. It is never downgraded to PASS.
+# NEW drift and stale rows always block, under every policy.
 if [[ ${NEW_TOTAL} -gt 0 || ${STALE} -gt 0 ]]; then RC=1; fi
-if [[ ${MUSTFIX_TOTAL} -gt 0 && "${FAIL_ON}" == "all" ]]; then RC=1; fi
+case "${POLICY}" in
+    all)      [[ ${MUSTFIX_TOTAL}    -gt 0 ]] && RC=1 ;;
+    targeted) [[ ${MUSTFIX_IN_SCOPE} -gt 0 ]] && RC=1
+              [[ "${SCOPE_VALIDATION}" == "FAIL" ]] && RC=1 ;;
+    drift)    : ;;   # known debt reported, never silently accepted
+esac
 # Admission is a SEPARATE axis from the CI verdict. A ratchet run can be green
 # (no new drift) while admission is still blocked by known BROKEN rows.
-if [[ ${MUSTFIX_TOTAL} -gt 0 ]]; then
-    printf 'MODE_AUTHORITY_ADMISSION=BLOCKED_FROM_ADMISSION\n'
-else
-    printf 'MODE_AUTHORITY_ADMISSION=ELIGIBLE\n'
+# POLICY TRUTH. CI success != global admission; targeted closure != unrelated
+# debt closure; a deferred defect is never a defect accepted as healthy.
+printf 'MODE_AUTHORITY_POLICY=%s\n' "${POLICY}"
+printf 'MODE_AUTHORITY_SCOPE=%s\n' "${SCOPE_RAW:-none}"
+printf 'MODE_AUTHORITY_MUST_FIX_IN_SCOPE=%s\n' "${MUSTFIX_IN_SCOPE}"
+
+if [[ "${POLICY}" == "targeted" ]]; then
+    if [[ "${SCOPE_VALIDATION}" == "FAIL" ]]; then
+        printf 'MODE_AUTHORITY_SCOPE_VALIDATION=FAIL\n'
+        printf 'MODE_AUTHORITY_ADMISSION_SCOPE_RESULT=FAIL\n'
+    elif [[ ${MUSTFIX_IN_SCOPE} -gt 0 ]]; then
+        printf 'MODE_AUTHORITY_SCOPE_VALIDATION=PASS\n'
+        printf 'MODE_AUTHORITY_ADMISSION_SCOPE_RESULT=FAIL\n'
+    else
+        printf 'MODE_AUTHORITY_SCOPE_VALIDATION=PASS\n'
+        printf 'MODE_AUTHORITY_ADMISSION_SCOPE_RESULT=PASS\n'
+    fi
 fi
-if [[ ${RC} -ne 0 ]]; then
-    printf 'MODE_AUTHORITY_RESULT=FAIL\n'
-elif [[ ${MUSTFIX_TOTAL} -gt 0 ]]; then
-    # green build, but do not call it a clean PASS
-    printf 'MODE_AUTHORITY_RESULT=CI_RATCHET_NONBLOCKING\n'
+
+# GLOBAL admission is a separate axis and is NOT granted by a targeted pass.
+if [[ ${MUSTFIX_TOTAL} -gt 0 ]]; then
+    printf 'MODE_AUTHORITY_GLOBAL_ADMISSION=BLOCKED\n'
 else
-    printf 'MODE_AUTHORITY_RESULT=PASS\n'
+    printf 'MODE_AUTHORITY_GLOBAL_ADMISSION=ELIGIBLE\n'
+fi
+
+if [[ ${RC} -ne 0 ]]; then
+    printf 'MODE_AUTHORITY_CI_RESULT=FAIL\n'
+elif [[ ${MUSTFIX_TOTAL} -gt 0 ]]; then
+    printf 'MODE_AUTHORITY_CI_RESULT=CI_RATCHET_NONBLOCKING\n'
+else
+    printf 'MODE_AUTHORITY_CI_RESULT=PASS\n'
 fi
 exit "${RC}"
