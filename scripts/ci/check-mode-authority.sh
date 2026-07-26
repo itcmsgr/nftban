@@ -797,11 +797,31 @@ path_modules() { # path -> zero or more modules, one per line
 }
 declare -A SCOPE_SET=()
 if [[ -n "${SCOPE_RAW}" ]]; then
-    IFS="," read -r -a _sc <<<"${SCOPE_RAW}"
-    for _m in "${_sc[@]}"; do
-        _m="$(tr -d "[:space:]" <<<"${_m}")"
-        [[ -n "${_m}" ]] && SCOPE_SET["${_m}"]=1
-    done
+    # Explicit bounded parser. No global or persistent IFS mutation (repository
+    # security policy flags IFS-based input splitting), no `|| true` concealing a
+    # pipeline failure, and tokens validated against an allowlist rather than
+    # merely split — an unknown scope must fail deterministically, not silently
+    # match nothing and appear to pass.
+    #
+    # `IFS=` on the read is deliberate even though it is not splitting: it stops
+    # read trimming implicitly, so trimming stays explicit and auditable. Only
+    # SURROUNDING whitespace is stripped, so a future identifier containing
+    # internal spaces would not be corrupted.
+    while IFS= read -r _m; do
+        _m="${_m#"${_m%%[![:space:]]*}"}"
+        _m="${_m%"${_m##*[![:space:]]}"}"
+        [[ -z "${_m}" ]] && continue
+        case "${_m}" in
+            ddos|portscan|loginmon) SCOPE_SET["${_m}"]=1 ;;
+            *)
+                printf 'Invalid mode-authority scope: %s\n' "${_m}" >&2
+                exit 2 ;;
+        esac
+    # printf '%s\n', NOT '%s': without a trailing newline `read` hits EOF and
+    # returns non-zero on the final token, so the while body never runs and EVERY
+    # scope parses as empty. That failed silently — the guard simply reported
+    # "targeted requires an explicit --scope" for a scope that was supplied.
+    done < <(printf '%s\n' "${SCOPE_RAW}" | tr ',' '\n')
 fi
 in_scope() { [[ -n "${SCOPE_SET[$(key_module "$1")]:-}" ]]; }
 
