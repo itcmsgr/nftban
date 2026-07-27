@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.228.0] - 2026-07-25 — Post-install outcome truth: the package boundary reports whether the install actually succeeded
+## [v1.228.0] - 2026-07-27 — Post-install outcome truth: the package boundary reports whether the install actually succeeded
 
 A package manager reports success when the payload unpacks, not when the installer succeeds. On stock enforcing
 EL9 the installer aborts `FAILED_NO_FIREWALL`, the firewall never loads, and the transaction still prints
