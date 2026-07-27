@@ -8,6 +8,9 @@ NFTBan enforces correctness through:
 
 - [STATUS.md](STATUS.md) — CI/CD audit surface (build, security, contract gates)
 - [docs/DESIGN_PRINCIPLES.md](docs/DESIGN_PRINCIPLES.md) — engineering contract
+- [docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md](docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md) — runtime mode
+  authority and evidence standard ([ADR-0001](docs/adr/ADR-0001-runtime-mode-authority.md),
+  [mode admission ledger](docs/MODE_ADMISSION_LEDGER.md))
 
 All contributions must preserve:
 
@@ -15,6 +18,24 @@ All contributions must preserve:
 - Validator-derived truth
 - Evidence-based protection
 - CI-enforced invariants
+
+### A feature is a complete production path
+
+> A feature is not merely code that exists. A feature is a complete production path that is
+> **reachable, observable, enforceable, testable and recoverable.**
+
+```
+DEFINED         ≠  REACHABLE
+CONFIGURED      ≠  EFFECTIVE
+ENABLED         ≠  DETECTING
+RUNNING         ≠  RECEIVING INPUT
+DETECTED        ≠  ENFORCED
+SET MEMBERSHIP  ≠  FIREWALL BLOCK
+PASS            ≠  INJECTION PROVEN
+```
+
+PRs touching modules, modes, Suricata, detection, banning, health or status must complete the
+mode-authority section of the pull request template. An unanswered field blocks merge.
 
 Changes that violate these principles must not be merged.
 
