@@ -44,6 +44,11 @@
 # only modifies /etc/systemd/system/$unit if its existing symlink targets /dev/null.
 # Operator-created custom aliases (target != /dev/null) are preserved.
 #
+# Policy stop_disable_remove (v1.228.2) uses remove_unit_file_if_exists(), which
+# removes the obsolete unit file and clears pre-existing /dev/null mask residue
+# but NEVER creates a mask. Same /etc territory boundary; use it when the unit
+# NAME is reserved for a possible future release.
+#
 # Templates ending in @.service are skipped from the static stop loop because
 # the template itself is not a runnable unit; only instances are.
 #
@@ -135,6 +140,38 @@ mask_if_exists() {
 HELPER
 }
 
+# Emit the shared remove_unit_file_if_exists helper body. Identical RPM/DEB.
+#
+# Used by policy stop_disable_remove (v1.228.2 Suricata retirement). It removes
+# the obsolete unit FILE and clears a pre-existing /dev/null mask residue, but
+# NEVER CREATES A MASK — the difference from mask_if_exists().
+#
+# Why a no-mask variant exists: a mask left at /etc/systemd/system/$unit is
+# permanent operator-visible state that silently neutralises any FUTURE unit
+# shipped under the same name. For units whose NAME is explicitly reserved for a
+# possible later release, that is the exact class of invisible failure the
+# retirement is meant to remove. mask_if_exists() remains correct for names that
+# are permanently retired and never returning (nftban-ui*).
+emit_remove_helper() {
+    cat <<'HELPER'
+# /etc territory boundary (A2): package only modifies /etc/systemd/system/$unit
+# when the existing symlink targets /dev/null (i.e., it is a mask).
+# Operator-created custom aliases (target != /dev/null) are preserved.
+# NOTE: this helper NEVER creates a mask — it only clears pre-existing mask
+# residue (including a mask an operator applied by hand) after removing the
+# obsolete unit file.
+remove_unit_file_if_exists() {
+    local unit="$1"
+    rm -f "/usr/lib/systemd/system/$unit" "/lib/systemd/system/$unit" 2>/dev/null || true
+    if [ -L "/etc/systemd/system/$unit" ]; then
+        if [ "$(readlink "/etc/systemd/system/$unit" 2>/dev/null)" = "/dev/null" ]; then
+            rm -f "/etc/systemd/system/$unit" 2>/dev/null || true
+        fi
+    fi
+}
+HELPER
+}
+
 # Generate RPM %preun cleanup body. Stop+disable uses systemctl directly.
 generate_rpm() {
     local target="${1:-$RPM_OUT}"
@@ -163,6 +200,8 @@ generate_rpm() {
 
 HEADER
         emit_mask_helper
+        echo
+        emit_remove_helper
         echo
         cat <<'STOP_HEADER'
 # Active units (sourced from install/packaging/systemd/nftban-systemd-install.list).
@@ -237,8 +276,32 @@ STOPONLY_BODY
     mask_if_exists "$unit"
 done
 
-systemctl daemon-reload 2>/dev/null || true
 SDMR_BODY
+
+        # Deprecated stop_disable_remove group (v1.228.2 Suricata retirement).
+        echo "# Deprecated units (policy: stop_disable_remove) — stop + disable + remove_unit_file_if_exists."
+        echo "# Retired from the ACTIVE product surface; the unit NAME stays reserved for a"
+        echo "# possible future release, so the obsolete file is REMOVED but NEVER masked."
+        echo "for unit in \\"
+        local first_sdr=1
+        while IFS='|' read -r name policy; do
+            [[ "$policy" != "stop_disable_remove" ]] && continue
+            if [[ $first_sdr -eq 1 ]]; then
+                printf '    %s' "$name"
+                first_sdr=0
+            else
+                printf ' \\\n    %s' "$name"
+            fi
+        done <<< "$deprecated_lines"
+        printf '; do\n'
+        cat <<'SDR_BODY'
+    systemctl stop "$unit" 2>/dev/null || true
+    systemctl disable "$unit" 2>/dev/null || true
+    remove_unit_file_if_exists "$unit"
+done
+
+systemctl daemon-reload 2>/dev/null || true
+SDR_BODY
     } > "$target"
 
     print_ok "Wrote RPM cleanup snippet to $target"
@@ -271,6 +334,8 @@ generate_deb() {
 
 HEADER
         emit_mask_helper
+        echo
+        emit_remove_helper
         echo
         cat <<'STOP_HEADER'
 # Active units (sourced from install/packaging/systemd/nftban-systemd-install.list).
@@ -346,8 +411,32 @@ done
 rm -f /usr/sbin/nftban-ui /usr/libexec/nftban-ui-auth 2>/dev/null || true
 rm -rf /run/nftban-ui 2>/dev/null || true
 
-systemctl daemon-reload 2>/dev/null || true
 SDMR_BODY
+
+        # Deprecated stop_disable_remove group (v1.228.2 Suricata retirement).
+        echo "# Deprecated units (policy: stop_disable_remove) — stop + disable + remove_unit_file_if_exists."
+        echo "# Retired from the ACTIVE product surface; the unit NAME stays reserved for a"
+        echo "# possible future release, so the obsolete file is REMOVED but NEVER masked."
+        echo "for unit in \\"
+        local first_sdr=1
+        while IFS='|' read -r name policy; do
+            [[ "$policy" != "stop_disable_remove" ]] && continue
+            if [[ $first_sdr -eq 1 ]]; then
+                printf '    %s' "$name"
+                first_sdr=0
+            else
+                printf ' \\\n    %s' "$name"
+            fi
+        done <<< "$deprecated_lines"
+        printf '; do\n'
+        cat <<'SDR_BODY'
+    deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
+    systemctl disable "$unit" 2>/dev/null || true
+    remove_unit_file_if_exists "$unit"
+done
+
+systemctl daemon-reload 2>/dev/null || true
+SDR_BODY
     } > "$target"
 
     print_ok "Wrote DEB cleanup snippet to $target"
@@ -390,6 +479,8 @@ generate_rpm_pre() {
 HEADER
         emit_mask_helper
         echo
+        emit_remove_helper
+        echo
 
         # Deprecated stop_only group
         echo "# Deprecated units (policy: stop_only) — stop + disable, no mask, no rm."
@@ -434,8 +525,32 @@ STOPONLY_BODY
     mask_if_exists "$unit"
 done
 
-systemctl daemon-reload 2>/dev/null || true
 SDMR_BODY
+
+        # Deprecated stop_disable_remove group (v1.228.2 Suricata retirement).
+        echo "# Deprecated units (policy: stop_disable_remove) — stop + disable + remove_unit_file_if_exists."
+        echo "# Retired from the ACTIVE product surface; the unit NAME stays reserved for a"
+        echo "# possible future release, so the obsolete file is REMOVED but NEVER masked."
+        echo "for unit in \\"
+        local first_sdr=1
+        while IFS='|' read -r name policy; do
+            [[ "$policy" != "stop_disable_remove" ]] && continue
+            if [[ $first_sdr -eq 1 ]]; then
+                printf '    %s' "$name"
+                first_sdr=0
+            else
+                printf ' \\\n    %s' "$name"
+            fi
+        done <<< "$deprecated_lines"
+        printf '; do\n'
+        cat <<'SDR_BODY'
+    systemctl stop "$unit" 2>/dev/null || true
+    systemctl disable "$unit" 2>/dev/null || true
+    remove_unit_file_if_exists "$unit"
+done
+
+systemctl daemon-reload 2>/dev/null || true
+SDR_BODY
     } > "$target"
 
     print_ok "Wrote RPM %pre deprecated-cleanup snippet to $target"
@@ -476,6 +591,8 @@ generate_deb_preinst() {
 
 HEADER
         emit_mask_helper
+        echo
+        emit_remove_helper
         echo
 
         # Deprecated stop_only group
@@ -529,8 +646,36 @@ STOPONLY_BODY
     mask_if_exists "$unit"
 done
 
-systemctl daemon-reload 2>/dev/null || true
 SDMR_BODY
+
+        # Deprecated stop_disable_remove group (v1.228.2 Suricata retirement).
+        echo "# Deprecated units (policy: stop_disable_remove) — stop + disable + remove_unit_file_if_exists."
+        echo "# Retired from the ACTIVE product surface; the unit NAME stays reserved for a"
+        echo "# possible future release, so the obsolete file is REMOVED but NEVER masked."
+        echo "for unit in \\"
+        local first_sdr=1
+        while IFS='|' read -r name policy; do
+            [[ "$policy" != "stop_disable_remove" ]] && continue
+            if [[ $first_sdr -eq 1 ]]; then
+                printf '    %s' "$name"
+                first_sdr=0
+            else
+                printf ' \\\n    %s' "$name"
+            fi
+        done <<< "$deprecated_lines"
+        printf '; do\n'
+        cat <<'SDR_BODY'
+    if command -v deb-systemd-invoke >/dev/null 2>&1; then
+        deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
+    else
+        systemctl stop "$unit" 2>/dev/null || true
+    fi
+    systemctl disable "$unit" 2>/dev/null || true
+    remove_unit_file_if_exists "$unit"
+done
+
+systemctl daemon-reload 2>/dev/null || true
+SDR_BODY
     } > "$target"
 
     print_ok "Wrote DEB preinst deprecated-cleanup snippet to $target"

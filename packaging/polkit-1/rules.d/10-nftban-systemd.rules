@@ -124,10 +124,15 @@ polkit.addRule(function (action, subject) {
             // See V130_D6A_POLKIT_DESIGN_ANALYSIS.md for the design rationale.
             "nftban-firewall-validate.service",
 
-            // NFTBan Suricata Integration (wrapper units)
-            "nftban-suricata.service",
-            "nftban-suricata-update.service",
-            "nftban-suricata-update.timer",
+            // NFTBan Suricata Integration — REMOVED v1.228.2 (owner ruling D4).
+            // The three wrapper units these grants covered
+            // (nftban-suricata.service, nftban-suricata-update.service,
+            // nftban-suricata-update.timer) are no longer shipped: Suricata is
+            // retired from the active product surface and is a dormant
+            // placeholder. A grant for a unit that does not exist is standing
+            // authority with no subject, so it is deleted rather than kept.
+            // nftban-suricata-stats.service was NEVER in this allowlist and is
+            // not added here.
 
             // NFTBan Login Monitor
             "nftban-login-monitor.service",
@@ -166,10 +171,17 @@ polkit.addRule(function (action, subject) {
 //     CapabilityBoundingSet=CAP_NET_ADMIN
 // - All firewall operations go through audited Go code
 //
-// Suricata Integration:
-// - NFTBan manages Suricata via wrapper units (nftban-suricata.service)
-// - Wrapper runs as root with SupplementaryGroups=suricata,nftban
-// - Native suricata.service also manageable via this rule
+// Suricata Integration (v1.228.2):
+// - NFTBan NO LONGER ships or manages any nftban-suricata wrapper unit.
+//   Suricata is retired from the active product surface (owner ruling D1-D4);
+//   `nftban suricata` exposes only `help` and a read-only dormant `status`.
+// - The three native entries below (suricata.service, suricata-update.service,
+//   suricata-update.timer) are RETAINED deliberately. They are third-party
+//   units, not NFTBan units; NFTBan no longer calls systemctl on them, so the
+//   grants are now unexercised by NFTBan code. Whether an operator convenience
+//   grant for a third-party unit should survive the retirement is an OWNER
+//   decision, not a side effect of D4 — D4 removes grants that referred ONLY
+//   to the retired NFTBan units. Reported, not silently changed.
 //
 // Why Wildcards Are Forbidden:
 // - Pattern like `unit.indexOf("nftban") === 0` is UNSAFE

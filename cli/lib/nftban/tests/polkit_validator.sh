@@ -71,9 +71,18 @@ readonly OPERATOR_UNITS=(
     "nftban-core-feeds.timer"
     "nftban-core-geoip.service"
     "nftban-core-geoip.timer"
-    "nftban-suricata.service"
-    "nftban-suricata-update.service"
-    "nftban-suricata-update.timer"
+    # v1.228.2 (owner ruling D4): nftban-suricata.service,
+    # nftban-suricata-update.service and nftban-suricata-update.timer were
+    # REMOVED from 10-nftban-systemd.rules. The units are no longer shipped, so
+    # a grant naming them is standing authority with no subject. This list must
+    # mirror the shipped allowlist exactly, so the three entries are dropped
+    # here too — keeping them would make the validator assert a grant the
+    # ruling deliberately deleted.
+    #
+    # The three NATIVE entries below (suricata.service, suricata-update.service,
+    # suricata-update.timer) are RETAINED: they name third-party units, not
+    # NFTBan units, and D4 removes only grants that referred solely to the
+    # retired NFTBan units.
     "nftban-login-monitor.service"
     "suricata.service"
     "suricata-update.service"

@@ -42,7 +42,6 @@ included in core reconciliation.
 | Timer | Schedule | Module | Purpose |
 |-------|----------|--------|---------|
 | `nftban-botscan.timer` | Every 10min | botscan | Clock 3: HTTP Exploit Scanner (BotScan) access-log pattern matching. Runs on `BOTSCAN_ENABLED`, **independent of BotGuard** — not owned by or conditional on the BotGuard module. |
-| `nftban-suricata-update.timer` | Weekly Sun 03:40 | suricata | Suricata rule updates |
 
 ### OPTIONAL Timers (opt-in)
 
@@ -94,8 +93,7 @@ The timer's `WantedBy=timers.target` line is intentionally commented out. Auto-e
 
 | Service | Module | Purpose |
 |---------|--------|---------|
-| `nftban-suricata.service` | suricata | Suricata IDS integration daemon |
-| `nftban-suricata-stats.service` | suricata | Suricata statistics collection |
+| `nftban-suricata-stats.service` | suricata | Suricata statistics collector. Not shipped as an enabled unit and not enabled by NFTBan; `Requires=suricata.service`, so it cannot start without an external Suricata. |
 
 ### DEPRECATED Services
 
@@ -173,7 +171,8 @@ nftban-botscan.timer            ← HTTP Exploit Scanner (BotScan), 10min
 ```
 Note: `nftban-botscan.timer` is gated by `BOTSCAN_ENABLED`, NOT by BotGuard. BotGuard being disabled does not disable BotScan.
 
-With suricata enabled, also:
-```
-nftban-suricata-update.timer    ← CONDITIONAL (weekly)
-```
+Suricata adds no timer. Suricata was retired from the active product surface in
+v1.228.2 (owner ruling D1-D4); `nftban-suricata.service`,
+`nftban-suricata-update.service` and `nftban-suricata-update.timer` are no
+longer shipped and are removed from hosts on upgrade. See
+`docs/systemd/UNITS.md` for the retirement note.

@@ -14,7 +14,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 > `OnBootSec=` directives where applicable. The unit file is authoritative; this
 > table is a curated projection.
 
-## Timers (23)
+## Timers (22)
 
 | Timer | Schedule | Purpose |
 |-------|----------|---------|
@@ -30,7 +30,6 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-pro-license.timer` | Every 6h + boot+5m | License validation |
 | `nftban-core-geoip.timer` | Weekly Sun 2:30 + boot+30m | GeoIP database update |
 | `nftban-geoban-refresh.timer` | Weekly Mon 3:30 + persistent | GeoBan country-CIDR refresh |
-| `nftban-suricata-update.timer` | Weekly Sun 3:40 + boot+30m | Suricata rules update |
 | `nftban-update-check.timer` | Daily 3:30 | Update availability check |
 | `nftban-update-apply.timer` | Weekly Sun 4:00 | Auto-update apply (gated) |
 | `nftban-rollback.timer` | Manual-trigger (`OnActiveSec=5min`) | Emergency rollback — started by `nftban-apply`, stopped by `nftban-confirm` |
@@ -42,7 +41,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (30)
+## Services (28)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
@@ -63,9 +62,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-rbl-check.service` | oneshot | RBL check |
 | `nftban-update-check.service` | oneshot | Update check (unprivileged) |
 | `nftban-update-apply.service` | oneshot | Auto-update apply (gated) |
-| `nftban-suricata.service` | daemon | Suricata integration |
-| `nftban-suricata-stats.service` | daemon | Suricata stats |
-| `nftban-suricata-update.service` | oneshot | Suricata rule updates |
+| `nftban-suricata-stats.service` | daemon | Suricata statistics collector. Requires an external `suricata.service`; NOT enabled by NFTBan. See the retirement note below. |
 | `nftban-pro-inventory.service` | oneshot | Pro inventory |
 | `nftban-pro-license.service` | oneshot | Pro license check |
 | `nftban-alert@.service` | template | Alert notifications |
@@ -87,6 +84,29 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 |--------|----------|---------|
 | `nftband.socket` | socket | Socket activation for `nftband.service` |
 
+## RETIRED IN v1.228.2 — Suricata operational units
+
+Owner ruling D1-D4 (2026-07-28) retired Suricata from the active product
+surface. It is a dormant placeholder for a later release, not an active
+protection module. These three units are no longer shipped, and package
+convergence stops, disables and removes them from hosts that already have them
+(`build/deprecated-units.yaml`, policy `stop_disable_remove`):
+
+| Unit | Why |
+|------|-----|
+| `nftban-suricata.service` | `ExecStartPre` invoked `nftban suricata rules verify`, a CLI token deleted by `ff1865b4`. Removed rather than de-fanged — stripping the precondition would leave a service that appears protective while no rule verification exists. |
+| `nftban-suricata-update.service` | `ExecStart` invoked `nftban suricata rules update`, also deleted. Not repointed at bare `suricata-update`: that would assert a new claim that NFTBan owns Suricata rule updates. |
+| `nftban-suricata-update.timer` | Trigger for the above. |
+
+NFTBan touches only `nftban-suricata*` units. The upstream `suricata.service`,
+the external suricata package and its independent configuration are never
+stopped, disabled, removed or altered.
+
+`nftban-suricata-stats.service` still ships. It has no dependency on the
+retired units and no dependency on any deleted CLI token, it is not enabled by
+NFTBan, and its `Requires=suricata.service` means it cannot start without an
+external Suricata. Its disposition is an open owner decision.
+
 ## DEPRECATED / PHANTOM (DO NOT USE)
 
 These names are INVALID - do not reference them anywhere:
@@ -94,7 +114,7 @@ These names are INVALID - do not reference them anywhere:
 - ~~`nftban.timer`~~ - legacy, never existed
 - ~~`nftban-feeds.timer`~~ - use `nftban-core-feeds.timer`
 - ~~`nftban-geoip-update.timer`~~ - use `nftban-core-geoip.timer`
-- ~~`nftban-suricata.timer`~~ - use `nftban-suricata-update.timer`
+- ~~`nftban-suricata.timer`~~ - never existed
 - ~~`nftban-ddos.timer`~~ - never existed
 - ~~`nftban-login.timer`~~ - never existed
 - ~~`nftban-portscan.timer`~~ - never existed

@@ -515,7 +515,9 @@ nftban_enable_all() {
     local tmr_geoip="${NFTBAN_TIMER_GEOIP:-nftban-core-geoip.timer}"
     local tmr_metrics="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
     local tmr_feeds="${NFTBAN_TIMER_FEEDS:-nftban-core-feeds.timer}"
-    local tmr_suricata="${NFTBAN_TIMER_SURICATA_UPDATE:-nftban-suricata-update.timer}"
+    # NFTBAN_TIMER_SURICATA_UPDATE is no longer read here: the timer it named
+    # was retired in v1.228.2 (owner ruling D2). The key survives in
+    # nftban.conf conffile space and is reported as a known stale key.
     # TMR-01: Snapshot/rollback timers are apply/confirm-managed, NOT
     # auto-enabled. nftban-rollback.timer is started by nftban-apply and stopped
     # by nftban-confirm (its unit's [Install] explicitly says "Do NOT
@@ -560,13 +562,13 @@ nftban_enable_all() {
             echo "  ✅ Enabled: $tmr_feeds"
         fi
     fi
-    if [[ "${NFTBAN_SURICATA_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "$tmr_suricata" &>/dev/null 2>&1; then
-            systemctl enable "$tmr_suricata" 2>/dev/null && \
-            systemctl start "$tmr_suricata" 2>/dev/null && \
-            echo "  ✅ Enabled: $tmr_suricata"
-        fi
-    fi
+    # v1.228.2: the NFTBAN_SURICATA_ENABLED-gated enable of
+    # nftban-suricata-update.timer is REMOVED. Suricata is retired from the
+    # active product surface (owner ruling D2); the timer is no longer shipped
+    # and package convergence removes it from hosts that have it. Enabling a
+    # unit that does not exist can only ever fail, and leaving the branch in
+    # place would keep a stale conffile key (NFTBAN_SURICATA_ENABLED) wired to
+    # an operational effect that no longer exists.
     echo ""
 
     # =========================================================================
