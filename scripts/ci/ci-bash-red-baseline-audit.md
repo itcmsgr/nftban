@@ -51,6 +51,12 @@ All 15 verified: direct `bash <test>` PASS, product tree unchanged, a meaningful
 | v128_help_code_correlation_test | CONFIRMED_PRODUCT_DEFECT | CANONICAL_COMMAND_REGISTRY_DRIFT | V1226-CIBASH-PRODDEF-01 | OPEN_CANONICAL_LOGS_REGISTRATION |
 | v128_polkit_aware_wording_sweep_test | CONFIRMED_PRODUCT_DEFECT | POLKIT_WORDING_DRIFT | V1226-CIBASH-PRODDEF-02 | OPEN_POLKIT_WORDING_REWORD |
 
+> This table is the **v1.226.0 PR-D snapshot** and is kept as the historical record.
+> Subsequent resolution: **V1226-CIBASH-PRODDEF-01** was fixed in v1.228.1 — `logs` was added to
+> `_nftban_canonical_commands()` and `v128_help_code_correlation_test` was removed from
+> `scripts/ci/ci-bash-quarantine.tsv` in the same commit (the registry blocks if a quarantined test
+> passes, so the product fix and the de-quarantine cannot be split).
+
 ### The two confirmed product defects (registered, NOT fixed in PR-D)
 
 - **V1226-CIBASH-PRODDEF-01** — `nftban logs` (`cmd_logs.sh`, shipped v1.222.0) is routed and shown in
