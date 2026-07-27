@@ -104,8 +104,15 @@ jobs:
       - name: Resolve declared policy
         id: mode
         shell: bash
+        # SECURITY: never interpolate ${{ github.* }} or ${{ inputs.* }} directly
+        # into a `run:` block — `inputs.scope` is operator-supplied via
+        # workflow_dispatch and would be shell injection. Pass through env, where
+        # the value is data rather than code.
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF:   ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          IN_POLICY:  ${{ inputs.policy }}
+          IN_SCOPE:   ${{ inputs.scope }}
         run: |
           set -Eeuo pipefail
           man=".github/mode-authority-gate.yml"
@@ -116,9 +123,19 @@ jobs:
             scope="$(sed -n '/^scope:/,/^[a-z_]*:/p' "${man}" \
                      | grep -oE '^\s*-\s*[a-z]+' | awk '{print $2}' | paste -sd, - || true)"
           fi
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            [[ -n "${{ inputs.policy }}" ]] && { policy="${{ inputs.policy }}"; why="operator input"; }
-            [[ -n "${{ inputs.scope }}"  ]] && scope="${{ inputs.scope }}"
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            [[ -n "${IN_POLICY:-}" ]] && { policy="${IN_POLICY}"; why="operator input"; }
+            [[ -n "${IN_SCOPE:-}"  ]] && scope="${IN_SCOPE}"
+          fi
+          # Validate before use. The guard allowlists scope values too, but a
+          # workflow must not pass unvalidated operator input onward.
+          case "${policy}" in
+            drift|targeted|all) ;;
+            *) echo "::error::invalid policy '${policy}'"; exit 2 ;;
+          esac
+          if [[ -n "${scope}" && ! "${scope}" =~ ^[a-z,]+$ ]]; then
+            echo "::error::invalid scope '${scope}' (expected comma-separated lowercase module names)"
+            exit 2
           fi
           git diff --name-only "origin/${BASE_REF:-main}...HEAD" > /tmp/changed.txt 2>/dev/null || : > /tmp/changed.txt
           echo "policy=${policy}" >> "$GITHUB_OUTPUT"
@@ -129,10 +146,13 @@ jobs:
       - name: Mode authority guard
         id: guard
         shell: bash
+        env:
+          POLICY: ${{ steps.mode.outputs.policy }}
+          SCOPE:  ${{ steps.mode.outputs.scope }}
         run: |
           set -Eeuo pipefail
-          args=(--policy "${{ steps.mode.outputs.policy }}" --changed-paths /tmp/changed.txt)
-          [[ -n "${{ steps.mode.outputs.scope }}" ]] && args+=(--scope "${{ steps.mode.outputs.scope }}")
+          args=(--policy "${POLICY}" --changed-paths /tmp/changed.txt)
+          [[ -n "${SCOPE:-}" ]] && args+=(--scope "${SCOPE}")
           ./scripts/ci/check-mode-authority.sh "${args[@]}" | tee /tmp/mode-authority.txt
 
       # A deferred defect must stay visible and must never be described as fixed.
