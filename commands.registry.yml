@@ -927,7 +927,7 @@ login:
       description: "Send a test alert email"
     mode:
       mutates: true
-      description: "Set monitoring mode"
+      description: "Set the login alert email cadence (realtime|digest|both). Does not change LOGIN_MODE — see 'nftban modes'."
       arguments:
         mode: {type: enum, required: false, values: [realtime, digest, both]}
     digest:
@@ -1495,7 +1495,9 @@ geoban:
     - "nftban geoban list --json"
     - "nftban geoban test"
 
-# NOTE: cloudflare command removed in v1.10.0 - use "nftban trust" instead
+# NOTE: the top-level 'cloudflare' command is a legacy ALIAS of 'trust' and is NOT removed.
+# See trust.aliases above and the dispatch arm in cli/sbin/nftban. What was retired in
+# v1.10.0 is the standalone cloudflare implementation; the token still routes to 'trust'.
 
 # =============================================================================
 # GROUP 3: INFRASTRUCTURE
@@ -3105,7 +3107,8 @@ mail:
 
 services:
   category: intelligence_reporting
-  description: "Systemd services status overview"
+  aliases: ["service"]
+  description: "Systemd services status overview. NOTE: 'service' (singular) is a legacy top-level alias of 'services' (sbin/nftban dispatch); kept for discovery/back-compat."
   risk: core
   audience: [cli, auditor, panel]
   capability: status_read
@@ -3670,7 +3673,13 @@ _metadata:
     - "Arguments with type validation (string, int, bool, enum)"
     - "Zabbix LLD discovery support"
     - "Auto-help generation support"
-  total_commands: 66  # v1.144.0 PR-A: -1 (gui retired)
+  # DERIVED VALUE — must equal the number of top-level command keys in this file
+  # (every column-0 `key:` line except global_options and standard_params; _metadata
+  # is not matched because it starts with '_'). Verified by the computed assertion
+  # T1-4 in cli/lib/nftban/tests/cli_no_gui_doc_drift_v144_test.sh, which measures the
+  # registry instead of pinning a literal. Bump this whenever a command key is added
+  # or removed; the guard fails if it drifts.
+  total_commands: 71
   commands_with_json: 46
   commands_without_json: 10  # v1.144.0 PR-A: -1 (gui retired)
   commands_with_full_options: 27
