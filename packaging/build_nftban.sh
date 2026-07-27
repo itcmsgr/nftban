@@ -1282,8 +1282,63 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     #   - Post-install assertions (8 checks)
     #   - Authority + history file writes
     #   - Full installer log at /var/log/nftban/installer.log
-    "\$NFTBAN_INSTALLER" --rpm --mode="\$INSTALL_MODE"
-    INSTALLER_EXIT=\$?
+    # --- v1.228.0 Item 2: post-install outcome truth -----------------------------
+    # The package manager reports success when the payload unpacks, NOT when the
+    # installer succeeds. On stock enforcing EL9 the installer aborts
+    # FAILED_NO_FIREWALL, the firewall never loads, and the transaction still
+    # reports Complete!.
+    #
+    # Capture the transaction start IMMEDIATELY before the mutating invocation —
+    # not at scriptlet start. Anything earlier widens the window in which a previous
+    # transaction's state would look fresh.
+    # Every %% is DOUBLED because this text is written into an RPM spec, where
+    # rpmbuild expands macros before the shell ever sees the line -- INCLUDING
+    # inside comments, which is why this comment doubles them too. A %%S followed
+    # by a non-alphanumeric character (here the '.' before %%N) terminates the
+    # macro name, so rpm resolves %%S as a parametric macro and the whole build
+    # dies with "%%S: argument expected" -- no package at all, not a bad package.
+    # The pre-existing +%%Y%%m%%dT%%H%%M%%SZ elsewhere in this file survives only
+    # by accident: %%SZ reads as one undefined macro name and is left alone.
+    # Do not rely on that.
+    PACKAGE_SCRIPT_START_UTC="\$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%S.%%NZ')"
+
+    # Capture the exit code in a condition context, exactly as the DEB postinst
+    # does. RPM supplies the scriptlet interpreter's flags, not this file — under
+    # an errexit interpreter the bare-call-then-\$? form would abort the scriptlet
+    # here and the verifier below would never run, which is precisely the failure
+    # this gate exists to expose.
+    INSTALLER_EXIT=0
+    "\$NFTBAN_INSTALLER" --rpm --mode="\$INSTALL_MODE" || INSTALLER_EXIT=\$?
+
+    # Run the read-only verifier UNCONDITIONALLY, after EVERY installer outcome.
+    #
+    # Running it only on failure would miss a stale COMMITTED after a lock-contention
+    # exit 75; running it only on success would miss the case the gate exists for.
+    # The verifier takes no lock and writes nothing, so it works even when the
+    # mutating installer never started.
+    #
+    # Bash supplies execution context only (expected version, transaction start,
+    # state dir). The installer remains the sole authority on state interpretation —
+    # the eight canonical state/verdict tokens are emitted by it, never duplicated
+    # here.
+    NFTBAN_PKG_VERSION="\$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo unknown)"
+    VERIFY_EXIT=0
+    "\$NFTBAN_INSTALLER" \
+        --verify-install-state \
+        --expected-version "\$NFTBAN_PKG_VERSION" \
+        --not-before "\$PACKAGE_SCRIPT_START_UTC" \
+        --state-dir "/var/lib/nftban/state" || VERIFY_EXIT=\$?
+
+    # Execution context summary. VERIFIED is derived ONLY from the verifier: a
+    # successful package transaction is not evidence of a verified installation.
+    echo "NFTBAN_PACKAGE_INSTALLER_EXIT=\${INSTALLER_EXIT}"
+    echo "NFTBAN_PACKAGE_VERIFY_EXIT=\${VERIFY_EXIT}"
+    if [ "\${VERIFY_EXIT}" -eq 0 ]; then
+        echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=YES"
+    else
+        echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO"
+    fi
+    # --- end Item 2 --------------------------------------------------------------
 
     if [ \$INSTALLER_EXIT -eq 0 ]; then
         echo "[NFTBan] ========================================"
@@ -1370,6 +1425,20 @@ else
     echo "[NFTBan ERROR] Installer binary not found: \$NFTBAN_INSTALLER"
     echo "[NFTBan ERROR] Package may be corrupt. Try reinstalling."
     echo "[NFTBan] Files have been installed but firewall is NOT active."
+    # --- v1.228.0 Item 2: no-installer path --------------------------------------
+    # The boundary must answer on EVERY path. Left silent, a missing or
+    # non-executable installer produces a transaction dnf reports as Complete!
+    # carrying NO machine-readable result at all — indistinguishable from a
+    # pre-Item-2 package. Absence is not a verdict, and this branch is precisely
+    # the "files unpacked, firewall never came up" case the gate exists for.
+    #
+    # 127 is the shell's command-not-found convention. The installer never ran, so
+    # there is no persisted state to interpret and no canonical state token to emit
+    # here — only execution context, exactly as on the normal path.
+    echo "NFTBAN_PACKAGE_INSTALLER_EXIT=127"
+    echo "NFTBAN_PACKAGE_VERIFY_EXIT=127"
+    echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO"
+    # --- end Item 2 no-installer -------------------------------------------------
 fi
 
 # Final cache ownership fix (must be after installer runs)

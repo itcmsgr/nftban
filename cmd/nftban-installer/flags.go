@@ -31,6 +31,11 @@ import (
 
 // config holds parsed CLI flags and environment variable overrides.
 type config struct {
+	// v1.228.0 Item 2 — read-only post-install verification (terminal mode).
+	verifyInstallState bool
+	expectedVersion    string
+	notBefore          string
+
 	mode          string // "install" or "upgrade"
 	rpm           bool   // called from RPM %post
 	deb           bool   // called from DEB postinst
@@ -113,6 +118,11 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.rpm, "rpm", false, "Called from RPM %post")
 	flag.BoolVar(&cfg.deb, "deb", false, "Called from DEB postinst")
 	flag.BoolVar(&cfg.repair, "repair", false, "Resume from last failed phase")
+	// v1.228.0 Item 2: read-only post-install verification. Terminal mode —
+	// runs before logging, lock acquisition and every mutation path.
+	flag.BoolVar(&cfg.verifyInstallState, "verify-install-state", false, "Read-only: verify the persisted install_state belongs to the CURRENT package transaction. Requires --expected-version and --not-before. Acquires no lock, writes nothing.")
+	flag.StringVar(&cfg.expectedVersion, "expected-version", "", "Version the package manager just installed (with --verify-install-state)")
+	flag.StringVar(&cfg.notBefore, "not-before", "", "RFC3339Nano UTC timestamp captured immediately before invoking the installer (with --verify-install-state)")
 	flag.BoolVar(&cfg.revalidate, "revalidate", false, "Recompute install_state from LIVE post-install assertions only (no install, no daemon restart). Transitions a stale DEGRADED → COMMITTED only when every live assertion passes (version match, validate clean, 0 failed nftban units, ip/ip6 tables, daemon active); otherwise leaves DEGRADED with the current live reason. Does not mask real failures.")
 	flag.BoolVar(&cfg.force, "force", false, "Re-run all phases ignoring state")
 	// V125 R-4 + V126 Lane A: companion safety flag for --force on a completed
@@ -171,6 +181,23 @@ func parseFlags() *config {
 			"Default 30m (safety.DefaultSessionWhitelistTTL). Set to 0 to disable auto-seed for this run.")
 
 	flag.Parse()
+
+	// v1.228.0 Item 2 — verification mode selects control flow BEFORE the
+	// installation-mode and package-family validation below.
+	//
+	// This is a reachability exemption, NOT a relaxation: verify mode still
+	// enforces its own strict allowlist and required arguments (see
+	// validateVerifyInvocation), so --verify-install-state combined with
+	// --repair / --mode / --deb still fails with INVALID_INVOCATION.
+	//
+	// The verifier is deliberately independent of --deb/--rpm/--mode: the
+	// persisted-state contract is identical across package families, so the
+	// family cannot alter the verdict. Satisfying the existing parser with a
+	// dummy --mode would blur exactly that independence.
+	if cfg.verifyInstallState {
+		validateVerifyInvocation(cfg)
+		return cfg
+	}
 
 	// Environment variable overrides
 	if os.Getenv("NFTBAN_TAKEOVER") == "1" {

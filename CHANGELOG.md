@@ -11,6 +11,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.0] - 2026-07-25 — Post-install outcome truth: the package boundary reports whether the install actually succeeded
+
+A package manager reports success when the payload unpacks, not when the installer succeeds. On stock enforcing
+EL9 the installer aborts `FAILED_NO_FIREWALL`, the firewall never loads, and the transaction still prints
+`Complete!`. This release makes the DEB and RPM post-install boundary emit a machine-readable result that
+distinguishes a verified installation from a mechanically completed transaction.
+
+### Added — post-install verification gate
+
+- **`nftban-installer --verify-install-state`**, a read-only terminal mode. It takes no lock, writes no state and
+  no log, and does not create the state directory when absent, so it works even when the mutating installer never
+  started. It emits eight canonical tokens (persisted state/version/timestamp, expected version, not-before,
+  current-attempt verdict, verified yes/no, installer exit) and exits `0` for a verified current `COMMITTED`,
+  `2` for any determinate non-verified verdict, `4` for invalid invocation.
+- **Freshness is evaluated before the state value.** A persisted `COMMITTED` that predates the current transaction
+  reports `STALE_STATE` even when the version matches. Version equality is explicitly *not* accepted as a freshness
+  proof: a retry after lock contention is by definition a same-version reinstall.
+- **Persisted-state provenance.** `NewStateFile()` seeds a non-empty state, so `State == ""` cannot detect a file
+  that carried no `INSTALL_STATE` line; a provenance flag now distinguishes "parsed from disk" from "constructor
+  default", and the verdict reports `UNKNOWN` rather than a fabricated default.
+- **DEB `postinst` and RPM `%post` run the verifier unconditionally**, after every installer outcome, and report
+  `NFTBAN_PACKAGE_INSTALLER_EXIT`, `NFTBAN_PACKAGE_VERIFY_EXIT` and `NFTBAN_PACKAGE_POSTINSTALL_VERIFIED`. The
+  scriptlets supply execution context only — the installer remains the sole authority on state interpretation, and
+  no canonical token is ever re-emitted from shell. Scriptlets still exit `0`: a non-zero `%post` yields
+  installed-and-failed, which is worse than a clear message. The truth rides in the tokens.
+
+### Fixed — gaps found while validating the above
+
+- **The boundary stayed silent when the installer binary was missing.** Both scriptlets nest the install in
+  `if [ -x "$NFTBAN_INSTALLER" ]`; the `else` branch printed human-readable text and emitted no tokens at all, so a
+  corrupt package produced a transaction the package manager called success with no machine-readable result —
+  indistinguishable from a pre-v1.228.0 package. That path now reports `VERIFIED=NO` with exit `127`.
+- **RPM `%post` captured the installer exit with a bare call followed by `$?`.** Under an errexit scriptlet
+  interpreter that form aborts before the verifier runs, removing the gate in exactly the failing transaction it
+  exists for. RPM supplies the interpreter's flags, not this repository, so both families now use the condition-context
+  form that is correct under either.
+- **`INSTALL_TIMESTAMP` was written at whole-second precision** while `--not-before` carries nanoseconds. A
+  transaction committing inside the second it began read as older than its own start and verified `STALE_STATE`.
+  The field is now written `RFC3339Nano`; the reader already accepted the fractional part.
+- **Removed a second, unreachable verdict-to-exit mapping** in the postinstall package that returned `1` where the
+  shipped binary returns `2`. It had no callers and contradicted the CLI contract.
+
 ## [v1.227.0] - 2026-07-24 — Mail/reporting Lane-1: SMTP auth, secret redaction, report XSS-safety, subject truth, DEB conffile parity & honest delivery wording
 
 Mail and reporting correctness/security release (Lane-1). **No Go product code changed** — `nftband`, `nftban-core`

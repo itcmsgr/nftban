@@ -70,6 +70,13 @@ func LockFilePath(stateDir string) string {
 //	SERVICES_ENABLED    — comma-separated list of enabled service units
 //	SERVICES_FAILED     — comma-separated list of failed service units
 type StateFile struct {
+	// stateFieldSeen records whether an INSTALL_STATE= line was actually parsed
+	// from disk. NewStateFile seeds State with a constructor default, so a
+	// non-empty State does NOT prove the value was persisted. A reader that
+	// evaluates the default as persisted evidence would report a fabricated
+	// state for a file that never carried one. Set only by Read().
+	stateFieldSeen bool
+
 	State             InstallState
 	Mode              string
 	Version           string
@@ -242,7 +249,14 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "INSTALL_STATE=%s\n", sf.State)
 	fmt.Fprintf(w, "INSTALL_MODE=%s\n", sf.Mode)
 	fmt.Fprintf(w, "INSTALL_VERSION=%s\n", sf.Version)
-	fmt.Fprintf(w, "INSTALL_TIMESTAMP=%s\n", sf.Timestamp.Format(time.RFC3339))
+	// RFC3339Nano, not RFC3339. v1.228.0 Item 2 made this field verdict-bearing:
+	// the post-install gate compares it against a --not-before stamp that carries
+	// nanoseconds (date %N). Whole-second precision floors the write time, so a
+	// transaction that commits inside the same second it began reads as older than
+	// its own start and is reported STALE_STATE. It fails closed, so it produces a
+	// false alarm rather than a false success — but it is still a wrong verdict.
+	// The reader parses with the RFC3339 layout, which accepts the fractional part.
+	fmt.Fprintf(w, "INSTALL_TIMESTAMP=%s\n", sf.Timestamp.UTC().Format(time.RFC3339Nano))
 	fmt.Fprintf(w, "SSH_PORT=%d\n", sf.SSHPort)
 	fmt.Fprintf(w, "AUTHORITY=%s\n", sf.Authority)
 	fmt.Fprintf(w, "PANEL=%s\n", sf.Panel)
@@ -310,6 +324,7 @@ func (sf *StateFile) Read() error {
 		switch key {
 		case "INSTALL_STATE":
 			sf.State = InstallState(val)
+			sf.stateFieldSeen = true
 		case "INSTALL_MODE":
 			sf.Mode = val
 		case "INSTALL_VERSION":
@@ -387,3 +402,13 @@ func fmtBool(b bool) string {
 	}
 	return "0"
 }
+
+// StateFieldPresent reports whether Read() actually parsed an INSTALL_STATE=
+// line from the file on disk.
+//
+// This exists because NewStateFile seeds State with a constructor default
+// (StateFilesInstalled). Without this signal a caller cannot distinguish
+// "the file records this state" from "the file recorded nothing and you are
+// looking at the constructor". Verification paths MUST consult it before
+// treating State as persisted evidence.
+func (sf *StateFile) StateFieldPresent() bool { return sf.stateFieldSeen }
