@@ -83,6 +83,48 @@
 
 ---
 
+### Runtime Mode Authority — MANDATORY for module/mode changes
+
+<!--
+REQUIRED if this PR touches: modules, modes (auto/classic/suricata/hybrid), Suricata,
+detection, banning, health, or status.  Delete this whole section only if none apply.
+
+Authority: docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md  ·  ADR-0001
+AN UNANSWERED FIELD BLOCKS MERGE. "N/A" is an answer; blank is not.
+
+A feature is not merely code that exists. A feature is a complete production path that is
+REACHABLE, OBSERVABLE, ENFORCEABLE, TESTABLE and RECOVERABLE.
+
+  DEFINED        != REACHABLE
+  CONFIGURED     != EFFECTIVE
+  ENABLED        != DETECTING
+  RUNNING        != RECEIVING INPUT
+  DETECTED       != ENFORCED
+  SET MEMBERSHIP != FIREWALL BLOCK
+  PASS           != INJECTION PROVEN
+-->
+
+- **MODULE:**
+- **CONFIGURED MODES:**
+- **EFFECTIVE MODE RESOLUTION:** <!-- resolver + where the result is recorded -->
+- **PRODUCTION ENTRYPOINT:** <!-- service/timer/scheduler/dispatcher, not a private helper -->
+- **DETECTION AUTHORITY:** <!-- kernel nftables | shell detector | EVE consumer | Go publisher -->
+- **BAN AUTHORITY:**
+- **ENFORCEMENT AUTHORITY:** <!-- set -> referencing rule -> HOOKED chain -> drop/reject -->
+- **HEALTH AUTHORITY:** <!-- proves the SELECTED mode is active -->
+- **LOG SOURCE:**
+- **CONSUMER IDENTITY:** <!-- the uid/gid actually reading that source -->
+- **ZERO-INPUT BEHAVIOR:** <!-- ACTIVE_ZERO_INPUT vs SOURCE_MISSING vs reported healthy -->
+- **FALLBACK BEHAVIOR:** <!-- and whether it is silent -->
+- **HYBRID DEDUP:** <!-- canonical event identity + single ban authority, or N/A -->
+- **STATIC TEST:**
+- **MUTATION TEST:** <!-- the guard was SEEN to fail when the behaviour was removed -->
+- **CROSS-VM TEST:** <!-- real traffic from a separate host, or explicitly not yet -->
+- **UNPROVEN ITEMS:** <!-- state them; do not leave blank to imply completeness -->
+- **MODE LEDGER UPDATED:** <!-- docs/MODE_ADMISSION_LEDGER.md row + new status -->
+
+---
+
 **By submitting this pull request, I confirm that:**
 1. My contribution is made under the MPL-2.0 license
 2. I have signed off my commits with the DCO (Developer Certificate of Origin)

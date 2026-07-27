@@ -1,0 +1,85 @@
+# =============================================================================
+# mode-authority-known.txt — accepted / tracked violations for
+# scripts/ci/check-mode-authority.sh
+# =============================================================================
+#
+# Authority for every LEDGER_STATUS below: docs/MODE_ADMISSION_LEDGER.md
+#                                          ("Current state — v1.228.0" table)
+# Contract:                                docs/RUNTIME_MODE_AUTHORITY_CONTRACT.md
+# Decision:                                docs/adr/ADR-0001-runtime-mode-authority.md
+#
+# Populated 2026-07-26 from a full guard run on branch
+# docs/runtime-mode-authority-doctrine. Every row below was OBSERVED by the
+# guard on that run; none is speculative.
+#
+# Format (TAB separated, 4 fields):
+#   KEY <TAB> DISPOSITION <TAB> LEDGER_STATUS <TAB> NOTE
+#
+# DISPOSITION:
+#   ACCEPTED_DEBT  recorded and tracked; does NOT fail the build. Permitted only
+#                  where the corresponding ledger row is not BROKEN.
+#   MUST_FIX       recorded and STILL FAILS the build. Used where the ledger
+#                  marks the row BROKEN. The contract's standing rule — "a BROKEN
+#                  mode must be hidden from help, rejected at config validation,
+#                  or explicitly marked unavailable; it must never be silently
+#                  selectable" — is an open obligation. Allowlisting it to green
+#                  would be precisely the failure mode this contract exists to
+#                  stop, so these rows are tracked in the open, not hidden.
+#
+# The guard also fails if a row here stops reproducing (STALE), so this file
+# cannot silently outlive the defect it records.
+#
+# HOW TO CLEAR A ROW
+#   SILENT_NO_OP        give the guard an `else` arm that returns non-zero and
+#                       emits a machine-readable reason (Lesson G).
+#   ORPHAN_ENTRYPOINT   add a real production caller, or delete the function and
+#                       remove the mode from config/help (Lesson C).
+#   LEDGER_*            fix the ledger row, or mark the mode unavailable/broken
+#                       on the surface named in the key.
+#   MARKRUNNING_*       transition status off RUNNING when the worker exits
+#                       (Lesson B), then re-run the guard.
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# CHECK 1 — SILENT_NO_OP  (Lesson G)
+# All nine are `if type -t <entrypoint>; then <entrypoint>; fi` with no else arm
+# inside a mode-dispatch function: a missing entrypoint returns rc0 and the
+# operation reports success having done nothing.
+# -----------------------------------------------------------------------------
+SILENT_NO_OP|cli/lib/nftban/core/nftban_portscan.sh|nftban_portscan_run|nftban_portscan_classic_run	ACCEPTED_DEBT	PortScan/classic=STATICALLY_REACHABLE	nftban_portscan.sh:975,985 (classic + hybrid branches). The dispatcher named in ADR-0001 "Context" para 4. Detection cycle no-ops silently if the classic module was not sourced.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_portscan.sh|nftban_portscan_run|nftban_portscan_suricata_run	ACCEPTED_DEBT	PortScan/suricata=STATICALLY_REACHABLE	nftban_portscan.sh:980,988 (suricata + hybrid branches). Same defect on the Suricata branch.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_portscan.sh|nftban_portscan_enable|nftban_portscan_classic_enable	ACCEPTED_DEBT	PortScan/hybrid=DECLARED	nftban_portscan.sh:430 — hybrid branch only; the classic and suricata branches DO have failing else arms (406,418), so this is the hybrid gap Lesson F warns about.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_portscan.sh|nftban_portscan_enable|nftban_portscan_suricata_enable	ACCEPTED_DEBT	PortScan/hybrid=DECLARED	nftban_portscan.sh:433 — hybrid branch only.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_portscan.sh|nftban_portscan_disable|nftban_portscan_classic_disable	ACCEPTED_DEBT	PortScan/classic=STATICALLY_REACHABLE	nftban_portscan.sh:506,516 — disable reports success even when nothing was torn down. Teardown truth matters as much as enable truth.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_portscan.sh|nftban_portscan_disable|nftban_portscan_suricata_disable	ACCEPTED_DEBT	PortScan/suricata=STATICALLY_REACHABLE	nftban_portscan.sh:511,519 — same on the Suricata branch.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_ddos.sh|nftban_ddos_enable|nftban_ddos_classic_enable	ACCEPTED_DEBT	DDoS/hybrid=DECLARED	nftban_ddos.sh:289 — hybrid Layer-0 branch only; the classic branch (259) and suricata branch (274) both have failing else arms.
+SILENT_NO_OP|cli/lib/nftban/core/nftban_ddos.sh|nftban_ddos_status|nftban_ddos_classic_status	ACCEPTED_DEBT	DDoS/classic=STATICALLY_REACHABLE (partial traffic)	nftban_ddos.sh:586 — status renders nothing rather than reporting that the classic status provider is absent (Lesson E: health must be able to report failure).
+SILENT_NO_OP|cli/lib/nftban/core/nftban_ddos.sh|nftban_ddos_status|nftban_ddos_suricata_status	ACCEPTED_DEBT	DDoS/suricata=BROKEN	nftban_ddos.sh:591 — status silently omits the Suricata section. Kept ACCEPTED_DEBT rather than MUST_FIX because the advertising violation for DDoS/suricata is already tracked under LEDGER_BROKEN_ADVERTISED below; fixing that is the blocking work.
+
+# -----------------------------------------------------------------------------
+# CHECK 2 — ORPHAN_ENTRYPOINT  (Lesson C)
+# This is the guard's calibration case. If this row ever stops reproducing
+# without a corresponding ledger promotion, the guard has silently broken.
+# -----------------------------------------------------------------------------
+ORPHAN_ENTRYPOINT|ddos|suricata|nftban_ddos_suricata_process	MUST_FIX	DDoS/suricata=BROKEN	Ledger row: "nftban_ddos_suricata_process has zero external callers (definition + export -f). No mode dispatcher exists for DDoS at all. The mode name resolves to nothing." Verified 2026-07-26: cli/lib/nftban/core/nftban_ddos_suricata.sh:680 definition and :698 export -f are the ONLY word-boundary occurrences in the shell tree. DDOS_MODE=suricata names a processor that never runs.
+
+# -----------------------------------------------------------------------------
+# CHECK 3 — LEDGER_CONSISTENCY
+# Row completeness passes: all 3 modules x 4 modes are present in the ledger.
+# What fails is the standing rule for BROKEN. Every row here is MUST_FIX.
+# -----------------------------------------------------------------------------
+LEDGER_BROKEN_ADVERTISED|ddos|suricata|cli/lib/nftban/cli/cmd_ddos.sh	MUST_FIX	DDoS/suricata=BROKEN	cmd_ddos.sh:71 help line "mode  Show or set protection mode (auto|classic|suricata|hybrid)"; :99 config example. A BROKEN mode offered in help with no availability marker.
+LEDGER_BROKEN_ADVERTISED|ddos|suricata|cli/lib/nftban/core/nftban_ddos.sh	MUST_FIX	DDoS/suricata=BROKEN	nftban_ddos.sh:590 selection case label, :615/:717 help text, :636 "DDOS_MODE=auto|classic|suricata|hybrid".
+LEDGER_BROKEN_ADVERTISED|ddos|suricata|cli/lib/nftban/cli/cmd_modes.sh	MUST_FIX	DDoS/suricata=BROKEN	cmd_modes.sh:150 accept-list case label; :264-265 "nftban ddos mode set <auto|classic|suricata|hybrid>".
+LEDGER_BROKEN_ADVERTISED|ddos|suricata|cli/lib/nftban/helpers/nftban_mode.sh	MUST_FIX	DDoS/suricata=BROKEN	nftban_mode.sh:32 NFTBAN_VALID_MODES="auto classic suricata hybrid" — this is the config-validation accept-list the contract says must REJECT a BROKEN mode; plus :220-237 validation branch and error text, :335 generated config comment, :420 usage line.
+LEDGER_BROKEN_ADVERTISED|loginmon|suricata|cli/lib/nftban/cli/cmd_modes.sh	MUST_FIX	LoginMon/suricata=BROKEN when source missing	Ledger: selected on presence (score >= 2, no EVE required), then only the EVE watcher runs. cmd_modes.sh advertises the mode with no availability marker.
+LEDGER_BROKEN_ADVERTISED|loginmon|suricata|cli/lib/nftban/helpers/nftban_mode.sh	MUST_FIX	LoginMon/suricata=BROKEN when source missing	Same accept-list/validation surface as the DDoS row above; the validator admits suricata for LoginMon too.
+LEDGER_BROKEN_ADVERTISED|loginmon|auto|cli/lib/nftban/cli/cmd_modes.sh	MUST_FIX	LoginMon/auto=BROKEN readiness resolution	Ledger: auto + Suricata present => ModeSuricata on presence alone, silently darkening journal sources (Lesson A).
+LEDGER_BROKEN_ADVERTISED|loginmon|auto|cli/lib/nftban/helpers/nftban_mode.sh	MUST_FIX	LoginMon/auto=BROKEN readiness resolution	Same accept-list/validation surface; auto is admitted without a readiness contract.
+
+# -----------------------------------------------------------------------------
+# CHECK 4 — MARKRUNNING_LIVENESS  (Lesson B)  [STATIC APPROXIMATION]
+# -----------------------------------------------------------------------------
+MARKRUNNING_LIVENESS|internal/loginmon/module.go|Start|runEVEWatcher	MUST_FIX	LoginMon/suricata=BROKEN when source missing	internal/loginmon/module.go:439 MarkRunning(); :454/:457 go m.runEVEWatcher(ctx); :1764 runEVEWatcher opens DefaultEVEPath and on error does RecordError(err) + return. RecordError sets Healthy=false but NOT Running=false (internal/module/module.go:140-148 vs :132-138), so the module reports RUNNING with zero detection. Exactly Lesson B.
+MARKRUNNING_LIVENESS|internal/loginmon/module.go|Start|runJournalWatcher	ACCEPTED_DEBT	LoginMon/classic=STATICALLY_REACHABLE	internal/loginmon/module.go:1043 — this one IS a respawn supervisor (runJournalWatcherOnce with retry), so its early-return paths are less severe than the EVE case, but it still never transitions status off RUNNING when it gives up. Tracked, not blocking.
