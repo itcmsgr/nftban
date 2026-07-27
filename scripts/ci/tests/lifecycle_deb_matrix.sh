@@ -521,8 +521,7 @@ release_lock_holder() {
     # VERIFY the release. A lock that is still held silently poisons every
     # downstream case, and "we sent a signal" is not evidence that it is free.
     if [[ -e "$LOCK_FILE" ]]; then
-        local i
-        for i in $(seq 1 20); do
+        for _ in $(seq 1 20); do
             if flock -n -x "$LOCK_FILE" -c true 2>/dev/null; then return 0; fi
             sleep 1
         done

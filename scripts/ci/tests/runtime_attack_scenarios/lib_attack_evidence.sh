@@ -29,7 +29,8 @@
 : "${MGMT_IP:?scenario must set MGMT_IP}"
 
 PASS_N=0; FAIL_N=0
-declare -A STATUS   # per-check status, keyed by label
+# Only FINAL_STATUS is read (scenario_summary). A per-label array was assigned by
+# every helper and never read — dead state, and shellcheck was right to say so.
 FINAL_STATUS=PASS
 
 # escalate the run's final status, honouring severity ordering
@@ -42,14 +43,14 @@ _escalate(){ # new_status
         NOT_YET_VERIFIED) [[ "$FINAL_STATUS" =~ FAIL_ ]]        || FINAL_STATUS=INCOMPLETE ;;
     esac
 }
-pass(){ echo "[PASS] $1"; PASS_N=$((PASS_N+1)); STATUS[$1]=PASS; }
+pass(){ echo "[PASS] $1"; PASS_N=$((PASS_N+1)); }
 fail(){ # status label
     local st="$1"; shift
-    echo "[$st] $1"; FAIL_N=$((FAIL_N+1)); STATUS[$1]="$st"; _escalate "$st"
+    echo "[$st] $1"; FAIL_N=$((FAIL_N+1)); _escalate "$st"
 }
 info(){ echo "[INFO] $1"; }
-na(){   echo "[N/A ] $1"; STATUS[$1]=NOT_APPLICABLE; }
-nyv(){  echo "[NYV ] $1"; STATUS[$1]=NOT_YET_VERIFIED; _escalate NOT_YET_VERIFIED; }
+na(){   echo "[N/A ] $1"; }
+nyv(){  echo "[NYV ] $1"; _escalate NOT_YET_VERIFIED; }
 
 # --- kernel evidence primitives (all read the TARGET's real kernel state) -----
 

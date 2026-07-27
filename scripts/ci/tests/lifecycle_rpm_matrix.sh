@@ -16,7 +16,6 @@ PKG=nftban-core
 STATE_DIR=/var/lib/nftban/state
 STATE="$STATE_DIR/install_state"
 LOCK="$STATE_DIR/installer.lock"
-INSTALLER=/usr/lib/nftban/bin/nftban-installer
 W="$(mktemp -d)"; LOCK_PID=""
 P=0; F=0; declare -A R
 ok(){ echo "[PASS] ${CASE:-PRE}  $1"; P=$((P+1)); }
