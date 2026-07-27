@@ -63,10 +63,16 @@ BIN="${NFTBAN_INSTALLER_BIN:-}"
 awk '/# --- v1\.228\.0 Item 2: post-install outcome truth/,/# --- end Item 2/' \
     packaging/deb/postinst | sed 's/^[[:space:]]*//' > "$WORK/deb_block.sh"
 
-# RPM: the same markers inside the generated %post, with the spec heredoc's
-# escaping removed (\$ -> $) so it runs as the shell it becomes on the target.
+# RPM: the same markers inside the generated %post, reversing BOTH transformations
+# that stand between the source text and what the target host actually executes:
+#   \$ -> $    the spec heredoc's shell escaping
+#   %% -> %     rpmbuild's macro expansion, applied when the spec is BUILT
+# Reversing only the first leaves `date -u +'%%Y-...'`, which emits the LITERAL
+# string %Y-%m-%d... instead of a timestamp. That garbage reaches --not-before, the
+# verifier correctly answers INVALID_INVOCATION/exit 4, and tier 3 collapses to
+# UNKNOWN — which is exactly how this shipped and was caught by CI, not by review.
 awk '/# --- v1\.228\.0 Item 2: post-install outcome truth/,/# --- end Item 2/' \
-    packaging/build_nftban.sh | sed 's/^[[:space:]]*//; s/\\\$/$/g' > "$WORK/rpm_block.sh"
+    packaging/build_nftban.sh | sed 's/^[[:space:]]*//; s/\\\$/$/g; s/%%/%/g' > "$WORK/rpm_block.sh"
 
 FAMILIES=(deb rpm)
 extract_ok=1
@@ -93,6 +99,29 @@ if grep -q '\\\$' "$WORK/rpm_block.sh"; then
     bad "extract: rpm block still carries spec escaping (\\\$) after unescaping"
 else
     ok "extract: rpm block unescapes cleanly to executable shell"
+fi
+
+# The extracted RPM block must produce a REAL timestamp, not literal %Y-%m-%d text.
+# This is the assertion that would have caught the %%-expansion defect at source.
+rpm_fmt="$(grep -m1 'PACKAGE_SCRIPT_START_UTC=' "$WORK/rpm_block.sh" || true)"
+if [[ -z "$rpm_fmt" ]]; then
+    bad "extract: rpm block has no PACKAGE_SCRIPT_START_UTC assignment"
+else
+    # `echo` is required: evaluating "$(date ...)" bare would try to RUN the
+    # resulting timestamp as a command and yield an empty string.
+    rpm_stamp="$(eval "echo ${rpm_fmt#*=}" 2>/dev/null | tr -d '"' || true)"
+    if [[ "$rpm_stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]; then
+        ok "extract: rpm transaction stamp evaluates to a real UTC timestamp ($rpm_stamp)"
+    else
+        bad "extract: rpm transaction stamp is not a timestamp — got '${rpm_stamp:-<empty>}' (un-reversed %% expansion?)"
+    fi
+fi
+# negative control: the un-reversed %% form must be detected as NOT a timestamp
+mutant_stamp="$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%S.%%NZ' 2>/dev/null || true)"
+if [[ "$mutant_stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]; then
+    bad "negative-control: the un-reversed %% form produced a timestamp — the check is decorative"
+else
+    ok "negative-control: un-reversed %% form yields '${mutant_stamp:-<literal>}', correctly not a timestamp"
 fi
 
 # =============================================================================
