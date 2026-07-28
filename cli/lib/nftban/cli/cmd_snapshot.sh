@@ -61,8 +61,18 @@ nftban_cmd_snapshot() {
             nftban_snapshot_help
             ;;
         *)
-            # Default to create for backwards compatibility with systemd service
-            nftban_snapshot_create "$@"
+            # v1.228.2 (OPEN_SNAPSHOT_SOURCE_TIME_DOUBLE_DISPATCH): this arm used
+            # to fall through to `nftban_snapshot_create`, so any unrecognised
+            # token — including the `restore` that bash-completion advertises —
+            # silently CREATED a snapshot. The stated reason was "backwards
+            # compatibility with systemd service", but
+            # install/systemd/nftban-snapshot.service invokes
+            # `nftban snapshot create` explicitly, and a bare `nftban snapshot`
+            # still defaults to create via `subcmd="${1:-create}"` above. Nothing
+            # depended on the catch-all, so an unsupported action now refuses.
+            echo "ERROR: unsupported snapshot action: ${subcmd}" >&2
+            echo "Supported: create, list, help" >&2
+            return 2
             ;;
     esac
 }
@@ -168,7 +178,21 @@ EOF
 export -f nftban_cmd_snapshot
 export -f nftban_snapshot_help
 
-# Execute if sourced with arguments
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ -n "${1:-}" ]]; then
+# Execute ONLY when run directly, never when sourced.
+#
+# v1.228.2 (OPEN_SNAPSHOT_SOURCE_TIME_DOUBLE_DISPATCH): the previous guard also
+# fired on `[[ -n "${1:-}" ]]`. The router sources command modules with the
+# caller's positional parameters still set (cli/sbin/nftban:1128 assigns
+# `cmd="${1:-hello}"` and does NOT shift before the `source` at :1236), so $1 was
+# always the literal command token "snapshot". That made the guard true for every
+# invocation, executing nftban_cmd_snapshot at SOURCE time with subcmd="snapshot",
+# which falls to the `*)` default-to-create arm — and the router then dispatched
+# the real subcommand a second time. Measured: `snapshot create` created twice,
+# `snapshot list` created once before listing, and the hourly
+# nftban-snapshot.service path double-wrote in production.
+#
+# The systemd unit invokes `/usr/sbin/nftban snapshot create` through the router,
+# so nothing ever depended on the sourced-with-args behaviour.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     nftban_cmd_snapshot "$@"
 fi
