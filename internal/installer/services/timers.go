@@ -71,7 +71,6 @@ var allKnownTimers = []string{
 	"nftban-rollback.timer",
 	"nftban-snapshot.timer",
 	"nftban-soak.timer",
-	"nftban-suricata-update.timer",
 	"nftban-tunnel.timer",
 	"nftban-unified-exporter.timer",
 	"nftban-update-apply.timer",
