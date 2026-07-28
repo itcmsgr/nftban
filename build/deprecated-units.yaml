@@ -96,6 +96,11 @@ deprecated:
   # external suricata package and its independent configuration are NEVER
   # stopped, disabled, removed or altered by this cleanup.
   # ---------------------------------------------------------------------------
+  - name: nftban-suricata-stats.service
+    policy: stop_disable_remove
+    removed_in: v1.228.2
+    reason: "D1/D3 — the FOURTH NFTBan Suricata unit. Its ExecStart is a Go command that exists and it carries Requires=suricata.service, so it cannot start without an external Suricata and NFTBan never enables it. Retired anyway: a dormant placeholder must not ship an operational service implying monitoring or protection. Shipping it while claiming Suricata is retired from the active product surface would make the release claim false. The Go stats implementation may remain internally; what is retired is the systemd/operational surface."
+
   - name: nftban-suricata-update.timer
     policy: stop_disable_remove
     removed_in: v1.228.2

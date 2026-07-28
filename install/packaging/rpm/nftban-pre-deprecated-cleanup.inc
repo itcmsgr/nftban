@@ -77,6 +77,7 @@ done
 # Retired from the ACTIVE product surface; the unit NAME stays reserved for a
 # possible future release, so the obsolete file is REMOVED but NEVER masked.
 for unit in \
+    nftban-suricata-stats.service \
     nftban-suricata-update.timer \
     nftban-suricata-update.service \
     nftban-suricata.service; do

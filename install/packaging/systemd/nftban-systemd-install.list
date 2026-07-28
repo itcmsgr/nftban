@@ -51,7 +51,6 @@ nftban-snapshot.service
 nftban-snapshot.timer
 nftban-soak.service
 nftban-soak.timer
-nftban-suricata-stats.service
 nftban-tunnel.service
 nftban-tunnel.timer
 nftban-unified-exporter.service
