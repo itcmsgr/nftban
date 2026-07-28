@@ -366,9 +366,15 @@ No marketing, no superlatives, no competitor comparisons. Calm senior-engineer t
 adjectives. Every behaviour claim carries a version scope. **The CLI is a report** — kernel verification
 proves enforcement; CLI output alone does not.
 
-**AUTHORITY.** `.claude/docs/DOCS_WRITING_STANDARD.md` · `DOCS_DO_AND_DONT.md` ·
-`CLAIMS_AND_WORDING_GUARDRAILS.md` · `WIKI_PAGE_CHECKLIST.md` · `DOCS_REWRITE_RULES_FOR_CLAUDE.md` ·
-`.claude/WIKI_STYLE_GUIDE.md` · `.claude/BRAND_GUIDE.md`
+**AUTHORITY.** `.claude/docs/` (`DOCS_WRITING_STANDARD` · `DOCS_DO_AND_DONT` ·
+`CLAIMS_AND_WORDING_GUARDRAILS` · `WIKI_PAGE_CHECKLIST` · `DOCS_REWRITE_RULES_FOR_CLAUDE` ·
+`CLI_WORDING_STANDARD`) plus `.claude/WIKI_STYLE_GUIDE.md` · `.claude/BRAND_GUIDE.md` ·
+`.claude/MODULECLI.md`.
+
+> ⚠ **These are LOCAL-ONLY and NOT version controlled.** `.gitignore` tracks exactly one file under
+> `.claude/` — this contract. A fresh clone or worktree has **none** of the documents above. If they
+> are absent, say so and fall back to the rules stated here; do not assume the guidance is missing
+> because it does not exist. Making them tracked is an open decision, not something to do silently.
 
 ---
 
@@ -382,7 +388,7 @@ docs/SHELL_INPUT_PARSING_STANDARD.md                       shell input handling
 docs/releases/V1_228_0_VALIDATION_AUTHORITY_STATEMENT.md   what "proven" means
 NFTBAN_ROADMAP/NFTBAN_PENDINGS_AND_BUGS_CURRENT.md         OPEN work — single authority
 NFTBAN_ROADMAP/NFTBAN_CLOSED_BUGS_IMPLEMENT_CURRENT.md     shipped history
-NFTBAN_ROADMAP/V1_139_FHS_AUTHORITY_GRAPH.md               FHS ownership topology
+NFTBAN_ROADMAP/COMPLETED/V1_139_FHS_AUTHORITY_GRAPH.md     FHS ownership topology
 ```
 
 ---
