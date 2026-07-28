@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-27"
-# meta:description="v1.137 log-durability regression. Asserts the config/packaging fixes that close the disk-fill exposure: B-05 (copytruncate on the main nftban stanza), B-09 (installer.log + update.log are covered by a stanza), B-04 (nftban suricata setup installs the suricata logrotate policy into /etc/logrotate.d/ and that policy covers suricata/eve-* + fast.log + stats.log), B-01 (the health-fix repair fallback no longer auto-generates a DIVERGENT policy when the packaged template is missing — single source of truth), the newly-declared logrotate package dependency (RPM Requires + DEB Depends, both build paths), and GEO-CLEANUP-001 (nftban_report_services.sh reads canonical GEOBAN_ENABLED). Behavioral: logrotate -d (debug parse) on a host-sanitized copy of each rendered config parses with no syntax error. No host contact; no root required; logrotate-parse steps SKIP cleanly if logrotate is not installed."
+# meta:description="v1.137 log-durability regression. Asserts the config/packaging fixes that close the disk-fill exposure: B-05 (copytruncate on the main nftban stanza), B-09 (installer.log + update.log are covered by a stanza), B-04 (SUPERSEDED v1.228.2 — `nftban suricata` install/enable/disable were retired by owner ruling D1-D4, so the assertion is inverted: cmd_suricata_setup.sh must be an inert tombstone that installs no logrotate policy; the shipped policy itself must still cover suricata/eve-* + fast.log + stats.log), B-01 (the health-fix repair fallback no longer auto-generates a DIVERGENT policy when the packaged template is missing — single source of truth), the newly-declared logrotate package dependency (RPM Requires + DEB Depends, both build paths), and GEO-CLEANUP-001 (nftban_report_services.sh reads canonical GEOBAN_ENABLED). Behavioral: logrotate -d (debug parse) on a host-sanitized copy of each rendered config parses with no syntax error. No host contact; no root required; logrotate-parse steps SKIP cleanly if logrotate is not installed."
 # meta:input="None (reads repo source files; self-contained sandbox)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep,sed,mktemp"
@@ -97,10 +97,33 @@ grep -q '/var/log/nftban/update.log' "$LR_MAIN" && ok "update_log_listed" || no 
 grep -q 'copytruncate' <<<"$inst_stanza" && ok "installer_update_stanza_copytruncate" || no "installer_update_stanza_copytruncate" "installer/update stanza lacks copytruncate"
 
 # ---------------------------------------------------------------------------
-echo "--- B-04: suricata setup installs the logrotate policy to /etc/logrotate.d/ ---"
+echo "--- B-04 (SUPERSEDED v1.228.2): suricata setup is retired and installs nothing ---"
 # ---------------------------------------------------------------------------
-grep -q '/etc/logrotate.d/nftban-suricata' "$SURI_SETUP" && ok "suri_setup_targets_logrotate_d" || no "suri_setup_targets_logrotate_d" "cmd_suricata_setup.sh does not install to /etc/logrotate.d/"
-grep -Eq 'install -D .*nftban-suricata.logrotate|install -D .*"\$_slr_src" "\$_slr_dst"' "$SURI_SETUP" && ok "suri_setup_install_cmd" || no "suri_setup_install_cmd" "no install of the suricata template found"
+# ORIGINAL B-04 (v1.137) asserted that `nftban suricata enable` copied the
+# packaged suricata logrotate template into /etc/logrotate.d/nftban-suricata.
+# That closed a real disk-fill exposure at the time, because `enable` was also
+# the thing that REWROTE /etc/suricata/suricata.yaml to point Suricata's EVE
+# output at /var/log/nftban/suricata/ in the first place.
+#
+# v1.228.2 (owner ruling D1-D4) retires Suricata from the active product
+# surface: install/enable/disable are removed because a dormant placeholder
+# must not mutate the host. The assertion is INVERTED rather than deleted —
+# a regression here would mean a host-mutating command came back.
+#
+# Why this does not reopen the v1.137 disk-fill exposure:
+#   * NFTBan no longer points any Suricata instance at /var/log/nftban/**.
+#     The EVE-path rewrite lived in the same removed `enable` command, so on a
+#     v1.228.2 host nothing directs Suricata output into the NFTBan tree.
+#   * Hosts that previously ran `enable` already have
+#     /etc/logrotate.d/nftban-suricata on disk; it is not removed by upgrade,
+#     so their rotation policy is unchanged.
+# The packaged template still ships and is still parse-checked below.
+grep -qE '^[[:space:]]*install -D .*nftban-suricata\.logrotate|^[[:space:]]*install -D .*"\$_slr_src"' "$SURI_SETUP" \
+    && no "suri_setup_no_longer_installs_logrotate" "cmd_suricata_setup.sh still installs a logrotate policy — the retired command has returned" \
+    || ok "suri_setup_no_longer_installs_logrotate"
+grep -qE '^[[:space:]]*cmd_suricata_[a-z]+\(\)' "$SURI_SETUP" \
+    && no "suri_setup_is_inert_tombstone" "cmd_suricata_setup.sh still defines a cmd_suricata_* function" \
+    || ok "suri_setup_is_inert_tombstone"
 # the shipped suricata policy must actually cover the high-volume eve + classic logs
 grep -q 'eve-' "$LR_SURI" && ok "suri_policy_covers_eve" || no "suri_policy_covers_eve" "suricata policy does not cover eve-*"
 grep -Eq 'fast.log|stats.log' "$LR_SURI" && ok "suri_policy_covers_fast_stats" || no "suri_policy_covers_fast_stats" "suricata policy missing fast.log/stats.log"

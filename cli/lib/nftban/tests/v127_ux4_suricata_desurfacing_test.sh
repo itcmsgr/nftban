@@ -8,7 +8,7 @@
 # meta:version="1.127.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-24"
-# meta:description="Deterministic shell tests for V127 UX-4 lane (PR-D). Asserts (a) cli/sbin/nftban no-args dashboard render block contains no Suricata row, status probe, or systemctl-suricata background call; (b) cmd_modes.sh default modes overview does not emit Suricata: status line, Suricata-naming reason text, or Suricata-naming help text; (c) nftban_help.sh essential + minimal help blocks no longer list the suricata row and the --all branch filters the suricata line from the generate-help.sh delegation; (d) production Suricata code paths (cmd_suricata.sh, cmd_suricata_setup.sh, nftban_login_suricata.sh, nftban_portscan_suricata.sh, nftban_ddos_suricata.sh) remain untouched by sentinel-grep; (e) command-routing infrastructure (dispatcher case, completion lists, typo handler) still references suricata so nftban suricata <subcmd> remains reachable."
+# meta:description="Deterministic shell tests for V127 UX-4 lane (PR-D). Asserts (a) cli/sbin/nftban no-args dashboard render block contains no Suricata row, status probe, or systemctl-suricata background call; (b) cmd_modes.sh default modes overview does not emit Suricata: status line, Suricata-naming reason text, or Suricata-naming help text; (c) nftban_help.sh essential + minimal help blocks no longer list the suricata row and the --all branch filters the suricata line from the generate-help.sh delegation; (d) v1.228.2 retirement invariants: cmd_suricata.sh exposes only status+help with a DORMANT contract and exit 2, cmd_suricata_setup.sh is an inert non-mutating tombstone, and the engine code paths (nftban_login_suricata.sh, nftban_portscan_suricata.sh, nftban_ddos_suricata.sh) remain present; (e) command-routing infrastructure (dispatcher case, completion lists, typo handler) still references suricata so nftban suricata <subcmd> remains reachable."
 # meta:input="static source-file inspection via grep code-pattern assertions + functional source-and-call test for cmd_modes.sh display helpers"
 # meta:output="exit 0 if all assertions pass; exit 1 with FAILED tests list otherwise"
 # meta:depends="bash,grep,awk,sed"
@@ -240,15 +240,57 @@ _t_assert "C4: nftban_help.sh carries V127 UX-4 scope anchor comment" "$ok"
 # (D) Production Suricata code paths UNTOUCHED (sentinel-grep)
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# D1/D2 REWRITTEN v1.228.2 (owner ruling D1-D4) — justification.
+#
+# The original D1/D2 were SENTINEL-GREP scope guards: UX-4 was a display-only
+# de-surfacing lane, so they asserted that the production Suricata code paths
+# were "untouched" by that PR. They pinned the pre-v1.228.2 surface as a side
+# effect of pinning UX-4's blast radius.
+#
+# v1.228.2 retires Suricata from the ACTIVE product surface: `nftban suricata`
+# is narrowed to `help` + `status`, and install/enable/disable are removed
+# because a dormant placeholder must not mutate the host. Asserting the old
+# entry points still exist would now assert the exact surface the ruling
+# deleted, so the two assertions are re-aimed at what UX-4 actually cares
+# about — that `nftban suricata <subcmd>` still ROUTES (A6/A7 above) and that
+# the retired module is inert — rather than deleted outright.
+#
+# D3-D5 below are UNCHANGED: the loginmon/portscan/ddos engine code is not in
+# scope for the retirement and must still be present.
+# -----------------------------------------------------------------------------
+
 # D1: cmd_suricata.sh present and still defines its top-level command function
 [[ -f "$_cmd_suricata" ]] && grep -qE 'cmd_suricata|nftban_cmd_suricata' "$_cmd_suricata"
 ok=$?
-_t_assert "D1: cmd_suricata.sh present with command entry point (untouched)" "$ok"
+_t_assert "D1: cmd_suricata.sh present with command entry point" "$ok"
 
-# D2: cmd_suricata_setup.sh present and still defines its setup entry point
-[[ -f "$_cmd_suricata_setup" ]] && grep -qE 'suricata.*setup|setup.*suricata' "$_cmd_suricata_setup"
+# D1b: the narrowed surface routes ONLY status + help (no install/enable/disable)
+awk '/^nftban_cmd_suricata\(\) \{/,/^\}$/' "$_cmd_suricata" \
+    | grep -qE '^[[:space:]]+(install|enable|disable|rules|update|sid|category|profile)\)'
 ok=$?
-_t_assert "D2: cmd_suricata_setup.sh present with setup entry point (untouched)" "$ok"
+[[ $ok -eq 0 ]] && ok=1 || ok=0
+_t_assert "D1b: cmd_suricata.sh router has no install/enable/disable/rules/update/sid/category/profile arm" "$ok"
+
+# D1c: status reports the dormant contract and a stable machine token
+grep -q 'DORMANT / NOT IMPLEMENTED' "$_cmd_suricata" \
+    && grep -q 'NFTBAN_SURICATA_STATE=DORMANT' "$_cmd_suricata" \
+    && grep -q 'NFTBAN_SURICATA_DORMANT_EXIT=2' "$_cmd_suricata"
+ok=$?
+_t_assert "D1c: cmd_suricata.sh status reports DORMANT + stable token + non-zero exit 2" "$ok"
+
+# D2: cmd_suricata_setup.sh is an inert tombstone — present, but defining no
+# command function. Deletion is hard-locked by shell-delete-guard CHECK 3
+# (NO-DROP-RUNTIME-DIRS-CODE), so the file stays and the behaviour goes.
+[[ -f "$_cmd_suricata_setup" ]] && ! grep -qE '^cmd_suricata_[a-z]+\(\)' "$_cmd_suricata_setup"
+ok=$?
+_t_assert "D2: cmd_suricata_setup.sh is an inert tombstone (defines no cmd_suricata_* function)" "$ok"
+
+# D2b: the tombstone performs no host mutation
+grep -qE '^[[:space:]]*(systemctl|usermod|chown|chmod|sed -i|install -D|pip3|dnf|apt-get)[[:space:]]' "$_cmd_suricata_setup"
+ok=$?
+[[ $ok -eq 0 ]] && ok=1 || ok=0
+_t_assert "D2b: cmd_suricata_setup.sh tombstone issues no host-mutating command" "$ok"
 
 # D3: nftban_login_suricata.sh present and non-empty
 [[ -f "$_core_login_suricata" ]] && [[ -s "$_core_login_suricata" ]]

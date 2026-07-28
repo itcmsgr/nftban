@@ -608,48 +608,24 @@ else
     log_warn "Suricata not installed - IDS protection disabled"
 fi
 
-# Check NFTBan Suricata integration daemon
-if systemctl list-unit-files nftban-suricata.service &>/dev/null 2>&1; then
-    if ! systemctl is-active --quiet nftban-suricata.service 2>/dev/null; then
-        log_warn "NFTBan Suricata daemon not running - attempting to start..."
-
-        # First verify filters.conf exists
-        FILTERS_CONF="/etc/suricata/filters.conf"
-        if [ ! -f "$FILTERS_CONF" ]; then
-            log_error "Missing $FILTERS_CONF - cannot start Suricata daemon"
-        else
-            # Pre-create suricata-events.log with correct ownership for CAP_NET_ADMIN-only daemon
-            # Daemon runs as User=root with SupplementaryGroups=nftban (no DAC capabilities)
-            # File must be group-writable by nftban so root process can write via group perms
-            SURICATA_LOG="${NFTBAN_LOG_DIR}/suricata-events.log"
-            if [ ! -f "$SURICATA_LOG" ]; then
-                touch "$SURICATA_LOG" 2>/dev/null || true
-                chown root:nftban "$SURICATA_LOG" 2>/dev/null || true
-                chmod 660 "$SURICATA_LOG" 2>/dev/null || true
-            else
-                # Fix ownership if file exists but has wrong perms (e.g. created by nftban user)
-                chown root:nftban "$SURICATA_LOG" 2>/dev/null || true
-                chmod 660 "$SURICATA_LOG" 2>/dev/null || true
-            fi
-
-            # Try to start daemon
-            if systemctl start nftban-suricata.service 2>/dev/null; then
-                sleep 2
-                if systemctl is-active --quiet nftban-suricata.service 2>/dev/null; then
-                    log_info "✅ Started NFTBan Suricata daemon"
-                else
-                    log_error "NFTBan Suricata daemon failed to start - check: journalctl -u nftban-suricata.service"
-                fi
-            else
-                log_error "Failed to start NFTBan Suricata daemon"
-            fi
-        fi
-    else
-        log_info "✅ NFTBan Suricata daemon is running"
-    fi
-else
-    log_warn "NFTBan Suricata integration not installed"
-fi
+# NFTBan Suricata integration daemon — RETIRED v1.228.2 (owner ruling D1).
+#
+# This block used to try to START nftban-suricata.service on every auto-heal
+# run, first chowning ${NFTBAN_LOG_DIR}/suricata-events.log to root:nftban. The
+# unit no longer exists: it is removed from newly built packages and converged
+# away on upgrade (build/deprecated-units.yaml, policy stop_disable_remove).
+#
+# The start attempt is not merely obsolete, it was actively dangerous. The unit
+# carried ExecStartPre=+/usr/sbin/nftban suricata rules verify --quiet — a CLI
+# token deleted by ff1865b4 — with Type=simple, Restart=on-failure and no
+# SuccessExitStatus. Auto-heal was therefore the recurring trigger that would
+# have turned an honest non-zero exit into a restart loop.
+#
+# Nothing replaces it. Auto-heal must not start, enable, create or chown
+# anything for a dormant surface, so this is a deliberate no-op. The upstream
+# Suricata checks above and below are untouched — they observe an external
+# installation and never modify it.
+log_info "NFTBan Suricata integration is dormant (retired v1.228.2) - no action"
 
 # Verify Suricata filter configuration (already set above in autoheal section)
 if [ -f "${FILTERS_CONF:-/etc/suricata/filters.conf}" ]; then

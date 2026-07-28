@@ -69,7 +69,21 @@ missing=0
 while IFS=$'\t' read -r cf tok _cls _note; do
     [[ -z "${cf:-}" ]] && continue
     if [[ ! -f "$_lib/$cf" ]]; then echo "    MISSING FILE: $cf"; missing=$((missing+1)); continue; fi
-    if ! grep -qF -- "$tok" "$_lib/$cf"; then echo "    token '$tok' not found in $cf"; missing=$((missing+1)); fi
+    # v1.228.2: match EXECUTABLE CODE ONLY. The bare `grep -qF` below used to scan
+    # the whole file, so a token surviving purely in a comment satisfied the check.
+    # Measured false-greens this caught: `stats` matched the comment
+    # "#   * nftban-suricata-stats.service" (a SERVICE name, not a subcommand) and
+    # `test` matched "# ...so it is also hermetic to test." (an ordinary English word).
+    # Full-line comments only: a `#` opening a line is unambiguously a comment in
+    # shell, whereas stripping inline `#` would corrupt `#` inside quoted strings.
+    # NOTE: captured into a variable and matched with a bash pattern, NOT a
+    # `grep -vE ... | grep -qF` pipeline. Under `set -o pipefail` (line 31) the
+    # inner `grep -q` exits the instant it matches, the upstream grep takes
+    # SIGPIPE (141), and pipefail propagates that as the pipeline status — so a
+    # SUCCESSFUL match is reported as "not found". Measured: 11 valid rows failed
+    # that way. `[[ != *"$tok"* ]]` is the same substring test with no subprocess.
+    _code=$(grep -vE '^[[:space:]]*#' "$_lib/$cf" || true)
+    if [[ "$_code" != *"$tok"* ]]; then echo "    token '$tok' not found in executable code of $cf"; missing=$((missing+1)); fi
 done < <(_rows)
 _t_assert "all allowlisted tokens present in their command files (missing=$missing)" "$([[ "$missing" -eq 0 ]] && echo 0 || echo 1)"
 

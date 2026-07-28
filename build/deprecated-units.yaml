@@ -27,6 +27,20 @@
 #     This closes Lane L10 F7_LOW (clean hosts no longer accumulate
 #     /etc/systemd/system/$unit -> /dev/null residue from buggy uninstall).
 #
+#   stop_disable_remove:                                            (v1.228.2)
+#     Run stop + disable. Then call remove_unit_file_if_exists() which:
+#       - Removes the unit file at /usr/lib/systemd/system/$unit and
+#         /lib/systemd/system/$unit if present.
+#       - Removes /etc/systemd/system/$unit ONLY when it is an existing
+#         /dev/null mask (residue, or a mask an operator applied by hand).
+#       - NEVER creates a mask.
+#     Same /etc territory boundary as stop_disable_mask_remove; the difference
+#     is that no mask is left behind. Use this policy — NOT the mask variant —
+#     when the unit NAME is reserved for a possible future release: a permanent
+#     /dev/null mask would silently neutralise any future unit shipped under
+#     that name, which is precisely the invisible-failure class the retirement
+#     is meant to remove.
+#
 # -----------------------------------------------------------------------------
 # /etc/systemd/system territory boundary (A2 — senior audit)
 # -----------------------------------------------------------------------------
@@ -68,3 +82,31 @@ deprecated:
     policy: stop_disable_mask_remove
     removed_in: v1.100.1b.A
     reason: "GOTH PR-D4 stage 1 — UI auth socket removed"
+
+  # ---------------------------------------------------------------------------
+  # v1.228.2 — Suricata retired from the ACTIVE product surface (owner ruling
+  # D1-D6, 2026-07-28). Suricata is a DORMANT PLACEHOLDER for a much later
+  # release, not an active protection module. These three units are removed
+  # from newly built packages and converged away on upgrade.
+  #
+  # Timer is listed FIRST so the loop stops the trigger before its service.
+  #
+  # BOUNDARY: NFTBan touches ONLY nftban-suricata* units. The upstream
+  # suricata.service / suricata-update.service / suricata-update.timer and the
+  # external suricata package and its independent configuration are NEVER
+  # stopped, disabled, removed or altered by this cleanup.
+  # ---------------------------------------------------------------------------
+  - name: nftban-suricata-update.timer
+    policy: stop_disable_remove
+    removed_in: v1.228.2
+    reason: "D2 — weekly rule-update timer for a retired surface; triggered a service whose ExecStart invokes `nftban suricata rules update`, a CLI token deleted by ff1865b4"
+
+  - name: nftban-suricata-update.service
+    policy: stop_disable_remove
+    removed_in: v1.228.2
+    reason: "D2 — ExecStart=/usr/sbin/nftban suricata rules update; the rules module was deleted by ff1865b4 and rule management is NOT restored. Deliberately not repointed to bare suricata-update: that would assert a NEW claim that NFTBan owns Suricata rule updates"
+
+  - name: nftban-suricata.service
+    policy: stop_disable_remove
+    removed_in: v1.228.2
+    reason: "D1 — ExecStartPre=+/usr/sbin/nftban suricata rules verify --quiet invokes a deleted CLI token; Type=simple + Restart=on-failure with no SuccessExitStatus means an honest non-zero turns unit start into a restart loop. Removed rather than de-fanged: stripping ExecStartPre would leave a service that APPEARS protective while no rule verification exists"

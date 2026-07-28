@@ -31,6 +31,22 @@ mask_if_exists() {
     # else: clean host — no /etc residue created
 }
 
+# /etc territory boundary (A2): package only modifies /etc/systemd/system/$unit
+# when the existing symlink targets /dev/null (i.e., it is a mask).
+# Operator-created custom aliases (target != /dev/null) are preserved.
+# NOTE: this helper NEVER creates a mask — it only clears pre-existing mask
+# residue (including a mask an operator applied by hand) after removing the
+# obsolete unit file.
+remove_unit_file_if_exists() {
+    local unit="$1"
+    rm -f "/usr/lib/systemd/system/$unit" "/lib/systemd/system/$unit" 2>/dev/null || true
+    if [ -L "/etc/systemd/system/$unit" ]; then
+        if [ "$(readlink "/etc/systemd/system/$unit" 2>/dev/null)" = "/dev/null" ]; then
+            rm -f "/etc/systemd/system/$unit" 2>/dev/null || true
+        fi
+    fi
+}
+
 # Active units (sourced from install/packaging/systemd/nftban-systemd-install.list).
 # Stop + disable. No mask, no file removal — package files are owned by RPM and
 # will be removed by the package manager.
@@ -75,9 +91,6 @@ for unit in \
     nftban-soak.service \
     nftban-soak.timer \
     nftban-suricata-stats.service \
-    nftban-suricata-update.service \
-    nftban-suricata-update.timer \
-    nftban-suricata.service \
     nftban-tunnel.service \
     nftban-tunnel.timer \
     nftban-unified-exporter.service \
@@ -111,6 +124,18 @@ for unit in \
     systemctl stop "$unit" 2>/dev/null || true
     systemctl disable "$unit" 2>/dev/null || true
     mask_if_exists "$unit"
+done
+
+# Deprecated units (policy: stop_disable_remove) — stop + disable + remove_unit_file_if_exists.
+# Retired from the ACTIVE product surface; the unit NAME stays reserved for a
+# possible future release, so the obsolete file is REMOVED but NEVER masked.
+for unit in \
+    nftban-suricata-update.timer \
+    nftban-suricata-update.service \
+    nftban-suricata.service; do
+    systemctl stop "$unit" 2>/dev/null || true
+    systemctl disable "$unit" 2>/dev/null || true
+    remove_unit_file_if_exists "$unit"
 done
 
 systemctl daemon-reload 2>/dev/null || true
