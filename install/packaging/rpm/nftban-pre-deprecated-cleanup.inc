@@ -35,6 +35,11 @@ mask_if_exists() {
         fi
     fi
     # else: clean host — no /etc residue created
+    # Same terminal failed-state latch as remove_unit_file_if_exists(): a unit
+    # that was already `failed` at upgrade time keeps its latch through
+    # stop+disable+mask. Unconditional and silent — a no-op on a host that
+    # never had the unit.
+    systemctl reset-failed "$unit" 2>/dev/null || true
 }
 
 # /etc territory boundary (A2): package only modifies /etc/systemd/system/$unit
@@ -51,6 +56,15 @@ remove_unit_file_if_exists() {
             rm -f "/etc/systemd/system/$unit" 2>/dev/null || true
         fi
     fi
+    # Clear any terminal failed-state latch BEFORE the caller's daemon-reload.
+    # stop+disable+rm does NOT clear it: a unit that was already `failed` when
+    # the upgrade began keeps its latch, and once the file is gone it becomes
+    # `Loaded: not-found / Active: failed` — unreferenceable residue that no
+    # operator can act on, but which still counts against NFTBan's own
+    # failed_units_postinstall_ok assertion and yields INSTALL_STATE=DEGRADED
+    # on an otherwise successful upgrade. Ordered before daemon-reload while
+    # the unit is still loaded, so the reset is unconditionally accepted.
+    systemctl reset-failed "$unit" 2>/dev/null || true
 }
 
 # Deprecated units (policy: stop_only) — stop + disable, no mask, no rm.
