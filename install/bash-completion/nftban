@@ -21,7 +21,10 @@ _nftban() {
     # DEBUG: debug smoke selftest emulate setup menu
 
     # H28 fix: 'cloudflare' is a legacy alias for 'trust' — still listed for discovery
-    local commands="status health validate config sync version help firewall firewall-logs logs ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip metrics stats report queue fhs module services timers mail rbl debug smoke selftest emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark rollback scale"
+    # v1.228.1: 'service' (singular) is a legacy alias for 'services' (cli/sbin/nftban
+    # dispatch); listed here and marked `aliases: ["service"]` in commands.registry.yml.
+    # Both surfaces are required together — check-cli-surface-parity.sh fails a half-fix.
+    local commands="status health validate config sync version help firewall firewall-logs logs ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip metrics stats report queue fhs module services service timers mail rbl debug smoke selftest emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark rollback scale"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -30,7 +33,7 @@ _nftban() {
     # Core commands
     local status_cmds="--json help"
     local health_cmds="check summary json fix enforce binaries geoip pro registries install verify conflicts config resources posture security --auto-heal --json help"
-    local validate_cmds="all firewall config permissions --json help"
+    local validate_cmds="--json help"
     local config_cmds="validate audit doctor diff show get defaults overrides set reset reset-all apply status help"
     local sync_cmds="full validate status --dry-run help"
 
@@ -45,12 +48,12 @@ _nftban() {
     local blacklist_cmds="add remove list show files count flush --json help"
     local whitelist_cmds="add remove list show --json help"
     local whitelist_system_cmds="--dry-run --json help"
-    local profile_cmds="list apply status basic standard advanced help"
-    local panel_cmds="detect status directadmin help"
-    local permissions_cmds="audit fix status --json help"
+    local profile_cmds="list apply help"
+    local panel_cmds="directadmin help"
+    local permissions_cmds="fix --json help"
 
     # Protection Modules
-    local ddos_cmds="status enable disable test config --json help"
+    local ddos_cmds="status enable disable test --json help"
     local portscan_cmds="status enable disable check history test --json help"
     local login_cmds="status stats enable disable restart logs test run mode digest --json help"
     local login_targets="ssh su sudo console service all"
@@ -70,24 +73,24 @@ _nftban() {
     local module_cmds="list status --json help"
     local services_cmds="status --json help"
     local timers_cmds="status enable disable --json help"
-    local mail_cmds="status port-status test config help"
+    local mail_cmds="status port-status test help"
 
     # Debug & Testing
     local debug_cmds="status enable disable trace logs dump botguard --json help"
     local smoke_cmds="--json --group --module --deep help"
     local selftest_cmds="run quick all lifecycle verify config check stats trace help"
     local emulate_cmds="--proto --port --direction --json help"
-    local setup_cmds="install uninstall configure wizard help"
+    local setup_cmds="help"
     local menu_cmds="help"
-    local test_cmds="run all --verbose --json help"
+    local test_cmds="--verbose --json help"
     local wizard_cmds="help"
 
     # System & Infrastructure
-    local nftables_cmds="status reload reset backup restore --json help"
+    local nftables_cmds="status reload --json help"
     local port_cmds="allow list status --json help"
     local port_protocols="tcp udp both"
     local port_directions="in out inout"
-    local system_cmds="status enable disable install uninstall --json help"
+    local system_cmds="status enable disable --json help"
 
     # Watchdog (System Resource Monitoring)
     local watchdog_cmds="status check run report trend trends history enable disable --json help"
@@ -106,7 +109,13 @@ _nftban() {
     local queue_cmds="status list process dlq metrics help"
     local rbl_cmds="check server status list enable disable cache alert critical watchlist config stats test providers help"
     local support_cmds="--network help"
-    local suricata_cmds="install enable disable status eve rules profile scan services sid category local custom recommend iface help"
+    # v1.228.2: Suricata is a DORMANT placeholder — the dispatcher accepts only
+    # `status` and `help` (cli/lib/nftban/cli/cmd_suricata.sh). Offering the old
+    # install/enable/disable/rules/profile/... tokens completed operators into a
+    # usage error. Keep this list set-equal to the dispatcher case arms and the
+    # commands.registry.yml suricata.subcommands block; the equality is enforced
+    # by cli/lib/nftban/tests/suricata_subcommand_authority_v1228_2_test.sh.
+    local suricata_cmds="status help"
     local update_cmds="check status github git local force repair rollback list history auto preflight verify auto-apply help"
 
     # Memory/Ban Management (NEW)
@@ -117,7 +126,7 @@ _nftban() {
     # New commands (connector, modes, snapshot, zabbix, preflight)
     local connector_cmds="list add remove enable disable test show push --json help"
     local modes_cmds="--json help"
-    local snapshot_cmds="create list restore --json help"
+    local snapshot_cmds="create list --json help"
     local zabbix_cmds="setup status test push reload template discover targets config --json help"
     local preflight_cmds="--strict --json help"
     local rollback_cmds="--list --version --dry-run --json help"
@@ -469,7 +478,12 @@ _nftban() {
                     case "${sub_cmd}" in
                         enable|disable)
                             # List available timers
-                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-suricata-update.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
+                            # v1.228.2: nftban-suricata-update.timer removed — the
+                            # unit is no longer shipped and build/deprecated-units.yaml
+                            # stops, disables and removes it on upgrade. Completing an
+                            # operator into `nftban timers enable` for a unit the
+                            # package just deleted is a guaranteed failure.
+                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
                             ;;
                     esac
                     ;;

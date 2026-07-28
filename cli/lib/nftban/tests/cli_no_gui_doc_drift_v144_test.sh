@@ -8,12 +8,12 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-01"
-# meta:description="v1.144.0 PR-A — asserts D-NFTBAN-GUI-DOC-DRIFT + FHS-SPEC-GUI-MENTION are closed. (1) commands.registry.yml has no top-level `gui:` entry and no `gui` row in `missing_json:`. (2) build/fhs-spec.yaml has no `gui:` feature block and no 'GUI/API' description. (3) cli/lib/nftban/core/nftban_fhs_spec.sh — regenerated from (2) — contains 'TLS certificates for API' (not 'GUI/API') and no /etc/nftban/gui directory entry. (4) `nftban gui` dispatch through cli/sbin/nftban falls through to the 'Unknown command' catch-all (verified by absence of dispatch case AND absence of alias). Hermetic — no host contact; no daemon, no nft. Closes the operator-visible UX confusion surfaced by the v1.142.0 fleet rollout (V1_142_0_FLEET_ROLLOUT_RECORD.md §3.2)."
+# meta:description="v1.144.0 PR-A — asserts D-NFTBAN-GUI-DOC-DRIFT + FHS-SPEC-GUI-MENTION are closed. (1) commands.registry.yml has no top-level `gui:` entry and no `gui` row in `missing_json:`. (2) build/fhs-spec.yaml has no `gui:` feature block and no 'GUI/API' description. (3) cli/lib/nftban/core/nftban_fhs_spec.sh — regenerated from (2) — contains 'TLS certificates for API' (not 'GUI/API') and no /etc/nftban/gui directory entry. (4) `nftban gui` dispatch through cli/sbin/nftban falls through to the 'Unknown command' catch-all (verified by absence of dispatch case AND absence of alias). (5) v1.228.1 — T1-4 asserts _metadata.total_commands EQUALS the computed top-level command-key count (was: a literal 66 pin, which failed correct counter bumps and passed stale ones); T1-5 proves T1-4 is falsifiable against a mutated fixture. The gui-retirement intent is carried by T1-1/T1-2/T1-3, which do not need the counter. Hermetic — no host contact; no daemon, no nft. Closes the operator-visible UX confusion surfaced by the v1.142.0 fleet rollout (V1_142_0_FLEET_ROLLOUT_RECORD.md §3.2)."
 # meta:input="commands.registry.yml, build/fhs-spec.yaml, cli/lib/nftban/core/nftban_fhs_spec.sh, cli/sbin/nftban"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
-# meta:depends="bash,grep"
+# meta:depends="bash,grep,mktemp,cp"
 # meta:inventory.files="commands.registry.yml,build/fhs-spec.yaml,cli/lib/nftban/core/nftban_fhs_spec.sh,cli/sbin/nftban"
-# meta:inventory.binaries="bash,grep"
+# meta:inventory.binaries="bash,grep,mktemp,cp"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -74,14 +74,60 @@ else
     ok "T1-3: commands.registry.yml 'missing_json:' has no '- gui' item"
 fi
 
-# T1-4: total_commands counter is one lower than it was before the retirement
-# (66, not 67) — guards against silent re-introduction by a future PR that
-# adds 'gui' back without bumping the counter.
-if grep -nE '^[[:space:]]+total_commands:[[:space:]]+66\b' "$REG" >/dev/null 2>&1; then
-    ok "T1-4: total_commands = 66 (reflects gui retirement)"
+# T1-4: _metadata.total_commands MUST EQUAL the number of top-level command keys
+# actually present in the registry.
+#
+# v1.228.1: this assertion previously pinned the LITERAL 66. That inverted the
+# guard: a PR that added a command and correctly bumped the counter FAILED, while
+# a PR that added a command and left the counter stale PASSED. The guard rewarded
+# staleness and was 5 behind by v1.228.0 (71 keys vs a declared 66). It now
+# MEASURES the registry instead of freezing a number, so it fails on real drift in
+# either direction and never on a correct bump.
+#
+# Parser constraint: scripts/ci/check-cli-surface-parity.sh:33 deliberately avoids a
+# pyyaml dependency. This assertion uses the SAME lightweight rule so both guards
+# agree without adding a Python dependency to the ci-bash image:
+#   a top-level command key is a column-0 `name:` line with nothing after the colon;
+#   `global_options` and `standard_params` are the only such keys that are not
+#   commands; `_metadata` is not matched at all because it starts with '_'.
+# Cross-checked against yaml.safe_load at v1.228.0: both yield 71.
+_registry_command_key_count() {
+    local reg="$1" total noncmd
+    total=$(grep -cE '^[a-z][a-z0-9_-]*:[[:space:]]*$' "$reg" || true)
+    noncmd=$(grep -cE '^(global_options|standard_params):[[:space:]]*$' "$reg" || true)
+    printf '%d\n' $(( total - noncmd ))
+}
+
+REG_COMPUTED=$(_registry_command_key_count "$REG")
+REG_DECLARED=$(grep -E '^[[:space:]]+total_commands:[[:space:]]+[0-9]+' "$REG" \
+               | grep -oE '[0-9]+' | head -1 || true)
+
+if [[ -z "$REG_DECLARED" ]]; then
+    no "T1-4: _metadata.total_commands == computed top-level command-key count" \
+       "total_commands key absent or not an integer"
+elif [[ "$REG_DECLARED" == "$REG_COMPUTED" ]]; then
+    ok "T1-4: _metadata.total_commands == computed command-key count (${REG_COMPUTED})"
 else
-    no "T1-4: total_commands = 66 (reflects gui retirement)" \
-       "$(grep -nE 'total_commands:' "$REG" | head -1 || echo 'absent')"
+    no "T1-4: _metadata.total_commands == computed top-level command-key count" \
+       "declared ${REG_DECLARED}, computed ${REG_COMPUTED} — update total_commands in commands.registry.yml"
+fi
+
+# T1-5: FALSIFIABILITY OF T1-4. A guard that cannot fail is the defect T1-4 was
+# just repaired for, so prove the comparison detects drift rather than trusting it.
+# Copy the registry to a temp fixture, add one synthetic top-level command key
+# WITHOUT bumping the counter, and assert the computed count moves away from the
+# declared one — i.e. T1-4 would have reported drift on that fixture.
+_T15_TMP=$(mktemp -d)
+# shellcheck disable=SC2064  # expand $_T15_TMP now, at trap-installation time
+trap "rm -rf '$_T15_TMP'" EXIT
+cp "$REG" "$_T15_TMP/registry.yml"
+printf '\nzzz_drift_fixture:\n  category: test\n' >> "$_T15_TMP/registry.yml"
+_T15_COMPUTED=$(_registry_command_key_count "$_T15_TMP/registry.yml")
+if [[ "$_T15_COMPUTED" -eq $(( REG_COMPUTED + 1 )) && "$_T15_COMPUTED" != "$REG_DECLARED" ]]; then
+    ok "T1-5: T1-4 is falsifiable (fixture with 1 added key computes ${_T15_COMPUTED} != declared ${REG_DECLARED})"
+else
+    no "T1-5: T1-4 is falsifiable (added key must move the computed count)" \
+       "fixture computed ${_T15_COMPUTED}, base computed ${REG_COMPUTED}, declared ${REG_DECLARED}"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────

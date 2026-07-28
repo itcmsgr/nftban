@@ -97,33 +97,41 @@ grep -q '/var/log/nftban/update.log' "$LR_MAIN" && ok "update_log_listed" || no 
 grep -q 'copytruncate' <<<"$inst_stanza" && ok "installer_update_stanza_copytruncate" || no "installer_update_stanza_copytruncate" "installer/update stanza lacks copytruncate"
 
 # ---------------------------------------------------------------------------
-echo "--- B-04 (SUPERSEDED v1.228.2): suricata setup is retired and installs nothing ---"
+echo "--- B-04: suricata setup module installs NO logrotate policy (v1.228.2) ---"
 # ---------------------------------------------------------------------------
-# ORIGINAL B-04 (v1.137) asserted that `nftban suricata enable` copied the
-# packaged suricata logrotate template into /etc/logrotate.d/nftban-suricata.
-# That closed a real disk-fill exposure at the time, because `enable` was also
-# the thing that REWROTE /etc/suricata/suricata.yaml to point Suricata's EVE
-# output at /var/log/nftban/suricata/ in the first place.
+# RE-AIMED v1.228.2 (owner ruling D1-D4) — justification.
 #
-# v1.228.2 (owner ruling D1-D4) retires Suricata from the active product
-# surface: install/enable/disable are removed because a dormant placeholder
-# must not mutate the host. The assertion is INVERTED rather than deleted —
-# a regression here would mean a host-mutating command came back.
+# B-04 originally asserted that cmd_suricata_setup.sh INSTALLS the suricata
+# logrotate policy into /etc/logrotate.d/. That was correct while
+# `nftban suricata enable` existed. The Suricata retirement removed the whole
+# install/enable/disable surface — a dormant placeholder must not mutate the
+# host — and reduced cmd_suricata_setup.sh to an inert tombstone. Asserting the
+# old behaviour would now assert the exact host mutation the ruling deleted.
 #
-# Why this does not reopen the v1.137 disk-fill exposure:
-#   * NFTBan no longer points any Suricata instance at /var/log/nftban/**.
-#     The EVE-path rewrite lived in the same removed `enable` command, so on a
-#     v1.228.2 host nothing directs Suricata output into the NFTBan tree.
-#   * Hosts that previously ran `enable` already have
-#     /etc/logrotate.d/nftban-suricata on disk; it is not removed by upgrade,
-#     so their rotation policy is unchanged.
-# The packaged template still ships and is still parse-checked below.
-grep -qE '^[[:space:]]*install -D .*nftban-suricata\.logrotate|^[[:space:]]*install -D .*"\$_slr_src"' "$SURI_SETUP" \
-    && no "suri_setup_no_longer_installs_logrotate" "cmd_suricata_setup.sh still installs a logrotate policy — the retired command has returned" \
-    || ok "suri_setup_no_longer_installs_logrotate"
-grep -qE '^[[:space:]]*cmd_suricata_[a-z]+\(\)' "$SURI_SETUP" \
-    && no "suri_setup_is_inert_tombstone" "cmd_suricata_setup.sh still defines a cmd_suricata_* function" \
-    || ok "suri_setup_is_inert_tombstone"
+# The two assertions are therefore inverted, not deleted: the log-durability
+# invariant this test owns is unchanged (the suricata rotation policy must
+# exist, must cover eve-*, must use copytruncate — all still checked below),
+# but the ACTIVATION of that policy is no longer NFTBan's to perform.
+#
+# Note the old B-04 line 1 would still have PASSED here by accident: the
+# tombstone's rationale comment names /etc/logrotate.d/nftban-suricata while
+# installing nothing. A grep for a path in a file that also explains why the
+# path is gone is not evidence of behaviour — hence the non-comment filter.
+_suri_setup_code=$(grep -vE '^[[:space:]]*#' "$SURI_SETUP")
+if grep -q '/etc/logrotate.d/nftban-suricata' <<<"$_suri_setup_code"; then
+    no "suri_setup_no_logrotate_d_write" "tombstone still references /etc/logrotate.d/ in NON-COMMENT code — the retired module must not activate a rotation policy"
+else
+    ok "suri_setup_no_logrotate_d_write"
+fi
+if grep -Eq 'install -D .*nftban-suricata.logrotate|install -D .*"\$_slr_src" "\$_slr_dst"' <<<"$_suri_setup_code"; then
+    no "suri_setup_no_install_cmd" "tombstone still installs the suricata logrotate template — host mutation was removed by the retirement"
+else
+    ok "suri_setup_no_install_cmd"
+fi
+# The template itself MUST still ship (packaging installs it to
+# /etc/nftban/templates/; see packaging/build_nftban.sh + payload.go). The
+# retirement removed the activator, not the policy.
+[[ -f "$LR_SURI" ]] && ok "suri_policy_template_still_shipped" || no "suri_policy_template_still_shipped" "install/config/nftban-suricata.logrotate is missing — the retirement must not drop the rotation policy"
 # the shipped suricata policy must actually cover the high-volume eve + classic logs
 grep -q 'eve-' "$LR_SURI" && ok "suri_policy_covers_eve" || no "suri_policy_covers_eve" "suricata policy does not cover eve-*"
 grep -Eq 'fast.log|stats.log' "$LR_SURI" && ok "suri_policy_covers_fast_stats" || no "suri_policy_covers_fast_stats" "suricata policy missing fast.log/stats.log"
