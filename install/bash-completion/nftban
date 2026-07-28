@@ -109,7 +109,13 @@ _nftban() {
     local queue_cmds="status list process dlq metrics help"
     local rbl_cmds="check server status list enable disable cache alert critical watchlist config stats test providers help"
     local support_cmds="--network help"
-    local suricata_cmds="install enable disable status eve rules profile scan services sid category local custom recommend iface help"
+    # v1.228.2: Suricata is a DORMANT placeholder — the dispatcher accepts only
+    # `status` and `help` (cli/lib/nftban/cli/cmd_suricata.sh). Offering the old
+    # install/enable/disable/rules/profile/... tokens completed operators into a
+    # usage error. Keep this list set-equal to the dispatcher case arms and the
+    # commands.registry.yml suricata.subcommands block; the equality is enforced
+    # by cli/lib/nftban/tests/suricata_subcommand_authority_v1228_2_test.sh.
+    local suricata_cmds="status help"
     local update_cmds="check status github git local force repair rollback list history auto preflight verify auto-apply help"
 
     # Memory/Ban Management (NEW)
@@ -472,7 +478,12 @@ _nftban() {
                     case "${sub_cmd}" in
                         enable|disable)
                             # List available timers
-                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-suricata-update.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
+                            # v1.228.2: nftban-suricata-update.timer removed — the
+                            # unit is no longer shipped and build/deprecated-units.yaml
+                            # stops, disables and removes it on upgrade. Completing an
+                            # operator into `nftban timers enable` for a unit the
+                            # package just deleted is a guaranteed failure.
+                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
                             ;;
                     esac
                     ;;

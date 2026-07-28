@@ -204,6 +204,7 @@ stats_status_truth_v150_test	cli/lib/nftban/tests/stats_status_truth_v150_test.s
 status_consistency_v153_test	cli/lib/nftban/tests/status_consistency_v153_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 status_rc_contract_v152_test	cli/lib/nftban/tests/status_rc_contract_v152_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 support_bundle_redaction_test	cli/lib/nftban/tests/support_bundle_redaction_test.sh	security	test	redaction	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+suricata_subcommand_authority_v1228_2_test	cli/lib/nftban/tests/suricata_subcommand_authority_v1228_2_test.sh	cli	test	cli-command-correlation	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 suricata_usr2_guard_gateb_test	cli/lib/nftban/tests/suricata_usr2_guard_gateb_test.sh	suricata	test	suricata-logrotate	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sysctl_risk_idle_age_v2161_test	cli/lib/nftban/tests/sysctl_risk_idle_age_v2161_test.sh	health	test	sysctl	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sysctl_safe_default_v216_test	cli/lib/nftban/tests/sysctl_safe_default_v216_test.sh	health	test	sysctl	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

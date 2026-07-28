@@ -49,15 +49,25 @@ ok(){ printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 no(){ printf '  [FAIL] %s (%s)\n' "$1" "$2"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
 
 # -----------------------------------------------------------------------------
-# SANCTIONED, TIME-LIMITED GAP — v1.228.1 PR-1 only.
+# SANCTIONED GAP LIST — NOW EMPTY (v1.228.2). This is the terminal state.
 #
-# PR-1 fixes the router; it is forbidden from touching systemd units, which
-# PR-2 owns and which are blocked on owner decisions D1 (what should
-# nftban-suricata.service ExecStartPre do now that `suricata rules verify` no
-# longer exists) and D2 (delete or repoint nftban-suricata-update.service).
-# Each entry is asserted BELOW to still be broken: when PR-2 lands, this test
-# fails until the entry is deleted. A sanctioned gap that silently becomes
-# correct is how a known-gap list rots into a lie.
+# v1.228.1 PR-1 fixed the router but was forbidden from touching systemd units,
+# so it sanctioned exactly one token — `suricata` — pending owner decisions D1
+# (what nftban-suricata.service ExecStartPre should do now that
+# `suricata rules verify` no longer exists) and D2 (delete or repoint
+# nftban-suricata-update.service). Each entry was asserted below to STILL be
+# broken, so that the list could not rot into a lie once the gap closed.
+#
+# That mechanism fired: the Suricata retirement (owner ruling D1-D4) DELETED
+# install/systemd/nftban-suricata.service and nftban-suricata-update.{service,timer}
+# rather than repointing them, and build/deprecated-units.yaml converges them
+# away on upgrade. No shipped unit invokes `nftban suricata` any more, so the
+# entry stopped earning its place and the reverse assertion failed until it was
+# removed. It is removed here.
+#
+# DO NOT re-populate this list to make a red run green. An undispatchable token
+# in a shipped unit is a unit that starts green while doing nothing — the exact
+# defect v1.228.1 exists to remove. Fix the unit or delete it.
 # -----------------------------------------------------------------------------
 # ZERO-GAP as of v1.228.2. The entry for 'suricata' was retired when the
 # Suricata units were removed from install/systemd/ — at that moment this
@@ -71,7 +81,8 @@ SANCTIONED_REASON="none — zero-gap"
 
 is_sanctioned(){
     local t="$1" s
-    for s in "${SANCTIONED_TOKENS[@]}"; do [[ "$s" == "$t" ]] && return 0; done
+    # `${arr[@]+...}` form: the list is now empty and must survive `set -u`.
+    for s in ${SANCTIONED_TOKENS[@]+"${SANCTIONED_TOKENS[@]}"}; do [[ "$s" == "$t" ]] && return 0; done
     return 1
 }
 
@@ -187,7 +198,7 @@ done
 # A sanctioned token that no unit invokes any more, or that quietly started
 # working, must be removed rather than left as decoration.
 echo "--- sanctioned-set hygiene ---"
-for s in "${SANCTIONED_TOKENS[@]}"; do
+for s in ${SANCTIONED_TOKENS[@]+"${SANCTIONED_TOKENS[@]}"}; do
     hit="no"
     for b in ${SEEN_BROKEN[@]+"${SEEN_BROKEN[@]}"}; do [[ "$b" == "$s" ]] && hit="yes"; done
     if [[ "$hit" == "yes" ]]; then
@@ -197,6 +208,31 @@ for s in "${SANCTIONED_TOKENS[@]}"; do
            "'$s' is no longer a broken systemd-invoked token — remove it from SANCTIONED_TOKENS"
     fi
 done
+
+# ZERO-GAP INVARIANT (v1.228.2). The allowlist is not merely "currently empty";
+# emptiness is the asserted terminal state. Stated as two explicit numbers so a
+# future PR that re-populates the list to silence a red run fails HERE, with the
+# reason spelled out, instead of quietly shipping a unit that starts green while
+# invoking a CLI token that does no work.
+#
+#   SANCTIONED_BROKEN_SURICATA_UNITS = 0
+#   SYSTEMD_UNDISPATCHABLE_TOKENS    = 0
+echo "--- zero-gap invariant ---"
+_sanctioned_n=${#SANCTIONED_TOKENS[@]}
+if (( _sanctioned_n == 0 )); then
+    ok "T-E1 SANCTIONED_BROKEN_SURICATA_UNITS=0 — allowlist is empty (terminal state)"
+else
+    no "T-E1 SANCTIONED_BROKEN_SURICATA_UNITS=0 — allowlist is empty (terminal state)" \
+       "${_sanctioned_n} sanctioned token(s) present: ${SANCTIONED_TOKENS[*]} — fix or delete the unit, do not allowlist it"
+fi
+
+_broken_n=${#SEEN_BROKEN[@]}
+if (( _broken_n == 0 )); then
+    ok "T-E1 SYSTEMD_UNDISPATCHABLE_TOKENS=0 — every shipped unit invokes a dispatchable token"
+else
+    no "T-E1 SYSTEMD_UNDISPATCHABLE_TOKENS=0 — every shipped unit invokes a dispatchable token" \
+       "${_broken_n} undispatchable invocation(s): ${SEEN_BROKEN[*]}"
+fi
 
 echo "=========================================================="
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"

@@ -2916,176 +2916,54 @@ geoip:
     - "nftban geoip update"
     - "nftban geoip config --json"
 
+# -----------------------------------------------------------------------------
+# v1.228.2 — SURICATA RETIRED FROM THE ACTIVE PRODUCT SURFACE (owner ruling D3)
+#
+# Suricata integration is reserved for a future release and is not currently an
+# active protection module. `nftban suricata` dispatches `status` and `help` and
+# nothing else (cli/lib/nftban/cli/cmd_suricata.sh:187-202); every other verb
+# returns a usage error.
+#
+# The 42 subcommands and 14 examples that used to live here advertised rule
+# management, profile management, custom-rule editing, service detection and
+# install/enable/disable. None of them dispatch: four of the five submodules
+# were deleted by ff1865b4 and the surviving install/enable/disable behaviour
+# was removed by the retirement because a dormant placeholder must not mutate
+# the host. Rule management is NOT restored.
+#
+# `suricata:` REMAINS a top-level command key — _metadata.total_commands is a
+# count of top-level keys and is unchanged at 71 by this reduction.
+#
+# INVARIANT: this block, install/bash-completion/nftban::suricata_cmds and the
+# dispatcher case arms must declare the SAME set. Enforced by
+# cli/lib/nftban/tests/suricata_subcommand_authority_v1228_2_test.sh, which
+# derives all four sets at runtime and fails on any phantom.
+# -----------------------------------------------------------------------------
 suricata:
   category: intelligence_reporting
-  description: "Suricata IDS integration (deep packet inspection)"
+  description: "Report the state of the Suricata integration (DORMANT — reserved for a future release, not an active protection module; NFTBan ships no Suricata service, rule management or update timer)"
   risk: advanced
   audience: [cli]
-  capability: service_control
-  mutates: conditional
+  capability: status_read
+  mutates: false
   supports_dry_run: false
-  requires_root: true
+  requires_root: false
   panel_expose: false
   output_modes: [json, text]
   has_json: true
   examples:
     - "nftban suricata status"
-    - "nftban suricata filters"
-    - "nftban suricata enable SSH_BRUTE_FORCE"
-    - "nftban suricata disable POLICY_VIOLATIONS"
-    - "nftban suricata set-threshold SSH_BRUTE_FORCE 50"
-    - "nftban suricata set-action WEB_ATTACKS alert"
-    - "nftban suricata profile-detect"
-    - "nftban suricata profile-apply standard"
-    - "nftban suricata scan"
-    - "nftban suricata rules-generate"
-    - "nftban suricata rules-verify"
-    - "nftban suricata rules-ensure"
-    - "nftban suricata sid-top"
-    - "nftban suricata recommend"
+    - "nftban suricata status --json"
+    - "nftban suricata help"
   subcommands:
-    # Core
-    status: {mutates: false, description: "Show Suricata integration status"}
-    filters: {mutates: false, description: "List detection filters and state"}
-    daemon: {mutates: false, description: "Run alert processing daemon"}
-    enable: {mutates: true, description: "Enable a detection filter"}
-    disable: {mutates: true, description: "Disable a detection filter"}
-    set-threshold:
-      mutates: true
-      description: "Set scoring threshold"
-    set-action:
-      mutates: true
-      description: "Set action (alert/drop)"
-    # Profiles
-    profile-detect:
+    status:
       mutates: false
-      description: "Auto-detect optimal profile"
-    profile-apply:
-      mutates: true
-      description: "Apply profile"
-    profile-show:
-      mutates: false
-      description: "Show current profile config"
-    profile-validate:
-      mutates: false
-      description: "Validate profile config"
-    # Service Detection
-    scan:
-      mutates: false
-      description: "Quick scan for services"
-    scan-deep:
-      mutates: false
-      description: "Deep service detection"
-    # Rules Management
-    rules-generate:
-      mutates: true
-      description: "Generate enabled rules list"
-    rules-stats:
-      mutates: false
-      description: "Show rule statistics"
-    rules-init:
-      mutates: true
-      description: "Initialize rule management"
-    rules-verify:
-      mutates: false
-      description: "Verify rules are loadable"
-    rules-ensure:
-      mutates: true
-      description: "Auto-download rules if missing"
-    # SID Statistics
-    sid-stats:
-      mutates: false
-      description: "Show signature trigger stats"
-    sid-info:
-      mutates: false
-      description: "Show details for specific SID"
-    sid-top:
-      mutates: false
-      description: "Show top triggered signatures"
-    sid-recent:
-      mutates: false
-      description: "Show recently triggered SIDs"
-    stats-daemon:
-      mutates: false
-      description: "Run statistics daemon"
-    # Custom Rules
-    custom-add:
-      mutates: true
-      description: "Add a custom Suricata rule"
-    custom-remove:
-      mutates: true
-      description: "Remove a custom rule by SID"
-    custom-edit:
-      mutates: true
-      description: "Edit an existing custom rule"
-    custom-list:
-      mutates: false
-      description: "List all custom rules"
-    custom-validate:
-      mutates: false
-      description: "Validate custom rules syntax"
-    custom-enable:
-      mutates: true
-      description: "Enable a custom rule"
-    custom-disable:
-      mutates: true
-      description: "Disable a custom rule"
-    custom-backup:
-      mutates: true
-      description: "Backup custom rules"
-    custom-rollback:
-      mutates: true
-      description: "Restore from backup"
-    # Recommendations
-    recommend:
-      mutates: false
-      description: "Get rule recommendations"
-    recommend-summary:
-      mutates: false
-      description: "Show recommendation summary"
-    # Advanced Operations
-    advanced:
-      mutates: conditional
-      description: "Advanced Suricata operations and tuning"
+      description: "Report the dormant integration state (read-only, no host contact; always exits 2)"
       options:
         --json: {type: bool, description: "Output in JSON format"}
-    iface:
-      mutates: conditional
-      description: "Manage Suricata network interface configuration"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
-    rules:
-      mutates: conditional
-      description: "Comprehensive rule management (generate, verify, ensure)"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
-    setup:
-      mutates: true
-      description: "Initial Suricata integration setup and configuration"
-      requires_root: true
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
-    tools:
+    help:
       mutates: false
-      description: "Suricata diagnostic and utility tools"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
-    # v1.19.13: Standard module consistency subcommands
-    config:
-      mutates: false
-      description: "Show Suricata configuration"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
-    stats:
-      mutates: false
-      description: "Show Suricata statistics (EVE, alerts)"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
-    test:
-      mutates: false
-      description: "Test Suricata connectivity and EVE log availability"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
+      description: "Show Suricata command help"
 
 mail:
   category: intelligence_reporting
