@@ -1,0 +1,211 @@
+# =============================================================================
+# NFTBan nft consumer execution authority
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Source of truth for WHICH shipped systemd units reach nftables, and therefore
+# which execution authority each unit requires. Consumed by
+# scripts/ci/check-nft-consumer-authority.sh.
+#
+# WHY THIS FILE EXISTS
+#   nftban-maintenance.service invokes nft but its RestrictAddressFamilies
+#   omitted AF_NETLINK. libmnl opens AF_NETLINK sockets to read kernel state, so
+#   every nft call inside that sandbox failed with:
+#       mnl.c:61: Unable to initialize Netlink socket:
+#                 Address family not supported by protocol
+#   The unit still reported Result=success, the probe discarded stderr, and the
+#   collapse of "non-zero exit" into "table absent" produced a false firewall-
+#   absent verdict on 11/11 measured hosts. Isolated by a four-cell transient-
+#   unit matrix on lab2 (DEB) + lab4 (RPM): only RestrictAddressFamilies
+#   differed; A1 exit 3 + EAFNOSUPPORT, A2 exit 0.
+#
+# -----------------------------------------------------------------------------
+# EVIDENCE STATES  (bounded — read these literally)
+# -----------------------------------------------------------------------------
+#   confirmed_consumer
+#     A concrete nft/netlink call site exists on a reachable execution path.
+#     Requires AF_NETLINK.
+#
+#   conditional_consumer
+#     An nft call site is reachable only under a stated condition. MUST declare
+#     `activation:`, which decides whether AF_NETLINK is required:
+#
+#       activation: runtime_ordinary
+#         The condition is an ordinary runtime state reachable with NO operator
+#         action (e.g. a stale cache). Treated EXACTLY like confirmed_consumer:
+#         AF_NETLINK is REQUIRED. An unmet requirement is an open violation.
+#
+#       activation: operator_action_required
+#         The condition needs a deliberate operator change (config edit, queued
+#         task). AF_NETLINK may be withheld ONLY when the unit also carries a
+#         `capability_decision`, i.e. the omission is a recorded decision rather
+#         than drift. Without one, the unit is treated as runtime_ordinary.
+#
+#     A conditional_consumer with no `activation:` is a HARD FAIL. It must not be
+#     possible for a declared unit to escape enforcement by virtue of its class.
+#
+#   no_nft_path_bounded_trace
+#     A transitive call-path trace found no reachable nft/netlink call.
+#     *** THIS IS A BOUNDED RESULT, NOT AN ABSOLUTE CLAIM. ***
+#     It means "no path found by this trace at this commit". It does NOT mean
+#     "cannot reach nft under every future configuration". Do not restate it as
+#     an architectural guarantee.
+#
+#   unknown_external_executable
+#     The unit execs a binary whose source is not in this repository, so its
+#     netlink behaviour cannot be established from the tree. Absence of an nft
+#     path is NOT proven. Such units get no AF_NETLINK, but the guard's
+#     "unnecessary AF_NETLINK" rejection MUST NOT be applied to them either.
+#
+# -----------------------------------------------------------------------------
+# STANDING RESTRICTIONS (owner rulings, v1.228.4)
+# -----------------------------------------------------------------------------
+#   Queue and BotScan run as User=nftban with no AmbientCapabilities. AF_NETLINK
+#   alone would not make their nft calls work — they would also need
+#   CAP_NET_ADMIN, which is a privilege increase and is DENIED for v1.228.4.
+#   Neither unit is modified. Follow-on debt handle:
+#       OPEN_UNPRIVILEGED_NFT_OPERATION_AUTHORITY
+#   No capability increase without that design and a separate owner gate.
+# =============================================================================
+schema_version: 1
+
+# Address family required by any process that shells out to nft. libmnl opens an
+# AF_NETLINK socket to read kernel state; without it nft exits non-zero with
+# EAFNOSUPPORT before it parses its own arguments.
+required_family: AF_NETLINK
+
+units:
+  # ---------------------------------------------------------------- CONFIRMED
+  - name: nftban-maintenance.service
+    state: confirmed_consumer
+    user: root
+    nft_operation: read
+    requires_capabilities: []
+    evidence: "cron/maintenance.sh:164 first ungated nft fork of main(); also :121,:210,:387-450,:650,:658; lib/ssh_port_detect.sh:148,:150,:162,:164; unconditional child helpers/autoheal.sh:368,:405,:457,:471,:505,:513"
+
+  - name: nftban-rollback.service
+    state: confirmed_consumer
+    user: root
+    nft_operation: write
+    requires_capabilities: []
+    evidence: "cli/sbin/nftban-rollback:70,:132 `nft -f \"$BACKUP\"`; emergency fallback :77,:78 `nft delete table`"
+
+  - name: nftban-snapshot.service
+    state: confirmed_consumer
+    user: root
+    nft_operation: read
+    requires_capabilities: []
+    evidence: "cli/lib/nftban/cli/cmd_snapshot.sh:108,:110 `nft list set`"
+
+  - name: nftban-update-apply.service
+    state: confirmed_consumer
+    user: root
+    nft_operation: read
+    requires_capabilities: []
+    evidence: "ExecStartPre `nftban update preflight` -> cmd_update.sh:1386 `nft list tables`, :1405,:1406 `nft list set`; ExecStartPost verify :1541,:1557,:1558,:1646"
+
+  - name: nftban-community-stats.service
+    state: confirmed_consumer
+    user: root
+    nft_operation: read
+    requires_capabilities: []
+    evidence: "cmd_pro.sh:948 -> nftban_pro.sh:814 `/usr/lib/nftban/bin/nftban-validate --json` -> internal/validator/nftjson.go:137 `nft -j list ruleset`. (Sibling calls :801 `nftban status --brief` and :805 `nftban health check --brief` are DIFFERENT executables that also reach the validator indirectly; only :814 invokes nftban-validate directly.)"
+
+  # -------------------------------------------------------------- CONDITIONAL
+  - name: nftban-queue.service
+    state: conditional_consumer
+    user: nftban
+    nft_operation: write
+    requires_capabilities: [CAP_NET_ADMIN]
+    capability_decision: denied_v1_228_4
+    activation: operator_action_required
+    condition: "a geoban_apply or feeds_sync task is pending"
+    evidence: "helpers/nftban_task_queue.sh:418 -> nftban_geoban.sh:198,:206,:215,:222; :414 -> nftban_feeds.sh:672,:677"
+    note: "User=nftban with no AmbientCapabilities. AF_NETLINK alone is insufficient. NOT modified in v1.228.4 — see OPEN_UNPRIVILEGED_NFT_OPERATION_AUTHORITY."
+
+  - name: nftban-botscan.service
+    state: conditional_consumer
+    user: nftban
+    nft_operation: write
+    requires_capabilities: [CAP_NET_ADMIN]
+    capability_decision: denied_v1_228_4
+    condition: "BOTSCAN_ACTION_MODE != alert AND BOTSCAN_BATCH_SIGNAL_MODE != true"
+    activation: operator_action_required
+    evidence: "core/nftban_botscan.sh:1403-1406 -> cmd_ban.sh:290 `output=$(\"$NFTBAN_CORE\" ban ...)` -> cmd/nftban-core/cmd_ban.go:478"
+    note: "Shipped default is nft-free (processor exports BATCH_SIGNAL_MODE=true), but operator config is re-sourced after that export. Same privilege blocker as queue. NOT modified in v1.228.4."
+
+  - name: nftban-report-daily.service
+    state: conditional_consumer
+    user: root
+    nft_operation: read
+    requires_capabilities: []
+    activation: runtime_ordinary
+    condition: "metrics cache /var/cache/nftban/metrics/stats.json absent, stale (>NFTBAN_UNIFIED_CACHE_TTL, default 300s) or invalid"
+    evidence: "cmd_report.sh:1300 -> nftban_stats_format.sh:710,:711 -> nftban_stats_collect.sh:193,:214 -> lib/nft_schema.sh:600"
+
+  # --------------------------------------------- BOUNDED TRACE — NO PATH FOUND
+  # Absence of an nft path is bounded by the trace, not proven for all configs.
+  - { name: nftban-alert@.service,            state: no_nft_path_bounded_trace, user: root,    evidence: "cli/sbin/nftban-service-alert -> collect_diagnostics:119 + send_email_alert:173 -> core/nftban_mail.sh send path; the 2 nft sites there (:263,:317) are in check_status/check_ports, reached only from cmd_mail.sh" }
+  - { name: nftban-botscan-collector.service, state: no_nft_path_bounded_trace, user: nftban,  evidence: "closure = 2 files: cli/sbin/nftban-botscan-collector + lib/nftban_http_logs.sh; zero nft tokens" }
+  - { name: nftban-core-geoip.service,        state: no_nft_path_bounded_trace, user: root,    evidence: "cmd_geoip.go:118-264 cmdGeoipUpdate = HTTP download + gzip/tar + maxminddb.Open + rename; no os/exec, no netlink imports on this path" }
+  - { name: nftban-pro-inventory.service,     state: no_nft_path_bounded_trace, user: root,    evidence: "cmd_pro.sh:941 -> :772 -> nftban_pro.sh:49,:101,:483,:299; leaves = hostname, uname, /proc, df, jq, curl" }
+  - { name: nftban-pro-license.service,       state: no_nft_path_bounded_trace, user: root,    evidence: "cmd_pro.sh:944 -> :858 nftban_pro_cmd_license_check() -> nftban_pro.sh:483,:414,:540,:517; leaves = jq, curl, date, systemctl" }
+  - { name: nftban-rbl-check.service,         state: no_nft_path_bounded_trace, user: root,    evidence: "full source closure grepped, zero reachable nft; note core/nftban_hostaddr.sh:97-105 execs `ip` (rtnetlink, not libmnl/nftables)" }
+  - { name: nftban-tunnel.service,            state: no_nft_path_bounded_trace, user: root,    evidence: "cmd_tunnel.sh:76 -> core/nftban_tunnel.sh:491; zero nft tokens across tunnel sources; nftban_output.sh:725 banner is --quiet-suppressed" }
+  - { name: nftban-update-check.service,      state: no_nft_path_bounded_trace, user: root,    evidence: "cmd_update.sh:2628 -> :224 _cmd_update_check = curl+jq+cache; all 5 nft blocks belong to _cmd_update_main_locked/_preflight/_verify, none called here" }
+  - { name: nftban-watchdog.service,          state: no_nft_path_bounded_trace, user: root,    evidence: "core/nftban_watchdog.sh:598 -> :203 run_all; grep for nft subcommands/nftban-validate/nftban-core across watchdog sources returns zero; conntrack check reads /proc files, not netlink" }
+
+  # -------------------------------------------- UNKNOWN EXTERNAL EXECUTABLE
+  - name: nftban-geoban-refresh.service
+    state: unknown_external_executable
+    user: root
+    evidence: "nftban_geoban.sh:1052-1057 execs ${GEOIP_BINARY} (nftban-geoip). That binary has NO SOURCE IN THIS REPOSITORY (cmd/ does not contain it; CHANGELOG records it as not shipped in the base package), so its netlink behaviour cannot be established from the tree."
+    note: "Gets no AF_NETLINK. The guard's unnecessary-AF_NETLINK rejection MUST NOT apply here — absence of an nft path is not proven, only untraceable."
+
+# Units that legitimately declare AF_NETLINK today and are verified consumers.
+# Listed so the guard can assert the declaration is intentional rather than drift.
+already_authorized:
+  - nftban-core-feeds.service
+  - nftban-firewall-init.service
+  - nftban-firewall-validate.service
+  - nftban-health.service
+  - nftban-rebuild-recovery.service
+  - nftban-soak.service
+  - nftban-unified-exporter.service
+
+# Units that declare NO RestrictAddressFamilies at all. systemd's default permits
+# every address family, so these are unrestricted and are NOT part of this defect.
+# They are enumerated so the guard can distinguish "not declared" (fine) from
+# "declared without AF_NETLINK" (the defect) — conflating the two is how the
+# original inventory overcounted.
+unrestricted_by_design:
+  - nftban-health-fix.service
+  - nftband.service
+
+# =============================================================================
+# TEMPORARY BASELINE — v1.228.4 PR-1 only
+# =============================================================================
+# PR-1 lands the inventory and the guard. PR-2 lands the actual sandbox
+# correction. Between them the guard MUST stay sensitive to the real defect
+# while remaining mergeable, so the currently-open violations are declared
+# EXACTLY here rather than suppressed by a generic ignore.
+#
+# The guard passes only when the observed violation set EQUALS this list:
+#   an UNEXPECTED violation appears            -> FAIL (regression)
+#   an EXPECTED violation disappears           -> FAIL (PR-2 landed; empty this list)
+#   the set matches exactly                    -> PASS
+#
+# PR-2 CLOSURE CONTRACT: this list must go 5 -> 0 and the block must be deleted.
+# Leaving it populated after the five corrections land is itself a FAIL.
+# =============================================================================
+expected_open_violations:
+  # nftban-report-daily is a conditional_consumer with activation: runtime_ordinary
+  # (a stale metrics cache needs no operator action), so it is enforced exactly like
+  # a confirmed consumer and is the SIXTH open unit. It was silently unasserted
+  # before the conditional_consumer rule existed.
+  - nftban-report-daily.service
+  - nftban-maintenance.service
+  - nftban-rollback.service
+  - nftban-snapshot.service
+  - nftban-update-apply.service
+  - nftban-community-stats.service

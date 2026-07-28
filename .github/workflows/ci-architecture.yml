@@ -188,6 +188,33 @@ jobs:
       - name: Check Core license metadata (PR-LICENSE)
         run: ./scripts/ci/check-license-metadata.sh
 
+      # v1.228.4 PR-1: nft consumer execution authority. A shipped unit that shells
+      # out to nft while its RestrictAddressFamilies omits AF_NETLINK fails with
+      # EAFNOSUPPORT before nft parses its arguments — and because the probes
+      # discard stderr, that surfaced as a false "firewall table absent" verdict on
+      # 11/11 measured hosts while systemd still reported Result=success.
+      # Asserts inventory<->unit parity both ways, that confirmed consumers declare
+      # AF_NETLINK, that bounded-trace non-consumers withhold it, that no
+      # unprivileged unit gains CAP_NET_ADMIN silently, and that the Queue/BotScan
+      # denial for v1.228.4 stays honoured. The temporary expected_open_violations
+      # baseline in build/nft-consumer-authority.yaml keeps this PASS while PR-1
+      # ships the guard ahead of the PR-2 correction; it must reach zero in PR-2.
+      #
+      # rc is captured INDEPENDENTLY of any output pipeline. `guard | tail` returns
+      # tail's status and has silently converted rc1 into job success three times
+      # in this codebase — see COMMAND_RC_EVIDENCE rule.
+      - name: Check nft consumer execution authority (v1.228.4 PR-1, BLOCKING)
+        run: |
+          set +e
+          output="$(./scripts/ci/check-nft-consumer-authority.sh 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nft consumer execution authority guard failed (rc=$rc) — see build/nft-consumer-authority.yaml"
+            exit "$rc"
+          fi
+
       # v1.205 CLI surface parity: registry ↔ bash-completion ↔ dispatch (authority
       # = shell dispatch). Classifies MISSING/STALE/RETIRED/ALIAS_NOT_MARKED/etc.;
       # fails on real drift (e.g. retired 'gui' resurfacing in completion, a real
