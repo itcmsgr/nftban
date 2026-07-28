@@ -93,7 +93,6 @@ The timer's `WantedBy=timers.target` line is intentionally commented out. Auto-e
 
 | Service | Module | Purpose |
 |---------|--------|---------|
-| `nftban-suricata-stats.service` | suricata | Suricata statistics collector. Not shipped as an enabled unit and not enabled by NFTBan; `Requires=suricata.service`, so it cannot start without an external Suricata. |
 
 ### DEPRECATED Services
 

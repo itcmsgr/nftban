@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — Suricata retired to a dormant placeholder
 
 Suricata is reserved for a future release and is **not** an active protection module. Rule management
-is **not** restored. `nftban-suricata.service`, `nftban-suricata-update.service` and its timer are
-removed from both package families; `nftban-suricata.service` invoked a command deleted months ago and
+is **not** restored. **All four** NFTBan Suricata units are removed from both package families —
+`nftban-suricata.service`, `nftban-suricata-update.service`,
+`nftban-suricata-update.timer` and `nftban-suricata-stats.service`; `nftban-suricata.service` invoked a command deleted months ago and
 passed only because the router discarded the failure. Its own comment said it existed *"to prevent
 silent failure where service runs but provides no protection"* — it **was** the silent failure.
 

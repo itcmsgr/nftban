@@ -41,7 +41,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (28)
+## Services (27)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
@@ -62,7 +62,6 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-rbl-check.service` | oneshot | RBL check |
 | `nftban-update-check.service` | oneshot | Update check (unprivileged) |
 | `nftban-update-apply.service` | oneshot | Auto-update apply (gated) |
-| `nftban-suricata-stats.service` | daemon | Suricata statistics collector. Requires an external `suricata.service`; NOT enabled by NFTBan. See the retirement note below. |
 | `nftban-pro-inventory.service` | oneshot | Pro inventory |
 | `nftban-pro-license.service` | oneshot | Pro license check |
 | `nftban-alert@.service` | template | Alert notifications |
@@ -102,10 +101,15 @@ NFTBan touches only `nftban-suricata*` units. The upstream `suricata.service`,
 the external suricata package and its independent configuration are never
 stopped, disabled, removed or altered.
 
-`nftban-suricata-stats.service` still ships. It has no dependency on the
-retired units and no dependency on any deleted CLI token, it is not enabled by
-NFTBan, and its `Requires=suricata.service` means it cannot start without an
-external Suricata. Its disposition is an open owner decision.
+All four NFTBan Suricata units are retired in v1.228.2: `nftban-suricata.service`,
+`nftban-suricata-update.service`, `nftban-suricata-update.timer` and
+`nftban-suricata-stats.service`. The stats unit was retained in the first pass because
+its `ExecStart` is a Go command that still exists and `Requires=suricata.service` means
+it cannot start without an external Suricata. It is retired anyway: a dormant placeholder
+must not ship an operational service implying monitoring or protection, and leaving it
+would have made the release's own retirement claim false. The Go stats implementation is
+untouched; what is retired is the systemd/operational surface. Upstream `suricata.service`,
+the external package and its configuration are never modified.
 
 ## DEPRECATED / PHANTOM (DO NOT USE)
 
