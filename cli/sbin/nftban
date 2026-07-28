@@ -1234,7 +1234,7 @@ main() {
                     search)   echo "  Search IPs/ports across feeds, ban lists, whitelists." ;;
                     feeds)    echo "  Manage and inspect threat-intelligence feeds." ;;
                     export)   echo "  Export stats snapshot. Alias for 'nftban stats export'." ;;
-                    suricata) echo "  Manage Suricata IDS (install, enable, rules, status, profile)." ;;
+                    suricata) echo "  Report Suricata integration state — dormant (status, help)." ;;
                     geoban)   echo "  Country-based IP blocking (ban, unban, whitelist, list, status, update)." ;;
                     install|uninstall|rebuild)
                         echo "  Note: '$cmd' is handled by the distro package (DEB/RPM) and the"
