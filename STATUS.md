@@ -1,9 +1,9 @@
 # NFTBan Development Project Health Status
 
 **Status:** ⚠️ Warning
-**Last Updated:** 2026-07-27 UTC
-**Current Development Version:** v1.228.0 — `RELEASE_PREP`, **NOT PUBLISHED**
-**Latest Published Release:** v1.227.0 (tag `v1.227.0` → `f1602764`, published 2026-07-24, 15 assets)
+**Last Updated:** 2026-07-28 UTC
+**Current Development Version:** v1.228.2 — `RELEASE_PREP`, **NOT PUBLISHED**
+**Latest Published Release:** v1.228.0 (tag `v1.228.0` → `0c2a0d9a`, published 2026-07-27, 15 assets)
 **Release State:** `RELEASE_PREP`
 
 > **Development version ≠ published version.** `VERSION` in this tree is the version being
@@ -16,6 +16,8 @@
 ---
 
 ## Active Release Train
+
+**v1.228.2 — CLI truth: a command that cannot do its work no longer reports success — `RELEASE_PREP`, NOT PUBLISHED** — *Four PRs merged to `main` (#1170 `081ffb71` Suricata retirement · #1171 `d0289184` router exit truth · #1172 `f2042f9d` command-count authority + advertising parity · #1173 `3be2ed09` snapshot dispatch truth). `TAG = NOT_CREATED` · `PUBLICATION = NOT_STARTED` · `FLEET = NOT_STARTED` · `GO_RELEASE = NO`. **`v1.228.1` was never published** — the lane originally numbered `.1` is deferred, because publishing it after `.2` would present as a downgrade to dpkg/rpm version comparison. Governing invariant: a component that failed to perform its required work must not report success. The router returned `0` when it had nothing to run (8 library files dispatchable, exiting 0 silently); `nftban snapshot` created snapshots when asked to list, restore or help, including hourly in production via `nftban-snapshot.service`. Suricata is retired to a dormant placeholder — 3 units removed from both package families, public surface reduced to `status`+`help`, registry narrowed 42→2 subcommands, 26 wrong or dead completion tokens removed. Four guards that measured the wrong thing were corrected: a count guard pinning a literal that punished correctness, an allowlist matching comment prose, a phantom-subcommand blind spot across all five existing guards, and a systemd-token gap. `PRODUCT_CODE_CHANGE = shell + CI only` · `DAEMON_CHANGE = NO` · `SCHEMA_CHANGE = NO` (nft 1.84.0 / config 1.1.0) · no exit-code values renumbered. **Required gate before publication: upgrade from v1.228.0 on lab2 (DEB) and lab4 (EL9/RPM) with legacy NFTBan Suricata units ENABLED** — proving the units are stopped, disabled and removed with no restart loop and upstream Suricata untouched. Final `main` tree verified byte-identical to the validated cumulative tree.*
 
 **v1.228.0 — Post-install outcome truth: the package boundary reports whether the install actually succeeded — `RELEASE_PREP`, NOT PUBLISHED** — *Implementation MERGED to `main` (PR #1166, squash `4676480f`). `TAG = NOT_CREATED` · `PUBLICATION = NOT_STARTED` · `FLEET = NOT_STARTED` · `GO_RELEASE = NO`. DEB `postinst` and RPM `%post` now run a read-only verifier after every installer outcome and emit machine-readable tokens, so a package manager printing `Complete!` over a failed install is distinguishable from a verified one. Ledger: `PACKAGE_POSTINSTALL_OUTCOME_TRUTH = MUTATION_PROVEN` (T8 44/44 on both DEB and RPM against the real verifier and the installed binary, outcome parity PASS). Explicitly **NOT** promoted: `PACKAGE_PRETRANSITION_T9_BOUNDARY = NOT_YET_VERIFIED` (no shipped injection hook; the lifecycle L5 case remains an analogue, not a proof) and `LAB4_SELINUX_ENFORCING = NOT_VALIDATED` (lab4 SELinux is Disabled; the v1.226 waiver stands — the separate stock-Enforcing tgt-a9 result is different host coverage and must not be restated as a lab4 Enforcing PASS). Post-merge CI attempt 1 recorded 2 non-required failures (`Fuzz Tests` = flaky 30s fuzz-deadline with no reproducer, first seen 18 days earlier on a metadata-only commit; `Build Docker Image` = ghcr.io login transport timeout); both classified with evidence and PASSED on an exact-SHA rerun with no source mutation — the failed attempts are retained as permanent history, not erased. Remaining confirmed runtime-mode defects are recorded in `docs/MODE_ADMISSION_LEDGER.md` and are **not** corrected in this release.*
 
