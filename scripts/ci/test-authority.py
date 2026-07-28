@@ -303,13 +303,39 @@ def render_index(records):
     return "\n".join(banner) + "\n"
 
 
-def cmd_generate(root):
+def cmd_generate(root, output=None):
+    """Render the authority index.
+
+    output=None  -> write the canonical index in place (unchanged behaviour).
+    output=PATH  -> write ONLY to PATH; the canonical index is left untouched.
+
+    The --output form exists so a CI pre-flight can generate to a temporary file
+    and diff it against the committed index WITHOUT mutating the checkout. A job
+    must validate repository state, never repair it: a generate-in-place followed
+    by `git diff` can be obscured by cleanup or concurrent steps.
+    """
     records, perr = collect(root)
     if perr:
         for e in perr:
             sys.stderr.write("ERROR %s\n" % e)
         return 1
     text = render_index(records)
+    if output:
+        dst = os.path.abspath(output)
+        parent = os.path.dirname(dst) or "."
+        if not os.path.isdir(parent):
+            sys.stderr.write("ERROR: --output directory does not exist: %s\n" % parent)
+            return 2
+        fd, tmp = tempfile.mkstemp(dir=parent, prefix=".ta-index.")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, dst)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        print("generated %s (%d tests)" % (output, len(records)))
+        return 0
     dst = os.path.join(root, INDEX_PATH)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dst), prefix=".ta-index.")
     try:
@@ -392,7 +418,10 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
     v.add_argument("--mode", choices=["transition", "strict"], default="transition")
-    sub.add_parser("generate")
+    _g = sub.add_parser("generate")
+    _g.add_argument("--output", metavar="PATH",
+                    help="write the rendered index to PATH instead of the canonical "
+                         "index; the canonical index is left untouched")
     sub.add_parser("check")
     sub.add_parser("summary")
     args = ap.parse_args()
@@ -400,7 +429,7 @@ def main():
     if args.cmd == "validate":
         return cmd_validate(root, args.mode)
     if args.cmd == "generate":
-        return cmd_generate(root)
+        return cmd_generate(root, getattr(args, "output", None))
     if args.cmd == "check":
         return cmd_check(root)
     if args.cmd == "summary":

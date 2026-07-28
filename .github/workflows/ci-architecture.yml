@@ -122,6 +122,31 @@ jobs:
           bash scripts/ci/pr-d-strict-selftest.sh
       - name: Quarantine registry validity (v1.226.0 PR-D, BLOCKING)
         run: bash scripts/ci/check-quarantine-registry.sh
+      # v1.228.2: DIAGNOSTIC ONLY — this does not replace the runner's own
+      # pre-flight. run-test-suite.sh already calls `test-authority.py check`
+      # before the suite starts and fails on a stale index; that guard works and
+      # is retained as the single runner authority. What it does NOT give a
+      # reviewer is a reviewable diff, so this step renders the index to a
+      # TEMPORARY path and diffs it. Neither path mutates the checkout: a CI job
+      # validates repository state, it never repairs it.
+      #
+      # Why this exists: the generated index is a MULTI-LANE authority. In the
+      # v1.228.2 stack four PRs added tests; one regenerated the index while it
+      # was last in merge order, a rebase then landed another test after it, and
+      # the composed tree was stale. Every individual PR was green. That is a
+      # post-rebase PROCESS failure, not a missing guard.
+      - name: test-authority index freshness (diagnostic diff)
+        run: |
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          python3 scripts/ci/test-authority.py generate --output "$tmp"
+          if ! diff -u scripts/ci/test-authority-index.tsv "$tmp"; then
+              echo "::error::test-authority index is stale"
+              echo "::error::Regenerate with: python3 scripts/ci/test-authority.py generate"
+              echo "::error::The generated index belongs to the LAST PR in merge order and must be regenerated after every rebase, cherry-pick, merge or stack reorder."
+              exit 2
+          fi
+
       - name: Policy Gates shell-test suite — index-driven (v1.226.0 PR-D, BLOCKING)
         run: bash scripts/ci/run-test-suite.sh run --gate policy-gates
       # ci-bash: BLOCKING. Every non-quarantined ci-bash test must pass; the 4
