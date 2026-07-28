@@ -34,7 +34,13 @@ coverage.txt
 .DS_Store
 
 # Claude Code (local dev settings)
-.claude/
+# .claude/ holds agent-local scratch, but CLAUDE.md is the tracked agent
+# operating contract and MUST be stageable without `git add -f`.
+# Uses `.claude/*` (contents) rather than `.claude/` (directory): a directory
+# exclusion stops git descending, so a `!.claude/CLAUDE.md` negation after it
+# would never match. Last matching rule wins — keep the negation below.
+.claude/*
+!.claude/CLAUDE.md
 
 # Local environment
 .env
