@@ -59,8 +59,15 @@ no(){ printf '  [FAIL] %s (%s)\n' "$1" "$2"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
 # fails until the entry is deleted. A sanctioned gap that silently becomes
 # correct is how a known-gap list rots into a lie.
 # -----------------------------------------------------------------------------
-SANCTIONED_TOKENS=("suricata")
-SANCTIONED_REASON="D1/D2 open; PR-2 owns install/systemd/nftban-suricata{,-update}.service and cmd_suricata.sh narrowing"
+# ZERO-GAP as of v1.228.2. The entry for 'suricata' was retired when the
+# Suricata units were removed from install/systemd/ — at that moment this
+# test began FAILING on its own allowlist ("observed undispatchable ...
+# remove it from SANCTIONED_TOKENS"), which is the intended behaviour: a
+# sanctioned gap must enforce its own deletion rather than quietly persist.
+# Do not re-populate this to make a failure go away — a systemd unit that
+# invokes an undispatchable CLI token is the defect this test exists to catch.
+SANCTIONED_TOKENS=()
+SANCTIONED_REASON="none — zero-gap"
 
 is_sanctioned(){
     local t="$1" s
