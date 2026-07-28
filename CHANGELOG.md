@@ -11,6 +11,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.2] - 2026-07-28 — CLI truth: a command that cannot do its work no longer reports success
+
+`v1.228.1` was never published. The lane originally numbered `.1` is deferred; publishing it after
+`.2` would present as a downgrade to dpkg and rpm version comparison.
+
+### Fixed — the CLI reported success for work it did not do
+
+- **The router returned `0` when it had nothing to run.** `cli/sbin/nftban` interpolated the command
+  token into a filename, sourced it while **discarding the source status**, then returned `0` if no
+  matching entrypoint existed. Eight library files were dispatchable as commands, exiting `0` with no
+  output. Source status is now captured and acted on only *after* entrypoint resolution — a module
+  may legitimately source non-zero while still defining its entrypoint. Measured across all 78 module
+  tokens and 15 aliases: **exactly the 8 silent-success tokens change `0` → `1`, nothing else.**
+- **`nftban snapshot` created snapshots when asked to do anything else.** A source-time footer fired
+  on the router's positional parameters, so `nftban_cmd_snapshot` ran during `source` with the literal
+  token `snapshot`, hitting the default-to-create arm — and the router then dispatched the real
+  subcommand a second time. Measured: `snapshot create` created twice, `snapshot list` created once
+  before listing, and the hourly `nftban-snapshot.service` double-wrote in production. The footer now
+  fires only on direct execution, and an unsupported action refuses instead of creating.
+
+### Changed — Suricata retired to a dormant placeholder
+
+Suricata is reserved for a future release and is **not** an active protection module. Rule management
+is **not** restored. `nftban-suricata.service`, `nftban-suricata-update.service` and its timer are
+removed from both package families; `nftban-suricata.service` invoked a command deleted months ago and
+passed only because the router discarded the failure. Its own comment said it existed *"to prevent
+silent failure where service runs but provides no protection"* — it **was** the silent failure.
+
+The public surface is now `suricata status` and `suricata help` only. `status` is declarative and
+read-only, reports `DORMANT / NOT IMPLEMENTED` with `NFTBAN_SURICATA_STATE=DORMANT`, and exits `2`
+(a determinate non-verified state, consistent with the installer contract — not `1`, which would
+conflate "deferred by design" with "you typed it wrong").
+
+Upgrade convergence stops, disables and removes only `nftban-suricata*` units, clears a stale mask
+without ever creating one, and **never touches upstream `suricata.service`, the external package or
+its configuration**. Operator config under `/etc/nftban/suricata/` is preserved.
+
+### Fixed — advertised surfaces now match the dispatcher
+
+The registry declared **42** Suricata subcommands where the dispatcher accepts 2; completion offered
+15. Reduced to `status` and `help`. Three registry claims about a read-only reporter were false and are
+corrected: `capability` `service_control` → `status_read`, `mutates` `conditional` → `false`,
+`requires_root` `true` → `false`.
+
+**26 completion tokens removed**, each verified against the router. Three were not merely unsupported —
+they performed the **wrong action**: `snapshot restore` created a snapshot, `mail config` sent the
+token as mail, and `setup install` launched the interactive wizard. `nftban logz` suggested `login` —
+a different protection module — because `logs` was absent from the canonical list; `logs` is now
+registered.
+
+### Fixed — guards that measured the wrong thing
+
+- The command-count guard pinned the literal `66` while the registry held **71**, so bumping the
+  counter correctly **failed CI** and leaving it stale **passed**. It now computes the count, and a
+  self-test proves the guard still measures.
+- The alias allowlist matched **comment text**: `stats` matched a comment naming a service, `test`
+  matched the English word in a sentence. It now searches executable code only.
+- No existing guard could detect a phantom *subcommand* — all five compared top-level commands only,
+  which is how 42 phantoms survived in a green repository. A new guard derives the dispatchable,
+  registry, completion and documented sets at runtime and asserts equality.
+- A systemd-token guard now asserts no shipped unit invokes an undispatchable CLI token.
+
+### Added
+
+`test-authority.py generate --output PATH` renders the index without mutating the checkout, so CI can
+diff instead of repair.
+
+### Not changed
+
+No exit-code values were renumbered. Nagios `0/1/2/3`, the `SuccessExitStatus=` units, `update` 10-13,
+installer 0-10 and `--verify-install-state` `0/2/4` are untouched. No firewall, daemon or schema change.
+
 ## [v1.228.0] - 2026-07-27 — Post-install outcome truth: the package boundary reports whether the install actually succeeded
 
 A package manager reports success when the payload unpacks, not when the installer succeeds. On stock enforcing
