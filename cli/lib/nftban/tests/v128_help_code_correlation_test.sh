@@ -165,6 +165,14 @@ _ALIAS_ONLY_HANDLED=(
     # other inline cases (help dispatcher at line 1320; cloudflare wrapper)
     "help"
     "cloudflare"
+    # v1.228.1 PR-1 (R20): inline alias arms in cli/sbin/nftban main() that the
+    # Level-0 completion already offered but the canonical list omitted. Adding
+    # them to _nftban_canonical_commands() closed that split; they are reachable
+    # via the post-autoloader case, not via a cmd_<X>.sh of their own.
+    "verify"      # -> nftban_cmd_emulate
+    "explain"     # -> nftban_cmd_emulate
+    "export"      # -> nftban_cmd_stats export
+    "rollback"    # -> nftban_cmd_update rollback
 )
 unreachable=()
 while IFS= read -r cmd; do

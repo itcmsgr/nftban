@@ -272,10 +272,16 @@ _pre=$(grep -c '^EXIT CODES:$' "$_cmd_update" || true)
 _t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no sweep)" "$?"
 
 # G3: No new top-level commands added to dispatcher canonical list as
-# side-effect of UX-5
+# side-effect of UX-5.
+# v1.228.1 PR-1: upper bound raised 80 -> 90. The list gained the five tokens
+# the Level-0 completion already offered but the suggester could not name
+# (logs, explain, verify, export, rollback) — an authority split, now asserted
+# in the other direction by cli_router_exit_truth_v1228_1_test T-D3
+# (Level-0 subset of the canonical list). This remains a runaway-growth bound,
+# not a contract: the exact-parity assertion lives in T-D3.
 _canonical_count=$(_nftban_canonical_commands | grep -v '^$' | wc -l)
-[[ "$_canonical_count" -ge 50 ]] && [[ "$_canonical_count" -le 80 ]]
-_t_assert "G3: canonical command list has $_canonical_count entries (sane bound 50-80)" "$?"
+[[ "$_canonical_count" -ge 50 ]] && [[ "$_canonical_count" -le 90 ]]
+_t_assert "G3: canonical command list has $_canonical_count entries (sane bound 50-90)" "$?"
 
 # =============================================================================
 # (H) Suricata work absent (we are PR-E, not PR-D)

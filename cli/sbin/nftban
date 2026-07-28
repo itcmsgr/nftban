@@ -233,7 +233,9 @@ nftban_complete() {
         echo "port"
         echo "panel"
         echo "module"
-        echo "services"
+        # v1.228.1 PR-1 (R19): duplicate `services` removed here; the SERVICE
+        # CONTROL group above is the keeper. A duplicate Level-0 token makes
+        # bash-completion offer the same candidate twice.
         echo "fhs"
         echo "nftables"
         echo "geoip"
@@ -953,6 +955,10 @@ _nftban_damerau_levenshtein() {
 # Kept in sync with the Level-0 completion list above (cli/sbin/nftban
 # lines ~165-235). NOT exhaustive of every sub-command; that's by design,
 # since the typo handler runs on the top-level command only.
+# v1.228.1 PR-1 (R20): the list had drifted behind Level-0 by five tokens
+# (logs, explain, verify, export, rollback) — a command the completion offers
+# but the suggester cannot name is an authority split. cli_router_exit_truth
+# _v1228_1_test T-D3 now asserts Level-0 ⊆ this list.
 _nftban_canonical_commands() {
     cat <<'EOF'
 status
@@ -972,6 +978,7 @@ wizard
 system
 firewall
 firewall-logs
+logs
 ban
 unban
 search
@@ -1017,6 +1024,10 @@ selftest
 list
 test
 emulate
+explain
+verify
+export
+rollback
 install
 uninstall
 update
@@ -1075,6 +1086,31 @@ _nftban_suggest_command() {
     elif [[ $best_dist -le $soft_threshold ]] && [[ $((second_best_dist - best_dist)) -ge 2 ]]; then
         echo "$best_cmd"
     fi
+}
+
+# v1.228.1 PR-1 (R1/R4) — module-load failure renderer.
+#
+# Distinct in TEXT from the "Unknown command" render at the bottom of main()
+# so an operator can tell the two apart ("the command exists but its payload
+# is broken" vs "there is no such command"), while both exit 1 (R3/D6:
+# CLI_USAGE_ERROR = 1, matching the pre-existing unknown-command arm).
+#
+# Stream contract follows v1.141 PR-B: banner + ERROR + diagnosis to stderr,
+# so `nftban <cmd> 2>/dev/null` still gives scripts clean stdout.
+_nftban_reject_module_load() {
+    local cmd="$1"
+    local cmd_file="$2"
+    local src_rc="${3:-1}"
+
+    nftban_render_banner simple >&2
+    echo "" >&2
+    echo -e "${NFTBAN_COLOR_RED}${NFTBAN_COLOR_BOLD}ERROR: Failed to load command module for '${cmd}'${NFTBAN_COLOR_RESET}" >&2
+    echo "" >&2
+    echo "Module: ${cmd_file}" >&2
+    echo "The module aborted while loading (status ${src_rc}), so '${cmd}' cannot run." >&2
+    echo "Any diagnostic printed above this message comes from the module itself." >&2
+    echo "" >&2
+    echo "Run 'nftban health check' to inspect the installation." >&2
 }
 
 # =============================================================================
@@ -1232,11 +1268,44 @@ main() {
     fi
 
     if [[ -f "$cmd_file" ]]; then
+        # v1.228.1 PR-1 (R1) — the status of `source` is no longer discarded.
+        # A module whose top level `return`s non-zero (e.g. a required sibling
+        # module is missing) never reaches its own entrypoint definition. Before
+        # v1.228.1 that status was thrown away here, `declare -f` below then
+        # failed, and the dispatcher returned 0 — the CLI reported success for
+        # work it had not done. errexit cannot catch this: `main "$@" || exit $?`
+        # at the bottom of this file suspends `set -e` for the whole call tree.
+        #
+        # The status is RECORDED here and acted on only AFTER entrypoint
+        # resolution (see below), deliberately: a module may source to a
+        # non-zero status from a trailing line that runs after its entrypoint is
+        # already defined (cmd_snapshot.sh's self-execute footer fires on the
+        # positional parameters this function inherits). Such a module IS
+        # dispatchable, and failing it here would convert a working command into
+        # an error — the opposite of the invariant this PR restores.
+        local _src_rc=0
         # shellcheck source=/dev/null
-        source "$cmd_file"
+        source "$cmd_file" || _src_rc=$?
 
         # Convert hyphens to underscores for function name (whitelist-system -> whitelist_system)
         local func_cmd="${cmd//-/_}"
+
+        # v1.228.1 PR-1 — entrypoint resolution follows the FILENAME remap.
+        # The special cases above remap the module PATH but not the function
+        # name, so an alias whose module entrypoint is not named after the alias
+        # token (support-bundle -> cmd_support.sh) would resolve to a function
+        # that does not exist. Derive the module's own canonical entrypoint from
+        # the resolved path and use it as a fallback. STRUCTURAL: derived from
+        # the filename, never from a list of alias names. No-op for every token
+        # whose file basename already matches its token.
+        if ! declare -f "nftban_cmd_${func_cmd}" >/dev/null 2>&1; then
+            local _module_token
+            _module_token="$(basename "$cmd_file" .sh)"
+            _module_token="${_module_token#cmd_}"
+            if declare -f "nftban_cmd_${_module_token}" >/dev/null 2>&1; then
+                func_cmd="$_module_token"
+            fi
+        fi
 
         # Some modules define nftban_cmd_X, others just use case statements
         if declare -f "nftban_cmd_${func_cmd}" >/dev/null 2>&1; then
@@ -1248,10 +1317,29 @@ main() {
             # "ERROR: Script failed" on top of the command's own output.
             "nftban_cmd_${func_cmd}" "$@" || return $?
             return 0
-        else
-            # Module handles args directly (like cmd_whitelist_system.sh)
-            return 0
         fi
+
+        # v1.228.1 PR-1 (R1/R4) — the module aborted mid-load and therefore
+        # never defined an entrypoint. This is the `nftban suricata <anything>`
+        # case: cmd_suricata.sh:141 `return 1`s on a missing required sibling
+        # module, so nftban_cmd_suricata() at :469 is never defined. Distinct
+        # message from "Unknown command" (the command exists; its payload is
+        # broken), same exit code 1.
+        if (( _src_rc != 0 )); then
+            _nftban_reject_module_load "$cmd" "$cmd_file" "$_src_rc"
+            return 1
+        fi
+
+        # v1.228.1 PR-1 (R2/R5) — STRUCTURAL rejection, not a denylist.
+        # The file exists and sourced cleanly but exposes no `nftban_cmd_<token>`
+        # entrypoint, so this token cannot perform any work. Pre-v1.228.1 this
+        # branch returned 0 with no output, justified by a comment claiming
+        # cmd_whitelist_system.sh "handles args directly" — stale since that
+        # module defines nftban_cmd_whitelist_system(). No shipped module relies
+        # on the old contract. Fall THROUGH to the single unknown-command
+        # renderer at the bottom of main() so exactly one rejection shape exists
+        # and no consumer learns a new one. Safe: no token that owns a
+        # cli/cmd_<token>.sh file also matches an alias arm in the case below.
     fi
 
     case "$cmd" in

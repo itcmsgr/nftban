@@ -63,6 +63,7 @@ cli_no_gui_doc_drift_v144_test	cli/lib/nftban/tests/cli_no_gui_doc_drift_v144_te
 cli_output_truth_v167_test	cli/lib/nftban/tests/cli_output_truth_v167_test.sh	cli	test	output-truth	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 cli_pipefail_arith_sweep_v172_test	cli/lib/nftban/tests/cli_pipefail_arith_sweep_v172_test.sh	cli	test	pipefail-arith	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 cli_port_reload_hint_v144_test	cli/lib/nftban/tests/cli_port_reload_hint_v144_test.sh	cli	test	port-reload-hint	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+cli_router_exit_truth_v1228_1_test	cli/lib/nftban/tests/cli_router_exit_truth_v1228_1_test.sh	cli	test	rc-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_runtime_hint_reachability_v144_test	cli/lib/nftban/tests/cli_runtime_hint_reachability_v144_test.sh	cli	test	runtime-hint-reachability	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 cli_status_count_truth_test	cli/lib/nftban/tests/cli_status_count_truth_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_status_json_no_contradict_test	cli/lib/nftban/tests/cli_status_json_no_contradict_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -206,6 +207,7 @@ support_bundle_redaction_test	cli/lib/nftban/tests/support_bundle_redaction_test
 suricata_usr2_guard_gateb_test	cli/lib/nftban/tests/suricata_usr2_guard_gateb_test.sh	suricata	test	suricata-logrotate	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sysctl_risk_idle_age_v2161_test	cli/lib/nftban/tests/sysctl_risk_idle_age_v2161_test.sh	health	test	sysctl	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sysctl_safe_default_v216_test	cli/lib/nftban/tests/sysctl_safe_default_v216_test.sh	health	test	sysctl	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+systemd_cli_token_dispatch_v1228_1_test	cli/lib/nftban/tests/systemd_cli_token_dispatch_v1228_1_test.sh	cli	test	dispatcher	CI_STATIC	ci-bash	true	false	false	false	false	false			
 tmpfiles_zz_v139_test	cli/lib/nftban/tests/tmpfiles_zz_v139_test.sh	packaging	test	fhs	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 trust_load_missing_whitelist_test	cli/lib/nftban/tests/trust_load_missing_whitelist_test.sh	trust	test	trust-load	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 uninstall_firewall_ownership_message_v225_test	cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh	packaging	test	packaging	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
