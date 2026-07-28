@@ -190,6 +190,7 @@ service_alerts_v138_test	cli/lib/nftban/tests/service_alerts_v138_test.sh	firewa
 session_whitelist_flock_v173_test	cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh	firewall	test	session-whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 set_apply_single_writer_v213_grep_guard_test	cli/lib/nftban/tests/set_apply_single_writer_v213_grep_guard_test.sh	firewall	test	set-apply-single-writer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 set_apply_single_writer_v213_test	cli/lib/nftban/tests/set_apply_single_writer_v213_test.sh	firewall	test	set-apply-single-writer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+snapshot_source_time_dispatch_v1228_2_test	cli/lib/nftban/tests/snapshot_source_time_dispatch_v1228_2_test.sh	cli	test	snapshot	CI_HERMETIC_SHELL	ci-bash	true	false	false	false					
 ssh_admin_port_guard_v150_test	cli/lib/nftban/tests/ssh_admin_port_guard_v150_test.sh	firewall	test	ssh-admin-port-guard	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 ssh_port_change_lifecycle_v155_test	cli/lib/nftban/tests/ssh_port_change_lifecycle_v155_test.sh	firewall	test	ssh-port-lifecycle-validate	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 ssh_socket_port_mismatch_v155_test	cli/lib/nftban/tests/ssh_socket_port_mismatch_v155_test.sh	firewall	test	ssh-admin-port-guard	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
