@@ -73,7 +73,7 @@ LockPersonality=true
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d /etc/logrotate.d
 
 # Network access (IPC socket + curl for SSH port detection)
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Resource limits
 CPUQuota=50%

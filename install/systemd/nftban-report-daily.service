@@ -46,7 +46,7 @@ ReadOnlyPaths=/etc/nftban /var/lib/nftban /var/log/nftban
 ReadWritePaths=/var/lib/nftban/reports
 
 # Network for email delivery
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Resource limits
 MemoryMax=128M

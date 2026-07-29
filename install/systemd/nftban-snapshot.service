@@ -59,7 +59,7 @@ LockPersonality=true
 RestrictNamespaces=true
 
 # No network needed
-RestrictAddressFamilies=AF_UNIX
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
 
 # Filesystem access
 ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban

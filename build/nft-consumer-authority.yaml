@@ -26,6 +26,18 @@
 #     A concrete nft/netlink call site exists on a reachable execution path.
 #     Requires AF_NETLINK.
 #
+#   CLOSURE STATE (v1.228.4 PR-2, 2026-07-29)
+#     expected_open_violations is GONE — deleted, not emptied. All six units that reached nft
+#     without AF_NETLINK now declare it. The guard's G1 rule asserts
+#       "baseline empty and zero violations"
+#     and FAILS if either half stops holding.
+#
+#     ⛔ SUPPRESSION RESURRECTION IS PROHIBITED. Re-introducing an expected_open_violations
+#     block naming a unit that is not actually open FAILS G1. The transitional mechanism that
+#     made PR-1 mergeable is NOT a permanent escape hatch, and controls PC-2 and PC-3 in
+#     cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh prove it.
+#     A genuinely new open violation must be FIXED, not declared.
+#
 #   conditional_consumer
 #     An nft call site is reachable only under a stated condition. MUST declare
 #     `activation:`, which decides whether AF_NETLINK is required:
@@ -181,31 +193,3 @@ already_authorized:
 unrestricted_by_design:
   - nftban-health-fix.service
   - nftband.service
-
-# =============================================================================
-# TEMPORARY BASELINE — v1.228.4 PR-1 only
-# =============================================================================
-# PR-1 lands the inventory and the guard. PR-2 lands the actual sandbox
-# correction. Between them the guard MUST stay sensitive to the real defect
-# while remaining mergeable, so the currently-open violations are declared
-# EXACTLY here rather than suppressed by a generic ignore.
-#
-# The guard passes only when the observed violation set EQUALS this list:
-#   an UNEXPECTED violation appears            -> FAIL (regression)
-#   an EXPECTED violation disappears           -> FAIL (PR-2 landed; empty this list)
-#   the set matches exactly                    -> PASS
-#
-# PR-2 CLOSURE CONTRACT: this list must go 5 -> 0 and the block must be deleted.
-# Leaving it populated after the five corrections land is itself a FAIL.
-# =============================================================================
-expected_open_violations:
-  # nftban-report-daily is a conditional_consumer with activation: runtime_ordinary
-  # (a stale metrics cache needs no operator action), so it is enforced exactly like
-  # a confirmed consumer and is the SIXTH open unit. It was silently unasserted
-  # before the conditional_consumer rule existed.
-  - nftban-report-daily.service
-  - nftban-maintenance.service
-  - nftban-rollback.service
-  - nftban-snapshot.service
-  - nftban-update-apply.service
-  - nftban-community-stats.service
