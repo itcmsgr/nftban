@@ -46,7 +46,7 @@ ReadOnlyPaths=/etc/nftban /var/lib/nftban /proc /sys /etc/os-release
 ReadWritePaths=/var/lib/nftban/community
 
 # Network for stats API
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Resource limits
 MemoryMax=64M

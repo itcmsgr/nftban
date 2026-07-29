@@ -192,21 +192,13 @@ else
 fi
 
 # ---------------------------------------------------------------- baseline contract
-echo "=== baseline contract (PR-1 -> PR-2) ==="
-d9=$(mkcopy BASELINE)
-python3 - "$d9/build/nft-consumer-authority.yaml" <<'PY'
-import sys
-p=sys.argv[1]; s=open(p).read()
-# simulate PR-2 fixing ONE unit while the baseline still claims it is open
-open(p,'w').write(s)
-PY
-sed -i 's/^RestrictAddressFamilies=AF_UNIX$/RestrictAddressFamilies=AF_UNIX AF_NETLINK/' \
-    "$d9/install/systemd/nftban-snapshot.service"
-brc=0; run_guard "$d9" || brc=$?
-if [[ $brc -ne 0 ]] && grep -q '\[FAIL\] G1' "$d9/.guard.out"; then
-    ok "G1 a fixed unit still listed as expected-open FAILS (forces PR-2 to empty the baseline)"
+echo "=== post-closure contract (PR-2) ==="
+d9=$(mkcopy CLOSURE)
+crc=0; run_guard "$d9" || crc=$?
+if [[ $crc -eq 0 ]] && grep -q 'G1 baseline empty and zero violations' "$d9/.guard.out"; then
+    ok "G1 baseline EMPTY and zero violations — PR-2 closure contract satisfied"
 else
-    no "G1 stale baseline entry must fail" "rc=$brc"
+    no "G1 closure contract satisfied" "rc=$crc — expected an empty baseline with no open violations"
 fi
 
 # =============================================================================
@@ -335,30 +327,27 @@ bc_case(){ # bc_case <id> <desc> <group-regex> <mutator>
         || no "$id $desc" "failed, but not in /$group/"
 }
 
-# 5 listed, 4 observed — one declared violation got fixed but stayed listed.
-bc_fewer(){ sed -i 's/^RestrictAddressFamilies=AF_UNIX$/RestrictAddressFamilies=AF_UNIX AF_NETLINK/' \
-              "$1/install/systemd/nftban-snapshot.service"; }
-# 5 listed, 6 observed — an UNDECLARED violation appeared (regression).
-bc_more(){ strip_family "$1/install/systemd/nftban-firewall-init.service"
-           sed -i 's/^  - nftban-core-feeds.service$/  - nftban-core-feeds.service/' \
-             "$1/build/nft-consumer-authority.yaml"
-           sed -i '/^already_authorized:/,/^$/{s/^  - nftban-firewall-init.service$//}' \
-             "$1/build/nft-consumer-authority.yaml"
-           sed -i 's|^units:$|units:\n  - name: nftban-firewall-init.service\n    state: confirmed_consumer\n    user: root\n    nft_operation: write\n    requires_capabilities: []\n    evidence: "ExecStop removes the nftban tables via the nft binary"|' \
-             "$1/build/nft-consumer-authority.yaml"; }
-# a WRONG unit replaces one expected entry.
-bc_swap(){ sed -i 's/^  - nftban-snapshot.service$/  - nftban-watchdog.service/' \
-             "$1/build/nft-consumer-authority.yaml"; }
-# ALL declared violations fixed, exceptions left behind.
-bc_all(){ for u in maintenance rollback snapshot update-apply community-stats; do
-              sed -i 's/^RestrictAddressFamilies=\(.*\)$/RestrictAddressFamilies=\1 AF_NETLINK/' \
-                "$1/install/systemd/nftban-${u}.service"
-          done; }
+# PR-2 CLOSED the baseline: expected_open_violations is now EMPTY and all six units carry
+# AF_NETLINK. The transitional controls that proved the baseline could not be abused have served
+# their purpose. What must be guarded NOW is the post-closure state:
+#   1. a fixed unit must not silently regress
+#   2. a suppression must not be resurrected
 
-bc_case BC-1 "5 listed / 4 observed (one fixed, still listed)"      '\[FAIL\] G1' bc_fewer
-bc_case BC-2 "5 listed / 6 observed (undeclared regression)"        '\[FAIL\] B1' bc_more
-bc_case BC-3 "wrong unit swapped into the expected-open list"       '\[FAIL\] (G1|B1)' bc_swap
-bc_case BC-4 "all 5 fixed but exceptions remain (PR-2 left stale)"  '\[FAIL\] G1' bc_all
+# PC-1: a now-fixed unit loses AF_NETLINK again. With no baseline to absorb it, this must FAIL.
+pc_regress(){ sed -i 's/^RestrictAddressFamilies=\(.*\) AF_NETLINK$/RestrictAddressFamilies=\1/' \
+                "$1/install/systemd/nftban-snapshot.service"; }
+# PC-2: someone re-introduces a baseline naming a unit that is NOT actually open.
+pc_resurrect(){ printf '\nexpected_open_violations:\n  - nftban-snapshot.service\n' \
+                  >> "$1/build/nft-consumer-authority.yaml"; }
+# PC-3: a full six-unit baseline is re-added when nothing is open at all.
+pc_resurrect_all(){ printf '\nexpected_open_violations:\n' >> "$1/build/nft-consumer-authority.yaml"
+    for u in maintenance rollback snapshot update-apply community-stats report-daily; do
+        printf '  - nftban-%s.service\n' "$u" >> "$1/build/nft-consumer-authority.yaml"
+    done; }
+
+bc_case PC-1 "a FIXED unit regresses (loses AF_NETLINK) -> B group fails"        '\[FAIL\] B1' pc_regress
+bc_case PC-2 "a suppression is resurrected for a non-open unit -> G1 fails"      '\[FAIL\] G1' pc_resurrect
+bc_case PC-3 "a full stale baseline is re-added when nothing is open -> G1 fails" '\[FAIL\] G1' pc_resurrect_all
 
 # =============================================================================
 # HR — harness self-regressions. Each of these defects was found in THIS suite
