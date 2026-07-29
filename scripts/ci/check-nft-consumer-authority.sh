@@ -32,7 +32,6 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
-IFS=$'\n\t'
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$SCRIPT_DIR/../.." && pwd)
