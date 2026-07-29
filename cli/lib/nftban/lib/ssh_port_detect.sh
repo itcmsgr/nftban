@@ -142,16 +142,46 @@ _nftban_ssh_detect_fallback() {
 # family: "ready" (table + tcp_ports_in + ssh_ports all present),
 # "no-table" (firewall not loaded), or "no-sets" (table present but the
 # v1.145 set-driven schema, incl. ssh_ports, is not loaded → needs reload).
+# v1.228.4 PR-3: TYPED. This function returned 'no-table' for EVERY non-zero nft
+# exit, and its caller (cron/maintenance.sh) then logged "firewall table absent".
+# On 11/11 measured hosts the table was PRESENT and the read was failing, so the
+# message was false ~927 times per host.
+#
+# It now emits a FOURTH state, 'cannot-read', which callers must handle distinctly:
+#   ready · no-sets · no-table (VERIFIED absent) · cannot-read (existence UNKNOWN)
+#
+# The legacy positional "ip nftban" spec is still accepted for caller
+# compatibility and is split explicitly here, NOT by shell word-splitting — the
+# script-scope IFS in cron/maintenance.sh suppressed that split and delivered one
+# fused argv element to nft.
 nftban_ssh_apply_state() {
-    local _tbl="$1"
-    # shellcheck disable=SC2086  # table spec is two words (family name)
-    nft list table $_tbl >/dev/null 2>&1 || { printf 'no-table\n'; return 0; }
-    # shellcheck disable=SC2086
-    if nft list set $_tbl tcp_ports_in >/dev/null 2>&1 && nft list set $_tbl ssh_ports >/dev/null 2>&1; then
-        printf 'ready\n'
-    else
-        printf 'no-sets\n'
+    local _tbl="$1" _fam _tab
+    _fam="${_tbl%% *}"; _tab="${_tbl##* }"
+    [[ -z "$_fam" || "$_fam" == "$_tbl" ]] && { _fam="ip"; _tab="${_tbl:-nftban}"; }
+
+    if ! declare -f nftban_nft_probe_table >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" 2>/dev/null || {
+            printf 'cannot-read\n'; return 0; }
     fi
+
+    nftban_nft_probe_table "$_fam" "$_tab" ssh_port_detect || true
+    case "$NFTBAN_NFT_PROBE_VERDICT" in
+        CANNOT_READ) printf 'cannot-read\n'; return 0 ;;
+        ABSENT)      printf 'no-table\n';    return 0 ;;
+    esac
+    # v1.228.4 PR-3: the SET probes are typed too. Leaving a collapsing probe
+    # inside a function whose table probe is typed would be incoherent — a failed
+    # set READ would still masquerade as "schema not loaded".
+    local _s
+    for _s in tcp_ports_in ssh_ports; do
+        nftban_nft_probe_set "$_fam" "$_tab" "$_s" ssh_port_detect || true
+        case "$NFTBAN_NFT_PROBE_VERDICT" in
+            CANNOT_READ) printf 'cannot-read\n'; return 0 ;;
+            ABSENT)      printf 'no-sets\n';     return 0 ;;
+        esac
+    done
+    printf 'ready\n'
 }
 
 # nftban_ssh_port_in_both_sets <table-spec> <port> — 0 iff <port> is present in

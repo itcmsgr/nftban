@@ -1,0 +1,47 @@
+# NFTBan — untyped nft probe migration debt (v1.228.4 PR-3)
+#
+# A RATCHET, not a target. scripts/ci/check-nft-probe-authority.sh fails if this
+# count INCREASES, so no new untyped probe can be added while the existing ones
+# are migrated. When you migrate sites, LOWER this number in the same PR — the
+# guard also fails if the count drops below the record, so the ratchet tightens
+# and cannot silently slip back.
+#
+# An untyped probe is a boolean nft read used as a truth value, e.g.
+#     nft list table ip nftban >/dev/null 2>&1
+# It collapses "cannot read the ruleset" into "the table is absent". On 11/11
+# measured hosts that collapse produced a false firewall-absent verdict ~927
+# times each, ~900 futile rebuild attempts, and ~900 emissions of destructive
+# 'reset --force' guidance aimed at intact firewalls — while systemd recorded
+# Result=success every time.
+#
+# Migrate to: nftban_nft_probe_table / nftban_nft_probe_set  (lib/nft_probe.sh)
+#
+# The maintenance path (cron/maintenance.sh, helpers/autoheal.sh,
+# lib/ssh_port_detect.sh) is already fully typed and is enforced separately by
+# rule G-1 — it must stay at ZERO regardless of this count.
+UNTYPED_PROBE_COUNT=95
+
+# -----------------------------------------------------------------------------
+# G-2a ALLOWLIST — failure-to-mutation sites that PRE-DATE PR-3
+# -----------------------------------------------------------------------------
+# These are NOT exemptions. They are the SAME defect class PR-3 exists to close,
+# found by G-2a in files outside PR-3's scope. They are recorded so the guard can
+# pass on day one while remaining sensitive to any NEW instance.
+#
+# ⚠ These rank ABOVE the generic untyped-probe debt: a plain untyped probe only
+#   misreports, whereas these convert a failed READ into a MUTATION.
+#
+# HIGH — identical to the defect PR-3 fixes, in a different file:
+#   cli/lib/nftban/lib/service_control.sh:428
+#       if ! nft list table ip nftban >/dev/null 2>&1; then ... nftban firewall rebuild
+#       A ruleset that cannot be READ triggers a firewall REBUILD. This is
+#       autoheal.sh:505 in another file. Migrate to nftban_nft_probe_table and
+#       rebuild only on a verified ABSENT.
+#
+# LOWER — failed read leads to an idempotent rule add, not a rebuild:
+#   cli/lib/nftban/core/nftban_ddos_suricata.sh:550
+#       if ! nft list chain $table input 2>/dev/null | grep -q "@$set drop"; then ...
+#       The pipeline's result is grep's, so an unreadable chain looks like "rule
+#       missing" and the rule is re-added. Duplicate-add is far less harmful than
+#       a rebuild, but it is the same collapse.
+G2A_ALLOWLIST=cli/lib/nftban/lib/service_control.sh:428,cli/lib/nftban/core/nftban_ddos_suricata.sh:550

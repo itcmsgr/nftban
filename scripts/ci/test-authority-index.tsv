@@ -214,6 +214,7 @@ sysctl_safe_default_v216_test	cli/lib/nftban/tests/sysctl_safe_default_v216_test
 systemd_cli_token_dispatch_v1228_1_test	cli/lib/nftban/tests/systemd_cli_token_dispatch_v1228_1_test.sh	cli	test	dispatcher	CI_STATIC	ci-bash	true	false	false	false	false	false			
 tmpfiles_zz_v139_test	cli/lib/nftban/tests/tmpfiles_zz_v139_test.sh	packaging	test	fhs	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 trust_load_missing_whitelist_test	cli/lib/nftban/tests/trust_load_missing_whitelist_test.sh	trust	test	trust-load	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+typed_nft_probe_v1228_4_test	cli/lib/nftban/tests/typed_nft_probe_v1228_4_test.sh	cli	test	nft-probe-authority	CI_STATIC	ci-bash	true	false	false	false	false	false			
 uninstall_firewall_ownership_message_v225_test	cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh	packaging	test	packaging	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 update_degraded_render_truth_v225_test	cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 update_force_delegation_v1223_test	cli/lib/nftban/tests/update_force_delegation_v1223_test.sh	update	test	update-force	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

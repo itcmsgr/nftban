@@ -501,23 +501,59 @@ log_info "Validating NFT schema..."
 
 NFTBAN_CMD="${NFTBAN_BIN:-/usr/sbin/nftban}"
 
-# Check if required tables exist
-if ! nft list table ip nftban &>/dev/null; then
-    log_warn "NFTBan IPv4 table missing - attempting rebuild..."
+# v1.228.4 PR-3 typed probe authority — PRESENT | ABSENT | CANNOT_READ.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh"
+
+# v1.228.4 PR-3: TYPED probe. The previous form collapsed EVERY non-zero nft exit
+# into "table missing" and rebuilt on it. On 11/11 measured hosts that produced a
+# false absent verdict ~900 times each, ~900 futile rebuilds, and ~900 emissions of
+# `reset --force` — destructive advice aimed at an intact firewall.
+#
+# CANNOT_READ is not a weaker ABSENT. It is a different fact and may not mutate.
+NFTBAN_AUTOHEAL_PROBE_FAILED=0
+nftban_nft_probe_table ip nftban autoheal || true
+
+if [[ "$NFTBAN_NFT_PROBE_VERDICT" == "CANNOT_READ" ]]; then
+    # Existence is UNKNOWN. Do not rebuild. Do not recommend a reset. Surface the
+    # evidence the old code discarded, and mark the component failed so the caller
+    # cannot report success.
+    log_error "Cannot read the nftables ruleset — firewall state is UNKNOWN, NOT absent."
+    log_error "$(nftban_nft_probe_diagnostic)"
+    log_error "No rebuild attempted: a rebuild requires a VERIFIED absent table."
+    log_error "Diagnose first — inspect the unit sandbox and the retained nft stderr above."
+    NFTBAN_AUTOHEAL_PROBE_FAILED=1
+
+elif nftban_nft_probe_may_rebuild; then
+    # Verified ABSENT — the ruleset was read successfully and the table is not in it.
+    log_warn "NFTBan IPv4 table verified ABSENT - attempting rebuild..."
     if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
         log_info "✅ Schema rebuilt successfully"
     else
         log_error "Schema rebuild failed - manual intervention required"
-        log_error "Try: nftban firewall reset --force"
+        NFTBAN_AUTOHEAL_PROBE_FAILED=1
     fi
-elif ! nft list table ip6 nftban &>/dev/null; then
-    log_warn "NFTBan IPv6 table missing - attempting rebuild..."
-    if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
-        log_info "✅ Schema rebuilt successfully"
-    else
-        log_warn "IPv6 schema rebuild failed (IPv6 support optional)"
-    fi
+
 else
+    # IPv4 PRESENT — now check IPv6 with the same typed authority.
+    nftban_nft_probe_table ip6 nftban autoheal || true
+    if [[ "$NFTBAN_NFT_PROBE_VERDICT" == "CANNOT_READ" ]]; then
+        log_error "Cannot read the nftables ruleset for ip6 — state UNKNOWN, NOT absent."
+        log_error "$(nftban_nft_probe_diagnostic)"
+        NFTBAN_AUTOHEAL_PROBE_FAILED=1
+    elif nftban_nft_probe_may_rebuild; then
+        log_warn "NFTBan IPv6 table verified ABSENT - attempting rebuild..."
+        if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+            log_info "✅ Schema rebuilt successfully"
+        else
+            log_warn "IPv6 schema rebuild failed (IPv6 support optional)"
+        fi
+    fi
+fi
+
+# Consult the MONOTONIC latch, not the last VERDICT: a later successful probe
+# must never recover the component after an earlier unreadable one.
+if [[ "$NFTBAN_AUTOHEAL_PROBE_FAILED" -eq 0 ]] && ! nftban_nft_probe_session_degraded; then
     # Tables exist - validate schema structure
     SCHEMA_ERRORS=$("$NFTBAN_CMD" firewall validate --quiet 2>&1 | grep -c "ERROR" || true)
     SCHEMA_ERRORS=${SCHEMA_ERRORS:-0}
@@ -811,9 +847,26 @@ log_info "✅ System configuration generated"
 log_info "✅ Systemd timer configured"
 echo ""
 
+# v1.228.4 PR-3: VERDICT HONESTY.
+# Previously this printed "Health: OK (system ready)" and exited 0 even when the
+# nft-access and schema stages had both failed. On 11/11 measured hosts that OK
+# was emitted in the same cycle as "nftables access: FAILED" and "Schema rebuild
+# failed" — a confident success whose subject was not what the reader assumed.
+#
+# A component that could not read the firewall may not report that the system is
+# ready, and may not exit 0.
+if [ "${NFTBAN_AUTOHEAL_PROBE_FAILED:-0}" -ne 0 ] || nftban_nft_probe_session_degraded; then
+    log_error "Health: DEGRADED — the nftables ruleset could not be read this run."
+    log_error "System readiness is UNKNOWN and is NOT being asserted."
+    echo ""
+    exit 1
+fi
+
 # Only show health status line if errors exist
 if [ "${HEALTH_STATUS:-OK}" = "ERROR" ]; then
     log_warn "Health: ${HEALTH_STATUS} (some issues need attention)"
+    echo ""
+    exit 1
 else
     log_info "Health: OK (system ready)"
 fi
