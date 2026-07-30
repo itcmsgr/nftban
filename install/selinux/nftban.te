@@ -136,10 +136,10 @@ allow iptables_t nftban_nftables_conf_t:file { getattr open read ioctl };
 # (the service reaches Result=success either way), but it recurs on every start
 # and that noise is exactly what masks a genuine denial later.
 #
-# What the evidence proves is a TCGETS attempt, NOT a need for general file ioctl
-# authority. So the ordinary allow above is left untouched and only this single
-# ioctl command is permitted. `lock` and `map` were never observed and are not
-# granted.
+# The ordinary allow above includes the base ioctl permission required for xperm
+# evaluation. This allowxperm rule restricts effective ioctl authority to TCGETS
+# (0x5401) only, so every other ioctl command is still denied. `lock` and `map`
+# were never observed and are not granted.
 #
 # EL9 showed ZERO denials here: its base policy dontaudits this class while EL10
 # does not. NO AVC != NO DENIAL — EL9's silence hid a real access attempt.
