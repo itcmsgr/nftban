@@ -2527,7 +2527,15 @@ _firewall_rebuild_core() {
         # is the exact residual bug class). No silent skeletal success path.
         if ! _firewall_complete_service_ports "$tmp_conf"; then
             echo "ERROR: effective service-port render FAILED — existing firewall preserved (refusing skeletal apply)!" >&2
-            echo "  Fix: ensure ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core is present and SSH port is detectable, then retry: nftban firewall rebuild" >&2
+            # v1.228.5: do NOT append a remediation that names the wrong subject. When
+            # the cause is a missing interpreter the callee has already reported it
+            # precisely; repeating "ensure nftban-core is present and SSH port is
+            # detectable" here sent operators after entirely the wrong thing.
+            if command -v perl >/dev/null 2>&1; then
+                echo "  Fix: ensure ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core is present and SSH port is detectable, then retry: nftban firewall rebuild" >&2
+            else
+                echo "  Fix: install the missing 'perl' interpreter (EL: dnf install perl-interpreter), then retry: nftban firewall rebuild" >&2
+            fi
             # PREVALIDATION_FAILED-class: no kernel mutation, no recovery marker.
             rm -f "$tmp_conf"
             return 1
