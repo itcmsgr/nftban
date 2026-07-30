@@ -160,8 +160,23 @@ nftban_ssh_apply_state() {
     [[ -z "$_fam" || "$_fam" == "$_tbl" ]] && { _fam="ip"; _tab="${_tbl:-nftban}"; }
 
     if ! declare -f nftban_nft_probe_table >/dev/null 2>&1; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" 2>/dev/null || {
+        # Resolve the probe library from THIS file's own directory FIRST: the typed
+        # probe is its sibling in lib/, in the installed tree and in the repo alike.
+        # Going straight to an absolute installed path made every not-yet-installed
+        # tree — including the hermetic test for this very function — source
+        # nothing and report cannot-read for a reason that had nothing to do with
+        # nftables. Fail-closed is still the last resort, but it must not be
+        # reached merely because the caller is not installed.
+        local _self_dir _cand
+        _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || _self_dir=""
+        for _cand in "${_self_dir:+$_self_dir/nft_probe.sh}" \
+                     "${NFTBAN_LIB_DIR:+$NFTBAN_LIB_DIR/lib/nft_probe.sh}" \
+                     /usr/lib/nftban/lib/nft_probe.sh; do
+            [[ -n "$_cand" && -r "$_cand" ]] || continue
+            # shellcheck source=/dev/null
+            source "$_cand" 2>/dev/null && break
+        done
+        declare -f nftban_nft_probe_table >/dev/null 2>&1 || {
             printf 'cannot-read\n'; return 0; }
     fi
 
