@@ -11,6 +11,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.4] - 2026-07-30 — a failed read is no longer proof of absence
+
+A failed `nft` read was being treated as evidence that a firewall table was **absent**, and absence
+authorised a rebuild. On a healthy host the message ran roughly 927 times, claiming the firewall was
+missing while both tables existed and were correct. This release removes the trigger, the defect class,
+and the ability to reintroduce it.
+
+### Fixed — the six units that read nftables could not open a netlink socket
+
+- **`RestrictAddressFamilies` omitted `AF_NETLINK`.** `nftban-maintenance`, `nftban-rollback`,
+  `nftban-snapshot`, `nftban-update-apply`, `nftban-community-stats` and `nftban-report-daily` each
+  sandboxed away the address family that libmnl needs, so every `nft` invocation inside them failed with
+  `mnl.c:61: Unable to initialize Netlink socket: Address family not supported by protocol` and
+  `EAFNOSUPPORT`. Each unit changed by exactly one line. `nftban-queue` and `nftban-botscan` continue to
+  **withhold** `AF_NETLINK` — granting it would materially expand their authority, so they were
+  deliberately left alone.
+
+- **Absence is now proven, not inferred.** `cli/lib/nftban/lib/nft_probe.sh` establishes a three-state
+  contract — `PRESENT | ABSENT | CANNOT_READ` — and **only a verified `ABSENT` may authorise a
+  mutation**. Readability is established *positively* (`nft list tables` succeeds whenever netlink is
+  usable) instead of by parsing error text, and `rc=0` with empty or unparseable output is
+  `CANNOT_READ`. Stated cost: a host with genuinely zero tables will not auto-rebuild, because zero
+  tables on an installed system is an operator-visible anomaly rather than something to rebuild through
+  silently. Rebuild authority is derived live from the verdict; there is deliberately **no stored
+  boolean**, which would be a second authority able to go stale.
+
+- **Degradation is monotonic within a run.** Any `CANNOT_READ` latches the session, and only an explicit
+  reset clears it. Callers gate on the latch rather than the last verdict. Without this, probing a table
+  (`CANNOT_READ`) and then a set (`PRESENT`) left the caller reading `PRESENT` and reporting healthy — a
+  later success erasing an earlier blindness.
+
+### Changed — callers now fail honestly instead of advising a reset
+
+`nftban-maintenance` returns `1` and logs `Maintenance INCOMPLETE — the nftables ruleset could not be
+read`, stating that dependent work was skipped. `autoheal` exits `1` with `Health: DEGRADED` and
+readiness explicitly **not** asserted. `nftban_ssh_apply_state` gains a fourth state, `cannot-read`,
+distinct from `no-table`. The former `Try: nftban firewall reset --force` guidance is removed: it advised
+resetting a firewall whose state was unknown.
+
+Two static guards that had been bound to one literal phrasing were corrected — a stricter message
+(`table VERIFIED ABSENT`) had read as a deleted safeguard.
+
+### Added — execution authority is now enumerated and enforced in CI
+
+- `build/nft-consumer-authority.yaml` plus `scripts/ci/check-nft-consumer-authority.sh` enumerate every
+  unit that executes `nft`, distinguishing `confirmed_consumer`, `conditional_consumer`,
+  `no_nft_path_bounded_trace` and `unknown_external_executable`, and separating
+  `activation: runtime_ordinary` from `operator_action_required`.
+- `scripts/ci/check-nft-probe-authority.sh` blocks in policy-gates: the converted path must stay typed,
+  new failure-to-absence conversions are rejected (including command substitution around the probe,
+  which discards every diagnostic in a subshell), and a ratchet holds the **95** remaining legacy probe
+  sites so the debt may shrink but never grow.
+
+### Validation
+
+Lab negative controls on lab2 (Ubuntu 24.04, DEB) and lab4 (Rocky 9.8 EL9, RPM), **29/29 on both**, in
+transient units replicating the shipped maintenance sandbox: removing `AF_NETLINK` yields a latched
+`CANNOT_READ` classified `NETLINK_FAMILY_BLOCKED`, exit `1`, rebuild authority denied, no unsafe
+guidance, zero write-shaped `nft` invocations across 24 observed executions, and a structurally
+unchanged firewall. The same condition previously exited `0` while reporting false absence.
+
+**Not claimed:** SELinux Enforcing behaviour is untested — both labs are Permissive or SELinux-less —
+and the EL9 Enforcing clean-install path is deferred to v1.228.5.
+
+---
+
 ## [v1.228.2] - 2026-07-28 — CLI truth: a command that cannot do its work no longer reports success
 
 `v1.228.1` was never published. The lane originally numbered `.1` is deferred; publishing it after
