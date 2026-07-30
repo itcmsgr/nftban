@@ -48,6 +48,13 @@ fi
 IFS=$'\n\t'
 umask 027
 
+# v1.228.4 PR-3 typed nft probe authority. Sourced early so every probe on this
+# path is typed. NOTE: the script-scope IFS above is exactly why the old unquoted
+# "$NFTBAN_TABLE_IPV4" expansions reached nft as one fused argv element.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh"
+_MAINT_PROBE_UNREADABLE=0
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -113,16 +120,25 @@ _maint_ipchange_alert() {
         "" || true
 }
 
+# v1.228.4 PR-3: TYPED re-check. Returns 0 only for a table that is VERIFIABLY
+# absent across the whole grace window. A window in which the ruleset could not be
+# READ returns 2 — neither "absent" nor "present", so the caller cannot collapse it.
+#
+# The old form expanded $_tbl UNQUOTED under the script-scope IFS=$'\n\t' set at
+# line 48, so "ip nftban" did NOT word-split and reached nft as ONE argv element.
+# The typed probe takes family and table as separate parameters, making that class
+# of defect unrepresentable.
 _maint_table_absent_confirmed() {
-    local _tbl="${1:-${NFTBAN_TABLE_IPV4:-ip nftban}}" _i
+    local _fam="${1:-ip}" _tab="${2:-nftban}" _i
     for _i in 1 2 3; do
         sleep "${_MAINT_TABLE_RECHECK_SLEEP:-0.4}"
-        # shellcheck disable=SC2086  # $_tbl is "ip nftban" — intentional 2-token split
-        if nft list table $_tbl >/dev/null 2>&1; then
-            return 1   # reappeared → transient transition window, not a genuine absence
-        fi
+        nftban_nft_probe_table "$_fam" "$_tab" maintenance || true
+        case "$NFTBAN_NFT_PROBE_VERDICT" in
+            PRESENT)     return 1 ;;   # reappeared → transient transition window
+            CANNOT_READ) return 2 ;;   # unreadable → absence is NOT established
+        esac
     done
-    return 0   # absent across the whole grace window → genuine
+    return 0   # ABSENT across the whole grace window → genuine
 }
 
 # =============================================================================
@@ -160,10 +176,20 @@ main() {
     log "INFO" "NFTBan Maintenance Starting"
 
     # v1.32.0: Cache table existence check (avoids 4 redundant kernel calls)
+    # v1.228.4 PR-3: typed. "not available" now distinguishes ABSENT from
+    # CANNOT_READ; the latter marks the whole run as failed rather than silently
+    # gating features off as though the firewall were simply not there.
     local _nft_table_available=false
-    if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-        _nft_table_available=true
-    fi
+    nftban_nft_probe_table ip nftban maintenance || true
+    case "$NFTBAN_NFT_PROBE_VERDICT" in
+        PRESENT)
+            _nft_table_available=true ;;
+        CANNOT_READ)
+            _MAINT_PROBE_UNREADABLE=1
+            log "ERROR" "Cannot read the nftables ruleset — firewall state is UNKNOWN, not absent."
+            log "ERROR" "$(nftban_nft_probe_diagnostic)"
+            ;;
+    esac
 
     # ==========================================================================
     # 1. SSH Port Monitoring (CRITICAL - Lockout Prevention)
@@ -221,12 +247,27 @@ main() {
                     echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
                     ;;
                 no-table)
-                    # v1.193.0 PR-B: suppress transient transition-window noise; keep genuine absence.
-                    if _maint_table_absent_confirmed "${NFTBAN_TABLE_IPV4}"; then
-                        log "WARN" "nftban firewall table absent — SSH-port enforcement skipped this run (state NOT advanced). Run: nftban firewall reload"
-                    else
-                        log "INFO" "nftban table briefly unavailable during a firewall transition (re-sample shows it present) — SSH-port enforcement deferred to next run; no action needed."
-                    fi
+                    # v1.193.0 PR-B: suppress transient transition-window noise.
+                    # v1.228.4 PR-3: three outcomes, not two. The message that ran
+                    # ~927 times per host claimed ABSENCE when the real condition was
+                    # UNREADABILITY — the ruleset was present and fine.
+                    _maint_table_absent_confirmed ip nftban
+                    case $? in
+                        0)  log "WARN" "nftban firewall table VERIFIED ABSENT — SSH-port enforcement skipped this run (state NOT advanced). Run: nftban firewall reload" ;;
+                        1)  log "INFO" "nftban table briefly unavailable during a firewall transition (re-sample shows it present) — SSH-port enforcement deferred to next run; no action needed." ;;
+                        2)  _MAINT_PROBE_UNREADABLE=1
+                            log "ERROR" "Cannot read the nftables ruleset — firewall presence is UNKNOWN, NOT absent. SSH-port enforcement skipped."
+                            log "ERROR" "$(nftban_nft_probe_diagnostic)"
+                            log "ERROR" "No remediation is suggested from an unknown cause — diagnose the unit sandbox first." ;;
+                    esac
+                    ;;
+                cannot-read)
+                    # v1.228.4 PR-3: the read FAILED. Existence is unknown, so no
+                    # claim of absence and no remediation advice is emitted.
+                    _MAINT_PROBE_UNREADABLE=1
+                    log "ERROR" "Cannot read the nftables ruleset — firewall presence is UNKNOWN, NOT absent. SSH-port enforcement skipped."
+                    log "ERROR" "$(nftban_nft_probe_diagnostic)"
+                    log "ERROR" "No remediation is suggested from an unknown cause — diagnose the unit sandbox first."
                     ;;
                 no-sets)
                     log "WARN" "nftban set-driven schema (tcp_ports_in/ssh_ports) not loaded — SSH-port enforcement skipped (state NOT advanced). Run: nftban firewall reload"
@@ -955,6 +996,19 @@ EOF
     # ==========================================================================
     # 10. Complete
     # ==========================================================================
+    # v1.228.4 PR-3: VERDICT HONESTY.
+    # A run in which the nftables ruleset could not be read has NOT completed its
+    # work. Previously such a run still logged "Complete" and returned 0, so systemd
+    # recorded Result=success — which is why a 100%-failure path went unnoticed on
+    # 11/11 hosts for 9.7+ days. No systemd-based monitor could ever have caught it.
+    # The monotonic latch is authoritative: any CANNOT_READ anywhere in this run
+    # degrades the whole run, regardless of what a later probe returned.
+    if [[ "${_MAINT_PROBE_UNREADABLE:-0}" -ne 0 ]] || nftban_nft_probe_session_degraded; then
+        log "ERROR" "[10/10] NFTBan Maintenance INCOMPLETE — the nftables ruleset could not be read."
+        log "ERROR" "Firewall state is UNKNOWN. Maintenance work depending on it was SKIPPED."
+        return 1
+    fi
+
     log "INFO" "[10/10] NFTBan Maintenance Complete"
 
     return 0

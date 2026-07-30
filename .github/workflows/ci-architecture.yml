@@ -203,6 +203,26 @@ jobs:
       # rc is captured INDEPENDENTLY of any output pipeline. `guard | tail` returns
       # tail's status and has silently converted rc1 into job success three times
       # in this codebase — see COMMAND_RC_EVIDENCE rule.
+      # v1.228.4 PR-3: nft probe authority. G-1 keeps the maintenance path fully
+      # typed; G-2 rejects NEW code that turns a generic nft failure into absence,
+      # rebuild authority, or a healthy verdict; G-3 is a ratchet on the remaining
+      # legacy debt (95 sites) so it can shrink but never grow.
+      #
+      # rc captured INDEPENDENTLY of any output pipeline — `guard | tail` returns
+      # tail's status and has silently converted rc1 into job success three times
+      # in this codebase.
+      - name: Check nft probe authority G-1/G-2/G-3 (v1.228.4 PR-3, BLOCKING)
+        run: |
+          set +e
+          output="$(./scripts/ci/check-nft-probe-authority.sh 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nft probe authority guard failed (rc=$rc) — use nftban_nft_probe_table/_set; see scripts/ci/nft-probe-debt-baseline.txt"
+            exit "$rc"
+          fi
+
       - name: Check nft consumer execution authority (v1.228.4 PR-1, BLOCKING)
         run: |
           set +e

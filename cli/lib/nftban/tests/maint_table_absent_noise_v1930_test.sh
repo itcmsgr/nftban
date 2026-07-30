@@ -38,6 +38,13 @@ PASS=0; FAIL=0
 ok(){ echo "  [PASS] $1"; PASS=$((PASS+1)); }
 bad(){ echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
+# v1.228.4 PR-3: the helper now routes its presence question through the TYPED
+# probe, so the probe library must be loaded before the extracted function is
+# evaluated. Without it the helper fails with "command not found" — which is a
+# harness gap, not a verdict about the firewall.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/../lib/nft_probe.sh"
+
 # Extract just the helper function (no top-level maintenance side effects).
 HELPER="$(awk '/^_maint_table_absent_confirmed\(\)/{f=1} f{print} f&&/^\}/{exit}' "$MAINT")"
 [[ -n "$HELPER" ]] || { echo "FAIL: _maint_table_absent_confirmed not found"; exit 1; }
@@ -46,22 +53,46 @@ sleep(){ :; }                              # fast: no real delay
 export _MAINT_TABLE_RECHECK_SLEEP=0
 # NFTBAN_TABLE_IPV4 left unset → the helper uses its ${NFTBAN_TABLE_IPV4:-ip nftban} fallback.
 
+# The typed probe establishes readability POSITIVELY via `nft list tables`, so the
+# mocks answer that. An absent table is a READABLE listing that does not contain
+# nftban — not a failed command, and not empty output (both of which are
+# CANNOT_READ by design, because neither proves anything is absent).
+_LIST_PRESENT=$'table ip filter\ntable ip nftban'
+_LIST_ABSENT=$'table ip filter'
+
 echo "=== T1: GENUINE absence (table never reappears) → rc0 (caller WARNs) ==="
-nft(){ return 1; }
+nft(){ printf '%s\n' "$_LIST_ABSENT"; return 0; }
 if _maint_table_absent_confirmed; then ok "persistent absence → confirmed genuine (rc0 → WARN kept)"; else bad "genuine absence misclassified as transient"; fi
 
 echo "=== T2: table PRESENT on re-probe → rc1 (transient, suppress to INFO) ==="
-nft(){ return 0; }
+nft(){ printf '%s\n' "$_LIST_PRESENT"; return 0; }
 if _maint_table_absent_confirmed; then bad "present table classified genuine-absent"; else ok "table present → transient (rc1 → suppress noisy WARN)"; fi
 
 echo "=== T3: table REAPPEARS mid-grace (fail then present) → rc1 (transient) ==="
-_n3=0; nft(){ _n3=$((_n3+1)); [ "$_n3" -ge 2 ] && return 0 || return 1; }
+_n3=0; nft(){ _n3=$((_n3+1))
+  if [ "$_n3" -ge 2 ]; then printf '%s\n' "$_LIST_PRESENT"; else printf '%s\n' "$_LIST_ABSENT"; fi
+  return 0; }
 if _maint_table_absent_confirmed; then bad "reappearing table classified genuine-absent (noise would persist)"; else ok "table reappears within grace → transient (rc1 → suppress)"; fi
 unset -f nft 2>/dev/null || true
 
+# v1.228.4 PR-3 — T3b. The defect this release removes: a failed READ being taken
+# as proof of absence. An unreadable ruleset must return 2 (unknown), never 0.
+echo "=== T3b: ruleset UNREADABLE → rc2 (absence NOT established) ==="
+nft(){ echo "mnl.c:61: Unable to initialize Netlink socket: Address family not supported by protocol" >&2; return 1; }
+set +e; _maint_table_absent_confirmed; _rc3b=$?; set -e
+[[ "$_rc3b" -eq 2 ]] \
+  && ok "unreadable ruleset → rc2 (never classified as genuine absence)" \
+  || bad "unreadable ruleset returned rc=$_rc3b (2 required; 0 would authorise a rebuild while blind)"
+unset -f nft 2>/dev/null || true
+
 echo "=== T4: static guard — BOTH 'table absent' WARN sites are gated by the recheck ==="
-warn_total=$(grep -cE 'log "WARN" "nftban firewall table absent' "$MAINT")
-warn_gated=$(grep -B4 -E 'log "WARN" "nftban firewall table absent' "$MAINT" | grep -cE '_maint_table_absent_confirmed')
+# v1.228.4 PR-3 renamed the first site's claim from "table absent" to "table
+# VERIFIED ABSENT" — the WARN is retained and strengthened, so the pattern must
+# match both wordings. Binding a static guard to one literal phrasing made a
+# stricter message look like a deleted safeguard.
+_WARN_RE='log "WARN" "nftban firewall table (VERIFIED ABSENT|absent)'
+warn_total=$(grep -cE "$_WARN_RE" "$MAINT")
+warn_gated=$(grep -B4 -E "$_WARN_RE" "$MAINT" | grep -cE '_maint_table_absent_confirmed')
 echo "    table-absent WARN sites=$warn_total  gated-by-recheck=$warn_gated"
 [[ "$warn_total" -ge 2 && "$warn_gated" -ge "$warn_total" ]] \
   && ok "every table-absent WARN ($warn_total) is gated by _maint_table_absent_confirmed" \

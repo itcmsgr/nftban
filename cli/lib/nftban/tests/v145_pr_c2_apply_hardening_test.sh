@@ -42,6 +42,24 @@ MODE="ready"; TCP_ELEMS="22, 80, 443"; SSH_ELEMS="22"
 nft() {
     local a="$*"
     case "$a" in
+        # v1.228.4 PR-3: the typed probe establishes readability POSITIVELY via
+        # `nft list tables` / `nft list sets <family>` rather than probing a single
+        # object and reading its failure as absence. The mock must answer those.
+        # For the absent cases it returns a READABLE listing that simply does not
+        # contain nftban — returning empty would be CANNOT_READ by design, since
+        # rc=0 with no output is not proof that anything is absent.
+        "list tables")
+            [[ "$MODE" == "cannot-read" ]] && {
+                echo "mnl.c:61: Unable to initialize Netlink socket: Address family not supported by protocol" >&2
+                return 1; }
+            [[ "$MODE" == "no-table" ]] && { printf 'table ip filter\n'; return 0; }
+            printf 'table ip filter\ntable ip nftban\n'; return 0 ;;
+        "list sets ip")
+            [[ "$MODE" == "no-table" ]] && { printf 'table ip filter\n'; return 0; }
+            [[ "$MODE" == "no-sets" ]] && {
+                printf 'table ip nftban {\n\tset tcp_ports_in {\n'; return 0; }
+            printf 'table ip nftban {\n\tset tcp_ports_in {\n\tset ssh_ports {\n'
+            return 0 ;;
         "list table ip nftban")
             [[ "$MODE" == "no-table" ]] && return 1; return 0 ;;
         "list set ip nftban tcp_ports_in")
@@ -60,6 +78,12 @@ echo "== nftban_ssh_apply_state =="
 MODE=ready;    eq "$(nftban_ssh_apply_state 'ip nftban')" "ready"    "ready when table+both sets present"
 MODE=no-table; eq "$(nftban_ssh_apply_state 'ip nftban')" "no-table" "no-table when table absent"
 MODE=no-sets;  eq "$(nftban_ssh_apply_state 'ip nftban')" "no-sets"  "no-sets when ssh_ports missing"
+# v1.228.4 PR-3 — the FOURTH state. An unreadable ruleset must NOT collapse into
+# no-table: "absent" authorises a rebuild, "cannot-read" must not.
+MODE=cannot-read
+eq "$(nftban_ssh_apply_state 'ip nftban')" "cannot-read" \
+   "cannot-read when the ruleset is unreadable (NOT reported as no-table)"
+MODE=ready
 
 echo "== nftban_ssh_port_in_both_sets =="
 MODE=ready; TCP_ELEMS="22, 80, 443"; SSH_ELEMS="22"
