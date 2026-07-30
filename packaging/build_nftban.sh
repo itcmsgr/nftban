@@ -642,7 +642,7 @@ install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinu
 # (refpolicy m4 interfaces). Guarded: if the devel Makefile is absent the .pp is
 # simply not shipped and the post scriptlet falls back to compile-on-target (or no-ops).
 # v1.228.5: BUILD-FATAL. Previously a compile failure was swallowed with an echo and
-# the package shipped WITHOUT nftban.pp, relying on a %post compile-on-target fallback
+# the package shipped WITHOUT nftban.pp, relying on a post-install compile-on-target
 # that needs selinux-policy-devel — absent on stock EL9 (verified). The result was a
 # successful RPM containing no policy, failing silently on the hosts that needed it.
 # gen_require of the distro iptables_t domain only fails LOUDLY if this is fatal.
