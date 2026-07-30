@@ -420,7 +420,7 @@ Requires:       gawk
 Requires:       socat
 # v1.228.5: cmd_firewall.sh _firewall_set_elements() invokes perl to render the
 # service-port element lists (tcp_ports_in etc). Proven on a stock Rocky 9.7 host:
-# perl is ABSENT, dnf install succeeded anyway, and `firewall rebuild` then failed.
+# perl is ABSENT, dnf install succeeded anyway, and a firewall rebuild then failed.
 # The executable capability form lets the resolver pick perl-interpreter (~120 KB)
 # instead of pulling the full perl meta-package.
 Requires:       /usr/bin/perl
