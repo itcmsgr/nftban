@@ -418,6 +418,12 @@ Requires:       gzip
 Requires:       bc
 Requires:       gawk
 Requires:       socat
+# v1.228.5: cmd_firewall.sh _firewall_set_elements() invokes perl to render the
+# service-port element lists (tcp_ports_in etc). Proven on a stock Rocky 9.7 host:
+# perl is ABSENT, dnf install succeeded anyway, and a firewall rebuild then failed.
+# The executable capability form lets the resolver pick perl-interpreter (~120 KB)
+# instead of pulling the full perl meta-package.
+Requires:       /usr/bin/perl
 Requires:       polkit
 # v1.137 (log-durability): logrotate is the rotation mechanism for
 # /etc/logrotate.d/nftban*. Previously undeclared, so a minimal host without it
@@ -635,11 +641,23 @@ install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinu
 # devel Makefile — checkmodule alone errors on policy_module()/init_daemon_domain
 # (refpolicy m4 interfaces). Guarded: if the devel Makefile is absent the .pp is
 # simply not shipped and the post scriptlet falls back to compile-on-target (or no-ops).
-if [ -f /usr/share/selinux/devel/Makefile ]; then
-    ( cd install/selinux && make -f /usr/share/selinux/devel/Makefile nftban.pp ) \
-        && install -D -m 0644 install/selinux/nftban.pp %{buildroot}/usr/share/nftban/selinux/nftban.pp \
-        || echo "[NFTBan build] SELinux .pp compile failed; %post will compile on target"
+# v1.228.5: BUILD-FATAL. Previously a compile failure was swallowed with an echo and
+# the package shipped WITHOUT nftban.pp, relying on a post-install compile-on-target
+# that needs selinux-policy-devel — absent on stock EL9 (verified). The result was a
+# successful RPM containing no policy, failing silently on the hosts that needed it.
+# gen_require of the distro iptables_t domain only fails LOUDLY if this is fatal.
+if [ ! -f /usr/share/selinux/devel/Makefile ]; then
+    echo "[NFTBan build] FATAL: selinux-policy-devel is required to compile nftban.pp" >&2
+    exit 1
 fi
+( cd install/selinux && make -f /usr/share/selinux/devel/Makefile nftban.pp ) || {
+    echo "[NFTBan build] FATAL: SELinux policy nftban.pp failed to compile" >&2
+    exit 1
+}
+install -D -m 0644 install/selinux/nftban.pp %{buildroot}/usr/share/nftban/selinux/nftban.pp || {
+    echo "[NFTBan build] FATAL: compiled nftban.pp could not be staged into the package" >&2
+    exit 1
+}
 
 # Validator spec file
 install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json

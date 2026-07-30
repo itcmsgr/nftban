@@ -35,6 +35,12 @@ gen_require(`
 	type syslogd_var_run_t;
 	type systemd_userdbd_runtime_t;
 	type rpm_var_lib_t;
+	# v1.228.5: the DISTRO nftables.service executes /sbin/nft (iptables_exec_t),
+	# which runs in iptables_t. That domain is the real consumer of the ruleset we
+	# render, so it must be named here. gen_require makes this coupling LOUD: if a
+	# future EL renames or removes the domain, the policy fails to COMPILE — and the
+	# package build now fails with it, rather than silently shipping no policy.
+	type iptables_t;
 ')
 
 ########################################
@@ -46,6 +52,22 @@ init_daemon_domain(nftband_t, nftband_exec_t)
 
 type nftban_conf_t;
 files_config_file(nftban_conf_t)
+
+# v1.228.5 — BUG-SELINUX-RPM-NFTABLES-CROSS-DOMAIN-CONSUMER-DENIAL
+#
+# A DEDICATED type for the ONE artifact the distro firewall service consumes.
+# /etc/nftban/nftables.conf is included by /etc/sysconfig/nftables.conf and read by
+# nftables.service in iptables_t. Labelling it nftban_conf_t like everything else in
+# /etc/nftban made it unreadable by that domain: the file existed, but nft reported
+# "File not found" and the clean install ended FAILED_NO_FIREWALL. No AVC was emitted,
+# even with dontaudit disabled — only a same-file label A/B exposed it.
+#
+# This type exists so the read grant below can be scoped to the rendered ruleset ALONE.
+# nftban_conf_t also covers credential-bearing configuration (conf.d/login/*.conf,
+# conf.d/panels/*/main.conf, botguard profiles); those must remain unreadable by the
+# distro service. Do NOT collapse this back into nftban_conf_t.
+type nftban_nftables_conf_t;
+files_config_file(nftban_nftables_conf_t)
 
 type nftban_var_lib_t;
 files_type(nftban_var_lib_t)
@@ -81,6 +103,55 @@ allow initrc_t nftband_t:process2 nnp_transition;
 manage_files_pattern(nftband_t, nftban_conf_t, nftban_conf_t)
 manage_dirs_pattern(nftband_t, nftban_conf_t, nftban_conf_t)
 allow nftband_t nftban_conf_t:file map;
+
+########################################
+# v1.228.5 — rendered-ruleset consumer authority
+########################################
+# PRODUCER: nftband_t renders /etc/nftban/nftables.conf, so it keeps full manage
+# rights on the dedicated type. Without this the renderer could not publish at all.
+manage_files_pattern(nftband_t, nftban_conf_t, nftban_nftables_conf_t)
+allow nftband_t nftban_nftables_conf_t:file map;
+
+# CONSUMER: the distro nftables.service, running nft in iptables_t, must READ the
+# rendered ruleset. Minimum demonstrated permissions ONLY.
+#
+# `ioctl` IS in this set, and that is required for the extended-permission rule below
+# to have any effect: an allowxperm REFINES an already-authorised base permission, it
+# does not grant one. Proven on a real EL10 Enforcing host — with the xperm loaded but
+# ioctl absent from this set, nft was still denied ioctlcmd=0x5401 160 seconds AFTER
+# the module was installed. The pair below is what actually narrows the authority:
+# this line opens the ioctl class, the allowxperm restricts it to TCGETS alone, so
+# every other ioctl command remains denied.
+#
+# `map` and `lock` are deliberately NOT granted. Neither was ever observed in a
+# service-domain test. Add only on direct evidence.
+allow iptables_t nftban_nftables_conf_t:file { getattr open read ioctl };
+
+# v1.228.5 — EXTENDED PERMISSION, narrowly scoped to the ONE observed ioctl.
+#
+# On EL10 Enforcing, every nftables.service consumption emitted:
+#   avc: denied { ioctl } comm="nft" path="/etc/nftban/nftables.conf"
+#        scontext=iptables_t tcontext=nftban_nftables_conf_t ioctlcmd=0x5401
+# 0x5401 is TCGETS — nft probing whether the fd is a terminal. It is NON-FATAL
+# (the service reaches Result=success either way), but it recurs on every start
+# and that noise is exactly what masks a genuine denial later.
+#
+# The ordinary allow above includes the base ioctl permission required for xperm
+# evaluation. This allowxperm rule restricts effective ioctl authority to TCGETS
+# (0x5401) only, so every other ioctl command is still denied. `lock` and `map`
+# were never observed and are not granted.
+#
+# EL9 showed ZERO denials here: its base policy dontaudits this class while EL10
+# does not. NO AVC != NO DENIAL — EL9's silence hid a real access attempt.
+allowxperm iptables_t nftban_nftables_conf_t:file ioctl { 0x5401 };
+
+# Traversal ONLY. iptables_t must cross /etc/nftban (nftban_conf_t) to reach the file.
+# This is `search` alone — it permits path traversal, NOT content read and NOT
+# directory enumeration. Files carrying nftban_conf_t, including credential-bearing
+# configuration, remain unreadable by iptables_t. This residual grant is unavoidable
+# under any design that keeps the artifact inside /etc/nftban, and it is stated here
+# rather than claimed away.
+allow iptables_t nftban_conf_t:dir search;
 
 # State (var/lib) read-write
 manage_files_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
