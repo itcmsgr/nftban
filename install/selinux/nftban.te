@@ -35,6 +35,12 @@ gen_require(`
 	type syslogd_var_run_t;
 	type systemd_userdbd_runtime_t;
 	type rpm_var_lib_t;
+	# v1.228.5: the DISTRO nftables.service executes /sbin/nft (iptables_exec_t),
+	# which runs in iptables_t. That domain is the real consumer of the ruleset we
+	# render, so it must be named here. gen_require makes this coupling LOUD: if a
+	# future EL renames or removes the domain, the policy fails to COMPILE — and the
+	# package build now fails with it, rather than silently shipping no policy.
+	type iptables_t;
 ')
 
 ########################################
@@ -46,6 +52,22 @@ init_daemon_domain(nftband_t, nftband_exec_t)
 
 type nftban_conf_t;
 files_config_file(nftban_conf_t)
+
+# v1.228.5 — BUG-SELINUX-RPM-NFTABLES-CROSS-DOMAIN-CONSUMER-DENIAL
+#
+# A DEDICATED type for the ONE artifact the distro firewall service consumes.
+# /etc/nftban/nftables.conf is included by /etc/sysconfig/nftables.conf and read by
+# nftables.service in iptables_t. Labelling it nftban_conf_t like everything else in
+# /etc/nftban made it unreadable by that domain: the file existed, but nft reported
+# "File not found" and the clean install ended FAILED_NO_FIREWALL. No AVC was emitted,
+# even with dontaudit disabled — only a same-file label A/B exposed it.
+#
+# This type exists so the read grant below can be scoped to the rendered ruleset ALONE.
+# nftban_conf_t also covers credential-bearing configuration (conf.d/login/*.conf,
+# conf.d/panels/*/main.conf, botguard profiles); those must remain unreadable by the
+# distro service. Do NOT collapse this back into nftban_conf_t.
+type nftban_nftables_conf_t;
+files_config_file(nftban_nftables_conf_t)
 
 type nftban_var_lib_t;
 files_type(nftban_var_lib_t)
@@ -81,6 +103,30 @@ allow initrc_t nftband_t:process2 nnp_transition;
 manage_files_pattern(nftband_t, nftban_conf_t, nftban_conf_t)
 manage_dirs_pattern(nftband_t, nftban_conf_t, nftban_conf_t)
 allow nftband_t nftban_conf_t:file map;
+
+########################################
+# v1.228.5 — rendered-ruleset consumer authority
+########################################
+# PRODUCER: nftband_t renders /etc/nftban/nftables.conf, so it keeps full manage
+# rights on the dedicated type. Without this the renderer could not publish at all.
+manage_files_pattern(nftband_t, nftban_conf_t, nftban_nftables_conf_t)
+allow nftband_t nftban_nftables_conf_t:file map;
+
+# CONSUMER: the distro nftables.service, running nft in iptables_t, must READ the
+# rendered ruleset. Minimum demonstrated permissions ONLY.
+#
+# `map` is deliberately NOT granted. There is no evidence nft mmaps this file, and it
+# cannot be derived from denials because the denial is silent (0 AVCs even with
+# dontaudit disabled). Add it only if a service-domain test fails without it.
+allow iptables_t nftban_nftables_conf_t:file { getattr open read };
+
+# Traversal ONLY. iptables_t must cross /etc/nftban (nftban_conf_t) to reach the file.
+# This is `search` alone — it permits path traversal, NOT content read and NOT
+# directory enumeration. Files carrying nftban_conf_t, including credential-bearing
+# configuration, remain unreadable by iptables_t. This residual grant is unavoidable
+# under any design that keeps the artifact inside /etc/nftban, and it is stated here
+# rather than claimed away.
+allow iptables_t nftban_conf_t:dir search;
 
 # State (var/lib) read-write
 manage_files_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)

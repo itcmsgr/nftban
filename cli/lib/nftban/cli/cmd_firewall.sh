@@ -171,8 +171,76 @@ _firewall_substitute_placeholders() {
 # substitution INSIDE the table block, NOT a post-table imperative `flush set`/
 # `add element` fragment (that segfaults `nft -c -f` when combined with the
 # declarative table render — lab-confirmed inc6 on nftables v1.0.x).
+# _firewall_publish_conf <tmp> <final>
+#
+# v1.228.5 — BUG-SELINUX-RPM-NFTABLES-CROSS-DOMAIN-CONSUMER-DENIAL
+#
+# Publishes a rendered ruleset atomically AND establishes its canonical SELinux type.
+# The rename PRESERVES the temp file's type, and the temp file is created inside
+# /etc/nftban, inheriting nftban_conf_t from the directory. Without an explicit
+# restorecon on the FINAL path the published file therefore carries nftban_conf_t —
+# which the distro nftables.service (nft in iptables_t) cannot read, producing a
+# misleading "File not found" and a FAILED_NO_FIREWALL install. Proven on Rocky 9.7:
+# a deliberately-set etc_t label returned to nftban_conf_t after a rebuild, so the
+# file-context declaration ALONE is not sufficient.
+#
+# Relabelling failure is FATAL only when SELinux is enabled AND our module is loaded,
+# i.e. when our file-context rule is actually authoritative for this path. Making it
+# unconditional would turn a host whose policy module failed to load into a total
+# render outage — trading one failure class for a worse one.
+_firewall_publish_conf() {
+    local _tmp="$1" _final="$2"
+    mv -- "$_tmp" "$_final" || {
+        echo "ERROR: failed to publish rendered nftables configuration to $_final" >&2
+        return 1
+    }
+    chmod 640 "$_final" 2>/dev/null || true
+    chown root:nftban "$_final" 2>/dev/null || true
+
+    command -v selinuxenabled >/dev/null 2>&1 || return 0
+    selinuxenabled 2>/dev/null || return 0
+
+    local _authoritative=0
+    if command -v semodule >/dev/null 2>&1 && semodule -l 2>/dev/null | grep -qx 'nftban'; then
+        _authoritative=1
+    fi
+
+    if command -v restorecon >/dev/null 2>&1; then
+        if ! restorecon -- "$_final" 2>/dev/null; then
+            if [[ $_authoritative -eq 1 ]]; then
+                echo "ERROR: failed to restore the SELinux context on $_final" >&2
+                echo "  nftables.service runs nft in iptables_t and could not read it." >&2
+                return 1
+            fi
+            echo "Warning: could not restore the SELinux context on $_final" >&2
+            echo "  (NFTBan SELinux module is not loaded — type enforcement not asserted)" >&2
+        fi
+    fi
+
+    if [[ $_authoritative -eq 1 ]]; then
+        local _t
+        _t=$(stat -c '%C' "$_final" 2>/dev/null | awk -F: '{print $3}')
+        if [[ -n "$_t" && "$_t" != "?" && "$_t" != "nftban_nftables_conf_t" ]]; then
+            echo "ERROR: $_final has SELinux type '$_t', expected 'nftban_nftables_conf_t'" >&2
+            echo "  The distro nftables.service (iptables_t) cannot read that type; starting" >&2
+            echo "  nftables would fail with a misleading 'File not found'." >&2
+            return 1
+        fi
+    fi
+    return 0
+}
+
 _firewall_set_elements() {
     local conf="$1" name="$2" csv="$3"
+    # v1.228.5: fail with the ACTUAL cause. Previously a missing interpreter surfaced
+    # as "ensure nftban-core is present and SSH port is detectable", which names the
+    # wrong subject entirely. Checked here so the diagnostic precedes any rendering.
+    if ! command -v perl >/dev/null 2>&1; then
+        echo "ERROR: required runtime dependency 'perl' is unavailable — service-port" >&2
+        echo "  element rendering cannot be completed. Existing firewall preserved." >&2
+        echo "  Install it (EL: dnf install perl-interpreter) then retry: nftban firewall rebuild" >&2
+        return 1
+    fi
     csv="${csv#"${csv%%[![:space:]]*}"}"; csv="${csv%"${csv##*[![:space:]]}"}"  # trim
     # Defense-in-depth: element list must be only digits/commas/spaces.
     if [[ -n "$csv" && ! "$csv" =~ ^[0-9,\ ]+$ ]]; then
@@ -1849,9 +1917,13 @@ FIREWALL_RELOAD_HELP
             echo "Warning: effective service-port render failed — NOT applying skeletal reload; existing ruleset kept. Try: nftban firewall rebuild" >&2
             rm -f "$_tmp_conf"
         elif nft -c -f "$_tmp_conf" 2>/dev/null; then
-            mv "$_tmp_conf" "$nftban_conf"
-            chmod 640 "$nftban_conf" 2>/dev/null || true
-            chown root:nftban "$nftban_conf" 2>/dev/null || true
+            # v1.228.5: publish + establish the canonical SELinux type. A raw mv here
+            # left the file as nftban_conf_t, unreadable by nftables.service.
+            if ! _firewall_publish_conf "$_tmp_conf" "$nftban_conf"; then
+                echo "Warning: rendered ruleset could not be published safely — existing ruleset kept." >&2
+                rm -f "$_tmp_conf" 2>/dev/null || true
+                return 1
+            fi
             if ! nft -f "$nftban_conf" 2>&1; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
                 echo "Try: nftban firewall rebuild" >&2
@@ -2476,10 +2548,17 @@ _firewall_rebuild_core() {
         fi
         [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED"
 
-        # Atomic write: mv on same filesystem = atomic
-        mv "$tmp_conf" "$nftban_conf"
-        chmod 640 "$nftban_conf" 2>/dev/null || true
-        chown root:nftban "$nftban_conf" 2>/dev/null || true
+        # Atomic write: mv on same filesystem = atomic.
+        # v1.228.5: publication ALSO has to establish the canonical SELinux type —
+        # the rename preserves the temp file's inherited nftban_conf_t, which the
+        # distro nftables.service (iptables_t) cannot read. Failure is fatal here:
+        # applying a ruleset the system service cannot subsequently load would leave
+        # the host firewall-less after the next boot with no visible error.
+        if ! _firewall_publish_conf "$tmp_conf" "$nftban_conf"; then
+            echo "ERROR: rendered ruleset could not be published — existing firewall preserved!" >&2
+            rm -f "$tmp_conf" 2>/dev/null || true
+            return 1
+        fi
         load_conf="$nftban_conf"
     else
         # No template, no placeholders — validate live config directly

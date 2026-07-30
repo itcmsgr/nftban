@@ -14,6 +14,14 @@
 /etc/nftban/nftban\.conf                                --  gen_context(system_u:object_r:nftban_conf_t,s0)
 /etc/nftban/conf\.d(/.*)?                                   gen_context(system_u:object_r:nftban_conf_t,s0)
 
+# v1.228.5 — the ONE artifact consumed by the distro nftables.service (iptables_t).
+# More specific than the /etc/nftban(/.*)? entry above, so it wins. Everything else
+# under /etc/nftban stays nftban_conf_t and remains unreadable by that domain.
+# NOTE: the renderer publishes via a temp file + rename, which PRESERVES the source
+# type, so this declaration alone is NOT sufficient — cmd_firewall.sh must restore the
+# context on the final path after publication. See _firewall_publish_conf().
+/etc/nftban/nftables\.conf                              --  gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
+
 # State files (var/lib)
 /var/lib/nftban(/.*)?                                       gen_context(system_u:object_r:nftban_var_lib_t,s0)
 /var/lib/nftban/feeds(/.*)?                                 gen_context(system_u:object_r:nftban_var_lib_t,s0)
