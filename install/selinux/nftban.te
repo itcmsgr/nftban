@@ -115,10 +115,35 @@ allow nftband_t nftban_nftables_conf_t:file map;
 # CONSUMER: the distro nftables.service, running nft in iptables_t, must READ the
 # rendered ruleset. Minimum demonstrated permissions ONLY.
 #
-# `map` is deliberately NOT granted. There is no evidence nft mmaps this file, and it
-# cannot be derived from denials because the denial is silent (0 AVCs even with
-# dontaudit disabled). Add it only if a service-domain test fails without it.
-allow iptables_t nftban_nftables_conf_t:file { getattr open read };
+# `ioctl` IS in this set, and that is required for the extended-permission rule below
+# to have any effect: an allowxperm REFINES an already-authorised base permission, it
+# does not grant one. Proven on a real EL10 Enforcing host — with the xperm loaded but
+# ioctl absent from this set, nft was still denied ioctlcmd=0x5401 160 seconds AFTER
+# the module was installed. The pair below is what actually narrows the authority:
+# this line opens the ioctl class, the allowxperm restricts it to TCGETS alone, so
+# every other ioctl command remains denied.
+#
+# `map` and `lock` are deliberately NOT granted. Neither was ever observed in a
+# service-domain test. Add only on direct evidence.
+allow iptables_t nftban_nftables_conf_t:file { getattr open read ioctl };
+
+# v1.228.5 — EXTENDED PERMISSION, narrowly scoped to the ONE observed ioctl.
+#
+# On EL10 Enforcing, every nftables.service consumption emitted:
+#   avc: denied { ioctl } comm="nft" path="/etc/nftban/nftables.conf"
+#        scontext=iptables_t tcontext=nftban_nftables_conf_t ioctlcmd=0x5401
+# 0x5401 is TCGETS — nft probing whether the fd is a terminal. It is NON-FATAL
+# (the service reaches Result=success either way), but it recurs on every start
+# and that noise is exactly what masks a genuine denial later.
+#
+# What the evidence proves is a TCGETS attempt, NOT a need for general file ioctl
+# authority. So the ordinary allow above is left untouched and only this single
+# ioctl command is permitted. `lock` and `map` were never observed and are not
+# granted.
+#
+# EL9 showed ZERO denials here: its base policy dontaudits this class while EL10
+# does not. NO AVC != NO DENIAL — EL9's silence hid a real access attempt.
+allowxperm iptables_t nftban_nftables_conf_t:file ioctl { 0x5401 };
 
 # Traversal ONLY. iptables_t must cross /etc/nftban (nftban_conf_t) to reach the file.
 # This is `search` alone — it permits path traversal, NOT content read and NOT
