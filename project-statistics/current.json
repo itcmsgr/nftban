@@ -1,6 +1,6 @@
 {
-  "snapshot_at": "2026-07-31T06:22:14Z",
-  "snapshot_date": "2026-07-31",
+  "snapshot_at": "2026-08-01T06:07:12Z",
+  "snapshot_date": "2026-08-01",
   "disclosure": "GitHub Release asset download requests and repository traffic counters. These INCLUDE NFTBan-operated infrastructure: an ~11-host fleet (dns1-4, srv1-4, monitor, lab2, lab4) self-updates by downloading DEB/RPM assets from GitHub Releases, and package-native validation downloads official assets too. GitHub exposes aggregate counts only, with no downloader identity or IP, so NFTBan-owned traffic cannot be identified or removed and historical counts are NOT retroactively adjusted. Do not read raw package downloads or clones as purely external adoption, or as unique users, installations, active systems, mirrors, CI jobs, or fleet size. Unique visitors are substantially less fleet-contaminated (automated hosts do not browse the repository web UI); non-release-day package-download deltas are the cleanest external-interest signal. A typical release-day internal baseline is approximately 11 fleet hosts plus validation downloads -- this is an ESTIMATE and is never subtracted from the reported counts. Future mirror routing of fleet updates can reduce this contamination prospectively (see OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE).",
   "fleet_contamination": {
     "raw_counts_include_nftban_infrastructure": true,
@@ -29,7 +29,7 @@
     "fabricated_fleet_excluded_metric": false
   },
   "package_downloads": 7208,
-  "package_delta": 15,
+  "package_delta": 0,
   "deb_downloads": 4866,
   "rpm_downloads": 2342,
   "standalone_binary_downloads": 755,
