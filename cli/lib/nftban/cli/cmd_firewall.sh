@@ -1834,7 +1834,99 @@ firewall_stats() {
 # SUBCOMMAND: RELOAD
 # =============================================================================
 
+# =============================================================================
+# v1.228.5 — BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE
+# =============================================================================
+# Single shared authority for projecting the durable whitelist.d/blacklist.d
+# layer into the running sets. Both firewall_reload() and _firewall_rebuild_core()
+# MUST call this and MUST honour its exit status.
+#
+# The defect it closes: both callers previously ran
+#     "$core" sync --quick >/dev/null 2>&1 || true
+# which DISCARDS rc and stderr. `sync --quick` reaches the daemon over
+# /run/nftban/nftband.sock; when the daemon is unavailable it exits 1 with
+# "daemon not running: ... connect: connection refused". The rebuild swallowed
+# that and still reported rc=0 / "all checks passed" while the durable
+# whitelist.d layer — including 00-session.conf, which holds the ACTIVE ADMIN
+# SSH IP — was never projected. MEASURED on an EL9 fixture: daemon down ->
+# rebuild rc=0 with the admin IP absent from whitelist_ipv4.
+#
+# Contract:
+#   1. attempt the reconcile, PRESERVING rc and stderr
+#   2. bounded retry when daemon startup is legitimately expected
+#   3. otherwise fail visibly
+#   4. re-read RUNNING members and compare to CONFIGURED members
+#   5. succeed ONLY on member-level convergence (never count-level)
+#
+# Members, not counts: equal counts with different members is a false pass.
+# IPv4 and IPv6 are compared INDEPENDENTLY.
+#
+# Args: $1 = retry budget in seconds (0 = no retry, fail fast)
+#       $2 = quiet ("true"/"false")
+# Returns: 0 only if the reconcile succeeded AND configured members are present.
+_nftban_whitelist_reconcile_and_verify() {
+    local _retry_budget="${1:-0}"
+    local _q="${2:-false}"
+    local _core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    local _cfg_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
+    local _rc=1 _err="" _waited=0
+
+    if [[ ! -x "$_core" ]]; then
+        [[ "$_q" == "false" ]] && echo "    Whitelist reconcile SKIPPED: core binary not executable ($_core)" >&2
+        return 1
+    fi
+
+    # 1-3: attempt with bounded retry, preserving rc and stderr.
+    while :; do
+        _err="$("$_core" sync --quick 2>&1 >/dev/null)"; _rc=$?
+        [[ $_rc -eq 0 ]] && break
+        (( _waited >= _retry_budget )) && break
+        sleep 2; _waited=$(( _waited + 2 ))
+        [[ "$_q" == "false" ]] && echo "    Whitelist reconcile: daemon not ready, retrying (${_waited}s/${_retry_budget}s)..."
+    done
+
+    if [[ $_rc -ne 0 ]]; then
+        echo "    ERROR: whitelist reconcile FAILED (rc=$_rc) after ${_waited}s" >&2
+        [[ -n "$_err" ]] && echo "           $_err" >&2
+        echo "           The durable whitelist.d layer is NOT projected into the running set." >&2
+        echo "           Fix: start the daemon (systemctl start nftband), then: nftban firewall reload" >&2
+        return 1
+    fi
+
+    # 4-5: member-level convergence, per family, independently.
+    local _fam _set _file_re _missing_all=""
+    for _fam in ip ip6; do
+        if [[ "$_fam" == "ip" ]]; then
+            _set="whitelist_ipv4"; _file_re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
+        else
+            _set="whitelist_ipv6"; _file_re='^[0-9a-fA-F]*:[0-9a-fA-F:]+'
+        fi
+        local _configured _running _missing
+        _configured=$(grep -hoE "$_file_re" "$_cfg_dir"/*.conf 2>/dev/null | sort -u)
+        [[ -z "$_configured" ]] && continue
+        _running=$(timeout 10s nft list set "$_fam" nftban "$_set" 2>/dev/null \
+                   | grep -oE "$(printf '%s' "$_file_re" | sed 's/^\^//')" | sort -u)
+        _missing=$(comm -23 <(printf '%s\n' "$_configured") <(printf '%s\n' "$_running") 2>/dev/null)
+        if [[ -n "$_missing" ]]; then
+            _missing_all+="${_set}: $(printf '%s' "$_missing" | tr '\n' ' ')"$'\n'
+        fi
+    done
+
+    if [[ -n "$_missing_all" ]]; then
+        echo "    ERROR: whitelist did NOT converge — configured members absent from the running set:" >&2
+        printf '           %s\n' "$_missing_all" >&2
+        echo "           Refusing to report success with an unprojected whitelist." >&2
+        return 1
+    fi
+
+    [[ "$_q" == "false" ]] && echo "    Whitelist reconcile verified (configured members present)."
+    return 0
+}
+
+
 firewall_reload() {
+    # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
+    local _reload_whitelist_converged="true"
     # Reload nftables ruleset AND re-apply NFTBan rules
     # v1.23.0 FIX (P1-17): reload now re-applies NFTBan schema + syncs whitelist
     local quiet=false
@@ -1973,10 +2065,11 @@ FIREWALL_RELOAD_HELP
     # no feeds/geoban) — calling `nftban sync` here would recurse back into firewall_reload.
     # No-op if the daemon/core binary is unavailable. (This is NOT the v1.59.1 system-IP
     # --quick path; it is the daemon LoadWhitelists/LoadBlacklists reconcile from files.)
-    local _core_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    if [[ -x "$_core_reconcile" ]]; then
-        [[ "$quiet" == "false" ]] && echo "Reconciling durable whitelist.d/blacklist.d entries..."
-        "$_core_reconcile" sync --quick >/dev/null 2>&1 || true
+    # v1.228.5: rc and stderr are NO LONGER discarded. Shared authority with rebuild.
+    [[ "$quiet" == "false" ]] && echo "Reconciling durable whitelist.d/blacklist.d entries..."
+    if ! _nftban_whitelist_reconcile_and_verify 10 "$quiet"; then
+        _reload_whitelist_converged="false"
+        echo "WARNING: reload completed but the durable whitelist did not converge (see above)." >&2
     fi
 
     # Step 4 (v1.34.0): Re-apply DDoS protection if it was enabled.
@@ -2387,6 +2480,8 @@ firewall_rebuild() {
 }
 
 _firewall_rebuild_core() {
+    # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
+    local _rebuild_whitelist_converged="true"
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
     # This is the correct way to fix corrupted schema
     #
@@ -2669,10 +2764,14 @@ _firewall_rebuild_core() {
     # `sync --quick` (whitelist/blacklist only, no feeds/geoban) that firewall_reload
     # uses (Step 3b), so rebuild and reload converge. No-op if the core binary is
     # unavailable. Does NOT touch system/trust whitelist behaviour or feed/geoban.
-    local _rb_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    if [[ -x "$_rb_reconcile" ]]; then
-        [[ "$quiet" == "false" ]] && echo "    Reconciling durable whitelist.d/blacklist.d entries..."
-        "$_rb_reconcile" sync --quick >/dev/null 2>&1 || true
+    # v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE: rc and stderr are NO
+    # LONGER discarded. A rebuild that cannot project the durable whitelist.d layer —
+    # which includes the ACTIVE ADMIN SSH IP in 00-session.conf — must NOT report
+    # success. The daemon may legitimately be transitioning during a package upgrade,
+    # so a bounded retry is allowed before failing visibly.
+    [[ "$quiet" == "false" ]] && echo "    Reconciling durable whitelist.d/blacklist.d entries..."
+    if ! _nftban_whitelist_reconcile_and_verify 30 "$quiet"; then
+        _rebuild_whitelist_converged="false"
     fi
 
     # Step 7 (L2a): Restore blacklist + blacklist_manual from the pre-rebuild snapshot,
@@ -2943,6 +3042,21 @@ _firewall_rebuild_core() {
 
     # Final validation summary
     [[ "$quiet" == "false" ]] && echo ""
+    # v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE: a rebuild that could not
+    # project the durable whitelist.d layer MUST NOT report "all checks passed". The
+    # firewall structure may be intact while the ACTIVE ADMIN SSH IP is absent from the
+    # running whitelist — reporting success there is exactly the false-success class this
+    # codebase already closed for the CLI router and the nft probe.
+    if [[ "${_rebuild_whitelist_converged:-true}" != "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo ""
+        echo "Final status: DEGRADED (whitelist did not converge)" >&2
+        echo "  The firewall schema was rebuilt, but the durable whitelist.d layer is NOT" >&2
+        echo "  projected into the running set. Configured management IPs may be unenforced." >&2
+        echo "  Fix: systemctl start nftband && nftban firewall reload" >&2
+        _firewall_record_transition_health rebuild "$_fth_t0" 2>/dev/null || true
+        return 1
+    fi
+
     case "$post_status" in
         protected|idle)
             [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"

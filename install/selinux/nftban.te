@@ -157,6 +157,29 @@ allow iptables_t nftban_conf_t:dir search;
 manage_files_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 manage_dirs_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 
+# v1.228.5 — BUG-SELINUX-GEOIP-MMDB-MAP-DENIED
+# `map` is a DISTINCT permission from `read`: manage_files_pattern above grants
+# open/read/write but NOT mmap. The GeoIP consumer memory-maps the MaxMind database
+# (/var/lib/nftban/geoip/*.mmdb) during verification, so on a stock EL9 host with
+# SELinux Enforcing the download succeeded and the verify step failed:
+#
+#   avc: denied { map } for comm="nftban-core"
+#        path="/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+#        scontext=system_u:system_r:nftband_t:s0
+#        tcontext=system_u:object_r:nftban_var_lib_t:s0 tclass=file permissive=0
+#
+# nftban-core-geoip.service therefore failed under Enforcing and left a failed unit
+# after an otherwise successful package transaction. The denial reproduces ONLY in
+# the service domain (nftband_t); an interactive run in unconfined_t succeeds, which
+# is why it stayed invisible until a lab ran EL9 Enforcing.
+#
+# Scope: file:map on the daemon's OWN state type only. This COMPLETES an existing
+# idiom rather than introducing one - nftban_conf_t (:105) and nftban_nftables_conf_t
+# (:113) already pair manage_files_pattern with file:map. nftban_var_lib_t was the
+# one state type that omitted it, which is precisely where the GeoIP database lives.
+# No log or run type gains map, and no new type is introduced.
+allow nftband_t nftban_var_lib_t:file map;
+
 # Logs append/create. NOTE: the dir:watch (inotify) permission is intentionally
 # omitted — it is undefined for class dir in EL8's refpolicy (3.14.3) and breaks
 # the module compile there. Omitting it keeps ONE portable .te across EL8/9/10;
