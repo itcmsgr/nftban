@@ -18,6 +18,7 @@
 package services
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -32,15 +33,28 @@ const (
 )
 
 // SyncWhitelist runs "nftban sync" to load whitelists and feeds.
-// Retries up to 3 times with 1s delay. Non-fatal — logs warnings.
-func SyncWhitelist(exec executor.Executor, log *logging.Logger) {
+//
+// v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE: this is the SOLE
+// installer convergence authority for the durable whitelist.d layer. The
+// pre-daemon switchop.Rebuild explicitly DEFERS that projection (it passes
+// --install-context), because it runs before StartDaemon and before
+// AddSessionWhitelist writes 00-session.conf.
+//
+// It therefore MUST NOT be a silent warning. Previously a total failure here left
+// only a log line while the install could still be reported COMMITTED — which
+// relocates the false-success defect to a later phase instead of closing it.
+// It now returns a verdict the caller records in install_state.
+//
+// Returns nil on convergence; a non-nil error when the durable whitelist could
+// not be projected after all retries.
+func SyncWhitelist(exec executor.Executor, log *logging.Logger) error {
 	for i := 1; i <= syncRetries; i++ {
 		res := exec.RunTimeout(syncTimeout, fhs.NftbanCLI, "sync")
 		log.CmdResult("nftban sync", res.ExitCode, res.Stderr)
 
 		if res.ExitCode == 0 {
 			log.Info("whitelist sync completed (attempt %d)", i)
-			return
+			return nil
 		}
 
 		log.Warn("nftban sync attempt %d/%d failed (exit %d)", i, syncRetries, res.ExitCode)
@@ -49,5 +63,9 @@ func SyncWhitelist(exec executor.Executor, log *logging.Logger) {
 		}
 	}
 
-	log.Warn("whitelist sync failed after %d attempts — non-fatal", syncRetries)
+	// Not silently tolerated: the durable whitelist layer (including the operator
+	// session IP) is unprojected. The caller decides the final install verdict, but
+	// it must never be an invisible warning.
+	log.Warn("whitelist sync failed after %d attempts — durable whitelist NOT projected", syncRetries)
+	return fmt.Errorf("durable whitelist projection failed after %d attempts", syncRetries)
 }

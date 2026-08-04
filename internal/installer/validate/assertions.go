@@ -97,6 +97,20 @@ type AssertionOpts struct {
 	// BUG-INSTALLER-FAILED-UNITS-STRUCTURED-STATE-NOT-POPULATED. Recovered/auxiliary
 	// units are excluded (only fatal, DEGRADED-causing units).
 	FailedUnitsOut *[]FailedUnitPostInstall
+
+	// WhitelistConvergence is the v1.228.5 durable whitelist convergence verdict
+	// as persisted in install_state WHITELIST_CONVERGENCE. Callers pass the value
+	// they hold (phaseValidate: the verdict phaseConfigure just recorded on the
+	// live StateFile; revalidate: the value read back from disk). Consumed by the
+	// whitelist_convergence_ok assertion — DATA only, no recomputation here
+	// (SyncWhitelist is a mutation and must never run inside validation).
+	//
+	// BACKWARD COMPATIBILITY (explicit, not incidental): "" means NOT EVALUATED —
+	// either an install_state written before v1.228.5 (no WHITELIST_CONVERGENCE=
+	// line at all → the parser leaves the field zero) or a caller that does not
+	// evaluate this dimension. "" is never read as CONVERGED and never converted
+	// into a FAILED. It mirrors the nil-HealthResource SKIP convention above.
+	WhitelistConvergence string
 }
 
 // WithPanelPolicy returns a copy of opts with PanelPolicy set and the
@@ -180,6 +194,11 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// blocks StateCommitted via the existing AllPassed gate.
 	results = append(results, assertPanelSurvival(exec, log, opts))
 	results = append(results, assertHealthResourcePolicyActive(opts, log))
+	// v1.228.5: durable whitelist convergence verdict → final-state effect.
+	// DATA-only (opts.WhitelistConvergence); issues no commands. An unset field
+	// ("") is the legacy/not-evaluated case and PASSES as UNKNOWN, so every
+	// existing caller (RunAssertions, RunWithBoundedFix, fixtures) is unchanged.
+	results = append(results, assertWhitelistConvergence(opts, log))
 
 	passed := 0
 	for _, r := range results {
@@ -443,6 +462,81 @@ func assertHealthResourcePolicyActive(opts AssertionOpts, log *logging.Logger) A
 		v.Profile.Tier, v.EffectiveState)
 	log.Warn("  expected MemoryHigh=%d MemoryMax=%d; effective MemoryHigh=%d MemoryMax=%d",
 		v.CalculatedHigh, v.CalculatedMax, v.EffectiveHigh, v.EffectiveMax)
+	return r
+}
+
+// Whitelist convergence vocabulary. These are the literals the installer writes
+// into install_state WHITELIST_CONVERGENCE:
+//   - written by cmd/nftban-installer/phases.go:594 (FAILED) and :596 (CONVERGED)
+//   - persisted/parsed by internal/installer/state/file.go:110, :281, :370-371
+//
+// Deliberately duplicated as literals rather than imported: package validate does
+// not depend on package state today, and this assertion consumes a plain string
+// handed in by the caller (DATA-only, same shape as the other AssertionOpts
+// injections). DEFERRED is part of the contract vocabulary even though no writer
+// emits it yet — it is the pre-convergence placeholder, and a reader that ignored
+// it would silently accept it as "not FAILED".
+const (
+	whitelistConvergenceConverged = "CONVERGED"
+	whitelistConvergenceFailed    = "FAILED"
+	whitelistConvergenceDeferred  = "DEFERRED"
+)
+
+// assertWhitelistConvergence (v1.228.5, BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE)
+// turns the durable whitelist convergence verdict recorded in phaseConfigure into a
+// final-state effect, exactly as assertHealthResourcePolicyActive does for the
+// health-resource verdict. Without it the field is written and never read, so a
+// failed projection of whitelist.d — the layer that carries the operator's
+// management IPs and the session IP seeded by safety.AddSessionWhitelist — would
+// still report a clean COMMITTED install.
+//
+// It performs NO live probe: services.SyncWhitelist runs `nftban sync`
+// (internal/installer/services/whitelist.go:52), which mutates the running set.
+// Validation must stay read-only, so the persisted verdict is the authority.
+//
+// Verdict mapping:
+//
+//	CONVERGED  → PASS (healthy for this dimension)
+//	FAILED     → FAIL (never clean; blocks COMMITTED via AllPassed)
+//	DEFERRED   → FAIL (valid only BEFORE the post-daemon convergence step; reaching
+//	             validation means convergence never ran → must not become COMMITTED)
+//	""         → PASS-as-UNKNOWN (legacy/not-evaluated; explicitly NOT "converged")
+//	other      → FAIL closed (an unrecognized verdict is not evidence of success)
+func assertWhitelistConvergence(opts AssertionOpts, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "whitelist_convergence_ok", Passed: true}
+	switch opts.WhitelistConvergence {
+	case whitelistConvergenceConverged:
+		r.Detail = "CONVERGED — durable whitelist.d projected into the running set"
+		log.Debug("ASSERT whitelist_convergence_ok: PASS — %s", r.Detail)
+
+	case "":
+		// BACKWARD COMPATIBILITY. An install_state written before v1.228.5 carries
+		// no WHITELIST_CONVERGENCE= line, so state.StateFile.Read leaves the field
+		// "". That is an absence of evidence, not evidence of failure — turning it
+		// into a FAIL would mark every pre-v1.228.5 host DEGRADED on its next
+		// revalidate. It is equally not evidence of success, so it is reported as
+		// UNKNOWN rather than folded into the CONVERGED branch, and it is logged at
+		// WARN (a passing assertion's Detail is only surfaced on failure, so a Debug
+		// line here would make the unknown genuinely silent).
+		r.Detail = "UNKNOWN — no WHITELIST_CONVERGENCE verdict for this path (install_state predates v1.228.5, or this caller does not evaluate it); NOT a convergence claim"
+		log.Warn("ASSERT whitelist_convergence_ok: UNKNOWN — no durable-whitelist convergence verdict is available for this path; recorded as not-evaluated, NOT as CONVERGED")
+
+	case whitelistConvergenceFailed:
+		r.Passed = false
+		r.Detail = "FAILED — the durable whitelist.d layer (including the operator management/session IPs) is NOT projected into the running set"
+		log.Error("ASSERT whitelist_convergence_ok: FAIL — install_state records WHITELIST_CONVERGENCE=FAILED; configured whitelist entries are not enforced")
+		log.Error("  remediation: re-project with 'nftban sync', then re-run the install/update — the install_state verdict is re-recorded ONLY by an installer run (phaseConfigure); 'nftban update revalidate' alone will NOT clear it")
+
+	case whitelistConvergenceDeferred:
+		r.Passed = false
+		r.Detail = "DEFERRED reached validation — the post-daemon whitelist convergence step never produced a verdict; DEFERRED is valid only before that step and must not survive as final install truth"
+		log.Error("ASSERT whitelist_convergence_ok: FAIL — WHITELIST_CONVERGENCE is still DEFERRED at validation time; the durable whitelist projection was never completed")
+
+	default:
+		r.Passed = false
+		r.Detail = fmt.Sprintf("unrecognized WHITELIST_CONVERGENCE value %q — failing closed rather than reading an unknown verdict as converged", opts.WhitelistConvergence)
+		log.Error("ASSERT whitelist_convergence_ok: FAIL-CLOSED — %s", r.Detail)
+	}
 	return r
 }
 

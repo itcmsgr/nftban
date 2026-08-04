@@ -57,8 +57,16 @@ const rebuildTimeout = 60 * time.Second
 func Rebuild(exec executor.Executor, log *logging.Logger) error {
 	log.Info("running nftban firewall rebuild (timeout=%s)", rebuildTimeout)
 
-	res := exec.RunTimeout(rebuildTimeout, fhs.NftbanCLI, "firewall", "rebuild")
-	log.CmdResult("nftban firewall rebuild", res.ExitCode, res.Stderr)
+	// v1.228.5: PASS the execution context explicitly. This rebuild runs BEFORE
+	// services.StartDaemon (phaseConfigure), and AddSessionWhitelist writes
+	// 00-session.conf AFTER it — so the durable whitelist cannot be verified here
+	// even if the daemon happened to be reachable. --install-context tells the
+	// rebuild to DEFER that projection rather than treat the expected daemon
+	// absence as a failure. services.SyncWhitelist is the convergence authority.
+	// Context is passed, never inferred: `systemctl is-active` cannot distinguish
+	// "operator stopped it" from "installer has not started it yet".
+	res := exec.RunTimeout(rebuildTimeout, fhs.NftbanCLI, "firewall", "rebuild", "--install-context")
+	log.CmdResult("nftban firewall rebuild --install-context", res.ExitCode, res.Stderr)
 
 	if res.ExitCode == 1 {
 		// DEGRADED: firewall base schema is loaded but module chains may be

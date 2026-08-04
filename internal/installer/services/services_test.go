@@ -241,7 +241,32 @@ func TestSyncWhitelist(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.RunResults["/usr/sbin/nftban:sync"] = executor.Result{ExitCode: 0}
 
-	SyncWhitelist(mock, newTestLogger())
+	if err := SyncWhitelist(mock, newTestLogger()); err != nil {
+		t.Fatalf("SyncWhitelist: converged sync must return nil, got %v", err)
+	}
+}
+
+// v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE.
+//
+// SyncWhitelist is the SOLE installer convergence authority for the durable
+// whitelist.d layer: switchop.Rebuild runs pre-daemon with --install-context and
+// explicitly DEFERS that projection. A total failure here previously produced only
+// a log warning while the install could still be reported COMMITTED, which merely
+// relocates the false-success defect to a later phase instead of closing it.
+//
+// This asserts the failure is now RETURNED, so cmd/nftban-installer/phases.go can
+// persist it via sf.WhitelistConvergence (state/file.go: struct field +
+// WHITELIST_CONVERGENCE write + parse case).
+func TestSyncWhitelist_FailureIsReturnedNotSwallowed(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.RunResults["/usr/sbin/nftban:sync"] = executor.Result{ExitCode: 1, Stderr: "daemon not running"}
+
+	err := SyncWhitelist(mock, newTestLogger())
+	if err == nil {
+		t.Fatal("SyncWhitelist: a non-converged sync MUST return an error, not a silent warning — " +
+			"otherwise the durable whitelist (incl. the operator session IP) can be unprojected " +
+			"while the install still reports COMMITTED")
+	}
 }
 
 func TestEnablePanel_None(t *testing.T) {

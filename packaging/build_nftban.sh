@@ -1432,10 +1432,20 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     if [ "\$INSTALL_MODE" = "upgrade" ] && [ "\${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ] && command -v nft >/dev/null 2>&1; then
         if nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -qE 'flags[[:space:]]+interval[[:space:]]*\$'; then
             echo "[NFTBan] v1.168: whitelist sets lack the timeout flag; rebuilding to enable --ttl expiry..."
-            if /usr/sbin/nftban firewall rebuild >/dev/null 2>&1; then
+            # v1.228.5: rebuild now returns non-zero with the CAUSE on stderr (e.g.
+            # the durable whitelist.d layer could not be projected). The previous
+            # form discarded it, so this WARN told the operator nothing actionable.
+            # Capture it and print a BOUNDED excerpt. Still NON-FATAL: the upgrade
+            # continues regardless of the rebuild outcome.
+            NFTBAN_V168_RC=0
+            NFTBAN_V168_OUT=\$(/usr/sbin/nftban firewall rebuild 2>&1) || NFTBAN_V168_RC=\$?
+            if [ "\$NFTBAN_V168_RC" -eq 0 ]; then
                 echo "[NFTBan] v1.168: whitelist sets are now timeout-capable (flags interval, timeout)."
             else
-                echo "[NFTBan] WARN: v1.168 rebuild did not complete; run 'nftban firewall rebuild' to enable whitelist TTLs."
+                echo "[NFTBan] WARN: v1.168 rebuild did not complete (exit \$NFTBAN_V168_RC); run 'nftban firewall rebuild' to enable whitelist TTLs."
+                if [ -n "\$NFTBAN_V168_OUT" ]; then
+                    echo "\$NFTBAN_V168_OUT" | tail -n 5 | sed 's/^/[NFTBan] WARN:   rebuild: /' || :
+                fi
             fi
         fi
     fi

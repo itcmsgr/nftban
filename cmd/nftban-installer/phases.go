@@ -80,6 +80,12 @@ type phaseData struct {
 	// verdict produced in phaseConfigure and consumed by the phaseValidate
 	// health_resource_policy_active assertion (single policy path).
 	healthResource healthresource.Verdict
+	// v1.228.5: durable whitelist convergence verdict from the SOLE installer
+	// convergence authority (services.SyncWhitelist, post-daemon). nil = converged.
+	// The pre-daemon rebuild explicitly DEFERS this projection, so if it also fails
+	// here the durable whitelist.d layer - including the operator session IP - is
+	// unprojected and the install must NOT be reported as fully healthy.
+	whitelistSyncErr error
 	// v1.223.0 verdict-truth: per-call DATA test-injection carrier (nil in
 	// production; never set by flag parsing). Propagated from cfg.inject in main().
 	// phaseValidate consults it (nil-safe) to source the systemd-payload assertion
@@ -573,7 +579,22 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 	}
 
 	// 5. Whitelist sync (loads whitelists and feeds)
-	services.SyncWhitelist(exec, log)
+	//
+	// v1.228.5: this is the SOLE installer convergence authority for the durable
+	// whitelist.d layer - switchop.Rebuild ran pre-daemon with --install-context and
+	// explicitly deferred it. A failure here is therefore NOT a cosmetic warning: it
+	// means the durable whitelist (including the operator session IP written just
+	// above by AddSessionWhitelist) never reached the running set. Recorded so the
+	// final install verdict can reflect it instead of reporting a silent COMMITTED.
+	pd.whitelistSyncErr = services.SyncWhitelist(exec, log)
+	if pd.whitelistSyncErr != nil {
+		log.Error("durable whitelist convergence FAILED: %v", pd.whitelistSyncErr)
+		log.Error("the configured whitelist.d layer is NOT projected into the running set")
+		log.Error("operator management IPs (including the session IP seeded above) may be unenforced")
+		sf.WhitelistConvergence = "FAILED"
+	} else {
+		sf.WhitelistConvergence = "CONVERGED"
+	}
 
 	// 6. Restart polkit (picks up new/removed polkit rules)
 	services.RestartPolkit(exec, log)
@@ -588,6 +609,13 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 
 	log.PhaseEnd("Configure")
 	phaseEndMarker(log, "configure")
+
+	// v1.228.5: the convergence verdict is persisted via sf.WhitelistConvergence
+	// (state/file.go: struct field + WHITELIST_CONVERGENCE write + parse case),
+	// which is the repository's established pattern for a phase verdict — the same
+	// one HealthResourceState uses. It is NOT threaded through Transition's reason:
+	// Transition records `reason` only for IsFailed()/COMMITTED/DEGRADED states, so
+	// a reason passed with StateServicesComplete would be silently discarded.
 	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
 }
 
@@ -637,6 +665,15 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// STRUCTURED names into install_state (SERVICES_FAILED + attribution).
 	var failedUnits []validate.FailedUnitPostInstall
 	opts.FailedUnitsOut = &failedUnits
+	// v1.228.5: feed the durable whitelist convergence verdict recorded by
+	// phaseConfigure (phases.go:594/596) to the whitelist_convergence_ok assertion,
+	// so a failed whitelist.d projection ends the run DEGRADED instead of COMMITTED.
+	// opts is reused verbatim for VALIDATE_2 below, so the verdict carries to both
+	// passes. On a repair/resume that starts at PhaseValidate (phaseConfigure
+	// SKIPPED) this is the value main() read from disk (main.go:145) — the last
+	// recorded convergence truth, and "" on a pre-v1.228.5 record, which the
+	// assertion reports as UNKNOWN rather than as a pass or a failure.
+	opts.WhitelistConvergence = sf.WhitelistConvergence
 	// v1.223.0 verdict-truth (owner ruling: per-pass resolution): VALIDATE_1
 	// resolves ONE authoritative health verdict for the health_resource_policy_active
 	// assertion. When phaseConfigure ran this process pd.healthResource is populated
