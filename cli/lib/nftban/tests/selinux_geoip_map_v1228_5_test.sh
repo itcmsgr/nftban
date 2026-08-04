@@ -59,6 +59,40 @@ actual="$(grep -oE '^[[:space:]]*allow[[:space:]]+nftband_t[[:space:]]+[a-z_]+:f
   && ok "T5 file:map granted to exactly the expected types [$actual]" \
   || no "T5 file:map type set drifted - expected [$expected] got [$actual]"
 
+# ── T6 CONTROLS: prove T1 measures a POLICY STATEMENT, not source text ──────
+# T1/T4/T5 anchor on '^[[:space:]]*allow', which already excludes comment lines by
+# construction. That is an ASSUMPTION until it is tested. A sibling guard on this
+# same branch reported PASS off a comment quoting the call it existed to verify, so
+# the anchor is proven here rather than trusted. Injection into a THROWAWAY copy —
+# the shipped policy is never written to.
+_g="$(mktemp -d)"; trap 'rm -rf "$_g"' EXIT
+
+# CONTROL A: grant present only as a COMMENT -> T1 must FAIL (no vacuous pass).
+grep -vE '^[[:space:]]*allow[[:space:]]+nftband_t[[:space:]]+nftban_var_lib_t:file[[:space:]]+map;' "$TE" \
+  > "$_g/a.te"
+echo '# allow nftband_t nftban_var_lib_t:file map;   <- documented, NOT granted' >> "$_g/a.te"
+if grep -qE '^[[:space:]]*allow[[:space:]]+nftband_t[[:space:]]+nftban_var_lib_t:file[[:space:]]+map;' "$_g/a.te"; then
+  no "T6a commented-out grant satisfies T1 (VACUOUS PASS - the fix could be absent)"
+else
+  ok "T6a commented-out grant correctly does NOT satisfy T1"
+fi
+
+# CONTROL B: grant removed entirely -> T1 must FAIL. Proves T1 can fail at all.
+if grep -qE '^[[:space:]]*allow[[:space:]]+nftband_t[[:space:]]+nftban_var_lib_t:file[[:space:]]+map;' \
+     <(grep -vE 'nftban_var_lib_t:file[[:space:]]+map;' "$TE"); then
+  no "T6b T1 still passes with the grant REMOVED - assertion is unfalsifiable"
+else
+  ok "T6b T1 correctly FAILS when the grant is removed"
+fi
+
+# CONTROL C: forbidden-scope check must catch a real sysctl grant, not just absence.
+if grep -qE '^[[:space:]]*allow[[:space:]]+nftband_t[[:space:]]+sysctl_net_t:dir[[:space:]]+search;' \
+     <(cat "$TE"; echo 'allow nftband_t sysctl_net_t:dir search;'); then
+  ok "T6c T4 would DETECT the unproven sysctl grant if it were added"
+else
+  no "T6c T4 blind to an injected sysctl grant - scope guard is inert"
+fi
+
 echo
 echo "=== RESULT: $PASS passed, $FAIL failed ==="
 [[ "$FAIL" -eq 0 ]] || exit 1

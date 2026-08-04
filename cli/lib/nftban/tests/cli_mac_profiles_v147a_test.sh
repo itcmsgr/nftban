@@ -48,15 +48,38 @@ BUILD="$REPO/packaging/build_nftban.sh"
 POSTINST="$REPO/packaging/deb/postinst"
 POSTRM="$REPO/packaging/deb/postrm"
 
+# ── executable-policy extraction ───────────────────────────────────────────
+# v1.228.5. These assertions are about POLICY, but they were reading raw source
+# TEXT, which is not the same thing. Both failure directions were then observed on
+# one branch:
+#
+#   FALSE FAIL  S9 forbids 'unconfined_t'. nftban.te documents the GeoIP denial's
+#               discriminator, which necessarily NAMES unconfined_t ("an interactive
+#               run in unconfined_t succeeds, the service domain nftband_t does
+#               not"). Prose tripped a guard about rules.
+#   FALSE PASS  the sibling v1930 guard was satisfied by a comment quoting the very
+#               call it existed to verify — it reported PASS while the call had
+#               moved. That is strictly worse than the visible failure, because a
+#               green check manufactures confidence.
+#
+# Strip trailing comments and blank lines, then assert against statements. Applied
+# to .te/.if/.fc only. Shell scripts are NOT run through this wholesale: build_nftban.sh
+# contains heredocs that EMIT policy text, where '#' is generated content rather
+# than a comment, so those assertions keep their existing extraction boundary.
+policy_code(){ sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$@" 2>/dev/null; }
+TE_CODE="$(policy_code "$TE")"
+IF_CODE="$(policy_code "$IF")"
+FC_CODE="$(policy_code "$FC")"
+
 # ── SELinux ────────────────────────────────────────────────────────────────
-[[ -f "$TE" ]] && grep -qE 'policy_module\(nftban, 1\.2\.0\)' "$TE" \
+[[ -f "$TE" ]] && grep -qE 'policy_module\(nftban, 1\.2\.0\)' <<<"$TE_CODE" \
   && ok "S1 nftban.te policy_module is 1.2.0" || no "S1 nftban.te policy_module is 1.2.0" "missing/old"
-[[ -f "$IF" ]] && grep -q 'nftban_domtrans' "$IF" \
+[[ -f "$IF" ]] && grep -q 'nftban_domtrans' <<<"$IF_CODE" \
   && ok "S2 nftban.if exists with interfaces" || no "S2 nftban.if exists" "missing"
-[[ -f "$FC" ]] && grep -Eq '/usr/lib/nftban/bin/nftband[[:space:]].*nftband_exec_t' "$FC" \
+[[ -f "$FC" ]] && grep -Eq '/usr/lib/nftban/bin/nftband[[:space:]].*nftband_exec_t' <<<"$FC_CODE" \
   && ok "S3 nftban.fc labels the daemon binary nftband_exec_t" || no "S3 .fc labels daemon binary" "missing"
-if grep -q 'netlink_netfilter_socket' "$TE" && grep -q 'netlink_route_socket' "$TE" \
-   && grep -Eq 'self:capability \{[^}]*\bnet_admin\b[^}]*\bnet_raw\b' "$TE"; then
+if grep -q 'netlink_netfilter_socket' <<<"$TE_CODE" && grep -q 'netlink_route_socket' <<<"$TE_CODE" \
+   && grep -Eq 'self:capability \{[^}]*\bnet_admin\b[^}]*\bnet_raw\b' <<<"$TE_CODE"; then
   ok "S4 nftban.te carries netlink + net_admin/net_raw allows"
 else no "S4 .te netlink/capability allows" "missing"; fi
 if grep -qE 'make -f /usr/share/selinux/devel/Makefile nftban\.pp' "$BUILD" \
@@ -75,12 +98,39 @@ if grep -q 'semodule -r nftban' <<<"$_postun_sec" && grep -q 'selinuxenabled' <<
   ok "S7 RPM %postun has selinuxenabled-guarded semodule -r"
 else no "S7 RPM %postun semodule -r" "missing/unguarded"; fi
 # enforcing domain only — NO permissive, NO unconfined workaround
-if ! grep -qE 'permissive[[:space:]]+nftband_t' "$TE"; then
+if ! grep -qE 'permissive[[:space:]]+nftband_t' <<<"$TE_CODE"; then
   ok "S8 no 'permissive nftband_t' (enforcing domain)"
 else no "S8 no permissive nftband_t" "permissive present"; fi
-if ! grep -qiE 'unconfined_domain|unconfined_t' "$TE" "$IF"; then
+if ! grep -qiE 'unconfined_domain|unconfined_t' <<<"$TE_CODE$IF_CODE"; then
   ok "S9 no unconfined workaround in policy"
 else no "S9 no unconfined workaround" "unconfined present"; fi
+# ── S9-CONTROLS: prove the guard discriminates statement from prose ────────
+# Without these, S9 is unfalsifiable: it would pass identically if policy_code
+# silently returned nothing, which is the failure mode that produced the vacuous
+# PASS elsewhere on this branch. Injection into a THROWAWAY copy, never the shipped
+# policy — the real .te is not written to at any point.
+_ctl_dir="$(mktemp -d)"; trap 'rm -rf "$_ctl_dir"' EXIT
+_ctl="$_ctl_dir/ctl.te"
+
+# CONTROL A (negative): a real, executable unconfined grant MUST be caught.
+{ cat "$TE"; echo 'allow nftband_t unconfined_t:file read;'; } > "$_ctl"
+if grep -qiE 'unconfined_domain|unconfined_t' <<<"$(policy_code "$_ctl")"; then
+  ok "S9-A injected EXECUTABLE unconfined grant is DETECTED"
+else no "S9-A injected executable unconfined grant" "guard blind to a real violation"; fi
+
+# CONTROL B (positive): the same token in a COMMENT must NOT trip it.
+{ grep -viE 'unconfined_domain|unconfined_t' "$TE"
+  echo '# discriminator: an interactive run in unconfined_t succeeds'; } > "$_ctl"
+if grep -qiE 'unconfined_domain|unconfined_t' <<<"$(policy_code "$_ctl")"; then
+  no "S9-B comment-only mention" "prose still trips the guard — parser not comment-blind"
+else ok "S9-B comment-only 'unconfined_t' correctly IGNORED"; fi
+
+# CONTROL C: policy_code must not be vacuous — an empty extraction would make every
+# forbidden-token check pass for the wrong reason.
+if [[ "$(wc -l <<<"$TE_CODE")" -gt 20 ]] && grep -q 'policy_module' <<<"$TE_CODE"; then
+  ok "S9-C policy_code extraction is non-empty and retains statements"
+else no "S9-C policy_code non-vacuous" "extraction empty/degenerate — forbidden checks would false-pass"; fi
+
 # guard typo check: must be selinuxenabled, never selinunenabled
 if ! grep -rq 'selinunenabled' "$BUILD" "$POSTINST" "$POSTRM"; then
   ok "S10 guard spelled 'selinuxenabled' (no 'selinunenabled' typo)"
