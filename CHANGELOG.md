@@ -11,6 +11,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.5] - 2026-08-04 — the distro nftables service can read the ruleset NFTBan renders for it
+
+On a stock EL9 host with SELinux **Enforcing from first boot**, a clean install produced **no
+firewall**. NFTBan renders the ruleset to `/etc/nftban/nftables.conf` and the distro
+`nftables.service` loads it — but that service executes `/sbin/nft` in the `iptables_t` domain, and
+the rendered file carried `nftban_conf_t`, which no rule permitted `iptables_t` to read. The service
+failed, and the install reported `INSTALL_STATE=FAILED_NO_FIREWALL`. The consumer, not NFTBan, was
+the domain being denied.
+
+### Fixed — a dedicated type for the one artifact a foreign domain must read
+
+- **The rendered ruleset now carries its own type.** `install/selinux/nftban.fc` labels
+  `/etc/nftban/nftables.conf` `nftban_nftables_conf_t`, separating the single cross-domain artifact
+  from `nftban_conf_t`, which stays private to NFTBan. Minimum authority is preserved: `iptables_t`
+  gains read access to exactly one file, not to NFTBan's configuration surface.
+
+- **`allowxperm` refines; it cannot grant.** The first attempt authorised the extended permission
+  alone and was refuted on a live EL10 Enforcing host, which emitted
+  `avc: denied { ioctl } comm="nft" … ioctlcmd=0x5401`. An `allowxperm` narrows a base permission
+  that is *already* allowed — it cannot create one. The rule therefore grants
+  `{ getattr open read ioctl }` and *then* narrows the ioctl to `TCGETS` (`0x5401`) via
+  `allowxperm`. Recorded because the failed form looked correct and passed policy compilation.
+
+- **Publication establishes the label, so a rebuild cannot lose it.** `nftban firewall rebuild`
+  previously published the rendered file with a plain `mv`, which carries the source label and
+  silently reverted the type. The publish path now establishes the canonical type as part of
+  publication, so the label survives `rebuild --force` and `restorecon -RFv`.
+
+### Fixed — remediation that named the wrong subject
+
+When `perl` is absent, the service-port step fails. The advice printed was
+`ensure nftban-core is present and SSH port is detectable` — neither of which was the problem.
+It now names the actual missing dependency:
+`Fix: install the missing 'perl' interpreter (EL: dnf install perl-interpreter)`. The existing
+firewall is preserved across that failure rather than torn down.
+
+### Changed — packaging
+
+- RPM declares `Requires: /usr/bin/perl` rather than the `perl` meta-package, which pulls a
+  substantially larger dependency set for one interpreter.
+- The DEB drops its redundant `perl` dependency: `perl-base` is `Essential: yes` on Debian and
+  Ubuntu, so the declaration added nothing. The DEB `Depends:` line returns to its pre-lane value.
+- Two spec-generation defects are closed: a bare RPM section macro written into a spec comment, and
+  backticks inside the unquoted spec heredoc.
+- The SELinux policy build is **fail-closed** — a deliberately broken policy fails the build at the
+  policy step instead of producing a package without one.
+
+### Validation
+
+Clean install on **Rocky Linux 9.7, SELinux Enforcing from first boot**, from the pristine overlay.
+Every firewall verdict comes from `nftables.service` — that is, from `iptables_t` — and **no manual
+`nft -f`, `semodule -i`, `restorecon` or `chcon` preceded the evidence**. Covered: clean install
+(`INSTALL_STATE=COMMITTED`), service start and restart, label persistence across `rebuild --force`
+and `restorecon -RFv`, persistence across reboot with zero failed units, upgrade **repairing** a host
+left broken by v1.228.2, policy artifact present in the cpio payload, and the perl-absent and
+perl-present paths. EL10 policy compatibility and runtime were exercised on AlmaLinux 10.1
+Enforcing after a clean autorelabel.
+
+**Not claimed:** the SELinux install-time controls remain unimplemented — `semodule -i` is still
+invoked without a three-state `getenforce` branch, without a `semodule -l` verification that the
+module actually loaded, and with no CI regression guard. Those are latent control gaps, not
+demonstrated failures; the module was empirically loaded on both EL9 and EL10 clean installs. They
+are tracked separately and are **not** closed by this release.
+
+---
+
 ## [v1.228.4] - 2026-07-30 — a failed read is no longer proof of absence
 
 A failed `nft` read was being treated as evidence that a firewall table was **absent**, and absence
