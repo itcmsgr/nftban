@@ -12,6 +12,17 @@
 # meta:input="install/selinux/nftban.te"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep"
+# meta:ta.id="selinux_geoip_map_v1228_5_test"
+# meta:ta.owner="security"
+# meta:ta.module="selinux-geoip-map"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="policy-gates"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -uo pipefail
 PASS=0; FAIL=0

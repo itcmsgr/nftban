@@ -12,6 +12,17 @@
 # meta:input="cli/lib/nftban/cli/cmd_firewall.sh :: _nftban_whitelist_reconcile_and_verify"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep,sort,comm,sed"
+# meta:ta.id="whitelist_reconcile_convergence_v1228_5_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="whitelist-reconcile-convergence"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="policy-gates"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -uo pipefail
 

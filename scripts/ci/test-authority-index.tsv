@@ -188,6 +188,7 @@ rpm_files_templates_dedup_v166_test	cli/lib/nftban/tests/rpm_files_templates_ded
 rpm_spec_no_section_macro_in_comment_v165_test	cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh	packaging	test	rpm-spec	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 rpm_spec_single_install_v157_test	cli/lib/nftban/tests/rpm_spec_single_install_v157_test.sh	packaging	test	rpm-spec	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 ruleset_fingerprint_v138_test	cli/lib/nftban/tests/ruleset_fingerprint_v138_test.sh	security	test	rulefp	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+selinux_geoip_map_v1228_5_test	cli/lib/nftban/tests/selinux_geoip_map_v1228_5_test.sh	security	test	selinux-geoip-map	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 service_alerts_v138_test	cli/lib/nftban/tests/service_alerts_v138_test.sh	firewall	test	firewall-conflicts	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 session_whitelist_flock_v173_test	cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh	firewall	test	session-whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 set_apply_single_writer_v213_grep_guard_test	cli/lib/nftban/tests/set_apply_single_writer_v213_grep_guard_test.sh	firewall	test	set-apply-single-writer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -253,6 +254,7 @@ version_release_date_authority_test	cli/lib/nftban/tests/version_release_date_au
 watchdog_update_swap_race_v1983_test	cli/lib/nftban/tests/watchdog_update_swap_race_v1983_test.sh	update	test	watchdog-update-swap	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_list_timed_label_v169_test	cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh	whitelist	test	whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_rebuild_remerge_v1930_test	cli/lib/nftban/tests/whitelist_rebuild_remerge_v1930_test.sh	firewall	test	whitelist-rebuild-remerge	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+whitelist_reconcile_convergence_v1228_5_test	cli/lib/nftban/tests/whitelist_reconcile_convergence_v1228_5_test.sh	firewall	test	whitelist-reconcile-convergence	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_set_timeout_flag_v168_test	cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh	whitelist	test	whitelist-set-timeout-flag	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_timeout_upgrade_activation_v168_test	cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh	packaging	test	whitelist-timeout-upgrade-activation	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 whitelist_verify_v163_test	cli/lib/nftban/tests/whitelist_verify_v163_test.sh	whitelist	test	whitelist-verify	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
