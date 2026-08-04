@@ -41,6 +41,9 @@ func newTestLogger() *logging.Logger {
 
 func TestRebuild_Success(t *testing.T) {
 	mock := executor.NewMockExecutor()
+	// v1.228.5: these tests assert SPECIFIC exit codes, so a stale argv key must
+	// fail loudly (exit 255) rather than silently returning success. See mock.go.
+	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{ExitCode: 0}
 
 	err := Rebuild(mock, newTestLogger())
@@ -53,6 +56,9 @@ func TestRebuild_Degraded(t *testing.T) {
 	// Exit 1 = DEGRADED: firewall operational but module checks failed.
 	// This is expected during upgrade and must NOT return an error.
 	mock := executor.NewMockExecutor()
+	// v1.228.5: these tests assert SPECIFIC exit codes, so a stale argv key must
+	// fail loudly (exit 255) rather than silently returning success. See mock.go.
+	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{ExitCode: 1, Stderr: "DEGRADED"}
 
 	err := Rebuild(mock, newTestLogger())
@@ -69,6 +75,9 @@ func TestRebuild_Degraded(t *testing.T) {
 func TestRebuild_Failure(t *testing.T) {
 	// Exit 2 = FAILED: rebuild failed, rollback happened.
 	mock := executor.NewMockExecutor()
+	// v1.228.5: these tests assert SPECIFIC exit codes, so a stale argv key must
+	// fail loudly (exit 255) rather than silently returning success. See mock.go.
+	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{ExitCode: 2, Stderr: "rebuild failed"}
 
 	err := Rebuild(mock, newTestLogger())
@@ -101,6 +110,9 @@ func readLog(t *testing.T) (*logging.Logger, func() string) {
 func TestRebuild_DegradedReason_FromStdout_NoContradiction(t *testing.T) {
 	// Real recoverable case: exit 1 with EMPTY stderr; reason is on stdout.
 	mock := executor.NewMockExecutor()
+	// v1.228.5: these tests assert SPECIFIC exit codes, so a stale argv key must
+	// fail loudly (exit 255) rather than silently returning success. See mock.go.
+	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{
 		ExitCode: 1, Stderr: "", Stdout: "base schema applied\nmodule chains pending daemon",
 	}
@@ -123,6 +135,9 @@ func TestRebuild_DegradedReason_FromStdout_NoContradiction(t *testing.T) {
 func TestRebuild_DegradedEmptyOutput_StaticReason(t *testing.T) {
 	// exit 1 with empty stderr AND empty stdout → static fallback reason (never blank).
 	mock := executor.NewMockExecutor()
+	// v1.228.5: these tests assert SPECIFIC exit codes, so a stale argv key must
+	// fail loudly (exit 255) rather than silently returning success. See mock.go.
+	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{ExitCode: 1}
 	log, dump := readLog(t)
 	_ = Rebuild(mock, log)
@@ -137,6 +152,9 @@ func TestRebuild_DegradedEmptyOutput_StaticReason(t *testing.T) {
 
 func TestRebuild_Success_PlainCompleted(t *testing.T) {
 	mock := executor.NewMockExecutor()
+	// v1.228.5: these tests assert SPECIFIC exit codes, so a stale argv key must
+	// fail loudly (exit 255) rather than silently returning success. See mock.go.
+	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{ExitCode: 0}
 	log, dump := readLog(t)
 	if err := Rebuild(mock, log); err != nil {
