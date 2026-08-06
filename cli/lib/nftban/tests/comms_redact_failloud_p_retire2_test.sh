@@ -27,6 +27,13 @@
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
+# meta:ta.timeout="300"
+# v1.228.5: MEASURED standalone runtime ~130s (baseline 6b88a9a7) and ~133s (candidate) —
+# it PASSES, but exceeds run-test-suite.sh's DEFAULT_TIMEOUT of 120s, so the gate recorded
+# it as a BLOCKING TIMEOUT rather than a pass. The test is not slow by defect: it drives a
+# large redaction corpus deliberately. Declaring the real budget is the correct fix; the
+# test is NOT trimmed to fit an arbitrary limit. 300s gives headroom for slower CI runners
+# without hiding a genuine hang.
 # =============================================================================
 
 set -Eeuo pipefail

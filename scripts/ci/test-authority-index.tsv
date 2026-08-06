@@ -96,7 +96,7 @@ comms_no_direct_send_guard_a0_test	cli/lib/nftban/tests/comms_no_direct_send_gua
 comms_producer_signal_accuracy_test	cli/lib/nftban/tests/comms_producer_signal_accuracy_test.sh	comms	test	health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_rbl_tunnel_producer_recipient_test	cli/lib/nftban/tests/comms_rbl_tunnel_producer_recipient_test.sh	comms	test	health-communication-component	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_debug_p_retire1_test	cli/lib/nftban/tests/comms_redact_debug_p_retire1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
-comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_p_retire2_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_p_retire2_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	300		
 comms_redact_p2a_noleak_test	cli/lib/nftban/tests/comms_redact_p2a_noleak_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

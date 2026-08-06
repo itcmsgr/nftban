@@ -58,11 +58,25 @@ PASS=0
 FAIL=0
 FAILED_TESTS=()
 
-# count_stanza_paths <log-path>: number of NON-comment lines in the logrotate
-# template that reference the exact path (i.e. real stanza path entries, not the
-# header/comment mentions).
+# count_stanza_paths <log-path>: number of NON-comment stanza path ENTRIES in the
+# logrotate template that are EXACTLY this path.
+#
+# v1.228.5: this used `grep -F -- "$1"`, a SUBSTRING match. Once 021d45f8 gave the
+# preserved predecessor its own retention owner, the template legitimately carries BOTH
+#     /var/log/nftban/permissions_audit.log
+#     /var/log/nftban/permissions_audit.log.pre-v1.228.5 {
+# and the substring match counted the predecessor as a second occurrence of the base
+# path — reporting a phantom duplicate. The product was correct throughout: the
+# generator declares one stanza with two paths, and `logrotate -d` returns 0 with no
+# "duplicate log entry" error.
+#
+# A logrotate stanza path entry starts at column 0 and ends either at end-of-line or
+# before the opening brace. Anchoring on that makes the count exact, so a genuine
+# duplicate is still caught while a longer sibling path is not miscounted.
 count_stanza_paths() {
-    grep -F -- "$1" "$LOGROTATE_FILE" | grep -vc '^[[:space:]]*#'
+    local esc="${1//./\\.}"
+    grep -vE '^[[:space:]]*#' "$LOGROTATE_FILE" \
+        | grep -cE "^${esc}([[:space:]]*\{)?[[:space:]]*$"
 }
 
 assert_contains() {
@@ -161,6 +175,17 @@ echo; echo "[T3] LOG-11 /var/log/nftban/permissions_audit.log logrotate stanza"
 T3_BLK=$(extract_stanza_block "/var/log/nftban/permissions_audit.log")
 assert_eq "$(count_stanza_paths /var/log/nftban/permissions_audit.log)" "1" "T3.1 exactly one stanza path entry"
 assert_eq "$(count_stanza_paths /var/lib/nftban/permissions_audit.log)" "0" "T3.1b OLD /var/lib path is GONE from the stanza"
+# The preserved predecessor is a SEPARATE path entry with its own retention owner
+# (021d45f8). It must be counted as itself, not as an occurrence of the base path.
+assert_eq "$(count_stanza_paths /var/log/nftban/permissions_audit.log.pre-v1.228.5)" "1" "T3.1c predecessor has its own single stanza path entry"
+# FALSIFIABILITY: tightening the matcher must not turn duplicate detection into an
+# always-green check. Inject a genuine duplicate of the EXACT path and require it to be
+# counted, then restore. Without this control, T3.1 could pass for the wrong reason.
+_dup_probe="$(mktemp)"
+{ cat "$LOGROTATE_FILE"; printf '%s\n' "/var/log/nftban/permissions_audit.log"; } > "$_dup_probe"
+_lr_real="$LOGROTATE_FILE"; LOGROTATE_FILE="$_dup_probe"
+assert_eq "$(count_stanza_paths /var/log/nftban/permissions_audit.log)" "2" "T3.1d FALSIFIABILITY: an injected duplicate EXACT path IS detected"
+LOGROTATE_FILE="$_lr_real"; rm -f "$_dup_probe"
 assert_contains "$T3_BLK" "weekly"     "T3.2 weekly frequency"
 assert_contains "$T3_BLK" "rotate 12"  "T3.3 rotate 12"
 
