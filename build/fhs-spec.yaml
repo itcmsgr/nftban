@@ -1017,6 +1017,26 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
 
+    - path: /var/log/nftban/reports/weekly
+      artifact_class: log
+      retention_owner: logrotate
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Weekly operational reports (v1.228.5: declared so ownership does not depend on which code path creates the directory first)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
+    - path: /var/log/nftban/reports/monthly
+      artifact_class: log
+      retention_owner: logrotate
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Monthly operational reports (v1.228.5: declared alongside daily/weekly for a complete report topology)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
     - path: /var/log/nftban/reports/archive
       artifact_class: log
       retention_owner: logrotate
