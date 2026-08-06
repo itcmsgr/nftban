@@ -98,7 +98,7 @@ func DefaultFamilies() []LogFamily {
 		{Key: "reports", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 50 * MiB, UseMaxsize: true, Olddir: "/var/log/nftban/reports/archive", CreateOlddir: "0750 nftban nftban", FloorDays: 90,
 			Paths: []string{"/var/log/nftban/reports/*.html", "/var/log/nftban/reports/*.txt", "/var/log/nftban/reports/*.json"}},
 		{Key: "reports-daily", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 20 * MiB, UseMaxsize: true, FloorDays: 90,
-			Paths: []string{"/var/log/nftban/reports/daily/*.html", "/var/log/nftban/reports/daily/*.txt"}},
+			Paths: []string{"/var/log/nftban/reports/daily/*.html", "/var/log/nftban/reports/daily/*.txt", "/var/log/nftban/reports/daily/*.json"}},
 
 		// Suricata-native (separate file, su suricata nftban). v1.222.0 R1: ALL eve
 		// logs use copytruncate — Suricata holds the fd open and USR2 is a rule

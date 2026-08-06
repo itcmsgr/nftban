@@ -1336,8 +1336,10 @@ _nftban_migrate_reports_to_log() {
     # MEASURED on the legacy fixture: after migrating, logrotate.service still failed with
     #   avc: denied { getattr } path="/var/log/nftban/reports/*.html"
     #        tcontext=...:nftban_var_lib_t:s0 permissive=0
-    # The %post restorecon runs BEFORE this function, so it cannot relabel what we move
-    # after it. Relabel here, inside the migration authority itself.
+    # The scriptlet-level restorecon runs BEFORE this function, so it cannot relabel what
+    # we move after it. Relabel here, inside the migration authority itself.
+    # (Deliberately avoids naming the RPM section macro: a section token in a spec COMMENT
+    #  is still parsed by rpm and can prematurely open a section — see the v1.165 guard.)
     if command -v restorecon >/dev/null 2>&1; then
         restorecon -R /var/log/nftban >/dev/null 2>&1 || true
     fi

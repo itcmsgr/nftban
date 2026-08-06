@@ -81,6 +81,35 @@ else
     fail "permissions_audit.log path differs between generator and template (or is missing)"
 fi
 
+echo "=== R-4: every pattern the MIGRATION moves has a retention owner ==="
+# The guard blind spot that let daily/*.json through: R-1..R-3 prove nothing rotates out
+# of /var/lib, but said nothing about whether the destination has an owner. The package
+# MOVES these artifacts, so it owns their destination lifecycle — a migrated file with no
+# stanza is an unowned artifact, the exact class this release closes.
+MIGSRC="packaging/deb/postinst"
+if [[ ! -r "$MIGSRC" ]]; then
+    fail "cannot read $MIGSRC to derive migrated patterns"
+else
+    # Patterns the migration loop actually moves, derived from the source rather than
+    # hardcoded here — a hardcoded list would drift from the migration it audits.
+    exts="$(sed -n '/_nftban_migrate_reports_to_log()/,/^        }/p' "$MIGSRC" \
+            | grep -oE '\*\.(html|txt|json)' | sort -u | tr -d '*.')"
+    subs="$(sed -n '/_nftban_migrate_reports_to_log()/,/^        }/p' "$MIGSRC" \
+            | grep -oE 'for _sub in [^;]*' | head -1)"
+    r4=0
+    for sub in "" "/daily"; do
+        for e in $exts; do
+            pat="/var/log/nftban/reports${sub}/*.${e}"
+            if ! grep -qF "$pat" install/config/nftban.logrotate 2>/dev/null; then
+                fail "migrated pattern has NO stanza: $pat"; r4=1
+            elif ! grep -qF "$pat" internal/logretention/inventory.go 2>/dev/null; then
+                fail "migrated pattern missing from the GENERATOR: $pat"; r4=1
+            fi
+        done
+    done
+    [[ "$r4" -eq 0 ]] && pass "every migrated pattern ($(echo $exts | tr ' ' ',') in reports/ and reports/daily/) has a retention owner in BOTH authorities"
+fi
+
 echo
 if [[ "$FAIL" -eq 0 ]]; then
     echo "=== RESULT: logrotate FHS authority PASS ==="

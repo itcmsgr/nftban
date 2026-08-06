@@ -332,7 +332,7 @@
 }
 
 # Daily reports subdirectory
-/var/log/nftban/reports/daily/*.html /var/log/nftban/reports/daily/*.txt {
+/var/log/nftban/reports/daily/*.html /var/log/nftban/reports/daily/*.txt /var/log/nftban/reports/daily/*.json {
     monthly
     rotate 3
     maxsize 20M
