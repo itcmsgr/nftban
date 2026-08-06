@@ -375,6 +375,15 @@ _nftban_migrate_reports_to_log() {
         chown nftban:nftban "$_na" 2>/dev/null || true
         chmod 0640 "$_na" 2>/dev/null || true
         [ -f "$_na.pre-v1.228.5" ] && { chown nftban:nftban "$_na.pre-v1.228.5" 2>/dev/null || true; chmod 0640 "$_na.pre-v1.228.5" 2>/dev/null || true; }
+        # Relabel the audit log HERE, not at the end of the function. MEASURED defect:
+        # the end-of-function restorecon sits AFTER `[ -d $_old ] || return 0`, so on a
+        # host with an audit log but NO /var/lib/nftban/reports the file was moved and
+        # never relabelled — keeping nftban_var_lib_t at its new /var/log path, which is
+        # exactly the label logrotate_t cannot read. Each move relabels what it moved.
+        if command -v restorecon >/dev/null 2>&1; then
+            restorecon -F "$_na" >/dev/null 2>&1 || true
+            [ -f "$_na.pre-v1.228.5" ] && restorecon -F "$_na.pre-v1.228.5" >/dev/null 2>&1 || true
+        fi
     fi
 
     [ -d "$_old" ] || return 0
@@ -410,6 +419,32 @@ _nftban_migrate_reports_to_log() {
         restorecon -R /var/log/nftban >/dev/null 2>&1 || true
     fi
         }
+                _nftban_migrate_reports_dir_conf() {
+            # v1.228.5: /etc/nftban/conf.d/*.conf is %config(noreplace), so an UPGRADE keeps the
+            # operator's existing file and drops the corrected default as .rpmnew. Changing the
+            # shipped default therefore fixes fresh installs ONLY — an upgraded host would keep
+            # pointing reports at /var/lib, where zero stanzas rotate them.
+            # MEASURED: nftban-report-daily.service wrote /var/lib/nftban/reports/daily/*.html on
+            # a candidate that had already migrated, because stats.conf still carried the old value.
+            #
+            # Rewrite ONLY when the live value is byte-identical to the OLD SHIPPED DEFAULT, i.e.
+            # the operator never customised it. A customised value is left alone and reported —
+            # silently rewriting operator configuration would be worse than the defect.
+            for _cf in /etc/nftban/conf.d/stats.conf:STATS_REPORTS_DIR \
+                       /etc/nftban/conf.d/metrics.conf:NFTBAN_REPORTS_DIR; do
+                _f="${_cf%%:*}"; _k="${_cf##*:}"
+                [ -f "$_f" ] || continue
+                if grep -q "^${_k}=\"/var/lib/nftban/reports\"" "$_f" 2>/dev/null; then
+                    sed -i "s|^${_k}=\"/var/lib/nftban/reports\".*|${_k}=\"/var/log/nftban/reports\"   # v1.228.5: migrated from /var/lib|" "$_f" 2>/dev/null || true
+                    echo "[NFTBan] ${_k} in ${_f}: migrated /var/lib -> /var/log (was the old shipped default)"
+                elif grep -qE "^${_k}=.*\/var\/lib\/nftban\/reports" "$_f" 2>/dev/null; then
+                    echo "[NFTBan] WARNING: ${_k} in ${_f} points under /var/lib but was CUSTOMISED — left unchanged."
+                    echo "[NFTBan]          Reports written there are NOT rotated. Set it to /var/log/nftban/reports."
+                fi
+            done
+        }
+
+        _nftban_migrate_reports_dir_conf || true
         _nftban_migrate_reports_to_log || true
         _nftban_generate_logretention || true
 

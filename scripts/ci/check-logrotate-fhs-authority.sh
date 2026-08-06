@@ -110,6 +110,36 @@ else
     [[ "$r4" -eq 0 ]] && pass "every migrated pattern ($(echo $exts | tr ' ' ',') in reports/ and reports/daily/) has a retention owner in BOTH authorities"
 fi
 
+echo "=== R-5: no package-owned config assigns a migrated dir back under /var/lib ==="
+# THE DEFECT THIS EXISTS TO CATCH. R-1..R-4 proved the logrotate GENERATOR targets
+# /var/log. They proved nothing about where the WRITER actually resolves to. The code
+# default at cmd_report.sh was already correct:
+#     NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
+# but shipped conf.d STILL assigned STATS_REPORTS_DIR=/var/lib/nftban/reports, so the
+# EFFECTIVE value stayed on the old path and nftban-report-daily.service wrote there —
+# unrotated — on a candidate that had otherwise "migrated".
+#
+#   DEFAULT_PATH_CORRECT  !=  EFFECTIVE_PATH_CORRECT
+#
+# Enumerate every package-owned assignment of the destination variables and reject any
+# that resolves under /var/lib or /var/cache. Comments are stripped so documenting the
+# old path cannot trip it.
+r5=0
+for var in STATS_REPORTS_DIR NFTBAN_REPORTS_DIR; do
+    hits="$(grep -rn --include='*.conf' --include='*.sh' -E "^[[:space:]]*(export[[:space:]]+)?${var}=" \
+              etc/ install/config/ cli/ 2>/dev/null \
+            | grep -vE ':[0-9]+:[[:space:]]*#' \
+            | grep -E '/var/(lib|cache)/nftban' || true)"
+    if [[ -n "$hits" ]]; then
+        fail "${var} assigned under /var/lib|/var/cache by package-owned config:"
+        printf '%s\n' "$hits" | sed 's/^/        /'
+        r5=1
+    fi
+done
+if [[ "$r5" -eq 0 ]]; then
+    pass "no package-owned assignment of STATS_REPORTS_DIR/NFTBAN_REPORTS_DIR under /var/lib|/var/cache"
+fi
+
 echo
 if [[ "$FAIL" -eq 0 ]]; then
     echo "=== RESULT: logrotate FHS authority PASS ==="
