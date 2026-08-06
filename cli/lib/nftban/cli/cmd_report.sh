@@ -108,7 +108,7 @@ fi
 
 
 readonly NFTBAN_CRON_FILE="${DISTRO_PATHS[cron_d]:-/etc/cron.d}/nftban-stats"
-readonly NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+readonly NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
 
 # =============================================================================
 
@@ -1195,7 +1195,7 @@ nftban_report_cmd_status() {
     echo "STORAGE"
     echo "--------------------------------------------------------------"
 
-    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
     printf "  %-20s %s\n" "Reports Directory..." "$reports_dir"
 
     if [[ -d "$reports_dir" ]]; then
@@ -1241,7 +1241,7 @@ _report_status_json() {
     local mail_enabled=false
     [[ "${mail_enabled_raw,,}" =~ ^(yes|true|1|on)$ ]] && mail_enabled=true
     local mail_recipients="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
-    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
     local cron_file="${NFTBAN_CRON_FILE:-/etc/cron.d/nftban-stats}"
 
     local report_count=0

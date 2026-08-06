@@ -1007,6 +1007,26 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
 
+    - path: /var/log/nftban/reports/daily
+      artifact_class: log
+      retention_owner: logrotate
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Daily operational reports (v1.228.5: moved from /var/lib — logrotate-managed)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
+    - path: /var/log/nftban/reports/archive
+      artifact_class: log
+      retention_owner: logrotate
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "logrotate olddir for rotated reports (v1.228.5: moved from /var/lib)"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
     - path: /var/log/nftban/rbl
       artifact_class: log
       retention_owner: logrotate

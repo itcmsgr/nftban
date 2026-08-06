@@ -124,9 +124,16 @@ if [[ -r "$SRC2" ]]; then
   else
     no "T7a final-status line is NOT deferral-aware — DEFERRED would report 'all checks passed'"
   fi
-  printf '%s\n' "$code2" | grep -q 'whitelist projection DEFERRED)' \
-    && ok "T7b deferred summary names the deferral explicitly" \
-    || no "T7b no explicit deferred summary wording"
+  # NO PIPE. `grep -q` exits on first match and closes the pipe; printf writing ~190KB
+  # then takes EPIPE, and `set -o pipefail` propagates PRINTF's failure as the pipeline
+  # status. That made this assertion FLAP purely on buffering timing — it failed and
+  # passed on identical content in consecutive runs. A test whose verdict depends on
+  # scheduling is worse than no test. A here-string has no pipeline to fail.
+  if grep -q 'whitelist projection DEFERRED)' <<<"$code2"; then
+    ok "T7b deferred summary names the deferral explicitly"
+  else
+    no "T7b no explicit deferred summary wording"
+  fi
   # T7c: the 'all checks passed' line must be GUARDED by the deferred test, not merely
   # present. Asserting its ABSENCE was wrong — it legitimately survives inside the else
   # branch, so that assertion false-positived on the correct fix. Assert the guard instead:

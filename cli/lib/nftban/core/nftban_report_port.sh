@@ -1534,7 +1534,7 @@ nftban_port_generate_html_report() {
     # Returns: Path to generated HTML file
 
     local template_path="${NFTBAN_TEMPLATE_DIR:-/usr/share/nftban/templates}/reports/port_report.html"
-    local report_dir="${NFTBAN_REPORT_DIR:-/var/lib/nftban/reports}"
+    local report_dir="${NFTBAN_REPORT_DIR:-/var/log/nftban/reports}"
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
     local report_file="${report_dir}/port_report_${timestamp}.html"

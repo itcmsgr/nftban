@@ -35,7 +35,7 @@ type LogFamily struct {
 	Delaycompress  bool
 	Create         string // e.g. "0640 nftban nftban" ("" = omit)
 	Su             string // e.g. "suricata nftban" ("" = omit)
-	Olddir         string // e.g. "/var/lib/nftban/reports/archive" ("" = omit)
+	Olddir         string // e.g. "/var/log/nftban/reports/archive" ("" = omit)
 	CreateOlddir   string // e.g. "0750 nftban nftban" ("" = omit)
 	UseMaxsize     bool   // emit `maxsize` instead of `size` (report documents)
 	PostrotateUSR2 bool   // emit the Suricata USR2 postrotate reopen block
@@ -95,10 +95,10 @@ func DefaultFamilies() []LogFamily {
 			Paths: []string{"/var/log/nftban/installer.log", "/var/log/nftban/update.log"}},
 		{Key: "permissions-audit", File: "main", Cadence: "weekly", Volume: VolumeLow, Weight: 1, FloorDays: 30, BaseRotate: 12, BaseSizeBytes: 10 * MiB, Copytruncate: true, Create: nft,
 			Paths: []string{"/var/log/nftban/permissions_audit.log"}},
-		{Key: "reports", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 50 * MiB, UseMaxsize: true, Olddir: "/var/lib/nftban/reports/archive", CreateOlddir: "0750 nftban nftban", FloorDays: 90,
-			Paths: []string{"/var/lib/nftban/reports/*.html", "/var/lib/nftban/reports/*.txt", "/var/lib/nftban/reports/*.json"}},
+		{Key: "reports", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 50 * MiB, UseMaxsize: true, Olddir: "/var/log/nftban/reports/archive", CreateOlddir: "0750 nftban nftban", FloorDays: 90,
+			Paths: []string{"/var/log/nftban/reports/*.html", "/var/log/nftban/reports/*.txt", "/var/log/nftban/reports/*.json"}},
 		{Key: "reports-daily", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 20 * MiB, UseMaxsize: true, FloorDays: 90,
-			Paths: []string{"/var/lib/nftban/reports/daily/*.html", "/var/lib/nftban/reports/daily/*.txt"}},
+			Paths: []string{"/var/log/nftban/reports/daily/*.html", "/var/log/nftban/reports/daily/*.txt"}},
 
 		// Suricata-native (separate file, su suricata nftban). v1.222.0 R1: ALL eve
 		// logs use copytruncate — Suricata holds the fd open and USR2 is a rule
