@@ -59,6 +59,7 @@ fi
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
+    source "${NFTBAN_LIB_DIR}/lib/whitelist_members.sh" || return 1
 fi
 
 # Load timestamp library (unified timestamp generation)
@@ -1877,32 +1878,6 @@ firewall_stats() {
 #       $2 = retry budget in seconds
 #       $3 = quiet ("true"/"false")
 # Returns: 0 converged · 1 required-but-failed · 2 deferred (non-fatal)
-# v1.228.5 — emit only whitelist.d lines that are still ACTIVE.
-# A line may carry "EXPIRES_AT=<RFC3339>"; `nftban-core sync` does not project an expired
-# entry, so the convergence check must not demand one. Lines with no EXPIRES_AT are durable
-# and always active. An unparseable timestamp is treated as ACTIVE (fail-open for the
-# CHECK, never for enforcement) so a malformed comment cannot silently drop a real member
-# from the required set and manufacture a false convergence.
-_nftban_whitelist_active_lines() {
-    local _dir="$1" _now
-    _now=$(date -u +%s 2>/dev/null) || _now=0
-    awk -v now="$_now" '
-        /^[[:space:]]*#/ { next }
-        /^[[:space:]]*$/ { next }
-        {
-            if (match($0, /EXPIRES_AT=[0-9TZ:+.-]+/)) {
-                ts = substr($0, RSTART + 11, RLENGTH - 11)
-                cmd = "date -u -d \"" ts "\" +%s 2>/dev/null"
-                exp_s = ""
-                cmd | getline exp_s
-                close(cmd)
-                if (exp_s != "" && now > 0 && (exp_s + 0) <= now) next
-            }
-            print
-        }
-    ' "$_dir"/*.conf 2>/dev/null
-}
-
 _nftban_whitelist_reconcile_and_verify() {
     local _mode="${1:-runtime-required}"
     local _retry_budget="${2:-0}"
@@ -1943,27 +1918,54 @@ _nftban_whitelist_reconcile_and_verify() {
     fi
 
     # Member-level convergence, per family, independently.
-    local _fam _set _file_re _missing_all=""
-    for _fam in ip ip6; do
-        if [[ "$_fam" == "ip" ]]; then
-            _set="whitelist_ipv4"; _file_re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
+    #
+    # v1.228.5 CONSOLIDATION. This previously assembled members itself and compared them
+    # with `comm -23`. That was a DUPLICATE of the operator verify path AND it was WRONG:
+    # nft coalesces adjacent CIDRs into intervals, so a STRING comparison reports drift
+    # for identical coverage — e.g. configured 192.0.2.0/25 + 192.0.2.128/25 against a
+    # kernel interval 192.0.2.0-192.0.2.255 is CONVERGED, not missing. The runtime path
+    # would have returned rc=1 forever on any host using adjacent CIDRs. The EL9 fixture
+    # never exposed it because it holds only single addresses.
+    #
+    # Coverage comparison is owned by the Go oracle `nftban-core whitelist-coverage`
+    # (cmd/nftban-core/main.go:168); member assembly and expiry are owned by the shared
+    # readers in lib/whitelist_members.sh. This function now only ORCHESTRATES.
+    local _fam _set _tbl _missing_all=""
+    for _fam in 4 6; do
+        if [[ "$_fam" == "4" ]]; then
+            _set="whitelist_ipv4"; _tbl="ip nftban"
         else
-            _set="whitelist_ipv6"; _file_re='^[0-9a-fA-F]*:[0-9a-fA-F:]+'
+            _set="whitelist_ipv6"; _tbl="ip6 nftban"
         fi
-        local _configured _running _missing
-        # v1.228.5: honour EXPIRES_AT. 00-session.conf entries carry an expiry, and
-        # `sync` CORRECTLY declines to project an expired one. Extracting every address
-        # regardless made an expired session entry a required member, so convergence went
-        # permanently false and rebuild returned rc=1 forever on any host carrying a stale
-        # session line. MEASURED on the EL9 fixture: 94.64.34.235 with
-        # EXPIRES_AT=2026-08-04T16:23:20Z still demanded on 2026-08-06.
-        # A false FAILURE is not better than the false SUCCESS this lane closed.
-        _configured=$(_nftban_whitelist_active_lines "$_cfg_dir" | grep -oE "$_file_re" | sort -u)
-        [[ -z "$_configured" ]] && continue
-        _running=$(timeout 10s nft list set "$_fam" nftban "$_set" 2>/dev/null \
-                   | grep -oE "$(printf '%s' "$_file_re" | sed 's/^\^//')" | sort -u)
-        _missing=$(comm -23 <(printf '%s\n' "$_configured") <(printf '%s\n' "$_running") 2>/dev/null)
-        [[ -n "$_missing" ]] && _missing_all+="${_set}: $(printf '%s' "$_missing" | tr '\n' ' ')"$'\n'
+        local _kraw _krc=0
+        _kraw="$(_nftban_wl_read_kernel_set "$_tbl" "$_set")" || _krc=$?
+        if [[ "$_krc" -ne 0 ]]; then
+            # UNREADABLE is a MEASUREMENT failure, not convergence and not drift.
+            # Treating it as clean would manufacture success; treating it as drift would
+            # blame the whitelist for an nft/daemon outage. Retry owns this case.
+            _missing_all+="${_set}: UNREADABLE (kernel set could not be measured)"$'\n'
+            continue
+        fi
+        local _base _sess
+        _base="$(_nftban_wl_read_baseline "$_fam")"
+        _sess="$(_nftban_wl_read_sessions "$_fam")"
+        # Nothing configured for this family => nothing to converge.
+        [[ -z "$_base$_sess" ]] && continue
+
+        local _req _out _m
+        # shellcheck disable=SC2046
+        _req="{\"baseline\":$(_nftban_wl_json_arr $_base),\"kernel\":$(_nftban_wl_json_arr $_kraw),\"sessions\":$(_nftban_wl_json_arr $_sess)}"
+        _out="$(printf '%s' "$_req" | "$_core" whitelist-coverage 2>/dev/null)"
+        if [[ -z "$_out" ]] || ! printf '%s' "$_out" | jq -e . >/dev/null 2>&1; then
+            _missing_all+="${_set}: COVERAGE ORACLE UNAVAILABLE (nftban-core whitelist-coverage)"$'\n'
+            continue
+        fi
+        # Only missing-from-kernel blocks convergence. Extra kernel members are an
+        # operator-verify concern (possible injection), NOT a rebuild-projection failure.
+        while IFS= read -r _m; do
+            [[ -z "$_m" ]] && continue
+            _missing_all+="${_set}: ${_m}"$'\n'
+        done < <(printf '%s' "$_out" | jq -r '.missing_from_kernel[]?' 2>/dev/null)
     done
 
     if [[ -n "$_missing_all" ]]; then

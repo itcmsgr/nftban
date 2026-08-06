@@ -2,7 +2,10 @@
 
 package validate
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // v1.228.5 controls for NFTBAN_UNIT_PREFIX != NFTBAN_FAILURE_OWNERSHIP.
 //
@@ -100,5 +103,40 @@ func TestSystemIntegrations_AllHaveArtifactsAndRationale(t *testing.T) {
 		if IsNftbanUnit(ig.Unit) {
 			t.Fatalf("%s is already an nftban-* unit; it belongs to the package-unit path", ig.Unit)
 		}
+	}
+}
+
+// v1.228.5 CAUSALITY controls for the PRODUCTION entry point.
+//
+// Participation (our stanza exists) must NOT be enough to attribute a failure. logrotate
+// can fail on another package's stanza while ours is present and fine; blocking the
+// install for that would be the mirror of the bug being fixed.
+
+func TestOwnership_ParticipationWithoutCausality_DoesNotBlock(t *testing.T) {
+	// Our stanza IS present (participation holds), but the failure names someone else's file.
+	own, why := classifyOwnershipWithProbes("logrotate.service",
+		"error: stat of /etc/logrotate.d/apache2 failed",
+		exists("/etc/logrotate.d/nftban"), nil, nil)
+	if own == OwnNftbanAffectedSystem {
+		t.Fatalf("participation alone must NOT attribute: got %s (%s)", own, why)
+	}
+	if own.Blocks() {
+		t.Fatalf("another package's stanza failure must not block our install (got %s)", own)
+	}
+}
+
+func TestOwnership_CausalityFromDetail_Blocks(t *testing.T) {
+	// The measured production shape: the failure text names an NFTBan-owned path.
+	own, why := classifyOwnershipWithProbes("logrotate.service",
+		"error: stat of /var/lib/nftban/permissions_audit.log failed: Permission denied",
+		exists("/etc/logrotate.d/nftban"), nil, nil)
+	if own != OwnNftbanAffectedSystem {
+		t.Fatalf("failure naming an NFTBan path MUST attribute to NFTBan: got %s (%s)", own, why)
+	}
+	if !own.Blocks() {
+		t.Fatal("an NFTBan-caused system failure must block COMMITTED")
+	}
+	if !strings.Contains(why, "/var/lib/nftban") {
+		t.Fatalf("attribution must cite the evidence, got %q", why)
 	}
 }

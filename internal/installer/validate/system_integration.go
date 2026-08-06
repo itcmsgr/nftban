@@ -2,7 +2,12 @@
 
 package validate
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/logging"
+)
 
 // v1.228.5 — NFTBAN_UNIT_PREFIX != NFTBAN_FAILURE_OWNERSHIP.
 //
@@ -140,4 +145,73 @@ func ClassifyFailedUnit(unit string, preFailed map[string]bool, fileExists func(
 		return OwnPreexistingUnrelated, "already failed before this transaction; no NFTBan-owned artifact involved"
 	}
 	return OwnNewUnclassified, "became failed during this transaction with no established cause — failing closed"
+}
+
+// classifyFailedUnitOwnership is the PRODUCTION entry point used by the gatherer.
+//
+// It layers CAUSALITY on top of ClassifyFailedUnit's PARTICIPATION test. Participation
+// (an NFTBan-owned artifact exists that this unit consumes) is necessary but NOT
+// sufficient: logrotate.service can fail on some other package's stanza while ours is
+// present and fine. Attributing that to NFTBan would block installs for someone else's
+// defect — the mirror of the bug being fixed.
+//
+// Causality is evidenced when the unit's own failure text names an NFTBan-owned path.
+// If participation holds but causality cannot be shown, the unit is reported as
+// PREEXISTING_UNRELATED (recorded, non-blocking) rather than silently dropped.
+func classifyFailedUnitOwnership(exec executor.Executor, unit, detail string, log *logging.Logger) (FailureOwnership, string) {
+	fileExists := func(p string) bool {
+		if exec == nil {
+			return false
+		}
+		return exec.FileExists(p)
+	}
+	journal := func(u string) string {
+		if exec == nil {
+			return ""
+		}
+		// Bounded: the unit's own recent journal, not a system-wide scan.
+		res := exec.Run("journalctl", "-u", u, "-n", "50", "--no-pager", "--output=cat")
+		if res.ExitCode != 0 {
+			return ""
+		}
+		return res.Stdout
+	}
+	return classifyOwnershipWithProbes(unit, detail, fileExists, journal, log)
+}
+
+// classifyOwnershipWithProbes holds the causality logic with its I/O injected, so the
+// attribution rules are testable without standing up a full executor. The production
+// wrapper above supplies executor-backed probes.
+func classifyOwnershipWithProbes(unit, detail string, fileExists func(string) bool, journal func(string) string, log *logging.Logger) (FailureOwnership, string) {
+	own, why := ClassifyFailedUnit(unit, nil, fileExists)
+	if own != OwnNftbanAffectedSystem {
+		return own, why
+	}
+	// Participation established. Now require causality evidence.
+	hay := detail
+	if journal != nil {
+		hay += "\n" + journal(unit)
+	}
+	for _, ig := range NftbanSystemIntegrations() {
+		if !strings.EqualFold(ig.Unit, unit) {
+			continue
+		}
+		for _, art := range ig.Artifacts {
+			if strings.Contains(hay, art) {
+				return OwnNftbanAffectedSystem, why + "; failure text names " + art
+			}
+		}
+		// Also accept an NFTBan-owned DATA path being named (e.g. logrotate failing on
+		// /var/lib/nftban/permissions_audit.log rather than on the stanza file itself).
+		for _, root := range []string{"/var/lib/nftban", "/var/log/nftban", "/var/cache/nftban", "/etc/nftban"} {
+			if strings.Contains(hay, root) {
+				return OwnNftbanAffectedSystem, why + "; failure text names NFTBan path under " + root
+			}
+		}
+		break
+	}
+	if log != nil {
+		log.Warn("failed-unit ownership: %s is failed and NFTBan participates, but its failure text names no NFTBan path — recording as PREEXISTING_UNRELATED (not blocking)", unit)
+	}
+	return OwnPreexistingUnrelated, "NFTBan participates in this integration, but no NFTBan-owned path appears in the failure evidence"
 }
