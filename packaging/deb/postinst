@@ -398,6 +398,17 @@ _nftban_migrate_reports_to_log() {
     chown -R nftban:nftban "$_new" 2>/dev/null || true
             find "$_new" -type f -exec chmod 0640 {} \; 2>/dev/null || true
             find "$_new" -type d -exec chmod 0750 {} \; 2>/dev/null || true
+    # v1.228.5 CRITICAL: `mv` PRESERVES the SELinux context. A file moved from /var/lib
+    # arrives at /var/log still labelled nftban_var_lib_t — precisely the label logrotate_t
+    # cannot read, so the migration would RELOCATE the defect instead of fixing it.
+    # MEASURED on the legacy fixture: after migrating, logrotate.service still failed with
+    #   avc: denied { getattr } path="/var/log/nftban/reports/*.html"
+    #        tcontext=...:nftban_var_lib_t:s0 permissive=0
+    # The %post restorecon runs BEFORE this function, so it cannot relabel what we move
+    # after it. Relabel here, inside the migration authority itself.
+    if command -v restorecon >/dev/null 2>&1; then
+        restorecon -R /var/log/nftban >/dev/null 2>&1 || true
+    fi
         }
         _nftban_migrate_reports_to_log || true
         _nftban_generate_logretention || true

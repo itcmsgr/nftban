@@ -42,7 +42,7 @@ if [[ ! -r "$GEN" ]]; then
     fail "cannot read $GEN"
 else
     g="$(sed -e 's://.*$::' "$GEN" \
-         | grep -oE '"(/var/[^"]+)"' | tr -d '"' | grep -E "^$FORBIDDEN" || true)"
+         | grep -oE '"(/var/[^"]+)"' | tr -d '"' | grep -E "^${FORBIDDEN}" || true)"
     if [[ -n "$g" ]]; then
         fail "generator declares rotation targets under nftban state/cache:"
         printf '%s\n' "$g" | sort -u | sed 's/^/        /'
@@ -59,9 +59,9 @@ t_all=""
 for t in install/config/*.logrotate; do
     [[ -r "$t" ]] || continue
     # stanza path lines only: a leading '/' at column 0, comments stripped
-    t_bad="$(sed -e 's:#.*$::' "$t" | grep -oE "^$FORBIDDEN[^ {]*" || true)"
+    t_bad="$(sed -e 's:#.*$::' "$t" | grep -oE "^${FORBIDDEN}[^ {]*" || true)"
     # olddir/createolddir targets are a rotation surface too (logrotate must create+rename there)
-    o_bad="$(sed -e 's:#.*$::' "$t" | grep -oE "olddir[[:space:]]+$FORBIDDEN[^ ]*" || true)"
+    o_bad="$(sed -e 's:#.*$::' "$t" | grep -oE "olddir[[:space:]]+${FORBIDDEN}[^ ]*" || true)"
     [[ -n "$t_bad$o_bad" ]] && t_all+="$t:"$'\n'"$t_bad$o_bad"$'\n'
 done
 if [[ -n "$t_all" ]]; then
