@@ -119,7 +119,11 @@ SRC2="$(dirname "${BASH_SOURCE[0]}")/../cli/cmd_firewall.sh"
 if [[ -r "$SRC2" ]]; then
   code2="$(grep -vE '^[[:space:]]*#' "$SRC2")"
   # the success line must be GATED on the deferred state, not unconditional
-  if printf '%s\n' "$code2" | grep -A3 'case "$post_status" in' | grep -q 'deferred'; then
+  # Producer is the whole ~190KB file and the match is found EARLY, so the final
+  # `grep -q` can close the pipe before printf finishes -> EPIPE -> pipefail reports
+  # printf's failure. Same defect that made T7b flap. Process substitution keeps the
+  # early-exiting grep out of a pipeline whose status we consume.
+  if grep -q 'deferred' < <(grep -A3 'case "$post_status" in' <<<"$code2"); then
     ok "T7a final-status line is gated on the deferred state"
   else
     no "T7a final-status line is NOT deferral-aware — DEFERRED would report 'all checks passed'"
@@ -144,6 +148,18 @@ if [[ -r "$SRC2" ]]; then
   else
     no "T7c 'all checks passed' is UNGUARDED — a deferred run would claim full success"
   fi
+
+  echo "=== T7d: the guard itself must be DETERMINISTIC (pipefail/SIGPIPE regression) ==="
+  # T7b once FAILED and PASSED on byte-identical content in consecutive runs. Assert the
+  # fix holds under repetition rather than trusting a single green.
+  _flap=0
+  for _i in $(seq 1 100); do
+    grep -q 'whitelist projection DEFERRED)' <<<"$code2" || { _flap=1; break; }
+  done
+  [[ "$_flap" -eq 0 ]] \
+    && ok "T7d 100/100 deterministic (no pipefail/SIGPIPE flap)" \
+    || no "T7d assertion FLAPPED within 100 runs — verdict depends on scheduling"
+
 else
   no "T7 cannot read cmd_firewall.sh"
 fi
