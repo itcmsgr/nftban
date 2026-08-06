@@ -208,14 +208,20 @@ allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms };
 #                    only daily/ is pre-created by the package.
 #
 # DELIBERATELY NOT GRANTED, each verified unnecessary against the final writer:
-#   file:setattr     no chmod/chown/touch — the report inherits its mode from the umask,
-#                    exactly as the previous `echo >` form did.
+#   file:setattr     chmod 0640 on the temporary before publication. MEASURED correction to
+#                    an earlier claim in this comment that setattr was unnecessary: mktemp
+#                    creates 0600, so publishing by rename silently tightened the report from
+#                    the 0640 the previous `echo >` form produced under umask 027. The mode is
+#                    now set explicitly, which requires this permission.
 #   file:link, file:map, dir:rmdir, dir:reparent — no operation performs them.
+#   capability chown — NOT granted and NOT required: the report stays root:root, exactly as
+#                    it was before this lane. Changing ownership to nftban:nftban is an OPEN
+#                    OWNER DECISION, not a silent change, because it needs CAP_CHOWN.
 # Two denials observed in the same run are closed in CODE rather than by policy, so no
 # grant appears here for either: tmp_t:unlink (temporaries moved out of /tmp into the
 # destination directory) and hostname_exec_t:map (the report's hostname now comes from
 # `uname -n`, which is bin_t and already covered by corecmd_exec_bin).
-allow nftband_t nftban_log_t:file { write rename unlink };
+allow nftband_t nftban_log_t:file { write rename unlink setattr };
 allow nftband_t nftban_log_t:dir { remove_name create };
 
 # Runtime (PID/lock/socket/json) — own type

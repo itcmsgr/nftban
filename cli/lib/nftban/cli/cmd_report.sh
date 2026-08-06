@@ -1338,6 +1338,17 @@ nftban_report_generate_html() {
         rm -f "$temp_json" 2>/dev/null
         return 1
     }
+    # MEASURED on EL9: mktemp creates 0600, but the previous `echo > "$output"` form produced
+    # 0640 under this file's umask 027. Publishing the temporary by rename therefore TIGHTENED
+    # the published report from 0640 to 0600 as a side effect — an undocumented behaviour
+    # change. Restore the mode explicitly so publication does not depend on how the temporary
+    # happened to be created. Ownership is left as-is (root:root, unchanged from before this
+    # lane); changing it would require CAP_CHOWN, which nftband_t deliberately does not hold.
+    chmod 0640 "$temp_html" 2>/dev/null || {
+        echo "ERROR: Cannot set report file mode on: $temp_html" >&2
+        rm -f "$temp_json" "$temp_html" 2>/dev/null
+        return 1
+    }
 
     # Generate JSON data.
     # nftban_stats_export_json ends with `echo "$output_file"`, so its RETURN CODE reports

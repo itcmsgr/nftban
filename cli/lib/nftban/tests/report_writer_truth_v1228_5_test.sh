@@ -161,7 +161,7 @@ probe() {
 
     chmod 700 "$box/log/reports/daily" 2>/dev/null || true
 
-    local size body temps ph
+    local size body temps ph mode
     if [[ -f "$out" ]]; then
         size="$(wc -c < "$out" | tr -d ' ')"
         body="$(sha256sum < "$out" | cut -c1-16)"
@@ -170,11 +170,12 @@ probe() {
         # marker-presence checks while carrying no data at all.
         ph="$(grep -c 'Placeholder - will be replaced' "$out" 2>/dev/null || true)"
         ph="${ph:-0}"
+        mode="$(stat -c %a "$out" 2>/dev/null || echo unknown)"
     else
-        size="absent"; body="absent"; ph="absent"
+        size="absent"; body="absent"; ph="absent"; mode="absent"
     fi
     temps="$(find "$box/log/reports/daily" -name '.nftban-report-*' 2>/dev/null | wc -l | tr -d ' ')"
-    echo "RC=$rc SIZE=$size BODY=$body TEMPS=$temps PLACEHOLDER=$ph"
+    echo "RC=$rc SIZE=$size BODY=$body TEMPS=$temps PLACEHOLDER=$ph MODE=$mode"
 }
 
 # shellcheck disable=SC2034  # consumed by the assert eval expressions below
@@ -201,7 +202,12 @@ assert "HEALTHY_DATA_SECTION_PRESENT"     'grep -q "window.__NFTBAN_DATA__" "$H_
 assert "HEALTHY_DOCUMENT_COMPLETE"        'grep -qi "</html>" "$H_BOX/log/reports/daily/report.html"'
 assert "HEALTHY_NO_TEMP_FILES_LEFT"       '[[ "$H_TEMPS" == "0" ]]'
 # The injection must actually have happened against the SHIPPED template shape.
-assert "HEALTHY_PLACEHOLDER_REPLACED"     '[[ "${H##*PLACEHOLDER=}" == "0" ]]'
+H_PH="${H##*PLACEHOLDER=}"; H_PH="${H_PH%% *}"
+H_MODE="${H##*MODE=}"; H_MODE="${H_MODE%% *}"
+assert "HEALTHY_PLACEHOLDER_REPLACED"     '[[ "$H_PH" == "0" ]]'
+# mktemp creates 0600; the pre-lane `echo >` produced 0640 under umask 027. Publishing by
+# rename must not silently tighten the published report's mode.
+assert "HEALTHY_REPORT_MODE_0640"         '[[ "$H_MODE" == "640" ]]'
 assert "HEALTHY_REAL_DATA_INJECTED"       'grep -q "testhost" "$H_BOX/log/reports/daily/report.html"'
 assert "HEALTHY_LATER_READ_NOT_REWRITTEN" 'grep -q "const data = window.__NFTBAN_DATA__;" "$H_BOX/log/reports/daily/report.html"'
 
@@ -224,7 +230,7 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
     # whose placeholder is intact — and still returns 0.
     OP="$(probe "$OLD_SRC" healthy "$SB/old_healthy")"
     assert "PREFIX_PUBLISHES_FULL_SIZE_PLACEHOLDER_DOC (rc=${OP#RC=})" \
-           '[[ "${OP#RC=}" == 0* ]] && [[ "${OP##*PLACEHOLDER=}" != "0" ]] && [[ "${OP##*SIZE=}" != absent* ]]' 
+           'OP_PH="${OP##*PLACEHOLDER=}"; OP_PH="${OP_PH%% *}"; [[ "${OP#RC=}" == 0* ]] && [[ "$OP_PH" != "0" ]] && [[ "${OP##*SIZE=}" != absent* ]]' 
 else
     echo "  [SKIP] commit 6b88a9a7 unreachable — discrimination NOT established"
     bad "DISCRIMINATION_CONTROL_AVAILABLE"
