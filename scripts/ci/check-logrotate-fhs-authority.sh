@@ -258,6 +258,13 @@ _r5_scan() {
 }
 
 R5_VAR='[Rr][Ee][Pp][Oo][Rr][Tt][Ss]?_?[Dd][Ii][Rr]'
+# A DECLARATION, not a mention. The rule must fire on a line that DEFINES the destination,
+# never on one that merely dereferences it — an operator message such as
+#     echo "Approved: ${NFTBAN_REPORTS_DIR} ... ${NFTBAN_DATA_DIR:-/var/lib/nftban}/*"
+# names the variable and a /var/lib path on one line while declaring nothing. Requiring an
+# assignment operator (optionally preceded by a closing quote, for JSON keys) keeps the
+# subject to real declarations across shell, systemd, Go struct fields and JSON.
+R5_DECL='["'"'"']?[[:space:]]*[:=]'
 # Assignment operators, plural. Shell/systemd/JSON use '=' or ':', but Go STRUCT LITERALS
 # use ':' — `ReportsDir: cfg.DataDir + "/reports"`. A first draft of this rule matched '='
 # only and missed internal/nftbanconf/loader.go for exactly that reason.
@@ -275,7 +282,7 @@ _r5_report() {   # $1 = heading, $2 = hits, $3 = "fail"|"warn"
 
 # R-5a: a report-destination declaration that resolves under state/cache, in ANY declaration
 # form (shell assignment, systemd Environment=, Go const/struct field, JSON default).
-a_all="$(_r5_scan "$R5_VAR" | grep -E '/var/(lib|cache)/nftban' | grep -vE "$R5_STATE_OK" || true)"
+a_all="$(_r5_scan "${R5_VAR}${R5_DECL}" | grep -E '/var/(lib|cache)/nftban' | grep -vE "$R5_STATE_OK" || true)"
 a_hits="$(printf '%s' "$a_all" | grep -vE "$R5_KNOWN_INERT" || true)"
 a_warn="$(printf '%s' "$a_all" | grep -E  "$R5_KNOWN_INERT" || true)"
 _r5_report "report-destination declaration resolves under /var/lib|/var/cache:" "$a_hits" fail

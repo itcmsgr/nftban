@@ -200,6 +200,17 @@ m_state_class() {
 }
 expect_pass "a state-class destination that legitimately stays under /var/lib (reports/watchdog)" m_state_class
 
+m_dereference_only() {
+    created install/config/zz-falsify-msg.sh
+    printf 'echo "[INFO] Approved: ${NFTBAN_REPORTS_DIR} (reports), ${NFTBAN_DATA_DIR:-/var/lib/nftban}/* (exports)"\n' \
+        > install/config/zz-falsify-msg.sh
+}
+# REGRESSION CONTROL. R-5a once matched any line carrying a reports-dir token and a
+# /var/lib path, so an operator MESSAGE that merely dereferences the variable was reported
+# as a misplaced declaration. The rule now requires an assignment operator. A guard that
+# fires on correct code trains people to ignore it.
+expect_pass "an operator message that DEREFERENCES the variable beside a /var/lib path" m_dereference_only
+
 # ---------------------------------------------------------------------------
 # STAGE 4 — RESTORATION PROOF. Every mutation must be gone.
 # ---------------------------------------------------------------------------

@@ -237,7 +237,10 @@ nftban_report_cmd_generate() {
     # Security notice for users
     if [[ -n "$output" ]]; then
         echo "[SECURITY] Output path validation enabled - only approved directories allowed" >&2
-        echo "[INFO] Approved locations: ${NFTBAN_DATA_DIR:-/var/lib/nftban}/* (reports, metrics, exports)" >&2
+        # v1.228.5: reports moved to /var/log/nftban/reports. This message still advertised
+        # /var/lib while the validator already accepted the new location — operator-facing
+        # text that contradicted the behaviour it described.
+        echo "[INFO] Approved locations: ${NFTBAN_REPORTS_DIR} (reports), ${NFTBAN_DATA_DIR:-/var/lib/nftban}/* (metrics, exports)" >&2
     fi
 
     # Generate based on format
@@ -1404,7 +1407,8 @@ nftban_report_generate_html() {
     # layouts are handled: if the opening line also closes the object it is replaced alone.
     # `injected` stops at the first assignment, so later reads such as
     # `const data = window.__NFTBAN_DATA__;` are never rewritten.
-    if ! NFTBAN_REPORT_JSON="$json_data" awk '
+    if ! NFTBAN_REPORT_JSON="$json_data" \
+         NFTBAN_REPORT_VERSION="${NFTBAN_VERSION:-unknown}" awk '
         !injected && /window\.__NFTBAN_DATA__[[:space:]]*=[[:space:]]*\{/ {
             # Preserve the source indentation rather than imposing one, so the rendered
             # document keeps the layout the template defines.
@@ -1424,7 +1428,11 @@ nftban_report_generate_html() {
         }
         skip && /^[[:space:]]*\}[[:space:]]*;?[[:space:]]*$/ { skip = 0; next }
         skip { next }
-        { print }
+        # v1.228.5: {NFTBAN_VERSION} was a DEAD token — nothing ever substituted it, so every
+        # published report rendered the literal string "NFTBan v{NFTBAN_VERSION}" in its
+        # footer. Found by observing that the delivered report was byte-identical to the
+        # shipped template. Substituted here so the artifact states a real version.
+        { gsub(/\{NFTBAN_VERSION\}/, ENVIRON["NFTBAN_REPORT_VERSION"]); print }
     ' "$template" > "$temp_html"; then
         echo "ERROR: Failed to render HTML report to: $temp_html" >&2
         rm -f "$temp_json" "$temp_html" 2>/dev/null
@@ -1480,6 +1488,11 @@ nftban_report_generate_html() {
             rm -f "$temp_html" 2>/dev/null
             return 1
         fi
+    fi
+    if grep -q '{NFTBAN_VERSION}' "$temp_html"; then
+        echo "ERROR: Generated report contains an unsubstituted {NFTBAN_VERSION} token" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
     fi
     if ! grep -qi '</html>' "$temp_html"; then
         echo "ERROR: Generated report is truncated (no closing </html>)" >&2
