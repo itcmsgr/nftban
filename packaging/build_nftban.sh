@@ -1302,6 +1302,26 @@ _nftban_migrate_reports_to_log() {
             fi
         done
     done
+    # v1.228.5: the audit log moves with the same contract. MEASURED failure without
+    # this block: the writer and the logrotate stanza both repointed to /var/log while
+    # 732 lines of history stayed at /var/lib — SPLIT history, and the orphan is targeted
+    # by ZERO stanzas so it grows unbounded with no rotation authority.
+    _oa=/var/lib/nftban/permissions_audit.log
+    _na=/var/log/nftban/permissions_audit.log
+    if [ -f "\$_oa" ]; then
+        mkdir -p /var/log/nftban 2>/dev/null || true
+        if [ -f "\$_na" ]; then
+            # BOTH exist: never overwrite, and never concatenate — the old entries PREDATE
+            # the new ones, so appending would corrupt chronological order in an audit
+            # trail. Preserve the predecessor beside it under a discoverable name.
+            mv -f "\$_oa" "\$_na.pre-v1.228.5" 2>/dev/null || true
+        else
+            mv -f "\$_oa" "\$_na" 2>/dev/null || true
+        fi
+        chown nftban:nftban "\$_na" 2>/dev/null || true
+        chmod 0640 "\$_na" 2>/dev/null || true
+        [ -f "\$_na.pre-v1.228.5" ] && { chown nftban:nftban "\$_na.pre-v1.228.5" 2>/dev/null || true; chmod 0640 "\$_na.pre-v1.228.5" 2>/dev/null || true; }
+    fi
     chown -R nftban:nftban "\$_new" 2>/dev/null || true
     find "\$_new" -type f -exec chmod 0640 {} \; 2>/dev/null || true
     find "\$_new" -type d -exec chmod 0750 {} \; 2>/dev/null || true
