@@ -106,6 +106,23 @@ jobs:
       - name: Check rebuild evidence authority (v1.228.5, BLOCKING)
         run: ./scripts/ci/check-rebuild-evidence-authority.sh
 
+      # v1.228.5 FHS/log authority. A logrotate stanza may only target /var/log:
+      # nftban_var_lib_t has no logrotate_t access, so ONE bad stanza fails the whole
+      # system-wide logrotate run. Reads the GENERATOR (inventory.go), not just the
+      # template, because /etc/logrotate.d/nftban is %ghost and regenerated at postinstall.
+      # R-4 asserts every MIGRATED pattern has a retention owner; R-5 asserts no
+      # package-owned config or writer default resolves back under /var/lib
+      # (DEFAULT_PATH_CORRECT != EFFECTIVE_PATH_CORRECT).
+      - name: Check logrotate FHS authority (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-logrotate-fhs-authority.sh
+
+      # v1.228.5 recurrence guard. Correctness derives from a DECLARED artifact_class in
+      # the canonical build/fhs-spec.yaml rather than pinned path strings, so a newly
+      # added artifact cannot pass by being merely self-consistent — the failure mode that
+      # let the original misplacement survive years of green tests.
+      - name: Check artifact class authority (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-artifact-class-authority.sh
+
       # Build provenance: the packaging build must never silently package a stale
       # bin/* artifact. Source builds rebuild+verify; prebuilt packaging is explicit
       # and manifest-verified. Runs the hermetic provenance test suite.

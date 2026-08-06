@@ -43,7 +43,10 @@ ProtectControlGroups=true
 
 # Filesystem access
 ReadOnlyPaths=/etc/nftban /var/lib/nftban /var/log/nftban
-ReadWritePaths=/var/lib/nftban/reports
+# v1.228.5: reports moved to /var/log/nftban/reports. The unit marked /var/log/nftban
+# ReadOnly, so repointing the writer without this grant would fail EROFS — the sandbox
+# would forbid the very destination the migration created.
+ReadWritePaths=/var/log/nftban/reports /var/lib/nftban/reports
 
 # Network for email delivery
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

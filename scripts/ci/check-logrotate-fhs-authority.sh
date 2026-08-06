@@ -96,6 +96,14 @@ else
             | grep -oE '\*\.(html|txt|json)' | sort -u | tr -d '*.')"
     subs="$(sed -n '/_nftban_migrate_reports_to_log()/,/^        }/p' "$MIGSRC" \
             | grep -oE 'for _sub in [^;]*' | head -1)"
+    # NON-VACUITY: an empty derivation must FAIL. MEASURED by the independent audit —
+    # renaming the migration function yields exts="", the loop never runs, r4 stays 0 and
+    # this printed PASS while asserting ZERO patterns. A guard against empty-parse-as-zero
+    # that itself reads empty as zero is worthless.
+    if [[ -z "$exts" ]]; then
+        fail "derived ZERO migrated extensions from $MIGSRC — extraction is degenerate, this rule would pass vacuously"
+        exts=""
+    fi
     r4=0
     for sub in "" "/daily"; do
         for e in $exts; do
@@ -107,7 +115,7 @@ else
             fi
         done
     done
-    [[ "$r4" -eq 0 ]] && pass "every migrated pattern ($(echo $exts | tr ' ' ',') in reports/ and reports/daily/) has a retention owner in BOTH authorities"
+    [[ "$r4" -eq 0 && -n "$exts" ]] && pass "every migrated pattern ($(echo $exts | tr ' ' ',') in reports/ and reports/daily/) has a retention owner in BOTH authorities"
 fi
 
 echo "=== R-5: no package-owned config assigns a migrated dir back under /var/lib ==="
@@ -125,8 +133,8 @@ echo "=== R-5: no package-owned config assigns a migrated dir back under /var/li
 # that resolves under /var/lib or /var/cache. Comments are stripped so documenting the
 # old path cannot trip it.
 r5=0
-for var in STATS_REPORTS_DIR NFTBAN_REPORTS_DIR; do
-    hits="$(grep -rn --include='*.conf' --include='*.sh' -E "^[[:space:]]*(export[[:space:]]+)?${var}=" \
+for var in STATS_REPORTS_DIR NFTBAN_REPORTS_DIR NFTBAN_REPORT_DIR; do
+    hits="$(grep -rn --include='*.conf' --include='*.sh' -E "(^[[:space:]]*(export[[:space:]]+)?${var}=|\\$\\{${var}:-)" \
               etc/ install/config/ cli/ 2>/dev/null \
             | grep -vE ':[0-9]+:[[:space:]]*#' \
             | grep -E '/var/(lib|cache)/nftban' || true)"

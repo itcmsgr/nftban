@@ -72,7 +72,10 @@ func main() {
 	if needsAnalytics {
 		// Get data dir from config (already loaded above)
 		dataDir := cfg.DataDir
-		if err := analytics.Init(dataDir, dataDir+"/reports"); err != nil {
+		// v1.228.5 FHS: reports are operational history, not state. They live under
+		// /var/log/nftban/reports (nftban_log_t, logrotate-owned), not dataDir.
+		// Deriving from dataDir kept a third writer on the old path.
+		if err := analytics.Init(dataDir, cfg.LogDir+"/reports"); err != nil {
 			log.Printf("Warning: Analytics disabled: %v", err)
 		}
 
