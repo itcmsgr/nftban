@@ -1357,9 +1357,23 @@ nftban_report_generate_html() {
         return 1
     fi
 
-    # Read JSON data
+    # Read JSON data, COMPACTED to a single line.
+    #
+    # nftban_stats_export_json emits a pretty-printed heredoc, so the payload spanned many
+    # lines once injected. That is why the v1.227 escaping comment below speaks of "compact
+    # JSON" while production never produced any — and why a post-injection parse check that
+    # reads the assignment line saw only `{`. Compacting here makes the injected object ONE
+    # line, which is what makes the substitution independently verifiable afterwards.
+    # Without jq the raw document is used and the strict post-injection parse is skipped;
+    # the pre-injection non-empty check still applies.
     local json_data
-    if ! json_data=$(cat "$temp_json"); then
+    if command -v jq >/dev/null 2>&1; then
+        if ! json_data=$(jq -c . "$temp_json" 2>/dev/null); then
+            echo "ERROR: Cannot compact generated statistics: $temp_json" >&2
+            rm -f "$temp_json" "$temp_html" 2>/dev/null
+            return 1
+        fi
+    elif ! json_data=$(cat "$temp_json"); then
         echo "ERROR: Cannot read generated statistics: $temp_json" >&2
         rm -f "$temp_json" "$temp_html" 2>/dev/null
         return 1
@@ -1456,6 +1470,20 @@ nftban_report_generate_html() {
     # own placeholder block contains the marker, so a completely un-injected document passes
     # a `grep -q window.__NFTBAN_DATA__` check. MEASURED: that is exactly what shipped.
     # Assert the placeholder is GONE and the payload is real, parseable data.
+    # TEMPLATE-COPY REJECTION. The strongest single assertion available: if the rendered
+    # document is byte-identical to its own template then NOTHING was substituted. MEASURED
+    # on both el9-clean and deb-clean — daily, weekly and the shipped template all carried
+    # the same sha256 while the unit reported success.
+    if command -v sha256sum >/dev/null 2>&1; then
+        local _tpl_sha _out_sha
+        _tpl_sha="$(sha256sum < "$template" | cut -d" " -f1)"
+        _out_sha="$(sha256sum < "$temp_html" | cut -d" " -f1)"
+        if [[ "$_tpl_sha" == "$_out_sha" ]]; then
+            echo "ERROR: Generated report is a byte-identical copy of the template — no data was substituted" >&2
+            rm -f "$temp_html" 2>/dev/null
+            return 1
+        fi
+    fi
     if grep -q 'Placeholder - will be replaced' "$temp_html"; then
         echo "ERROR: Generated report still contains the template placeholder — data was not injected" >&2
         rm -f "$temp_html" 2>/dev/null
@@ -1489,11 +1517,16 @@ nftban_report_generate_html() {
             return 1
         fi
     fi
-    if grep -q '{NFTBAN_VERSION}' "$temp_html"; then
-        echo "ERROR: Generated report contains an unsubstituted {NFTBAN_VERSION} token" >&2
+    # GENERIC unresolved-token check. Checking only {NFTBAN_VERSION} would let the next
+    # dead token escape exactly as that one did — nothing substituted it for its whole life
+    # and every report rendered the literal string.
+    if grep -qE '\{NFTBAN_[A-Z0-9_]+\}' "$temp_html"; then
+        echo "ERROR: Generated report contains unsubstituted template tokens:" >&2
+        grep -oE '\{NFTBAN_[A-Z0-9_]+\}' "$temp_html" | sort -u | head -5 >&2
         rm -f "$temp_html" 2>/dev/null
         return 1
     fi
+
     if ! grep -qi '</html>' "$temp_html"; then
         echo "ERROR: Generated report is truncated (no closing </html>)" >&2
         rm -f "$temp_html" 2>/dev/null

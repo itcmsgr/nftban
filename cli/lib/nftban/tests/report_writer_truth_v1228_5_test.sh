@@ -97,7 +97,13 @@ probe() {
         echo '<html><body>'
         echo '<script>'
         echo '        // Data will be injected here by bash script'
-        if [[ "$scenario" == "placeholder_survives" ]]; then
+        if [[ "$scenario" == "template_copy" ]]; then
+            # Unmatchable assignment AND no placeholder sentinel, so the placeholder rule
+            # cannot fire. Only the byte-identity check stands between this and publication.
+            echo '        window.__NFTBAN_DATA__ ='
+            echo '        {'
+            echo '        };'
+        elif [[ "$scenario" == "placeholder_survives" ]]; then
             # TEMPLATE DRIFT: the opening brace moves to its own line, so the injector
             # matches nothing. This is the general form of the defect measured on EL9 —
             # the template changed shape and the writer silently published a data-free
@@ -107,8 +113,10 @@ probe() {
         else
             echo '        window.__NFTBAN_DATA__ = {'
         fi
-        echo '            // Placeholder - will be replaced'
-        echo '        };'
+        if [[ "$scenario" != "template_copy" ]]; then
+            echo '            // Placeholder - will be replaced'
+            echo '        };'
+        fi
         echo '        const data = window.__NFTBAN_DATA__;'
         echo '</script>'
         # TRUNCATED scenario: the closing </html> is withheld, standing in for a write
@@ -139,9 +147,13 @@ probe() {
         elif [[ "$NFTBAN_SCENARIO" == "no_hostname" ]]; then
             # Valid JSON, but the identity field is empty — the exact shape produced while
             # /usr/bin/hostname was unexecutable in nftband_t under Enforcing.
-            nftban_stats_export_json() { jq -cn "{report:{hostname:\"\"}, n:1}" > "$1"; }
+            nftban_stats_export_json() { jq -n "{report:{hostname:\"\"}, n:1}" > "$1"; }
         else
-            nftban_stats_export_json() { jq -cn "{report:{hostname:\"testhost\"}, n:1}" > "$1"; }
+            # PRETTY-PRINTED, exactly as nftban_stats_export_json emits it in production.
+            # The earlier fixture used `jq -cn` (compact). Production never was, so a
+            # post-injection parse that reads the assignment LINE saw only "{" — a
+            # regression this harness could not see because its fixture was the wrong shape.
+            nftban_stats_export_json() { jq -n "{report:{hostname:\"testhost\"}, n:1}" > "$1"; }
         fi
         nftban_report_generate_html "$NFTBAN_OUT" "" "" dark >/dev/null 2>&1
     ' >/dev/null 2>&1
@@ -201,7 +213,7 @@ assert "HEALTHY_LATER_READ_NOT_REWRITTEN" 'grep -q "const data = window.__NFTBAN
 echo ""
 echo "--- STAGE 2: discrimination control (pre-fix code must FAIL these) ---"
 if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
-    for scen in dest_ro stats_empty truncated no_hostname placeholder_survives; do
+    for scen in dest_ro stats_empty truncated no_hostname placeholder_survives template_copy; do
         O="$(probe "$OLD_SRC" "$scen" "$SB/old_$scen")"
         O_RC="${O#RC=}"; O_RC="${O_RC%% *}"
         assert "PREFIX_FALSE_SUCCESS_REPRODUCED[$scen] (old rc=$O_RC, expected 0)" \
@@ -225,7 +237,7 @@ fi
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- STAGE 3: candidate assertion (failures must propagate) ---"
-for scen in dest_ro stats_empty truncated no_hostname placeholder_survives; do
+for scen in dest_ro stats_empty truncated no_hostname placeholder_survives template_copy; do
     N="$(probe "$NEW_SRC" "$scen" "$SB/new_$scen")"
     N_RC="${N#RC=}";       N_RC="${N_RC%% *}"
     N_SIZE="${N##*SIZE=}"; N_SIZE="${N_SIZE%% *}"
