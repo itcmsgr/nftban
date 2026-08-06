@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan - report writer truth (v1.228.5)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="report_writer_truth_v1228_5_test.sh"
+# meta:type="test"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Behavioural proof that nftban_report_generate_html FAILS when it cannot produce a report, and never publishes a zero-byte or truncated artifact. Every negative case is ALSO run against the pre-fix implementation extracted from git, so the harness proves it discriminates instead of asserting into a vacuum. No network."
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="unprivileged"
+# meta:ta.id="report_writer_truth_v1228_5_test"
+# meta:ta.owner="mail"
+# meta:ta.module="report-writer-truth"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# =============================================================================
+#
+# WHY THIS TEST EXISTS
+#   v1.228.5 Gate 1 reported "8 passed, 0 failed" while the journal held Permission
+#   denied and the published report was 0 bytes. Two mechanisms hid it: the generator
+#   ignored its own write failure, and the unit declared SuccessExitStatus=0 1. The
+#   assertions in use — unit result, then file existence — could not tell a good run
+#   from a failed one. This harness asserts on the DISCRIMINATION first: a probe that
+#   cannot fail is not evidence.
+#
+# WHAT IT CANNOT PROVE
+#   The SELinux Enforcing path. DAC read-only directories stand in for the denied
+#   write locally; the nftband_t -> nftban_log_t behaviour is only provable on a
+#   real Enforcing host running the real systemd unit.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+PASS=0; FAIL=0
+ok()  { echo "  [PASS] $1"; PASS=$((PASS+1)); }
+bad() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
+assert() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
+
+echo "=== report_writer_truth_v1228_5 ==="
+
+# ---------------------------------------------------------------------------
+# GUARD: root bypasses DAC. Under EUID 0 a chmod 500 directory stays writable,
+# every negative case would silently pass, and the suite would report a green
+# result while testing nothing. Refuse rather than mislead.
+# ---------------------------------------------------------------------------
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    echo "  [FATAL] must run unprivileged: root bypasses the DAC controls this test relies on"
+    exit 1
+fi
+
+command -v jq >/dev/null 2>&1 || { echo "  [SKIP] jq not available"; exit 0; }
+
+SB="$(mktemp -d)"
+cleanup() { chmod -R u+rwX "$SB" 2>/dev/null || true; rm -rf "$SB"; }
+trap cleanup EXIT
+
+# The pre-fix implementation, extracted from the rejected candidate. If the commit is
+# unreachable the discrimination controls are SKIPPED loudly — never assumed to pass.
+OLD_SRC="$SB/cmd_report_prefix.sh"
+OLD_AVAILABLE=0
+if git -C "$ROOT" show 6b88a9a7:cli/lib/nftban/cli/cmd_report.sh > "$OLD_SRC" 2>/dev/null; then
+    OLD_AVAILABLE=1
+fi
+NEW_SRC="$ROOT/cli/lib/nftban/cli/cmd_report.sh"
+
+# ---------------------------------------------------------------------------
+# probe <source-file> <scenario> <sandbox>
+#   Emits: RC=<n> SIZE=<n|absent> BODY=<sha|absent> TEMPS=<n>
+#   Each probe runs in its own bash -c: cmd_report.sh declares readonly globals
+#   and cannot be sourced twice in one shell.
+# ---------------------------------------------------------------------------
+probe() {
+    local src="$1" scenario="$2" box="$3"
+    mkdir -p "$box/log/reports/daily" "$box/data" "$box/run" "$box/state"
+
+    local tmpl="$box/tmpl.html"
+    {
+        echo '<html><body>'
+        echo '<script>'
+        echo 'window.__NFTBAN_DATA__ = {            // Placeholder - will be replaced        }'
+        echo '</script>'
+        # TRUNCATED scenario: the closing </html> is withheld, standing in for a write
+        # that stopped early (ENOSPC, a killed writer, a full quota).
+        if [[ "$scenario" != "truncated" ]]; then
+            echo '</body></html>'
+        fi
+    } > "$tmpl"
+
+    local out="$box/log/reports/daily/report.html"
+    # A KNOWN-GOOD predecessor. Atomic publication must leave it untouched on failure.
+    printf 'PREVIOUS-REPORT-SENTINEL\n' > "$out"
+
+    [[ "$scenario" == "dest_ro" ]] && chmod 500 "$box/log/reports/daily"
+
+    local rc
+    NFTBAN_SCENARIO="$scenario" NFTBAN_SRC="$src" NFTBAN_OUT="$out" \
+    NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" NFTBAN_DATA_DIR="$box/data" \
+    NFTBAN_RUN_DIR="$box/run" NFTBAN_LOG_DIR="$box/log" NFTBAN_STATE_DIR="$box/state" \
+    NFTBAN_REPORT_TEMPLATE="$tmpl" \
+    bash -c '
+        # shellcheck disable=SC1090
+        source "$NFTBAN_SRC" 2>/dev/null || true
+        if [[ "$NFTBAN_SCENARIO" == "stats_empty" ]]; then
+            # Export succeeds loudly and produces nothing — the shape that makes a
+            # data-less report look healthy to a return-code check.
+            nftban_stats_export_json() { : > "$1"; return 0; }
+        else
+            nftban_stats_export_json() { jq -cn "{host:\"h\", n:1}" > "$1"; }
+        fi
+        nftban_report_generate_html "$NFTBAN_OUT" "" "" dark >/dev/null 2>&1
+    ' >/dev/null 2>&1
+    rc=$?
+
+    chmod 700 "$box/log/reports/daily" 2>/dev/null || true
+
+    local size body temps
+    if [[ -f "$out" ]]; then
+        size="$(wc -c < "$out" | tr -d ' ')"
+        body="$(sha256sum < "$out" | cut -c1-16)"
+    else
+        size="absent"; body="absent"
+    fi
+    temps="$(find "$box/log/reports/daily" -name '.nftban-report-*' 2>/dev/null | wc -l | tr -d ' ')"
+    echo "RC=$rc SIZE=$size BODY=$body TEMPS=$temps"
+}
+
+# shellcheck disable=SC2034  # consumed by the assert eval expressions below
+SENTINEL="$(printf 'PREVIOUS-REPORT-SENTINEL\n' | sha256sum | cut -c1-16)"
+
+# ---------------------------------------------------------------------------
+# STAGE 1 — INSTRUMENTATION CONTROL
+# Prove the real generator ran and produced a real document. Without this a green
+# negative matrix could just mean the function was never reached.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- STAGE 1: instrumentation control (the healthy path really runs) ---"
+H_BOX="$SB/new_healthy"; H="$(probe "$NEW_SRC" healthy "$H_BOX")"
+H_RC="${H#RC=}";   H_RC="${H_RC%% *}"
+H_SIZE="${H##*SIZE=}"; H_SIZE="${H_SIZE%% *}"
+H_BODY="${H##*BODY=}"; H_BODY="${H_BODY%% *}"
+# shellcheck disable=SC2034  # consumed by the assert eval expressions below
+H_TEMPS="${H##*TEMPS=}"
+
+assert "HEALTHY_RC_ZERO"                  '[[ "$H_RC" == "0" ]]'
+assert "HEALTHY_REPORT_NON_EMPTY"         '[[ "$H_SIZE" != "absent" && "$H_SIZE" -gt 0 ]]'
+assert "HEALTHY_REPORT_REPLACED_PREVIOUS" '[[ "$H_BODY" != "$SENTINEL" ]]'
+assert "HEALTHY_DATA_SECTION_PRESENT"     'grep -q "window.__NFTBAN_DATA__" "$H_BOX/log/reports/daily/report.html"'
+assert "HEALTHY_DOCUMENT_COMPLETE"        'grep -qi "</html>" "$H_BOX/log/reports/daily/report.html"'
+assert "HEALTHY_NO_TEMP_FILES_LEFT"       '[[ "$H_TEMPS" == "0" ]]'
+
+# ---------------------------------------------------------------------------
+# STAGE 2 — DISCRIMINATION CONTROL
+# Run the SAME negative scenarios against the pre-fix implementation. If the old
+# code also "passes", the assertions below are non-discriminating and prove nothing.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- STAGE 2: discrimination control (pre-fix code must FAIL these) ---"
+if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
+    for scen in dest_ro stats_empty truncated; do
+        O="$(probe "$OLD_SRC" "$scen" "$SB/old_$scen")"
+        O_RC="${O#RC=}"; O_RC="${O_RC%% *}"
+        assert "PREFIX_FALSE_SUCCESS_REPRODUCED[$scen] (old rc=$O_RC, expected 0)" \
+               '[[ "$O_RC" == "0" ]]'
+    done
+else
+    echo "  [SKIP] commit 6b88a9a7 unreachable — discrimination NOT established"
+    bad "DISCRIMINATION_CONTROL_AVAILABLE"
+fi
+
+# ---------------------------------------------------------------------------
+# STAGE 3 — SUBJECT ASSERTION
+# The candidate must turn each of those silent successes into a reported failure,
+# without ever publishing a bad artifact over a good one.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- STAGE 3: candidate assertion (failures must propagate) ---"
+for scen in dest_ro stats_empty truncated; do
+    N="$(probe "$NEW_SRC" "$scen" "$SB/new_$scen")"
+    N_RC="${N#RC=}";       N_RC="${N_RC%% *}"
+    N_SIZE="${N##*SIZE=}"; N_SIZE="${N_SIZE%% *}"
+    N_BODY="${N##*BODY=}"; N_BODY="${N_BODY%% *}"
+    # shellcheck disable=SC2034  # consumed by the assert eval expressions below
+    N_TEMPS="${N##*TEMPS=}"
+
+    assert "FAILURE_PROPAGATES[$scen] (rc=$N_RC)"        '[[ "$N_RC" != "0" ]]'
+    assert "NO_ZERO_BYTE_PUBLISHED[$scen]"               '[[ "$N_SIZE" == "absent" || "$N_SIZE" -gt 0 ]]'
+    assert "PREVIOUS_REPORT_PRESERVED[$scen]"            '[[ "$N_BODY" == "$SENTINEL" ]]'
+    assert "NO_TEMP_FILES_LEFT[$scen]"                   '[[ "$N_TEMPS" == "0" ]]'
+done
+
+echo ""
+echo "=== report_writer_truth_v1228_5: PASS=$PASS FAIL=$FAIL ==="
+[[ "$FAIL" -eq 0 ]]

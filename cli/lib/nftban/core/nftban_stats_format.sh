@@ -691,6 +691,12 @@ nftban_stats_export_json() {
         echo "[INFO] Exporting to: $output_file"
     fi
 
+    # v1.228.5 REPORT-WRITER: the hostname below comes from `uname -n`, not `hostname`.
+    # /usr/bin/hostname is labelled hostname_exec_t, which the daemon domain nftband_t may
+    # not execute — under EL9 Enforcing the substitution failed and the field silently
+    # rendered as "". `uname` is bin_t, already permitted via corecmd_exec_bin, and returns
+    # the same nodename for the unqualified form used here. This closes the denial without
+    # widening the policy.
     # Build JSON structure
     cat > "$output_file" <<EOF
 {
@@ -702,7 +708,7 @@ nftban_stats_export_json() {
       "until": "${until}"
     },
     "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "hostname": "$(hostname)"
+    "hostname": "$(uname -n)"
   },
   "summary": {
     "total_bans": $(nftban_stats_count_bans "$since" "$until"),

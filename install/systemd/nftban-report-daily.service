@@ -27,8 +27,20 @@ Type=oneshot
 # Generate and optionally email the daily report
 ExecStart=/usr/sbin/nftban report run daily
 
-# Exit codes: 0=OK, 1=error (non-fatal — don't restart)
-SuccessExitStatus=0 1
+# Exit codes: 0=OK, non-zero=failure.
+#
+# v1.228.5 UNIT-TRUTH: this unit previously declared `SuccessExitStatus=0 1`, whose own
+# comment described 1 as "error". systemd was therefore instructed to report a FAILED report
+# run as a successful one. Combined with an unchecked write in the generator, a clean EL9
+# Enforcing host produced a 0-byte report and a green unit — the failure was invisible to
+# `systemctl status`, to `is-failed`, and to every gate that asserted on unit result.
+#
+# There is no separately documented, safe, non-error meaning for exit 1 anywhere in the
+# report command path: `nftban report run` returns 1 only from its own error branches
+# (unknown frequency, generation failure). The directive is removed rather than narrowed,
+# so systemd's default applies: exit 0 succeeds, anything else fails.
+# Type=oneshot units are not restarted on failure, so removing this does NOT introduce a
+# restart loop — the concern the original comment was reaching for.
 
 # =============================================================================
 # SECURITY HARDENING

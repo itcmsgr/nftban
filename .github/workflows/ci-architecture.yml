@@ -116,6 +116,16 @@ jobs:
       - name: Check logrotate FHS authority (v1.228.5, BLOCKING)
         run: ./scripts/ci/check-logrotate-fhs-authority.sh
 
+      # v1.228.5 GUARD-THE-GUARD, BLOCKING. The rule above shipped in two non-discriminating
+      # states: R-4 returned PASS after extracting ZERO patterns, and R-5 was blind to Go,
+      # systemd, packaging and JSON — so it could not catch the defect it was written for.
+      # A guard that cannot fail is not protection, and nothing detects that from its own
+      # green output. This injects each defect class and requires a FAIL, then injects a
+      # correct construct and requires a PASS. Mutations are restored and the tree is
+      # verified byte-identical afterwards.
+      - name: Check logrotate FHS guard is falsifiable (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-logrotate-fhs-authority-falsifiability.sh
+
       # v1.228.5 recurrence guard. Correctness derives from a DECLARED artifact_class in
       # the canonical build/fhs-spec.yaml rather than pinned path strings, so a newly
       # added artifact cannot pass by being merely self-consistent — the failure mode that
@@ -790,6 +800,7 @@ jobs:
       # G2-3: Schema version guard — Go source matches CLI expectations
       - name: Schema version guard (G2-3)
         run: bash cli/lib/nftban/tests/test_schema_version_guard.sh
+
 
       # =====================================================================
       # v1.85 M85-3: Module Completeness Gates
