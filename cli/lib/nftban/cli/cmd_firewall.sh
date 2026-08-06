@@ -1877,6 +1877,32 @@ firewall_stats() {
 #       $2 = retry budget in seconds
 #       $3 = quiet ("true"/"false")
 # Returns: 0 converged · 1 required-but-failed · 2 deferred (non-fatal)
+# v1.228.5 — emit only whitelist.d lines that are still ACTIVE.
+# A line may carry "EXPIRES_AT=<RFC3339>"; `nftban-core sync` does not project an expired
+# entry, so the convergence check must not demand one. Lines with no EXPIRES_AT are durable
+# and always active. An unparseable timestamp is treated as ACTIVE (fail-open for the
+# CHECK, never for enforcement) so a malformed comment cannot silently drop a real member
+# from the required set and manufacture a false convergence.
+_nftban_whitelist_active_lines() {
+    local _dir="$1" _now
+    _now=$(date -u +%s 2>/dev/null) || _now=0
+    awk -v now="$_now" '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        {
+            if (match($0, /EXPIRES_AT=[0-9TZ:+.-]+/)) {
+                ts = substr($0, RSTART + 11, RLENGTH - 11)
+                cmd = "date -u -d \"" ts "\" +%s 2>/dev/null"
+                exp_s = ""
+                cmd | getline exp_s
+                close(cmd)
+                if (exp_s != "" && now > 0 && (exp_s + 0) <= now) next
+            }
+            print
+        }
+    ' "$_dir"/*.conf 2>/dev/null
+}
+
 _nftban_whitelist_reconcile_and_verify() {
     local _mode="${1:-runtime-required}"
     local _retry_budget="${2:-0}"
@@ -1925,7 +1951,14 @@ _nftban_whitelist_reconcile_and_verify() {
             _set="whitelist_ipv6"; _file_re='^[0-9a-fA-F]*:[0-9a-fA-F:]+'
         fi
         local _configured _running _missing
-        _configured=$(grep -hoE "$_file_re" "$_cfg_dir"/*.conf 2>/dev/null | sort -u)
+        # v1.228.5: honour EXPIRES_AT. 00-session.conf entries carry an expiry, and
+        # `sync` CORRECTLY declines to project an expired one. Extracting every address
+        # regardless made an expired session entry a required member, so convergence went
+        # permanently false and rebuild returned rc=1 forever on any host carrying a stale
+        # session line. MEASURED on the EL9 fixture: 94.64.34.235 with
+        # EXPIRES_AT=2026-08-04T16:23:20Z still demanded on 2026-08-06.
+        # A false FAILURE is not better than the false SUCCESS this lane closed.
+        _configured=$(_nftban_whitelist_active_lines "$_cfg_dir" | grep -oE "$_file_re" | sort -u)
         [[ -z "$_configured" ]] && continue
         _running=$(timeout 10s nft list set "$_fam" nftban "$_set" 2>/dev/null \
                    | grep -oE "$(printf '%s' "$_file_re" | sed 's/^\^//')" | sort -u)
@@ -3109,7 +3142,15 @@ _firewall_rebuild_core() {
 
     case "$post_status" in
         protected|idle)
-            [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
+            # v1.228.5: "all checks passed" is reserved for ACTUAL convergence. A deferred
+            # projection printed its Note above and then fell through to this line, so the
+            # summary contradicted it — and the summary is what an operator reads. DEFERRED
+            # is not a failure, but it is not "all checks passed" either.
+            if [[ "${_rebuild_whitelist_converged:-true}" == "deferred" ]]; then
+                [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (schema checks passed; whitelist projection DEFERRED)"
+            else
+                [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
+            fi
             # v1.96: SUCCESS — clear any stale recovery marker
             # idle = structurally equivalent to protected (no traffic observed yet)
             declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear

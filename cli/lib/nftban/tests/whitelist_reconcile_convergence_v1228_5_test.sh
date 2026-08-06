@@ -108,6 +108,39 @@ else
   no "T6 cannot read $SRC"
 fi
 
+echo "=== T7 (v1.228.5): DEFERRED must NOT be summarised as 'all checks passed' ==="
+# MEASURED defect on the EL9 fixture: the deferred branch printed its Note and then FELL
+# THROUGH to the generic success line, so the run ended with
+#   Note: durable whitelist projection DEFERRED ...
+#   Final status: IDLE (all checks passed)
+# The summary is what an operator reads, and it contradicted the note. DEFERRED is not a
+# failure, but it is not convergence either.
+SRC2="$(dirname "${BASH_SOURCE[0]}")/../cli/cmd_firewall.sh"
+if [[ -r "$SRC2" ]]; then
+  code2="$(grep -vE '^[[:space:]]*#' "$SRC2")"
+  # the success line must be GATED on the deferred state, not unconditional
+  if printf '%s\n' "$code2" | grep -A3 'case "$post_status" in' | grep -q 'deferred'; then
+    ok "T7a final-status line is gated on the deferred state"
+  else
+    no "T7a final-status line is NOT deferral-aware — DEFERRED would report 'all checks passed'"
+  fi
+  printf '%s\n' "$code2" | grep -q 'whitelist projection DEFERRED)' \
+    && ok "T7b deferred summary names the deferral explicitly" \
+    || no "T7b no explicit deferred summary wording"
+  # T7c: the 'all checks passed' line must be GUARDED by the deferred test, not merely
+  # present. Asserting its ABSENCE was wrong — it legitimately survives inside the else
+  # branch, so that assertion false-positived on the correct fix. Assert the guard instead:
+  # a 'deferred' conditional must appear within the 6 lines preceding it.
+  guarded=$(printf '%s\n' "$code2" | grep -B6 'all checks passed' | grep -c 'deferred')
+  if [[ "$guarded" -ge 1 ]]; then
+    ok "T7c 'all checks passed' is guarded by the deferred test ($guarded guard line(s) above)"
+  else
+    no "T7c 'all checks passed' is UNGUARDED — a deferred run would claim full success"
+  fi
+else
+  no "T7 cannot read cmd_firewall.sh"
+fi
+
 echo
 echo "=== RESULT: $PASS passed, $FAIL failed ==="
 [[ "$FAIL" -eq 0 ]] || exit 1
