@@ -1284,24 +1284,10 @@ _nftban_migrate_reports_to_log() {
     # root:nftban-auditor capability boundary) and baseline/ are directories and never match.
     _old=/var/lib/nftban/reports
     _new=/var/log/nftban/reports
-    [ -d "\$_old" ] || return 0
-    mkdir -p "\$_new/daily" 2>/dev/null || true
-    for _sub in "" /daily; do
-        _o="\$_old\$_sub"; _n="\$_new\$_sub"
-        [ -d "\$_o" ] || continue
-        mkdir -p "\$_n" 2>/dev/null || true
-        for _f in "\$_o"/*.html "\$_o"/*.txt "\$_o"/*.json; do
-            [ -e "\$_f" ] || continue
-            _b=\$(basename "\$_f")
-            if [ -e "\$_n/\$_b" ]; then
-                # BOTH exist: never overwrite. Archive the old copy deterministically.
-                mkdir -p "\$_new/archive/pre-v1.228.5" 2>/dev/null || true
-                mv -f "\$_f" "\$_new/archive/pre-v1.228.5/\$_b" 2>/dev/null || true
-            else
-                mv -f "\$_f" "\$_n/\$_b" 2>/dev/null || true
-            fi
-        done
-    done
+    # v1.228.5: the audit log is migrated BEFORE the reports guard below.
+    # MEASURED defect: it was placed after `[ -d $_old ] || return 0`, so on any
+    # host without /var/lib/nftban/reports the audit-log migration was skipped
+    # entirely — gated on an unrelated directory.
     # v1.228.5: the audit log moves with the same contract. MEASURED failure without
     # this block: the writer and the logrotate stanza both repointed to /var/log while
     # 732 lines of history stayed at /var/lib — SPLIT history, and the orphan is targeted
@@ -1322,6 +1308,25 @@ _nftban_migrate_reports_to_log() {
         chmod 0640 "\$_na" 2>/dev/null || true
         [ -f "\$_na.pre-v1.228.5" ] && { chown nftban:nftban "\$_na.pre-v1.228.5" 2>/dev/null || true; chmod 0640 "\$_na.pre-v1.228.5" 2>/dev/null || true; }
     fi
+
+    [ -d "\$_old" ] || return 0
+    mkdir -p "\$_new/daily" 2>/dev/null || true
+    for _sub in "" /daily; do
+        _o="\$_old\$_sub"; _n="\$_new\$_sub"
+        [ -d "\$_o" ] || continue
+        mkdir -p "\$_n" 2>/dev/null || true
+        for _f in "\$_o"/*.html "\$_o"/*.txt "\$_o"/*.json; do
+            [ -e "\$_f" ] || continue
+            _b=\$(basename "\$_f")
+            if [ -e "\$_n/\$_b" ]; then
+                # BOTH exist: never overwrite. Archive the old copy deterministically.
+                mkdir -p "\$_new/archive/pre-v1.228.5" 2>/dev/null || true
+                mv -f "\$_f" "\$_new/archive/pre-v1.228.5/\$_b" 2>/dev/null || true
+            else
+                mv -f "\$_f" "\$_n/\$_b" 2>/dev/null || true
+            fi
+        done
+    done
     chown -R nftban:nftban "\$_new" 2>/dev/null || true
     find "\$_new" -type f -exec chmod 0640 {} \; 2>/dev/null || true
     find "\$_new" -type d -exec chmod 0750 {} \; 2>/dev/null || true

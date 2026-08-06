@@ -305,7 +305,8 @@
 # Permissions audit log (v1.150 — LOG-11)
 # =============================================================================
 # Under /var/lib (the data dir), NOT /var/log — its own explicit stanza.
-/var/log/nftban/permissions_audit.log {
+/var/log/nftban/permissions_audit.log
+/var/log/nftban/permissions_audit.log.pre-v1.228.5 {
     weekly
     rotate 12
     size 10M

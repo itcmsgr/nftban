@@ -94,7 +94,7 @@ func DefaultFamilies() []LogFamily {
 		{Key: "installer-update", File: "main", Cadence: "weekly", Volume: VolumeLow, Weight: 2, FloorDays: 30, BaseRotate: 8, BaseSizeBytes: 20 * MiB, Copytruncate: true, Create: nft,
 			Paths: []string{"/var/log/nftban/installer.log", "/var/log/nftban/update.log"}},
 		{Key: "permissions-audit", File: "main", Cadence: "weekly", Volume: VolumeLow, Weight: 1, FloorDays: 30, BaseRotate: 12, BaseSizeBytes: 10 * MiB, Copytruncate: true, Create: nft,
-			Paths: []string{"/var/log/nftban/permissions_audit.log"}},
+			Paths: []string{"/var/log/nftban/permissions_audit.log", "/var/log/nftban/permissions_audit.log.pre-v1.228.5"}},
 		{Key: "reports", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 50 * MiB, UseMaxsize: true, Olddir: "/var/log/nftban/reports/archive", CreateOlddir: "0750 nftban nftban", FloorDays: 90,
 			Paths: []string{"/var/log/nftban/reports/*.html", "/var/log/nftban/reports/*.txt", "/var/log/nftban/reports/*.json"}},
 		{Key: "reports-daily", File: "main", Cadence: "monthly", Volume: VolumeLow, Fixed: true, BaseRotate: 3, BaseSizeBytes: 20 * MiB, UseMaxsize: true, FloorDays: 90,
