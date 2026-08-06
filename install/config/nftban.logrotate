@@ -16,7 +16,7 @@
 # rotated; the logs.go LogInventory() + drift-test is the bridge that proves
 # every inventoried /var/log/nftban log is covered here):
 # - Enumerated /var/log/nftban/*.log files (see stanzas below; frequencies vary)
-# - One /var/lib/nftban/permissions_audit.log audit log (weekly, 12)
+# - One /var/log/nftban/permissions_audit.log audit log (weekly, 12)
 # - /var/lib/nftban/reports/* (monthly, 3 months)
 # - Suricata logs (handled separately, /etc/logrotate.d/nftban-suricata)
 #
@@ -305,7 +305,7 @@
 # Permissions audit log (v1.150 — LOG-11)
 # =============================================================================
 # Under /var/lib (the data dir), NOT /var/log — its own explicit stanza.
-/var/lib/nftban/permissions_audit.log {
+/var/log/nftban/permissions_audit.log {
     weekly
     rotate 12
     size 10M

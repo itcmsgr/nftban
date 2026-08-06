@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-05"
-# meta:description="Tests for v1.150 Lane A log/CLI-truth fixes: logrotate stanzas exist for security-audit.log (LOG-01), portscan-events.log (LOG-02) and /var/lib/nftban/permissions_audit.log (LOG-11); the header comment no longer claims a *.log glob (LOG-10); nftban_sync.sh user-facing output no longer says Fail2Ban (13.5); reports-registry.json is valid JSON with bans.log + the real field set and no jail (LOG-09); and the SSH posture resolver picks up /etc/ssh/sshd_config.d drop-in overrides (15.5). logrotate -d and the Go inventory drift-test are lab steps."
+# meta:description="Tests for v1.150 Lane A log/CLI-truth fixes: logrotate stanzas exist for security-audit.log (LOG-01), portscan-events.log (LOG-02) and /var/log/nftban/permissions_audit.log (LOG-11; path corrected in v1.228.5 — see below); the header comment no longer claims a *.log glob (LOG-10); nftban_sync.sh user-facing output no longer says Fail2Ban (13.5); reports-registry.json is valid JSON with bans.log + the real field set and no jail (LOG-09); and the SSH posture resolver picks up /etc/ssh/sshd_config.d drop-in overrides (15.5). logrotate -d and the Go inventory drift-test are lab steps."
 # meta:input="None (self-contained sandbox)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep,awk,sed,mktemp,python3"
@@ -152,9 +152,15 @@ assert_contains "$T2_BLK" "size 100M"  "T2.4 size 100M cap"
 # ---------------------------------------------------------------------------
 # T3: LOG-11 — permissions_audit.log under /var/lib has a weekly/12 stanza
 # ---------------------------------------------------------------------------
-echo; echo "[T3] LOG-11 /var/lib/nftban/permissions_audit.log logrotate stanza"
-T3_BLK=$(extract_stanza_block "/var/lib/nftban/permissions_audit.log")
-assert_eq "$(count_stanza_paths /var/lib/nftban/permissions_audit.log)" "1" "T3.1 exactly one stanza path entry"
+# v1.228.5 FHS CORRECTION: this asserted the /var/lib path, which is what MADE the defect
+# invisible to the suite — the guard agreed with the misplacement. Under /var/lib the file
+# carries nftban_var_lib_t, which logrotate_t cannot access, so logrotate.service failed
+# daily on EL9 Enforcing. The assertion now pins the CORRECT location and additionally
+# forbids any /var/lib rotation target, so the defect cannot be reintroduced.
+echo; echo "[T3] LOG-11 /var/log/nftban/permissions_audit.log logrotate stanza"
+T3_BLK=$(extract_stanza_block "/var/log/nftban/permissions_audit.log")
+assert_eq "$(count_stanza_paths /var/log/nftban/permissions_audit.log)" "1" "T3.1 exactly one stanza path entry"
+assert_eq "$(count_stanza_paths /var/lib/nftban/permissions_audit.log)" "0" "T3.1b OLD /var/lib path is GONE from the stanza"
 assert_contains "$T3_BLK" "weekly"     "T3.2 weekly frequency"
 assert_contains "$T3_BLK" "rotate 12"  "T3.3 rotate 12"
 

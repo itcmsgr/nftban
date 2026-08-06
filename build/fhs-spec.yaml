@@ -78,6 +78,7 @@ directories:
   # ---------------------------------------------------------------------------
   system:
     - path: /usr/lib/nftban
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -85,6 +86,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/core
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -92,6 +94,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/cli
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -99,6 +102,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/lib
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -106,6 +110,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/bin
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -113,6 +118,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/exporters
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -120,6 +126,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/setup
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -127,6 +134,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/tests
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -134,6 +142,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/helpers
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -141,6 +150,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/cron
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -148,6 +158,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/modules
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -155,6 +166,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/sbin
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -162,6 +174,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/health
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -169,6 +182,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/data
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -176,6 +190,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/templates
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -183,6 +198,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/tools
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -190,6 +206,7 @@ directories:
       created_by: package
 
     - path: /usr/lib/nftban/scripts
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -202,6 +219,7 @@ directories:
   # ---------------------------------------------------------------------------
   config:
     - path: /etc/nftban
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -209,6 +227,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -216,6 +235,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/ddos
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -223,6 +243,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/portscan
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -230,6 +251,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/login
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -237,6 +259,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -244,6 +267,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/cpanel
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -251,6 +275,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/cwp
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -258,6 +283,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/cyberpanel
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -265,6 +291,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/directadmin
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -272,6 +299,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/generic
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -279,6 +307,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/interworx
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -286,6 +315,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/plesk
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -293,6 +323,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/panels/vesta
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -300,6 +331,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/botscan
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -307,6 +339,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/botguard
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -314,6 +347,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/botguard/profiles
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -321,6 +355,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/suricata
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -328,6 +363,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/tunnel
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -335,6 +371,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/templates
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -342,6 +379,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/patterns.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -349,6 +387,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/patterns.d/botscan
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -356,6 +395,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/whitelist.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -363,6 +403,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/blacklist.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -370,6 +411,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/ports.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -377,6 +419,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/rules.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -384,6 +427,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/access.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -391,6 +435,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/rbl
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -398,6 +443,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/geoban
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -405,6 +451,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/conf.d/geoip
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -412,6 +459,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/nftables.d
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -419,6 +467,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/ssl
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -426,6 +475,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -433,6 +483,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata/profiles
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -440,6 +491,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata/config
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -447,6 +499,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata/rules
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -454,6 +507,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata/cache
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -461,6 +515,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata/state
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -468,6 +523,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/suricata/state/last-good
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -475,6 +531,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/connectors
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -482,6 +539,7 @@ directories:
       created_by: package
 
     - path: /etc/nftban/distros
+      artifact_class: config
       mode: "0750"
       owner: root
       group: nftban
@@ -495,6 +553,7 @@ directories:
   # ---------------------------------------------------------------------------
   data:
     - path: /var/lib/nftban
+      artifact_class: state
       mode: "0750"
       owner: root
       group: nftban
@@ -503,6 +562,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/banned
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -511,6 +571,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/whitelist
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -519,6 +580,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/feeds
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -527,6 +589,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -535,6 +598,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/baseline
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -543,6 +607,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/watchdog
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -551,6 +616,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/auditors
+      artifact_class: state
       mode: "0770"
       owner: root
       group: nftban-auditor
@@ -584,6 +650,7 @@ directories:
         write without joining the daemon group.
 
     - path: /var/lib/nftban/metrics
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -592,6 +659,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/snapshots
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -600,6 +668,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/exports
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -608,6 +677,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/geoip
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -616,6 +686,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/stats
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -624,6 +695,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/stats/history
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -632,6 +704,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/stats/profiles
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -640,6 +713,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -648,6 +722,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue/pending
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -656,6 +731,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue/work
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -664,6 +740,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue/dlq
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -672,6 +749,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/mailspool
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -680,6 +758,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/botguard
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -688,6 +767,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/tunnel
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -696,6 +776,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/community
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -703,6 +784,7 @@ directories:
       created_by: package
 
     - path: /var/lib/nftban/analytics
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -711,6 +793,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/backup
+      artifact_class: state
       mode: "0750"
       owner: root
       group: nftban
@@ -719,6 +802,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/config
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -727,6 +811,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/login
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -735,6 +820,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/panels
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -743,6 +829,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/portscan
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -751,6 +838,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/recorder
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -759,6 +847,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/staging
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -767,6 +856,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/state
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -775,6 +865,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/suricata
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -783,6 +874,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/suricata/cache
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -797,6 +889,7 @@ directories:
         cache.go migrates the old /etc copy on first startup. See internal/suricata/stats/cache.go.
 
     - path: /var/lib/nftban/alerts
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -812,6 +905,7 @@ directories:
         (both nftban:nftban) lets throttling actually persist. See cli/sbin/nftban-service-alert.
 
     - path: /var/lib/nftban/update-backups
+      artifact_class: state
       mode: "0750"
       owner: root
       group: nftban
@@ -820,6 +914,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/watchdog
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -828,6 +923,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/archive
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -836,6 +932,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/pro
+      artifact_class: state
       mode: "0750"
       owner: root
       group: nftban
@@ -844,6 +941,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/botscan
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -851,6 +949,7 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
     - path: /var/lib/nftban/botscan/spool
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -858,6 +957,7 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
     - path: /var/lib/nftban/botscan/proc-offsets
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -865,6 +965,7 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
     - path: /var/lib/nftban/botscan-collector
+      artifact_class: state
       mode: "0750"
       owner: nftban
       group: nftban
@@ -877,6 +978,8 @@ directories:
   # ---------------------------------------------------------------------------
   logs:
     - path: /var/log/nftban
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -885,6 +988,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/watchdog
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -893,6 +998,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/reports
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -901,6 +1008,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/rbl
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -909,6 +1018,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/botguard
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -917,6 +1028,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/metrics
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -925,6 +1038,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/soak
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -933,6 +1048,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/update-runs
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0750"
       owner: nftban
       group: nftban
@@ -941,6 +1058,8 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/suricata
+      artifact_class: log
+      retention_owner: logrotate
       mode: "0770"
       owner: suricata
       group: nftban
@@ -953,6 +1072,8 @@ directories:
   # ---------------------------------------------------------------------------
   runtime:
     - path: /var/cache/nftban
+      artifact_class: cache
+      retention_owner: internal
       mode: "0755"
       owner: nftban
       group: nftban
@@ -962,6 +1083,8 @@ directories:
       note: "0755 intentional: public-cache traversal — non-sensitive cache contents (timestamps, last-check status) readable by unprivileged tooling. Sensitive subdirs (e.g. /health) are tightened to 0750 individually."
 
     - path: /var/cache/nftban/health
+      artifact_class: cache
+      retention_owner: internal
       mode: "0750"
       owner: nftban
       group: nftban
@@ -970,6 +1093,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /run/nftban
+      artifact_class: runtime
       mode: "0755"
       owner: nftban
       group: nftban
@@ -979,6 +1103,7 @@ directories:
       note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict. 0755 intentional: socket-discovery — non-nftban-group processes (panel adapters, monitoring tools) must stat() the daemon socket; the socket file itself uses unit-level SocketMode=0660 + group ownership for access control. Tightening the parent dir would break socket-discovery for anything outside the nftban group."
 
     - path: /run/nftban/botscan
+      artifact_class: runtime
       mode: "0750"
       owner: nftban
       group: nftban
@@ -987,6 +1112,7 @@ directories:
       tmpfiles_reconcile: "z"
 
     - path: /run/nftban/firewall-validate
+      artifact_class: runtime
       mode: "2750"
       owner: root
       group: nftban
@@ -1020,6 +1146,7 @@ directories:
   # ---------------------------------------------------------------------------
   shared:
     - path: /usr/share/nftban
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1027,6 +1154,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/templates
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1034,6 +1162,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/templates/mail
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1041,6 +1170,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/templates/reports
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1048,6 +1178,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/templates/email
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1055,6 +1186,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/templates/partials
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1062,6 +1194,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/templates/zabbix
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1069,6 +1202,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/dashboards
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1076,6 +1210,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/dashboards/grafana
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1083,6 +1218,7 @@ directories:
       created_by: package
 
     - path: /usr/share/nftban/specs
+      artifact_class: program
       mode: "0755"
       owner: root
       group: root
@@ -1098,6 +1234,7 @@ conditional:
     condition: "metrics_enabled"
     directories:
       - path: /etc/nftban/metrics
+        artifact_class: config
         mode: "0750"
         owner: root
         group: nftban
@@ -1105,6 +1242,7 @@ conditional:
         created_by: feature_enable
 
       - path: /var/lib/node_exporter
+        artifact_class: external
         mode: "0755"
         owner: node_exporter
         group: node_exporter
@@ -1143,6 +1281,7 @@ distro_paths:
 file_permissions:
   # /etc/nftban - config files readable by daemon
   - path: /etc/nftban
+    artifact_class: config
     pattern: "*.conf"
     mode: "0640"
     owner: root
@@ -1150,6 +1289,7 @@ file_permissions:
     recursive: true
 
   - path: /etc/nftban
+    artifact_class: config
     pattern: "*.local"
     mode: "0640"
     owner: root
@@ -1158,6 +1298,7 @@ file_permissions:
 
   # /usr/lib/nftban - shell scripts executable
   - path: /usr/lib/nftban
+    artifact_class: program
     pattern: "*.sh"
     mode: "0755"
     owner: root
@@ -1166,6 +1307,7 @@ file_permissions:
 
   # /usr/lib/nftban/bin - Go binaries with CAP_NET_ADMIN
   - path: /usr/lib/nftban/bin
+    artifact_class: program
     pattern: "*"
     mode: "0755"
     owner: root
@@ -1174,6 +1316,7 @@ file_permissions:
 
   # /usr/lib/nftban/sbin - helper binaries executable
   - path: /usr/lib/nftban/sbin
+    artifact_class: program
     pattern: "*"
     mode: "0755"
     owner: root
@@ -1181,6 +1324,7 @@ file_permissions:
 
   # /usr/sbin/nftban* - CLI binaries group-restricted
   - path: /usr/sbin
+    artifact_class: program
     pattern: "nftban*"
     mode: "0750"
     owner: root
@@ -1188,6 +1332,7 @@ file_permissions:
 
   # /var/lib/nftban - state files
   - path: /var/lib/nftban
+    artifact_class: state
     pattern: "*"
     mode: "0640"
     owner: nftban
@@ -1197,6 +1342,7 @@ file_permissions:
 
   # /var/lib/nftban/reports/auditors - auditor access
   - path: /var/lib/nftban/reports/auditors
+    artifact_class: state
     pattern: "*"
     mode: "0660"
     owner: root
@@ -1205,6 +1351,8 @@ file_permissions:
 
   # /var/log/nftban - log files
   - path: /var/log/nftban
+    artifact_class: log
+    retention_owner: logrotate
     pattern: "*"
     mode: "0640"
     owner: nftban
@@ -1221,6 +1369,8 @@ file_permissions:
 
   # /var/log/nftban/suricata - suricata writes
   - path: /var/log/nftban/suricata
+    artifact_class: log
+    retention_owner: logrotate
     pattern: "*"
     mode: "0640"
     owner: suricata
