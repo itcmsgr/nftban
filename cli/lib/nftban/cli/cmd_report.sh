@@ -1387,11 +1387,43 @@ nftban_report_generate_html() {
     # captured the whole document into a variable and then `echo "$html_content" > "$output"`
     # with no check at all — the defect this change closes. Redirecting here means the
     # shell's open(2)/write(2) failures land in awk's exit status, which IS checked.
+    # v1.228.5 INJECTION-TRUTH: the previous pattern required `window.__NFTBAN_DATA__ = {`
+    # and `Placeholder - will be replaced` on the SAME line. The SHIPPED template spreads
+    # them over three lines:
+    #       window.__NFTBAN_DATA__ = {
+    #           // Placeholder - will be replaced
+    #       };
+    # so the pattern could NEVER match and the data was NEVER injected. MEASURED on EL9
+    # against the real installed template: awk matches = 0, and every generated report was a
+    # well-formed 18379-byte document whose data object was literally empty. It passed a
+    # size check, a </html> check and a marker-presence check, and the unit reported success.
+    # The regression escaped because the unit test's stub template used the one-line form —
+    # a fixture that did not match the artifact actually shipped.
+    #
+    # Match on the ASSIGNMENT OPENING only, then consume through the closing `};`. Both
+    # layouts are handled: if the opening line also closes the object it is replaced alone.
+    # `injected` stops at the first assignment, so later reads such as
+    # `const data = window.__NFTBAN_DATA__;` are never rewritten.
     if ! NFTBAN_REPORT_JSON="$json_data" awk '
-        /window\.__NFTBAN_DATA__ = \{.*Placeholder - will be replaced/ {
-            print "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"]
+        !injected && /window\.__NFTBAN_DATA__[[:space:]]*=[[:space:]]*\{/ {
+            # Preserve the source indentation rather than imposing one, so the rendered
+            # document keeps the layout the template defines.
+            match($0, /^[[:space:]]*/); indent = substr($0, 1, RLENGTH)
+            injected = 1
+            if ($0 ~ /\}/ && $0 !~ /\{[[:space:]]*$/) {
+                # Single-line form: the object opens and closes on this line, so replace it
+                # in place and add NO terminator the original did not have.
+                print indent "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"]
+                next
+            }
+            # Block form (the shipped template): the `};` terminator lives on a later line
+            # and is consumed below, so it must be re-emitted here.
+            print indent "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"] ";"
+            skip = 1
             next
         }
+        skip && /^[[:space:]]*\}[[:space:]]*;?[[:space:]]*$/ { skip = 0; next }
+        skip { next }
         { print }
     ' "$template" > "$temp_html"; then
         echo "ERROR: Failed to render HTML report to: $temp_html" >&2
@@ -1412,10 +1444,42 @@ nftban_report_generate_html() {
         rm -f "$temp_html" 2>/dev/null
         return 1
     fi
-    if ! grep -q 'window\.__NFTBAN_DATA__' "$temp_html"; then
-        echo "ERROR: Generated report is missing its data section" >&2
+    # v1.228.5 INJECTION-TRUTH: marker PRESENCE is not evidence of injection — the template's
+    # own placeholder block contains the marker, so a completely un-injected document passes
+    # a `grep -q window.__NFTBAN_DATA__` check. MEASURED: that is exactly what shipped.
+    # Assert the placeholder is GONE and the payload is real, parseable data.
+    if grep -q 'Placeholder - will be replaced' "$temp_html"; then
+        echo "ERROR: Generated report still contains the template placeholder — data was not injected" >&2
         rm -f "$temp_html" 2>/dev/null
         return 1
+    fi
+
+    local injected_payload
+    # The terminator is OPTIONAL: the block form re-emits `;`, the single-line form does not.
+    # Anchoring on a required `;` rejected a perfectly good single-line document.
+    # `^[[:space:]]*window\.` also keeps later READS such as
+    # `const data = window.__NFTBAN_DATA__;` out of the match.
+    injected_payload="$(sed -n 's/^[[:space:]]*window\.__NFTBAN_DATA__[[:space:]]*=[[:space:]]*//p' \
+                        "$temp_html" | head -1 | sed 's/[[:space:]]*;[[:space:]]*$//')"
+    if [[ -z "$injected_payload" ]]; then
+        echo "ERROR: Generated report has no data assignment" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq -e . <<<"$injected_payload" >/dev/null 2>&1; then
+            echo "ERROR: Injected report data is not valid JSON" >&2
+            rm -f "$temp_html" 2>/dev/null
+            return 1
+        fi
+        # The hostname rendered empty for the entire time /usr/bin/hostname was unexecutable
+        # in nftband_t. An empty identity makes a fleet report unattributable, so it is a
+        # generation failure, not a cosmetic one.
+        if [[ -z "$(jq -r '.report.hostname // empty' <<<"$injected_payload" 2>/dev/null)" ]]; then
+            echo "ERROR: Injected report data has an empty hostname" >&2
+            rm -f "$temp_html" 2>/dev/null
+            return 1
+        fi
     fi
     if ! grep -qi '</html>' "$temp_html"; then
         echo "ERROR: Generated report is truncated (no closing </html>)" >&2
