@@ -515,6 +515,7 @@ nftban_health_check_all() {
     # Run security checks
     nftban_health_check_nftables_security || { ((warnings++)) || true; }
     nftban_health_check_set_sizes || { ((warnings++)) || true; }
+    nftban_health_check_limiter_capacity || { ((warnings++)) || true; }
     nftban_health_check_conflicting_firewalls || { ((warnings++)) || true; }
     nftban_health_check_ruleset_fingerprint || { ((warnings++)) || true; }
     nftban_health_check_immutable_flags || { ((warnings++)) || true; }

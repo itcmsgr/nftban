@@ -1,0 +1,35 @@
+# NFTBan bounded-limiter capacity policy manifest (v1.228.6)
+# One row per dynamic rate-limit set in the render sources. The guard
+# (check-nft-bounded-limiters.sh) fails if a limiter exists without a row here
+# or a row exists without a limiter — a new limiter REQUIRES a deliberate
+# capacity-policy decision, never a default.
+#
+# AT_CAPACITY policy vocabulary (OPEN_V1_228_6_METER_CAPACITY_HOTFIX §6):
+#   FAIL_CLOSED_VISIBLE  insertion failure -> fallthrough drop; deliberate under
+#                        >size concurrently-active sources (flood conditions);
+#                        self-heals via timeout expiry; surfaced by the
+#                        limiter_capacity health check
+#   FAIL_OPEN_VISIBLE    insertion failure -> rule does not match -> traffic
+#                        continues (bounded protection loss, no outage);
+#                        surfaced by the same health check
+#
+# NAME<TAB>FAMILY<TAB>SOURCE<TAB>AT_CAPACITY<TAB>NOTE
+syn_meter_v4	ip	base	FAIL_CLOSED_VISIBLE	always-on; all new TCP to service ports
+syn_meter_v6	ip6	base	FAIL_CLOSED_VISIBLE	always-on; v4 pair
+syn_prefix_meter_v6	ip6	base	FAIL_OPEN_VISIBLE	rate-over drop shape; no v4 counterpart by design (v4 prefix pressure handled by ddos_prefix_syn when DDoS enabled)
+ddos_dns_udp	ip	fragment	FAIL_CLOSED_VISIBLE	the 2026-08-04 outage object
+ddos_dns_udp6	ip6	fragment	FAIL_CLOSED_VISIBLE	measured 70-71% on two resolvers
+ddos_icmp_flood	ip	fragment	FAIL_CLOSED_VISIBLE	ICMP rate
+ddos_icmp_flood6	ip6	fragment	FAIL_CLOSED_VISIBLE	ICMPv6 rate
+ddos_udp_flood	ip	fragment	FAIL_CLOSED_VISIBLE	ALL non-DNS UDP (NTP/VPN/QUIC blast radius)
+ddos_udp_flood6	ip6	fragment	FAIL_CLOSED_VISIBLE	v6 pair
+ddos_prefix_syn	ip	fragment	FAIL_OPEN_VISIBLE	DEAD CODE (jump after base SYN drop) — DECISION v1.228.6: converted for state-boundedness, ordering unchanged; activation belongs to OPEN_NFT_SCHEMA_METER_AUTHORITY lane
+ddos_prefix_syn6	ip6	fragment	FAIL_OPEN_VISIBLE	same recorded decision as v4
+ddos_prefix_conn	ip	fragment	FAIL_CLOSED_VISIBLE	/24 connection aggregation
+ddos_prefix_conn6	ip6	fragment	FAIL_CLOSED_VISIBLE	/64 connection aggregation
+http_bot_grey_meter	ip	fragment	FAIL_CLOSED_VISIBLE	throttle population bounded by @http_bot_grey membership
+http_bot_grey_meter6	ip6	fragment	FAIL_CLOSED_VISIBLE	v6 pair
+http_bot_pending_meter	ip	fragment	FAIL_CLOSED_VISIBLE	throttle population bounded by @http_bot_pending membership
+http_bot_pending_meter6	ip6	fragment	FAIL_CLOSED_VISIBLE	v6 pair
+http_bot_meter	ip	fragment	FAIL_OPEN_VISIBLE	rate-over suspect marker; at capacity marking stops, traffic unaffected
+http_bot_meter6	ip6	fragment	FAIL_OPEN_VISIBLE	v6 pair

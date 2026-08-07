@@ -777,16 +777,29 @@ nft_fragment_render_ddos_prefix() {
 # SYN Rate: ${syn_rate} burst ${syn_burst}
 # Conn Rate: ${conn_rate} burst ${conn_burst}
 
+# v1.228.6: the nft meter shorthand created an implicit dynamic set —
+# 65535 cap, NO timeout, monotonic growth, inline (unflushable) on nft <= 1.0.9.
+# Measured outcome: at capacity a NEW key cannot insert, the rule does not
+# match, and traffic takes the unconditional drop below. Explicit named dynamic
+# sets bound the state by activity (timeout expires idle keys), keep ONE
+# addressable runtime form on every supported nft, and declare size/timeout
+# for audit and health. Prefix keys aggregate many hosts (lower cardinality,
+# longer-lived behaviour): timeout 10m. Declarations precede the rules that
+# reference them; sets persist across fragment re-application (flush chain does
+# not touch them) and converge on full rebuild (table delete + recreate).
+
 # --- IPv4 Prefix Aggregation ---
 add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
+add set ${table_ipv4} ${syn_meter} { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 10m; comment "v1.228.6 bounded prefix SYN rate state"; }
+add set ${table_ipv4} ${conn_meter} { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 10m; comment "v1.228.6 bounded prefix conn rate state"; }
 
 # SYN flood protection by /24 prefix
-add rule ${table_ipv4} ${chain} tcp flags syn meter ${syn_meter} { ip saddr & ${ipv4_bitmask} limit rate ${syn_rate} burst ${syn_burst} packets } return comment "Prefix SYN: rate OK"
+add rule ${table_ipv4} ${chain} tcp flags syn update @${syn_meter} { ip saddr & ${ipv4_bitmask} limit rate ${syn_rate} burst ${syn_burst} packets } return comment "Prefix SYN: rate OK"
 add rule ${table_ipv4} ${chain} tcp flags syn counter name total_input_drop counter drop comment "Prefix SYN flood: ${ipv4_mask} rate exceeded"
 
 # Connection rate by /24 prefix
-add rule ${table_ipv4} ${chain} ct state new meter ${conn_meter} { ip saddr & ${ipv4_bitmask} limit rate ${conn_rate} burst ${conn_burst} packets } return comment "Prefix conn: rate OK"
+add rule ${table_ipv4} ${chain} ct state new update @${conn_meter} { ip saddr & ${ipv4_bitmask} limit rate ${conn_rate} burst ${conn_burst} packets } return comment "Prefix conn: rate OK"
 add rule ${table_ipv4} ${chain} ct state new counter name total_input_drop counter drop comment "Prefix conn flood: ${ipv4_mask} rate exceeded"
 
 # Return to input chain for remaining traffic
@@ -795,13 +808,15 @@ add rule ${table_ipv4} ${chain} return
 # --- IPv6 Prefix Aggregation ---
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
+add set ${table_ipv6} ${syn_meter}6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 10m; comment "v1.228.6 bounded prefix SYN rate state"; }
+add set ${table_ipv6} ${conn_meter}6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 10m; comment "v1.228.6 bounded prefix conn rate state"; }
 
 # SYN flood protection by /64 prefix
-add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr & ${ipv6_bitmask} limit rate ${syn_rate} burst ${syn_burst} packets } return comment "Prefix SYN: rate OK"
+add rule ${table_ipv6} ${chain} tcp flags syn update @${syn_meter}6 { ip6 saddr & ${ipv6_bitmask} limit rate ${syn_rate} burst ${syn_burst} packets } return comment "Prefix SYN: rate OK"
 add rule ${table_ipv6} ${chain} tcp flags syn counter name total_input_drop counter drop comment "Prefix SYN flood: ${ipv6_mask} rate exceeded"
 
 # Connection rate by /64 prefix
-add rule ${table_ipv6} ${chain} ct state new meter ${conn_meter}6 { ip6 saddr & ${ipv6_bitmask} limit rate ${conn_rate} burst ${conn_burst} packets } return comment "Prefix conn: rate OK"
+add rule ${table_ipv6} ${chain} ct state new update @${conn_meter}6 { ip6 saddr & ${ipv6_bitmask} limit rate ${conn_rate} burst ${conn_burst} packets } return comment "Prefix conn: rate OK"
 add rule ${table_ipv6} ${chain} ct state new counter name total_input_drop counter drop comment "Prefix conn flood: ${ipv6_mask} rate exceeded"
 
 # Return to input chain
@@ -943,6 +958,20 @@ nft_fragment_render_ddos_classic() {
 add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
+# v1.228.6: nft meter shorthand converted to explicit named dynamic
+# sets (size + timeout declared). The shorthand's implicit set was capped at
+# 65535 with NO expiry: ddos_dns_udp SATURATED on four production resolvers
+# (2026-08-04) and every NEW source's DNS/UDP fell through to the drop below —
+# a measured outage, silent, unflushable on nft <= 1.0.9 (inline meter form).
+# timeout 5m bounds state to the recently-active source population; a source
+# idle > ~2s already has a full token bucket, so expiry changes no enforcement
+# outcome for any source active within the window. AT CAPACITY the fallthrough
+# drop remains (FAIL_CLOSED under >65535 concurrently-active sources — genuine
+# flood conditions), now self-healing via expiry and visible to health checks.
+add set ${table_ipv4} ddos_dns_udp { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded DNS/UDP rate state"; }
+add set ${table_ipv4} ${icmp_meter} { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded ICMP rate state"; }
+add set ${table_ipv4} ${udp_meter} { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded UDP rate state"; }
+
 # v1.67.1: Removed duplicate SYN flood meter + SSH/HTTP/HTTPS conn limits.
 # Base input DETECT phase already enforces:
 #   - SYN rate (syn_meter_v4, 25/sec) — tighter, fires first, terminal accept
@@ -955,15 +984,15 @@ add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_l
 
 # DNS Protection (unique — no base schema equivalent)
 add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
-add rule ${table_ipv4} ${chain} udp dport 53 meter ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
+add rule ${table_ipv4} ${chain} udp dport 53 update @ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv4} ${chain} udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
 # ICMP Rate Limiting (unique — base allows ICMP without rate limit)
-add rule ${table_ipv4} ${chain} ip protocol icmp meter ${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
+add rule ${table_ipv4} ${chain} ip protocol icmp update @${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
 add rule ${table_ipv4} ${chain} ip protocol icmp counter name total_input_drop counter drop comment "ICMP flood: rate exceeded"
 
 # UDP Flood Protection (unique — generic UDP rate limit)
-add rule ${table_ipv4} ${chain} ip protocol udp meter ${udp_meter} { ip saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
+add rule ${table_ipv4} ${chain} ip protocol udp update @${udp_meter} { ip saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
 add rule ${table_ipv4} ${chain} ip protocol udp counter name total_input_drop counter drop comment "UDP flood: rate exceeded"
 
 # Return to input chain
@@ -973,6 +1002,13 @@ add rule ${table_ipv4} ${chain} return
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
 
+# v1.228.6: same conversion as IPv4 — parity is mandatory (ddos_dns_udp6
+# measured at 70-71% occupancy on two resolvers; a v4-only fix leaves the
+# outage latent on v6).
+add set ${table_ipv6} ddos_dns_udp6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded DNS/UDP rate state"; }
+add set ${table_ipv6} ${icmp_meter}6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded ICMPv6 rate state"; }
+add set ${table_ipv6} ${udp_meter}6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded UDP rate state"; }
+
 # v1.67.1: Same deduplication as IPv4 — removed SYN meter + SSH/HTTP/HTTPS conn limits.
 
 # SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
@@ -980,15 +1016,15 @@ add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_l
 
 # DNS Protection (unique)
 add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
-add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 meter ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
+add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 update @ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
 # ICMPv6 Rate Limiting (unique)
-add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
+add rule ${table_ipv6} ${chain} meta l4proto icmpv6 update @${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 counter name total_input_drop counter drop comment "ICMPv6 flood: rate exceeded"
 
 # UDP Flood Protection (unique)
-add rule ${table_ipv6} ${chain} meta l4proto udp meter ${udp_meter}6 { ip6 saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
+add rule ${table_ipv6} ${chain} meta l4proto udp update @${udp_meter}6 { ip6 saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp counter name total_input_drop counter drop comment "UDP flood: rate exceeded"
 
 # Return to input chain
@@ -1689,6 +1725,17 @@ nft_fragment_render_http_botguard() {
 add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
+# v1.228.6: throttle/suspect meters converted from the meter shorthand to
+# explicit named dynamic sets — bounded (timeout expires idle sources),
+# addressable on every nft version, size/timeout declared. Throttle-state
+# cardinality is already bounded by the grey/pending membership sets; the
+# suspect meter is a rate-over marker: at capacity a NEW source cannot
+# insert, the rule does not match, and NO suspect marking happens —
+# FAIL_OPEN (bounded protection loss, no availability impact).
+add set ${table_ipv4} http_bot_grey_meter { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded grey-throttle rate state"; }
+add set ${table_ipv4} http_bot_pending_meter { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded pending-throttle rate state"; }
+add set ${table_ipv4} http_bot_meter { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded suspect-marking rate state"; }
+
 # 1. Allow set: verified crawlers bypass throttle
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_allow accept comment "BotGuard: verified crawler allow"
 
@@ -1699,15 +1746,15 @@ add rule ${table_ipv4} ${chain} ip saddr @http_bot_ban counter name total_input_
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_emergency counter name total_input_drop counter drop comment "BotGuard: emergency drop"
 
 # 4. Grey set: suspicious bots get heavy throttle
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} ct state new meter http_bot_grey_meter { ip saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} ct state new update @http_bot_grey_meter { ip saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: grey throttle exceeded"
 
 # 5. Pending set: awaiting classification, light throttle
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} ct state new meter http_bot_pending_meter { ip saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} ct state new update @http_bot_pending_meter { ip saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: pending throttle exceeded"
 
 # 6. Suspect meter: mark IPs exceeding rate for Go classification
-add rule ${table_ipv4} ${chain} tcp dport {80, 443} ct state new meter http_bot_meter { ip saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect { ip saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
+add rule ${table_ipv4} ${chain} tcp dport {80, 443} ct state new update @http_bot_meter { ip saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect { ip saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
 
 # 7. Return to input chain
 add rule ${table_ipv4} ${chain} return
@@ -1715,6 +1762,11 @@ add rule ${table_ipv4} ${chain} return
 # --- IPv6 HTTP Bot Guard ---
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
+
+# v1.228.6: same conversion as IPv4 (v4/v6 parity mandatory).
+add set ${table_ipv6} http_bot_grey_meter6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded grey-throttle rate state"; }
+add set ${table_ipv6} http_bot_pending_meter6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded pending-throttle rate state"; }
+add set ${table_ipv6} http_bot_meter6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded suspect-marking rate state"; }
 
 # 1. Allow set
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_allow6 accept comment "BotGuard: verified crawler allow"
@@ -1726,15 +1778,15 @@ add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_ban6 counter name total_inpu
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_emergency6 counter name total_input_drop counter drop comment "BotGuard: emergency drop"
 
 # 4. Grey set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} ct state new meter http_bot_grey_meter6 { ip6 saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} ct state new update @http_bot_grey_meter6 { ip6 saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: grey throttle exceeded"
 
 # 5. Pending set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} ct state new meter http_bot_pending_meter6 { ip6 saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} ct state new update @http_bot_pending_meter6 { ip6 saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: pending throttle exceeded"
 
 # 6. Suspect meter
-add rule ${table_ipv6} ${chain} tcp dport {80, 443} ct state new meter http_bot_meter6 { ip6 saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect6 { ip6 saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
+add rule ${table_ipv6} ${chain} tcp dport {80, 443} ct state new update @http_bot_meter6 { ip6 saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect6 { ip6 saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
 
 # 7. Return
 add rule ${table_ipv6} ${chain} return
