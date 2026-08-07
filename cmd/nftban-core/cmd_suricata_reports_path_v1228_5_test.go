@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 package main
 
 // v1.228.5 FHS — focused proof for the Suricata analytics reports path.

@@ -1285,7 +1285,7 @@ _nftban_migrate_reports_to_log() {
     _old=/var/lib/nftban/reports
     _new=/var/log/nftban/reports
     # v1.228.5: the audit log is migrated BEFORE the reports guard below.
-    # MEASURED defect: it was placed after `[ -d $_old ] || return 0`, so on any
+    # MEASURED defect: it was placed after \`[ -d \$_old ] || return 0\`, so on any
     # host without /var/lib/nftban/reports the audit-log migration was skipped
     # entirely — gated on an unrelated directory.
     # v1.228.5: the audit log moves with the same contract. MEASURED failure without
@@ -1308,7 +1308,7 @@ _nftban_migrate_reports_to_log() {
         chmod 0640 "\$_na" 2>/dev/null || true
         [ -f "\$_na.pre-v1.228.5" ] && { chown nftban:nftban "\$_na.pre-v1.228.5" 2>/dev/null || true; chmod 0640 "\$_na.pre-v1.228.5" 2>/dev/null || true; }
         # Relabel the audit log HERE, not at the end of the function. MEASURED defect:
-        # the end-of-function restorecon sits AFTER `[ -d \$_old ] || return 0`, so on a
+        # the end-of-function restorecon sits AFTER \`[ -d \$_old ] || return 0\`, so on a
         # host with an audit log but NO /var/lib/nftban/reports the file was moved and
         # never relabelled — keeping nftban_var_lib_t at its new /var/log path, which is
         # exactly the label logrotate_t cannot read. Each move relabels what it moved.
@@ -1339,7 +1339,7 @@ _nftban_migrate_reports_to_log() {
     chown -R nftban:nftban "\$_new" 2>/dev/null || true
     find "\$_new" -type f -exec chmod 0640 {} \; 2>/dev/null || true
     find "\$_new" -type d -exec chmod 0750 {} \; 2>/dev/null || true
-    # v1.228.5 CRITICAL: `mv` PRESERVES the SELinux context. A file moved from /var/lib
+    # v1.228.5 CRITICAL: \`mv\` PRESERVES the SELinux context. A file moved from /var/lib
     # arrives at /var/log still labelled nftban_var_lib_t — precisely the label logrotate_t
     # cannot read, so the migration would RELOCATE the defect instead of fixing it.
     # MEASURED on the legacy fixture: after migrating, logrotate.service still failed with
