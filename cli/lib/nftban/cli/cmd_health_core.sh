@@ -469,7 +469,23 @@ nftban_health_cmd_fix() {
             # A full sync directly applies port config to nft sets.
             if command -v nftban &>/dev/null; then
                 echo "  Syncing ports to firewall..."
-                nftban sync --quick 2>/dev/null || true
+                # v1.228.5: `sync --quick` reaches the daemon over
+                # /run/nftban/nftband.sock and exits non-zero when it is unreachable.
+                # Swallowing that with `|| true` let `health --fix` print "Syncing
+                # ports to firewall..." and move on having synced nothing — a fix path
+                # claiming work it did not do. Report the failure instead of hiding it.
+                _hc_sync_out="$(nftban sync --quick 2>&1)"; _hc_sync_rc=$?
+                if [[ $_hc_sync_rc -eq 0 ]]; then
+                    echo "  ✅ Ports synced to firewall"
+                else
+                    echo "  ⚠ Port sync FAILED (rc=$_hc_sync_rc) — firewall may not reflect config" >&2
+                    if [[ -n "$_hc_sync_out" ]]; then
+                        printf '%s\n' "$_hc_sync_out" | tail -3 | while IFS= read -r _hc_l; do
+                            [[ -n "$_hc_l" ]] && echo "    sync: $_hc_l" >&2
+                        done
+                    fi
+                fi
+                unset _hc_sync_out _hc_sync_rc _hc_l
             fi
 
             # v1.18.7: Download GeoIP database if missing

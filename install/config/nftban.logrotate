@@ -16,8 +16,8 @@
 # rotated; the logs.go LogInventory() + drift-test is the bridge that proves
 # every inventoried /var/log/nftban log is covered here):
 # - Enumerated /var/log/nftban/*.log files (see stanzas below; frequencies vary)
-# - One /var/lib/nftban/permissions_audit.log audit log (weekly, 12)
-# - /var/lib/nftban/reports/* (monthly, 3 months)
+# - One /var/log/nftban/permissions_audit.log audit log (weekly, 12)
+# - /var/log/nftban/reports/* (monthly, 3 months)  [v1.228.5: moved from /var/lib]
 # - Suricata logs (handled separately, /etc/logrotate.d/nftban-suricata)
 #
 # NOTE: there is intentionally no catch-all `/var/log/nftban/*.log` safety
@@ -305,7 +305,8 @@
 # Permissions audit log (v1.150 — LOG-11)
 # =============================================================================
 # Under /var/lib (the data dir), NOT /var/log — its own explicit stanza.
-/var/lib/nftban/permissions_audit.log {
+/var/log/nftban/permissions_audit.log
+/var/log/nftban/permissions_audit.log.pre-v1.228.5 {
     weekly
     rotate 12
     size 10M
@@ -319,19 +320,19 @@
 # Generated reports - monthly rotation, keep 3 months.
 # Report files are written whole (not appended) so they are bounded per file by
 # their generator; `maxsize` is a backstop against a pathologically large report.
-/var/lib/nftban/reports/*.html /var/lib/nftban/reports/*.txt /var/lib/nftban/reports/*.json {
+/var/log/nftban/reports/*.html /var/log/nftban/reports/*.txt /var/log/nftban/reports/*.json {
     monthly
     rotate 3
     maxsize 50M
     compress
     missingok
     notifempty
-    olddir /var/lib/nftban/reports/archive
+    olddir /var/log/nftban/reports/archive
     createolddir 0750 nftban nftban
 }
 
 # Daily reports subdirectory
-/var/lib/nftban/reports/daily/*.html /var/lib/nftban/reports/daily/*.txt {
+/var/log/nftban/reports/daily/*.html /var/log/nftban/reports/daily/*.txt /var/log/nftban/reports/daily/*.json {
     monthly
     rotate 3
     maxsize 20M

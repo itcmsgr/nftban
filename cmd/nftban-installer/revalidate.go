@@ -112,6 +112,15 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// profile forces a deterministic tier for execution-path tests (nil → /proc).
 	resolvedHealth := services.ResolveHealthResourceVerdict(exec, sf, log, healthresource.Verdict{}, version.Version, cfg.inject.profile())
 	opts.HealthResource = &resolvedHealth
+	// v1.228.5: carry the PERSISTED durable-whitelist convergence verdict into the
+	// assertion set. Unlike the health verdict there is no read-only live re-probe:
+	// the convergence authority is services.SyncWhitelist, which runs `nftban sync`
+	// (internal/installer/services/whitelist.go:52) and MUTATES the running set —
+	// revalidate is explicitly "no install, no daemon restart". So a recorded FAILED
+	// keeps the record DEGRADED (revalidate must not launder it into COMMITTED); the
+	// assertion logs the remediation, which requires an installer run to re-record.
+	// A pre-v1.228.5 record has no such line → "" → reported UNKNOWN, never FAILED.
+	opts.WhitelistConvergence = cur.WhitelistConvergence
 	results := validate.RunAssertionsWithOpts(exec, sshPort, log, opts)
 
 	// Preserve recorded identity the Transition writer re-emits. main() blanked

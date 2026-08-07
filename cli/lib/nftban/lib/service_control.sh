@@ -428,10 +428,23 @@ nftban_enable_all() {
     if ! nft list table ip nftban >/dev/null 2>&1; then
         echo "  Firewall not initialized, initializing now..."
         if command -v nftban &>/dev/null; then
-            if nftban firewall rebuild >/dev/null 2>&1; then
+            # v1.228.5: rebuild returns non-zero with the CAUSE on stderr. Discarding
+            # it left this branch — which rolls the previous firewall back and returns
+            # 1 — with no evidence at all. Capture it; report a BOUNDED excerpt.
+            # Pass/fail semantics and the rollback below are unchanged.
+            local _fw_rc=0 _fw_out="" _fw_line
+            _fw_out="$(nftban firewall rebuild 2>&1)" || _fw_rc=$?
+            if [[ $_fw_rc -eq 0 ]]; then
                 echo "  ✅ Firewall initialized"
             else
-                echo "  ❌ ERROR: Failed to initialize firewall" >&2
+                echo "  ❌ ERROR: Failed to initialize firewall (exit $_fw_rc)" >&2
+                if [[ -n "$_fw_out" ]]; then
+                    while IFS= read -r _fw_line; do
+                        if [[ -n "$_fw_line" ]]; then
+                            echo "     rebuild: $_fw_line" >&2
+                        fi
+                    done <<< "$(printf '%s\n' "$_fw_out" | tail -n 5)"
+                fi
                 # ROLLBACK: Restore previous firewall if we disabled one
                 if [[ -n "$_prev_firewall" ]]; then
                     echo "  Restoring previous firewall ($_prev_firewall)..."

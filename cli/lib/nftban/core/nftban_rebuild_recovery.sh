@@ -124,7 +124,20 @@ log_info "Attempting deferred rebuild recovery (attempt $((retry_count + 1))/$ma
 
 rebuild_exit=0
 if [[ -x "$NFTBAN_CLI" ]]; then
-    "$NFTBAN_CLI" firewall rebuild --quiet 2>&1 || rebuild_exit=$?
+    # v1.228.5: rebuild returns non-zero with the CAUSE on stderr. The previous form
+    # let that text pass through to the caller's stdout unretained, so the recovery
+    # log recorded only "failed (exit N)". Capture it and log a BOUNDED excerpt.
+    # rebuild_exit semantics are unchanged.
+    rebuild_output=""
+    rebuild_output="$("$NFTBAN_CLI" firewall rebuild --quiet 2>&1)" || rebuild_exit=$?
+    if [[ $rebuild_exit -ne 0 && -n "$rebuild_output" ]]; then
+        log_warn "Rebuild reported the following (last 5 line(s)):"
+        while IFS= read -r _rr_line; do
+            if [[ -n "$_rr_line" ]]; then
+                log_warn "  rebuild: $_rr_line"
+            fi
+        done <<< "$(printf '%s\n' "$rebuild_output" | tail -n 5)"
+    fi
 else
     log_error "nftban CLI not found at $NFTBAN_CLI"
     rebuild_exit=1

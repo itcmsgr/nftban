@@ -65,7 +65,11 @@ OUT="$(
         # shellcheck disable=SC1090
         source "$ROOT/cli/lib/nftban/cli/cmd_report.sh" 2>/dev/null || true
         # stub the stats export: write JSON carrying the hostile value + &,<,> chars
-        nftban_stats_export_json() { jq -cn --arg h "$HOSTILE" "{host:\$h, note:\"a & b < c > d\"}" > "$1"; }
+        # v1.228.5: the stub now carries the PRODUCTION json shape (report.hostname), which
+        # the generator validates before publishing. The hostile value stays in .host/.note,
+        # so every escaping assertion below is unchanged. A fixture that does not match the
+        # real payload shape is how the data-injection defect stayed hidden.
+        nftban_stats_export_json() { jq -n --arg h "$HOSTILE" "{report:{hostname:\"stub-host\"}, host:\$h, note:\"a & b < c > d\"}" > "$1"; }
         out="$SB/report.html"
         nftban_report_generate_html "$out" "" "" dark >/dev/null 2>&1 || true
         cat "$out" 2>/dev/null

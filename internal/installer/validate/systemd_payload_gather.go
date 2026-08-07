@@ -272,15 +272,16 @@ func isUnitFilename(name string) bool {
 	return false
 }
 
-// listFailedNftbanUnits queries systemctl for failed units and returns
-// only the nftban-owned ones plus a query-error string.
+// listFailedNftbanUnits queries systemctl for failed units and returns only those
+// NFTBan OWNS — its own package units, plus system units NFTBan is proven to have
+// broken (v1.228.5) — plus a query-error string.
 //
 // Fails closed: a non-zero exit, missing systemctl, or unreadable
 // output produces a non-empty queryErr so FAILED-UNIT-POSTINSTALL-001
 // surfaces the enumeration failure as an assertion failure instead of
 // silently returning an empty list and false-passing.
 func listFailedNftbanUnits(exec executor.Executor, log *logging.Logger) (findings []FailedUnitFinding, queryErr string) {
-	findings, queryErr = queryFailedNftbanUnitsOnce(exec, log)
+	findings, queryErr = queryFailedUnitsOnce(exec, log)
 	if queryErr != "" {
 		return findings, queryErr
 	}
@@ -289,7 +290,7 @@ func listFailedNftbanUnits(exec executor.Executor, log *logging.Logger) (finding
 	// during a package swap recovers within seconds). A protection-critical
 	// failure is never waited on.
 	findings = settleAuxiliaryFailures(findings,
-		func() ([]FailedUnitFinding, string) { return queryFailedNftbanUnitsOnce(exec, log) },
+		func() ([]FailedUnitFinding, string) { return queryFailedUnitsOnce(exec, log) },
 		auxiliarySettleAttempts,
 		func() { time.Sleep(auxiliarySettleDelay) },
 		log)
@@ -344,7 +345,7 @@ func settleAuxiliaryFailures(
 	return cur
 }
 
-func queryFailedNftbanUnitsOnce(exec executor.Executor, log *logging.Logger) (findings []FailedUnitFinding, queryErr string) {
+func queryFailedUnitsOnce(exec executor.Executor, log *logging.Logger) (findings []FailedUnitFinding, queryErr string) {
 	if !exec.CommandExists("systemctl") {
 		queryErr = "systemctl binary not available — cannot enumerate failed units"
 		if log != nil {
@@ -372,14 +373,28 @@ func queryFailedNftbanUnitsOnce(exec executor.Executor, log *logging.Logger) (fi
 			continue
 		}
 		unit := fields[0]
-		if !IsNftbanUnit(unit) {
+		detail := strings.Join(fields[4:], " ")
+		// v1.228.5: enumerate ALL failed units, then classify by OWNERSHIP.
+		// The old `if !IsNftbanUnit(unit) { continue }` dropped every system unit at
+		// gather time, so a unit NFTBan itself had broken could never reach the
+		// assertion. MEASURED: COMMITTED reached with logrotate.service failed on
+		// NFTBan's own generated stanza.
+		//
+		// Unrelated host debt must still NOT block an install, so only two classes are
+		// collected: our own package units, and system units where NFTBan participation
+		// is PROVEN by a package-owned artifact AND causality is evidenced by the
+		// failure text naming an NFTBan path. Participation alone is not causality.
+		own, why := classifyFailedUnitOwnership(exec, unit, detail, log)
+		if own != OwnNftbanPackageUnit && own != OwnNftbanAffectedSystem {
 			continue
 		}
 		finding := FailedUnitFinding{
-			Unit:   unit,
-			Active: fields[2],
-			Sub:    fields[3],
-			Detail: strings.Join(fields[4:], " "),
+			Unit:         unit,
+			Active:       fields[2],
+			Sub:          fields[3],
+			Detail:       detail,
+			Ownership:    own,
+			OwnershipWhy: why,
 		}
 		// v1.174 D-INSTALL-FAILED-UNITS-STALE-LATCHED-STATE: capture the
 		// unit's last-failure timestamp so the validator can classify it as

@@ -527,12 +527,26 @@ if [[ "$NFTBAN_NFT_PROBE_VERDICT" == "CANNOT_READ" ]]; then
 elif nftban_nft_probe_may_rebuild; then
     # Verified ABSENT — the ruleset was read successfully and the table is not in it.
     log_warn "NFTBan IPv4 table verified ABSENT - attempting rebuild..."
-    if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+    # v1.228.5: rebuild returns non-zero with the CAUSE on stderr (e.g. the durable
+    # whitelist.d layer could not be projected). The previous form sent that stderr
+    # to /dev/null and then told the operator "manual intervention required" with no
+    # cause at all. Capture it; report a BOUNDED excerpt. Pass/fail is unchanged.
+    _ah1_rc=0
+    _ah1_out="$("$NFTBAN_CMD" firewall rebuild --quiet 2>&1)" || _ah1_rc=$?
+    if [[ $_ah1_rc -eq 0 ]]; then
         log_info "✅ Schema rebuilt successfully"
     else
-        log_error "Schema rebuild failed - manual intervention required"
+        log_error "Schema rebuild failed (exit $_ah1_rc) - manual intervention required"
+        if [[ -n "$_ah1_out" ]]; then
+            while IFS= read -r _ah1_line; do
+                if [[ -n "$_ah1_line" ]]; then
+                    log_error "  rebuild: $_ah1_line"
+                fi
+            done <<< "$(printf '%s\n' "$_ah1_out" | tail -n 5)"
+        fi
         NFTBAN_AUTOHEAL_PROBE_FAILED=1
     fi
+    unset _ah1_rc _ah1_out _ah1_line
 
 else
     # IPv4 PRESENT — now check IPv6 with the same typed authority.
@@ -543,11 +557,23 @@ else
         NFTBAN_AUTOHEAL_PROBE_FAILED=1
     elif nftban_nft_probe_may_rebuild; then
         log_warn "NFTBan IPv6 table verified ABSENT - attempting rebuild..."
-        if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+        # v1.228.5: retain the reason (see IPv4 site above). This site stays a
+        # WARNING — IPv6 support is optional and this must not become an error.
+        _ah2_rc=0
+        _ah2_out="$("$NFTBAN_CMD" firewall rebuild --quiet 2>&1)" || _ah2_rc=$?
+        if [[ $_ah2_rc -eq 0 ]]; then
             log_info "✅ Schema rebuilt successfully"
         else
-            log_warn "IPv6 schema rebuild failed (IPv6 support optional)"
+            log_warn "IPv6 schema rebuild failed (exit $_ah2_rc) (IPv6 support optional)"
+            if [[ -n "$_ah2_out" ]]; then
+                while IFS= read -r _ah2_line; do
+                    if [[ -n "$_ah2_line" ]]; then
+                        log_warn "  rebuild: $_ah2_line"
+                    fi
+                done <<< "$(printf '%s\n' "$_ah2_out" | tail -n 5)"
+            fi
         fi
+        unset _ah2_rc _ah2_out _ah2_line
     fi
 fi
 
@@ -559,11 +585,23 @@ if [[ "$NFTBAN_AUTOHEAL_PROBE_FAILED" -eq 0 ]] && ! nftban_nft_probe_session_deg
     SCHEMA_ERRORS=${SCHEMA_ERRORS:-0}
     if [[ "$SCHEMA_ERRORS" -gt 0 ]]; then
         log_warn "Schema validation found $SCHEMA_ERRORS error(s) - attempting rebuild..."
-        if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+        # v1.228.5: retain the reason (see IPv4 site above). No probe-failed flag is
+        # set here — this site never set one and its semantics are unchanged.
+        _ah3_rc=0
+        _ah3_out="$("$NFTBAN_CMD" firewall rebuild --quiet 2>&1)" || _ah3_rc=$?
+        if [[ $_ah3_rc -eq 0 ]]; then
             log_info "✅ Schema rebuilt after validation errors"
         else
-            log_error "Schema rebuild failed - manual intervention required"
+            log_error "Schema rebuild failed (exit $_ah3_rc) - manual intervention required"
+            if [[ -n "$_ah3_out" ]]; then
+                while IFS= read -r _ah3_line; do
+                    if [[ -n "$_ah3_line" ]]; then
+                        log_error "  rebuild: $_ah3_line"
+                    fi
+                done <<< "$(printf '%s\n' "$_ah3_out" | tail -n 5)"
+            fi
         fi
+        unset _ah3_rc _ah3_out _ah3_line
     else
         log_info "✅ NFT schema validation passed"
     fi

@@ -94,6 +94,45 @@ jobs:
       - name: Check nft transition atomicity
         run: ./scripts/ci/check-nft-atomicity.sh
 
+      # v1.228.5 completion guard. Prevents reintroduction of the defect class where a
+      # branch-significant failure is consumed with its evidence discarded. The measured
+      # defect: `sync --quick ... || true` let firewall rebuild report rc=0 and
+      # "all checks passed" while the durable whitelist.d layer — including the ACTIVE
+      # ADMIN SSH IP in 00-session.conf — was never projected into the running set.
+      # Also rejects rebuild callers that branch on rc with stderr sent to /dev/null,
+      # which leaves the operator a failure with no cause. Executable lines only:
+      # comments must keep documenting the defect and tests must keep asserting its
+      # absence, so neither may trip the guard.
+      - name: Check rebuild evidence authority (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-rebuild-evidence-authority.sh
+
+      # v1.228.5 FHS/log authority. A logrotate stanza may only target /var/log:
+      # nftban_var_lib_t has no logrotate_t access, so ONE bad stanza fails the whole
+      # system-wide logrotate run. Reads the GENERATOR (inventory.go), not just the
+      # template, because /etc/logrotate.d/nftban is %ghost and regenerated at postinstall.
+      # R-4 asserts every MIGRATED pattern has a retention owner; R-5 asserts no
+      # package-owned config or writer default resolves back under /var/lib
+      # (DEFAULT_PATH_CORRECT != EFFECTIVE_PATH_CORRECT).
+      - name: Check logrotate FHS authority (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-logrotate-fhs-authority.sh
+
+      # v1.228.5 GUARD-THE-GUARD, BLOCKING. The rule above shipped in two non-discriminating
+      # states: R-4 returned PASS after extracting ZERO patterns, and R-5 was blind to Go,
+      # systemd, packaging and JSON — so it could not catch the defect it was written for.
+      # A guard that cannot fail is not protection, and nothing detects that from its own
+      # green output. This injects each defect class and requires a FAIL, then injects a
+      # correct construct and requires a PASS. Mutations are restored and the tree is
+      # verified byte-identical afterwards.
+      - name: Check logrotate FHS guard is falsifiable (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-logrotate-fhs-authority-falsifiability.sh
+
+      # v1.228.5 recurrence guard. Correctness derives from a DECLARED artifact_class in
+      # the canonical build/fhs-spec.yaml rather than pinned path strings, so a newly
+      # added artifact cannot pass by being merely self-consistent — the failure mode that
+      # let the original misplacement survive years of green tests.
+      - name: Check artifact class authority (v1.228.5, BLOCKING)
+        run: ./scripts/ci/check-artifact-class-authority.sh
+
       # Build provenance: the packaging build must never silently package a stale
       # bin/* artifact. Source builds rebuild+verify; prebuilt packaging is explicit
       # and manifest-verified. Runs the hermetic provenance test suite.
@@ -761,6 +800,7 @@ jobs:
       # G2-3: Schema version guard — Go source matches CLI expectations
       - name: Schema version guard (G2-3)
         run: bash cli/lib/nftban/tests/test_schema_version_guard.sh
+
 
       # =====================================================================
       # v1.85 M85-3: Module Completeness Gates

@@ -53,7 +53,14 @@ readonly PERMS_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}"
 readonly PERMS_USRSHARE="${NFTBAN_SHARE_DIR:-/usr/share/nftban}"
 
 # Audit logging
-readonly PERMS_AUDIT_LOG="${PERMS_VAR}/permissions_audit.log"
+# v1.228.5 FHS: this is an append-only OPERATIONAL LOG, not authoritative state, so it
+# belongs under PERMS_LOG (/var/log/nftban) — declared on the line above and previously
+# unused for it. Under /var/lib it carried SELinux type nftban_var_lib_t, which logrotate_t
+# has NO file access to, so the package-generated logrotate stanza made logrotate.service
+# fail daily on EL9 Enforcing (MEASURED: denied { getattr }, service exit-code, 08-05+08-06).
+# /var/log/nftban is already labelled nftban_log_t via logging_log_file(), so this needs
+# ZERO new SELinux policy.
+readonly PERMS_AUDIT_LOG="${PERMS_LOG}/permissions_audit.log"
 
 # =============================================================================
 # HELPER FUNCTIONS

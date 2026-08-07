@@ -108,7 +108,7 @@ fi
 
 
 readonly NFTBAN_CRON_FILE="${DISTRO_PATHS[cron_d]:-/etc/cron.d}/nftban-stats"
-readonly NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+readonly NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
 
 # =============================================================================
 
@@ -237,7 +237,10 @@ nftban_report_cmd_generate() {
     # Security notice for users
     if [[ -n "$output" ]]; then
         echo "[SECURITY] Output path validation enabled - only approved directories allowed" >&2
-        echo "[INFO] Approved locations: ${NFTBAN_DATA_DIR:-/var/lib/nftban}/* (reports, metrics, exports)" >&2
+        # v1.228.5: reports moved to /var/log/nftban/reports. This message still advertised
+        # /var/lib while the validator already accepted the new location — operator-facing
+        # text that contradicted the behaviour it described.
+        echo "[INFO] Approved locations: ${NFTBAN_REPORTS_DIR} (reports), ${NFTBAN_DATA_DIR:-/var/lib/nftban}/* (metrics, exports)" >&2
     fi
 
     # Generate based on format
@@ -255,7 +258,8 @@ nftban_report_cmd_generate() {
         html)
             local safe_output
             safe_output=$(nftban_path_get_safe_output "$output" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe" ".html") || return 1
-            nftban_report_generate_html "$safe_output" "$since" "$until" "$theme"
+            # v1.228.5 WRITER-TRUTH: propagate generation failure to the caller's exit code.
+            nftban_report_generate_html "$safe_output" "$since" "$until" "$theme" || return 1
             ;;
         all)
             local base_name
@@ -978,7 +982,15 @@ nftban_report_cmd_run() {
 
     local output_file
     output_file="${output_dir}/report-$(date +%Y%m%d).html"
-    nftban_report_generate_html "$output_file" "$since" "$until" "${REPORTS_THEME:-dark}"
+    # v1.228.5 WRITER-TRUTH: this return code was DISCARDED. Combined with
+    # SuccessExitStatus=0 1 on nftban-report-daily.service it produced the release-blocking
+    # failure mode: SELinux denied the write, the report was 0 bytes, and systemd still
+    # reported success. Report generation is the entire purpose of this command — if it
+    # fails, the command fails, and the unit fails with it.
+    if ! nftban_report_generate_html "$output_file" "$since" "$until" "${REPORTS_THEME:-dark}"; then
+        echo "ERROR: ${frequency} report generation failed: $output_file" >&2
+        return 1
+    fi
 
     # Email if configured
     if [[ "${STATS_EMAIL_ENABLED,,}" =~ ^(yes|true|1|on)$ ]] && [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]]; then
@@ -1195,7 +1207,7 @@ nftban_report_cmd_status() {
     echo "STORAGE"
     echo "--------------------------------------------------------------"
 
-    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
     printf "  %-20s %s\n" "Reports Directory..." "$reports_dir"
 
     if [[ -d "$reports_dir" ]]; then
@@ -1241,7 +1253,7 @@ _report_status_json() {
     local mail_enabled=false
     [[ "${mail_enabled_raw,,}" =~ ^(yes|true|1|on)$ ]] && mail_enabled=true
     local mail_recipients="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
-    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/reports}"
     local cron_file="${NFTBAN_CRON_FILE:-/etc/cron.d/nftban-stats}"
 
     local report_count=0
@@ -1294,18 +1306,89 @@ nftban_report_generate_html() {
         return 1
     fi
 
-    # Generate JSON data
-    local temp_json
-    temp_json=$(mktemp)
+    # v1.228.5 WRITER-TRUTH: the destination directory must exist before any temporary is
+    # placed in it. mkdir -p is not enough on its own — it returns non-zero for a path that
+    # already exists as something other than a directory, and it succeeds vacuously under a
+    # concurrent create, so the -d test is the authority.
+    local out_dir
+    out_dir="$(dirname "$output")"
+    if ! mkdir -p "$out_dir" 2>/dev/null && [[ ! -d "$out_dir" ]]; then
+        echo "ERROR: Cannot create report directory: $out_dir" >&2
+        return 1
+    fi
+
+    # v1.228.5 WRITER-TRUTH: temporaries live in the DESTINATION directory, never /tmp.
+    # Two load-bearing reasons:
+    #   1. rename(2) is atomic only WITHIN one filesystem. The unit sets PrivateTmp=true, so
+    #      /tmp is a separate tmpfs mount; a /tmp temporary could not be renamed into
+    #      /var/log at all, and any copy-based fallback reopens the torn-write window this
+    #      change exists to close.
+    #   2. It removes the tmp_t dependency outright. No SELinux grant is needed for a type
+    #      the workflow no longer touches — a smaller policy, not a broader one.
+    # The names carry NO .html/.json/.csv extension, so neither `report list` (which globs
+    # those three) nor any logrotate pattern can adopt a half-written temporary as if it
+    # were a published report.
+    local temp_json temp_html
+    temp_json=$(mktemp "${out_dir}/.nftban-report-json.XXXXXX" 2>/dev/null) || {
+        echo "ERROR: Cannot create temporary JSON file in: $out_dir" >&2
+        return 1
+    }
+    temp_html=$(mktemp "${out_dir}/.nftban-report-html.XXXXXX" 2>/dev/null) || {
+        echo "ERROR: Cannot create temporary HTML file in: $out_dir" >&2
+        rm -f "$temp_json" 2>/dev/null
+        return 1
+    }
+    # MEASURED on EL9: mktemp creates 0600, but the previous `echo > "$output"` form produced
+    # 0640 under this file's umask 027. Publishing the temporary by rename therefore TIGHTENED
+    # the published report from 0640 to 0600 as a side effect — an undocumented behaviour
+    # change. Restore the mode explicitly so publication does not depend on how the temporary
+    # happened to be created. Ownership is left as-is (root:root, unchanged from before this
+    # lane); changing it would require CAP_CHOWN, which nftband_t deliberately does not hold.
+    chmod 0640 "$temp_html" 2>/dev/null || {
+        echo "ERROR: Cannot set report file mode on: $temp_html" >&2
+        rm -f "$temp_json" "$temp_html" 2>/dev/null
+        return 1
+    }
+
+    # Generate JSON data.
+    # nftban_stats_export_json ends with `echo "$output_file"`, so its RETURN CODE reports
+    # the echo, not the write — it cannot be trusted to detect a failed heredoc. The
+    # produced artifact is therefore validated directly below.
     nftban_stats_export_json "$temp_json" "$since" "$until" &>/dev/null
 
-    # Read template
-    local html_content
-    html_content=$(cat "$template")
+    if [[ ! -s "$temp_json" ]]; then
+        echo "ERROR: Statistics export produced no data: $temp_json" >&2
+        rm -f "$temp_json" "$temp_html" 2>/dev/null
+        return 1
+    fi
+    # Structural check when jq is available: a truncated write can still be non-empty.
+    if command -v jq >/dev/null 2>&1 && ! jq -e . "$temp_json" >/dev/null 2>&1; then
+        echo "ERROR: Statistics export is not valid JSON: $temp_json" >&2
+        rm -f "$temp_json" "$temp_html" 2>/dev/null
+        return 1
+    fi
 
-    # Read JSON data
+    # Read JSON data, COMPACTED to a single line.
+    #
+    # nftban_stats_export_json emits a pretty-printed heredoc, so the payload spanned many
+    # lines once injected. That is why the v1.227 escaping comment below speaks of "compact
+    # JSON" while production never produced any — and why a post-injection parse check that
+    # reads the assignment line saw only `{`. Compacting here makes the injected object ONE
+    # line, which is what makes the substitution independently verifiable afterwards.
+    # Without jq the raw document is used and the strict post-injection parse is skipped;
+    # the pre-injection non-empty check still applies.
     local json_data
-    json_data=$(cat "$temp_json")
+    if command -v jq >/dev/null 2>&1; then
+        if ! json_data=$(jq -c . "$temp_json" 2>/dev/null); then
+            echo "ERROR: Cannot compact generated statistics: $temp_json" >&2
+            rm -f "$temp_json" "$temp_html" 2>/dev/null
+            return 1
+        fi
+    elif ! json_data=$(cat "$temp_json"); then
+        echo "ERROR: Cannot read generated statistics: $temp_json" >&2
+        rm -f "$temp_json" "$temp_html" 2>/dev/null
+        return 1
+    fi
 
     # v1.227 MAIL-F4: this JSON is injected into a <script> block. jq escapes quotes for JSON
     # validity but does NOT neutralize characters the HTML parser acts on — a data value
@@ -1328,18 +1411,148 @@ nftban_report_generate_html() {
     # awk keyed on the unique placeholder comment, with the (already \u-escaped) JSON passed via the
     # ENVIRONMENT so neither the shell nor awk performs escape processing on the \uXXXX sequences and
     # the JSON braces cannot perturb any brace parser.
-    html_content="$(NFTBAN_REPORT_JSON="$json_data" awk '
-        /window\.__NFTBAN_DATA__ = \{.*Placeholder - will be replaced/ {
-            print "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"]
+    # v1.228.5 WRITER-TRUTH: awk writes STRAIGHT to the temporary file. The prior form
+    # captured the whole document into a variable and then `echo "$html_content" > "$output"`
+    # with no check at all — the defect this change closes. Redirecting here means the
+    # shell's open(2)/write(2) failures land in awk's exit status, which IS checked.
+    # v1.228.5 INJECTION-TRUTH: the previous pattern required `window.__NFTBAN_DATA__ = {`
+    # and `Placeholder - will be replaced` on the SAME line. The SHIPPED template spreads
+    # them over three lines:
+    #       window.__NFTBAN_DATA__ = {
+    #           // Placeholder - will be replaced
+    #       };
+    # so the pattern could NEVER match and the data was NEVER injected. MEASURED on EL9
+    # against the real installed template: awk matches = 0, and every generated report was a
+    # well-formed 18379-byte document whose data object was literally empty. It passed a
+    # size check, a </html> check and a marker-presence check, and the unit reported success.
+    # The regression escaped because the unit test's stub template used the one-line form —
+    # a fixture that did not match the artifact actually shipped.
+    #
+    # Match on the ASSIGNMENT OPENING only, then consume through the closing `};`. Both
+    # layouts are handled: if the opening line also closes the object it is replaced alone.
+    # `injected` stops at the first assignment, so later reads such as
+    # `const data = window.__NFTBAN_DATA__;` are never rewritten.
+    if ! NFTBAN_REPORT_JSON="$json_data" \
+         NFTBAN_REPORT_VERSION="${NFTBAN_VERSION:-unknown}" awk '
+        !injected && /window\.__NFTBAN_DATA__[[:space:]]*=[[:space:]]*\{/ {
+            # Preserve the source indentation rather than imposing one, so the rendered
+            # document keeps the layout the template defines.
+            match($0, /^[[:space:]]*/); indent = substr($0, 1, RLENGTH)
+            injected = 1
+            if ($0 ~ /\}/ && $0 !~ /\{[[:space:]]*$/) {
+                # Single-line form: the object opens and closes on this line, so replace it
+                # in place and add NO terminator the original did not have.
+                print indent "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"]
+                next
+            }
+            # Block form (the shipped template): the `};` terminator lives on a later line
+            # and is consumed below, so it must be re-emitted here.
+            print indent "window.__NFTBAN_DATA__ = " ENVIRON["NFTBAN_REPORT_JSON"] ";"
+            skip = 1
             next
         }
-        { print }
-    ' "$template")"
+        skip && /^[[:space:]]*\}[[:space:]]*;?[[:space:]]*$/ { skip = 0; next }
+        skip { next }
+        # v1.228.5: {NFTBAN_VERSION} was a DEAD token — nothing ever substituted it, so every
+        # published report rendered the literal string "NFTBan v{NFTBAN_VERSION}" in its
+        # footer. Found by observing that the delivered report was byte-identical to the
+        # shipped template. Substituted here so the artifact states a real version.
+        { gsub(/\{NFTBAN_VERSION\}/, ENVIRON["NFTBAN_REPORT_VERSION"]); print }
+    ' "$template" > "$temp_html"; then
+        echo "ERROR: Failed to render HTML report to: $temp_html" >&2
+        rm -f "$temp_json" "$temp_html" 2>/dev/null
+        return 1
+    fi
 
-    # Write final HTML
-    echo "$html_content" > "$output"
+    rm -f "$temp_json" 2>/dev/null
 
-    rm -f "$temp_json"
+    # v1.228.5 WRITER-TRUTH: validate the ARTIFACT before publishing it. A zero-byte or
+    # truncated document must never reach the destination — that is precisely what shipped
+    # under Enforcing while the unit reported success. Three independent assertions:
+    #   -s                     the write produced bytes at all (ENOSPC/EACCES/EROFS)
+    #   __NFTBAN_DATA__        the data injection actually ran (not a bare template copy)
+    #   </html>                the document is complete, not cut off mid-write
+    if [[ ! -s "$temp_html" ]]; then
+        echo "ERROR: Generated report is empty: $temp_html" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
+    # v1.228.5 INJECTION-TRUTH: marker PRESENCE is not evidence of injection — the template's
+    # own placeholder block contains the marker, so a completely un-injected document passes
+    # a `grep -q window.__NFTBAN_DATA__` check. MEASURED: that is exactly what shipped.
+    # Assert the placeholder is GONE and the payload is real, parseable data.
+    # TEMPLATE-COPY REJECTION. The strongest single assertion available: if the rendered
+    # document is byte-identical to its own template then NOTHING was substituted. MEASURED
+    # on both el9-clean and deb-clean — daily, weekly and the shipped template all carried
+    # the same sha256 while the unit reported success.
+    if command -v sha256sum >/dev/null 2>&1; then
+        local _tpl_sha _out_sha
+        _tpl_sha="$(sha256sum < "$template" | cut -d" " -f1)"
+        _out_sha="$(sha256sum < "$temp_html" | cut -d" " -f1)"
+        if [[ "$_tpl_sha" == "$_out_sha" ]]; then
+            echo "ERROR: Generated report is a byte-identical copy of the template — no data was substituted" >&2
+            rm -f "$temp_html" 2>/dev/null
+            return 1
+        fi
+    fi
+    if grep -q 'Placeholder - will be replaced' "$temp_html"; then
+        echo "ERROR: Generated report still contains the template placeholder — data was not injected" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
+
+    local injected_payload
+    # The terminator is OPTIONAL: the block form re-emits `;`, the single-line form does not.
+    # Anchoring on a required `;` rejected a perfectly good single-line document.
+    # `^[[:space:]]*window\.` also keeps later READS such as
+    # `const data = window.__NFTBAN_DATA__;` out of the match.
+    injected_payload="$(sed -n 's/^[[:space:]]*window\.__NFTBAN_DATA__[[:space:]]*=[[:space:]]*//p' \
+                        "$temp_html" | head -1 | sed 's/[[:space:]]*;[[:space:]]*$//')"
+    if [[ -z "$injected_payload" ]]; then
+        echo "ERROR: Generated report has no data assignment" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq -e . <<<"$injected_payload" >/dev/null 2>&1; then
+            echo "ERROR: Injected report data is not valid JSON" >&2
+            rm -f "$temp_html" 2>/dev/null
+            return 1
+        fi
+        # The hostname rendered empty for the entire time /usr/bin/hostname was unexecutable
+        # in nftband_t. An empty identity makes a fleet report unattributable, so it is a
+        # generation failure, not a cosmetic one.
+        if [[ -z "$(jq -r '.report.hostname // empty' <<<"$injected_payload" 2>/dev/null)" ]]; then
+            echo "ERROR: Injected report data has an empty hostname" >&2
+            rm -f "$temp_html" 2>/dev/null
+            return 1
+        fi
+    fi
+    # GENERIC unresolved-token check. Checking only {NFTBAN_VERSION} would let the next
+    # dead token escape exactly as that one did — nothing substituted it for its whole life
+    # and every report rendered the literal string.
+    if grep -qE '\{NFTBAN_[A-Z0-9_]+\}' "$temp_html"; then
+        echo "ERROR: Generated report contains unsubstituted template tokens:" >&2
+        grep -oE '\{NFTBAN_[A-Z0-9_]+\}' "$temp_html" | sort -u | head -5 >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
+
+    if ! grep -qi '</html>' "$temp_html"; then
+        echo "ERROR: Generated report is truncated (no closing </html>)" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
+
+    # v1.228.5 WRITER-TRUTH: publish atomically. Same directory, therefore same filesystem,
+    # therefore rename(2) — a reader sees either the previous report or the complete new
+    # one, never a partial document. A failure here leaves the PREVIOUS report intact and
+    # is reported; it is never swallowed.
+    if ! mv -f "$temp_html" "$output"; then
+        echo "ERROR: Failed to publish report to: $output" >&2
+        rm -f "$temp_html" 2>/dev/null
+        return 1
+    fi
 
     if type -t nftban_print_status >/dev/null 2>&1; then
         nftban_print_status "success" "HTML report generated: $output"

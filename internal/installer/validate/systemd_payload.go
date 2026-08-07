@@ -272,6 +272,21 @@ type FailedUnitFinding struct {
 	// re-fails its run is never cleared). Zero value = no re-verify attempted.
 	OwnedWindowReverifyDone  bool
 	OwnedWindowReverifyClean bool
+
+	// Ownership records WHY this unit is in the findings list. v1.228.5:
+	// enumeration previously filtered on IsNftbanUnit at gather time, so a SYSTEM
+	// unit that NFTBan itself had broken was never collected. MEASURED 2026-08-06:
+	// INSTALL_STATE reached COMMITTED while logrotate.service was failed on
+	// NFTBan's own generated /etc/logrotate.d/nftban stanza.
+	// NFTBAN_UNIT_PREFIX != NFTBAN_FAILURE_OWNERSHIP.
+	//
+	// Empty on findings produced before this field existed; treat "" as
+	// OwnNftbanPackageUnit for backward compatibility (every pre-v1.228.5 finding
+	// had already passed the IsNftbanUnit filter).
+	Ownership FailureOwnership
+	// OwnershipWhy explains a non-package attribution so an operator can act on a
+	// blocked install that names a unit not called nftban-*.
+	OwnershipWhy string
 }
 
 // PayloadInventory describes which paths are considered known after

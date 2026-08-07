@@ -1275,6 +1275,112 @@ _nftban_generate_logretention() {
     } | tee -a /var/log/nftban/installer.log >&2 2>/dev/null || true
     return 0
 }
+_nftban_migrate_reports_to_log() {
+    # v1.228.5 FHS: operational reports moved /var/lib/nftban/reports -> /var/log/nftban/reports.
+    # Under /var/lib they carried SELinux nftban_var_lib_t, which logrotate_t cannot access, so
+    # the package-generated stanza failed the WHOLE system-wide logrotate.service daily (MEASURED
+    # on AlmaLinux 9.7 Enforcing). Runs BEFORE the generator so the new stanza rotates files
+    # already at the new path. ONLY the declared report patterns move: auditors/ (the 0770
+    # root:nftban-auditor capability boundary) and baseline/ are directories and never match.
+    _old=/var/lib/nftban/reports
+    _new=/var/log/nftban/reports
+    # v1.228.5: the audit log is migrated BEFORE the reports guard below.
+    # MEASURED defect: it was placed after \`[ -d \$_old ] || return 0\`, so on any
+    # host without /var/lib/nftban/reports the audit-log migration was skipped
+    # entirely — gated on an unrelated directory.
+    # v1.228.5: the audit log moves with the same contract. MEASURED failure without
+    # this block: the writer and the logrotate stanza both repointed to /var/log while
+    # 732 lines of history stayed at /var/lib — SPLIT history, and the orphan is targeted
+    # by ZERO stanzas so it grows unbounded with no rotation authority.
+    _oa=/var/lib/nftban/permissions_audit.log
+    _na=/var/log/nftban/permissions_audit.log
+    if [ -f "\$_oa" ]; then
+        mkdir -p /var/log/nftban 2>/dev/null || true
+        if [ -f "\$_na" ]; then
+            # BOTH exist: never overwrite, and never concatenate — the old entries PREDATE
+            # the new ones, so appending would corrupt chronological order in an audit
+            # trail. Preserve the predecessor beside it under a discoverable name.
+            mv -f "\$_oa" "\$_na.pre-v1.228.5" 2>/dev/null || true
+        else
+            mv -f "\$_oa" "\$_na" 2>/dev/null || true
+        fi
+        chown nftban:nftban "\$_na" 2>/dev/null || true
+        chmod 0640 "\$_na" 2>/dev/null || true
+        [ -f "\$_na.pre-v1.228.5" ] && { chown nftban:nftban "\$_na.pre-v1.228.5" 2>/dev/null || true; chmod 0640 "\$_na.pre-v1.228.5" 2>/dev/null || true; }
+        # Relabel the audit log HERE, not at the end of the function. MEASURED defect:
+        # the end-of-function restorecon sits AFTER \`[ -d \$_old ] || return 0\`, so on a
+        # host with an audit log but NO /var/lib/nftban/reports the file was moved and
+        # never relabelled — keeping nftban_var_lib_t at its new /var/log path, which is
+        # exactly the label logrotate_t cannot read. Each move relabels what it moved.
+        if command -v restorecon >/dev/null 2>&1; then
+            restorecon -F "\$_na" >/dev/null 2>&1 || true
+            [ -f "\$_na.pre-v1.228.5" ] && restorecon -F "\$_na.pre-v1.228.5" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    [ -d "\$_old" ] || return 0
+    mkdir -p "\$_new/daily" 2>/dev/null || true
+    for _sub in "" /daily; do
+        _o="\$_old\$_sub"; _n="\$_new\$_sub"
+        [ -d "\$_o" ] || continue
+        mkdir -p "\$_n" 2>/dev/null || true
+        for _f in "\$_o"/*.html "\$_o"/*.txt "\$_o"/*.json; do
+            [ -e "\$_f" ] || continue
+            _b=\$(basename "\$_f")
+            if [ -e "\$_n/\$_b" ]; then
+                # BOTH exist: never overwrite. Archive the old copy deterministically.
+                mkdir -p "\$_new/archive/pre-v1.228.5" 2>/dev/null || true
+                mv -f "\$_f" "\$_new/archive/pre-v1.228.5/\$_b" 2>/dev/null || true
+            else
+                mv -f "\$_f" "\$_n/\$_b" 2>/dev/null || true
+            fi
+        done
+    done
+    chown -R nftban:nftban "\$_new" 2>/dev/null || true
+    find "\$_new" -type f -exec chmod 0640 {} \; 2>/dev/null || true
+    find "\$_new" -type d -exec chmod 0750 {} \; 2>/dev/null || true
+    # v1.228.5 CRITICAL: \`mv\` PRESERVES the SELinux context. A file moved from /var/lib
+    # arrives at /var/log still labelled nftban_var_lib_t — precisely the label logrotate_t
+    # cannot read, so the migration would RELOCATE the defect instead of fixing it.
+    # MEASURED on the legacy fixture: after migrating, logrotate.service still failed with
+    #   avc: denied { getattr } path="/var/log/nftban/reports/*.html"
+    #        tcontext=...:nftban_var_lib_t:s0 permissive=0
+    # The scriptlet-level restorecon runs BEFORE this function, so it cannot relabel what
+    # we move after it. Relabel here, inside the migration authority itself.
+    # (Deliberately avoids naming the RPM section macro: a section token in a spec COMMENT
+    #  is still parsed by rpm and can prematurely open a section — see the v1.165 guard.)
+    if command -v restorecon >/dev/null 2>&1; then
+        restorecon -R /var/log/nftban >/dev/null 2>&1 || true
+    fi
+}
+
+_nftban_migrate_reports_dir_conf() {
+    # v1.228.5: /etc/nftban/conf.d/*.conf is %config(noreplace), so an UPGRADE keeps the
+    # operator's existing file and drops the corrected default as .rpmnew. Changing the
+    # shipped default therefore fixes fresh installs ONLY — an upgraded host would keep
+    # pointing reports at /var/lib, where zero stanzas rotate them.
+    # MEASURED: nftban-report-daily.service wrote /var/lib/nftban/reports/daily/*.html on
+    # a candidate that had already migrated, because stats.conf still carried the old value.
+    #
+    # Rewrite ONLY when the live value is byte-identical to the OLD SHIPPED DEFAULT, i.e.
+    # the operator never customised it. A customised value is left alone and reported —
+    # silently rewriting operator configuration would be worse than the defect.
+    for _cf in /etc/nftban/conf.d/stats.conf:STATS_REPORTS_DIR \
+               /etc/nftban/conf.d/metrics.conf:NFTBAN_REPORTS_DIR; do
+        _f="\${_cf%%:*}"; _k="\${_cf##*:}"
+        [ -f "\$_f" ] || continue
+        if grep -q "^\${_k}=\"/var/lib/nftban/reports\"" "\$_f" 2>/dev/null; then
+            sed -i "s|^\${_k}=\"/var/lib/nftban/reports\".*|\${_k}=\"/var/log/nftban/reports\"   # v1.228.5: migrated from /var/lib|" "\$_f" 2>/dev/null || true
+            echo "[NFTBan] \${_k} in \${_f}: migrated /var/lib -> /var/log (was the old shipped default)"
+        elif grep -qE "^\${_k}=.*\/var\/lib\/nftban\/reports" "\$_f" 2>/dev/null; then
+            echo "[NFTBan] WARNING: \${_k} in \${_f} points under /var/lib but was CUSTOMISED — left unchanged."
+            echo "[NFTBan]          Reports written there are NOT rotated. Set it to /var/log/nftban/reports."
+        fi
+    done
+}
+
+_nftban_migrate_reports_dir_conf || true
+_nftban_migrate_reports_to_log || true
 _nftban_generate_logretention || true
 
 # =============================================================================
@@ -1432,10 +1538,20 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     if [ "\$INSTALL_MODE" = "upgrade" ] && [ "\${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ] && command -v nft >/dev/null 2>&1; then
         if nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -qE 'flags[[:space:]]+interval[[:space:]]*\$'; then
             echo "[NFTBan] v1.168: whitelist sets lack the timeout flag; rebuilding to enable --ttl expiry..."
-            if /usr/sbin/nftban firewall rebuild >/dev/null 2>&1; then
+            # v1.228.5: rebuild now returns non-zero with the CAUSE on stderr (e.g.
+            # the durable whitelist.d layer could not be projected). The previous
+            # form discarded it, so this WARN told the operator nothing actionable.
+            # Capture it and print a BOUNDED excerpt. Still NON-FATAL: the upgrade
+            # continues regardless of the rebuild outcome.
+            NFTBAN_V168_RC=0
+            NFTBAN_V168_OUT=\$(/usr/sbin/nftban firewall rebuild 2>&1) || NFTBAN_V168_RC=\$?
+            if [ "\$NFTBAN_V168_RC" -eq 0 ]; then
                 echo "[NFTBan] v1.168: whitelist sets are now timeout-capable (flags interval, timeout)."
             else
-                echo "[NFTBan] WARN: v1.168 rebuild did not complete; run 'nftban firewall rebuild' to enable whitelist TTLs."
+                echo "[NFTBan] WARN: v1.168 rebuild did not complete (exit \$NFTBAN_V168_RC); run 'nftban firewall rebuild' to enable whitelist TTLs."
+                if [ -n "\$NFTBAN_V168_OUT" ]; then
+                    echo "\$NFTBAN_V168_OUT" | tail -n 5 | sed 's/^/[NFTBan] WARN:   rebuild: /' || :
+                fi
             fi
         fi
     fi

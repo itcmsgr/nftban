@@ -34,7 +34,11 @@ type MockExecutor struct {
 	Commands []RecordedCommand
 
 	// RunResults maps "name:arg1:arg2" to a preset Result.
-	// If a command is not in RunResults, it returns exit 0 with empty output.
+	// If a command is not in RunResults it returns exit 0 with empty output —
+	// UNLESS StrictUnregistered is set, which turns an unmatched key into a loud
+	// exit-255 failure instead of a silent success. Note the key is derived from
+	// the COLON-JOINED argv, so adding or removing an argument in production code
+	// invalidates every key for that command.
 	RunResults map[string]Result
 
 	// RunResultSeq maps a command key ("name:arg1:arg2") to an ORDERED list of
@@ -105,6 +109,17 @@ type MockExecutor struct {
 	DaemonReloadErr    error
 	RemoveErr          error
 
+	// StrictUnregistered makes an UNREGISTERED command key a LOUD failure
+	// (exit 255 + a marker on Stderr) instead of the permissive zero-value
+	// Result{ExitCode: 0}. Set this in any test that asserts a SPECIFIC exit
+	// code, where a stale or missing fixture key must never be able to
+	// masquerade as a successful command. See unregisteredResult. v1.228.5.
+	StrictUnregistered bool
+
+	// unmatched records every command key that ran without a registered Result,
+	// in call order, regardless of StrictUnregistered. Read via UnmatchedCommands.
+	unmatched []string
+
 	// callbacks maps "name:args" -> function to call when command is executed.
 	callbacks map[string]func()
 }
@@ -170,7 +185,54 @@ func (m *MockExecutor) Run(name string, args ...string) Result {
 	if r, ok := m.lookupResult(name, args...); ok {
 		return r
 	}
+	return m.unregisteredResult(key)
+}
+
+// unregisteredResult decides what an UNREGISTERED command key returns, and always
+// records it for post-hoc assertion via UnmatchedCommands.
+//
+// v1.228.5 — why this exists. The default fall-through below is PERMISSIVE: a key
+// with no registered Result yields Result{ExitCode: 0}, i.e. a SUCCESSFUL command
+// execution. That converts a missing test fixture into a passing command, so a
+// negative test asserting a failure exit code can flip to a false pass with no
+// diagnostic. This is not hypothetical: when switchop.Rebuild gained the
+// --install-context argument, the argv-derived keys in rebuild_test.go went stale
+// and three tests asserting exit 1 and exit 2 received exit 0 instead. The mock did
+// not report a miss; it reported success.
+//
+// StrictUnregistered turns that into a LOUD failure using the SAME sentinel shape
+// the RunResultSeq exhaustion path already uses (exit 255 + a marker on Stderr), so
+// the harness has ONE recognisable "the fixture is wrong" signal rather than two.
+//
+// Strict is OPT-IN, deliberately. MEASURED in this checkout: 504 NewMockExecutor
+// construction sites against 225 RunResults registrations, so the large majority of
+// existing tests legitimately rely on the permissive default for commands whose
+// result they do not care about. Flipping the default would fail hundreds of tests
+// that have no defect, which is a migration of its own and not this lane's scope.
+// Tests that assert a SPECIFIC exit code should set StrictUnregistered — for those,
+// an unmatched key is never a valid outcome.
+func (m *MockExecutor) unregisteredResult(key string) Result {
+	m.mu.Lock()
+	m.unmatched = append(m.unmatched, key)
+	strict := m.StrictUnregistered
+	m.mu.Unlock()
+	if strict {
+		return Result{
+			ExitCode: 255,
+			Stderr: "MockExecutor: UNREGISTERED command key " + key +
+				" (no RunResults/RunResultSeq entry; refusing to report success)",
+		}
+	}
 	return Result{ExitCode: 0}
+}
+
+// UnmatchedCommands returns every command key that ran without a registered
+// Result, in call order. Recorded regardless of StrictUnregistered so a test can
+// assert its fixtures actually matched even when it does not opt into strict mode.
+func (m *MockExecutor) UnmatchedCommands() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.unmatched...)
 }
 
 // nextSeqResult returns the next ordered Result for a command key registered in

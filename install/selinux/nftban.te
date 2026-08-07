@@ -157,6 +157,29 @@ allow iptables_t nftban_conf_t:dir search;
 manage_files_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 manage_dirs_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 
+# v1.228.5 — BUG-SELINUX-GEOIP-MMDB-MAP-DENIED
+# `map` is a DISTINCT permission from `read`: manage_files_pattern above grants
+# open/read/write but NOT mmap. The GeoIP consumer memory-maps the MaxMind database
+# (/var/lib/nftban/geoip/*.mmdb) during verification, so on a stock EL9 host with
+# SELinux Enforcing the download succeeded and the verify step failed:
+#
+#   avc: denied { map } for comm="nftban-core"
+#        path="/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+#        scontext=system_u:system_r:nftband_t:s0
+#        tcontext=system_u:object_r:nftban_var_lib_t:s0 tclass=file permissive=0
+#
+# nftban-core-geoip.service therefore failed under Enforcing and left a failed unit
+# after an otherwise successful package transaction. The denial reproduces ONLY in
+# the service domain (nftband_t); an interactive run in unconfined_t succeeds, which
+# is why it stayed invisible until a lab ran EL9 Enforcing.
+#
+# Scope: file:map on the daemon's OWN state type only. This COMPLETES an existing
+# idiom rather than introducing one - nftban_conf_t (:105) and nftban_nftables_conf_t
+# (:113) already pair manage_files_pattern with file:map. nftban_var_lib_t was the
+# one state type that omitted it, which is precisely where the GeoIP database lives.
+# No log or run type gains map, and no new type is introduced.
+allow nftband_t nftban_var_lib_t:file map;
+
 # Logs append/create. NOTE: the dir:watch (inotify) permission is intentionally
 # omitted — it is undefined for class dir in EL8's refpolicy (3.14.3) and breaks
 # the module compile there. Omitting it keeps ONE portable .te across EL8/9/10;
@@ -164,6 +187,42 @@ manage_dirs_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 # these dirs in normal operation). Same rationale for syslogd_var_run_t:dir below.
 allow nftband_t nftban_log_t:file { append_file_perms create_file_perms read_file_perms };
 allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms };
+
+# v1.228.5 REPORT-WRITER: reports moved from /var/lib/nftban/reports (nftban_var_lib_t) to
+# /var/log/nftban/reports (nftban_log_t). Every rule above this line was written for
+# APPEND-ONLY log files; a report is REPLACED on each run, which is a different syscall
+# shape. Under /var/lib the writer inherited write from files_type(); under /var/lib's
+# replacement type it does not, so a clean EL9 Enforcing host produced a 0-byte report.
+#
+# Derived permission-by-permission from the report workflow, NOT from a broad macro.
+# The macros above already supply { getattr open create read append lock ioctl }; only the
+# following are additionally required, each tied to a specific operation:
+#
+#   file:write       awk renders the document into the temporary file (O_WRONLY|O_TRUNC).
+#                    THE denial that produced the 0-byte report.
+#   file:rename      mv -f publishes the temporary over the destination via rename(2).
+#   file:unlink      removal of the temporary on every failure path, and replacement of an
+#                    existing report by that same rename(2).
+#   dir:remove_name  the directory-side half of both the unlink and the rename above.
+#   dir:create       `report run weekly|monthly` creates its subdirectory on first use;
+#                    only daily/ is pre-created by the package.
+#
+# DELIBERATELY NOT GRANTED, each verified unnecessary against the final writer:
+#   file:setattr     chmod 0640 on the temporary before publication. MEASURED correction to
+#                    an earlier claim in this comment that setattr was unnecessary: mktemp
+#                    creates 0600, so publishing by rename silently tightened the report from
+#                    the 0640 the previous `echo >` form produced under umask 027. The mode is
+#                    now set explicitly, which requires this permission.
+#   file:link, file:map, dir:rmdir, dir:reparent — no operation performs them.
+#   capability chown — NOT granted and NOT required: the report stays root:root, exactly as
+#                    it was before this lane. Changing ownership to nftban:nftban is an OPEN
+#                    OWNER DECISION, not a silent change, because it needs CAP_CHOWN.
+# Two denials observed in the same run are closed in CODE rather than by policy, so no
+# grant appears here for either: tmp_t:unlink (temporaries moved out of /tmp into the
+# destination directory) and hostname_exec_t:map (the report's hostname now comes from
+# `uname -n`, which is bin_t and already covered by corecmd_exec_bin).
+allow nftband_t nftban_log_t:file { write rename unlink setattr };
+allow nftband_t nftban_log_t:dir { remove_name create };
 
 # Runtime (PID/lock/socket/json) — own type
 manage_files_pattern(nftband_t, nftban_var_run_t, nftban_var_run_t)

@@ -224,8 +224,13 @@ func initAnalyticsIfNeeded() error {
 		return nil // Already initialized
 	}
 	cfg := nftbanconf.MustLoad()
-	_, _, _, dataDir := getSuricataPaths(cfg)
-	return analytics.Init(dataDir, dataDir+"/reports")
+	_, _, logDir, dataDir := getSuricataPaths(cfg)
+	// v1.228.5 FHS: reports are operational history, not state — they live under
+	// /var/log/nftban/reports (nftban_log_t, logrotate-owned), not under dataDir.
+	// Deriving the reports path from dataDir here left a writer on the OLD path that
+	// would recreate /var/lib/nftban/reports after postinstall had migrated it away.
+	// Must stay identical to main.go's analytics.Init reports argument.
+	return analytics.Init(dataDir, logDir+"/reports")
 }
 
 // saveAnalyticsIfNeeded saves analytics state if initialized

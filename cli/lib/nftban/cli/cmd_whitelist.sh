@@ -902,8 +902,8 @@ nftban_whitelist_list() {
 # Strictly read-only: the only nft invocation is `nft list set` (read). No add,
 # no delete, no sync. Remediation is a hint; there is no --fix.
 
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/whitelist_members.sh" || return 1  # _NFTBAN_WHITELIST_ANCHOR_V1228_5
 # Directory holding the durable + session whitelist config files.
-_NFTBAN_WHITELIST_CONF_DIR="/etc/nftban/whitelist.d"
 
 # Normalize a single nft `elements` token to a bare IP/CIDR key for comparison.
 # Drops any trailing nft annotation (e.g. ` comment "..."` / ` timeout ...`) and
@@ -924,81 +924,14 @@ _nftban_wl_norm_key() {
 # $1 = family table words ("ip nftban" | "ip6 nftban"), $2 = set name.
 # Returns rc 0 on a readable set (even if empty), rc 1 if the set is unreadable
 # (nft absent, daemon down, or no table) so the caller can report gracefully.
-_nftban_wl_read_kernel_set() {
-    local table="$1" set_name="$2" raw tok
-    # shellcheck disable=SC2086
-    raw=$(timeout 10s nft list set ${table} ${set_name} 2>/dev/null) || return 1
-    # Empty/absent elements block is a valid (empty) set, not an error.
-    [[ "$raw" == *"elements"* ]] || return 0
-    printf '%s\n' "$raw" \
-        | tr '\n' ' ' \
-        | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' \
-        | tr ',' '\n' \
-        | while IFS= read -r tok || [[ -n "$tok" ]]; do
-            [[ -z "${tok//[[:space:]]/}" ]] && continue
-            local k; k="$(_nftban_wl_norm_key "$tok")"
-            [[ -n "$k" ]] && printf '%s\n' "$k"
-          done
-    return 0
-}
 
 # Read durable baseline keys (whitelist.d/*.conf entries with NO EXPIRES_AT).
 # $1 = "4" or "6" to filter by family (IPv6 keys contain ':').
-_nftban_wl_read_baseline() {
-    local fam="$1" f line before_hash ip
-    [[ -d "$_NFTBAN_WHITELIST_CONF_DIR" ]] || return 0
-    for f in "$_NFTBAN_WHITELIST_CONF_DIR"/*.conf; do
-        [[ -e "$f" ]] || continue
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            local trimmed="${line#"${line%%[![:space:]]*}"}"
-            [[ -z "$trimmed" ]] && continue
-            [[ "${trimmed:0:1}" == "#" ]] && continue
-            # Durable baseline = NO EXPIRES_AT marker (session/TTL entries excluded).
-            [[ "$line" == *EXPIRES_AT=* ]] && continue
-            before_hash="${line%%#*}"
-            # shellcheck disable=SC2086
-            ip=$(printf '%s' $before_hash | awk '{print $1}')
-            [[ -z "$ip" ]] && continue
-            if [[ "$fam" == "6" && "$ip" == *:* ]]; then
-                printf '%s\n' "${ip,,}"
-            elif [[ "$fam" == "4" && "$ip" != *:* ]]; then
-                printf '%s\n' "${ip,,}"
-            fi
-        done < "$f"
-    done
-}
 
 # Read CURRENT (unexpired) session keys (whitelist.d/*.conf entries WITH an
 # EXPIRES_AT still in the future). $1 = "4"/"6". Used to classify kernel entries
 # as legitimate live sessions rather than injections. Unparseable/expired lines
 # are skipped (NOT counted as session), so they fall through to anomaly checks.
-_nftban_wl_read_sessions() {
-    local fam="$1" f line before_hash ip expires_at expires_unix now_unix
-    now_unix=$(date -u +%s 2>/dev/null) || now_unix=0
-    [[ -d "$_NFTBAN_WHITELIST_CONF_DIR" ]] || return 0
-    for f in "$_NFTBAN_WHITELIST_CONF_DIR"/*.conf; do
-        [[ -e "$f" ]] || continue
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            local trimmed="${line#"${line%%[![:space:]]*}"}"
-            [[ -z "$trimmed" ]] && continue
-            [[ "${trimmed:0:1}" == "#" ]] && continue
-            [[ "$line" == *EXPIRES_AT=* ]] || continue
-            expires_at=$(printf '%s' "$line" | grep -oE 'EXPIRES_AT=[^ ]+' | head -1 | cut -d= -f2)
-            [[ -z "$expires_at" ]] && continue
-            expires_unix=$(date -u -d "$expires_at" +%s 2>/dev/null) || continue
-            [[ "$expires_unix" -le "$now_unix" ]] && continue   # expired => not a current session
-            before_hash="${line%%#*}"
-            # shellcheck disable=SC2086
-            ip=$(printf '%s' $before_hash | awk '{print $1}')
-            [[ -z "$ip" ]] && continue
-            if [[ "$fam" == "6" && "$ip" == *:* ]]; then
-                printf '%s\n' "${ip,,}"
-            elif [[ "$fam" == "4" && "$ip" != *:* ]]; then
-                printf '%s\n' "${ip,,}"
-            fi
-        done < "$f"
-    done
-}
 
 # Verify one family. Echoes report lines; returns the anomaly count for the
 # family via the named-by-convention globals below (bash can't return ints >255
@@ -1031,11 +964,6 @@ _nftban_wl_verify_family_exact() {
 }
 
 # Build a JSON array from shell args (IP/CIDR/interval tokens are quote-safe).
-_nftban_wl_json_arr() {
-    local first=1 x; printf '['
-    for x in "$@"; do [[ $first -eq 1 ]] && first=0 || printf ','; printf '"%s"' "$x"; done
-    printf ']'
-}
 
 _nftban_wl_verify_family() {
     local label="$1" fam="$2" table="$3" set_name="$4"

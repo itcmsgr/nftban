@@ -102,6 +102,13 @@ type StateFile struct {
 	// v1.222.1 HEALTH-OOM hotfix (Lane 2): profile-derived health-service
 	// resource reconciliation result. All optional/backward-compatible — an old
 	// state file without these keys parses to zero values. No volatile timestamp.
+	// v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE: durable whitelist.d
+	// convergence verdict from services.SyncWhitelist, the SOLE installer convergence
+	// authority (switchop.Rebuild runs pre-daemon with --install-context and DEFERS
+	// the projection). CONVERGED | FAILED | "" (not evaluated). A FAILED value means
+	// configured management IPs are not projected into the running set.
+	WhitelistConvergence string
+
 	HealthResourceState         string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
 	HealthResourceProfile       string // resource tier: small/medium/large
 	HealthResourceAuthority     string // always internal/safety
@@ -271,6 +278,7 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "SERVICES_FAILED=%s\n", sf.ServicesFailed)
 	fmt.Fprintf(w, "SERVICES_FAILED_PREEXISTING=%s\n", sf.ServicesFailedPreexisting)
 	fmt.Fprintf(w, "SERVICES_FAILED_IN_WINDOW=%s\n", sf.ServicesFailedInWindow)
+	fmt.Fprintf(w, "WHITELIST_CONVERGENCE=%s\n", sf.WhitelistConvergence)
 	fmt.Fprintf(w, "HEALTH_RESOURCE_STATE=%s\n", sf.HealthResourceState)
 	fmt.Fprintf(w, "HEALTH_RESOURCE_PROFILE=%s\n", sf.HealthResourceProfile)
 	fmt.Fprintf(w, "HEALTH_RESOURCE_AUTHORITY=%s\n", sf.HealthResourceAuthority)
@@ -359,6 +367,8 @@ func (sf *StateFile) Read() error {
 			sf.ServicesFailedPreexisting = val
 		case "SERVICES_FAILED_IN_WINDOW":
 			sf.ServicesFailedInWindow = val
+		case "WHITELIST_CONVERGENCE":
+			sf.WhitelistConvergence = val
 		case "HEALTH_RESOURCE_STATE":
 			sf.HealthResourceState = val
 		case "HEALTH_RESOURCE_PROFILE":

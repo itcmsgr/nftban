@@ -59,6 +59,7 @@ fi
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
+    source "${NFTBAN_LIB_DIR}/lib/whitelist_members.sh" || return 1
 fi
 
 # Load timestamp library (unified timestamp generation)
@@ -1834,7 +1835,157 @@ firewall_stats() {
 # SUBCOMMAND: RELOAD
 # =============================================================================
 
+# =============================================================================
+# v1.228.5 — BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE
+# =============================================================================
+# Single shared authority for projecting the durable whitelist.d/blacklist.d
+# layer into the running sets, with an EXPLICIT execution-context mode.
+#
+# The defect it closes: both callers previously ran
+#     "$core" sync --quick >/dev/null 2>&1 || true
+# which DISCARDS rc and stderr. `sync --quick` reaches the daemon over
+# /run/nftban/nftband.sock; when the daemon is unavailable it exits 1 with
+# "daemon not running: ... connection refused". A runtime rebuild swallowed that
+# and still reported rc=0 / "all checks passed" while the durable whitelist.d
+# layer — including 00-session.conf, which holds the ACTIVE ADMIN SSH IP — was
+# never projected. MEASURED: daemon down -> rebuild rc=0 with the admin IP absent.
+#
+# ⛔ CONTEXT IS PASSED, NEVER INFERRED. `systemctl is-active` cannot distinguish
+# "operator deliberately stopped the daemon" from "installer has not started it
+# yet". Both look identical and mean opposite things:
+#
+#     EXPECTED_UNAVAILABLE  != FAILURE
+#     UNEXPECTED_UNAVAILABLE = FAILURE
+#     DEFERRED              != SUCCESS
+#
+# Modes:
+#   runtime-required  daemon is expected to be reachable. Bounded retry, then a
+#                     member-level convergence check. Non-convergence => rc 1.
+#   install-deferred  the installer runs rebuild BEFORE services.StartDaemon by
+#                     design (cmd/nftban-installer/phases.go: Rebuild at step 7,
+#                     StartDaemon in phaseConfigure). Worse, AddSessionWhitelist
+#                     writes 00-session.conf AFTER that rebuild, so a pre-daemon
+#                     rebuild CANNOT truthfully verify the final configured
+#                     whitelist even if the daemon happened to be reachable.
+#                     Attempt opportunistically; otherwise report DEFERRED (rc 2)
+#                     and NEVER claim convergence. services.SyncWhitelist is the
+#                     sole installer convergence authority, after daemon start.
+#
+# Members, not counts: equal counts with different members is a false pass.
+# IPv4 and IPv6 are compared INDEPENDENTLY.
+#
+# Args: $1 = mode (runtime-required | install-deferred)
+#       $2 = retry budget in seconds
+#       $3 = quiet ("true"/"false")
+# Returns: 0 converged · 1 required-but-failed · 2 deferred (non-fatal)
+_nftban_whitelist_reconcile_and_verify() {
+    local _mode="${1:-runtime-required}"
+    local _retry_budget="${2:-0}"
+    local _q="${3:-false}"
+    local _core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    local _cfg_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
+    local _rc=1 _err="" _waited=0
+
+    if [[ ! -x "$_core" ]]; then
+        if [[ "$_mode" == "install-deferred" ]]; then
+            [[ "$_q" == "false" ]] && echo "    Whitelist projection DEFERRED: core binary not yet available."
+            return 2
+        fi
+        echo "    ERROR: whitelist reconcile FAILED: core binary not executable ($_core)" >&2
+        return 1
+    fi
+
+    while :; do
+        _err="$("$_core" sync --quick 2>&1 >/dev/null)"; _rc=$?
+        [[ $_rc -eq 0 ]] && break
+        (( _waited >= _retry_budget )) && break
+        sleep 2; _waited=$(( _waited + 2 ))
+        [[ "$_q" == "false" ]] && echo "    Whitelist reconcile: daemon not ready, retrying (${_waited}s/${_retry_budget}s)..."
+    done
+
+    if [[ $_rc -ne 0 ]]; then
+        if [[ "$_mode" == "install-deferred" ]]; then
+            # Expected during install: the daemon is intentionally not started yet.
+            # Name the deferral explicitly — a deferred projection is NOT a success.
+            [[ "$_q" == "false" ]] && echo "    Whitelist projection DEFERRED to daemon start (installer owns convergence)."
+            return 2
+        fi
+        echo "    ERROR: whitelist reconcile FAILED (rc=$_rc) after ${_waited}s" >&2
+        [[ -n "$_err" ]] && echo "           $_err" >&2
+        echo "           The durable whitelist.d layer is NOT projected into the running set." >&2
+        echo "           Fix: start the daemon (systemctl start nftband), then: nftban firewall reload" >&2
+        return 1
+    fi
+
+    # Member-level convergence, per family, independently.
+    #
+    # v1.228.5 CONSOLIDATION. This previously assembled members itself and compared them
+    # with `comm -23`. That was a DUPLICATE of the operator verify path AND it was WRONG:
+    # nft coalesces adjacent CIDRs into intervals, so a STRING comparison reports drift
+    # for identical coverage — e.g. configured 192.0.2.0/25 + 192.0.2.128/25 against a
+    # kernel interval 192.0.2.0-192.0.2.255 is CONVERGED, not missing. The runtime path
+    # would have returned rc=1 forever on any host using adjacent CIDRs. The EL9 fixture
+    # never exposed it because it holds only single addresses.
+    #
+    # Coverage comparison is owned by the Go oracle `nftban-core whitelist-coverage`
+    # (cmd/nftban-core/main.go:168); member assembly and expiry are owned by the shared
+    # readers in lib/whitelist_members.sh. This function now only ORCHESTRATES.
+    local _fam _set _tbl _missing_all=""
+    for _fam in 4 6; do
+        if [[ "$_fam" == "4" ]]; then
+            _set="whitelist_ipv4"; _tbl="ip nftban"
+        else
+            _set="whitelist_ipv6"; _tbl="ip6 nftban"
+        fi
+        local _kraw _krc=0
+        _kraw="$(_nftban_wl_read_kernel_set "$_tbl" "$_set")" || _krc=$?
+        if [[ "$_krc" -ne 0 ]]; then
+            # UNREADABLE is a MEASUREMENT failure, not convergence and not drift.
+            # Treating it as clean would manufacture success; treating it as drift would
+            # blame the whitelist for an nft/daemon outage. Retry owns this case.
+            _missing_all+="${_set}: UNREADABLE (kernel set could not be measured)"$'\n'
+            continue
+        fi
+        local _base _sess
+        _base="$(_nftban_wl_read_baseline "$_fam")"
+        _sess="$(_nftban_wl_read_sessions "$_fam")"
+        # Nothing configured for this family => nothing to converge.
+        [[ -z "$_base$_sess" ]] && continue
+
+        local _req _out _m
+        # shellcheck disable=SC2046
+        _req="{\"baseline\":$(_nftban_wl_json_arr $_base),\"kernel\":$(_nftban_wl_json_arr $_kraw),\"sessions\":$(_nftban_wl_json_arr $_sess)}"
+        _out="$(printf '%s' "$_req" | "$_core" whitelist-coverage 2>/dev/null)"
+        if [[ -z "$_out" ]] || ! printf '%s' "$_out" | jq -e . >/dev/null 2>&1; then
+            _missing_all+="${_set}: COVERAGE ORACLE UNAVAILABLE (nftban-core whitelist-coverage)"$'\n'
+            continue
+        fi
+        # Only missing-from-kernel blocks convergence. Extra kernel members are an
+        # operator-verify concern (possible injection), NOT a rebuild-projection failure.
+        while IFS= read -r _m; do
+            [[ -z "$_m" ]] && continue
+            _missing_all+="${_set}: ${_m}"$'\n'
+        done < <(printf '%s' "$_out" | jq -r '.missing_from_kernel[]?' 2>/dev/null)
+    done
+
+    if [[ -n "$_missing_all" ]]; then
+        if [[ "$_mode" == "install-deferred" ]]; then
+            [[ "$_q" == "false" ]] && echo "    Whitelist projection INCOMPLETE — DEFERRED to installer convergence gate."
+            return 2
+        fi
+        echo "    ERROR: whitelist did NOT converge — configured members absent from the running set:" >&2
+        printf '           %s\n' "$_missing_all" >&2
+        echo "           Refusing to report success with an unprojected whitelist." >&2
+        return 1
+    fi
+
+    [[ "$_q" == "false" ]] && echo "    Whitelist reconcile verified (configured members present)."
+    return 0
+}
+
 firewall_reload() {
+    # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
+    local _reload_whitelist_converged="true"
     # Reload nftables ruleset AND re-apply NFTBan rules
     # v1.23.0 FIX (P1-17): reload now re-applies NFTBan schema + syncs whitelist
     local quiet=false
@@ -1973,10 +2124,11 @@ FIREWALL_RELOAD_HELP
     # no feeds/geoban) — calling `nftban sync` here would recurse back into firewall_reload.
     # No-op if the daemon/core binary is unavailable. (This is NOT the v1.59.1 system-IP
     # --quick path; it is the daemon LoadWhitelists/LoadBlacklists reconcile from files.)
-    local _core_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    if [[ -x "$_core_reconcile" ]]; then
-        [[ "$quiet" == "false" ]] && echo "Reconciling durable whitelist.d/blacklist.d entries..."
-        "$_core_reconcile" sync --quick >/dev/null 2>&1 || true
+    # v1.228.5: rc and stderr are NO LONGER discarded. Shared authority with rebuild.
+    [[ "$quiet" == "false" ]] && echo "Reconciling durable whitelist.d/blacklist.d entries..."
+    if ! _nftban_whitelist_reconcile_and_verify runtime-required 10 "$quiet"; then
+        _reload_whitelist_converged="false"
+        echo "WARNING: reload completed but the durable whitelist did not converge (see above)." >&2
     fi
 
     # Step 4 (v1.34.0): Re-apply DDoS protection if it was enabled.
@@ -2387,6 +2539,8 @@ firewall_rebuild() {
 }
 
 _firewall_rebuild_core() {
+    # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
+    local _rebuild_whitelist_converged="true"
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
     # This is the correct way to fix corrupted schema
     #
@@ -2397,6 +2551,11 @@ _firewall_rebuild_core() {
     local force=false
     local quiet=false
     local use_new=false
+    # v1.228.5: execution context for the durable whitelist reconcile. PASSED by the
+    # caller, never inferred. The installer runs rebuild BEFORE services.StartDaemon
+    # by design, and AddSessionWhitelist writes 00-session.conf AFTER that rebuild —
+    # so a pre-daemon rebuild cannot truthfully verify the final configured whitelist.
+    local _NFTBAN_REBUILD_CONTEXT="runtime-required"
     # v1.192.1 PR-B: transition-health timing (ms epoch; harmless if date lacks %N).
     local _fth_t0; _fth_t0=$(date +%s%3N 2>/dev/null || echo 0)
 
@@ -2408,6 +2567,13 @@ _firewall_rebuild_core() {
                 ;;
             --quiet|-q)
                 quiet=true
+                shift
+                ;;
+            --install-context)
+                # v1.228.5: installer pre-daemon phase. Durable whitelist projection is
+                # DEFERRED to services.SyncWhitelist (the sole installer convergence
+                # authority, which runs after StartDaemon + AddSessionWhitelist).
+                _NFTBAN_REBUILD_CONTEXT="install-deferred"
                 shift
                 ;;
             --use-new)
@@ -2669,11 +2835,24 @@ _firewall_rebuild_core() {
     # `sync --quick` (whitelist/blacklist only, no feeds/geoban) that firewall_reload
     # uses (Step 3b), so rebuild and reload converge. No-op if the core binary is
     # unavailable. Does NOT touch system/trust whitelist behaviour or feed/geoban.
-    local _rb_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    if [[ -x "$_rb_reconcile" ]]; then
-        [[ "$quiet" == "false" ]] && echo "    Reconciling durable whitelist.d/blacklist.d entries..."
-        "$_rb_reconcile" sync --quick >/dev/null 2>&1 || true
-    fi
+    # v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE: rc and stderr are NO
+    # LONGER discarded. A rebuild that cannot project the durable whitelist.d layer —
+    # which includes the ACTIVE ADMIN SSH IP in 00-session.conf — must NOT report
+    # success. The daemon may legitimately be transitioning during a package upgrade,
+    # so a bounded retry is allowed before failing visibly.
+    # Mode is PASSED by the caller (see _NFTBAN_REBUILD_CONTEXT), never inferred from
+    # `systemctl is-active` — an operator-stopped daemon and a not-yet-started daemon
+    # look identical and mean opposite things.
+    [[ "$quiet" == "false" ]] && echo "    Reconciling durable whitelist.d/blacklist.d entries..."
+    local _wl_mode="${_NFTBAN_REBUILD_CONTEXT:-runtime-required}"
+    local _wl_budget=30
+    [[ "$_wl_mode" == "install-deferred" ]] && _wl_budget=0
+    _nftban_whitelist_reconcile_and_verify "$_wl_mode" "$_wl_budget" "$quiet"
+    case $? in
+        0) _rebuild_whitelist_converged="true" ;;
+        2) _rebuild_whitelist_converged="deferred" ;;   # installer owns convergence
+        *) _rebuild_whitelist_converged="false" ;;
+    esac
 
     # Step 7 (L2a): Restore blacklist + blacklist_manual from the pre-rebuild snapshot,
     # preserving remaining TTL. blacklist_manual_* holds detector TTL bans
@@ -2943,9 +3122,37 @@ _firewall_rebuild_core() {
 
     # Final validation summary
     [[ "$quiet" == "false" ]] && echo ""
+    # v1.228.5 BUG-REBUILD-DISCARDS-FAILED-WHITELIST-RECONCILE: a rebuild that could not
+    # project the durable whitelist.d layer MUST NOT report "all checks passed". The
+    # firewall structure may be intact while the ACTIVE ADMIN SSH IP is absent from the
+    # running whitelist — reporting success there is exactly the false-success class this
+    # codebase already closed for the CLI router and the nft probe.
+    if [[ "${_rebuild_whitelist_converged:-true}" == "deferred" ]]; then
+        # Installer pre-daemon phase: the daemon is intentionally not running yet and
+        # 00-session.conf may not exist. Deferral is EXPECTED here and is NOT a failure
+        # — but it is also NOT convergence, so it is named rather than implied.
+        [[ "$quiet" == "false" ]] && echo "Note: durable whitelist projection DEFERRED to daemon start (installer convergence gate owns it)."
+    elif [[ "${_rebuild_whitelist_converged:-true}" != "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo ""
+        echo "Final status: DEGRADED (whitelist did not converge)" >&2
+        echo "  The firewall schema was rebuilt, but the durable whitelist.d layer is NOT" >&2
+        echo "  projected into the running set. Configured management IPs may be unenforced." >&2
+        echo "  Fix: systemctl start nftband && nftban firewall reload" >&2
+        _firewall_record_transition_health rebuild "$_fth_t0" 2>/dev/null || true
+        return 1
+    fi
+
     case "$post_status" in
         protected|idle)
-            [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
+            # v1.228.5: "all checks passed" is reserved for ACTUAL convergence. A deferred
+            # projection printed its Note above and then fell through to this line, so the
+            # summary contradicted it — and the summary is what an operator reads. DEFERRED
+            # is not a failure, but it is not "all checks passed" either.
+            if [[ "${_rebuild_whitelist_converged:-true}" == "deferred" ]]; then
+                [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (schema checks passed; whitelist projection DEFERRED)"
+            else
+                [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
+            fi
             # v1.96: SUCCESS — clear any stale recovery marker
             # idle = structurally equivalent to protected (no traffic observed yet)
             declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear

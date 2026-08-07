@@ -842,6 +842,38 @@
         "created_by": "tmpfiles"
       },
       {
+        "path": "/var/log/nftban/reports/daily",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Daily operational reports (v1.228.5: moved from /var/lib — logrotate-managed)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/reports/weekly",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Weekly operational reports (v1.228.5: declared so ownership does not depend on which code path creates the directory first)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/reports/monthly",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Monthly operational reports (v1.228.5: declared alongside daily/weekly for a complete report topology)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/reports/archive",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "logrotate olddir for rotated reports (v1.228.5: moved from /var/lib)",
+        "created_by": "tmpfiles"
+      },
+      {
         "path": "/var/log/nftban/rbl",
         "mode": "0750",
         "owner": "nftban",

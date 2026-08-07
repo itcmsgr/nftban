@@ -96,7 +96,7 @@ comms_no_direct_send_guard_a0_test	cli/lib/nftban/tests/comms_no_direct_send_gua
 comms_producer_signal_accuracy_test	cli/lib/nftban/tests/comms_producer_signal_accuracy_test.sh	comms	test	health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_rbl_tunnel_producer_recipient_test	cli/lib/nftban/tests/comms_rbl_tunnel_producer_recipient_test.sh	comms	test	health-communication-component	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_debug_p_retire1_test	cli/lib/nftban/tests/comms_redact_debug_p_retire1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
-comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_p_retire2_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_p_retire2_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	300		
 comms_redact_p2a_noleak_test	cli/lib/nftban/tests/comms_redact_p2a_noleak_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -182,12 +182,14 @@ read_ra_ifs_v156_test	cli/lib/nftban/tests/read_ra_ifs_v156_test.sh	portscan	tes
 rebuild_no_syn_drop_v192_test	cli/lib/nftban/tests/rebuild_no_syn_drop_v192_test.sh	firewall	test	firewall-rebuild	ROOT_LAB	lab-manual	false	true	false	false	true	false			
 recovery_legacy_reconcile_v12012_test	cli/lib/nftban/tests/recovery_legacy_reconcile_v12012_test.sh	firewall	test	recovery	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 report_html_json_script_safe_v1227_test	cli/lib/nftban/tests/report_html_json_script_safe_v1227_test.sh	mail	test	report-html-script-safe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+report_writer_truth_v1228_5_test	cli/lib/nftban/tests/report_writer_truth_v1228_5_test.sh	mail	test	report-writer-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rollback_help_guard_v1_139_2_test	cli/lib/nftban/tests/rollback_help_guard_v1_139_2_test.sh	update	test	rollback	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 rpm_files_no_double_dir_listing_v165_test	cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v165_test.sh	packaging	test	rpm-files	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 rpm_files_templates_dedup_v166_test	cli/lib/nftban/tests/rpm_files_templates_dedup_v166_test.sh	packaging	test	rpm-files	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 rpm_spec_no_section_macro_in_comment_v165_test	cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh	packaging	test	rpm-spec	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 rpm_spec_single_install_v157_test	cli/lib/nftban/tests/rpm_spec_single_install_v157_test.sh	packaging	test	rpm-spec	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 ruleset_fingerprint_v138_test	cli/lib/nftban/tests/ruleset_fingerprint_v138_test.sh	security	test	rulefp	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+selinux_geoip_map_v1228_5_test	cli/lib/nftban/tests/selinux_geoip_map_v1228_5_test.sh	security	test	selinux-geoip-map	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 service_alerts_v138_test	cli/lib/nftban/tests/service_alerts_v138_test.sh	firewall	test	firewall-conflicts	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 session_whitelist_flock_v173_test	cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh	firewall	test	session-whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 set_apply_single_writer_v213_grep_guard_test	cli/lib/nftban/tests/set_apply_single_writer_v213_grep_guard_test.sh	firewall	test	set-apply-single-writer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -253,6 +255,7 @@ version_release_date_authority_test	cli/lib/nftban/tests/version_release_date_au
 watchdog_update_swap_race_v1983_test	cli/lib/nftban/tests/watchdog_update_swap_race_v1983_test.sh	update	test	watchdog-update-swap	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_list_timed_label_v169_test	cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh	whitelist	test	whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_rebuild_remerge_v1930_test	cli/lib/nftban/tests/whitelist_rebuild_remerge_v1930_test.sh	firewall	test	whitelist-rebuild-remerge	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+whitelist_reconcile_convergence_v1228_5_test	cli/lib/nftban/tests/whitelist_reconcile_convergence_v1228_5_test.sh	firewall	test	whitelist-reconcile-convergence	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_set_timeout_flag_v168_test	cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh	whitelist	test	whitelist-set-timeout-flag	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_timeout_upgrade_activation_v168_test	cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh	packaging	test	whitelist-timeout-upgrade-activation	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 whitelist_verify_v163_test	cli/lib/nftban/tests/whitelist_verify_v163_test.sh	whitelist	test	whitelist-verify	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
