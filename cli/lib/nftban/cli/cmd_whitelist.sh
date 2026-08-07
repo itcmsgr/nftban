@@ -905,20 +905,10 @@ nftban_whitelist_list() {
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/whitelist_members.sh" || return 1  # _NFTBAN_WHITELIST_ANCHOR_V1228_5
 # Directory holding the durable + session whitelist config files.
 
-# Normalize a single nft `elements` token to a bare IP/CIDR key for comparison.
-# Drops any trailing nft annotation (e.g. ` comment "..."` / ` timeout ...`) and
-# surrounding whitespace, leaving "1.2.3.4" or "1.2.3.0/24". Lowercased so IPv6
-# hex compares stably against config lines.
-_nftban_wl_norm_key() {
-    local tok="$1"
-    tok="${tok%%comment*}"   # strip ` comment "..."`
-    tok="${tok%%timeout*}"   # strip ` timeout ...`
-    tok="${tok%%expires*}"   # strip ` expires ...`
-    # trim surrounding whitespace
-    tok="${tok#"${tok%%[![:space:]]*}"}"
-    tok="${tok%"${tok##*[![:space:]]}"}"
-    printf '%s' "${tok,,}"
-}
+# v1.228.6: _nftban_wl_norm_key moved into lib/whitelist_members.sh (sourced
+# above) — it is called by that lib's readers, and defining it here left the
+# rebuild path (which sources the lib without this file) with an undefined
+# symbol: every rebuild reported a false whitelist-convergence DEGRADED.
 
 # Read one kernel whitelist set, one normalized key per line (read-only).
 # $1 = family table words ("ip nftban" | "ip6 nftban"), $2 = set name.

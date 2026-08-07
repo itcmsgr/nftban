@@ -24,6 +24,29 @@ _NFTBAN_WHITELIST_MEMBERS_LOADED=1
 
 _NFTBAN_WHITELIST_CONF_DIR="/etc/nftban/whitelist.d"
 
+# Normalize a single nft `elements` token to a bare IP/CIDR key for comparison.
+# Drops any trailing nft annotation (e.g. ` comment "..."` / ` timeout ...`) and
+# surrounding whitespace, leaving "1.2.3.4" or "1.2.3.0/24". Lowercased so IPv6
+# hex compares stably against config lines.
+#
+# v1.228.6: MOVED here from cmd_whitelist.sh. It was defined there but CALLED
+# from _nftban_wl_read_kernel_set below, so any consumer that sourced this lib
+# WITHOUT cmd_whitelist.sh (the rebuild path in cmd_firewall.sh) hit
+# "command not found", every key normalized to empty, and the convergence check
+# reported ALL configured members absent — every `firewall rebuild` on a
+# v1.228.5 host ended DEGRADED with the members demonstrably present in the
+# running set. A lib must not depend on a symbol its caller may not have loaded.
+_nftban_wl_norm_key() {
+    local tok="$1"
+    tok="${tok%%comment*}"   # strip ` comment "..."`
+    tok="${tok%%timeout*}"   # strip ` timeout ...`
+    tok="${tok%%expires*}"   # strip ` expires ...`
+    # trim surrounding whitespace
+    tok="${tok#"${tok%%[![:space:]]*}"}"
+    tok="${tok%"${tok##*[![:space:]]}"}"
+    printf '%s' "${tok,,}"
+}
+
 _nftban_wl_read_kernel_set() {
     local table="$1" set_name="$2" raw tok
     # shellcheck disable=SC2086
