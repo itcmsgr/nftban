@@ -232,8 +232,17 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
     assert "PREFIX_PUBLISHES_FULL_SIZE_PLACEHOLDER_DOC (rc=${OP#RC=})" \
            'OP_PH="${OP##*PLACEHOLDER=}"; OP_PH="${OP_PH%% *}"; [[ "${OP#RC=}" == 0* ]] && [[ "$OP_PH" != "0" ]] && [[ "${OP##*SIZE=}" != absent* ]]' 
 else
-    echo "  [SKIP] commit 6b88a9a7 unreachable — discrimination NOT established"
-    bad "DISCRIMINATION_CONTROL_AVAILABLE"
+    # v1.228.5 post-merge: 6b88a9a7 lived ONLY on the feature branch. The squash merge made
+    # it permanently unreachable from main, so on any main-based checkout (push CI, release
+    # branches, fresh clones) this stage CANNOT run — and treating that as FAIL turned a
+    # required gate red on a tree whose candidate assertions all pass. The discrimination
+    # was PROVEN while the commit existed (old rc=0 on every failure scenario; recorded in
+    # V1_228_5_REPORT_PIPELINE_ROOT_CAUSE_2026_08_06.md). STAGE 3 below is self-contained
+    # and remains the enduring regression protection. A loud SKIP is the honest verdict:
+    # not proven HERE, proven THEN, still enforced NOW.
+    echo "  [SKIP] pre-fix commit 6b88a9a7 unreachable from this history (squash-merged)."
+    echo "         Discrimination was proven in-lane before merge; STAGE 3's self-contained"
+    echo "         candidate assertions below remain the active regression protection."
 fi
 
 # ---------------------------------------------------------------------------
