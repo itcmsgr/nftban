@@ -49,19 +49,35 @@ extract_sets() {
     ' "$NFTCONF" | sort -u
 }
 
-# Canonicalize a set name to a family-neutral base, covering all 3 conventions:
+# Canonicalize a set name to a family-neutral base, covering all 4 conventions:
 #   *_ipv4 / *_ipv6  -> strip suffix          (blacklist_ipv4 -> blacklist)
 #   http_bot_X / X6  -> strip trailing 6      (http_bot_ban6  -> http_bot_ban)
+#   *_v4 / *_v6      -> strip suffix          (syn_meter_v4   -> syn_meter)
+#                       (v1.228.6: the base rate limiters became NAMED dynamic
+#                        sets — as meters they were invisible to this guard;
+#                        their historical names carry the _v4/_v6 convention)
 #   unsuffixed       -> unchanged             (tcp_ports_in   -> tcp_ports_in)
 canon() {
     local s b
     while read -r s; do
         [[ -z "$s" ]] && continue
         b="${s%_ipv4}"; b="${b%_ipv6}"
+        b="${b%_v4}"; b="${b%_v6}"
         case "$b" in http_bot_*) b="${b%6}";; esac
         printf '%s\n' "$b"
     done | sort -u
 }
+
+# Deliberate single-family sets as canonical:family pairs, each carrying the
+# recorded decision that justifies the asymmetry. An entry here is a DESIGN
+# STATEMENT, not a waiver: the guard verifies the set exists in EXACTLY its
+# declared family (a singleton growing an undeclared partner, or appearing in
+# the wrong family, still fails), and the capacity-policy manifest row for the
+# same object must say the same thing.
+#   syn_prefix_meter:ip6 — /64-aggregate SYN pressure exists only for IPv6 by
+#   design (v4 prefix pressure is handled by ddos_prefix_syn when the DDoS
+#   module is enabled); manifest row: "no v4 counterpart by design".
+PARITY_SINGLETONS='syn_prefix_meter:ip6'
 
 # --- R2a: explicit *_ipv4 <-> *_ipv6 suffix parity --------------------------
 v4suf=$(grep -oE 'set [a-z0-9_]+_ipv4' "$NFTCONF" | sed 's/set //; s/_ipv4$//' | sort -u)
@@ -75,6 +91,29 @@ fi
 # --- R2b: full table set inventory parity (canonical) -----------------------
 v4canon=$(extract_sets ip  | canon)
 v6canon=$(extract_sets ip6 | canon)
+# Each declared singleton must exist in EXACTLY its declared family; only then
+# is it excluded from the two-sided comparison. Stripping blindly from both
+# sides would delete the evidence of a singleton that grew an undeclared
+# partner — the falsifiability harness proved that exact blindness.
+for entry in $PARITY_SINGLETONS; do
+    sname="${entry%%:*}"; sfam="${entry##*:}"
+    # grep -c exits 1 on a zero count, which set -e would turn into a silent
+    # death of the whole guard — the zero is a VALUE here, not a failure.
+    in4=$(grep -cxF "$sname" <<<"$v4canon" || true); in6=$(grep -cxF "$sname" <<<"$v6canon" || true)
+    case "$sfam" in
+        ip)  want4=1; want6=0 ;;
+        ip6) want4=0; want6=1 ;;
+        *)   echo "::error::PARITY_SINGLETONS entry '$entry' has unknown family"; FAIL=1; continue ;;
+    esac
+    if [[ "$in4" -eq "$want4" && "$in6" -eq "$want6" ]]; then
+        echo "  [OK] declared singleton '$sname' present only in $sfam"
+    else
+        echo "::error::declared singleton '$sname' family mismatch: in_ip=$in4 in_ip6=$in6 (declared $sfam-only)"
+        FAIL=1
+    fi
+    v4canon=$(grep -vxF "$sname" <<<"$v4canon" || true)
+    v6canon=$(grep -vxF "$sname" <<<"$v6canon" || true)
+done
 if [[ "$v4canon" == "$v6canon" ]]; then
     echo "  [OK] table ip nftban and ip6 nftban have matching canonical set inventories ($(echo "$v4canon" | grep -c .) sets each)"
 else
