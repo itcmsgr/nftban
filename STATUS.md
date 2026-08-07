@@ -1,7 +1,7 @@
 # NFTBan Development Project Health Status
 
 **Status:** ⚠️ Warning
-**Last Updated:** 2026-08-04 UTC
+**Last Updated:** 2026-08-07 UTC
 **Current Development Version:** v1.228.5 — `RELEASE_PREP`, **NOT PUBLISHED**
 **Latest Published Release:** v1.228.4 (tag `v1.228.4` → `6bde73f8`, published 2026-07-30, 15 assets)
 **Production Fleet Baseline:** v1.228.0 — *published ≠ deployed; no fleet rollout has been performed for v1.228.2, v1.228.4 or v1.228.5*

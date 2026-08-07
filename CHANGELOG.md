@@ -77,6 +77,71 @@ are tracked separately and are **not** closed by this release.
 
 ---
 
+### Fixed — the daily report was a copy of its own template
+
+On every platform and in every SELinux mode, the generated report contained **no data**. The
+injector required `window.__NFTBAN_DATA__ = {` and `Placeholder - will be replaced` on one line;
+the shipped template spreads them over three. The pattern never matched, so `awk` printed the
+template unchanged and exited 0. Measured on EL9 and Ubuntu: the published report was
+**byte-identical to `stats_dashboard.html`**. Three plausible checks all passed on that broken
+artifact — 18379 bytes, closing `</html>`, and the `window.__NFTBAN_DATA__` marker — because the
+template placeholder itself contains the marker.
+
+- Injection now matches the assignment opening and consumes through the closing `};`, handling
+  both layouts and preserving the template's indentation. The payload is compacted before
+  injection so the published data object is one line and can be parsed back out and verified.
+- Publication is refused unless: the output differs from the template, the placeholder is gone,
+  a data assignment exists, the payload parses as JSON, the hostname is non-empty, and no
+  `{NFTBAN_*}` token survives — ordered most-fundamental first so each rule is reachable.
+- `{NFTBAN_VERSION}` was never substituted by anything and rendered as a literal token in every
+  report. Now substituted, with a generic unresolved-token check.
+
+### Fixed — report generation failures were reported as success
+
+A failed report produced a green `nftban-report-daily.service`. Three layers erased the failure:
+the writer ignored its own write result, the caller discarded the generator's return code, and
+the unit declared `SuccessExitStatus=0 1` over an exit its own comment called "error".
+
+- The writer generates into a temporary file **in the destination directory** (`rename(2)` is
+  atomic only within one filesystem, and `PrivateTmp=true` puts `/tmp` on a separate mount),
+  validates the artifact, then publishes atomically. Every failure returns non-zero; a failed
+  regeneration leaves the previous report byte-identical and publishes nothing.
+- `SuccessExitStatus` removed. `Type=oneshot` is not restarted on failure, so no restart loop.
+- **Operator note:** a unit that genuinely failed now stays latched until cleared. An upgrade
+  may truthfully report `INSTALL_STATE=DEGRADED` with `PREEXISTING_STILL_FAILED`. Verify, then:
+  `systemctl status nftban-report-daily.service` · `journalctl -u nftban-report-daily.service` ·
+  `systemctl reset-failed nftban-report-daily.service`.
+
+### Fixed — reports could not be written under SELinux Enforcing
+
+Reports moved to `nftban_log_t`, whose rules were written for append-only logs; a report is
+replaced. Granted `file:{write,rename,unlink,setattr}` and `dir:{remove_name,create}`, each tied
+to a named operation. Two further denials were closed in **code, not policy**: temporaries no
+longer touch `/tmp`, and the report hostname comes from `uname -n` rather than
+`/usr/bin/hostname`, which the daemon domain may not execute — it had been rendering empty.
+
+### Fixed — report directory ownership depended on creation order
+
+`weekly/` was created by the writer as `root:root` while `daily/` came from tmpfiles as
+`nftban:nftban`. `build/fhs-spec.yaml` now declares `reports/{daily,weekly,monthly}`, so package
+installation establishes the whole topology before any timer runs. Protected state under
+`/var/lib/nftban/reports/{auditors,baseline,watchdog,archive}` is deliberately untouched.
+Report file ownership is phase-dependent by design: `root:root 0640` at publication,
+`nftban:nftban 0640` after permissions maintenance; mode and `nftban_log_t` are the invariants.
+
+### Fixed — build-time command execution from spec-generation comments
+
+Three doc comments inside the unquoted RPM-spec heredoc carried unescaped backticks and
+therefore **executed in the build shell** on every spec render, swallowing their own text from
+the shipped `%post`. Escaped to the heredoc's established convention; the V108 heredoc-safety
+gate now passes and is falsifiable both directions.
+
+### Known limitation
+
+**v1.228.5 does not fix the nftables meter-capacity risk** (`size 65535`, `flags dynamic`, no
+timeout). That correction is v1.228.6. Publication is not fleet validation; production remains
+on its previous baseline until staged rollout completes.
+
 ## [v1.228.4] - 2026-07-30 — a failed read is no longer proof of absence
 
 A failed `nft` read was being treated as evidence that a firewall table was **absent**, and absence
