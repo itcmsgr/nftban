@@ -251,21 +251,43 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 			"input_syn_rate_exceeded",
 		}
 		enforcing := false
+		// Track whether the evidence EXISTS at all. "All counters read zero"
+		// and "no counter was found in the ruleset" produce the same numbers
+		// but mean opposite things: the first is a module deployed and quiet,
+		// the second is a module whose enforcement evidence we never located.
+		// Only the first may be reported idle.
+		anyCounterPresent := false
 		for _, name := range ddosCounters {
-			if doc.GetCounter("ip", "nftban", name) > 0 {
+			v, ok := doc.GetCounterOK("ip", "nftban", name)
+			if ok {
+				anyCounterPresent = true
+			}
+			if ok && v > 0 {
 				enforcing = true
 				break
 			}
 		}
 		// Also check IPv6 SYN prefix counter
-		if !enforcing && doc.GetCounter("ip6", "nftban", "input_syn_prefix_drop") > 0 {
-			enforcing = true
+		if !enforcing {
+			if v, ok := doc.GetCounterOK("ip6", "nftban", "input_syn_prefix_drop"); ok {
+				anyCounterPresent = true
+				if v > 0 {
+					enforcing = true
+				}
+			}
 		}
 
-		if enforcing {
+		switch {
+		case enforcing:
 			h.Effective = EffectiveEnforcing
-		} else {
+		case anyCounterPresent:
 			h.Effective = EffectiveIdle // zero = NEUTRAL per vocabulary Rule 1
+		default:
+			// Structurally present but not one enforcement counter was found.
+			// The effective axis is UNESTABLISHED: leave it unset (an already
+			// representable state, omitted from output) rather than assert the
+			// module is idle on evidence we do not have.
+			h.Effective = ""
 		}
 	}
 

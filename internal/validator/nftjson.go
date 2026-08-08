@@ -298,12 +298,28 @@ func (d *RulesetDocument) CountChains(family string) int {
 }
 
 // GetCounter returns a named counter's packet count, or 0 if not found.
+//
+// The zero it returns for a MISSING counter is indistinguishable from the zero
+// of a counter that exists and has not fired. That ambiguity is fine for
+// display and totals, and wrong for verdicts: a counter absent because the
+// ruleset was rendered by a different nft version, or because the counter was
+// renamed, would read as "present and never triggered" — which is how an
+// enforcing module came to be reported idle. Callers deriving a VERDICT must
+// use GetCounterOK and treat absence as unestablished, not as zero.
 func (d *RulesetDocument) GetCounter(family, table, name string) int64 {
+	v, _ := d.GetCounterOK(family, table, name)
+	return v
+}
+
+// GetCounterOK returns a named counter's packet count and whether the counter
+// was actually present in the parsed ruleset. Absence is a distinct fact from
+// a zero count and the two must not be collapsed by a verdict-bearing caller.
+func (d *RulesetDocument) GetCounterOK(family, table, name string) (int64, bool) {
 	key := family + ":" + table + ":" + name
 	if c, ok := d.counters[key]; ok {
-		return c.Packets
+		return c.Packets, true
 	}
-	return 0
+	return 0, false
 }
 
 // GetCounterFull returns a named counter with both packets and bytes.

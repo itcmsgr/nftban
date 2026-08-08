@@ -1,0 +1,58 @@
+{
+ "nftables": [
+  {
+   "metainfo": {
+    "version": "1.0.2",
+    "release_name": "Lester Gooch",
+    "json_schema_version": 1
+   }
+  },
+  {
+   "set": {
+    "family": "ip",
+    "name": "syn_meter_v4",
+    "table": "nftban",
+    "type": "ipv4_addr",
+    "handle": 50,
+    "comment": "v1.228.6 bounded per-IP SYN rate state",
+    "size": 65535,
+    "flags": [
+     "timeout"
+    ],
+    "timeout": 300,
+    "elem": []
+   }
+  },
+  {
+   "set": {
+    "family": "ip",
+    "name": "ddos_dns_udp",
+    "table": "nftban",
+    "type": "ipv4_addr",
+    "handle": 104,
+    "comment": "v1.228.6 bounded DNS/UDP rate state",
+    "size": 65535,
+    "flags": [
+     "timeout"
+    ],
+    "timeout": 300,
+    "elem": []
+   }
+  },
+  {
+   "set": {
+    "family": "ip",
+    "name": "whitelist_ipv4",
+    "table": "nftban",
+    "type": "ipv4_addr",
+    "handle": 34,
+    "comment": "Trusted IPs and networks",
+    "flags": [
+     "interval",
+     "timeout"
+    ],
+    "elem": []
+   }
+  }
+ ]
+}

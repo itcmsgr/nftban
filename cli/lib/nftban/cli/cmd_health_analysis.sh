@@ -168,8 +168,15 @@ nftban_health_cmd_conflicts() {
     # v1.48.0: Ghost table detection (live nft state)
     local ghost_found=false
     if command -v nft &>/dev/null; then
-        local live_tables
-        live_tables=$(nft list tables 2>/dev/null || true)
+        # `|| true` swallowed the read failure and left live_tables empty, and
+        # an empty list walks straight into the "sole authority" branch below.
+        # The strongest claim this section can make was therefore produced by
+        # the case where nothing was read at all. Track readability explicitly.
+        local live_tables tables_readable=true
+        live_tables=$(nft list tables 2>/dev/null) || tables_readable=false
+        # rc=0 with no output is not an empty table list: nft lists what it can
+        # see, and this host is running NFTBan's own tables.
+        [[ -z "${live_tables//[[:space:]]/}" ]] && tables_readable=false
         echo "┌────────────────────────────────────────────────────────────┐"
         echo "│ GHOST NFT TABLES (live state)                              │"
         echo "├────────────────────────────────────────────────────────────┤"
@@ -185,7 +192,10 @@ nftban_health_cmd_conflicts() {
             ghost_found=true
             ((ghost_count++)) || true
         done <<< "$live_tables"
-        if [[ "$ghost_found" == "false" ]]; then
+        if [[ "$tables_readable" != "true" ]]; then
+            printf "│  %-58s│\n" "? Cannot read live nft tables — ghost tables NOT checked"
+            printf "│  %-58s│\n" "  (this is not evidence of sole authority)"
+        elif [[ "$ghost_found" == "false" ]]; then
             echo "│  ✓ No ghost tables — NFTBan has sole authority             │"
         fi
         echo "└────────────────────────────────────────────────────────────┘"

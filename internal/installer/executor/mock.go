@@ -72,6 +72,11 @@ type MockExecutor struct {
 
 	// NftTables maps "family:table" -> exists.
 	NftTables map[string]bool
+	// NftDeleteTableCalls records every NftDeleteTable invocation as
+	// "family:table", in order. Deletion is destructive, so tests assert on
+	// the CALL rather than only on the resulting state: a guard that must not
+	// delete has to be shown never to have tried.
+	NftDeleteTableCalls []string
 
 	// NftSets maps "family:table:set" -> element list as string.
 	NftSets map[string]string
@@ -398,6 +403,7 @@ func (m *MockExecutor) NftAddElement(family, table, set string, element string) 
 func (m *MockExecutor) NftDeleteTable(family, table string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.NftDeleteTableCalls = append(m.NftDeleteTableCalls, family+":"+table)
 	delete(m.NftTables, family+":"+table)
 	return nil
 }
