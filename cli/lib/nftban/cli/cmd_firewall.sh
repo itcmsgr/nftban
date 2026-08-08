@@ -54,6 +54,15 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
+# v1.228.7: the module-enablement authority — the rebuild/reload DDoS and
+# PortScan re-apply gates below call nftban_module_effective_enabled, so it must
+# be loaded here rather than assumed from the dispatcher chain. Idempotent.
+# shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1 && \
+   [[ -f "${NFTBAN_LIB_DIR}/lib/module_authority.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/module_authority.sh" || return 1
+fi
+
 
 # Load NFT schema (single source of truth for table/set names)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
@@ -2134,11 +2143,11 @@ FIREWALL_RELOAD_HELP
     # Step 4 (v1.34.0): Re-apply DDoS protection if it was enabled.
     # firewall reload destroys DDoS chains (synproxy, portscan, ddos_protection).
     # Without this step, reload leaves the server unprotected.
+    # v1.228.7: canonical effective-config authority (base main.conf + .local
+    # override), replacing a .local-ONLY read that skipped re-apply on hosts
+    # with DDOS_ENABLED="true" in main.conf.
     local _ddos_enabled="false"
-    local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
-    if [[ -f "$_ddos_local_conf" ]]; then
-        _ddos_enabled=$(grep -oP '^DDOS_ENABLED="\K[^"]+' "$_ddos_local_conf" 2>/dev/null || echo "false")
-    fi
+    nftban_module_effective_enabled ddos DDOS_ENABLED && _ddos_enabled="true"
     if [[ "$_ddos_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying DDoS protection rules..."
         nftban ddos reload 2>/dev/null || {
@@ -2147,11 +2156,10 @@ FIREWALL_RELOAD_HELP
     fi
 
     # Step 4b (v1.50.1): Re-apply portscan if enabled — reload destroys jump rules
+    # v1.228.7: canonical effective-config authority (fixes the case the old
+    # .local-then-main read could not express: main=true + .local=false = off).
     local _portscan_enabled="false"
-    local _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
-    [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
-    [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
-        [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying portscan detection rules..."
         nftban portscan enable --quiet 2>/dev/null || {
@@ -2923,11 +2931,11 @@ _firewall_rebuild_core() {
             declare -f _rebuild_classify_daemon_down &>/dev/null && _rebuild_classify_daemon_down
         fi
     fi
+    # v1.228.7: canonical effective-config authority (base main.conf + .local
+    # override), replacing a .local-ONLY read that skipped re-apply on hosts
+    # with DDOS_ENABLED="true" in main.conf.
     local _ddos_enabled="false"
-    local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
-    if [[ -f "$_ddos_local_conf" ]]; then
-        _ddos_enabled=$(grep -oP '^DDOS_ENABLED="\K[^"]+' "$_ddos_local_conf" 2>/dev/null || echo "false")
-    fi
+    nftban_module_effective_enabled ddos DDOS_ENABLED && _ddos_enabled="true"
     if [[ "$_ddos_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "    DDoS protection: re-applying..."
         if nftban ddos reload 2>/dev/null; then
@@ -2940,11 +2948,10 @@ _firewall_rebuild_core() {
 
     # Step 9 (v1.50.1): Re-apply portscan if enabled
     [[ "$quiet" == "false" ]] && echo "  [9/12] Re-applying portscan detection..."
+    # v1.228.7: canonical effective-config authority (fixes the case the old
+    # .local-then-main read could not express: main=true + .local=false = off).
     local _portscan_enabled="false"
-    local _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
-    [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
-    [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
-        [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
         if nftban portscan enable --quiet 2>/dev/null; then
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "portscan" "$MR_OK"
@@ -3275,20 +3282,19 @@ firewall_reset() {
 
     # Step 6 (v1.50.1): Re-apply DDoS protection if enabled
     [[ "$quiet" == "false" ]] && echo "  [6/11] Re-applying protection modules..."
+    # v1.228.7: canonical effective-config authority.
     local _ddos_enabled="false"
-    local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
-    [[ -f "$_ddos_local_conf" ]] && _ddos_enabled=$(grep -oP '^DDOS_ENABLED="\K[^"]+' "$_ddos_local_conf" 2>/dev/null || echo "false")
+    nftban_module_effective_enabled ddos DDOS_ENABLED && _ddos_enabled="true"
     if [[ "$_ddos_enabled" == "true" ]]; then
         nftban ddos reload 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed"
     fi
 
     # Step 7 (v1.50.1): Re-apply portscan if enabled
     [[ "$quiet" == "false" ]] && echo "  [7/11] Re-applying portscan detection..."
+    # v1.228.7: canonical effective-config authority (fixes the case the old
+    # .local-then-main read could not express: main=true + .local=false = off).
     local _portscan_enabled="false"
-    local _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
-    [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
-    [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
-        [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
         nftban portscan enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed"
     fi

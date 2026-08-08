@@ -557,6 +557,14 @@ cmd_load_module_config() {
     fi
 }
 
+# v1.228.7: the single "is module X enabled?" authority lives in
+# lib/module_authority.sh (nftban_module_effective_enabled). Source it here so
+# every consumer that loads cmd_common.sh gets it; the lib is idempotent.
+if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+fi
+
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
