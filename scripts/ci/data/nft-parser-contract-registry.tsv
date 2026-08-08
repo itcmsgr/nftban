@@ -23,7 +23,7 @@
 # Severity may never be downgraded to dodge the rule (anti-laundering guard).
 #
 # columns: file<TAB>anchor<TAB>severity_class<TAB>failure_policy<TAB>waiver_tier<TAB>reviewer<TAB>current_behavior<TAB>required_behavior<TAB>note
-cli/lib/nftban/core/nftban_health_checks_security.sh	done < <(nft -j list table "$family" nftban 2>/dev/null | python3 -c '	HEALTH_VERDICT	UNKNOWN_REQUIRED	-	-	-	-	PR1 MUST-FIX: fixed in this PR to 3-state UNKNOWN discipline
+cli/lib/nftban/core/nftban_health_checks_security.sh	_dump=$(nft -j list table "$family" nftban 2>/dev/null) || _rc=$?	HEALTH_VERDICT	UNKNOWN_REQUIRED	-	-	-	-	PR1 MUST-FIX: fixed in this PR to 3-state UNKNOWN discipline
 cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	UNKNOWN_REQUIRED	-	-	-	-	PR1 MUST-FIX: fixed in this PR to 3-state UNKNOWN discipline
 cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	UNKNOWN_REQUIRED	-	-	-	-	PR1 MUST-FIX: fixed in this PR to 3-state UNKNOWN discipline
 cli/lib/nftban/cli/cmd_firewall.sh	ruleset=$(nft -a list ruleset 2>/dev/null) || {	SECURITY_VERDICT	UNKNOWN_REQUIRED	-	-	-	-	PR1 MUST-FIX: fixed in this PR to 3-state UNKNOWN discipline

@@ -1076,31 +1076,59 @@ nftban_health_check_limiter_capacity() {
         return $status
     fi
 
-    local family line
+    local family line _dump _rc
     for family in ip ip6; do
-        # One netlink dump for the whole table; skip silently if the table is
-        # absent (kernel-parity and boot-safety checks own that failure).
+        # One netlink dump for the whole table. A FAILED dump is not an empty
+        # one: `nft` exits non-zero both when the table is genuinely absent and
+        # when the read itself could not be performed, and those two must not
+        # collapse. Absence is owned by the kernel-parity/boot-safety checks;
+        # unreadability has to surface here, because a limiter this check
+        # cannot see is exactly the saturated limiter it exists to find.
+        _dump=""; _rc=0
+        _dump=$(nft -j list table "$family" nftban 2>/dev/null) || _rc=$?
+        if [[ $_rc -ne 0 ]]; then
+            if declare -f nftban_nft_probe_table >/dev/null 2>&1 &&
+               nftban_nft_probe_table "$family" nftban limiter_capacity 2>/dev/null &&
+               [[ "$NFTBAN_NFT_PROBE_VERDICT" == "$NFTBAN_NFT_PROBE_ABSENT" ]]; then
+                continue   # proven absent — another check owns that verdict
+            fi
+            limiter_issues+=("UNKNOWN: $family limiter occupancy could not be measured (nft read failed, rc=$_rc) — capacity is NOT established; this is not evidence of healthy limiters")
+            continue
+        fi
+
         while IFS= read -r line; do
             [[ -n "$line" ]] && limiter_issues+=("$line")
-        done < <(nft -j list table "$family" nftban 2>/dev/null | python3 -c '
+        done < <(printf '%s' "$_dump" | python3 -c '
 import json, sys
 family = sys.argv[1]
 try:
     doc = json.load(sys.stdin)
-except Exception:
+    objects = doc["nftables"]
+except Exception as e:
+    # A dump we cannot parse tells us NOTHING about occupancy. Reporting no
+    # issues here would render an unparseable ruleset as healthy limiters.
+    print(f"UNKNOWN: {family} limiter occupancy could not be measured "
+          f"(unparseable nft JSON: {type(e).__name__}) — capacity is NOT established")
     sys.exit(0)
-for obj in doc.get("nftables", []):
+for obj in objects:
     s = obj.get("set")
     if not s:
         continue
+    # Identify a limiter SEMANTICALLY, by the properties that make it one: a
+    # capacity cap plus per-element expiry. Do NOT gate on the "dynamic" flag
+    # token — nft 1.0.2 omits it from `nft -j list sets` output (measured on
+    # srv3, where 13 correctly-bounded limiters reported flags=["timeout"]).
+    # Gating on the token made every limiter invisible on that version, which
+    # is the blindness this check was written to end.
     flags = s.get("flags") or []
-    if "dynamic" not in flags:
+    size = s.get("size") or 0
+    has_timeout = bool(s.get("timeout")) or "timeout" in flags
+    if "dynamic" not in flags and not (size and has_timeout):
         continue
     name = s.get("name", "?")
-    size = s.get("size") or 0
     elems = s.get("elem") or []
     count = len(elems)
-    if not s.get("timeout") and "timeout" not in flags:
+    if not has_timeout:
         print(f"WARNING: {family} {name} is a dynamic limiter WITHOUT timeout "
               f"(unbounded legacy state, {count} entries) — run: nftban firewall rebuild")
         continue
@@ -1119,8 +1147,11 @@ for obj in doc.get("nftables", []):
         for issue in "${limiter_issues[@]}"; do
             if [[ "$issue" == CRITICAL:* ]]; then
                 status=$HEALTH_CRITICAL
-            elif [[ "$issue" == WARNING:* && $status -lt $HEALTH_WARNING ]]; then
-                status=$HEALTH_WARNING
+            elif [[ "$issue" == WARNING:* || "$issue" == UNKNOWN:* ]]; then
+                # UNKNOWN is a WARNING, never OK: an unmeasured limiter is an
+                # unproven one. It must never be reported at the same level as
+                # a limiter measured and found healthy.
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         done
         # shellcheck disable=SC2034  # Used by render functions externally

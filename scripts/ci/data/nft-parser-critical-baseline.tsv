@@ -2,7 +2,7 @@
 # file<TAB>anchor<TAB>severity_class<TAB>waiver_tier   (regenerate: --emit-baseline)
 # Guards: severity may not be downgraded (anti-laundering); critical waivers
 # may not increase; a site absent here may never be born waived.
-cli/lib/nftban/core/nftban_health_checks_security.sh	done < <(nft -j list table "$family" nftban 2>/dev/null | python3 -c '	HEALTH_VERDICT	-
+cli/lib/nftban/core/nftban_health_checks_security.sh	_dump=$(nft -j list table "$family" nftban 2>/dev/null) || _rc=$?	HEALTH_VERDICT	-
 cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	-
 cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	-
 cli/lib/nftban/cli/cmd_firewall.sh	ruleset=$(nft -a list ruleset 2>/dev/null) || {	SECURITY_VERDICT	-
