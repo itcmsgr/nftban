@@ -1346,6 +1346,12 @@ readonly VALIDATE_POLICYKIT_MISSING=10
 readonly VALIDATE_FIREWALL_CONFLICT=20
 readonly VALIDATE_NFT_COLLISION=30
 readonly VALIDATE_ENV_ERROR=40
+# A verification that could not be PERFORMED is not a verification that PASSED,
+# and it is not the same finding as a collision that was observed. Callers that
+# gate on "no collision" must be able to tell "looked, found none" apart from
+# "could not look" — collapsing them is how an unreadable ruleset came to be
+# reported as a clean one.
+readonly VALIDATE_NFT_COLLISION_UNKNOWN=31
 
 firewall_validate() {
     # Validate nftables structure against NFTBan specification
@@ -1561,9 +1567,12 @@ _firewall_validate_strict() {
     fi
 
     # Check 3: NFTables hook collisions (non-NFTBan active input hooks)
-    if ! _check_nft_collisions "$json_mode"; then
-        return $VALIDATE_NFT_COLLISION
-    fi
+    _check_nft_collisions "$json_mode"
+    case $? in
+        0) : ;;
+        2) return $VALIDATE_NFT_COLLISION_UNKNOWN ;;
+        *) return $VALIDATE_NFT_COLLISION ;;
+    esac
 
     [[ "$json_mode" == "false" ]] && echo ""
     if [[ "$structural_ok" == "true" ]]; then
@@ -1670,12 +1679,24 @@ _check_nft_collisions() {
     # Check for non-NFTBan tables with active input hooks
     local json_mode="${1:-false}"
 
-    # Get current ruleset
+    # Get current ruleset. A ruleset we cannot read proves NOTHING about
+    # collisions: returning 0 here reported "no conflicting hooks" on a host
+    # whose ruleset was never examined, which is the strongest possible claim
+    # made from the weakest possible evidence. Unreadable is its own outcome.
     local ruleset
     ruleset=$(nft -a list ruleset 2>/dev/null) || {
-        [[ "$json_mode" == "false" ]] && echo "[WARN] Cannot read nftables ruleset"
-        return 0
+        [[ "$json_mode" == "false" ]] &&
+            echo "[UNKNOWN] Cannot read nftables ruleset — hook collisions NOT verified (this is not a clean result)"
+        return 2
     }
+    # rc=0 with no output is equally unreadable: nft always emits at least the
+    # tables it can see, so an empty document is a failed observation, not an
+    # empty ruleset.
+    if [[ -z "${ruleset//[[:space:]]/}" ]]; then
+        [[ "$json_mode" == "false" ]] &&
+            echo "[UNKNOWN] nftables ruleset read returned no output — hook collisions NOT verified"
+        return 2
+    fi
 
     # Parse for non-nftban active input hooks
     # Active = has policy != accept OR has actual rules
@@ -3631,22 +3652,46 @@ firewall_record() {
         local _expected_type _expected_flags
         IFS='|' read -r _expected_type _expected_flags _ <<< "$set_spec"
 
-        local count=0
+        # A snapshot is evidence, so it must record what was OBSERVED, not a
+        # default that looks like an observation. Reading the set can end three
+        # ways and they are not interchangeable: read-and-present, read-and-
+        # absent, and could-not-read. The old form collapsed the last two into
+        # type="missing" with empty flags and 0 elements, so a snapshot taken
+        # while nft was unreadable became durable evidence that the sets did
+        # not exist — and later drift comparisons trusted it.
+        local count=0 set_info="" read_state="absent"
         local actual_type="" actual_flags=""
-        if nft list set ip nftban "$set_name" &>/dev/null; then
-            count=$(nftban_nft_count_set ip nftban "$set_name" 2>/dev/null || echo 0)
-            local set_info
-            set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)
-            actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || true)
-            actual_flags=$(echo "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || true)
+        if set_info=$(nft list set ip nftban "$set_name" 2>/dev/null); then
+            if [[ -n "${set_info//[[:space:]]/}" ]]; then
+                read_state="present"
+                count=$(nftban_nft_count_set ip nftban "$set_name" 2>/dev/null || echo 0)
+                # Parsed from TEXT output, which carries the full flag list on
+                # every supported nft version (the omission that hid limiters
+                # on 1.0.2 is specific to the -j JSON representation).
+                actual_type=$(printf '%s\n' "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || true)
+                actual_flags=$(printf '%s\n' "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || true)
+            else
+                read_state="unknown"   # rc=0, no output: nothing was established
+            fi
+        elif declare -f nftban_nft_probe_set >/dev/null 2>&1 &&
+             nftban_nft_probe_set ip nftban "$set_name" firewall_snapshot 2>/dev/null &&
+             [[ "$NFTBAN_NFT_PROBE_VERDICT" == "$NFTBAN_NFT_PROBE_ABSENT" ]]; then
+            read_state="absent"        # positively proven absent
+        else
+            read_state="unknown"       # read failed; existence NOT established
         fi
 
         local entry
-        entry=$(jq -n \
-            --arg type "${actual_type:-missing}" \
-            --arg flags "${actual_flags:-}" \
-            --argjson elements "${count:-0}" \
-            '{type: $type, flags: $flags, elements: $elements}')
+        if [[ "$read_state" == "unknown" ]]; then
+            entry=$(jq -n '{type: "unknown", flags: null, elements: null, read_state: "unknown"}')
+        else
+            entry=$(jq -n \
+                --arg type "${actual_type:-missing}" \
+                --arg flags "${actual_flags:-}" \
+                --argjson elements "${count:-0}" \
+                --arg state "$read_state" \
+                '{type: $type, flags: $flags, elements: $elements, read_state: $state}')
+        fi
         ipv4_set_entries="${ipv4_set_entries}$(jq -n --arg k "$set_name" --argjson v "$entry" '{($k): $v}')"$'\n'
     done
     if [[ -n "$ipv4_set_entries" ]]; then
@@ -3661,22 +3706,46 @@ firewall_record() {
         local _expected_type _expected_flags
         IFS='|' read -r _expected_type _expected_flags _ <<< "$set_spec"
 
-        local count=0
+        # A snapshot is evidence, so it must record what was OBSERVED, not a
+        # default that looks like an observation. Reading the set can end three
+        # ways and they are not interchangeable: read-and-present, read-and-
+        # absent, and could-not-read. The old form collapsed the last two into
+        # type="missing" with empty flags and 0 elements, so a snapshot taken
+        # while nft was unreadable became durable evidence that the sets did
+        # not exist — and later drift comparisons trusted it.
+        local count=0 set_info="" read_state="absent"
         local actual_type="" actual_flags=""
-        if nft list set ip6 nftban "$set_name" &>/dev/null; then
-            count=$(nftban_nft_count_set ip6 nftban "$set_name" 2>/dev/null || echo 0)
-            local set_info
-            set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)
-            actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || true)
-            actual_flags=$(echo "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || true)
+        if set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null); then
+            if [[ -n "${set_info//[[:space:]]/}" ]]; then
+                read_state="present"
+                count=$(nftban_nft_count_set ip6 nftban "$set_name" 2>/dev/null || echo 0)
+                # Parsed from TEXT output, which carries the full flag list on
+                # every supported nft version (the omission that hid limiters
+                # on 1.0.2 is specific to the -j JSON representation).
+                actual_type=$(printf '%s\n' "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || true)
+                actual_flags=$(printf '%s\n' "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || true)
+            else
+                read_state="unknown"   # rc=0, no output: nothing was established
+            fi
+        elif declare -f nftban_nft_probe_set >/dev/null 2>&1 &&
+             nftban_nft_probe_set ip6 nftban "$set_name" firewall_snapshot 2>/dev/null &&
+             [[ "$NFTBAN_NFT_PROBE_VERDICT" == "$NFTBAN_NFT_PROBE_ABSENT" ]]; then
+            read_state="absent"        # positively proven absent
+        else
+            read_state="unknown"       # read failed; existence NOT established
         fi
 
         local entry
-        entry=$(jq -n \
-            --arg type "${actual_type:-missing}" \
-            --arg flags "${actual_flags:-}" \
-            --argjson elements "${count:-0}" \
-            '{type: $type, flags: $flags, elements: $elements}')
+        if [[ "$read_state" == "unknown" ]]; then
+            entry=$(jq -n '{type: "unknown", flags: null, elements: null, read_state: "unknown"}')
+        else
+            entry=$(jq -n \
+                --arg type "${actual_type:-missing}" \
+                --arg flags "${actual_flags:-}" \
+                --argjson elements "${count:-0}" \
+                --arg state "$read_state" \
+                '{type: $type, flags: $flags, elements: $elements, read_state: $state}')
+        fi
         ipv6_set_entries="${ipv6_set_entries}$(jq -n --arg k "$set_name" --argjson v "$entry" '{($k): $v}')"$'\n'
     done
     if [[ -n "$ipv6_set_entries" ]]; then

@@ -323,9 +323,22 @@ _check_config_divergence() {
 
 _nftban_count_rules() {
     # Count nftables rules consistently for both human and JSON output.
-    local count
-    count=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
-    count=${count:-0}
+    #
+    # This is the headline "Rules" figure, so a wrong value here is the most
+    # visible untruth the CLI can tell. The previous form piped a possibly
+    # failed read straight into `grep -c` and defaulted to 0, which rendered
+    # an unreadable ruleset as a firewall with no rules — the same operator
+    # signal as a genuinely empty table.
+    #
+    # Emits an integer when the table was read, or the literal UNKNOWN when it
+    # was not. Callers MUST branch: never print UNKNOWN where a number is
+    # expected, and never coerce it back to 0.
+    local raw count
+    raw=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null) || { echo "UNKNOWN"; return 0; }
+    # rc=0 with empty output is not a rule-free table: the table header alone
+    # would have been printed had the read actually succeeded.
+    [[ -z "${raw//[[:space:]]/}" ]] && { echo "UNKNOWN"; return 0; }
+    count=$(printf '%s\n' "$raw" | grep -c "# handle" 2>/dev/null || true)
     echo "${count:-0}"
 }
 
@@ -550,11 +563,15 @@ _status_section_firewall() {
     printf "  %-20s %s\n" "nftables............" "$nft_status"
 
     # v1.24.0: Use shared rule counting function
-    local rule_count=0
+    local rule_count="UNKNOWN"
     if command -v nft >/dev/null 2>&1; then
         rule_count=$(_nftban_count_rules)
     fi
-    printf "  %-20s %s\n" "Rules..............." "$rule_count"
+    if [[ "$rule_count" == "UNKNOWN" ]]; then
+        printf "  %-20s %s\n" "Rules..............." "UNKNOWN (ruleset could not be read)"
+    else
+        printf "  %-20s %s\n" "Rules..............." "$rule_count"
+    fi
 
     # v1.141 PR-C (D-headline + D-cache-wording): kernel is authoritative per
     # SELECT_CACHE_KERNEL_AUTHORITY=kernel (operator 2026-05-28). Headline
@@ -1847,10 +1864,12 @@ output_json() {
     echo "    \"nftables_active\": $nft_active,"
 
     # v1.24.0: Use shared rule counting function (matches human output)
-    local rule_count=0
+    local rule_count="UNKNOWN"
     if command -v nft >/dev/null 2>&1; then
         rule_count=$(_nftban_count_rules)
     fi
+    # null, not 0: a consumer must be able to tell "no rules" from "not read".
+    [[ "$rule_count" == "UNKNOWN" ]] && rule_count=null
     echo "    \"rule_count\": $rule_count,"
 
     # v1.141 PR-C (D-json-fork): banned_ips is now ALWAYS the kernel total

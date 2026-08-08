@@ -12,7 +12,7 @@ cli/lib/nftban/cli/cmd_blacklist.sh	6
 cli/lib/nftban/cli/cmd_botguard.sh	11
 cli/lib/nftban/cli/cmd_ddos.sh	1
 cli/lib/nftban/cli/cmd_egress.sh	12
-cli/lib/nftban/cli/cmd_firewall.sh	24
+cli/lib/nftban/cli/cmd_firewall.sh	22
 cli/lib/nftban/cli/cmd_flush.sh	9
 cli/lib/nftban/cli/cmd_health_analysis.sh	3
 cli/lib/nftban/cli/cmd_health_core.sh	1
@@ -24,7 +24,7 @@ cli/lib/nftban/cli/cmd_search.sh	12
 cli/lib/nftban/cli/cmd_snapshot.sh	2
 cli/lib/nftban/cli/cmd_stats.sh	2
 cli/lib/nftban/cli/cmd_status.sh	10
-cli/lib/nftban/cli/cmd_support.sh	8
+cli/lib/nftban/cli/cmd_support.sh	9
 cli/lib/nftban/cli/cmd_update.sh	7
 cli/lib/nftban/cli/cmd_whitelist.sh	7
 cli/lib/nftban/cli/cmd_zabbix.sh	4

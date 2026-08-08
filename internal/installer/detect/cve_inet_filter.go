@@ -80,6 +80,12 @@ const (
 	CVEInetFilterRemovedOverride CVEInetFilterVerdict = "REMOVED_OVERRIDE"
 	// CVEInetFilterPopulated — populated operator-owned table left in place.
 	CVEInetFilterPopulated CVEInetFilterVerdict = "POPULATED"
+	// CVEInetFilterUnknown — the table exists but its CONTENTS could not be
+	// established, so no classification was reached and nothing was deleted.
+	// Deliberately distinct from NONE: "we saw nothing" and "we could not
+	// look" authorise different actions, and only one of them authorises a
+	// destructive one.
+	CVEInetFilterUnknown CVEInetFilterVerdict = "UNKNOWN"
 )
 
 // CheckCVEInetFilter classifies any pre-existing `inet filter` table and acts
@@ -109,6 +115,11 @@ func CheckCVEInetFilter(exec executor.Executor, log *logging.Logger) CVEInetFilt
 		// Same wording as the DEB postinst REMOVED_OVERRIDE branch.
 		log.Warn("HIGH-RISK: removed a POPULATED operator-owned 'inet filter' table because %s=1 was set (explicit opt-in).", inetFilterOverrideEnv)
 		log.Warn("Any firewall rules that table held are now gone. This action was deliberate and is logged here for audit.")
+	case CVEInetFilterUnknown:
+		log.Detect("cve_inet_filter", "result", "unknown")
+		log.Warn("An 'inet filter' table is present but its contents could not be read — NOT removed.")
+		log.Warn("Classification requires a successful read: a failed observation must never authorise")
+		log.Warn("deleting a table. Check: nft list table inet filter")
 	case CVEInetFilterPopulated:
 		log.Detect("cve_inet_filter", "result", "populated")
 		// Same wording as the DEB postinst POPULATED (upgrade) branch: warn,
@@ -136,6 +147,20 @@ func classifyAndActInetFilter(exec executor.Executor) CVEInetFilterVerdict {
 	// (table/chain/type/policy/closing-brace/comment) and any blank line; if
 	// nothing remains, the table is an empty/default skeleton.
 	res := exec.Run("nft", "list", "table", "inet", "filter")
+	// The rule count is only evidence if the read SUCCEEDED. A failed nft
+	// invocation returns empty stdout, which counts as zero rules, which used
+	// to mean "empty skeleton" and authorise deleting the table. That is a
+	// destructive action taken on the strength of a measurement that never
+	// happened. The existence guard above already proved the table is there,
+	// so a failure here is a read failure, not an absence.
+	if res.ExitCode != 0 {
+		return CVEInetFilterUnknown
+	}
+	// rc=0 with no output is equally unusable: `nft list table` prints at
+	// minimum the table and chain scaffolding for a table it can see.
+	if strings.TrimSpace(res.Stdout) == "" {
+		return CVEInetFilterUnknown
+	}
 	if inetFilterRuleCount(res.Stdout) == 0 {
 		// Empty/default distro skeleton — remove it (it would shadow nftban).
 		_ = exec.NftDeleteTable("inet", "filter")

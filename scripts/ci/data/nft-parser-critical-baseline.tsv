@@ -3,12 +3,12 @@
 # Guards: severity may not be downgraded (anti-laundering); critical waivers
 # may not increase; a site absent here may never be born waived.
 cli/lib/nftban/core/nftban_health_checks_security.sh	_dump=$(nft -j list table "$family" nftban 2>/dev/null) || _rc=$?	HEALTH_VERDICT	-
-cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	-
-cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_firewall.sh	if set_info=$(nft list set ip nftban "$set_name" 2>/dev/null); then	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_firewall.sh	if set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null); then	HEALTH_VERDICT	-
 cli/lib/nftban/cli/cmd_firewall.sh	ruleset=$(nft -a list ruleset 2>/dev/null) || {	SECURITY_VERDICT	-
-cli/lib/nftban/cli/cmd_health_analysis.sh	live_tables=$(nft list tables 2>/dev/null || true)	AUTHORITY_VERDICT	-
-cli/lib/nftban/cli/cmd_support.sh	nft_v4=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -cE '^\s+[0-9]') || nft_v4=0	HEALTH_VERDICT	-
-cli/lib/nftban/cli/cmd_status.sh	count=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)	OPERATOR_STATUS	-
+cli/lib/nftban/cli/cmd_health_analysis.sh	live_tables=$(nft list tables 2>/dev/null) || tables_readable=false	AUTHORITY_VERDICT	-
+cli/lib/nftban/cli/cmd_support.sh	nft_raw=$(nft list set ip nftban blacklist_ipv4 2>/dev/null) || nft_readable=false	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_status.sh	raw=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null) || { echo "UNKNOWN"; return 0; }	OPERATOR_STATUS	-
 cli/lib/nftban/core/nftban_health_checks_security.sh	count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -c ',' || true)	HEALTH_VERDICT	TIER-1
 cli/lib/nftban/core/nftban_health_checks_security.sh	nft_tcp_ports=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null) || nft_tcp_ports=""	SECURITY_VERDICT	TIER-1
 cli/lib/nftban/core/nftban_health_checks_security.sh	rule_count=$(nft list chain ip nftban "${chain_name}" 2>/dev/null \	HEALTH_VERDICT	TIER-2

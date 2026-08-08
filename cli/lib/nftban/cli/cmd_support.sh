@@ -1469,9 +1469,21 @@ _collect_feeds_nft_mismatch() {
         # Mismatch verdict
         echo "=== Mismatch Verdict ==="
         if [[ "$disk_total" -gt 0 ]]; then
-            local nft_v4
-            nft_v4=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -cE '^\s+[0-9]') || nft_v4=0
-            if [[ "$nft_v4" -eq 0 ]]; then
+            # The kernel side of this comparison used to be `... | grep -c` with
+            # the count forced to 0 on failure, so a set that could not be READ
+            # was indistinguishable from a set that was read and found EMPTY.
+            # Only the second one means "feeds not loaded"; the first sent
+            # operators to re-run feeds against a firewall that may be fine.
+            local nft_raw nft_v4 nft_readable=true
+            nft_raw=$(nft list set ip nftban blacklist_ipv4 2>/dev/null) || nft_readable=false
+            if [[ "$nft_readable" == "true" ]]; then
+                nft_v4=$(printf '%s\n' "$nft_raw" | grep -cE '^[[:space:]]+[0-9]') || nft_v4=0
+            fi
+            if [[ "$nft_readable" != "true" ]]; then
+                echo "  UNKNOWN: $disk_total IPs on disk; the kernel set could not be read"
+                echo "  The disk/kernel comparison was NOT performed — this is not evidence that feeds are missing."
+                echo "  Check: nft list set ip nftban blacklist_ipv4"
+            elif [[ "$nft_v4" -eq 0 ]]; then
                 echo "  WARNING: $disk_total IPs on disk but 0 in nft — feeds not loaded"
                 echo "  Fix: nftban feeds update && nftban sync"
             else
