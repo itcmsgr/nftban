@@ -4,7 +4,7 @@
 **Last Updated:** 2026-08-07 UTC
 **Current Development Version:** v1.228.6 — `RELEASE_PREP` (meter capacity; fleet rollout v1.228.0 → v1.228.6 direct)
 **Latest Published Release:** v1.228.5 (tag `v1.228.5` → `926f6968`, published 2026-08-07, 15 assets)
-**In Release Prep:** v1.228.6 — P0 meter-capacity hotfix (bounded rate-limit state)
+**In Release Prep:** v1.228.7 — stabilization (watchdog tiering, effective-config authority, geoban migration)
 **Production Fleet Baseline:** v1.228.0 — *published ≠ deployed; no fleet rollout has been performed for v1.228.2, v1.228.4 or v1.228.5*
 **Release State:** `RELEASE_PREP`
 

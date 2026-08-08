@@ -11,6 +11,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.7] - 2026-08-08 — stabilization: the watchdog stops walking every set, and config authority is single
+
+Post-v1.228.6 runtime convergence. Pays down the systemic defects the meter-capacity rollout
+surfaced — all pre-existing, none v1.228.6 regressions — without reopening scope.
+
+### Fixed — the watchdog dumped every set element every 5 seconds
+
+`collectSetSizes` ran ungated on every 5-second tick under a "cheap operation" comment,
+enumerating every element of every nftables set only to take its length. Daemon CPU tracked
+total element count: a DNS resolver at ~188,000 elements ran the daemon at 113% CPU with IPC
+starved to the point that `nftban ddos enable` timed out. Set-size sampling is now tiered —
+enforcement sets (blacklist/whitelist/ports) at `NFTSetInterval` (a config knob that was
+declared, clamped and unit-tested but never actually read until now), and the large
+kernel-managed rate-limiter sets at a separate 5-minute cadence, since their occupancy is
+capacity observability rather than enforcement correctness. Off-ticks publish the cached
+counts (an absent metric would read as "no sets", a different claim from "unchanged"); a
+failed enumeration keeps the last known value rather than a false zero.
+`DAEMON_RUNTIME_CHANGE=YES` (sampling cadence), `ENFORCEMENT_BEHAVIOR_CHANGE=NO`.
+
+### Fixed — "is this module enabled?" had four different answers
+
+The DDoS re-apply gate read `main.conf.local` only (a host with `DDOS_ENABLED="true"` in the
+base `main.conf` silently lost DDoS on every rebuild); the PortScan gate read
+`.local`-then-`main.conf` but could not express `main=true` + `.local=false`; and elsewhere the
+mere existence of a generated fragment on disk was treated as proof a module was active. One
+`nftban_module_effective_enabled` authority now resolves base + `.local` override for every
+lifecycle consumer; a fragment file is never authority. RPM and DEB now converge identical
+runtime state from identical effective config (proven package-native across all four config
+layerings per module).
+
+### Fixed — GeoBan called a binary that no longer exists
+
+GeoIP was migrated into `nftban-core geoip`, but the GeoBan enforcement path kept resolving the
+retired standalone `nftban-geoip` binary, so `nftban geoban update`/`ban` failed "binary not
+found" fleet-wide and country-blocking was non-functional since the migration. GeoBan now uses
+its bash implementation (IPDENY) for country-set population and `nftban-core geoip` for lookups.
+A new blocking CI guard rejects any reference to a retired entrypoint — it immediately found and
+fixed five more consumers left pointing at the dead binary.
+
+### Fixed — the release date could ship stale
+
+`VERSION_DATE` (the operator-visible Release Date) lagged the actual release. A blocking guard
+now requires it to equal the CHANGELOG heading for the current version.
+
+### Operator notes
+
+- **CPU relief without upgrading further:** because the watchdog cost tracked total set element
+  count, v1.228.6's bounded meters already collapsed it on upgraded hosts (a resolver measured
+  165,000 → 1,200 elements, 67% → 0.7% daemon CPU). This release fixes the underlying algorithm
+  so the daemon stays cheap even as state grows.
+- No enforcement, schema, or configuration-format change. `nftban firewall rebuild` converges a
+  module's runtime to its effective config; a previously-drifted module (enforcing while its
+  config said disabled) resolves on the next rebuild.
+
 ## [v1.228.6] - 2026-08-08 — rate-limit state is bounded; a saturated meter can no longer turn accept into permanent drop
 
 ### Fixed — the nft meter shorthand accumulated state until the service went dark
