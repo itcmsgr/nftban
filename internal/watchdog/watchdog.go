@@ -91,7 +91,10 @@ func New(cfg *Config, controls *RuntimeControls) (*Watchdog, error) {
 		runtimeCollector:  NewRuntimeCollector(),
 		systemCollector:   NewSystemCollector("/var/log"),
 		kernelCollector:   NewKernelCollector(),
-		nftablesCollector: NewNFTablesCollector(cfg.NFTRulesetInterval),
+		// v1.228.7: NFTSetInterval was a DEAD KNOB — declared, defaulted,
+		// clamped, unit-tested, never read. It now paces enforcement-set
+		// sampling; dynamic limiter sets get their own slower cadence.
+		nftablesCollector: NewNFTablesCollectorWithIntervals(cfg.NFTRulesetInterval, cfg.NFTSetInterval, 0),
 
 		calculator: NewPressureCalculator(cfg),
 		state:      NewStateMachine(cfg),
