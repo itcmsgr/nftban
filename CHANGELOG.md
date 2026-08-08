@@ -66,12 +66,18 @@ exits 0 and leaves the set empty is reported as failed, and a set that cannot be
 read is unknown. When one producer restores and another does not, the result is
 partial: the successful one is not rolled back and the failure is named.
 
-**Scope note.** This release provides the reconciler; it does **not** wire
-automatic derived-state convergence into package install or upgrade. That wiring
-requires changes to install-state truth and rebuild concurrency that are outside
-this release, so an upgrade may still require `nftban firewall rebuild` to
-converge derived state. BotScan bans are deliberately not restored: their active
-state cannot be computed from any durable record.
+**Scope note.** This release provides the canonical reconciler; it does **not**
+wire that reconciler into package install or upgrade. Doing so requires changes
+to install-state truth and to rebuild concurrency which are outside this release:
+today a package transition records its outcome before convergence runs, so a
+failed convergence would still report a committed install.
+
+Until that lifecycle work lands, running `nftban firewall rebuild` after an
+upgrade is an **operator workaround**, not the architectural answer — the fix is
+a package lifecycle that can truthfully own the reconciler's outcome.
+
+BotScan bans are deliberately not restored: their active state cannot be computed
+from any durable record, so doing so would mean inventing a ban-lifetime policy.
 
 ### Fixed — GeoBan refresh had been failing since v1.228.7
 
