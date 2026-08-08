@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 # NFTBan Prometheus Remote Write Configuration
 # Copy to /etc/nftban/conf.d/prometheus-remote-write.conf and customize
 

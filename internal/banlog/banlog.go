@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+// Copyright (c) 2024-2026 Antonios Voulvoulis
 //
 // Package banlog provides centralized ban logging for NFTBan
 // All ban actions (from any source) should log here for stats tracking

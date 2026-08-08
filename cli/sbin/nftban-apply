@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # NFTBan Emergency Recovery - Apply Rules (Commit-Confirm)
-# Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
+# Copyright (c) 2024-2026 Antonios Voulvoulis
 # SPDX-License-Identifier: MPL-2.0
 #
 # meta:name="nftban-apply"

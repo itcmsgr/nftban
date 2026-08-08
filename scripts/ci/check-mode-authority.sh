@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # check-mode-authority.sh — static CI guard for the Runtime Mode Authority contract
 # =============================================================================

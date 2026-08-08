@@ -116,7 +116,7 @@ export -f detect_pkg_manager
 # LICENSE
 # =============================================================================
 # Mozilla Public License 2.0 (MPL-2.0)
-# Copyright © 2024-2026 NFTBAN Project / Antonios Voulvoulis
+# Copyright (c) 2024-2026 Antonios Voulvoulis
 # Contact: contact@nftban.com | Website: https://nftban.com
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
