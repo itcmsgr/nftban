@@ -276,20 +276,36 @@ nftban_geoip_cmd_status() {
 nftban_geoip_cmd_test() {
     # Run built-in tests
     # No args
+    #
+    # v1.228.7: the standalone nftban-geoip binary (with its own `test`
+    # subcommand) was retired; GeoIP lives in `nftban-core geoip`. The health
+    # check here is now: the core binary is present, its database status
+    # resolves, and a known lookup returns a country — exercising the real
+    # production path instead of a dead entrypoint.
+    local core_bin="${NFTBAN_CORE:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
 
-    local binary_path="${NFTBAN_LIB_DIR}/bin/nftban-geoip"
-
-    if [[ ! -x "$binary_path" ]]; then
-        echo "ERROR: GeoIP binary not found: $binary_path" >&2
+    if [[ ! -x "$core_bin" ]]; then
+        echo "ERROR: nftban-core binary not found: $core_bin" >&2
         return 1
     fi
 
     echo "Running GeoIP system tests..."
     echo ""
 
-    # Run GO binary tests
-    "$binary_path" test
-    local result=$?
+    local result=0
+    if "$core_bin" geoip status >/dev/null 2>&1; then
+        echo "✓ database status: OK"
+    else
+        echo "✗ database status: FAILED (run: nftban geoip update)"; result=1
+    fi
+
+    local cc
+    cc=$("$core_bin" geoip lookup 8.8.8.8 2>/dev/null | grep -oiE '[A-Z]{2}' | head -1 || true)
+    if [[ -n "$cc" ]]; then
+        echo "✓ lookup 8.8.8.8 -> ${cc}"
+    else
+        echo "✗ lookup FAILED"; result=1
+    fi
 
     echo ""
     if [[ $result -eq 0 ]]; then

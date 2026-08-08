@@ -1,0 +1,17 @@
+# NFTBan retired-entrypoint manifest (v1.228.7)
+# Executables/paths that were migrated into nftban-core/nftband subcommands and
+# no longer exist as standalone binaries. Any EXECUTABLE reference (a call or a
+# path assignment) in shell/Go/systemd/packaging source is a migration-
+# completeness defect — the consumer was left pointing at a dead entrypoint
+# while the implementation moved. This is the guard the geoban case needed:
+# GeoIP moved into `nftban-core geoip` but nftban_geoban.sh kept resolving
+# bin/.real/nftban-geoip-x86_64, so country-blocking silently died fleet-wide.
+#
+# Comments (# lines) and lines carrying an inline "RETIRED-OK:" marker are
+# allowlisted as historical documentation — a guard against reintroduction may
+# name the retired path in prose. Matching is on the PATTERN as a substring of
+# non-comment source.
+#
+# PATTERN<TAB>MIGRATED_TO<TAB>NOTE
+bin/.real/nftban-geoip	nftban-core geoip	standalone GeoIP binary retired; lookups -> nftban-core geoip, country sets -> bash (IPDENY)
+bin/nftban-geoip	nftban-core geoip	flat-path variant of the retired GeoIP binary

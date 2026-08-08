@@ -241,16 +241,15 @@ nftban_health_cmd_geoip() {
     if [[ $result -eq 0 ]]; then
         echo "✅ GeoIP system: OK"
 
-        # Show additional details if available
-        local binary_path="${NFTBAN_LIB_DIR}/bin/nftban-geoip"
+        # Show additional details if available.
+        # v1.228.7: GeoIP is `nftban-core geoip` now (the standalone
+        # nftban-geoip binary was retired); read version/lookup from core.
+        local core_bin="${NFTBAN_CORE:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
         local db_path
         db_path=$(cmd_get_geoip_database 2>/dev/null) || db_path=""
 
-        if [[ -x "$binary_path" ]]; then
-            local version
-            version=$("$binary_path" version 2>/dev/null || echo "unknown")
-            echo "  Binary: $binary_path"
-            echo "  Version: $version"
+        if [[ -x "$core_bin" ]]; then
+            echo "  Binary: $core_bin geoip"
         fi
 
         if [[ -n "$db_path" ]] && [[ -f "$db_path" ]]; then
@@ -261,12 +260,12 @@ nftban_health_cmd_geoip() {
         fi
 
         # Performance test
-        if [[ -x "$binary_path" && -f "$db_path" ]]; then
+        if [[ -x "$core_bin" && -f "$db_path" ]]; then
             echo ""
             echo "  Performance test (8.8.8.8):"
             local start_time end_time elapsed
             start_time=$(date +%s%N)
-            "$binary_path" lookup 8.8.8.8 >/dev/null 2>&1
+            "$core_bin" geoip lookup 8.8.8.8 >/dev/null 2>&1
             end_time=$(date +%s%N)
             elapsed=$(( (end_time - start_time) / 1000 ))
             echo "  Lookup time: ${elapsed} microseconds"

@@ -497,11 +497,8 @@ cmd_get_core_binary() {
     echo "${NFTBAN_CORE:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
 }
 
-# Get nftban-geoip binary path
-# Usage: local geoip; geoip=$(cmd_get_geoip_binary)
-cmd_get_geoip_binary() {
-    echo "${NFTBAN_GEOIP:-${NFTBAN_LIB_DIR}/bin/nftban-geoip}"
-}
+# v1.228.7: cmd_get_geoip_binary REMOVED — it returned the retired standalone
+# nftban-geoip path and had no callers. GeoIP is `nftban-core geoip` now.
 
 # Get GeoIP database path (auto-detects if not explicitly configured)
 # Usage: local db; db=$(cmd_get_geoip_database)
