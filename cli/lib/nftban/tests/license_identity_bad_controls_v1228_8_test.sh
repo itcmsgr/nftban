@@ -56,19 +56,35 @@ gate_fails() { ! bash "$LICENSE_GATE" >/dev/null 2>&1; }
 meta_fails() { ! bash "$META_GATE" >/dev/null 2>&1; }
 
 echo "=== BASELINE — both gates must be GREEN before any control means anything ==="
-bash "$LICENSE_GATE" >/dev/null 2>&1 && ok "license gate green on a clean tree" || bad "license gate RED before mutation — controls below are meaningless"
-bash "$META_GATE"    >/dev/null 2>&1 && ok "meta gate green on a clean tree"    || bad "meta gate RED before mutation"
+if bash "$LICENSE_GATE" >/dev/null 2>&1; then
+    ok "license gate green on a clean tree"
+else
+    bad "license gate RED before mutation — controls below are meaningless"
+fi
+if bash "$META_GATE" >/dev/null 2>&1; then
+    ok "meta gate green on a clean tree"
+else
+    bad "meta gate RED before mutation"
+fi
 
 VICTIM="$ROOT/scripts/ci/check-mode-authority.sh"   # owned, header-applicable
 
 echo "=== BC1  remove SPDX from owned applicable shell source -> FAIL ==="
 guard "$VICTIM"; grep -v 'SPDX-License-Identifier' "$VICTIM.pr4bak" > "$VICTIM"
-gate_fails && ok "BC1 missing SPDX detected" || bad "BC1 missing SPDX NOT detected"
+if gate_fails; then
+    ok "BC1 missing SPDX detected"
+else
+    bad "BC1 missing SPDX NOT detected"
+fi
 release "$VICTIM"
 
 echo "=== BC2  wrong SPDX identifier -> FAIL ==="
 guard "$VICTIM"; sed 's|SPDX-License-Identifier: MPL-2.0|SPDX-License-Identifier: GPL-3.0|' "$VICTIM.pr4bak" > "$VICTIM"
-gate_fails && ok "BC2 wrong identifier detected" || bad "BC2 wrong identifier NOT detected"
+if gate_fails; then
+    ok "BC2 wrong identifier detected"
+else
+    bad "BC2 wrong identifier NOT detected"
+fi
 release "$VICTIM"
 
 echo "=== BC3  canonical copyright removed -> not silently accepted ==="
@@ -96,13 +112,21 @@ printf '#!/usr/bin/env bash\necho "new owned source with no identity"\n' > "$NEW
 # which is how CI sees every file in a pull request. An untracked file is
 # invisible to the gate BY DESIGN and would have made this control vacuous.
 (cd "$ROOT" && git add -N "$NEWF" >/dev/null 2>&1)
-gate_fails && ok "BC5/BC6 new unclassified/uncompliant owned source detected" || bad "BC5/BC6 new owned source without identity NOT detected"
+if gate_fails; then
+    ok "BC5/BC6 new unclassified/uncompliant owned source detected"
+else
+    bad "BC5/BC6 new owned source without identity NOT detected"
+fi
 (cd "$ROOT" && git rm -q --cached "$NEWF" >/dev/null 2>&1); rm -f "$NEWF"
 
 echo "=== BC7  generated artifact stamped BY HAND instead of by its generator -> FAIL ==="
 GEN="$ROOT/install/packaging/deb/nftban.dirs"
 guard "$GEN"; printf '# STAMPED-BY-HAND\n%s\n' "$(cat "$GEN.pr4bak")" > "$GEN"
-gate_fails && ok "BC7 hand-stamped generated artifact detected" || bad "BC7 hand-stamped generated artifact NOT detected"
+if gate_fails; then
+    ok "BC7 hand-stamped generated artifact detected"
+else
+    bad "BC7 hand-stamped generated artifact NOT detected"
+fi
 release "$GEN"
 
 echo "=== BC8/BC9/BC10  classes that must PASS WITHOUT mutation ==="
@@ -113,8 +137,16 @@ gold_before=$(sha256sum "$ROOT/internal/metrics/testdata/evidence_snapshot_v1.88
 bash "$LICENSE_GATE" >/dev/null 2>&1
 json_after=$(sha256sum "$ROOT/install/grafana/dashboards/nftban_overview.json" 2>/dev/null | cut -d' ' -f1)
 gold_after=$(sha256sum "$ROOT/internal/metrics/testdata/evidence_snapshot_v1.88.golden.json" 2>/dev/null | cut -d' ' -f1)
-[[ "$json_before" == "$json_after" ]] && ok "BC9 JSON artifact unmutated (no illegal header inserted)" || bad "BC9 JSON artifact was MUTATED"
-[[ "$gold_before" == "$gold_after" ]] && ok "BC10 byte-sensitive golden unmutated" || bad "BC10 golden artifact was MUTATED"
+if [[ "$json_before" == "$json_after" ]]; then
+    ok "BC9 JSON artifact unmutated (no illegal header inserted)"
+else
+    bad "BC9 JSON artifact was MUTATED"
+fi
+if [[ "$gold_before" == "$gold_after" ]]; then
+    ok "BC10 byte-sensitive golden unmutated"
+else
+    bad "BC10 golden artifact was MUTATED"
+fi
 # BC8: no vendored tree exists; assert the classifier would route one, and that
 # its absence is a measured fact rather than an untested branch.
 if bash "$LICENSE_GATE" 2>&1 | grep -qE 'VENDORED +0'; then
@@ -125,17 +157,29 @@ fi
 
 echo "=== BC11  remove the CI invocation of the LICENSE gate -> meta-gate FAILS ==="
 guard "$WORKFLOW"; grep -v 'check-license-identity.sh' "$WORKFLOW.pr4bak" > "$WORKFLOW"
-meta_fails && ok "BC11 unwired license gate detected by the meta-gate" || bad "BC11 unwired license gate NOT detected — enforcement could vanish silently"
+if meta_fails; then
+    ok "BC11 unwired license gate detected by the meta-gate"
+else
+    bad "BC11 unwired license gate NOT detected — enforcement could vanish silently"
+fi
 release "$WORKFLOW"
 
 echo "=== BC12  remove the CI invocation of the PARSER gate -> meta-gate FAILS ==="
 guard "$WORKFLOW"; grep -v 'check-nft-parser-contract.sh' "$WORKFLOW.pr4bak" > "$WORKFLOW"
-meta_fails && ok "BC12 unwired parser gate detected by the meta-gate" || bad "BC12 unwired parser gate NOT detected — this is the exact PR1 defect"
+if meta_fails; then
+    ok "BC12 unwired parser gate detected by the meta-gate"
+else
+    bad "BC12 unwired parser gate NOT detected — this is the exact PR1 defect"
+fi
 release "$WORKFLOW"
 
 echo "=== BC12b  gate wired but its SELFTEST dropped -> meta-gate FAILS ==="
 guard "$WORKFLOW"; grep -v -- 'check-nft-parser-contract.sh --selftest' "$WORKFLOW.pr4bak" > "$WORKFLOW"
-meta_fails && ok "BC12b selftest-not-run detected (a blind gate would pass everything)" || bad "BC12b dropped selftest NOT detected"
+if meta_fails; then
+    ok "BC12b selftest-not-run detected (a blind gate would pass everything)"
+else
+    bad "BC12b dropped selftest NOT detected"
+fi
 release "$WORKFLOW"
 
 echo "=== RESTORATION — the tree must be exactly as it was at test START ==="
