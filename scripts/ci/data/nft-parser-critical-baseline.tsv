@@ -1,0 +1,33 @@
+# NFTBan nft parser critical/severity baseline (v1.228.8 PR1)
+# file<TAB>anchor<TAB>severity_class<TAB>waiver_tier   (regenerate: --emit-baseline)
+# Guards: severity may not be downgraded (anti-laundering); critical waivers
+# may not increase; a site absent here may never be born waived.
+cli/lib/nftban/core/nftban_health_checks_security.sh	done < <(nft -j list table "$family" nftban 2>/dev/null | python3 -c '	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_firewall.sh	set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_firewall.sh	ruleset=$(nft -a list ruleset 2>/dev/null) || {	SECURITY_VERDICT	-
+cli/lib/nftban/cli/cmd_health_analysis.sh	live_tables=$(nft list tables 2>/dev/null || true)	AUTHORITY_VERDICT	-
+cli/lib/nftban/cli/cmd_support.sh	nft_v4=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -cE '^\s+[0-9]') || nft_v4=0	HEALTH_VERDICT	-
+cli/lib/nftban/cli/cmd_status.sh	count=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)	OPERATOR_STATUS	-
+cli/lib/nftban/core/nftban_health_checks_security.sh	count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -c ',' || true)	HEALTH_VERDICT	TIER-1
+cli/lib/nftban/core/nftban_health_checks_security.sh	nft_tcp_ports=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null) || nft_tcp_ports=""	SECURITY_VERDICT	TIER-1
+cli/lib/nftban/core/nftban_health_checks_security.sh	rule_count=$(nft list chain ip nftban "${chain_name}" 2>/dev/null \	HEALTH_VERDICT	TIER-2
+cli/lib/nftban/core/nftban_health_checks_security.sh	filter_policy=$(nft list table inet filter 2>/dev/null | grep -E 'chain input.*priority 0.*policy accept' || true)	SECURITY_VERDICT	TIER-1
+cli/lib/nftban/lib/nft_schema.sh	nft -j list set "$family" "$table" "$set" 2>/dev/null | \	HEALTH_VERDICT	TIER-1
+cli/lib/nftban/lib/nft_schema.sh	json_output=$(nft -j list set "$family" "$table" "$set_name" 2>/dev/null) || { echo "0"; return; }	HEALTH_VERDICT	TIER-1
+cli/lib/nftban/lib/service_control.sh	rules_count=$(nft list ruleset 2>/dev/null | grep -cE '^\s+(type|chain|rule|set)' || true)	OPERATOR_STATUS	TIER-1
+cli/lib/nftban/core/nftban_ddos_classic.sh	offenders_v4=$(nft list meter ${table_v4} ${syn_meter} 2>/dev/null \	SECURITY_VERDICT	TIER-1
+cli/lib/nftban/core/nftban_portscan_classic.sh	ruleset=$(nft list ruleset 2>/dev/null) || return 0  # Skip check if nft fails	HEALTH_VERDICT	TIER-1
+cli/lib/nftban/core/nftban_firewall_conflicts.sh	actual_nftban_prio=$(nft -j list chain ip nftban input 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio 	AUTHORITY_VERDICT	TIER-1
+cli/lib/nftban/core/nftban_config_doctor.sh	_DOCTOR_NFT_JSON=$(nft -j list ruleset 2>/dev/null || echo '{"nftables":[]}')	HEALTH_VERDICT	TIER-1
+internal/validator/module_health.go	return 0	HEALTH_VERDICT	TIER-2
+internal/validator/module_health.go	return 0	HEALTH_VERDICT	TIER-2
+internal/metrics/evidence_sets.go	if err := json.Unmarshal(data, &result); err != nil {	HEALTH_VERDICT	TIER-2
+cli/lib/nftban/lib/nft_probe.sh	NFTBAN_NFT_PROBE_ARGV="$_nft list tables"	SECURITY_VERDICT	-
+cli/lib/nftban/core/nftban_ip_and_stats.sh	output=$(nft -j list ruleset 2>&1)	OPERATOR_STATUS	-
+cli/lib/nftban/lib/whitelist_members.sh	raw=$(timeout 10s nft list set ${table} ${set_name} 2>/dev/null) || return 1	SECURITY_VERDICT	-
+internal/nftenforce/enforce.go	func Evaluate(rulesetJSON []byte, family, table, setName string) Result {	SECURITY_VERDICT	-
+internal/metrics/collector.go	if err != nil {	METRIC_ONLY	-
+cli/lib/nftban/exporters/nftban_exporter_json_compat.sh	nft_rules=$(nft list table ${NFTBAN_TABLE_IPV4:-ip\ nftban} 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|	METRIC_ONLY	-
+cli/lib/nftban/core/nftban_report_email.sh	_blocked_v4=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+	DISPLAY_ONLY	-
+cli/lib/nftban/core/nftban_stats_format.sh	ipv4_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep 'blacklist_ipv4.*counter' | grep -oP 'packets 	DISPLAY_ONLY	-

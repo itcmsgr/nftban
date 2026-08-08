@@ -1,0 +1,80 @@
+# NFTBan nft read-site coverage pin (v1.228.8 PR1)
+# One row per shipped file containing nft READ invocations (list / get element)
+# with the count of such lines. Regenerate ONLY as the deliberate second half
+# of a registry decision: classify the new/changed site in
+# nft-parser-contract-registry.tsv first, then `check-nft-parser-contract.sh
+# --emit-pins > this file`. The gate (R1) fails on ANY drift in either
+# direction, which is what makes "new parser with unspecified failure policy"
+# impossible to merge (owner ruling 2026-08-08: NEW_FAILURE_TO_ZERO = FORBIDDEN).
+cli/lib/nftban/cli/cmd_ban.sh	2
+cli/lib/nftban/cli/cmd_benchmark.sh	2
+cli/lib/nftban/cli/cmd_blacklist.sh	6
+cli/lib/nftban/cli/cmd_botguard.sh	11
+cli/lib/nftban/cli/cmd_ddos.sh	1
+cli/lib/nftban/cli/cmd_egress.sh	12
+cli/lib/nftban/cli/cmd_firewall.sh	24
+cli/lib/nftban/cli/cmd_flush.sh	9
+cli/lib/nftban/cli/cmd_health_analysis.sh	3
+cli/lib/nftban/cli/cmd_health_core.sh	1
+cli/lib/nftban/cli/cmd_list.sh	12
+cli/lib/nftban/cli/cmd_polkit.sh	1
+cli/lib/nftban/cli/cmd_portscan.sh	3
+cli/lib/nftban/cli/cmd_port.sh	10
+cli/lib/nftban/cli/cmd_search.sh	12
+cli/lib/nftban/cli/cmd_snapshot.sh	2
+cli/lib/nftban/cli/cmd_stats.sh	2
+cli/lib/nftban/cli/cmd_status.sh	10
+cli/lib/nftban/cli/cmd_support.sh	8
+cli/lib/nftban/cli/cmd_update.sh	7
+cli/lib/nftban/cli/cmd_whitelist.sh	7
+cli/lib/nftban/cli/cmd_zabbix.sh	4
+cli/lib/nftban/core/nftban_config_doctor.sh	2
+cli/lib/nftban/core/nftban_ddos_classic.sh	16
+cli/lib/nftban/core/nftban_ddos_suricata.sh	3
+cli/lib/nftban/core/nftban_emulate.sh	3
+cli/lib/nftban/core/nftban_feeds.sh	2
+cli/lib/nftban/core/nftban_firewall_conflicts.sh	13
+cli/lib/nftban/core/nftban_geoban.sh	5
+cli/lib/nftban/core/nftban_health_checks_modules.sh	3
+cli/lib/nftban/core/nftban_health_checks_security.sh	16
+cli/lib/nftban/core/nftban_health_fixes.sh	6
+cli/lib/nftban/core/nftban_ip_and_stats.sh	7
+cli/lib/nftban/core/nftban_login.sh	1
+cli/lib/nftban/core/nftban_mail.sh	2
+cli/lib/nftban/core/nftban_output.sh	1
+cli/lib/nftban/core/nftban_portscan_classic.sh	1
+cli/lib/nftban/core/nftban_portscan.sh	10
+cli/lib/nftban/core/nftban_report_email.sh	11
+cli/lib/nftban/core/nftban_report_port.sh	7
+cli/lib/nftban/core/nftban_security.sh	1
+cli/lib/nftban/core/nftban_stats_collect.sh	2
+cli/lib/nftban/core/nftban_stats_format.sh	14
+cli/lib/nftban/core/nftban_sync.sh	8
+cli/lib/nftban/core/nftban_system_ip.sh	1
+cli/lib/nftban/cron/maintenance.sh	6
+cli/lib/nftban/exporters/nftban_exporter_json_compat.sh	3
+cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	4
+cli/lib/nftban/helpers/autoheal.sh	2
+cli/lib/nftban/lib/nftban_panel_common.sh	1
+cli/lib/nftban/lib/nftban_panel_directadmin.sh	2
+cli/lib/nftban/lib/nftban_pro.sh	1
+cli/lib/nftban/lib/nft_fragment.sh	18
+cli/lib/nftban/lib/nft_schema.sh	30
+cli/lib/nftban/lib/service_control.sh	2
+cli/lib/nftban/lib/whitelist_members.sh	1
+cli/sbin/nftban-apply	1
+cli/sbin/nftban-confirm	1
+internal/installer/authority/classify.go	1
+internal/installer/detect/cve_inet_filter.go	1
+internal/installer/executor/real.go	2
+internal/installer/extfw/detect.go	1
+internal/installer/switchop/classify.go	1
+internal/installer/validate/assertions.go	1
+internal/metrics/collector.go	2
+internal/metrics/evidence_chains.go	2
+internal/metrics/evidence_sets.go	2
+internal/metrics/rule_counters.go	3
+internal/nftbackend/backend.go	2
+internal/rulefp/baseline.go	2
+internal/validator/module_health.go	2
+internal/validator/nftjson.go	1
