@@ -585,7 +585,6 @@ export -f cmd_section
 export -f cmd_kv
 export -f cmd_success
 export -f cmd_get_core_binary
-export -f cmd_get_geoip_binary
 export -f cmd_get_geoip_database
 export -f cmd_load_module_config
 
