@@ -1054,6 +1054,6 @@ export -f nftban_services_status
 # LICENSE
 # =============================================================================
 # Mozilla Public License 2.0 (MPL-2.0)
-# Copyright (c) 2024-2026 NFTBAN Project / Antonios Voulvoulis
+# Copyright (c) 2024-2026 Antonios Voulvoulis
 # Contact: contact@nftban.com | Website: https://nftban.com
 # =============================================================================

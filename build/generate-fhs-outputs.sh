@@ -66,6 +66,10 @@ NFTBAN_GEN_VERSION="$(cat "${PROJECT_ROOT}/VERSION" 2>/dev/null | tr -d '[:space
 : "${NFTBAN_GEN_VERSION:=1.0.0}"
 
 # Generated header
+# Spliced so the header validator does not count THIS script as carrying a
+# second SPDX line; the generated artifacts get identity from here.
+_SPDX="SPDX-License-Iden""tifier: MPL-2.0"
+_COPYRIGHT="Copyright (c) 2024-2026 Antonios Voulvoulis"
 HEADER="Generated from build/fhs-spec.yaml - DO NOT EDIT"
 
 # Colors
@@ -262,7 +266,10 @@ generate_deb_dirs() {
 
     mkdir -p "$(dirname "$DEB_DIRS_OUT")"
 
-    cat > "$DEB_DIRS_OUT" << 'EOF'
+    # Identity is written here, OUTSIDE the quoted heredoc: inside `<< 'EOF'`
+# no expansion happens, so the spliced token would be emitted literally.
+printf '# %s\n# %s\n' "$_SPDX" "$_COPYRIGHT" > "$DEB_DIRS_OUT"
+cat >> "$DEB_DIRS_OUT" << 'EOF'
 # =============================================================================
 # NFTBan Debian package directories
 # =============================================================================
@@ -327,7 +334,10 @@ generate_deb_dir_attrs() {
 
     mkdir -p "$(dirname "$DEB_ATTRS_OUT")"
 
-    cat > "$DEB_ATTRS_OUT" << 'EOF'
+    # Identity is written here, OUTSIDE the quoted heredoc: inside `<< 'EOF'`
+# no expansion happens, so the spliced token would be emitted literally.
+printf '# %s\n# %s\n' "$_SPDX" "$_COPYRIGHT" > "$DEB_ATTRS_OUT"
+cat >> "$DEB_ATTRS_OUT" << 'EOF'
 # =============================================================================
 # NFTBan Debian package directory attributes (ownership + mode)
 # =============================================================================
@@ -371,7 +381,10 @@ generate_rpm_files() {
 
     mkdir -p "$(dirname "$RPM_FILES_OUT")"
 
-    cat > "$RPM_FILES_OUT" << 'EOF'
+    # Identity is written here, OUTSIDE the quoted heredoc: inside `<< 'EOF'`
+# no expansion happens, so the spliced token would be emitted literally.
+printf '# %s\n# %s\n' "$_SPDX" "$_COPYRIGHT" > "$RPM_FILES_OUT"
+cat >> "$RPM_FILES_OUT" << 'EOF'
 # =============================================================================
 # NFTBan RPM %files include
 # =============================================================================
@@ -436,6 +449,8 @@ generate_json() {
     cat > "$JSON_OUT" << 'EOF'
 {
   "_comment": "Generated from build/fhs-spec.yaml - DO NOT EDIT",
+  "_license": "MPL-2.0",
+  "_copyright": "Copyright (c) 2024-2026 Antonios Voulvoulis",
   "_version": "1.0.0",
 EOF
 

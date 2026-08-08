@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 # NFTBan — Portscan Trusted-Monitoring-Flow Exclusion (EXAMPLE / TEMPLATE)
 # =============================================================================
 # Copy to  /etc/nftban/conf.d/portscan/trusted-flows.conf  and edit to activate.

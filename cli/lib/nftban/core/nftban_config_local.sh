@@ -3,7 +3,7 @@
 # NFTBan — config local (read-only .conf.local diagnostics) — IMPL-2
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
+# Copyright (c) 2024-2026 Antonios Voulvoulis
 #
 # meta:name="nftban_config_local.sh"
 # meta:type="core"

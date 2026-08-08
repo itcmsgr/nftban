@@ -1,5 +1,7 @@
 {
   "_comment": "Generated from build/fhs-spec.yaml - DO NOT EDIT",
+  "_license": "MPL-2.0",
+  "_copyright": "Copyright (c) 2024-2026 Antonios Voulvoulis",
   "_version": "1.0.0",
   "directories": {
     "system": [
