@@ -1053,6 +1053,91 @@ nftban_health_check_set_sizes() {
 }
 
 # =============================================================================
+# LIMITER CAPACITY CHECK (v1.228.6)
+# =============================================================================
+# The meter-capacity incident (2026-08-04) was invisible to every health
+# surface: four resolvers served DNS outages from saturated 65535-cap rate
+# state and no check reported anything. v1.228.6 converts the meters to
+# explicit named dynamic sets; this check makes their occupancy observable:
+#   >=95% fill  CRITICAL  (saturation: NEW sources take the fallthrough verdict)
+#   >=80% fill  WARNING   (near-capacity)
+#   dynamic set with NO timeout  WARNING  (unbounded legacy limiter — the
+#   runtime did not converge to the bounded v1.228.6 definitions; a rebuild
+#   recreates them)
+# Measurement: `nft -j` ONLY (text parsing measured false zeros on 5/9 hosts).
+# One JSON dump per family — never a per-set enumeration loop.
+
+nftban_health_check_limiter_capacity() {
+    local status=$HEALTH_OK
+    local limiter_issues=()
+
+    if ! command -v nft &>/dev/null || ! command -v python3 &>/dev/null; then
+        NFTBAN_HEALTH_RESULTS["limiter_capacity"]=$status
+        return $status
+    fi
+
+    local family line
+    for family in ip ip6; do
+        # One netlink dump for the whole table; skip silently if the table is
+        # absent (kernel-parity and boot-safety checks own that failure).
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && limiter_issues+=("$line")
+        done < <(nft -j list table "$family" nftban 2>/dev/null | python3 -c '
+import json, sys
+family = sys.argv[1]
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for obj in doc.get("nftables", []):
+    s = obj.get("set")
+    if not s:
+        continue
+    flags = s.get("flags") or []
+    if "dynamic" not in flags:
+        continue
+    name = s.get("name", "?")
+    size = s.get("size") or 0
+    elems = s.get("elem") or []
+    count = len(elems)
+    if not s.get("timeout") and "timeout" not in flags:
+        print(f"WARNING: {family} {name} is a dynamic limiter WITHOUT timeout "
+              f"(unbounded legacy state, {count} entries) — run: nftban firewall rebuild")
+        continue
+    if size:
+        pct = count * 100 // size
+        if pct >= 95:
+            print(f"CRITICAL: {family} {name} at {count}/{size} ({pct}%) — SATURATED: "
+                  f"new sources take the fallthrough verdict until entries expire")
+        elif pct >= 80:
+            print(f"WARNING: {family} {name} at {count}/{size} ({pct}%) — near capacity")
+' "$family" 2>/dev/null)
+    done
+
+    if [[ ${#limiter_issues[@]} -gt 0 ]]; then
+        local issue
+        for issue in "${limiter_issues[@]}"; do
+            if [[ "$issue" == CRITICAL:* ]]; then
+                status=$HEALTH_CRITICAL
+            elif [[ "$issue" == WARNING:* && $status -lt $HEALTH_WARNING ]]; then
+                status=$HEALTH_WARNING
+            fi
+        done
+        # shellcheck disable=SC2034  # Used by render functions externally
+        NFTBAN_HEALTH_ISSUES["limiter_capacity"]="${limiter_issues[*]}"
+        if [[ $status -ge $HEALTH_CRITICAL ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Limiter capacity: ${limiter_issues[*]}")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Limiter capacity: ${limiter_issues[*]}")
+        fi
+    fi
+
+    # shellcheck disable=SC2034  # Used by render functions externally
+    NFTBAN_HEALTH_RESULTS["limiter_capacity"]=$status
+    return $status
+}
+
+# =============================================================================
 # BOOT SAFETY CHECK (v1.50.0)
 # =============================================================================
 # Verifies /etc/nftban/nftables.conf is placeholder-free and nft-valid.
@@ -1479,3 +1564,4 @@ export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
 export -f nftban_health_check_portscan_placement nftban_health_check_module_jump_placement
 export -f nftban_health_check_anchor_integrity nftban_health_check_kernel_parity
 export -f nftban_health_check_firewall_transition
+export -f nftban_health_check_limiter_capacity

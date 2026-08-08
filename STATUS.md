@@ -2,10 +2,10 @@
 
 **Status:** ⚠️ Warning
 **Last Updated:** 2026-08-07 UTC
-**Current Development Version:** v1.228.5 — `RELEASE_PREP`, **NOT PUBLISHED**
-**Latest Published Release:** v1.228.4 (tag `v1.228.4` → `6bde73f8`, published 2026-07-30, 15 assets)
+**Current Development Version:** v1.228.5 — **PUBLISHED** (fleet rollout separate)
+**Latest Published Release:** v1.228.5 (tag `v1.228.5` → `926f6968`, published 2026-08-07, 15 assets)
 **Production Fleet Baseline:** v1.228.0 — *published ≠ deployed; no fleet rollout has been performed for v1.228.2, v1.228.4 or v1.228.5*
-**Release State:** `RELEASE_PREP`
+**Release State:** `PUBLISHED`
 
 > **Development version ≠ published version.** `VERSION` in this tree is the version being
 > *prepared*; it becomes the published release only when a tag exists and assets are published.

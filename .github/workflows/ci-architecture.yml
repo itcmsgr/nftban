@@ -126,6 +126,25 @@ jobs:
       - name: Check logrotate FHS guard is falsifiable (v1.228.5, BLOCKING)
         run: ./scripts/ci/check-logrotate-fhs-authority-falsifiability.sh
 
+      # v1.228.6 BLOCKING. The nft meter shorthand creates an IMPLICIT dynamic set:
+      # 65535 cap, no timeout, monotonic growth — and on nft <= 1.0.9 an inline meter
+      # that cannot be listed as a set or flushed. Measured result (2026-08-04): four
+      # production resolvers served DNS outages from saturated ddos_dns_udp state and
+      # srv3 was ~16h from total TCP lockout. R1 rejects the shorthand in every render
+      # source; R2 requires size+timeout+dynamic on every limiter declaration; R3
+      # enforces v4/v6 parity; R4 pins the pre-rendered boot copy to the template
+      # (the 28-anchor count cannot see a divergent limiter definition); R5 requires
+      # a deliberate at-capacity policy row per limiter in
+      # scripts/ci/data/nft-limiter-capacity-policy.tsv.
+      - name: Check nft bounded limiters (v1.228.6, BLOCKING)
+        run: ./scripts/ci/check-nft-bounded-limiters.sh
+
+      # v1.228.6 GUARD-THE-GUARD, BLOCKING — same discipline as the logrotate guard
+      # above: inject each violation class, require a FAIL that names it; inject prose
+      # mentioning the construct, require a PASS; verify restoration.
+      - name: Check bounded-limiter guard is falsifiable (v1.228.6, BLOCKING)
+        run: ./scripts/ci/check-nft-bounded-limiters-falsifiability.sh
+
       # v1.228.5 recurrence guard. Correctness derives from a DECLARED artifact_class in
       # the canonical build/fhs-spec.yaml rather than pinned path strings, so a newly
       # added artifact cannot pass by being merely self-consistent — the failure mode that
