@@ -84,7 +84,7 @@ classify() { # $1=path -> class
     esac
     case "$f" in
         # bytes are asserted, modelled on a source, or are literal expected output
-        *testdata/*|*/fixtures/*|scripts/ci/fixtures/*|*.golden.json|*.fixture|*expected.report|*expected.exit)
+        *testdata/*|*/fixtures/*|*.golden.json|*.fixture|*expected.report|*expected.exit)
             echo FIXTURE_BYTE_SENSITIVE; return ;;
     esac
     case "$f" in
