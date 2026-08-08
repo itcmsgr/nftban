@@ -120,6 +120,7 @@ fsync_residual_guard_v176_test	cli/lib/nftban/tests/fsync_residual_guard_v176_te
 fw_l2cd_transition_counter_botguard_chain_test	cli/lib/nftban/tests/fw_l2cd_transition_counter_botguard_chain_test.sh	firewall	test	firewall-transition-counter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fw_rebuild_preserve_timed_bans_l2a_test	cli/lib/nftban/tests/fw_rebuild_preserve_timed_bans_l2a_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fw_transition_health_truth_v1982_test	cli/lib/nftban/tests/fw_transition_health_truth_v1982_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+geoban_migration_v1228_7_test	cli/lib/nftban/tests/geoban_migration_v1228_7_test.sh	firewall	test	geoban-migration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 geoban_refresh_execcondition_v159_test	cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh	geoban	test	geoban	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 health_failed_unit_remediation_v1222_1_test	cli/lib/nftban/tests/health_failed_unit_remediation_v1222_1_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 health_journalctl_bounded_v174_test	cli/lib/nftban/tests/health_journalctl_bounded_v174_test.sh	health	test	health-journalctl-bound	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
