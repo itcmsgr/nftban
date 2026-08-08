@@ -33,4 +33,4 @@ high-level public legal surfaces declare `MPL-2.0` (never GPL/LGPL/AGPL).
 
 ---
 
-Copyright © 2024-2026 NFTBan Project / Antonios Voulvoulis.
+Copyright (c) 2024-2026 Antonios Voulvoulis
