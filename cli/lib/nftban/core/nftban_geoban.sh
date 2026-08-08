@@ -1045,14 +1045,18 @@ nftban_geoban_update() {
 
             nftban_info "Updating ${action}: ${cc}"
 
-            # Call Go binary
-            if "${GEOIP_BINARY}" geoban fetch "${cc}" \
-                --action "${action}" \
-                --atomic="${GEOBAN_ATOMIC}" \
-                --files-dir="${GEOBAN_FILES_DIR}" \
-                --tracking-dir="${GEOBAN_TRACKING_DIR}" \
-                --cache-dir="${GEOBAN_CACHE_DIR}"; then
-
+            # v1.228.8 PR2 Step 0: call the canonical fetch authority, which
+            # picks the Go path when available and otherwise downloads via the
+            # bash IPDENY fallback.
+            #
+            # This loop previously invoked "${GEOIP_BINARY}" DIRECTLY, without
+            # the soft-check its sibling call sites use. v1.228.7 retired the
+            # standalone geoip binary and set GEOIP_BINARY="" — so the direct
+            # invocation became an empty command, exiting 127 and reporting
+            # "Failed to update" for EVERY configured country, while the
+            # comment above still claimed a bash fallback. The refresh timer
+            # has been failing on any host with countries configured since.
+            if nftban_geoban_fetch_country "${cc}" "${action}"; then
                 ((++updated))
             else
                 nftban_error "Failed to update ${cc}"
