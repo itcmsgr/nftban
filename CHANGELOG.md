@@ -11,6 +11,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.8] - 2026-08-08 — nft parsing becomes a governed boundary, and derived state must prove it was restored
+
+Three defects in this release share one shape: a failed observation was
+reported as a clean result.
+
+### Fixed — a limiter that could not be seen on nft 1.0.2
+
+`nft` output is version-dependent. nft 1.0.2 omits the `dynamic` flag from
+`nft -j list sets`, so the v1.228.6 capacity check — which selected limiters by
+that flag — could not see a limiter at all on those hosts. Measured live on a
+production resolver running 1.0.2: **thirteen bounded limiters present, zero
+seen**. That host could not have reported saturation at any occupancy.
+
+Limiters are now identified by the properties that make them one, a capacity cap
+plus per-element expiry, with the flag accepted as sufficient but never required.
+Across a seven-host fixture corpus this changes nothing on 1.0.9/1.1.1/1.1.5/1.1.6
+and takes 1.0.2 from 0 to 13.
+
+### Fixed — seven more places where failure read as health
+
+An inventory of every shipped `nft` read site found the wider defect class was
+not the flag omission but what happens when a read fails. Among the consumers
+repaired: hook-collision preflight returned "no collisions" for a ruleset it
+could not read; health analysis printed "NFTBan has sole authority" from an empty
+table list, which is exactly what a failed read produces; the support bundle
+announced "feeds not loaded" when the kernel set was unreadable; the status
+headline rule count fell back to 0, rendering an unreadable ruleset as a firewall
+with no rules; and the DDoS effective axis reported idle when not one enforcement
+counter was found.
+
+The destructive one: the CVE inet-filter guard counted rule lines without
+checking the exit code, and a failed `nft` invocation returns empty output, which
+counts as zero rules, which authorised **deleting the table**. A count is now
+evidence only when the read succeeded and returned output.
+
+Every `nft` read site is registered with a severity class and a failure policy. A
+new reader cannot merge unclassified, and a critical-severity site may not derive
+its verdict from a failure-collapsed zero.
+
+### Fixed — feed and GeoBan state was never actually restored after a rebuild
+
+A rebuild renders the ruleset from `delete table` upward, so derived set elements
+are wiped and must be restored from disk. Both calls that were supposed to do
+that failed silently in the affirmative: `nftban geoban sync` is not a dispatch
+verb and its unknown-command exit was discarded, while `nftban-core feeds sync`
+short-circuits on an unchanged config mtime and returns success — and after a
+rebuild the config has not changed.
+
+Restoration now follows a contract: discover the source, build a plan, validate
+it, bind it to a content digest, apply, then verify against the kernel. A plan
+whose source moved in between is refused rather than executed. An applier that
+exits 0 and leaves the set empty is reported as failed, and a set that cannot be
+read is unknown. When one producer restores and another does not, the result is
+partial: the successful one is not rolled back and the failure is named.
+
+**Scope note.** This release provides the reconciler; it does **not** wire
+automatic derived-state convergence into package install or upgrade. That wiring
+requires changes to install-state truth and rebuild concurrency that are outside
+this release, so an upgrade may still require `nftban firewall rebuild` to
+converge derived state. BotScan bans are deliberately not restored: their active
+state cannot be computed from any durable record.
+
+### Fixed — GeoBan refresh had been failing since v1.228.7
+
+v1.228.7 retired the standalone geoip binary. Three of the four call sites check
+for it and fall back to a bash path; the update loop did not, so every configured
+country exited 127 while the comment above it claimed a fallback. Hosts with no
+countries configured were unaffected, which is why it went unnoticed.
+
+### Changed — license identity
+
+Header coverage is now measured against the files that can carry a header rather
+than every tracked file, since JSON, toolchain-owned files, byte-asserted
+fixtures and packaging metadata cannot. Three files genuinely lacked an
+identifier. Thirteen mutually inconsistent copyright spellings are normalised to
+one, and generated artifacts receive identity from their generator rather than
+being stamped after the fact.
+
+A meta-gate now asserts that each of these controls has a workflow that actually
+runs it. The parser gate shipped in this release's first change with a selftest
+and no consumer, enforcing nothing until it was wired — a checker present in the
+repository is not a blocking control.
+
 ## [v1.228.7] - 2026-08-08 — stabilization: the watchdog stops walking every set, and config authority is single
 
 Post-v1.228.6 runtime convergence. Pays down the systemic defects the meter-capacity rollout
