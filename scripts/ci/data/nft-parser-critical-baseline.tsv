@@ -31,3 +31,4 @@ internal/metrics/collector.go	if err != nil {	METRIC_ONLY	-
 cli/lib/nftban/exporters/nftban_exporter_json_compat.sh	nft_rules=$(nft list table ${NFTBAN_TABLE_IPV4:-ip\ nftban} 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|	METRIC_ONLY	-
 cli/lib/nftban/core/nftban_report_email.sh	_blocked_v4=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+	DISPLAY_ONLY	-
 cli/lib/nftban/core/nftban_stats_format.sh	ipv4_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep 'blacklist_ipv4.*counter' | grep -oP 'packets 	DISPLAY_ONLY	-
+cli/lib/nftban/lib/derived_state_reconcile.sh	out=$(nft -j list set "$1" nftban "$2" 2>/dev/null) || { echo UNKNOWN; return 1; }	HEALTH_VERDICT	-

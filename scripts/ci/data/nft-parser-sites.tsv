@@ -55,6 +55,7 @@ cli/lib/nftban/cron/maintenance.sh	6
 cli/lib/nftban/exporters/nftban_exporter_json_compat.sh	3
 cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	4
 cli/lib/nftban/helpers/autoheal.sh	2
+cli/lib/nftban/lib/derived_state_reconcile.sh	1
 cli/lib/nftban/lib/nftban_panel_common.sh	1
 cli/lib/nftban/lib/nftban_panel_directadmin.sh	2
 cli/lib/nftban/lib/nftban_pro.sh	1

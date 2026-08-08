@@ -103,7 +103,9 @@ fi
 
 echo "=== D. reconcile authorities exist and PROPAGATE their result ==="
 for fn in _nftban_reconcile_feeds _nftban_reconcile_geoban; do
-    if grep -q "^${fn}() {" "$FIREWALL"; then
+    # match the DEFINITION, tolerant of formatting: the claim is "this function
+    # exists", not "it is written on one line with one space".
+    if grep -qE "^${fn}\\(\\)[[:space:]]*\\{" "$FIREWALL"; then
         ok "$fn defined"
     else
         bad "$fn missing"

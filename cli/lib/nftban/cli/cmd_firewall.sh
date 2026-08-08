@@ -1699,34 +1699,20 @@ _check_firewall_conflicts() {
 #            has not changed — so it reported success and restored nothing.
 #            `feeds load` is the restore-from-disk path (no re-download).
 
-_nftban_reconcile_feeds() {
-    # Restore feed elements from the durable on-disk feed store.
-    # Returns 0 only when a restore was actually performed.
-    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
-        nftban_feeds_sync_to_nftables
-        return $?
-    fi
-    local _core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
-    if [[ -x "$_core" ]]; then
-        # `load`, never `sync`: load reads the durable store unconditionally.
-        timeout 120s "$_core" feeds load
-        return $?
-    fi
-    return 1
+_nftban_dsr_load() {
+    declare -f nftban_dsr_reconcile_one >/dev/null 2>&1 && return 0
+    local _l="${NFTBAN_LIB_DIR}/lib/derived_state_reconcile.sh"
+    # shellcheck source=/dev/null
+    [[ -r "$_l" ]] && source "$_l" 2>/dev/null || return 1
+    declare -f nftban_dsr_reconcile_one >/dev/null 2>&1
 }
 
-_nftban_reconcile_geoban() {
-    # Restore GeoBan country ranges from the durable geoban.d authority.
-    # Returns 0 only when a restore was actually performed.
-    if ! declare -f nftban_geoban_apply_to_nftables &>/dev/null; then
-        local _geo="${NFTBAN_LIB_DIR}/core/nftban_geoban.sh"
-        # shellcheck source=/dev/null
-        [[ -r "$_geo" ]] && source "$_geo" 2>/dev/null || return 1
-    fi
-    declare -f nftban_geoban_apply_to_nftables &>/dev/null || return 1
-    nftban_geoban_apply_to_nftables
-    return $?
-}
+# The rebuild lane knows only a producer NAME. Discovery, planning, plan
+# validation, the stale-plan check, the restore call and the kernel-side
+# verification all live behind the reconciler, so this lane cannot drift into
+# knowing how feeds or GeoBan store their state.
+_nftban_reconcile_feeds()  { _nftban_dsr_load || return 1; nftban_dsr_reconcile_one feeds; }
+_nftban_reconcile_geoban() { _nftban_dsr_load || return 1; nftban_dsr_reconcile_one geoban; }
 
 _check_nft_collisions() {
     # Check for non-NFTBan tables with active input hooks
