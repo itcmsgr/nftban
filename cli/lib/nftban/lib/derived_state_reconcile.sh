@@ -177,8 +177,11 @@ nftban_dsr_plan() { # $1=producer -> plan on stdout; rc 0 plan, 1 UNKNOWN
 # =============================================================================
 # STEP 3 — VALIDATE PLAN
 # =============================================================================
-nftban_dsr_validate_plan() { # stdin or $1=file -> rc 0 valid
-    local plan; plan="$(cat "${1:-/dev/stdin}")"
+# Reads the plan from STDIN. It deliberately takes no file argument: every
+# caller has the plan in hand already, and an unused file path would be an
+# untested second way in.
+nftban_dsr_validate_plan() { # stdin -> rc 0 valid
+    local plan; plan="$(cat)"
     local f
     for f in producer planned_state source_digest source_files; do
         grep -qE "^${f}=" <<<"$plan" || { echo "invalid plan: missing $f" >&2; return 1; }
