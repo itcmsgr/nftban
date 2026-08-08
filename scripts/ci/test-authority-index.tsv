@@ -155,6 +155,7 @@ nft_bounded_limiter_render_v1228_6_test	cli/lib/nftban/tests/nft_bounded_limiter
 nft_consumer_authority_guard_v1228_4_test	cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh	packaging	test	systemd-execution-authority	CI_STATIC	ci-bash	true	false	false	false	false	false			
 nft_counting_model_guard_v190_test	cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_loopback_before_invalid_v217_test	cli/lib/nftban/tests/nft_loopback_before_invalid_v217_test.sh	firewall	test	nft-schema-rule-order	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+nft_parser_compat_v1228_8_test	cli/lib/nftban/tests/nft_parser_compat_v1228_8_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 nft_writer_authority_v150_test	cli/lib/nftban/tests/nft_writer_authority_v150_test.sh	firewall	test	nft-writer-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_config_rhg_cosmetic_r1a6_test	cli/lib/nftban/tests/nftban_config_rhg_cosmetic_r1a6_test.sh	core	test	config-cosmetic-hygiene	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_da_help_ssh_port_r1a2_test	cli/lib/nftban/tests/nftban_da_help_ssh_port_r1a2_test.sh	installer	test	directadmin-panel	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
