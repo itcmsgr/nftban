@@ -19,7 +19,7 @@
 # The maintenance path (cron/maintenance.sh, helpers/autoheal.sh,
 # lib/ssh_port_detect.sh) is already fully typed and is enforced separately by
 # rule G-1 — it must stay at ZERO regardless of this count.
-UNTYPED_PROBE_COUNT=95
+UNTYPED_PROBE_COUNT=93
 
 # -----------------------------------------------------------------------------
 # G-2a ALLOWLIST — failure-to-mutation sites that PRE-DATE PR-3

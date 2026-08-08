@@ -49,6 +49,12 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 HEALTH_OK=0; HEALTH_WARNING=1; HEALTH_CRITICAL=2
 declare -A NFTBAN_HEALTH_RESULTS NFTBAN_HEALTH_ISSUES
 NFTBAN_HEALTH_ERRORS=(); NFTBAN_HEALTH_WARNINGS=()
+# These are the caller-scope contract the health module writes into and reads
+# from: it compares against HEALTH_WARNING and appends to NFTBAN_HEALTH_WARNINGS.
+# The use is real but lives in another file, so it is named here explicitly
+# rather than silenced — the harness depends on all of them existing.
+: "$HEALTH_OK" "$HEALTH_WARNING" "$HEALTH_CRITICAL" \
+  "${NFTBAN_HEALTH_ERRORS[*]:-}" "${NFTBAN_HEALTH_WARNINGS[*]:-}"
 
 # shellcheck source=/dev/null
 source "$NFTBAN_LIB_DIR/core/nftban_health_checks_security.sh" 2>/dev/null || {
@@ -135,30 +141,38 @@ done
 echo "=== C. FAILED / MALFORMED / TRUNCATED OBSERVATION -> UNKNOWN, NEVER HEALTHY ==="
 NFT_FAKE_MODE=fail; export NFT_FAKE_MODE
 run_check; st="$ST"; iss="$ISS"
-[[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]] &&
-    ok "nft command failure -> UNKNOWN + non-OK status" ||
+if [[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]]; then
+    ok "nft command failure -> UNKNOWN + non-OK status"
+else
     bad "nft command failure reported as OK/no-UNKNOWN (status=$st issues=${iss:0:80})"
+fi
 
 NFT_FAKE_MODE=malformed; export NFT_FAKE_MODE
 run_check; st="$ST"; iss="$ISS"
-[[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]] &&
-    ok "unparseable JSON -> UNKNOWN + non-OK status" ||
+if [[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]]; then
+    ok "unparseable JSON -> UNKNOWN + non-OK status"
+else
     bad "unparseable JSON reported as OK (status=$st issues=${iss:0:80})"
+fi
 
 NFT_FAKE_TRUNC_SRC="$(occupy "$FIXDIR/sets-1.0.2.json" 65000)"; export NFT_FAKE_TRUNC_SRC
 NFT_FAKE_MODE=truncated; export NFT_FAKE_MODE
 run_check; st="$ST"; iss="$ISS"
-[[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]] &&
-    ok "truncated JSON -> UNKNOWN + non-OK status" ||
+if [[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]]; then
+    ok "truncated JSON -> UNKNOWN + non-OK status"
+else
     bad "truncated JSON reported as OK (status=$st issues=${iss:0:80})"
+fi
 
 echo "=== D. EMPTY-BUT-SUCCESSFUL DUMP CLASSIFIED PER CONTRACT ==="
 NFT_FAKE_MODE=empty; export NFT_FAKE_MODE
 run_check; st="$ST"; iss="$ISS"
 # rc=0 with zero bytes is not a readable ruleset: it must be UNKNOWN, not OK.
-[[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]] &&
-    ok "empty-but-rc0 dump -> UNKNOWN (an empty read is not a measurement)" ||
+if [[ "$st" != "$HEALTH_OK" && "$iss" == *UNKNOWN:* ]]; then
+    ok "empty-but-rc0 dump -> UNKNOWN (an empty read is not a measurement)"
+else
     bad "empty-but-rc0 dump treated as healthy (status=$st issues=${iss:0:80})"
+fi
 
 echo "=== E. DISCRIMINATION CONTROL — the pre-fix logic MUST miss 1.0.2 ==="
 # If this control ever passes with the old logic, the test is vacuous: it would
@@ -187,7 +201,7 @@ fi
 # Authentic-representation assertion: 1.0.2 really does omit the flag, and the
 # modern versions really do carry it. Guards against a fixture regenerated from
 # the wrong host silently removing the whole point of the corpus.
-python3 - "$FIXDIR" <<'PY' && ok "fixtures preserve the authentic per-version flag divergence" || bad "fixture divergence lost"
+if python3 - "$FIXDIR" <<'PY'
 import json,sys,os
 d=sys.argv[1]
 def flags(v):
@@ -200,6 +214,11 @@ assert "dynamic" not in flags("1.0.2"), "1.0.2 fixture unexpectedly carries 'dyn
 for v in ("1.0.9","1.1.1","1.1.5","1.1.6"):
     assert "dynamic" in flags(v), f"{v} fixture unexpectedly LACKS 'dynamic'"
 PY
+then
+    ok "fixtures preserve the authentic per-version flag divergence"
+else
+    bad "fixture divergence lost"
+fi
 
 echo
 echo "=== nft_parser_compat_v1228_8: PASS=$PASS FAIL=$FAIL ==="

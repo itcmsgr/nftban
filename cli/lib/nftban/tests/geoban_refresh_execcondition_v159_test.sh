@@ -63,7 +63,6 @@ grep -qE '^ExecStart=/usr/sbin/nftban geoip refresh$' "$UNIT" \
 cond=$(grep -E "^ExecCondition=/bin/sh -c " "$UNIT" | grep nftban-core | head -1 | sed -E "s|^ExecCondition=/bin/sh -c '(.*)'$|\1|")
 [[ -n "$cond" ]] || { echo "could not extract geoip ExecCondition payload"; exit 1; }
 SB="$(mktemp -d)"; trap 'rm -rf "$SB"' EXIT
-arch="$(uname -m)"
 run_cond(){ local p="${cond//\/usr\/lib\/nftban/$SB}"; sh -c "$p"; }   # returns the condition rc
 
 echo "=== (b) missing nftban-core => condition NOT met (rc 1..254 => systemd SKIPS, not fails) ==="
