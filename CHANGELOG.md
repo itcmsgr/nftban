@@ -11,6 +11,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.6] - 2026-08-08 — rate-limit state is bounded; a saturated meter can no longer turn accept into permanent drop
+
+### Fixed — the nft meter shorthand accumulated state until the service went dark
+
+Every rate limiter used the nftables `meter` shorthand, which creates an implicit dynamic
+set: capped at 65535 entries, with no way to declare a timeout, so it only grew. At
+capacity the insertion of a NEW source fails, the rule does not match, and the packet
+falls through to the unconditional drop on the same criteria. Measured on production
+(2026-08-04): four resolvers served DNS/UDP outages from saturated `ddos_dns_udp` state;
+one host was ~16 hours from total TCP lockout; the highest-traffic resolver refilled to
+86% within three days of remediation. On nft <= 1.0.9 the implicit set is an inline
+meter — absent from `nft list sets`, not flushable, recoverable only by ruleset
+recreation — so whether a host was even remediable depended on its nftables version.
+
+As of v1.228.6 every limiter is an explicit named dynamic set with declared `size 65535`,
+`flags dynamic,timeout` and a timeout (5 minutes per-IP, 10 minutes for prefix
+aggregates), driven by an `update @set { key limit rate ... }` statement. All 19 objects,
+both families, in all three render authorities (base template, pre-rendered boot copy,
+module fragments — byte-identical limiter lines between template and boot copy, enforced
+by CI).
+
+- **Bounded.** Idle sources expire; state tracks the recently-active population. Every
+  limiter bucket refills within ~2 seconds of idle, so expiry changes no enforcement
+  outcome for any source active inside the window. Rates, bursts, keys, verdicts, rule
+  order and whitelist precedence are unchanged.
+- **One runtime form on every supported nftables.** Parse and behaviour proven on real
+  kernels with nft 1.0.2, 1.0.9 and 1.1.1: named, listable, flushable everywhere. The
+  version-dependent inline-meter/named-set split is gone.
+- **At capacity, by declared policy.** Reaching 65535 now requires that many
+  concurrently-active sources inside the window (genuine flood conditions). Accept-shaped
+  limiters stay fail-closed for new sources — deliberate under flood, self-healing via
+  expiry; rate-over markers fail open (bounded protection loss, no outage). The policy
+  per object is a machine-checked manifest (`scripts/ci/data/nft-limiter-capacity-policy.tsv`);
+  a new limiter cannot ship without a deliberate at-capacity decision.
+- **Visible.** `nftban health` gains a limiter-capacity check: warning at 80% fill,
+  critical at 95%, and a warning for any dynamic limiter running WITHOUT a timeout (a
+  non-converged legacy runtime; a rebuild converges it). Measurement is `nft -j` only,
+  one dump per family.
+
+Validation envelope (measured, EL9 kernel 5.14 / nft 1.0.9 — the affected resolver's
+exact version): the old design fed 321k unique sources pegged at 65535/65535, dropped
+200/200 new sources, and reclaimed nothing after idle; the new design fed 521k unique
+sources never exceeded 65535, drained to 0 within 30 seconds of quiet, admitted 500/500
+new sources after churn, and still dropped 1465/2500 packets from a single source at 2.5x
+the configured rate. Package-native upgrade gates (EL9 RPM, DEB): 13 inline meters
+converge to 0, every dynamic set bounded, whitelist/port state preserved, rebuild/reload/
+restart/reboot all keep the bounded form.
+
+### Fixed — every `firewall rebuild` on v1.228.5 reported a false whitelist DEGRADED
+
+`_nftban_wl_norm_key` was defined in `cmd_whitelist.sh` but called from
+`lib/whitelist_members.sh`; the rebuild path sources the lib without that file, so every
+key normalized to empty and the convergence check reported all configured whitelist
+members absent — with the members demonstrably present in the running set. The function
+now lives in the lib beside its only call site. (Shipped in v1.228.5; first exposed by
+the v1.228.6 package gate, the first gate to run `firewall rebuild` on installed bytes.)
+
+### Operator notes
+
+- **DEB upgrades touch a conffile.** v1.228.6 legitimately changes
+  `/etc/nftban/nftables.conf` (a dpkg conffile that is also a render target). Unattended
+  upgrades must run with `DEBIAN_FRONTEND=noninteractive` and `--force-confnew`; the
+  postinstall re-renders the file from the template with the host's configured ports, so
+  nothing host-specific is lost.
+- A dynamic limiter reported by health as "WITHOUT timeout" is pre-v1.228.6 runtime that
+  has not yet converged: run `nftban firewall rebuild`.
+
 ## [v1.228.5] - 2026-08-04 — the distro nftables service can read the ruleset NFTBan renders for it
 
 On a stock EL9 host with SELinux **Enforcing from first boot**, a clean install produced **no
