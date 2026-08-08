@@ -1675,6 +1675,45 @@ _check_firewall_conflicts() {
     fi
 }
 
+# =============================================================================
+# DERIVED-STATE RECONCILE AUTHORITIES (v1.228.8 PR2 Step 0)
+# =============================================================================
+# A rebuild renders the ruleset from `delete table` upward, so every derived
+# set element — feed CIDRs, GeoBan country ranges — is wiped and must be
+# restored from its DURABLE authority on disk. These two functions are the
+# only place the rebuild/reset lanes may express that restore.
+#
+# INVARIANT: the rebuild does NOT invent module verbs. Each function calls the
+# module's own canonical restore entrypoint, and each RETURNS ITS RESULT so a
+# caller can tell a restore that happened from one that did not.
+#
+# WHAT WAS WRONG (both measured 2026-08-08):
+#   GeoBan   the lanes called `nftban geoban sync`. `sync` is not in the geoban
+#            dispatch (ban|unban|whitelist|unwhitelist|list|update|status|
+#            refresh), so it hit the unknown-command branch and its non-zero
+#            exit was swallowed by `2>/dev/null || true`. A convergence step
+#            wired to a nonexistent interface, silently doing nothing.
+#   Feeds    the lanes called `nftban-core feeds sync`, which short-circuits on
+#            an unchanged feeds-config mtime and prints "config unchanged, no
+#            sync needed" while returning SUCCESS. After a rebuild the config
+#            has not changed — so it reported success and restored nothing.
+#            `feeds load` is the restore-from-disk path (no re-download).
+
+_nftban_dsr_load() {
+    declare -f nftban_dsr_reconcile_one >/dev/null 2>&1 && return 0
+    local _l="${NFTBAN_LIB_DIR}/lib/derived_state_reconcile.sh"
+    # shellcheck source=/dev/null
+    [[ -r "$_l" ]] && source "$_l" 2>/dev/null || return 1
+    declare -f nftban_dsr_reconcile_one >/dev/null 2>&1
+}
+
+# The rebuild lane knows only a producer NAME. Discovery, planning, plan
+# validation, the stale-plan check, the restore call and the kernel-side
+# verification all live behind the reconciler, so this lane cannot drift into
+# knowing how feeds or GeoBan store their state.
+_nftban_reconcile_feeds()  { _nftban_dsr_load || return 1; nftban_dsr_reconcile_one feeds; }
+_nftban_reconcile_geoban() { _nftban_dsr_load || return 1; nftban_dsr_reconcile_one geoban; }
+
 _check_nft_collisions() {
     # Check for non-NFTBan tables with active input hooks
     local json_mode="${1:-false}"
@@ -2242,12 +2281,12 @@ FIREWALL_RELOAD_HELP
     if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
         nftban_feeds_sync_to_nftables 2>/dev/null || true
     elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
-        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null || true
+        _nftban_reconcile_feeds || true
     fi
 
     # Step 6 (v1.50.1): Re-sync geoban
     [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
-    timeout 120s nftban geoban sync 2>/dev/null || true
+    _nftban_reconcile_geoban || true
 
     # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
     _firewall_record_transition_health reload "$_fth_t0"
@@ -3003,24 +3042,20 @@ _firewall_rebuild_core() {
 
     # Step 11: Re-sync feeds (v1.50.1: auto-restore, was manual-only)
     [[ "$quiet" == "false" ]] && echo "  [11/12] Re-syncing threat feeds..."
-    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
-        nftban_feeds_sync_to_nftables 2>/dev/null && \
-            { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
-            { [[ "$quiet" == "false" ]] && echo "    No feeds to sync (disabled or empty)"; }
-    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
-        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null && \
-            { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
-            { [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (not configured or failed)"; }
+    if _nftban_reconcile_feeds; then
+        [[ "$quiet" == "false" ]] && echo "    Feeds restored to nftables" || true
     else
-        [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (no sync function available)" || true
+        [[ "$quiet" == "false" ]] && echo "    Feeds restore FAILED or unavailable (state NOT reconciled)" || true
     fi
 
     # Step 12: Re-sync geoban (v1.50.1: auto-restore, was manual-only)
     [[ "$quiet" == "false" ]] && echo "  [12/12] Re-syncing GeoBan..."
     if command -v nftban &>/dev/null; then
-        timeout 120s nftban geoban sync 2>/dev/null && \
-            { [[ "$quiet" == "false" ]] && echo "    GeoBan synced to nftables"; } || \
-            { [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (not configured or failed)"; }
+        if _nftban_reconcile_geoban; then
+            [[ "$quiet" == "false" ]] && echo "    GeoBan restored to nftables" || true
+        else
+            [[ "$quiet" == "false" ]] && echo "    GeoBan restore FAILED or unavailable (state NOT reconciled)" || true
+        fi
     else
         [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)" || true
     fi
@@ -3331,12 +3366,12 @@ firewall_reset() {
     if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
         nftban_feeds_sync_to_nftables 2>/dev/null || true
     elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
-        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null || true
+        _nftban_reconcile_feeds || true
     fi
 
     # Step 10: Re-sync geoban (v1.50.1: auto-restore)
     [[ "$quiet" == "false" ]] && echo "  [10/11] Re-syncing GeoBan..."
-    timeout 120s nftban geoban sync 2>/dev/null || true
+    _nftban_reconcile_geoban || true
 
     # Step 11: Restart services
     [[ "$quiet" == "false" ]] && echo "  [11/11] Restarting NFTBan services..."
@@ -4421,8 +4456,7 @@ Examples:
   nftban firewall reset --force
 
 After reset, restore data with:
-  nftban geoban sync
-  nftban feeds sync
+  nftban firewall rebuild        (reconciles feeds + GeoBan from durable state)
 
 EOF
 }
