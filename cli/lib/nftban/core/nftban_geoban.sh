@@ -109,15 +109,15 @@ _source_local "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
 : "${GEOBAN_CACHE_DIR:=${NFTBAN_CACHE_DIR}/geoban}"
 : "${GEOBAN_TRACKING_DIR:=${NFTBAN_DATA_DIR}/geoban/tracking}"
 
-# Binary location (architecture detection) - uses central config paths
+# v1.228.7: the standalone nftban-geoip binary was RETIRED in the shell->Go
+# migration; GeoIP lookups moved into `nftban-core geoip` (update|status|lookup)
+# and country-set population is served by the complete bash implementation
+# below (nftban_geoban_fetch_bash, IPDENY). nftban-core has NO `geoban` action,
+# so the old Go fast-path can never succeed — it is left permanently empty so
+# every check_binary_soft resolves to bash. Do NOT reintroduce a
+# bin/.real/nftban-geoip-* path here: it is a retired entrypoint and the CI
+# guard rejects it.
 GEOIP_BINARY=""
-if [[ -f "${NFTBAN_LIB_DIR}/bin/.real/nftban-geoip-x86_64" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
-    GEOIP_BINARY="${NFTBAN_LIB_DIR}/bin/.real/nftban-geoip-x86_64"
-elif [[ -f "${NFTBAN_LIB_DIR}/bin/.real/nftban-geoip-aarch64" ]] && [[ "$(uname -m)" == "aarch64" ]]; then
-    GEOIP_BINARY="${NFTBAN_LIB_DIR}/bin/.real/nftban-geoip-aarch64"
-elif [[ -f "${NFTBAN_LIB_DIR}/bin/nftban-geoip" ]]; then
-    GEOIP_BINARY="${NFTBAN_LIB_DIR}/bin/nftban-geoip"
-fi
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -134,16 +134,10 @@ nftban_geoban_check_enabled() {
     return 0
 }
 
-# Check if Go binary exists
-nftban_geoban_check_binary() {
-    if [[ -z "${GEOIP_BINARY}" ]] || [[ ! -x "${GEOIP_BINARY}" ]]; then
-        nftban_error "nftban-geoip binary not found or not executable"
-        nftban_info "Expected location: ${NFTBAN_LIB_DIR}/bin/.real/nftban-geoip-$(uname -m)"
-        nftban_info "Run: ./build.sh to build Go binaries"
-        return 1
-    fi
-    return 0
-}
+# v1.228.7: nftban_geoban_check_binary REMOVED. It hard-failed on the retired
+# standalone nftban-geoip binary and its only remaining caller (geoban update)
+# now falls through to the bash implementation. Country-set population is served
+# by nftban_geoban_fetch_bash; GeoIP lookups by `nftban-core geoip lookup`.
 
 # Ensure directories exist
 nftban_geoban_ensure_directories() {
@@ -643,7 +637,6 @@ nftban_geoban_ban_countries() {
     # Checks
     nftban_geoban_check_enabled || return 1
     # Don't fail if binary missing - we have bash fallback now!
-    # nftban_geoban_check_binary || return 1
     nftban_geoban_ensure_directories
 
     if [[ ${#countries[@]} -eq 0 ]]; then
@@ -1012,7 +1005,11 @@ nftban_geoban_list() {
 # Update all active GeoBan countries
 nftban_geoban_update() {
     nftban_geoban_check_enabled || return 1
-    nftban_geoban_check_binary || return 1
+    # v1.228.7: NO hard binary check — each nftban_geoban_fetch_country call
+    # below falls back to bash when the (retired) Go binary is absent, which it
+    # now always is. The hard check here made `nftban geoban update/refresh`
+    # fail outright on every host post-migration (measured on dns1). Every other
+    # geoban path already dropped it; this one was missed.
 
     nftban_info "Updating all active GeoBan countries..."
     echo ""

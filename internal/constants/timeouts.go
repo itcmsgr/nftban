@@ -49,6 +49,15 @@ const (
 	// WatchdogNFTSetInterval is how often nft set sizes are sampled.
 	WatchdogNFTSetInterval = 10 * time.Second
 
+	// WatchdogNFTDynamicSetInterval is how often DYNAMIC (kernel-managed
+	// rate-limiter) sets are enumerated. Dumping a dynamic set walks up to its
+	// declared size (65535) over netlink purely to take len(); doing that for
+	// every limiter on the enforcement-set cadence made daemon CPU track total
+	// element count (measured 2026-08-04: dns4 188,704 elements -> 113% CPU,
+	// IPC starved). Occupancy is an observability signal — a 5-minute sample
+	// bounds the walk cost while keeping capacity fill visible.
+	WatchdogNFTDynamicSetInterval = 5 * time.Minute
+
 	// WatchdogNFTRulesetInterval is how often the full ruleset is scanned.
 	WatchdogNFTRulesetInterval = 30 * time.Second
 

@@ -120,6 +120,7 @@ fsync_residual_guard_v176_test	cli/lib/nftban/tests/fsync_residual_guard_v176_te
 fw_l2cd_transition_counter_botguard_chain_test	cli/lib/nftban/tests/fw_l2cd_transition_counter_botguard_chain_test.sh	firewall	test	firewall-transition-counter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fw_rebuild_preserve_timed_bans_l2a_test	cli/lib/nftban/tests/fw_rebuild_preserve_timed_bans_l2a_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fw_transition_health_truth_v1982_test	cli/lib/nftban/tests/fw_transition_health_truth_v1982_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+geoban_migration_v1228_7_test	cli/lib/nftban/tests/geoban_migration_v1228_7_test.sh	firewall	test	geoban-migration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 geoban_refresh_execcondition_v159_test	cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh	geoban	test	geoban	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 health_failed_unit_remediation_v1222_1_test	cli/lib/nftban/tests/health_failed_unit_remediation_v1222_1_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 health_journalctl_bounded_v174_test	cli/lib/nftban/tests/health_journalctl_bounded_v174_test.sh	health	test	health-journalctl-bound	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
@@ -149,6 +150,7 @@ mail_netrc_auth_transport_v1227_test	cli/lib/nftban/tests/mail_netrc_auth_transp
 mail_recipient_subject_help_v1223_test	cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh	mail	test	mail	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 mail_subject_authority_v1227_test	cli/lib/nftban/tests/mail_subject_authority_v1227_test.sh	mail	test	mail-subject-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 maint_table_absent_noise_v1930_test	cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh	firewall	test	maintenance-table-probe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+module_effective_config_v1228_7_test	cli/lib/nftban/tests/module_effective_config_v1228_7_test.sh	firewall	test	effective-config-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 nft_bounded_limiter_render_v1228_6_test	cli/lib/nftban/tests/nft_bounded_limiter_render_v1228_6_test.sh	firewall	test	nft-bounded-limiters	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 nft_consumer_authority_guard_v1228_4_test	cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh	packaging	test	systemd-execution-authority	CI_STATIC	ci-bash	true	false	false	false	false	false			
 nft_counting_model_guard_v190_test	cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -252,6 +254,7 @@ v145_ssh_port_detect_test	cli/lib/nftban/tests/v145_ssh_port_detect_test.sh	fire
 v145_ssh_port_template_set_driven_static_test	cli/lib/nftban/tests/v145_ssh_port_template_set_driven_static_test.sh	firewall	test	nftables-ssh-templates	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 v1921_effective_port_render_failclosed_test	cli/lib/nftban/tests/v1921_effective_port_render_failclosed_test.sh	firewall	test	firewall-service-port-render	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 version_build_date_v151_test	cli/lib/nftban/tests/version_build_date_v151_test.sh	release	test	version-build-date	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+version_date_coherence_v1228_7_test	cli/lib/nftban/tests/version_date_coherence_v1228_7_test.sh	packaging	test	version-date-coherence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 version_release_date_authority_test	cli/lib/nftban/tests/version_release_date_authority_test.sh	release	test	version	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 watchdog_update_swap_race_v1983_test	cli/lib/nftban/tests/watchdog_update_swap_race_v1983_test.sh	update	test	watchdog-update-swap	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_list_timed_label_v169_test	cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh	whitelist	test	whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			

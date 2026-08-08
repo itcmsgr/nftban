@@ -497,11 +497,8 @@ cmd_get_core_binary() {
     echo "${NFTBAN_CORE:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
 }
 
-# Get nftban-geoip binary path
-# Usage: local geoip; geoip=$(cmd_get_geoip_binary)
-cmd_get_geoip_binary() {
-    echo "${NFTBAN_GEOIP:-${NFTBAN_LIB_DIR}/bin/nftban-geoip}"
-}
+# v1.228.7: cmd_get_geoip_binary REMOVED — it returned the retired standalone
+# nftban-geoip path and had no callers. GeoIP is `nftban-core geoip` now.
 
 # Get GeoIP database path (auto-detects if not explicitly configured)
 # Usage: local db; db=$(cmd_get_geoip_database)
@@ -557,6 +554,14 @@ cmd_load_module_config() {
     fi
 }
 
+# v1.228.7: the single "is module X enabled?" authority lives in
+# lib/module_authority.sh (nftban_module_effective_enabled). Source it here so
+# every consumer that loads cmd_common.sh gets it; the lib is idempotent.
+if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+fi
+
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
@@ -580,7 +585,6 @@ export -f cmd_section
 export -f cmd_kv
 export -f cmd_success
 export -f cmd_get_core_binary
-export -f cmd_get_geoip_binary
 export -f cmd_get_geoip_database
 export -f cmd_load_module_config
 

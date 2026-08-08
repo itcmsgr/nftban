@@ -58,7 +58,12 @@ ExecCondition=/usr/bin/test -f /etc/nftban/conf.d/geoban/main.conf
 # NOT failed, so it does not trip the installer's failed_units_postinstall_ok
 # assertion (fixes BUG-GEOBAN-REFRESH-UNSHIPPED-GEOIP-DEGRADES-INSTALL, where
 # v1.156 enabling this timer turned a latent gap into INSTALL_STATE=DEGRADED).
-ExecCondition=/bin/sh -c 'test -x /usr/lib/nftban/bin/.real/nftban-geoip-$(uname -m) || test -x /usr/lib/nftban/bin/nftban-geoip'
+# v1.228.7: GeoIP migrated into nftban-core; gate on THAT (the capability now
+# lives there), not the retired standalone nftban-geoip binary. Geoban country
+# refresh also has a working bash fallback, so this now skips the timer only on
+# a genuinely broken install rather than on the permanent absence of the old
+# binary.
+ExecCondition=/bin/sh -c 'test -x /usr/lib/nftban/bin/nftban-core'
 
 # Refresh all active GeoBan country CIDR sets.
 ExecStart=/usr/sbin/nftban geoip refresh

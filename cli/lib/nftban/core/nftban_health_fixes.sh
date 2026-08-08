@@ -345,12 +345,9 @@ nftban_health_fix_permissions() {
             : $((fixed_count++))
         fi
 
-        if [[ -f "${NFTBAN_LIB_DIR}/bin/nftban-geoip" ]]; then
-            chmod 755 "${NFTBAN_LIB_DIR}/bin/nftban-geoip" 2>/dev/null && \
-            chown root:root "${NFTBAN_LIB_DIR}/bin/nftban-geoip" 2>/dev/null && \
-            echo "  ✓ Fixed ${NFTBAN_LIB_DIR}/bin/nftban-geoip" && \
-            : $((fixed_count++))
-        fi
+        # v1.228.7: the standalone nftban-geoip binary was retired (migrated into
+        # nftban-core geoip); no permission fix applies to a file that no longer
+        # ships. RETIRED-OK: reference removed.
 
         # Recursively fix ownership for system libraries (both directories AND files)
         if [[ -d "${NFTBAN_LIB_DIR}" ]]; then

@@ -145,6 +145,27 @@ jobs:
       - name: Check bounded-limiter guard is falsifiable (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters-falsifiability.sh
 
+      # v1.228.7 BLOCKING — INCOMPLETE_SHELL_TO_GO_MIGRATION guard. A shell->Go
+      # migration is complete only when EVERY consumer is repointed. GeoIP moved
+      # into `nftban-core geoip` but six consumers kept resolving the retired
+      # standalone bin/.real/nftban-geoip-* — so country-blocking was dead
+      # fleet-wide for months (measured on dns1) with no test catching it. This
+      # fails on any EXECUTABLE reference to a retired entrypoint listed in
+      # scripts/ci/data/retired-entrypoints.tsv; comment lines and RETIRED-OK:
+      # markers are allowlisted so a reintroduction-guard may name the path.
+      - name: Check retired-binary references (v1.228.7, BLOCKING)
+        run: ./scripts/ci/check-retired-binary-references.sh
+
+      # v1.228.7 BLOCKING — VERSION_DATE coherence. The operator-visible Release
+      # Date lagged the real release (v1.227.0 shipped 2026-07-24 with
+      # VERSION_DATE=2026-07-20; v1.228.6 shipped 2026-08-08 with VERSION_DATE
+      # still 2026-07-28). This asserts VERSION_DATE == the CHANGELOG heading for
+      # the current VERSION (the declared release-prep authority, NOT the wall
+      # clock), so a prep that bumps VERSION/CHANGELOG but forgets VERSION_DATE
+      # cannot merge.
+      - name: Check VERSION_DATE coherence (v1.228.7, BLOCKING)
+        run: ./scripts/ci/check-version-date-coherence.sh
+
       # v1.228.5 recurrence guard. Correctness derives from a DECLARED artifact_class in
       # the canonical build/fhs-spec.yaml rather than pinned path strings, so a newly
       # added artifact cannot pass by being merely self-consistent — the failure mode that

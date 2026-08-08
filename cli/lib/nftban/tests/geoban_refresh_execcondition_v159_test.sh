@@ -45,39 +45,41 @@ no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 echo "=== (a) both ExecConditions present in the shipped unit ==="
 grep -qE '^ExecCondition=/usr/bin/test -f /etc/nftban/conf.d/geoban/main.conf' "$UNIT" \
   && ok "config-file ExecCondition present" || no "config-file ExecCondition missing"
-grep -qE '^ExecCondition=/bin/sh -c .*nftban-geoip' "$UNIT" \
-  && ok "geoip-binary ExecCondition present (v1.159 fix)" || no "geoip-binary ExecCondition missing"
+# v1.228.7: the geoip helper was migrated into nftban-core; the skip-not-fail
+# ExecCondition now gates on THAT (the retired standalone nftban-geoip binary is
+# gone). The v1.159 protection is preserved by a truthful mechanism: a broken
+# install lacking nftban-core skips the unit rather than failing it.
+grep -qE '^ExecCondition=/bin/sh -c .*nftban-core' "$UNIT" \
+  && ok "nftban-core ExecCondition present (v1.228.7 migration)" || no "nftban-core ExecCondition missing"
+# Executable directives only — a comment explaining the migration may name the
+# retired binary without being a live reference.
+grep -vE '^[[:space:]]*#' "$UNIT" | grep -qE 'nftban-geoip' \
+  && no "retired nftban-geoip still referenced in a unit directive" || ok "no retired nftban-geoip in unit directives"
 # ExecStart must remain the geoip refresh (fix must not change behaviour-when-set-up)
 grep -qE '^ExecStart=/usr/sbin/nftban geoip refresh$' "$UNIT" \
   && ok "ExecStart unchanged (nftban geoip refresh)" || no "ExecStart changed unexpectedly"
 
 # Extract the geoip-binary ExecCondition payload and retarget /usr/lib/nftban -> sandbox
-cond=$(grep -E "^ExecCondition=/bin/sh -c " "$UNIT" | grep nftban-geoip | head -1 | sed -E "s|^ExecCondition=/bin/sh -c '(.*)'$|\1|")
+cond=$(grep -E "^ExecCondition=/bin/sh -c " "$UNIT" | grep nftban-core | head -1 | sed -E "s|^ExecCondition=/bin/sh -c '(.*)'$|\1|")
 [[ -n "$cond" ]] || { echo "could not extract geoip ExecCondition payload"; exit 1; }
 SB="$(mktemp -d)"; trap 'rm -rf "$SB"' EXIT
 arch="$(uname -m)"
 run_cond(){ local p="${cond//\/usr\/lib\/nftban/$SB}"; sh -c "$p"; }   # returns the condition rc
 
-echo "=== (b) missing helper binary => condition NOT met (rc 1..254 => systemd SKIPS, not fails) ==="
-mkdir -p "$SB/bin/.real"
+echo "=== (b) missing nftban-core => condition NOT met (rc 1..254 => systemd SKIPS, not fails) ==="
+mkdir -p "$SB/bin"
 rc=0; run_cond || rc=$?
-{ [[ "$rc" -ge 1 && "$rc" -le 254 ]]; } && ok "no binary -> rc=$rc (condition-not-met => unit skipped, NOT failed)" || no "expected rc 1..254 with no binary, got $rc"
+{ [[ "$rc" -ge 1 && "$rc" -le 254 ]]; } && ok "no nftban-core -> rc=$rc (condition-not-met => unit skipped, NOT failed; preserves the v1.159 no-DEGRADE guarantee)" || no "expected rc 1..254 with no nftban-core, got $rc"
 
-echo "=== (c) arch-specific .real binary present => condition met (rc 0 => run) ==="
-printf '#!/bin/sh\nexit 0\n' > "$SB/bin/.real/nftban-geoip-$arch"; chmod +x "$SB/bin/.real/nftban-geoip-$arch"
+echo "=== (c) nftban-core present => condition met (rc 0 => run) ==="
+printf '#!/bin/sh\nexit 0\n' > "$SB/bin/nftban-core"; chmod +x "$SB/bin/nftban-core"
 rc=0; run_cond || rc=$?
-[[ "$rc" -eq 0 ]] && ok "arch .real binary -> rc=0 (condition met => run)" || no "expected rc=0 with .real binary, got $rc"
+[[ "$rc" -eq 0 ]] && ok "nftban-core present -> rc=0 (condition met => run; geoban refresh works via nftban-core + bash fallback)" || no "expected rc=0 with nftban-core, got $rc"
 
-echo "=== (d) only bin/nftban-geoip fallback present => condition met (rc 0) ==="
-rm -f "$SB/bin/.real/nftban-geoip-$arch"
-printf '#!/bin/sh\nexit 0\n' > "$SB/bin/nftban-geoip"; chmod +x "$SB/bin/nftban-geoip"
+echo "=== (d) non-executable nftban-core => condition NOT met (skip) ==="
+: > "$SB/bin/nftban-core"; chmod -x "$SB/bin/nftban-core" 2>/dev/null || true
 rc=0; run_cond || rc=$?
-[[ "$rc" -eq 0 ]] && ok "fallback bin/nftban-geoip -> rc=0 (condition met => run)" || no "expected rc=0 with fallback, got $rc"
-
-echo "=== (e) non-executable binary => condition NOT met (skip) ==="
-rm -f "$SB/bin/nftban-geoip"; : > "$SB/bin/.real/nftban-geoip-$arch"; chmod -x "$SB/bin/.real/nftban-geoip-$arch" 2>/dev/null || true
-rc=0; run_cond || rc=$?
-{ [[ "$rc" -ge 1 && "$rc" -le 254 ]]; } && ok "non-executable binary -> rc=$rc (skip)" || no "expected skip rc with non-exec binary, got $rc"
+{ [[ "$rc" -ge 1 && "$rc" -le 254 ]]; } && ok "non-executable nftban-core -> rc=$rc (skip)" || no "expected skip rc with non-exec nftban-core, got $rc"
 
 echo "================================================================"
 echo "geoban_refresh_execcondition_v159: PASS=$PASS FAIL=$FAIL"
