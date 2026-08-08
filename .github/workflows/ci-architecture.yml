@@ -175,6 +175,17 @@ jobs:
       - name: Check license identity (v1.228.8 PR3, BLOCKING)
         run: ./scripts/ci/check-license-identity.sh
 
+      # v1.228.8 PR4 BLOCKING — control-enforcement meta-gate. The parser gate
+      # shipped in PR1 with a selftest, was manually falsified, was called
+      # BLOCKING in its PR body and register, and had NO workflow consumer
+      # until PR3: it enforced nothing for three PRs. This asserts that each
+      # .8 control has an implementation, a selftest, a workflow consumer, and
+      # that the consumer job exists — because CONTROL_IMPLEMENTATION is not
+      # CONTROL_ENFORCEMENT. Scope is the .8 controls only, deliberately not a
+      # repo-wide CI-wiring audit.
+      - name: Check control enforcement (v1.228.8 PR4, BLOCKING)
+        run: ./scripts/ci/check-control-enforcement.sh
+
       # v1.228.7 BLOCKING — VERSION_DATE coherence. The operator-visible Release
       # Date lagged the real release (v1.227.0 shipped 2026-07-24 with
       # VERSION_DATE=2026-07-20; v1.228.6 shipped 2026-08-08 with VERSION_DATE
