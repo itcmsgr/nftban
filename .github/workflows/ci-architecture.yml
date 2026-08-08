@@ -156,6 +156,25 @@ jobs:
       - name: Check retired-binary references (v1.228.7, BLOCKING)
         run: ./scripts/ci/check-retired-binary-references.sh
 
+      # v1.228.8 PR1 BLOCKING — nft parser contract. nft's output representation
+      # is version-dependent (1.0.2 omits the `dynamic` flag from `nft -j list
+      # sets`, and a saturated limiter was therefore invisible on that version),
+      # and most historical parse sites collapsed a FAILED read into 0/absent/
+      # healthy. This pins every nft read site and rejects an unclassified new
+      # one, so the registry forbids NEW debt rather than only recording old.
+      - name: Check nft parser contract (v1.228.8 PR1, BLOCKING)
+        run: |
+          ./scripts/ci/check-nft-parser-contract.sh --selftest
+          ./scripts/ci/check-nft-parser-contract.sh
+
+      # v1.228.8 PR3 BLOCKING — license identity. Classification-aware: the
+      # denominator is the files that CAN carry a header, not every tracked
+      # file. An unclassified file fails, a hand-stamped generated artifact
+      # fails (its identity belongs to the generator), and a competing
+      # copyright spelling fails.
+      - name: Check license identity (v1.228.8 PR3, BLOCKING)
+        run: ./scripts/ci/check-license-identity.sh
+
       # v1.228.7 BLOCKING — VERSION_DATE coherence. The operator-visible Release
       # Date lagged the real release (v1.227.0 shipped 2026-07-24 with
       # VERSION_DATE=2026-07-20; v1.228.6 shipped 2026-08-08 with VERSION_DATE
