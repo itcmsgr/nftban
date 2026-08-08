@@ -55,11 +55,11 @@ type Watchdog struct {
 	recorder   *Recorder
 
 	// State tracking
-	mu              sync.RWMutex
-	running         bool
-	lastSnapshot    *Snapshot
-	lastState       *PressureState
-	levelDurations  map[Dimension]time.Time // When each dimension entered current level
+	mu             sync.RWMutex
+	running        bool
+	lastSnapshot   *Snapshot
+	lastState      *PressureState
+	levelDurations map[Dimension]time.Time // When each dimension entered current level
 
 	// Metrics callbacks
 	onMetrics func(*Snapshot, *PressureState)
@@ -87,10 +87,10 @@ func New(cfg *Config, controls *RuntimeControls) (*Watchdog, error) {
 		config:   cfg,
 		controls: controls,
 
-		processCollector:  processCollector,
-		runtimeCollector:  NewRuntimeCollector(),
-		systemCollector:   NewSystemCollector("/var/log"),
-		kernelCollector:   NewKernelCollector(),
+		processCollector: processCollector,
+		runtimeCollector: NewRuntimeCollector(),
+		systemCollector:  NewSystemCollector("/var/log"),
+		kernelCollector:  NewKernelCollector(),
 		// v1.228.7: NFTSetInterval was a DEAD KNOB — declared, defaulted,
 		// clamped, unit-tested, never read. It now paces enforcement-set
 		// sampling; dynamic limiter sets get their own slower cadence.
