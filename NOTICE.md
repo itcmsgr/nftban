@@ -3,7 +3,7 @@
 **Project:** NFTBan — Open-source Linux IPS and nftables firewall manager  
 **Website:** https://nftban.com
 
-Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis.
+Copyright © 2024-2026 Antonios Voulvoulis.
 
 This product includes software developed by contributors to the **nftban** project.  
 The **Core** is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**. See `LICENSE` for details.  

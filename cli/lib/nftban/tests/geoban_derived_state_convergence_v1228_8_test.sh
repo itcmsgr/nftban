@@ -82,12 +82,12 @@ echo "=== C. convergence lanes no longer call non-restoring interfaces ==="
 # raw-source grep would let those comments fail an assertion about code (and,
 # worse, would let a reworded comment satisfy it). Strip comment lines first.
 code_only() { grep -vE '^[[:space:]]*#' "$1"; }
-if ! code_only "$FIREWALL" | grep -q 'geoban sync'; then
+if [[ "$(code_only "$FIREWALL" | grep -c 'geoban sync' || true)" -eq 0 ]]; then
     ok "no 'nftban geoban sync' call (it was never a dispatch verb)"
 else
     bad "'nftban geoban sync' still present — a call to a nonexistent interface"
 fi
-if ! code_only "$FIREWALL" | grep -q 'feeds sync'; then
+if [[ "$(code_only "$FIREWALL" | grep -c 'feeds sync' || true)" -eq 0 ]]; then
     ok "no 'feeds sync' call (it short-circuits on unchanged config and restores nothing)"
 else
     bad "'feeds sync' still present — reports success without restoring after a rebuild"
@@ -95,7 +95,7 @@ fi
 # `sync` really is absent from the geoban dispatch — proves C1 is not cosmetic.
 if ! grep -qE '^\s+ban\|unban\|whitelist\|unwhitelist\|list\|update\|status\|refresh\)' "$LIB/cli/cmd_geoban.sh"; then
     bad "geoban dispatch line not found — cannot verify the verb set"
-elif grep -E '^\s+ban\|unban\|whitelist\|unwhitelist\|list\|update\|status\|refresh\)' "$LIB/cli/cmd_geoban.sh" | grep -q 'sync'; then
+elif [[ "$(grep -E '^\s+ban\|unban\|whitelist\|unwhitelist\|list\|update\|status\|refresh\)' "$LIB/cli/cmd_geoban.sh" | grep -c 'sync' || true)" -gt 0 ]]; then
     bad "'sync' IS a geoban verb — the premise of this fix is wrong"
 else
     ok "confirmed: 'sync' is absent from the geoban dispatch verb set"

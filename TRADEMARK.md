@@ -150,4 +150,4 @@ This policy may be updated at any time. The current version is always available 
 
 ---
 
-Copyright 2024-2026 NFTBAN Project / Antonios Voulvoulis. All rights reserved.
+Copyright 2024-2026 Antonios Voulvoulis. All rights reserved.

@@ -142,7 +142,7 @@ for f in "${!GUARD[@]}"; do
     fi
 done
 # no numeric comparison may be performed against a possibly-UNKNOWN priority
-if grep -A2 'shadowing NOT ruled out' "$LIB/core/nftban_firewall_conflicts.sh" | grep -q 'elif'; then
+if [[ "$(grep -A2 'shadowing NOT ruled out' "$LIB/core/nftban_firewall_conflicts.sh" | grep -c 'elif' || true)" -gt 0 ]]; then
     ok "conflict priority: UNKNOWN is checked BEFORE the numeric comparison"
 else
     bad "conflict priority: numeric comparison is not guarded by the UNKNOWN branch"
