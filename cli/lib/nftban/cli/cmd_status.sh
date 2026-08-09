@@ -466,7 +466,12 @@ output_brief() {
 
     local whitelist_count=0
     if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
-        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null || echo 0)
+        # `|| echo 0` does not fire when the helper exits 0 while printing
+        # nothing, which emitted `"whitelist_ips": ,` and broke the document.
+        # Pre-existing on main; fixed here because an unparseable status
+        # surface fails every consumer at once.
+        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null)
+        [[ "$whitelist_count" =~ ^[0-9]+$ ]] || whitelist_count=null
     fi
 
     local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache"
@@ -1934,21 +1939,43 @@ output_json() {
     fi
     echo "    \"counts\": {"
     echo "      \"authority\": \"kernel\","
-    echo "      \"kernel_total\": $kernel_count,"
-    echo "      \"kernel_automatic\": $kernel_automatic,"
-    echo "      \"kernel_manual\": $kernel_manual,"
-    echo "      \"kernel_elements\": $kernel_count,"
+    # These siblings of banned_ips must be JSON too. When PR3 made the counts
+    # three-valued, banned_ips was converted to null but these were not, so an
+    # unreadable kernel emitted a bare UNKNOWN token and the whole document
+    # stopped parsing — a status surface that cannot be read is worse than one
+    # reporting a wrong number, because every consumer fails at once.
+    local _jt="$kernel_count" _ja="$kernel_automatic" _jm="$kernel_manual"
+    [[ "$_jt" =~ ^[0-9]+$ ]] || _jt=null
+    [[ "$_ja" =~ ^[0-9]+$ ]] || _ja=null
+    [[ "$_jm" =~ ^[0-9]+$ ]] || _jm=null
+    echo "      \"kernel_total\": $_jt,"
+    echo "      \"kernel_automatic\": $_ja,"
+    echo "      \"kernel_manual\": $_jm,"
+    echo "      \"kernel_elements\": $_jt,"
     echo "      \"cache_count\": $cache_count,"
     echo "      \"source_index_count\": $source_index_count"
     echo "    },"
 
     # Add dashboard fields for scripts/API consumers
     # whitelist_ips: Total whitelist count
-    local whitelist_count=0
+    # `command -v` (not `declare -f`) is why this path was missed once already.
+    #
+    # Two defects, both baseline-present and both inside PR1's scope:
+    #  - `|| echo 0` only handles a NON-ZERO exit. The helper can exit 0 while
+    #    printing nothing, leaving this empty and emitting the syntactically
+    #    invalid `"whitelist_ips": ,` — one bad field fails every consumer of
+    #    the whole document at once.
+    #  - a successful-but-empty result is NOT zero. Empty output is not a
+    #    measured count, and inventing 0 would report an unestablished
+    #    whitelist as an empty one.
+    local whitelist_count=UNKNOWN
     if command -v nftban_stats_count_whitelist >/dev/null 2>&1; then
-        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null || echo 0)
+        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null)
+        [[ "$whitelist_count" =~ ^[0-9]+$ ]] || whitelist_count=UNKNOWN
     fi
-    echo "    \"whitelist_ips\": $whitelist_count,"
+    local _jw="$whitelist_count"
+    [[ "$_jw" =~ ^[0-9]+$ ]] || _jw=null
+    echo "    \"whitelist_ips\": $_jw,"
 
     # feed_ips: Count of IPs from threat feeds (part of unified blacklist in v0.7.3)
     # NOTE: In v0.7.3, feeds are loaded into unified blacklist, can't distinguish
