@@ -91,5 +91,5 @@ Maintainers' quick tips:
 </p>
 
 <p align="center">
-  <sub>Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis</sub>
+  <sub>Copyright © 2024-2026 Antonios Voulvoulis</sub>
 </p>

@@ -169,4 +169,4 @@ Do not use public issues or discussions to disclose confidential reports or pers
 
 **NFTBan Project — Building a welcoming, inclusive, and professional community.**
 
-Copyright © 2024–2026 NFTBan Project / Antonios Voulvoulis
+Copyright © 2024-2026 Antonios Voulvoulis

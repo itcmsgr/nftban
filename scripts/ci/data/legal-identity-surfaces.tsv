@@ -1,0 +1,35 @@
+# NFTBan Core legal-identity surfaces (v1.228.9 PR2)
+#
+# CORE OWNERSHIP AUTHORITY (owner-frozen 2026-08-09):
+#   CORE_COPYRIGHT_HOLDER = Antonios Voulvoulis
+#   CORE_COPYRIGHT_YEARS  = 2024-2026
+#   CORE_LICENSE          = MPL-2.0
+#   PROJECT_NAME_IS_OWNER = NO   -> "NFTBan Project / Antonios Voulvoulis",
+#                                   "NFTBAN Project / ...", "NFTBan / ..." are
+#                                   RETIRED as competing ownership identities.
+#
+# ⛔ THIS IS A SEMANTIC REGISTRY, NOT A BYTE-EQUALITY LIST. Different surfaces
+# have different grammars and MUST be allowed to render the same ownership
+# differently — DEP-5 legitimately writes `Copyright: 2024-2026 <holder>` with
+# no `(c)`. The gate resolves each rendering to HOLDER + YEARS + LICENSE and
+# compares THOSE. Same design as the SPDX/DEP-5/OCI licence-identity check:
+# different grammar, one authority.
+#
+# ⛔ NOT every Markdown file is a legal surface. Only files deliberately
+# carrying ownership identity are listed; making all of them legal surfaces
+# would create meaningless boilerplate and, eventually, another waiver list.
+#
+# surface_class: source-header | markdown-legal-doc | dep5 | package-metadata
+# required: YES = absence FAILS the gate
+#
+# path<TAB>surface_class<TAB>required<TAB>owner_authority<TAB>years_authority<TAB>license_authority
+README.md	markdown-legal-doc	YES	CORE	CORE	CORE
+NOTICE.md	markdown-legal-doc	YES	CORE	CORE	CORE
+TRADEMARK.md	markdown-legal-doc	YES	CORE	CORE	CORE
+AI_ASSISTED_DEVELOPMENT.md	markdown-legal-doc	YES	CORE	CORE	-
+branding/README.md	markdown-legal-doc	YES	CORE	CORE	-
+.github/SUPPORT.md	markdown-legal-doc	YES	CORE	CORE	-
+.github/CODE_OF_CONDUCT.md	markdown-legal-doc	YES	CORE	CORE	-
+.github/DISCUSSION_TEMPLATE/welcome.md	markdown-legal-doc	YES	CORE	CORE	-
+SPDX-HEADERS.md	markdown-legal-doc	YES	CORE	CORE	CORE
+packaging/deb/copyright	dep5	YES	CORE	CORE	CORE

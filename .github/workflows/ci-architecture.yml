@@ -175,6 +175,15 @@ jobs:
       - name: Check license identity (v1.228.8 PR3, BLOCKING)
         run: ./scripts/ci/check-license-identity.sh
 
+      # v1.228.9 PR2 BLOCKING — Core ownership identity. The tree carried nine
+      # different renderings of who owns Core across its legal documents, so
+      # "who owns NFTBan Core" had no single answer. This is a SEMANTIC gate:
+      # DEP-5 legitimately writes `Copyright: 2024-2026 <holder>` with no `(c)`,
+      # and that must pass — each surface is resolved to holder/years/licence
+      # and those are compared, not the raw strings.
+      - name: Check Core ownership identity (v1.228.9 PR2, BLOCKING)
+        run: ./scripts/ci/check-core-ownership-identity.sh
+
       # v1.228.8 PR4 BLOCKING — control-enforcement meta-gate. The parser gate
       # shipped in PR1 with a selftest, was manually falsified, was called
       # BLOCKING in its PR body and register, and had NO workflow consumer

@@ -31,4 +31,4 @@ ChatGPT and Claude).
 
 ---
 
-Copyright © 2024-2026 NFTBan Project / Antonios Voulvoulis.
+Copyright © 2024-2026 Antonios Voulvoulis.

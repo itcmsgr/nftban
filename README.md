@@ -381,7 +381,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and full pipeline det
 
 NFTBan Core is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**.
 
-Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
+Copyright (c) 2024-2026 Antonios Voulvoulis
 
 MPL-2.0 is file-level copyleft: you may use, modify, and distribute freely.
 Modified MPL files must remain open. Your own separate code is unaffected.
