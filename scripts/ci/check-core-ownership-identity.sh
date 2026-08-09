@@ -147,6 +147,11 @@ while IFS= read -r f; do
     # the CI step comment). Documentation of a rule is not a claim of ownership,
     # and matching it here would let this gate fail on its own explanation.
     case "$f" in *.tsv|*.yml|*.yaml) continue ;; esac
+    # CHANGELOG.md is a HISTORICAL record: it quotes attribution strings while
+    # describing what changed (this release's entry quotes the DEP-5 example
+    # verbatim). Describing an attribution is not making one, and a release
+    # note must be free to state what the rule is without tripping it.
+    case "$f" in CHANGELOG.md) continue ;; esac
     # generated artifacts take their identity from their GENERATOR (v1.228.8
     # PR3) and are asserted by the parser/licence gates; stamping them here
     # would duplicate an authority and invite hand-editing a generated file.
