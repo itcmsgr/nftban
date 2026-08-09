@@ -101,7 +101,7 @@ fi
 
 # --------------------------------------------------------------------------
 echo "=== B. health checks — UNKNOWN reaches the operator, never 0/healthy ==="
-run_health() { # $1=check fn -> sets ST/ISS
+run_health() { # $1=check fn -> sets ST/ISS/SURF
     HEALTH_OK=0; HEALTH_WARNING=1; HEALTH_CRITICAL=2; HEALTH_ERROR=2
     # The sourced health module reads these from the caller's scope; naming them
     # here documents the contract rather than silencing the linter.
@@ -113,6 +113,12 @@ run_health() { # $1=check fn -> sets ST/ISS
     "$1" >/dev/null 2>&1 || true
     ST="${NFTBAN_HEALTH_RESULTS[${1#nftban_health_check_}]:-MISSING}"
     ISS="${NFTBAN_HEALTH_ISSUES[${1#nftban_health_check_}]:-}"
+    # NFTBAN_HEALTH_ISSUES is internal state. What the operator actually sees is
+    # rendered from NFTBAN_HEALTH_ERRORS / NFTBAN_HEALTH_WARNINGS
+    # (nftban_health_render.sh), which the check populates at :1109-1113. This
+    # section claims UNKNOWN "reaches the operator", so capture the surfaced text
+    # and assert on it instead of assuming the internal map implies delivery.
+    SURF="${NFTBAN_HEALTH_ERRORS[*]:-} ${NFTBAN_HEALTH_WARNINGS[*]:-}"
 }
 NFT_MODE=fail; export NFT_MODE
 run_health nftban_health_check_set_sizes
@@ -120,6 +126,14 @@ if [[ "$ISS" == *UNKNOWN* && "$ST" != "0" ]]; then
     ok "set_sizes: unreadable dump -> UNKNOWN + non-OK (a 500k set cannot read as small)"
 else
     bad "set_sizes: unreadable dump gave status=$ST issues=${ISS:0:60}"
+fi
+# An UNKNOWN recorded only in the internal map is not an UNKNOWN the operator
+# ever reads. The render layer consumes ERRORS/WARNINGS, so delivery is asserted
+# here rather than inferred from the status code.
+if [[ "$SURF" == *UNKNOWN* ]]; then
+    ok "set_sizes: UNKNOWN reaches the operator-facing collector (render input), not just the issues map"
+else
+    bad "set_sizes: UNKNOWN never reached NFTBAN_HEALTH_ERRORS/WARNINGS — the operator would not see it (surfaced='${SURF:0:80}')"
 fi
 
 # --------------------------------------------------------------------------
