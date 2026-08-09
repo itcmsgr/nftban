@@ -143,6 +143,10 @@ while IFS= read -r f; do
     case "$f" in *test*|*fixtures*) continue ;; esac   # negative-control fixtures
     # source headers are governed by check-license-identity.sh, not this gate
     case "$f" in *.sh|*.go|*.py|cli/sbin/*|*.conf|*.rules) continue ;; esac
+    # The gate's own machinery DESCRIBES the canon (the surface registry header,
+    # the CI step comment). Documentation of a rule is not a claim of ownership,
+    # and matching it here would let this gate fail on its own explanation.
+    case "$f" in *.tsv|*.yml|*.yaml) continue ;; esac
     # generated artifacts take their identity from their GENERATOR (v1.228.8
     # PR3) and are asserted by the parser/licence gates; stamping them here
     # would duplicate an authority and invite hand-editing a generated file.
