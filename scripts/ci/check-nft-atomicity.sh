@@ -170,7 +170,7 @@ if ! grep -qE 'backend\.ReplaceSet\(' <<<"$APPLY_BODY"; then
     echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — applyReplace does not call backend.ReplaceSet()."
     OPQ_FAIL=1; FAIL=1
 fi
-if grep -vE '^[[:space:]]*//' <<<"$APPLY_BODY" | grep -qE 'backend\.(FlushSet|AddElements)\('; then
+if [[ "$(grep -vE '^[[:space:]]*//' <<<"$APPLY_BODY" | grep -cE 'backend\.(FlushSet|AddElements)\(' || true)" -gt 0 ]]; then
     echo "::error::V-OPQUEUE-REPLACE-ATOMICITY — applyReplace still calls the separately-committing FlushSet()/AddElements()."
     OPQ_FAIL=1; FAIL=1
 fi

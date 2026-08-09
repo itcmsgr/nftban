@@ -88,9 +88,9 @@ while IFS=$'\t' read -r tag id path owner reason finding introduced review dispo
         esac
     done
     # introduced must be a date
-    printf '%s' "$introduced" | grep -qE "$date_re" || fail "$id: 'introduced' must be YYYY-MM-DD (got '$introduced')"
+    [[ "$(printf '%s' "$introduced" | grep -cE "$date_re" || true)" -gt 0 ]] || fail "$id: 'introduced' must be YYYY-MM-DD (got '$introduced')"
     # review_or_expiry: a date is a HARD expiry (must not be past); else a condition string
-    if printf '%s' "$review" | grep -qE "$date_re"; then
+    if [[ "$(printf '%s' "$review" | grep -cE "$date_re" || true)" -gt 0 ]]; then
         if [[ "$review" < "$today" ]]; then fail "$id: quarantine EXPIRED (review_or_expiry=$review < today=$today)"; fi
     fi
     # disposition must be one of the 7 PR-D dispositions

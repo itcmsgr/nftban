@@ -183,6 +183,13 @@ jobs:
       # and those are compared, not the raw strings.
       - name: Check Core ownership identity (v1.228.9 PR2, BLOCKING)
         run: ./scripts/ci/check-core-ownership-identity.sh
+      # v1.228.9 PR4 BLOCKING — no timing-dependent gate results. `grep -q`
+      # downstream of a pipe under pipefail gives the producer EPIPE, which
+      # pipefail reports as a failed pipeline; whether it fires depends on
+      # producer speed. Scope is merge-deciding gates only: a flaky assertion
+      # in a gate changes a merge decision, which is a truth defect.
+      - name: Check gates have no EPIPE short-circuits (v1.228.9 PR4, BLOCKING)
+        run: ./scripts/ci/check-pipefail-epipe-shortcircuit.sh
 
       # v1.228.8 PR4 BLOCKING — control-enforcement meta-gate. The parser gate
       # shipped in PR1 with a selftest, was manually falsified, was called

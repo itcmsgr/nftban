@@ -120,9 +120,9 @@ for name in "${MANIFEST_NAMES[@]}"; do
         *_v6) base="${name%_v6}_v4" ;;
         *6)   base="${name%6}" ;;
     esac
-    if [[ -n "$base" ]] && ! printf '%s\n' "${MANIFEST_NAMES[@]}" | grep -qx "$base"; then
+    if [[ -n "$base" ]] && [[ "$(printf '%s\n' "${MANIFEST_NAMES[@]}" | grep -cx "$base" || true)" -eq 0 ]]; then
         # A missing v4 pair is legal ONLY when the manifest row records it.
-        if ! grep -P "^$name\t" "$MANIFEST" | grep -q "no v4 counterpart by design"; then
+        if [[ "$(grep -P "^$name\t" "$MANIFEST" | grep -c "no v4 counterpart by design" || true)" -eq 0 ]]; then
             bad "R3 $name has no v4 counterpart '$base' in the manifest"
             R3_BAD=1
         fi
