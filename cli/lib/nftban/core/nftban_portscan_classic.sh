@@ -159,7 +159,16 @@ _nftban_portscan_verify_prefix() {
 
     # Check live ruleset for either prefix
     local ruleset
-    ruleset=$(nft list ruleset 2>/dev/null) || return 0  # Skip check if nft fails
+    # `|| return 0` reported the LOG-prefix as verified whenever the ruleset
+    # could not be read. Not verified is its own outcome, not a pass.
+    ruleset=$(nft list ruleset 2>/dev/null) || {
+        _nftban_portscan_classic_log "WARN" "UNKNOWN: ruleset unreadable - LOG prefix NOT verified (this is not a pass)"
+        return 2
+    }
+    if [[ -z "${ruleset//[[:space:]]/}" ]]; then
+        _nftban_portscan_classic_log "WARN" "UNKNOWN: ruleset read returned no output - LOG prefix NOT verified"
+        return 2
+    fi
 
     if [[ "$ruleset" == *"$expected_prefix"* ]]; then
         _nftban_portscan_classic_log "INFO" "Prefix verified: $expected_prefix found in live ruleset"

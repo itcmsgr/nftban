@@ -284,7 +284,17 @@ nftban_detect_conflicting_tables() {
     # shellcheck disable=SC2034  # nftban_priority documents expected default
     local nftban_priority=0
     local actual_nftban_prio
-    actual_nftban_prio=$(nft -j list chain ip nftban input 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
+    # `// 0` plus a fallback of 0 made an unreadable chain indistinguishable
+    # from a chain at priority 0 — and priority is what the conflict verdict
+    # compares. UNKNOWN is carried so the comparison can refuse instead.
+    local _prio_raw
+    _prio_raw=$(nft -j list chain ip nftban input 2>/dev/null) || _prio_raw=""
+    if [[ -n "${_prio_raw//[[:space:]]/}" ]]; then
+        actual_nftban_prio=$(printf '%s' "$_prio_raw" | jq -r '.nftables[]? | select(.chain?) | .chain.prio // 0' 2>/dev/null | head -1)
+        [[ "$actual_nftban_prio" =~ ^-?[0-9]+$ ]] || actual_nftban_prio="UNKNOWN"
+    else
+        actual_nftban_prio="UNKNOWN"
+    fi
 
     # Check for known conflicting tables with PRIORITY-BASED SAFETY
 
@@ -295,9 +305,15 @@ nftban_detect_conflicting_tables() {
         # empty tables on any iptables invocation but they have no hooks.
         if nft list chain ip filter INPUT &>/dev/null; then
             local filter_prio
-            filter_prio=$(nft -j list chain ip filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
+            filter_prio=$(nft -j list chain ip filter INPUT 2>/dev/null | jq -r '.nftables[]? | select(.chain?) | .chain.prio // 0' 2>/dev/null | head -1)
+            [[ "$filter_prio" =~ ^-?[0-9]+$ ]] || filter_prio="UNKNOWN"
 
-            if [[ "$filter_prio" -le "$actual_nftban_prio" ]]; then
+            if [[ ! "$actual_nftban_prio" =~ ^-?[0-9]+$ || ! "$filter_prio" =~ ^-?[0-9]+$ ]]; then
+                # Priority ordering decides whether a foreign table shadows us.
+                # With either priority unread that ordering is unknown, and a
+                # numeric compare against UNKNOWN would error rather than decide.
+                NFTBAN_FIREWALL_CONFLICTS+=("UNKNOWN: 'ip filter' present but a chain priority was unreadable (nftban=$actual_nftban_prio, foreign=$filter_prio) — shadowing NOT ruled out")
+            elif [[ "$filter_prio" -le "$actual_nftban_prio" ]]; then
                 # CRITICAL: filter table has INPUT hook at competing priority
                 status=2
                 NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip filter' table (priority $filter_prio) runs before NFTBan (priority $actual_nftban_prio)")
@@ -319,9 +335,15 @@ nftban_detect_conflicting_tables() {
     if echo "$tables" | grep -q "^table ip6 filter"; then
         if nft list chain ip6 filter INPUT &>/dev/null; then
             local filter6_prio
-            filter6_prio=$(nft -j list chain ip6 filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
+            filter6_prio=$(nft -j list chain ip6 filter INPUT 2>/dev/null | jq -r '.nftables[]? | select(.chain?) | .chain.prio // 0' 2>/dev/null | head -1)
+            [[ "$filter6_prio" =~ ^-?[0-9]+$ ]] || filter6_prio="UNKNOWN"
 
-            if [[ "$filter6_prio" -le "$actual_nftban_prio" ]]; then
+            if [[ ! "$actual_nftban_prio" =~ ^-?[0-9]+$ || ! "$filter6_prio" =~ ^-?[0-9]+$ ]]; then
+                # Priority ordering decides whether a foreign table shadows us.
+                # With either priority unread that ordering is unknown, and a
+                # numeric compare against UNKNOWN would error rather than decide.
+                NFTBAN_FIREWALL_CONFLICTS+=("UNKNOWN: 'ip6 filter' present but a chain priority was unreadable (nftban=$actual_nftban_prio, foreign=$filter6_prio) — shadowing NOT ruled out")
+            elif [[ "$filter6_prio" -le "$actual_nftban_prio" ]]; then
                 status=2
                 NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip6 filter' table (priority $filter6_prio) runs before NFTBan")
                 [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL

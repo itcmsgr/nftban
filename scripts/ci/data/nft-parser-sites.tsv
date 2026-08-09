@@ -28,7 +28,7 @@ cli/lib/nftban/cli/cmd_support.sh	9
 cli/lib/nftban/cli/cmd_update.sh	7
 cli/lib/nftban/cli/cmd_whitelist.sh	7
 cli/lib/nftban/cli/cmd_zabbix.sh	4
-cli/lib/nftban/core/nftban_config_doctor.sh	2
+cli/lib/nftban/core/nftban_config_doctor.sh	3
 cli/lib/nftban/core/nftban_ddos_classic.sh	16
 cli/lib/nftban/core/nftban_ddos_suricata.sh	3
 cli/lib/nftban/core/nftban_emulate.sh	3

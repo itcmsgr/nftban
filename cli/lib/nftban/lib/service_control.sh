@@ -648,11 +648,18 @@ nftban_enable_all() {
     local validation_failures=()
 
     # Check 1: nft rules loaded > 0
-    local rules_count=0
-    rules_count=$(nft list ruleset 2>/dev/null | grep -cE '^\s+(type|chain|rule|set)' || true)
-    rules_count=${rules_count:-0}
-    if [[ "$rules_count" -eq 0 ]]; then
-        validation_failures+=("nft rules: 0 (no firewall rules loaded)")
+    local rules_count _ruleset_raw
+    if _ruleset_raw=$(nft list ruleset 2>/dev/null) && [[ -n "${_ruleset_raw//[[:space:]]/}" ]]; then
+        rules_count=$(printf '%s' "$_ruleset_raw" | grep -cE '^\s+(type|chain|rule|set)' || true)
+        rules_count=${rules_count:-0}
+        if [[ "$rules_count" -eq 0 ]]; then
+            validation_failures+=("nft rules: 0 (no firewall rules loaded)")
+        fi
+    else
+        # A ruleset that could not be read is not a ruleset with no rules. Both
+        # are failures here, but only one of them is a statement about the
+        # firewall — the other is a statement about our own visibility.
+        validation_failures+=("nft rules: UNKNOWN (ruleset could not be read; rule count NOT established)")
     fi
 
     # Check 2: nftband active (using config var)

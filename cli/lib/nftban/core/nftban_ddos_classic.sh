@@ -1068,10 +1068,21 @@ nftban_ddos_penalty_scan() {
     # Extract IPs from SYN flood meter (these IPs triggered rate limiting)
     # Meter entries look like: "1.2.3.4 limit rate 100/second burst 200 packets"
     local offenders_v4 offenders_v6
-    offenders_v4=$(nft list meter ${table_v4} ${syn_meter} 2>/dev/null \
-        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -u) || true
-    offenders_v6=$(nft list meter ${table_v6} ${syn_meter}6 2>/dev/null \
-        | grep -oE '[0-9a-fA-F:]+:[0-9a-fA-F:]+' | grep -v '^::$' | sort -u) || true
+    # A meter that cannot be read is not a meter with no offenders. Both used
+    # to end in the same silent `return 0`, so a broken read looked exactly like
+    # a quiet network and strikes were simply never applied. The autoban POLICY
+    # is unchanged — an unreadable meter still applies no strikes, because
+    # striking on evidence we do not have would be worse — but the condition is
+    # now distinguishable and logged instead of silent.
+    local _m4 _m6 _meter_readable=true
+    _m4=$(nft list meter ${table_v4} ${syn_meter} 2>/dev/null) || _meter_readable=false
+    _m6=$(nft list meter ${table_v6} ${syn_meter}6 2>/dev/null) || _meter_readable=false
+    if [[ "$_meter_readable" != "true" ]]; then
+        _nftban_ddos_classic_log "WARN" "SYN meter unreadable — offender list NOT established; no strikes applied this cycle (this is not evidence of zero offenders)"
+        return 0
+    fi
+    offenders_v4=$(printf '%s' "$_m4" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -u) || true
+    offenders_v6=$(printf '%s' "$_m6" | grep -oE '[0-9a-fA-F:]+:[0-9a-fA-F:]+' | grep -v '^::$' | sort -u) || true
 
     [[ -z "$offenders_v4" && -z "$offenders_v6" ]] && return 0
 
