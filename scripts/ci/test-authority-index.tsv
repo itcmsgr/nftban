@@ -173,6 +173,7 @@ nftban_update_progress_r1b3_test	cli/lib/nftban/tests/nftban_update_progress_r1b
 no_reintroduced_orphan_modules_v167_test	cli/lib/nftban/tests/no_reintroduced_orphan_modules_v167_test.sh	architecture	test	orphan-modules	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 panel_group_retirement_v137_test	cli/lib/nftban/tests/panel_group_retirement_v137_test.sh	security	test	panel-group-retirement	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 parser_tier1_unknown_truth_v1228_9_test	cli/lib/nftban/tests/parser_tier1_unknown_truth_v1228_9_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	180		
+pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migration_ownership_boundary_v1228_10_test.sh	packaging	test	package-migration-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_generic_corroborate_v149_test	cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_trusted_flow_test	cli/lib/nftban/tests/portscan_trusted_flow_test.sh	portscan	test	portscan-trusted-flow	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 protection_claim_matrix_v194_test	cli/lib/nftban/tests/protection_claim_matrix_v194_test.sh	cross-cutting	test	protection-claim-matrix	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
