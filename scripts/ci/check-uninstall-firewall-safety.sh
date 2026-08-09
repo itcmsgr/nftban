@@ -41,7 +41,7 @@ check_flush_paired() {
         # look for `nft delete table <fam> nftban` within the next WINDOW lines
         local end=$((ln + WINDOW))
         [ "$end" -gt "$n" ] && end="$n"
-        if ! sed -n "${ln},${end}p" "$f" | grep -qE "nft delete table ${fam} nftban"; then
+        if [[ "$(sed -n "${ln},${end}p" "$f" | grep -cE "nft delete table ${fam} nftban" || true)" -eq 0 ]]; then
             echo "::error::$f:$ln — 'nft flush table ${fam} nftban' has no matching 'nft delete table ${fam} nftban' within ${WINDOW} lines (would leave the ${fam} nftban input chain at policy drop with no accept rules → inbound lockout)"
             rc=1
         fi

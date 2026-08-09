@@ -527,7 +527,7 @@ check_markrunning() {
                     "grep -rn 'func.*${worker}(' ${pkgdir}"
                 continue
             fi
-            if printf '%s' "${wbody}" | grep -qE 'Mark(Stopped|Degraded|Failed|NotRunning)\('; then
+            if [[ "$(printf '%s' "${wbody}" | grep -cE 'Mark(Stopped|Degraded|Failed|NotRunning)\(' || true)" -gt 0 ]]; then
                 say "  ok     ${rel}:${startfn}() -> ${worker}() has a status transition"
                 continue
             fi
