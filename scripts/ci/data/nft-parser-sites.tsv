@@ -60,7 +60,7 @@ cli/lib/nftban/lib/nftban_panel_common.sh	1
 cli/lib/nftban/lib/nftban_panel_directadmin.sh	2
 cli/lib/nftban/lib/nftban_pro.sh	1
 cli/lib/nftban/lib/nft_fragment.sh	18
-cli/lib/nftban/lib/nft_schema.sh	30
+cli/lib/nftban/lib/nft_schema.sh	31
 cli/lib/nftban/lib/service_control.sh	2
 cli/lib/nftban/lib/whitelist_members.sh	1
 cli/sbin/nftban-apply	1
