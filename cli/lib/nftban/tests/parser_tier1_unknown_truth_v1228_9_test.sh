@@ -103,6 +103,9 @@ fi
 echo "=== B. health checks — UNKNOWN reaches the operator, never 0/healthy ==="
 run_health() { # $1=check fn -> sets ST/ISS
     HEALTH_OK=0; HEALTH_WARNING=1; HEALTH_CRITICAL=2; HEALTH_ERROR=2
+    # The sourced health module reads these from the caller's scope; naming them
+    # here documents the contract rather than silencing the linter.
+    : "$HEALTH_OK" "$HEALTH_WARNING" "$HEALTH_CRITICAL" "$HEALTH_ERROR"
     declare -gA NFTBAN_HEALTH_RESULTS=() NFTBAN_HEALTH_ISSUES=()
     NFTBAN_HEALTH_ERRORS=(); NFTBAN_HEALTH_WARNINGS=()
     # shellcheck source=/dev/null
