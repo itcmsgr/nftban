@@ -114,7 +114,20 @@ declare -g _DOCTOR_SYSTEMD_UNITS=""
 
 _doctor_gather_data() {
     # Gather all system state in a single pass
-    _DOCTOR_NFT_JSON=$(nft -j list ruleset 2>/dev/null || echo '{"nftables":[]}')
+    # A failed read used to collapse into '{"nftables":[]}', i.e. an EMPTY ruleset,
+    # which every downstream doctor check then treated as measured fact. Absence
+    # of objects and inability to see objects are different findings.
+    _DOCTOR_NFT_READABLE=true
+    _DOCTOR_NFT_JSON=$(nft -j list ruleset 2>/dev/null) || _DOCTOR_NFT_READABLE=false
+    [[ -z "${_DOCTOR_NFT_JSON//[[:space:]]/}" ]] && _DOCTOR_NFT_READABLE=false
+    [[ "$_DOCTOR_NFT_READABLE" == "true" ]] || _DOCTOR_NFT_JSON='{"nftables":[]}'
+    # Surface it: a private flag nobody reads would leave every downstream
+    # check silently operating on a fabricated empty ruleset.
+    if [[ "$_DOCTOR_NFT_READABLE" != "true" ]]; then
+        _doctor_finding "$_SEV_WARN" "nft-ruleset-unreadable" \
+            "The nftables ruleset could not be read; the nft-based checks below did NOT inspect live state" \
+            "nft -j list ruleset"
+    fi
     _DOCTOR_NFT_TABLES=$(nft list tables 2>/dev/null || echo "")
     _DOCTOR_SS_OUTPUT=$(ss -tunlpH 2>/dev/null || echo "")
     _DOCTOR_EFFECTIVE_CONFIG=$(nftban_config_load_effective 2>/dev/null || echo "{}")

@@ -113,8 +113,18 @@ nftban_health_check_nftables_security() {
     # Check for legacy inet filter table (CVE-2025-NFTBAN-001)
     if nft list table inet filter &>/dev/null 2>&1; then
         # Table exists - check if it has ACCEPT policy at priority 0
-        local filter_policy
-        filter_policy=$(nft list table inet filter 2>/dev/null | grep -E 'chain input.*priority 0.*policy accept' || true)
+        local filter_policy _filter_raw _filter_readable=true
+        _filter_raw=$(nft list table inet filter 2>/dev/null) || _filter_readable=false
+        [[ -z "${_filter_raw//[[:space:]]/}" ]] && _filter_readable=false
+        filter_policy=""
+        if [[ "$_filter_readable" == "true" ]]; then
+            filter_policy=$(printf '%s' "$_filter_raw" | grep -E 'chain input.*priority 0.*policy accept' || true)
+        else
+            # The guard above proved the table exists. An unreadable table cannot
+            # be declared free of an accept-policy bypass.
+            security_issues+=("UNKNOWN: inet filter table present but unreadable — accept-policy bypass NOT ruled out (CVE-2025-NFTBAN-001)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
 
         if [[ -n "$filter_policy" ]]; then
             security_issues+=("CRITICAL: inet filter table with 'policy accept' at priority 0 bypasses nftban blocking (CVE-2025-NFTBAN-001)")
@@ -833,7 +843,17 @@ EOF
     if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
         # v1.24.0: Break pipeline to avoid pipefail false positive
         local nft_tcp_ports
-        nft_tcp_ports=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null) || nft_tcp_ports=""
+        local _ports_readable=true
+        nft_tcp_ports=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null) || {
+            nft_tcp_ports=""; _ports_readable=false
+        }
+        if [[ "$_ports_readable" != "true" ]]; then
+            # The enclosing branch already proved the table exists, so this is a
+            # read failure, not an absent set. Staying silent here reported an
+            # unverified SSH port exactly like a verified one.
+            ssh_issues+=("UNKNOWN: could not read tcp_ports_in — SSH port $current_ssh_port NOT verified in nftables")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
         # v1.25.0: Only check elements section — empty set has no "elements" line
         # grep against full nft output could false-match on metadata or fail on empty set
         if [[ -n "$nft_tcp_ports" ]] && echo "$nft_tcp_ports" | grep -q "elements"; then
@@ -1009,8 +1029,16 @@ nftban_health_check_set_sizes() {
             local family="ip"
             [[ "$set_name" == *_ipv6 ]] && family="ip6"
             local count
-            count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -c ',' || true)
-            count=${count:-0}
+            # A failed dump is not a small set. Counting commas on empty output
+            # reported a 500k set as healthily small, which is the one thing this
+            # threshold check exists to catch.
+            local _raw
+            if _raw=$(nft list set "$family" nftban "$set_name" 2>/dev/null) && [[ -n "${_raw//[[:space:]]/}" ]]; then
+                count=$(printf '%s' "$_raw" | grep -c ',' || true)
+                count=${count:-0}
+            else
+                count="UNKNOWN"
+            fi
             set_counts["$set_name"]="$count"
         done
     fi
@@ -1018,6 +1046,13 @@ nftban_health_check_set_sizes() {
     # Check interval sets (O(n) performance concern)
     for set_name in blacklist_ipv4 blacklist_ipv6; do
         local count="${set_counts[$set_name]:-0}"
+        if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+            # Unmeasured is not small. Comparing UNKNOWN numerically would both
+            # error and silently pass the threshold.
+            set_issues+=("UNKNOWN: $set_name size could not be measured — scale thresholds NOT evaluated")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            continue
+        fi
         if [[ "$count" -ge 500000 ]]; then
             set_issues+=("CRITICAL: $set_name has ${count} elements (CRITICAL_SCALE) — expect 20-30s per query")
             status=$HEALTH_CRITICAL
@@ -1030,6 +1065,11 @@ nftban_health_check_set_sizes() {
     # Check whitelist sets (should be small)
     for set_name in whitelist_ipv4 whitelist_ipv6; do
         local count="${set_counts[$set_name]:-0}"
+        if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+            set_issues+=("UNKNOWN: $set_name size could not be measured — whitelist size NOT evaluated")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            continue
+        fi
         if [[ "$count" -ge 10000 ]]; then
             set_issues+=("WARNING: $set_name has ${count} elements — whitelists should be small for performance")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING

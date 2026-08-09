@@ -321,6 +321,18 @@ _check_config_divergence() {
 # RULE COUNTING — Single Source of Truth (v1.24.0)
 # =============================================================================
 
+# Sum counts that may be UNKNOWN. Defined at FILE scope, not inside the human
+# renderer: a helper that only exists after some other path happened to run is
+# not available to the JSON surface, which can be invoked on its own.
+_nftban_sum_or_unknown() {
+    local t=0 v
+    for v in "$@"; do
+        [[ "$v" =~ ^[0-9]+$ ]] || { echo UNKNOWN; return 0; }
+        t=$((t + v))
+    done
+    echo "$t"
+}
+
 _nftban_count_rules() {
     # Count nftables rules consistently for both human and JSON output.
     #
@@ -580,16 +592,21 @@ _status_section_firewall() {
     # below so an operator sees attribution. Pre-v1.141 'cache may lag' is
     # replaced by an explicit 'reconciled Ns ago' note that only fires when
     # the source-index disagrees with the kernel. (V1_141_0 §2 D-headline.)
-    local kernel_v4_auto=0 kernel_v4_manual=0 kernel_v6_auto=0 kernel_v6_manual=0
+    local kernel_v4_auto=UNKNOWN kernel_v4_manual=UNKNOWN kernel_v6_auto=UNKNOWN kernel_v6_manual=UNKNOWN
     if declare -f nftban_nft_count_set >/dev/null 2>&1; then
-        kernel_v4_auto=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
-        kernel_v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
-        kernel_v6_auto=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
-        kernel_v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
+        kernel_v4_auto=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)
+        kernel_v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo UNKNOWN)
+        kernel_v6_auto=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)
+        kernel_v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo UNKNOWN)
     fi
-    local _auto_total=$((kernel_v4_auto + kernel_v6_auto))
-    local _manual_total=$((kernel_v4_manual + kernel_v6_manual))
-    local kernel_total=$((_auto_total + _manual_total))
+    # "Banned IPs" is the headline protection figure. A component that could not
+    # be read makes the TOTAL unestablished — summing it as 0 would report an
+    # unreadable kernel as an empty one, which is the strongest claim this
+    # surface can make from the weakest evidence.
+    local _auto_total _manual_total kernel_total
+    _auto_total=$(_nftban_sum_or_unknown "$kernel_v4_auto" "$kernel_v6_auto")
+    _manual_total=$(_nftban_sum_or_unknown "$kernel_v4_manual" "$kernel_v6_manual")
+    kernel_total=$(_nftban_sum_or_unknown "$kernel_v4_auto" "$kernel_v6_auto" "$kernel_v4_manual" "$kernel_v6_manual")
     # ban_count stays the headline-authority count so existing quick-commands
     # gating on it works unchanged.
     local ban_count=$kernel_total
@@ -1879,18 +1896,24 @@ output_json() {
     # bans to feed/admin sources. cache_count + source_index_count remain
     # below but are clearly subordinate; counts.authority="kernel" marks
     # which field consumers should use. (V1_141_0 §2 D-json-fork.)
-    local jk_v4_auto=0 jk_v4_manual=0 jk_v6_auto=0 jk_v6_manual=0
+    local jk_v4_auto=UNKNOWN jk_v4_manual=UNKNOWN jk_v6_auto=UNKNOWN jk_v6_manual=UNKNOWN
     if declare -f nftban_nft_count_set >/dev/null 2>&1; then
-        jk_v4_auto=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
-        jk_v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
-        jk_v6_auto=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
-        jk_v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
+        jk_v4_auto=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)
+        jk_v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo UNKNOWN)
+        jk_v6_auto=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)
+        jk_v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo UNKNOWN)
     fi
-    local kernel_automatic=$((jk_v4_auto + jk_v6_auto))
-    local kernel_manual=$((jk_v4_manual + jk_v6_manual))
-    local kernel_count=$((kernel_automatic + kernel_manual))
+    local kernel_automatic kernel_manual kernel_count
+    kernel_automatic=$(_nftban_sum_or_unknown "$jk_v4_auto" "$jk_v6_auto")
+    kernel_manual=$(_nftban_sum_or_unknown "$jk_v4_manual" "$jk_v6_manual")
+    kernel_count=$(_nftban_sum_or_unknown "$jk_v4_auto" "$jk_v6_auto" "$jk_v4_manual" "$jk_v6_manual")
+    # null, not 0: a JSON consumer must be able to tell "no bans" from
+    # "the kernel could not be read". Emitting 0 for an unreadable set would
+    # report an unprotected-looking host as a measured empty one.
     local ban_count=$kernel_count
-    echo "    \"banned_ips\": $ban_count,"
+    local _banned_json="$ban_count"
+    [[ "$_banned_json" =~ ^[0-9]+$ ]] || _banned_json=null
+    echo "    \"banned_ips\": $_banned_json,"
 
     # v1.141 PR-C (D-json-fork): structured counts subordinate to the
     # kernel authority computed above. cache_count + source_index_count are

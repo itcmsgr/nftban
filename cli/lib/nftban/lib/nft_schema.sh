@@ -595,16 +595,34 @@ nftban_nft_count_set() {
     local table="${2:-nftban}"
     local set="${3:-blacklist_ipv4}"
 
-    # Use JSON output for fast O(1) counting
+    # Use JSON output for fast O(1) counting.
+    #
+    # Two defects fixed in v1.228.9:
+    #  - the query indexed `.nftables[1]` POSITIONALLY. That assumes exactly one
+    #    object (metainfo) precedes the set, which is not guaranteed across nft
+    #    versions; on a document with a different prologue it selects the wrong
+    #    object and yields 0. The defensive form selects BY SHAPE.
+    #  - a failed or unparseable read fell back to 0, so an unreadable set was
+    #    indistinguishable from an empty one. This is the headline "Banned IPs"
+    #    figure, so that zero reads as "nothing is banned".
+    #
+    # Emits an integer, or UNKNOWN when the count could not be established.
+    # Callers MUST branch on UNKNOWN and never coerce it back to 0.
     if command -v jq &>/dev/null; then
-        nft -j list set "$family" "$table" "$set" 2>/dev/null | \
-            jq -r '.nftables[1].set.elem // [] | length' 2>/dev/null || echo "0"
+        local _json _count
+        _json=$(nft -j list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
+        [[ -z "${_json//[[:space:]]/}" ]] && { echo "UNKNOWN"; return 0; }
+        _count=$(printf '%s' "$_json" | jq -r '[.nftables[]? | select(.set?) | .set.elem[]?] | length' 2>/dev/null)
+        [[ "$_count" =~ ^[0-9]+$ ]] || { echo "UNKNOWN"; return 0; }
+        echo "$_count"
     else
         # Fallback: count commas (still faster than regex)
         local output
-        output=$(nft list set "$family" "$table" "$set" 2>/dev/null || true)
-        if [[ -z "$output" ]]; then
-            echo "0"
+        output=$(nft list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
+        if [[ -z "${output//[[:space:]]/}" ]]; then
+            # rc=0 with no output is not an empty set: `nft list set` prints the
+            # set scaffolding for a set it can actually see.
+            echo "UNKNOWN"
         else
             # Count elements by counting commas + 1 (if has elements)
             local comma_count
@@ -655,7 +673,10 @@ nftban_nft_count_set_elements() {
     fi
 
     local json_output
-    json_output=$(nft -j list set "$family" "$table" "$set_name" 2>/dev/null) || { echo "0"; return; }
+    # A failed read is not an empty set. This count feeds set-size health
+    # thresholds, so a fabricated 0 reports a 500k set as healthily small.
+    json_output=$(nft -j list set "$family" "$table" "$set_name" 2>/dev/null) || { echo "UNKNOWN"; return; }
+    [[ -z "${json_output//[[:space:]]/}" ]] && { echo "UNKNOWN"; return; }
 
     # Defensive jq: iterate all objects, find .set, count .elem
     # Works across nft 1.0.2 through 1.1.x:
