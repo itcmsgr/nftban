@@ -682,12 +682,18 @@ nftban_emulate_format_text() {
     fi
 
     # Colors
-    local RED='\033[0;31m'
-    local GREEN='\033[0;32m'
-    local YELLOW='\033[1;33m'
-    local CYAN='\033[0;36m'
-    local NC='\033[0m'
-    local BOLD='\033[1m'
+    # ANSI-C quoting ($'...'), not plain single quotes. These are emitted through
+    # `cat <<EOF`, which performs no backslash interpretation, so '\033[1m' would
+    # reach the operator as the seven literal characters \033[1m rather than as a
+    # colour. Proven: BOLD='\033[1m' through a heredoc prints \033[1mHEADING,
+    # while BOLD=$'\033[1m' prints the escape. The non-tty path blanks these, so
+    # the defect was invisible in pipes and only appeared on a real terminal.
+    local RED=$'\033[0;31m'
+    local GREEN=$'\033[0;32m'
+    local YELLOW=$'\033[1;33m'
+    local CYAN=$'\033[0;36m'
+    local NC=$'\033[0m'
+    local BOLD=$'\033[1m'
 
     # Disable colors if not terminal or disabled
     if [[ ! -t 1 ]] || [[ "${NFTBAN_COLOR_OUTPUT:-true}" != "true" ]]; then

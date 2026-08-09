@@ -65,6 +65,7 @@ cli_pipefail_arith_sweep_v172_test	cli/lib/nftban/tests/cli_pipefail_arith_sweep
 cli_port_reload_hint_v144_test	cli/lib/nftban/tests/cli_port_reload_hint_v144_test.sh	cli	test	port-reload-hint	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_router_exit_truth_v1228_1_test	cli/lib/nftban/tests/cli_router_exit_truth_v1228_1_test.sh	cli	test	rc-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_runtime_hint_reachability_v144_test	cli/lib/nftban/tests/cli_runtime_hint_reachability_v144_test.sh	cli	test	runtime-hint-reachability	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+cli_semantic_verdict_matrix_v1228_9_test	cli/lib/nftban/tests/cli_semantic_verdict_matrix_v1228_9_test.sh	cli	test	cli-semantic-parity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	180		
 cli_status_count_truth_test	cli/lib/nftban/tests/cli_status_count_truth_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_status_json_no_contradict_test	cli/lib/nftban/tests/cli_status_json_no_contradict_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_status_kernel_verify_hint_test	cli/lib/nftban/tests/cli_status_kernel_verify_hint_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
