@@ -83,6 +83,10 @@ echo "== Core ownership identity (semantic, per-surface grammar) =="
 printf '   authority: holder=%s years=%s license=%s\n\n' "$CORE_HOLDER" "$CORE_YEARS" "$CORE_LICENSE"
 
 classified=0
+# owner_auth/years_auth are read to keep the row shape explicit and to make a
+# future per-surface authority override a data change rather than a code change;
+# today every classified surface answers to CORE.
+# shellcheck disable=SC2034
 while IFS=$'\t' read -r path klass required owner_auth years_auth lic_auth; do
     [[ -z "$path" || "${path:0:1}" == "#" ]] && continue
     classified=$((classified + 1))
