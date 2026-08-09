@@ -109,7 +109,7 @@ while IFS=$'\t' read -r path klass required owner_auth years_auth lic_auth; do
 
     # A retired holder form is a competing ownership identity, regardless of
     # whether the canonical holder also appears in the same line.
-    if printf '%s' "$line" | grep -qE "$RETIRED_HOLDER_RE"; then
+    if [[ "$(printf '%s' "$line" | grep -cE "$RETIRED_HOLDER_RE" || true)" -gt 0 ]]; then
         bad "$path names the PROJECT as an owner (retired form): ${line:0:64}"
         continue
     fi

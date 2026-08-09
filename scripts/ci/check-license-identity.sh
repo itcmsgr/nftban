@@ -78,7 +78,10 @@ EOF
 
 classify() { # $1=path -> class
     local f="$1"
-    generated_artifacts | grep -qxF "$f" && { echo GENERATED_BY_AUTHORITY; return; }
+    # Counted, not `grep -q`: under pipefail an early -q exit gives the
+    # upstream heredoc EPIPE, which would misclassify a generated artifact as
+    # not generated — and then demand a hand-stamped header on it.
+    if [[ "$(generated_artifacts | grep -cxF "$f" || true)" -gt 0 ]]; then echo GENERATED_BY_AUTHORITY; return; fi
     case "$f" in
         vendor/*|third_party/*|node_modules/*) echo VENDORED; return ;;
     esac

@@ -98,7 +98,7 @@ release "$CVICTIM"
 echo "=== BC4  competing OLD copyright identity -> FAIL ==="
 guard "$CVICTIM"
 sed "s|$CANON|Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis|" "$CVICTIM.pr4bak" > "$CVICTIM"
-if bash "$LICENSE_GATE" 2>&1 | grep -q 'NON_CANON_COPYRIGHT       = 0'; then
+if [[ "$(bash "$LICENSE_GATE" 2>&1 | grep -cF 'NON_CANON_COPYRIGHT       = 0' || true)" -gt 0 ]]; then
     bad "BC4 competing identity NOT detected — the gate still reports 0 non-canon"
 else
     ok "BC4 competing identity detected"
@@ -149,7 +149,11 @@ else
 fi
 # BC8: no vendored tree exists; assert the classifier would route one, and that
 # its absence is a measured fact rather than an untested branch.
-if bash "$LICENSE_GATE" 2>&1 | grep -qE 'VENDORED +0'; then
+# NOT `grep -q` downstream of a pipe: it exits on first match, the upstream
+# gate dies with EPIPE, and `pipefail` turns that into a pipeline failure. It
+# passed locally on timing and failed in CI — flaky by construction, and the
+# third instance of this trap in this release train.
+if [[ "$(bash "$LICENSE_GATE" 2>&1 | grep -cE 'VENDORED +0' || true)" -gt 0 ]]; then
     ok "BC8 vendored class present in the census and measured as 0 (not an untested branch)"
 else
     bad "BC8 vendored class missing from the census"
