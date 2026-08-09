@@ -40,8 +40,19 @@ NC='\033[0m'
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # Files to check (staged files only)
-# Exclude: this script, packaging/build_nftban.sh (legacy), and health_check.sh (contains grep patterns)
-FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|spec|postinst|preinst|postrm|prerm)$' | grep -v 'check-recursive-permissions.sh' | grep -v 'packaging/build_nftban.sh' | grep -v 'health_check.sh' || true)
+#
+# v1.228.10: the subject is UNBOUNDED OWNERSHIP/MODE MUTATION, not the literal shell
+# string "chown -R". Two coverage gaps were measured and are closed here:
+#
+#   1. GO WAS INVISIBLE. internal/installer/fhs/permissions.go issues the same policy as
+#      exec.Run("chown","-R",...) argv elements, which no shell-only grep can see. That
+#      path is the installer's permission fallback — a security actor the guard was blind to.
+#   2. packaging/build_nftban.sh WAS BLIND-EXCLUDED as "legacy". It emits the RPM %post
+#      scriptlet, so the exclusion hid a privileged packaging actor. The exclusion is removed.
+#
+# Still excluded, and only these: this script and health_check.sh, both of which contain the
+# detection patterns themselves as data rather than as executable policy.
+FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|go|spec|postinst|preinst|postrm|prerm)$' | grep -v 'check-recursive-permissions.sh' | grep -v 'health_check.sh' || true)
 
 if [[ -z "$FILES" ]]; then
     echo -e "${GREEN}[OK]${NC} No shell/packaging files to check"
@@ -49,6 +60,15 @@ if [[ -z "$FILES" ]]; then
 fi
 
 ERRORS=0
+PENDING_FILE="${REPO_ROOT}/scripts/ci/data/recursive-permission-pending.tsv"
+
+# A site listed in the pending file is STILL WRONG and deliberately deferred (owner TODO-3,
+# GO fallback parity). It is reported every run so the debt stays visible; it does not fail
+# the build. Anything NOT listed fails immediately.
+is_pending() {  # $1=file  $2=line
+    [[ -f "$PENDING_FILE" ]] || return 1
+    grep -qF "$1:$2	" "$PENDING_FILE" 2>/dev/null
+}
 
 echo "Checking for recursive permission commands..."
 
@@ -72,6 +92,22 @@ for file in $FILES; do
         echo "  Use explicit ownership or systemd-tmpfiles instead"
         ERRORS=$((ERRORS + 1))
     fi
+
+    # Go surface: the recursive flag as its own quoted argv element immediately after the
+    # quoted verb. Written this way so a Go COMMENT or a log string naming the flag does
+    # NOT match — only an actual command invocation does.
+    if [[ "$file" == *.go ]]; then
+        while IFS=: read -r ln _; do
+            [[ -n "$ln" ]] || continue
+            if is_pending "$file" "$ln"; then
+                echo "  [PENDING] $file:$ln — deferred debt (GO fallback parity, owner TODO-3)"
+            else
+                echo -e "${RED}[ERROR]${NC} $file:$ln executes a recursive chown/chmod"
+                echo "  Derive from the canonical FHS matrix (build/fhs-spec.yaml) instead"
+                ERRORS=$((ERRORS + 1))
+            fi
+        done < <(grep -n -E '"(chown|chmod)"[[:space:]]*,[[:space:]]*"(-R|--recursive)"' "$filepath" 2>/dev/null || true)
+    fi
 done
 
 if [[ $ERRORS -gt 0 ]]; then
@@ -80,6 +116,7 @@ if [[ $ERRORS -gt 0 ]]; then
     echo ""
     echo "Recursive chmod/chown is prohibited because:"
     echo "  1. It changes permissions on user-edited config files"
+    echo "  1b. It claims ownership of descendants the package never created"
     echo "  2. It creates race conditions with running services"
     echo "  3. It bypasses the canonical FHS spec"
     echo ""

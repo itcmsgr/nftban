@@ -1,0 +1,30 @@
+# NFTBan — UNRESOLVED unbounded ownership/mode mutation sites (v1.228.10)
+#
+# Consumed by BOTH existing guards — tools/check-recursive-permissions.sh (pre-commit) and
+# check_recursive_permissions() in .github/ci/health_check.sh (CI). There is no third guard.
+#
+# THIS IS NOT AN ALLOWLIST. A row means STILL WRONG, deliberately deferred, with a named
+# owner decision. Rows are printed on every run so the debt stays visible, the count may
+# only DECREASE, and a site that is NOT listed fails the build immediately.
+#
+# All six rows are one open item: OPEN_DEBT — GO FALLBACK PARITY (owner TODO-3).
+# internal/installer/fhs/permissions.go::applyPermissions is the installer's FALLBACK
+# permission path, reached only when the generated primary script is missing or fails
+# (fhs/permissions.go SetPermissions). It maintains its own recursive ownership logic
+# instead of deriving from the canonical matrix in build/fhs-spec.yaml, so it is WEAKER
+# than the primary path it stands in for.
+#
+#   INVARIANT: RECOVERY/FALLBACK MUST NOT BE WEAKER THAN PRIMARY.
+#
+# The canonical-permission lane may not close until these either converge to the canonical
+# matrix or are separated into an approved follow-up with a hard release gate (owner ruling
+# 2026-08-09). The primary path for LogDir is already fixed at the spec level (226e49b5);
+# :89 remains here precisely because fixing the spec did NOT fix the fallback.
+#
+# columns: file:line<TAB>reason
+internal/installer/fhs/permissions.go:78	GO_FALLBACK_PARITY — EtcDir /etc/nftban root:nftban. Highest-priority sibling: recursive over OPERATOR-CREATED config (whitelist.d/, blacklist.d/). Owner-required read-only classification before any change.
+internal/installer/fhs/permissions.go:82	GO_FALLBACK_PARITY — BinDir /usr/lib/nftban/bin root:root. Package-owned binaries; foreign content unlikely but UNMEASURED.
+internal/installer/fhs/permissions.go:85	GO_FALLBACK_PARITY — DataDir /var/lib/nftban. Would flatten the root:nftban admin roots (backup/, update-backups/, pro/) and the root:nftban-auditor 0770 evidence boundary that the primary path preserves.
+internal/installer/fhs/permissions.go:89	GO_FALLBACK_PARITY — LogDir /var/log/nftban. The primary path was fixed at the canonical spec (226e49b5); this fallback still claims every descendant, so the invariant is not yet closed end-to-end.
+internal/installer/fhs/permissions.go:93	GO_FALLBACK_PARITY — CacheDir /var/cache/nftban 0755 world-traversable; foreign-content reachability unmeasured.
+internal/installer/fhs/permissions.go:97	GO_FALLBACK_PARITY — RunDir /run/nftban. tmpfs, recreated per boot, so foreign persistence is bounded by definition. Lowest risk of the six; still requires the explicit classification.
