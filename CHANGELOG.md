@@ -11,6 +11,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.9] - 2026-08-09 — operator output that parses, one owner, and gates that cannot pass by accident
+
+### Fixed — `nftban status --json` did not parse
+
+A count helper can exit 0 while printing nothing, and `|| echo 0` only handles
+a non-zero exit, so the document emitted `"whitelist_ips": ,`. Separately, the
+kernel-count siblings emitted a bare `UNKNOWN` token after those counts became
+three-valued in v1.228.8. Either one breaks the whole object, so every consumer
+of the document fails at once — worse than a wrong number, because nothing can
+be read at all.
+
+A successful-but-empty measurement is now UNKNOWN, not zero. Empty output is not
+a count, and inventing a zero reports an unestablished whitelist as an empty one.
+
+**Scope, stated plainly: one JSON surface is proven, not all of them.** NFTBan
+advertises `--json` on 62 commands; this release proves `status`. The remaining
+61 are unverified and tracked separately. The defect was per-field and every
+field looked plausible in isolation, so field-level assertions do not establish
+that a document parses.
+
+### Fixed — nine parser sites where a failed read looked healthy
+
+A set-size threshold counted commas on empty output, so a 500,000-element set
+reported as healthily small. An unreadable `tcp_ports_in` produced no SSH-port
+warning. An unreadable `inet filter` table could not be declared free of an
+accept-policy bypass, but was. A failed ruleset read became "0 rules loaded",
+conflating a statement about the firewall with a statement about our own
+visibility. An unread chain priority became priority 0 — the exact number the
+conflict verdict compares.
+
+The element counter also selected its JSON object positionally, which reports
+zero bans on a document whose prologue differs; it now selects by shape.
+
+Every one of these now yields UNKNOWN, and each consumer handles it: thresholds
+refuse to compare rather than passing silently, and the conflict check tests for
+UNKNOWN before the numeric comparison rather than erroring on it.
+
+The DDoS autoban policy is deliberately unchanged: an unreadable meter still
+applies no strikes, because striking on evidence we do not have would be worse.
+What changed is that the condition is logged rather than being indistinguishable
+from a quiet network.
+
+### Changed — one owner, many grammars
+
+The tree carried nine different renderings of who owns NFTBan Core, all naming
+the project alongside the person. A project name is not a legal person and
+cannot hold copyright, so ownership resolves to one holder and one year range.
+
+The gate is semantic rather than a byte-equality search: DEP-5 legitimately
+writes `Copyright: 2024-2026 <holder>` with no parenthesised c, and demanding an
+identical string would reject valid packaging metadata. Surfaces are classified
+in a registry rather than declaring every Markdown file a legal surface.
+
+A missing required legal document is now a failure. The previous check skipped
+absent files, so deleting NOTICE.md or TRADEMARK.md left it green — a control
+that can be satisfied by removing its own subject.
+
+### Fixed — gates that could pass or fail on timing
+
+Seven gates used `grep -q` downstream of a pipe under `pipefail`. The early exit
+gives the producer EPIPE, which pipefail reports as a failed pipeline, so the
+same assertion passed locally and failed on a slower runner. In a test that is
+noise; in a gate it decides whether code may merge.
+
+A guard now prevents the shape returning, scoped to merge-deciding gates. It
+bans one shape, not a construct: a plain `grep -q PATTERN file` has no upstream
+and is untouched. The 495 occurrences in test suites are recorded as measured
+debt rather than remediated here or declared safe.
+
 ## [v1.228.8] - 2026-08-08 — nft parsing becomes a governed boundary, and derived state must prove it was restored
 
 Three defects in this release share one shape: a failed observation was
