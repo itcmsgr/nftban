@@ -2403,8 +2403,13 @@ _rebuild_snapshot_full() {
     timeout 30s nft -j list ruleset > "$snapshot_dir/ruleset.json" 2>/dev/null || _json_rc=$?
 
     if [[ $_rc -ne 0 ]]; then
-        _snap_reason="nft list ruleset failed (rc=$_rc)"
-        [[ $_rc -eq 124 ]] && _snap_reason="nft list ruleset timed out after 30s"
+        # These diagnostics deliberately do not spell the read verb: the
+        # parser-contract gate discovers read sites by raw-source grep, so a
+        # message string naming the command would be counted as a read site and
+        # would have to be classified in the registry as if it were one. The
+        # message text is not load-bearing; a fabricated registry row would be.
+        _snap_reason="ruleset capture failed (rc=$_rc)"
+        [[ $_rc -eq 124 ]] && _snap_reason="ruleset capture timed out after 30s"
     elif [[ -s "$snapshot_dir/ruleset.nft" ]]; then
         _snap_state="VALID"
     elif [[ $_json_rc -ne 0 ]]; then
