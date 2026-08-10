@@ -62,7 +62,21 @@ if [[ ! -f "$FW" ]]; then
 fi
 
 # Recovery/operator funcs allowed to flush/delete the live table by design.
-REBUILD_EXEMPT='_rebuild_rollback firewall_reset _restore_from_file _restore_previous_firewall'
+#
+# v1.228.10 A1: _rebuild_rollback REMOVED from this list. It was exempt, and the
+# exemption is precisely how the defect survived — the forward lane's prohibition on
+# flush-then-load was enforced while the AUTOMATIC recovery path that fires when a
+# rebuild regresses was allowed to do exactly that, plus a global `nft flush ruleset`
+# that also destroyed foreign (Docker/panel/operator) tables.
+#
+# An exemption is a claim that a path is safe by design. That claim was never true
+# here: rollback now builds an NFTBan-scoped, self-resetting candidate, pre-validates
+# it with `nft -c -f`, and commits it in ONE `nft -f`. It therefore needs no exemption
+# and must be held to the same rule as the forward lane.
+#
+# The three remaining entries are operator-invoked, --force-gated paths (B15) and stay
+# exempt for now; they are tracked separately and are NOT in this lane's scope.
+REBUILD_EXEMPT='firewall_reset _restore_from_file _restore_previous_firewall'
 
 REBUILD_VIOLATIONS="$(
     awk -v exempt="$REBUILD_EXEMPT" '
@@ -71,10 +85,25 @@ REBUILD_VIOLATIONS="$(
         /^[a-zA-Z_][a-zA-Z0-9_]*\(\)[[:space:]]*\{?[[:space:]]*$/ {
             f = $0; sub(/\(\).*/, "", f); fn = f; next
         }
-        # Match a real (non-comment) standalone flush/delete of the live table.
-        /nft[[:space:]]+(flush|delete)[[:space:]]+table[[:space:]]+(ip|ip6|inet)[[:space:]]+nftban/ {
+        # Match a real (non-comment) standalone flush/delete of live state.
+        #
+        # v1.228.10 A1: `nft flush ruleset` added. The rule previously matched only a
+        # NAMED nftban table, so the GLOBAL flush — which is strictly worse, because it
+        # also destroys foreign (Docker/panel/operator) tables — was invisible to it.
+        # Removing _rebuild_rollback from the exemption list alone did NOT catch the old
+        # code; measured, the guard still passed. Both changes were required.
+        /nft[[:space:]]+(flush|delete)[[:space:]]+table[[:space:]]+(ip|ip6|inet)[[:space:]]+nftban|nft[[:space:]]+flush[[:space:]]+ruleset/ {
             line = $0; sub(/^[[:space:]]+/, "", line)
             if (line ~ /^#/) next
+            # v1.228.10 A1: the subject is the EXECUTABLE surface. An operator hint or a
+            # warning that NAMES the forbidden command is not the command. Approximate
+            # "inside a quoted string" by counting quotes before the match — imperfect,
+            # but it fails toward reporting (a real command is never skipped), and the
+            # alternative was flagging a message that warns AGAINST the very primitive.
+            pre = line; sub(/nft[[:space:]]+(flush|delete).*/, "", pre)
+            q = gsub(/"/, "\"", pre)
+            if (q % 2 == 1) next
+            if (line ~ /^(echo|printf)[[:space:]]/) next
             if (!(fn in ex)) printf "  %s:%d  [in %s()]  %s\n", FILENAME, NR, fn, line
         }
     ' "$FW"
