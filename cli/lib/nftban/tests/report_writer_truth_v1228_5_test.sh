@@ -63,7 +63,17 @@ fi
 command -v jq >/dev/null 2>&1 || { echo "  [SKIP] jq not available"; exit 0; }
 
 SB="$(mktemp -d)"
-cleanup() { chmod -R u+rwX "$SB" 2>/dev/null || true; rm -rf "$SB"; }
+# This test deliberately creates unreadable/unwritable directories to drive the
+# DAC failure paths, so cleanup must restore traversal before rm -rf can descend.
+# Only DIRECTORIES need it: removing a file requires write+execute on its parent,
+# not on the file itself. Bounded by construction — $SB is a fresh mktemp -d whose
+# entire contents this test created, and find does not follow symlinks without -L,
+# so the restore cannot escape the sandbox. A recursive chmod over the whole tree
+# is both broader than required and indiscriminate about object type.
+cleanup() {
+    find "$SB" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+    rm -rf "$SB"
+}
 trap cleanup EXIT
 
 # The pre-fix implementation, extracted from the rejected candidate. If the commit is
