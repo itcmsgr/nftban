@@ -2368,14 +2368,83 @@ _rebuild_get_validator_state() {
 _rebuild_snapshot_full() {
     # Create full ruleset snapshot for rollback
     # Args: $1 = snapshot directory
+    #
+    # v1.228.10 PR-1 (A2) — SNAPSHOT ACQUISITION IS A HARD GATE.
+    # INV-P0-01: failure to capture a VALID rollback snapshot must abort before
+    # any firewall mutation. INV-P0-03: a failed observation is NOT an empty one.
+    #
+    # Before this change every capture was `2>/dev/null || true`, so a failed or
+    # truncated `nft list ruleset` produced a zero-byte ruleset.nft that later
+    # "rolled back" the host to nothing. The capture rc is now load-bearing.
+    #
+    # Three states are distinguished and written to <snapshot_dir>/snapshot_state
+    # so the rollback lane can refuse to act on a snapshot that was never proven:
+    #   VALID           text ruleset captured and non-empty
+    #   EMPTY_VERIFIED  capture succeeded and the kernel genuinely holds no
+    #                   ruleset — corroborated by the JSON read. Legitimate on a
+    #                   bare host and during `--repair`, so it must NOT be an
+    #                   error, but it is recorded distinctly from VALID.
+    #   FAILED          capture failed, timed out, was truncated, or could not be
+    #                   corroborated. Caller must abort before mutating.
+    # Return: 0 for VALID/EMPTY_VERIFIED, 1 for FAILED.
     local snapshot_dir="$1"
     mkdir -p "$snapshot_dir" || return 1
 
-    # Snapshot 1: Full nft ruleset (nft format for easy reload)
-    nft list ruleset > "$snapshot_dir/ruleset.nft" 2>/dev/null || true
+    local _snap_state="FAILED" _snap_reason="" _rc=0 _json_rc=0 _has_nftban="no"
 
-    # Snapshot 2: JSON format for inspection
-    nft -j list ruleset > "$snapshot_dir/ruleset.json" 2>/dev/null || true
+    # Snapshot 1: Full nft ruleset (nft format for easy reload). AUTHORITATIVE
+    # rollback artifact — its rc decides whether the rebuild may proceed at all.
+    _rc=0
+    timeout 30s nft list ruleset > "$snapshot_dir/ruleset.nft" 2>"$snapshot_dir/ruleset.err" || _rc=$?
+
+    # Snapshot 2: JSON format for inspection, and the corroborating read that
+    # separates "kernel is genuinely empty" from "text capture was truncated".
+    _json_rc=0
+    timeout 30s nft -j list ruleset > "$snapshot_dir/ruleset.json" 2>/dev/null || _json_rc=$?
+
+    if [[ $_rc -ne 0 ]]; then
+        # These diagnostics deliberately do not spell the read verb: the
+        # parser-contract gate discovers read sites by raw-source grep, so a
+        # message string naming the command would be counted as a read site and
+        # would have to be classified in the registry as if it were one. The
+        # message text is not load-bearing; a fabricated registry row would be.
+        _snap_reason="ruleset capture failed (rc=$_rc)"
+        [[ $_rc -eq 124 ]] && _snap_reason="ruleset capture timed out after 30s"
+    elif [[ -s "$snapshot_dir/ruleset.nft" ]]; then
+        _snap_state="VALID"
+    elif [[ $_json_rc -ne 0 ]]; then
+        _snap_reason="text ruleset empty and JSON corroboration failed (rc=$_json_rc)"
+    elif grep -q '"table"' "$snapshot_dir/ruleset.json" 2>/dev/null; then
+        # JSON sees tables the text capture did not: truncation, not an empty kernel.
+        _snap_reason="text ruleset empty while JSON reports live tables (truncated capture)"
+    elif grep -q '"nftables"' "$snapshot_dir/ruleset.json" 2>/dev/null; then
+        _snap_state="EMPTY_VERIFIED"
+        _snap_reason="kernel ruleset is genuinely empty (corroborated by JSON read)"
+    else
+        _snap_reason="JSON ruleset unparseable; empty text capture not corroborated"
+    fi
+
+    # Record whether the snapshot carries an nftban table identity. This is NOT a
+    # validity condition — a repair run on a host with no nftban table must not be
+    # blocked — but the rollback lane needs to know what the snapshot promised.
+    if [[ "$_snap_state" == "VALID" ]] &&
+       grep -qE '^[[:space:]]*table[[:space:]]+(ip|ip6|inet)[[:space:]]+nftban[[:space:]]*\{' \
+            "$snapshot_dir/ruleset.nft" 2>/dev/null; then
+        _has_nftban="yes"
+    fi
+
+    {
+        printf 'state=%s\n' "$_snap_state"
+        printf 'reason=%s\n' "$_snap_reason"
+        printf 'nftban_table=%s\n' "$_has_nftban"
+        printf 'list_rc=%s\n' "$_rc"
+        printf 'json_rc=%s\n' "$_json_rc"
+        printf 'captured_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$snapshot_dir/snapshot_state" 2>/dev/null || true
+
+    if [[ "$_snap_state" == "FAILED" ]]; then
+        return 1
+    fi
 
     # Snapshot 3: Validator state
     if [[ -x "$_REBUILD_VALIDATOR_BIN" ]]; then
@@ -2689,7 +2758,35 @@ _firewall_rebuild_core() {
     local snapshot_dir="$backup_dir/rebuild_$timestamp"
 
     [[ "$quiet" == "false" ]] && echo "  [0/12] Creating full ruleset snapshot..."
-    _rebuild_snapshot_full "$snapshot_dir" >/dev/null 2>&1 || true
+    # v1.228.10 PR-1 (A2) — INV-P0-01: the snapshot is a HARD GATE. A rebuild that
+    # cannot prove it captured a restorable snapshot must abort BEFORE it mutates
+    # the firewall, because the rollback lane it would depend on has nothing to
+    # restore from. The previous `|| true` made a failed capture indistinguishable
+    # from a successful one. Nothing has been mutated at this point in the rebuild.
+    local _snap_rc=0
+    _rebuild_snapshot_full "$snapshot_dir" >/dev/null || _snap_rc=$?
+    if [[ $_snap_rc -ne 0 ]]; then
+        local _snap_why="unknown"
+        if [[ -r "$snapshot_dir/snapshot_state" ]]; then
+            _snap_why=$(sed -n 's/^reason=//p' "$snapshot_dir/snapshot_state" 2>/dev/null | head -1)
+        fi
+        echo "ERROR: rollback snapshot could not be captured — rebuild ABORTED" >&2
+        echo "       reason: ${_snap_why:-unknown}" >&2
+        echo "       The firewall was NOT modified; existing enforcement is unchanged." >&2
+        echo "       Snapshot dir: $snapshot_dir" >&2
+        # INV-P0-05: the failure must be recorded truthfully and must not be
+        # retried (SNAPSHOT_FAILED is a never-retry class, internal/rebuild/policy.go).
+        # The operation failed; system health is whatever it was before — no
+        # rollback ran and nothing was destroyed, so this is never FAILED_FATAL.
+        if declare -f _rebuild_marker_write &>/dev/null; then
+            local _snap_result="$OR_FAILED_DEGRADED"
+            if [[ "$pre_status" == "protected" || "$pre_status" == "idle" ]]; then
+                _snap_result="$OR_FAILED_RECOVERED"
+            fi
+            _rebuild_marker_write "$FC_SNAPSHOT_FAILED" "$_snap_result" "$snapshot_dir" "$pre_status"
+        fi
+        return 1
+    fi
     [[ "$quiet" == "false" ]] && echo "    Snapshot: $snapshot_dir"
 
     # Step 1: Backup current IPs from sets (preserve bans/whitelist)
