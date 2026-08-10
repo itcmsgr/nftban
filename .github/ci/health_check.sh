@@ -512,29 +512,60 @@ check_recursive_permissions() {
 
     local errors=0
 
-    # Exclude: check-recursive-permissions.sh itself, packaging/build_nftban.sh (legacy),
-    # and health_check.sh (this file - contains grep patterns, not actual recursive commands)
+    # v1.228.10: the subject is UNBOUNDED OWNERSHIP/MODE MUTATION, not one shell spelling.
+    # Two measured coverage gaps are closed here, in step with the pre-commit twin
+    # tools/check-recursive-permissions.sh:
+    #   1. Go was invisible. internal/installer/fhs/permissions.go issues the same policy as
+    #      exec.Run("chown","-R",...) argv elements — the installer's permission fallback,
+    #      a privileged actor no shell-only grep could see.
+    #   2. packaging/build_nftban.sh was excluded as "legacy" while it emits the RPM %post
+    #      scriptlet. A privileged packaging actor must not be exempt; the exclusion is gone.
+    # Excluded now, and only these: this file and the pre-commit twin, both of which carry the
+    # detection patterns as data rather than as executable policy.
     local files
-    files=$(find "$PROJECT_ROOT" \( -name "*.sh" -o -name "*.spec" -o -name "postinst" -o -name "preinst" \) \
+    files=$(find "$PROJECT_ROOT" \( -name "*.sh" -o -name "*.go" -o -name "*.spec" -o -name "postinst" -o -name "preinst" \) \
         ! -path "*/.git/*" \
         ! -path "*/build/*" \
+        ! -name "*_test.go" \
         ! -name "check-recursive-permissions.sh" \
         ! -name "health_check.sh" \
-        ! -path "*/packaging/build_nftban.sh" \
         -type f 2>/dev/null || true)
 
     for file in $files; do
-        # Check for chmod -R (various forms)
-        if grep -n -E '(chmod\s+-R|chmod\s+--recursive)' "$file" 2>/dev/null; then
-            log_error "Found 'chmod -R' in: $file"
+        # Shell surface — executable command surface only. A comment-only line
+        # (optionally indented) is skipped — '#' for shell and '//' for Go, since this
+        # surface check also reads .go files.
+        # BOUNDARY: a recursive verb inside a quoted string on an executable line is
+        # NOT discriminated; that needs real shell parsing, and a regex approximation
+        # would risk false negatives on genuine commands.
+        local _l _b
+        while IFS=: read -r _l _b; do
+            [ -n "$_l" ] || continue
+            case "$(printf '%s' "$_b" | sed 's/^[[:space:]]*//')" in '#'*|'//'*) continue ;; esac
+            log_error "Found a recursive chown/chmod in: ${file#"$PROJECT_ROOT"/}:$_l"
             errors=$((errors + 1))
-        fi
+        done < <(grep -n -E '(chown|chmod)\s+(-R|--recursive)' "$file" 2>/dev/null || true)
 
-        # Check for chown -R (various forms)
-        if grep -n -E '(chown\s+-R|chown\s+--recursive)' "$file" 2>/dev/null; then
-            log_error "Found 'chown -R' in: $file"
-            errors=$((errors + 1))
-        fi
+        # Go surface: recursive flag as its own quoted argv element after the quoted verb,
+        # so a comment or a log string naming the flag does not match.
+        case "$file" in
+            *.go)
+                # A site in the pending list is STILL WRONG and deliberately deferred (owner
+                # TODO-3, GO fallback parity). Reported every run so it stays visible; it does
+                # not fail the build. Anything NOT listed fails immediately.
+                local _pend="$PROJECT_ROOT/scripts/ci/data/recursive-permission-pending.tsv"
+                local _rel="${file#"$PROJECT_ROOT"/}" _ln
+                while IFS=: read -r _ln _; do
+                    [ -n "$_ln" ] || continue
+                    if [ -f "$_pend" ] && grep -qF "$_rel:$_ln	" "$_pend" 2>/dev/null; then
+                        log_warning "PENDING (deferred debt): $_rel:$_ln recursive chown/chmod"
+                    else
+                        log_error "Found a recursive chown/chmod execution in: $_rel:$_ln"
+                        errors=$((errors + 1))
+                    fi
+                done < <(grep -n -E '"(chown|chmod)"[[:space:]]*,[[:space:]]*"(-R|--recursive)"' "$file" 2>/dev/null || true)
+                ;;
+        esac
     done
 
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))

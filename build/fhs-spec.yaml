@@ -1390,21 +1390,34 @@ file_permissions:
     recursive: true
 
   # /var/log/nftban - log files
+  #
+  # v1.228.10 INV-LOG-OWN-01. History of this entry, because it matters:
+  #   originally  pattern:"*" + recursive:true  -> a find sweep over EVERY descendant
+  #   then        24 name patterns (*.log/*.html/*.txt/*.json)  -> STILL WRONG
+  #
+  # The second attempt was falsified by package-native test on lab2: a planted foreign
+  # root:root 0600 file named foreign-TEST.txt was re-owned to nftban:nftban 0640 because
+  # it happened to match a declared pattern. A filename extension is NOT ownership
+  # authority. Neither is basename, nesting depth, or membership of a declared directory.
+  #
+  # Install-time enforcement now owns the DECLARED DIRECTORY SKELETON ONLY (the directories
+  # section). File ownership belongs to whoever creates the file:
+  #   NFTBan writer        -> sets owner/mode at creation
+  #   logrotate            -> the create directive below
+  #   package migration    -> exact migrated artifacts only (#1206)
+  #   unknown pre-existing -> UNTOUCHED
+  #
+  # This entry is retained ONLY as the logrotate `create` authority. install_enforce:false
+  # tells the generator to emit no chown/chmod for it, while
+  # logs_logrotate_create_parity_test.go keeps reading the triple below as the single
+  # authority for `create MODE OWNER GROUP` in install/config/nftban.logrotate.
   - path: /var/log/nftban
     artifact_class: log
     retention_owner: logrotate
-    pattern: "*"
     mode: "0640"
     owner: nftban
     group: nftban
-    recursive: true
-    exclude: "/var/log/nftban/suricata"
-    # v1.139 PR-B (FHS-UNGEN-LOGROTATE-CREATE): authoritative for the
-    # logrotate `create` directive on stanzas covering /var/log/nftban/*
-    # (excluding /var/log/nftban/suricata/*). Bridge-tested by
-    # internal/nftbanconf/logs_logrotate_create_parity_test.go — every
-    # matching `create MODE OWNER GROUP` line in
-    # install/config/nftban.logrotate must equal this triple.
+    install_enforce: false
     logrotate_create: true
 
   # /var/log/nftban/suricata - suricata writes

@@ -67,9 +67,6 @@ nftban_install_set_file_permissions() {
     # /var/lib/nftban/reports/auditors - *
     find "/var/lib/nftban/reports/auditors" -type f -name "*" -exec chown root:nftban-auditor {} \; 2>/dev/null || true
     find "/var/lib/nftban/reports/auditors" -type f -name "*" -exec chmod 0660 {} \; 2>/dev/null || true
-    # /var/log/nftban - *
-    find "/var/log/nftban" -type f -name "*" -not -path "/var/log/nftban/suricata/*" -exec chown nftban:nftban {} \; 2>/dev/null || true
-    find "/var/log/nftban" -type f -name "*" -not -path "/var/log/nftban/suricata/*" -exec chmod 0640 {} \; 2>/dev/null || true
     # /var/log/nftban/suricata - *
     find "/var/log/nftban/suricata" -type f -name "*" -exec chown suricata:nftban {} \; 2>/dev/null || true
     find "/var/log/nftban/suricata" -type f -name "*" -exec chmod 0640 {} \; 2>/dev/null || true

@@ -100,6 +100,30 @@ const (
 
 // --- Logs ---
 
+// CanonicalLogDirs is the set of log directories NFTBan authoritatively owns.
+//
+// INV-LOG-OWN-01 (v1.228.10): installation and repair may establish ownership on these
+// exact paths and on nothing else beneath LogDir. Mirror of the `d` entries for
+// /var/log/nftban in install/systemd/tmpfiles.d/nftban.conf, which the canonical
+// build/fhs-spec.yaml generates — keep them in sync.
+//
+// Deliberately NOT a recursive walk. An undeclared descendant of LogDir has no path
+// authority behind it and keeps the ownership it already has.
+var CanonicalLogDirs = []string{
+	LogDir,
+	LogDir + "/watchdog",
+	LogDir + "/reports",
+	LogDir + "/reports/daily",
+	LogDir + "/reports/weekly",
+	LogDir + "/reports/monthly",
+	LogDir + "/reports/archive",
+	LogDir + "/rbl",
+	LogDir + "/botguard",
+	LogDir + "/metrics",
+	LogDir + "/soak",
+	LogDir + "/update-runs",
+}
+
 const (
 	// LogDir is the log directory.
 	LogDir = "/var/log/nftban"
