@@ -2551,35 +2551,131 @@ _fw_count_dump_elems() {
 }
 
 _rebuild_rollback() {
-    # Restore from snapshot
+    # Restore NFTBan enforcement from a snapshot — atomically, and scoped to the
+    # tables NFTBan owns.
     # Args: $1 = snapshot directory
+    #
+    # v1.228.10 A1 (INV-P0-02): rollback must never create a standalone unfiltered
+    # interval. This previously did:
+    #
+    #     nft flush ruleset            <- destroyed EVERY table on the host
+    #     nft -f "$ruleset_file"       <- separate transaction; may fail
+    #
+    # with `nft -c` pre-validation deliberately skipped. That is a single-fault chain
+    # to an empty ruleset: flush succeeds, load fails, host is left default-accept with
+    # no firewall — and every foreign table (Docker/panel/operator) is gone too.
+    #
+    # TWO THINGS MAKE THE REPLACEMENT SAFE, AND BOTH MATTER:
+    #
+    # 1. SCOPE. ruleset.nft is a COMPLETE HOST ruleset (`nft list ruleset`), not an
+    #    NFTBan-only artifact. Replaying it wholesale would recreate foreign tables
+    #    from a stale snapshot — restoring another service's old rules, or colliding
+    #    with one that legitimately changed since. So the candidate is built from the
+    #    NFTBan tables ONLY; foreign tables are never named and never touched.
+    #
+    # 2. ATOMICITY. The candidate uses the same self-resetting idiom the forward apply
+    #    lane already uses (see V-NFT-REBUILD-ATOMICITY): `table … nftban { }`
+    #    idempotent create, then `delete table … nftban`, then the snapshot's full
+    #    definition — all in ONE `nft -f`. nft applies the file as a single
+    #    transaction, so there is no interval in which enforcement is absent. On
+    #    failure nothing commits and the CURRENT ruleset stays active.
+    #
+    # ROLLBACK ELIGIBILITY consumes the A2 contract at <snapshot_dir>/snapshot_state
+    # exactly as merged; it does NOT re-derive snapshot validity:
+    #     VALID          -> eligible
+    #     EMPTY_VERIFIED -> trustworthy observation, but NO restorable security state.
+    #                       Restoring "empty" is operationally indistinguishable from
+    #                       the catastrophic flush this change exists to remove.
+    #     FAILED         -> untrustworthy/unavailable observation.
+    # Anything other than VALID: refuse BEFORE nft -c and BEFORE nft -f, mutate nothing.
     local snapshot_dir="$1"
     local ruleset_file="$snapshot_dir/ruleset.nft"
+    local state_file="$snapshot_dir/snapshot_state"
 
     if [[ ! -f "$ruleset_file" ]]; then
         echo "ERROR: Snapshot not found: $ruleset_file" >&2
         return 1
     fi
 
-    # v1.78.0: Skip pre-validation — snapshot came from working state.
-    # Syntax check (nft -c) fails when objects already exist in kernel.
-    # Instead, we flush then load, which is always valid for a captured ruleset.
-
-    echo "Flushing current ruleset..." >&2
-
-    # Flush all tables to ensure clean state
-    nft flush ruleset 2>/dev/null || true
-
-    echo "Loading snapshot..." >&2
-
-    if nft -f "$ruleset_file" 2>&1; then
-        echo "Rollback successful from: $snapshot_dir"
-        return 0
-    else
-        echo "ERROR: Rollback FAILED — firewall may be in inconsistent state!" >&2
-        echo "  Try manually: nft flush ruleset && nft -f $ruleset_file" >&2
+    # --- eligibility gate (zero mutation before this passes) -------------------
+    local _state="MISSING"
+    if [[ -r "$state_file" ]]; then
+        _state=$(sed -n 's/^state=//p' "$state_file" 2>/dev/null | head -1)
+        _state="${_state:-MISSING}"
+    fi
+    if [[ "$_state" != "VALID" ]]; then
+        echo "ERROR: rollback REFUSED — snapshot is not rollback-eligible (state=$_state)" >&2
+        case "$_state" in
+            EMPTY_VERIFIED)
+                echo "       The snapshot is trustworthy but holds NO enforcement state to restore." >&2
+                echo "       Restoring it would empty the ruleset, which is the failure mode this" >&2
+                echo "       guard exists to prevent." >&2 ;;
+            FAILED)
+                echo "       Snapshot acquisition failed, so its contents cannot be trusted." >&2 ;;
+            *)
+                echo "       No snapshot_state record found beside the snapshot." >&2 ;;
+        esac
+        echo "       The firewall was NOT modified; current enforcement is unchanged." >&2
         return 1
     fi
+
+    # --- build an NFTBan-scoped, self-resetting candidate ----------------------
+    local candidate="$snapshot_dir/rollback_candidate.nft"
+    local _fams=() _f
+    : > "$candidate"
+    for _f in ip ip6 inet; do
+        if awk -v F="$_f" '
+            $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*\{" {f=1}
+            f {print}
+            f && /^\}/ {exit}
+        ' "$ruleset_file" | grep -q .; then
+            _fams+=("$_f")
+        fi
+    done
+    if [[ ${#_fams[@]} -eq 0 ]]; then
+        echo "ERROR: rollback REFUSED — snapshot contains no nftban table to restore" >&2
+        echo "       The firewall was NOT modified." >&2
+        rm -f "$candidate"
+        return 1
+    fi
+    # Idempotent create + delete for exactly the NFTBan families present in the
+    # snapshot, then their captured definitions. Foreign tables are never named.
+    for _f in "${_fams[@]}"; do
+        printf 'table %s nftban { }
+delete table %s nftban
+' "$_f" "$_f" >> "$candidate"
+    done
+    for _f in "${_fams[@]}"; do
+        awk -v F="$_f" '
+            $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*\{" {f=1}
+            f {print}
+            f && /^\}/ {exit}
+        ' "$ruleset_file" >> "$candidate"
+    done
+
+    # --- pre-validate; a failure here must not mutate anything -----------------
+    if ! nft -c -f "$candidate" 2>&1; then
+        echo "ERROR: rollback REFUSED — snapshot candidate failed validation (nft -c)" >&2
+        echo "       The firewall was NOT modified; current enforcement is unchanged." >&2
+        echo "       Rejected candidate kept for inspection: $candidate" >&2
+        return 1
+    fi
+
+    # --- commit as ONE transaction --------------------------------------------
+    if nft -f "$candidate" 2>&1; then
+        echo "Rollback successful from: $snapshot_dir (families: ${_fams[*]})"
+        rm -f "$candidate"
+        return 0
+    fi
+
+    # Commit failed => nothing was applied; the pre-rollback ruleset is still live.
+    echo "ERROR: Rollback FAILED to commit — no changes were applied." >&2
+    echo "       The ruleset active before this attempt is still active." >&2
+    echo "       Recover with: nftban firewall rebuild   (atomic, validated)" >&2
+    echo "       Do NOT run a standalone 'nft flush ruleset' — that is the very" >&2
+    echo "       failure mode this recovery path was changed to eliminate." >&2
+    echo "       Candidate kept for inspection: $candidate" >&2
+    return 1
 }
 
 # =============================================================================
