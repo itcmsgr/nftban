@@ -3107,9 +3107,32 @@ _firewall_rebuild_core() {
         fi
         case "$_class" in
             "$TC_EXTERNAL_AUTHORITY_GHOST")
-                if nft delete table "$TABLE_SPEC" 2>/dev/null; then
-                    [[ "$quiet" == "false" ]] && echo "    Deleted external-authority ghost table: $TABLE_SPEC" || true
+                # v1.228.11 (OPEN_FIREWALL_REBUILD_DELETES_POPULATED_FOREIGN_NFT_TABLES):
+                # identity is NOT ownership. This branch previously deleted on the
+                # name classification alone, so `nftban firewall rebuild` destroyed
+                # a POPULATED operator-owned table (rc=0, no install, no takeover,
+                # no CSF) — isolated to this exact nft invocation by command-boundary
+                # tracing. Content now gates the delete, matching the Go
+                # CleanGhostTables posture and nftban_cleanup_ghost_tables.
+                local _cclass="$TC_CONTENT_UNREADABLE"
+                if declare -f nftban_table_content_class &>/dev/null; then
+                    _cclass="$(nftban_table_content_class "${TABLE_SPEC%% *}" "${TABLE_SPEC#* }")"
                 fi
+                case "$_cclass" in
+                    "$TC_CONTENT_EMPTY")
+                        if nft delete table "$TABLE_SPEC" 2>/dev/null; then
+                            [[ "$quiet" == "false" ]] && echo "    Deleted external-authority ghost table: $TABLE_SPEC (empty skeleton)" || true
+                        fi
+                        ;;
+                    "$TC_CONTENT_POPULATED")
+                        echo "    WARNING: Populated '$TABLE_SPEC' NOT removed — foreign or unattributed ownership." >&2
+                        echo "             Remove deliberately if unwanted: nft delete table $TABLE_SPEC" >&2
+                        ;;
+                    "$TC_CONTENT_UNREADABLE")
+                        echo "    WARNING: Could not classify '$TABLE_SPEC' — PRESERVED; cleanup safety UNVERIFIED." >&2
+                        ;;
+                    *) : ;;
+                esac
                 ;;
             "$TC_OPERATOR_SAFETY")
                 # PR26.6 invariant — preserve operator-retained tables.
