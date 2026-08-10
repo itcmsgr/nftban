@@ -2622,15 +2622,34 @@ _rebuild_rollback() {
     # --- build an NFTBan-scoped, self-resetting candidate ----------------------
     local candidate="$snapshot_dir/rollback_candidate.nft"
     local _fams=() _f
+    local -A _tbl=()
     : > "$candidate"
+    #
+    # Extraction is captured, NEVER piped. The earlier `awk ... | grep -q .` form
+    # was a latent refusal: `grep -q` exits at the first line, awk then dies of
+    # SIGPIPE (141), and this file runs under `set -o pipefail` (see the header),
+    # so the pipeline reported FAILURE for a table that was present and intact.
+    # It only surfaced once the nftban table was large enough that awk was still
+    # writing when grep left -- i.e. on hosts with real blacklists, never on the
+    # small fixtures. Refusing here is fail-closed, but an inert rollback is still
+    # a broken recovery path, so the pipe is gone rather than worked around.
+    #
+    # A read failure and an absent table are also kept distinct: awk exiting
+    # non-zero means we could not READ the snapshot, which is not the same fact as
+    # "this family has no nftban table" and must not be reported as one.
     for _f in ip ip6 inet; do
-        if awk -v F="$_f" '
-            $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*\{" {f=1}
+        if ! _tbl["$_f"]=$(awk -v F="$_f" '
+            $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*[{]" {f=1}
             f {print}
-            f && /^\}/ {exit}
-        ' "$ruleset_file" | grep -q .; then
-            _fams+=("$_f")
+            f && /^[}]/ {exit}
+        ' "$ruleset_file"); then
+            echo "ERROR: rollback REFUSED — could not read the snapshot ($_f family)" >&2
+            echo "       This is a READ failure, not an empty snapshot." >&2
+            echo "       The firewall was NOT modified." >&2
+            rm -f "$candidate"
+            return 1
         fi
+        [[ -n "${_tbl["$_f"]}" ]] && _fams+=("$_f")
     done
     if [[ ${#_fams[@]} -eq 0 ]]; then
         echo "ERROR: rollback REFUSED — snapshot contains no nftban table to restore" >&2
@@ -2645,12 +2664,10 @@ _rebuild_rollback() {
 delete table %s nftban
 ' "$_f" "$_f" >> "$candidate"
     done
+    # Reuse the text captured above -- re-running awk here would re-read the
+    # snapshot and could disagree with the families we just committed to.
     for _f in "${_fams[@]}"; do
-        awk -v F="$_f" '
-            $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*\{" {f=1}
-            f {print}
-            f && /^\}/ {exit}
-        ' "$ruleset_file" >> "$candidate"
+        printf '%s\n' "${_tbl["$_f"]}" >> "$candidate"
     done
 
     # --- pre-validate; a failure here must not mutate anything -----------------
