@@ -75,6 +75,7 @@ exists(){ [[ -f "$NFT_STATE/$1__$2.tbl" ]] && echo yes || echo no; }
 # shellcheck source=/dev/null
 . "$LIB" 2>/dev/null
 set +eEuo pipefail; trap - ERR   # the sourced lib re-enables errexit
+# shellcheck source=/dev/null
 . "$WRITER" 2>/dev/null
 set +eEuo pipefail; trap - ERR
 
