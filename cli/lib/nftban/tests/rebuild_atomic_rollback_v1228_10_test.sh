@@ -85,10 +85,14 @@ EOF
 }
 
 # Recording nft shim. NFT_FAIL controls which invocation fails.
-run_rollback() { # $1=snapshot dir ; env NFT_FAIL=none|check|commit  -> echoes rc
+run_rollback() { # $1=snapshot dir ; env NFT_FAIL=none|check|commit ; FN_OVERRIDE=path -> echoes rc
     local d="$1"
     : > "$d/nft.log"
     (
+        # cmd_firewall.sh:28 runs under `set -Eeuo pipefail`. pipefail is what turned
+        # an awk SIGPIPE into a false "no nftban table", so the harness MUST reproduce
+        # it or the large-snapshot arm below measures nothing.
+        set -o pipefail
         NFT_LOG="$d/nft.log"; export NFT_LOG
         nft() {
             printf '%s\n' "$*" >> "$NFT_LOG"
@@ -99,7 +103,7 @@ run_rollback() { # $1=snapshot dir ; env NFT_FAIL=none|check|commit  -> echoes r
             return 0
         }
         # shellcheck source=/dev/null
-        . "$FN"
+        . "${FN_OVERRIDE:-$FN}"
         _rebuild_rollback "$d"
     ) >/dev/null 2>&1
     echo $?
@@ -184,6 +188,124 @@ if [[ "$RC" == "0" && "$(commits "$D")" == "1" ]]; then
 else
     no "VALID snapshot did not restore" "rc=$RC commits=$(commits "$D")"
 fi
+
+# --------------------------------------------------- large snapshot / SIGPIPE
+# REGRESSION (found on lab4, Rocky 9.8, real RPM): the family probe was
+#   awk '...' "$ruleset_file" | grep -q .
+# `grep -q` exits at the FIRST line, so awk dies of SIGPIPE (141); cmd_firewall.sh
+# runs under `set -o pipefail`, so the pipeline reported FAILURE for a table that
+# was present and intact -> "snapshot contains no nftban table" -> rollback refused
+# on every host whose nftban table was big enough that awk was still writing when
+# grep left. Every fixture above is ~18 lines, so awk always finished first and the
+# whole suite passed green against a rollback that was inert in production.
+#
+# This arm pins BOTH halves: the pipeline semantics directly, and the real function
+# against a snapshot large enough to lose the race.
+echo "--- D2. large snapshot must not be misread as 'no nftban table' (SIGPIPE) ---"
+
+# The bug is only observable with pipefail ON, which is what the product sets.
+sigpipe_demo() { # proves the harness can see the prohibited behaviour
+    ( set -o pipefail
+      awk 'BEGIN{for(i=0;i<20000;i++) print "x"}' | grep -q . ) >/dev/null 2>&1
+    echo $?
+}
+[[ "$(sigpipe_demo)" != "0" ]] \
+    && ok "harness CAN observe the defect (piped probe returns non-zero under pipefail)" \
+    || no "harness cannot observe SIGPIPE — this arm would be vacuous"
+
+D="$WORK/s_large"; mkdir -p "$D"
+{
+    printf 'table inet docker {\n\tchain forward {\n\t}\n}\n'
+    printf 'table ip nftban {\n\tset blacklist_ipv4 {\n\t\ttype ipv4_addr\n\t\telements = {'
+    for i in $(seq 1 20000); do printf ' 10.%d.%d.%d,' $((i/65536%256)) $((i/256%256)) $((i%256)); done
+    printf ' }\n\t}\n}\n'
+    printf 'table ip panelfw {\n\tchain input {\n\t}\n}\n'
+} > "$D/ruleset.nft"
+printf 'state=VALID\n' > "$D/snapshot_state"
+# NOT a pipe-buffer threshold. Measured on lab4, `nft list set | grep -q` returned 141
+# for a 4195-byte producer -- far below the 64K buffer -- while a 1445-byte producer on
+# lab2 returned 0. SIGPIPE fires when grep exits before the producer has finished writing
+# AND exiting; output size only makes that more likely, it is not a bound. The fixture is
+# large to make the race reliable in CI, not because a threshold exists.
+SZ=$(wc -c < "$D/ruleset.nft")
+[[ "$SZ" -gt 65536 ]] && ok "fixture is large enough (${SZ} bytes) to make the race reliable" \
+    || no "fixture too small (${SZ} bytes) to exercise the regression reliably"
+
+# FALSIFIABILITY: run the pre-fix probe VERBATIM against this exact fixture and prove
+# it fails. Without this, "large snapshot passes" cannot distinguish a fixed product
+# from a fixture that is too small or a harness that lost pipefail.
+prefix_probe() { # the shipped pre-fix family detection, unmodified
+    local ruleset_file="$1" _f _fams=()
+    for _f in ip ip6 inet; do
+        if awk -v F="$_f" '
+            $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*\{" {f=1}
+            f {print}
+            f && /^\}/ {exit}
+        ' "$ruleset_file" | grep -q .; then
+            _fams+=("$_f")
+        fi
+    done
+    echo "${#_fams[@]}"
+}
+PRE_N=$( set -o pipefail; prefix_probe "$D/ruleset.nft" 2>/dev/null )
+[[ "$PRE_N" == "0" ]] \
+    && ok "MUTATION CONTROL: pre-fix piped probe finds 0 families on this fixture — it IS detectable" \
+    || no "MUTATION CONTROL: pre-fix probe found $PRE_N families — fixture cannot detect the regression" "VACUOUS"
+
+POST_N=0
+for _pf in ip ip6 inet; do
+    _out=$(awk -v F="$_pf" '
+        $0 ~ "^[[:space:]]*table[[:space:]]+"F"[[:space:]]+nftban[[:space:]]*[{]" {f=1}
+        f {print}
+        f && /^[}]/ {exit}
+    ' "$D/ruleset.nft") || _out=""
+    [[ -n "$_out" ]] && POST_N=$((POST_N+1))
+done
+[[ "$POST_N" -ge 1 ]] \
+    && ok "the same fixture DOES contain $POST_N nftban family/families — the pre-fix 0 was a lie" \
+    || no "fixture genuinely has no nftban table — the control above proves nothing"
+
+RC=$(run_rollback "$D")
+[[ "$RC" == "0" ]] && ok "large snapshot: rollback PROCEEDS (rc=0), not refused as empty" \
+    || no "large snapshot: refused" "rc=$RC — SIGPIPE regression is back"
+[[ "$(commits "$D")" == "1" ]] && ok "large snapshot: exactly ONE commit transaction" \
+    || no "large snapshot: commit count = $(commits "$D")"
+
+# and the restored content must be the real table, not a truncated prefix
+D3="$WORK/s_large_keep"; mkdir -p "$D3"; cp "$D/ruleset.nft" "$D3/"; cp "$D/snapshot_state" "$D3/"
+NFT_FAIL=commit run_rollback "$D3" >/dev/null
+C3="$D3/rollback_candidate.nft"
+if [[ -f "$C3" ]]; then
+    grep -q "blacklist_ipv4" "$C3" && ok "large snapshot: nftban set content present in the candidate" \
+        || no "large snapshot: candidate lost the set content"
+    grep -q "panelfw\|docker" "$C3" && no "large snapshot: a FOREIGN table leaked into the candidate" \
+        || ok "large snapshot: foreign tables still never named"
+else
+    no "large snapshot: no candidate produced for inspection"
+fi
+
+# The product must not reintroduce a pipe on this probe. The guard reads CODE only:
+# an earlier version of this check matched the comment that DESCRIBES the bug, so the
+# comment both documented and violated the assertion. Strip comments, don't reword them.
+#
+# BOUNDARY (owner ruling): this stripper is NOT quote-aware -- a '#' inside a quoted
+# shell string is data, not a comment. It is acceptable ONLY because it is scoped to
+# this one extracted function, which is asserted below to contain no quoted '#', and
+# because the injection control proves it can still fail. Do NOT lift this regex out
+# as a general shell comment parser; that needs real parsing.
+grep -qE "[\"'][^\"']*#" "$FN" \
+    && no "_rebuild_rollback contains a quoted '#' — the naive stripper is unsafe here" \
+    || ok "scope precondition: no quoted '#' in the function, stripper is sound for it"
+CODE_ONLY="$WORK/fn_code_only.sh"
+sed -e 's/[[:space:]]*#.*$//' "$FN" > "$CODE_ONLY"
+grep -qE "awk .*\|[[:space:]]*grep -q" "$CODE_ONLY" \
+    && no "_rebuild_rollback still pipes an awk extraction into 'grep -q'" \
+    || ok "no 'awk | grep -q' probe remains in _rebuild_rollback (comments excluded)"
+# prove that stripper cannot simply blind the check
+printf 'x() { awk foo | grep -q . ; }\n' > "$WORK/inject.sh"
+grep -qE "awk .*\|[[:space:]]*grep -q" <(sed -e 's/[[:space:]]*#.*$//' "$WORK/inject.sh") \
+    && ok "comment-stripping guard still detects a REAL piped probe (injection control)" \
+    || no "guard is blind after comment stripping — it cannot fail"
 
 # ---------------------------------------------------------------- guard
 echo "--- E. the atomicity guard now covers this lane ---"
