@@ -23,7 +23,9 @@
 package whitelist
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -86,16 +88,40 @@ func LoadAllWhitelists(configDir string) (map[string]bool, map[string]bool, erro
 // V119 A1: closes whitelist half of D-MANUAL-CIDR-LOAD-GAP. Callers in
 // V116 §4 allowlist (cmd_check.go, cmd_ban.go, daemon_handlers_ban.go)
 // use this typed loader; profile_sync.go remains on legacy LoadAllWhitelists.
+// v1.228.10 PR-3 (audit finding A3) — OBSERVATION FAILURE IS NOT AN EMPTY WHITELIST.
+//
+// This loader produces DESIRED STATE. FullSync treats its output as authoritative and
+// deletes every kernel whitelist element absent from it, so a read failure that returns
+// success-with-empty removes the operator's whitelist from the kernel — an admin-lockout
+// enabler, because the input chain drops blacklisted sources BEFORE the established-state
+// accept, so a lost whitelist entry kills a live session and not merely new connections.
+//
+// Three states are now distinguished, and only the first may yield an empty result:
+//
+//	whitelist.d legitimately absent    -> empty desired state, no error (first install)
+//	whitelist.d present, unenumerable  -> error; caller preserves kernel state
+//	any participating file unreadable/
+//	  unparseable                      -> error; NO partial union may become authoritative
+//
+// The third case is the one that matters most: a partial union is indistinguishable from a
+// deliberate removal, so "file A parsed, file B failed" must not produce "desired = A".
+// On any error the maps are returned nil so a partial result cannot be consumed by accident.
+//
+// INV-P0-03 / INV-P0-04. Callers already abort correctly on error
+// (internal/runtime/state.go LoadWhitelists -> daemon_handlers_sync.go), which is why this
+// is an authority correction and not a FullSync redesign.
 func LoadAllWhitelistsTyped(configDir string) (map[string]WhitelistEntry, map[string]WhitelistEntry, error) {
 	ipv4 := make(map[string]WhitelistEntry)
 	ipv6 := make(map[string]WhitelistEntry)
 
-	// 1. Load main whitelist.conf (optional - whitelist.d/ is preferred)
+	// 1. Load main whitelist.conf. The file is OPTIONAL — absence is a legitimate
+	//    configuration, not a failure. But if it exists and cannot be read or parsed it
+	//    is a participating source whose contribution is unknown, and an unknown
+	//    contribution may not be silently dropped from the desired state.
 	mainFile := filepath.Join(configDir, "whitelist.conf")
 	if err := loadWhitelistFileTyped(mainFile, ipv4, ipv6); err != nil {
-		// Non-fatal: file is optional, only log if it exists but has errors
-		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Warning: Could not load %s: %v\n", mainFile, err)
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, fmt.Errorf("whitelist source %s unreadable: %w", mainFile, err)
 		}
 	}
 
@@ -103,9 +129,13 @@ func LoadAllWhitelistsTyped(configDir string) (map[string]WhitelistEntry, map[st
 	whitelistDir := filepath.Join(configDir, "whitelist.d")
 	entries, err := os.ReadDir(whitelistDir)
 	if err != nil {
-		// Non-fatal: directory might not exist yet
-		fmt.Fprintf(os.Stderr, "Warning: Could not read whitelist.d: %v\n", err)
-		return ipv4, ipv6, nil
+		// Absent directory = legitimate first-install shape: empty, not degraded.
+		if errors.Is(err, fs.ErrNotExist) {
+			return ipv4, ipv6, nil
+		}
+		// Present but unenumerable (EACCES from a packaging perms slip, EIO, an SELinux
+		// denial, or a non-directory at that path). The whitelist is UNKNOWN, not empty.
+		return nil, nil, fmt.Errorf("whitelist directory %s unreadable: %w", whitelistDir, err)
 	}
 
 	for _, entry := range entries {
@@ -118,7 +148,9 @@ func LoadAllWhitelistsTyped(configDir string) (map[string]WhitelistEntry, map[st
 
 		filePath := filepath.Join(whitelistDir, entry.Name())
 		if err := loadWhitelistFileTyped(filePath, ipv4, ipv6); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Could not load %s: %v\n", filePath, err)
+			// Per-file failure shortens the union. Previously warn-and-continue, which
+			// let one unreadable file silently delete its IPs from the kernel.
+			return nil, nil, fmt.Errorf("whitelist source %s unreadable: %w", filePath, err)
 		}
 	}
 
