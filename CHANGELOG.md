@@ -11,6 +11,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.10] - 2026-08-10 — an unreadable source is not an empty one
+
+Three P0 fail-open defects, all one shape: a read that FAILED was recorded as a
+measurement that came back EMPTY. Nothing in the firewall changed because of
+those defects; what changed was whether NFTBan could tell "I looked and found
+nothing" apart from "I could not look."
+
+### Fixed — a rebuild would proceed after failing to capture its own rollback snapshot
+
+`_rebuild_snapshot_full` recorded its result with `|| true`, so a failed,
+timed-out or truncated `nft list ruleset` was indistinguishable from a good one.
+The rebuild then mutated the firewall while the rollback lane it depends on had
+nothing to restore from.
+
+The snapshot is now a hard gate that writes one of three states — `VALID`,
+`EMPTY_VERIFIED` (empty text corroborated by a JSON read) or `FAILED` — and a
+rebuild that cannot prove a restorable snapshot aborts **before** it mutates
+anything. A truncated capture, where the text is empty but JSON still reports
+live tables, is classified `FAILED` rather than treated as an empty kernel.
+
+### Fixed — rollback issued a global `nft flush ruleset`
+
+Recovery removed the entire host ruleset, including tables NFTBan does not own,
+and left a window in which nothing was filtered before the restore was applied.
+
+Rollback now builds an NFTBan-scoped, self-resetting candidate for exactly the
+families present in the snapshot, validates it with `nft -c -f`, and commits it
+as one transaction. Foreign tables are never named. `EMPTY_VERIFIED` and
+`FAILED` snapshots are refused, because restoring them would empty the ruleset.
+
+### Fixed — rollback refused a valid snapshot on hosts with real blacklists
+
+The family probe was `awk … | grep -q .`. `grep -q` exits at the first line,
+`awk` dies of SIGPIPE, and this file runs under `set -o pipefail`, so the
+pipeline reported failure for a table that was present and intact — and the
+recovery path refused precisely when a production-sized host would need it.
+
+This is not bounded by the pipe buffer: a 4195-byte producer was measured
+returning 141. Output size only makes the race more likely. The extraction is
+now captured rather than piped, and a read failure is reported distinctly from
+an absent family.
+
+The existing tests could not have caught it — every fixture was 18 lines, small
+enough that `awk` always finished first. The regression test now runs the
+pre-fix probe verbatim against a large fixture and proves it reports zero
+families where the fixed form reports one.
+
+### Fixed — an unreadable `whitelist.d` emptied the whitelist and reported success
+
+`ENOENT` was treated as proof of absence. A dangling symlink or broken mount
+makes `ReadDir` return `ENOENT` while the path is demonstrably present, so an
+unobservable whitelist became an empty desired state, and the sync layer deletes
+kernel members absent from the desired state.
+
+Measured on a real EL9 host: the whitelist set was emptied — losing loopback and
+the host's own address — while the rebuild exited 0 and reported
+"Whitelist reconcile verified (configured members present)."
+
+`Lstat` does not follow the final link, so it succeeds on exactly the shapes
+`ReadDir` cannot see through, and that is now the discriminator. The shell
+readers gained the same three-state contract (`READ_OK_WITH_MEMBERS`,
+`READ_OK_EMPTY`, `UNREADABLE`), and the reconcile refuses to report success for
+a source it could not read.
+
+Correcting the verifier was not sufficient, and that is the more general lesson:
+the rebuild repopulates the whitelist **before** the verifier runs, so
+verification restored truthful reporting while the whitelist was still emptied.
+A pre-mutation gate is what preserves it.
+
+A legitimately absent `whitelist.d` is unchanged — that is the first-install
+shape, and it remains an empty desired state with no error.
+
+### Fixed — packaging claimed ownership of files it did not install
+
+The DEB and RPM migration paths ran a recursive `chown` over the log tree, so
+operator-owned files under `/var/log/nftban` were re-owned by an upgrade. The
+canonical declaration in `build/fhs-spec.yaml` was the source — the generated
+script was rendering it faithfully — so the fix is at the spec level, with the
+Go fallback converged to the same boundary rather than left weaker than the
+path it stands in for.
+
+### Notes
+
+`nftban status --json` remains proven for `status` only; the other JSON
+surfaces are still unverified and tracked separately.
+
+Validation for this release ran the destructive rebuild, rollback and whitelist
+paths against installed packages on Debian, EL9 (Rocky 9) and two EL10
+implementations (AlmaLinux 10.2 and CentOS Stream 10, both SELinux Enforcing,
+nftables 1.1.5). Rocky Linux 10 was not tested.
+
 ## [v1.228.9] - 2026-08-09 — operator output that parses, one owner, and gates that cannot pass by accident
 
 ### Fixed — `nftban status --json` did not parse
