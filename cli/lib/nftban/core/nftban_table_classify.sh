@@ -193,32 +193,11 @@ readonly -a _NFTBAN_GHOST_TABLE_IDENTITIES=(
     "inet firewalld" "inet filter"
 )
 
-# nftban_delete_ghost_table_if_empty — the ONLY sanctioned way to remove a
-# known ghost-table identity. v1.228.11: five independent call sites previously
-# ran a bare `nft delete table <name>`; this centralises the content gate so a
-# sixth cannot reintroduce the defect by copying the old one-liner.
-#
-#   EMPTY      -> deleted (rc 0)
-#   POPULATED  -> preserved, warned (rc 0 — not an error, a deliberate refusal)
-#   UNREADABLE -> preserved, warned (observation failure is never permission)
-#   ABSENT     -> no-op (rc 0)
-nftban_delete_ghost_table_if_empty() {
-    local family="$1" name="$2" quiet="${3:-false}" cclass
-    cclass="$(nftban_table_content_class "$family" "$name")"
-    case "$cclass" in
-        "$TC_CONTENT_EMPTY")
-            nft delete table "$family" "$name" 2>/dev/null || return 0
-            [[ "$quiet" == "true" ]] || echo "  Removed ghost table: $family $name (empty skeleton)"
-            ;;
-        "$TC_CONTENT_POPULATED")
-            echo "  WARNING: Populated '$family $name' NOT removed — foreign or unattributed ownership." >&2
-            ;;
-        "$TC_CONTENT_UNREADABLE")
-            echo "  WARNING: Could not classify '$family $name' — PRESERVED; cleanup safety UNVERIFIED." >&2
-            ;;
-    esac
-    return 0
-}
+# NOTE (v1.228.11): the ghost-delete helper deliberately does NOT live here.
+# This file is the CLASSIFIER — identity and content, both read-only. nft WRITE
+# authority belongs to files sanctioned by scripts/ci/check-nft-writes.sh, so
+# nftban_delete_ghost_table_if_empty lives in nftban_firewall_conflicts.sh.
+# Keeping classification write-free is why that gate caught this at all.
 
 # nftban_table_should_delete_for_takeover — true (rc 0) if the table
 # may be destructively deleted during takeover-driven rebuild cleanup.

@@ -1042,6 +1042,33 @@ nftban_get_panel_conflicts() {
 # FIREWALL REMOVAL FUNCTIONS (Distro-aware)
 # =============================================================================
 
+# nftban_delete_ghost_table_if_empty — the ONLY sanctioned way to remove a
+# known ghost-table identity. v1.228.11: five independent call sites previously
+# ran a bare `nft delete table <name>`; this centralises the content gate so a
+# sixth cannot reintroduce the defect by copying the old one-liner.
+#
+#   EMPTY      -> deleted (rc 0)
+#   POPULATED  -> preserved, warned (rc 0 — not an error, a deliberate refusal)
+#   UNREADABLE -> preserved, warned (observation failure is never permission)
+#   ABSENT     -> no-op (rc 0)
+nftban_delete_ghost_table_if_empty() {
+    local family="$1" name="$2" quiet="${3:-false}" cclass
+    cclass="$(nftban_table_content_class "$family" "$name")"
+    case "$cclass" in
+        "$TC_CONTENT_EMPTY")
+            nft delete table "$family" "$name" 2>/dev/null || return 0
+            [[ "$quiet" == "true" ]] || echo "  Removed ghost table: $family $name (empty skeleton)"
+            ;;
+        "$TC_CONTENT_POPULATED")
+            echo "  WARNING: Populated '$family $name' NOT removed — foreign or unattributed ownership." >&2
+            ;;
+        "$TC_CONTENT_UNREADABLE")
+            echo "  WARNING: Could not classify '$family $name' — PRESERVED; cleanup safety UNVERIFIED." >&2
+            ;;
+    esac
+    return 0
+}
+
 # shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_fail2ban() {
     # Remove/disable fail2ban (distro-aware)

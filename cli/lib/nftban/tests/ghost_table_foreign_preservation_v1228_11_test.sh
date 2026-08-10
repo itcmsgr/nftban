@@ -12,7 +12,7 @@
 # meta:input="None (nft shim fixtures)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep,sed,mktemp"
-# meta:inventory.files="cli/lib/nftban/core/nftban_table_classify.sh"
+# meta:inventory.files="cli/lib/nftban/core/nftban_table_classify.sh,cli/lib/nftban/core/nftban_firewall_conflicts.sh"
 # meta:inventory.binaries="bash,grep,sed,mktemp"
 # meta:inventory.privileges="none"
 # meta:ta.id="ghost_table_foreign_preservation_v1228_11_test"
@@ -31,6 +31,9 @@ set -uo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../../../.." && pwd)"
 LIB="$REPO_ROOT/cli/lib/nftban/core/nftban_table_classify.sh"
+# v1.228.11: nftban_delete_ghost_table_if_empty lives in the AUTHORIZED nft-writer
+# (check-nft-writes.sh), not in the read-only classifier.
+WRITER="$REPO_ROOT/cli/lib/nftban/core/nftban_firewall_conflicts.sh"
 GUARD="$REPO_ROOT/scripts/ci/check-ghost-table-drift.sh"
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }
@@ -72,6 +75,8 @@ exists(){ [[ -f "$NFT_STATE/$1__$2.tbl" ]] && echo yes || echo no; }
 # shellcheck source=/dev/null
 . "$LIB" 2>/dev/null
 set +eEuo pipefail; trap - ERR   # the sourced lib re-enables errexit
+. "$WRITER" 2>/dev/null
+set +eEuo pipefail; trap - ERR
 
 echo "--- A. content classifier (the primitive both languages share) ---"
 mkpop ip filter;   [[ "$(nftban_table_content_class ip filter)"   == "$TC_CONTENT_POPULATED"  ]] && ok "populated -> POPULATED"   || no "populated misclassified"
