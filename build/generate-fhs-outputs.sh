@@ -791,7 +791,10 @@ nftban_install_set_file_permissions() {
 PERMS_HEADER
 
     # Generate permission commands from file_permissions section
-    yq -r '.file_permissions[] |
+    # v1.228.10: an entry may DECLARE an ownership triple (e.g. as the logrotate `create`
+    # authority) without asking the installer to enforce it over existing files.
+    # install_enforce:false emits no chown/chmod. Absent field = enforced, as before.
+    yq -r '.file_permissions[] | select(.install_enforce != false) |
         "    # \(.path) - \(.pattern // "*")\n" +
         (if .recursive == true then
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +

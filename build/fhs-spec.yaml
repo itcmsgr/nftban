@@ -1391,197 +1391,33 @@ file_permissions:
 
   # /var/log/nftban - log files
   #
-  # v1.228.10 INV-LOG-OWN-01: this domain previously declared `pattern: "*"` with
-  # `recursive: true`, which asserted ownership over EVERY descendant of the log tree.
-  # MEASURED on a real RPM upgrade (Rocky 9.8, 2026-08-09): a planted root:root 0600 file
-  # under /var/log/nftban/reports came back nftban:nftban 0640. The declaration, not the
-  # generated script, was the defect — the script rendered this policy faithfully.
+  # v1.228.10 INV-LOG-OWN-01. History of this entry, because it matters:
+  #   originally  pattern:"*" + recursive:true  -> a find sweep over EVERY descendant
+  #   then        24 name patterns (*.log/*.html/*.txt/*.json)  -> STILL WRONG
   #
-  # Ownership is now claimed only over DECLARED ARTIFACT PATTERNS in DECLARED DIRECTORIES.
-  # Each entry is non-recursive, so the generator emits a one-level glob rather than a
-  # `find` sweep, and an undeclared descendant keeps the ownership it already has.
-  # Patterns are evidence-derived (live v1.228.9 host: 20 *.log at the root, *.jsonl under
-  # watchdog/, *.html under reports/), not guessed.
+  # The second attempt was falsified by package-native test on lab2: a planted foreign
+  # root:root 0600 file named foreign-TEST.txt was re-owned to nftban:nftban 0640 because
+  # it happened to match a declared pattern. A filename extension is NOT ownership
+  # authority. Neither is basename, nesting depth, or membership of a declared directory.
   #
-  # The canonical root /var/log/nftban nftban:nftban 0750 is UNCHANGED (see the directories
-  # section) — the defect was recursive authority over descendants, not the ownership triple.
-  # logrotate_create stays on the root entry with the identical 0640/nftban/nftban triple, so
-  # logs_logrotate_create_parity_test.go remains valid.
+  # Install-time enforcement now owns the DECLARED DIRECTORY SKELETON ONLY (the directories
+  # section). File ownership belongs to whoever creates the file:
+  #   NFTBan writer        -> sets owner/mode at creation
+  #   logrotate            -> the create directive below
+  #   package migration    -> exact migrated artifacts only (#1206)
+  #   unknown pre-existing -> UNTOUCHED
+  #
+  # This entry is retained ONLY as the logrotate `create` authority. install_enforce:false
+  # tells the generator to emit no chown/chmod for it, while
+  # logs_logrotate_create_parity_test.go keeps reading the triple below as the single
+  # authority for `create MODE OWNER GROUP` in install/config/nftban.logrotate.
   - path: /var/log/nftban
     artifact_class: log
     retention_owner: logrotate
-    pattern: "*.log"
     mode: "0640"
     owner: nftban
     group: nftban
-    logrotate_create: true
-  - path: /var/log/nftban
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.jsonl"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.html"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.txt"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.json"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/daily
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.html"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/daily
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.txt"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/daily
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.json"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/weekly
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.html"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/weekly
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.txt"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/weekly
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.json"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/monthly
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.html"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/monthly
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.txt"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/monthly
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.json"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/archive
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.html"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/archive
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.txt"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/reports/archive
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.json"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/watchdog
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.jsonl"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/metrics
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.jsonl"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/rbl
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.log"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/botguard
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.log"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/soak
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.log"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/watchdog
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.log"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-  - path: /var/log/nftban/metrics
-    artifact_class: log
-    retention_owner: logrotate
-    pattern: "*.log"
-    mode: "0640"
-    owner: nftban
-    group: nftban
-    # v1.139 PR-B (FHS-UNGEN-LOGROTATE-CREATE): authoritative for the
-    # logrotate `create` directive on stanzas covering /var/log/nftban/*
-    # (excluding /var/log/nftban/suricata/*). Bridge-tested by
-    # internal/nftbanconf/logs_logrotate_create_parity_test.go — every
-    # matching `create MODE OWNER GROUP` line in
-    # install/config/nftban.logrotate must equal this triple.
+    install_enforce: false
     logrotate_create: true
 
   # /var/log/nftban/suricata - suricata writes

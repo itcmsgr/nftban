@@ -318,9 +318,25 @@ perms_enforce_log_files() {
 
     # Secure all log files (excluding suricata subdirectory)
     if [[ -d "$PERMS_LOG" ]]; then
-        # Fix file ownership and permissions (excluding suricata)
-        perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chown nftban:nftban {} \;
-        perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chmod 0640 {} \;
+        # v1.228.10 INV-LOG-OWN-01 — THIS SWEEP IS REMOVED, NOT NARROWED.
+        #
+        # It was:
+        #     find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chown nftban:nftban {} \;
+        #     find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chmod 0640 {} \;
+        #
+        # IDENTIFIED BY SYSCALL TRACE on lab2 as the actor that re-owned a nested foreign
+        # file during a normal package install — fchownat(...,113,115) + fchmodat(...,0640),
+        # one forked process per file, the signature of `find -exec … \;`. It survived the
+        # canonical-spec correction because it is a SECOND permission authority: it does not
+        # derive from build/fhs-spec.yaml at all, so regenerating the spec could never reach it.
+        #
+        # A file's presence under $PERMS_LOG is not authority over it. Extension, basename,
+        # nesting depth and parent directory are all equally not authority. Directory
+        # ownership is handled by perms_enforce_from_fhs_spec() from the canonical matrix
+        # (see the NOTE above); file ownership belongs to the writer that creates the file,
+        # to logrotate's `create` directive, and to the exact-path package migration.
+        # An unknown pre-existing descendant keeps the ownership it already has.
+        :
 
         # Handle suricata directory specially: suricata:nftban so Suricata can write, nftban can read
         # v1.160: optional-module skip. On a host WITHOUT Suricata the directory is
