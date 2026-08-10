@@ -1319,26 +1319,39 @@ _nftban_migrate_reports_to_log() {
     fi
 
     [ -d "\$_old" ] || return 0
+    # v1.228.10 INV-PKG-OWN-01/02: ownership and mode are applied to the EXACT artifacts
+    # this migration creates or moves — never recursively over the destination tree. The
+    # loop already knows every path it is authoritative for; a recursive ownership/mode sweep
+    # over "\$_new" also re-owned descendants the package never created. systemd-tmpfiles
+    # declares the reports directories but archive/pre-v1.228.5 is not declared there, so
+    # directories THIS function creates are set here, explicitly and idempotently.
+    # DRIFT-CHECKED TWIN of packaging/deb/postinst — keep both families identical.
+    _own_file() { chown nftban:nftban -- "\$1" 2>/dev/null || true; chmod 0640 -- "\$1" 2>/dev/null || true; }
+    _own_dir()  { chown nftban:nftban -- "\$1" 2>/dev/null || true; chmod 0750 -- "\$1" 2>/dev/null || true; }
     mkdir -p "\$_new/daily" 2>/dev/null || true
+    _own_dir "\$_new"; _own_dir "\$_new/daily"
     for _sub in "" /daily; do
         _o="\$_old\$_sub"; _n="\$_new\$_sub"
         [ -d "\$_o" ] || continue
         mkdir -p "\$_n" 2>/dev/null || true
+        _own_dir "\$_n"
         for _f in "\$_o"/*.html "\$_o"/*.txt "\$_o"/*.json; do
             [ -e "\$_f" ] || continue
             _b=\$(basename "\$_f")
             if [ -e "\$_n/\$_b" ]; then
                 # BOTH exist: never overwrite. Archive the old copy deterministically.
                 mkdir -p "\$_new/archive/pre-v1.228.5" 2>/dev/null || true
-                mv -f "\$_f" "\$_new/archive/pre-v1.228.5/\$_b" 2>/dev/null || true
+                _own_dir "\$_new/archive"; _own_dir "\$_new/archive/pre-v1.228.5"
+                if mv -f "\$_f" "\$_new/archive/pre-v1.228.5/\$_b" 2>/dev/null; then
+                    _own_file "\$_new/archive/pre-v1.228.5/\$_b"
+                fi
             else
-                mv -f "\$_f" "\$_n/\$_b" 2>/dev/null || true
+                if mv -f "\$_f" "\$_n/\$_b" 2>/dev/null; then
+                    _own_file "\$_n/\$_b"
+                fi
             fi
         done
     done
-    chown -R nftban:nftban "\$_new" 2>/dev/null || true
-    find "\$_new" -type f -exec chmod 0640 {} \; 2>/dev/null || true
-    find "\$_new" -type d -exec chmod 0750 {} \; 2>/dev/null || true
     # v1.228.5 CRITICAL: \`mv\` PRESERVES the SELinux context. A file moved from /var/lib
     # arrives at /var/log still labelled nftban_var_lib_t — precisely the label logrotate_t
     # cannot read, so the migration would RELOCATE the defect instead of fixing it.
