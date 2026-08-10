@@ -79,19 +79,23 @@ for file in $FILES; do
         continue
     fi
 
-    # Check for chmod -R (various forms)
-    if grep -n -E '(chmod\s+-R|chmod\s+--recursive)' "$filepath" 2>/dev/null; then
-        echo -e "${RED}[ERROR]${NC} $file contains 'chmod -R'"
-        echo "  Use explicit permissions or systemd-tmpfiles instead"
+    # Shell surface. The subject is the EXECUTABLE COMMAND SURFACE, so a comment
+    # describing the policy is not a violation of it — the same rule the Go branch
+    # below already applies to '//' lines. A comment-only line (optionally indented)
+    # is skipped; everything else is judged. Both comment prefixes count: '#' for shell
+    # and '//' for Go, because this surface check also reads .go files.
+    #
+    # BOUNDARY, stated rather than faked: this does NOT discriminate a recursive verb
+    # appearing inside a quoted string on an otherwise executable line. Doing that
+    # correctly needs shell parsing, and a regex approximation would be fragile in
+    # exactly the direction that matters (false negatives on real commands).
+    while IFS=: read -r ln body; do
+        [[ -n "$ln" ]] || continue
+        case "$(printf '%s' "$body" | sed 's/^[[:space:]]*//')" in '#'*|'//'*) continue ;; esac
+        echo -e "${RED}[ERROR]${NC} $file:$ln contains a recursive chown/chmod"
+        echo "  Use explicit ownership/permissions or systemd-tmpfiles instead"
         ERRORS=$((ERRORS + 1))
-    fi
-
-    # Check for chown -R (various forms)
-    if grep -n -E '(chown\s+-R|chown\s+--recursive)' "$filepath" 2>/dev/null; then
-        echo -e "${RED}[ERROR]${NC} $file contains 'chown -R'"
-        echo "  Use explicit ownership or systemd-tmpfiles instead"
-        ERRORS=$((ERRORS + 1))
-    fi
+    done < <(grep -n -E '(chown|chmod)\s+(-R|--recursive)' "$filepath" 2>/dev/null || true)
 
     # Go surface: the recursive flag as its own quoted argv element immediately after the
     # quoted verb. Written this way so a Go COMMENT or a log string naming the flag does

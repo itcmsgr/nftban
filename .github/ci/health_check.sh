@@ -532,17 +532,19 @@ check_recursive_permissions() {
         -type f 2>/dev/null || true)
 
     for file in $files; do
-        # Check for chmod -R (various forms)
-        if grep -n -E '(chmod\s+-R|chmod\s+--recursive)' "$file" 2>/dev/null; then
-            log_error "Found 'chmod -R' in: $file"
+        # Shell surface — executable command surface only. A comment-only line
+        # (optionally indented) is skipped — '#' for shell and '//' for Go, since this
+        # surface check also reads .go files.
+        # BOUNDARY: a recursive verb inside a quoted string on an executable line is
+        # NOT discriminated; that needs real shell parsing, and a regex approximation
+        # would risk false negatives on genuine commands.
+        local _l _b
+        while IFS=: read -r _l _b; do
+            [ -n "$_l" ] || continue
+            case "$(printf '%s' "$_b" | sed 's/^[[:space:]]*//')" in '#'*|'//'*) continue ;; esac
+            log_error "Found a recursive chown/chmod in: ${file#"$PROJECT_ROOT"/}:$_l"
             errors=$((errors + 1))
-        fi
-
-        # Check for chown -R (various forms)
-        if grep -n -E '(chown\s+-R|chown\s+--recursive)' "$file" 2>/dev/null; then
-            log_error "Found 'chown -R' in: $file"
-            errors=$((errors + 1))
-        fi
+        done < <(grep -n -E '(chown|chmod)\s+(-R|--recursive)' "$file" 2>/dev/null || true)
 
         # Go surface: recursive flag as its own quoted argv element after the quoted verb,
         # so a comment or a log string naming the flag does not match.

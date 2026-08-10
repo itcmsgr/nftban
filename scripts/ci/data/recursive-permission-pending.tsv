@@ -16,15 +16,19 @@
 #
 #   INVARIANT: RECOVERY/FALLBACK MUST NOT BE WEAKER THAN PRIMARY.
 #
+# LogDir (:89) was RETIRED from this list on 2026-08-09 — the fallback now derives from the
+# canonical directory skeleton, so PRIMARY and FALLBACK agree for the log tree.
+#
 # The canonical-permission lane may not close until these either converge to the canonical
 # matrix or are separated into an approved follow-up with a hard release gate (owner ruling
-# 2026-08-09). The primary path for LogDir is already fixed at the spec level (226e49b5);
-# :89 remains here precisely because fixing the spec did NOT fix the fallback.
+# 2026-08-09). The primary path for LogDir was fixed at the spec level (226e49b5) and the
+# fallback converged with it (this branch), which is why LogDir no longer appears below.
 #
+# NOTE: rows key on file:line, so ANY edit that shifts these lines must update them here.
+# The LogDir fix in this branch shifted CacheDir 93->114 and RunDir 97->118; both corrected.
 # columns: file:line<TAB>reason
 internal/installer/fhs/permissions.go:78	GO_FALLBACK_PARITY — EtcDir /etc/nftban root:nftban. Highest-priority sibling: recursive over OPERATOR-CREATED config (whitelist.d/, blacklist.d/). Owner-required read-only classification before any change.
 internal/installer/fhs/permissions.go:82	GO_FALLBACK_PARITY — BinDir /usr/lib/nftban/bin root:root. Package-owned binaries; foreign content unlikely but UNMEASURED.
 internal/installer/fhs/permissions.go:85	GO_FALLBACK_PARITY — DataDir /var/lib/nftban. Would flatten the root:nftban admin roots (backup/, update-backups/, pro/) and the root:nftban-auditor 0770 evidence boundary that the primary path preserves.
-internal/installer/fhs/permissions.go:89	GO_FALLBACK_PARITY — LogDir /var/log/nftban. The primary path was fixed at the canonical spec (226e49b5); this fallback still claims every descendant, so the invariant is not yet closed end-to-end.
-internal/installer/fhs/permissions.go:93	GO_FALLBACK_PARITY — CacheDir /var/cache/nftban 0755 world-traversable; foreign-content reachability unmeasured.
-internal/installer/fhs/permissions.go:97	GO_FALLBACK_PARITY — RunDir /run/nftban. tmpfs, recreated per boot, so foreign persistence is bounded by definition. Lowest risk of the six; still requires the explicit classification.
+internal/installer/fhs/permissions.go:114	GO_FALLBACK_PARITY — CacheDir /var/cache/nftban 0755 world-traversable; foreign-content reachability unmeasured.
+internal/installer/fhs/permissions.go:118	GO_FALLBACK_PARITY — RunDir /run/nftban. tmpfs, recreated per boot, so foreign persistence is bounded by definition. Lowest risk of the six; still requires the explicit classification.

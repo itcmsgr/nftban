@@ -86,8 +86,29 @@ func applyPermissions(exec executor.Executor, log *logging.Logger) {
 	exec.Run("chmod", "0750", DataDir)
 
 	// /var/log/nftban — nftban:nftban 0750
-	exec.Run("chown", "-R", "nftban:nftban", LogDir)
-	exec.Run("chmod", "0750", LogDir)
+	//
+	// INV-LOG-OWN-01 + FALLBACK PARITY (v1.228.10). This was
+	// `chown -R nftban:nftban LogDir`, which claimed every descendant of the log tree.
+	// The canonical spec was corrected to stop asserting that, and the generated primary
+	// script now applies bounded per-pattern globs — but this is the FALLBACK path
+	// (see SetPermissions), reached when the generated script is missing or fails. A
+	// fallback that still flattened the tree would mean PRIMARY fixed / FALLBACK still
+	// violating, which is not closure:
+	//
+	//     RECOVERY/FALLBACK MUST NOT BE WEAKER THAN PRIMARY.
+	//
+	// Ownership is established on the canonical directory skeleton only. Files get their
+	// ownership from the writer that creates them, which is where path authority exists.
+	// The other five recursive sites in this function remain OPEN, deliberately: they are
+	// listed in scripts/ci/data/recursive-permission-pending.tsv and are not in this lane's
+	// scope (owner ruling — LogDir parity now, the rest record/classify).
+	for _, dir := range CanonicalLogDirs {
+		if !exec.FileExists(dir) {
+			continue
+		}
+		exec.Run("chown", "nftban:nftban", dir)
+		exec.Run("chmod", "0750", dir)
+	}
 
 	// /var/cache/nftban — nftban:nftban 0755 (public-cache traversal; /health subdir is 0750)
 	exec.Run("chown", "-R", "nftban:nftban", CacheDir)
