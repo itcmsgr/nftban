@@ -2629,10 +2629,12 @@ _rebuild_rollback() {
     # was a latent refusal: `grep -q` exits at the first line, awk then dies of
     # SIGPIPE (141), and this file runs under `set -o pipefail` (see the header),
     # so the pipeline reported FAILURE for a table that was present and intact.
-    # It only surfaced once the nftban table was large enough that awk was still
-    # writing when grep left -- i.e. on hosts with real blacklists, never on the
-    # small fixtures. Refusing here is fail-closed, but an inert rollback is still
-    # a broken recovery path, so the pipe is gone rather than worked around.
+    # It surfaces when grep leaves before awk has finished writing AND exiting.
+    # This is NOT bounded by the 64K pipe buffer: a 4195-byte producer was measured
+    # returning 141 on lab4. Output size only makes the race more likely, which is
+    # why small fixtures pass and real hosts fail. Refusing here is fail-closed, but
+    # an inert rollback is still a broken recovery path, so the pipe is gone rather
+    # than worked around.
     #
     # A read failure and an absent table are also kept distinct: awk exiting
     # non-zero means we could not READ the snapshot, which is not the same fact as

@@ -222,9 +222,14 @@ D="$WORK/s_large"; mkdir -p "$D"
     printf 'table ip panelfw {\n\tchain input {\n\t}\n}\n'
 } > "$D/ruleset.nft"
 printf 'state=VALID\n' > "$D/snapshot_state"
+# NOT a pipe-buffer threshold. Measured on lab4, `nft list set | grep -q` returned 141
+# for a 4195-byte producer -- far below the 64K buffer -- while a 1445-byte producer on
+# lab2 returned 0. SIGPIPE fires when grep exits before the producer has finished writing
+# AND exiting; output size only makes that more likely, it is not a bound. The fixture is
+# large to make the race reliable in CI, not because a threshold exists.
 SZ=$(wc -c < "$D/ruleset.nft")
-[[ "$SZ" -gt 65536 ]] && ok "fixture exceeds the 64K pipe buffer (${SZ} bytes) — the race is reachable" \
-    || no "fixture too small (${SZ} bytes) to exercise the regression"
+[[ "$SZ" -gt 65536 ]] && ok "fixture is large enough (${SZ} bytes) to make the race reliable" \
+    || no "fixture too small (${SZ} bytes) to exercise the regression reliably"
 
 # FALSIFIABILITY: run the pre-fix probe VERBATIM against this exact fixture and prove
 # it fails. Without this, "large snapshot passes" cannot distinguish a fixed product
