@@ -268,6 +268,7 @@ version_build_date_v151_test	cli/lib/nftban/tests/version_build_date_v151_test.s
 version_date_coherence_v1228_7_test	cli/lib/nftban/tests/version_date_coherence_v1228_7_test.sh	packaging	test	version-date-coherence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 version_release_date_authority_test	cli/lib/nftban/tests/version_release_date_authority_test.sh	release	test	version	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 watchdog_update_swap_race_v1983_test	cli/lib/nftban/tests/watchdog_update_swap_race_v1983_test.sh	update	test	watchdog-update-swap	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+whitelist_dir_observation_v1228_10_test	cli/lib/nftban/tests/whitelist_dir_observation_v1228_10_test.sh	whitelist	test	whitelist-members	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_list_timed_label_v169_test	cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh	whitelist	test	whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_rebuild_remerge_v1930_test	cli/lib/nftban/tests/whitelist_rebuild_remerge_v1930_test.sh	firewall	test	whitelist-rebuild-remerge	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_reconcile_convergence_v1228_5_test	cli/lib/nftban/tests/whitelist_reconcile_convergence_v1228_5_test.sh	firewall	test	whitelist-reconcile-convergence	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			

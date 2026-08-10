@@ -1999,7 +1999,7 @@ _nftban_whitelist_reconcile_and_verify() {
     # Coverage comparison is owned by the Go oracle `nftban-core whitelist-coverage`
     # (cmd/nftban-core/main.go:168); member assembly and expiry are owned by the shared
     # readers in lib/whitelist_members.sh. This function now only ORCHESTRATES.
-    local _fam _set _tbl _missing_all=""
+    local _fam _set _tbl _missing_all="" _unreadable_all=""
     for _fam in 4 6; do
         if [[ "$_fam" == "4" ]]; then
             _set="whitelist_ipv4"; _tbl="ip nftban"
@@ -2015,10 +2015,19 @@ _nftban_whitelist_reconcile_and_verify() {
             _missing_all+="${_set}: UNREADABLE (kernel set could not be measured)"$'\n'
             continue
         fi
-        local _base _sess
-        _base="$(_nftban_wl_read_baseline "$_fam")"
-        _sess="$(_nftban_wl_read_sessions "$_fam")"
-        # Nothing configured for this family => nothing to converge.
+        local _base _sess _base_rc=0 _sess_rc=0
+        _base="$(_nftban_wl_read_baseline "$_fam")" || _base_rc=$?
+        _sess="$(_nftban_wl_read_sessions "$_fam")" || _sess_rc=$?
+        # OBSERVATION FAILURE MUST NEVER BE INTERPRETED AS DESIRED SECURITY STATE EMPTY.
+        # rc 3 = UNREADABLE: the configured source exists and could not be read, so the
+        # desired whitelist is UNKNOWN. Reporting convergence here is what let a rebuild
+        # empty whitelist_ipv4 and still print "verified" (measured, lab4, v1.228.9).
+        if [[ $_base_rc -eq 3 || $_sess_rc -eq 3 ]]; then
+            _unreadable_all+="${_set}: durable whitelist source UNREADABLE (desired state UNKNOWN, not empty)"$'\n'
+            continue
+        fi
+        # Nothing configured for this family => nothing to converge. This is now
+        # reachable only after a SUCCESSFUL read, so it means READ_OK_EMPTY (data).
         [[ -z "$_base$_sess" ]] && continue
 
         local _req _out _m
@@ -2036,6 +2045,18 @@ _nftban_whitelist_reconcile_and_verify() {
             _missing_all+="${_set}: ${_m}"$'\n'
         done < <(printf '%s' "$_out" | jq -r '.missing_from_kernel[]?' 2>/dev/null)
     done
+
+    if [[ -n "$_unreadable_all" ]]; then
+        if [[ "$_mode" == "install-deferred" ]]; then
+            [[ "$_q" == "false" ]] && echo "    Whitelist source UNREADABLE — DEFERRED to installer convergence gate."
+            return 2
+        fi
+        echo "    ERROR: whitelist source could NOT be read — reconcile status is UNKNOWN:" >&2
+        printf '           %s\n' "$_unreadable_all" >&2
+        echo "           The effective whitelist was left as-is; it was NOT reconciled." >&2
+        echo "           Refusing to report success for a source that could not be observed." >&2
+        return 1
+    fi
 
     if [[ -n "$_missing_all" ]]; then
         if [[ "$_mode" == "install-deferred" ]]; then
@@ -2899,6 +2920,38 @@ _firewall_rebuild_core() {
                 _snap_result="$OR_FAILED_RECOVERED"
             fi
             _rebuild_marker_write "$FC_SNAPSHOT_FAILED" "$_snap_result" "$snapshot_dir" "$pre_status"
+        fi
+        return 1
+    fi
+
+    # v1.228.10 A3-DIR — INV-P0-03/04: a SECOND hard gate, same doctrine as the
+    # snapshot gate above. The rebuild recreates the nftban table wholesale and
+    # repopulates the whitelist sets from the durable source, so if that source
+    # cannot be READ the rebuild would render an EMPTY whitelist as though the
+    # operator had configured one. Verifying after the fact is too late: the set
+    # is already empty by then.
+    #
+    #   OBSERVATION FAILURE MUST NEVER BE INTERPRETED AS DESIRED SECURITY STATE EMPTY.
+    #
+    # MEASURED on lab4 (real RPM v1.228.9): a dangling symlink at whitelist.d made
+    # the rebuild flush whitelist_ipv4 to EMPTY -- losing 127.0.0.1 and the host's
+    # own address -- and still exit 0 reporting the reconcile "verified".
+    #
+    # A legitimately ABSENT whitelist.d is NOT caught here: absence is the
+    # first-install shape and is data, matching internal/whitelist/loader.go and
+    # TestA3_AbsentWhitelistDir_IsEmptyNotError. Only present-but-unenumerable aborts.
+    if declare -f _nftban_wl_dir_status &>/dev/null && ! _nftban_wl_dir_status; then
+        echo "ERROR: durable whitelist source could not be read — rebuild ABORTED" >&2
+        echo "       path: ${_NFTBAN_WHITELIST_CONF_DIR:-/etc/nftban/whitelist.d}" >&2
+        echo "       The desired whitelist is UNKNOWN, not empty. Rebuilding now would" >&2
+        echo "       project an empty whitelist over your effective one." >&2
+        echo "       The firewall was NOT modified; the effective whitelist is preserved." >&2
+        if declare -f _rebuild_marker_write &>/dev/null; then
+            local _wl_result="$OR_FAILED_DEGRADED"
+            if [[ "$pre_status" == "protected" || "$pre_status" == "idle" ]]; then
+                _wl_result="$OR_FAILED_RECOVERED"
+            fi
+            _rebuild_marker_write "${FC_SNAPSHOT_FAILED:-SNAPSHOT_FAILED}" "$_wl_result" "$snapshot_dir" "$pre_status"
         fi
         return 1
     fi

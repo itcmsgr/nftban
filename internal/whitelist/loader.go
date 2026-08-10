@@ -120,8 +120,17 @@ func LoadAllWhitelistsTyped(configDir string) (map[string]WhitelistEntry, map[st
 	//    contribution may not be silently dropped from the desired state.
 	mainFile := filepath.Join(configDir, "whitelist.conf")
 	if err := loadWhitelistFileTyped(mainFile, ipv4, ipv6); err != nil {
+		// Same ENOENT-is-not-absence rule as whitelist.d below: a dangling symlink at
+		// whitelist.conf opens with ENOENT while Lstat proves the path is present.
+		// Treating that as "optional file absent" would silently drop a participating
+		// source from the desired state.
 		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, nil, fmt.Errorf("whitelist source %s unreadable: %w", mainFile, err)
+		}
+		if _, lerr := os.Lstat(mainFile); lerr == nil {
+			return nil, nil, fmt.Errorf(
+				"whitelist source %s unreadable: path is present but cannot be opened "+
+					"(dangling symlink); its contribution is unknown, not absent: %w", mainFile, err)
 		}
 	}
 
@@ -130,7 +139,24 @@ func LoadAllWhitelistsTyped(configDir string) (map[string]WhitelistEntry, map[st
 	entries, err := os.ReadDir(whitelistDir)
 	if err != nil {
 		// Absent directory = legitimate first-install shape: empty, not degraded.
+		//
+		// But ENOENT does NOT prove absence. A dangling symlink or a broken bind
+		// mount at this path makes ReadDir return ENOENT while the path itself is
+		// demonstrably PRESENT: Lstat does not follow the final link, so it succeeds
+		// on exactly the shapes ReadDir cannot see through. Measured on lab4 (real
+		// RPM, v1.228.9): `ln -s /nonexistent /etc/nftban/whitelist.d` was classified
+		// as first-install, FullSync consumed the empty desired state as authoritative
+		// and flushed whitelist_ipv4 to EMPTY — losing 127.0.0.1 and the host's own
+		// address — while the rebuild exited 0 and reported the reconcile "verified".
+		//
+		// OBSERVATION FAILURE MUST NEVER BE INTERPRETED AS DESIRED SECURITY STATE EMPTY.
 		if errors.Is(err, fs.ErrNotExist) {
+			if _, lerr := os.Lstat(whitelistDir); lerr == nil {
+				return nil, nil, fmt.Errorf(
+					"whitelist directory %s unreadable: path is present but not enumerable "+
+						"(dangling symlink or broken mount); the whitelist is UNKNOWN, not empty: %w",
+					whitelistDir, err)
+			}
 			return ipv4, ipv6, nil
 		}
 		// Present but unenumerable (EACCES from a packaging perms slip, EIO, an SELinux

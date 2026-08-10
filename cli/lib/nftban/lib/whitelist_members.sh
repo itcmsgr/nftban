@@ -65,10 +65,51 @@ _nftban_wl_read_kernel_set() {
     return 0
 }
 
+# --- OBSERVATION CONTRACT (v1.228.10 A3-DIR) --------------------------------
+# These readers describe DESIRED whitelist state. Their output is consumed as
+# authoritative, and the sync layer DELETES kernel members absent from it, so
+# "I read nothing" and "I could not read" must never share a representation.
+#
+#   rc 0 + non-empty stdout -> READ_OK_WITH_MEMBERS
+#   rc 0 + empty stdout     -> READ_OK_EMPTY   (legitimate configured truth)
+#   rc 3                    -> UNREADABLE      (observation failure; DATA UNKNOWN)
+#
+#         EMPTY = DATA.   UNREADABLE = ERROR.
+#
+# Previously BOTH states were `rc 0 + ""`, because a missing/dangling
+# $_NFTBAN_WHITELIST_CONF_DIR returned 0 with no output. Measured on lab4 (real
+# RPM v1.228.9): a dangling symlink at whitelist.d made the reconcile read zero
+# members, treat that as "nothing configured", and report
+# "Whitelist reconcile verified (configured members present)" with exit 0 while
+# whitelist_ipv4 had been flushed to EMPTY.
+#
+# A TRULY ABSENT directory stays rc 0 / empty: that is the first-install shape,
+# and it matches internal/whitelist/loader.go, whose behaviour is pinned by
+# TestA3_AbsentWhitelistDir_IsEmptyNotError. Present-but-unenumerable is the
+# defect; absence is not.
+_NFTBAN_WL_RC_UNREADABLE=3
+
+# Returns 0 if the configured dir is usable or legitimately absent, 3 if it is
+# present but cannot be enumerated (dangling symlink, broken mount, non-dir,
+# EACCES). Note `-e` follows symlinks and `-L` does not, so a dangling link is
+# exactly (! -e && -L).
+_nftban_wl_dir_status() {
+    local d="$_NFTBAN_WHITELIST_CONF_DIR"
+    if [[ -d "$d" && -r "$d" && -x "$d" ]]; then return 0; fi
+    if [[ -e "$d" || -L "$d" ]]; then return $_NFTBAN_WL_RC_UNREADABLE; fi
+    return 0
+}
+
 _nftban_wl_read_baseline() {
     local fam="$1" f line before_hash ip
+    _nftban_wl_dir_status || return $?
     [[ -d "$_NFTBAN_WHITELIST_CONF_DIR" ]] || return 0
     for f in "$_NFTBAN_WHITELIST_CONF_DIR"/*.conf; do
+        # An unmatched glob is "no files configured" (data). A dangling symlink is
+        # a source that exists and cannot be read (error) -- do not skip it silently.
+        [[ "$f" == *'*'* && ! -e "$f" ]] && continue
+        [[ ! -e "$f" && -L "$f" ]] && return $_NFTBAN_WL_RC_UNREADABLE
+        [[ -e "$f" && ! -r "$f" ]] && return $_NFTBAN_WL_RC_UNREADABLE
         [[ -e "$f" ]] || continue
         while IFS= read -r line || [[ -n "$line" ]]; do
             local trimmed="${line#"${line%%[![:space:]]*}"}"
@@ -92,8 +133,12 @@ _nftban_wl_read_baseline() {
 _nftban_wl_read_sessions() {
     local fam="$1" f line before_hash ip expires_at expires_unix now_unix
     now_unix=$(date -u +%s 2>/dev/null) || now_unix=0
+    _nftban_wl_dir_status || return $?
     [[ -d "$_NFTBAN_WHITELIST_CONF_DIR" ]] || return 0
     for f in "$_NFTBAN_WHITELIST_CONF_DIR"/*.conf; do
+        [[ "$f" == *'*'* && ! -e "$f" ]] && continue
+        [[ ! -e "$f" && -L "$f" ]] && return $_NFTBAN_WL_RC_UNREADABLE
+        [[ -e "$f" && ! -r "$f" ]] && return $_NFTBAN_WL_RC_UNREADABLE
         [[ -e "$f" ]] || continue
         while IFS= read -r line || [[ -n "$line" ]]; do
             local trimmed="${line#"${line%%[![:space:]]*}"}"
