@@ -163,11 +163,50 @@ func TestPR26_6_LFDBinary_NeutralizedNotDeleted(t *testing.T) {
 		}
 	}
 
-	// 3. The bytes must survive somewhere, unchanged, as audit evidence.
-	//    (sha pinned at seed time so a silent rewrite is caught too.)
-	_ = lfdSHA
-	if !mock.FileExists("/usr/sbin/lfd") && !mock.FileExists("/usr/sbin/lfd.disabled") {
-		t.Error("lfd payload vanished entirely — audit/troubleshooting evidence lost")
+	// 3. PAYLOAD_PRESERVED_FOR_EVIDENCE != PAYLOAD_CAPABLE_OF_REENTRY.
+	//
+	// MockExecutor.Run only RECORDS commands — it does not simulate `mv`, so
+	// asserting on mock.FileExists("/usr/sbin/lfd") directly would pass via the
+	// ORIGINAL path and prove nothing about neutralization. Replay the recorded
+	// renames onto the file map first, then assert on the resulting state.
+	replayRenames(mock)
+
+	if mock.FileExists("/usr/sbin/lfd") {
+		t.Error("canonical executable path /usr/sbin/lfd still populated — re-entry authority intact")
+	}
+	if !mock.FileExists("/usr/sbin/lfd.disabled") {
+		t.Fatal("lfd payload vanished entirely — audit/troubleshooting evidence lost")
+	}
+	got2, err := mock.ReadFile("/usr/sbin/lfd.disabled")
+	if err != nil {
+		t.Fatalf("read retained payload: %v", err)
+	}
+	if sha256Hex(got2) != lfdSHA {
+		t.Errorf("retained payload was altered: want sha %s, got %s", lfdSHA, sha256Hex(got2))
+	}
+
+	// 4. Nothing may re-create the canonical path after neutralization.
+	for _, c := range mock.Commands {
+		if c.Name == "mv" && len(c.Args) >= 2 && c.Args[1] == "/usr/sbin/lfd" {
+			t.Errorf("a command restored the canonical executable path: %v", c)
+		}
+	}
+}
+
+// replayRenames applies every recorded `mv SRC DST` to the mock file map, so
+// post-condition assertions describe the state the commands would actually
+// produce rather than the seed state. Without this, any assertion about a
+// renamed path is vacuous against a recording-only executor.
+func replayRenames(m *executor.MockExecutor) {
+	for _, c := range m.Commands {
+		if c.Name != "mv" || len(c.Args) < 2 {
+			continue
+		}
+		src, dst := c.Args[0], c.Args[1]
+		if data, ok := m.Files[src]; ok {
+			m.Files[dst] = data
+			delete(m.Files, src)
+		}
 	}
 }
 
