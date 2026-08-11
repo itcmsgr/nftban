@@ -162,18 +162,35 @@ func TestClassify_Ambiguous_TableWithoutChain(t *testing.T) {
 	}
 }
 
-func TestClassify_Priority_UpdateOverConflicts(t *testing.T) {
-	// Even with every conflict active, UPDATE wins if NFTBan owns the firewall
+// CONTRACT CHANGED 2026-08-11 (CSF-CLOSE-4). This previously asserted
+// "UPDATE wins ... (overrides everything)" even with forceApprove=true.
+// Runtime proof (el9-clean, R3-P1 #3) showed that rule left NFTBan and CSF
+// BOTH effective — 65 nftban rules alongside 129 CSF rules — with
+// DisableConflicts never entered, rc=0 and status=PROTECTED. Explicit
+// operator approval was being discarded by the decision layer.
+//
+//	NFTBAN OWNING THE FIREWALL != NOTHING ELSE DOES
+//
+// The safety property worth keeping is narrower and is asserted below:
+// UPDATE still wins when takeover was NOT explicitly approved, so routine
+// upgrades on a host that merely has another firewall installed never turn
+// destructive.
+func TestClassify_Priority_ExplicitApprovalContestsUpdate(t *testing.T) {
 	mock := authoritativeMock()
-
 	conflicts := []detect.Conflict{
 		{Name: "CSF", Active: true},
 		{Name: "UFW", Active: true},
 		{Name: "firewalld", Active: true},
 	}
-	decision := Classify(mock, conflicts, detect.PanelCPanel, true, true, newTestLogger())
-	if decision != Update {
-		t.Errorf("decision = %s, want UPDATE (overrides everything)", decision)
+
+	// Explicitly approved takeover MUST contest, not silently update.
+	if d := Classify(mock, conflicts, detect.PanelCPanel, true, true, newTestLogger()); d != Takeover {
+		t.Errorf("explicit approval with active conflicts = %s, want TAKEOVER", d)
+	}
+
+	// NEGATIVE CONTROL: without explicit approval the old priority holds.
+	if d := Classify(mock, conflicts, detect.PanelCPanel, false, false, newTestLogger()); d != Update {
+		t.Errorf("unapproved run with conflicts = %s, want UPDATE (upgrades stay safe)", d)
 	}
 }
 
