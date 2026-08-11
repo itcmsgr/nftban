@@ -10,8 +10,17 @@
 # meta:description="R0 release gate. Proves CSF observation executes no vendor firewall binary, that activity is read from csf.service OR lfd.service, that an unobservable host yields cannot-verify (never 'disabled'), and that cannot-verify can never cross the observation->mutation boundary into the drift-policy consumer."
 # meta:inventory.files="cli/lib/nftban/core/nftban_firewall_conflicts.sh,cli/lib/nftban/cli/cmd_health_analysis.sh,cli/lib/nftban/lib/nftban_checks.sh,cli/lib/nftban/core/nftban_output.sh"
 # meta:inventory.privileges="none"
+# meta:ta.id="csf_observation_purity_v1229_test"
+# meta:ta.owner="firewall"
+# meta:ta.module="firewall"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
 # meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 #
 # PROVEN DEFECT THIS GUARDS (el9-clean, 2026-08-11):
