@@ -109,7 +109,42 @@ func Classify(
 	log *logging.Logger,
 ) Decision {
 	// 1. NFTBan fully authoritative — UPDATE.
+	//
+	// CSF-CLOSE-4: this check no longer short-circuits unconditionally.
+	//
+	// Previously `IsNftbanAuthoritative` was evaluated first and returned
+	// Update regardless of what else was live on the host. Runtime proof
+	// (el9-clean, 2026-08-11): with NFTBan COMMITTED **and** CSF active with
+	// 129 kernel rules, an explicit `--takeover --force` produced
+	//
+	//     extfw/detect: AMBIGUOUS — multiple active: [iptables csf]
+	//     [conflict] CSF=service (csf.service)
+	//     [authority] decision=UPDATE          <- foreign-active state discarded
+	//     DisableConflicts markers: 0          <- never entered
+	//     rc=0 · CONFLICTS=<empty> · status=PROTECTED
+	//
+	// so retroactive takeover was UNREACHABLE: the information needed to
+	// contest was produced by detection and then thrown away by the decision
+	// layer. The discriminator was proven by contrast — same binary, same
+	// flags, same live CSF; only NFTBan's own authoritativeness flipped
+	// TAKEOVER into UPDATE.
+	//
+	// NFTBan owning the firewall is NOT evidence that nothing else does.
+	// When the operator has EXPLICITLY approved takeover and conflicts are
+	// actually present, that request must reach the takeover path instead of
+	// being silently downgraded. Deliberately narrow: no conflicts, or no
+	// explicit approval, still yields Update exactly as before — this does
+	// not make ordinary upgrades destructive.
 	if IsNftbanAuthoritative(exec) {
+		if len(conflicts) > 0 && forceApprove {
+			log.Detect("authority", "decision", string(Takeover))
+			log.Detect("authority", "reason",
+				"nftban authoritative BUT conflicts present and takeover explicitly approved — contested, not an update")
+			for _, c := range conflicts {
+				log.Detect("authority", "contested", c.Name)
+			}
+			return Takeover
+		}
 		log.Detect("authority", "decision", string(Update))
 		log.Detect("authority", "reason", "nftban table+chain+daemon all present")
 		return Update
