@@ -260,6 +260,21 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	// Store for mapper to use
 	result.ConsistencyOverall = consistencyResult.Overall
 
+	// CSF-CLOSE-5: a contested host must not be reported PROTECTED.
+	//
+	// NFTBan's own structure can be perfectly healthy while CSF is still
+	// effective or able to re-enter — proven twice on el9-clean (arms 3 and 4),
+	// where `nftban status` said PROTECTED with CSF re-armable and, in arm 3,
+	// 129 CSF rules recoverable by simply starting a still-enabled unit.
+	//
+	//     NFTBAN HEALTHY != SOLE EFFECTIVE AUTHORITY
+	//
+	// Read-only and conservative: UNKNOWN also produces a finding, so an
+	// unqueryable host degrades rather than silently passing.
+	if f := csfConflictFinding(DetectCSFConflict()); f != nil {
+		result.Findings = append(result.Findings, *f)
+	}
+
 	// Compute summary
 	result.Summary = computeSummary(result)
 
