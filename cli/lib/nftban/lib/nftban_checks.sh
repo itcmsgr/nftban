@@ -600,8 +600,35 @@ nftban_check_firewall_conflict() {
             if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
                 installed="true"
                 status_text="installed"
-                # Check if CSF/lfd is actually running (service state is source of truth)
-                if systemctl is-active lfd &>/dev/null 2>&1; then
+                # v1.229.0 R0 SITE 3 — CSF activity via csf.service OR lfd.service.
+                # The old test asked only about `lfd`, so a host with csf.service
+                # active and lfd failed was reported disabled while enforcing.
+                #
+                # DELIBERATE R0 DUPLICATION: this file is sourced standalone by the
+                # report/render surfaces and does NOT source
+                # nftban_firewall_conflicts.sh, so the canonical
+                # _nftban_csf_activity is not reachable here. The spec permits
+                # inlining per site. Collapsing the two bodies onto one canonical
+                # observer belongs to R1 (adoption-not-invention) — NOT to this
+                # hotfix. Keep the two bodies byte-equivalent in semantics.
+                # No pipelines: `producer | grep -q` under pipefail returns 141
+                # on a MATCH and reads as no-match.
+                local _csf_act _csf_unit _csf_saw=0 _csf_out
+                for _csf_unit in csf.service lfd.service; do
+                    _csf_out=$(systemctl is-active "$_csf_unit" 2>/dev/null)
+                    [[ -n "$_csf_out" ]] && _csf_saw=1
+                    [[ "$_csf_out" == "active" ]] && { _csf_act="active"; break; }
+                done
+                if [[ "${_csf_act:-}" != "active" ]]; then
+                    if [[ $_csf_saw -eq 0 ]]; then _csf_act="cannot-verify"; else _csf_act="not-active"; fi
+                fi
+
+                if [[ "$_csf_act" == "cannot-verify" ]]; then
+                    # Observation failed. Assert no safety: never "disabled_*",
+                    # never critical (destructive consumers key on critical).
+                    status_text="state_unverifiable"
+                    conflict_level="info"
+                elif [[ "$_csf_act" == "active" ]]; then
                     active="true"
                     enabled="true"
                     if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then

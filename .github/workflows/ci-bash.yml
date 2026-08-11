@@ -69,3 +69,23 @@ jobs:
           echo "=== ShellCheck: Install ==="
           shellcheck -x -S warning install/*.sh
           shellcheck -x -S warning install.sh build.sh
+
+      # ----------------------------------------------------------------------
+      # v1.229.0 R0 — EXECUTE the CSF observation-purity gate.
+      #
+      # This workflow previously only linted; it never EXECUTED a *_test.sh.
+      # A test file that is merely present is inert (TEST-DISCOVERY GAP:
+      # 182/225 shell tests not CI-wired), and the R0 spec makes
+      # TEST_PRESENT_IN_REQUIRED_CI release-blocking — "test file added" is
+      # explicitly insufficient.
+      #
+      # Scope note: this step is deliberately an explicit single-file
+      # invocation, NOT a glob over tests/. Auto-discovering every shell test
+      # here would turn a lint gate into an unreviewed test runner and drag in
+      # the known-red baseline. Broad discovery belongs to the test-authority
+      # lane, not to this hotfix.
+      - name: CSF observation purity (v1.229.0 R0 gate)
+        run: |
+          echo "=== Executing: csf_observation_purity_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh
+          bash cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh

@@ -128,17 +128,23 @@ nftban_health_cmd_conflicts() {
         echo "│  ✓ ufw           not installed                            │"
     fi
 
-    # CSF - Check BOTH service status AND config file
-    # Root cause fix: Previously only checked config, not service state
-    # CSF can be disabled (csf -x) but config still has TESTING="0"
-    local csf_service_active=false
-    if systemctl is-active --quiet lfd 2>/dev/null; then
-        csf_service_active=true
-    elif command -v csf &>/dev/null && csf -s 2>&1 | grep -q "csf is enabled"; then
-        csf_service_active=true
-    fi
+    # CSF — v1.229.0 R0 SITE 2. Observation must not execute vendor binaries.
+    # REMOVED the `csf -s ... | grep -q` probe: `csf -s` STARTS CSF (measured
+    # 0 -> 129 kernel rules). CORRECTED the activity test to csf.service OR
+    # lfd.service — `lfd` alone reported an enforcing CSF as "disabled".
+    # _nftban_csf_activity is defined in nftban_firewall_conflicts.sh, which
+    # this command sources above before any conflict rendering.
+    local csf_activity
+    csf_activity="$(_nftban_csf_activity)"
 
-    if [[ "$csf_service_active" == "true" ]] && [[ -f /etc/csf/csf.conf ]]; then
+    if [[ ! -f /etc/csf/csf.conf ]] && ! command -v csf &>/dev/null; then
+        echo "│  ✓ CSF           not installed                            │"
+    elif [[ "$csf_activity" == "cannot-verify" ]]; then
+        # Neither ACTIVE nor DISABLED may be asserted. has_conflicts is left
+        # unchanged — this line IS the signal; it must not manufacture a clean
+        # verdict, nor a conflict that was never observed.
+        echo "│  ⚠ CSF           cannot-verify (systemd unavailable)      │"
+    elif [[ "$csf_activity" == "active" ]] && [[ -f /etc/csf/csf.conf ]]; then
         if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
             echo "│  ✗ CSF           ACTIVE (production mode)                 │"
         else

@@ -105,6 +105,7 @@ config_local_impl2_test	cli/lib/nftban/tests/config_local_impl2_test.sh	core	tes
 config_local_source_helper_impl1_test	cli/lib/nftban/tests/config_local_source_helper_impl1_test.sh	core	test	config-local-source	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_show_secret_redaction_v1227_test	cli/lib/nftban/tests/config_show_secret_redaction_v1227_test.sh	mail	test	config-secret-redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 core_ownership_identity_v1228_9_test	cli/lib/nftban/tests/core_ownership_identity_v1228_9_test.sh	core	test	legal-identity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
+csf_observation_purity_v1229_test	cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 deb_conffile_parity_v1227_test	cli/lib/nftban/tests/deb_conffile_parity_v1227_test.sh	mail	test	deb-conffile-parity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 deprecated_unit_failed_latch_v1228_2_test	cli/lib/nftban/tests/deprecated_unit_failed_latch_v1228_2_test.sh	packaging	test	systemd-maintainer-scripts	CI_STATIC	ci-bash	true	false	false	false	false	false			
 derived_state_reconcile_v1228_8_test	cli/lib/nftban/tests/derived_state_reconcile_v1228_8_test.sh	firewall	test	derived-state-convergence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		

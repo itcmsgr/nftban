@@ -528,6 +528,32 @@ nftban_detect_cphulk() {
 # CSF / OTHER SECURITY TOOLS
 # =============================================================================
 
+# _nftban_csf_activity — PURE observation of CSF activity. v1.229.0 R0.
+#
+# Emits exactly one of: active | not-active | cannot-verify
+#
+# INVARIANT (release-blocking): this function MUST NOT execute `csf`, `lfd`, or
+# any other vendor firewall binary. `csf -s` STARTS CSF — using it as a probe
+# re-armed a competing firewall from `nftban firewall conflicts`, `nftban
+# health`, and the maintenance/health TIMERS (unattended root).
+#
+# Empty output from BOTH queries means systemctl/D-Bus is unusable (container,
+# degraded host) — that is cannot-verify, NOT "disabled". Modern systemd prints
+# `inactive` for a not-found unit, which is correctly not-active.
+#
+# No pipelines: `producer | grep -q` under `set -o pipefail` yields 141 on a
+# MATCH and silently reads as no-match.
+_nftban_csf_activity() {
+    local out unit saw_output=0
+    for unit in csf.service lfd.service; do
+        out=$(systemctl is-active "$unit" 2>/dev/null)
+        [[ -n "$out" ]] && saw_output=1
+        [[ "$out" == "active" ]] && { echo "active"; return 0; }
+    done
+    [[ $saw_output -eq 0 ]] && { echo "cannot-verify"; return 0; }
+    echo "not-active"
+}
+
 nftban_detect_csf() {
     # Detect ConfigServer Firewall (CSF)
     # Returns: 0=not found, 1=installed but disabled, 2=active
@@ -537,16 +563,30 @@ nftban_detect_csf() {
     if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
         status=1
 
-        # Check if CSF is actually ENABLED (not just installed)
-        # CSF can be in production mode (TESTING=0) but still disabled
-        local csf_enabled=false
-        if systemctl is-active lfd &>/dev/null 2>&1; then
-            csf_enabled=true
-        elif csf -s 2>&1 | grep -q "csf is enabled"; then
-            csf_enabled=true
-        fi
+        # v1.229.0 R0 SITE 1 — CSF OBSERVATION PURITY.
+        #
+        # REMOVED: `csf -s 2>&1 | grep -q "csf is enabled"`. `csf -s` is CSF's
+        # START command, not a status query: it installed 129 kernel rules on a
+        # host where CSF was inactive (measured 0 -> 129, el9-clean 2026-08-11).
+        # An observation path must never execute a vendor firewall binary.
+        #
+        # CORRECTED: activity is `csf.service` OR `lfd.service`. The old test
+        # asked only about `lfd`, so a host with csf.service active and lfd
+        # failed was reported "disabled (no conflict)" while enforcing.
+        #
+        # No pipelines here: `producer | grep -q` under `set -o pipefail`
+        # returns 141 on match and reads as NOT-FOUND.
+        local csf_activity
+        csf_activity="$(_nftban_csf_activity)"
 
-        if [[ "$csf_enabled" == "true" ]]; then
+        if [[ "$csf_activity" == "cannot-verify" ]]; then
+            # Observation failed — assert neither ACTIVE nor DISABLED. UNKNOWN
+            # must never cross the observation -> mutation boundary, so severity
+            # is capped at INFO: destructive drift consumers key on CRITICAL.
+            NFTBAN_FIREWALL_CONFLICTS+=("CSF: Installed — state CANNOT-VERIFY (systemd unavailable)")
+            NFTBAN_FIREWALL_CONFLICTS+=("  └─ CSF activity could not be observed; no safety claim is made")
+            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
+        elif [[ "$csf_activity" == "active" ]]; then
             # CSF is actually running
             status=2
             if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
