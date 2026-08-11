@@ -29,7 +29,13 @@ import (
 // authorises deleting a POPULATED, operator-owned `inet filter` table.
 const inetFilterOverrideEnv = "NFTBAN_ALLOW_REMOVE_INET_FILTER"
 
-// ghostTables is the unconditional-delete list: tables an iptables-nft compat
+// ghostTables is the Class-1 name list. v1.228.11: these names are CANDIDATES
+// for cleanup, no longer an unconditional-delete list — each is classified by
+// ClassifyTable and only a proven-EMPTY skeleton is removed. A populated or
+// unclassifiable table is preserved and warned about. See the Class-1 block in
+// CleanGhostTables and OPEN_INSTALLER_DELETES_POPULATED_FOREIGN_NFT_TABLES_BY_NAME.
+//
+// Original note: tables an iptables-nft compat
 // shim (or firewalld) creates purely as a side-effect and that never legitimately
 // hold operator rules. These are skeletons by construction, so deleting them on
 // sight is safe.
@@ -80,14 +86,49 @@ var rawGhostTables = []struct {
 //
 // Ignores errors for tables that don't exist.
 func CleanGhostTables(exec executor.Executor, log *logging.Logger) {
-	// Class 1 — unconditional ghost skeletons.
+	// Class 1 — v1.228.11: was UNCONDITIONAL DELETE BY NAME.
+	//
+	// OPEN_INSTALLER_DELETES_POPULATED_FOREIGN_NFT_TABLES_BY_NAME (P0). The
+	// previous form deleted these tables because their family/name matched,
+	// with no emptiness check and no ownership attribution. REPRODUCED twice on
+	// a host with NFTBan and CSF both proven ABSENT beforehand: an ordinary
+	// `dnf install` destroyed a populated operator-owned `ip filter` (hooked
+	// chain + accept/drop rules), and a `--force --allow-recommit` run destroyed
+	// a populated `ip mangle`. Both installs returned rc=0/COMMITTED, and the
+	// same log said "No conflicting firewall tools detected" three lines before
+	// "removed ghost table: ip filter" — the name alone triggered the delete.
+	//
+	// This is NOT takeover-gated (phases.go: "Clean ghost tables (all paths)"),
+	// so it was reachable by any supported install/upgrade.
+	//
+	//	UNKNOWN_FOREIGN_FIREWALL_STATE MUST NEVER BE DELETED AS GHOST STATE.
+	//
+	// Class 1 now uses the SAME classify-then-act posture Classes 2 and 3
+	// already demonstrate, via the shared ClassifyTable primitive — deliberately
+	// not a fourth cleanup model.
 	for _, gt := range ghostTables {
-		if exec.NftTableExists(gt.family, gt.table) {
+		switch ClassifyTable(exec, gt.family, gt.table) {
+		case TableClassAbsent:
+			// nothing to do
+		case TableClassEmpty:
 			if err := exec.NftDeleteTable(gt.family, gt.table); err != nil {
 				log.Warn("delete ghost table %s %s: %v", gt.family, gt.table, err)
 			} else {
-				log.Info("removed ghost table: %s %s", gt.family, gt.table)
+				log.Info("removed ghost table: %s %s (empty skeleton)", gt.family, gt.table)
 			}
+		case TableClassPopulated:
+			// Ownership is not established by the table name. A populated table
+			// under a Class-1 name is foreign-or-unknown and is PRESERVED.
+			log.Warn("Populated '%s %s' table present — NOT removed (foreign or unattributed ownership).", gt.family, gt.table)
+			log.Warn("  It holds rules this installer did not create and cannot attribute. If it is a")
+			log.Warn("  stale skeleton you want gone, remove it deliberately: nft delete table %s %s", gt.family, gt.table)
+		case TableClassUnknown:
+			// Observation failure is never permission to delete, AND it must not
+			// be reported as a clean cleanup: log.Warn feeds the installer's
+			// warnCount, so the summary says "with N warning" rather than
+			// claiming success for a check that never completed.
+			log.Warn("Could not classify '%s %s' (nft read failed) — PRESERVED.", gt.family, gt.table)
+			log.Warn("  Cleanup safety for this table is UNVERIFIED; it was left untouched by design.")
 		}
 	}
 

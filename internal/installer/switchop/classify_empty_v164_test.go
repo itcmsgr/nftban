@@ -116,20 +116,58 @@ func TestV164_PopulatedInetFilter_OverrideRemoves(t *testing.T) {
 	}
 }
 
-// TestV164_UnconditionalGhost_RemovedRegardlessOfContent locks that the
-// classify-empty refinement did NOT leak into the unconditional ghost class:
-// `ip filter` is a compat-shim skeleton by construction and is deleted on sight
-// even if RunResults would describe content (it is never classified).
-func TestV164_UnconditionalGhost_RemovedRegardlessOfContent(t *testing.T) {
+// SUPERSEDED by v1.228.11. The former
+// TestV164_UnconditionalGhost_RemovedRegardlessOfContent asserted that Class 1
+// deletes `ip filter` "regardless of content", on the premise that it "is a
+// compat-shim skeleton by construction ... it is never classified".
+//
+// RUNTIME FALSIFIED THAT PREMISE. On a host with NFTBan and CSF both proven
+// absent, a populated operator-owned `ip filter` (hooked chain, accept + drop
+// rules) was destroyed by an ordinary `dnf install`, and a populated `ip mangle`
+// by a `--force --allow-recommit` run — both returning rc=0/COMMITTED. The name
+// does not establish ownership, so "by construction" was an assumption, not a
+// property. See OPEN_INSTALLER_DELETES_POPULATED_FOREIGN_NFT_TABLES_BY_NAME.
+//
+// The replacement below locks the corrected contract. It is deliberately the
+// inverse assertion on the SAME fixture, so this file records that the previous
+// behaviour was pinned as intended rather than merely overlooked.
+func TestV1228_11_PopulatedClass1Table_Preserved(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.NftTables["ip:filter"] = true
-	// Even with a "rule" present, the unconditional class never classifies.
 	mock.RunResults["nft:list:table:ip:filter"] = executor.Result{Stdout: "table ip filter {\n\tchain input {\n\t\ttype filter hook input priority 0; policy accept;\n\t\ttcp dport 22 accept\n\t}\n}\n"}
 
 	CleanGhostTables(mock, newTestLogger())
 
-	if mock.NftTableExists("ip", "filter") {
-		t.Error("expected unconditional ghost ip filter to be removed regardless of content")
+	if !mock.NftTableExists("ip", "filter") {
+		t.Error("populated Class-1 ip filter was DELETED — ownership is not established by name; " +
+			"a populated foreign table must be preserved (INV-CSF-03)")
+	}
+}
+
+// Empty Class-1 skeletons must STILL be removable, or the fix would be inert.
+func TestV1228_11_EmptyClass1Table_StillRemoved(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.NftTables["ip:mangle"] = true
+	mock.RunResults["nft:list:table:ip:mangle"] = executor.Result{Stdout: "table ip mangle {\n}\n"}
+
+	CleanGhostTables(mock, newTestLogger())
+
+	if mock.NftTableExists("ip", "mangle") {
+		t.Error("empty Class-1 skeleton was preserved — cleanup path is inert (positive control)")
+	}
+}
+
+// Observation failure is never permission to delete.
+func TestV1228_11_UnclassifiableClass1Table_Preserved(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.NftTables["ip:nat"] = true
+	mock.RunResults["nft:list:table:ip:nat"] = executor.Result{ExitCode: 1, Stderr: "nft: read failed"}
+
+	CleanGhostTables(mock, newTestLogger())
+
+	if !mock.NftTableExists("ip", "nat") {
+		t.Error("table was deleted after a FAILED classification — observation failure must never " +
+			"be interpreted as an empty/removable table")
 	}
 }
 

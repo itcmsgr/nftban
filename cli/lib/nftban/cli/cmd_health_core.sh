@@ -451,10 +451,16 @@ nftban_health_cmd_fix() {
                 nftban_cleanup_ghost_tables
             else
                 # Fallback if function not loaded
-                for rogue_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet filter" "inet firewalld" "inet nftban_install_emergency"; do
+                # v1.228.11: this fallback was a SIXTH independent ghost list AND an
+                # unconditional delete — it is the site that still destroyed populated
+                # foreign tables via `nftban health --fix` after the other four were
+                # gated. Now derives from the canonical identity list and uses the
+                # gated helper. NOTE: inet nftban_install_emergency is deliberately
+                # NOT in the canonical list (it protects SSH during postinst).
+                for rogue_table in "${_NFTBAN_GHOST_TABLE_IDENTITIES[@]}"; do
                     if nft list table $rogue_table &>/dev/null; then
                         echo "  Removing: $rogue_table"
-                        nft delete table $rogue_table 2>/dev/null || true
+                        nftban_delete_ghost_table_if_empty "${rogue_table%% *}" "${rogue_table#* }" || true
                     fi
                 done
             fi

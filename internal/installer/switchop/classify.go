@@ -63,6 +63,47 @@ import (
 // (non-zero exit), TableIsEmpty returns false so the caller does NOT treat it
 // as a removable skeleton. Callers gate the actual delete on NftTableExists
 // first; the existence re-check here is defense-in-depth for the error case.
+// TableClass is the tri-state result of classifying a foreign nft table.
+//
+// TableIsEmpty collapses "populated" and "could not observe" into a single
+// false, which is correct for a delete gate (both must refuse) but wrong for
+// reporting: an install that could not CLASSIFY a table has not established
+// that its cleanup was safe, and must not report clean success. v1.228.11
+// separates the two so callers can preserve in both cases while telling the
+// truth about which one happened.
+type TableClass int
+
+const (
+	// TableClassUnknown — `nft` could not be read. Observation failure is NEVER
+	// permission to delete (OBSERVATION_FAILURE != SECURITY_STATE_EMPTY).
+	TableClassUnknown TableClass = iota
+	// TableClassAbsent — the table does not exist; nothing to do.
+	TableClassAbsent
+	// TableClassEmpty — exists with zero rule lines: a bare iptables-nft/distro
+	// skeleton, eligible for cleanup.
+	TableClassEmpty
+	// TableClassPopulated — holds real rules. Ownership is NOT established by
+	// the table name, so this is foreign-or-unknown and must be preserved.
+	TableClassPopulated
+)
+
+// ClassifyTable reports the tri-state class of a table using the same
+// structural-line heuristic as TableIsEmpty, so the delete gate and the
+// reporting path can never disagree.
+func ClassifyTable(exec executor.Executor, family, table string) TableClass {
+	if !exec.NftTableExists(family, table) {
+		return TableClassAbsent
+	}
+	res := exec.Run("nft", "list", "table", family, table)
+	if res.ExitCode != 0 {
+		return TableClassUnknown
+	}
+	if tableRuleCount(res.Stdout) == 0 {
+		return TableClassEmpty
+	}
+	return TableClassPopulated
+}
+
 func TableIsEmpty(exec executor.Executor, family, table string) bool {
 	if !exec.NftTableExists(family, table) {
 		return false

@@ -467,13 +467,32 @@ while IFS= read -r table_line; do
     fi
     case "$_class" in
         "$TC_EXTERNAL_AUTHORITY_GHOST")
-            log_warn "Detected external-authority ghost table: $table_line"
-            if nft delete table "$TABLE_SPEC" 2>/dev/null; then
-                log_info "✅ Deleted external-authority ghost table: $TABLE_SPEC"
-                GHOST_COUNT=$((GHOST_COUNT + 1))
-            else
-                log_error "Failed to delete ghost table: $TABLE_SPEC"
+            # v1.228.11 (OPEN_FIREWALL_REBUILD_DELETES_POPULATED_FOREIGN_NFT_TABLES):
+            # same by-name deletion as the rebuild loop and the Go Class-1 path.
+            # Autoheal runs unattended, so deleting a populated foreign table here
+            # would be silent operator data loss. Content gates the delete.
+            _cclass="$TC_CONTENT_UNREADABLE"
+            if declare -f nftban_table_content_class &>/dev/null; then
+                _cclass="$(nftban_table_content_class "${TABLE_SPEC%% *}" "${TABLE_SPEC#* }")"
             fi
+            case "$_cclass" in
+                "$TC_CONTENT_EMPTY")
+                    log_warn "Detected external-authority ghost table: $table_line"
+                    if nft delete table "$TABLE_SPEC" 2>/dev/null; then
+                        log_info "✅ Deleted external-authority ghost table: $TABLE_SPEC (empty skeleton)"
+                        GHOST_COUNT=$((GHOST_COUNT + 1))
+                    else
+                        log_error "Failed to delete ghost table: $TABLE_SPEC"
+                    fi
+                    ;;
+                "$TC_CONTENT_POPULATED")
+                    log_warn "Populated '$TABLE_SPEC' NOT removed — foreign or unattributed ownership (preserved)."
+                    ;;
+                "$TC_CONTENT_UNREADABLE")
+                    log_warn "Could not classify '$TABLE_SPEC' — PRESERVED; cleanup safety UNVERIFIED."
+                    ;;
+                *) : ;;
+            esac
             ;;
         "$TC_OPERATOR_SAFETY")
             # PR26.6 invariant — preserve operator-retained tables.

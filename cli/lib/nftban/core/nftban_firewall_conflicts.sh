@@ -1042,6 +1042,33 @@ nftban_get_panel_conflicts() {
 # FIREWALL REMOVAL FUNCTIONS (Distro-aware)
 # =============================================================================
 
+# nftban_delete_ghost_table_if_empty — the ONLY sanctioned way to remove a
+# known ghost-table identity. v1.228.11: five independent call sites previously
+# ran a bare `nft delete table <name>`; this centralises the content gate so a
+# sixth cannot reintroduce the defect by copying the old one-liner.
+#
+#   EMPTY      -> deleted (rc 0)
+#   POPULATED  -> preserved, warned (rc 0 — not an error, a deliberate refusal)
+#   UNREADABLE -> preserved, warned (observation failure is never permission)
+#   ABSENT     -> no-op (rc 0)
+nftban_delete_ghost_table_if_empty() {
+    local family="$1" name="$2" quiet="${3:-false}" cclass
+    cclass="$(nftban_table_content_class "$family" "$name")"
+    case "$cclass" in
+        "$TC_CONTENT_EMPTY")
+            nft delete table "$family" "$name" 2>/dev/null || return 0
+            [[ "$quiet" == "true" ]] || echo "  Removed ghost table: $family $name (empty skeleton)"
+            ;;
+        "$TC_CONTENT_POPULATED")
+            echo "  WARNING: Populated '$family $name' NOT removed — foreign or unattributed ownership." >&2
+            ;;
+        "$TC_CONTENT_UNREADABLE")
+            echo "  WARNING: Could not classify '$family $name' — PRESERVED; cleanup safety UNVERIFIED." >&2
+            ;;
+    esac
+    return 0
+}
+
 # shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_fail2ban() {
     # Remove/disable fail2ban (distro-aware)
@@ -1137,20 +1164,17 @@ nftban_remove_ufw() {
 
 # Known ghost tables left by iptables-nft, firewalld, CSF, fail2ban, etc.
 # These are the tables we know are NOT ours and safe to remove.
-readonly -a _NFTBAN_KNOWN_GHOST_TABLES=(
-    "ip filter"
-    "ip6 filter"
-    "ip nat"
-    "ip6 nat"
-    "ip mangle"
-    "ip6 mangle"
-    # NOTE: "ip raw" and "ip6 raw" are NOT ghost tables — used by NFTBan SYNPROXY
-    "ip security"
-    "ip6 security"
-    "inet firewalld"
-    "inet filter"
-    # v1.51.1: nftban_install_emergency is NOT a ghost — it protects SSH during postinst
-)
+# v1.228.11: derived from the canonical identity list in nftban_table_classify.sh
+# (was an independent copy). Falls back to a literal only if the classifier is
+# unavailable, and that fallback is drift-guarded by CI.
+if declare -p _NFTBAN_GHOST_TABLE_IDENTITIES &>/dev/null; then
+    readonly -a _NFTBAN_KNOWN_GHOST_TABLES=("${_NFTBAN_GHOST_TABLE_IDENTITIES[@]}")
+else
+    readonly -a _NFTBAN_KNOWN_GHOST_TABLES=(
+        "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle"
+        "ip security" "ip6 security" "inet firewalld" "inet filter"
+    )
+fi
 
 nftban_cleanup_ghost_tables() {
     # Remove known ghost nftables tables left by other firewalls.
@@ -1178,19 +1202,50 @@ nftban_cleanup_ghost_tables() {
     local live_tables removed=0 found=0
     live_tables=$(nft list tables 2>/dev/null) || return 0
 
+    # v1.228.11 (OPEN_FIREWALL_REBUILD_DELETES_POPULATED_FOREIGN_NFT_TABLES):
+    # a name match is NOT ownership evidence. This loop previously ran
+    # `nft delete table $ghost` on a bare `grep -qx` name match, so a POPULATED
+    # operator-owned table was destroyed by `nftban firewall rebuild` (rc=0) and
+    # by `nftban health --fix` — no install, no takeover, no CSF required.
+    # Identity now comes from the canonical classifier and CONTENT gates the
+    # delete, matching the Go CleanGhostTables posture exactly.
+    local preserved=0 unreadable=0
     for ghost in "${_NFTBAN_KNOWN_GHOST_TABLES[@]}"; do
         if echo "$live_tables" | grep -qx "table $ghost"; then
             ((found++)) || true
             if [[ "$report_only" == "true" ]]; then
                 [[ "$quiet" == "false" ]] && echo "  Ghost table found: $ghost"
-            else
-                if nft delete table $ghost 2>/dev/null; then
-                    ((removed++)) || true
-                    [[ "$quiet" == "false" ]] && echo "  Removed ghost table: $ghost"
-                else
-                    [[ "$quiet" == "false" ]] && echo "  WARNING: Failed to remove ghost table: $ghost"
-                fi
+                continue
             fi
+            local _fam="${ghost%% *}" _nm="${ghost#* }" _content
+            if declare -f nftban_table_content_class &>/dev/null; then
+                _content="$(nftban_table_content_class "$_fam" "$_nm")"
+            else
+                # Canonical classifier unavailable => cannot establish content.
+                # Fail CLOSED: preserve. Never delete on unestablished evidence.
+                _content="$TC_CONTENT_UNREADABLE"
+            fi
+            case "$_content" in
+                "$TC_CONTENT_EMPTY")
+                    if nft delete table $ghost 2>/dev/null; then
+                        ((removed++)) || true
+                        [[ "$quiet" == "false" ]] && echo "  Removed ghost table: $ghost (empty skeleton)"
+                    else
+                        [[ "$quiet" == "false" ]] && echo "  WARNING: Failed to remove ghost table: $ghost"
+                    fi
+                    ;;
+                "$TC_CONTENT_POPULATED")
+                    ((preserved++)) || true
+                    echo "  WARNING: Populated '$ghost' table present — NOT removed (foreign or unattributed ownership)." >&2
+                    echo "           It holds rules NFTBan did not create and cannot attribute." >&2
+                    echo "           To remove it deliberately: nft delete table $ghost" >&2
+                    ;;
+                "$TC_CONTENT_UNREADABLE")
+                    ((unreadable++)) || true
+                    echo "  WARNING: Could not classify '$ghost' — PRESERVED; cleanup safety UNVERIFIED." >&2
+                    ;;
+                *) : ;;  # ABSENT — raced away between listing and classification
+            esac
         fi
     done
 
@@ -1390,7 +1445,8 @@ nftban_remove_firewalld() {
     systemctl mask firewalld 2>/dev/null || true
 
     # Flush any nftables tables created by firewalld
-    nft delete table inet firewalld 2>/dev/null || true
+    # v1.228.11: content-gated (OPEN_FIREWALL_REBUILD_DELETES_POPULATED_FOREIGN_NFT_TABLES)
+    nftban_delete_ghost_table_if_empty inet firewalld || true
 
     # Uninstall if requested
     if [[ "$uninstall" == true ]]; then
@@ -1449,10 +1505,12 @@ nftban_remove_iptables() {
     fi
 
     # Remove shadow nftables tables created by iptables-nft
-    nft delete table ip filter 2>/dev/null || true
-    nft delete table ip6 filter 2>/dev/null || true
-    nft delete table ip nat 2>/dev/null || true
-    nft delete table ip mangle 2>/dev/null || true
+    # v1.228.11: these four were unconditional deletes reached by `nftban health --fix`
+    # via nftban_remove_iptables(); a populated operator table was destroyed. Content-gated.
+    nftban_delete_ghost_table_if_empty ip filter  || true
+    nftban_delete_ghost_table_if_empty ip6 filter || true
+    nftban_delete_ghost_table_if_empty ip nat     || true
+    nftban_delete_ghost_table_if_empty ip mangle  || true
 
     # Uninstall if requested
     if [[ "$uninstall" == true ]]; then

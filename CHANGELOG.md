@@ -11,6 +11,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.11] - 2026-08-11 — a table name is not evidence of who owns it
+
+Two P0 defects, one invariant. NFTBan removed nftables tables belonging to other
+software because their family and name matched a list of known compatibility
+skeletons — without checking whether the table held anything, and without
+establishing who owned it.
+
+> Populated nftables state not owned by NFTBan must survive ordinary install,
+> upgrade, recommit and firewall rebuild.
+
+### Fixed — an ordinary install could delete an operator's firewall rules
+
+The installer's ghost-table cleanup deleted `ip filter`, `ip nat`, `ip mangle`,
+`ip security`, their IPv6 counterparts and `inet firewalld` unconditionally by
+name. It runs on **all** install paths, so this needed no takeover, no competing
+firewall, and no unusual configuration.
+
+Measured on a host with NFTBan and CSF both absent beforehand: an ordinary
+package install destroyed a populated `ip filter` table — a hooked chain with
+accept and drop rules — and the install reported success. The same log records
+"No conflicting firewall tools detected" three lines before "removed ghost table:
+ip filter". Ownership was never established; the name alone triggered the delete.
+
+Cleanup now classifies before acting, the way two adjacent code paths already
+did: an empty skeleton is removed, a populated table is preserved and reported,
+and a table that cannot be read is preserved rather than assumed empty. An
+install that could not classify a table now says so in its summary instead of
+reporting clean success.
+
+### Fixed — `nftban firewall rebuild` did the same thing
+
+Correcting the installer was not sufficient. `nftban firewall rebuild` — an
+ordinary operator command, with no install and no takeover involved — destroyed
+a populated foreign table and returned success. `nftban health --fix` did the
+same.
+
+Tracing every `nft` invocation of one rebuild located it precisely: a targeted
+delete by name, not a flush and not a ruleset replacement.
+
+Five independent code paths were deleting by name, and six separate lists of
+table identities existed across the shell and Go implementations — which is how
+the two languages had drifted to different safety levels for the same table.
+All five paths now share one gated helper, all consumers derive from a single
+declaration, and a build check fails if the Go and shell lists diverge.
+
+Deliberately unchanged: `inet filter` keeps its stronger existing handling,
+where removing a populated table requires an explicit opt-in.
+
+### Verified
+
+The destructive paths were exercised on installed packages, asserting after each
+stage rather than only at the end: RPM on AlmaLinux 10.2, and a genuine DEB
+upgrade from v1.228.9 on Ubuntu 24.04. Four populated foreign tables survived the
+package installation itself and each of the three code paths, while an empty
+skeleton was still removed and `nftban firewall validate` returned success.
+
+### Scope
+
+This release addresses foreign-state preservation only. Firewall authority
+transition, uninstall semantics and the CSF lifecycle work remain open and are
+tracked separately.
+
 ## [v1.228.10] - 2026-08-10 — an unreadable source is not an empty one
 
 Three P0 fail-open defects, all one shape: a read that FAILED was recorded as a
