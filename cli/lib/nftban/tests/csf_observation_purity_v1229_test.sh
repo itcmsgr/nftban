@@ -24,7 +24,18 @@
 #
 # HARNESS POLICY: no `producer | grep -q` under pipefail anywhere — that
 # returns 141 on a MATCH and reads as no-match.
+#
+# SHELLCHECK: the health gate runs shellcheck at DEFAULT severity (info and
+# above), not `-S warning`. These are suppressed file-wide with cause:
+#   SC2030/SC2031  subshell-local PATH/SYSTEMCTL_MODE is the POINT — each arm
+#                  must run under its own mocks and must NOT leak into the next.
+#   SC2034         NFTBAN_FIREWALL_FIXES is written by the detector under test,
+#                  never read here; it is reset so arms cannot bleed.
+#   SC2015         `a && ok ... || no ...` is the intended report idiom: `ok`
+#                  cannot fail, so the C-may-run-when-A-is-true caveat does not
+#                  apply to these lines.
 # =============================================================================
+# shellcheck disable=SC2030,SC2031,SC2034,SC2015
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
