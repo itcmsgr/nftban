@@ -102,11 +102,25 @@ func TestPR26_6_CSFBinary_RenamedNotDestroyed(t *testing.T) {
 	}
 }
 
-// TestPR26_6_LFDBinary_NotDestructivelyDeleted pins the contract that
-// /usr/sbin/lfd is NOT touched by takeover. lfd is masked at the systemd
-// layer (DisableConflicts loop calls ServiceMask("lfd.service")) but the
-// binary stays on disk for restore.
-func TestPR26_6_LFDBinary_NotDestructivelyDeleted(t *testing.T) {
+// TestPR26_6_LFDBinary_NeutralizedNotDeleted — CONTRACT CHANGED 2026-08-11.
+//
+// This test previously pinned "lfd is NOT touched by takeover … the binary
+// stays on disk FOR RESTORE" (mask-only). The owner has since removed CSF
+// restore from the product contract entirely:
+//
+//	CSF_POLICY = REMOVE, NOT RESTORE
+//	CSF_RESTORE_SUPPORT = REMOVED   ·   CSF_COEXISTENCE_SUPPORT = NO
+//
+// Mask-only left a proven re-entry plane: lfd.service is masked, but the
+// binary stayed executable, so re-enabling the unit (or any caller invoking
+// the path directly) re-armed CSF. Runtime evidence: el9-clean arms 3 and 4,
+// where CSF survived takeover and was restored to 129 live rules.
+//
+// The contract is now NEUTRALIZE, NOT DELETE: the binary is renamed to
+// .disabled so it cannot execute at its original path, while the payload
+// stays on disk as audit/troubleshooting evidence carrying no restore
+// promise. Deletion is NOT permitted — that would destroy operator data.
+func TestPR26_6_LFDBinary_NeutralizedNotDeleted(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Services["csf.service"] = true
 	mock.Services["lfd.service"] = true
@@ -126,29 +140,72 @@ func TestPR26_6_LFDBinary_NotDestructivelyDeleted(t *testing.T) {
 		t.Fatalf("DisableConflicts: %v", err)
 	}
 
-	// lfd binary path must still be present (no rm, no mv to .disabled).
-	if !mock.FileExists("/usr/sbin/lfd") {
-		t.Fatal("expected /usr/sbin/lfd to remain on disk after takeover (mask-only contract)")
+	// 1. The re-entry plane must be closed: lfd must be renamed to .disabled.
+	sawRename := false
+	for _, c := range mock.Commands {
+		if c.Name == "mv" && len(c.Args) >= 2 &&
+			c.Args[0] == "/usr/sbin/lfd" && c.Args[1] == "/usr/sbin/lfd.disabled" {
+			sawRename = true
+		}
 	}
-	got, err := mock.ReadFile("/usr/sbin/lfd")
-	if err != nil {
-		t.Fatalf("read /usr/sbin/lfd: %v", err)
-	}
-	if sha256Hex(got) != lfdSHA {
-		t.Errorf("lfd binary content changed during takeover: want sha %s, got %s", lfdSHA, sha256Hex(got))
+	if !sawRename {
+		t.Error("lfd binary left executable at /usr/sbin/lfd — CSF re-entry plane still open")
 	}
 
-	// And no `mv` or `rm` should target /usr/sbin/lfd at all.
+	// 2. NEUTRALIZE, NOT DELETE: deletion of operator payload is forbidden.
 	for _, c := range mock.Commands {
 		if c.Name == "rm" {
 			for _, a := range c.Args {
-				if a == "/usr/sbin/lfd" {
-					t.Errorf("takeover invoked rm on /usr/sbin/lfd: %v", c)
+				if a == "/usr/sbin/lfd" || a == "/usr/sbin/lfd.disabled" {
+					t.Errorf("takeover DELETED the lfd payload (%v) — evidence must be retained", c)
 				}
 			}
 		}
-		if c.Name == "mv" && len(c.Args) >= 1 && c.Args[0] == "/usr/sbin/lfd" {
-			t.Errorf("takeover invoked mv on /usr/sbin/lfd: %v", c)
+	}
+
+	// 3. PAYLOAD_PRESERVED_FOR_EVIDENCE != PAYLOAD_CAPABLE_OF_REENTRY.
+	//
+	// MockExecutor.Run only RECORDS commands — it does not simulate `mv`, so
+	// asserting on mock.FileExists("/usr/sbin/lfd") directly would pass via the
+	// ORIGINAL path and prove nothing about neutralization. Replay the recorded
+	// renames onto the file map first, then assert on the resulting state.
+	replayRenames(mock)
+
+	if mock.FileExists("/usr/sbin/lfd") {
+		t.Error("canonical executable path /usr/sbin/lfd still populated — re-entry authority intact")
+	}
+	if !mock.FileExists("/usr/sbin/lfd.disabled") {
+		t.Fatal("lfd payload vanished entirely — audit/troubleshooting evidence lost")
+	}
+	got2, err := mock.ReadFile("/usr/sbin/lfd.disabled")
+	if err != nil {
+		t.Fatalf("read retained payload: %v", err)
+	}
+	if sha256Hex(got2) != lfdSHA {
+		t.Errorf("retained payload was altered: want sha %s, got %s", lfdSHA, sha256Hex(got2))
+	}
+
+	// 4. Nothing may re-create the canonical path after neutralization.
+	for _, c := range mock.Commands {
+		if c.Name == "mv" && len(c.Args) >= 2 && c.Args[1] == "/usr/sbin/lfd" {
+			t.Errorf("a command restored the canonical executable path: %v", c)
+		}
+	}
+}
+
+// replayRenames applies every recorded `mv SRC DST` to the mock file map, so
+// post-condition assertions describe the state the commands would actually
+// produce rather than the seed state. Without this, any assertion about a
+// renamed path is vacuous against a recording-only executor.
+func replayRenames(m *executor.MockExecutor) {
+	for _, c := range m.Commands {
+		if c.Name != "mv" || len(c.Args) < 2 {
+			continue
+		}
+		src, dst := c.Args[0], c.Args[1]
+		if data, ok := m.Files[src]; ok {
+			m.Files[dst] = data
+			delete(m.Files, src)
 		}
 	}
 }

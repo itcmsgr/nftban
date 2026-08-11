@@ -30,7 +30,26 @@ import (
 // For CSF conflicts on DirectAdmin servers, also disarms CustomBuild so
 // that `./build update` does not re-enable CSF.
 func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, panel detect.PanelType, log *logging.Logger) error {
+	// CSF-CLOSE-1/2 (owner doctrine 2026-08-11: CSF_POLICY = REMOVE, NOT RESTORE).
+	//
+	// hasCSF is decided BEFORE the empty-Service skip below. Previously the
+	// `if c.Service == "" { continue }` guard ran first, so a CSF conflict
+	// observed only via /etc/csf/csf.conf (SourceConfigFile, Unit "") exited
+	// the loop before `hasCSF = true` was ever reached — silently disabling
+	// the ENTIRE CSF disarm path (binary, cron, panel) while CSF was still
+	// listed in CONFLICTS and shown to the operator. Proven on el9-clean:
+	// CONFLICTS=iptables-nft,iptables,CSF with zero neutralization performed
+	// and status=PROTECTED.
+	//
+	// Any credible CSF evidence must reach the removal path. Removal must not
+	// depend on obtaining a service name.
 	hasCSF := false
+	for _, c := range conflicts {
+		if c.Name == "CSF" {
+			hasCSF = true
+		}
+	}
+
 	for _, c := range conflicts {
 		if c.Service == "" {
 			continue
@@ -60,26 +79,28 @@ func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, panel
 				log.Info("cleared stale failed marker for masked conflict service: %s", c.Service)
 			}
 		}
-		if c.Name == "CSF" {
-			hasCSF = true
-		}
 	}
 
-	// Flush legacy iptables rules (reset policies, flush all tables, delete chains)
-	for _, cmd := range []string{"iptables", "ip6tables"} {
-		if exec.CommandExists(cmd) {
-			// Reset policies to ACCEPT before flushing (prevents DROP lockout)
-			for _, chain := range []string{"INPUT", "FORWARD", "OUTPUT"} {
-				exec.Run(cmd, "-P", chain, "ACCEPT")
-			}
-			// Flush and delete chains in all tables
-			for _, table := range []string{"filter", "nat", "mangle"} {
-				exec.Run(cmd, "-t", table, "-F")
-				exec.Run(cmd, "-t", table, "-X")
-			}
-			log.Info("flushed all %s rules (filter/nat/mangle)", cmd)
-		}
-	}
+	// CSF-CLOSE-3 — REMOVED: the blanket legacy-iptables flush.
+	//
+	// This block previously ran, for both iptables and ip6tables:
+	//     -P INPUT/FORWARD/OUTPUT ACCEPT
+	//     -t filter/nat/mangle -F   and   -X
+	//
+	// That is not CSF removal. It destroys EVERY foreign rule in filter, nat
+	// and mangle regardless of ownership. Proven on el9-clean across three
+	// separate arms: an operator-owned mangle chain (OPERATOR_QOS) and
+	// Docker-shaped chains were destroyed alongside CSF's rules, with the
+	// installer's own log line `flushed all iptables rules (filter/nat/mangle)`
+	// as the causal witness.
+	//
+	//     HARD REMOVE CSF = YES        HARD FLUSH ALL IPTABLES = NO
+	//
+	// Ownership is not implied by table name — the same lesson v1.228.11
+	// applied to the nft path, which this interface bypassed entirely.
+	// CSF-owned kernel state is removed by `csf --stop` inside
+	// disarmCSFArtifacts, which unwinds exactly what CSF created and nothing
+	// else. Foreign rules NFTBan cannot attribute are left alone.
 
 	// Disarm panel CSF management (prevents re-enable on panel update)
 	if hasCSF {
@@ -115,8 +136,29 @@ func disarmCSFArtifacts(exec executor.Executor, log *logging.Logger) {
 		log.Warn("cron-backup manifest writer: %v (continuing with cron rm; A.4 restore will soft-skip on this host)", err)
 	}
 
-	// Remove CSF/LFD cron jobs (lfd-cron runs "csf --lfd restart" daily)
-	for _, cronFile := range []string{"/etc/cron.d/lfd-cron", "/etc/cron.d/csf-cron"} {
+	// CSF-CLOSE-2: unwind CSF's OWN kernel state before neutralizing the
+	// binary, so the removal is attributable rather than a blanket flush.
+	// `csf --stop` removes exactly the rules CSF created; anything it does
+	// not own stays. Best-effort: a failure here must not block the rest of
+	// the disarm, but it is logged so a partial removal is visible.
+	if exec.FileExists("/usr/sbin/csf") {
+		if r := exec.Run("/usr/sbin/csf", "--stop"); r.ExitCode == 0 {
+			log.Info("removed CSF-owned firewall state (csf --stop)")
+		} else {
+			log.Warn("csf --stop exit %d: %s — CSF kernel state may persist", r.ExitCode, r.Stderr)
+		}
+	}
+
+	// Remove CSF/LFD cron persistence. CSF-CLOSE-2 widened this beyond the
+	// original two files: el9-clean runtime showed /etc/cron.d/csf_update
+	// (`csf -u`, daily) surviving every takeover, and the TESTING="1" mode
+	// writes a ROOT flush job into /etc/crontab itself — a re-entry surface
+	// with zero prior coverage (repo-wide grep for /etc/crontab: 0 hits).
+	for _, cronFile := range []string{
+		"/etc/cron.d/lfd-cron",
+		"/etc/cron.d/csf-cron",
+		"/etc/cron.d/csf_update",
+	} {
 		if exec.FileExists(cronFile) {
 			res := exec.Run("rm", "-f", cronFile)
 			if res.ExitCode == 0 {
@@ -127,14 +169,44 @@ func disarmCSFArtifacts(exec executor.Executor, log *logging.Logger) {
 		}
 	}
 
-	// Disable CSF binary (rename to .disabled to prevent accidental execution)
-	csfBin := "/usr/sbin/csf"
-	if exec.FileExists(csfBin) {
-		res := exec.Run("mv", csfBin, csfBin+".disabled")
-		if res.ExitCode == 0 {
-			log.Info("disabled CSF binary: %s -> %s.disabled", csfBin, csfBin)
-		} else {
-			log.Warn("failed to disable CSF binary: %s", res.Stderr)
+	// /etc/crontab is shared with the distro and operator, so this strips ONLY
+	// lines invoking the CSF binaries — never the file, never unrelated jobs.
+	// (`ATTRIBUTION BEFORE NEUTRALIZATION`: same rule applied to nft tables in
+	// v1.228.11 and to iptables in CSF-CLOSE-3.)
+	if exec.FileExists("/etc/crontab") {
+		if data, err := exec.ReadFile("/etc/crontab"); err == nil {
+			var kept []string
+			removed := 0
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.Contains(line, "/usr/sbin/csf") || strings.Contains(line, "/usr/sbin/lfd") {
+					removed++
+					continue
+				}
+				kept = append(kept, line)
+			}
+			if removed > 0 {
+				if err := exec.WriteFileAtomic("/etc/crontab", []byte(strings.Join(kept, "\n")), 0644); err != nil {
+					log.Warn("could not strip %d CSF line(s) from /etc/crontab: %v", removed, err)
+				} else {
+					log.Info("removed %d CSF persistence line(s) from /etc/crontab", removed)
+				}
+			}
+		}
+	}
+
+	// Neutralize BOTH CSF executables. lfd was previously left executable even
+	// though takeover masks lfd.service — leaving a re-entry path whenever the
+	// unit could be re-enabled. Renaming (not deleting) keeps the payload on
+	// disk as audit/troubleshooting evidence; it carries no restore contract
+	// (CSF_RESTORE_SUPPORT = REMOVED, owner doctrine 2026-08-11).
+	for _, bin := range []string{"/usr/sbin/csf", "/usr/sbin/lfd"} {
+		if exec.FileExists(bin) {
+			res := exec.Run("mv", bin, bin+".disabled")
+			if res.ExitCode == 0 {
+				log.Info("disabled CSF binary: %s -> %s.disabled", bin, bin)
+			} else {
+				log.Warn("failed to disable %s: %s", bin, res.Stderr)
+			}
 		}
 	}
 
