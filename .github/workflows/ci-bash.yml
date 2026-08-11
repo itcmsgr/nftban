@@ -89,3 +89,13 @@ jobs:
           echo "=== Executing: csf_observation_purity_v1229_test.sh ==="
           chmod +x cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh
           bash cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh
+
+      # v1.229.x R2 (O1) — the legacy restore path must stay neutralized.
+      # Explicit single-file invocation, consistent with the R0 gate above:
+      # this workflow is a lint gate that executes named tests, not a
+      # discovery-based runner.
+      - name: Legacy restore neutralized (v1.229.x R2 gate)
+        run: |
+          echo "=== Executing: legacy_restore_neutralized_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test.sh
+          bash cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test.sh

@@ -3812,66 +3812,74 @@ _restore_from_file() {
 }
 
 _restore_previous_firewall() {
+    # =========================================================================
+    # v1.229.x R2 (decision O1) — LEGACY RESTORE AUTHORITY NEUTRALIZED
+    # =========================================================================
+    # This path previously ran, for ALL FOUR targets, an unconditional prefix:
+    #
+    #   [1/4] systemctl stop/disable nftban-maintenance.timer , nftband
+    #   [2/4] nft delete table ip nftban ; nft delete table ip6 nftban
+    #   [3/4] <attempt to start the replacement firewall>
+    #
+    # NFTBan's kernel authority was destroyed at step 2 BEFORE the replacement
+    # was proven able to start. When step 3 could not succeed — target
+    # uninstalled, unit masked, or the binary renamed by takeover — the host
+    # was left with no NFTBan tables AND no working replacement:
+    #
+    #   REPLACEMENT_NOT_PROVEN + NFTBAN_AUTHORITY_ALREADY_DESTROYED
+    #     = FAILED_NO_FIREWALL
+    #
+    # That ordering is unsafe for every target, which is why all four are
+    # neutralized rather than only the ones lacking a successor. It was also
+    # ungated (no confirmation, dry-run or refusal), untested, and duplicated a
+    # safer Go restore authority that refuses ufw/firewalld outright and gates
+    # csf behind typed preconditions.
+    #
+    # The commands are deliberately KEPT so operator UX and scripts do not
+    # silently change shape — they now refuse. This function MUST NOT:
+    #   mutate NFTBan services · delete nft tables · start a foreign service ·
+    #   execute a foreign vendor binary.
+    # It returns non-zero so callers cannot mistake refusal for success.
+    #
+    # Successor status differs per target and is stated honestly below rather
+    # than papered over as generic cleanup.
+    # =========================================================================
     local firewall="$1"
 
-    echo "Restoring previous firewall: $firewall"
-    echo "======================================="
-    echo ""
-    echo "WARNING: This will disable NFTBan and re-enable $firewall"
-    echo ""
+    echo "Legacy restore path DISABLED for safety: $firewall" >&2
+    echo "" >&2
+    echo "  The legacy rollback deleted NFTBan's nftables tables BEFORE proving the" >&2
+    echo "  replacement firewall could start. A failure after that point left the host" >&2
+    echo "  with no firewall at all, so the path has been withdrawn for every target." >&2
+    echo "" >&2
 
-    # Step 1: Disable NFTBan
-    echo "[1/4] Disabling NFTBan services..."
-    systemctl stop nftban-maintenance.timer 2>/dev/null || true
-    systemctl stop nftband 2>/dev/null || true
-    systemctl disable nftban-maintenance.timer 2>/dev/null || true
-    systemctl disable nftband 2>/dev/null || true
-
-    # Step 2: Flush NFTBan tables
-    echo "[2/4] Flushing NFTBan nftables..."
-    nft delete table ip nftban 2>/dev/null || true
-    nft delete table ip6 nftban 2>/dev/null || true
-
-    # Step 3: Re-enable previous firewall
-    echo "[3/4] Re-enabling $firewall..."
     case "$firewall" in
-        fail2ban)
-            systemctl enable fail2ban 2>/dev/null || true
-            systemctl start fail2ban 2>/dev/null || true
-            ;;
         csf)
-            if command -v csf &>/dev/null; then
-                csf -e 2>/dev/null || true
-            fi
-            systemctl enable lfd 2>/dev/null || true
-            systemctl start lfd 2>/dev/null || true
+            echo "  CSF: an evidence-gated restore engine exists in the installer, but it is" >&2
+            echo "  intentionally not releasable until its safety verification is complete." >&2
             ;;
         ufw)
-            systemctl enable ufw 2>/dev/null || true
-            systemctl start ufw 2>/dev/null || true
-            ufw enable 2>/dev/null || true
+            echo "  UFW: automatic restore is not currently authorized." >&2
             ;;
         firewalld)
-            systemctl enable firewalld 2>/dev/null || true
-            systemctl start firewalld 2>/dev/null || true
+            echo "  firewalld: automatic restore is not currently authorized." >&2
+            ;;
+        fail2ban)
+            echo "  Fail2Ban: legacy automatic restore has been withdrawn because no" >&2
+            echo "  evidence-gated replacement currently exists. This is a deliberate" >&2
+            echo "  capability withdrawal, not an oversight." >&2
             ;;
     esac
 
-    # Step 4: Verify
-    echo "[4/4] Verifying..."
-    if systemctl is-active --quiet "$firewall" 2>/dev/null; then
-        echo ""
-        echo "$firewall is now ACTIVE"
-        echo "NFTBan has been disabled"
-        echo ""
-        echo "To return to NFTBan:"
-        echo "  systemctl disable --now $firewall"
-        echo "  nftban enable all"
-    else
-        echo ""
-        echo "WARNING: $firewall may not have started correctly"
-        echo "Check: systemctl status $firewall"
-    fi
+    echo "" >&2
+    echo "  No changes were made. NFTBan services, nftables tables and $firewall" >&2
+    echo "  were all left exactly as they were." >&2
+    echo "" >&2
+    echo "  To hand the firewall back manually, consult the runbook for your" >&2
+    echo "  platform — an operator-driven transition can verify each step before" >&2
+    echo "  the previous authority is removed, which this automated path could not." >&2
+
+    return 1
 }
 
 # =============================================================================
@@ -4514,16 +4522,15 @@ Examples:
 
 Backup location: /var/lib/nftban/backup/
 
-What 'restore <firewall>' does:
-  1. Stops NFTBan services
-  2. Disables NFTBan services
-  3. Flushes NFTBan nftables
-  4. Re-enables specified firewall
-  5. Starts specified firewall
+What 'restore <firewall>' does (as of v1.229.x):
+  REFUSES. All four targets are disabled for safety and make NO changes.
 
-To return to NFTBan after rollback:
-  systemctl disable --now <firewall>
-  nftban enable all
+  The legacy implementation deleted NFTBan's nftables tables BEFORE proving the
+  replacement firewall could start; a failure after that point left the host
+  with no firewall at all. The commands remain so scripts fail loudly with a
+  non-zero exit rather than silently changing behaviour.
+
+  Backup listing, creation and file restore are UNAFFECTED.
 
 EOF
 }
