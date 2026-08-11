@@ -89,7 +89,16 @@ NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 #                                   table (nftban_failopen_test_$$), never production;
 #                                   lab/root-only, skips without root/nft.
 # REMOVED v1.150 AUTH-4: nftban_geoban.sh (0 direct nft writes — routes via nft_ipc_apply_ruleset).
-ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test\.sh|cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test\.sh|cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
+#     legacy_restore_neutralized_v1229_test.sh — R2/O1 gate. Its T4 falsifiability
+#                                   arm REINTRODUCES the removed destructive prefix
+#                                   (`nft delete table ip nftban`) to prove the harness
+#                                   can still detect it; without that arm T2/T3 would be
+#                                   vacuous. Every nft/systemctl/vendor call is
+#                                   PATH-SHADOWED to a recording mock inside a mktemp
+#                                   sandbox — the real nft binary is never reached, so
+#                                   this is strictly weaker than the v1.192 throwaway-
+#                                   table precedent.
+ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test\.sh|cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test\.sh|cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test\.sh|cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
 
 # =============================================================================
 # MAIN
