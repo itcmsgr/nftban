@@ -136,18 +136,31 @@ func disarmCSFArtifacts(exec executor.Executor, log *logging.Logger) {
 		log.Warn("cron-backup manifest writer: %v (continuing with cron rm; A.4 restore will soft-skip on this host)", err)
 	}
 
-	// CSF-CLOSE-2: unwind CSF's OWN kernel state before neutralizing the
-	// binary, so the removal is attributable rather than a blanket flush.
-	// `csf --stop` removes exactly the rules CSF created; anything it does
-	// not own stays. Best-effort: a failure here must not block the rest of
-	// the disarm, but it is logged so a partial removal is visible.
-	if exec.FileExists("/usr/sbin/csf") {
-		if r := exec.Run("/usr/sbin/csf", "--stop"); r.ExitCode == 0 {
-			log.Info("removed CSF-owned firewall state (csf --stop)")
-		} else {
-			log.Warn("csf --stop exit %d: %s — CSF kernel state may persist", r.ExitCode, r.Stderr)
-		}
-	}
+	// CSF-CLOSE-2 CORRECTED 2026-08-12 after package-native runtime validation.
+	//
+	// This previously ran `csf --stop`, on the assumption that CSF unwinding
+	// its own ruleset was "attributable" removal. MEASURED ON el9-clean, IT IS
+	// NOT: `csf --stop` flushes filter/nat/mangle wholesale, exactly like the
+	// blanket flush CLOSE-3 deleted.
+	//
+	//     seed OPERATOR_QOS=2, CSF rules=129
+	//     csf --stop  ->  OPERATOR_QOS=0, CSF rules=0
+	//
+	// Delegating the flush to the vendor does not make it attributable — it
+	// only changes who issues it. The operator's mangle chain is destroyed
+	// either way, which is precisely the hard limit:
+	//
+	//     HARD REMOVE CSF = YES        HARD FLUSH ALL IPTABLES = NO
+	//
+	// So NO vendor stop is invoked. CSF's kernel rules are left in place and
+	// become INERT once every execution plane below is neutralized: services
+	// masked, both binaries renamed, cron persistence removed. CSF cannot
+	// re-arm them, and nothing NFTBan cannot attribute is destroyed.
+	//
+	// Residual (stated, not hidden): stale CSF rules may remain in the legacy
+	// iptables tables until an operator clears them deliberately. That is a
+	// cosmetic residue with no authority behind it — strictly preferable to
+	// destroying operator state we did not create.
 
 	// Remove CSF/LFD cron persistence. CSF-CLOSE-2 widened this beyond the
 	// original two files: el9-clean runtime showed /etc/cron.d/csf_update

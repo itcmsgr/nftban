@@ -169,16 +169,37 @@ func TestCSFRemoval_NeverFlushesUnrelatedIptablesState(t *testing.T) {
 	}
 }
 
-func TestCSFRemoval_RemovesCSFOwnedKernelStateAttributably(t *testing.T) {
+// CONTRACT CORRECTED 2026-08-12 after package-native runtime validation.
+//
+// This previously asserted that `csf --stop` IS invoked, on the assumption
+// that CSF unwinding its own ruleset counts as attributable removal. Measured
+// on el9-clean, it does not: `csf --stop` flushes filter/nat/mangle wholesale
+// and destroyed the operator-owned OPERATOR_QOS chain (2 -> 0), exactly like
+// the blanket flush CLOSE-3 deleted.
+//
+//	DELEGATING THE FLUSH TO THE VENDOR != MAKING IT ATTRIBUTABLE
+//
+// The corrected contract: NFTBan invokes NO vendor stop. CSF's kernel rules
+// are left inert once every execution plane is neutralized.
+func TestCSFRemoval_NeverInvokesVendorStop(t *testing.T) {
 	m := csfHost()
 	conflicts := []detect.Conflict{{Name: "CSF", Service: "csf.service", Active: true}}
 	if err := DisableConflicts(m, conflicts, detect.PanelNone, newTestLogger()); err != nil {
 		t.Fatalf("DisableConflicts: %v", err)
 	}
-	// `csf --stop` unwinds exactly what CSF created — attribution by the vendor
-	// itself, rather than NFTBan guessing ownership from table names.
-	if !ranCmd(m, "/usr/sbin/csf", "--stop") {
-		t.Error("CSF-owned kernel state not removed attributably (csf --stop not invoked)")
+
+	// No vendor firewall binary may be executed — not to probe, not to stop.
+	for _, c := range m.Commands {
+		switch c.Name {
+		case "/usr/sbin/csf", "csf", "/usr/sbin/lfd", "lfd":
+			t.Errorf("takeover executed a vendor firewall binary (%s %v) — it flushes "+
+				"operator state wholesale", c.Name, c.Args)
+		}
+	}
+
+	// And the execution planes must still be closed, so the rules are inert.
+	if !ranCmd(m, "mv", "/usr/sbin/csf") || !ranCmd(m, "mv", "/usr/sbin/lfd") {
+		t.Error("binaries not neutralized — CSF rules would not be inert")
 	}
 }
 

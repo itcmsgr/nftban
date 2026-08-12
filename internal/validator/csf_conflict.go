@@ -94,6 +94,7 @@ var (
 // NOT_OBSERVED. Absence of evidence is not evidence of absence.
 func DetectCSFConflict() CSFConflictResult {
 	var ev []string
+	var inert []string // persistence artifacts with no execution plane behind them
 	systemdUsable := false
 
 	checker := SystemdChecker{}
@@ -120,25 +121,59 @@ func DetectCSFConflict() CSFConflictResult {
 		}
 	}
 
+	// EXECUTION PLANE. Only an executable binary can actually act.
+	executable := false
 	for _, bin := range csfBinaries {
 		if isExecutableFile(bin) {
+			executable = true
 			ev = append(ev, bin+" executable")
+		}
+	}
+
+	// PERSISTENCE PLANE — CORRECTED 2026-08-12 after package-native validation.
+	//
+	// Config and cron were previously counted as conflicts on their own. That
+	// made VAL-CSF-001 UNCLEARABLE after a SUCCESSFUL takeover: the doctrine
+	// deliberately RETAINS /etc/csf as audit evidence, so the host stayed
+	// "contested" forever and could never return to PROTECTED. Measured on
+	// el9-clean: services masked, both binaries .disabled, cron.d empty — and
+	// the finding still fired on csf.conf alone.
+	//
+	// Persistence is only re-entry when something can EXECUTE. A cron line or
+	// a config file with no runnable binary and no startable unit cannot
+	// re-arm anything:
+	//
+	//     PERSISTENCE_ARTIFACT_PRESENT != REENTRY_CAPABLE
+	//
+	// This is the false-FAIL mirror of the original defect, and it is just as
+	// wrong: a status that can never say PROTECTED is as useless as one that
+	// always does.
+	for _, cron := range csfCrons {
+		if fileExists(cron) {
+			if executable {
+				ev = append(ev, cron+" present — scheduled re-entry")
+			} else {
+				// Recorded but not a conflict: inert without an executable.
+				inert = append(inert, cron+" present (inert — no executable CSF binary)")
+			}
 		}
 	}
 	for _, cfg := range csfConfigs {
 		if fileExists(cfg) {
-			ev = append(ev, cfg+" present")
-		}
-	}
-	for _, cron := range csfCrons {
-		if fileExists(cron) {
-			ev = append(ev, cron+" present — scheduled re-entry")
+			if executable {
+				ev = append(ev, cfg+" present")
+			} else {
+				inert = append(inert, cfg+" present (retained as evidence — no execution plane)")
+			}
 		}
 	}
 
 	switch {
 	case len(ev) > 0:
 		return CSFConflictResult{State: CSFPresent, Evidence: ev}
+	case len(inert) > 0:
+		// Neutralized: payload/config on disk, nothing able to run it.
+		return CSFConflictResult{State: CSFNotObserved, Evidence: inert}
 	case !systemdUsable:
 		// Could not query systemd AND found nothing on disk: we did not prove
 		// the host is clean, we failed to look. Fail closed.
