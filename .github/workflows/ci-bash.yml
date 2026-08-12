@@ -99,3 +99,14 @@ jobs:
           echo "=== Executing: legacy_restore_neutralized_v1229_test.sh ==="
           chmod +x cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test.sh
           bash cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test.sh
+
+      # UNINSTALL-PR1 — uninstall.sh critical safety (D2/D4/D5).
+      # Explicit single-file invocation, same rationale as the gates above.
+      # D2's arm is BEHAVIOURAL: it executes uninstall_package_manager() with
+      # dpkg/rpm mocked, because a text scan cannot distinguish a purge in the
+      # PURGE_DATA branch from one in the else branch 8 lines below it.
+      - name: Uninstall critical safety (UNINSTALL-PR1 gate)
+        run: |
+          echo "=== Executing: uninstall_sh_critical_safety_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/uninstall_sh_critical_safety_v1229_test.sh
+          bash cli/lib/nftban/tests/uninstall_sh_critical_safety_v1229_test.sh

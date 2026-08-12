@@ -151,11 +151,29 @@ uninstall_package_manager() {
     # Check if installed via DEB (Debian/Ubuntu)
     if command -v dpkg &>/dev/null; then
         if dpkg -l nftban-core 2>/dev/null | grep -qE '^ii|^iU|^iF|^iH'; then
-            log "  Found DEB package, removing from database..."
-            # Force remove from database even if files are missing
-            dpkg --remove --force-remove-reinstreq nftban-core 2>/dev/null || true
-            dpkg --purge nftban-core 2>/dev/null || true
-            ok "Removed nftban-core from dpkg database"
+            # D2 (UNINSTALL-PR1): `dpkg --purge` is gated behind PURGE_DATA.
+            #
+            # Both commands used to run unconditionally, so STANDARD mode always
+            # purged. `dpkg --purge` fires `postrm purge)`, which rm -rf's all
+            # five trees — including whitelist.d/*.conf, the durable
+            # management-IP whitelist that is the SSH-lockout safety invariant —
+            # while this same script printed "Configuration preserved" (:379),
+            # "Data preserved" (:415) and "Configuration and data preserved"
+            # (:512). The operator was told the exact opposite of what happened.
+            #
+            # This script's own config/data steps were already PURGE_DATA-gated;
+            # only the package-level purge was not. Standard mode now matches
+            # `apt remove` semantics.
+            if [[ "$PURGE_DATA" == true ]]; then
+                log "  Found DEB package, PURGING from database (config+data will be removed)..."
+                dpkg --remove --force-remove-reinstreq nftban-core 2>/dev/null || true
+                dpkg --purge nftban-core 2>/dev/null || true
+                ok "Purged nftban-core from dpkg database"
+            else
+                log "  Found DEB package, removing from database (config+data preserved)..."
+                dpkg --remove --force-remove-reinstreq nftban-core 2>/dev/null || true
+                ok "Removed nftban-core from dpkg database"
+            fi
         else
             ok "No DEB package found in database"
         fi
@@ -384,19 +402,35 @@ uninstall_data() {
     if [[ "$PURGE_DATA" == true ]]; then
         log "Purging data directories..."
 
+        # D4 (UNINSTALL-PR1): each directory carries its OWN expected prefix.
+        #
+        # /usr/share/nftban used to sit in this list while every entry was passed
+        # "/var/" as expected_prefix. safe_rm_rf Guard 4 then fired
+        # `CRITICAL: Path /usr/share/nftban does not start with expected prefix
+        # /var/` and `exit 1` — AFTER /var/lib, /var/log and /var/cache had
+        # already been deleted. The operator saw a CRITICAL failure and no
+        # summary, with the evidence corpus already gone.
+        #
+        #     PARTIAL_PROGRESS != SAFE_INTERMEDIATE_STATE
+        #
+        # Pairing the prefix with the path keeps Guard 4 at full strength (it is
+        # never widened to a permissive prefix) while making it impossible for a
+        # correctly-listed directory to abort the run.
         local data_dirs=(
-            "/var/lib/nftban"
-            "/var/log/nftban"
-            "/var/cache/nftban"
-            "/usr/share/nftban"
+            "/var/lib/nftban|/var/"
+            "/var/log/nftban|/var/"
+            "/var/cache/nftban|/var/"
+            "/usr/share/nftban|/usr/share/"
         )
 
         local removed=0
 
-        for dir in "${data_dirs[@]}"; do
+        for entry in "${data_dirs[@]}"; do
+            local dir="${entry%%|*}"
+            local prefix="${entry##*|}"
             if [[ -d "$dir" ]]; then
                 echo "  Removing: $dir"
-                safe_rm_rf "$dir" "/var/"  # Enforce /var/ prefix for safety
+                safe_rm_rf "$dir" "$prefix"
                 removed=$((removed + 1))
             fi
         done
@@ -517,5 +551,27 @@ else
     echo "To completely remove everything:"
     echo "   sudo $0 --purge"
 fi
+echo ""
+
+# D5 (UNINSTALL-PR1): tell the truth about firewall state after removal.
+#
+# This script deletes NFTBan's nft tables in BOTH modes and never re-probes,
+# yet printed NOTHING about firewall state. The packaging scriptlets did worse:
+# they asserted "Other firewall rules ... were NOT modified and may still be
+# active" — which was FALSE on the proven EL9 host, where no other firewall
+# existed and the nftables tooling itself had been cascade-removed by package
+# dependency cleanup.
+#
+#     OBSERVATION_FAILURE_MUST_NEVER_BE_INTERPRETED_AS_SECURITY_STATE
+#
+# The wording below is deliberately unconditional and claims NOTHING this
+# script has not done itself. It does not assert another firewall is active,
+# because that was never probed. Upgrading to a real post-condition probe is
+# UNINSTALL-PR2/PR3 scope; asserting an unverified positive is never acceptable.
+echo "⚠️  FIREWALL STATE — REVIEW REQUIRED"
+echo "   NFTBan no longer protects this host."
+echo "   Review your firewall state after removal."
+echo "   nftables tooling may also have been removed by package-manager"
+echo "   dependency cleanup."
 echo ""
 log "════════════════════════════════════════════════════════════"
