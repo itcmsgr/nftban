@@ -601,11 +601,11 @@ cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/
 # so on erase a modified file was renamed to 99-manual.conf.rpmsave. Every
 # loader globs whitelist.d/*.conf and .rpmsave cannot match it, so the
 # operator's durable bans/allows became silently unenforced while the file was
-# still visibly on disk. (Before D1 that was masked: %postun rm -rf'd the whole
+# still visibly on disk. (Before D1 that was masked: the postun scriptlet
 # tree, so the .rpmsave never survived to be found.)
 #
 # Root fix: the package no longer owns them. The payload carries TEMPLATES under
-# /usr/share/nftban/templates/; %post seeds the real paths only when absent.
+# /usr/share/nftban/templates/; the post scriptlet seeds the real paths when absent.
 # rpm therefore never renames, never replaces, and never removes operator state.
 mkdir -p %{buildroot}/etc/nftban/whitelist.d
 mkdir -p %{buildroot}/etc/nftban/blacklist.d
@@ -1942,7 +1942,7 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
 # D3 (UNINSTALL-PR2): NOT %config — the package must not own operator state.
-# Shipped as templates; %post seeds /etc/nftban/{whitelist,blacklist}.d/99-manual.conf
+# Shipped as templates; the post scriptlet seeds /etc/nftban/*list.d/99-manual.conf
 # only when absent. No %ghost either: rpm removes %ghost paths on erase.
 /usr/share/nftban/templates/whitelist.d/99-manual.conf
 /usr/share/nftban/templates/blacklist.d/99-manual.conf
