@@ -110,3 +110,22 @@ jobs:
           echo "=== Executing: uninstall_sh_critical_safety_v1229_test.sh ==="
           chmod +x cli/lib/nftban/tests/uninstall_sh_critical_safety_v1229_test.sh
           bash cli/lib/nftban/tests/uninstall_sh_critical_safety_v1229_test.sh
+
+      # UNINSTALL-PR2 — RPM preserve-by-default (D1) + operator-config
+      # ownership (D3). Generates the real RPM spec from packaging/build_nftban.sh
+      # and runs the real DEB conffiles generator, so the assertions land on the
+      # produced artifacts rather than on the generator's source text.
+      - name: Operator config not package-owned (UNINSTALL-PR2 gate)
+        run: |
+          echo "=== Executing: operator_config_not_package_owned_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/operator_config_not_package_owned_v1229_test.sh
+          bash cli/lib/nftban/tests/operator_config_not_package_owned_v1229_test.sh
+
+      # UNINSTALL-PR2 D5 — removal messaging truth contract (DEB↔RPM parity on
+      # MEANING, not on a literal string). Gate is policy-gates for this test;
+      # executed here too so a wording regression fails fast on every PR.
+      - name: Uninstall firewall-ownership message (UNINSTALL-PR2 D5)
+        run: |
+          echo "=== Executing: uninstall_firewall_ownership_message_v225_test.sh ==="
+          chmod +x cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh
+          bash cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh

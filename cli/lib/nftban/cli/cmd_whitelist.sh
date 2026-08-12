@@ -366,7 +366,12 @@ nftban_whitelist_remove_ip() {
 _NFTBAN_MANUAL_WHITELIST_PATH="/etc/nftban/whitelist.d/99-manual.conf"
 
 # Ensure 99-manual.conf exists with a header on FIRST creation only. Never clobbers
-# an existing file (shipped %config(noreplace); may carry hand-written operator entries).
+# an existing file (may carry hand-written operator entries).
+# v1.229 UNINSTALL-PR2 D3: this file is NO LONGER package-owned. It was shipped as
+# %config(noreplace) (RPM) and enrolled in the generated DEB conffiles; packaging now
+# ships a template under /usr/share/nftban/templates and seeds this path only when
+# absent. This function, the RPM %post seed loop and the DEB postinst seed are the
+# three create-if-absent writers of this path — keep them in agreement.
 _nftban_whitelist_manual_ensure_header() {
     [[ -f "$_NFTBAN_MANUAL_WHITELIST_PATH" ]] && return 0
     mkdir -p "$(dirname "$_NFTBAN_MANUAL_WHITELIST_PATH")"

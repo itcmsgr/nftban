@@ -661,6 +661,31 @@ _nftban_migrate_reports_to_log() {
         )
         _nftban_dpkg_quarantine || true
 
+        # D3 (UNINSTALL-PR2): seed operator state ONLY when absent.
+        #
+        # 99-manual.conf is operator state, not package-owned config. It is no
+        # longer staged under etc/ (so the generated conffiles glob no longer
+        # claims it) and is shipped as a template instead. dpkg therefore never
+        # replaces it on upgrade, never writes a .dpkg-old/.dpkg-dist sidecar,
+        # and never removes it on `remove` or `purge`.
+        #
+        # Runs on install AND upgrade; the -e guard makes upgrade a no-op.
+        # Twin of the RPM %post seed loop in packaging/build_nftban.sh and of
+        # the CLI's _nftban_whitelist_manual_ensure_header — all create-if-absent.
+        _nftban_seed_operator_manual() {
+            _seed_rel="$1"
+            _seed_dst="/etc/nftban/${_seed_rel}"
+            _seed_src="/usr/share/nftban/templates/${_seed_rel}"
+            [ -e "$_seed_dst" ] && return 0
+            [ -f "$_seed_src" ] || return 0
+            mkdir -p "$(dirname "$_seed_dst")" 2>/dev/null || true
+            cp -p "$_seed_src" "$_seed_dst" 2>/dev/null || return 0
+            chmod 0640 "$_seed_dst" 2>/dev/null || true
+            chown root:nftban "$_seed_dst" 2>/dev/null || true
+        }
+        _nftban_seed_operator_manual "whitelist.d/99-manual.conf" || true
+        _nftban_seed_operator_manual "blacklist.d/99-manual.conf" || true
+
         ;;
 esac
 
