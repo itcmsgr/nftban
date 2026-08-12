@@ -31,11 +31,13 @@
 package switchop
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
 // csfHost seeds a host carrying CSF payload + every persistence plane, plus a
@@ -200,6 +202,40 @@ func TestCSFRemoval_NeverInvokesVendorStop(t *testing.T) {
 	// And the execution planes must still be closed, so the rules are inert.
 	if !ranCmd(m, "mv", "/usr/sbin/csf") || !ranCmd(m, "mv", "/usr/sbin/lfd") {
 		t.Error("binaries not neutralized — CSF rules would not be inert")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Destructive-consequence disclosure must precede mutation
+// ---------------------------------------------------------------------------
+
+// OWNER RULING 2026-08-12: legacy-iptables preservation across CSF removal is
+// NOT SUPPORTED, because CSF's own ExecStop flushes those tables. That is an
+// acceptable contract ONLY if the operator is told before anything is mutated.
+func TestCSFRemoval_DisclosesDestructiveConsequenceBeforeMutation(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "installer.log")
+	lg := logging.New(logPath, false)
+
+	m := csfHost()
+	conflicts := []detect.Conflict{{Name: "CSF", Service: "csf.service", Active: true}}
+	if err := DisableConflicts(m, conflicts, detect.PanelNone, lg); err != nil {
+		t.Fatalf("DisableConflicts: %v", err)
+	}
+
+	warned := strings.Join(lg.Warnings(), " | ")
+	for _, must := range []string{"destructive", "FLUSH legacy", "does not restore"} {
+		if !strings.Contains(warned, must) {
+			t.Errorf("pre-mutation disclosure missing %q — operator not told that CSF shutdown "+
+				"may flush legacy iptables rules. warnings: %s", must, warned)
+		}
+	}
+
+	// NEGATIVE CONTROL: a non-CSF conflict must not emit the CSF disclosure.
+	m2 := csfHost()
+	lg2 := logging.New(filepath.Join(t.TempDir(), "b.log"), false)
+	_ = DisableConflicts(m2, []detect.Conflict{{Name: "UFW", Service: "ufw.service"}}, detect.PanelNone, lg2)
+	if strings.Contains(strings.Join(lg2.Warnings(), " "), "CSF takeover authorized") {
+		t.Error("CSF destructive disclosure emitted with no CSF conflict present")
 	}
 }
 

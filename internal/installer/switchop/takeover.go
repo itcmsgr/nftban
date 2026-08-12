@@ -50,6 +50,31 @@ func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, panel
 		}
 	}
 
+	// OWNER RULING 2026-08-12 — CSF takeover is a DESTRUCTIVE REPLACEMENT.
+	// The consequence is disclosed BEFORE any mutation, because stopping CSF
+	// runs the vendor's own ExecStop (`csf --initdown ; csf --stop`), which
+	// flushes the legacy iptables/ip6tables tables. That is CSF's documented
+	// shutdown behaviour, not something NFTBan can suppress without leaving
+	// CSF running — and NFTBan does not build a capture/replay subsystem to
+	// reconstruct arbitrary foreign rules around it.
+	//
+	//     PRESERVE_ARBITRARY_LEGACY_IPTABLES_ACROSS_CSF_REMOVAL = NOT SUPPORTED
+	//
+	// What remains forbidden is NFTBan issuing blanket foreign-state flushes
+	// of its own (CSF-CLOSE-3) or executing vendor binaries directly.
+	// --takeover / force approval IS the deliberate destructive authorization,
+	// so no second confirmation is required — only that the operator was told.
+	if hasCSF {
+		log.Warn("CSF takeover authorized — this REPLACES CSF with NFTBan and is destructive:")
+		log.Warn("  · csf.service and lfd.service will be stopped, disabled and masked")
+		log.Warn("  · the CSF and LFD executables will be neutralized (renamed .disabled)")
+		log.Warn("  · CSF/LFD cron persistence will be removed")
+		log.Warn("  · stopping CSF runs its own shutdown, which MAY FLUSH legacy")
+		log.Warn("    iptables/ip6tables rules — including unrelated rules coexisting")
+		log.Warn("    in those tables. NFTBan does not restore them.")
+		log.Warn("  Continue only if replacing CSF with NFTBan is intended.")
+	}
+
 	for _, c := range conflicts {
 		if c.Service == "" {
 			continue
