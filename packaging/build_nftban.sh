@@ -595,11 +595,24 @@ install -D -m 0644 etc/nftban/conf.d/botguard/profiles/wordpress.yaml %{buildroo
 mkdir -p %{buildroot}/etc/nftban/distros
 cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/
 
-# Manual whitelist/blacklist files (user-managed, noreplace)
+# D3 (UNINSTALL-PR2): 99-manual.conf is OPERATOR STATE, not package-owned config.
+#
+# These two files were shipped as %config(noreplace). That made rpm the owner,
+# so on erase a modified file was renamed to 99-manual.conf.rpmsave. Every
+# loader globs whitelist.d/*.conf and .rpmsave cannot match it, so the
+# operator's durable bans/allows became silently unenforced while the file was
+# still visibly on disk. (Before D1 that was masked: %postun rm -rf'd the whole
+# tree, so the .rpmsave never survived to be found.)
+#
+# Root fix: the package no longer owns them. The payload carries TEMPLATES under
+# /usr/share/nftban/templates/; %post seeds the real paths only when absent.
+# rpm therefore never renames, never replaces, and never removes operator state.
 mkdir -p %{buildroot}/etc/nftban/whitelist.d
 mkdir -p %{buildroot}/etc/nftban/blacklist.d
-install -m 0640 etc/nftban/whitelist.d/99-manual.conf %{buildroot}/etc/nftban/whitelist.d/99-manual.conf
-install -m 0640 etc/nftban/blacklist.d/99-manual.conf %{buildroot}/etc/nftban/blacklist.d/99-manual.conf
+mkdir -p %{buildroot}/usr/share/nftban/templates/whitelist.d
+mkdir -p %{buildroot}/usr/share/nftban/templates/blacklist.d
+install -m 0644 etc/nftban/whitelist.d/99-manual.conf %{buildroot}/usr/share/nftban/templates/whitelist.d/99-manual.conf
+install -m 0644 etc/nftban/blacklist.d/99-manual.conf %{buildroot}/usr/share/nftban/templates/blacklist.d/99-manual.conf
 
 # MFST-C1: systemd units come from generator (install/systemd glob -> nftban-systemd-install.list).
 # Closes D1 install-list drift. File presence does NOT auto-enable units; the Go installer
@@ -1641,6 +1654,26 @@ if [ -f "/usr/lib/nftban/lib/nftban_pro.sh" ]; then
     ) &
 fi
 
+# D3 (UNINSTALL-PR2): seed operator state ONLY when absent.
+# Runs on install AND upgrade; the -f guard makes upgrade a no-op, so an
+# existing operator file is never overwritten and never renamed. Mirrors
+# packaging/deb/postinst:_nftban_seed_operator_manual and the CLI's own
+# _nftban_whitelist_manual_ensure_header (cmd_whitelist.sh) — all three are
+# create-if-absent; drift between them is guarded by
+# operator_config_not_package_owned_v1229_test.sh.
+for _seed_pair in \\
+    "whitelist.d/99-manual.conf" \\
+    "blacklist.d/99-manual.conf" ; do
+    _seed_dst="/etc/nftban/\${_seed_pair}"
+    _seed_src="/usr/share/nftban/templates/\${_seed_pair}"
+    if [ ! -e "\$_seed_dst" ] && [ -f "\$_seed_src" ]; then
+        mkdir -p "\$(dirname "\$_seed_dst")" 2>/dev/null || true
+        cp -p "\$_seed_src" "\$_seed_dst" 2>/dev/null || true
+        chmod 0640 "\$_seed_dst" 2>/dev/null || true
+        chown root:nftban "\$_seed_dst" 2>/dev/null || true
+    fi
+done
+
 # Ensure the post scriptlet exits 0 (RPM treats non-zero as scriptlet failure)
 exit 0
 
@@ -1684,17 +1717,14 @@ if [ \$1 -eq 0 ]; then
         semodule -r nftban 2>/dev/null || true
     fi
 
-    # STEP 1: Backup user configuration before removal
-    BACKUP_DIR="/var/tmp/nftban-config-backup-\$(date +%%Y%%m%%d-%%H%%M%%S)"
-    if [ -d /etc/nftban ]; then
-        echo "[NFTBan] Backing up user configuration to \${BACKUP_DIR} ..."
-        mkdir -p "\$BACKUP_DIR" 2>/dev/null || true
-        cp -a /etc/nftban "\$BACKUP_DIR/" 2>/dev/null || true
-        if [ -d /var/lib/nftban/state ]; then
-            cp -a /var/lib/nftban/state "\$BACKUP_DIR/" 2>/dev/null || true
-        fi
-        echo "[NFTBan] Config backup saved. Restore with: cp -a \${BACKUP_DIR}/nftban /etc/"
-    fi
+    # STEP 1: D1 (UNINSTALL-PR2) — configuration is PRESERVED IN PLACE, not copied.
+    #
+    # This step used to copy -a /etc/nftban into /var/tmp/nftban-config-backup-*
+    # because STEP 6 was about to delete it. STEP 6 no longer does, so the copy
+    # is redundant — and it was actively harmful: mkdir -p applied no mode, so
+    # the directory landed world-readable under the default umask while
+    # /etc/nftban/conf.d carries mail credentials and every whitelisted and
+    # banned address. Removing the destruction removes the reason for the copy.
 
     # STEP 2: Remove runtime directories
     rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
@@ -1769,20 +1799,41 @@ if [ \$1 -eq 0 ]; then
         rm -f /usr/bin/yq 2>/dev/null || true
     fi
 
-    # STEP 6: Remove ALL configuration, data, logs, cache directories
-    # (user config already backed up in STEP 1)
-    rm -rf /etc/nftban 2>/dev/null || true
-    rm -rf /var/lib/nftban 2>/dev/null || true
-    rm -rf /var/log/nftban 2>/dev/null || true
+    # STEP 6: D1 (UNINSTALL-PR2) — PRESERVE operator state on standard remove.
+    #
+    # RPM has no purge verb: dnf remove and rpm -e BOTH land here with
+    # \$1 -eq 0, so this block was the standard-remove path and it destroyed
+    # /etc/nftban, /var/lib/nftban and /var/log/nftban unconditionally. DEB has
+    # always confined that destruction to the postrm purge branch, while the
+    # remove branch preserved. RPM was the outlier; it now matches DEB.
+    #
+    #   RPM STANDARD REMOVE != PURGE
+    #
+    # PRESERVED (operator state / forensic record):
+    #   /etc/nftban        config, whitelist.d, blacklist.d
+    #   /var/lib/nftban    ban state, feeds
+    #   /var/log/nftban    audit history — evidence outlives the package
+    #
+    # STILL REMOVED (neither operator state nor evidence):
+    #   /var/cache/nftban  regenerable cache
+    #   /usr/share/nftban  package payload + the D3 templates; rpm removes its
+    #                      own files here, this only sweeps generated leftovers
     rm -rf /var/cache/nftban 2>/dev/null || true
     rm -rf /usr/share/nftban 2>/dev/null || true
 
-    echo "[NFTBan] Complete removal finished."
-    echo "[NFTBan] NFTBan-owned nftables tables and enforcement rules were deleted — NFTBan is no longer protecting this system."
-    echo "[NFTBan] Other firewall rules managed by the OS, firewalld, ufw, Docker, libvirt, cloud tooling, or the administrator were NOT modified and may still be active."
-    echo "[NFTBan] You are now responsible for the host firewall state. Review it before exposing services:  sudo nft list ruleset"
+    # D5 (UNINSTALL-PR2): state only what was observed.
+    #
+    # The removed line asserted other firewall rules "were NOT modified and may
+    # still be active". Nothing here observes that. On EL9 the package manager's
+    # own dependency cleanup removed the nftables tooling during this same
+    # transaction, so the claim was not merely unverified — it was false, and it
+    # read as reassurance at the exact moment the host lost enforcement.
+    echo "[NFTBan] Removal finished."
+    echo "[NFTBan] NFTBan-owned nftables tables and enforcement rules were deleted — NFTBan no longer protects this host."
+    echo "[NFTBan] Review the resulting firewall state before exposing services:  sudo nft list ruleset"
+    echo "[NFTBan] nftables tooling may have been removed by package-manager dependency cleanup."
+    echo "[NFTBan] Configuration, state and logs were PRESERVED: /etc/nftban /var/lib/nftban /var/log/nftban"
     echo "[NFTBan] To restore NFTBan protection, reinstall/start NFTBan and validate the rebuilt firewall policy."
-    echo "[NFTBan] Config backup at: \${BACKUP_DIR}"
     echo "[NFTBan] User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
 fi
 
@@ -1890,8 +1941,11 @@ fi
 %attr(644,root,nftban) /etc/nftban/distros/*.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
-%config(noreplace) %attr(640,root,nftban) /etc/nftban/whitelist.d/99-manual.conf
-%config(noreplace) %attr(640,root,nftban) /etc/nftban/blacklist.d/99-manual.conf
+# D3 (UNINSTALL-PR2): NOT %config — the package must not own operator state.
+# Shipped as templates; %post seeds /etc/nftban/{whitelist,blacklist}.d/99-manual.conf
+# only when absent. No %ghost either: rpm removes %ghost paths on erase.
+/usr/share/nftban/templates/whitelist.d/99-manual.conf
+/usr/share/nftban/templates/blacklist.d/99-manual.conf
 /etc/nftban/templates/nftban.logrotate
 /etc/nftban/templates/nftban-suricata.logrotate
 
@@ -2367,8 +2421,16 @@ build_deb() {
     cp "${PROJECT_ROOT}/etc/nftban/distros"/*.conf "${deb_root}/etc/nftban/distros/"
 
     # Manual whitelist/blacklist files (user-managed, preserved on upgrade)
-    install -m 0640 "${PROJECT_ROOT}/etc/nftban/whitelist.d/99-manual.conf" "${deb_root}/etc/nftban/whitelist.d/"
-    install -m 0640 "${PROJECT_ROOT}/etc/nftban/blacklist.d/99-manual.conf" "${deb_root}/etc/nftban/blacklist.d/"
+    # D3 (UNINSTALL-PR2): ship these as TEMPLATES, not as /etc payload.
+    # Staging them under etc/ also enrolled them in the generated conffiles list
+    # (create_deb_control globs etc/nftban/**/*.conf), which made dpkg the owner
+    # of operator state — the DEB twin of the RPM %config(noreplace) defect.
+    # Not staging them under etc/ removes them from that glob automatically.
+    # postinst seeds the real paths only when absent.
+    install -d -m 0755 "${deb_root}/usr/share/nftban/templates/whitelist.d"
+    install -d -m 0755 "${deb_root}/usr/share/nftban/templates/blacklist.d"
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/whitelist.d/99-manual.conf" "${deb_root}/usr/share/nftban/templates/whitelist.d/"
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/blacklist.d/99-manual.conf" "${deb_root}/usr/share/nftban/templates/blacklist.d/"
 
     # MFST-C1: systemd units come from generator (install/systemd glob -> nftban-systemd-install.list).
     # Closes D1 install-list drift; the list is canonical and re-checked by CI --check.

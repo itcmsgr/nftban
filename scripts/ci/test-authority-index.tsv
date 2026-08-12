@@ -175,6 +175,7 @@ nftban_rbl_json_escaping_r1a3_test	cli/lib/nftban/tests/nftban_rbl_json_escaping
 nftban_render_findings_r1b1_test	cli/lib/nftban/tests/nftban_render_findings_r1b1_test.sh	health	test	health-findings-render	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_update_progress_r1b3_test	cli/lib/nftban/tests/nftban_update_progress_r1b3_test.sh	update	test	update-progress	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 no_reintroduced_orphan_modules_v167_test	cli/lib/nftban/tests/no_reintroduced_orphan_modules_v167_test.sh	architecture	test	orphan-modules	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+operator_config_not_package_owned_v1229_test	cli/lib/nftban/tests/operator_config_not_package_owned_v1229_test.sh	packaging	test	uninstall-lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 panel_group_retirement_v137_test	cli/lib/nftban/tests/panel_group_retirement_v137_test.sh	security	test	panel-group-retirement	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 parser_tier1_unknown_truth_v1228_9_test	cli/lib/nftban/tests/parser_tier1_unknown_truth_v1228_9_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	180		
 pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migration_ownership_boundary_v1228_10_test.sh	packaging	test	package-migration-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

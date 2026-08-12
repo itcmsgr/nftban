@@ -215,13 +215,25 @@ case "$1" in
         if command -v nft >/dev/null 2>&1; then
             nft delete table ip nftban 2>/dev/null || true
             nft delete table ip6 nftban 2>/dev/null || true
-            echo "nftban: NFTBan has been removed."
-            echo "nftban: NFTBan-owned nftables tables and enforcement rules were deleted — NFTBan is no longer protecting this system."
-            echo "nftban: Other firewall rules managed by the OS, firewalld, ufw, Docker, libvirt, cloud tooling, or the administrator were NOT modified and may still be active."
-            echo "nftban: You are now responsible for the host firewall state. Review it before exposing services:  sudo nft list ruleset"
-            echo "nftban: To restore NFTBan protection, reinstall/start NFTBan and validate the rebuilt firewall policy."
-            echo "nftban: Config preserved in /etc/nftban/. Purge with: apt remove --purge nftban-core"
         fi
+
+        # D5 (UNINSTALL-PR2): the operator message is NOT gated on `nft` being
+        # present. It used to sit inside the guard above, so on a host where the
+        # package manager's dependency cleanup had already removed the nftables
+        # tooling — the one case where the warning matters most — removal printed
+        # nothing at all. Enforcement is gone whether or not `nft` survives to
+        # confirm it, so the disclosure must not depend on the tool.
+        #
+        # The claim that other firewall rules "were NOT modified and may still be
+        # active" is DELETED, not reworded: nothing in this scriptlet observes
+        # other firewall authorities, and on the proven EL9 host it was false.
+        # Parity with the RPM %postun is on this truth contract, not on wording.
+        echo "nftban: NFTBan has been removed."
+        echo "nftban: NFTBan-owned nftables tables and enforcement rules were deleted — NFTBan no longer protects this host."
+        echo "nftban: Review the resulting firewall state before exposing services:  sudo nft list ruleset"
+        echo "nftban: nftables tooling may have been removed by package-manager dependency cleanup."
+        echo "nftban: To restore NFTBan protection, reinstall/start NFTBan and validate the rebuilt firewall policy."
+        echo "nftban: Config preserved in /etc/nftban/. Purge with: apt remove --purge nftban-core"
 
         # v1.146 Phase-D D-NFTABLES-POSTRM-MARKER-IDEMPOTENCY (remove-branch gap):
         # On `remove` (non-purge) the package files are gone, so the distro

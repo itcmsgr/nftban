@@ -204,12 +204,11 @@ esac
 # packaging guard (uninstall_firewall_ownership_message_v225_test.sh) applies to
 # postrm/%postun, applied here to uninstall.sh's own message.
 #
-# SCOPE NOTE — NOT a defect of this file: packaging/deb/postrm:220 and
-# packaging/build_nftban.sh:1782 state other firewall rules "were NOT modified and
-# may still be active", and the v225 test REQUIRES that phrasing in both. D5's
-# EL9 evidence (nft tooling cascade-removed) contests it, but postrm/%postun
-# wording is PR2 (D5 DEB/RPM parity) and cannot be changed without amending v225.
-# This suite deliberately makes no assertion about those two files.
+# SCOPE NOTE: packaging/deb/postrm and packaging/build_nftban.sh carry the same
+# truth contract as of v1.229 UNINSTALL-PR2 (D5) — the "may still be active"
+# claim was retired from both and uninstall_firewall_ownership_message_v225_test
+# now enforces parity on meaning rather than on that literal string. This suite
+# still asserts nothing about those two files; they are guarded there, not here.
 OVERCLAIM=0
 while IFS= read -r bad; do
     if printf '%s\n' "$CODE" | grep -qiE "$bad"; then
