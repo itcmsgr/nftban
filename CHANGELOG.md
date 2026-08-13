@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.228.12] - 2026-08-13
+
+Release reconciliation: packages the merged, previously untagged commits on `main`.
+No new content beyond the pull requests listed below.
+
+- fix(observation): CSF detection must never execute a vendor firewall binary [v1.229.0 R0] (#1213)
+- fix(restore): neutralize the legacy shell restore path for all four targets [v1.229.x R2/O1] (#1214)
+- fix(takeover): CSF removal contract — remove, not restore [CSF-CLOSE-1/2/3] (#1215)
+- fix(authority): explicit takeover must not be discarded when NFTBan is authoritative (#1216)
+- fix(validator): PROTECTED must not be reported while CSF can act (#1217)
+- fix(csf): runtime corrections + destructive-takeover disclosure [CSF final] (#1218)
+- fix(uninstall): stop standard mode purging config, and end mid-purge aborts (#1219)
+- fix(packaging): RPM remove must preserve operator state, and stop owning it (#1220)
+- fix(ci): a matrix that cannot observe must not report a passing removal (#1221)
+- fix(tests): two matrix defects that only a real systemd VM could expose (#1222)
+
+---
+
 ## [v1.228.11] - 2026-08-11 — a table name is not evidence of who owns it
 
 Two P0 defects, one invariant. NFTBan removed nftables tables belonging to other
