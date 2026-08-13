@@ -460,7 +460,15 @@ jobs:
           echo "=== All packages ==="
           ls -lh dist/packages/
 
+      # A1: this step DELETES assets from the release named by $REF. It had no
+      # guard, and on a workflow_dispatch $REF resolves from the VERSION file — so
+      # once a release for the current VERSION exists, a publish=false "dry run"
+      # would delete that live release's assets. The v1.228.12 dry run only
+      # no-op'd because the release did not exist yet: TIMING, NOT A GUARD.
+      # Same condition as the publish steps below.
+      #   DRY_RUN MUST NOT MUTATE A PUBLISHED RELEASE
       - name: Clean up old release assets
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

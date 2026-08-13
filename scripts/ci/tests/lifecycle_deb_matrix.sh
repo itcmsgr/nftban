@@ -342,6 +342,10 @@ nft_table_state() { # family name
 }
 
 failed_nftban_units() {
+    # A8 (twin of the RPM probe): without this guard a missing systemctl yields
+    # empty output, which is exactly the value the caller asserts as "no failed
+    # units" — a pass with nothing observed. Emits the shared sentinel instead.
+    command -v systemctl >/dev/null 2>&1 || { printf '%s' "$BLOCKED_TOKEN"; return 0; }
     systemctl list-units --state=failed --no-legend --plain 2>/dev/null \
         | awk '{print $1}' | grep -E '^(nftban|nftband)' || true
 }
@@ -415,7 +419,7 @@ assert_runtime_healthy() {
         "emergency SSH table removed (assertions.go:279 no_emergency_table)"
     local failed
     failed="$(failed_nftban_units | tr '\n' ' ' | sed 's/ *$//')"
-    assert_eq "" "$failed" "zero failed NFTBan systemd units"
+    assert_eq_vm "" "$failed" "zero failed NFTBan systemd units"
 }
 
 assert_validate_ok() {
@@ -1699,6 +1703,22 @@ main() {
     VERDICT_EMITTED=1
 
     # Taxonomy: PASS=0 · TEST_FAILURE=1 · INCOMPLETE=2 · HARNESS_FAILURE=3
+    # A9 ASSERTION FLOOR (twin of the RPM guard): a scope token matching no known
+    # case left every counter at zero and reached PASS having asserted NOTHING.
+    #   ZERO ASSERTIONS IS NOT A PASS
+    if [[ "$PASS_N" -eq 0 && "$FAIL_N" -eq 0 ]]; then
+        printf 'NFTBAN_MATRIX_VERDICT=HARNESS_FAILURE\n'
+        printf 'NFTBAN_MATRIX_HARNESS_NOTE=zero assertions executed (scope=%s); a requested case may not exist\n' "${NFTBAN_LIFECYCLE_CASES:-ALL}"
+        return 3
+    fi
+    local _want
+    for _want in ${NFTBAN_LIFECYCLE_CASES:-}; do
+        if [[ " ${CASE_ORDER[*]} " != *" $_want "* ]]; then
+            printf 'NFTBAN_MATRIX_VERDICT=HARNESS_FAILURE\n'
+            printf 'NFTBAN_MATRIX_HARNESS_NOTE=requested case %s is not a known case\n' "$_want"
+            return 3
+        fi
+    done
     if [[ "$unknown" -ne 0 ]]; then
         printf 'NFTBAN_MATRIX_VERDICT=HARNESS_FAILURE\n'
         log "RESULT: HARNESS_FAILURE — ${unknown} case(s) carried an unrecognised verdict."
