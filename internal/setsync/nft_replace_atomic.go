@@ -51,10 +51,15 @@ const replaceAddBatch = 1000
 // _ipv6, so a name-suffix guess resolves the wrong table and can fabricate a
 // bogus interval set).
 func (m *NFTManager) FindSetInTable(table *nftables.Table, name string) (*nftables.Set, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	if table == nil {
 		return nil, nil
 	}
-	sets, err := m.conn.GetSets(table)
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("list sets in %s: %w", table.Name, err)
 	}
@@ -91,7 +96,14 @@ func (m *NFTManager) FindSetInTable(table *nftables.Table, name string) (*nftabl
 //     not an accidental empty-set fail-open.
 //   - Interval sets are rejected: they are owned by the atomic FULL-sync path.
 func (m *NFTManager) ReplaceSetElements(set *nftables.Set, elements []SetElementInput) error {
-	return replaceSetElementsOnConn(m.conn, set, elements)
+	// INV-NFT-TX-01: the atomic replacement owns a PRIVATE connection. This is
+	// what makes its documented atomicity true by construction — no other writer
+	// can append into, or prematurely flush, this batch.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
+	return replaceSetElementsOnConn(conn, set, elements)
 }
 
 // replaceSetElementsOnConn is the testable core: pure validation, then the

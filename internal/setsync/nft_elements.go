@@ -34,6 +34,11 @@ import (
 
 // addSetElementsBatch adds a single batch of IPs or CIDRs
 func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	elements := make([]nftables.SetElement, 0, len(ips)*2) // Pre-allocate (*2 for CIDR ranges)
 	for _, ipStr := range ips {
 		var key []byte
@@ -121,11 +126,11 @@ func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error 
 		}
 	}
 
-	if err := m.conn.SetAddElements(set, elements); err != nil {
+	if err := conn.SetAddElements(set, elements); err != nil {
 		return fmt.Errorf("failed to add elements: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("failed to flush add elements: %w", err)
 	}
 
@@ -140,6 +145,11 @@ func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error 
 // The netlink library doesn't properly handle interval markers for single IPs,
 // which can cause corrupted ranges like "1.2.3.4-255.255.255.255".
 func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout time.Duration) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	// Try parsing as single IP first
 	ip := net.ParseIP(ipStr)
 
@@ -190,11 +200,11 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 		element.Timeout = timeout
 	}
 
-	if err := m.conn.SetAddElements(set, []nftables.SetElement{element}); err != nil {
+	if err := conn.SetAddElements(set, []nftables.SetElement{element}); err != nil {
 		return fmt.Errorf("failed to add element: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		// Ignore EEXIST errors - element already in set
 		if !errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("failed to flush: %w", err)
@@ -226,6 +236,11 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 
 // DeleteSetElements removes IPs from a set (batch operation)
 func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	if len(ips) == 0 {
 		return nil
 	}
@@ -271,11 +286,11 @@ func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
 		})
 	}
 
-	if err := m.conn.SetDeleteElements(set, elements); err != nil {
+	if err := conn.SetDeleteElements(set, elements); err != nil {
 		return fmt.Errorf("failed to delete elements: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("failed to flush delete elements: %w", err)
 	}
 
@@ -286,7 +301,12 @@ func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
 // Returns nil, nil if the set doesn't exist (not an error - idempotent behavior)
 // Port sets use TypeInetService (uint16) for port numbers
 func (m *NFTManager) GetPortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
-	sets, err := m.conn.GetSets(table)
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sets: %w", err)
 	}
@@ -304,8 +324,13 @@ func (m *NFTManager) GetPortSet(table *nftables.Table, setName string) (*nftable
 // GetOrCreatePortSet creates or gets an existing port set for TCP or UDP
 // Port sets use TypeInetService (uint16) for port numbers
 func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	// Try to get existing set
-	sets, err := m.conn.GetSets(table)
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sets: %w", err)
 	}
@@ -323,11 +348,11 @@ func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (
 		KeyType: nftables.TypeInetService, // uint16 for ports
 	}
 
-	if err := m.conn.AddSet(set, nil); err != nil {
+	if err := conn.AddSet(set, nil); err != nil {
 		return nil, fmt.Errorf("failed to add port set: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return nil, fmt.Errorf("failed to create port set: %w", err)
 	}
 
@@ -336,6 +361,11 @@ func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (
 
 // AddPortElements adds port numbers to a port set
 func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	if len(ports) == 0 {
 		return nil
 	}
@@ -354,11 +384,11 @@ func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
 		})
 	}
 
-	if err := m.conn.SetAddElements(set, elements); err != nil {
+	if err := conn.SetAddElements(set, elements); err != nil {
 		return fmt.Errorf("failed to add port elements: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("failed to flush port elements: %w", err)
 	}
 
@@ -368,6 +398,11 @@ func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
 // DeletePortElements removes port numbers from a port set
 // Returns nil for "no such file" errors (idempotent - element already doesn't exist)
 func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	if len(ports) == 0 {
 		return nil
 	}
@@ -381,11 +416,11 @@ func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
 		})
 	}
 
-	if err := m.conn.SetDeleteElements(set, elements); err != nil {
+	if err := conn.SetDeleteElements(set, elements); err != nil {
 		return fmt.Errorf("failed to delete port elements: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		// Tolerate ENOENT errors - element already doesn't exist (idempotent)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil // Idempotent: element already gone
@@ -490,8 +525,13 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 // GetOrCreateConcatSet creates or retrieves a concat set (IP . port) for per-IP port access.
 // The set type is ipv4_addr . inet_service (or ipv6_addr) with timeout flag.
 func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	// Try to get existing set
-	sets, err := m.conn.GetSets(table)
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sets: %w", err)
 	}
@@ -515,11 +555,11 @@ func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string,
 		KeyType:    nftables.MustConcatSetType(addrType, nftables.TypeInetService),
 	}
 
-	if err := m.conn.AddSet(set, nil); err != nil {
+	if err := conn.AddSet(set, nil); err != nil {
 		return nil, fmt.Errorf("failed to add concat set %s: %w", setName, err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return nil, fmt.Errorf("failed to flush concat set creation: %w", err)
 	}
 
@@ -529,6 +569,11 @@ func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string,
 // AddConcatIPPort adds an IP+port element to a concat set.
 // The key is concatenated as [IP bytes][port bytes (big-endian)].
 func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, timeout time.Duration) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("invalid port: %d", port)
 	}
@@ -561,11 +606,11 @@ func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, 
 		elem.Timeout = timeout
 	}
 
-	if err := m.conn.SetAddElements(set, []nftables.SetElement{elem}); err != nil {
+	if err := conn.SetAddElements(set, []nftables.SetElement{elem}); err != nil {
 		return fmt.Errorf("failed to add concat element: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("failed to flush concat element: %w", err)
 	}
 
@@ -574,6 +619,11 @@ func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, 
 
 // DeleteConcatIPPort removes an IP+port element from a concat set.
 func (m *NFTManager) DeleteConcatIPPort(set *nftables.Set, ipStr string, port int) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("invalid port: %d", port)
 	}
@@ -598,11 +648,11 @@ func (m *NFTManager) DeleteConcatIPPort(set *nftables.Set, ipStr string, port in
 		return fmt.Errorf("cannot convert IP: %s", ipStr)
 	}
 
-	if err := m.conn.SetDeleteElements(set, []nftables.SetElement{{Key: key}}); err != nil {
+	if err := conn.SetDeleteElements(set, []nftables.SetElement{{Key: key}}); err != nil {
 		return fmt.Errorf("failed to delete concat element: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil // Idempotent: element already gone
 		}

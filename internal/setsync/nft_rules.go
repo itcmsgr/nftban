@@ -28,8 +28,13 @@ import (
 
 // CreateChainIfNotExists creates a chain if it doesn't exist
 func (m *NFTManager) CreateChainIfNotExists(table *nftables.Table, chainName string, chainType nftables.ChainType, hook *nftables.ChainHook, priority *nftables.ChainPriority) (*nftables.Chain, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	// Try to get existing chain
-	chains, err := m.conn.ListChains()
+	chains, err := conn.ListChains()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list chains: %w", err)
 	}
@@ -49,9 +54,9 @@ func (m *NFTManager) CreateChainIfNotExists(table *nftables.Table, chainName str
 		Priority: priority,
 	}
 
-	m.conn.AddChain(chain)
+	conn.AddChain(chain)
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return nil, fmt.Errorf("failed to create chain: %w", err)
 	}
 
@@ -60,6 +65,11 @@ func (m *NFTManager) CreateChainIfNotExists(table *nftables.Table, chainName str
 
 // AddDropRuleForSet adds a rule to drop packets from IPs in a set
 func (m *NFTManager) AddDropRuleForSet(chain *nftables.Chain, set *nftables.Set, ipv4 bool) error {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
 	// Build rule: ip saddr @blacklist_ipv4 drop
 	var expressions []expr.Any
 
@@ -108,9 +118,9 @@ func (m *NFTManager) AddDropRuleForSet(chain *nftables.Chain, set *nftables.Set,
 		Exprs: expressions,
 	}
 
-	m.conn.AddRule(rule)
+	conn.AddRule(rule)
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("failed to add drop rule: %w", err)
 	}
 
