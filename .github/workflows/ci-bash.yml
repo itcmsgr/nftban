@@ -124,6 +124,16 @@ jobs:
       # UNINSTALL-PR2 D5 — removal messaging truth contract (DEB↔RPM parity on
       # MEANING, not on a literal string). Gate is policy-gates for this test;
       # executed here too so a wording regression fails fast on every PR.
+      # UNINSTALL-PR3 — lifecycle-matrix observation semantics (A1-A6).
+      # Hermetic: it drives the shipped probes/classifiers directly, no root,
+      # no packages. Guards the rule that a missing systemd/nft observation
+      # authority can never be reported as a passing removal assertion.
+      - name: Lifecycle matrix observation semantics (UNINSTALL-PR3)
+        run: |
+          echo "=== Executing: lifecycle_matrix_observation_semantics_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/lifecycle_matrix_observation_semantics_v1229_test.sh
+          bash cli/lib/nftban/tests/lifecycle_matrix_observation_semantics_v1229_test.sh
+
       - name: Uninstall firewall-ownership message (UNINSTALL-PR2 D5)
         run: |
           echo "=== Executing: uninstall_firewall_ownership_message_v225_test.sh ==="

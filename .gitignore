@@ -104,3 +104,7 @@ scripts/ci/privacy-forbidden.txt
 
 # v1.226.0 PR-C: ci-bash informational runner manifest (CI runtime artifact)
 ci-bash-manifest.txt
+
+# v1.229: CI-cached, SHA-pinned yq (packaging/build_nftban.sh PROV_YQ_SHA256).
+# Never committed — provision_yq re-verifies the checksum wherever it came from.
+offline/yq_linux_amd64

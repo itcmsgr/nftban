@@ -128,6 +128,10 @@ CASE_ID="INIT"
 declare -A CASE_RESULT=()
 declare -A CASE_NOTE=()
 CASE_ORDER=(L1 L2 L3 L4 L5 L6 L7 L8 L9 L10 L11)
+# Shared sentinel: "in scope, but observation authority unavailable".
+readonly BLOCKED_TOKEN="BLOCKED_ENVIRONMENT"
+BLOCKED_N=0
+VERDICT_EMITTED=0
 
 # cleanup ledger — every mutation this harness makes to host state
 CLEAN_IMMUTABLE=()
@@ -160,8 +164,36 @@ assert() {
     fi
 }
 
+# A3 (UNINSTALL-PR3): a BLOCKED_ENVIRONMENT observation must never compare as an
+# ordinary string — neither a PASS (nothing was observed) nor a product FAIL
+# (the product is not what failed). It propagates as its own state.
+assert_blocked() { # description
+    printf '[BLOCKED] %-4s %s\n' "$CASE_ID" "$*"
+    BLOCKED_N=$((BLOCKED_N + 1))
+    CASE_RESULT["$CASE_ID"]="BLOCKED_ENVIRONMENT"
+}
+
+# LAYER A/B SPLIT (UNINSTALL-PR3) — see the RPM twin. Layer A declares VM-only
+# assertions NOT_IN_SCOPE instead of letting them go BLOCKED (which would make
+# every container run permanently INCOMPLETE and pressure us to weaken them).
+VM_ASSERTIONS="${NFTBAN_MATRIX_VM_ASSERTIONS:-1}"
+VM_NOT_IN_SCOPE_N=0
+assert_eq_vm() { # want got description  — VM-only (systemd / kernel nftables)
+    if [[ "$VM_ASSERTIONS" != "1" ]]; then
+        shift 2   # want/got are deliberately unread: nothing observed them
+        printf '[NOT_IN_SCOPE] %-4s %s — VM-only assertion; this environment cannot observe it\n' "$CASE_ID" "$*"
+        VM_NOT_IN_SCOPE_N=$((VM_NOT_IN_SCOPE_N + 1))
+        return 0
+    fi
+    assert_eq "$@"
+}
+
 assert_eq() { # want got description
     local want="$1" got="$2"; shift 2
+    if [[ "$got" == "$BLOCKED_TOKEN" ]]; then
+        assert_blocked "$* — observation authority unavailable (wanted '${want}'); NOT a product verdict"
+        return 0
+    fi
     if [[ "$want" == "$got" ]]; then
         assert 0 "$* (= ${want})"
     else
@@ -301,7 +333,11 @@ snapshot() { # label
 }
 
 nft_table_state() { # family name
-    if ! command -v nft >/dev/null 2>&1; then printf 'nft-absent'; return 0; fi
+    # A6 (UNINSTALL-PR3): this already fail-CLOSED via a distinct token (the
+    # correct in-repo template for A2), but 'nft-absent' surfaced as a bare
+    # assertion FAIL — mislabelling an environment block as a product defect.
+    # Normalised onto the shared sentinel so it routes to BLOCKED_ENVIRONMENT.
+    if ! command -v nft >/dev/null 2>&1; then printf '%s' "$BLOCKED_TOKEN"; return 0; fi
     if nft list table "$1" "$2" >/dev/null 2>&1; then printf 'present'; else printf 'absent'; fi
 }
 
@@ -361,21 +397,21 @@ assert_runtime_healthy() {
     local u active enabled
     for u in "${DAEMON_UNITS[@]}"; do
         active="$(unit_active_state "$u")"
-        assert_eq "active" "$active" "systemd ${u} is-active"
+        assert_eq_vm "active" "$active" "systemd ${u} is-active"
     done
     for u in "${CORE_TIMERS[@]}"; do
         active="$(unit_active_state "$u")"
         enabled="$(systemctl is-enabled "$u" 2>/dev/null || true)"
-        assert_eq "active"  "$active"  "core timer ${u} is-active"
-        assert_eq "enabled" "$enabled" "core timer ${u} is-enabled"
+        assert_eq_vm "active"  "$active"  "core timer ${u} is-active"
+        assert_eq_vm "enabled" "$enabled" "core timer ${u} is-enabled"
     done
     for u in "${CRITICAL_TIMERS[@]}"; do
-        assert_eq "active" "$(unit_active_state "$u")" \
+        assert_eq_vm "active" "$(unit_active_state "$u")" \
             "CRITICAL timer ${u} active (drives DEGRADED per timers.go:68-80)"
     done
-    assert_eq "present" "$(nft_table_state ip nftban)"  "nft table ip nftban loaded"
-    assert_eq "present" "$(nft_table_state ip6 nftban)" "nft table ip6 nftban loaded"
-    assert_eq "absent"  "$(nft_table_state inet "$EMERGENCY_TABLE")" \
+    assert_eq_vm "present" "$(nft_table_state ip nftban)"  "nft table ip nftban loaded"
+    assert_eq_vm "present" "$(nft_table_state ip6 nftban)" "nft table ip6 nftban loaded"
+    assert_eq_vm "absent"  "$(nft_table_state inet "$EMERGENCY_TABLE")" \
         "emergency SSH table removed (assertions.go:279 no_emergency_table)"
     local failed
     failed="$(failed_nftban_units | tr '\n' ' ' | sed 's/ *$//')"
@@ -402,9 +438,17 @@ assert_validate_ok() {
 # "inactive\ninactive" -- reporting a product failure where the unit state was
 # exactly right. One helper, one word, used everywhere.
 unit_active_state() { # unit -> exactly one word
+    # A2 (UNINSTALL-PR3): systemctl unavailable != inactive. Removal cases assert
+    # "inactive", so collapsing a missing manager into that value made them PASS
+    # having observed nothing. Mirrors nft_table_state's existing sentinel style.
     local s
+    command -v systemctl >/dev/null 2>&1 || { printf '%s' "$BLOCKED_TOKEN"; return 0; }
     s="$(systemctl is-active "$1" 2>/dev/null | head -1 || true)"
-    [[ -n "$s" ]] || s="inactive"   # unit absent
+    if [[ -z "$s" ]]; then
+        # No reachable manager is NOT evidence that a unit is stopped.
+        systemctl is-system-running >/dev/null 2>&1 || { printf '%s' "$BLOCKED_TOKEN"; return 0; }
+        s="inactive"   # unit absent, manager reachable
+    fi
     printf '%s' "$s"
 }
 
@@ -577,6 +621,16 @@ on_exit() {
         fi
     done
     log "cleanup done (harness exit rc=${rc}); artifacts under ${WORKDIR:-<none>}"
+    # A4 (UNINSTALL-PR3) DURABLE F4 CLOSURE. This trap was cleanup-only, so a
+    # mid-run `set -e` abort exited with the failing command's rc — often 1 or 2
+    # — and printed NO SUMMARY, making a harness crash indistinguishable from a
+    # legitimate FAIL or INCOMPLETE. The harness must PROVE it reached its
+    # verdict path; the exit code alone cannot carry that.
+    if [[ "${VERDICT_EMITTED:-0}" -ne 1 ]]; then
+        printf 'NFTBAN_MATRIX_VERDICT=HARNESS_FAILURE\n'
+        printf 'NFTBAN_MATRIX_HARNESS_NOTE=aborted before emitting a verdict (rc=%s); this run proves NOTHING\n' "$rc"
+        exit 3
+    fi
 }
 
 # =============================================================================
@@ -667,7 +721,13 @@ case_L2() {
 }
 
 case_L3() {
-    case_begin L3 "upgrade (published ${PRIOR_VER} -> candidate ${CANDIDATE_VER})"
+    case_begin L3 "upgrade (published ${PRIOR_VER:-<none>} -> candidate ${CANDIDATE_VER})"
+    # An upgrade arm without a prior package proves nothing. SKIP (-> INCOMPLETE),
+    # never a silent pass and never a crash mid-run.
+    if [[ -z "$PRIOR_DEB" ]]; then
+        case_skip "no prior deb supplied — an upgrade cannot be exercised; select a subset with NFTBAN_LIFECYCLE_CASES to declare this NOT_IN_SCOPE instead"
+        return 0
+    fi
     if [[ "$PRIOR_VER" == "$CANDIDATE_VER" ]]; then
         case_skip "prior deb version (${PRIOR_VER}) equals candidate (${CANDIDATE_VER}) — this is NOT an upgrade. Rebuild the candidate with a bumped VERSION file (repo VERSION is currently the source of PKG_VERSION, build_nftban.sh:46)."
         return 0
@@ -1010,21 +1070,63 @@ case_L7() {
     snapshot "L7 post"
 
     assert_eq "0" "$rc" "apt-get remove exit"
+    # F1 (UNINSTALL-PR3): 'absent' USED TO PASS HERE. That accepted the single
+    # bit which distinguishes remove from purge: 'rc' means the package is
+    # removed with config-files RETAINED; 'absent' means nothing of it is left.
+    # Accepting both made this case pass whether or not operator config
+    # survived — the exact property D1/D2 exist to defend.
+    #     REMOVE != PURGE, and the status field is how dpkg says which happened.
     local st; st="$(dpkg_status)"
-    if [[ "$st" == "rc" || "$st" == "absent" ]]; then
-        assert 0 "dpkg status after remove = ${st} (config-files retained per policy)"
+    assert_eq "rc" "$st" "dpkg status after remove (config-files retained, NOT purged)"
+
+    # ---- D1 PACKAGE-NATIVE PROOF (DEB half; parity with RPM R7) -------------
+    # DEB has always preserved on `remove`; asserting it here makes the DEB side
+    # a REFERENCE the RPM side is measured against, rather than an assumption.
+    local _d
+    for _d in /etc/nftban /var/lib/nftban /var/log/nftban; do
+        [[ -d "$_d" ]] && assert 0 "D1: $_d preserved by apt-get remove" \
+                       || assert 1 "D1: $_d destroyed by apt-get remove — remove is not purge"
+    done
+
+    # ---- D3 PACKAGE-NATIVE PROOF: preserved must be LOADER-VISIBLE ----------
+    # BYTES_PRESERVED != FUNCTIONAL_STATE_PRESERVED. dpkg's sidecar suffixes
+    # (.dpkg-old/.dpkg-dist/.dpkg-new) are as invisible to a *.conf loader as
+    # rpm's .rpmsave is.
+    local _l _f _side
+    for _l in whitelist blacklist; do
+        _f="/etc/nftban/${_l}.d/99-manual.conf"
+        if [[ -f "$_f" ]]; then
+            assert 0 "D3: ${_l}.d/99-manual.conf survives remove under its LOADED name"
+        else
+            _side="$(find "/etc/nftban/${_l}.d" -maxdepth 1 -name '99-manual.conf.*' 2>/dev/null | head -1)"
+            if [[ -n "$_side" ]]; then
+                assert 1 "D3: operator config survives only as ${_side} — present but INVISIBLE to the *.conf loader"
+            else
+                assert 1 "D3: ${_l}.d/99-manual.conf absent after remove"
+            fi
+        fi
+    done
+
+    # ---- D5 PACKAGE-NATIVE PROOF: disclosure, and no unobserved claim -------
+    if grep -qF 'no longer protects this host' "$out"; then
+        assert 0 "D5: removal states NFTBan no longer protects this host"
     else
-        assert 1 "dpkg status after remove = ${st} (want 'rc')"
+        assert 1 "D5: removal did not disclose loss of protection"
+    fi
+    if grep -qF 'were NOT modified and may still be active' "$out"; then
+        assert 1 "D5: removal asserts an UNOBSERVED other-firewall state"
+    else
+        assert 0 "D5: removal makes no unobserved other-firewall claim"
     fi
 
     # services stopped (prerm:51-106 stops; deprecated units also disabled 109-125)
     local u
     for u in "${DAEMON_UNITS[@]}"; do
-        assert_eq "inactive" "$(unit_active_state "$u")" \
+        assert_eq_vm "inactive" "$(unit_active_state "$u")" \
             "after remove: ${u} not active (prerm:105 deb-systemd-invoke stop)"
     done
     for u in "${CORE_TIMERS[@]}"; do
-        assert_eq "inactive" "$(unit_active_state "$u")" \
+        assert_eq_vm "inactive" "$(unit_active_state "$u")" \
             "after remove: ${u} not active"
     done
     # unit FILES removed with the payload (raw dpkg-deb build: no debhelper
@@ -1035,12 +1137,17 @@ case_L7() {
     assert_eq "0" "$leftover_units" "after remove: no nftban unit files left under /usr/lib/systemd/system"
 
     # nftables tables deleted, NOT left as an empty drop-policy chain (postrm:215-217)
-    assert_eq "absent" "$(nft_table_state ip nftban)"  "after remove: ip nftban table deleted (no drop-policy blackhole)"
-    assert_eq "absent" "$(nft_table_state ip6 nftban)" "after remove: ip6 nftban table deleted"
-    if grep -aq 'no longer protecting this system' "$out"; then
-        assert 0 "postrm disclosed the documented uninstall firewall consequence (postrm:219-222)"
+    assert_eq_vm "absent" "$(nft_table_state ip nftban)"  "after remove: ip nftban table deleted (no drop-policy blackhole)"
+    assert_eq_vm "absent" "$(nft_table_state ip6 nftban)" "after remove: ip6 nftban table deleted"
+    # D5 truth contract (UNINSTALL-PR2). The anchor was the pre-PR2 wording
+    # "no longer protecting this system"; the message now states what was
+    # actually observed. Asserted on MEANING, matching
+    # uninstall_firewall_ownership_message_v225_test — and the retired
+    # unobserved claim is checked for ABSENCE just above.
+    if grep -aq 'no longer protects this host' "$out"; then
+        assert 0 "postrm disclosed the uninstall firewall consequence"
     else
-        assert 1 "postrm did not print the documented uninstall firewall consequence"
+        assert 1 "postrm did not print the uninstall firewall consequence"
     fi
 
     # runtime files per policy: /run/nftban removed only on purge (postrm:64),
@@ -1077,12 +1184,17 @@ assert_no_stale_success_claim() { # not_before_epoch label
     local t0="$1" label="$2" bin="${WORKDIR}/nftban-installer.copy"
     local nb out rc=0
     # Both early exits are INFORMATIONAL — they must never be counted as passes.
+    # F3 (UNINSTALL-PR3): these early exits USED TO return 0 silently, so a run
+    # with missing inputs produced ZERO coverage of the stale-claim property
+    # while the case still reported PASS. They now record a SKIP, which forces
+    # the matrix verdict to INCOMPLETE (exit 2).
+    #     ABSENT PROBE != PROPERTY PROVEN
     if [[ ! -x "$bin" ]]; then
-        printf '  %s: no preserved verifier binary — stale-claim probe not run\n' "$label"
+        case_skip "${label}: no preserved verifier binary — stale-claim probe NOT RUN (zero coverage)"
         return 0
     fi
     if [[ ! -f "$STATE_FILE" ]]; then
-        printf '  %s: no persisted state to misread — stale-claim probe not run\n' "$label"
+        case_skip "${label}: no persisted state to misread — stale-claim probe NOT RUN (zero coverage)"
         return 0
     fi
     nb="$(date -u -d "@${t0}" +'%Y-%m-%dT%H:%M:%S.000000000Z')"
@@ -1266,11 +1378,14 @@ case_L10() {
     fi
     # 2. A previous COMMITTED must not read as evidence of removal success.
     assert_no_stale_success_claim "$t0" "L10"
+    # F2 (UNINSTALL-PR3): the else branch USED TO ASSERT PASS. A removal that
+    # FAILED must not have destroyed install state on its way out — recording
+    # that destruction as "recorded" turned the defect into evidence of success.
     if [[ -f "$STATE_FILE" ]]; then
         assert_eq "$ts_before" "$(statefield INSTALL_TIMESTAMP)" \
             "install_state untouched by the failed removal"
     else
-        assert 0 "install_state absent after the failed removal (recorded)"
+        assert 1 "install_state DESTROYED by a failed removal — a failed uninstall must not consume state"
     fi
 
     # recover the host
@@ -1284,7 +1399,10 @@ case_L10() {
 # =============================================================================
 usage() {
     cat <<'EOF'
-usage: lifecycle_deb_matrix.sh <candidate.deb> <prior-v1.227.0.deb>
+usage: lifecycle_deb_matrix.sh <candidate.deb> [prior-v1.227.0.deb]
+
+  <prior> is OPTIONAL. Without it the upgrade arms cannot run; select a subset
+  with NFTBAN_LIFECYCLE_CASES so they are NOT_IN_SCOPE rather than SKIP.
 
   Runs AS ROOT on a DISPOSABLE Ubuntu 24.04 VM. Destructive.
 
@@ -1393,13 +1511,29 @@ case_L11() {
     fi
 }
 
+# Environment preconditions are NOT harness bugs: emit the canonical verdict so
+# the EXIT trap does not reclassify them as HARNESS_FAILURE.
+blocked_exit() { # reason
+    printf 'NFTBAN_MATRIX_VERDICT=INCOMPLETE\n'
+    printf 'NFTBAN_MATRIX_INCOMPLETE_REASON=BLOCKED_ENVIRONMENT\n'
+    printf 'NFTBAN_MATRIX_BLOCKED_PRECONDITION=%s\n' "$1"
+    VERDICT_EMITTED=1
+    exit 2
+}
+
 main() {
-    if [[ $# -lt 2 ]]; then usage; exit 2; fi
+    if [[ $# -lt 1 ]]; then usage; VERDICT_EMITTED=1; exit 2; fi
     CANDIDATE_DEB="$(readlink -f "$1")"
-    PRIOR_DEB="$(readlink -f "$2")"
+    # PRIOR is optional (UNINSTALL-PR3): the upgrade arms need a PUBLISHED prior
+    # deb, but remove/purge need only the candidate. Binding a merge decision to
+    # an external release download would fail the gate for unrelated reasons.
+    # Cases that need it declare SKIP -> INCOMPLETE; they never silently pass.
+    PRIOR_DEB=""
+    [[ -n "${2:-}" ]] && PRIOR_DEB="$(readlink -f "$2")"
 
     if [[ "$(id -u)" -ne 0 ]]; then
-        log "ERROR: must run as root"; exit 2
+        log "ERROR: must run as root"
+        blocked_exit "must run as root"
     fi
 
     # SINGLE INSTANCE, enforced rather than assumed. This harness purges,
@@ -1414,29 +1548,54 @@ main() {
         log "       This harness is destructive; refusing to run a second copy against the same host."
         exit 2
     fi
+    # REQUIREMENTS FOLLOW SCOPE. systemctl and nft are only needed by the VM-only
+    # assertions; requiring them unconditionally made a Layer A container run
+    # impossible even though every assertion it DOES make is observable there.
+    # They stay mandatory whenever VM assertions are in scope (Layer B), so this
+    # relaxes nothing about the full contract.
     local missing=() b
-    for b in dpkg dpkg-deb dpkg-query apt-get systemctl nft flock date find awk grep sed; do
+    local required=(dpkg dpkg-deb dpkg-query apt-get flock date find awk grep sed)
+    if [[ "$VM_ASSERTIONS" == "1" ]]; then
+        required+=(systemctl nft)
+    else
+        log "scope: VM assertions out of scope — systemctl/nft not required for this run"
+    fi
+    for b in "${required[@]}"; do
         command -v "$b" >/dev/null 2>&1 || missing+=("$b")
     done
     if [[ "${#missing[@]}" -gt 0 ]]; then
-        log "ERROR: missing required binaries: ${missing[*]}"; exit 2
+        log "ERROR: missing required binaries: ${missing[*]}"
+        blocked_exit "missing required binaries: ${missing[*]}"
     fi
-    for b in "$CANDIDATE_DEB" "$PRIOR_DEB"; do
-        [[ -f "$b" ]] || { log "ERROR: not a file: $b"; exit 2; }
+    # PRIOR is optional (see main): validate it only when one was supplied, and
+    # report a genuinely missing input as a BLOCKED precondition rather than a
+    # bare exit that the EXIT trap would reclassify as HARNESS_FAILURE.
+    local _inputs=("$CANDIDATE_DEB")
+    [[ -n "$PRIOR_DEB" ]] && _inputs+=("$PRIOR_DEB")
+    for b in "${_inputs[@]}"; do
+        [[ -f "$b" ]] || { log "ERROR: not a file: $b"; blocked_exit "input not a file: ${b:-<empty>}"; }
     done
 
     WORKDIR="$(mktemp -d /var/tmp/nftban-lifecycle-XXXXXX)"
     trap on_exit EXIT
 
     CANDIDATE_VER="$(dpkg-deb -f "$CANDIDATE_DEB" Version)"
-    PRIOR_VER="$(dpkg-deb -f "$PRIOR_DEB" Version)"
-    local cand_pkg prior_pkg
+    local cand_pkg prior_pkg=""
     cand_pkg="$(dpkg-deb -f "$CANDIDATE_DEB" Package)"
-    prior_pkg="$(dpkg-deb -f "$PRIOR_DEB" Package)"
+    # PRIOR is optional: reading it unconditionally aborted the run under set -e
+    # before any verdict when none was supplied.
+    if [[ -n "$PRIOR_DEB" ]]; then
+        PRIOR_VER="$(dpkg-deb -f "$PRIOR_DEB" Version)"
+        prior_pkg="$(dpkg-deb -f "$PRIOR_DEB" Package)"
+    fi
 
     hdr "NFTBan v1.228.0 Item 2 — DEB lifecycle matrix"
     log "candidate : ${CANDIDATE_DEB} (${cand_pkg} ${CANDIDATE_VER})"
-    log "prior     : ${PRIOR_DEB} (${prior_pkg} ${PRIOR_VER})"
+    if [[ -n "$PRIOR_DEB" ]]; then
+        log "prior     : ${PRIOR_DEB} (${prior_pkg} ${PRIOR_VER})"
+    else
+        log "prior     : (none supplied — upgrade arms cannot run)"
+    fi
     log "host      : $( (. /etc/os-release && printf '%s %s' "${ID:-?}" "${VERSION_ID:-?}") 2>/dev/null || echo unknown)"
     log "kernel    : $(uname -r)"
     log "workdir   : ${WORKDIR}"
@@ -1444,8 +1603,18 @@ main() {
     CASE_ID="PRE"
     CASE_RESULT["PRE"]="PASS"
     assert_eq "$PKG" "$cand_pkg"  "candidate package name (control:13)"
-    assert_eq "$PKG" "$prior_pkg" "prior package name"
-    if [[ "$CANDIDATE_VER" == "$PRIOR_VER" ]]; then
+    # Only meaningful when a prior was supplied; otherwise this asserted against
+    # an empty string and reported a FAIL for an input that is legitimately absent.
+    if [[ -n "$PRIOR_DEB" ]]; then
+        assert_eq "$PKG" "$prior_pkg" "prior package name"
+    else
+        log "prior package name: not applicable (no prior supplied)"
+    fi
+    if [[ -z "$PRIOR_DEB" ]]; then
+        # Without a prior this compared against "" and emitted a PASS reading
+        # "differs from prior " — a green line asserting nothing.
+        log "version comparison: not applicable (no prior supplied)"
+    elif [[ "$CANDIDATE_VER" == "$PRIOR_VER" ]]; then
         assert 1 "candidate and prior versions differ (both ${CANDIDATE_VER}) — L3 cannot be a real upgrade"
     else
         assert 0 "candidate ${CANDIDATE_VER} differs from prior ${PRIOR_VER}"
@@ -1468,13 +1637,16 @@ main() {
     # `|| true` is load-bearing: is-active exits 3 when inactive and this script
     # runs under `set -o pipefail`, so without it the assignment aborts the run.
     ufw_now="$(unit_active_state ufw.service)"
-    assert_eq "inactive" "$ufw_now" "baseline: ufw.service inactive"
+    assert_eq_vm "inactive" "$ufw_now" "baseline: ufw.service inactive"
 
     local selected="${NFTBAN_LIFECYCLE_CASES:-}"
     local c
     for c in "${CASE_ORDER[@]}"; do
         if [[ -n "$selected" ]] && [[ " $selected " != *" $c "* ]]; then
-            CASE_ID="$c"; CASE_RESULT["$c"]="SKIP"
+            # A5 (UNINSTALL-PR3): unselected cases were marked SKIP, which is
+            # closure-blocking — so ANY subset run was permanently INCOMPLETE.
+            # A declared exclusion is NOT a gap. Matches the RPM mechanism.
+            CASE_ID="$c"; CASE_RESULT["$c"]="NOT_IN_SCOPE"
             CASE_NOTE["$c"]="not selected via NFTBAN_LIFECYCLE_CASES"
             continue
         fi
@@ -1483,7 +1655,7 @@ main() {
 
     # -------------------------------------------------------------------------
     hdr "MACHINE-READABLE SUMMARY"
-    local skipped=0 failed=0
+    local skipped=0 failed=0 blocked=0 unknown=0
     printf 'NFTBAN_MATRIX_CANDIDATE_VERSION=%s\n' "$CANDIDATE_VER"
     printf 'NFTBAN_MATRIX_PRIOR_VERSION=%s\n' "$PRIOR_VER"
     for c in "${CASE_ORDER[@]}"; do
@@ -1492,29 +1664,69 @@ main() {
         if [[ -n "${CASE_NOTE[$c]:-}" ]]; then
             printf 'NFTBAN_MATRIX_NOTE_%s=%s\n' "$c" "${CASE_NOTE[$c]}"
         fi
-        if [[ "$r" == "SKIP" ]]; then skipped=$((skipped + 1)); fi
-        if [[ "$r" == "FAIL" ]]; then failed=$((failed + 1)); fi
+        # A1 (UNINSTALL-PR3) CLOSED-SET AGGREGATION. This counted only SKIP and
+        # FAIL; every other value fell through and the run could still reach
+        # PASS — so a new verdict state would have been counted as NOTHING.
+        # There is no default-success path: unknown => HARNESS_FAILURE.
+        case "$r" in
+            PASS)                ;;
+            FAIL)                failed=$((failed + 1)) ;;
+            SKIP)                skipped=$((skipped + 1)) ;;
+            BLOCKED_ENVIRONMENT) blocked=$((blocked + 1)) ;;
+            NOT_IN_SCOPE)        ;;   # declared exclusion — not a claim, not a gap
+            *)                   unknown=$((unknown + 1))
+                                 printf 'NFTBAN_MATRIX_UNKNOWN_VERDICT_%s=%s\n' "$c" "$r" ;;
+        esac
     done
     printf 'NFTBAN_MATRIX_ASSERTIONS_PASS=%d\n' "$PASS_N"
     printf 'NFTBAN_MATRIX_ASSERTIONS_FAIL=%d\n' "$FAIL_N"
     printf 'NFTBAN_MATRIX_CASES_FAILED=%d\n'   "$failed"
     printf 'NFTBAN_MATRIX_CASES_SKIPPED=%d\n'  "$skipped"
+    printf 'NFTBAN_MATRIX_ASSERTIONS_BLOCKED=%d\n' "$BLOCKED_N"
+    printf 'NFTBAN_MATRIX_CASES_BLOCKED=%d\n'  "$blocked"
+    printf 'NFTBAN_MATRIX_VM_ASSERTIONS_NOT_IN_SCOPE=%d\n' "$VM_NOT_IN_SCOPE_N"
+    if [[ "$VM_ASSERTIONS" == "1" ]]; then
+        printf 'NFTBAN_MATRIX_LAYER=B_VM_AUTHORITATIVE\n'
+        printf 'NFTBAN_MATRIX_CLAIMS_SYSTEMD_AUTHORITY=YES\n'
+    else
+        printf 'NFTBAN_MATRIX_LAYER=A_CONTAINER_PACKAGE_ONLY\n'
+        printf 'NFTBAN_MATRIX_CLAIMS_SYSTEMD_AUTHORITY=NO\n'
+        printf 'NFTBAN_MATRIX_CLAIMS_KERNEL_FIREWALL_AUTHORITY=NO\n'
+    fi
+    printf 'NFTBAN_MATRIX_SCOPE=%s\n'          "${NFTBAN_LIFECYCLE_CASES:-ALL}"
     printf 'NFTBAN_MATRIX_ARTIFACTS=%s\n'      "$WORKDIR"
+    VERDICT_EMITTED=1
 
+    # Taxonomy: PASS=0 · TEST_FAILURE=1 · INCOMPLETE=2 · HARNESS_FAILURE=3
+    if [[ "$unknown" -ne 0 ]]; then
+        printf 'NFTBAN_MATRIX_VERDICT=HARNESS_FAILURE\n'
+        log "RESULT: HARNESS_FAILURE — ${unknown} case(s) carried an unrecognised verdict."
+        return 3
+    fi
     if [[ "$FAIL_N" -ne 0 || "$failed" -ne 0 ]]; then
         printf 'NFTBAN_MATRIX_VERDICT=FAIL\n'
         log "RESULT: FAIL — ${FAIL_N} failed assertions across ${failed} case(s)."
         return 1
     fi
+    # BLOCKED is closure-blocking exactly like SKIP, but labelled separately:
+    # SKIP is "known-not-run"; BLOCKED is "could-not-observe".
+    if [[ "$blocked" -ne 0 ]]; then
+        printf 'NFTBAN_MATRIX_VERDICT=INCOMPLETE\n'
+        printf 'NFTBAN_MATRIX_INCOMPLETE_REASON=BLOCKED_ENVIRONMENT\n'
+        log "RESULT: INCOMPLETE — ${blocked} case(s) could not be OBSERVED (missing systemd/nft"
+        log "        authority). This run establishes nothing about those properties."
+        return 2
+    fi
     if [[ "$skipped" -ne 0 ]]; then
         # A skipped case is NOT a pass. Refuse to report success.
         printf 'NFTBAN_MATRIX_VERDICT=INCOMPLETE\n'
+        printf 'NFTBAN_MATRIX_INCOMPLETE_REASON=SKIP\n'
         log "RESULT: INCOMPLETE — ${skipped} case(s) were skipped; this run does NOT establish"
         log "        the v1.228.0 Item 2 DEB lifecycle contract. Resolve every SKIP and re-run."
         return 2
     fi
     printf 'NFTBAN_MATRIX_VERDICT=PASS\n'
-    log "RESULT: PASS — all ${#CASE_ORDER[@]} cases executed, ${PASS_N} assertions passed."
+    log "RESULT: PASS — scope=${NFTBAN_LIFECYCLE_CASES:-ALL}, ${PASS_N} assertions passed."
     return 0
 }
 

@@ -34,6 +34,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Restore pinned yq (cache)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: offline/yq_linux_amd64
+          key: yq-pinned-${{ hashFiles('packaging/build_nftban.sh') }}
+
       - name: Validate yq checksums are consistent
         run: |
           echo "Checking yq SHA256 checksums across build files..."
@@ -70,11 +76,29 @@ jobs:
           . packaging/lib/fetch_verified.sh
           YQ_URL="https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
 
-          if fetch_verified "$YQ_URL" "$YQ_SHA256" /tmp/yq_linux_amd64; then
+          # v1.229 CI hardening: this required job downloaded yq from a live GitHub
+          # release, so an upstream 503 failed the merge gate. Two DIFFERENT things
+          # were conflated here:
+          #   PIN CONSISTENCY  — all YQ_SHA256 in packaging/ agree. Static, offline,
+          #                      always blocking. Verified above.
+          #   UPSTREAM LIVENESS — the pin still matches the published artifact.
+          #                      Needs the network and cannot be made deterministic.
+          # Trust is NOT enforced here: provision_yq verifies the sha256 before the
+          # binary is ever used, wherever it came from. This step is drift
+          # DETECTION, so a network outage must be reported as unverifiable rather
+          # than as a pin failure — and must not fail the merge gate.
+          #   CANNOT_VERIFY != VERIFIED_BAD
+          if [ -f offline/yq_linux_amd64 ] &&
+             echo "${YQ_SHA256}  offline/yq_linux_amd64" | sha256sum -c - >/dev/null 2>&1; then
+            echo "✅ yq pin matches the cached artifact (no network needed)"
+          elif fetch_verified "$YQ_URL" "$YQ_SHA256" /tmp/yq_linux_amd64; then
             echo "✅ yq checksum validated successfully"
+            mkdir -p offline && install -m 0755 /tmp/yq_linux_amd64 offline/yq_linux_amd64 || true
           else
-            echo "ERROR: yq fetch/verify failed."
-            echo "Re-downloading to report the actual checksum (network blip vs. outdated pin)..."
+            # Attribute the failure instead of exiting 1 for every cause. The old
+            # branch failed even when the re-download reported Expected == Actual,
+            # i.e. it printed evidence that the pin was CORRECT and failed anyway.
+            echo "yq fetch/verify did not succeed — determining why..."
             if curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
                     --connect-timeout 10 --max-time 120 -sS \
                     -o /tmp/yq_linux_amd64.actual "$YQ_URL"; then
@@ -82,11 +106,18 @@ jobs:
               echo "Expected: $YQ_SHA256"
               echo "Actual:   $ACTUAL_SHA"
               if [[ "$YQ_SHA256" != "$ACTUAL_SHA" ]]; then
-                echo "The bundled checksum is outdated. Update with:"
-                echo "  YQ_SHA256=\"$ACTUAL_SHA\""
+                echo "::error::PIN_OUTDATED — the published yq artifact no longer matches the bundled checksum. Update with: YQ_SHA256=\"$ACTUAL_SHA\""
+                exit 1
               fi
+              echo "::warning::TRANSIENT_FETCH_FAILURE — the pin is CORRECT (expected == actual); the first fetch failed for a transient reason."
+              mkdir -p offline && install -m 0755 /tmp/yq_linux_amd64.actual offline/yq_linux_amd64 || true
+              exit 0
             fi
-            exit 1
+            # No authoritative source reachable. Pin CONSISTENCY was already proven
+            # offline above, and provision_yq re-verifies the sha before use, so an
+            # upstream outage must not fail the merge gate as though the pin were bad.
+            echo "::warning::UPSTREAM_VERIFICATION_UNAVAILABLE — could not reach the yq release to re-verify the pin. Pin consistency across packaging/ was verified offline; the build-time checksum gate is unaffected. NOT treated as a pin failure."
+            exit 0
           fi
 
   # ==========================================================================
@@ -225,6 +256,23 @@ jobs:
         with:
           name: go-binaries
           path: bin/
+
+      # v1.229 UNINSTALL-PR3 CI hardening: keep the pinned yq out of the critical
+      # path of every build. Keyed on the VERSION+SHA pinned in
+      # packaging/build_nftban.sh, so a pin change invalidates the cache
+      # automatically and a stale binary can never be served for a new pin.
+      # provision_yq re-verifies the sha256 regardless of where the file came
+      # from — the cache is a latency optimisation, never a trust boundary.
+      - name: Restore pinned yq (cache)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: offline/yq_linux_amd64
+          # Keyed on the FILE that defines the version+sha pin, not on the raw
+          # digest: a literal 64-hex string in a workflow trips secret scanning
+          # as a generic API key. Editing the pin changes the file, so the cache
+          # still invalidates automatically and a stale binary is never reused
+          # for a new pin. provision_yq re-verifies the sha256 regardless.
+          key: yq-pinned-${{ hashFiles('packaging/build_nftban.sh') }}
 
       - name: Build RPM in ${{ matrix.distro }} container
         run: |
@@ -375,6 +423,23 @@ jobs:
         with:
           name: go-binaries
           path: bin/
+
+      # v1.229 UNINSTALL-PR3 CI hardening: keep the pinned yq out of the critical
+      # path of every build. Keyed on the VERSION+SHA pinned in
+      # packaging/build_nftban.sh, so a pin change invalidates the cache
+      # automatically and a stale binary can never be served for a new pin.
+      # provision_yq re-verifies the sha256 regardless of where the file came
+      # from — the cache is a latency optimisation, never a trust boundary.
+      - name: Restore pinned yq (cache)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: offline/yq_linux_amd64
+          # Keyed on the FILE that defines the version+sha pin, not on the raw
+          # digest: a literal 64-hex string in a workflow trips secret scanning
+          # as a generic API key. Editing the pin changes the file, so the cache
+          # still invalidates automatically and a stale binary is never reused
+          # for a new pin. provision_yq re-verifies the sha256 regardless.
+          key: yq-pinned-${{ hashFiles('packaging/build_nftban.sh') }}
 
       - name: Build DEB in ${{ matrix.distro }} container
         run: |
@@ -840,6 +905,117 @@ jobs:
   # ==========================================================================
   # CONSOLIDATE ALL PACKAGES
   # ==========================================================================
+  # ===========================================================================
+  # UNINSTALL-PR3 LAYER A — package-native remove/purge in a CONTAINER
+  # ===========================================================================
+  # D6: the lifecycle matrices were the ONLY package-native remove/purge tests
+  # and ran in NO workflow, so D1/D2/D3/D5 were SOURCE_PROVEN only. This job
+  # removes a REAL built package and asserts on the resulting filesystem.
+  #
+  # LAYER A != LAYER B. A GitHub container has dpkg/rpm and a real filesystem,
+  # so package operations and preservation are genuinely observable here. It has
+  # no PID1 systemd and no kernel nftables, so unit and ruleset assertions are
+  # NOT observable. Those are declared NOT_IN_SCOPE via
+  # NFTBAN_MATRIX_VM_ASSERTIONS=0 — they are NOT executed and NOT weakened, and
+  # the matrix prints CLAIMS_SYSTEMD_AUTHORITY=NO so a Layer A PASS can never be
+  # read as VM proof.
+  #
+  #   CONTAINER_PACKAGE_PASS != SYSTEMD_VM_PASS
+  #
+  # If observation authority goes missing for an IN-SCOPE assertion, the probes
+  # emit BLOCKED_ENVIRONMENT and the matrix returns INCOMPLETE (exit 2), which
+  # fails this job. Exit 3 means the harness could not produce a trustworthy
+  # verdict at all. Closure (UNINSTALL_LIFECYCLE_DEBT_FREE) still requires the
+  # Layer B systemd-VM run; this job cannot grant it.
+  #
+  # NOT REQUIRED YET: making this a required check is a branch-protection change
+  # (repo settings), deliberately not done in a code PR.
+  lifecycle-layer-a:
+    name: Lifecycle Layer A — package-native remove (${{ matrix.label }})
+    needs: [build-rpm, build-deb]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: rpm-el9
+            family: rpm
+            container: rockylinux:9
+            # build-rpm uploads rpm-${distro} where distro is el9/el10 — the
+            # artifact is named for the EL generation, not the image vendor.
+            # Matches test-rpm-install's rockylinux:9 -> rpm-el9 pairing.
+            artifact: rpm-el9
+          - label: deb-ubuntu24.04
+            family: deb
+            container: ubuntu:24.04
+            artifact: deb-ubuntu24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download package artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v6.0.0
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages
+
+      - name: Pull base image (retry)
+        run: |
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull failed - retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull failed after 3 attempts"; exit 125; }
+
+      - name: Package-native remove (${{ matrix.family }}, VM assertions out of scope)
+        env:
+          FAMILY: ${{ matrix.family }}
+          IMAGE: ${{ matrix.container }}
+        run: |
+          set -euo pipefail
+          ls -la packages/
+          docker run --rm \
+            -v "$(pwd)/packages:/packages:ro" \
+            -v "$(pwd)/scripts:/scripts:ro" \
+            -e NFTBAN_MATRIX_VM_ASSERTIONS=0 \
+            -e NFTBAN_RPM_CASES="R7" \
+            -e NFTBAN_LIFECYCLE_CASES="L7" \
+            -e FAMILY="$FAMILY" \
+            "$IMAGE" bash -c '
+              set -uo pipefail
+              if [ "$FAMILY" = "rpm" ]; then
+                dnf -y install findutils procps-ng util-linux >/dev/null 2>&1 || true
+                CAND=$(find /packages -name "*.rpm" | head -1)
+                [ -n "$CAND" ] || { echo "no candidate rpm in artifact"; exit 1; }
+                bash /scripts/ci/tests/lifecycle_rpm_matrix.sh "$CAND"
+              else
+                apt-get update -qq >/dev/null 2>&1 || true
+                apt-get install -y -qq findutils procps util-linux >/dev/null 2>&1 || true
+                CAND=$(find /packages -name "*.deb" | head -1)
+                [ -n "$CAND" ] || { echo "no candidate deb in artifact"; exit 1; }
+                bash /scripts/ci/tests/lifecycle_deb_matrix.sh "$CAND"
+              fi
+            ' | tee matrix.log
+          rc=${PIPESTATUS[0]}
+          echo "matrix rc=$rc"
+          # 0 PASS · 1 TEST_FAILURE · 2 INCOMPLETE · 3 HARNESS_FAILURE.
+          # INCOMPLETE is NOT a pass: an unobserved property proves nothing.
+          if ! grep -q 'CLAIMS_SYSTEMD_AUTHORITY=NO' matrix.log; then
+            echo "::error::Layer A run did not disclaim systemd authority - refusing to report success"
+            exit 1
+          fi
+          exit "$rc"
+
+      - name: Upload matrix log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lifecycle-layer-a-${{ matrix.label }}
+          path: matrix.log
+          if-no-files-found: warn
+
   consolidate-packages:
     name: Consolidate all packages
     needs: [build-deb, build-rpm]
