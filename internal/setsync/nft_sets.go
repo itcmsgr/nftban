@@ -30,8 +30,13 @@ import (
 
 // GetOrCreateSet gets or creates a named set in the table
 func (m *NFTManager) GetOrCreateSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	// Try to get existing set
-	sets, err := m.conn.GetSets(table)
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sets: %w", err)
 	}
@@ -57,11 +62,11 @@ func (m *NFTManager) GetOrCreateSet(table *nftables.Table, setName string, ipv4 
 		KeyType: keyType,
 	}
 
-	if err := m.conn.AddSet(set, nil); err != nil {
+	if err := conn.AddSet(set, nil); err != nil {
 		return nil, fmt.Errorf("failed to add set: %w", err)
 	}
 
-	if err := m.conn.Flush(); err != nil {
+	if err := conn.Flush(); err != nil {
 		return nil, fmt.Errorf("failed to create set: %w", err)
 	}
 
@@ -71,8 +76,13 @@ func (m *NFTManager) GetOrCreateSet(table *nftables.Table, setName string, ipv4 
 // GetOrCreateHashSet gets or creates a hash set with timeout support (O(1) lookup)
 // v1.33.0: Used for manual/auto-detect bans where CIDR aggregation is not needed
 func (m *NFTManager) GetOrCreateHashSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	// Try to get existing set
-	sets, err := m.conn.GetSets(table)
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sets: %w", err)
 	}
@@ -114,8 +124,13 @@ func (m *NFTManager) GetOrCreateHashSet(table *nftables.Table, setName string, i
 
 // GetOrCreateIntervalSet gets or creates an interval set for CIDR ranges
 func (m *NFTManager) GetOrCreateIntervalSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
 	// Try to get existing set
-	sets, err := m.conn.GetSets(table)
+	sets, err := conn.GetSets(table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sets: %w", err)
 	}
@@ -160,7 +175,12 @@ func (m *NFTManager) GetOrCreateIntervalSet(table *nftables.Table, setName strin
 
 // GetSetElements retrieves all elements from a set
 func (m *NFTManager) GetSetElements(set *nftables.Set) ([]string, error) {
-	elements, err := m.conn.GetSetElements(set)
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
+	elements, err := conn.GetSetElements(set)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get set elements: %w", err)
 	}
@@ -204,7 +224,12 @@ func decrementIP(ip net.IP) net.IP {
 // strings (WHITELIST_DURABLE_APPLY_RECONCILE Step 4). nftables stores an interval
 // [a,b] as a start element (a) + an interval-end marker (b+1, exclusive).
 func (m *NFTManager) GetSetElementsRanges(set *nftables.Set) ([]string, error) {
-	elements, err := m.conn.GetSetElements(set)
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return nil, errTx
+	}
+	elements, err := conn.GetSetElements(set)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get set elements: %w", err)
 	}
@@ -328,14 +353,24 @@ func (m *NFTManager) deleteSetElementsCLI(set *nftables.Set, ips []string) error
 
 // FlushSet removes all elements from a set
 func (m *NFTManager) FlushSet(set *nftables.Set) error {
-	m.conn.FlushSet(set)
-	return m.conn.Flush()
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return errTx
+	}
+	conn.FlushSet(set)
+	return conn.Flush()
 }
 
 // GetSetCount returns the number of elements in a set
 // For interval sets, filters out IntervalEnd markers to return the true entry count
 func (m *NFTManager) GetSetCount(set *nftables.Set) (int, error) {
-	elements, err := m.conn.GetSetElements(set)
+	// INV-NFT-TX-01: private connection, owned for this transaction only.
+	conn, errTx := m.txConn()
+	if errTx != nil {
+		return 0, errTx
+	}
+	elements, err := conn.GetSetElements(set)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get set elements: %w", err)
 	}

@@ -481,7 +481,15 @@ func (d *Daemon) initWatchdog() error {
 // are DEGRADABLE — a failure returns an error that Run() treats as non-fatal
 // (async operations disabled) and the lifecycle marks the component degraded.
 func (d *Daemon) initOpQueue() error {
-	// Get NFTManager from backend for shared netlink connection
+	// Get the backend's NFTManager. v1.229.0: the old comment here said
+	// "for shared netlink connection" — that was FALSE and was the premise that
+	// designed in FSA-CONC-01. The manager never held a lasting netlink socket
+	// (nftables.New without AsLasting dials per Flush); what was actually shared
+	// was the Conn's message buffer, which let one writer's Flush commit another
+	// writer's queued work and return nil to the owner. The manager now holds NO
+	// connection: every mutating method owns a private per-transaction Conn
+	// (INV-NFT-TX-01, internal/setsync). Sharing the MANAGER is fine — it
+	// carries only the synchronized table cache.
 	d.lifecycle.BeginPhase(PhaseNFTManagerInit, "nftbackend")
 	nft := d.backend.GetNFTManager()
 	if nft == nil {
