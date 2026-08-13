@@ -38,7 +38,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
 	"strings"
 	"testing"
 )
@@ -67,12 +67,29 @@ func typeReachesConn(e ast.Expr) bool {
 }
 
 func TestMutatingMethodsOwnPrivateTransactionConn(t *testing.T) {
+	// parser.ParseDir is deprecated (SA1019); enumerate and parse the
+	// production files directly. Build-tag association is irrelevant here: the
+	// invariant must hold for EVERY production file in the package regardless
+	// of tags.
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
+	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatalf("parse package: %v", err)
+		t.Fatalf("read package dir: %v", err)
+	}
+	var files []*ast.File
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, perr := parser.ParseFile(fset, name, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", name, perr)
+		}
+		files = append(files, f)
+	}
+	if len(files) == 0 {
+		t.Fatal("no production files parsed — the guard would be vacuous")
 	}
 
 	var violations []string
@@ -80,8 +97,8 @@ func TestMutatingMethodsOwnPrivateTransactionConn(t *testing.T) {
 		violations = append(violations, fmt.Sprintf("%s: [%s] %s", fset.Position(pos), rule, msg))
 	}
 
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
+	{
+		for _, file := range files {
 			// ---- G1: no struct field may hold a Conn ------------------------
 			ast.Inspect(file, func(n ast.Node) bool {
 				st, ok := n.(*ast.StructType)
