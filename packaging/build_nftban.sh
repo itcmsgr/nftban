@@ -85,6 +85,24 @@ PROV_YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3
 #   verify sha, FAIL-CLOSED if absent — NEVER curl/wget. ONLINE: fetch_verified.
 provision_yq() {
     local dest="$1" src
+    # CACHE-FIRST (v1.229 UNINSTALL-PR3 CI hardening). A live GitHub-release
+    # download sat on the critical path of EVERY package build, so an upstream
+    # 503 failed required CI for reasons unrelated to the change under test.
+    #   NETWORK_TRANSIENT != RANDOM_REQUIRED_CI_FAILURE
+    # Any locally present copy whose sha256 matches the pin is authoritative and
+    # is used in ONLINE mode too — CI restores one from cache, so the network is
+    # only touched on a cache miss. A candidate that fails the checksum is
+    # IGNORED, never used and never "repaired":
+    #   DOWNLOAD_RC0 != ARTIFACT_TRUST
+    for src in "${NFTBAN_OFFLINE_YQ:-}" "${PROJECT_ROOT}/offline/yq_linux_amd64"; do
+        [[ -n "$src" && -f "$src" ]] || continue
+        if echo "${PROV_YQ_SHA256}  ${src}" | sha256sum -c - >/dev/null 2>&1; then
+            install -m 0755 "$src" "$dest"
+            log_success "yq v${PROV_YQ_VERSION}: SHA-pinned local copy used (no network) — ${src}"
+            return 0
+        fi
+        log_warn "yq: local candidate ${src} FAILED the pinned sha256 — ignoring it"
+    done
     if [[ "$PROV_OFFLINE" == "1" ]]; then
         src="${NFTBAN_OFFLINE_YQ:-${PROJECT_ROOT}/offline/yq_linux_amd64}"
         if [[ ! -f "$src" ]]; then
@@ -100,9 +118,21 @@ provision_yq() {
     fi
     # shellcheck source=packaging/lib/fetch_verified.sh
     . "${SCRIPT_DIR}/lib/fetch_verified.sh"
-    fetch_verified \
+    if ! fetch_verified \
         "https://github.com/mikefarah/yq/releases/download/v${PROV_YQ_VERSION}/yq_linux_amd64" \
-        "${PROV_YQ_SHA256}" "$dest" || return 1
+        "${PROV_YQ_SHA256}" "$dest"; then
+        log_error "yq v${PROV_YQ_VERSION}: no authoritative source succeeded."
+        log_error "  local candidates absent or checksum-mismatched, and the pinned"
+        log_error "  release download failed after bounded retries. FAIL-CLOSED."
+        return 1
+    fi
+    # Seed the cache location so the next build (and CI cache) needs no network.
+    # Best-effort: a read-only or absent tree must not fail a successful build.
+    if [[ -n "${PROJECT_ROOT:-}" && -w "${PROJECT_ROOT}" ]]; then
+        mkdir -p "${PROJECT_ROOT}/offline" 2>/dev/null &&
+            install -m 0755 "$dest" "${PROJECT_ROOT}/offline/yq_linux_amd64" 2>/dev/null &&
+            log_info "yq: seeded ${PROJECT_ROOT}/offline/yq_linux_amd64 for reuse" || true
+    fi
     return 0
 }
 

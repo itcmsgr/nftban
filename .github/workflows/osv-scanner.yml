@@ -54,49 +54,105 @@ jobs:
           # newer toolchain; local would block that auto-fetch.
           go-version: '1.25.12'
 
+      # v1.229 CI hardening: the scanner binary download sat on the critical path
+      # of this required job. An upstream releases 503 meant the tool was never
+      # provisioned, nothing produced a SARIF, and the failure then surfaced from
+      # the UPLOAD step as "Path does not exist" — attributing a provisioning
+      # outage to a path bug.  NETWORK_TRANSIENT != RANDOM_REQUIRED_CI_FAILURE
+      - name: Restore pinned OSV-Scanner (cache)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: osv-scanner
+          key: osv-scanner-2.3.3-linux-amd64
+
       - name: Install OSV-Scanner
+        id: install_scanner
         run: |
+          set -uo pipefail
+          # SCANNER_PROVISIONED is the single fact every later step keys on, so a
+          # provisioning outage is never mistaken for a scan result.
+          if [ -x osv-scanner ] && ./osv-scanner --version >/dev/null 2>&1; then
+            echo "cached osv-scanner is usable: $(./osv-scanner --version 2>&1 | head -1)"
+            echo "provisioned=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # v1.161: retry/fail-fast hardening (mirrors v1.157 fetch_verified policy) —
-          # transient github.com blips (HTTP 504) no longer hard-fail the scan.
-          curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+          # transient github.com blips (HTTP 5xx) no longer hard-fail on first try.
+          if curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
                --connect-timeout 10 --max-time 120 -sS \
-               https://github.com/google/osv-scanner/releases/download/v2.3.3/osv-scanner_linux_amd64 -o osv-scanner
-          chmod +x osv-scanner
-          ./osv-scanner --version
+               https://github.com/google/osv-scanner/releases/download/v2.3.3/osv-scanner_linux_amd64 -o osv-scanner; then
+            chmod +x osv-scanner
+            ./osv-scanner --version
+            echo "provisioned=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -f osv-scanner
+            echo "provisioned=false" >> "$GITHUB_OUTPUT"
+            echo "::error::SCANNER_NOT_PROVISIONED — osv-scanner v2.3.3 could not be downloaded after bounded retries. This is a provisioning failure, NOT a scan result and NOT a SARIF path problem."
+            exit 1
+          fi
 
       - name: Run OSV-Scanner
+        id: scan
+        if: steps.install_scanner.outputs.provisioned == 'true'
         run: |
           # Scan go.mod in lockfile mode
           # Config: osv-scanner.toml suppresses stdlib CVEs (patched by Go toolchain)
           # Exit 0 = clean, Exit 1 = vulnerabilities found, Exit 128 = scan error
           ./osv-scanner scan --config=osv-scanner.toml --lockfile=go.mod \
             --format=sarif --output=osv-results.sarif; OSV_EXIT=$?
+          echo "scanner_ran=true" >> "$GITHUB_OUTPUT"
+          echo "osv_exit=${OSV_EXIT}" >> "$GITHUB_OUTPUT"
           if [[ "$OSV_EXIT" -eq 128 ]]; then
-            echo "::warning::OSV-Scanner encountered an error (exit 128) — check skipped"
+            # SCANNER_FAILURE. Previously a warning that let the job pass: an
+            # errored scan then read as "no vulnerabilities found", which is the
+            # same defect class as an unobserved state reported as a safe one.
+            echo "::error::SCANNER_FAILURE — OSV-Scanner exited 128 (scan error). No vulnerability conclusion can be drawn from this run."
+            exit 1
           elif [[ "$OSV_EXIT" -ne 0 ]]; then
             echo "::error::OSV-Scanner found vulnerabilities in Go dependencies"
             exit 1
           fi
 
+      # Runs even when an earlier step failed, so the SARIF contract is decided
+      # HERE with attribution, rather than surfacing later as a path error.
+      #   SCANNER_NOT_PROVISIONED != SCANNER_FAILED != NO_FINDINGS != PATH_WRONG
+      # Not continue-on-error: a genuine provisioning/scan failure still fails
+      # the job — it is simply reported as what it is.
       - name: Check SARIF output
+        id: sarif
+        if: always()
         run: |
-          if [ -f osv-results.sarif ]; then
-            echo "SARIF file created successfully"
-            cat osv-results.sarif | head -50
-          else
-            echo "Creating empty SARIF for upload"
-            cat > osv-results.sarif << 'EOF'
-          {
-            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
-            "version": "2.1.0",
-            "runs": [{"tool": {"driver": {"name": "osv-scanner", "version": "2.3.3"}}, "results": []}]
-          }
-          EOF
+          if [ "${{ steps.install_scanner.outputs.provisioned }}" != "true" ]; then
+            echo "PROVISIONING_FAILURE — the scanner was never provisioned, so no scan ran."
+            echo "Refusing to synthesise an empty SARIF: an empty result set would"
+            echo "publish 'no vulnerabilities found' for a scan that never happened."
+            echo "sarif_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          if [ "${{ steps.scan.outputs.scanner_ran }}" != "true" ]; then
+            echo "SCANNER_FAILURE — the scanner was provisioned but did not complete a scan."
+            echo "sarif_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -f osv-results.sarif ]; then
+            echo "SARIF produced by a scan that actually ran (osv exit ${{ steps.scan.outputs.osv_exit }})"
+            echo "sarif_ready=true" >> "$GITHUB_OUTPUT"
+            head -50 osv-results.sarif
+            exit 0
+          fi
+          # The scanner ran successfully and was told --output=osv-results.sarif,
+          # so the file MUST exist. Its absence is a broken producer/consumer
+          # contract, not a clean result — and synthesising an empty SARIF here
+          # would publish "no findings" for output we never actually saw.
+          echo "::error::ARTIFACT_CONTRACT_FAILURE — osv-scanner exited ${{ steps.scan.outputs.osv_exit }} but produced no osv-results.sarif. The output contract was violated; no vulnerability conclusion can be drawn."
+          echo "sarif_ready=false" >> "$GITHUB_OUTPUT"
+          exit 1
 
+      # Uploads only a SARIF that actually represents a scan. Without this guard
+      # the uploader failed on a missing path and MASKED the real cause.
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
-        if: always()
+        if: always() && steps.sarif.outputs.sarif_ready == 'true'
         with:
           sarif_file: osv-results.sarif
           category: osv-scanner
