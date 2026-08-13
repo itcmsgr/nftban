@@ -298,7 +298,12 @@ if ! installed; then skip "R7 needs an installed package"; else
       if [[ -f "$_f" ]]; then
           ok "D3: ${_l}.d/99-manual.conf survives erase under its LOADED name"
       else
-          _side="$(find "/etc/nftban/${_l}.d" -maxdepth 1 -name '99-manual.conf.*' 2>/dev/null | head -1)"
+          # `|| true` is load-bearing: find exits non-zero when the directory is
+          # absent, and under `set -Eeuo pipefail` the ASSIGNMENT inherits that
+          # status and aborts the whole matrix mid-case — reported (correctly) as
+          # HARNESS_FAILURE, but the arm never runs. A missing directory is a
+          # legitimate observation here, not a harness error.
+          _side="$(find "/etc/nftban/${_l}.d" -maxdepth 1 -name '99-manual.conf.*' 2>/dev/null | head -1 || true)"
           if [[ -n "$_side" ]]; then
               bad "D3: operator config survives only as ${_side} — present but INVISIBLE to the *.conf loader"
           else
@@ -307,9 +312,22 @@ if ! installed; then skip "R7 needs an installed package"; else
       fi
   done
   # No package-manager sidecar may be produced for operator state at all.
-  _sides="$(find /etc/nftban -name '*.rpmsave' -o -name '*.rpmnew' 2>/dev/null | head -5)"
-  [[ -z "$_sides" ]] && ok "D3: erase produced no .rpmsave/.rpmnew under /etc/nftban" \
-                     || bad "D3: package manager still owns config — sidecars: ${_sides//$'\n'/ }"
+  # SCOPE OF THIS ASSERTION. D3's contract is that OPERATOR STATE must not be
+  # package-owned. It does NOT forbid rpm's normal handling of genuinely
+  # package-owned config: /etc/nftban/nftables.conf is %config(noreplace)
+  # (build_nftban.sh) — a rendered template the package replaces on reinstall —
+  # so a .rpmsave for it on erase is CORRECT rpm behaviour, not a D3 violation.
+  # A blanket "no .rpmsave anywhere" arm asserted something D3 never claimed and
+  # failed on standard packaging semantics. Narrowed to the operator-state dirs,
+  # where a sidecar WOULD prove the package owns operator state.
+  _opsides="$(find /etc/nftban/whitelist.d /etc/nftban/blacklist.d \
+                   \( -name '*.rpmsave' -o -name '*.rpmnew' \) 2>/dev/null | head -5 || true)"
+  [[ -z "$_opsides" ]] && ok "D3: no .rpmsave/.rpmnew in the operator-state dirs (whitelist.d/blacklist.d)" \
+                       || bad "D3: package manager still owns OPERATOR state — sidecars: ${_opsides//$'\n'/ }"
+  # Package-owned config sidecars are reported, never failed: visibility without
+  # a false verdict.
+  _pkgsides="$(find /etc/nftban -maxdepth 1 \( -name '*.rpmsave' -o -name '*.rpmnew' \) 2>/dev/null | head -5 || true)"
+  [[ -n "$_pkgsides" ]] && echo "[INFO] $CASE  package-owned config sidecars (expected rpm semantics): ${_pkgsides//$'\n'/ }"
 
   # ---- D5 PACKAGE-NATIVE PROOF: disclosure, and no unobserved claim --------
   grep -qF 'no longer protects this host' "$o" \
