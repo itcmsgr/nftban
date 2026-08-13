@@ -25,7 +25,10 @@ PRIOR="${2:-}"
 #
 # Those are DIFFERENT verdicts on purpose: silently dropping a case and being
 # unable to run one must not look alike.
-CASES="${NFTBAN_RPM_CASES:-R1 R2 R3 R4 R7 R8 R11}"
+# ONE canonical case list: the default scope AND the scope validator below both
+# derive from it, so a case added/renamed here cannot drift from either.
+ALL_CASES="R1 R2 R3 R4 R7 R8 R11"
+CASES="${NFTBAN_RPM_CASES:-$ALL_CASES}"
 want() { [[ " $CASES " == *" $1 "* ]]; }
 PKG=nftban-core
 STATE_DIR=/var/lib/nftban/state
@@ -132,8 +135,20 @@ assert_healthy_install(){ # outfile expected_version
     eq_vm active "$(unit_state nftband.service)" "nftband.service"
     eq_vm active "$(unit_state nftban-maintenance.timer)" "critical timer"
     eq_vm present "$(fw)" "nftables table ip nftban"
-    local failed; failed="$(systemctl list-units --state=failed --no-legend 2>/dev/null | grep -c nftban || true)"
-    eq 0 "${failed:-0}" "failed NFTBan units"
+    # A8: this probe was the one survivor of the BLOCKED_ENVIRONMENT conversion —
+    # the three lines above use eq_vm, this used bare `eq`. Four traps stacked:
+    # a missing systemctl yields empty output, 2>/dev/null hides the very failure
+    # that is the subject, `grep -c` returns 0 for no-match which IS the pass
+    # value, and it was not VM-scoped. In an environment without systemd it
+    # PASSED having observed nothing, and counted into ASSERTIONS_PASS.
+    local failed
+    if ! command -v systemctl >/dev/null 2>&1; then
+        failed="$BLOCKED_TOKEN"
+    else
+        failed="$(systemctl list-units --state=failed --no-legend 2>/dev/null | grep -c nftban || true)"
+        [[ -n "$failed" ]] || failed=0
+    fi
+    eq_vm 0 "${failed}" "failed NFTBan units"
 }
 
 CAND_VER="$(rpm -qp --qf '%{VERSION}' "$CAND" 2>/dev/null)"
@@ -439,6 +454,27 @@ echo "NFTBAN_RPM_MATRIX_CASES_BLOCKED=$blocked"
 echo "NFTBAN_RPM_MATRIX_ENVIRONMENT=STOCK_ENFORCING_$(getenforce 2>/dev/null || echo UNKNOWN)"
 VERDICT_EMITTED=1
 # Taxonomy: PASS=0 · TEST_FAILURE=1 · INCOMPLETE=2 · HARNESS_FAILURE=3
+# A9 ASSERTION FLOOR. NOT_IN_SCOPE is correctly non-blocking, but nothing
+# required that ANY case actually ran. A scope token matching no known case —
+# a typo, or a case renamed while the workflow still names the old id — left
+# every counter at zero and reached VERDICT=PASS having asserted NOTHING.
+#   ZERO ASSERTIONS IS NOT A PASS
+# It is a harness failure, not a product verdict: the run could not have
+# observed the product either way.
+if [[ "$P" -eq 0 && "$F" -eq 0 ]]; then
+  echo "NFTBAN_RPM_MATRIX_VERDICT=HARNESS_FAILURE"
+  echo "NFTBAN_RPM_MATRIX_HARNESS_NOTE=zero assertions executed (scope='${CASES}'); a requested case may not exist"
+  VERDICT_EMITTED=1
+  exit 3
+fi
+# Every requested token must resolve to a real case, or the scope is a typo.
+for _want in $CASES; do
+  if [[ " $ALL_CASES " != *" $_want "* ]]; then
+    echo "NFTBAN_RPM_MATRIX_VERDICT=HARNESS_FAILURE"
+    echo "NFTBAN_RPM_MATRIX_HARNESS_NOTE=requested case '${_want}' is not a known case"
+    VERDICT_EMITTED=1; exit 3
+  fi
+done
 if [[ "$unknown" -gt 0 ]]; then
   echo "NFTBAN_RPM_MATRIX_VERDICT=HARNESS_FAILURE"
   echo "NFTBAN_RPM_MATRIX_HARNESS_NOTE=${unknown} case(s) carried an unrecognised verdict"
