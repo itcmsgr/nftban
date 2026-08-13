@@ -1098,7 +1098,8 @@ case_L7() {
         if [[ -f "$_f" ]]; then
             assert 0 "D3: ${_l}.d/99-manual.conf survives remove under its LOADED name"
         else
-            _side="$(find "/etc/nftban/${_l}.d" -maxdepth 1 -name '99-manual.conf.*' 2>/dev/null | head -1)"
+            # See the RPM twin: an absent directory must not abort the matrix.
+            _side="$(find "/etc/nftban/${_l}.d" -maxdepth 1 -name '99-manual.conf.*' 2>/dev/null | head -1 || true)"
             if [[ -n "$_side" ]]; then
                 assert 1 "D3: operator config survives only as ${_side} — present but INVISIBLE to the *.conf loader"
             else
