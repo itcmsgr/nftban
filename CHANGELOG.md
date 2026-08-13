@@ -11,6 +11,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.0] - 2026-08-13 — a transaction nobody owns is a transaction nobody commits
+
+`NFTManager` shared one `*nftables.Conn` across every writer in the daemon. A
+`Conn` buffers queued messages and `Flush()` transmits the whole buffer, so two
+writers did not have two transactions — they had one, and whichever flushed
+first committed the other's work.
+
+> Queued operations must be committed by the code that queued them, and by
+> nothing else.
+
+Reproduced on v1.228.12 before the fix. Writer A queued a table, writer B queued
+a table, then each committed. Writer A's single batch reached the kernel as
+`BATCH_BEGIN, NEWTABLE, NEWTABLE, BATCH_END` — both writers' work inside one
+transaction. Writer B then transmitted nothing at all and returned success. The
+library states that half plainly in its own source: *"Messages were already
+programmed, returning nil."*
+
+The daemon reaches that shared connection from `Backend.Ban` under one lock, from
+OpQueue's worker goroutines under none, and from eight IPC handler call sites in
+per-connection goroutines. A second defect sat on the same object: the table
+cache was an unsynchronised map, read and written from those same goroutines,
+confirmed by the race detector through the exported methods.
+
+The comment explaining why the connection was shared said *"for shared netlink
+connection"*. That was the premise, and it was false: the connection was never
+lasting, so the library already dialled a fresh socket inside every flush and
+closed it after. Nothing was being economised. What was shared was the defective
+buffer.
+
+So the fix removes the shared object rather than locking it. `NFTManager` no
+longer holds a connection. Each mutating method obtains a private one and owns
+it for exactly one queue-then-commit cycle, which also disposes of a quieter
+problem: a method that failed after queueing had no way to discard its work —
+the library offers no such call, and flushing would have applied the partial
+transaction — so those messages waited in the buffer and rode into the next
+writer's commit. A private connection takes its residue with it.
+
+A mutex was considered and rejected. A lock around the commit does not stop a
+second writer appending to the buffer beforehand, and a lock around the whole
+transaction would serialise every ban behind every bulk set replacement.
+Ownership is now a property of the object graph rather than of lock discipline.
+The atomic set replacement credited in v1.228.x becomes atomic by construction:
+its batch can no longer be contaminated or committed early by another writer.
+The table cache keeps its own small lock, which guards the map and is never held
+across a commit.
+
+Guarded by two independent regressions, each verified by re-introducing the
+defect and confirming the guard fails: one behavioural, one structural. The
+structural guard parses the package and rejects any connection held on a struct
+or at package level, and any commit on a connection the method did not acquire
+itself — the case the behavioural guard provably misses. Two further tests pin
+the contract and the library semantics and are labelled as pins, because
+inversion showed they do not fail on re-introduction.
+
+Also included: release-process corrections found by the v1.228.12 post-release
+review. A dry run could delete a published release's assets, because the cleanup
+step was unguarded and resolves its target from the `VERSION` file; the
+v1.228.12 dry run was harmless only because that release did not exist yet.
+A lifecycle probe reported "no failed units" when `systemctl` was absent, and a
+mistyped case selector produced a passing verdict with no assertions executed.
+
+Scope: in-process transaction ownership. Cross-process serialisation of nftables
+transactions is not addressed here and remains open.
+
+---
+
 ## [v1.228.12] - 2026-08-13
 
 Release reconciliation: packages the merged, previously untagged commits on `main`.
