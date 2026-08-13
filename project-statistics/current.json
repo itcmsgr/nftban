@@ -1,6 +1,6 @@
 {
-  "snapshot_at": "2026-08-12T04:59:26Z",
-  "snapshot_date": "2026-08-12",
+  "snapshot_at": "2026-08-13T05:02:17Z",
+  "snapshot_date": "2026-08-13",
   "disclosure": "GitHub Release asset download requests and repository traffic counters. These INCLUDE NFTBan-operated infrastructure: an ~11-host fleet (dns1-4, srv1-4, monitor, lab2, lab4) self-updates by downloading DEB/RPM assets from GitHub Releases, and package-native validation downloads official assets too. GitHub exposes aggregate counts only, with no downloader identity or IP, so NFTBan-owned traffic cannot be identified or removed and historical counts are NOT retroactively adjusted. Do not read raw package downloads or clones as purely external adoption, or as unique users, installations, active systems, mirrors, CI jobs, or fleet size. Unique visitors are substantially less fleet-contaminated (automated hosts do not browse the repository web UI); non-release-day package-download deltas are the cleanest external-interest signal. A typical release-day internal baseline is approximately 11 fleet hosts plus validation downloads -- this is an ESTIMATE and is never subtracted from the reported counts. Future mirror routing of fleet updates can reduce this contamination prospectively (see OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE).",
   "fleet_contamination": {
     "raw_counts_include_nftban_infrastructure": true,
@@ -28,16 +28,16 @@
     "historical_counts_retroactively_adjusted": false,
     "fabricated_fleet_excluded_metric": false
   },
-  "package_downloads": 7424,
-  "package_delta": 39,
-  "deb_downloads": 5030,
+  "package_downloads": 7429,
+  "package_delta": 5,
+  "deb_downloads": 5035,
   "rpm_downloads": 2394,
   "standalone_binary_downloads": 774,
   "metadata_downloads": 3839,
-  "all_release_asset_downloads": 12450,
+  "all_release_asset_downloads": 12455,
   "per_platform": {
     "Ubuntu 22.04": 849,
-    "Ubuntu 24.04": 2334,
+    "Ubuntu 24.04": 2339,
     "Ubuntu 26.04": 289,
     "Debian 12": 787,
     "Debian 13": 771,
@@ -50,12 +50,12 @@
   "assets_scanned": 6562,
   "stars": 7,
   "forks": 0,
-  "open_issues": 11,
+  "open_issues": 12,
   "rolling_14d": {
-    "clones": 10388,
-    "unique_cloners": 269,
-    "views": 301,
-    "unique_visitors": 133
+    "clones": 10362,
+    "unique_cloners": 264,
+    "views": 246,
+    "unique_visitors": 80
   },
   "traffic_auth": "PASS",
   "reconciles": true
