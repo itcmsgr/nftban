@@ -137,6 +137,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/login"]="0750|nftban|nftban|Login monitor state data"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/panels"]="0750|nftban|nftban|Panel integration state"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/portscan"]="0750|nftban|nftban|Port scan detection state"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/portscan/log-cursors"]="0750|nftban|nftban|PortScan read cursors (v1.229.x): per-source position state so a cycle consumes only records it has not already processed. File sources store inode:offset via the canonical incremental reader; the journald source stores its last COMMITTED journal cursor, written only after a batch has been processed."
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/recorder"]="0750|nftban|nftban|Flight recorder events and snapshots"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/staging"]="0750|nftban|nftban|Feed staging area (temporary download/validation)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/state"]="0750|nftban|nftban|Critical runtime state files"
