@@ -67,14 +67,51 @@ func newExemptResolver(configDir, scannerFile string) *exemptResolver {
 	}
 }
 
+// canonPrefix returns p in the SAME canonical identity form the exact keys use.
+// An IPv4-mapped IPv6 prefix ("::ffff:203.0.113.0/120") is rewritten to its IPv4
+// equivalent ("203.0.113.0/24") so that a canonicalized (unmapped) lookup address
+// compares correctly. Without this, canonicalizing only the lookup side would move
+// the mismatch instead of removing it. Non-mapped prefixes are returned unchanged.
+func canonPrefix(p netip.Prefix) netip.Prefix {
+	if p.Addr().Is4In6() && p.Bits() >= 96 {
+		if c := netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96); c.IsValid() {
+			return c
+		}
+	}
+	return p
+}
+
 // IsExempt reports whether ipStr (a single IP literal) must never be banned, plus a
 // short reason. Returns false for non-single-IP inputs (CIDR ban requests are not the
-// admin/session class this guard protects). Range-aware, v4+v6.
+// admin/session class this guard protects). Range-aware, v4+v6, and IPv4-mapped-IPv6
+// aware: the input is canonicalized before any membership comparison.
 func (r *exemptResolver) IsExempt(ipStr string) (bool, string) {
 	addr, err := netip.ParseAddr(strings.TrimSpace(ipStr))
 	if err != nil {
 		return false, ""
 	}
+	// CANONICAL IDENTITY BEFORE THE SECURITY DECISION.
+	//
+	// The store canonicalizes every exact key with Unmap() (see :addExact); the
+	// lookup did not. An IPv4-mapped IPv6 form of an exempt address therefore
+	// missed BOTH membership paths and the ban proceeded:
+	//
+	//   stored key                 "203.0.113.5"
+	//   addr.String()              "::ffff:203.0.113.5"  -> exact MISS
+	//   v4prefix.Contains(mapped)   false (family mismatch) -> cidr MISS
+	//
+	// That is a never-ban BYPASS at the authority itself, not a downstream
+	// suppression gap: Ban(), IsExempt() and the AddElement guard all resolve
+	// through this one function, so all three inherited the miss.
+	//
+	// Canonicalizing here — once, at the parse boundary, before any comparison —
+	// fixes every consumer rather than patching each membership path. Prefixes are
+	// canonicalized to the same form at store time (see canonPrefix), because
+	// comparing a canonical address against a non-canonical prefix would simply
+	// move the mismatch: a stored "::ffff:203.0.113.0/120" Contains() the mapped
+	// form but NOT the unmapped one, so unmapping only here would have broken a
+	// case that previously worked.
+	addr = addr.Unmap()
 	r.maybeRefresh()
 
 	r.mu.RLock()
@@ -121,7 +158,7 @@ func (r *exemptResolver) Refresh() {
 		}
 		if isCIDR || strings.Contains(value, "/") {
 			if p, err := netip.ParsePrefix(value); err == nil {
-				prefixes = append(prefixes, p)
+				prefixes = append(prefixes, canonPrefix(p))
 			}
 			return
 		}
@@ -156,7 +193,7 @@ func (r *exemptResolver) Refresh() {
 		for i := range sys.LoopbackCIDRs {
 			c := sys.LoopbackCIDRs[i]
 			if p, err := netip.ParsePrefix(c.String()); err == nil {
-				prefixes = append(prefixes, p)
+				prefixes = append(prefixes, canonPrefix(p))
 			}
 		}
 	}
