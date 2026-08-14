@@ -134,6 +134,16 @@ jobs:
           chmod +x cli/lib/nftban/tests/lifecycle_matrix_observation_semantics_v1229_test.sh
           bash cli/lib/nftban/tests/lifecycle_matrix_observation_semantics_v1229_test.sh
 
+      # PORTSCAN-CURSOR (v1.229.x) — replay elimination. Hermetic: drives the
+      # shipped cursor helpers and the wired journald pipeline with a stubbed
+      # journalctl; no root, no live logs. Two arms exist specifically because
+      # the implementation's own bugs were in the WIRING, not the helpers.
+      - name: PortScan cursor replay elimination (v1.229.x)
+        run: |
+          echo "=== Executing: portscan_cursor_replay_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh
+          bash cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh
+
       - name: Uninstall firewall-ownership message (UNINSTALL-PR2 D5)
         run: |
           echo "=== Executing: uninstall_firewall_ownership_message_v225_test.sh ==="

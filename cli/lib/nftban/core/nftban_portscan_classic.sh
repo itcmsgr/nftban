@@ -45,6 +45,12 @@ source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
 source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
+# v1.229.x PORTSCAN-CURSOR: canonical incremental file reader (inode:offset,
+# rotation/truncation, forward drain). Reused, never reimplemented — the same
+# authority BotScan consumes. Guarded: absence degrades to the legacy bounded
+# read, never to silence.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_http_logs.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -486,6 +492,121 @@ _nftban_portscan_extract_timestamp() {
 }
 
 # Process log entries and detect portscans
+# =============================================================================
+# v1.229.x PORTSCAN-CURSOR — replay elimination
+# =============================================================================
+# The window readers below used to re-read the SAME tail every cycle with no
+# record of what had already been consumed, so each cycle re-emitted events it
+# had emitted before. Measured on srv3: 4.6x window amplification (5000 lines ->
+# 1079 unique), one line re-emitted 24x, portscan-events.log growing ~16 lines/s.
+#
+# DETECTION IS UNCHANGED. Thresholds read _IP_PORTS / _IP_TARGETS, and both
+# deduplicate on insert, so replay never contributed to a threshold. The only
+# timestamp-sensitive branch (strobe, duration < 10) was HARMED by replay, which
+# appended a fresh cycle-time per replayed line and stretched the duration.
+#
+# TWO SOURCES, TWO EXISTING AUTHORITIES, NEITHER INVENTED HERE:
+#   file     -> nftban_http_read_incremental (lib/nftban_http_logs.sh)
+#   journald -> --after-cursor / --show-cursor (the LoginMon model,
+#               core/nftban_login_classic.sh)
+#
+# ⚠ COMMIT SEMANTICS DIFFER BETWEEN THE TWO — stated plainly rather than
+# papered over:
+#
+#   FILE     = AT-MOST-ONCE. nftban_http_read_incremental persists the new
+#              offset immediately after writing bytes to stdout and before the
+#              consumer has finished reading them. PortScan inherits that
+#              established behaviour unchanged; it is what BotScan already
+#              relies on. A crash mid-batch loses that batch.
+#   JOURNALD = AT-LEAST-ONCE. This module owns that code, so the cursor is
+#              committed ONLY after the batch has passed through the processing
+#              loop. Advancing first would trade replay for permanently skipped
+#              records, which is the worse failure.
+: "${PORTSCAN_CLASSIC_CURSOR_ENABLED:=true}"
+: "${PORTSCAN_CLASSIC_CURSOR_DIR:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/portscan/log-cursors}"
+: "${PORTSCAN_CLASSIC_CURSOR_MAX_BYTES:=1048576}"
+
+# Emit only records not yet consumed from a FILE source.
+# Degradation ladder (a broken cursor must never look like "nothing happened"):
+#   cursor disabled / reader absent -> legacy bounded read, silent (by design)
+#   state dir unwritable            -> legacy bounded read + WARN
+_nftban_portscan_classic_read_file_source() {
+    local f="$1"
+    if [[ "${PORTSCAN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]] \
+       && type -t nftban_http_read_incremental &>/dev/null; then
+        if mkdir -p "$PORTSCAN_CLASSIC_CURSOR_DIR" 2>/dev/null; then
+            NFTBAN_HTTP_LOG_OFFSET_DIR="$PORTSCAN_CLASSIC_CURSOR_DIR" \
+            NFTBAN_HTTP_LOG_READ_FORWARD=true \
+            NFTBAN_HTTP_LOG_MAX_BYTES="$PORTSCAN_CLASSIC_CURSOR_MAX_BYTES" \
+            nftban_http_read_incremental "$f"
+            return 0
+        fi
+        _nftban_portscan_classic_log "WARN" \
+            "cursor state dir not writable (${PORTSCAN_CLASSIC_CURSOR_DIR}) — falling back to bounded re-read; replay suppression INACTIVE"
+    fi
+    { tail -5000 "$f" 2>/dev/null || true; }
+}
+
+# Fetch a journald batch into $1, echoing the batch's end cursor on stdout.
+# The cursor is NOT persisted here — the caller commits it only after the batch
+# has been processed.
+_nftban_portscan_classic_journal_fetch() {
+    local out="$1" window="$2"
+    local cursor_file="${PORTSCAN_CLASSIC_CURSOR_DIR}/journal.cursor"
+    local -a jcmd=(journalctl -k --no-pager --show-cursor)
+    local resumed=false
+
+    if [[ "${PORTSCAN_CLASSIC_CURSOR_ENABLED:-true}" == "true" && -r "$cursor_file" ]]; then
+        local saved
+        saved=$(cat "$cursor_file" 2>/dev/null) || saved=""
+        if [[ -n "$saved" ]]; then
+            jcmd+=(--after-cursor="$saved")
+            resumed=true
+        else
+            _nftban_portscan_classic_log "WARN" \
+                "journal cursor file present but unreadable/empty — bounded re-read this cycle; replay suppression INACTIVE"
+        fi
+    fi
+    # BOOTSTRAP (no cursor yet) is not a failure: bound by the time window
+    # exactly as before, and this cycle establishes the cursor.
+    [[ "$resumed" == "true" ]] || jcmd+=(--since "${window} seconds ago")
+
+    "${jcmd[@]}" >"$out" 2>/dev/null || true
+    # journalctl prints "-- cursor: <c>" as the final line under --show-cursor.
+    sed -n 's/^-- cursor: //p' "$out" 2>/dev/null | tail -1
+}
+
+# Emit the journald records to process this cycle.
+#   batch file present -> the cursor-resumed batch already fetched
+#   batch file absent   -> legacy bounded read (degraded: replays, never blind)
+_nftban_portscan_classic_journal_stream() {
+    local batch="$1" window="$2"
+    if [[ -n "$batch" && -r "$batch" ]]; then
+        cat "$batch" 2>/dev/null || true
+        return 0
+    fi
+    { journalctl -k --since "${window} seconds ago" --no-pager 2>/dev/null || true; }
+}
+
+# Commit a journald cursor atomically. Called ONLY after successful processing.
+_nftban_portscan_classic_journal_commit() {
+    local cursor="$1"
+    [[ -n "$cursor" && "${PORTSCAN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]] || return 0
+    local cursor_file="${PORTSCAN_CLASSIC_CURSOR_DIR}/journal.cursor"
+    if ! mkdir -p "$PORTSCAN_CLASSIC_CURSOR_DIR" 2>/dev/null; then
+        _nftban_portscan_classic_log "WARN" \
+            "cannot create cursor dir — journal cursor NOT advanced; next cycle will re-read (replay, not loss)"
+        return 0
+    fi
+    if printf '%s\n' "$cursor" > "${cursor_file}.tmp" 2>/dev/null; then
+        mv -f "${cursor_file}.tmp" "$cursor_file" 2>/dev/null || \
+            _nftban_portscan_classic_log "WARN" "journal cursor commit failed — next cycle re-reads this batch"
+    else
+        _nftban_portscan_classic_log "WARN" "journal cursor write failed — next cycle re-reads this batch"
+    fi
+    return 0
+}
+
 nftban_portscan_classic_process_logs() {
     # BUGFIX v1.78.1: Self-initialize config before using variables
     # Invariant: No module function may assume config is loaded by its caller
@@ -523,6 +644,20 @@ nftban_portscan_classic_process_logs() {
     if [[ "$log_source" == "journalctl" ]]; then
         # Use journalctl for kernel logs on systemd systems
         _nftban_portscan_classic_log "DEBUG" "Reading from journalctl (kernel logs)"
+        local _ps_jbatch _ps_jcursor=""
+        _ps_jbatch=$(mktemp "${TMPDIR:-/tmp}/nftban-portscan-journal.XXXXXX" 2>/dev/null) || _ps_jbatch=""
+        if [[ -z "$_ps_jbatch" ]]; then
+            # DEGRADED, NOT BLIND. An earlier version pointed the batch at
+            # /dev/null here: it logged a warning and then processed nothing,
+            # which is exactly the "cursor failure looks like nothing happened"
+            # outcome this lane exists to prevent. The stream helper now performs
+            # the legacy bounded read directly, so detection continues with
+            # replay (the old behaviour) rather than silently stopping.
+            _nftban_portscan_classic_log "WARN" \
+                "cannot create journal batch file — falling back to bounded re-read; replay suppression INACTIVE this cycle"
+        else
+            _ps_jcursor=$(_nftban_portscan_classic_journal_fetch "$_ps_jbatch" "$time_window")
+        fi
         while IFS= read -r line; do
             local parsed
             parsed=$(nftban_portscan_classic_parse_line "$line") || continue
@@ -552,10 +687,20 @@ nftban_portscan_classic_process_logs() {
             # Record this connection for realtime detection
             nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
-        # v1.82 Step 5: Added tail -5000 safety cap on journalctl output
-        # (--since already bounds, but high-volume hosts may still produce
-        # huge output within the time window). SIGPIPE fix preserved.
-        done < <({ journalctl -k --since "${time_window} seconds ago" --no-pager 2>/dev/null | { tail -5000 || true; } | grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" || true; } | { tail -1000 || true; })
+        # v1.229.x PORTSCAN-CURSOR: resume after the last COMMITTED cursor so
+        # already-consumed records are not re-emitted. tail caps retained as a
+        # volume bound. The batch is buffered because the cursor must not be
+        # committed until the loop below has actually processed it.
+        # NOTE the braces around grep: `grep ... || true | { tail ...; }` parses as
+        # `grep || (true | tail)`, which silently DROPS the tail cap whenever grep
+        # matches. Bracing keeps the cap on the match path, as the file branch does.
+        done < <({ _nftban_portscan_classic_journal_stream "$_ps_jbatch" "$time_window"; } | { tail -5000 || true; } | { grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" 2>/dev/null || true; } | { tail -1000 || true; })
+
+        # COMMIT-AFTER-PROCESSING. Reaching this point means the loop drained
+        # without aborting the function, so the cursor may advance. Advancing
+        # before this would convert replay into permanently skipped records.
+        _nftban_portscan_classic_journal_commit "$_ps_jcursor"
+        [[ -n "$_ps_jbatch" ]] && rm -f "$_ps_jbatch" 2>/dev/null || true
     else
         # grep returns 1 when no matches found - use || true to handle this
         _nftban_portscan_classic_log "DEBUG" "Reading from file: $log_source"
@@ -595,7 +740,10 @@ nftban_portscan_classic_process_logs() {
         # of total file size. 5000 raw lines ≈ covers several minutes of
         # high-volume portscan logging with margin.
         # SIGPIPE fix: { cmd || true; } prevents pipefail exit 141.
-        done < <({ tail -5000 "$log_source" 2>/dev/null || true; } | { grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" 2>/dev/null || true; } | { tail -1000 || true; })
+        # v1.229.x PORTSCAN-CURSOR: emit only bytes not yet consumed (inode:offset
+        # via the canonical incremental reader). AT-MOST-ONCE — see the commit
+        # semantics note above. tail caps retained as a volume bound.
+        done < <({ _nftban_portscan_classic_read_file_source "$log_source"; } | { tail -5000 || true; } | { grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" 2>/dev/null || true; } | { tail -1000 || true; })
     fi
 
     # Analyze and block if needed

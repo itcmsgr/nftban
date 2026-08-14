@@ -837,6 +837,15 @@ directories:
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
 
+    - path: /var/lib/nftban/portscan/log-cursors
+      artifact_class: state
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "PortScan read cursors (v1.229.x): per-source position state so a cycle consumes only records it has not already processed. File sources store inode:offset via the canonical incremental reader; the journald source stores its last COMMITTED journal cursor, written only after a batch has been processed."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+
     - path: /var/lib/nftban/recorder
       artifact_class: state
       mode: "0750"
