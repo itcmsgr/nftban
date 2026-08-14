@@ -246,12 +246,42 @@ def scan_changed_lines(root, base, deny):
     return hits
 
 
+def scan_text_sources(paths, deny):
+    """Scan arbitrary text that is PUBLISHED but is not a tracked file.
+
+    Commit messages and PR title/body are exactly as public as the tree, and the
+    2026-08-14 incident put a real administrative identifier in a commit message
+    while the tree itself was clean: --whole-tree could not see it, so the gate
+    passed on the surface that mattered. Same extraction and same denylist as the
+    tree scan — only the source of the text differs.
+
+    FAIL-CLOSED: a path that is absent or unreadable is a COVERAGE GAP, never an
+    empty pass. An EMPTY file is permitted (a PR body may legitimately be empty);
+    proving the capture actually happened is the caller's job, because only the
+    caller knows whether the source should have contained anything.
+    """
+    hits = []
+    for p in paths:
+        if not os.path.isfile(p):
+            raise RuntimeError("text source missing")
+        try:
+            with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                for n, line in enumerate(fh, 1):
+                    for c in candidates(line) & deny:
+                        hits.append((os.path.basename(p), n, c))
+        except OSError:
+            raise RuntimeError("text source unreadable")
+    return hits
+
+
 def main():
     ap = argparse.ArgumentParser(description="NFTBan private-identifier deny gate (independent).")
     ap.add_argument("--mode", choices=["publication", "advisory"], default="advisory")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--whole-tree", action="store_true")
     g.add_argument("--changed-lines", metavar="BASE")
+    # Published-but-untracked surfaces: commit messages in the PR range, PR title/body.
+    g.add_argument("--text-sources", nargs="+", metavar="PATH")
     ap.add_argument("--selftest-root", help=argparse.SUPPRESS)  # internal: scan an alt tree
     args = ap.parse_args()
 
@@ -266,12 +296,20 @@ def main():
         sys.stderr.write("PRIVATE_GATE = FAIL_CLOSED (no NFTBAN_PRIVACY_FP_KEY) in publication mode\n")
         return 2
 
-    root = args.selftest_root or repo_root()
-    if not root:
-        sys.stderr.write("PRIVATE_GATE = FAIL_CLOSED (not in a git repository)\n")
-        return 2
+    # --text-sources scans files given by path and needs no repository context.
+    root = None
+    if not args.text_sources:
+        root = args.selftest_root or repo_root()
+        if not root:
+            sys.stderr.write("PRIVATE_GATE = FAIL_CLOSED (not in a git repository)\n")
+            return 2
     try:
-        hits = scan_whole_tree(root, deny) if args.whole_tree else scan_changed_lines(root, args.changed_lines, deny)
+        if args.text_sources:
+            hits = scan_text_sources(args.text_sources, deny)
+        elif args.whole_tree:
+            hits = scan_whole_tree(root, deny)
+        else:
+            hits = scan_changed_lines(root, args.changed_lines, deny)
     except Exception as e:
         # never let the exception body echo a value
         sys.stderr.write("PRIVATE_GATE = FAIL_CLOSED (scan error: %s)\n" % type(e).__name__)

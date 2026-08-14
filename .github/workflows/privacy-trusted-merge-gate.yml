@@ -84,16 +84,73 @@ jobs:
             --whole-tree --mode publication \
             --selftest-root "$GITHUB_WORKSPACE/pr-head"
 
+      # (3b) PUBLISHED-BUT-UNTRACKED surfaces: commit messages in the PR and the
+      #      PR title/body. These are exactly as public as the tree, and on
+      #      2026-08-14 a real administrative identifier reached a COMMIT MESSAGE
+      #      while the tree was clean — --whole-tree could not see it, so the gate
+      #      passed on the surface that mattered.
+      #
+      #      Both are fetched as DATA from the API (never executed) and handed to
+      #      the TRUSTED scanner, preserving the model in step (3).
+      #
+      #      FAIL-CLOSED: a PR always has at least one commit, so an empty
+      #      commit-message capture means the capture failed, not that the PR is
+      #      clean. The scanner treats a MISSING file as an error; only the caller
+      #      can know that this particular source should never be empty.
+      - name: Trusted private-identifier gate over PR metadata (messages + title/body)
+        id: gate_meta
+        env:
+          NFTBAN_PRIVACY_DENYLIST: ${{ secrets.NFTBAN_PRIVACY_DENYLIST }}
+          NFTBAN_PRIVACY_FP_KEY: ${{ secrets.NFTBAN_PRIVACY_FP_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.inputs.pr_head_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p meta
+          # Resolve the PR(s) whose head is this SHA. Data only.
+          gh api "repos/$REPO/commits/$SHA/pulls" \
+            -H "Accept: application/vnd.github+json" \
+            --jq '.[].number' > meta/pr-numbers.txt || true
+          if [ ! -s meta/pr-numbers.txt ]; then
+            echo "::error::no pull request resolves to $SHA — cannot scan PR metadata"
+            exit 2
+          fi
+          : > meta/commit-messages.txt
+          : > meta/pr-text.txt
+          while read -r n; do
+            [ -n "$n" ] || continue
+            gh api "repos/$REPO/pulls/$n/commits" --paginate \
+              --jq '.[].commit.message' >> meta/commit-messages.txt
+            gh api "repos/$REPO/pulls/$n" \
+              --jq '.title, (.body // "")' >> meta/pr-text.txt
+          done < meta/pr-numbers.txt
+          # A PR always has >=1 commit: an empty capture is a failed capture.
+          if [ ! -s meta/commit-messages.txt ]; then
+            echo "::error::commit-message capture is empty — treating as coverage failure, not a pass"
+            exit 2
+          fi
+          echo "captured $(wc -l < meta/commit-messages.txt) message line(s), $(wc -l < meta/pr-text.txt) PR-text line(s)"
+          cd trusted
+          python3 scripts/ci/private-identifier-gate.py \
+            --mode publication \
+            --text-sources "$GITHUB_WORKSPACE/meta/commit-messages.txt" \
+                           "$GITHUB_WORKSPACE/meta/pr-text.txt"
+
       # (4) Bind the result to the exact PR-head SHA so branch protection can require it.
+      # The published status must reflect EVERY scanned surface. Binding it to the
+      # tree scan alone would make the metadata gate decorative: a leak in a commit
+      # message would fail its step, yet this status would still say success and
+      # branch protection would allow the merge. Both outcomes are required.
       - name: Publish commit status on the exact PR-head SHA
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          STATE: ${{ steps.gate.outcome == 'success' && 'success' || 'failure' }}
+          STATE: ${{ (steps.gate.outcome == 'success' && steps.gate_meta.outcome == 'success') && 'success' || 'failure' }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.inputs.pr_head_sha }}
         run: |
           gh api -X POST "repos/$REPO/statuses/$SHA" \
             -f state="$STATE" \
             -f context="privacy/trusted-private-gate" \
-            -f description="Trusted private-identifier gate (publication, fail-closed) bound to this SHA"
+            -f description="Trusted private-identifier gate (publication, fail-closed): tree + commit messages + PR title/body, bound to this SHA"

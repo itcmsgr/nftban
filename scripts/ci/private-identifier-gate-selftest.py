@@ -159,13 +159,74 @@ def test_scanner_source_canary():
           "private gate detects a token injected into scanner source (no whole-file skip)")
 
 
+def test_text_sources_mode():
+    """Commit messages and PR title/body are as public as the tree.
+
+    The 2026-08-14 incident put a real administrative identifier in a COMMIT
+    MESSAGE while the tree was clean: --whole-tree could not see it and the gate
+    passed on the surface that actually mattered. These arms prove the scanner
+    now covers that surface, and that it can SEE a true positive there — an arm
+    that only ever passes proves nothing.
+    """
+    print("test_text_sources_mode")
+    root = make_repo({"a.txt": "nothing here\n"})
+    d = tempfile.mkdtemp(prefix="pig-text-")
+
+    # POSITIVE CONTROL: a denylisted identifier in commit-message-shaped text MUST be caught.
+    leak = os.path.join(d, "commit-messages.txt")
+    open(leak, "w").write("fix: the witness yielded %s on the affected host\n" % D4)
+    rc, out, err = run(root, ["--text-sources", leak, "--mode", "publication"])
+    check(rc == 1 and "BLOCKING" in out, "denylisted identifier in commit-message text => FAIL", err.strip())
+    check(D4 not in out and D4 not in err, "raw identifier never echoed in diagnostics")
+
+    # Documentation-range-only text MUST pass — the sanctioned fixture form.
+    ok = os.path.join(d, "pr-body.txt")
+    open(ok, "w").write("peer 192.0.2.50 and 203.0.113.9 and 2001:db8::1 are documentation ranges\n")
+    rc, out, err = run(root, ["--text-sources", ok, "--mode", "publication"])
+    check(rc == 0 and "PASS" in out, "documentation-range-only text => PASS", err.strip())
+
+    # An EMPTY source is allowed (a PR body may legitimately be empty)...
+    empty = os.path.join(d, "empty.txt")
+    open(empty, "w").write("")
+    rc, _, err = run(root, ["--text-sources", empty, "--mode", "publication"])
+    check(rc == 0, "empty text source => PASS (an empty PR body is legitimate)", err.strip())
+
+    # ...but a MISSING source is a coverage gap, never an empty pass.
+    rc, _, err = run(root, ["--text-sources", os.path.join(d, "absent.txt"), "--mode", "publication"])
+    check(rc == 2 and "FAIL_CLOSED" in err, "missing text source => FAIL_CLOSED, not a silent pass", err.strip())
+
+    # Multiple sources: a leak in ANY one of them must fail the whole scan.
+    rc, out, _ = run(root, ["--text-sources", ok, leak, "--mode", "publication"])
+    check(rc == 1, "leak in the second of several sources still fails")
+
+
+def test_fixture_identifier_policy():
+    """PRODUCTION_IDENTIFIERS_IN_TEST_FIXTURES = FORBIDDEN.
+
+    Planted-fixture proof: a fixture built from documentation ranges passes, and
+    the same fixture carrying a denylisted production identifier fails. Without
+    the failing half, a green scan would not distinguish 'clean' from 'blind'.
+    """
+    print("test_fixture_identifier_policy")
+    clean = make_repo({"cli/lib/nftban/tests/x_test.sh":
+                       "peer=192.0.2.50\nsrv=198.51.100.10\nv6=2001:db8::1\n"})
+    rc, out, err = run(clean, ["--whole-tree", "--mode", "publication"])
+    check(rc == 0 and "PASS" in out, "fixture using RFC 5737/3849 documentation ranges => PASS", err.strip())
+
+    dirty = make_repo({"cli/lib/nftban/tests/x_test.sh":
+                       "peer=%s\nsrv=198.51.100.10\n" % D4})
+    rc, out, _ = run(dirty, ["--whole-tree", "--mode", "publication"])
+    check(rc == 1 and "BLOCKING" in out, "fixture carrying a production identifier => FAIL")
+
+
 def main():
     if not os.path.exists(GATE):
         sys.stderr.write("gate not found: %s\n" % GATE)
         return 2
     for t in (test_detection_forms, test_output_hygiene, test_hmac_fingerprint, test_fail_closed,
               test_clean_pass_and_false_positive_controls, test_changed_lines_mode,
-              test_scanner_source_canary):
+              test_scanner_source_canary, test_text_sources_mode,
+              test_fixture_identifier_policy):
         t()
     print()
     if _fail:
