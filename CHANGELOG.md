@@ -11,6 +11,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.1] - 2026-08-14 — the same bytes on both sides of the comparison
+
+Five corrections, four of which share one shape: a value was compared, indexed or
+counted in one representation and then used in another. Each gap was invisible in
+the ordinary case and only opened for specific inputs, which is why all of them
+survived the tests that already existed.
+
+**Never-ban identity is canonicalized before the decision, not after.** The
+exemption store recorded every protected address in unmapped form while the lookup
+did not, and prefix membership does not match across address families. An
+IPv4-mapped IPv6 form of a protected address therefore missed both the exact and
+the range check, and the ban proceeded. `Backend.Ban`, `IsExempt` and the
+add-element guard all resolve through that one lookup, so a single missed
+comparison removed admin protection on every path at once. The input is now
+canonicalized once at the parse boundary, before any comparison, and stored
+prefixes are canonicalized to the same form — normalizing only the lookup would
+have moved the mismatch rather than removing it, because a stored mapped prefix
+contains the mapped form and not the unmapped one.
+
+**LoginMon locates markers in the bytes it slices.** The panel and FTP detectors
+found `from` and `ip=` with an index computed over a lowercased copy of the line
+and then cut the original line at that offset. Lowercasing does not preserve byte
+length, so text before the marker shifted the two buffers apart, the address was
+cut at the wrong position, parsing failed, and no verdict was produced — a silent
+miss, indistinguishable from a line that never matched. One character in a
+username was enough to suppress a login-failure verdict. Marker location now runs
+on the original bytes with a case-insensitive search, so an offset always
+addresses the buffer it came from. A lowercased copy is still used for signature
+matching, where no offset is transferred. Offset compensation was rejected: the
+length change differs per character, so arithmetic would have fixed the observed
+cases and failed the next one. A structural check now rejects the pattern itself
+in these detectors, and it is what found the fourth affected site after a manual
+sweep had found three.
+
+**Active SSH sessions are whitelisted again, on every listener port.** The
+maintenance step that protects logged-in administrators read the peer address from
+the wrong column of `ss` output — the state filter omits a column — and matched
+only port 22 although the real listener ports had already been detected. The
+result was an empty set on every host and every port: the step logged that there
+were no sessions to protect while sessions were established. Both faults are
+corrected together, since either alone still yields nothing. The peer column is
+now read positionally from the end, which is correct in both output layouts, and
+the port filter is built from the detected ports.
+
+**PortScan reads the live tail instead of re-reading a window.** Classic PortScan
+re-processed the same bounded region of the kernel log every cycle, re-emitting
+records it had already handled. It now consumes each record once through the
+established incremental reader. The first correction asked that reader for
+backlog-draining mode, which was wrong for an external system log: on a large file
+it began at the start and advanced by one capped read per cycle, so it would have
+worked through days of history before reaching current events, and the cursor was
+never persisted at all under the shell options the timer runs with. A production
+canary found both before rollout. The module now uses the reader's default
+tail-biased mode, which starts from the current end of the file and advances from
+there. Falling further behind than one read cap now skips the excess rather than
+lagging, and that skip is reported rather than silent.
+
+**Privacy scanning covers the surfaces that are actually published.** The trusted
+gate examined tracked files only, while commit messages and pull-request text are
+equally public. It now scans all three, and the published result depends on every
+surface rather than on the tree scan alone. Two historical production addresses in
+a test fixture were replaced with documentation-range addresses; production values
+in fixtures are no longer permitted.
+
+Directory `/var/lib/nftban/portscan/log-cursors` is added for the PortScan cursor
+state and is created by the packaged tmpfiles configuration.
+
+---
+
 ## [v1.229.0] - 2026-08-13 — a transaction nobody owns is a transaction nobody commits
 
 `NFTManager` shared one `*nftables.Conn` across every writer in the daemon. A
