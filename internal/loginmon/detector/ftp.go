@@ -210,7 +210,7 @@ func (d *FTPDetector) detectProFTPD(line, lineLower []byte) (Verdict, bool) {
 	}
 
 	// Try to find IP after "from "
-	fromIdx := bytes.LastIndex(lineLower, d.markerFrom)
+	fromIdx := lastIndexFoldASCII(line, d.markerFrom)  // INDEX_SOURCE == SLICE_SOURCE (see marker.go)
 	if fromIdx != -1 {
 		ipStart := fromIdx + len(d.markerFrom)
 		// Bounds check: ensure ipStart is within line
