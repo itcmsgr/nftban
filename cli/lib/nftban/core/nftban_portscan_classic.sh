@@ -526,17 +526,77 @@ _nftban_portscan_extract_timestamp() {
 : "${PORTSCAN_CLASSIC_CURSOR_DIR:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/portscan/log-cursors}"
 : "${PORTSCAN_CLASSIC_CURSOR_MAX_BYTES:=1048576}"
 
+# Report ONCE per cycle, before the read, when the unread backlog exceeds the
+# incremental cap and older records will therefore be skipped.
+#
+# This READS the shared reader's state file (inode:offset) rather than owning it.
+# The coupling is deliberate and one-directional: PortScan never WRITES that file,
+# and every parse step below fails closed to "no warning". If the reader's format
+# ever changes, this degrades to silence on the WARN only — it can never affect
+# detection, and it can never invent a backlog that is not there.
+_nftban_portscan_classic_warn_backlog() {
+    local f="$1" size ino key state prev_ino prev_off backlog cap
+    cap="${PORTSCAN_CLASSIC_CURSOR_MAX_BYTES:-1048576}"
+    size="$(stat -c %s "$f" 2>/dev/null)" || return 0
+    ino="$(stat -c %i "$f" 2>/dev/null)"  || return 0
+    [[ "$size" =~ ^[0-9]+$ && "$ino" =~ ^[0-9]+$ ]] || return 0
+    key="$(printf '%s' "$f" | tr '/' '_')"
+    state="${PORTSCAN_CLASSIC_CURSOR_DIR}/${key}"
+    # No cursor yet: the bounded current tail IS the intended first read, not a skip.
+    [[ -r "$state" ]] || return 0
+    IFS=':' read -r prev_ino prev_off < "$state" 2>/dev/null || return 0
+    [[ "$prev_ino" =~ ^[0-9]+$ && "$prev_off" =~ ^[0-9]+$ ]] || return 0
+    # Rotation is a different condition and is handled by the reader, not a backlog.
+    [[ "$prev_ino" == "$ino" ]] || return 0
+    backlog=$(( size - prev_off ))
+    (( backlog > cap )) || return 0
+    _nftban_portscan_classic_log "WARN" \
+        "PortScan log backlog exceeds incremental read cap; older records will be skipped to preserve live-tail detection (path=${f} backlog_bytes=${backlog} cap_bytes=${cap})"
+}
+
 # Emit only records not yet consumed from a FILE source.
+#
+# READ MODE — tail-biased (the shared reader's DEFAULT). Do not re-enable
+# NFTBAN_HTTP_LOG_READ_FORWARD here. Forward mode is correct for BotScan, which
+# owns its spool and legitimately drains backlog, and WRONG for PortScan, which
+# consumes an external live system log. Proven on srv3 (kern.log, 484 MB), three
+# separate runtime failures came from that one line:
+#
+#   D1 CURSOR NEVER PERSISTED. Forward mode runs `tail -c +N file | head -c CAP`;
+#      on a file larger than CAP, head exits early, tail takes SIGPIPE (141),
+#      pipefail propagates it and errexit aborts the process-substitution subshell
+#      BEFORE the reader persists its offset. maintenance.sh and this module both
+#      run `set -Eeuo pipefail`, so in production the cursor was never written and
+#      the whole feature was inert. Measured: set-e+pipefail -> cursor absent;
+#      any other combination -> cursor present.
+#   D2 BOF BOOTSTRAP. With no cursor, prev_ino=0 never matches the real inode, so
+#      the reader treats first use as ROTATION and starts at byte 0. Forward mode
+#      then drains CAP bytes per cycle: ~8 hours to reach the tail of a 484 MB log
+#      that keeps growing, i.e. current scans unread. Replay traded for blindness.
+#   D3 the original replay, left unfixed because D1 made the fix inert.
+#
+# Tail-biased mode fixes all three: `start` is clamped to size-CAP so the first
+# read is the CURRENT tail and the offset is seeded at EOF; `tail` then emits
+# ≈exactly CAP bytes so head does not close early and the SIGPIPE abort does not
+# arise. Verified on the live file under `set -Eeuo pipefail` inside this exact
+# pipeline: call 1 -> bounded current tail + cursor seeded at EOF, call 2 -> only
+# the newly appended records, call 3 -> zero.
+#
+# The trade is explicit: falling more than CAP behind SKIPS the excess instead of
+# lagging. For a live detector that is the correct side — stale records are worth
+# less than current ones — but the skip must never be silent, hence the WARN above.
+#
 # Degradation ladder (a broken cursor must never look like "nothing happened"):
 #   cursor disabled / reader absent -> legacy bounded read, silent (by design)
 #   state dir unwritable            -> legacy bounded read + WARN
+#   backlog > cap                   -> incremental read + WARN (records skipped)
 _nftban_portscan_classic_read_file_source() {
     local f="$1"
     if [[ "${PORTSCAN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]] \
        && type -t nftban_http_read_incremental &>/dev/null; then
         if mkdir -p "$PORTSCAN_CLASSIC_CURSOR_DIR" 2>/dev/null; then
+            _nftban_portscan_classic_warn_backlog "$f"
             NFTBAN_HTTP_LOG_OFFSET_DIR="$PORTSCAN_CLASSIC_CURSOR_DIR" \
-            NFTBAN_HTTP_LOG_READ_FORWARD=true \
             NFTBAN_HTTP_LOG_MAX_BYTES="$PORTSCAN_CLASSIC_CURSOR_MAX_BYTES" \
             nftban_http_read_incremental "$f"
             return 0
