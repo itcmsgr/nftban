@@ -144,6 +144,19 @@ jobs:
           chmod +x cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh
           bash cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh
 
+      # A6 — the maintenance step that prevents ADMIN LOCKOUT was proven inert
+      # FLEET-WIDE by runtime witness (srv2 :55000, srv3 :22, both v1.228.11):
+      # the peer address was read as $5 while `ss -tn state established` omits
+      # the State column, and the port filter was hardcoded to :22. Defect 1
+      # masked defect 2, so fixing either alone still whitelists nothing — each
+      # arm therefore carries a control asserting the PRE-FIX pipeline returns
+      # EMPTY on the same fixture. Hermetic: stubbed ss, no root/network.
+      - name: Active-SSH auto-whitelist peer extraction (A6)
+        run: |
+          echo "=== Executing: maint_active_ssh_peers_v1229_test.sh ==="
+          chmod +x cli/lib/nftban/tests/maint_active_ssh_peers_v1229_test.sh
+          bash cli/lib/nftban/tests/maint_active_ssh_peers_v1229_test.sh
+
       - name: Uninstall firewall-ownership message (UNINSTALL-PR2 D5)
         run: |
           echo "=== Executing: uninstall_firewall_ownership_message_v225_test.sh ==="

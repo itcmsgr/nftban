@@ -195,11 +195,41 @@ for POLICY in auto quarantine; do
 done
 # T6(b): prove the consumer keys on severity ALONE — if it ever gained another
 # trigger, capping severity would stop being sufficient and this test would lie.
-GATES=$(sed -n '893p' "$LIB/cron/maintenance.sh" | sed 's/#.*//')
-case "$GATES" in
-  *'NFTBAN_FIREWALL_SEVERITY'*'-ge 3'*) ok "consumer gate is severity-only (line 893 unchanged)";;
-  *) no "consumer gate changed — T6 no longer proves the invariant" "$GATES";;
-esac
+#
+# The gate is located by ANCHOR (the nearest severity test above the
+# nftban_remove_csf call site), not by line number. A fixed line number detaches
+# from its subject the moment anything above it grows, and then asserts against
+# whatever text happens to land there — which is a guard that has stopped
+# guarding without failing. That is exactly what happened: an unrelated
+# +38-line change in maintenance.sh moved this gate from 893 to 931.
+# The assertion below is unchanged; only how it FINDS its subject is.
+# \b so a RENAMED consumer (nftban_remove_csf_renamed) is NOT accepted as this
+# one — a substring match would silently re-attach the anchor to different code.
+CONSUMER_LN=$(grep -nE 'nftban_remove_csf\b' "$LIB/cron/maintenance.sh" | head -1 | cut -d: -f1)
+if [ -z "$CONSUMER_LN" ]; then
+    # Fail closed: no subject located means the invariant is unproven, not satisfied.
+    no "nftban_remove_csf call site not found — T6(b) cannot locate its subject" "anchor missing"
+else
+    GATES=$(awk -v end="$CONSUMER_LN" '
+        NR < end && /NFTBAN_FIREWALL_SEVERITY/ { last = $0 }
+        END { print last }' "$LIB/cron/maintenance.sh" | sed 's/#.*//')
+    # Extract the CONDITION between [[ ]] and normalise whitespace, then require
+    # it to be EXACTLY the severity test.
+    #
+    # A substring match (*'-ge 3'*) is not sufficient and never was: it happily
+    # accepts `-ge 3 || -n "$NFTBAN_FORCE_DRIFT"`, which is precisely the second
+    # trigger this arm exists to forbid. Proven by inversion — the old pattern
+    # stayed green when an || clause was added to the live gate.
+    COND=$(printf '%s\n' "$GATES" \
+             | sed -n 's/.*\[\[\(.*\)\]\].*/\1/p' \
+             | tr -s '[:space:]' ' ' \
+             | sed 's/^ //; s/ $//')
+    if [ "$COND" = '${NFTBAN_FIREWALL_SEVERITY:-0} -ge 3' ]; then
+        ok "consumer gate is severity-ONLY (exact condition, anchored to the nftban_remove_csf call site)"
+    else
+        no "consumer gate changed — T6 no longer proves the invariant" "$COND"
+    fi
+fi
 
 echo
 echo "══ RESULT: PASS=$PASS FAIL=$FAIL ══"
