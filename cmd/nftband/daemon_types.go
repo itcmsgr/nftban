@@ -190,7 +190,8 @@ type Daemon struct {
 	cancel    context.CancelFunc
 	socketLn  net.Listener
 	httpSrv   *http.Server
-	configDir string // Config directory for whitelist loading
+	httpState httpLifecycleState // v1.229.2 TRACK A — see httpLifecycleState
+	configDir string             // Config directory for whitelist loading
 
 	// v1.13.0: Async IPC operation queue
 	opQueue     *opqueue.OpQueue     // Async operation queue for batched netlink
@@ -248,4 +249,48 @@ type SocketResponse struct {
 	Success bool   `json:"success"`
 	Data    any    `json:"data,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+// httpLifecycleState is the authoritative state of the optional HTTP API component.
+//
+// The HTTP API is optional BY DESIGN: when another service already owns the
+// configured port, startHTTP deliberately continues and the daemon runs IPC-only.
+// Before v1.229.2 that intent was carried only by "d.httpSrv == nil", which two
+// consumers read wrongly — shutdown dereferenced it (nil panic, aborting the whole
+// ordered shutdown), and startup asserted HTTP readiness regardless.
+//
+// The three states are mutually exclusive and answer three different questions, so
+// a pair of booleans cannot express them: "is there a server", "may the daemon still
+// become ready", and "was this a real failure". httpStateUnknown is retained as the
+// ZERO VALUE deliberately — an incompletely initialised Daemon must never be
+// indistinguishable from a valid degraded one.
+type httpLifecycleState uint8
+
+const (
+	// httpStateUnknown is the zero value: startHTTP has not yet classified the
+	// component. It is NOT a synonym for disabled and must never satisfy readiness.
+	httpStateUnknown httpLifecycleState = iota
+	// httpStateRunning — the listener was established and httpSrv is non-nil.
+	httpStateRunning
+	// httpStateDisabledByDesign — the port is owned by another service
+	// (errors.Is(err, syscall.EADDRINUSE)). httpSrv stays nil, the daemon runs
+	// IPC-only, and this participates in the DEGRADED readiness tier.
+	httpStateDisabledByDesign
+	// httpStateFailed — any other initialisation failure. This is a genuine fault
+	// (bad bind address, insufficient privilege, unknown errno) and startHTTP
+	// returns the error so startup fails loudly rather than reporting health.
+	httpStateFailed
+)
+
+func (h httpLifecycleState) String() string {
+	switch h {
+	case httpStateRunning:
+		return "running"
+	case httpStateDisabledByDesign:
+		return "disabled-by-design"
+	case httpStateFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
 }

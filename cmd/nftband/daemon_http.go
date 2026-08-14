@@ -21,12 +21,15 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	nethttpprof "net/http/pprof" // BUG-H4 FIX: explicit import instead of blank import to avoid polluting DefaultServeMux
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/pkg/version"
@@ -79,6 +82,25 @@ func resolveAPIBind(addr string) string {
 	}
 	log.Printf("[SECURITY][ERROR] HTTP API configured to bind non-loopback (%s) without NFTBAN_API_ALLOW_INSECURE_BIND=YES — refusing unsafe bind, falling back to loopback %s. Set the ack to expose deliberately (auth is SEC-P1-3b).", addr, DefaultHTTPAddr)
 	return DefaultHTTPAddr
+}
+
+// classifyBindError maps a net.Listen failure to the authoritative HTTP lifecycle
+// state. It is a pure function so the DECISION itself is testable: previously the
+// classification lived inline inside startHTTP, which builds a mux and launches a
+// goroutine and therefore cannot be driven from a unit test — a mutation that
+// tolerated every bind error would have gone unnoticed.
+//
+// Only "another service already owns this port" is disabled by design. Everything
+// else — including errnos that do not exist yet — is a genuine failure. The default
+// arm is deliberately the failing one.
+func classifyBindError(err error) httpLifecycleState {
+	if err == nil {
+		return httpStateRunning
+	}
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return httpStateDisabledByDesign
+	}
+	return httpStateFailed
 }
 
 // startHTTP starts the HTTP API server
@@ -138,12 +160,28 @@ func (d *Daemon) startHTTP() error {
 	addr := resolveAPIBind(getAPIAddr())
 	log.Printf("[nftband] HTTP API binding %s (loopback=%t)", addr, isLoopbackAPIBind(addr))
 
-	// v1.52.0: Pre-check if port is available — if not, skip HTTP API gracefully
-	// This prevents noisy errors when Apache/DA/cPanel/nginx is on the same port
+	// v1.52.0: pre-check that the port is available.
+	//
+	// v1.229.2 TRACK A — CLASSIFY the failure instead of tolerating every error.
+	// Previously ANY net.Listen error took the "API disabled" path, so a genuine
+	// misconfiguration (bad bind address -> EADDRNOTAVAIL, privileged port ->
+	// EACCES) was reported as a healthy daemon that had merely disabled its API.
+	// Only "another service already owns this port" is disabled BY DESIGN; every
+	// other error is a real fault and must fail loudly.
+	//
+	// Classification is by ERRNO through the wrapped *net.OpError chain, not by
+	// matching error text: errors.Is is stable, a message match is not. The default
+	// direction is deliberate — an unknown or future errno FAILS rather than being
+	// silently tolerated.
 	testLn, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Printf("[WARN] HTTP API port %s unavailable (%v) — API disabled, IPC socket still works", addr, err)
-		return nil
+		switch d.httpState = classifyBindError(err); d.httpState {
+		case httpStateDisabledByDesign:
+			log.Printf("[WARN] HTTP API port %s is already owned by another service — HTTP API DISABLED BY DESIGN (%v); IPC socket still works", addr, err)
+			return nil
+		default:
+			return fmt.Errorf("HTTP API bind failed on %s: %w", addr, err)
+		}
 	}
 	testLn.Close()
 
@@ -151,6 +189,7 @@ func (d *Daemon) startHTTP() error {
 		Addr:    addr,
 		Handler: mux,
 	}
+	d.httpState = httpStateRunning
 
 	go func() {
 		if err := d.httpSrv.ListenAndServe(); err != http.ErrServerClosed {

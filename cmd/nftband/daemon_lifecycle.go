@@ -97,11 +97,23 @@ func (d *Daemon) gracefulShutdown() {
 		WithMessage("NFTBan daemon shutting down").
 		WithSeverity(eventbus.SeverityInfo))
 
-	// Shutdown HTTP server
+	// Shutdown HTTP server.
+	//
+	// v1.229.2 TRACK A — the HTTP API is optional: when its port is owned by another
+	// service httpSrv is never created. This call was unguarded, so on those hosts
+	// SIGTERM panicked on a nil receiver INSIDE this goroutine. The only recover() is
+	// deferred in the parent goroutine that spawned handleSignals and cannot catch a
+	// panic raised here, so the process died and every step below was skipped:
+	// module StopAll, OpQueue drain, the SourceIndex save, the event bus close, the
+	// final cache flush, completeShutdown, and PID-file removal — after STOPPING=1
+	// had already been sent to systemd. Guarded to match socketLn/opQueue/sourceIndex
+	// below, which were already nil-checked.
 	ctx, cancel := context.WithTimeout(context.Background(), constants.DaemonStartupWait)
 	defer cancel()
-	if err := d.httpSrv.Shutdown(ctx); err != nil {
-		log.Printf("HTTP shutdown error: %v", err)
+	if d.httpSrv != nil {
+		if err := d.httpSrv.Shutdown(ctx); err != nil {
+			log.Printf("HTTP shutdown error: %v", err)
+		}
 	}
 
 	// Stop all modules
