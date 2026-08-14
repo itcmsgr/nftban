@@ -36,12 +36,12 @@ CFG="$WORK/whitelist.d"; mkdir -p "$CFG"
 cat > "$CFG/00-system.conf" <<'EOF'
 # managed - do not hand edit
 127.0.0.1  # Localhost (critical)
-167.233.138.111  # Server interface (auto-detected)
+192.0.2.1  # Server interface (auto-detected)
 ::1  # Localhost v6
 fe80::9000:9ff:fe7a:1cc1  # link-local
 EOF
 cat > "$CFG/00-session.conf" <<'EOF'
-94.64.34.235  # EXPIRES_AT=2026-08-04T16:23:20Z REASON=session ADDED_BY=nftban-installer
+198.51.100.20  # EXPIRES_AT=2026-08-04T16:23:20Z REASON=session ADDED_BY=nftban-installer
 EOF
 
 V4RE='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
@@ -51,7 +51,7 @@ missing_vs(){ comm -23 <(printf '%s\n' "$1") <(printf '%s\n' "$2"); }
 
 echo "=== T1: config extraction ignores comments and trailing text ==="
 got="$(cfg_members "$V4RE" | tr '\n' ' ')"
-[[ "$got" == "127.0.0.1 167.233.138.111 94.64.34.235 " ]] \
+[[ "$got" == "127.0.0.1 192.0.2.1 198.51.100.20 " ]] \
   && ok "T1a IPv4 members extracted exactly" || no "T1a got [$got]"
 got6="$(cfg_members "$V6RE" | tr '\n' ' ')"
 [[ "$got6" == "::1 fe80::9000:9ff:fe7a:1cc1 " ]] \
@@ -59,13 +59,13 @@ got6="$(cfg_members "$V6RE" | tr '\n' ' ')"
 
 echo "=== T2: NEGATIVE CONTROL - the measured production shape is detected ==="
 # daemon down -> only system IPs projected, durable session IP absent
-run="$(printf '127.0.0.1\n167.233.138.111\n' | sort -u)"
+run="$(printf '127.0.0.1\n192.0.2.1\n' | sort -u)"
 m="$(missing_vs "$(cfg_members "$V4RE")" "$run")"
-[[ "$m" == "94.64.34.235" ]] \
+[[ "$m" == "198.51.100.20" ]] \
   && ok "T2 admin/session IP detected missing (rebuild MUST fail)" || no "T2 got [$m]"
 
 echo "=== T3: equal COUNTS, different MEMBERS - count-level check would false-pass ==="
-run3="$(printf '127.0.0.1\n167.233.138.111\n10.0.0.1\n' | sort -u)"
+run3="$(printf '127.0.0.1\n192.0.2.1\n10.0.0.1\n' | sort -u)"
 cnt_cfg=$(cfg_members "$V4RE" | wc -l); cnt_run=$(printf '%s\n' "$run3" | wc -l)
 m3="$(missing_vs "$(cfg_members "$V4RE")" "$run3")"
 [[ "$cnt_cfg" -eq "$cnt_run" && -n "$m3" ]] \
