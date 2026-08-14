@@ -141,6 +141,45 @@ _maint_table_absent_confirmed() {
     return 0   # ABSENT across the whole grace window → genuine
 }
 
+# _maint_active_ssh_peers <port>... — echo the PEER IP of every established SSH
+# session, one per line, loopback excluded. Empty output = genuinely no sessions.
+#
+# RUNTIME_VERIFIED 2026-08-14 (srv2 :55000 + srv3 :22, both v1.228.11): the code
+# this replaces produced an EMPTY result on EVERY host and EVERY port, so the
+# active-session lockout protection was inert fleet-wide. Two layered defects:
+#
+#   1. DOMINANT — the peer was read as $5. `ss -tn state established` OMITS the
+#      State column, so a data row is:
+#          $1 Recv-Q   $2 Send-Q   $3 Local Address:Port   $4 Peer Address:Port
+#      i.e. $5 is empty. $NF is used here because it is the peer column in BOTH
+#      layouts (with State present it is $5, without it is $4).
+#   2. MASKED BY 1 — the filter hardcoded :22 even though step [1/10] has already
+#      detected the real listeners into SSH_PORTS. Once defect 1 is fixed, a host
+#      with SSH on 55000 would still whitelist nothing.
+#
+# Fixing either one alone yields a FALSE "fixed" signal, so both land together.
+#
+# The header line is NOT skipped by row number: its $NF is the literal
+# "Address:Port", which cannot match the IP patterns below. Filtering by shape
+# rather than by NR>1 means a session is still protected on any ss build that
+# omits the header — dropping the only live session there would be a lockout.
+_maint_active_ssh_peers() {
+    local _filter="" _p
+    for _p in "$@"; do
+        [[ "$_p" =~ ^[0-9]+$ ]] || continue
+        [[ -n "$_filter" ]] && _filter+=" or "
+        _filter+="dport = :$_p or sport = :$_p"
+    done
+    [[ -n "$_filter" ]] || _filter="dport = :22 or sport = :22"
+
+    ss -tn state established "( $_filter )" 2>/dev/null | \
+        awk '{print $NF}' | \
+        grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-f:]+:+)+[0-9a-f]+' | \
+        grep -v '^127\.' | \
+        grep -v '^::1' | \
+        sort -u || true
+}
+
 # =============================================================================
 # LOCKING (Prevent concurrent runs)
 # =============================================================================
@@ -721,13 +760,12 @@ EOF
     ACTIVE_SSH_WHITELIST="${NFTBAN_DATA_DIR}/state/active_ssh_whitelist.state"
     mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
 
-    # Get all current SSH connections (excluding localhost)
-    CURRENT_SSH_IPS=$(ss -tn state established '( dport = :22 or sport = :22 )' 2>/dev/null | \
-                      awk 'NR>1 {print $5}' | \
-                      grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-f:]+:+)+[0-9a-f]+' | \
-                      grep -v '^127\.' | \
-                      grep -v '^::1' | \
-                      sort -u || true)
+    # Get all current SSH connections (excluding localhost) on every REAL SSH
+    # listener port, not a hardcoded :22. SSH_PORTS is populated by step [1/10]
+    # above (same function scope, always runs first) and is never empty there;
+    # the :-22 fallback only covers a future reordering.
+    # See _maint_active_ssh_peers for the two defects this replaced.
+    CURRENT_SSH_IPS=$(_maint_active_ssh_peers "${SSH_PORTS[@]:-22}")
 
     # Update active SSH whitelist timestamp file
     : > "$ACTIVE_SSH_WHITELIST.new"
