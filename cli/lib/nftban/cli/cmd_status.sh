@@ -761,11 +761,34 @@ _status_section_services() {
 
     check_service_clean "nftables" "nftables.service"
     check_service_clean "nftband" "nftband.service"
+    _status_http_api_state
     check_service_clean "suricata" "suricata.service"
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
     # v1.23.0: login-monitor removed (replaced by nftband loginmon module)
     check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     echo ""
+}
+
+# v1.229.2 TRACK A — report the OPTIONAL HTTP API honestly.
+#
+# The HTTP API is optional: when another service already owns its port the daemon
+# runs IPC-only, which is a supported degraded state, not a fault. Without this line
+# an operator sees only http_ready=false and cannot tell "disabled on purpose" from
+# "startup is unhealthy" — the same ambiguity the daemon-side fix removes. Silent on
+# a stopped daemon or an unreachable socket: absence of an answer is not a state.
+_status_http_api_state() {
+    [[ -S /run/nftban/nftband.sock ]] || return 0
+    local resp
+    resp=$(nftban_ipc_call "status" 2>/dev/null) || return 0
+    [[ -n "$resp" ]] || return 0
+
+    if grep -q '"http_disabled_by_design":[[:space:]]*true' <<<"$resp"; then
+        printf '  %-22s %s\n' "HTTP API" "disabled by design (port already in use) — IPC-only, daemon healthy"
+    elif grep -q '"http_ready":[[:space:]]*true' <<<"$resp"; then
+        printf '  %-22s %s\n' "HTTP API" "running"
+    else
+        printf '  %-22s %s\n' "HTTP API" "not ready"
+    fi
 }
 
 _status_section_protection() {
