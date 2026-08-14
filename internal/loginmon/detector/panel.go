@@ -250,7 +250,7 @@ func (d *PanelDetector) detectCPanel(line, lineLower []byte) (Verdict, bool) {
 	}
 
 	// Try "ip=" marker
-	ipIdx := bytes.Index(lineLower, d.markerIpLower)
+	ipIdx := indexFoldASCII(line, d.markerIpLower)  // INDEX_SOURCE == SLICE_SOURCE (see marker.go)
 	if ipIdx != -1 {
 		ipStart := ipIdx + 3
 		// Bounds check: ensure ipStart is within line
@@ -278,7 +278,7 @@ func (d *PanelDetector) detectCPanel(line, lineLower []byte) (Verdict, bool) {
 	}
 
 	// Try "from " marker
-	fromIdx := bytes.LastIndex(lineLower, d.markerFrom)
+	fromIdx := lastIndexFoldASCII(line, d.markerFrom)  // INDEX_SOURCE == SLICE_SOURCE (see marker.go)
 	if fromIdx != -1 {
 		ipStart := fromIdx + len(d.markerFrom)
 		// Bounds check: ensure ipStart is within line
@@ -358,7 +358,7 @@ func (d *PanelDetector) detectPlesk(line, lineLower []byte) (Verdict, bool) {
 	}
 
 	// Try "from " marker (generic)
-	fromIdx := bytes.LastIndex(lineLower, d.markerFrom)
+	fromIdx := lastIndexFoldASCII(line, d.markerFrom)  // INDEX_SOURCE == SLICE_SOURCE (see marker.go)
 	if fromIdx != -1 {
 		ipStart := fromIdx + len(d.markerFrom)
 		// Bounds check: ensure ipStart is within line
