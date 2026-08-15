@@ -47,6 +47,12 @@ func (d *Daemon) handleStatusRequest() SocketResponse {
 			// v1.13.12: Config reload tracking
 			"config_hash":   configHash,
 			"config_loaded": lastReload.Format(time.RFC3339),
+			// v1.229.2 TRACK B: reload capability, not per-key state. Both values are
+			// structurally true for the whole process lifetime and depend on no field
+			// classification: a reload refreshes the singleton configuration view and
+			// never reconfigures running components.
+			"config_reload_mode":      configReloadMode,
+			"runtime_reconfiguration": false,
 			// Startup lifecycle observability: additive rendering of the ONE
 			// canonical lifecycle snapshot (readiness, phase, degraded components).
 			// Existing fields above are unchanged for backward compatibility.

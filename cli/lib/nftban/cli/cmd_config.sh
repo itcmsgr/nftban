@@ -357,7 +357,17 @@ _config_ipc_reload() {
 
     local response
     response=$(nft_ipc_reload 2>/dev/null) || return 1
+    # v1.229.2 TRACK B: keep the payload so the caller can report the daemon's own
+    # reload semantics instead of asserting unqualified success.
+    _CONFIG_LAST_RELOAD_RESPONSE="$response"
     nft_ipc_success "$response"
+}
+
+# v1.229.2 TRACK B: true when the daemon reported that a restart may be needed for
+# the change to take effect. Substring form matches the existing nft_ipc_success
+# idiom in lib/nft_ipc.sh (no jq dependency).
+_config_reload_restart_may_be_required() {
+    [[ "${_CONFIG_LAST_RELOAD_RESPONSE:-}" == *'"restart_may_be_required":true'* ]]
 }
 
 _config_service_running() {
@@ -475,8 +485,17 @@ nftban_cmd_config_reload() {
 
         # Try IPC reload first (only nftband supports this)
         if _config_daemon_supports_reload "$svc"; then
+            _CONFIG_LAST_RELOAD_RESPONSE=""
             if _config_ipc_reload "$svc"; then
-                echo "[RELOADED via IPC]"
+                # v1.229.2 TRACK B: an IPC reload refreshes the daemon's configuration
+                # view; it does NOT reconfigure running components. Reporting it as
+                # complete success was the operator-truthfulness defect.
+                if _config_reload_restart_may_be_required; then
+                    echo "[CONFIG RELOADED via IPC - restart may be required]"
+                    ((needs_restart++)) || true
+                else
+                    echo "[CONFIG RELOADED via IPC - no change]"
+                fi
                 # v1.19.20 FIX
                 ((reloaded++)) || true
                 return 0
@@ -536,7 +555,8 @@ nftban_cmd_config_reload() {
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if [[ $reloaded -gt 0 ]]; then
-        echo "  Reloaded: $reloaded (verified via IPC)"
+        # v1.229.2 TRACK B: "verified via IPC" described the transport, not the effect.
+        echo "  Config reloaded: $reloaded (configuration view refreshed via IPC)"
     fi
     if [[ $signaled -gt 0 ]]; then
         echo "  Signaled: $signaled (SIGHUP sent)"
@@ -546,17 +566,23 @@ nftban_cmd_config_reload() {
     fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # Warning if services need restart
+    # Warning if services need restart.
+    # v1.229.2 TRACK B: this now covers BOTH paths — a service that only received
+    # SIGHUP, and a daemon that accepted an IPC reload but does not reconfigure
+    # running components. The previous text asserted the SIGHUP cause for every case.
     if [[ $needs_restart -gt 0 ]]; then
         echo ""
-        echo "⚠ WARNING: $needs_restart service(s) received SIGHUP but daemon does not"
-        echo "  support hot-reload yet. Config changes may require service restart:"
+        echo "⚠ Running components are not automatically reconfigured."
+        echo "  Some changes may require a restart to take effect:"
         echo ""
         for svc in "${_CONFIG_SIGHUP_SERVICES[@]}"; do
             if _config_service_running "$svc" && ! _config_daemon_supports_reload "$svc"; then
                 echo "    systemctl restart $svc"
             fi
         done
+        if _config_reload_restart_may_be_required; then
+            echo "    systemctl restart nftband"
+        fi
     fi
 
     echo ""

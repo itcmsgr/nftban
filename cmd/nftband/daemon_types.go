@@ -144,6 +144,50 @@ func getSocketPath() string {
 	return runDir + "/nftband.sock"
 }
 
+// reloadOutcome is the explicit result of a configuration reload.
+//
+// v1.229.2 TRACK B — reloadConfig refreshes the singleton configuration view and
+// nothing else: it references no module, listener, timer or the registry. The
+// previous code reported "Config reloaded successfully", which reads as "the
+// running daemon now reflects the new configuration". A lab witness disproved
+// that: after changing NFTBAN_API_ADDR and reloading, the listener stayed on the
+// old port, and only a restart moved it.
+//
+// The accepted state is deliberately NOT named "applied" — whether a given change
+// took effect is per-key runtime state this repository cannot currently establish,
+// so the daemon reports what it does know instead of manufacturing that claim.
+type reloadOutcome uint8
+
+const (
+	// reloadFailed means the configuration could not be reloaded.
+	reloadFailed reloadOutcome = iota
+	// reloadNoChange means the config source hash was unchanged; nothing was reparsed.
+	reloadNoChange
+	// reloadAccepted means the configuration source was reloaded and the singleton
+	// view updated. Running components may retain previously materialized values
+	// until restart.
+	reloadAccepted
+)
+
+func (o reloadOutcome) String() string {
+	switch o {
+	case reloadNoChange:
+		return "RELOAD_NO_CHANGE"
+	case reloadAccepted:
+		return "RELOAD_ACCEPTED"
+	default:
+		return "RELOAD_FAILED"
+	}
+}
+
+// runtimeReconfigurationState is the single structurally-true statement the daemon
+// can make about reload: it never reconfigures running components. It holds for the
+// whole process lifetime and depends on no per-key classification.
+const runtimeReconfigurationState = "not_performed"
+
+// configReloadMode is the capability reported by status.
+const configReloadMode = "singleton_only"
+
 // getPidFile returns PID file path from central config
 func getPidFile() string {
 	runDir, _, _, _ := getDaemonPaths()

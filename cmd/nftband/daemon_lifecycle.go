@@ -56,10 +56,21 @@ func (d *Daemon) handleSignals(pidFile string) {
 			}
 			// Handle config reload
 			log.Println("Received SIGHUP, reloading configuration...")
-			if err := d.reloadConfig(); err != nil {
+			outcome, err := d.reloadConfig()
+			switch {
+			case err != nil:
 				log.Printf("Config reload failed: %v", err)
-			} else {
-				log.Printf("Config reloaded successfully (hash: %s)", d.configHash[:16])
+			case outcome == reloadAccepted:
+				// v1.229.2 TRACK B: the previous wording ("Config reloaded
+				// successfully") read as a claim that running components had been
+				// reconfigured. reloadConfig refreshes the singleton config view
+				// only, so the message is qualified.
+				d.reloadMu.RLock()
+				hash := d.configHash
+				d.reloadMu.RUnlock()
+				log.Printf("Configuration reloaded (hash: %s). Running components are not "+
+					"automatically reconfigured; some changes may require nftband restart "+
+					"to take effect.", hash[:16])
 			}
 			continue // Keep waiting for signals
 
@@ -239,25 +250,25 @@ func (d *Daemon) computeConfigHash() (string, error) {
 
 // reloadConfig reloads configuration from disk
 // This is called on SIGHUP or via IPC reload request
-func (d *Daemon) reloadConfig() error {
+func (d *Daemon) reloadConfig() (reloadOutcome, error) {
 	d.reloadMu.Lock()
 	defer d.reloadMu.Unlock()
 
 	// Compute new hash before reload
 	newHash, err := d.computeConfigHash()
 	if err != nil {
-		return fmt.Errorf("failed to compute config hash: %w", err)
+		return reloadFailed, fmt.Errorf("failed to compute config hash: %w", err)
 	}
 
 	// Check if config actually changed
 	if newHash == d.configHash {
 		log.Println("Config unchanged, skipping reload")
-		return nil
+		return reloadNoChange, nil
 	}
 
 	// Reload config via nftbanconf package
 	if err := nftbanconf.Reload(); err != nil {
-		return fmt.Errorf("failed to reload config: %w", err)
+		return reloadFailed, fmt.Errorf("failed to reload config: %w", err)
 	}
 
 	// Update daemon state
@@ -270,7 +281,7 @@ func (d *Daemon) reloadConfig() error {
 		WithMessage(fmt.Sprintf("Config reloaded (hash: %s -> %s)", oldHash[:8], newHash[:8])).
 		WithSeverity(eventbus.SeverityInfo))
 
-	return nil
+	return reloadAccepted, nil
 }
 
 // initConfigHash initializes config hash on startup
