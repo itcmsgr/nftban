@@ -103,6 +103,7 @@ comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	t
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_impl2_test	cli/lib/nftban/tests/config_local_impl2_test.sh	core	test	config-local	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_source_helper_impl1_test	cli/lib/nftban/tests/config_local_source_helper_impl1_test.sh	core	test	config-local-source	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+config_reload_truthfulness_v1229_2_test	cli/lib/nftban/tests/config_reload_truthfulness_v1229_2_test.sh	cli	test	cli	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_show_secret_redaction_v1227_test	cli/lib/nftban/tests/config_show_secret_redaction_v1227_test.sh	mail	test	config-secret-redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 core_ownership_identity_v1228_9_test	cli/lib/nftban/tests/core_ownership_identity_v1228_9_test.sh	core	test	legal-identity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 csf_observation_purity_v1229_test	cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

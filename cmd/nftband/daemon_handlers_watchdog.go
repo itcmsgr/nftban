@@ -165,7 +165,8 @@ func (d *Daemon) handleWatchdogEventsRequest(params map[string]any) SocketRespon
 // Returns the new config hash and reload timestamp for verification
 func (d *Daemon) handleReloadRequest(params map[string]any) SocketResponse {
 	// Perform config reload
-	if err := d.reloadConfig(); err != nil {
+	outcome, err := d.reloadConfig()
+	if err != nil {
 		return SocketResponse{
 			Success: false,
 			Error:   err.Error(),
@@ -179,11 +180,32 @@ func (d *Daemon) handleReloadRequest(params map[string]any) SocketResponse {
 
 	return SocketResponse{
 		Success: true,
-		Data: map[string]any{
-			"reloaded":    true,
-			"config_hash": hash,
-			"reloaded_at": ts.Format(time.RFC3339),
-		},
+		Data:    reloadResponseData(outcome, hash, ts),
+	}
+}
+
+// reloadResponseData builds the reload IPC payload.
+//
+// v1.229.2 TRACK B. Pure so the truthfulness contract can be driven directly from a
+// test — an inline map inside handleReloadRequest could not be, and a semantic
+// mutation of it would pass unnoticed.
+//
+// The existing fields (reloaded / config_hash / reloaded_at) are unchanged for
+// backward compatibility; the new metadata is additive.
+//
+// restart_may_be_required is deliberately NOT named restart_required: the evidence
+// pass proved the daemon cannot determine, per key, whether a restart is genuinely
+// needed. It is true ONLY for RELOAD_ACCEPTED — on RELOAD_NO_CHANGE nothing was
+// reparsed, so there is nothing a restart could apply.
+func reloadResponseData(outcome reloadOutcome, hash string, ts time.Time) map[string]any {
+	return map[string]any{
+		"reloaded":    true,
+		"config_hash": hash,
+		"reloaded_at": ts.Format(time.RFC3339),
+
+		"reload_outcome":          outcome.String(),
+		"runtime_reconfiguration": runtimeReconfigurationState,
+		"restart_may_be_required": outcome == reloadAccepted,
 	}
 }
 
