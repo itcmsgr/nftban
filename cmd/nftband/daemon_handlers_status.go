@@ -79,8 +79,12 @@ func (d *Daemon) lifecycleStatus() map[string]any {
 		"modules_initialized":      s.ModulesInitialized,
 		"required_modules_started": s.RequiredModulesStarted,
 		"http_ready":               s.HTTPReady,
-		"watchdog_ready":           s.WatchdogReady,
-		"degraded_components":      s.DegradedComponents,
+		// v1.229.2 TRACK A — an operator must be able to tell "no HTTP because the
+		// port is owned by another service" from "HTTP is unhealthy". Without this
+		// key both look identical: http_ready=false.
+		"http_disabled_by_design": s.HTTPDisabledByDesign,
+		"watchdog_ready":          s.WatchdogReady,
+		"degraded_components":     s.DegradedComponents,
 	}
 }
 

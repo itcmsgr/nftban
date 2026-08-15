@@ -274,8 +274,28 @@ func (d *Daemon) Run() error {
 		d.lifecycle.FailPhase(PhaseHTTPInit, err)
 		return fmt.Errorf("failed to start HTTP: %w", err)
 	}
-	d.lifecycle.setHTTPReady(true)
-	d.lifecycle.CompletePhase(PhaseHTTPInit)
+	// v1.229.2 TRACK A — consume the CLASSIFIED state instead of asserting readiness
+	// unconditionally. startHTTP returns nil both when a server was created and when
+	// the port is legitimately owned by another service; asserting readiness for both
+	// told systemd a mandatory prerequisite was satisfied by a component that did not
+	// exist. A genuine failure never reaches this point — startHTTP returns an error
+	// above and startup fails there.
+	switch d.httpState {
+	case httpStateRunning:
+		d.lifecycle.setHTTPReady(true)
+		d.lifecycle.CompletePhase(PhaseHTTPInit)
+	case httpStateDisabledByDesign:
+		d.lifecycle.setHTTPDisabledByDesign(true)
+		d.lifecycle.DegradePhase(PhaseHTTPInit, "http api port owned by another service", nil)
+		log.Println("HTTP API disabled by design (port owned by another service); daemon continues IPC-only")
+	default:
+		// httpStateUnknown must never satisfy readiness. Reaching here means
+		// startHTTP returned without classifying, which is a wiring fault, not a
+		// tolerated degraded mode.
+		err := fmt.Errorf("HTTP lifecycle state not classified after startHTTP (state=%s)", d.httpState)
+		d.lifecycle.FailPhase(PhaseHTTPInit, err)
+		return err
+	}
 
 	// Start pprof server if profiling enabled
 	if profileEnabled {

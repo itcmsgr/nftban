@@ -120,6 +120,7 @@ type LifecycleSnapshot struct {
 	IPCBound               bool           `json:"ipc_bound"`
 	IPCAccepting           bool           `json:"ipc_accepting"`
 	HTTPReady              bool           `json:"http_ready"`
+	HTTPDisabledByDesign   bool           `json:"http_disabled_by_design"`
 	RequiredModulesStarted bool           `json:"required_modules_started"`
 	WatchdogReady          bool           `json:"watchdog_ready"`
 	DegradedComponents     []string       `json:"degraded_components"`
@@ -149,6 +150,7 @@ type startupLifecycle struct {
 	ipcBound               bool
 	ipcAccepting           bool
 	httpReady              bool
+	httpDisabledByDesign   bool // v1.229.2 TRACK A — HTTP optional-by-design (EADDRINUSE)
 	requiredModulesStarted bool
 	watchdogReady          bool
 
@@ -342,6 +344,7 @@ func (s *startupLifecycle) setModulesInitialized(v bool)     { s.setFlag(&s.modu
 func (s *startupLifecycle) setIPCBound(v bool)               { s.setFlag(&s.ipcBound, v) }
 func (s *startupLifecycle) setIPCAccepting(v bool)           { s.setFlag(&s.ipcAccepting, v) }
 func (s *startupLifecycle) setHTTPReady(v bool)              { s.setFlag(&s.httpReady, v) }
+func (s *startupLifecycle) setHTTPDisabledByDesign(v bool)   { s.setFlag(&s.httpDisabledByDesign, v) }
 func (s *startupLifecycle) setRequiredModulesStarted(v bool) { s.setFlag(&s.requiredModulesStarted, v) }
 func (s *startupLifecycle) setWatchdogReady(v bool)          { s.setFlag(&s.watchdogReady, v) }
 
@@ -372,7 +375,26 @@ func (s *startupLifecycle) evaluateReadinessLocked() (missing, degraded []string
 	if !s.ipcAccepting {
 		missing = append(missing, "ipc_accepting")
 	}
-	if !s.httpReady {
+	// v1.229.2 TRACK A — HTTP READINESS TIER.
+	//
+	// The HTTP API is optional by design: when another service owns the port the
+	// daemon runs IPC-only and MUST still be allowed to reach READY. Previously
+	// http_ready sat unconditionally in the MANDATORY tier, and startup papered
+	// over that by asserting setHTTPReady(true) even when no server existed —
+	// systemd was told a mandatory prerequisite was met by a component that was
+	// never created.
+	//
+	// Simply reporting httpReady=false when disabled would have been the opposite
+	// error: it would place http_ready in `missing`, making an intentional
+	// port collision a FATAL startup failure.
+	//
+	// So disabled-by-design joins the DEGRADED tier, where nft, opqueue and
+	// watchdog already live: honest state, READY=1 still permitted. A genuine bind
+	// failure never reaches here at all — startHTTP returns an error and startup
+	// fails at the producer.
+	if s.httpDisabledByDesign {
+		degraded = append(degraded, "http")
+	} else if !s.httpReady {
 		missing = append(missing, "http_ready")
 	}
 	if !s.requiredModulesStarted {
@@ -591,6 +613,7 @@ func (s *startupLifecycle) snapshotLocked() LifecycleSnapshot {
 		IPCBound:               s.ipcBound,
 		IPCAccepting:           s.ipcAccepting,
 		HTTPReady:              s.httpReady,
+		HTTPDisabledByDesign:   s.httpDisabledByDesign,
 		RequiredModulesStarted: s.requiredModulesStarted,
 		WatchdogReady:          s.watchdogReady,
 		DegradedComponents:     degraded,
