@@ -70,10 +70,36 @@ else
         # the shell default must resolve to exactly the Go constant
         SHELL_DEFAULT="$(sed -n 's/.*_nftlock_path="\${NFTBAN_RUN_DIR:-\([^}]*\)}\(.*\)".*/\1\2/p' <<<"$WRAPPER" | head -1)"
         if [[ "$SHELL_DEFAULT" == "$GO_PATH" ]]; then
-            pass "shell lock path == internal/nftlock canonical const ($GO_PATH)"
+            pass "rebuild lock path == internal/nftlock canonical const ($GO_PATH)"
         else
-            fail "LOCK PATH DRIFT: shell resolves to '$SHELL_DEFAULT', Go declares '$GO_PATH'"
+            fail "LOCK PATH DRIFT: rebuild resolves to '$SHELL_DEFAULT', Go declares '$GO_PATH'"
         fi
+
+        # --- EVERY shell consumer of the canonical lock, not just the rebuild ---
+        # v1.229.3 0C added a second consumer (the legacy backup migration). Its
+        # whole safety premise is mutual exclusion WITH the rebuild, so if the two
+        # pathnames ever diverge both would flock successfully, both would look
+        # correct in isolation, and the exclusion would silently be gone. This
+        # guard is the single authority for that: extend it when a consumer is
+        # added rather than writing a parallel test.
+        CONSUMERS=(
+            "$SCRIPT_DIR/../core/nftban_legacy_backup_migration.sh:_LBM_LOCK_PATH"
+        )
+        for spec in "${CONSUMERS[@]}"; do
+            cfile="${spec%%:*}"; cvar="${spec##*:}"
+            if [[ ! -f "$cfile" ]]; then
+                fail "SUBJECT_NOT_FOUND: canonical-lock consumer $cfile"
+                continue
+            fi
+            cpath="$(sed -n "s|^${cvar}=\"\${NFTBAN_RUN_DIR:-\([^}]*\)}\(.*\)\"|\1\2|p" "$cfile" | head -1)"
+            if [[ -z "$cpath" ]]; then
+                fail "SUBJECT_NOT_FOUND: $cvar not parsed from $(basename "$cfile") — drift would be invisible"
+            elif [[ "$cpath" == "$GO_PATH" ]]; then
+                pass "$(basename "$cfile") lock path == canonical const (3-way match holds)"
+            else
+                fail "LOCK PATH DRIFT in $(basename "$cfile"): '$cpath' != canonical '$GO_PATH' — mutual exclusion would be silently lost"
+            fi
+        done
     fi
 fi
 

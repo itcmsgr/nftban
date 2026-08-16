@@ -1032,6 +1032,32 @@ EOF
     fi
 
     # ==========================================================================
+    # 9c. Legacy rebuild_* backup migration (v1.229.3 0C) — ONE-TIME, bounded
+    # ==========================================================================
+    # Resolves the pre-0B recovery population that carries no transaction terminal
+    # discriminator and is therefore permanently non-prunable under 0B's
+    # fail-closed rule. Runs inside the EXISTING maintenance authority -- no new
+    # service, timer or cleaner -- and takes the canonical nft_operations.lock, so
+    # a participating rebuild cannot execute its protected section concurrently.
+    #
+    # Structurally idempotent: once only the protected floor remains, the
+    # candidate set is empty and later cycles delete nothing. No completion
+    # marker is written, because a marker would assert historical facts this
+    # migration deliberately does not claim.
+    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_legacy_backup_migration.sh" ]]; then
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_legacy_backup_migration.sh" 2>/dev/null || true
+        if declare -f nftban_legacy_backup_migrate &>/dev/null; then
+            local _lbm_out
+            _lbm_out=$(nftban_legacy_backup_migrate 2>/dev/null) || true
+            case "$_lbm_out" in
+                *"LBM_RESULT=OK removed=0"*)  : ;;   # steady state, stay quiet
+                *"LBM_RESULT=OK"*)            log "INFO" "Legacy backup migration: ${_lbm_out}" ;;
+                *"REFUSED"*)                  log "INFO" "Legacy backup migration: deferred (${_lbm_out})" ;;
+            esac
+        fi
+    fi
+
+    # ==========================================================================
     # 10. Complete
     # ==========================================================================
     # v1.228.4 PR-3: VERDICT HONESTY.
