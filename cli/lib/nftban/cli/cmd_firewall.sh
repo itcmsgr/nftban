@@ -2729,7 +2729,7 @@ firewall_rebuild() {
     # No retry for PREVALIDATION_FAILED or structural failures (INV-RR-005).
     local _rebuild_exit=0
 
-    _firewall_rebuild_core "$@"
+    _firewall_rebuild_serialized "$@"
     _rebuild_exit=$?
 
     # Exit 0 = success, no retry needed
@@ -2783,7 +2783,7 @@ firewall_rebuild() {
     echo "  [RETRY] Transient failure detected ($_fail_class) — retrying rebuild (attempt 2/2)..." >&2
     echo "" >&2
 
-    _firewall_rebuild_core "$@"
+    _firewall_rebuild_serialized "$@"
     _rebuild_exit=$?
 
     if [[ $_rebuild_exit -eq 0 ]]; then
@@ -2809,6 +2809,71 @@ firewall_rebuild() {
     fi
 
     return $_rebuild_exit
+}
+
+# v1.229.3 P0-J — SHELL REBUILD JOINS THE CANONICAL nft SERIALIZATION AUTHORITY.
+#
+# internal/nftlock declares /run/nftban/nft_operations.lock as "the canonical lock
+# file for all nft operations" and states that Go and shell use the SAME file. The
+# Go side honours it (daemon_reconciliation.go, opqueue/queue.go take
+# AcquireExclusive; botguard/suspect.go takes AcquireShared). The shell rebuild did
+# NOT: it mutated the kernel directly -- `nft delete table` and the atomic
+# `nft -f "$load_conf"` -- while holding nothing, so a rebuild could interleave with
+# daemon reconciliation and the OpQueue drain.
+#
+# This wrapper closes that gap by participating in the EXISTING authority. It is
+# deliberately NOT a resurrection of cli/lib/nftban/lib/nft_lock.sh, which was
+# deleted as an orphan in v1.167 PR-3 and is guarded against reintroduction by
+# no_reintroduced_orphan_modules_v167_test.sh; no new lock path, module or
+# migration-specific mechanism is introduced.
+#
+# Preconditions proven at v1.229.2 (b62ecf53) before writing this:
+#   J1 canonical path  internal/nftlock/lock.go:44 (dir 0750 root:nftban, file 0640)
+#   J2 semantics       flock LOCK_EX, canonical timeout constants.ReconciliationLockTimeout = 30s
+#   J3 flock(1)        already a de-facto dependency: 13 shipped shell files invoke it,
+#                      including this file's session-whitelist lock
+#   J4 no recursion    every mutating helper reached from the core
+#                      (_fw_restore_timed_set, _nftban_reconcile_feeds,
+#                      _nftban_reconcile_geoban, _rebuild_rollback) acquires NO lock,
+#                      and the rebuild never touches the session-whitelist lock, whose
+#                      owner (installer/safety/session_whitelist.go) never takes nftlock
+#                      -- so there is no nested acquisition and no ABBA ordering inversion.
+#
+# The wrapper is a SEPARATE function rather than a rename of the core: three existing
+# guards bind to `_firewall_rebuild_core` and two extract its BODY, so the core keeps its
+# name and only the two call sites move. The wrapper form guarantees release on EVERY exit
+# path of a 731-line function with many `return` sites, without restructuring it. Uses fd 8: this file's
+# session-whitelist critical sections use fd 9, and although those are subshell-scoped
+# a distinct descriptor removes any doubt.
+_firewall_rebuild_serialized() {
+    local _nftlock_path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
+    # Mirrors constants.ReconciliationLockTimeout (30s) -- the canonical exclusive
+    # timeout used by reconciliation and the OpQueue drain. Not an arbitrary value.
+    local _nftlock_wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+
+    mkdir -p "$(dirname "$_nftlock_path")" 2>/dev/null || true
+    if ! exec 8>>"$_nftlock_path"; then
+        echo "ERROR: cannot open nft operations lock: $_nftlock_path" >&2
+        echo "       The firewall was NOT modified." >&2
+        return 1
+    fi
+    if ! flock -w "$_nftlock_wait" 8; then
+        # REFUSE, never proceed unserialized: a rebuild that cannot serialize could
+        # interleave with reconciliation/OpQueue. Nothing has been mutated here.
+        echo "ERROR: could not acquire the nft operations lock within ${_nftlock_wait}s — rebuild REFUSED" >&2
+        echo "       Another nft operation (reconciliation, queue drain or rebuild) holds it." >&2
+        echo "       The firewall was NOT modified; existing enforcement is unchanged." >&2
+        exec 8>&-
+        return 1
+    fi
+
+    _firewall_rebuild_core "$@"
+    local _rebuild_rc=$?
+
+    # Closing the descriptor releases the flock -- on success, validation failure,
+    # rollback and every error return alike.
+    exec 8>&-
+    return "$_rebuild_rc"
 }
 
 _firewall_rebuild_core() {

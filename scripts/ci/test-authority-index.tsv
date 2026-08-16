@@ -200,6 +200,7 @@ rbl_seven_state_v206_test	cli/lib/nftban/tests/rbl_seven_state_v206_test.sh	rbl	
 rbl_shared_address_authority_v220_0_test	cli/lib/nftban/tests/rbl_shared_address_authority_v220_0_test.sh	rbl	test	rbl-shared-address-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 read_ra_ifs_v156_test	cli/lib/nftban/tests/read_ra_ifs_v156_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_atomic_rollback_v1228_10_test	cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+rebuild_nft_lock_participation_v1229_3_test	cli/lib/nftban/tests/rebuild_nft_lock_participation_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_syn_drop_v192_test	cli/lib/nftban/tests/rebuild_no_syn_drop_v192_test.sh	firewall	test	firewall-rebuild	ROOT_LAB	lab-manual	false	true	false	false	true	false			
 rebuild_snapshot_hard_gate_v1228_10_test	cli/lib/nftban/tests/rebuild_snapshot_hard_gate_v1228_10_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 recovery_legacy_reconcile_v12012_test	cli/lib/nftban/tests/recovery_legacy_reconcile_v12012_test.sh	firewall	test	recovery	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
