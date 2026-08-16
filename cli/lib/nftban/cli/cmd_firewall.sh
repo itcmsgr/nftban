@@ -2845,6 +2845,49 @@ _rebuild_tx_state_write() {
     return 0
 }
 
+# _rebuild_tx_last_state — the last recorded transaction state, or non-zero.
+# Needed because TERMINAL_SUCCESS and TERMINAL_FAILURE are both terminal but are
+# NOT interchangeable for disposal: only the ordinary successful path is disposable
+# (v1.229.3 P0-2A). TERMINAL_FAILURE is deliberately left alone -- equating it with
+# "deletable" would require proving the recovery contract permits it, which P0-2A
+# does not attempt.
+_rebuild_tx_last_state() {
+    local _dir="$1"
+    [[ -n "$_dir" && -r "$_dir/snapshot_state" ]] || return 1
+    sed -n 's/^tx_state=//p' "$_dir/snapshot_state" 2>/dev/null | tail -1
+}
+
+# _rebuild_dispose_ordinary_success — v1.229.3 P0-2A.
+#
+#     NORMAL REBUILD MAY USE RECOVERY STATE, BUT MUST NOT TURN EVERY SUCCESSFUL
+#     REBUILD INTO PERMANENT BACKUP HISTORY.
+#
+# An ordinary rebuild that SUCCEEDED has nothing left to roll back to, so retaining
+# its recovery directory converts transactional safety material into permanent
+# history -- ~93 generations/day/host on the maintenance cadence. This disposes of
+# exactly that, and nothing else.
+#
+# It is NOT the legacy migration (0C, a one-time authority over the pre-0B
+# population) and must never be implemented by calling it: conflating the two would
+# make a one-time migration authority part of the ordinary lifecycle.
+#
+# Fail-closed. Disposal requires POSITIVELY reading TERMINAL_SUCCESS back from the
+# state file, which also means a terminal write that failed leaves the artifact in
+# place -- consistent with 0B, where a failed metadata write can never promote an
+# artifact to disposable.
+_rebuild_dispose_ordinary_success() {
+    local _dir="$1" _st _base
+    [[ -n "$_dir" && -d "$_dir" ]] || return 1
+    _base=$(basename -- "$_dir")
+    [[ "$_base" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ ]] || return 1
+    _st=$(_rebuild_tx_last_state "$_dir") || return 1
+    # ONLY the ordinary successful path. ACTIVE, TERMINAL_FAILURE, malformed,
+    # unknown, unreadable and observation failure all keep the artifact.
+    [[ "$_st" == "TERMINAL_SUCCESS" ]] || return 1
+    rm -rf -- "$_dir" 2>/dev/null || return 1
+    return 0
+}
+
 # _rebuild_tx_is_terminal — FAIL-CLOSED eligibility read.
 #
 #     PENDING != COMPLETE      UNKNOWN != COMPLETE
@@ -2940,8 +2983,20 @@ _firewall_rebuild_serialized() {
     if [[ -n "${_REBUILD_SNAPSHOT_DIR:-}" ]]; then
         if [[ $_rebuild_rc -eq 0 ]]; then
             _rebuild_tx_state_write "$_REBUILD_SNAPSHOT_DIR" TERMINAL_SUCCESS || true
+            # v1.229.3 P0-2A — ordinary no-history disposal.
+            #
+            # STRICTLY AFTER the terminal transition, and still under the lock. The
+            # ordering is load-bearing: rollback runs INSIDE the core, so disposing
+            # here cannot race it, and disposal re-reads TERMINAL_SUCCESS rather
+            # than trusting the rc it just handled. Only the successful ordinary
+            # path is disposed -- the failure branch below deliberately keeps its
+            # artifact.
+            _rebuild_dispose_ordinary_success "$_REBUILD_SNAPSHOT_DIR" || true
         else
             _rebuild_tx_state_write "$_REBUILD_SNAPSHOT_DIR" TERMINAL_FAILURE || true
+            # No disposal on failure. TERMINAL_FAILURE != DELETABLE: proving that
+            # would require the recovery contract to permit it, which is out of
+            # P0-2A's scope.
         fi
     fi
 
@@ -3106,10 +3161,14 @@ _firewall_rebuild_core() {
 
     # Step 1: Backup current IPs from sets (preserve bans/whitelist)
     [[ "$quiet" == "false" ]] && echo "  [1/12] Backing up current sets..."
-    timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
-    timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
-    timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null > "$backup_dir/whitelist_ipv6_$timestamp.txt" || true
-    timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null > "$backup_dir/blacklist_ipv6_$timestamp.txt" || true
+    # v1.229.3 P0-2A — the four {white,black}list_ipv{4,6}_$timestamp.txt dumps that
+    # used to be written here are REMOVED. They were write-only: nothing read them
+    # back. Rollback consumes <snapshot_dir>/ruleset.nft and snapshot_state
+    # (_rebuild_rollback), never these; no restore path, support bundle or forensic
+    # contract referenced them. Four files per rebuild at the 15-minute cadence is
+    # ~370/day/host of data with no consumer, so the writer is stopped rather than
+    # given retention. The live sets remain fully recoverable from ruleset.nft,
+    # which is a COMPLETE host ruleset.
 
     # v1.50.0: Template-based rebuild architecture
     # Source: /usr/lib/nftban/templates/nftables.conf.tpl (package-owned template)
