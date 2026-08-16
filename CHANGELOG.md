@@ -11,6 +11,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.2] - 2026-08-16 — what an optional component is, and what a reload is not
+
+Two lanes, one theme: a component that is legitimately absent, and an operation that
+legitimately does less than its message implied. In both cases the code was closer to
+correct than what it reported.
+
+**A daemon whose HTTP API is intentionally unavailable now shuts down completely.**
+The HTTP API is optional by design: when another service already owns the configured
+port — Apache, DirectAdmin, cPanel or nginx on a shared host — startup deliberately
+continues and the daemon serves IPC only. Shutdown did not account for that and
+dereferenced the server that had never been created, so on those hosts SIGTERM
+terminated the process on a nil receiver. That call runs on the signal-handling
+goroutine, and the only recovery is deferred on the goroutine that spawned it, which
+cannot catch a panic raised on another stack. Everything after the failure was
+skipped — module stop, the operation-queue drain, the ban-provenance save, the event
+bus close, the final cache flush and PID-file removal — after the daemon had already
+told systemd it was stopping. The unit ended in a failed state with a stale PID file,
+on every shutdown of such a host, including package upgrades and reboots. The
+terminator is now guarded and the full cleanup sequence completes.
+
+**Disabled by design is now a distinct state, not an inferred one.** The intent was
+carried only by an uninitialised pointer, which two consumers read differently.
+Startup asserted that a mandatory readiness prerequisite was satisfied by a component
+that had never been created. The state is now explicit and is reported as degraded
+rather than missing, so an intentional port collision remains a valid, ready,
+IPC-only daemon instead of becoming a startup failure. Status distinguishes the two
+cases, and `nftban status` renders the distinction in words.
+
+**A genuine bind failure is no longer treated as a benign port collision.** Every
+`listen` error took the "API disabled" path, so a bind address that does not exist on
+the host, or a privileged-port misconfiguration, produced a daemon that reported
+itself healthy with its API merely switched off. Classification is now by errno
+through the wrapped error chain: only an in-use address is disabled by design, and
+any other error fails startup loudly.
+
+**A configuration reload says what it did, and no longer implies what it did not.**
+SIGHUP and the IPC reload refresh the shared configuration view; they do not
+reconfigure components that are already running. The previous message —
+`Config reloaded successfully` — read as a statement that the running daemon now
+reflected the new file. Changing the API address and reloading demonstrated
+otherwise: the reload succeeded and the configuration hash changed while the listener
+stayed on the previous port, and only a restart moved it. The operation now reports
+one of three outcomes — failed, unchanged, or accepted — and the accepted case states
+that running components are not automatically reconfigured and that some changes may
+require a restart.
+
+**The same information is available to tooling.** The reload response carries the
+outcome, a `not_performed` runtime-reconfiguration state, and a non-authoritative
+`restart_may_be_required` flag that is set only when configuration was actually
+reparsed; status reports `config_reload_mode` and `runtime_reconfiguration` as
+capabilities that hold for the lifetime of the process. The flag is deliberately not
+called `restart_required` and the accepted outcome is deliberately not called
+`applied`: whether a specific setting has taken effect is per-setting runtime state
+the daemon cannot currently determine, and claiming it would replace one inaccurate
+message with another. Existing reload response fields are unchanged.
+
+**`nftban config reload` no longer reports an unqualified success.** It printed
+`[RELOADED via IPC]` for any accepted reload, repeating the same implication on a
+second surface. It now reports what the daemon reported, and the restart guidance
+covers both a service that only received a signal and a daemon that refreshed its
+configuration view without reconfiguring anything.
+
+---
+
 ## [v1.229.1] - 2026-08-14 — the same bytes on both sides of the comparison
 
 Five corrections, four of which share one shape: a value was compared, indexed or
