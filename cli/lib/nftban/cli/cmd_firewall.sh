@@ -2834,6 +2834,12 @@ firewall_rebuild() {
 #
 # This module records state only. It prunes nothing and reads no historical
 # snapshot -- legacy migration is a separate lane (0C).
+# v1.229.3 P0-3: path-local storage safety authority (bytes + entries/inodes).
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_backup_capacity.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_backup_capacity.sh" 2>/dev/null || true
+fi
+
 _rebuild_tx_state_write() {
     local _dir="$1" _state="$2"
     [[ -n "$_dir" && -d "$_dir" ]] || return 1
@@ -2855,6 +2861,77 @@ _rebuild_tx_last_state() {
     local _dir="$1"
     [[ -n "$_dir" && -r "$_dir/snapshot_state" ]] || return 1
     sed -n 's/^tx_state=//p' "$_dir/snapshot_state" 2>/dev/null | tail -1
+}
+
+# _rebuild_is_update_lifecycle — v1.229.3 P0-2B.
+#
+# The installer passes --install-context explicitly (switchop/rebuild.go), and the
+# in-tree doctrine for it is already "Context is passed, never inferred" -- because
+# `systemctl is-active` cannot distinguish "operator stopped it" from "installer
+# has not started it yet". The same reasoning applies here: whether a rebuild
+# belongs to the update lifecycle is a fact the caller knows and we must not guess.
+_rebuild_is_update_lifecycle() {
+    local _a
+    for _a in "$@"; do [[ "$_a" == "--install-context" ]] && return 0; done
+    return 1
+}
+
+# _rebuild_update_history_prune — v1.229.3 P0-2B + P0-3.
+#
+#   POLICY (lifecycle, not capacity-derived): MIN 1, MAX 2 completed generations.
+#   CAPACITY (P0-3) may only answer "can 1..2 safely fit here?" -- free space never
+#   authorizes MORE history, and pressure never removes the mandatory floor.
+#
+# Ordinary successful rebuilds are disposed at once (P0-2A), so every surviving
+# TERMINAL_SUCCESS generation IS update history; no separate marking is needed.
+#
+# Ordering is the directory NAME (rebuild_YYYYMMDD_HHMMSS is fixed-width, so a
+# lexicographic sort is chronological, total and touch(1)-proof), matching 0C.
+_rebuild_update_history_prune() {
+    local _bk="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup"
+    [[ -d "$_bk" && -r "$_bk" && -x "$_bk" ]] || return 1
+
+    local _hist=() _d
+    while IFS= read -r _d; do
+        [[ -n "$_d" ]] || continue
+        [[ "$(basename -- "$_d")" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ ]] || continue
+        [[ "$(_rebuild_tx_last_state "$_d" 2>/dev/null)" == "TERMINAL_SUCCESS" ]] && _hist+=("$_d")
+    done < <(find "$_bk" -mindepth 1 -maxdepth 1 -type d -name 'rebuild_*' 2>/dev/null | LC_ALL=C sort)
+
+    local _n=${#_hist[@]}
+    (( _n >= 1 )) || return 0
+
+    # MANDATORY FLOOR: the newest completed generation is never removable.
+    local _keep=2
+    local _newest="${_hist[$((_n-1))]}"
+    local _cost _cb _ce _verdict
+    if _cost=$(_bcap_object_cost "$_newest"); then
+        _cb=$(awk '{print $1}' <<<"$_cost"); _ce=$(awk '{print $2}' <<<"$_cost")
+        # Can a SECOND generation of comparable actual cost also fit? Measured from
+        # a real object, never from a fleet mean.
+        _verdict=$(_bcap_verdict "$_bk" "$_cb" "$_ce" "${NFTBAN_LOG_DIR:-/var/log/nftban}")
+        case "$_verdict" in
+            FITS)    _keep=2 ;;
+            NO_FIT)  _keep=1 ;;   # degrade to the floor -- never below it
+            *)       _keep=1      # UNKNOWN: keep the floor, take no optimistic action
+                     echo "NFTBAN_BACKUP_CAPACITY=UNKNOWN (retaining mandatory floor only)" >&2 ;;
+        esac
+        if [[ "$_verdict" == "NO_FIT" ]]; then
+            # REFUSE + REPORT rather than silently shrinking recovery safety.
+            echo "NFTBAN_BACKUP_CAPACITY=NO_FIT — retaining only the mandatory recovery generation; add capacity" >&2
+        fi
+    else
+        _keep=1
+        echo "NFTBAN_BACKUP_CAPACITY=UNKNOWN (cost unreadable; retaining mandatory floor only)" >&2
+    fi
+
+    (( _n > _keep )) || return 0
+    local _i
+    for (( _i = 0; _i < _n - _keep; _i++ )); do
+        [[ "$(basename -- "${_hist[$_i]}")" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ ]] || continue
+        rm -rf -- "${_hist[$_i]}" 2>/dev/null || true
+    done
+    return 0
 }
 
 # _rebuild_dispose_ordinary_success — v1.229.3 P0-2A.
@@ -2991,7 +3068,15 @@ _firewall_rebuild_serialized() {
             # than trusting the rc it just handled. Only the successful ordinary
             # path is disposed -- the failure branch below deliberately keeps its
             # artifact.
-            _rebuild_dispose_ordinary_success "$_REBUILD_SNAPSHOT_DIR" || true
+            if _rebuild_is_update_lifecycle "$@"; then
+                # v1.229.3 P0-2B — UPDATE lifecycle: this generation is RETAINED as
+                # recovery history rather than disposed, then history is bounded to
+                # the policy max. Capacity (P0-3) may reduce 2 -> 1 under pressure
+                # but never removes the mandatory floor.
+                _rebuild_update_history_prune || true
+            else
+                _rebuild_dispose_ordinary_success "$_REBUILD_SNAPSHOT_DIR" || true
+            fi
         else
             _rebuild_tx_state_write "$_REBUILD_SNAPSHOT_DIR" TERMINAL_FAILURE || true
             # No disposal on failure. TERMINAL_FAILURE != DELETABLE: proving that
