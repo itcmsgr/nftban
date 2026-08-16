@@ -543,53 +543,24 @@ nftban_watchdog_cleanup_old() {
     echo "$removed"
 }
 
-nftban_watchdog_cleanup_all() {
-    # Comprehensive cleanup of all watchdog-related data directories
-    # Called by maintenance.sh for periodic housekeeping
-    local total_removed=0
-    local removed
-
-    # 1. Watchdog reports (already handled by cleanup_old)
-    removed=$(nftban_watchdog_cleanup_old 2>/dev/null) || removed=0
-    total_removed=$((total_removed + removed))
-
-    # 2. Stats history directory - keep 30 days
-    local stats_history_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/stats/history"
-    if [[ -d "$stats_history_dir" ]]; then
-        removed=0
-        while IFS= read -r -d '' file; do
-            rm -f "$file" && { ((removed++)) || true; }
-        done < <(find "$stats_history_dir" -name "*.json" -type f -mtime +30 -print0 2>/dev/null)
-        [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old stats history files (>30 days)"
-        total_removed=$((total_removed + removed))
-    fi
-
-    # 3. Profiles directory - keep 7 days (pprof captures)
-    local profiles_dir="${NFTBAN_WATCHDOG_PROFILE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/stats/profiles}"
-    local profile_retention="${NFTBAN_WATCHDOG_PROFILE_RETENTION_DAYS:-7}"
-    if [[ -d "$profiles_dir" ]]; then
-        removed=0
-        while IFS= read -r -d '' file; do
-            rm -f "$file" && { ((removed++)) || true; }
-        done < <(find "$profiles_dir" -type f -mtime +"$profile_retention" -print0 2>/dev/null)
-        [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old profile captures (>${profile_retention} days)"
-        total_removed=$((total_removed + removed))
-    fi
-
-    # 4. Flight recorder directory - keep 7 days
-    local recorder_dir="${NFTBAN_RECORDER_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/recorder}"
-    local recorder_retention="${NFTBAN_RECORDER_RETENTION_DAYS:-7}"
-    if [[ -d "$recorder_dir" ]]; then
-        removed=0
-        while IFS= read -r -d '' file; do
-            rm -f "$file" && { ((removed++)) || true; }
-        done < <(find "$recorder_dir" -type f -mtime +"$recorder_retention" -print0 2>/dev/null)
-        [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old recorder files (>${recorder_retention} days)"
-        total_removed=$((total_removed + removed))
-    fi
-
-    echo "$total_removed"
-}
+# v1.229.3 P1-6C — nftban_watchdog_cleanup_all was REMOVED here, deliberately.
+#
+# It was a DEAD DUPLICATE RETENTION AUTHORITY with divergent policy: zero callers
+# (its docstring claimed "Called by maintenance.sh"; maintenance.sh had no such
+# call), and beyond delegating to cleanup_old it re-implemented cleanup for
+# stats/history (hardcoded 30 days, exceeding the Go authority's hard max of 28)
+# and stats/profiles (no maxCount bound, weaker than the Go authority's 7d+10).
+# Both directories are governed by the WIRED Go collector authorities
+# (internal/stats CleanupHistory/CleanupProfiles, collector.go runCleanup).
+#
+#   SERVICE/FUNCTION UNUSED + SAME RESOURCE ALREADY GOVERNED + POLICY DIFFERS
+#       => DO NOT ACTIVATE THE DUPLICATE — REMOVE IT.
+#   DUPLICATE_IMPLEMENTATION_REMOVED != RETENTION_CAPABILITY_REMOVED
+#
+# cleanup_old remains scheduler-reachable (nftban-watchdog.timer -> watchdog run)
+# and is untouched. Do NOT reintroduce a shell cleanup for stats/history or
+# stats/profiles; the duplicate-authority guard in
+# tests/cleanup_reachability_v1229_3_test.sh fails on the BEHAVIOR, not the name.
 
 # =============================================================================
 # MAIN ENTRY POINT (for timer/service)
@@ -1477,7 +1448,6 @@ export -f nftban_watchdog_metrics_export
 export -f nftban_watchdog_run
 # Check functions exported in nftban_watchdog_checks.sh
 export -f nftban_watchdog_cleanup_old
-export -f nftban_watchdog_cleanup_all
 export -f nftban_watchdog_trend_collect
 export -f nftban_watchdog_trend_display
 export -f nftban_watchdog_trend_averages

@@ -1058,6 +1058,30 @@ EOF
     fi
 
     # ==========================================================================
+    # 9d. Stats/snapshot retention (v1.229.3 P1-6A)
+    # ==========================================================================
+    # nftban_stats_cleanup_logs existed with a real policy (STATS_RETENTION_DAYS,
+    # default 90) and a MANUAL caller only (`nftban stats cleanup`) — no timer, no
+    # service, no maintenance call. Snapshots are written HOURLY, so in practice
+    # the population grew unpruned (4,216 files measured on monitor).
+    #
+    #   MANUAL_CLEANUP_REACHABLE != MAINTENANCE_REACHABLE
+    #
+    # This wires the EXISTING implementation into the EXISTING maintenance
+    # authority. No new engine, no new retention value: the function's own
+    # STATS_RETENTION_DAYS default governs.
+    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_format.sh" ]]; then
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_format.sh" 2>/dev/null || true
+        if declare -f nftban_stats_cleanup_logs &>/dev/null; then
+            if nftban_stats_cleanup_logs >/dev/null 2>&1; then
+                log "INFO" "Stats/snapshot retention: OK"
+            else
+                log "INFO" "Stats/snapshot retention: skipped (non-fatal)"
+            fi
+        fi
+    fi
+
+    # ==========================================================================
     # 10. Complete
     # ==========================================================================
     # v1.228.4 PR-3: VERDICT HONESTY.
