@@ -2811,6 +2811,57 @@ firewall_rebuild() {
     return $_rebuild_exit
 }
 
+# v1.229.3 0B — REBUILD TRANSACTION TERMINAL DISCRIMINATOR.
+#
+# <rebuild_dir>/snapshot_state already carries the A2 SNAPSHOT CAPTURE contract
+# (state=VALID|EMPTY_VERIFIED|FAILED). That answers "did the capture succeed", NOT
+# "has the rebuild transaction finished" -- the snapshot is step 0 of 12, so a
+# VALID capture says nothing about whether the rebuild that owns it is still in
+# flight. Retention cannot reason about a snapshot without that second fact:
+#
+#     SNAPSHOT_CAPTURE_STATE  !=  REBUILD_TRANSACTION_STATE
+#
+# A separate transaction lifecycle is therefore recorded in the SAME file, as an
+# append-only transition log. VALID is never overloaded to mean "completed".
+#
+#     tx_state=ACTIVE            snapshot exists; the owning rebuild is in flight
+#     tx_state=TERMINAL_SUCCESS  the rebuild reached its successful terminal path
+#     tx_state=TERMINAL_FAILURE  failure handling/rollback reached its terminal point
+#
+# Append-only rather than rewrite: a single-line append needs no temp file or
+# rename, cannot truncate the existing capture contract, and preserves the
+# transition history. Readers take the LAST tx_state line.
+#
+# This module records state only. It prunes nothing and reads no historical
+# snapshot -- legacy migration is a separate lane (0C).
+_rebuild_tx_state_write() {
+    local _dir="$1" _state="$2"
+    [[ -n "$_dir" && -d "$_dir" ]] || return 1
+    # A failed append must never be able to read as "completed": eligibility below
+    # requires positively observing a terminal value, so a missing line stays
+    # NON-PRUNABLE rather than defaulting to done.
+    printf 'tx_state=%s\ntx_state_at=%s\n' "$_state" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        >> "$_dir/snapshot_state" 2>/dev/null || return 1
+    return 0
+}
+
+# _rebuild_tx_is_terminal — FAIL-CLOSED eligibility read.
+#
+#     PENDING != COMPLETE      UNKNOWN != COMPLETE
+#
+# Returns 0 ONLY when a terminal value is positively observed. Absent, malformed,
+# unknown, unreadable, still-ACTIVE and observation failure all return non-zero,
+# so a caller that cannot prove termination must treat the artifact as active.
+_rebuild_tx_is_terminal() {
+    local _dir="$1" _last
+    [[ -n "$_dir" && -r "$_dir/snapshot_state" ]] || return 1
+    _last=$(sed -n 's/^tx_state=//p' "$_dir/snapshot_state" 2>/dev/null | tail -1)
+    case "$_last" in
+        TERMINAL_SUCCESS|TERMINAL_FAILURE) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # v1.229.3 P0-J — SHELL REBUILD JOINS THE CANONICAL nft SERIALIZATION AUTHORITY.
 #
 # internal/nftlock declares /run/nftban/nft_operations.lock as "the canonical lock
@@ -2867,8 +2918,32 @@ _firewall_rebuild_serialized() {
         return 1
     fi
 
+    _REBUILD_SNAPSHOT_DIR=""
     _firewall_rebuild_core "$@"
     local _rebuild_rc=$?
+
+    # v1.229.3 0B — TERMINAL TRANSITION.
+    #
+    # This is the only point that executes after EVERY exit path of the core, so it
+    # is structurally impossible to stamp terminal early: rollback and failure
+    # classification both run inside the core and have already finished by the time
+    # control returns here. That matters because
+    #
+    #     REBUILD_FAILED  !=  REBUILD_TRANSACTION_TERMINATED
+    #
+    # -- a forward rebuild that failed is not terminal until its rollback has
+    # reached its own defined end.
+    #
+    # Recorded while the lock is still held, so no concurrent reader can observe a
+    # half-transitioned artifact. A write failure here cannot promote the snapshot
+    # to prunable: eligibility requires positively reading a terminal value.
+    if [[ -n "${_REBUILD_SNAPSHOT_DIR:-}" ]]; then
+        if [[ $_rebuild_rc -eq 0 ]]; then
+            _rebuild_tx_state_write "$_REBUILD_SNAPSHOT_DIR" TERMINAL_SUCCESS || true
+        else
+            _rebuild_tx_state_write "$_REBUILD_SNAPSHOT_DIR" TERMINAL_FAILURE || true
+        fi
+    fi
 
     # Closing the descriptor releases the flock -- on success, validation failure,
     # rollback and every error return alike.
@@ -2957,6 +3032,11 @@ _firewall_rebuild_core() {
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
     local snapshot_dir="$backup_dir/rebuild_$timestamp"
+    # v1.229.3 0B: published so the serialization wrapper -- which is the only place
+    # that runs after EVERY exit path of this function, rollback included -- can
+    # record the terminal transition. Set before the capture attempt so a rebuild
+    # that aborts at the snapshot gate is still stamped terminal.
+    _REBUILD_SNAPSHOT_DIR="$snapshot_dir"
 
     [[ "$quiet" == "false" ]] && echo "  [0/12] Creating full ruleset snapshot..."
     # v1.228.10 PR-1 (A2) — INV-P0-01: the snapshot is a HARD GATE. A rebuild that
@@ -3021,6 +3101,8 @@ _firewall_rebuild_core() {
         return 1
     fi
     [[ "$quiet" == "false" ]] && echo "    Snapshot: $snapshot_dir"
+    # v1.229.3 0B: a snapshot now exists and its owning rebuild is in flight.
+    _rebuild_tx_state_write "$snapshot_dir" ACTIVE || true
 
     # Step 1: Backup current IPs from sets (preserve bans/whitelist)
     [[ "$quiet" == "false" ]] && echo "  [1/12] Backing up current sets..."
