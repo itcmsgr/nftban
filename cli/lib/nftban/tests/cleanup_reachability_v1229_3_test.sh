@@ -71,20 +71,34 @@ awk '/^nftban_stats_cleanup_logs\(\) \{/,/^\}/' "$STATS_SH" | grep -q 'STATS_RET
 # --- P3/P4/P5 · CleanupReports wired beside siblings ---------------------------
 RUNCLEAN="$(awk '/func \(c \*Collector\) runCleanup\(\)/,/^}/' "$COLL")"
 [[ -n "$RUNCLEAN" ]] || { fail "P3 SUBJECT_NOT_FOUND: runCleanup"; RUNCLEAN=""; }
-grep -q 'CleanupReports(c.config.ReportsDir, c.config.ReportsRetentionDays)' <<<"$RUNCLEAN" \
-    && pass "P3 collector lifecycle reaches CleanupReports with the EXISTING policy fields" \
-    || fail "P3 CleanupReports not wired into runCleanup with ReportsDir/ReportsRetentionDays"
+# v1.229.3 correction: the daily report stream moved to LogDir in v1.228.5 and is
+# governed by logrotate. The Go CleanupReports that still targeted the retired
+# /var/lib path was a permanent no-op and has been removed, so these arms assert
+# the CORRECT authority rather than the presence of a dead one.
+#
+#   REACHABLE CLEANUP + RETENTION POLICY != EFFECTIVE RETENTION
+#       unless the target is the current writer-owned path.
+grep -q 'CleanupReports' <<<"$RUNCLEAN" \
+    && fail "P3 stale CleanupReports is back in runCleanup — it targets the retired /var/lib path" \
+    || pass "P3 no Go cleanup targets the retired /var/lib/nftban/reports/daily"
 grep -q 'CleanupHistory(' <<<"$RUNCLEAN" && grep -q 'CleanupProfiles(' <<<"$RUNCLEAN" \
     && pass "P4 CleanupHistory + CleanupProfiles remain wired" \
     || fail "P4 a sibling cleanup lost its wiring"
-if grep -A2 'CleanupReports(' <<<"$RUNCLEAN" | grep -q 'log.Printf'; then
-    pass "P5 CleanupReports failure handled non-fatally (log.Printf), matching sibling convention"
-else
-    fail "P5 CleanupReports error handling diverges from the collector convention"
-fi
+# WRITER -> current path
+grep -q 'NFTBAN_LOG_DIR:-/var/log/nftban}/reports' "$SCRIPT_DIR/../cli/cmd_report.sh" \
+    && pass "P5a daily report WRITER targets LogDir/reports (post-v1.228.5 location)" \
+    || fail "P5a report writer no longer targets the LogDir location"
+# SCHEMA -> log class + logrotate owner
+awk '/path: \/var\/log\/nftban\/reports\/daily/,/mode:/' "$ROOT/build/fhs-spec.yaml" | grep -q 'retention_owner: logrotate' \
+    && pass "P5b schema declares that path log-class, retention_owner=logrotate" \
+    || fail "P5b schema no longer declares logrotate ownership for the daily reports"
+# INSTALLED AUTHORITY -> same path
+grep -q '/var/log/nftban/reports/daily/\*' "$ROOT/internal/logretention/inventory.go" \
+    && pass "P5c logretention inventory governs that exact path (reports-daily)" \
+    || fail "P5c no logrotate inventory entry governs the daily reports"
 grep -q 'ReportsRetentionDays' "$CFG" \
-    && pass "P8b ReportsRetentionDays policy field exists and is the value consumed" \
-    || fail "P8b reports policy field missing"
+    && pass "P8b ReportsRetentionDays retained (operator-facing surface, currently unconsumed)" \
+    || fail "P8b operator-facing retention field silently deleted"
 
 # --- P6 · watchdog chain intact: timer -> run -> cleanup_old -------------------
 grep -qE 'ExecStart=.*nftban watchdog run' "$UNIT" \
@@ -151,12 +165,31 @@ else
     pass "P9 INVERSION: removing the maintenance call is detected (P1 is falsifiable)"
 fi
 
-# --- P10 · INVERSION: remove the CleanupReports call -> P3 must fail -----------
-sed 's/CleanupReports(/CleanupReportsDISABLED(/' "$COLL" > "$TMP/coll_inv.go"
-if awk '/func \(c \*Collector\) runCleanup\(\)/,/^}/' "$TMP/coll_inv.go" | grep -q 'CleanupReports(c.config'; then
-    fail "P10 inversion ineffective — mutated collector still matches"
+# --- P10 · INVERSION: PATH DRIFT, both directions ------------------------------
+# The old P10 (mutating the CleanupReports call) became VACUOUS once the function
+# was removed: the mutation matched nothing and the arm passed for free. The
+# meaningful falsification now is drift of the writer or the cleanup BACK to the
+# retired /var/lib location.
+#
+# D1: reintroduce a Go cleanup of the retired path
+cat "$COLL" > "$TMP/coll_drift.go"
+cat >> "$TMP/coll_drift.go" <<'DRIFT'
+func staleReportsPrune(c *Collector) {
+    _ = CleanupReports(c.config.ReportsDir, c.config.ReportsRetentionDays)
+}
+DRIFT
+if grep -q 'CleanupReports(c.config.ReportsDir' "$TMP/coll_drift.go"; then
+    pass "P10a INVERSION: a reintroduced Go cleanup of the retired path is detectable"
 else
-    pass "P10 INVERSION: removing the collector call is detected (P3 is falsifiable)"
+    fail "P10a drift inversion not detectable — the reports arm would be vacuous"
+fi
+# D2: drift the WRITER back to DataDir
+sed 's|NFTBAN_LOG_DIR:-/var/log/nftban}/reports|NFTBAN_DATA_DIR:-/var/lib/nftban}/reports|' \
+    "$SCRIPT_DIR/../cli/cmd_report.sh" > "$TMP/report_drift.sh"
+if grep -q 'NFTBAN_LOG_DIR:-/var/log/nftban}/reports' "$TMP/report_drift.sh"; then
+    fail "P10b writer-drift inversion ineffective — mutation did not apply"
+else
+    pass "P10b INVERSION: writer drifting back to DataDir is detectable (P5a is falsifiable)"
 fi
 
 # --- P11-INV · restore a synthetic divergent cleanup_all -> guard must fail ----

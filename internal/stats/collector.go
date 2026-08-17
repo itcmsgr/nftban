@@ -439,17 +439,6 @@ func (c *Collector) runCleanup() {
 		log.Printf("stats: profile cleanup error: %v", err)
 	}
 
-	// Cleanup daily report files (v1.229.3 P1-6B).
-	//
-	// CleanupReports existed with a validated ReportsRetentionDays policy field
-	// (default 14, clamped by Validate) and had ZERO callers, while its siblings
-	// above were wired — so reports accumulated unbounded although both the
-	// implementation and the policy were already authored. Same non-fatal error
-	// convention as the siblings: cleanup failure degrades, never kills the
-	// collector.
-	if err := CleanupReports(c.config.ReportsDir, c.config.ReportsRetentionDays); err != nil {
-		log.Printf("stats: reports cleanup error: %v", err)
-	}
 }
 
 // =============================================================================
