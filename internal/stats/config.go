@@ -77,7 +77,15 @@ type Config struct {
 	// Reports
 	ReportsEnabled     bool   // Enable report generation (default: true)
 	ReportsDir         string // Reports output directory
-	ReportsRetentionDays int  // Days to keep daily reports (default: 14, max: 28)
+	// ReportsRetentionDays is currently UNCONSUMED (v1.229.3). Its only reader was
+	// CleanupReports, removed as stale after the v1.228.5 report move; the daily
+	// stream is now governed by logrotate. The field and its
+	// NFTBAN_REPORTS_RETENTION_DAYS schema entry are RETAINED rather than deleted
+	// because that key is an operator-facing configuration surface -- silently
+	// dropping it would break a published contract. Note the key was never wired to
+	// this field in the first place (no Go reader), so the knob was already inert.
+	// Deprecation is registered separately.
+	ReportsRetentionDays int  // Days to keep daily reports (default: 14, max: 28) -- currently unconsumed
 }
 
 // DefaultConfig returns configuration with safe defaults

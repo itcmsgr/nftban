@@ -186,53 +186,26 @@ func CanCreateProfile(profileDir string, maxCount int) bool {
 	return GetProfileCount(profileDir) < maxCount
 }
 
-// CleanupReports removes report files older than retention days.
-// Handles both daily/ subdirectory and root report files.
-func CleanupReports(reportsDir string, retentionDays int) error {
-	if retentionDays < 1 {
-		retentionDays = 1
-	}
-
-	dailyDir := filepath.Join(reportsDir, "daily")
-
-	// Clean daily reports
-	files, err := os.ReadDir(dailyDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
-	deleted := 0
-
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		if !strings.HasSuffix(f.Name(), ".json") {
-			continue
-		}
-
-		filePath := filepath.Join(dailyDir, f.Name())
-		info, err := f.Info()
-		if err != nil {
-			continue
-		}
-
-		if info.ModTime().Before(cutoffTime) {
-			if err := os.Remove(filePath); err != nil {
-				log.Printf("stats: failed to remove old report %s: %v", filePath, err)
-			} else {
-				deleted++
-			}
-		}
-	}
-
-	if deleted > 0 {
-		log.Printf("stats: cleaned up %d old report files", deleted)
-	}
-
-	return nil
-}
+// CleanupReports was REMOVED in v1.229.3 (D-REPORTS-CLEANUP-STALE-AFTER-FHS-MOVE).
+//
+// Its subject was the daily operational report stream, which MOVED in v1.228.5:
+//
+//	before v1.228.5  /var/lib/nftban/reports/daily   <- this function's target
+//	after  v1.228.5  /var/log/nftban/reports/daily   <- logrotate authority
+//	                 (fhs-spec.yaml: artifact_class=log, retention_owner=logrotate;
+//	                  logretention inventory key "reports-daily")
+//
+// The writer, the schema and the retention authority all moved; this
+// implementation did not. It kept targeting the retired path, so os.ReadDir hit
+// os.IsNotExist and it returned nil -- a permanent silent no-op. Wiring it into
+// the collector (v1.229.3 P1-6B) therefore connected a function with no live
+// subject, which is why the wiring was real but the coverage claim was not:
+//
+//	REACHABLE CLEANUP + RETENTION POLICY != EFFECTIVE RETENTION
+//	    unless the target is the current writer-owned path.
+//
+// It is deliberately NOT retargeted at /var/lib/nftban/reports/* -- nothing
+// establishes it as the canonical authority for baseline/watchdog/auditors/
+// archive, and repurposing a stale implementation into a new retention authority
+// is the defect class this release exists to remove. Those classes remain
+// UNCLASSIFIED pending their own writer/lifecycle evidence.
