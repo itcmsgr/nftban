@@ -150,7 +150,14 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.inputs.pr_head_sha }}
         run: |
-          gh api -X POST "repos/$REPO/statuses/$SHA" \
-            -f state="$STATE" \
-            -f context="privacy/trusted-private-gate" \
-            -f description="Trusted private-identifier gate (publication, fail-closed): tree + commit messages + PR title/body, bound to this SHA"
+          # v1.229.4 P2. The verdict in $STATE is ALREADY COMPUTED from both scan
+          # steps and is not recomputed here. The publisher retries only transient
+          # transport/server failures and reports SCAN_RESULT and PUBLICATION_RESULT
+          # separately, so a lost status can never be read as a failed scan.
+          # ⛔ PUBLICATION_FAILURE != SCAN_FAILURE (witnessed: PR #1245, HTTP 503).
+          ./trusted/scripts/ci/publish-trusted-gate-status.sh \
+            "$STATE" \
+            "$REPO" \
+            "$SHA" \
+            "privacy/trusted-private-gate" \
+            "Trusted private-identifier gate (publication, fail-closed): tree + commit messages + PR title/body, bound to this SHA"
