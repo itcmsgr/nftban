@@ -244,6 +244,7 @@ suricata_usr2_guard_gateb_test	cli/lib/nftban/tests/suricata_usr2_guard_gateb_te
 sysctl_risk_idle_age_v2161_test	cli/lib/nftban/tests/sysctl_risk_idle_age_v2161_test.sh	health	test	sysctl	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sysctl_safe_default_v216_test	cli/lib/nftban/tests/sysctl_safe_default_v216_test.sh	health	test	sysctl	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 systemd_cli_token_dispatch_v1228_1_test	cli/lib/nftban/tests/systemd_cli_token_dispatch_v1228_1_test.sh	cli	test	dispatcher	CI_STATIC	ci-bash	true	false	false	false	false	false			
+test_count_floor_v1229_4_test	cli/lib/nftban/tests/test_count_floor_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 tmpfiles_zz_v139_test	cli/lib/nftban/tests/tmpfiles_zz_v139_test.sh	packaging	test	fhs	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 trust_load_missing_whitelist_test	cli/lib/nftban/tests/trust_load_missing_whitelist_test.sh	trust	test	trust-load	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 trusted_flow_tempfile_lifecycle_v1229_3_test	cli/lib/nftban/tests/trusted_flow_tempfile_lifecycle_v1229_3_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

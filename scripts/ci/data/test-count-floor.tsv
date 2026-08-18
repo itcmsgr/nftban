@@ -1,0 +1,24 @@
+# NFTBan — SHELL TEST-COUNT FLOOR  (v1.229.4 P1)
+#
+# ⛔ THIS FILE IS HAND-MAINTAINED AND MUST NEVER BE GENERATED.
+#
+# It exists because the generated index cannot constrain its own shrinkage:
+#
+#     delete a test                  -> test-authority.py check FAILS
+#     delete a test + regenerate     -> the index tracks the smaller reality, silently
+#
+# Regeneration is routine, so the index describes what IS. This floor constrains
+# whether what IS may shrink without a human saying so.
+#
+# ⛔ THE FLOOR MUST NOT DERIVE FROM THE INDEX IT CONSTRAINS. If test-authority.py
+# ever writes this file, the control becomes tautological:
+#     delete -> regenerate index -> regenerate floor -> green.
+#
+# LOWERING the floor is a deliberate act: edit the value, state why, and let it show
+# in review. RAISING it is routine and may accompany any PR that adds tests.
+#
+# field	value
+floor	294
+recorded_at	2026-08-18
+recorded_for	v1.229.4 P1
+justification	Baseline set in v1.229.4 P1, on main 940f0253 plus the two tests this train adds. The domains were proven comparable BEFORE any floor was chosen: non-comment index rows = data rows + 1 TSV header row, and the data rows match *_test.sh on disk exactly — no missing test. See COUNT MISMATCH != MISSING TEST.
