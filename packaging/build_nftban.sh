@@ -1361,6 +1361,48 @@ _nftban_migrate_reports_to_log() {
         fi
     fi
 
+    # ── v1.229.3 P1-4 · ROTATED SIBLINGS ────────────────────────────────────────
+    # The block above is gated on the EXACT head filename, so rotated siblings
+    # written while the old /var/lib stanza was live (v1.150 -> v1.228.5) were never
+    # moved, never rotated and never deleted. Measured: 9 files / ~8.9 MB on monitor.
+    #
+    # ⛔ Deliberately OUTSIDE the head-file guard: once the head file has been
+    # migrated, that guard is false, yet the siblings can still be present. Nesting
+    # this inside it would make the migration succeed once and then silently skip the
+    # remainder forever.
+    #
+    # ⛔ EXACT PATTERNS ONLY — never a glob sweep of /var/lib. Each pattern is the
+    # audit basename plus a logrotate suffix grammar (numbered or dateext, optionally
+    # compressed). An unmatched glob stays literal and is skipped by the -f test.
+    for _sib in \
+        /var/lib/nftban/permissions_audit.log.[0-9] \
+        /var/lib/nftban/permissions_audit.log.[0-9][0-9] \
+        /var/lib/nftban/permissions_audit.log.[0-9].gz \
+        /var/lib/nftban/permissions_audit.log.[0-9][0-9].gz \
+        /var/lib/nftban/permissions_audit.log-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9] \
+        /var/lib/nftban/permissions_audit.log-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].gz
+    do
+        [ -f "\$_sib" ] || continue
+        # a symlink is not ours to relocate: move the link and the target is orphaned,
+        # follow it and we write outside the audited namespace.
+        [ -L "\$_sib" ] && continue
+        # ⛔ NO COMMAND SUBSTITUTION HERE. A backtick or $( ) in this heredoc runs at
+        # SPEC GENERATION time, not at install time — caught by
+        # operator_config_not_package_owned_v1229_test. POSIX parameter expansion has
+        # no such hazard.
+        _sdst=/var/log/nftban/\${_sib##*/}
+        # never overwrite and never concatenate — same rule as the head file.
+        if [ -e "\$_sdst" ]; then _sdst="\$_sdst.pre-v1.228.5"; fi
+        [ -e "\$_sdst" ] && continue
+        mv -f "\$_sib" "\$_sdst" 2>/dev/null || continue
+        chown nftban:nftban "\$_sdst" 2>/dev/null || true
+        chmod 0640 "\$_sdst" 2>/dev/null || true
+        # relabel what was moved, at the move site — same MEASURED lesson as above.
+        if command -v restorecon >/dev/null 2>&1; then
+            restorecon -F "\$_sdst" >/dev/null 2>&1 || true
+        fi
+    done
+
     [ -d "\$_old" ] || return 0
     # v1.228.10 INV-PKG-OWN-01/02: ownership and mode are applied to the EXACT artifacts
     # this migration creates or moves — never recursively over the destination tree. The
