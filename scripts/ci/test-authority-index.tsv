@@ -188,6 +188,7 @@ pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migratio
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_generic_corroborate_v149_test	cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_trusted_flow_test	cli/lib/nftban/tests/portscan_trusted_flow_test.sh	portscan	test	portscan-trusted-flow	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+posture_observation_truth_v1229_3_test	cli/lib/nftban/tests/posture_observation_truth_v1229_3_test.sh	health	test	health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 protection_claim_matrix_v194_test	cli/lib/nftban/tests/protection_claim_matrix_v194_test.sh	cross-cutting	test	protection-claim-matrix	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 rbl_cli_correctness_v220_3_test	cli/lib/nftban/tests/rbl_cli_correctness_v220_3_test.sh	rbl	test	rbl-cli-correctness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rbl_enable_readiness_test	cli/lib/nftban/tests/rbl_enable_readiness_test.sh	rbl	test	rbl-enable-readiness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
