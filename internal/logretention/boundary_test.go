@@ -215,9 +215,26 @@ func TestForensicFloorKindAndSizeTriggered(t *testing.T) {
 		if !f.SizeTriggered {
 			t.Errorf("family %s not marked size-triggered (all families are size-capped)", f.Key)
 		}
-		// hard floor = generations x size = worst-case bytes
-		if uint64(f.RotateCount)*f.SizeCapBytes != f.WorstCaseBytes {
-			t.Errorf("family %s: rotate*size != worst-case (%d*%d != %d)", f.Key, f.RotateCount, f.SizeCapBytes, f.WorstCaseBytes)
+		// hard floor = generations x size x FILES GOVERNED = worst-case bytes.
+		//
+		// v1.229.3 P1-2: this assertion previously read `rotate*size == worst`, which
+		// is the PER-FILE bound. A family covers len(Paths) files that share one
+		// stanza, so it retains that bound once per path — the audit family alone
+		// governs 8. The old form was self-consistent with the old calculation and so
+		// could never have caught the ~3x budget under-count.
+		paths := f.PathCount
+		if paths == 0 {
+			paths = 1
+		}
+		if uint64(f.RotateCount)*f.SizeCapBytes*uint64(paths) != f.WorstCaseBytes {
+			t.Errorf("family %s: rotate*size*paths != worst-case (%d*%d*%d != %d)",
+				f.Key, f.RotateCount, f.SizeCapBytes, paths, f.WorstCaseBytes)
+		}
+		// and the multiplier must actually be applied: a multi-path family whose worst
+		// case equals the single-file bound means the fix regressed.
+		if paths > 1 && f.WorstCaseBytes == uint64(f.RotateCount)*f.SizeCapBytes {
+			t.Errorf("family %s governs %d paths but its worst case is the single-file bound (%d) — path multiplier lost",
+				f.Key, paths, f.WorstCaseBytes)
 		}
 	}
 	if p.CapacityVerdict != CapAchievable {

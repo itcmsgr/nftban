@@ -137,8 +137,15 @@ func LogInventory() []LogPolicy {
 		{Name: "maintenance.log", Category: LogCategoryMaintenance, Rotation: "weekly", Retain: 4, Template: TemplateMain},
 		{Name: "cli-errors.log", Category: LogCategoryCLIErrors, Rotation: "weekly", Retain: 12, Template: TemplateMain},
 		{Name: "debug_trace.log", Category: LogCategoryDebug, Rotation: "weekly", Retain: 12, Template: TemplateMain},
-		{Name: "botguard/botguard.log", Category: LogCategoryBotguard, Rotation: "daily", Retain: 30, Template: TemplateMain},
-		{Name: "botguard/decisions.log", Category: LogCategoryBotguard, Rotation: "daily", Retain: 30, Template: TemplateMain},
+		// v1.229.3 P1-1: the botguard writer emits at the TOP LEVEL. guard.go:62-66
+		// returns cfg.LogDir + "/botguard.log" and :194 takes filepath.Dir(), so
+		// NewLogger opens <LogDir>/botguard.log and <LogDir>/decisions.log. The
+		// `botguard/` subdirectory named here, in the logretention inventory and in
+		// the logrotate stanza was used by NO writer, leaving both held-fd logs
+		// outside every retention authority. All three are corrected together —
+		// this file is the third authority bound by inventory_parity_test.go.
+		{Name: "botguard.log", Category: LogCategoryBotguard, Rotation: "daily", Retain: 30, Template: TemplateMain},
+		{Name: "decisions.log", Category: LogCategoryBotguard, Rotation: "daily", Retain: 30, Template: TemplateMain},
 		{Name: "installer.log", Category: LogCategoryMaintenance, Rotation: "weekly", Retain: 8, Template: TemplateMain},
 		{Name: "update.log", Category: LogCategoryMaintenance, Rotation: "weekly", Retain: 8, Template: TemplateMain},
 		{Name: "suricata-events.log", Category: LogCategorySuricata, Rotation: "daily", Retain: 30, Template: TemplateMain},
