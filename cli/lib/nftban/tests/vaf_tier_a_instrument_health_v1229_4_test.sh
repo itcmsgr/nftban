@@ -98,6 +98,76 @@ fi
 TMP="$(mktemp -d)"; trap 'rm -rf "${TMP:?}"' EXIT
 
 # =============================================================================
+# G1 · REPOSITORY FIXTURE ISOLATION GUARD
+# =============================================================================
+#
+#   ⛔ F2 CONTROL SUBJECT MUST NOT BECOME PRODUCT ANALYSIS SUBJECT
+#      unless that is the property being tested.
+#
+#   REGRESSION WITNESS for a defect this harness committed: the fixture subjects were
+#   first stored as LIVE main.go / go.mod. That single choice did three unwanted things
+#   at once —
+#       1. entered go_changed=true trigger space (a fixture-only PR made the Go security
+#          lane run, and it reported the product's real findings)
+#       2. entered repository-wide Go/security analysis scope (govulncheck, gosec,
+#          CodeQL, Semgrep would carry control source forever)
+#       3. acquired unrelated product policy obligations (SPDX header validation)
+#
+#   ⛔ FIXTURE_SOURCE_PRESENT_IN_REPOSITORY != FIXTURE_ISOLATED_FROM_PRODUCT_ANALYSIS
+#   ⛔ SECURITY CONTROL FIXTURES MUST NOT ACCIDENTALLY EXPAND THE PRODUCT SUBJECT OF
+#      UNRELATED VALIDATORS.
+#
+#   The repository stores INERT DATA (*.go.txt / go.mod.txt); the control materializes an
+#   ephemeral subject at run time and destroys it. This guard fails if anyone renames the
+#   inert data back into live Go files. Bound to the fixture directory ONLY — never a
+#   repository-wide search.
+LIVE_GO="$(find "$FIX" \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -type f 2>/dev/null)"
+if [[ -z "$LIVE_GO" ]]; then
+    pass "G1 fixture data is inert — no live *.go / go.mod / go.sum under $(basename "$FIX")"
+else
+    fail "G1 LIVE GO SOURCE inside the fixture directory — the control subject has re-entered the product Go surface"
+    sed 's/^/          /' <<<"$LIVE_GO"
+fi
+
+# ---- materialization: inert data -> ephemeral subject ---------------------------
+# ⛔ CONTROL MATERIALIZATION != PRODUCT SOURCE MUTATION. Everything below is written
+#    inside the mktemp-owned tree and removed by the EXIT trap.
+SUBJ="$TMP/subjects"
+materialize(){ # $1 = fixture-relative subject dir -> echoes the materialized path
+    local src="$FIX/$1" dst="$SUBJ/$1" f base
+    mkdir -p "$dst" || return 1
+    shopt -s nullglob
+    for f in "$src"/*.txt; do
+        base="$(basename "$f" .txt)"
+        cp -- "$f" "$dst/$base" || return 1
+    done
+    shopt -u nullglob
+    printf '%s' "$dst"
+}
+MAT_OK=1
+for s in govulncheck/subject_positive govulncheck/subject_negative osv/subject_vulnerable osv/subject_fixed; do
+    materialize "$s" >/dev/null || { fail "G2 materialization failed for $s"; MAT_OK=0; }
+done
+# ⛔ Assert the EXACT expected files exist before any scanner is invoked. A scanner
+#    pointed at an empty directory reports zero findings and looks clean.
+declare -A WANT=(
+  [govulncheck/subject_positive]="go.mod main.go"
+  [govulncheck/subject_negative]="go.mod main.go"
+  [osv/subject_vulnerable]="go.mod"
+  [osv/subject_fixed]="go.mod"
+)
+for s in "${!WANT[@]}"; do
+    for w in ${WANT[$s]}; do
+        [[ -s "$SUBJ/$s/$w" ]] || { fail "G2 materialized subject $s is missing $w — a scanner would read this as clean"; MAT_OK=0; }
+    done
+done
+if [[ "$MAT_OK" -eq 1 ]]; then
+    pass "G2 all four subjects materialized into the temp tree with their exact expected files"
+else
+    echo "RESULT: FAIL"; exit 1
+fi
+
+# =============================================================================
 # INSTRUMENT 1 — osv-scanner (version/dependency semantics)
 # =============================================================================
 echo
@@ -121,7 +191,7 @@ print('\n'.join(v['id'] for r in d.get('results',[]) for p in r.get('packages',[
 
     # -- POSITIVE ------------------------------------------------------------
     set +e
-    "$OSV_BIN" scan source --lockfile="$FIX/osv/subject_vulnerable/go.mod" --offline --no-resolve \
+    "$OSV_BIN" scan source --lockfile="$SUBJ/osv/subject_vulnerable/go.mod" --offline --no-resolve \
         --format=json --output="$TMP/osv_pos.json" >"$TMP/osv_pos.out" 2>"$TMP/osv_pos.err"
     P_RC=$?
     set -e
@@ -136,7 +206,7 @@ print('\n'.join(v['id'] for r in d.get('results',[]) for p in r.get('packages',[
 
     # -- NEGATIVE ------------------------------------------------------------
     set +e
-    "$OSV_BIN" scan source --lockfile="$FIX/osv/subject_fixed/go.mod" --offline --no-resolve \
+    "$OSV_BIN" scan source --lockfile="$SUBJ/osv/subject_fixed/go.mod" --offline --no-resolve \
         --format=json --output="$TMP/osv_neg.json" >"$TMP/osv_neg.out" 2>"$TMP/osv_neg.err"
     N_RC=$?
     set -e
@@ -155,7 +225,7 @@ print('\n'.join(v['id'] for r in d.get('results',[]) for p in r.get('packages',[
     OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY="$TMP/db-absent"
     export OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY
     set +e
-    "$OSV_BIN" scan source --lockfile="$FIX/osv/subject_vulnerable/go.mod" --offline --no-resolve \
+    "$OSV_BIN" scan source --lockfile="$SUBJ/osv/subject_vulnerable/go.mod" --offline --no-resolve \
         --format=json --output="$TMP/osv_fail.json" >"$TMP/osv_fail.out" 2>"$TMP/osv_fail.err"
     F_RC=$?
     set -e
@@ -195,7 +265,7 @@ except Exception: sys.exit(9)
 print('\n'.join(r.get('level','') for run in d.get('runs',[]) for r in run.get('results',[]) if r.get('ruleId')==sys.argv[2]))" "$1" "$2"
     }
     run_gvc(){ # $1 subject dir, $2 out prefix, $3 db path
-        ( cd "$FIX/govulncheck/$1" && "$GVC_BIN" -db "file://$3" -format sarif ./... ) \
+        ( cd "$SUBJ/govulncheck/$1" && "$GVC_BIN" -db "file://$3" -format sarif ./... ) \
             >"$TMP/$2.sarif" 2>"$TMP/$2.err"
     }
 
