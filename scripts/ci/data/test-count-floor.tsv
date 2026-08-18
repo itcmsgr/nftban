@@ -18,7 +18,7 @@
 # in review. RAISING it is routine and may accompany any PR that adds tests.
 #
 # field	value
-floor	294
+floor	295
 recorded_at	2026-08-18
 recorded_for	v1.229.4 P1
 justification	Baseline set in v1.229.4 P1, on main 940f0253 plus the two tests this train adds. The domains were proven comparable BEFORE any floor was chosen: non-comment index rows = data rows + 1 TSV header row, and the data rows match *_test.sh on disk exactly — no missing test. See COUNT MISMATCH != MISSING TEST.

@@ -95,23 +95,43 @@ jobs:
         id: scan
         if: steps.install_scanner.outputs.provisioned == 'true'
         run: |
-          # Scan go.mod in lockfile mode
-          # Config: osv-scanner.toml suppresses stdlib CVEs (patched by Go toolchain)
-          # Exit 0 = clean, Exit 1 = vulnerabilities found, Exit 128 = scan error
+          # Scan go.mod in lockfile mode.
+          # Exit 0 = clean · 1 = findings AND/OR unused ignores · 128 = scan error
+          #
+          # ⛔ v1.229.4 PR-A — THE OBSERVABILITY DEFECT THIS FIXES.
+          # GitHub runs `run:` blocks under `bash -e`. The previous form was
+          #     ./osv-scanner …; OSV_EXIT=$?
+          # and a simple command returning non-zero TERMINATES the script under -e.
+          # So on every non-clean scan the step died AT the scanner line:
+          #   · scanner_ran was never written -> the SARIF step reported
+          #     "did not complete a scan"
+          #   · the SARIF (which EXISTS on disk, containing the findings) was
+          #     never uploaded
+          #   · every classification branch below was DEAD CODE — the
+          #     "found vulnerabilities" message never actually printed
+          # Measured: 25/25 runs from 2026-08-13 produced no finding data, while a
+          # diagnostic scan of the same tree reported 7 findings.
+          #
+          # `set +e` around the invocation is the whole fix: capture the status
+          # instead of dying on it.
+          set +e
           ./osv-scanner scan --config=osv-scanner.toml --lockfile=go.mod \
-            --format=sarif --output=osv-results.sarif; OSV_EXIT=$?
+            --format=sarif --output=osv-results.sarif
+          OSV_EXIT=$?
+          set -e
           echo "scanner_ran=true" >> "$GITHUB_OUTPUT"
           echo "osv_exit=${OSV_EXIT}" >> "$GITHUB_OUTPUT"
+          echo "osv exit=${OSV_EXIT}"
           if [[ "$OSV_EXIT" -eq 128 ]]; then
-            # SCANNER_FAILURE. Previously a warning that let the job pass: an
-            # errored scan then read as "no vulnerabilities found", which is the
-            # same defect class as an unobserved state reported as a safe one.
+            # SCANNER_FAILURE: no vulnerability conclusion is possible.
+            # ⛔ OBSERVATION FAILURE != CLEAN.
             echo "::error::SCANNER_FAILURE — OSV-Scanner exited 128 (scan error). No vulnerability conclusion can be drawn from this run."
             exit 1
-          elif [[ "$OSV_EXIT" -ne 0 ]]; then
-            echo "::error::OSV-Scanner found vulnerabilities in Go dependencies"
-            exit 1
           fi
+          # ⛔ NO VERDICT HERE. rc=1 means findings AND/OR unused ignores, and the
+          # exit code cannot tell them apart. The verdict is issued AFTER the SARIF
+          # is validated and uploaded, from the scanner-native result count — so a
+          # run containing real findings can never be lost or mislabelled as drift.
 
       # Runs even when an earlier step failed, so the SARIF contract is decided
       # HERE with attribution, rather than surfacing later as a path error.
@@ -156,3 +176,45 @@ jobs:
         with:
           sarif_file: osv-results.sarif
           category: osv-scanner
+
+      # v1.229.4 PR-A. The verdict is issued LAST, from the scanner-native SARIF,
+      # so the finding evidence is uploaded before any failure is raised.
+      #
+      #   FINDINGS DOMINATE. rc=1 can mean findings, unused ignores, or BOTH. The
+      #   count of scanner-native results decides — never the exit code, and never
+      #   a message match. A run with 7 findings and 34 unused ignores is a
+      #   SECURITY FINDING, not configuration drift.
+      #
+      #   ⛔ UNUSED_IGNORE != VULNERABILITY   ⛔ OBSERVATION FAILURE != CLEAN
+      - name: OSV verdict (scanner-native results)
+        if: always() && steps.install_scanner.outputs.provisioned == 'true'
+        env:
+          OSV_EXIT: ${{ steps.scan.outputs.osv_exit }}
+          SARIF_READY: ${{ steps.sarif.outputs.sarif_ready }}
+        run: |
+          if [[ "$SARIF_READY" != "true" ]]; then
+            echo "::error::OBSERVATION_FAILURE — no validated SARIF for this scan (osv exit ${OSV_EXIT}). No vulnerability conclusion can be drawn; this is NOT a clean result."
+            exit 1
+          fi
+          RESULTS=$(python3 - <<'PY'
+          import json,sys
+          try:
+              d=json.load(open('osv-results.sarif'))
+          except Exception as e:
+              print("PARSE_FAILURE", file=sys.stderr); sys.exit(2)
+          print(sum(len(r.get('results',[])) for r in d.get('runs',[])))
+          PY
+          ) || {
+            echo "::error::OBSERVATION_FAILURE — osv-results.sarif exists but is not parseable. ⛔ An unparseable artifact is NOT an empty one."
+            exit 1
+          }
+          echo "scanner-native SARIF results: ${RESULTS}"
+          if [[ "$RESULTS" -gt 0 ]]; then
+            echo "::error title=OSV vulnerability findings::OSV-Scanner reported ${RESULTS} finding(s) in Go dependencies/stdlib. See the Security tab (category osv-scanner) for the uploaded SARIF. Coincident suppression drift, if any, does NOT downgrade this."
+            exit 1
+          fi
+          if [[ "$OSV_EXIT" -ne 0 ]]; then
+            echo "::error title=OSV suppression drift::The scan reported ZERO findings but exited ${OSV_EXIT} — osv-scanner.toml lists ignores that match nothing. This is CONFIGURATION DRIFT, not a vulnerability. ⛔ UNUSED_IGNORE != VULNERABILITY."
+            exit 1
+          fi
+          echo "CLEAN — scan completed, SARIF validated, zero scanner-native results."
