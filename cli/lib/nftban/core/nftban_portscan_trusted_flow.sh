@@ -112,6 +112,12 @@ _ptf_field_safe() { [[ ! "$1" =~ [\$\`\;\|\<\>\\\(\)\{\}\&\!\*\ \	] || "$1" == "
 nftban_portscan_trusted_flow_load() {
     _PTF_SRC=(); _PTF_PROTO=(); _PTF_PORT=(); _PTF_DST=(); _PTF_RATE=(); _PTF_KEY=()
     _PTF_PARSE_ERRORS=0; _PTF_DECLARATIONS=0; _PTF_LOADED=1
+    # Belt-and-braces reap of temps orphaned by a process that died before the rename.
+    # ⛔ WIRED HERE ON PURPOSE. An unreferenced reaper is the P1-6 defect class (a
+    # correct prune that nothing ever invokes). load() is guarded by _PTF_LOADED, so
+    # this runs ONCE PER PROCESS — never on the per-event hot path — and it is reached
+    # because suppress() lazily calls load() on the first event it handles.
+    _ptf_reap_orphan_temps
     local f="$NFTBAN_PORTSCAN_TRUSTED_FLOWS_FILE"
     [[ -f "$f" ]] || { _ptf_state_set declarations 0; _ptf_state_set parse_errors 0; return 0; }
 
@@ -178,11 +184,53 @@ _ptf_state_unlock() { [[ -n "${_ptf_lockfd:-}" ]] && exec {_ptf_lockfd}>&- 2>/de
 # comparison, never grep regex, for get/set.
 _ptf_state_get() { [[ -f "$_PTF_STATE_FILE" ]] || { echo ""; return; }
     awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,"");print;exit}' "$_PTF_STATE_FILE" 2>/dev/null; }
+# ⛔ THIS RUNS ON A PER-EVENT HOT PATH (reached from portscan_classic.sh per candidate
+# event), so a leak here is unbounded in COUNT, not just in size.
+#
+# The previous form removed the temp only when `mv` FAILED. Death between mktemp and mv
+# — signal, shell exit, host restart — left the temp behind forever, and this module
+# writes into the DATA-DIR ROOT rather than a state/ subdirectory, so the orphans landed
+# next to durable product state.
+#
+# Fix (a): the trap-guarded atomic write already used by nftban_file_ops.sh:47-50 — the
+# temp is removed on ANY exit path, and the trap is cleared once the rename has
+# succeeded so the now-canonical file is never touched.
 _ptf_state_set() { # key value  (atomic replace)
     mkdir -p "$(dirname "$_PTF_STATE_FILE")" 2>/dev/null || return 0
     local tmp; tmp="$(mktemp "${_PTF_STATE_FILE}.XXXXXX" 2>/dev/null)" || return 0
+    # RETURN scope, not EXIT: this is a library function on a hot path — an EXIT trap
+    # here would fire at shell teardown and would clobber an unrelated later handler.
+    trap 'rm -f -- "$tmp" 2>/dev/null' RETURN
     { [[ -f "$_PTF_STATE_FILE" ]] && awk -F= -v k="$1" '$1!=k' "$_PTF_STATE_FILE" 2>/dev/null; echo "$1=$2"; } > "$tmp" 2>/dev/null
-    mv -f "$tmp" "$_PTF_STATE_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    if mv -f "$tmp" "$_PTF_STATE_FILE" 2>/dev/null; then
+        # renamed away: nothing left to remove, and the trap must NOT delete the
+        # canonical file that now occupies the destination.
+        tmp=""
+        trap - RETURN
+    fi
+}
+
+# Fix (b), belt-and-braces: reap orphans left by a process that died before the rename.
+#
+# ⛔ CLEANUP OWNERSHIP IS PROVEN, NOT ASSUMED:
+#   CREATION  only _ptf_state_set creates "${_PTF_STATE_FILE}.XXXXXX". The panel modules
+#             use the same TEMPLATE SHAPE but a different basename (enabled.conf) in a
+#             different directory, so they are outside this namespace.
+#   BOUND     the pattern is the exact basename plus exactly six suffix characters.
+#             "${_PTF_STATE_FILE}.lock" has a FOUR-character suffix and cannot match.
+#             The canonical state file has no suffix and cannot match.
+#   ⛔ A directory-wide glob is NOT used. This module's state dir defaults to the
+#     data-dir ROOT, where a broad "state.*" sweep would reach unrelated product state.
+# ⛔ A KNOWN FILENAME PATTERN IS NOT PROOF OF OWNERSHIP — hence the constraints above.
+_ptf_reap_orphan_temps() {
+    local dir base
+    dir="$(dirname "$_PTF_STATE_FILE")" || return 0
+    base="$(basename "$_PTF_STATE_FILE")" || return 0
+    [[ -d "$dir" ]] || return 0
+    # -mmin +60 mirrors the existing reaper prior art in
+    # nftban_unified_exporter_helpers.sh:54. The age floor keeps a live writer's
+    # in-flight temp out of scope; it is not the safety mechanism on its own.
+    find "$dir" -maxdepth 1 -type f -name "${base}.??????" -mmin +60 -delete 2>/dev/null || true
 }
 _ptf_state_incr() { local cur; cur="$(_ptf_state_get "$1")"; [[ "$cur" =~ ^[0-9]+$ ]] || cur=0; _ptf_state_set "$1" "$((cur + ${2:-1}))"; }
 
@@ -267,6 +315,9 @@ nftban_portscan_trusted_flow_validate() {
 
 export -f _ptf_ip_to_int _ptf_v4_in_cidr _ptf_v6_expand _ptf_hex_to_bin _ptf_v6_in_cidr _ptf_ip_in_cidr 2>/dev/null || true
 export -f _ptf_is_ipv4 _ptf_is_ipv6 _ptf_is_ipv4_cidr _ptf_is_ipv6_cidr _ptf_field_safe _ptf_perr 2>/dev/null || true
-export -f _ptf_state_get _ptf_state_set _ptf_state_incr _ptf_rate_check 2>/dev/null || true
+# _ptf_reap_orphan_temps must be exported alongside these: nftban_portscan_trusted_flow_load
+# is itself exported, and it calls the reaper. Without this, load() running in a
+# subshell that inherits only the exported set would invoke an undefined command.
+export -f _ptf_state_get _ptf_state_set _ptf_state_incr _ptf_rate_check _ptf_reap_orphan_temps 2>/dev/null || true
 export -f nftban_portscan_trusted_flow_load nftban_portscan_trusted_flow_suppress 2>/dev/null || true
 export -f nftban_portscan_trusted_flow_render nftban_portscan_trusted_flow_validate 2>/dev/null || true
