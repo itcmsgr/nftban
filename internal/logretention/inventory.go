@@ -82,7 +82,12 @@ func DefaultFamilies() []LogFamily {
 		{Key: "tunnel", File: "main", Cadence: "weekly", Volume: VolumeLow, Weight: 2, FloorDays: 14, BaseRotate: 12, BaseSizeBytes: 20 * MiB, Copytruncate: true, Create: nft,
 			Paths: []string{"/var/log/nftban/tunnel.log"}},
 		{Key: "botguard", File: "main", Cadence: "daily", Volume: VolumeHigh, Weight: 8, FloorDays: 7, BaseRotate: 30, BaseSizeBytes: 100 * MiB, Copytruncate: true, Create: nft,
-			Paths: []string{"/var/log/nftban/botguard/botguard.log", "/var/log/nftban/botguard/decisions.log"}},
+			// v1.229.3 P1-1: the writer emits at the TOP LEVEL, not in a botguard/ subdirectory.
+			// internal/botguard/guard.go:62-66 returns cfg.LogDir + "/botguard.log" and :194 takes
+			// filepath.Dir() of it, so NewLogger opens /var/log/nftban/{botguard,decisions}.log.
+			// The inventory previously recorded paths no writer used, so these two held-fd logs
+			// were invisible to every retention authority.
+			Paths: []string{"/var/log/nftban/botguard.log", "/var/log/nftban/decisions.log"}},
 		{Key: "watchdog-subdir", File: "main", Cadence: "weekly", Volume: VolumeLow, Weight: 2, FloorDays: 14, BaseRotate: 4, BaseSizeBytes: 20 * MiB, Copytruncate: true, Create: nft,
 			Paths: []string{"/var/log/nftban/watchdog/alerts.log", "/var/log/nftban/watchdog/stats.log", "/var/log/nftban/watchdog/profiles.log"}},
 		{Key: "audit", File: "main", Cadence: "daily", Volume: VolumeMedium, Weight: 6, FloorDays: 30, BaseRotate: 90, BaseSizeBytes: 50 * MiB, Copytruncate: true, Create: nft,

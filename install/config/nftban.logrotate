@@ -201,8 +201,17 @@
 # handler → copytruncate is mandatory (rename+create would strand the daemon on
 # the rotated-away inode). Migrating this requires a daemon Reopen()+signal path
 # (tracked separately, not in this release).
-/var/log/nftban/botguard/botguard.log
-/var/log/nftban/botguard/decisions.log {
+# ⛔ v1.229.3 P1-1: these paths previously named a `botguard/` SUBDIRECTORY that no
+# writer ever used. internal/botguard/guard.go:62-66 returns
+# `cfg.LogDir + "/botguard.log"`, and guard.go:194 takes filepath.Dir() of it, so
+# NewLogger writes /var/log/nftban/botguard.log and /var/log/nftban/decisions.log at
+# the TOP LEVEL. No stanza matched either file, leaving two held-fd logs unbounded.
+#
+# The stanza is aligned to the writer rather than the writer to the stanza: moving the
+# writer would orphan the operator's existing top-level logs, and no migration for them
+# exists in this release.
+/var/log/nftban/botguard.log
+/var/log/nftban/decisions.log {
     daily
     rotate 30
     size 100M

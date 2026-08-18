@@ -156,8 +156,9 @@ type FamilyPolicy struct {
 	Key               string `json:"key"`
 	RotateCount       int    `json:"rotate_count"` // retained generations (hard floor in generations)
 	SizeCapBytes      uint64 `json:"size_cap_bytes"`
+	PathCount         int    `json:"path_count"`                 // files this family governs; worst case scales with it
 	RetentionDays     int    `json:"target_retention_days"`      // best-case elapsed days; size pressure may reduce actual days
-	WorstCaseBytes    uint64 `json:"worst_case_bytes"`           // RotateCount * SizeCapBytes = hard byte floor (uncompressed)
+	WorstCaseBytes    uint64 `json:"worst_case_bytes"`           // RotateCount * SizeCapBytes * len(Paths), uncompressed
 	ForensicFloorDays int    `json:"forensic_floor_target_days"` // TARGET floor (NOT guaranteed under size pressure)
 	CeilingDays       int    `json:"ceiling_days"`
 	SizeTriggered     bool   `json:"size_triggered"` // a size cap exists -> may rotate before cadence
@@ -390,7 +391,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		if f.Fixed {
 			rd := f.BaseRotate * cadenceDays(f.Cadence)
 			w := famWork{f: f, rotate: f.BaseRotate, retDays: rd, size: f.BaseSizeBytes, fixed: true, floorDays: rd, ceilDays: rd}
-			fixedWorst += safeconv.ToUint64OrZero(w.rotate) * w.size
+			fixedWorst += worstCaseBytes(w)
 			work = append(work, w)
 			continue
 		}
@@ -414,7 +415,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 		}
 		retDays := clampInt(defaultRetentionDays(f.Volume, prof), effMin, ceil)
 		rotate := rotationsForDays(f.Cadence, retDays)
-		nonFixedFloor += safeconv.ToUint64OrZero(rotate) * minFamilySizeBytes
+		nonFixedFloor += safeconv.ToUint64OrZero(rotate) * minFamilySizeBytes * pathCount(f)
 		totalWeight += f.Weight
 		work = append(work, famWork{f: f, retDays: retDays, rotate: rotate, floorDays: effMin, ceilDays: ceil})
 	}
@@ -467,7 +468,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 	families := make([]FamilyPolicy, 0, len(work))
 	unbounded := 0
 	for _, w := range work {
-		worst := safeconv.ToUint64OrZero(w.rotate) * w.size
+		worst := worstCaseBytes(w)
 		theoretical += worst
 		if w.size == 0 {
 			unbounded++
@@ -476,6 +477,7 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 			Key:               w.f.Key,
 			RotateCount:       w.rotate,
 			SizeCapBytes:      w.size,
+			PathCount:         len(w.f.Paths),
 			RetentionDays:     w.retDays,
 			WorstCaseBytes:    worst,
 			ForensicFloorDays: w.floorDays,
@@ -531,6 +533,30 @@ func Calculate(disk DiskFacts, prof Profile, o Overrides, fams []LogFamily) (Eff
 }
 
 // famWork is the calculator's per-family working state.
+// pathCount is the number of files a family actually governs.
+//
+// ⛔ A family's `rotate * size` is a PER-FILE bound, but one stanza can cover many
+// files. The audit family alone declares 8 paths, so a single stanza retains its
+// bound EIGHT times. Omitting this multiplier made the budget guard under-count the
+// theoretical maximum roughly 3x across the current inventory, which is the
+// difference between a budget that holds and one that is silently exceeded.
+//
+// A family with no declared path still bounds one file; returning 0 here would erase
+// the family from the budget entirely.
+func pathCount(fam LogFamily) uint64 {
+	if len(fam.Paths) == 0 {
+		return 1
+	}
+	return uint64(len(fam.Paths))
+}
+
+// worstCaseBytes is the SINGLE definition of a family's uncompressed worst case.
+// Every caller uses it so that reporting, budget-fitting and trim ordering can never
+// disagree about what a family costs.
+func worstCaseBytes(w famWork) uint64 {
+	return safeconv.ToUint64OrZero(w.rotate) * w.size * pathCount(w.f)
+}
+
 type famWork struct {
 	f         LogFamily
 	rotate    int
@@ -548,7 +574,7 @@ func trimToBudget(work []famWork, budget uint64) {
 	sum := func() uint64 {
 		var t uint64
 		for _, w := range work {
-			t += safeconv.ToUint64OrZero(w.rotate) * w.size
+			t += worstCaseBytes(w)
 		}
 		return t
 	}
@@ -560,8 +586,8 @@ func trimToBudget(work []famWork, budget uint64) {
 		}
 	}
 	sort.SliceStable(idx, func(a, b int) bool {
-		wa := safeconv.ToUint64OrZero(work[idx[a]].rotate) * work[idx[a]].size
-		wb := safeconv.ToUint64OrZero(work[idx[b]].rotate) * work[idx[b]].size
+		wa := worstCaseBytes(work[idx[a]])
+		wb := worstCaseBytes(work[idx[b]])
 		if wa != wb {
 			return wa > wb
 		}

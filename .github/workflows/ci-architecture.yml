@@ -219,6 +219,15 @@ jobs:
       - name: Check artifact class authority (v1.228.5, BLOCKING)
         run: ./scripts/ci/check-artifact-class-authority.sh
 
+      # v1.229.3 P1-2. The MISSING DIRECTION. The retention authority already checks
+      # that what it declares is coherent; nothing checked that what the product
+      # WRITES is declared, so botguard.log and decisions.log were written for
+      # releases with no stanza matching them. Ratchets against a recorded baseline:
+      # a NEW undeclared writer fails, the pre-existing population stays registered
+      # debt rather than being swept into this release.
+      - name: Check log writer -> retention inventory parity (v1.229.3, BLOCKING)
+        run: ./scripts/ci/check-log-writer-inventory-parity.sh
+
       # Build provenance: the packaging build must never silently package a stale
       # bin/* artifact. Source builds rebuild+verify; prebuilt packaging is explicit
       # and manifest-verified. Runs the hermetic provenance test suite.
