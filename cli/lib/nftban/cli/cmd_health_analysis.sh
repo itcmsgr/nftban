@@ -648,7 +648,12 @@ nftban_health_cmd_posture() {
     echo ""
 
     local warnings=0
-    local issues=0
+    # ⛔ UNKNOWN IS A WARNING, NEVER OK. Same rule as the existing security checks
+    # (nftban_health_checks_security.sh:1190-1191): an unmeasured control is not a
+    # passing control. `unknowns` makes unreadable sources visible in the summary
+    # instead of silently inflating "checks passed".
+    local unknowns=0
+    local _POSTURE_UNKNOWN="__NFTBAN_UNKNOWN__"
     local total_checks=0
 
     # Load posture collection if available
@@ -667,10 +672,23 @@ nftban_health_cmd_posture() {
     # in /etc/ssh/sshd_config.d/*.conf and can flip the main file's values.
     # Prefer `sshd -T` (authoritative merged config, root-only); otherwise merge
     # the main file with the drop-ins (last matching value wins, lexical order).
-    # Case-insensitive directive match, matching sshd. Defaults to "yes" when a
-    # directive is absent, preserving the prior conservative warning behaviour.
+    # Case-insensitive directive match, matching sshd.
+    #
+    # ⛔ READ FAILURE != DIRECTIVE ABSENT. When a config source IS readable and the
+    # directive simply is not present, sshd's own default applies and "yes" is a
+    # TRUE answer. When NO source could be read at all, the value is not known and
+    # this returns the UNKNOWN sentinel. Printing "yes" for an unread file states a
+    # fact the system does not have.
+    # Renders one posture row whose source could not be read. Counts as a warning
+    # AND as an unknown, so the summary can never call it a pass.
+    _posture_unknown_row() {
+        printf "  %-28s ❔ UNKNOWN: %s\n" "$1" "$2"
+        ((unknowns++)) || true
+        ((warnings++)) || true
+    }
+
     _ssh_effective_directive() {
-        local directive="$1" main_config="$2" value=""
+        local directive="$1" main_config="$2" value="" _read_any=false
         if [[ "${EUID:-$(id -u)}" -eq 0 ]] && command -v sshd >/dev/null 2>&1; then
             local teff
             teff=$(sshd -T 2>/dev/null | awk -v d="$directive" 'tolower($1)==d {print $2; exit}')
@@ -680,12 +698,25 @@ nftban_health_cmd_posture() {
             fi
         fi
         local f match
-        for f in "$main_config" /etc/ssh/sshd_config.d/*.conf; do
+        # Drop-in directory is overridable ONLY so this resolver can be exercised
+        # hermetically; production default is unchanged. A root test cannot prove
+        # unreadability with chmod (DAC_OVERRIDE), so the test supplies a directory
+        # that contains no readable source instead.
+        for f in "$main_config" "${NFTBAN_SSHD_CONFIG_D:-/etc/ssh/sshd_config.d}"/*.conf; do
             [[ -f "$f" ]] || continue
+            # readability is the discriminator, not existence
+            [[ -r "$f" ]] || continue
+            _read_any=true
             match=$(grep -iE "^[[:space:]]*${directive}[[:space:]]" "$f" 2>/dev/null | awk '{print $2}' | tail -n1)
             [[ -n "$match" ]] && value="$match"
         done
-        if [[ -n "$value" ]]; then echo "$value"; else echo "yes"; fi
+        if [[ -n "$value" ]]; then
+            echo "$value"
+        elif [[ "$_read_any" == true ]]; then
+            echo "yes"          # read succeeded, directive absent -> sshd default
+        else
+            echo "$_POSTURE_UNKNOWN"
+        fi
     }
 
     local ssh_config="/etc/ssh/sshd_config"
@@ -695,7 +726,9 @@ nftban_health_cmd_posture() {
         # PasswordAuthentication
         local pass_auth
         pass_auth=$(_ssh_effective_directive "passwordauthentication" "$ssh_config")
-        if [[ "$pass_auth" == "no" ]]; then
+        if [[ "$pass_auth" == "$_POSTURE_UNKNOWN" ]]; then
+            _posture_unknown_row "PasswordAuthentication" "no readable sshd config source"
+        elif [[ "$pass_auth" == "no" ]]; then
             printf "  %-28s ✅ Disabled (key-only)\n" "PasswordAuthentication"
         else
             printf "  %-28s ⚠️  Enabled (consider disabling)\n" "PasswordAuthentication"
@@ -708,7 +741,9 @@ nftban_health_cmd_posture() {
         # PermitRootLogin
         local root_login
         root_login=$(_ssh_effective_directive "permitrootlogin" "$ssh_config")
-        if [[ "$root_login" == "no" || "$root_login" == "prohibit-password" ]]; then
+        if [[ "$root_login" == "$_POSTURE_UNKNOWN" ]]; then
+            _posture_unknown_row "PermitRootLogin" "no readable sshd config source"
+        elif [[ "$root_login" == "no" || "$root_login" == "prohibit-password" ]]; then
             printf "  %-28s ✅ %s\n" "PermitRootLogin" "$root_login"
         else
             printf "  %-28s ⚠️  %s (consider 'no' or 'prohibit-password')\n" "PermitRootLogin" "$root_login"
@@ -721,7 +756,9 @@ nftban_health_cmd_posture() {
         # X11Forwarding
         local x11_fwd
         x11_fwd=$(_ssh_effective_directive "x11forwarding" "$ssh_config")
-        if [[ "$x11_fwd" == "no" ]]; then
+        if [[ "$x11_fwd" == "$_POSTURE_UNKNOWN" ]]; then
+            _posture_unknown_row "X11Forwarding" "no readable sshd config source"
+        elif [[ "$x11_fwd" == "no" ]]; then
             printf "  %-28s ✅ Disabled\n" "X11Forwarding"
         else
             printf "  %-28s ℹ️  Enabled (minor risk)\n" "X11Forwarding"
@@ -744,6 +781,7 @@ nftban_health_cmd_posture() {
         # v1.19.20 FIX
         ((total_checks++)) || true
         local risky_count=0
+        local sudoers_unreadable=0
         local nftban_sudoers_ok=false
 
         for sfile in "$sudoers_dir"/*; do
@@ -761,6 +799,15 @@ nftban_health_cmd_posture() {
             [[ "$sname" == *~ ]] && continue
             [[ "$sname" == *.bak ]] && continue
 
+            # ⛔ UNREADABLE != CLEAN. Without this, a non-root run cannot read the
+            # sudoers drop-ins, grep fails silently, risky_count stays 0 and the row
+            # prints "No risky NOPASSWD patterns" — a definite negative from a read
+            # that never happened. This is the worst of the seven sites because the
+            # non-root path is the DEFAULT invocation.
+            if [[ ! -r "$sfile" ]]; then
+                ((sudoers_unreadable++)) || true
+                continue
+            fi
             # Flag ALL NOPASSWD (risky)
             if grep -qE "NOPASSWD:\s*ALL" "$sfile" 2>/dev/null; then
                 printf "  %-28s ⚠️  %s has ALL NOPASSWD\n" "Sudoers" "$sname"
@@ -769,7 +816,9 @@ nftban_health_cmd_posture() {
             fi
         done
 
-        if [[ $risky_count -eq 0 ]]; then
+        if [[ ${sudoers_unreadable:-0} -gt 0 ]]; then
+            _posture_unknown_row "Sudoers" "${sudoers_unreadable} file(s) unreadable — NOPASSWD not verified"
+        elif [[ $risky_count -eq 0 ]]; then
             printf "  %-28s ✅ No risky NOPASSWD patterns\n" "Sudoers"
         else
             ((warnings += risky_count))
@@ -856,7 +905,11 @@ nftban_health_cmd_posture() {
             fi
         done < "$integrity_file"
 
-        if [[ $drift_count -eq 0 ]]; then
+        if [[ $checked_count -eq 0 ]]; then
+            # ⛔ ZERO VERIFIED != VERIFIED ZERO DRIFT. An unreadable or empty manifest
+            # produced "✅ 0 files verified" — a green row proving nothing was checked.
+            _posture_unknown_row "Config integrity" "manifest yielded no readable files — integrity NOT verified"
+        elif [[ $drift_count -eq 0 ]]; then
             printf "  %-28s ✅ %d files verified\n" "Config integrity" "$checked_count"
         else
             printf "  %-28s ⚠️  %d file(s) modified since install\n" "Config integrity" "$drift_count"
@@ -880,7 +933,11 @@ nftban_health_cmd_posture() {
     if declare -f _nftban_mac_posture >/dev/null 2>&1; then
         ((total_checks++)) || true
         local _mac_line _mac_system _mac_verdict _mac_mode _mac_summary _mac_detail
-        _mac_line=$(_nftban_mac_posture 2>/dev/null) || _mac_line="none|INFO|n/a|MAC not applicable|"
+        # ⛔ HELPER FAILURE != MAC NOT APPLICABLE. The old fallback turned an error
+        # (including the non-root case) into a silent informational "not applicable".
+        if ! _mac_line=$(_nftban_mac_posture 2>/dev/null); then
+            _mac_line="none|UNKNOWN|n/a|MAC posture could not be determined|"
+        fi
         IFS='|' read -r _mac_system _mac_verdict _mac_mode _mac_summary _mac_detail <<<"$_mac_line"
         case "$_mac_verdict" in
             PASS)
@@ -891,6 +948,9 @@ nftban_health_cmd_posture() {
                 printf "  %-28s ⚠️  %s\n" "MAC profile" "$_mac_summary"
                 [[ -n "$_mac_detail" ]] && printf "      FIX: %s\n" "$_mac_detail"
                 ((warnings++)) || true
+                ;;
+            UNKNOWN)
+                _posture_unknown_row "MAC profile" "$_mac_summary"
                 ;;
             *)  # INFO / N/A — not applicable on this host; never a warning
                 printf "  %-28s ℹ️  %s\n" "MAC profile" "$_mac_summary"
@@ -906,24 +966,38 @@ nftban_health_cmd_posture() {
     # SUMMARY
     # ───────────────────────────────────────────────────────────────────────
     echo "─────────────────────────────────────────"
-    if [[ $warnings -eq 0 && $issues -eq 0 ]]; then
-        echo "  Status: ✅ OK ($total_checks checks passed)"
+    # ⛔ "$total_checks checks passed" was a COUNT OF CHECKS RUN, not of checks that
+    # passed, so an unreadable source inflated the pass count. The summary now
+    # reports observed vs unknown separately and can never describe an unmeasured
+    # control as passing.
+    #
+    # The former `issues`/`return 2` branch was DEAD: `issues` is declared in this
+    # function and never incremented (the increments elsewhere in this file belong
+    # to a different function). It has been removed rather than left as an
+    # unreachable severity tier implying an escalation path that does not exist.
+    local _observed=$(( total_checks - unknowns ))
+    if [[ $warnings -eq 0 ]]; then
+        echo "  Status: ✅ OK ($_observed of $total_checks checks observed and passed)"
         echo ""
         echo "  Note: This is a basic posture check, not a security audit."
         echo "  For comprehensive auditing, use dedicated tools like:"
         echo "    - lynis audit system"
         echo "    - oscap xccdf eval"
         return 0
-    elif [[ $issues -eq 0 ]]; then
+    fi
+    if [[ $unknowns -gt 0 ]]; then
+        echo "  Status: ⚠️  $warnings advisory finding(s), including $unknowns UNKNOWN"
+        echo ""
+        echo "  ❔ UNKNOWN means the source could not be read, NOT that the control"
+        echo "     is absent and NOT that it is fine. Re-run with sufficient"
+        echo "     privileges to resolve these rows."
+    else
         echo "  Status: ⚠️  $warnings advisory finding(s)"
         echo ""
         echo "  These are recommendations, not critical issues."
         echo "  Review and address as appropriate for your environment."
-        return 1
-    else
-        echo "  Status: ❌ $issues issue(s), $warnings warning(s)"
-        return 2
     fi
+    return 1
 }
 
 # =============================================================================
