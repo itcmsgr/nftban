@@ -11,6 +11,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.3] - 2026-08-18 — what accumulates, and what a failed read may not claim
+
+Two themes. Storage that grew because nothing owned its end, and checks that reported a
+definite answer from a source they could not read.
+
+### Retention and storage authority
+
+Every persistent state class in the FHS schema now declares what happens to what
+accumulates in it — `managed`, `none`, or `unclassified`. The third value is deliberate:
+an open question stays visibly open rather than collapsing into a default that reads like
+an answer. Three classes are `managed` and cite the code that prunes them; 41 remain
+`unclassified` and are reported on every run.
+
+A second guard resolves those claims against source. A `managed` entry must name an
+authority that exists as a real function, in the location the evidence gives, with a
+production call site, reaching the declared path. A declaration that cannot be resolved
+now fails.
+
+Ordinary rebuilds no longer turn every success into permanent backup history, update
+lifecycles keep one or two recovery generations and only when the filesystem can hold
+them, and the pre-existing backup population is disposed of by a one-time migration that
+only removes entries it can positively classify. Artifacts that do not match the expected
+grammar are kept, not guessed.
+
+Log families now count the files they govern. `rotate * size` is a per-file bound, but one
+stanza can cover many paths — the audit family alone governs eight — so the budget guard
+had been under-counting the theoretical maximum. Five separate computations were collapsed
+into one definition so reporting, budget-fitting and trim ordering cannot disagree.
+
+Bot Guard wrote `botguard.log` and `decisions.log` at the top level while three separate
+authorities named a `botguard/` subdirectory no writer had ever used, leaving both logs
+outside every retention authority. The authorities are aligned to the writer. A new CI
+check closes the missing direction: the product could always verify that what it declared
+was coherent, but nothing verified that what it wrote was declared.
+
+Trusted-flow state writes are trap-guarded, and a bounded reaper removes temporary files
+orphaned by a process that died before the rename. The reaper is bound to that module's
+exact filename grammar rather than a directory pattern, so the lock file and the canonical
+state file are outside its reach.
+
+The v1.228.5 audit-log migration now takes the rotated generations, not only the head
+file. It matches an exact suffix grammar, never overwrites, and where a destination is
+already occupied it preserves the predecessor rather than converging.
+
+### Observation truth in the posture report
+
+Seven sites rendered an unreadable source as a checkmark or a definite value. The worst
+fired on the default non-root invocation: `/etc/sudoers.d` could not be read, the check
+failed silently, and the report stated there were no risky `NOPASSWD` patterns.
+
+A failed read now renders `UNKNOWN`, which is a warning and never an OK. The distinction
+that matters is preserved: when a configuration file *is* readable and a directive is
+simply absent, the platform default applies and remains a true answer. Only an unread
+source is unknown.
+
+An unreachable severity tier that could not execute was removed rather than left in place,
+and the summary no longer reports the number of checks run as the number that passed.
+
+### Notes
+
+`NFTBAN_REPORTS_RETENTION_DAYS` is retained for operator compatibility and is inert; the
+cleanup it once drove targeted a path retired in v1.228.5 and was removed rather than
+retargeted. Declaration completeness for the 41 unclassified state classes remains open
+and is reported by the schema guard on every run.
+
 ## [v1.229.2] - 2026-08-16 — what an optional component is, and what a reload is not
 
 Two lanes, one theme: a component that is legitimately absent, and an operation that
