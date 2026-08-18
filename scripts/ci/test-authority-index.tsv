@@ -184,6 +184,7 @@ no_reintroduced_orphan_modules_v167_test	cli/lib/nftban/tests/no_reintroduced_or
 operator_config_not_package_owned_v1229_test	cli/lib/nftban/tests/operator_config_not_package_owned_v1229_test.sh	packaging	test	uninstall-lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 panel_group_retirement_v137_test	cli/lib/nftban/tests/panel_group_retirement_v137_test.sh	security	test	panel-group-retirement	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 parser_tier1_unknown_truth_v1228_9_test	cli/lib/nftban/tests/parser_tier1_unknown_truth_v1228_9_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	180		
+permissions_audit_rotated_siblings_v1229_3_test	cli/lib/nftban/tests/permissions_audit_rotated_siblings_v1229_3_test.sh	packaging	test	packaging	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migration_ownership_boundary_v1228_10_test.sh	packaging	test	package-migration-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_generic_corroborate_v149_test	cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
