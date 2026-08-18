@@ -121,83 +121,92 @@ jobs:
           sarif_file: gosec.sarif
           category: gosec
 
-      # ---- govulncheck: vulnerability intelligence with SARIF ----
+      # ---- govulncheck: NATIVE SARIF (v1.229.4 PR-B) ----
+      #
+      # ⛔ THE CONVERTER WAS DELETED, NOT REPAIRED.
+      # It read `govulncheck -json` as ONE JSON OBJECT PER LINE, but govulncheck emits
+      # MULTI-LINE pretty-printed objects, so `json.loads(line)` threw on the first
+      # record. Its own except-branch then WROTE AN EMPTY SARIF ("results": []), which
+      # uploaded as a clean scan. Reproduced on lab2: the real tool reports 7 results
+      # (5 reachable) on the same tree the dashboard showed as results=0.
+      #
+      # VAF v2: NATIVE ARTIFACT FIRST — where a tool emits SARIF, SARIF is the envelope.
+      # A second translation authority between the scanner and the verdict is exactly
+      # what manufactured the false zero.  G4: NO MANUFACTURED OBSERVATION SUCCESS.
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
-      - name: Run govulncheck (JSON)
-        run: $(go env GOPATH)/bin/govulncheck -json ./... > govulncheck.json || true
-
-      - name: Convert govulncheck to SARIF
+      - name: Run govulncheck (native SARIF)
+        id: gvc
         run: |
-          python3 << 'PY'
-          import json
-          import sys
-
-          try:
-              with open('govulncheck.json', 'r') as f:
-                  findings = [json.loads(line) for line in f if line.strip()]
-
-              results = []
-              for finding in findings:
-                  if finding.get('finding'):
-                      vuln = finding['finding']
-                      osv = vuln.get('osv', {})
-                      results.append({
-                          "ruleId": osv.get('id', 'UNKNOWN'),
-                          "message": {"text": osv.get('summary', 'Vulnerability detected')},
-                          "level": "warning",
-                          "locations": [{
-                              "physicalLocation": {
-                                  "artifactLocation": {"uri": "go.mod"},
-                                  "region": {"startLine": 1, "startColumn": 1}
-                              }
-                          }]
-                      })
-
-              sarif = {
-                  "version": "2.1.0",
-                  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-                  "runs": [{
-                      "tool": {
-                          "driver": {
-                              "name": "govulncheck",
-                              "informationUri": "https://golang.org/x/vuln/cmd/govulncheck",
-                              "version": "latest"
-                          }
-                      },
-                      "results": results
-                  }]
-              }
-
-              with open('govulncheck.sarif', 'w') as f:
-                  json.dump(sarif, f, indent=2)
-          except Exception as e:
-              print(f"Error converting govulncheck to SARIF: {e}", file=sys.stderr)
-              # Create empty SARIF if conversion fails
-              sarif = {
-                  "version": "2.1.0",
-                  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-                  "runs": [{
-                      "tool": {
-                          "driver": {
-                              "name": "govulncheck",
-                              "informationUri": "https://golang.org/x/vuln/cmd/govulncheck",
-                              "version": "latest"
-                          }
-                      },
-                      "results": []
-                  }]
-              }
-              with open('govulncheck.sarif', 'w') as f:
-                  json.dump(sarif, f, indent=2)
-          PY
+          # ⛔ In SARIF/JSON mode govulncheck EXITS 0 EVEN WITH FINDINGS.
+          #    GOVULNCHECK_RC0 != NO_VULNERABILITIES  (verified: rc=0 with 7 results)
+          #    A non-zero rc here therefore means the TOOL failed, not that findings exist.
+          set +e
+          "$(go env GOPATH)/bin/govulncheck" -format sarif ./... > govulncheck.sarif 2> govulncheck.err
+          GVC_RC=$?
+          set -e
+          echo "gvc_rc=${GVC_RC}" >> "$GITHUB_OUTPUT"
+          echo "govulncheck rc=${GVC_RC} (0 is expected in sarif mode, findings or not)"
+          if [[ "$GVC_RC" -ne 0 ]]; then
+            echo "::error::GOVULNCHECK_EXECUTION_FAILURE — the tool exited ${GVC_RC} in SARIF mode, which indicates a TOOL failure, not a finding count. No vulnerability conclusion can be drawn."
+            sed 's/^/    /' govulncheck.err | head -20
+            exit 1
+          fi
+          # ⛔ NEVER synthesise a SARIF here. An absent artifact is an OBSERVATION
+          #    FAILURE, not an empty result set.
+          if [[ ! -s govulncheck.sarif ]]; then
+            echo "::error::OBSERVATION_FAILURE — govulncheck exited 0 but produced no SARIF. The output contract was violated; this is NOT a clean result."
+            exit 1
+          fi
 
       - name: Upload govulncheck SARIF
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
+
+      # v1.229.4 PR-B. Verdict LAST, from the scanner-native SARIF, so finding evidence
+      # is uploaded before any failure is raised.
+      #
+      #   The native artifact carries REACHABILITY, which the deleted converter destroyed
+      #   by flattening every finding to "warning":
+      #       level=error  -> call-reachable from this source tree
+      #       level=note   -> vulnerable code present, not proven reachable
+      #   ⛔ REACHABILITY != EXPLOITABILITY. Neither level is an exploitability claim.
+      - name: govulncheck verdict (scanner-native results)
+        if: always()
+        run: |
+          if [[ ! -s govulncheck.sarif ]]; then
+            echo "::error::OBSERVATION_FAILURE — no govulncheck SARIF to classify. NOT a clean result."
+            exit 1
+          fi
+          COUNTS=$(python3 -c "
+          import json,sys
+          try:
+              d=json.load(open('govulncheck.sarif'))
+          except Exception:
+              print('PARSE_FAILURE'); sys.exit(0)
+          res=[r for run in d.get('runs',[]) for r in run.get('results',[])]
+          e=sum(1 for r in res if r.get('level')=='error')
+          n=sum(1 for r in res if r.get('level')=='note')
+          print(f'{len(res)} {e} {n}')")
+          if [[ "$COUNTS" == "PARSE_FAILURE" ]]; then
+            echo "::error::OBSERVATION_FAILURE — govulncheck.sarif is not parseable. ⛔ An unparseable artifact is NOT an empty one."
+            exit 1
+          fi
+          set -- $COUNTS
+          TOTAL=$1; REACHABLE=$2; PRESENT=$3
+          echo "govulncheck native SARIF: total=${TOTAL} reachable(error)=${REACHABLE} present-only(note)=${PRESENT}"
+          if [[ "$REACHABLE" -gt 0 ]]; then
+            echo "::error title=govulncheck reachable vulnerabilities::${REACHABLE} vulnerability/vulnerabilities are CALL-REACHABLE from this source tree (${TOTAL} total, ${PRESENT} present-but-not-reachable). See the Security tab, category govulncheck. ⛔ Reachability is not exploitability."
+            exit 1
+          fi
+          if [[ "$TOTAL" -gt 0 ]]; then
+            echo "::error title=govulncheck vulnerable code present::${TOTAL} finding(s) present but NOT proven call-reachable. This needs disposition, not dismissal."
+            exit 1
+          fi
+          echo "CLEAN — govulncheck completed, SARIF validated, zero results."
 
       # ---- Trivy: filesystem vulnerability scanning ----
       - name: Run Trivy vulnerability scanner
