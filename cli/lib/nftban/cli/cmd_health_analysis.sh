@@ -776,8 +776,29 @@ nftban_health_cmd_posture() {
     echo "Sudoers Configuration"
     echo "  ─────────────────────────────────────"
 
-    local sudoers_dir="/etc/sudoers.d"
-    if [[ -d "$sudoers_dir" ]]; then
+    local sudoers_dir="${NFTBAN_POSTURE_SUDOERS_DIR:-/etc/sudoers.d}"
+    # ⛔ v1.229.3 P0-1 CORRECTION — PROVEN ON THE INSTALLED DEB RUNTIME.
+    #
+    #   DIRECTORY EXISTS + CANNOT ENUMERATE/SEARCH  =  OBSERVATION_FAILED  =  UNKNOWN
+    #
+    # The per-file readability guard below CANNOT RUN when directory enumeration itself
+    # is unavailable: the glob expands to nothing, the loop body never executes, the
+    # unreadable counter stays 0, and the block fell through to "No risky NOPASSWD
+    # patterns" — a clean verdict derived from a directory that was never read.
+    #
+    # Witnessed on lab2 as the nftban service identity (/etc/sudoers.d is 0750 root:root):
+    #     test -d -> TRUE · test -r -> FALSE · glob -> 0 entries · rendered ✅ clean
+    #
+    # ⛔ GLOB RETURNED ZERO FILES != ZERO RISKY SUDOERS FILES.
+    #
+    # Both -r AND -x are required: read grants enumeration, search grants stat/inspection
+    # of the entries. Missing either makes the directory unobservable.
+    # ⛔ Absent-directory semantics are deliberately UNCHANGED — the reproduced defect is
+    # specifically EXISTS + UNOBSERVABLE, and widening it here would be scope creep.
+    if [[ -d "$sudoers_dir" ]] && { [[ ! -r "$sudoers_dir" ]] || [[ ! -x "$sudoers_dir" ]]; }; then
+        ((total_checks++)) || true
+        _posture_unknown_row "Sudoers" "$sudoers_dir exists but is not enumerable — NOPASSWD not verified"
+    elif [[ -d "$sudoers_dir" ]]; then
         # v1.19.20 FIX
         ((total_checks++)) || true
         local risky_count=0

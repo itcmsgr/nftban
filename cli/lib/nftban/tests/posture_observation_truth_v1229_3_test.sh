@@ -160,6 +160,107 @@ else
     pass "B6 the unreachable issues/return-2 severity tier is removed from the posture function"
 fi
 
+# ============ C · SUDOERS DIRECTORY UNOBSERVABLE (P0-1 correction) ============
+# Stage-B falsified the first P0-1 fix: the per-FILE readability guard cannot run when
+# directory ENUMERATION itself is unavailable — the glob expands to nothing, the loop
+# body never executes, and the block rendered "No risky NOPASSWD patterns" from a
+# directory it never read. Witnessed on the installed DEB runtime as the nftban identity.
+#
+# ⛔ These arms are BEHAVIOURAL. A structural grep is NOT accepted as proof of this
+#    correction, because the previous structural arm passed while the defect was live.
+SUDO_BLOCK="$(awk '/^    local sudoers_dir=/,/^    echo ""$/' "$SUBJECT")"
+if [[ -z "$SUDO_BLOCK" ]] || ! grep -q 'sudoers_dir' <<<"$SUDO_BLOCK"; then
+    fail "C0 SUBJECT_NOT_FOUND: could not extract the sudoers posture block"
+else
+    pass "C0 sudoers posture block extracted from production source"
+
+    # harness: the real UNKNOWN renderer + the counters the block mutates
+    run_sudoers_block() { # <dir>
+        local out
+        out="$(
+            export NFTBAN_POSTURE_SUDOERS_DIR="$1"
+            # these three ARE mutated by the eval'd production block below; shellcheck
+            # cannot see through eval, so the "unused" warning is a false positive.
+            # shellcheck disable=SC2034
+            warnings=0
+            # shellcheck disable=SC2034
+            unknowns=0
+            # shellcheck disable=SC2034
+            total_checks=0
+            # shellcheck disable=SC2034
+            _POSTURE_UNKNOWN="__NFTBAN_UNKNOWN__"
+            eval "$(sed 's/^    //' <<<"$(fn_body _posture_unknown_row)")"
+            eval "$(sed 's/^    //' <<<"$SUDO_BLOCK")"
+            echo "MARKER_UNK_COUNT:$unknowns"
+        )"
+        printf '%s' "$out"
+    }
+
+    # ---- C1 · POSITIVE CONTROL: a readable directory still gets CLASSIFIED --------
+    okdir="$TMP/sudoers_ok"; mkdir -p "$okdir"
+    printf '%%admin ALL=(ALL) ALL\n' > "$okdir/10-safe"
+    outp="$(run_sudoers_block "$okdir")"
+    # assertion must ignore the harness marker line, which is not block output
+    outp_rows="$(grep -v '^MARKER_UNK_COUNT:' <<<"$outp")"
+    if grep -q 'No risky NOPASSWD' <<<"$outp_rows" && ! grep -q 'UNKNOWN' <<<"$outp_rows"; then
+        pass "C1 POSITIVE CONTROL: a readable directory is classified, not forced to UNKNOWN"
+    else
+        fail "C1 a readable directory did not classify (over-reporting UNKNOWN)"
+        sed 's/^/        /' <<<"$outp" | head -3
+    fi
+
+    # ---- C1b · a readable directory WITH a risky entry is still detected ----------
+    printf '%%bad ALL=(ALL) NOPASSWD: ALL\n' > "$okdir/20-risky"
+    outr="$(run_sudoers_block "$okdir")"
+    if grep -q 'ALL NOPASSWD' <<<"$outr"; then
+        pass "C1b risky NOPASSWD still detected on a readable directory"
+    else
+        fail "C1b the correction suppressed real risky-entry detection"
+    fi
+
+    # ---- C2 · NEGATIVE CASE: existing but NOT enumerable -> UNKNOWN --------------
+    baddir="$TMP/sudoers_blind"; mkdir -p "$baddir"; printf 'x\n' > "$baddir/10-hidden"
+    # A root process bypasses permission bits (DAC_OVERRIDE), so unreadability must be
+    # produced against a NON-ROOT identity — never by chmod alone under root.
+    ran_unpriv=0
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        chmod 0000 "$baddir" 2>/dev/null && ran_unpriv=1
+        outb="$(run_sudoers_block "$baddir")"
+        chmod 0755 "$baddir" 2>/dev/null || true
+    elif command -v setpriv >/dev/null 2>&1 && id -u nobody >/dev/null 2>&1; then
+        chmod 0700 "$baddir" 2>/dev/null || true   # root-owned, nobody cannot enumerate
+        chmod 0755 "$TMP" 2>/dev/null || true
+        export -f fn_body 2>/dev/null || true
+        outb="$(setpriv --reuid=nobody --regid="$(id -g nobody)" --clear-groups \
+                 bash -c "
+                   export NFTBAN_POSTURE_SUDOERS_DIR='$baddir'
+                   warnings=0; unknowns=0; total_checks=0
+                   $(sed 's/^    //' <<<"$(fn_body _posture_unknown_row)")
+                   $(sed 's/^    //' <<<"$SUDO_BLOCK")
+                 " 2>/dev/null)" && ran_unpriv=1
+    fi
+
+    if [[ "$ran_unpriv" -ne 1 ]]; then
+        fail "C2 WITNESS NOT OBTAINED: could not produce a non-root identity — recorded UNKNOWN, not a pass"
+    elif grep -q 'No risky NOPASSWD' <<<"${outb:-}"; then
+        fail "C2 an UNENUMERABLE directory still rendered a CLEAN verdict (the Stage-B defect)"
+    elif grep -qE 'UNKNOWN|not enumerable' <<<"${outb:-}"; then
+        pass "C2 BEHAVIOURAL: an existing-but-unenumerable sudoers dir renders UNKNOWN"
+    else
+        fail "C2 unexpected output from the unenumerable case"
+        sed 's/^/        /' <<<"${outb:-<empty>}" | head -3
+    fi
+
+    # ---- C3 · absent directory semantics UNCHANGED ------------------------------
+    outa="$(run_sudoers_block "$TMP/definitely_absent")"
+    if grep -q 'not found' <<<"$outa"; then
+        pass "C3 absent-directory semantics preserved (not converted to UNKNOWN)"
+    else
+        fail "C3 absent-directory behaviour changed — outside the reproduced defect"
+        sed 's/^/        /' <<<"$outa" | head -3
+    fi
+fi
+
 # --- B7 · INVERSION: restoring any silent fallback must be detectable ---------
 # Rebuild the removed MAC fallback in a copy and confirm B3's predicate flips.
 cp -a "$SUBJECT" "$TMP/subject.sh"
