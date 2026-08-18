@@ -52,7 +52,7 @@ try:
             cur = {"path": m.group(1)}
             continue
         if cur is not None:
-            m = re.match(r'\s+(artifact_class|retention_owner|owner|group|mode):\s*"?([A-Za-z0-9_:\-/.]+)"?\s*$', ln)
+            m = re.match(r'\s+(artifact_class|retention_owner|retention_mode|retention_evidence|owner|group|mode|pattern):\s*"?([A-Za-z0-9_:\-/. ()+,;*]+)"?\s*$', ln)
             if m: cur[m.group(1)] = m.group(2)
     if cur: entries.append(cur)
 except OSError as e:
@@ -156,6 +156,110 @@ if badr:
     print("           different units (count vs age) silently truncates history.")
 else:
     ok("every log/cache directory declares a single valid retention_owner")
+
+print()
+print("=== R-5: every state directory declares a lifecycle disposition (v1.229.3 INV-C0) ===")
+
+# TRI-STATE. The decisive rule is that UNKNOWN must stay visibly UNKNOWN:
+#     UNCLASSIFIED != NO_RETENTION_BY_DESIGN
+# A state directory with no disposition is a silent gap; one labelled `none`
+# without a reason is an escape hatch. Both fail.
+RMODE = {"managed", "none", "unclassified"}
+# Scope to DIRECTORY DECLARATIONS. Entries in file_permissions: carry a `pattern`
+# (and recursive/exclude) — they are permission RULES over a class of files, not
+# persistent-class declarations. A permission rule has no lifecycle of its own;
+# the directory it applies to does, and that directory is declared separately.
+state = [e for e in entries
+         if e.get("artifact_class") == "state" and not e.get("pattern")]
+
+# C0-6 PARSE VALIDITY, evaluated BEFORE any verdict.
+# An empty or partial parse must never read as "nothing to check". The parser's
+# result is cross-checked against an INDEPENDENT count of the raw declaration
+# lines; if the two disagree the spec was not observed, and no PASS below would
+# mean anything. EMPTY_PARSE != ZERO_FINDINGS.
+raw_state = sum(1 for ln in open(spec, encoding="utf-8")
+                if ln.strip() == "artifact_class: state")
+perm_rules = [e for e in entries
+              if e.get("artifact_class") == "state" and e.get("pattern")]
+if raw_state != len(state) + len(perm_rules):
+    no(f"PARSE_INCOMPLETE: {raw_state} raw 'artifact_class: state' lines but the "
+       f"parser resolved {len(state)} declarations + {len(perm_rules)} permission rules")
+    print("        -> the schema was NOT observed; every result below is invalid.")
+elif not state:
+    no("PARSE_INCOMPLETE: zero state declarations resolved — an empty parse is not a pass")
+else:
+    ok(f"parse validity: {len(state)} declarations + {len(perm_rules)} permission "
+       f"rules == {raw_state} raw state lines")
+bad_mode = [e["path"] for e in state if e.get("retention_mode") not in RMODE]
+if bad_mode:
+    no(f"{len(bad_mode)} state directories lack a valid retention_mode:")
+    for pth in bad_mode[:20]:
+        print(f"        {pth}")
+    print(f"        -> one of: {sorted(RMODE)}")
+else:
+    ok(f"all {len(state)} state directories declare a retention_mode")
+
+# managed REQUIRES an owner and the evidence that proves it
+bad_managed = [e["path"] for e in state
+               if e.get("retention_mode") == "managed"
+               and (not e.get("retention_owner") or not e.get("retention_evidence"))]
+if bad_managed:
+    no(f"{len(bad_managed)} managed state directories lack retention_owner+retention_evidence:")
+    for pth in bad_managed[:20]:
+        print(f"        {pth}")
+    print("        -> a managed class must name its authority AND the proof it is reachable.")
+else:
+    ok("every managed state directory names an owner and its evidence")
+
+# none REQUIRES a stated reason; it must never be reachable by omission
+bad_none = [e["path"] for e in state
+            if e.get("retention_mode") == "none" and not e.get("retention_evidence")]
+if bad_none:
+    no(f"{len(bad_none)} state directories claim retention_mode=none with no justification:")
+    for pth in bad_none[:20]:
+        print(f"        {pth}")
+    print("        -> 'no cleanup required' is a lifecycle DECISION and must state why.")
+    print("           UNCLASSIFIED is the honest value when evidence is absent.")
+else:
+    ok("no unjustified retention_mode=none declarations")
+
+# unclassified must not masquerade as a completed classification
+bad_unc = [e["path"] for e in state
+           if e.get("retention_mode") == "unclassified"
+           and (e.get("retention_owner") or e.get("retention_evidence"))]
+if bad_unc:
+    no(f"{len(bad_unc)} unclassified entries carry owner/evidence implying they were classified:")
+    for pth in bad_unc[:20]:
+        print(f"        {pth}")
+else:
+    ok("unclassified entries carry no owner/evidence (no false completeness)")
+
+# C0-8: classes with PROVEN accumulation + a wired authority cannot be quietly
+# downgraded. Relabelling one of these `none` or `unclassified` would erase a
+# closure that runtime evidence established, so the schema is pinned against the
+# proof rather than against a hand-list of opinions.
+PROVEN_MANAGED = {
+    "/var/lib/nftban/snapshots":      "nftban_stats_cleanup_logs via maintenance 9d (hourly writer; 4,216 files measured on a fleet host)",
+    "/var/lib/nftban/stats/history":  "internal/stats CleanupHistory via collector runCleanup",
+    "/var/lib/nftban/stats/profiles": "internal/stats CleanupProfiles via collector runCleanup",
+}
+downgraded = [(e["path"], e.get("retention_mode"))
+              for e in state
+              if e["path"] in PROVEN_MANAGED and e.get("retention_mode") != "managed"]
+if downgraded:
+    no(f"{len(downgraded)} classes with PROVEN retention authority were downgraded:")
+    for pth, md in downgraded:
+        print(f"        {pth}  <- retention_mode={md!r}")
+        print(f"           proof: {PROVEN_MANAGED[pth]}")
+    print("        -> a proven authority cannot be relabelled none/unclassified.")
+else:
+    ok(f"all {len(PROVEN_MANAGED)} classes with proven authority remain managed")
+
+unc = [e["path"] for e in state if e.get("retention_mode") == "unclassified"]
+mgd = [e["path"] for e in state if e.get("retention_mode") == "managed"]
+print(f"    STATE_LIFECYCLE: managed={len(mgd)} none={len([e for e in state if e.get('retention_mode')=='none'])} "
+      f"unclassified={len(unc)} of {len(state)}")
+print(f"    INV-C2 declaration completeness: {'COMPLETE' if not unc else f'OPEN — {len(unc)} UNCLASSIFIED state classes'}")
 
 print()
 print("=== RESULT: artifact class authority " + ("PASS" if not fail else "FAIL") + " ===")
