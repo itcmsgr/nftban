@@ -96,7 +96,7 @@ rcv(){ ( cd "$TMP" && bash verdict.sh >/dev/null 2>&1 ); echo $?; }
 # ---- B5 · POSITIVE SECURITY CONTROL: the real 5-reachable shape ---------------
 mk 5 2
 out="$(runv)"; rc="$(rcv)"
-if [[ "$rc" -ne 0 ]] && grep -q 'reachable vulnerabilities' <<<"$out" && grep -q 'reachable(error)=5' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -q '::error title=govulncheck reachable vulnerabilities::' <<<"$out" && grep -q 'reachable(error)=5' <<<"$out"; then
     pass "B5 POSITIVE CONTROL: 5 reachable + 2 present -> security failure, counts reported"
 else
     fail "B5 the real finding shape did not fail as a security finding (rc=$rc)"; sed 's/^/        /' <<<"$out" | head -3
@@ -105,7 +105,7 @@ fi
 # ---- B6 · present-but-not-reachable is still a finding, distinctly labelled ---
 mk 0 2
 out="$(runv)"; rc="$(rcv)"
-if [[ "$rc" -ne 0 ]] && grep -q 'vulnerable code present' <<<"$out" && ! grep -q 'reachable vulnerabilities' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -q 'vulnerable code present' <<<"$out" && ! grep -q '::error title=govulncheck reachable vulnerabilities::' <<<"$out"; then
     pass "B6 present-only findings are reported distinctly from reachable ones"
 else
     fail "B6 present-only findings misclassified (rc=$rc)"

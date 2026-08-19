@@ -79,7 +79,7 @@ json.dump({"version":"2.1.0","runs":[{"results":[{"ruleId":i,"message":{"text":i
           open(sys.argv[1],"w"))
 PY
 out="$(run_verdict true 1)"; rc="$(rc_of true 1)"
-if [[ "$rc" -ne 0 ]] && grep -q 'OSV vulnerability findings' <<<"$out" && grep -q '7 finding' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -q '::error title=OSV vulnerability findings::' <<<"$out" && grep -q '7 finding' <<<"$out"; then
     pass "A1 POSITIVE SECURITY CONTROL: 7 real findings -> security failure (rc=$rc)"
 else
     fail "A1 real findings did not produce a security failure (rc=$rc)"; sed 's/^/        /' <<<"$out" | head -3
@@ -104,7 +104,7 @@ out="$(run_verdict true 0)"; rc="$(rc_of true 0)"
 
 # ---- A4 · DRIFT ONLY is drift, not vulnerability ------------------------------
 out="$(run_verdict true 1)"; rc="$(rc_of true 1)"
-if [[ "$rc" -ne 0 ]] && grep -qi 'suppression drift' <<<"$out" && ! grep -q 'vulnerability findings' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -q '::error title=OSV suppression drift::' <<<"$out" && ! grep -q '::error title=OSV vulnerability findings::' <<<"$out"; then
     pass "A4 zero results + rc1 -> CONFIGURATION DRIFT, not a vulnerability"
 else
     fail "A4 drift-only run misclassified (rc=$rc)"; sed 's/^/        /' <<<"$out" | head -3
@@ -149,7 +149,7 @@ json.dump({"version":"2.1.0","runs":[{"results":[{"ruleId":"CVE-2026-56853","mes
           open(sys.argv[1],"w"))
 PY
 out="$(run_verdict true 127)"; rc="$(rc_of true 127)"
-if [[ "$rc" -ne 0 ]] && grep -q 'OSV vulnerability findings' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -q '::error title=OSV vulnerability findings::' <<<"$out"; then
     pass "A4d a real finding still dominates, even when the exit status is an execution failure"
 else
     fail "A4d findings were suppressed by the execution-failure branch (rc=$rc)"

@@ -231,6 +231,25 @@ jobs:
       - name: Check Go toolchain pin parity (v1.229.4 VAF-0, BLOCKING)
         run: ./scripts/ci/check-toolchain-pin-parity.sh
 
+      # v1.229.4 VAF-0 Stage 3B. Recurrence guard over the DECLARED security-observation
+      # population (tier-aware: 14 Tier-A, 2 Tier-B gosec, 1 gate). G1: a producer's failure
+      # may be suppressed only if the status is captured AND consumed — gosec ran under bare
+      # `|| true`, so a crashed scanner looked like a clean one. G4: a validator may not
+      # create or replace the artifact it validates on an absence path — the SBOM validator
+      # fabricated a stub attributing itself to the producer that had just failed.
+      # ⛔ NOT a repo-wide `|| true` lint: 91 occurrences exist, nearly all legitimate.
+      - name: Check security observation integrity (v1.229.4 VAF-0, BLOCKING)
+        run: ./scripts/ci/check-security-observation-integrity.sh
+
+      # v1.229.4 VAF-0 Stage 3C. Where a declared producer emits `::error title=X::`, tests
+      # asserting that state must bind to the signal, not to prose. Five recurrences in one
+      # train — twice inside the file documenting the rule — because a correct message for a
+      # state contains the words of the state it DENIES ("NOT suppression drift").
+      # ⛔ Signals come from the declared producers' own run blocks; test-side occurrences
+      # are never treated as protocol. Producers with no signal keep prose assertions.
+      - name: Check producer signal binding (v1.229.4 VAF-0, BLOCKING)
+        run: ./scripts/ci/check-producer-signal-binding.sh
+
       # v1.229.3 P1-2. The MISSING DIRECTION. The retention authority already checks
       # that what it declares is coherent; nothing checked that what the product
       # WRITES is declared, so botguard.log and decisions.log were written for
