@@ -108,3 +108,15 @@ ci-bash-manifest.txt
 # v1.229: CI-cached, SHA-pinned yq (packaging/build_nftban.sh PROV_YQ_SHA256).
 # Never committed — provision_yq re-verifies the checksum wherever it came from.
 offline/yq_linux_amd64
+
+# v1.229.4 SC-B — Python bytecode cache from the CI authorities.
+# ⛔ THIS IS THE PROVEN CAUSE OF THE `+dirty` BUILD STAMP. CI runs scripts/ci/*.py
+# (test-authority.py, privacy-scan.py, ...) BEFORE the release build. Python writes
+# __pycache__/, `git status --porcelain` reports it as untracked, Go's VCS stamper reads
+# any unclean tree as dirty, and both shipped binaries were stamped +dirty.
+# MEASURED on the release path (run 32292166763):
+#     DIRTY_PATH_COUNT=1  ->  ?? scripts/ci/__pycache__/
+#     tracked source modified: NONE · staged: NONE · unstaged: NONE
+# ⛔ The dirtiness was never about the source. It was our own tooling's build artifact.
+__pycache__/
+*.py[cod]
