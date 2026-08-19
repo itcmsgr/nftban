@@ -131,16 +131,26 @@ jobs:
       # complete checksums for all packages. SLSA provenance (.intoto.jsonl)
       # provides cryptographic verification for these binaries.
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          tag_name: ${{ needs.get-tag.outputs.tag }}
-          # Use single pattern to avoid duplicates (nftban-* matches .intoto.jsonl too)
-          files: dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # v1.19.0: Verify SLSA provenance after build (R26)
+      # ===================================================================
+      # v1.229.4 SC-A (item 6) — VERIFY BEFORE PUBLIC EXPOSURE
+      # ===================================================================
+      # The previous order was  upload -> install verifier -> verify.  The release is
+      # ALREADY PUBLIC by the time this job runs (release.yml's verify-release publishes
+      # it, and this workflow is triggered on workflow_run AFTER that), so uploading first
+      # made nftban-core publicly downloadable BEFORE its provenance was checked — and it
+      # STAYED downloadable if verification failed, because nothing here deletes assets.
+      #
+      #   PRE-PUBLICATION VERIFICATION > POST-PUBLICATION DETECTION + ROLLBACK
+      #   PARTIAL PROGRESS != SAFE INTERMEDIATE STATE
+      #
+      # Verification needs only the artifact and its provenance, both present after the
+      # two download steps above — it never depended on the upload. Reordering therefore
+      # closes the window WITHOUT adding a deletion/rollback authority.
+      #
+      # ⛔ CLAIM BOUNDARY. This proves: a provenance-bearing artifact cannot be UPLOADED
+      #    before its verification succeeds. It does NOT yet prove that the whole GitHub
+      #    release cannot become public before all release verification — that is R2's
+      #    subject (release-topology recon), tracked separately. ITEM 4 STAYS OPEN.
       - name: Install SLSA Verifier
         run: |
           curl -sSfL https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.0/slsa-verifier-linux-amd64 \
@@ -231,6 +241,16 @@ jobs:
           fi
           echo "SLSA provenance verified for all ${VERIFIED} declared subject(s)."
 
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ needs.get-tag.outputs.tag }}
+          # Use single pattern to avoid duplicates (nftban-* matches .intoto.jsonl too)
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # v1.19.0: Verify SLSA provenance after build (R26)
       - name: Generate SLSA Summary
         run: |
           echo "## SLSA Level 3 Build Complete" >> $GITHUB_STEP_SUMMARY
