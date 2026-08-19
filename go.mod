@@ -1,6 +1,6 @@
 module github.com/itcmsgr/nftban
 
-go 1.25.12
+go 1.25.13
 
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
