@@ -110,6 +110,52 @@ else
     fail "A4 drift-only run misclassified (rc=$rc)"; sed 's/^/        /' <<<"$out" | head -3
 fi
 
+# ---- A4b · VAF-C1a: EXECUTION FAILURE IS NOT DRIFT ----------------------------
+# MEASURED (osv-scanner 2.3.3): a missing offline database exits 127 and STILL writes a
+# valid, parseable, ZERO-finding artifact. Before C1a that shape was classified as
+# "suppression drift", pointing an operator at osv-scanner.toml for a fault that is not
+# there. Both states fail closed — they must not fail closed under the SAME NAME.
+#   ⛔ FAILED != DRIFT      ⛔ VALID EMPTY ARTIFACT != CLEAN
+printf '{"version":"2.1.0","runs":[{"results":[]}]}' > "$TMP/osv-results.sarif"
+out="$(run_verdict true 127)"; rc="$(rc_of true 127)"
+# ⛔ MATCH THE VERDICT TITLE, NOT THE WORDS. The observation-failure message deliberately
+# contains "NOT suppression drift"; a bare `grep 'suppression drift'` matches the sentence
+# that states the OPPOSITE. Fourth instance of DOCUMENTATION-ABOUT-X matching a guard for X
+# in this train — hence title-anchored matching everywhere below.
+if [[ "$rc" -ne 0 ]] && grep -q '::error title=OSV observation failure::' <<<"$out" \
+   && ! grep -q '::error title=OSV suppression drift::' <<<"$out"; then
+    pass "A4b rc=127 + valid EMPTY artifact -> OBSERVATION FAILURE, not drift and not clean"
+else
+    fail "A4b an execution failure was misclassified (rc=$rc)"; sed 's/^/        /' <<<"$out" | head -3
+fi
+
+# ---- A4c · the discrimination must be TWO-WAY ---------------------------------
+# A repair that relabels every nonzero status as an observation failure would destroy the
+# distinction in the opposite direction. rc=1 is the DOCUMENTED "findings and/or unused
+# ignores" status, so with zero findings it is genuinely drift.
+out="$(run_verdict true 1)"; rc="$(rc_of true 1)"
+if [[ "$rc" -ne 0 ]] && grep -q '::error title=OSV suppression drift::' <<<"$out" \
+   && ! grep -q '::error title=OSV observation failure::' <<<"$out"; then
+    pass "A4c rc=1 remains CONFIGURATION DRIFT — both classifications stay reachable"
+else
+    fail "A4c the drift classification was lost (rc=$rc)"; sed 's/^/        /' <<<"$out" | head -3
+fi
+
+# ---- A4d · findings still DOMINATE an execution failure -----------------------
+# If the scanner found something, that is the security fact regardless of exit status.
+python3 - "$TMP/osv-results.sarif" <<'PY'
+import json,sys
+json.dump({"version":"2.1.0","runs":[{"results":[{"ruleId":"CVE-2026-56853","message":{"text":"x"}}]}]},
+          open(sys.argv[1],"w"))
+PY
+out="$(run_verdict true 127)"; rc="$(rc_of true 127)"
+if [[ "$rc" -ne 0 ]] && grep -q 'OSV vulnerability findings' <<<"$out"; then
+    pass "A4d a real finding still dominates, even when the exit status is an execution failure"
+else
+    fail "A4d findings were suppressed by the execution-failure branch (rc=$rc)"
+fi
+printf '{"version":"2.1.0","runs":[{"results":[]}]}' > "$TMP/osv-results.sarif"
+
 # ---- A5 · FAILURE CONTROL: no SARIF -> never CLEAN ----------------------------
 out="$(run_verdict false 1)"; rc="$(rc_of false 1)"
 if [[ "$rc" -ne 0 ]] && grep -q 'OBSERVATION_FAILURE' <<<"$out" && ! grep -q 'CLEAN' <<<"$out"; then
@@ -149,6 +195,23 @@ if grep -qE '\./osv-scanner[^|]*;[[:space:]]*OSV_EXIT=' <<<"$SCAN_CODE"; then
     fail 'A7b the fatal "cmd; VAR=$?" form is still present'
 else
     pass 'A7b the fatal "cmd; VAR=$?" form is gone'
+fi
+
+# ---- A7c · VAF-C1a: the scan step must not key on a SINGLE magic status -------
+# ⛔ RC127 IS A WITNESS, NOT THE RULE. The pre-C1a code tested `-eq 128` alone, so the
+# MEASURED database-unavailable status (127) slipped straight past it. Replacing 128 with
+# 127 would repeat the defect with a different number. The correct shape is "not a
+# DOCUMENTED status" — i.e. the check must reference both documented codes (0 and 1),
+# not enumerate failure codes.
+if grep -qE '(-ne[[:space:]]+0.*-ne[[:space:]]+1|-ne[[:space:]]+1.*-ne[[:space:]]+0)' <<<"$SCAN_CODE"; then
+    pass "A7c the scan step classifies by DOCUMENTED statuses (0/1), not by an enumerated failure code"
+else
+    fail "A7c the scan step still keys on specific failure code(s) — one magic number replacing another"
+fi
+if grep -qE '"?\$?OSV_EXIT"?[[:space:]]*-eq[[:space:]]+12[78]' <<<"$SCAN_CODE"; then
+    fail "A7c2 a bare -eq 127/128 test is present again — RC IS A WITNESS, NOT THE RULE"
+else
+    pass "A7c2 no bare equality test against a single failure status remains in the scan step"
 fi
 
 # ---- A8 · the verdict must not be issued before the SARIF is uploaded ---------
