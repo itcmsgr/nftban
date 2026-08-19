@@ -219,6 +219,18 @@ jobs:
       - name: Check artifact class authority (v1.228.5, BLOCKING)
         run: ./scripts/ci/check-artifact-class-authority.sh
 
+      # v1.229.4 VAF-0 Stage 2. THE single authority for GO_TOOLCHAIN_PIN_PARITY.
+      # PR-C moved 20 live Go declarations across 19 files with no guard whatsoever, and
+      # the SOFT-COUPLED pins (jobs without GOTOOLCHAIN=local) would have drifted SILENTLY:
+      # Go auto-upgrades to satisfy go.mod, so a stale pin still goes green.
+      #     SOFT-COUPLED JOB GREEN != DECLARED PIN COHERENT
+      # Asserts BOTH value parity (every registered pin == go.mod) and LOCATION parity
+      # (the classified live pin set == the declared set, in both directions), so tomorrow's
+      # 20th pin cannot appear unclassified. ⛔ Do not duplicate these assertions inside
+      # individual workflows — this is the only place the invariant lives.
+      - name: Check Go toolchain pin parity (v1.229.4 VAF-0, BLOCKING)
+        run: ./scripts/ci/check-toolchain-pin-parity.sh
+
       # v1.229.3 P1-2. The MISSING DIRECTION. The retention authority already checks
       # that what it declares is coherent; nothing checked that what the product
       # WRITES is declared, so botguard.log and decisions.log were written for

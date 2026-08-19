@@ -1,0 +1,50 @@
+# NFTBan — DECLARED LIVE GO TOOLCHAIN PIN POPULATION  (v1.229.4 VAF-0 Stage 2)
+#
+# ⛔ HAND-MAINTAINED. READ, NEVER GENERATED FROM THE CURRENT GO VERSION.
+#
+#     CURRENT REALITY -> GENERATES EXPECTATION -> VALIDATES CURRENT REALITY
+#     = SELF-CONSISTENCY, NOT FALSIFIABILITY
+#
+# The VALUE authority is go.mod. This file declares only WHERE live pins live, so a pin
+# cannot silently diverge, disappear, or appear unclassified. The initial population was
+# captured by a VALUE-INDEPENDENT structural scan (declaration FORM, never the version
+# string) and hand-reviewed; from here it is read-only data and drift in EITHER direction
+# is a failure.
+#
+# ⛔ WHY THIS EXISTS. PR-C moved 20 live declarations across 19 files with NO guard. The
+# SOFT-COUPLED pins (jobs without GOTOOLCHAIN=local) would have drifted SILENTLY: Go
+# auto-upgrades to satisfy go.mod, so a stale pin still goes green.
+#     SOFT-COUPLED JOB GREEN != DECLARED PIN COHERENT
+#
+# ⛔ LOCATIONS ARE FILE+KEY, NEVER LINE NUMBERS. Line numbers drift with every edit.
+#
+# NOT IN THIS POPULATION, by design:
+#   * `go-version: ${{ env.GO_VERSION }}`  DERIVED references (ossra x2, socket x1) — they
+#     inherit from the GO_VERSION pin declared in the same file, which IS registered.
+#   * comments and CHANGELOG history — v1.218.10 genuinely shipped 1.25.12; rewriting that
+#     would falsify the record. HISTORICAL REFERENCE != LIVE DECLARATION.
+#   * Dockerfile `FROM golang:1.25-alpine` — a deliberate MINOR-level float. It is NOT a
+#     patch-level pin and Stage 2 must not pin or redesign it (supply-chain finding PR-C-2).
+#
+# field	file	key	occurrences
+pin	.github/workflows/build-packages.yml	go-version	2
+pin	.github/workflows/ci-empty-env-smoke.yml	go-version	1
+pin	.github/workflows/ci-go.yml	go-version	1
+pin	.github/workflows/ci-install-canonization.yml	go-version	1
+pin	.github/workflows/ci-restore-canonization.yml	go-version	1
+pin	.github/workflows/ci-runtime-truth.yml	go-version	1
+pin	.github/workflows/ci-smoke.yml	go-version	1
+pin	.github/workflows/ci-uninstall-canonization.yml	go-version	1
+pin	.github/workflows/ci-update-canonization.yml	go-version	1
+pin	.github/workflows/codeql.yml	go-version	1
+pin	.github/workflows/fuzz.yml	go-version	1
+pin	.github/workflows/ossra-remediation.yml	GO_VERSION	1
+pin	.github/workflows/osv-scanner.yml	go-version	1
+pin	.github/workflows/project-health.yml	go-version	1
+pin	.github/workflows/release.yml	go-version	1
+pin	.github/workflows/secure-go.yml	go-version	1
+pin	.github/workflows/slsa-go-releaser.yml	go-version	1
+pin	.github/workflows/socket-supplychain.yml	GO_VERSION	1
+expected_total	19
+recorded_at	2026-08-19
+recorded_for	v1.229.4 VAF-0 Stage 2
