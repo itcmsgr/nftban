@@ -1,0 +1,38 @@
+# NFTBan — DECLARED SLSA PROVENANCE SUBJECT POPULATION  (v1.229.4 VAF-0 Stage 1)
+#
+# ⛔ THIS FILE IS HAND-MAINTAINED AND MUST NEVER BE GENERATED FROM WHAT IS FOUND ON DISK.
+#
+#     PROVENANCE_FILES_FOUND  must NOT define  PROVENANCE_FILES_EXPECTED
+#
+# If the expected population were enumerated from the files present, then a MISSING
+# provenance file would simply disappear from the enumeration, the expected population
+# would shrink to match reality, and the false green would survive the fix. The whole
+# point of this file is that reality is compared against a declaration reality cannot edit.
+#
+# WHY IT EXISTS — three witnesses against ONE validator (SLSA_VALIDATION_FALSE_GREEN):
+#
+#     L1  ZERO_SUBJECT_ITERATION          `for binary in dist/nftban-*` matching nothing
+#                                         left VERIFY_FAILED=0 -> "verified"
+#     L2  REQUIRED_SUBJECT_ABSENCE_SKIPPED `if [ -f "$provenance" ]` with NO else -> a
+#                                         SHIPPED BINARY WITH NO PROVENANCE passed the
+#                                         provenance check
+#     L3  EXPECTED_POPULATION_NOT_ASSERTED no declared population existed at all
+#
+# ADDING a subject is a deliberate act: add the row, and the verifier will require it.
+# REMOVING a subject is equally deliberate and must be justified in review — it is the
+# only way to stop requiring provenance for something we ship.
+#
+# ⛔ NOT every shipped binary is an SLSA subject today. `nftband-linux-amd64` is published
+#    WITHOUT provenance (it carries a SHA256SUMS entry instead, while nftban-core carries
+#    provenance but NO SHA256SUMS entry — see the F1 capsule finding). That asymmetry is a
+#    SUPPLY-CHAIN COVERAGE QUESTION and is deliberately NOT decided here. This file records
+#    what IS covered, so the validator stops lying about it; it does not assert that the
+#    coverage is sufficient.
+#
+# field	binary	provenance
+subject	nftban-core-linux-amd64	nftban-core-linux-amd64.intoto.jsonl
+expected_count	1
+source_uri	github.com/itcmsgr/nftban
+recorded_at	2026-08-19
+recorded_for	v1.229.4 VAF-0 Stage 1
+justification	dist/ is populated by exactly two download-artifact steps in slsa-go-releaser.yml: the nftban-core binary and its provenance. That is the entire SLSA subject population as shipped in v1.229.3, verified against the published release asset list.
