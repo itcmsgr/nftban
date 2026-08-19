@@ -117,7 +117,33 @@ jobs:
         run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
 
       - name: Run gosec (SARIF)
-        run: $(go env GOPATH)/bin/gosec -nosec -fmt sarif -out gosec.sarif ./... || true
+        id: gosec
+        run: |
+          # ---- v1.229.4 VAF-0 Stage 3B · G1-W1 — FAILURE MUST BE CONSUMED ----
+          # This was `gosec ... || true`: a claim-bearing producer's status discarded with no
+          # downstream consumer, so a gosec that CRASHED was indistinguishable from a gosec
+          # that found nothing. ⛔ TOOL EXECUTION FAILURE != NO FINDINGS.
+          # gosec exits non-zero when it REPORTS ISSUES, which is why the status was
+          # suppressed — but suppression is only legitimate when the status is captured and
+          # classified. It is now both.
+          set +e
+          "$(go env GOPATH)/bin/gosec" -nosec -fmt sarif -out gosec.sarif ./...
+          GOSEC_RC=$?
+          set -e
+          echo "gosec_rc=${GOSEC_RC}" >> "$GITHUB_OUTPUT"
+          echo "gosec rc=${GOSEC_RC}"
+          # ⛔ ARTIFACT VALIDITY IS THE DISCRIMINATOR, NOT THE EXIT CODE. A non-zero rc WITH a
+          # parseable SARIF means findings (Tier-B corroborating, reported not blocking); a
+          # missing or unparseable SARIF means the tool did not complete an observation.
+          if [[ ! -s gosec.sarif ]]; then
+            echo "::error title=gosec execution failure::gosec exited ${GOSEC_RC} and produced no SARIF. This is a TOOL FAILURE, not a clean scan — no gosec conclusion can be drawn for this run."
+            exit 1
+          fi
+          if ! python3 -c "import json,sys; json.load(open('gosec.sarif'))" 2>/dev/null; then
+            echo "::error title=gosec artifact unparseable::gosec.sarif exists but is not valid JSON (rc=${GOSEC_RC}). ⛔ An unparseable artifact is NOT an empty one."
+            exit 1
+          fi
+          echo "gosec produced a parseable SARIF (rc=${GOSEC_RC}; non-zero here means findings, which are Tier-B corroborating evidence)"
 
       - name: Fix gosec SARIF relationships
         run: |
