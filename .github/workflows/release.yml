@@ -616,6 +616,17 @@ jobs:
           2. Verify package integrity:
 
              wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
+
+             # Verify the file you downloaded, BY NAME.
+             # --ignore-missing skips entries for files you did not download, so on its
+             # own it cannot tell you whether YOUR file was covered at all: verifying
+             # nothing and verifying successfully look identical.
+             grep " nftban-<distro>-<arch>.<ext>$" SHA256SUMS | sha256sum -c -
+
+             # If that prints no line, your file has NO published checksum.
+             # That is NOT a pass. Do not install it; report it instead.
+
+             # Only after the per-file check above confirms coverage exists:
              sha256sum -c SHA256SUMS --ignore-missing
 
           3. Install package:
