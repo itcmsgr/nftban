@@ -106,6 +106,12 @@ jobs:
       contents: write  # To upload release assets
 
     steps:
+      # v1.229.4 VAF-0 Stage 1: the declared SLSA subject population lives in the repo, so
+      # this job must have the repo. ⛔ MUST BE THE FIRST STEP — actions/checkout cleans the
+      # workspace by default and would delete dist/ if it ran after the downloads.
+      - name: Checkout (for the declared SLSA subject population)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
       - name: Download nftban-core artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -143,26 +149,87 @@ jobs:
 
       - name: Verify SLSA Provenance
         run: |
-          echo "Verifying SLSA provenance..."
-          VERIFY_FAILED=0
-          for binary in dist/nftban-*; do
-            if [[ ! "$binary" =~ \.intoto\.jsonl$ ]] && [[ ! "$binary" =~ SHA256SUMS$ ]]; then
-              provenance="${binary}.intoto.jsonl"
-              if [ -f "$provenance" ]; then
-                echo "Verifying $(basename "$binary")..."
-                slsa-verifier verify-artifact "$binary" \
-                  --provenance-path "$provenance" \
-                  --source-uri github.com/itcmsgr/nftban || {
-                    echo "::error::Provenance verification failed for $(basename "$binary")"
-                    VERIFY_FAILED=1
-                  }
-              fi
-            fi
-          done
-          if [[ "$VERIFY_FAILED" -ne 0 ]]; then
-            echo "::error::One or more SLSA provenance verifications failed"
+          # =================================================================
+          # v1.229.4 VAF-0 Stage 1 — SLSA_VALIDATION_FALSE_GREEN
+          # =================================================================
+          # THREE WITNESSES AGAINST ONE VALIDATOR. The previous form was:
+          #
+          #     VERIFY_FAILED=0
+          #     for binary in dist/nftban-*; do
+          #       if [ -f "$provenance" ]; then slsa-verifier ... || VERIFY_FAILED=1; fi
+          #     done
+          #     [[ $VERIFY_FAILED -ne 0 ]] && exit 1
+          #
+          #   L1 ZERO_SUBJECT_ITERATION           glob matches nothing -> 0 iterations ->
+          #                                       VERIFY_FAILED stays 0 -> "verified"
+          #   L2 REQUIRED_SUBJECT_ABSENCE_SKIPPED no else on the -f test -> A SHIPPED BINARY
+          #                                       WITH NO PROVENANCE PASSED THE PROVENANCE
+          #                                       CHECK. This was a live FALSE SECURITY
+          #                                       CLAIM about a specific artifact, not a
+          #                                       missing defence.
+          #   L3 EXPECTED_POPULATION_NOT_ASSERTED nothing declared what SHOULD be verified
+          #
+          # ⛔ Adding an `else` alone would close L2 and leave L1 and L3. The population must
+          #    come from a DECLARATION THAT REALITY CANNOT EDIT:
+          #        PROVENANCE_FILES_FOUND must NOT define PROVENANCE_FILES_EXPECTED
+          set -uo pipefail
+          DECL="scripts/ci/data/slsa-subjects.tsv"
+          VERIFIER="${SLSA_VERIFIER_BIN:-slsa-verifier}"
+          [[ -f "$DECL" ]] || { echo "::error title=SLSA subject declaration missing::$DECL is absent. The expected population cannot be established, so nothing can be verified. ⛔ A MISSING DECLARATION IS NOT AN EMPTY POPULATION."; exit 1; }
+
+          EXPECTED_COUNT="$(awk -F'\t' '$1=="expected_count"{print $2; exit}' "$DECL" | tr -d '[:space:]')"
+          SOURCE_URI="$(awk -F'\t' '$1=="source_uri"{print $2; exit}' "$DECL" | tr -d '[:space:]')"
+          [[ "$EXPECTED_COUNT" =~ ^[0-9]+$ ]] || { echo "::error title=SLSA declaration invalid::expected_count is missing or non-numeric."; exit 1; }
+          [[ -n "$SOURCE_URI" ]] || { echo "::error title=SLSA declaration invalid::source_uri is missing."; exit 1; }
+
+          # ---- CARDINALITY PRECONDITION: a zero-subject run is never a pass -------------
+          DECLARED=$(awk -F'\t' '$1=="subject" && NF>=3' "$DECL" | wc -l | tr -d ' ')
+          echo "declared SLSA subjects: ${DECLARED} (expected_count=${EXPECTED_COUNT})"
+          if [[ "$DECLARED" -eq 0 ]]; then
+            echo "::error title=SLSA population empty::The declaration lists ZERO subjects. ⛔ 0 SUBJECTS != 0 FAILURES, and 0 FAILURES != PASS."
             exit 1
           fi
+          if [[ "$DECLARED" -ne "$EXPECTED_COUNT" ]]; then
+            echo "::error title=SLSA declaration incoherent::${DECLARED} subject row(s) but expected_count=${EXPECTED_COUNT}. A subject was added or removed without updating the count."
+            exit 1
+          fi
+
+          # ---- verify EACH DECLARED subject; absence is a FAILURE, never a skip ---------
+          VERIFIED=0
+          FAILED=0
+          while IFS=$'\t' read -r _tag binary provenance; do
+            [[ -n "${binary:-}" ]] || continue
+            echo "--- declared subject: ${binary}"
+            if [[ ! -f "dist/${binary}" ]]; then
+              echo "::error title=SLSA subject binary missing::Declared subject '"${binary}"' is not present in dist/. It was expected to ship. ⛔ ABSENCE IS NOT A SKIP."
+              FAILED=$((FAILED+1)); continue
+            fi
+            if [[ ! -f "dist/${provenance}" ]]; then
+              echo "::error title=SLSA provenance missing::Declared subject '"${binary}"' SHIPS WITHOUT PROVENANCE ('"${provenance}"' absent). ⛔ This is the exact state the previous validator passed silently."
+              FAILED=$((FAILED+1)); continue
+            fi
+            if "$VERIFIER" verify-artifact "dist/${binary}" \
+                 --provenance-path "dist/${provenance}" \
+                 --source-uri "$SOURCE_URI"; then
+              VERIFIED=$((VERIFIED+1))
+              echo "    provenance verified and bound to ${binary}"
+            else
+              echo "::error title=SLSA provenance binding failed::Provenance did not verify against '"${binary}"'."
+              FAILED=$((FAILED+1))
+            fi
+          done < <(awk -F'\t' '$1=="subject" && NF>=3 {print $1"\t"$2"\t"$3}' "$DECL")
+
+          # ---- OBSERVED-COUNT POSTCONDITION -------------------------------------------
+          echo "verified ${VERIFIED}/${EXPECTED_COUNT} declared subject(s); failures=${FAILED}"
+          if [[ "$FAILED" -ne 0 ]]; then
+            echo "::error title=SLSA verification failed::${FAILED} declared subject(s) could not be verified."
+            exit 1
+          fi
+          if [[ "$VERIFIED" -ne "$EXPECTED_COUNT" ]]; then
+            echo "::error title=SLSA coverage incomplete::verified ${VERIFIED} of ${EXPECTED_COUNT} declared subjects. ⛔ EVERY DECLARED SUBJECT MUST BE ACCOUNTED FOR — a partial pass is not a pass."
+            exit 1
+          fi
+          echo "SLSA provenance verified for all ${VERIFIED} declared subject(s)."
 
       - name: Generate SLSA Summary
         run: |
