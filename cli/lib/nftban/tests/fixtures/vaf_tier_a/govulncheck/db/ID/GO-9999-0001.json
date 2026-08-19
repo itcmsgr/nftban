@@ -1,0 +1,6 @@
+{"schema_version":"1.3.1","id":"GO-9999-0001","modified":"2026-01-01T00:00:00Z","published":"2026-01-01T00:00:00Z",
+ "summary":"SYNTHETIC VAF Tier-A instrument-health control. NOT a real vulnerability.",
+ "details":"Deterministic local control proving govulncheck still distinguishes REACHABLE (level=error) from PRESENT-NOT-PROVEN-REACHABLE (level=note). Year 9999 marks it synthetic; fixed at an unreachable 1.99.0 so every real toolchain is 'affected'.",
+ "affected":[{"package":{"name":"stdlib","ecosystem":"Go"},
+ "ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"1.99.0"}]}],
+ "ecosystem_specific":{"imports":[{"path":"net/url","symbols":["Parse"]}]}}]}

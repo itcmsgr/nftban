@@ -1,0 +1,29 @@
+# VAF TIER-A DETERMINISTIC CONTROL — EXPECTED ANSWER AUTHORITY  (v1.229.4 F2a)
+#
+# ⛔ THIS FILE IS HAND-MAINTAINED AND MUST NEVER BE GENERATED FROM SCANNER OUTPUT.
+#
+#   If a scanner produced the expected answers that the same scanner is then checked
+#   against, the control proves SELF-CONSISTENCY, not DETECTION. It would pass just as
+#   happily against a scanner that had silently stopped detecting anything — which is
+#   precisely the decay this control exists to catch.
+#
+#   The values below were derived from the FIXTURE DEFINITIONS (which module/version the
+#   synthetic advisory declares affected; which symbol each subject calls), NOT by running
+#   a scanner and copying its output.
+#
+# ⛔ ASSERT REQUIRED IDS AND THEIR EXPECTED CLASSIFICATION — NEVER TOTAL FINDING COUNT.
+#   CARDINALITY_PRECONDITION != UNIVERSAL EXPECTATION MODEL. A vulnerability subject can
+#   carry unrelated advisory populations; a count assertion breaks the moment it does.
+#   (Measured: an osv negative arm that "fixed" x/net still reported 58 findings, because
+#   the module's `go` directive left the stdlib vulnerable.)
+#
+# ⛔ MODE CHANGES SEMANTICS. govulncheck source mode: error = reachable from this module's
+#   code. Binary mode: error = vulnerable symbol present in the binary. Do not conflate.
+#
+# instrument	arm	required_id	expectation	rationale
+osv	positive	OSV-VAF-CONTROL-0001	PRESENT	subject_vulnerable requires example.com/vaf-control-mod v1.0.0; the synthetic advisory declares introduced=0 fixed=1.1.0, so v1.0.0 is inside the affected range
+osv	negative	OSV-VAF-CONTROL-0001	ABSENT	subject_fixed requires v1.1.0, which equals the declared fixed version and is therefore outside the affected range
+osv	failure	OSV-VAF-CONTROL-0001	NOT_CLEAN	DB cache absent under --offline: measured rc=127 with a VALID, PARSEABLE, ZERO-finding JSON. An observation failure must never classify as CLEAN
+govulncheck	positive	GO-9999-0001	ERROR	subject_positive calls net/url.Parse, the symbol the synthetic advisory lists; reachability is proven, so the native level is error
+govulncheck	negative	GO-9999-0001	NOTE	subject_negative never calls the symbol; stdlib is still within the affected range, so the finding REMAINS PRESENT but drops to note. This level transition is the load-bearing semantic the deleted converter destroyed
+govulncheck	failure	GO-9999-0001	NOT_CLEAN	DB unavailable: measured rc=1 and a 0-byte SARIF. No valid observation exists, so no clean verdict may be drawn
