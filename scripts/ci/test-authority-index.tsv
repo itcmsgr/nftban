@@ -290,6 +290,7 @@ v145_pr_g_ssh_ports_invariants_test	cli/lib/nftban/tests/v145_pr_g_ssh_ports_inv
 v145_ssh_port_detect_test	cli/lib/nftban/tests/v145_ssh_port_detect_test.sh	firewall		ssh-port-detect	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 v145_ssh_port_template_set_driven_static_test	cli/lib/nftban/tests/v145_ssh_port_template_set_driven_static_test.sh	firewall	test	nftables-ssh-templates	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 v1921_effective_port_render_failclosed_test	cli/lib/nftban/tests/v1921_effective_port_render_failclosed_test.sh	firewall	test	firewall-service-port-render	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+vaf0_stage3d_controls_v1229_4_test	cli/lib/nftban/tests/vaf0_stage3d_controls_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 vaf_tier_a_instrument_health_v1229_4_test	cli/lib/nftban/tests/vaf_tier_a_instrument_health_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 version_build_date_v151_test	cli/lib/nftban/tests/version_build_date_v151_test.sh	release	test	version-build-date	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 version_date_coherence_v1228_7_test	cli/lib/nftban/tests/version_date_coherence_v1228_7_test.sh	packaging	test	version-date-coherence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		

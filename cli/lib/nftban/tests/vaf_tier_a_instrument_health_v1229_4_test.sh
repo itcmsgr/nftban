@@ -95,6 +95,30 @@ else
     echo "RESULT: FAIL"; exit 1
 fi
 
+# ---- fixture identity — CONTENT + FIXTURE-RELATIVE NAME, never the checkout path -----
+# ⛔ `sha256sum <file>` SERIALIZES THE PATH INTO ITS OUTPUT. The previous form hashed that
+#    output, so the displayed identity changed with the checkout directory: MEASURED
+#    e8c24245 vs a38ed47c for BYTE-IDENTICAL fixtures. An identity that varies with where
+#    the tree happens to sit is not an identity.
+#      CONTENT IDENTITY MUST DERIVE FROM CONTENT BYTES.
+#
+# Hashing only the sorted CONTENT digests would be path-independent but would also make a
+# rename or a member swap invisible, since two different trees sharing a multiset of file
+# contents would collide. Fixture MEMBERSHIP is part of what identity means here, so each
+# member contributes  <fixture-relative-path> <content-sha256>  and the sorted manifest is
+# hashed. Excluded by construction: absolute paths, temp dir names, mtime, ownership and
+# filesystem traversal order.
+fixture_identity(){
+    local root="$1"
+    ( cd "$root" 2>/dev/null || return 1
+      find . -type f -print0 \
+        | LC_ALL=C sort -z \
+        | while IFS= read -r -d '' f; do
+              printf '%s %s\n' "${f#./}" "$(sha256sum < "$f" | cut -d' ' -f1)"
+          done \
+        | sha256sum | cut -d' ' -f1 )
+}
+
 TMP="$(mktemp -d)"; trap 'rm -rf "${TMP:?}"' EXIT
 
 # =============================================================================
@@ -255,7 +279,7 @@ if [[ -z "$GVC_BIN" || ! -x "$GVC_BIN" || -z "$GO_BIN" ]]; then
     info "INSTRUMENT_UNAVAILABLE: govulncheck and/or go not found (set GOVULNCHECK_BIN). ⛔ NOT A PASS."
 else
     info "instrument: $("$GVC_BIN" -version 2>&1 | grep -i '^Scanner:' || echo 'version unknown')"
-    info "db fixture sha256: $(find "$FIX/govulncheck/db" -type f -exec sha256sum {} \; | sort -k2 | sha256sum | cut -d' ' -f1) (tree digest)"
+    info "db fixture identity: $(fixture_identity "$FIX/govulncheck/db")"
     RID="$(req_id govulncheck positive)"
     gvc_level(){ # $1 sarif, $2 id -> level or empty
         python3 -c "
