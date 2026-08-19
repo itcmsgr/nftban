@@ -9,6 +9,21 @@ on:
   push:
     branches: [ main, master, develop ]
   pull_request:
+  # ---- v1.229.4 VAF-C1b · PATH A — FRESHNESS AUTHORITY ----
+  # ⛔ NO SOURCE CHANGE != NO NEW VULNERABILITY INFORMATION.
+  # A code-change trigger cannot be the freshness authority for externally evolving
+  # security knowledge: the advisory database moves on days nobody touches Go.
+  # MEASURED before this change: 16 of the last 20 runs reported a PASSING required
+  # security context with no vulnerability observation at all.
+  # Cadence matches osv-scanner.yml so both Tier-A vulnerability instruments share one
+  # observation rhythm.
+  # ⛔ WEEKLY SCHEDULE != RELEASE-TIME FRESHNESS PROOF. This bounds the background blind
+  # window to seven days; a release must obtain FRESH evidence for its exact candidate
+  # SHA via workflow_dispatch. "The cron happened sometime this week" is not release
+  # evidence.
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly: Monday 6:00 AM UTC
+  workflow_dispatch:
 
 concurrency:
   group: secure-go-${{ github.ref }}
@@ -42,7 +57,19 @@ jobs:
   analyze:
     name: Go Security Analysis
     needs: filter
-    if: needs.filter.outputs.go_changed == 'true'
+    # ---- v1.229.4 VAF-C1b · EVENT AUTHORITY IS NOT FILTER AUTHORITY ----
+    # A freshness event REQUIRES the scan because of WHAT EVENT IT IS, never because
+    # paths-filter happened to report a change. On a `schedule` event the filter has no
+    # meaningful diff base, so its output must not be consulted there at all.
+    # `always()` is deliberate: if the filter job itself fails, a freshness run must still
+    # scan. On the PR/push path a failed filter leaves go_changed empty, this condition is
+    # false, analyze is skipped — and the gate below classifies that as UNKNOWN, not "OK".
+    if: >-
+      always() && (
+        needs.filter.outputs.go_changed == 'true' ||
+        github.event_name == 'schedule' ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: ubuntu-latest
 
     steps:
@@ -260,16 +287,90 @@ jobs:
     steps:
       - name: Evaluate result
         run: |
-          if [[ "${{ needs.filter.outputs.go_changed }}" != "true" ]]; then
-            echo "No Go changes detected — security scan skipped (OK)"
+          # ===================================================================
+          # v1.229.4 VAF-C1b — THE REQUIRED GATE MUST BE TRUTHFUL
+          # ===================================================================
+          # Three distinct false-green mechanisms were REPRODUCED against the previous
+          # form of this block, on unmodified main, before this fix was designed:
+          #
+          #   PATH A  no Go change -> "security scan skipped (OK)"
+          #           A code-change trigger was acting as the freshness authority.
+          #           MEASURED: 16 of 20 runs passed with zero observation.
+          #
+          #   PATH B  filter job FAILS -> outputs empty -> "" != "true"
+          #           -> "No Go changes detected — security scan skipped (OK)", rc=0.
+          #           BYTE-IDENTICAL to a legitimate no-change PR.
+          #           ⛔ FAILED PRODUCER + EMPTY OUTPUT != "NO GO CHANGE"
+          #
+          #   PATH C  go_changed=true but analyze skipped -> "Go security analysis passed"
+          #           The gate asserted a COMPLETED ANALYSIS THAT NEVER RAN.
+          #           B is a false skip; C is a false pass.
+          #
+          # ⛔ "SKIPPED" is an EXECUTION FACT. "SKIPPED (OK)" is a POLICY VERDICT that
+          #    requires authority proving the observation was not required.
+          # ⛔ DEFAULT DENY: any state not explicitly recognised fails.
+          FILTER_RESULT="${{ needs.filter.result }}"
+          GO_CHANGED="${{ needs.filter.outputs.go_changed }}"
+          ANALYZE_RESULT="${{ needs.analyze.result }}"
+          EVENT="${{ github.event_name }}"
+          echo "filter.result=${FILTER_RESULT} go_changed='${GO_CHANGED}' analyze.result=${ANALYZE_RESULT} event=${EVENT}"
+
+          # ---- EVENT AUTHORITY (evaluated FIRST, independent of the filter) ----
+          # A freshness event requires the scan because of the EVENT, never because the
+          # filter said so. Checking this before the filter authority also keeps scheduled
+          # runs from depending on paths-filter health, which has no diff base on schedule.
+          SCAN_REQUIRED=false
+          REQUIRED_BECAUSE=""
+          if [[ "$EVENT" == "schedule" || "$EVENT" == "workflow_dispatch" ]]; then
+            SCAN_REQUIRED=true
+            REQUIRED_BECAUSE="freshness event (${EVENT})"
+          else
+            # ---- FILTER AUTHORITY (PR/push path only) ----
+            if [[ "$FILTER_RESULT" != "success" ]]; then
+              echo "::error title=Go security coverage UNKNOWN::The change-detection job did not succeed (filter.result=${FILTER_RESULT}), so whether a Go security scan was required is UNKNOWN. ⛔ A FAILED PRODUCER'S EMPTY OUTPUT IS NOT A NEGATIVE DECISION — this is not 'no Go changes'."
+              exit 1
+            fi
+            if [[ "$GO_CHANGED" != "true" && "$GO_CHANGED" != "false" ]]; then
+              echo "::error title=Go security coverage UNKNOWN::The change-detection job succeeded but produced no usable go_changed value (got '${GO_CHANGED}'). The requirement cannot be determined, so it is not satisfied."
+              exit 1
+            fi
+            if [[ "$GO_CHANGED" == "true" ]]; then
+              SCAN_REQUIRED=true
+              REQUIRED_BECAUSE="Go subject changed in this delta"
+            fi
+          fi
+
+          # ---- NO-SUBJECT-CHANGE PATH ----
+          # The PR gate passes, but it must make NO current-security claim. Coverage for an
+          # unchanged subject is owed to the weekly schedule, not to this run.
+          if [[ "$SCAN_REQUIRED" != "true" ]]; then
+            echo "Go security analysis NOT REQUIRED for this source delta (no Go subject change)."
+            echo "⛔ This is an EXECUTION FACT, not a security verdict. It asserts nothing about"
+            echo "   current vulnerability state: advisories change without this repository changing."
+            echo "   Current coverage is supplied by the weekly scheduled run, not by this gate."
             exit 0
           fi
-          if [[ "${{ needs.analyze.result }}" == "failure" ]]; then
-            echo "::error::Go security analysis failed"
-            exit 1
-          fi
-          if [[ "${{ needs.analyze.result }}" == "cancelled" ]]; then
-            echo "::error::Go security analysis was cancelled"
-            exit 1
-          fi
-          echo "Go security analysis passed"
+
+          # ---- SCAN REQUIRED: the analysis must actually have COMPLETED ----
+          echo "Go security analysis REQUIRED — ${REQUIRED_BECAUSE}."
+          case "$ANALYZE_RESULT" in
+            success)
+              echo "Go security analysis passed"
+              ;;
+            failure)
+              echo "::error title=Go security analysis failed::govulncheck/gosec/Trivy reported a failure on a run where the scan was REQUIRED (${REQUIRED_BECAUSE})."
+              exit 1
+              ;;
+            cancelled)
+              echo "::error title=Go security analysis cancelled::The scan was REQUIRED (${REQUIRED_BECAUSE}) but was cancelled. No conclusion can be drawn."
+              exit 1
+              ;;
+            skipped)
+              echo "::error title=Go security analysis DID NOT RUN::The scan was REQUIRED (${REQUIRED_BECAUSE}) but the analysis job was SKIPPED. ⛔ AN ABSENT ANALYSIS IS NOT A PASSING ANALYSIS."
+              exit 1
+              ;;
+            *)
+              echo "::error title=Go security analysis state unrecognised::analyze.result='${ANALYZE_RESULT}' on a run where the scan was REQUIRED (${REQUIRED_BECAUSE}). ⛔ DEFAULT DENY — an unclassified state is not a pass."
+              exit 1
+              ;;
+          esac
