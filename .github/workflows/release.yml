@@ -101,9 +101,59 @@ jobs:
 
       - name: Build binaries
         run: |
+          # ===================================================================
+          # v1.229.4 SC-B — +dirty BUILD-STATE DIAGNOSTIC (observation only)
+          # ===================================================================
+          # Both shipped binaries embed a `+dirty` module version, and the CAUSE IS NOT
+          # KNOWN. Three hypotheses were tested by reading and REJECTED: `chmod +x
+          # build.sh` is a no-op (already 100755), build.sh's `rm -f go.work` targets an
+          # UNTRACKED file, and bin/ is gitignored. The remaining candidates cannot be
+          # separated by reading -- they depend on what the runner's tree actually looks
+          # like at the instant `go build` runs.
+          #
+          # ⛔ OBSERVATION ONLY. No fix is attempted here. GO_SC_ITEM5_FIX = NO until the
+          #    cause is proven; a speculative fix could change version-stamping semantics.
+          #
+          # The witness must BIND three things that are otherwise reported separately:
+          #     TREE STATE AT THE BUILD INSTANT  +  BUILD COMMAND  +  RESULTING go version -m
+          # Captured immediately before the build, not at some earlier convenient point --
+          # an earlier snapshot would not describe the state Go actually stamped.
+          echo "=== SC-B: tree state at the build instant ==="
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "--- git status --porcelain=v1 (empty = clean) ---"
+          git status --porcelain=v1 || true
+          echo "--- git diff --name-status (unstaged) ---"
+          git diff --name-status || true
+          echo "--- git diff --cached --name-status (staged) ---"
+          git diff --cached --name-status || true
+          # ⛔ NAMES AND STATUS ONLY. No content, no environment, no secrets are printed.
+          DIRTY_COUNT="$(git status --porcelain=v1 | wc -l | tr -d ' ')"
+          echo "SC-B DIRTY_PATH_COUNT=${DIRTY_COUNT}"
+          if [ "${DIRTY_COUNT}" -eq 0 ]; then
+            echo "SC-B CLASSIFICATION=TREE_CLEAN_AT_BUILD — if the binary still stamps +dirty,"
+            echo "                    the cause is the Go/VCS build invocation, not the worktree."
+          else
+            echo "SC-B CLASSIFICATION=TREE_DIRTY_AT_BUILD — the paths listed above are the producer."
+          fi
+
+          echo "=== SC-B: build command ==="
+          echo "SC-B BUILD_COMMAND=./build.sh"
           chmod +x build.sh
           ./build.sh
           ls -la bin/
+
+          echo "=== SC-B: resulting binary stamping ==="
+          # ⛔ The two shipped binaries use DIFFERENT version forms (nftban-core carries a
+          #    pseudo-version, nftband carries v1.229.3). That asymmetry is unexplained and
+          #    is part of what this witness must answer.
+          for b in bin/nftban-core bin/nftband; do
+            if [ -f "$b" ]; then
+              echo "--- $b ---"
+              go version -m "$b" 2>/dev/null | head -4 || true
+            fi
+          done
+          echo "=== SC-B: post-build tree state (did the build itself dirty the tree?) ==="
+          git status --porcelain=v1 || true
 
       - name: Upload binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
