@@ -116,16 +116,35 @@ jobs:
           # instead of dying on it.
           set +e
           ./osv-scanner scan --config=osv-scanner.toml --lockfile=go.mod \
-            --format=sarif --output=osv-results.sarif
+            --format=sarif --output=osv-results.sarif 2>osv-scanner.err
           OSV_EXIT=$?
           set -e
+          cat osv-scanner.err >&2 || true
           echo "scanner_ran=true" >> "$GITHUB_OUTPUT"
           echo "osv_exit=${OSV_EXIT}" >> "$GITHUB_OUTPUT"
           echo "osv exit=${OSV_EXIT}"
-          if [[ "$OSV_EXIT" -eq 128 ]]; then
-            # SCANNER_FAILURE: no vulnerability conclusion is possible.
-            # ⛔ OBSERVATION FAILURE != CLEAN.
-            echo "::error::SCANNER_FAILURE — OSV-Scanner exited 128 (scan error). No vulnerability conclusion can be drawn from this run."
+          # ---- v1.229.4 VAF-C1a — EXECUTION FAILURE IS NOT CONFIGURATION DRIFT ----
+          # The documented rc contract is only:
+          #     0 = clean
+          #     1 = findings AND/OR unused ignores
+          # EVERY OTHER STATUS IS AN EXECUTION FAILURE, and no vulnerability conclusion
+          # can be drawn from it.
+          #
+          # ⛔ This was previously written as `-eq 128`, a single magic number. MEASURED:
+          # a missing offline database exits 127 with a VALID, PARSEABLE, ZERO-finding
+          # artifact — so it slipped past the 128 test and was later classified as
+          # "suppression drift", sending an operator to osv-scanner.toml for a fault that
+          # is not there.  ⛔ FAILED != DRIFT.
+          #
+          # ⛔ 127 IS A WITNESS, NOT THE RULE. Do not swap one magic number for another:
+          # the classification is "not a documented status", plus the scanner's own
+          # diagnostic, plus artifact validity — never a single code.
+          if [[ "$OSV_EXIT" -ne 0 && "$OSV_EXIT" -ne 1 ]]; then
+            echo "::error::OBSERVATION_FAILURE — OSV-Scanner exited ${OSV_EXIT}, which is not a documented result status (0=clean, 1=findings and/or unused ignores). This is an EXECUTION failure, NOT configuration drift and NOT a clean scan. No vulnerability conclusion can be drawn."
+            if [[ -s osv-scanner.err ]]; then
+              echo "scanner-native diagnostic:"
+              sed 's/^/    /' osv-scanner.err | tail -5
+            fi
             exit 1
           fi
           # ⛔ NO VERDICT HERE. rc=1 means findings AND/OR unused ignores, and the
@@ -213,8 +232,27 @@ jobs:
             echo "::error title=OSV vulnerability findings::OSV-Scanner reported ${RESULTS} finding(s) in Go dependencies/stdlib. See the Security tab (category osv-scanner) for the uploaded SARIF. Coincident suppression drift, if any, does NOT downgrade this."
             exit 1
           fi
+          # ---- v1.229.4 VAF-C1a — DISCRIMINATE FAILED FROM DRIFT ----
+          # Reaching here means the artifact validated and carries ZERO findings. Two very
+          # different states produce that shape, and collapsing them loses the actionable one:
+          #
+          #   rc=1  the scanner RAN and observed nothing, but flagged unused ignores
+          #         -> CONFIGURATION DRIFT (a real, low-severity config fault)
+          #   rc!=0,1  the scanner did NOT complete a valid observation (e.g. the offline
+          #         database was unavailable, measured rc=127) yet still emitted a VALID,
+          #         PARSEABLE, EMPTY artifact
+          #         -> OBSERVATION FAILURE (we know nothing about this subject)
+          #
+          # ⛔ VALID EMPTY ARTIFACT != CLEAN SCAN.   ⛔ FAILED != DRIFT.
+          # ⛔ STALE/UNKNOWN != DRIFT — under drift we know the security state; under an
+          #    observation failure we do not, and that is the more actionable fact.
+          # Both fail closed; they must not fail closed under the SAME NAME.
+          if [[ "$OSV_EXIT" -eq 1 ]]; then
+            echo "::error title=OSV suppression drift::The scan reported ZERO findings but exited 1 — osv-scanner.toml lists ignores that match nothing. This is CONFIGURATION DRIFT, not a vulnerability. ⛔ UNUSED_IGNORE != VULNERABILITY."
+            exit 1
+          fi
           if [[ "$OSV_EXIT" -ne 0 ]]; then
-            echo "::error title=OSV suppression drift::The scan reported ZERO findings but exited ${OSV_EXIT} — osv-scanner.toml lists ignores that match nothing. This is CONFIGURATION DRIFT, not a vulnerability. ⛔ UNUSED_IGNORE != VULNERABILITY."
+            echo "::error title=OSV observation failure::The artifact is valid and EMPTY, but the scanner exited ${OSV_EXIT} — not a documented result status (0=clean, 1=findings and/or unused ignores). The scan did not complete a valid observation; a database-unavailable run exits this way while still writing a parseable empty artifact. This is an OBSERVATION FAILURE, NOT suppression drift and NOT a clean scan. ⛔ Do not edit osv-scanner.toml in response to this."
             exit 1
           fi
           echo "CLEAN — scan completed, SARIF validated, zero scanner-native results."

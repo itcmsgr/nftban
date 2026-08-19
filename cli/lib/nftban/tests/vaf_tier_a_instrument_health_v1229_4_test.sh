@@ -354,18 +354,30 @@ PY
         set -e
         if [[ "$C_RC" -eq 0 ]]; then
             fail "C1a-W the production classifier returned SUCCESS for an observation failure — FAIL-OPEN"
-        elif grep -qi 'observation.failure\|database\|unavailable' <<<"$C_OUT"; then
-            pass "C1a-W production classifier identifies the observation failure (rc=$C_RC) — C1a appears CLOSED"
-        elif grep -q 'suppression drift' <<<"$C_OUT"; then
-            info "C1A_OPEN — fails closed (rc=$C_RC) but MISCLASSIFIES: DB-unavailable reported as suppression drift."
-            info "  expected: an OBSERVATION_FAILURE / database-unavailable classification"
-            info "  observed: $(head -1 <<<"$C_OUT" | cut -c1-120)"
-            info "  ⛔ FAILED != DRIFT. Severity: classification fidelity, not fail-open."
-            if [[ "${VAF_REQUIRE_C1A:-0}" == "1" ]]; then
-                fail "C1a-W VAF_REQUIRE_C1A=1 and the classifier still reports suppression drift"
-            fi
+        elif grep -q '::error title=OSV suppression drift::' <<<"$C_OUT"; then
+            # ⛔ BINDING SINCE VAF-C1a. Was non-fatal while the defect was open; C1a repaired
+            #    the classifier, so a regression back to "drift" is now a hard failure.
+            fail "C1a-W REGRESSION: a database-unavailable observation failure is classified as suppression drift"
+            info "  ⛔ FAILED != DRIFT. This sends an operator to osv-scanner.toml for a fault that is not there."
+            info "  observed: $(grep -o 'title=[^:]*' <<<"$C_OUT" | head -1)"
+        elif grep -q '::error title=OSV observation failure::' <<<"$C_OUT"; then
+            pass "C1a-W production classifier reports OBSERVATION FAILURE for rc=127 + valid empty artifact"
+            info "⛔ VALID EMPTY ARTIFACT != CLEAN. Both states fail closed — but not under the same name."
         else
             fail "C1a-W classifier produced an unrecognised verdict (rc=$C_RC)"
+            sed 's/^/          /' <<<"$C_OUT" | head -3
+        fi
+        # ---- the OTHER side of the discrimination: rc=1 must STILL be drift -------
+        # A "fix" that relabels everything as observation failure would destroy the
+        # distinction in the opposite direction. Both names must remain reachable.
+        set +e
+        D_OUT="$( cd "$TMP" && SARIF_READY=true OSV_EXIT=1 bash verdict.sh 2>&1 )"
+        D_RC=$?
+        set -e
+        if [[ "$D_RC" -ne 0 ]] && grep -q '::error title=OSV suppression drift::' <<<"$D_OUT"; then
+            pass "C1a-W2 rc=1 + zero findings is STILL classified as suppression drift (discrimination is two-way)"
+        else
+            fail "C1a-W2 rc=1 no longer classifies as suppression drift — the repair collapsed the distinction the other way"
         fi
     fi
 fi
