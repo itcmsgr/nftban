@@ -221,6 +221,7 @@ rpm_files_templates_dedup_v166_test	cli/lib/nftban/tests/rpm_files_templates_ded
 rpm_spec_no_section_macro_in_comment_v165_test	cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh	packaging	test	rpm-spec	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 rpm_spec_single_install_v157_test	cli/lib/nftban/tests/rpm_spec_single_install_v157_test.sh	packaging	test	rpm-spec	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 ruleset_fingerprint_v138_test	cli/lib/nftban/tests/ruleset_fingerprint_v138_test.sh	security	test	rulefp	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+sbom_no_fabrication_v1229_4_test	cli/lib/nftban/tests/sbom_no_fabrication_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 secure_go_gate_coverage_v1229_4_test	cli/lib/nftban/tests/secure_go_gate_coverage_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 selinux_geoip_map_v1228_5_test	cli/lib/nftban/tests/selinux_geoip_map_v1228_5_test.sh	security	test	selinux-geoip-map	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 service_alerts_v138_test	cli/lib/nftban/tests/service_alerts_v138_test.sh	firewall	test	firewall-conflicts	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
