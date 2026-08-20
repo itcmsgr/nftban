@@ -26,6 +26,11 @@
 #   * Dockerfile `FROM golang:1.25-alpine` — a deliberate MINOR-level float. It is NOT a
 #     patch-level pin and Stage 2 must not pin or redesign it (supply-chain finding PR-C-2).
 #
+# v1.229.4 PR-D raised release.yml from 1 to 2: the shipped-binary govulncheck witness
+# needs Go in verify-release. Registered deliberately — the parity guard's LOCATION arm
+# caught it as an unregistered live pin within hours of the pin being added, which is
+# exactly the drift class Stage 2 exists to prevent.
+#
 # field	file	key	occurrences
 pin	.github/workflows/build-packages.yml	go-version	2
 pin	.github/workflows/ci-empty-env-smoke.yml	go-version	1
@@ -41,10 +46,10 @@ pin	.github/workflows/fuzz.yml	go-version	1
 pin	.github/workflows/ossra-remediation.yml	GO_VERSION	1
 pin	.github/workflows/osv-scanner.yml	go-version	1
 pin	.github/workflows/project-health.yml	go-version	1
-pin	.github/workflows/release.yml	go-version	1
+pin	.github/workflows/release.yml	go-version	2
 pin	.github/workflows/secure-go.yml	go-version	1
 pin	.github/workflows/slsa-go-releaser.yml	go-version	1
 pin	.github/workflows/socket-supplychain.yml	GO_VERSION	1
-expected_total	19
+expected_total	20
 recorded_at	2026-08-19
 recorded_for	v1.229.4 VAF-0 Stage 2

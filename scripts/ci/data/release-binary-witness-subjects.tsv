@@ -1,0 +1,30 @@
+# NFTBan — DECLARED BINARY-WITNESS SUBJECTS  (v1.229.4 PR-D)
+#
+# ⛔ HAND-MAINTAINED. READ, NEVER GENERATED FROM WHAT HAPPENS TO BE DOWNLOADED.
+#     FOUND_BINARIES must NOT define EXPECTED_BINARIES — that is the tautology the
+#     SLSA subject declaration exists to prevent, and the same shape that let
+#     nftban-core silently vanish from SHA256SUMS.
+#
+# Every subject listed here MUST be present at witness time and MUST be scanned.
+# Absence is a FAILURE, never a skip.
+#
+# ⛔ MODE CHANGES SEMANTICS (measured in F1, same subject, same tool, same day):
+#     source mode   error = REACHABLE from this module's code      -> 5 error / 2 note
+#     binary mode   error = vulnerable symbol PRESENT in the binary -> 7 error / 0 note
+#   This witness runs BINARY mode over shipped artifacts, so its claim is
+#   "present in the shipped binary", NOT "reachable from source". Never quote one as
+#   the other.
+#
+# ⛔ NOT LISTED YET — nftban-core-linux-amd64.
+#   It is built by the third-party SLSA reusable workflow and does not exist in the
+#   release when verify-release runs. Listing it today would fail every release for a
+#   reason that is not a defect. R2 (release-topology inversion) makes it available at
+#   this point; its row is added THERE, deliberately, not inferred here.
+#   Until then this witness does NOT cover nftban-core and must not be described as if
+#   it does.
+#
+# field	basename
+subject	nftband-linux-amd64
+expected_total	1
+recorded_at	2026-08-20
+recorded_for	v1.229.4 PR-D
