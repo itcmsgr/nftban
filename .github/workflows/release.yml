@@ -430,6 +430,43 @@ jobs:
   # ==========================================================================
   # CREATE RELEASE
   # ==========================================================================
+  # ==========================================================================
+  # v1.229.4 R2 — the SLSA builder is now a JOB HERE, not a separate workflow
+  # ==========================================================================
+  # It used to live in slsa-go-releaser.yml, triggered `on: workflow_run` AFTER this
+  # workflow completed — which is precisely why nftban-core did not exist when the
+  # checksum authority finalized SHA256SUMS, and why the release was already PUBLIC
+  # before its provenance was verified.
+  #
+  # ⛔ upload-assets: false IS LOAD-BEARING AND MUST STAY EXPLICIT.
+  #    The pinned builder declares `upload-assets` with DEFAULT TRUE, and its upload job
+  #    fires on  inputs.upload-assets && (startsWith(github.ref,'refs/tags/') || ...).
+  #    On a tag push it therefore uploads to the release EVEN WITH upload-tag-name empty.
+  #    OMITTING THIS INPUT RE-ENABLES A THIRD-PARTY PUBLISHER. Absence is the unsafe state.
+  #      THIRD_PARTY_RELEASE_UPLOAD_CAPABILITY = OFF
+  #    is the invariant; removing upload-tag-name alone does NOT achieve it.
+  #
+  # The binary and its provenance are still produced: the builder's `build-dry` and
+  # `provenance` jobs are UNGUARDED by upload-assets, and expose go-binary-name /
+  # go-provenance-name as workflow artifacts. Only the terminal upload job is gated.
+  build-nftban-core:
+    name: Build nftban-core (SLSA3)
+    needs: [build-binaries]
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
+    with:
+      # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.13`) so the SLSA builder
+      # selects the same toolchain patch. GOTOOLCHAIN cannot be injected into a
+      # third-party reusable workflow, so it is left to the builder.
+      go-version: "1.25.13"
+      config-file: .github/slsa/nftban-core.yml
+      evaluated-envs: "VERSION:${{ github.ref_name }}"
+      # ⛔ DO NOT REMOVE. See the block above: absent == true == third-party publisher ON.
+      upload-assets: false
+
   create-release:
     name: Create GitHub Release
     needs: [build-rpm, build-deb]
@@ -911,7 +948,7 @@ jobs:
   # If ANY check fails, the release stays as DRAFT and is never exposed to users.
   verify-release:
     name: Verify & Publish Release
-    needs: create-release
+    needs: [create-release, build-nftban-core]
     # v1.221.1: this job downloads + verifies + PUBLISHES the draft release. On a
     # manual dry-run (workflow_dispatch, publish=false) no release exists, so the
     # whole job is skipped. Tag push always runs it.
@@ -1198,6 +1235,113 @@ jobs:
       #
       # ⛔ Runs BEFORE publication, consistent with SC-A: a witness after publication
       #    detects rather than prevents.
+      # ---- v1.229.4 R2: the SLSA subject now arrives BEFORE finalization ----
+      # These downloads pull the builder's WORKFLOW ARTIFACTS (not release assets), which
+      # is why upload-assets: false does not deprive us of anything. They land alongside
+      # the release assets already fetched above, so Gate 3 sees the complete population.
+      - name: Download nftban-core artifact (SLSA builder)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build-nftban-core.outputs.go-binary-name }}
+          path: /tmp/release-verify
+
+      - name: Download nftban-core provenance (SLSA builder)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build-nftban-core.outputs.go-provenance-name }}
+          path: /tmp/release-verify
+
+      - name: Install SLSA Verifier
+        run: |
+          curl -sSfL https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.0/slsa-verifier-linux-amd64 \
+            -o /usr/local/bin/slsa-verifier
+          chmod +x /usr/local/bin/slsa-verifier
+
+      - name: Verify SLSA Provenance
+        run: |
+          # =================================================================
+          # v1.229.4 VAF-0 Stage 1 — SLSA_VALIDATION_FALSE_GREEN
+          # =================================================================
+          # THREE WITNESSES AGAINST ONE VALIDATOR. The previous form was:
+          #
+          #     VERIFY_FAILED=0
+          #     for binary in dist/nftban-*; do
+          #       if [ -f "$provenance" ]; then slsa-verifier ... || VERIFY_FAILED=1; fi
+          #     done
+          #     [[ $VERIFY_FAILED -ne 0 ]] && exit 1
+          #
+          #   L1 ZERO_SUBJECT_ITERATION           glob matches nothing -> 0 iterations ->
+          #                                       VERIFY_FAILED stays 0 -> "verified"
+          #   L2 REQUIRED_SUBJECT_ABSENCE_SKIPPED no else on the -f test -> A SHIPPED BINARY
+          #                                       WITH NO PROVENANCE PASSED THE PROVENANCE
+          #                                       CHECK. This was a live FALSE SECURITY
+          #                                       CLAIM about a specific artifact, not a
+          #                                       missing defence.
+          #   L3 EXPECTED_POPULATION_NOT_ASSERTED nothing declared what SHOULD be verified
+          #
+          # ⛔ Adding an `else` alone would close L2 and leave L1 and L3. The population must
+          #    come from a DECLARATION THAT REALITY CANNOT EDIT:
+          #        PROVENANCE_FILES_FOUND must NOT define PROVENANCE_FILES_EXPECTED
+          set -uo pipefail
+          DECL="scripts/ci/data/slsa-subjects.tsv"
+          VERIFIER="${SLSA_VERIFIER_BIN:-slsa-verifier}"
+          [[ -f "$DECL" ]] || { echo "::error title=SLSA subject declaration missing::$DECL is absent. The expected population cannot be established, so nothing can be verified. ⛔ A MISSING DECLARATION IS NOT AN EMPTY POPULATION."; exit 1; }
+
+          EXPECTED_COUNT="$(awk -F'\t' '$1=="expected_count"{print $2; exit}' "$DECL" | tr -d '[:space:]')"
+          SOURCE_URI="$(awk -F'\t' '$1=="source_uri"{print $2; exit}' "$DECL" | tr -d '[:space:]')"
+          [[ "$EXPECTED_COUNT" =~ ^[0-9]+$ ]] || { echo "::error title=SLSA declaration invalid::expected_count is missing or non-numeric."; exit 1; }
+          [[ -n "$SOURCE_URI" ]] || { echo "::error title=SLSA declaration invalid::source_uri is missing."; exit 1; }
+
+          # ---- CARDINALITY PRECONDITION: a zero-subject run is never a pass -------------
+          DECLARED=$(awk -F'\t' '$1=="subject" && NF>=3' "$DECL" | wc -l | tr -d ' ')
+          echo "declared SLSA subjects: ${DECLARED} (expected_count=${EXPECTED_COUNT})"
+          if [[ "$DECLARED" -eq 0 ]]; then
+            echo "::error title=SLSA population empty::The declaration lists ZERO subjects. ⛔ 0 SUBJECTS != 0 FAILURES, and 0 FAILURES != PASS."
+            exit 1
+          fi
+          if [[ "$DECLARED" -ne "$EXPECTED_COUNT" ]]; then
+            echo "::error title=SLSA declaration incoherent::${DECLARED} subject row(s) but expected_count=${EXPECTED_COUNT}. A subject was added or removed without updating the count."
+            exit 1
+          fi
+
+          # ---- verify EACH DECLARED subject; absence is a FAILURE, never a skip ---------
+          VERIFIED=0
+          FAILED=0
+          while IFS=$'\t' read -r _tag binary provenance; do
+            [[ -n "${binary:-}" ]] || continue
+            echo "--- declared subject: ${binary}"
+            if [[ ! -f "/tmp/release-verify/${binary}" ]]; then
+              echo "::error title=SLSA subject binary missing::Declared subject '"${binary}"' is not present in dist/. It was expected to ship. ⛔ ABSENCE IS NOT A SKIP."
+              FAILED=$((FAILED+1)); continue
+            fi
+            if [[ ! -f "/tmp/release-verify/${provenance}" ]]; then
+              echo "::error title=SLSA provenance missing::Declared subject '"${binary}"' SHIPS WITHOUT PROVENANCE ('"${provenance}"' absent). ⛔ This is the exact state the previous validator passed silently."
+              FAILED=$((FAILED+1)); continue
+            fi
+            if "$VERIFIER" verify-artifact "/tmp/release-verify/${binary}" \
+                 --provenance-path "/tmp/release-verify/${provenance}" \
+                 --source-uri "$SOURCE_URI"; then
+              VERIFIED=$((VERIFIED+1))
+              echo "    provenance verified and bound to ${binary}"
+            else
+              echo "::error title=SLSA provenance binding failed::Provenance did not verify against '"${binary}"'."
+              FAILED=$((FAILED+1))
+            fi
+          done < <(awk -F'\t' '$1=="subject" && NF>=3 {print $1"\t"$2"\t"$3}' "$DECL")
+
+          # ---- OBSERVED-COUNT POSTCONDITION -------------------------------------------
+          echo "verified ${VERIFIED}/${EXPECTED_COUNT} declared subject(s); failures=${FAILED}"
+          if [[ "$FAILED" -ne 0 ]]; then
+            echo "::error title=SLSA verification failed::${FAILED} declared subject(s) could not be verified."
+            exit 1
+          fi
+          if [[ "$VERIFIED" -ne "$EXPECTED_COUNT" ]]; then
+            echo "::error title=SLSA coverage incomplete::verified ${VERIFIED} of ${EXPECTED_COUNT} declared subjects. ⛔ EVERY DECLARED SUBJECT MUST BE ACCOUNTED FOR — a partial pass is not a pass."
+            exit 1
+          fi
+          echo "SLSA provenance verified for all ${VERIFIED} declared subject(s)."
+
+
       - name: Set up Go (PR-D binary witness)
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
@@ -1300,6 +1444,30 @@ jobs:
           # Generate SHA256SUMS from all downloadable package/binary files
           # Excludes: SHA256SUMS.build (internal), MANIFEST.txt, VERIFY.txt, sbom (metadata)
           shopt -s nullglob
+          # ---- v1.229.4 item 4 / R2: REQUIRED SUBJECTS, NOT WHATEVER GLOBS ----
+          # Before R2 this globbed and nftban-core was silently absent, because its builder
+          # ran in a later workflow. `binaries=(nftban-core... nftband...)` upstream DECLARED
+          # it required, while a `[[ -f ]]` skip and a `>0` count let it vanish without a word.
+          #     DECLARED REQUIRED + SILENTLY SKIPPED = the false-green shape
+          # The declaration below is the SAME file PR-D uses, so the witness population and
+          # the checksum population cannot drift apart.
+          DECL="$GITHUB_WORKSPACE/scripts/ci/data/release-binary-witness-subjects.tsv"
+          if [ ! -f "$DECL" ]; then
+            echo "::error title=Checksum subject declaration missing::$DECL is absent; the required checksum population cannot be established. A MISSING DECLARATION IS NOT AN EMPTY POPULATION."
+            exit 1
+          fi
+          MISSING=0
+          while IFS= read -r req; do
+            [ -n "$req" ] || continue
+            if [ ! -f "$req" ]; then
+              echo "::error title=Required checksum subject missing::${req} is a DECLARED required checksum subject but is not present at finalization. ABSENCE IS NOT A SKIP."
+              MISSING=$((MISSING+1))
+            fi
+          done < <(awk -F'\t' '$1=="subject" && NF>=2 {print $2}' "$DECL")
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error title=Checksum population incomplete::${MISSING} declared subject(s) absent; SHA256SUMS will NOT be finalized over an incomplete population."
+            exit 1
+          fi
           all_files=(*.rpm *.deb *-linux-amd64)
 
           if [ ${#all_files[@]} -eq 0 ]; then
@@ -1329,6 +1497,28 @@ jobs:
                 echo "  $FILE: SHA256SUMS == SHA256SUMS.build"
               else
                 echo "::error::$FILE: SHA256SUMS != SHA256SUMS.build (should never happen at this point)"
+                CROSS_FAILURES=$((CROSS_FAILURES + 1))
+              fi
+            else
+              # ---- v1.229.4 R2: NO BUILD HASH IS A CLASSIFICATION, NOT A SKIP ----
+              # This branch did not exist. `if [ -n "$BUILD_HASH" ]` with no else meant a
+              # file present in the PUBLIC SHA256SUMS but absent from SHA256SUMS.build was
+              # silently not cross-checked at all. That was invisible before R2 because
+              # every file in the population came from build-binaries. R2 adds nftban-core,
+              # which the SLSA builder produces and which is NOT reliably in
+              # SHA256SUMS.build (create-release does not depend on build-nftban-core), so
+              # the release would have published its checksum with the cross-check quietly
+              # doing nothing.
+              #
+              # ⛔ UNCHECKABLE-BY-DESIGN != ACCIDENTALLY-UNCHECKED. Only a subject DECLARED
+              #    to derive integrity from signed provenance may lack a build hash, and
+              #    that provenance was already verified earlier in this job. Anything else
+              #    is a real gap and fails.
+              AUTHORITY="$(awk -F'\t' -v f="$FILE" '$1=="subject" && $2==f {print $3; exit}' "$DECL")"
+              if [ "$AUTHORITY" = "slsa-provenance" ]; then
+                echo "  $FILE: no build checksum BY DECLARATION (integrity authority = slsa-provenance, verified earlier in this job)"
+              else
+                echo "::error title=Checksum cross-check silently skipped::${FILE} is in the public SHA256SUMS but has no entry in SHA256SUMS.build, and is not declared as deriving integrity from signed provenance (declared authority: '${AUTHORITY:-<undeclared>}'). ABSENCE OF A GROUND TRUTH IS NOT A PASS."
                 CROSS_FAILURES=$((CROSS_FAILURES + 1))
               fi
             fi

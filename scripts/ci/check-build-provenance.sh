@@ -154,23 +154,33 @@ _neg_expect_fail DEB_JQ_REMOVED         '/apt-get install -y[[:space:]]\+dpkg-de
 _neg_expect_fail USE_PREBUILT_REMOVED       '/build_nftban\.sh .*--use-prebuilt/s/--use-prebuilt//'                 check_workflow_mode3
 _neg_expect_fail PREBUILT_MANIFEST_REMOVED  '/build_nftban\.sh .*--prebuilt-manifest/s/--prebuilt-manifest [^ ]*//' check_workflow_mode3
 
-# 8) Downstream SLSA contract: nftban-core-linux-amd64 (+ .intoto.jsonl provenance)
-#    are the TWO assets the release intentionally splits to the SLSA workflow, which
-#    runs only after a SUCCESSFUL Release Packages run. Guards that this gating stays
-#    intact so the final 15-asset set is not silently reduced (the release.yml dry-run
-#    only certifies the pre-SLSA 13; these 2 come from here).
-SLSA=".github/workflows/slsa-go-releaser.yml"
+# 8) SLSA contract: nftban-core-linux-amd64 (+ .intoto.jsonl provenance) are the two
+#    provenance-bearing assets. ⛔ v1.229.4 R2 MOVED THE BUILDER. It used to live in
+#    slsa-go-releaser.yml, chained `on: workflow_run` after Release Packages — which is
+#    precisely why the release went PUBLIC before nftban-core existed, and why the binary
+#    was silently dropped from SHA256SUMS. R2 made the builder a called job of release.yml.
+#    The contract this guards therefore INVERTED: the old assertions (workflow_run trigger,
+#    conclusion == success, event == push) now describe the defect, not the requirement.
+#    ⛔ The guard is RETARGETED, not retired — the assets must still not silently vanish.
+SLSA=".github/workflows/release.yml"
 if [[ -f "$SLSA" ]]; then
-    echo "[slsa-contract] $SLSA"
-    grep -q 'workflows: \["Release Packages"\]' "$SLSA" || { echo "::error::SLSA must trigger on the 'Release Packages' workflow_run"; FAIL=1; }
-    grep -qE "workflow_run\.conclusion == 'success'" "$SLSA" || { echo "::error::SLSA must gate on Release Packages conclusion == success"; FAIL=1; }
-    grep -q 'nftban-core' "$SLSA" || { echo "::error::SLSA must build/upload nftban-core"; FAIL=1; }
-    grep -qiE 'builder_go_slsa3|slsa-github-generator' "$SLSA" || { echo "::error::SLSA must use the slsa-github-generator (provenance) builder"; FAIL=1; }
-    # dry-run safety: SLSA must only publish for a real tag PUSH, never for a
-    # successful manual Release Packages dry-run (workflow_dispatch).
-    grep -qE "workflow_run\.event == 'push'" "$SLSA" || { echo "::error::SLSA must require workflow_run.event=='push' (a Release Packages dry-run must not trigger SLSA publication)"; FAIL=1; }
+    echo "[slsa-contract] $SLSA (R2 topology: builder is a called job, not a chained workflow)"
+    grep -q 'nftban-core' "$SLSA" || { echo "::error::release.yml must build nftban-core"; FAIL=1; }
+    grep -qiE 'builder_go_slsa3|slsa-github-generator' "$SLSA" || { echo "::error::release.yml must use the slsa-github-generator (provenance) builder"; FAIL=1; }
+    # ⛔ The builder must NOT be able to publish. upload-assets defaults to TRUE, so an
+    #    ABSENT input silently re-enables a third-party publisher on our release.
+    grep -qE '^[[:space:]]*upload-assets:[[:space:]]*false' "$SLSA" \
+        || { echo "::error::release.yml must pass upload-assets: false — ABSENT DEFAULTS TO TRUE and hands release-upload capability to a third-party workflow"; FAIL=1; }
+    grep -qE '^[[:space:]]*upload-tag-name:' "$SLSA" \
+        && { echo "::error::upload-tag-name reintroduced — it instructs the third-party builder to upload to the release itself"; FAIL=1; }
+    # the defect being removed: no cross-workflow release chain may reappear
+    grep -qE '^[[:space:]]*workflow_run:' "$SLSA" \
+        && { echo "::error::a workflow_run trigger reappeared in release.yml — R2 removed the cross-workflow race"; FAIL=1; }
+    if [[ -f ".github/workflows/slsa-go-releaser.yml" ]]; then
+        echo "::error::slsa-go-releaser.yml exists again — R2 deleted it to remove the competing orchestration authority, not merely to leave it unused"; FAIL=1
+    fi
 else
-    echo "::error::$SLSA missing — the downstream nftban-core provenance assets would be absent from releases"; FAIL=1
+    echo "::error::$SLSA missing — the release workflow is the sole orchestration authority"; FAIL=1
 fi
 
 # 9) Shared release-assembly verifier contract (regression guard for the v1.221.1
