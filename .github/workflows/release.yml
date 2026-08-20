@@ -1183,6 +1183,112 @@ jobs:
           echo "GATE 2 PASSED: All 6 packages contain identical nftband binary"
           echo "Reference hash: $REFERENCE_HASH"
 
+      # =====================================================================
+      # v1.229.4 PR-D — BINARY GOVULNCHECK WITNESS OVER SHIPPED ARTIFACTS
+      # =====================================================================
+      # F1 measured the same subject two ways on the same day:
+      #     source mode   error = REACHABLE from this module's code   -> 5 error / 2 note
+      #     binary mode   error = symbol PRESENT in the binary        -> 7 error / 0 note
+      # Both are correct answers to DIFFERENT questions, and the binary is what ships, so
+      # source-mode CI cannot close the release claim on its own.
+      #
+      # ⛔ NO NEW SCANNER AUTHORITY AND NO INTERPRETATION LAYER. Same pinned govulncheck
+      #    as secure-go, its NATIVE SARIF, classified from the scanner's own `level` field.
+      #    The deleted converter is not reintroduced in any form.
+      #
+      # ⛔ Runs BEFORE publication, consistent with SC-A: a witness after publication
+      #    detects rather than prevents.
+      - name: Set up Go (PR-D binary witness)
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
+        with:
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.13`).
+          go-version: '1.25.13'
+
+      - name: PR-D binary govulncheck witness over shipped artifacts
+        run: |
+          set -uo pipefail
+          DECL="scripts/ci/data/release-binary-witness-subjects.tsv"
+          if [ ! -f "$DECL" ]; then
+            echo "::error title=Binary witness declaration missing::$DECL is absent; the expected subject population cannot be established. A MISSING DECLARATION IS NOT AN EMPTY POPULATION."
+            exit 1
+          fi
+          EXPECTED="$(awk -F'\t' '$1=="expected_total"{print $2; exit}' "$DECL" | tr -d '[:space:]')"
+          case "$EXPECTED" in ''|*[!0-9]*) echo "::error title=Binary witness declaration invalid::expected_total missing or non-numeric."; exit 1;; esac
+          DECLARED=$(awk -F'\t' '$1=="subject" && NF>=2' "$DECL" | wc -l | tr -d ' ')
+          echo "declared binary-witness subjects: ${DECLARED} (expected_total=${EXPECTED})"
+          # CARDINALITY PRECONDITION: a zero-subject witness reports success having examined
+          # nothing. 0 SUBJECTS != 0 FINDINGS, and 0 FINDINGS != PASS.
+          if [ "$DECLARED" -eq 0 ] || [ "$DECLARED" -ne "$EXPECTED" ]; then
+            echo "::error title=Binary witness population invalid::declared=${DECLARED} expected_total=${EXPECTED}; a zero or incoherent population cannot pass."
+            exit 1
+          fi
+
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          GVC="$(go env GOPATH)/bin/govulncheck"
+          WITNESSED=0; FAILED=0
+
+          awk -F'\t' '$1=="subject" && NF>=2 {print $2}' "$DECL" > /tmp/prd-subjects.txt
+          while IFS= read -r base; do
+            [ -n "$base" ] || continue
+            ART="/tmp/release-verify/${base}"
+            echo "--- declared subject: ${base}"
+            if [ ! -f "$ART" ]; then
+              echo "::error title=Binary witness subject missing::Declared subject ${base} was not downloaded from the release. ABSENCE IS NOT A SKIP."
+              FAILED=$((FAILED+1)); continue
+            fi
+            echo "    embedded toolchain: $(go version -m "$ART" 2>/dev/null | head -1 | awk '{print $2}')"
+            set +e
+            "$GVC" -mode=binary -format sarif "$ART" > "/tmp/prd.sarif" 2> "/tmp/prd.err"
+            GVC_RC=$?
+            set -e
+            # In SARIF mode govulncheck EXITS 0 EVEN WITH FINDINGS; a non-zero rc means the
+            # TOOL failed. RC IS NEVER THE VERDICT.
+            if [ "$GVC_RC" -ne 0 ]; then
+              echo "::error title=Binary witness execution failure::govulncheck exited ${GVC_RC} in SARIF mode for ${base} - a TOOL failure, not a finding count. No conclusion can be drawn."
+              tail -5 /tmp/prd.err | sed 's/^/      /'
+              FAILED=$((FAILED+1)); continue
+            fi
+            if [ ! -s /tmp/prd.sarif ]; then
+              echo "::error title=Binary witness produced no artifact::govulncheck exited 0 but emitted no SARIF for ${base}; the output contract was violated. This is NOT a clean result."
+              FAILED=$((FAILED+1)); continue
+            fi
+            SUMMARY="$(python3 -c "$(printf '%s\n' \
+              "import json,sys" \
+              "try: d=json.load(open('/tmp/prd.sarif'))" \
+              "except Exception: print('PARSE_FAILURE'); sys.exit(0)" \
+              "res=[r for run in d.get('runs',[]) for r in run.get('results',[])]" \
+              "e=sum(1 for r in res if r.get('level')=='error')" \
+              "ids=' '.join(sorted({r.get('ruleId','?') for r in res}))" \
+              "print('%d %d %s'%(len(res),e,ids))")")"
+            case "$SUMMARY" in
+              PARSE_FAILURE*)
+                echo "::error title=Binary witness artifact unparseable::SARIF for ${base} is not parseable. An unparseable artifact is NOT an empty one."
+                FAILED=$((FAILED+1)); continue;;
+            esac
+            TOTAL="$(printf '%s' "$SUMMARY" | awk '{print $1}')"
+            PRESENT="$(printf '%s' "$SUMMARY" | awk '{print $2}')"
+            IDS="$(printf '%s' "$SUMMARY" | cut -d' ' -f3-)"
+            echo "    native SARIF: total=${TOTAL} present-in-binary(error)=${PRESENT}"
+            if [ "$TOTAL" -gt 0 ]; then
+              echo "::error title=Binary witness findings::${base} SHIPS WITH ${TOTAL} vulnerability finding(s) present in the binary: ${IDS}. BINARY-MODE error MEANS THE VULNERABLE SYMBOL IS PRESENT IN THE SHIPPED ARTIFACT - not the same claim as source-mode reachability."
+              FAILED=$((FAILED+1)); continue
+            fi
+            WITNESSED=$((WITNESSED+1))
+            echo "    clean: no vulnerable symbols present in the shipped binary"
+          done < /tmp/prd-subjects.txt
+
+          echo "witnessed ${WITNESSED}/${EXPECTED} declared subject(s); failures=${FAILED}"
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error title=Binary witness failed::${FAILED} declared subject(s) did not pass the shipped-binary witness."
+            exit 1
+          fi
+          # OBSERVED-COUNT POSTCONDITION: a partial pass is not a pass.
+          if [ "$WITNESSED" -ne "$EXPECTED" ]; then
+            echo "::error title=Binary witness coverage incomplete::witnessed ${WITNESSED} of ${EXPECTED} declared subjects; EVERY DECLARED SUBJECT MUST BE ACCOUNTED FOR."
+            exit 1
+          fi
+          echo "PR-D: all ${WITNESSED} declared shipped binaries carry no vulnerable symbols."
+
       - name: "Gate 3: Generate final SHA256SUMS from downloaded assets"
         run: |
           echo "=== GATE 3: Generate Public SHA256SUMS ==="
