@@ -31,6 +31,15 @@
 # caught it as an unregistered live pin within hours of the pin being added, which is
 # exactly the drift class Stage 2 exists to prevent.
 #
+# v1.229.4 R2 raised release.yml from 2 to 3 and REMOVED slsa-go-releaser.yml entirely.
+# R2 moved the SLSA builder invocation into release.yml as a called job — the third
+# workflow pin is the `go-version` passed to builder_go_slsa3.yml, which is what the
+# provenance-bearing nftban-core is actually compiled with. slsa-go-releaser.yml was
+# DELETED, so its row is removed here deliberately rather than left to rot: a declared
+# pin in a file that no longer exists is an authority claim with no subject.
+# ⛔ Net expected_total is unchanged at 20 by coincidence (+1 release.yml, -1 deleted
+#    file), NOT because nothing moved. Both edits are intentional.
+#
 # field	file	key	occurrences
 pin	.github/workflows/build-packages.yml	go-version	2
 pin	.github/workflows/ci-empty-env-smoke.yml	go-version	1
@@ -46,10 +55,9 @@ pin	.github/workflows/fuzz.yml	go-version	1
 pin	.github/workflows/ossra-remediation.yml	GO_VERSION	1
 pin	.github/workflows/osv-scanner.yml	go-version	1
 pin	.github/workflows/project-health.yml	go-version	1
-pin	.github/workflows/release.yml	go-version	2
+pin	.github/workflows/release.yml	go-version	3
 pin	.github/workflows/secure-go.yml	go-version	1
-pin	.github/workflows/slsa-go-releaser.yml	go-version	1
 pin	.github/workflows/socket-supplychain.yml	GO_VERSION	1
 expected_total	20
 recorded_at	2026-08-19
-recorded_for	v1.229.4 VAF-0 Stage 2
+recorded_for	v1.229.4 VAF-0 Stage 2 · updated by PR-D and R2

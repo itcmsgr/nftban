@@ -15,16 +15,40 @@
 #   "present in the shipped binary", NOT "reachable from source". Never quote one as
 #   the other.
 #
-# ⛔ NOT LISTED YET — nftban-core-linux-amd64.
-#   It is built by the third-party SLSA reusable workflow and does not exist in the
-#   release when verify-release runs. Listing it today would fail every release for a
-#   reason that is not a defect. R2 (release-topology inversion) makes it available at
-#   this point; its row is added THERE, deliberately, not inferred here.
-#   Until then this witness does NOT cover nftban-core and must not be described as if
-#   it does.
+# nftban-core-linux-amd64 JOINED IN R2 (v1.229.4). Before R2 it could not be a subject:
+# the SLSA builder ran in a separate workflow triggered AFTER this one, so the artifact
+# did not exist at verification time. R2 made the builder a job of release.yml, so the
+# artifact is present before both the witness and checksum finalization. Declaration and
+# reality moved together — the row was added in the same change that made it available,
+# never one ahead of the other.
 #
-# field	basename
-subject	nftband-linux-amd64
-expected_total	1
+# ⛔ THIS FILE IS ALSO THE CHECKSUM COMPLETENESS AUTHORITY (item 4). Gate 3 requires every
+#    subject here to be present and covered by SHA256SUMS. One declaration, two consumers —
+#    NOT two declarations that can drift apart.
+#
+# ⛔ COLUMN 3 = INTEGRITY AUTHORITY. The two binaries do NOT have the same ground truth,
+#    and R2 made that difference load-bearing rather than theoretical:
+#
+#      build-checksum   built by OUR build-binaries job, so create-release records its
+#                       digest in SHA256SUMS.build and Gate 3 cross-checks the downloaded
+#                       asset against it.
+#      slsa-provenance  built by the SLSA reusable builder in build-nftban-core. It is NOT
+#                       produced by build-binaries, and create-release does NOT depend on
+#                       build-nftban-core, so its digest is NOT reliably in SHA256SUMS.build.
+#                       Its ground truth is the signed provenance verified earlier in
+#                       verify-release, not a build-time checksum.
+#
+#    ⛔ WHY THIS IS DECLARED AND NOT INFERRED. Gate 3's cross-check reads
+#    `if [ -n "$BUILD_HASH" ]` with NO else — a subject absent from SHA256SUMS.build is
+#    silently not cross-checked. Before R2 that was invisible because nftban-core was not
+#    in the population at all. R2 puts it in, so without this column the release would
+#    publish a checksum for an artifact whose cross-validation quietly did nothing:
+#        UNCHECKABLE-BY-DESIGN and ACCIDENTALLY-UNCHECKED would look identical.
+#    Declaring the authority makes the second one a FAILURE while allowing the first.
+#
+# field	basename	integrity_authority
+subject	nftband-linux-amd64	build-checksum
+subject	nftban-core-linux-amd64	slsa-provenance
+expected_total	2
 recorded_at	2026-08-20
-recorded_for	v1.229.4 PR-D
+recorded_for	v1.229.4 PR-D · extended by R2 (nftban-core subject + integrity_authority column)

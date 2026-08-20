@@ -7,7 +7,7 @@
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-08-20"
-# meta:description="PR-D. Source-mode govulncheck cannot close the release claim: F1 measured the same subject as 5 error / 2 note in source mode and 7 error / 0 note in binary mode on the same day, because the two modes answer different questions and the binary is what ships. Asserts the release witness declares its subject population independently, fails on a missing subject, fails on an unparseable or absent artifact, treats a non-zero scanner status as a TOOL failure rather than a finding count, and cannot pass with a partial population."
+# meta:description="PR-D. Source-mode govulncheck cannot close the release claim: F1 measured the same subject as 5 error / 2 note in source mode and 7 error / 0 note in binary mode on the same day, because the two modes answer different questions and the binary is what ships. Asserts the release witness declares its subject population independently, fails on a missing subject, fails on an unparseable or absent artifact, treats a non-zero scanner status as a TOOL failure rather than a finding count, and cannot pass with a partial population. R2 added nftban-core-linux-amd64 as a second declared subject, so the witness covers both shipped binaries."
 # meta:inventory.files=".github/workflows/release.yml,scripts/ci/data/release-binary-witness-subjects.tsv"
 # meta:inventory.privileges="none"
 # meta:ta.id="binary_witness_v1229_4_test"
@@ -102,12 +102,18 @@ if grep -qiE '^\s*(ls|find|grep|awk|python)' "$DECL"; then
 else
     pass "DECL2 the declaration is declarative data, not a rediscovery of what was downloaded"
 fi
-# ⛔ The declaration must state, in its own text, that nftban-core is NOT yet covered.
-#    Otherwise a reader could take this witness as covering every shipped binary.
-if grep -q 'nftban-core' "$DECL"; then
-    pass "DECL3 the declaration records that nftban-core is not yet a subject (R2 adds it)"
+# ⛔ R2 CLOSED THIS GAP, SO THE ARM MUST NOW ASSERT THE CLOSURE, NOT THE GAP.
+#    Before R2 nftban-core could not be a subject: the SLSA builder ran in a separate
+#    workflow triggered AFTER this one, so the artifact did not exist at witness time.
+#    R2 made the builder a job of release.yml. ⛔ A bare `grep nftban-core` would be
+#    satisfied by the COMMENT explaining the history — mention is not declaration.
+#    Require a real subject row, so the witness cannot regress to covering one binary
+#    while a comment claims otherwise.
+if awk -F'\t' '$1=="subject" && $2=="nftban-core-linux-amd64"{f=1} END{exit !f}' "$DECL"; then
+    pass "DECL3 nftban-core-linux-amd64 is a DECLARED SUBJECT — the R2 coverage gap is closed"
+    info "the witness now covers BOTH shipped binaries, not just nftband"
 else
-    fail "DECL3 the declaration is silent about nftban-core — the coverage gap must be explicit"
+    fail "DECL3 nftban-core-linux-amd64 is not a declared subject row — R2's coverage closure regressed"
 fi
 
 # ---- behavioural arms against the extracted logic -------------------------------
@@ -137,11 +143,18 @@ EOF
 run_w(){ ( cd "$1" && PATH="$1/bin:$PATH" STUB_GOPATH="$1/gopath" bash "$TMP/witness.sh" 2>&1 ); }
 rc_w(){ ( cd "$1" && PATH="$1/bin:$PATH" STUB_GOPATH="$1/gopath" bash "$TMP/witness.sh" >/dev/null 2>&1 ); echo $?; }
 
+# ⛔ TOOL PROSE != PROTOCOL SIGNAL. Each arm below binds to the producer's exact
+#    `::error title=...::` signal, not to a phrase. Two reasons, both measured:
+#    (1) R2's Gate 3 added "Checksum subject declaration missing" and "Required checksum
+#        subject missing", so the old phrases 'declaration missing' and 'subject missing'
+#        now each match TWO different producers — an arm could pass on the wrong one.
+#    (2) a correct message for a state routinely contains the words of the state it
+#        DENIES, so a bare phrase match hits the opposite sentence.
 # W-N1 · declaration missing
 d="$(mk n1)"; stub "$d" 0 '{}'
 rm -f "$d/scripts/ci/data/release-binary-witness-subjects.tsv"
 out="$(run_w "$d")"; rc="$(rc_w "$d")"
-if [[ "$rc" -ne 0 ]] && grep -q 'declaration missing' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -qF '::error title=Binary witness declaration missing::' <<<"$out"; then
     pass "W-N1 missing declaration -> FAIL (⛔ MISSING DECLARATION != EMPTY POPULATION)"
 else
     fail "W-N1 a missing declaration did not fail (rc=$rc)"
@@ -151,7 +164,7 @@ fi
 d="$(mk n2)"; stub "$d" 0 '{}'
 printf 'expected_total\t0\n' > "$d/scripts/ci/data/release-binary-witness-subjects.tsv"
 out="$(run_w "$d")"; rc="$(rc_w "$d")"
-if [[ "$rc" -ne 0 ]] && grep -q 'population invalid' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -qF '::error title=Binary witness population invalid::' <<<"$out"; then
     pass "W-N2 zero declared subjects -> FAIL (0 SUBJECTS != 0 FINDINGS)"
 else
     fail "W-N2 an empty population did not fail (rc=$rc)"
@@ -160,7 +173,7 @@ fi
 # W-N3 · declared subject was not downloaded
 d="$(mk n3)"; stub "$d" 0 '{}'; decl "$d" "nftband-linux-amd64" 1
 out="$(run_w "$d")"; rc="$(rc_w "$d")"
-if [[ "$rc" -ne 0 ]] && grep -q 'subject missing' <<<"$out"; then
+if [[ "$rc" -ne 0 ]] && grep -qF '::error title=Binary witness subject missing::' <<<"$out"; then
     pass "W-N3 declared subject absent from the release -> FAIL (ABSENCE IS NOT A SKIP)"
 else
     fail "W-N3 a missing artifact did not fail (rc=$rc)"

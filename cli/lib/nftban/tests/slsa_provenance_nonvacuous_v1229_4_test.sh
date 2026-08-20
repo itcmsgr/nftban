@@ -8,7 +8,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-08-19"
 # meta:description="VAF-0 Stage 1. The SLSA provenance verifier carried three vacuity layers at once: a glob that could match nothing left VERIFY_FAILED=0 and reported success, an -f test with no else silently skipped a SHIPPED BINARY THAT HAD NO PROVENANCE, and no expected population was ever asserted. The second was a live FALSE SECURITY CLAIM about a specific artifact. Executes the verification logic EXTRACTED FROM THE PRODUCTION WORKFLOW against a declared subject population and proves that zero subjects, a missing binary, a missing provenance file, a non-binding provenance, and a short count all FAIL."
-# meta:inventory.files=".github/workflows/slsa-go-releaser.yml,scripts/ci/data/slsa-subjects.tsv"
+# meta:inventory.files=".github/workflows/release.yml,scripts/ci/data/slsa-subjects.tsv"
 # meta:inventory.privileges="none"
 # meta:ta.id="slsa_provenance_nonvacuous_v1229_4_test"
 # meta:ta.owner="cross-cutting"
@@ -41,7 +41,10 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-WF="$ROOT/.github/workflows/slsa-go-releaser.yml"
+# ⛔ v1.229.4 R2 relocated the verification steps into release.yml and DELETED
+#    slsa-go-releaser.yml. The validator logic under test is unchanged; only its host
+#    workflow moved. Retargeted so this control keeps a live subject.
+WF="$ROOT/.github/workflows/release.yml"
 DECL_SRC="$ROOT/scripts/ci/data/slsa-subjects.tsv"
 FAIL=0
 pass(){ echo "  PASS  $1"; }
@@ -69,6 +72,27 @@ sys.exit(3)
 PY
 [[ -s "$TMP/verify.sh" ]] || { fail "G0 could not extract 'Verify SLSA Provenance' from the workflow"; echo "RESULT: FAIL"; exit 1; }
 pass "G0 verification logic extracted from the production workflow"
+
+# ---- hermetic relocation of the artifact directory -------------------------------
+# ⛔ verify-release reads artifacts from the ABSOLUTE path /tmp/release-verify (the
+#    pre-existing convention of that job, not something R2 introduced). A control that
+#    executed it unmodified would read a SHARED real directory: non-hermetic, racy
+#    against a concurrent run, and able to "pass" on files this test never created.
+#    Only the PATH is relocated to the per-case sandbox — no logic, no condition and no
+#    message is altered.
+# ⛔ ASSERT THE SUBSTITUTION APPLIED. If the workflow later renames that directory this
+#    sed silently matches nothing, every arm runs against an empty path, and the negative
+#    controls all "detect" for the wrong reason. A rewrite that no longer matches its
+#    subject is a vacuous control, so its absence is a hard failure.
+ABS_DIR="/tmp/release-verify"
+if ! grep -qF "$ABS_DIR" "$TMP/verify.sh"; then
+    fail "G0c the extracted step no longer references $ABS_DIR — the relocation would be vacuous"
+    info "⛔ the arms below would test an empty directory and pass for the wrong reason"
+    echo "RESULT: FAIL"; exit 1
+fi
+sed -i "s|${ABS_DIR}|\$PWD/dist|g" "$TMP/verify.sh"
+grep -qF "$ABS_DIR" "$TMP/verify.sh" && { fail "G0c relocation incomplete — an absolute path survived"; echo "RESULT: FAIL"; exit 1; }
+pass "G0c artifact directory relocated to the per-case sandbox (path only; logic untouched)"
 bash -n "$TMP/verify.sh" 2>/dev/null && pass "G0b extracted block is syntactically valid" \
                                      || { fail "G0b extracted block has a syntax error"; echo "RESULT: FAIL"; exit 1; }
 

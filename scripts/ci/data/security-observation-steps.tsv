@@ -29,7 +29,7 @@ step	.github/workflows/secure-go.yml	analyze	Fix gosec SARIF relationships	B	pyt
 step	.github/workflows/secure-go.yml	analyze	Run govulncheck (native SARIF)	A	govulncheck	producer
 step	.github/workflows/secure-go.yml	analyze	govulncheck verdict (scanner-native results)	A	-	classifier
 step	.github/workflows/secure-go.yml	secure-go-gate	Evaluate result	GATE	-	gate
-step	.github/workflows/slsa-go-releaser.yml	assemble-release	Verify SLSA Provenance	A	slsa-verifier	validator
+step	.github/workflows/release.yml	verify-release	Verify SLSA Provenance	A	slsa-verifier	validator
 step	.github/workflows/release.yml	build-rpm	Validate RPM contains correct binaries	A	sha256sum	validator
 step	.github/workflows/release.yml	build-deb	Validate DEB contains correct binaries	A	sha256sum	validator
 step	.github/workflows/release.yml	create-release	Generate SHA256SUMS.build (local ground truth)	A	sha256sum	producer
@@ -41,3 +41,9 @@ step	.github/workflows/release.yml	create-release	Validate SBOM	A	anchore/sbom-a
 expected_total	17
 recorded_at	2026-08-19
 recorded_for	v1.229.4 VAF-0 Stage 3B
+#
+# v1.229.4 R2: the 'Verify SLSA Provenance' validator moved from
+# slsa-go-releaser.yml/assemble-release to release.yml/verify-release. R2 deleted the
+# former file, so the row was RELOCATED, not removed — the observation still exists and
+# still bears a Tier-A claim. ⛔ Deleting the row instead would have dropped a claim-bearing
+# validator out of the declared population while the validator kept running.

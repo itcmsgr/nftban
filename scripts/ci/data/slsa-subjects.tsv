@@ -35,4 +35,4 @@ expected_count	1
 source_uri	github.com/itcmsgr/nftban
 recorded_at	2026-08-19
 recorded_for	v1.229.4 VAF-0 Stage 1
-justification	dist/ is populated by exactly two download-artifact steps in slsa-go-releaser.yml: the nftban-core binary and its provenance. That is the entire SLSA subject population as shipped in v1.229.3, verified against the published release asset list.
+justification	dist/ is populated by exactly two download-artifact steps: the nftban-core binary and its provenance. That is the entire SLSA subject population as shipped in v1.229.3, verified against the published release asset list. v1.229.4 R2 moved those steps from slsa-go-releaser.yml (deleted) into release.yml/verify-release; the SUBJECT POPULATION IS UNCHANGED — only the workflow that downloads it moved.
