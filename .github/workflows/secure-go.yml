@@ -22,19 +22,19 @@ on:
   # SHA via workflow_dispatch. "The cron happened sometime this week" is not release
   # evidence.
   schedule:
-    # ⛔ TEMPORARY — v1.229.4 REAL_SCHEDULE_PROOF witness. REVERT TO '0 6 * * 1' IMMEDIATELY
-    #    after one genuine schedule-triggered run is observed (PR-SCHED-2).
-    #    C1b's freshness path was proven by a workflow_dispatch witness, and the gate's
-    #    `schedule` branch is proven hermetically — but neither is an actual schedule EVENT.
-    #      DISPATCH WITNESS != SCHEDULE WITNESS
-    #    This repo demonstrably receives schedule events (osv-scanner fired 2026-08-17T06:38Z,
-    #    ~38 min after its 06:00 slot), so the only thing missing is the observation itself.
-    #    Hourly rather than a single near-term slot BECAUSE scheduled runs can be delayed:
-    #    one missed slot must not cost a day. `concurrency: cancel-in-progress` prevents pileup.
-    #    ⛔ THE WEEKDAY/HOUR IS NOT THE SECURITY PROPERTY. What is under test is that a real
-    #    `event_name=schedule` delivery makes analyze run REGARDLESS of go_changed.
-    #    ⛔ PUBLICATION IS FORBIDDEN WHILE THIS TEMPORARY CADENCE REMAINS ON MAIN.
-    - cron: '0 * * * *'  # TEMPORARY hourly — restore '0 6 * * 1' after the witness
+    # v1.229.4 VAF-C1b freshness authority. Cadence matches osv-scanner.yml so both Tier-A
+    # vulnerability instruments share one observation rhythm.
+    # ⛔ NO SOURCE CHANGE != NO NEW VULNERABILITY INFORMATION — the advisory database moves
+    # on days nobody touches Go, which is why a code-change trigger cannot be the freshness
+    # authority. MEASURED before C1b: 16 of 20 runs reported a PASSING required security
+    # context with zero vulnerability observation.
+    # ⛔ WEEKLY SCHEDULE != RELEASE-TIME FRESHNESS PROOF. This bounds the background blind
+    # window to seven days; a release must dispatch a fresh run against its exact candidate
+    # SHA. "The cron happened sometime this week" is not release evidence.
+    # REAL_SCHEDULE_PROOF was obtained under a temporary hourly cadence and the canonical
+    # weekly cadence is restored here: run 32292159901, event=schedule, head 4dccb4f8,
+    # analyze RAN, govulncheck RAN, gate reason "freshness event (schedule)".
+    - cron: '0 6 * * 1'  # Weekly: Monday 6:00 AM UTC
   workflow_dispatch:
 
 concurrency:
