@@ -509,7 +509,7 @@ and release workflows — not uniformly "on every commit."
 
 | Tool | Workflow | Purpose |
 |------|----------|---------|
-| **SLSA Provenance** | `slsa-go-releaser.yml` | Cryptographic build attestation |
+| **SLSA Provenance** | `release.yml` (job `build-nftban-core`) | Cryptographic build attestation |
 | **OpenSSF Scorecard** | `scorecard.yml` | Security health assessment |
 | **Syft SBOM** | `release.yml` | Software Bill of Materials generation |
 | **Socket.dev** | GitHub App | Typosquatting and malware detection |

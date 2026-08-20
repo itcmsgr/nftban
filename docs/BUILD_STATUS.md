@@ -46,7 +46,7 @@
 |----------|-----------------|-----------|--------|
 | [OSSRA Remediation](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml) | License compliance (go-licenses), SPDX headers, dependency freshness (libyear), URL validation (Lychee) | Every PR + push | [![OSSRA](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml) |
 | [OpenSSF Scorecard](https://github.com/itcmsgr/nftban/actions/workflows/scorecard.yml) | OpenSSF security health score | Scheduled | [![Scorecard](https://github.com/itcmsgr/nftban/actions/workflows/scorecard.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/scorecard.yml) |
-| [SLSA Go Releaser](https://github.com/itcmsgr/nftban/actions/workflows/slsa-go-releaser.yml) | SLSA Level 3 provenance attestation | On release | — |
+| [Release Packages](https://github.com/itcmsgr/nftban/actions/workflows/release.yml) (job `build-nftban-core`) | SLSA Level 3 provenance attestation for `nftban-core` | On release | — |
 
 ---
 
