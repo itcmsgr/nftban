@@ -72,4 +72,41 @@ nftban_module_effective_enabled() {
     [[ "$val" == "true" ]]
 }
 
-export -f _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled
+# -----------------------------------------------------------------------------
+# nftban_module_set_enabled <module> <true|false>
+#
+# THE single writer of durable module intent -- the write counterpart to
+# nftban_module_effective_enabled above, deliberately homed beside it so read
+# authority and write authority live together.
+#
+# v1.229.7 PR-2: before this, FOUR hand-rolled writers existed (ddos enable,
+# ddos disable, portscan enable, portscan disable), each its own
+# grep -q / sed -i / echo >> sequence, and each reachable from TWO principals
+# -- the operator CLI *and* the nftband daemon. The daemon path is removed in
+# this same change; this collapses the remaining four implementations into one.
+#
+# ⛔ ONLY EXPLICIT OPERATOR ACTIONS MAY CALL THIS.
+#    `nftban <module> enable|disable` -- and nothing on a daemon lifecycle path.
+#    SERVICE RESTART MUST NOT CHANGE MODULE CONFIGURATION.
+# -----------------------------------------------------------------------------
+nftban_module_set_enabled() {
+    local module="$1" want="$2" key
+    case "$want" in
+        true|false) ;;
+        *) echo "nftban_module_set_enabled: value must be true|false, got '$want'" >&2; return 2 ;;
+    esac
+    key="$(_nftban_module_enable_var "$module")" || {
+        echo "nftban_module_set_enabled: unknown module '$module'" >&2
+        return 2
+    }
+    local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/${module}/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")" || return 1
+    if grep -q "^${key}=" "$local_conf" 2>/dev/null; then
+        sed -i "s/^${key}=.*/${key}=\"${want}\"/" "$local_conf" || return 1
+    else
+        printf '%s="%s"\n' "$key" "$want" >> "$local_conf" || return 1
+    fi
+    return 0
+}
+
+export -f _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled

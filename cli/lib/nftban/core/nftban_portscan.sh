@@ -379,7 +379,7 @@ nftban_portscan_init() {
 # =============================================================================
 
 # Enable portscan detection
-nftban_portscan_enable() {
+nftban_portscan_apply() {
     # Load config and modules even if currently disabled — enable needs to work
     # when portscan is off (that's the whole point of enable)
     nftban_portscan_load_config
@@ -449,15 +449,20 @@ nftban_portscan_enable() {
         _nftban_portscan_log "ERROR" "Failed to apply nftables rules (exit=$enable_result)"
         return 1
     fi
+    return 0
+}
 
-    # Step 3: Persist PORTSCAN_ENABLED=true ONLY after nft rules succeed
-    local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")" || return 1
-    if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
-        sed -i 's/^PORTSCAN_ENABLED=.*/PORTSCAN_ENABLED="true"/' "$local_conf"
-    else
-        echo 'PORTSCAN_ENABLED="true"' >> "$local_conf"
-    fi
+# -----------------------------------------------------------------------------
+# nftban_portscan_enable -- OPERATOR ORCHESTRATION. CLI-ONLY.
+# v1.229.7 PR-2: persists intent, calls the neutral apply, then performs the
+# service lifecycle action. NOT daemon-callable.
+# -----------------------------------------------------------------------------
+nftban_portscan_enable() {
+    nftban_portscan_apply || return 1
+
+    # Step 3: Persist PORTSCAN_ENABLED=true ONLY after nft rules succeed.
+    # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
+    nftban_module_set_enabled portscan true || return 1
     PORTSCAN_ENABLED="true"
 
     # Step 4: Auto-restart nftband to activate immediately
@@ -483,21 +488,15 @@ nftban_portscan_enable() {
 }
 
 # Disable portscan detection
-nftban_portscan_disable() {
+# -----------------------------------------------------------------------------
+# nftban_portscan_teardown -- NEUTRAL RUNTIME TEARDOWN. Daemon-callable.
+# v1.229.7 PR-2: removes runtime enforcement ONLY. No config write, no restart.
+# -----------------------------------------------------------------------------
+nftban_portscan_teardown() {
     local mode="${_PORTSCAN_ACTIVE_MODE:-classic}"
 
     echo ""
     echo "  Disabling portscan detection (${mode})..."
-
-    # Persist PORTSCAN_ENABLED=false to local config override
-    local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")" || return 1
-    if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
-        sed -i 's/^PORTSCAN_ENABLED=.*/PORTSCAN_ENABLED="false"/' "$local_conf"
-    else
-        echo 'PORTSCAN_ENABLED="false"' >> "$local_conf"
-    fi
-    PORTSCAN_ENABLED="false"
 
     _nftban_portscan_log "INFO" "Disabling portscan detection"
 
@@ -529,6 +528,16 @@ nftban_portscan_disable() {
 
     _nftban_portscan_log "INFO" "Portscan detection disabled"
     return 0
+}
+
+# -----------------------------------------------------------------------------
+# nftban_portscan_disable -- OPERATOR ORCHESTRATION. CLI-ONLY.
+# v1.229.7 PR-2: persists intent, then tears down runtime. NOT daemon-callable.
+# -----------------------------------------------------------------------------
+nftban_portscan_disable() {
+    nftban_module_set_enabled portscan false || return 1
+    PORTSCAN_ENABLED="false"
+    nftban_portscan_teardown
 }
 
 # =============================================================================

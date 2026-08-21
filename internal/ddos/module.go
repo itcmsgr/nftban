@@ -253,6 +253,15 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 
 // Start begins the module's background work
 func (m *Module) Start(ctx context.Context) error {
+	// v1.229.7 PR-2 (C-0): consume durable intent, do not override it.
+	// Before this, Start() called enable() with no gate, so every daemon start
+	// rebuilt the module layer regardless of DDOS_ENABLED -- RUNTIME_WITNESSED on
+	// lab4 2026-08-21: 0 -> 10 module chains with config false on both modules.
+	// Mirrors internal/botguard/guard.go, which has always gated correctly.
+	if !m.config.Enabled {
+		log.Printf("[ddos] Module disabled in config -- not applying runtime state")
+		return nil
+	}
 	ctx, m.cancel = context.WithCancel(ctx)
 
 	m.mu.Lock()
@@ -278,6 +287,11 @@ func (m *Module) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the module
 func (m *Module) Stop() error {
+	// v1.229.7 PR-2 (C-7): a service stop must not turn a module off durably.
+	// SERVICE RESTART MUST NOT CHANGE MODULE CONFIGURATION.
+	if !m.config.Enabled {
+		return nil
+	}
 	if m.cancel != nil {
 		m.cancel()
 	}
@@ -347,13 +361,13 @@ func (m *Module) detectMode() {
 
 // enable enables DDoS protection
 func (m *Module) enable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_enable", "_", getDDOSScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_apply", "_", getDDOSScript())
 	return cmd.Run()
 }
 
 // disable disables DDoS protection
 func (m *Module) disable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_disable", "_", getDDOSScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_teardown", "_", getDDOSScript())
 	return cmd.Run()
 }
 
