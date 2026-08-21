@@ -11,6 +11,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.4] - 2026-08-21 — what a green check was allowed to mean
+
+One theme. A check that reports success is making a claim, and several claims in the
+release path could not be traced to an observation that had actually happened.
+
+### Security observations that could not fail
+
+The OSV step ran under `bash -e` with a step that had stopped executing; a scan that never
+ran reported no findings. The govulncheck pipeline passed through a hand-written SARIF
+converter that dropped severity, so a finding could arrive and leave without a verdict.
+The converter is deleted in favour of the tool's native SARIF output, and the tool's own
+exit status is now read as a tool status rather than a finding count — a scanner that
+crashes is a failed observation, not a clean one.
+
+Seventeen claim-bearing steps are now declared with their tier, tool and role, and a guard
+resolves each declaration against the workflow that hosts it. A declared observation whose
+step no longer exists fails rather than disappearing.
+
+### Provenance and the artifacts it covers
+
+SLSA verification iterated a glob and set a failure flag inside a conditional. An empty
+glob produced zero iterations and the flag stayed clear, so the step reported verified
+provenance for nothing at all; a binary shipped without provenance passed the provenance
+check. Verification now reads a declared subject population, and absence of a subject is a
+failure rather than a skip.
+
+The SBOM step wrote a fallback document when its producer emitted nothing, so a file that
+described no scan was published as though it did. The fallback is removed.
+
+`nftban-core` was built by a second workflow triggered after the release completed. The
+release was therefore already public before that binary existed: it was uploaded onto a
+published release and verified afterwards, and it was silently absent from the published
+`SHA256SUMS` even though an upstream step named it as required. The builder is now a job of
+the release workflow, and the separate workflow is deleted rather than left unused. The
+builder is passed `upload-assets: false` — the input defaults to true, so its absence, not
+its presence, is the unsafe state.
+
+Making that binary a checksum subject exposed a second silence in the same step. The
+cross-check against the build-time checksums had no branch for a file it could not find
+there, so a published artifact with no ground truth was simply not checked. Integrity
+authority is now declared per subject, which separates an artifact that cannot have a
+build checksum from one that should have had one.
+
+### What ships, measured rather than assumed
+
+Source-mode and binary-mode govulncheck answer different questions, and the same subject
+measured 5 errors in one mode and 7 in the other on the same day. The release now runs a
+binary-mode witness over the shipped artifacts against a declared subject population, so
+the claim is about what is in the binary rather than what is reachable from source.
+
+Both shipped binaries carried a `+dirty` module stamp. The cause was not source: CI runs
+Python authorities before the build, Python writes `__pycache__/`, and Go's VCS stamper
+reads any unclean tree as dirty.
+
+The Go toolchain pin moves to 1.25.13, and every pin location is registered so that adding
+one without declaring it fails.
+
+### Assurance coverage
+
+Both published binaries are covered by checksums and by the binary witness. SLSA
+provenance covers `nftban-core`, the subject the provenance-capable builder produces.
+
 ## [v1.229.3] - 2026-08-18 — what accumulates, and what a failed read may not claim
 
 Two themes. Storage that grew because nothing owned its end, and checks that reported a
