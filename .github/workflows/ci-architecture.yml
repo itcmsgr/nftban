@@ -930,7 +930,14 @@ jobs:
       - name: Lint health JSON schema (G17)
         run: bash scripts/lint-health-json-schema.sh
 
-      # G18: Rebuild safety simulation
+      # G18: Rebuild / convergence safety
+      # v1.229.7: the self-test runs FIRST and proves the guard's violation
+      # accumulator is connected. The previous implementation was BLOCKING while
+      # unable to fail (accumulator never incremented, all 5 subjects absent).
+      # CURRENT GREEN != COVERAGE.
+      - name: Test rebuild safety self-test (G18-N4)
+        run: bash scripts/test-rebuild-safety.sh --selftest
+
       - name: Test rebuild safety patterns (G18)
         run: bash scripts/test-rebuild-safety.sh
 
