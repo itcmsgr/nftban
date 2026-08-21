@@ -21,7 +21,9 @@
 #   AUTO MODE:     Auto-detect best mode based on system
 #
 # **Mode Selection Logic:**
-#   1. Check DDOS_MODE in config (auto/classic/suricata/hybrid)
+#   1. The transaction root resolves DDOS_MODE (auto|classic|suricata) ONCE
+#      and publishes a plan; consumers read that plan and never re-resolve.
+#      `hybrid` is LEGACY: it resolves to `unknown` and refuses (v1.229.7).
 #   2. If "auto": detect Suricata availability
 #   3. Load appropriate sub-module
 #
@@ -305,6 +307,43 @@ nftban_ddos_reconcile() {
     esac
 }
 
+# -----------------------------------------------------------------------------
+# _nftban_ddos_remove_other_projection <mode-being-applied>
+#
+# v1.229.7 PR-3B. Removes the OPPOSITE mode's projection so the rendered state
+# matches the plan and nothing else. Best-effort by design: a host that never ran
+# the other mode has nothing to remove, and that is not a failure.
+#
+# ⛔ Scoped to higher-tier DDoS objects only. Base Layer-0 is never touched.
+# ⛔ This is projection hygiene, NOT a mode decision: it acts on the mode it was
+#    given and never inspects live state to choose one.
+# -----------------------------------------------------------------------------
+_nftban_ddos_remove_other_projection() {
+    local other
+    case "${1:-}" in
+        classic)  other="nftban_ddos_suricata_disable" ;;
+        suricata) other="nftban_ddos_classic_disable" ;;
+        *)        return 0 ;;
+    esac
+    # ⛔ NO SILENT NO-OP. The earlier shape was `if type -t <fn>; then <fn>; fi`
+    # with no else, so a MISSING entrypoint made exclusivity vanish at rc0 --
+    # both projections could then coexist while this function reported success.
+    # That is the exact defect the mode-authority SILENT_NO_OP check exists to
+    # catch, and it caught this one.
+    #   SELECTED MODE + MISSING ENTRYPOINT MUST NEVER BE rc0.
+    # Refusing is the only honest outcome: returning 0 would claim a
+    # mode-exclusive projection this function did not establish.
+    if ! type -t "$other" &>/dev/null; then
+        echo "  ERROR: $other is unavailable — cannot establish that the other mode's projection is absent." >&2
+        _nftban_ddos_log "ERROR" "exclusivity unestablished: $other missing"
+        return 1
+    fi
+    # The teardown itself is best-effort: a host that never ran the other mode
+    # has nothing to remove, and that is not a failure.
+    "$other" >/dev/null 2>&1 || true
+    return 0
+}
+
 nftban_ddos_apply() {
     _nftban_ddos_load_config
     _nftban_ddos_banner
@@ -373,11 +412,42 @@ nftban_ddos_apply() {
 
     # Step 1: Apply nftables rules FIRST (before persisting config)
     local enable_result=0
+    # v1.229.7 PR-3B: PROJECTION IS A PURE FUNCTION OF THE PLAN.
+    #
+    #   RENDERER CONSUMES A DECISION. RENDERER DOES NOT MAKE A DECISION.
+    #
+    # Exactly two modes are projectable. `hybrid` is NOT one of them: an arm here
+    # enabled classic AND suricata together, which is the CLASSIC_ACTIVE +
+    # SURICATA_ACTIVE state this lane exists to remove. It is gone, and no mode
+    # outside the closed set may be projected.
+    # ⛔ The renderer must never REPAIR a bad plan -- it may not decide that
+    #    Suricata looks available and reconstruct an answer the plan did not give.
+    case "$mode" in
+        classic|suricata) ;;
+        # NOTE: `inactive` is handled ABOVE by the PR-3A early return (benign
+        # no-op: apply projects nothing; the reconcile root routes inactive to
+        # teardown, which owns removal). Deliberately NOT repeated here -- two
+        # contradictory statements about one condition is worse than either.
+        *)
+            echo "  ERROR: effective_mode='${mode}' is not projectable (expected classic|suricata)." >&2
+            _nftban_ddos_log "ERROR" "refusing apply: non-projectable effective_mode=${mode}"
+            return 1
+            ;;
+    esac
+
+    # ⛔ EXCLUSIVITY IS PART OF THE PROJECTION, NOT A SIDE EFFECT OF IT.
+    # Entering a mode did not previously remove the other mode's objects, so a
+    # plan switch left BOTH pipelines live -- exactly the drift the validator
+    # reports as `unexpected_objects_present`. Removing the opposite projection
+    # first is what makes the plan, and only the plan, decide what is rendered.
+    #   PLAN DIFFERENCE MUST CONTROL MODE-SPECIFIC PROJECTION.
+    # Base Layer-0 is untouched by both arms: ALWAYS_ON_BASE_PROTECTION.
+    _nftban_ddos_remove_other_projection "$mode" || return 1
+
     case "$mode" in
         classic)
             echo ""
             echo "  Using CLASSIC mode (native nftables)"
-            echo "  Suricata: NOT AVAILABLE"
             echo ""
             if type -t nftban_ddos_classic_enable &>/dev/null; then
                 nftban_ddos_classic_enable || enable_result=$?
@@ -400,31 +470,6 @@ nftban_ddos_apply() {
                 echo "  ERROR: Suricata module not loaded!" >&2
                 return 1
             fi
-            ;;
-
-        hybrid)
-            echo ""
-            echo "  Using HYBRID mode (Classic Layer 0 + Suricata Layer 1)"
-            echo ""
-
-            # Enable Classic as Layer 0
-            echo "  [Layer 0] Classic (hard limits)..."
-            if type -t nftban_ddos_classic_enable &>/dev/null; then
-                nftban_ddos_classic_enable || enable_result=$?
-            fi
-
-            echo ""
-
-            # Enable Suricata as Layer 1
-            echo "  [Layer 1] Suricata (signature-based detection)..."
-                # shellcheck disable=SC2034  # Reserved for dual-mode toggle
-                DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
-                nftban_ddos_suricata_enable || enable_result=$?
-            ;;
-
-        *)
-            echo "  ERROR: Unknown mode: $mode" >&2
-            return 1
             ;;
     esac
 
@@ -452,8 +497,14 @@ nftban_ddos_enable() {
     # banner below referenced an UNBOUND variable. Under `set -Eeuo pipefail`
     # (:41) that is fatal -- the command aborted AFTER persisting intent and
     # AFTER restarting nftband, returning non-zero to its caller.
-    local mode
-    mode="$(_nftban_ddos_detect_mode)"
+    # ⛔ v1.229.7 PR-3B: REPORT WHAT THE TRANSACTION DID, NOT A FRESH GUESS.
+    # This called the local detector purely to label the success banner, so the
+    # operator could be told "SURICATA" while the transaction had actually
+    # applied CLASSIC (or the reverse) whenever availability changed between the
+    # two independent resolutions. Only the plan the root published is entitled
+    # to answer "which mode did we just enable?".
+    #   A REPORT MUST DESCRIBE THE ACTION THAT HAPPENED.
+    local mode="${NFTBAN_PLAN_EFFECTIVE_MODE:-unknown}"
 
     # Step 3: Persist DDOS_ENABLED=true ONLY after nft rules succeed.
     # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
@@ -494,8 +545,10 @@ nftban_ddos_teardown() {
     _nftban_ddos_load_config
     _nftban_ddos_banner
 
-    local mode
-    mode=$(_nftban_ddos_detect_mode)
+    # v1.229.7 PR-3B: the mode detection here was DEAD -- its result was never
+    # read, and teardown removes BOTH pipelines unconditionally (correct:
+    # teardown is mode-independent). Removing it also removes a second-authority
+    # invocation from a mutation path.
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -750,7 +803,9 @@ nftban_ddos_status() {
     echo "  suricata  - Uses Suricata IDS for advanced threat detection"
     echo "              Better accuracy, detects complex attack patterns"
     echo ""
-    echo "  hybrid    - Combines both classic and Suricata detection"
+    echo "  hybrid    - LEGACY, NOT SUPPORTED: resolves to unknown and refuses."
+    echo "              Running both pipelines at once is an invalid state."
+    echo "              Set an explicit mode to migrate."
     echo "              Maximum protection with redundant detection layers"
     echo ""
     echo "  auto      - Auto-selects based on Suricata availability"
@@ -775,7 +830,7 @@ nftban_ddos_status() {
     echo ""
     echo "  Key Settings:"
     echo "    DDOS_ENABLED=true|false     - Enable/disable DDoS protection"
-    echo "    DDOS_MODE=auto|classic|suricata|hybrid"
+    echo "    DDOS_MODE=auto|classic|suricata   (hybrid = legacy, refuses)"
     echo "    DDOS_SYN_RATE=25            - SYN packets per second limit"
     echo "    DDOS_CONN_LIMIT=100         - Max connections per IP"
     echo ""
@@ -856,14 +911,14 @@ _nftban_ddos_cli() {
             echo "  enable     Enable DDoS protection (auto-detects mode)"
             echo "  disable    Disable DDoS protection"
             echo "  status     Show current status"
-            echo "  mode       Show active mode (classic/suricata/hybrid)"
+            echo "  mode       Show active mode (classic/suricata)"
             echo "  test       Output status in key=value format"
             echo ""
             echo "Modes:"
             echo "  auto       Auto-detect (use Suricata if available, else Classic)"
             echo "  classic    Force Classic mode (nftables-only)"
             echo "  suricata   Force Suricata mode (requires Suricata)"
-            echo "  hybrid     Both: Classic Layer 0 + Suricata Layer 1"
+            echo "  hybrid     LEGACY — refuses; migrate to an explicit mode"
             echo ""
             echo "Configuration:"
             echo "  ${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf"

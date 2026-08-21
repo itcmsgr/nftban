@@ -459,6 +459,47 @@ nftban_portscan_reconcile() {
     esac
 }
 
+# -----------------------------------------------------------------------------
+# _nftban_portscan_remove_other_projection <mode-being-applied>
+#
+# v1.229.7 PR-3B. Removes the OPPOSITE mode's projection so rendered state
+# matches the plan and nothing else.
+#
+# ⛔ ASYMMETRIC BY SUBSTRATE, NOT BY OMISSION. The classic side projects a
+# portscan chain and rules into nftables, so entering suricata must remove them.
+# The Suricata side creates NO nftables objects for portscan -- its detection is
+# daemon-side -- so entering classic has no nft projection to remove and
+# `nftban_portscan_suricata_disable` is a state-save only. Do NOT "fix" that by
+# inventing a teardown for objects that were never rendered.
+#   SAME CONTRACT != SAME IMPLEMENTATION.
+# ⛔ Base Layer-0 is never touched.
+# -----------------------------------------------------------------------------
+_nftban_portscan_remove_other_projection() {
+    local other
+    case "${1:-}" in
+        classic)  other="nftban_portscan_suricata_disable" ;;
+        suricata) other="nftban_portscan_classic_disable" ;;
+        *)        return 0 ;;
+    esac
+    # ⛔ NO SILENT NO-OP. The earlier shape was `if type -t <fn>; then <fn>; fi`
+    # with no else, so a MISSING entrypoint made exclusivity vanish at rc0 --
+    # both projections could then coexist while this function reported success.
+    # That is the exact defect the mode-authority SILENT_NO_OP check exists to
+    # catch, and it caught this one.
+    #   SELECTED MODE + MISSING ENTRYPOINT MUST NEVER BE rc0.
+    # Refusing is the only honest outcome: returning 0 would claim a
+    # mode-exclusive projection this function did not establish.
+    if ! type -t "$other" &>/dev/null; then
+        echo "  ERROR: $other is unavailable — cannot establish that the other mode's projection is absent." >&2
+        _nftban_portscan_log "ERROR" "exclusivity unestablished: $other missing"
+        return 1
+    fi
+    # The teardown itself is best-effort: a host that never ran the other mode
+    # has nothing to remove, and that is not a failure.
+    "$other" >/dev/null 2>&1 || true
+    return 0
+}
+
 nftban_portscan_apply() {
     # Load config and modules even if currently disabled — enable needs to work
     # when portscan is off (that's the whole point of enable)
@@ -516,6 +557,32 @@ nftban_portscan_apply() {
 
     # Step 1: Apply nftables rules FIRST (before persisting config)
     local enable_result=0
+    # v1.229.7 PR-3B: PROJECTION IS A PURE FUNCTION OF THE PLAN.
+    #
+    #   RENDERER CONSUMES A DECISION. RENDERER DOES NOT MAKE A DECISION.
+    #
+    # Same contract as ddos, separate adapter. The `hybrid` arm that enabled
+    # classic AND suricata together is gone: CLASSIC_ACTIVE + SURICATA_ACTIVE is
+    # the state this lane exists to remove.
+    # ⛔ The renderer must never REPAIR a bad plan.
+    case "$mode" in
+        classic|suricata) ;;
+        # NOTE: `inactive` is handled ABOVE by the PR-3A early return (benign
+        # no-op: apply projects nothing; the reconcile root routes inactive to
+        # teardown, which owns removal). Deliberately NOT repeated here -- two
+        # contradictory statements about one condition is worse than either.
+        *)
+            echo "  ERROR: effective_mode='${mode}' is not projectable (expected classic|suricata)." >&2
+            _nftban_portscan_log "ERROR" "refusing apply: non-projectable effective_mode=${mode}"
+            return 1
+            ;;
+    esac
+
+    # ⛔ EXCLUSIVITY IS PART OF THE PROJECTION, NOT A SIDE EFFECT OF IT.
+    #   PLAN DIFFERENCE MUST CONTROL MODE-SPECIFIC PROJECTION.
+    # Base Layer-0 is untouched: ALWAYS_ON_BASE_PROTECTION.
+    _nftban_portscan_remove_other_projection "$mode" || return 1
+
     case "$mode" in
         classic)
             echo ""
@@ -529,6 +596,7 @@ nftban_portscan_apply() {
                 return 1
             fi
             ;;
+
         suricata)
             echo ""
             echo "  Using SURICATA mode (IDS-integrated)"
@@ -540,22 +608,6 @@ nftban_portscan_apply() {
                 _nftban_portscan_log "ERROR" "Suricata mode module not loaded"
                 return 1
             fi
-            ;;
-        hybrid)
-            echo ""
-            echo "  Using HYBRID mode (Classic + Suricata)"
-            echo ""
-            if type -t nftban_portscan_classic_enable &>/dev/null; then
-                nftban_portscan_classic_enable || enable_result=$?
-            fi
-            if type -t nftban_portscan_suricata_enable &>/dev/null; then
-                nftban_portscan_suricata_enable || enable_result=$?
-            fi
-            ;;
-        *)
-            echo "  ERROR: Unknown mode: ${mode}" >&2
-            _nftban_portscan_log "ERROR" "Unknown mode: ${mode}"
-            return 1
             ;;
     esac
 
@@ -579,7 +631,14 @@ nftban_portscan_enable() {
     nftban_portscan_reconcile || return 1
 
     # v1.229.7 PR-2a: see nftban_ddos_enable -- same unbound-`mode` defect.
-    local mode="${_PORTSCAN_ACTIVE_MODE:-$(_nftban_portscan_detect_mode)}"
+    # ⛔ v1.229.7 PR-3B: REPORT WHAT THE TRANSACTION DID, NOT A FRESH GUESS.
+    # This called the local detector purely to label the success banner, so the
+    # operator could be told "SURICATA" while the transaction had actually
+    # applied CLASSIC (or the reverse) whenever availability changed between the
+    # two independent resolutions. Only the plan the root published is entitled
+    # to answer "which mode did we just enable?".
+    #   A REPORT MUST DESCRIBE THE ACTION THAT HAPPENED.
+    local mode="${NFTBAN_PLAN_EFFECTIVE_MODE:-${_PORTSCAN_ACTIVE_MODE:-unknown}}"
 
     # Step 3: Persist PORTSCAN_ENABLED=true ONLY after nft rules succeed.
     # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
@@ -918,7 +977,9 @@ nftban_portscan_status() {
     echo "  suricata  - Uses Suricata IDS with portscan rules"
     echo "              Better accuracy, lower false positives"
     echo ""
-    echo "  hybrid    - Combines both classic and Suricata detection"
+    echo "  hybrid    - LEGACY, NOT SUPPORTED: resolves to unknown and refuses."
+    echo "              Running both pipelines at once is an invalid state."
+    echo "              Set an explicit mode to migrate."
     echo "              Maximum coverage with redundant detection"
     echo ""
     echo "  auto      - Auto-selects based on Suricata availability"
@@ -942,7 +1003,7 @@ nftban_portscan_status() {
     echo ""
     echo "  Key Settings:"
     echo "    PORTSCAN_ENABLED=true|false"
-    echo "    PORTSCAN_MODE=auto|classic|suricata|hybrid"
+    echo "    PORTSCAN_MODE=auto|classic|suricata   (hybrid = legacy, refuses)"
     echo "    PORTSCAN_AUTO_BAN=true|false   - Auto-ban detected scanners"
     echo "    PORTSCAN_THRESHOLD=10          - Ports to trigger detection"
     echo "    PORTSCAN_TIME_WINDOW=300       - Detection window (seconds)"
