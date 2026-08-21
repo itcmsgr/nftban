@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.229.4] - 2026-08-20 — what a green check was allowed to mean
+## [v1.229.4] - 2026-08-21 — what a green check was allowed to mean
 
 One theme. A check that reports success is making a claim, and several claims in the
 release path could not be traced to an observation that had actually happened.
