@@ -1009,6 +1009,7 @@ jobs:
           #    adding it here — check-verify-release-workspace.sh fails the build otherwise.
           sparse-checkout: |
             VERSION
+            go.mod
             scripts/ci/data/slsa-subjects.tsv
             scripts/ci/data/release-binary-witness-subjects.tsv
           sparse-checkout-cone-mode: false
@@ -1481,6 +1482,80 @@ jobs:
             exit 1
           fi
           echo "PR-D: all ${WITNESSED} declared shipped binaries carry no vulnerable symbols."
+
+      # =================================================================
+      # v1.229.6 GATE 4 — SHIPPED BINARY BUILD METADATA
+      # =================================================================
+      # ⛔ WHY THIS EXISTS. v1.229.5 PUBLISHED with nftban-core carrying
+      #    vcs.modified=true. "+dirty absent" was a declared release stop condition, but
+      #    it lived only in a post-publication witness — so every machine gate passed
+      #    legitimately and the release went out.
+      #
+      #        POST-PUBLICATION WITNESS CANNOT ENFORCE A PRE-PUBLICATION REQUIREMENT
+      #
+      #    A release requirement must exist as a PRE-PUBLICATION MACHINE GATE before it
+      #    may be used as a release stop condition. A witness confirms; a gate enforces.
+      #
+      # ⛔ OBSERVATION ONLY. Reads embedded Go build metadata with grep. It NEVER executes
+      #    a shipped binary — the release path must not run the artifact it verifies.
+      - name: "Gate 4: Shipped binary build metadata (compiler + clean tree)"
+        run: |
+          set -uo pipefail
+          cd /tmp/release-verify
+
+          CANONICAL_GO="$(awk '/^go /{print $2; exit}' "$GITHUB_WORKSPACE/go.mod")"
+          if [ -z "$CANONICAL_GO" ]; then
+            echo "::error title=Canonical Go version unresolved::could not read the go directive from go.mod. UNKNOWN IS NOT PASS."
+            exit 1
+          fi
+          echo "canonical Go from go.mod: ${CANONICAL_GO}"
+
+          DECL="$GITHUB_WORKSPACE/scripts/ci/data/release-binary-witness-subjects.tsv"
+          if [ ! -f "$DECL" ]; then
+            echo "::error title=Binary metadata declaration missing::${DECL} is absent; the subject population cannot be established. A MISSING DECLARATION IS NOT AN EMPTY POPULATION."
+            exit 1
+          fi
+
+          FAILED=0
+          CHECKED=0
+          while IFS= read -r subject; do
+            [ -n "$subject" ] || continue
+            if [ ! -f "$subject" ]; then
+              echo "::error title=Binary metadata subject missing::${subject} is declared but not present at verification. ABSENCE IS NOT A SKIP."
+              FAILED=$((FAILED+1)); continue
+            fi
+            COMPILERS="$(grep -aoE 'go1\.[0-9]+(\.[0-9]+)?' "$subject" | sort -u | paste -sd, -)"
+            MODIFIED="$(grep -aoE 'vcs\.modified=(true|false)' "$subject" | sort -u | paste -sd, -)"
+            echo "  ${subject}: compiler=[${COMPILERS}] ${MODIFIED:-<absent>}"
+
+            # ⛔ UNREADABLE OR ABSENT METADATA IS NOT A PASS.
+            if [ -z "$COMPILERS" ] || [ -z "$MODIFIED" ]; then
+              echo "::error title=Binary metadata unreadable::${subject} exposes no usable Go build metadata (compiler='${COMPILERS}' modified='${MODIFIED}'). UNKNOWN IS NOT PASS."
+              FAILED=$((FAILED+1)); continue
+            fi
+            case ",${COMPILERS}," in
+              *",go${CANONICAL_GO},"*) : ;;
+              *) echo "::error title=Compiler mismatch::${subject} was built with [${COMPILERS}], which does not include the canonical go${CANONICAL_GO}."
+                 FAILED=$((FAILED+1)); continue ;;
+            esac
+            if [ "$MODIFIED" != "vcs.modified=false" ]; then
+              echo "::error title=Dirty build tree::${subject} carries ${MODIFIED}. The build tree was not clean, so the provenance is qualified. PUBLICATION IS BLOCKED."
+              FAILED=$((FAILED+1)); continue
+            fi
+            CHECKED=$((CHECKED+1))
+          done < <(awk -F'\t' '$1=="subject" && NF>=2 {print $2}' "$DECL")
+
+          EXPECTED="$(awk -F'\t' '$1=="expected_total"{print $2; exit}' "$DECL" | tr -d '[:space:]')"
+          echo "clean subjects: ${CHECKED}/${EXPECTED}  failures: ${FAILED}"
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error title=Binary metadata gate failed::${FAILED} shipped binary/binaries failed the build-metadata contract. The release stays a DRAFT."
+            exit 1
+          fi
+          if [ "$CHECKED" != "$EXPECTED" ]; then
+            echo "::error title=Binary metadata coverage incomplete::verified ${CHECKED} of ${EXPECTED} declared subjects. ⛔ PARTIAL COVERAGE IS NOT A PASS."
+            exit 1
+          fi
+          echo "OK: every declared shipped binary is go${CANONICAL_GO} and built from a clean tree"
 
       - name: "Gate 3: Generate final SHA256SUMS from downloaded assets"
         run: |

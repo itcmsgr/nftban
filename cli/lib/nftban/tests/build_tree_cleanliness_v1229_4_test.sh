@@ -104,11 +104,38 @@ fi
 #    residue silently blocked an inversion from executing at all.
 rm -rf "$CACHE"
 
+# ---- A4 · the SLSA builder's vendor/ must not dirty the tree ---------------------
+# ⛔ A SEPARATE PRODUCER from A1/A2. builder_go_slsa3.yml@v2.1.0 runs `go mod vendor` in
+#    the project checkout immediately before compiling (job "build", step "Download
+#    dependencies"). That materializes vendor/ as untracked, git reports the worktree
+#    dirty, and Go stamps vcs.modified=true — which is why every SLSA-built nftban-core
+#    shipped +dirty (v1.229.3, v1.229.5) while our own build path, which never vendors,
+#    did not. ⛔ Do NOT describe this as the __pycache__ cause; same shape, different
+#    producer, and conflating them would have sent the fix to the wrong path.
+VEND="vendor"
+mkdir -p "$VEND/example.com/pkg"
+: > "$VEND/example.com/pkg/f.go"
+: > "$VEND/modules.txt"
+D4="$(git status --porcelain=v1 | grep -c 'vendor' || true)"
+if [[ "$D4" -eq 0 ]]; then
+    pass "A4 a vendored dependency tree does not dirty the worktree"
+    info "the SLSA builder can no longer stamp nftban-core +dirty from its own vendoring"
+else
+    fail "A4 vendor/ still dirties the worktree ($D4 path(s))"
+    git status --porcelain=v1 | grep 'vendor' | sed 's/^/          /' | head -3
+fi
+rm -rf "$VEND"
+
 # ---- A3 · the ignore rule must be declared, not incidental -----------------------
 if grep -qE '^\s*__pycache__/\s*$' .gitignore 2>/dev/null; then
     pass "A3 __pycache__/ is declared in .gitignore"
 else
     fail "A3 __pycache__/ is not declared — A1/A2 would pass only by accident of state"
+fi
+if grep -qE '^\s*vendor/\s*$' .gitignore 2>/dev/null; then
+    pass "A3b vendor/ is declared in .gitignore"
+else
+    fail "A3b vendor/ is not declared — A4 would pass only by accident of state"
 fi
 
 echo
