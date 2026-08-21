@@ -21,8 +21,11 @@ package validator
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // v1.229.7 PR-3A — StructuralUnknown propagation contract.
@@ -413,5 +416,69 @@ func TestV7_PlanSubjectMustBeBoundToRunDir(t *testing.T) {
 	}
 	if got := readEffectiveMode("portscan", "conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_MODE"); got != "suricata" {
 		t.Fatalf("V7 FAILED (positive): the constraint broke the legitimate portscan case (got %q)", got)
+	}
+}
+
+// V8 — PATH CONFINEMENT MUST BE ESTABLISHED BEFORE FILE READ.
+//
+// V7 proves the crafted module is rejected. It does NOT distinguish:
+//
+//	reject module      -> no read is ever attempted outside RunDir     (correct)
+//	read outside RunDir -> reject the parsed content afterwards        (STILL WRONG)
+//
+// The second still crosses the path-authority boundary even though the final
+// verdict is UNKNOWN: the process opened a file it had no authority to open.
+// A verdict-only assertion cannot tell them apart, so this arm observes the
+// READ ITSELF.
+//
+// Mechanism: place a FIFO at the escape target with no writer. os.ReadFile on
+// such a FIFO BLOCKS. So:
+//
+//	returns promptly -> no read was attempted -> confinement precedes the read
+//	blocks           -> a read was attempted  -> confinement is too late
+//
+// This is a real observation of behaviour, not an inference from the return
+// value. ABSENCE OF A WRONG ANSWER != ABSENCE OF THE WRONG ACTION.
+func TestV8_ConfinementPrecedesTheRead(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("FIFO-based read observation is Linux-specific; nftban targets Linux")
+	}
+	defer withPlanGen(t, "auto", "ddos", "auto", "classic", "7", "7")()
+
+	const escape = "x/../../evil"
+	target := filepath.Join(RunDir, "module-plan-"+escape+".env")
+	if filepath.Dir(target) == RunDir {
+		t.Fatalf("V8 setup invalid: %q does not leave RunDir (%s)", escape, RunDir)
+	}
+	_ = os.Remove(target)
+	if err := syscall.Mkfifo(target, 0o640); err != nil {
+		t.Fatalf("V8 setup: cannot create FIFO at %s: %v", target, err)
+	}
+	defer func() { _ = os.Remove(target) }()
+
+	done := make(chan string, 1)
+	go func() {
+		done <- readEffectiveMode(escape, "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE")
+	}()
+
+	select {
+	case got := <-done:
+		if got != modeUnknown {
+			t.Fatalf("V8 FAILED: crafted module resolved to %q", got)
+		}
+		// Returned without blocking on the FIFO => the read never happened.
+	case <-time.After(2 * time.Second):
+		// Unblock the reader so the goroutine does not stay parked.
+		if w, err := os.OpenFile(target, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_ = w.Close()
+		}
+		t.Fatalf("V8 FAILED: the reader BLOCKED on a FIFO at %s — a read outside RunDir was attempted. "+
+			"Rejecting the parsed content afterwards is not confinement: the boundary was already crossed.", target)
+	}
+
+	// Positive control: the legitimate subject must still be read, so this arm
+	// cannot pass by never reading anything at all.
+	if got := readEffectiveMode("ddos", "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != "classic" {
+		t.Fatalf("V8 FAILED (positive): the legitimate ddos read no longer works (got %q)", got)
 	}
 }
