@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.6] - 2026-08-21 — a blocking property has to be checked before the thing it blocks
+
+v1.229.5 published with `nftban-core` carrying `vcs.modified=true`. Absence of that marker
+was a stated release requirement, but it was only ever checked after publication, so every
+gate in the release path passed and the release went out.
+
+The marker means Go's VCS stamper saw an unclean working tree when it compiled. The cause
+is in the third-party SLSA builder, and it is not the cause fixed in v1.229.4 for this
+project's own build path. `builder_go_slsa3.yml` runs `go mod vendor` in the project
+checkout immediately before compiling; `vendor/` was not ignored, so the tree was dirty at
+the moment of the build. That is why every SLSA-built binary carried the marker while
+`nftband`, which is never vendored, did not.
+
+`vendor/` is now ignored, and a gate ahead of publication reads the embedded build metadata
+of each shipped Go binary: the compiler must be the toolchain declared in `go.mod`, and the
+tree must have been clean. Metadata that cannot be read is a failure rather than a skip,
+and covering some of the declared binaries is not covering them. The gate inspects the
+binaries; it does not run them.
+
 ## [v1.229.5] - 2026-08-21 — the release must publish everything it verified
 
 v1.229.4 published thirteen artifacts where the previous release published fifteen.
