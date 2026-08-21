@@ -235,6 +235,50 @@ nftban_module_resolve_plan() {
 }
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# CONVERGENCE GENERATION — the binding that makes a plan record CURRENT
+#
+# v1.229.7 PR-3A. A plan witness is only usable if it describes the convergence
+# that is actually rendered. Without a binding, a perfectly well-formed
+# auto->classic record can survive while a later renderer resolved auto->suricata,
+# and the validator would derive the wrong expectation from a valid-looking file.
+#
+#     A PLAN RECORD IS USABLE ONLY IF ITS BINDING IS CURRENT.
+#
+# Every convergence root BUMPS the generation before it converges; every plan
+# publication STAMPS the generation current at publish time. A root that
+# re-renders without re-resolving a module therefore leaves that module's record
+# behind at an older generation, where it reads as STALE -> UNKNOWN rather than
+# as a usable expectation.
+#
+# ⛔ This is a binding, not an authority. The generation never selects a mode.
+# -----------------------------------------------------------------------------
+NFTBAN_PLAN_GENERATION_FILE="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
+
+nftban_plan_generation_current() {
+    local g=""
+    [[ -r "$NFTBAN_PLAN_GENERATION_FILE" ]] && read -r g < "$NFTBAN_PLAN_GENERATION_FILE" 2>/dev/null
+    # An absent file is generation 0, not an error: a host that has never
+    # converged still has a coherent (empty) generation. ENOENT != ABSENCE of
+    # meaning -- it IS the pre-convergence generation, and records stamped 0
+    # match it until the first real convergence bumps past them.
+    [[ "$g" =~ ^[0-9]+$ ]] || g=0
+    printf '%s' "$g"
+}
+
+nftban_plan_generation_bump() {
+    local dir cur next tmp
+    dir="$(dirname "$NFTBAN_PLAN_GENERATION_FILE")"
+    [[ -d "$dir" ]] || return 0   # no /run/nftban yet: nothing to bind to
+    cur="$(nftban_plan_generation_current)"
+    next=$(( cur + 1 ))
+    tmp="${NFTBAN_PLAN_GENERATION_FILE}.$$"
+    printf '%s\n' "$next" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    chmod 0644 "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$NFTBAN_PLAN_GENERATION_FILE" 2>/dev/null || rm -f "$tmp"
+    return 0
+}
+
 # nftban_module_plan_provenance_ok <module>
 #
 # ⛔ PLAN-N2 ENFORCEMENT: a consumer must carry the SAME plan identity as the
@@ -261,4 +305,4 @@ nftban_module_plan_provenance_ok() {
     return 0
 }
 
-export -f _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok
+export -f nftban_plan_generation_current nftban_plan_generation_bump _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok

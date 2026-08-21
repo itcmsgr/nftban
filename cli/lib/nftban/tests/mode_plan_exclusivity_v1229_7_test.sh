@@ -42,6 +42,19 @@ ok()   { echo "  ok    $1"; }
 # mistaken for the call. SECURITY_GUARD_SOURCE_TEXT_CAN_MATCH_ITS_OWN_POLICY.
 code_of() { [[ -f "$1" ]] && sed 's/#.*$//' "$1"; }
 
+# ⛔ NEVER `code_of ... | grep -q`. Under `set -o pipefail`, grep -q exits as soon
+# as it matches, sed can die on SIGPIPE (141), and the PIPELINE reports non-zero --
+# so a REAL violation reads as "no match" and the guard prints ok. That is the
+# failure direction that matters: the check goes quiet exactly when it fires.
+#
+# Whether it triggers is SIZE-DEPENDENT: on the ~600-line module files sed drains
+# before grep exits and the raw pipe happened to work, but on cmd_firewall.sh
+# (~4k lines) it did NOT -- section 9 reported ok for a violation that was
+# demonstrably present. A check that works only below some file size is not a
+# check. Capture first, then match.
+#   SIGPIPE + pipefail + grep -q = FALSE "NOT FOUND"
+code_has() { local body; body="$(code_of "$1")"; grep -qE "$2" <<<"$body"; }
+
 echo "=== mode plan / exclusivity contract (v1.229.7 PR-3A) ==="
 
 AUTH="$ROOT/cli/lib/nftban/lib/module_authority.sh"
@@ -57,7 +70,7 @@ for spec in "core/nftban_ddos_suricata.sh:nftban_ddos_classic_(enable|disable)" 
             "core/nftban_portscan_suricata.sh:nftban_portscan_classic_(enable|disable)"; do
     rel="cli/lib/nftban/${spec%%:*}"; pat="${spec##*:}"
     if [[ ! -f "$ROOT/$rel" ]]; then ok "$rel absent (nothing to assert)"; continue; fi
-    if code_of "$ROOT/$rel" | grep -qE "$pat"; then
+    if code_has "$ROOT/$rel" "$pat"; then
         fail "$rel invokes the OTHER mode's full pipeline — CLASSIC_ACTIVE + SURICATA_ACTIVE = INVALID"
     else
         ok "$rel does not invoke the other mode's full pipeline"
@@ -73,7 +86,7 @@ for spec in "core/nftban_ddos_suricata.sh:ddos/classic\.conf" \
             "core/nftban_portscan_classic.sh:portscan/suricata\.conf"; do
     rel="cli/lib/nftban/${spec%%:*}"; pat="${spec##*:}"
     if [[ ! -f "$ROOT/$rel" ]]; then ok "$rel absent (nothing to assert)"; continue; fi
-    if code_of "$ROOT/$rel" | grep -qE "$pat"; then
+    if code_has "$ROOT/$rel" "$pat"; then
         fail "$rel sources the OTHER mode's config — CLASSIC CONFIG IS READ ONLY BY CLASSIC MODE"
     else
         ok "$rel does not source the other mode's config"
@@ -209,6 +222,39 @@ for mod in ddos portscan; do
         ok "$mod provenance gate: mixed REJECTED, missing REJECTED, matching ACCEPTED"
     fi
 done
+
+echo ""
+echo "9. every convergence root bumps the plan binding..."
+# ⛔ The binding only has teeth if EVERY root that re-renders advances it. A root
+# that converges without bumping leaves a superseded plan record looking current,
+# which is precisely the failure the binding exists to catch:
+#   A PLAN RECORD IS USABLE ONLY IF ITS BINDING IS CURRENT.
+FW="$ROOT/cli/lib/nftban/cli/cmd_firewall.sh"
+if [[ ! -f "$FW" ]]; then
+    fail "SUBJECT_NOT_FOUND: $FW"
+else
+    for fn in firewall_reload _firewall_rebuild_core firewall_reset; do
+        body="$(awk -v fn="$fn" '$0 ~ "^"fn"\\(\\) \\{"{i=1;next} i&&/^\}/{exit} i{print}' "$FW")"
+        if [[ -z "$body" ]]; then
+            fail "convergence root $fn NOT FOUND — cannot prove it advances the binding"
+        elif grep -q "nftban_plan_generation_bump" <<<"$body"; then
+            ok "$fn bumps the convergence generation"
+        else
+            fail "$fn converges WITHOUT bumping the generation — a superseded plan would still read as current"
+        fi
+    done
+    # A convergence path must never rewrite durable operator intent. `enable`
+    # persists MODULE_ENABLED and restarts the daemon; reload does neither.
+    #   RELOAD != CONFIG MUTATION
+    # Match INVOCATIONS only. `Run: nftban ddos enable` inside an operator-facing
+    # message is advice, not a call, and an earlier revision failed on it.
+    #   A MENTION IS NOT AN INVOCATION.
+    if code_has "$FW" '(^|[;&|]|then |else |do )[[:space:]]*nftban (ddos|portscan) (enable|disable)\b'; then
+        fail "$(basename "$FW") drives a module through enable/disable — a convergence path must not rewrite durable intent"
+    else
+        ok "$(basename "$FW") drives modules through reload only"
+    fi
+fi
 
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""

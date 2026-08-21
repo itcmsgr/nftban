@@ -773,6 +773,30 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 //
 //	reports the configured value; becoming a second resolver is prohibited.
 //
+// currentConvergenceGeneration returns the generation of the convergence that is
+// actually rendered. Every convergence root bumps it before converging; every
+// plan publication stamps the value current at publish time.
+//
+// An absent file is generation 0 -- the coherent pre-convergence generation, not
+// an error -- so a host that has never converged still compares cleanly against
+// records stamped 0. ENOENT != ABSENCE OF MEANING.
+func currentConvergenceGeneration() string {
+	data, err := os.ReadFile(filepath.Join(RunDir, "convergence-generation"))
+	if err != nil {
+		return "0"
+	}
+	g := strings.TrimSpace(string(data))
+	for _, r := range g {
+		if r < '0' || r > '9' {
+			return "0"
+		}
+	}
+	if g == "" {
+		return "0"
+	}
+	return g
+}
+
 // readEffectiveMode resolves the effective mode WITHOUT ever resolving `auto`
 // itself. It is a READER of the transient plan record published by the shell
 // reconcile root; it never writes, never regenerates a resolution_id, and never
@@ -803,7 +827,7 @@ func readEffectiveMode(module, localPath, basePath, key string) string {
 		return modeUnknown
 	}
 
-	var gotModule, effective, planConfigured string
+	var gotModule, effective, planConfigured, boundGen string
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_MODULE="); ok {
@@ -815,6 +839,9 @@ func readEffectiveMode(module, localPath, basePath, key string) string {
 		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_CONFIGURED_MODE="); ok {
 			planConfigured = v
 		}
+		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_BOUND_GENERATION="); ok {
+			boundGen = v
+		}
 	}
 
 	// MALFORMED: wrong module, or an effective_mode outside the closed set.
@@ -822,6 +849,19 @@ func readEffectiveMode(module, localPath, basePath, key string) string {
 	// is not a mode a verdict can be derived from either.
 	if gotModule != module || planConfigured == "" ||
 		(effective != "classic" && effective != "suricata" && effective != "inactive") {
+		return modeUnknown
+	}
+
+	// UNBOUND / STALE BY GENERATION: a record is usable only if it describes the
+	// convergence that is actually rendered.
+	//
+	//	A PLAN RECORD IS USABLE ONLY IF ITS BINDING IS CURRENT.
+	//
+	// Without this, a well-formed auto->classic record survives a later renderer
+	// that resolved auto->suricata, and the validator derives the WRONG
+	// expectation from a file that passes every other check. A record with no
+	// binding at all is not "probably fine" -- it is unverifiable.
+	if boundGen == "" || boundGen != currentConvergenceGeneration() {
 		return modeUnknown
 	}
 

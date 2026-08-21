@@ -127,6 +127,13 @@ func TestUP_ValidStatesStillPass(t *testing.T) {
 
 func withPlan(t *testing.T, cfgMode, planModule, planConfigured, planEffective string) func() {
 	t.Helper()
+	return withPlanGen(t, cfgMode, planModule, planConfigured, planEffective, "7", "7")
+}
+
+// withPlanGen additionally controls the convergence binding: the generation
+// stamped INTO the record vs the generation currently rendered.
+func withPlanGen(t *testing.T, cfgMode, planModule, planConfigured, planEffective, recGen, curGen string) func() {
+	t.Helper()
 	cfg, run := t.TempDir(), t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfg, "conf.d", "ddos"), 0o755); err != nil {
 		t.Fatal(err)
@@ -139,7 +146,15 @@ func withPlan(t *testing.T, cfgMode, planModule, planConfigured, planEffective s
 		rec := "NFTBAN_PLAN_MODULE=" + planModule + "\n" +
 			"NFTBAN_PLAN_CONFIGURED_MODE=" + planConfigured + "\n" +
 			"NFTBAN_PLAN_EFFECTIVE_MODE=" + planEffective + "\n"
+		if recGen != "ABSENT" {
+			rec += "NFTBAN_PLAN_BOUND_GENERATION=" + recGen + "\n"
+		}
 		if err := os.WriteFile(filepath.Join(run, "module-plan-ddos.env"), []byte(rec), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if curGen != "ABSENT" {
+		if err := os.WriteFile(filepath.Join(run, "convergence-generation"), []byte(curGen+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -236,5 +251,53 @@ func TestUP4_UnknownStructuralDoesNotSuppressEffective(t *testing.T) {
 	}
 	if h.Effective != EffectiveEnforcing {
 		t.Fatalf("U-P4 FAILED: an observed enforcing counter was discarded because the structural expectation was unknown (effective=%q)", h.Effective)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// V5 — the convergence binding.
+//
+//	A PLAN RECORD IS USABLE ONLY IF ITS BINDING IS CURRENT.
+//
+// The motivating scenario is the dangerous one: a perfectly well-formed
+// auto->classic record survives while a later renderer resolved auto->suricata.
+// Every other field checks out, so without the binding the validator derives the
+// WRONG expectation from a valid-looking file and reports a false FAIL against a
+// correctly configured host.
+// -----------------------------------------------------------------------------
+
+func TestV5_BindingMustBeCurrent(t *testing.T) {
+	for _, tc := range []struct {
+		name, recGen, curGen, want string
+	}{
+		{"bound and current", "7", "7", "classic"},
+		{"record left behind by a later convergence", "7", "8", modeUnknown},
+		{"record from the future (impossible => not trusted)", "9", "8", modeUnknown},
+		{"record carries no binding at all", "ABSENT", "8", modeUnknown},
+		{"pre-convergence: generation 0 on both sides", "0", "ABSENT", "classic"},
+		{"converged once, record still pre-convergence", "0", "1", modeUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer withPlanGen(t, "auto", "ddos", "auto", "classic", tc.recGen, tc.curGen)()
+			if got := effMode(t); got != tc.want {
+				t.Fatalf("V5 FAILED (%s): got %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// V6: the binding must not be vacuous. A stale record that would otherwise have
+// produced a DIFFERENT, wrong expectation must be rejected -- this is the exact
+// auto->classic-survives-auto->suricata case, end to end through evaluateDDoS.
+func TestV6_StaleBindingDoesNotYieldTheWrongExpectation(t *testing.T) {
+	// Renderer has since resolved auto->suricata (generation 8); the surviving
+	// record still says classic at generation 7.
+	defer withPlanGen(t, "auto", "ddos", "auto", "classic", "7", "8")()
+	h := evaluateDDoS(ParseRuleset(&NftRuleset{}))
+	if h.Structural != StructuralUnknown {
+		t.Fatalf("V6 FAILED: a stale record produced structural=%q — the validator adopted a superseded expectation", h.Structural)
+	}
+	if h.StructuralReason != ReasonExpectationUnknown {
+		t.Fatalf("V6 FAILED: reason=%q, want %q", h.StructuralReason, ReasonExpectationUnknown)
 	}
 }

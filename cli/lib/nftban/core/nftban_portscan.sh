@@ -432,6 +432,7 @@ nftban_portscan_reconcile() {
             printf 'NFTBAN_PLAN_RESOLUTION_ID=%s\n'    "$NFTBAN_PLAN_RESOLUTION_ID"
             printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$NFTBAN_PLAN_RESOLVED_AT"
             printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$NFTBAN_PLAN_RESOLUTION_BASIS"
+            printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$(nftban_plan_generation_current)"
         } > "$_tmp" 2>/dev/null && { chmod 0640 "$_tmp" 2>/dev/null || true; mv -f "$_tmp" "$_pf" 2>/dev/null || rm -f "$_tmp"; }
     fi
     export NFTBAN_PLAN_MODULE NFTBAN_PLAN_ENABLED NFTBAN_PLAN_CONFIGURED_MODE \

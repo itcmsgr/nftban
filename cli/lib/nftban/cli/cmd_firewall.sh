@@ -2074,6 +2074,12 @@ _nftban_whitelist_reconcile_and_verify() {
 }
 
 firewall_reload() {
+    # v1.229.7 PR-3A: BUMP THE CONVERGENCE GENERATION FIRST.
+    # Every root that re-renders must advance the binding, so any module plan
+    # this run fails to re-resolve is left behind at an older generation and
+    # reads as STALE -> UNKNOWN instead of as a usable expectation.
+    #   EVERY TRANSACTION ROOT THAT RESOLVES A PLAN MUST PUBLISH THAT SAME PLAN.
+    declare -f nftban_plan_generation_bump >/dev/null 2>&1 && nftban_plan_generation_bump || true
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _reload_whitelist_converged="true"
     # Reload nftables ruleset AND re-apply NFTBan rules
@@ -2243,8 +2249,8 @@ FIREWALL_RELOAD_HELP
     nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying portscan detection rules..."
-        nftban portscan enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply portscan rules. Run: nftban portscan enable" || true
+        nftban portscan reload 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply portscan rules. Run: nftban portscan reload" || true
         }
     fi
 
@@ -3092,6 +3098,12 @@ _firewall_rebuild_serialized() {
 }
 
 _firewall_rebuild_core() {
+    # v1.229.7 PR-3A: BUMP THE CONVERGENCE GENERATION FIRST.
+    # Every root that re-renders must advance the binding, so any module plan
+    # this run fails to re-resolve is left behind at an older generation and
+    # reads as STALE -> UNKNOWN instead of as a usable expectation.
+    #   EVERY TRANSACTION ROOT THAT RESOLVES A PLAN MUST PUBLISH THAT SAME PLAN.
+    declare -f nftban_plan_generation_bump >/dev/null 2>&1 && nftban_plan_generation_bump || true
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _rebuild_whitelist_converged="true"
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
@@ -3592,10 +3604,10 @@ _firewall_rebuild_core() {
     local _portscan_enabled="false"
     nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
-        if nftban portscan enable --quiet 2>/dev/null; then
+        if nftban portscan reload 2>/dev/null; then
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "portscan" "$MR_OK"
         else
-            [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed. Run: nftban portscan enable" || true
+            [[ "$quiet" == "false" ]] && echo "    Warning: Portscan reload failed. Run: nftban portscan reload" || true
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "portscan" "$MR_FAILED"
         fi
     else
@@ -3840,6 +3852,12 @@ _firewall_rebuild_core() {
 # =============================================================================
 
 firewall_reset() {
+    # v1.229.7 PR-3A: BUMP THE CONVERGENCE GENERATION FIRST.
+    # Every root that re-renders must advance the binding, so any module plan
+    # this run fails to re-resolve is left behind at an older generation and
+    # reads as STALE -> UNKNOWN instead of as a usable expectation.
+    #   EVERY TRANSACTION ROOT THAT RESOLVES A PLAN MUST PUBLISH THAT SAME PLAN.
+    declare -f nftban_plan_generation_bump >/dev/null 2>&1 && nftban_plan_generation_bump || true
     # Complete firewall reset - flush everything and rebuild clean
     # WARNING: This will remove all bans, whitelists, and geoban data!
     local force=false
@@ -3931,7 +3949,7 @@ firewall_reset() {
     local _portscan_enabled="false"
     nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
-        nftban portscan enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed"
+        nftban portscan reload 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: Portscan reload failed"
     fi
 
     # Step 8 (v1.50.1, v1.81.0 key fix): Re-apply botguard if enabled

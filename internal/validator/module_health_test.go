@@ -38,9 +38,13 @@ func setupTestConfig(t *testing.T, files map[string]string) func() {
 			t.Fatal(err)
 		}
 	}
-	oldConfigDir := ConfigDir
+	// v1.229.7 PR-3A: isolate RunDir too. These tests previously read the HOST's
+	// /run/nftban, so a real plan record on the build machine silently changed
+	// what they asserted. A test that reads live host state is not hermetic.
+	oldConfigDir, oldRunDir := ConfigDir, RunDir
 	ConfigDir = tmpDir
-	return func() { ConfigDir = oldConfigDir }
+	RunDir = t.TempDir()
+	return func() { ConfigDir, RunDir = oldConfigDir, oldRunDir }
 }
 
 // buildDoc creates a minimal RulesetDocument with specified objects.
