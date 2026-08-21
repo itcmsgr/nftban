@@ -361,7 +361,7 @@ func TestDDoSDisabledResidual(t *testing.T) {
 
 func TestDDoSEnabledPresent(t *testing.T) {
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/ddos/main.conf": `DDOS_ENABLED="true"`,
+		"conf.d/ddos/main.conf": "DDOS_ENABLED=\"true\"\nDDOS_MODE=\"classic\"",
 	})
 	defer cleanup()
 
@@ -380,7 +380,7 @@ func TestDDoSEnabledPresent(t *testing.T) {
 func TestDDoSEnforcingFromCounter(t *testing.T) {
 	// DDoS with counter > 0 should report ENFORCING.
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/ddos/main.conf": `DDOS_ENABLED="true"`,
+		"conf.d/ddos/main.conf": "DDOS_ENABLED=\"true\"\nDDOS_MODE=\"classic\"",
 	})
 	defer cleanup()
 
@@ -405,7 +405,7 @@ func TestDDoSEnforcingFromCounter(t *testing.T) {
 func TestDDoSIdleZeroCounters(t *testing.T) {
 	// DDoS with all counters at zero = IDLE (neutral per Rule 1).
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/ddos/main.conf": `DDOS_ENABLED="true"`,
+		"conf.d/ddos/main.conf": "DDOS_ENABLED=\"true\"\nDDOS_MODE=\"classic\"",
 	})
 	defer cleanup()
 
@@ -432,7 +432,7 @@ func TestPortscanEffectiveAlwaysIdle(t *testing.T) {
 	// the validator's perspective. This is a documented M81-3 gap, not a bug.
 	// Real enforcement evidence requires kernel log parsing (M81-7 scope).
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/portscan/main.conf": `PORTSCAN_ENABLED="true"`,
+		"conf.d/portscan/main.conf": "PORTSCAN_ENABLED=\"true\"\nPORTSCAN_MODE=\"classic\"",
 	})
 	defer cleanup()
 
@@ -464,7 +464,7 @@ func TestPortscanDisabled(t *testing.T) {
 
 func TestPortscanEnabledPresent(t *testing.T) {
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/portscan/main.conf": `PORTSCAN_ENABLED="true"`,
+		"conf.d/portscan/main.conf": "PORTSCAN_ENABLED=\"true\"\nPORTSCAN_MODE=\"classic\"",
 	})
 	defer cleanup()
 
@@ -485,7 +485,7 @@ func TestPortscanEnabledPresent(t *testing.T) {
 func TestPortscanEnabledMissing(t *testing.T) {
 	// Enabled but chain missing → StructuralMissing (degraded scenario)
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/portscan/main.conf": `PORTSCAN_ENABLED="true"`,
+		"conf.d/portscan/main.conf": "PORTSCAN_ENABLED=\"true\"\nPORTSCAN_MODE=\"classic\"",
 	})
 	defer cleanup()
 

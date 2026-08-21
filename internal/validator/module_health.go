@@ -35,6 +35,14 @@ import (
 // ConfigDir is the base config directory. Overridable for testing.
 var ConfigDir = "/etc/nftban"
 
+// RunDir holds the transient runtime records. A package var, like ConfigDir, so
+// the plan-record failure contract is testable without a real /run.
+var RunDir = "/run/nftban"
+
+// modeUnknown is returned when the effective mode CANNOT be established.
+// It is never a mode the system runs in -- it is the refusal to guess one.
+const modeUnknown = "unknown"
+
 // DataDir is the base data directory (project NFTBAN_DATA_DIR). Resolved from the
 // environment with the project-canonical default; overridable for testing.
 // Mirrors the shell rule `${NFTBAN_DATA_DIR:-/var/lib/nftban}` used by
@@ -214,27 +222,69 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 	// Structural axis: 4 required chains in IPv4.
 	// GAP-D1: Also check IPv6 if ip6 table exists — DDoS chains should
 	// be present in both families for full dual-stack protection.
-	ddosChains := []string{"ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection"}
-	allPresent := true
-	for _, c := range ddosChains {
-		if !doc.ChainExists("ip", "nftban", c) {
-			allPresent = false
-			break
+	//
+	// v1.229.7 PR-3A: the classic chain set is the expectation for CLASSIC mode
+	// only. In suricata mode those chains are correctly ABSENT -- demanding them
+	// would false-fail every properly configured Suricata host.
+	ddosMode := readEffectiveMode("ddos", "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE")
+	if h.Config == ConfigEnabled && (ddosMode == "auto" || ddosMode == "unknown" || ddosMode == "") {
+		// ⛔ Unresolved. This process MUST NOT resolve `auto` -- that would make
+		// the validator a second mode authority, the exact defect this lane
+		// removes. No valid plan record means the expectation is genuinely not
+		// established, so neither present nor missing may be claimed.
+		//   EXPECTATION UNKNOWN != EXPECTATION SATISFIED
+		//
+		// ⛔ Scoped to the STRUCTURAL axis only. The effective axis below reads
+		// enforcement counters straight out of the observed ruleset -- a fact
+		// that does not depend on knowing which mode was planned. Returning here
+		// would suppress evidence we actually have.
+		//   UNKNOWN MUST NOT BE CONTAGIOUS ACROSS AXES
+		h.Structural = StructuralUnknown
+		h.StructuralReason = ReasonExpectationUnknown
+	} else if h.Config == ConfigEnabled && ddosMode == "suricata" {
+		// Suricata mode contributes no classic objects. Structural expectation is
+		// the ABSENCE of the classic pipeline; its presence is cross-mode DRIFT.
+		classicPresent := false
+		for _, c := range []string{"ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection"} {
+			if doc.ChainExists("ip", "nftban", c) || doc.ChainExists("ip6", "nftban", c) {
+				classicPresent = true
+				break
+			}
 		}
-	}
-	// Check IPv6 if table exists
-	if allPresent && doc.TableExists("ip6", "nftban") {
+		if classicPresent {
+			// CLASSIC_ACTIVE + SURICATA mode = the forbidden dual-mode state.
+			// EXPECTED MISSING + OBSERVED PRESENT = DRIFT, not absence.
+			h.Structural = StructuralMissing
+			h.StructuralReason = ReasonDriftPresent
+		} else {
+			h.Structural = StructuralPresent
+		}
+		// Suricata mode publishes no classic counters, so the classic effective
+		// evaluation below does not apply to it.
+		return h
+	} else {
+		ddosChains := []string{"ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection"}
+		allPresent := true
 		for _, c := range ddosChains {
-			if !doc.ChainExists("ip6", "nftban", c) {
+			if !doc.ChainExists("ip", "nftban", c) {
 				allPresent = false
 				break
 			}
 		}
-	}
-	if allPresent {
-		h.Structural = StructuralPresent
-	} else {
-		h.Structural = StructuralMissing
+		// Check IPv6 if table exists
+		if allPresent && doc.TableExists("ip6", "nftban") {
+			for _, c := range ddosChains {
+				if !doc.ChainExists("ip6", "nftban", c) {
+					allPresent = false
+					break
+				}
+			}
+		}
+		if allPresent {
+			h.Structural = StructuralPresent
+		} else {
+			h.Structural = StructuralMissing
+		}
 	}
 
 	// Runtime: not required for DDoS (kernel-only enforcement)
@@ -243,7 +293,10 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 	// Effective axis: check DDoS enforcement counters from kernel.
 	// Per M81-3 DDoS contract: each counter is PRIMARY ENFORCEMENT evidence.
 	// Any counter > 0 = ENFORCING. All zero = IDLE (neutral).
-	if h.Structural == StructuralPresent {
+	// Gate on "not contradicted" rather than "confirmed present": with an
+	// unknown expectation the counters are still real observations, and an
+	// enforcing counter is evidence regardless of which mode resolved.
+	if h.Structural == StructuralPresent || h.Structural == StructuralUnknown {
 		ddosCounters := []string{
 			"input_ct_ssh_drop",
 			"input_ct_http_drop",
@@ -303,15 +356,37 @@ func evaluatePortscan(doc *RulesetDocument) *ModuleHealth {
 
 	h.Config = readConfigBool("conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_ENABLED")
 
-	// GAP-P1: Check both IPv4 and IPv6 (if ip6 table exists).
-	if doc.ChainExists("ip", "nftban", "portscan_detection") {
-		if doc.TableExists("ip6", "nftban") && !doc.ChainExists("ip6", "nftban", "portscan_detection") {
-			h.Structural = StructuralMissing // IPv4 present but IPv6 missing
+	// v1.229.7 PR-3A: mode-aware, symmetric with evaluateDDoS. Before this the
+	// portscan arm demanded portscan_detection whenever PORTSCAN_ENABLED=true,
+	// with no regard for PORTSCAN_MODE -- so a correctly configured Suricata
+	// host reported StructuralMissing. Same defect class as the DDoS arm above,
+	// on the other half of the same subject population.
+	psMode := readEffectiveMode("portscan", "conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_MODE")
+	if h.Config == ConfigEnabled && (psMode == modeUnknown || psMode == "auto" || psMode == "") {
+		// Expectation unestablished. Scoped to the structural axis: the
+		// effective assignment below is unconditional and unaffected.
+		h.Structural = StructuralUnknown
+		h.StructuralReason = ReasonExpectationUnknown
+	} else if h.Config == ConfigEnabled && psMode == "suricata" {
+		// Suricata mode contributes no classic portscan chain. Its presence is
+		// cross-mode DRIFT -- EXPECTED MISSING + OBSERVED PRESENT -- not absence.
+		if doc.ChainExists("ip", "nftban", "portscan_detection") || doc.ChainExists("ip6", "nftban", "portscan_detection") {
+			h.Structural = StructuralMissing
+			h.StructuralReason = ReasonDriftPresent
 		} else {
 			h.Structural = StructuralPresent
 		}
 	} else {
-		h.Structural = StructuralMissing
+		// GAP-P1: Check both IPv4 and IPv6 (if ip6 table exists).
+		if doc.ChainExists("ip", "nftban", "portscan_detection") {
+			if doc.TableExists("ip6", "nftban") && !doc.ChainExists("ip6", "nftban", "portscan_detection") {
+				h.Structural = StructuralMissing // IPv4 present but IPv6 missing
+			} else {
+				h.Structural = StructuralPresent
+			}
+		} else {
+			h.Structural = StructuralMissing
+		}
 	}
 
 	// Portscan has no dedicated counter — effective state is always IDLE
@@ -687,6 +762,113 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 
 // readConfigBool reads a boolean config key from .local then base conf.
 // Returns ConfigEnabled if key="true", ConfigDisabled otherwise.
+// readEffectiveMode returns the module's EFFECTIVE mode for this transaction.
+//
+// v1.229.7 PR-3A. Prefers the transient plan record published by the shell
+// reconcile root (/run/nftban/module-plan-<module>.env), which carries the
+// single authorised resolution of `auto`. Falls back to the configured mode
+// when no record exists.
+//
+// ⛔ This process NEVER resolves `auto` itself. It CONSUMES a resolution or
+//
+//	reports the configured value; becoming a second resolver is prohibited.
+//
+// readEffectiveMode resolves the effective mode WITHOUT ever resolving `auto`
+// itself. It is a READER of the transient plan record published by the shell
+// reconcile root; it never writes, never regenerates a resolution_id, and never
+// re-interprets configured_mode.
+//
+// v1.229.7 PR-3A failure contract. Every arm below returns modeUnknown rather
+// than a guess, because for MODE=auto:
+//
+//	MISSING PLAN != CLASSIC · != SURICATA · != DISABLED
+//
+// The earlier shape fell back to the configured mode on ANY unusable record,
+// which turned "the record is broken" into "the operator said auto" and then
+// into a structural verdict. A present-but-invalid record is evidence of a
+// BROKEN CONTRACT, not evidence of absence, so it must not be treated as if no
+// record existed.
+func readEffectiveMode(module, localPath, basePath, key string) string {
+	configured := readConfiguredMode(localPath, basePath, key)
+	explicit := configured == "classic" || configured == "suricata"
+
+	data, err := os.ReadFile(filepath.Join(RunDir, "module-plan-"+module+".env"))
+	if err != nil {
+		// No record. An explicit mode is self-authoritative -- the plan is not
+		// needed to know what was asked for. `auto` (or any legacy value such
+		// as hybrid) is genuinely unresolved here.
+		if explicit {
+			return configured
+		}
+		return modeUnknown
+	}
+
+	var gotModule, effective, planConfigured string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_MODULE="); ok {
+			gotModule = v
+		}
+		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_EFFECTIVE_MODE="); ok {
+			effective = v
+		}
+		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_CONFIGURED_MODE="); ok {
+			planConfigured = v
+		}
+	}
+
+	// MALFORMED: wrong module, or an effective_mode outside the closed set.
+	// `unknown` is itself a legitimate resolver output (legacy hybrid), and it
+	// is not a mode a verdict can be derived from either.
+	if gotModule != module || planConfigured == "" ||
+		(effective != "classic" && effective != "suricata" && effective != "inactive") {
+		return modeUnknown
+	}
+
+	// STALE: the record records the configured_mode it was resolved FROM. If the
+	// on-disk configured mode has changed since, this record describes a
+	// superseded transaction and is not current policy.
+	//   A STALE RECORD IS NOT THE CURRENT PLAN
+	if planConfigured != configured {
+		return modeUnknown
+	}
+
+	// CONTRADICTION: an explicit operator mode that the plan disagrees with.
+	// The plan may RESOLVE `auto`; it may never OVERRIDE an explicit intent.
+	if explicit && effective != configured {
+		return modeUnknown
+	}
+
+	return effective
+}
+
+// readConfiguredMode returns the configured MODE for a module, applying the
+// same main.conf -> main.conf.local layering readConfigBool uses.
+//
+// v1.229.7 PR-3A. The structural expectation for a module is a FUNCTION OF ITS
+// EFFECTIVE MODE, not a fixed list of classic chain names. Before this,
+// evaluateDDoS demanded all four classic chains whenever DDOS_ENABLED=true,
+// with no regard for DDOS_MODE -- so a correctly configured Suricata host
+// reported StructuralMissing, and the effective-axis counters were suppressed
+// behind that verdict.
+//
+// ⛔ THE PLAN DEFINES EXPECTATION, NOT PROOF:
+//
+//	  expected = function(effective_mode)
+//	  observed = module-specific runtime witness
+//	  verdict  = compare(expected, observed)
+//	This must NOT become "plan says suricata -> healthy", which would be the
+//	same error as "classic_chain_exists -> healthy" wearing different clothes.
+func readConfiguredMode(localPath, basePath, key string) string {
+	if val := readKeyFromFile(filepath.Join(ConfigDir, localPath), key); val != "" {
+		return val
+	}
+	if val := readKeyFromFile(filepath.Join(ConfigDir, basePath), key); val != "" {
+		return val
+	}
+	return "auto"
+}
+
 func readConfigBool(localPath, basePath, key string) ConfigState {
 	// Try .local first
 	if val := readKeyFromFile(filepath.Join(ConfigDir, localPath), key); val != "" {

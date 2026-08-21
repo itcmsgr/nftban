@@ -165,7 +165,7 @@ func TestIPv6Parity_DDoS(t *testing.T) {
 	doc := ParseRuleset(raw)
 
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/ddos/main.conf": `DDOS_ENABLED="true"`,
+		"conf.d/ddos/main.conf": "DDOS_ENABLED=\"true\"\nDDOS_MODE=\"classic\"",
 	})
 	defer cleanup()
 
@@ -187,7 +187,7 @@ func TestIPv6Parity_Portscan(t *testing.T) {
 	doc := ParseRuleset(raw)
 
 	cleanup := setupTestConfig(t, map[string]string{
-		"conf.d/portscan/main.conf": `PORTSCAN_ENABLED="true"`,
+		"conf.d/portscan/main.conf": "PORTSCAN_ENABLED=\"true\"\nPORTSCAN_MODE=\"classic\"",
 	})
 	defer cleanup()
 

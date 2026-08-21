@@ -153,6 +153,35 @@ type StructuralState string
 const (
 	StructuralPresent StructuralState = "present"
 	StructuralMissing StructuralState = "missing"
+	// StructuralUnknown — the expectation itself could not be established.
+	// v1.229.7 PR-3A: with MODE=auto the effective mode is only knowable from
+	// the resolved plan; if that record is absent, malformed, or belongs to
+	// another module, this process MUST NOT guess.
+	//   MISSING PLAN != CLASSIC · != SURICATA · != DISABLED
+	// Reporting present/missing here would be a false claim in either direction.
+	StructuralUnknown StructuralState = "unknown"
+)
+
+// StructuralReason is the internal cause tag for a structural verdict.
+// v1.229.7 PR-3A. See ModuleHealth.StructuralReason.
+type StructuralReason string
+
+const (
+	ReasonNone StructuralReason = ""
+	// ReasonExpectedAbsent — the expected objects for the resolved mode are
+	// simply not there. The classic "enable it" case.
+	ReasonExpectedAbsent StructuralReason = "expected_objects_absent"
+	// ReasonDriftPresent — objects belonging to the OTHER mode are live while
+	// this mode is in force. EXPECTED MISSING + OBSERVED PRESENT = DRIFT.
+	// This is the motivating defect of the v1.229.7 lane; it must never be
+	// reported as "objects missing".
+	ReasonDriftPresent StructuralReason = "unexpected_objects_present"
+	// ReasonExpectationUnknown — MODE=auto with no authoritative resolved plan.
+	// The PROVENANCE side failed: we do not know what to expect.
+	ReasonExpectationUnknown StructuralReason = "expectation_unestablished"
+	// ReasonObservationUnknown — the expectation is known but the runtime state
+	// could not be observed. The OBSERVATION side failed.
+	ReasonObservationUnknown StructuralReason = "observation_incomplete"
 )
 
 // EffectiveState represents the module's activity level based on evidence.
@@ -189,6 +218,18 @@ type ModuleHealth struct {
 	Runtime    RuntimeState    `json:"runtime,omitempty"`
 	Effective  EffectiveState  `json:"effective,omitempty"`
 	Input      InputState      `json:"-"` // internal (v1.183); surfaced via CodeLoginMonNoInput finding, not the frozen schema
+	// StructuralReason carries WHY the structural verdict is what it is.
+	// Internal (v1.229.7 PR-3A), same schema-safe pattern as Input above: it is
+	// surfaced through the consistency detail and the findings array, never as a
+	// new field in the frozen M81-6 ModuleJSON.
+	//
+	// It exists because the three-value axis cannot distinguish causes that are
+	// operationally opposite:
+	//   MISSING  — expected objects absent  vs  the OTHER mode's objects PRESENT
+	//   UNKNOWN  — the EXPECTATION failed   vs  the OBSERVATION failed
+	// Reporting "objects missing" for cross-mode drift is a false statement, and
+	// merging the two unknowns hides which side of the contract broke.
+	StructuralReason StructuralReason `json:"-"`
 }
 
 // BlacklistHealth holds the split blacklist state per M81-3 contract.
@@ -346,6 +387,18 @@ const (
 
 	// Consistency findings (v1.82)
 	CodeConsistencyMismatch = "VAL-CONS-001" // config/kernel disagreement
+	// v1.229.7 PR-3A: the expectation could not be established at all (MODE=auto
+	// with no valid resolved plan). This is NOT a mismatch -- asserting one would
+	// claim a kernel/config disagreement that was never observed. It is a
+	// contract failure, and it degrades status rather than collapsing to "ok".
+	CodeConsistencyUnknown = "VAL-CONS-002" // EXPECTED unknown: no authoritative plan (provenance side failed)
+	// v1.229.7 PR-3A: converges to the same non-PASS status as VAL-CONS-002 but
+	// keeps the cause distinct -- here the plan was fine and the RUNTIME
+	// OBSERVATION could not be completed.
+	CodeConsistencyObserveUnknown = "VAL-CONS-003" // OBSERVED unknown: observation incomplete
+	// Not a state of the firewall -- a state of THIS PROGRAM. Reached only if a
+	// StructuralState value exists that this consumer was never taught.
+	CodeConsistencyInvalidState = "VAL-CONS-004" // internal contract error: unrecognised StructuralState
 
 	// System findings
 	CodeNftFailed   = "VAL-SYSTEM-001"

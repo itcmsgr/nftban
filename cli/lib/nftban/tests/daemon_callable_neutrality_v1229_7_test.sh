@@ -115,10 +115,25 @@ for spec in "internal/ddos/module.go:nftban_ddos" "internal/portscan/module.go:n
     else
         ok "$(basename "$gof") invokes only the neutral halves"
     fi
-    if grep -q "${pre}_apply" "$gof" && grep -q "${pre}_teardown" "$gof"; then
-        ok "$(basename "$gof") wired to ${pre}_apply / ${pre}_teardown"
+    # v1.229.7 PR-3A moved the daemon one hop back: it now calls the transaction
+    # ROOT, which resolves the mode ONCE and dispatches to the neutral halves.
+    # The requirement is unchanged -- the daemon must reach the neutral halves
+    # and never the CLI orchestrator -- so this asserts the SAME property across
+    # the new topology instead of dropping it:
+    #     daemon -> <mod>_reconcile -> {_apply, _teardown}
+    # A guard that stops asserting a property because the code moved is the
+    # dead authority it exists to prevent.
+    if ! grep -q "${pre}_reconcile" "$gof"; then
+        fail "$(basename "$gof") does not call ${pre}_reconcile -- the daemon must enter through the transaction root"
     else
-        fail "$(basename "$gof") is not wired to both neutral halves"
+        root_body="$(awk -v fn="${pre}_reconcile" '$0 ~ "^"fn"\\(\\) \\{"{i=1;next} i&&/^\}/{exit} i{print}' "$ROOT/cli/lib/nftban/core/${pre}.sh")"
+        if [[ -z "$root_body" ]]; then
+            fail "${pre}_reconcile not found -- cannot prove the daemon reaches the neutral halves"
+        elif grep -q "${pre}_apply" <<<"$root_body" && grep -q "${pre}_teardown" <<<"$root_body"; then
+            ok "$(basename "$gof") -> ${pre}_reconcile -> both neutral halves"
+        else
+            fail "${pre}_reconcile does not dispatch to BOTH ${pre}_apply and ${pre}_teardown"
+        fi
     fi
 done
 

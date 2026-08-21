@@ -175,7 +175,7 @@ type ModulesJSON struct {
 // Fields are omitted when not applicable (e.g. runtime for kernel-only modules).
 type ModuleJSON struct {
 	Config     string `json:"config"`               // enabled|disabled (always present)
-	Structural string `json:"structural,omitempty"` // present|missing (omitted if disabled)
+	Structural string `json:"structural,omitempty"` // present|missing|unknown (omitted if disabled); unknown = expectation unestablished (v1.229.7)
 	Runtime    string `json:"runtime,omitempty"`    // running|stopped (omitted if not daemon-dependent)
 	Effective  string `json:"effective,omitempty"`  // enforcing|observing|idle (omitted if disabled)
 	// NOTE: the v1.183 input-readability axis is intentionally NOT a field here — the
@@ -201,7 +201,7 @@ type BlacklistSubJSON struct {
 // ConsistencyJSON holds cross-source agreement status.
 // Stub for v1.81.0 — expanded in v1.82.
 type ConsistencyJSON struct {
-	KernelVsValidator string `json:"kernel_vs_validator"` // ok|mismatch
+	KernelVsValidator string `json:"kernel_vs_validator"` // ok|mismatch|unknown (v1.229.7)
 }
 
 // FindingJSON is a single validation finding in the output.

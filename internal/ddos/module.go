@@ -361,13 +361,13 @@ func (m *Module) detectMode() {
 
 // enable enables DDoS protection
 func (m *Module) enable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_apply", "_", getDDOSScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_reconcile", "_", getDDOSScript())
 	return cmd.Run()
 }
 
 // disable disables DDoS protection
 func (m *Module) disable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_teardown", "_", getDDOSScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_reconcile", "_", getDDOSScript())
 	return cmd.Run()
 }
 

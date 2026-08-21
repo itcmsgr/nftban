@@ -109,6 +109,8 @@ _nftban_ddos_suricata_load_config() {
     # Integration
     : "${DDOS_SURICATA_USE_FEEDS:=true}"
     : "${DDOS_SURICATA_USE_GEOIP:=true}"
+    # v1.229.7 PR-3A: LEGACY. Read for compatibility/reporting only; it has
+    # NO enforcement authority and NO mode authority. Do not branch on it.
     : "${DDOS_SURICATA_USE_CLASSIC_LAYER0:=true}"
 
     # Performance
@@ -527,13 +529,29 @@ nftban_ddos_suricata_enable() {
     echo "  Suricata: $(nftban_ddos_suricata_get_status)"
     echo ""
 
-    # Enable Classic Layer 0 if configured
-    if [[ "$DDOS_SURICATA_USE_CLASSIC_LAYER0" == "true" ]]; then
-        echo "  Enabling Classic Layer 0 (hard limits)..."
-        if type -t nftban_ddos_classic_enable &>/dev/null; then
-            nftban_ddos_classic_enable
-        fi
-    fi
+    # v1.229.7 PR-3A: REMOVED -- this called nftban_ddos_classic_enable, the SAME
+    # entrypoint DDOS_MODE=classic uses. It was not a narrow "Layer 0" sub-feature:
+    # it started the ENTIRE classic pipeline (sanity + synproxy + prefix +
+    # ddos_protection + the penalty ladder). With the shipped default
+    # DDOS_SURICATA_USE_CLASSIC_LAYER0="true", DDOS_MODE=suricata therefore ran
+    # BOTH full pipelines -- the state the frozen model declares INVALID, reached
+    # with no config change at all.
+    #
+    #   CLASSIC_ACTIVE + SURICATA_ACTIVE = INVALID
+    #   ONE MODULE, ONE EFFECTIVE MODE
+    #
+    # Suricata mode does NOT need the classic pipeline to retain Layer-0: base
+    # Layer-0 (invalid-state drop, SSH/HTTP/MAIL connlimits, per-source SYN meter)
+    # is UNCONDITIONAL in install/nftables/nftables.conf.tpl and is not a mode.
+    # The classic hard limits even reach it already -- cmd_firewall.sh substitutes
+    # DDOS_CLASSIC_*_CONN_LIMIT into __CT_LIMIT_* on every render, mode-blind.
+    #
+    # The key survives as compatibility-visible input with NO enforcement effect:
+    #   LEGACY_KEY_PRESENT        = allowed
+    #   LEGACY_KEY_ENFORCEMENT    = none
+    #   LEGACY_KEY_MODE_AUTHORITY = none
+    # ⛔ LEGACY VALUE != AUTHORITY TO CHOOSE ITS REPLACEMENT. No replacement
+    #    semantics were invented for it.
 
     # Create block set if not exists (via IPC fragment)
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
@@ -563,7 +581,7 @@ nftban_ddos_suricata_enable() {
     echo "  Alert Window:    ${DDOS_SURICATA_ALERT_WINDOW}s"
     echo "  Use Feeds:       $DDOS_SURICATA_USE_FEEDS"
     echo "  Use GeoIP:       $DDOS_SURICATA_USE_GEOIP"
-    echo "  Classic Layer0:  $DDOS_SURICATA_USE_CLASSIC_LAYER0"
+    echo "  Classic Layer0:  $DDOS_SURICATA_USE_CLASSIC_LAYER0 (LEGACY — no enforcement effect since v1.229.7)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -579,12 +597,9 @@ nftban_ddos_suricata_disable() {
     echo "Disabling Suricata DDoS Protection..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # Disable Classic Layer 0 if it was enabled
-    if [[ "$DDOS_SURICATA_USE_CLASSIC_LAYER0" == "true" ]]; then
-        if type -t nftban_ddos_classic_disable &>/dev/null; then
-            nftban_ddos_classic_disable
-        fi
-    fi
+    # v1.229.7 PR-3A: REMOVED -- the teardown twin of the classic invocation above.
+    # A Suricata teardown must not tear down the classic pipeline; the reconcile
+    # root owns cross-mode convergence.
 
     # Flush block set via IPC
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
@@ -659,7 +674,7 @@ nftban_ddos_suricata_status() {
     echo "  Alert Window:      ${DDOS_SURICATA_ALERT_WINDOW}s"
     echo "  Use Feeds:         $DDOS_SURICATA_USE_FEEDS"
     echo "  Use GeoIP:         $DDOS_SURICATA_USE_GEOIP"
-    echo "  Classic Layer0:    $DDOS_SURICATA_USE_CLASSIC_LAYER0"
+    echo "  Classic Layer0:    $DDOS_SURICATA_USE_CLASSIC_LAYER0 (LEGACY — no enforcement effect since v1.229.7)"
 
     # Block set stats
     echo ""

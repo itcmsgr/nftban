@@ -597,10 +597,7 @@ nftban_cmd_portscan() {
             # Not reached from the firewall lane today (unlike ddos reload), but
             # the semantics are identical: a reload re-applies runtime state and
             # must not rewrite operator intent or restart the daemon.
-            if nftban_portscan_teardown 2>/dev/null; then
-                echo ""
-            fi
-            nftban_portscan_apply
+            nftban_portscan_reconcile
             echo ""
             echo "Port scan detection reloaded successfully"
             ;;

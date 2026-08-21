@@ -391,8 +391,7 @@ nftban_cmd_ddos() {
             # restarted the daemon mid-rebuild -- violating PR-2's own contract:
             # ONLY EXPLICIT OPERATOR ACTIONS MAY WRITE DURABLE INTENT.
             # Reload is a RUNTIME re-application, so it uses the neutral halves.
-            nftban_ddos_teardown 2>/dev/null || true
-            nftban_ddos_apply
+            nftban_ddos_reconcile
             ;;
 
         status)
