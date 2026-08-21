@@ -319,3 +319,51 @@ func TestV6_StaleBindingDoesNotYieldTheWrongExpectation(t *testing.T) {
 		t.Fatalf("V6 FAILED: reason=%q, want %q", h.StructuralReason, ReasonExpectationUnknown)
 	}
 }
+
+// V7: the plan-record filename is derived from `module`, so an out-of-set value
+// must never reach the filesystem.
+//
+// ⛔ Two earlier versions of this control were VACUOUS, both worth recording:
+//  1. it asserted only that the result was UNKNOWN -- which the pre-existing
+//     `gotModule != module` check already guarantees -- so it passed with the
+//     constraint removed;
+//  2. it used "../evil" as the traversal, which does NOT escape: Clean treats
+//     `module-plan-..` as a filename ending in dots, not as a parent reference,
+//     so the path stayed inside RunDir and nothing was proven.
+//
+// A real escape needs ".." as its own component. `x/../../evil` resolves to
+// RunDir/../evil.env -- outside RunDir entirely -- and the planted record's
+// MODULE field matches the traversal string, so WITHOUT the constraint this
+// returns a real, usable mode read from outside the intended directory.
+//
+//	A SUPPRESSION THAT ONLY ASSERTS SAFETY IS NOT A CONTROL.
+//	A CONTROL THAT PASSES WITHOUT ITS SUBJECT IS NOT A CONTROL EITHER.
+func TestV7_ModuleNameIsConstrainedToTheClosedSet(t *testing.T) {
+	defer withPlanGen(t, "auto", "ddos", "auto", "classic", "7", "7")()
+
+	const escape = "x/../../evil" // -> filepath.Join(RunDir, "module-plan-x/../../evil.env") == RunDir/../evil.env
+	target := filepath.Join(RunDir, "module-plan-"+escape+".env")
+	if filepath.Dir(target) == RunDir {
+		t.Fatalf("V7 setup invalid: %q does not leave RunDir (%s) — the control would prove nothing", escape, RunDir)
+	}
+	rec := "NFTBAN_PLAN_MODULE=" + escape + "\n" +
+		"NFTBAN_PLAN_CONFIGURED_MODE=auto\n" +
+		"NFTBAN_PLAN_EFFECTIVE_MODE=suricata\n" +
+		"NFTBAN_PLAN_BOUND_GENERATION=7\n"
+	if err := os.WriteFile(target, []byte(rec), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if got := readEffectiveMode(escape, "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != modeUnknown {
+		t.Fatalf("V7 FAILED: module=%q resolved to %q by reading %s — outside RunDir", escape, got, target)
+	}
+
+	for _, bad := range []string{"ddos/../ddos", "", "DDOS", "loginmon"} {
+		if got := readEffectiveMode(bad, "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != modeUnknown {
+			t.Fatalf("V7 FAILED: out-of-set module %q resolved to %q", bad, got)
+		}
+	}
+	// Positive control: the real name still works, so the constraint is not vacuous.
+	if got := readEffectiveMode("ddos", "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != "classic" {
+		t.Fatalf("V7 FAILED: the constraint broke the legitimate case (got %q)", got)
+	}
+}

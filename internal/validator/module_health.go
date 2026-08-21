@@ -816,7 +816,20 @@ func readEffectiveMode(module, localPath, basePath, key string) string {
 	configured := readConfiguredMode(localPath, basePath, key)
 	explicit := configured == "classic" || configured == "suricata"
 
-	data, err := os.ReadFile(filepath.Join(RunDir, "module-plan-"+module+".env"))
+	// The record path is DERIVED FROM `module`, so constrain it to the closed set
+	// before it can reach the filesystem. Both current call sites pass literals;
+	// this is defence against a future one, and it is what makes the #nosec below
+	// a constraint rather than a promise.
+	//   A SUPPRESSION THAT ONLY ASSERTS SAFETY IS NOT A CONTROL.
+	switch module {
+	case "ddos", "portscan":
+	default:
+		return modeUnknown
+	}
+
+	// #nosec G304 -- module is constrained to the closed set immediately above and
+	// RunDir is a package-level path, so no part of this filename is attacker-derived.
+	data, err := os.ReadFile(filepath.Clean(filepath.Join(RunDir, "module-plan-"+module+".env")))
 	if err != nil {
 		// No record. An explicit mode is self-authoritative -- the plan is not
 		// needed to know what was asked for. `auto` (or any legacy value such
