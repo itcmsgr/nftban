@@ -320,32 +320,49 @@ func TestV6_StaleBindingDoesNotYieldTheWrongExpectation(t *testing.T) {
 	}
 }
 
-// V7: the plan-record filename is derived from `module`, so an out-of-set value
-// must never reach the filesystem.
+// V7 — PLAN SUBJECT MUST BE BOUND TO RunDir.
 //
-// ⛔ Two earlier versions of this control were VACUOUS, both worth recording:
+//	module identifier != arbitrary filesystem path component
+//
+// The plan-record filename is derived from `module`. Without confinement a
+// crafted identifier makes this reader open a plan file OUTSIDE the configured
+// RunDir and accept that external file as authoritative derived state.
+//
+// Three controls, kept distinct on purpose:
+//
+//  1. POSITIVE  — legitimate names (ddos, portscan) still resolve correctly.
+//  2. NEGATIVE  — traversal / separator-bearing / absolute-path-like names
+//     cannot escape RunDir.
+//  3. SUBJECT   — the external file holds a VALID-LOOKING Suricata plan, and
+//     without the constraint it is actually CONSUMED. Proving
+//     os.ReadFile was merely attempted would not be enough:
+//     semantic consumption is the defect, not reachability.
+//
+// ⛔ Two earlier versions of this control were vacuous, each differently:
+//
 //  1. it asserted only that the result was UNKNOWN -- which the pre-existing
 //     `gotModule != module` check already guarantees -- so it passed with the
 //     constraint removed;
-//  2. it used "../evil" as the traversal, which does NOT escape: Clean treats
-//     `module-plan-..` as a filename ending in dots, not as a parent reference,
-//     so the path stayed inside RunDir and nothing was proven.
 //
-// A real escape needs ".." as its own component. `x/../../evil` resolves to
-// RunDir/../evil.env -- outside RunDir entirely -- and the planted record's
-// MODULE field matches the traversal string, so WITHOUT the constraint this
-// returns a real, usable mode read from outside the intended directory.
+//  2. it used "../evil", which does NOT escape: Clean treats `module-plan-..`
+//     as a filename ending in dots, not a parent reference, so the path stayed
+//     inside RunDir and nothing was proven.
 //
-//	A SUPPRESSION THAT ONLY ASSERTS SAFETY IS NOT A CONTROL.
-//	A CONTROL THAT PASSES WITHOUT ITS SUBJECT IS NOT A CONTROL EITHER.
-func TestV7_ModuleNameIsConstrainedToTheClosedSet(t *testing.T) {
+//     A SUPPRESSION THAT ONLY ASSERTS SAFETY IS NOT A CONTROL.
+//     A CONTROL THAT PASSES WITHOUT ITS SUBJECT IS NOT A CONTROL EITHER.
+func TestV7_PlanSubjectMustBeBoundToRunDir(t *testing.T) {
 	defer withPlanGen(t, "auto", "ddos", "auto", "classic", "7", "7")()
 
-	const escape = "x/../../evil" // -> filepath.Join(RunDir, "module-plan-x/../../evil.env") == RunDir/../evil.env
+	// --- 3. SUBJECT CONTROL -------------------------------------------------
+	// `x/../../evil` puts ".." in its own component, so Join resolves it to
+	// RunDir/../evil.env -- outside RunDir entirely.
+	const escape = "x/../../evil"
 	target := filepath.Join(RunDir, "module-plan-"+escape+".env")
 	if filepath.Dir(target) == RunDir {
 		t.Fatalf("V7 setup invalid: %q does not leave RunDir (%s) — the control would prove nothing", escape, RunDir)
 	}
+	// A valid-looking plan: right module field, current generation, coherent
+	// configured/effective pair. Nothing but confinement rejects it.
 	rec := "NFTBAN_PLAN_MODULE=" + escape + "\n" +
 		"NFTBAN_PLAN_CONFIGURED_MODE=auto\n" +
 		"NFTBAN_PLAN_EFFECTIVE_MODE=suricata\n" +
@@ -354,16 +371,47 @@ func TestV7_ModuleNameIsConstrainedToTheClosedSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := readEffectiveMode(escape, "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != modeUnknown {
-		t.Fatalf("V7 FAILED: module=%q resolved to %q by reading %s — outside RunDir", escape, got, target)
+		t.Fatalf("V7 FAILED (subject): module=%q was CONSUMED as %q from %s — an external file became authoritative derived state",
+			escape, got, target)
 	}
 
-	for _, bad := range []string{"ddos/../ddos", "", "DDOS", "loginmon"} {
+	// --- 2. NEGATIVE CONTROL ------------------------------------------------
+	for _, bad := range []string{
+		"x/../../evil", // traversal, escapes RunDir
+		"/../evil",     // absolute-prefixed traversal
+		"/etc/passwd",  // absolute path
+		"ddos/../ddos", // separator-bearing, resolves back to a real name
+		"a/b",          // plain separator
+		"ddos ",        // trailing space
+		"", "DDOS",     // empty / wrong case
+		"loginmon", // a real module, but not one this reader owns
+	} {
 		if got := readEffectiveMode(bad, "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != modeUnknown {
-			t.Fatalf("V7 FAILED: out-of-set module %q resolved to %q", bad, got)
+			t.Fatalf("V7 FAILED (negative): out-of-set module %q resolved to %q", bad, got)
 		}
 	}
-	// Positive control: the real name still works, so the constraint is not vacuous.
+
+	// --- 1. POSITIVE CONTROL ------------------------------------------------
+	// Without this the constraint could reject everything and prove nothing.
 	if got := readEffectiveMode("ddos", "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE"); got != "classic" {
-		t.Fatalf("V7 FAILED: the constraint broke the legitimate case (got %q)", got)
+		t.Fatalf("V7 FAILED (positive): the constraint broke the legitimate ddos case (got %q)", got)
+	}
+	// The portscan half needs its own fixture: withPlanGen builds ddos paths.
+	// (An earlier revision reused it and the "positive control" failed for a
+	// setup reason, not a code reason -- which would have read as a real defect.)
+	if err := os.MkdirAll(filepath.Join(ConfigDir, "conf.d", "portscan"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ConfigDir, "conf.d", "portscan", "main.conf"),
+		[]byte("PORTSCAN_ENABLED=true\nPORTSCAN_MODE=auto\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	psRec := "NFTBAN_PLAN_MODULE=portscan\nNFTBAN_PLAN_CONFIGURED_MODE=auto\n" +
+		"NFTBAN_PLAN_EFFECTIVE_MODE=suricata\nNFTBAN_PLAN_BOUND_GENERATION=7\n"
+	if err := os.WriteFile(filepath.Join(RunDir, "module-plan-portscan.env"), []byte(psRec), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if got := readEffectiveMode("portscan", "conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_MODE"); got != "suricata" {
+		t.Fatalf("V7 FAILED (positive): the constraint broke the legitimate portscan case (got %q)", got)
 	}
 }
