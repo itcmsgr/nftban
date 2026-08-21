@@ -218,7 +218,12 @@ _nftban_ddos_detect_mode() {
 # Get current active mode
 nftban_ddos_get_mode() {
     _nftban_ddos_load_config
-    _nftban_ddos_detect_mode
+    # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT. This used the local detector,
+    # which resolves `auto` by probing Suricata availability -- a second,
+    # independent authority that could report a mode the system had not decided.
+    #   STATUS MUST NOT RESOLVE AUTO.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+    eval "$(nftban_module_report_modes ddos)"; printf '%s\n' "${NFTBAN_REPORT_EFFECTIVE_MODE}"
 }
 
 # Check if Suricata is available (wrapper)
@@ -269,8 +274,8 @@ nftban_ddos_reconcile() {
     # deliberately, because a resolution is valid for ONE transaction.
     # ⛔ DERIVED EVIDENCE, NOT DURABLE CONFIGURATION. MODE=auto stays the
     #    operator's intent; this record only says what it resolved to, and when.
-    if [[ -d /run/nftban ]]; then
-        local _pf="/run/nftban/module-plan-ddos.env" _tmp
+    if [[ -d "${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}" ]]; then
+        local _pf="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}/module-plan-ddos.env" _tmp
         _tmp="${_pf}.$$"
         {
             printf 'NFTBAN_PLAN_MODULE=%s\n'           "$NFTBAN_PLAN_MODULE"
@@ -669,7 +674,13 @@ nftban_ddos_status() {
     _nftban_ddos_load_config
 
     local mode
-    mode=$(_nftban_ddos_detect_mode)
+    # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT. This used the local detector,
+    # which resolves `auto` by probing Suricata availability -- a second,
+    # independent authority that could report a mode the system had not decided.
+    #   STATUS MUST NOT RESOLVE AUTO.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+    eval "$(nftban_module_report_modes ddos)"
+    mode="${NFTBAN_REPORT_EFFECTIVE_MODE}"
     local configured_mode="${DDOS_MODE:-auto}"
 
     if [[ "$json_mode" == "true" ]]; then
@@ -861,7 +872,13 @@ nftban_ddos_test() {
     _nftban_ddos_load_config
 
     local mode
-    mode=$(_nftban_ddos_detect_mode)
+    # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT. This used the local detector,
+    # which resolves `auto` by probing Suricata availability -- a second,
+    # independent authority that could report a mode the system had not decided.
+    #   STATUS MUST NOT RESOLVE AUTO.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+    eval "$(nftban_module_report_modes ddos)"
+    mode="${NFTBAN_REPORT_EFFECTIVE_MODE}"
 
     echo "mode=$mode"
     echo "enabled=$DDOS_ENABLED"
