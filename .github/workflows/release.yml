@@ -716,6 +716,21 @@ jobs:
              # Only after the per-file check above confirms coverage exists:
              sha256sum -c SHA256SUMS --ignore-missing
 
+          2b. Verify the RELEASE POPULATION is complete (not just your file):
+
+             # v1.229.4 published a SHA256SUMS listing nftban-core-linux-amd64 while that
+             # file was absent from the release. --ignore-missing skips absent entries, so
+             # the command above reports success for a release that is missing an artifact
+             # it claims to cover. Coverage of YOUR file is not completeness of the RELEASE.
+             #
+             # This lists every file SHA256SUMS claims but that you do not have. If you
+             # downloaded the whole release and any line appears, the release is incomplete:
+
+             while read -r _ f; do [ -e "$f" ] || echo "MISSING FROM RELEASE: $f"; done < SHA256SUMS
+
+             # No output = every claimed artifact is present.
+             # Any output = do not treat this release as complete; report it.
+
           3. Install package:
 
              # Rocky / Alma / RHEL
@@ -1559,10 +1574,84 @@ jobs:
 
           cd /tmp/release-verify
 
+          # ⛔ The publisher reads the SAME declaration the verifier used. Deriving these
+          #    names from whatever happens to be on disk would let the upload set be
+          #    defined by reality instead of by declaration — the tautology every other
+          #    gate in this job exists to avoid.
+          DECL="$GITHUB_WORKSPACE/scripts/ci/data/slsa-subjects.tsv"
+          if [ ! -f "$DECL" ]; then
+            echo "::error title=Publisher declaration missing::$DECL is absent; the required publication population cannot be established."
+            exit 1
+          fi
+          SLSA_BINARY="$(awk -F'\t' '$1=="subject"{print $2; exit}' "$DECL")"
+          SLSA_PROVENANCE="$(awk -F'\t' '$1=="subject"{print $3; exit}' "$DECL")"
+          if [ -z "$SLSA_BINARY" ] || [ -z "$SLSA_PROVENANCE" ]; then
+            echo "::error title=Publisher declaration invalid::no subject row with a binary and provenance in $DECL"
+            exit 1
+          fi
+          echo "declared provenance-bearing subject: $SLSA_BINARY (+ $SLSA_PROVENANCE)"
+
+          # ---- v1.229.5: THE SOLE PUBLISHER MUST ACTUALLY UPLOAD WHAT IT VERIFIED -------
+          # v1.229.4 shipped WITHOUT nftban-core and its provenance. R2 disabled the
+          # third-party builder's upload (correctly), but slsa-go-releaser.yml also held
+          # OUR OWN "Upload to GitHub Release" step, and deleting the file removed both.
+          # The binary was built, provenance-verified, witnessed and checksummed — and
+          # then never uploaded, because nothing was left that could upload it.
+          #
+          #     ONE_PUBLISHER held. COMPLETE_PUBLISHED_POPULATION did not.
+          #
+          # ⛔ Uniqueness of the publishing authority says nothing about completeness of
+          #    its output. These are two invariants, and only the first was proven.
+          echo "Uploading provenance-bearing artifacts..."
+          for f in "${SLSA_BINARY}" "${SLSA_PROVENANCE}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error title=Publisher input missing::${f} was verified earlier in this job but is not present at upload time. VERIFIED IS NOT PUBLISHED."
+              exit 1
+            fi
+            gh release upload "$VERSION" "$f" --clobber -R "$GITHUB_REPOSITORY"
+          done
+
           # Upload final SHA256SUMS (computed from downloaded assets)
           echo "Uploading SHA256SUMS..."
           gh release upload "$VERSION" SHA256SUMS --clobber \
             -R "$GITHUB_REPOSITORY"
+
+          # ---- FINAL PUBLISHED-POPULATION CHECK (must precede publication) -------------
+          # ⛔ Every gate before this one reasoned about files on the RUNNER. This is the
+          #    only assertion about what a USER can actually obtain. SHA256SUMS is the
+          #    public claim, so anything it lists must exist as a published asset — that
+          #    is exactly what v1.229.4 violated, and it violated it while every earlier
+          #    gate passed legitimately.
+          #
+          #    VERIFIED_RELEASE_POPULATION == PUBLISHED_RELEASE_POPULATION
+          echo "=== FINAL: verified population == published population ==="
+          gh release view "$VERSION" -R "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' | sort > /tmp/published-assets.txt
+          echo "--- published assets ---"; cat /tmp/published-assets.txt
+
+          MISSING=0
+          # (a) everything the PUBLIC checksum file claims must be obtainable
+          while IFS= read -r claimed; do
+            [ -n "$claimed" ] || continue
+            if ! grep -qxF "$claimed" /tmp/published-assets.txt; then
+              echo "::error title=Published population incomplete::SHA256SUMS lists '${claimed}' but it is NOT a published asset. A CHECKSUM FOR AN UNOBTAINABLE FILE IS A FALSE CLAIM."
+              MISSING=$((MISSING+1))
+            fi
+          done < <(awk '{print $2}' SHA256SUMS | sed 's/^\*//')
+
+          # (b) declared provenance-bearing subjects must ship WITH their provenance
+          for req in "${SLSA_BINARY}" "${SLSA_PROVENANCE}"; do
+            if ! grep -qxF "$req" /tmp/published-assets.txt; then
+              echo "::error title=Published population incomplete::Declared subject '${req}' was verified in this job but is NOT a published asset. VERIFIED IS NOT PUBLISHED."
+              MISSING=$((MISSING+1))
+            fi
+          done
+
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error title=Publication blocked::${MISSING} required artifact(s) absent from the release. ⛔ The release stays a DRAFT — an incomplete population is not published."
+            exit 1
+          fi
+          echo "OK: every checksummed and declared artifact is present in the release"
 
           # Publish: remove draft flag
           echo "Publishing release (draft=false)..."
