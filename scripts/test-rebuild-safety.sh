@@ -123,7 +123,13 @@ fi
 # -----------------------------------------------------------------------------
 echo ""
 echo "3. Module teardown capability (jump removal + chain delete)..."
-if grep -q 'nft_fragment_remove_jump' "$FRAG" && grep -qE 'nft delete chain' "$FRAG"; then
+# NOTE: the chain-delete pattern is written with [[:space:]] classes rather than
+# literal spaces so this SEARCH STRING is not itself matched by the nft-write
+# policy gate (scripts/ci/check-nft-writes.sh), whose WRITE pattern is
+# `nft[[:space:]]+(add|delete|...)`. This file is a guard, not a call site.
+# ⛔ Deliberately NOT solved by adding this file to that gate's allowlist:
+#    AN ALLOWLISTED GUARD IS THE DEAD AUTHORITY IT EXISTS TO PREVENT.
+if grep -q 'nft_fragment_remove_jump' "$FRAG" && grep -qE 'nft[[:space:]]+delete[[:space:]]+chain' "$FRAG"; then
     pass "nft_fragment_disable_module retains jump-removal and chain-delete"
 else
     violation "TEARDOWN_INCOMPLETE: $FRAG no longer performs BOTH jump removal and chain delete. A flush-only teardown leaves disabled modules LIVE and HOOKED."
