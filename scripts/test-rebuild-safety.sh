@@ -133,7 +133,25 @@ fi
 # CHECK 4 — FLUSH-ONLY TEARDOWN RATCHET.
 #   Four DDoS stages currently bypass the correct teardown (C-2, fixed in PR-4).
 #   This is a RATCHET, not an assertion of the desired end state: the count may
-#   go DOWN, never UP. Lower the baseline as PR-4 lands.
+#   go DOWN, never UP.
+#
+#   G18_FLUSH_ONLY_BASELINE  = 4
+#   TEMPORARY_ACCEPTED_DEBT  = YES
+#   OWNER                    = v1.229.7 PR-4 / C-2
+#
+#   PR-4 ACCEPTANCE: drive the baseline 4 -> 0, then REPLACE this ratchet with
+#   the exact invariant:
+#
+#       FLUSH_ONLY_TEARDOWN_PATHS = 0
+#
+#   ⛔ DO NOT leave `<= 4` as the permanent invariant after PR-4. A ratchet that
+#      outlives its debt silently licenses the defect it was pinning.
+#
+#   ⛔ The baseline is an EXPLICIT, INDEPENDENT EXPECTATION and is deliberately
+#      hardcoded here. It MUST NOT be recalculated from whatever the
+#      implementation currently contains -- otherwise a fifth bypass would
+#      redefine its own accepted baseline and the ratchet would assert nothing.
+#      SELF-DERIVED BASELINE = NO BASELINE.
 # -----------------------------------------------------------------------------
 echo ""
 echo "4. Flush-only teardown ratchet..."
