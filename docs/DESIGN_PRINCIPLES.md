@@ -230,3 +230,85 @@ This document must be:
 - Enforced via CI gates
 - Embedded into validator assumptions
 - Linked from README and STATUS page
+
+---
+
+## Evidence Authority Principle — DESIGN → VERIFY → CONFIRM
+
+**Statement:** A claim about system behaviour is safe only when all three stages hold.
+
+```
+DESIGN    define the property and the expected system behaviour.
+VERIFY    provide falsifiable controls proving the implementation can DETECT violation
+          of that property.
+CONFIRM   observe the actual production/release path and prove the expected result
+          occurred in the environment where the claim applies.
+```
+
+```
+DESIGNED != VERIFIED
+VERIFIED != CONFIRMED
+
+SAFE CLAIM = DESIGNED + VERIFIED + CONFIRMED
+```
+
+### Enforcement vs confirmation
+
+```
+RELEASE GATE    = enforcement
+RELEASE WITNESS = confirmation
+
+A BLOCKING PROPERTY MUST BE VERIFIED BEFORE THE ACTION IT IS SUPPOSED TO BLOCK.
+POST-PUBLICATION WITNESS != PRE-PUBLICATION ENFORCEMENT
+```
+
+A required property that exists only as a post-hoc observation does not block anything. It
+will be observed after the action it was supposed to prevent has already occurred.
+
+### Subject populations are not stable across topology changes
+
+```
+IMPLEMENTATION LINE IDENTICAL != SUBJECT POPULATION IDENTICAL
+
+WHEN JOB TOPOLOGY / ARTIFACT FLOW CHANGES,
+DOWNSTREAM SUBJECT POPULATIONS MUST BE RE-EVALUATED
+— even if the consuming step is unchanged.
+```
+
+Diff-based review cannot catch this class: the consumer shows no change. It applies to any
+control whose input set is *ambient* (a directory, a glob, a workspace) rather than declared.
+
+### Authority uniqueness is not authority completeness
+
+```
+ONE AUTHORITY != COMPLETE AUTHORITY OUTPUT
+
+ONE_PUBLISHER
++ COMPLETE_PUBLISHED_POPULATION
+are SEPARATE required properties.
+```
+
+Proving that exactly one component may perform an action says nothing about whether it
+performed that action for every required subject.
+
+### Separation of authority
+
+```
+TWO HUMAN ACTORS is ONE IMPLEMENTATION of separation of authority.
+SEPARATION OF AUTHORITY does not inherently require two humans.
+```
+
+A protected immutable authority boundary provides the same or a stronger property, provided
+the change under review cannot modify the code that authorizes it. When replacing a human
+control with a machine one, the security property must be **proven equivalent before** the
+human step is removed — recorded as RETIRED + REPLACED_BY, never as REMOVED.
+
+### Human attention is not a security control
+
+```
+If a property matters for release safety, encode it as an
+EXECUTABLE, FALSIFIABLE, FAIL-CLOSED gate.
+```
+
+**Provenance of these rules:** each was derived from a measured defect in the v1.229.4–v1.229.6
+release train, not from theory. See `NFTBAN_ROADMAP/V1_229_6_RELEASE_CLOSURE.md`.
