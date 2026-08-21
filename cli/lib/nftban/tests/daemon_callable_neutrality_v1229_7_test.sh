@@ -122,6 +122,30 @@ for spec in "internal/ddos/module.go:nftban_ddos" "internal/portscan/module.go:n
     fi
 done
 
+# --- 3b. NON-OPERATOR LIFECYCLE ARMS MUST NOT REACH THE CLI ORCHESTRATORS ----
+# v1.229.7 PR-2a. `reload`/`restart` re-apply RUNTIME state; they are not
+# operator intent changes. Before this, `nftban ddos reload` called
+# nftban_ddos_{disable,enable}, which persist DDOS_ENABLED and restart nftband
+# -- and the firewall rebuild lane calls `nftban ddos reload`, so a rebuild
+# mutated durable config and restarted the daemon mid-rebuild.
+#   RELOAD != CONFIG MUTATION
+echo ""
+echo "3b. reload/restart arms use the neutral halves..."
+for spec in "cli/lib/nftban/cli/cmd_ddos.sh:nftban_ddos" \
+            "cli/lib/nftban/cli/cmd_portscan.sh:nftban_portscan"; do
+    rel="${spec%%:*}"; pre="${spec##*:}"; f="$ROOT/$rel"
+    if [[ ! -f "$f" ]]; then fail "SUBJECT_NOT_FOUND: $f"; continue; fi
+    # Subject = the reload/restart case arm only, bounded to its own ;; terminator.
+    arm="$(awk '/^ *reload\)|^ *reload\|restart\)/{inside=1} inside{print} inside&&/;;/{exit}' "$f")"
+    if [[ -z "$arm" ]]; then
+        fail "$rel reload/restart arm not found -- cannot assert what it calls"
+    elif grep -qE "${pre}_(enable|disable)\b" <<<"$arm"; then
+        fail "$rel reload/restart calls ${pre}_enable/${pre}_disable -- a reload must not write durable intent or restart the daemon"
+    else
+        ok "$rel reload/restart uses the neutral halves"
+    fi
+done
+
 # --- 4. Start() and Stop() each consume intent -----------------------------------
 # extract_go_fn <file> <signature-prefix> -- body of ONE Go method, bounded by its
 # own closing brace. Bounding is load-bearing: an earlier revision of this check

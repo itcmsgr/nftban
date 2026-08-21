@@ -460,6 +460,9 @@ nftban_portscan_apply() {
 nftban_portscan_enable() {
     nftban_portscan_apply || return 1
 
+    # v1.229.7 PR-2a: see nftban_ddos_enable -- same unbound-`mode` defect.
+    local mode="${_PORTSCAN_ACTIVE_MODE:-$(_nftban_portscan_detect_mode)}"
+
     # Step 3: Persist PORTSCAN_ENABLED=true ONLY after nft rules succeed.
     # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
     nftban_module_set_enabled portscan true || return 1

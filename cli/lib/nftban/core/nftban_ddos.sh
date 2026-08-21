@@ -325,6 +325,13 @@ nftban_ddos_enable() {
     _nftban_ddos_load_config
     nftban_ddos_apply || return 1
 
+    # v1.229.7 PR-2a: `mode` is local to nftban_ddos_apply, so the success
+    # banner below referenced an UNBOUND variable. Under `set -Eeuo pipefail`
+    # (:41) that is fatal -- the command aborted AFTER persisting intent and
+    # AFTER restarting nftband, returning non-zero to its caller.
+    local mode
+    mode="$(_nftban_ddos_detect_mode)"
+
     # Step 3: Persist DDOS_ENABLED=true ONLY after nft rules succeed.
     # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
     nftban_module_set_enabled ddos true || return 1
