@@ -960,8 +960,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # ⛔ WORKSPACE PRECONDITION. This job's claim-bearing steps READ repo-resident
+          #    declarations, so a checkout that omits them leaves the step unable to run at
+          #    all. The v1.229.4 first tag attempt failed here — unpublished — because the
+          #    workspace contained only VERSION:
+          #        Verify SLSA Provenance -> scripts/ci/data/slsa-subjects.tsv
+          #        PR-D binary witness    -> scripts/ci/data/release-binary-witness-subjects.tsv
+          #        Gate 3 SHA256SUMS      -> scripts/ci/data/release-binary-witness-subjects.tsv
+          #    STEP LOGIC VALID != STEP INPUT REACHABLE. Each declaration was correct; none
+          #    was in the workspace, and no PR could observe it because this job only runs
+          #    on a tag.
+          #
+          #    ⛔ Deliberately EXPLICIT rather than a full checkout. This job downloads the
+          #    PUBLISHED assets and verifies those; the narrower its view of the repository,
+          #    the less it can accidentally verify against a source tree instead of against
+          #    what actually shipped. Adding a repo-resident input to this job REQUIRES
+          #    adding it here — check-verify-release-workspace.sh fails the build otherwise.
           sparse-checkout: |
             VERSION
+            scripts/ci/data/slsa-subjects.tsv
+            scripts/ci/data/release-binary-witness-subjects.tsv
           sparse-checkout-cone-mode: false
 
       # v1.221.1: resolve REF/VER in THIS job (job-scoped env from create-release
