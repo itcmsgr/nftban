@@ -1,3 +1,21 @@
+// =============================================================================
+// NFTBan v1.229.7 — Structural UNKNOWN propagation & plan-record contract tests
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// meta:name="mode-plan-unknown-test"
+// meta:type="test"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-08-21"
+// meta:description="v1.229.7 PR-3A: negative controls at the semantic boundary for StructuralUnknown (U-N1..U-N4, U-P1..U-P4) and the plan-record consumer contract (V1..V6). Asserts that an unknown structural axis never collapses to PASS or to a top-level PROTECTED verdict, that an unrecognised StructuralState fails closed, that cross-mode drift is diagnosed as unexpected PRESENT objects rather than as absence, and that a plan record is usable only when it is well-formed, owned by the module, non-contradictory with explicit operator intent, and bound to the CURRENT convergence generation."
+// meta:inventory.files="internal/validator/mode_plan_unknown_v1229_7_test.go"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none (ConfigDir and RunDir are redirected to t.TempDir())"
+// =============================================================================
+
 package validator
 
 import (
