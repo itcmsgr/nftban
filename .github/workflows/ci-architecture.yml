@@ -250,6 +250,17 @@ jobs:
       - name: Check producer signal binding (v1.229.4 VAF-0, BLOCKING)
         run: ./scripts/ci/check-producer-signal-binding.sh
 
+      # v1.229.4. verify-release uses a NON-CONE SPARSE CHECKOUT, so its workspace holds
+      # only what it lists. Three claim-bearing steps read repo-resident declarations; the
+      # first v1.229.4 tag attempt failed (unpublished) because none were checked out.
+      # ⛔ STEP LOGIC VALID != STEP INPUT REACHABLE. The step-logic controls build their own
+      # fixtures, so the declaration always exists for them and they cannot fail for the
+      # reason production did: FIXTURE PROVIDES DECLARATION != JOB PROVIDES DECLARATION.
+      # This job only runs on a tag, so without this check the mismatch is unobservable
+      # until a release is already in flight.
+      - name: Check verify-release workspace precondition (BLOCKING)
+        run: ./scripts/ci/check-verify-release-workspace.sh
+
       # v1.229.3 P1-2. The MISSING DIRECTION. The retention authority already checks
       # that what it declares is coherent; nothing checked that what the product
       # WRITES is declared, so botguard.log and decisions.log were written for
