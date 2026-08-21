@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.5] - 2026-08-21 — the release must publish everything it verified
+
+v1.229.4 published thirteen artifacts where the previous release published fifteen.
+`nftban-core-linux-amd64` and its provenance were absent, and the published `SHA256SUMS`
+listed the binary anyway — a checksum for a file nobody could obtain.
+
+The binary was built, its provenance was verified, a binary-mode vulnerability witness
+scanned it, and it was checksummed. It was never uploaded. v1.229.4 moved the SLSA builder
+into the release workflow and disabled the third-party upload capability, but the workflow
+it replaced also contained the repository's own upload step, and removing the file removed
+both. Once the third-party path was off, nothing was left that could publish the binary.
+
+    ONE_PUBLISHER held. COMPLETE_PUBLISHED_POPULATION did not.
+
+Every gate passed honestly. All of them reason about files on the build runner, where the
+binary was present; none of them looks at the release.
+
+Three changes. The publisher now uploads the declared subject and its provenance, taking
+both names from the same declaration the verifier reads. A final population check runs
+while the release is still a draft and blocks publication: every file `SHA256SUMS` claims,
+and every declared subject, must be present as a published asset. And `VERIFY.txt` gains a
+release-completeness step, because `sha256sum -c SHA256SUMS --ignore-missing` reports
+success on the v1.229.4 assets — it skips entries for files that are absent, which is
+exactly the case it needed to catch.
+
+v1.229.4 remains published and unmodified. Its assets are not being changed, so anyone who
+already downloaded that release sees the same bytes; the correction ships here instead.
+
 ## [v1.229.4] - 2026-08-21 — what a green check was allowed to mean
 
 One theme. A check that reports success is making a claim, and several claims in the
