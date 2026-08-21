@@ -593,10 +593,14 @@ nftban_cmd_portscan() {
             echo ""
             # Disable + re-enable to re-read config and rebuild nft chains
             # v1.40.0: Also fixes wrong jump rule position
-            if nftban_portscan_disable 2>/dev/null; then
+            # v1.229.7 PR-2a: RELOAD != CONFIG MUTATION -- neutral halves only.
+            # Not reached from the firewall lane today (unlike ddos reload), but
+            # the semantics are identical: a reload re-applies runtime state and
+            # must not rewrite operator intent or restart the daemon.
+            if nftban_portscan_teardown 2>/dev/null; then
                 echo ""
             fi
-            nftban_portscan_enable
+            nftban_portscan_apply
             echo ""
             echo "Port scan detection reloaded successfully"
             ;;

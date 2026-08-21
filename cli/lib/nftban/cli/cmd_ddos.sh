@@ -382,8 +382,17 @@ nftban_cmd_ddos() {
             # v1.34.0: Reload DDoS rules — re-reads config, strips SSH port,
             # flushes raw table before re-adding (no duplicates)
             echo "Reloading DDoS protection rules..."
-            nftban_ddos_disable 2>/dev/null || true
-            nftban_ddos_enable
+            # v1.229.7 PR-2a: RELOAD != CONFIG MUTATION.
+            # This arm previously called the CLI orchestrators, which since PR-2
+            # persist DDOS_ENABLED via nftban_module_set_enabled and run
+            # `systemctl restart nftband`. `nftban ddos reload` is invoked by the
+            # firewall lane (cmd_firewall.sh:2234, :3580, :3924), so a rebuild
+            # transiently persisted DDOS_ENABLED="false", then "true", and
+            # restarted the daemon mid-rebuild -- violating PR-2's own contract:
+            # ONLY EXPLICIT OPERATOR ACTIONS MAY WRITE DURABLE INTENT.
+            # Reload is a RUNTIME re-application, so it uses the neutral halves.
+            nftban_ddos_teardown 2>/dev/null || true
+            nftban_ddos_apply
             ;;
 
         status)
