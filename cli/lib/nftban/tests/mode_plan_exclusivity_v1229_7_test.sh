@@ -237,10 +237,34 @@ else
         body="$(awk -v fn="$fn" '$0 ~ "^"fn"\\(\\) \\{"{i=1;next} i&&/^\}/{exit} i{print}' "$FW")"
         if [[ -z "$body" ]]; then
             fail "convergence root $fn NOT FOUND — cannot prove it advances the binding"
-        elif grep -q "nftban_plan_generation_bump" <<<"$body"; then
-            ok "$fn bumps the convergence generation"
-        else
+            continue
+        fi
+        if ! grep -q "nftban_plan_generation_bump" <<<"$body"; then
             fail "$fn converges WITHOUT bumping the generation — a superseded plan would still read as current"
+            continue
+        fi
+        # ⛔ ORDERING. The bump must land BEFORE the modules re-resolve, or each
+        # module publishes at generation G and the root then advances to G+1 --
+        # instantly staling a plan that had JUST been correctly resolved, and
+        # reporting UNKNOWN immediately after a successful convergence.
+        bump_at="$(grep -n "nftban_plan_generation_bump" <<<"$body" | head -1 | cut -d: -f1)"
+        conv_at="$(grep -nE "nftban (ddos|portscan) reload" <<<"$body" | head -1 | cut -d: -f1)"
+        if [[ -n "$conv_at" && -n "$bump_at" && "$bump_at" -ge "$conv_at" ]]; then
+            fail "$fn bumps the generation AFTER converging a module (line $bump_at >= $conv_at) — it would stale the plan it just published"
+        else
+            ok "$fn bumps before it converges (bump@$bump_at, first convergence@${conv_at:-none})"
+        fi
+        # ⛔ A root that advances the binding must converge BOTH modules, or
+        # intentionally leave them stale. Converging only one is the silent case
+        # the owner named: generation advances, one module quietly keeps an old
+        # plan while the other is refreshed.
+        missing=""
+        grep -q "nftban ddos reload"     <<<"$body" || missing="$missing ddos"
+        grep -q "nftban portscan reload" <<<"$body" || missing="$missing portscan"
+        if [[ -n "$missing" ]]; then
+            fail "$fn advances the generation but does not converge:$missing — an old plan would survive a render it does not describe"
+        else
+            ok "$fn converges both module plans it invalidates"
         fi
     done
     # A convergence path must never rewrite durable operator intent. `enable`
@@ -255,6 +279,39 @@ else
         ok "$(basename "$FW") drives modules through reload only"
     fi
 fi
+
+echo ""
+echo "10. the binding has exactly one writer topology..."
+# (a) no bump may exist outside the three declared convergence roots -- an
+#     unaccounted bump advances the binding with nothing converging behind it,
+#     turning every plan UNKNOWN for no reason.
+bump_sites="$(grep -rlE "^[^#]*nftban_plan_generation_bump" "$ROOT/cli/lib/nftban" 2>/dev/null \
+              | grep -v "/tests/" | grep -v "module_authority.sh" | sort)"
+expected="$ROOT/cli/lib/nftban/cli/cmd_firewall.sh"
+if [[ "$bump_sites" == "$expected" ]]; then
+    ok "the generation is bumped only from the firewall convergence roots"
+else
+    fail "unexpected generation-bump site(s): ${bump_sites:-none} (expected only cmd_firewall.sh)"
+fi
+# (b) the record may be written ONLY from the module's resolve root. A writer
+#     anywhere else could stamp the CURRENT generation onto a plan nobody
+#     resolved -- a forged "current" witness.
+#       STAMPING MUST IMPLY RESOLVING.
+for mod in ddos portscan; do
+    src="$ROOT/cli/lib/nftban/core/nftban_${mod}.sh"
+    wln="$(grep -n "module-plan-${mod}.env" "$src" | head -1 | cut -d: -f1)"
+    if [[ -z "$wln" ]]; then
+        fail "$mod publishes no plan record — the Go validator would have nothing to read"
+        continue
+    fi
+    owner_fn="$(awk -v L="$wln" 'NR<=L && /^nftban_[a-z_]+\(\) \{/{f=$1} END{print f}' "$src")"
+    owner_fn="${owner_fn%%(*}"
+    if [[ "$owner_fn" == "nftban_${mod}_reconcile" ]]; then
+        ok "$mod plan record is written only by its resolve root"
+    else
+        fail "$mod plan record is written by '${owner_fn:-unknown}', not nftban_${mod}_reconcile — STAMPING MUST IMPLY RESOLVING"
+    fi
+done
 
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""
