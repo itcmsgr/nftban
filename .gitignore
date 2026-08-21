@@ -113,6 +113,17 @@ offline/yq_linux_amd64
 # ⛔ THIS IS THE PROVEN CAUSE OF THE `+dirty` BUILD STAMP. CI runs scripts/ci/*.py
 # (test-authority.py, privacy-scan.py, ...) BEFORE the release build. Python writes
 # __pycache__/, `git status --porcelain` reports it as untracked, Go's VCS stamper reads
+
+# v1.229.6: the SLSA reusable builder runs `go mod vendor` in the project checkout
+# immediately before compiling (builder_go_slsa3.yml@v2.1.0, job "build", step
+# "Download dependencies"). That materializes vendor/ as an untracked directory, git
+# reports the worktree as dirty, and Go's VCS stamper records vcs.modified=true — which
+# is why every SLSA-built nftban-core has shipped +dirty (v1.229.3, v1.229.5) while our
+# own build path, which never vendors, has not.
+#   MEASURED: an untracked vendor/ produces exactly one dirty path in this repository.
+# ⛔ Scoped to that measured producer. This is NOT a general gitignore cleanup, and it is
+#    a DIFFERENT cause from the __pycache__ entry above — same shape, separate producer.
+vendor/
 # any unclean tree as dirty, and both shipped binaries were stamped +dirty.
 # MEASURED on the release path (run 32292166763):
 #     DIRTY_PATH_COUNT=1  ->  ?? scripts/ci/__pycache__/

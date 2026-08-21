@@ -9,6 +9,7 @@ b1_text_ux_v1872_test	cli/lib/nftban/tests/b1_text_ux_v1872_test.sh	cli	test	ban
 b1b_banner_compact_v1873_test	cli/lib/nftban/tests/b1b_banner_compact_v1873_test.sh	cli	test	banner	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 b2_badbot_aibot_v188_test	cli/lib/nftban/tests/b2_badbot_aibot_v188_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 banner_nobanner_v153_test	cli/lib/nftban/tests/banner_nobanner_v153_test.sh	cli	test	banner	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+binary_metadata_gate_v1229_6_test	cli/lib/nftban/tests/binary_metadata_gate_v1229_6_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 binary_witness_v1229_4_test	cli/lib/nftban/tests/binary_witness_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 blacklist_flush_manual_truth_v218_10_test	cli/lib/nftban/tests/blacklist_flush_manual_truth_v218_10_test.sh	blacklist	test	blacklist-flush	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 blacklist_refresh_no_failopen_v192_test	cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test.sh	blacklist	test	blacklist-refresh-atomicity	ROOT_LAB	lab-manual	false	true	false	false	true	false			
