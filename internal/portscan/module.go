@@ -355,13 +355,13 @@ func (m *Module) detectMode() {
 
 // enable enables portscan detection
 func (m *Module) enable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_apply", "_", getPortscanScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_reconcile", "_", getPortscanScript())
 	return cmd.Run()
 }
 
 // disable disables portscan detection
 func (m *Module) disable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_teardown", "_", getPortscanScript())
+	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_reconcile", "_", getPortscanScript())
 	return cmd.Run()
 }
 

@@ -25,6 +25,16 @@
 # =============================================================================
 
 set -Eeuo pipefail
+
+# v1.229.7 PR-3A: the apply/teardown halves consume a RESOLVED MODULE PLAN from
+# nftban_module_resolve_plan (lib/module_authority.sh). The daemon sources this
+# file standalone (`bash -c 'source "$1" && nftban_portscan_apply'`), so the authority
+# must be guard-sourced here rather than assumed present.
+# shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+if ! declare -F nftban_module_resolve_plan >/dev/null 2>&1 && \
+   [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+fi
 IFS=$'\n\t'
 umask 027
 
@@ -379,6 +389,76 @@ nftban_portscan_init() {
 # =============================================================================
 
 # Enable portscan detection
+# -----------------------------------------------------------------------------
+# nftban_portscan_reconcile -- THE TRANSACTION ROOT. v1.229.7 PR-3A.
+#
+# Resolves the module plan EXACTLY ONCE, then dispatches. Every root calls this:
+# CLI enable/disable, daemon Start, firewall reload/rebuild. The adapters below
+# are pure CONSUMERS and refuse to run without a supplied plan.
+#
+#   ONE operator intent · ONE mode resolution · ONE effective mode
+#   ONE reconciliation path · ZERO cross-mode full-pipeline calls
+#
+# ⛔ inactive and unknown are DIFFERENT and must stay different:
+#     inactive = a VALID resolved state   -> teardown higher tier, success
+#     unknown  = an INVALID/unresolved contract state -> REFUSE ALL MUTATION
+#   Letting teardown read unknown as inactive would turn malformed intent into
+#   destructive cleanup. Base Layer-0 is unconditional either way.
+# -----------------------------------------------------------------------------
+nftban_portscan_reconcile() {
+    local _plan
+    # A root OPENS a transaction: clear any inherited plan first, so a nested
+    # root cannot silently reuse an outer transaction's identity.
+    unset NFTBAN_PLAN_TXN_ID NFTBAN_PLAN_RESOLUTION_ID NFTBAN_PLAN_MODULE
+    _plan="$(nftban_module_resolve_plan portscan)" || return 1
+    eval "$_plan"
+    NFTBAN_PLAN_TXN_ID="$NFTBAN_PLAN_RESOLUTION_ID"
+    export NFTBAN_PLAN_TXN_ID
+
+    # Publish the plan as a TRANSIENT DERIVED OBSERVATION for cross-process
+    # consumers (the Go validator cannot resolve `auto` and must not become a
+    # second resolver). /run is tmpfiles-declared and does not survive reboot --
+    # deliberately, because a resolution is valid for ONE transaction.
+    # ⛔ DERIVED EVIDENCE, NOT DURABLE CONFIGURATION. MODE=auto stays the
+    #    operator's intent; this record only says what it resolved to, and when.
+    if [[ -d /run/nftban ]]; then
+        local _pf="/run/nftban/module-plan-portscan.env" _tmp
+        _tmp="${_pf}.$$"
+        {
+            printf 'NFTBAN_PLAN_MODULE=%s\n'           "$NFTBAN_PLAN_MODULE"
+            printf 'NFTBAN_PLAN_ENABLED=%s\n'          "$NFTBAN_PLAN_ENABLED"
+            printf 'NFTBAN_PLAN_CONFIGURED_MODE=%s\n'  "$NFTBAN_PLAN_CONFIGURED_MODE"
+            printf 'NFTBAN_PLAN_EFFECTIVE_MODE=%s\n'   "$NFTBAN_PLAN_EFFECTIVE_MODE"
+            printf 'NFTBAN_PLAN_RESOLUTION_ID=%s\n'    "$NFTBAN_PLAN_RESOLUTION_ID"
+            printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$NFTBAN_PLAN_RESOLVED_AT"
+            printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$NFTBAN_PLAN_RESOLUTION_BASIS"
+            printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$(nftban_plan_generation_current)"
+        } > "$_tmp" 2>/dev/null && { chmod 0640 "$_tmp" 2>/dev/null || true; mv -f "$_tmp" "$_pf" 2>/dev/null || rm -f "$_tmp"; }
+    fi
+    export NFTBAN_PLAN_MODULE NFTBAN_PLAN_ENABLED NFTBAN_PLAN_CONFIGURED_MODE \
+           NFTBAN_PLAN_EFFECTIVE_MODE NFTBAN_PLAN_RESOLUTION_ID \
+           NFTBAN_PLAN_RESOLVED_AT NFTBAN_PLAN_RESOLUTION_BASIS
+
+    case "$NFTBAN_PLAN_EFFECTIVE_MODE" in
+        unknown)
+            echo "  ERROR: effective mode is UNKNOWN (${NFTBAN_PLAN_RESOLUTION_BASIS:-no basis})." >&2
+            echo "         Refusing ALL higher-tier portscan mutation — apply AND teardown." >&2
+            echo "         Base Layer-0 protection is unaffected." >&2
+            return 1
+            ;;
+        inactive)
+            nftban_portscan_teardown
+            ;;
+        classic|suricata)
+            nftban_portscan_apply
+            ;;
+        *)
+            echo "  ERROR: unhandled effective mode '${NFTBAN_PLAN_EFFECTIVE_MODE}'." >&2
+            return 1
+            ;;
+    esac
+}
+
 nftban_portscan_apply() {
     # Load config and modules even if currently disabled — enable needs to work
     # when portscan is off (that's the whole point of enable)
@@ -386,8 +466,46 @@ nftban_portscan_apply() {
     nftban_portscan_init_dirs
     _nftban_portscan_load_modules
 
-    # Detect mode (init may have returned early if disabled, leaving mode unset)
-    local mode="${_PORTSCAN_ACTIVE_MODE:-$(_nftban_portscan_detect_mode)}"
+    # v1.229.7 PR-3A: CONSUME THE PLAN. Same contract as ddos -- identical at the
+    # authority layer, separate adapters below. Do NOT rediscover mode from disk.
+    local mode
+    if [[ "${NFTBAN_PLAN_MODULE:-}" == "portscan" && -n "${NFTBAN_PLAN_EFFECTIVE_MODE:-}" ]]; then
+        # ⛔ PLAN-N2: the plan must belong to THIS transaction. Missing and mixed
+        # provenance are different failures and both refuse.
+        nftban_module_plan_provenance_ok portscan || {
+            echo "  ERROR: plan provenance check failed — refusing to apply." >&2
+            return 1
+        }
+        mode="$NFTBAN_PLAN_EFFECTIVE_MODE"
+        _nftban_portscan_log "INFO" "consuming plan ${NFTBAN_PLAN_RESOLUTION_ID:-<no-id>} (${NFTBAN_PLAN_RESOLUTION_BASIS:-})"
+    else
+        # ⛔ NO PLAN AT A CONSUMER = CONTRACT FAILURE.
+        # This deliberately does NOT fall back to resolving one. A downstream
+        # helper that resolves "when convenient" is how "resolve once" degrades
+        # back into "resolve wherever" -- and it would make PLAN-N1 bypassable,
+        # because a forgotten plan parameter would silently mint a second
+        # authority instead of failing.
+        #   TRANSACTION ROOT   may resolve exactly once
+        #   DOWNSTREAM CONSUMER must RECEIVE the plan
+        echo "  ERROR: no resolved module plan supplied — refusing to apply." >&2
+        echo "         Call nftban_portscan_reconcile (the transaction root) instead." >&2
+        _nftban_portscan_log "ERROR" "refusing apply: no plan supplied (consumer must receive a plan)"
+        return 1
+    fi
+    _PORTSCAN_ACTIVE_MODE="$mode"
+
+    # ⛔ UNKNOWN stops the higher-tier transaction -- no fallback, no teardown,
+    # no fabricated plan. Base Layer-0 is unaffected.
+    if [[ "$mode" == "unknown" ]]; then
+        echo "  ERROR: effective mode is UNKNOWN (${NFTBAN_PLAN_RESOLUTION_BASIS:-no basis}) — refusing to apply higher-tier portscan." >&2
+        echo "         Base Layer-0 protection is unaffected." >&2
+        _nftban_portscan_log "ERROR" "refusing apply: effective_mode=unknown basis=${NFTBAN_PLAN_RESOLUTION_BASIS:-}"
+        return 1
+    fi
+    if [[ "$mode" == "inactive" ]]; then
+        _nftban_portscan_log "INFO" "module disabled — no higher-tier apply"
+        return 0
+    fi
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -458,7 +576,7 @@ nftban_portscan_apply() {
 # service lifecycle action. NOT daemon-callable.
 # -----------------------------------------------------------------------------
 nftban_portscan_enable() {
-    nftban_portscan_apply || return 1
+    nftban_portscan_reconcile || return 1
 
     # v1.229.7 PR-2a: see nftban_ddos_enable -- same unbound-`mode` defect.
     local mode="${_PORTSCAN_ACTIVE_MODE:-$(_nftban_portscan_detect_mode)}"
@@ -540,7 +658,7 @@ nftban_portscan_teardown() {
 nftban_portscan_disable() {
     nftban_module_set_enabled portscan false || return 1
     PORTSCAN_ENABLED="false"
-    nftban_portscan_teardown
+    nftban_portscan_reconcile
 }
 
 # =============================================================================
