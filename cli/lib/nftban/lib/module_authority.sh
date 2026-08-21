@@ -254,6 +254,9 @@ nftban_module_resolve_plan() {
 # ⛔ This is a binding, not an authority. The generation never selects a mode.
 # -----------------------------------------------------------------------------
 NFTBAN_PLAN_GENERATION_FILE="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
+# v1.229.7 PR-4: the transient plan-record directory, as a variable so the read
+# contract is testable without rewriting source text. Mirrors validator.RunDir.
+NFTBAN_PLAN_RECORD_DIR="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
 
 nftban_plan_generation_current() {
     local g=""
@@ -276,6 +279,111 @@ nftban_plan_generation_bump() {
     printf '%s\n' "$next" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
     chmod 0644 "$tmp" 2>/dev/null || true
     mv -f "$tmp" "$NFTBAN_PLAN_GENERATION_FILE" 2>/dev/null || rm -f "$tmp"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# nftban_module_report_modes <module>
+#
+# v1.229.7 PR-4. THE READ-PATH MODE CONTRACT.
+#
+#     STATUS MUST NOT RESOLVE AUTO.
+#     CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+#
+# Emits two of the three report axes (the third, observed runtime, is each
+# caller's own independent observation and is never derived here):
+#
+#     NFTBAN_REPORT_CONFIGURED_MODE  durable operator intent, VERBATIM --
+#                                    classic | suricata | auto | a legacy or
+#                                    invalid value exactly as configured
+#     NFTBAN_REPORT_EFFECTIVE_MODE   classic | suricata | inactive | unknown
+#     NFTBAN_REPORT_EFFECTIVE_BASIS  why effective_mode is what it is
+#
+# ⛔ This function NEVER:
+#      resolves `auto`                    (that is the transaction root's job)
+#      probes Suricata availability        (that is how the old detector guessed)
+#      infers effective_mode from observed kernel objects
+#      falls back from a broken/missing plan to the configured mode
+#      mutates anything
+#
+# ⛔ OBSERVED STATE != AUTHORITY TO RECONSTRUCT THE DECISION. A caller may report
+#    "classic objects are present"; it may NOT conclude "effective_mode=classic".
+#
+# ⛔ STATUS MUST NOT CLAIM EFFECT FRESHNESS FROM VALUE FRESHNESS. An explicit
+#    configured mode does not prove the currently effective transaction used it:
+#    with no current plan the answer is still `unknown`.
+#
+# One valid special case: a DISABLED module is `inactive`, because disabling
+# requires no choice between classic and Suricata. That is the existing
+# short-circuit, deliberately not broadened into another resolver.
+#
+# This mirrors internal/validator readEffectiveMode. The two implementations
+# must agree; a drift guard asserts the rule set is identical.
+# -----------------------------------------------------------------------------
+nftban_module_report_modes() {
+    local module="${1:-}" configured effective basis
+    case "$module" in
+        ddos|portscan) ;;
+        *) echo "nftban_module_report_modes: unknown module '${module}'" >&2; return 2 ;;
+    esac
+
+    # Same base + .local layering nftban_module_effective_enabled uses, so the
+    # reported intent is the intent that actually applies.
+    local mode_key base v
+    mode_key="$(_nftban_module_mode_var "$module")" || return 2
+    base="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/${module}/main.conf"
+    configured="auto"
+    v="$(_nftban_module_read_key "$base" "$mode_key")";        [[ -n "$v" ]] && configured="$v"
+    v="$(_nftban_module_read_key "${base}.local" "$mode_key")"; [[ -n "$v" ]] && configured="$v"
+
+    # DISABLED -> inactive. The one valid short-circuit.
+    if ! nftban_module_effective_enabled "$module"; then
+        effective="inactive"; basis="module_disabled"
+        printf 'NFTBAN_REPORT_CONFIGURED_MODE=%s
+' "$configured"
+        printf 'NFTBAN_REPORT_EFFECTIVE_MODE=%s
+'  "$effective"
+        printf 'NFTBAN_REPORT_EFFECTIVE_BASIS=%s
+' "$basis"
+        return 0
+    fi
+
+    local pf="${NFTBAN_PLAN_RECORD_DIR}/module-plan-${module}.env"
+    local p_module="" p_effective="" p_configured="" p_gen=""
+    if [[ -r "$pf" ]]; then
+        local line k v
+        while IFS= read -r line; do
+            k="${line%%=*}"; v="${line#*=}"
+            case "$k" in
+                NFTBAN_PLAN_MODULE)           p_module="$v" ;;
+                NFTBAN_PLAN_EFFECTIVE_MODE)   p_effective="$v" ;;
+                NFTBAN_PLAN_CONFIGURED_MODE)  p_configured="$v" ;;
+                NFTBAN_PLAN_BOUND_GENERATION) p_gen="$v" ;;
+            esac
+        done < "$pf"
+    fi
+
+    effective="unknown"; basis="no_current_plan"
+    if [[ -z "$p_module" ]]; then
+        basis="no_current_plan"
+    elif [[ "$p_module" != "$module" || -z "$p_configured" ]]          || [[ "$p_effective" != "classic" && "$p_effective" != "suricata" && "$p_effective" != "inactive" ]]; then
+        basis="plan_malformed"
+    elif [[ -z "$p_gen" || "$p_gen" != "$(nftban_plan_generation_current)" ]]; then
+        basis="plan_not_bound_to_current_convergence"
+    elif [[ "$p_configured" != "$configured" ]]; then
+        basis="plan_superseded_by_config_change"
+    elif [[ ( "$configured" == "classic" || "$configured" == "suricata" ) && "$p_effective" != "$configured" ]]; then
+        basis="plan_contradicts_explicit_intent"
+    else
+        effective="$p_effective"; basis="current_plan"
+    fi
+
+    printf 'NFTBAN_REPORT_CONFIGURED_MODE=%s
+' "$configured"
+    printf 'NFTBAN_REPORT_EFFECTIVE_MODE=%s
+'  "$effective"
+    printf 'NFTBAN_REPORT_EFFECTIVE_BASIS=%s
+' "$basis"
     return 0
 }
 
@@ -305,4 +413,4 @@ nftban_module_plan_provenance_ok() {
     return 0
 }
 
-export -f nftban_plan_generation_current nftban_plan_generation_bump _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok
+export -f nftban_module_report_modes nftban_plan_generation_current nftban_plan_generation_bump _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok

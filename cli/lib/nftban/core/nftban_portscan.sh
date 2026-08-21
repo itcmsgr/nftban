@@ -376,7 +376,13 @@ nftban_portscan_init() {
     _nftban_portscan_load_modules
 
     # Detect mode
-    _PORTSCAN_ACTIVE_MODE=$(_nftban_portscan_detect_mode)
+    # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT. This used the local detector,
+    # which resolves `auto` by probing Suricata availability -- a second,
+    # independent authority that could report a mode the system had not decided.
+    #   STATUS MUST NOT RESOLVE AUTO.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+    eval "$(nftban_module_report_modes portscan)"
+    _PORTSCAN_ACTIVE_MODE="${NFTBAN_REPORT_EFFECTIVE_MODE}"
 
     _nftban_portscan_log "INFO" "Portscan mode: ${_PORTSCAN_ACTIVE_MODE}"
 
@@ -421,8 +427,8 @@ nftban_portscan_reconcile() {
     # deliberately, because a resolution is valid for ONE transaction.
     # ⛔ DERIVED EVIDENCE, NOT DURABLE CONFIGURATION. MODE=auto stays the
     #    operator's intent; this record only says what it resolved to, and when.
-    if [[ -d /run/nftban ]]; then
-        local _pf="/run/nftban/module-plan-portscan.env" _tmp
+    if [[ -d "${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}" ]]; then
+        local _pf="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}/module-plan-portscan.env" _tmp
         _tmp="${_pf}.$$"
         {
             printf 'NFTBAN_PLAN_MODULE=%s\n'           "$NFTBAN_PLAN_MODULE"
@@ -733,7 +739,13 @@ _nftban_portscan_status_json() {
     local configured_mode="${PORTSCAN_MODE:-auto}"
 
     local detected_mode active_mode suricata_available=false
-    detected_mode=$(_nftban_portscan_detect_mode 2>/dev/null || echo "unknown")
+    # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT. This used the local detector,
+    # which resolves `auto` by probing Suricata availability -- a second,
+    # independent authority that could report a mode the system had not decided.
+    #   STATUS MUST NOT RESOLVE AUTO.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+    eval "$(nftban_module_report_modes portscan)"
+    detected_mode="${NFTBAN_REPORT_EFFECTIVE_MODE}"
     active_mode="${_PORTSCAN_ACTIVE_MODE:-$detected_mode}"
     if type -t _nftban_portscan_suricata_is_available &>/dev/null \
        && _nftban_portscan_suricata_is_available; then
@@ -828,7 +840,13 @@ nftban_portscan_status() {
 
     local configured_mode="${PORTSCAN_MODE:-auto}"
     local detected_mode
-    detected_mode=$(_nftban_portscan_detect_mode)
+    # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT. This used the local detector,
+    # which resolves `auto` by probing Suricata availability -- a second,
+    # independent authority that could report a mode the system had not decided.
+    #   STATUS MUST NOT RESOLVE AUTO.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION != OBSERVED RUNTIME
+    eval "$(nftban_module_report_modes portscan)"
+    detected_mode="${NFTBAN_REPORT_EFFECTIVE_MODE}"
     local active_mode="${_PORTSCAN_ACTIVE_MODE:-$detected_mode}"
 
     case "$active_mode" in
@@ -1209,7 +1227,15 @@ nftban_portscan_cli() {
             ;;
         mode)
             echo "Configured: ${PORTSCAN_MODE:-auto}"
-            echo "Active: ${_PORTSCAN_ACTIVE_MODE:-$(_nftban_portscan_detect_mode)}"
+            # ⛔ v1.229.7 PR-4 READ-PATH MODE CONTRACT — status must not resolve auto.
+            eval "$(nftban_module_report_modes portscan)"
+            echo "Configured: ${NFTBAN_REPORT_CONFIGURED_MODE}"
+            echo "Active:     ${NFTBAN_REPORT_EFFECTIVE_MODE}"
+            # `&& echo` alone would return non-zero when the condition is false,
+            # and this is the arm's last command -- under `set -e` that aborts.
+            if [[ "${NFTBAN_REPORT_EFFECTIVE_MODE}" == "unknown" ]]; then
+                echo "            (${NFTBAN_REPORT_EFFECTIVE_BASIS} — no authoritative decision to report)"
+            fi
             ;;
         help|--help|-h)
             echo "Usage: nftban portscan <command>"
