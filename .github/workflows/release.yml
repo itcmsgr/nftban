@@ -763,10 +763,26 @@ jobs:
         with:
           syft-version: v1.42.3
 
+      # ⛔ SBOM SUBJECT POPULATION == SHIPPED RELEASE ASSETS.
+      #    `path: .` scans the WHOLE WORKSPACE. Before v1.229.4 that happened to be
+      #    harmless: the SLSA builder lived in a separate workflow, so its artifacts
+      #    were never here. R2 made the builder a job of THIS workflow, and
+      #    "Download all artifacts" pulls every artifact into all-packages/ — including
+      #    slsa-builder-go-linux-amd64. The published v1.229.4 SBOM therefore inventoried
+      #    a BUILD TOOL as release content, and attributed a go1.23.1 stdlib to a release
+      #    built with 1.25.13:
+      #
+      #        v1.229.3   202 packages   0 slsa-builder refs   stdlib go1.25.12
+      #        v1.229.4   415 packages   1 slsa-builder ref    stdlib go1.23.1 + go1.25.13
+      #
+      #    ⛔ The defect is SUBJECT SELECTION, not the presence of a version string.
+      #       Filtering "go1.23.1" out afterwards, or excluding the builder by name, would
+      #       treat the symptom and leave the next build tool to reappear silently.
+      #       dist/packages/ is the assembled shipped payload — scan exactly that.
       - name: Generate SBOM (Software Bill of Materials)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          path: .
+          path: dist/packages
           format: spdx-json
           output-file: dist/packages/sbom.spdx.json
           upload-artifact: false
