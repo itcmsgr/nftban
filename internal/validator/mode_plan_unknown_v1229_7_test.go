@@ -482,3 +482,67 @@ func TestV8_ConfinementPrecedesTheRead(t *testing.T) {
 		t.Fatalf("V8 FAILED (positive): the legitimate ddos read no longer works (got %q)", got)
 	}
 }
+
+// V9 — IPv6 drift semantics (PR-4B, closes Pass A finding F-A2).
+//
+// The mode-aware drift detection checks BOTH families
+// (module_health.go: ChainExists("ip", ...) || ChainExists("ip6", ...)), but no
+// v1.229.7 control exercised v6 at all — the v6 half of "cross-mode drift is
+// detected" was in the code and unproven.
+//
+// Cross-mode drift confined to IPv6 is the realistic residue of a v4-only
+// teardown, so it is exactly the case worth proving.
+func TestV9_DriftDetectedInIPv6Only(t *testing.T) {
+	for _, fam := range []string{"ip", "ip6"} {
+		t.Run("classic chain present only in "+fam, func(t *testing.T) {
+			defer withPlanGen(t, "auto", "ddos", "auto", "suricata", "7", "7")()
+			doc := ParseRuleset(&NftRuleset{Nftables: []NftObject{
+				{Table: &NftTable{Family: "ip", Name: "nftban"}},
+				{Table: &NftTable{Family: "ip6", Name: "nftban"}},
+				{Chain: &NftChain{Family: fam, Table: "nftban", Name: "ddos_sanity"}},
+			}})
+			h := evaluateDDoS(doc)
+			if h.Structural != StructuralMissing || h.StructuralReason != ReasonDriftPresent {
+				t.Fatalf("V9 FAILED (%s): classic objects live under a suricata plan went undetected "+
+					"(structural=%q reason=%q)", fam, h.Structural, h.StructuralReason)
+			}
+		})
+	}
+	// Positive control: with NO classic chain in either family, suricata mode is
+	// healthy — so the arm cannot pass by flagging everything.
+	t.Run("neither family -> healthy", func(t *testing.T) {
+		defer withPlanGen(t, "auto", "ddos", "auto", "suricata", "7", "7")()
+		doc := ParseRuleset(&NftRuleset{Nftables: []NftObject{
+			{Table: &NftTable{Family: "ip", Name: "nftban"}},
+			{Table: &NftTable{Family: "ip6", Name: "nftban"}},
+		}})
+		if h := evaluateDDoS(doc); h.Structural != StructuralPresent {
+			t.Fatalf("V9 FAILED: suricata mode with no classic objects should be present, got %q", h.Structural)
+		}
+	})
+	// PortScan: same claim, its own adapter.
+	t.Run("portscan classic chain present only in ip6", func(t *testing.T) {
+		cfg, run := t.TempDir(), t.TempDir()
+		if err := os.MkdirAll(filepath.Join(cfg, "conf.d", "portscan"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(filepath.Join(cfg, "conf.d", "portscan", "main.conf"),
+			[]byte("PORTSCAN_ENABLED=true\nPORTSCAN_MODE=auto\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(run, "convergence-generation"), []byte("7\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(run, "module-plan-portscan.env"), []byte(
+			"NFTBAN_PLAN_MODULE=portscan\nNFTBAN_PLAN_CONFIGURED_MODE=auto\n"+
+				"NFTBAN_PLAN_EFFECTIVE_MODE=suricata\nNFTBAN_PLAN_BOUND_GENERATION=7\n"), 0o640)
+		oc, or := ConfigDir, RunDir
+		ConfigDir, RunDir = cfg, run
+		defer func() { ConfigDir, RunDir = oc, or }()
+		doc := ParseRuleset(&NftRuleset{Nftables: []NftObject{
+			{Table: &NftTable{Family: "ip", Name: "nftban"}},
+			{Table: &NftTable{Family: "ip6", Name: "nftban"}},
+			{Chain: &NftChain{Family: "ip6", Table: "nftban", Name: "portscan_detection"}},
+		}})
+		if h := evaluatePortscan(doc); h.Structural != StructuralMissing || h.StructuralReason != ReasonDriftPresent {
+			t.Fatalf("V9 FAILED (portscan/ip6): drift undetected (structural=%q reason=%q)",
+				h.Structural, h.StructuralReason)
+		}
+	})
+}

@@ -24,6 +24,7 @@ package validator
 import (
 	"context"
 	"encoding/json"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,7 @@ var RunDir = "/run/nftban"
 
 // modeUnknown is returned when the effective mode CANNOT be established.
 // It is never a mode the system runs in -- it is the refusal to guess one.
-const modeUnknown = "unknown"
+const modeUnknown = nftbanconf.ModeUnknown
 
 // DataDir is the base data directory (project NFTBAN_DATA_DIR). Resolved from the
 // environment with the project-canonical default; overridable for testing.
@@ -780,22 +781,6 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 // An absent file is generation 0 -- the coherent pre-convergence generation, not
 // an error -- so a host that has never converged still compares cleanly against
 // records stamped 0. ENOENT != ABSENCE OF MEANING.
-func currentConvergenceGeneration() string {
-	data, err := os.ReadFile(filepath.Join(RunDir, "convergence-generation"))
-	if err != nil {
-		return "0"
-	}
-	g := strings.TrimSpace(string(data))
-	for _, r := range g {
-		if r < '0' || r > '9' {
-			return "0"
-		}
-	}
-	if g == "" {
-		return "0"
-	}
-	return g
-}
 
 // readEffectiveMode resolves the effective mode WITHOUT ever resolving `auto`
 // itself. It is a READER of the transient plan record published by the shell
@@ -813,114 +798,20 @@ func currentConvergenceGeneration() string {
 // BROKEN CONTRACT, not evidence of absence, so it must not be treated as if no
 // record existed.
 func readEffectiveMode(module, localPath, basePath, key string) string {
-	configured := readConfiguredMode(localPath, basePath, key)
-	explicit := configured == "classic" || configured == "suricata"
-
-	// The record path is DERIVED FROM `module`, so constrain it to the closed set
-	// before it can reach the filesystem. Both current call sites pass literals;
-	// this is defence against a future one, and it is what makes the #nosec below
-	// a constraint rather than a promise.
-	//   A SUPPRESSION THAT ONLY ASSERTS SAFETY IS NOT A CONTROL.
-	switch module {
-	case "ddos", "portscan":
-	default:
-		return modeUnknown
-	}
-
-	// #nosec G304 -- module is constrained to the closed set immediately above and
-	// RunDir is a package-level path, so no part of this filename is attacker-derived.
-	data, err := os.ReadFile(filepath.Clean(filepath.Join(RunDir, "module-plan-"+module+".env")))
-	if err != nil {
-		// No record. An explicit mode is self-authoritative -- the plan is not
-		// needed to know what was asked for. `auto` (or any legacy value such
-		// as hybrid) is genuinely unresolved here.
-		if explicit {
-			return configured
-		}
-		return modeUnknown
-	}
-
-	var gotModule, effective, planConfigured, boundGen string
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_MODULE="); ok {
-			gotModule = v
-		}
-		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_EFFECTIVE_MODE="); ok {
-			effective = v
-		}
-		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_CONFIGURED_MODE="); ok {
-			planConfigured = v
-		}
-		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_BOUND_GENERATION="); ok {
-			boundGen = v
-		}
-	}
-
-	// MALFORMED: wrong module, or an effective_mode outside the closed set.
-	// `unknown` is itself a legitimate resolver output (legacy hybrid), and it
-	// is not a mode a verdict can be derived from either.
-	if gotModule != module || planConfigured == "" ||
-		(effective != "classic" && effective != "suricata" && effective != "inactive") {
-		return modeUnknown
-	}
-
-	// UNBOUND / STALE BY GENERATION: a record is usable only if it describes the
-	// convergence that is actually rendered.
-	//
-	//	A PLAN RECORD IS USABLE ONLY IF ITS BINDING IS CURRENT.
-	//
-	// Without this, a well-formed auto->classic record survives a later renderer
-	// that resolved auto->suricata, and the validator derives the WRONG
-	// expectation from a file that passes every other check. A record with no
-	// binding at all is not "probably fine" -- it is unverifiable.
-	if boundGen == "" || boundGen != currentConvergenceGeneration() {
-		return modeUnknown
-	}
-
-	// STALE: the record records the configured_mode it was resolved FROM. If the
-	// on-disk configured mode has changed since, this record describes a
-	// superseded transaction and is not current policy.
-	//   A STALE RECORD IS NOT THE CURRENT PLAN
-	if planConfigured != configured {
-		return modeUnknown
-	}
-
-	// CONTRADICTION: an explicit operator mode that the plan disagrees with.
-	// The plan may RESOLVE `auto`; it may never OVERRIDE an explicit intent.
-	if explicit && effective != configured {
-		return modeUnknown
-	}
-
-	return effective
+	// v1.229.7 PR-4B: DELEGATES to the single Go implementation in nftbanconf.
+	// This function previously carried its own copy of the rule set; the daemon
+	// then needed the same rules, and three copies of one contract is three
+	// chances to drift. localPath/basePath/key are retained for call-site
+	// compatibility -- the shared reader derives them from the module name.
+	mode, _ := nftbanconf.ReadEffectiveMode(module, ConfigDir, RunDir)
+	return mode
 }
 
-// readConfiguredMode returns the configured MODE for a module, applying the
-// same main.conf -> main.conf.local layering readConfigBool uses.
-//
-// v1.229.7 PR-3A. The structural expectation for a module is a FUNCTION OF ITS
-// EFFECTIVE MODE, not a fixed list of classic chain names. Before this,
-// evaluateDDoS demanded all four classic chains whenever DDOS_ENABLED=true,
-// with no regard for DDOS_MODE -- so a correctly configured Suricata host
-// reported StructuralMissing, and the effective-axis counters were suppressed
-// behind that verdict.
-//
-// ⛔ THE PLAN DEFINES EXPECTATION, NOT PROOF:
-//
-//	  expected = function(effective_mode)
-//	  observed = module-specific runtime witness
-//	  verdict  = compare(expected, observed)
-//	This must NOT become "plan says suricata -> healthy", which would be the
-//	same error as "classic_chain_exists -> healthy" wearing different clothes.
-func readConfiguredMode(localPath, basePath, key string) string {
-	if val := readKeyFromFile(filepath.Join(ConfigDir, localPath), key); val != "" {
-		return val
-	}
-	if val := readKeyFromFile(filepath.Join(ConfigDir, basePath), key); val != "" {
-		return val
-	}
-	return "auto"
-}
+// NOTE (v1.229.7 PR-4B): readConfiguredMode lived here and was removed when
+// readEffectiveMode began delegating to nftbanconf.ReadEffectiveMode, which owns
+// the base + .local layering for the MODE key. It was dead code, not a lost
+// capability -- staticcheck U1000 caught it. readKeyFromFile is retained: it
+// still has 7 other callers.
 
 func readConfigBool(localPath, basePath, key string) ConfigState {
 	// Try .local first

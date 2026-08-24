@@ -90,7 +90,11 @@ type Module struct {
 	mode          string // classic, suricata, hybrid, auto
 	enabled       bool
 	suricataAvail bool
-	scansDetected int64
+	// v1.229.7 PR-4B: which mode config was actually loaded, and why.
+	// Empty source means NONE was loaded (inactive or unknown).
+	modeConfigSource string
+	modeConfigBasis  string
+	scansDetected    int64
 
 	// IP tracking for ban decisions
 	ipTrackers map[string]*ipTracker
@@ -140,26 +144,69 @@ func (m *Module) loadConfig() {
 		m.parseMainConfig(string(data))
 	}
 
-	// 3. Determine which mode-specific config to load based on mode
-	modeConfigFile := "classic.conf"
-	if m.config.Mode == "suricata" || (m.config.Mode == "auto" && m.suricataAvail) {
-		modeConfigFile = "suricata.conf"
-	}
-
-	// 4. Load mode-specific config (classic.conf or suricata.conf)
-	modePath := filepath.Join(configDir, modeConfigFile)
-	if data, err := os.ReadFile(modePath); err == nil {
-		m.parseModeConfig(string(data))
-	}
-
-	// 5. Load mode-specific .local override
-	localModePath := filepath.Join(configDir, modeConfigFile+".local")
-	if data, err := os.ReadFile(localModePath); err == nil {
-		m.parseModeConfig(string(data))
-	}
+	// 3-5. Mode-specific configuration.
+	//
+	// ⛔ v1.229.7 PR-4B. This used to choose classic.conf vs suricata.conf with
+	// `m.config.Mode == "auto" && m.suricataAvail` -- a SECOND, independent
+	// resolution of `auto`, and one whose input did not exist yet: loadConfig()
+	// runs from New(), while m.suricataAvail is first assigned in detectMode()
+	// from Init(). Its Go zero value therefore made MODE=auto select classic.conf
+	// DETERMINISTICALLY, and loadConfig() never re-ran to correct it. Because
+	// PORTSCAN_CLASSIC_* and PORTSCAN_SURICATA_* keys populate the SAME struct
+	// fields, an auto->suricata host ran on classic values.
+	//
+	//   THE DAEMON MUST NOT CHOOSE A MODE CONFIG FILE BY RE-RESOLVING AUTO.
+	//
+	// The plan is the only authority. It is published by the shell reconcile root,
+	// which Start() invokes -- so at New() there is usually no plan yet and the
+	// honest answer is UNKNOWN. loadModeConfig is therefore called again from
+	// Start() once the plan exists. Nothing here probes availability.
+	m.loadModeConfig(cfg.ConfigDir, cfg.RunDir, configDir)
 
 	m.enabled = m.config.Enabled
 	m.mode = m.config.Mode
+}
+
+// loadModeConfig loads the mode-specific configuration for the EFFECTIVE mode,
+// as reported by the shared plan reader. It resolves nothing.
+//
+//	effective_mode=classic   -> classic.conf
+//	effective_mode=suricata  -> suricata.conf
+//	effective_mode=inactive  -> no higher-tier mode config required
+//	effective_mode=unknown   -> load NEITHER
+//
+// ⛔ For unknown it must not guess classic, must not probe Suricata, and must not
+// silently choose either file. Loading neither leaves the New() defaults in
+// place and is reported, so the daemon still starts far enough to surface the
+// contract problem rather than running on another mode's values.
+func (m *Module) loadModeConfig(rootConfigDir, runDir, moduleConfigDir string) {
+	effective, basis := nftbanconf.ReadEffectiveMode("portscan", rootConfigDir, runDir)
+	m.modeConfigSource = ""
+	m.modeConfigBasis = basis
+
+	var modeConfigFile string
+	switch effective {
+	case "classic":
+		modeConfigFile = "classic.conf"
+	case "suricata":
+		modeConfigFile = "suricata.conf"
+	case "inactive":
+		return // no higher-tier mode config to load
+	default: // unknown
+		log.Printf("[portscan] effective mode UNKNOWN (%s) -- loading NO mode-specific config; "+
+			"mode-specific values remain at defaults until a plan is published", basis)
+		return
+	}
+
+	for _, p := range []string{
+		filepath.Join(moduleConfigDir, modeConfigFile),
+		filepath.Join(moduleConfigDir, modeConfigFile+".local"),
+	} {
+		if data, err := os.ReadFile(filepath.Clean(p)); err == nil { // #nosec G304 -- composed from trusted config dirs and a closed filename set
+			m.parseModeConfig(string(data))
+		}
+	}
+	m.modeConfigSource = modeConfigFile
 }
 
 // parseMainConfig parses main.conf settings
@@ -261,6 +308,22 @@ func (m *Module) Start(ctx context.Context) error {
 	// Enable portscan detection
 	if err := m.enable(); err != nil {
 		m.status.RecordError(err)
+	}
+
+	// ⛔ v1.229.7 PR-4B: the plan exists NOW. m.enable() invokes the shell
+	// reconcile root, which resolves once and publishes the record; before this
+	// point loadConfig() had no authoritative effective mode and therefore loaded
+	// NO mode-specific config. Re-read it here so the module runs on its own
+	// mode's values instead of the New() defaults.
+	//   OBTAIN THE PLAN -> SELECT MODE CONFIG -> INITIALISE MODE RUNTIME
+	// This is a READ of the published plan, never a resolution: the daemon does
+	// not become another authority while fixing the ordering.
+	{
+		cfg := nftbanconf.MustLoad()
+		m.loadModeConfig(cfg.ConfigDir, cfg.RunDir, filepath.Join(cfg.ConfigDir, "conf.d", "portscan"))
+		if m.modeConfigSource == "" {
+			log.Printf("[portscan] no mode-specific config loaded after reconcile (%s)", m.modeConfigBasis)
+		}
 	}
 
 	// Start periodic detection goroutine

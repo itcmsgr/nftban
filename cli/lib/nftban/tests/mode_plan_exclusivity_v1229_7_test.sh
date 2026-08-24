@@ -313,6 +313,75 @@ for mod in ddos portscan; do
     fi
 done
 
+# --- 11. MODE CONFIG OWNERSHIP IS CROSS-LANGUAGE ---------------------------
+echo ""
+echo "11. mode-config ownership across BOTH languages..."
+# ⛔ Section 2 proves "classic.conf read only by classic mode" over
+# cli/lib/nftban/core/*.sh -- SHELL ONLY. A Go consumer choosing classic.conf vs
+# suricata.conf sat outside that subject population and was found by hand
+# (OPEN_MODULE_GO_AUTO_CONFIG_SOURCE_PRE_RESOLUTION).
+#   A GUARD THAT PROVES SHELL CONSUMERS ARE CLEAN
+#   DOES NOT ESTABLISH REPOSITORY-WIDE OWNERSHIP.
+#
+# The defect shape is a file that can choose BETWEEN the two mode configs. A
+# mode module naming only its OWN config is not a selector, and neither is a
+# declaration file that lists both. Population = references BOTH, minus data.
+SELECTORS=()
+while IFS= read -r f; do
+    body="$(sed 's|//.*$||; s/#.*$//' "$f")"
+    grep -q 'classic\.conf'  <<<"$body" || continue
+    grep -q 'suricata\.conf' <<<"$body" || continue
+    case "$f" in *.json|*.yaml|*.yml) continue ;; esac   # declarations, not selectors
+    SELECTORS+=("$f")
+done < <(grep -rlE '"(classic|suricata)\.conf"|/(classic|suricata)\.conf' \
+            "$ROOT/cli/lib/nftban" "$ROOT/internal" "$ROOT/cmd" 2>/dev/null \
+            | grep -vE "/tests/|_test\.(go|sh)$" | sort -u)
+
+# ⛔ SUBJECT-POPULATION RECONCILIATION. Declare the INTENDED population and
+# assert the ACTUAL one matches it. Printing a count is not asserting one: narrow
+# the search path and the population silently shrinks while every row still says
+# ok -- which is precisely how the Go selector stayed invisible until Pass A.
+#   INTENDED != ACTUAL  =>  EITHER EXPAND THE GUARD OR NARROW THE CLAIM.
+_sel_shell=0 _sel_go=0
+for _s in "${SELECTORS[@]}"; do
+    case "$_s" in *.sh) _sel_shell=$((_sel_shell+1)) ;; *.go) _sel_go=$((_sel_go+1)) ;; esac
+done
+if [[ ${#SELECTORS[@]} -eq 0 ]]; then
+    fail "no mode-config SELECTOR found — the population cannot be empty"
+elif [[ $_sel_go -lt 2 ]]; then
+    fail "selector population contains $_sel_go Go file(s); the cross-language claim requires BOTH Go modules — the subject has silently narrowed"
+elif [[ $_sel_shell -lt 1 ]]; then
+    fail "selector population contains no shell file; the subject has silently narrowed"
+else
+    ok "mode-config selector population: ${#SELECTORS[@]} file(s) — shell=$_sel_shell go=$_sel_go (both languages present)"
+fi
+for src in "${SELECTORS[@]}"; do
+    rel="${src#"$ROOT"/}"
+    body="$(sed 's|//.*$||; s/#.*$//' "$src")"
+    case "$rel" in
+        *nftban_ddos.sh|*nftban_portscan.sh|internal/ddos/*|internal/portscan/*)
+            # IN the v1.229.7 declared subject population: selection MUST be
+            # plan-derived, and must not come from an availability probe.
+            if grep -qE 'ReadEffectiveMode|NFTBAN_PLAN_EFFECTIVE_MODE|nftban_module_report_modes' <<<"$body"; then
+                if grep -qE '(suricataAvail|_is_available)[^\n]*\?|Mode == "auto" && m\.suricataAvail' <<<"$body"; then
+                    fail "$rel still selects a mode config from an availability probe"
+                else
+                    ok "$rel selects its mode config from the plan"
+                fi
+            else
+                fail "$rel chooses between mode configs with NO plan-derived selection — CONFIG SOURCE MUST FOLLOW THE PLAN"
+            fi
+            ;;
+        *)
+            # OUTSIDE the .7 population. Reported, never silently passed: the
+            # guard's claim covers ddos+portscan, and saying so is the point.
+            #   SUBJECT BOUNDARY MUST MATCH THE CLAIM.
+            echo "  NOTE  $rel selects between mode configs but is OUTSIDE the v1.229.7 subject"
+            echo "        population (ddos + portscan). Not asserted here; see the register."
+            ;;
+    esac
+done
+
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""
 echo "8. runtime classic XOR suricata..."
