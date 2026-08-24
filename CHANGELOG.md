@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.9] - 2026-08-24 — a setting that is read but not obeyed is worse than no setting
+
+Both Suricata modules accept an EVE log path, and until now the two of them disagreed
+about what that setting meant.
+
+DDoS took the configured value, kept only its directory, and then looked for any file
+matching a fixed `eve-alerts*.json` pattern beside it. A host configured to read
+`custom.json` was therefore judged by whichever `eve-alerts` file happened to be in the
+same directory, and a configured file that was stale or missing could still be reported as
+fresh on the strength of an unrelated one. The configured path is now the path that is
+read. Suricata's threaded logging is still supported, but the additional files are derived
+from the configured name — `custom.json` alongside `custom.1.json` — rather than from a
+fixed pattern, so the feature no longer overrides the configuration.
+
+PortScan obeyed the setting but required it to exist. It read the variable directly, so a
+caller that reached the availability check without first loading the module's
+configuration ended the shell rather than returning an answer. The check now reports that
+its configuration was never established and returns unavailable. It does not substitute a
+path of its own: doing so would place a second source of truth beside the loader and
+conceal the caller's mistake. Three further values in the EVE reader had the same
+requirement and the same omission, and are handled the same way.
+
+Release verification also gained a required field. The script that verifies a release
+assembly accepted an optional expected commit and, when it was absent, skipped the check
+that binds the packaged binaries to their source — silently, with nothing in the log to
+say so. The expected commit is now required in both the dry run and the publication path,
+validated before verification begins rather than at the point of use. Every release to
+date supplied it, so no published artifact was affected.
+
 ## [v1.229.8] - 2026-08-24 — work done twice is work paid for twice
 
 Two measured CPU consumers, each with a causal fix rather than a tuning adjustment.
