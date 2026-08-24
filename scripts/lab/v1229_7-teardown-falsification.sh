@@ -7,13 +7,13 @@
 # meta:type="lab"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-08-24"
-# meta:description="Proves the cross-mode teardown contract on the EXACT operator path `nftban ddos reload`, and proves the proof itself is falsifiable by mutating the shipped implementation four ways and requiring each mutation to be DETECTED."
+# meta:description="Proves the cross-mode teardown contract on the EXACT operator path `nftban "$MOD" reload`, and proves the proof itself is falsifiable by mutating the shipped implementation four ways and requiring each mutation to be DETECTED."
 # =============================================================================
 #
 # ⛔ A REBUILD PASS DOES NOT PROVE A TRANSITION-SPECIFIC TEARDOWN PATH.
 # `firewall rebuild` recreates the table and therefore never creates the
 # opposite mode's objects; it cannot exercise cross-mode teardown at all. Every
-# arm here uses `nftban ddos reload`, the operator path where the defect lived.
+# arm here uses `nftban "$MOD" reload`, the operator path where the defect lived.
 #
 # ⛔ FINAL STATE ALONE IS NOT ENOUGH -- ASSERT THE SUBJECT POPULATION.
 # The shipped fix once processed ZERO subjects and still returned success
@@ -26,7 +26,13 @@
 #   NO SUBJECTS PROCESSED != NOTHING TO DO
 set -uo pipefail
 
-SRC=/usr/lib/nftban/core/nftban_ddos.sh
+# MOD selects the module under test; SRC follows it. Both modules implement the
+# SAME contract with DIFFERENT code and different object inventories, so each is
+# proven on its own implementation -- never by analogy to the other.
+#   SAME CONTRACT != SAME IMPLEMENTATION
+MOD="${1:-ddos}"
+case "$MOD" in ddos|portscan) ;; *) echo "usage: $0 [ddos|portscan]"; exit 2 ;; esac
+SRC=/usr/lib/nftban/core/nftban_${MOD}.sh
 FRAG=/usr/lib/nftban/lib/nft_fragment.sh
 PRISTINE="/var/tmp/nftban-ddos.pristine.$$"
 FRAG_PRISTINE="/var/tmp/nftban-frag.pristine.$$"
@@ -47,19 +53,30 @@ restore_all(){ cp -p "$PRISTINE" "$SRC"; cp -p "$FRAG_PRISTINE" "$FRAG"; }
 # worse than a failed test.
 trap 'restore' EXIT INT TERM
 
-setmode(){ printf 'DDOS_ENABLED="true"\nDDOS_MODE="%s"\n' "$1" > /etc/nftban/conf.d/ddos/main.conf.local; }
+# setmode <mode> -- writes durable intent for the module under test.
+setmode(){
+  local K; K="$(tr '[:lower:]' '[:upper:]' <<<"$MOD")"
+  printf '%s_ENABLED="true"\n%s_MODE="%s"\n' "$K" "$K" "$1" > "/etc/nftban/conf.d/$MOD/main.conf.local"
+}
 # Classic-owned objects only: ddos_blocked is the SHARED ban set and is never
 # part of the classic projection census.
+# classic_objs [module] -- census of the CLASSIC projection only. The shared ban
+# set (ddos_blocked / portscan_blocked) is excluded: it belongs to neither mode's
+# projection, and treating it as one is what aborted an early ddos revision.
 classic_objs(){
-  local f n=0
+  # Operates on the module under test. It deliberately takes NO argument: an
+  # optional-parameter signature that no call site ever uses is a false
+  # affordance (shellcheck SC2120) and invites a caller to think the census can
+  # be pointed at another module mid-run.
+  local m="$MOD" f n=0
   for f in ip ip6; do
     n=$((n + $(nft list table "$f" nftban 2>/dev/null \
-        | grep -oE 'chain ddos_[a-z_]+|set ddos_[a-z_0-9]+' \
-        | grep -v 'ddos_blocked' | grep -c . || true)))
+        | grep -oE "chain ${m}_[a-z_]+|set ${m}_[a-z_0-9]+" \
+        | grep -v "${m}_blocked" | grep -c . || true)))
   done
   echo "$n"
 }
-jumps(){ local f n=0; for f in ip ip6; do n=$((n + $(nft list chain "$f" nftban input 2>/dev/null | grep -coE 'jump ddos_[a-z_]+' || true))); done; echo "$n"; }
+jumps(){ local m="$MOD" f n=0; for f in ip ip6; do n=$((n + $(nft list chain "$f" nftban input 2>/dev/null | grep -coE "jump ${m}_[a-z_]+" || true))); done; echo "$n"; }
 valchain(){ /usr/lib/nftban/bin/nftban-validate 2>&1 | grep -c 'VAL-CHAIN-004' || true; }
 
 # transition_converges -- classic -> suricata via the OPERATOR path.
@@ -74,31 +91,37 @@ transition_converges(){
     return 1
   fi
   discovered="$expected"
-  setmode suricata; nftban ddos reload >/dev/null 2>&1; rc=$?; sleep 5
+  setmode suricata; nftban "$MOD" reload >/dev/null 2>&1; rc=$?; sleep 5
   after="$(classic_objs)"; purged=$(( discovered - after )); jl="$(jumps)"; vc="$(valchain)"
   echo "      expected=$discovered purged=$purged residue=$after jumps=$jl VAL-CHAIN-004=$vc rc=$rc"
   [[ "$purged" -eq "$discovered" && "$after" -eq 0 && "$jl" -eq 0 && "$vc" -eq 0 && "$rc" -eq 0 ]]
 }
 
-echo "=== v1.229.7 cross-mode teardown falsification ==="
+echo "=== v1.229.7 cross-mode teardown falsification — module: $MOD ==="
 echo ""
 echo "P — POSITIVE (shipped implementation)"
 if transition_converges; then ok "P1 classic->suricata converges, population non-vacuous and fully purged"
 else bad "P1 classic->suricata did NOT converge on the shipped implementation"; fi
 
-setmode classic; nftban ddos reload >/dev/null 2>&1; sleep 5
+setmode classic; nftban "$MOD" reload >/dev/null 2>&1; sleep 5
 if [[ "$(classic_objs)" -gt 0 && "$(valchain)" -eq 0 ]]; then
   ok "P2 suricata->classic restores the classic projection ($(classic_objs) objects), VAL-CHAIN-004=0"
 else bad "P2 suricata->classic left objects=$(classic_objs) VAL-CHAIN-004=$(valchain)"; fi
 
-nftban ddos reload >/dev/null 2>&1; sleep 5
-[[ "$(classic_objs)" -gt 0 && "$(valchain)" -eq 0 ]] \
-  && ok "P3 classic->classic idempotent" || bad "P3 classic->classic not idempotent"
+nftban "$MOD" reload >/dev/null 2>&1; sleep 5
+if [[ "$(classic_objs)" -gt 0 && "$(valchain)" -eq 0 ]]; then
+  ok "P3 classic->classic idempotent"
+else
+  bad "P3 classic->classic not idempotent"
+fi
 
-setmode suricata; nftban ddos reload >/dev/null 2>&1; sleep 4
-nftban ddos reload >/dev/null 2>&1; sleep 5
-[[ "$(classic_objs)" -eq 0 && "$(valchain)" -eq 0 ]] \
-  && ok "P4 suricata->suricata idempotent" || bad "P4 suricata->suricata not idempotent"
+setmode suricata; nftban "$MOD" reload >/dev/null 2>&1; sleep 4
+nftban "$MOD" reload >/dev/null 2>&1; sleep 5
+if [[ "$(classic_objs)" -eq 0 && "$(valchain)" -eq 0 ]]; then
+  ok "P4 suricata->suricata idempotent"
+else
+  bad "P4 suricata->suricata not idempotent"
+fi
 
 # --- negative controls -------------------------------------------------------
 # Each mutation is applied to the INSTALLED implementation, the SAME positive
@@ -136,6 +159,9 @@ MUTEOF
     restore_all
 }
 
+# shellcheck disable=SC2016  # the mutation arguments are PYTHON source passed as
+# DATA to python3; shell expansion inside them would corrupt the program. Single
+# quotes are required here, not an oversight.
 echo ""
 echo "N — NEGATIVE CONTROLS (mutate the shipped implementation, require detection)"
 
@@ -145,7 +171,7 @@ negative "N1 no jump removal" \
   /usr/lib/nftban/lib/nft_fragment.sh
 
 negative "N2 IPv4 only" \
-  's = s.replace("    for fam in ip ip6; do\n        # Base Layer-0 lives", "    for fam in ip; do\n        # Base Layer-0 lives")' \
+  's = s.replace("    for fam in ip ip6; do", "    for fam in ip; do", 1)' \
   "clean only IPv4: IPv6 residue must be detected"
 
 negative "N3 flush not delete" \
@@ -154,7 +180,7 @@ negative "N3 flush not delete" \
   /usr/lib/nftban/lib/nft_fragment.sh
 
 negative "N4 empty subject population" \
-  's = s.replace("        /^[[:space:]]*chain[[:space:]]+ddos_/ { print \"chain \" $2 }", "        /^ZZZ_NEVER_MATCHES/ { print \"chain \" $2 }").replace("        /^[[:space:]]*set[[:space:]]+ddos_/   { print \"set \"   $2 }", "        /^ZZZ_NEVER_MATCHES/ { print \"set \" $2 }")' \
+  'import re; s = re.sub(r"/\^\[\[:space:\]\]\*chain\[\[:space:\]\]\+[a-z]+_/", "/^ZZZ_NEVER_MATCHES/", s); s = re.sub(r"/\^\[\[:space:\]\]\*set\[\[:space:\]\]\+[a-z]+_/", "/^ZZZ_NEVER_MATCHES/", s)' \
   "make subject parsing yield zero objects (the IFS failure class): must fail as vacuous, never as success"
 
 echo ""

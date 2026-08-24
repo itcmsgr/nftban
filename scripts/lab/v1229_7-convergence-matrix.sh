@@ -115,6 +115,7 @@ classic_chain(){ [[ "$1" == ddos ]] && echo ddos_sanity || echo portscan_detecti
 assert_state(){ # <module> <state-label> <operation> [expected-configured-mode]
   local mod="$1" intent="$2" op="$3" want_cfg="${4:-$2}"
   local cfg eff basis v4 v6 xor verdict notes=""
+  PRE_EXISTING_NOTE=""
   cfg="$(configured_mode "$mod")"
   eff="$(plan_field "$mod" EFFECTIVE_MODE)"; [[ -z "$eff" ]] && eff="NO_PLAN"
   basis="$(plan_field "$mod" RESOLUTION_BASIS)"
@@ -190,30 +191,53 @@ assert_state(){ # <module> <state-label> <operation> [expected-configured-mode]
     local cons; cons="$(jq -r '.consistency.kernel_vs_validator // "NA"' <<<"$hj" 2>/dev/null || echo NA)"
     [[ "$cons" == unknown && "$hstatus" == protected ]] && notes="${notes}UNKNOWN_COLLAPSED_TO_PASS;"
   fi
-  # ⛔ FAILED_UNITS_COUNT != FAILED_UNIT_EVIDENCE.
-  # The first revision recorded only a count. By the time anyone looked, nothing
-  # was failed any more, so two FAIL rows could not be adjudicated at all: a
-  # bare "2" names no unit, no state, and no cause. Capture identities AT THE
-  # MOMENT the assertion is evaluated -- afterwards is a different system.
-  # ⛔ A failed query is UNKNOWN, never zero. ABSENT_QUERY != RESOURCE_ABSENT.
-  local failed_raw failed names states
-  if failed_raw="$(systemctl list-units --state=failed --no-legend --no-pager 2>/dev/null)"; then
-      names="$(awk '/nftban/{print $1}'  <<<"$failed_raw" | paste -sd, -)"
-      states="$(awk '/nftban/{print $1"="$3"/"$4}' <<<"$failed_raw" | paste -sd, -)"
-      failed="$(awk '/nftban/' <<<"$failed_raw" | grep -c . || true)"
-      if [[ "${failed:-0}" -gt 0 ]]; then
-          notes="${notes}FAILED_UNIT_COUNT=$failed;FAILED_UNIT_NAMES=${names};FAILED_UNIT_STATES=${states};"
-      fi
-  else
+  # ⛔ FAILED_UNITS_COUNT != FAILED_UNIT_EVIDENCE, and
+  #    FAILED_UNIT_PRESENT != COMPONENT_CAUSATION_PROVEN.
+  # Identities and states are captured on BOTH sides of the operation and the
+  # DELTA is what classifies the row. A count alone named nothing; "any failed
+  # unit anywhere" would let an unrelated pre-existing crash-loop invalidate
+  # every firewall row.
+  local post new_fail="" pre_fail="" recovered="" restart_delta=""
+  if [[ "$UNIT_PRE_OK" -ne 1 ]] || ! post="$(unit_snapshot)"; then
       notes="${notes}FAILED_UNIT_STATE=UNKNOWN;"
+  else
+      local line unit state pstate
+      while read -r line; do
+          [[ -z "$line" ]] && continue
+          unit="${line%%=*}"; state="${line#*=}"
+          pstate="$(grep -m1 "^${unit}=" <<<"$UNIT_PRE" || true)"; pstate="${pstate#*=}"
+          # restart-count movement is evidence even without a state change
+          local pn="${pstate##*/}" cn="${state##*/}"
+          if [[ -n "$pn" && -n "$cn" && "$pn" =~ ^[0-9]+$ && "$cn" =~ ^[0-9]+$ && "$cn" -gt "$pn" ]]; then
+              restart_delta="${restart_delta}${unit}:+$((cn-pn)),"
+          fi
+          case "$state" in
+              failed/*)
+                  if [[ "$pstate" == failed/* ]]; then pre_fail="${pre_fail}${unit},"
+                  else new_fail="${new_fail}${unit}=${state},"; fi ;;
+              *)
+                  [[ "$pstate" == failed/* ]] && recovered="${recovered}${unit}," ;;
+          esac
+      done <<<"$post"
+
+      # ONLY a new failure across this operation is attributable to it.
+      [[ -n "$new_fail"       ]] && notes="${notes}NEW_UNIT_FAILURE=${new_fail%,};"
+      # Recorded, never hidden, and never a row failure on its own.
+      [[ -n "$pre_fail"       ]] && PRE_EXISTING_NOTE="PRE_EXISTING_UNIT_FAILURE=${pre_fail%,}"
+      [[ -n "$recovered"      ]] && PRE_EXISTING_NOTE="${PRE_EXISTING_NOTE:+$PRE_EXISTING_NOTE }UNIT_RECOVERY=${recovered%,}"
+      [[ -n "$restart_delta"  ]] && PRE_EXISTING_NOTE="${PRE_EXISTING_NOTE:+$PRE_EXISTING_NOTE }RESTART_DELTA=${restart_delta%,}"
   fi
 
   [[ -z "${verdict:-}" || "$verdict" != UNKNOWN ]] && { [[ -z "$notes" ]] && verdict=PASS || verdict=FAIL; }
   [[ "$verdict" == FAIL ]] && FAILROWS=$((FAILROWS+1))
   [[ "$verdict" == UNKNOWN ]] && UNKNOWNROWS=$((UNKNOWNROWS+1))
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$DISTRO" "$mod" "$intent" "$eff" "${basis:-none}" "$op" "$v4" "$v6" "$xor" "$hstatus" "$verdict" "${notes:-clean}" >> "$ROWS"
+  # PRE_EXISTING is its own column, deliberately NOT folded into notes: a
+  # non-empty notes field fails the row, and a pre-existing unit failure that
+  # this operation did not cause must be VISIBLE without being ATTRIBUTED.
+  #   RECORDED != BLAMED
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$DISTRO" "$mod" "$intent" "$eff" "${basis:-none}" "$op" "$v4" "$v6" "$xor" "$hstatus" "$verdict" "${notes:-clean}" "${PRE_EXISTING_NOTE:-none}" >> "$ROWS"
   nft_json > "$EVID/ruleset-${mod}-${intent}-${op}.json" 2>/dev/null || true
 }
 
@@ -277,16 +301,50 @@ settle(){
     return 1
 }
 
+# unit_snapshot -- "<unit>=<ActiveState>/<SubState>/<Result>/<NRestarts>" per
+# nftban unit, sorted. Emits nothing but returns 1 if the query itself failed, so
+# an unavailable query becomes UNKNOWN rather than "no failures".
+#   ABSENT_QUERY != RESOURCE_ABSENT
+unit_snapshot(){
+  local raw u
+  raw="$(systemctl list-units 'nftban*' --all --no-legend --no-pager 2>/dev/null)" || return 1
+  [[ -z "$raw" ]] && return 1
+  while read -r u; do
+    [[ -z "$u" ]] && continue
+    printf '%s=%s/%s/%s/%s\n' "$u" \
+      "$(systemctl show "$u" -p ActiveState --value 2>/dev/null)" \
+      "$(systemctl show "$u" -p SubState    --value 2>/dev/null)" \
+      "$(systemctl show "$u" -p Result      --value 2>/dev/null)" \
+      "$(systemctl show "$u" -p NRestarts   --value 2>/dev/null)"
+  done < <(awk '{ if ($1 ~ /^[●*]$/) print $2; else print $1 }' <<<"$raw" | sort -u)
+  return 0
+}
+
+# ⛔ FAILED_UNIT_PRESENT != COMPONENT_CAUSATION_PROVEN.
+# A pre-existing crash-loop elsewhere in the product must not fail every
+# firewall convergence row. The row is failed only by a NEW failure appearing
+# across THIS operation; an unchanged pre-existing failure is recorded as
+# evidence and classified PRE_EXISTING.
+# ⛔ And it is captured, never allowlisted: hiding a known-bad unit would delete
+# the very signal that identifies it.
+UNIT_PRE=""
+UNIT_PRE_OK=0
+capture_pre(){ if UNIT_PRE="$(unit_snapshot)"; then UNIT_PRE_OK=1; else UNIT_PRE=""; UNIT_PRE_OK=0; fi; }
+
 run_ops(){ # <module> <state-label> <configured-value>
   local mod="$1" intent="$2" cfgval="$3"
+  capture_pre
   nftban "$mod" reload >/dev/null 2>&1 || true;          settle; assert_state "$mod" "$intent" reload         "$cfgval"
+  capture_pre
   nftban firewall rebuild --quiet >/dev/null 2>&1||true; settle; assert_state "$mod" "$intent" rebuild        "$cfgval"
   # ⛔ `--force` is REQUIRED: without it reset prints "Use --force to confirm" and
   # returns without doing anything. The matrix previously ran `reset --quiet`, so
   # all 8 reset rows per host tested a command that REFUSED TO RUN and were
   # reported as failures of the product.
   #   A COMMAND THAT DECLINED TO EXECUTE HAS NOT BEEN TESTED.
+  capture_pre
   nftban firewall reset --force --quiet >/dev/null 2>&1 || true; settle; assert_state "$mod" "$intent" reset          "$cfgval"
+  capture_pre
   systemctl restart nftband >/dev/null 2>&1 || true;     settle; assert_state "$mod" "$intent" daemon-restart "$cfgval"
 }
 
