@@ -271,6 +271,28 @@ while IFS= read -r hit; do
     fi
 done < <(grep -rnE "$LEGACY_RESOLVERS" "$ROOT/cli/lib/nftban" --include="*.sh" 2>/dev/null | grep -v "/tests/" || true)
 
+# ⛔ NON-VACUITY. "No offenders" is only meaningful if the search actually had a
+# subject. A wrong path, a renamed resolver, or a broken glob would produce an
+# empty scan and this guard would report clean while a regression was live.
+#   COUNT PRINTED != POPULATION ASSERTED
+#   ZERO OFFENDERS OVER ZERO SUBJECTS PROVES NOTHING.
+# ⛔ `|| true` on BOTH pipelines. Under `set -e` + pipefail an empty grep result
+# returns non-zero and kills the assignment -- so this detector would DIE on
+# exactly the condition it exists to detect, producing no output at all rather
+# than a failure. Observed: M40 ran and printed nothing.
+#   A VACUITY DETECTOR MUST SURVIVE VACUITY.
+_scanned="$(grep -rlE "$LEGACY_RESOLVERS" "$ROOT/cli/lib/nftban" --include="*.sh" 2>/dev/null | grep -v "/tests/" | wc -l || true)"
+_defs="$(grep -rcE "^(_modes_resolve_effective|_nftban_mode_detect_effective)\(\) \{" \
+         "$ROOT/cli/lib/nftban/cli/cmd_modes.sh" "$ROOT/cli/lib/nftban/helpers/nftban_mode.sh" 2>/dev/null \
+         | awk -F: '{s+=$2} END{print s+0}' || true)"
+if [[ "$_defs" -lt 2 ]]; then
+    fail "population vacuous: found $_defs/2 legacy resolver definitions — the guard has no subject"
+elif [[ "$_scanned" -lt 2 ]]; then
+    fail "population vacuous: only $_scanned file(s) scanned; expected at least cmd_modes.sh + nftban_mode.sh"
+else
+    ok "population non-vacuous: $_defs legacy resolvers still defined across $_scanned scanned file(s)"
+fi
+
 if [[ ${#OFFENDERS[@]} -eq 0 ]]; then
     ok "no ddos/portscan path reaches a legacy mode resolver"
 else
