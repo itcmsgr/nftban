@@ -634,11 +634,6 @@ _nftban_portscan_purge_projection() {
         return 0
     fi
 
-    if ! declare -F nft_fragment_delete_object >/dev/null 2>&1; then
-        echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
-        return 1
-    fi
-
     for fam in ip ip6; do
         while IFS=' ' read -r kind name; do
             # ⛔ IFS pinned: sourcing the product leaves IFS=$'\n\t' in scope, so a
@@ -648,6 +643,18 @@ _nftban_portscan_purge_projection() {
             #   NO SUBJECTS PROCESSED != NOTHING TO DO
             [[ -z "$kind" || -z "$name" ]] && continue
             [[ " $_NFTBAN_PORTSCAN_SHARED_SETS " == *" $name "* ]] && continue
+            # ⛔ The writer requirement is checked HERE, per object, not up front.
+            # Hoisting it to the top of the function made an EMPTY census a hard
+            # failure: with nothing to remove there is nothing to establish, and
+            # refusing then aborts a legitimate dispatch. plan_projection_v1229_7
+            # caught exactly that -- portscan plan=suricata never reached
+            # suricata_enable -- and it caught it because the ddos twin checks
+            # per object, so the two implementations disagreed.
+            #   NOTHING TO REMOVE != FAILURE TO REMOVE
+            if ! declare -F nft_fragment_delete_object >/dev/null 2>&1; then
+                echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
+                return 1
+            fi
             nft_fragment_delete_object "$fam" "$kind" "$name" || true
         done < <(_nftban_portscan_live_objects "$fam")
     done
