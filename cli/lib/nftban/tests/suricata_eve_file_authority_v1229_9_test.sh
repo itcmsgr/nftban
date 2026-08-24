@@ -67,14 +67,17 @@ ddos_eve() {
 # explicitly rather than allowed to terminate the shell. Production callers reach this
 # predicate from conditional context (`if ... ; then`), where `-e` does not fire.
 portscan_eve() {
-    local out rc=0
+    # The predicate's rc is carried in the echoed RC= marker, not in this shell's $?,
+    # so a local rc would be assigned and never read (SC2034). Tolerate a non-zero exit
+    # here explicitly rather than capturing a value nothing consumes.
+    local out
     out=$(bash --noprofile --norc -c '
         set -uo pipefail
         src="$1"
         if [ "$2" != "__UNSET__" ]; then export PORTSCAN_SURICATA_EVE_FILE="$2"; fi
         eval "$(awk "/^nftban_portscan_suricata_eve_active\\(\\) \\{/{i=1} i{print} i&&/^\\}/{exit}" "$src")"
         nftban_portscan_suricata_eve_active; echo "RC=$?"
-    ' _ "$PSRC" "$1" 2>/dev/null) || rc=$?
+    ' _ "$PSRC" "$1" 2>/dev/null) || true
     if grep -q '^RC=' <<<"$out"; then echo "rc=$(grep -o 'RC=[0-9]*' <<<"$out" | cut -d= -f2)"; else echo "TERMINATED"; fi
 }
 
