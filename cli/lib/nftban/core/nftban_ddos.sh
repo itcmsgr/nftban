@@ -308,8 +308,22 @@ nftban_ddos_reconcile() {
     # silent no-op. Creating the directory we own is not inventing a plan; the
     # root still resolves, this only makes the resolved decision observable.
     local _dir="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
-    if [[ ! -d "$_dir" ]] && ! mkdir -p "$_dir" 2>/dev/null; then
-        echo "nftban_ddos_reconcile: cannot create $_dir — refusing to publish." >&2
+    # ⛔ DO NOT create the canonical runtime directory here. /run/nftban is owned
+    # by systemd-tmpfiles (see /usr/lib/tmpfiles.d/nftban.conf) and must carry
+    # its declared ownership: the daemon's socket lives there. An earlier
+    # revision used `mkdir -p`, which recreated it as ROOT and produced
+    #   "unsafe path transition /run/nftban (owned by nftban) -> (owned by root)"
+    # A publisher silently taking ownership of another authority's directory is
+    # the same defect class this lane removes, one level down.
+    #   ESTABLISHING A PREREQUISITE != SEIZING ANOTHER AUTHORITY'S RESOURCE.
+    # A missing runtime directory is an ANOMALY the operator must see, not
+    # something to paper over: fail the transaction and say why.
+    # (A caller-supplied NFTBAN_PLAN_RECORD_DIR — lab/test isolation — is the
+    # caller's own directory and is created by the caller.)
+    if [[ ! -d "$_dir" ]]; then
+        echo "nftban_ddos_reconcile: runtime directory $_dir is absent — refusing to publish." >&2
+        echo "                        it is owned by systemd-tmpfiles; restore it with:" >&2
+        echo "                        systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf" >&2
         return 4
     fi
 

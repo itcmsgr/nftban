@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan — v1.229.7 targeted plan-binding witness (PR-5)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="v1229_7_binding_witness"
+# meta:type="lab"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-08-24"
+# meta:description="Targeted package-native proof that every convergence root publishes a plan bound to the CURRENT generation. Requires an EXECUTION WITNESS per command, not rc=0, because this campaign proved repeatedly that COMMAND_RC0 != COMMAND_EXECUTED."
+# =============================================================================
+set -uo pipefail
+LABEL="${1:?usage: $0 <distro-label>}"
+F=0
+say(){ printf '%s\n' "$*"; }
+ok(){  say "  ok    $*"; }
+bad(){ F=$((F+1)); say "  FAIL  $*"; }
+
+gen(){ cat /run/nftban/convergence-generation 2>/dev/null || echo 0; }
+bound(){ sed -n 's/^NFTBAN_PLAN_BOUND_GENERATION=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
+rid(){ sed -n 's/^NFTBAN_PLAN_RESOLUTION_ID=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
+valcons(){ /usr/lib/nftban/bin/nftban-validate 2>&1 | grep -c 'VAL-CONS-002' || true; }
+
+# ⛔ THE EXPECTED POPULATION IS DERIVED FROM DURABLE INTENT, NOT FROM WHICH
+#    FILES HAPPEN TO EXIST.
+#      NO MALFORMED RECORD FOUND != ALL REQUIRED RECORDS EXIST
+#    An unmatched glob would otherwise report "clean" for a host with no records
+#    at all -- turning shell globbing behaviour into evidence.
+# ⛔ REUSE THE CANONICAL AUTHORITY. An earlier revision of this function parsed
+# main.conf + main.conf.local itself -- a SECOND config resolver, which is the
+# exact defect class this lane exists to remove. It would also have traded
+# "population from files" for "population from an invented resolver".
+#   THE HARNESS MUST NOT REIMPLEMENT PRODUCT CONFIG SEMANTICS.
+# nftban_module_effective_enabled IS the product's durable-intent authority and
+# owns the base + .local precedence; the witness calls it rather than copying it.
+# ⛔ The authority returns 0=enabled, 1=disabled, 2=unknown module. Treating
+# rc=2 as "disabled" would silently drop a module from the expected population --
+# EMPTY_PARSE != ZERO in another costume. Anything outside {0,1} refuses
+# classification instead.
+AUTH_UNKNOWN=""
+expected_modules(){
+    local m rc
+    AUTH_UNKNOWN=""
+    for m in ddos portscan; do
+        nftban_module_effective_enabled "$m" >/dev/null 2>&1; rc=$?
+        case "$rc" in
+            0) printf '%s\n' "$m" ;;
+            1) : ;;                                   # legitimately disabled
+            *) AUTH_UNKNOWN="$AUTH_UNKNOWN $m(rc=$rc)" ;;
+        esac
+    done
+}
+
+# Enumerate ACTUAL record files explicitly -- never rely on glob expansion.
+actual_records(){ local m; for m in ddos portscan; do [[ -f "/run/nftban/module-plan-$m.env" ]] && printf '%s\n' "$m"; done; }
+
+# Fails on EITHER: a required record missing, OR present but unbound/stale.
+# scope: "" = all expected modules (convergence roots) | "<mod>" = that one only
+population_ok(){
+    local scope="${1:-}" g m b miss="" unb=""
+    g="$(gen)"
+    while read -r m; do
+        [[ -n "$scope" && "$m" != "$scope" ]] && continue
+        [[ -z "$m" ]] && continue
+        if [[ ! -f "/run/nftban/module-plan-$m.env" ]]; then miss="$miss $m"; continue; fi
+        b="$(bound "$m")"
+        [[ -z "$b" ]] && { unb="$unb $m(empty)"; continue; }
+        [[ "$b" != "$g" ]] && unb="$unb $m($b!=$g)"
+    done < <(expected_modules)
+    POP_DETAIL=""
+    [[ -n "$AUTH_UNKNOWN" ]] && POP_DETAIL="AUTHORITY_UNKNOWN:$AUTH_UNKNOWN "
+    [[ -n "$miss" ]] && POP_DETAIL="${POP_DETAIL}MISSING:$miss "
+    [[ -n "$unb"  ]] && POP_DETAIL="${POP_DETAIL}UNBOUND:$unb"
+    [[ -z "$POP_DETAIL" ]]
+}
+
+# The canonical authority must be present; without it the witness has no
+# legitimate way to know the expected population, and inventing one is forbidden.
+# shellcheck source=/dev/null
+if ! source /usr/lib/nftban/lib/module_authority.sh 2>/dev/null \
+   || ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+    echo "FATAL: canonical module authority unavailable — refusing to substitute a local resolver" >&2
+    exit 2
+fi
+
+say "=== v1.229.7 plan-binding witness — $LABEL ==="
+say "--- PRECONDITION ---"
+PKG="$(rpm -q nftban-core 2>/dev/null || dpkg-query -W -f='${Package} ${Version}' nftban-core 2>/dev/null || echo NONE)"
+say "  package        : $PKG"
+say "  configured ddos: $(sed -n 's/^[[:space:]]*DDOS_MODE=//p' /etc/nftban/conf.d/ddos/main.conf.local 2>/dev/null | tr -d '\"')"
+say "  generation     : $(gen)"
+say "  VAL-CONS-002   : $(valcons)"
+[[ "$PKG" == NONE ]] && { say "  FATAL: package not installed"; exit 2; }
+
+# step <n> <label> <execution-witness-cmd> -- <command...>
+step(){
+    local n="$1" label="$2"; shift 2
+    # A per-module reload publishes ONLY its own record; asserting the full
+    # population after it reported a product failure for correct behaviour.
+    local scope=""
+    case "$label" in "ddos reload") scope=ddos ;; "portscan reload") scope=portscan ;; esac
+    local g0 g1 out rc
+    g0="$(gen)"
+    out="$("$@" 2>&1)"; rc=$?
+    sleep 8
+    g1="$(gen)"
+    # ⛔ EXECUTION WITNESS IS OPERATION-SPECIFIC. Generation movement is a valid
+    # witness only where the contract says that operation bumps it; making it a
+    # universal oracle would invent a synthetic requirement (module reload does
+    # NOT bump -- only the firewall convergence roots do).
+    local witness="none"
+    case "$label" in
+        "ddos reload"|"portscan reload")
+            grep -qiE 'reload|re-?appl|Mode:' <<<"$out" && witness="reconcile-path-entered" ;;
+        "firewall reload")
+            grep -qiE 're-?appl|reload' <<<"$out" && witness="reload-path-entered"
+            [[ "$g1" != "$g0" ]] && witness="${witness}+generation($g0->$g1)" ;;
+        "firewall rebuild")
+            grep -qiE '\[[0-9]+/[0-9]+\]|schema|rebuild' <<<"$out" && witness="serialized-rebuild-entered"
+            [[ "$g1" != "$g0" ]] && witness="${witness}+generation($g0->$g1)" ;;
+        "firewall reset")
+            # Must prove the FORCE-AUTHORISED path ran, not the declined one.
+            grep -qiE 'Use --force' <<<"$out" && witness="DECLINED"
+            grep -qiE 'Performing complete firewall reset|reset' <<<"$out" && [[ "$witness" != DECLINED ]] && witness="reset-path-entered"
+            [[ "$g1" != "$g0" && "$witness" != DECLINED ]] && witness="${witness}+generation($g0->$g1)" ;;
+    esac
+    [[ "$witness" == DECLINED ]] && { bad "$n $label — command DECLINED to execute (confirmation gate). Not a product test."; return; }
+    if [[ "$witness" == "none" ]]; then
+        bad "$n $label — NO EXECUTION WITNESS (rc=$rc). COMMAND_RC0 != COMMAND_EXECUTED"
+    elif [[ $rc -ne 0 ]]; then
+        bad "$n $label — rc=$rc (witness: $witness)"
+    else
+        ok "$n $label — rc=0, executed [$witness]"
+    fi
+    local v; v="$(valcons)"
+    local exp act; exp="$(expected_modules | tr '\n' ' ')"; act="$(actual_records | tr '\n' ' ')"
+    if population_ok "$scope"; then ok "    expected[${scope:-$exp}] present and bound to current gen $g1"
+    else bad "    population expected[${scope:-$exp}] actual[$act] -> $POP_DETAIL"; fi
+    local rid_bad=""
+    for m in ${scope:-$exp}; do [[ -z "$(rid "$m")" ]] && rid_bad="$rid_bad $m"; done
+    [[ -z "$rid_bad" ]] && ok "    resolution_id present for [${scope:-$exp}]" \
+                        || bad "    resolution_id missing for:$rid_bad"
+    [[ "$v" -eq 0 ]] && ok "    VAL-CONS-002 = 0" || bad "    VAL-CONS-002 = $v"
+}
+
+printf 'DDOS_ENABLED="true"\nDDOS_MODE="classic"\n'         > /etc/nftban/conf.d/ddos/main.conf.local
+printf 'PORTSCAN_ENABLED="true"\nPORTSCAN_MODE="classic"\n' > /etc/nftban/conf.d/portscan/main.conf.local
+
+say "--- WITNESS ---"
+step 1 "ddos reload"       nftban ddos reload
+step 2 "portscan reload"   nftban portscan reload
+step 3 "firewall reload"   nftban firewall reload --quiet
+step 4 "firewall rebuild"  nftban firewall rebuild --quiet
+step 5 "firewall reset"    nftban firewall reset --force --quiet
+
+say "--- 6 daemon restart ---"
+b0="$(cat /proc/sys/kernel/random/boot_id)"
+systemctl restart nftband >/dev/null 2>&1; sleep 12
+pid="$(systemctl show -p MainPID --value nftband 2>/dev/null)"
+[[ -n "$pid" && "$pid" != 0 ]] && ok "6 daemon restart — active (MainPID=$pid), same boot ($([[ "$b0" == "$(cat /proc/sys/kernel/random/boot_id)" ]] && echo yes || echo NO))" \
+                               || bad "6 daemon restart — not active"
+population_ok && ok "    expected[$(expected_modules | tr '\n' ' ')] present and bound to gen $(gen)" \
+              || bad "    population -> $POP_DETAIL"
+[[ "$(valcons)" -eq 0 ]] && ok "    VAL-CONS-002 = 0" || bad "    VAL-CONS-002 = $(valcons)"
+
+say ""
+[[ $F -eq 0 ]] && { say "WITNESS PASS — $LABEL"; exit 0; }
+say "WITNESS FAIL — $LABEL ($F failures)"; exit 1
