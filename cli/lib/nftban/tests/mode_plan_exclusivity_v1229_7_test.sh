@@ -382,6 +382,195 @@ for src in "${SELECTORS[@]}"; do
     esac
 done
 
+# --- 12. PLAN BINDING MUST BE VALID BEFORE PUBLICATION (PR-5) ---------------
+echo ""
+echo "12. an unbound plan is never made durable..."
+# ⛔ THE MOTIVATING DEFECT. The publisher interpolated the generation straight
+# into the record. When the substitution yielded nothing it wrote
+# `NFTBAN_PLAN_BOUND_GENERATION=` and published anyway. The validator then
+# correctly rejected the unbound plan as UNKNOWN -> health degraded ->
+# `firewall rebuild` exited 1. Measured on a clean package-native host:
+#   pre-v1.229.7 rebuild rc=0 3/3   ·   v1.229.7 rebuild rc=1 5/5   (both distros)
+#
+#   AN INVALID PLAN MUST NEVER BE MADE DURABLE
+#   MERELY SO A LATER VALIDATOR CAN REJECT IT.
+for mod in ddos portscan; do
+    K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
+    bind_probe() {   # <generation-authority-behaviour> -> "<rc>|<record-state>"
+        local behaviour="$1" d; d="$(mktemp -d)"
+        mkdir -p "$d/conf.d/$mod" "$d/run"
+        printf '%s_ENABLED="true"\n%s_MODE="classic"\n' "$K" "$K" > "$d/conf.d/$mod/main.conf"
+        local out rc
+        out="$(NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
+               NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+               NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
+            set -Eeuo pipefail
+            source '$ROOT/cli/lib/nftban/lib/module_authority.sh'
+            source '$ROOT/cli/lib/nftban/core/nftban_${mod}.sh' 2>/dev/null || true
+            printf '7\n' > '$d/run/convergence-generation'
+            case '$behaviour' in
+                valid)  : ;;                                                     # P
+                empty)  nftban_plan_generation_current(){ printf ''; } ;;        # N1
+                fail)   nftban_plan_generation_current(){ return 3; } ;;         # N2
+            esac
+            nftban_${mod}_suricata_is_available(){ return 1; }
+            nftban_${mod}_apply(){ return 0; }; nftban_${mod}_teardown(){ return 0; }
+            _nftban_${mod}_log(){ :; }
+            nftban_${mod}_reconcile >/dev/null 2>&1; echo \"RC=\$?\"" 2>&1 || true)"
+        rc="$(grep -oE 'RC=[0-9]+' <<<"$out" | tail -1 | cut -d= -f2)"
+        local g state
+        g="$(sed -n 's/^NFTBAN_PLAN_BOUND_GENERATION=//p' "$d/run/module-plan-$mod.env" 2>/dev/null)"
+        if [[ ! -f "$d/run/module-plan-$mod.env" ]]; then state=NO_RECORD
+        elif [[ -z "$g" ]]; then state=UNBOUND_RECORD
+        else state="BOUND($g)"; fi
+        rm -rf "$d"; echo "${rc:-?}|$state"
+    }
+
+    # P — a valid generation is written exactly, not defaulted.
+    r="$(bind_probe valid)"
+    [[ "$r" == "0|BOUND(7)" ]] \
+        && ok "$mod P: valid generation -> record bound to exactly 7" \
+        || fail "$mod P: expected 0|BOUND(7), got $r"
+
+    # N1 — resolver returns EMPTY. This is the exact production signature.
+    r="$(bind_probe empty)"
+    if [[ "$r" == 0\|* ]]; then
+        fail "$mod N1: publication SUCCEEDED with an empty generation ($r) — EMPTY BINDING MUST BE UNREPRESENTABLE"
+    elif [[ "$r" == *"UNBOUND_RECORD" ]]; then
+        fail "$mod N1: an unbound record was made durable ($r)"
+    else
+        ok "$mod N1: empty generation -> publication refused, no usable record ($r)"
+    fi
+
+    # N2 — resolver FAILS (non-zero). Must not fall back to a default.
+    r="$(bind_probe fail)"
+    if [[ "$r" == 0\|* || "$r" == *"UNBOUND_RECORD" ]]; then
+        fail "$mod N2: resolver failure still produced a record ($r)"
+    else
+        ok "$mod N2: resolver failure -> publication refused ($r)"
+    fi
+done
+
+# --- 13. RUNTIME / IPC AUTHORITY BOUNDARY (PR-5) ----------------------------
+echo ""
+echo "13. no .7 component acquires authority over another lifecycle's runtime resource..."
+# ⛔ /run/nftban is declared by systemd-tmpfiles as `0755 nftban nftban` and holds
+# the daemon socket. A PR-5 revision used `mkdir -p` there, which recreated it
+# ROOT-owned and produced an unsafe-path-transition report; destroying that
+# directory in the lab removed the socket, IPC apply failed, module chains went
+# 16 -> 6, health went DOWN and rebuild exited 1.
+#   ESTABLISHING A PREREQUISITE != ACQUIRING AUTHORITY OVER THE PREREQUISITE.
+_v7_files=(lib/module_authority.sh core/nftban_ddos.sh core/nftban_portscan.sh cli/cmd_firewall.sh)
+seize=""
+for rel in "${_v7_files[@]}"; do
+    src="$ROOT/cli/lib/nftban/$rel"
+    [[ -f "$src" ]] || continue
+    if code_has "$src" '(mkdir|chown|chmod|install -d|rm -rf)[^|]*(/run/nftban|RECORD_DIR"?\}?"?$|RUN_DIR)'; then
+        seize="$seize $rel"
+    fi
+done
+if [[ -n "$seize" ]]; then
+    fail "these .7 files mutate the tmpfiles-owned runtime directory:$seize"
+else
+    ok "no .7 file creates/chowns/removes the runtime directory"
+fi
+
+# N4 — a failed publication must not leave a current-looking record.
+for mod in ddos portscan; do
+    d="$(mktemp -d)"; mkdir -p "$d/conf.d/$mod" "$d/run"
+    K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
+    printf '%s_ENABLED="true"\n%s_MODE="classic"\n' "$K" "$K" > "$d/conf.d/$mod/main.conf"
+    printf '7\n' > "$d/run/convergence-generation"
+    # make the atomic replace impossible: the target path is a directory
+    mkdir -p "$d/run/module-plan-$mod.env"
+    NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
+    NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+    NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
+        source '$AUTH'
+        source '$ROOT/cli/lib/nftban/core/nftban_${mod}.sh' 2>/dev/null || true
+        nftban_${mod}_suricata_is_available(){ return 1; }
+        nftban_${mod}_apply(){ return 0; }; nftban_${mod}_teardown(){ return 0; }
+        _nftban_${mod}_log(){ :; }
+        nftban_${mod}_reconcile" >/dev/null 2>&1
+    leftover="$(find "$d/run" -maxdepth 1 -name "module-plan-$mod.env.*" 2>/dev/null | wc -l)"
+    if [[ "$leftover" -eq 0 ]]; then
+        ok "$mod N4: failed publication leaves no partial/temp record"
+    else
+        fail "$mod N4: $leftover orphaned temp record(s) survived a failed publication"
+    fi
+    rm -rf "$d"
+done
+
+# --- 14. auto MUST RESOLVE WITH ITS PREDICATE LOADED (PR-5C) -----------------
+# `auto` is decided by calling nftban_<mod>_suricata_is_available. If the
+# reconcile root resolves BEFORE that function has been sourced, the resolver
+# records basis `auto_suricata_module_not_loaded` and falls back to classic --
+# so the module can never select suricata regardless of the environment.
+# WITNESSED 2026-08-24 on lab2/DEB and lab4/RPM: portscan resolved classic with
+# its availability predicate observed TRUE on both families, because portscan
+# loads optional modules from a function the enable/apply paths call only AFTER
+# resolution, while ddos sources its suricata module at FILE scope.
+#
+#   RESOLVING BEFORE THE INPUTS ARE LOADED IS NOT A RESOLUTION.
+#
+# The subject is the reconcile ROOT body, and the assertion is ORDERING: a
+# loader must appear before the resolve call. Mere presence of a loader
+# somewhere in the file is exactly the condition that shipped broken.
+#   MENTION != ORDERING
+echo ""
+echo "14. auto resolves with its predicate loaded..."
+for mod in ddos portscan; do
+    f="$ROOT/cli/lib/nftban/core/nftban_${mod}.sh"
+    if [[ ! -f "$f" ]]; then fail "SUBJECT_NOT_FOUND: $f"; continue; fi
+
+    # File-scope sourcing satisfies the precondition unconditionally (ddos).
+    file_scope=0
+    if awk '/^[a-zA-Z_][a-zA-Z0-9_]*\(\) *\{/{d=1} /^\}/{d=0} !d && /source .*nftban_'"$mod"'_suricata\.sh/{found=1} END{exit !found}' "$f"; then
+        file_scope=1
+    fi
+
+    # ⛔ STRIP COMMENTS BEFORE MATCHING. The first revision of this guard passed
+    # its own negative control: the explanatory comment inside the reconcile body
+    # names _nftban_<mod>_load_modules, so deleting the actual CALL still matched.
+    # A guard that reads prose is measuring documentation, not behaviour.
+    #   MENTION != ORDERING  (this guard's own subject line)
+    body="$(awk '/^nftban_'"$mod"'_reconcile\(\) \{/{i=1} i{print} i&&/^\}/{exit}' "$f" \
+            | sed 's/[[:space:]]*#.*$//')"
+    if [[ -z "$body" ]]; then
+        fail "$mod: nftban_${mod}_reconcile not found — cannot assert resolution ordering"
+        continue
+    fi
+
+    # ⛔ `|| true` above is load-bearing, not cosmetic. Under `set -Eeuo pipefail`
+    # a no-match grep inside a command substitution makes the ASSIGNMENT fail, so
+    # the script aborted at exactly the case this section exists to detect --
+    # exit 1 with no diagnosis, and every later section skipped. A guard that
+    # dies on its own defect case reports the right exit code for the wrong
+    # reason and stops being readable evidence.
+    #   ABORTING != REPORTING
+    # Non-vacuity: the resolve call MUST be present, else the ordering assertion
+    # below would pass on a body that never resolves at all.
+    resolve_ln="$(grep -n "nftban_module_resolve_plan" <<<"$body" | head -1 | cut -d: -f1)" || true
+    if [[ -z "$resolve_ln" ]]; then
+        fail "$mod: reconcile root does not call nftban_module_resolve_plan — subject invalid"
+        continue
+    fi
+
+    if [[ $file_scope -eq 1 ]]; then
+        ok "$mod: suricata predicate sourced at file scope (precondition unconditional)"
+        continue
+    fi
+
+    loader_ln="$(grep -nE "_nftban_${mod}_load_modules|source .*nftban_${mod}_suricata\.sh" <<<"$body" | head -1 | cut -d: -f1)" || true
+    if [[ -z "$loader_ln" ]]; then
+        fail "$mod: reconcile resolves \`auto\` without loading nftban_${mod}_suricata.sh — basis will be auto_suricata_module_not_loaded and suricata can NEVER be selected"
+    elif (( loader_ln < resolve_ln )); then
+        ok "$mod: predicate loaded (line $loader_ln) before resolution (line $resolve_ln)"
+    else
+        fail "$mod: predicate loaded at line $loader_ln but resolution happens at line $resolve_ln — LOADED AFTER RESOLVING IS NOT LOADED"
+    fi
+done
+
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""
 echo "8. runtime classic XOR suricata..."

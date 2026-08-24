@@ -61,6 +61,41 @@ _nftban_check_suricata_available() {
 # Resolve "auto" mode to effective mode based on Suricata availability
 # Usage: _nftban_mode_detect_effective <configured_mode>
 # Returns: effective mode (classic or suricata)
+# =============================================================================
+# v1.229.7 PR-5C — READ-SIDE MODE REPORTING CONSUMES THE PLAN
+# =============================================================================
+# ⛔ READ / STATUS / REPORT MUST CONSUME THE EXISTING PLAN, NEVER RESOLVE.
+# `_nftban_mode_detect_effective` resolves `auto` by probing Suricata. Leaving it
+# on a read path meant `nftban ddos mode` and `nftban modes` could report an
+# effective mode the system had never decided -- the exact contradiction
+# v1.229.7 removed from the module CLIs, surviving in this helper.
+#
+# SCOPE: ddos and portscan ONLY. LoginMon's mode provenance is unevaluated
+# (OPEN_LOGINMON_MODE_CONFIG_SELECTOR_UNEVALUATED); imposing .7 semantics on it
+# without proof would silently change its behaviour.
+#   COLLAPSING A DUPLICATE AUTHORITY != EXTENDING IT TO NEW SUBJECTS.
+#
+# ⛔ This does NOT call nftban_module_resolve_plan. A reporter that resolves is
+# still a resolver, whichever function it calls.
+_nftban_mode_effective_from_plan() {   # <module> -> effective mode, or "" if not in scope
+    case "${1:-}" in
+        ddos|portscan) ;;
+        *) return 1 ;;
+    esac
+    # ⛔ IN SCOPE => NEVER FALL BACK TO RESOLVING. If the plan cannot be read the
+    # honest report is `unknown`; returning non-zero here would send ddos/portscan
+    # back to _nftban_mode_detect_effective and quietly restore a read-side
+    # resolver through the error path.
+    #   A FALLBACK THAT RESOLVES IS STILL A RESOLVER.
+    local out eff
+    if declare -F nftban_module_report_modes >/dev/null 2>&1 \
+       && out="$(nftban_module_report_modes "$1" 2>/dev/null)"; then
+        eff="$(sed -n 's/^NFTBAN_REPORT_EFFECTIVE_MODE=//p' <<<"$out")"
+        [[ -n "$eff" ]] && { printf '%s' "$eff"; return 0; }
+    fi
+    printf 'unknown'; return 0
+}
+
 _nftban_mode_detect_effective() {
     local configured_mode="${1:-auto}"
 
@@ -108,8 +143,12 @@ _nftban_mode_read() {
         fi
     fi
 
-    # Determine effective mode
-    MODE_EFFECTIVE=$(_nftban_mode_detect_effective "$MODE_CONFIGURED")
+    # Determine effective mode.
+    # ⛔ ddos/portscan CONSUME the published plan; they must not re-resolve here.
+    # Other modules keep the legacy path until their provenance is evaluated.
+    if ! MODE_EFFECTIVE="$(_nftban_mode_effective_from_plan "$module_name" 2>/dev/null)"; then
+        MODE_EFFECTIVE=$(_nftban_mode_detect_effective "$MODE_CONFIGURED")
+    fi
 }
 
 # =============================================================================
@@ -336,9 +375,15 @@ HEADER
         echo "${mode_var_name}=\"$new_mode\"" >> "$config_local"
     fi
 
-    # Determine effective mode for display
+    # Determine effective mode for display.
+    # ⛔ Durable intent has just changed, so the published plan is legitimately
+    # SUPERSEDED until a convergence root runs. Reporting a freshly re-resolved
+    # mode here would assert an effect that has not happened yet.
+    #   CONFIGURED INTENT != EFFECTIVE DECISION.
     local effective_mode
-    effective_mode=$(_nftban_mode_detect_effective "$new_mode")
+    if ! effective_mode="$(_nftban_mode_effective_from_plan "$module_name" 2>/dev/null)"; then
+        effective_mode=$(_nftban_mode_detect_effective "$new_mode")
+    fi
 
     # JSON output
     if [[ "$json_mode" == "true" ]] && declare -f json_output &>/dev/null; then

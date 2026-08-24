@@ -413,6 +413,29 @@ nftban_portscan_init() {
 # -----------------------------------------------------------------------------
 nftban_portscan_reconcile() {
     local _plan
+    # ⛔ ESTABLISH THE RESOLUTION PRECONDITION BEFORE RESOLVING.
+    # `auto` is decided by calling nftban_portscan_suricata_is_available. That
+    # function only exists once _nftban_portscan_load_modules has sourced the
+    # suricata module -- and unlike ddos (which sources its suricata module at
+    # FILE scope) portscan loads its optional modules from a function that the
+    # enable/apply paths call only AFTER resolution. So the resolver found no
+    # predicate, recorded basis `auto_suricata_module_not_loaded`, and fell back
+    # to classic every time: portscan `auto` was structurally incapable of ever
+    # resolving to suricata, no matter what the environment actually offered.
+    # WITNESSED on lab2/DEB and lab4/RPM 2026-08-24, both families, with the
+    # canonical availability predicate observed TRUE:
+    #     ddos     -> basis auto_suricata_unavailable      (predicate consulted)
+    #     portscan -> basis auto_suricata_module_not_loaded (never consulted)
+    #
+    #   RESOLVING BEFORE THE INPUTS ARE LOADED IS NOT A RESOLUTION --
+    #   IT IS A DEFAULT WEARING A RESOLUTION'''S NAME.
+    #
+    # Tolerant by design: if the optional module genuinely is not installed the
+    # resolver still records `auto_suricata_module_not_loaded`, which is then a
+    # TRUE statement about the host rather than an artefact of call ordering.
+    # init_state only resets in-memory arrays and re-reads persisted state, so
+    # calling the existing loader earlier adds no new system mutation.
+    _nftban_portscan_load_modules || true
     # A root OPENS a transaction: clear any inherited plan first, so a nested
     # root cannot silently reuse an outer transaction's identity.
     unset NFTBAN_PLAN_TXN_ID NFTBAN_PLAN_RESOLUTION_ID NFTBAN_PLAN_MODULE
@@ -427,10 +450,62 @@ nftban_portscan_reconcile() {
     # deliberately, because a resolution is valid for ONE transaction.
     # ⛔ DERIVED EVIDENCE, NOT DURABLE CONFIGURATION. MODE=auto stays the
     #    operator's intent; this record only says what it resolved to, and when.
-    if [[ -d "${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}" ]]; then
-        local _pf="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}/module-plan-portscan.env" _tmp
-        _tmp="${_pf}.$$"
-        {
+    # ⛔ EMPTY BINDING MUST BE UNREPRESENTABLE.
+    #
+    # This block previously interpolated the generation directly into the record:
+    #     printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$(nftban_plan_generation_current)"
+    # A command substitution that yielded nothing wrote an EMPTY field, and the
+    # record was published anyway -- unbound and unusable. The validator then
+    # correctly rejected it as UNKNOWN, which degraded health and made
+    # `firewall rebuild` exit 1. Measured: pre-v1.229.7 rebuild rc=0 3/3;
+    # v1.229.7 rebuild rc=1 5/5 on a clean package-native host, both distros.
+    #
+    #   AN INVALID PLAN MUST NEVER BE MADE DURABLE
+    #   MERELY SO A LATER VALIDATOR CAN REJECT IT.
+    #
+    # The binding is now obtained and VALIDATED before any serialization. If it
+    # cannot be established the publication fails and the convergence
+    # transaction fails with it -- no record is written at all.
+    # ⛔ Do NOT substitute a default, reuse the previous record's generation, or
+    #    infer one from the environment. That would manufacture authority.
+    local _gen
+    if ! declare -F nftban_plan_generation_current >/dev/null 2>&1; then
+        echo "nftban_portscan_reconcile: plan-generation authority unavailable — refusing to publish an unbound plan." >&2
+        return 4
+    fi
+    _gen="$(nftban_plan_generation_current)" || _gen=""
+    if [[ -z "$_gen" || ! "$_gen" =~ ^[0-9]+$ ]]; then
+        echo "nftban_portscan_reconcile: convergence generation is '${_gen:-<empty>}' — refusing to publish an unbound plan." >&2
+        return 4
+    fi
+
+    # ⛔ A REQUIRED PUBLICATION MAY NOT BE GUARDED BY AN OPTIONAL EXISTENCE CHECK.
+    # The old `if [[ -d ... ]]` had no else, so a missing runtime directory was a
+    # silent no-op. Creating the directory we own is not inventing a plan; the
+    # root still resolves, this only makes the resolved decision observable.
+    local _dir="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
+    # ⛔ DO NOT create the canonical runtime directory here. /run/nftban is owned
+    # by systemd-tmpfiles (see /usr/lib/tmpfiles.d/nftban.conf) and must carry
+    # its declared ownership: the daemon's socket lives there. An earlier
+    # revision used `mkdir -p`, which recreated it as ROOT and produced
+    #   "unsafe path transition /run/nftban (owned by nftban) -> (owned by root)"
+    # A publisher silently taking ownership of another authority's directory is
+    # the same defect class this lane removes, one level down.
+    #   ESTABLISHING A PREREQUISITE != SEIZING ANOTHER AUTHORITY'S RESOURCE.
+    # A missing runtime directory is an ANOMALY the operator must see, not
+    # something to paper over: fail the transaction and say why.
+    # (A caller-supplied NFTBAN_PLAN_RECORD_DIR — lab/test isolation — is the
+    # caller's own directory and is created by the caller.)
+    if [[ ! -d "$_dir" ]]; then
+        echo "nftban_portscan_reconcile: runtime directory $_dir is absent — refusing to publish." >&2
+        echo "                        it is owned by systemd-tmpfiles; restore it with:" >&2
+        echo "                        systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf" >&2
+        return 4
+    fi
+
+    local _pf="$_dir/module-plan-portscan.env" _tmp
+    _tmp="${_pf}.$$"
+    if ! {
             printf 'NFTBAN_PLAN_MODULE=%s\n'           "$NFTBAN_PLAN_MODULE"
             printf 'NFTBAN_PLAN_ENABLED=%s\n'          "$NFTBAN_PLAN_ENABLED"
             printf 'NFTBAN_PLAN_CONFIGURED_MODE=%s\n'  "$NFTBAN_PLAN_CONFIGURED_MODE"
@@ -438,8 +513,17 @@ nftban_portscan_reconcile() {
             printf 'NFTBAN_PLAN_RESOLUTION_ID=%s\n'    "$NFTBAN_PLAN_RESOLUTION_ID"
             printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$NFTBAN_PLAN_RESOLVED_AT"
             printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$NFTBAN_PLAN_RESOLUTION_BASIS"
-            printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$(nftban_plan_generation_current)"
-        } > "$_tmp" 2>/dev/null && { chmod 0640 "$_tmp" 2>/dev/null || true; mv -f "$_tmp" "$_pf" 2>/dev/null || rm -f "$_tmp"; }
+            printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$_gen"
+        } > "$_tmp" 2>/dev/null; then
+        rm -f "$_tmp"
+        echo "nftban_portscan_reconcile: failed to write the plan record — refusing to publish a partial one." >&2
+        return 4
+    fi
+    chmod 0640 "$_tmp" 2>/dev/null || true
+    if ! mv -f "$_tmp" "$_pf" 2>/dev/null; then
+        rm -f "$_tmp"
+        echo "nftban_portscan_reconcile: atomic publication failed." >&2
+        return 4
     fi
     export NFTBAN_PLAN_MODULE NFTBAN_PLAN_ENABLED NFTBAN_PLAN_CONFIGURED_MODE \
            NFTBAN_PLAN_EFFECTIVE_MODE NFTBAN_PLAN_RESOLUTION_ID \

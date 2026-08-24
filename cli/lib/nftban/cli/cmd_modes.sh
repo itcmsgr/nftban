@@ -135,6 +135,30 @@ _modes_read_config() {
 
 # Resolve effective mode based on config and Suricata availability
 # Args: $1 = configured mode, $2 = suricata_running (true/false)
+# v1.229.7 PR-5C — ddos/portscan rows CONSUME the published plan.
+# ⛔ `_modes_resolve_effective` resolves `auto` itself (and even accepts
+# `hybrid`, which v1.229.7 treats as unrenderable). On a read surface that let
+# `nftban modes` report an effective mode the system never decided, and disagree
+# with `nftban health` about whether a configured state is valid at all.
+#   READ / REPORT MUST CONSUME THE EXISTING PLAN, NEVER RESOLVE.
+# ⛔ SCOPE: ddos + portscan only. The Login row keeps the legacy path -- its mode
+# provenance is unevaluated and imposing .7 semantics would change its behaviour.
+_modes_effective_for() {   # <module> <configured> <suricata_running>
+    local mod="$1"
+    case "$mod" in
+        ddos|portscan)
+            if declare -F nftban_module_report_modes >/dev/null 2>&1; then
+                local out eff
+                out="$(nftban_module_report_modes "$mod" 2>/dev/null)" || out=""
+                eff="$(sed -n 's/^NFTBAN_REPORT_EFFECTIVE_MODE=//p' <<<"$out")"
+                [[ -n "$eff" ]] && { printf '%s' "$eff"; return 0; }
+            fi
+            # Plan unavailable is a legitimate answer on a read surface.
+            printf 'unknown'; return 0 ;;
+    esac
+    _modes_resolve_effective "$2" "$3"
+}
+
 _modes_resolve_effective() {
     local config_mode="$1"
     local suricata_running="$2"
@@ -240,8 +264,8 @@ _modes_overview() {
     
     # Calculate effective modes
     local portscan_effective ddos_effective login_effective
-    portscan_effective=$(_modes_resolve_effective "$portscan_config" "$suricata_running")
-    ddos_effective=$(_modes_resolve_effective "$ddos_config" "$suricata_running")
+    portscan_effective=$(_modes_effective_for portscan "$portscan_config" "$suricata_running")
+    ddos_effective=$(_modes_effective_for ddos "$ddos_config" "$suricata_running")
     login_effective=$(_modes_resolve_effective "$login_config" "$suricata_running")
     
     # Get reasons
@@ -302,8 +326,8 @@ _modes_json() {
     
     # Calculate effective modes
     local portscan_effective ddos_effective login_effective
-    portscan_effective=$(_modes_resolve_effective "$portscan_config" "$suricata_running")
-    ddos_effective=$(_modes_resolve_effective "$ddos_config" "$suricata_running")
+    portscan_effective=$(_modes_effective_for portscan "$portscan_config" "$suricata_running")
+    ddos_effective=$(_modes_effective_for ddos "$ddos_config" "$suricata_running")
     login_effective=$(_modes_resolve_effective "$login_config" "$suricata_running")
     
     # Get reasons

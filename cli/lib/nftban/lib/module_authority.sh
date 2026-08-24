@@ -253,14 +253,27 @@ nftban_module_resolve_plan() {
 #
 # ⛔ This is a binding, not an authority. The generation never selects a mode.
 # -----------------------------------------------------------------------------
-NFTBAN_PLAN_GENERATION_FILE="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
+# ⛔ EXPORTED. `export -f nftban_plan_generation_current` sends the FUNCTION to
+# child processes; without exporting the variable it depends on, that inherited
+# function runs with NFTBAN_PLAN_GENERATION_FILE UNSET and returns EMPTY.
+# Measured: parent gen=[6] var=[/run/nftban/convergence-generation]
+#           child  gen=[]  var=[UNSET]
+# That is why the whole firewall lane (reload/rebuild/reset), which invokes
+# `nftban <mod> reload` as a subprocess, published UNBOUND plan records while a
+# standalone module reload and the daemon published correctly.
+#   AN EXPORTED FUNCTION MUST NOT DEPEND ON AN UNEXPORTED VARIABLE.
+export NFTBAN_PLAN_GENERATION_FILE="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
 # v1.229.7 PR-4: the transient plan-record directory, as a variable so the read
 # contract is testable without rewriting source text. Mirrors validator.RunDir.
-NFTBAN_PLAN_RECORD_DIR="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
+export NFTBAN_PLAN_RECORD_DIR="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
 
 nftban_plan_generation_current() {
+    # Defence in depth: an inherited copy of this function must still resolve the
+    # canonical path if the variable did not travel with it. This is the SAME
+    # canonical location, not an invented one -- it manufactures no authority.
+    local gf="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
     local g=""
-    [[ -r "$NFTBAN_PLAN_GENERATION_FILE" ]] && read -r g < "$NFTBAN_PLAN_GENERATION_FILE" 2>/dev/null
+    [[ -r "$gf" ]] && read -r g < "$gf" 2>/dev/null
     # An absent file is generation 0, not an error: a host that has never
     # converged still has a coherent (empty) generation. ENOENT != ABSENCE of
     # meaning -- it IS the pre-convergence generation, and records stamped 0
@@ -271,14 +284,34 @@ nftban_plan_generation_current() {
 
 nftban_plan_generation_bump() {
     local dir cur next tmp
-    dir="$(dirname "$NFTBAN_PLAN_GENERATION_FILE")"
-    [[ -d "$dir" ]] || return 0   # no /run/nftban yet: nothing to bind to
+    local gf="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
+    dir="$(dirname "$gf")"
+    # ⛔ Do NOT create this directory. /run/nftban is owned by systemd-tmpfiles
+    # (0755 nftban:nftban) and holds the daemon socket.
+    #   ESTABLISHING A PREREQUISITE != ACQUIRING AUTHORITY OVER IT.
+    # ⛔ Every failure path below previously returned 0 silently, so a root could
+    # believe it had advanced the binding when it had not. Callers use `|| true`,
+    # so the return value alone changes no control flow -- the DIAGNOSTIC is what
+    # makes the condition observable.
+    #   A SILENT FAILURE IS INDISTINGUISHABLE FROM SUCCESS.
+    if [[ ! -d "$dir" ]]; then
+        echo "nftban_plan_generation_bump: $dir absent — convergence binding NOT advanced." >&2
+        return 5
+    fi
     cur="$(nftban_plan_generation_current)"
     next=$(( cur + 1 ))
-    tmp="${NFTBAN_PLAN_GENERATION_FILE}.$$"
-    printf '%s\n' "$next" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    tmp="${gf}.$$"
+    if ! printf '%s\n' "$next" > "$tmp" 2>/dev/null; then
+        rm -f "$tmp"
+        echo "nftban_plan_generation_bump: cannot write $tmp — binding NOT advanced." >&2
+        return 5
+    fi
     chmod 0644 "$tmp" 2>/dev/null || true
-    mv -f "$tmp" "$NFTBAN_PLAN_GENERATION_FILE" 2>/dev/null || rm -f "$tmp"
+    if ! mv -f "$tmp" "$gf" 2>/dev/null; then
+        rm -f "$tmp"
+        echo "nftban_plan_generation_bump: atomic replace of $gf failed — binding NOT advanced." >&2
+        return 5
+    fi
     return 0
 }
 
