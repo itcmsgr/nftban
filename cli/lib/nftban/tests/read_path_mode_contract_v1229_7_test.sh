@@ -183,6 +183,34 @@ for mod in ddos portscan; do
     fi
 done
 
+# --- no read path may DERIVE A MODE from an availability probe -------------
+echo ""
+echo "no read path derives a mode from availability (PR-4B / F-A1)..."
+# ⛔ The arm above counts callers of a NAMED function. The claim it is read as
+# supporting is broader: "no read path resolves auto". Probing availability and
+# assigning a mode is the same defect under a different name.
+#   NO CALLER OF A NAMED FUNCTION != NO INSTANCE OF THE BEHAVIOUR.
+# Reporting `suricata_available` as its OWN field is legitimate -- that is the
+# observed-runtime axis. Assigning a MODE from it is not.
+for mod in ddos portscan; do
+    src="$ROOT/cli/lib/nftban/core/nftban_${mod}.sh"
+    bad=""
+    while IFS=: read -r ln _; do
+        [[ -n "$ln" ]] || continue
+        # look at the probe line and the few lines it guards
+        window="$(sed -n "${ln},$((ln+6))p" "$src" | sed 's/#.*$//')"
+        if grep -qE '\b(mode|MODE|_ACTIVE_MODE|detected_mode|effective[_a-z]*)=' <<<"$window"; then
+            fn="$(awk -v L="$ln" 'NR<=L && /^[a-z_]+\(\) \{/{f=$1} END{print f}' "$src")"
+            bad="$bad ${fn%%(*}:$ln"
+        fi
+    done < <(sed 's/#.*$//' "$src" | grep -nE "_suricata_is_available|suricata_available\b" | grep -v "() {" || true)
+    if [[ -n "$bad" ]]; then
+        fail "$mod derives a mode from an availability probe at:$bad — AVAILABILITY IS AN OBSERVATION, NOT A DECISION"
+    else
+        ok "$mod probes availability only to report it, never to choose a mode"
+    fi
+done
+
 echo ""
 if [[ $FAILURES -gt 0 ]]; then
     echo "::error::read-path mode contract FAILED: $FAILURES"

@@ -267,6 +267,18 @@ for mod in ddos portscan; do
     fi
 done
 
+# --- LAB obligation, declared not faked (PR-4B, closes Pass A finding F-A3) ---
+echo ""
+echo "5. runtime classic XOR suricata..."
+# ⛔ Every arm above is CALL-LEVEL: it proves which entrypoints ran, never what
+# ended up in the kernel. This PASS must not be read as runtime proof.
+#   CALL-LEVEL EXCLUSIVITY != RUNTIME EXCLUSIVITY
+echo "  LAB   this guard proves DISPATCH, not live nft state."
+echo "  LAB   required per module, independently, in live nft:"
+echo "  LAB     effective_mode=classic  => suricata projection ABSENT (ip AND ip6)"
+echo "  LAB     effective_mode=suricata => classic  projection ABSENT (ip AND ip6)"
+echo "  LAB   observed across reload / rebuild / reset / restart / reboot."
+
 echo ""
 if [[ $FAILURES -gt 0 ]]; then
     echo "::error::plan projection contract FAILED: $FAILURES"
