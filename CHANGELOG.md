@@ -11,6 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.7] - 2026-08-24 — the mode a module reports must be the mode the kernel is in
+
+A module's mode was resolved wherever it happened to be needed. `nftban modes`, the
+renderer, the daemon and the validator each worked it out for themselves, so `auto` could
+mean one thing to the report and another to the ruleset, and nothing in the system was
+obliged to notice.
+
+A transaction now resolves the mode once, at its root, and publishes the result as a
+transient record bound to the current convergence generation. Everything downstream
+consumes that record instead of re-deriving an answer. A record whose binding is stale, or
+that belongs to another transaction, is refused rather than used. The configured intent is
+untouched by this: `auto` remains what the operator wrote, and the record only states what
+it resolved to, and when.
+
+Three defects followed from the old arrangement and are fixed here.
+
+PortScan's `auto` could never select Suricata on any host. Resolution ran before the module
+loader had defined the availability predicate, so the resolver took its fail-closed branch
+and returned `classic` every time, recording a basis of `auto_suricata_module_not_loaded`.
+DDoS was unaffected only because it sources its Suricata module at file scope.
+
+Switching modes with `nftban ddos reload` or `nftban portscan reload` published the new plan
+but left the previous mode's projection in the ruleset. The cleanup path flushes chains and
+keeps them for reference safety, which is appropriate for `nftban ddos disable` and not
+sufficient for a mode transition: the emptied chains stayed jumped from the base `input`
+chain in both address families, and `nftban health` reported DEGRADED with `VAL-CHAIN-004`
+for each one. Cross-mode teardown now removes the jump edges and the chains themselves,
+verifies their absence, and fails the transaction rather than claim an exclusivity it did
+not establish. `nftban firewall rebuild` never showed this, because it recreates the table
+from scratch and so never exercises the transition path at all.
+
+The validator gained an explicit unknown state. A module whose expected kernel objects could
+not be determined previously reported as present, which read as verified. Where the evidence
+is missing the validator now declines the claim in both directions, and that unknown reaches
+the top-level status instead of being absorbed into a pass.
+
 ## [v1.229.6] - 2026-08-21 — a blocking property has to be checked before the thing it blocks
 
 v1.229.5 published with `nftban-core` carrying `vcs.modified=true`. Absence of that marker
