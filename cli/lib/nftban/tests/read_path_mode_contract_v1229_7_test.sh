@@ -211,6 +211,80 @@ for mod in ddos portscan; do
     fi
 done
 
+# --- ONE MODE DECISION AUTHORITY, over the EXECUTABLE population (PR-5C) ----
+echo ""
+echo "one mode-decision authority for ddos/portscan, repo-wide..."
+# ⛔ THE SUBJECT-POPULATION FAILURE THIS GUARD EXISTS FOR. Authority Map Pass A/B
+# declared row 5 COMPLETE while `cmd_modes.sh` and `helpers/nftban_mode.sh` --
+# both live, both reachable, both independently resolving `auto` -- were absent
+# from every .7 guard's population. `nftban modes` could report an effective mode
+# the system never decided, and `_modes_resolve_effective` even accepted `hybrid`,
+# which .7 treats as unrenderable.
+#   A GUARD'S PASS ESTABLISHES EXACTLY ITS SUBJECT POPULATION AND NOTHING MORE.
+#
+# Population is derived by CALL GRAPH, not a filename list: any shell file that
+# reaches a legacy resolver is in scope automatically.
+LEGACY_RESOLVERS='_modes_resolve_effective|_nftban_mode_detect_effective'
+declare -a OFFENDERS=()
+while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    src="${hit%%:*}"; rest="${hit#*:}"; ln="${rest%%:*}"
+    line="$(sed -n "${ln}p" "$src")"
+    grep -qE "^\s*#"      <<<"$line" && continue   # comment
+    grep -qE "\(\) \{"  <<<"$line" && continue   # definition
+    grep -qE "^export -f"  <<<"$line" && continue   # export
+    rel="${src#"$ROOT"/}"
+
+    # (a) DIRECT: the call site itself names ddos/portscan. Always an offender --
+    #     no context exemption. An earlier revision exempted the whole enclosing
+    #     function if ANY line in it used the plan path, so a legacy call sitting
+    #     one line below a plan-consuming call went undetected (M38 did not fire).
+    #       AN EXEMPTION MUST BIND TO THE CALL SITE, NOT ITS NEIGHBOURHOOD.
+    # ⛔ NO TRAILING \b. Underscore is a word character, so `\bddos\b` does NOT
+    # match `ddos_effective` or `$ddos_config` -- the exact identifier forms this
+    # code uses. An earlier revision used it and the control silently failed to
+    # see its own subject (M38 did not fire against a real regression).
+    #   A WORD BOUNDARY IS NOT A TOKEN BOUNDARY IN SNAKE_CASE.
+    if grep -qiE '(^|[^a-z0-9_])(ddos|portscan)' <<<"$line"; then
+        OFFENDERS+=("$rel:$ln(direct)")
+        continue
+    fi
+
+    # (b) PARAMETERISED: reached with a module variable. Legitimate ONLY as the
+    #     fallback arm of an immediately-preceding plan check, which for
+    #     ddos/portscan always succeeds and so cannot reach here.
+    guard="$(sed -n "$((ln>2 ? ln-2 : 1)),$((ln-1))p" "$src")"
+    if grep -qE '_effective_from_plan|_modes_effective_for' <<<"$guard"; then
+        continue
+    fi
+    # Structurally unreachable for ddos/portscan: an earlier `case` arm in the
+    # SAME function matches them and returns before this line. That is a real
+    # exemption, not a neighbourhood one -- the in-scope modules never arrive.
+    fstart="$(awk -v L="$ln" 'NR<=L && /^_?[a-z_]+\(\) \{/{n=NR} END{print n}' "$src")"
+    before="$(sed -n "${fstart},$((ln-1))p" "$src")"
+    if grep -qE '^\s*(ddos\|portscan|portscan\|ddos)\)' <<<"$before" \
+       && grep -qE 'return 0' <<<"$before"; then
+        continue
+    fi
+    if grep -qE 'module_name|mode_var_name|\$1|\$2' <<<"$line"; then
+        OFFENDERS+=("$rel:$ln(parameterised, no plan guard)")
+    fi
+done < <(grep -rnE "$LEGACY_RESOLVERS" "$ROOT/cli/lib/nftban" --include="*.sh" 2>/dev/null | grep -v "/tests/" || true)
+
+if [[ ${#OFFENDERS[@]} -eq 0 ]]; then
+    ok "no ddos/portscan path reaches a legacy mode resolver"
+else
+    fail "ddos/portscan still reach a legacy resolver at: ${OFFENDERS[*]}"
+fi
+
+# ⛔ Login must NOT have been dragged into .7 semantics.
+#   COLLAPSING A DUPLICATE AUTHORITY != EXTENDING IT TO NEW SUBJECTS.
+if grep -qE 'login_effective=\$\(_modes_resolve_effective' "$ROOT/cli/lib/nftban/cli/cmd_modes.sh"; then
+    ok "Login row still uses its own legacy path (behaviour unchanged)"
+else
+    fail "Login was moved onto .7 mode semantics without its provenance being proven"
+fi
+
 echo ""
 if [[ $FAILURES -gt 0 ]]; then
     echo "::error::read-path mode contract FAILED: $FAILURES"
