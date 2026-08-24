@@ -541,9 +541,16 @@ for mod in ddos portscan; do
         continue
     fi
 
+    # ⛔ `|| true` above is load-bearing, not cosmetic. Under `set -Eeuo pipefail`
+    # a no-match grep inside a command substitution makes the ASSIGNMENT fail, so
+    # the script aborted at exactly the case this section exists to detect --
+    # exit 1 with no diagnosis, and every later section skipped. A guard that
+    # dies on its own defect case reports the right exit code for the wrong
+    # reason and stops being readable evidence.
+    #   ABORTING != REPORTING
     # Non-vacuity: the resolve call MUST be present, else the ordering assertion
     # below would pass on a body that never resolves at all.
-    resolve_ln="$(grep -n "nftban_module_resolve_plan" <<<"$body" | head -1 | cut -d: -f1)"
+    resolve_ln="$(grep -n "nftban_module_resolve_plan" <<<"$body" | head -1 | cut -d: -f1)" || true
     if [[ -z "$resolve_ln" ]]; then
         fail "$mod: reconcile root does not call nftban_module_resolve_plan — subject invalid"
         continue
@@ -554,7 +561,7 @@ for mod in ddos portscan; do
         continue
     fi
 
-    loader_ln="$(grep -nE "_nftban_${mod}_load_modules|source .*nftban_${mod}_suricata\.sh" <<<"$body" | head -1 | cut -d: -f1)"
+    loader_ln="$(grep -nE "_nftban_${mod}_load_modules|source .*nftban_${mod}_suricata\.sh" <<<"$body" | head -1 | cut -d: -f1)" || true
     if [[ -z "$loader_ln" ]]; then
         fail "$mod: reconcile resolves \`auto\` without loading nftban_${mod}_suricata.sh — basis will be auto_suricata_module_not_loaded and suricata can NEVER be selected"
     elif (( loader_ln < resolve_ln )); then
