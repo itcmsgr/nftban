@@ -170,6 +170,10 @@ step(){
 printf 'DDOS_ENABLED="true"\nDDOS_MODE="classic"\n'         > /etc/nftban/conf.d/ddos/main.conf.local
 printf 'PORTSCAN_ENABLED="true"\nPORTSCAN_MODE="classic"\n' > /etc/nftban/conf.d/portscan/main.conf.local
 
+# WITNESS_ONLY=arms runs ONLY section 7 (the read-path ARM A/B/C arms).
+# Default (unset) runs everything, so the gate cannot silently shrink a full run.
+#   A SECTION FILTER MUST NARROW ONLY WHEN EXPLICITLY ASKED.
+if [[ "${WITNESS_ONLY:-all}" != "arms" ]]; then
 say "--- WITNESS ---"
 step 1 "ddos reload"       nftban ddos reload
 step 2 "portscan reload"   nftban portscan reload
@@ -186,6 +190,9 @@ pid="$(systemctl show -p MainPID --value nftband 2>/dev/null)"
 population_ok && ok "    expected[$(expected_modules | tr '\n' ' ')] present and bound to gen $(gen)" \
               || bad "    population -> $POP_DETAIL"
 [[ "$(valcons)" -eq 0 ]] && ok "    VAL-CONS-002 = 0" || bad "    VAL-CONS-002 = $(valcons)"
+else
+    say "--- WITNESS: sections 1-6 SKIPPED (WITNESS_ONLY=arms) ---"
+fi
 
 # --- 7 nftban modes: OBSERVATION FOLLOWS THE PLAN, NOT THE ENVIRONMENT -------
 say "--- 7 nftban modes read/report (PR-5C) ---"
