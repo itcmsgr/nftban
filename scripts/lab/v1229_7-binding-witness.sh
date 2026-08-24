@@ -111,22 +111,13 @@ if [[ "$(rt_stat)" != "nftban:nftban:755" ]] || ! sock_ok; then
 fi
 [[ "$PKG" == NONE ]] && { say "  FATAL: package not installed"; exit 2; }
 
-# step <n> <label> <execution-witness-cmd> -- <command...>
-step(){
-    local n="$1" label="$2"; shift 2
-    # A per-module reload publishes ONLY its own record; asserting the full
-    # population after it reported a product failure for correct behaviour.
-    local scope=""
-    case "$label" in "ddos reload") scope=ddos ;; "portscan reload") scope=portscan ;; esac
-    local g0 g1 out rc rt0 rt1
-    g0="$(gen)"; rt0="$(rt_stat)"
-    out="$("$@" 2>&1)"; rc=$?
-    sleep 8
-    g1="$(gen)"; rt1="$(rt_stat)"
-    # ⛔ EXECUTION WITNESS IS OPERATION-SPECIFIC. Generation movement is a valid
-    # witness only where the contract says that operation bumps it; making it a
-    # universal oracle would invent a synthetic requirement (module reload does
-    # NOT bump -- only the firewall convergence roots do).
+# exec_witness <label> <out> <g0> <g1> -- prints the execution witness, or
+# "none" / "DECLINED". ⛔ ONE matcher, called by BOTH runners. Copying these
+# patterns into the affected-path runner would create a second witness authority
+# that could drift from this one and quietly disagree about what "executed"
+# means.  TWO MATCHERS = TWO DEFINITIONS OF EXECUTED.
+exec_witness(){
+    local label="$1" out="$2" g0="$3" g1="$4"
     local witness="none"
     case "$label" in
         "ddos reload"|"portscan reload")
@@ -143,6 +134,27 @@ step(){
             grep -qiE 'Performing complete firewall reset|reset' <<<"$out" && [[ "$witness" != DECLINED ]] && witness="reset-path-entered"
             [[ "$g1" != "$g0" && "$witness" != DECLINED ]] && witness="${witness}+generation($g0->$g1)" ;;
     esac
+    printf '%s' "$witness"
+}
+
+# step <n> <label> <execution-witness-cmd> -- <command...>
+step(){
+    local n="$1" label="$2"; shift 2
+    # A per-module reload publishes ONLY its own record; asserting the full
+    # population after it reported a product failure for correct behaviour.
+    local scope=""
+    case "$label" in "ddos reload") scope=ddos ;; "portscan reload") scope=portscan ;; esac
+    local g0 g1 out rc rt0 rt1
+    g0="$(gen)"; rt0="$(rt_stat)"
+    out="$("$@" 2>&1)"; rc=$?
+    sleep 8
+    g1="$(gen)"; rt1="$(rt_stat)"
+    # ⛔ EXECUTION WITNESS IS OPERATION-SPECIFIC. Generation movement is a valid
+    # witness only where the contract says that operation bumps it; making it a
+    # universal oracle would invent a synthetic requirement (module reload does
+    # NOT bump -- only the firewall convergence roots do).
+    local witness
+    witness="$(exec_witness "$label" "$out" "$g0" "$g1")"
     [[ "$witness" == DECLINED ]] && { bad "$n $label — command DECLINED to execute (confirmation gate). Not a product test."; return; }
     if [[ "$witness" == "none" ]]; then
         bad "$n $label — NO EXECUTION WITNESS (rc=$rc). COMMAND_RC0 != COMMAND_EXECUTED"
@@ -170,10 +182,11 @@ step(){
 printf 'DDOS_ENABLED="true"\nDDOS_MODE="classic"\n'         > /etc/nftban/conf.d/ddos/main.conf.local
 printf 'PORTSCAN_ENABLED="true"\nPORTSCAN_MODE="classic"\n' > /etc/nftban/conf.d/portscan/main.conf.local
 
-# WITNESS_ONLY=arms runs ONLY section 7 (the read-path ARM A/B/C arms).
-# Default (unset) runs everything, so the gate cannot silently shrink a full run.
+# WITNESS_ONLY selects a subset: "arms" = section 7 read-path arms only,
+# "portscan-roots" = section 8 affected-path roots only. Default (unset) runs
+# EVERYTHING, so the gate cannot silently shrink a full run.
 #   A SECTION FILTER MUST NARROW ONLY WHEN EXPLICITLY ASKED.
-if [[ "${WITNESS_ONLY:-all}" != "arms" ]]; then
+if [[ "${WITNESS_ONLY:-all}" == "all" ]]; then
 say "--- WITNESS ---"
 step 1 "ddos reload"       nftban ddos reload
 step 2 "portscan reload"   nftban portscan reload
@@ -191,7 +204,7 @@ population_ok && ok "    expected[$(expected_modules | tr '\n' ' ')] present and
               || bad "    population -> $POP_DETAIL"
 [[ "$(valcons)" -eq 0 ]] && ok "    VAL-CONS-002 = 0" || bad "    VAL-CONS-002 = $(valcons)"
 else
-    say "--- WITNESS: sections 1-6 SKIPPED (WITNESS_ONLY=arms) ---"
+    say "--- WITNESS: sections 1-6 SKIPPED (WITNESS_ONLY=${WITNESS_ONLY}) ---"
 fi
 
 # --- 7 nftban modes: OBSERVATION FOLLOWS THE PLAN, NOT THE ENVIRONMENT -------
@@ -245,6 +258,8 @@ modes_eff(){   # <module> -> what `nftban modes` reports
 }
 plan_eff(){ sed -n 's/^NFTBAN_PLAN_EFFECTIVE_MODE=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
 
+# WITNESS_ONLY=arms runs ONLY these read-path arms; portscan-roots skips them.
+if [[ "${WITNESS_ONLY:-all}" == "all" || "${WITNESS_ONLY:-}" == "arms" ]]; then
 for mod in ddos portscan; do
     pre_avail=""; post_avail=""
     K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
@@ -307,6 +322,108 @@ for mod in ddos portscan; do
     nftban "$mod" reload >/dev/null 2>&1; sleep 3
 done
 systemctl start suricata >/dev/null 2>&1 || true
+fi
+
+# --- 8 AFFECTED-PATH: PortScan resolution through EVERY convergence root -----
+# f50c45b4 changed production code in the PortScan resolution path
+# (_nftban_portscan_load_modules now runs before nftban_module_resolve_plan), so
+# convergence evidence earned on the previous head cannot authorize this head
+# for the roots that can exercise PortScan resolution.
+#
+#   RC0 THROUGH A ROOT != THE ORDERING REGRESSION IS GONE IN THAT ROOT
+#
+# Every root is therefore asserted on the DECISION it produced, not merely on
+# exiting cleanly: with the Suricata prerequisite POSITIVELY established, `auto`
+# must resolve to suricata via basis auto_suricata_available. The pre-fix build
+# returned rc=0 from all five of these roots while resolving classic with basis
+# auto_suricata_module_not_loaded -- rc alone could never have detected it.
+if [[ "${WITNESS_ONLY:-all}" == "all" || "${WITNESS_ONLY:-}" == "portscan-roots" ]]; then
+say ""
+say "--- 8 affected-path: PortScan resolution through the convergence roots ---"
+
+# PRECONDITION, POSITIVELY ESTABLISHED -- never inferred from ddos.
+# UNMET REQUIRED PRECONDITION != PASS, so failure here is RECORDED, not skipped.
+systemctl start suricata >/dev/null 2>&1; sleep 8
+if suricata_available_per_product portscan; then
+    ok "8 precondition -- canonical portscan availability predicate observed TRUE"
+
+    printf 'DDOS_ENABLED="true"\nDDOS_MODE="auto"\n'         > /etc/nftban/conf.d/ddos/main.conf.local
+    printf 'PORTSCAN_ENABLED="true"\nPORTSCAN_MODE="auto"\n' > /etc/nftban/conf.d/portscan/main.conf.local
+
+    # Bounded convergence wait. FIXED_SLEEP_IS_NOT_CONVERGENCE_PROOF: wait for the
+    # observable condition (record present AND bound to the CURRENT generation)
+    # and report SETTLE_TIMEOUT if it never arrives, instead of sampling once at
+    # an arbitrary instant and treating the sample as a verdict.
+    settle(){
+        local mod="$1" deadline=$((SECONDS+45)) b g
+        while (( SECONDS < deadline )); do
+            g="$(gen)"; b="$(bound "$mod")"
+            [[ -n "$b" && -n "$g" && "$b" == "$g" ]] && return 0
+            sleep 2
+        done
+        return 1
+    }
+
+    plan_get(){ sed -n "s/^$2=//p" "/run/nftban/module-plan-$1.env" 2>/dev/null; }
+
+    # proot <n> <label> -- <command...>
+    proot(){
+        local n="$1" label="$2"; shift 2
+        local g0 g1 out rc rt0 rt1 witness v durable cfg eff basis
+        g0="$(gen)"; rt0="$(rt_stat)"
+        out="$("$@" 2>&1)"; rc=$?
+        if ! settle portscan; then
+            bad "8.$n $label -- SETTLE_TIMEOUT: portscan record never bound to the current generation within 45s"
+            return
+        fi
+        g1="$(gen)"; rt1="$(rt_stat)"
+        witness="$(exec_witness "$label" "$out" "$g0" "$g1")"
+
+        [[ "$witness" == DECLINED ]] && { bad "8.$n $label -- command DECLINED to execute; not a product test"; return; }
+        if [[ "$witness" == "none" ]]; then
+            bad "8.$n $label -- NO EXECUTION WITNESS (rc=$rc). COMMAND_RC0 != COMMAND_EXECUTED"; return
+        fi
+        [[ $rc -eq 0 ]] && ok "8.$n $label -- rc=0, executed [$witness]" \
+                        || bad "8.$n $label -- rc=$rc (witness: $witness)"
+
+        # Configured intent PRESERVED: a convergence root must never rewrite
+        # durable operator intent.   CONFIGURED INTENT != EFFECTIVE DECISION
+        durable="$(sed -n 's/^PORTSCAN_MODE="\(.*\)"$/\1/p' /etc/nftban/conf.d/portscan/main.conf.local 2>/dev/null)"
+        cfg="$(plan_get portscan NFTBAN_PLAN_CONFIGURED_MODE)"
+        [[ "$durable" == "auto" ]] && ok "    durable intent preserved (PORTSCAN_MODE=auto)" \
+                                   || bad "    durable intent MUTATED -> '${durable:-<absent>}'"
+        [[ "$cfg" == "auto" ]]     && ok "    plan records configured_mode=auto" \
+                                   || bad "    plan configured_mode='${cfg:-<absent>}', expected auto"
+
+        # The DECISION itself -- the reason this rerun exists.
+        eff="$(plan_get portscan NFTBAN_PLAN_EFFECTIVE_MODE)"
+        basis="$(plan_get portscan NFTBAN_PLAN_RESOLUTION_BASIS)"
+        [[ "$eff" == "suricata" ]] \
+            && ok "    effective_mode=suricata" \
+            || bad "    effective_mode='${eff:-<absent>}', expected suricata -- ORDERING REGRESSION PRESENT IN THIS ROOT"
+        [[ "$basis" == "auto_suricata_available" ]] \
+            && ok "    basis=auto_suricata_available (the predicate was actually consulted)" \
+            || bad "    basis='${basis:-<absent>}', expected auto_suricata_available"
+
+        [[ -n "$(rid portscan)" ]] && ok "    resolution_id present" || bad "    resolution_id EMPTY"
+        population_ok portscan && ok "    portscan bound to current gen $g1" \
+                               || bad "    population -> $POP_DETAIL"
+        [[ "$rt0" == "$rt1" ]] && ok "    /run/nftban unchanged ($rt1)" \
+                               || bad "    /run/nftban CHANGED $rt0 -> $rt1"
+        sock_ok   && ok "    nftband.sock present" || bad "    nftband.sock ABSENT -- IPC broken"
+        daemon_ok && ok "    nftband active"       || bad "    nftband not active"
+        v="$(valcons)"; [[ "$v" -eq 0 ]] && ok "    VAL-CONS-002 = 0" || bad "    VAL-CONS-002 = $v"
+    }
+
+    proot 1 "portscan reload"   nftban portscan reload
+    proot 2 "firewall reload"   nftban firewall reload --quiet
+    proot 3 "firewall rebuild"  nftban firewall rebuild --quiet
+    proot 4 "firewall reset"    nftban firewall reset --force --quiet
+    proot 5 "daemon restart"    systemctl restart nftband
+else
+    bad "8 LAB_PRECONDITION_FAIL -- portscan availability predicate is FALSE; the auto->suricata decision cannot be exercised (UNMET REQUIRED PRECONDITION != PASS)"
+fi
+fi
 
 say ""
 [[ $F -eq 0 ]] && { say "WITNESS PASS — $LABEL"; exit 0; }
