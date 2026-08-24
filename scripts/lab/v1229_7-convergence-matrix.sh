@@ -252,7 +252,12 @@ run_ops(){ # <module> <state-label> <configured-value>
   local mod="$1" intent="$2" cfgval="$3"
   nftban "$mod" reload >/dev/null 2>&1 || true;          settle; assert_state "$mod" "$intent" reload         "$cfgval"
   nftban firewall rebuild --quiet >/dev/null 2>&1||true; settle; assert_state "$mod" "$intent" rebuild        "$cfgval"
-  nftban firewall reset --quiet >/dev/null 2>&1 || true; settle; assert_state "$mod" "$intent" reset          "$cfgval"
+  # ⛔ `--force` is REQUIRED: without it reset prints "Use --force to confirm" and
+  # returns without doing anything. The matrix previously ran `reset --quiet`, so
+  # all 8 reset rows per host tested a command that REFUSED TO RUN and were
+  # reported as failures of the product.
+  #   A COMMAND THAT DECLINED TO EXECUTE HAS NOT BEEN TESTED.
+  nftban firewall reset --force --quiet >/dev/null 2>&1 || true; settle; assert_state "$mod" "$intent" reset          "$cfgval"
   systemctl restart nftband >/dev/null 2>&1 || true;     settle; assert_state "$mod" "$intent" daemon-restart "$cfgval"
 }
 
