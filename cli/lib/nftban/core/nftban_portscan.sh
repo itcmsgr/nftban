@@ -413,6 +413,29 @@ nftban_portscan_init() {
 # -----------------------------------------------------------------------------
 nftban_portscan_reconcile() {
     local _plan
+    # ⛔ ESTABLISH THE RESOLUTION PRECONDITION BEFORE RESOLVING.
+    # `auto` is decided by calling nftban_portscan_suricata_is_available. That
+    # function only exists once _nftban_portscan_load_modules has sourced the
+    # suricata module -- and unlike ddos (which sources its suricata module at
+    # FILE scope) portscan loads its optional modules from a function that the
+    # enable/apply paths call only AFTER resolution. So the resolver found no
+    # predicate, recorded basis `auto_suricata_module_not_loaded`, and fell back
+    # to classic every time: portscan `auto` was structurally incapable of ever
+    # resolving to suricata, no matter what the environment actually offered.
+    # WITNESSED on lab2/DEB and lab4/RPM 2026-08-24, both families, with the
+    # canonical availability predicate observed TRUE:
+    #     ddos     -> basis auto_suricata_unavailable      (predicate consulted)
+    #     portscan -> basis auto_suricata_module_not_loaded (never consulted)
+    #
+    #   RESOLVING BEFORE THE INPUTS ARE LOADED IS NOT A RESOLUTION --
+    #   IT IS A DEFAULT WEARING A RESOLUTION'''S NAME.
+    #
+    # Tolerant by design: if the optional module genuinely is not installed the
+    # resolver still records `auto_suricata_module_not_loaded`, which is then a
+    # TRUE statement about the host rather than an artefact of call ordering.
+    # init_state only resets in-memory arrays and re-reads persisted state, so
+    # calling the existing loader earlier adds no new system mutation.
+    _nftban_portscan_load_modules || true
     # A root OPENS a transaction: clear any inherited plan first, so a nested
     # root cannot silently reuse an outer transaction's identity.
     unset NFTBAN_PLAN_TXN_ID NFTBAN_PLAN_RESOLUTION_ID NFTBAN_PLAN_MODULE

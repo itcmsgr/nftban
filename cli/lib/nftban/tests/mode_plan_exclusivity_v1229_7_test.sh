@@ -501,6 +501,69 @@ for mod in ddos portscan; do
     rm -rf "$d"
 done
 
+# --- 14. auto MUST RESOLVE WITH ITS PREDICATE LOADED (PR-5C) -----------------
+# `auto` is decided by calling nftban_<mod>_suricata_is_available. If the
+# reconcile root resolves BEFORE that function has been sourced, the resolver
+# records basis `auto_suricata_module_not_loaded` and falls back to classic --
+# so the module can never select suricata regardless of the environment.
+# WITNESSED 2026-08-24 on lab2/DEB and lab4/RPM: portscan resolved classic with
+# its availability predicate observed TRUE on both families, because portscan
+# loads optional modules from a function the enable/apply paths call only AFTER
+# resolution, while ddos sources its suricata module at FILE scope.
+#
+#   RESOLVING BEFORE THE INPUTS ARE LOADED IS NOT A RESOLUTION.
+#
+# The subject is the reconcile ROOT body, and the assertion is ORDERING: a
+# loader must appear before the resolve call. Mere presence of a loader
+# somewhere in the file is exactly the condition that shipped broken.
+#   MENTION != ORDERING
+echo ""
+echo "14. auto resolves with its predicate loaded..."
+for mod in ddos portscan; do
+    f="$ROOT/cli/lib/nftban/core/nftban_${mod}.sh"
+    if [[ ! -f "$f" ]]; then fail "SUBJECT_NOT_FOUND: $f"; continue; fi
+
+    # File-scope sourcing satisfies the precondition unconditionally (ddos).
+    file_scope=0
+    if awk '/^[a-zA-Z_][a-zA-Z0-9_]*\(\) *\{/{d=1} /^\}/{d=0} !d && /source .*nftban_'"$mod"'_suricata\.sh/{found=1} END{exit !found}' "$f"; then
+        file_scope=1
+    fi
+
+    # ⛔ STRIP COMMENTS BEFORE MATCHING. The first revision of this guard passed
+    # its own negative control: the explanatory comment inside the reconcile body
+    # names _nftban_<mod>_load_modules, so deleting the actual CALL still matched.
+    # A guard that reads prose is measuring documentation, not behaviour.
+    #   MENTION != ORDERING  (this guard's own subject line)
+    body="$(awk '/^nftban_'"$mod"'_reconcile\(\) \{/{i=1} i{print} i&&/^\}/{exit}' "$f" \
+            | sed 's/[[:space:]]*#.*$//')"
+    if [[ -z "$body" ]]; then
+        fail "$mod: nftban_${mod}_reconcile not found — cannot assert resolution ordering"
+        continue
+    fi
+
+    # Non-vacuity: the resolve call MUST be present, else the ordering assertion
+    # below would pass on a body that never resolves at all.
+    resolve_ln="$(grep -n "nftban_module_resolve_plan" <<<"$body" | head -1 | cut -d: -f1)"
+    if [[ -z "$resolve_ln" ]]; then
+        fail "$mod: reconcile root does not call nftban_module_resolve_plan — subject invalid"
+        continue
+    fi
+
+    if [[ $file_scope -eq 1 ]]; then
+        ok "$mod: suricata predicate sourced at file scope (precondition unconditional)"
+        continue
+    fi
+
+    loader_ln="$(grep -nE "_nftban_${mod}_load_modules|source .*nftban_${mod}_suricata\.sh" <<<"$body" | head -1 | cut -d: -f1)"
+    if [[ -z "$loader_ln" ]]; then
+        fail "$mod: reconcile resolves \`auto\` without loading nftban_${mod}_suricata.sh — basis will be auto_suricata_module_not_loaded and suricata can NEVER be selected"
+    elif (( loader_ln < resolve_ln )); then
+        ok "$mod: predicate loaded (line $loader_ln) before resolution (line $resolve_ln)"
+    else
+        fail "$mod: predicate loaded at line $loader_ln but resolution happens at line $resolve_ln — LOADED AFTER RESOLVING IS NOT LOADED"
+    fi
+done
+
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""
 echo "8. runtime classic XOR suricata..."
