@@ -173,12 +173,23 @@ nftban_ddos_suricata_eve_active() {
     local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local threshold="${DDOS_EVE_FRESHNESS_THRESHOLD:-60}"
 
-    # Support Suricata 7.x threaded logging (writes to eve-alerts.1.json, eve-alerts.2.json, etc.)
+    # ⛔ CONSUME THE CONFIGURED VALUE. This took the configured file's DIRECTORY and
+    # globbed a HARDCODED `eve-alerts*.json` prefix, discarding the operator's filename
+    # entirely: a host configured with `custom.json` was judged by whatever
+    # `eve-alerts*.json` happened to sit beside it, and a configured file that was stale
+    # or absent could still yield TRUE from an unrelated sibling.
+    #   CONFIGURED EVE FILE -> SAME CANONICAL VALUE CONSUMED BY THE PREDICATE
+    #   ACCEPTING A SETTING AND THEN IGNORING IT IS WORSE THAN NOT OFFERING IT.
+    # Suricata 7.x threaded logging remains supported, but the threaded siblings are now
+    # derived FROM THE CONFIGURED NAME (`x.json` -> `x.1.json`, `x.2.json`, ...) instead
+    # of from a fixed prefix, so the feature no longer overrides the configuration.
     local eve_dir="${eve_file%/*}"
+    local eve_base="${eve_file##*/}"
+    local eve_stem="${eve_base%.json}"
     local freshest_mtime=0
 
     shopt -s nullglob
-    for f in "$eve_dir"/eve-alerts*.json; do
+    for f in "$eve_file" "$eve_dir/$eve_stem".*.json; do
         [[ -f "$f" ]] || continue
         local m
         m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue

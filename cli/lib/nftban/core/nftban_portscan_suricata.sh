@@ -150,8 +150,26 @@ nftban_portscan_suricata_service_running() {
 
 # Check if EVE JSON file is active (being written to)
 nftban_portscan_suricata_eve_active() {
-    local eve_file="${PORTSCAN_SURICATA_EVE_FILE}"
+    # ⛔ MISSING REQUIRED CONFIG IS AN EXPLICIT ANSWER, NOT A PROCESS DEATH.
+    # This dereferenced PORTSCAN_SURICATA_EVE_FILE with no default at the point of use.
+    # The canonical default is applied by nftban_portscan_suricata_load_config; a caller
+    # that reaches this predicate without having loaded the config therefore terminated
+    # the whole shell under `set -u`, while the DDoS twin degraded cleanly to false --
+    # the same caller mistake crashing one module and returning a clean answer in the
+    # other. Same class as the v1.229.8 maintenance defect.
+    #   AN UNSET REQUIRED VALUE MUST YIELD AN EXPLICIT BOUNDED RESULT.
+    # It is NOT silently defaulted here: inventing the path would make this a second
+    # config authority beside load_config and would hide the caller's mistake.
+    #   UNSET REQUIRED CONFIG != EMPTY/DEFAULT VALUE
+    local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-}"
     local freshness_threshold="${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}"
+
+    if [[ -z "$eve_file" ]]; then
+        if type -t nftban_portscan_suricata_log &>/dev/null; then
+            nftban_portscan_suricata_log "ERROR" "PORTSCAN_SURICATA_EVE_FILE is not established — call nftban_portscan_suricata_load_config first; reporting Suricata UNAVAILABLE rather than guessing a path"
+        fi
+        return 1
+    fi
 
     [[ -f "$eve_file" ]] || return 1
 
@@ -300,9 +318,23 @@ nftban_portscan_suricata_load_state() {
 
 # Read new alerts from EVE file
 nftban_portscan_suricata_read_eve() {
-    local eve_file="${PORTSCAN_SURICATA_EVE_FILE}"
-    local batch_size="${PORTSCAN_SURICATA_BATCH_SIZE}"
-    local sig_patterns="${PORTSCAN_SURICATA_SIG_PATTERNS}"
+    # ⛔ SAME PRECONDITION, SAME TREATMENT. All three of these are established by
+    # nftban_portscan_suricata_load_config. Guarding only the EVE file would leave this
+    # function terminating the shell under `set -u` on the next unset value, so the
+    # failure mode would survive a fix that appeared to address it.
+    #   FIXING ONE DEREFERENCE OF A SHARED PRECONDITION IS NOT FIXING THE PRECONDITION.
+    # Reported, never defaulted: guessing a batch size or a signature pattern set would
+    # make this a second config authority and hide the caller's mistake.
+    local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-}"
+    local batch_size="${PORTSCAN_SURICATA_BATCH_SIZE:-}"
+    local sig_patterns="${PORTSCAN_SURICATA_SIG_PATTERNS:-}"
+
+    if [[ -z "$eve_file" || -z "$batch_size" || -z "$sig_patterns" ]]; then
+        if type -t nftban_portscan_suricata_log &>/dev/null; then
+            nftban_portscan_suricata_log "ERROR" "Suricata EVE reader configuration is not established (eve_file/batch_size/sig_patterns) — call nftban_portscan_suricata_load_config first; refusing to read rather than guessing"
+        fi
+        return 1
+    fi
 
     [[ -f "$eve_file" ]] || return 1
 
