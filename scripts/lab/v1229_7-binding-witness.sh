@@ -214,7 +214,7 @@ modes_eff(){   # <module> -> what `nftban modes` reports
 plan_eff(){ sed -n 's/^NFTBAN_PLAN_EFFECTIVE_MODE=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
 
 for mod in ddos portscan; do
-    local_pre=""; pre_avail=""; post_avail=""
+    pre_avail=""; post_avail=""
     K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
     printf '%s_ENABLED="true"\n%s_MODE="auto"\n' "$K" "$K" > "/etc/nftban/conf.d/$mod/main.conf.local"
     # Suricata DOWN -> auto must resolve classic; then bring it UP so the
