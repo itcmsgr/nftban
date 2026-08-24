@@ -200,8 +200,20 @@ say "--- 7 nftban modes read/report (PR-5C) ---"
 #   PROCESS LIVENESS != PRODUCT AVAILABILITY PREDICATE
 suricata_available_per_product(){   # <module>
     local mod="$1"
+    # ⛔ LOAD THE MODULE CONFIG FIRST, as the real caller path does. The
+    # predicate does NOT load its own config (0 sites), and PortScan reads
+    # ${PORTSCAN_SURICATA_EVE_FILE} with NO default -- so under `set -u` an
+    # unloaded config makes it CRASH with "unbound variable" rather than return
+    # false. DDoS uses ${DDOS_SURICATA_EVE_FILE:-<path>} and degrades cleanly.
+    # Evaluating the predicate without its config is not evaluating the product.
+    #   A PREDICATE MUST BE EVALUATED IN ITS OWN CONTEXT.
     bash -c "
         export NFTBAN_LIB_DIR=/usr/lib/nftban
+        set +u
+        for c in /etc/nftban/conf.d/${mod}/main.conf /etc/nftban/conf.d/${mod}/main.conf.local \
+                 /etc/nftban/conf.d/${mod}/suricata.conf /etc/nftban/conf.d/${mod}/suricata.conf.local; do
+            [ -r \"\$c\" ] && . \"\$c\"
+        done
         source /usr/lib/nftban/core/nftban_${mod}_suricata.sh 2>/dev/null || exit 1
         nftban_${mod}_suricata_is_available" >/dev/null 2>&1
 }
