@@ -565,10 +565,10 @@ nftban_portscan_reconcile() {
 # ⛔ Base Layer-0 is never touched.
 # -----------------------------------------------------------------------------
 _nftban_portscan_remove_other_projection() {
-    local other
+    local other target_mode
     case "${1:-}" in
-        classic)  other="nftban_portscan_suricata_disable" ;;
-        suricata) other="nftban_portscan_classic_disable" ;;
+        classic)  other="nftban_portscan_suricata_disable"; target_mode="suricata" ;;
+        suricata) other="nftban_portscan_classic_disable";  target_mode="classic"  ;;
         *)        return 0 ;;
     esac
     # ⛔ NO SILENT NO-OP. The earlier shape was `if type -t <fn>; then <fn>; fi`
@@ -587,7 +587,97 @@ _nftban_portscan_remove_other_projection() {
     # The teardown itself is best-effort: a host that never ran the other mode
     # has nothing to remove, and that is not a failure.
     "$other" >/dev/null 2>&1 || true
+
+    # ⛔ FLUSHED != ABSENT -- the same contract violation proven for ddos, with
+    # PortScan's own evidence and PortScan's own object inventory.
+    # nft_fragment_render_portscan_classic_cleanup emits `flush chain` for
+    # portscan_detection in both families, annotated "keeps chain for reference
+    # safety". After `nftban portscan reload` across classic -> suricata the
+    # plan said suricata while portscan_detection remained, still jumped from
+    # base input.
+    # WITNESSED package-native on lab4/RPM, merged .7 main:
+    #     portscan suricata reload -> CLASSIC_RESIDUE, V4_MISMATCH, V6_MISMATCH
+    #
+    # ⛔ NOT A PORT OF THE DDOS FIX. The inventory was measured for PortScan
+    # independently (converged, lab2/DEB):
+    #     classic  : chain portscan_detection  (ip AND ip6) + base jump edges
+    #     suricata : NO portscan nft objects at all
+    # so only one direction has anything to remove -- which is why entering
+    # classic returns early below rather than "purging" an empty projection.
+    #   SAME CONTRACT != SAME IMPLEMENTATION.
+    _nftban_portscan_purge_projection "$target_mode" || return 1
     return 0
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_portscan_purge_projection <mode-whose-projection-must-become-absent>
+#
+# Order is forced by the kernel: jump edges first, then the chain, both families.
+# Writes go through nft_fragment_delete_object -- the sanctioned nft writer --
+# never directly from this module.
+#   AN ALLOWLIST ENTRY IS NOT A COMPLIANCE ARGUMENT.
+#
+# ⛔ portscan_blocked, if a host has one, is a BAN SET and is never part of the
+# classic projection census. The ddos lane proved what happens otherwise:
+# deleting the shared ban set aborted the whole apply and left the host DEGRADED
+# with no higher-tier projection at all.
+#   SHARED OBJECT != OTHER MODE'S PROJECTION
+_NFTBAN_PORTSCAN_SHARED_SETS="portscan_blocked"
+
+_nftban_portscan_purge_projection() {
+    local mode="${1:-}" fam name kind residue=""
+
+    # Suricata projects no portscan nft object, so there is nothing to remove
+    # when entering classic. This is a no-op BY CONSTRUCTION, not an unwritten
+    # case -- see the measured inventory above.
+    if [[ "$mode" == suricata ]]; then
+        return 0
+    fi
+
+    if ! declare -F nft_fragment_delete_object >/dev/null 2>&1; then
+        echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
+        return 1
+    fi
+
+    for fam in ip ip6; do
+        while IFS=' ' read -r kind name; do
+            # ⛔ IFS pinned: sourcing the product leaves IFS=$'\n\t' in scope, so a
+            # bare read leaves $name empty and the loop silently processes NOTHING
+            # while still returning success. That exact bug shipped in the ddos
+            # version of this function and was caught only by a population assertion.
+            #   NO SUBJECTS PROCESSED != NOTHING TO DO
+            [[ -z "$kind" || -z "$name" ]] && continue
+            [[ " $_NFTBAN_PORTSCAN_SHARED_SETS " == *" $name "* ]] && continue
+            nft_fragment_delete_object "$fam" "$kind" "$name" || true
+        done < <(_nftban_portscan_live_objects "$fam")
+    done
+
+    # ⛔ VERIFY, DO NOT ASSUME: the deletes above are individually tolerant, so
+    # absence is asserted separately or a stray reference leaves residue at rc0.
+    for fam in ip ip6; do
+        while IFS=' ' read -r kind name; do
+            [[ -z "$name" ]] && continue
+            [[ " $_NFTBAN_PORTSCAN_SHARED_SETS " == *" $name "* ]] && continue
+            residue="$residue $fam/$kind/$name"
+        done < <(_nftban_portscan_live_objects "$fam")
+    done
+
+    if [[ -n "$residue" ]]; then
+        echo "  ERROR: the ${mode} projection is still present after teardown:${residue}" >&2
+        echo "         refusing to claim mode-exclusive projection." >&2
+        _nftban_portscan_log "ERROR" "exclusivity unestablished: residue${residue}"
+        return 1
+    fi
+    return 0
+}
+
+# Enumerate live higher-tier PortScan objects in one family: "<kind> <name>".
+_nftban_portscan_live_objects() {
+    local fam="${1:-ip}"
+    nft list table "$fam" nftban 2>/dev/null | awk '
+        /^[[:space:]]*chain[[:space:]]+portscan_/ { print "chain " $2 }
+        /^[[:space:]]*set[[:space:]]+portscan_/   { print "set "   $2 }
+    '
 }
 
 nftban_portscan_apply() {
