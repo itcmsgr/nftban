@@ -1071,9 +1071,37 @@ EOF
     # authority. No new engine, no new retention value: the function's own
     # STATS_RETENTION_DAYS default governs.
     if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_format.sh" ]]; then
+        # ⛔ LOAD THE CANONICAL DEPENDENCY BEFORE ITS CONSUMER.
+        # nftban_stats_cleanup_logs lives in nftban_stats_format.sh, which is
+        # documented as "extracted from nftban_stats.sh" and does NOT define the
+        # configuration it reads. NFTBAN_BAN_LOG and NFTBAN_STATS_SNAPSHOTS_DIR are
+        # established at file scope in nftban_stats.sh (:59,:61) via lib/env.sh.
+        # This block sourced the CONSUMER without its dependency, so both were unset
+        # and the first dereference terminated the whole run:
+        #
+        #   set -Eeuo pipefail  ->  unbound variable  ->  shell EXITS 1
+        #   step 10 never ran   ->  systemd Restart=  ->  permanent restart loop
+        #
+        # ⛔ AN `if` CONDITION SUPPRESSES `set -e`. IT DOES NOT MAKE AN UNBOUND
+        #    VARIABLE SAFE UNDER `set -u`.
+        # That is why the failure looked impossible: the call is guarded by `if`
+        # and redirected to /dev/null, yet it still killed the process.
+        #
+        # The loader is the same one the normal stats path uses (cmd_stats.sh:69),
+        # is idempotent (NFTBAN_STATS_LOADED guard at nftban_stats.sh:40), and only
+        # materializes effective config plus its own directories -- it does not
+        # mutate durable configuration.
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats.sh" 2>/dev/null || true
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_format.sh" 2>/dev/null || true
         if declare -f nftban_stats_cleanup_logs &>/dev/null; then
-            if nftban_stats_cleanup_logs >/dev/null 2>&1; then
+            # ⛔ REQUIRED CONFIG PRECONDITION MUST BE ESTABLISHED BEFORE THE CALL.
+            #   UNSET REQUIRED CONFIG != EMPTY/DEFAULT VALUE != SUCCESSFUL CLEANUP
+            # Reported, never defaulted: inventing a path here would hide exactly
+            # the orchestration defect this block just fixed, and would point a
+            # delete-by-age sweep at a directory nobody configured.
+            if [[ -z "${NFTBAN_BAN_LOG:-}" || -z "${NFTBAN_STATS_SNAPSHOTS_DIR:-}" ]]; then
+                log "ERROR" "Stats/snapshot retention: required configuration not established (NFTBAN_BAN_LOG / NFTBAN_STATS_SNAPSHOTS_DIR) — retention SKIPPED, not performed"
+            elif nftban_stats_cleanup_logs >/dev/null 2>&1; then
                 log "INFO" "Stats/snapshot retention: OK"
             else
                 log "INFO" "Stats/snapshot retention: skipped (non-fatal)"

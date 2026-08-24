@@ -146,6 +146,19 @@ mkdir -p "$NFTBAN_LIB_DIR/core"
 cat > "$NFTBAN_LIB_DIR/core/nftban_stats_format.sh" <<'STUB'
 nftban_stats_cleanup_logs() { echo invoked > "${P1B_WITNESS:?}"; return 0; }
 STUB
+# v1.229.8: the 9d block now loads its CANONICAL DEPENDENCY before the consumer.
+# nftban_stats_cleanup_logs reads NFTBAN_BAN_LOG and NFTBAN_STATS_SNAPSHOTS_DIR,
+# which are defined in nftban_stats.sh -- not in the format module. The block used
+# to source only the consumer, so under `set -u` the first dereference killed the
+# whole maintenance run and systemd restarted it forever (FB-12, corrected).
+# The harness must therefore model the SAME dependency contract the product has;
+# a harness missing the dependency describes an environment the shipped package
+# cannot produce, since both files install together.
+#   THE HARNESS MUST MODEL THE CONTRACT, NOT AN IMPOSSIBLE SUBSET OF IT.
+cat > "$NFTBAN_LIB_DIR/core/nftban_stats.sh" <<'STUB'
+NFTBAN_BAN_LOG="${NFTBAN_BAN_LOG:-/tmp/p1b-bans.log}"
+NFTBAN_STATS_SNAPSHOTS_DIR="${NFTBAN_STATS_SNAPSHOTS_DIR:-/tmp/p1b-snapshots}"
+STUB
 export P1B_WITNESS="$TMP/witness"
 log(){ :; }
 rm -f "$P1B_WITNESS"
@@ -155,6 +168,26 @@ if [[ -f "$P1B_WITNESS" ]]; then
 else
     fail "P1b the 9d block ran but never invoked the cleanup — call is present yet dead"
 fi
+
+# --- P1c · the dependency-absent path must REPORT, never silently skip ---------
+# Strengthens P1b rather than replacing it. With the canonical config unavailable
+# the cleanup MUST NOT run (it would dereference unset paths and, under set -u,
+# terminate the run) -- but the skip must be VISIBLE.
+#   NOT INVOKED != NOTHING TO SAY
+P1C_LOG="$TMP/p1c.log"
+rm -f "$P1B_WITNESS" "$P1C_LOG"
+rm -f "$NFTBAN_LIB_DIR/core/nftban_stats.sh"
+unset NFTBAN_BAN_LOG NFTBAN_STATS_SNAPSHOTS_DIR
+log(){ printf '%s %s\n' "${1:-}" "${2:-}" >> "$P1C_LOG"; }
+eval "$BLOCK" >/dev/null 2>&1 || true
+if [[ -f "$P1B_WITNESS" ]]; then
+    fail "P1c cleanup ran WITHOUT its required config — it would dereference unset paths under set -u"
+elif [[ -s "$P1C_LOG" ]] && grep -qi "required configuration not established" "$P1C_LOG"; then
+    pass "P1c dependency absent -> cleanup skipped AND reported (no silent skip)"
+else
+    fail "P1c dependency absent -> cleanup skipped SILENTLY; the orchestration defect would be invisible"
+fi
+log(){ :; }
 unset NFTBAN_LIB_DIR P1B_WITNESS
 
 # --- P9 · INVERSION: remove the maintenance call -> P1 must fail ---------------
