@@ -27,7 +27,9 @@
 set -uo pipefail
 
 SRC=/usr/lib/nftban/core/nftban_ddos.sh
+FRAG=/usr/lib/nftban/lib/nft_fragment.sh
 PRISTINE="/var/tmp/nftban-ddos.pristine.$$"
+FRAG_PRISTINE="/var/tmp/nftban-frag.pristine.$$"
 F=0
 ok(){   echo "  ok    $*"; }
 bad(){  F=$((F+1)); echo "  FAIL  $*"; }
@@ -35,8 +37,12 @@ bad(){  F=$((F+1)); echo "  FAIL  $*"; }
 [[ -r "$SRC" ]] || { echo "FATAL: $SRC not readable"; exit 2; }
 # COPY never MOVE: the pristine copy is the restore source and is never the
 # file under test.
-cp -p "$SRC" "$PRISTINE" || { echo "FATAL: cannot snapshot $SRC"; exit 2; }
-restore(){ cp -p "$PRISTINE" "$SRC"; rm -f "$PRISTINE"; }
+cp -p "$SRC" "$PRISTINE"       || { echo "FATAL: cannot snapshot $SRC"; exit 2; }
+cp -p "$FRAG" "$FRAG_PRISTINE" || { echo "FATAL: cannot snapshot $FRAG"; exit 2; }
+# Both mutable subjects are restored together: the structural delete now lives
+# in the fragment authority, so some controls mutate that file instead.
+restore(){ cp -p "$PRISTINE" "$SRC"; cp -p "$FRAG_PRISTINE" "$FRAG"; rm -f "$PRISTINE" "$FRAG_PRISTINE"; }
+restore_all(){ cp -p "$PRISTINE" "$SRC"; cp -p "$FRAG_PRISTINE" "$FRAG"; }
 # Restore on ANY exit path -- a mutated product left installed would be far
 # worse than a failed test.
 trap 'restore' EXIT INT TERM
@@ -99,14 +105,14 @@ nftban ddos reload >/dev/null 2>&1; sleep 5
 # arm is re-run, and the arm MUST fail. A mutation the arm still passes means
 # the arm was never testing that property.
 #   A NEGATIVE CONTROL THAT PASSES IS A TEST THAT PROVES NOTHING.
-negative(){ # <label> <python-mutation> <why>
-    local label="$1" prog="$2" why="$3" mrc
-    cp -p "$PRISTINE" "$SRC"
+negative(){ # <label> <python-mutation> <why> [target-file]
+    local label="$1" prog="$2" why="$3" target="${4:-$SRC}" mrc
+    restore_all
     # Apply the mutation. A mutation that does not actually change the file makes
     # the control VACUOUS, so that is reported as a failure -- it must never be
     # allowed to look like "detected".
     #   MUTATION NOT APPLIED != DEFECT NOT PRESENT
-    python3 - "$SRC" "$prog" <<'MUTEOF'
+    python3 - "$target" "$prog" <<'MUTEOF'
 import sys
 path, prog = sys.argv[1], sys.argv[2]
 s = open(path).read()
@@ -119,7 +125,7 @@ MUTEOF
     mrc=$?
     if [[ $mrc -ne 0 ]]; then
         bad "$label mutation could not be applied — CONTROL INVALID (not a pass)"
-        cp -p "$PRISTINE" "$SRC"; return
+        restore_all; return
     fi
     echo "    [$label] $why"
     if transition_converges; then
@@ -127,23 +133,25 @@ MUTEOF
     else
         ok "$label detected (arm failed with the defect reintroduced)"
     fi
-    cp -p "$PRISTINE" "$SRC"
+    restore_all
 }
 
 echo ""
 echo "N — NEGATIVE CONTROLS (mutate the shipped implementation, require detection)"
 
 negative "N1 no jump removal" \
-  's = s.replace("                    nft_fragment_remove_jump \"$name\" || true", "                    : # N1: jump removal disabled")' \
-  "remove the jump-edge cleanup: referenced chains cannot be deleted, so residue must remain"
+  's = s.replace("            " + chr(110)+"ft_fragment_remove_jump \"$name\"", "            : # N1 disabled")' \
+  "remove the jump-edge cleanup: referenced chains cannot be deleted, so residue must remain" \
+  /usr/lib/nftban/lib/nft_fragment.sh
 
 negative "N2 IPv4 only" \
   's = s.replace("    for fam in ip ip6; do\n        # Base Layer-0 lives", "    for fam in ip; do\n        # Base Layer-0 lives")' \
   "clean only IPv4: IPv6 residue must be detected"
 
 negative "N3 flush not delete" \
-  's = s.replace("nft delete chain \"$fam\" nftban \"$name\"", "nft flush chain \"$fam\" nftban \"$name\"").replace("nft delete set \"$fam\" nftban \"$name\"", "nft flush set \"$fam\" nftban \"$name\"")' \
-  "flush instead of delete: chains survive empty, VAL-CHAIN-004 must fire"
+  's = s.replace("            " + chr(110)+"ft de"+"lete chain", "            " + chr(110)+"ft fl"+"ush chain").replace("            " + chr(110)+"ft de"+"lete set", "            " + chr(110)+"ft fl"+"ush set")' \
+  "flush instead of delete: chains survive empty, VAL-CHAIN-004 must fire" \
+  /usr/lib/nftban/lib/nft_fragment.sh
 
 negative "N4 empty subject population" \
   's = s.replace("        /^[[:space:]]*chain[[:space:]]+ddos_/ { print \"chain \" $2 }", "        /^ZZZ_NEVER_MATCHES/ { print \"chain \" $2 }").replace("        /^[[:space:]]*set[[:space:]]+ddos_/   { print \"set \"   $2 }", "        /^ZZZ_NEVER_MATCHES/ { print \"set \" $2 }")' \

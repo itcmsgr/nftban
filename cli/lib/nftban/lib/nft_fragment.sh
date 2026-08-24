@@ -261,6 +261,48 @@ nft_fragment_remove_jump() {
     done
 }
 
+# v1.229.7: structural removal of ONE module object.
+# Usage: nft_fragment_delete_object <family> <chain|set> <name>
+#
+# The cleanup fragments deliberately only `flush`, documented as "keeps chain for
+# reference safety" -- a chain that is still jumped to cannot be deleted. That is
+# right for the operator-facing disable paths and wrong for a CROSS-MODE
+# TRANSITION, where the contract is that the other mode's projection is ABSENT:
+#     FLUSHED != ABSENT
+# An empty helper chain that is still a jump target is what the validator reports
+# as VAL-CHAIN-004 "no-op jump target", and it left `nftban ddos reload` DEGRADED
+# after a mode switch.
+#
+# ⛔ THIS LIVES IN THE FRAGMENT AUTHORITY ON PURPOSE.
+# nft writes must go through a sanctioned writer (ARCHITECTURE-NFT-POLICY.md);
+# this file already owns fragment application and jump removal. The alternative
+# -- writing nft directly from the ddos module and adding that module to the
+# policy allowlist -- would have silenced the check instead of satisfying it.
+#   AN ALLOWLIST ENTRY IS NOT A COMPLIANCE ARGUMENT.
+#
+# Best-effort per object: a host that never ran the other mode has nothing to
+# remove. The CALLER is responsible for verifying absence afterwards, because a
+# tolerated failure here must never be mistaken for a removal that happened.
+nft_fragment_delete_object() {
+    local family="$1" kind="$2" name="$3"
+
+    case "$kind" in
+        chain)
+            # Jumps first: deleting a referenced chain fails, which is exactly
+            # why the shipped cleanup could only flush.
+            nft_fragment_remove_jump "$name"
+            nft delete chain "$family" nftban "$name" 2>/dev/null || true
+            ;;
+        set)
+            nft delete set "$family" nftban "$name" 2>/dev/null || true
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
 # =============================================================================
 # DDOS SANITY FRAGMENTS (Packet Validation - Stage 3)
 # =============================================================================

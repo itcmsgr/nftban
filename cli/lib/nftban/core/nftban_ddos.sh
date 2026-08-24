@@ -503,16 +503,20 @@ _nftban_ddos_purge_projection() {
             [[ -z "$kind" || -z "$name" ]] && continue
             # Everything ddos_* EXCEPT the shared ban set is classic-owned.
             [[ " $_NFTBAN_DDOS_SHARED_SETS " == *" $name "* ]] && continue
-            if [[ "$kind" == chain ]]; then
-                # Jumps first -- deleting a referenced chain fails, which is
-                # precisely why the shipped cleanup only flushed.
-                if declare -F nft_fragment_remove_jump >/dev/null 2>&1; then
-                    nft_fragment_remove_jump "$name" || true
-                fi
-                nft delete chain "$fam" nftban "$name" 2>/dev/null || true
-            else
-                nft delete set "$fam" nftban "$name" 2>/dev/null || true
+            # ⛔ WRITES GO THROUGH THE SANCTIONED WRITER, NOT FROM HERE.
+            # nft_fragment_delete_object owns jump removal + deletion order and
+            # lives in the fragment authority, which the nft write policy
+            # permits. Writing nft directly from this module would have required
+            # adding it to the policy allowlist -- silencing the check rather
+            # than satisfying it.
+            #   AN ALLOWLIST ENTRY IS NOT A COMPLIANCE ARGUMENT.
+            # A missing writer is a hard failure: claiming exclusivity we cannot
+            # establish is the silent-no-op this lane exists to remove.
+            if ! declare -F nft_fragment_delete_object >/dev/null 2>&1; then
+                echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
+                return 1
             fi
+            nft_fragment_delete_object "$fam" "$kind" "$name" || true
         done < <(_nftban_ddos_live_objects "$fam")
     done
 
