@@ -807,32 +807,11 @@ func readEffectiveMode(module, localPath, basePath, key string) string {
 	return mode
 }
 
-// readConfiguredMode returns the configured MODE for a module, applying the
-// same main.conf -> main.conf.local layering readConfigBool uses.
-//
-// v1.229.7 PR-3A. The structural expectation for a module is a FUNCTION OF ITS
-// EFFECTIVE MODE, not a fixed list of classic chain names. Before this,
-// evaluateDDoS demanded all four classic chains whenever DDOS_ENABLED=true,
-// with no regard for DDOS_MODE -- so a correctly configured Suricata host
-// reported StructuralMissing, and the effective-axis counters were suppressed
-// behind that verdict.
-//
-// ⛔ THE PLAN DEFINES EXPECTATION, NOT PROOF:
-//
-//	  expected = function(effective_mode)
-//	  observed = module-specific runtime witness
-//	  verdict  = compare(expected, observed)
-//	This must NOT become "plan says suricata -> healthy", which would be the
-//	same error as "classic_chain_exists -> healthy" wearing different clothes.
-func readConfiguredMode(localPath, basePath, key string) string {
-	if val := readKeyFromFile(filepath.Join(ConfigDir, localPath), key); val != "" {
-		return val
-	}
-	if val := readKeyFromFile(filepath.Join(ConfigDir, basePath), key); val != "" {
-		return val
-	}
-	return "auto"
-}
+// NOTE (v1.229.7 PR-4B): readConfiguredMode lived here and was removed when
+// readEffectiveMode began delegating to nftbanconf.ReadEffectiveMode, which owns
+// the base + .local layering for the MODE key. It was dead code, not a lost
+// capability -- staticcheck U1000 caught it. readKeyFromFile is retained: it
+// still has 7 other callers.
 
 func readConfigBool(localPath, basePath, key string) ConfigState {
 	// Try .local first
