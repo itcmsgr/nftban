@@ -40,7 +40,16 @@ set -Eeuo pipefail
 
 MODE=""
 DIST_DIR=""
-EXPECT_COMMIT=""   # optional: assert the packaged nftband embeds this git commit
+# ⛔ RELEASE IDENTITY IS REQUIRED AUTHORITY, NOT AN OPTIONAL ENHANCEMENT.
+# This was annotated "optional" and its consumer was wrapped in
+# `if [ -n "$EXPECT_COMMIT" ]`, so an absent value skipped the identity binding with
+# NO error and NO evidence line -- the run simply looked clean.
+#   EMPTY EXPECT_COMMIT != "CHECK NOT REQUESTED"
+# BOTH modes are release-candidate assembly verification: dry-run is deliberately the
+# pre-publication witness on the SAME candidate SHA, so a dry-run permitted to omit
+# identity would be weaker than the publication gate it exists to exercise. Required
+# in dry-run exactly as in push. Set by parse_args; never defaulted.
+EXPECT_COMMIT=""
 
 usage() { echo "usage: verify-release-assembly.sh --mode {dry-run|push} --dist-dir DIR [--expect-commit SHA]" >&2; }
 
@@ -60,6 +69,20 @@ parse_args() {
     fi
     if [ -z "$DIST_DIR" ] || [ ! -d "$DIST_DIR" ]; then
         echo "::error::--dist-dir must be an existing directory (got '${DIST_DIR}')" >&2; exit 2
+    fi
+    # ⛔ REQUIRED AUTHORITY FIELD VALIDATED BEFORE RELEASE-ASSEMBLY VERIFICATION
+    #    CONTINUES -- not at the point of use, where a skip is invisible.
+    # An explicitly-supplied empty string fails identically to omission: both mean the
+    # caller never established the release identity.
+    if [ -z "$EXPECT_COMMIT" ]; then
+        echo "::error::--expect-commit is REQUIRED (mode=${MODE}). Release identity is required authority, not an optional enhancement; refusing to verify a release assembly whose expected source commit was never established." >&2
+        exit 2
+    fi
+    case "$EXPECT_COMMIT" in
+        *[!0-9a-fA-F]*) echo "::error::--expect-commit must be a hex commit SHA (got '${EXPECT_COMMIT}')" >&2; exit 2 ;;
+    esac
+    if [ "${#EXPECT_COMMIT}" -lt 7 ]; then
+        echo "::error::--expect-commit too short (${#EXPECT_COMMIT} chars); refusing an ambiguous identity" >&2; exit 2
     fi
     # Absolutize: verify_parity cd's into a temp workdir and then extracts packages
     # by "$DIST_DIR/<pkg>". A RELATIVE --dist-dir (how release.yml invokes it:
@@ -140,15 +163,17 @@ verify_parity() {
         elif [ "$dsha" != "$rsha" ]; then echo "::error::DEB_RPM_${b}_BYTE_IDENTICAL=NO"; ok=1
         else echo "EVIDENCE_DEB_RPM_${b}_BYTE_IDENTICAL=YES"; fi
     done
-    if [ -n "$EXPECT_COMMIT" ]; then
-        local emb
-        emb=$("$work/deb/x/usr/lib/nftban/bin/nftband" --version 2>/dev/null | grep -oE 'git [0-9a-f]+' | awk '{print $2}' || true)
-        echo "EVIDENCE_PUBLISHED_EMBEDDED_COMMIT=${emb:-unknown}"
-        if [ -z "$emb" ] || [ "${EXPECT_COMMIT#"$emb"}" = "$EXPECT_COMMIT" ]; then
-            echo "::error::embedded commit ${emb:-unknown} does not match expected $EXPECT_COMMIT"; ok=1
-        else
-            echo "EVIDENCE_EMBEDDED_COMMIT_MATCH=YES"
-        fi
+    # ⛔ UNCONDITIONAL BY CONSTRUCTION. This assertion must NOT be dominated by a
+    # presence test on its own input. EXPECT_COMMIT is validated in parse_args, so
+    # control cannot reach here with it empty; re-introducing `if [ -n "$EXPECT_COMMIT" ]`
+    # would restore the silent-skip defect this change removes.
+    local emb
+    emb=$("$work/deb/x/usr/lib/nftban/bin/nftband" --version 2>/dev/null | grep -oE 'git [0-9a-f]+' | awk '{print $2}' || true)
+    echo "EVIDENCE_PUBLISHED_EMBEDDED_COMMIT=${emb:-unknown}"
+    if [ -z "$emb" ] || [ "${EXPECT_COMMIT#"$emb"}" = "$EXPECT_COMMIT" ]; then
+        echo "::error::embedded commit ${emb:-unknown} does not match expected $EXPECT_COMMIT"; ok=1
+    else
+        echo "EVIDENCE_EMBEDDED_COMMIT_MATCH=YES"
     fi
     rm -rf "$work"
     return "$ok"
