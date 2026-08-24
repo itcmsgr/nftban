@@ -187,6 +187,60 @@ population_ok && ok "    expected[$(expected_modules | tr '\n' ' ')] present and
               || bad "    population -> $POP_DETAIL"
 [[ "$(valcons)" -eq 0 ]] && ok "    VAL-CONS-002 = 0" || bad "    VAL-CONS-002 = $(valcons)"
 
+# --- 7 nftban modes: OBSERVATION FOLLOWS THE PLAN, NOT THE ENVIRONMENT -------
+say "--- 7 nftban modes read/report (PR-5C) ---"
+# ⛔ The environment is rigged to DISAGREE with the plan. Before PR-5C,
+# `_modes_resolve_effective` re-resolved `auto` here and could report an
+# effective mode the system never decided.
+#   OBSERVATION CHANGE != DECISION CHANGE
+modes_eff(){   # <module> -> what `nftban modes` reports
+    local mod="$1" row
+    row="$(nftban modes 2>/dev/null | grep -iE "^\s*${mod}\b" | head -1)"
+    awk '{print $3}' <<<"$row"
+}
+plan_eff(){ sed -n 's/^NFTBAN_PLAN_EFFECTIVE_MODE=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
+
+for mod in ddos portscan; do
+    K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
+    printf '%s_ENABLED="true"\n%s_MODE="auto"\n' "$K" "$K" > "/etc/nftban/conf.d/$mod/main.conf.local"
+    # Suricata DOWN -> auto must resolve classic; then bring it UP so the
+    # environment now contradicts the published plan.
+    systemctl stop suricata >/dev/null 2>&1; sleep 2
+    nftban "$mod" reload >/dev/null 2>&1; sleep 4
+    p="$(plan_eff "$mod")"
+    systemctl start suricata >/dev/null 2>&1; sleep 6   # environment now says suricata
+    m="$(modes_eff "$mod")"
+    if [[ "$p" == "classic" && "$m" == "classic" ]]; then
+        ok "7 $mod plan=classic, environment now favours suricata -> modes reports classic"
+    elif [[ "$p" != "classic" ]]; then
+        bad "7 $mod setup invalid: plan resolved to '$p', expected classic with suricata down"
+    else
+        bad "7 $mod modes reported '$m' while the plan says '$p' — READ PATH RE-RESOLVED"
+    fi
+
+    # Inverse: plan=suricata, then take the environment away.
+    nftban "$mod" reload >/dev/null 2>&1; sleep 4
+    p="$(plan_eff "$mod")"
+    systemctl stop suricata >/dev/null 2>&1; sleep 4    # environment now says classic
+    m="$(modes_eff "$mod")"
+    if [[ "$p" == "suricata" && "$m" == "suricata" ]]; then
+        ok "7 $mod plan=suricata, environment now favours classic -> modes reports suricata"
+    elif [[ "$p" != "suricata" ]]; then
+        say "  note  7 $mod inverse arm skipped: plan resolved '$p' (suricata not available to this host)"
+    else
+        bad "7 $mod modes reported '$m' while the plan says '$p' — READ PATH RE-RESOLVED"
+    fi
+
+    # Plan absent -> unknown, never a re-resolution.
+    rm -f "/run/nftban/module-plan-$mod.env"
+    m="$(modes_eff "$mod")"
+    [[ "$m" == "unknown" ]] \
+        && ok "7 $mod plan absent -> modes reports unknown (no re-resolution)" \
+        || bad "7 $mod plan absent but modes reported '$m' — READ PATH RE-RESOLVED"
+    nftban "$mod" reload >/dev/null 2>&1; sleep 3
+done
+systemctl start suricata >/dev/null 2>&1 || true
+
 say ""
 [[ $F -eq 0 ]] && { say "WITNESS PASS — $LABEL"; exit 0; }
 say "WITNESS FAIL — $LABEL ($F failures)"; exit 1
