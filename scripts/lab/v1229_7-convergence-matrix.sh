@@ -116,6 +116,26 @@ assert_state(){ # <module> <state-label> <operation> [expected-configured-mode]
   local mod="$1" intent="$2" op="$3" want_cfg="${4:-$2}"
   local cfg eff basis v4 v6 xor verdict notes=""
   PRE_EXISTING_NOTE=""
+
+  # ⛔ RECOVER FROM THE HARNESS'"'"'S OWN RATE LIMIT BEFORE OBSERVING.
+  # Clearing the counter before each operation is not sufficient: `firewall
+  # reset` itself drives several restarts inside ONE row, so the burst
+  # (StartLimitBurst=10) can still be exhausted mid-row. The daemon is then down
+  # for the remainder of the run and every following row reports a firewall that
+  # is absent for a reason the harness created -- which is exactly how two rows
+  # per host kept looking like product failures.
+  #   HARNESS-INDUCED RATE LIMIT != PRODUCT FAILURE
+  # Recovery is bounded and DECLARED: it is recorded in the PRE_EXISTING column
+  # so the event stays visible, and it is triggered ONLY by Result=start-limit-hit.
+  # A genuine crash reports exit-code/signal instead and is left untouched, so
+  # this cannot launder a real failure into a pass.
+  if [[ "$(systemctl show nftband.service -p Result --value 2>/dev/null)" == "start-limit-hit" ]]; then
+      systemctl reset-failed 'nftban*' >/dev/null 2>&1 || true
+      systemctl start nftband.socket  >/dev/null 2>&1 || true
+      systemctl start nftband.service >/dev/null 2>&1 || true
+      settle
+      PRE_EXISTING_NOTE="HARNESS_START_LIMIT_RECOVERED=nftband.service"
+  fi
   cfg="$(configured_mode "$mod")"
   eff="$(plan_field "$mod" EFFECTIVE_MODE)"; [[ -z "$eff" ]] && eff="NO_PLAN"
   basis="$(plan_field "$mod" RESOLUTION_BASIS)"
