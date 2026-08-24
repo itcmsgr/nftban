@@ -451,6 +451,56 @@ for mod in ddos portscan; do
     fi
 done
 
+# --- 13. RUNTIME / IPC AUTHORITY BOUNDARY (PR-5) ----------------------------
+echo ""
+echo "13. no .7 component acquires authority over another lifecycle's runtime resource..."
+# ⛔ /run/nftban is declared by systemd-tmpfiles as `0755 nftban nftban` and holds
+# the daemon socket. A PR-5 revision used `mkdir -p` there, which recreated it
+# ROOT-owned and produced an unsafe-path-transition report; destroying that
+# directory in the lab removed the socket, IPC apply failed, module chains went
+# 16 -> 6, health went DOWN and rebuild exited 1.
+#   ESTABLISHING A PREREQUISITE != ACQUIRING AUTHORITY OVER THE PREREQUISITE.
+_v7_files=(lib/module_authority.sh core/nftban_ddos.sh core/nftban_portscan.sh cli/cmd_firewall.sh)
+seize=""
+for rel in "${_v7_files[@]}"; do
+    src="$ROOT/cli/lib/nftban/$rel"
+    [[ -f "$src" ]] || continue
+    if code_has "$src" '(mkdir|chown|chmod|install -d|rm -rf)[^|]*(/run/nftban|RECORD_DIR"?\}?"?$|RUN_DIR)'; then
+        seize="$seize $rel"
+    fi
+done
+if [[ -n "$seize" ]]; then
+    fail "these .7 files mutate the tmpfiles-owned runtime directory:$seize"
+else
+    ok "no .7 file creates/chowns/removes the runtime directory"
+fi
+
+# N4 — a failed publication must not leave a current-looking record.
+for mod in ddos portscan; do
+    d="$(mktemp -d)"; mkdir -p "$d/conf.d/$mod" "$d/run"
+    K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
+    printf '%s_ENABLED="true"\n%s_MODE="classic"\n' "$K" "$K" > "$d/conf.d/$mod/main.conf"
+    printf '7\n' > "$d/run/convergence-generation"
+    # make the atomic replace impossible: the target path is a directory
+    mkdir -p "$d/run/module-plan-$mod.env"
+    NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
+    NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+    NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
+        source '$AUTH'
+        source '$ROOT/cli/lib/nftban/core/nftban_${mod}.sh' 2>/dev/null || true
+        nftban_${mod}_suricata_is_available(){ return 1; }
+        nftban_${mod}_apply(){ return 0; }; nftban_${mod}_teardown(){ return 0; }
+        _nftban_${mod}_log(){ :; }
+        nftban_${mod}_reconcile" >/dev/null 2>&1
+    leftover="$(find "$d/run" -maxdepth 1 -name "module-plan-$mod.env.*" 2>/dev/null | wc -l)"
+    if [[ "$leftover" -eq 0 ]]; then
+        ok "$mod N4: failed publication leaves no partial/temp record"
+    else
+        fail "$mod N4: $leftover orphaned temp record(s) survived a failed publication"
+    fi
+    rm -rf "$d"
+done
+
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""
 echo "8. runtime classic XOR suricata..."

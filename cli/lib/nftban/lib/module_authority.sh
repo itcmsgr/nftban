@@ -286,13 +286,32 @@ nftban_plan_generation_bump() {
     local dir cur next tmp
     local gf="${NFTBAN_PLAN_GENERATION_FILE:-/run/nftban/convergence-generation}"
     dir="$(dirname "$gf")"
-    [[ -d "$dir" ]] || return 0   # no /run/nftban yet: nothing to bind to
+    # ⛔ Do NOT create this directory. /run/nftban is owned by systemd-tmpfiles
+    # (0755 nftban:nftban) and holds the daemon socket.
+    #   ESTABLISHING A PREREQUISITE != ACQUIRING AUTHORITY OVER IT.
+    # ⛔ Every failure path below previously returned 0 silently, so a root could
+    # believe it had advanced the binding when it had not. Callers use `|| true`,
+    # so the return value alone changes no control flow -- the DIAGNOSTIC is what
+    # makes the condition observable.
+    #   A SILENT FAILURE IS INDISTINGUISHABLE FROM SUCCESS.
+    if [[ ! -d "$dir" ]]; then
+        echo "nftban_plan_generation_bump: $dir absent — convergence binding NOT advanced." >&2
+        return 5
+    fi
     cur="$(nftban_plan_generation_current)"
     next=$(( cur + 1 ))
     tmp="${gf}.$$"
-    printf '%s\n' "$next" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    if ! printf '%s\n' "$next" > "$tmp" 2>/dev/null; then
+        rm -f "$tmp"
+        echo "nftban_plan_generation_bump: cannot write $tmp — binding NOT advanced." >&2
+        return 5
+    fi
     chmod 0644 "$tmp" 2>/dev/null || true
-    mv -f "$tmp" "$gf" 2>/dev/null || rm -f "$tmp"
+    if ! mv -f "$tmp" "$gf" 2>/dev/null; then
+        rm -f "$tmp"
+        echo "nftban_plan_generation_bump: atomic replace of $gf failed — binding NOT advanced." >&2
+        return 5
+    fi
     return 0
 }
 

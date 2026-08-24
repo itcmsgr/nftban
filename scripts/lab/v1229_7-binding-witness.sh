@@ -17,6 +17,15 @@ ok(){  say "  ok    $*"; }
 bad(){ F=$((F+1)); say "  FAIL  $*"; }
 
 gen(){ cat /run/nftban/convergence-generation 2>/dev/null || echo 0; }
+
+# ⛔ RUNTIME/IPC AUTHORITY INVARIANTS. /run/nftban is declared by systemd-tmpfiles
+# (0755 nftban nftban) and holds the daemon socket. No convergence root may
+# change its ownership/mode or remove the socket. The socket inode MAY change --
+# the daemon can legitimately recreate it -- so presence and type are asserted,
+# not identity.
+rt_stat(){ stat -c '%U:%G:%a' /run/nftban 2>/dev/null || echo "ABSENT"; }
+sock_ok(){ [[ -S /run/nftban/nftband.sock ]]; }
+daemon_ok(){ [[ "$(systemctl is-active nftband 2>/dev/null)" == active ]]; }
 bound(){ sed -n 's/^NFTBAN_PLAN_BOUND_GENERATION=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
 rid(){ sed -n 's/^NFTBAN_PLAN_RESOLUTION_ID=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
 valcons(){ /usr/lib/nftban/bin/nftban-validate 2>&1 | grep -c 'VAL-CONS-002' || true; }
@@ -90,6 +99,16 @@ say "  package        : $PKG"
 say "  configured ddos: $(sed -n 's/^[[:space:]]*DDOS_MODE=//p' /etc/nftban/conf.d/ddos/main.conf.local 2>/dev/null | tr -d '\"')"
 say "  generation     : $(gen)"
 say "  VAL-CONS-002   : $(valcons)"
+say "  /run/nftban    : $(rt_stat)   socket=$(sock_ok && echo present || echo ABSENT)"
+# ⛔ The witness must NOT wipe /run/nftban. An earlier run did, which removed the
+# daemon socket, broke IPC apply, dropped module chains 16 -> 6, and produced a
+# false PRODUCT_FAIL for rebuild. Restoration is the tmpfiles owner's job.
+#   DESTROYING A RUNTIME NAMESPACE IS NOT A COLD-START TEST.
+if [[ "$(rt_stat)" != "nftban:nftban:755" ]] || ! sock_ok; then
+    say "  FATAL: runtime namespace not in canonical state — restore with:"
+    say "         systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf && systemctl restart nftband"
+    exit 2
+fi
 [[ "$PKG" == NONE ]] && { say "  FATAL: package not installed"; exit 2; }
 
 # step <n> <label> <execution-witness-cmd> -- <command...>
@@ -99,11 +118,11 @@ step(){
     # population after it reported a product failure for correct behaviour.
     local scope=""
     case "$label" in "ddos reload") scope=ddos ;; "portscan reload") scope=portscan ;; esac
-    local g0 g1 out rc
-    g0="$(gen)"
+    local g0 g1 out rc rt0 rt1
+    g0="$(gen)"; rt0="$(rt_stat)"
     out="$("$@" 2>&1)"; rc=$?
     sleep 8
-    g1="$(gen)"
+    g1="$(gen)"; rt1="$(rt_stat)"
     # ⛔ EXECUTION WITNESS IS OPERATION-SPECIFIC. Generation movement is a valid
     # witness only where the contract says that operation bumps it; making it a
     # universal oracle would invent a synthetic requirement (module reload does
@@ -132,6 +151,11 @@ step(){
     else
         ok "$n $label — rc=0, executed [$witness]"
     fi
+    # runtime-authority invariants, per operation
+    [[ "$rt0" == "$rt1" ]] && ok "    /run/nftban ownership/mode unchanged ($rt1)" \
+                           || bad "    /run/nftban CHANGED $rt0 -> $rt1 — a convergence root seized the runtime directory"
+    sock_ok   && ok "    nftband.sock present" || bad "    nftband.sock ABSENT after $label — IPC broken"
+    daemon_ok && ok "    nftband active"       || bad "    nftband not active after $label"
     local v; v="$(valcons)"
     local exp act; exp="$(expected_modules | tr '\n' ' ')"; act="$(actual_records | tr '\n' ' ')"
     if population_ok "$scope"; then ok "    expected[${scope:-$exp}] present and bound to current gen $g1"
