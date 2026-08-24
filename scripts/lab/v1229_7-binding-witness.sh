@@ -18,6 +18,9 @@ bad(){ F=$((F+1)); say "  FAIL  $*"; }
 
 gen(){ cat /run/nftban/convergence-generation 2>/dev/null || echo 0; }
 
+# Observables for the daemon-restart execution witness (set by proot).
+WPID0=""; WPID1=""; WBOOT0=""; WBOOT1=""
+
 # ⛔ RUNTIME/IPC AUTHORITY INVARIANTS. /run/nftban is declared by systemd-tmpfiles
 # (0755 nftban nftban) and holds the daemon socket. No convergence root may
 # change its ownership/mode or remove the socket. The socket inode MAY change --
@@ -133,7 +136,28 @@ exec_witness(){
             grep -qiE 'Use --force' <<<"$out" && witness="DECLINED"
             grep -qiE 'Performing complete firewall reset|reset' <<<"$out" && [[ "$witness" != DECLINED ]] && witness="reset-path-entered"
             [[ "$g1" != "$g0" && "$witness" != DECLINED ]] && witness="${witness}+generation($g0->$g1)" ;;
+        "daemon restart")
+            # systemctl prints NOTHING on success, so there is no output to match.
+            # The witness is the observable effect: the unit came back active
+            # under a NEW MainPID, within the SAME boot. Requiring a new pid is
+            # what distinguishes "restarted" from "was already running and the
+            # command silently did nothing".
+            #   SILENT SUCCESS IS NOT SELF-EVIDENT -- WITNESS THE EFFECT.
+            # Reboot is explicitly excluded: a changed boot_id would mean the
+            # host restarted, which is a different test with different evidence.
+            if [[ "$WPID1" != "0" && -n "$WPID1" ]] \
+               && [[ "$WPID1" != "$WPID0" ]] \
+               && [[ "$WBOOT1" == "$WBOOT0" ]] \
+               && daemon_ok; then
+                witness="daemon-restarted($WPID0->$WPID1, same boot)"
+            fi ;;
     esac
+    # A pattern miss is not evidence of absence when the command was run
+    # --quiet: `firewall rebuild --quiet` prints nothing, so the generation
+    # bump IS the execution witness. Report it as such instead of the
+    # self-contradictory "none+generation(...)" the first revision emitted.
+    #   SUPPRESSED OUTPUT != NOTHING HAPPENED
+    [[ "$witness" == none+* ]] && witness="${witness#none+}"
     printf '%s' "$witness"
 }
 
@@ -371,7 +395,13 @@ if suricata_available_per_product portscan; then
         local n="$1" label="$2"; shift 2
         local g0 g1 out rc rt0 rt1 witness v durable cfg eff basis
         g0="$(gen)"; rt0="$(rt_stat)"
+        # Observables for the "daemon restart" witness, captured around the
+        # command because systemctl itself reports nothing on success.
+        WPID0="$(systemctl show -p MainPID --value nftband 2>/dev/null)"
+        WBOOT0="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
         out="$("$@" 2>&1)"; rc=$?
+        WPID1="$(systemctl show -p MainPID --value nftband 2>/dev/null)"
+        WBOOT1="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
         if ! settle portscan; then
             bad "8.$n $label -- SETTLE_TIMEOUT: portscan record never bound to the current generation within 45s"
             return
