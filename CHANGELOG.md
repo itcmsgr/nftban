@@ -11,6 +11,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.8] - 2026-08-24 — work done twice is work paid for twice
+
+Two measured CPU consumers, each with a causal fix rather than a tuning adjustment.
+
+Every watchdog activation ran the full check battery twice. `nftban_watchdog_run`
+executed it, then called trend collection, which executed the whole battery again to
+obtain numbers that already existed in memory. The trend collector had been wired in
+because it previously had no callers at all, leaving `watchdog trends` averages empty;
+the wiring was right, the second full run was not. Trend collection now consumes the
+existing results, but only when the caller presents the run identity stamped by that
+activation — a populated array is not evidence of a current one, and reusing stale
+numbers would trade a CPU cost for a freshness defect. Callers that supply no identity
+run their own battery as before. Measured on a lab host, same visible status and the
+same trend output: 1483 process executions per activation reduced to 796, system CPU
+3.90s to 1.50s, wall 5.51s to 2.39s.
+
+`nftban-maintenance.service` completed all ten of its steps, reported them all OK, then
+exited non-zero and was restarted by systemd every few minutes, indefinitely. Step 9d
+loaded the module containing the log-retention function but not the module that defines
+the paths that function reads. Under `set -u` the first unset dereference terminates the
+shell, so the run ended before step 10 and the service never reported completion. An
+`if` condition suppresses `set -e`; it does not make an unbound variable safe. The step
+now loads the same configuration the ordinary stats path loads, and if that
+configuration is unavailable it reports the fact and skips retention rather than
+inventing a path to delete files under.
+
+An earlier analysis attributed the restart loop to the unit's systemd sandbox blocking
+its nftables probe. That attribution was tested directly and does not hold: the probe
+succeeds inside the unit's own sandbox, and the log lines the theory predicts never
+appear. No sandbox directive, capability or privilege was changed.
+
 ## [v1.229.7] - 2026-08-24 — the mode a module reports must be the mode the kernel is in
 
 A module's mode was resolved wherever it happened to be needed. `nftban modes`, the
