@@ -52,6 +52,20 @@ ddos_eve() {
     ' _ "$DSRC" "$1" >/dev/null 2>&1
 }
 # portscan_eve [configured-file|__UNSET__] -> "rc=<n>" or "TERMINATED"
+#
+# ⛔ DO NOT "SIMPLIFY" THIS INTO A BARE CALL ON THE SOURCED MODULE.
+# nftban_portscan_suricata.sh sets `set -Eeuo pipefail` at file scope. A probe that
+# sources the whole module and then calls the predicate BARE inherits `-e`, so a
+# CORRECT `return 1` exits the probe's own shell and the arm reports TERMINATED --
+# which is exactly the failure this test exists to detect, produced by the harness
+# instead of the product. That false failure was observed package-native on both
+# families on 2026-08-24 before being traced.
+#   INHERITED SHELL OPTIONS ARE PART OF THE CALLER'S STATE.
+#   A PROBE THAT DOES NOT REPRODUCE THE CALLER'S CONVENTION TESTS THE PROBE.
+# Two independent defences are used here: the function is extracted and evaluated on
+# its own (so no file-scope `set -e` is inherited), and the return code is captured
+# explicitly rather than allowed to terminate the shell. Production callers reach this
+# predicate from conditional context (`if ... ; then`), where `-e` does not fire.
 portscan_eve() {
     local out rc=0
     out=$(bash --noprofile --norc -c '
