@@ -193,6 +193,19 @@ say "--- 7 nftban modes read/report (PR-5C) ---"
 # `_modes_resolve_effective` re-resolved `auto` here and could report an
 # effective mode the system never decided.
 #   OBSERVATION CHANGE != DECISION CHANGE
+# ⛔ CANONICAL PREDICATE. `systemctl is-active suricata` is NOT the same question
+# as "does the nftban resolver consider Suricata available" -- the product also
+# requires a fresh eve file at ITS configured path. Equating the two is how this
+# campaign spent a whole run with AUTO_SURICATA never actually exercised.
+#   PROCESS LIVENESS != PRODUCT AVAILABILITY PREDICATE
+suricata_available_per_product(){   # <module>
+    local mod="$1"
+    bash -c "
+        export NFTBAN_LIB_DIR=/usr/lib/nftban
+        source /usr/lib/nftban/core/nftban_${mod}_suricata.sh 2>/dev/null || exit 1
+        nftban_${mod}_suricata_is_available" >/dev/null 2>&1
+}
+
 modes_eff(){   # <module> -> what `nftban modes` reports
     local mod="$1" row
     row="$(nftban modes 2>/dev/null | grep -iE "^\s*${mod}\b" | head -1)"
@@ -201,42 +214,64 @@ modes_eff(){   # <module> -> what `nftban modes` reports
 plan_eff(){ sed -n 's/^NFTBAN_PLAN_EFFECTIVE_MODE=//p' "/run/nftban/module-plan-$1.env" 2>/dev/null; }
 
 for mod in ddos portscan; do
+    local_pre=""; pre_avail=""; post_avail=""
     K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
     printf '%s_ENABLED="true"\n%s_MODE="auto"\n' "$K" "$K" > "/etc/nftban/conf.d/$mod/main.conf.local"
     # Suricata DOWN -> auto must resolve classic; then bring it UP so the
     # environment now contradicts the published plan.
-    systemctl stop suricata >/dev/null 2>&1; sleep 2
+    # ARM A — plan=classic, then make Suricata GENUINELY available.
+    # ⛔ PROVE THE TRANSITION, do not assume it. The predicate must be observed
+    # FALSE, then TRUE. Without this the environment could have been in the same
+    # state both times and the "contradiction" would be imaginary.
+    #   BELIEVING YOU CHANGED THE ENVIRONMENT != HAVING CHANGED IT
+    # ⛔ Per module: ddos and portscan availability are separate predicates and
+    #   are not assumed equal.
+    systemctl stop suricata >/dev/null 2>&1; sleep 3
+    pre_avail=false; suricata_available_per_product "$mod" && pre_avail=true
     nftban "$mod" reload >/dev/null 2>&1; sleep 4
     p="$(plan_eff "$mod")"
-    systemctl start suricata >/dev/null 2>&1; sleep 6   # environment now says suricata
-    m="$(modes_eff "$mod")"
-    if [[ "$p" == "classic" && "$m" == "classic" ]]; then
-        ok "7 $mod plan=classic, environment now favours suricata -> modes reports classic"
+    systemctl start suricata >/dev/null 2>&1; sleep 8
+    post_avail=false; suricata_available_per_product "$mod" && post_avail=true
+    if [[ "$pre_avail" != "false" || "$post_avail" != "true" ]]; then
+        bad "7 $mod ARM A LAB_PRECONDITION_FAIL — predicate did not transition false->true (saw $pre_avail->$post_avail); the contradiction was never established"
     elif [[ "$p" != "classic" ]]; then
-        bad "7 $mod setup invalid: plan resolved to '$p', expected classic with suricata down"
+        bad "7 $mod ARM A LAB_PRECONDITION_FAIL — plan resolved '$p', expected classic with Suricata down"
     else
-        bad "7 $mod modes reported '$m' while the plan says '$p' — READ PATH RE-RESOLVED"
+        m="$(modes_eff "$mod")"
+        [[ "$m" == "classic" ]] \
+            && ok "7 $mod ARM A plan=classic, product says Suricata AVAILABLE -> modes reports classic" \
+            || bad "7 $mod ARM A modes reported '$m' while the plan says '$p' — READ PATH RE-RESOLVED"
     fi
 
     # Inverse: plan=suricata, then take the environment away.
+    # ARM B — plan=suricata, then remove availability. REQUIRED evidence: an
+    # unmet precondition is not a pass.
+    #   UNMET PRECONDITION != PRODUCT FAILURE
+    #   UNMET REQUIRED PRECONDITION != PASS
+    # ⛔ Same discipline inverted: the predicate must be observed TRUE, then FALSE.
+    pre_avail=false; suricata_available_per_product "$mod" && pre_avail=true
     nftban "$mod" reload >/dev/null 2>&1; sleep 4
     p="$(plan_eff "$mod")"
-    systemctl stop suricata >/dev/null 2>&1; sleep 4    # environment now says classic
-    m="$(modes_eff "$mod")"
-    if [[ "$p" == "suricata" && "$m" == "suricata" ]]; then
-        ok "7 $mod plan=suricata, environment now favours classic -> modes reports suricata"
+    systemctl stop suricata >/dev/null 2>&1; sleep 5
+    post_avail=false; suricata_available_per_product "$mod" && post_avail=true
+    if [[ "$pre_avail" != "true" || "$post_avail" != "false" ]]; then
+        bad "7 $mod ARM B LAB_PRECONDITION_FAIL — predicate did not transition true->false (saw $pre_avail->$post_avail)"
     elif [[ "$p" != "suricata" ]]; then
-        say "  note  7 $mod inverse arm skipped: plan resolved '$p' (suricata not available to this host)"
+        bad "7 $mod ARM B LAB_PRECONDITION_FAIL — plan resolved '$p' with Suricata available; cannot establish the inverse contradiction"
     else
-        bad "7 $mod modes reported '$m' while the plan says '$p' — READ PATH RE-RESOLVED"
+        m="$(modes_eff "$mod")"
+        [[ "$m" == "suricata" ]] \
+            && ok "7 $mod ARM B plan=suricata, Suricata now UNAVAILABLE -> modes reports suricata" \
+            || bad "7 $mod ARM B modes reported '$m' while the plan says '$p' — READ PATH RE-RESOLVED"
     fi
 
     # Plan absent -> unknown, never a re-resolution.
     rm -f "/run/nftban/module-plan-$mod.env"
     m="$(modes_eff "$mod")"
+    # ARM C — plan absent.
     [[ "$m" == "unknown" ]] \
-        && ok "7 $mod plan absent -> modes reports unknown (no re-resolution)" \
-        || bad "7 $mod plan absent but modes reported '$m' — READ PATH RE-RESOLVED"
+        && ok "7 $mod ARM C plan absent -> modes reports unknown (no re-resolution)" \
+        || bad "7 $mod ARM C plan absent but modes reported '$m' — READ PATH RE-RESOLVED"
     nftban "$mod" reload >/dev/null 2>&1; sleep 3
 done
 systemctl start suricata >/dev/null 2>&1 || true
