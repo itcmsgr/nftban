@@ -64,7 +64,11 @@ setmode(){
 # set (ddos_blocked / portscan_blocked) is excluded: it belongs to neither mode's
 # projection, and treating it as one is what aborted an early ddos revision.
 classic_objs(){
-  local m="${1:-$MOD}" f n=0
+  # Operates on the module under test. It deliberately takes NO argument: an
+  # optional-parameter signature that no call site ever uses is a false
+  # affordance (shellcheck SC2120) and invites a caller to think the census can
+  # be pointed at another module mid-run.
+  local m="$MOD" f n=0
   for f in ip ip6; do
     n=$((n + $(nft list table "$f" nftban 2>/dev/null \
         | grep -oE "chain ${m}_[a-z_]+|set ${m}_[a-z_0-9]+" \
@@ -72,7 +76,7 @@ classic_objs(){
   done
   echo "$n"
 }
-jumps(){ local m="${1:-$MOD}" f n=0; for f in ip ip6; do n=$((n + $(nft list chain "$f" nftban input 2>/dev/null | grep -coE "jump ${m}_[a-z_]+" || true))); done; echo "$n"; }
+jumps(){ local m="$MOD" f n=0; for f in ip ip6; do n=$((n + $(nft list chain "$f" nftban input 2>/dev/null | grep -coE "jump ${m}_[a-z_]+" || true))); done; echo "$n"; }
 valchain(){ /usr/lib/nftban/bin/nftban-validate 2>&1 | grep -c 'VAL-CHAIN-004' || true; }
 
 # transition_converges -- classic -> suricata via the OPERATOR path.
@@ -105,13 +109,19 @@ if [[ "$(classic_objs)" -gt 0 && "$(valchain)" -eq 0 ]]; then
 else bad "P2 suricata->classic left objects=$(classic_objs) VAL-CHAIN-004=$(valchain)"; fi
 
 nftban "$MOD" reload >/dev/null 2>&1; sleep 5
-[[ "$(classic_objs)" -gt 0 && "$(valchain)" -eq 0 ]] \
-  && ok "P3 classic->classic idempotent" || bad "P3 classic->classic not idempotent"
+if [[ "$(classic_objs)" -gt 0 && "$(valchain)" -eq 0 ]]; then
+  ok "P3 classic->classic idempotent"
+else
+  bad "P3 classic->classic not idempotent"
+fi
 
 setmode suricata; nftban "$MOD" reload >/dev/null 2>&1; sleep 4
 nftban "$MOD" reload >/dev/null 2>&1; sleep 5
-[[ "$(classic_objs)" -eq 0 && "$(valchain)" -eq 0 ]] \
-  && ok "P4 suricata->suricata idempotent" || bad "P4 suricata->suricata not idempotent"
+if [[ "$(classic_objs)" -eq 0 && "$(valchain)" -eq 0 ]]; then
+  ok "P4 suricata->suricata idempotent"
+else
+  bad "P4 suricata->suricata not idempotent"
+fi
 
 # --- negative controls -------------------------------------------------------
 # Each mutation is applied to the INSTALLED implementation, the SAME positive
@@ -149,6 +159,9 @@ MUTEOF
     restore_all
 }
 
+# shellcheck disable=SC2016  # the mutation arguments are PYTHON source passed as
+# DATA to python3; shell expansion inside them would corrupt the program. Single
+# quotes are required here, not an oversight.
 echo ""
 echo "N — NEGATIVE CONTROLS (mutate the shipped implementation, require detection)"
 
