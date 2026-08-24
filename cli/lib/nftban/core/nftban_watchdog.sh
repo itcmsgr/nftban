@@ -241,6 +241,14 @@ nftban_watchdog_run_all() {
     WATCHDOG_RESULTS[overall_status]="$overall_status"
     WATCHDOG_RESULTS[check_timestamp]=$(date +%s)
     WATCHDOG_RESULTS[check_datetime]=$(date '+%Y-%m-%d %H:%M:%S')
+    # v1.229.8: PER-ACTIVATION IDENTITY, so a consumer can prove the results in
+    # WATCHDOG_RESULTS are THIS battery's and not whatever was left in the array.
+    # A timestamp alone is not identity -- two activations inside one second stamp
+    # the same value.
+    #   REUSING RESULTS != REUSING WHATEVER IS IN THE ARRAY.
+    # Built from shell-native values only: this function exists to REMOVE fork
+    # cost, so it must not add a subprocess to describe itself.
+    WATCHDOG_RESULTS[run_id]="${BASHPID:-$$}.${EPOCHSECONDS:-${WATCHDOG_RESULTS[check_timestamp]}}.${RANDOM}"
 
     return $overall_status
 }
@@ -608,7 +616,15 @@ nftban_watchdog_run() {
     # always rendered empty. Wire it into the active run path here (non-fatal;
     # it re-reads the already-populated WATCHDOG_RESULTS). The working JSONL
     # path above is left untouched.
-    nftban_watchdog_trend_collect >/dev/null 2>&1 || true
+    # v1.229.8 OPEN_WATCHDOG_DUPLICATE_FULL_BATTERY_PER_ACTIVATION.
+    # This call used to re-run the ENTIRE check battery a second time inside one
+    # activation: run_all here, then trend_collect -> run_all again. Measured cost
+    # of ONE battery (TUNE-008): 1,151 execve, 73.8% of syscall time in wait4,
+    # ~12.9 s wall, ~9.2 s system CPU -- and it was paid twice, every activation.
+    #   ONE WATCHDOG ACTIVATION -> ONE CURRENT CHECK BATTERY
+    # The run identity is passed so trend collection can PROVE the results it
+    # consumes belong to this activation, rather than trusting a populated array.
+    nftban_watchdog_trend_collect "${WATCHDOG_RESULTS[run_id]:-}" >/dev/null 2>&1 || true
 
     # Cleanup old reports periodically
     nftban_watchdog_cleanup_old >/dev/null
@@ -656,8 +672,28 @@ nftban_watchdog_trend_collect() {
 
     mkdir -p "$NFTBAN_WATCHDOG_TREND_DIR" 2>/dev/null || true
 
-    # Run checks to populate WATCHDOG_RESULTS (|| true prevents set -e exit)
-    nftban_watchdog_run_all >/dev/null 2>&1 || true
+    # v1.229.8: consume the caller's battery when it can be PROVEN current.
+    # ⛔ The caller must present the run identity stamped by run_all, and it must
+    # match what is actually in the array. Anything weaker -- "the array looks
+    # populated" -- turns this optimisation into a freshness bug that publishes a
+    # previous activation's numbers as current trend data.
+    #   POPULATED != CURRENT
+    # Standalone callers (no argument) keep the original behaviour and run their
+    # own battery, so this is not a behaviour change for them.
+    local expect_run="${1:-}"
+    if [[ -n "$expect_run" && "${WATCHDOG_RESULTS[run_id]:-}" == "$expect_run" ]]; then
+        : # results proven to belong to this activation -- do NOT re-run the battery
+    else
+        nftban_watchdog_run_all >/dev/null 2>&1 || true
+    fi
+
+    # ⛔ NEVER INVENT A TREND POINT. If no battery is populated -- the caller
+    # presented no identity and its own run produced nothing -- record nothing
+    # rather than writing a point that claims to describe the current system.
+    #   NO CURRENT OBSERVATION != WRITE A ZERO
+    if [[ -z "${WATCHDOG_RESULTS[check_timestamp]:-}" ]]; then
+        return 0
+    fi
 
     local hour_start
     hour_start=$(date -d "$(date +%Y-%m-%d\ %H):00:00" +%Y-%m-%dT%H:%M:%SZ)
