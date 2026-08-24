@@ -385,10 +385,10 @@ nftban_ddos_reconcile() {
 #    given and never inspects live state to choose one.
 # -----------------------------------------------------------------------------
 _nftban_ddos_remove_other_projection() {
-    local other
+    local other target_mode
     case "${1:-}" in
-        classic)  other="nftban_ddos_suricata_disable" ;;
-        suricata) other="nftban_ddos_classic_disable" ;;
+        classic)  other="nftban_ddos_suricata_disable"; target_mode="suricata" ;;
+        suricata) other="nftban_ddos_classic_disable";  target_mode="classic"  ;;
         *)        return 0 ;;
     esac
     # ⛔ NO SILENT NO-OP. The earlier shape was `if type -t <fn>; then <fn>; fi`
@@ -407,7 +407,151 @@ _nftban_ddos_remove_other_projection() {
     # The teardown itself is best-effort: a host that never ran the other mode
     # has nothing to remove, and that is not a failure.
     "$other" >/dev/null 2>&1 || true
+
+    # ⛔ FLUSHED != ABSENT.
+    # The disable entrypoints above have FLUSH semantics by design -- every
+    # cleanup fragment emits `flush chain`, documented as "removes all rules but
+    # keeps chain for reference safety", because a chain that is still jumped to
+    # cannot be deleted. That is defensible for the operator-facing
+    # `nftban ddos disable`, and it is NOT sufficient here: this function's whole
+    # contract is that the OTHER mode's projection is ABSENT.
+    #
+    # WITNESSED on merged .7 main (e2555b65), lab2/DEB + lab4/RPM, via the exact
+    # operator path `nftban ddos reload` across classic -> suricata:
+    #     plan effective = suricata
+    #     ddos_protection/ddos_sanity/ddos_prefix = PRESENT, rules=0,
+    #     still jumped from base input in BOTH families
+    #     nftban-validate: Status DEGRADED,
+    #       VAL-CHAIN-004 "Helper chain exists but has no rules (no-op jump target)" x6
+    # The product's own validator calls this state degraded, so leaving it is a
+    # convergence-contract violation, not a matter of taste.
+    #
+    # ⛔ A REBUILD PASS DOES NOT PROVE A TRANSITION-SPECIFIC TEARDOWN PATH.
+    # `firewall rebuild` passed every matrix row here only because it recreates
+    # the table from scratch and therefore never creates the opposite mode's
+    # objects -- it never exercised cross-mode teardown at all. Only the reload
+    # root does.
+    #
+    # This helper owns the transition ordering, so it can safely be stronger than
+    # the shared disable entrypoints without changing their semantics for other
+    # callers.
+    _nftban_ddos_purge_projection "$target_mode" || return 1
     return 0
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_ddos_purge_projection <mode-whose-projection-must-become-absent>
+#
+# Structural removal of ONE mode's nft objects, in both families, in the only
+# order the kernel permits:
+#     1. remove inbound jump edges   (a referenced chain cannot be deleted)
+#     2. delete the now-unreferenced chains
+#     3. delete that mode's sets     (freed once the chains referencing them go)
+#
+# ⛔ THE INVENTORY IS DERIVED FROM THE LIVE TABLE, NOT HARDCODED.
+# A static name list here would be a SECOND inventory authority next to the
+# fragment renderers, and would silently miss any object a renderer later adds --
+# residue that no test names is exactly the failure this function exists to stop.
+# Suricata owns exactly one object, so classic-owned is expressible as "every
+# ddos_* object that is not suricata-owned" and stays correct as classic grows.
+#   OBSERVED INVENTORY (converged, lab2/DEB + lab4/RPM, 2026-08-24)
+#     classic  : chains ddos_sanity ddos_prefix ddos_protection ddos_penalty
+#                sets   ddos_prefix_syn ddos_prefix_conn ddos_dns_udp
+#                       ddos_icmp_flood ddos_udp_flood ddos_limit_10s
+#                       ddos_limit_5m ddos_drop_5m ddos_ban_1h   (ip6: +"6")
+#     suricata : set    ddos_blocked
+# -----------------------------------------------------------------------------
+# ⛔ ddos_blocked is SHARED, NOT suricata-exclusive.
+# classic declares it (DDOS_CLASSIC_BLOCK_SET) and suricata writes to the same
+# set; a freshly built classic host simply has not created it yet, which made an
+# early measurement look like "suricata-only". The product's own validator
+# settles it: on an UNPATCHED control host, `suricata -> classic` reload ends
+# with ddos_blocked PRESENT and Status: PROTECTED -- so its presence in classic
+# mode is not drift, and cross-mode teardown must never remove it. Deleting it
+# aborted the entire classic apply and left the host DEGRADED with no
+# higher-tier projection at all.
+#   SHARED OBJECT != OTHER MODE'S PROJECTION
+_NFTBAN_DDOS_SHARED_SETS="ddos_blocked"
+
+_nftban_ddos_purge_projection() {
+    local mode="${1:-}" fam name kind residue=""
+
+    # ⛔ THE EXCLUSIVITY IS ONE-DIRECTIONAL, BECAUSE THE SUBSTRATE IS ASYMMETRIC.
+    # Suricata mode's entire nft footprint is the SHARED ban set, so there is no
+    # suricata-exclusive object for classic to displace: purging "the suricata
+    # projection" is a no-op by construction, not an unimplemented case.
+    # Asserting a removal here would mean deleting the shared set.
+    #   SAME MODE CONTRACT != SAME KERNEL OBJECT SHAPE
+    # The observable contract still holds in both directions and is proven at
+    # runtime: entering classic yields the classic projection, entering suricata
+    # yields no classic residue.
+    if [[ "$mode" == suricata ]]; then
+        return 0
+    fi
+
+    for fam in ip ip6; do
+        # Base Layer-0 lives in `input`/`forward` and never matches ddos_*, so
+        # base protection cannot be removed here: ALWAYS_ON_BASE_PROTECTION.
+        # ⛔ PIN IFS. Sourcing the product leaves a non-default IFS in scope, so a
+        # bare `read -r kind name` put the WHOLE line into $kind and left $name
+        # empty -- every object then tripped the emptiness guard and was skipped,
+        # so the purge deleted nothing AND reported no residue, at rc=0. A silent
+        # no-op wearing a success code is the exact defect class this lane exists
+        # to remove, and it reappeared inside the fix for it.
+        #   INHERITED IFS IS PART OF THE CALLER'S STATE, NOT A CONSTANT.
+        while IFS=' ' read -r kind name; do
+            [[ -z "$kind" || -z "$name" ]] && continue
+            # Everything ddos_* EXCEPT the shared ban set is classic-owned.
+            [[ " $_NFTBAN_DDOS_SHARED_SETS " == *" $name "* ]] && continue
+            # ⛔ WRITES GO THROUGH THE SANCTIONED WRITER, NOT FROM HERE.
+            # nft_fragment_delete_object owns jump removal + deletion order and
+            # lives in the fragment authority, which the nft write policy
+            # permits. Writing nft directly from this module would have required
+            # adding it to the policy allowlist -- silencing the check rather
+            # than satisfying it.
+            #   AN ALLOWLIST ENTRY IS NOT A COMPLIANCE ARGUMENT.
+            # A missing writer is a hard failure: claiming exclusivity we cannot
+            # establish is the silent-no-op this lane exists to remove.
+            if ! declare -F nft_fragment_delete_object >/dev/null 2>&1; then
+                echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
+                return 1
+            fi
+            nft_fragment_delete_object "$fam" "$kind" "$name" || true
+        done < <(_nftban_ddos_live_objects "$fam")
+    done
+
+    # ⛔ VERIFY, DO NOT ASSUME. Best-effort deletes above are individually
+    # tolerant, so absence must be asserted afterwards or a stray reference would
+    # leave residue at rc0 -- the same silent-no-op class this lane removes.
+    for fam in ip ip6; do
+        while IFS=' ' read -r kind name; do   # IFS pinned: see note above
+            [[ -z "$name" ]] && continue
+            [[ " $_NFTBAN_DDOS_SHARED_SETS " == *" $name "* ]] && continue
+            residue="$residue $fam/$kind/$name"
+        done < <(_nftban_ddos_live_objects "$fam")
+    done
+
+    if [[ -n "$residue" ]]; then
+        echo "  ERROR: the ${mode} projection is still present after teardown:${residue}" >&2
+        echo "         refusing to claim mode-exclusive projection." >&2
+        _nftban_ddos_log "ERROR" "exclusivity unestablished: residue${residue}"
+        return 1
+    fi
+    return 0
+}
+
+# Enumerate live higher-tier DDoS objects in one family: "<kind> <name>" lines.
+# Text output of `nft list table` is used deliberately: it needs no JSON parser
+# in this layer, and an unreadable/absent table yields NOTHING, which the callers
+# treat as "nothing to remove" -- never as a silent success for objects that do
+# exist. ABSENT_QUERY != RESOURCE_ABSENT is handled by the verify pass above,
+# which re-reads the same way and would still see any object that survived.
+_nftban_ddos_live_objects() {
+    local fam="${1:-ip}"
+    nft list table "$fam" nftban 2>/dev/null | awk '
+        /^[[:space:]]*chain[[:space:]]+ddos_/ { print "chain " $2 }
+        /^[[:space:]]*set[[:space:]]+ddos_/   { print "set "   $2 }
+    '
 }
 
 nftban_ddos_apply() {

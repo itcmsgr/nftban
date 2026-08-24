@@ -151,9 +151,23 @@ assert_state(){ # <module> <state-label> <operation> [expected-configured-mode]
   # XOR: the opposite mode's projection must not co-exist.
   xor=NA
   if [[ "$mod" == ddos ]]; then
-    local sur4 sur6; sur4="$(set_present ip ddos_blocked)"; sur6="$(set_present ip6 ddos_blocked)"
+    # ⛔ ddos_blocked IS SHARED STATE, NOT A SURICATA-ONLY MARKER.
+    # This oracle used `set_present ddos_blocked` as the suricata projection and
+    # reported SURICATA_RESIDUE whenever it survived into classic mode. It is the
+    # ban set BOTH modes use: classic declares it (DDOS_CLASSIC_BLOCK_SET) and
+    # suricata writes the same set. On an UNPATCHED control host, suricata ->
+    # classic ends with it PRESENT and the product validator reporting
+    # Status: PROTECTED -- so its presence in classic mode is not drift, and
+    # those FAIL rows were instrument error, not product failure.
+    #   SHARED OBJECT != OTHER MODE'"'"'S PROJECTION
+    #
+    # Suricata mode has NO nft object of its own, so "classic must not carry
+    # suricata residue" has nothing observable to assert. That direction is
+    # therefore NOT_ASSERTABLE and says so, rather than silently reporting OK --
+    # an unasserted axis must never read as a passed one.
+    #   SAME MODE CONTRACT != SAME KERNEL OBJECT SHAPE
     case "$eff" in
-      classic)  [[ "$sur4" == PRESENT || "$sur6" == PRESENT ]] && { xor=VIOLATED; notes="${notes}SURICATA_RESIDUE;"; } || xor=OK ;;
+      classic)  xor=NOT_ASSERTABLE ;;
       suricata) [[ "$o4" == PRESENT || "$o6" == PRESENT ]] && { xor=VIOLATED; notes="${notes}CLASSIC_RESIDUE;"; } || xor=OK ;;
     esac
   else
@@ -176,8 +190,23 @@ assert_state(){ # <module> <state-label> <operation> [expected-configured-mode]
     local cons; cons="$(jq -r '.consistency.kernel_vs_validator // "NA"' <<<"$hj" 2>/dev/null || echo NA)"
     [[ "$cons" == unknown && "$hstatus" == protected ]] && notes="${notes}UNKNOWN_COLLAPSED_TO_PASS;"
   fi
-  local failed; failed="$(systemctl list-units --state=failed --no-legend 2>/dev/null | grep -c nftban || true)"
-  [[ "${failed:-0}" -gt 0 ]] && notes="${notes}FAILED_UNITS=$failed;"
+  # ⛔ FAILED_UNITS_COUNT != FAILED_UNIT_EVIDENCE.
+  # The first revision recorded only a count. By the time anyone looked, nothing
+  # was failed any more, so two FAIL rows could not be adjudicated at all: a
+  # bare "2" names no unit, no state, and no cause. Capture identities AT THE
+  # MOMENT the assertion is evaluated -- afterwards is a different system.
+  # ⛔ A failed query is UNKNOWN, never zero. ABSENT_QUERY != RESOURCE_ABSENT.
+  local failed_raw failed names states
+  if failed_raw="$(systemctl list-units --state=failed --no-legend --no-pager 2>/dev/null)"; then
+      names="$(awk '/nftban/{print $1}'  <<<"$failed_raw" | paste -sd, -)"
+      states="$(awk '/nftban/{print $1"="$3"/"$4}' <<<"$failed_raw" | paste -sd, -)"
+      failed="$(awk '/nftban/' <<<"$failed_raw" | grep -c . || true)"
+      if [[ "${failed:-0}" -gt 0 ]]; then
+          notes="${notes}FAILED_UNIT_COUNT=$failed;FAILED_UNIT_NAMES=${names};FAILED_UNIT_STATES=${states};"
+      fi
+  else
+      notes="${notes}FAILED_UNIT_STATE=UNKNOWN;"
+  fi
 
   [[ -z "${verdict:-}" || "$verdict" != UNKNOWN ]] && { [[ -z "$notes" ]] && verdict=PASS || verdict=FAIL; }
   [[ "$verdict" == FAIL ]] && FAILROWS=$((FAILROWS+1))
