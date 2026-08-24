@@ -200,21 +200,34 @@ say "--- 7 nftban modes read/report (PR-5C) ---"
 #   PROCESS LIVENESS != PRODUCT AVAILABILITY PREDICATE
 suricata_available_per_product(){   # <module>
     local mod="$1"
-    # ⛔ LOAD THE MODULE CONFIG FIRST, as the real caller path does. The
-    # predicate does NOT load its own config (0 sites), and PortScan reads
-    # ${PORTSCAN_SURICATA_EVE_FILE} with NO default -- so under `set -u` an
-    # unloaded config makes it CRASH with "unbound variable" rather than return
-    # false. DDoS uses ${DDOS_SURICATA_EVE_FILE:-<path>} and degrades cleanly.
-    # Evaluating the predicate without its config is not evaluating the product.
-    #   A PREDICATE MUST BE EVALUATED IN ITS OWN CONTEXT.
+    # ⛔ USE THE CANONICAL LOADER, NOT A HAND-ROLLED CONFIG SOURCE.
+    # An earlier revision sourced main.conf/suricata.conf/suricata.conf.local by
+    # hand and reported AVAILABLE=true while the real product path reported
+    # false -- because `_nftban_<mod>_suricata_load_config` reads ONLY
+    # conf.d/<mod>/suricata.conf and applies its own `:=` defaults. The harness
+    # had become a second config authority and disagreed with production.
+    #   THE PREDICATE MUST BE EVALUATED THROUGH THE SAME INITIALISATION
+    #   PRODUCTION USES, NOT AN EQUIVALENT-LOOKING ONE.
     bash -c "
         export NFTBAN_LIB_DIR=/usr/lib/nftban
         set +u
-        for c in /etc/nftban/conf.d/${mod}/main.conf /etc/nftban/conf.d/${mod}/main.conf.local \
-                 /etc/nftban/conf.d/${mod}/suricata.conf /etc/nftban/conf.d/${mod}/suricata.conf.local; do
-            [ -r \"\$c\" ] && . \"\$c\"
-        done
         source /usr/lib/nftban/core/nftban_${mod}_suricata.sh 2>/dev/null || exit 1
+        # The canonical loader is NOT uniformly named: ddos exposes it private
+        # (_nftban_ddos_suricata_load_config), portscan public
+        # (nftban_portscan_suricata_load_config). Assuming one spelling made this
+        # helper skip portscan's config entirely and report the predicate FALSE
+        # from an unloaded environment -- a harness artifact indistinguishable
+        # from a real product asymmetry.
+        #   LOADER_NAME_DIFFERS != PREDICATE_DIFFERS
+        # Resolve either spelling; if NEITHER exists, fail -- never evaluate the
+        # predicate from an uninitialised environment.
+        if declare -F _nftban_${mod}_suricata_load_config >/dev/null 2>&1; then
+            _nftban_${mod}_suricata_load_config
+        elif declare -F nftban_${mod}_suricata_load_config >/dev/null 2>&1; then
+            nftban_${mod}_suricata_load_config
+        else
+            exit 1
+        fi
         nftban_${mod}_suricata_is_available" >/dev/null 2>&1
 }
 
