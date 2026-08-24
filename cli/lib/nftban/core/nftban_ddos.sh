@@ -274,10 +274,48 @@ nftban_ddos_reconcile() {
     # deliberately, because a resolution is valid for ONE transaction.
     # ⛔ DERIVED EVIDENCE, NOT DURABLE CONFIGURATION. MODE=auto stays the
     #    operator's intent; this record only says what it resolved to, and when.
-    if [[ -d "${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}" ]]; then
-        local _pf="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}/module-plan-ddos.env" _tmp
-        _tmp="${_pf}.$$"
-        {
+    # ⛔ EMPTY BINDING MUST BE UNREPRESENTABLE.
+    #
+    # This block previously interpolated the generation directly into the record:
+    #     printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$(nftban_plan_generation_current)"
+    # A command substitution that yielded nothing wrote an EMPTY field, and the
+    # record was published anyway -- unbound and unusable. The validator then
+    # correctly rejected it as UNKNOWN, which degraded health and made
+    # `firewall rebuild` exit 1. Measured: pre-v1.229.7 rebuild rc=0 3/3;
+    # v1.229.7 rebuild rc=1 5/5 on a clean package-native host, both distros.
+    #
+    #   AN INVALID PLAN MUST NEVER BE MADE DURABLE
+    #   MERELY SO A LATER VALIDATOR CAN REJECT IT.
+    #
+    # The binding is now obtained and VALIDATED before any serialization. If it
+    # cannot be established the publication fails and the convergence
+    # transaction fails with it -- no record is written at all.
+    # ⛔ Do NOT substitute a default, reuse the previous record's generation, or
+    #    infer one from the environment. That would manufacture authority.
+    local _gen
+    if ! declare -F nftban_plan_generation_current >/dev/null 2>&1; then
+        echo "nftban_ddos_reconcile: plan-generation authority unavailable — refusing to publish an unbound plan." >&2
+        return 4
+    fi
+    _gen="$(nftban_plan_generation_current)" || _gen=""
+    if [[ -z "$_gen" || ! "$_gen" =~ ^[0-9]+$ ]]; then
+        echo "nftban_ddos_reconcile: convergence generation is '${_gen:-<empty>}' — refusing to publish an unbound plan." >&2
+        return 4
+    fi
+
+    # ⛔ A REQUIRED PUBLICATION MAY NOT BE GUARDED BY AN OPTIONAL EXISTENCE CHECK.
+    # The old `if [[ -d ... ]]` had no else, so a missing runtime directory was a
+    # silent no-op. Creating the directory we own is not inventing a plan; the
+    # root still resolves, this only makes the resolved decision observable.
+    local _dir="${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
+    if [[ ! -d "$_dir" ]] && ! mkdir -p "$_dir" 2>/dev/null; then
+        echo "nftban_ddos_reconcile: cannot create $_dir — refusing to publish." >&2
+        return 4
+    fi
+
+    local _pf="$_dir/module-plan-ddos.env" _tmp
+    _tmp="${_pf}.$$"
+    if ! {
             printf 'NFTBAN_PLAN_MODULE=%s\n'           "$NFTBAN_PLAN_MODULE"
             printf 'NFTBAN_PLAN_ENABLED=%s\n'          "$NFTBAN_PLAN_ENABLED"
             printf 'NFTBAN_PLAN_CONFIGURED_MODE=%s\n'  "$NFTBAN_PLAN_CONFIGURED_MODE"
@@ -285,8 +323,17 @@ nftban_ddos_reconcile() {
             printf 'NFTBAN_PLAN_RESOLUTION_ID=%s\n'    "$NFTBAN_PLAN_RESOLUTION_ID"
             printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$NFTBAN_PLAN_RESOLVED_AT"
             printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$NFTBAN_PLAN_RESOLUTION_BASIS"
-            printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$(nftban_plan_generation_current)"
-        } > "$_tmp" 2>/dev/null && { chmod 0640 "$_tmp" 2>/dev/null || true; mv -f "$_tmp" "$_pf" 2>/dev/null || rm -f "$_tmp"; }
+            printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$_gen"
+        } > "$_tmp" 2>/dev/null; then
+        rm -f "$_tmp"
+        echo "nftban_ddos_reconcile: failed to write the plan record — refusing to publish a partial one." >&2
+        return 4
+    fi
+    chmod 0640 "$_tmp" 2>/dev/null || true
+    if ! mv -f "$_tmp" "$_pf" 2>/dev/null; then
+        rm -f "$_tmp"
+        echo "nftban_ddos_reconcile: atomic publication failed." >&2
+        return 4
     fi
     export NFTBAN_PLAN_MODULE NFTBAN_PLAN_ENABLED NFTBAN_PLAN_CONFIGURED_MODE \
            NFTBAN_PLAN_EFFECTIVE_MODE NFTBAN_PLAN_RESOLUTION_ID \

@@ -382,6 +382,75 @@ for src in "${SELECTORS[@]}"; do
     esac
 done
 
+# --- 12. PLAN BINDING MUST BE VALID BEFORE PUBLICATION (PR-5) ---------------
+echo ""
+echo "12. an unbound plan is never made durable..."
+# ⛔ THE MOTIVATING DEFECT. The publisher interpolated the generation straight
+# into the record. When the substitution yielded nothing it wrote
+# `NFTBAN_PLAN_BOUND_GENERATION=` and published anyway. The validator then
+# correctly rejected the unbound plan as UNKNOWN -> health degraded ->
+# `firewall rebuild` exited 1. Measured on a clean package-native host:
+#   pre-v1.229.7 rebuild rc=0 3/3   ·   v1.229.7 rebuild rc=1 5/5   (both distros)
+#
+#   AN INVALID PLAN MUST NEVER BE MADE DURABLE
+#   MERELY SO A LATER VALIDATOR CAN REJECT IT.
+for mod in ddos portscan; do
+    K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
+    bind_probe() {   # <generation-authority-behaviour> -> "<rc>|<record-state>"
+        local behaviour="$1" d; d="$(mktemp -d)"
+        mkdir -p "$d/conf.d/$mod" "$d/run"
+        printf '%s_ENABLED="true"\n%s_MODE="classic"\n' "$K" "$K" > "$d/conf.d/$mod/main.conf"
+        local out rc
+        out="$(NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
+               NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+               NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
+            set -Eeuo pipefail
+            source '$ROOT/cli/lib/nftban/lib/module_authority.sh'
+            source '$ROOT/cli/lib/nftban/core/nftban_${mod}.sh' 2>/dev/null || true
+            printf '7\n' > '$d/run/convergence-generation'
+            case '$behaviour' in
+                valid)  : ;;                                                     # P
+                empty)  nftban_plan_generation_current(){ printf ''; } ;;        # N1
+                fail)   nftban_plan_generation_current(){ return 3; } ;;         # N2
+            esac
+            nftban_${mod}_suricata_is_available(){ return 1; }
+            nftban_${mod}_apply(){ return 0; }; nftban_${mod}_teardown(){ return 0; }
+            _nftban_${mod}_log(){ :; }
+            nftban_${mod}_reconcile >/dev/null 2>&1; echo \"RC=\$?\"" 2>&1 || true)"
+        rc="$(grep -oE 'RC=[0-9]+' <<<"$out" | tail -1 | cut -d= -f2)"
+        local g state
+        g="$(sed -n 's/^NFTBAN_PLAN_BOUND_GENERATION=//p' "$d/run/module-plan-$mod.env" 2>/dev/null)"
+        if [[ ! -f "$d/run/module-plan-$mod.env" ]]; then state=NO_RECORD
+        elif [[ -z "$g" ]]; then state=UNBOUND_RECORD
+        else state="BOUND($g)"; fi
+        rm -rf "$d"; echo "${rc:-?}|$state"
+    }
+
+    # P — a valid generation is written exactly, not defaulted.
+    r="$(bind_probe valid)"
+    [[ "$r" == "0|BOUND(7)" ]] \
+        && ok "$mod P: valid generation -> record bound to exactly 7" \
+        || fail "$mod P: expected 0|BOUND(7), got $r"
+
+    # N1 — resolver returns EMPTY. This is the exact production signature.
+    r="$(bind_probe empty)"
+    if [[ "$r" == 0\|* ]]; then
+        fail "$mod N1: publication SUCCEEDED with an empty generation ($r) — EMPTY BINDING MUST BE UNREPRESENTABLE"
+    elif [[ "$r" == *"UNBOUND_RECORD" ]]; then
+        fail "$mod N1: an unbound record was made durable ($r)"
+    else
+        ok "$mod N1: empty generation -> publication refused, no usable record ($r)"
+    fi
+
+    # N2 — resolver FAILS (non-zero). Must not fall back to a default.
+    r="$(bind_probe fail)"
+    if [[ "$r" == 0\|* || "$r" == *"UNBOUND_RECORD" ]]; then
+        fail "$mod N2: resolver failure still produced a record ($r)"
+    else
+        ok "$mod N2: resolver failure -> publication refused ($r)"
+    fi
+done
+
 # --- LAB OBLIGATION, declared not faked --------------------------------------
 echo ""
 echo "8. runtime classic XOR suricata..."
