@@ -198,8 +198,13 @@ assert_state(){ # <module> <state-label> <operation> [expected-configured-mode]
   # ⛔ A failed query is UNKNOWN, never zero. ABSENT_QUERY != RESOURCE_ABSENT.
   local failed_raw failed names states
   if failed_raw="$(systemctl list-units --state=failed --no-legend --no-pager 2>/dev/null)"; then
-      names="$(awk '/nftban/{print $1}'  <<<"$failed_raw" | paste -sd, -)"
-      states="$(awk '/nftban/{print $1"="$3"/"$4}' <<<"$failed_raw" | paste -sd, -)"
+      # ⛔ systemctl prefixes a FAILED unit line with a "●" status glyph, so $1
+      # is the bullet and the unit name is $2. The first revision recorded
+      # FAILED_UNIT_NAMES=● for every row -- evidence that names nothing is no
+      # better than the bare count it replaced.
+      #   A FIELD INDEX IS AN ASSUMPTION ABOUT OUTPUT SHAPE. VERIFY IT.
+      names="$(awk '/nftban/{ if ($1 ~ /^[●*]$/) print $2; else print $1 }' <<<"$failed_raw" | paste -sd, -)"
+      states="$(awk '/nftban/{ if ($1 ~ /^[●*]$/) print $2"="$4"/"$5; else print $1"="$3"/"$4 }' <<<"$failed_raw" | paste -sd, -)"
       failed="$(awk '/nftban/' <<<"$failed_raw" | grep -c . || true)"
       if [[ "${failed:-0}" -gt 0 ]]; then
           notes="${notes}FAILED_UNIT_COUNT=$failed;FAILED_UNIT_NAMES=${names};FAILED_UNIT_STATES=${states};"
