@@ -3,6 +3,7 @@
 # NFTBan - Systemd Install-List Generator (MFST-C1 / Layer 1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="generate-systemd-install-list"
 # meta:type="build"

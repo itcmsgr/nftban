@@ -3,6 +3,7 @@
 # NFTBan v1.192.2 - BotScan authenticated WP-admin false-positive context gate
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_wpadmin_context_gate_v1922_test"
 # meta:type="test"

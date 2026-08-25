@@ -3,6 +3,7 @@
 # NFTBan - FHS-TMPFILES-ZZ behavior test (v1.139 PR-A)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="tmpfiles_zz_v139_test"
 # meta:type="test"
 # meta:version="1.0.0"

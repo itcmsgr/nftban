@@ -2,6 +2,7 @@
 // NFTBan v1.181.0 - LoginMon source-ownership / duplicate-source guard
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="loginmon_source_ownership_guard_test"
 // meta:type="package"

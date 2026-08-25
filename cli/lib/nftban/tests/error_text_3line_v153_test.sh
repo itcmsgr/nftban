@@ -3,6 +3,7 @@
 # NFTBan - v1.153 PR-C: error-text normalization (UX-C2 + UX-C6)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="error_text_3line_v153_test"
 # meta:type="test"
 # meta:version="1.0.0"

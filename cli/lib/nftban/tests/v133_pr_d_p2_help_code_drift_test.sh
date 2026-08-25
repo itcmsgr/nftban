@@ -3,6 +3,7 @@
 # V133 PR-D P2 — help/code drift regression guard (D-01, D-03..D-11)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v133_pr_d_p2_help_code_drift_test"
 # meta:type="test"
 # meta:version="1.133.0"

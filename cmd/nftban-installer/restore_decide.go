@@ -2,6 +2,7 @@
 // NFTBan v1.100 PR-24 — Restore Policy Decision Dispatcher
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-restore-decide"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

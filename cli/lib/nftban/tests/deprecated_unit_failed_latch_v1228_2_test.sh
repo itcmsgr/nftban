@@ -3,6 +3,7 @@
 # NFTBan - deprecated-unit retirement must clear the terminal failed-state latch
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="deprecated_unit_failed_latch_v1228_2_test"
 # meta:type="test"
 # meta:version="1.0.0"

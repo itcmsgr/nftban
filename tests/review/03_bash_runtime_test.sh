@@ -3,6 +3,7 @@
 # NFTBan v1.0.0 - Bash Runtime & Config Hygiene Static Analysis Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Automated static analysis checks for shell safety, meta tags,
 #          config loading order, and module guard patterns across all
 #          .sh files under cli/lib/nftban/.

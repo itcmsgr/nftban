@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="opqueue/enqueue_ban_never_ban_guard_l3b_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L3b: the never-ban invariant holds on the opqueue ban path. Proves EnqueueBan refuses (skips) an exempt single IP into an enforcement/drop set (v4+v6) via the injected resolver, increments EnqueueBanExemptSkips, allows normal public IPs, allows exempt IPs into non-enforcement sets, and is fail-safe when no resolver is injected. Also covers CheckExempt (the caller-side pre-check helper). Hermetic: trivial stub backend, no netlink/root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

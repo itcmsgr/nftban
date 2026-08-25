@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Evidence Types (Phase 1 Canonical Model)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_types"
 // meta:type="package"
 // meta:version="1.88.0"

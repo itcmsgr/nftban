@@ -2,6 +2,7 @@
 // NFTBan v1.100 Amendment 2 — Test helper: read source files for invariants
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-restore-decide-evidence-test-helper"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

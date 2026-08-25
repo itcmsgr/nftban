@@ -2,6 +2,7 @@
 // NFTBan - NFTables Manager - Batch element operations, CIDR support, and timeouts
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nft"
 // meta:type="package"
 // meta:version="1.41.0"

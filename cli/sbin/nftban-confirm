@@ -2,6 +2,7 @@
 # NFTBan Emergency Recovery - Confirm Rules
 # Copyright (c) 2024-2026 Antonios Voulvoulis
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # Confirms the currently applied rules and disarms the rollback timer.
 # Call this after verifying SSH/connectivity works with new rules.

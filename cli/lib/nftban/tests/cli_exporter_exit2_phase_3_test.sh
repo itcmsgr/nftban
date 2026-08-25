@@ -3,6 +3,7 @@
 # NFTBan - exporter EXIT2 Phase 3 test (v1.143.1 EXPORTER-PHASE-3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_exporter_exit2_phase_3_test"
 # meta:type="test"
 # meta:version="1.0.0"

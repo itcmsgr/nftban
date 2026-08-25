@@ -2,6 +2,7 @@
 // NFTBan v1.199 - Installer Logger run-id correlation tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="logger_runid_test"
 // meta:type="test"
 // meta:version="1.0.0"

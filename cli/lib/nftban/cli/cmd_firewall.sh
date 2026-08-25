@@ -3,6 +3,7 @@
 # NFTBan v1.4.0 - Firewall Management Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Firewall validation, conflicts, stats, logs, and atomic rollback
 #
 # meta:name="cmd_firewall"

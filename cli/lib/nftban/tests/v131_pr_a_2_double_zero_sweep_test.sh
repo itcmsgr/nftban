@@ -3,6 +3,7 @@
 # V131 PR-A.2 — double-zero pattern sweep regression guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v131_pr_a_2_double_zero_sweep_test"
 # meta:type="test"
 # meta:version="1.131.0"

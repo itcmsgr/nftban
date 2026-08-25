@@ -2,6 +2,7 @@
 // NFTBan v1.99 PR-18 — Update Apply Orchestrator (G3-U5..U10)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-update-apply"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -4,6 +4,7 @@
 # NFTBan - Login Monitor Module (Dual-Mode Controller)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Master controller for login monitoring with dual-mode support
 #
 # meta:name="nftban_login"

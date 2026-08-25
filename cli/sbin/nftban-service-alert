@@ -3,6 +3,7 @@
 # NFTBan v1.0.0 - Service Failure Alert Worker
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Log and optionally email alerts when a service fails
 #
 # meta:name="nftban_service_alert"

@@ -4,6 +4,7 @@
 # NFTBan - Module Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Module inventory scanning and reporting with validation
 #
 # meta:name="nftban_report_module"
@@ -111,7 +112,9 @@ nftban_module_extract_license() {
     # Output: license identifier or empty string
 
     local file="$1"
+# REUSE-IgnoreStart
     grep -E "^#[[:space:]]*SPDX-License-Identifier:" "$file" 2>/dev/null | head -1 | sed -E 's/^#[[:space:]]*SPDX-License-Identifier:[[:space:]]*(.*)/\1/' | xargs || echo ""
+# REUSE-IgnoreEnd
 }
 
 # =============================================================================
@@ -448,7 +451,9 @@ nftban_module_check_license() {
     fi
 
     echo "Note: This is informational only. No files were modified."
+# REUSE-IgnoreStart
     echo "      Standard: All scripts should have SPDX-License-Identifier: MPL-2.0"
+# REUSE-IgnoreEnd
     echo
 }
 

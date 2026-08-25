@@ -3,6 +3,7 @@
 # NFTBan - v1.220.1: non-public address admission across ALL RBL sources
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_nonpublic_admission_v220_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

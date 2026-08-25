@@ -2,6 +2,7 @@
 // NFTBan - Suricata Ban Handler
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="ban_handler"
 // meta:type="package"
 // meta:version="1.1.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.187.3 - B1b compact-banner convergence guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="b1b_banner_compact_v1873_test"
 # meta:type="test"

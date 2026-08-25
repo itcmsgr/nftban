@@ -3,6 +3,7 @@
 # NFTBan Test - Update Warning Taxonomy + Timer-Restore Fix (v1.216.4)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="update-warning-taxonomy-v2164-test"
 # meta:type="test"

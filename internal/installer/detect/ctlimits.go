@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer CT Limits Detection
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-detect-ctlimits"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

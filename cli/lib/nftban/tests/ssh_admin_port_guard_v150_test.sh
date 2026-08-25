@@ -3,6 +3,7 @@
 # NFTBan - Tests for OBS-SSHPORT-55000-FAMILY external admin SSH-port guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ssh_admin_port_guard_v150_test"
 # meta:type="test"
 # meta:version="1.0.0"

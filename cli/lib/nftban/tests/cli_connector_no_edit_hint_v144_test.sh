@@ -3,6 +3,7 @@
 # NFTBan - connector no-edit-hint test (v1.144.0 PR-C D-UXV-14)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_connector_no_edit_hint_v144_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="setsync/nft_replace_atomic_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Proves the atomic netlink set replacement: all elements validated before the connection is mutated, flush-before-add ordering, exactly ONE commit per replace, prior contents preserved on commit failure, explicit empty replacement, IPv4/IPv6 parity, family derived from KeyType (http_bot_*6), deterministic dedup, interval/CIDR rejection. Uses a recording fake connection — no nft, netlink, or root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

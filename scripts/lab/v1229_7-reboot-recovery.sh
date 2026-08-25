@@ -3,6 +3,7 @@
 # NFTBan — scripted reboot + recovery + post-reboot assertion (v1.229.7)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v1229_7_reboot_recovery"
 # meta:type="lab"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

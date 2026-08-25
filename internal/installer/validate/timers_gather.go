@@ -2,6 +2,7 @@
 // NFTBan v1.135.0 — Critical Core Timers Gather (host-side adapter)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-validate-timers-gather"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

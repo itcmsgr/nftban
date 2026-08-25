@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # check-license-identity.sh — v1.228.8 PR3 License Identity Phase A gate.
 #
@@ -38,7 +39,9 @@
 #   NON_HEADER_FORMAT_MUTATIONS        = 0
 #
 # CANONICAL IDENTITY is frozen by the v1.228.8 scope and is NOT re-decided here:
-#   SPDX-License-Identifier: MPL-2.0
+# REUSE-IgnoreStart
+#   SPDX identifier ....... MPL-2.0
+# REUSE-IgnoreEnd
 #   Copyright (c) 2024-2026 Antonios Voulvoulis
 # The tree currently carries THREE mutually inconsistent copyright spellings.
 # This gate names one and rejects the others; it does not invent a fourth.
@@ -110,7 +113,9 @@ classify() { # $1=path -> class
     echo UNCLASSIFIED
 }
 
+# REUSE-IgnoreStart
 has_spdx() { grep -qE '^[[:space:]]*(#|//)[[:space:]]*SPDX-License-Identifier:[[:space:]]*'"$CANON_SPDX" "$1" 2>/dev/null; }
+# REUSE-IgnoreEnd
 
 # =============================================================================
 declare -A COUNT=()
@@ -158,7 +163,9 @@ printf 'GENERATED_STAMPED_BY_HAND = %s\n' "${#STAMPED[@]}"
 printf 'NON_CANON_COPYRIGHT       = %s\n' "${#BADCOPY[@]}"
 
 [[ ${#NONCOMPLIANT[@]} -gt 0 ]] && {
+# REUSE-IgnoreStart
     viol "HEADER_MISSING" "${#NONCOMPLIANT[@]} owned header-applicable file(s) lack 'SPDX-License-Identifier: $CANON_SPDX'"
+# REUSE-IgnoreEnd
     printf '        %s\n' "${NONCOMPLIANT[@]}"
 }
 [[ ${#UNCLASSED[@]} -gt 0 ]] && {

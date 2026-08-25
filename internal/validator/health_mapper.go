@@ -2,6 +2,7 @@
 // NFTBan v1.81 - Health Output Mapper
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="health_mapper"
 // meta:type="lib"
 // meta:version="1.81.0"

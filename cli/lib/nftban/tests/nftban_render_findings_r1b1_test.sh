@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.198 R1b-1 shared findings renderer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_render_findings_r1b1_test"
 # meta:type="test"
 # meta:version="1.0.0"

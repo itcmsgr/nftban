@@ -3,6 +3,7 @@
 # NFTBan - v1.171 state-write atomicity (§4.2/§4.3/§3.6) call-site lock
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="state_write_atomicity_v171_test"
 # meta:type="test"
 # meta:version="1.0.0"

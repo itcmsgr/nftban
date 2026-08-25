@@ -3,6 +3,7 @@
 # NFTBan v1.190 — SOS-4 lab-first OpenMetrics scrape-contract validation
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="openmetrics_scrape_validate_v190"
 # meta:type="tool"
 # meta:version="1.0.0"

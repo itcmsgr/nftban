@@ -2,6 +2,7 @@
 # TRANSITIONAL: loaded by unified exporter (unified_exporter.sh:153). Scheduled
 # for removal after portal migrates to daemon API. See V190_HANDOFF_PLAN.md.
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_exporter_json_compat"
 # meta:type="exporter"
 # meta:version="1.56.0"

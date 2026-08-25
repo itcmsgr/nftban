@@ -3,6 +3,7 @@
 # NFTBan - version Release-Date authority (per-release VERSION_DATE artifact)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="version_release_date_authority_test"
 # meta:type="test"
 # meta:version="1.0.0"

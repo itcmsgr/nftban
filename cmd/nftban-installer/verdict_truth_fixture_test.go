@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="verdict_truth_fixture_test.go"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -119,12 +120,16 @@ func newAllAssertionsPassFixture(t *testing.T) (*assertionTestInjection, *execut
 	//    NFTBAN_RECONCILE_CORE_TIMERS=false line so the core-timer assertion takes
 	//    the intentional-opt-out Skipped→PASS path) and nftables.conf (>=512B + the
 	//    two required tokens).
+// REUSE-IgnoreStart
 	conf := "# SPDX-License-Identifier: MPL-2.0\n" +
+// REUSE-IgnoreEnd
 		"NFTBAN_RECONCILE_CORE_TIMERS=\"false\"\n" +
 		"# nftban.conf fixture — padding to satisfy the >=256-byte minimum-viability\n" +
 		"# integrity check without any semantic parse. " + strings.Repeat("padpadpad ", 20) + "\n"
 	m.Files["/etc/nftban/nftban.conf"] = []byte(conf)
+// REUSE-IgnoreStart
 	nft := "#!/usr/sbin/nft -f\n# SPDX-License-Identifier: MPL-2.0\ntable ip nftban {\n}\n" +
+// REUSE-IgnoreEnd
 		"# padding to satisfy the >=512-byte minimum-viability integrity check.\n" +
 		strings.Repeat("# pad pad pad pad pad pad pad pad pad pad pad pad pad pad\n", 12)
 	m.Files["/etc/nftban/nftables.conf"] = []byte(nft)

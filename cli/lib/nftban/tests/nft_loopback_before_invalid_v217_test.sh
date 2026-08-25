@@ -3,6 +3,7 @@
 # NFTBan Test - Loopback-Before-Invalid rule order (v1.217.0)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="nft-loopback-before-invalid-v217-test"
 # meta:type="test"

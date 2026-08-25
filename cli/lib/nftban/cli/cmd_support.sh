@@ -3,6 +3,7 @@
 # NFTBan v1.9.4 - Support Bundle Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Collect diagnostic information for troubleshooting
 #
 # meta:name="cmd_support"

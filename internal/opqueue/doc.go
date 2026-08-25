@@ -2,6 +2,7 @@
 // NFTBan v1.1 - OpQueue Package (Async IPC Architecture)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="opqueue"
 // meta:type="package"
 // meta:version="1.1.0"

@@ -2,6 +2,7 @@
 // NFTBan - Effective service-port authority (v1.192.1)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="effective"
 // meta:type="package"
 // meta:version="1.192.1"

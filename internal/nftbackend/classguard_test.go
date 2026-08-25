@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftbackend/classguard_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="v1.220.2 F3: exemptAddRejection rejects absolute+non-public classes on enforcement sets even with a nil (fail-open) exemption resolver, allows public routable IPs, and never blocks non-enforcement sets (whitelist can hold loopback/private). Pure decision, no netlink/root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

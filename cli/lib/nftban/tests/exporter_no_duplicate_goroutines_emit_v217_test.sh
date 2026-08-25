@@ -3,6 +3,7 @@
 # NFTBan - L1 EXPORTER-GOROUTINES-DUP regression guard (NEW-01 / MX-1 / FAB-01)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="exporter_no_duplicate_goroutines_emit_v217_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan - Configuration Schema and Validation
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="nftban_config_schema"
 # meta:type="core"

@@ -3,6 +3,7 @@
 # NFTBan - Snapshot source-time dispatch truth (v1.228.2 PR-D)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="snapshot_source_time_dispatch_v1228_2_test"
 # meta:type="test"
 # meta:version="1.228.2"

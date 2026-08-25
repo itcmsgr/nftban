@@ -3,6 +3,7 @@
 # NFTBan v1.223.0 — mail recipient/subject/help fix guard (static)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="mail_recipient_subject_help_v1223_test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -2,6 +2,7 @@
 // NFTBan v1.216.3 - Journal Query Arg Construction Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="journal_args_test"
 // meta:type="test"
 // meta:version="1.216.3"

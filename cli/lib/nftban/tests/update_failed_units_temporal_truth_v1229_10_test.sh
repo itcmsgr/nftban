@@ -3,6 +3,7 @@
 # NFTBan - two numbers from one run must say when they were observed (v1.229.10)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="update_failed_units_temporal_truth_v1229_10_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Correlation Engine (M87-6)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_correlate"
 // meta:type="package"
 // meta:version="1.88.0"

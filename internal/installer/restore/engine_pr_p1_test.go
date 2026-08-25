@@ -2,6 +2,7 @@
 // NFTBan v1.102.0 - PR-P1: restore must NOT call ServiceResetFailed (#524)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-restore-engine-pr-p1-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

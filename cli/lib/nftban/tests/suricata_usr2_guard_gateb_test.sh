@@ -3,6 +3,7 @@
 # NFTBan v1.222.0 — Z5 Suricata USR2 reintroduction guard (REAL logrotate)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="suricata_usr2_guard_gateb_test"
 # meta:type="test"
 # meta:version="1.0.0"

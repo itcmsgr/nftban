@@ -3,6 +3,7 @@
 # V129 PR-C — runtime defect fixes regression test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v129_pr_c_runtime_defect_fixes_test"
 # meta:type="test"
 # meta:version="1.129.0"

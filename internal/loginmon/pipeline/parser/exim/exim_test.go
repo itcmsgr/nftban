@@ -2,6 +2,7 @@
 // NFTBan v1.80 - Exim parser tests (Phase C)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: exim
 // Purpose: Unit tests + fixture replay for the Exim mainlog parser.
 //

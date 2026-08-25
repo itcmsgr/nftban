@@ -2,6 +2,7 @@
 // NFTBan v1.161 - CVE-2025-NFTBAN-001 inet-filter guard (Go installer detect)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-detect-cve-inet-filter"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

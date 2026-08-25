@@ -2,6 +2,7 @@
 // NFTBan v1.99 PR-20 — Update Apply Logging Tests (G3-U15/U16/U17)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-update-apply-logging-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

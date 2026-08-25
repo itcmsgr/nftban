@@ -2,6 +2,7 @@
 // NFTBan v1.145 - PR-G ssh_ports required-set invariant (Go)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="schema_ssh_ports_test"
 // meta:type="test"
 // meta:version="1.0.0"

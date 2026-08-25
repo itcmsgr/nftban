@@ -2,6 +2,7 @@
 // NFTBan - Suricata L7 EVE to ThreatEvent Mapper
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="threat_mapper"
 // meta:type="package"
 // meta:version="1.0.0"

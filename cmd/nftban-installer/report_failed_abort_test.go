@@ -2,6 +2,7 @@
 // V126.2 UX hotfix snapshot test — FAILED_AUTHORITY_ABORT report() output
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-report-failed-abort-test"
 // meta:type="test"
 // meta:version="1.126.2"

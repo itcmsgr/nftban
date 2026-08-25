@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // =============================================================================
 // V127 UX-3 item 2.4 — LogTempBan BLC-1 convergence regression test
 // =============================================================================

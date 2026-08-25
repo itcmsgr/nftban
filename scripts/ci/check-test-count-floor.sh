@@ -3,6 +3,7 @@
 # NFTBan CI — SHELL TEST-COUNT FLOOR  (v1.229.4 P1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-test-count-floor"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

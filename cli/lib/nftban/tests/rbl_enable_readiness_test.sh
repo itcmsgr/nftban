@@ -3,6 +3,7 @@
 # NFTBan - RBLMON enable-readiness hardening (§4.2 state.dat prune + §4.3 advisory)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_enable_readiness_test"
 # meta:type="test"
 # meta:version="1.0.0"

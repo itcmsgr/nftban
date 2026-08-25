@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.218.13 EXP_RFI false-positive narrowing
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_exp_rfi_fp_v218_13_test"
 # meta:type="test"
 # meta:version="1.0.0"

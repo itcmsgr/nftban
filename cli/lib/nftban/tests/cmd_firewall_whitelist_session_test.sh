@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.120 firewall whitelist-session subcommand
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_firewall_whitelist_session_test"
 # meta:type="test"
 # meta:version="1.0.0"

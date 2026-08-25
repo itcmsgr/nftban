@@ -3,6 +3,7 @@
 # NFTBan v1.100.4 — H3.3 Shell-Delete Guard self-test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ci-shell-delete-guard-test"
 # meta:type="ci-script-test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

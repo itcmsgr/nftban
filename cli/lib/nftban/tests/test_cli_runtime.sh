@@ -3,6 +3,7 @@
 # NFTBan v1.87 — CLI Runtime Smoke Gate
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test_cli_runtime"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

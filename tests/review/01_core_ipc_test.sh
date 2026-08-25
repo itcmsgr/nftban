@@ -3,6 +3,7 @@
 # NFTBan v1.0.0 - Core IPC Enforcement Review Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Static analysis to enforce IPC boundary invariants
 #
 # meta:name="01_core_ipc_test"

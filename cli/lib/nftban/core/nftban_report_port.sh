@@ -3,6 +3,7 @@
 # NFTBan - Port Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Port scanning and nftables firewall status analysis
 #
 # meta:name="nftban_report_port"

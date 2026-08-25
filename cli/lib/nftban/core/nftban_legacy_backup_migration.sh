@@ -3,6 +3,7 @@
 # NFTBan - Legacy rebuild_* backup migration (v1.229.3 0C)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_legacy_backup_migration"
 # meta:type="core"
 # meta:header="Legacy backup migration"

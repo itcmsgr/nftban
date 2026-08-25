@@ -3,6 +3,7 @@
 # NFTBan - Tier-1 parser UNKNOWN-truth consumer controls (v1.228.9 PR3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="parser_tier1_unknown_truth_v1228_9_test"
 # meta:type="test"
 # meta:version="1.0.0"

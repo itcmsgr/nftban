@@ -2,6 +2,7 @@
 // NFTBan v1.20.0 - HTTP Bot Guard: Set Enforcer
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Write classification decisions to nftables sets via OpQueue
 //

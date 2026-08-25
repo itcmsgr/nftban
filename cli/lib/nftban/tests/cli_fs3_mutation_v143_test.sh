@@ -3,6 +3,7 @@
 # NFTBan - FS3-MUTATION rc-swallow regression test (v1.143 PR-A)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_fs3_mutation_v143_test"
 # meta:type="test"
 # meta:version="1.0.0"

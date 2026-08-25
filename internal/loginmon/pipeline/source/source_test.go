@@ -2,6 +2,7 @@
 // NFTBan v1.80 - pipeline source tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: source
 // Purpose: Tests for Source interface and FileSource layered resolution.
 //

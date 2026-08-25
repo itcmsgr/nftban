@@ -3,6 +3,7 @@
 # NFTBan v1.52.0 - Config Doctor — System Integrity Audit
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Full config+kernel+runtime integrity audit
 #
 # meta:name="nftban_config_doctor"

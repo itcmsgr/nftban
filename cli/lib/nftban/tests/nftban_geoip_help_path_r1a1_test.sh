@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.198 R1a-1 GeoIP help-path correction
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_geoip_help_path_r1a1_test"
 # meta:type="test"
 # meta:version="1.0.0"

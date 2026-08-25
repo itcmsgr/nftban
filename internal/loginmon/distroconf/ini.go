@@ -2,6 +2,7 @@
 // NFTBan v1.79.2 - distroconf INI parser (BUG-15)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: distroconf
 // Purpose: Minimal stdlib-only INI parser for distro config files.
 //

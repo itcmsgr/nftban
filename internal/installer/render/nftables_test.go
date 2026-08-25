@@ -2,6 +2,7 @@
 // NFTBan v1.121 - Installer nftables.conf Render Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-render-nftables-test"
 // meta:type="test"
 // meta:version="1.0.0"

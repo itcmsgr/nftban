@@ -2,6 +2,7 @@
 // NFTBan v1.100 PR-P2-2 — External-Firewall Detection (Unified)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-extfw-detect"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

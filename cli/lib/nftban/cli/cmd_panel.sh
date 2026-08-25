@@ -5,6 +5,7 @@
 # =============================================================================
 #
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Web hosting panel firewall integration and management
 #
 # meta:name="cmd_panel"

@@ -3,6 +3,7 @@
 # NFTBan - --json clean-output (valid JSON from byte 1) test (v1.141 PR-B J-*)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_json_clean_output_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # V131.3 D13 — setgid handoff-dir group-ownership regression test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v131_3_d13_setgid_group_ownership_test"
 # meta:type="test"
 # meta:version="1.131.3"

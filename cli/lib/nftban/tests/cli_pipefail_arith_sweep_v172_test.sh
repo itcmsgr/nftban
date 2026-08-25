@@ -3,6 +3,7 @@
 # NFTBan - v1.172 CLI-PIPEFAIL-ARITH full-class sweep
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_pipefail_arith_sweep_v172_test"
 # meta:type="test"
 # meta:version="1.0.0"

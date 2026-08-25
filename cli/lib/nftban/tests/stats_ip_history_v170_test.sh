@@ -3,6 +3,7 @@
 # NFTBan - v1.170 BUG-STATS-IP-HISTORY: `stats ip` pipefail fix + compressed logs
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="stats_ip_history_v170_test"
 # meta:type="test"
 # meta:version="1.0.0"

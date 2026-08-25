@@ -2,6 +2,7 @@
 // NFTBan v1.184.0 - Suricata EVE reader rotation tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="suricata_reader_rotation_test"
 // meta:type="package"

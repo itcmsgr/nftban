@@ -3,6 +3,7 @@
 # NFTBan v1.229.4 SC-B — RUNNING THE CI AUTHORITIES MUST NOT DIRTY THE TREE
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="build-tree-cleanliness-v1229-4-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

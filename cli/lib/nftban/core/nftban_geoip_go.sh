@@ -3,6 +3,7 @@
 # NFTBan - GO GeoIP Wrapper Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Wrapper for nftban-geoip GO binary
 #
 # meta:name="nftban_geoip_go"

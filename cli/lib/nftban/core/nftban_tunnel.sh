@@ -3,6 +3,7 @@
 # NFTBan v1.30.0 - Tunnel Suspicion Scoring Engine
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Compute DNS tunnel suspicion scores from parsed DNS logs
 #
 # meta:name="nftban_tunnel"

@@ -2,6 +2,7 @@
 // NFTBan - NFTables Constants
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="constants"
 // meta:type="package"
 // meta:version="1.0.0"

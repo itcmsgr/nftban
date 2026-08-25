@@ -2,6 +2,7 @@
 // NFTBan v1.148 - Config-preservation (V148_CONFIG_PRESERVATION_CONTRACT) tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="payload-preserve-v148-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

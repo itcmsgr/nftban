@@ -3,6 +3,7 @@
 # NFTBan v1.19.1 - Review 07: RBL Module Static Analysis Tests
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Automated static checks for RBL module code review
 #
 # meta:name="07_rbl_test"

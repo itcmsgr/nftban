@@ -3,6 +3,7 @@
 # NFTBan - A2a central-comms delivery-truth (produce layer)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="comms_a2a_delivery_truth_test"
 # meta:type="test"
 # meta:version="1.0.0"

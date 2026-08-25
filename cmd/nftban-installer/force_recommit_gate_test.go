@@ -2,6 +2,7 @@
 // NFTBan v1.125 R-4 / v1.126 Lane A — --force / --allow-recommit gate test
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-force-recommit-gate-test"
 // meta:type="test"
 // meta:version="1.1.0"

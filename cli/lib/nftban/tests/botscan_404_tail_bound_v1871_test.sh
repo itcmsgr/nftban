@@ -3,6 +3,7 @@
 # NFTBan v1.187.1 - BotScan A4 404-tail bounding guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_404_tail_bound_v1871_test"
 # meta:type="test"

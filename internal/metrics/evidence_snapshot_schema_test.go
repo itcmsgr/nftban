@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Evidence Snapshot Schema Tests (M87-10)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_snapshot_schema_test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

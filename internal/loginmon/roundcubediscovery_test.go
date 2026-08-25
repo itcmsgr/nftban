@@ -2,6 +2,7 @@
 // NFTBan v1.186.0 - Roundcube discovery tests (DA-only hard-stops #9/#10)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="loginmon_roundcubediscovery_test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan v1.190 — NFT COUNTING-MODEL / SCHEMA-UNFREEZE contract CI guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nft_counting_model_guard_v190_test"
 # meta:type="test"
 # meta:version="1.0.0"

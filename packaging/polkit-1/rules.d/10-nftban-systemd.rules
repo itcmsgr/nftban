@@ -2,6 +2,7 @@
 // NFTBan v1.0.20 - Consolidated Systemd Authorization Rules
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="10-nftban-systemd.rules"
 // meta:type="polkit"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

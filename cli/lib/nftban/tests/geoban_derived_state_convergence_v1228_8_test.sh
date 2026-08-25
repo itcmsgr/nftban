@@ -3,6 +3,7 @@
 # NFTBan - GeoBan/feeds derived-state convergence truth (v1.228.8 PR2 Step 0)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="geoban_derived_state_convergence_v1228_8_test"
 # meta:type="test"
 # meta:version="1.0.0"

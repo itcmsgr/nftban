@@ -3,6 +3,7 @@
 # NFTBan V108 Item 1 — CI Gate Test Fixture (placeholder helper)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="execstart-resolution-fixture-helper"
 # meta:type="test-fixture"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

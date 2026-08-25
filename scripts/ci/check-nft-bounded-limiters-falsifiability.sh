@@ -3,6 +3,7 @@
 # NFTBan - falsifiability control for the bounded-limiter guard (v1.228.6)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-nft-bounded-limiters-falsifiability"
 # meta:type="ci-guard"
 # meta:version="1.0.0"

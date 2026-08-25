@@ -2,6 +2,7 @@
 // NFTBan v1.179.0 - LoginMon web access-log discovery (auth_failure source)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: loginmon
 // Purpose: Panel-aware discovery of WEB access logs for the LoginMon auth_failure
 //          event class (HTTP basic-auth 401/403 + WordPress wp-login failed-credential).

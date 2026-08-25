@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Batch-signal → decision-cache transitions (5A)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.191 8B increment-5A wiring: batch signals drive TEMPORARY
 //          decision-cache transitions (observation/state-transition layer only). The

@@ -3,6 +3,7 @@
 # NFTBan - feeds select input-contract test (v1.142 PR-FS, BUG-FS1..FS5)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_feeds_select_input_contract_test"
 # meta:type="test"
 # meta:version="1.0.0"

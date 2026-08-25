@@ -3,6 +3,7 @@
 # NFTBan Review 08 - Login Module Static Analysis Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Automated static checks for login monitoring module
 #
 # meta:name="08_login_test"

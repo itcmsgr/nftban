@@ -3,6 +3,7 @@
 # NFTBan - GeoIP Module Static Review Tests
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Automated static-analysis checks for the GeoIP module (review 04)
 #
 # meta:name="04_geoip_test"

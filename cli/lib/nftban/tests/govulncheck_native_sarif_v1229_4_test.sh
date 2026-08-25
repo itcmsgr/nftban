@@ -3,6 +3,7 @@
 # NFTBan v1.229.4 PR-B — A PARSE FAILURE MUST NOT BECOME AN EMPTY RESULT SET
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="govulncheck-native-sarif-v1229-4-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

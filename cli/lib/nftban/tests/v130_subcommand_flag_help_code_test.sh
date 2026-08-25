@@ -3,6 +3,7 @@
 # v1.134 PR-D — subcommand help/code correlation doctest guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v130_subcommand_flag_help_code_test"
 # meta:type="test"
 # meta:version="1.134.0"

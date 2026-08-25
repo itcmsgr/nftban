@@ -4,6 +4,7 @@
 # NFTBan - Login Monitor Suricata Mode Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Suricata EVE JSON based login/auth failure monitoring
 #
 # meta:name="nftban_login_suricata"

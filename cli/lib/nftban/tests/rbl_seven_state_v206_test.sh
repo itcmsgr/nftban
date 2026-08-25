@@ -3,6 +3,7 @@
 # NFTBan - Tests for the v1.206 RBL 7-state result model (TODO-1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_seven_state_v206_test"
 # meta:type="test"
 # meta:version="1.0.0"

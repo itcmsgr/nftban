@@ -2,6 +2,7 @@
 // NFTBan v1.80 - pipeline aggregate tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: aggregate
 // Purpose: Tests for the Aggregator (per-IP / per-account counters + windows).
 //

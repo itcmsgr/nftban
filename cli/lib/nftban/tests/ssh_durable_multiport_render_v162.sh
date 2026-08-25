@@ -3,6 +3,7 @@
 # NFTBan - v1.162: SSH durable multi-port render + reboot-sim regression (shell)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ssh_durable_multiport_render_v162"
 # meta:type="test"
 # meta:version="1.0.0"

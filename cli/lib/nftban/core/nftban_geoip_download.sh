@@ -3,6 +3,7 @@
 # NFTBan - GeoIP Database Download Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Download and update MaxMind GeoLite2 database
 #
 # meta:name="nftban_geoip_download"

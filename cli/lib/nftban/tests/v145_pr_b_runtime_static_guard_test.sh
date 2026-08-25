@@ -3,6 +3,7 @@
 # NFTBan v1.145 - PR-B runtime static guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v145_pr_b_runtime_static_guard_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Static regression guard for v1.145 PR-B: asserts no scalar head -1 SSH-port detector remains in runtime enforcement paths, that each path consumes the union/primary wrapper, and that both-set (tcp_ports_in + ssh_ports) parity is present in the mutation paths (maintenance, health, cmd_port)."
 # meta:input="None (greps repo source read-only)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"

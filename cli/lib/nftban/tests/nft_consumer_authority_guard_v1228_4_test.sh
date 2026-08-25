@@ -3,6 +3,7 @@
 # NFTBan - negative controls for the nft consumer execution authority guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nft_consumer_authority_guard_v1228_4_test"
 # meta:type="test"
 # meta:version="1.0.0"

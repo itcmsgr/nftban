@@ -2,6 +2,7 @@
 // NFTBan v1.164 - switchop classify-empty hermetic tests (PR-A + PR-B)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-switchop-classify-empty-v164-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

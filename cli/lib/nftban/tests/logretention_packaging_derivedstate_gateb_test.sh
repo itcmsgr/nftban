@@ -3,6 +3,7 @@
 # NFTBan v1.222.0 — Z2 packaging derived-state + conffile parity guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="logretention_packaging_derivedstate_gateb_test"
 # meta:type="test"
 # meta:version="1.0.0"

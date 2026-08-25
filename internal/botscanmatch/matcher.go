@@ -2,6 +2,7 @@
 // NFTBan v1.209.1 - BotScan hybrid pattern matcher (Aho-Corasick prefilter + RE2)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botscanmatch
 // Purpose: Bounded, single-pass replacement for the `grep -E -f <patternfile>`
 //          BotScan candidate prefilter. The shell `match_url_g` bash matcher stays

@@ -3,6 +3,7 @@
 # NFTBan v1.84 — G2-1: Truth Consistency Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test_truth_consistency"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

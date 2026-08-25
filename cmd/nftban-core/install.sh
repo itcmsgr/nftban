@@ -3,6 +3,7 @@
 # NFTBan v1.0.0 - Core Go Binary Installer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="install"
 # meta:type="installer"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

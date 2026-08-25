@@ -1,6 +1,7 @@
 // NFTBan - LoginMon detector marker location
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="loginmon_detector_marker"
 // meta:type="core"

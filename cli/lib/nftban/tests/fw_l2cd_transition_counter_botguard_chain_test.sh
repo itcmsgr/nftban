@@ -3,6 +3,7 @@
 # NFTBan - L2c+L2d guard: transition fail-open counter wiring + BotGuard chain name
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="fw_l2cd_transition_counter_botguard_chain_test"
 # meta:type="test"
 # meta:version="1.0.0"

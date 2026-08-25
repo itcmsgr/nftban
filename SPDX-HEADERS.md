@@ -18,10 +18,25 @@ SPDX-License-Identifier: MPL-2.0
 
 ## Enforcement
 
-This requirement is enforced automatically by `tools/validate-headers.sh`
-(wired into the pre-commit hook and CI). It rejects any tracked shell/Go/config
-file that is missing the SPDX line, carries a non-`MPL-2.0` identifier, or has
-more than one SPDX line, and it also requires the `meta:` and
+This requirement is enforced by `tools/validate-headers.sh`, which runs in the
+**pre-commit hook** (`.pre-commit-config.yaml`, `.githooks/pre-commit`). It is
+**not** wired into a CI workflow; the licence gates that do run in CI are
+`scripts/ci/check-license-identity.sh` and
+`scripts/ci/check-core-ownership-identity.sh` (both blocking in
+`ci-architecture.yml`), plus `.github/workflows/ci-reuse.yml` for REUSE
+compliance.
+
+Two corrections to what this document previously claimed, both found in
+v1.229.11 Lane 8. It said the script was wired into CI — it never was. And it
+said the script "rejects any tracked ... file", which was false in a more
+serious way: its subject set came from `git diff --cached`, so with nothing
+staged it validated **zero** files and exited 0. That is now fixed — it falls
+back to the full tracked tree, uncapped — but the claim below describes the
+corrected behaviour, not the behaviour of any released version before it.
+
+It rejects any tracked shell/Go/config file that is missing the SPDX line,
+carries a non-`MPL-2.0` identifier, has more than one SPDX line, or lacks the
+canonical copyright attribution line, and it also requires the `meta:` and
 `meta:inventory.*` header keys described in `CONTRIBUTING.md` (section
 "File Headers").
 

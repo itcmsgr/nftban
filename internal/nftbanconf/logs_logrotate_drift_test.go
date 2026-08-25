@@ -2,6 +2,7 @@
 // NFTBan - Log inventory <-> logrotate template drift test (v1.137, B-12)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="logs_logrotate_drift_test"
 // meta:type="package"
 // meta:version="1.0.0"

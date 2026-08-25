@@ -3,6 +3,7 @@
 # NFTBan — Suricata subcommand authority (v1.228.2, F2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="suricata_subcommand_authority_v1228_2_test"
 # meta:type="test"
 # meta:version="1.228.2"

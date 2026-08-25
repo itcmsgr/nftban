@@ -3,6 +3,7 @@
 # NFTBan - BotScan direct-ban flag guard (BUG-BOTSCAN-DIRECT-BAN-FLAG)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_direct_ban_flag_v1903_test"
 # meta:type="test"

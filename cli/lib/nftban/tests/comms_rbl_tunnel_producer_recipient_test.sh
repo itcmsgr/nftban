@@ -3,6 +3,7 @@
 # NFTBan - RBL/Tunnel producer-recipient accuracy (central-comms deliverability)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="comms_rbl_tunnel_producer_recipient_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer State File I/O
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-state-file"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

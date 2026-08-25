@@ -2,6 +2,7 @@
 // NFTBan v1.0.30 - Login Monitor Module (High-Performance Go Implementation)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: loginmon
 // Purpose: Go module for login monitoring with signal-based detection
 //

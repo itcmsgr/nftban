@@ -2,6 +2,7 @@
 // NFTBan - Suricata Inline Exception Mode
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="inline"
 // meta:type="package"
 // meta:version="1.92.0"

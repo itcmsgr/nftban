@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // =============================================================================
 // NFTBan v1.100 — Safety-net primitives tests (PR-25 §23.2 / §23.5 / §21.3)
 // =============================================================================

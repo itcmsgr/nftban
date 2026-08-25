@@ -2,6 +2,7 @@
 // NFTBan v1.180.0 - FTP Detector Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="ftp_detector_test"
 // meta:type="package"

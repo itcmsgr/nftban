@@ -3,6 +3,7 @@
 # NFTBan - atomic rollback (v1.228.10 A1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rebuild_atomic_rollback_v1228_10_test"
 # meta:type="test"
 # meta:version="1.0.0"

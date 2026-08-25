@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Set Element Evidence Collector (M87-3)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_sets"
 // meta:type="package"
 // meta:version="1.88.0"

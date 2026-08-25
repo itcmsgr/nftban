@@ -3,6 +3,7 @@
 # NFTBan - v1.167 PR-2 guard: CLI output-truth / flag-parity
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_output_truth_v167_test"
 # meta:type="test"
 # meta:version="1.0.0"

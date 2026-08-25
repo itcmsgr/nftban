@@ -2,6 +2,7 @@
 // NFTBan v1.197.0 - Validator geoban GeoIP DB path resolution tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="validator_geoban_path_test"
 // meta:type="package"

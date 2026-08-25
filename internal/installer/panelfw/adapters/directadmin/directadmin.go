@@ -2,6 +2,7 @@
 // NFTBan v1.100.x PR26.3 - DirectAdmin Panel Adapter
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-panelfw-directadmin"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

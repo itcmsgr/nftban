@@ -3,6 +3,7 @@
 # NFTBan v1.108 — V108 Item 2: +i lifecycle matrix CI gate
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test-immutable-lifecycle-matrix"
 # meta:type="ci-script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

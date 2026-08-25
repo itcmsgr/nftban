@@ -4,6 +4,7 @@
 # NFTBan - Firewall Transition Health (harm-keyed observability)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Harm-keyed health signals for nftables firewall transitions
 #          (rebuild/reload/refresh). Detects SERVICE-PORT, mgmt-FLOOR,
 #          TABLE-ABSENT-while-COMMITTED, and BLACKLIST-EMPTY harm — NOT

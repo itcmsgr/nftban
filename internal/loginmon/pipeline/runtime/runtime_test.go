@@ -2,6 +2,7 @@
 // NFTBan v1.80 - pipeline runtime end-to-end tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: runtime
 // Purpose: End-to-end test of the pipeline using fake source/watcher/parser.
 //

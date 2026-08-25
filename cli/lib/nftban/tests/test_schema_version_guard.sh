@@ -3,6 +3,7 @@
 # NFTBan v1.84 — G2-3: Schema Version Guard Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test_schema_version_guard"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

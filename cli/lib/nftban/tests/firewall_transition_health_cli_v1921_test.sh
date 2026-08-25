@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # =============================================================================
 # NFTBan v1.192.1 — firewall transition health CLI/status wiring test (PR-B)
 # =============================================================================

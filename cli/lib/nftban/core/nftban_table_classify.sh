@@ -3,6 +3,7 @@
 # NFTBan v1.100 Amendment 4 - nft Table Classifier (PR26.6 / 6A)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_table_classify"
 # meta:type="lib"
 # meta:version="1.100.0"

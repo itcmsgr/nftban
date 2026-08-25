@@ -3,6 +3,7 @@
 # NFTBan - Verified build-time fetch helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="fetch_verified"
 # meta:type="installer"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

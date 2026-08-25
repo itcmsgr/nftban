@@ -3,6 +3,7 @@
 # NFTBan CI guard — CLI surface parity (registry ↔ bash-completion ↔ dispatch)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-cli-surface-parity"
 # meta:type="ci-guard"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

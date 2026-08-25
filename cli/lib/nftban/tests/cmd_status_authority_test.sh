@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.118 B1 cmd_status authority + conflicts CLI guidance
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_status_authority_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.198 R1a-6 CONFIG/RHG cosmetic comment cleanup (D-RHG-1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_config_rhg_cosmetic_r1a6_test"
 # meta:type="test"
 # meta:version="1.0.0"

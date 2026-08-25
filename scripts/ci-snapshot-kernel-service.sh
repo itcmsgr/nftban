@@ -3,6 +3,7 @@
 # NFTBan v1.100 PR-P2-3 — CI kernel/service snapshot helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ci-snapshot-kernel-service"
 # meta:type="script"
 # meta:version="1.100.0"

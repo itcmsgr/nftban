@@ -3,6 +3,7 @@
 # NFTBan - v1.168 CLI-BUG-2: whitelist sets carry the 'timeout' flag (render)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="whitelist_set_timeout_flag_v168_test"
 # meta:type="test"
 # meta:version="1.0.0"

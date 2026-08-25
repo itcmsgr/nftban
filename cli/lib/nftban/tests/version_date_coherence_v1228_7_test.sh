@@ -3,6 +3,7 @@
 # NFTBan - VERSION_DATE coherence guard falsifiability (v1.228.7)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="version_date_coherence_v1228_7_test"
 # meta:type="test"
 # meta:version="1.0.0"

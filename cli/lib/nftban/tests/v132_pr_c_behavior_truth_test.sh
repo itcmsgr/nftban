@@ -3,6 +3,7 @@
 # V132 PR-C — behavior-truth regression guard (C1/C2/C3/C5/C7/C8)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v132_pr_c_behavior_truth_test"
 # meta:type="test"
 # meta:version="1.132.0"

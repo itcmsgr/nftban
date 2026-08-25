@@ -3,6 +3,7 @@
 # NFTBan v1.198.3 - watchdog/update-swap race: cadence-timer inhibit/restore
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="watchdog_update_swap_race_v1983_test"
 # meta:type="test"
 # meta:version="1.0.0"

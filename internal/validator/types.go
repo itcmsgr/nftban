@@ -2,6 +2,7 @@
 // NFTBan v1.78 - Kernel Truth Validator Types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="validator-types"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

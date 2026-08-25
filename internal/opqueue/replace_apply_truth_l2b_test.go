@@ -2,6 +2,7 @@
 // NFTBan - L2b replace_set apply-truth (REPLACE-PARTIAL-SILENT + OPQUEUE_PER_ELEMENT_APPLY_RESULT)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="opqueue/replace_apply_truth_l2b_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L2b: proves the replace_set apply result is truth-bearing — reported_applied == actually_applied and partial_apply != success. Mocks NetlinkBackend to force a mid-replace shortfall and asserts FlushResult.Err is set, Applied is the true count, Intended is preserved, WasReplace stays true, the success onFlush callback does not fire, and QueueStats.ReplacePartialFailures increments. Hermetic; no real nft/netlink/root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

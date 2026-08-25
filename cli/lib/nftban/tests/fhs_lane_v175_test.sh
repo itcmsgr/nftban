@@ -3,6 +3,7 @@
 # NFTBan - v1.175 FHS LANE invariants
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="fhs_lane_v175_test"
 # meta:type="test"
 # meta:version="1.0.0"

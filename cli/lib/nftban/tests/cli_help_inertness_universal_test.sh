@@ -3,6 +3,7 @@
 # NFTBan - universal help-inertness sweep test (v1.141 PR-A sweep-all)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_help_inertness_universal_test"
 # meta:type="test"
 # meta:version="1.0.0"

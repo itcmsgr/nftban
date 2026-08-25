@@ -3,6 +3,7 @@
 # NFTBan v1.229.4 SC-A — NOTHING PROVENANCE-BEARING IS EXPOSED BEFORE VERIFICATION
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="verify-before-publish-v1229-4-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan - status --json no-self-contradict test (v1.141 PR-C D-json-fork)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_status_json_no_contradict_test"
 # meta:type="test"
 # meta:version="1.0.0"

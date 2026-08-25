@@ -3,6 +3,7 @@
 # NFTBan v1.85 — G8-4: Cross-Surface Module Selftest Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test_module_selftest"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

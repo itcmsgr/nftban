@@ -3,6 +3,7 @@
 # NFTBan - v1.160: state-aware firewall package wording (CHECK 2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="firewall_pkg_wording_v160"
 # meta:type="test"
 # meta:version="1.0.0"

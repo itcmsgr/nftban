@@ -2,6 +2,7 @@
 // NFTBan v1.20.0 - HTTP Bot Guard: Kernel Suspect Set Reader
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Read kernel-populated http_bot_suspect nft sets (IPv4 + IPv6)
 //

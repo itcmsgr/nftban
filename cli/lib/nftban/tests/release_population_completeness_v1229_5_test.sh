@@ -3,6 +3,7 @@
 # NFTBan v1.229.5 — VERIFIED IS NOT PUBLISHED
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="release-population-completeness-v1229-5-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

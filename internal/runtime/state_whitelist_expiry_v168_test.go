@@ -2,6 +2,7 @@
 // NFTBan v1.168 - CLI-BUG-2 whitelist TTL: runtime ExpireAt + expiry snapshot
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="state_whitelist_expiry_v168_test"
 // meta:type="test"
 // meta:version="1.0.0"

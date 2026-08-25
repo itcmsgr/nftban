@@ -3,6 +3,7 @@
 # NFTBan v1.82 - IP/Port Check + Firewall Stats
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_ip_and_stats"
 # meta:type="core"
 # meta:version="1.82.0"

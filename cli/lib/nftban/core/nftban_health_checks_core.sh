@@ -4,6 +4,7 @@
 # NFTBan - Health Check Core Functions
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Core health check functions (helpers, binaries, paths, permissions, resources, fhs)
 #
 # meta:name="nftban_health_checks_core"

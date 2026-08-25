@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.136.1 exporter exit-2 Phase 2 (scale-cache guard)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="exporter_exit2_phase2_scale_guard_v1361_test"
 # meta:type="test"
 # meta:version="1.0.0"

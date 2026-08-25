@@ -2,6 +2,7 @@
 // NFTBan v1.0 - nftband Daemon - Daemon entry point
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftband"
 // meta:type="cmd"
 // meta:version="1.0.0"

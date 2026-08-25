@@ -245,7 +245,9 @@ All contributions **must** comply with these authoritative standards:
 ### 1. File Headers
 
 Every source file must have a compliant header with:
+<!-- REUSE-IgnoreStart -->
 - **SPDX-License-Identifier: MPL-2.0** (exactly one per file)
+<!-- REUSE-IgnoreEnd -->
 - All `meta:` tags with quoted values: `meta:key="value"`
 - All inventory keys present (even if empty):
   ```

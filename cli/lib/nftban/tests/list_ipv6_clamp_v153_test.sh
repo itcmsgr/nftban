@@ -3,6 +3,7 @@
 # NFTBan - v1.153 PR-D: list/table IPv6 column clamp (UX-A4)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="list_ipv6_clamp_v153_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.79.0 - HTTP Bot Guard: Signal Types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Signal types for profile-based scoring system (v2)
 //

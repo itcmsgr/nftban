@@ -2,6 +2,7 @@
 // NFTBan - Logrotate `create` parity test (v1.139 PR-B, FHS-UNGEN-LOGROTATE-CREATE)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="logs_logrotate_create_parity_test"
 // meta:type="package"
 // meta:version="1.0.0"

@@ -1,0 +1,12 @@
+NFTBan Brand Assets — All Rights Reserved
+
+The NFTBan name, wordmark and logo are trademarks of Antonios Voulvoulis.
+They are NOT covered by the Mozilla Public License 2.0 that licenses the
+NFTBan source code and NFTBan-authored documentation. Use of these assets is
+governed by TRADEMARK.md at the repository root.
+
+Third-party artwork notice: the NFTBan logo incorporates the Tux penguin
+figure originally created by Larry Ewing using The GIMP, used with attribution
+per the creator's terms. Permission to use and/or modify that image is granted
+provided credit is given to Larry Ewing and The GIMP if requested. See the
+"Third-Party Artwork Notice" in NOTICE.md for the full attribution.

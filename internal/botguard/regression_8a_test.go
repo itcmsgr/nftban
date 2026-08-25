@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: 8A consolidated regression + cadence visibility
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Increment 8A Group A — one consolidated suite proving every 8B increment behavior
 //          remains intact (browser-like suppression, abuse enforcement, cadence-gap gate,

@@ -2,6 +2,7 @@
 // NFTBan v1.0 - Network IP Family Detection Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="detect_test"
 // meta:type="test"
 // meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.9.3 - DDoS CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Command-line interface for DDoS protection management
 #
 # meta:name="cmd_ddos"

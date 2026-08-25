@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Structured Batch-Signal Accessors
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: v1.191 8B (Amendment B) — resolve request_class/family from the STRUCTURED
 //          batch-signal fields only; never infer class by grepping the free-text Reasons.

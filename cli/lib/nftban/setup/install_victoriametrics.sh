@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2120  # Function designed to accept optional args
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="install_victoriametrics"
 # meta:type="setup"
 # meta:version="1.39.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Read-only explain API tests (6A)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.191 8B increment-6A read-only explain/query API: it returns the
 //          temporary decision-cache state for an IP, is side-effect-free (Peek), never

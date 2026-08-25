@@ -3,6 +3,7 @@
 # NFTBan v1.145 - PR-A static regression guard: set-driven SSH rate-limit
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v145_ssh_port_template_set_driven_static_test"
 # meta:type="test"
 # meta:version="1.0.0"

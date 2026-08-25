@@ -3,6 +3,7 @@
 # NFTBan v1.212.0 - BotScan write_signal flock-guarded append test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_signal_flock_v212_test"
 # meta:type="test"

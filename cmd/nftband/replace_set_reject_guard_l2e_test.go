@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftband/replace_set_reject_guard_l2e_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L2e reject-guard: handleReplaceSetRequest must DENY the legacy non-atomic replace_set IPC for the atomic-owned interval sets (blacklist_ipv4/blacklist_ipv6), which are the sole domain of the FULL-sync atomic writer (setsync). Proves the two protection sets are rejected with an explicit error and that a non-interval set is not blocked by this guard. Hermetic; no nft/netlink/root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

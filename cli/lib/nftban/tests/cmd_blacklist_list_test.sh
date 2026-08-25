@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.119 A1 cmd_blacklist list dual-set query (D2 fix)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_blacklist_list_test"
 # meta:type="test"
 # meta:version="1.0.0"

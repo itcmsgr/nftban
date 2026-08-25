@@ -4,6 +4,7 @@
 # NFTBan - Health Check Modules Functions
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Module-related health check functions (geoip, geoban, databases, rbl)
 #
 # meta:name="nftban_health_checks_modules"

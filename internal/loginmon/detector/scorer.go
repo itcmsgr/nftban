@@ -2,6 +2,7 @@
 // NFTBan v1.0.30 - IP Scoring Engine
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: detector
 // Purpose: Track detection scores per IP and trigger bans at threshold
 //

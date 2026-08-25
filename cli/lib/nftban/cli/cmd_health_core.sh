@@ -3,6 +3,7 @@
 # NFTBan - Health Check CLI Command - Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Core health check commands: check, summary, json, report, fix
 #
 # meta:name="cmd_health_core"

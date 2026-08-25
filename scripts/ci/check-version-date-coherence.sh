@@ -3,6 +3,7 @@
 # NFTBan - VERSION_DATE coherence guard (v1.228.7)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-version-date-coherence"
 # meta:type="ci-guard"
 # meta:version="1.0.0"

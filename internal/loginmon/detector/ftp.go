@@ -2,6 +2,7 @@
 // NFTBan v1.0.30 - High-Performance FTP Detector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: detector
 // Purpose: Signal-based FTP authentication failure detection
 //

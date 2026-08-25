@@ -2,6 +2,7 @@
 // NFTBan v1.180.0 - LoginMon FTP log discovery (auth_failure source)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: loginmon
 // Purpose: Discovery of FTP daemon logs for the LoginMon auth_failure event class
 //          (pure-ftpd / vsftpd / proftpd authentication-failure lines).

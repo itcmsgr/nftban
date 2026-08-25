@@ -46,6 +46,7 @@ fi
 # =============================================================================
 #
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI interface for country-based IP blocking (wrapper for geoip)
 #
 # meta:name="cmd_geoban"

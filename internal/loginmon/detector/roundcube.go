@@ -2,6 +2,7 @@
 // NFTBan v1.186.0 - Roundcube webmail auth-failure detector (DirectAdmin-only claim)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: detector
 //
 // meta:name="roundcube_detector"
