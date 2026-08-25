@@ -23,6 +23,7 @@ botscan_daemon_truth_v219_0_test	cli/lib/nftban/tests/botscan_daemon_truth_v219_
 botscan_deadline_rotation_v185_test	cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh	botscan	test	botscan-deadline-rotation	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 botscan_direct_ban_flag_v1903_test	cli/lib/nftban/tests/botscan_direct_ban_flag_v1903_test.sh	botscan	test	botscan-direct-ban-flag	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_endpoint_flood_test	cli/lib/nftban/tests/botscan_endpoint_flood_test.sh	botscan	test	botscan-endpoint-flood	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+botscan_enforcement_claim_evidence_backed_v1229_10_test	cli/lib/nftban/tests/botscan_enforcement_claim_evidence_backed_v1229_10_test.sh	botscan	test	botscan-report-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 botscan_exp_rfi_fp_v218_13_test	cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	botscan	test	botscan-pattern-exp-rfi	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_fcrdns_v189_test	cli/lib/nftban/tests/botscan_fcrdns_v189_test.sh	botscan	test	botscan-fcrdns-crawler	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_logsource_validity_r22a_test	cli/lib/nftban/tests/botscan_logsource_validity_r22a_test.sh	botscan	test	botscan-logsource-validity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
