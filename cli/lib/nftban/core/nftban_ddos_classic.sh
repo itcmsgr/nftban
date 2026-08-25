@@ -871,7 +871,51 @@ nftban_ddos_classic_status() {
         count_drop=${count_drop:-0}
         count_ban=$(nft list set $table_v4 "${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}" 2>/dev/null | grep -c 'expires' || true)
         count_ban=${count_ban:-0}
-        echo "  Status: DEPLOYED"
+        # v1.229.10 — "DEPLOYED" used to be printed on SET EXISTENCE ALONE
+        # (the `nft list set` gate above). Existence of the penalty sets says
+        # nothing about whether the ladder can operate: the sets are filled by
+        # nftban_ddos_penalty_scan(), which runs ONLY from the maintenance timer
+        # (cron/maintenance.sh:1001) and takes its offender input from the SYN
+        # flood meter. If the scanner never runs, or the meter is absent, the
+        # ladder is present and permanently idle — autoban never fires — while
+        # the operator was told DEPLOYED.
+        #
+        #   OBJECT PRESENT != PRODUCER LIVE != FUNCTIONAL ENFORCEMENT PATH.
+        #   CONFIGURED/INSTALLED != FUNCTIONALLY DEPLOYED.
+        #
+        # This reports the axes separately. It does NOT repair starvation: if the
+        # ladder cannot receive the events it needs, the report says exactly that.
+        local _pl_prod="UNKNOWN" _pl_input="UNKNOWN"
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null; then
+                _pl_prod="LIVE"
+            elif systemctl list-unit-files nftban-maintenance.timer >/dev/null 2>&1; then
+                _pl_prod="NOT_RUNNING"
+            else
+                _pl_prod="ABSENT"
+            fi
+        fi
+        if nft list set $table_v4 "${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}" &>/dev/null \
+           || nft list meter $table_v4 "${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}" &>/dev/null; then
+            _pl_input="PRESENT"
+        elif nft list table $table_v4 &>/dev/null; then
+            # The table reads fine and the meter is not in it — that is a real
+            # absence, not a failed observation.
+            _pl_input="ABSENT"
+        fi
+        # An unobservable producer or input is UNKNOWN and must never render as
+        # the favourable state.
+        if [[ "$_pl_prod" == "LIVE" && "$_pl_input" == "PRESENT" ]]; then
+            echo "  Status: DEPLOYED (sets present · penalty scanner LIVE · SYN meter readable)"
+        elif [[ "$_pl_prod" == "UNKNOWN" || "$_pl_input" == "UNKNOWN" ]]; then
+            echo "  Status: PRESENT — readiness UNKNOWN (scanner=${_pl_prod}, syn_meter=${_pl_input}); autoban operation NOT established"
+        else
+            echo "  Status: PRESENT but STARVED — sets exist, autoban will NOT fire (scanner=${_pl_prod}, syn_meter=${_pl_input})"
+            [[ "$_pl_prod" != "LIVE" ]] && \
+                echo "          penalty scanner does not run: nftban-maintenance.timer is ${_pl_prod}"
+            [[ "$_pl_input" != "PRESENT" ]] && \
+                echo "          no offender input: SYN meter ${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood} ${_pl_input}"
+        fi
         echo "  Tier 1 (limit 10s): ${count_10s} IPs"
         echo "  Tier 2 (limit 5m):  ${count_5m} IPs"
         echo "  Tier 3 (drop 5m):   ${count_drop} IPs"
