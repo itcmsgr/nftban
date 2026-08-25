@@ -78,6 +78,230 @@ fi
 #   --labels KEY=VAL,KEY=VAL              External labels (optional)
 #   --force|-f                            Force enable even if already running
 # ==============================================================================
+# ==============================================================================
+# Remote-submission wrappers (v1.229.10)
+# ==============================================================================
+# `nftban metrics enable --pro` and `--remote` dispatched to
+# _metrics_enable_pro / _metrics_enable_remote_user, which were CALLED but never
+# DEFINED anywhere in the tree — both advertised flags exited 127
+# ("command not found"). The shipping implementation itself was never missing:
+# setup/install_vmagent.sh already provides install / config-pro / config-user /
+# start / validate. Only the wrapper was absent.
+#
+#   AN ADVERTISED FLAG THAT DISPATCHES TO NOTHING IS A BROKEN CONTRACT,
+#   NOT AN UNIMPLEMENTED FEATURE.
+#
+# These wrappers GATE BEFORE THEY MUTATE. A shipper pointed at a target that
+# serves nothing would report success and deliver no metrics — the fail-open
+# shape this project rejects. Every precondition is proven, never assumed.
+# ==============================================================================
+
+# The address the vmagent config will actually scrape. Kept as one constant so
+# the precondition subject IS the configured input (GUARD SUBJECT == GUARD INPUT).
+# setup/install_vmagent.sh writes `targets: ['localhost:9100']` — the
+# node_exporter textfile surface, which is this CLI's canonical local export
+# (see nftban_metrics_status: "OpenMetrics format (node_exporter textfile)").
+: "${NFTBAN_METRICS_SCRAPE_TARGET:=localhost:9100}"
+
+_metrics_vmagent_script() {
+    # Resolve the shipper installer. ENOENT != absence of the capability, so we
+    # report the exact path we looked for instead of guessing an alternative.
+    local script="${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
+    if [[ ! -f "$script" ]]; then
+        echo "ERROR: metrics shipper installer not found" >&2
+        echo "  expected: $script" >&2
+        echo "  This is an installation defect — reinstall the nftban-core package." >&2
+        return 1
+    fi
+    printf '%s\n' "$script"
+}
+
+_metrics_scrape_target_serves() {
+    # CAPABILITY, NOT PRESENCE: a running unit is not proof that the endpoint
+    # serves metrics. We require an actual exposition response.
+    local target="$1" body=""
+
+    if ! command -v curl >/dev/null 2>&1; then
+        # TOOL ABSENCE != EMPTY PASS. We cannot establish the fact, so we must
+        # not claim it either way.
+        echo "ERROR: curl is required to verify the scrape target and is not installed" >&2
+        return 2
+    fi
+
+    body=$(curl -fsS --max-time 5 "http://${target}/metrics" 2>/dev/null) || return 1
+    [[ -n "$body" ]] || return 1
+    grep -qE '^[#a-zA-Z_]' <<<"$body" || return 1
+    return 0
+}
+
+_metrics_require_scrape_target() {
+    local target="$1" rc=0
+    _metrics_scrape_target_serves "$target" || rc=$?
+    case "$rc" in
+        0) return 0 ;;
+        2) return 1 ;;   # message already printed; do not restate a cause we did not establish
+    esac
+
+    echo "ERROR: the metrics scrape target is not serving metrics" >&2
+    echo "  target: http://${target}/metrics" >&2
+    echo "" >&2
+    echo "  vmagent would be configured to scrape this address and would ship" >&2
+    echo "  nothing. Refusing to configure a shipper over a dead target." >&2
+    echo "" >&2
+    echo "  Enable the local export surface first:" >&2
+    echo "    nftban metrics enable" >&2
+    echo "  Then re-run this command." >&2
+    return 1
+}
+
+_metrics_run_vmagent() {
+    # Single execution point for the installer, so every stage failure is
+    # attributed to the stage that produced it.
+    local script="$1" stage="$2"; shift 2
+    if ! bash "$script" "$stage" "$@"; then
+        echo "ERROR: metrics shipper stage failed: $stage" >&2
+        return 1
+    fi
+    return 0
+}
+
+# ------------------------------------------------------------------------------
+# nftban metrics enable --pro
+# ------------------------------------------------------------------------------
+_metrics_enable_pro() {
+    local script server_id="" token_file="${NFTBAN_PRO_TOKEN_FILE:-/etc/nftban/pro.token}"
+
+    script=$(_metrics_vmagent_script) || return 1
+
+    # ---- PRECONDITION: enrolment. Asserted BEFORE any capability work. --------
+    if ! declare -F nftban_pro_get_server_id >/dev/null 2>&1; then
+        echo "ERROR: the Pro library is not loaded (nftban_pro_get_server_id undefined)" >&2
+        echo "  expected: ${NFTBAN_LIB_DIR}/lib/nftban_pro.sh" >&2
+        return 1
+    fi
+
+    # READ-ONLY accessor by design: enabling metrics must not mint an identity.
+    server_id=$(nftban_pro_get_server_id)
+    if [[ -z "$server_id" ]]; then
+        echo "ERROR: this host is not enrolled with NFTBan Pro" >&2
+        echo "  no server_id at ${NFTBAN_PRO_SERVER_ID_FILE:-/etc/nftban/server_id}" >&2
+        echo "" >&2
+        echo "  Enrol first:  nftban pro enroll" >&2
+        return 1
+    fi
+
+    if [[ ! -s "$token_file" ]]; then
+        echo "ERROR: no NFTBan Pro token present" >&2
+        echo "  expected a non-empty file at: $token_file" >&2
+        echo "" >&2
+        echo "  Enrol first:  nftban pro enroll" >&2
+        return 1
+    fi
+
+    _metrics_require_scrape_target "$NFTBAN_METRICS_SCRAPE_TARGET" || return 1
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Enabling NFTBan Pro metrics submission"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Server ID:     $server_id"
+    echo "  Scrape target: http://${NFTBAN_METRICS_SCRAPE_TARGET}/metrics"
+    echo "  Destination:   ${NFTBAN_PRO_REMOTE_WRITE_URL:-https://pro.nftban.com/api/v1/write}"
+    echo ""
+
+    echo "Step 1/4: Installing the metrics shipper..."
+    _metrics_run_vmagent "$script" install || return 1
+
+    echo "Step 2/4: Writing the Pro submission config..."
+    _metrics_run_vmagent "$script" config-pro "$server_id" || return 1
+
+    echo "Step 3/4: Starting the shipper..."
+    _metrics_run_vmagent "$script" start || return 1
+
+    echo "Step 4/4: Validating..."
+    if ! _metrics_run_vmagent "$script" validate; then
+        echo "" >&2
+        echo "  The shipper was configured but did not validate." >&2
+        echo "  Metrics submission is NOT confirmed. Inspect: nftban metrics status" >&2
+        return 1
+    fi
+
+    echo ""
+    echo "NFTBan Pro metrics submission enabled."
+    echo "  Verify: nftban metrics status"
+    echo ""
+    return 0
+}
+
+# ------------------------------------------------------------------------------
+# nftban metrics enable --remote --url URL [--token FILE] [--labels K=V,...]
+# ------------------------------------------------------------------------------
+_metrics_enable_remote_user() {
+    local remote_url="$1" token_file="$2" external_labels="$3"
+    local script
+
+    script=$(_metrics_vmagent_script) || return 1
+
+    if [[ -z "$remote_url" ]]; then
+        echo "ERROR: --remote requires a remote-write URL" >&2
+        echo "  usage: nftban metrics enable --remote --url <URL> [--token FILE] [--labels K=V,...]" >&2
+        return 1
+    fi
+
+    case "$remote_url" in
+        http://*|https://*) : ;;
+        *)
+            echo "ERROR: --url must be an http:// or https:// remote-write endpoint" >&2
+            echo "  got: $remote_url" >&2
+            return 1
+            ;;
+    esac
+
+    # A token was NAMED, so it must exist. A named-but-absent token is an error,
+    # never a silent downgrade to unauthenticated submission.
+    if [[ -n "$token_file" && ! -s "$token_file" ]]; then
+        echo "ERROR: token file named but not readable or empty: $token_file" >&2
+        return 1
+    fi
+
+    _metrics_require_scrape_target "$NFTBAN_METRICS_SCRAPE_TARGET" || return 1
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Enabling remote metrics submission"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Scrape target: http://${NFTBAN_METRICS_SCRAPE_TARGET}/metrics"
+    echo "  Destination:   $remote_url"
+    echo "  Token:         ${token_file:-(none)}"
+    echo "  Labels:        ${external_labels:-(none)}"
+    echo ""
+
+    echo "Step 1/4: Installing the metrics shipper..."
+    _metrics_run_vmagent "$script" install || return 1
+
+    echo "Step 2/4: Writing the remote submission config..."
+    _metrics_run_vmagent "$script" config-user "$remote_url" "$token_file" "$external_labels" || return 1
+
+    echo "Step 3/4: Starting the shipper..."
+    _metrics_run_vmagent "$script" start || return 1
+
+    echo "Step 4/4: Validating..."
+    if ! _metrics_run_vmagent "$script" validate; then
+        echo "" >&2
+        echo "  The shipper was configured but did not validate." >&2
+        echo "  Metrics submission is NOT confirmed. Inspect: nftban metrics status" >&2
+        return 1
+    fi
+
+    echo ""
+    echo "Remote metrics submission enabled."
+    echo "  Verify: nftban metrics status"
+    echo ""
+    return 0
+}
+
 nftban_metrics_enable() {
     local force=false
     local remote_mode=""        # "user" or "pro" or ""
