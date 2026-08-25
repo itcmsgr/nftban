@@ -11,6 +11,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.10] - 2026-08-25 — a report that describes the instrument instead of the subject
+
+Bug burn-down. Eleven fixes, all report-truth or lifecycle correctness. No new
+architecture, no enforcement-semantics change, no nftables schema change.
+
+### Fixed — protection lifecycle
+
+- **BotScan spool cursor identity.** v1.209.3 relocated the spool
+  `/run/nftban/botscan/` → `/var/lib/nftban/botscan/spool/`. Cursor identity was derived
+  from the absolute file path, independently, in both the reader and the reaper, so the
+  move renamed every cursor key at once. A missing cursor was then read as offset 0, the
+  completion predicate `off >= size` could never become true, no completed spool object was
+  ever reclaimed, and the spool grew to its 1 GiB cap where collector backpressure latched
+  permanently. Measured fleet-wide: 8/8 hosts carried old-key cursors, 6/8 carried zero
+  current-key cursors, two hosts sat pinned at cap with 57-day-old spool objects. Identity
+  is now the logical subject (namespace + basename) and survives relocation; legacy state
+  migrates once where the mapping is exact and unambiguous, preserving the cursor value so
+  nothing is replayed. A missing cursor is UNKNOWN and keeps; conflicting cursors keep and
+  report. Zero-byte objects — which the scanner's `-s` filter meant could never complete —
+  are reclaimable without a cursor. The 1 GiB cap is unchanged.
+- **DDoS penalty ladder reported DEPLOYED on set existence alone.** The sets are filled
+  only by the maintenance-timer scan, taking offender input from the SYN meter; with either
+  absent the ladder is present and permanently idle while the operator was told DEPLOYED.
+  Readiness is now three axes, both defaulting to UNKNOWN so the favourable state must be
+  earned.
+- **`nftban metrics enable --pro` / `--remote` exited 127.** Both advertised flags
+  dispatched to functions that existed nowhere in the tree. The shipping implementation was
+  never missing — only the wrapper between the CLI and it. Every precondition gates before
+  it mutates.
+
+### Fixed — operator truth
+
+- **BotScan reported "NOT currently enforcing" from a coverage verdict.** Measured false on
+  a production host: the scanner was budget-hit and reporting DEGRADED while it was actively
+  banning an HTTP flood, with the attackers in the kernel blacklist and 1,241 records in the
+  daemon's durable ban evidence. Coverage degradation and enforcement evidence are now
+  independent axes; absent evidence reports UNPROVEN, explicitly not proven-absent.
+- **Connection limits advertised "max N/IP" while the rules are global.** Kernel-confirmed
+  across five live rules, none keyed by source. Wording only — the keying defect remains
+  open under its own owner.
+- **Zabbix status presented a shared exporter timer as its own health**, showing a green
+  check while Zabbix was disabled and unconfigured.
+- **`nftban zabbix` had no top-level enable/disable** while every sibling module does.
+- **BotScan was not findable under the name operators type.** The row read "HTTP Exploit
+  Scan"; the command is `nftban botscan`.
+- **Update summary reported "Failed units: 0" beside its own failing post-install
+  assertion.** Two producers, two planes, two moments — the summary never said which moment
+  its number described.
+
+### Fixed — test authority
+
+- **`botscan_throughput_v187_test` declared itself hermetic while writing absolute
+  production paths.** The module resolves its state paths at source time, so sourcing before
+  declaring the sandbox baked in `/var/lib/nftban`. Its Go-matcher dependency is now an
+  explicit named precondition instead of a misleading wrong-count assertion.
+
+---
+
 ## [v1.229.9] - 2026-08-24 — a setting that is read but not obeyed is worse than no setting
 
 Both Suricata modules accept an EVE log path, and until now the two of them disagreed
