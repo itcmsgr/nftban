@@ -91,9 +91,15 @@ func countSetElementsJSON(ctx context.Context, family, name string) (count int, 
 		return 0, false, true
 	}
 
-	c, found := parseSetElementCount(output)
+	c, found, decodeFailed := parseSetElementCount(output)
+	if decodeFailed {
+		// v1.229.11: the response could not be decoded. That is an OBSERVATION
+		// FAILURE, not an absence — surface it as unknown so no consumer renders
+		// it as CONFIRMED-ABSENT.
+		return 0, false, true
+	}
 	if !found {
-		// Valid JSON but no set object for this name → confirmed absent
+		// Fully decoded, no set object for this name → confirmed absent
 		return 0, false, false
 	}
 	return c, true, false
@@ -120,27 +126,58 @@ func nftListSet(ctx context.Context, family, name string) ([]byte, error) {
 //
 //	found=true → a set object was present in the JSON
 //	found=false → no set object found (set absent or parse mismatch)
-func parseSetElementCount(data []byte) (int, bool) {
+//
+// parseSetElementCount returns (count, found, decodeFailed).
+//
+// v1.229.11 (OPEN_NFT_PARSER_FAILURE_TRUTH_TAIL): this used to return only
+// (int, bool). A json.Unmarshal FAILURE and a VALID response containing no set
+// object both returned (0, false), and the caller rendered that as
+// exists=false, unknown=false — i.e. CONFIRMED-ABSENT. A decode error was
+// therefore published as positive evidence that a set does not exist, which for
+// an enforcement set reads as proof of no protection.
+//
+//	A DECODE ERROR IS UNKNOWN — NEVER CONFIRMED-ABSENT.
+//	INSTRUMENT FAILURE IS NOT SUBJECT STATE.
+//
+// Mirrors the three-valued contract already used by
+// internal/validator/module_health.go:989 (countSetElementsStateReal); this is
+// application of an existing in-tree pattern, not a new one.
+func parseSetElementCount(data []byte) (count int, found bool, decodeFailed bool) {
 	var result struct {
 		NFTables []json.RawMessage `json:"nftables"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
-		return 0, false
+		// Malformed output. We learned NOTHING about the set.
+		return 0, false, true
 	}
 
+	// An element we cannot decode is also a failed observation, not an absence.
+	// Recorded rather than skipped: previously `continue` swallowed it and the
+	// loop could fall through to the confirmed-absent return below.
+	sawUndecodable := false
 	for _, raw := range result.NFTables {
 		var setWrapper struct {
 			Set *struct {
 				Elem []json.RawMessage `json:"elem"`
 			} `json:"set,omitempty"`
 		}
-		if err := json.Unmarshal(raw, &setWrapper); err != nil || setWrapper.Set == nil {
+		if err := json.Unmarshal(raw, &setWrapper); err != nil {
+			sawUndecodable = true
 			continue
 		}
-		// Set object found — count elements (may be 0)
-		return len(setWrapper.Set.Elem), true
+		if setWrapper.Set == nil {
+			continue // a valid non-set object (metainfo, table, ...) — not evidence either way
+		}
+		// Set object found — count elements (may legitimately be 0)
+		return len(setWrapper.Set.Elem), true, false
 	}
 
-	// No set object found in valid JSON → absent
-	return 0, false
+	if sawUndecodable {
+		// We could not read part of the response, so "no set here" is not a
+		// conclusion we are entitled to draw.
+		return 0, false, true
+	}
+
+	// Fully decoded, no set object for this name → CONFIRMED absent.
+	return 0, false, false
 }

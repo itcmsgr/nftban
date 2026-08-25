@@ -888,13 +888,16 @@ func feedsExist() bool {
 	return false
 }
 
-// collectEvidenceSetElements queries element counts for all evidence-relevant sets.
+// Evidence-set collection. See evidenceSetNames and collectEvidenceSetElementsState.
 // v1.89 INV-M-001: Validator is the sole kernel-query authority.
 // Evidence layer reads from ValidationResult.SetElementCounts instead of
 // making its own nft -j list set calls.
-func collectEvidenceSetElements() map[string]int {
-	result := make(map[string]int)
-	evidenceSets := map[string][]string{
+// evidenceSetNames is the single population of evidence-relevant sets. Both
+// collectors read it so there is only ONE authority for "which sets matter".
+//
+//	ONE POPULATION, ONE AUTHORITY — A SECOND LIST IS A SECOND TRUTH.
+func evidenceSetNames() map[string][]string {
+	return map[string][]string{
 		"ip": {
 			"blacklist_manual_ipv4", "blacklist_ipv4",
 			"http_bot_suspect", "http_bot_pending", "http_bot_allow",
@@ -906,13 +909,38 @@ func collectEvidenceSetElements() map[string]int {
 			"http_bot_grey6", "http_bot_ban6", "http_bot_emergency6",
 		},
 	}
-	for family, sets := range evidenceSets {
+}
+
+// collectEvidenceSetElementsState returns element counts AND the keys that could
+// not be observed.
+//
+// v1.229.11 (OPEN_NFT_PARSER_FAILURE_TRUTH_TAIL): the previous collector returned
+// map[string]int via countSetElements, so an exec or decode failure arrived here
+// as 0 — indistinguishable from a genuinely empty set, and published downstream
+// as a confirmed count. For an enforcement set that reads as proof of no
+// protection.
+//
+//	A FAILED READ IS NOT A COUNT OF ZERO.
+//	INSTRUMENT FAILURE IS NOT SUBJECT STATE.
+//
+// Uses countSetElementsState — the three-valued reader ALREADY in this file
+// (countSetElementsStateReal). This applies an existing in-tree pattern; it does
+// not introduce a new mechanism.
+func collectEvidenceSetElementsState() (counts map[string]int, unknown map[string]bool) {
+	counts, unknown = make(map[string]int), make(map[string]bool)
+	for family, sets := range evidenceSetNames() {
 		for _, name := range sets {
 			key := family + ":" + name
-			result[key] = countSetElements(family, name)
+			c, _, unk := countSetElementsState(family, name)
+			if unk {
+				// Record the FAILURE, not a number we never observed.
+				unknown[key] = true
+				continue
+			}
+			counts[key] = c
 		}
 	}
-	return result
+	return counts, unknown
 }
 
 // countSetElements returns the number of elements in a kernel set.

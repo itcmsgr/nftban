@@ -1448,17 +1448,38 @@ nftban_health_check_kernel_parity() {
         [[ "$config_val" != "true" ]] && continue
 
         # Module enabled in config — verify kernel has the chain with rules
+        # v1.229.11 (OPEN_NFT_PARSER_FAILURE_TRUTH_TAIL): the rule count used to be
+        # produced by piping `nft list chain` straight into grep -c with `|| true`.
+        # If that read FAILED, grep saw empty input, printed 0, and rule_count became
+        # 0 — then compared against the expectation AS IF MEASURED, reporting
+        # "chain has 0 rules in kernel". A failed observation was published as a
+        # measurement of emptiness.
+        #
+        #   A FAILED READ IS NOT A COUNT OF ZERO.
+        #   INSTRUMENT FAILURE IS NOT SUBJECT STATE.
+        #
+        # Capture the output and its rc SEPARATELY so an unreadable chain renders
+        # UNKNOWN and skips the comparison entirely.
         chain_exists=false
-        local rule_count=0
+        local rule_count=0 rule_count_known=false _chain_out=""
         if nft list chain ip nftban "${chain_name}" &>/dev/null; then
             chain_exists=true
-            rule_count=$(nft list chain ip nftban "${chain_name}" 2>/dev/null \
-                | grep -cE '^\s+(meta|ip|tcp|udp|ct |counter|drop|accept|jump|reject|log|return|limit|meter)' || true)
+            if _chain_out="$(nft list chain ip nftban "${chain_name}" 2>/dev/null)"; then
+                # grep -c PRINTS a count and EXITS 1 when that count is zero, so its
+                # exit status must be ignored while its stdout is kept.
+                rule_count="$(grep -cE '^[[:space:]]+(meta|ip|tcp|udp|ct |counter|drop|accept|jump|reject|log|return|limit|meter)' <<<"$_chain_out" || true)"
+                rule_count="${rule_count//[^0-9]/}"; rule_count="${rule_count:-0}"
+                rule_count_known=true
+            fi
         fi
 
         if [[ "$chain_exists" == "false" ]]; then
             issues+=("${label}: enabled in config but chain missing from kernel")
             status=$HEALTH_ERROR
+        elif [[ "$rule_count_known" != "true" ]]; then
+            # Chain is present but its contents could not be read. Do NOT compare.
+            issues+=("${label}: chain present but rule count UNKNOWN — kernel read failed, not verified as empty")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         elif [[ "$rule_count" -eq 0 ]]; then
             issues+=("${label}: enabled in config but chain has 0 rules in kernel")
             status=$HEALTH_WARNING
