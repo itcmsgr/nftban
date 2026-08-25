@@ -118,7 +118,22 @@ _update_start_banner() {
 _update_classify_warnings() {
     local ilog="${1:-}" before="${2:-0}"
     _NFTBAN_WARN_REAL=0; _NFTBAN_WARN_RECOVERED=0; _NFTBAN_WARN_ACCEPTED=0; _NFTBAN_WARN_EXTERNAL=0
-    [[ -f "$ilog" ]] || return 0
+    # v1.229.10: RETAIN the actual REAL warning lines, not just a count. The summary told
+    # the operator to "review N warning(s) requiring action" and then neither printed them
+    # nor named where they were -- they existed only inside the per-run record the operator
+    # was never pointed at.
+    #   A COUNT IS NOT A FINDING.
+    # Same authority, same parse, same classification -- only the text is now kept.
+    _NFTBAN_WARN_REAL_LINES=()
+    # ⛔ AN UNREADABLE SOURCE IS NOT "ZERO WARNINGS". This returned with every counter at 0
+    # when the log was missing, which renders as "Action needed: NONE" -- a clean bill of
+    # health derived from an absent observation.
+    #   ABSENT SOURCE != NO FINDINGS
+    _NFTBAN_WARN_SOURCE="READABLE"
+    if [[ ! -f "$ilog" ]]; then
+        _NFTBAN_WARN_SOURCE="UNREADABLE"
+        return 0
+    fi
     # Classify by SIGNATURE first (accepted/external lines often lack a WARN tag), skipping
     # the installer's own meta self-report; only genuinely warn-tagged remainder = REAL.
     # Order matters: specific signatures are matched before the generic WARN/non-fatal catch.
@@ -128,13 +143,41 @@ _update_classify_warnings() {
             *"recovered — verified active"*)                                             _NFTBAN_WARN_RECOVERED=$((_NFTBAN_WARN_RECOVERED + 1)); continue ;;
             *"exit 73"*|*"unsafe path transition"*|*"firewall-validate"*)                 _tmpfiles=1; continue ;;                                       # W2/W3 accepted (deduped)
             *"Pending kernel"*|*needrestart*|*"deferred"*|*"Restarting services"*|*"outdated binaries"*) _external=1; continue ;;                        # W4 external (deduped)
-            *"still inactive after restore"*)                                            _NFTBAN_WARN_REAL=$((_NFTBAN_WARN_REAL + 1)); continue ;;      # W1 real
+            *"still inactive after restore"*)                                            _NFTBAN_WARN_REAL=$((_NFTBAN_WARN_REAL + 1)); _NFTBAN_WARN_REAL_LINES+=("$line"); continue ;;  # W1 real
             *", with "*"warning"*|*" warning — non-fatal"*|*"non-fatal"*)                 continue ;;                                                    # installer meta self-report — skip
-            *"WARN"*|*"⚠"*)                                                              _NFTBAN_WARN_REAL=$((_NFTBAN_WARN_REAL + 1)); continue ;;      # any other warn-tagged line = real
+            *"WARN"*|*"⚠"*)                                                              _NFTBAN_WARN_REAL=$((_NFTBAN_WARN_REAL + 1)); _NFTBAN_WARN_REAL_LINES+=("$line"); continue ;;  # any other warn-tagged line = real
         esac
     done < <(tail -n +$((before + 1)) "$ilog" 2>/dev/null)
     [[ "$_tmpfiles" -eq 1 ]] && _NFTBAN_WARN_ACCEPTED=1
     [[ "$_external" -eq 1 ]] && _NFTBAN_WARN_EXTERNAL=1
+    return 0
+}
+
+# _update_render_actionable_warnings <run_log_dir> <installer_log>
+# Renders the REAL warnings the summary just counted, or names exactly where to read them.
+# ⛔ NO SECOND STORE, NO SECOND PARSER: the lines come from _update_classify_warnings,
+# the same authority that produced the count. A divergent renderer would be free to
+# disagree with the number printed beside it.
+_update_render_actionable_warnings() {
+    local log_dir="${1:-}" ilog="${2:-}"
+    if [[ "${_NFTBAN_WARN_SOURCE:-READABLE}" == "UNREADABLE" ]]; then
+        printf "  %-20s %s\n" "Warnings:" "UNKNOWN — the run log could not be read (${ilog:-<no path>})"
+        printf "  %-20s %s\n" "" "This is NOT a report of zero warnings."
+        return 0
+    fi
+    [[ "${_NFTBAN_WARN_REAL:-0}" -gt 0 ]] || return 0
+    echo "  Warnings requiring action:"
+    local n=0
+    for _w in "${_NFTBAN_WARN_REAL_LINES[@]}"; do
+        n=$((n + 1))
+        [[ $n -gt 10 ]] && { echo "    … and $(( ${#_NFTBAN_WARN_REAL_LINES[@]} - 10 )) more"; break; }
+        echo "    • ${_w}"
+    done
+    # Always name the authority, even when every line was shown: the operator needs a
+    # durable location, not only this terminal's scrollback.
+    [[ -n "$log_dir" && "$log_dir" != "n/a" ]] && echo "    full run record: ${log_dir}"
+    [[ -n "$ilog" ]] && echo "    installer log:   ${ilog}"
+    echo ""
     return 0
 }
 
