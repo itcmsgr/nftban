@@ -377,14 +377,130 @@ nftban_http_classify_candidates() {
 # call (per-file offset keyed by path), capped at MAX_BYTES. Handles rotation
 # (inode change) and truncation (size < stored offset) by reading from BOF.
 # Falls back to a bounded tail if the offset dir is not writable (never blind).
+# =============================================================================
+# Cursor identity — ONE logical subject, ONE canonical cursor (v1.229.10)
+# =============================================================================
+# The cursor state file used to be named from the ABSOLUTE FILE PATH:
+#     key="$(printf '%s' "$file" | tr '/' '_')"
+# Both the reader here and the BotScan reaper derived it independently that way.
+#
+# v1.209.3 relocated the BotScan spool /run/nftban/botscan/ ->
+# /var/lib/nftban/botscan/spool/. Because identity was the path, EVERY cursor key
+# changed at once. The old state stayed under the old key, the new lookup found
+# nothing, a missing cursor was read as offset 0, and the reaper's completion
+# predicate (off >= size) could then never become true — so completed spool
+# objects were never reclaimed and the spool grew monotonically to its cap.
+# Measured fleet-wide 2026-08-25: 8/8 hosts carry old-key cursors, 6/8 carry
+# ZERO current-key cursors; srv3 and srv4 are latched at cap with backpressure.
+#
+#   CURSOR IDENTITY MUST FOLLOW THE LOGICAL SPOOL SUBJECT,
+#   NOT THE ABSOLUTE DIRECTORY THAT CURRENTLY STORES IT.
+#
+#   A MISSING CURSOR IS NOT OFFSET ZERO.
+#   0 IS A VALID CURSOR VALUE; ABSENT AUTHORITY IS A DIFFERENT STATE.
+#
+# Callers that own a relocatable subject set NFTBAN_HTTP_CURSOR_NS to a stable
+# logical namespace; identity then becomes NS + basename and survives relocation.
+# Callers that do not set it keep the historical path-derived identity exactly,
+# so nothing else on this shared reader changes behaviour.
+
+# Canonical cursor key for a subject. Path-independent when a namespace is set.
+nftban_http_cursor_key() {
+    local file="$1"
+    if [[ -n "${NFTBAN_HTTP_CURSOR_NS:-}" ]]; then
+        printf '%s%s' "${NFTBAN_HTTP_CURSOR_NS}" "$(basename -- "$file")"
+    else
+        printf '%s' "$file" | tr '/' '_'
+    fi
+}
+
+# Legacy cursor keys that may hold this subject's pre-migration state.
+# Each historical directory that once stored the subject yields exactly one
+# candidate: <that dir path with / -> _> + <basename>. The mapping is exact and
+# unambiguous — we never pattern-match or guess a neighbour.
+nftban_http_cursor_legacy_keys() {
+    local file="$1" base d
+    # This module runs under a pinned IFS that does NOT include a space, so a
+    # space-separated list would arrive as ONE word and every legacy candidate
+    # would be silently wrong. Pin IFS locally for the split.
+    #   INHERITED IFS SILENTLY CHANGES WHAT "A LIST" MEANS.
+    local IFS=$' \t\n'
+    base="$(basename -- "$file")"
+    [[ -n "${NFTBAN_HTTP_CURSOR_LEGACY_DIRS:-}" ]] || return 0
+    for d in ${NFTBAN_HTTP_CURSOR_LEGACY_DIRS}; do
+        [[ -n "$d" ]] || continue
+        printf '%s%s\n' "$(printf '%s' "${d%/}/" | tr '/' '_')" "$base"
+    done
+}
+
+# Resolve the cursor for a subject, migrating legacy state ONCE when the mapping
+# is exact and unambiguous. Prints "<statefile>|<verdict>" where verdict is:
+#   CURRENT   canonical state exists and is authoritative
+#   MIGRATED  canonical absent, exactly one legacy state found and promoted
+#   ABSENT    no authority anywhere -> caller MUST treat completion as UNKNOWN
+#   CONFLICT  canonical and legacy disagree -> UNKNOWN, keep, never pick a value
+nftban_http_cursor_resolve() {
+    local file="$1" dir="${NFTBAN_HTTP_LOG_OFFSET_DIR}"
+    local key cur lk lf _nleg=0 legacy_file="" cur_val="" leg_val=""
+
+    key="$(nftban_http_cursor_key "$file")"
+    cur="${dir}/${key}"
+
+    # `set -e` safety: a missing canonical cursor is a NORMAL outcome, not an
+    # error. A bare guard returning 1 here would abort the resolver and the caller
+    # would read an empty verdict as "no authority" forever.
+    [[ -r "$cur" ]] && cur_val="$(cat -- "$cur" 2>/dev/null)" || true
+
+    while IFS= read -r lk; do
+        [[ -n "$lk" ]] || continue
+        lf="${dir}/${lk}"
+        # A legacy key that resolves to the canonical file is not a legacy source.
+        [[ "$lf" == "$cur" ]] && { continue; } || true
+        if [[ -r "$lf" ]]; then
+            _nleg=$((_nleg+1)); legacy_file="$lf"; leg_val="$(cat -- "$lf" 2>/dev/null)"
+        fi
+    done < <(nftban_http_cursor_legacy_keys "$file")
+
+    # Canonical present: it wins, but a DISAGREEING legacy is a conflict we report
+    # rather than silently resolve. Never choose the more convenient value.
+    if [[ -n "$cur_val" ]]; then
+        if [[ "$_nleg" -gt 0 && -n "$leg_val" && "$leg_val" != "$cur_val" ]]; then
+            printf '%s|CONFLICT\n' "$cur"; return 0
+        fi
+        printf '%s|CURRENT\n' "$cur"; return 0
+    fi
+
+    # Canonical absent. Promote only from EXACTLY ONE legacy source: two candidates
+    # cannot be disambiguated, so that is a conflict, not a coin toss.
+    if [[ "$_nleg" -eq 1 && -n "$leg_val" ]]; then
+        if mkdir -p "$dir" 2>/dev/null && printf '%s\n' "$leg_val" > "${cur}.tmp" 2>/dev/null \
+           && mv -f "${cur}.tmp" "$cur" 2>/dev/null; then
+            rm -f -- "$legacy_file" 2>/dev/null || true
+            printf '%s|MIGRATED\n' "$cur"; return 0
+        fi
+        rm -f -- "${cur}.tmp" 2>/dev/null || true
+        printf '%s|ABSENT\n' "$cur"; return 0
+    fi
+    if [[ "$_nleg" -gt 1 ]]; then printf '%s|CONFLICT\n' "$cur"; return 0; fi
+
+    printf '%s|ABSENT\n' "$cur"
+}
+
 nftban_http_read_incremental() {
     local file="$1"
     [[ -f "$file" && -r "$file" ]] || return 0
     local size inode key statefile prev_off prev_ino start
     size="$(stat -c %s "$file" 2>/dev/null || echo 0)"
     inode="$(stat -c %i "$file" 2>/dev/null || echo 0)"
-    key="$(printf '%s' "$file" | tr '/' '_' )"
+    # v1.229.10: identity comes from the SHARED resolver so the reader and the
+    # BotScan reaper can never drift into two separate cursor authorities again.
+    key="$(nftban_http_cursor_key "$file")"
     statefile="${NFTBAN_HTTP_LOG_OFFSET_DIR}/${key}"
+    if [[ -n "${NFTBAN_HTTP_CURSOR_LEGACY_DIRS:-}" ]]; then
+        local _res
+        _res="$(nftban_http_cursor_resolve "$file" 2>/dev/null)"
+        [[ -n "${_res%%|*}" ]] && statefile="${_res%%|*}"
+    fi
 
     if ! mkdir -p "${NFTBAN_HTTP_LOG_OFFSET_DIR}" 2>/dev/null; then
         # No state dir → bounded tail (last MAX_BYTES) so we still detect, just not incrementally.

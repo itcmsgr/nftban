@@ -158,13 +158,35 @@ reap_env(){
   [[ -f "$reallog" ]] && exit 0 || exit 1
 ) && ok "T10 GATE-1: non-spool file (real log) never reaped" || no "T10 real-log safety"
 
-# T11: empty spool file (size 0) is NOT reaped even if cursor present.
+# T11: empty spool file (size 0) IS reclaimable.
+#
+# ⛔ CONTRACT CHANGED IN v1.229.10 — this assertion was previously the inverse
+# ("empty spool file is NOT reaped"). It is superseded deliberately, not by drift.
+#
+# The v1.209.3 model treated size 0 as "not yet proven complete" and kept it. But
+# the scanner enumerates its work list with -s (nftban_botscan.sh:576), so an empty
+# spool object is NEVER scanned and therefore could never become complete either —
+# it was structurally unreclaimable for the lifetime of the host. Combined with the
+# cursor-identity orphaning (v1.209.3 relocation), that contributed to a spool that
+# only ever grew, reached its 1 GiB cap, and latched collector backpressure
+# permanently (srv3 + srv4, measured 2026-08-25).
+#
+# Reclaiming it is safe on its own terms, and the authority is structural — never age:
+#   - size 0 means there is NO unread payload, so no cursor is required to
+#     establish completion;
+#   - the reaper runs under the processor lock the collector also takes, so no
+#     append can race the delete;
+#   - deletion remains gated on: inside the BotScan spool namespace, expected
+#     spool basename shape, regular file, not a symlink, size == 0.
+#
+# T9 (partial kept) and the v1.229.10 suite's N1/N2/N3/N5/N6 continue to prove that
+# nothing with unread payload, and nothing outside the namespace, is ever removed.
 ( reap_env
   sd="$WORK/rspool4"; od="$WORK/roff4"; mkdir -p "$sd" "$od"
   f="$sd/_empty"; : > "$f"; printf '1:0\n' > "$od/$(printf '%s' "$f" | tr '/' '_')"
   nftban_botscan_reap_consumed_spool "$f" "$sd" "$od" || true
-  [[ -f "$f" ]] && exit 0 || exit 1
-) && ok "T11 empty (size 0) spool file not reaped" || no "T11 empty-not-reaped"
+  [[ ! -f "$f" ]] && exit 0 || exit 1
+) && ok "T11 empty (size 0) spool file IS reclaimed (v1.229.10 contract; -s means it can never complete)" || no "T11 empty-reclaimed"
 
 # T12: systemd unit ReadWritePaths includes the disk spool + keeps MemoryMax=256M.
 if grep -Eq '^ReadWritePaths=.*/var/lib/nftban/botscan( |$)' "$COLLECTOR_UNIT" \
