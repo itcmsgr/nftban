@@ -51,14 +51,19 @@ printf 'PORTSCAN_ENABLED="true"\nPORTSCAN_MODE="auto"\n' > "$TMP/conf.d/portscan
 
 # A transaction owner, run as an isolated process with a controllable dwell.
 # `hold_s` keeps the transaction OPEN so a competitor genuinely overlaps it.
-owner() {  # owner <hold_seconds> <lock_wait> [extra-env]
+# `wait` is the EXPLICIT caller policy: empty = fail-fast (the default for every
+# interactive mutation), a number = a caller that deliberately opts into queuing.
+owner() {  # owner <hold_seconds> <lock_wait|""> [extra-env]
     local hold="$1" wait="$2"; shift 2
     env NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
         NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" \
-        NFTBAN_RUN_DIR="$TMP/run" NFTBAN_TIMEOUT_NFT_LOCK="$wait" "$@" \
+        NFTBAN_RUN_DIR="$TMP/run" NFTBAN_PLAN_LOCK_WAIT="$wait" "$@" \
     bash -c '
         source "'"$AUTH"'"
-        if ! nftban_plan_txn_begin ddos portscan 2>/dev/null; then echo "REFUSED"; exit 9; fi
+        # ⛔ DO NOT SUPPRESS STDERR HERE. The refusal DIAGNOSTIC is part of the
+        # contract under test — an operator who is refused must be told why.
+        # Discarding it and then asserting on it measures nothing.
+        if ! nftban_plan_txn_begin ddos portscan; then echo "REFUSED"; exit 9; fi
         echo "OPENED target=${NFTBAN_PLAN_TARGET_GENERATION}"
         sleep '"$hold"'
         nftban_plan_txn_abort
@@ -71,16 +76,22 @@ printf '0\n' > "$TMP/run/convergence-generation"
 # -----------------------------------------------------------------------------
 # T1 — TWO CONCURRENT OWNERS: the second REFUSES, it does not converge anyway.
 # -----------------------------------------------------------------------------
-owner 3 1 > "$TMP/a.out" &  APID=$!
+owner 3 "" > "$TMP/a.out" &  APID=$!
 sleep 0.7                                    # A is inside the lock, holding it
-owner 0 1 > "$TMP/b.out" || true             # B must refuse within its 1s wait
+_t0=$(date +%s); owner 0 "" > "$TMP/b.out" || true; _t1=$(date +%s)
 wait $APID || true
 eq "T1.1 first owner opened the transaction" \
    "$(grep -c OPENED "$TMP/a.out" || true)" "1"
 eq "T1.2 concurrent second owner REFUSED" \
-   "$(grep -c REFUSED "$TMP/b.out" || true)" "1"
+   "$(grep -cx REFUSED "$TMP/b.out" || true)" "1"
 eq "T1.3 the refused owner opened NOTHING" \
    "$(grep -c OPENED "$TMP/b.out" || true)" "0"
+# ⛔ FAIL-FAST, NOT QUEUED. A bounded wait would also serialize, but both
+# operators would be told they succeeded. The refusal must be IMMEDIATE.
+if (( _t1 - _t0 <= 1 )); then ok "T1.4 the refusal was IMMEDIATE ($((_t1-_t0))s) — not queued"
+else fail "T1.4 refusal took $((_t1-_t0))s — it queued instead of refusing"; fi
+eq "T1.5 the operator is told convergence is already in progress" \
+   "$(grep -c 'convergence already in progress' "$TMP/b.out" || true)" "1"
 
 # -----------------------------------------------------------------------------
 # T2 — A REFUSAL MUTATES NOTHING. Not a partial transaction: no transaction.
@@ -93,8 +104,8 @@ eq "T2.2 no staged artifacts survived the refusal" \
 # -----------------------------------------------------------------------------
 # T3 — SERIAL OWNERS SUCCEED. Serialization must not mean starvation.
 # -----------------------------------------------------------------------------
-owner 0 5 > "$TMP/c.out" || true
-owner 0 5 > "$TMP/d.out" || true
+owner 0 "" > "$TMP/c.out" || true
+owner 0 "" > "$TMP/d.out" || true
 eq "T3.1 sequential owner 1 opened" "$(grep -c OPENED "$TMP/c.out" || true)" "1"
 eq "T3.2 sequential owner 2 opened" "$(grep -c OPENED "$TMP/d.out" || true)" "1"
 eq "T3.3 each chose the SAME target — neither committed, so N never moved" \
@@ -107,7 +118,7 @@ eq "T3.3 each chose the SAME target — neither committed, so N never moved" \
 t0=$(date +%s)
 out="$(NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
   NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" \
-  NFTBAN_RUN_DIR="$TMP/run" NFTBAN_TIMEOUT_NFT_LOCK=10 bash -c '
+  NFTBAN_RUN_DIR="$TMP/run" bash -c '
     source "'"$AUTH"'"
     # Simulate _firewall_rebuild_serialized: take the canonical lock, declare it.
     exec 8>>"'"$TMP"'/run/nft_operations.lock"
@@ -128,7 +139,7 @@ else fail "T4.2 took $((t1-t0))s — it blocked against its own held lock"; fi
 printf '4\n' > "$TMP/run/convergence-generation"
 printf 'NFTBAN_PLAN_MODULE=ddos\nNFTBAN_PLAN_CONFIGURED_MODE=auto\nNFTBAN_PLAN_EFFECTIVE_MODE=classic\nNFTBAN_PLAN_BOUND_GENERATION=4\n' \
     > "$TMP/run/module-plan-ddos.env.4"
-owner 3 1 > "$TMP/e.out" & EPID=$!
+owner 3 "" > "$TMP/e.out" & EPID=$!
 sleep 0.7                                    # a writer is mid-transaction
 t0=$(date +%s)
 reff="$(NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
@@ -149,11 +160,11 @@ eq "T5.3 the reader takes no lock at all" \
 rm -f "$TMP/run"/module-plan-* ; printf '4\n' > "$TMP/run/convergence-generation"
 NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
   NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" \
-  NFTBAN_RUN_DIR="$TMP/run" NFTBAN_TIMEOUT_NFT_LOCK=1 bash -c '
+  NFTBAN_RUN_DIR="$TMP/run" bash -c '
     source "'"$AUTH"'"; nftban_plan_txn_begin ddos portscan >/dev/null 2>&1; sleep 30' &
 KPID=$!
 sleep 0.7; kill -9 $KPID 2>/dev/null || true; wait $KPID 2>/dev/null || true
-owner 0 3 > "$TMP/f.out" || true
+owner 0 "" > "$TMP/f.out" || true
 eq "T6.1 a later owner acquires after the holder was SIGKILLed" \
    "$(grep -c OPENED "$TMP/f.out" || true)" "1"
 eq "T6.2 the killed owner did not advance the generation" \
@@ -165,13 +176,28 @@ eq "T6.2 the killed owner did not advance the generation" \
 #      demonstrate the unserialized state is not measuring serialization.
 # -----------------------------------------------------------------------------
 rm -f "$TMP/run"/module-plan-*
-owner 3 1 > "$TMP/g.out" & GPID=$!
+owner 3 "" > "$TMP/g.out" & GPID=$!
 sleep 0.7
-owner 0 1 NFTBAN_NFTLOCK_HELD=1 > "$TMP/h.out" || true
+owner 0 "" NFTBAN_NFTLOCK_HELD=1 > "$TMP/h.out" || true
 wait $GPID || true
 eq "T7.1 with the marker forced, a SECOND owner opens concurrently" \
    "$(grep -c OPENED "$TMP/h.out" || true)" "1"
 ok "T7.2 the guard is therefore load-bearing, not incidental"
+
+# -----------------------------------------------------------------------------
+# T8 — EXPLICIT CALLER POLICY. Waiting is not removed, it is made deliberate:
+# a caller that sets NFTBAN_PLAN_LOCK_WAIT queues instead of refusing.
+#   ONE LOCK AUTHORITY · CALLER POLICY EXPLICIT.
+# -----------------------------------------------------------------------------
+rm -f "$TMP/run"/module-plan-*
+owner 2 "" > "$TMP/i.out" & IPID=$!
+sleep 0.5
+owner 0 8 > "$TMP/j.out" || true        # explicit wait: must QUEUE, then open
+wait $IPID || true
+eq "T8.1 a caller that explicitly opts into waiting still queues and opens" \
+   "$(grep -c OPENED "$TMP/j.out" || true)" "1"
+eq "T8.2 and the default path did not silently inherit that policy" \
+   "$(grep -cx REFUSED "$TMP/b.out" || true)" "1"
 
 echo
 if (( FAILURES == 0 )); then echo "PASS — convergence serialization"; exit 0; fi

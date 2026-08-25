@@ -2086,7 +2086,15 @@ firewall_reload() {
     # gen=N+1 and resolved UNKNOWN — a window entered on EVERY convergence, 453
     # seconds wide on srv3, and made permanent whenever the rebuild was killed.
     #     THE GENERATION IS COMMITTED AT THE END, OR NOT AT ALL.
-    declare -f nftban_plan_txn_begin >/dev/null 2>&1 && nftban_plan_txn_begin ddos portscan || true
+    # ⛔ A REFUSED TRANSACTION MUST ABORT THE MUTATION. The `|| true` here was
+    # inherited from the generation bump it replaced, where a failure was
+    # genuinely non-fatal. For a transaction OPEN it is not: swallowing the
+    # refusal let the whole convergence proceed with NO transaction open and NO
+    # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
+    #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _reload_whitelist_converged="true"
     # Reload nftables ruleset AND re-apply NFTBan rules
@@ -3142,7 +3150,15 @@ _firewall_rebuild_core() {
     # gen=N+1 and resolved UNKNOWN — a window entered on EVERY convergence, 453
     # seconds wide on srv3, and made permanent whenever the rebuild was killed.
     #     THE GENERATION IS COMMITTED AT THE END, OR NOT AT ALL.
-    declare -f nftban_plan_txn_begin >/dev/null 2>&1 && nftban_plan_txn_begin ddos portscan || true
+    # ⛔ A REFUSED TRANSACTION MUST ABORT THE MUTATION. The `|| true` here was
+    # inherited from the generation bump it replaced, where a failure was
+    # genuinely non-fatal. For a transaction OPEN it is not: swallowing the
+    # refusal let the whole convergence proceed with NO transaction open and NO
+    # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
+    #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _rebuild_whitelist_converged="true"
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
@@ -3918,7 +3934,15 @@ firewall_reset() {
     # gen=N+1 and resolved UNKNOWN — a window entered on EVERY convergence, 453
     # seconds wide on srv3, and made permanent whenever the rebuild was killed.
     #     THE GENERATION IS COMMITTED AT THE END, OR NOT AT ALL.
-    declare -f nftban_plan_txn_begin >/dev/null 2>&1 && nftban_plan_txn_begin ddos portscan || true
+    # ⛔ A REFUSED TRANSACTION MUST ABORT THE MUTATION. The `|| true` here was
+    # inherited from the generation bump it replaced, where a failure was
+    # genuinely non-fatal. For a transaction OPEN it is not: swallowing the
+    # refusal let the whole convergence proceed with NO transaction open and NO
+    # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
+    #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
     # Complete firewall reset - flush everything and rebuild clean
     # WARNING: This will remove all bans, whitelists, and geoban data!
     local force=false

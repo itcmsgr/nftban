@@ -696,9 +696,16 @@ _nftban_plan_lock_acquire() {
         return 0             # an ancestor holds it; do NOT re-acquire
     fi
     local path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
-    # Mirrors constants.ReconciliationLockTimeout (30s) — the canonical exclusive
-    # timeout used by reconciliation and the OpQueue drain. Not an arbitrary value.
-    local wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+    # ⛔ FAIL-FAST IS THE DEFAULT. A bounded wait serializes correctly but LIES TO
+    # THE OPERATOR: two administrators each run a mutation, both are told it
+    # succeeded, and neither learns they collided. Measured on lab2 before this
+    # change — two concurrent rebuilds, A rc=0 and B rc=0, generation 28 -> 30.
+    #     SERIALIZATION CORRECTNESS AND OPERATOR TRUTH ARE NOT THE SAME PROPERTY.
+    # Waiting remains available, but ONLY as EXPLICIT caller policy: a caller
+    # that genuinely needs to queue sets NFTBAN_PLAN_LOCK_WAIT deliberately.
+    #     ONE CANONICAL LOCK AUTHORITY, WITH CALLER POLICY EXPLICIT —
+    #     never every caller inventing its own timeout.
+    local wait="${NFTBAN_PLAN_LOCK_WAIT:-}"
     if ! declare -F flock >/dev/null 2>&1 && ! command -v flock >/dev/null 2>&1; then
         echo "nftban_plan_txn_begin: flock(1) unavailable — refusing to converge UNSERIALIZED." >&2
         return 1
@@ -711,13 +718,21 @@ _nftban_plan_lock_acquire() {
         echo "nftban_plan_txn_begin: cannot open $path — convergence NOT started." >&2
         return 1
     fi
-    if ! flock -w "$wait" "$fd"; then
-        # ⛔ TIMEOUT IS ITS OWN VERDICT CLASS. This is not "the convergence
-        # failed" — it is "the convergence never began". Nothing was mutated.
+    local _got=0
+    if [[ -n "$wait" ]]; then
+        flock -w "$wait" "$fd" && _got=1        # explicit caller policy: queue
+    else
+        flock -n "$fd" && _got=1                # default: refuse immediately
+    fi
+    if (( _got == 0 )); then
+        # ⛔ THIS IS ITS OWN VERDICT CLASS. It is not "the convergence failed" —
+        # it is "the convergence never began". Nothing has been mutated.
         eval "exec ${fd}>&-"
-        echo "nftban_plan_txn_begin: could not acquire the nft operations lock within ${wait}s — convergence REFUSED." >&2
-        echo "                       Another nft operation (reconciliation, queue drain, rebuild or module reload) holds it." >&2
-        echo "                       NOTHING was mutated; existing enforcement is unchanged." >&2
+        echo "ERROR: convergence already in progress — this operation was REFUSED." >&2
+        echo "       Another nft operation holds the convergence lock: reconciliation," >&2
+        echo "       an OpQueue drain, a firewall rebuild/reload/reset, or a module reload." >&2
+        echo "       NOTHING was mutated; existing enforcement is unchanged." >&2
+        echo "       Wait for it to finish, then retry." >&2
         return 1
     fi
     export NFTBAN_NFTLOCK_HELD=1
@@ -760,6 +775,9 @@ nftban_plan_txn_begin() {
     # the first's staged set.
     #     THE READ THAT CHOOSES THE TARGET MUST BE INSIDE THE LOCK.
     # ⛔ DIRECT CALL, NOT COMMAND SUBSTITUTION — see the note on the function.
+    # rc 7 = CONVERGENCE BUSY. A DISTINCT code, deliberately: an operator must be
+    # able to tell "someone else is converging" from "your convergence broke".
+    #     A REFUSAL AND A FAILURE ARE DIFFERENT FACTS.
     _nftban_plan_lock_acquire || return 7
     local _lockfd="${NFTBAN_PLAN_TXN_LOCKFD:-}"
 

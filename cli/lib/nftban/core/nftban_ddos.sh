@@ -305,7 +305,9 @@ nftban_ddos_reconcile() {
     # standalone, it owns the transaction and commits below, after runtime
     # reconciliation has actually completed.
     if [[ -z "${NFTBAN_PLAN_TARGET_GENERATION:-}" ]]; then
-        nftban_plan_txn_begin ddos || return 4
+        # Propagate rc 7 (CONVERGENCE BUSY) rather than flattening it into the
+        # generic publication failure 4 — the operator needs to know which it was.
+        nftban_plan_txn_begin ddos || return $?
         _txn_owned="true"
     fi
     # ⛔ THE RECORD IS STAMPED WITH THE UNCOMMITTED TARGET, NOT THE COMMITTED
