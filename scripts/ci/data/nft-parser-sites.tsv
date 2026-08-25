@@ -29,7 +29,7 @@ cli/lib/nftban/cli/cmd_update.sh	7
 cli/lib/nftban/cli/cmd_whitelist.sh	7
 cli/lib/nftban/cli/cmd_zabbix.sh	4
 cli/lib/nftban/core/nftban_config_doctor.sh	3
-cli/lib/nftban/core/nftban_ddos_classic.sh	16
+cli/lib/nftban/core/nftban_ddos_classic.sh	19
 cli/lib/nftban/core/nftban_ddos_suricata.sh	3
 cli/lib/nftban/core/nftban_emulate.sh	3
 cli/lib/nftban/core/nftban_feeds.sh	2
@@ -51,6 +51,7 @@ cli/lib/nftban/core/nftban_stats_collect.sh	2
 cli/lib/nftban/core/nftban_stats_format.sh	14
 cli/lib/nftban/core/nftban_sync.sh	8
 cli/lib/nftban/core/nftban_system_ip.sh	1
+cli/lib/nftban/core/nftban_table_classify.sh	2
 cli/lib/nftban/cron/maintenance.sh	6
 cli/lib/nftban/exporters/nftban_exporter_json_compat.sh	3
 cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	4
@@ -79,4 +80,3 @@ internal/nftbackend/backend.go	2
 internal/rulefp/baseline.go	2
 internal/validator/module_health.go	2
 internal/validator/nftjson.go	1
-cli/lib/nftban/core/nftban_table_classify.sh	2
