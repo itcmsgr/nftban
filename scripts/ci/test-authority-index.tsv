@@ -271,6 +271,7 @@ typed_nft_probe_v1228_4_test	cli/lib/nftban/tests/typed_nft_probe_v1228_4_test.s
 uninstall_firewall_ownership_message_v225_test	cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh	packaging	test	packaging	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 uninstall_sh_critical_safety_v1229_test	cli/lib/nftban/tests/uninstall_sh_critical_safety_v1229_test.sh	packaging	test	uninstall-lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 update_degraded_render_truth_v225_test	cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+update_failed_units_temporal_truth_v1229_10_test	cli/lib/nftban/tests/update_failed_units_temporal_truth_v1229_10_test.sh	update	test	update-report-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 update_force_delegation_v1223_test	cli/lib/nftban/tests/update_force_delegation_v1223_test.sh	update	test	update-force	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 update_history_capacity_v1229_3_test	cli/lib/nftban/tests/update_history_capacity_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 update_msg_recovered_v174_test	cli/lib/nftban/tests/update_msg_recovered_v174_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			

@@ -204,7 +204,32 @@ _update_final_summary() {
     else
         printf '  │ %-16s %s\n' "Warnings:" "$warnings"
     fi
-    printf '  │ %-16s %s\n' "Failed units:"    "$failed_units"
+    # v1.229.10 — this line read "Failed units: 0" while the SAME RUN carried
+    # "ASSERT failed_units_postinstall_ok: FAIL — 2 failed" (monitor run
+    # 20260824T211440Z-2782103). It reads as a contradiction, and an operator
+    # takes the 0 as refuting the assertion.
+    #
+    # Neither is lying. They are two producers, two planes, two moments:
+    #
+    #   SUMMARY    here — `systemctl --failed` filtered to nftban,
+    #              observed AT SUMMARY TIME
+    #   ASSERTION  internal/installer/validate/assertions.go:654,
+    #              observed AT POSTINSTALL TIME, Go validate plane
+    #
+    #   POSTINSTALL ASSERTION != SUMMARY-TIME OBSERVATION.
+    #   TWO NUMBERS FROM ONE RUN MUST NOT DISAGREE WITHOUT SAYING WHY.
+    #
+    # The defect is that the summary never said WHICH MOMENT its number
+    # describes. Naming the observation point removes the false contradiction
+    # without touching either measurement.
+    #
+    # ⛔ DELIBERATELY NOT FIXED HERE: `systemctl --failed` does not show a unit in
+    # activating/auto-restart (proven by FB-12, where it returned 0 across 75
+    # consecutive restart-loop failures). Widening the query changes WHAT is
+    # measured, not how it is described, and is a separate measurement-authority
+    # decision. This PR is presentation only.
+    printf '  │ %-16s %s\n' "Failed units:"    "${failed_units} (observed now, at summary time)"
+    printf '  │ %-16s %s\n' "" "post-install assertions are reported separately and may differ"
     printf '  │ %-16s %s\n' "Validation:"      "$validation"
     printf '  │ %-16s %s\n' "Completed phases:" "${phases_done}/${phases_total}"
     printf '  │ %-16s %s\n' "Run ID:"          "$run_id"
