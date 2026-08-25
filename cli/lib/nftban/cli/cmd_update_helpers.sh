@@ -129,7 +129,7 @@ _update_classify_warnings() {
     # when the log was missing, which renders as "Action needed: NONE" -- a clean bill of
     # health derived from an absent observation.
     #   ABSENT SOURCE != NO FINDINGS
-    _NFTBAN_WARN_SOURCE="OK"
+    _NFTBAN_WARN_SOURCE="READABLE"
     if [[ ! -f "$ilog" ]]; then
         _NFTBAN_WARN_SOURCE="UNREADABLE"
         return 0
@@ -160,7 +160,7 @@ _update_classify_warnings() {
 # disagree with the number printed beside it.
 _update_render_actionable_warnings() {
     local log_dir="${1:-}" ilog="${2:-}"
-    if [[ "${_NFTBAN_WARN_SOURCE:-OK}" == "UNREADABLE" ]]; then
+    if [[ "${_NFTBAN_WARN_SOURCE:-READABLE}" == "UNREADABLE" ]]; then
         printf "  %-20s %s\n" "Warnings:" "UNKNOWN — the run log could not be read (${ilog:-<no path>})"
         printf "  %-20s %s\n" "" "This is NOT a report of zero warnings."
         return 0
