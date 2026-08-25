@@ -452,6 +452,7 @@ for mod in ddos portscan; do
         local out rc
         out="$(NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
                NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+           NFTBAN_RUN_DIR="$d/run" \
                NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
             set -Eeuo pipefail
             source '$ROOT/cli/lib/nftban/lib/module_authority.sh'
@@ -550,6 +551,7 @@ for mod in ddos portscan; do
     mkdir -p "$d/run/module-plan-$mod.env.8"
     NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
     NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+           NFTBAN_RUN_DIR="$d/run" \
     NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
         source '$AUTH'
         source '$ROOT/cli/lib/nftban/core/nftban_${mod}.sh' 2>/dev/null || true

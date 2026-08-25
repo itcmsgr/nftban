@@ -636,6 +636,104 @@ nftban_plan_txn_required_modules() {
     printf '%s' "$out"
 }
 
+# =============================================================================
+# v1.229.11 LANE 7 — CONVERGENCE TRANSACTION SERIALIZATION
+# =============================================================================
+# ⛔ NO NEW LOCK. This participates in the EXISTING canonical authority:
+#     /run/nftban/nft_operations.lock   (internal/nftlock/lock.go:44)
+# declared as "the canonical lock file for all nft operations", honoured by the
+# Go daemon reconciliation, the OpQueue drain, botguard, and — since v1.229.3
+# P0-J — by _firewall_rebuild_serialized. A fourth lock path would be a fourth
+# authority.
+#     REUSE THE CANONICAL LOCK. DO NOT INVENT A SECOND ONE.
+#
+# WHAT LANE 7 ACTUALLY FIXES IS COVERAGE, NOT ABSENCE. Before this, exactly one
+# convergence owner was serialized:
+#     _firewall_rebuild_core   COVERED   (fd 8, since v1.229.3)
+#     firewall_reload          NOT       bumps, converges and commits holding nothing
+#     firewall_reset           NOT       same
+#     nftban ddos reload       NOT       owns a transaction, holding nothing
+#     nftban portscan reload   NOT       same
+# Serializing the rebuild while leaving a module-owned transaction free to race
+# it protects the loudest path and leaves the quiet ones open.
+#
+# The lock is taken HERE, at the single chokepoint where a transaction is OWNED,
+# so every owner is covered by construction and joiners never re-acquire:
+#     ONE LOCK · ONE TRANSACTION OWNER · ONE TARGET GENERATION · ONE COMMIT AUTHORITY
+#
+# ⛔ RE-ENTRANCY IS MANDATORY, NOT DEFENSIVE. _firewall_rebuild_serialized
+# already holds this exact lock before it calls into the transaction. A second
+# flock on the same file from the same process would block against itself until
+# the timeout and then REFUSE a rebuild that was already correctly serialized.
+# The tree carries a recorded incident of exactly this shape:
+#   nftban_health_checks_services.sh:632 "Dual locking (flock + script) causes
+#   permanent lock state".
+#     A LOCK THAT DEADLOCKS AGAINST ITS OWN HOLDER IS NOT SERIALIZATION.
+# NFTBAN_NFTLOCK_HELD is EXPORTED, so `nftban ddos reload` running as a
+# subprocess of the firewall lane also knows the lock is already held — and it
+# genuinely is: the fd is inherited across fork/exec.
+#
+# ⛔ READ-ONLY PATHS TAKE NOTHING. nftban_module_report_modes never calls this.
+# A status query must never block, or be blocked by, a converging writer — which
+# is why the reader uses a snapshot re-read instead.
+# -----------------------------------------------------------------------------
+
+# _nftban_plan_lock_acquire — sets NFTBAN_PLAN_TXN_LOCKFD to the fd if THIS call
+# acquired the lock, or to empty if an ancestor already holds it. Returns
+# non-zero if the lock could not be taken.
+#
+# ⛔ SETS A VARIABLE; DOES NOT ECHO. It MUST be called directly, never as
+# `x="$(_nftban_plan_lock_acquire)"`. Command substitution runs the function in a
+# SUBSHELL: the fd would be opened and flocked inside that subshell, and the
+# kernel would release the lock the instant the substitution returned. The first
+# revision of this function did exactly that, and the concurrency suite caught it
+# — two owners opened the same transaction concurrently while the code "held" a
+# lock that had already evaporated.
+#     A LOCK ACQUIRED IN A SUBSHELL IS RELEASED WHEN THAT SUBSHELL EXITS.
+_nftban_plan_lock_acquire() {
+    NFTBAN_PLAN_TXN_LOCKFD=""
+    if [[ -n "${NFTBAN_NFTLOCK_HELD:-}" ]]; then
+        return 0             # an ancestor holds it; do NOT re-acquire
+    fi
+    local path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
+    # Mirrors constants.ReconciliationLockTimeout (30s) — the canonical exclusive
+    # timeout used by reconciliation and the OpQueue drain. Not an arbitrary value.
+    local wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+    if ! declare -F flock >/dev/null 2>&1 && ! command -v flock >/dev/null 2>&1; then
+        echo "nftban_plan_txn_begin: flock(1) unavailable — refusing to converge UNSERIALIZED." >&2
+        return 1
+    fi
+    local fd
+    # Auto-allocated fd: fd 8 is the rebuild's nftlock and fd 9 is the
+    # session-whitelist critical section in the same file. Hardcoding a number
+    # here could silently clobber either.
+    if ! eval 'exec {fd}>>"$path"' 2>/dev/null; then
+        echo "nftban_plan_txn_begin: cannot open $path — convergence NOT started." >&2
+        return 1
+    fi
+    if ! flock -w "$wait" "$fd"; then
+        # ⛔ TIMEOUT IS ITS OWN VERDICT CLASS. This is not "the convergence
+        # failed" — it is "the convergence never began". Nothing was mutated.
+        eval "exec ${fd}>&-"
+        echo "nftban_plan_txn_begin: could not acquire the nft operations lock within ${wait}s — convergence REFUSED." >&2
+        echo "                       Another nft operation (reconciliation, queue drain, rebuild or module reload) holds it." >&2
+        echo "                       NOTHING was mutated; existing enforcement is unchanged." >&2
+        return 1
+    fi
+    export NFTBAN_NFTLOCK_HELD=1
+    NFTBAN_PLAN_TXN_LOCKFD="$fd"
+    return 0
+}
+
+# _nftban_plan_lock_release <fd-or-empty>
+_nftban_plan_lock_release() {
+    local fd="${1:-}"
+    [[ -n "$fd" ]] || return 0        # we did not acquire it; not ours to release
+    eval "exec ${fd}>&-" 2>/dev/null || true
+    unset NFTBAN_NFTLOCK_HELD
+    return 0
+}
+
 # nftban_plan_txn_begin <module-to-be-re-resolved>...
 #
 # Opens a convergence transaction. Computes the target, exports it, and carries
@@ -657,6 +755,14 @@ nftban_plan_txn_begin() {
         echo "                       systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf" >&2
         return 5
     fi
+    # ⛔ ACQUIRE BEFORE READING THE GENERATION. If two writers both read N and
+    # then serialize, both compute target N+1 and the second silently overwrites
+    # the first's staged set.
+    #     THE READ THAT CHOOSES THE TARGET MUST BE INSIDE THE LOCK.
+    # ⛔ DIRECT CALL, NOT COMMAND SUBSTITUTION — see the note on the function.
+    _nftban_plan_lock_acquire || return 7
+    local _lockfd="${NFTBAN_PLAN_TXN_LOCKFD:-}"
+
     cur="$(nftban_plan_generation_current)" || cur=""
     # ⛔ EMPTY BINDING MUST BE UNREPRESENTABLE — ENFORCED AT TRANSACTION OPEN.
     # This check used to live in the publisher. Moving the binding to the
@@ -666,6 +772,7 @@ nftban_plan_txn_begin() {
     #     A BROKEN GENERATION AUTHORITY MUST FAIL THE TRANSACTION, NOT DEFAULT IT.
     if [[ -z "$cur" || ! "$cur" =~ ^[0-9]+$ ]]; then
         echo "nftban_plan_txn_begin: convergence generation authority returned '${cur:-<empty>}' — transaction NOT opened." >&2
+        _nftban_plan_lock_release "$_lockfd"; unset NFTBAN_PLAN_TXN_LOCKFD
         return 5
     fi
     target=$(( cur + 1 ))
@@ -736,7 +843,8 @@ nftban_plan_txn_abort() {
             rm -f "$(nftban_plan_record_path "$m" "$target")".tmp.* 2>/dev/null || true
         done < <(_nftban_plan_bearing_modules)
     fi
-    unset NFTBAN_PLAN_TARGET_GENERATION NFTBAN_PLAN_TXN_RERESOLVE
+    _nftban_plan_lock_release "${NFTBAN_PLAN_TXN_LOCKFD:-}"
+    unset NFTBAN_PLAN_TARGET_GENERATION NFTBAN_PLAN_TXN_RERESOLVE NFTBAN_PLAN_TXN_LOCKFD
     return 0
 }
 
@@ -783,7 +891,8 @@ nftban_plan_txn_commit() {
         nftban_plan_txn_abort
         return 5
     fi
-    unset NFTBAN_PLAN_TARGET_GENERATION NFTBAN_PLAN_TXN_RERESOLVE
+    _nftban_plan_lock_release "${NFTBAN_PLAN_TXN_LOCKFD:-}"
+    unset NFTBAN_PLAN_TARGET_GENERATION NFTBAN_PLAN_TXN_RERESOLVE NFTBAN_PLAN_TXN_LOCKFD
     nftban_plan_generation_reap "$target"
     return 0
 }
@@ -808,7 +917,7 @@ nftban_plan_generation_reap() {
     return 0
 }
 
-export -f nftban_plan_record_path nftban_plan_target_generation _nftban_plan_bearing_modules \
+export -f _nftban_plan_lock_acquire _nftban_plan_lock_release nftban_plan_record_path nftban_plan_target_generation _nftban_plan_bearing_modules \
     _nftban_plan_record_valid nftban_plan_txn_required_modules nftban_plan_txn_begin \
     nftban_plan_txn_abort nftban_plan_txn_commit nftban_plan_generation_reap
 export -f nftban_module_report_modes nftban_plan_generation_current _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok

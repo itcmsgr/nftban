@@ -48,6 +48,13 @@ mkdir -p "$TMP/conf.d/ddos" "$TMP/conf.d/portscan" "$TMP/run"
 
 export NFTBAN_CONFIG_DIR="$TMP"
 export NFTBAN_PLAN_RECORD_DIR="$TMP/run"
+# ⛔ The canonical convergence lock resolves from NFTBAN_RUN_DIR, NOT from
+# NFTBAN_PLAN_RECORD_DIR. In production both are /run/nftban; in a test they
+# diverge, and a suite that redirects only the record dir reaches the REAL
+# /run/nftban for its lock — refusing every transaction (rc=7) for reasons that
+# have nothing to do with the behaviour under test.
+#   REDIRECTING ONE RUNTIME PATH IS NOT ISOLATING THE RUNTIME.
+export NFTBAN_RUN_DIR="$TMP/run"
 export NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation"
 # shellcheck source=/dev/null
 source "$AUTH"

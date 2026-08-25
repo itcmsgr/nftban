@@ -3059,6 +3059,16 @@ _firewall_rebuild_serialized() {
         exec 8>&-
         return 1
     fi
+    # ⛔ v1.229.11 LANE 7: DECLARE THE HOLD. nftban_plan_txn_begin now takes this
+    # SAME canonical lock at the transaction chokepoint, and this wrapper calls
+    # into the transaction while already holding it on fd 8. Without this marker
+    # the transaction would flock the same file against its own holder, block for
+    # the full timeout, and REFUSE a rebuild that was already correctly
+    # serialized — the recorded dual-lock failure shape.
+    #     A LOCK THAT DEADLOCKS AGAINST ITS OWN HOLDER IS NOT SERIALIZATION.
+    # EXPORTED because the lane converges modules via `nftban <mod> reload`
+    # SUBPROCESSES, which own transactions of their own and must also stand down.
+    export NFTBAN_NFTLOCK_HELD=1
 
     _REBUILD_SNAPSHOT_DIR=""
     _firewall_rebuild_core "$@"
@@ -3109,7 +3119,13 @@ _firewall_rebuild_serialized() {
 
     # Closing the descriptor releases the flock -- on success, validation failure,
     # rollback and every error return alike.
+    # ⛔ v1.229.11 LANE 7: clear the hold marker WITH the descriptor. If it
+    # outlived the lock, the next transaction in this process would believe an
+    # ancestor still held it and converge UNSERIALIZED — a stale marker is worse
+    # than no marker, because it fails open and says nothing.
+    #     THE MARKER'S LIFETIME MUST EQUAL THE LOCK'S LIFETIME.
     exec 8>&-
+    unset NFTBAN_NFTLOCK_HELD
     return "$_rebuild_rc"
 }
 
