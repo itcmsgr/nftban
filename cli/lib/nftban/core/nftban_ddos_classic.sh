@@ -52,6 +52,12 @@ source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
 source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
+# v1.229.10 — canonical typed nft probe (PRESENT | ABSENT | CANNOT_READ). The
+# penalty-ladder readiness line needs a probe that can say CANNOT_READ; a raw
+# `nft list` collapses that into "absent" and would let an unobservable meter
+# render as a determination. Loaded with the same tolerant pattern as its
+# siblings — the caller guards on `declare -f` and falls back to UNKNOWN.
+source "${NFTBAN_LIB_DIR}/lib/nft_probe.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -871,7 +877,62 @@ nftban_ddos_classic_status() {
         count_drop=${count_drop:-0}
         count_ban=$(nft list set $table_v4 "${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}" 2>/dev/null | grep -c 'expires' || true)
         count_ban=${count_ban:-0}
-        echo "  Status: DEPLOYED"
+        # v1.229.10 — "DEPLOYED" used to be printed on SET EXISTENCE ALONE
+        # (the `nft list set` gate above). Existence of the penalty sets says
+        # nothing about whether the ladder can operate: the sets are filled by
+        # nftban_ddos_penalty_scan(), which runs ONLY from the maintenance timer
+        # (cron/maintenance.sh:1001) and takes its offender input from the SYN
+        # flood meter. If the scanner never runs, or the meter is absent, the
+        # ladder is present and permanently idle — autoban never fires — while
+        # the operator was told DEPLOYED.
+        #
+        #   OBJECT PRESENT != PRODUCER LIVE != FUNCTIONAL ENFORCEMENT PATH.
+        #   CONFIGURED/INSTALLED != FUNCTIONALLY DEPLOYED.
+        #
+        # This reports the axes separately. It does NOT repair starvation: if the
+        # ladder cannot receive the events it needs, the report says exactly that.
+        local _pl_prod="UNKNOWN" _pl_input="UNKNOWN"
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null; then
+                _pl_prod="LIVE"
+            elif systemctl list-unit-files nftban-maintenance.timer >/dev/null 2>&1; then
+                _pl_prod="NOT_RUNNING"
+            else
+                _pl_prod="ABSENT"
+            fi
+        fi
+        # Use the CANONICAL typed probe, not a raw `nft list`. It already returns
+        # the exact three-valued verdict this readiness line needs
+        # (PRESENT | ABSENT | CANNOT_READ) and keeps its diagnostics — an untyped
+        # probe would collapse "cannot read" into "absent", which is the very
+        # failure this block exists to avoid.
+        #   ABSENT_QUERY != RESOURCE_ABSENT.
+        # Called in CONDITIONAL context so its rc cannot trip the caller's set -e,
+        # and NEVER in a subshell, which would discard the diagnostic variables.
+        if declare -f nftban_nft_probe_set >/dev/null 2>&1; then
+            local _fam="${table_v4%% *}" _tbl="${table_v4##* }"
+            if nftban_nft_probe_set "$_fam" "$_tbl" "${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}" 2>/dev/null; then
+                case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
+                    "${NFTBAN_NFT_PROBE_PRESENT:-PRESENT}") _pl_input="PRESENT" ;;
+                    "${NFTBAN_NFT_PROBE_ABSENT:-ABSENT}")   _pl_input="ABSENT" ;;
+                esac
+            fi
+            # rc=1 means CANNOT_READ -> _pl_input stays UNKNOWN. No else branch:
+            # an unreadable probe must never resolve to a determination.
+        fi
+        # An unobservable producer or input is UNKNOWN and must never render as
+        # the favourable state.
+        if [[ "$_pl_prod" == "LIVE" && "$_pl_input" == "PRESENT" ]]; then
+            echo "  Status: DEPLOYED (sets present · penalty scanner LIVE · SYN meter readable)"
+        elif [[ "$_pl_prod" == "UNKNOWN" || "$_pl_input" == "UNKNOWN" ]]; then
+            echo "  Status: PRESENT — readiness UNKNOWN (scanner=${_pl_prod}, syn_meter=${_pl_input}); autoban operation NOT established"
+        else
+            echo "  Status: PRESENT but STARVED — sets exist, autoban will NOT fire (scanner=${_pl_prod}, syn_meter=${_pl_input})"
+            [[ "$_pl_prod" != "LIVE" ]] && \
+                echo "          penalty scanner does not run: nftban-maintenance.timer is ${_pl_prod}"
+            [[ "$_pl_input" != "PRESENT" ]] && \
+                echo "          no offender input: SYN meter ${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood} ${_pl_input}"
+        fi
         echo "  Tier 1 (limit 10s): ${count_10s} IPs"
         echo "  Tier 2 (limit 5m):  ${count_5m} IPs"
         echo "  Tier 3 (drop 5m):   ${count_drop} IPs"
