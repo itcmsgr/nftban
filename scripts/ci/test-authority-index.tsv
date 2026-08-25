@@ -173,6 +173,7 @@ maint_active_ssh_peers_v1229_test	cli/lib/nftban/tests/maint_active_ssh_peers_v1
 maint_table_absent_noise_v1930_test	cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh	firewall	test	maintenance-table-probe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 maintenance_stats_config_precondition_v1229_8_test	cli/lib/nftban/tests/maintenance_stats_config_precondition_v1229_8_test.sh	core	test	maintenance-orchestration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 managed_authority_invariant_v1229_3_test	cli/lib/nftban/tests/managed_authority_invariant_v1229_3_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+metrics_remote_submission_wired_v1229_10_test	cli/lib/nftban/tests/metrics_remote_submission_wired_v1229_10_test.sh	metrics	test	metrics-remote-submission	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 mode_plan_exclusivity_v1229_7_test	cli/lib/nftban/tests/mode_plan_exclusivity_v1229_7_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	90		
 module_effective_config_v1228_7_test	cli/lib/nftban/tests/module_effective_config_v1228_7_test.sh	firewall	test	effective-config-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 module_orchestrator_unbound_var_v1229_7_test	cli/lib/nftban/tests/module_orchestrator_unbound_var_v1229_7_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
