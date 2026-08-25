@@ -672,8 +672,19 @@ nftban_ddos_classic_enable() {
     fi
     echo "  Stage 2 - Rate Limiting:"
     echo "    SYN Rate:  ${DDOS_CLASSIC_SYN_RATE} burst ${DDOS_CLASSIC_SYN_BURST}"
-    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT}/IP"
-    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT}/IP"
+    # v1.229.10 — S4 of STATUS-HEALTH-TRUTH-AUDIT-2026-08-20. These lines claimed
+    # "/IP". The shipped rules are `ct count over N` with NO `ip saddr` key, so the
+    # limit is GLOBAL: one busy source can consume the whole allowance and every
+    # other source is then dropped. Kernel-confirmed on srv3 2026-08-25 — five live
+    # rules (SSH, HTTP(S), MAIL, SMTP, DNS/TCP), none keyed by source.
+    #
+    #   REPORT WHAT THE RULE ACTUALLY KEYS ON, NOT WHAT IT WAS MEANT TO.
+    #
+    # WORDING ONLY. The keying defect itself is OPEN_CT_COUNT_CONNLIMIT_GLOBAL_KEY_SCOPE
+    # and is NOT touched here — this PR must not change rule semantics.
+    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent GLOBAL (not per-source)"
+    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent GLOBAL (not per-source)"
+    echo "               one busy source can consume the whole allowance"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
     echo ""
     echo "  Penalty Ladder:"
@@ -888,8 +899,19 @@ nftban_ddos_classic_status() {
     echo ""
     echo "  Rate Limiting:"
     echo "    SYN Rate:  ${DDOS_CLASSIC_SYN_RATE} burst ${DDOS_CLASSIC_SYN_BURST}"
-    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT}/IP"
-    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT}/IP"
+    # v1.229.10 — S4 of STATUS-HEALTH-TRUTH-AUDIT-2026-08-20. These lines claimed
+    # "/IP". The shipped rules are `ct count over N` with NO `ip saddr` key, so the
+    # limit is GLOBAL: one busy source can consume the whole allowance and every
+    # other source is then dropped. Kernel-confirmed on srv3 2026-08-25 — five live
+    # rules (SSH, HTTP(S), MAIL, SMTP, DNS/TCP), none keyed by source.
+    #
+    #   REPORT WHAT THE RULE ACTUALLY KEYS ON, NOT WHAT IT WAS MEANT TO.
+    #
+    # WORDING ONLY. The keying defect itself is OPEN_CT_COUNT_CONNLIMIT_GLOBAL_KEY_SCOPE
+    # and is NOT touched here — this PR must not change rule semantics.
+    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent GLOBAL (not per-source)"
+    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent GLOBAL (not per-source)"
+    echo "               one busy source can consume the whole allowance"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
     echo "    Auto-tune: ${DDOS_CLASSIC_AUTO_TUNE}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
