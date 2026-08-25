@@ -1132,7 +1132,12 @@ _status_section_protection() {
             botguard_status="ENABLED (sets not loaded)"
         fi
     fi
-    printf "  %-20s %s\n" "HTTP Guard.........." "$botguard_status"
+    # v1.229.10 — lead with the name the operator TYPES. `nftban botguard ...` is
+    # the command; the row said only "HTTP Guard", so the product name appeared
+    # nowhere an operator scanning this list would see it.
+    #   THE NAME AN OPERATOR TYPES MUST BE THE NAME THE REPORT PRINTS.
+    # Label kept at exactly 20 chars so column alignment is unchanged.
+    printf "  %-20s %s\n" "BotGuard (HTTP Grd)." "$botguard_status"
 
     # HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (v1.218.11 operator-truth).
     # INDEPENDENT of BotGuard: BotScan can enforce bans via blacklist_manual_* even when BotGuard is OFF.
@@ -1203,7 +1208,10 @@ _status_section_protection() {
             fi
         fi
     fi
-    printf "  %-20s %s\n" "HTTP Exploit Scan..." "$botscan_status"
+    # v1.229.10 — same: the command is `nftban botscan ...`. An operator on a host
+    # under attack read this list and reported "i dont see botscan", because the
+    # token only appeared in the explanatory note underneath the row.
+    printf "  %-20s %s\n" "BotScan (HTTP Scan)." "$botscan_status"
     if [[ "$botscan_enabled" == "true" && -r "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
         local _r="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
         printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
