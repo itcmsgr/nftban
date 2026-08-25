@@ -1009,6 +1009,18 @@ _nftban_health_render_botscan() {
     IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
     local mode_note="enforces via blacklist_manual"
     [[ "$mode" == "alert" ]] && mode_note="DETECT-ONLY (does not ban)"
+    # v1.229.10 — enforcement proof is read from the daemon's DURABLE per-ban
+    # side-record (internal/botguard/botscan_truth.go), which exists precisely so
+    # ban truth survives batch-signal consumption. It is the only artefact here
+    # that speaks to enforcement; health_state speaks to COVERAGE.
+    #
+    #   "NOT ENFORCING" IS AN ENFORCEMENT CLAIM.
+    #   IT MUST BE BACKED BY ENFORCEMENT EVIDENCE, NOT BY A COVERAGE VERDICT.
+    #   DEGRADED COVERAGE != ABSENT ENFORCEMENT.
+    #   ABSENCE OF EVIDENCE != EVIDENCE OF ABSENCE.
+    local _bs_enf="UNPROVEN"
+    [[ -s "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_ban_evidence.jsonl" ]] && _bs_enf="PROVEN"
+
     # v1.219.0 PR-B — a broken consumer hand-off (batch signals not draining to the kernel)
     # must NOT read as healthy/enforcing: the scanner produces bans but they are not applied.
     local broken_handoff="no"
@@ -1020,7 +1032,11 @@ _nftban_health_render_botscan() {
     elif [[ "$broken_handoff" == "yes" ]]; then
         verdict="ENABLED but CONSUMER HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
     elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
-        verdict="ENABLED but ${hs} — NOT currently enforcing (scanner blind/degraded)"
+        if [[ "$_bs_enf" == "PROVEN" ]]; then
+            verdict="ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement PROVEN by durable ban evidence"
+        else
+            verdict="ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement UNPROVEN (no ban evidence recorded — not the same as proven absent)"
+        fi
     elif [[ "$timer" != "active" ]]; then
         verdict="ENABLED but timer ${timer} — not scanning on schedule"
     else
@@ -1050,7 +1066,17 @@ nftban_health_check_botscan() {
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner consumer HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
             status=$HEALTH_WARNING
         elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
-            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but ${hs} — NOT currently enforcing (blind/degraded)"
+            # Same authority rule as the verdict renderer above: a coverage verdict
+            # must not be reported as an enforcement verdict. WARNING is still
+            # correct — degraded coverage IS an operator concern — but the wording
+            # must not assert that enforcement has stopped.
+            local _bs_enf2="UNPROVEN"
+            [[ -s "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_ban_evidence.jsonl" ]] && _bs_enf2="PROVEN"
+            if [[ "$_bs_enf2" == "PROVEN" ]]; then
+                NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement PROVEN by durable ban evidence"
+            else
+                NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement UNPROVEN (no ban evidence recorded)"
+            fi
             status=$HEALTH_WARNING
         elif [[ "$timer" != "active" ]]; then
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but timer ${timer}"

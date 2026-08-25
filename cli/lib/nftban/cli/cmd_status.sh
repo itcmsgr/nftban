@@ -1132,7 +1132,12 @@ _status_section_protection() {
             botguard_status="ENABLED (sets not loaded)"
         fi
     fi
-    printf "  %-20s %s\n" "HTTP Guard.........." "$botguard_status"
+    # v1.229.10 — lead with the name the operator TYPES. `nftban botguard ...` is
+    # the command; the row said only "HTTP Guard", so the product name appeared
+    # nowhere an operator scanning this list would see it.
+    #   THE NAME AN OPERATOR TYPES MUST BE THE NAME THE REPORT PRINTS.
+    # Label kept at exactly 20 chars so column alignment is unchanged.
+    printf "  %-20s %s\n" "BotGuard (HTTP Grd)." "$botguard_status"
 
     # HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (v1.218.11 operator-truth).
     # INDEPENDENT of BotGuard: BotScan can enforce bans via blacklist_manual_* even when BotGuard is OFF.
@@ -1163,12 +1168,50 @@ _status_section_protection() {
         if [[ -r "$_bs_rs" ]] && command -v jq &>/dev/null; then
             local _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips
             IFS='|' read -r _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips < <(jq -r '"\(.health_state//"UNKNOWN")|\(.last_run_ts//0)|\(.budget_hit_total//0)|\(.bans_emitted_total//0)|\(.unique_ips_flagged_last//0)"' "$_bs_rs" 2>/dev/null)
+            # v1.229.10 — a degraded health state describes SCAN COVERAGE. It is not
+            # an observation of enforcement, and this line used to convert it into one:
+            # it printed "NOT currently enforcing" purely because health_state matched
+            # DEGRADED_*, without consulting anything that speaks to enforcement.
+            #
+            # On srv3 (2026-08-25) that was measurably false. The scanner was budget-hit
+            # and reported DEGRADED_BUDGET_HIT — while it was actively banning an
+            # xmlrpc.php flood. The kernel held three of the flooding sources in
+            # ip nftban blacklist_manual_ipv4, and the daemon's durable side-record
+            # carried 1,241 ban records. The report told the operator the control was
+            # blind at the exact moment it was working. (Addresses deliberately not
+            # reproduced here: shipped files must carry no real IPs — the evidence
+            # lives in the private register.)
+            #
+            #   "NOT ENFORCING" IS AN ENFORCEMENT CLAIM.
+            #   IT MUST BE BACKED BY ENFORCEMENT EVIDENCE, NOT BY A COVERAGE VERDICT.
+            #
+            #   DEGRADED COVERAGE != ABSENT ENFORCEMENT.
+            #   ABSENCE OF EVIDENCE != EVIDENCE OF ABSENCE.
+            #
+            # Authority direction is one-way: durable ban evidence informs the report.
+            # The report never reinterprets proven enforcement as absent.
             if [[ "$_bs_hs" == DEGRADED_* || "$_bs_hs" == NO_INPUT_* ]]; then
-                botscan_status="ENABLED but ${_bs_hs} — NOT currently enforcing (scanner blind/degraded), action=${botscan_mode}, timer ${botscan_timer}"
+                # botscan_ban_evidence.jsonl is the daemon's DURABLE per-ban side-record
+                # (internal/botguard/botscan_truth.go) — written precisely so that ban
+                # truth survives batch-signal consumption. Presence of records is
+                # positive proof this scanner has enforced.
+                local _bs_ev="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_ban_evidence.jsonl"
+                local _bs_enf="UNPROVEN"
+                if [[ -s "$_bs_ev" ]]; then
+                    _bs_enf="PROVEN"
+                fi
+                if [[ "$_bs_enf" == "PROVEN" ]]; then
+                    botscan_status="ENABLED · ${_bs_hs} — COVERAGE DEGRADED (some sources not scanned this cycle); enforcement PROVEN by durable ban evidence, action=${botscan_mode}, timer ${botscan_timer}"
+                else
+                    botscan_status="ENABLED · ${_bs_hs} — COVERAGE DEGRADED (some sources not scanned this cycle); enforcement UNPROVEN (no ban evidence recorded — not the same as proven absent), action=${botscan_mode}, timer ${botscan_timer}"
+                fi
             fi
         fi
     fi
-    printf "  %-20s %s\n" "HTTP Exploit Scan..." "$botscan_status"
+    # v1.229.10 — same: the command is `nftban botscan ...`. An operator on a host
+    # under attack read this list and reported "i dont see botscan", because the
+    # token only appeared in the explanatory note underneath the row.
+    printf "  %-20s %s\n" "BotScan (HTTP Scan)." "$botscan_status"
     if [[ "$botscan_enabled" == "true" && -r "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
         local _r="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
         printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \

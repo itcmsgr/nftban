@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-07-09"
-# meta:description="v1.219.0 PR-A (shell/docs, daemon byte-identical) BotScan first-class operator-truth contract. Behaviorally exercises the cheap-read nftban health BotScan render across enabled+active, DEGRADED/blind, and alert-mode fixtures (asserts a blind/degraded scanner renders 'NOT currently enforcing', alert renders DETECT-ONLY, and the render/facts NEVER open access-log content — the cheap-read invariant). Source-asserts: counter truth-fix wiring (signals emitted counter reset+increment+passed, unique_ips passed, lines_prefiltered marked RESERVED_NO_PRODUCER), nftban status DEGRADED honesty + action-mode note + runstate read, search cache-only relabelled 'CACHE ONLY — not currently enforced', support bundle collects botscan + pattern inventory, help draws BotGuard-vs-BotScan and drops 'Automatically bans', docs (TIMERS botscan-not-botguard, README BotScan row, BotGuard-vs-BotScan + recovery-drill docs), dead config keys marked non-functional."
+# meta:description="v1.219.0 PR-A (shell/docs, daemon byte-identical) BotScan first-class operator-truth contract. Behaviorally exercises the cheap-read nftban health BotScan render across enabled+active, DEGRADED/blind, and alert-mode fixtures (as REFINED in v1.229.10: asserts a blind/degraded scanner renders COVERAGE DEGRADED and derives its enforcement axis from the daemon's durable ban evidence rather than from the coverage verdict — the original 'NOT currently enforcing' wording was measured false on srv3 2026-08-25 while the scanner was actively banning; alert renders DETECT-ONLY, and the render/facts NEVER open access-log content — the cheap-read invariant). Source-asserts: counter truth-fix wiring (signals emitted counter reset+increment+passed, unique_ips passed, lines_prefiltered marked RESERVED_NO_PRODUCER), nftban status DEGRADED honesty + action-mode note + runstate read, search cache-only relabelled 'CACHE ONLY — not currently enforced', support bundle collects botscan + pattern inventory, help draws BotGuard-vs-BotScan and drops 'Automatically bans', docs (TIMERS botscan-not-botguard, README BotScan row, BotGuard-vs-BotScan + recovery-drill docs), dead config keys marked non-functional."
 # meta:input="None (extracts + stubs health render; greps sources/docs)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,jq"
@@ -77,8 +77,32 @@ out=$(render true both active OK_SCANNED_NO_BOTS)
 has "$out" "HTTP Exploit Scanner (BotScan)" && ok "render: BotScan section heading" || no "render heading"
 has "$out" "ENABLED + timer active" && has "$out" "enforces via blacklist_manual" && ok "render enabled+active: enforcing" || no "render enabled+active"
 
+# ⛔ CONTRACT REFINED IN v1.229.10 — this assertion previously required the render
+# to say "NOT currently enforcing" whenever health_state was DEGRADED_*.
+#
+# The v1.219.0 INTENT — a degraded scanner must never read as healthy — is CORRECT
+# and is still asserted below. What was wrong is that the wording turned a COVERAGE
+# verdict into an ENFORCEMENT claim, consulting nothing that observes enforcement.
+#
+# Measured false on srv3, 2026-08-25: BotScan reported DEGRADED_BUDGET_HIT while
+# actively banning an xmlrpc.php flood — three attackers held in
+# ip nftban blacklist_manual_ipv4 and 1,241 records in the daemon's durable
+# botscan_ban_evidence.jsonl. The report called a working control blind.
+#
+#   "NOT ENFORCING" IS AN ENFORCEMENT CLAIM.
+#   IT MUST BE BACKED BY ENFORCEMENT EVIDENCE, NOT BY A COVERAGE VERDICT.
+#   DEGRADED COVERAGE != ABSENT ENFORCEMENT.
+#
+# So the contract keeps the no-false-green half and drops the false claim.
 out=$(render true both active DEGRADED_INPUT_BLIND)
-has "$out" "NOT currently enforcing" && ok "render DEGRADED: 'NOT currently enforcing'" || no "render DEGRADED honesty"
+has "$out" "COVERAGE DEGRADED" \
+  && ok "render DEGRADED: degradation still surfaced (no false green)" \
+  || no "render DEGRADED honesty — degradation was suppressed"
+if has "$out" "NOT currently enforcing"; then
+  no "render DEGRADED: still asserts absent enforcement from a coverage verdict"
+else
+  ok "render DEGRADED: does NOT claim absent enforcement without evidence"
+fi
 
 out=$(render true alert active OK_SCANNED_NO_BOTS)
 has "$out" "DETECT-ONLY" && ok "render alert-mode: DETECT-ONLY" || no "render alert-mode"
@@ -104,7 +128,17 @@ grep -q 'unique_ips_flagged_last' "$ADAPT" && ok "runstate: unique_ips_flagged_l
 grep -q 'RESERVED_NO_PRODUCER' "$ADAPT" && ok "runstate: lines_prefiltered marked RESERVED (not faked)" || no "lines_prefiltered honesty"
 
 # ---- Status honesty ----
-hasf "$STATUS" "NOT currently enforcing (scanner blind/degraded)" && ok "status: DEGRADED honesty branch" || no "status DEGRADED"
+# ⛔ REFINED v1.229.10 — same correction as the render assertion above. The
+# DEGRADED branch must still exist and must still be honest about degradation,
+# but it must report COVERAGE, and derive the enforcement axis from the daemon's
+# durable ban evidence rather than from the coverage verdict.
+hasf "$STATUS" "COVERAGE DEGRADED" && ok "status: DEGRADED branch still surfaces degradation" || no "status DEGRADED"
+hasf "$STATUS" "botscan_ban_evidence.jsonl" && ok "status: enforcement axis read from durable ban evidence" || no "status enforcement evidence"
+if hasf "$STATUS" "NOT currently enforcing (scanner blind/degraded)"; then
+  no "status: still derives an enforcement claim from a coverage verdict"
+else
+  ok "status: no coverage-derived enforcement claim"
+fi
 hasf "$STATUS" "DETECT-ONLY, does not ban" && ok "status: alert-mode note" || no "status alert note"
 hasf "$STATUS" "runstate.json" && ok "status: reads runstate (cheap counters)" || no "status runstate read"
 
