@@ -52,6 +52,12 @@ source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
 source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
+# v1.229.10 — canonical typed nft probe (PRESENT | ABSENT | CANNOT_READ). The
+# penalty-ladder readiness line needs a probe that can say CANNOT_READ; a raw
+# `nft list` collapses that into "absent" and would let an unobservable meter
+# render as a determination. Loaded with the same tolerant pattern as its
+# siblings — the caller guards on `declare -f` and falls back to UNKNOWN.
+source "${NFTBAN_LIB_DIR}/lib/nft_probe.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -895,13 +901,24 @@ nftban_ddos_classic_status() {
                 _pl_prod="ABSENT"
             fi
         fi
-        if nft list set $table_v4 "${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}" &>/dev/null \
-           || nft list meter $table_v4 "${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}" &>/dev/null; then
-            _pl_input="PRESENT"
-        elif nft list table $table_v4 &>/dev/null; then
-            # The table reads fine and the meter is not in it — that is a real
-            # absence, not a failed observation.
-            _pl_input="ABSENT"
+        # Use the CANONICAL typed probe, not a raw `nft list`. It already returns
+        # the exact three-valued verdict this readiness line needs
+        # (PRESENT | ABSENT | CANNOT_READ) and keeps its diagnostics — an untyped
+        # probe would collapse "cannot read" into "absent", which is the very
+        # failure this block exists to avoid.
+        #   ABSENT_QUERY != RESOURCE_ABSENT.
+        # Called in CONDITIONAL context so its rc cannot trip the caller's set -e,
+        # and NEVER in a subshell, which would discard the diagnostic variables.
+        if declare -f nftban_nft_probe_set >/dev/null 2>&1; then
+            local _fam="${table_v4%% *}" _tbl="${table_v4##* }"
+            if nftban_nft_probe_set "$_fam" "$_tbl" "${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}" 2>/dev/null; then
+                case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
+                    "${NFTBAN_NFT_PROBE_PRESENT:-PRESENT}") _pl_input="PRESENT" ;;
+                    "${NFTBAN_NFT_PROBE_ABSENT:-ABSENT}")   _pl_input="ABSENT" ;;
+                esac
+            fi
+            # rc=1 means CANNOT_READ -> _pl_input stays UNKNOWN. No else branch:
+            # an unreadable probe must never resolve to a determination.
         fi
         # An unobservable producer or input is UNKNOWN and must never render as
         # the favourable state.
