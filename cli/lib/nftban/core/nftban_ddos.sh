@@ -292,14 +292,31 @@ nftban_ddos_reconcile() {
     # transaction fails with it -- no record is written at all.
     # ⛔ Do NOT substitute a default, reuse the previous record's generation, or
     #    infer one from the environment. That would manufacture authority.
-    local _gen
-    if ! declare -F nftban_plan_generation_current >/dev/null 2>&1; then
+    local _gen _txn_owned="false"
+    if ! declare -F nftban_plan_generation_current >/dev/null 2>&1 \
+    || ! declare -F nftban_plan_txn_begin >/dev/null 2>&1; then
         echo "nftban_ddos_reconcile: plan-generation authority unavailable — refusing to publish an unbound plan." >&2
         return 4
     fi
-    _gen="$(nftban_plan_generation_current)" || _gen=""
+    # ⛔ v1.229.11 LANE 6A: JOIN OR OWN — ONE COMMIT PER TRANSACTION, PERFORMED
+    # BY WHOEVER OPENED IT. Inside the firewall lane this function runs as a
+    # SUBPROCESS of `nftban ddos reload`, with NFTBAN_PLAN_TARGET_GENERATION
+    # already exported; it joins that transaction and the LANE commits. Run
+    # standalone, it owns the transaction and commits below, after runtime
+    # reconciliation has actually completed.
+    if [[ -z "${NFTBAN_PLAN_TARGET_GENERATION:-}" ]]; then
+        nftban_plan_txn_begin ddos || return 4
+        _txn_owned="true"
+    fi
+    # ⛔ THE RECORD IS STAMPED WITH THE UNCOMMITTED TARGET, NOT THE COMMITTED
+    # GENERATION. The generation file does not advance until commit, so a record
+    # written for the committed generation would either violate the immutability
+    # of an already-committed set or be indistinguishable from the state a
+    # truncated convergence leaves behind.
+    _gen="$(nftban_plan_target_generation)" || _gen=""
     if [[ -z "$_gen" || ! "$_gen" =~ ^[0-9]+$ ]]; then
-        echo "nftban_ddos_reconcile: convergence generation is '${_gen:-<empty>}' — refusing to publish an unbound plan." >&2
+        echo "nftban_ddos_reconcile: convergence target generation is '${_gen:-<empty>}' — refusing to publish an unbound plan." >&2
+        if [[ "$_txn_owned" == "true" ]]; then nftban_plan_txn_abort; fi
         return 4
     fi
 
@@ -327,8 +344,11 @@ nftban_ddos_reconcile() {
         return 4
     fi
 
-    local _pf="$_dir/module-plan-ddos.env" _tmp
-    _tmp="${_pf}.$$"
+    # v1.229.11 lane 6A: records are addressed BY GENERATION and are IMMUTABLE
+    # once their generation commits. The generation file is the sole selector.
+    local _pf _tmp
+    _pf="$(nftban_plan_record_path ddos "$_gen")"
+    _tmp="${_pf}.tmp.$$"
     if ! {
             printf 'NFTBAN_PLAN_MODULE=%s\n'           "$NFTBAN_PLAN_MODULE"
             printf 'NFTBAN_PLAN_ENABLED=%s\n'          "$NFTBAN_PLAN_ENABLED"
@@ -341,36 +361,56 @@ nftban_ddos_reconcile() {
         } > "$_tmp" 2>/dev/null; then
         rm -f "$_tmp"
         echo "nftban_ddos_reconcile: failed to write the plan record — refusing to publish a partial one." >&2
+        if [[ "$_txn_owned" == "true" ]]; then nftban_plan_txn_abort; fi
         return 4
     fi
     chmod 0640 "$_tmp" 2>/dev/null || true
     if ! mv -f "$_tmp" "$_pf" 2>/dev/null; then
         rm -f "$_tmp"
         echo "nftban_ddos_reconcile: atomic publication failed." >&2
+        if [[ "$_txn_owned" == "true" ]]; then nftban_plan_txn_abort; fi
         return 4
     fi
     export NFTBAN_PLAN_MODULE NFTBAN_PLAN_ENABLED NFTBAN_PLAN_CONFIGURED_MODE \
            NFTBAN_PLAN_EFFECTIVE_MODE NFTBAN_PLAN_RESOLUTION_ID \
            NFTBAN_PLAN_RESOLVED_AT NFTBAN_PLAN_RESOLUTION_BASIS
 
+    # ⛔ v1.229.11 LANE 6A: RUNTIME RECONCILIATION HAPPENS BEFORE THE COMMIT.
+    # The generation becomes authoritative ONLY after the work it describes has
+    # completed successfully.
+    #     IF convergence-generation=N, THE TRANSACTION FOR N COMPLETED.
+    local _rc=0
     case "$NFTBAN_PLAN_EFFECTIVE_MODE" in
         unknown)
             echo "  ERROR: effective mode is UNKNOWN (${NFTBAN_PLAN_RESOLUTION_BASIS:-no basis})." >&2
             echo "         Refusing ALL higher-tier DDoS mutation — apply AND teardown." >&2
             echo "         Base Layer-0 protection is unaffected." >&2
-            return 1
+            _rc=1
             ;;
         inactive)
-            nftban_ddos_teardown
+            nftban_ddos_teardown || _rc=$?
             ;;
         classic|suricata)
-            nftban_ddos_apply
+            nftban_ddos_apply || _rc=$?
             ;;
         *)
             echo "  ERROR: unhandled effective mode '${NFTBAN_PLAN_EFFECTIVE_MODE}'." >&2
-            return 1
+            _rc=1
             ;;
     esac
+
+    if [[ "$_txn_owned" == "true" ]]; then
+        if (( _rc == 0 )); then
+            # THE ONLY PLACE THIS PATH ADVANCES THE GENERATION.
+            nftban_plan_txn_commit || _rc=$?
+        else
+            # ⛔ FAILURE BEFORE COMMIT: generation stays N, N remains fully
+            # readable, the staged N+1 set is discarded. NOTHING is rolled back,
+            # because nothing inconsistent was ever made authoritative.
+            nftban_plan_txn_abort
+        fi
+    fi
+    return "$_rc"
 }
 
 # -----------------------------------------------------------------------------
