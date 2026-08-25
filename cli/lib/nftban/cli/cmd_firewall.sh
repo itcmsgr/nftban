@@ -3048,9 +3048,24 @@ _rebuild_tx_is_terminal() {
 # a distinct descriptor removes any doubt.
 _firewall_rebuild_serialized() {
     local _nftlock_path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
-    # Mirrors constants.ReconciliationLockTimeout (30s) -- the canonical exclusive
-    # timeout used by reconciliation and the OpQueue drain. Not an arbitrary value.
-    local _nftlock_wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+    # ⛔ v1.229.11 LANE 7: THE POLICY LIVES HERE TOO, OR IT DOES NOT EXIST.
+    # Making nftban_plan_txn_begin fail-fast changed NOTHING for `firewall
+    # rebuild`: this wrapper takes the SAME lock FIRST, and a 30s wait here means
+    # a second operator still queues, still succeeds, and is still never told
+    # they collided. Measured on lab2 AFTER the primitive was made fail-fast —
+    # two concurrent rebuilds, A rc=0 B rc=0, generation 36 -> 38.
+    #     A POLICY APPLIED AT THE INNER LOCK IS UNREACHABLE IF AN OUTER LOCK
+    #     ALREADY DECIDED THE OUTCOME.
+    #
+    # Interactive CLI is fail-fast. Internal lifecycle may queue, but only by
+    # SAYING SO: --install-context sets an explicit bounded wait, because a
+    # package upgrade contending with a daemon reconciliation is not an operator
+    # collision and must not fail the install.
+    local _nftlock_wait="${NFTBAN_PLAN_LOCK_WAIT:-}"
+    if [[ -z "$_nftlock_wait" ]] && _rebuild_is_update_lifecycle "$@"; then
+        # Canonical constants.ReconciliationLockTimeout. Not an arbitrary value.
+        _nftlock_wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+    fi
 
     mkdir -p "$(dirname "$_nftlock_path")" 2>/dev/null || true
     if ! exec 8>>"$_nftlock_path"; then
@@ -3058,10 +3073,16 @@ _firewall_rebuild_serialized() {
         echo "       The firewall was NOT modified." >&2
         return 1
     fi
-    if ! flock -w "$_nftlock_wait" 8; then
+    local _nftlock_got=0
+    if [[ -n "$_nftlock_wait" ]]; then
+        flock -w "$_nftlock_wait" 8 && _nftlock_got=1     # declared lifecycle policy
+    else
+        flock -n 8 && _nftlock_got=1                      # interactive: refuse now
+    fi
+    if (( _nftlock_got == 0 )); then
         # REFUSE, never proceed unserialized: a rebuild that cannot serialize could
         # interleave with reconciliation/OpQueue. Nothing has been mutated here.
-        echo "ERROR: could not acquire the nft operations lock within ${_nftlock_wait}s — rebuild REFUSED" >&2
+        echo "ERROR: convergence already in progress — this rebuild was REFUSED." >&2
         echo "       Another nft operation (reconciliation, queue drain or rebuild) holds it." >&2
         echo "       The firewall was NOT modified; existing enforcement is unchanged." >&2
         exec 8>&-
