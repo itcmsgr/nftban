@@ -224,6 +224,43 @@ printf 'NFTBAN_PLAN_MODULE=ddos\nNFTBAN_PLAN_CONFIGURED_MODE=auto\nNFTBAN_PLAN_E
     > "$TMP/run/module-plan-ddos.env"
 eq "T11.2 a legacy record bound to another generation is still rejected" "$(eff ddos)" "unknown"
 
+# -----------------------------------------------------------------------------
+# T12 — SIGKILL MID-TRANSACTION. The owner's first failure-path witness.
+# A writer is KILLED after staging, before commit. Nothing rolls anything back:
+# the point of commit-last is that there is nothing inconsistent to roll back.
+#   THE PROCESS DIES. THE COMMITTED STATE DOES NOT MOVE.
+# ⛔ This is the srv3 shape reproduced deliberately — the installer's 60s kill
+# landed exactly here. Pre-v1.229.11 it left gen advanced with stale records; the
+# assertion below is that the same kill is now inert.
+# -----------------------------------------------------------------------------
+reset_state; setcfg ddos true auto; setcfg portscan true auto
+printf '60\n' > "$NFTBAN_PLAN_GENERATION_FILE"
+stage ddos 60 classic auto; stage portscan 60 suricata auto
+NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
+NFTBAN_PLAN_GENERATION_FILE="$NFTBAN_PLAN_GENERATION_FILE" \
+bash -c "
+    source '$AUTH'
+    nftban_plan_txn_begin ddos portscan
+    printf 'NFTBAN_PLAN_MODULE=ddos\nNFTBAN_PLAN_CONFIGURED_MODE=auto\nNFTBAN_PLAN_EFFECTIVE_MODE=classic\nNFTBAN_PLAN_BOUND_GENERATION=61\n' \
+        > '$TMP/run/module-plan-ddos.env.61'
+    kill -9 \$\$
+" >/dev/null 2>&1 || true
+eq "T12.1 a killed writer did NOT advance the generation" "$(gen)" "60"
+eq "T12.2 the committed generation-60 set is still readable" \
+   "$([[ -r "$(nftban_plan_record_path ddos 60)" && -r "$(nftban_plan_record_path portscan 60)" ]] && echo yes || echo no)" "yes"
+eq "T12.3 readers stay coherent after the kill (ddos)" "$(eff ddos)" "classic"
+eq "T12.4 readers stay coherent after the kill (portscan)" "$(eff portscan)" "suricata"
+eq "T12.5 no basis degradation — the committed generation is still current" "$(basis ddos)" "current_plan"
+# The orphaned staged record is inert: it belongs to a generation nothing selects.
+eq "T12.6 the orphaned staged record is unreachable, not authoritative" \
+   "$([[ -r "$(nftban_plan_record_path ddos 61)" ]] && echo present || echo absent)/$(gen)" "present/60"
+# ⛔ And the NEXT transaction must clear it rather than inherit it — an
+# uncommitted artifact from a dead writer must never satisfy a later commit.
+nftban_plan_txn_begin ddos portscan
+eq "T12.7 the next transaction discards the dead writer's staged artifact" \
+   "$([[ -r "$(nftban_plan_record_path ddos 61)" ]] && echo present || echo absent)" "absent"
+nftban_plan_txn_abort
+
 echo
 if (( FAILURES == 0 )); then echo "PASS — convergence commit transaction"; exit 0; fi
 echo "FAIL — $FAILURES assertion(s)"; exit 1
