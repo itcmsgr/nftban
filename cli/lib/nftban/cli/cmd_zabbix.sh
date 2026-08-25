@@ -541,19 +541,58 @@ EOF
     echo ""
 
     # Check exporter timer status
+    #
+    # v1.229.10 — this block used to print a bare "Timer: ✅ Active" derived
+    # ONLY from `systemctl is-active nftban-unified-exporter.timer`, with no
+    # reference to $enabled, which was computed and printed as
+    # "Enabled: ❌ false" a few lines above. A host with Zabbix disabled and no
+    # server configured still showed a green check under "Exporter Service:"
+    # inside the Zabbix status panel, which reads as "the Zabbix exporter is
+    # running".
+    #
+    # That timer is SHARED — it drives JSON, Prometheus, Zabbix and connector
+    # export alike (nftban_unified_exporter.sh). Its being active says nothing
+    # about whether Zabbix specifically is being pushed.
+    #
+    #   A FAVOURABLE INDICATOR ABOUT SHARED INFRASTRUCTURE IS NOT A
+    #   FAVOURABLE INDICATOR ABOUT THIS SUBJECT.
+    #   TIMER SCHEDULED != THIS TARGET EXPORTED.
+    #
+    # Same family as the false-zero problem, one level up: false GREEN rather
+    # than false ZERO. The timer state is still reported truthfully; what is
+    # added is the subject-specific verdict the panel was missing.
     echo "Exporter Service:"
     if systemctl is-active nftban-unified-exporter.timer &>/dev/null; then
-        echo "  Timer:      ✅ Active"
+        echo "  Timer:      ✅ Active (shared exporter: JSON/Prometheus/Zabbix/connectors)"
         local last_run
         last_run=$(systemctl show nftban-unified-exporter.timer -p LastTriggerUSec --value 2>/dev/null || echo "n/a")
         if [[ -n "$last_run" ]] && [[ "$last_run" != "n/a" ]]; then
             echo "  Last run:   $(date -d "$last_run" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$last_run")"
         fi
+        if [[ "$enabled" == "true" ]]; then
+            echo "  Zabbix push: ✅ scheduled on this timer"
+        else
+            echo "  Zabbix push: ❌ NOT running — NFTBAN_ZABBIX_ENABLED=false"
+            echo "               The timer above is active for OTHER export targets."
+            echo "               It is not sending Zabbix data."
+        fi
     elif systemctl list-unit-files nftban-unified-exporter.timer &>/dev/null 2>&1; then
         echo "  Timer:      ⚠️  Installed but not active"
         echo "              Enable with: systemctl enable --now nftban-unified-exporter.timer"
+        if [[ "$enabled" == "true" ]]; then
+            # Enabled with no timer to carry it is the contradiction that
+            # actually matters: intent says export, nothing will ever run.
+            echo "  Zabbix push: ❌ NOT running — Zabbix is ENABLED but no timer is active"
+        else
+            echo "  Zabbix push: ❌ NOT running — NFTBAN_ZABBIX_ENABLED=false"
+        fi
     else
         echo "  Timer:      ℹ️  Not installed (using bash fallback)"
+        if [[ "$enabled" == "true" ]]; then
+            echo "  Zabbix push: ⚠️  UNKNOWN — no exporter timer installed; push cadence unproven"
+        else
+            echo "  Zabbix push: ❌ NOT running — NFTBAN_ZABBIX_ENABLED=false"
+        fi
     fi
     echo ""
 
@@ -606,6 +645,8 @@ EOF
         echo "  Test connection:     nftban zabbix test --verbose"
         echo "  Force push metrics:  nftban zabbix push"
         echo "  Reload config:       nftban zabbix reload"
+        echo "  Stop pushing:        nftban zabbix disable"
+        echo "  Resume pushing:      nftban zabbix enable"
         echo "  Export template:     nftban zabbix template --version 7.0 --output /tmp/nftban.yaml"
         echo "  View all targets:    nftban zabbix targets list"
         echo "  Full help:           nftban zabbix help"
@@ -1175,6 +1216,8 @@ COMMANDS:
     test                Test Zabbix connectivity
     push                Force immediate metric push
     reload              Re-read config and push metrics
+    enable              Enable the Zabbix integration
+    disable             Disable the Zabbix integration (stops metric push)
     template            Export Zabbix template
     discover            Run LLD discovery
     targets             Manage multiple Zabbix targets
@@ -1312,6 +1355,21 @@ nftban_cmd_zabbix() {
         test)     _cmd_zabbix_test "$@" ;;
         push)     _cmd_zabbix_push "$@" ;;
         reload)   _cmd_zabbix_reload "$@" ;;
+        # v1.229.10 — lifecycle verb parity. Every sibling module (portscan, ddos,
+        # geoban, botguard, rbl, metrics) exposes `enable`/`disable` at the top
+        # level; zabbix exposed them ONLY as `zabbix config enable|disable`, one
+        # level down under a verb that reads as "show/set settings". An operator
+        # reading the top-level verbs, or the Commands block printed by
+        # `zabbix status`, could not find how to turn the integration off.
+        #
+        #   A LIFECYCLE VERB THAT EXISTS BUT CANNOT BE FOUND IS NOT AN
+        #   AVAILABLE CONTROL.
+        #
+        # These DELEGATE to the existing implementation. The behaviour is
+        # unchanged and there is no second enable/disable authority:
+        # `zabbix config enable|disable` remains valid and does the same thing.
+        enable)   _cmd_zabbix_config enable "$@" ;;
+        disable)  _cmd_zabbix_config disable "$@" ;;
         template) _cmd_zabbix_template "$@" ;;
         discover) _cmd_zabbix_discover "$@" ;;
         targets)  _cmd_zabbix_targets "$@" ;;
