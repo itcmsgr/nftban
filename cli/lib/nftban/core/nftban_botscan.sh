@@ -609,23 +609,113 @@ nftban_botscan_find_log() {
 # reaping we drop BOTH the spool file and its cursor; the next collector cycle
 # recreates the file fresh and the scanner reads it from offset 0 (collector source
 # offsets are independent) → no duplicate, no loss. Returns 0 if reaped, 1 otherwise.
+# Canonical cursor namespace for BotScan spool subjects, plus the historical
+# directories that may still hold pre-migration cursor state. The spool dir the
+# caller actually passes is ALWAYS added as a migration candidate too, so the
+# path-derived cursor of the CURRENT location is picked up wherever the spool
+# lives — which is what makes this migration survive the next relocation instead
+# of only repairing the one v1.209.3 performed. Identity is now the
+# LOGICAL subject (namespace + spool basename), so relocating the spool again can
+# never orphan the cursor set the way v1.209.3 did.
+: "${BOTSCAN_SPOOL_CURSOR_NS:=_botscan_spool_}"
+: "${BOTSCAN_SPOOL_CURSOR_LEGACY_DIRS:=/run/nftban/botscan /var/lib/nftban/botscan/spool}"
+
+# Reclaim a BotScan-owned spool object. Two bounded cases, both namespace-gated:
+#
+#   1. EMPTY      size == 0 -> no unread payload exists, so NO cursor is required
+#                 to establish completion. Note the scanner enumerates with -s,
+#                 so an empty spool file is never scanned and therefore could
+#                 never become reclaimable through the normal completed path.
+#   2. COMPLETED  cursor authority proves offset >= size.
+#
+# Everything else KEEPS. In particular a MISSING or CONFLICTING cursor is UNKNOWN
+# authority — it is NOT offset zero and it is NOT permission to delete.
+#
+#   AGE IS NEVER THE DELETION AUTHORITY.
+#
+# Returns 0 if reclaimed, 1 otherwise. Echoes a verdict on fd 3 when open.
 nftban_botscan_reap_consumed_spool() {
     local f="$1" spooldir="$2" offdir="$3"
-    [[ -n "$spooldir" && "$f" == "$spooldir"/* ]] || return 1   # GATE 1: spool files only
-    local k state off sz
-    k="$(printf '%s' "$f" | tr '/' '_')"
-    state="${offdir}/${k}"
-    off=0
-    # statefile is "inode:offset"; we only need the offset (drop the inode field).
-    [[ -r "$state" ]] && IFS=':' read -r _ off < "$state" 2>/dev/null
-    [[ "$off" =~ ^[0-9]+$ ]] || off=0
-    sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
-    if [[ "${sz:-0}" -gt 0 && "${off:-0}" -ge "${sz:-0}" ]]; then   # GATE 2: fully consumed
-        rm -f "$f" "$state" 2>/dev/null || true
+
+    # --- structural gates: BotScan-owned spool objects only ------------------
+    [[ -n "$spooldir" && "$f" == "$spooldir"/* ]] || return 1   # inside the namespace
+    [[ "$f" != *"/.."* ]]                          || return 1   # no traversal
+    [[ -L "$f" ]] && return 1                                    # never a symlink
+    [[ -f "$f" ]] || return 1                                    # regular files only
+    local base; base="$(basename -- "$f")"
+    # Expected BotScan spool basename shape: the collector encodes the source path
+    # as _var_log_... — anything else in this directory is not ours to delete.
+    [[ "$base" == _* ]] || return 1
+
+    local sz; sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+    [[ "$sz" =~ ^[0-9]+$ ]] || return 1
+
+    # --- case 1: empty -> no payload to lose, no cursor needed ----------------
+    if [[ "$sz" -eq 0 ]]; then
+        rm -f -- "$f" 2>/dev/null || true
+        return 0
+    fi
+
+    # --- case 2: completion must be PROVEN by cursor authority ----------------
+    local res state statefile off=""
+    res="$(NFTBAN_HTTP_LOG_OFFSET_DIR="$offdir" \
+           NFTBAN_HTTP_CURSOR_NS="${BOTSCAN_SPOOL_CURSOR_NS}" \
+           NFTBAN_HTTP_CURSOR_LEGACY_DIRS="${spooldir} ${BOTSCAN_SPOOL_CURSOR_LEGACY_DIRS}" \
+           nftban_http_cursor_resolve "$f" 2>/dev/null)"
+    statefile="${res%%|*}"; state="${res##*|}"
+
+    case "$state" in
+        CURRENT|MIGRATED) : ;;
+        CONFLICT)
+            # Two authorities disagree. Report and KEEP — never pick the value
+            # that happens to authorize deletion.
+            # Use the module's own log file, the same sink the SIGNAL/BANNED
+            # records use — no invented logging interface.
+            [[ -n "${BOTSCAN_LOG_FILE:-}" ]] && \
+                echo "$(date -Iseconds)|botscan-spool|${base}|0|CURSOR_CONFLICT|keeping — two cursor authorities disagree, no deletion authority" \
+                >> "$BOTSCAN_LOG_FILE" 2>/dev/null || true
+            return 1 ;;
+        *) return 1 ;;   # ABSENT -> UNKNOWN completion -> KEEP
+    esac
+
+    [[ -r "$statefile" ]] || return 1
+    IFS=':' read -r _ off < "$statefile" 2>/dev/null || return 1
+    [[ "$off" =~ ^[0-9]+$ ]] || return 1
+
+    if [[ "$off" -ge "$sz" ]]; then
+        rm -f -- "$f" "$statefile" 2>/dev/null || true
         return 0
     fi
     return 1
 }
+
+# Bounded spool reclamation sweep. Runs every scanner cycle so the bound stays a
+# BOUND and not a LATCH: when the spool reaches its cap the collector asserts
+# backpressure and stops appending, so unless completed work is retired here the
+# spool can never fall back under cap and collection never resumes.
+#
+#   WHEN THE SPOOL REACHES ITS BOUND THE SYSTEM MUST RETIRE COMPLETED WORK
+#   SO NEW ELIGIBLE WORK CAN ENTER. THE BOUND MUST REMAIN BOUNDED.
+#
+# This does NOT raise the cap. Raising the cap moves the failure point; it does
+# not restore forward progress.
+nftban_botscan_reclaim_spool() {
+    local spooldir="${1:-${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}}"
+    local offdir="${2:-${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}}"
+    [[ -d "$spooldir" ]] || return 0
+    local f reclaimed=0 kept=0
+    for f in "$spooldir"/*; do
+        [[ -e "$f" ]] || continue
+        if nftban_botscan_reap_consumed_spool "$f" "$spooldir" "$offdir"; then
+            reclaimed=$((reclaimed+1))
+        else
+            kept=$((kept+1))
+        fi
+    done
+    printf '%s %s\n' "$reclaimed" "$kept"
+    return 0
+}
+
 
 # Parse access log line
 # Returns: IP|URL|METHOD|STATUS|USER_AGENT
@@ -1585,7 +1675,20 @@ nftban_botscan_process_logs() {
         done < <(
             {
                 if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
-                elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then nftban_http_read_incremental "$f"
+                elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then
+                    # v1.229.10: when reading a SPOOL subject the reader must use the
+                    # SAME canonical cursor identity the reaper uses. Two independent
+                    # path-derived identities are exactly how the v1.209.3 relocation
+                    # orphaned the cursor set fleet-wide.
+                    #   ONE LOGICAL SPOOL SUBJECT -> ONE CANONICAL CURSOR IDENTITY
+                    #   -> SAME IDENTITY USED BY READER AND REAPER.
+                    if [[ "$f" == "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}"/* ]]; then
+                        NFTBAN_HTTP_CURSOR_NS="${BOTSCAN_SPOOL_CURSOR_NS:-_botscan_spool_}" \
+                        NFTBAN_HTTP_CURSOR_LEGACY_DIRS="${BOTSCAN_SPOOL_CURSOR_LEGACY_DIRS:-/run/nftban/botscan /var/lib/nftban/botscan/spool}" \
+                            nftban_http_read_incremental "$f"
+                    else
+                        nftban_http_read_incremental "$f"
+                    fi
                 else tail -1000 -- "$f" 2>/dev/null; fi
             } | { if [[ -n "$_bs_pf_bin" ]]; then "$_bs_pf_bin" --filter "$_pf" 2>/dev/null || cat; else cat; fi; }
         )
@@ -1603,6 +1706,24 @@ nftban_botscan_process_logs() {
                 "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}"
         fi
     done
+
+    # v1.229.10 — bounded spool reclamation, EVERY cycle. The per-file reap above
+    # only ever sees files this cycle actually reached; with a deadline budget most
+    # of the spool is deferred, and empty spool files are never enumerated at all
+    # (the scan list uses -s). Without this sweep the spool can sit at its cap with
+    # completed work still on disk, backpressure permanently asserted and collection
+    # never resuming. This retires only PROVEN-completed or EMPTY BotScan-owned
+    # objects; it never raises the cap.
+    if [[ -z "$log_file" && "${BOTSCAN_SPOOL_REAP:-true}" == "true" ]] \
+       && declare -F nftban_botscan_reclaim_spool >/dev/null 2>&1; then
+        local _rc_out _rc_n _rc_k
+        _rc_out="$(nftban_botscan_reclaim_spool \
+            "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
+            "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}" 2>/dev/null)" || _rc_out=""
+        _rc_n="${_rc_out%% *}"; _rc_k="${_rc_out##* }"
+        [[ "${_rc_n:-0}" =~ ^[0-9]+$ ]] && [[ "${_rc_n:-0}" -gt 0 ]] && \
+            echo "Spool reclaimed: ${_rc_n} object(s) retired, ${_rc_k} kept"
+    fi
 
     # Persist rotation cursor: next cycle starts at the first file we did NOT finish.
     if [[ -z "$log_file" && "$n" -gt 0 ]]; then
