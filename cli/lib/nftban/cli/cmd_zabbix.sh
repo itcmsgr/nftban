@@ -606,6 +606,8 @@ EOF
         echo "  Test connection:     nftban zabbix test --verbose"
         echo "  Force push metrics:  nftban zabbix push"
         echo "  Reload config:       nftban zabbix reload"
+        echo "  Stop pushing:        nftban zabbix disable"
+        echo "  Resume pushing:      nftban zabbix enable"
         echo "  Export template:     nftban zabbix template --version 7.0 --output /tmp/nftban.yaml"
         echo "  View all targets:    nftban zabbix targets list"
         echo "  Full help:           nftban zabbix help"
@@ -1175,6 +1177,8 @@ COMMANDS:
     test                Test Zabbix connectivity
     push                Force immediate metric push
     reload              Re-read config and push metrics
+    enable              Enable the Zabbix integration
+    disable             Disable the Zabbix integration (stops metric push)
     template            Export Zabbix template
     discover            Run LLD discovery
     targets             Manage multiple Zabbix targets
@@ -1312,6 +1316,21 @@ nftban_cmd_zabbix() {
         test)     _cmd_zabbix_test "$@" ;;
         push)     _cmd_zabbix_push "$@" ;;
         reload)   _cmd_zabbix_reload "$@" ;;
+        # v1.229.10 — lifecycle verb parity. Every sibling module (portscan, ddos,
+        # geoban, botguard, rbl, metrics) exposes `enable`/`disable` at the top
+        # level; zabbix exposed them ONLY as `zabbix config enable|disable`, one
+        # level down under a verb that reads as "show/set settings". An operator
+        # reading the top-level verbs, or the Commands block printed by
+        # `zabbix status`, could not find how to turn the integration off.
+        #
+        #   A LIFECYCLE VERB THAT EXISTS BUT CANNOT BE FOUND IS NOT AN
+        #   AVAILABLE CONTROL.
+        #
+        # These DELEGATE to the existing implementation. The behaviour is
+        # unchanged and there is no second enable/disable authority:
+        # `zabbix config enable|disable` remains valid and does the same thing.
+        enable)   _cmd_zabbix_config enable "$@" ;;
+        disable)  _cmd_zabbix_config disable "$@" ;;
         template) _cmd_zabbix_template "$@" ;;
         discover) _cmd_zabbix_discover "$@" ;;
         targets)  _cmd_zabbix_targets "$@" ;;
