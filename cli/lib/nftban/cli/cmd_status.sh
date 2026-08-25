@@ -1170,10 +1170,12 @@ _status_section_protection() {
             #
             # On srv3 (2026-08-25) that was measurably false. The scanner was budget-hit
             # and reported DEGRADED_BUDGET_HIT — while it was actively banning an
-            # xmlrpc.php flood. The kernel held 136.70.153.123, 64.89.160.249 and
-            # 185.177.72.9 in ip nftban blacklist_manual_ipv4, and the daemon's durable
-            # side-record carried 1,241 ban records. The report told the operator the
-            # control was blind at the exact moment it was working.
+            # xmlrpc.php flood. The kernel held three of the flooding sources in
+            # ip nftban blacklist_manual_ipv4, and the daemon's durable side-record
+            # carried 1,241 ban records. The report told the operator the control was
+            # blind at the exact moment it was working. (Addresses deliberately not
+            # reproduced here: shipped files must carry no real IPs — the evidence
+            # lives in the private register.)
             #
             #   "NOT ENFORCING" IS AN ENFORCEMENT CLAIM.
             #   IT MUST BE BACKED BY ENFORCEMENT EVIDENCE, NOT BY A COVERAGE VERDICT.
