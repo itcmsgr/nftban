@@ -389,6 +389,7 @@ Modified MPL files must remain open. Your own separate code is unaffected.
 | Layer | License |
 |---|---|
 | Core engine | MPL-2.0 |
+| Documentation | MPL-2.0 |
 | Pro portal | Commercial |
 | Brand assets | All rights reserved |
 
