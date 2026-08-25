@@ -126,6 +126,7 @@ exporter_exit2_phase2_scale_guard_v1361_test	cli/lib/nftban/tests/exporter_exit2
 exporter_exit2_resilience_v136_test	cli/lib/nftban/tests/exporter_exit2_resilience_v136_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_no_duplicate_goroutines_emit_v217_test	cli/lib/nftban/tests/exporter_no_duplicate_goroutines_emit_v217_test.sh	metrics	test	exporter-goroutines	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_sigterm_graceful_v151_test	cli/lib/nftban/tests/exporter_sigterm_graceful_v151_test.sh	metrics	test	exporter-err-trap	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+exporter_textfile_no_timestamps_v1229_11_test	cli/lib/nftban/tests/exporter_textfile_no_timestamps_v1229_11_test.sh	metrics	test	exporter-textfile-correctness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 feed_counters_unify_v167_test	cli/lib/nftban/tests/feed_counters_unify_v167_test.sh	feeds	test	feeds	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 feeds_select_strict_e2e_v152_test	cli/lib/nftban/tests/feeds_select_strict_e2e_v152_test.sh	feeds	test	feeds	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fetch_verified_v157_test	cli/lib/nftban/tests/fetch_verified_v157_test.sh	packaging	test	build-fetch	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
