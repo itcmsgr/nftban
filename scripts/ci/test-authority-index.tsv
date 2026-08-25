@@ -26,6 +26,7 @@ botscan_endpoint_flood_test	cli/lib/nftban/tests/botscan_endpoint_flood_test.sh	
 botscan_exp_rfi_fp_v218_13_test	cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	botscan	test	botscan-pattern-exp-rfi	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_fcrdns_v189_test	cli/lib/nftban/tests/botscan_fcrdns_v189_test.sh	botscan	test	botscan-fcrdns-crawler	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_logsource_validity_r22a_test	cli/lib/nftban/tests/botscan_logsource_validity_r22a_test.sh	botscan	test	botscan-logsource-validity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+botscan_name_discoverable_v1229_10_test	cli/lib/nftban/tests/botscan_name_discoverable_v1229_10_test.sh	botscan	test	botscan-operator-discoverability	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 botscan_nofork_parity_v1871_test	cli/lib/nftban/tests/botscan_nofork_parity_v1871_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_operator_truth_contract_v219_0_test	cli/lib/nftban/tests/botscan_operator_truth_contract_v219_0_test.sh	botscan	test	botscan-operator-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_operator_truth_v218_11_test	cli/lib/nftban/tests/botscan_operator_truth_v218_11_test.sh	botscan	test	botscan-status-surface	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -113,6 +114,7 @@ config_show_secret_redaction_v1227_test	cli/lib/nftban/tests/config_show_secret_
 core_ownership_identity_v1228_9_test	cli/lib/nftban/tests/core_ownership_identity_v1228_9_test.sh	core	test	legal-identity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 csf_observation_purity_v1229_test	cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 daemon_callable_neutrality_v1229_7_test	cli/lib/nftban/tests/daemon_callable_neutrality_v1229_7_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
+ddos_connlimit_label_global_v1229_10_test	cli/lib/nftban/tests/ddos_connlimit_label_global_v1229_10_test.sh	ddos	test	ddos-status-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 deb_conffile_parity_v1227_test	cli/lib/nftban/tests/deb_conffile_parity_v1227_test.sh	mail	test	deb-conffile-parity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 deprecated_unit_failed_latch_v1228_2_test	cli/lib/nftban/tests/deprecated_unit_failed_latch_v1228_2_test.sh	packaging	test	systemd-maintainer-scripts	CI_STATIC	ci-bash	true	false	false	false	false	false			
 derived_state_reconcile_v1228_8_test	cli/lib/nftban/tests/derived_state_reconcile_v1228_8_test.sh	firewall	test	derived-state-convergence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
@@ -321,3 +323,5 @@ whitelist_reconcile_convergence_v1228_5_test	cli/lib/nftban/tests/whitelist_reco
 whitelist_set_timeout_flag_v168_test	cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh	whitelist	test	whitelist-set-timeout-flag	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_timeout_upgrade_activation_v168_test	cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh	packaging	test	whitelist-timeout-upgrade-activation	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 whitelist_verify_v163_test	cli/lib/nftban/tests/whitelist_verify_v163_test.sh	whitelist	test	whitelist-verify	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+zabbix_lifecycle_verb_parity_v1229_10_test	cli/lib/nftban/tests/zabbix_lifecycle_verb_parity_v1229_10_test.sh	metrics	test	zabbix-lifecycle-verbs	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
+zabbix_status_shared_timer_verdict_v1229_10_test	cli/lib/nftban/tests/zabbix_status_shared_timer_verdict_v1229_10_test.sh	metrics	test	zabbix-status-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
