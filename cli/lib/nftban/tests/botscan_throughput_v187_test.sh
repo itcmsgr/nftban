@@ -12,9 +12,8 @@
 # meta:description="BOTSCAN-SCAN-THROUGHPUT (v1.187 Lane A) guard. (A) FORWARD cursor drains a backlog larger than the per-file cap across successive cycles with NO skipped bytes (every line processed exactly once; not tail-biased). (B) The C-speed candidate PREFILTER keeps lines that could match a pattern (or carry 404) and drops unrelated lines — soundly (a real hit still recorded). (C) The 404-window OPTION 1 fixed-tail re-read is INDEPENDENT of the forward cursor: a 404 flood is still detected on a cycle where the cursor reads 0 new bytes."
 #
 # meta:inventory.files="botscan_throughput_v187_test.sh"
-# meta:inventory.binaries="bash,grep,tail,head"
+# meta:inventory.binaries="bash,grep,tail,head,mktemp,nftban-botscan-matcher"
 # meta:inventory.env_vars="NFTBAN_DATA_DIR,BOTSCAN_SPOOL_DIR,BOTSCAN_SCAN_MAX_BYTES_PER_FILE,BOTSCAN_404_THRESHOLD,NFTBAN_BIN_DIR"
-# meta:inventory.binaries="bash,mktemp,nftban-botscan-matcher"
 # meta:requires="nftban-botscan-matcher (Go prefilter helper, built by ci-go.yml) — sections B/C assert prefilter behaviour and fail with a named precondition error without it"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
