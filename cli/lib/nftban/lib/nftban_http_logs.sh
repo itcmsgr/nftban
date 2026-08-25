@@ -420,14 +420,19 @@ nftban_http_cursor_key() {
 # unambiguous — we never pattern-match or guess a neighbour.
 nftban_http_cursor_legacy_keys() {
     local file="$1" base d
-    # This module runs under a pinned IFS that does NOT include a space, so a
-    # space-separated list would arrive as ONE word and every legacy candidate
-    # would be silently wrong. Pin IFS locally for the split.
-    #   INHERITED IFS SILENTLY CHANGES WHAT "A LIST" MEANS.
-    local IFS=$' \t\n'
     base="$(basename -- "$file")"
     [[ -n "${NFTBAN_HTTP_CURSOR_LEGACY_DIRS:-}" ]] || return 0
-    for d in ${NFTBAN_HTTP_CURSOR_LEGACY_DIRS}; do
+    # This module runs under a pinned IFS that does NOT include a space, so a
+    # space-separated list would arrive as ONE word and every legacy candidate
+    # would be silently wrong.
+    #   INHERITED IFS SILENTLY CHANGES WHAT "A LIST" MEANS.
+    # The first fix assigned IFS locally. Semgrep flags that
+    # (bash.lang.security.ifs-tampering) and the rule is reasonable — IFS
+    # assignment is a real footgun class even when function-scoped. So NORMALISE
+    # THE DATA INSTEAD OF THE PARSER: translate the separator to newline, which
+    # the module's own pinned IFS already splits on. No IFS is touched.
+    #   PREFER CHANGING THE INPUT OVER CHANGING THE SPLITTER.
+    for d in $(printf '%s' "${NFTBAN_HTTP_CURSOR_LEGACY_DIRS}" | tr ' ' '\n'); do
         [[ -n "$d" ]] || continue
         printf '%s%s\n' "$(printf '%s' "${d%/}/" | tr '/' '_')" "$base"
     done
