@@ -541,19 +541,58 @@ EOF
     echo ""
 
     # Check exporter timer status
+    #
+    # v1.229.10 — this block used to print a bare "Timer: ✅ Active" derived
+    # ONLY from `systemctl is-active nftban-unified-exporter.timer`, with no
+    # reference to $enabled, which was computed and printed as
+    # "Enabled: ❌ false" a few lines above. A host with Zabbix disabled and no
+    # server configured still showed a green check under "Exporter Service:"
+    # inside the Zabbix status panel, which reads as "the Zabbix exporter is
+    # running".
+    #
+    # That timer is SHARED — it drives JSON, Prometheus, Zabbix and connector
+    # export alike (nftban_unified_exporter.sh). Its being active says nothing
+    # about whether Zabbix specifically is being pushed.
+    #
+    #   A FAVOURABLE INDICATOR ABOUT SHARED INFRASTRUCTURE IS NOT A
+    #   FAVOURABLE INDICATOR ABOUT THIS SUBJECT.
+    #   TIMER SCHEDULED != THIS TARGET EXPORTED.
+    #
+    # Same family as the false-zero problem, one level up: false GREEN rather
+    # than false ZERO. The timer state is still reported truthfully; what is
+    # added is the subject-specific verdict the panel was missing.
     echo "Exporter Service:"
     if systemctl is-active nftban-unified-exporter.timer &>/dev/null; then
-        echo "  Timer:      ✅ Active"
+        echo "  Timer:      ✅ Active (shared exporter: JSON/Prometheus/Zabbix/connectors)"
         local last_run
         last_run=$(systemctl show nftban-unified-exporter.timer -p LastTriggerUSec --value 2>/dev/null || echo "n/a")
         if [[ -n "$last_run" ]] && [[ "$last_run" != "n/a" ]]; then
             echo "  Last run:   $(date -d "$last_run" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$last_run")"
         fi
+        if [[ "$enabled" == "true" ]]; then
+            echo "  Zabbix push: ✅ scheduled on this timer"
+        else
+            echo "  Zabbix push: ❌ NOT running — NFTBAN_ZABBIX_ENABLED=false"
+            echo "               The timer above is active for OTHER export targets."
+            echo "               It is not sending Zabbix data."
+        fi
     elif systemctl list-unit-files nftban-unified-exporter.timer &>/dev/null 2>&1; then
         echo "  Timer:      ⚠️  Installed but not active"
         echo "              Enable with: systemctl enable --now nftban-unified-exporter.timer"
+        if [[ "$enabled" == "true" ]]; then
+            # Enabled with no timer to carry it is the contradiction that
+            # actually matters: intent says export, nothing will ever run.
+            echo "  Zabbix push: ❌ NOT running — Zabbix is ENABLED but no timer is active"
+        else
+            echo "  Zabbix push: ❌ NOT running — NFTBAN_ZABBIX_ENABLED=false"
+        fi
     else
         echo "  Timer:      ℹ️  Not installed (using bash fallback)"
+        if [[ "$enabled" == "true" ]]; then
+            echo "  Zabbix push: ⚠️  UNKNOWN — no exporter timer installed; push cadence unproven"
+        else
+            echo "  Zabbix push: ❌ NOT running — NFTBAN_ZABBIX_ENABLED=false"
+        fi
     fi
     echo ""
 
