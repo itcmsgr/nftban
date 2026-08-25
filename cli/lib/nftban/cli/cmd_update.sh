@@ -921,6 +921,14 @@ _cmd_update_main_locked() {
             printf "  %-20s %s\n" "Upgrade readiness:" "$_rd_ready"
             printf "  %-20s %s\n" "Action needed:" "$_rd_action"
             echo ""
+            # v1.229.10: an operator told to "review N warning(s) requiring action" must be
+            # able to act. Render the warnings the line just counted, from the SAME
+            # classification authority, and always name the durable run record.
+            #   TELLING AN OPERATOR THAT ACTION IS NEEDED, WITHOUT TELLING THEM WHAT OR
+            #   WHERE, IS NOT AN ACTIONABLE REPORT.
+            if declare -F _update_render_actionable_warnings >/dev/null 2>&1; then
+                _update_render_actionable_warnings "${FORENSIC_RUN_DIR:-}" "${_ilog_file:-}"
+            fi
 
             # v1.174 transparency: if this run auto-recovered a PRE-EXISTING failed
             # nftban unit (failed before the upgrade, live health clean → stale

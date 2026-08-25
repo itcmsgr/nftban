@@ -277,6 +277,7 @@ update_history_capacity_v1229_3_test	cli/lib/nftban/tests/update_history_capacit
 update_msg_recovered_v174_test	cli/lib/nftban/tests/update_msg_recovered_v174_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 update_run_human_log_gatea_test	cli/lib/nftban/tests/update_run_human_log_gatea_test.sh	update	test	lifecycle-log-forensics	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 update_warning_taxonomy_v2164_test	cli/lib/nftban/tests/update_warning_taxonomy_v2164_test.sh	update	test	warning-taxonomy	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+update_warnings_actionable_v1229_10_test	cli/lib/nftban/tests/update_warnings_actionable_v1229_10_test.sh	update	test	update-report-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 v127_ux1_p0_test	cli/lib/nftban/tests/v127_ux1_p0_test.sh	cli	test	ux-lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 v127_ux2_well_known_test	cli/lib/nftban/tests/v127_ux2_well_known_test.sh	cli	test	well-known-guard	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 v127_ux3_stats_banlog_test	cli/lib/nftban/tests/v127_ux3_stats_banlog_test.sh	cli	test	stats-banlog	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
