@@ -68,5 +68,7 @@ See `branding/README.md` for further details on artwork attribution and logo com
 
 ---
 
-© 2024–2026 NFTBAN Project / Antonios Voulvoulis. All rights reserved.
-See also: `LICENSE` and `TRADEMARK.md`.
+© 2024-2026 Antonios Voulvoulis <contact@nftban.com>.
+NFTBan Core and NFTBan-authored documentation are licensed under the Mozilla Public
+License 2.0 — see `LICENSE`. Trademarks and brand assets are reserved and governed
+separately — see `TRADEMARK.md`.
