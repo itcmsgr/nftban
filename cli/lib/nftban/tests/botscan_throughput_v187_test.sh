@@ -13,7 +13,9 @@
 #
 # meta:inventory.files="botscan_throughput_v187_test.sh"
 # meta:inventory.binaries="bash,grep,tail,head"
-# meta:inventory.env_vars="NFTBAN_DATA_DIR,BOTSCAN_SPOOL_DIR,BOTSCAN_SCAN_MAX_BYTES_PER_FILE,BOTSCAN_404_THRESHOLD"
+# meta:inventory.env_vars="NFTBAN_DATA_DIR,BOTSCAN_SPOOL_DIR,BOTSCAN_SCAN_MAX_BYTES_PER_FILE,BOTSCAN_404_THRESHOLD,NFTBAN_BIN_DIR"
+# meta:inventory.binaries="bash,mktemp,nftban-botscan-matcher"
+# meta:requires="nftban-botscan-matcher (Go prefilter helper, built by ci-go.yml) — sections B/C assert prefilter behaviour and fail with a named precondition error without it"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -43,8 +45,39 @@ procof() { sed -n 's/^Processed: \([0-9]*\) entries.*/\1/p' <<<"$1"; }
 sigfile() { printf '%s\n' "${NFTBAN_DATA_DIR}/botguard/batch_signals.jsonl"; }
 banned_has() { grep -q "\"ip\":\"$1\"" "$(sigfile)" 2>/dev/null; }
 
+# v1.229.10 — HERMETICITY FIX. This test declares ta.hermetic="true" but sourced
+# the module BEFORE any sandbox existed, so nftban_botscan_adaptive.sh resolved
+#     readonly _BS_RUNSTATE="${NFTBAN_DATA_DIR}/botscan/runstate.json"
+#     readonly _BS_TREND="${NFTBAN_DATA_DIR}/botscan/trend.jsonl"
+# against the DEFAULT /var/lib/nftban and baked them in. The per-phase
+# `export NFTBAN_DATA_DIR=...` below then could not move them — the variables are
+# readonly — so every run wrote, or tried to write, real production paths and the
+# test failed on any host without /var/lib/nftban.
+#
+#   A READONLY PATH IS RESOLVED AT SOURCE TIME, NOT AT USE TIME.
+#   DECLARING hermetic=true DOES NOT MAKE A TEST HERMETIC.
+#
+# The product is already correctly parameterised on NFTBAN_DATA_DIR; the defect is
+# purely this ordering. Fixed by declaring the sandbox BEFORE the source. The
+# module is NOT modified to suit the harness, no assertion is weakened, nothing is
+# skipped, and no failure is made allowable.
+_HERMETIC_ROOT="$(mktemp -d)"
+trap 'rm -rf "$_HERMETIC_ROOT"' EXIT
+export NFTBAN_DATA_DIR="$_HERMETIC_ROOT/data"
+mkdir -p "$NFTBAN_DATA_DIR/botscan" "$NFTBAN_DATA_DIR/botguard" "$NFTBAN_DATA_DIR/watchdog"
+
 # shellcheck source=/dev/null
 source "$LIB_CORE"
+
+# Guard the fix itself: if a future edit moves the source above the sandbox, the
+# baked paths silently return to production and this test would once again write
+# outside its sandbox. Fail loudly instead.
+case "${_BS_RUNSTATE:-}" in
+    "$_HERMETIC_ROOT"/*) : ;;
+    *) fail "hermeticity: _BS_RUNSTATE resolved OUTSIDE the sandbox (${_BS_RUNSTATE:-unset}) — the module was sourced before NFTBAN_DATA_DIR was exported" ;;
+esac
+
+
 
 # v1.209.3: these sections re-scan a STATIC spool across cycles to prove the forward
 # cursor drains a backlog with no skipped/duplicated bytes. Disable spool reaping so
@@ -55,7 +88,7 @@ export BOTSCAN_SPOOL_REAP="false"
 # ---------------------------------------------------------------------------
 # (A) FORWARD cursor — backlog > per-file cap drains across cycles, no skip
 # ---------------------------------------------------------------------------
-tA="$(mktemp -d)"; trap 'rm -rf "$tA"' EXIT
+tA="$(mktemp -d)"; trap 'rm -rf "$tA" "$_HERMETIC_ROOT"' EXIT
 export NFTBAN_DATA_DIR="$tA/data" BOTSCAN_SPOOL_DIR="$tA/spool" \
        BOTSCAN_PATTERNS_DIR="$tA/patterns" BOTSCAN_STATE_FILE="$tA/state.db" \
        BOTSCAN_LOG_FILE="$tA/botscan.log" \
@@ -90,7 +123,25 @@ echo "PASS A: forward cursor drains backlog across cycles with no skipped bytes"
 # ---------------------------------------------------------------------------
 # (B) PREFILTER soundness — candidate kept (hit recorded), unrelated dropped
 # ---------------------------------------------------------------------------
-tB="$(mktemp -d)"; trap 'rm -rf "$tA" "$tB"' EXIT
+# v1.229.10 — DECLARE THE PRECONDITION, do not discover it as a wrong number.
+# Sections B and C assert that the Go prefilter keeps ONLY the candidate line.
+# That requires the compiled helper (built in CI by ci-go.yml:94). Without it the
+# module degrades to unfiltered pass-through — correct product behaviour — and the
+# assertion then failed as "expected 1, got 2", which reads like a detection
+# regression rather than a missing build artefact.
+#
+#   PRECONDITION ASSERTED BEFORE CAPABILITY TEST.
+#   AN UNMET PRECONDITION MUST BE NAMED, NOT DISCOVERED AS A WRONG RESULT.
+#
+# This does NOT skip and does NOT weaken: the test still fails without the helper,
+# it now says exactly why and what to build.
+_pf_bin="$(command -v nftban-botscan-matcher 2>/dev/null || true)"
+[[ -z "$_pf_bin" ]] && _pf_bin="${NFTBAN_BIN_DIR:-/usr/lib/nftban/bin}/nftban-botscan-matcher"
+if [[ ! -x "$_pf_bin" ]]; then
+    fail "PRECONDITION UNMET: nftban-botscan-matcher not found or not executable (looked for: command -v, then ${NFTBAN_BIN_DIR:-/usr/lib/nftban/bin}/nftban-botscan-matcher). Sections B/C assert Go-prefilter behaviour and cannot be evaluated without it. Build it: go build -trimpath -o bin/nftban-botscan-matcher ./cmd/nftban-botscan-matcher (CI does this in ci-go.yml)."
+fi
+
+tB="$(mktemp -d)"; trap 'rm -rf "$tA" "$tB" "$_HERMETIC_ROOT"' EXIT
 export NFTBAN_DATA_DIR="$tB/data" BOTSCAN_SPOOL_DIR="$tB/spool" \
        BOTSCAN_PATTERNS_DIR="$tB/patterns" BOTSCAN_STATE_FILE="$tB/state.db" \
        BOTSCAN_LOG_FILE="$tB/botscan.log"
@@ -119,7 +170,7 @@ echo "PASS B: prefilter drops unrelated lines, keeps candidates (sound — no de
 # ---------------------------------------------------------------------------
 # (C) 404-window fixed-tail is INDEPENDENT of the forward cursor
 # ---------------------------------------------------------------------------
-tC="$(mktemp -d)"; trap 'rm -rf "$tA" "$tB" "$tC"' EXIT
+tC="$(mktemp -d)"; trap 'rm -rf "$tA" "$tB" "$tC" "$_HERMETIC_ROOT"' EXIT
 export NFTBAN_DATA_DIR="$tC/data" BOTSCAN_SPOOL_DIR="$tC/spool" \
        BOTSCAN_PATTERNS_DIR="$tC/patterns" BOTSCAN_STATE_FILE="$tC/state.db" \
        BOTSCAN_LOG_FILE="$tC/botscan.log" \
