@@ -3,6 +3,7 @@
 # NFTBan v1.4.0 - Zabbix Integration CLI
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI commands for Zabbix metrics integration
 #
 # meta:name="cmd_zabbix"
@@ -899,10 +900,54 @@ _cmd_zabbix_discover() {
         modules)
             echo '{"data":['
             local first=true
+            # v1.229.11 (lane 3). Two defects here, both proven on lab2:
+            #
+            #  1. LIVE MONITORING DEFECT — enablement was inferred from
+            #     ${NFTBAN_CONFIG_DIR}/modules/${module}.conf, a path that DOES
+            #     NOT EXIST (real config lives under conf.d/). Every module was
+            #     therefore reported ENABLED="0" on every host. Measured on lab2:
+            #     LLD said 0 for ddos/portscan/login/geoban while all four were
+            #     "true" in config.
+            #       A PATH THAT NEVER EXISTS IS A CONSTANT, NOT A CHECK.
+            #
+            #  2. SECOND POPULATION AUTHORITY — this literal list is not derived
+            #     from anything canonical, so it can drift from the modules that
+            #     actually exist.
+            #
+            # Enablement now comes from nftban_module_effective_enabled, the SAME
+            # authority the CLI and health surfaces use. The list is retained as
+            # the LLD's declared discovery population (a monitoring feed must not
+            # silently gain or lose items), but it no longer decides TRUTH — only
+            # WHICH SUBJECTS ARE DISCOVERED.
+            #   ONE AUTHORITY FOR STATE. THE FEED DECLARES ITS SUBJECTS, NOT THEIR TRUTH.
+            #
+            # login and suricata are not in _nftban_module_enable_var's table, so
+            # their key is passed explicitly rather than inventing a second
+            # resolver. An UNRESOLVABLE module reports UNKNOWN ("") — never "0",
+            # which would be a false claim of "disabled".
+            #   UNRESOLVED != DISABLED.
             for module in login portscan ddos feeds geoban suricata; do
-                local enabled="0"
-                if [[ -f "${NFTBAN_CONFIG_DIR}/modules/${module}.conf" ]]; then
-                    enabled="1"
+                local enabled="" _mkey=""
+                case "$module" in
+                    login)    _mkey="LOGIN_ENABLED" ;;
+                    suricata) _mkey="SURICATA_ENABLED" ;;
+                esac
+                # CONTRACT: nftban_module_effective_enabled RETURNS A STATUS; it
+                # does NOT echo. Its final statement is [[ "$val" == "true" ]], so
+                # rc=0 means enabled, rc=1 disabled, rc=2 unknown module. Capturing
+                # its stdout yields an empty string and comparing that to "true" is
+                # always false — which is exactly the bug this lane is fixing, so it
+                # must not be reintroduced by the fix.
+                #   READ THE FUNCTION'"'"'S CONTRACT, NOT THE ONE YOU EXPECTED.
+                if declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+                    local _rc=0
+                    # shellcheck disable=SC2086  # _mkey is intentionally unquoted: empty = omit the arg
+                    nftban_module_effective_enabled "$module" $_mkey >/dev/null 2>&1 || _rc=$?
+                    case "$_rc" in
+                        0) enabled="1" ;;
+                        1) enabled="0" ;;
+                        *) enabled="" ;;   # rc>=2 => unresolvable. UNRESOLVED != DISABLED.
+                    esac
                 fi
                 [[ "$first" != "true" ]] && echo ","
                 echo "{\"{\#MODULE}\":\"$module\",\"{\#ENABLED}\":\"$enabled\"}"

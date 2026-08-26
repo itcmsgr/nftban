@@ -3,6 +3,7 @@
 # NFTBan - Regression test for v1.149 BUG-1: nftban update _latv unbound crash
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_update_latv_unbound_v149_test"
 # meta:type="test"
 # meta:version="1.0.0"

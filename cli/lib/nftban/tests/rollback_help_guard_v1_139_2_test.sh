@@ -3,6 +3,7 @@
 # NFTBan - rollback --help guard test (v1.139.2 hotfix)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rollback_help_guard_v1_139_2_test"
 # meta:type="test"
 # meta:version="1.0.0"

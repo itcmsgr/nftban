@@ -3,6 +3,7 @@
 # NFTBan - CVE-2025-NFTBAN-001 inet-filter classify-then-act test (v1.146 Phase-D)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_inet_filter_policy_v146_test"
 # meta:type="test"
 # meta:version="1.0.0"

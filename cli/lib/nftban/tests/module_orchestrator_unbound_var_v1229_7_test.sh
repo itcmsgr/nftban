@@ -3,6 +3,7 @@
 # NFTBan - module orchestrator unbound-variable guard (v1.229.7 PR-2a)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="module_orchestrator_unbound_var_v1229_7_test"
 # meta:type="test"
 # meta:version="1.0.0"

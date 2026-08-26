@@ -2,6 +2,7 @@
 // NFTBan v1.0 - Set Data Model
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="setdata"
 // meta:type="package"
 // meta:version="1.0.0"

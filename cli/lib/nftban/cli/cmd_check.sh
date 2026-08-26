@@ -3,6 +3,7 @@
 # NFTBan - Check Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Check if IP or port is allowed/blocked in nftables
 #
 # meta:name="cmd_check"

@@ -2,6 +2,7 @@
 // NFTBan v1.98.x - Installer Safety Whitelist Tests (PR-14-pre G-14-H)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-safety-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

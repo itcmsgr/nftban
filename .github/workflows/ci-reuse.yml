@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
+#
+# REUSE compliance — a SEPARATE gate, never a replacement.
+#
+# This proves a DIFFERENT property from the two licence gates already in
+# ci-architecture.yml, and none of the three can substitute for another:
+#
+#   check-license-identity.sh   every tracked file classified, UNCLASSIFIED=0,
+#                               identifier is MPL-2.0, copyright is the frozen canon
+#   validate-headers.sh         NFTBan house policy: exactly ONE licence line,
+#                               meta: conventions, set -Eeuo pipefail
+#   reuse lint (here)           REUSE spec: copyright present on EVERY file,
+#                               LICENSES/ holds every referenced text, binaries too
+#
+# reuse lint does not know MPL-2.0 is mandatory here, does not know the meta:
+# convention, and does not know the frozen holder. It is also NOT comment-anchored,
+# so it reads SPDX strings inside code literals -- which is why REUSE-Ignore
+# markers exist in ten files.
+#   THREE GATES, THREE DISJOINT ASSERTIONS. KEEP ALL THREE.
+name: REUSE
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Pinned by commit SHA, matching the posture of the existing supply-chain
+      # workflows (dependency-review, scorecard, socket, osv-scanner).
+      # An unpinned third-party action would contradict them.
+      - name: reuse lint
+        uses: fsfe/reuse-action@bb774aa972c2a89ff34781233d275075cbddf542 # v5

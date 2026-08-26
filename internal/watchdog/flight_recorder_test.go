@@ -2,6 +2,7 @@
 // NFTBan - Tests for watchdog flight recorder
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="watchdog_flight_recorder_test"
 // meta:type="package"
 // meta:version="1.0.0"

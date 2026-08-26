@@ -2,6 +2,7 @@
 // NFTBan — CSF-CLOSE-5: PROTECTED must not be reported while CSF can act
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="validator-csf-conflict"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

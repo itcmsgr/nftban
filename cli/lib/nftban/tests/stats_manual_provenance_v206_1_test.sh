@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.206.1 stats manual-ban provenance attribution (hotfix)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="stats_manual_provenance_v206_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

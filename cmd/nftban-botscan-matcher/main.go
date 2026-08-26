@@ -2,6 +2,7 @@
 // NFTBan v1.209.1 - nftban-botscan-matcher (BotScan candidate prefilter helper)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Purpose: Bounded-memory replacement for `grep -E -f <patternfile>` in the BotScan
 //          shell scan loop. Reads candidate-prefilter patterns (one ERE per line, the
 //          $_pf file build_prefilter writes), streams stdin, and emits the lines grep

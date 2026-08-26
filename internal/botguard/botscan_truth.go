@@ -2,6 +2,7 @@
 // NFTBan v1.219.0 PR-B - BotScan daemon-truth surfaces (handoff status + ban evidence)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: v1.219.0 PR-B — two durable, bounded artifacts written next to batch_signals.jsonl
 //          (DataDir/botguard) so the SHELL operator surfaces can tell the truth about the

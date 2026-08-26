@@ -3,6 +3,7 @@
 # NFTBan v1.3.0 - Update Command Detection Functions
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Install type and distribution detection for updates
 #
 # meta:name="cmd_update_detection"

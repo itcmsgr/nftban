@@ -2,6 +2,7 @@
 // NFTBan v1.89 - Evidence Snapshot Builder + Renderers
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_snapshot"
 // meta:type="package"
 // meta:version="1.89.0"
@@ -42,9 +43,9 @@ import (
 // This is NOT a truth object. Validator remains sole authority.
 // Correlation is diagnostic only — cannot affect exit codes.
 type EvidenceSnapshot struct {
-	SchemaVersion  string                  `json:"schema_version"`
-	CollectedAt    time.Time               `json:"collected_at"`
-	TruthAuthority string                  `json:"truth_authority"`
+	SchemaVersion  string    `json:"schema_version"`
+	CollectedAt    time.Time `json:"collected_at"`
+	TruthAuthority string    `json:"truth_authority"`
 
 	Kernel struct {
 		Counters map[string]CounterValue `json:"counters"`
@@ -56,7 +57,7 @@ type EvidenceSnapshot struct {
 	External  *JournalEvidenceResult `json:"external,omitempty"`
 	Freshness *DataFreshnessResult   `json:"freshness,omitempty"`
 
-	Validator *ValidatorSnapshot   `json:"validator"`
+	Validator   *ValidatorSnapshot `json:"validator"`
 	Correlation map[string]string  `json:"correlation"`
 }
 
@@ -88,7 +89,7 @@ func CollectEvidenceSnapshot(ctx context.Context) (*EvidenceSnapshot, error) {
 	} else {
 		// Extract kernel facts from validator's parsed data.
 		snap.Kernel.Counters = extractCountersFromDoc(valResult.Doc)
-		snap.Kernel.Sets = extractSetsFromCounts(valResult.Doc, valResult.SetElementCounts)
+		snap.Kernel.Sets = extractSetsFromCounts(valResult.Doc, valResult.SetElementCounts, valResult.SetElementUnknown)
 		snap.Kernel.Chains = extractChainsFromDoc(valResult.Doc)
 
 		// Build validator snapshot from health result.
@@ -132,10 +133,17 @@ func extractCountersFromDoc(doc *validator.RulesetDocument) map[string]CounterVa
 // schema) and SetElementCounts (for element counts from per-set queries).
 //
 // Three-state semantics preserved:
-//   doc.SetExists=true + count available → Exists=true, Count=N
-//   doc.SetExists=false → Exists=false (confirmed absent)
-//   doc=nil → Unknown (validator failed)
-func extractSetsFromCounts(doc *validator.RulesetDocument, counts map[string]int) map[string]SetInfo {
+//
+//	doc.SetExists=true + count available → Exists=true, Count=N
+//	doc.SetExists=false → Exists=false (confirmed absent)
+//	doc=nil → Unknown (validator failed)
+//
+// v1.229.11: `unknown` marks keys whose count could not be observed. SetInfo
+// already carries an Unknown field; it was simply never fed, so a failed read
+// was published as Count: 0 with Unknown: false.
+//
+//	A COUNT WE NEVER OBSERVED MUST NOT BE PUBLISHED AS ZERO.
+func extractSetsFromCounts(doc *validator.RulesetDocument, counts map[string]int, unknown map[string]bool) map[string]SetInfo {
 	if doc == nil || counts == nil {
 		return nil
 	}
@@ -143,6 +151,11 @@ func extractSetsFromCounts(doc *validator.RulesetDocument, counts map[string]int
 	for family, setNames := range Phase1Sets {
 		for _, name := range setNames {
 			key := family + ":" + name
+			if unknown[key] {
+				// The set may well exist; we could not READ it. Do not emit a count.
+				sets[key] = SetInfo{Exists: doc.SetExists(family, "nftban", name), Unknown: true}
+				continue
+			}
 			if doc.SetExists(family, "nftban", name) {
 				count := counts[key] // 0 if not queried (valid: empty set)
 				sets[key] = SetInfo{Exists: true, Count: count}

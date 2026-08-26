@@ -3,6 +3,7 @@
 # NFTBan - Host Address Inventory Authority (neutral, read-only)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_hostaddr"
 # meta:type="core"
 # meta:version="1.0.0"

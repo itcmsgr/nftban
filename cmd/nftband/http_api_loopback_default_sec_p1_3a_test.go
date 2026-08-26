@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftband/http_api_loopback_default_sec_p1_3a_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="SEC-P1-3a: the daemon HTTP API defaults to loopback and a non-loopback bind is refused (falls back to loopback) unless explicitly acknowledged via NFTBAN_API_ALLOW_INSECURE_BIND. Covers isLoopbackAPIBind classification (loopback vs all-interfaces/0.0.0.0/::/LAN/public/hostname), resolveAPIBind fallback-vs-honor, the ack env parse, and that the DefaultHTTPAddr fallback is loopback. Hermetic: pure functions, no netlink/daemon."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # =============================================================================
 # NFTBan v1.80 - B80-5 Schema Codegen
 # =============================================================================
@@ -152,12 +153,21 @@ go_string_slice() {
 # Build the generated file's license line via concatenation so the header
 # validator does not count it as a second SPDX occurrence in THIS script.
 _SPDX="SPDX-License-Iden""tifier: MPL-2.0"
+# ⛔ The generator must emit the COPYRIGHT line too, by the same split-string
+# trick. Without it, regenerating STRIPS the SPDX-FileCopyrightText that REUSE
+# compliance depends on, and the schema-drift gate fails on a diff that looks
+# like an ordinary regeneration. This is the SECOND generator with the defect —
+# build/generate-fhs-outputs.sh had it too.
+#   A GENERATOR THAT OMITS A REQUIRED HEADER FIELD IS A COMPLIANCE REGRESSION
+#   ON A TIMER — AND IT FIRES ON WHOEVER REGENERATES NEXT.
+_SPDXC="SPDX-FileCopyright""Text: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 
 cat > "$OUTPUT_FILE" <<HEADER
 // =============================================================================
 // NFTBan v1.80 - Generated Schema Constants
 // =============================================================================
 // ${_SPDX}
+// ${_SPDXC}
 // meta:name="schema_generated"
 // meta:type="generated"
 // meta:version="1.80.0"

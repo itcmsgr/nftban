@@ -3,6 +3,7 @@
 # NFTBan - Path-local storage safety authority (v1.229.3 P0-3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_backup_capacity"
 # meta:type="core"
 # meta:header="Path-local storage safety"

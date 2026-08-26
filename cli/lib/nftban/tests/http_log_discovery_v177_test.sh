@@ -3,6 +3,7 @@
 # NFTBan v1.177 - HTTP log discovery + BotScan/LoginMon-WordPress panel paths
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="http_log_discovery_v177_test"
 # meta:type="test"
 # meta:version="1.0.0"

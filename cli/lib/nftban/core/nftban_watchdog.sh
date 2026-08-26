@@ -3,6 +3,7 @@
 # NFTBan - System Watchdog Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Monitor system resources for auditing and alerting
 #
 # meta:name="nftban_watchdog"

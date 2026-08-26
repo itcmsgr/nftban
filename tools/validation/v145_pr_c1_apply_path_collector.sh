@@ -3,6 +3,7 @@
 # NFTBan v1.145 - PR-C1 apply-path root-cause collector (READ-ONLY)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v145_pr_c1_apply_path_collector" meta:type="tool" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="READ-ONLY diagnostic collector for the v1.145 PR-C1 apply-path root-cause (why _nft_table_available can be false while the nftban table exists). Captures table-probe transience, lock/concurrency correlation, systemd context, socket-activation state, and SSH-port config/state. Mutates NOTHING: no nft add/delete/flush, no reload, no restart, no SSH-port change."
 # meta:input="None"
 # meta:output="Structured diagnostic record on stdout"

@@ -2,6 +2,7 @@
 // NFTBan v1.106 - distroconf shell↔Go loader parity test (MFST-C5)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="distroconf-loader-parity-test"
 // meta:type="test"
 // meta:header="distroconf shell↔Go loader parity test"

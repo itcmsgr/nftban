@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Bounded decision-cache warm-up on restart
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: v1.191 8B (increment 7) — on daemon start, replay only the bounded RECENT TAIL of
 //          the existing batch_signals.jsonl into the TEMPORARY decision cache, so a restart

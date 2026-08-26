@@ -2,6 +2,7 @@
 // NFTBan v1.200 - LoginMon source-visibility: ack/suppress + per-reason remediation
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="loginmon_source_ack_v1200_test"
 // meta:type="test"
 // meta:version="1.0.0"

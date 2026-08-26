@@ -2,6 +2,7 @@
 // NFTBan v1.0.30 - Login Monitor Module (High-Performance Go Implementation)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: loginmon
 // Purpose: Go module for login monitoring with signal-based detection
 //
@@ -433,6 +434,24 @@ func (m *Module) startBindingHeartbeat(ctx context.Context) {
 
 // Start begins the module's background work
 func (m *Module) Start(ctx context.Context) error {
+	// v1.229.11: consume durable intent, do not override it.
+	//
+	// Before this, LOGIN_ENABLED was parsed into config.Enabled whose ONLY
+	// consumers were the status field (:222) and config reload (:729). There was
+	// no gate in Start(), Registry.StartAll or the ban path, so the module was
+	// registered and started unconditionally: `nftban login disable` changed the
+	// REPORTED status and nothing else. Fail-OPEN.
+	//
+	//   A FLAG THAT ONLY REACHES THE STATUS FIELD IS A LABEL, NOT A CONTROL.
+	//
+	// This mirrors internal/ddos/module.go:308 (v1.229.7 PR-2) and
+	// internal/botguard/guard.go, which have always gated correctly. The
+	// population claim in the register named ddos and portscan as sharing the
+	// defect; both were verified fixed on 2026-08-25 — loginmon was the last one.
+	if !m.config.Enabled {
+		log.Printf("[LOGINMON] Module disabled in config -- not starting runtime work")
+		return nil
+	}
 	ctx, m.cancel = context.WithCancel(ctx)
 
 	m.mu.Lock()
@@ -487,6 +506,13 @@ func (m *Module) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the module
 func (m *Module) Stop() error {
+	// v1.229.11: symmetry with Start(). A module that never started has nothing
+	// to tear down, and a service stop must not turn a module off durably.
+	//   SERVICE RESTART MUST NOT CHANGE MODULE CONFIGURATION.
+	// Mirrors internal/ddos/module.go:355 (v1.229.7 PR-2 C-7).
+	if !m.config.Enabled {
+		return nil
+	}
 	if m.cancel != nil {
 		m.cancel()
 	}
@@ -1702,6 +1728,19 @@ func (m *Module) processLine(line []byte) {
 // strings via the canonical .WithIP() field per same path as manual
 // `nftban ban <CIDR>`.
 func (m *Module) triggerBan(action *detector.BanAction) {
+	// v1.229.11 DEFENCE IN DEPTH. Start() is the primary gate; this is the last
+	// point before an ENFORCEMENT action leaves the module. A disabled module must
+	// not ban even if some path reached here — an in-flight detection after a
+	// config reload flipped Enabled to false, a future caller, or a test harness.
+	//
+	//   THE GATE THAT MATTERS MOST IS THE ONE CLOSEST TO THE EFFECT.
+	//
+	// This is NOT a substitute for the Start() gate: a module that should not run
+	// must not run, not merely decline to act.
+	if !m.config.Enabled {
+		return
+	}
+
 	// Determine severity based on duration
 	severity := eventbus.SeverityCritical
 	banType := "temporary"

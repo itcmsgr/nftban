@@ -3,6 +3,7 @@
 # NFTBan v1.18.4 - Preflight Check Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Pre-installation/pre-enforcement validation
 #
 # meta:name="cmd_preflight"

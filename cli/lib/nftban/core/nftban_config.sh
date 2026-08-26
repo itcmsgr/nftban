@@ -3,6 +3,7 @@
 # NFTBan - Configuration Management
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Unified configuration file management with .conf.local override support
 #
 # meta:name="nftban_config"

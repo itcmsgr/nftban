@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: BotScan cadence-lag visibility (read-only)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: v1.191 8B (config-knobs/cadence) — a bounded, READ-ONLY advisory of the
 //          BotScan→BotGuard pipeline freshness, derived from the batch-signal file mtime.

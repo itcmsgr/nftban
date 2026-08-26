@@ -2,6 +2,7 @@
 // NFTBan - Suricata Integration - Suricata daemon management
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="cmd_suricata"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

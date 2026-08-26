@@ -3,6 +3,7 @@
 # NFTBan - Feeds Module Static Review Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="05_feeds_test"
 # meta:type="test"
 # meta:header="Feeds Module Review Test"

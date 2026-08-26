@@ -3,6 +3,7 @@
 # NFTBan — ghost-table identity drift guard (v1.228.11)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # v1.228.11 fixed the SAME by-name deletion defect in two languages. The Go
 # ghostTables[] and the shell _NFTBAN_GHOST_TABLE_IDENTITIES are consumed by

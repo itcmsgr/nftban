@@ -3,6 +3,7 @@
 # NFTBan - BotGuard support/health cache diagnostics (v1.191 8B inc6B2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botguard_diag_6b2_test"
 # meta:type="test"

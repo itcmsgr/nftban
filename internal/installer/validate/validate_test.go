@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer Validate Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-validate-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -65,9 +66,13 @@ func seedReadyLogretention(t *testing.T) {
 
 // seedNftbanConfContent returns a byte slice that satisfies PR-P2-6
 // config_integrity_ok checks for nftban.conf: >= 256 bytes AND contains
+// REUSE-IgnoreStart
 // the SPDX-License-Identifier token.
+// REUSE-IgnoreEnd
 func seedNftbanConfContent() []byte {
+// REUSE-IgnoreStart
 	body := "# SPDX-License-Identifier: MPL-2.0\n# NFTBan operator config\n"
+// REUSE-IgnoreEnd
 	for len(body) < 400 {
 		body += "# filler line\n"
 	}
@@ -78,7 +83,9 @@ func seedNftbanConfContent() []byte {
 // config_integrity_ok checks for nftables.conf: >= 512 bytes AND
 // contains both "#!/usr/sbin/nft" and "table ip nftban".
 func seedNftablesConfContent() []byte {
+// REUSE-IgnoreStart
 	body := "#!/usr/sbin/nft -f\n# SPDX-License-Identifier: MPL-2.0\ntable ip nftban { }\n"
+// REUSE-IgnoreEnd
 	for len(body) < 700 {
 		body += "# filler line\n"
 	}

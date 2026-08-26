@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer Ghost Table Cleanup
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-switchop-ghost"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

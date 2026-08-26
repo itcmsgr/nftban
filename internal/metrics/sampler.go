@@ -2,6 +2,7 @@
 // NFTBan - Global Metrics Sampler
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // DEPRECATED (v1.89 INV-M-006): sampler.go is scheduled for removal.
 // New code MUST NOT import or call GetSampler(). Use daemon /metrics instead.

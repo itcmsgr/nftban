@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="setsync/nft_replace_atomic" meta:type="package" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Atomic single-transaction netlink set replacement for the opqueue replace_set path (no standalone committed flush)"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

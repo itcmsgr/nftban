@@ -3,6 +3,7 @@
 # NFTBan - Health Check CLI Command - Components Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Component health checks: services, modules, binaries, permissions,
 #          geoip, pro, install, registries
 #

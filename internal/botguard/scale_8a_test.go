@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: 8A synthetic scale-envelope suite
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Increment 8A Groups B+C — hermetic synthetic scale-envelope tests for
 //          small/medium/large/stress profiles (generated representative input, no real hosts).

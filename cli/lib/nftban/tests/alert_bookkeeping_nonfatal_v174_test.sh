@@ -3,6 +3,7 @@
 # NFTBan - v1.174 ALERT-THROTTLE-NONFATAL (alert bookkeeping best-effort)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="alert_bookkeeping_nonfatal_v174_test"
 # meta:type="test"
 # meta:version="1.0.0"

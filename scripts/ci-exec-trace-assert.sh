@@ -3,6 +3,7 @@
 # NFTBan v1.100 PR-P2-4 — CI exec-trace assertion helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ci-exec-trace-assert"
 # meta:type="script"
 # meta:version="1.100.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.0.19 - Auditor Group Read-Only Authorization
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="20-nftban-auditor.rules"
 // meta:type="polkit"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

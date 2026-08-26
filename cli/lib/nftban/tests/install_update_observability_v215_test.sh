@@ -3,6 +3,7 @@
 # NFTBan Test - Install/Update Observability (v1.215.0, PR-1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="install-update-observability-v215-test"
 # meta:type="test"

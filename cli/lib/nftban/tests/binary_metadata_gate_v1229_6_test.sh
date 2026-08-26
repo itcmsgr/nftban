@@ -3,6 +3,7 @@
 # NFTBan v1.229.6 — A BLOCKING PROPERTY MUST BE CHECKED BEFORE THE ACTION IT BLOCKS
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="binary-metadata-gate-v1229-6-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

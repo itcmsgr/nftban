@@ -3,6 +3,7 @@
 # NFTBan v1.176 — FSYNC-RESIDUAL durability-idiom CI guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="fsync_residual_guard_v176_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.80 - pipeline source abstraction
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: source
 // Purpose: Source interface wrapping distroconf for the v1.80 pipeline.
 //

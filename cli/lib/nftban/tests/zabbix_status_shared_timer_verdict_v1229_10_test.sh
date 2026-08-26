@@ -3,6 +3,7 @@
 # NFTBan - zabbix status must not report a shared timer as its own health (v1.229.10)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="zabbix_status_shared_timer_verdict_v1229_10_test"
 # meta:type="test"
 # meta:version="1.0.0"

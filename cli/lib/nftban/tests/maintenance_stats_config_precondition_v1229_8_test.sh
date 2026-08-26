@@ -3,6 +3,7 @@
 # NFTBan - maintenance step 9d config precondition (v1.229.8 PR-2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="maintenance_stats_config_precondition_v1229_8_test"
 # meta:type="test"
 # meta:version="1.0.0"

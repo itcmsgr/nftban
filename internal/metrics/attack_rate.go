@@ -2,6 +2,7 @@
 // NFTBan - Attack Rate Tracker (v1.41.0)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="attack_rate"
 // meta:type="package"
 // meta:version="1.41.0"

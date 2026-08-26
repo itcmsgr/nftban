@@ -3,6 +3,7 @@
 # NFTBan v1.198.2 - FW-transition health truth: reset (A) + verdict aggregation (B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="fw_transition_health_truth_v1982_test"
 # meta:type="test"
 # meta:version="1.0.0"

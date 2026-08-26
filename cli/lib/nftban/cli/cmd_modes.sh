@@ -3,6 +3,7 @@
 # NFTBan v1.7.0 - Detection Modes Overview CLI Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Unified overview of detection modes across all protection modules
 #
 # meta:name="cmd_modes"

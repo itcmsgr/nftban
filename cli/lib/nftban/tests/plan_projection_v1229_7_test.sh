@@ -3,6 +3,7 @@
 # NFTBan - plan projection contract (v1.229.7 PR-3B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="plan_projection_v1229_7_test"
 # meta:type="test"
 # meta:version="1.0.0"

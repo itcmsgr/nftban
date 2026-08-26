@@ -3,6 +3,7 @@
 # NFTBan - Duplicate-redactor retirement P-retire-1: nftban debug uses the shared authority
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="comms_redact_debug_p_retire1_test"
 # meta:type="test"
 # meta:version="1.0.0"

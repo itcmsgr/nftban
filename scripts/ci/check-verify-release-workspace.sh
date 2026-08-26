@@ -3,6 +3,7 @@
 # NFTBan — A RELEASE STEP CANNOT READ A FILE ITS JOB DID NOT CHECK OUT
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-verify-release-workspace"
 # meta:type="script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

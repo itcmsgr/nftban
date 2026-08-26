@@ -3,6 +3,7 @@
 # NFTBan - v1.163: `nftban whitelist verify` (SEC-WL-VERIFY) read-only check
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="whitelist_verify_v163_test"
 # meta:type="test"
 # meta:version="1.0.0"

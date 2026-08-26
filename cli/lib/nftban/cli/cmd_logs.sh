@@ -3,6 +3,7 @@
 # NFTBan - Logs Command (log-retention visibility)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Operator-facing, READ-ONLY visibility into the effective log-retention
 #          policy. Delegates to `nftban-core logretention status`, which reports
 #          the authoritative generated-state + live filesystem/usage/override

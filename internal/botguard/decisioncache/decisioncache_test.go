@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Temporary Decision Cache Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: decisioncache
 // Purpose: Prove the v1.191 8B temporary decision cache is correct IN ISOLATION —
 //          allowed-states-only, durable rejection, monotonic-TTL expiry, bounded

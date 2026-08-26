@@ -3,6 +3,7 @@
 # V127 UX-2 well-known infrastructure guard — deterministic test fixtures
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v127_ux2_well_known_test"
 # meta:type="test"
 # meta:version="1.127.0"

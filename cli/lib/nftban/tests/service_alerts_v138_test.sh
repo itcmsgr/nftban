@@ -3,6 +3,7 @@
 # NFTBan - SEC-BYPASS-ALERT service-alerts.log emitter test (v1.138 PR-B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="service_alerts_v138_test"
 # meta:type="test"
 # meta:version="1.0.0"

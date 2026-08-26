@@ -2,6 +2,7 @@
 // NFTBan v1.80 - Dovecot parser tests (Phase D)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: dovecot
 // Purpose: Unit tests + fixture replay for the Dovecot auth-failure parser.
 //

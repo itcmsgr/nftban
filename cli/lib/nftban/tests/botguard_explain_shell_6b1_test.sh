@@ -3,6 +3,7 @@
 # NFTBan - BotGuard explain shell client (v1.191 8B inc6B1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botguard_explain_shell_6b1_test"
 # meta:type="test"

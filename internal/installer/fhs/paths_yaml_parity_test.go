@@ -2,6 +2,7 @@
 // NFTBan v1.106 - paths.go ↔ fhs-spec.yaml parity test (MFST-C4)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-fhs-paths-yaml-parity-test"
 // meta:type="test"
 // meta:header="paths.go ↔ fhs-spec.yaml parity test"

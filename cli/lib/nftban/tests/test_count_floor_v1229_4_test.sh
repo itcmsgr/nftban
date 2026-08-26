@@ -3,6 +3,7 @@
 # NFTBan v1.229.4 P1 — A SHRINKING TEST ESTATE MUST NOT BE SILENT
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test-count-floor-v1229-4-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

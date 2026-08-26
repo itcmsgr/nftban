@@ -2,6 +2,7 @@
 // NFTBan v1.81 - Module Health Evaluator
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="module_health"
 // meta:type="lib"
 // meta:version="1.81.0"
@@ -697,15 +698,17 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	// Feeds: per M81-3 contract, feeds configured + data available = LOADED
 	// (not ACTIVE — feeds are data pipeline, not traffic processing).
 	// Feeds share blacklist_ipv4 with geoban so element count is shared.
-	feedsConfigured := feedsExist()
-	if !feedsConfigured {
+	// v1.229.11 FEEDS-HEALTH-TRUTH: enablement, not config presence, and the
+	// feed data dir under DataDir instead of a hardcoded /var/lib/nftban.
+	enabledFeeds := feedsEnabledNames()
+	if len(enabledFeeds) == 0 {
 		bh.Feeds = BlacklistSubHealth{State: "disabled"}
 	} else {
-		// Feed config exists → check data freshness.
+		// At least one feed is enabled → check data freshness.
 		// GAP-BL5: Check feed data directory for actual downloaded data.
 		// If no data files or all data > 7 days old → stale sync.
-		feedDataDir := "/var/lib/nftban/feeds"
-		feedFresh := feedDataIsFresh(feedDataDir, 7*24*time.Hour)
+		feedDataDir := filepath.Join(DataDir, "feeds")
+		feedFresh := feedDataIsFresh(feedDataDir, enabledFeeds, 7*24*time.Hour)
 		if feedFresh {
 			bh.Feeds = BlacklistSubHealth{State: "loaded"}
 		} else {
@@ -851,50 +854,125 @@ func readKeyFromFile(path, key string) string {
 	return ""
 }
 
-// feedDataIsFresh checks if the feed data directory has files newer than maxAge.
+// feedDataIsFresh reports whether any ENABLED feed has materialized data newer
+// than maxAge under dir.
 // GAP-BL5: detects stale feed sync (no data or old data = sync not working).
-func feedDataIsFresh(dir string, maxAge time.Duration) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false // no data directory = not fresh
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
+//
+// v1.229.11 FEEDS-HEALTH-TRUTH: scoped to the enabled feeds' own files instead
+// of "any file in the directory". Feed data files are never removed when a feed
+// is disabled, so an orphan file from a previously-enabled feed used to be able
+// to report a freshly-synced pipeline that no longer exists. The name→file
+// resolution (lowercase(name) + ".txt") is the one declared by the shell feed
+// counters, the single source of truth for this mapping since v1.167 PR-1
+// (cli/lib/nftban/lib/nftban_feed_counters.sh:62-66).
+func feedDataIsFresh(dir string, enabled map[string]bool, maxAge time.Duration) bool {
+	for name := range enabled {
+		p := filepath.Join(dir, strings.ToLower(name)+".txt") // #nosec G304 — name derives from FEED_<NAME>_ENABLED keys in root-owned config
+		info, err := os.Stat(p)
+		if err != nil || info.IsDir() {
 			continue
 		}
 		if time.Since(info.ModTime()) < maxAge {
-			return true // at least one recent file
+			return true // at least one enabled feed has recent data
 		}
 	}
-	return false // no recent files
+	return false // no enabled feed has recent data
 }
 
-// feedsExist checks if any feed config files exist.
-func feedsExist() bool {
-	feedDir := filepath.Join(ConfigDir, "conf.d/feeds")
-	entries, err := os.ReadDir(feedDir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".conf") {
-			return true
+// feedsEnabledNames returns the feeds whose FEED_<NAME>_ENABLED resolves true.
+//
+// v1.229.11 FEEDS-HEALTH-TRUTH. The predicate this replaces (feedsExist) probed
+// ConfigDir/conf.d/feeds as a DIRECTORY of *.conf files. No NFTBan artifact has
+// ever created that directory: both packaging paths install the feeds config as
+// the FILE conf.d/feeds.conf (packaging/build_nftban.sh:593 RPM, :2467 deb), and
+// that same file is what every feeds authority reads (cmd/nftban-core/
+// cmd_feeds.go:99, cli/lib/nftban/core/nftban_feeds.sh:68). os.ReadDir therefore
+// failed on every installed host and the feeds sub-health rendered a constant
+// "disabled" while `nftban feeds list` and `nftban status` reported enabled,
+// populated feeds.
+//
+// PRESENCE IS NOT ENABLEMENT: feeds.conf always ships and always defines all
+// feeds (with every one disabled), so "the config exists" would have been the
+// wrong predicate even at the right path. The predicate is per-feed enablement —
+// the same one the feeds surfaces use.
+//
+// Precedence mirrors the feeds config authority exactly, last wins
+// (cmd/nftban-core/cmd_feeds.go:134-136):
+//
+//	conf.d/feeds.conf → conf.d/feeds.conf.local → nftban.conf.local
+//
+// This is a READER of that authority. It never writes, and it does not become a
+// second enablement authority: feeds remains a blacklist sub-health served by
+// evaluateBlacklist, not a ModuleClassification module.
+func feedsEnabledNames() map[string]bool {
+	enabled := make(map[string]bool)
+	for _, rel := range []string{"conf.d/feeds.conf", "conf.d/feeds.conf.local", "nftban.conf.local"} {
+		data, err := os.ReadFile(filepath.Join(ConfigDir, rel)) // #nosec G304 — ConfigDir + fixed filenames, not user input
+		if err != nil {
+			continue // absent override is normal, not an error
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			name, val, ok := parseFeedEnabledLine(line)
+			if !ok {
+				continue
+			}
+			enabled[name] = val
 		}
 	}
-	return false
+	// Keep only the feeds that resolved to true.
+	for name, on := range enabled {
+		if !on {
+			delete(enabled, name)
+		}
+	}
+	return enabled
 }
 
-// collectEvidenceSetElements queries element counts for all evidence-relevant sets.
+// parseFeedEnabledLine extracts (name, enabled) from a FEED_<NAME>_ENABLED line.
+// Returns ok=false for anything else, including comments and malformed lines.
+func parseFeedEnabledLine(line string) (name string, enabled, ok bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "FEED_") {
+		return "", false, false // comments and every other key
+	}
+	eq := strings.Index(line, "=")
+	if eq < 0 {
+		return "", false, false
+	}
+	key := strings.TrimSpace(line[:eq])
+	if !strings.HasSuffix(key, "_ENABLED") {
+		return "", false, false // FEED_*_URL / _CATEGORY / _DESCRIPTION
+	}
+	name = strings.TrimSuffix(strings.TrimPrefix(key, "FEED_"), "_ENABLED")
+	if name == "" {
+		return "", false, false
+	}
+	// Value may be quoted and may carry a trailing comment.
+	val := strings.TrimSpace(line[eq+1:])
+	if strings.HasPrefix(val, `"`) {
+		if end := strings.Index(val[1:], `"`); end >= 0 {
+			val = val[1 : 1+end]
+		} else {
+			val = strings.TrimPrefix(val, `"`)
+		}
+	} else if fields := strings.Fields(val); len(fields) > 0 {
+		val = fields[0]
+	} else {
+		val = ""
+	}
+	return name, val == "true", true
+}
+
+// Evidence-set collection. See evidenceSetNames and collectEvidenceSetElementsState.
 // v1.89 INV-M-001: Validator is the sole kernel-query authority.
 // Evidence layer reads from ValidationResult.SetElementCounts instead of
 // making its own nft -j list set calls.
-func collectEvidenceSetElements() map[string]int {
-	result := make(map[string]int)
-	evidenceSets := map[string][]string{
+// evidenceSetNames is the single population of evidence-relevant sets. Both
+// collectors read it so there is only ONE authority for "which sets matter".
+//
+//	ONE POPULATION, ONE AUTHORITY — A SECOND LIST IS A SECOND TRUTH.
+func evidenceSetNames() map[string][]string {
+	return map[string][]string{
 		"ip": {
 			"blacklist_manual_ipv4", "blacklist_ipv4",
 			"http_bot_suspect", "http_bot_pending", "http_bot_allow",
@@ -906,13 +984,38 @@ func collectEvidenceSetElements() map[string]int {
 			"http_bot_grey6", "http_bot_ban6", "http_bot_emergency6",
 		},
 	}
-	for family, sets := range evidenceSets {
+}
+
+// collectEvidenceSetElementsState returns element counts AND the keys that could
+// not be observed.
+//
+// v1.229.11 (OPEN_NFT_PARSER_FAILURE_TRUTH_TAIL): the previous collector returned
+// map[string]int via countSetElements, so an exec or decode failure arrived here
+// as 0 — indistinguishable from a genuinely empty set, and published downstream
+// as a confirmed count. For an enforcement set that reads as proof of no
+// protection.
+//
+//	A FAILED READ IS NOT A COUNT OF ZERO.
+//	INSTRUMENT FAILURE IS NOT SUBJECT STATE.
+//
+// Uses countSetElementsState — the three-valued reader ALREADY in this file
+// (countSetElementsStateReal). This applies an existing in-tree pattern; it does
+// not introduce a new mechanism.
+func collectEvidenceSetElementsState() (counts map[string]int, unknown map[string]bool) {
+	counts, unknown = make(map[string]int), make(map[string]bool)
+	for family, sets := range evidenceSetNames() {
 		for _, name := range sets {
 			key := family + ":" + name
-			result[key] = countSetElements(family, name)
+			c, _, unk := countSetElementsState(family, name)
+			if unk {
+				// Record the FAILURE, not a number we never observed.
+				unknown[key] = true
+				continue
+			}
+			counts[key] = c
 		}
 	}
-	return result
+	return counts, unknown
 }
 
 // countSetElements returns the number of elements in a kernel set.
@@ -922,10 +1025,13 @@ func collectEvidenceSetElements() map[string]int {
 // defaultServiceChecker in validator.go:70).
 var countSetElementsFunc = countSetElementsReal
 
-// countSetElements delegates to countSetElementsFunc for testability.
-func countSetElements(family, setName string) int {
-	return countSetElementsFunc(family, setName)
-}
+// ⛔ countSetElements (the int-returning wrapper) was REMOVED in v1.229.11.
+// The failure-truth lane replaced its callers with the three-valued
+// countSetElementsState* family, because an int alone cannot distinguish
+// CONFIRMED-ABSENT from COULD-NOT-READ.
+//   A FAILED READ IS NOT A COUNT OF ZERO.
+// countSetElementsFunc is retained: completeness_test.go swaps it to stub the
+// real nft query, so it is a live test seam rather than dead code.
 
 // countSetElementsReal queries the kernel for actual element count in a set.
 // v1.82 CF-4: replaces the v1.81 stub that always returned 0.

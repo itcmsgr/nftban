@@ -3,6 +3,7 @@
 # NFTBan - v1.225.0 PR-B: health-resources bash-completion parity
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="health_resources_completion_parity_v225_test"
 # meta:type="test"
 # meta:version="1.0.0"

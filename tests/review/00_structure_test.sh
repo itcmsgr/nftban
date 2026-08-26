@@ -3,6 +3,7 @@
 # NFTBan v1.0.0 - Project Structure & Conventions Validator
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Static analysis of project structure, meta tags, and conventions
 #
 # meta:name="00_structure_test"

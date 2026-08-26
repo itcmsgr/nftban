@@ -2,6 +2,7 @@
 // NFTBan v1.228.10 PR-3 (A3) - whitelist observation failure preserves state
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="state_whitelist_observation_preserve_v1228_10_test"
 // meta:type="test"
 // meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.126 firewall_reload trust-provider re-merge
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_firewall_trust_remerge_test"
 # meta:type="test"
 # meta:version="1.0.0"

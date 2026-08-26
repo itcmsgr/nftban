@@ -3,6 +3,7 @@
 # NFTBan - Firewall Conflict Detection Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Detect and report conflicting firewall systems
 #
 # meta:name="nftban_firewall_conflicts"

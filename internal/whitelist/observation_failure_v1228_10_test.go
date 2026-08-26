@@ -3,6 +3,7 @@
 // an empty desired state
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="whitelist_observation_failure_v1228_10_test"
 // meta:type="package"
 // meta:version="1.0.0"

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="opqueue/replace_set_atomic_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Proves the opqueue replace_set and flush_source paths route through the atomic ReplaceSet primitive and NEVER call the separately-committing FlushSet()/AddElements(). A recording backend asserts: applyReplace → exactly one ReplaceSet, zero FlushSet/AddElements; flush_source → one ReplaceSet (explicit atomic flush); atomic failure preserves old state (Applied==0). Hermetic; no nft/netlink/root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

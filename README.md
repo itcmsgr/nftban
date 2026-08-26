@@ -6,6 +6,8 @@
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Build: Go 1.25](https://img.shields.io/badge/Build-Go%201.25-00ADD8.svg)](https://go.dev/)
 [![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
+[![IPv4 + IPv6](https://img.shields.io/badge/IPv4%20%2B%20IPv6-supported-brightgreen)]()
+[![Packages](https://img.shields.io/badge/packages-DEB%20%7C%20RPM-blue)]()
 
 ### CI/CD Status
 
@@ -389,6 +391,7 @@ Modified MPL files must remain open. Your own separate code is unaffected.
 | Layer | License |
 |---|---|
 | Core engine | MPL-2.0 |
+| Documentation | MPL-2.0 |
 | Pro portal | Commercial |
 | Brand assets | All rights reserved |
 

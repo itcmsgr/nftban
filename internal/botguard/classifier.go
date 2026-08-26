@@ -2,6 +2,7 @@
 // NFTBan v1.21.0 - HTTP Bot Guard: Bot Classifier
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Classify suspect IPs using FCrDNS verification and crawler configs
 //

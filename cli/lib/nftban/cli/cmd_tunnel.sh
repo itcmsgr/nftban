@@ -3,6 +3,7 @@
 # NFTBan v1.30.0 - Tunnel Suspicion CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI interface for DNS tunnel suspicion monitoring
 #
 # meta:name="cmd_tunnel"

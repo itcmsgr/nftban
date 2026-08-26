@@ -3,6 +3,7 @@
 # NFTBan V108 Item 3 — CI Gate Test Fixture
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="heredoc-safety-fixture"
 # meta:type="test-fixture"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

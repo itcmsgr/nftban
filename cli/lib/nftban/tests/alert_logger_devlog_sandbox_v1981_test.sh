@@ -3,6 +3,7 @@
 # NFTBan - v1.198.1 PR-A: alert handler survives /dev/log denied under sandbox
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="alert_logger_devlog_sandbox_v1981_test"
 # meta:type="test"
 # meta:version="1.0.0"

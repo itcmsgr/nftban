@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.198 R1a-2 DirectAdmin help/disable SSH-port + PAM audit
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_da_help_ssh_port_r1a2_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.84 - Bounded Journal Evidence Reader
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="journal-evidence"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

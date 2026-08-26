@@ -3,6 +3,7 @@
 # NFTBan - System Watchdog CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_watchdog"
 # meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

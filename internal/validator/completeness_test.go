@@ -2,6 +2,7 @@
 // NFTBan v1.85 — Module Completeness & Classification Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="completeness-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan v1.145 - PR-B SSH-port detection wrapper tests
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v145_ssh_port_detect_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Unit tests for cli/lib/nftban/lib/ssh_port_detect.sh — the ListenAddress-aware pure-bash helper (_nftban_listenaddr_port) and the conservative fallback union (_nftban_ssh_detect_fallback). The Go binary is the primary authority and is covered by internal/installer/detect/ssh_test.go; these cover the install-transition shell fallback."
 # meta:input="None (self-contained; temp sshd_config fixtures)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"

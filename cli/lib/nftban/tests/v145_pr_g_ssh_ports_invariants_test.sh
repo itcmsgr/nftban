@@ -3,6 +3,7 @@
 # NFTBan v1.145 - PR-G ssh_ports systemic-alignment invariants
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v145_pr_g_ssh_ports_invariants_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Negative/invariant guards for v1.145 PR-G: ssh_ports is never counted as a public/open service port, the set-driven @ssh_ports ct-count rule is never treated as a service-blocking drop, UDP paths never reference ssh_ports (TCP-only), Pure-FTPd/FTP stay on tcp_ports_in (never ssh_ports), and ssh_ports remains a required internal set mirrored across IPv4/IPv6."
 # meta:input="None (greps repo source read-only)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"

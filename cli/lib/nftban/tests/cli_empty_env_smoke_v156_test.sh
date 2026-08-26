@@ -3,6 +3,7 @@
 # NFTBan - empty-env smoke test (v1.156 PR-B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_empty_env_smoke_v156_test"
 # meta:type="test"
 # meta:version="1.0.0"

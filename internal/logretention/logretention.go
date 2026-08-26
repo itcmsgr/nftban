@@ -2,6 +2,7 @@
 // NFTBan Gate B — Log-retention capacity budget calculator
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="logretention-calculator"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

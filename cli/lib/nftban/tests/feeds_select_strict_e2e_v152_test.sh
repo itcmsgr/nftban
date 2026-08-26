@@ -3,6 +3,7 @@
 # NFTBan - v1.152 BUG-FEEDS-SELECT-NONFUNCTIONAL: strict-mode IFS regression
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="feeds_select_strict_e2e_v152_test"
 # meta:type="test"
 # meta:version="1.0.0"

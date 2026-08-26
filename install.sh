@@ -3,6 +3,7 @@
 # NFTBan v1.98.x - Installation Bootstrap (≤20-line entry point)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Thin bootstrap that hands off to the Go installer for source install
 #
 # meta:name="nftban_install"

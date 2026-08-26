@@ -3,6 +3,7 @@
 # NFTBan - nftables.conf fenced-include idempotency test (v1.146 Phase-D)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_nftables_include_idempotency_v146_test"
 # meta:type="test"
 # meta:version="1.0.0"

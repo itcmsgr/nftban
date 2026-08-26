@@ -3,6 +3,7 @@
 # NFTBan - CLI router exit-truth test (v1.228.1 PR-1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_router_exit_truth_v1228_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

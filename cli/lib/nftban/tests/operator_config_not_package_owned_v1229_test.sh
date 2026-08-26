@@ -3,6 +3,7 @@
 # NFTBan — UNINSTALL-PR2: RPM preserve-by-default + operator-config ownership
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="operator-config-not-package-owned-v1229-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

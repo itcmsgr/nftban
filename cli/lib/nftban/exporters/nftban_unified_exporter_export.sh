@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_unified_exporter_export"
 # meta:type="exporter"
 # meta:version="1.39.0"
@@ -107,11 +108,11 @@ write_reconciliation_metrics() {
 
         # Only emit metrics for targets that have been attempted
         if [[ $attempts -gt 0 ]]; then
-            metrics+="nftban_export_attempts_total{target=\"$target\"} $attempts $timestamp\n"
-            metrics+="nftban_export_success_total{target=\"$target\"} $successes $timestamp\n"
-            metrics+="nftban_export_failures_total{target=\"$target\"} $failures $timestamp\n"
-            metrics+="nftban_export_last_success_timestamp{target=\"$target\"} $last_success $timestamp\n"
-            metrics+="nftban_export_duration_ms{target=\"$target\"} $duration $timestamp\n"
+            metrics+="nftban_export_attempts_total{target=\"$target\"} $attempts\n"
+            metrics+="nftban_export_success_total{target=\"$target\"} $successes\n"
+            metrics+="nftban_export_failures_total{target=\"$target\"} $failures\n"
+            metrics+="nftban_export_last_success_timestamp{target=\"$target\"} $last_success\n"
+            metrics+="nftban_export_duration_ms{target=\"$target\"} $duration\n"
         fi
     done
 

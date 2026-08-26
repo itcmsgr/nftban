@@ -3,6 +3,7 @@
 # NFTBan - v1.167 PR-1 guard: unified feed-IP / feed-file counters
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="feed_counters_unify_v167_test"
 # meta:type="test"
 # meta:version="1.0.0"

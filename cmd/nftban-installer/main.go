@@ -2,6 +2,7 @@
 // NFTBan v1.75 - nftban-installer - RPM/DEB install finalizer
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

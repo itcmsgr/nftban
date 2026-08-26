@@ -2,6 +2,7 @@
 // NFTBan - Smoke Framework: Evidence-Aware Assertions
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="smoke-assertions"
 // meta:type="package"
 // meta:version="1.95.0"

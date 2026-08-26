@@ -3,6 +3,7 @@
 # NFTBan v1.209.2 - BotScan collector gather streaming test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Prove the v1.209.2 gather hotfix — streaming nftban_http_read_incremental
 #          straight to the spool (instead of new="$(...)") preserves cursor/no-dup/no-loss
 #          semantics while removing the per-source bash-variable slurp that OOM'd the

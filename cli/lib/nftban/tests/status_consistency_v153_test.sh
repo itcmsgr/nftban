@@ -3,6 +3,7 @@
 # NFTBan - v1.153 PR-A: status output-truth + cross-command consistency
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="status_consistency_v153_test"
 # meta:type="test"
 # meta:version="1.0.0"

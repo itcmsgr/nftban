@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer Executor Interface
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-executor"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -28,6 +29,22 @@ type Result struct {
 	ExitCode int
 	Stdout   string
 	Stderr   string
+
+	// TimedOut reports that the command was KILLED because its context deadline
+	// expired — it did not choose an exit code, it was not allowed to finish.
+	//
+	// ⛔ v1.229.11 lane 6A. Without this field a timeout was indistinguishable
+	// from any other signal death: exec.ExitError.ExitCode() returns -1 for a
+	// signal-terminated process, the same -1 RunContext returns for "binary not
+	// found". switchop.Rebuild tested `== 1` and `>= 2`, so -1 matched neither
+	// and a rebuild KILLED PART-WAY THROUGH was logged as
+	// "finished DEGRADED ... (recovery expected)" and returned nil — a
+	// SUCCESSFUL install over a convergence that never completed.
+	//
+	//	A TIMEOUT IS NOT AN EXIT CODE. IT IS THE ABSENCE OF ONE.
+	//	TIMEOUT / KILLED / INTERRUPTED IS ITS OWN VERDICT CLASS —
+	//	NEVER FAIL, NEVER PASS, NEVER DEGRADED.
+	TimedOut bool
 }
 
 // FileMeta carries the read-only metadata Stat returns. Added in

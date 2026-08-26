@@ -3,6 +3,7 @@
 # NFTBan CI — GO TOOLCHAIN PIN PARITY  (v1.229.4 VAF-0 Stage 2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-toolchain-pin-parity"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

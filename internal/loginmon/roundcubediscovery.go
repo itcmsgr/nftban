@@ -2,6 +2,7 @@
 // NFTBan v1.186.0 - LoginMon Roundcube userlogins.log discovery (DirectAdmin-only)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: loginmon
 // Purpose: Discovery of the Roundcube webmail userlogins.log for the LoginMon
 //          auth_failure event class (source=roundcube), DirectAdmin-only in v1.186.

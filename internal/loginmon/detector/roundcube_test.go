@@ -2,6 +2,7 @@
 // NFTBan v1.186.0 - Roundcube detector tests (parser match/non-match + public-IP guard)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="roundcube_detector_test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

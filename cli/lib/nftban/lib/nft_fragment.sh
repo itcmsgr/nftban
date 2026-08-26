@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nft_fragment" meta:type="lib" meta:version="1.61.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
 # meta:inventory.files="/etc/nftban/rules.d"
 # meta:inventory.binaries="nft"
@@ -1022,10 +1023,10 @@ add set ${table_ipv4} ${udp_meter} { type ipv4_addr; size 65535; flags dynamic,t
 # Only unique protections remain below.
 
 # SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
-add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent NEW conns (host-wide, not per IP)"
 
 # DNS Protection (unique — no base schema equivalent)
-add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent NEW conns (host-wide, not per IP)"
 add rule ${table_ipv4} ${chain} udp dport 53 update @ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv4} ${chain} udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
@@ -1054,10 +1055,10 @@ add set ${table_ipv6} ${udp_meter}6 { type ipv6_addr; size 65535; flags dynamic,
 # v1.67.1: Same deduplication as IPv4 — removed SYN meter + SSH/HTTP/HTTPS conn limits.
 
 # SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
-add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent NEW conns (host-wide, not per IP)"
 
 # DNS Protection (unique)
-add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent NEW conns (host-wide, not per IP)"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 update @ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 

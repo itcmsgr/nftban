@@ -3,6 +3,7 @@
 # NFTBan v1.229.3 P0-1 — A FAILED READ MUST NEVER RENDER AS A PASS
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="posture-observation-truth-v1229-3-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

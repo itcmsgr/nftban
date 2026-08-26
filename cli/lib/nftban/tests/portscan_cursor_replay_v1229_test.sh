@@ -3,6 +3,7 @@
 # NFTBan — PORTSCAN-CURSOR: replay elimination regression (v1.229.x)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="portscan-cursor-replay-v1229-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -4,6 +4,7 @@
 # NFTBan - DDoS Protection Module - SURICATA MODE
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Suricata IDS-integrated DDoS protection with scoring engine
 #
 # meta:name="nftban_ddos_suricata"

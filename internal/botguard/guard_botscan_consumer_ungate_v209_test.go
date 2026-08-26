@@ -2,6 +2,7 @@
 // NFTBan v1.209.0 - BotScan batch-signal consumer un-gate (Option A) tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.209 fix — when BotGuard classification is DISABLED, BotScan (Clock-3)
 //          ban signals are still consumed and routed to the DURABLE, drop-enforced

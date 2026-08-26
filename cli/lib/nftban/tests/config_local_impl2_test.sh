@@ -3,6 +3,7 @@
 # NFTBan — CONFIG_LOCAL_RECOVERY IMPL-2 — read-only `config local` verbs test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="config_local_impl2_test"
 # meta:type="test"
 # meta:version="1.0.0"

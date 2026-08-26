@@ -2,6 +2,7 @@
 // NFTBan v1.78 - Kernel Truth Validator
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="validator"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -252,7 +253,7 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 
 	// v1.89 INV-M-001: Collect set element counts for evidence layer.
 	// Validator is the sole kernel-query authority — evidence reads from here.
-	result.SetElementCounts = collectEvidenceSetElements()
+	result.SetElementCounts, result.SetElementUnknown = collectEvidenceSetElementsState()
 
 	// v1.82 Step 3: Consistency axis — cross-source verification
 	consistencyResult := evaluateConsistency(result.Modules)

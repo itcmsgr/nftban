@@ -3,6 +3,7 @@
 # NFTBan - mode plan / exclusivity contract (v1.229.7 PR-3A)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="mode_plan_exclusivity_v1229_7_test"
 # meta:type="test"
 # meta:version="1.0.0"
@@ -224,40 +225,61 @@ for mod in ddos portscan; do
 done
 
 echo ""
-echo "9. every convergence root bumps the plan binding..."
-# ⛔ The binding only has teeth if EVERY root that re-renders advances it. A root
-# that converges without bumping leaves a superseded plan record looking current,
-# which is precisely the failure the binding exists to catch:
-#   A PLAN RECORD IS USABLE ONLY IF ITS BINDING IS CURRENT.
+echo "9. every convergence root commits the plan binding LAST..."
+# ⛔ v1.229.11 LANE 6A — THIS SECTION'S ASSERTION IS INVERTED ON PURPOSE.
+# It used to require the bump BEFORE the module re-apply. That ordering was the
+# defect: the generation became authoritative while the records describing it
+# had not been republished yet, so every reader in between resolved UNKNOWN —
+# a window entered on EVERY convergence, 453 seconds wide on srv3, and frozen
+# permanently whenever the rebuild was killed inside it.
+#
+#	GENERATION N BECOMES AUTHORITATIVE ONLY AFTER THE WORK FOR N COMPLETES.
+#
+# ⛔ COMMENTS ARE STRIPPED BEFORE MATCHING. The previous form grepped the RAW
+# function body, so a comment merely NAMING the bump satisfied it — this guard
+# was observed passing on explanatory prose with no call behind it.
+#	MENTION != WRITER. A GUARD THAT MATCHES A COMMENT PROVES NOTHING.
 FW="$ROOT/cli/lib/nftban/cli/cmd_firewall.sh"
 if [[ ! -f "$FW" ]]; then
     fail "SUBJECT_NOT_FOUND: $FW"
 else
     for fn in firewall_reload _firewall_rebuild_core firewall_reset; do
-        body="$(awk -v fn="$fn" '$0 ~ "^"fn"\\(\\) \\{"{i=1;next} i&&/^\}/{exit} i{print}' "$FW")"
+        body="$(awk -v fn="$fn" '$0 ~ "^"fn"\\(\\) \\{"{i=1;next} i&&/^\}/{exit} i{print}' "$FW" \
+                | sed 's/#.*$//')"
         if [[ -z "$body" ]]; then
-            fail "convergence root $fn NOT FOUND — cannot prove it advances the binding"
+            fail "convergence root $fn NOT FOUND — cannot prove its commit ordering"
             continue
         fi
-        if ! grep -q "nftban_plan_generation_bump" <<<"$body"; then
-            fail "$fn converges WITHOUT bumping the generation — a superseded plan would still read as current"
+        # (a) the root must OPEN a transaction, and must NOT advance the
+        #     generation by any other means.
+        if ! grep -q "nftban_plan_txn_begin" <<<"$body"; then
+            fail "$fn converges WITHOUT opening a convergence transaction"
             continue
         fi
-        # ⛔ ORDERING. The bump must land BEFORE the modules re-resolve, or each
-        # module publishes at generation G and the root then advances to G+1 --
-        # instantly staling a plan that had JUST been correctly resolved, and
-        # reporting UNKNOWN immediately after a successful convergence.
-        bump_at="$(grep -n "nftban_plan_generation_bump" <<<"$body" | head -1 | cut -d: -f1)"
-        conv_at="$(grep -nE "nftban (ddos|portscan) reload" <<<"$body" | head -1 | cut -d: -f1)"
-        if [[ -n "$conv_at" && -n "$bump_at" && "$bump_at" -ge "$conv_at" ]]; then
-            fail "$fn bumps the generation AFTER converging a module (line $bump_at >= $conv_at) — it would stale the plan it just published"
+        if grep -q "nftban_plan_generation_bump" <<<"$body"; then
+            fail "$fn still advances the generation outside the commit — THE PRE-v1.229.11 DEFECT"
+            continue
+        fi
+        begin_at="$(grep -n "nftban_plan_txn_begin"          <<<"$body" | head -1 | cut -d: -f1)"
+        conv_at="$( grep -nE "nftban (ddos|portscan) reload" <<<"$body" | head -1 | cut -d: -f1)"
+        conv_last="$(grep -nE "nftban (ddos|portscan) reload" <<<"$body" | tail -1 | cut -d: -f1)"
+        commit_at="$(grep -n "nftban_plan_txn_commit"        <<<"$body" | head -1 | cut -d: -f1)"
+        # (b) the transaction opens BEFORE any module resolves, so every record
+        #     it publishes is stamped with this transaction's target.
+        if [[ -n "$conv_at" && -n "$begin_at" && "$begin_at" -ge "$conv_at" ]]; then
+            fail "$fn opens its transaction AFTER converging a module (line $begin_at >= $conv_at)"
         else
-            ok "$fn bumps before it converges (bump@$bump_at, first convergence@${conv_at:-none})"
+            ok "$fn opens its transaction before it converges (begin@$begin_at, first convergence@${conv_at:-none})"
         fi
-        # ⛔ A root that advances the binding must converge BOTH modules, or
-        # intentionally leave them stale. Converging only one is the silent case
-        # the owner named: generation advances, one module quietly keeps an old
-        # plan while the other is refreshed.
+        # (c) THE COMMIT IS LAST. This is the invariant of the lane.
+        if [[ -z "$commit_at" ]]; then
+            fail "$fn never commits — the generation would never advance for a completed convergence"
+        elif [[ -n "$conv_last" && "$commit_at" -le "$conv_last" ]]; then
+            fail "$fn commits the generation BEFORE its last module converges (line $commit_at <= $conv_last) — it would publish a generation whose work had not finished"
+        else
+            ok "$fn commits only after every module has converged (commit@$commit_at, last convergence@${conv_last:-none})"
+        fi
+        # (d) a root that opens a transaction must converge BOTH modules.
         missing=""
         grep -q "nftban ddos reload"     <<<"$body" || missing="$missing ddos"
         grep -q "nftban portscan reload" <<<"$body" || missing="$missing portscan"
@@ -282,16 +304,41 @@ fi
 
 echo ""
 echo "10. the binding has exactly one writer topology..."
-# (a) no bump may exist outside the three declared convergence roots -- an
-#     unaccounted bump advances the binding with nothing converging behind it,
-#     turning every plan UNKNOWN for no reason.
+# (a) ⛔ v1.229.11 LANE 6A: EXACTLY ONE FUNCTION IN THE TREE MAY ADVANCE THE
+#     GENERATION, AND IT IS THE COMMIT. The standalone bump primitive is deleted;
+#     an unaccounted advance announces a convergence that nothing performed.
+#       THE GENERATION ADVANCES IN nftban_plan_txn_commit, OR NOWHERE.
 bump_sites="$(grep -rlE "^[^#]*nftban_plan_generation_bump" "$ROOT/cli/lib/nftban" 2>/dev/null \
-              | grep -v "/tests/" | grep -v "module_authority.sh" | sort)"
-expected="$ROOT/cli/lib/nftban/cli/cmd_firewall.sh"
-if [[ "$bump_sites" == "$expected" ]]; then
-    ok "the generation is bumped only from the firewall convergence roots"
+              | grep -v "/tests/" | sort || true)"
+if [[ -z "$bump_sites" ]]; then
+    ok "the standalone generation-bump primitive no longer exists anywhere in the tree"
 else
-    fail "unexpected generation-bump site(s): ${bump_sites:-none} (expected only cmd_firewall.sh)"
+    fail "generation-bump primitive still present in: $bump_sites — it can advance the binding outside a transaction"
+fi
+# The generation FILE must have exactly one writer, and that writer must be the
+# commit. Located by OWNING FUNCTION, never by line number.
+AUTHSRC="$ROOT/cli/lib/nftban/lib/module_authority.sh"
+gen_writers="$(awk '
+    /^[a-z_]+\(\) \{/ { fn=$1; sub(/\(\).*/,"",fn) }
+    /^[^#]*mv -f "\$tmp" "\$gf"/ { print fn }
+' "$AUTHSRC" | sort -u)"
+if [[ "$gen_writers" == "nftban_plan_txn_commit" ]]; then
+    ok "the generation file is written only by nftban_plan_txn_commit"
+else
+    fail "generation-file writer(s) = [${gen_writers:-none}], expected exactly nftban_plan_txn_commit"
+fi
+# Transactions may be OPENED only from the declared convergence roots plus the
+# two module resolve roots (which own a standalone reload's transaction).
+txn_sites="$(grep -rlE "^[^#]*nftban_plan_txn_begin" "$ROOT/cli/lib/nftban" 2>/dev/null \
+             | grep -v "/tests/" | grep -v "module_authority.sh" | sort || true)"
+txn_expected="$(printf '%s\n' \
+    "$ROOT/cli/lib/nftban/cli/cmd_firewall.sh" \
+    "$ROOT/cli/lib/nftban/core/nftban_ddos.sh" \
+    "$ROOT/cli/lib/nftban/core/nftban_portscan.sh" | sort)"
+if [[ "$txn_sites" == "$txn_expected" ]]; then
+    ok "convergence transactions are opened only by the declared roots"
+else
+    fail "unexpected transaction-open site(s): ${txn_sites:-none}"
 fi
 # (b) the record may be written ONLY from the module's resolve root. A writer
 #     anywhere else could stamp the CURRENT generation onto a plan nobody
@@ -299,7 +346,10 @@ fi
 #       STAMPING MUST IMPLY RESOLVING.
 for mod in ddos portscan; do
     src="$ROOT/cli/lib/nftban/core/nftban_${mod}.sh"
-    wln="$(grep -n "module-plan-${mod}.env" "$src" | head -1 | cut -d: -f1)"
+    # ⛔ v1.229.11: records are addressed by generation via nftban_plan_record_path,
+    #    so the literal "module-plan-<mod>.env" no longer appears in the writer.
+    #    LOCATE THE WRITER BY THE CALL IT MAKES, NOT BY A FILENAME IT NO LONGER SPELLS.
+    wln="$(grep -nE "^[^#]*nftban_plan_record_path" "$src" | head -1 | cut -d: -f1)"
     if [[ -z "$wln" ]]; then
         fail "$mod publishes no plan record — the Go validator would have nothing to read"
         continue
@@ -403,6 +453,7 @@ for mod in ddos portscan; do
         local out rc
         out="$(NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
                NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+           NFTBAN_RUN_DIR="$d/run" \
                NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
             set -Eeuo pipefail
             source '$ROOT/cli/lib/nftban/lib/module_authority.sh'
@@ -418,19 +469,29 @@ for mod in ddos portscan; do
             _nftban_${mod}_log(){ :; }
             nftban_${mod}_reconcile >/dev/null 2>&1; echo \"RC=\$?\"" 2>&1 || true)"
         rc="$(grep -oE 'RC=[0-9]+' <<<"$out" | tail -1 | cut -d= -f2)"
-        local g state
-        g="$(sed -n 's/^NFTBAN_PLAN_BOUND_GENERATION=//p' "$d/run/module-plan-$mod.env" 2>/dev/null)"
-        if [[ ! -f "$d/run/module-plan-$mod.env" ]]; then state=NO_RECORD
+        # ⛔ v1.229.11: records are addressed BY GENERATION. Looking only at the
+        # old unsuffixed path made every outcome report NO_RECORD — including the
+        # POSITIVE control — so the negative controls were passing because the
+        # probe could not see a record at all, not because publication was
+        # refused.
+        #     A CONTROL THAT CANNOT SEE THE ARTIFACT PROVES NOTHING ABOUT IT.
+        local g state rec
+        rec="$(find "$d/run" -maxdepth 1 -name "module-plan-$mod.env*" 2>/dev/null | sort | tail -1)"
+        g="$([[ -n "$rec" ]] && sed -n 's/^NFTBAN_PLAN_BOUND_GENERATION=//p' "$rec" 2>/dev/null || true)"
+        if [[ -z "$rec" ]]; then state=NO_RECORD
         elif [[ -z "$g" ]]; then state=UNBOUND_RECORD
         else state="BOUND($g)"; fi
-        rm -rf "$d"; echo "${rc:-?}|$state"
+        local committed; committed="$(cat "$d/run/convergence-generation" 2>/dev/null || echo "?")"
+        rm -rf "$d"; echo "${rc:-?}|$state|gen=$committed"
     }
 
-    # P — a valid generation is written exactly, not defaulted.
+    # P — a valid generation yields a record bound to the TRANSACTION TARGET
+    #     (current 7 -> target 8), and the generation advances to 8 ONLY at the
+    #     commit, once the module has actually reconciled.
     r="$(bind_probe valid)"
-    [[ "$r" == "0|BOUND(7)" ]] \
-        && ok "$mod P: valid generation -> record bound to exactly 7" \
-        || fail "$mod P: expected 0|BOUND(7), got $r"
+    [[ "$r" == "0|BOUND(8)|gen=8" ]] \
+        && ok "$mod P: reconcile bound the record to target 8 and committed generation 8" \
+        || fail "$mod P: expected 0|BOUND(8)|gen=8, got $r"
 
     # N1 — resolver returns EMPTY. This is the exact production signature.
     r="$(bind_probe empty)"
@@ -481,18 +542,33 @@ for mod in ddos portscan; do
     K="$( [[ $mod == ddos ]] && echo DDOS || echo PORTSCAN )"
     printf '%s_ENABLED="true"\n%s_MODE="classic"\n' "$K" "$K" > "$d/conf.d/$mod/main.conf"
     printf '7\n' > "$d/run/convergence-generation"
-    # make the atomic replace impossible: the target path is a directory
-    mkdir -p "$d/run/module-plan-$mod.env"
+    # ⛔ v1.229.11: THE OBSTACLE MUST SIT WHERE THE WRITER ACTUALLY WRITES.
+    # Records are now addressed by generation, so the writer targets
+    # module-plan-<mod>.env.8 (current 7 -> target 8). Obstructing the old
+    # unsuffixed path left publication free to SUCCEED, and this control then
+    # counted the legitimately published record as an orphan — passing or
+    # failing for reasons unrelated to the defect it exists to catch.
+    #     A NEGATIVE CONTROL MUST STILL HIT THE MOTIVATING DEFECT.
+    mkdir -p "$d/run/module-plan-$mod.env.8"
     NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
     NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
+           NFTBAN_RUN_DIR="$d/run" \
     NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
         source '$AUTH'
         source '$ROOT/cli/lib/nftban/core/nftban_${mod}.sh' 2>/dev/null || true
         nftban_${mod}_suricata_is_available(){ return 1; }
         nftban_${mod}_apply(){ return 0; }; nftban_${mod}_teardown(){ return 0; }
         _nftban_${mod}_log(){ :; }
-        nftban_${mod}_reconcile" >/dev/null 2>&1
-    leftover="$(find "$d/run" -maxdepth 1 -name "module-plan-$mod.env.*" 2>/dev/null | wc -l)"
+        nftban_${mod}_reconcile" >/dev/null 2>&1 || true
+    # ⛔ `|| true` is load-bearing. This control DELIBERATELY makes publication
+    # fail, so the reconcile root correctly returns non-zero — and under
+    # `set -Eeuo pipefail` that aborted the whole suite before the assertion
+    # below could run. Previously the obstacle sat at a path the writer no longer
+    # used, publication SUCCEEDED, and the abort never surfaced.
+    #     A CONTROL MUST TOLERATE THE FAILURE IT EXISTS TO INDUCE.
+    # Count STAGING temporaries only — the obstructing directory itself also
+    # matches a bare module-plan-<mod>.env.* glob.
+    leftover="$(find "$d/run" -maxdepth 1 -type f -name "module-plan-$mod.env.*.tmp.*" 2>/dev/null | wc -l)"
     if [[ "$leftover" -eq 0 ]]; then
         ok "$mod N4: failed publication leaves no partial/temp record"
     else

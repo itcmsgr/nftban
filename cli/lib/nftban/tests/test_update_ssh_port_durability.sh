@@ -3,6 +3,7 @@
 # NFTBan v1.121 - Tests for SSH-port durability dual-surface verifier
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test_update_ssh_port_durability"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.1.0 - Trust CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI handler for trusted provider IP range management
 #
 # meta:name="cmd_trust"

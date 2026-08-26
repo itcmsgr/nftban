@@ -3,6 +3,7 @@
 # NFTBan v1.21.0 - Bot Scanner Processor (Clock 3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Process access logs via botscan and write batch_signals.jsonl
 #
 # meta:name="nftban_botscan_processor"

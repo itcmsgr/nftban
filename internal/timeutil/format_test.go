@@ -2,6 +2,7 @@
 // NFTBan - Tests for time formatting utilities
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="timeutil_format_test"
 // meta:type="package"
 // meta:version="1.0.0"

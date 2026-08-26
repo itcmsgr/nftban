@@ -3,6 +3,7 @@
 # V131.1 D13 — Option C validator output-capture regression test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v131_1_d13_option_c_output_capture_test"
 # meta:type="test"
 # meta:version="1.131.1"

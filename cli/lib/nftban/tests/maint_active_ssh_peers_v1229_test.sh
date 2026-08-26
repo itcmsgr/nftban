@@ -3,6 +3,7 @@
 # NFTBan v1.229.x — active-SSH auto-whitelist peer extraction (A6)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="maint_active_ssh_peers_v1229_test"
 # meta:type="test"

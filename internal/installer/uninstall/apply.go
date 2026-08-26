@@ -2,6 +2,7 @@
 // NFTBan v1.100 PR-23 — Uninstall Mutation Phase 1 (Authority Release Core)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-uninstall-apply"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan v1.193.0 PR-B - maintenance table-absent transient-noise suppression
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="maint_table_absent_noise_v1930_test"
 # meta:type="test"

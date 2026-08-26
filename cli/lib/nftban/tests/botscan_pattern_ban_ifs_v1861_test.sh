@@ -3,6 +3,7 @@
 # NFTBan v1.186.1 - BotScan pattern-ban IFS word-split guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_pattern_ban_ifs_v1861_test"
 # meta:type="test"

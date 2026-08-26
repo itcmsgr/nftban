@@ -3,6 +3,7 @@
 # NFTBan v1.222.0 — log-retention rollout acceptance evidence collector (Z9)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="logretention_acceptance_evidence"
 # meta:type="tool"
 # meta:version="2.0.0"

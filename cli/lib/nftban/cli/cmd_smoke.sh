@@ -3,6 +3,7 @@
 # NFTBan v1.95.0 - Smoke Command (Registry-Driven, Non-Destructive)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Pass-through to Go registry-driven smoke framework
 #
 # meta:name="cmd_smoke"

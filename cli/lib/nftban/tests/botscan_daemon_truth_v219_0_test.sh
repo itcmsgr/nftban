@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.219.0 PR-B BotScan daemon-truth (shell consumes it)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_daemon_truth_v219_0_test"
 # meta:type="test"
 # meta:version="1.0.0"

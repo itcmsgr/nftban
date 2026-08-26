@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.126 update-history mixed-install detector fix
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_update_detection_v126_test"
 # meta:type="test"
 # meta:version="1.0.0"

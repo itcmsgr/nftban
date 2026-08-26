@@ -2,6 +2,7 @@
 // NFTBan v1.180.0 - LoginMon FTP Discovery Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="loginmon_ftpdiscovery_test"
 // meta:type="package"

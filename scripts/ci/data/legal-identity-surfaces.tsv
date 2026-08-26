@@ -33,3 +33,4 @@ branding/README.md	markdown-legal-doc	YES	CORE	CORE	-
 .github/DISCUSSION_TEMPLATE/welcome.md	markdown-legal-doc	YES	CORE	CORE	-
 SPDX-HEADERS.md	markdown-legal-doc	YES	CORE	CORE	CORE
 packaging/deb/copyright	dep5	YES	CORE	CORE	CORE
+REUSE.toml	reuse-manifest	YES	CORE	CORE	CORE

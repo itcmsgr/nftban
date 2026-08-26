@@ -3,6 +3,7 @@
 # NFTBan - v1.163: SEC-IMMUT immutable-flag HEALTH VERIFICATION (advisory)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="immutable_health_verify_v163_test"
 # meta:type="test"
 # meta:version="1.0.0"

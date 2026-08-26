@@ -3,6 +3,7 @@
 # NFTBan CI — SECURITY OBSERVATION INTEGRITY  (v1.229.4 VAF-0 Stage 3B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-security-observation-integrity"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

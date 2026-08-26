@@ -3,6 +3,7 @@
 # NFTBan Update Safety Lint (U1 + U2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="lint_update_safety"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

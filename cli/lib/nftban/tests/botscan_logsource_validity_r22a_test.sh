@@ -3,6 +3,7 @@
 # NFTBan - BotScan log-source validity & health-state truth (R22A) tests
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_logsource_validity_r22a"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # V131 PR-A — long-tail code bug fix regression test (CB-1..CB-4)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v131_pr_a_long_tail_code_bug_fix_test"
 # meta:type="test"
 # meta:version="1.131.0"

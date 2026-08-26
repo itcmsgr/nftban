@@ -2,6 +2,7 @@
 // NFTBan PR26.6.1 - DA Watchdog Coherence Lock-In Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-switchop-takeover-pr26-6-1-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftbackend/never_ban_add_element_l3a_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L3a: never-ban is a target-set + element invariant, not a verb property. Proves backend.AddElement refuses a single exempt IP into an enforcement (drop) set (v4+v6, exact+CIDR-covered), that the AddElementExemptSkips counter increments, that whitelist/port/public-IP/CIDR adds are NOT blocked, and that backend.Ban still refuses exempt IPs (regression). Uses the package snapshot() helper for a fixed exempt set; the reject path returns before any netlink work, so it is hermetic (no nft/root)."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

@@ -3,6 +3,7 @@
 # NFTBan - v1.160: optional-module permission enforcement skip (PR-D)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="permissions_optional_module_skip_v160"
 # meta:type="test"
 # meta:version="1.0.0"

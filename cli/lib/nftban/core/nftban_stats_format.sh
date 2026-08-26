@@ -3,6 +3,7 @@
 # NFTBan - Statistics Display & Trends
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Dashboard generation, export, and trend analysis extracted from nftban_stats.sh
 #
 # meta:name="nftban_stats_format"

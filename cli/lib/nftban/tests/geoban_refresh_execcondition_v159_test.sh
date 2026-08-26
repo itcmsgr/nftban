@@ -3,6 +3,7 @@
 # NFTBan - v1.159: nftban-geoban-refresh.service ExecCondition skip-not-fail
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="geoban_refresh_execcondition_v159_test"
 # meta:type="test"
 # meta:version="1.0.0"

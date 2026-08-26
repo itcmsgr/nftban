@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // =============================================================================
 // NFTBan v1.100 — Restore Execute Orchestration (PR-25 §23)
 // =============================================================================

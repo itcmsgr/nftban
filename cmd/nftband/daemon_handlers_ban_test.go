@@ -2,6 +2,7 @@
 // NFTBan v1.119 - Tests for daemon ban handlers (V119 A1 whitelist CIDR guard)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="daemon_handlers_ban_test"
 // meta:type="test"
 // meta:version="1.0.0"

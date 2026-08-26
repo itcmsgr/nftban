@@ -2,6 +2,7 @@
 // NFTBan - D-UXV-16 / D-UXV-17 regression tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="tracker_duxv16_duxv17_test"
 // meta:type="package"
 // meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.79 - CI Gate G17: Health JSON Schema Validation
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Validate health JSON output contains required fields and structure
 #
 # meta:name="lint-health-json-schema"

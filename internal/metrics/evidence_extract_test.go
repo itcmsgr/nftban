@@ -2,6 +2,7 @@
 // NFTBan v1.89 - Evidence Extraction Tests (INV-M-002)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_extract_test"
 // meta:type="test"
 // meta:version="1.89.0"
@@ -140,7 +141,7 @@ func TestExtractSetsFromCounts(t *testing.T) {
 		"ip:http_bot_ban":          5,
 	}
 
-	sets := extractSetsFromCounts(doc, counts)
+	sets := extractSetsFromCounts(doc, counts, nil)
 	if sets == nil {
 		t.Fatal("extractSetsFromCounts returned nil for valid inputs")
 	}
@@ -172,7 +173,7 @@ func TestExtractSetsFromCounts(t *testing.T) {
 
 func TestExtractSetsFromCounts_NilDoc(t *testing.T) {
 	counts := map[string]int{"ip:test": 1}
-	sets := extractSetsFromCounts(nil, counts)
+	sets := extractSetsFromCounts(nil, counts, nil)
 	if sets != nil {
 		t.Error("extractSetsFromCounts(nil, ...) should return nil")
 	}
@@ -182,7 +183,7 @@ func TestBuildValidatorSnapshot(t *testing.T) {
 	result := &validator.ValidationResult{
 		Status: validator.StatusProtected,
 		Modules: validator.ModuleHealthMap{
-			DDoS: &validator.ModuleHealth{Effective: validator.EffectiveEnforcing},
+			DDoS:     &validator.ModuleHealth{Effective: validator.EffectiveEnforcing},
 			BotGuard: &validator.ModuleHealth{Effective: validator.EffectiveObserving},
 			Blacklist: &validator.BlacklistHealth{
 				Manual: validator.BlacklistSubHealth{State: "enforcing"},

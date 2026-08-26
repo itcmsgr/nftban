@@ -3,6 +3,7 @@
 # NFTBan - Polkit Authorization Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI wrapper for Polkit authorization validation
 #
 # meta:name="cmd_polkit"

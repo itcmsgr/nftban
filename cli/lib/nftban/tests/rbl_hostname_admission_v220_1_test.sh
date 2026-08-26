@@ -4,6 +4,7 @@
 #          host-address classifier before entering the RBL candidate set
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_hostname_admission_v220_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

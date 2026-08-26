@@ -2,6 +2,7 @@
 // NFTBan v1.78 - nft JSON Output Parsing
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="validator-nftjson"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

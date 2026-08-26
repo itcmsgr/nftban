@@ -3,6 +3,7 @@
 # NFTBan Module Isolation Lint (R-10)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="lint_module_isolation"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

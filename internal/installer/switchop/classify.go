@@ -2,6 +2,7 @@
 // NFTBan v1.164 - Empty-table classifier (switchop ghost cleanup)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-switchop-classify"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan v1.9.3 - Installation Script (Prerequisites Module)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Prerequisite checks for NFTBan installation
 #
 # meta:name="install_prerequisites"

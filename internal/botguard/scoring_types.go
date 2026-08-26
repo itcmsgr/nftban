@@ -2,6 +2,7 @@
 // NFTBan v1.79.0 - HTTP Bot Guard: Scoring Types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Scoring engine types for profile-based BotGuard (v2)
 //

@@ -2,6 +2,7 @@
 // NFTBan v1.100.x PR26.2 - Panel Framework Tests (FakePanelAdapter)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-panelfw-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

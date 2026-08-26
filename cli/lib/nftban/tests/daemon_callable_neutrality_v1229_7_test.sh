@@ -3,6 +3,7 @@
 # NFTBan - daemon-callable neutrality (v1.229.7 PR-2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="daemon_callable_neutrality_v1229_7_test"
 # meta:type="test"
 # meta:version="1.0.0"

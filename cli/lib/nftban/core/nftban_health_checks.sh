@@ -4,6 +4,7 @@
 # NFTBan - Health Check Functions Library (Loader)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Load all health check function modules
 #
 # meta:name="nftban_health_checks"

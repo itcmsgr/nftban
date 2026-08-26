@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.137 log-durability (PR-A logrotate config + packaging)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="logrotate_config_v137_test"
 # meta:type="test"
 # meta:version="1.0.0"

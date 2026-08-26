@@ -3,6 +3,7 @@
 # NFTBan — v1.229.7 cross-mode teardown falsification (P1-P4 + N1-N4)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v1229_7_teardown_falsification"
 # meta:type="lab"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

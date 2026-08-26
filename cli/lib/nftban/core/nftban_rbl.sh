@@ -3,6 +3,7 @@
 # NFTBan - RBL Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Real-time Blackhole List (RBL) checking core logic
 #
 # meta:name="nftban_rbl"

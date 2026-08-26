@@ -3,6 +3,7 @@
 # NFTBan v1.107 — V108 Item 6: install-method detection CI gate
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test-install-method-detection"
 # meta:type="ci-script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

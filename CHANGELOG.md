@@ -11,6 +11,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.11] - 2026-08-26 — the generation now means what it says
+
+A convergence-truth and legal-hygiene release. The firewall's behaviour is
+deliberately unchanged except where it was reporting something untrue.
+
+### Fixed — convergence transaction
+
+- **The generation advertised work that had not happened.** All three firewall
+  mutators advanced the convergence generation at their head and republished the
+  module plan records at their tail. Both readers require exact equality between a
+  record's binding and the generation file, so for the entire span in between every
+  reader resolved UNKNOWN. That window was entered on every convergence, not under
+  rare timing — 453 seconds wide on one production host, and made permanent whenever
+  the rebuild was killed inside it. Plan records are now addressed by generation and
+  are immutable once committed; the generation file is both the sole selector and the
+  sole commit point, so one atomic rename switches the whole set. Readers see either
+  a complete generation N or a complete N+1, never a mixture. The standalone bump
+  primitive is deleted rather than deprecated.
+
+- **A killed rebuild reported a successful installation.** The installer ran the
+  rebuild under a fixed 60-second deadline while the step scales with host firewall
+  state — 35s on a lab, 453s on a production host. A killed process reports exit -1,
+  which matched neither the degraded nor the failed branch, so it fell through to
+  "finished DEGRADED … recovery expected" and returned success. Interruption is now
+  its own verdict class and is fatal to the install. The deadline is removed rather
+  than raised: boundedness belongs to the rebuild's own operations, not to an outer
+  clock that cannot know the size of the work it interrupts.
+
+- **Only one convergence path was serialized.** The canonical nft lock covered the
+  rebuild; reload, reset and both standalone module reloads held nothing. The lock is
+  now taken where a transaction is owned, so every owner is covered by construction.
+  A second interactive mutation is refused immediately rather than queued — a bounded
+  wait serializes correctly but tells both operators they succeeded.
+
+### Fixed — reporting truth
+
+- **Feeds health had been false on every installed host since v1.81.** The evaluator
+  probed a directory that no packaging path has ever created, while the config ships
+  as a file. It therefore reported feeds disabled while the feeds surfaces reported
+  them enabled and populated. Enablement now derives from the same authority the rest
+  of the CLI uses, freshness is scoped to the feeds actually enabled, and the data
+  directory is no longer hardcoded.
+
+- **LoginMon's enable flag did not gate runtime**, only the status field.
+- **A failed read reported a count of zero**, indistinguishable from confirmed-absent.
+- **Zabbix discovery reported every module disabled on every host**, because it
+  inferred enablement from a path that does not exist.
+- **Textfile exposition carried client-side timestamps**, which makes the collector
+  discard the entire file.
+- **Connection limits described themselves as per-IP.** They are host-wide. A lab
+  witness proved it: with a limit of two, one source opened two connections and a
+  different source was then blocked. Only the wording is corrected here — the
+  enforcement semantics are unchanged and the real fix is designed for v1.229.12.
+
+### Added
+
+- **PRO export profile** — a deny-by-default field authority for what may leave a
+  host. Transport is deliberately not included.
+- **REUSE 3.3 compliance.** Third-party material is carved out rather than swept up:
+  the Code of Conduct resolves to CC-BY-4.0 attributed to the Contributor Covenant
+  authors, and brand assets to their own terms recording Larry Ewing's Tux. NFTBan
+  documentation is MPL-2.0, the same licence as the source it documents.
+
+### Notes
+
+Zabbix module enablement decisions are canonicalized. The Zabbix LLD subject
+population remains explicitly enumerated and is tracked for population-authority
+convergence in v1.229.12.
+
+### Upgrade path — v1.229.10 is bypassed
+
+**v1.229.10 was published, but its fleet rollout was stopped.** The convergence fixes discovered
+during that stopped rollout are in this release. Existing v1.229.9 installations should upgrade
+directly to v1.229.11; deployment of v1.229.10 is not recommended.
+
+```
+v1.229.9  ──►  v1.229.11        (v1.229.10 bypassed)
+```
+
+Skipping it requires nothing special — package upgrades are cumulative and do not assume the
+intermediate version was ever installed. That was validated rather than assumed, package-native,
+on all three shipped families:
+
+| Family | Host | From | Result |
+|---|---|---|---|
+| DEB | Ubuntu 24.04 | 1.229.9 | rc=0, no conffile prompts |
+| RPM | Rocky 9.8 | 1.229.9 | rc=0, no `.rpmnew` / `.rpmsave` |
+| RPM | Rocky 10.0 | 1.228.9 | rc=0, and the convergence generation initialized cleanly on a host that never had one |
+
+Each upgrade was run non-interactively from the previously published artifact, with the modules
+enabled and converged beforehand, and each preserved its IPv4 and IPv6 rule and set counts exactly.
+
+---
+
 ## [v1.229.10] - 2026-08-25 — a report that describes the instrument instead of the subject
 
 Bug burn-down. Eleven fixes, all report-truth or lifecycle correctness. No new

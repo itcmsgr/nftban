@@ -3,6 +3,7 @@
 # NFTBan - BotScan smart-adaptive controller (v1.207) — pressure/backlog/health
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_botscan_adaptive"
 # meta:type="core"
 # meta:header="BotScan smart-adaptive control loop"

@@ -3,6 +3,7 @@
 # NFTBan - v1.152 BUG-S1a/S1b: status DOWN rc-contract (+ caller safety)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="status_rc_contract_v152_test"
 # meta:type="test"
 # meta:version="1.0.0"

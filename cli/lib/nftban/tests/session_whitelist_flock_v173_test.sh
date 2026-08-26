@@ -3,6 +3,7 @@
 # NFTBan - v1.173 §4.1 session-whitelist flock (shell side)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="session_whitelist_flock_v173_test"
 # meta:type="test"
 # meta:version="1.0.0"

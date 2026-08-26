@@ -2,6 +2,7 @@
 // NFTBan v1.97 - Lifecycle Evidence Logger
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="lifecycle-logger"
 // meta:type="lib"
 // meta:version="1.97.0"

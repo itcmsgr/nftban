@@ -3,6 +3,7 @@
 # NFTBan CLI Wording Lint
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="lint_cli_wording"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

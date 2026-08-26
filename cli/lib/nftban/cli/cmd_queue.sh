@@ -3,6 +3,7 @@
 # NFTBan - Queue CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Handle task queue CLI commands including DLQ management
 #
 # meta:name="cmd_queue"

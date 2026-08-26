@@ -3,6 +3,7 @@
 # NFTBan v1.145 - Runtime SSH-port detection wrapper (PR-B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ssh_port_detect" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Runtime SSH-port detection: union of all SSH listener/config ports via the Go helper binary, with a conservative ListenAddress-aware pure-shell fallback. Replaces scalar head -1 detectors (PR-B)."
 # meta:inventory.files=""
 # meta:inventory.binaries="nftban-detect-ssh-ports,ss,grep,awk,sort"

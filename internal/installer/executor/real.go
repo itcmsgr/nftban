@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer Real Executor
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-executor-real"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -50,6 +51,11 @@ func (r *RealExecutor) RunContext(ctx context.Context, name string, args ...stri
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
+	// ⛔ Ask the CONTEXT, not the exit code. A process killed on deadline reports
+	// ExitCode -1, which is also what "binary not found" reports — the exit code
+	// alone cannot tell those apart, and collapsing them is how a killed
+	// convergence came to look like a completed one.
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 	exitCode := 0
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -57,10 +63,10 @@ func (r *RealExecutor) RunContext(ctx context.Context, name string, args ...stri
 			exitCode = exitErr.ExitCode()
 		} else {
 			// Command not found, permission denied, etc.
-			return Result{ExitCode: -1, Stdout: stdout.String(), Stderr: err.Error()}
+			return Result{ExitCode: -1, Stdout: stdout.String(), Stderr: err.Error(), TimedOut: timedOut}
 		}
 	}
-	return Result{ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String()}
+	return Result{ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String(), TimedOut: timedOut}
 }
 
 func (r *RealExecutor) RunTimeout(timeout time.Duration, name string, args ...string) Result {

@@ -52,10 +52,23 @@ See `branding/README.md` for further details on artwork attribution and logo com
 
 - **Core:** Licensed under **MPL-2.0**.  
 - **Pro Components:** Licensed under the **nftban Pro Commercial License Agreement**.  
-- **Documentation & Brand Assets:** All rights reserved. See `branding/README.md`.
+- **Documentation:** NFTBan-authored documentation is licensed under **MPL-2.0**, the same
+  licence as the source it documents. Operators may redistribute package documentation,
+  examples, operational guides and derived deployment material without a second copyright
+  regime. Third-party or derived documentation retains its own upstream licence and is
+  never silently relicensed — see the exceptions below.
+- **Brand Assets:** All rights reserved. See `branding/README.md` and `TRADEMARK.md`.
+- **Documentation exceptions (third-party / derived, NOT MPL-2.0):**
+  - `.github/CODE_OF_CONDUCT.md` — adapted from the Contributor Covenant v2.1, licensed
+    **CC-BY-4.0**; the upstream text retains its own licence and attribution.
+  - `branding/logo/nftban-logo.png` — incorporates the **Tux** penguin by **Larry Ewing**
+    (The GIMP), used under the creator's attribution terms. See the Third-Party Artwork
+    Notice above.
 - **SPDX Identifiers:** See `SPDX-HEADERS.md` for headers required in all source files.
 
 ---
 
-© 2024–2026 NFTBAN Project / Antonios Voulvoulis. All rights reserved.
-See also: `LICENSE` and `TRADEMARK.md`.
+© 2024-2026 Antonios Voulvoulis <contact@nftban.com>.
+NFTBan Core and NFTBan-authored documentation are licensed under the Mozilla Public
+License 2.0 — see `LICENSE`. Trademarks and brand assets are reserved and governed
+separately — see `TRADEMARK.md`.

@@ -3,6 +3,7 @@
 # NFTBan v1.199 - Lifecycle forensics: per-run record + JSONL + snapshot
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="lifecycle_forensics_v1199_test"
 # meta:type="test"
 # meta:version="1.0.0"

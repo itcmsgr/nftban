@@ -3,6 +3,7 @@
 # NFTBan v1.229.2 TRACK B — CONFIG RELOAD OPERATOR TRUTHFULNESS (CLI surface)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="config-reload-truthfulness-v1229-2-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

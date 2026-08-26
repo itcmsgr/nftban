@@ -3,6 +3,7 @@
 # NFTBan - LogDir foreign-content safety (v1.228.10)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="logdir_foreign_content_safety_v1228_10_test"
 # meta:type="test"
 # meta:version="1.0.0"

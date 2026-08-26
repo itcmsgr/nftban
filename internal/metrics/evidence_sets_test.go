@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Set Element Evidence Tests (M87-3)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_sets_test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -29,7 +30,10 @@ func TestParseSet_WithElements(t *testing.T) {
 			"elem": ["1.2.3.4", "5.6.7.8", "10.0.0.1"]}}
 	]}`
 
-	count, found := parseSetElementCount([]byte(fixture))
+	count, found, decodeFailed := parseSetElementCount([]byte(fixture))
+	if decodeFailed {
+		t.Fatal("well-formed fixture must not report a decode failure")
+	}
 	if !found {
 		t.Fatal("set should be found")
 	}
@@ -45,7 +49,10 @@ func TestParseSet_EmptySet(t *testing.T) {
 		{"set": {"family": "ip", "table": "nftban", "name": "blacklist_manual_ipv4"}}
 	]}`
 
-	count, found := parseSetElementCount([]byte(fixture))
+	count, found, decodeFailed := parseSetElementCount([]byte(fixture))
+	if decodeFailed {
+		t.Fatal("well-formed fixture must not report a decode failure")
+	}
 	if !found {
 		t.Fatal("set object exists → found should be true")
 	}
@@ -58,16 +65,54 @@ func TestParseSet_NoSetWrapper(t *testing.T) {
 	// Valid JSON but no set object → found=false (absent, not empty-present)
 	fixture := `{"nftables": [{"metainfo": {"version": "1.0.9"}}]}`
 
-	_, found := parseSetElementCount([]byte(fixture))
+	_, found, decodeFailed := parseSetElementCount([]byte(fixture))
 	if found {
 		t.Error("no set wrapper → found should be false (absent)")
 	}
+	// v1.229.11: this is the CONFIRMED-ABSENT case and must stay distinguishable
+	// from a decode failure. Both used to return (0,false).
+	if decodeFailed {
+		t.Error("valid JSON with no set object is CONFIRMED ABSENT, not a decode failure")
+	}
 }
 
+// v1.229.11 — the motivating defect of OPEN_NFT_PARSER_FAILURE_TRUTH_TAIL.
+//
+// Malformed output used to return (0, false), which the caller rendered as
+// exists=false, unknown=false — CONFIRMED-ABSENT. A decode error was published
+// as positive evidence that an enforcement set does not exist.
+//
+//	A DECODE ERROR IS UNKNOWN — NEVER CONFIRMED-ABSENT.
 func TestParseSet_MalformedJSON(t *testing.T) {
-	_, found := parseSetElementCount([]byte(`INVALID`))
+	_, found, decodeFailed := parseSetElementCount([]byte(`INVALID`))
 	if found {
 		t.Error("malformed JSON should return found=false")
+	}
+	if !decodeFailed {
+		t.Error("malformed JSON must report decodeFailed=true — otherwise it is indistinguishable from CONFIRMED-ABSENT")
+	}
+}
+
+// A response we can only PARTIALLY decode is also not an absence.
+func TestParseSet_UndecodableElementIsUnknown(t *testing.T) {
+	// Valid outer envelope, one member that cannot decode into the set wrapper.
+	fixture := `{"nftables": [{"metainfo": {"version": "1.0.9"}}, ["not-an-object"]]}`
+
+	_, found, decodeFailed := parseSetElementCount([]byte(fixture))
+	if found {
+		t.Error("no decodable set object → found=false")
+	}
+	if !decodeFailed {
+		t.Error("an undecodable member must yield decodeFailed=true, not CONFIRMED-ABSENT")
+	}
+}
+
+// countSetElementsJSB contract: a decode failure must surface as unknown=true
+// so no consumer can read it as a confirmed-absent set.
+func TestCountSetElementsJSON_DecodeFailureIsUnknown(t *testing.T) {
+	_, found, decodeFailed := parseSetElementCount([]byte(`{"nftables": `))
+	if found || !decodeFailed {
+		t.Fatalf("truncated JSON must be decodeFailed (found=%v decodeFailed=%v)", found, decodeFailed)
 	}
 }
 

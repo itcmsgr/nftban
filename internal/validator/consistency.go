@@ -2,6 +2,7 @@
 // NFTBan v1.82 - Consistency Axis Evaluator
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="consistency"
 // meta:type="lib"
 // meta:version="1.82.0"

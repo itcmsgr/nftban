@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.135 mixed-drift clean-ownership unblock
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_update_detection_v135_clean_ownership_test"
 # meta:type="test"
 # meta:version="1.0.0"

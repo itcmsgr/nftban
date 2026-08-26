@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nft_schema" meta:type="lib" meta:version="1.47.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
@@ -1473,10 +1474,10 @@ export -f nftban_nft_report_status
 #       log prefix "nftban: portscan: "
 #
 #     ct state new tcp dport 22 ct count over 5 drop \
-#       comment "SSH: max 5 concurrent per IP"
+#       comment "SSH: max 5 concurrent NEW conns (host-wide, not per IP)"
 #
 #     ct state new tcp dport { 80, 443 } ct count over 50 drop \
-#       comment "HTTP(S): max 50 concurrent per IP"
+#       comment "HTTP(S): max 50 concurrent NEW conns (host-wide, not per IP)"
 #
 #     # 9. TCP SERVICES (with ct limits applied above)
 #     tcp dport @tcp_ports_in accept comment "TCP services"

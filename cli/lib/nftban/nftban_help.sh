@@ -3,6 +3,7 @@
 # NFTBan - Help System Wrapper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Wrapper for generate-help.sh (single source of truth)
 #
 # This file delegates to scripts/generate-help.sh which reads from

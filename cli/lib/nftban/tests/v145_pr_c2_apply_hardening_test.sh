@@ -3,6 +3,7 @@
 # NFTBan v1.145 - PR-C2 apply-path hardening tests
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v145_pr_c2_apply_hardening_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Tests for v1.145 PR-C2 apply-path hardening: the live (never-cached) readiness helper nftban_ssh_apply_state (ready/no-table/no-sets) and the post-apply verifier nftban_ssh_port_in_both_sets, plus static assertions that maintenance/health advance state/config only on verified kernel success and no longer gate SSH-port apply on the once-cached _nft_table_available."
 # meta:input="None (mocks nft)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"

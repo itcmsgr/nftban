@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer System nftables.conf Integration
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-render-sysconf"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

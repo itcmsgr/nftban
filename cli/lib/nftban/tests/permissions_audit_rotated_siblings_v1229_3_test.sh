@@ -3,6 +3,7 @@
 # NFTBan v1.229.3 P1-4 — THE v1.228.5 AUDIT MIGRATION MUST TAKE THE ROTATED SIBLINGS
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="permissions-audit-rotated-siblings-v1229-3-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

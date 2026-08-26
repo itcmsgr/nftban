@@ -3,6 +3,7 @@
 # NFTBan v1.155 - SSH-port-change lifecycle validator (READ-ONLY)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ssh_port_change_lifecycle_validate" meta:type="tool" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="READ-ONLY validator (v1.155 PR-2 / item 3.3) for the SSH-port-change lifecycle invariants. Given the rendered nftables ruleset and the real sshd listeners, it asserts: (a) every sshd listener is in tcp_ports_in; (b) every sshd listener is in ssh_ports; (c) the brute-force ct-count rule references @ssh_ports (the set); (d) there is NO literal 'tcp dport <port>' ct-count rule for an sshd port (must use the set). Exit 0 iff all invariants hold. Mutates NOTHING: no nft write, no reload, no restart, no SSH-port change. Inputs auto-collected on a host, or injected via env for hermetic testing."
 # meta:input="Live ruleset + listeners on a host, OR injected via NFTBAN_VALIDATE_RULESET_FILE / NFTBAN_VALIDATE_LISTENERS"
 # meta:output="PASS/FAIL lines on stdout; exit 0 on all-pass, non-zero on drift"

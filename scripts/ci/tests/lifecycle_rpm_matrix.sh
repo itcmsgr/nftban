@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # =============================================================================
 # NFTBan v1.228.0 Item 2 — RPM package-native lifecycle matrix (EL9).
 # Runs AS ROOT on a DISPOSABLE, snapshot-backed AlmaLinux 9 VM. Destructive.
