@@ -57,12 +57,20 @@ fi
 
 # 2) The surviving emission must be the authoritative live-IPC path ($d_goroutines),
 #    not the removed proc/stats-file fallback path ($goroutines).
-if grep -qE 'metrics\+="nftban_runtime_goroutines \$d_goroutines ' "$SRC"; then
+# ⛔ v1.229.11: the pattern used to require a TRAILING SPACE after $d_goroutines.
+# That space was not part of the contract — it existed only because a client-side
+# `$timestamp` followed the value. The exporter-timestamp lane removed those
+# timestamps (node_exporter's textfile collector REJECTS THE WHOLE FILE when it
+# sees them), so the line is now `...$d_goroutines\n"` and the old pattern could
+# never match again.
+#   THE ASSERTION IS "THE LIVE-IPC PATH SURVIVES", NOT "A SPACE FOLLOWS IT".
+# Anchored on the variable boundary so it still cannot match $goroutines.
+if grep -qE 'metrics\+="nftban_runtime_goroutines \$d_goroutines(\\n)?"' "$SRC"; then
     ok "surviving emission is the authoritative live-IPC path (\$d_goroutines)"
 else
     no "surviving nftban_runtime_goroutines emission is not the live-IPC (\$d_goroutines) path"
 fi
-if grep -qE 'metrics\+="nftban_runtime_goroutines \$goroutines ' "$SRC"; then
+if grep -qE 'metrics\+="nftban_runtime_goroutines \$goroutines(\\n)?[ "]' "$SRC"; then
     no "the removed proc/stats-file emission (\$goroutines) is back — regression"
 else
     ok "removed proc/stats-file emission (\$goroutines) is absent"
