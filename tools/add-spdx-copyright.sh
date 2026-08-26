@@ -55,6 +55,12 @@ readonly TAG='SPDX-FileCopyrightText'
 _is_conffile() {
     case "$1" in
         etc/nftban/*|install/config/*|install/nftables/nftables.conf) return 0 ;;
+        # ⛔ NOT ALL CONFFILES LIVE UNDER etc/nftban/. install/sysctl/90-nftban.conf
+        # ships to /etc/sysctl.d/ and is equally a declared conffile — the first
+        # revision of this predicate missed it, and it was the ONE remaining
+        # divergence out of 74 after the other 71 were fixed.
+        #   A PATH-SHAPED PREDICATE MISSES EVERY FILE THAT DOES NOT SHARE THE PATH.
+        install/sysctl/*) return 0 ;;
     esac
     return 1
 }
