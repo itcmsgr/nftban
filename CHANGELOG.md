@@ -82,16 +82,17 @@ convergence in v1.229.12.
 
 ### Upgrade path — v1.229.10 is bypassed
 
-**v1.229.10 was published but never deployed.** Its fleet rollout was stopped, and the fixes that
-stopped it are in this release. The supported and witnessed path for existing installations is:
+**v1.229.10 was published, but its fleet rollout was stopped.** The convergence fixes discovered
+during that stopped rollout are in this release. Existing v1.229.9 installations should upgrade
+directly to v1.229.11; deployment of v1.229.10 is not recommended.
 
 ```
-v1.229.9  ──►  v1.229.11        (v1.229.10 is skipped, deliberately)
+v1.229.9  ──►  v1.229.11        (v1.229.10 bypassed)
 ```
 
-Do not deploy v1.229.10. Skipping it requires nothing special — package upgrades are cumulative
-and do not assume the intermediate version was ever installed. That was proven rather than
-assumed, on all three shipped families:
+Skipping it requires nothing special — package upgrades are cumulative and do not assume the
+intermediate version was ever installed. That was validated rather than assumed, package-native,
+on all three shipped families:
 
 | Family | Host | From | Result |
 |---|---|---|---|
