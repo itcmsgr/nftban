@@ -3,6 +3,7 @@
 # NFTBan - whitelist directory observation contract (v1.228.10 A3-DIR)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="whitelist_dir_observation_v1228_10_test"
 # meta:type="test"
 # meta:version="1.0.0"

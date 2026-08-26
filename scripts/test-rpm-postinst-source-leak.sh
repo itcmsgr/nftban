@@ -3,6 +3,7 @@
 # NFTBan RPM Postinst Source-Leak Regression Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test_rpm_postinst_source_leak"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

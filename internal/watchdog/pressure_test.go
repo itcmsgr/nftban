@@ -2,6 +2,7 @@
 // NFTBan - Tests for watchdog pressure calculator
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="watchdog_pressure_test"
 // meta:type="package"
 // meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.73 - Installer Config Persistence
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-render-config"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -2,6 +2,7 @@
 // NFTBan v1.229.7 — shared mode-plan reader (PR-4B)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="modeplan"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

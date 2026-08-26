@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: G1 cadence-gap interim dynamic posture (5B2)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.191 8B increment-5B2 cadence-gap posture: the request-blind L4
 //          meter hit-count escalation is gated by the decision cache so it can only

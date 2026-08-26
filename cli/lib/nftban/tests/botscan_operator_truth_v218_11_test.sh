@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.218.11 BotScan operator-truth V1 (shell surfacing)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_operator_truth_v218_11_test"
 # meta:type="test"
 # meta:version="1.0.0"

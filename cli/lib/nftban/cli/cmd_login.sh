@@ -45,6 +45,7 @@ fi
 # NFTBan - Login Alert CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Provides CLI interface for login monitoring and alerting
 #
 # meta:name="cmd_login"

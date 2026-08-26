@@ -1,0 +1,109 @@
+version = 1
+SPDX-PackageName = "nftban"
+SPDX-PackageSupplier = "Antonios Voulvoulis <contact@nftban.com>"
+SPDX-PackageDownloadLocation = "https://github.com/itcmsgr/nftban"
+
+# =============================================================================
+# NFTBan — REUSE annotations (v1.229.11 Lane 8)
+# =============================================================================
+# Covers files that carry NO in-file SPDX header. Source files (.sh .go .conf
+# .rules, cli/sbin/*) carry their own headers and are deliberately NOT listed
+# here — that set is the INTERSECTION of what tools/validate-headers.sh governs
+# and what check-core-ownership-identity.sh exempts. Annotating outside that
+# intersection turns a file into an unregistered legal-identity surface.
+#
+#   AN IN-FILE ATTRIBUTION IS A LEGAL SURFACE. A REUSE.toml ENTRY IS METADATA.
+#
+# ⛔ THIRD-PARTY CARVE-OUTS COME FIRST AND ARE NEVER COVERED BY A BLANKET RULE.
+# Later entries do not silently override earlier ones — each path is listed once,
+# and the exceptions are excluded from the general globs by construction.
+#   ANNOTATING SOMEONE ELSE'S FILE WITH YOUR OWN LICENCE IS A LEGAL ERROR,
+#   NOT A FORMATTING ERROR.
+# =============================================================================
+
+# ⛔ ORDERING IS LOAD-BEARING: LATER ENTRIES WIN.
+# The carve-outs were originally written FIRST, which read naturally but was
+# WRONG: `.github/CODE_OF_CONDUCT.md` also matches the later `.github/**` glob,
+# and that glob overrode the carve-out. `reuse lint` still reported PASS while
+# the Code of Conduct RESOLVED TO MPL-2.0 — a Contributor Covenant derivative
+# relicensed under our own terms, exactly the legal error these carve-outs exist
+# to prevent. Verified by reading the resolved SPDX output, not the lint verdict.
+#   A SYNTACTICALLY COMPLIANT ANNOTATION CAN STILL BE SEMANTICALLY WRONG.
+#   LINT PASS IS NOT PROOF OF CORRECT ATTRIBUTION.
+# General rules therefore come first; the third-party exceptions come LAST so
+# they have the final word.
+
+# --- NFTBan-authored documentation --------------------------------------------
+# Policy set in NOTICE.md: NFTBan-authored documentation is MPL-2.0, the same
+# licence as the source it documents, so operators can redistribute package
+# documentation and derived deployment material without a second regime.
+[[annotations]]
+path = ["docs/**", "*.md", ".github/**.md", ".github/ISSUE_TEMPLATE/**", "install/share/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
+SPDX-License-Identifier = "MPL-2.0"
+
+# --- CI, build and packaging metadata -----------------------------------------
+[[annotations]]
+path = [".github/**", "scripts/**", "build/**", "packaging/**", "tools/**", "Makefile", "Dockerfile", ".dockerignore", ".lycheeignore", ".githooks/**", "*.yml", "*.yaml", "*.toml", "*.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
+SPDX-License-Identifier = "MPL-2.0"
+
+# --- runtime configuration, units and templates -------------------------------
+# Systemd units, .cfg/.env and templates/* are SOURCE to validate-headers.sh but
+# LEGAL SURFACES to the ownership registry, so they are annotated here rather
+# than stamped in-file.
+[[annotations]]
+path = ["install/**", "etc/**", "cli/**", "internal/**", "cmd/**", "share/**", "VERSION"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
+SPDX-License-Identifier = "MPL-2.0"
+
+# --- test fixtures and generated test data ------------------------------------
+# Byte-exact fixtures whose content must not change; annotated in bulk rather
+# than edited.
+[[annotations]]
+path = ["**/testdata/**", "**/fixtures/**", "tests/**", "**/*.txt", "**/*.log", "**/*.zip"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
+SPDX-License-Identifier = "MPL-2.0"
+
+# --- CARVE-OUT 1: Contributor Covenant derivative -----------------------------
+# .github/CODE_OF_CONDUCT.md:154 — "adapted from the Contributor Covenant,
+# version 2.1", which is licensed CC-BY-4.0. The upstream text keeps its own
+# licence and attribution; NFTBan does not relicense it.
+[[annotations]]
+path = ".github/CODE_OF_CONDUCT.md"
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright (c) Coraline Ada Ehmke and the Contributor Covenant contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# --- CARVE-OUT 2: brand assets, incl. third-party artwork ---------------------
+# NOTICE.md:24-31 records that the logo incorporates the Tux penguin by Larry
+# Ewing (The GIMP), used under the creator's attribution terms.
+# branding/README.md:12-14 states these assets are NOT covered by MPL-2.0, and
+# NOTICE.md lists them as all rights reserved, governed by TRADEMARK.md.
+[[annotations]]
+path = "branding/**"
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>; incorporates the Tux penguin by Larry Ewing (The GIMP)"
+SPDX-License-Identifier = "LicenseRef-NFTBan-Brand"
+
+# --- NOTE ON THE LICENCE TEXTS (deliberately NOT annotated) -------------------
+# LICENSE and LICENSES/** are excluded from REUSE's annotatable file set
+# entirely: `reuse spdx` lists 1956 files and LICENSE is not among them. An
+# annotation for it would be INERT, and an inert rule that looks effective is
+# worse than no rule -- a later reader would believe the Mozilla text had been
+# attributed when nothing had been asserted at all.
+#   DO NOT WRITE A RULE THAT CANNOT TAKE EFFECT.
+# LICENSE remains Mozilla's text, unmodified, and carries no project copyright.
+
+# --- repository metadata without a comment syntax -----------------------------
+# go.mod/go.sum, VERSION_DATE, MAINTAINERS, .gitignore and .claude/CLAUDE.md
+# cannot carry a header comment in a form their consumers tolerate.
+[[annotations]]
+path = ["go.mod", "go.sum", "VERSION_DATE", "MAINTAINERS", ".gitignore", ".claude/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
+SPDX-License-Identifier = "MPL-2.0"

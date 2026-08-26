@@ -2,6 +2,7 @@
 // NFTBan v1.98.x - Installer Payload Staging Tests (PR-14-pre)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-payload-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -383,12 +384,16 @@ func TestStageAll_OperatorConfigPreserved(t *testing.T) {
 // Tests that want to break a single constraint start from this and
 // mutate exactly one dimension.
 func validNftbanConf() []byte {
+// REUSE-IgnoreStart
 	// 512 bytes of realistic content with the SPDX-License-Identifier
+// REUSE-IgnoreEnd
 	// token — comfortably above the 256-byte minimum.
 	body := "# =============================================================================\n"
 	body += "# NFTBan - Main Configuration File\n"
 	body += "# =============================================================================\n"
+// REUSE-IgnoreStart
 	body += "# SPDX-License-Identifier: MPL-2.0\n"
+// REUSE-IgnoreEnd
 	body += "# Purpose: operator configuration\n"
 	body += "# Some amount of pretend configuration follows so this file is\n"
 	body += "# comfortably above the integrity minimum-size floor. A real\n"
@@ -405,7 +410,9 @@ func validNftbanConf() []byte {
 func validNftablesConf() []byte {
 	body := "#!/usr/sbin/nft -f\n"
 	body += "# NFTBan firewall ruleset\n"
+// REUSE-IgnoreStart
 	body += "# SPDX-License-Identifier: MPL-2.0\n"
+// REUSE-IgnoreEnd
 	body += "table ip nftban {\n"
 	body += "    chain input {\n"
 	body += "        type filter hook input priority 0; policy drop;\n"
@@ -466,7 +473,9 @@ func TestVerifyConfigIntegrity_UndersizedNftbanConf(t *testing.T) {
 	seedIntegrityHappyPath(mock)
 	// Stub shorter than the 256-byte minimum — simulates a truncated
 	// file or an empty-stub regression.
+// REUSE-IgnoreStart
 	mock.Files["/etc/nftban/nftban.conf"] = []byte("# SPDX-License-Identifier: MPL-2.0\n")
+// REUSE-IgnoreEnd
 
 	ok, issues := VerifyConfigIntegrity(mock)
 	if ok {
@@ -501,7 +510,9 @@ func TestVerifyConfigIntegrity_NftbanConfMissingLicenseToken(t *testing.T) {
 	}
 	var sawMissingToken bool
 	for _, i := range issues {
+// REUSE-IgnoreStart
 		if i.Path == "/etc/nftban/nftban.conf" && strings.Contains(i.Reason, "SPDX-License-Identifier") {
+// REUSE-IgnoreEnd
 			sawMissingToken = true
 		}
 	}

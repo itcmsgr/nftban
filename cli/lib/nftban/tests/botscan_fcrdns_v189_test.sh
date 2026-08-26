@@ -3,6 +3,7 @@
 # NFTBan v1.189 - BotScan FCrDNS verified-crawler guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_fcrdns_v189_test"
 # meta:type="test"

@@ -2,6 +2,7 @@
 // NFTBan — CSF REMOVAL CONTRACT (CSF-CLOSE-1/2/3)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="switchop-csf-removal-contract-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # V134 PR-D P3 (Lane 1) — alias allowlist + D-26 document + D-28 fix guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v134_pr_d_p3_alias_allowlist_test"
 # meta:type="test"
 # meta:version="1.134.0"

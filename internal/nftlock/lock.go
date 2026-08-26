@@ -2,6 +2,7 @@
 // NFTBan v1.32.0 - Global nft Operation Lock
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftlock"
 // meta:type="package"
 // meta:version="1.0.0"

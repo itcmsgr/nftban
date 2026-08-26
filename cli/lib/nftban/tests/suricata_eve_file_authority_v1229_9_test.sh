@@ -3,6 +3,7 @@
 # NFTBan - the configured EVE file is the consumed EVE file (v1.229.9)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="suricata_eve_file_authority_v1229_9_test"
 # meta:type="test"
 # meta:version="1.0.0"

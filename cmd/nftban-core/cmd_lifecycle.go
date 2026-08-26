@@ -2,6 +2,7 @@
 // NFTBan v1.97 - CLI Lifecycle Command
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="cmd_lifecycle"
 // meta:type="command"
 // meta:version="1.97.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.23.0 - Blacklist Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="cmd_blacklist"
 # meta:type="cli"

@@ -3,6 +3,7 @@
 # NFTBan v1.107 — V108 Item 3: heredoc command-substitution safety CI gate
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="test-heredoc-safety"
 # meta:type="ci-script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

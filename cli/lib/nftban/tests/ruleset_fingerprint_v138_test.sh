@@ -3,6 +3,7 @@
 # NFTBan - SEC-RULEFP integration wiring + invariant guard (v1.138 PR-A)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ruleset_fingerprint_v138_test"
 # meta:type="test"
 # meta:version="1.0.0"

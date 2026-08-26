@@ -3,6 +3,7 @@
 # NFTBan v1.19.1 - GeoBan Code Review Test (Static Analysis)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="06_geoban_test"
 # meta:type="test"

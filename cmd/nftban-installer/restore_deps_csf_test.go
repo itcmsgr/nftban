@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // =============================================================================
 // NFTBan v1.100 PR-25 — CSF Restore Mutation tests (commit 4B-3-csf)
 // =============================================================================

@@ -2,6 +2,7 @@
 // NFTBan v1.97 - Authority Model Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="lifecycle-authority-test"
 // meta:type="test"
 // meta:version="1.97.0"

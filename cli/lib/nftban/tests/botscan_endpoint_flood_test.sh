@@ -3,6 +3,7 @@
 # NFTBan - BotScan endpoint-flood detector test (BOTSCAN-ENDPOINT-FLOOD)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_endpoint_flood_test"
 # meta:type="test"

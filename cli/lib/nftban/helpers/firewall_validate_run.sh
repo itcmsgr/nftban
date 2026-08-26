@@ -3,6 +3,7 @@
 # NFTBan - Firewall Validate Run Wrapper (Option C output capture)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="firewall_validate_run"
 # meta:type="helper"
 # meta:version="1.131.2"

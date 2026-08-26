@@ -2,6 +2,7 @@
 // NFTBan v1.145 - SSH Port Union Detector Command
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-detect-ssh-ports"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

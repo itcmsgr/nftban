@@ -4,6 +4,7 @@
 # NFTBan - RBL provider registry SLICE 3C (curated projection — behavior change)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_provider_registry_slice3c_test"
 # meta:type="test"
 # meta:version="1.0.0"

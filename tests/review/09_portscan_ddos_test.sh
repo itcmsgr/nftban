@@ -3,6 +3,7 @@
 # NFTBan v1.19.6 - Review Test: Portscan + DDoS Modules (Chat 09)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="09_portscan_ddos_test"
 # meta:type="test"

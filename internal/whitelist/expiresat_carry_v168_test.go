@@ -2,6 +2,7 @@
 // NFTBan v1.168 - CLI-BUG-2 whitelist TTL: EXPIRES_AT carry into typed loader
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="expiresat_carry_v168_test"
 // meta:type="test"
 // meta:version="1.0.0"

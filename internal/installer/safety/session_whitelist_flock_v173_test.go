@@ -2,6 +2,7 @@
 // NFTBan v1.173 - §4.1 session-whitelist flock (cross-process lost-update fix)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-safety-session-flock-v173-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

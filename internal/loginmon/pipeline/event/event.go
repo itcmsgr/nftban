@@ -2,6 +2,7 @@
 // NFTBan v1.80 - pipeline event types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: event
 // Purpose: Canonical data types for the detection pipeline (RawLine, NormalizedEvent).
 //

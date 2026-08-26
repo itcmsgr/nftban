@@ -3,6 +3,7 @@
 # NFTBan v1.199 GATE-A — self-contained per-run lifecycle record
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="update_run_human_log_gatea_test"
 # meta:type="test"
 # meta:version="1.0.0"

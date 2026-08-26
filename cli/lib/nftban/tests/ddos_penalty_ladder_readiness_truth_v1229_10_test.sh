@@ -3,6 +3,7 @@
 # NFTBan - configured is not deployed: penalty ladder readiness (v1.229.10)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ddos_penalty_ladder_readiness_truth_v1229_10_test"
 # meta:type="test"
 # meta:version="1.0.0"

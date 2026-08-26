@@ -2,6 +2,7 @@
 // NFTBan v1.146 - sysconf fenced-include idempotency + Shape-B skeleton tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-render-sysconf-test"
 // meta:type="test"
 // meta:version="1.1.0"

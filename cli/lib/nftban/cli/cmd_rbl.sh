@@ -3,6 +3,7 @@
 # NFTBan - RBL CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI interface for RBL (Real-time Blackhole List) monitoring
 #
 # meta:name="cmd_rbl"

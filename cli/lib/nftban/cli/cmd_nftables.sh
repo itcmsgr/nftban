@@ -32,6 +32,7 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # =============================================================================
 
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Command-line interface for nftables service management
 #
 # meta:name="cmd_nftables"

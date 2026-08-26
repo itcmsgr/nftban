@@ -2,6 +2,7 @@
 // NFTBan - Analytics Reporter for Batch GeoIP and Module Status
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="reporter"
 // meta:type="package"
 // meta:version="1.0.0"

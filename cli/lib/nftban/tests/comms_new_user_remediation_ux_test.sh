@@ -3,6 +3,7 @@
 # NFTBan - Central-comms new-user remediation UX
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="comms_new_user_remediation_ux_test"
 # meta:type="test"
 # meta:version="1.0.0"

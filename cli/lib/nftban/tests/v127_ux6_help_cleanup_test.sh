@@ -3,6 +3,7 @@
 # V127 UX-6 help-system cleanup — deterministic test fixtures
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v127_ux6_help_cleanup_test"
 # meta:type="test"
 # meta:version="1.127.0"

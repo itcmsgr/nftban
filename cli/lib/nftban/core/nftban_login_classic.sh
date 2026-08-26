@@ -4,6 +4,7 @@
 # NFTBan - Login Monitor Classic Mode Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: journalctl/log file based login monitoring
 #
 # meta:name="nftban_login_classic"

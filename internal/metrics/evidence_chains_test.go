@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Chain Presence Evidence Tests (M87-4)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_chains_test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

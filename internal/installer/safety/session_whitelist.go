@@ -2,6 +2,7 @@
 // NFTBan v1.120 - Installer Safety Session Whitelist (D-UPDATE-OPERATOR-SELF-BAN-GAP-001)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-safety-session"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

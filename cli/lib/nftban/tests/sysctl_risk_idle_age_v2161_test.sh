@@ -3,6 +3,7 @@
 # NFTBan Test - Sysctl Risk Guard Idle-Age Refinement + conntrack fallback (v1.216.1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="sysctl-risk-idle-age-v2161-test"
 # meta:type="test"

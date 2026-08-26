@@ -3,6 +3,7 @@
 # NFTBan - stdout/stderr contract test (v1.141 PR-B E1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_stderr_contract_v141_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan - v1.169 CLI-BUG-3: `whitelist list` timed/session vs durable labeling
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="whitelist_list_timed_label_v169_test"
 # meta:type="test"
 # meta:version="1.0.0"

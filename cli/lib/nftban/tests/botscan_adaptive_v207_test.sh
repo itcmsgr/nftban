@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.207 BotScan smart-adaptive controller
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_adaptive_v207_test"
 # meta:type="test"
 # meta:version="1.0.0"

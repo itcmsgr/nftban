@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Config-knobs tests (decision-cache + warm-up)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.191 8B config-knobs gate: decision-cache caps and warm-up replay
 //          bounds are operator-configurable via conf.d/botguard/main.conf, defaults preserve

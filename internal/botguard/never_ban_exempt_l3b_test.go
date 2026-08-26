@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="botguard/never_ban_exempt_l3b_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L3b caller-side never-ban pre-check: a BotGuard ban signal for an exempt IP must NOT enter any drop/enforcement set (the enforcer/batch-signal path skips before EnqueueBan). Control: a non-exempt IP with the same signal IS banned, proving the skip is specific to the exempt IP and the path is otherwise live. Uses the package recBackend harness; no netlink/root."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

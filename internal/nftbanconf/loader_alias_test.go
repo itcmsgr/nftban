@@ -2,6 +2,7 @@
 // NFTBan - Tests for v1.103 PR-C3-C canonical/alias DDoS+Portscan handling
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftbanconf_loader_alias_test"
 // meta:type="package"
 // meta:version="1.0.0"

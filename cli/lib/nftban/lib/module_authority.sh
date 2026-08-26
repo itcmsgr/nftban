@@ -3,6 +3,7 @@
 # NFTBan - module enablement authority (v1.228.7)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="module_authority"
 # meta:type="lib"
 # meta:version="1.0.0"

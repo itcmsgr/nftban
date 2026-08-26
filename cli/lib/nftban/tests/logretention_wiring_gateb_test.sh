@@ -3,6 +3,7 @@
 # NFTBan v1.222.0 — log-retention generator wiring + RPM/DEB parity guard (R2/R3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="logretention_wiring_gateb_test"
 # meta:type="test"
 # meta:version="1.0.0"

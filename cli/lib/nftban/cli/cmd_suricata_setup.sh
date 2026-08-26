@@ -3,6 +3,7 @@
 # NFTBan - Suricata Setup Module — RETIRED TOMBSTONE (v1.228.2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: none. This file defines no commands. It exists only as a tombstone.
 #
 # meta:name="cmd_suricata_setup"

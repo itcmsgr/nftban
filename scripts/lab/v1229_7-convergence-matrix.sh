@@ -3,6 +3,7 @@
 # NFTBan — v1.229.7 package-native convergence matrix
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v1229_7_convergence_matrix"
 # meta:type="lab"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

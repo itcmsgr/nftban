@@ -3,6 +3,7 @@
 # NFTBan - Statistics Data Collection
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Core metrics collection functions extracted from nftban_stats.sh
 #
 # meta:name="nftban_stats_collect"

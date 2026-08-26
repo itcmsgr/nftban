@@ -3,6 +3,7 @@
 # NFTBan CI — PRODUCER SIGNAL BINDING  (v1.229.4 VAF-0 Stage 3C)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-producer-signal-binding"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

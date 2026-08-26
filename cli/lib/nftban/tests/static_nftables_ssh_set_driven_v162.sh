@@ -3,6 +3,7 @@
 # NFTBan - v1.162 PR-B: static boot-baseline SSH ct-count is set-driven (@ssh_ports)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="static_nftables_ssh_set_driven_v162"
 # meta:type="test"
 # meta:version="1.0.0"

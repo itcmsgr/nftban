@@ -3,6 +3,7 @@
 # NFTBan v1.193.0 - rebuild re-merges manual whitelist.d (BUG-REBUILD-DROPS-MANUAL-WHITELIST)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="whitelist_rebuild_remerge_v1930_test"
 # meta:type="test"

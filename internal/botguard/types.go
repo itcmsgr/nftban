@@ -2,6 +2,7 @@
 // NFTBan v1.21.0 - HTTP Bot Guard: Automated Crawler Detection & Protection
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Types and state model for HTTP bot classification
 //

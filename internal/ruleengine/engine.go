@@ -2,6 +2,7 @@
 // NFTBan - Event Rule Engine: Core Engine
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="ruleengine-engine"
 // meta:type="package"
 // meta:version="1.93.0"

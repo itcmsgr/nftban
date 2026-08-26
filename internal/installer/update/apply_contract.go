@@ -2,6 +2,7 @@
 // NFTBan v1.99 PR-18 — Update Apply Contract Audit Harness (Public Surface)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-update-apply-contract"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -2,6 +2,7 @@
 // NFTBan v1.229.7 — Structural UNKNOWN propagation & plan-record contract tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="mode-plan-unknown-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

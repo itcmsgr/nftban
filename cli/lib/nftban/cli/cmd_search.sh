@@ -4,6 +4,7 @@
 # NFTBan - Search CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Search for IP/Port across all ban lists, feeds, filters, and whitelists
 #
 # meta:name="cmd_search"

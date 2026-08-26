@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_botguard_explain" meta:type="lib" meta:version="1.191.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Read-only shell client for the BotGuard decision-cache explain_ip daemon verb (v1.191 8B inc6B1)"
 # meta:inventory.files="/usr/lib/nftban/lib/nftban_botguard_explain.sh"
 # meta:inventory.binaries="socat,jq"

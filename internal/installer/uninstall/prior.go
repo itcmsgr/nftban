@@ -2,6 +2,7 @@
 // NFTBan v1.100 PR-P2-1 — Prior-Authority Record Detector (Read-Only)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-uninstall-prior"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

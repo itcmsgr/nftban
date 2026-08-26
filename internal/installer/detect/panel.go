@@ -2,6 +2,7 @@
 // NFTBan v1.75.1 - Installer Panel Detection
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-detect-panel"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

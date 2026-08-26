@@ -2,6 +2,7 @@
 // NFTBan v1.0.30 - Login Monitor Types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: loginmon
 // Purpose: Smart login monitoring with risk-based scoring (replaces fail2ban)
 //

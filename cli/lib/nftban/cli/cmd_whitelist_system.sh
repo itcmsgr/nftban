@@ -3,6 +3,7 @@
 # NFTBan - System Whitelist CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: System IP Whitelist Management
 #
 # meta:name="cmd_whitelist_system"

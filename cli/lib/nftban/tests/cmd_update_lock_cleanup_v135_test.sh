@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.135 update-lock cleanup (D-UPDATE-LOCK-LEFT-BEHIND)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cmd_update_lock_cleanup_v135_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.214.0 - BotScan pattern-delimiter fix test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_pattern_delimiter_v214_test"
 # meta:type="test"

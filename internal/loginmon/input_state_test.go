@@ -2,6 +2,7 @@
 // NFTBan v1.182.0 - LoginMon input-state observability tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="loginmon_input_state_test"
 // meta:type="package"

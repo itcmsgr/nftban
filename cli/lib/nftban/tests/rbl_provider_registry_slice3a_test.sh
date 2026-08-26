@@ -4,6 +4,7 @@
 # NFTBan - RBL provider registry SLICE 3A (typed metadata curation)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_provider_registry_slice3a_test"
 # meta:type="test"
 # meta:version="1.0.0"

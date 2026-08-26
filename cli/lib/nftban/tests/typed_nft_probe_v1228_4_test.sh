@@ -3,6 +3,7 @@
 # NFTBan - typed nft probe authority + verdict honesty (v1.228.4 PR-3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="typed_nft_probe_v1228_4_test"
 # meta:type="test"
 # meta:version="1.0.0"

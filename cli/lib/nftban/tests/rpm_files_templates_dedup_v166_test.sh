@@ -3,6 +3,7 @@
 # NFTBan - v1.166 PR-C guard: templates RPM %files dedup via FHS-generator fix
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rpm_files_templates_dedup_v166_test"
 # meta:type="test"
 # meta:version="1.0.0"

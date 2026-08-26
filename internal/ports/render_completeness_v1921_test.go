@@ -2,6 +2,7 @@
 // NFTBan - V-NFT-SERVICE-PORTS-RENDERED-COMPLETE fixture guard (v1.192.1 inc5)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="render_completeness_v1921_test"
 // meta:type="test"
 // meta:version="1.192.1"

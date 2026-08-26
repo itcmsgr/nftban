@@ -2,6 +2,7 @@
 // NFTBan v1.98 - Installer ↔ Lifecycle Bridge
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-lifecycle-bridge"
 // meta:type="cmd"
 // meta:version="1.98.0"

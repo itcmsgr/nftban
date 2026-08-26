@@ -2,6 +2,7 @@
 // NFTBan v1.154.0 - Installer Post-Install Timer Wedge Recovery
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-services-timers-post-install"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan - Bot Scanner Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Detect and block bot scanners, webshell probes, exploit attempts
 #
 # meta:name="nftban_botscan"

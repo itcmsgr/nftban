@@ -3,6 +3,7 @@
 # NFTBan - help-block reachability test (v1.144.0 PR-D D-UXV-13 companion)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_help_block_reachability_v144_test"
 # meta:type="test"
 # meta:version="1.0.0"

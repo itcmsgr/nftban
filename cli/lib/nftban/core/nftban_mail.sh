@@ -3,6 +3,7 @@
 # NFTBan - Mail Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Email sending mechanism for all NFTBan modules
 #
 # meta:name="nftban_mail"

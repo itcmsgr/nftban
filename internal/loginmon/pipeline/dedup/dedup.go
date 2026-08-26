@@ -2,6 +2,7 @@
 // NFTBan v1.80 - pipeline dedup
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: dedup
 // Purpose: Bounded LRU sieve to suppress duplicate events from overlapping sources.
 //

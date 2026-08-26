@@ -3,6 +3,7 @@
 # NFTBan - v1.156 PR-D: read -ra <<< strict-IFS regression lock
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="read_ra_ifs_v156_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.178.0 - BotScan read-authority collector (B1) tests
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_read_authority_v178_test"
 # meta:type="test"
 # meta:version="1.0.0"

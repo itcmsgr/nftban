@@ -3,6 +3,7 @@
 # NFTBan - BotScan request_class classifier (v1.191 8B / increment 3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_request_class_classifier_v1913_test"
 # meta:type="test"

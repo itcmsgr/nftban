@@ -3,6 +3,7 @@
 # NFTBan - Output & Banner Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Standardized output, banners, and formatting for all modules
 #
 # meta:name="nftban_output"

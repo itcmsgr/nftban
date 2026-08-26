@@ -3,6 +3,7 @@
 # NFTBan - v1.167 PR-3 guard: confirmed-orphan shell modules stay deleted
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="no_reintroduced_orphan_modules_v167_test"
 # meta:type="test"
 # meta:version="1.0.0"

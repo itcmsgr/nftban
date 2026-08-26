@@ -2,6 +2,7 @@
 // NFTBan — CSF-CLOSE-5 gate: PROTECTED may not be asserted on a contested host
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="validator-csf-conflict-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

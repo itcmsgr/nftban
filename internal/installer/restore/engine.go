@@ -2,6 +2,7 @@
 // NFTBan v1.100 PR-24 — Authority Restoration Policy Decision Engine
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-restore-engine"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

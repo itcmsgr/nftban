@@ -3,6 +3,7 @@
 # NFTBan CI — LOG WRITER -> RETENTION INVENTORY PARITY  (v1.229.3 P1-2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="check-log-writer-inventory-parity"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

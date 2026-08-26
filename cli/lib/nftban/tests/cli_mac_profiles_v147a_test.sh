@@ -3,6 +3,7 @@
 # NFTBan - MAC profiles test (v1.147-A: AppArmor + SELinux)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_mac_profiles_v147a_test"
 # meta:type="test"
 # meta:version="1.0.0"

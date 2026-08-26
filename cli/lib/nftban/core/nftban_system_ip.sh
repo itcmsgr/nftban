@@ -3,6 +3,7 @@
 # NFTBan - System IP Auto-Detection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_system_ip"
 # meta:type="core"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

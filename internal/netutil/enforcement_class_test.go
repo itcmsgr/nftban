@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="netutil/enforcement_class_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="v1.220.2 enforcement address-class guard: EnforcementClassReject + IsAbsolutelyNonBannable across loopback/unspecified/multicast/RFC1918/ULA/link-local/CGNAT/doc/reserved (reject) vs public v4+v6 (allow); IPv4-mapped normalized; CIDR/blank pass. Pure, no netlink."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

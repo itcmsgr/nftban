@@ -3,6 +3,7 @@
 # V130 PR-A Option C — polkit-authorized validate service regression test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v130_polkit_validate_service_test"
 # meta:type="test"
 # meta:version="1.130.0"

@@ -3,6 +3,7 @@
 # NFTBan - Systemd Maintainer-Script Generator (MFST-C3 / Layer 3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="generate-systemd-maintainer-scripts"
 # meta:type="build"

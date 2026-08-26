@@ -3,6 +3,7 @@
 # NFTBan v1.194.0 (8C) - Protection-Claim Matrix harness test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="protection_claim_matrix_v194_test"
 # meta:type="test"

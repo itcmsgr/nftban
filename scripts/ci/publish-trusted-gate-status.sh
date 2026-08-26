@@ -3,6 +3,7 @@
 # NFTBan CI — TRUSTED-GATE PUBLICATION ADAPTER  (v1.229.4 P2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="publish-trusted-gate-status"
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

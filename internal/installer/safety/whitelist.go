@@ -2,6 +2,7 @@
 // NFTBan v1.98.x - Installer Safety Whitelist Seeding (PR-14-pre G-14-H)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-safety"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

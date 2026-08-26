@@ -2,6 +2,7 @@
 // NFTBan v1.13.0 - NFTBackend Wrapper for OpQueue
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="opqueue/nftbackend_wrapper" meta:type="package" meta:version="1.1.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="NFTBackend wrapper for OpQueue netlink operations"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

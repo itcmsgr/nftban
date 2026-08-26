@@ -3,6 +3,7 @@
 # NFTBan - _v144_error_with_hint UX-C2 migration test (v1.144.0 PR-B)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_error_with_hint_v144_test"
 # meta:type="test"
 # meta:version="1.0.0"

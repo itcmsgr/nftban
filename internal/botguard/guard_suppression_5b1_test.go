@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Cache-aware browser-like ban suppression (5B1)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.191 8B increment-5B1 enforcement behavior: browser-like
 //          false-positive batch-signal bans are SUPPRESSED (never reach http_bot_ban from

@@ -3,6 +3,7 @@
 # NFTBan - Atomic File Operations Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_file_ops"
 # meta:type="core"
 # meta:version="1.39.0"

@@ -3,6 +3,7 @@
 # NFTBan - MAC posture test (v1.158: AppArmor + SELinux health-posture summary)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="mac_posture_v158_test"
 # meta:type="test"
 # meta:version="1.0.0"

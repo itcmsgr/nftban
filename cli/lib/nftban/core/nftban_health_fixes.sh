@@ -4,6 +4,7 @@
 # NFTBan - Health Fix Functions Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Auto-fix functions for health issues (permissions, directories, etc.)
 #
 # meta:name="nftban_health_fixes"

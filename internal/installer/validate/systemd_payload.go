@@ -2,6 +2,7 @@
 // NFTBan v1.100.x PR26.1 - Reusable Install Validation: Systemd Payload
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-validate-systemd-payload"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan CI Gate G18: Rebuild / Convergence Safety
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Assert the rebuild/convergence invariants of the Layer-0 authority.
 #
 # meta:name="test-rebuild-safety"

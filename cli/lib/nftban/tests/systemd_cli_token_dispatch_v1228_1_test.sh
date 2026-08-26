@@ -3,6 +3,7 @@
 # NFTBan - shipped systemd units must not invoke an undispatchable CLI token
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="systemd_cli_token_dispatch_v1228_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

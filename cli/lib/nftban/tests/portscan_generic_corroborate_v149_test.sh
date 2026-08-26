@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.149.0 portscan "generic" corroboration (PORTSCAN-RATE)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="portscan_generic_corroborate_v149_test"
 # meta:type="test"
 # meta:version="1.0.0"

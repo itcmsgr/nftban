@@ -3,6 +3,7 @@
 # NFTBan v1.9.3 - Consolidated Build Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="build"
 # meta:type="script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

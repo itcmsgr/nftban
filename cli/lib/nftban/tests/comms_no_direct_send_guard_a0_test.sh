@@ -3,6 +3,7 @@
 # NFTBan - A0 no-direct-send CI ratchet: guard self-test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="comms_no_direct_send_guard_a0_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan - inline sudo / root-shell guidance test (v1.142 UX-C6)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_sudo_hint_v142_test"
 # meta:type="test"
 # meta:version="1.0.0"

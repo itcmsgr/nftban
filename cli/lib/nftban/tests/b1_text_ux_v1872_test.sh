@@ -3,6 +3,7 @@
 # NFTBan v1.187.2 - B1 CLI/text-UX guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="b1_text_ux_v1872_test"
 # meta:type="test"

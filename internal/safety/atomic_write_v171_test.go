@@ -2,6 +2,7 @@
 // NFTBan v1.171 - State-write atomicity (§4.2/§4.3): SafeWriteFile guarantees
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="atomic_write_v171_test"
 // meta:type="test"
 // meta:version="1.0.0"

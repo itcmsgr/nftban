@@ -2,6 +2,7 @@
 // NFTBan v1.148 - DisarmSystemConf (Shape-B include restore-disarm) tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="render-disarm-v148-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

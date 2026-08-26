@@ -3,6 +3,7 @@
 # NFTBan - Suricata CLI Command (DORMANT SURFACE)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Report that Suricata integration is dormant. Nothing else.
 #
 # meta:name="cmd_suricata"

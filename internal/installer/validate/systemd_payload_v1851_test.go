@@ -2,6 +2,7 @@
 // NFTBan v1.185.1 - Stale-clearable oneshot classification tests (H2)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-validate-systemd-payload-v1851-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -3,6 +3,7 @@
 # NFTBan v1.188 - B2 BOTSCAN-BADBOT-EASY-UX (Option A) guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="b2_badbot_aibot_v188_test"
 # meta:type="test"

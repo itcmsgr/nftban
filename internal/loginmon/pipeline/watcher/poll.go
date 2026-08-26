@@ -2,6 +2,7 @@
 // NFTBan v1.80 - polling file watcher
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: watcher
 // Purpose: Stdlib-only polling file tail with rotation handling.
 //

@@ -3,6 +3,7 @@
 # NFTBan - feeds --json jq-construction (no string concat) test (v1.141 PR-B F-FEEDS-JSON)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_feeds_json_jq_construction_test"
 # meta:type="test"
 # meta:version="1.0.0"

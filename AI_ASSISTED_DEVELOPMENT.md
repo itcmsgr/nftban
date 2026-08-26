@@ -14,7 +14,7 @@ ChatGPT and Claude).
 
 - AI tools are **not authors, contributors, maintainers, copyright holders, or
   owners** of NFTBan. They hold no rights in the project.
-- All copyright in NFTBan is claimed by **NFTBan Project / Antonios Voulvoulis** to the
+- All copyright in NFTBan is claimed by **Antonios Voulvoulis <contact@nftban.com>** to the
   fullest extent permitted by law.
 - NFTBan Core is distributed under the **Mozilla Public License 2.0 (MPL-2.0)**;
   see `LICENSE`. Trademarks and brand assets are governed separately by

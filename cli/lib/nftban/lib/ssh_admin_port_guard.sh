@@ -3,6 +3,7 @@
 # NFTBan - External admin SSH-port guard (OBS-SSHPORT-55000-FAMILY)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ssh_admin_port_guard" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Warn-only + lockout-net guard for hosts where admin SSH arrives on an EXTERNAL redirect/NAT port (e.g. :55000 -> :22 via firewalld/iptables-nft/provider) that nftban does NOT own. nftban's ssh_ports stays the ACTUAL sshd listener set (it is NOT a NAT manager); before a rebuild/takeover that could disrupt the external redirect, this guard WARNS and session-whitelists the active admin source IP (via the existing IPC whitelist-session path) so SSH survives by IP regardless of the external port. It does NOT import the external port into ssh_ports and does NOT recreate/preserve the redirect."
 # meta:inventory.files="/usr/lib/nftban/lib/ssh_port_detect.sh"
 # meta:inventory.binaries="ss,grep,awk,sort,paste,tr,nft"

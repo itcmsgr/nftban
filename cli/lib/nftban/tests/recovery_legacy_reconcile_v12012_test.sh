@@ -3,6 +3,7 @@
 # NFTBan v1.201.2 — recovery legacy reconcile (schema truth + nftban-apply wiring)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="recovery_legacy_reconcile_v12012_test"
 # meta:type="test"
 # meta:version="1.0.0"

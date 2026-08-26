@@ -2,6 +2,7 @@
 // NFTBan v1.0.30 - Detector Test Tool
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Purpose: Test detector against real log lines from stdin
 //
 // meta:name="test-detector"

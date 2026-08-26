@@ -3,6 +3,7 @@
 # NFTBan v1.187 - BotScan throughput (Lane A) guard test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_throughput_v187_test"
 # meta:type="test"

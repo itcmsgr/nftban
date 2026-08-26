@@ -2,6 +2,7 @@
 // NFTBan v1.80 - Effective-axis state machine (Phase E)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: aggregate
 // Purpose: Evaluate aggregation snapshots into Effective-axis health states.
 //

@@ -4,6 +4,7 @@
 #          11.5/11.6 + 16.6)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_false_clean_v150_test"
 # meta:type="test"
 # meta:version="1.0.0"

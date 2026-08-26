@@ -3,6 +3,7 @@
 # NFTBan - v1.223.0 verdict-truth: update-force delegation (no shell verdict logic)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="update_force_delegation_v1223_test"
 # meta:type="test"
 # meta:version="1.0.0"

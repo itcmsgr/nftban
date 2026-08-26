@@ -2,6 +2,7 @@
 // NFTBan v1.81 - Health Mapper Tests (M81-6 Schema Compliance)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="health_mapper_test"
 // meta:type="test"
 // meta:version="1.81.0"

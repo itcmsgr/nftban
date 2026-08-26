@@ -3,6 +3,7 @@
 # V133 PR-B — write-guard / reframe refusal regression guard (A12–A15)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="v133_pr_b_write_guard_refusal_test"
 # meta:type="test"
 # meta:version="1.133.0"

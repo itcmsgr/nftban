@@ -3,6 +3,7 @@
 # NFTBan - v1.151 D-EXPORTER-EXIT2-PHASE-4: signal-aware ERR trap (class-killer)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="exporter_sigterm_graceful_v151_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -3,6 +3,7 @@
 # NFTBan - Health Check CLI Handler (Loader)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI interface for system health checks and diagnostics
 #
 # meta:name="cmd_health"

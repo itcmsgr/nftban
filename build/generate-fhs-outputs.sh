@@ -3,6 +3,7 @@
 # NFTBan v1.39.0 - FHS Output Generator
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="generate-fhs-outputs"
 # meta:type="build"
@@ -131,7 +132,9 @@ generate_tmpfiles() {
         echo "# ============================================================================="
         echo "# NFTBan - tmpfiles.d Configuration (GENERATED)"
         echo "# ============================================================================="
+# REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+# REUSE-IgnoreEnd
     } > "$TMPFILES_OUT"
     cat >> "$TMPFILES_OUT" << 'EOF'
 #
@@ -208,7 +211,9 @@ generate_sysusers() {
         echo "# ============================================================================="
         echo "# NFTBan - sysusers.d Configuration (GENERATED)"
         echo "# ============================================================================="
+# REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+# REUSE-IgnoreEnd
     } > "$SYSUSERS_OUT"
     cat >> "$SYSUSERS_OUT" << 'EOF'
 #
@@ -527,7 +532,9 @@ generate_shell_helper() {
         echo "# ============================================================================="
         echo "# NFTBan v${NFTBAN_GEN_VERSION} - FHS Specification (GENERATED)"
         echo "# ============================================================================="
+# REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+# REUSE-IgnoreEnd
         echo "#"
         echo "# meta:name=\"nftban_fhs_spec\""
         echo "# meta:type=\"core\""
@@ -756,7 +763,9 @@ generate_file_permissions() {
         echo "# ============================================================================="
         echo "# NFTBan - FHS File Permissions (GENERATED)"
         echo "# ============================================================================="
+# REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+# REUSE-IgnoreEnd
     } > "$PERMS_OUT"
     cat >> "$PERMS_OUT" << 'PERMS_HEADER'
 #

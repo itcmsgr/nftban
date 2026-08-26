@@ -3,6 +3,7 @@
 # NFTBan - v1.225.0 PR-A: update DEGRADED render truth (E1a + E1b)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="update_degraded_render_truth_v225_test"
 # meta:type="test"
 # meta:version="1.0.0"

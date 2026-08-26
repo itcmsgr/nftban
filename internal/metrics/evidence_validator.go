@@ -2,6 +2,7 @@
 // NFTBan v1.88 - Validator Snapshot Bridge (M87-5)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="evidence_validator"
 // meta:type="package"
 // meta:version="1.88.0"

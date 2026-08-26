@@ -3,6 +3,7 @@
 # NFTBan v1.3.0 - Update Command Methods
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Update methods (RPM, DEB, Git, Local) and GitHub release functions
 #
 # meta:name="cmd_update_methods"

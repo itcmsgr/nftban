@@ -4,6 +4,7 @@
 # NFTBan - DDoS Protection Module - CLASSIC MODE
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Standalone DDoS protection using native nftables (no Suricata)
 #
 # meta:name="nftban_ddos_classic"

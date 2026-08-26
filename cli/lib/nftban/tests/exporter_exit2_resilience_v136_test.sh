@@ -4,6 +4,7 @@
 # NFTBan - Tests for v1.136 exporter exit-2 resilience + diagnosability (Phase 1)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="exporter_exit2_resilience_v136_test"
 # meta:type="test"
 # meta:version="1.0.0"

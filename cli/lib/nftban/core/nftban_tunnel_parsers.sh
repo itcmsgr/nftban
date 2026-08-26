@@ -3,6 +3,7 @@
 # NFTBan v1.30.0 - Tunnel Suspicion DNS Log Parsers
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Parse DNS query logs from BIND, Unbound, dnsmasq, systemd-resolved
 #
 # meta:name="nftban_tunnel_parsers"

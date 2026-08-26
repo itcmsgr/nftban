@@ -2,6 +2,7 @@
 // NFTBan v1.212.0 - BotScan lost-ban-signal hand-off (flock-guarded rename-then-consume) tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.212 fix for OPEN_BOTSCAN_LOST_BAN_SIGNAL — the consumer no longer
 //          truncates a LIVE file (which destroyed any signal appended in the read->truncate

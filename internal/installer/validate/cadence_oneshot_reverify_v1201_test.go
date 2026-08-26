@@ -2,6 +2,7 @@
 // NFTBan v1.201 - cadence-oneshot gated re-verify classification tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="cadence_oneshot_reverify_v1201_test"
 // meta:type="test"
 // meta:version="1.0.0"

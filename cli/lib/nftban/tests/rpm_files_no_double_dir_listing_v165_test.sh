@@ -3,6 +3,7 @@
 # NFTBan - v1.165 PR-B guard: lib-dir RPM %files dedup (no double dir listing)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rpm_files_no_double_dir_listing_v165_test"
 # meta:type="test"
 # meta:version="1.0.0"

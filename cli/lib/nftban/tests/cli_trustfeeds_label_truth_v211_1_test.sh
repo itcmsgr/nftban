@@ -3,6 +3,7 @@
 # NFTBan - Trust-Feeds status label truth test (v1.211.1 STATUS_LABEL_TRUTH)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_trustfeeds_label_truth_v211_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

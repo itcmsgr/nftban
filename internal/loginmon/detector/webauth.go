@@ -2,6 +2,7 @@
 // NFTBan v1.179.0 - High-Performance Web Auth Detector (HTTP basic-auth + WordPress login)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: detector
 // Purpose: Signal-based AUTHENTICATION-failure detection from web access logs.
 //

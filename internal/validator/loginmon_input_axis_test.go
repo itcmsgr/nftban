@@ -2,6 +2,7 @@
 // NFTBan v1.183.0 - Validator LoginMon Input-axis tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="validator_loginmon_input_axis_test"
 // meta:type="package"

@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.155 PR-2 SSH-port-change lifecycle validator
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="ssh_port_change_lifecycle_v155_test"
 # meta:type="test"
 # meta:version="1.0.0"

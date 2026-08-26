@@ -3,6 +3,7 @@
 # NFTBan Chain Order Validator (G4 + G5 + G6)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="validate_chain_order"
 # meta:type="ci"
 # meta:version="1.61.0"

@@ -3,6 +3,7 @@
 # NFTBan v1.4.0 - Zabbix Integration CLI
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: CLI commands for Zabbix metrics integration
 #
 # meta:name="cmd_zabbix"

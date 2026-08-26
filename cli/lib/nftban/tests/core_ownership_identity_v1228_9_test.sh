@@ -3,6 +3,7 @@
 # NFTBan - Core ownership identity bad controls (v1.228.9 PR2)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="core_ownership_identity_v1228_9_test"
 # meta:type="test"
 # meta:version="1.0.0"

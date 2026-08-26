@@ -2,6 +2,7 @@
 // NFTBan v1.80 - DirectAdmin parser tests (Phase B)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: directadmin
 // Purpose: Unit tests + fixture replay for the DirectAdmin login.log parser.
 //

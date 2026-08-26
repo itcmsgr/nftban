@@ -2,6 +2,7 @@
 // NFTBan v1.100 PR-22 — Uninstall Dry-Run Orchestrator (Detect + Plan Only)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="nftban-installer-uninstall-dryrun"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

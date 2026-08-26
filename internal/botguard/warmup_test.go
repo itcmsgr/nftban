@@ -2,6 +2,7 @@
 // NFTBan v1.191.0 - HTTP Bot Guard: Bounded warm-up replay tests (inc7)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // Package: botguard
 // Purpose: Prove the v1.191 8B increment-7 restart warm-up: it replays only the bounded recent
 //          tail of batch_signals.jsonl into the TEMPORARY decision cache (cache context only,

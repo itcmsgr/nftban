@@ -3,6 +3,7 @@
 # NFTBan - v1.161: default-enabled-timer first-run CI guard
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="default_enabled_timer_first_run_guard_v161"
 # meta:type="test"
 # meta:version="1.0.0"

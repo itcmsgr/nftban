@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="persistence/blacklistd_classguard_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="v1.220.2 F2: PersistBan refuses non-public/absolute-non-bannable addresses (never written to blacklist.d so the full-sync cannot re-materialize them into a drop set) and still persists public addresses; IPv4/IPv6 symmetric."
 // meta:inventory.files=""
 // meta:inventory.binaries=""

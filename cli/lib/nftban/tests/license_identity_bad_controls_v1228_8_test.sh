@@ -3,6 +3,7 @@
 # NFTBan - license-identity + control-enforcement bad controls (v1.228.8 PR4)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="license_identity_bad_controls_v1228_8_test"
 # meta:type="test"
 # meta:version="1.0.0"
@@ -70,7 +71,9 @@ fi
 VICTIM="$ROOT/scripts/ci/check-mode-authority.sh"   # owned, header-applicable
 
 echo "=== BC1  remove SPDX from owned applicable shell source -> FAIL ==="
+# REUSE-IgnoreStart
 guard "$VICTIM"; grep -v 'SPDX-License-Identifier' "$VICTIM.pr4bak" > "$VICTIM"
+# REUSE-IgnoreEnd
 if gate_fails; then
     ok "BC1 missing SPDX detected"
 else
@@ -79,7 +82,9 @@ fi
 release "$VICTIM"
 
 echo "=== BC2  wrong SPDX identifier -> FAIL ==="
+# REUSE-IgnoreStart
 guard "$VICTIM"; sed 's|SPDX-License-Identifier: MPL-2.0|SPDX-License-Identifier: GPL-3.0|' "$VICTIM.pr4bak" > "$VICTIM"
+# REUSE-IgnoreEnd
 if gate_fails; then
     ok "BC2 wrong identifier detected"
 else

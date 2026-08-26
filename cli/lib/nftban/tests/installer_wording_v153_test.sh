@@ -3,6 +3,7 @@
 # NFTBan - v1.153 PR-E: installer-output wording (UX-T1..T4)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="installer_wording_v153_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -2,6 +2,7 @@
 // NFTBan v1.211 — LOGINMON-JOURNAL-NO-RESPAWN regression tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="loginmon-journal-watcher-respawn-v211-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

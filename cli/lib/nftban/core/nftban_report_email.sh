@@ -3,6 +3,7 @@
 # NFTBan - Email Report Generator
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # Purpose: Generate and send HTML email reports with real firewall stats
 #
 # meta:name="nftban_report_email"

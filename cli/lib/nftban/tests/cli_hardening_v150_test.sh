@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.150 Lane A shell/CLI-health hardening
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cli_hardening_v150_test"
 # meta:type="test"
 # meta:version="1.0.0"

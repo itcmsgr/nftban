@@ -3,6 +3,7 @@
 # NFTBan - v1.165 guard: no bare RPM section macro in a generated-spec comment
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rpm_spec_no_section_macro_in_comment_v165_test"
 # meta:type="test"
 # meta:version="1.0.0"

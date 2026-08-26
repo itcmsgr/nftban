@@ -3,6 +3,7 @@
 # NFTBan v1.229.4 VAF-0 Stage 3A — AN SBOM MUST NOT BE MANUFACTURED
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="sbom-no-fabrication-v1229-4-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

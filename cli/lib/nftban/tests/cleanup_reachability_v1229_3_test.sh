@@ -3,6 +3,7 @@
 # NFTBan v1.229.3 P1-6 — CLEANUP AUTHORITY REACHABILITY (cross-language)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="cleanup-reachability-v1229-3-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

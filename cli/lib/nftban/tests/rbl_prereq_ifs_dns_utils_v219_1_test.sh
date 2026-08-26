@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.219.1 RBL enable-prereq IFS-safety + dns_utils package key
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="rbl_prereq_ifs_dns_utils_v219_1_test"
 # meta:type="test"
 # meta:version="1.0.0"

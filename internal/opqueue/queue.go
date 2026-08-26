@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="opqueue/queue" meta:type="package" meta:version="1.2.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Async operation queue manager for nftables with priority scheduling"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

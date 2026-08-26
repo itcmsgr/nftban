@@ -3,6 +3,7 @@
 # NFTBan - Tests for v1.218.10 EXP_REVSLIDER false-positive narrowing
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="botscan_revslider_fp_v218_10_test"
 # meta:type="test"
 # meta:version="1.0.0"
