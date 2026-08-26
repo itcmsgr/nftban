@@ -60,6 +60,11 @@ type ValidationResult struct {
 	// These fields are internal — not serialized to the frozen JSON schema.
 	Doc              *RulesetDocument `json:"-"` // parsed kernel ruleset (counters, chains, sets)
 	SetElementCounts map[string]int   `json:"-"` // "family:set" → element count
+	// v1.229.11: keys whose element count could NOT be observed (exec/decode
+	// failure). ADDITIVE — a key present here has NO entry in SetElementCounts,
+	// so a consumer can never read a failed observation as a count of zero.
+	//   ABSENT COUNT + UNKNOWN=true  !=  COUNT 0
+	SetElementUnknown map[string]bool `json:"-"` // "family:set" → observation failed
 }
 
 // SchemaVersionCurrent is the output/IPC schema version per M81-6.
