@@ -78,9 +78,9 @@ jobs:
           set -euo pipefail
 
           # Adjust if your repo uses a different SPDX id.
-# REUSE-IgnoreStart
+          # REUSE-IgnoreStart
           REQUIRED="SPDX-License-Identifier: MPL-2.0"
-# REUSE-IgnoreEnd
+          # REUSE-IgnoreEnd
 
           # Exclusions:
           # - vendor/, third_party/, dist/, bin/ - external/build artifacts
