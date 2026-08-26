@@ -110,6 +110,21 @@ NFTBAN_PRO_PROFILE_FIELDS=(
     # have reported green throughout the srv3 incident.
     "module_ddos_config|validator:.modules.ddos.config"
     "module_ddos_structural|validator:.modules.ddos.structural"
+    # ⛔ ADDED BEFORE v1 WAS EVER CONSUMED. The validator produces
+    # .modules.ddos.effective and this profile omitted it, while portscan and
+    # loginmon both admit theirs. `effective` is the PROVABILITY axis — it is what
+    # separates "configured and running" from "protection actually established",
+    # which is precisely the distinction the srv3 incident turned on. Without it a
+    # receiver could never compute DEGRADED for ddos, however clearly the host
+    # said so.
+    #   A VERSIONED CONTRACT IS CHEAPEST TO CORRECT BEFORE ANYTHING CONSUMES IT.
+    # Nothing consumes it today: no transport in .11 by design, and no receiver
+    # endpoint. Shipping v1 knowingly incomplete would force .12 either to mutate
+    # v1's meaning silently or to publish v2 for a contract never used.
+    # ⛔ ONLY the proven producer -> missing field. NOT botguard.runtime/effective,
+    # NOT ddos.runtime, NOT portscan.runtime — no axis is admitted because
+    # symmetry looks tidy. The lab proves botguard emits `config` ALONE.
+    "module_ddos_effective|validator:.modules.ddos.effective"
     "module_portscan_config|validator:.modules.portscan.config"
     "module_portscan_structural|validator:.modules.portscan.structural"
     "module_portscan_effective|validator:.modules.portscan.effective"

@@ -44,10 +44,18 @@ source "$P" 2>/dev/null || { echo "cannot source profile"; exit 1; }
 # Pinned deliberately: changing what may leave a customer host must be a reviewed
 # act, never a silent drift.
 #   THE EXPORT SURFACE IS PINNED, NOT DISCOVERED.
-expected="blacklist_feeds_state blacklist_geoban_state blacklist_manual_entries blacklist_manual_state consistency_status hostname module_botguard_config module_ddos_config module_ddos_structural module_loginmon_config module_loginmon_effective module_loginmon_runtime module_loginmon_structural module_portscan_config module_portscan_effective module_portscan_structural nftban_version observed_at overall_status schema_version server_id service_state"
+# v1.229.11 review: +module_ddos_effective. The validator PRODUCES
+# .modules.ddos.effective and the profile omitted it, so a receiver could never
+# compute DEGRADED for ddos. `effective` is the provability axis — the one that
+# separates "configured and running" from "protection actually established".
+# Added before v1 had any consumer; no transport and no receiver exist yet.
+# ⛔ ONLY that field. botguard.runtime/effective, ddos.runtime and
+# portscan.runtime were NOT added: the lab proves botguard emits `config` alone,
+# and nothing is admitted merely because symmetry would look tidy.
+expected="blacklist_feeds_state blacklist_geoban_state blacklist_manual_entries blacklist_manual_state consistency_status hostname module_botguard_config module_ddos_config module_ddos_effective module_ddos_structural module_loginmon_config module_loginmon_effective module_loginmon_runtime module_loginmon_structural module_portscan_config module_portscan_effective module_portscan_structural nftban_version observed_at overall_status schema_version server_id service_state"
 actual="$(nftban_pro_profile_fields | sort | tr '\n' ' ' | sed 's/ $//')"
 if [[ "$actual" == "$expected" ]]; then
-    ok "P1 permitted set is EXACTLY the reviewed 22 fields"
+    ok "P1 permitted set is EXACTLY the reviewed 23 fields"
 else
     no "P1 permitted set changed — review required"
     echo "      expected: $expected"
