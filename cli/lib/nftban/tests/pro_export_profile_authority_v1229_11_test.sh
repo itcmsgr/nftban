@@ -3,6 +3,7 @@
 # NFTBan - PRO export profile is a deny-by-default data-release authority (v1.229.11)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="pro_export_profile_authority_v1229_11_test"
 # meta:type="test"
 # meta:version="1.0.0"

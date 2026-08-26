@@ -2,6 +2,7 @@
 // NFTBan v1.229.11 lane 6A — installer rebuild interruption semantics
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 // meta:name="installer-switchop-rebuild-interruption-test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

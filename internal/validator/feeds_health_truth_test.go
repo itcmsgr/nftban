@@ -2,6 +2,7 @@
 // NFTBan v1.229.11 - Validator feeds sub-health truth tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="validator_feeds_health_truth_test"
 // meta:type="package"

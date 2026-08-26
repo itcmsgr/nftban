@@ -3,6 +3,7 @@
 # NFTBan - PRO export profile (DATA-RELEASE AUTHORITY)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nftban_export_profile_pro"
 # meta:type="library"
 # meta:version="1.229.11"

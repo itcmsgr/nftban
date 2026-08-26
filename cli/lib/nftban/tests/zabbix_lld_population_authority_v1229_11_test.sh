@@ -3,6 +3,7 @@
 # NFTBan - Zabbix LLD reads the canonical enable authority (v1.229.11)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="zabbix_lld_population_authority_v1229_11_test"
 # meta:type="test"
 # meta:version="1.0.0"

@@ -39,7 +39,28 @@ readonly TAG='SPDX-FileCopyrightText'
 #   ANOTHER MUST SATISFY THE STRICTER ONE.
 # Everything outside this intersection is covered by REUSE.toml, which states the
 # same licence and copyright WITHOUT planting an attribution inside the file.
+# ⛔ A SHIPPED dpkg/rpm CONFFILE MUST NEVER CARRY AN IN-FILE ANNOTATION.
+# Adding one changes the file's checksum, so the new release ships a conffile that
+# differs from the previous release's. Combined with the fact that some of these
+# are rendered at install time (nftables.conf substitutes __CT_LIMIT_*__), dpkg
+# sees "locally modified + new upstream version" and PROMPTS INTERACTIVELY. With
+# no stdin — unattended-upgrades, ansible, any scripted rollout — the upgrade
+# ABORTS half-configured.
+# Measured on a clean v1.229.9 host: 71 of 74 conffiles had been annotated, and
+# the v1.229.9 -> v1.229.11 upgrade failed with `end of file on stdin at conffile
+# prompt`, leaving dpkg state `iU`.
+#   ANNOTATING OPERATOR CONFIG TURNS EVERY UPGRADE INTO A QUESTION.
+# These files get their licence and copyright from REUSE.toml instead, which
+# asserts the same facts without altering a single shipped byte.
+_is_conffile() {
+    case "$1" in
+        etc/nftban/*|install/config/*|install/nftables/nftables.conf) return 0 ;;
+    esac
+    return 1
+}
+
 _is_source() {
+    _is_conffile "$1" && return 1
     case "$1" in
         *.sh|*.go|*.conf|*.rules) return 0 ;;
         cli/sbin/*)               return 0 ;;

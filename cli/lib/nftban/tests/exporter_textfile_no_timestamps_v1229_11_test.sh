@@ -3,6 +3,7 @@
 # NFTBan - textfile exposition must carry no client-side timestamps (v1.229.11)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="exporter_textfile_no_timestamps_v1229_11_test"
 # meta:type="test"
 # meta:version="1.0.0"

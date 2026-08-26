@@ -3,6 +3,7 @@
 # NFTBan - convergence commit transaction (v1.229.11 lane 6A)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="convergence_commit_transaction_v1229_11_test"
 # meta:type="test"
 # meta:version="1.0.0"
