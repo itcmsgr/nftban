@@ -2093,9 +2093,6 @@ firewall_reload() {
     # refusal let the whole convergence proceed with NO transaction open and NO
     # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
     #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
-    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
-        nftban_plan_txn_begin ddos portscan || return 7
-    fi
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _reload_whitelist_converged="true"
     # Reload nftables ruleset AND re-apply NFTBan rules
@@ -2144,6 +2141,20 @@ FIREWALL_RELOAD_HELP
                 ;;
         esac
     done
+
+    # ⛔ v1.229.11: THE TRANSACTION OPENS ONLY AFTER ARGUMENTS ARE PARSED.
+    # It used to sit at the top of the function, where the generation bump had
+    # been. That was harmless while the bump ended in `|| true`; once a refused
+    # transaction correctly became `return 7`, it broke a contract this file
+    # already had: `nftban firewall reload --help` returned rc=7 with
+    # "convergence transaction NOT opened" instead of printing help.
+    #     HELP MUST BE INERT — NO LOCK, NO TRANSACTION, NO RUNTIME STATE.
+    # v1.141 PR-A made help inert (see the help-guard above); moving this line
+    # below the parser restores that, and the transaction still opens before any
+    # convergence work begins.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
 
     # Step 1: Reload system nftables config
     local nft_conf
@@ -3178,9 +3189,6 @@ _firewall_rebuild_core() {
     # refusal let the whole convergence proceed with NO transaction open and NO
     # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
     #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
-    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
-        nftban_plan_txn_begin ddos portscan || return 7
-    fi
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _rebuild_whitelist_converged="true"
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
@@ -3233,6 +3241,13 @@ _firewall_rebuild_core() {
                 ;;
         esac
     done
+
+    # ⛔ v1.229.11: OPENS ONLY AFTER ARGUMENTS ARE PARSED — see firewall_reload.
+    # A transaction above the parser makes `--help` return rc=7 instead of help.
+    #     HELP MUST BE INERT — NO LOCK, NO TRANSACTION, NO RUNTIME STATE.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
 
     [[ "$quiet" == "false" ]] && echo "Rebuilding NFTBan firewall schema..."
 
@@ -3962,9 +3977,6 @@ firewall_reset() {
     # refusal let the whole convergence proceed with NO transaction open and NO
     # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
     #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
-    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
-        nftban_plan_txn_begin ddos portscan || return 7
-    fi
     # Complete firewall reset - flush everything and rebuild clean
     # WARNING: This will remove all bans, whitelists, and geoban data!
     local force=false
@@ -3990,6 +4002,13 @@ firewall_reset() {
                 ;;
         esac
     done
+
+    # ⛔ v1.229.11: OPENS ONLY AFTER ARGUMENTS ARE PARSED — see firewall_reload.
+    # A transaction above the parser makes `--help` return rc=7 instead of help.
+    #     HELP MUST BE INERT — NO LOCK, NO TRANSACTION, NO RUNTIME STATE.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
 
     if [[ "$force" == "false" ]]; then
         echo "WARNING: This will completely reset the firewall!"
