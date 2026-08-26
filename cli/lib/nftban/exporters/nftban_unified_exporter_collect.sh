@@ -32,6 +32,32 @@ collect_all_metrics() {
     log_debug "Collecting metrics (groups: $collection_groups)..."
 
     local metrics=""
+    # v1.229.11 (BUG-EXPORTER-TEXTFILE-CLIENT-SIDE-TIMESTAMPS-REJECT-ENTIRE-FILE).
+    #
+    # $timestamp is still used for CALCULATIONS below (uptime, rate deltas, state
+    # files). What was removed is the per-sample EXPOSITION TIMESTAMP that used to
+    # be appended to every metric line:
+    #
+    #     metrics+="nftban_daemon_up $status $timestamp\n"     <- 211 lines did this
+    #
+    # PROVEN on lab2 with prometheus-node-exporter 1.7.0:
+    #     node_textfile_scrape_error 1
+    #     "contains unsupported client-side timestamps, SKIPPING ENTIRE FILE"
+    # Control, same file without the suffix: metric served, scrape_error 0.
+    #
+    #   A REJECTED FILE IS NOT A DEGRADED FILE. IT IS NO DATA AT ALL.
+    #
+    # So every nftban metric was silently discarded at the collector on any host
+    # using the canonical textfile surface.
+    #
+    # SECOND defect in the same construct: exposition timestamps are MILLISECONDS,
+    # `date +%s` is SECONDS. Read as ms they land in 1970 — ~56 years stale, which
+    # would make any freshness model classify everything STALE forever.
+    # ⛔ Do NOT "fix" that by multiplying by 1000: the file stays rejected either way.
+    #
+    # Observation freshness must be an EXPLICIT metric VALUE (lane 4.2), never the
+    # exposition timestamp field.
+    #   THE OBSERVATION TIME IS DATA, NOT METADATA.
     local timestamp
     timestamp=$(date +%s)
 
@@ -113,14 +139,14 @@ collect_all_metrics() {
         local mode
         mode=$(cat "${NFTBAN_RUN_DIR}/mode" 2>/dev/null || echo "normal")
 
-        metrics+="nftban_daemon_up $status $timestamp\n"
-        metrics+="nftban_version_info{version=\"$version\"} 1 $timestamp\n"
-        metrics+="nftban_mode_info{mode=\"$mode\"} 1 $timestamp\n"
+        metrics+="nftban_daemon_up $status\n"
+        metrics+="nftban_version_info{version=\"$version\"} 1\n"
+        metrics+="nftban_mode_info{mode=\"$mode\"} 1\n"
         # Zabbix-specific: send version and mode as string values (template expects these)
-        metrics+="nftban.version.info |STRING|$version $timestamp\n"
-        metrics+="nftban.mode.info |STRING|$mode $timestamp\n"
-        metrics+="nftban_uptime_seconds $uptime $timestamp\n"
-        metrics+="nftban_pid $pid $timestamp\n"
+        metrics+="nftban.version.info |STRING|$version\n"
+        metrics+="nftban.mode.info |STRING|$mode\n"
+        metrics+="nftban_uptime_seconds $uptime\n"
+        metrics+="nftban_pid $pid\n"
 
         # --- Panel Detection ---
         local panel="none"
@@ -137,9 +163,9 @@ collect_all_metrics() {
         elif command -v hestia &>/dev/null || [[ -d /usr/local/hestia ]]; then
             panel="hestia"
         fi
-        metrics+="nftban_panel_info{panel=\"$panel\"} 1 $timestamp\n"
+        metrics+="nftban_panel_info{panel=\"$panel\"} 1\n"
         # Zabbix string metric for host inventory
-        metrics+="nftban.server.panel |STRING|$panel $timestamp\n"
+        metrics+="nftban.server.panel |STRING|$panel\n"
 
         # --- Ban Metrics (SINGLE SOURCE OF TRUTH: nft_schema.sh centralized counting) ---
         # These metrics align with nftban_stats.sh dashboard requirements
@@ -216,22 +242,22 @@ collect_all_metrics() {
         fi
         active_total=$((active_v4 + active_v6))
 
-        metrics+="nftban_active_count $active_total $timestamp\n"
+        metrics+="nftban_active_count $active_total\n"
         # Zabbix-specific: nftban.blocks.total is what the template expects
-        metrics+="nftban_blocks_total $active_total $timestamp\n"
+        metrics+="nftban_blocks_total $active_total\n"
         # Prometheus-style with labels (for Prometheus)
-        metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
-        metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6 $timestamp\n"
+        metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4\n"
+        metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6\n"
         # Zabbix-specific: separate keys without labels (template expects nftban.active.bans)
-        metrics+="nftban.active.bans $active_total $timestamp\n"
-        metrics+="nftban.active.bans.ipv4 $active_v4 $timestamp\n"
-        metrics+="nftban.active.bans.ipv6 $active_v6 $timestamp\n"
+        metrics+="nftban.active.bans $active_total\n"
+        metrics+="nftban.active.bans.ipv4 $active_v4\n"
+        metrics+="nftban.active.bans.ipv6 $active_v6\n"
 
         # Perm/temp breakdown (aligned with nftban stats dashboard)
-        metrics+="nftban_blacklist_ipv4_perm $blacklist_v4_perm $timestamp\n"
-        metrics+="nftban_blacklist_ipv4_temp $blacklist_v4_temp $timestamp\n"
-        metrics+="nftban_blacklist_ipv6_perm $blacklist_v6_perm $timestamp\n"
-        metrics+="nftban_blacklist_ipv6_temp $blacklist_v6_temp $timestamp\n"
+        metrics+="nftban_blacklist_ipv4_perm $blacklist_v4_perm\n"
+        metrics+="nftban_blacklist_ipv4_temp $blacklist_v4_temp\n"
+        metrics+="nftban_blacklist_ipv6_perm $blacklist_v6_perm\n"
+        metrics+="nftban_blacklist_ipv6_temp $blacklist_v6_temp\n"
 
         # --- Whitelist Metrics (moved to LIVE for real-time consistency with nftban stats) ---
         # Use fast JSON API for O(1) counting (same as blacklist)
@@ -250,9 +276,9 @@ collect_all_metrics() {
             whitelist_v6=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6) || whitelist_v6=0
             [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
         fi
-        metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4 $timestamp\n"
-        metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6 $timestamp\n"
-        metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
+        metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4\n"
+        metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6\n"
+        metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6))\n"
 
         # --- Botguard Metrics (LIVE - real-time bot classification set counts) ---
         local bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
@@ -300,13 +326,13 @@ collect_all_metrics() {
             [[ "$bg_ban" =~ ^[0-9]+$ ]] || bg_ban=0
             [[ "$bg_emergency" =~ ^[0-9]+$ ]] || bg_emergency=0
         fi
-        metrics+="nftban_botguard_set_count{category=\"suspect\"} $bg_suspect $timestamp\n"
-        metrics+="nftban_botguard_set_count{category=\"pending\"} $bg_pending $timestamp\n"
-        metrics+="nftban_botguard_set_count{category=\"allow\"} $bg_allow $timestamp\n"
-        metrics+="nftban_botguard_set_count{category=\"grey\"} $bg_grey $timestamp\n"
-        metrics+="nftban_botguard_set_count{category=\"ban\"} $bg_ban $timestamp\n"
-        metrics+="nftban_botguard_set_count{category=\"emergency\"} $bg_emergency $timestamp\n"
-        metrics+="nftban_botguard_total_tracked $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency)) $timestamp\n"
+        metrics+="nftban_botguard_set_count{category=\"suspect\"} $bg_suspect\n"
+        metrics+="nftban_botguard_set_count{category=\"pending\"} $bg_pending\n"
+        metrics+="nftban_botguard_set_count{category=\"allow\"} $bg_allow\n"
+        metrics+="nftban_botguard_set_count{category=\"grey\"} $bg_grey\n"
+        metrics+="nftban_botguard_set_count{category=\"ban\"} $bg_ban\n"
+        metrics+="nftban_botguard_set_count{category=\"emergency\"} $bg_emergency\n"
+        metrics+="nftban_botguard_total_tracked $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency))\n"
 
         # --- Feeds Metrics (moved to LIVE for real-time consistency with nftban stats) ---
         # Check for feed data files in /var/lib/nftban/feeds/ (primary) or /var/cache/nftban/feeds/
@@ -334,9 +360,9 @@ collect_all_metrics() {
                     local feed_name
                     feed_name=$(basename "$feed_file" | sed 's/\.\(txt\|list\)$//')
                     # Per-feed Prometheus metrics
-                    metrics+="nftban_feed_ips{name=\"$feed_name\"} $total_count $timestamp\n"
-                    metrics+="nftban_feed_ipv4{name=\"$feed_name\"} $v4_count $timestamp\n"
-                    metrics+="nftban_feed_ipv6{name=\"$feed_name\"} $v6_count $timestamp\n"
+                    metrics+="nftban_feed_ips{name=\"$feed_name\"} $total_count\n"
+                    metrics+="nftban_feed_ipv4{name=\"$feed_name\"} $v4_count\n"
+                    metrics+="nftban_feed_ipv6{name=\"$feed_name\"} $v6_count\n"
                     # Build JSON for Zabbix discovery
                     [[ $feeds_json_first -eq 0 ]] && feeds_json+=","
                     feeds_json_first=0
@@ -345,14 +371,14 @@ collect_all_metrics() {
             fi
         fi
         feeds_json+="]"
-        metrics+="nftban_feeds_enabled $feeds_enabled $timestamp\n"
-        metrics+="nftban_feeds_loaded $feeds_loaded $timestamp\n"
-        metrics+="nftban_feeds_failed $feeds_failed $timestamp\n"
-        metrics+="nftban_feeds_ips_total $feeds_ips $timestamp\n"
-        metrics+="nftban_feeds_ipv4_total $feeds_ipv4_total $timestamp\n"
-        metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total $timestamp\n"
+        metrics+="nftban_feeds_enabled $feeds_enabled\n"
+        metrics+="nftban_feeds_loaded $feeds_loaded\n"
+        metrics+="nftban_feeds_failed $feeds_failed\n"
+        metrics+="nftban_feeds_ips_total $feeds_ips\n"
+        metrics+="nftban_feeds_ipv4_total $feeds_ipv4_total\n"
+        metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total\n"
         # Zabbix: JSON with all feeds for LLD/dashboard
-        metrics+="nftban.feeds.details |STRING|$feeds_json $timestamp\n"
+        metrics+="nftban.feeds.details |STRING|$feeds_json\n"
 
         # --- Time-based ban stats (from log) ---
         # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
@@ -460,40 +486,40 @@ collect_all_metrics() {
             [[ "$rate" == .* ]] && rate="0${rate}"  # JSON requires leading zero
 
             # Time window metrics
-            metrics+="nftban_bans_last_1h $bans_1h $timestamp\n"
-            metrics+="nftban_bans_last_24h $bans_24h $timestamp\n"
-            metrics+="nftban_bans_7d $bans_7d $timestamp\n"
-            metrics+="nftban_bans_30d $bans_30d $timestamp\n"
-            metrics+="nftban_bans_total $bans_total $timestamp\n"
-            metrics+="nftban_throughput_bans_per_minute $rate $timestamp\n"
+            metrics+="nftban_bans_last_1h $bans_1h\n"
+            metrics+="nftban_bans_last_24h $bans_24h\n"
+            metrics+="nftban_bans_7d $bans_7d\n"
+            metrics+="nftban_bans_30d $bans_30d\n"
+            metrics+="nftban_bans_total $bans_total\n"
+            metrics+="nftban_throughput_bans_per_minute $rate\n"
 
             # Bans by source (total)
-            metrics+="nftban_bans_by_source{source=\"login\"} $src_login $timestamp\n"
-            metrics+="nftban_bans_by_source{source=\"portscan\"} $src_portscan $timestamp\n"
-            metrics+="nftban_bans_by_source{source=\"ddos\"} $src_ddos $timestamp\n"
-            metrics+="nftban_bans_by_source{source=\"manual\"} $src_manual $timestamp\n"
-            metrics+="nftban_bans_by_source{source=\"feeds\"} $src_feeds $timestamp\n"
-            metrics+="nftban_bans_by_source{source=\"suricata\"} $src_suricata $timestamp\n"
+            metrics+="nftban_bans_by_source{source=\"login\"} $src_login\n"
+            metrics+="nftban_bans_by_source{source=\"portscan\"} $src_portscan\n"
+            metrics+="nftban_bans_by_source{source=\"ddos\"} $src_ddos\n"
+            metrics+="nftban_bans_by_source{source=\"manual\"} $src_manual\n"
+            metrics+="nftban_bans_by_source{source=\"feeds\"} $src_feeds\n"
+            metrics+="nftban_bans_by_source{source=\"suricata\"} $src_suricata\n"
 
             # Bans by source (24h) - for trend analysis
-            metrics+="nftban_bans_by_source_24h{source=\"login\"} $src_login_24h $timestamp\n"
-            metrics+="nftban_bans_by_source_24h{source=\"portscan\"} $src_portscan_24h $timestamp\n"
-            metrics+="nftban_bans_by_source_24h{source=\"ddos\"} $src_ddos_24h $timestamp\n"
-            metrics+="nftban_bans_by_source_24h{source=\"manual\"} $src_manual_24h $timestamp\n"
-            metrics+="nftban_bans_by_source_24h{source=\"feeds\"} $src_feeds_24h $timestamp\n"
-            metrics+="nftban_bans_by_source_24h{source=\"suricata\"} $src_suricata_24h $timestamp\n"
+            metrics+="nftban_bans_by_source_24h{source=\"login\"} $src_login_24h\n"
+            metrics+="nftban_bans_by_source_24h{source=\"portscan\"} $src_portscan_24h\n"
+            metrics+="nftban_bans_by_source_24h{source=\"ddos\"} $src_ddos_24h\n"
+            metrics+="nftban_bans_by_source_24h{source=\"manual\"} $src_manual_24h\n"
+            metrics+="nftban_bans_by_source_24h{source=\"feeds\"} $src_feeds_24h\n"
+            metrics+="nftban_bans_by_source_24h{source=\"suricata\"} $src_suricata_24h\n"
 
             # Bans by reason (24h) - for attack pattern analysis
             # Common SSH ban reasons from nftband daemon
-            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_invalid_user\"} ${rsn_ssh_invalid_user:-0} $timestamp\n"
-            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_preauth_disconnect\"} ${rsn_ssh_preauth_disconnect:-0} $timestamp\n"
-            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_auth_failure\"} ${rsn_ssh_auth_failure:-0} $timestamp\n"
-            metrics+="nftban_bans_by_reason_24h{reason=\"module_ban\"} ${rsn_module_ban:-0} $timestamp\n"
-            metrics+="nftban_bans_by_reason_24h{reason=\"other\"} ${rsn_other:-0} $timestamp\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_invalid_user\"} ${rsn_ssh_invalid_user:-0}\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_preauth_disconnect\"} ${rsn_ssh_preauth_disconnect:-0}\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_auth_failure\"} ${rsn_ssh_auth_failure:-0}\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"module_ban\"} ${rsn_module_ban:-0}\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"other\"} ${rsn_other:-0}\n"
 
             # Unique IPs (aligned with nftban_stats.sh)
-            metrics+="nftban_unique_ips_24h ${unique_ips_24h:-0} $timestamp\n"
-            metrics+="nftban_unique_ips_total ${unique_ips_total:-0} $timestamp\n"
+            metrics+="nftban_unique_ips_24h ${unique_ips_24h:-0}\n"
+            metrics+="nftban_unique_ips_total ${unique_ips_total:-0}\n"
         fi
 
         # --- Memory Metrics ---
@@ -505,9 +531,9 @@ collect_all_metrics() {
             fds=${fds//[[:space:]]/}  # strip whitespace from wc -l
             threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
 
-            metrics+="nftban_proc_rss_bytes $rss $timestamp\n"
-            metrics+="nftban_open_fds $fds $timestamp\n"
-            metrics+="nftban_threads $threads $timestamp\n"
+            metrics+="nftban_proc_rss_bytes $rss\n"
+            metrics+="nftban_open_fds $fds\n"
+            metrics+="nftban_threads $threads\n"
 
             # Daemon CPU and Memory percentage (from ps)
             local daemon_cpu_pct=0 daemon_mem_pct=0 daemon_vsz=0
@@ -518,9 +544,9 @@ collect_all_metrics() {
                 daemon_mem_pct=$(echo "$ps_output" | awk '{print $2}')
                 daemon_vsz=$(echo "$ps_output" | awk '{print $3 * 1024}')  # VSZ in bytes
             fi
-            metrics+="nftban.daemon.cpu_percent $daemon_cpu_pct $timestamp\n"
-            metrics+="nftban.daemon.mem_percent $daemon_mem_pct $timestamp\n"
-            metrics+="nftban.daemon.vsz_bytes $daemon_vsz $timestamp\n"
+            metrics+="nftban.daemon.cpu_percent $daemon_cpu_pct\n"
+            metrics+="nftban.daemon.mem_percent $daemon_mem_pct\n"
+            metrics+="nftban.daemon.vsz_bytes $daemon_vsz\n"
 
             # Goroutines (for Go-based daemon)
             # Try to read from daemon stats file first, then estimate from threads
@@ -553,15 +579,15 @@ collect_all_metrics() {
             else
                 growth_rate_mb_h=0
             fi
-            metrics+="nftban.daemon.memory_growth_rate $growth_rate_mb_h $timestamp\n"
-            metrics+="nftban.daemon.uptime_seconds $uptime_sec $timestamp\n"
+            metrics+="nftban.daemon.memory_growth_rate $growth_rate_mb_h\n"
+            metrics+="nftban.daemon.uptime_seconds $uptime_sec\n"
 
             # Cgroup memory pressure (cgroup v2)
             local pressure_file="/sys/fs/cgroup/system.slice/nftband.service/memory.pressure"
             if [[ -f "$pressure_file" ]]; then
                 memory_pressure=$(awk '/^some/ {gsub(/avg10=/, ""); printf "%.0f", $2}' "$pressure_file" 2>/dev/null || echo "0")
             fi
-            metrics+="nftban.daemon.memory_pressure $memory_pressure $timestamp\n"
+            metrics+="nftban.daemon.memory_pressure $memory_pressure\n"
 
             # Memory health status (0=ok, 1=warning, 2=critical)
             local memory_health=0
@@ -571,7 +597,7 @@ collect_all_metrics() {
             elif [[ $rss_mb -gt 100 ]] || [[ $memory_pressure -gt 50 ]]; then
                 memory_health=1  # warning
             fi
-            metrics+="nftban.daemon.memory_health $memory_health $timestamp\n"
+            metrics+="nftban.daemon.memory_health $memory_health\n"
         fi
 
         # --- Event Bus Metrics (Phase 3) ---
@@ -621,17 +647,17 @@ collect_all_metrics() {
         fi
 
         # Export Event Bus metrics
-        metrics+="nftban_eventbus_events_total $eventbus_events_total $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"ban\"} $eventbus_events_ban $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"unban\"} $eventbus_events_unban $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"login_fail\"} $eventbus_events_login_fail $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"ddos_detected\"} $eventbus_events_ddos_detected $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"portscan_detected\"} $eventbus_events_portscan_detected $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"suricata_alert\"} $eventbus_events_suricata_alert $timestamp\n"
-        metrics+="nftban_eventbus_events_by_type{type=\"feed_sync\"} $eventbus_events_feed_sync $timestamp\n"
-        metrics+="nftban_eventbus_events_dropped_total $eventbus_events_dropped_total $timestamp\n"
-        metrics+="nftban_eventbus_queue_size $eventbus_queue_size $timestamp\n"
-        metrics+="nftban_eventbus_handlers_total $eventbus_handlers_total $timestamp\n"
+        metrics+="nftban_eventbus_events_total $eventbus_events_total\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"ban\"} $eventbus_events_ban\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"unban\"} $eventbus_events_unban\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"login_fail\"} $eventbus_events_login_fail\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"ddos_detected\"} $eventbus_events_ddos_detected\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"portscan_detected\"} $eventbus_events_portscan_detected\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"suricata_alert\"} $eventbus_events_suricata_alert\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"feed_sync\"} $eventbus_events_feed_sync\n"
+        metrics+="nftban_eventbus_events_dropped_total $eventbus_events_dropped_total\n"
+        metrics+="nftban_eventbus_queue_size $eventbus_queue_size\n"
+        metrics+="nftban_eventbus_handlers_total $eventbus_handlers_total\n"
 
         # --- nftables Performance Metrics (Phase 3) ---
         # Rule application latency, error tracking, and detailed set/rule metrics
@@ -644,7 +670,7 @@ collect_all_metrics() {
                 # Ensure it's a valid number
                 [[ ! "$nft_apply_latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] && nft_apply_latency=0
             fi
-            metrics+="nftban_nftables_apply_latency_ms $nft_apply_latency $timestamp\n"
+            metrics+="nftban_nftables_apply_latency_ms $nft_apply_latency\n"
 
             # nftban_nftables_apply_errors_total - count nft errors from log
             local nft_apply_errors=0
@@ -653,7 +679,7 @@ collect_all_metrics() {
                 # Count lines containing nft command errors (case-insensitive)
                 nft_apply_errors=$(grep -ciE '(nft.*error|nft.*failed|nft:.*Error)' "$nftban_log" 2>/dev/null) || nft_apply_errors=0
             fi
-            metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
+            metrics+="nftban_nftables_apply_errors_total $nft_apply_errors\n"
 
             # nftban_nft_rules_total - count rules in nftban table
             local nft_rules_total=0
@@ -664,7 +690,7 @@ collect_all_metrics() {
                 nft_rules_total=$(echo "$table_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null | tr -d '[:space:]') || true
                 [[ -z "$nft_rules_total" || ! "$nft_rules_total" =~ ^[0-9]+$ ]] && nft_rules_total=0
             fi
-            metrics+="nftban_nft_rules_total $nft_rules_total $timestamp\n"
+            metrics+="nftban_nft_rules_total $nft_rules_total\n"
 
             # nftban_nftables_sets_total - count sets in nftban table
             local nft_sets_total=0
@@ -672,7 +698,7 @@ collect_all_metrics() {
                 nft_sets_total=$(echo "$table_output" | grep -c "^\s*set " 2>/dev/null | tr -d '[:space:]') || true
                 [[ -z "$nft_sets_total" || ! "$nft_sets_total" =~ ^[0-9]+$ ]] && nft_sets_total=0
             fi
-            metrics+="nftban_nftables_sets_total $nft_sets_total $timestamp\n"
+            metrics+="nftban_nftables_sets_total $nft_sets_total\n"
 
             # nftban_nftables_set_elements - element count per set with set label
             # v1.32.0: Use cached counting (0 kernel calls) with kernel fallback
@@ -687,7 +713,7 @@ collect_all_metrics() {
                     set_elem_count=$(nftban_nft_count_set_elements "$_fam" nftban "$set_name") || true
                 fi
                 [[ -z "$set_elem_count" || ! "$set_elem_count" =~ ^[0-9]+$ ]] && set_elem_count=0
-                metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
+                metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count\n"
             done
 
             # v1.32.0: Scale-level metrics from daemon cache (0 kernel calls)
@@ -707,7 +733,7 @@ collect_all_metrics() {
                     if jq -e . "$_scale_cache" >/dev/null 2>&1; then
                         # Per-set scale level (numeric: 0=NORMAL, 1=LARGE, ..., 5=CRITICAL_SCALE)
                         while IFS=$'\t' read -r _sname _snum; do
-                            [[ -n "$_sname" ]] && metrics+="nftban_set_scale_level{set=\"${_sname}\"} $_snum $timestamp\n"
+                            [[ -n "$_sname" ]] && metrics+="nftban_set_scale_level{set=\"${_sname}\"} $_snum\n"
                         done < <(jq -r '.sets | to_entries[] | [.key, (.value.scale_num | tostring)] | @tsv' "$_scale_cache" 2>/dev/null)
 
                         # Global scale mode (numeric). Belt-and-suspenders default in case
@@ -719,8 +745,8 @@ collect_all_metrics() {
                         LARGE) _global_num=1 ;; VERY_LARGE) _global_num=2 ;; HUGE) _global_num=3 ;;
                         EXTREME) _global_num=4 ;; CRITICAL_SCALE) _global_num=5 ;;
                     esac
-                    metrics+="nftban_global_scale_level $_global_num $timestamp\n"
-                    metrics+="nftban_scale_cache_age_seconds $_scale_age $timestamp\n"
+                    metrics+="nftban_global_scale_level $_global_num\n"
+                    metrics+="nftban_scale_cache_age_seconds $_scale_age\n"
                 fi
             fi
 
@@ -737,7 +763,7 @@ collect_all_metrics() {
                     [[ -z "$nft_commands_total" || ! "$nft_commands_total" =~ ^[0-9]+$ ]] && nft_commands_total=0
                 fi
             fi
-            metrics+="nftban_nftables_commands_total $nft_commands_total $timestamp\n"
+            metrics+="nftban_nftables_commands_total $nft_commands_total\n"
         fi
 
     fi  # end LIVE group
@@ -808,9 +834,9 @@ collect_all_metrics() {
             fi
         done
 
-        metrics+="nftban_modules_enabled $mod_enabled $timestamp\n"
-        metrics+="nftban_modules_active $mod_active $timestamp\n"
-        metrics+="nftban_modules_failed $mod_failed $timestamp\n"
+        metrics+="nftban_modules_enabled $mod_enabled\n"
+        metrics+="nftban_modules_active $mod_active\n"
+        metrics+="nftban_modules_failed $mod_failed\n"
 
         # --- Individual Module Status Metrics ---
         # Status values: 1=active, 0=disabled, -1=failed
@@ -842,7 +868,7 @@ collect_all_metrics() {
                 watchdog) module_watchdog_status=$status_val ;;
             esac
 
-            metrics+="nftban_module_${module}_status $status_val $timestamp\n"
+            metrics+="nftban_module_${module}_status $status_val\n"
         done
 
         # Botguard module status (uses conf.d config, not modules/ config)
@@ -867,7 +893,7 @@ collect_all_metrics() {
             fi
         fi
         module_botguard_status=$botguard_status_val
-        metrics+="nftban_module_botguard_status $botguard_status_val $timestamp\n"
+        metrics+="nftban_module_botguard_status $botguard_status_val\n"
 
 
         # --- nftables Extended Metrics (EXTENDED only - sets total, elements total) ---
@@ -892,8 +918,8 @@ collect_all_metrics() {
             sets_count=$((_v4_sets + _v6_sets))
             # Total elements across all standard sets (use function-level whitelist_v4/v6 from LIVE)
             elements_total=$((${active_v4:-0} + ${active_v6:-0} + ${whitelist_v4:-0} + ${whitelist_v6:-0}))
-            metrics+="nftban_nft_sets_total $sets_count $timestamp\n"
-            metrics+="nftban_nft_elements_total $elements_total $timestamp\n"
+            metrics+="nftban_nft_sets_total $sets_count\n"
+            metrics+="nftban_nft_elements_total $elements_total\n"
         fi
 
         # --- Feed Health Metrics (Phase 1) ---
@@ -905,7 +931,7 @@ collect_all_metrics() {
             # POSIX-compatible: count errors in last 24h using grep (mawk doesn't support {n} quantifiers)
             feeds_sync_errors=$(grep -cE '\[(ERROR|FAIL)\]' "$feeds_log" 2>/dev/null) || feeds_sync_errors=0
         fi
-        metrics+="nftban_feeds_sync_errors_total $feeds_sync_errors $timestamp\n"
+        metrics+="nftban_feeds_sync_errors_total $feeds_sync_errors\n"
 
         # Stale feeds: count feeds with last_sync > 24 hours from .state files
         local feeds_state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
@@ -921,7 +947,7 @@ collect_all_metrics() {
                 fi
             done
         fi
-        metrics+="nftban_feeds_stale_count $feeds_stale_count $timestamp\n"
+        metrics+="nftban_feeds_stale_count $feeds_stale_count\n"
 
         # --- GeoBan Metrics (count blocked countries) ---
         # Count by 50-ban-*.conf files in geoban.d directory
@@ -929,7 +955,7 @@ collect_all_metrics() {
         if [[ -d "$geoban_dir" ]]; then
             geoban_countries_blocked=$(ls -1 "$geoban_dir"/50-ban-*.conf 2>/dev/null | wc -l) || geoban_countries_blocked=0
         fi
-        metrics+="nftban_geoban_countries_blocked $geoban_countries_blocked $timestamp\n"
+        metrics+="nftban_geoban_countries_blocked $geoban_countries_blocked\n"
 
         # --- Watchdog Metrics (component: watchdog) ---
         if should_collect_component "watchdog"; then
@@ -943,10 +969,10 @@ collect_all_metrics() {
                     net_score=$(jq -r '.net_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
                     watchdog_mode=$(jq -r '.mode // "NORMAL"' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "NORMAL")
 
-                    metrics+="nftban_pressure_score{dim=\"cpu\"} $cpu_score $timestamp\n"
-                    metrics+="nftban_pressure_score{dim=\"mem\"} $mem_score $timestamp\n"
-                    metrics+="nftban_pressure_score{dim=\"io\"} $io_score $timestamp\n"
-                    metrics+="nftban_pressure_score{dim=\"net\"} $net_score $timestamp\n"
+                    metrics+="nftban_pressure_score{dim=\"cpu\"} $cpu_score\n"
+                    metrics+="nftban_pressure_score{dim=\"mem\"} $mem_score\n"
+                    metrics+="nftban_pressure_score{dim=\"io\"} $io_score\n"
+                    metrics+="nftban_pressure_score{dim=\"net\"} $net_score\n"
                     # Mode as one-hot vector matching daemon nftban_operating_mode{mode=X}
                     local mode_normal=0 mode_degraded=0 mode_survival=0
                     case "$watchdog_mode" in
@@ -954,13 +980,13 @@ collect_all_metrics() {
                         DEGRADED) mode_degraded=1 ;;
                         SURVIVAL) mode_survival=1 ;;
                     esac
-                    metrics+="nftban_operating_mode{mode=\"normal\"} $mode_normal $timestamp\n"
-                    metrics+="nftban_operating_mode{mode=\"degraded\"} $mode_degraded $timestamp\n"
-                    metrics+="nftban_operating_mode{mode=\"survival\"} $mode_survival $timestamp\n"
+                    metrics+="nftban_operating_mode{mode=\"normal\"} $mode_normal\n"
+                    metrics+="nftban_operating_mode{mode=\"degraded\"} $mode_degraded\n"
+                    metrics+="nftban_operating_mode{mode=\"survival\"} $mode_survival\n"
                 fi
-                metrics+="nftban_watchdog_up 1 $timestamp\n"
+                metrics+="nftban_watchdog_up 1\n"
             else
-                metrics+="nftban_watchdog_up 0 $timestamp\n"
+                metrics+="nftban_watchdog_up 0\n"
             fi
 
             # Daemon runtime stats via IPC (heap, gc, ipc, throughput)
@@ -995,23 +1021,23 @@ collect_all_metrics() {
                             d_bans d_unbans d_events d_bans_min d_ipc_req d_ipc_lat d_ipc_err <<< "$stats_values"
 
                         # Daemon runtime metrics
-                        metrics+="nftban_daemon_uptime_seconds $d_uptime $timestamp\n"
-                        metrics+="nftban_daemon_memory_heap_mb $d_heap $timestamp\n"
-                        metrics+="nftban_daemon_memory_sys_mb $d_sys $timestamp\n"
-                        metrics+="nftban_runtime_goroutines $d_goroutines $timestamp\n"
-                        metrics+="nftban_daemon_gc_cycles_total $d_gc_cycles $timestamp\n"
-                        metrics+="nftban_daemon_gc_pause_ms $d_gc_pause $timestamp\n"
+                        metrics+="nftban_daemon_uptime_seconds $d_uptime\n"
+                        metrics+="nftban_daemon_memory_heap_mb $d_heap\n"
+                        metrics+="nftban_daemon_memory_sys_mb $d_sys\n"
+                        metrics+="nftban_runtime_goroutines $d_goroutines\n"
+                        metrics+="nftban_daemon_gc_cycles_total $d_gc_cycles\n"
+                        metrics+="nftban_daemon_gc_pause_ms $d_gc_pause\n"
 
                         # Throughput metrics
-                        metrics+="nftban_daemon_bans_total $d_bans $timestamp\n"
-                        metrics+="nftban_daemon_unbans_total $d_unbans $timestamp\n"
-                        metrics+="nftban_daemon_events_total $d_events $timestamp\n"
-                        metrics+="nftban_daemon_bans_per_minute $d_bans_min $timestamp\n"
+                        metrics+="nftban_daemon_bans_total $d_bans\n"
+                        metrics+="nftban_daemon_unbans_total $d_unbans\n"
+                        metrics+="nftban_daemon_events_total $d_events\n"
+                        metrics+="nftban_daemon_bans_per_minute $d_bans_min\n"
 
                         # IPC metrics
-                        metrics+="nftban_daemon_ipc_requests_total $d_ipc_req $timestamp\n"
-                        metrics+="nftban_daemon_ipc_latency_avg_ms $d_ipc_lat $timestamp\n"
-                        metrics+="nftban_daemon_ipc_errors_total $d_ipc_err $timestamp\n"
+                        metrics+="nftban_daemon_ipc_requests_total $d_ipc_req\n"
+                        metrics+="nftban_daemon_ipc_latency_avg_ms $d_ipc_lat\n"
+                        metrics+="nftban_daemon_ipc_errors_total $d_ipc_err\n"
                     fi
                 fi
             fi
@@ -1052,9 +1078,9 @@ collect_all_metrics() {
                     run_memory=$mem_peak
                 fi
 
-                metrics+="nftban_module_${timer_module}_last_run_duration_seconds $run_duration $timestamp\n"
-                metrics+="nftban_module_${timer_module}_last_run_memory_bytes $run_memory $timestamp\n"
-                metrics+="nftban_module_${timer_module}_last_run_status $run_status $timestamp\n"
+                metrics+="nftban_module_${timer_module}_last_run_duration_seconds $run_duration\n"
+                metrics+="nftban_module_${timer_module}_last_run_memory_bytes $run_memory\n"
+                metrics+="nftban_module_${timer_module}_last_run_status $run_status\n"
             fi
         done
 
@@ -1105,8 +1131,8 @@ collect_all_metrics() {
                         'BEGIN {printf "%.2f", (t > 0) ? (d * 0.8 * b / t) : 0}')
                 fi
 
-                metrics+="nftban_module_${embed_module}_cpu_percent_estimated $mod_cpu $timestamp\n"
-                metrics+="nftban_module_${embed_module}_memory_percent_estimated $mod_mem $timestamp\n"
+                metrics+="nftban_module_${embed_module}_cpu_percent_estimated $mod_cpu\n"
+                metrics+="nftban_module_${embed_module}_memory_percent_estimated $mod_mem\n"
             fi
         done
 
@@ -1118,7 +1144,7 @@ collect_all_metrics() {
                 # Column 2 (0-indexed: col 1) is dropped packets, values are in hex
                 softnet_drops_total=$(awk '{sum += strtonum("0x" $2)} END {print sum}' /proc/net/softnet_stat 2>/dev/null || echo "0")
             fi
-            metrics+="nftban_softnet_drops $softnet_drops_total $timestamp\n"
+            metrics+="nftban_softnet_drops $softnet_drops_total\n"
 
             # Calculate rate from previous value
             local softnet_state="${NFTBAN_RUN_DIR}/softnet_state.dat"
@@ -1134,19 +1160,19 @@ collect_all_metrics() {
                 fi
             fi
             echo "$softnet_drops_total $timestamp" > "${softnet_state}.tmp" && mv -f "${softnet_state}.tmp" "$softnet_state"
-            metrics+="nftban_softnet_backlog_total $softnet_drops_rate $timestamp\n"
+            metrics+="nftban_softnet_backlog_total $softnet_drops_rate\n"
         fi
 
         # --- Server Load Metrics ---
         local load1 load5 load15
         if [[ -f /proc/loadavg ]]; then
             read -r load1 load5 load15 _ < /proc/loadavg
-            metrics+="nftban.server.load_1m $load1 $timestamp\n"
-            metrics+="nftban.server.load_5m $load5 $timestamp\n"
-            metrics+="nftban.server.load_15m $load15 $timestamp\n"
+            metrics+="nftban.server.load_1m $load1\n"
+            metrics+="nftban.server.load_5m $load5\n"
+            metrics+="nftban.server.load_15m $load15\n"
         fi
         cpu_cores=$(nproc 2>/dev/null || echo "1")
-        metrics+="nftban.server.cpu_cores $cpu_cores $timestamp\n"
+        metrics+="nftban.server.cpu_cores $cpu_cores\n"
 
         # --- Server Memory Metrics ---
         if [[ -f /proc/meminfo ]]; then
@@ -1157,15 +1183,15 @@ collect_all_metrics() {
                 memory_used_pct=$(awk -v used="$memory_used" -v total="$memory_total" 'BEGIN {printf "%.2f", (used/total)*100}')
             fi
         fi
-        metrics+="nftban.server.memory_total $memory_total $timestamp\n"
-        metrics+="nftban.server.memory_available $memory_available $timestamp\n"
-        metrics+="nftban.server.mem_used_percent $memory_used_pct $timestamp\n"
+        metrics+="nftban.server.memory_total $memory_total\n"
+        metrics+="nftban.server.memory_available $memory_available\n"
+        metrics+="nftban.server.mem_used_percent $memory_used_pct\n"
 
         # --- Server Uptime ---
         if [[ -f /proc/uptime ]]; then
             server_uptime=$(awk '{printf "%.0f", $1}' /proc/uptime 2>/dev/null || echo "0")
         fi
-        metrics+="nftban.server.uptime $server_uptime $timestamp\n"
+        metrics+="nftban.server.uptime $server_uptime\n"
 
         # --- Server Disk Metrics (root filesystem) ---
         if command -v df &>/dev/null; then
@@ -1177,9 +1203,9 @@ collect_all_metrics() {
                 disk_used_pct=$(echo "$df_output" | awk '{gsub(/%/, "", $5); print $5}')
             fi
         fi
-        metrics+="nftban.server.disk_total $disk_total $timestamp\n"
-        metrics+="nftban.server.disk_used $disk_used $timestamp\n"
-        metrics+="nftban.server.disk_used_percent $disk_used_pct $timestamp\n"
+        metrics+="nftban.server.disk_total $disk_total\n"
+        metrics+="nftban.server.disk_used $disk_used\n"
+        metrics+="nftban.server.disk_used_percent $disk_used_pct\n"
 
     fi  # end EXTENDED group
 
@@ -1221,8 +1247,8 @@ collect_all_metrics() {
         # Hostname and FQDN
         server_hostname=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "unknown")
         server_fqdn=$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown")
-        metrics+="nftban_server_hostname_info{hostname=\"$server_hostname\"} 1 $timestamp\n"
-        metrics+="nftban_server_fqdn_info{fqdn=\"$server_fqdn\"} 1 $timestamp\n"
+        metrics+="nftban_server_hostname_info{hostname=\"$server_hostname\"} 1\n"
+        metrics+="nftban_server_fqdn_info{fqdn=\"$server_fqdn\"} 1\n"
 
         # OS information from /etc/os-release
         if [[ -f /etc/os-release ]]; then
@@ -1235,17 +1261,17 @@ collect_all_metrics() {
         [[ -z "$server_os_release" ]] && server_os_release=$(uname -o 2>/dev/null || echo "Linux")
         server_kernel=$(uname -r 2>/dev/null || echo "unknown")
         server_arch=$(uname -m 2>/dev/null || echo "unknown")
-        metrics+="nftban_server_os_info{os=\"$server_os\"} 1 $timestamp\n"
-        metrics+="nftban_server_os_release_info{release=\"$server_os_release\"} 1 $timestamp\n"
-        metrics+="nftban_server_kernel_info{kernel=\"$server_kernel\"} 1 $timestamp\n"
-        metrics+="nftban_server_arch_info{arch=\"$server_arch\"} 1 $timestamp\n"
+        metrics+="nftban_server_os_info{os=\"$server_os\"} 1\n"
+        metrics+="nftban_server_os_release_info{release=\"$server_os_release\"} 1\n"
+        metrics+="nftban_server_kernel_info{kernel=\"$server_kernel\"} 1\n"
+        metrics+="nftban_server_arch_info{arch=\"$server_arch\"} 1\n"
 
         # CPU model name
         if [[ -f /proc/cpuinfo ]]; then
             server_cpu_model=$(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | cut -d':' -f2 | sed 's/^[ \t]*//' || echo "")
         fi
         [[ -z "$server_cpu_model" ]] && server_cpu_model=$(uname -p 2>/dev/null || echo "unknown")
-        metrics+="nftban_server_cpu_model_info{model=\"$server_cpu_model\"} 1 $timestamp\n"
+        metrics+="nftban_server_cpu_model_info{model=\"$server_cpu_model\"} 1\n"
 
         # Server type detection (physical, vm, container)
         server_type="physical"
@@ -1258,7 +1284,7 @@ collect_all_metrics() {
             virt=$(systemd-detect-virt 2>/dev/null || echo "none")
             [[ "$virt" != "none" ]] && server_type="vm"
         fi
-        metrics+="nftban_server_type_info{type=\"$server_type\"} 1 $timestamp\n"
+        metrics+="nftban_server_type_info{type=\"$server_type\"} 1\n"
 
         # Hardware vendor and model (from DMI if available)
         if [[ -f /sys/class/dmi/id/sys_vendor ]]; then
@@ -1273,9 +1299,9 @@ collect_all_metrics() {
         [[ -z "$server_vendor" ]] && server_vendor="Unknown"
         [[ -z "$server_model" ]] && server_model="Unknown"
         [[ -z "$server_serial" ]] && server_serial="N/A"
-        metrics+="nftban_server_vendor_info{vendor=\"$server_vendor\"} 1 $timestamp\n"
-        metrics+="nftban_server_model_info{model=\"$server_model\"} 1 $timestamp\n"
-        metrics+="nftban_server_serial_info{serial=\"$server_serial\"} 1 $timestamp\n"
+        metrics+="nftban_server_vendor_info{vendor=\"$server_vendor\"} 1\n"
+        metrics+="nftban_server_model_info{model=\"$server_model\"} 1\n"
+        metrics+="nftban_server_serial_info{serial=\"$server_serial\"} 1\n"
 
         # Network information (primary IP, MAC, subnet mask)
         # Get primary interface (default route)
@@ -1304,19 +1330,19 @@ collect_all_metrics() {
         server_networks=$(ip -4 addr 2>/dev/null | awk '/inet / {gsub(/\/.*/, "", $2); printf "%s:%s ", $NF, $2}' | sed 's/ $//' || echo "")
         [[ -z "$server_networks" ]] && server_networks="lo:127.0.0.1"
 
-        metrics+="nftban_server_primary_ip_info{ip=\"$server_primary_ip\"} 1 $timestamp\n"
-        metrics+="nftban_server_mac_info{mac=\"$server_mac\"} 1 $timestamp\n"
-        metrics+="nftban_server_subnet_mask_info{mask=\"$server_subnet_mask\"} 1 $timestamp\n"
-        metrics+="nftban_server_networks_info{networks=\"$server_networks\"} 1 $timestamp\n"
+        metrics+="nftban_server_primary_ip_info{ip=\"$server_primary_ip\"} 1\n"
+        metrics+="nftban_server_mac_info{mac=\"$server_mac\"} 1\n"
+        metrics+="nftban_server_subnet_mask_info{mask=\"$server_subnet_mask\"} 1\n"
+        metrics+="nftban_server_networks_info{networks=\"$server_networks\"} 1\n"
 
         # Location (from config or empty)
         server_location="${NFTBAN_SERVER_LOCATION:-}"
         [[ -z "$server_location" ]] && server_location="Not configured"
-        metrics+="nftban_server_location_info{location=\"$server_location\"} 1 $timestamp\n"
+        metrics+="nftban_server_location_info{location=\"$server_location\"} 1\n"
 
         # NFTBan version
         nftban_version=$(cat "${NFTBAN_LIB_DIR}/VERSION" 2>/dev/null | head -1 || echo "unknown")
-        metrics+="nftban_server_nftban_version_info{version=\"$nftban_version\"} 1 $timestamp\n"
+        metrics+="nftban_server_nftban_version_info{version=\"$nftban_version\"} 1\n"
 
         # NOTE: Memory, uptime, disk metrics moved to EXTENDED group (every 5 min)
         # See: "Server Load Metrics", "Server Memory Metrics", "Server Disk Metrics" in EXTENDED
@@ -1326,23 +1352,23 @@ collect_all_metrics() {
         # These are formatted as: metric_name |STRING|value timestamp
         # The export_zabbix function handles the |STRING| marker specially
         # Using dot notation to match Zabbix template keys exactly
-        metrics+="nftban.server.hostname |STRING|$server_hostname $timestamp\n"
-        metrics+="nftban.server.fqdn |STRING|$server_fqdn $timestamp\n"
-        metrics+="nftban.server.os |STRING|$server_os $timestamp\n"
-        metrics+="nftban.server.os_release |STRING|$server_os_release $timestamp\n"
-        metrics+="nftban.server.kernel |STRING|$server_kernel $timestamp\n"
-        metrics+="nftban.server.arch |STRING|$server_arch $timestamp\n"
-        metrics+="nftban.server.cpu_model |STRING|$server_cpu_model $timestamp\n"
-        metrics+="nftban.server.type |STRING|$server_type $timestamp\n"
-        metrics+="nftban.server.vendor |STRING|$server_vendor $timestamp\n"
-        metrics+="nftban.server.model |STRING|$server_model $timestamp\n"
-        metrics+="nftban.server.serial |STRING|$server_serial $timestamp\n"
-        metrics+="nftban.server.primary_ip |STRING|$server_primary_ip $timestamp\n"
-        metrics+="nftban.server.mac_address |STRING|$server_mac $timestamp\n"
-        metrics+="nftban.server.subnet_mask |STRING|$server_subnet_mask $timestamp\n"
-        metrics+="nftban.server.networks |STRING|$server_networks $timestamp\n"
-        metrics+="nftban.server.location |STRING|$server_location $timestamp\n"
-        metrics+="nftban.server.nftban_version |STRING|$nftban_version $timestamp\n"
+        metrics+="nftban.server.hostname |STRING|$server_hostname\n"
+        metrics+="nftban.server.fqdn |STRING|$server_fqdn\n"
+        metrics+="nftban.server.os |STRING|$server_os\n"
+        metrics+="nftban.server.os_release |STRING|$server_os_release\n"
+        metrics+="nftban.server.kernel |STRING|$server_kernel\n"
+        metrics+="nftban.server.arch |STRING|$server_arch\n"
+        metrics+="nftban.server.cpu_model |STRING|$server_cpu_model\n"
+        metrics+="nftban.server.type |STRING|$server_type\n"
+        metrics+="nftban.server.vendor |STRING|$server_vendor\n"
+        metrics+="nftban.server.model |STRING|$server_model\n"
+        metrics+="nftban.server.serial |STRING|$server_serial\n"
+        metrics+="nftban.server.primary_ip |STRING|$server_primary_ip\n"
+        metrics+="nftban.server.mac_address |STRING|$server_mac\n"
+        metrics+="nftban.server.subnet_mask |STRING|$server_subnet_mask\n"
+        metrics+="nftban.server.networks |STRING|$server_networks\n"
+        metrics+="nftban.server.location |STRING|$server_location\n"
+        metrics+="nftban.server.nftban_version |STRING|$nftban_version\n"
 
         # --- Kernel Conntrack Metrics (component: kernel) ---
         # Variables declared at function level for JSON cache access
@@ -1356,9 +1382,9 @@ collect_all_metrics() {
             if [[ $conntrack_max -gt 0 ]]; then
                 conntrack_utilization=$(awk -v e="$conntrack_entries" -v m="$conntrack_max" 'BEGIN {printf "%.2f", (e/m)*100}')
             fi
-            metrics+="nftban_conntrack_used $conntrack_entries $timestamp\n"
-            metrics+="nftban_conntrack_max $conntrack_max $timestamp\n"
-            metrics+="nftban_conntrack_utilization $conntrack_utilization $timestamp\n"
+            metrics+="nftban_conntrack_used $conntrack_entries\n"
+            metrics+="nftban_conntrack_max $conntrack_max\n"
+            metrics+="nftban_conntrack_utilization $conntrack_utilization\n"
         fi
 
     fi  # end INVENTORY group
@@ -1389,14 +1415,14 @@ collect_all_metrics() {
         read -r rx_bytes rx_packets rx_errs rx_drop tx_bytes tx_packets tx_errs tx_drop <<< "$stats"
 
         # Per-interface metrics
-        metrics+="nftban_network_rx_bytes{interface=\"${iface}\"} $rx_bytes $timestamp\n"
-        metrics+="nftban_network_tx_bytes{interface=\"${iface}\"} $tx_bytes $timestamp\n"
-        metrics+="nftban_network_rx_packets{interface=\"${iface}\"} $rx_packets $timestamp\n"
-        metrics+="nftban_network_tx_packets{interface=\"${iface}\"} $tx_packets $timestamp\n"
-        metrics+="nftban_network_rx_errors{interface=\"${iface}\"} $rx_errs $timestamp\n"
-        metrics+="nftban_network_tx_errors{interface=\"${iface}\"} $tx_errs $timestamp\n"
-        metrics+="nftban_network_rx_dropped{interface=\"${iface}\"} $rx_drop $timestamp\n"
-        metrics+="nftban_network_tx_dropped{interface=\"${iface}\"} $tx_drop $timestamp\n"
+        metrics+="nftban_network_rx_bytes{interface=\"${iface}\"} $rx_bytes\n"
+        metrics+="nftban_network_tx_bytes{interface=\"${iface}\"} $tx_bytes\n"
+        metrics+="nftban_network_rx_packets{interface=\"${iface}\"} $rx_packets\n"
+        metrics+="nftban_network_tx_packets{interface=\"${iface}\"} $tx_packets\n"
+        metrics+="nftban_network_rx_errors{interface=\"${iface}\"} $rx_errs\n"
+        metrics+="nftban_network_tx_errors{interface=\"${iface}\"} $tx_errs\n"
+        metrics+="nftban_network_rx_dropped{interface=\"${iface}\"} $rx_drop\n"
+        metrics+="nftban_network_tx_dropped{interface=\"${iface}\"} $tx_drop\n"
 
         # Accumulate totals for Zabbix compatibility
         total_rx_bytes=$((total_rx_bytes + rx_bytes))
@@ -1422,8 +1448,8 @@ collect_all_metrics() {
                 local rx_mbps tx_mbps
                 rx_mbps=$(calculate_mbps $rx_delta $time_delta)
                 tx_mbps=$(calculate_mbps $tx_delta $time_delta)
-                metrics+="nftban_network_rx_mbps{interface=\"${iface}\"} $rx_mbps $timestamp\n"
-                metrics+="nftban_network_tx_mbps{interface=\"${iface}\"} $tx_mbps $timestamp\n"
+                metrics+="nftban_network_rx_mbps{interface=\"${iface}\"} $rx_mbps\n"
+                metrics+="nftban_network_tx_mbps{interface=\"${iface}\"} $tx_mbps\n"
                 total_rx_mbps=$(echo "$total_rx_mbps + $rx_mbps" | bc -l 2>/dev/null || echo "$total_rx_mbps")
                 total_tx_mbps=$(echo "$total_tx_mbps + $tx_mbps" | bc -l 2>/dev/null || echo "$total_tx_mbps")
                 [[ "$total_rx_mbps" == .* ]] && total_rx_mbps="0${total_rx_mbps}"
@@ -1442,14 +1468,14 @@ collect_all_metrics() {
         fi
 
     # Total bandwidth and peaks
-    metrics+="nftban_network_total_rx_mbps $total_rx_mbps $timestamp\n"
-    metrics+="nftban_network_total_tx_mbps $total_tx_mbps $timestamp\n"
+    metrics+="nftban_network_total_rx_mbps $total_rx_mbps\n"
+    metrics+="nftban_network_total_tx_mbps $total_tx_mbps\n"
 
     local peaks
     peaks=$(update_bandwidth_peaks "$total_rx_mbps" "$total_tx_mbps" "$timestamp")
     read -r peak_rx peak_tx <<< "$peaks"
-    metrics+="nftban_bandwidth_peak_rx_mbps $peak_rx $timestamp\n"
-    metrics+="nftban_bandwidth_peak_tx_mbps $peak_tx $timestamp\n"
+    metrics+="nftban_bandwidth_peak_rx_mbps $peak_rx\n"
+    metrics+="nftban_bandwidth_peak_tx_mbps $peak_tx\n"
 
     # -------------------------------------------------------------------------
     # NETWORK TOTALS (Zabbix-compatible aggregated counters)
@@ -1460,36 +1486,36 @@ collect_all_metrics() {
     #   nftban.bandwidth.in, nftban.bandwidth.out
     # -------------------------------------------------------------------------
     # Total bytes (counters)
-    metrics+="nftban_network_bytes_received_total $total_rx_bytes $timestamp\n"
-    metrics+="nftban_network_bytes_sent_total $total_tx_bytes $timestamp\n"
+    metrics+="nftban_network_bytes_received_total $total_rx_bytes\n"
+    metrics+="nftban_network_bytes_sent_total $total_tx_bytes\n"
 
     # Total packets (counters)
-    metrics+="nftban_network_packets_received_total $total_rx_packets $timestamp\n"
-    metrics+="nftban_network_packets_sent_total $total_tx_packets $timestamp\n"
+    metrics+="nftban_network_packets_received_total $total_rx_packets\n"
+    metrics+="nftban_network_packets_sent_total $total_tx_packets\n"
 
     # Total errors (combined RX+TX errors)
     total_errors=$((total_rx_errors + total_tx_errors))
-    metrics+="nftban_network_errors_total $total_errors $timestamp\n"
+    metrics+="nftban_network_errors_total $total_errors\n"
 
     # Total dropped packets (combined RX+TX dropped)
     total_dropped=$((total_rx_dropped + total_tx_dropped))
-    metrics+="nftban_network_packets_dropped_total $total_dropped $timestamp\n"
+    metrics+="nftban_network_packets_dropped_total $total_dropped\n"
 
     # Bandwidth rate in bits per second (for Zabbix nftban.bandwidth.in/out)
     # Convert Mbps to bps: Mbps * 1000000
     bandwidth_in_bps=$(awk -v m="$total_rx_mbps" 'BEGIN {printf "%.0f", m * 1000000}')
     bandwidth_out_bps=$(awk -v m="$total_tx_mbps" 'BEGIN {printf "%.0f", m * 1000000}')
-    metrics+="nftban_bandwidth_in_bps $bandwidth_in_bps $timestamp\n"
-    metrics+="nftban_bandwidth_out_bps $bandwidth_out_bps $timestamp\n"
+    metrics+="nftban_bandwidth_in_bps $bandwidth_in_bps\n"
+    metrics+="nftban_bandwidth_out_bps $bandwidth_out_bps\n"
 
         # --- Connection Metrics ---
         # Variables declared at function level for JSON cache access
         conn_active=$(get_connection_stats active)
         conn_established=$(get_connection_stats established)
         conn_time_wait=$(get_connection_stats time_wait)
-        metrics+="nftban_connections_active $conn_active $timestamp\n"
-        metrics+="nftban_connections_established $conn_established $timestamp\n"
-        metrics+="nftban_connections_time_wait $conn_time_wait $timestamp\n"
+        metrics+="nftban_connections_active $conn_active\n"
+        metrics+="nftban_connections_established $conn_established\n"
+        metrics+="nftban_connections_time_wait $conn_time_wait\n"
 
     fi  # end NETWORK group (live + network component)
 
@@ -1508,10 +1534,10 @@ collect_all_metrics() {
         if [[ -n "$geoip_db" ]]; then
             local db_age_days
             db_age_days=$(( (timestamp - $(stat -c %Y "$geoip_db" 2>/dev/null || echo "$timestamp")) / 86400 ))
-            metrics+="nftban_geoip_database_age_days $db_age_days $timestamp\n"
-            metrics+="nftban_geoip_database_present 1 $timestamp\n"
+            metrics+="nftban_geoip_database_age_days $db_age_days\n"
+            metrics+="nftban_geoip_database_present 1\n"
         else
-            metrics+="nftban_geoip_database_present 0 $timestamp\n"
+            metrics+="nftban_geoip_database_present 0\n"
         fi
 
         # Count blocked countries
@@ -1519,7 +1545,7 @@ collect_all_metrics() {
         if [[ -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]]; then
             countries_blocked=$(ls -1 "${NFTBAN_CONFIG_DIR}/geoban.d/"50-ban-*.conf 2>/dev/null | wc -l) || countries_blocked=0
         fi
-        metrics+="nftban_geoip_countries_blocked $countries_blocked $timestamp\n"
+        metrics+="nftban_geoip_countries_blocked $countries_blocked\n"
     fi  # end GEOIP group
 
     # =========================================================================
