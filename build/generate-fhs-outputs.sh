@@ -134,6 +134,13 @@ generate_tmpfiles() {
         echo "# ============================================================================="
 # REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+        # ⛔ The generator must emit the copyright line too. Without it, every
+        # version bump silently STRIPS the SPDX-FileCopyrightText that REUSE
+        # compliance depends on -- measured: the 1.229.10 -> .11 bump removed it
+        # from all four generated files at once.
+        #   A GENERATOR THAT OMITS A REQUIRED HEADER FIELD IS A COMPLIANCE
+        #   REGRESSION ON A TIMER.
+        echo "# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 # REUSE-IgnoreEnd
     } > "$TMPFILES_OUT"
     cat >> "$TMPFILES_OUT" << 'EOF'
@@ -213,6 +220,13 @@ generate_sysusers() {
         echo "# ============================================================================="
 # REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+        # ⛔ The generator must emit the copyright line too. Without it, every
+        # version bump silently STRIPS the SPDX-FileCopyrightText that REUSE
+        # compliance depends on -- measured: the 1.229.10 -> .11 bump removed it
+        # from all four generated files at once.
+        #   A GENERATOR THAT OMITS A REQUIRED HEADER FIELD IS A COMPLIANCE
+        #   REGRESSION ON A TIMER.
+        echo "# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 # REUSE-IgnoreEnd
     } > "$SYSUSERS_OUT"
     cat >> "$SYSUSERS_OUT" << 'EOF'
@@ -534,6 +548,13 @@ generate_shell_helper() {
         echo "# ============================================================================="
 # REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+        # ⛔ The generator must emit the copyright line too. Without it, every
+        # version bump silently STRIPS the SPDX-FileCopyrightText that REUSE
+        # compliance depends on -- measured: the 1.229.10 -> .11 bump removed it
+        # from all four generated files at once.
+        #   A GENERATOR THAT OMITS A REQUIRED HEADER FIELD IS A COMPLIANCE
+        #   REGRESSION ON A TIMER.
+        echo "# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 # REUSE-IgnoreEnd
         echo "#"
         echo "# meta:name=\"nftban_fhs_spec\""
@@ -765,6 +786,13 @@ generate_file_permissions() {
         echo "# ============================================================================="
 # REUSE-IgnoreStart
         echo "# SPDX-License-Identifier: MPL-2.0"
+        # ⛔ The generator must emit the copyright line too. Without it, every
+        # version bump silently STRIPS the SPDX-FileCopyrightText that REUSE
+        # compliance depends on -- measured: the 1.229.10 -> .11 bump removed it
+        # from all four generated files at once.
+        #   A GENERATOR THAT OMITS A REQUIRED HEADER FIELD IS A COMPLIANCE
+        #   REGRESSION ON A TIMER.
+        echo "# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 # REUSE-IgnoreEnd
     } > "$PERMS_OUT"
     cat >> "$PERMS_OUT" << 'PERMS_HEADER'
