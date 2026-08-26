@@ -80,8 +80,27 @@ Zabbix module enablement decisions are canonicalized. The Zabbix LLD subject
 population remains explicitly enumerated and is tracked for population-authority
 convergence in v1.229.12.
 
-v1.229.10 was published but never deployed; the supported upgrade path for existing
-installations is v1.229.9 → v1.229.11 directly.
+### Upgrade path — v1.229.10 is bypassed
+
+**v1.229.10 was published but never deployed.** Its fleet rollout was stopped, and the fixes that
+stopped it are in this release. The supported and witnessed path for existing installations is:
+
+```
+v1.229.9  ──►  v1.229.11        (v1.229.10 is skipped, deliberately)
+```
+
+Do not deploy v1.229.10. Skipping it requires nothing special — package upgrades are cumulative
+and do not assume the intermediate version was ever installed. That was proven rather than
+assumed, on all three shipped families:
+
+| Family | Host | From | Result |
+|---|---|---|---|
+| DEB | Ubuntu 24.04 | 1.229.9 | rc=0, no conffile prompts |
+| RPM | Rocky 9.8 | 1.229.9 | rc=0, no `.rpmnew` / `.rpmsave` |
+| RPM | Rocky 10.0 | 1.228.9 | rc=0, and the convergence generation initialized cleanly on a host that never had one |
+
+Each upgrade was run non-interactively from the previously published artifact, with the modules
+enabled and converged beforehand, and each preserved its IPv4 and IPv6 rule and set counts exactly.
 
 ---
 
