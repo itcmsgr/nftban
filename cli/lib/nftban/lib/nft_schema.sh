@@ -1473,10 +1473,10 @@ export -f nftban_nft_report_status
 #       log prefix "nftban: portscan: "
 #
 #     ct state new tcp dport 22 ct count over 5 drop \
-#       comment "SSH: max 5 concurrent per IP"
+#       comment "SSH: max 5 concurrent NEW conns (host-wide, not per IP)"
 #
 #     ct state new tcp dport { 80, 443 } ct count over 50 drop \
-#       comment "HTTP(S): max 50 concurrent per IP"
+#       comment "HTTP(S): max 50 concurrent NEW conns (host-wide, not per IP)"
 #
 #     # 9. TCP SERVICES (with ct limits applied above)
 #     tcp dport @tcp_ports_in accept comment "TCP services"
