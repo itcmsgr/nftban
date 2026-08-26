@@ -2079,7 +2079,22 @@ firewall_reload() {
     # this run fails to re-resolve is left behind at an older generation and
     # reads as STALE -> UNKNOWN instead of as a usable expectation.
     #   EVERY TRANSACTION ROOT THAT RESOLVES A PLAN MUST PUBLISH THAT SAME PLAN.
-    declare -f nftban_plan_generation_bump >/dev/null 2>&1 && nftban_plan_generation_bump || true
+    # ⛔ v1.229.11 LANE 6A: OPEN A TRANSACTION — DO NOT ADVANCE THE GENERATION.
+    # This line used to be `nftban_plan_generation_bump`, which made generation
+    # N+1 authoritative HERE, hundreds of lines before the module re-apply that
+    # republishes the plan records. Every reader in between saw bound=N against
+    # gen=N+1 and resolved UNKNOWN — a window entered on EVERY convergence, 453
+    # seconds wide on srv3, and made permanent whenever the rebuild was killed.
+    #     THE GENERATION IS COMMITTED AT THE END, OR NOT AT ALL.
+    # ⛔ A REFUSED TRANSACTION MUST ABORT THE MUTATION. The `|| true` here was
+    # inherited from the generation bump it replaced, where a failure was
+    # genuinely non-fatal. For a transaction OPEN it is not: swallowing the
+    # refusal let the whole convergence proceed with NO transaction open and NO
+    # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
+    #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _reload_whitelist_converged="true"
     # Reload nftables ruleset AND re-apply NFTBan rules
@@ -2314,6 +2329,15 @@ FIREWALL_RELOAD_HELP
     # Step 6 (v1.50.1): Re-sync geoban
     [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
     _nftban_reconcile_geoban || true
+
+    # ⛔ v1.229.11 LANE 6A: COMMIT LAST. Every module has been re-applied and its
+    # record staged for the target generation; only now does that generation
+    # become authoritative, and only if the staged set is complete and valid.
+    if declare -f nftban_plan_txn_commit >/dev/null 2>&1; then
+        nftban_plan_txn_commit || {
+            [[ "$quiet" == "false" ]] && echo "Warning: convergence NOT committed — generation unchanged. Run: nftban firewall rebuild" >&2 || true
+        }
+    fi
 
     # v1.192.1 PR-B: record transition health (harm-keyed; never cadence).
     _firewall_record_transition_health reload "$_fth_t0"
@@ -3024,9 +3048,24 @@ _rebuild_tx_is_terminal() {
 # a distinct descriptor removes any doubt.
 _firewall_rebuild_serialized() {
     local _nftlock_path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
-    # Mirrors constants.ReconciliationLockTimeout (30s) -- the canonical exclusive
-    # timeout used by reconciliation and the OpQueue drain. Not an arbitrary value.
-    local _nftlock_wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+    # ⛔ v1.229.11 LANE 7: THE POLICY LIVES HERE TOO, OR IT DOES NOT EXIST.
+    # Making nftban_plan_txn_begin fail-fast changed NOTHING for `firewall
+    # rebuild`: this wrapper takes the SAME lock FIRST, and a 30s wait here means
+    # a second operator still queues, still succeeds, and is still never told
+    # they collided. Measured on lab2 AFTER the primitive was made fail-fast —
+    # two concurrent rebuilds, A rc=0 B rc=0, generation 36 -> 38.
+    #     A POLICY APPLIED AT THE INNER LOCK IS UNREACHABLE IF AN OUTER LOCK
+    #     ALREADY DECIDED THE OUTCOME.
+    #
+    # Interactive CLI is fail-fast. Internal lifecycle may queue, but only by
+    # SAYING SO: --install-context sets an explicit bounded wait, because a
+    # package upgrade contending with a daemon reconciliation is not an operator
+    # collision and must not fail the install.
+    local _nftlock_wait="${NFTBAN_PLAN_LOCK_WAIT:-}"
+    if [[ -z "$_nftlock_wait" ]] && _rebuild_is_update_lifecycle "$@"; then
+        # Canonical constants.ReconciliationLockTimeout. Not an arbitrary value.
+        _nftlock_wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
+    fi
 
     mkdir -p "$(dirname "$_nftlock_path")" 2>/dev/null || true
     if ! exec 8>>"$_nftlock_path"; then
@@ -3034,15 +3073,31 @@ _firewall_rebuild_serialized() {
         echo "       The firewall was NOT modified." >&2
         return 1
     fi
-    if ! flock -w "$_nftlock_wait" 8; then
+    local _nftlock_got=0
+    if [[ -n "$_nftlock_wait" ]]; then
+        flock -w "$_nftlock_wait" 8 && _nftlock_got=1     # declared lifecycle policy
+    else
+        flock -n 8 && _nftlock_got=1                      # interactive: refuse now
+    fi
+    if (( _nftlock_got == 0 )); then
         # REFUSE, never proceed unserialized: a rebuild that cannot serialize could
         # interleave with reconciliation/OpQueue. Nothing has been mutated here.
-        echo "ERROR: could not acquire the nft operations lock within ${_nftlock_wait}s — rebuild REFUSED" >&2
+        echo "ERROR: convergence already in progress — this rebuild was REFUSED." >&2
         echo "       Another nft operation (reconciliation, queue drain or rebuild) holds it." >&2
         echo "       The firewall was NOT modified; existing enforcement is unchanged." >&2
         exec 8>&-
         return 1
     fi
+    # ⛔ v1.229.11 LANE 7: DECLARE THE HOLD. nftban_plan_txn_begin now takes this
+    # SAME canonical lock at the transaction chokepoint, and this wrapper calls
+    # into the transaction while already holding it on fd 8. Without this marker
+    # the transaction would flock the same file against its own holder, block for
+    # the full timeout, and REFUSE a rebuild that was already correctly
+    # serialized — the recorded dual-lock failure shape.
+    #     A LOCK THAT DEADLOCKS AGAINST ITS OWN HOLDER IS NOT SERIALIZATION.
+    # EXPORTED because the lane converges modules via `nftban <mod> reload`
+    # SUBPROCESSES, which own transactions of their own and must also stand down.
+    export NFTBAN_NFTLOCK_HELD=1
 
     _REBUILD_SNAPSHOT_DIR=""
     _firewall_rebuild_core "$@"
@@ -3093,7 +3148,13 @@ _firewall_rebuild_serialized() {
 
     # Closing the descriptor releases the flock -- on success, validation failure,
     # rollback and every error return alike.
+    # ⛔ v1.229.11 LANE 7: clear the hold marker WITH the descriptor. If it
+    # outlived the lock, the next transaction in this process would believe an
+    # ancestor still held it and converge UNSERIALIZED — a stale marker is worse
+    # than no marker, because it fails open and says nothing.
+    #     THE MARKER'S LIFETIME MUST EQUAL THE LOCK'S LIFETIME.
     exec 8>&-
+    unset NFTBAN_NFTLOCK_HELD
     return "$_rebuild_rc"
 }
 
@@ -3103,7 +3164,22 @@ _firewall_rebuild_core() {
     # this run fails to re-resolve is left behind at an older generation and
     # reads as STALE -> UNKNOWN instead of as a usable expectation.
     #   EVERY TRANSACTION ROOT THAT RESOLVES A PLAN MUST PUBLISH THAT SAME PLAN.
-    declare -f nftban_plan_generation_bump >/dev/null 2>&1 && nftban_plan_generation_bump || true
+    # ⛔ v1.229.11 LANE 6A: OPEN A TRANSACTION — DO NOT ADVANCE THE GENERATION.
+    # This line used to be `nftban_plan_generation_bump`, which made generation
+    # N+1 authoritative HERE, hundreds of lines before the module re-apply that
+    # republishes the plan records. Every reader in between saw bound=N against
+    # gen=N+1 and resolved UNKNOWN — a window entered on EVERY convergence, 453
+    # seconds wide on srv3, and made permanent whenever the rebuild was killed.
+    #     THE GENERATION IS COMMITTED AT THE END, OR NOT AT ALL.
+    # ⛔ A REFUSED TRANSACTION MUST ABORT THE MUTATION. The `|| true` here was
+    # inherited from the generation bump it replaced, where a failure was
+    # genuinely non-fatal. For a transaction OPEN it is not: swallowing the
+    # refusal let the whole convergence proceed with NO transaction open and NO
+    # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
+    #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
     # v1.228.5: whitelist convergence gate (see _nftban_whitelist_reconcile_and_verify)
     local _rebuild_whitelist_converged="true"
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
@@ -3817,6 +3893,17 @@ _firewall_rebuild_core() {
             # alarm. Gated: fth_reset refuses if a CURRENT breach remains (no mask),
             # touches only the state JSON (no ban loss).
             _firewall_reset_transition_health "firewall rebuild: clean re-baseline (floor intact, atomic, baseline re-recorded)"
+            # ⛔ v1.229.11 LANE 6A: COMMIT LAST, AND ONLY AFTER POST-VALIDATION.
+            # The generation advances here or nowhere. If the staged set is
+            # incomplete — the signature of a rebuild killed part-way through —
+            # the commit refuses and the host keeps the last generation it
+            # actually completed.
+            if declare -f nftban_plan_txn_commit >/dev/null 2>&1; then
+                if ! nftban_plan_txn_commit; then
+                    echo "REBUILD FAILED: convergence could not be committed — generation NOT advanced." >&2
+                    return 1
+                fi
+            fi
             return 0
             ;;
         degraded)
@@ -3834,6 +3921,9 @@ _firewall_rebuild_core() {
                 # If DEGRADED but no module/daemon issue, don't write marker
                 # (could be a pre-existing DEGRADED state, not caused by this rebuild)
             fi
+            # ⛔ FAILURE BEFORE COMMIT: discard the staged set. The generation
+            # stays where it was, and that generation remains fully readable.
+            declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
             return 1
             ;;
         *)
@@ -3842,6 +3932,7 @@ _firewall_rebuild_core() {
             if declare -f _rebuild_marker_write &>/dev/null; then
                 _rebuild_marker_write "$FC_POSTVALIDATION_HARD_FAIL" "$OR_FAILED_DEGRADED" "$snapshot_dir" "$post_status"
             fi
+            declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
             return 1
             ;;
     esac
@@ -3857,7 +3948,22 @@ firewall_reset() {
     # this run fails to re-resolve is left behind at an older generation and
     # reads as STALE -> UNKNOWN instead of as a usable expectation.
     #   EVERY TRANSACTION ROOT THAT RESOLVES A PLAN MUST PUBLISH THAT SAME PLAN.
-    declare -f nftban_plan_generation_bump >/dev/null 2>&1 && nftban_plan_generation_bump || true
+    # ⛔ v1.229.11 LANE 6A: OPEN A TRANSACTION — DO NOT ADVANCE THE GENERATION.
+    # This line used to be `nftban_plan_generation_bump`, which made generation
+    # N+1 authoritative HERE, hundreds of lines before the module re-apply that
+    # republishes the plan records. Every reader in between saw bound=N against
+    # gen=N+1 and resolved UNKNOWN — a window entered on EVERY convergence, 453
+    # seconds wide on srv3, and made permanent whenever the rebuild was killed.
+    #     THE GENERATION IS COMMITTED AT THE END, OR NOT AT ALL.
+    # ⛔ A REFUSED TRANSACTION MUST ABORT THE MUTATION. The `|| true` here was
+    # inherited from the generation bump it replaced, where a failure was
+    # genuinely non-fatal. For a transaction OPEN it is not: swallowing the
+    # refusal let the whole convergence proceed with NO transaction open and NO
+    # lock held — i.e. exactly the unserialized mutation lane 7 exists to prevent.
+    #     AN ERROR-TOLERANT IDIOM INHERITED ACROSS A SEMANTIC CHANGE IS A DEFECT.
+    if declare -f nftban_plan_txn_begin >/dev/null 2>&1; then
+        nftban_plan_txn_begin ddos portscan || return 7
+    fi
     # Complete firewall reset - flush everything and rebuild clean
     # WARNING: This will remove all bans, whitelists, and geoban data!
     local force=false
@@ -3969,6 +4075,13 @@ firewall_reset() {
     # Step 10: Re-sync geoban (v1.50.1: auto-restore)
     [[ "$quiet" == "false" ]] && echo "  [10/11] Re-syncing GeoBan..."
     _nftban_reconcile_geoban || true
+
+    # ⛔ v1.229.11 LANE 6A: COMMIT LAST — see firewall_reload.
+    if declare -f nftban_plan_txn_commit >/dev/null 2>&1; then
+        nftban_plan_txn_commit || {
+            [[ "$quiet" == "false" ]] && echo "  Warning: convergence NOT committed — generation unchanged." >&2 || true
+        }
+    fi
 
     # Step 11: Restart services
     [[ "$quiet" == "false" ]] && echo "  [11/11] Restarting NFTBan services..."

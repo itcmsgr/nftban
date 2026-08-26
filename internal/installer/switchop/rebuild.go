@@ -6,7 +6,7 @@
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-04"
-// meta:description="Run nftban firewall rebuild with timeout — FATAL on failure"
+// meta:description="Run nftban firewall rebuild as a MANDATORY convergence step. No outer deadline: the step scales with host firewall state (lab2 ~35s vs srv3 ~453s) and an arbitrary constant killed legitimate convergences. Interruption is its own verdict class and is FATAL to the install — a killed rebuild is not DEGRADED, it is CONVERGENCE DID NOT COMPLETE."
 // meta:inventory.files="internal/installer/switchop/rebuild.go"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -18,9 +18,9 @@
 package switchop
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
@@ -40,8 +40,23 @@ func lastNonEmptyLine(s string) string {
 	return ""
 }
 
-// rebuildTimeout is the wall-clock limit for nftban firewall rebuild.
-const rebuildTimeout = 60 * time.Second
+// ⛔ v1.229.11 LANE 6A — THE 60-SECOND OUTER TIMEOUT IS GONE, NOT RAISED.
+//
+// It was `const rebuildTimeout = 60 * time.Second`, applied to a step whose
+// duration scales with the host's firewall state:
+//
+//	lab2  ~35 s      inside the limit, so the defect was invisible there
+//	srv3  ~453 s     killed at 60 s, EVERY upgrade
+//
+// That is more than an order of magnitude, and no constant is correct across it.
+// Raising 60 to 600 would only move the threshold to the next larger host.
+//
+//	A PACKAGE MANAGER KILLING A LEGITIMATE CONVERGENCE BECAUSE THE HOST HAS A
+//	LARGE FIREWALL STATE IS DANGEROUS. LONG DOES NOT MEAN HUNG.
+//
+// Boundedness belongs to the rebuild's own internal operations, which are
+// individually bounded and report progress, not to an arbitrary outer clock
+// that cannot know the size of the work it is interrupting.
 
 // Rebuild runs "nftban firewall rebuild" and returns an error if it fails.
 // Shell rebuild exit code contract (authoritative — do not redefine):
@@ -55,7 +70,7 @@ const rebuildTimeout = 60 * time.Second
 // require the daemon to be running, which may not be the case yet.
 // Only exit 2+ is treated as a fatal rebuild failure.
 func Rebuild(exec executor.Executor, log *logging.Logger) error {
-	log.Info("running nftban firewall rebuild (timeout=%s)", rebuildTimeout)
+	log.Info("running nftban firewall rebuild (no outer deadline; bounded by its own operations)")
 
 	// v1.228.5: PASS the execution context explicitly. This rebuild runs BEFORE
 	// services.StartDaemon (phaseConfigure), and AddSessionWhitelist writes
@@ -65,8 +80,32 @@ func Rebuild(exec executor.Executor, log *logging.Logger) error {
 	// absence as a failure. services.SyncWhitelist is the convergence authority.
 	// Context is passed, never inferred: `systemctl is-active` cannot distinguish
 	// "operator stopped it" from "installer has not started it yet".
-	res := exec.RunTimeout(rebuildTimeout, fhs.NftbanCLI, "firewall", "rebuild", "--install-context")
+	res := exec.RunContext(context.Background(), fhs.NftbanCLI, "firewall", "rebuild", "--install-context")
 	log.CmdResult("nftban firewall rebuild --install-context", res.ExitCode, res.Stderr)
+
+	// ⛔ INTERRUPTION IS CLASSIFIED FIRST, AND IT IS FATAL.
+	//
+	//	completed successfully          -> continue install
+	//	explicitly non-fatal condition  -> DEGRADED, protection contract intact
+	//	timeout / killed / incomplete   -> INSTALL FAILURE
+	//
+	// A killed rebuild is not "some module chain might be missing". It is
+	// CONVERGENCE DID NOT COMPLETE, and the installer must not carry on as
+	// though the result were acceptably degraded.
+	if res.TimedOut {
+		if err := exec.WriteFileAtomic(fhs.InstallFailedMarker, []byte("NFTBAN_INSTALL_FAILED=1\n"), 0644); err != nil {
+			log.Warn("failed to write install-failed marker: %v", err)
+		}
+		return fmt.Errorf("nftban firewall rebuild was INTERRUPTED before completion — convergence did not complete; the generation was not advanced and the host retains its last completed convergence")
+	}
+	// A process that died by signal without a deadline is equally incomplete:
+	// it never chose an exit code, so it never reported a verdict.
+	if res.ExitCode < 0 {
+		if err := exec.WriteFileAtomic(fhs.InstallFailedMarker, []byte("NFTBAN_INSTALL_FAILED=1\n"), 0644); err != nil {
+			log.Warn("failed to write install-failed marker: %v", err)
+		}
+		return fmt.Errorf("nftban firewall rebuild did not produce an exit status (killed, or not executable): %s", res.Stderr)
+	}
 
 	if res.ExitCode == 1 {
 		// DEGRADED: firewall base schema is loaded but module chains may be
