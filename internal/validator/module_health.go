@@ -1025,10 +1025,13 @@ func collectEvidenceSetElementsState() (counts map[string]int, unknown map[strin
 // defaultServiceChecker in validator.go:70).
 var countSetElementsFunc = countSetElementsReal
 
-// countSetElements delegates to countSetElementsFunc for testability.
-func countSetElements(family, setName string) int {
-	return countSetElementsFunc(family, setName)
-}
+// ⛔ countSetElements (the int-returning wrapper) was REMOVED in v1.229.11.
+// The failure-truth lane replaced its callers with the three-valued
+// countSetElementsState* family, because an int alone cannot distinguish
+// CONFIRMED-ABSENT from COULD-NOT-READ.
+//   A FAILED READ IS NOT A COUNT OF ZERO.
+// countSetElementsFunc is retained: completeness_test.go swaps it to stub the
+// real nft query, so it is a live test seam rather than dead code.
 
 // countSetElementsReal queries the kernel for actual element count in a set.
 // v1.82 CF-4: replaces the v1.81 stub that always returned 0.
