@@ -45,7 +45,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -139,8 +138,6 @@ type Module struct {
 
 	// Log watchers
 	journalCmd *exec.Cmd
-	eveFile    *os.File
-	eveReader  *bufio.Reader
 
 	// v1.48.0: File watchers for services that don't log to journalctl
 	// (DirectAdmin, cPanel, Plesk use their own log files)
@@ -547,10 +544,9 @@ func (m *Module) Stop() error {
 		}
 	}
 
-	// Close EVE file if open
-	if m.eveFile != nil {
-		m.eveFile.Close()
-	}
+	// v1.229.12 A12: the EVE reader is no longer descriptor-bound here. The
+	// PollingWatcher owns the file handle and closes it via w.Stop() when the
+	// watcher's context is cancelled, so there is nothing to close at this level.
 
 	m.mu.Lock()
 	m.status.MarkStopped()
@@ -1799,29 +1795,87 @@ func (m *Module) triggerBan(action *detector.BanAction) {
 	m.bus.Publish(ev)
 }
 
-// runEVEWatcher watches Suricata EVE JSON log for auth failures
+// runEVEWatcher supervises runEVEWatcherOnce with the same bounded-backoff
+// respawn loop the journal and file watchers already use, so a detection source
+// never silently goes dark.
+//
+// v1.229.12 P1-2 / A12 (GitHub #53): the previous implementation opened
+// DefaultEVEPath ONCE and held it BY DESCRIPTOR. A logrotate rename+create left
+// the reader attached to the old inode: Suricata wrote to the new file, the
+// watcher read a file nobody was writing to any more, and EVE detection stopped
+// with no error and no restart. It also had no respawn supervision at all.
+//
+// Both are fixed by reusing the EXISTING lifecycle machinery rather than adding a
+// third bespoke rotation detector: pipeline/watcher.PollingWatcher opens BY NAME
+// (so an inode/dev change is detected and the new file is read from its start),
+// resets the offset on truncation, and tolerates the logrotate swap window; the
+// loop below supplies bounded respawn.
 func (m *Module) runEVEWatcher(ctx context.Context) {
-	var err error
-	m.eveFile, err = os.Open(DefaultEVEPath)
-	if err != nil {
-		m.status.RecordError(err)
-		return
+	backoff := m.watcherBackoffMin
+	for attempt := 0; ; attempt++ {
+		start := time.Now()
+		err := m.runEVEWatcherOnce(ctx, attempt)
+
+		// Clean shutdown -> do not respawn.
+		if ctx.Err() != nil {
+			return
+		}
+
+		// A run that lasted long enough is "healthy" -> reset backoff.
+		if time.Since(start) >= m.watcherHealthyReset {
+			backoff = m.watcherBackoffMin
+		}
+
+		m.status.RecordError(fmt.Errorf("EVE watcher exited (ran %s): %v — respawning in %s",
+			time.Since(start).Round(time.Millisecond), err, backoff))
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStop, ModuleName).
+			WithMessage(fmt.Sprintf("EVE watcher DOWN (%s) — respawning in %s", DefaultEVEPath, backoff)))
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff *= 2; backoff > m.watcherBackoffMax {
+			backoff = m.watcherBackoffMax
+		}
 	}
+}
 
-	// Seek to end of file
-	m.eveFile.Seek(0, io.SeekEnd)
+// runEVEWatcherOnce tails DefaultEVEPath through a PollingWatcher until the
+// watcher stops or ctx is cancelled. Returns the reason the run ended (nil on
+// clean ctx cancellation).
+//
+// EVE's own semantics are preserved exactly: the watcher seeks to EOF on first
+// open (no replay of historical alerts on start), and each delivered line is
+// handed to the unchanged EVE JSON handler.
+func (m *Module) runEVEWatcherOnce(ctx context.Context, attempt int) error {
+	w := pipelineWatcher.NewPollingWatcher(pipelineWatcher.PollingWatcherOptions{
+		Source:       "eve",
+		Path:         DefaultEVEPath,
+		PollInterval: constants.LoginmonEVEPollInterval,
+	})
+	if err := w.Start(ctx); err != nil {
+		return fmt.Errorf("start: %w", err)
+	}
+	defer func() { _ = w.Stop() }()
 
-	m.eveReader = bufio.NewReader(m.eveFile)
-
-	ticker := time.NewTicker(constants.LoginmonEVEPollInterval)
-	defer ticker.Stop()
+	verb := "started"
+	if attempt > 0 {
+		verb = "RESPAWNED"
+	}
+	m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, ModuleName).
+		WithMessage(fmt.Sprintf("EVE watcher %s (%s)", verb, DefaultEVEPath)))
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			m.processEVELines()
+			return nil
+		case rl, ok := <-w.Lines():
+			if !ok {
+				return fmt.Errorf("EVE line stream closed")
+			}
+			m.processEVELine(rl.Line)
 		}
 	}
 }
@@ -1846,34 +1900,33 @@ type EVEEvent struct {
 	} `json:"ssh,omitempty"`
 }
 
-// processEVELines processes new lines from EVE JSON log
-func (m *Module) processEVELines() {
-	for {
-		line, err := m.eveReader.ReadBytes('\n')
-		if err != nil {
-			return // No more lines
-		}
+// processEVELine processes ONE line delivered by the EVE watcher.
+//
+// v1.229.12 A12: was processEVELines(), which pulled from a descriptor-bound
+// bufio.Reader. The reader is now owned by the PollingWatcher (which survives
+// rotation), so this is a pure per-line handler. The JSON handling and every
+// downstream decision below are unchanged.
+func (m *Module) processEVELine(line []byte) {
+	var event EVEEvent
+	if err := json.Unmarshal(line, &event); err != nil {
+		return
+	}
 
-		var event EVEEvent
-		if err := json.Unmarshal(line, &event); err != nil {
-			continue
-		}
+	// Look for authentication-related alerts
+	if event.Alert == nil {
+		return
+	}
+	category := strings.ToLower(event.Alert.Category)
+	signature := strings.ToLower(event.Alert.Signature)
 
-		// Look for authentication-related alerts
-		if event.Alert != nil {
-			category := strings.ToLower(event.Alert.Category)
-			signature := strings.ToLower(event.Alert.Signature)
+	// Check for auth failure patterns
+	if strings.Contains(category, "authentication") ||
+		strings.Contains(signature, "brute") ||
+		strings.Contains(signature, "failed") ||
+		strings.Contains(signature, "login") {
 
-			// Check for auth failure patterns
-			if strings.Contains(category, "authentication") ||
-				strings.Contains(signature, "brute") ||
-				strings.Contains(signature, "failed") ||
-				strings.Contains(signature, "login") {
-
-				// Also try to detect from raw line using our detectors
-				m.processLine(line)
-			}
-		}
+		// Also try to detect from raw line using our detectors
+		m.processLine(line)
 	}
 }
 
