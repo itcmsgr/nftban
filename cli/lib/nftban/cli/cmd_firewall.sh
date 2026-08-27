@@ -2402,14 +2402,35 @@ _rebuild_get_validator_state() {
     # Call Go validator and return status (protected/degraded/down)
     # Also outputs chain count for relative comparison
     # Returns: "status:chain_count" e.g. "protected:16"
+    #
+    # v1.229.12 P12-A01 — PARALLEL STRUCTURED CAPTURE.
+    # The scalar return contract above is UNCHANGED; every existing caller keeps working.
+    # In addition, when the caller sets _REBUILD_VALIDATOR_JSON_SINK to a writable path, the
+    # COMPLETE validator JSON from THE SAME INVOCATION is written there.
+    #
+    # ⛔ WHY A FILE AND NOT A GLOBAL: this function is invoked as
+    #       post_state=$(_rebuild_get_validator_state)
+    #    which runs in a COMMAND-SUBSTITUTION SUBSHELL. A variable assigned here would be
+    #    discarded on return. The sink file crosses that boundary.
+    #
+    # ⛔ ONE OBSERVATION, TWO REPRESENTATIONS — never a second validator call. Two invocations
+    #    would let the scalar and the structured facts describe DIFFERENT MOMENTS, and the
+    #    classifier would reason over an inconsistent pair (TOCTOU).
     local json_output
 
     if [[ ! -x "$_REBUILD_VALIDATOR_BIN" ]]; then
+        [[ -n "${_REBUILD_VALIDATOR_JSON_SINK:-}" ]] && : > "$_REBUILD_VALIDATOR_JSON_SINK" 2>/dev/null || true
         echo "down:0"
         return
     fi
 
     json_output=$("$_REBUILD_VALIDATOR_BIN" --json 2>/dev/null) || true
+
+    # Publish the raw observation BEFORE deriving the legacy scalar, so the sink always
+    # reflects exactly what this call saw -- including the empty case below.
+    if [[ -n "${_REBUILD_VALIDATOR_JSON_SINK:-}" ]]; then
+        printf '%s' "$json_output" > "$_REBUILD_VALIDATOR_JSON_SINK" 2>/dev/null || true
+    fi
 
     if [[ -z "$json_output" ]]; then
         echo "down:0"
@@ -3206,6 +3227,7 @@ _firewall_rebuild_core() {
     # by design, and AddSessionWhitelist writes 00-session.conf AFTER that rebuild —
     # so a pre-daemon rebuild cannot truthfully verify the final configured whitelist.
     local _NFTBAN_REBUILD_CONTEXT="runtime-required"
+    local _NFTBAN_REBUILD_RESULT_FILE="" _NFTBAN_REBUILD_OPERATION_ID=""
     # v1.192.1 PR-B: transition-health timing (ms epoch; harmless if date lacks %N).
     local _fth_t0; _fth_t0=$(date +%s%3N 2>/dev/null || echo 0)
 
@@ -3218,6 +3240,17 @@ _firewall_rebuild_core() {
             --quiet|-q)
                 quiet=true
                 shift
+                ;;
+            --result-file)
+                # v1.229.12 P12-A01: the CALLER allocates a unique per-operation path and
+                # passes it in. ⛔ Never a fixed global path — a shared name reintroduces the
+                # stale-result / concurrency hazards this project spent releases removing.
+                _NFTBAN_REBUILD_RESULT_FILE="${2:-}"
+                shift 2
+                ;;
+            --operation-id)
+                _NFTBAN_REBUILD_OPERATION_ID="${2:-}"
+                shift 2
                 ;;
             --install-context)
                 # v1.228.5: installer pre-daemon phase. Durable whitelist projection is
@@ -3801,15 +3834,80 @@ _firewall_rebuild_core() {
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "  [POST] Validating post-rebuild state..."
     local post_state post_status post_chains
+    # v1.229.12 P12-A01: capture the STRUCTURED observation from THE SAME validator call
+    # that produces the legacy scalar. One observation, two representations.
+    local _post_vjson; _post_vjson=$(mktemp "${TMPDIR:-/tmp}/nftban-postval.XXXXXX" 2>/dev/null || echo "")
+    _REBUILD_VALIDATOR_JSON_SINK="$_post_vjson"
     post_state=$(_rebuild_get_validator_state)
+    _REBUILD_VALIDATOR_JSON_SINK=""
     post_status="${post_state%%:*}"
     post_chains="${post_state##*:}"
     [[ "$quiet" == "false" ]] && echo "    POST state: $post_status (chains: $post_chains)"
 
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # v1.229.12 P12-A01/A01b — INSTALLER CONTINUATION VERDICT. COMPUTED EXACTLY ONCE.
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ⛔ WRITE-ONCE. `_disposition` is assigned HERE and NOWHERE ELSE. Every later branch
+    # CONSUMES it. Before this, three sites independently re-derived a verdict from the same
+    # facts (pre/post comparison, `case post_status`, and a late _REBUILD_DAEMON_WAS_DOWN
+    # branch) — which is how an EXPECTED pre-daemon degradation became a fatal rollback while
+    # a FAILED GENERATION COMMIT became a tolerated "DEGRADED".
+    #
+    # ⛔ THE ONLY CLASS PERMITTED TO COMMIT THE GENERATION IS COMPLETE.
+    # ⛔ NO ROLLBACK != COMMIT GENERATION. DEFERRED_RUNTIME performs no rollback AND does not
+    #    advance the generation: per LANE 6A, G becomes authoritative only after ALL required
+    #    convergence for G completed, and deferred module projection means it did not.
+    #    The convergence debt stays explicit and is discharged by the deferred retry.
+    local _disposition _disposition_reasons _cline
+    _cline=$(_rebuild_disposition_classify \
+                "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}" \
+                "$_post_vjson" \
+                "${_REBUILD_FATAL_STAGE:-}" \
+                "$post_status" 2>/dev/null || printf 'REGRESSION\tCLASSIFIER_UNAVAILABLE\n')
+    _disposition="${_cline%%$'\t'*}"
+    _disposition_reasons="${_cline#*$'\t'}"
+    [[ "$_disposition" == "$_cline" ]] && _disposition_reasons=""
+    # Fail closed if the classifier produced nothing intelligible.
+    case "$_disposition" in
+        COMPLETE|DEFERRED_RUNTIME|REGRESSION|FATAL) : ;;
+        *) _disposition="REGRESSION"; _disposition_reasons="CLASSIFIER_UNINTELLIGIBLE" ;;
+    esac
+    # ⛔ WRITE-ONCE IS A STRUCTURAL RULE, NOT A BASH RUNTIME TRAP.
+    # `readonly _disposition` was tried and REMOVED: reassigning a readonly local in
+    # non-interactive bash ABORTS THE FUNCTION AND RETURNS 1 — which the legacy contract
+    # read as "DEGRADED, install continues". The guard's own failure mode was the defect
+    # it existed to prevent. NEVER enforce an invariant with a construct whose violation
+    # itself alters control flow.
+    # The invariant is enforced by tools/check-disposition-write-once.sh (CI) and made SAFE
+    # at runtime by the result contract: an aborted shell writes no result, and a missing
+    # result is FATAL to the installer.
+    rm -f "$_post_vjson" 2>/dev/null || true
+    [[ "$quiet" == "false" ]] && echo "    CONTINUATION: $_disposition${_disposition_reasons:+ (${_disposition_reasons})}"
+
+    # ⛔ DEFERRED: no regression to restore, but convergence is INCOMPLETE.
+    # No rollback, no commit, retry owed. This branch must precede the regression check.
+    if [[ "$_disposition" == "DEFERRED_RUNTIME" ]]; then
+        [[ "$quiet" == "false" ]] && echo "  Post-validation DEFERRED: ${_disposition_reasons}"
+        [[ "$quiet" == "false" ]] && echo "  Module projection requires the daemon; it is not running in this phase."
+        [[ "$quiet" == "false" ]] && echo "  Generation NOT advanced — convergence debt remains and is owed to the retry."
+        if declare -f _rebuild_marker_write &>/dev/null; then
+            _rebuild_marker_write "$FC_DAEMON_RESTART_FAILED" "$OR_FAILED_DEGRADED" "$snapshot_dir" "$post_status"
+        fi
+        # 6A: do NOT commit. The staged set is discarded; the host keeps its last completed generation.
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        _firewall_record_transition_health rebuild "$_fth_t0" 2>/dev/null || true
+        # FINAL RECORD — emitted after the abort, so it reports what actually happened.
+        _rebuild_emit_result "$RD_DEFERRED_RUNTIME" "$_disposition_reasons" "false" "false" "DEFERRED_CONVERGENCE"
+        return 1
+    fi
+
     # v1.78.0: CRITICAL SAFETY CHECK — Rollback if degraded from PROTECTED
     # v1.96: 'idle' is structurally equivalent to 'protected' (all checks pass,
     # just no traffic observed yet after rebuild). Do not treat idle as regression.
-    if [[ "$pre_status" == "protected" && "$post_status" != "protected" && "$post_status" != "idle" ]]; then
+    # v1.229.12: the verdict is now the authority; the pre/post shape is retained only as a
+    # guard against a classifier that says CONTINUE while the state visibly regressed.
+    if [[ "$_disposition" == "REGRESSION" || "$_disposition" == "FATAL" ]] \
+       || [[ "$pre_status" == "protected" && "$post_status" != "protected" && "$post_status" != "idle" ]]; then
         echo "" >&2
         echo "═══════════════════════════════════════════════════════════════════" >&2
         echo "REBUILD FAILED: Post-rebuild validation returned $post_status" >&2
@@ -3836,6 +3934,8 @@ _firewall_rebuild_core() {
                     _rebuild_marker_write "$FC_POSTVALIDATION_REGRESSION" "$OR_FAILED_DEGRADED" "$snapshot_dir" "$_restored_status"
                 fi
             fi
+            # FINAL RECORD — rollback ACTUALLY succeeded before this point.
+            _rebuild_emit_result "$RD_REGRESSION" "$_disposition_reasons" "true" "false" "FAILURE_RECOVERY"
             return 2  # FAILED (rolled back)
         else
             echo "FATAL: Rollback FAILED — manual intervention required!" >&2
@@ -3851,6 +3951,9 @@ _firewall_rebuild_core() {
             if declare -f _rebuild_marker_write &>/dev/null; then
                 _rebuild_marker_write "$FC_ROLLBACK_FAILED" "$OR_FAILED_FATAL" "$snapshot_dir" "down"
             fi
+            # ⛔ THE CLASSIFICATION WAS REGRESSION, BUT THE ROLLBACK FAILED — so the FINAL
+            # disposition is FATAL. The record reports the resulting state, not the intent.
+            _rebuild_emit_result "$RD_FATAL" "ROLLBACK_FAILED" "true" "false" "NONE"
             return 3  # FATAL (rollback failed)
         fi
     fi
@@ -3914,12 +4017,33 @@ _firewall_rebuild_core() {
             # incomplete — the signature of a rebuild killed part-way through —
             # the commit refuses and the host keeps the last generation it
             # actually completed.
+            # ⛔ STRUCTURAL: THE COMMIT IS REACHABLE ONLY FROM COMPLETE.
+            # This assertion is the mechanical form of the policy — it prevents any FUTURE
+            # continuation class from accidentally falling through into a generation commit.
+            if [[ "${_disposition:-}" != "COMPLETE" ]]; then
+                echo "REBUILD FAILED: internal invariant — generation commit reached with" >&2
+                echo "  continuation='${_disposition:-unset}' (only COMPLETE may commit)." >&2
+                declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+                return 2
+            fi
             if declare -f nftban_plan_txn_commit >/dev/null 2>&1; then
                 if ! nftban_plan_txn_commit; then
+                    # ⛔ v1.229.12 P12-A01b: THIS RETURNED 1, AND switchop/rebuild.go MAPS 1 TO
+                    # "DEGRADED — install continues". A generation that could not become
+                    # authoritative is NOT a tolerable degradation; it is a failed transaction.
+                    # It must dominate daemon-down, post_status=degraded and every other
+                    # deferred-looking signal. FATAL.
                     echo "REBUILD FAILED: convergence could not be committed — generation NOT advanced." >&2
-                    return 1
+                    echo "  This is a TRANSACTION FAILURE, not a deferred lifecycle condition." >&2
+                    if declare -f _rebuild_marker_write &>/dev/null; then
+                        _rebuild_marker_write "$FC_COMMIT_FAILED" "$OR_FAILED_FATAL" "$snapshot_dir" "$post_status"
+                    fi
+                    _rebuild_emit_result "$RD_FATAL" "COMMIT_FAILED" "false" "false" "NONE"
+                    return 2
                 fi
             fi
+            # FINAL RECORD — the generation is committed at this point, not merely intended.
+            _rebuild_emit_result "$RD_COMPLETE" "" "false" "true" "NONE"
             return 0
             ;;
         degraded)
@@ -3931,7 +4055,11 @@ _firewall_rebuild_core() {
                     _rebuild_marker_write "$FC_MODULE_RESTORE_FAILED" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
                 elif _rebuild_classify_has_module_incomplete 2>/dev/null; then
                     _rebuild_marker_write "$FC_MODULE_RESTORE_INCOMPLETE" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
-                elif [[ "$_REBUILD_DAEMON_WAS_DOWN" == "true" ]]; then
+                elif [[ "${_disposition:-}" == "DEFERRED_RUNTIME" ]]; then
+                    # ⛔ v1.229.12: CONSUMES the verdict; it does NOT re-decide whether the
+                    # degradation was acceptable. Previously this branch reasoned independently
+                    # from _REBUILD_DAEMON_WAS_DOWN — a second verdict authority formed AFTER
+                    # the rollback decision had already been taken on other grounds.
                     _rebuild_marker_write "$FC_DAEMON_RESTART_FAILED" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
                 fi
                 # If DEGRADED but no module/daemon issue, don't write marker
@@ -3940,6 +4068,7 @@ _firewall_rebuild_core() {
             # ⛔ FAILURE BEFORE COMMIT: discard the staged set. The generation
             # stays where it was, and that generation remains fully readable.
             declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+            _rebuild_emit_result "$RD_REGRESSION" "${_disposition_reasons:-post_status:degraded}" "false" "false" "FAILURE_RECOVERY"
             return 1
             ;;
         *)

@@ -42,6 +42,20 @@ type MockExecutor struct {
 	// invalidates every key for that command.
 	RunResults map[string]Result
 
+	// RunHook is a TEST-ONLY escape hatch for commands whose argv cannot be known
+	// in advance.
+	//
+	// ⛔ WHY IT EXISTS: RunResults keys on the EXACT argv. v1.229.12 P12-A01 gives each
+	// rebuild a UNIQUE per-operation id (--operation-id / --result-file), deliberately, so
+	// a stale or foreign result can never be consumed. That uniqueness makes argv-keyed
+	// mocking impossible by construction — every key would be a one-shot.
+	//
+	// The tension is real and is resolved in favour of SAFETY: production keeps unique
+	// per-operation paths; the mock gains a hook that can inspect argv (and, for the
+	// rebuild contract, PUBLISH THE RESULT RECORD the real shell would have written).
+	// Returning ok=false falls through to the existing behaviour unchanged.
+	RunHook func(name string, args []string) (Result, bool)
+
 	// RunResultSeq maps a command key ("name:arg1:arg2") to an ORDERED list of
 	// Results; each Run of that exact key returns the next element in sequence.
 	// TEST-ONLY (v1.223.0 verdict-truth): lets a test model live systemd state
@@ -174,6 +188,11 @@ func (m *MockExecutor) lookupResult(name string, args ...string) (Result, bool) 
 
 func (m *MockExecutor) Run(name string, args ...string) Result {
 	m.recordCommand(name, args...)
+	if m.RunHook != nil {
+		if r, ok := m.RunHook(name, args); ok {
+			return r
+		}
+	}
 	// Fire callback if registered
 	key := name + ":" + strings.Join(args, ":")
 	m.mu.Lock()
