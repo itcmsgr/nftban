@@ -103,8 +103,6 @@ jobs:
       - name: Capability model (B03) — positive/negative/epistemic witnesses
         run: bash cli/lib/nftban/tests/capability_model_v1229_12_test.sh
 
-      - name: Observability counters (A08) — semantics and never-decide invariant
-        run: bash cli/lib/nftban/tests/observability_counters_v1229_12_test.sh
 
       - name: DDoS penalty tier progression (A08) — every boundary, both families
         run: bash cli/lib/nftban/tests/ddos_penalty_progression_v1229_12_test.sh

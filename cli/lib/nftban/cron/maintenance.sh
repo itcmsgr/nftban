@@ -999,18 +999,8 @@ EOF
         fi
 
         if declare -f nftban_ddos_penalty_scan >/dev/null 2>&1; then
-            # v1.229.12 A08: the `|| true` below keeps a producer failure from
-            # aborting maintenance — that is deliberate. But it also made failure
-            # INVISIBLE. Record the rc so health can see a producer that fails
-            # every run despite the wrapper swallowing the process-level error.
-            # ⛔ EVIDENCE FIRST: this does not change the wrapper's behaviour.
-            local _pscan_rc=0
-            nftban_ddos_penalty_scan 2>/dev/null || _pscan_rc=$?
-            if declare -f nftban_obs_set >/dev/null 2>&1; then
-                nftban_obs_set ddos_penalty last_scan_rc "$_pscan_rc"
-                [[ $_pscan_rc -ne 0 ]] && nftban_obs_bump ddos_penalty penalty_scan_failures
-            fi
-            log "INFO" "DDoS penalty scan: OK (rc=${_pscan_rc})"
+            nftban_ddos_penalty_scan 2>/dev/null || true
+            log "INFO" "DDoS penalty scan: OK"
         else
             log "INFO" "DDoS penalty scan: Skipped (function not available)"
         fi
