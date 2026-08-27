@@ -106,6 +106,9 @@ jobs:
       - name: Observability counters (A08) — semantics and never-decide invariant
         run: bash cli/lib/nftban/tests/observability_counters_v1229_12_test.sh
 
+      - name: DDoS penalty tier progression (A08) — every boundary, both families
+        run: bash cli/lib/nftban/tests/ddos_penalty_progression_v1229_12_test.sh
+
       # v1.228.5 completion guard. Prevents reintroduction of the defect class where a
       # branch-significant failure is consumed with its evidence discarded. The measured
       # defect: `sync --quick ... || true` let firewall rebuild report rc=0 and

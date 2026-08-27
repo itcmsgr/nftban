@@ -1129,6 +1129,41 @@ _nftban_ddos_ban_has_ipc() {
 # Design: no daemon dependency, no dynamic pressure response, reads nft
 # meter directly, uses atomic state file, nftables expiry handles cleanup.
 
+# _nftban_ddos_penalty_target_tier <strikes> <threshold> <suffix>
+#
+# The penalty ladder's selection authority, extracted so it can be tested
+# directly rather than through a copy of the formula. Emits "<set> <timeout>",
+# or "- -" when the strike count has not reached the first tier.
+#
+# ⛔ The tier is recomputed from the CURRENT strike count on every scan, so a
+# persistent offender is re-placed into its tier each scan (refreshing the
+# expiry). Tier selection is NOT a one-shot transition.
+#
+# With T = DDOS_CLASSIC_ESCALATE_THRESHOLD (default 3):
+#   strikes < T       -> no tier
+#   T   <= s < T*2    -> tier1  ddos_limit_10s  10s
+#   T*2 <= s < T*3    -> tier2  ddos_limit_5m   5m
+#   T*3 <= s < T*4    -> tier3  ddos_drop_5m    5m
+#   s   >= T*4        -> tier4  ddos_ban_1h     1h
+_nftban_ddos_penalty_target_tier() {
+    local strikes="${1:-0}" threshold="${2:-3}" suffix="${3:-}"
+    local set_10s="${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}"
+    local set_5m="${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m}"
+    local set_drop="${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m}"
+    local set_ban="${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}"
+    if [[ $strikes -ge $((threshold * 4)) ]]; then
+        printf '%s %s' "${set_ban}${suffix}" "${DDOS_PENALTY_TIMEOUT_1H:-1h}"
+    elif [[ $strikes -ge $((threshold * 3)) ]]; then
+        printf '%s %s' "${set_drop}${suffix}" "${DDOS_PENALTY_TIMEOUT_5M:-5m}"
+    elif [[ $strikes -ge $((threshold * 2)) ]]; then
+        printf '%s %s' "${set_5m}${suffix}" "${DDOS_PENALTY_TIMEOUT_5M:-5m}"
+    elif [[ $strikes -ge $threshold ]]; then
+        printf '%s %s' "${set_10s}${suffix}" "${DDOS_PENALTY_TIMEOUT_10S:-10s}"
+    else
+        printf '%s %s' "-" "-"
+    fi
+}
+
 nftban_ddos_penalty_scan() {
     _nftban_ddos_classic_load_config
 
@@ -1226,16 +1261,11 @@ nftban_ddos_penalty_scan() {
         # Determine penalty level based on strikes (+ the matching per-tier
         # timeout, so the IPC-routed add carries the same expiry the set default
         # would have applied — behaviour-preserving vs the old direct write).
-        local target_set="" target_timeout=""
-        if [[ $current_strikes -ge $((escalate_threshold * 4)) ]]; then
-            target_set="${set_ban}${suffix}";  target_timeout="${DDOS_PENALTY_TIMEOUT_1H:-1h}"
-        elif [[ $current_strikes -ge $((escalate_threshold * 3)) ]]; then
-            target_set="${set_drop}${suffix}"; target_timeout="${DDOS_PENALTY_TIMEOUT_5M:-5m}"
-        elif [[ $current_strikes -ge $((escalate_threshold * 2)) ]]; then
-            target_set="${set_5m}${suffix}";   target_timeout="${DDOS_PENALTY_TIMEOUT_5M:-5m}"
-        elif [[ $current_strikes -ge $escalate_threshold ]]; then
-            target_set="${set_10s}${suffix}";  target_timeout="${DDOS_PENALTY_TIMEOUT_10S:-10s}"
-        fi
+        local target_set="" target_timeout="" _tier_pair
+        _tier_pair=$(_nftban_ddos_penalty_target_tier "$current_strikes" "$escalate_threshold" "$suffix")
+        target_set="${_tier_pair%% *}"
+        target_timeout="${_tier_pair#* }"
+        [[ "$target_set" == "-" ]] && { target_set=""; target_timeout=""; }
 
         # Add to penalty set if threshold reached.
         # v1.150 AUTH-1: route the escalation write through the daemon IPC
@@ -1309,4 +1339,4 @@ export -f nftban_ddos_classic_status
 export -f nftban_ddos_ban_ip
 export -f nftban_ddos_unban_ip
 export -f nftban_ddos_list_banned
-export -f nftban_ddos_penalty_scan
+export -f nftban_ddos_penalty_scan _nftban_ddos_penalty_target_tier
