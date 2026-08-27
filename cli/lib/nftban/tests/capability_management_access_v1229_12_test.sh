@@ -62,6 +62,32 @@ rm -f "$SB/whitelist.d/00-local.conf"; echo "198.51.100.9" > "$SB/whitelist.d/00
 PROJ=absent; ORDER=correct
 want INCAPABLE "$ADDR" "durable NO, projection NO"
 
+echo "== EXPIRY SEMANTICS: a file match is NOT a durable declaration =="
+PROJ=absent; ORDER=correct
+# expired session grant only -> no durable declaration at all
+printf '%s  # EXPIRES_AT=2000-01-01T00:00:00Z  REASON=old  ADDED_BY=test\n' "$ADDR" > "$SB/whitelist.d/00-session.conf"
+rm -f "$SB/whitelist.d/00-local.conf"
+want INCAPABLE "$ADDR" "expired session grant only (the live dns4 shape)"
+got=$(nftban_capability_management_access "$ADDR")
+case "$got" in *EXPIRED*) ok "detail names the EXPIRED grant explicitly" ;;
+               *) no "detail should name the expired grant: $got" ;; esac
+
+# unexpired session grant IS durable for now
+printf '%s  # EXPIRES_AT=2999-01-01T00:00:00Z  REASON=live  ADDED_BY=test\n' "$ADDR" > "$SB/whitelist.d/00-session.conf"
+PROJ=present; ORDER=correct
+want CAPABLE "$ADDR" "unexpired session grant + projected"
+
+# commented-out entry must never count
+printf '#   %s  # EXPIRES_AT=2999-01-01T00:00:00Z\n' "$ADDR" > "$SB/whitelist.d/00-session.conf"
+PROJ=absent; ORDER=correct
+want INCAPABLE "$ADDR" "commented-out entry does not count as a declaration"
+
+# an unbounded entry (no EXPIRES_AT) is durable
+printf '%s\n' "$ADDR" > "$SB/whitelist.d/99-manual.conf"
+PROJ=absent; ORDER=correct
+want DEGRADED "$ADDR" "unbounded entry is durable; projection missing -> DEGRADED"
+rm -f "$SB/whitelist.d/99-manual.conf" "$SB/whitelist.d/00-session.conf"
+
 echo "== UNKNOWN: evidence unreadable is NEVER a pass =="
 echo "$ADDR" > "$SB/whitelist.d/00-local.conf"; PROJ=unreadable; ORDER=correct
 want UNKNOWN "$ADDR" "projection set unreadable"

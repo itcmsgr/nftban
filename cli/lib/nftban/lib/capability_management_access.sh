@@ -63,14 +63,38 @@ nftban_capability_management_access() {
     fi
 
     # --- durable authority ----------------------------------------------------
+    # ⛔ A MATCH IN A FILE IS NOT A DURABLE DECLARATION. `00-session.conf` holds
+    # TIME-BOUNDED operator-session grants carrying `# EXPIRES_AT=<RFC3339>`, and
+    # the whitelist loader SKIPS EXPIRED ENTRIES AT LOAD TIME. The file persists
+    # long after its entries stop counting, so grepping filenames would report an
+    # expired grant as durable protection — which is how this adapter first
+    # mis-classified a host whose projection was in fact CORRECT.
+    #
+    # A line is a durable declaration only if it is not commented out and either
+    # carries no EXPIRES_AT (an unbounded entry) or one still in the future.
     local wl_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
-    local durable="unknown" durable_in=""
+    local durable="unknown" durable_in="" expired_in=""
     if [[ -d "$wl_dir" ]]; then
         local files; files=$(find "$wl_dir" -maxdepth 1 -name '*.conf' -readable 2>/dev/null)
         if [[ -n "$files" ]]; then
-            # shellcheck disable=SC2086
-            durable_in=$(grep -l -F "$addr" $files 2>/dev/null | xargs -r -n1 basename 2>/dev/null | tr '\n' ' ')
-            [[ -n "$durable_in" ]] && durable="yes" || durable="no"
+            durable="no"
+            local f line exp now base
+            now=$(date -u +%s 2>/dev/null || echo 0)
+            for f in $files; do
+                base=$(basename "$f")
+                while IFS= read -r line; do
+                    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+                    [[ "$line" == *"$addr"* ]] || continue
+                    exp=$(printf '%s' "$line" | grep -oE 'EXPIRES_AT=[^[:space:]]+' | head -1 | cut -d= -f2)
+                    if [[ -z "$exp" ]]; then
+                        durable="yes"; durable_in+="$base "
+                    else
+                        local ets; ets=$(date -u -d "$exp" +%s 2>/dev/null || echo 0)
+                        if [[ "$ets" -gt "$now" ]]; then durable="yes"; durable_in+="$base "
+                        else expired_in+="$base "; fi
+                    fi
+                done < "$f"
+            done
         fi
     fi
 
@@ -103,7 +127,12 @@ nftban_capability_management_access() {
         printf 'UNKNOWN management address %s: durable=%s projected=%s (evidence unreadable — NOT a pass)' \
             "$fam" "$durable" "$projected"
     elif [[ "$durable" == "no" && "$projected" == "no" ]]; then
-        printf 'INCAPABLE management address is absent from BOTH the durable authority and the %s projection' "$wlset"
+        if [[ -n "$expired_in" ]]; then
+            printf 'INCAPABLE management address has only an EXPIRED session grant (%s) and is absent from the %s projection — no durable declaration exists' \
+                "${expired_in% }" "$wlset"
+        else
+            printf 'INCAPABLE management address is absent from BOTH the durable authority and the %s projection' "$wlset"
+        fi
     elif [[ "$durable" == "yes" && "$projected" == "no" ]]; then
         # The live dns4 shape: declared but never projected.
         printf 'DEGRADED management address is declared durably (%s) but is ABSENT from the %s projection' \
