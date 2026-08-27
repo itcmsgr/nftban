@@ -24,6 +24,11 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="nftban"
 # meta:created_date="2026-02-04"
+
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
 # =============================================================================
 
 set -Eeuo pipefail
@@ -116,7 +121,7 @@ nftban_health_check_nftables_security() {
         # Table exists - check if it has ACCEPT policy at priority 0
         local filter_policy _filter_raw _filter_readable=true
         _filter_raw=$(nft list table inet filter 2>/dev/null) || _filter_readable=false
-        [[ -z "${_filter_raw//[[:space:]]/}" ]] && _filter_readable=false
+        ! nftban_has_non_whitespace "$_filter_raw" && _filter_readable=false
         filter_policy=""
         if [[ "$_filter_readable" == "true" ]]; then
             filter_policy=$(printf '%s' "$_filter_raw" | grep -E 'chain input.*priority 0.*policy accept' || true)
@@ -1034,7 +1039,7 @@ nftban_health_check_set_sizes() {
             # reported a 500k set as healthily small, which is the one thing this
             # threshold check exists to catch.
             local _raw
-            if _raw=$(nft list set "$family" nftban "$set_name" 2>/dev/null) && [[ -n "${_raw//[[:space:]]/}" ]]; then
+            if _raw=$(nft list set "$family" nftban "$set_name" 2>/dev/null) && nftban_has_non_whitespace "$_raw"; then
                 count=$(printf '%s' "$_raw" | grep -c ',' || true)
                 count=${count:-0}
             else

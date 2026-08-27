@@ -10,6 +10,11 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+
 set -Eeuo pipefail
 
 # Prevent double-loading
@@ -612,7 +617,7 @@ nftban_nft_count_set() {
     if command -v jq &>/dev/null; then
         local _json _count
         _json=$(nft -j list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
-        [[ -z "${_json//[[:space:]]/}" ]] && { echo "UNKNOWN"; return 0; }
+        ! nftban_has_non_whitespace "$_json" && { echo "UNKNOWN"; return 0; }
         _count=$(printf '%s' "$_json" | jq -r '[.nftables[]? | select(.set?) | .set.elem[]?] | length' 2>/dev/null)
         [[ "$_count" =~ ^[0-9]+$ ]] || { echo "UNKNOWN"; return 0; }
         echo "$_count"
@@ -620,7 +625,7 @@ nftban_nft_count_set() {
         # Fallback: count commas (still faster than regex)
         local output
         output=$(nft list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
-        if [[ -z "${output//[[:space:]]/}" ]]; then
+        if ! nftban_has_non_whitespace "$output"; then
             # rc=0 with no output is not an empty set: `nft list set` prints the
             # set scaffolding for a set it can actually see.
             echo "UNKNOWN"
@@ -677,7 +682,7 @@ nftban_nft_count_set_elements() {
     # A failed read is not an empty set. This count feeds set-size health
     # thresholds, so a fabricated 0 reports a 500k set as healthily small.
     json_output=$(nft -j list set "$family" "$table" "$set_name" 2>/dev/null) || { echo "UNKNOWN"; return; }
-    [[ -z "${json_output//[[:space:]]/}" ]] && { echo "UNKNOWN"; return; }
+    ! nftban_has_non_whitespace "$json_output" && { echo "UNKNOWN"; return; }
 
     # Defensive jq: iterate all objects, find .set, count .elem
     # Works across nft 1.0.2 through 1.1.x:

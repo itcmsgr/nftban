@@ -18,6 +18,11 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root (nft writes)"
+
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
 #
 # WHY THIS EXISTS
 # A rebuild renders the ruleset from `delete table` upward, so every DERIVED
@@ -246,7 +251,7 @@ nftban_dsr_apply() { # $1=plan text -> rc 0 applied, 3 STALE, 1 failed
 _nftban_dsr_kernel_set_count() { # $1=family $2=set -> count, or UNKNOWN
     local out
     out=$(nft -j list set "$1" nftban "$2" 2>/dev/null) || { echo UNKNOWN; return 1; }
-    [[ -z "${out//[[:space:]]/}" ]] && { echo UNKNOWN; return 1; }
+    ! nftban_has_non_whitespace "$out" && { echo UNKNOWN; return 1; }
     printf '%s' "$out" | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)

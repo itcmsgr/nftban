@@ -24,6 +24,11 @@
 #
 # meta:created_date="2025-11-13"
 # meta:updated_date="2026-02-20"
+
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
 # =============================================================================
 
 set -Eeuo pipefail
@@ -1732,7 +1737,7 @@ _check_nft_collisions() {
     # rc=0 with no output is equally unreadable: nft always emits at least the
     # tables it can see, so an empty document is a failed observation, not an
     # empty ruleset.
-    if [[ -z "${ruleset//[[:space:]]/}" ]]; then
+    if ! nftban_has_non_whitespace "$ruleset"; then
         [[ "$json_mode" == "false" ]] &&
             echo "[UNKNOWN] nftables ruleset read returned no output — hook collisions NOT verified"
         return 2
@@ -4564,7 +4569,7 @@ firewall_record() {
         local count=0 set_info="" read_state="absent"
         local actual_type="" actual_flags=""
         if set_info=$(nft list set ip nftban "$set_name" 2>/dev/null); then
-            if [[ -n "${set_info//[[:space:]]/}" ]]; then
+            if nftban_has_non_whitespace "$set_info"; then
                 read_state="present"
                 count=$(nftban_nft_count_set ip nftban "$set_name" 2>/dev/null || echo 0)
                 # Parsed from TEXT output, which carries the full flag list on
@@ -4618,7 +4623,7 @@ firewall_record() {
         local count=0 set_info="" read_state="absent"
         local actual_type="" actual_flags=""
         if set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null); then
-            if [[ -n "${set_info//[[:space:]]/}" ]]; then
+            if nftban_has_non_whitespace "$set_info"; then
                 read_state="present"
                 count=$(nftban_nft_count_set ip6 nftban "$set_name" 2>/dev/null || echo 0)
                 # Parsed from TEXT output, which carries the full flag list on

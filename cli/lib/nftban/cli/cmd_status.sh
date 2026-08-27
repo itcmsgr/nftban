@@ -23,6 +23,11 @@
 #
 # meta:created_date="2025-11-05"
 
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+
 
 # =============================================================================
 # CONFIGURATION
@@ -350,7 +355,7 @@ _nftban_count_rules() {
     raw=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null) || { echo "UNKNOWN"; return 0; }
     # rc=0 with empty output is not a rule-free table: the table header alone
     # would have been printed had the read actually succeeded.
-    [[ -z "${raw//[[:space:]]/}" ]] && { echo "UNKNOWN"; return 0; }
+    nftban_has_non_whitespace "$raw" || { echo "UNKNOWN"; return 0; }
     count=$(printf '%s\n' "$raw" | grep -c "# handle" 2>/dev/null || true)
     echo "${count:-0}"
 }

@@ -10,6 +10,11 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+
 set -Eeuo pipefail
 
 # Guard against multiple sourcing (C4 fix: unique guard name to avoid collision with nftban_service_control.sh)
@@ -650,7 +655,7 @@ nftban_enable_all() {
 
     # Check 1: nft rules loaded > 0
     local rules_count _ruleset_raw
-    if _ruleset_raw=$(nft list ruleset 2>/dev/null) && [[ -n "${_ruleset_raw//[[:space:]]/}" ]]; then
+    if _ruleset_raw=$(nft list ruleset 2>/dev/null) && nftban_has_non_whitespace "$_ruleset_raw"; then
         rules_count=$(printf '%s' "$_ruleset_raw" | grep -cE '^\s+(type|chain|rule|set)' || true)
         rules_count=${rules_count:-0}
         if [[ "$rules_count" -eq 0 ]]; then

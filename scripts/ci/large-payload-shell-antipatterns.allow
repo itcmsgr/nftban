@@ -1,0 +1,19 @@
+# P0-2 EXCEPTION REGISTRY — v1.229.12
+# Every match the guard finds MUST resolve to a line here, or the guard fails.
+# Keyed by file + enclosing function (NOT line numbers — those rot).
+# FORMAT: <path>|<function>|<CLASS>|<reason>
+#
+# CLASS_B = the whitespace-stripped value is genuinely consumed downstream.
+# CLASS_C = input is structurally bounded; no scaling hazard.
+#
+cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh|*|CLASS_B|fds=${fds//...} normalizes a wc -l integer that IS consumed at :536 and :1696 as a Prometheus value; not an emptiness test
+cli/lib/nftban/cli/cmd_health_analysis.sh|nftban_health_cmd_conflicts|CLASS_C|input is `nft list tables` which emits one short header line per table, never elements
+cli/lib/nftban/lib/nft_probe.sh|nftban_nft_probe_table|CLASS_C|input is `nft list tables`; header-only output, sub-kilobyte, and the branch is deliberately fail-closed
+cli/lib/nftban/lib/nft_probe.sh|nftban_nft_probe_set|CLASS_C|input is `nft list sets` which emits set DECLARATIONS only, never elements
+cli/lib/nftban/lib/whitelist_members.sh|_nftban_wl_read_kernel_set|CLASS_C|operand is ONE split element token per loop iteration (tens of bytes), not the raw set dump
+cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_detect_conflicting_tables|CLASS_C|input is a single chain's JSON, a few hundred bytes to a few KB
+#
+# --- CI TOOLING (verified 2026-08-27: operands are per-line or fragment-sized) ---
+scripts/ci/check-core-ownership-identity.sh|parse_identity|CLASS_B|years=${years//...} is ASSIGNED and consumed; operand is a 4-9 char year fragment from grep -oE
+scripts/ci/check-logrotate-fhs-authority.sh|*|CLASS_C|operand is ONE comment-stripped source line inside a read loop, not a whole file
+scripts/ci/check-mode-authority.sh|load_known|CLASS_C|operand is ONE line of the known-modes file inside a read loop

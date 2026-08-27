@@ -23,6 +23,11 @@
 #
 # meta:created_date="2025-10-26"
 # meta:updated_date="2026-01-11"
+
+# v1.229.12 P0-2 / TUNE-001a: bounded non-whitespace predicate.
+# Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
 # =============================================================================
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # =============================================================================
@@ -172,7 +177,7 @@ _nftban_portscan_verify_prefix() {
         _nftban_portscan_classic_log "WARN" "UNKNOWN: ruleset unreadable - LOG prefix NOT verified (this is not a pass)"
         return 2
     }
-    if [[ -z "${ruleset//[[:space:]]/}" ]]; then
+    if ! nftban_has_non_whitespace "$ruleset"; then
         _nftban_portscan_classic_log "WARN" "UNKNOWN: ruleset read returned no output - LOG prefix NOT verified"
         return 2
     fi
