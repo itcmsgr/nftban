@@ -31,9 +31,21 @@ const rebuildKey = "/usr/sbin/nftban:firewall:rebuild:--install-context"
 func TestRebuild_TimedOut_IsFatalToTheInstall(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.StrictUnregistered = true
+	redirectResultDir(t) // CI is not root; /run/nftban is unwritable there
 	// The shape a killed rebuild actually produces: no chosen exit code, and the
 	// context reporting the deadline.
-	mock.RunResults[rebuildKey] = executor.Result{ExitCode: -1, TimedOut: true}
+	// ⛔ argv now carries a UNIQUE per-operation id, so an argv-keyed RunResults entry can
+	// never match. The hook models the killed shell: it publishes NO record and reports the
+	// deadline. Interruption is classified BEFORE the result contract is consulted, and
+	// remains fatal — the redesign did not weaken that.
+	mock.RunHook = func(_ string, args []string) (executor.Result, bool) {
+		for _, a := range args {
+			if a == "--result-file" {
+				return executor.Result{ExitCode: -1, TimedOut: true}, true
+			}
+		}
+		return executor.Result{}, false
+	}
 
 	err := Rebuild(mock, newTestLogger())
 	if err == nil {
@@ -89,19 +101,31 @@ func TestRebuild_NoExitStatus_IsFatal(t *testing.T) {
 func TestRebuild_SurvivingClassesUnchanged(t *testing.T) {
 	cases := []struct {
 		name    string
-		res     executor.Result
-		wantErr bool
-		marker  bool
+		res         executor.Result
+		wantErr     bool
+		marker      bool
+		disposition string // "" = publish NOTHING (legacy rc/text-only behaviour)
 	}{
-		{"SUCCESS", executor.Result{ExitCode: 0}, false, false},
-		{"DEGRADED_COMPLETE", executor.Result{ExitCode: 1, Stderr: "modules deferred"}, false, false},
-		{"FAILED", executor.Result{ExitCode: 2, Stderr: "rollback"}, true, true},
+		// ⛔ v1.229.12 P12-A01b MIGRATION. The retired property was:
+		//       rc==1 + human-readable text MAY AUTHORIZE INSTALL CONTINUATION
+		//   The replacement property is:
+		//       ONLY A VALID FINAL RESULT RECORD MAY AUTHORIZE THE REBUILD VERDICT
+		// These cases are NOT deleted — they are the strongest negative control for the
+		// fail-open that shipped, and they are kept as falsifiers.
+		{"SUCCESS_WITH_RECORD", executor.Result{ExitCode: 0}, false, false, "COMPLETE"},
+		{"DEFERRED_WITH_RECORD", executor.Result{ExitCode: 1}, false, false, "DEFERRED_RUNTIME"},
+		{"FAILED", executor.Result{ExitCode: 2, Stderr: "rollback"}, true, true, "REGRESSION"},
+		// INVERTED: rc/text alone, no record published -> must NOT continue.
+		{"RC_TEXT_ONLY_NO_RECORD", executor.Result{ExitCode: 1, Stderr: "modules deferred"}, true, true, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := executor.NewMockExecutor()
 			mock.StrictUnregistered = true
 			mock.RunResults[rebuildKey] = tc.res
+			if tc.disposition != "" {
+				publishResult(t, mock, tc.disposition, tc.res.ExitCode, nil)
+			}
 
 			err := Rebuild(mock, newTestLogger())
 			if tc.wantErr && err == nil {
