@@ -26,6 +26,18 @@ _NFTBAN_OBS_COUNTERS_LOADED=1
 #     reported as UNKNOWN by the consumer, never as zero. Absence of a counter
 #     file is "not established", not "nothing happened".
 #
+# ⛔ PROVISIONAL (owner ruling 2026-08-27). This primitive and the A08 producer
+# instrumentation that feeds it are retained because the B03/A09b adapter will
+# consume the same evidence model — NOT because they were already written. If
+# that adapter does not materialise in v1.229.12, revisit whether they ship.
+# `WE ALREADY WROTE IT` IS NOT A JUSTIFICATION.
+#
+# Deliberately NOT wired into the DDoS readiness report (nftban_ddos_classic.sh
+# :928-944). Structural readiness ("can it operate?") and operational history
+# ("has it operated recently, with what result?") are different questions, and
+# fusing them casually would produce bad semantics — e.g. "no recent placement"
+# rendering as STARVED when there has simply been no qualifying traffic.
+#
 # Format is flat `key=value`, one per line — no jq dependency on the write path,
 # so instrumentation cannot fail because a JSON tool is missing.
 #
