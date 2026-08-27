@@ -27,6 +27,7 @@ package watcher
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -64,6 +65,15 @@ type PollingWatcher struct {
 	maxLineBytes int
 
 	lines chan event.RawLine
+
+	// v1.229.12 W01: `offset` is the COMMITTED RECORD OFFSET — it advances only
+	// through complete, newline-terminated records. `pending` holds an
+	// unterminated tail that has been read from the file but is NOT yet an
+	// authoritative record. `sample` is the continuity fingerprint: a copy of the
+	// bytes immediately BEFORE offset, used to detect copytruncate (which keeps
+	// the same inode, so inode identity alone cannot see it).
+	pending []byte
+	sample  []byte
 
 	mu      sync.Mutex
 	started bool
@@ -158,6 +168,45 @@ func (w *PollingWatcher) Stop() error {
 }
 
 // run is the tailing loop. Exits when ctx is cancelled.
+// continuitySampleBytes is the size of the fingerprint kept immediately before
+// the committed offset. Small enough to be free, large enough that a refill is
+// overwhelmingly unlikely to reproduce it byte-for-byte.
+const continuitySampleBytes = 64
+
+// captureSample records the bytes immediately before the committed offset so a
+// later poll can prove the file still contains what we already consumed.
+func (w *PollingWatcher) captureSample(f *os.File) {
+	if w.offset <= 0 {
+		w.sample = nil
+		return
+	}
+	n := int64(continuitySampleBytes)
+	if n > w.offset {
+		n = w.offset
+	}
+	buf := make([]byte, n)
+	if _, err := f.ReadAt(buf, w.offset-n); err != nil {
+		w.sample = nil
+		return
+	}
+	w.sample = buf
+}
+
+// continuityOK reports whether the bytes before the committed offset still match
+// the fingerprint. A mismatch means the file was truncated and refilled beyond
+// the old offset while keeping its inode (copytruncate) — size and inode checks
+// both miss that, and reading on would deliver a corrupted mid-line suffix.
+func (w *PollingWatcher) continuityOK(f *os.File) bool {
+	if w.offset <= 0 || len(w.sample) == 0 {
+		return true
+	}
+	buf := make([]byte, len(w.sample))
+	if _, err := f.ReadAt(buf, w.offset-int64(len(w.sample))); err != nil {
+		return false
+	}
+	return bytes.Equal(buf, w.sample)
+}
+
 func (w *PollingWatcher) run(ctx context.Context) {
 	defer w.wg.Done()
 	defer close(w.lines)
@@ -200,6 +249,8 @@ func (w *PollingWatcher) run(ctx context.Context) {
 			off, _ := newF.Seek(0, io.SeekCurrent)
 			w.offset = off
 		}
+		// A reopen invalidates any tail read from the previous handle.
+		w.pending = nil
 		w.currentInode = sys.Ino
 		w.currentDev = sys.Dev
 		if f != nil {
@@ -207,6 +258,11 @@ func (w *PollingWatcher) run(ctx context.Context) {
 		}
 		f = newF
 		reader = bufio.NewReaderSize(f, w.maxLineBytes)
+		// Capture the continuity fingerprint for wherever we are starting from —
+		// including the first open, which seeks to EOF. Without this the check
+		// would be disabled until the first committed record and a copytruncate
+		// in that window would go undetected.
+		w.captureSample(f)
 		return true
 	}
 
@@ -241,32 +297,55 @@ func (w *PollingWatcher) run(ctx context.Context) {
 		}
 		missingDeadline = time.Time{}
 		sys, _ := stat.Sys().(*syscall.Stat_t)
-		if sys != nil && (sys.Ino != w.currentInode || sys.Dev != w.currentDev) {
-			// Inode changed = rotation. Reopen and reset offset.
-			w.offset = 0
+		switch {
+		case sys != nil && (sys.Ino != w.currentInode || sys.Dev != w.currentDev):
+			// Inode/device changed = rename+create rotation. Reopen from 0.
+			// The unterminated tail belonged to the OLD file and can never be
+			// completed, so it is dropped rather than fused onto the new file.
+			w.offset, w.pending, w.sample = 0, nil, nil
 			if !open() {
 				continue
 			}
-		} else if stat.Size() < w.offset {
-			// Truncation: reopen and read from 0.
-			w.offset = 0
+		case stat.Size() < w.offset:
+			// Shrunk below what we committed: truncation. Reopen from 0.
+			w.offset, w.pending, w.sample = 0, nil, nil
+			if !open() {
+				continue
+			}
+		case !w.continuityOK(f):
+			// v1.229.12 W01: same inode, size >= committed offset, but the bytes
+			// before that offset no longer match — the file was truncated and
+			// refilled between polls (copytruncate). Continuing here would emit a
+			// corrupted mid-line suffix, so reopen from 0.
+			w.offset, w.pending, w.sample = 0, nil, nil
 			if !open() {
 				continue
 			}
 		}
 
 		// Drain available data.
+		//
+		// v1.229.12 W01: a record is COMMITTED only when its newline arrives. The
+		// previous form emitted whatever ReadBytes returned — including a line
+		// still being written — and advanced the offset by len+1, adding a phantom
+		// byte for a terminator that was never consumed. That pushed the offset
+		// past the file size, which the size check above then read as truncation,
+		// rewound to 0, and re-emitted the same partial on every poll.
+		advanced := false
 		for {
-			line, err := reader.ReadBytes('\n')
-			if len(line) > 0 {
-				// Strip trailing \n (and \r if present)
-				if line[len(line)-1] == '\n' {
-					line = line[:len(line)-1]
-				}
+			chunk, err := reader.ReadBytes('\n')
+			if len(chunk) > 0 {
+				w.pending = append(w.pending, chunk...)
+			}
+			if n := len(w.pending); n > 0 && w.pending[n-1] == '\n' {
+				// Complete record: the offset advances by the bytes actually
+				// consumed from the file, terminator included.
+				w.offset += int64(n)
+				advanced = true
+				line := w.pending[:n-1]
 				if len(line) > 0 && line[len(line)-1] == '\r' {
 					line = line[:len(line)-1]
 				}
-				w.offset += int64(len(line)) + 1
 				rl := event.RawLine{
 					Source:     w.source,
 					Path:       w.path,
@@ -274,6 +353,7 @@ func (w *PollingWatcher) run(ctx context.Context) {
 					Offset:     w.offset,
 					ReceivedAt: time.Now(),
 				}
+				w.pending = nil
 				select {
 				case w.lines <- rl:
 				case <-ctx.Done():
@@ -287,6 +367,11 @@ func (w *PollingWatcher) run(ctx context.Context) {
 				// Non-EOF read error: re-open on next poll.
 				break
 			}
+		}
+		// Refresh the continuity fingerprint whenever the committed offset moved,
+		// so the next poll compares against the bytes we most recently consumed.
+		if advanced && f != nil {
+			w.captureSample(f)
 		}
 	}
 }
