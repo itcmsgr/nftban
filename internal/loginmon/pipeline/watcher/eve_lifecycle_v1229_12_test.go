@@ -194,3 +194,48 @@ func TestPollingWatcher_W01_CopytruncateSmallerThanOffset(t *testing.T) {
 		t.Fatalf("copytruncate-smaller: want exactly one whole record, got %v", got)
 	}
 }
+
+// W01 REGRESSION GUARD — the continuity fingerprint must exist immediately after
+// the initial open-at-EOF, before any record has been committed.
+//
+// During development the fingerprint was captured only after a drain that
+// advanced the offset. On first open the watcher seeks to EOF, so the offset was
+// non-zero while the sample was still nil — and continuityOK() returns true when
+// the sample is empty. The copytruncate protection was therefore SILENTLY
+// DISABLED for exactly the window between start and the first committed record.
+// A guard that turns itself off under a specific condition is the failure mode
+// this test exists to prevent from returning.
+func TestPollingWatcher_W01_FingerprintPresentAfterInitialOpenAtEOF(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "eve.json")
+	// Enough seed content that open-at-EOF leaves a non-zero offset.
+	seed := make([]byte, 0, 256)
+	for i := 0; i < 16; i++ {
+		seed = append(seed, []byte("{\"seed\":1}\n")...)
+	}
+	if err := os.WriteFile(p, seed, 0644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	w := NewPollingWatcher(PollingWatcherOptions{Source: "eve", Path: p, PollInterval: 40 * time.Millisecond})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer w.Stop()
+
+	// Let the first open complete; do NOT write anything, so no record is ever
+	// committed and the sample can only come from open() itself.
+	time.Sleep(300 * time.Millisecond)
+
+	if w.offset <= 0 {
+		t.Fatalf("precondition failed: open-at-EOF should leave a non-zero offset, got %d", w.offset)
+	}
+	if len(w.sample) == 0 {
+		t.Fatal("continuity fingerprint is EMPTY after initial open-at-EOF — copytruncate detection is silently disabled in this window")
+	}
+	if want := len(seed); int64(want) != w.offset {
+		t.Errorf("offset: want %d (EOF), got %d", want, w.offset)
+	}
+}
