@@ -25,6 +25,10 @@
 # meta:inventory.privileges="nftban"
 # meta:created_date="2025-12-01"
 # meta:updated_date="2026-02-07"
+
+# v1.229.12 A08 observability: best-effort capability counters (never decide).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/observability_counters.sh" 2>/dev/null || true
 # =============================================================================
 
 set -Eeuo pipefail
@@ -1128,6 +1132,12 @@ _nftban_ddos_ban_has_ipc() {
 nftban_ddos_penalty_scan() {
     _nftban_ddos_classic_load_config
 
+    # v1.229.12 A08: a COMPLETED ENTRY into the scan body — not "the timer fired".
+    # Recorded before the early returns below so an idle scan is still evidence
+    # that the producer path is REACHED. Distinguishing "scan ran, found nothing"
+    # from "scan never ran" is the whole point.
+    nftban_obs_bump ddos_penalty penalty_scan_runs
+
     local table_v4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_v6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
@@ -1183,6 +1193,10 @@ nftban_ddos_penalty_scan() {
     # Process each offender (IPv4 + IPv6)
     local ip family table_fam
     for ip in $offenders_v4 $offenders_v6; do
+        # One UNIQUE candidate inspected. Both offender lists are `sort -u`, so an
+        # IP seen many times in one meter counts ONCE per scan; the same IP seen
+        # in a later scan counts again (that is what strikes accumulate on).
+        nftban_obs_bump ddos_penalty candidate_sources_seen
         # Determine family
         if [[ "$ip" =~ : ]]; then
             family="ip6"; table_fam="$table_v6"
@@ -1206,6 +1220,8 @@ nftban_ddos_penalty_scan() {
         current_strikes=$((current_strikes + 1))
         strikes_json=$(echo "$strikes_json" | jq --arg ip "$ip" --argjson s "$current_strikes" --argjson t "$now" \
             '.[$ip] = {"strikes": $s, "last_seen": $t}') 2>/dev/null || continue
+        # A strike mutation that SUCCEEDED (the `|| continue` above discards failures).
+        nftban_obs_bump ddos_penalty strike_updates
 
         # Determine penalty level based on strikes (+ the matching per-tier
         # timeout, so the IPC-routed add carries the same expiry the set default
@@ -1233,6 +1249,10 @@ nftban_ddos_penalty_scan() {
         if [[ -n "$target_set" ]]; then
             local _to_secs _added=0
             _to_secs=$(_nftban_ddos_timeout_to_seconds "$target_timeout")
+            # The candidate crossed the configured escalation condition and a
+            # target tier was selected. ⛔ a threshold hit is NOT a placement.
+            nftban_obs_bump ddos_penalty promotion_threshold_hits
+            nftban_obs_bump ddos_penalty placement_attempts
             if declare -f nft_ipc_add_element >/dev/null 2>&1 \
                && nft_ipc_add_element "${table_fam}" "${target_set}" "$ip" "${_to_secs}" 2>/dev/null; then
                 _added=1
@@ -1248,6 +1268,18 @@ nftban_ddos_penalty_scan() {
             if [[ $_added -eq 1 ]]; then
                 _nftban_ddos_classic_log "INFO" "Penalty: ${ip} → ${target_set} (strikes=${current_strikes})"
                 promoted=$((promoted + 1))
+                # Authoritative success for the mutation.
+                # ⛔ success != active: kernel membership has its own expiry and
+                # must be observed separately, never inferred from this counter.
+                nftban_obs_bump ddos_penalty placement_success
+                case "$target_set" in
+                    "${set_10s}"*)  nftban_obs_bump ddos_penalty tier1_placements ;;
+                    "${set_5m}"*)   nftban_obs_bump ddos_penalty tier2_placements ;;
+                    "${set_drop}"*) nftban_obs_bump ddos_penalty tier3_placements ;;
+                    "${set_ban}"*)  nftban_obs_bump ddos_penalty tier4_placements ;;
+                esac
+            else
+                nftban_obs_bump ddos_penalty placement_failure
             fi
         fi
     done
