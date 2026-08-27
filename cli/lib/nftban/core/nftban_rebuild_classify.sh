@@ -300,6 +300,28 @@ readonly CR_RUNTIME_DEFERRED="RUNTIME_MODULE_PROJECTION_DEFERRED"
 readonly CR_DAEMON_UNAVAILABLE="DAEMON_UNAVAILABLE"
 readonly CR_SCHEMA_UNUSABLE="VALIDATOR_SCHEMA_UNUSABLE"
 
+# _rebuild_join_reasons <item>...
+# Joins reason codes with "," WITHOUT mutating IFS.
+#
+# ⛔ WHY NOT `$(IFS=,; echo "${arr[*]}")`: that idiom is safe here (the assignment is confined
+# to a command-substitution subshell, and the parent IFS is provably unchanged), but it is an
+# AVOIDABLE new scanner/policy surface in new code. EXISTING TOLERATED DEBT IS NOT PRECEDENT
+# FOR INTRODUCING AVOIDABLE NEW DEBT — the repository's 324 historical `while IFS=` sites are
+# policy surface already carried; this PR does not need to add site 325.
+#
+# ⛔ REASON-CODE GRAMMAR: codes are a controlled vocabulary of [A-Z_]+ with an optional
+# ":<count>" suffix (e.g. RUNTIME_MODULE_PROJECTION_DEFERRED:2). They MUST NOT contain a
+# comma — otherwise this joined form would be an ambiguous interchange format. Asserted by
+# the reason-grammar test; if a comma-bearing code is ever introduced, that test fails first.
+_rebuild_join_reasons() {
+    local out="" item
+    for item in "$@"; do
+        [[ -n "$out" ]] && out+=","
+        out+="$item"
+    done
+    printf '%s' "$out"
+}
+
 # _rebuild_disposition_classify <context> <validator_json_file> <fatal_class> <post_status>
 #   context      : install-deferred | runtime-required
 #   fatal_class  : non-empty FC_* if a fatal stage already occurred (dominates everything)
@@ -404,7 +426,7 @@ _rebuild_disposition_classify() {
     if (( missing_attributable > 0 )); then
         if [[ "$context" == "install-deferred" && "$daemon" == "STOPPED" ]]; then
             reasons+=("$CR_DAEMON_UNAVAILABLE" "$CR_RUNTIME_DEFERRED:$missing_attributable")
-            printf '%s\t%s\n' "$RD_DEFERRED_RUNTIME" "$(IFS=,; echo "${reasons[*]}")"
+            printf '%s\t%s\n' "$RD_DEFERRED_RUNTIME" "$(_rebuild_join_reasons "${reasons[@]}")"
         else
             printf '%s\t%s\n' "$RD_REGRESSION" "$CR_UNATTRIBUTABLE_ABSENCE:not-install-context"
         fi

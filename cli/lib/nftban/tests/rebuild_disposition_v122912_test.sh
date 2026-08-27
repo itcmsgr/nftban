@@ -64,5 +64,29 @@ chk "UNSUPPORTED schema 99.0.0 -> fail closed"         REGRESSION  install-defer
 mk n "{\"schema_version\":\"2.0.0\",\"status\":\"protected\",\"service_state\":{\"nftband\":\"RUNNING\"},\"modules\":{\"ddos\":{\"config\":\"enabled\",\"structural\":\"present\",\"runtime\":\"running\"}}}"
 chk "UNSUPPORTED schema even when healthy -> closed"   REGRESSION  runtime-required "$T/n.json" "" protected
 
+# ─── reason-code JOIN + GRAMMAR (v1.229.12 merge-hygiene: no IFS mutation) ───
+jchk(){ local name=$1 want=$2 got=$3; total=$((total+1))
+  if [[ "$want" == "$got" ]]; then printf '  PASS  %-48s [%s]\n' "$name" "$got"
+  else printf '  FAIL  %-48s want [%s] got [%s]\n' "$name" "$want" "$got"; fails=$((fails+1)); fi; }
+
+# ⛔ the join must NOT mutate the caller's IFS
+_ifs_before=$IFS
+jchk "join: empty array"        ""                    "$(_rebuild_join_reasons)"
+jchk "join: single element"     "A"                   "$(_rebuild_join_reasons A)"
+jchk "join: multiple elements"  "A,B,C"               "$(_rebuild_join_reasons A B C)"
+jchk "join: element with spaces" "A B,C D"            "$(_rebuild_join_reasons "A B" "C D")"
+jchk "join: real reason codes"  "DAEMON_UNAVAILABLE,RUNTIME_MODULE_PROJECTION_DEFERRED:2" \
+     "$(_rebuild_join_reasons DAEMON_UNAVAILABLE RUNTIME_MODULE_PROJECTION_DEFERRED:2)"
+jchk "join: element with glob char" "A*,B?"           "$(_rebuild_join_reasons 'A*' 'B?')"
+jchk "caller IFS unchanged"     "same"                "$([[ "$IFS" == "$_ifs_before" ]] && echo same || echo MUTATED)"
+
+# ⛔ REASON-CODE GRAMMAR: no declared code may contain a comma, or the joined form is ambiguous.
+_bad=0
+for _cr in "$CR_FATAL_STAGE" "$CR_INSUFFICIENT_EVIDENCE" "$CR_UNATTRIBUTABLE_ABSENCE" \
+           "$CR_RUNTIME_DEFERRED" "$CR_DAEMON_UNAVAILABLE" "$CR_SCHEMA_UNUSABLE" "$CR_SCHEMA_UNSUPPORTED"; do
+  [[ "$_cr" == *,* ]] && { echo "    comma-bearing reason code: $_cr"; _bad=$((_bad+1)); }
+done
+jchk "grammar: no comma in any reason code" "0" "$_bad"
+
 echo; if (( fails )); then echo "CLASSIFIER FIXTURES FAILED ($fails/$total)"; exit 1; fi
 echo "CLASSIFIER FIXTURES PASSED — $total/$total"
