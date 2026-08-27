@@ -100,6 +100,9 @@ jobs:
       - name: Bounded non-whitespace predicate contract + performance sentinel
         run: bash cli/lib/nftban/tests/shell_predicates_v1229_12_test.sh
 
+      - name: Capability model (B03) — positive/negative/epistemic witnesses
+        run: bash cli/lib/nftban/tests/capability_model_v1229_12_test.sh
+
       # v1.228.5 completion guard. Prevents reintroduction of the defect class where a
       # branch-significant failure is consumed with its evidence discarded. The measured
       # defect: `sync --quick ... || true` let firewall rebuild report rc=0 and
