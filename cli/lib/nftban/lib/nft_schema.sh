@@ -277,19 +277,32 @@ declare -g -A NFTBAN_IPTABLES_NFT_TABLES=(
 # Connection tracking and rate limiting are ESSENTIAL for DDoS protection.
 # These limits should be applied in the input chain BEFORE service rules.
 #
-# CT LIMITS (per source IP):
-# ---------------------------
-# Purpose: Limit concurrent connections per IP to prevent resource exhaustion
+# CT LIMITS (HOST-WIDE, not per source IP):
+# -----------------------------------------
+# Purpose: cap total concurrent NEW connections to a service, so the host cannot
+# be exhausted. ⛔ THIS IS A GLOBAL CEILING, NOT A PER-SOURCE LIMIT.
+#
+# `ct count over N` counts connections matching the rule ACROSS ALL SOURCES. It
+# carries no `ip saddr` key, so one source consuming the allowance affects every
+# other source. Earlier revisions of this block described these rules as
+# "per IP", which they have never been — see the accurate form further down
+# ("host-wide, not per IP") and P12-A02.
+#
+# Per-source concurrency requires a keyed dynamic set, e.g.
+#   add @ssh_conn { ip saddr ct count over 5 }
+# which is a different mechanism with different false-positive characteristics:
+# a NAT gateway is one source address for many legitimate users, so a per-source
+# limit is NOT simply a stricter version of this rule. See P12-A02.
 #
 # Example rules for input chain:
 #   ct state new tcp dport @tcp_ports_in \
 #     meter syn_flood { ip saddr limit rate 100/second burst 200 } accept
 #
 #   ct state new tcp dport 22 \
-#     ct count over 5 drop comment "SSH: max 5 concurrent connections per IP"
+#     ct count over 5 drop comment "SSH: max 5 concurrent NEW conns (host-wide)"
 #
 #   ct state new tcp dport { 80, 443 } \
-#     ct count over 50 drop comment "HTTP(S): max 50 concurrent connections per IP"
+#     ct count over 50 drop comment "HTTP(S): max 50 concurrent NEW conns (host-wide)"
 #
 # RATE LIMITS (connection rate per IP):
 # --------------------------------------
