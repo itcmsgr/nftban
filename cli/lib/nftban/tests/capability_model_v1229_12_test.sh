@@ -54,6 +54,7 @@ c=$(nftban_capability_classify yes yes yes yes yes no)
 echo "== HEALTH MAPPING (must feed the shipped vocabulary, not replace it) =="
 m(){ local got; got=$(nftban_capability_to_health "$1" "${3:-yes}")
      [[ "$got" == "$2" ]] && ok "$1 -> health $2" || no "$1 expected health $2 got $got"; }
+m CAPABLE        0
 m CAPABLE_ACTIVE 0
 m CAPABLE_IDLE   0
 m CONVERGING     1
@@ -62,6 +63,18 @@ m UNKNOWN        1
 m DISABLED       5
 m INCAPABLE      3 yes
 m INCAPABLE      1 no
+# ⛔ No adapter state may fall through to the default. A silent fallthrough once
+# reported a live CAPABLE verdict as "NOT ESTABLISHED".
+for st in CAPABLE CAPABLE_ACTIVE CAPABLE_IDLE DEGRADED INCAPABLE UNKNOWN CONVERGING DISABLED; do
+    e=$(nftban_capability_explain "$st" "x")
+    case "$e" in
+        *UNRECOGNISED*) no "state $st falls through to the unrecognised branch" ;;
+        *) ok "state $st has an explicit explain branch" ;;
+    esac
+done
+e=$(nftban_capability_explain "MADE_UP_STATE" "x")
+case "$e" in *UNRECOGNISED*) ok "an unknown state is reported LOUDLY, not silently" ;;
+             *) no "unknown state was silently absorbed: $e" ;; esac
 c=$(nftban_capability_to_health UNKNOWN yes)
 [[ "$c" != "0" ]] && ok "UNKNOWN never maps to OK (cannot-prove is not a pass)" \
                   || no "UNKNOWN mapped to OK — an unproven mechanism would report healthy"

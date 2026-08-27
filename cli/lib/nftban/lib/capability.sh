@@ -102,6 +102,7 @@ nftban_capability_classify() {
 nftban_capability_to_health() {
     local cap="${1:-UNKNOWN}" required="${2:-yes}"
     case "$cap" in
+        CAPABLE)        printf '%s' "${HEALTH_OK:-0}" ;;
         CAPABLE_ACTIVE) printf '%s' "${HEALTH_OK:-0}" ;;
         CAPABLE_IDLE)   printf '%s' "${HEALTH_OK:-0}" ;;
         CONVERGING)     printf '%s' "${HEALTH_WARNING:-1}" ;;
@@ -120,13 +121,19 @@ nftban_capability_to_health() {
 nftban_capability_explain() {
     local cap="${1:-UNKNOWN}" what="${2:-mechanism}"
     case "$cap" in
+        CAPABLE)        printf '%s: capability present — required structural path is whole' "$what" ;;
         CAPABLE_ACTIVE) printf '%s: capability proven — producer reached and activity observed' "$what" ;;
         CAPABLE_IDLE)   printf '%s: capability present, currently idle — no qualifying activity (this is not a fault)' "$what" ;;
         DEGRADED)       printf '%s: capability partially present — see findings' "$what" ;;
         INCAPABLE)      printf '%s: a required edge is absent — the mechanism CANNOT act' "$what" ;;
         CONVERGING)     printf '%s: projection in progress — capability not yet stable' "$what" ;;
         DISABLED)       printf '%s: not configured' "$what" ;;
-        UNKNOWN|*)      printf '%s: capability NOT ESTABLISHED — evidence unreadable (this is not a pass)' "$what" ;;
+        UNKNOWN)        printf '%s: capability NOT ESTABLISHED — evidence unreadable (this is not a pass)' "$what" ;;
+        # ⛔ An unrecognised state must be LOUD. A silent fallthrough once reported a
+        # live CAPABLE verdict as "NOT ESTABLISHED", because an adapter introduced a
+        # state name the model did not know. Misreporting a healthy capability is as
+        # bad as misreporting a broken one.
+        *)              printf '%s: UNRECOGNISED CAPABILITY STATE %s — model/adapter mismatch' "$what" "$cap" ;;
     esac
 }
 
