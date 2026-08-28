@@ -381,8 +381,29 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}
 
+	// 6b. Generate the boot projection BEFORE anything points the distro include
+	// at it (P12-FPA Phase 2 ordering constraint).
+	//
+	// ⛔ THIS ORDER IS LOAD-BEARING, NOT STYLISTIC. IntegrateSystemConf below makes
+	// the include authoritative. If the artifact it names has not been published
+	// yet, nftables.service fails at the next boot on a missing file and the host
+	// comes up with no NFTBan firewall. Generation must therefore PRECEDE
+	// integration, and a failure here must prevent integration rather than be
+	// warned past. IntegrateSystemConf carries its own defensive refusal as a
+	// second layer, but ordering is the first and primary guarantee.
+	bootProjectionReady := true
+	if err := switchop.RenderBoot(exec, log); err != nil {
+		log.Error("boot projection render failed: %v", err)
+		bootProjectionReady = false
+	}
+
 	// 7. Integrate NFTBan include into system nftables.conf
-	if pd.distro != nil && pd.distro.NftConfPath != "" {
+	if !bootProjectionReady {
+		// Leave the previous boot path exactly as it was. A host that keeps its
+		// old include still boots; a host pointed at a file that was never
+		// created does not.
+		log.Warn("skipping system conf integration: no boot projection was published — previous boot path left unchanged")
+	} else if pd.distro != nil && pd.distro.NftConfPath != "" {
 		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath, log); err != nil {
 			log.Warn("system conf integration: %v", err)
 			// Non-fatal — system conf might not exist

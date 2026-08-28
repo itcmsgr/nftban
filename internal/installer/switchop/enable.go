@@ -20,6 +20,9 @@ package switchop
 
 import (
 	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,29 +85,111 @@ func cleanXtCompat(exec executor.Executor, distro *detect.DistroInfo, log *loggi
 
 	log.Warn("detected incompatible xt target rules in %s", confPath)
 
-	// Backup original
-	backupPath := fmt.Sprintf("%s.xt-backup.%s", confPath, time.Now().Format("20060102150405"))
+	// =========================================================================
+	// v1.229.12 P12-FPA — THIS NO LONGER REPLACES THE FILE.
+	//
+	// It used to overwrite confPath wholesale with a heredoc containing a bare
+	// unfenced `include "/etc/nftban/nftables.conf"`. Three defects:
+	//
+	//   1. It DESTROYED every operator rule in the distro file. A timestamped
+	//      backup is not preservation — the running configuration was gone.
+	//   2. It wrote an UNFENCED include, invisible to render.IntegrateSystemConf
+	//      (which owns the fenced BEGIN/END block) and to the deb postrm / rpm
+	//      %postun remover, so uninstall could not remove it.
+	//   3. It ran in phaseSwitch, AFTER phasePrepare had already written the
+	//      canonical fenced block — so on this path it DELETED IntegrateSystemConf's
+	//      work and substituted a competing include naming the legacy path.
+	//
+	// It now neutralises ONLY the offending lines. nft reports the line number of
+	// each error, so those lines are commented out and everything else — operator
+	// rules and NFTBan's managed fenced block alike — is preserved byte for byte.
+	// The result is re-validated before it is published, and abandoned if it did
+	// not actually help.
+	//
+	// ⛔ DO NOT REINSTATE A WHOLESALE REWRITE, AND DO NOT WRITE AN INCLUDE HERE.
+	// The managed include has exactly one owner: render.IntegrateSystemConf.
+	// =========================================================================
 	data, err := exec.ReadFile(confPath)
 	if err != nil {
-		log.Warn("cannot read %s for backup: %v", confPath, err)
+		log.Warn("cannot read %s: %v", confPath, err)
 		return
 	}
-	if err := exec.WriteFileAtomic(backupPath, data, 0644); err != nil {
-		log.Warn("cannot write backup %s: %v", backupPath, err)
-		return
-	}
-	log.Info("backed up %s to %s", confPath, backupPath)
 
-	// Replace with clean NFTBan include
-	cleanConf := `#!/usr/sbin/nft -f
-# NFTBan v1.76.0 - Clean nftables config (auto-fixed by installer)
-# Original backed up with .xt-backup.* extension
-# xt target rules removed to prevent nftables.service failure
-include "/etc/nftban/nftables.conf"
-`
-	if err := exec.WriteFileAtomic(confPath, []byte(cleanConf), 0644); err != nil {
-		log.Warn("cannot write clean %s: %v", confPath, err)
+	bad := offendingLines(combined)
+	if len(bad) == 0 {
+		log.Warn("xt-compat detected in %s but nft reported no line numbers — NOT modifying the file", confPath)
+		log.Warn("  remove the xt target rules manually, then: systemctl restart nftables.service")
 		return
 	}
-	log.Info("cleaned xt target rules from %s", confPath)
+
+	lines := strings.Split(string(data), "\n")
+	neutralised := 0
+	for _, ln := range bad {
+		i := ln - 1
+		if i < 0 || i >= len(lines) || strings.HasPrefix(strings.TrimSpace(lines[i]), "#") {
+			continue
+		}
+		lines[i] = "# " + lines[i] + "  # neutralized by nftban: xt target/xtables compat is unsupported by nftables.service"
+		neutralised++
+	}
+	if neutralised == 0 {
+		log.Warn("xt-compat lines in %s were already commented — NOT modifying the file", confPath)
+		return
+	}
+	candidate := strings.Join(lines, "\n")
+
+	// Validate the CANDIDATE before publishing it. A neutralisation that does not
+	// actually fix the parse must not be written: it would edit an operator's file
+	// for no benefit.
+	tmpPath := fmt.Sprintf("%s.nftban-xt-candidate.%s", confPath, time.Now().Format("20060102150405"))
+	if err := exec.WriteFileAtomic(tmpPath, []byte(candidate), 0644); err != nil {
+		log.Warn("cannot stage xt-compat candidate: %v", err)
+		return
+	}
+	check := exec.Run("nft", "-c", "-f", tmpPath)
+	if check.ExitCode != 0 {
+		exec.Run("rm", "-f", tmpPath)
+		log.Warn("neutralising %d xt line(s) did not make %s valid — file left UNCHANGED", neutralised, confPath)
+		log.Warn("  nft: %s", strings.TrimSpace(check.Stderr))
+		return
+	}
+
+	// Keep a backup, then publish the minimally-edited file.
+	backupPath := fmt.Sprintf("%s.xt-backup.%s", confPath, time.Now().Format("20060102150405"))
+	if err := exec.WriteFileAtomic(backupPath, data, 0644); err != nil {
+		log.Warn("cannot write backup %s — refusing to edit %s: %v", backupPath, confPath, err)
+		exec.Run("rm", "-f", tmpPath)
+		return
+	}
+	if err := exec.WriteFileAtomic(confPath, []byte(candidate), 0644); err != nil {
+		log.Warn("cannot write %s: %v", confPath, err)
+		exec.Run("rm", "-f", tmpPath)
+		return
+	}
+	exec.Run("rm", "-f", tmpPath)
+	log.Info("neutralized %d xt target line(s) in %s (backup %s); all other content preserved",
+		neutralised, confPath, backupPath)
+}
+
+// nftErrorLineRe matches the line number in an nft diagnostic, e.g.
+// "/etc/nftables.conf:12:1-20: Error: ...". Group 1 is the line number.
+var nftErrorLineRe = regexp.MustCompile(`(?m)^[^\s:]*:(\d+):\d+`)
+
+// offendingLines extracts the 1-based line numbers nft complained about, in
+// ascending order and deduplicated. Pure function — unit-testable without an
+// executor, which is the point: the neutraliser edits an operator's file, so the
+// part that decides WHICH lines to touch must be testable in isolation.
+func offendingLines(nftOutput string) []int {
+	seen := map[int]bool{}
+	out := []int{}
+	for _, m := range nftErrorLineRe.FindAllStringSubmatch(nftOutput, -1) {
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n <= 0 || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	sort.Ints(out)
+	return out
 }

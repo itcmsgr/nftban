@@ -61,8 +61,9 @@ TPL
     cat > "$d/cli/lib/nftban/cli/cmd_firewall.sh" <<'REN'
 #!/usr/bin/env bash
 _firewall_rebuild_target() {
-    # P8 reads the publication target from this line, so the fixture must carry it.
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    # P8 requires the runtime render to go through the path authority rather than
+    # constructing the legacy path literally, so the aligned fixture does that.
+    local nftban_conf; nftban_conf="$(nftban_boot_projection_path)"
     echo "$nftban_conf"
 }
 _firewall_substitute_placeholders() {
@@ -86,7 +87,8 @@ FC
     mkdir -p "$d/internal/installer/render"
     cat > "$d/internal/installer/render/sysconf.go" <<'SC'
 package render
-const IncludeDirective = `include "/etc/nftban/nftables.conf"`
+const BootProjectionPath = "/etc/nftban/generated/nftban-boot.nft"
+const IncludeDirective = `include "` + BootProjectionPath + `"`
 SC
     cp "$GUARD" "$d/scripts/ci/"
     printf '%s' "$d"
@@ -229,9 +231,18 @@ expect "F13 a Go unfenced include writer is caught" "$D" 1 "P7"
 # The failure this whole lane exists to prevent — boot loading a file the runtime
 # no longer maintains. Neither half is wrong alone; the DISAGREEMENT is the defect.
 D=$(mk_repo)
-sed -i 's|include "/etc/nftban/nftables.conf"|include "/etc/nftban/generated/nftban-boot.nft"|' \
+sed -i 's|/etc/nftban/generated/nftban-boot.nft|/etc/nftban/generated/other-name.nft|' \
     "$D/internal/installer/render/sysconf.go"
-expect "F14 include repointed without relocating publication is caught" "$D" 1 "P8"
+expect "F14 include and projection path authorities disagree is caught" "$D" 1 "P8"
+
+# --- F15 the runtime render still builds the legacy path literally ---------
+# The other half of the same split: the include moved, but the shell still
+# publishes and loads /etc/nftban/nftables.conf. Boot would read a file the
+# runtime no longer maintains.
+D=$(mk_repo)
+printf '%s\n' 'local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"' \
+    >> "$D/cli/lib/nftban/cli/cmd_firewall.sh"
+expect "F15 runtime render still constructing the LEGACY path is caught" "$D" 1 "P8"
 
 echo "=== firewall-projection-authority-falsifiability: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1

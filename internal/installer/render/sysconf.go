@@ -26,9 +26,32 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
+// BootProjectionPath is the ONE persistent generated nft artifact. It is
+// consumed by nftables.service at early boot AND republished/loaded by the
+// runtime firewall rebuild, so boot and runtime cannot drift: they are the same
+// bytes. See P12-FPA.
+//
+// It lives under /etc rather than /var/lib as a DELIBERATE FHS exception:
+// nftables.service can run before a separate /var is mounted on Debian-family
+// systems, and a boot projection that may be missing at boot is a worse defect
+// than a placement exception. Do not "fix" this without first changing and
+// proving the nftables.service mount-order contract.
+const BootProjectionPath = "/etc/nftban/generated/nftban-boot.nft"
+
+// legacyProjectionPath is the historical artifact. It is NO LONGER written and
+// NO LONGER included, but it stays on disk with its DEB conffile / RPM
+// %config(noreplace) ownership intact — package tooling cannot distinguish an
+// NFTBan-generated modification from a genuine operator one, so removing it
+// would risk discarding operator work.
+//
+// It is retained HERE only so stripNftbanInclude can still remove a bare legacy
+// include left by a previous install. Removal condition: when no supported
+// upgrade path can still carry one.
+const legacyProjectionPath = "/etc/nftban/nftables.conf"
+
 // IncludeDirective is the line nftban adds to the distro nftables.conf so a
 // plain `systemctl reload nftables.service` re-includes the nftban ruleset.
-const IncludeDirective = `include "/etc/nftban/nftables.conf"`
+const IncludeDirective = `include "` + BootProjectionPath + `"`
 
 // v1.146 PR Phase-D — fenced marker idempotency.
 //
@@ -85,7 +108,7 @@ func stripNftbanInclude(content string) string {
 			continue
 		case trimmed == legacyComment:
 			continue
-		case trimmed == IncludeDirective || strings.Contains(trimmed, `"/etc/nftban/nftables.conf"`):
+		case trimmed == IncludeDirective || strings.Contains(trimmed, `"`+legacyProjectionPath+`"`):
 			continue
 		}
 		out = append(out, line)
@@ -198,6 +221,25 @@ func IntegrateSystemConf(exec executor.Executor, nftConfPath string, log *loggin
 		return nil
 	}
 
+	// DEFENSIVE PRECONDITION (P12-FPA Phase 2).
+	//
+	// This function must never make the include authoritative unless the artifact
+	// it names is actually there. If it did, nftables.service would fail at boot
+	// on a missing file and the host would come up with no NFTBan firewall.
+	//
+	// ⛔ THIS IS THE SECOND LAYER, NOT THE FIRST. Installer phase ordering is what
+	// GUARANTEES the projection exists: generation runs before integration. This
+	// check exists so that a future reordering fails loudly here instead of
+	// silently at the next reboot. It deliberately does NOT generate anything —
+	// making the include writer a rendering authority is the duplicated-authority
+	// defect this lane removes.
+	if !exec.FileExists(BootProjectionPath) {
+		return fmt.Errorf(
+			"refusing to point %s at %s: the boot projection does not exist. "+
+				"Generate it first (firewall render-boot) — this function must not create it",
+			nftConfPath, BootProjectionPath)
+	}
+
 	data, err := exec.ReadFile(nftConfPath)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", nftConfPath, err)
@@ -225,7 +267,7 @@ func IntegrateSystemConf(exec executor.Executor, nftConfPath string, log *loggin
 		return fmt.Errorf("write %s: %w", nftConfPath, err)
 	}
 
-	if strings.Contains(original, "/etc/nftban/nftables.conf") {
+	if strings.Contains(original, legacyProjectionPath) || strings.Contains(original, BootProjectionPath) {
 		log.Info("normalised NFTBan include in %s (collapsed to one fenced block)", nftConfPath)
 	} else {
 		log.Info("added fenced NFTBan include block to %s", nftConfPath)

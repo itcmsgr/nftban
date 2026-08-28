@@ -29,6 +29,12 @@
 # Replaces ${var//[[:space:]]/} emptiness tests on nft-sized payloads.
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+
+# v1.229.12 P12-FPA: single path authority for the generated boot projection.
+# The runtime render publishes AND loads the same artifact nftables.service
+# includes at boot, so boot and runtime cannot drift — they are the same bytes.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
 # =============================================================================
 
 set -Eeuo pipefail
@@ -2246,7 +2252,7 @@ FIREWALL_RELOAD_HELP
 
     # Step 2: Re-apply NFTBan schema
     # v1.50.0: Render from template if available, otherwise use live config
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    local nftban_conf; nftban_conf="$(nftban_boot_projection_path)"
     local _template="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
     if [[ -f "$_template" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema from template..."
@@ -3463,8 +3469,9 @@ _firewall_rebuild_core() {
 
     # v1.50.0: Template-based rebuild architecture
     # Source: /usr/lib/nftban/templates/nftables.conf.tpl (package-owned template)
-    # Target: /etc/nftban/nftables.conf (rendered, boot-safe live config)
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    # Target: /etc/nftban/generated/nftban-boot.nft — the ONE generated projection,
+    # consumed by nftables.service at boot AND loaded here at runtime (P12-FPA)
+    local nftban_conf; nftban_conf="$(nftban_boot_projection_path)"
     local template_file="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
     local rpmnew_conf="${nftban_conf}.rpmnew"
     local tmp_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/.nftables.conf.tmp"
@@ -4243,7 +4250,7 @@ firewall_reset() {
 
     # Step 4: Reload NFTBan schema
     [[ "$quiet" == "false" ]] && echo "  [4/11] Loading clean NFTBan schema..."
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    local nftban_conf; nftban_conf="$(nftban_boot_projection_path)"
     if [[ -f "$nftban_conf" ]]; then
         if ! nft -f "$nftban_conf" 2>&1; then
             echo "ERROR: Failed to load NFTBan schema" >&2
@@ -4435,7 +4442,7 @@ _restore_from_file() {
         echo "ERROR: Failed to restore backup" >&2
         echo "Attempting to reload NFTBan schema..." >&2
         # v1.50.0: Live config should be rendered (no placeholders). Just load it.
-        local _nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+        local _nftban_conf; _nftban_conf="$(nftban_boot_projection_path)"
         if [[ -f "$_nftban_conf" ]]; then
             nft -f "$_nftban_conf" 2>/dev/null || true
         fi
@@ -5331,7 +5338,7 @@ What it does:
   1. Backs up current IPs from all sets
   2. Renders template with SSH port + CT limits (from DDoS config)
   3. Validates rendered schema (dry-run) BEFORE flushing
-  4. Atomic-writes rendered config to /etc/nftban/nftables.conf
+  4. Atomic-writes the rendered projection to /etc/nftban/generated/nftban-boot.nft
   5. Removes rogue tables (non-NFTBan tables)
   6. Flushes and loads validated schema
   7. Re-syncs system whitelist + restores blacklist

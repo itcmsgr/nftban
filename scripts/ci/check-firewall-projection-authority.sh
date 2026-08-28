@@ -273,23 +273,33 @@ fi
 # they diverge.
 # ---------------------------------------------------------------------------
 SYSCONF="${FPA_SYSCONF:-internal/installer/render/sysconf.go}"
-if [[ -f "$SYSCONF" && -f "$RENDER" ]]; then
-    INC_PATH=$(grep -oE 'IncludeDirective[^`]*`include "[^"]+"' "$SYSCONF" | grep -oE '"/[^"]+"' | tr -d '"' | head -1)
-    PUB_PATH=$(grep -oE 'local nftban_conf="\$\{NFTBAN_CONFIG_DIR:-/etc/nftban\}[^"]*"' "$RENDER" \
-               | grep -oE '\}[^"]*' | sed 's|^}|/etc/nftban|' | sort -u | head -1)
-    if [[ -z "$INC_PATH" || -z "$PUB_PATH" ]]; then
-        bad "P8 cannot read the include directive or the publication target — guard input shape changed"
-        inf "include='$INC_PATH' publish='$PUB_PATH'"
-    elif [[ "$INC_PATH" == "$PUB_PATH" ]]; then
-        ok "P8 include directive and runtime publication target agree ($INC_PATH)"
+if [[ -f "$SYSCONF" && -f "$PATHAUTH" && -f "$RENDER" ]]; then
+    # Go side: the const the include directive is built from.
+    GO_PATH=$(grep -oE 'BootProjectionPath[[:space:]]*=[[:space:]]*"[^"]+"' "$SYSCONF" | grep -oE '"/[^"]+"' | tr -d '"' | head -1)
+    # Shell side: the path authority the generator and the runtime render both use.
+    # The captured text keeps its trailing quote (printf '%s/generated'), so strip
+    # quotes BEFORE anchoring on end-of-string. The dir match is taken from the
+    # FIRST printf that is not the .nft one, since both lines share the shape.
+    SH_DIR=$(grep -oE "printf '%s/[A-Za-z0-9._-]+'" "$PATHAUTH" | tr -d "'" | grep -v '[.]nft$' | head -1 | grep -oE '/[A-Za-z0-9._-]+$')
+    SH_FILE=$(grep -oE "printf '%s/[A-Za-z0-9._-]+[.]nft'" "$PATHAUTH" | tr -d "'" | head -1 | grep -oE '/[A-Za-z0-9._-]+[.]nft$')
+    SH_PATH="/etc/nftban${SH_DIR}${SH_FILE}"
+    if [[ -z "$GO_PATH" || -z "$SH_DIR" || -z "$SH_FILE" ]]; then
+        bad "P8 cannot read both path authorities — guard input shape changed"
+        inf "go='$GO_PATH' shell='$SH_PATH'"
+    elif [[ "$GO_PATH" != "$SH_PATH" ]]; then
+        bad "P8 MIGRATION SPLIT — include directive and projection path authority disagree:"
+        inf "  $SYSCONF  names : $GO_PATH"
+        inf "  $PATHAUTH names : $SH_PATH"
+        inf "boot would load a file the runtime does not maintain; these must move in ONE change"
+    elif grep -qE 'NFTBAN_CONFIG_DIR:-/etc/nftban[}]/nftables[.]conf' "$RENDER"; then
+        bad "P8 the runtime render still constructs the LEGACY path literally in $RENDER"
+        grep -nE 'NFTBAN_CONFIG_DIR:-/etc/nftban[}]/nftables[.]conf' "$RENDER" | head -4 | sed 's/^/         /'
+        inf "publish and load must both go through nftban_boot_projection_path()"
     else
-        bad "P8 MIGRATION SPLIT — the boot include and the runtime publication target disagree:"
-        inf "  distro include names : $INC_PATH"
-        inf "  runtime publishes to : $PUB_PATH"
-        inf "boot would load a file the runtime no longer maintains; these must move in ONE change"
+        ok "P8 include directive and runtime projection agree ($GO_PATH), no literal legacy construction"
     fi
 else
-    inf "P8 SKIPPED — $SYSCONF or $RENDER absent"
+    inf "P8 SKIPPED — a path authority is absent"
 fi
 
 echo "=== firewall-projection-authority: FAILS=$FAILS ==="

@@ -134,6 +134,10 @@ func TestIntegrateSystemConf_FreshShapeB(t *testing.T) {
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
 	m.Files[p] = []byte(distroSkeleton)
+	// P12-FPA: IntegrateSystemConf refuses to point the include at a projection
+	// that does not exist. Stage it, exactly as the installer's phase ordering
+	// does by running the render BEFORE integration.
+	m.Files[BootProjectionPath] = []byte("# generated boot projection\n")
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate: %v", err)
 	}
@@ -166,6 +170,8 @@ func TestIntegrateSystemConf_CollapsesAccumulatedDuplicates(t *testing.T) {
 	m.Files[p] = []byte(distroSkeleton +
 		legacyComment + "\n" + IncludeDirective + "\n" +
 		legacyComment + "\n" + IncludeDirective + "\n")
+	// P12-FPA: the include may only be made authoritative when the projection exists.
+	m.Files[BootProjectionPath] = []byte("# generated boot projection\n")
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate: %v", err)
 	}
@@ -186,6 +192,10 @@ func TestIntegrateSystemConf_IdempotentNoWrite(t *testing.T) {
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
 	m.Files[p] = []byte(distroSkeleton)
+	// P12-FPA: IntegrateSystemConf refuses to point the include at a projection
+	// that does not exist. Stage it, exactly as the installer's phase ordering
+	// does by running the render BEFORE integration.
+	m.Files[BootProjectionPath] = []byte("# generated boot projection\n")
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate #1: %v", err)
 	}
@@ -195,5 +205,56 @@ func TestIntegrateSystemConf_IdempotentNoWrite(t *testing.T) {
 	}
 	if _, wrote := m.WrittenFiles[p]; wrote {
 		t.Errorf("second integrate wrote despite canonical+neutralized content (not idempotent):\n%s", string(m.Files[p]))
+	}
+}
+
+// TestIntegrateSystemConf_RefusesMissingProjection locks the P12-FPA defensive
+// precondition: the managed include must never be made authoritative while the
+// artifact it names is absent. If it were, nftables.service would fail at the
+// next boot on a missing file and the host would come up with no NFTBan
+// firewall — a failure that no unit test of the include text itself would show.
+//
+// It also asserts the distro file is left BYTE-IDENTICAL: a refusal must not be
+// a partial edit.
+func TestIntegrateSystemConf_RefusesMissingProjection(t *testing.T) {
+	log := newTestLogger()
+	defer log.Close()
+	m := executor.NewMockExecutor()
+	const p = "/etc/nftables.conf"
+	m.Files[p] = []byte(distroSkeleton)
+	// deliberately do NOT stage BootProjectionPath
+
+	err := IntegrateSystemConf(m, p, log)
+	if err == nil {
+		t.Fatalf("integrate SUCCEEDED with no boot projection present — the include would name a missing file")
+	}
+	if !strings.Contains(err.Error(), BootProjectionPath) {
+		t.Errorf("error should name the missing projection, got: %v", err)
+	}
+	if string(m.Files[p]) != distroSkeleton {
+		t.Errorf("distro config was modified despite the refusal:\n%s", string(m.Files[p]))
+	}
+}
+
+// TestIntegrateSystemConf_StripsLegacyBareInclude locks the migration cleanup:
+// a bare include of the RETIRED path left by a previous install must be removed,
+// so a migrated host is never left including both artifacts.
+func TestIntegrateSystemConf_StripsLegacyBareInclude(t *testing.T) {
+	log := newTestLogger()
+	defer log.Close()
+	m := executor.NewMockExecutor()
+	const p = "/etc/nftables.conf"
+	m.Files[p] = []byte(distroSkeleton + "\ninclude \"" + legacyProjectionPath + "\"\n")
+	m.Files[BootProjectionPath] = []byte("# generated boot projection\n")
+
+	if err := IntegrateSystemConf(m, p, log); err != nil {
+		t.Fatalf("integrate: %v", err)
+	}
+	body := string(m.Files[p])
+	if strings.Contains(body, `"`+legacyProjectionPath+`"`) {
+		t.Errorf("legacy bare include survived migration:\n%s", body)
+	}
+	if got := countSubstr(body, IncludeDirective); got != 1 {
+		t.Errorf("want exactly 1 include of the boot projection, got %d:\n%s", got, body)
 	}
 }

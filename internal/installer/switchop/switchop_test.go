@@ -43,26 +43,59 @@ func TestEnableNftables_NotActive(t *testing.T) {
 	t.Skip("mock auto-activates on ServiceStart — skip negative test")
 }
 
+// TestCleanXtCompat_XtTargetDetected locks the P12-FPA rewrite of the xt-compat
+// handler. It used to replace the whole distro file with a heredoc carrying a
+// bare unfenced include of the retired path — destroying operator rules, writing
+// an include neither remover could see, and (because it runs in phaseSwitch,
+// AFTER phasePrepare) deleting the canonical fenced block that had just been
+// written. It now neutralises ONLY the lines nft actually complained about.
 func TestCleanXtCompat_XtTargetDetected(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Services["nftables"] = true
 
 	confPath := "/etc/sysconfig/nftables.conf"
-	mock.Files[confPath] = []byte("table ip filter { chain FORWARD { xt target \"REDIRECT\" } }")
+	const operatorRule = "table ip mine { chain c { tcp dport 8443 accept } }"
+	const managedBlock = "# >>> nftban firewall include (managed; do not edit between markers) >>>"
+	original := operatorRule + "\n" +
+		"table ip filter { chain FORWARD { xt target \"REDIRECT\" } }\n" +
+		managedBlock + "\n"
+	mock.Files[confPath] = []byte(original)
 
-	// nft -c -f should fail with xt target error
+	// Real nft diagnostics carry the offending line number; that is what makes a
+	// surgical edit possible instead of a wholesale replacement.
 	mock.RunResults["nft:-c:-f:"+confPath] = executor.Result{
 		ExitCode: 1,
-		Stderr:   "Error: xt target not found",
+		Stderr:   confPath + ":2:35-54: Error: xt target not found",
 	}
 
 	distro := &detect.DistroInfo{NftConfPath: confPath}
-	err := EnableNftables(mock, distro, newTestLogger())
-	if err != nil {
+	if err := EnableNftables(mock, distro, newTestLogger()); err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
 
-	// Verify backup was created (any file starting with confPath.xt-backup.)
+	written := mock.WrittenFiles[confPath]
+	if written == nil {
+		t.Fatal("expected the neutralized config to be written to confPath")
+	}
+	body := string(written)
+
+	// 1. the offending line is neutralized
+	if !strings.Contains(body, "# table ip filter") {
+		t.Errorf("offending xt line was not commented out:\n%s", body)
+	}
+	// 2. UNRELATED OPERATOR CONTENT SURVIVES — the whole point of the rewrite
+	if !strings.Contains(body, operatorRule) {
+		t.Errorf("operator rule was destroyed:\n%s", body)
+	}
+	// 3. the canonical managed block survives
+	if !strings.Contains(body, managedBlock) {
+		t.Errorf("managed include block was destroyed:\n%s", body)
+	}
+	// 4. NO include is written here — that authority belongs to IntegrateSystemConf
+	if strings.Contains(body, "include \"/etc/nftban") {
+		t.Errorf("cleanXtCompat wrote an include; the managed include has ONE owner:\n%s", body)
+	}
+	// 5. a backup still exists
 	foundBackup := false
 	for path := range mock.WrittenFiles {
 		if strings.HasPrefix(path, confPath+".xt-backup.") {
@@ -71,16 +104,52 @@ func TestCleanXtCompat_XtTargetDetected(t *testing.T) {
 		}
 	}
 	if !foundBackup {
-		t.Error("expected xt-backup file to be created")
+		t.Error("expected an xt-backup file to be created")
 	}
+}
 
-	// Verify clean config was written
-	written := mock.WrittenFiles[confPath]
-	if written == nil {
-		t.Fatal("expected clean config to be written to confPath")
+// TestCleanXtCompat_NoLineNumbers: when nft reports xt-compat but gives no line
+// numbers there is nothing safe to neutralise, so the operator's file must be
+// left completely untouched rather than guessed at.
+func TestCleanXtCompat_NoLineNumbers(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["nftables"] = true
+	confPath := "/etc/sysconfig/nftables.conf"
+	original := "table ip filter { chain FORWARD { xt target \"REDIRECT\" } }"
+	mock.Files[confPath] = []byte(original)
+	mock.RunResults["nft:-c:-f:"+confPath] = executor.Result{
+		ExitCode: 1,
+		Stderr:   "Error: xt target not found", // no file:line:col
 	}
-	if !strings.Contains(string(written), "include \"/etc/nftban/nftables.conf\"") {
-		t.Error("expected clean config to include nftban nftables.conf")
+	distro := &detect.DistroInfo{NftConfPath: confPath}
+	if err := EnableNftables(mock, distro, newTestLogger()); err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if _, wrote := mock.WrittenFiles[confPath]; wrote {
+		t.Errorf("file was modified despite nft giving no line numbers:\n%s", string(mock.Files[confPath]))
+	}
+}
+
+// TestOffendingLines is a pure-function test of the part that decides WHICH
+// lines get edited. It edits an operator's file, so that decision must be
+// testable without an executor.
+func TestOffendingLines(t *testing.T) {
+	in := "/etc/nftables.conf:12:1-20: Error: xt target not found\n" +
+		"/etc/nftables.conf:4:3-9: Error: something else\n" +
+		"/etc/nftables.conf:12:1-20: Error: duplicate report\n" +
+		"no line number here\n"
+	got := offendingLines(in)
+	want := []int{4, 12}
+	if len(got) != len(want) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("want %v (sorted, deduped), got %v", want, got)
+		}
+	}
+	if len(offendingLines("Error: no numbers at all")) != 0 {
+		t.Error("expected no lines when nft reports no positions")
 	}
 }
 
