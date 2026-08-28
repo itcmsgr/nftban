@@ -1,0 +1,46 @@
+# =============================================================================
+# NFTBan - P12-FPA registered rule-comment drift (boot projection vs canonical schema)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# WHAT THIS FILE IS
+# Each non-comment line is one rule-comment string that currently differs between
+# the SHIPPED BOOT PROJECTION (install/nftables/nftables.conf) and the CANONICAL
+# SCHEMA rendered with its install-time fallbacks (install/nftables/nftables.conf.tpl).
+# check-firewall-projection-authority.sh P4 fails on any divergence NOT listed here.
+#
+# WHY THESE EXIST AND ARE NOT SIMPLY FIXED
+# The boot projection ships as a DEB conffile and RPM %config(noreplace). Editing a
+# shipped conffile makes the package manager treat the change as an operator conflict:
+# every upgrade becomes an interactive prompt and unattended installs abort. This
+# project has already had that failure once. Commit 6af9fe9f corrected the same wrong
+# "per IP" wording in cli/lib/nftban/lib/nft_schema.sh and explicitly declined to touch
+# these two files for that reason.
+#
+# THE SUBSTANTIVE DEFECT BEHIND THE FIRST SIX ENTRIES
+# `ct count over N` counts connections HOST-WIDE, not per source address. The boot
+# projection tells the operator "per IP", which is wrong, and that text is loaded into
+# the kernel and read back by `nft list ruleset`. The canonical schema already carries
+# the corrected wording. So the two projections disagree about what the same rule means.
+#
+# THE LAST FOUR ENTRIES are benign provenance-wording differences, registered only so
+# that P4 can fail on anything NEW.
+#
+# ⛔ THIS REGISTRY MAY ONLY SHRINK. It is P12-FPA migration debt: once the boot
+# projection is GENERATED rather than shipped as a conffile, every line here is
+# corrected by regeneration and this file must be emptied. Adding a row to make a new
+# drift pass is the exact failure this guard exists to prevent — extend the canonical
+# schema and regenerate instead.
+#
+# Registered 2026-08-28 (P12-FPA Phase 1). Population at registration: 10.
+# =============================================================================
+comment "HTTP(S): max 150 concurrent NEW conns (host-wide, not per IP)"
+comment "HTTP(S): max 150 concurrent per IP"
+comment "MAIL: max 150 concurrent NEW conns (host-wide, not per IP)"
+comment "MAIL: max 150 concurrent per IP"
+comment "SSH: max 15 concurrent NEW conns (host-wide, not per IP) — v1.145 PR-A set-driven"
+comment "SSH: max 15 concurrent per IP — v1.145/v1.162 set-driven"
+comment "SSH ports for set-driven brute-force rate-limit"
+comment "SSH ports for set-driven brute-force rate-limit (v1.162 §3.5 static-fallback)"
+comment "SSH ports for set-driven brute-force rate-limit (v1.162 §3.5 static-fallback, v6)"
+comment "SSH ports for set-driven brute-force rate-limit (v6)"

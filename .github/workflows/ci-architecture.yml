@@ -161,6 +161,28 @@ jobs:
       - name: Check bounded-limiter guard is falsifiable (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters-falsifiability.sh
 
+      # v1.229.12 P12-FPA Phase 1, BLOCKING — FIREWALL PROJECTION AUTHORITY.
+      # NFTBan ships TWO executable nft artifacts that both reach the kernel: the
+      # canonical schema (placeholder template, rendered at rebuild) and a
+      # pre-rendered boot projection included by nftables.service. Nothing proved
+      # they stayed equivalent. The bounded-limiter R4 above compares only
+      # `update @|flags dynamic` lines, so it cannot see the ct-count rules — which
+      # is exactly where the divergence risk lives. This guard covers the WHOLE
+      # ruleset: P1 one canonical schema, P2 one substitution authority, P3
+      # enforcement equivalence against the install-time fallbacks READ FROM the
+      # render authority, P4 rule-comment equivalence with a shrink-only registry
+      # for drift that a shipped conffile cannot yet fix, P5 nft -c on the render.
+      - name: Check firewall projection authority (v1.229.12 P12-FPA, BLOCKING)
+        run: ./scripts/ci/check-firewall-projection-authority.sh
+
+      # GUARD-THE-GUARD, BLOCKING. Every rule is driven by a fixture reproducing its
+      # motivating defect in a hermetic fake repo — including the ct-count 150-vs-200
+      # enforcement drift that motivated P12-FPA. A fixture that fails for the wrong
+      # reason is treated as broken, and an nft -c that cannot run is reported as
+      # INCONCLUSIVE rather than counted as a pass.
+      - name: Check firewall projection guard is falsifiable (v1.229.12, BLOCKING)
+        run: ./scripts/ci/check-firewall-projection-authority-falsifiability.sh
+
       # v1.228.7 BLOCKING — INCOMPLETE_SHELL_TO_GO_MIGRATION guard. A shell->Go
       # migration is complete only when EVERY consumer is repointed. GeoIP moved
       # into `nftban-core geoip` but six consumers kept resolving the retired
