@@ -71,12 +71,24 @@ if declare -F _firewall_substitute_placeholders >/dev/null 2>&1; then
 else
     OUT2="$SB/conf/generated/t2.nft"
     ERR2=$(nftban_boot_projection_generate "$TPL" "$OUT2" 2>&1); RC2=$?
-    if [[ "$RC2" -ne 0 ]] && grep -q "render authority" <<<"$ERR2" && [[ ! -f "$OUT2" ]]; then
-        ok "T2 FAILS CLOSED without the render authority, and writes nothing"
+    if [[ "$RC2" -ne 0 ]] && grep -q "_firewall_substitute_placeholders" <<<"$ERR2" && [[ ! -f "$OUT2" ]]; then
+        ok "T2 FAILS CLOSED without the render authority, names it, and writes nothing"
     else
         bad "T2 did not fail closed (rc=$RC2, file exists: $([[ -f "$OUT2" ]] && echo yes || echo no))"
     fi
 fi
+
+# --- T2b FAIL-CLOSED without the PUBLICATION authority ----------------------
+# A bare `mv` would preserve the temp file's SELinux type, so the projection would
+# carry nftban_conf_t and the distro nftables.service (nft in iptables_t) could not
+# read it — a boot-time FAILED_NO_FIREWALL with a misleading "File not found".
+# The generator must refuse rather than publish it itself.
+( _firewall_substitute_placeholders() { cp "$1" "$2"; }
+  OUT2B="$SB/conf/generated/t2b.nft"
+  ERR2B=$(nftban_boot_projection_generate "$TPL" "$OUT2B" 2>&1); RC2B=$?
+  [[ "$RC2B" -ne 0 ]] && grep -q "_firewall_publish_conf" <<<"$ERR2B" && [[ ! -f "$OUT2B" ]]
+) && ok "T2b FAILS CLOSED without the SELinux-aware publication authority" \
+   || bad "T2b published without _firewall_publish_conf (would carry the wrong SELinux type)"
 
 # --- load the REAL render authority ----------------------------------------
 # cmd_firewall.sh only defines functions at top level (its guarded sources are

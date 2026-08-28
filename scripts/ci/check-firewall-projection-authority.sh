@@ -30,6 +30,8 @@ TPL="${FPA_TPL:-install/nftables/nftables.conf.tpl}"
 CONF="${FPA_CONF:-install/nftables/nftables.conf}"
 RENDER="${FPA_RENDER:-cli/lib/nftban/cli/cmd_firewall.sh}"
 ALLOW="${FPA_ALLOW:-scripts/ci/data/firewall-projection-drift.allow}"
+PATHAUTH="${FPA_PATHAUTH:-cli/lib/nftban/lib/boot_projection.sh}"
+FC="${FPA_FC:-install/selinux/nftban.fc}"
 # A CHECKER MUST NOT BE ITS OWN SUBJECT. This guard renders the schema in order to
 # compare it, and its inversion harness builds fixtures that deliberately contain the
 # violating shapes. Both are guard machinery, not the product render path, so both are
@@ -173,6 +175,37 @@ else
     else
         inf "P5 SKIPPED — nft not installed in this environment"
     fi
+fi
+
+# ---------------------------------------------------------------------------
+# P6 — SELINUX LABEL BINDING. The boot projection is read by the distro
+# nftables.service, which runs nft in iptables_t. That domain may read ONLY
+# nftban_nftables_conf_t under /etc/nftban; everything else there is
+# nftban_conf_t and is deliberately unreadable to it. A boot projection without
+# an explicit file-context entry inherits nftban_conf_t from the
+# /etc/nftban(/.*)? catch-all and fails at boot with a misleading
+# "File not found" (FAILED_NO_FIREWALL, proven on Rocky 9.7, v1.228.5).
+#
+# The path is taken FROM the path authority, not restated here, so renaming the
+# artifact without updating the policy fails this guard instead of shipping a
+# host that cannot load its firewall at boot.
+# ---------------------------------------------------------------------------
+if [[ -f "$PATHAUTH" && -f "$FC" ]]; then
+    BP=$(grep -oE "printf '%s/[A-Za-z0-9._-]+' \"\\\$\(nftban_boot_projection_dir\)\"" "$PATHAUTH" \
+         | grep -oE "/[A-Za-z0-9._-]+\.nft" | head -1)
+    if [[ -z "$BP" ]]; then
+        bad "P6 cannot read the boot-projection filename from $PATHAUTH — path authority shape changed"
+    else
+        FCPAT="/etc/nftban/generated${BP//./\\.}"
+        if grep -qF "$FCPAT" "$FC" && grep -F "$FCPAT" "$FC" | grep -q 'nftban_nftables_conf_t'; then
+            ok "P6 boot projection ${BP#/} has an explicit nftban_nftables_conf_t entry in $FC"
+        else
+            bad "P6 boot projection ${BP#/} has NO nftban_nftables_conf_t entry in $FC"
+            inf "it would inherit nftban_conf_t and nftables.service (iptables_t) could not read it at boot"
+        fi
+    fi
+else
+    inf "P6 SKIPPED — $PATHAUTH or $FC absent"
 fi
 
 echo "=== firewall-projection-authority: FAILS=$FAILS ==="

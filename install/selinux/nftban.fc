@@ -22,6 +22,18 @@
 # context on the final path after publication. See _firewall_publish_conf().
 /etc/nftban/nftables\.conf                              --  gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
 
+# v1.229.12 P12-FPA — the GENERATED BOOT PROJECTION. Same cross-domain consumer as
+# the line above: the distro nftables.service reads it with nft in iptables_t, which
+# is allowed to read nftban_nftables_conf_t and nothing else under /etc/nftban.
+# Without this entry the file inherits nftban_conf_t from /etc/nftban(/.*)? and
+# nftables.service fails at boot with a misleading "File not found" — the
+# FAILED_NO_FIREWALL class proven on Rocky 9.7 (v1.228.5).
+# The enclosing directory deliberately keeps nftban_conf_t: iptables_t is granted
+# `dir search` on it for traversal only, never read or enumeration.
+# Publication goes through _firewall_publish_conf(), because rename PRESERVES the
+# source type and this declaration alone is therefore NOT sufficient.
+/etc/nftban/generated/nftban-boot\.nft                   --  gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
+
 # State files (var/lib)
 /var/lib/nftban(/.*)?                                       gen_context(system_u:object_r:nftban_var_lib_t,s0)
 /var/lib/nftban/feeds(/.*)?                                 gen_context(system_u:object_r:nftban_var_lib_t,s0)

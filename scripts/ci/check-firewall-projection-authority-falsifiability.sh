@@ -68,6 +68,16 @@ _firewall_substitute_placeholders() {
 }
 REN
     : > "$d/scripts/ci/data/firewall-projection-drift.allow"
+    mkdir -p "$d/cli/lib/nftban/lib" "$d/install/selinux"
+    cat > "$d/cli/lib/nftban/lib/boot_projection.sh" <<'PA'
+#!/usr/bin/env bash
+nftban_boot_projection_dir()  { printf '%s/generated' "${NFTBAN_CONFIG_DIR:-/etc/nftban}"; }
+nftban_boot_projection_path() { printf '%s/nftban-boot.nft' "$(nftban_boot_projection_dir)"; }
+PA
+    cat > "$d/install/selinux/nftban.fc" <<'FC'
+/etc/nftban(/.*)?                          gen_context(system_u:object_r:nftban_conf_t,s0)
+/etc/nftban/generated/nftban-boot\.nft  -- gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
+FC
     cp "$GUARD" "$d/scripts/ci/"
     printf '%s' "$d"
 }
@@ -138,6 +148,28 @@ else
     ok "F6 unparseable projection is caught (rc=$RC)"
 fi
 rm -rf "$D"
+
+# --- F7 boot projection with no SELinux label rule -------------------------
+# Without an explicit nftban_nftables_conf_t entry the file inherits nftban_conf_t,
+# which nftables.service (iptables_t) may not read: the host boots with no firewall
+# and reports a misleading "File not found".
+D=$(mk_repo)
+sed -i '/generated\/nftban-boot/d' "$D/install/selinux/nftban.fc"
+expect "F7 boot projection with NO SELinux label rule is caught" "$D" 1 "P6"
+
+# --- F8 label rule present but for the WRONG type --------------------------
+# A rule that exists but grants the unreadable type is worse than none, because it
+# looks deliberate. The guard must check the TYPE, not merely that a line matches.
+D=$(mk_repo)
+sed -i 's/nftban_nftables_conf_t/nftban_conf_t/' "$D/install/selinux/nftban.fc"
+expect "F8 label rule naming the WRONG type is caught" "$D" 1 "P6"
+
+# --- F9 artifact renamed without updating the policy -----------------------
+# The guard reads the filename FROM the path authority, so a rename that leaves the
+# policy behind must fail rather than ship a host that cannot load its firewall.
+D=$(mk_repo)
+sed -i "s/nftban-boot\.nft/nftban-boot-v2.nft/" "$D/cli/lib/nftban/lib/boot_projection.sh"
+expect "F9 artifact renamed without updating the policy is caught" "$D" 1 "P6"
 
 echo "=== firewall-projection-authority-falsifiability: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1

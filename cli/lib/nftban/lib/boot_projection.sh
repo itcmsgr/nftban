@@ -108,13 +108,15 @@ nftban_boot_projection_generate() {
         echo "[NFTBan ERROR] boot projection: canonical schema not found: $schema" >&2
         return 1
     fi
-    if ! declare -F _firewall_substitute_placeholders >/dev/null 2>&1; then
-        echo "[NFTBan ERROR] boot projection: render authority _firewall_substitute_placeholders is NOT loaded." >&2
-        echo "[NFTBan ERROR]   Source the firewall command file first. This function MUST NOT substitute" >&2
-        echo "[NFTBan ERROR]   placeholders itself — a second substitution path is the duplicated firewall" >&2
-        echo "[NFTBan ERROR]   authority P12-FPA exists to remove." >&2
+    local fn
+    for fn in _firewall_substitute_placeholders _firewall_publish_conf; do
+        declare -F "$fn" >/dev/null 2>&1 && continue
+        echo "[NFTBan ERROR] boot projection: required authority $fn is NOT loaded." >&2
+        echo "[NFTBan ERROR]   Source the firewall command file first. This function MUST NOT re-derive" >&2
+        echo "[NFTBan ERROR]   placeholder substitution or SELinux-aware publication — a second path is the" >&2
+        echo "[NFTBan ERROR]   duplicated firewall authority P12-FPA exists to remove." >&2
         return 1
-    fi
+    done
 
     out_dir="$(dirname "$out")"
     if [[ ! -d "$out_dir" ]]; then
@@ -157,11 +159,19 @@ nftban_boot_projection_generate() {
         *) echo "[NFTBan ERROR] boot projection: candidate REJECTED — existing projection preserved" >&2; return 1 ;;
     esac
 
-    # 5. atomic install
-    chmod 0640 "$tmp_out" 2>/dev/null || true
-    if ! mv -f "$tmp_out" "$out"; then
-        echo "[NFTBan ERROR] boot projection: atomic install failed: $out" >&2
+    # 5. atomic install THROUGH the existing publication authority.
+    #
+    # ⛔ DO NOT REPLACE THIS WITH `mv`. A rename PRESERVES the source file's SELinux
+    # type, so a projection published by a bare mv carries nftban_conf_t — which the
+    # distro nftables.service (nft in iptables_t) is NOT allowed to read. It fails at
+    # boot with a misleading "File not found", the FAILED_NO_FIREWALL class proven on
+    # Rocky 9.7. _firewall_publish_conf() owns the mv + mode + ownership + restorecon
+    # and verifies the resulting type is nftban_nftables_conf_t.
+    if ! _firewall_publish_conf "$tmp_out" "$out"; then
+        echo "[NFTBan ERROR] boot projection: publication failed — existing projection preserved" >&2
         return 1
     fi
+    trap - RETURN
+    rm -f "$tmp_render"
     return 0
 }
