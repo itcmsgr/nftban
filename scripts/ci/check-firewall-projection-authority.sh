@@ -226,5 +226,26 @@ else
     inf "P6 SKIPPED — $PATHAUTH or $FC absent"
 fi
 
+# ---------------------------------------------------------------------------
+# P7 — INCLUDE-WRITER SINGULARITY. The managed distro include is owned by
+# render.IntegrateSystemConf, which fences it in BEGIN/END markers so both the
+# Go writer and the postrm/%postun strip twin can remove exactly NFTBan's lines.
+# autoheal.sh used to rewrite the whole distro nftables.conf with an UNFENCED
+# include of the legacy path: invisible to both removers, destructive to
+# operator rules, and after migration it would have resurrected the legacy file
+# as a boot authority. Comments describing that history are not writers.
+# ---------------------------------------------------------------------------
+mapfile -t P7_HITS < <(grep -rn 'include[[:space:]]*"/etc/nftban' \
+    --include='*.sh' cli/ packaging/ install/ 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+    | grep -vE '^cli/lib/nftban/tests/')
+if [[ ${#P7_HITS[@]} -eq 0 ]]; then
+    ok "P7 no shell file writes an nftban distro include (single fenced authority)"
+else
+    bad "P7 a shell file emits an nftban include outside the managed marker authority:"
+    printf '         %s\n' "${P7_HITS[@]}"
+    inf "an unfenced include is invisible to BOTH removers and survives uninstall"
+fi
+
 echo "=== firewall-projection-authority: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1

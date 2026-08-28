@@ -405,33 +405,40 @@ if [ -n "$NFT_CONFIG" ]; then
     # Test if config can be loaded without errors
     NFT_CHECK=$(nft -c -f "$NFT_CONFIG" 2>&1 || true)
     if echo "$NFT_CHECK" | grep -qE "xt target|xtables compat"; then
+        # =====================================================================
+        # v1.229.12 P12-FPA — THIS NO LONGER REWRITES THE DISTRO CONFIG.
+        #
+        # It used to replace $NFT_CONFIG wholesale with a heredoc containing a
+        # bare unfenced include of the legacy NFTBan path. That was wrong three
+        # ways:
+        #
+        #   1. THIRD INCLUDE MECHANISM. The managed include is owned by
+        #      render.IntegrateSystemConf, which fences it in BEGIN/END markers.
+        #      This wrote an UNFENCED include, so neither the Go writer nor the
+        #      postrm / %postun strip twin could see or remove it.
+        #   2. DESTROYED OPERATOR CONTENT. Every non-NFTBan rule in the distro
+        #      file was replaced; a timestamped backup is not preservation.
+        #   3. HARDCODED THE LEGACY PATH. After the P12-FPA migration this would
+        #      silently RESURRECT the legacy file as a boot authority, undoing
+        #      the migration on any host that tripped this branch.
+        #
+        # Reusing the canonical authority is not possible from here — it is Go,
+        # invoked by the installer, not reachable from a shell helper. So this
+        # branch DETECTS AND REPORTS, per the rule that a helper must fail safely
+        # rather than invent a competing mechanism.
+        # ⛔ DO NOT REINSTATE AN AUTO-REWRITE HERE. Route repair through the
+        # canonical installer path, which owns the managed include block.
+        # =====================================================================
         log_warn "Detected incompatible xt target rules in $NFT_CONFIG"
-        log_info "AUTO-FIXING: Backing up and replacing config..."
-
-        # Backup original
-        cp "$NFT_CONFIG" "${NFT_CONFIG}.xt-backup.$(date +%Y%m%d%H%M%S)"
-        log_info "Backup saved to ${NFT_CONFIG}.xt-backup.*"
-
-        # Replace with clean include of NFTBan config
-        cat > "$NFT_CONFIG" << 'NFTCLEAN'
-#!/usr/sbin/nft -f
-# NFTBan v1.17.5 - Clean nftables config (auto-fixed by autoheal)
-# Original backed up with .xt-backup.* extension
-# xt target rules removed to prevent nftables.service failure
-include "/etc/nftban/nftables.conf"
-NFTCLEAN
-
-        log_info "✅ Fixed $NFT_CONFIG - xt target rules removed"
-
-        # Restart nftables service if it was failed
-        if systemctl is-failed --quiet nftables.service 2>/dev/null; then
-            log_info "Restarting nftables.service after fix..."
-            if systemctl restart nftables.service 2>/dev/null; then
-                log_info "✅ nftables.service restarted successfully"
-            else
-                log_warn "nftables.service restart failed - check: journalctl -u nftables.service"
-            fi
-        fi
+        log_warn "NOT auto-fixing: rewriting that file would discard operator rules and"
+        log_warn "  write an unfenced include outside NFTBan's managed marker block."
+        log_info "  Affected file : $NFT_CONFIG"
+        log_info "  Symptom       : nftables.service fails to load (xt target / xtables compat)"
+        log_info "  Repair        : /usr/lib/nftban/bin/nftban-installer --repair"
+        log_info "  Manual review : remove the xt target rules from $NFT_CONFIG, then"
+        log_info "                  systemctl restart nftables.service"
+        AUTOHEAL_XT_UNRESOLVED=1
+        export AUTOHEAL_XT_UNRESOLVED
     else
         log_info "✅ No incompatible xt target rules detected"
     fi

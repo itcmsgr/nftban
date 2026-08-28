@@ -186,5 +186,25 @@ func r(c string, n int) string {
 GO
 expect "F10 Go-dialect (strings.ReplaceAll) substitution is caught" "$D" 1 "P2"
 
+# --- F11 an unfenced include writer reappears ------------------------------
+# The autoheal precedent: a shell helper writing `include "/etc/nftban/..."`
+# outside the managed marker block. Invisible to the Go writer AND to the
+# postrm/%postun strip twin, so it survives uninstall and, after migration,
+# resurrects the legacy path as a boot authority.
+D=$(mk_repo)
+mkdir -p "$D/cli/lib/nftban/helpers"
+printf '%s\n' '#!/usr/bin/env bash' 'echo '"'"'include "/etc/nftban/nftables.conf"'"'"' > /etc/nftables.conf' \
+    > "$D/cli/lib/nftban/helpers/rogue_autoheal.sh"
+expect "F11 an unfenced shell include writer is caught" "$D" 1 "P7"
+
+# --- F12 a COMMENT describing the history must NOT trip P7 -----------------
+# Guard subject == guard input: prose about the defect is not the defect. Without
+# this, documenting why the rule exists would fail the rule.
+D=$(mk_repo)
+mkdir -p "$D/cli/lib/nftban/helpers"
+printf '%s\n' '#!/usr/bin/env bash' '# it used to write include "/etc/nftban/nftables.conf" here' \
+    > "$D/cli/lib/nftban/helpers/documented.sh"
+expect "F12 a comment mentioning an include does NOT trip P7" "$D" 0
+
 echo "=== firewall-projection-authority-falsifiability: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1
