@@ -148,7 +148,10 @@ else
     # so editing it turns every upgrade into an interactive prompt) live in the
     # registry WITH their reason. THE REGISTRY MAY ONLY SHRINK.
     # -----------------------------------------------------------------------
-    REGISTERED=$(grep -cvE '^[[:space:]]*(#|$)' "$ALLOW" 2>/dev/null || echo 0)
+    # grep -c prints 0 AND exits 1 when nothing matches, so `|| echo 0` would append
+    # a SECOND zero and break the arithmetic below. Take the count, ignore the status.
+    REGISTERED=$(grep -cvE '^[[:space:]]*(#|$)' "$ALLOW" 2>/dev/null) || true
+    REGISTERED=${REGISTERED:-0}
     mapfile -t P4_DIFF < <(diff <(rulecmt "$CONF") <(rulecmt "$RENDERED") | grep -E '^[<>]' || true)
     UNREG=0
     for line in "${P4_DIFF[@]}"; do
@@ -235,16 +238,58 @@ fi
 # operator rules, and after migration it would have resurrected the legacy file
 # as a boot authority. Comments describing that history are not writers.
 # ---------------------------------------------------------------------------
+# ⛔ SCAN BOTH LANGUAGES. The first version of this rule scanned only *.sh and
+# therefore passed while internal/installer/switchop/enable.go did the SAME thing
+# autoheal.sh did — back up the distro file, replace it wholesale, and write a bare
+# unfenced include. Restricting a rule to one dialect reports a false negative on
+# the twin, exactly as P2 did.
+# The canonical writer (sysconf.go) is excluded by path: it is the ONE authority,
+# and its directive lives in a const, not an emitted include line.
 mapfile -t P7_HITS < <(grep -rn 'include[[:space:]]*"/etc/nftban' \
-    --include='*.sh' cli/ packaging/ install/ 2>/dev/null \
-    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
-    | grep -vE '^cli/lib/nftban/tests/')
+    --include='*.sh' --include='*.go' cli/ packaging/ install/ internal/ cmd/ 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|//)' \
+    | grep -vE '^cli/lib/nftban/tests/' \
+    | grep -vE '^internal/installer/render/sysconf\.go:' \
+    | grep -vE '_test\.go:')
 if [[ ${#P7_HITS[@]} -eq 0 ]]; then
-    ok "P7 no shell file writes an nftban distro include (single fenced authority)"
+    ok "P7 no file outside the canonical authority writes an nftban distro include"
 else
-    bad "P7 a shell file emits an nftban include outside the managed marker authority:"
+    bad "P7 a file emits an nftban include outside the managed marker authority:"
     printf '         %s\n' "${P7_HITS[@]}"
     inf "an unfenced include is invisible to BOTH removers and survives uninstall"
+fi
+
+# ---------------------------------------------------------------------------
+# P8 — MIGRATION ATOMICITY. The distro include names one path; the runtime
+# render publishes and loads another. Today they are the same file, which is why
+# boot and runtime cannot drift. Relocating EITHER alone breaks that:
+#
+#   include -> legacy, publish -> generated   boot loads a file nothing writes (STALE)
+#   include -> generated, publish -> legacy   boot loads a file nothing created (ABSENT)
+#
+# Both are boot-time failures that no unit test would surface, so the two must
+# land in the same change. This rule compares the path inside sysconf.go's
+# IncludeDirective against the path cmd_firewall.sh publishes, and fails when
+# they diverge.
+# ---------------------------------------------------------------------------
+SYSCONF="${FPA_SYSCONF:-internal/installer/render/sysconf.go}"
+if [[ -f "$SYSCONF" && -f "$RENDER" ]]; then
+    INC_PATH=$(grep -oE 'IncludeDirective[^`]*`include "[^"]+"' "$SYSCONF" | grep -oE '"/[^"]+"' | tr -d '"' | head -1)
+    PUB_PATH=$(grep -oE 'local nftban_conf="\$\{NFTBAN_CONFIG_DIR:-/etc/nftban\}[^"]*"' "$RENDER" \
+               | grep -oE '\}[^"]*' | sed 's|^}|/etc/nftban|' | sort -u | head -1)
+    if [[ -z "$INC_PATH" || -z "$PUB_PATH" ]]; then
+        bad "P8 cannot read the include directive or the publication target — guard input shape changed"
+        inf "include='$INC_PATH' publish='$PUB_PATH'"
+    elif [[ "$INC_PATH" == "$PUB_PATH" ]]; then
+        ok "P8 include directive and runtime publication target agree ($INC_PATH)"
+    else
+        bad "P8 MIGRATION SPLIT — the boot include and the runtime publication target disagree:"
+        inf "  distro include names : $INC_PATH"
+        inf "  runtime publishes to : $PUB_PATH"
+        inf "boot would load a file the runtime no longer maintains; these must move in ONE change"
+    fi
+else
+    inf "P8 SKIPPED — $SYSCONF or $RENDER absent"
 fi
 
 echo "=== firewall-projection-authority: FAILS=$FAILS ==="

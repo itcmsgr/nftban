@@ -60,6 +60,11 @@ TPL
         "$d/install/nftables/nftables.conf.tpl" > "$d/install/nftables/nftables.conf"
     cat > "$d/cli/lib/nftban/cli/cmd_firewall.sh" <<'REN'
 #!/usr/bin/env bash
+_firewall_rebuild_target() {
+    # P8 reads the publication target from this line, so the fixture must carry it.
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    echo "$nftban_conf"
+}
 _firewall_substitute_placeholders() {
     local _ssh_port=22
     local _ct_ssh=15 _ct_http=150 _ct_mail=150
@@ -78,6 +83,11 @@ PA
 /etc/nftban(/.*)?                          gen_context(system_u:object_r:nftban_conf_t,s0)
 /etc/nftban/generated/nftban-boot\.nft  -- gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
 FC
+    mkdir -p "$d/internal/installer/render"
+    cat > "$d/internal/installer/render/sysconf.go" <<'SC'
+package render
+const IncludeDirective = `include "/etc/nftban/nftables.conf"`
+SC
     cp "$GUARD" "$d/scripts/ci/"
     printf '%s' "$d"
 }
@@ -205,6 +215,23 @@ mkdir -p "$D/cli/lib/nftban/helpers"
 printf '%s\n' '#!/usr/bin/env bash' '# it used to write include "/etc/nftban/nftables.conf" here' \
     > "$D/cli/lib/nftban/helpers/documented.sh"
 expect "F12 a comment mentioning an include does NOT trip P7" "$D" 0
+
+# --- F13 a Go include writer (the enable.go twin) --------------------------
+# P7 first scanned only *.sh and passed while switchop/enable.go did exactly what
+# autoheal.sh did. One-dialect rules produce false negatives on their twin.
+D=$(mk_repo)
+mkdir -p "$D/internal/installer/switchop"
+printf '%s\n' 'package switchop' 'var clean = `include "/etc/nftban/nftables.conf"`' \
+    > "$D/internal/installer/switchop/enable.go"
+expect "F13 a Go unfenced include writer is caught" "$D" 1 "P7"
+
+# --- F14 migration split: include moved, publication left behind -----------
+# The failure this whole lane exists to prevent — boot loading a file the runtime
+# no longer maintains. Neither half is wrong alone; the DISAGREEMENT is the defect.
+D=$(mk_repo)
+sed -i 's|include "/etc/nftban/nftables.conf"|include "/etc/nftban/generated/nftban-boot.nft"|' \
+    "$D/internal/installer/render/sysconf.go"
+expect "F14 include repointed without relocating publication is caught" "$D" 1 "P8"
 
 echo "=== firewall-projection-authority-falsifiability: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1
