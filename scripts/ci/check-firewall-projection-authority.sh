@@ -32,6 +32,10 @@ RENDER="${FPA_RENDER:-cli/lib/nftban/cli/cmd_firewall.sh}"
 ALLOW="${FPA_ALLOW:-scripts/ci/data/firewall-projection-drift.allow}"
 PATHAUTH="${FPA_PATHAUTH:-cli/lib/nftban/lib/boot_projection.sh}"
 FC="${FPA_FC:-install/selinux/nftban.fc}"
+# The Go installer is a SECOND, KNOWN substitution authority. It is declared here
+# rather than silently matched, so P2 reports "two declared authorities" instead of
+# pretending there is one. Collapsing them is P12-FPA follow-on work, not a rename.
+GORENDER="${FPA_GORENDER:-internal/installer/render/nftables.go}"
 # A CHECKER MUST NOT BE ITS OWN SUBJECT. This guard renders the schema in order to
 # compare it, and its inversion harness builds fixtures that deliberately contain the
 # violating shapes. Both are guard machinery, not the product render path, so both are
@@ -78,11 +82,25 @@ fi
 # may turn placeholders into values. Any other sed/replace of the placeholder
 # tokens reimplements the render and can drift from it.
 # ---------------------------------------------------------------------------
-mapfile -t P2_HITS < <(grep -rnE "s/__(CT_LIMIT_(SSH|HTTP|MAIL)|SSH_PORT)__/" \
+# ⛔ MATCH THE TOKEN, NOT ONE LANGUAGE'S SYNTAX. The first version of this rule
+# grepped only for the sed form `s/__TOKEN__/` and therefore PASSED while
+# internal/installer/render/nftables.go substituted the same tokens with
+# strings.ReplaceAll. A guard that can only see one dialect reports a false
+# negative on exactly the authority it exists to find, so match any line that
+# names a placeholder token alongside a replace/substitute operation.
+mapfile -t P2_HITS < <(grep -rnE "(s/__(CT_LIMIT_(SSH|HTTP|MAIL)|SSH_PORT)__/|(ReplaceAll|Replace|sub|gsub|replace)\([^)]*__(CT_LIMIT_(SSH|HTTP|MAIL)|SSH_PORT)__)" \
     --include='*.sh' --include='*.go' . 2>/dev/null \
-    | sed 's|^\./||' | grep -vE '^\.claude/' | grep -vE "^$RENDER:" | grep -vE "^$SELF:" | grep -vE "^$SELF_INV:" | grep -vE '^cli/lib/nftban/tests/')
+    | sed 's|^\./||' | grep -vE '^\.claude/' | grep -vE "^$RENDER:" | grep -vE "^$SELF:" | grep -vE "^$SELF_INV:" | grep -vE '^cli/lib/nftban/tests/' \
+    | grep -vE "^${GORENDER}:")
 if [[ ${#P2_HITS[@]} -eq 0 ]]; then
-    ok "P2 substitution happens only in the render authority ($RENDER)"
+    if [[ -f "$GORENDER" ]] && grep -qE "ReplaceAll\([^)]*__CT_LIMIT_" "$GORENDER"; then
+        bad "P2 TWO substitution authorities exist: $RENDER (shell) and $GORENDER (Go)"
+        inf "both render the same canonical schema with INDEPENDENT fallback defaults —"
+        inf "shell: see 'local _ct_ssh=... _ct_http=... _ct_mail=...'; Go: detect.DefaultCTLimits()"
+        inf "this is the duplicated-authority class P12-FPA exists to remove; collapse them, do not register an exception"
+    else
+        ok "P2 substitution happens only in the render authority ($RENDER)"
+    fi
 else
     bad "P2 placeholder substitution reimplemented outside the render authority:"
     printf '         %s\n' "${P2_HITS[@]}"

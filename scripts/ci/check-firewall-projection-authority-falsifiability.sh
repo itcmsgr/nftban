@@ -171,5 +171,20 @@ D=$(mk_repo)
 sed -i "s/nftban-boot\.nft/nftban-boot-v2.nft/" "$D/cli/lib/nftban/lib/boot_projection.sh"
 expect "F9 artifact renamed without updating the policy is caught" "$D" 1 "P6"
 
+# --- F10 Go-dialect substitution (the blind spot that shipped) -------------
+# P2 originally matched only the sed form `s/__TOKEN__/`, so a Go authority using
+# strings.ReplaceAll on the SAME tokens passed unseen. A guard that can only read
+# one dialect returns a false negative on exactly what it exists to find.
+D=$(mk_repo)
+mkdir -p "$D/internal/installer/render"
+cat > "$D/internal/installer/render/nftables.go" <<'GO'
+package render
+func r(c string, n int) string {
+    c = strings.ReplaceAll(c, "__CT_LIMIT_SSH__", strconv.Itoa(n))
+    return c
+}
+GO
+expect "F10 Go-dialect (strings.ReplaceAll) substitution is caught" "$D" 1 "P2"
+
 echo "=== firewall-projection-authority-falsifiability: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1
