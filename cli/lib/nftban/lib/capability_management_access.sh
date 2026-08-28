@@ -13,6 +13,12 @@
 [[ -n "${_NFTBAN_CAP_MGMT_ACCESS_LOADED:-}" ]] && return 0
 _NFTBAN_CAP_MGMT_ACCESS_LOADED=1
 
+# v1.229.12 P0-2: bounded non-whitespace predicate. This adapter tests
+# `nft list set` and `nft -a list chain` output for emptiness, and both are
+# ruleset-sized — exactly the input class where ${var//[[:space:]]/} costs
+# seconds. shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/capability.sh" 2>/dev/null || true
 
@@ -103,7 +109,7 @@ nftban_capability_management_access() {
     # membership is not proof of absence of membership.
     local projected="unknown" raw
     if raw=$(nft list set ${table} "$wlset" 2>/dev/null); then
-        if [[ -n "${raw//[[:space:]]/}" ]]; then
+        if nftban_has_non_whitespace "$raw"; then
             printf '%s' "$raw" | grep -qF "$addr" && projected="yes" || projected="no"
         fi
     fi
@@ -111,7 +117,7 @@ nftban_capability_management_access() {
     # --- rule order: ACCEPT must precede the managed DROP ---------------------
     local order="unknown" chain
     if chain=$(nft -a list chain ${table} input 2>/dev/null); then
-        if [[ -n "${chain//[[:space:]]/}" ]]; then
+        if nftban_has_non_whitespace "$chain"; then
             local a d
             a=$(printf '%s' "$chain" | grep -n "@${wlset}" | grep -m1 accept | cut -d: -f1)
             d=$(printf '%s' "$chain" | grep -nE "@blacklist[a-z_]*${fam#ip}" | grep -m1 drop | cut -d: -f1)

@@ -11,6 +11,12 @@
 # meta:inventory.privileges="none"
 set -uo pipefail
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
+# ENVIRONMENT IDENTITY: the adapter resolves its own dependencies through
+# NFTBAN_LIB_DIR. Leaving it unset pointed that lookup at /usr/lib/nftban, which
+# does not exist in a checkout, so lib/shell_predicates.sh silently failed to load
+# and every nft-reading branch fell through. Point it at the repo tree so the test
+# exercises the same wiring production uses.
+NFTBAN_LIB_DIR="$(cd "$LIB/.." && pwd)"; export NFTBAN_LIB_DIR
 # shellcheck source=/dev/null
 source "$LIB/capability.sh"
 # shellcheck source=/dev/null
@@ -108,6 +114,29 @@ before=$(find "$SB" -type f | sort | md5sum)
 PROJ=absent; nftban_capability_management_access "$ADDR" >/dev/null
 after=$(find "$SB" -type f | sort | md5sum)
 [[ "$before" == "$after" ]] && ok "no files created or removed by observation" || no "adapter mutated config state"
+
+# =============================================================================
+# The adapter reads nft output through nftban_has_non_whitespace, which it loads
+# through a GUARDED source (`|| true`). If that load ever fails, the predicate is
+# undefined and every nft-reading branch is skipped. That must degrade to UNKNOWN
+# — never to a confident "no". Today it does, but only because `projected` and
+# `order` happen to be initialised to "unknown"; without this assertion a future
+# refactor could initialise them to "no" and turn a load failure into a silent
+# claim that management access is NOT protected.
+#   ⛔ AN UNREADABLE DEPENDENCY IS UNKNOWN, NOT A NEGATIVE FINDING.
+# =============================================================================
+echo "== a missing predicate degrades to UNKNOWN, never to a false negative =="
+(
+  unset -f nftban_has_non_whitespace 2>/dev/null || true
+  PROJ=present
+  got=$(nftban_capability_management_access "$ADDR" 2>/dev/null)
+  verdict="${got%% *}"
+  if [[ "$verdict" == "CAPABLE" || "$verdict" == "INCAPABLE" ]]; then
+      exit 1   # asserted protection state from evidence it could not read
+  fi
+  exit 0
+) && ok "predicate absent -> never CAPABLE/INCAPABLE (degrades to UNKNOWN)" \
+   || no "predicate absent produced a CONFIDENT verdict from unreadable evidence"
 
 echo
 echo "TOTAL: pass=$pass fail=$fail"
