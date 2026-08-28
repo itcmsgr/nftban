@@ -28,6 +28,22 @@
 # =============================================================================
 
 set -Eeuo pipefail
+
+# v1.229.12 P12-FPA: SSH-port durability is a question about the artifact that
+# will actually be loaded at boot, so it must be asked of the AUTHORITATIVE boot
+# projection — not the retired /etc/nftban/nftables.conf, which is no longer
+# written or included. Falls back to the canonical literal only if the path
+# authority cannot be sourced; a missing file simply fails the grep, which is the
+# correct answer (not durable) rather than a false positive.
+nftban_update_boot_projection() {
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+    if declare -F nftban_boot_projection_path >/dev/null 2>&1; then
+        nftban_boot_projection_path
+    else
+        printf '%s/generated/nftban-boot.nft' "${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    fi
+}
 IFS=$'\n\t'
 
 # Prevent double-loading
@@ -741,7 +757,7 @@ _cmd_update_main_locked() {
             if [[ $_ssh_in_durable -eq 0 ]] && \
                [[ -f /etc/nftban/nftban.conf.local ]] && \
                grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
-               grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+               grep -qE "\\b${_ssh_port}\\b" "$(nftban_update_boot_projection)" 2>/dev/null; then
                 _ssh_in_durable=1
             fi
             # Report (per detected port)
@@ -1419,7 +1435,7 @@ _cmd_update_preflight() {
                 _ssh_durable=1
             elif [[ -f /etc/nftban/nftban.conf.local ]] && \
                  grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
-                 grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+                 grep -qE "\\b${_ssh_port}\\b" "$(nftban_update_boot_projection)" 2>/dev/null; then
                 _ssh_durable=1
             fi
             if [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 1 ]]; then
@@ -1571,7 +1587,7 @@ _cmd_update_verify() {
             _ssh_durable=1
         elif [[ -f /etc/nftban/nftban.conf.local ]] && \
              grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
-             grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+             grep -qE "\\b${_ssh_port}\\b" "$(nftban_update_boot_projection)" 2>/dev/null; then
             _ssh_durable=1
         fi
         if [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 1 ]]; then

@@ -1284,10 +1284,20 @@ _collect_ssh_port() {
         fi
         echo ""
 
-        # nftables.conf SSH port
-        echo "=== /etc/nftban/nftables.conf SSH ==="
-        if [[ -f /etc/nftban/nftables.conf ]]; then
-            grep -n 'ssh\|22\|__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null | head -5 || echo "No SSH references"
+        # Boot projection SSH port (P12-FPA: the AUTHORITATIVE artifact, not the
+        # retired /etc/nftban/nftables.conf — reporting on a file nothing loads
+        # would describe a firewall the host does not have).
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+        local _bp
+        if declare -F nftban_boot_projection_path >/dev/null 2>&1; then
+            _bp="$(nftban_boot_projection_path)"
+        else
+            _bp="${NFTBAN_CONFIG_DIR:-/etc/nftban}/generated/nftban-boot.nft"
+        fi
+        echo "=== $_bp SSH ==="
+        if [[ -f "$_bp" ]]; then
+            grep -n 'ssh\|22\|__SSH_PORT__' "$_bp" 2>/dev/null | head -5 || echo "No SSH references"
         fi
 
     } > "$ssh_dir/ssh-port.txt"
@@ -1391,19 +1401,28 @@ _collect_config_divergence() {
         [[ $dpkg_count -eq 0 ]] && echo "  None found"
         echo ""
 
-        # Placeholder check in live config
-        echo "=== Placeholder Check (nftables.conf) ==="
-        if [[ -f /etc/nftban/nftables.conf ]]; then
+        # Placeholder check on the AUTHORITATIVE boot projection (P12-FPA).
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+        local _pbp
+        if declare -F nftban_boot_projection_path >/dev/null 2>&1; then
+            _pbp="$(nftban_boot_projection_path)"
+        else
+            _pbp="${NFTBAN_CONFIG_DIR:-/etc/nftban}/generated/nftban-boot.nft"
+        fi
+        echo "=== Placeholder Check ($_pbp) ==="
+        if [[ -f "$_pbp" ]]; then
             local placeholders
-            placeholders=$(grep -cE '__SSH_PORT__|__CT_LIMIT_SSH__|__CT_LIMIT_HTTP__|__CT_LIMIT_MAIL__' /etc/nftban/nftables.conf 2>/dev/null) || placeholders=0
+            placeholders=$(grep -cE '__SSH_PORT__|__CT_LIMIT_SSH__|__CT_LIMIT_HTTP__|__CT_LIMIT_MAIL__' "$_pbp" 2>/dev/null) || true
+            placeholders=${placeholders:-0}
             if [[ "$placeholders" -gt 0 ]]; then
                 echo "  CRITICAL: $placeholders raw placeholders found — BOOT UNSAFE"
-                grep -n '__SSH_PORT__\|__CT_LIMIT_' /etc/nftban/nftables.conf 2>/dev/null
+                grep -n '__SSH_PORT__\|__CT_LIMIT_' "$_pbp" 2>/dev/null
             else
                 echo "  OK: No raw placeholders — boot safe"
             fi
         else
-            echo "  /etc/nftban/nftables.conf not found"
+            echo "  $_pbp not found"
         fi
         echo ""
 
@@ -1576,7 +1595,14 @@ _collect_boot_safety() {
         echo "# Collected: $(date -Iseconds)"
         echo ""
 
-        local nftables_conf="/etc/nftban/nftables.conf"
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+        local nftables_conf
+        if declare -F nftban_boot_projection_path >/dev/null 2>&1; then
+            nftables_conf="$(nftban_boot_projection_path)"
+        else
+            nftables_conf="/etc/nftban/generated/nftban-boot.nft"
+        fi
         local template="/usr/lib/nftban/templates/nftables.conf.tpl"
 
         # Config file exists

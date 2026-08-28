@@ -1217,16 +1217,32 @@ for obj in objects:
 # =============================================================================
 # BOOT SAFETY CHECK (v1.50.0)
 # =============================================================================
-# Verifies /etc/nftban/nftables.conf is placeholder-free and nft-valid.
+# Verifies the AUTHORITATIVE boot projection is placeholder-free and nft-valid.
 # If placeholders remain, nftables.service boot/restart fails → no firewall.
+#
+# v1.229.12 P12-FPA: the subject is /etc/nftban/generated/nftban-boot.nft, not the
+# retired /etc/nftban/nftables.conf. Checking the retired file would report on an
+# artifact nothing maintains and nothing loads — a green check for a host with no
+# boot firewall.
 
 nftban_health_check_boot_safety() {
     local status=$HEALTH_OK
     local boot_issues=()
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    # v1.229.12 P12-FPA: ONLY THE SUBJECT CHANGES. The verdict mapping below is
+    # exactly as before; what moved is which artifact is inspected. The retired
+    # /etc/nftban/nftables.conf is no longer written or included, so checking it
+    # would describe a firewall the host does not load.
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+    local nftban_conf
+    if declare -F nftban_boot_projection_path >/dev/null 2>&1; then
+        nftban_conf="$(nftban_boot_projection_path)"
+    else
+        nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/generated/nftban-boot.nft"
+    fi
 
     if [[ ! -f "$nftban_conf" ]]; then
-        boot_issues+=("WARNING: NFTBan config not found: $nftban_conf")
+        boot_issues+=("WARNING: NFTBan boot projection not found: $nftban_conf")
         status=$HEALTH_WARNING
     else
         # Check for unrendered placeholders (boot-fatal)
@@ -1241,7 +1257,7 @@ nftban_health_check_boot_safety() {
         fi
 
         # Validate config syntax (only if no placeholder issue — nft -c would fail anyway)
-        if [[ $status -eq $HEALTH_OK ]]; then
+            if [[ $status -eq $HEALTH_OK ]]; then
             local _validate_out
             if ! _validate_out=$(nft -c -f "$nftban_conf" 2>&1); then
                 boot_issues+=("CRITICAL: Live config fails nft validation — boot will fail!")
