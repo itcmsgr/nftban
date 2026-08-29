@@ -90,6 +90,69 @@ done
 [[ "$R2_BAD" -eq 0 ]] && ok "R2 every update-statement limiter declares size + timeout + flags dynamic"
 
 # ---------------------------------------------------------------------------
+# R2b — CONNCOUNT_DYNAMIC_SET (v1.229.12 P12-A02 required correction)
+#
+# R2 above scans `update @X` only, so it was BLIND to the `add @X { .. ct count
+# over N }` form that per-source connection limiting requires. That is not a
+# relaxation being added here — it is coverage R2 never had, and an unguarded
+# dynamic set is worse than a wrongly-guarded one.
+#
+# A conncount set is a DIFFERENT SEMANTIC CLASS from an accumulating rate
+# limiter, and the difference is enforced by the kernel, not by preference:
+#
+#   rate limiter   entries accumulate over time -> MUST carry a timeout or the
+#                  set grows monotonically to the 65535 cap and starts dropping
+#                  silently (the v1.228.6 meter-capacity P0, four DNS outages)
+#   conncount set  membership follows LIVE conntrack state and is reclaimed on
+#                  teardown -> nft REJECTS `timeout` on such a set outright
+#                  ("Operation not supported"), so requiring one makes the
+#                  correct rule unloadable
+#
+# ⛔ THE BOUNDED-SIZE REQUIREMENT IS NOT WAIVED. Following conntrack removes the
+# need for a timeout; it does not make the set safe to leave unbounded.
+#
+# ⛔ CLASSIFICATION IS BY THE RULE/DECLARATION RELATIONSHIP, NEVER BY NAME. A set
+# qualifies only because a rule consumes it with `ip saddr`/`ip6 saddr` + `ct
+# count`. Renaming an ordinary dynamic set cannot buy it this exception.
+# ---------------------------------------------------------------------------
+R2B_BAD=0
+R2B_SEEN=0
+for f in "$TPL" "$CONF" "$FRAG"; do
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        esc=$(printf '%s' "$name" | sed 's/[]$.*[\^]/\\&/g')
+        # The statement must genuinely be live-connection accounting keyed by source.
+        stmt=$(strip "$f" | grep -E "add @${esc}[[:space:]]*\{" | head -1)
+        if ! grep -qE '(ip6?[[:space:]]+saddr)[^}]*ct count' <<<"$stmt"; then
+            continue   # not a conncount set: R2's ordinary rules govern it
+        fi
+        R2B_SEEN=$((R2B_SEEN+1))
+        if [[ "$f" == "$FRAG" ]]; then
+            block=$(strip "$f" | grep -E "add set .*[[:space:]]${esc}[[:space:]]*\{" | head -1)
+        else
+            block=$(strip "$f" | sed -n "/^[[:space:]]*set ${esc} {/,/^[[:space:]]*}/p")
+        fi
+        if [[ -z "$block" ]]; then
+            bad "R2b $f: conncount set @$name has NO declaration in the same source"; R2B_BAD=1; continue
+        fi
+        for req in "type" "size" "dynamic"; do
+            grep -q "$req" <<<"$block" || { bad "R2b $f: conncount set $name lacks '$req'"; R2B_BAD=1; }
+        done
+        if grep -q "timeout" <<<"$block"; then
+            bad "R2b $f: conncount set $name declares 'timeout' — nft REJECTS this; the rule cannot load"
+            R2B_BAD=1
+        fi
+    done < <(strip "$f" | grep -oE 'add @[A-Za-z0-9_${}]+' | sed 's/add @//' | sort -u)
+done
+if [[ "$R2B_BAD" -eq 0 ]]; then
+    if [[ "$R2B_SEEN" -eq 0 ]]; then
+        ok "R2b no conncount sets present (rule inactive, not vacuously passing)"
+    else
+        ok "R2b $R2B_SEEN conncount set(s): type + bounded size + flags dynamic, and NO timeout"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # R3 — v4/v6 parity of DECLARED limiters, driven by the manifest pairs.
 # Pairing convention: NAME6 <-> NAME, and NAME_v6 <-> NAME_v4.
 # Fragment limiters are declared through shell variables; the alias map below
