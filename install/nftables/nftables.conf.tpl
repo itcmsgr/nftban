@@ -830,15 +830,27 @@ table ip6 nftban {
             echo-reply
         } counter name input_icmp_accept counter name total_input_accept accept comment "ICMPv6 error+echo"
 
-        # 5b. NDP — link-local only (v1.67.0)
-        # RFC 4861: NDP is inherently link-local. Non-link-local NDP is spoofed or misconfigured.
+        # 5b. NDP — RFC 4861 conformant (NDP-SOURCE-SCOPE)
+        # Hop Limit 255 is the anti-off-link control the RFC actually mandates:
+        # §6.1.1/§6.1.2/§7.1.1/§7.1.2 — a receiver MUST discard ND with Hop Limit != 255,
+        # i.e. the packet could not possibly have been forwarded by a router.
+        # Source SCOPE is not a valid filter for NS/NA/RS:
+        #   §4.3 NS — source is any address assigned to the sending interface, or :: during DAD
+        #   §4.4 NA — source is any address assigned to the sending interface
+        #   §4.1 RS — source is an assigned address, or :: when none is configured yet
+        #   §4.2 RA — source MUST be link-local, so that restriction is KEPT, below
+        # The previous "fe80::/10 for all four types" rule dropped legitimate global-sourced
+        # NS/NA from same-subnet neighbours and all DAD solicitations, so an on-link IPv6
+        # peer could not resolve this host and TCP never established. Measured, not theorised.
         # nd-redirect intentionally excluded — unnecessary for servers, attack surface.
-        ip6 saddr fe80::/10 meta l4proto ipv6-icmp icmpv6 type {
-            nd-router-solicit,
-            nd-router-advert,
+        ip6 hoplimit 255 meta l4proto ipv6-icmp icmpv6 type {
             nd-neighbor-solicit,
-            nd-neighbor-advert
-        } counter name input_icmp_accept counter name total_input_accept accept comment "NDP link-local only"
+            nd-neighbor-advert,
+            nd-router-solicit
+        } counter name input_icmp_accept counter name total_input_accept accept comment "NDP NS/NA/RS — any source, hop-limit 255 (RFC 4861)"
+        ip6 hoplimit 255 ip6 saddr fe80::/10 meta l4proto ipv6-icmp icmpv6 type {
+            nd-router-advert
+        } counter name input_icmp_accept counter name total_input_accept accept comment "NDP RA — link-local source only (RFC 4861 4.2)"
 
         # ── Phase 4: DETECT ───────────────────────────────────────
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
