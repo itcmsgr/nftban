@@ -91,7 +91,10 @@ _redact_unavailable() {
 _support_write_lifecycle_timelines() {
     local root="$1" d="$1/incident"
     local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
-    mkdir -p "$d" || return 0
+    if ! mkdir -p "$d"; then
+        _support_log WARN "Lifecycle timelines NOT collected (cannot create $d)"
+        return 0
+    fi
 
     {
         _support_correlation_header "TIMELINE 1 — RULESET LIFECYCLE"
@@ -100,7 +103,7 @@ _support_write_lifecycle_timelines() {
         echo
         if [[ -r "$log" ]]; then
             grep -nE 'render|nft -f|apply|Post-rebuild validation|PRE state|POST state|rollback|snapshot' "$log" \
-                | tail -40
+                | tail -40 | _support_scrub_stream
         else
             echo "UNAVAILABLE: $log not readable"
         fi
@@ -126,19 +129,25 @@ _support_write_lifecycle_timelines() {
         echo "installer_global_budget=$(_support_installer_budget)"
         echo "terminal_state=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2)"
         echo
+        if [[ ! -r "$log" ]]; then
+            echo "UNAVAILABLE: $log not readable — no phase markers or cancellation records."
+        fi
+        # The attribution warning is emitted UNCONDITIONALLY. It previously sat inside the
+        # log-present branch, so it vanished on exactly the degraded hosts where a reader is
+        # most likely to mis-attribute a timeout to a phase that never ran.
+        echo
+        echo "## ⛔ ATTRIBUTION WARNING"
+        echo "# The installer tests context expiry when ENTERING a phase. An error naming"
+        echo "# phase X can therefore mean 'the deadline had already expired before X"
+        echo "# started', NOT 'X overran'. Cross-check the phase that was RUNNING using the"
+        echo "# rebuild start/end pairs in phase_timeline.txt before attributing blame."
+        echo
         if [[ -r "$log" ]]; then
             echo "## phase markers, last run"
-            grep -E '\[PHASE\]|Phase:' "$log" | tail -20
+            grep -E '\[PHASE\]|Phase:' "$log" | tail -20 | _support_scrub_stream
             echo
             echo "## cancellation / deadline observations"
-            grep -nE 'timed out or cancelled|context deadline|DeadlineExceeded|cancelled' "$log" | tail -10
-            echo
-            echo "## ⛔ ATTRIBUTION WARNING"
-            echo "# The installer tests context expiry when ENTERING a phase. An error naming"
-            echo "# phase X can therefore mean 'the deadline had already expired before X"
-            echo "# started', NOT 'X overran'. Cross-check the phase that was RUNNING using"
-            echo "# the rebuild start/end pairs in phase_timeline.txt before attributing"
-            echo "# blame to the named phase."
+            grep -nE 'timed out or cancelled|context deadline|DeadlineExceeded|cancelled' "$log" | tail -10 | _support_scrub_stream
         fi
     } > "$d/timeline_installer_run.txt" 2>&1
 
@@ -152,22 +161,43 @@ _support_write_lifecycle_timelines() {
 # collection failed. During the srv3 incident that ambiguity cost real time.
 _support_write_manifest() {
     local root="$1"
+    # ⛔ APPEND, never overwrite. The pre-existing MANIFEST.txt carries the bundle ID and
+    # the "may contain sensitive information — review before sharing publicly" warning.
+    # Truncating it silently deleted that warning while --help still advertised it.
+    local tmp
+    tmp=$(mktemp "${root}/.manifest.XXXXXX") || return 0
     {
-        echo "# NFTBan support bundle manifest"
+        echo
+        echo "# === COLLECTION CENSUS (v1.229.12) ==="
         echo "generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "host=$(hostname -s 2>/dev/null)"
         echo "nftban_version=$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo UNKNOWN)"
-        echo "nft_version=$(nft --version 2>/dev/null | awk '{print $2}')"
+        echo "nft_version=$(nft --version 2>/dev/null | awk '{print $2}' || echo UNAVAILABLE)"
         echo "kernel=$(uname -r)"
-        echo "install_state=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2)"
+        echo "install_state=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2 || echo UNKNOWN)"
         echo
         echo "# files collected (path<TAB>bytes)"
         find "$root" -type f -printf '%P\t%s\n' 2>/dev/null | sort
         echo
-        echo "# EMPTY files — collected but produced no content (distinguish from absent)"
+        echo "# EMPTY — collected but produced no content"
         find "$root" -type f -empty -printf '%P\n' 2>/dev/null | sort
-    } > "$root/MANIFEST.txt" 2>&1
-    _support_log OK "Bundle manifest (contents + empty-file census)"
+        echo
+        echo "# UNAVAILABLE / FAILED — sections that declared they could not collect."
+        echo "# An absent file is ambiguous; these are the ones that SAID SO."
+        grep -rlE '^(UNAVAILABLE|# UNAVAILABLE)|=UNKNOWN|Command failed with exit code' "$root" 2>/dev/null \
+            | sed "s|^$root/||" | sort || true
+    } > "$tmp"
+    # Concatenate AFTER the census is fully written, so the manifest's own recorded size is
+    # the final one. Writing find output into the file being written made it report its own
+    # partial length (measured: claimed 202 bytes, actual 6053).
+    cat "$tmp" >> "$root/MANIFEST.txt" 2>/dev/null
+    rm -f -- "$tmp"
+    # Now correct this file's own entry, which was necessarily stale when written.
+    local self
+    self=$(stat -c%s "$root/MANIFEST.txt" 2>/dev/null || echo 0)
+    printf '# MANIFEST.txt final size: %s bytes (its own entry above predates this line)\n' "$self" \
+        >> "$root/MANIFEST.txt"
+    _support_log OK "Bundle manifest (collected / empty / unavailable census)"
 }
 
 # _support_correlation_header <label>
@@ -219,7 +249,10 @@ _support_correlation_header() {
 _support_collect_incident_evidence() {
     local root="$1"
     local d="$root/incident"
-    mkdir -p "$d" || return 0
+    if ! mkdir -p "$d"; then
+        _support_log WARN "Incident evidence NOT collected (cannot create $d)"
+        return 0
+    fi
 
     # ---- A: phase timing, budget, and the deadline moment ------------------------
     {
@@ -235,7 +268,7 @@ _support_collect_incident_evidence() {
         if [[ -r "$log" ]]; then
             echo "# phase markers (start/end/duration/exit), newest run last"
             grep -E '\[PHASE\]|Phase:|running nftban firewall rebuild|firewall rebuild --install-context|timed out or cancelled|phase .* failed' "$log" \
-                | tail -80
+                | tail -80 | _support_scrub_stream
             echo
             echo "# rebuild durations (start -> end), computed"
             # A start with no matching end must be reported as DANGLING, never paired
@@ -253,7 +286,7 @@ _support_collect_incident_evidence() {
                   sk=0
               }
               END { if (sk) printf "rebuild_start=%s rebuild_end=DANGLING exit=UNKNOWN (no end line; run interrupted or log rotated)\n", start }
-            ' "$log" | tail -10
+            ' "$log" | tail -10 | _support_scrub_stream
         else
             echo "# UNAVAILABLE: $log not readable"
         fi
@@ -265,13 +298,28 @@ _support_collect_incident_evidence() {
         echo "# Live chain inventory — identities, not just counts."
         echo "# A count of 6 is weak evidence; knowing the 6 survivors are the base"
         echo "# chains and every module chain is absent is strong evidence."
-        local fam
-        for fam in ip ip6; do
-            echo "## table $fam nftban"
-            nft list table "$fam" nftban 2>/dev/null \
-                | awk '/^\t*chain [a-z_0-9]+ \{/ {gsub(/[\t{]/,""); print "  chain: " $2}'
-            echo "  chain_count=$(nft list table "$fam" nftban 2>/dev/null | grep -cE '^[[:space:]]*chain ')"
-        done
+        if ! command -v nft >/dev/null 2>&1; then
+            echo "UNAVAILABLE: nft not present — chain inventory NOT collected."
+            echo "# This is NOT 'zero chains'. A tool failure must never be rendered as"
+            echo "# evidence that protections were destroyed."
+        else
+            local fam out rc
+            for fam in ip ip6; do
+                echo "## table $fam nftban"
+                out=$(nft list table "$fam" nftban 2>&1); rc=$?
+                if [[ $rc -ne 0 ]]; then
+                    # ⛔ A failed query is UNKNOWN, never zero. `$(... | grep -c)` returns 0
+                    # for BOTH "empty table" and "nft failed", and this file's own comment
+                    # calls zero module chains the degraded signature — so a tool failure
+                    # would read as proof the firewall was flattened.
+                    echo "  chain_count=UNKNOWN (nft query failed, rc=$rc)"
+                    echo "  query_error=$(printf '%s' "$out" | head -1)"
+                    continue
+                fi
+                printf '%s\n' "$out" | awk '/^\t*chain [a-z_0-9]+ \{/ {gsub(/[\t{]/,""); print "  chain: " $2}'
+                echo "  chain_count=$(printf '%s\n' "$out" | grep -cE '^[[:space:]]*chain ')"
+            done
+        fi
         echo
         echo "# base chains are input/forward/output per family (6 total). Anything"
         echo "# beyond that is module-contributed; zero module chains after a rebuild"
@@ -287,11 +335,16 @@ _support_collect_incident_evidence() {
         _support_correlation_header "PARSER REJECTIONS"
         echo "# Feed/list parser rejections, classified. Bounded samples, never raw feeds."
         local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
-        local n=0
+        # ⛔ `grep -c ... || echo 0` emits BOTH greps' output when there are no matches,
+        # producing "total_rejections=0" followed by a stray "0". And an unreadable log
+        # must yield UNKNOWN, never a fabricated zero.
         if [[ -r "$log" ]]; then
-            n=$(grep -c 'skip unparseable element' "$log" 2>/dev/null || echo 0)
+            local n
+            n=$(grep -c 'skip unparseable element' "$log" 2>/dev/null) || n=0
+            echo "total_rejections=$n"
+        else
+            echo "total_rejections=UNKNOWN (installer.log not readable — this is NOT zero)"
         fi
-        echo "total_rejections=$n"
         echo
         echo "# by input class (heuristic: dash range vs other)"
         if [[ -r "$log" ]]; then
@@ -323,10 +376,9 @@ _support_installer_budget() {
         b=$(grep -oE 'global (budget|timeout)=[0-9]+[a-z]*' "$log" 2>/dev/null | tail -1)
         [[ -n "$b" ]] && { echo "${b#*=}"; return 0; }
     fi
-    echo "UNKNOWN — the installer does not report its global wall-clock budget."
-    echo "  Without it, a run that FAILED purely by exceeding the budget is"
-    echo "  indistinguishable from one whose operations actually failed."
-    echo "  Tracked as part of the installer deadline fix (defect A)."
+    # Single line: this is consumed as key=value. A multi-line value made
+    # terminal_state= look nested inside the budget block.
+    echo "UNKNOWN (installer does not log its global wall-clock budget; a run that failed purely by exceeding it is then indistinguishable from one whose operations failed)"
 }
 
 _support_log() {
@@ -2236,13 +2288,16 @@ EOF
 
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "  Sending this to support:
+        echo "$(if [[ -z "${email_recipient:-}" ]]; then cat <<'NOMAIL'
+  Sending this to support:
     This bundle was NOT emailed — no address was given, which is fine.
       - to have NFTBan send it:  nftban support --email you@example.com
       - to send it yourself:     attach the .tar.gz path printed above
     If your server cannot send mail (no MTA, relay blocked, or policy), use the
     second option. Nothing here requires the server to send anything.
 
+NOMAIL
+fi)
   Next steps:"
         echo "    1. Review the bundle for sensitive data"
         echo "    2. Attach to your GitHub issue or support request"
@@ -2403,7 +2458,10 @@ nftban_cmd_support() {
                 shift
                 ;;
             --output|-o)
-                if [[ -n "${2:-}" ]]; then
+                # Must not swallow a following option: `--output --network` previously set
+                # the output dir to "--network", dropped the real flag, and died with a
+                # misleading tarball error. The --email branch already guards this.
+                if [[ -n "${2:-}" && ! "${2:-}" =~ ^- ]]; then
                     SUPPORT_OUTPUT_DIR="$2"
                     shift 2
                 else
