@@ -52,6 +52,18 @@ const RebuildResultSchemaSupported = "1"
 // not weaken the contract (uniqueness, atomic rename and operation_id binding are unchanged).
 var rebuildResultBaseDir = "/run/nftban/rebuild-results"
 
+// SetRebuildResultBaseDirForTest overrides the publish directory and returns a restore
+// func. The variable above exists to be overridden — CI has no writable /run/nftban, so a
+// hardcoded path fails there while passing locally as root — but it is package-private,
+// which leaves out-of-package callers (cmd/nftban-installer end-to-end tests that drive
+// runInstall) unable to use it. This is a TEST AFFORDANCE ONLY: it changes the directory,
+// never the protocol. Uniqueness, atomic rename and operation_id binding are unchanged.
+func SetRebuildResultBaseDirForTest(dir string) func() {
+	old := rebuildResultBaseDir
+	rebuildResultBaseDir = dir
+	return func() { rebuildResultBaseDir = old }
+}
+
 // RebuildDisposition is the SHELL's report about its own transaction.
 type RebuildDisposition string
 

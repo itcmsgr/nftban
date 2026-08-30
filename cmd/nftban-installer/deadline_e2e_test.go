@@ -29,6 +29,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -58,6 +59,12 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 	dir := t.TempDir()
 	t.Setenv("NFTBAN_MIN_DISK_FREE_MB", "1")
 	m.Files["/etc/ssh/sshd_config"] = []byte("Port 22\n")
+
+	// The rebuild publishes its result record under /run/nftban/rebuild-results, which is
+	// not writable in CI. Without this the Switch phase fails with "cannot allocate rebuild
+	// result directory" and every case below fails for a reason unrelated to deadlines —
+	// passing locally as root and failing in CI.
+	t.Cleanup(switchop.SetRebuildResultBaseDirForTest(t.TempDir()))
 
 	// Satisfy the Prepare dependency gate. WITHOUT THIS the run dies in Prepare with
 	// FAILED_RENDER and never reaches Switch — every assertion below would then pass
