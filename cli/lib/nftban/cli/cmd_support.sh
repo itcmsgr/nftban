@@ -76,6 +76,73 @@ _redact_unavailable() {
 # =============================================================================
 
 
+# _support_write_lifecycle_timelines <bundle_root>
+#
+# v1.229.12 GA-hardening. Two INDEPENDENT timelines, because conflating them is
+# what made the srv3 incident unreadable:
+#
+#   RULESET LIFECYCLE  render -> apply -> validation -> rollback -> final live state
+#   INSTALLER RUN      phase -> duration -> exit -> deadline/cancellation -> verdict
+#
+# They can disagree, and the disagreement is the diagnosis. srv3: the ruleset
+# lifecycle completed cleanly (render ok, apply ok, live state healthy) while the
+# installer run reported a terminal failure. Only side-by-side does that read as
+# "false verdict" rather than "firewall broken".
+_support_write_lifecycle_timelines() {
+    local root="$1" d="$1/incident"
+    local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+    mkdir -p "$d" || return 0
+
+    {
+        echo "# TIMELINE 1 — RULESET LIFECYCLE"
+        echo "# render -> apply -> validation -> rollback -> final live state"
+        echo
+        if [[ -r "$log" ]]; then
+            grep -nE 'render|nft -f|apply|Post-rebuild validation|PRE state|POST state|rollback|snapshot' "$log" \
+                | tail -40
+        else
+            echo "UNAVAILABLE: $log not readable"
+        fi
+        echo
+        echo "## final live state (observed now, not from logs)"
+        local fam
+        for fam in ip ip6; do
+            echo "  $fam nftban chains=$(nft list table "$fam" nftban 2>/dev/null | grep -cE '^[[:space:]]*chain ')" \
+                 "rules=$(nft list table "$fam" nftban 2>/dev/null | grep -cE '^[[:space:]]+(ct|ip|ip6|tcp|udp|meta|iif|counter)')"
+        done
+        echo "  nftables_service=$(systemctl is-active nftables 2>/dev/null)"
+        echo "  nftband_service=$(systemctl is-active nftband 2>/dev/null)"
+        echo
+        echo "# READING THIS: a healthy final live state alongside a terminal installer"
+        echo "# verdict does NOT mean the host is unprotected. Compare with TIMELINE 2."
+    } > "$d/timeline_ruleset_lifecycle.txt" 2>&1
+
+    {
+        echo "# TIMELINE 2 — INSTALLER RUN"
+        echo "# phase -> duration -> exit -> deadline/cancellation -> terminal verdict"
+        echo
+        echo "installer_global_budget=$(_support_installer_budget)"
+        echo "terminal_state=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2)"
+        echo
+        if [[ -r "$log" ]]; then
+            echo "## phase markers, last run"
+            grep -E '\[PHASE\]|Phase:' "$log" | tail -20
+            echo
+            echo "## cancellation / deadline observations"
+            grep -nE 'timed out or cancelled|context deadline|DeadlineExceeded|cancelled' "$log" | tail -10
+            echo
+            echo "## ⛔ ATTRIBUTION WARNING"
+            echo "# The installer tests context expiry when ENTERING a phase. An error naming"
+            echo "# phase X can therefore mean 'the deadline had already expired before X"
+            echo "# started', NOT 'X overran'. Cross-check the phase that was RUNNING using"
+            echo "# the rebuild start/end pairs in phase_timeline.txt before attributing"
+            echo "# blame to the named phase."
+        fi
+    } > "$d/timeline_installer_run.txt" 2>&1
+
+    _support_log OK "Lifecycle timelines (ruleset lifecycle + installer run, kept separate)"
+}
+
 # _support_write_manifest <bundle_root>
 #
 # Records what the bundle CONTAINS and, as importantly, what it could NOT collect.
@@ -2038,6 +2105,7 @@ _cmd_support_bundle() {
     # v1.229.12: incident evidence + manifest, collected LAST so the manifest
     # reflects everything above it.
     _support_collect_incident_evidence "$bundle_dir"
+        _support_write_lifecycle_timelines "$bundle_dir"
     _support_write_manifest "$bundle_dir"
 
     local output_file="$SUPPORT_OUTPUT_DIR/${bundle_name}.tar.gz"
