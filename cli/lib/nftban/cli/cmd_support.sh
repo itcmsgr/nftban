@@ -267,7 +267,11 @@ _support_collect_incident_evidence() {
         local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
         if [[ -r "$log" ]]; then
             echo "# phase markers (start/end/duration/exit), newest run last"
-            grep -E '\[PHASE\]|Phase:|running nftban firewall rebuild|firewall rebuild --install-context|timed out or cancelled|phase .* failed' "$log" \
+            # 'exempt by policy' and 'granting a single fresh budget' are the lines that
+            # explain WHY a run continued past an exhausted budget. Without them a bundle
+            # shows a >budget rebuild next to a success and leaves the reader to guess
+            # whether the deadline logic worked or was simply not reached.
+            grep -E '\[PHASE\]|Phase:|running nftban firewall rebuild|firewall rebuild --install-context|timed out or cancelled|phase .* failed|exempt operation|exempt by policy|granting a single fresh budget|deadline expired after phase' "$log" \
                 | tail -80 | _support_scrub_stream
             echo
             echo "# rebuild durations (start -> end), computed"
