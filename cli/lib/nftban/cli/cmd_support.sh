@@ -94,6 +94,7 @@ _support_write_lifecycle_timelines() {
     mkdir -p "$d" || return 0
 
     {
+        _support_correlation_header "TIMELINE 1 — RULESET LIFECYCLE"
         echo "# TIMELINE 1 — RULESET LIFECYCLE"
         echo "# render -> apply -> validation -> rollback -> final live state"
         echo
@@ -118,6 +119,7 @@ _support_write_lifecycle_timelines() {
     } > "$d/timeline_ruleset_lifecycle.txt" 2>&1
 
     {
+        _support_correlation_header "TIMELINE 2 — INSTALLER RUN"
         echo "# TIMELINE 2 — INSTALLER RUN"
         echo "# phase -> duration -> exit -> deadline/cancellation -> terminal verdict"
         echo
@@ -168,6 +170,34 @@ _support_write_manifest() {
     _support_log OK "Bundle manifest (contents + empty-file census)"
 }
 
+# _support_correlation_header <label>
+#
+# Every evidence file carries this. A technically correct bundle can still MISLEAD if a
+# reader takes rotated logs and a freshly-observed live state as one incident. The header
+# states what each file is bound to, so "old log + current live state" cannot be read as a
+# single coherent story by accident.
+_support_correlation_header() {
+    local label="$1"
+    local sd="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
+    echo "# === $label ==="
+    echo "# collected_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)   (observation time, NOT incident time)"
+    echo "# host=$(hostname -s 2>/dev/null)"
+    echo "# nftban_version=$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo UNKNOWN)"
+    echo "# install_state=$(grep -m1 '^INSTALL_STATE=' "$sd" 2>/dev/null | cut -d= -f2 || echo UNKNOWN)"
+    echo "# install_state_timestamp=$(grep -m1 '^INSTALL_TIMESTAMP=' "$sd" 2>/dev/null | cut -d= -f2 || echo UNKNOWN)"
+    # NOTE: `ls ... | head -1 || echo NONE` does NOT work — head exits 0 on empty input,
+    # so the fallback never fires and the field renders blank. A blank field is exactly
+    # the empty-vs-unavailable ambiguity this bundle exists to eliminate.
+    local _rid
+    _rid=$(ls -t "${NFTBAN_LOG_DIR:-/var/log/nftban}/update-runs" 2>/dev/null | head -1)
+    echo "# latest_run_id=${_rid:-NONE (no per-run forensic records on this host)}"
+    echo "#"
+    echo "# ⛔ CORRELATION: log-derived lines below carry their OWN timestamps. Where a"
+    echo "# section reports LIVE state it is labelled as observed at collected_at above."
+    echo "# Do not read a log line and a live observation as the same moment."
+    echo
+}
+
 # _support_collect_incident_evidence <bundle_root>
 #
 # v1.229.12 — INCIDENT EVIDENCE. Added after a production upgrade failure (srv3,
@@ -193,6 +223,7 @@ _support_collect_incident_evidence() {
 
     # ---- A: phase timing, budget, and the deadline moment ------------------------
     {
+        _support_correlation_header "PHASE TIMELINE"
         echo "# Installer phase timeline — reconstructed from installer.log"
         echo "# A phase that never STARTED cannot have timed out. The installer checks"
         echo "# context expiry when ENTERING a phase, so the phase named in a timeout"
@@ -207,14 +238,22 @@ _support_collect_incident_evidence() {
                 | tail -80
             echo
             echo "# rebuild durations (start -> end), computed"
+            # A start with no matching end must be reported as DANGLING, never paired
+            # with a later run's end. Silently pairing across runs would fabricate a
+            # duration — the exact class of error this bundle exists to prevent.
             awk '
-              /running nftban firewall rebuild/ { split($1,a,"T"); start=$1; sk=1; next }
+              /running nftban firewall rebuild/ {
+                  if (sk) printf "rebuild_start=%s rebuild_end=DANGLING exit=UNKNOWN (no end line; run interrupted or log rotated)\n", start
+                  start=$1; sk=1; next
+              }
               sk && /firewall rebuild --install-context/ {
                   e="?"
                   if (match($0, /exit=-?[0-9]+/)) e = substr($0, RSTART+5, RLENGTH-5)
                   printf "rebuild_start=%s rebuild_end=%s exit=%s\n", start, $1, e
                   sk=0
-              }' "$log" | tail -10
+              }
+              END { if (sk) printf "rebuild_start=%s rebuild_end=DANGLING exit=UNKNOWN (no end line; run interrupted or log rotated)\n", start }
+            ' "$log" | tail -10
         else
             echo "# UNAVAILABLE: $log not readable"
         fi
@@ -222,6 +261,7 @@ _support_collect_incident_evidence() {
 
     # ---- B: firewall topology, structured, with chain identities ----------------
     {
+        _support_correlation_header "CHAIN INVENTORY"
         echo "# Live chain inventory — identities, not just counts."
         echo "# A count of 6 is weak evidence; knowing the 6 survivors are the base"
         echo "# chains and every module chain is absent is strong evidence."
@@ -244,6 +284,7 @@ _support_collect_incident_evidence() {
 
     # ---- C: parser rejections, classified and counted ---------------------------
     {
+        _support_correlation_header "PARSER REJECTIONS"
         echo "# Feed/list parser rejections, classified. Bounded samples, never raw feeds."
         local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
         local n=0
