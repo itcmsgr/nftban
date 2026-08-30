@@ -19,6 +19,7 @@
 package main
 
 import (
+	"regexp"
 	"context"
 	"fmt"
 	"os"
@@ -48,6 +49,77 @@ import (
 
 // globalTimeout is the maximum wall-clock time for the entire installer run.
 const globalTimeout = 300 * time.Second
+
+// formatGlobalBudgetLine renders the budget evidence line. Its SHAPE is a cross-component
+// contract: cmd_support.sh (_support_installer_budget) greps installer.log for
+//     global (budget|timeout)=[0-9]+[a-z]*
+// and reports UNKNOWN when it finds nothing. Changing this wording without updating that
+// collector silently re-blinds the support bundle, which is how the srv3 incident became
+// undiagnosable in the first place. Pinned by TestGlobalBudgetIsLoggedInCollectorForm.
+func formatGlobalBudgetLine(budget time.Duration, deadline time.Time) string {
+	return fmt.Sprintf("installer global budget=%ds deadline=%s",
+		int(budget.Seconds()), deadline.UTC().Format(time.RFC3339))
+}
+
+// matchesCollectorBudgetRegex mirrors the collector's pattern exactly.
+func matchesCollectorBudgetRegex(line string) bool {
+	return regexp.MustCompile(`global (budget|timeout)=[0-9]+[a-z]*`).MatchString(line)
+}
+
+// deadlineOutcome is the decision taken when the installer's context has expired at a
+// phase boundary. Extracted as a pure function so every timeout/cancellation class can be
+// exercised directly: the production incident showed this decision has more cases than it
+// appears, and getting it wrong changes --repair behaviour, not just a log line.
+type deadlineOutcome struct {
+	Fail       bool   // fail the run now
+	GrantCredit bool  // continue under a fresh bounded budget (single-shot)
+	Message    string // operator-facing attribution
+	Reason     string // persisted FAILURE_REASON
+}
+
+// decideOnExpiry answers: the budget is gone — is this a real failure?
+//
+//	lastRan   the phase that actually EXECUTED ("none" if none did)
+//	next      the phase about to be entered — it has NOT started and must never be blamed
+//	pd        run state, carrying any policy-exempt operation record
+//	credited  whether a credit was already granted this run (single-shot)
+//
+// The credit exists because switchop.Rebuild runs on context.Background() by policy, so it
+// can consume the entire budget while succeeding. Failing a run for that is a false
+// verdict. The credit is granted ONLY for an operation that has already RETURNED
+// SUCCESSFULLY — never one still running, which would be unbounded by construction — and
+// at most once per run.
+func decideOnExpiry(lastRan, next string, pd *phaseData, credited bool) deadlineOutcome {
+	if !credited && exemptOpSucceeded(pd) {
+		return deadlineOutcome{
+			GrantCredit: true,
+			Message: fmt.Sprintf("installer budget exceeded during %s, which is exempt by "+
+				"policy and completed successfully (duration=%s); granting a single fresh "+
+				"budget of %ds for the remaining phases",
+				pd.exemptOpName, pd.exemptOpDuration.Round(time.Second),
+				int(postExemptBudget.Seconds())),
+		}
+	}
+	return deadlineOutcome{
+		Fail: true,
+		Message: fmt.Sprintf("installer deadline expired after phase %s; phase %s was not entered",
+			lastRan, next),
+		Reason: "deadline_expired_after_" + lastRan,
+	}
+}
+
+// postExemptBudget bounds the phases that follow a policy-exempt operation which
+// overran the global budget. It is deliberately NOT "no deadline": Configure and
+// Validate contain only short bounded operations, so a fresh bounded tail keeps the
+// installer terminating while no longer failing a run whose work all succeeded.
+const postExemptBudget = 120 * time.Second
+
+// exemptOpSucceeded reports whether a policy-exempt (deadline-immune) operation ran to
+// SUCCESSFUL completion during this run. Credit is granted only for a completed
+// operation — never for one still running, which would be unbounded by construction.
+func exemptOpSucceeded(pd *phaseData) bool {
+	return pd != nil && pd.exemptOpName != "" && pd.exemptOpSucceeded
+}
 
 func main() {
 	cfg := parseFlags()
@@ -122,6 +194,16 @@ func main() {
 	// Global timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)
 	defer cancel()
+
+	// Log the budget as structured evidence. Until this existed, a run could FAIL purely
+	// by exhausting the budget while every operation inside it succeeded, and nothing on
+	// the host recorded what the budget WAS — so `nftban support` could only report
+	// UNKNOWN and an operator could not tell a false verdict from a real failure.
+	// The text matches the collector's regex in cmd_support.sh (_support_installer_budget):
+	//     global (budget|timeout)=[0-9]+[a-z]*
+	// Changing this wording without updating that collector re-blinds the support bundle.
+	installerDeadline, _ := ctx.Deadline()
+	log.Info("%s", formatGlobalBudgetLine(globalTimeout, installerDeadline))
 
 	// Handle signals
 	sigCh := make(chan os.Signal, 1)
@@ -412,16 +494,52 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 		{state.PhaseValidate, "Validate", phaseValidate},
 	}
 
+	// lastRan is the phase that actually EXECUTED. The deadline check below runs when
+	// ENTERING a phase, so the phase in hand has not started and must never be blamed.
+	lastRan := "none"
+	// budgetCredited is single-shot. A credit may be granted at most ONCE per run, and
+	// only for an operation that has ALREADY RETURNED SUCCESSFULLY. Evaluating a credit
+	// while an operation is still running would be unbounded by construction.
+	budgetCredited := false
+
 	for _, p := range phases {
-		// Check context cancellation
 		if ctx.Err() != nil {
-			log.Error("installer timed out or cancelled during phase %s", p.name)
-			sf.Transition(state.StateFailedRebuild, p.phase, "timeout")
-			if lb != nil {
-				lb.observeResult(sf)
+			// An operation the installer deliberately exempts from the global budget
+			// (switchop.Rebuild runs on context.Background() by policy, since 219bd781)
+			// can consume the whole budget while succeeding. Failing the run for that is
+			// a FALSE VERDICT: measured on a production host, a 318s rebuild returned
+			// exit=0 against a 300s budget and the run was recorded FAILED_REBUILD with a
+			// healthy firewall. Worse, ResumePhase(FAILED_REBUILD) = PhaseSwitch, so
+			// --repair then re-runs the entire Switch phase, including another full
+			// rebuild, to recover from a run in which nothing failed.
+			d := decideOnExpiry(lastRan, p.name, &globalPhaseData, budgetCredited)
+			if d.GrantCredit {
+				budgetCredited = true
+				log.Info("%s", d.Message)
+				// A FRESH BOUNDED budget, never "no deadline". runInstall receives ctx but
+				// not its cancel; derive one locally. The original deadline is already past.
+				var freshCancel context.CancelFunc
+				ctx, freshCancel = context.WithTimeout(context.Background(), postExemptBudget)
+				defer freshCancel()
+			} else {
+				log.Error("%s", d.Message)
+				// Transition returns a NON-NIL error for any failed state BY DESIGN — that
+				// sentinel is what stops the phase runner — so non-nil here is expected and
+				// is not itself a defect. It can ALSO carry a genuine WriteAtomic failure,
+				// and that case is otherwise invisible: report() renders the IN-MEMORY
+				// state, so a failed write would show the right verdict on screen and leave
+				// the wrong one on disk — precisely the state-truth problem this change
+				// exists to fix. Log it so the log carries what the state file may not.
+				if err := sf.Transition(state.StateFailedRebuild, p.phase, d.Reason); err != nil {
+					log.Debug("terminal transition returned: %v", err)
+				}
+				if lb != nil {
+					lb.observeResult(sf)
+				}
+				return report(sf, log)
 			}
-			return report(sf, log)
 		}
+		lastRan = p.name
 
 		log.Phase(p.name)
 		if err := p.fn(ctx, exec, sf, log); err != nil {
@@ -518,6 +636,8 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 
 	started := false
 	lastName := ""
+	lastRepairRan := "none"
+
 	for _, p := range phases {
 		if p.phase == startPhase {
 			started = true
@@ -527,9 +647,25 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 		}
 
 		if ctx.Err() != nil {
-			log.Error("installer timed out during repair phase %s", p.name)
+			// The install path writes a terminal state here; repair wrote NOTHING, leaving
+			// whatever state was already on disk. That asymmetry means a repair killed by
+			// the deadline is indistinguishable from a repair that never started. Name the
+			// phase that RAN, as above, and record the outcome.
+			log.Error("installer deadline expired during repair after phase %s; phase %s was not entered",
+				lastRepairRan, p.name)
+// Transition returns a NON-NIL error for any failed state BY DESIGN — that
+			// sentinel is what stops the phase runner — so non-nil here is expected and
+			// is not itself a defect. It can ALSO carry a genuine WriteAtomic failure,
+			// and that case is otherwise invisible: report() renders the IN-MEMORY
+			// state, so a failed write would show the right verdict on screen and leave
+			// the wrong one on disk — precisely the state-truth problem this change
+			// exists to fix. Log it so the log carries what the state file may not.
+			if err := sf.Transition(state.StateFailedRebuild, p.phase, "repair_deadline_expired_after_"+lastRepairRan); err != nil {
+				log.Debug("terminal transition returned: %v", err)
+			}
 			return report(sf, log)
 		}
+		lastRepairRan = p.name
 
 		log.Phase(p.name)
 		if err := p.fn(ctx, exec, sf, log); err != nil {

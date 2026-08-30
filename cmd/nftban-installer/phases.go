@@ -48,6 +48,15 @@ import (
 // phaseData holds state accumulated across phases (detect→prepare→switch etc.)
 // Stored on the config struct or passed via state file fields.
 type phaseData struct {
+	// Policy-exempt operation record. switchop.Rebuild runs on context.Background()
+	// by policy (219bd781), so it can outlive the installer's global budget while
+	// succeeding. Recording that here lets the phase loop distinguish "the budget was
+	// consumed by an exempt operation that SUCCEEDED" from a genuine expiry, instead of
+	// failing a run in which nothing failed.
+	exemptOpName      string
+	exemptOpDuration  time.Duration
+	exemptOpSucceeded bool
+
 	sshPort   int   // primary SSH port (back-compat scalar; used by InjectEmergencySSH, AssertSSHInLiveSet, assertions, lifecycle bridge)
 	sshPorts  []int // v1.125 R-1: ALL detected sshd listener ports (primary first). len(sshPorts) >= 1 once phaseDetect completes; len > 1 on multi-port hosts (e.g., sshd on :22 + :55000). Passed to RenderNftablesConfMultiPort so the firewall allow-set covers every detected port (closes dns2-class lockout vector).
 	panel     detect.PanelType
@@ -492,7 +501,14 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	}
 
 	// 7. REBUILD — FATAL on failure (v1.70.0 invariant)
-	if err := switchop.Rebuild(exec, log); err != nil {
+	rebuildStart := time.Now()
+	rebuildErr := switchop.Rebuild(exec, log)
+	pd.exemptOpName = "firewall rebuild"
+	pd.exemptOpDuration = time.Since(rebuildStart)
+	pd.exemptOpSucceeded = rebuildErr == nil
+	log.Info("exempt operation %s completed: duration=%s success=%t",
+		pd.exemptOpName, pd.exemptOpDuration.Round(time.Second), pd.exemptOpSucceeded)
+	if err := rebuildErr; err != nil {
 		// Emergency table LEFT IN PLACE — SSH still safe
 		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, err.Error())
 	}

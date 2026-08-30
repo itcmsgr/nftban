@@ -93,10 +93,10 @@ var (
 // Sequence (each phase short-circuits on failure; later phases only run
 // when earlier ones pass):
 //
-//	1. update.Preflight            (read-only)
-//	2. nftban firewall rebuild     (canonical mutation path)
-//	3. nftban-validate --json      (truth gate)
-//	4. postStateInspection         (read-only, success-path only)
+//  1. update.Preflight            (read-only)
+//  2. nftban firewall rebuild     (canonical mutation path)
+//  3. nftban-validate --json      (truth gate)
+//  4. postStateInspection         (read-only, success-path only)
 //
 // Post-state inspection runs only on the success path because the earlier
 // failure branches already returned with a precise failure state; emitting
@@ -178,7 +178,13 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// owned by firewall_rebuild (v1.96 pipeline). PR-18 owns NONE of them.
 	meta.beginPhase("Rebuild")
 	log.Phase("Rebuild")
-	rebuildRes := exec.Run(rebuildCmd, rebuildArg1, rebuildArg2)
+	// ⛔ NOT exec.Run: that applies executor defaultTimeout (30s) and would kill a
+	// legitimate long rebuild, then map ExitCode -1 to FAILED_REBUILD below — the
+	// same false-verdict class as the installer global budget, through a different
+	// door. A production rebuild measured 318s. 219bd781 exempted switchop.Rebuild
+	// but not this path. Rebuild is bounded by its own operations, not by a caller
+	// wall-clock guess.
+	rebuildRes := exec.RunContext(context.Background(), rebuildCmd, rebuildArg1, rebuildArg2)
 	log.PhaseEnd("Rebuild")
 	meta.endPhase(log, "Rebuild", rebuildRes.ExitCode == 0)
 
@@ -303,14 +309,14 @@ func stateForValidatorExit(rc int) state.InstallState {
 // return via defer. Pure observability — never inspected to make control
 // decisions (PR-20 contract).
 type runMeta struct {
-	mode          string
-	from          string
-	to            string
-	start         time.Time
-	currentPhase  string
-	phaseStart    time.Time
-	phasesPassed  int
-	phasesFailed  int
+	mode         string
+	from         string
+	to           string
+	start        time.Time
+	currentPhase string
+	phaseStart   time.Time
+	phasesPassed int
+	phasesFailed int
 }
 
 func newRunMeta(mode string) *runMeta {
