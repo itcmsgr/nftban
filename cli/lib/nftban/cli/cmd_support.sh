@@ -37,7 +37,14 @@ readonly NFTBAN_CLI_SUPPORT_LOADED=1
 # CONFIGURATION
 # =============================================================================
 
-readonly SUPPORT_OUTPUT_DIR="${NFTBAN_SUPPORT_DIR:-/tmp}"
+# NOT readonly: `nftban support --output DIR` assigns this during argument parsing.
+# It WAS readonly, which made the documented --output flag fail outright:
+#   cmd_support.sh: line 2133: SUPPORT_OUTPUT_DIR: readonly variable
+#   exit 1, NO bundle produced.
+# Reproduced on a production host mid-incident (srv3, 1.229.11) — the operator ran
+# the documented command and got nothing back. The default path was unaffected,
+# which is why this survived: every routine invocation omits --output.
+SUPPORT_OUTPUT_DIR="${NFTBAN_SUPPORT_DIR:-/tmp}"
 readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 
 # Bootstrap paths (nftban.conf will make them readonly)
@@ -67,6 +74,325 @@ _redact_unavailable() {
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+
+# _support_write_lifecycle_timelines <bundle_root>
+#
+# v1.229.12 GA-hardening. Two INDEPENDENT timelines, because conflating them is
+# what made the srv3 incident unreadable:
+#
+#   RULESET LIFECYCLE  render -> apply -> validation -> rollback -> final live state
+#   INSTALLER RUN      phase -> duration -> exit -> deadline/cancellation -> verdict
+#
+# They can disagree, and the disagreement is the diagnosis. srv3: the ruleset
+# lifecycle completed cleanly (render ok, apply ok, live state healthy) while the
+# installer run reported a terminal failure. Only side-by-side does that read as
+# "false verdict" rather than "firewall broken".
+_support_write_lifecycle_timelines() {
+    local root="$1" d="$1/incident"
+    local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+    if ! mkdir -p "$d"; then
+        _support_log WARN "Lifecycle timelines NOT collected (cannot create $d)"
+        return 0
+    fi
+
+    {
+        _support_correlation_header "TIMELINE 1 — RULESET LIFECYCLE"
+        echo "# TIMELINE 1 — RULESET LIFECYCLE"
+        echo "# render -> apply -> validation -> rollback -> final live state"
+        echo
+        if [[ -r "$log" ]]; then
+            grep -nE 'render|nft -f|apply|Post-rebuild validation|PRE state|POST state|rollback|snapshot' "$log" \
+                | tail -40 | _support_scrub_stream
+        else
+            echo "UNAVAILABLE: $log not readable"
+        fi
+        echo
+        echo "## final live state (observed now, not from logs)"
+        # ⛔ Same discipline as chain_inventory.txt: `nft ... 2>/dev/null | grep -c` yields
+        # 0 for BOTH an empty table and a failed nft, so a tool failure would render here
+        # as "chains=0 rules=0" — i.e. as evidence the firewall was destroyed. Caught by
+        # the nft parser-contract gate (R1 COVERAGE_PIN), which is exactly what it is for.
+        local fam out rc
+        for fam in ip ip6; do
+            out=$(nft list table "$fam" nftban 2>&1); rc=$?
+            if [[ $rc -ne 0 ]]; then
+                echo "  $fam nftban chains=UNKNOWN rules=UNKNOWN (nft query failed, rc=$rc)"
+                continue
+            fi
+            echo "  $fam nftban chains=$(printf '%s\n' "$out" | grep -cE '^[[:space:]]*chain ')" \
+                 "rules=$(printf '%s\n' "$out" | grep -cE '^[[:space:]]+(ct|ip|ip6|tcp|udp|meta|iif|counter)')"
+        done
+        echo "  nftables_service=$(systemctl is-active nftables 2>/dev/null)"
+        echo "  nftband_service=$(systemctl is-active nftband 2>/dev/null)"
+        echo
+        echo "# READING THIS: a healthy final live state alongside a terminal installer"
+        echo "# verdict does NOT mean the host is unprotected. Compare with TIMELINE 2."
+    } > "$d/timeline_ruleset_lifecycle.txt" 2>&1
+
+    {
+        _support_correlation_header "TIMELINE 2 — INSTALLER RUN"
+        echo "# TIMELINE 2 — INSTALLER RUN"
+        echo "# phase -> duration -> exit -> deadline/cancellation -> terminal verdict"
+        echo
+        echo "installer_global_budget=$(_support_installer_budget)"
+        echo "terminal_state=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2)"
+        echo
+        if [[ ! -r "$log" ]]; then
+            echo "UNAVAILABLE: $log not readable — no phase markers or cancellation records."
+        fi
+        # The attribution warning is emitted UNCONDITIONALLY. It previously sat inside the
+        # log-present branch, so it vanished on exactly the degraded hosts where a reader is
+        # most likely to mis-attribute a timeout to a phase that never ran.
+        echo
+        echo "## ⛔ ATTRIBUTION WARNING"
+        echo "# The installer tests context expiry when ENTERING a phase. An error naming"
+        echo "# phase X can therefore mean 'the deadline had already expired before X"
+        echo "# started', NOT 'X overran'. Cross-check the phase that was RUNNING using the"
+        echo "# rebuild start/end pairs in phase_timeline.txt before attributing blame."
+        echo
+        if [[ -r "$log" ]]; then
+            echo "## phase markers, last run"
+            grep -E '\[PHASE\]|Phase:' "$log" | tail -20 | _support_scrub_stream
+            echo
+            echo "## cancellation / deadline observations"
+            grep -nE 'timed out or cancelled|context deadline|DeadlineExceeded|cancelled' "$log" | tail -10 | _support_scrub_stream
+        fi
+    } > "$d/timeline_installer_run.txt" 2>&1
+
+    _support_log OK "Lifecycle timelines (ruleset lifecycle + installer run, kept separate)"
+}
+
+# _support_write_manifest <bundle_root>
+#
+# Records what the bundle CONTAINS and, as importantly, what it could NOT collect.
+# Without this, an absent file is ambiguous: not collected, collected empty, or
+# collection failed. During the srv3 incident that ambiguity cost real time.
+_support_write_manifest() {
+    local root="$1"
+    # ⛔ APPEND, never overwrite. The pre-existing MANIFEST.txt carries the bundle ID and
+    # the "may contain sensitive information — review before sharing publicly" warning.
+    # Truncating it silently deleted that warning while --help still advertised it.
+    local tmp
+    tmp=$(mktemp "${root}/.manifest.XXXXXX") || return 0
+    {
+        echo
+        echo "# === COLLECTION CENSUS (v1.229.12) ==="
+        echo "generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "host=$(hostname -s 2>/dev/null)"
+        echo "nftban_version=$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo UNKNOWN)"
+        echo "nft_version=$(nft --version 2>/dev/null | awk '{print $2}' || echo UNAVAILABLE)"
+        echo "kernel=$(uname -r)"
+        echo "install_state=$(grep -m1 '^INSTALL_STATE=' "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state" 2>/dev/null | cut -d= -f2 || echo UNKNOWN)"
+        echo
+        echo "# files collected (path<TAB>bytes)"
+        find "$root" -type f -printf '%P\t%s\n' 2>/dev/null | sort
+        echo
+        echo "# EMPTY — collected but produced no content"
+        find "$root" -type f -empty -printf '%P\n' 2>/dev/null | sort
+        echo
+        echo "# UNAVAILABLE / FAILED — sections that declared they could not collect."
+        echo "# An absent file is ambiguous; these are the ones that SAID SO."
+        grep -rlE '^(UNAVAILABLE|# UNAVAILABLE)|=UNKNOWN|Command failed with exit code' "$root" 2>/dev/null \
+            | sed "s|^$root/||" | sort || true
+    } > "$tmp"
+    # Concatenate AFTER the census is fully written, so the manifest's own recorded size is
+    # the final one. Writing find output into the file being written made it report its own
+    # partial length (measured: claimed 202 bytes, actual 6053).
+    cat "$tmp" >> "$root/MANIFEST.txt" 2>/dev/null
+    rm -f -- "$tmp"
+    # Now correct this file's own entry, which was necessarily stale when written.
+    local self
+    self=$(stat -c%s "$root/MANIFEST.txt" 2>/dev/null || echo 0)
+    printf '# MANIFEST.txt final size: %s bytes (its own entry above predates this line)\n' "$self" \
+        >> "$root/MANIFEST.txt"
+    _support_log OK "Bundle manifest (collected / empty / unavailable census)"
+}
+
+# _support_correlation_header <label>
+#
+# Every evidence file carries this. A technically correct bundle can still MISLEAD if a
+# reader takes rotated logs and a freshly-observed live state as one incident. The header
+# states what each file is bound to, so "old log + current live state" cannot be read as a
+# single coherent story by accident.
+_support_correlation_header() {
+    local label="$1"
+    local sd="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
+    echo "# === $label ==="
+    echo "# collected_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)   (observation time, NOT incident time)"
+    echo "# host=$(hostname -s 2>/dev/null)"
+    echo "# nftban_version=$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo UNKNOWN)"
+    echo "# install_state=$(grep -m1 '^INSTALL_STATE=' "$sd" 2>/dev/null | cut -d= -f2 || echo UNKNOWN)"
+    echo "# install_state_timestamp=$(grep -m1 '^INSTALL_TIMESTAMP=' "$sd" 2>/dev/null | cut -d= -f2 || echo UNKNOWN)"
+    # NOTE: `ls ... | head -1 || echo NONE` does NOT work — head exits 0 on empty input,
+    # so the fallback never fires and the field renders blank. A blank field is exactly
+    # the empty-vs-unavailable ambiguity this bundle exists to eliminate.
+    local _rid
+    _rid=$(ls -t "${NFTBAN_LOG_DIR:-/var/log/nftban}/update-runs" 2>/dev/null | head -1)
+    echo "# latest_run_id=${_rid:-NONE (no per-run forensic records on this host)}"
+    echo "#"
+    echo "# ⛔ CORRELATION: log-derived lines below carry their OWN timestamps. Where a"
+    echo "# section reports LIVE state it is labelled as observed at collected_at above."
+    echo "# Do not read a log line and a live observation as the same moment."
+    echo
+}
+
+# _support_collect_incident_evidence <bundle_root>
+#
+# v1.229.12 — INCIDENT EVIDENCE. Added after a production upgrade failure (srv3,
+# 1.229.11) could NOT be diagnosed from a support bundle. The bundle had the
+# installer logs and install_state, yet three questions stayed unanswerable:
+#
+#   A  Was the run a REAL failure, or a false verdict from a deadline?
+#      The bundle recorded neither the installer's global budget nor the moment the
+#      context expired. Without both you cannot tell "rebuild failed" from "rebuild
+#      succeeded in 318s against a 300s budget".
+#   B  Which chains disappeared when post-rebuild validation reported degraded?
+#      The bundle had counts in log prose (16 -> 6) but no chain IDENTITIES and no
+#      expected-vs-actual inventory, so "which protections were lost" was unknowable.
+#   C  What exactly did the feed parser reject? 371 "skip unparseable" lines with no
+#      source, no input class, no totals.
+#
+# Everything here is READ-ONLY and bounded. It must never mutate the host being
+# diagnosed — a host in a failed state is evidence.
+_support_collect_incident_evidence() {
+    local root="$1"
+    local d="$root/incident"
+    if ! mkdir -p "$d"; then
+        _support_log WARN "Incident evidence NOT collected (cannot create $d)"
+        return 0
+    fi
+
+    # ---- A: phase timing, budget, and the deadline moment ------------------------
+    {
+        _support_correlation_header "PHASE TIMELINE"
+        echo "# Installer phase timeline — reconstructed from installer.log"
+        echo "# A phase that never STARTED cannot have timed out. The installer checks"
+        echo "# context expiry when ENTERING a phase, so the phase named in a timeout"
+        echo "# error may be the one about to start, not the one that overran."
+        echo
+        echo "installer_global_timeout=$(_support_installer_budget)"
+        echo
+        local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+        if [[ -r "$log" ]]; then
+            echo "# phase markers (start/end/duration/exit), newest run last"
+            # 'exempt by policy' and 'granting a single fresh budget' are the lines that
+            # explain WHY a run continued past an exhausted budget. Without them a bundle
+            # shows a >budget rebuild next to a success and leaves the reader to guess
+            # whether the deadline logic worked or was simply not reached.
+            grep -E '\[PHASE\]|Phase:|running nftban firewall rebuild|firewall rebuild --install-context|timed out or cancelled|phase .* failed|exempt operation|exempt by policy|granting a single fresh budget|deadline expired after phase' "$log" \
+                | tail -80 | _support_scrub_stream
+            echo
+            echo "# rebuild durations (start -> end), computed"
+            # A start with no matching end must be reported as DANGLING, never paired
+            # with a later run's end. Silently pairing across runs would fabricate a
+            # duration — the exact class of error this bundle exists to prevent.
+            awk '
+              /running nftban firewall rebuild/ {
+                  if (sk) printf "rebuild_start=%s rebuild_end=DANGLING exit=UNKNOWN (no end line; run interrupted or log rotated)\n", start
+                  start=$1; sk=1; next
+              }
+              sk && /firewall rebuild --install-context/ {
+                  e="?"
+                  if (match($0, /exit=-?[0-9]+/)) e = substr($0, RSTART+5, RLENGTH-5)
+                  printf "rebuild_start=%s rebuild_end=%s exit=%s\n", start, $1, e
+                  sk=0
+              }
+              END { if (sk) printf "rebuild_start=%s rebuild_end=DANGLING exit=UNKNOWN (no end line; run interrupted or log rotated)\n", start }
+            ' "$log" | tail -10 | _support_scrub_stream
+        else
+            echo "# UNAVAILABLE: $log not readable"
+        fi
+    } > "$d/phase_timeline.txt" 2>&1
+
+    # ---- B: firewall topology, structured, with chain identities ----------------
+    {
+        _support_correlation_header "CHAIN INVENTORY"
+        echo "# Live chain inventory — identities, not just counts."
+        echo "# A count of 6 is weak evidence; knowing the 6 survivors are the base"
+        echo "# chains and every module chain is absent is strong evidence."
+        if ! command -v nft >/dev/null 2>&1; then
+            echo "UNAVAILABLE: nft not present — chain inventory NOT collected."
+            echo "# This is NOT 'zero chains'. A tool failure must never be rendered as"
+            echo "# evidence that protections were destroyed."
+        else
+            local fam out rc
+            for fam in ip ip6; do
+                echo "## table $fam nftban"
+                out=$(nft list table "$fam" nftban 2>&1); rc=$?
+                if [[ $rc -ne 0 ]]; then
+                    # ⛔ A failed query is UNKNOWN, never zero. `$(... | grep -c)` returns 0
+                    # for BOTH "empty table" and "nft failed", and this file's own comment
+                    # calls zero module chains the degraded signature — so a tool failure
+                    # would read as proof the firewall was flattened.
+                    echo "  chain_count=UNKNOWN (nft query failed, rc=$rc)"
+                    echo "  query_error=$(printf '%s' "$out" | head -1)"
+                    continue
+                fi
+                printf '%s\n' "$out" | awk '/^\t*chain [a-z_0-9]+ \{/ {gsub(/[\t{]/,""); print "  chain: " $2}'
+                echo "  chain_count=$(printf '%s\n' "$out" | grep -cE '^[[:space:]]*chain ')"
+            done
+        fi
+        echo
+        echo "# base chains are input/forward/output per family (6 total). Anything"
+        echo "# beyond that is module-contributed; zero module chains after a rebuild"
+        echo "# that previously had them is the 'degraded' signature."
+    } > "$d/chain_inventory.txt" 2>&1
+
+    # structured forms — parseable without scraping human text
+    _safe_cmd "$d/nft_ruleset.json" "nft ruleset (structured)" nft -j list ruleset
+    _safe_cmd "$d/nft_sets.json"    "nft sets (structured)"    nft -j list sets
+
+    # ---- C: parser rejections, classified and counted ---------------------------
+    {
+        _support_correlation_header "PARSER REJECTIONS"
+        echo "# Feed/list parser rejections, classified. Bounded samples, never raw feeds."
+        local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+        # ⛔ `grep -c ... || echo 0` emits BOTH greps' output when there are no matches,
+        # producing "total_rejections=0" followed by a stray "0". And an unreadable log
+        # must yield UNKNOWN, never a fabricated zero.
+        if [[ -r "$log" ]]; then
+            local n
+            n=$(grep -c 'skip unparseable element' "$log" 2>/dev/null) || n=0
+            echo "total_rejections=$n"
+        else
+            echo "total_rejections=UNKNOWN (installer.log not readable — this is NOT zero)"
+        fi
+        echo
+        echo "# by input class (heuristic: dash range vs other)"
+        if [[ -r "$log" ]]; then
+            grep -o "skip unparseable element '[^']*'" "$log" 2>/dev/null \
+              | sed "s/.*element '//; s/'$//" \
+              | awk '{ if ($0 ~ /^[0-9.]+-[0-9.]+$/) c["dash_range"]++; else c["other"]++ }
+                     END { for (k in c) printf "  input_class=%s count=%d\n", k, c[k] }'
+            echo
+            echo "# bounded samples (max 5 per class)"
+            grep -o "skip unparseable element '[^']*'" "$log" 2>/dev/null \
+              | sed "s/.*element '//; s/'$//" | sort -u | head -5 | sed 's/^/  sample=/'
+        fi
+    } > "$d/parser_rejections.txt" 2>&1
+
+    _support_log OK "Incident evidence (phase timeline, chain inventory, parser rejections)"
+}
+
+# _support_installer_budget — the installer's global wall-clock budget, if it can be
+# obtained. Recorded because a run can FAIL purely by exceeding it while every
+# operation inside succeeded, and no other artifact in the bundle carries the number.
+_support_installer_budget() {
+    # Preferred source: the installer logging its own budget at run start. Until it
+    # does, this is honestly UNKNOWN — do NOT guess 300s here. A bundle that asserts
+    # a budget the running binary did not report would be fabricated evidence, and
+    # the whole point of this collector is that the budget was unknowable.
+    local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+    if [[ -r "$log" ]]; then
+        local b
+        b=$(grep -oE 'global (budget|timeout)=[0-9]+[a-z]*' "$log" 2>/dev/null | tail -1)
+        [[ -n "$b" ]] && { echo "${b#*=}"; return 0; }
+    fi
+    # Single line: this is consumed as key=value. A multi-line value made
+    # terminal_state= look nested inside the budget block.
+    echo "UNKNOWN (installer does not log its global wall-clock budget; a run that failed purely by exceeding it is then indistinguishable from one whose operations failed)"
+}
 
 _support_log() {
     local level="$1"
@@ -1882,6 +2208,12 @@ _cmd_support_bundle() {
     } > "$bundle_dir/MANIFEST.txt"
 
     # Create tarball
+    # v1.229.12: incident evidence + manifest, collected LAST so the manifest
+    # reflects everything above it.
+    _support_collect_incident_evidence "$bundle_dir"
+        _support_write_lifecycle_timelines "$bundle_dir"
+    _support_write_manifest "$bundle_dir"
+
     local output_file="$SUPPORT_OUTPUT_DIR/${bundle_name}.tar.gz"
     if tar -czf "$output_file" -C "$(dirname "$bundle_dir")" "$(basename "$bundle_dir")" 2>/dev/null; then
         # Cleanup temp directory
@@ -1969,7 +2301,17 @@ EOF
 
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "  Next steps:"
+        echo "$(if [[ -z "${email_recipient:-}" ]]; then cat <<'NOMAIL'
+  Sending this to support:
+    This bundle was NOT emailed — no address was given, which is fine.
+      - to have NFTBan send it:  nftban support --email you@example.com
+      - to send it yourself:     attach the .tar.gz path printed above
+    If your server cannot send mail (no MTA, relay blocked, or policy), use the
+    second option. Nothing here requires the server to send anything.
+
+NOMAIL
+fi)
+  Next steps:"
         echo "    1. Review the bundle for sensitive data"
         echo "    2. Attach to your GitHub issue or support request"
         echo "    3. Include: what you expected vs what happened"
@@ -2129,7 +2471,10 @@ nftban_cmd_support() {
                 shift
                 ;;
             --output|-o)
-                if [[ -n "${2:-}" ]]; then
+                # Must not swallow a following option: `--output --network` previously set
+                # the output dir to "--network", dropped the real flag, and died with a
+                # misleading tarball error. The --email branch already guards this.
+                if [[ -n "${2:-}" && ! "${2:-}" =~ ^- ]]; then
                     SUPPORT_OUTPUT_DIR="$2"
                     shift 2
                 else
