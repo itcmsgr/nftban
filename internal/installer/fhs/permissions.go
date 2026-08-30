@@ -19,7 +19,9 @@
 package fhs
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
@@ -73,36 +75,67 @@ func SetCapabilities(exec executor.Executor, log *logging.Logger) {
 	}
 }
 
+// applyCanonicalTree applies the CANONICAL owner and mode to every directory that
+// RequiredDirs declares at or below root. It is bounded by that declaration and is
+// never recursive.
+//
+// A `chown -R` here would be unbounded in three separate ways, all measured:
+//  1. It flattens heterogeneous ownership the canonical matrix deliberately declares.
+//     `chown -R nftban:nftban /var/lib/nftban` collapses reports/auditors
+//     (root:nftban-auditor 0770/0660 — the audit-evidence boundary), plus backup/,
+//     update-backups/ and pro/ (root:nftban), into the daemon's own identity. The
+//     PRIMARY generated script explicitly excludes the auditor tree from its sweep
+//     and re-applies it separately, so the recursive fallback was strictly weaker
+//     than the path it stands in for.
+//  2. `chown -R nftban:nftban /run/nftban` flattens firewall-validate (root:nftban 2750).
+//  3. Recursion CROSSES MOUNT BOUNDARIES (measured: a bind mount under the tree is
+//     traversed and the real backing content is chowned). chown has no
+//     --one-file-system; only find has -xdev.
+//
+// Symlink escape was measured and is NOT a vector here: chown -R defaults to -P, so it
+// neither traverses symlinked directories nor dereferences symlinked files. That is
+// recorded so the constraint is not re-derived as folklore, and so that adding -L or -H
+// is understood to be a security change.
+//
+//	INVARIANT: RECOVERY/FALLBACK MUST NOT BE WEAKER THAN PRIMARY.
+//
+// Ownership is established on the canonical directory skeleton only. Files take their
+// ownership from the writer that creates them, which is where path authority exists —
+// the same rule the log tree adopted in v1.228.10.
+func applyCanonicalTree(exec executor.Executor, root string) {
+	for _, d := range RequiredDirs {
+		if d.Path != root && !strings.HasPrefix(d.Path, root+"/") {
+			continue
+		}
+		if !exec.FileExists(d.Path) {
+			continue
+		}
+		owner := d.Owner
+		if owner == "" {
+			owner = "root:root"
+		}
+		exec.Run("chown", owner, d.Path)
+		exec.Run("chmod", fmt.Sprintf("%04o", d.Mode), d.Path)
+	}
+}
+
 // applyPermissions sets ownership and mode on key directories/files.
 func applyPermissions(exec executor.Executor, log *logging.Logger) {
-	// /etc/nftban — root:nftban 0640 for conf files
-	exec.Run("chown", "-R", "root:nftban", EtcDir)
-	exec.Run("chmod", "0750", EtcDir)
+	// Every tree below derives from RequiredDirs, the same canonical authority
+	// EnsureDirectories uses and the projection build/fhs-spec.yaml generates.
+	applyCanonicalTree(exec, EtcDir)   // /etc/nftban
+	applyCanonicalTree(exec, DataDir)  // /var/lib/nftban — preserves the auditor boundary
+	applyCanonicalTree(exec, CacheDir) // /var/cache/nftban
+	applyCanonicalTree(exec, RunDir)   // /run/nftban — preserves firewall-validate 2750
 
-	// /usr/lib/nftban/bin — root:root 0755
-	exec.Run("chown", "-R", "root:root", BinDir)
+	// /usr/lib/nftban/bin — root:root 0755. Not declared in RequiredDirs; package-owned
+	// content already ships root:root, so the directory alone is asserted here.
+	if exec.FileExists(BinDir) {
+		exec.Run("chown", "root:root", BinDir)
+		exec.Run("chmod", "0755", BinDir)
+	}
 
-	// /var/lib/nftban — nftban:nftban 0750
-	exec.Run("chown", "-R", "nftban:nftban", DataDir)
-	exec.Run("chmod", "0750", DataDir)
-
-	// /var/log/nftban — nftban:nftban 0750
-	//
-	// INV-LOG-OWN-01 + FALLBACK PARITY (v1.228.10). This was
-	// `chown -R nftban:nftban LogDir`, which claimed every descendant of the log tree.
-	// The canonical spec was corrected to stop asserting that, and the generated primary
-	// script now applies bounded per-pattern globs — but this is the FALLBACK path
-	// (see SetPermissions), reached when the generated script is missing or fails. A
-	// fallback that still flattened the tree would mean PRIMARY fixed / FALLBACK still
-	// violating, which is not closure:
-	//
-	//     RECOVERY/FALLBACK MUST NOT BE WEAKER THAN PRIMARY.
-	//
-	// Ownership is established on the canonical directory skeleton only. Files get their
-	// ownership from the writer that creates them, which is where path authority exists.
-	// The other five recursive sites in this function remain OPEN, deliberately: they are
-	// listed in scripts/ci/data/recursive-permission-pending.tsv and are not in this lane's
-	// scope (owner ruling — LogDir parity now, the rest record/classify).
+	// /var/log/nftban — canonical skeleton only (INV-LOG-OWN-01, v1.228.10).
 	for _, dir := range CanonicalLogDirs {
 		if !exec.FileExists(dir) {
 			continue
@@ -110,14 +143,6 @@ func applyPermissions(exec executor.Executor, log *logging.Logger) {
 		exec.Run("chown", "nftban:nftban", dir)
 		exec.Run("chmod", "0750", dir)
 	}
-
-	// /var/cache/nftban — nftban:nftban 0755 (public-cache traversal; /health subdir is 0750)
-	exec.Run("chown", "-R", "nftban:nftban", CacheDir)
-	exec.Run("chmod", "0755", CacheDir)
-
-	// /run/nftban — nftban:nftban 0755
-	exec.Run("chown", "-R", "nftban:nftban", RunDir)
-	exec.Run("chmod", "0755", RunDir)
 
 	// /var/lib/node_exporter/textfile_collector — nftban:nftban 0755 (optional)
 	if exec.FileExists(NodeExporterDir) {
