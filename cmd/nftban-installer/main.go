@@ -523,7 +523,16 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 				defer freshCancel()
 			} else {
 				log.Error("%s", d.Message)
-				sf.Transition(state.StateFailedRebuild, p.phase, d.Reason)
+				// Transition returns a NON-NIL error for any failed state BY DESIGN — that
+				// sentinel is what stops the phase runner — so non-nil here is expected and
+				// is not itself a defect. It can ALSO carry a genuine WriteAtomic failure,
+				// and that case is otherwise invisible: report() renders the IN-MEMORY
+				// state, so a failed write would show the right verdict on screen and leave
+				// the wrong one on disk — precisely the state-truth problem this change
+				// exists to fix. Log it so the log carries what the state file may not.
+				if err := sf.Transition(state.StateFailedRebuild, p.phase, d.Reason); err != nil {
+					log.Debug("terminal transition returned: %v", err)
+				}
 				if lb != nil {
 					lb.observeResult(sf)
 				}
@@ -644,7 +653,16 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 			// phase that RAN, as above, and record the outcome.
 			log.Error("installer deadline expired during repair after phase %s; phase %s was not entered",
 				lastRepairRan, p.name)
-			sf.Transition(state.StateFailedRebuild, p.phase, "repair_deadline_expired_after_"+lastRepairRan)
+// Transition returns a NON-NIL error for any failed state BY DESIGN — that
+			// sentinel is what stops the phase runner — so non-nil here is expected and
+			// is not itself a defect. It can ALSO carry a genuine WriteAtomic failure,
+			// and that case is otherwise invisible: report() renders the IN-MEMORY
+			// state, so a failed write would show the right verdict on screen and leave
+			// the wrong one on disk — precisely the state-truth problem this change
+			// exists to fix. Log it so the log carries what the state file may not.
+			if err := sf.Transition(state.StateFailedRebuild, p.phase, "repair_deadline_expired_after_"+lastRepairRan); err != nil {
+				log.Debug("terminal transition returned: %v", err)
+			}
 			return report(sf, log)
 		}
 		lastRepairRan = p.name
