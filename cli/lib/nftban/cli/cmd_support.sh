@@ -109,10 +109,19 @@ _support_write_lifecycle_timelines() {
         fi
         echo
         echo "## final live state (observed now, not from logs)"
-        local fam
+        # ⛔ Same discipline as chain_inventory.txt: `nft ... 2>/dev/null | grep -c` yields
+        # 0 for BOTH an empty table and a failed nft, so a tool failure would render here
+        # as "chains=0 rules=0" — i.e. as evidence the firewall was destroyed. Caught by
+        # the nft parser-contract gate (R1 COVERAGE_PIN), which is exactly what it is for.
+        local fam out rc
         for fam in ip ip6; do
-            echo "  $fam nftban chains=$(nft list table "$fam" nftban 2>/dev/null | grep -cE '^[[:space:]]*chain ')" \
-                 "rules=$(nft list table "$fam" nftban 2>/dev/null | grep -cE '^[[:space:]]+(ct|ip|ip6|tcp|udp|meta|iif|counter)')"
+            out=$(nft list table "$fam" nftban 2>&1); rc=$?
+            if [[ $rc -ne 0 ]]; then
+                echo "  $fam nftban chains=UNKNOWN rules=UNKNOWN (nft query failed, rc=$rc)"
+                continue
+            fi
+            echo "  $fam nftban chains=$(printf '%s\n' "$out" | grep -cE '^[[:space:]]*chain ')" \
+                 "rules=$(printf '%s\n' "$out" | grep -cE '^[[:space:]]+(ct|ip|ip6|tcp|udp|meta|iif|counter)')"
         done
         echo "  nftables_service=$(systemctl is-active nftables 2>/dev/null)"
         echo "  nftband_service=$(systemctl is-active nftband 2>/dev/null)"
