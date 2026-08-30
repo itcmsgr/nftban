@@ -1,6 +1,6 @@
 {
-  "snapshot_at": "2026-08-29T10:00:37Z",
-  "snapshot_date": "2026-08-29",
+  "snapshot_at": "2026-08-30T09:11:22Z",
+  "snapshot_date": "2026-08-30",
   "disclosure": "GitHub Release asset download requests and repository traffic counters. These INCLUDE NFTBan-operated infrastructure: an ~11-host fleet (dns1-4, srv1-4, monitor, lab2, lab4) self-updates by downloading DEB/RPM assets from GitHub Releases, and package-native validation downloads official assets too. GitHub exposes aggregate counts only, with no downloader identity or IP, so NFTBan-owned traffic cannot be identified or removed and historical counts are NOT retroactively adjusted. Do not read raw package downloads or clones as purely external adoption, or as unique users, installations, active systems, mirrors, CI jobs, or fleet size. Unique visitors are substantially less fleet-contaminated (automated hosts do not browse the repository web UI); non-release-day package-download deltas are the cleanest external-interest signal. A typical release-day internal baseline is approximately 11 fleet hosts plus validation downloads -- this is an ESTIMATE and is never subtracted from the reported counts. Future mirror routing of fleet updates can reduce this contamination prospectively (see OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE).",
   "fleet_contamination": {
     "raw_counts_include_nftban_infrastructure": true,
@@ -28,16 +28,16 @@
     "historical_counts_retroactively_adjusted": false,
     "fabricated_fleet_excluded_metric": false
   },
-  "package_downloads": 7809,
-  "package_delta": 4,
-  "deb_downloads": 5343,
+  "package_downloads": 7811,
+  "package_delta": 2,
+  "deb_downloads": 5345,
   "rpm_downloads": 2466,
   "standalone_binary_downloads": 825,
   "metadata_downloads": 3986,
-  "all_release_asset_downloads": 13033,
+  "all_release_asset_downloads": 13035,
   "per_platform": {
     "Ubuntu 22.04": 879,
-    "Ubuntu 24.04": 2535,
+    "Ubuntu 24.04": 2537,
     "Ubuntu 26.04": 317,
     "Debian 12": 814,
     "Debian 13": 798,
@@ -52,10 +52,10 @@
   "forks": 0,
   "open_issues": 11,
   "rolling_14d": {
-    "clones": 20397,
-    "unique_cloners": 298,
-    "views": 281,
-    "unique_visitors": 61
+    "clones": 18336,
+    "unique_cloners": 288,
+    "views": 235,
+    "unique_visitors": 62
   },
   "traffic_auth": "PASS",
   "reconciles": true
