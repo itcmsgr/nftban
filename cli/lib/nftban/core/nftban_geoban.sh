@@ -52,6 +52,8 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nftban_dataset_cidr.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_recovery_status.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 
 # Load shared utility libraries
@@ -240,6 +242,9 @@ nftban_geoban_apply_to_nftables() {
     local cidrs_v6=()
     local cidr_count_v4=0
     local cidr_count_v6=0
+    # Starts UNAVAILABLE, never SYNCED: an outcome that was never established
+    # must not default to success. Only proven application may raise it.
+    local _geoban_recovery_state="${NFTBAN_RECOVERY_UNAVAILABLE:-UNAVAILABLE}"
 
     for file in "${ban_files[@]}"; do
         while IFS= read -r line; do
@@ -279,7 +284,18 @@ nftban_geoban_apply_to_nftables() {
             _geoban_tmp_v4=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v4_XXXXXX")
             _geoban_merged_v4=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v4m_XXXXXX")
             printf '%s\n' "${cidrs_v4[@]}" > "$_geoban_tmp_v4"
-            nftban_cidr_merge "$_geoban_tmp_v4" "$_geoban_merged_v4" 4
+            # ⛔ The merge status is LOAD-BEARING. A converter handed a non-empty
+            #    list that emits nothing has FAILED; applying its empty output
+            #    would zero this country's coverage while the step reported
+            #    success. Handled in an `if` so the inherited `set -e` cannot turn
+            #    a reportable failure into a bare mid-apply abort.
+            if ! nftban_cidr_merge "$_geoban_tmp_v4" "$_geoban_merged_v4" 4; then
+                nftban_error "IPv4 CIDR merge FAILED — refusing to apply an empty GeoBan set (intended ${cidr_count_v4} ranges)"
+                rm -f "$_geoban_tmp_v4" "$_geoban_merged_v4"
+                _geoban_recovery_state="${NFTBAN_RECOVERY_FAILED:-FAILED}"
+                nftban_recovery_render geoban "$_geoban_recovery_state" "IPv4 CIDR conversion produced no usable list" 2>/dev/null || true
+                return 1
+            fi
             # Reload merged CIDRs
             cidrs_v4=()
             while IFS= read -r line; do
@@ -298,7 +314,13 @@ nftban_geoban_apply_to_nftables() {
             _geoban_tmp_v6=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v6_XXXXXX")
             _geoban_merged_v6=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v6m_XXXXXX")
             printf '%s\n' "${cidrs_v6[@]}" > "$_geoban_tmp_v6"
-            nftban_cidr_merge "$_geoban_tmp_v6" "$_geoban_merged_v6" 6
+            if ! nftban_cidr_merge "$_geoban_tmp_v6" "$_geoban_merged_v6" 6; then
+                nftban_error "IPv6 CIDR merge FAILED — refusing to apply an empty GeoBan set (intended ${cidr_count_v6} ranges)"
+                rm -f "$_geoban_tmp_v6" "$_geoban_merged_v6"
+                _geoban_recovery_state="${NFTBAN_RECOVERY_FAILED:-FAILED}"
+                nftban_recovery_render geoban "$_geoban_recovery_state" "IPv6 CIDR conversion produced no usable list" 2>/dev/null || true
+                return 1
+            fi
             cidrs_v6=()
             while IFS= read -r line; do
                 [[ -n "$line" ]] && cidrs_v6+=("$line")

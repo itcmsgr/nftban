@@ -115,11 +115,43 @@ done
 # The old lanes swallowed everything with `2>/dev/null || true`, so a failed
 # restore was indistinguishable from a successful one. The new callers must
 # branch on the result.
-if grep -q 'Feeds restore FAILED or unavailable (state NOT reconciled)' "$FIREWALL" &&
-   grep -q 'GeoBan restore FAILED or unavailable (state NOT reconciled)' "$FIREWALL"; then
-    ok "both lanes report an unreconciled restore instead of claiming success"
+# v1.229.12: this asserted two EXACT sentences ("... FAILED or unavailable (state
+# NOT reconciled)"). Those were deliberately removed because they COLLAPSED a
+# proven failure and an undetermined result into one message, and could not say
+# DISABLED at all. Asserting the literal would now force the weaker wording back.
+# The property is asserted instead, and more strictly than before.
+_rp="$(sed -n '/^_fw_recover_producer()/,/^}/p' "$FIREWALL")"
+if [[ -z "$_rp" ]]; then
+    bad "no single recovery reporting contract found — each call site may report differently"
 else
-    bad "restore failure is not surfaced to the operator"
+    ok "one reporting contract exists for every recovery call site"
+    _miss=""
+    for tok in DISABLED SYNCED PARTIAL FAILED UNAVAILABLE; do
+        grep -q "$tok" <<<"$_rp" || _miss="$_miss $tok"
+    done
+    [[ -z "$_miss" ]] && ok "all five result states are distinguishable (never collapsed)" \
+                      || bad "recovery reporting cannot express:$_miss"
+    # FAILED and UNAVAILABLE must be SEPARATE branches, not one shared message.
+    if [[ "$(grep -c 'FAILED' <<<"$_rp")" -ge 1 && "$(grep -c 'UNAVAILABLE' <<<"$_rp")" -ge 1 ]] \
+       && ! grep -qE 'FAILED or unavailable' <<<"$_rp"; then
+        ok "a proven failure and an undetermined result are reported separately"
+    else
+        bad "FAILED and UNAVAILABLE are still collapsed into one message"
+    fi
+    # Affirmative wording must be reachable ONLY from the proven-success branch.
+    if grep -qE 'RECONCILED\)' <<<"$_rp" && grep -qE 'SYNCED \(intended coverage verified' <<<"$_rp"; then
+        ok "affirmative wording is gated on proven coverage, not on an exit status"
+    else
+        bad "affirmative wording is not gated on proven coverage"
+    fi
+fi
+# The old lanes swallowed everything with `2>/dev/null || true`, so a failed restore
+# was indistinguishable from a successful one. No recovery call site may do that now.
+if grep -nE 'nftban_feeds_sync_to_nftables 2>/dev/null \|\| true|_nftban_reconcile_(feeds|geoban) \|\| true' "$FIREWALL" \
+     | grep -vE '^\s*[0-9]+:\s*#' >/dev/null; then
+    bad "a recovery call site still discards its result with a bare || true"
+else
+    ok "no recovery call site discards its result with a bare || true"
 fi
 
 echo "=== E. zero-country configuration remains a valid no-op ==="

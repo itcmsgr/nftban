@@ -57,6 +57,8 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null
 # v1.19.0: Load shared CIDR merge library (shared with geoban)
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_dataset_cidr.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION
@@ -572,11 +574,28 @@ nftban_feeds_update_single() {
 
 # Update all enabled feeds
 nftban_feeds_update_all() {
-    # v1.19.0: Check master enable switch (R05)
-    if [[ "${NFTBAN_FEEDS_ENABLED:-YES}" != "YES" ]]; then
-        nftban_feeds_log INFO "Feeds disabled (NFTBAN_FEEDS_ENABLED=${NFTBAN_FEEDS_ENABLED:-NO})"
-        echo "Feeds module is disabled. Enable with: nftban config set NFTBAN_FEEDS_ENABLED=YES"
-        return 0
+    # Master enable switch, resolved through the ONE canonical authority.
+    #
+    # ⛔ THIS WAS FAIL-OPEN. `${NFTBAN_FEEDS_ENABLED:-YES}` treated an ABSENT
+    #    master gate as enabled, while the shipped configuration explicitly
+    #    defaults it to false — so a host with no readable authority ran feed
+    #    updates that its configuration never asked for. Absent authority is not
+    #    affirmative enablement.
+    # ⛔ IT ALSO REQUIRED EXACTLY "YES". A host configured NFTBAN_FEEDS_ENABLED
+    #    ="true" was silently skipped here while autoheal saw the same value as
+    #    enabled. One parser now answers for both.
+    if declare -f nftban_module_effective_enabled >/dev/null 2>&1; then
+        if ! nftban_module_effective_enabled feeds; then
+            nftban_feeds_log INFO "Feeds master gate is not enabled (NFTBAN_FEEDS_ENABLED=${NFTBAN_FEEDS_ENABLED:-<unset>})"
+            echo "Feeds module is disabled. Enable with: nftban config set NFTBAN_FEEDS_ENABLED=true"
+            return 0
+        fi
+    else
+        # The authority itself is unreachable. That is UNAVAILABLE, not enabled:
+        # fail closed rather than update feeds on an unverifiable gate.
+        nftban_feeds_log ERROR "Module enablement authority unavailable — refusing to update feeds (this is NOT 'disabled', the gate could not be read)"
+        echo "Feeds enablement could not be determined (module authority unavailable). No feeds were updated." >&2
+        return 1
     fi
 
     # Check if another update is already running

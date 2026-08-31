@@ -1806,6 +1806,91 @@ _nftban_dsr_load() {
 # validation, the stale-plan check, the restore call and the kernel-side
 # verification all live behind the reconciler, so this lane cannot drift into
 # knowing how feeds or GeoBan store their state.
+
+# =============================================================================
+# _fw_recover_producer <producer> <indent> — ONE reporting contract for every
+# dataset-recovery call site (threat feeds, GeoBan).
+# =============================================================================
+# Three call sites re-applied these producers and disagreed about the result.
+# Two of them ran `nftban_feeds_sync_to_nftables 2>/dev/null || true` followed by
+# `_nftban_reconcile_geoban || true`: stderr discarded, status discarded, and NO
+# outcome printed at all — the operator saw "Re-syncing threat feeds..." and then
+# silence, which reads as success. The third reported honestly but collapsed
+# FAILED and UNAVAILABLE into one message.
+#
+# ⛔ NO AFFIRMATIVE WORDING WITHOUT PROOF. Only SYNCED — an effective intent
+#    proven present in live kernel state by the producer-attributable oracle —
+#    licenses a success message. UNKNOWN and FAILED must read as such.
+# ⛔ DISABLED IS NOT EMPTY. "The operator turned this off" and "this produced no
+#    data" are different facts. Both may legitimately require no work, but they
+#    must not be reported as the same thing, and neither is SYNCED.
+#
+# Rebuild policy for .12: recovery outcomes are REPORTED, and only a genuine
+# apply failure marks the run degraded. Feed/GeoBan recovery does not abort a
+# rebuild that has already published a valid ruleset — but it may never claim a
+# restoration it cannot prove.
+# =============================================================================
+_fw_recover_producer() {
+    local producer="$1" ind="${2:-    }" state rc reason=""
+
+    # Enablement is asked FIRST and separately, so "turned off" never masquerades
+    # as "nothing to restore" and never reaches the apply path at all.
+    if declare -f nftban_module_effective_enabled >/dev/null 2>&1; then
+        if ! nftban_module_effective_enabled "$producer" >/dev/null 2>&1; then
+            echo "${ind}${producer}: DISABLED (operator configuration; no synchronization required)"
+            return 0
+        fi
+    else
+        echo "${ind}${producer}: UNAVAILABLE — enablement authority unreachable; recovery NOT attempted" >&2
+        return 0
+    fi
+
+    if ! declare -f nftban_dsr_reconcile_one >/dev/null 2>&1; then
+        echo "${ind}${producer}: UNAVAILABLE — reconciler unreachable; state NOT verified" >&2
+        return 0
+    fi
+
+    # ⛔ TWO TRAPS, BOTH MEASURED ON lab4 2026-08-31.
+    #
+    # 1. `state=$(cmd); rc=$?` ABORTS under the `set -Eeuo pipefail` that
+    #    nftban_dataset_cidr.sh imposes on everything that sources it: a failing
+    #    reconcile kills the caller before rc is ever read, so FAILED and
+    #    UNAVAILABLE produced NO OUTPUT AT ALL — the worst possible outcome for a
+    #    reporting function. The `if !` form is exempt from set -e.
+    # 2. The producers log to STDOUT ("[INFO] FEEDS: Syncing feeds..."), so the
+    #    captured text is verdict PLUS noise. Parsing it loosely reported a
+    #    correct RECONCILED as an unrecognised state. Extract only a token from
+    #    the frozen vocabulary, and take the LAST one — the verdict is emitted
+    #    after any producer chatter.
+    local raw=""
+    rc=0
+    if ! raw="$(nftban_dsr_reconcile_one "$producer" 2>/dev/null)"; then rc=1; fi
+    state="$(printf '%s\n' "$raw" | grep -oE '^(RECONCILED|PARTIAL|FAILED|EMPTY|UNKNOWN)$' | tail -n1)"
+
+    case "$state" in
+        RECONCILED)
+            echo "${ind}${producer}: SYNCED (intended coverage verified present in the kernel)" ;;
+        PARTIAL)
+            echo "${ind}${producer}: PARTIAL — some intended coverage present, less than intended." \
+                 "NOT a proven restoration; investigate before relying on it." >&2 ;;
+        EMPTY)
+            # Enabled, but nothing effective to apply. Distinct from DISABLED, and
+            # emphatically not SYNCED: nothing was intended, so nothing is proven.
+            echo "${ind}${producer}: DISABLED (enabled, but no effective intent — nothing to restore)" ;;
+        FAILED)
+            echo "${ind}${producer}: FAILED — recovery did not establish the intended state (rc=${rc})" >&2
+            return 1 ;;
+        UNKNOWN|"")
+            # Empty also covers "no vocabulary token could be extracted". An
+            # unreadable verdict is UNAVAILABLE — never assumed successful.
+            echo "${ind}${producer}: UNAVAILABLE — result could not be established (rc=${rc});" \
+                 "this is NOT a clean result" >&2 ;;
+        *)
+            echo "${ind}${producer}: UNAVAILABLE — unrecognised reconciler state '${state}' (rc=${rc})" >&2 ;;
+    esac
+    return 0
+}
+
 _nftban_reconcile_feeds()  { _nftban_dsr_load || return 1; nftban_dsr_reconcile_one feeds; }
 _nftban_reconcile_geoban() { _nftban_dsr_load || return 1; nftban_dsr_reconcile_one geoban; }
 
@@ -2425,16 +2510,16 @@ FIREWALL_RELOAD_HELP
     fi
 
     # Step 5 (v1.50.1): Re-sync feeds — reload destroys sets (delete table + recreate)
+    # Was `nftban_feeds_sync_to_nftables 2>/dev/null || true`: stderr discarded,
+    # status discarded, no outcome printed. Silence after "Re-syncing..." reads as
+    # success. Now every outcome is named, and only SYNCED claims a restoration.
     [[ "$quiet" == "false" ]] && echo "Re-syncing threat feeds..."
-    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
-        nftban_feeds_sync_to_nftables 2>/dev/null || true
-    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
-        _nftban_reconcile_feeds || true
-    fi
+    _nftban_dsr_load 2>/dev/null || true
+    _fw_recover_producer feeds "  " || true
 
     # Step 6 (v1.50.1): Re-sync geoban
     [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
-    _nftban_reconcile_geoban || true
+    _fw_recover_producer geoban "  " || true
 
     # ⛔ v1.229.11 LANE 6A: COMMIT LAST. Every module has been re-applied and its
     # record staged for the target generation; only now does that generation
@@ -2668,8 +2753,23 @@ _fw_restore_timed_set() {
         raw="${raw#"${raw%%[![:space:]]*}"}"   # ltrim
         raw="${raw%"${raw##*[![:space:]]}"}"    # rtrim
         [[ -z "$raw" ]] && continue
-        addr="${raw%% *}"                        # first token = ip / ip6 / cidr
-        if ! [[ "$addr" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?$ ]]; then
+        addr="${raw%% *}"                        # first token = ip / ip6 / cidr / range
+        # ⛔ THE RANGE FORM IS NFTBAN'S OWN OUTPUT — it must round-trip.
+        # blacklist_ipv4/_ipv6 are declared `flags interval, timeout` with `auto-merge`
+        # (install/nftables/nftables.conf), so the KERNEL merges adjacent bans and
+        # `nft list set` prints them as `a-b`. This parser reads exactly that dump during
+        # rebuild step 7. Rejecting `a-b` meant NFTBan could not consume its own
+        # serialisation: MEASURED on lab2 via the genuine feed path, one rebuild took the
+        # set from 750 elements to 700 — 717 individual addresses silently stopped being
+        # blocked — and the only guard fires when the restored total is exactly ZERO, so a
+        # partial loss was invisible. Production snapshot at the time: srv3 held 172
+        # range-form elements covering ~840k addresses.
+        # The rejection protected nothing: nftables accepts `a-b` in these sets natively,
+        # and the Go feed parser already supports the form (internal/feeds/parser.go).
+        # Structure only is validated here. A semantically impossible range (reversed
+        # bounds) cannot occur in a kernel dump, and nft itself rejects one on add — so
+        # this stays a structural check and does not reimplement address arithmetic.
+        if ! [[ "$addr" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?(-[0-9a-fA-F:.]+(/[0-9]{1,3})?)?$ ]]; then
             skipped=$((skipped + 1))
             [[ "$quiet" == "false" ]] && echo "      WARN: $set_name: skip unparseable element '$raw'" >&2
             continue
@@ -3869,20 +3969,16 @@ _firewall_rebuild_core() {
 
     # Step 11: Re-sync feeds (v1.50.1: auto-restore, was manual-only)
     [[ "$quiet" == "false" ]] && echo "  [11/12] Re-syncing threat feeds..."
-    if _nftban_reconcile_feeds; then
-        [[ "$quiet" == "false" ]] && echo "    Feeds restored to nftables" || true
-    else
-        [[ "$quiet" == "false" ]] && echo "    Feeds restore FAILED or unavailable (state NOT reconciled)" || true
-    fi
+    # Was a two-way if/else printing "FAILED or unavailable" — truthful about not
+    # being a success, but collapsing a proven failure and an undetermined result
+    # into one message, and unable to say DISABLED at all.
+    _nftban_dsr_load 2>/dev/null || true
+    _fw_recover_producer feeds "    " || true
 
     # Step 12: Re-sync geoban (v1.50.1: auto-restore, was manual-only)
     [[ "$quiet" == "false" ]] && echo "  [12/12] Re-syncing GeoBan..."
     if command -v nftban &>/dev/null; then
-        if _nftban_reconcile_geoban; then
-            [[ "$quiet" == "false" ]] && echo "    GeoBan restored to nftables" || true
-        else
-            [[ "$quiet" == "false" ]] && echo "    GeoBan restore FAILED or unavailable (state NOT reconciled)" || true
-        fi
+        _fw_recover_producer geoban "    " || true
     else
         [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)" || true
     fi
@@ -4325,16 +4421,15 @@ firewall_reset() {
     fi
 
     # Step 9: Re-sync feeds (v1.50.1: auto-restore)
+    # See _fw_recover_producer: this site also discarded stderr and status and
+    # printed no outcome at all.
     [[ "$quiet" == "false" ]] && echo "  [9/11] Re-syncing threat feeds..."
-    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
-        nftban_feeds_sync_to_nftables 2>/dev/null || true
-    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
-        _nftban_reconcile_feeds || true
-    fi
+    _nftban_dsr_load 2>/dev/null || true
+    _fw_recover_producer feeds "    " || true
 
     # Step 10: Re-sync geoban (v1.50.1: auto-restore)
     [[ "$quiet" == "false" ]] && echo "  [10/11] Re-syncing GeoBan..."
-    _nftban_reconcile_geoban || true
+    _fw_recover_producer geoban "    " || true
 
     # ⛔ v1.229.11 LANE 6A: COMMIT LAST — see firewall_reload.
     if declare -f nftban_plan_txn_commit >/dev/null 2>&1; then
