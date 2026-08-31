@@ -73,23 +73,20 @@ Key Principle: Single Writer Architecture
 |  |  /usr/lib/nftban/setup/       - Installation helpers                    | |
 |  +-------------------------------------------------------------------------+ |
 |                                                                              |
-|  GO PACKAGES (pkg/)                                                          |
+|  GO CODE                                                                      |
 |  +-------------------------------------------------------------------------+ |
-|  |  api/        - HTTP API handlers        nftables/   - nft operations    | |
-|  |  analytics/  - Event analytics          nftbackend/ - Backend abstraction| |
-|  |  auth/       - Authentication           nftbanconf/ - Config loading     | |
-|  |  banlog/     - Ban logging              opqueue/    - Operation queue    | |
-|  |  blacklist/  - Blacklist management     persistence/- State persistence  | |
-|  |  config/     - Configuration parser     ports/      - Port management    | |
-|  |  ddos/       - DDoS detection           portscan/   - Port scan detect   | |
-|  |  eventbus/   - Inter-module events      safety/     - Safety checks      | |
-|  |  exporters/  - Metrics export           state/      - Runtime state      | |
-|  |  feeds/      - Threat feed sync         stats/      - Statistics         | |
-|  |  geoban/     - Country blocking         suricata/   - Suricata IDS       | |
-|  |  geoip/      - GeoIP lookups            sync/       - Cluster sync       | |
-|  |  ipc/        - IPC client               watchdog/   - Self-monitoring    | |
-|  |  loginmon/   - Login monitoring         whitelist/  - Whitelist mgmt     | |
-|  |  metrics/    - Prometheus metrics       util/       - Shared utilities   | |
+|  |  pkg/       PUBLIC boundary - the ONLY importable surface:              | |
+|  |             ipc/      - IPC client (external Go integrators)            | |
+|  |             version/  - version information                             | |
+|  |                                                                          | |
+|  |  internal/  ~55 packages, deliberately NOT importable. Includes:        | |
+|  |             nftbackend/ - the ONLY authorized nftables WRITE location    | |
+|  |             validator/  - zero-side-effect kernel truth validator        | |
+|  |             installer/  - install/update/restore lifecycle               | |
+|  |             loginmon/ botguard/ botscanmatch/ ddos/ portscan/ geoban/    | |
+|  |             feeds/ suricata/ watchdog/ - detection + enforcement engines | |
+|  |             setsync/ opqueue/ eventbus/ - serialized application path    | |
+|  |             nftbanconf/ configloader/  - configuration loading           | |
 |  +-------------------------------------------------------------------------+ |
 |                                                                              |
 +==============================================================================+
@@ -340,7 +337,6 @@ LOGS (/var/log/nftban/)
 |  +-- nftban.log               # Main application log                         |
 |  +-- ban.log                  # Ban/unban actions                            |
 |  +-- health.log               # Health check results                         |
-|  +-- sync.log                 # Cluster sync operations                      |
 +-----------------------------------------------------------------------------+
 
 LIBRARIES (/usr/lib/nftban/)
@@ -521,11 +517,16 @@ Detection Tiers:
 
 ```
 nftban/
-+-- cmd/                    # Go main packages (binaries)
-|   +-- nftband/            # Main daemon
-|   +-- nftban-core/        # Fast CLI operations (Go)
-|   +-- nftban-loginmon/    # Login monitor (placeholder)
-+-- pkg/                    # Go packages (libraries)
++-- cmd/                    # Go binaries (7)
+|   +-- nftband/                  # Daemon - sole nftables writer in normal operation
+|   +-- nftban-core/              # Fast CLI operations
+|   +-- nftban-installer/         # Install/update/restore lifecycle
+|   +-- nftban-validate/          # Kernel truth validator (zero-side-effect)
+|   +-- nftban-botscan-matcher/   # Bounded-memory BotScan prefilter
+|   +-- nftban-detect-ssh-ports/  # Shared SSH port detector (read-only)
+|   +-- validate-test/            # Validator test harness
++-- pkg/                    # PUBLIC Go boundary: ipc/ and version/ ONLY
++-- internal/               # ~55 packages, not externally importable
 +-- cli/                    # Bash CLI components
 |   +-- sbin/               # Main nftban script
 |   +-- lib/nftban/         # Install-mirror layout (see README.md)
