@@ -339,11 +339,12 @@ _nftban_dsr_intended_entries() {
 
 # Echo "<covered> <intended>" in ADDRESSES for a producer, or UNKNOWN.
 # $1=producer  (IPv4 only: the coverage oracle is 32-bit, see below)
-_nftban_dsr_producer_coverage_v4() {
-    local p="$1" live intended
-    live=$(nft -j list set ip nftban blacklist_ipv4 2>/dev/null) || { echo UNKNOWN; return 1; }
+_nftban_dsr_producer_coverage_fam() { # $1=producer $2=4|6 -> "<covered> <intended>" | UNKNOWN
+    local p="$1" fam="$2" live intended famtab set
+    if [[ "$fam" == "6" ]]; then famtab="ip6"; set="blacklist_ipv6"; else famtab="ip"; set="blacklist_ipv4"; fi
+    live=$(nft -j list set "$famtab" nftban "$set" 2>/dev/null) || { echo UNKNOWN; return 1; }
     [[ -z "${live//[[:space:]]/}" ]] && { echo UNKNOWN; return 1; }
-    intended="$(_nftban_dsr_intended_entries "$p" 4)" || { echo UNKNOWN; return 1; }
+    intended="$(_nftban_dsr_intended_entries "$p" "$fam")" || { echo UNKNOWN; return 1; }
     [[ -z "$intended" ]] && { echo "0 0"; return 0; }
 
     # ⛔ The env assignments bind to the command they prefix. Putting them before
@@ -351,7 +352,8 @@ _nftban_dsr_producer_coverage_v4() {
     #    empty while the min-prefix silently fell back to its python default —
     #    the filter appeared to work while doing nothing.
     printf '%s' "$live" \
-      | NFTBAN_DSR_BOGON_PREFIXES="$NFTBAN_DSR_BOGON_PREFIXES" \
+      | NFTBAN_DSR_FAMILY="$fam" \
+        NFTBAN_DSR_BOGON_PREFIXES="$NFTBAN_DSR_BOGON_PREFIXES" \
         NFTBAN_DSR_MIN_PREFIX_LEN="$NFTBAN_DSR_MIN_PREFIX_LEN" \
         python3 -c '
 import json, sys, ipaddress
@@ -361,8 +363,16 @@ BOGONS = [ipaddress.ip_network(b) for b in
           os.environ.get("NFTBAN_DSR_BOGON_PREFIXES", "").split()]
 MINLEN = int(os.environ.get("NFTBAN_DSR_MIN_PREFIX_LEN", "9"))
 
+FAM = int(os.environ.get("NFTBAN_DSR_FAMILY", "4"))
+
 def policy_excluded(n):
-    """Mirror of internal/setsync/cidr.go FilterProblematicCIDRs, IPv4."""
+    """Mirror of internal/setsync/cidr.go FilterProblematicCIDRs.
+    Both filters there are explicitly IPv4-only (the prefix-length check is
+    guarded by ip.To4() != nil and BogonPrefixes holds only v4 ranges), so IPv6
+    intent is never policy-excluded. Applying v4 rules to v6 would silently
+    shrink the denominator."""
+    if n.version != 4:
+        return False
     if n.prefixlen < MINLEN:
         return True                                   # oversized
     return any(n.overlaps(b) for b in BOGONS)         # bogon
@@ -377,7 +387,7 @@ def parse_nets(lines):
             out.append(ipaddress.ip_network(ln, strict=False))
         except ValueError:
             continue          # malformed intent is not coverage; it is dropped
-    return [n for n in out if n.version == 4]
+    return [n for n in out if n.version == FAM]
 
 def net_of(addr, plen):
     return ipaddress.ip_network(str(addr) + "/" + str(plen), strict=False)
@@ -434,7 +444,7 @@ if elems is None:
 live_raw = []
 for e in elems:
     flatten(e, live_raw)
-live = list(ipaddress.collapse_addresses([n for n in live_raw if n.version == 4])) if live_raw else []
+live = list(ipaddress.collapse_addresses([n for n in live_raw if n.version == FAM])) if live_raw else []
 
 # Coverage, in ADDRESSES, of intended space that is actually present live.
 # Element equality is deliberately NOT used: interval sets auto-merge, so an
@@ -452,8 +462,59 @@ print(str(covered) + " " + str(want_total))
 ' "$intended" 2>/dev/null || { echo UNKNOWN; return 1; }
 }
 
-_nftban_dsr_verify_feeds()  { _nftban_dsr_producer_coverage_v4 feeds; }
-_nftban_dsr_verify_geoban() { _nftban_dsr_producer_coverage_v4 geoban; }
+# ⛔ NO FAMILY MAY LICENSE SUCCESS FOR THE OTHER. The shared-set defect proved
+#    that cross-PRODUCER proof is invalid; the same argument applies across
+#    FAMILIES. Each family is measured against its own set and its own intent,
+#    then composed conservatively: any family FAILED makes the producer FAILED,
+#    any UNAVAILABLE makes it UNAVAILABLE, any PARTIAL makes it PARTIAL, and only
+#    every ACTIVE family fully covered yields success. A family with no intent is
+#    inactive and neither licenses nor blocks the verdict.
+# Emits "<covered> <intended>" for the COMPOSED result so the caller contract and
+# its strict arity guard are unchanged.
+_nftban_dsr_producer_coverage() { # $1=producer
+    local p="$1" r4 r6 c4 i4 c6 i6
+    r4="$(_nftban_dsr_producer_coverage_fam "$p" 4)" || r4="UNKNOWN"
+    r6="$(_nftban_dsr_producer_coverage_fam "$p" 6)" || r6="UNKNOWN"
+    # An unreadable family is UNAVAILABLE for the whole producer — never ignored,
+    # because ignoring it would let the readable family speak for both.
+    [[ "$r4" == "UNKNOWN" || "$r6" == "UNKNOWN" ]] && { echo UNKNOWN; return 1; }
+    read -r c4 i4 <<<"$r4"; read -r c6 i6 <<<"$r6"
+    _nftban_dsr_log_family "$p" "$c4" "$i4" "$c6" "$i6"
+
+    # ⛔ NEVER DO ARITHMETIC ON IPv6 COVERAGE IN SHELL. A single /48 is 2^80
+    #    addresses; bash integers are 64-bit, so `[[ "$i6" -gt 0 ]]` silently
+    #    mis-evaluates and an entirely present IPv6 intent read as absent.
+    #    MEASURED: v6 coverage 1208925819614629174706176/1208925819614629174706176
+    #    composed to "0 0" (EMPTY). Every comparison below is therefore a STRING
+    #    comparison, which is exact at any magnitude.
+    _fam_verdict() { # $1=covered $2=intended -> INACTIVE|FULL|NONE|PART
+        [[ "$2" == "0" ]] && { echo INACTIVE; return; }
+        [[ "$1" == "$2" ]] && { echo FULL; return; }
+        [[ "$1" == "0" ]] && { echo NONE; return; }
+        echo PART
+    }
+    local v4 v6
+    v4="$(_fam_verdict "$c4" "$i4")"
+    v6="$(_fam_verdict "$c6" "$i6")"
+
+    # Conservative composition. An inactive family neither licenses nor blocks.
+    [[ "$v4" == "NONE" || "$v6" == "NONE" ]] && { echo "0 1"; return 0; }
+    [[ "$v4" == "PART" || "$v6" == "PART" ]] && { echo "1 2"; return 0; }
+    local active=0
+    [[ "$v4" == "FULL" ]] && active=$((active+1))
+    [[ "$v6" == "FULL" ]] && active=$((active+1))
+    [[ "$active" -eq 0 ]] && { echo "0 0"; return 0; }   # nothing intended anywhere
+    echo "$active $active"
+}
+
+# Family detail is recorded even though the composed verdict is what gates, so a
+# reader can tell WHICH family fell short rather than only that one did.
+_nftban_dsr_log_family() {
+    printf '[dsr] %s coverage v4=%s/%s v6=%s/%s\n' "$1" "$2" "$3" "$4" "$5" >&2
+}
+
+_nftban_dsr_verify_feeds()  { _nftban_dsr_producer_coverage feeds; }
+_nftban_dsr_verify_geoban() { _nftban_dsr_producer_coverage geoban; }
 
 nftban_dsr_verify() { # $1=plan text -> echoes final state, rc 0 only if RECONCILED/EMPTY
     local plan="$1" p planned fn

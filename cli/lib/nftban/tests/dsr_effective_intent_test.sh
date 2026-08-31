@@ -109,6 +109,54 @@ raw_state="$(NFTBAN_DSR_BOGON_PREFIXES="" NFTBAN_DSR_MIN_PREFIX_LEN=0 \
     && ok "negative control: with filtering disabled the SAME input yields PARTIAL — the subtraction is load-bearing" \
     || bad "negative control did not discriminate (got '$raw_state'); case 3 may pass for the wrong reason"
 
+echo "=== CROSS-FAMILY: no family may license success for the other ==="
+# Family-aware stub: the ip query and the ip6 query must answer differently, or
+# the test could not tell the families apart at all.
+cat > "$T/bin/nft" <<'EOS'
+#!/bin/sh
+for a in "$@"; do case "$a" in ip6) fam=6 ;; ip) fam=${fam:-4} ;; esac; done
+if [ "${fam:-4}" = "6" ]; then
+  printf '{"nftables":[{"set":{"family":"ip6","name":"blacklist_ipv6","table":"nftban","elem":[%s]}}]}\n' "${LIVE6:-}"
+else
+  printf '{"nftables":[{"set":{"family":"ip","name":"blacklist_ipv4","table":"nftban","elem":[%s]}}]}\n' "${LIVE4:-}"
+fi
+EOS
+chmod +x "$T/bin/nft"
+p6() { printf '{"prefix":{"addr":"%s","len":%s}}' "$1" "$2"; }
+famrun() { # $1=intent lines $2=LIVE4 $3=LIVE6
+    printf '%s\n' "$1" > "$T/etc/geoban.d/50-ban-ZZ.conf"
+    # ⛔ EXPORT, do not prefix. `VAR=x somefunc` does not reliably reach the child
+    #    processes the function spawns — the same trap that left the bogon list
+    #    empty when the assignment was written before `printf` instead of before
+    #    `python3`. The stub `nft` is a child, so the values must be exported.
+    export LIVE4="$2" LIVE6="$3"
+    nftban_dsr_verify "$PLAN"
+}
+V4="5.10.0.0/24"; V6="2a00:1450:4001::/48"
+e4="$(pfx 5.10.0.0 24)"; e6="$(p6 2a00:1450:4001:: 48)"
+
+st="$(famrun "$V4" "$e4" "")"
+[[ "$st" == "RECONCILED" ]] && ok "IPv4-only intent, IPv4 present -> RECONCILED" || bad "v4-only -> $st"
+st="$(famrun "$V6" "" "$e6")"
+[[ "$st" == "RECONCILED" ]] && ok "IPv6-only intent, IPv6 present -> RECONCILED (v6 intent is no longer invisible)" || bad "v6-only -> $st"
+st="$(famrun "$V4
+$V6" "$e4" "$e6")"
+[[ "$st" == "RECONCILED" ]] && ok "dual-stack, both present -> RECONCILED" || bad "dual-stack both -> $st"
+st="$(famrun "$V4
+$V6" "$e4" "")"
+[[ "$st" == "FAILED" ]] && ok "dual-stack, IPv4 present / IPv6 ABSENT -> FAILED (v4 cannot license v6)" \
+                        || bad "v4-present/v6-absent -> $st (expected FAILED)"
+st="$(famrun "$V4
+$V6" "" "$e6")"
+[[ "$st" == "FAILED" ]] && ok "dual-stack, IPv6 present / IPv4 ABSENT -> FAILED (v6 cannot license v4)" \
+                        || bad "v6-present/v4-absent -> $st (expected FAILED)"
+# Restore the single-family stub for any later rows.
+cat > "$T/bin/nft" <<'EOS'
+#!/bin/sh
+printf '{"nftables":[{"set":{"family":"ip","name":"blacklist_ipv4","table":"nftban","elem":[%s]}}]}\n' "${LIVE_ELEMS:-}"
+EOS
+chmod +x "$T/bin/nft"
+
 echo
 echo "=== dsr_effective_intent: PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL -eq 0 ]]
