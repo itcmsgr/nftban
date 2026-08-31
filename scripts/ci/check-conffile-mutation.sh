@@ -53,7 +53,20 @@ conffile_sources() { # $1=ref -> source paths, sorted
         # explicitly installed into a conffile destination
         $0 == "install/config/nftban.conf"   { print; next }
         $0 == "install/config/feeds.conf"    { print; next }
-        $0 == "install/nftables/nftables.conf" { print; next }
+        # ⛔ install/nftables/nftables.conf is DELIBERATELY ABSENT from this list.
+        #    From v1.229.12 /etc/nftban/nftables.conf is a GENERATED RUNTIME
+        #    ARTIFACT, not operator-owned configuration: the firewall renders it
+        #    from nftables.conf.tpl and republishes it over that path on every
+        #    reload/rebuild with a bare `mv`. It is no longer a DEB conffile and
+        #    no longer RPM %config(noreplace), so a change to it cannot make a
+        #    package manager prompt — which is the only thing this gate exists to
+        #    prevent. Listing it here would report an "unacknowledged mutation"
+        #    for a file that is not, and can no longer be, protected config.
+        #    ⛔ This is NOT an acknowledgement or an exception: the file left the
+        #       protected surface, so there is no mutation to acknowledge. Do not
+        #       "restore" this line, and do not reach for NFTBAN_CONFFILE_ACK.
+        #       See packaging/build_nftban.sh, which excludes the same path from
+        #       the generated DEBIAN/conffiles and ships it as a plain %attr file.
         $0 == "install/sysctl/90-nftban.conf" { print; next }
     ' | grep -vE '\.(default|example|local)$' | LC_ALL=C sort -u
 }
