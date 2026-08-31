@@ -53,7 +53,7 @@ derive their authoritative verdict from kernel and validator evidence.
 - Server public IPv4/IPv6 reputation monitoring via DNSBL/RBL checks, with explicit degraded-coverage reporting — observe-only and non-enforcing
 - Optional Suricata DPI integration (EVE JSON)
 - 4-axis health model with kernel-derived truth validator
-- Atomic nftables schema rebuild (validate before load)
+- Atomic nftables ruleset transaction (validate before load)
 - Structured transactional installer with emergency SSH protection and per-run forensic logging
 
 ---
@@ -221,7 +221,17 @@ nftban ban 1.2.3.4                             # permanent ban
 nftban ban 1.2.3.4 --timeout 3600             # 1-hour ban (positive integer seconds)
 nftban unban 1.2.3.4
 nftban status
+
+# Diagnostics — read-only, safe to run during an incident
+nftban health                                  # 4-axis truth table
+nftban support                                 # collect a diagnostic bundle
 ```
+
+`nftban support` writes `/tmp/nftban-support-<timestamp>.tar.gz`. Move or copy that
+file somewhere durable before running any repair — a repair can destroy the state the
+bundle explains. (`nftban support --output DIR` writes straight to `DIR`, but that flag
+works only on **current main / upcoming v1.229.12 — not yet published**; on v1.229.11 it
+exits 1 and produces no bundle.)
 
 `--timeout` requires a positive integer (seconds) — non-integer / negative /
 zero / fractional / signed / hex / leading-zero values are rejected at parse
@@ -376,6 +386,9 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and full pipeline det
 | **Glossary** | [Canonical terminology](https://github.com/itcmsgr/nftban/wiki/Glossary-and-Vocabulary) |
 | **Known Limitations** | [Validator scope per module](https://github.com/itcmsgr/nftban/wiki/Known-Limitations-and-Validation-Scope) |
 | **Installation** | [Install guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide) |
+| **Troubleshooting** | [Incident diagnostics + support bundle](https://github.com/itcmsgr/nftban/wiki/Support-Bundle-and-Incident-Diagnostics) |
+| **Recovery** | [Emergency recovery and rollback](docs/operator/EMERGENCY_RECOVERY_AND_ROLLBACK.md) |
+| **Support bundle contract** | [What `nftban support` collects](docs/operator/SUPPORT_BUNDLE_AND_INCIDENT_EVIDENCE.md) |
 
 ---
 
