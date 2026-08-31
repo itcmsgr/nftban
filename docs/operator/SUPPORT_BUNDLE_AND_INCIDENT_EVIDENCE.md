@@ -50,9 +50,14 @@ be searched for in a bundle:
 ```
 UNKNOWN      != 0            a query that failed, never a count
 UNAVAILABLE  != ABSENT       an input that could not be read
-EMPTY        != missing      collected, but produced no content
 DANGLING     != COMPLETE     a start with no matching end
 ```
+
+Each is attached to a record — `chains=UNKNOWN`, `UNAVAILABLE: <path> not readable`,
+`rebuild_end=DANGLING` — so finding one in a bundle tells you something about that record.
+`EMPTY` is **not** in this list: it appears only as a MANIFEST census heading, written on
+every run whether or not anything is empty, so searching for it discriminates nothing. See
+[Manifest and collection census](#manifest-and-collection-census-manifesttxt).
 
 **Semantic rule, not a token.** A phase that was never entered must not be treated as a
 failed phase. The collector does **not** emit a literal `NOT_STARTED` value — read the
