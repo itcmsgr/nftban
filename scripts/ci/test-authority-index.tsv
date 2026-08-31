@@ -113,6 +113,7 @@ comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_
 comms_redact_p2a_noleak_test	cli/lib/nftban/tests/comms_redact_p2a_noleak_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+conffile_mutation_guard_test	cli/lib/nftban/tests/conffile_mutation_guard_test.sh	packaging	test	release-safety-conffile	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 config_local_impl2_test	cli/lib/nftban/tests/config_local_impl2_test.sh	core	test	config-local	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_source_helper_impl1_test	cli/lib/nftban/tests/config_local_source_helper_impl1_test.sh	core	test	config-local-source	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_reload_truthfulness_v1229_2_test	cli/lib/nftban/tests/config_reload_truthfulness_v1229_2_test.sh	cli	test	cli	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -200,6 +201,7 @@ nft_ndp_rfc4861_source_scope_test	cli/lib/nftban/tests/nft_ndp_rfc4861_source_sc
 nft_parser_compat_v1228_8_test	cli/lib/nftban/tests/nft_parser_compat_v1228_8_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 nft_shipped_conf_cold_load_idiom_test	cli/lib/nftban/tests/nft_shipped_conf_cold_load_idiom_test.sh	firewall	test	nft-schema-load-idiom	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_writer_authority_v150_test	cli/lib/nftban/tests/nft_writer_authority_v150_test.sh	firewall	test	nft-writer-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+nftables_conf_ownership_transition_v1229_12_test	cli/lib/nftban/tests/nftables_conf_ownership_transition_v1229_12_test.sh	packaging	test	packaging-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_config_rhg_cosmetic_r1a6_test	cli/lib/nftban/tests/nftban_config_rhg_cosmetic_r1a6_test.sh	core	test	config-cosmetic-hygiene	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_da_help_ssh_port_r1a2_test	cli/lib/nftban/tests/nftban_da_help_ssh_port_r1a2_test.sh	installer	test	directadmin-panel	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_file_cleanup_r1a5_test	cli/lib/nftban/tests/nftban_file_cleanup_r1a5_test.sh	packaging	test	shipped-config-hygiene	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -238,6 +240,7 @@ read_path_mode_contract_v1229_7_test	cli/lib/nftban/tests/read_path_mode_contrac
 read_ra_ifs_v156_test	cli/lib/nftban/tests/read_ra_ifs_v156_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_atomic_rollback_v1228_10_test	cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_disposition_v122912_test	cli/lib/nftban/tests/rebuild_disposition_v122912_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+rebuild_module_evidence_test	cli/lib/nftban/tests/rebuild_module_evidence_test.sh	firewall	test	rebuild-module-reapply-evidence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 rebuild_nft_lock_participation_v1229_3_test	cli/lib/nftban/tests/rebuild_nft_lock_participation_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_ordinary_history_v1229_3_test	cli/lib/nftban/tests/rebuild_no_ordinary_history_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_syn_drop_v192_test	cli/lib/nftban/tests/rebuild_no_syn_drop_v192_test.sh	firewall	test	firewall-rebuild	ROOT_LAB	lab-manual	false	true	false	false	true	false			

@@ -7,7 +7,7 @@
 # meta:name="ipc-sync-coalesce-truth-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="D9a. nft_ipc_sync debounces rapid full-sync requests using a HOST-WIDE marker (/run/nftban/.sync_last, 3s), and the suppressed branch returned 0 — a status every caller reads as 'the sync happened'. No IPC is sent, so the daemon never sees the request and performs zero replaces. The docstring even codified it: 'Returns: 0 on success (or coalesced)'. MEASURED on lab4 2026-08-31 through the real recovery path, counting the daemon's own replace lines: back-to-back gave SYNCED(2 replaces) FAILED(0) SYNCED(2) FAILED(0) while the same calls spaced 15s gave SYNCED(2) three times. Because recovery writes its durable source and THEN syncs, 'a sync ran 2s ago' does not imply the caller's state is committed. Propagation alone cannot fix this — the work never happened — so nft_ipc_sync_or_apply, whose contract is to apply, re-issues once with force=1. The debounce still protects direct nft_ipc_sync callers that do not need immediate proof. Counts real IPC requests via a stub transport, and reproduces the defect against the origin/main library so no row passes vacuously."
+# meta:description="D9a. nft_ipc_sync debounces rapid full-sync requests using a HOST-WIDE marker (/run/nftban/.sync_last, 3s), and the suppressed branch returned 0 — a status every caller reads as 'the sync happened'. No IPC is sent, so the daemon never sees the request and performs zero replaces. The docstring even codified it: 'Returns: 0 on success (or coalesced)'. MEASURED on lab4 2026-08-31 through the real recovery path, counting the daemon's own replace lines: back-to-back gave SYNCED(2 replaces) FAILED(0) SYNCED(2) FAILED(0) while the same calls spaced 15s gave SYNCED(2) three times. Because recovery writes its durable source and THEN syncs, 'a sync ran 2s ago' does not imply the caller's state is committed. Propagation alone cannot fix this — the work never happened — so nft_ipc_sync_or_apply, whose contract is to apply, re-issues once with force=1. The debounce still protects direct nft_ipc_sync callers that do not need immediate proof. Counts real IPC requests via a stub transport, and reproduces the defect against the pre-fix baseline library so no row passes vacuously."
 # meta:ta.id="ipc_sync_coalesce_truth_test"
 # meta:ta.owner="firewall"
 # meta:ta.module="ipc-sync-contract"
@@ -35,8 +35,39 @@ bad() { FAIL=$((FAIL+1)); echo "  [FAIL] $1"; }
 SBX="$(mktemp -d)"; trap 'rm -rf "$SBX"' EXIT
 export NFTBAN_RUN_DIR="$SBX/run"; mkdir -p "$NFTBAN_RUN_DIR"
 STUB_LOG="$SBX/ipc.log"; : > "$STUB_LOG"
-git -C "$REPO_ROOT" show origin/main:cli/lib/nftban/lib/nft_ipc.sh > "$SBX/old_ipc.sh" 2>/dev/null || {
-    echo "  [FAIL] cannot read origin/main nft_ipc.sh — the control would be vacuous"; exit 1; }
+# ⛔ THE PRE-FIX BASELINE IS SYNTHESISED FROM THE LIVE LIBRARY BY A DECLARED
+#    INVERSION — it is NOT read from a git ref.
+#
+#    This test originally read the baseline from `git show pre-fix baseline:...`.
+#    pre-fix baseline is a MOVING ref: the moment the fix merged, the "pre-fix"
+#    baseline BECAME the fixed code and both negative controls inverted, so the
+#    test failed deterministically on main and on every PR branched from it.
+#    A baseline must be immutable with respect to the thing it is the baseline
+#    FOR. Pinning a tag would not do either — the ci-bash checkout is shallow,
+#    so no historical ref is guaranteed to be present.
+#
+#    Instead: take the CURRENT library and restore exactly the one line the fix
+#    changed. That is immutable by construction, needs no history, and cannot
+#    drift out of sync with the code it is the control for.
+FIXED_RETURN='return "${NFTBAN_IPC_SYNC_COALESCED}"'
+# grep -c EXITS 1 when the count is 0 while still printing "0", so a
+# `|| echo 0` fallback appends a SECOND line and the comparison below then
+# sees "0\n0" and dies with an arithmetic error instead of reporting the
+# shape drift it exists to report.
+n_shape=$(grep -c "$FIXED_RETURN" "$IPC_LIB" 2>/dev/null) || n_shape=0
+[[ "$n_shape" =~ ^[0-9]+$ ]] || n_shape=0
+if [[ "$n_shape" -ne 1 ]]; then
+    echo "  [FAIL] expected exactly ONE '$FIXED_RETURN' in nft_ipc.sh, found $n_shape."
+    echo "         The inversion below no longer describes the fix, so the negative"
+    echo "         control would not reproduce the motivating defect. Re-derive it."
+    exit 1
+fi
+sed "s|${FIXED_RETURN}|return 0|" "$IPC_LIB" > "$SBX/old_ipc.sh" || {
+    echo "  [FAIL] could not synthesise the pre-fix library — the control would be vacuous"; exit 1; }
+# The inversion must have CHANGED something, or the control is the fixed code.
+if cmp -s "$IPC_LIB" "$SBX/old_ipc.sh"; then
+    echo "  [FAIL] synthesised baseline is byte-identical to the fixed library — vacuous"; exit 1
+fi
 
 # Each arm runs in a SUBSHELL with its own library, so old and new never coexist.
 # The stub transport RECORDS every request, so "was IPC actually sent" is counted,
@@ -53,15 +84,15 @@ arm() { # $1=lib  $2=body
 reset() { : > "$STUB_LOG"; rm -f "$NFTBAN_RUN_DIR/.sync_last" "$NFTBAN_RUN_DIR/.sync_last.pending"; }
 sent()  { grep -c 'REQUEST method=sync' "$STUB_LOG" 2>/dev/null || echo 0; }
 
-echo "=== NEGATIVE CONTROL: origin/main suppresses request B and calls it success ==="
+echo "=== NEGATIVE CONTROL: pre-fix baseline suppresses request B and calls it success ==="
 reset
 r=$(arm "$SBX/old_ipc.sh" 'nft_ipc_sync >/dev/null 2>&1; echo "A=$?"; nft_ipc_sync >/dev/null 2>&1; echo "B=$?"')
 n=$(sent)
 b_rc=$(sed -n 's/^B=//p' <<<"$r")
-[[ "$n" -eq 1 ]] && ok "origin/main: only 1 IPC request sent for 2 calls (B suppressed, REPLACE_COUNT=0)" \
-                 || bad "origin/main sent $n requests; expected 1"
-[[ "$b_rc" == "0" ]] && ok "origin/main: suppressed request B returned rc=0 — THE MOTIVATING DEFECT" \
-                     || bad "origin/main B returned rc=$b_rc; expected the false success 0"
+[[ "$n" -eq 1 ]] && ok "pre-fix baseline: only 1 IPC request sent for 2 calls (B suppressed, REPLACE_COUNT=0)" \
+                 || bad "pre-fix baseline sent $n requests; expected 1"
+[[ "$b_rc" == "0" ]] && ok "pre-fix baseline: suppressed request B returned rc=0 — THE MOTIVATING DEFECT" \
+                     || bad "pre-fix baseline B returned rc=$b_rc; expected the false success 0"
 
 echo "=== FIXED: bare nft_ipc_sync still coalesces, but says so ==="
 reset
@@ -93,12 +124,12 @@ reset
 arm "$IPC_LIB" 'for i in 1 2 3 4; do nft_ipc_sync_or_apply geoban "" >/dev/null 2>&1; done' >/dev/null
 n=$(sent); [[ "$n" -eq 4 ]] && ok "4-call rapid burst: IPC_SENT=4" || bad "burst IPC_SENT=$n, want 4"
 
-echo "=== the SAME burst on origin/main is where the work disappeared ==="
+echo "=== the SAME burst on pre-fix baseline is where the work disappeared ==="
 reset
 arm "$SBX/old_ipc.sh" 'for i in 1 2 3 4; do nft_ipc_sync_or_apply geoban "" >/dev/null 2>&1; done' >/dev/null
 n=$(sent)
-[[ "$n" -eq 1 ]] && ok "origin/main burst: only 1 of 4 requests reached the daemon (3 lost, all reported success)" \
-                 || bad "origin/main burst sent $n; expected 1"
+[[ "$n" -eq 1 ]] && ok "pre-fix baseline burst: only 1 of 4 requests reached the daemon (3 lost, all reported success)" \
+                 || bad "pre-fix baseline burst sent $n; expected 1"
 
 echo "=== spaced control: no forced re-issue when the window has passed ==="
 reset

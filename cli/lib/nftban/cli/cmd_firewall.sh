@@ -95,6 +95,100 @@ fi
 # HELPERS
 # =============================================================================
 
+
+# _rebuild_run_module_reapply <module> <human_label>
+#
+# v1.229.12 B-LANE. Runs a module re-apply and PRESERVES ITS EVIDENCE.
+#
+# ⛔ WHY THIS EXISTS. These calls used to be `nftban <mod> reload 2>/dev/null`. On
+# 2026-08-26 three production hosts recorded:
+#     PRE state: protected (chains: 16)   POST state: degraded (chains: 6)
+# 6 chains is base input/forward/output x2 families, i.e. every module chain absent.
+# The rebuild had loaded the base ruleset fine; the MODULE RE-APPLY had failed. But the
+# reason was gone: stderr went to /dev/null and the "Warning: ... reload failed" line went
+# to the rebuild's own stdout, which the installer never captured. The operator — and this
+# lane, months later — got a degraded verdict with no cause. The mechanism was reproducible;
+# the TRIGGER was not recoverable from any surviving evidence.
+#
+# ⛔ NOT MERELY `2>/dev/null` REMOVED. Module stderr can carry secret material, and this
+# record is collected into support bundles that are emailed to third parties. Everything
+# captured here goes through the canonical redactor (lib/nftban_redact.sh) and is BOUNDED.
+# Un-suppressing without redacting would fix diagnosability by creating disclosure — the
+# exact trade this project already refused once in the support collector.
+#
+# Emits one bounded record per module:
+#   step / command / start / end / duration / exit / stdout / stderr / result
+_rebuild_module_evidence_file() {
+    local d="${NFTBAN_LOG_DIR:-/var/log/nftban}/rebuild-modules"
+    mkdir -p "$d" 2>/dev/null || { echo ""; return 0; }
+    echo "$d/reapply-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
+}
+
+_rebuild_run_module_reapply() {
+    local module="$1" label="$2"
+    local ev; ev="${_REBUILD_MODULE_EVIDENCE:-}"
+    local out_f err_f rc start end
+    out_f=$(mktemp "${TMPDIR:-/tmp}/nftban-mre-out.XXXXXX" 2>/dev/null) || out_f=""
+    err_f=$(mktemp "${TMPDIR:-/tmp}/nftban-mre-err.XXXXXX" 2>/dev/null) || err_f=""
+    start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    if [[ -n "$out_f" && -n "$err_f" ]]; then
+        nftban "$module" reload >"$out_f" 2>"$err_f"; rc=$?
+    else
+        nftban "$module" reload >/dev/null 2>&1; rc=$?
+    fi
+    end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ -n "$ev" ]]; then
+        {
+            echo "step=${module}_reload"
+            echo "command=nftban $module reload"
+            echo "start=$start"
+            echo "end=$end"
+            echo "exit=$rc"
+            echo "result=$([[ $rc -eq 0 ]] && echo SUCCESS || echo FAILED)"
+            # Bounded + redacted. An UNAVAILABLE capture is stated, never rendered as empty
+            # (an empty stderr and a stderr we failed to capture are different facts).
+            local sect
+            for sect in stdout:"$out_f" stderr:"$err_f"; do
+                local name="${sect%%:*}" path="${sect#*:}"
+                if [[ -z "$path" || ! -r "$path" ]]; then
+                    echo "${name}=UNAVAILABLE (capture file could not be created)"
+                elif [[ ! -s "$path" ]]; then
+                    echo "${name}=<empty>"
+                else
+                    echo "${name}_excerpt<<END"
+                    head -c 4096 "$path" | _rebuild_redact_stream
+                    echo "END"
+                fi
+            done
+            echo
+        } >> "$ev" 2>/dev/null
+    fi
+
+    # Always surface the failure reason to the operator, not just the fact of failure.
+    if [[ $rc -ne 0 && "${quiet:-false}" == "false" && -n "$err_f" && -s "$err_f" ]]; then
+        echo "    $label reload failed (exit $rc): $(head -c 300 "$err_f" | _rebuild_redact_stream | tr '\n' ' ')" >&2
+    fi
+    rm -f -- "$out_f" "$err_f" 2>/dev/null
+    return $rc
+}
+
+# _rebuild_redact_stream — canonical redactor, FAIL CLOSED. If the redactor cannot be
+# loaded we emit a marker rather than raw text: an unredactable capture must never reach a
+# bundle that gets emailed.
+_rebuild_redact_stream() {
+    if ! declare -F nftban_redact_stream >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_redact.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_redact_stream >/dev/null 2>&1; then
+        nftban_redact_stream
+    else
+        cat >/dev/null 2>&1
+        echo "[REDACTOR UNAVAILABLE — capture withheld]"
+    fi
+}
+
 _firewall_substitute_placeholders() {
     # Substitute __SSH_PORT__ and __CT_LIMIT_*__ placeholders in nftables.conf
     # Usage: _firewall_substitute_placeholders <input_file> <output_file>
@@ -3810,11 +3904,28 @@ _firewall_rebuild_core() {
     # v1.228.7: canonical effective-config authority (base main.conf + .local
     # override), replacing a .local-ONLY read that skipped re-apply on hosts
     # with DDOS_ENABLED="true" in main.conf.
+    # v1.229.12 B-LANE: one bounded evidence record per rebuild, opened before the first
+    # module re-apply so a failure at ANY step is attributable to a named command.
+    _REBUILD_MODULE_EVIDENCE=$(_rebuild_module_evidence_file)
+    if [[ -n "$_REBUILD_MODULE_EVIDENCE" ]]; then
+        {
+            echo "# nftban module re-apply evidence"
+            echo "rebuild_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "host=$(hostname -s 2>/dev/null)"
+            echo "nftban_version=$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo UNKNOWN)"
+            echo "# Module chains exist ONLY after these steps succeed. A rebuild whose base"
+            echo "# ruleset loaded fine but whose module re-apply failed leaves the live"
+            echo "# topology at the 6 BASE chains, which post-rebuild validation correctly"
+            echo "# reports as degraded. Without this record the CAUSE of that is unknowable."
+            echo
+        } > "$_REBUILD_MODULE_EVIDENCE" 2>/dev/null
+    fi
+
     local _ddos_enabled="false"
     nftban_module_effective_enabled ddos DDOS_ENABLED && _ddos_enabled="true"
     if [[ "$_ddos_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "    DDoS protection: re-applying..."
-        if nftban ddos reload 2>/dev/null; then
+        if _rebuild_run_module_reapply ddos "DDoS"; then
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "ddos" "$MR_OK"
         else
             [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed. Run: nftban ddos reload" || true
@@ -3829,7 +3940,7 @@ _firewall_rebuild_core() {
     local _portscan_enabled="false"
     nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
-        if nftban portscan reload 2>/dev/null; then
+        if _rebuild_run_module_reapply portscan "Portscan"; then
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "portscan" "$MR_OK"
         else
             [[ "$quiet" == "false" ]] && echo "    Warning: Portscan reload failed. Run: nftban portscan reload" || true
