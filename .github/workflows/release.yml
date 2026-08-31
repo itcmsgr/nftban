@@ -72,10 +72,17 @@ jobs:
   # nothing about generation is reimplemented here. If a generator gains a new
   # committed output, add it there, not to this workflow.
   release-preflight:
-    name: Release preflight (generated-artifact drift)
+    name: Release preflight (generated-artifact + conffile authority)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # SHA-pinned like every other action in this workflow (B4). fetch-depth: 0
+      # is REQUIRED, not cosmetic: the conffile gate resolves its baseline with
+      # `git describe --tags`, which returns nothing in a shallow checkout — the
+      # gate would then exit 2 on every run, or worse, be given a baseline that
+      # silently does not exist.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: FHS outputs are current (VERSION-coupled)
         run: ./build/generate-fhs-outputs.sh --check
@@ -88,6 +95,35 @@ jobs:
 
       - name: VERSION / VERSION_DATE / CHANGELOG cohere
         run: ./scripts/ci/check-version-date-coherence.sh
+
+      # ⛔ B3. The shipped-conffile mutation gate must be INVOKED here, not merely
+      #    exist in scripts/ci/. A guard with unit tests but no call site provides
+      #    ZERO release protection while reading, on a green board, exactly like one
+      #    that does. No `|| true`, no `continue-on-error`: a non-zero rc must fail
+      #    this job, and this job gates every build/publish job in the file.
+      - name: No shipped conffile silently mutated since the last release
+        run: ./scripts/ci/check-conffile-mutation.sh
+
+      # Integration negative control for the step above. B3 was an INTEGRATION-EDGE
+      # failure (the guard existed and passed its own tests while protecting
+      # nothing), so proving the script can fail is NOT sufficient — we invoke it
+      # through the same command line the real step uses, on a planted mutation.
+      - name: Self-test - a mutated shipped conffile must fail preflight
+        run: |
+          set -euo pipefail
+          SUBJ=install/config/nftban.conf
+          test -f "$SUBJ" || { echo "::error::$SUBJ absent - self-test would be vacuous"; exit 1; }
+          cp "$SUBJ" /tmp/conffile.orig
+          printf '\n# deliberate conffile mutation injected by the preflight self-test\n' >> "$SUBJ"
+          if ./scripts/ci/check-conffile-mutation.sh >/dev/null 2>&1; then
+            cp /tmp/conffile.orig "$SUBJ"
+            echo "::error::conffile gate PASSED on a deliberately mutated shipped conffile - the gate is blind"
+            exit 1
+          fi
+          cp /tmp/conffile.orig "$SUBJ"
+          git diff --quiet -- "$SUBJ" || { echo "::error::self-test did not restore $SUBJ"; exit 1; }
+          ./scripts/ci/check-conffile-mutation.sh >/dev/null
+          echo "self-test OK: mutation detected when injected, clean once restored"
 
       # Proves the drift check can actually fail. A guard that has never been
       # observed failing is a guard nobody has tested.

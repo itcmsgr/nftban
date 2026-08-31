@@ -106,6 +106,61 @@ grep -q "conffile-generation block was not found" <<<"$out" \
     && ok "missing packaging authority -> FAIL (cannot silently drift from what it mirrors)" \
     || bad "gate did not notice its authority vanished"
 
+# =============================================================================
+# ⛔ B3 — THE GUARD MUST BE INVOKED. Everything above proves the SCRIPT behaves.
+#    None of it proves the release path CALLS it. The gate shipped with tests,
+#    passed them all, and protected nothing: `git grep check-conffile-mutation`
+#    over .github/ matched only its own meta:name line. Existence is not
+#    enforcement — assert the call site, not just the callee.
+# =============================================================================
+echo "=== ⛔ B3 INTEGRATION EDGE: the release path actually invokes the gate ==="
+WF="$REPO_ROOT/.github/workflows/release.yml"
+if [[ ! -f "$WF" ]]; then
+    bad "release.yml not found — the wiring assertions below would be vacuous"
+else
+    # ⛔ Strip comments first. These are STRUCTURAL assertions; a comment that
+    #    merely NAMES continue-on-error or `|| true` must not satisfy or break an
+    #    arm. (Measured: the explanatory comment added with this very step tripped
+    #    the continue-on-error assertion.)
+    PREFLIGHT="$(awk '/^  release-preflight:/{n=1;next} n && /^  [a-z][a-z-]*:$/{exit} n{print}' "$WF" \
+                 | sed 's/[[:space:]]*#.*$//')"
+    [[ -n "$PREFLIGHT" ]] \
+        && ok "release-preflight job exists in release.yml" \
+        || bad "no release-preflight job — nothing gates publication"
+
+    INVOKE="$(printf '%s\n' "$PREFLIGHT" | grep -F 'check-conffile-mutation.sh' | grep -v '^ *#' || true)"
+    [[ -n "$INVOKE" ]] \
+        && ok "release-preflight INVOKES check-conffile-mutation.sh" \
+        || bad "gate is never called from release-preflight — B3: tested but inert"
+
+    # A call that cannot fail the job is not enforcement either.
+    if printf '%s\n' "$INVOKE" | grep -qE '\|\| *true|\|\| *:'; then
+        bad "the gate invocation swallows its exit status (|| true) — cannot fail the release"
+    else
+        ok "gate invocation does not suppress its exit status"
+    fi
+    printf '%s\n' "$PREFLIGHT" | grep -q 'continue-on-error' \
+        && bad "release-preflight sets continue-on-error — a failing gate would not stop the release" \
+        || ok "release-preflight does not set continue-on-error"
+
+    # The gate resolves its baseline via `git describe --tags`; a shallow
+    # checkout returns nothing and the gate exits 2 on every run.
+    printf '%s\n' "$PREFLIGHT" | grep -q 'fetch-depth: 0' \
+        && ok "release-preflight checkout is deep (baseline tag resolvable)" \
+        || bad "shallow checkout — git describe --tags finds no baseline, gate cannot run"
+
+    # And the guard must gate PUBLICATION, not merely exist alongside it.
+    grep -q 'needs: release-preflight' "$WF" \
+        && ok "a build/publish job declares needs: release-preflight" \
+        || bad "no job depends on release-preflight — it gates nothing"
+
+    # NEGATIVE CONTROL: the detector must actually see a suppressed invocation.
+    SUPPRESSED='        run: ./scripts/ci/check-conffile-mutation.sh || true'
+    printf '%s\n' "$SUPPRESSED" | grep -qE '\|\| *true|\|\| *:' \
+        && ok "detector DOES flag a suppressed invocation — assertions non-vacuous" \
+        || bad "detector blind to '|| true' — the suppression assertion proves nothing"
+fi
+
 echo
 echo "=== conffile_mutation_guard: PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL -eq 0 ]]
