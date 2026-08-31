@@ -172,8 +172,9 @@ IPs in `whitelist_ipv4/ipv6` are accepted BEFORE any limits are evaluated.
 ## 7. ICMPv6 Requirements
 
 Blocking all ICMPv6 breaks IPv6 completely. ICMPv6 was split into separate
-error/echo and Neighbor Discovery rules as of v1.67.0; as of v1.229.12 the ND
-half is itself split into NS/NA/RS and RA, which have different source rules:
+error/echo and Neighbor Discovery rules as of v1.67.0. On main, for the
+unpublished v1.229.12, the ND half is itself split into NS/NA/RS and RA, which
+have different source rules:
 
 **Rule 1 — Error + Echo (any source):**
 
@@ -187,7 +188,8 @@ icmpv6 type {
 } accept
 ```
 
-**Rule 2 — Neighbor Discovery, RFC 4861 conformant (as of v1.229.12):**
+**Rule 2 — Neighbor Discovery, RFC 4861 conformant** (merged to main for the
+unpublished v1.229.12; **not present in v1.229.11**):
 
 ND is admitted by **Hop Limit 255**, not by source scope. RFC 4861 sets the
 permitted source per message type, and only RA is restricted to a link-local
@@ -217,9 +219,10 @@ Hop Limit 255 is the anti-off-link control the RFC mandates (§6.1.1, §6.1.2,
 that reached this host with hop limit 255 cannot have been forwarded by a
 router, so it is on-link by construction.
 
-The two changes are coupled. Relaxing the source scope without the hop-limit
-check would newly admit off-link forged NS/NA from any global address, so
-neither may be applied alone.
+The source-scope correction is coupled with Hop Limit 255 enforcement so that
+widening the accepted ND source forms does not remove the protocol's on-link
+validation boundary. The two are a single design change and are not applied
+independently.
 
 `nd-redirect` is intentionally excluded (unnecessary for servers, attack surface).
 

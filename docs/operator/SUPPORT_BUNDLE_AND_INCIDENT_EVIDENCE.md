@@ -1,6 +1,10 @@
 # Support bundle and incident evidence
 
-**Last verified: v1.229.12** (`cli/lib/nftban/cli/cmd_support.sh` at `4cf715a0`).
+**Verified against main @ `4cf715a0`** (`cli/lib/nftban/cli/cmd_support.sh`).
+
+> **Current development status.** This page describes behavior merged to main for the
+> upcoming **v1.229.12**, which **has not been published**. The latest published release is
+> **v1.229.11**. Differences from v1.229.11 are identified explicitly below.
 
 `nftban support` collects a diagnostic bundle from the host. This page is the operator
 contract for what it produces, how to read it, and how to interpret evidence the
@@ -23,9 +27,10 @@ nftban support --network              # additionally include ip addr / routes / 
 `nftban support-bundle` is an accepted alias for the same command.
 
 - **Default output:** `/tmp/nftban-support-YYYYMMDD-HHMMSS.tar.gz`.
-- **`--output DIR` writes the bundle to `DIR`.** This flag was broken before v1.229.12
-  (`SUPPORT_OUTPUT_DIR: readonly variable`, exit 1, **no bundle produced at all**). If you
-  are on an earlier build, omit `--output` and move the tarball afterwards.
+- **`--output DIR` writes the bundle to `DIR` — on main only.** On **v1.229.11, the current
+  published release, this flag exits 1 and produces no bundle at all**
+  (`SUPPORT_OUTPUT_DIR: readonly variable`). On that release use plain `nftban support` and
+  move the tarball from `/tmp` afterwards.
 - **`--email` is transport, not authority.** The bundle is generated first and written to
   disk regardless of whether mail delivery succeeds. A mail failure does not mean you have
   no bundle — look in the output directory.
@@ -105,8 +110,10 @@ them is what makes an incident unreadable.
 ### Chain inventory: identity, not count
 
 `chain_inventory.txt` lists chains per family. The base firewall contributes
-`input`, `forward`, and `output` per family — **six chains total across `ip` and `ip6`**.
-Everything beyond that is contributed by protection modules during module re-apply.
+`input`, `forward`, and `output` **per family**. That structural statement is the claim to
+rely on; the resulting total of six follows from it and is not pinned by a regression test.
+Everything beyond the base chains is contributed by protection modules during module
+re-apply, which runs **outside** the atomic ruleset transaction.
 
 This matters for reading a topology change:
 
@@ -129,10 +136,10 @@ unconditionally:
 > start/end pairs before attributing blame.
 
 The installer's global wall-clock budget is **300 seconds**
-(`cmd/nftban-installer/main.go:51`) and is now logged as structured evidence
-(`installer global budget=300s deadline=...`). Before v1.229.12 it was never written
-anywhere, so a bundle could only report `UNKNOWN` and an operator could not distinguish a
-false verdict from a real failure.
+(`cmd/nftban-installer/main.go:51`). That constant is present in v1.229.11 as well —
+but **v1.229.11 does not log it**, so on a currently released host the budget is real yet
+unobservable and a bundle reports it as `UNKNOWN`. Emitting it as structured evidence
+(`installer global budget=300s deadline=...`) is unreleased v1.229.12 behavior.
 
 A firewall rebuild is exempt from that budget by policy. If the budget is exhausted and a
 policy-exempt operation has **already returned successfully**, the run continues under one
@@ -152,16 +159,17 @@ empty", and "collection failed". The census resolves it: these are the sections 
 
 ## Redaction and handling
 
-- Secrets (API keys, tokens, passwords) are redacted by the canonical redaction authority.
-  Derived diagnostic evidence — log excerpts, timelines, phase markers — is scrubbed
-  through the same authority as the source logs, because derived evidence carries the same
-  confidentiality requirements as its source.
+- Redaction removes **known secret patterns** (API keys, tokens, passwords) via the
+  canonical redaction authority. Derived diagnostic evidence — log excerpts, timelines,
+  phase markers — is scrubbed through the same authority as the source logs, because
+  derived evidence carries the same confidentiality requirements as its source.
 - Redaction is **fail-closed**. If the redactor is unavailable, the affected stream is
   discarded and a marker is emitted; raw content is never passed through
   (`_support_scrub_stream`, `cmd_support.sh`).
-- **Still treat the bundle as sensitive.** Redaction removes known secret shapes; it is not
-  a guarantee that nothing identifying remains. Review before sharing publicly, and prefer
-  a private channel.
+- **Review the bundle before sharing it outside your organization.** Diagnostic data may
+  still contain identifying or environment-specific information, and no pattern-based
+  redactor can guarantee that arbitrary sensitive material is absent. Prefer a private
+  channel.
 - Never paste credentials into an issue or a bundle. Nothing in NFTBan asks for them.
 
 ## Known limitations
