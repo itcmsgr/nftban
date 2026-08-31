@@ -26,7 +26,6 @@
 # =============================================================================
 set -uo pipefail
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="$(cd "${LIB_DIR}/../../.." && pwd)"
 PASS=0; FAIL=0
 ok()  { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 bad() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
@@ -47,12 +46,18 @@ if [[ "$(grep -c -- '-\[0-9a-fA-F' "$T/fn_old.sh")" -ne 0 ]]; then
     echo "  [FAIL] negative control still contains the dash branch — it would not reproduce the defect"; exit 1
 fi
 _stripped="$(grep -oE 'addr" =~ [^ ]+' "$T/fn_old.sh" | head -1)"
-_shipped="$(git -C "$REPO" show origin/main:cli/lib/nftban/cli/cmd_firewall.sh 2>/dev/null \
-            | grep -oE 'addr" =~ [^ ]+' | head -1)"
-if [[ -n "$_shipped" && "$_stripped" == "$_shipped" ]]; then
-    ok "negative control pattern is byte-identical to the one origin/main shipped"
+# ⛔ PINNED LITERAL, NOT A GIT REF. This compared the stripped pattern against
+#    `git show origin/main:cmd_firewall.sh`. origin/main is a MOVING ref: once the
+#    fix merged, "what origin/main shipped" became the FIXED pattern and this
+#    assertion inverted, failing on main and on every branch cut from it.
+#    The pre-fix pattern is a historical fact, so it is pinned as a literal here —
+#    immutable, and readable by anyone auditing what the control reproduces.
+#    (A tag would not work: the ci-bash checkout is shallow.)
+_shipped='addr" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?$'
+if [[ "$_stripped" == "$_shipped" ]]; then
+    ok "negative control pattern is byte-identical to the pre-fix shipped pattern"
 else
-    bad "control pattern does not match origin/main (stripped='$_stripped' shipped='$_shipped')"
+    bad "control pattern does not match the pinned pre-fix pattern (stripped='$_stripped' pinned='$_shipped')"
 fi
 
 dump() { printf 'set x {\n  type ipv4_addr\n  elements = { %s }\n}\n' "$1" > "$T/d.txt"; }
@@ -120,21 +125,21 @@ read -r r2 s2 _ <<<"$(run)"
     && ok "round trip stable: $r1 then $r2 restored, 0 skipped both times" \
     || bad "round trip drifted: $r1/$s1 then $r2/$s2"
 
-echo "=== NEGATIVE CONTROL — origin/main pattern loses the range form ==="
+echo "=== NEGATIVE CONTROL — the pre-fix pattern loses the range form ==="
 for fam in "1.2.3.40-1.2.3.50:IPv4" "2a00:1450::1-2a00:1450::ff:IPv6"; do
     val="${fam%:*}"; name="${fam##*:}"
     dump "$val"
     read -r ro so _ <<<"$(run x fn_old.sh)"
     read -r rn sn _ <<<"$(run)"
     [[ "$ro" == "0" && "$so" == "1" && "$rn" == "1" && "$sn" == "0" ]] \
-        && ok "$name range: origin/main restored=$ro skipped=$so -> fixed restored=$rn skipped=$sn" \
+        && ok "$name range: pre-fix restored=$ro skipped=$so -> fixed restored=$rn skipped=$sn" \
         || bad "$name control did not reproduce (old=$ro/$so new=$rn/$sn)"
 done
 dump "1.2.3.4, 1.2.3.0/24, 1.2.3.40-1.2.3.50"
 read -r ro so _ <<<"$(run x fn_old.sh)"
 read -r rn sn _ <<<"$(run)"
 [[ "$ro" == "2" && "$rn" == "3" ]] \
-    && ok "COVERAGE LOSS reproduced: origin/main restores $ro of 3, fixed restores $rn of 3" \
+    && ok "COVERAGE LOSS reproduced: pre-fix restores $ro of 3, fixed restores $rn of 3" \
     || bad "coverage-loss control did not reproduce (old=$ro new=$rn)"
 
 echo
