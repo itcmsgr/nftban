@@ -43,6 +43,7 @@ git -C "$REPO_ROOT" show origin/main:cli/lib/nftban/lib/nft_ipc.sh > "$SBX/old_i
 # never inferred.
 arm() { # $1=lib  $2=body
 ( set +u
+  # shellcheck source=/dev/null
   source "$1" >/dev/null 2>&1
   nft_ipc_request() { echo "REQUEST method=$1" >> "$STUB_LOG"; echo '{"success":true}'; return 0; }
   nft_ipc_apply_ruleset() { echo "APPLY" >> "$STUB_LOG"; return 0; }
