@@ -2574,8 +2574,23 @@ _fw_restore_timed_set() {
         raw="${raw#"${raw%%[![:space:]]*}"}"   # ltrim
         raw="${raw%"${raw##*[![:space:]]}"}"    # rtrim
         [[ -z "$raw" ]] && continue
-        addr="${raw%% *}"                        # first token = ip / ip6 / cidr
-        if ! [[ "$addr" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?$ ]]; then
+        addr="${raw%% *}"                        # first token = ip / ip6 / cidr / range
+        # ⛔ THE RANGE FORM IS NFTBAN'S OWN OUTPUT — it must round-trip.
+        # blacklist_ipv4/_ipv6 are declared `flags interval, timeout` with `auto-merge`
+        # (install/nftables/nftables.conf), so the KERNEL merges adjacent bans and
+        # `nft list set` prints them as `a-b`. This parser reads exactly that dump during
+        # rebuild step 7. Rejecting `a-b` meant NFTBan could not consume its own
+        # serialisation: MEASURED on lab2 via the genuine feed path, one rebuild took the
+        # set from 750 elements to 700 — 717 individual addresses silently stopped being
+        # blocked — and the only guard fires when the restored total is exactly ZERO, so a
+        # partial loss was invisible. Production snapshot at the time: srv3 held 172
+        # range-form elements covering ~840k addresses.
+        # The rejection protected nothing: nftables accepts `a-b` in these sets natively,
+        # and the Go feed parser already supports the form (internal/feeds/parser.go).
+        # Structure only is validated here. A semantically impossible range (reversed
+        # bounds) cannot occur in a kernel dump, and nft itself rejects one on add — so
+        # this stays a structural check and does not reimplement address arithmetic.
+        if ! [[ "$addr" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?(-[0-9a-fA-F:.]+(/[0-9]{1,3})?)?$ ]]; then
             skipped=$((skipped + 1))
             [[ "$quiet" == "false" ]] && echo "      WARN: $set_name: skip unparseable element '$raw'" >&2
             continue
