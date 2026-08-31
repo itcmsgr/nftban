@@ -120,6 +120,156 @@ systemctl daemon-reload 2>/dev/null || true
 # == END GENERATED deprecated-unit cleanup ==
 
 
+# =============================================================================
+# ONE-TIME OWNERSHIP TRANSITION — /etc/nftban/nftables.conf
+# =============================================================================
+# Until v1.229.12 this file was declared a dpkg conffile (and %config(noreplace)
+# for RPM), i.e. operator-owned configuration dpkg must preserve. The RUNTIME has
+# always treated it as a GENERATED publication artifact: firewall reload/rebuild
+# renders it from /usr/lib/nftban/templates/nftables.conf.tpl and republishes it
+# over this path with a bare `mv` — no merge, no backup, no operator-content
+# preservation. Two owners, one file.
+#
+# MEASURED consequence, v1.229.11 -> v1.229.12 on Ubuntu 24.04 with the file in
+# NFTBan's OWN normal rendered state: APT_RC=100, dpkg status iU (unpacked, NOT
+# configured), postinst never reached, so the correction was never delivered. The
+# rendered form differs from the package payload even at packaged defaults, so
+# this needs no operator edit and no non-default configuration. Ubuntu 24.04 sets
+# no force-conf* default, so a stock unattended host hits exactly this.
+# The same seam appeared in v1.228.6 and was answered with a release note telling
+# operators to pass --force-confnew. That is evidence of the problem, not a fix.
+#
+# From v1.229.12 the file is a generated runtime artifact and is no longer a
+# conffile. This block runs ONCE, BEFORE dpkg unpacks over it, and decides whether
+# the existing bytes may be displaced.
+#
+# ⛔ CONTINUING IS CONDITIONAL ON SUCCESSFUL PRESERVATION. Unknown content is
+#    backed up and VERIFIED before the upgrade proceeds; if preservation cannot be
+#    proven the transition ABORTS. Silent irreversible loss would replace one bad
+#    contract (interactive dpkg deadlock) with a worse one.
+# ⛔ CLASSIFICATION BIASES TOWARD UNKNOWN. A false UNKNOWN costs a backup; a false
+#    KNOWN destroys content that may encode real operator intent.
+_nftban_nftables_conf_ownership_transition() {
+    _c=/etc/nftban/nftables.conf
+    [ -f "$_c" ] || return 0
+
+    _tpl=/usr/lib/nftban/templates/nftables.conf.tpl
+    _class=UNKNOWN
+
+    # ⛔ ONE-TIME, AND SELF-LIMITING. dpkg's own conffile registration IS the
+    #    marker: while the INSTALLED package still declares this path a conffile we
+    #    are upgrading FROM the old ownership model and the transition applies.
+    #    Once it has happened the path is an ordinary packaged file, dpkg replaces
+    #    it silently, and this block must not run again. Without this gate the
+    #    rerun re-classified the freshly installed PAYLOAD as UNKNOWN (the payload
+    #    and the template differ in their comment blocks) and cut a second backup
+    #    on every reinstall — MEASURED: BACKUPS_AFTER_RERUN=2.
+    #    Note this is dpkg state, not a flag file we wrote: it cannot claim the
+    #    transition happened when it did not.
+    _rec=$(dpkg-query -W -f='${Conffiles}' nftban-core 2>/dev/null \
+           | tr ' ' '\n' | grep -A1 -x "$_c" | tail -1)
+    if [ -z "$_rec" ]; then
+        return 0
+    fi
+
+    # (1) Untouched package payload: dpkg's OWN recorded conffile md5 is the
+    #     authority here, not a guess about what the old package shipped.
+    _now=$(md5sum "$_c" 2>/dev/null | cut -d' ' -f1)
+    if [ "$_rec" = "$_now" ]; then
+        _class=KNOWN_PACKAGE_PAYLOAD
+    elif [ -f "$_tpl" ]; then
+        # (2) An NFTBan-rendered form.
+        #
+        # ⛔ THIS DELIBERATELY USES THE INSTALLED (PRE-UPGRADE) TEMPLATE, and a
+        #    reviewer must not "correct" it to the incoming one. preinst runs
+        #    before the new package's files exist, and the two templates answer
+        #    DIFFERENT questions:
+        #      installed template -> could the existing file have been generated
+        #                            legitimately by the version that is installed?
+        #      incoming template  -> what should the NEW version generate?
+        #    Only the first is the question being asked. Classifying a
+        #    v1.229.11-produced file against a v1.229.12 template would manufacture
+        #    false UNKNOWN (pointless backups) or false KNOWN (silent loss of
+        #    unique operator content) on every release whose template changes.
+        #
+        # Normalise BOTH sides by collapsing the
+        #     substituted regions, so a host with a non-default SSH port or CT
+        #     limit is still recognised as generated rather than misread as
+        #     operator content.
+        _n1=$(mktemp) || return 1
+        _n2=$(mktemp) || { rm -f "$_n1"; return 1; }
+        sed -E 's/\{[[:space:]]*[0-9]+([[:space:]]*,[[:space:]]*[0-9]+)*[[:space:]]*\}/{N}/g; s/[0-9]+/N/g' \
+            "$_c"   > "$_n1" 2>/dev/null
+        sed -E 's/__SSH_PORT__/N/g; s/__CT_LIMIT_[A-Z]+__/N/g; s/\{[[:space:]]*[0-9N]+([[:space:]]*,[[:space:]]*[0-9N]+)*[[:space:]]*\}/{N}/g; s/[0-9]+/N/g' \
+            "$_tpl" > "$_n2" 2>/dev/null
+        if cmp -s "$_n1" "$_n2"; then _class=KNOWN_NFTBAN_RENDERED_FORM; fi
+        rm -f "$_n1" "$_n2"
+    fi
+
+    if [ "$_class" != "UNKNOWN" ]; then
+        echo "nftban: /etc/nftban/nftables.conf is ${_class}; transitioning to generated-runtime ownership."
+        return 0
+    fi
+
+    # UNKNOWN: preserve first, and only continue if preservation is PROVEN.
+    _bdir=/var/lib/nftban/update-backups
+    _stamp=$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
+    _bak="${_bdir}/nftables.conf.pre-1.229.12-ownership-transition.${_stamp}"
+    if ! mkdir -p "$_bdir" 2>/dev/null; then
+        echo "nftban: ERROR cannot create ${_bdir} to preserve /etc/nftban/nftables.conf" >&2
+        echo "nftban: refusing to continue - unknown content must not be displaced unpreserved." >&2
+        return 1
+    fi
+    if ! cp -a "$_c" "$_bak" 2>/dev/null; then
+        echo "nftban: ERROR could not preserve /etc/nftban/nftables.conf to ${_bak}" >&2
+        echo "nftban: refusing to continue - unknown content must not be displaced unpreserved." >&2
+        return 1
+    fi
+    chmod 0600 "$_bak" 2>/dev/null || true
+    # VERIFY the copy. A backup that was never confirmed is not preservation.
+    _s1=$(sha256sum "$_c"   2>/dev/null | cut -d' ' -f1)
+    _s2=$(sha256sum "$_bak" 2>/dev/null | cut -d' ' -f1)
+    if [ -z "$_s1" ] || [ "$_s1" != "$_s2" ]; then
+        echo "nftban: ERROR backup verification FAILED for /etc/nftban/nftables.conf" >&2
+        echo "nftban:   original sha256=${_s1:-UNREADABLE}" >&2
+        echo "nftban:   backup   sha256=${_s2:-UNREADABLE}" >&2
+        echo "nftban: refusing to continue - preservation could not be proven." >&2
+        return 1
+    fi
+
+    # Durable record. A console warning is invisible to an unattended upgrade, so
+    # the migration is also written to the existing installer log — which the
+    # support bundle already collects, giving support visibility without adding
+    # another logging subsystem.
+    _rec_log=/var/log/nftban/installer.log
+    if mkdir -p /var/log/nftban 2>/dev/null; then
+        {
+            echo "MIGRATION=nftables-conf-generated-state"
+            echo "CLASSIFICATION=UNKNOWN_EXISTING_CONTENT"
+            echo "SOURCE_PATH=${_c}"
+            echo "BACKUP_PATH=${_bak}"
+            echo "BACKUP_SHA256=${_s1}"
+            echo "TIMESTAMP=${_stamp}"
+            echo "RESULT=PRESERVED_AND_CONTINUED"
+        } >> "$_rec_log" 2>/dev/null || true
+    fi
+
+    echo "nftban: NOTICE /etc/nftban/nftables.conf did not match a known package or"
+    echo "nftban:        NFTBan-generated form. It has been preserved at:"
+    echo "nftban:          ${_bak}"
+    echo "nftban:        sha256 ${_s1}"
+    echo "nftban:        From v1.229.12 NFTBan treats /etc/nftban/nftables.conf as"
+    echo "nftban:        GENERATED runtime state. Direct edits to that file are not"
+    echo "nftban:        retained across firewall reload/rebuild - they were not"
+    echo "nftban:        retained before either; the package metadata implied otherwise."
+    return 0
+}
+
+if ! _nftban_nftables_conf_ownership_transition; then
+    echo "nftban: ownership transition aborted; package NOT upgraded." >&2
+    exit 1
+fi
+
 # Remove immutable flag from nft_schema.sh before upgrade (security protection)
 # The file is protected with chattr +i to prevent command injection attacks.
 # dpkg cannot create backup links of immutable files, so we MUST remove the flag.
