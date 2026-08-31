@@ -101,15 +101,17 @@ header exists to make that mistake visible rather than silent.
 ## Incident evidence (`incident/`)
 
 Added in v1.229.12 after a production upgrade failure could not be diagnosed from a
-bundle. Five files:
+bundle. Seven files:
 
 | File | Answers |
 |---|---|
 | `incident/phase_timeline.txt` | Was this a real failure, or a false verdict from a deadline? Installer global budget, phase markers, and computed rebuild start/end/exit pairs. |
 | `incident/chain_inventory.txt` | *Which* chains are present, by **identity** — not just a count. |
-| `incident/parser_rejections.txt` | What exactly the feed parser rejected, classified and counted by input class. |
+| `incident/parser_rejections.txt` | How many feed/list elements the parser rejected, and roughly what shape they were. Counted from `installer.log` only, split by a two-way heuristic (`dash_range` vs `other`), with at most five unique sample values. An unreadable log yields `total_rejections=UNKNOWN`, never `0`. |
 | `incident/timeline_ruleset_lifecycle.txt` | render → apply → validation → rollback → final live state. |
 | `incident/timeline_installer_run.txt` | phase → duration → exit → deadline/cancellation → terminal verdict. |
+| `incident/nft_ruleset.json` | The full live ruleset as `nft -j list ruleset` — structured, parseable without scraping human text. |
+| `incident/nft_sets.json` | The live sets as `nft -j list sets`, same structured form. |
 
 The two timelines are kept **separate on purpose**. They can disagree, and *the
 disagreement is the diagnosis*: a ruleset lifecycle that completed cleanly alongside a

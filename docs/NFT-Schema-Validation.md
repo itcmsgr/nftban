@@ -128,7 +128,7 @@ Priority | Rule                            | Purpose
 3        | whitelist accept                | Trusted IPs bypass checks
 4        | blacklist drop                  | ⚠️ BEFORE established!
 5        | ct state established accept     | ✅ NOW safe (after bans)
-6        | ICMPv4/ICMPv6 accept            | Control plane (ND: hop-limit 255; RA link-local only)
+6        | ICMPv4/ICMPv6 accept            | Control plane (ND gate is release-dependent: v1.229.11 = fe80::/10; hop-limit 255 is unpublished v1.229.12 — see §7)
 7a       | /64 prefix SYN gate (IPv6)      | Anti-rotation: drops /64 >100 SYN/sec
 7b       | Per-IP SYN rate limit           | 25/sec terminal accept
 7c       | CT limits (SSH/HTTP/HTTPS)      | Connection count limits
@@ -226,13 +226,17 @@ independently.
 
 `nd-redirect` is intentionally excluded (unnecessary for servers, attack surface).
 
-> **Superseded.** Before v1.229.12 all four ND types were gated on
-> `ip6 saddr fe80::/10`. That rule dropped legitimate global-sourced NS/NA from
+> **Superseded on main only.** Up to and including v1.229.11 all four ND types are
+> gated on `ip6 saddr fe80::/10`. That rule dropped legitimate global-sourced NS/NA from
 > same-subnet neighbours and every DAD solicitation. Measured on lab4
 > (Rocky 9.8, kernel 5.14, nft 1.0.9): an on-link IPv6 peer could not resolve
 > the host, the neighbour entry stayed `INCOMPLETE`, and TCP never established.
-> If your host still carries a pre-v1.229.12 ruleset, `nftban firewall rebuild`
-> renders the current one.
+> **Every currently deployed host still carries that rule.** v1.229.11 is the latest
+> published release, and its shipped template gates all four ND types on
+> `ip6 saddr fe80::/10`. `nftban firewall rebuild` re-renders the **installed package's**
+> template (`/usr/lib/nftban/templates/nftables.conf.tpl`), so on v1.229.11 a rebuild
+> reproduces the same rule — it does **not** introduce the correction. Upgrading the
+> package to v1.229.12, once that release exists, is what delivers it.
 
 **Without these:**
 - PMTU blackholes (missing error types)
