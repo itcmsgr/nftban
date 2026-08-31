@@ -109,6 +109,21 @@ raw_state="$(NFTBAN_DSR_BOGON_PREFIXES="" NFTBAN_DSR_MIN_PREFIX_LEN=0 \
     && ok "negative control: with filtering disabled the SAME input yields PARTIAL — the subtraction is load-bearing" \
     || bad "negative control did not discriminate (got '$raw_state'); case 3 may pass for the wrong reason"
 
+echo "=== an UNREADABLE source is not an EMPTY one ==="
+# A present-but-unreadable durable source must not read as "no effective intent".
+# That would render a quiet non-result as a decision — the UNKNOWN-as-zero shape.
+if [[ "$(id -u)" -eq 0 ]]; then
+    ok "SKIPPED as root (chmod 000 does not restrict root) — asserted under an unprivileged run"
+else
+    printf '5.10.0.0/24\n' > "$T/etc/geoban.d/50-ban-ZZ.conf"
+    chmod 000 "$T/etc/geoban.d/50-ban-ZZ.conf"
+    st="$(LIVE_ELEMS="" nftban_dsr_verify "$PLAN")"
+    chmod 644 "$T/etc/geoban.d/50-ban-ZZ.conf"
+    [[ "$st" == "UNKNOWN" ]] \
+        && ok "present but unreadable source -> UNKNOWN (not EMPTY, not FAILED)" \
+        || bad "unreadable source reported '$st' — a non-result presented as a decision"
+fi
+
 echo "=== CROSS-FAMILY: no family may license success for the other ==="
 # Family-aware stub: the ip query and the ip6 query must answer differently, or
 # the test could not tell the families apart at all.

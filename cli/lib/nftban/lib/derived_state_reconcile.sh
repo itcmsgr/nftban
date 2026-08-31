@@ -326,9 +326,22 @@ _nftban_dsr_intended_entries() {
         geoban) pat='50-ban-*.conf' ;;
         *)      return 1 ;;
     esac
+    # ⛔ AN UNREADABLE SOURCE IS NOT AN EMPTY ONE. If matching files exist but none
+    #    can be read, returning no entries would render the producer "no effective
+    #    intent" — a quiet non-result dressed as a decision. Fail so the caller
+    #    reports UNAVAILABLE.
+    local -a _files=()
+    while IFS= read -r -d '' _f; do _files+=("$_f"); done \
+        < <(find "$src" -maxdepth 1 -type f -name "$pat" -print0 2>/dev/null)
+    if [[ "${#_files[@]}" -gt 0 ]]; then
+        local _readable=0 _f2
+        for _f2 in "${_files[@]}"; do [[ -r "$_f2" ]] && _readable=$((_readable+1)); done
+        [[ "$_readable" -eq 0 ]] && return 1   # present but wholly unreadable
+    fi
+
     # Same parse the producers themselves use: skip blanks and #-comments,
     # discriminate family by the presence of a colon.
-    find "$src" -maxdepth 1 -type f -name "$pat" -print0 2>/dev/null \
+    printf '%s\0' "${_files[@]:-}" 2>/dev/null \
       | xargs -0 -r cat 2>/dev/null \
       | sed 's/[[:space:]]*$//' \
       | awk -v fam="$fam" '
