@@ -53,7 +53,7 @@ derive their authoritative verdict from kernel and validator evidence.
 - Server public IPv4/IPv6 reputation monitoring via DNSBL/RBL checks, with explicit degraded-coverage reporting — observe-only and non-enforcing
 - Optional Suricata DPI integration (EVE JSON)
 - 4-axis health model with kernel-derived truth validator
-- Atomic nftables schema rebuild (validate before load)
+- Atomic nftables ruleset transaction (validate before load)
 - Structured transactional installer with emergency SSH protection and per-run forensic logging
 
 ---

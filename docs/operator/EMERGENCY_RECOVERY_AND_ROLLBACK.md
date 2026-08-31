@@ -1,9 +1,10 @@
 # Emergency recovery and rollback
 
 **Last verified: v1.218.5**, except sections 0 and 2 (evidence collection, rebuild
-duration, safe fallback), which were verified against v1.229.12. The remaining sections
-have not been re-verified since v1.218.5 and carry that stamp deliberately rather than a
-bumped one.
+duration, safe fallback), which were **verified against current main for the upcoming
+v1.229.12 (not yet published)**. The latest published release is **v1.229.11**. The
+remaining sections have not been re-verified since v1.218.5 and carry that stamp
+deliberately rather than a bumped one.
 
 This page is the operator reference for recovering an NFTBan host after a failed update, a broken
 firewall reload, an unresponsive daemon, or an accidental self-lockout. Every command and path below
@@ -125,18 +126,25 @@ Any of these failing tells you to roll back:
 The command is **`nftban firewall rebuild`**. (The bare `nftban rebuild` is an inert stub in this
 build — it only prints that rebuild is handled by the distro package. Use the `firewall` form.)
 
-Rebuild is safe to run for recovery because it validates before it applies:
+Rebuild applies the base ruleset atomically: it renders to a temporary file, dry-run validates
+it with `nft -c -f`, and only on success loads it in a single `nft -f` transaction. If that
+validation fails, the existing firewall is left untouched.
 
-1. renders the ruleset to a temporary file,
-2. dry-run validates it with `nft -c -f`,
-3. only on success does it atomically `mv` the file into place and load it in a single `nft -f`
-   transaction.
+That guarantee covers the base ruleset transaction only. After it completes, enabled protection
+modules are re-applied by separate invocations, outside that transaction. An individual module
+re-apply failure can be reported as a warning without immediately aborting the rebuild. NFTBan then
+performs post-rebuild validation and, when a previously PROTECTED host is detected as degraded,
+attempts rollback from the pre-rebuild snapshot.
 
-If validation fails, the existing firewall is left untouched. The rendered ruleset does its
-create/delete/define inside one transaction, so packets never see an empty ruleset. Before the
-rebuild, NFTBan snapshots the full ruleset to `/var/lib/nftban/backup/rebuild_<timestamp>/` and backs
-up the whitelist and blacklist sets (v4 and v6), so existing bans and whitelist entries are preserved
-across the rebuild. If the load fails, the CLI advises `nftban firewall reset --force`.
+Therefore the base ruleset is validated before application, while the resulting post-rebuild
+protection state is evaluated after module re-apply. Rollback is a containment control for a
+detected regression; it is not equivalent to making the complete rebuild lifecycle atomic.
+
+The rendered ruleset does its create/delete/define inside one transaction, so packets never see an
+empty ruleset. Before the rebuild, NFTBan snapshots the full ruleset to
+`/var/lib/nftban/backup/rebuild_<timestamp>/` and backs up the whitelist and blacklist sets (v4 and
+v6), so existing bans and whitelist entries are preserved across the rebuild. If the load fails, the
+CLI advises `nftban firewall reset --force`.
 
 Verify after a rebuild:
 
@@ -152,10 +160,13 @@ exempt by policy from the installer's 300-second global wall-clock budget
 (`cmd/nftban-installer/main.go:51`), so a long rebuild is not itself an error and is not
 killed by the installer deadline.
 
-- Since v1.229.12 the installer no longer converts a **successful** long rebuild into a
-  `FAILED_REBUILD` verdict, and `nftban update` no longer imposes a separate 30-second
-  timeout on the rebuild subprocess.
-- The global budget is now written to `installer.log` as
+- **In v1.229.11** (the current published release) a successful long rebuild **can still** be
+  recorded as `FAILED_REBUILD`, `nftban update` imposes a separate 30-second timeout on the
+  rebuild subprocess, and the budget is not written to the log — so a support bundle from such
+  a host reports it as `UNKNOWN`.
+- **On current main / upcoming v1.229.12**, a successful long rebuild is no longer converted
+  into a `FAILED_REBUILD` verdict, the separate 30-second `update` door is closed, and the
+  global budget is written to `installer.log` as
   `installer global budget=300s deadline=...`, so a bundle can show what the budget was.
 
 **A rebuild that never returns is not bounded.** The rebuild subprocess runs on
@@ -169,11 +180,12 @@ timeout will resolve it.
 ### Safe fallback ruleset
 
 `install/nftables/nftables-safe.conf` is a minimal standalone ruleset used as a recovery
-fallback. Before v1.229.12 it could not load on a host that had **no** `nftban` tables — a
-bare `delete table` is a hard error and `nft` applies a file as one transaction, so it
-returned `rc=1` and installed no firewall at all. That is exactly the fresh-install,
-post-flush, post-uninstall, and recovery case the fallback exists for. It now declares the
-empty tables before deleting them, so it loads cold as well as warm.
+fallback. **In v1.229.11** it cannot load on a host that has **no** `nftban` tables — a bare
+`delete table` is a hard error and `nft` applies a file as one transaction, so it returns
+`rc=1` and installs no firewall at all. That is exactly the fresh-install, post-flush,
+post-uninstall, and recovery case the fallback exists for. **Current main / upcoming
+v1.229.12** corrects this: it declares the empty tables before deleting them, so it loads
+cold as well as warm.
 
 ## 3. Recover an unresponsive daemon
 
