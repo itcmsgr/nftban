@@ -26,15 +26,46 @@
 # =============================================================================
 set -uo pipefail
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="$(cd "${LIB_DIR}/../../.." && pwd)"
 PASS=0; FAIL=0
 ok()  { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 bad() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export NFTBAN_CONFIG_DIR="$T/etc"
-git -C "$REPO" show origin/main:cli/lib/nftban/lib/module_authority.sh > "$T/old.sh" 2>/dev/null || {
-    echo "  [FAIL] cannot read origin/main authority — negative control would be vacuous"; exit 1; }
+# ⛔ THE PRE-FIX BASELINE IS SYNTHESISED FROM THE LIVE LIBRARY, NOT READ FROM A REF.
+#    This previously did `git show origin/main:module_authority.sh`. origin/main is a
+#    MOVING ref: the hour this lane merged, the "pre-fix" baseline BECAME the fixed
+#    code and every negative control below inverted, failing deterministically on main
+#    and on every branch cut from it. Third occurrence of that defect in this release.
+#    A tag is not the fix either — the ci-bash checkout is shallow, so no historical
+#    ref is guaranteed present.
+#    Instead: restore exactly what the fix changed. Immutable by construction.
+_synth_prefix_authority() { # $1=destination
+    local live="${LIB_DIR}/lib/module_authority.sh" n_bool n_key n_disp
+    n_bool=$(grep -c 'nftban_bool_is_true "\$val"' "$live") || n_bool=0
+    n_key=$(grep -c 'feeds).*"NFTBAN_FEEDS_ENABLED"' "$live") || n_key=0
+    n_disp=$(grep -c 'if \[\[ "\$module" == "feeds" \]\]; then' "$live") || n_disp=0
+    if [[ "$n_bool" -eq 0 || "$n_key" -eq 0 || "$n_disp" -eq 0 ]]; then
+        echo "  [FAIL] live authority no longer has the shape this inversion reverts" \
+             "(bool=$n_bool key=$n_key dispatch=$n_disp) — the negative control cannot" \
+             "reproduce the defect; re-derive it."
+        return 1
+    fi
+    awk '
+      /if \[\[ "\$module" == "feeds" \]\]; then/ { skip=1; next }
+      skip && /^[[:space:]]*fi[[:space:]]*$/          { skip=0; next }
+      skip { next }
+      { print }
+    ' "$live" \
+    | sed -e 's/nftban_bool_is_true "\$val"/[[ "$val" == "true" ]]/' \
+          -e 's/feeds)    echo "NFTBAN_FEEDS_ENABLED" ;;/feeds)    echo "FEEDS_ENABLED" ;;/' \
+      > "$1" || return 1
+    if cmp -s "$live" "$1"; then
+        echo "  [FAIL] synthesised baseline is identical to the live library — vacuous"; return 1
+    fi
+    bash -n "$1" 2>/dev/null || { echo "  [FAIL] synthesised baseline is not valid shell"; return 1; }
+}
+_synth_prefix_authority "$T/old.sh" || exit 1
 
 # END-TO-END: write the real config file, ask the real authority.
 probe() { # $1=module $2=KEY $3=value $4=impl(new|old)
@@ -73,7 +104,7 @@ for pair in "ddos:DDOS_ENABLED" "portscan:PORTSCAN_ENABLED"; do
     # NEGATIVE CONTROL: the motivating defect, on the real shipped module.
     old_yes="$(probe "$m" "$k" yes old)"; new_yes="$(probe "$m" "$k" yes new)"
     [[ "$old_yes" == "disabled" && "$new_yes" == "ENABLED" ]] \
-        && ok "$m NEGATIVE CONTROL: origin/main reads ${k}=yes as '$old_yes'; fixed reads '$new_yes'" \
+        && ok "$m NEGATIVE CONTROL: pre-fix authority reads ${k}=yes as '$old_yes'; fixed reads '$new_yes'" \
         || bad "$m negative control did not reproduce (old=$old_yes new=$new_yes)"
     # Direction guard: nothing that was TRUE may become FALSE.
     old_true="$(probe "$m" "$k" true old)"; new_true="$(probe "$m" "$k" true new)"
