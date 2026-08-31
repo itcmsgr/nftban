@@ -109,6 +109,7 @@ comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_
 comms_redact_p2a_noleak_test	cli/lib/nftban/tests/comms_redact_p2a_noleak_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+conffile_mutation_guard_test	cli/lib/nftban/tests/conffile_mutation_guard_test.sh	packaging	test	release-safety-conffile	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 config_local_impl2_test	cli/lib/nftban/tests/config_local_impl2_test.sh	core	test	config-local	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_source_helper_impl1_test	cli/lib/nftban/tests/config_local_source_helper_impl1_test.sh	core	test	config-local-source	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_reload_truthfulness_v1229_2_test	cli/lib/nftban/tests/config_reload_truthfulness_v1229_2_test.sh	cli	test	cli	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -156,6 +157,7 @@ http_log_discovery_v177_test	cli/lib/nftban/tests/http_log_discovery_v177_test.s
 immutable_health_verify_v163_test	cli/lib/nftban/tests/immutable_health_verify_v163_test.sh	health	test	immutable-flags-health	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 install_update_observability_v215_test	cli/lib/nftban/tests/install_update_observability_v215_test.sh	update	test	update-observability	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 installer_wording_v153_test	cli/lib/nftban/tests/installer_wording_v153_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+ipc_sync_coalesce_truth_test	cli/lib/nftban/tests/ipc_sync_coalesce_truth_test.sh	firewall	test	ipc-sync-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 l2e_replace_set_reachability_guard_test	cli/lib/nftban/tests/l2e_replace_set_reachability_guard_test.sh	firewall	test	set-apply-replace	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 l3a_never_ban_add_element_guard_test	cli/lib/nftban/tests/l3a_never_ban_add_element_guard_test.sh	firewall	test	never-ban-guard	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 legacy_backup_migration_v1229_3_test	cli/lib/nftban/tests/legacy_backup_migration_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -231,6 +233,7 @@ read_path_mode_contract_v1229_7_test	cli/lib/nftban/tests/read_path_mode_contrac
 read_ra_ifs_v156_test	cli/lib/nftban/tests/read_ra_ifs_v156_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_atomic_rollback_v1228_10_test	cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_disposition_v122912_test	cli/lib/nftban/tests/rebuild_disposition_v122912_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+rebuild_module_evidence_test	cli/lib/nftban/tests/rebuild_module_evidence_test.sh	firewall	test	rebuild-module-reapply-evidence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 rebuild_nft_lock_participation_v1229_3_test	cli/lib/nftban/tests/rebuild_nft_lock_participation_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_ordinary_history_v1229_3_test	cli/lib/nftban/tests/rebuild_no_ordinary_history_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_syn_drop_v192_test	cli/lib/nftban/tests/rebuild_no_syn_drop_v192_test.sh	firewall	test	firewall-rebuild	ROOT_LAB	lab-manual	false	true	false	false	true	false			

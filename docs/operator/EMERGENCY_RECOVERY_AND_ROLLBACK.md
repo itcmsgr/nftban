@@ -1,6 +1,10 @@
 # Emergency recovery and rollback
 
-**Last verified: v1.218.5.**
+**Last verified: v1.218.5**, except sections 0 and 2 (evidence collection, rebuild
+duration, safe fallback), which were **verified against current main for the upcoming
+v1.229.12 (not yet published)**. The latest published release is **v1.229.11**. The
+remaining sections have not been re-verified since v1.218.5 and carry that stamp
+deliberately rather than a bumped one.
 
 This page is the operator reference for recovering an NFTBan host after a failed update, a broken
 firewall reload, an unresponsive daemon, or an accidental self-lockout. Every command and path below
@@ -14,6 +18,67 @@ so and gives the real value.
   (`/usr/lib/nftban/`, `/etc/nftban/`, `/var/lib/nftban/`, `/var/log/nftban/`).
 - Keep a second way into the box (console, or a second SSH session on a known-good port) before you
   start recovery work.
+
+## 0. Before you mutate anything: collect evidence
+
+A host in a failed state **is evidence**. Repair, rollback, and rebuild all overwrite the
+state that explains what happened. For a serious rebuild, update, or installer incident,
+work in this order where it is operationally safe to do so:
+
+1. **Establish whether protection is currently active.** This decides how much time you
+   have, and it is a different question from "did the run succeed".
+   ```bash
+   nft list tables                    # expect: table ip nftban, table ip6 nftban
+   systemctl is-active nftables nftband
+   nftban health
+   ```
+2. **Collect the support bundle.**
+   ```bash
+   nftban support
+   ```
+   This is read-only and does not mutate the host. It writes
+   `/tmp/nftban-support-<timestamp>.tar.gz`.
+
+   > On **current main / upcoming v1.229.12 (not yet published)** you may instead use
+   > `nftban support --output /root` to write it directly to a chosen directory. On
+   > **v1.229.11**, the current published release, that flag exits 1 and produces **no
+   > bundle** — use the plain form above.
+3. **Preserve the bundle off-host.** Move it out of `/tmp` and copy it away
+   (`cp /tmp/nftban-support-*.tar.gz /root/` then `scp`, or `nftban support --email`).
+   A later repair may destroy the evidence it was collected from, and `/tmp` may be
+   cleared on reboot.
+4. **Read the installer/rebuild state** — `incident/timeline_installer_run.txt` and
+   `incident/phase_timeline.txt` in the bundle, plus
+   `/var/lib/nftban/state/install_state`.
+5. **Read the validation and rollback result** —
+   `incident/timeline_ruleset_lifecycle.txt`.
+6. **Identify which stage actually failed**: render, apply, module re-apply, validation, or
+   rollback. These have different remedies, and a terminal verdict alone does not name the
+   stage.
+7. **Only then** consider repair or any other mutation.
+
+> **Do not run `nftban-installer --repair` as a first response.** Repair resumes from the
+> phase recorded in the install state and re-runs it in full — which for a `FAILED_REBUILD`
+> state means the entire Switch phase, including emergency SSH injection, ghost-table
+> cleanup, and another complete firewall rebuild. If the original run's work actually
+> succeeded, repair does substantial work to recover from nothing, and overwrites the
+> evidence that would have shown that.
+
+### A terminal verdict is not the same as a broken firewall
+
+An installer run can report a terminal failure while the firewall is healthy and enforcing.
+The two timelines in the support bundle are kept separate precisely so this is visible:
+compare the **ruleset lifecycle** (render → apply → validation → rollback → live state)
+against the **installer run** (phase → duration → exit → verdict). A clean ruleset lifecycle
+next to a terminal installer verdict reads as a verdict problem, not a protection problem.
+
+Note also that the installer checks its deadline when **entering** a phase. A timeout error
+naming phase X can mean the deadline had already expired before X started — X may never have
+run at all. Cross-check against the rebuild start/end pairs before attributing a failure to a
+phase.
+
+See [Support bundle and incident evidence](SUPPORT_BUNDLE_AND_INCIDENT_EVIDENCE.md) for how
+to read each file and how to interpret `UNKNOWN` / `UNAVAILABLE` / `DANGLING`.
 
 ## 1. Roll back a failed update
 
@@ -69,18 +134,25 @@ Any of these failing tells you to roll back:
 The command is **`nftban firewall rebuild`**. (The bare `nftban rebuild` is an inert stub in this
 build — it only prints that rebuild is handled by the distro package. Use the `firewall` form.)
 
-Rebuild is safe to run for recovery because it validates before it applies:
+Rebuild applies the base ruleset atomically: it renders to a temporary file, dry-run validates
+it with `nft -c -f`, and only on success loads it in a single `nft -f` transaction. If that
+validation fails, the existing firewall is left untouched.
 
-1. renders the ruleset to a temporary file,
-2. dry-run validates it with `nft -c -f`,
-3. only on success does it atomically `mv` the file into place and load it in a single `nft -f`
-   transaction.
+That guarantee covers the base ruleset transaction only. After it completes, enabled protection
+modules are re-applied by separate invocations, outside that transaction. An individual module
+re-apply failure can be reported as a warning without immediately aborting the rebuild. NFTBan then
+performs post-rebuild validation and, when a previously PROTECTED host is detected as degraded,
+attempts rollback from the pre-rebuild snapshot.
 
-If validation fails, the existing firewall is left untouched. The rendered ruleset does its
-create/delete/define inside one transaction, so packets never see an empty ruleset. Before the
-rebuild, NFTBan snapshots the full ruleset to `/var/lib/nftban/backup/rebuild_<timestamp>/` and backs
-up the whitelist and blacklist sets (v4 and v6), so existing bans and whitelist entries are preserved
-across the rebuild. If the load fails, the CLI advises `nftban firewall reset --force`.
+Therefore the base ruleset is validated before application, while the resulting post-rebuild
+protection state is evaluated after module re-apply. Rollback is a containment control for a
+detected regression; it is not equivalent to making the complete rebuild lifecycle atomic.
+
+The rendered ruleset does its create/delete/define inside one transaction, so packets never see an
+empty ruleset. Before the rebuild, NFTBan snapshots the full ruleset to
+`/var/lib/nftban/backup/rebuild_<timestamp>/` and backs up the whitelist and blacklist sets (v4 and
+v6), so existing bans and whitelist entries are preserved across the rebuild. If the load fails, the
+CLI advises `nftban firewall reset --force`.
 
 Verify after a rebuild:
 
@@ -88,6 +160,44 @@ Verify after a rebuild:
 nft list tables            # must include: table ip nftban  and  table ip6 nftban
 nftban health
 ```
+
+### How long a rebuild may take
+
+A firewall rebuild on a host with large feed sets can run for **several minutes**. The
+installer's own phase deadline does not terminate it: `switchop.Rebuild` runs the
+subprocess on `context.Background()`, so it is exempt by policy from the 300-second global
+wall-clock budget (`cmd/nftban-installer/main.go:51`). A long rebuild is therefore not, by
+itself, evidence of a fault.
+
+**That exemption does not cover every caller.** Whether a long rebuild survives depends on
+the path that invoked it and on the release:
+
+- **In v1.229.11** (the current published release) a successful long rebuild **can still** be
+  recorded as `FAILED_REBUILD`, `nftban update` imposes a separate 30-second timeout on the
+  rebuild subprocess, and the budget is not written to the log — so a support bundle from such
+  a host reports it as `UNKNOWN`.
+- **On current main / upcoming v1.229.12**, a successful long rebuild is no longer converted
+  into a `FAILED_REBUILD` verdict, the separate 30-second `update` door is closed, and the
+  global budget is written to `installer.log` as
+  `installer global budget=300s deadline=...`, so a bundle can show what the budget was.
+
+**A rebuild that never returns is not bounded.** The rebuild subprocess runs on
+`context.Background()` (`internal/installer/switchop/rebuild.go`), so the installer's
+deadline cannot terminate it, and nothing wraps the installer itself. NFTBan currently has
+**no progress-aware supervision** and therefore **cannot distinguish a long rebuild from a
+hung one**. If a rebuild appears stuck, diagnose it from outside the installer — check
+whether `nft` is running and whether the process is consuming CPU — rather than assuming a
+timeout will resolve it.
+
+### Safe fallback ruleset
+
+`install/nftables/nftables-safe.conf` is a minimal standalone ruleset used as a recovery
+fallback. **In v1.229.11** it cannot load on a host that has **no** `nftban` tables — a bare
+`delete table` is a hard error and `nft` applies a file as one transaction, so it returns
+`rc=1` and installs no firewall at all. That is exactly the fresh-install, post-flush,
+post-uninstall, and recovery case the fallback exists for. **Current main / upcoming
+v1.229.12** corrects this: it declares the empty tables before deleting them, so it loads
+cold as well as warm.
 
 ## 3. Recover an unresponsive daemon
 
@@ -167,6 +277,10 @@ Reinstall from the official package for your distro, then confirm with `nftban h
 
 - **Rollback is destructive.** It overwrites the current install with the newest backup and cannot be
   undone. Read `nftban update list` first.
+- **Collect before you repair.** `--repair` re-runs a whole phase and overwrites the state
+  that explains the incident. See [section 0](#0-before-you-mutate-anything-collect-evidence).
+- **A failed collection is not a zero.** In a support bundle, `UNKNOWN` and `UNAVAILABLE`
+  mean the tool could not answer — never that the firewall is empty.
 - **CLI output is a report, not proof.** After any recovery, confirm kernel state with `nft list set`
   / `nft list tables`, not the CLI summary alone.
 - **Emergency mode is break-glass.** It bypasses the daemon and logs a warning on every operation;
@@ -183,4 +297,7 @@ Reinstall from the official package for your distro, then confirm with `nftban h
 - Whitelist (durable `--static`): `cli/lib/nftban/cli/cmd_whitelist.sh`
 - Services: `cli/lib/nftban/cli/cmd_services.sh`
 - Ruleset template (whitelist-before-blacklist ordering): `install/nftables/nftables.conf.tpl`
-- Related: [Ban forensics](BAN_FORENSICS.md), [Production baseline](PRODUCTION_BASELINE.md)
+- Installer budget / phase attribution: `cmd/nftban-installer/main.go`
+- Rebuild context policy (no hang supervision): `internal/installer/switchop/rebuild.go`
+- Related: [Support bundle and incident evidence](SUPPORT_BUNDLE_AND_INCIDENT_EVIDENCE.md),
+  [Ban forensics](BAN_FORENSICS.md), [Production baseline](PRODUCTION_BASELINE.md)
