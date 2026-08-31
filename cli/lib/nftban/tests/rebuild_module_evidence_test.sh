@@ -120,8 +120,11 @@ if [[ ! -s "$T/coll.sh" ]]; then
     bad "could not extract the support collector block"
 else
     collect() { ( _support_correlation_header() { echo "== $1 =="; }
-                  # Both are consumed by the collector block sourced below, which
-                  # shellcheck cannot follow; they are inputs, not dead locals.
+                  # Both are consumed by the collector block sourced below.
+                  # Static analysis cannot follow a runtime source, so they look
+                  # like dead locals; they are inputs. (A comment opening with the
+                  # word shellcheck is itself parsed as a directive - hence this
+                  # wording.)
                   # shellcheck disable=SC2034
                   local d="$T"; local NFTBAN_LOG_DIR="$1"
                   set +e; source "$T/coll.sh" ) > "$T/mr.txt" 2>&1; }
