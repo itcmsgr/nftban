@@ -379,6 +379,12 @@ nft_ipc_apply_ruleset() {
 
 # Coalescing / retry knobs (test-overridable)
 NFTBAN_SYNC_DEBOUNCE_SECONDS="${NFTBAN_SYNC_DEBOUNCE_SECONDS:-3}"
+
+# ⛔ A COALESCED REQUEST IS NOT A COMPLETED ONE. Distinct, non-success status for
+#    a full-sync request that was DEBOUNCED AWAY rather than executed. It must
+#    never be conflated with 0: 0 means the daemon ran a full sync, this means no
+#    IPC was sent at all and the caller's state is NOT proven committed.
+NFTBAN_IPC_SYNC_COALESCED="${NFTBAN_IPC_SYNC_COALESCED:-3}"
 NFTBAN_SYNC_RETRIES="${NFTBAN_SYNC_RETRIES:-3}"
 NFTBAN_SYNC_RETRY_DELAY="${NFTBAN_SYNC_RETRY_DELAY:-1}"
 
@@ -404,8 +410,22 @@ nft_ipc_sync() {
         if [[ "$now" -ge "$last" && $((now - last)) -lt "${NFTBAN_SYNC_DEBOUNCE_SECONDS}" ]]; then
             # A full sync ran within the debounce window; coalesce this request.
             # The periodic reconcile timer flushes the pending marker as a backstop.
+            #
+            # ⛔ THIS RETURNED 0 AND THAT WAS A FALSE SUCCESS. The debounce reasons
+            #    "a full sync ran recently, so your state is committed" — which is
+            #    FALSE whenever the caller mutated its durable source AFTER that
+            #    sync. That is exactly the recovery flow: write geoban.d / the feed
+            #    store, then request a sync. MEASURED on lab4 2026-08-31, counting
+            #    the daemon's own replace lines per call:
+            #        back-to-back : SYNCED(2 replaces) FAILED(0) SYNCED(2) FAILED(0)
+            #        spaced 15s   : SYNCED(2) SYNCED(2) SYNCED(2)
+            #    The failing calls performed ZERO replaces — no IPC was ever sent —
+            #    yet the caller was told the sync had happened. Convergence does
+            #    still occur later via the pending marker and the reconcile timer,
+            #    but "it will be right eventually" is not what rc=0 means to a
+            #    caller that verifies live state now.
             : > "${marker}.pending" 2>/dev/null || true
-            return 0
+            return "${NFTBAN_IPC_SYNC_COALESCED}"
         fi
     fi
 
@@ -437,8 +457,21 @@ nft_ipc_sync_or_apply() {
     local module="${1:-nftban}"
     local fallback_file="${2:-}"
 
-    if nft_ipc_sync; then
+    # This helper's contract is to APPLY the caller's state, so a coalesced
+    # request is not an acceptable outcome here: feeds/geoban/trust each write a
+    # durable source and then need THAT state committed. Re-issue once with
+    # force=1, which performs the work rather than waiting for it — this is not a
+    # sleep or a settle, and the debounce still protects any caller that invokes
+    # nft_ipc_sync directly and does not require immediate proof.
+    local _sync_rc=0
+    nft_ipc_sync || _sync_rc=$?
+    if [[ "$_sync_rc" -eq 0 ]]; then
         return 0
+    fi
+    if [[ "$_sync_rc" -eq "${NFTBAN_IPC_SYNC_COALESCED}" ]]; then
+        if nft_ipc_sync 1; then
+            return 0
+        fi
     fi
 
     echo "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" >&2
@@ -724,7 +757,7 @@ export NFTBAN_DAEMON_SOCKET
 export NFTBAN_IPC_TIMEOUT
 export NFTBAN_EMERGENCY_MODE
 # v1.213.0 SET_APPLY_SINGLE_WRITER coalescing/retry knobs
-export NFTBAN_SYNC_DEBOUNCE_SECONDS
+export NFTBAN_SYNC_DEBOUNCE_SECONDS NFTBAN_IPC_SYNC_COALESCED
 export NFTBAN_SYNC_RETRIES
 export NFTBAN_SYNC_RETRY_DELAY
 
