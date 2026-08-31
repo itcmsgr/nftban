@@ -284,6 +284,37 @@ print("UNKNOWN"); raise SystemExit(1)' 2>/dev/null || { echo UNKNOWN; return 1; 
 #    improvement. Only ZERO coverage from non-empty intent is treated as FAILED,
 #    which is the measured defect signature.
 
+# -----------------------------------------------------------------------------
+# EFFECTIVE INTENT = RAW INTENT − BOGON − OVERSIZED
+# -----------------------------------------------------------------------------
+# The single writer filters its input before committing. Measured on lab4
+# 2026-08-31: a GeoBan source of 198.51.100.0/24 + 203.0.113.0/24 produced
+# "[SYNC] CIDR filter: removed 2 problematic entries (bogon=2, oversized=0)" and
+# an EMPTY kernel set. Comparing live coverage against RAW intent would therefore
+# report FAILED on a perfectly healthy host whose source merely contains reserved
+# space. The denominator must be what policy actually allows through.
+#
+# ⛔ WHITELIST CONTRIBUTES ZERO SUBTRACTION. Measured 2026-08-31, six cases incl.
+#    the discriminating one (an exact whitelisted /32 banned with no covering
+#    range): the entry was still committed. Whitelist precedence is implemented
+#    by RULE ORDER (whitelist accept before blacklist drop), never by removing
+#    trusted addresses from the blacklist sets. Do not subtract it.
+#
+# ⛔ THIS IS A MIRROR, NOT A SECOND POLICY. The authority is Go:
+#      internal/setsync/cidr.go :: BogonPrefixes, MinAllowedPrefixLen
+#    There is no callable CLI surface to reuse (nftban-core exposes no
+#    cidr-filter subcommand), and /var/lib/nftban/state/filter.json records only
+#    the GLOBAL last-sync totals (feeds+geoban+blacklist.d combined), so it
+#    cannot attribute a filtered entry to one producer. The mirror is therefore
+#    unavoidable, and is pinned by a STRUCTURAL PARITY TEST that parses the Go
+#    source and fails if the two ever diverge:
+#      cli/lib/nftban/tests/cidr_policy_parity_test.sh
+NFTBAN_DSR_MIN_PREFIX_LEN=9      # IPv4 prefixes shorter than /9 are rejected
+NFTBAN_DSR_BOGON_PREFIXES="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 \
+169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 192.168.0.0/16 \
+198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 \
+255.255.255.255/32"
+
 # Emit one intended entry per line for a producer, family-filtered.
 # $1=producer $2=4|6
 _nftban_dsr_intended_entries() {
@@ -315,8 +346,26 @@ _nftban_dsr_producer_coverage_v4() {
     intended="$(_nftban_dsr_intended_entries "$p" 4)" || { echo UNKNOWN; return 1; }
     [[ -z "$intended" ]] && { echo "0 0"; return 0; }
 
-    printf '%s' "$live" | python3 -c '
+    # ⛔ The env assignments bind to the command they prefix. Putting them before
+    #    `printf` set them for printf and NOT for python3, leaving the bogon list
+    #    empty while the min-prefix silently fell back to its python default —
+    #    the filter appeared to work while doing nothing.
+    printf '%s' "$live" \
+      | NFTBAN_DSR_BOGON_PREFIXES="$NFTBAN_DSR_BOGON_PREFIXES" \
+        NFTBAN_DSR_MIN_PREFIX_LEN="$NFTBAN_DSR_MIN_PREFIX_LEN" \
+        python3 -c '
 import json, sys, ipaddress
+
+import os
+BOGONS = [ipaddress.ip_network(b) for b in
+          os.environ.get("NFTBAN_DSR_BOGON_PREFIXES", "").split()]
+MINLEN = int(os.environ.get("NFTBAN_DSR_MIN_PREFIX_LEN", "9"))
+
+def policy_excluded(n):
+    """Mirror of internal/setsync/cidr.go FilterProblematicCIDRs, IPv4."""
+    if n.prefixlen < MINLEN:
+        return True                                   # oversized
+    return any(n.overlaps(b) for b in BOGONS)         # bogon
 
 def parse_nets(lines):
     out = []
@@ -357,8 +406,15 @@ def flatten(e, acc):
         except Exception: pass
         return
 
-intended = parse_nets(sys.argv[1].splitlines())
+raw = parse_nets(sys.argv[1].splitlines())
+# EFFECTIVE intent: what the single writer would actually accept. Entries the
+# daemon filters never reach the kernel, so counting them as intended-but-absent
+# would fail a healthy host.
+intended = [n for n in raw if not policy_excluded(n)]
 if not intended:
+    # Either nothing was intended, or EVERYTHING intended was policy-excluded.
+    # Both mean "no effective intent" — zero live coverage is then CORRECT, not
+    # a failure. Distinguishing the two is the caller, not coverage.
     print("0 0"); raise SystemExit(0)
 
 try:
