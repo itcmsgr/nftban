@@ -67,6 +67,7 @@ readonly NFTBAN_DSR_RECONCILED="RECONCILED"
 readonly NFTBAN_DSR_EMPTY="EMPTY"
 readonly NFTBAN_DSR_UNKNOWN="UNKNOWN"
 readonly NFTBAN_DSR_FAILED="FAILED"
+readonly NFTBAN_DSR_PARTIAL="PARTIAL"
 readonly NFTBAN_DSR_STALE="STALE_PLAN"
 
 # =============================================================================
@@ -257,19 +258,181 @@ for o in d.get("nftables",[]):
 print("UNKNOWN"); raise SystemExit(1)' 2>/dev/null || { echo UNKNOWN; return 1; }
 }
 
-_nftban_dsr_verify_feeds()  { _nftban_dsr_kernel_set_count ip blacklist_ipv4; }
-_nftban_dsr_verify_geoban() { _nftban_dsr_kernel_set_count ip blacklist_ipv4; }
+# =============================================================================
+# ⛔ PRODUCER-ATTRIBUTABLE VERIFICATION (D8)
+# =============================================================================
+# These two functions were LITERALLY IDENTICAL — both counted `ip blacklist_ipv4`
+# and reported success on any non-zero count. blacklist_ipv4 is SHARED by feeds,
+# geoban and BotScan, so a non-emptiness test cannot attribute a commit to the
+# producer that was supposed to make it. Measured 2026-08-31 on lab2: GeoBan
+# converted 28 CIDRs to 0, never called nft_ipc_sync_or_apply, printed
+# "ACTIVELY BLOCKING", and DSR returned RECONCILED — satisfied entirely by the
+# 750 elements FEEDS had put in the same set. 0 of 524,032 intended addresses
+# were in the kernel and the reconciler agreed everything was fine.
+#
+# The oracle must therefore compare THIS producer's intended state against the
+# kernel. Comparison is by ADDRESS COVERAGE, not element equality: nftables
+# interval sets auto-merge, so `1.0.0.0/24` legitimately appears inside a wider
+# live element and a string/element-count comparison would report a false
+# failure on a healthy host.
+#
+# ⛔ SCOPE: this establishes ATTRIBUTION, not enforcement. Partial coverage is
+#    reported as PARTIAL and is NOT fatal, because the interaction between
+#    geoban ranges and whitelist subtraction/normalisation has NOT yet been
+#    measured — a healthy host may legitimately hold less than it intended.
+#    Turning a falsely-permissive control into a falsely-fatal one is not an
+#    improvement. Only ZERO coverage from non-empty intent is treated as FAILED,
+#    which is the measured defect signature.
+
+# Emit one intended entry per line for a producer, family-filtered.
+# $1=producer $2=4|6
+_nftban_dsr_intended_entries() {
+    local p="$1" fam="$2" src pat
+    src="$(nftban_dsr_field "$p" durable_source)"
+    [[ -d "$src" ]] || return 1
+    case "$p" in
+        feeds)  pat='*.txt' ;;
+        geoban) pat='50-ban-*.conf' ;;
+        *)      return 1 ;;
+    esac
+    # Same parse the producers themselves use: skip blanks and #-comments,
+    # discriminate family by the presence of a colon.
+    find "$src" -maxdepth 1 -type f -name "$pat" -print0 2>/dev/null \
+      | xargs -0 -r cat 2>/dev/null \
+      | sed 's/[[:space:]]*$//' \
+      | awk -v fam="$fam" '
+          /^[[:space:]]*$/ { next }
+          /^[[:space:]]*#/ { next }
+          { is6 = (index($0, ":") > 0) ? 6 : 4; if (is6 == fam+0) print }'
+}
+
+# Echo "<covered> <intended>" in ADDRESSES for a producer, or UNKNOWN.
+# $1=producer  (IPv4 only: the coverage oracle is 32-bit, see below)
+_nftban_dsr_producer_coverage_v4() {
+    local p="$1" live intended
+    live=$(nft -j list set ip nftban blacklist_ipv4 2>/dev/null) || { echo UNKNOWN; return 1; }
+    [[ -z "${live//[[:space:]]/}" ]] && { echo UNKNOWN; return 1; }
+    intended="$(_nftban_dsr_intended_entries "$p" 4)" || { echo UNKNOWN; return 1; }
+    [[ -z "$intended" ]] && { echo "0 0"; return 0; }
+
+    printf '%s' "$live" | python3 -c '
+import json, sys, ipaddress
+
+def parse_nets(lines):
+    out = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            out.append(ipaddress.ip_network(ln, strict=False))
+        except ValueError:
+            continue          # malformed intent is not coverage; it is dropped
+    return [n for n in out if n.version == 4]
+
+def net_of(addr, plen):
+    return ipaddress.ip_network(str(addr) + "/" + str(plen), strict=False)
+
+def flatten(e, acc):
+    """nft -j renders a set element as a bare string, a prefix object, a range
+    object, or any of those wrapped in {\"elem\": {\"val\": ...}}."""
+    if isinstance(e, str):
+        try: acc.append(ipaddress.ip_network(e, strict=False))
+        except ValueError: pass
+        return
+    if not isinstance(e, dict):
+        return
+    if "elem" in e and isinstance(e["elem"], dict) and "val" in e["elem"]:
+        flatten(e["elem"]["val"], acc); return
+    if "prefix" in e:
+        pf = e["prefix"]
+        try: acc.append(net_of(pf["addr"], pf["len"]))
+        except Exception: pass
+        return
+    if "range" in e:
+        lo, hi = e["range"]
+        try:
+            acc.extend(ipaddress.summarize_address_range(
+                ipaddress.ip_address(lo), ipaddress.ip_address(hi)))
+        except Exception: pass
+        return
+
+intended = parse_nets(sys.argv[1].splitlines())
+if not intended:
+    print("0 0"); raise SystemExit(0)
+
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    print("UNKNOWN"); raise SystemExit(1)
+
+elems = None
+for obj in doc.get("nftables", []):
+    st = obj.get("set")
+    if st is not None:
+        elems = st.get("elem") or []
+        break
+if elems is None:
+    print("UNKNOWN"); raise SystemExit(1)
+
+live_raw = []
+for e in elems:
+    flatten(e, live_raw)
+live = list(ipaddress.collapse_addresses([n for n in live_raw if n.version == 4])) if live_raw else []
+
+# Coverage, in ADDRESSES, of intended space that is actually present live.
+# Element equality is deliberately NOT used: interval sets auto-merge, so an
+# intended /24 may be present inside a wider live element.
+want = list(ipaddress.collapse_addresses(intended))
+want_total = sum(n.num_addresses for n in want)
+covered = 0
+for n in want:
+    enclosing = next((l for l in live if n.subnet_of(l)), None)
+    if enclosing is not None:
+        covered += n.num_addresses          # fully present
+    else:
+        covered += sum(l.num_addresses for l in live if l.subnet_of(n))
+print(str(covered) + " " + str(want_total))
+' "$intended" 2>/dev/null || { echo UNKNOWN; return 1; }
+}
+
+_nftban_dsr_verify_feeds()  { _nftban_dsr_producer_coverage_v4 feeds; }
+_nftban_dsr_verify_geoban() { _nftban_dsr_producer_coverage_v4 geoban; }
 
 nftban_dsr_verify() { # $1=plan text -> echoes final state, rc 0 only if RECONCILED/EMPTY
-    local plan="$1" p planned fn count
+    local plan="$1" p planned fn
     p="$(_nftban_dsr_plan_get "$plan" producer)"
     planned="$(_nftban_dsr_plan_get "$plan" planned_state)"
     if [[ "$planned" == "$NFTBAN_DSR_EMPTY" ]]; then echo "$NFTBAN_DSR_EMPTY"; return 0; fi
     fn="$(nftban_dsr_field "$p" verify_function)"
     declare -f "$fn" >/dev/null 2>&1 || { echo "$NFTBAN_DSR_UNKNOWN"; return 1; }
-    count="$("$fn")"
-    if [[ "$count" == "UNKNOWN" ]]; then echo "$NFTBAN_DSR_UNKNOWN"; return 1; fi
-    if [[ "${count:-0}" -gt 0 ]]; then echo "$NFTBAN_DSR_RECONCILED"; return 0; fi
+    # The verify contract is now "<covered> <intended>" in ADDRESSES for THIS
+    # producer, not a shared-set element count. See the D8 banner above.
+    local result covered intended
+    result="$("$fn")"
+    if [[ -z "$result" || "$result" == "UNKNOWN" ]]; then echo "$NFTBAN_DSR_UNKNOWN"; return 1; fi
+    # ⛔ STRICT ARITY. The contract is exactly two whitespace-separated integers.
+    #    A single bare number — the PREVIOUS contract — must NOT be accepted:
+    #    "${r%% *}" and "${r##* }" both yield N for input "N", which would make
+    #    any legacy or future count-returning verifier read as covered==intended,
+    #    i.e. a silent full-coverage SUCCESS. Anything not matching is UNKNOWN.
+    local -a _fields
+    read -r -a _fields <<<"$result"
+    if [[ "${#_fields[@]}" -ne 2 ]] \
+       || ! [[ "${_fields[0]}" =~ ^[0-9]+$ && "${_fields[1]}" =~ ^[0-9]+$ ]]; then
+        echo "$NFTBAN_DSR_UNKNOWN"; return 1
+    fi
+    covered="${_fields[0]}"; intended="${_fields[1]}"
+    if [[ "$intended" -eq 0 ]]; then echo "$NFTBAN_DSR_EMPTY"; return 0; fi
+    if [[ "$covered" -eq "$intended" ]]; then echo "$NFTBAN_DSR_RECONCILED"; return 0; fi
+    if [[ "$covered" -gt 0 ]]; then
+        # NOT fatal: see the D8 scope note. Whitelist subtraction/normalisation
+        # has not been measured, so a healthy host may legitimately hold less
+        # than it intended. Report the shortfall as evidence and continue.
+        echo "$NFTBAN_DSR_PARTIAL"; return 0
+    fi
+    # Zero coverage from non-empty intent is the measured defect signature:
+    # the producer established nothing while the shared set looked populated.
     echo "$NFTBAN_DSR_FAILED"; return 1
 }
 

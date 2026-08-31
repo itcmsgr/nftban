@@ -58,50 +58,133 @@ _nftban_cidr_log() {
 # PUBLIC API: Merge overlapping CIDRs in a file
 # Usage: nftban_cidr_merge <input_file> <output_file> <ip_version>
 # ip_version: 4 or 6
-# Returns: 0 on success, merged count logged
+#
+# Returns: 0 = output_file holds a USABLE merged list (or the input was empty)
+#          1 = no method produced a usable list. output_file is left EMPTY and
+#              the caller MUST treat this as a CONVERSION FAILURE — never as
+#              "this source legitimately has no ranges".
+#
+# ⛔ A converter handed non-empty input that emits nothing has FAILED. It has not
+#    "merged everything away": two CIDR blocks are either disjoint or one contains
+#    the other, so a non-empty input ALWAYS yields a non-empty output. Returning 0
+#    on an empty result was the whole of the GeoBan self-zeroing defect —
+#    `netmask -c < file` printed nothing (netmask parses ARGUMENTS and reads
+#    nothing from stdin), the count became 0, the `-gt 0` apply gate went false,
+#    nft_ipc_sync_or_apply was never called, and the module announced SUCCESS
+#    having committed nothing to the kernel.
+#
+# The judgement "an empty result is unacceptable" lives HERE and only here, so a
+# new merge method cannot reintroduce the defect by forgetting to make it.
 # =============================================================================
 nftban_cidr_merge() {
     local input_file="$1"
     local output_file="$2"
     local ip_version="${3:-4}"
 
-    if [[ ! -s "$input_file" ]]; then
+    if [[ ! -f "$input_file" ]]; then
         : > "$output_file"
-        return 0
+        _nftban_cidr_log ERROR "CIDR merge input does not exist: ${input_file}"
+        return 1
     fi
 
+    # Count records that carry at least one non-whitespace character. `wc -l`
+    # would count a blank-padded file as non-empty and then compare that inflated
+    # figure against a trimmed output.
     local input_count
-    input_count=$(wc -l < "$input_file")
+    input_count=$(grep -cE '[^[:space:]]' "$input_file" 2>/dev/null) || input_count=0
+    if [[ "${input_count:-0}" -eq 0 ]]; then
+        : > "$output_file"          # genuinely empty source — not a failure
+        return 0
+    fi
 
-    # Method 1: aggregate6 (best — handles all edge cases)
-    if command -v aggregate6 &>/dev/null; then
-        _nftban_cidr_log DEBUG "Using aggregate6 for CIDR merging (IPv${ip_version})"
-        if [[ "$ip_version" == "4" ]]; then
-            aggregate6 -4 < "$input_file" > "$output_file" 2>/dev/null
-        else
-            aggregate6 -6 < "$input_file" > "$output_file" 2>/dev/null
+    local method rc output_count
+    for method in aggregate6 netmask bash; do
+        : > "$output_file"
+        "_nftban_cidr_try_${method}" "$input_file" "$output_file" "$ip_version"
+        rc=$?
+        [[ $rc -eq 2 ]] && continue      # not available / not applicable on this host
+        if [[ $rc -ne 0 ]]; then
+            _nftban_cidr_log WARN "CIDR merge method '${method}' FAILED (rc=${rc}) — trying next method"
+            continue
         fi
-        local output_count
-        output_count=$(wc -l < "$output_file")
-        local merged=$((input_count - output_count))
-        [[ $merged -gt 0 ]] && _nftban_cidr_log INFO "CIDR merge (aggregate6): ${input_count} -> ${output_count} (merged ${merged} overlaps)"
+        output_count=$(grep -cE '[^[:space:]]' "$output_file" 2>/dev/null) || output_count=0
+        if [[ "${output_count:-0}" -eq 0 ]]; then
+            _nftban_cidr_log WARN "CIDR merge method '${method}' produced 0 CIDRs from ${input_count} records — REJECTED (a merge cannot empty a non-empty list)"
+            continue
+        fi
+        _nftban_cidr_log INFO "CIDR merge (${method}, IPv${ip_version}): ${input_count} -> ${output_count}"
         return 0
+    done
+
+    : > "$output_file"
+    _nftban_cidr_log ERROR "CIDR merge FAILED (IPv${ip_version}): no method produced a usable list from ${input_count} records"
+    return 1
+}
+
+# -----------------------------------------------------------------------------
+# Method adapters.
+# Contract for every _nftban_cidr_try_*:
+#   rc 0 = ran and wrote output_file      rc 1 = ran and failed
+#   rc 2 = not available / not applicable on this host
+# None of them may decide that an empty result is acceptable; that judgement
+# belongs to nftban_cidr_merge alone (see the banner above).
+# -----------------------------------------------------------------------------
+
+_nftban_cidr_try_aggregate6() {
+    local in="$1" out="$2" v="$3"
+    command -v aggregate6 &>/dev/null || return 2
+    if [[ "$v" == "4" ]]; then
+        aggregate6 -4 < "$in" > "$out" 2>/dev/null || return 1
+    else
+        aggregate6 -6 < "$in" > "$out" 2>/dev/null || return 1
+    fi
+    return 0
+}
+
+_nftban_cidr_try_netmask() {
+    local in="$1" out="$2" v="$3"
+    command -v netmask &>/dev/null || return 2
+    [[ "$v" == "4" ]] || return 2      # only invoked for IPv4 here
+
+    # netmask(1) SYNOPSIS is `netmask spec [spec ...]`: it parses ARGUMENTS and
+    # reads NOTHING from stdin, so `netmask -c < file` exits 1 having printed only
+    # a usage hint. Measured on netmask 2.4.4 (Ubuntu 24.04):
+    #   netmask -c < file      -> rc=1, 0 lines, "Try `netmask --help'"
+    #   netmask -c -n -f file  -> rc=0, correct aggregation, exact coverage
+    #   -f  treat the arguments as input FILES (the supported way to pass a list)
+    #   -n  never resolve DNS. Without it an unparseable record is handed to the
+    #       resolver as a hostname, turning malformed data into network traffic.
+    # netmask exits 0 even when it REJECTED records, reporting each on stderr, so
+    # stderr is surfaced rather than discarded.
+    # Output is RIGHT-ALIGNED with variable indent (measured: 6-9 leading spaces)
+    # and always carries an explicit prefix — a bare `5.6.7.8` is normalised to
+    # `5.6.7.8/32` — so trimming plus a prefix-requiring shape filter is exact and
+    # drops no coverage.
+    local err raw rc=0
+    err=$(mktemp "${TMPDIR:-/tmp}/nftban_nm_err_XXXXXX") || return 1
+    raw=$(mktemp "${TMPDIR:-/tmp}/nftban_nm_raw_XXXXXX") || { rm -f "$err"; return 1; }
+
+    netmask -c -n -f "$in" > "$raw" 2>"$err" || rc=1
+
+    if [[ -s "$err" ]]; then
+        local rejected
+        rejected=$(grep -c 'parse error' "$err" 2>/dev/null) || rejected=0
+        _nftban_cidr_log WARN "netmask REJECTED ${rejected:-0} malformed record(s) — they are NOT in the applied set; first: $(head -1 "$err")"
     fi
 
-    # Method 2: netmask (good alternative, IPv4 only)
-    if command -v netmask &>/dev/null && [[ "$ip_version" == "4" ]]; then
-        _nftban_cidr_log DEBUG "Using netmask for CIDR merging (IPv4)"
-        netmask -c < "$input_file" 2>/dev/null | sort -u > "$output_file"
-        local output_count
-        output_count=$(wc -l < "$output_file")
-        local merged=$((input_count - output_count))
-        [[ $merged -gt 0 ]] && _nftban_cidr_log INFO "CIDR merge (netmask): ${input_count} -> ${output_count} (merged ${merged} overlaps)"
-        return 0
-    fi
+    sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "$raw" \
+        | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' \
+        | sort -u > "$out"
 
-    # Method 3: Pure bash fallback — remove contained CIDRs
-    _nftban_cidr_log DEBUG "Using bash fallback for CIDR deduplication (IPv${ip_version})"
-    _nftban_cidr_merge_bash "$input_file" "$output_file" "$ip_version"
+    rm -f "$err" "$raw"
+    return $rc
+}
+
+_nftban_cidr_try_bash() {
+    local in="$1" out="$2" v="$3"
+    _nftban_cidr_log DEBUG "Using bash fallback for CIDR deduplication (IPv${v})"
+    _nftban_cidr_merge_bash "$in" "$out" "$v" || return 1
+    return 0
 }
 
 # =============================================================================
@@ -167,6 +250,11 @@ _nftban_cidr_merge_bash() {
     output_count=$(wc -l < "$output_file")
     merged=$((input_count - output_count))
     [[ $merged -gt 0 ]] && _nftban_cidr_log INFO "CIDR merge (bash): ${input_count} -> ${output_count} (removed ${merged} contained CIDRs)"
+    # ⛔ EXPLICIT SUCCESS. Without this the function returned the exit status of
+    #    the `[[ $merged -gt 0 ]]` test above, so the NORMAL case — a list where
+    #    nothing needed merging — returned 1. Under the calling module's `set -e`
+    #    that aborted the apply mid-flight.
+    return 0
 }
 
 # =============================================================================
