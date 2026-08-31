@@ -106,17 +106,44 @@ header exists to make that mistake visible rather than silent.
 ## Incident evidence (`incident/`)
 
 Added in v1.229.12 after a production upgrade failure could not be diagnosed from a
-bundle. Seven files:
+bundle. Eight files:
 
 | File | Answers |
 |---|---|
 | `incident/phase_timeline.txt` | Was this a real failure, or a false verdict from a deadline? Installer global budget, phase markers, and computed rebuild start/end/exit pairs. |
 | `incident/chain_inventory.txt` | *Which* chains are present, by **identity** — not just a count. |
+| `incident/module_reapply.txt` | *Why* module re-apply failed — per-module command, start/end, exit, result, and bounded stdout/stderr excerpts. |
 | `incident/parser_rejections.txt` | How many feed/list elements the parser rejected, and roughly what shape they were. Counted from `installer.log` only, split by a two-way heuristic (`dash_range` vs `other`), with at most five unique sample values. An unreadable log yields `total_rejections=UNKNOWN`, never `0`. |
 | `incident/timeline_ruleset_lifecycle.txt` | render → apply → validation → rollback → final live state. |
 | `incident/timeline_installer_run.txt` | phase → duration → exit → deadline/cancellation → terminal verdict. |
 | `incident/nft_ruleset.json` | The full live ruleset as `nft -j list ruleset` — structured, parseable without scraping human text. |
 | `incident/nft_sets.json` | The live sets as `nft -j list sets`, same structured form. |
+
+### Module re-apply evidence
+
+Added in v1.229.12. Before it, a rebuild could record `PRE protected (chains: 16)` →
+`POST degraded (chains: 6)` with **no recoverable cause**: the module re-apply calls
+suppressed stderr, and their warnings went to the rebuild's own stdout, which the
+installer never captured. The mechanism was reproducible; the trigger was not.
+
+`module_reapply.txt` carries the newest three records from
+`${NFTBAN_LOG_DIR}/rebuild-modules/`, each with `step`, `command`, `start`, `end`,
+`exit` and `result`, plus bounded stdout/stderr excerpts.
+
+Content is redacted **at write time** by `_rebuild_redact_stream`
+(`cli/lib/nftban/cli/cmd_firewall.sh`), which is fail-closed: if the canonical redactor
+cannot be sourced it drains the stream and emits
+`[REDACTOR UNAVAILABLE — capture withheld]` rather than raw content. The support
+collector therefore emits these records without re-scrubbing them.
+
+Reading absence correctly matters more here than in most sections:
+
+| Observation | Meaning |
+|---|---|
+| directory does not exist | `UNAVAILABLE`. Rebuilds before v1.229.12 recorded nothing — **not** evidence the modules succeeded. |
+| `records_present=0` | Stated explicitly as **not** the same as "all modules succeeded". |
+| `stdout=<empty>` | The stream was captured and was genuinely empty. |
+| `stdout=UNAVAILABLE` | The capture file could not be created. A different fact from empty. |
 
 The two timelines are kept **separate on purpose**. They can disagree, and *the
 disagreement is the diagnosis*: a ruleset lifecycle that completed cleanly alongside a
