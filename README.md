@@ -224,8 +224,14 @@ nftban status
 
 # Diagnostics — read-only, safe to run during an incident
 nftban health                                  # 4-axis truth table
-nftban support --output /root                  # collect a diagnostic bundle
+nftban support                                 # collect a diagnostic bundle
 ```
+
+`nftban support` writes `/tmp/nftban-support-<timestamp>.tar.gz`. Move or copy that
+file somewhere durable before running any repair — a repair can destroy the state the
+bundle explains. (`nftban support --output DIR` writes straight to `DIR`, but that flag
+works only on **current main / upcoming v1.229.12 — not yet published**; on v1.229.11 it
+exits 1 and produces no bundle.)
 
 `--timeout` requires a positive integer (seconds) — non-integer / negative /
 zero / fractional / signed / hex / leading-zero values are rejected at parse

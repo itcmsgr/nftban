@@ -16,12 +16,15 @@ failed state is evidence, and collection must not destroy it.
 ## Invocation
 
 ```bash
-nftban support                        # create the bundle
-nftban support --output DIR           # write it to DIR instead of /tmp
+nftban support                        # create the bundle  (works on every release)
 nftban support --email admin@example.com   # create it AND email it
 nftban support --email                # create it AND email the default recipient
 nftban support --quick                # terminal diagnostics only, no file
 nftban support --network              # additionally include ip addr / routes / ports
+
+# current main / upcoming v1.229.12 ONLY — NOT yet published.
+# On v1.229.11 this exits 1 and produces NO bundle.
+nftban support --output DIR           # write it to DIR instead of /tmp
 ```
 
 `nftban support-bundle` is an accepted alias for the same command.
@@ -39,14 +42,22 @@ nftban support --network              # additionally include ip addr / routes / 
 ## Reading the bundle: the four truth rules
 
 The bundle is designed so that *absence of evidence* can never be mistaken for
-*evidence of absence*. Four distinctions are load-bearing:
+*evidence of absence*.
+
+**Serialized evidence tokens.** These literal values are written by the collector and can
+be searched for in a bundle:
 
 ```
-UNKNOWN      != 0
-UNAVAILABLE  != ABSENT
-NOT_STARTED  != FAILED
-DANGLING     != COMPLETE
+UNKNOWN      != 0            a query that failed, never a count
+UNAVAILABLE  != ABSENT       an input that could not be read
+EMPTY        != missing      collected, but produced no content
+DANGLING     != COMPLETE     a start with no matching end
 ```
+
+**Semantic rule, not a token.** A phase that was never entered must not be treated as a
+failed phase. The collector does **not** emit a literal `NOT_STARTED` value — read the
+phase and deadline evidence it does emit (below) and reason about it. Do not search a
+bundle for a token that does not exist.
 
 - **`UNKNOWN` is not zero.** When a query fails, the bundle records `UNKNOWN` and the
   error, never a count. `nft list table ip nftban 2>/dev/null | grep -c chain` returns `0`
@@ -54,9 +65,10 @@ DANGLING     != COMPLETE
   would read as proof the firewall had been destroyed. The collectors refuse to do this.
 - **`UNAVAILABLE` is not absent.** A section that could not read its input says so. An
   absent file, by contrast, is ambiguous — which is why the manifest exists (below).
-- **`NOT_STARTED` is not failed.** The installer tests deadline expiry when *entering* a
-  phase, so a phase named in a timeout error may be the one that never began. See
-  [Installer phase attribution](#installer-phase-attribution).
+- **An unentered phase is not a failed phase.** The installer tests deadline expiry when
+  *entering* a phase, so a phase named in a timeout error may be the one that never began.
+  There is no token for this — establish it from the phase markers and rebuild start/end
+  pairs. See [Installer phase attribution](#installer-phase-attribution).
 - **`DANGLING` is not complete.** A rebuild start with no matching end is reported as
   `rebuild_end=DANGLING exit=UNKNOWN`. It is never paired with a later run's end line,
   because that would fabricate a duration.

@@ -34,11 +34,19 @@ work in this order where it is operationally safe to do so:
    ```
 2. **Collect the support bundle.**
    ```bash
-   nftban support --output /root
+   nftban support
    ```
-   This is read-only and does not mutate the host.
-3. **Preserve the bundle off-host** (`scp`, or `nftban support --email`). A later repair may
-   destroy the evidence it was collected from.
+   This is read-only and does not mutate the host. It writes
+   `/tmp/nftban-support-<timestamp>.tar.gz`.
+
+   > On **current main / upcoming v1.229.12 (not yet published)** you may instead use
+   > `nftban support --output /root` to write it directly to a chosen directory. On
+   > **v1.229.11**, the current published release, that flag exits 1 and produces **no
+   > bundle** — use the plain form above.
+3. **Preserve the bundle off-host.** Move it out of `/tmp` and copy it away
+   (`cp /tmp/nftban-support-*.tar.gz /root/` then `scp`, or `nftban support --email`).
+   A later repair may destroy the evidence it was collected from, and `/tmp` may be
+   cleared on reboot.
 4. **Read the installer/rebuild state** — `incident/timeline_installer_run.txt` and
    `incident/phase_timeline.txt` in the bundle, plus
    `/var/lib/nftban/state/install_state`.
@@ -155,10 +163,14 @@ nftban health
 
 ### How long a rebuild may take
 
-A firewall rebuild on a host with large feed sets can run for **several minutes**. It is
-exempt by policy from the installer's 300-second global wall-clock budget
-(`cmd/nftban-installer/main.go:51`), so a long rebuild is not itself an error and is not
-killed by the installer deadline.
+A firewall rebuild on a host with large feed sets can run for **several minutes**. The
+installer's own phase deadline does not terminate it: `switchop.Rebuild` runs the
+subprocess on `context.Background()`, so it is exempt by policy from the 300-second global
+wall-clock budget (`cmd/nftban-installer/main.go:51`). A long rebuild is therefore not, by
+itself, evidence of a fault.
+
+**That exemption does not cover every caller.** Whether a long rebuild survives depends on
+the path that invoked it and on the release:
 
 - **In v1.229.11** (the current published release) a successful long rebuild **can still** be
   recorded as `FAILED_REBUILD`, `nftban update` imposes a separate 30-second timeout on the
