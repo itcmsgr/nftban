@@ -126,7 +126,9 @@ else
                   # word shellcheck is itself parsed as a directive - hence this
                   # wording.)
                   # shellcheck disable=SC2034
-                  local d="$T"; local NFTBAN_LOG_DIR="$1"
+                  local d="$T"
+                  # shellcheck disable=SC2034
+                  local NFTBAN_LOG_DIR="$1"
                   set +e; source "$T/coll.sh" ) > "$T/mr.txt" 2>&1; }
 
     # (a) directory absent
