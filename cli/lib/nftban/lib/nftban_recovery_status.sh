@@ -31,6 +31,12 @@
 #    this library at all must treat the step as UNAVAILABLE, not assume success.
 # =============================================================================
 
+# Exported: these are the vocabulary CONSUMERS read (feeds, geoban, the firewall
+# recovery call sites). They are deliberately not referenced inside this file —
+# it defines the vocabulary, it does not use it — so export states the contract
+# rather than silencing the observation.
+export NFTBAN_RECOVERY_DISABLED NFTBAN_RECOVERY_SYNCED NFTBAN_RECOVERY_PARTIAL
+export NFTBAN_RECOVERY_FAILED NFTBAN_RECOVERY_UNAVAILABLE
 NFTBAN_RECOVERY_DISABLED="DISABLED"
 NFTBAN_RECOVERY_SYNCED="SYNCED"
 NFTBAN_RECOVERY_PARTIAL="PARTIAL"

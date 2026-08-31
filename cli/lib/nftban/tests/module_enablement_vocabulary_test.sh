@@ -30,6 +30,7 @@ probe() { # $1=module $2=KEY $3=value $4=impl(new|old)
     if [[ "$v" == "__MISSING__" ]]; then rm -f "$T/etc/conf.d/$m/main.conf"
     else printf '%s="%s"\n' "$k" "$v" > "$T/etc/conf.d/$m/main.conf"; fi
     local lib="${LIB_DIR}/lib/module_authority.sh"; [[ "$impl" == "old" ]] && lib="$T/old.sh"
+    # shellcheck source=/dev/null
     ( set +u; source "$lib" >/dev/null 2>&1
       nftban_module_effective_enabled "$m" >/dev/null 2>&1 && echo ENABLED || echo disabled )
 }
