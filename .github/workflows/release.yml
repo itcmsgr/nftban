@@ -54,10 +54,64 @@ permissions: read-all
 
 jobs:
   # ==========================================================================
+  # RELEASE PREFLIGHT — generated-artifact drift, BEFORE anything is built
+  # ==========================================================================
+  # ⛔ WHY THIS JOB EXISTS. Every generator drift check lives in
+  # ci-architecture.yml, whose trigger is push[main,master,develop] and
+  # pull_request — NOT tags. release.yml ran none of them. So a tag pushed from a
+  # commit carrying a stale generated artifact WOULD PUBLISH, and the only thing
+  # standing between that and a bad release was the procedural rule "never tag a
+  # commit that has not had a green ci-architecture run". A load-bearing human
+  # rule is exactly what this release cycle has been removing everywhere else.
+  #
+  # It runs FIRST and gates build-binaries, so it fails before any artifact is
+  # built, signed, uploaded or published — not merely before the final flip to
+  # --draft=false.
+  #
+  # ⛔ IT REUSES THE CANONICAL GENERATORS. Their --check modes are the authority;
+  # nothing about generation is reimplemented here. If a generator gains a new
+  # committed output, add it there, not to this workflow.
+  release-preflight:
+    name: Release preflight (generated-artifact drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: FHS outputs are current (VERSION-coupled)
+        run: ./build/generate-fhs-outputs.sh --check
+
+      - name: systemd install list is current
+        run: ./build/generate-systemd-install-list.sh --check
+
+      - name: systemd maintainer scripts are current
+        run: ./build/generate-systemd-maintainer-scripts.sh --check
+
+      - name: VERSION / VERSION_DATE / CHANGELOG cohere
+        run: ./scripts/ci/check-version-date-coherence.sh
+
+      # Proves the drift check can actually fail. A guard that has never been
+      # observed failing is a guard nobody has tested.
+      - name: Self-test — a stale generated artifact must be detected
+        run: |
+          set -euo pipefail
+          cp cli/lib/nftban/core/nftban_fhs_spec.sh /tmp/fhs.orig
+          printf '\n# deliberate drift injected by the preflight self-test\n' \
+            >> cli/lib/nftban/core/nftban_fhs_spec.sh
+          if ./build/generate-fhs-outputs.sh --check >/dev/null 2>&1; then
+            cp /tmp/fhs.orig cli/lib/nftban/core/nftban_fhs_spec.sh
+            echo "::error::drift check PASSED on a deliberately stale artifact - the gate is blind"
+            exit 1
+          fi
+          cp /tmp/fhs.orig cli/lib/nftban/core/nftban_fhs_spec.sh
+          ./build/generate-fhs-outputs.sh --check
+          echo "self-test OK: drift detected when injected, clean once restored"
+
+  # ==========================================================================
   # BUILD GO BINARIES
   # ==========================================================================
   build-binaries:
     name: Build Go binaries
+    needs: release-preflight
     runs-on: ubuntu-latest
     # v1.226.0: this job runs the fail-closed publication privacy gate, whose
     # secrets (NFTBAN_PRIVACY_DENYLIST / NFTBAN_PRIVACY_FP_KEY) live ONLY on the
