@@ -78,11 +78,40 @@ NFTBAN_CIDR_MERGE_BUDGET_SECONDS=2 nftban_cidr_merge "$T/big.txt" "$T/o2.txt" 4 
     && ok "conversion failure is distinguishable from 'this source has no ranges'" \
     || bad "a timed-out conversion is indistinguishable from an empty source"
 
-echo "=== budget=0 disables the bound (escape hatch stays available) ==="
-gen 50 "$T/s.txt"
-NFTBAN_CIDR_MERGE_BUDGET_SECONDS=0 nftban_cidr_merge "$T/s.txt" "$T/so.txt" 4 >/dev/null 2>&1
-[[ $? -eq 0 && "$(records "$T/so.txt")" -eq 50 ]] && ok "budget=0 disables the deadline without breaking conversion" \
-                                                  || bad "budget=0 path broken"
+echo "=== ⛔ there is NO config path back to an unbounded conversion ==="
+# Two separate proofs, because timing a backgrounded subshell proved unreliable:
+# an earlier version of this test polled a background PID and reported 1s for runs
+# that actually took 65s, which would have passed vacuously.
+#
+# (a) RESOLUTION — deterministic, no timing involved.
+for badval in 0 "" abc -5 " " 3.5; do
+    got="$( NFTBAN_CIDR_MERGE_BUDGET_SECONDS="$badval" \
+            bash -c 'source "$1" >/dev/null 2>&1; printf "%s" "$NFTBAN_CIDR_MERGE_BUDGET_SECONDS"' \
+                 _ "${LIB_DIR}/lib/nftban_dataset_cidr.sh" )"
+    [[ "$got" == "60" ]] \
+        && ok "budget='$badval' resolves to the default 60, not to 'unlimited'" \
+        || bad "budget='$badval' resolved to '$got' — a config path away from the bound"
+done
+
+# (b) BEHAVIOUR — one full-speed run at the real default, measured in the
+#     foreground. 1200 CIDRs needs ~100s unbounded on this class of hardware, so a
+#     bounded run must stop near 60s and emit nothing.
+gen 1200 "$T/u.txt"
+start=$(date +%s)
+NFTBAN_CIDR_MERGE_BUDGET_SECONDS=0 timeout 150 bash -c '
+    source "$1" >/dev/null 2>&1; set +e
+    nftban_cidr_merge "$2" "$3" 4 >/dev/null 2>&1; exit $?' \
+    _ "${LIB_DIR}/lib/nftban_dataset_cidr.sh" "$T/u.txt" "$T/uo.txt"
+rc=$?; elapsed=$(( $(date +%s) - start ))
+[[ $rc -ne 0 && $rc -ne 124 ]] \
+    && ok "budget=0 still terminates by the DEFAULT bound (rc=$rc, ${elapsed}s), not unbounded" \
+    || bad "budget=0 run rc=$rc after ${elapsed}s (124 = ran to the outer 150s cap = unbounded)"
+[[ "$elapsed" -ge 30 && "$elapsed" -le 110 ]] \
+    && ok "stopped in the expected window (${elapsed}s) — the bound fired, it did not finish early" \
+    || bad "elapsed ${elapsed}s is outside the window; the row may be passing for the wrong reason"
+[[ "$(records "$T/uo.txt")" -eq 0 ]] \
+    && ok "no partial output from the default-bounded run" \
+    || bad "partial output left behind"
 
 echo
 echo "=== cidr_merge_bounded: PASS=$PASS FAIL=$FAIL ==="

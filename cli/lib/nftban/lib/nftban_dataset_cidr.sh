@@ -147,7 +147,22 @@ nftban_cidr_merge() {
 # A host that genuinely needs country-scale conversion should install `netmask` or
 # `aggregate6` (both are packaging Recommends); those paths are not O(n^2) and are
 # not gated by this budget in practice.
+# ⛔ THERE IS NO "UNLIMITED" SETTING. A value of 0, empty, or non-numeric falls
+#    back to the default rather than disabling the deadline: an easy config path
+#    back to an unbounded recovery conversion would reinstate the exact defect
+#    this bounds. A deliberately long budget is still expressible — set a large
+#    positive number — but it has to be an explicit, visible choice.
 NFTBAN_CIDR_MERGE_BUDGET_SECONDS="${NFTBAN_CIDR_MERGE_BUDGET_SECONDS:-60}"
+[[ "$NFTBAN_CIDR_MERGE_BUDGET_SECONDS" =~ ^[1-9][0-9]*$ ]] || NFTBAN_CIDR_MERGE_BUDGET_SECONDS=60
+
+# ⛔ THIS IS A CONVERSION BUDGET, NOT A RECOVERY-STEP DEADLINE. Two invocations
+#    per apply cap CONVERSION at 2x this value, but reading the durable source,
+#    IPC, daemon reconciliation, the kernel replace and verification all fall
+#    OUTSIDE it — so conversion alone can consume that whole span before the apply
+#    begins. GeoBan recovery has no outer deadline governing the complete step
+#    (feeds recovery does: `timeout 120s "$core" feeds load`). That asymmetry is a
+#    real gap and is recorded as an owned boundedness finding; it is deliberately
+#    NOT solved here by inventing a second timer framework.
 
 # -----------------------------------------------------------------------------
 # Method adapters.
@@ -262,7 +277,7 @@ _nftban_cidr_merge_bash() {
     while IFS= read -r cidr; do
         [[ -z "$cidr" ]] && continue
         _seen=$((_seen + 1))
-        if [[ "$_budget" -gt 0 && $((_seen % 64)) -eq 0 ]]; then
+        if [[ $((_seen % 64)) -eq 0 ]]; then
             _now="${EPOCHSECONDS:-$(date +%s)}"
             if [[ $((_now - _started)) -ge "$_budget" ]]; then
                 _nftban_cidr_log ERROR "CIDR merge (bash) EXCEEDED its ${_budget}s budget after ${_seen} of $(grep -cE '[^[:space:]]' "$input_file" 2>/dev/null || echo '?') records — this fallback is O(n^2); install netmask or aggregate6 for country-scale input"
