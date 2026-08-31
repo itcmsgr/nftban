@@ -192,6 +192,7 @@ nft_ndp_rfc4861_source_scope_test	cli/lib/nftban/tests/nft_ndp_rfc4861_source_sc
 nft_parser_compat_v1228_8_test	cli/lib/nftban/tests/nft_parser_compat_v1228_8_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 nft_shipped_conf_cold_load_idiom_test	cli/lib/nftban/tests/nft_shipped_conf_cold_load_idiom_test.sh	firewall	test	nft-schema-load-idiom	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_writer_authority_v150_test	cli/lib/nftban/tests/nft_writer_authority_v150_test.sh	firewall	test	nft-writer-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+nftables_conf_ownership_transition_v1229_12_test	cli/lib/nftban/tests/nftables_conf_ownership_transition_v1229_12_test.sh	packaging	test	packaging-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_config_rhg_cosmetic_r1a6_test	cli/lib/nftban/tests/nftban_config_rhg_cosmetic_r1a6_test.sh	core	test	config-cosmetic-hygiene	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_da_help_ssh_port_r1a2_test	cli/lib/nftban/tests/nftban_da_help_ssh_port_r1a2_test.sh	installer	test	directadmin-panel	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_file_cleanup_r1a5_test	cli/lib/nftban/tests/nftban_file_cleanup_r1a5_test.sh	packaging	test	shipped-config-hygiene	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
