@@ -122,6 +122,34 @@ nftban_cidr_merge() {
 }
 
 # -----------------------------------------------------------------------------
+# CONVERTER BUDGET
+# -----------------------------------------------------------------------------
+# The pure-bash fallback is O(n^2): every input CIDR is compared against every
+# CIDR kept so far. MEASURED on lab4 (EL9, where BOTH netmask and aggregate6 are
+# absent, so this fallback is the DEFAULT path):
+#     10 -> 0.03s   100 -> 0.75s   250 -> 4.6s   500 -> 19.0s
+#    750 -> 44.2s  1000 -> 76.5s  1500 -> exceeded 120s
+# A real country zone (~3000 CIDRs) did not finish in 600s. Unbounded, that stalls
+# a firewall rebuild for many minutes with no verdict — worse than a truthful
+# failure, because the operator cannot tell a slow rebuild from a hung one.
+#
+# ⛔ THE BOUND IS NOT DERIVED FROM THE 600s FAILURE. It comes from an existing
+#    authority: derived_state_reconcile.sh already governs a recovery apply with
+#    `timeout 120s "$core" feeds load`. A producer performs AT MOST TWO converter
+#    invocations per apply (one per family, each gated on a non-zero count), so a
+#    60s per-converter budget makes the cumulative worst case exactly that same
+#    120s. No new global timeout policy is introduced.
+#
+# ⛔ EXCEEDING THE BUDGET IS A CONVERSION FAILURE, NEVER A PARTIAL RESULT. Output
+#    written so far is discarded: a half-converted country applied as if complete
+#    is precisely the silent coverage loss this lane exists to remove.
+#
+# A host that genuinely needs country-scale conversion should install `netmask` or
+# `aggregate6` (both are packaging Recommends); those paths are not O(n^2) and are
+# not gated by this budget in practice.
+NFTBAN_CIDR_MERGE_BUDGET_SECONDS="${NFTBAN_CIDR_MERGE_BUDGET_SECONDS:-60}"
+
+# -----------------------------------------------------------------------------
 # Method adapters.
 # Contract for every _nftban_cidr_try_*:
 #   rc 0 = ran and wrote output_file      rc 1 = ran and failed
@@ -225,8 +253,24 @@ _nftban_cidr_merge_bash() {
     : > "$temp_filtered"
     declare -a kept_cidrs=()
 
+    # Deadline for the quadratic section. EPOCHSECONDS avoids a subprocess per
+    # check; the 64-iteration stride keeps even the `date` fallback negligible.
+    local _budget="${NFTBAN_CIDR_MERGE_BUDGET_SECONDS:-60}"
+    local _started _now _seen=0
+    _started="${EPOCHSECONDS:-$(date +%s)}"
+
     while IFS= read -r cidr; do
         [[ -z "$cidr" ]] && continue
+        _seen=$((_seen + 1))
+        if [[ "$_budget" -gt 0 && $((_seen % 64)) -eq 0 ]]; then
+            _now="${EPOCHSECONDS:-$(date +%s)}"
+            if [[ $((_now - _started)) -ge "$_budget" ]]; then
+                _nftban_cidr_log ERROR "CIDR merge (bash) EXCEEDED its ${_budget}s budget after ${_seen} of $(grep -cE '[^[:space:]]' "$input_file" 2>/dev/null || echo '?') records — this fallback is O(n^2); install netmask or aggregate6 for country-scale input"
+                rm -f "$temp_sorted" "$temp_filtered"
+                : > "$output_file"     # ⛔ no partial conversion is ever applied
+                return 1
+            fi
+        fi
         local dominated=false
 
         for kept in "${kept_cidrs[@]}"; do
