@@ -128,7 +128,7 @@ Priority | Rule                            | Purpose
 3        | whitelist accept                | Trusted IPs bypass checks
 4        | blacklist drop                  | ⚠️ BEFORE established!
 5        | ct state established accept     | ✅ NOW safe (after bans)
-6        | ICMPv4/ICMPv6 accept            | Control plane (NDP: fe80::/10 only)
+6        | ICMPv4/ICMPv6 accept            | Control plane (ND: hop-limit 255; RA link-local only)
 7a       | /64 prefix SYN gate (IPv6)      | Anti-rotation: drops /64 >100 SYN/sec
 7b       | Per-IP SYN rate limit           | 25/sec terminal accept
 7c       | CT limits (SSH/HTTP/HTTPS)      | Connection count limits
@@ -171,7 +171,9 @@ IPs in `whitelist_ipv4/ipv6` are accepted BEFORE any limits are evaluated.
 
 ## 7. ICMPv6 Requirements
 
-Blocking all ICMPv6 breaks IPv6 completely. As of v1.67.0, ICMPv6 is split into two rules:
+Blocking all ICMPv6 breaks IPv6 completely. ICMPv6 was split into separate
+error/echo and Neighbor Discovery rules as of v1.67.0; as of v1.229.12 the ND
+half is itself split into NS/NA/RS and RA, which have different source rules:
 
 **Rule 1 — Error + Echo (any source):**
 
@@ -185,18 +187,49 @@ icmpv6 type {
 } accept
 ```
 
-**Rule 2 — NDP (link-local only, per RFC 4861):**
+**Rule 2 — Neighbor Discovery, RFC 4861 conformant (as of v1.229.12):**
+
+ND is admitted by **Hop Limit 255**, not by source scope. RFC 4861 sets the
+permitted source per message type, and only RA is restricted to a link-local
+source:
+
+| Type | Permitted source (RFC 4861) | Filter applied |
+|---|---|---|
+| NS (`nd-neighbor-solicit`) | any address assigned to the sending interface, or `::` during DAD (§4.3) | `ip6 hoplimit 255` |
+| NA (`nd-neighbor-advert`) | any address assigned to the sending interface (§4.4) | `ip6 hoplimit 255` |
+| RS (`nd-router-solicit`) | an assigned address, or `::` when none is configured yet (§4.1) | `ip6 hoplimit 255` |
+| RA (`nd-router-advert`) | **MUST** be link-local (§4.2) | `ip6 hoplimit 255` **and** `ip6 saddr fe80::/10` |
 
 ```nft
-ip6 saddr fe80::/10 icmpv6 type {
-    nd-router-solicit,
-    nd-router-advert,
+ip6 hoplimit 255 meta l4proto ipv6-icmp icmpv6 type {
     nd-neighbor-solicit,
-    nd-neighbor-advert
+    nd-neighbor-advert,
+    nd-router-solicit
+} accept
+
+ip6 hoplimit 255 ip6 saddr fe80::/10 meta l4proto ipv6-icmp icmpv6 type {
+    nd-router-advert
 } accept
 ```
 
+Hop Limit 255 is the anti-off-link control the RFC mandates (§6.1.1, §6.1.2,
+§7.1.1, §7.1.2: a receiver MUST discard ND with Hop Limit != 255). A packet
+that reached this host with hop limit 255 cannot have been forwarded by a
+router, so it is on-link by construction.
+
+The two changes are coupled. Relaxing the source scope without the hop-limit
+check would newly admit off-link forged NS/NA from any global address, so
+neither may be applied alone.
+
 `nd-redirect` is intentionally excluded (unnecessary for servers, attack surface).
+
+> **Superseded.** Before v1.229.12 all four ND types were gated on
+> `ip6 saddr fe80::/10`. That rule dropped legitimate global-sourced NS/NA from
+> same-subnet neighbours and every DAD solicitation. Measured on lab4
+> (Rocky 9.8, kernel 5.14, nft 1.0.9): an on-link IPv6 peer could not resolve
+> the host, the neighbour entry stayed `INCOMPLETE`, and TCP never established.
+> If your host still carries a pre-v1.229.12 ruleset, `nftban firewall rebuild`
+> renders the current one.
 
 **Without these:**
 - PMTU blackholes (missing error types)

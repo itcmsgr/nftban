@@ -221,6 +221,10 @@ nftban ban 1.2.3.4                             # permanent ban
 nftban ban 1.2.3.4 --timeout 3600             # 1-hour ban (positive integer seconds)
 nftban unban 1.2.3.4
 nftban status
+
+# Diagnostics — read-only, safe to run during an incident
+nftban health                                  # 4-axis truth table
+nftban support --output /root                  # collect a diagnostic bundle
 ```
 
 `--timeout` requires a positive integer (seconds) — non-integer / negative /
@@ -376,6 +380,9 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and full pipeline det
 | **Glossary** | [Canonical terminology](https://github.com/itcmsgr/nftban/wiki/Glossary-and-Vocabulary) |
 | **Known Limitations** | [Validator scope per module](https://github.com/itcmsgr/nftban/wiki/Known-Limitations-and-Validation-Scope) |
 | **Installation** | [Install guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide) |
+| **Troubleshooting** | [Incident diagnostics + support bundle](https://github.com/itcmsgr/nftban/wiki/Support-Bundle-and-Incident-Diagnostics) |
+| **Recovery** | [Emergency recovery and rollback](docs/operator/EMERGENCY_RECOVERY_AND_ROLLBACK.md) |
+| **Support bundle contract** | [What `nftban support` collects](docs/operator/SUPPORT_BUNDLE_AND_INCIDENT_EVIDENCE.md) |
 
 ---
 
