@@ -128,7 +128,7 @@ Priority | Rule                            | Purpose
 3        | whitelist accept                | Trusted IPs bypass checks
 4        | blacklist drop                  | ⚠️ BEFORE established!
 5        | ct state established accept     | ✅ NOW safe (after bans)
-6        | ICMPv4/ICMPv6 accept            | Control plane (NDP: fe80::/10 only)
+6        | ICMPv4/ICMPv6 accept            | Control plane (ND gate is release-dependent: v1.229.11 = fe80::/10; hop-limit 255 is unpublished v1.229.12 — see §7)
 7a       | /64 prefix SYN gate (IPv6)      | Anti-rotation: drops /64 >100 SYN/sec
 7b       | Per-IP SYN rate limit           | 25/sec terminal accept
 7c       | CT limits (SSH/HTTP/HTTPS)      | Connection count limits
@@ -171,7 +171,10 @@ IPs in `whitelist_ipv4/ipv6` are accepted BEFORE any limits are evaluated.
 
 ## 7. ICMPv6 Requirements
 
-Blocking all ICMPv6 breaks IPv6 completely. As of v1.67.0, ICMPv6 is split into two rules:
+Blocking all ICMPv6 breaks IPv6 completely. ICMPv6 was split into separate
+error/echo and Neighbor Discovery rules as of v1.67.0. On main, for the
+unpublished v1.229.12, the ND half is itself split into NS/NA/RS and RA, which
+have different source rules:
 
 **Rule 1 — Error + Echo (any source):**
 
@@ -185,18 +188,55 @@ icmpv6 type {
 } accept
 ```
 
-**Rule 2 — NDP (link-local only, per RFC 4861):**
+**Rule 2 — Neighbor Discovery, RFC 4861 conformant** (merged to main for the
+unpublished v1.229.12; **not present in v1.229.11**):
+
+ND is admitted by **Hop Limit 255**, not by source scope. RFC 4861 sets the
+permitted source per message type, and only RA is restricted to a link-local
+source:
+
+| Type | Permitted source (RFC 4861) | Filter applied |
+|---|---|---|
+| NS (`nd-neighbor-solicit`) | any address assigned to the sending interface, or `::` during DAD (§4.3) | `ip6 hoplimit 255` |
+| NA (`nd-neighbor-advert`) | any address assigned to the sending interface (§4.4) | `ip6 hoplimit 255` |
+| RS (`nd-router-solicit`) | an assigned address, or `::` when none is configured yet (§4.1) | `ip6 hoplimit 255` |
+| RA (`nd-router-advert`) | **MUST** be link-local (§4.2) | `ip6 hoplimit 255` **and** `ip6 saddr fe80::/10` |
 
 ```nft
-ip6 saddr fe80::/10 icmpv6 type {
-    nd-router-solicit,
-    nd-router-advert,
+ip6 hoplimit 255 meta l4proto ipv6-icmp icmpv6 type {
     nd-neighbor-solicit,
-    nd-neighbor-advert
+    nd-neighbor-advert,
+    nd-router-solicit
+} accept
+
+ip6 hoplimit 255 ip6 saddr fe80::/10 meta l4proto ipv6-icmp icmpv6 type {
+    nd-router-advert
 } accept
 ```
 
+Hop Limit 255 is the anti-off-link control the RFC mandates (§6.1.1, §6.1.2,
+§7.1.1, §7.1.2: a receiver MUST discard ND with Hop Limit != 255). A packet
+that reached this host with hop limit 255 cannot have been forwarded by a
+router, so it is on-link by construction.
+
+The source-scope correction is coupled with Hop Limit 255 enforcement so that
+widening the accepted ND source forms does not remove the protocol's on-link
+validation boundary. The two are a single design change and are not applied
+independently.
+
 `nd-redirect` is intentionally excluded (unnecessary for servers, attack surface).
+
+> **Superseded on main only.** Up to and including v1.229.11 all four ND types are
+> gated on `ip6 saddr fe80::/10`. That rule dropped legitimate global-sourced NS/NA from
+> same-subnet neighbours and every DAD solicitation. Measured on lab4
+> (Rocky 9.8, kernel 5.14, nft 1.0.9): an on-link IPv6 peer could not resolve
+> the host, the neighbour entry stayed `INCOMPLETE`, and TCP never established.
+> **Every currently deployed host still carries that rule.** v1.229.11 is the latest
+> published release, and its shipped template gates all four ND types on
+> `ip6 saddr fe80::/10`. `nftban firewall rebuild` re-renders the **installed package's**
+> template (`/usr/lib/nftban/templates/nftables.conf.tpl`), so on v1.229.11 a rebuild
+> reproduces the same rule — it does **not** introduce the correction. Upgrading the
+> package to v1.229.12, once that release exists, is what delivers it.
 
 **Without these:**
 - PMTU blackholes (missing error types)
