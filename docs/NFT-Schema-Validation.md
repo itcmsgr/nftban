@@ -2,6 +2,15 @@
 
 NFTBan uses a canonical nftables schema with strict validation to ensure firewall integrity and security.
 
+> **Document ownership.** This repository document is authoritative for the exact nftables
+> ruleset/schema contract — set architecture, security-critical rule ordering, connection
+> limits, ICMPv6/ND handling and chain priorities — and is versioned with the code it
+> describes. For the conceptual validator model and the operator-facing explanation of how
+> NFTBan validates the live ruleset, see the Wiki page
+> [NFT Schema & Validator Model](https://github.com/itcmsgr/nftban/wiki/NFT-Schema-Validation).
+> The two are not interchangeable: where they overlap, this document is authoritative for
+> exact rules and ordering.
+
 ## 1. Architectural Strategy
 
 ### Strict IP Family Separation
