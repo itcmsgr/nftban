@@ -38,8 +38,17 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"  # Daily for CI security
-    open-pull-requests-limit: 10
+      # Weekly, NOT daily. Action bumps are overwhelmingly minor/patch digest churn,
+      # and every open Dependabot PR re-runs the full check graph. gomod deliberately
+      # stays DAILY above: CVE response time in shipped Go dependencies is a different
+      # question from CI churn, and is not traded away here.
+      interval: "weekly"
+      day: "monday"
+    # Bounded queue. Was 10; four action PRs sat open simultaneously, each
+    # re-running the whole graph.
+    open-pull-requests-limit: 3
+    # Do not auto-rebase open PRs: every rebase re-triggers the full graph.
+    rebase-strategy: "disabled"
     commit-message:
       prefix: "deps(actions)"
     labels:
