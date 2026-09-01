@@ -60,7 +60,11 @@ APPLY_FEEDS_RC=0; APPLY_GEOBAN_RC=0
 APPLIED_FEEDS=0;  APPLIED_GEOBAN=0
 _nftban_dsr_apply_feeds()  { APPLIED_FEEDS=$((APPLIED_FEEDS+1));  return $APPLY_FEEDS_RC; }
 _nftban_dsr_apply_geoban() { APPLIED_GEOBAN=$((APPLIED_GEOBAN+1)); return $APPLY_GEOBAN_RC; }
-KERNEL_FEEDS=0; KERNEL_GEOBAN=0
+# D8: the verify contract is "<covered> <intended>" in ADDRESSES, attributed to
+# THIS producer — not an element count of the SHARED blacklist_ipv4 set. The
+# stubs speak that contract; "0 512" means "this producer intended 512 addresses
+# and none of them are in the kernel", which is the measured GeoBan defect.
+KERNEL_FEEDS="0 512"; KERNEL_GEOBAN="0 512"
 _nftban_dsr_verify_feeds()  { printf '%s' "$KERNEL_FEEDS"; }
 _nftban_dsr_verify_geoban() { printf '%s' "$KERNEL_GEOBAN"; }
 
@@ -117,7 +121,7 @@ nftban_dsr_validate_plan <<<"$(printf 'producer=feeds\nplanned_state=WISHFUL\nso
 echo "=== STEP 4. APPLY IS BOUND TO THE VALIDATED PLAN (stale -> refuse) ==="
 seed_feeds
 plan="$(plan_of feeds)"
-KERNEL_FEEDS=5; APPLY_FEEDS_RC=0
+KERNEL_FEEDS="512 512"; APPLY_FEEDS_RC=0
 before=$APPLIED_FEEDS
 nftban_dsr_apply "$plan"; rc=$?
 [[ $rc -eq 0 && $APPLIED_FEEDS -eq $((before+1)) ]] && ok "current plan applies" || bad "current plan did not apply (rc=$rc)"
@@ -139,7 +143,7 @@ nftban_dsr_apply "$(plan_of feeds)"; rc=$?
 echo "=== STEP 5. POST-VERIFY ASKS THE KERNEL, not the applier's return code ==="
 # THE FALSE-SUCCESS REGRESSION: this is what `feeds sync` did — returned 0
 # because the config mtime was unchanged, while the runtime sets stayed empty.
-APPLY_FEEDS_RC=0; KERNEL_FEEDS=0
+APPLY_FEEDS_RC=0; KERNEL_FEEDS="0 512"
 plan="$(plan_of feeds)"
 nftban_dsr_apply "$plan" >/dev/null 2>&1
 state="$(nftban_dsr_verify "$plan")"
@@ -148,15 +152,47 @@ if [[ "$state" == "FAILED" ]]; then
 else
     bad "applier rc0 + empty kernel reported as '$state' — the original defect would pass"
 fi
-KERNEL_FEEDS=42
+KERNEL_FEEDS="512 512"
 [[ "$(nftban_dsr_verify "$plan")" == "RECONCILED" ]] && ok "restored kernel state -> RECONCILED" || bad "restored state not RECONCILED"
 KERNEL_FEEDS=UNKNOWN
 [[ "$(nftban_dsr_verify "$plan")" == "UNKNOWN" ]] && ok "unreadable kernel -> UNKNOWN (never RECONCILED)" || bad "unreadable kernel not UNKNOWN"
 
+# --- D8: producer attribution, partial coverage, and contract arity ----------
+# The two verify functions were once IDENTICAL (both counted the SHARED
+# blacklist_ipv4), so a sibling producer's elements satisfied this producer's
+# oracle. Measured on lab2 2026-08-31: GeoBan committed 0 of 524,032 intended
+# addresses, and DSR reported RECONCILED on the strength of feeds' 750 elements.
+KERNEL_FEEDS="256 512"
+state="$(nftban_dsr_verify "$plan")"; rc=$?
+[[ "$state" == "PARTIAL" ]] && ok "half the intended coverage present -> PARTIAL (never RECONCILED)" \
+                            || bad "partial coverage reported as '$state'"
+# PARTIAL must NOT be fatal: whitelist subtraction/normalisation is unmeasured,
+# so a healthy host may legitimately hold less than it intended. Reporting the
+# shortfall is the goal; hard-failing a healthy rebuild on an unproven coverage
+# equation is not.
+[[ $rc -eq 0 ]] && ok "PARTIAL is non-fatal (rc=0) — evidence, not enforcement" \
+                || bad "PARTIAL returned rc=$rc; a falsely-fatal control is not an improvement"
+
+KERNEL_FEEDS="0 0"
+[[ "$(nftban_dsr_verify "$plan")" == "EMPTY" ]] && ok "nothing intended -> EMPTY (not a false restore claim)" \
+                                                || bad "zero intent not EMPTY"
+
+# ⛔ ARITY GUARD. The PREVIOUS contract was a single bare count. Under the new
+# parser a lone "N" would split to covered=N intended=N — i.e. a silent
+# full-coverage SUCCESS for any verifier still speaking the old contract.
+for legacy in 0 42 999; do
+    KERNEL_FEEDS="$legacy"
+    got="$(nftban_dsr_verify "$plan")"
+    [[ "$got" == "UNKNOWN" ]] || bad "legacy bare count '$legacy' read as '$got' — must be UNKNOWN, never success"
+done
+ok "a legacy single-count result is UNKNOWN, never a silent full-coverage success"
+KERNEL_FEEDS="not a number"
+[[ "$(nftban_dsr_verify "$plan")" == "UNKNOWN" ]] && ok "non-numeric oracle result -> UNKNOWN" || bad "non-numeric not UNKNOWN"
+
 echo "=== CROSS-PRODUCER PARTIAL FAILURE (truthful, no invented atomicity) ==="
 seed_feeds; seed_geoban
 ENABLED_FEEDS=true; ENABLED_GEOBAN=true
-APPLY_FEEDS_RC=0;  KERNEL_FEEDS=17      # feeds succeeds
+APPLY_FEEDS_RC=0;  KERNEL_FEEDS="512 512" # feeds succeeds
 APPLY_GEOBAN_RC=1; KERNEL_GEOBAN=0      # geoban fails
 out="$(nftban_dsr_reconcile_all 2>/dev/null)"; rc=$?
 [[ $rc -ne 0 ]] && ok "overall rc is non-zero when a producer failed" || bad "overall rc 0 despite a failure"

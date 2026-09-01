@@ -272,7 +272,12 @@ CRITICAL_TIMERS=(
 )
 
 # Conditionally add feeds timer only if feeds are enabled (save resources)
-if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
+# Same canonical parser as nftban_module_effective_enabled / feeds update_all.
+# This required exactly "true" while update_all required exactly "YES", so no
+# configured value satisfied both readers.
+if { declare -f nftban_bool_is_true >/dev/null 2>&1 \
+     || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null; } \
+   && nftban_bool_is_true "${NFTBAN_FEEDS_ENABLED:-}"; then
     CRITICAL_TIMERS+=("nftban-core-feeds.timer")
 fi
 

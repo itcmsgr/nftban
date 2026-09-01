@@ -11,6 +11,336 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.12] - 2026-08-31 — reliability, recovery, and release-safety fixes
+
+Installer verdict correctness, recovery truth, and evidence recovery. The
+firewall's enforcement semantics are unchanged except for IPv6 neighbour
+discovery, which was rejecting traffic RFC 4861 requires be accepted.
+
+### Fixed — installer verdicts
+
+- **A run whose work succeeded was recorded as failed, and blamed a phase that
+  never ran.** `switchop.Rebuild` runs on `context.Background()` by policy, so the
+  global 300-second budget cannot kill it — but the phase loop after it is still
+  bound by that budget. On one production host a rebuild ran 318 seconds and
+  returned exit 0, and the run was then recorded FAILED_REBUILD naming phase
+  "Configure", which had not been entered, while both services were active and the
+  ruleset was live. A single-shot credit now applies: if the budget is exhausted and
+  a policy-exempt operation has *already returned successfully*, the run continues
+  under a fresh bounded budget — never an absent one, granted at most once per run,
+  and only for a completed operation. Expiry attribution now names the phase that
+  ran and states which phase was not entered. `globalTimeout` is deliberately not
+  raised: the semantics were wrong, not the number.
+
+  Two adjacent defects are closed with it. `runRepair` logged its own timeout and
+  returned without a state transition, so a repair killed by the deadline was
+  indistinguishable on disk from one that never started. And `nftban update`
+  invoked the rebuild through the executor's 30-second default timeout, mapping
+  exit -1 to FAILED_REBUILD — the exemption added for the switch path had never
+  covered this second door.
+
+  The global budget is also now logged rather than only referenced in source. Its
+  line shape is a cross-component contract with the support collector, asserted by a
+  test, because a bundle whose budget field reads UNKNOWN cannot distinguish a false
+  verdict from a real failure.
+
+- **The rebuild's exit code could not carry the meaning being asked of it.**
+  `return 1` meant all of: expected pre-daemon deferral, template missing, publish
+  failed, apply failed, generation commit failed, and any bash programming error.
+  That overload produced two opposite defects — an expected pre-daemon degradation
+  escalated to a fatal rollback, and a *failed generation commit* accepted as
+  DEGRADED so the install continued. The two authorities are now separate: the shell
+  publishes a versioned per-operation `RebuildDisposition` record
+  (COMPLETE / DEFERRED_RUNTIME / REGRESSION / FATAL), written by atomic
+  temp-and-rename after the mutation it describes, and the Go installer decides
+  continuation from it. Go fails closed on a missing, malformed, stale or
+  unrecognised record, which is what makes an unknown shell failure safe without
+  modelling bash: an aborted rebuild publishes nothing, and nothing aborts the
+  install. Only COMPLETE may commit the generation; a deferred install performs no
+  rollback and does not advance the generation, so the convergence debt stays
+  explicit and is discharged by the retry. The four tests that encoded the old
+  fail-open as expected behaviour are inverted rather than deleted.
+
+### Fixed — IPv6 neighbour discovery
+
+- **The shipped ruleset dropped legitimate neighbour discovery.** All four ND types
+  were gated on `ip6 saddr fe80::/10` under the rationale that NDP is inherently
+  link-local. The scoping premise is right; the source-address premise is not.
+  RFC 4861 sets the source per type — NS from any address assigned to the sending
+  interface or `::` during DAD (§4.3), NA likewise (§4.4), RS from an assigned
+  address or `::` (§4.1) — and restricts only RA to a link-local source (§4.2). The
+  anti-off-link control the RFC does mandate is Hop Limit 255
+  (§6.1.1/§6.1.2/§7.1.1/§7.1.2: a receiver MUST discard ND whose hop limit is not
+  255), and that check was absent everywhere in the tree. NS, NA and RS are now
+  accepted from any source under `ip6 hoplimit 255`; RA keeps the link-local
+  restriction and gains the hop-limit check. On a lab host with crafted frames, all
+  legitimate ND is accepted, RA from a global source is dropped, and any ND with a
+  hop limit other than 255 is dropped. End to end, an on-link IPv6 peer that
+  previously could not resolve the host — neighbour entry stuck INCOMPLETE, TCP
+  never establishing — now reaches REACHABLE. The two changes are coupled by
+  design: relaxing source scope without the hop-limit check would newly admit
+  off-link forged NS/NA from any global address. `nd-redirect` remains excluded and
+  IPv4 is untouched.
+
+  **This correction is delivered by upgrading the package, not by `nftban firewall
+  rebuild`.** A rebuild re-renders the *installed* template, and v1.229.11's template
+  still gates all four ND types on `fe80::/10` and carries no hop-limit check at all.
+  On a host that has not been upgraded, a rebuild reproduces the old rules faithfully.
+  Upgrade first; rebuild alone does not deliver this fix.
+
+- **The safe fallback config could not load on a host with no nftban tables.**
+  `nftables-safe.conf` issued a bare `delete table`, which is a hard error, and nft
+  applies a file as one transaction — so on a fresh install, after a flush, after an
+  uninstall, or in recovery it returned rc=1 and installed no firewall at all, which
+  is precisely the case a safe fallback exists for. It now declares the empty tables
+  before deleting them, the idiom `nftables.conf.tpl` already used. A test asserts
+  the idiom across every shipped nftables artifact.
+
+### Fixed — permission boundaries
+
+- **The installer's fallback permission path was weaker than the path it stands in
+  for.** `applyPermissions` is reached when the generated primary script is missing
+  or fails, and it maintained its own recursive ownership logic instead of deriving
+  from the canonical matrix in `build/fhs-spec.yaml`. Two of its five recursive
+  calls provably violated that matrix: `chown -R nftban:nftban /var/lib/nftban`
+  flattened `reports/auditors` (`root:nftban-auditor`, 0770/0660) so the daemon
+  ended up owning its own audit evidence, along with the backup, update-backup and
+  pro trees and the parent directory itself; `chown -R nftban:nftban /run/nftban`
+  flattened the setgid 2750 on `firewall-validate`. The primary generated script
+  uses no recursion and explicitly excludes the auditor tree before re-applying it
+  separately, so the fallback destroyed the exact boundary the primary preserves.
+  Every tree now derives from `RequiredDirs` via the same authority
+  `EnsureDirectories` uses; ownership is established on the canonical directory
+  skeleton only, and files take ownership from the writer that creates them.
+
+  Recorded so it is not re-derived later: `chown -R` defaults to `-P`, so it neither
+  traverses symlinked directories nor dereferences symlinked files, and adding `-L`
+  or `-H` would be a security change; but it does cross bind mounts and mutate the
+  real backing content, and `chown` has no `--one-file-system`. That is why the
+  bound is "do not recurse" rather than "recurse more carefully".
+  `/run/nftban/firewall-validate` is deliberately not asserted here — it is owned by
+  systemd-tmpfiles, the correct mechanism for a tmpfs path.
+
+### Fixed — convergence requests
+
+- **A coalesced sync reported the requested work as done.** `nft_ipc_sync` debounces
+  rapid full-sync requests against a host-wide marker with a three-second default,
+  and the suppressed branch returned 0 — the status every caller reads as "the sync
+  happened". No IPC is sent, so the daemon never sees the request and performs zero
+  replaces. The debounce reasons that a recent full sync means the caller's state is
+  committed, which is false whenever the caller mutated its durable source after
+  that sync — the recovery flow exactly. Measured through the real recovery path by
+  counting the daemon's own replace lines: back-to-back calls produced two replaces,
+  then zero, then two, then zero; the same calls spaced fifteen seconds apart
+  produced two replaces each time.
+
+  Reporting "coalesced" upward would only describe a recovery that still had not
+  happened, so the coalesced branch now returns a distinct non-success status and
+  `nft_ipc_sync_or_apply` — whose contract is to apply the caller's state —
+  re-issues once with force. That performs the work; it is not a sleep or a retry
+  until it looks right. The debounce is preserved for callers of `nft_ipc_sync`
+  that do not need immediate proof. The marker is host-wide, so this was never
+  limited to feeds and geoban: any two sync-triggering operations inside the
+  window coalesced, including two operator commands.
+
+### Fixed — recovery truth
+
+The governing rule for this group: **no recovery step may emit an affirmative
+success message unless it can prove the intended state was actually applied.**
+
+- **Feed enablement was a constant, not a check.** Canonical module authority
+  resolved feeds from `conf.d/feeds/main.conf` — a path no package creates — and
+  looked for the bare key `FEEDS_ENABLED`, while the shipped `conf.d/feeds.conf`
+  declares `NFTBAN_FEEDS_ENABLED`. The key lookup is anchored, so it could never
+  match. Two independent mismatches stacked, and with a missing file resolving to
+  disabled, the answer was `false` regardless of operator configuration. Measured
+  with the shipped file and the operator setting the value on: `false` before,
+  `true` after. Feeds now resolve from the configuration that actually exists —
+  the flat `conf.d/feeds.conf`, overridden by `nftban.conf.local`. Boolean
+  interpretation is unified across modules (`true/yes/1/on/enabled`) rather than
+  each call site inventing its own comparison. This is the same class as the
+  previously fixed Zabbix LLD population defect — a path that never exists is a
+  constant, not a check — which feeds survived because it resolved through a
+  different path.
+
+- **Blacklist range restore could not read the range form NFTBan itself emits.**
+  `nftban firewall recover` rejected `a-b` interval elements, so ranges the product
+  writes were silently dropped on the way back in — a recovery reporting success
+  while losing entries. The round trip is closed and tested against the kernel's own
+  serialisation.
+
+- **GeoBan conversion could report success while producing nothing.** The CIDR
+  converter is now fail-closed, with per-method adapters and explicit exit
+  semantics, so a conversion that did not happen cannot be reported as one that did.
+  The O(n²) fallback is bounded by `NFTBAN_CIDR_MERGE_BUDGET_SECONDS` (default 60),
+  enforced inside the loop; on expiry the output is truncated to empty and the
+  function fails, so a partial merge can never be mistaken for a complete one. A
+  stalled rebuild is not a verdict.
+
+- **An IPv4 result silently licensed an IPv6 claim.** The two derived-state verify
+  functions were byte-identical. Coverage is now computed per family and composed,
+  with FULL/PART/NONE/INACTIVE verdicts, and compared against *effective* intent
+  (raw minus bogon minus oversized) rather than raw source, because the daemon never
+  intended to install the subtracted entries. Comparison is string-based throughout:
+  a /48 is 2^80 addresses and shell arithmetic is 64-bit, so a fully present IPv6
+  intent previously composed to EMPTY. A bare count is UNKNOWN, never success, and
+  an unreadable-but-present source fails rather than reading as empty.
+
+- All six dataset-recovery call sites now share one result vocabulary
+  (RECONCILED / PARTIAL / FAILED / EMPTY / UNKNOWN), so no call site can invent its
+  own success wording.
+
+### Fixed — support bundles
+
+- **`nftban support --output DIR` produced nothing.** `SUPPORT_OUTPUT_DIR` was
+  declared `readonly` and then assigned by the documented `--output` handler, so the
+  command aborted with a readonly-variable error and exit 1 and wrote no bundle. The
+  default path was unaffected, which is why it survived: routine use omits the flag,
+  and the operators who reached for it were mid-incident.
+
+- **A bundle is no longer silently ambiguous about what it did not collect.**
+  Bundles now carry a `MANIFEST.txt` with host, version, kernel and install state,
+  the full file list with sizes, and an explicit empty-file census. Without it an
+  absent file was indistinguishable between not collected, collected empty, and
+  collection failed.
+
+- **Email is not required to produce a bundle.** When no address is given the
+  bundle is still written and the operator is told so, with both routes stated:
+  have NFTBan send it, or attach the printed archive. A host with no MTA, a blocked
+  relay, or a policy against server-sent mail is a normal case, not an error.
+
+- Two defects inside the collector itself were found by exercising it and fixed
+  before commit: exit-code parsing emitted `exit=exit=-1)`, and the budget helper
+  invoked an installer flag that does not exist. Rather than invent that flag, the
+  helper now prefers a budget the installer logs and otherwise reports UNKNOWN with
+  the reason it matters. It deliberately does not hardcode a value.
+
+### Changed — `/etc/nftban/nftables.conf` is a generated runtime artifact
+
+- **The package no longer claims this file is operator-owned configuration.** It was
+  shipped as a DEB conffile and RPM `%config(noreplace)` — a promise the package
+  manager would preserve operator edits — while the runtime has always treated it as
+  generated output: firewall reload and rebuild render it from
+  `nftables.conf.tpl` to a temporary file and publish it over that path through the
+  publish helper, including SELinux labelling. It does not merge, and it does not
+  preserve arbitrary operator content. Two owners, one file.
+
+  The consequence was measured on Ubuntu 24.04 upgrading from v1.229.11 with the
+  file in NFTBan's own normal rendered state — no operator edit and no non-default
+  configuration: apt returned 100, dpkg left the package `iU` (unpacked, not
+  configured), `postinst` was never reached, and the corrections in this release
+  were therefore never delivered. The rendered form differs from the package payload
+  even at packaged defaults, so any host whose file passed through the normal
+  renderer was affected, and Ubuntu 24.04 sets no `force-conf*` default.
+
+  From this release the file is a plain packaged file in both families. **It is
+  still installed**; it simply stopped being treated as protected configuration.
+  Direct edits to it are not retained across reload or rebuild — that was already
+  true, and the package metadata implied otherwise.
+
+  Upgrades from v1.229.11 and earlier preserve unrecognised content before replacing
+  it. On DEB a one-time transition, gated on dpkg's own live conffile registration
+  so it cannot repeat, classifies the existing file as package payload (against
+  dpkg's recorded checksum), as an NFTBan-rendered form (against the *installed*
+  pre-upgrade template, so a host with a non-default SSH port or connection limit is
+  still recognised as generated), or as unknown. Unknown content is copied to
+  `/var/lib/nftban/update-backups`, the copy is SHA256-verified and mode 0600, and a
+  record naming the backup path and digest is appended to
+  `/var/log/nftban/installer.log`, which the support bundle already collects. **If
+  preservation cannot be proven the upgrade stops** rather than displacing content
+  it could not save. On RPM no migration scriptlet is needed: removing
+  `%config(noreplace)` is sufficient and complete, because rpm's own handling of a
+  file that ceases to be config is non-interactive, reaches `%post`, installs the
+  corrected payload, and preserves modified content as `.rpmsave`. The safety
+  contract is identical across families; the mechanism differs because the package
+  managers differ.
+
+### Added
+
+- **Module re-apply evidence survives the rebuild that produced it.** The rebuild's
+  module re-apply calls were `nftban <mod> reload 2>/dev/null`, and the warning line
+  went to the rebuild's own stdout, which the installer never captured. When three
+  production hosts recorded PRE protected with sixteen chains and POST degraded with
+  six — base input/forward/output across both families, every module chain absent,
+  with the base ruleset itself loaded correctly — the mechanism was reproducible but
+  the trigger was not recoverable from anything that survived. The rebuild now emits
+  one bounded record per module: step, command, start, end, duration, exit code,
+  stdout, stderr and result.
+
+  Un-suppressing stderr without redacting it would have traded diagnosability for
+  disclosure, since these records are collected into bundles that are emailed to
+  third parties. Everything captured passes through the canonical redactor, and if
+  the redactor is unreachable no raw text is emitted and the withholding is stated.
+  The support collector reads the records and treats a missing directory as
+  UNAVAILABLE rather than as an absence of failures, with `records_present=0`
+  explicitly not the same as "all modules succeeded".
+
+- **Bundle evidence for incident reconstruction.** Paired rebuild start/end/exit with
+  computed durations, alongside a note that the installer checks context expiry when
+  *entering* a phase; a chain inventory by identity per family plus the structured
+  `nft -j` ruleset and sets, so a bare count becomes legible as which protections are
+  absent; and parser rejections classified and counted rather than left as loose log
+  lines, with bounded samples and no raw feed content.
+
+- **Release-time enforcement of generated-artifact and conffile safety.** A release
+  preflight now runs the declared generator `--check` modes, the VERSION/VERSION_DATE
+  /CHANGELOG coherence gate, and the shipped-conffile mutation gate before any build
+  or publish job — every one of which is downstream of it. Two self-tests prove the
+  gates are not blind: one injects drift into a generated artifact and requires the
+  check to fail, the other mutates a shipped conffile and requires the gate to fail
+  through the same command line the real step uses. Previously the conffile gate
+  existed and passed its own unit tests while nothing invoked it, and no
+  architecture or generator check ran on a tag at all.
+
+- **`docs/operator/SUPPORT_BUNDLE_AND_INCIDENT_EVIDENCE.md`**, documenting the
+  support-bundle contract: the real flags, the incident evidence files, the
+  UNKNOWN / UNAVAILABLE / NOT_STARTED / DANGLING distinctions, collection-time
+  versus incident-time correlation, fail-closed redaction, and the known limits.
+  `docs/NFT-Schema-Validation.md` is corrected against the ND rules that actually
+  ship, and the emergency recovery page gains a section on collecting evidence
+  before mutating, with an explicit warning against `--repair` as a first response
+  because it re-runs the resumed phase in full.
+
+### Notes
+
+- **Connection limits are re-scoped to v1.229.13.** The v1.229.11 notes said the
+  real fix was designed for this release. It is not in it — no commit in this range
+  touches connlimit enforcement. Under the roadmap's pre-authorised fallback, the
+  full per-source connection-limit work moves to v1.229.13. The correction made in
+  v1.229.11 stands: the limits are host-wide, not per-IP, the wording describes them
+  accurately, and the enforcement semantics are unchanged in this release.
+
+- **Zabbix LLD population-authority convergence is not delivered here.** The
+  v1.229.11 notes tracked it for v1.229.12. No commit in this release changes Zabbix
+  discovery or its subject population, which remains explicitly enumerated. The work
+  is carried forward without a target release being claimed for it here.
+
+- A reason-code join in the rebuild classifier no longer assigns `IFS` in a command
+  substitution. This is not remediation of a demonstrated defect — the assignment
+  was confined to a subshell and the parent `IFS` was verified unchanged. It removes
+  a fresh security-review exception from new code rather than carrying one into the
+  release. The repository's existing historical sites are untouched, and no
+  classifier decision, disposition vocabulary or transaction semantic changes.
+
+- Two negative controls read their pre-fix baseline from `origin/main`, a moving
+  ref, so each fix's own merge turned its baseline into the fixed code and inverted
+  the control. Both now synthesise the baseline from the live source by a declared
+  inversion — immutable with respect to what they are a control for, and workable in
+  a shallow CI checkout where no historical ref is guaranteed present. A
+  repository-wide sweep confirms no remaining test resolves a baseline from a moving
+  ref.
+
+- The per-family derived-state read added in this release is registered in the nft
+  parser contract as HEALTH_VERDICT / UNKNOWN_REQUIRED: a failed or unparseable read
+  must surface as UNKNOWN, never as zero elements, because zero would read as
+  "family absent" and license a coverage claim the kernel never confirmed.
+
+- Package-native DEB and RPM upgrade witnesses for this release were exercised
+  during development against real packages built from this source. A formal
+  upgrade-path witness table is not asserted in this entry.
+
+---
+
 ## [v1.229.11] - 2026-08-26 — the generation now means what it says
 
 A convergence-truth and legal-hygiene release. The firewall's behaviour is

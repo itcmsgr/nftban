@@ -59,9 +59,27 @@ run() { ( cd "$R" && bash scripts/ci/check-conffile-mutation.sh vBASE "${1:-HEAD
 echo "=== UNCHANGED baseline must PASS ==="
 out="$(run vBASE)"
 grep -q "conffile-mutation PASS" <<<"$out" && ok "identical refs -> PASS" || { bad "identical refs did not pass"; sed 's/^/      /' <<<"$out" | tail -6; }
-grep -qE "conffile sources: baseline=9 candidate=9" <<<"$out" \
-    && ok "source set derived correctly (9: 6 .conf + 1 yaml + 2 install), .default/.local excluded" \
+# 8, not 9: install/nftables/nftables.conf is present in the fixture but is
+# NOT a conffile source from v1.229.12 — it became a generated runtime artifact.
+grep -qE "conffile sources: baseline=8 candidate=8" <<<"$out" \
+    && ok "source set derived correctly (8: 6 .conf + 1 yaml + 1 install), .default/.local and nftables.conf excluded" \
     || { bad "unexpected source count"; grep "conffile sources" <<<"$out" | sed 's/^/      /'; }
+
+# ⛔ PROVE THE EXCLUSION IS REAL, don't just accommodate the new number. The
+#    fixture still SHIPS install/nftables/nftables.conf; mutating it must NOT be
+#    reported, because it is no longer protected config. If this arm ever fails,
+#    the gate and packaging disagree about who owns that file again.
+echo "=== generated-runtime artifact is NOT protected config (v1.229.12) ==="
+echo "table ip nftban { chain c {} }" > "$R/install/nftables/nftables.conf"
+git -C "$R" commit -aqm mutate-generated-artifact
+out="$(run HEAD)"
+grep -q "conffile-mutation PASS" <<<"$out" \
+    && ok "mutating the generated nftables.conf does NOT trip the gate (no ACK needed)" \
+    || { bad "generated nftables.conf still treated as protected config"; sed 's/^/      /' <<<"$out" | tail -6; }
+grep -qi "NFTBAN_CONFFILE_ACK" <<<"$out" \
+    && bad "gate suggested an ACK for a file that is not protected config" \
+    || ok "gate did not ask for an acknowledgement"
+git -C "$R" reset -q --hard vBASE
 
 echo "=== PLANTED MUTATION must FAIL and name the path ==="
 echo "setting_3=CHANGED" > "$R/etc/nftban/conf.d/mod3.conf"

@@ -23,6 +23,59 @@
 [[ -n "${_NFTBAN_MODULE_AUTHORITY_LOADED:-}" ]] && return 0
 _NFTBAN_MODULE_AUTHORITY_LOADED=1
 
+# -----------------------------------------------------------------------------
+# nftban_bool_is_true <value> — THE canonical truth parser.
+#
+# The same configured value must mean the same thing to every reader. Measured
+# 2026-08-31: NFTBAN_FEEDS_ENABLED was interpreted three incompatible ways —
+# nftban_feeds_update_all required exactly "YES", autoheal required exactly
+# "true", and this authority required exactly "true" under a different key. No
+# single value satisfied all three: "YES" left autoheal believing feeds were off,
+# "true" left update_all believing they were off. Scattered == "YES" / == "true"
+# comparisons are the defect; one parser is the fix.
+#
+# ⛔ ANYTHING NOT RECOGNISED AS TRUE IS FALSE. A malformed or empty value must
+#    never fail open into enablement.
+# -----------------------------------------------------------------------------
+nftban_bool_is_true() {
+    case "${1,,}" in
+        true|yes|1|on|enabled) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_module_feeds_enabled — feeds resolves from the authority that EXISTS.
+#
+# Every other module ships conf.d/<module>/main.conf. Feeds does not: it ships a
+# FILE, conf.d/feeds.conf, and is overridden by the global nftban.conf.local —
+# the same precedence the per-feed reader (nftban_feeds_get_property) already
+# uses. The generic lookup therefore searched conf.d/feeds/main.conf for
+# FEEDS_ENABLED, and BOTH the file and the key are absent on every host, so
+# feeds resolved DISABLED unconditionally. Measured on lab4 2026-08-31:
+#   nftban_module_effective_enabled feeds  -> disabled (rc=1)   ALWAYS
+#   nftban_module_effective_enabled geoban -> ENABLED
+# The consequence was silent: the DSR/rebuild recovery path classified the feeds
+# producer as intentionally disabled and did nothing, while other call sites
+# synced feeds directly — so feeds looked healthy while their recovery path was
+# permanently dead.
+#
+# ⛔ The fix is NOT to create conf.d/feeds/main.conf. That would add a fourth
+#    authority location and a new shipped conffile (upgrade risk) without
+#    resolving the semantic split. Read what the project already ships.
+# -----------------------------------------------------------------------------
+_nftban_module_feeds_enabled() {
+    local cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local val="" v
+    v="$(_nftban_module_read_key "${cfg}/conf.d/feeds.conf" NFTBAN_FEEDS_ENABLED)"
+    [[ -n "$v" ]] && val="$v"
+    # nftban.conf.local OVERRIDES the shipped default — same precedence as the
+    # per-feed reader, so master and per-feed answers come from one model.
+    v="$(_nftban_module_read_key "${cfg}/nftban.conf.local" NFTBAN_FEEDS_ENABLED)"
+    [[ -n "$v" ]] && val="$v"
+    nftban_bool_is_true "$val"
+}
+
 # The per-module enablement variable. Modules are not uniform, so the mapping
 # is EXPLICIT — an unknown module is an error, never a guessed variable name.
 _nftban_module_enable_var() {
@@ -31,7 +84,10 @@ _nftban_module_enable_var() {
         portscan) echo "PORTSCAN_ENABLED" ;;
         botguard) echo "HTTP_BOTGUARD_ENABLED" ;;
         geoban)   echo "GEOBAN_ENABLED" ;;
-        feeds)    echo "FEEDS_ENABLED" ;;
+        # feeds ships NFTBAN_FEEDS_ENABLED in conf.d/feeds.conf, not
+        # FEEDS_ENABLED in conf.d/feeds/main.conf. See
+        # _nftban_module_feeds_enabled, which owns the feeds lookup.
+        feeds)    echo "NFTBAN_FEEDS_ENABLED" ;;
         *)        return 1 ;;
     esac
 }
@@ -62,6 +118,13 @@ nftban_module_effective_enabled() {
             return 2
         }
     fi
+    # feeds does not use the conf.d/<module>/main.conf shape — see the banner on
+    # _nftban_module_feeds_enabled for the measured consequence.
+    if [[ "$module" == "feeds" ]]; then
+        _nftban_module_feeds_enabled
+        return $?
+    fi
+
     local base="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/${module}/main.conf"
     local val="false" v
 
@@ -70,7 +133,13 @@ nftban_module_effective_enabled() {
     v="$(_nftban_module_read_key "${base}.local" "$key")"
     [[ -n "$v" ]] && val="$v"
 
-    [[ "$val" == "true" ]]
+    # ⛔ DELIBERATE BEHAVIOUR CHANGE. This was `[[ "$val" == "true" ]]`, so a host
+    #    declaring DDOS_ENABLED="yes" — an explicit operator request to enable —
+    #    resolved DISABLED. That is the same fragmentation the feeds gate showed,
+    #    and it silently withheld a protection the operator asked for. One parser
+    #    now answers for every module. Values that were true before are still
+    #    true; only previously-unrecognised truthy spellings change meaning.
+    nftban_bool_is_true "$val"
 }
 
 # -----------------------------------------------------------------------------
@@ -939,4 +1008,5 @@ nftban_plan_generation_reap() {
 export -f _nftban_plan_lock_acquire _nftban_plan_lock_release nftban_plan_record_path nftban_plan_target_generation _nftban_plan_bearing_modules \
     _nftban_plan_record_valid nftban_plan_txn_required_modules nftban_plan_txn_begin \
     nftban_plan_txn_abort nftban_plan_txn_commit nftban_plan_generation_reap
+export -f nftban_bool_is_true _nftban_module_feeds_enabled
 export -f nftban_module_report_modes nftban_plan_generation_current _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok
