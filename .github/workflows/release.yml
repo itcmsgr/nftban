@@ -128,6 +128,14 @@ jobs:
       - name: Self-test - a mutated shipped conffile must fail preflight
         run: |
           set -uo pipefail
+          # ⛔ GitHub runs `run:` steps as `bash -e`. This step DELIBERATELY invokes a
+          #    gate that must exit non-zero, and under errexit the command
+          #    substitution below aborts the step before the RC check can read it —
+          #    the step then fails with no diagnostic, which is exactly what happened
+          #    on the first dry run after this control was fixed. Every failure path
+          #    here is handled explicitly, so errexit is turned OFF on purpose.
+          #    A local `bash script` run does NOT reproduce CI's -e; test with `bash -e`.
+          set +e
           SUBJ=install/config/nftban.conf
           test -f "$SUBJ" || { echo "::error::$SUBJ absent - self-test would be vacuous"; exit 1; }
 
