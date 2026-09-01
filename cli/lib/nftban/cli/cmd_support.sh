@@ -343,6 +343,34 @@ _support_collect_incident_evidence() {
     _safe_cmd "$d/nft_ruleset.json" "nft ruleset (structured)" nft -j list ruleset
     _safe_cmd "$d/nft_sets.json"    "nft sets (structured)"    nft -j list sets
 
+    # ---- module re-apply evidence (v1.229.12 B-lane) ----------------------------
+    # The 2026-08-26 incident was "POST degraded (chains: 6)" with no recoverable cause:
+    # the module re-apply calls suppressed stderr and their warnings never reached
+    # installer.log. Those records are the difference between "modules failed" and
+    # "modules failed BECAUSE X".
+    {
+        _support_correlation_header "MODULE RE-APPLY EVIDENCE"
+        local mdir="${NFTBAN_LOG_DIR:-/var/log/nftban}/rebuild-modules"
+        if [[ ! -d "$mdir" ]]; then
+            echo "UNAVAILABLE: $mdir does not exist — no rebuild has recorded module"
+            echo "re-apply evidence on this host (pre-v1.229.12 rebuilds did not)."
+        else
+            local n; n=$(find "$mdir" -type f -name 'reapply-*.log' 2>/dev/null | wc -l)
+            echo "records_present=$n"
+            if [[ "$n" -eq 0 ]]; then
+                echo "# directory exists but holds no records — NOT the same as 'all modules succeeded'."
+            else
+                # newest 3 only: bounded, and already redacted at write time
+                find "$mdir" -type f -name 'reapply-*.log' -printf '%T@ %p\n' 2>/dev/null \
+                    | sort -rn | head -3 | awk '{print $2}' | while read -r rf; do
+                    echo "## $(basename "$rf")"
+                    head -c 8192 "$rf"
+                    echo
+                done
+            fi
+        fi
+    } > "$d/module_reapply.txt" 2>&1
+
     # ---- C: parser rejections, classified and counted ---------------------------
     {
         _support_correlation_header "PARSER REJECTIONS"

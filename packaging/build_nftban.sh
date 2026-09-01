@@ -1944,7 +1944,10 @@ fi
 /usr/lib/nftban/templates/nftables.conf.tpl
 # Main config files
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
-%attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
+# GENERATED runtime artifact, not operator-owned config — see the DEB
+# conffiles block for the measured rationale. %config(noreplace) made RPM
+# promise a preservation the runtime does not honour.
+%attr(640,root,nftban) /etc/nftban/nftables.conf
 # /etc/logrotate.d/nftban is GENERATED DERIVED STATE (v1.222.0 Z2/Z3), NOT a
 # packaged file and NOT operator config. It is declared %ghost: RPM owns the path
 # (so uninstall removes it) but ships no content and records no digest, so
@@ -2322,7 +2325,20 @@ PRERM
     {
         (
             cd "${BUILD_DIR}/deb" 2>/dev/null || exit 0
+            # ⛔ /etc/nftban/nftables.conf is EXCLUDED: it is a GENERATED runtime
+            #    publication artifact, not operator-owned configuration. NFTBan renders
+            #    it from /usr/lib/nftban/templates/nftables.conf.tpl and republishes it
+            #    over this path on every firewall reload/rebuild via a bare `mv` — no
+            #    merge, no backup, no operator-content preservation. Declaring it a
+            #    conffile made dpkg promise a preservation the runtime does not honour,
+            #    and made ordinary upgrades stop at a conffile prompt: MEASURED, a host
+            #    in the NORMAL rendered state upgrading .11 -> .12 returned APT_RC=100
+            #    and dpkg status iU (unpacked, NOT configured), postinst never reached,
+            #    so the correction was never delivered. The same seam was hit in
+            #    v1.228.6 and answered with a release note telling operators to pass
+            #    --force-confnew; that is evidence of the problem, not a mechanism.
             find etc/nftban -type f -name '*.conf' \
+                 ! -name 'nftables.conf' \
                  ! -name '*.default' ! -name '*.example' ! -name '*.local' 2>/dev/null
             find etc/nftban/conf.d -type f \( -name '*.yaml' -o -name '*.yml' \) \
                  ! -name '*.default' ! -name '*.example' ! -name '*.local' 2>/dev/null
