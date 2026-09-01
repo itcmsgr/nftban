@@ -193,6 +193,7 @@ mode_plan_exclusivity_v1229_7_test	cli/lib/nftban/tests/mode_plan_exclusivity_v1
 module_effective_config_v1228_7_test	cli/lib/nftban/tests/module_effective_config_v1228_7_test.sh	firewall	test	effective-config-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 module_enablement_vocabulary_test	cli/lib/nftban/tests/module_enablement_vocabulary_test.sh	core	test	module-enablement-vocabulary	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 module_orchestrator_unbound_var_v1229_7_test	cli/lib/nftban/tests/module_orchestrator_unbound_var_v1229_7_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
+module_reapply_warning_precedence_test	cli/lib/nftban/tests/module_reapply_warning_precedence_test.sh	firewall	test	firewall-reset	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_bounded_limiter_render_v1228_6_test	cli/lib/nftban/tests/nft_bounded_limiter_render_v1228_6_test.sh	firewall	test	nft-bounded-limiters	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 nft_consumer_authority_guard_v1228_4_test	cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh	packaging	test	systemd-execution-authority	CI_STATIC	ci-bash	true	false	false	false	false	false			
 nft_counting_model_guard_v190_test	cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
