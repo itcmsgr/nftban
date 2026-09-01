@@ -4401,7 +4401,9 @@ firewall_reset() {
     local _ddos_enabled="false"
     nftban_module_effective_enabled ddos DDOS_ENABLED && _ddos_enabled="true"
     if [[ "$_ddos_enabled" == "true" ]]; then
-        nftban ddos reload 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed"
+        nftban ddos reload 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed" || true
+        }
     fi
 
     # Step 7 (v1.50.1): Re-apply portscan if enabled
@@ -4411,13 +4413,17 @@ firewall_reset() {
     local _portscan_enabled="false"
     nftban_module_effective_enabled portscan PORTSCAN_ENABLED && _portscan_enabled="true"
     if [[ "$_portscan_enabled" == "true" ]]; then
-        nftban portscan reload 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: Portscan reload failed"
+        nftban portscan reload 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: Portscan reload failed" || true
+        }
     fi
 
     # Step 8 (v1.50.1, v1.81.0 key fix): Re-apply botguard if enabled
     [[ "$quiet" == "false" ]] && echo "  [8/11] Re-applying BotGuard..."
     if _firewall_botguard_is_enabled; then
-        nftban botguard enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed"
+        nftban botguard enable --quiet 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed" || true
+        }
     fi
 
     # Step 9: Re-sync feeds (v1.50.1: auto-restore)
