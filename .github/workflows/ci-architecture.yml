@@ -136,6 +136,12 @@ jobs:
       # (the 28-anchor count cannot see a divergent limiter definition); R5 requires
       # a deliberate at-capacity policy row per limiter in
       # scripts/ci/data/nft-limiter-capacity-policy.tsv.
+      # P12-FPA current projection invariants (P1/P3/P5). Deliberately does NOT
+      # enforce single-substitution-authority, comment drift, or any boot-projection
+      # rule — those subjects do not exist or do not pass on this tree yet.
+      - name: Check firewall projection invariants (P12-FPA P1/P3/P5)
+        run: ./scripts/ci/check-firewall-projection-authority.sh
+
       - name: Check nft bounded limiters (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters.sh
 
