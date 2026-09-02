@@ -26,7 +26,6 @@
 # =============================================================================
 set -uo pipefail
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="$(cd "${LIB_DIR}/../../.." && pwd)"
 PASS=0; FAIL=0
 ok()  { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 bad() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
@@ -35,8 +34,40 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/etc/conf.d"
 export NFTBAN_CONFIG_DIR="$T/etc"
 
-git -C "$REPO" show origin/main:cli/lib/nftban/lib/module_authority.sh > "$T/old_authority.sh" 2>/dev/null \
-  || { echo "  [FAIL] cannot read origin/main authority — negative controls would be vacuous"; exit 1; }
+# ⛔ THE PRE-FIX BASELINE IS SYNTHESISED FROM THE LIVE LIBRARY, NOT READ FROM A REF.
+#    This previously did `git show origin/main:module_authority.sh`. origin/main is a
+#    MOVING ref: the hour this lane merged, the "pre-fix" baseline BECAME the fixed
+#    code and every negative control below inverted, failing deterministically on main
+#    and on every branch cut from it. Third occurrence of that defect in this release.
+#    A tag is not the fix either — the ci-bash checkout is shallow, so no historical
+#    ref is guaranteed present.
+#    Instead: restore exactly what the fix changed. Immutable by construction.
+_synth_prefix_authority() { # $1=destination
+    local live="${LIB_DIR}/lib/module_authority.sh" n_bool n_key n_disp
+    n_bool=$(grep -c 'nftban_bool_is_true "\$val"' "$live") || n_bool=0
+    n_key=$(grep -c 'feeds).*"NFTBAN_FEEDS_ENABLED"' "$live") || n_key=0
+    n_disp=$(grep -c 'if \[\[ "\$module" == "feeds" \]\]; then' "$live") || n_disp=0
+    if [[ "$n_bool" -eq 0 || "$n_key" -eq 0 || "$n_disp" -eq 0 ]]; then
+        echo "  [FAIL] live authority no longer has the shape this inversion reverts" \
+             "(bool=$n_bool key=$n_key dispatch=$n_disp) — the negative control cannot" \
+             "reproduce the defect; re-derive it."
+        return 1
+    fi
+    awk '
+      /if \[\[ "\$module" == "feeds" \]\]; then/ { skip=1; next }
+      skip && /^[[:space:]]*fi[[:space:]]*$/          { skip=0; next }
+      skip { next }
+      { print }
+    ' "$live" \
+    | sed -e 's/nftban_bool_is_true "\$val"/[[ "$val" == "true" ]]/' \
+          -e 's/feeds)    echo "NFTBAN_FEEDS_ENABLED" ;;/feeds)    echo "FEEDS_ENABLED" ;;/' \
+      > "$1" || return 1
+    if cmp -s "$live" "$1"; then
+        echo "  [FAIL] synthesised baseline is identical to the live library — vacuous"; return 1
+    fi
+    bash -n "$1" 2>/dev/null || { echo "  [FAIL] synthesised baseline is not valid shell"; return 1; }
+}
+_synth_prefix_authority "$T/old_authority.sh" || exit 1
 
 # Each probe runs in a SUBSHELL: module_authority.sh guards against double-sourcing,
 # so old and new cannot both be live in one shell.
@@ -86,11 +117,11 @@ echo "=== missing authority must not become enablement ==="
 clear_all
 [[ "$(ask_new)" == "disabled" ]] && ok "no configuration at all -> disabled (absence is not enablement)" || bad "absent config -> $(ask_new)"
 
-echo "=== NEGATIVE CONTROLS against origin/main ==="
+echo "=== NEGATIVE CONTROLS against the synthesised pre-fix authority ==="
 clear_all; set_master true
 old="$(ask_old)"; new="$(ask_new)"
 [[ "$old" == "disabled" && "$new" == "ENABLED" ]] \
-  && ok "NEGATIVE_AUTHORITY: origin/main says '$old' with master=true; fixed says '$new'" \
+  && ok "NEGATIVE_AUTHORITY: pre-fix authority says '$old' with master=true; fixed says '$new'" \
   || bad "NEGATIVE_AUTHORITY did not reproduce (old=$old new=$new) — the fix may be untested"
 
 # vocabulary split: reproduce the two readers disagreeing on the SAME value.
@@ -98,7 +129,7 @@ for val in true YES; do
     upd_old=$([[ "$val" != "YES" ]] && echo disabled || echo ENABLED)   # update_all required exactly YES
     ah_old=$([[ "$val" == "true" ]] && echo ENABLED || echo disabled)   # autoheal required exactly true
     if [[ "$upd_old" != "$ah_old" ]]; then
-        ok "NEGATIVE_VOCAB_SPLIT_${val}: origin/main update_all=$upd_old vs autoheal=$ah_old on the SAME value"
+        ok "NEGATIVE_VOCAB_SPLIT_${val}: pre-fix update_all=$upd_old vs autoheal=$ah_old on the SAME value"
     else
         bad "NEGATIVE_VOCAB_SPLIT_${val}: expected the two readers to disagree"
     fi
@@ -111,26 +142,40 @@ done
 # ⛔ NEVER `grep -q` inside a pipeline under `set -o pipefail`: grep exits on the
 #    first match and closes the pipe, the producer takes SIGPIPE, and the pipeline
 #    reports non-zero — a match read as "not found". Count, then compare.
-_om_failopen="$(git -C "$REPO" show origin/main:cli/lib/nftban/core/nftban_feeds.sh 2>/dev/null | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')"
-[[ "${_om_failopen:-0}" -gt 0 ]] \
-  && ok "NEGATIVE_FAIL_OPEN: origin/main defaults an ABSENT master gate to YES (enabled)" \
-  || bad "NEGATIVE_FAIL_OPEN: could not reproduce the fail-open default in origin/main"
+# ⛔ FIXTURE, NOT A GIT REF. This previously read the fail-open default out of
+#    `git show origin/main:nftban_feeds.sh`. Once the fix merged, origin/main no
+#    longer contained it and the control inverted. The live code does not merely
+#    change that expression, it removes the gate entirely, so there is no one-line
+#    inversion to apply — and none is needed: what this control must prove is that
+#    the PROBE can see the defect shape, which a fixture proves without history.
+_FIXTURE_CODE='    if [[ "${NFTBAN_FEEDS_ENABLED:-YES}" != "YES" ]]; then'
+_FIXTURE_COMMENT='    # historical banner mentioning ${NFTBAN_FEEDS_ENABLED:-YES} in prose'
+
+_fx_code="$(printf '%s\n' "$_FIXTURE_CODE" | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')" || _fx_code=0
+[[ "${_fx_code:-0}" -gt 0 ]] \
+  && ok "NEGATIVE_FAIL_OPEN: the probe DOES detect an absent-gate default of YES" \
+  || bad "NEGATIVE_FAIL_OPEN: probe cannot see the fail-open shape — every arm below is vacuous"
+
 # ⛔ Strip comments first. The fix DOCUMENTS the old expression in a banner, and
 #    matching that banner would report the defect as still present — a checker
 #    reading prose instead of code.
-_fixed_failopen="$(sed 's/#.*//' "${LIB_DIR}/core/nftban_feeds.sh" | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')"
+_fixed_failopen="$(sed 's/#.*//' "${LIB_DIR}/core/nftban_feeds.sh" | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')" || _fixed_failopen=0
 if [[ "${_fixed_failopen:-0}" -gt 0 ]]; then
     bad "fixed tree still contains the fail-open default in EXECUTABLE code"
 else
     ok "  fixed: the fail-open default is gone from executable code (banner text excluded)"
 fi
-# Prove that comment-stripping did not simply blind the check.
-_om_stripped="$(git -C "$REPO" show origin/main:cli/lib/nftban/core/nftban_feeds.sh 2>/dev/null | sed 's/#.*//' | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')"
-if [[ "${_om_stripped:-0}" -gt 0 ]]; then
-    ok "  non-vacuity: the same comment-stripped probe DOES find it on origin/main"
-else
-    bad "  non-vacuity: comment-stripped probe cannot find the defect on origin/main — it proves nothing"
-fi
+
+# Prove comment-stripping did not blind the probe: it must still find the shape in
+# CODE, and must NOT find it in a comment carrying the same words.
+_fx_code_stripped="$(printf '%s\n' "$_FIXTURE_CODE" | sed 's/#.*//' | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')" || _fx_code_stripped=0
+_fx_cmt_stripped="$(printf '%s\n' "$_FIXTURE_COMMENT" | sed 's/#.*//' | grep -c 'NFTBAN_FEEDS_ENABLED:-YES')" || _fx_cmt_stripped=0
+[[ "${_fx_code_stripped:-0}" -gt 0 ]] \
+  && ok "  non-vacuity: the comment-stripped probe still finds the shape in CODE" \
+  || bad "  non-vacuity: comment-stripping blinded the probe entirely — it proves nothing"
+[[ "${_fx_cmt_stripped:-0}" -eq 0 ]] \
+  && ok "  and correctly does NOT match the same words inside a comment" \
+  || bad "  comment-stripping failed: prose still satisfies the probe"
 
 echo
 echo "=== feeds_authority: PASS=$PASS FAIL=$FAIL ==="

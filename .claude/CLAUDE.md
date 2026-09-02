@@ -61,9 +61,20 @@ emulate, search, list, fhs, botguard, tunnel, sync
 ```
 
 ### Current Version
+
+⛔ **NEVER hard-code the current version here.** This block previously read `v1.195.0`
+while `VERSION` was `1.229.12` — a stale authority inside the file that exists to prevent
+stale authority. Any literal written here is wrong by the next release. Derive it:
+
 ```
-v1.195.0 (check /VERSION file for updates)
+VERSION           cat VERSION                 (no trailing newline — preserve it)
+release date      cat VERSION_DATE            (strict ISO; must be CORRECT, not merely valid)
+latest published  gh release list --limit 1
+source authority  git rev-parse origin/main
+open work         NFTBAN_ROADMAP/NFTBAN_PENDINGS_AND_BUGS_CURRENT.md  §0 baseline
 ```
+
+If two of those disagree, STOP and report the disagreement — do not pick one.
 
 ### NOT Supported (Common Hallucinations)
 ```
@@ -157,4 +168,4 @@ When writing wiki pages, docs, README sections, or release notes, follow:
 - Full hallucination guide: `/home/commonfolder/LLMAI4NFTBAN/HOW_TO_ASK_ELIMINATE_HALLUCINATION.md`
 - Hallucination detector: `/home/commonfolder/LLMAI4NFTBAN/validators/scripts/detect_hallucinations.sh`
 - Auditor system: `/home/commonfolder/LLMAI4NFTBAN/prompts/hallucination_auditor_system.md`
-- FHS authority graph (canonical): `/home/commonfolder/LLMAI4NFTBAN/NFTBAN_ROADMAP/V1_139_FHS_AUTHORITY_GRAPH.md` — single source of truth for the FHS authority topology (which surface owns which dir/file perms + closure status of historical gaps; v1.139 PR-C formalization).
+- FHS authority graph (canonical): `/home/commonfolder/LLMAI4NFTBAN/NFTBAN_ROADMAP/COMPLETED/V1_139_FHS_AUTHORITY_GRAPH.md` — single source of truth for the FHS authority topology (which surface owns which dir/file perms + closure status of historical gaps; v1.139 PR-C formalization).

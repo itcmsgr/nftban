@@ -106,25 +106,82 @@ for badval in 0 "" abc -5 " " 3.5; do
         || bad "budget='$badval' resolved to '$got' — a config path away from the bound"
 done
 
-# (b) BEHAVIOUR — one full-speed run at the real default, measured in the
-#     foreground. 1200 CIDRs needs ~100s unbounded on this class of hardware, so a
-#     bounded run must stop near 60s and emit nothing.
-gen 1200 "$T/u.txt"
-start=$(date +%s)
-NFTBAN_CIDR_MERGE_BUDGET_SECONDS=0 timeout 150 bash -c '
-    source "$1" >/dev/null 2>&1; set +e
-    nftban_cidr_merge "$2" "$3" 4 >/dev/null 2>&1; exit $?' \
-    _ "${LIB_DIR}/lib/nftban_dataset_cidr.sh" "$T/u.txt" "$T/uo.txt"
-rc=$?; elapsed=$(( $(date +%s) - start ))
-[[ $rc -ne 0 && $rc -ne 124 ]] \
-    && ok "budget=0 still terminates by the DEFAULT bound (rc=$rc, ${elapsed}s), not unbounded" \
-    || bad "budget=0 run rc=$rc after ${elapsed}s (124 = ran to the outer 150s cap = unbounded)"
-[[ "$elapsed" -ge 30 && "$elapsed" -le 110 ]] \
-    && ok "stopped in the expected window (${elapsed}s) — the bound fired, it did not finish early" \
-    || bad "elapsed ${elapsed}s is outside the window; the row may be passing for the wrong reason"
-[[ "$(records "$T/uo.txt")" -eq 0 ]] \
-    && ok "no partial output from the default-bounded run" \
-    || bad "partial output left behind"
+# (b) BEHAVIOUR — the RESOLVED value is the value the deadline actually uses.
+#
+# ⛔ THIS MUST NOT BE PROVEN BY WAITING OUT THE 60s DEFAULT. An earlier version
+#    generated 1200 CIDRs and asserted the run could not finish inside 60s,
+#    commenting "1200 CIDRs needs ~100s on this class of hardware". That couples a
+#    CORRECTNESS test to absolute CPU speed. On a faster CI runner the same merge
+#    completed in 56s, so the bound never fired, the product behaved CORRECTLY, and
+#    the test failed on its own false premise — a blocking flake in the ci-bash
+#    suite. A hardware benchmark is not a correctness proof.
+#
+# The contract splits cleanly in two, and neither half needs a slow machine:
+#   (a) above  invalid/unlimited-looking values resolve to the default 60, never
+#              to "no bound" — proven deterministically, no timing at all.
+#   (b) here   the deadline consumes the RESOLVED variable, proven with a small
+#              VALID budget whose expiry is cheap to observe. The check is one
+#              comparison against one number; a mechanism that bounds at 1s bounds
+#              at 60s, because it is the same code path with a different integer.
+
+# Calibrate first: establish a workload that provably exceeds the small test
+# budget ON THIS MACHINE, rather than assuming a fixed record count is slow.
+CAL_BUDGET=1
+CAL_N=0
+for _n in 400 800 1600 3200; do
+    gen "$_n" "$T/cal.txt"
+    _s=$(date +%s)
+    NFTBAN_CIDR_MERGE_BUDGET_SECONDS=900 timeout 120 bash -c '
+        source "$1" >/dev/null 2>&1; set +e
+        nftban_cidr_merge "$2" "$3" 4 >/dev/null 2>&1' \
+        _ "${LIB_DIR}/lib/nftban_dataset_cidr.sh" "$T/cal.txt" "$T/calout.txt"
+    _e=$(( $(date +%s) - _s ))
+    if [[ "$_e" -gt $(( CAL_BUDGET * 3 )) ]]; then CAL_N="$_n"; CAL_ELAPSED="$_e"; break; fi
+done
+if [[ "$CAL_N" -eq 0 ]]; then
+    bad "could not calibrate a workload exceeding ${CAL_BUDGET}s within the bounded search — the arms below would be vacuous"
+else
+    ok "calibrated: ${CAL_N} records take ${CAL_ELAPSED}s unbounded, comfortably over the ${CAL_BUDGET}s test budget"
+
+    gen "$CAL_N" "$T/u.txt"
+    start=$(date +%s)
+    NFTBAN_CIDR_MERGE_BUDGET_SECONDS="$CAL_BUDGET" timeout 120 bash -c '
+        source "$1" >/dev/null 2>&1; set +e
+        nftban_cidr_merge "$2" "$3" 4 >/dev/null 2>&1; exit $?' \
+        _ "${LIB_DIR}/lib/nftban_dataset_cidr.sh" "$T/u.txt" "$T/uo.txt"
+    rc=$?; elapsed=$(( $(date +%s) - start ))
+
+    [[ $rc -ne 0 && $rc -ne 124 ]] \
+        && ok "the resolved budget bounds the run (rc=$rc, ${elapsed}s); 124 would mean it escaped to the outer cap" \
+        || bad "run rc=$rc after ${elapsed}s (124 = ran to the outer 120s cap = unbounded)"
+
+    # Bounded, and bounded EARLY relative to the calibrated unbounded cost — so the
+    # row cannot pass merely because the work happened to finish.
+    [[ "$elapsed" -lt "$CAL_ELAPSED" ]] \
+        && ok "stopped at ${elapsed}s, before the ${CAL_ELAPSED}s the same input needs unbounded — the bound fired" \
+        || bad "elapsed ${elapsed}s did not beat the unbounded ${CAL_ELAPSED}s; the row may be passing for the wrong reason"
+
+    # ⛔ Partial output is only meaningful AFTER a conversion that actually failed.
+    #    The previous version asserted it unconditionally and reported "partial
+    #    output left behind" for a run that had COMPLETED — whose output was full
+    #    and correct. A completed conversion is never partial.
+    if [[ $rc -ne 0 && $rc -ne 124 ]]; then
+        [[ "$(records "$T/uo.txt")" -eq 0 ]] \
+            && ok "no partial output from the bounded run" \
+            || bad "bounded run left $(records "$T/uo.txt") records behind"
+    else
+        ok "conversion did not fail, so there is no partial-output claim to make"
+    fi
+fi
+
+# (c) An invalid budget must still CONVERT NORMALLY on ordinary input — resolving
+#     to the default must not turn into "bound of 0", i.e. instant failure.
+gen 40 "$T/small.txt"
+NFTBAN_CIDR_MERGE_BUDGET_SECONDS=0 nftban_cidr_merge "$T/small.txt" "$T/smallout.txt" 4 >/dev/null 2>&1
+_rc0=$?
+[[ "$_rc0" -eq 0 && "$(records "$T/smallout.txt")" -gt 0 ]] \
+    && ok "budget=0 converts ordinary input normally (resolved to the default, not to a zero bound)" \
+    || bad "budget=0 broke an ordinary conversion (rc=$_rc0, $(records "$T/smallout.txt") records)"
 
 echo
 echo "=== cidr_merge_bounded: PASS=$PASS FAIL=$FAIL ==="

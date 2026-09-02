@@ -108,22 +108,92 @@ jobs:
       # failure (the guard existed and passed its own tests while protecting
       # nothing), so proving the script can fail is NOT sufficient — we invoke it
       # through the same command line the real step uses, on a planted mutation.
+      # Integration negative control for the step above. B3 was an INTEGRATION-EDGE
+      # failure (the guard existed and passed its own tests while protecting
+      # nothing), so proving the script can fail is NOT sufficient — we invoke it
+      # through the same command line the real step uses, on a planted mutation.
+      #
+      # ⛔ THE MUTATION MUST BE COMMITTED. check-conffile-mutation.sh compares GIT
+      #    REFS (`git ls-tree`, `git rev-parse "$BASE:$f"` / `"$CAND:$f"`), never the
+      #    working tree. An earlier revision of this step appended to the file on
+      #    disk and left it uncommitted, so the guard could not see it and the
+      #    self-test reported "the gate is blind" against a gate that was working
+      #    correctly. GUARD SUBJECT MUST EQUAL GUARD INPUT: the control has to place
+      #    the mutation in the candidate ref the guard actually reads.
+      #    Measured: worktree-only mutation -> rc=0 (invisible); committed -> rc=1.
+      #
+      # ⛔ THIS STEP HARD-RESETS THE CHECKOUT. It is safe in CI (fresh checkout, and
+      #    it restores the exact starting commit), but running it by hand in a
+      #    worktree that has UNCOMMITTED work will discard that work. Commit first.
       - name: Self-test - a mutated shipped conffile must fail preflight
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # ⛔ GitHub runs `run:` steps as `bash -e`. This step DELIBERATELY invokes a
+          #    gate that must exit non-zero, and under errexit the command
+          #    substitution below aborts the step before the RC check can read it —
+          #    the step then fails with no diagnostic, which is exactly what happened
+          #    on the first dry run after this control was fixed. Every failure path
+          #    here is handled explicitly, so errexit is turned OFF on purpose.
+          #    A local `bash script` run does NOT reproduce CI's -e; test with `bash -e`.
+          set +e
           SUBJ=install/config/nftban.conf
           test -f "$SUBJ" || { echo "::error::$SUBJ absent - self-test would be vacuous"; exit 1; }
-          cp "$SUBJ" /tmp/conffile.orig
+
+          ORIG_HEAD="$(git rev-parse HEAD)"
+          ORIG_TREE="$(git rev-parse 'HEAD^{tree}')"
+          ORIG_BLOB="$(git rev-parse "HEAD:$SUBJ")"
+
+          # Restore the exact starting commit no matter how the arms below exit.
+          cleanup() {
+            git reset -q --hard "$ORIG_HEAD" 2>/dev/null || true
+            git clean -qfd -- "$SUBJ" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
           printf '\n# deliberate conffile mutation injected by the preflight self-test\n' >> "$SUBJ"
-          if ./scripts/ci/check-conffile-mutation.sh >/dev/null 2>&1; then
-            cp /tmp/conffile.orig "$SUBJ"
+          git -c user.email=ci@nftban.com -c user.name="NFTBan CI" \
+              commit -aqm "preflight self-test: deliberate conffile mutation" \
+            || { echo "::error::self-test could not commit the deliberate mutation"; exit 1; }
+
+          MUTATED_HEAD="$(git rev-parse HEAD)"
+          MUTATED_BLOB="$(git rev-parse "HEAD:$SUBJ")"
+
+          # ⛔ PROVE THE CANDIDATE REF ACTUALLY CHANGED. Without this, a commit that
+          #    silently recorded nothing would make the arm below vacuous again.
+          if [ "$MUTATED_HEAD" = "$ORIG_HEAD" ]; then
+            echo "::error::self-test did not advance HEAD - the guard would see the original ref"; exit 1
+          fi
+          if [ "$MUTATED_BLOB" = "$ORIG_BLOB" ]; then
+            echo "::error::self-test did not change $SUBJ in the candidate ref (blob unchanged) - vacuous"; exit 1
+          fi
+          echo "self-test: candidate ref carries the mutation (${ORIG_BLOB:0:12} -> ${MUTATED_BLOB:0:12})"
+
+          # THE CONTROL: the gate must now FAIL, and must name the mutated path.
+          OUT="$(./scripts/ci/check-conffile-mutation.sh 2>&1)"; RC=$?
+          if [ "$RC" -eq 0 ]; then
+            echo "$OUT"
             echo "::error::conffile gate PASSED on a deliberately mutated shipped conffile - the gate is blind"
             exit 1
           fi
-          cp /tmp/conffile.orig "$SUBJ"
-          git diff --quiet -- "$SUBJ" || { echo "::error::self-test did not restore $SUBJ"; exit 1; }
-          ./scripts/ci/check-conffile-mutation.sh >/dev/null
-          echo "self-test OK: mutation detected when injected, clean once restored"
+          if ! printf '%s\n' "$OUT" | grep -q "$SUBJ"; then
+            echo "$OUT"
+            echo "::error::gate failed but did not name $SUBJ - it failed for the wrong reason"
+            exit 1
+          fi
+
+          # Restore and prove the restoration is exact.
+          git reset -q --hard "$ORIG_HEAD"
+          [ "$(git rev-parse HEAD)" = "$ORIG_HEAD" ] \
+            || { echo "::error::self-test did not restore HEAD"; exit 1; }
+          [ "$(git rev-parse 'HEAD^{tree}')" = "$ORIG_TREE" ] \
+            || { echo "::error::self-test did not restore the tree"; exit 1; }
+          [ -z "$(git status --porcelain)" ] \
+            || { echo "::error::self-test left the working tree dirty"; git status --porcelain; exit 1; }
+
+          # And the gate must pass again on the restored tree.
+          ./scripts/ci/check-conffile-mutation.sh >/dev/null \
+            || { echo "::error::gate fails on the RESTORED tree - restoration was not clean"; exit 1; }
+          echo "self-test OK: mutation detected in the candidate ref, clean once restored"
 
       # Proves the drift check can actually fail. A guard that has never been
       # observed failing is a guard nobody has tested.
