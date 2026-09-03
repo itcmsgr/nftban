@@ -154,6 +154,27 @@ jobs:
       - name: Check non-whitespace predicate loader authority (v1.229.13, BLOCKING)
         run: ./scripts/ci/check-predicate-loader-authority.sh
 
+      # v1.229.13 Lane 2C BLOCKING (G2). Forbids ${var//[[:space:]]/} where var was
+      # captured from an nft subcommand that DUMPS CONTENTS. Such a rewrite builds a
+      # full transformed copy of an unbounded payload purely to answer a boolean:
+      # measured 1.1-2.3 s per call on live 20-43 KB lab rulesets, and 14.0 s on a
+      # 50k-element set dump. All 15 historical sites were remediated in #1354/#1355/
+      # #1356, so this lands with KNOWN_VIOLATIONS=0 and NO allow-list -- an allow
+      # entry would be a standing declaration that an unbounded rewrite is acceptable
+      # somewhere, and none is. The discriminator is structural: nft's SINGULAR object
+      # subcommands dump contents; the PLURAL ones list names and are bounded.
+      - name: Check unbounded nft payload rewrite (v1.229.13 G2, BLOCKING)
+        run: ./scripts/ci/check-unbounded-payload-rewrite.sh
+
+      # GUARD-THE-GUARD, BLOCKING. G2 ships at KNOWN_VIOLATIONS=0, the exact state in
+      # which a broken matcher is indistinguishable from a clean tree, so its PASS is
+      # worthless without this. Injects a violation (requires FAIL), the two lookalikes
+      # it must tolerate (requires PASS), then the SAME fixture at the SAME position
+      # changed only plural->singular (requires FAIL) -- which is what proves those
+      # PASSes came from the discriminator and not from an unreachable fixture.
+      - name: Check unbounded-payload guard is falsifiable (v1.229.13 G2, BLOCKING)
+        run: ./scripts/ci/check-unbounded-payload-rewrite-falsifiability.sh
+
       - name: Check nft bounded limiters (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters.sh
 
