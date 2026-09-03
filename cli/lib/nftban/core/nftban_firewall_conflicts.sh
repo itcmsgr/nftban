@@ -45,6 +45,20 @@ set -Eeuo pipefail
 # the first bare reference (`$CONFLICT_NONE`). Keeping the declares above the
 # guard makes double-sourcing safe.
 declare -g CONFLICT_NONE=0
+
+# v1.229.13 Lane 2B: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file.
+# The fallback body is BYTE-IDENTICAL to the canonical definition in
+# lib/shell_predicates.sh. Without it an absent helper returns 127, the predicate
+# evaluates FALSE, and a readable payload is silently reported UNKNOWN.
+# scripts/ci/check-predicate-loader-authority.sh enforces this pairing.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
 declare -g CONFLICT_INFO=1
 declare -g CONFLICT_WARNING=2
 declare -g CONFLICT_CRITICAL=3
@@ -290,7 +304,7 @@ nftban_detect_conflicting_tables() {
     # compares. UNKNOWN is carried so the comparison can refuse instead.
     local _prio_raw
     _prio_raw=$(nft -j list chain ip nftban input 2>/dev/null) || _prio_raw=""
-    if [[ -n "${_prio_raw//[[:space:]]/}" ]]; then
+    if nftban_has_non_whitespace "$_prio_raw"; then
         actual_nftban_prio=$(printf '%s' "$_prio_raw" | jq -r '.nftables[]? | select(.chain?) | .chain.prio // 0' 2>/dev/null | head -1)
         [[ "$actual_nftban_prio" =~ ^-?[0-9]+$ ]] || actual_nftban_prio="UNKNOWN"
     else

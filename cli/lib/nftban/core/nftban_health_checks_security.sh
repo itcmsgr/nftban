@@ -54,6 +54,20 @@ fi
 if [[ -f "${_NFTBAN_LIBS_DIR}/nftban_service_control.sh" ]]; then
     # shellcheck source=/dev/null
     source "${_NFTBAN_LIBS_DIR}/nftban_service_control.sh" 2>/dev/null || true
+
+# v1.229.13 Lane 2B: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file.
+# The fallback body is BYTE-IDENTICAL to the canonical definition in
+# lib/shell_predicates.sh. Without it an absent helper returns 127, the predicate
+# evaluates FALSE, and a readable payload is silently reported UNKNOWN.
+# scripts/ci/check-predicate-loader-authority.sh enforces this pairing.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
 fi
 
 # Load IPC client library (provides nft_ipc_add_element for atomic SSH port updates)
@@ -116,7 +130,7 @@ nftban_health_check_nftables_security() {
         # Table exists - check if it has ACCEPT policy at priority 0
         local filter_policy _filter_raw _filter_readable=true
         _filter_raw=$(nft list table inet filter 2>/dev/null) || _filter_readable=false
-        [[ -z "${_filter_raw//[[:space:]]/}" ]] && _filter_readable=false
+        nftban_has_non_whitespace "$_filter_raw" || _filter_readable=false
         filter_policy=""
         if [[ "$_filter_readable" == "true" ]]; then
             filter_policy=$(printf '%s' "$_filter_raw" | grep -E 'chain input.*priority 0.*policy accept' || true)

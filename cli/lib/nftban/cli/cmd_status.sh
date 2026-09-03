@@ -32,6 +32,20 @@
 # shellcheck source=/etc/nftban/nftban.conf
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
+# v1.229.13 Lane 2B: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file.
+# The fallback body is BYTE-IDENTICAL to the canonical definition in
+# lib/shell_predicates.sh. Without it an absent helper returns 127, the predicate
+# evaluates FALSE, and a readable payload is silently reported UNKNOWN.
+# scripts/ci/check-predicate-loader-authority.sh enforces this pairing.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
+
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
@@ -350,7 +364,7 @@ _nftban_count_rules() {
     raw=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null) || { echo "UNKNOWN"; return 0; }
     # rc=0 with empty output is not a rule-free table: the table header alone
     # would have been printed had the read actually succeeded.
-    [[ -z "${raw//[[:space:]]/}" ]] && { echo "UNKNOWN"; return 0; }
+    nftban_has_non_whitespace "$raw" || { echo "UNKNOWN"; return 0; }
     count=$(printf '%s\n' "$raw" | grep -c "# handle" 2>/dev/null || true)
     echo "${count:-0}"
 }
