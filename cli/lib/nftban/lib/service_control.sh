@@ -28,6 +28,21 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 NFTBAN_SERVICES_CONF="${NFTBAN_CONFIG_DIR}/conf.d/services.conf"
 NFTBAN_SERVICES_LOCAL="${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
 
+# v1.229.13 Lane 2B-1a: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file
+# (every source here is already wrapped in a presence test). The fallback body is
+# BYTE-IDENTICAL to the canonical definition in lib/shell_predicates.sh, so an
+# absent helper degrades to nothing at all. Without the fallback an absent helper
+# would return 127, and a readable ruleset would be silently reported UNKNOWN --
+# the exact false-negative class this file exists to prevent.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
+
 # Load services config
 _nftban_load_services_config() {
     # Load base config
@@ -650,7 +665,7 @@ nftban_enable_all() {
 
     # Check 1: nft rules loaded > 0
     local rules_count _ruleset_raw
-    if _ruleset_raw=$(nft list ruleset 2>/dev/null) && [[ -n "${_ruleset_raw//[[:space:]]/}" ]]; then
+    if _ruleset_raw=$(nft list ruleset 2>/dev/null) && nftban_has_non_whitespace "$_ruleset_raw"; then
         rules_count=$(printf '%s' "$_ruleset_raw" | grep -cE '^\s+(type|chain|rule|set)' || true)
         rules_count=${rules_count:-0}
         if [[ "$rules_count" -eq 0 ]]; then

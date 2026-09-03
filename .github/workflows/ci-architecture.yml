@@ -142,6 +142,18 @@ jobs:
       - name: Check firewall projection invariants (P12-FPA P1/P3/P5)
         run: ./scripts/ci/check-firewall-projection-authority.sh
 
+      # v1.229.13 Lane 2B BLOCKING. The three FULL-RULESET sites call
+      # nftban_has_non_whitespace, but every one of them SOFT-loads the lib file
+      # (each `source` is wrapped in a presence test). An absent helper therefore
+      # returns 127, the predicate evaluates FALSE, and a perfectly readable
+      # ruleset is reported UNKNOWN -- a silent false negative on a firewall
+      # verification path. This guard requires each caller to carry the loader
+      # pair (soft source + `declare -F` fallback) and requires the fallback body
+      # to be byte-identical to the canonical predicate, so the two can never
+      # diverge into two different predicates.
+      - name: Check non-whitespace predicate loader authority (v1.229.13, BLOCKING)
+        run: ./scripts/ci/check-predicate-loader-authority.sh
+
       - name: Check nft bounded limiters (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters.sh
 

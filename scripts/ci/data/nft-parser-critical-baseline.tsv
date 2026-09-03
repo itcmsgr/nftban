@@ -15,7 +15,7 @@ cli/lib/nftban/core/nftban_health_checks_security.sh	rule_count=$(nft list chain
 cli/lib/nftban/core/nftban_health_checks_security.sh	_filter_raw=$(nft list table inet filter 2>/dev/null) || _filter_readable=false	SECURITY_VERDICT	-
 cli/lib/nftban/lib/nft_schema.sh	_json=$(nft -j list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }	HEALTH_VERDICT	-
 cli/lib/nftban/lib/nft_schema.sh	json_output=$(nft -j list set "$family" "$table" "$set_name" 2>/dev/null) || { echo "UNKNOWN"; return; }	HEALTH_VERDICT	-
-cli/lib/nftban/lib/service_control.sh	if _ruleset_raw=$(nft list ruleset 2>/dev/null) && [[ -n "${_ruleset_raw//[[:space:]]/}" ]]; then	OPERATOR_STATUS	-
+cli/lib/nftban/lib/service_control.sh	if _ruleset_raw=$(nft list ruleset 2>/dev/null) && nftban_has_non_whitespace "$_ruleset_raw"; then	OPERATOR_STATUS	-
 cli/lib/nftban/core/nftban_ddos_classic.sh	_m4=$(nft list meter ${table_v4} ${syn_meter} 2>/dev/null) || _meter_readable=false	SECURITY_VERDICT	-
 cli/lib/nftban/core/nftban_portscan_classic.sh	ruleset=$(nft list ruleset 2>/dev/null) || {	HEALTH_VERDICT	-
 cli/lib/nftban/core/nftban_firewall_conflicts.sh	_prio_raw=$(nft -j list chain ip nftban input 2>/dev/null) || _prio_raw=""	AUTHORITY_VERDICT	-
