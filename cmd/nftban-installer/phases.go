@@ -390,6 +390,24 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}
 
+	// 6b. Generate the boot projection (P12-FPA port, Lane 3C).
+	//
+	// Renders and publishes the persistent boot projection WITHOUT loading a
+	// ruleset. It delegates entirely to `nftban firewall render-boot`; the
+	// render, validation and fail-closed publication semantics live in
+	// cli/lib/nftban/lib/boot_projection.sh and are NOT reimplemented here.
+	//
+	// ⛔ DELIBERATELY NOT GATING STEP 7 ON THIS RESULT — that belongs to Lane 3D.
+	// On this tree IntegrateSystemConf still points the distro include at the
+	// LEGACY /etc/nftban/nftables.conf, which does not depend on the boot
+	// projection existing. Suppressing that integration when render-boot fails
+	// would disable a currently-valid path and change shipping semantics before
+	// the include authority actually moves. Once 3D repoints the include at the
+	// projection, the ordering becomes load-bearing and the gate lands WITH it.
+	if err := switchop.RenderBoot(exec, log); err != nil {
+		log.Error("boot projection render failed: %v", err)
+	}
+
 	// 7. Integrate NFTBan include into system nftables.conf
 	if pd.distro != nil && pd.distro.NftConfPath != "" {
 		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath, log); err != nil {
