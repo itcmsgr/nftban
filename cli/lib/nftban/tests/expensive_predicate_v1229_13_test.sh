@@ -126,14 +126,14 @@ for present in yes no; do
 done
 
 echo "--- scope boundary: PER-SET sites are deliberately NOT converted ---"
-# Measured on live hosts: per-set payloads showed no gain (320-532us legacy vs
-# 289-417us regex), while these four cost 0.4-2.3 s/call. The per-set payload
-# scales with SET POPULATION, which is small on the measured hosts and unmeasured
-# in production, so those sites are HELD rather than cleared.
+# Lane 2B measured per-set as showing no gain ON THE LABS (320-532us legacy vs
+# 289-417us regex). That reading was UNREPRESENTATIVE: both labs carry near-empty
+# sets, and the payload scales with SET POPULATION -- 573 ms per call at 10k entries,
+# 14.0 s at 50k -- so Lane 2B-3 converted them. See perset_predicate_v1229_13_test.
 held="$ROOT/cli/lib/nftban/core/nftban_health_checks_security.sh"
-[[ "$(grep -c '//\[\[:space:\]\]/' "$held")" == 1 ]] \
-    && ok "health_checks_security retains its 1 PER-SET site (boundary enforced)" \
-    || no "per-set boundary drifted: $(grep -c '//\[\[:space:\]\]/' "$held") sites remain"
+[[ "$(grep -c '//\[\[:space:\]\]/' "$held")" == 0 ]] \
+    && ok "health_checks_security fully converted (per-set site adopted by Lane 2B-3)" \
+    || no "unconverted copy-idiom site(s) remain: $(grep -c '//\[\[:space:\]\]/' "$held")"
 for f in "$CD" "$CS" "$FC"; do
     b="$(basename "$f")"; c="$(grep -c '//\[\[:space:\]\]/' "$f")"
     [[ "$c" == 0 ]] && ok "$b: fully converted" || no "$b: $c copy-idiom site(s) remain"

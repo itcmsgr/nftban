@@ -1048,7 +1048,7 @@ nftban_health_check_set_sizes() {
             # reported a 500k set as healthily small, which is the one thing this
             # threshold check exists to catch.
             local _raw
-            if _raw=$(nft list set "$family" nftban "$set_name" 2>/dev/null) && [[ -n "${_raw//[[:space:]]/}" ]]; then
+            if _raw=$(nft list set "$family" nftban "$set_name" 2>/dev/null) && nftban_has_non_whitespace "$_raw"; then
                 count=$(printf '%s' "$_raw" | grep -c ',' || true)
                 count=${count:-0}
             else

@@ -133,10 +133,13 @@ done
 echo "--- the replaced idiom is gone from these three sites ---"
 for f in "$FW" "$PC" "$SC"; do
     b="$(basename "$f")"
-    case "$b" in
-        cmd_firewall.sh) want=2 ;;   # :4779 / :4833 are PER-SET sites, out of 2B-1a scope
-        *) want=0 ;;
-    esac
+    # v1.229.13 Lane 2B-3 converted the PER-SET sites too, once the shipped
+    # template was shown to declare blacklist_ipv4 WITHOUT a size (unbounded,
+    # feed-populated) and the cost was measured at 573 ms per call at 10k
+    # entries and 14.0 s at 50k. Until then this asserted want=2 for
+    # cmd_firewall.sh, which is why moving the boundary failed this test --
+    # deliberately, so the scope change had to be argued rather than absorbed.
+    want=0
     got="$(grep -c '//\[\[:space:\]\]/' "$f")"
     [[ "$got" == "$want" ]] && ok "$b: $got remaining copy-idiom site(s), as scoped" \
                             || no "$b: $got remaining copy-idiom site(s), expected $want"
