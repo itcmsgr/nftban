@@ -4791,7 +4791,7 @@ firewall_record() {
         local count=0 set_info="" read_state="absent"
         local actual_type="" actual_flags=""
         if set_info=$(nft list set ip nftban "$set_name" 2>/dev/null); then
-            if [[ -n "${set_info//[[:space:]]/}" ]]; then
+            if nftban_has_non_whitespace "$set_info"; then
                 read_state="present"
                 count=$(nftban_nft_count_set ip nftban "$set_name" 2>/dev/null || echo 0)
                 # Parsed from TEXT output, which carries the full flag list on
@@ -4845,7 +4845,7 @@ firewall_record() {
         local count=0 set_info="" read_state="absent"
         local actual_type="" actual_flags=""
         if set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null); then
-            if [[ -n "${set_info//[[:space:]]/}" ]]; then
+            if nftban_has_non_whitespace "$set_info"; then
                 read_state="present"
                 count=$(nftban_nft_count_set ip6 nftban "$set_name" 2>/dev/null || echo 0)
                 # Parsed from TEXT output, which carries the full flag list on

@@ -54,6 +54,20 @@
 #    OPEN_BOTSCAN_DERIVED_BAN_STATE_AUTHORITY_AND_RECONCILIATION.
 # =============================================================================
 
+# v1.229.13 Lane 2B-3: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file.
+# The fallback body is BYTE-IDENTICAL to the canonical definition in
+# lib/shell_predicates.sh. Without it an absent helper returns 127, the predicate
+# evaluates FALSE, and a readable set dump is silently reported UNKNOWN.
+# scripts/ci/check-predicate-loader-authority.sh enforces this pairing.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
+
 [[ -n "${_NFTBAN_DSR_LOADED:-}" ]] && return 0
 _NFTBAN_DSR_LOADED=1
 
@@ -247,7 +261,7 @@ nftban_dsr_apply() { # $1=plan text -> rc 0 applied, 3 STALE, 1 failed
 _nftban_dsr_kernel_set_count() { # $1=family $2=set -> count, or UNKNOWN
     local out
     out=$(nft -j list set "$1" nftban "$2" 2>/dev/null) || { echo UNKNOWN; return 1; }
-    [[ -z "${out//[[:space:]]/}" ]] && { echo UNKNOWN; return 1; }
+    nftban_has_non_whitespace "$out" || { echo UNKNOWN; return 1; }
     printf '%s' "$out" | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
@@ -356,7 +370,7 @@ _nftban_dsr_producer_coverage_fam() { # $1=producer $2=4|6 -> "<covered> <intend
     local p="$1" fam="$2" live intended famtab set
     if [[ "$fam" == "6" ]]; then famtab="ip6"; set="blacklist_ipv6"; else famtab="ip"; set="blacklist_ipv4"; fi
     live=$(nft -j list set "$famtab" nftban "$set" 2>/dev/null) || { echo UNKNOWN; return 1; }
-    [[ -z "${live//[[:space:]]/}" ]] && { echo UNKNOWN; return 1; }
+    nftban_has_non_whitespace "$live" || { echo UNKNOWN; return 1; }
     intended="$(_nftban_dsr_intended_entries "$p" "$fam")" || { echo UNKNOWN; return 1; }
     [[ -z "$intended" ]] && { echo "0 0"; return 0; }
 
