@@ -130,6 +130,7 @@ deprecated_unit_failed_latch_v1228_2_test	cli/lib/nftban/tests/deprecated_unit_f
 derived_state_reconcile_v1228_8_test	cli/lib/nftban/tests/derived_state_reconcile_v1228_8_test.sh	firewall	test	derived-state-convergence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 dsr_effective_intent_test	cli/lib/nftban/tests/dsr_effective_intent_test.sh	firewall	test	derived-state-effective-intent	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 error_text_3line_v153_test	cli/lib/nftban/tests/error_text_3line_v153_test.sh	cli	test	cli-ux	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+expensive_predicate_v1229_13_test	cli/lib/nftban/tests/expensive_predicate_v1229_13_test.sh	cross-cutting	test	shell-predicates	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_exit2_phase2_scale_guard_v1361_test	cli/lib/nftban/tests/exporter_exit2_phase2_scale_guard_v1361_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_exit2_resilience_v136_test	cli/lib/nftban/tests/exporter_exit2_resilience_v136_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_no_duplicate_goroutines_emit_v217_test	cli/lib/nftban/tests/exporter_no_duplicate_goroutines_emit_v217_test.sh	metrics	test	exporter-goroutines	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
