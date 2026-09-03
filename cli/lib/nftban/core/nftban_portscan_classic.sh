@@ -53,6 +53,21 @@ source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_http_logs.sh" 2>/dev/null || true
 
+# v1.229.13 Lane 2B-1a: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file
+# (every source here is already wrapped in a presence test). The fallback body is
+# BYTE-IDENTICAL to the canonical definition in lib/shell_predicates.sh, so an
+# absent helper degrades to nothing at all. Without the fallback an absent helper
+# would return 127, and a readable ruleset would be silently reported UNKNOWN --
+# the exact false-negative class this file exists to prevent.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
+
 # =============================================================================
 # CONFIGURATION LOADING
 # =============================================================================
@@ -172,7 +187,7 @@ _nftban_portscan_verify_prefix() {
         _nftban_portscan_classic_log "WARN" "UNKNOWN: ruleset unreadable - LOG prefix NOT verified (this is not a pass)"
         return 2
     }
-    if [[ -z "${ruleset//[[:space:]]/}" ]]; then
+    if ! nftban_has_non_whitespace "$ruleset"; then
         _nftban_portscan_classic_log "WARN" "UNKNOWN: ruleset read returned no output - LOG prefix NOT verified"
         return 2
     fi

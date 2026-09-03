@@ -86,6 +86,21 @@ fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
+
+# v1.229.13 Lane 2B-1a: bounded non-whitespace predicate.
+# Loaded soft, matching this file's existing tolerance for an absent lib file
+# (every source here is already wrapped in a presence test). The fallback body is
+# BYTE-IDENTICAL to the canonical definition in lib/shell_predicates.sh, so an
+# absent helper degrades to nothing at all. Without the fallback an absent helper
+# would return 127, and a readable ruleset would be silently reported UNKNOWN --
+# the exact false-negative class this file exists to prevent.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
+
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
@@ -1911,7 +1926,7 @@ _check_nft_collisions() {
     # rc=0 with no output is equally unreadable: nft always emits at least the
     # tables it can see, so an empty document is a failed observation, not an
     # empty ruleset.
-    if [[ -z "${ruleset//[[:space:]]/}" ]]; then
+    if ! nftban_has_non_whitespace "$ruleset"; then
         [[ "$json_mode" == "false" ]] &&
             echo "[UNKNOWN] nftables ruleset read returned no output — hook collisions NOT verified"
         return 2
