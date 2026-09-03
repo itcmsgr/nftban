@@ -14,6 +14,7 @@ binary_witness_v1229_4_test	cli/lib/nftban/tests/binary_witness_v1229_4_test.sh	
 blacklist_flush_manual_truth_v218_10_test	cli/lib/nftban/tests/blacklist_flush_manual_truth_v218_10_test.sh	blacklist	test	blacklist-flush	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 blacklist_range_roundtrip_test	cli/lib/nftban/tests/blacklist_range_roundtrip_test.sh	firewall	test	blacklist-range-restore	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 blacklist_refresh_no_failopen_v192_test	cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test.sh	blacklist	test	blacklist-refresh-atomicity	ROOT_LAB	lab-manual	false	true	false	false	true	false			
+boot_projection_v1229_13_test	cli/lib/nftban/tests/boot_projection_v1229_13_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botguard_diag_6b2_test	cli/lib/nftban/tests/botguard_diag_6b2_test.sh	botguard	test	botguard-explain-diag	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botguard_explain_shell_6b1_test	cli/lib/nftban/tests/botguard_explain_shell_6b1_test.sh	botguard	test	botguard-explain-client	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_404_tail_bound_v1871_test	cli/lib/nftban/tests/botscan_404_tail_bound_v1871_test.sh	botscan	test	botscan-404-tail	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -143,6 +144,7 @@ fetch_verified_v157_test	cli/lib/nftban/tests/fetch_verified_v157_test.sh	packag
 fhs_lane_v175_test	cli/lib/nftban/tests/fhs_lane_v175_test.sh	packaging	test	fhs	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 firewall_transition_health_cli_v1921_test	cli/lib/nftban/tests/firewall_transition_health_cli_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 firewall_transition_health_v1921_test	cli/lib/nftban/tests/firewall_transition_health_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+fpa_render_boot_v1229_13_test	cli/lib/nftban/tests/fpa_render_boot_v1229_13_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fsync_residual_guard_v176_test	cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh	cross-cutting	test	durability-fsync	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 fullruleset_predicate_v1229_13_test	cli/lib/nftban/tests/fullruleset_predicate_v1229_13_test.sh	cross-cutting	test	shell-predicates	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fw_l2cd_transition_counter_botguard_chain_test	cli/lib/nftban/tests/fw_l2cd_transition_counter_botguard_chain_test.sh	firewall	test	firewall-transition-counter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

@@ -350,6 +350,65 @@ _firewall_publish_conf() {
     return 0
 }
 
+# =============================================================================
+# firewall render-boot — P12-FPA Phase 2 render-only entry point
+# =============================================================================
+# Produces the persistent boot projection and NOTHING ELSE. It renders the
+# canonical package-owned schema through the existing substitution authority,
+# validates it with nft -c, and publishes it atomically through the existing
+# publication authority (which owns mode, ownership and the SELinux type).
+#
+# ⛔ IT MUST NEVER `nft -f`. That is the whole reason it exists. The installer
+# needs a valid boot projection ON DISK before IntegrateSystemConf may point the
+# distro include at it, and that moment is inside phasePrepare — before nftables
+# is enabled and before the SSH-safety invariants of `rebuild` are established.
+# `rebuild` renders AND loads, so it cannot be moved there; this can.
+#
+# ⛔ IT IS NOT A SECOND RENDER AUTHORITY. Every step delegates:
+#   substitution -> _firewall_substitute_placeholders
+#   publication  -> _firewall_publish_conf
+#   orchestration-> nftban_boot_projection_generate (lib/boot_projection.sh)
+# which is why it is ~20 lines rather than a parallel implementation.
+_firewall_render_boot() {
+    local quiet="false" arg
+    for arg in "$@"; do
+        case "$arg" in
+            --quiet|-q) quiet="true" ;;
+            --help|-h)
+                cat <<'RBHELP'
+Usage: nftban firewall render-boot [--quiet]
+
+Generate the persistent boot projection from the canonical NFTBan firewall
+schema and publish it atomically. Does NOT load the ruleset into the kernel.
+
+  renders   /usr/lib/nftban/templates/nftables.conf.tpl
+  publishes /etc/nftban/generated/nftban-boot.nft
+
+Use `nftban firewall rebuild` to render AND apply a ruleset.
+RBHELP
+                return 0 ;;
+        esac
+    done
+
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+    if ! declare -F nftban_boot_projection_generate >/dev/null 2>&1; then
+        echo "ERROR: boot projection authority not available (lib/boot_projection.sh)" >&2
+        return 1
+    fi
+
+    local schema="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
+    local target; target="$(nftban_boot_projection_path)"
+
+    [[ "$quiet" == "false" ]] && echo "Rendering boot projection from canonical schema..."
+    if ! nftban_boot_projection_generate "$schema" "$target"; then
+        echo "ERROR: boot projection was NOT published — the previous boot path is unchanged" >&2
+        return 1
+    fi
+    [[ "$quiet" == "false" ]] && echo "  published: $target"
+    return 0
+}
+
 _firewall_set_elements() {
     local conf="$1" name="$2" csv="$3"
     # v1.228.5: fail with the ACTUAL cause. Previously a missing interpreter surfaced
@@ -613,6 +672,11 @@ nftban_cmd_firewall() {
             shift
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
+            ;;
+        render-boot)
+            # P12-FPA: render + publish the boot projection WITHOUT loading it.
+            shift
+            _firewall_render_boot "$@"
             ;;
         reset)
             shift
