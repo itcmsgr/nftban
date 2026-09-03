@@ -142,6 +142,22 @@ jobs:
       - name: Check firewall projection invariants (P12-FPA P1/P3/P5)
         run: ./scripts/ci/check-firewall-projection-authority.sh
 
+      # v1.229.13 Lane 1B GUARD-THE-GUARD, BLOCKING. The guard above landed in
+      # #1352 WITHOUT its falsifiability twin, leaving GUARD=YES /
+      # GUARD_THE_GUARD=NO against a codebase convention that pairs every such
+      # guard (logrotate, bounded-limiters). This control injects each defect
+      # class G1 claims to catch and requires a FAIL that NAMES THAT RULE, so a
+      # guard that fails for an unrelated reason cannot be mistaken for one that
+      # discriminates.
+      #
+      # Scope is P1/P3/P5 ONLY — exactly what G1 enforces on this tree. It does
+      # NOT carry arms for P2/P6/P7/P8 or any boot-projection rule: those
+      # subjects are not on main. When they land, G1 and this control must be
+      # extended in the SAME change; a guard arm without a falsifiability arm is
+      # an unproven claim.
+      - name: Check firewall projection guard is falsifiable (v1.229.13, BLOCKING)
+        run: ./scripts/ci/check-firewall-projection-authority-falsifiability.sh
+
       # v1.229.13 Lane 2B BLOCKING. The three FULL-RULESET sites call
       # nftban_has_non_whitespace, but every one of them SOFT-loads the lib file
       # (each `source` is wrapped in a presence test). An absent helper therefore
