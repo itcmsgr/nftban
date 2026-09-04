@@ -288,9 +288,21 @@ export_zabbix() {
             # Note: |STRING| is concatenated with value, so $2 = "|STRING|actualvalue"
             if (index($2, "|STRING|") == 1) {
                 # String value: strip |STRING| prefix and collect multi-word values
-                # $2 = "|STRING|firstword", $3..$NF-1 = "more words", $NF = timestamp
+                # $2 = "|STRING|firstword", $3..$NF = "more words".
+                #
+                # ⛔ THERE IS NO TRAILING TIMESTAMP. Commit 5d245017 (v1.229.11,
+                # "textfile exposition must carry no client-side timestamps") removed it
+                # from the collector rows, but this loop kept the bound `i < NF` that
+                # reserved the last field for one. With no timestamp to skip, that
+                # silently DROPPED THE FINAL WORD of every multi-word STRING metric:
+                #     "Ubuntu 24.04.1 LTS" -> "Ubuntu 24.04.1"
+                #     "Not configured"     -> "Not"
+                # nftban.version.info is a single token, which is why it went unnoticed;
+                # 17 template inventory_link entries populate Zabbix HOST INVENTORY from
+                # these items, so the truncation was operator-visible. Guarded by
+                # tests/zabbix_string_truncation_v1229_13_test.sh.
                 value = substr($2, 9)  # Strip "|STRING|" (8 chars)
-                for (i = 3; i < NF; i++) {
+                for (i = 3; i <= NF; i++) {
                     value = value " " $i
                 }
                 printf "%s %s \"%s\"\n", host, key, value
