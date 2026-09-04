@@ -354,3 +354,4 @@ whitelist_verify_v163_test	cli/lib/nftban/tests/whitelist_verify_v163_test.sh	wh
 zabbix_lifecycle_verb_parity_v1229_10_test	cli/lib/nftban/tests/zabbix_lifecycle_verb_parity_v1229_10_test.sh	metrics	test	zabbix-lifecycle-verbs	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 zabbix_lld_population_authority_v1229_11_test	cli/lib/nftban/tests/zabbix_lld_population_authority_v1229_11_test.sh	metrics	test	zabbix-lld-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 zabbix_status_shared_timer_verdict_v1229_10_test	cli/lib/nftban/tests/zabbix_status_shared_timer_verdict_v1229_10_test.sh	metrics	test	zabbix-status-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
+zabbix_string_truncation_v1229_13_test	cli/lib/nftban/tests/zabbix_string_truncation_v1229_13_test.sh	cross-cutting	test	exporter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
