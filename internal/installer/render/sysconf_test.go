@@ -134,7 +134,7 @@ func TestIntegrateSystemConf_FreshShapeB(t *testing.T) {
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
 	m.Files[p] = []byte(distroSkeleton)
-	if err := IntegrateSystemConf(m, p, log); err != nil {
+	if err := IntegrateSystemConf(m, p, IncludeDependencyLegacy, true, log); err != nil {
 		t.Fatalf("integrate: %v", err)
 	}
 	body := string(m.Files[p])
@@ -166,7 +166,7 @@ func TestIntegrateSystemConf_CollapsesAccumulatedDuplicates(t *testing.T) {
 	m.Files[p] = []byte(distroSkeleton +
 		legacyComment + "\n" + IncludeDirective + "\n" +
 		legacyComment + "\n" + IncludeDirective + "\n")
-	if err := IntegrateSystemConf(m, p, log); err != nil {
+	if err := IntegrateSystemConf(m, p, IncludeDependencyLegacy, true, log); err != nil {
 		t.Fatalf("integrate: %v", err)
 	}
 	body := string(m.Files[p])
@@ -186,11 +186,11 @@ func TestIntegrateSystemConf_IdempotentNoWrite(t *testing.T) {
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
 	m.Files[p] = []byte(distroSkeleton)
-	if err := IntegrateSystemConf(m, p, log); err != nil {
+	if err := IntegrateSystemConf(m, p, IncludeDependencyLegacy, true, log); err != nil {
 		t.Fatalf("integrate #1: %v", err)
 	}
 	m.WrittenFiles = map[string][]byte{}
-	if err := IntegrateSystemConf(m, p, log); err != nil {
+	if err := IntegrateSystemConf(m, p, IncludeDependencyLegacy, true, log); err != nil {
 		t.Fatalf("integrate #2: %v", err)
 	}
 	if _, wrote := m.WrittenFiles[p]; wrote {

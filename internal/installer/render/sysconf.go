@@ -26,6 +26,33 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
+// IncludeDependency classifies WHICH readiness authority an include write depends
+// on. It is DELIBERATELY not inferred from the include path: keying safety off a
+// literal path string would make the interlock depend on a second literal that a
+// future edit could silently desynchronise from the guard.
+//
+// v1.229.13 Lane 3D.3 installs this interlock; Lane 3D.4 arms it by changing
+// IncludeDirective and the shipping dependency together, atomically.
+type IncludeDependency int
+
+const (
+	// IncludeDependencyLegacy — the included artifact does not depend on the
+	// generated boot projection. This is the SHIPPING dependency as of 3D.3, and
+	// boot-projection readiness is irrelevant to it.
+	IncludeDependencyLegacy IncludeDependency = iota
+	// IncludeDependencyBootProjection — the included artifact IS the generated
+	// boot projection, so the include must not be written unless that projection
+	// was established by the authoritative render in THIS run.
+	IncludeDependencyBootProjection
+)
+
+func (d IncludeDependency) String() string {
+	if d == IncludeDependencyBootProjection {
+		return "BOOT_PROJECTION"
+	}
+	return "LEGACY"
+}
+
 // IncludeDirective is the line nftban adds to the distro nftables.conf so a
 // plain `systemctl reload nftables.service` re-includes the nftban ruleset.
 const IncludeDirective = `include "/etc/nftban/nftables.conf"`
@@ -189,7 +216,21 @@ func neutralizeDistroSkeleton(content string, log *logging.Logger) string {
 // removing it would silently drop v1.145 protection every reboot). In addition
 // to the fenced include it neutralizes the distro skeleton (flush ruleset +
 // default empty `table inet filter`) via neutralizeDistroSkeleton.
-func IntegrateSystemConf(exec executor.Executor, nftConfPath string, log *logging.Logger) error {
+// dep declares what the include depends on; bootProjectionReady MUST come from the
+// result of the authoritative boot-projection render in THIS run, never from
+// file existence — a stale artifact from a previous run is exactly what this
+// signal exists to distinguish (EXISTS != ESTABLISHED_THIS_RUN).
+func IntegrateSystemConf(exec executor.Executor, nftConfPath string, dep IncludeDependency, bootProjectionReady bool, log *logging.Logger) error {
+	// ⛔ PRE-MUTATION GATE. Refuse BEFORE reading, backing up or writing anything:
+	// a post-hoc check is not a gate. When the include depends on the generated
+	// boot projection and that projection was not established in this run, making
+	// boot configuration point at it would produce a host whose boot include names
+	// an artifact that is missing, stale or unvalidated.
+	if dep == IncludeDependencyBootProjection && !bootProjectionReady {
+		return fmt.Errorf("refusing to write the system include: dependency=%s but the boot "+
+			"projection was not established in this run (bootProjectionReady=false); "+
+			"boot configuration must not depend on an unestablished projection", dep)
+	}
 	if nftConfPath == "" {
 		return fmt.Errorf("system nftables.conf path is empty")
 	}
