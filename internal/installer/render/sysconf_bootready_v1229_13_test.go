@@ -106,23 +106,36 @@ func TestBootReady_StaleFileCannotBypassGate(t *testing.T) {
 	}
 }
 
-// TestBootReady_ShippingDependencyIsLegacy is the NC3 discriminator: it fails if
-// production is switched to the BOOT_PROJECTION dependency before 3D.4 does so
-// deliberately, together with the include directive.
-func TestBootReady_ShippingDependencyIsLegacy(t *testing.T) {
-	src := readRepoFile(t, "cmd/nftban-installer/phases.go")
-	if !strings.Contains(src, "render.IncludeDependencyLegacy") {
-		t.Error("phases.go no longer ships IncludeDependencyLegacy — 3D.4 must change the " +
-			"include directive and the dependency TOGETHER, atomically")
+// TestIncludeAuthorityTransitionIsAtomic is the 3D.4 atomicity guard and the NC1/NC2
+// discriminator. The include TARGET and the shipping DEPENDENCY must move together;
+// a tree carrying only one half is invalid:
+//
+//	NC1  generated target + LEGACY dependency      -> unguarded boot dependency
+//	NC2  BOOT_PROJECTION dependency + legacy target -> gate armed against the wrong subject
+func TestIncludeAuthorityTransitionIsAtomic(t *testing.T) {
+	const generated = `include "/etc/nftban/generated/nftban-boot.nft"`
+
+	targetIsGenerated := IncludeDirective == generated
+	sysSrc := readRepoFile(t, "cmd/nftban-installer/phases.go")
+	depIsBootProjection := strings.Contains(sysSrc, "render.IncludeDependencyBootProjection")
+	depIsLegacy := strings.Contains(sysSrc, "render.IncludeDependencyLegacy")
+
+	if targetIsGenerated != depIsBootProjection {
+		t.Errorf("NON-ATOMIC AUTHORITY TRANSITION: include target generated=%v but shipping "+
+			"dependency BOOT_PROJECTION=%v. Both must change together — one half alone either "+
+			"leaves a generated include unguarded (NC1) or arms the gate against the legacy "+
+			"target it does not protect (NC2).", targetIsGenerated, depIsBootProjection)
 	}
-	if strings.Contains(src, "render.IncludeDependencyBootProjection") {
-		t.Error("phases.go selects IncludeDependencyBootProjection — that is 3D.4, and it must " +
-			"land with the IncludeDirective change, not before it")
+	if depIsBootProjection && depIsLegacy {
+		t.Error("phases.go selects BOTH dependencies — the shipping selection must be unambiguous")
 	}
-	// INCLUDE_TARGET_UNCHANGED: 3D.4 owns moving it.
-	sys := readRepoFile(t, "internal/installer/render/sysconf.go")
-	if !strings.Contains(sys, `const IncludeDirective = `+"`"+`include "/etc/nftban/nftables.conf"`+"`") {
-		t.Error("IncludeDirective changed — 3D.3 must not move the include target")
+	// The legacy literal must survive ONLY as a migration matcher, never as authority.
+	if strings.Contains(IncludeDirective, "/etc/nftban/nftables.conf") {
+		t.Error("IncludeDirective still names the legacy artifact — it is no longer boot authority")
+	}
+	if legacyIncludePath != `"/etc/nftban/nftables.conf"` {
+		t.Error("the legacy migration matcher was removed — an upgraded host could then keep " +
+			"BOTH includes, which is two boot authorities (NC3)")
 	}
 }
 

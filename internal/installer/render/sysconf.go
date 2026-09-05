@@ -55,7 +55,28 @@ func (d IncludeDependency) String() string {
 
 // IncludeDirective is the line nftban adds to the distro nftables.conf so a
 // plain `systemctl reload nftables.service` re-includes the nftban ruleset.
-const IncludeDirective = `include "/etc/nftban/nftables.conf"`
+//
+// v1.229.13 Lane 3D.4 — AUTHORITATIVE INCLUDE TRANSITION. Boot authority moved from
+// the legacy runtime artifact to the VALIDATED generated boot projection. This
+// constant and the shipping IncludeDependency in cmd/nftban-installer/phases.go
+// changed TOGETHER, atomically: a tree carrying only one of the two transitions is
+// invalid, and TestIncludeAuthorityTransitionIsAtomic fails on either half alone.
+//
+// ⛔ THIS IS THE ONLY ACTIVE BOOT AUTHORITY. See legacyIncludePath below.
+const IncludeDirective = `include "/etc/nftban/generated/nftban-boot.nft"`
+
+// legacyIncludePath is a MIGRATION MATCHER, NOT AN AUTHORITY.
+//
+// It exists so an upgraded host cannot end up carrying BOTH the legacy include and
+// the generated one — two boot authorities is precisely the state this lane removes.
+// The upgrader must still RECOGNISE and REMOVE the old line; recognising a retired
+// literal is not the same as depending on it.
+//
+// ⛔ Structural authority checks must not count this as a second boot authority:
+//
+//	ACTIVE_LEGACY_INCLUDE_COUNT     = 0   (nothing includes this path any more)
+//	LEGACY_MIGRATION_MATCHER_PRESENT = YES (this constant, used only for removal)
+const legacyIncludePath = `"/etc/nftban/nftables.conf"`
 
 // v1.146 PR Phase-D — fenced marker idempotency.
 //
@@ -112,7 +133,10 @@ func stripNftbanInclude(content string) string {
 			continue
 		case trimmed == legacyComment:
 			continue
-		case trimmed == IncludeDirective || strings.Contains(trimmed, `"/etc/nftban/nftables.conf"`):
+		// The generated (active) include OR the legacy one — the latter purely as a
+		// migration matcher, so an upgrade cannot leave two boot authorities behind.
+		case trimmed == IncludeDirective || strings.Contains(trimmed, legacyIncludePath) ||
+			strings.Contains(trimmed, `"/etc/nftban/generated/nftban-boot.nft"`):
 			continue
 		}
 		out = append(out, line)
@@ -266,7 +290,10 @@ func IntegrateSystemConf(exec executor.Executor, nftConfPath string, dep Include
 		return fmt.Errorf("write %s: %w", nftConfPath, err)
 	}
 
-	if strings.Contains(original, "/etc/nftban/nftables.conf") {
+	// Truthful log discriminator: "normalised" only when SOME nftban include was
+	// already present — legacy (pre-transition host) or generated (re-apply).
+	if strings.Contains(original, legacyIncludePath) ||
+		strings.Contains(original, `"/etc/nftban/generated/nftban-boot.nft"`) {
 		log.Info("normalised NFTBan include in %s (collapsed to one fenced block)", nftConfPath)
 	} else {
 		log.Info("added fenced NFTBan include block to %s", nftConfPath)

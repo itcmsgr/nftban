@@ -24,6 +24,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/render"
 )
 
 func TestEnableNftables_Success(t *testing.T) {
@@ -79,7 +80,11 @@ func TestCleanXtCompat_XtTargetDetected(t *testing.T) {
 	if written == nil {
 		t.Fatal("expected clean config to be written to confPath")
 	}
-	if !strings.Contains(string(written), "include \"/etc/nftban/nftables.conf\"") {
+	// v1.229.13 Lane 3D.4: bound to the SINGLE include authority rather than a
+	// literal, so this property cannot silently desynchronise from the constant
+	// when the boot authority moves. The PROPERTY is unchanged: the cleaned conf
+	// must still carry the nftban include.
+	if !strings.Contains(string(written), render.IncludeDirective) {
 		t.Error("expected clean config to include nftban nftables.conf")
 	}
 }
