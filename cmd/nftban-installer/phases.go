@@ -64,6 +64,11 @@ type phaseData struct {
 	decision  authority.Decision
 	distro    *detect.DistroInfo
 	ctLimits  detect.CTLimits
+	// bootProjectionReady — v1.229.13 Lane 3D.3. TRUE only when the authoritative
+	// boot-projection render SUCCEEDED IN THIS RUN. Never derived from os.Stat /
+	// FileExists / mtime / size: a stale artifact from a previous run exists but was
+	// not established, and telling those apart is the entire point of this signal.
+	bootProjectionReady bool
 	// v1.98.x PR-14-pre: source-install fields. Populated from cfg in main()
 	// before phases run. When source is true, Prepare and Configure take
 	// additional branches for user/group creation, payload staging from
@@ -404,13 +409,27 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	// would disable a currently-valid path and change shipping semantics before
 	// the include authority actually moves. Once 3D repoints the include at the
 	// projection, the ordering becomes load-bearing and the gate lands WITH it.
+	// v1.229.13 Lane 3D.3 — READINESS IS ESTABLISHED HERE, BY THE AUTHORITATIVE
+	// OPERATION, and nowhere else. rc=0 from `firewall render-boot` does NOT mean
+	// "nft -c passed"; it means the shell publication transaction returned a result
+	// the caller may rely on — which includes the UNKNOWN + byte-identical-existing
+	// PRESERVATION case (boot_projection.sh returns 0 there). The tri-state
+	// VALIDATE=0/1/2 decision tree stays in the shell and is NOT reimplemented here.
 	if err := switchop.RenderBoot(exec, log); err != nil {
 		log.Error("boot projection render failed: %v", err)
+		pd.bootProjectionReady = false
+	} else {
+		pd.bootProjectionReady = true
 	}
 
 	// 7. Integrate NFTBan include into system nftables.conf
 	if pd.distro != nil && pd.distro.NftConfPath != "" {
-		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath, log); err != nil {
+		// SHIPPING DEPENDENCY IS LEGACY. The included artifact does not depend on the
+		// generated projection, so a failed render-boot must NOT suppress this write —
+		// that would regress a currently-valid path before the authority actually
+		// moves. Lane 3D.4 changes IncludeDirective and this dependency together.
+		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath,
+			render.IncludeDependencyLegacy, pd.bootProjectionReady, log); err != nil {
 			log.Warn("system conf integration: %v", err)
 			// Non-fatal — system conf might not exist
 		}
