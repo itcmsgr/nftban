@@ -65,8 +65,8 @@
 #
 # CT LIMITS (base schema placeholders, substituted at rebuild):
 #   __CT_LIMIT_SSH__   default: 15 (or DDoS SSH limit when DDoS active)
-#   __CT_LIMIT_HTTP__  default: 150 (or DDoS HTTP limit when DDoS active)
-#   __CT_LIMIT_MAIL__  default: 150 (or DDoS SMTP limit when DDoS active)
+#   __CT_LIMIT_HTTP__  default: 200 (or DDoS HTTP limit when DDoS active)
+#   __CT_LIMIT_MAIL__  default: 30  (or DDoS SMTP limit when DDoS active)
 #
 #   v1.49.0 FIX-F: Base limits were dead when DDoS module active because
 #   DDoS helper chain had stricter limits (SSH:10 vs base:15). Now both
