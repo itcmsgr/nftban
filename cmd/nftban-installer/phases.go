@@ -385,7 +385,7 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	// vector). For single-port hosts (the common case) pd.sshPorts is a
 	// single-element slice and the render output is byte-identical to the
 	// v1.124 single-port code path.
-	if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, pd.ctLimits, log); err != nil {
+	if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, log); err != nil {
 		log.Error("nftables.conf render failed: %v", err)
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}

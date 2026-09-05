@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
@@ -75,8 +74,8 @@ func portSetElementsReFor(setName string) *regexp.Regexp {
 // callers should use RenderNftablesConfMultiPort which renders all detected
 // SSH listener ports into the tcp_ports_in allow-set (closes the
 // dns2-class lockout vector for hosts with sshd on multiple ports).
-func RenderNftablesConf(exec executor.Executor, sshPort int, ct detect.CTLimits, log *logging.Logger) error {
-	return RenderNftablesConfMultiPort(exec, []int{sshPort}, ct, log)
+func RenderNftablesConf(exec executor.Executor, sshPort int, log *logging.Logger) error {
+	return RenderNftablesConfMultiPort(exec, []int{sshPort}, log)
 }
 
 // RenderNftablesConfMultiPort renders nftables.conf with multi-port SSH
@@ -95,7 +94,7 @@ func RenderNftablesConf(exec executor.Executor, sshPort int, ct detect.CTLimits,
 // single-port render path. The single-port RenderNftablesConf is preserved
 // as a thin wrapper around this function for backward compatibility with
 // existing callers.
-func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct detect.CTLimits, log *logging.Logger) error {
+func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, log *logging.Logger) error {
 	if len(sshPorts) == 0 {
 		return fmt.Errorf("RenderNftablesConfMultiPort: sshPorts is empty (primary port required)")
 	}
@@ -123,15 +122,34 @@ func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct dete
 	// tcp_ports_in. This closes Gap 2 from the V1.145 audit: per-port
 	// rate-limit semantics now cover every detected SSH port, and an atomic
 	// set update can move the rate-limit dport without a full ruleset reload.
-	content = strings.ReplaceAll(content, "__SSH_PORT__", strconv.Itoa(primary))
-	content = strings.ReplaceAll(content, "__CT_LIMIT_SSH__", strconv.Itoa(ct.SSH))
-	content = strings.ReplaceAll(content, "__CT_LIMIT_HTTP__", strconv.Itoa(ct.HTTP))
-	content = strings.ReplaceAll(content, "__CT_LIMIT_MAIL__", strconv.Itoa(ct.Mail))
-
-	// Check for unrendered placeholders
+	// v1.229.13 Lane 3D.2 — SINGLE SUBSTITUTION AUTHORITY.
+	//
+	// This function used to substitute __SSH_PORT__ and the three __CT_LIMIT_*__
+	// placeholders itself. That made it a SECOND substitution authority alongside
+	// the shell's _firewall_substitute_placeholders, which is reached from
+	// `firewall reload`, `firewall rebuild` and `firewall render-boot`.
+	//
+	// MEASURED: the substitution here was INERT on the shipping path. payload.go
+	// stages install/nftables/nftables.conf to nftbanConf, and that artifact
+	// carries ZERO placeholders (the placeholders live in the .tpl the SHELL
+	// renders). The two authorities also disagreed on defaults — the shell falls
+	// back to the DDoS classic.conf values, this path to its own CTLimits — which
+	// is precisely the divergence FPA exists to remove.
+	//
+	// Substitution now happens in exactly one place: the shell. What remains here
+	// is the SSH-port set injection, which is a different operation on an already
+	// rendered file.
+	//
+	// FAIL CLOSED: if placeholders are still present, this file is a TEMPLATE and
+	// belongs to the shell authority. Publishing it half-rendered would install an
+	// invalid ruleset, so refuse and name the owner.
 	for _, ph := range placeholders {
 		if strings.Contains(content, ph) {
-			return fmt.Errorf("unrendered placeholder %s in %s", ph, nftbanConf)
+			return fmt.Errorf(
+				"%s still contains placeholder %s: substitution is owned by the shell "+
+					"authority (_firewall_substitute_placeholders, reached via "+
+					"`nftban firewall rebuild|reload|render-boot`); this path must not "+
+					"publish a partially rendered ruleset", nftbanConf, ph)
 		}
 	}
 
@@ -202,10 +220,10 @@ func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct dete
 		for _, p := range sshPorts[1:] {
 			extras = append(extras, strconv.Itoa(p))
 		}
-		log.Info("rendered nftables.conf (SSH primary=%d, additional=%s, CT: ssh=%d http=%d mail=%d) — V125 R-1 multi-port allow-set",
-			primary, strings.Join(extras, ","), ct.SSH, ct.HTTP, ct.Mail)
+		log.Info("rendered nftables.conf (SSH primary=%d, additional=%s) — V125 R-1 multi-port allow-set",
+			primary, strings.Join(extras, ","))
 	} else {
-		log.Info("rendered nftables.conf (SSH=%d, CT: ssh=%d http=%d mail=%d)", primary, ct.SSH, ct.HTTP, ct.Mail)
+		log.Info("rendered nftables.conf (SSH=%d)", primary)
 	}
 	return nil
 }

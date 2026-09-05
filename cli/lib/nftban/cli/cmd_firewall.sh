@@ -260,7 +260,12 @@ _firewall_substitute_placeholders() {
     _ssh_ports_csv=$(printf '%s' "$_ssh_ports_csv" | sed 's/,/, /g')
 
     # CT limits — use DDoS config when available, else sensible defaults
-    local _ct_ssh=15 _ct_http=150 _ct_mail=150
+    # v1.229.13 Lane 3D.2: these are the FALLBACKS used only when
+    # conf.d/ddos/classic.conf is absent. They were 15/150/150 while the SHIPPED
+    # classic.conf carries 15/200/30 — measured live on lab2/lab3/lab4. Aligned so
+    # the fallback renders what a normal install actually enforces. NOT a policy
+    # change: A02-3 owns whether these caps should exist at all.
+    local _ct_ssh=15 _ct_http=200 _ct_mail=30
     local _ddos_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/classic.conf"
     local _ddos_local="${_ddos_conf}.local"
     # Source DDoS config (defaults then overrides) to get tuned limits

@@ -23,13 +23,20 @@
 
 package render
 
+// ⛔ v1.229.13 Lane 3D.2 — SUPERSESSION NOTICE (assurance MIGRATED, not retired).
+// Placeholder substitution now has exactly ONE authority: the shell function
+// _firewall_substitute_placeholders. The Go tests that exercised substitution
+// here were removed because the BEHAVIOUR left this package, not because the
+// guarantees were dropped. They are re-asserted arm for arm, with two
+// non-vacuity negative controls, against the real authority in:
+//     cli/lib/nftban/tests/render_authority_ssh_union_v1229_13_test.sh
+
 import (
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
@@ -298,7 +305,7 @@ func TestRenderNftablesConfMultiPort_EmptySSHPorts(t *testing.T) {
 	// the early-return error path via the public API. Using nil
 	// executor is acceptable because the empty-sshPorts check fires
 	// before any executor method is called.
-	err := RenderNftablesConfMultiPort(nil, nil, detect.CTLimits{}, log)
+	err := RenderNftablesConfMultiPort(nil, nil, log)
 	if err == nil {
 		t.Fatalf("expected error on empty sshPorts; got nil")
 	}
@@ -306,7 +313,7 @@ func TestRenderNftablesConfMultiPort_EmptySSHPorts(t *testing.T) {
 		t.Errorf("expected 'sshPorts is empty' in error; got: %v", err)
 	}
 	// Empty slice (vs nil) — same code path.
-	err = RenderNftablesConfMultiPort(nil, []int{}, detect.CTLimits{}, log)
+	err = RenderNftablesConfMultiPort(nil, []int{}, log)
 	if err == nil {
 		t.Fatalf("expected error on empty sshPorts slice; got nil")
 	}
@@ -382,76 +389,6 @@ func TestEnsureSSHPortInTcpPortsIn_AdditionalSubstringDoesNotCount(t *testing.T)
 	}
 }
 
-// TestRenderNftablesConfMultiPort_PrimaryFirst_SSHPortSubstitution is the
-// v1.125 R-1 end-to-end guard for the primary-first contract: when
-// sshPorts = [55000, 22] (primary 55000 placed first by DetectSSHPorts via
-// primaryFirstPorts), the rendered nftables.conf MUST have __SSH_PORT__
-// substituted with 55000 (the primary), not with 22 (the additional port).
-//
-// Without this test, the dns2-class regression would be: SSH_CLIENT=55000
-// → primary=55000 → ports=[22,55000] (UNORDERED) → __SSH_PORT__ replaced
-// with 22 → per-IP SSH rate-limit rule applied to wrong port. The fix
-// (primaryFirstPorts) makes ports=[55000,22] so sshPorts[0]=55000 and
-// __SSH_PORT__ correctly substitutes 55000.
-func TestRenderNftablesConfMultiPort_PrimaryFirst_SSHPortSubstitution(t *testing.T) {
-	log := newRenderTestLogger(t)
-	defer log.Close()
-	mock := executor.NewMockExecutor()
-	// Template with __SSH_PORT__ placeholder (per-IP rate-limit rule
-	// canonical line) + a tcp_ports_in set that already has the primary
-	// (so the post-substitution path exercises both code paths).
-	mock.Files["/etc/nftban/nftables.conf"] = []byte(`# Simulated template
-table ip nftban {
-	set tcp_ports_in {
-		type inet_service
-		elements = { 55000, 80, 443 }
-	}
-	chain input {
-		ct state new tcp dport __SSH_PORT__ ct count over 15 counter drop comment "SSH rate-limit"
-	}
-}
-`)
-
-	// Primary-first slice as DetectSSHPorts would emit on SSH_CLIENT=55000.
-	err := RenderNftablesConfMultiPort(mock, []int{55000, 22}, detect.CTLimits{SSH: 15, HTTP: 200, Mail: 30}, log)
-	if err != nil {
-		t.Fatalf("RenderNftablesConfMultiPort: %v", err)
-	}
-
-	written, ok := mock.WrittenFiles["/etc/nftban/nftables.conf"]
-	if !ok {
-		t.Fatal("RenderNftablesConfMultiPort did not write /etc/nftban/nftables.conf")
-	}
-	out := string(written)
-
-	// __SSH_PORT__ substitution MUST use the primary (55000), not the
-	// additional port (22). Look for the canonical rate-limit line.
-	if !strings.Contains(out, "tcp dport 55000 ct count over 15") {
-		t.Errorf("__SSH_PORT__ substitution did not use primary=55000; rendered output:\n%s", out)
-	}
-	// And it must NOT have replaced with the additional port.
-	if strings.Contains(out, "tcp dport 22 ct count over 15") {
-		t.Errorf("__SSH_PORT__ substitution incorrectly used additional port 22 instead of primary 55000; rendered output:\n%s", out)
-	}
-	// Additional port (22) MUST be injected into tcp_ports_in allow-set
-	// as a whole token (and not be masked by the existing 55000 entry).
-	tokRe := regexp.MustCompile(`(^|[^0-9])22([^0-9]|$)`)
-	if !tokRe.MatchString(out) {
-		t.Errorf("additional port 22 not injected as whole token into tcp_ports_in; rendered output:\n%s", out)
-	}
-}
-
-// =============================================================================
-// v1.145 PR-A — set-driven SSH brute-force rate-limit (`tcp dport @ssh_ports`)
-// =============================================================================
-// These tests cover the generalized injector targeting the ssh_ports set and
-// the integrated multi-port render contract: every detected SSH port must land
-// in BOTH tcp_ports_in (allow-set) and ssh_ports (rate-limit set), the brute-
-// force ct-count rule must read @ssh_ports (no literal SSH dport), and the
-// retired __SSH_PORTS_LIST__ placeholder must never appear in rendered output.
-
-// wholeToken returns a matcher for an exact numeric port token (not masked by
-// a longer number containing it as a substring, e.g. 22 inside 2222).
 func wholeToken(port int) *regexp.Regexp {
 	return regexp.MustCompile(`(^|[^0-9])` + strconv.Itoa(port) + `([^0-9]|$)`)
 }
@@ -596,8 +533,22 @@ func renderForPorts(t *testing.T, sshPorts []int) string {
 	log := newRenderTestLogger(t)
 	defer log.Close()
 	mock := executor.NewMockExecutor()
-	mock.Files["/etc/nftban/nftables.conf"] = []byte(renderSetDrivenTemplate())
-	if err := RenderNftablesConfMultiPort(mock, sshPorts, detect.CTLimits{SSH: 15, HTTP: 200, Mail: 30}, log); err != nil {
+	// v1.229.13 Lane 3D.2: substitution belongs to the SHELL authority, so by the
+	// time this package sees the file the placeholders are already gone. The
+	// harness therefore performs the shell's role explicitly and hands the Go path
+	// a POST-SUBSTITUTION artifact — which is exactly what happens in production.
+	//
+	// The primary port is seeded the way the shell seeds it. That MATTERS for the
+	// reserved-port edge: with sshPorts=[80] the shell emits `{ 80, 80, 443 }`, so
+	// dedupePortSetElements is still handed a real duplicate and the dedup
+	// assertions stay non-vacuous. Seeding a constant here would have silently
+	// turned those tests into no-ops.
+	seeded := strings.ReplaceAll(renderSetDrivenTemplate(), "__SSH_PORT__", strconv.Itoa(sshPorts[0]))
+	seeded = strings.ReplaceAll(seeded, "__CT_LIMIT_SSH__", "15")
+	seeded = strings.ReplaceAll(seeded, "__CT_LIMIT_HTTP__", "200")
+	seeded = strings.ReplaceAll(seeded, "__CT_LIMIT_MAIL__", "30")
+	mock.Files["/etc/nftban/nftables.conf"] = []byte(seeded)
+	if err := RenderNftablesConfMultiPort(mock, sshPorts, log); err != nil {
 		t.Fatalf("RenderNftablesConfMultiPort(%v): %v", sshPorts, err)
 	}
 	written, ok := mock.WrittenFiles["/etc/nftban/nftables.conf"]
@@ -711,109 +662,28 @@ func TestRenderV145_ReservedPortDuplicateEdge(t *testing.T) {
 	}
 }
 
-// TestRenderNftablesConfMultiPort_V145_SetDriven is the integrated render
-// contract for PR-A. For each port shape, the rendered output must:
-//   - contain every SSH port in tcp_ports_in (whole token)
-//   - contain every SSH port in ssh_ports (whole token)
-//   - keep the brute-force rule set-driven (`tcp dport @ssh_ports ct count`)
-//   - carry NO literal `tcp dport <sshport> ct count` rule
-//   - contain no retired __SSH_PORTS_LIST__ placeholder
-func TestRenderNftablesConfMultiPort_V145_SetDriven(t *testing.T) {
-	cases := []struct {
-		name     string
-		sshPorts []int
-	}{
-		{"default single port 22", []int{22}},
-		{"non-default single port 55000", []int{55000}},
-		{"multi-port primary-first 22+55000", []int{22, 55000}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			log := newRenderTestLogger(t)
-			defer log.Close()
-			mock := executor.NewMockExecutor()
-			mock.Files["/etc/nftban/nftables.conf"] = []byte(renderSetDrivenTemplate())
+// TestRenderRefusesUnsubstitutedTemplate pins the NEW Lane 3D.2 contract: this
+// package is no longer a substitution authority, so when handed a file that
+// still carries placeholders it must FAIL CLOSED rather than publish a partially
+// rendered ruleset. A half-rendered nftables.conf is not a degraded firewall, it
+// is an unloadable one.
+func TestRenderRefusesUnsubstitutedTemplate(t *testing.T) {
+	for _, ph := range placeholders {
+		mock := executor.NewMockExecutor()
+		mock.Files["/etc/nftban/nftables.conf"] = []byte(
+			"table ip nftban {\n  set ssh_ports {\n    elements = { " + ph + " }\n  }\n}\n")
+		log := newRenderTestLogger(t)
 
-			if err := RenderNftablesConfMultiPort(mock, tc.sshPorts, detect.CTLimits{SSH: 15, HTTP: 200, Mail: 30}, log); err != nil {
-				t.Fatalf("RenderNftablesConfMultiPort: %v", err)
-			}
-			written, ok := mock.WrittenFiles["/etc/nftban/nftables.conf"]
-			if !ok {
-				t.Fatal("render did not write /etc/nftban/nftables.conf")
-			}
-			out := string(written)
-
-			// Retired placeholder must never survive.
-			if strings.Contains(out, "__SSH_PORTS_LIST__") {
-				t.Errorf("retired __SSH_PORTS_LIST__ placeholder present in rendered output:\n%s", out)
-			}
-			// Brute-force rule must be set-driven.
-			if !strings.Contains(out, "tcp dport @ssh_ports ct count") {
-				t.Errorf("expected set-driven `tcp dport @ssh_ports ct count` rule; got:\n%s", out)
-			}
-
-			sshElems := sshPortsElements(t, out)
-			tcpRe := regexp.MustCompile(`(?s)set tcp_ports_in \{[^{}]*elements = \{([^}]*)\}`)
-			tcpM := tcpRe.FindStringSubmatch(out)
-			if tcpM == nil {
-				t.Fatalf("tcp_ports_in block missing:\n%s", out)
-			}
-			tcpElems := tcpM[1]
-
-			for _, p := range tc.sshPorts {
-				if !wholeToken(p).MatchString(sshElems) {
-					t.Errorf("SSH port %d missing from ssh_ports elements %q", p, sshElems)
-				}
-				if !wholeToken(p).MatchString(tcpElems) {
-					t.Errorf("SSH port %d missing from tcp_ports_in elements %q", p, tcpElems)
-				}
-				// No literal per-port ct-count rule (rule is set-driven).
-				if strings.Contains(out, "tcp dport "+strconv.Itoa(p)+" ct count") {
-					t.Errorf("found literal `tcp dport %d ct count` — brute-force rule must be set-driven via @ssh_ports", p)
-				}
-			}
-		})
-	}
-}
-
-// ADD_V145_PR_A_MAIL_RESERVED_PORT_RENDER_TESTS — when the detected SSH port is
-// a mail-reserved port (25/465/587), the renderer must still place exactly one
-// token in each port set, never contaminate UDP sets, leave the MAIL ct-count
-// anonymous set { 25, 465, 587 } untouched (it is an inline rule set, not a
-// named `set { … }` block the injector operates on), and keep the SSH ct-count
-// rule set-driven (@ssh_ports) with no literal SSH ct-count rule.
-func TestRenderV145_MailReservedSSHPort(t *testing.T) {
-	for _, p := range []int{25, 465, 587} {
-		t.Run(strconv.Itoa(p), func(t *testing.T) {
-			out := renderForPorts(t, []int{p})
-
-			tcp := setElements(t, out, "tcp_ports_in")
-			ssh := setElements(t, out, "ssh_ports")
-			if c := tokenCount(tcp, p); c != 1 {
-				t.Errorf("tcp_ports_in: port %d appears %d times, want exactly 1; elements=%q", p, c, tcp)
-			}
-			if c := tokenCount(ssh, p); c != 1 {
-				t.Errorf("ssh_ports: port %d appears %d times, want exactly 1; elements=%q", p, c, ssh)
-			}
-
-			// No UDP contamination.
-			for _, set := range []string{"udp_ports_in", "udp_ports_out"} {
-				if tokenCount(setElements(t, out, set), p) != 0 {
-					t.Errorf("SSH port %d leaked into %s", p, set)
-				}
-			}
-
-			// MAIL ct-count anonymous set must remain intact.
-			if !strings.Contains(out, "tcp dport { 25, 465, 587 } ct count") {
-				t.Errorf("MAIL ct-count anonymous set { 25, 465, 587 } was altered; rendered:\n%s", out)
-			}
-			// SSH ct-count rule stays set-driven; no literal SSH ct-count rule.
-			if !strings.Contains(out, "tcp dport @ssh_ports ct count") {
-				t.Errorf("SSH ct-count rule is not set-driven (@ssh_ports); rendered:\n%s", out)
-			}
-			if strings.Contains(out, "tcp dport "+strconv.Itoa(p)+" ct count") {
-				t.Errorf("found literal `tcp dport %d ct count` — SSH brute-force rule must use @ssh_ports", p)
-			}
-		})
+		err := RenderNftablesConfMultiPort(mock, []int{22}, log)
+		log.Close()
+		if err == nil {
+			t.Fatalf("placeholder %s: render returned nil — a partially rendered ruleset was accepted", ph)
+		}
+		if !strings.Contains(err.Error(), ph) {
+			t.Errorf("placeholder %s: error does not name the offending placeholder: %v", ph, err)
+		}
+		if !strings.Contains(err.Error(), "_firewall_substitute_placeholders") {
+			t.Errorf("placeholder %s: error must name the owning authority; got: %v", ph, err)
+		}
 	}
 }
