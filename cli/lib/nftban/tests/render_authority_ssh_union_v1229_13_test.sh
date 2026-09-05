@@ -24,6 +24,7 @@
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # =============================================================================
 set -uo pipefail
 
