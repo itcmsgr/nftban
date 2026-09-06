@@ -20,6 +20,15 @@
 // - "Invalid user <user> from <ip>"
 // - "Disconnected from <ip> ... preauth"
 // - "Too many authentication failures for <user> from <ip>"
+// - "Connection closed by authenticating user <user> <ip> port <n> [preauth]"
+// - "Disconnecting authenticating user <user> <ip> port <n>: Too many ... [preauth]"
+// - "error: maximum authentication attempts exceeded for <user> from <ip> ..."
+//
+// Safety rule: the detector matches the FAILURE SIGNAL, never the authentication
+// METHOD NAME. Matching "publickey" would also match
+// "Accepted publickey for root from <ip> ..." and turn a successful key login
+// into a ban. The "authenticating user" phrase is emitted by sshd only while
+// authentication is still in progress, so it cannot appear on a success line.
 //
 // Performance:
 // - bytes.Contains prefilter skips 99%+ of lines instantly
@@ -45,19 +54,21 @@ import (
 // SSHDetector detects SSH authentication failures
 type SSHDetector struct {
 	// Prefilter signals (cheap checks)
-	sigFailed      []byte // "Failed password"
-	sigInvalid     []byte // "Invalid user"
-	sigDisconnect  []byte // "Disconnected from"
-	sigTooMany     []byte // "Too many authentication"
-	sigSshd        []byte // "sshd"
+	sigFailed     []byte // "Failed password"
+	sigInvalid    []byte // "Invalid user"
+	sigDisconnect []byte // "Disconnected from"
+	sigTooMany    []byte // "Too many authentication"
+	sigMaxAuth    []byte // "maximum authentication attempts exceeded"
+	sigAuthUser   []byte // "authenticating user " (preauth-only phrase)
+	sigSshd       []byte // "sshd"
 
 	// Extraction markers
-	markerFrom     []byte // "from "
-	markerPort     []byte // " port"
-	markerFor      []byte // "for "
-	markerPreauth  []byte // "preauth"
-	markerRoot     []byte // "root"
-	markerInvalid  []byte // "invalid user "
+	markerFrom    []byte // "from "
+	markerPort    []byte // " port"
+	markerFor     []byte // "for "
+	markerPreauth []byte // "preauth"
+	markerRoot    []byte // "root"
+	markerInvalid []byte // "invalid user "
 }
 
 // NewSSHDetector creates a new SSH detector with precomputed signals
@@ -67,6 +78,8 @@ func NewSSHDetector() *SSHDetector {
 		sigInvalid:    []byte("Invalid user"),
 		sigDisconnect: []byte("Disconnected from"),
 		sigTooMany:    []byte("Too many authentication"),
+		sigMaxAuth:    []byte("maximum authentication attempts exceeded"),
+		sigAuthUser:   []byte("authenticating user "),
 		sigSshd:       []byte("sshd"),
 		markerFrom:    []byte("from "),
 		markerPort:    []byte(" port"),
@@ -103,9 +116,26 @@ func (d *SSHDetector) Detect(line []byte) (Verdict, bool) {
 		return d.detectPreauth(line)
 	}
 
-	// Stage 4: Check for "Too many authentication" signal
+	// Stage 4: Check for "maximum authentication attempts exceeded" signal
+	// OpenSSH 8.x/9.x: "error: maximum authentication attempts exceeded for
+	// root from <ip> port <n> ssh2 [preauth]" - emitted for publickey brute
+	// force against a VALID account, where "Failed password" never appears.
+	if bytes.Contains(line, d.sigMaxAuth) {
+		return d.detectMaxAuthAttempts(line)
+	}
+
+	// Stage 5: Check for "Too many authentication" signal
 	if bytes.Contains(line, d.sigTooMany) {
 		return d.detectTooMany(line)
+	}
+
+	// Stage 6: Check for the preauth-only "authenticating user" phrase
+	// "Connection closed by authenticating user root <ip> port <n> [preauth]"
+	// sshd emits "authenticating user" only while authentication is still in
+	// progress; a completed login logs "user <name>" without it. The [preauth]
+	// marker is required as a second, independent proof of failure context.
+	if bytes.Contains(line, d.sigAuthUser) && bytes.Contains(line, d.markerPreauth) {
+		return d.detectAuthUserPreauth(line, ReasonSSHPreauth, 20)
 	}
 
 	return Verdict{}, false
@@ -275,7 +305,11 @@ func (d *SSHDetector) detectTooMany(line []byte) (Verdict, bool) {
 	// Find "from " marker
 	fromIdx := bytes.Index(line, d.markerFrom)
 	if fromIdx == -1 {
-		return Verdict{}, false
+		// OpenSSH 9.x emits the failure without a "from " marker:
+		// "Disconnecting authenticating user root <ip> port <n>: Too many
+		// authentication failures [preauth]". Without this fallback the
+		// signal fires and IP extraction silently yields nothing.
+		return d.detectAuthUserPreauth(line, ReasonSSHTooManyFailures, 30)
 	}
 
 	// Extract IP
@@ -305,6 +339,100 @@ func (d *SSHDetector) detectTooMany(line []byte) (Verdict, bool) {
 		IP:         addr,
 		Reason:     ReasonSSHTooManyFailures,
 		ScoreDelta: 30, // Very high score for repeated failures
+		User:       user,
+		Service:    "ssh",
+	}, true
+}
+
+// detectMaxAuthAttempts handles the OpenSSH publickey exhaustion line:
+// "error: maximum authentication attempts exceeded for <user> from <ip> port <n> ssh2 [preauth]"
+// This is a failure signal, not a method name: it is never logged on success.
+func (d *SSHDetector) detectMaxAuthAttempts(line []byte) (Verdict, bool) {
+	fromIdx := bytes.Index(line, d.markerFrom)
+	if fromIdx == -1 {
+		// Same failure with the "authenticating user <user> <ip>" shape.
+		return d.detectAuthUserPreauth(line, ReasonSSHTooManyFailures, 30)
+	}
+
+	ipStart := fromIdx + len(d.markerFrom)
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
+	ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t")
+	if ipEnd == -1 {
+		ipEnd = len(line) - ipStart
+	}
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
+	}
+
+	addr, err := netip.ParseAddr(string(line[ipStart : ipStart+ipEnd]))
+	if err != nil {
+		return Verdict{}, false
+	}
+
+	return Verdict{
+		IP:         addr,
+		Reason:     ReasonSSHTooManyFailures,
+		ScoreDelta: 30, // Authentication attempt budget exhausted
+		User:       d.extractUser(line, fromIdx),
+		Service:    "ssh",
+	}, true
+}
+
+// detectAuthUserPreauth handles the OpenSSH 8.x/9.x "authenticating user" family:
+//
+//	"Connection closed by authenticating user root 1.2.3.4 port 6536 [preauth]"
+//	"Disconnecting authenticating user root 1.2.3.4 port 28340: Too many authentication failures [preauth]"
+//
+// These carry no "from " marker and no method name. The address is the token
+// immediately preceding " port"; the username is the token immediately after
+// "authenticating user ".
+func (d *SSHDetector) detectAuthUserPreauth(line []byte, reason uint16, score int16) (Verdict, bool) {
+	idx := bytes.Index(line, d.sigAuthUser)
+	if idx == -1 {
+		return Verdict{}, false
+	}
+	rest := line[idx+len(d.sigAuthUser):]
+
+	// Username: token right after "authenticating user ".
+	userEnd := bytes.IndexByte(rest, ' ')
+	if userEnd <= 0 || userEnd >= len(rest)-1 {
+		return Verdict{}, false
+	}
+	user := string(rest[:userEnd])
+
+	// Address: token immediately before " port". Fall back to the token that
+	// follows the username when sshd omitted the port field.
+	var ipBytes []byte
+	if portIdx := bytes.Index(rest, d.markerPort); portIdx > userEnd {
+		head := rest[:portIdx]
+		if sp := bytes.LastIndexByte(head, ' '); sp != -1 {
+			ipBytes = head[sp+1:]
+		} else {
+			ipBytes = head
+		}
+	} else {
+		seg := rest[userEnd+1:]
+		end := bytes.IndexAny(seg, " \n\r\t")
+		if end == -1 {
+			end = len(seg)
+		}
+		ipBytes = seg[:end]
+	}
+	if len(ipBytes) == 0 {
+		return Verdict{}, false
+	}
+
+	addr, err := netip.ParseAddr(string(ipBytes))
+	if err != nil {
+		return Verdict{}, false
+	}
+
+	return Verdict{
+		IP:         addr,
+		Reason:     reason,
+		ScoreDelta: score,
 		User:       user,
 		Service:    "ssh",
 	}, true
