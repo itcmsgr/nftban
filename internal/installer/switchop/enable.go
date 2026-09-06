@@ -26,6 +26,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/render"
 )
 
 // EnableNftables enables and starts the nftables service, then verifies.
@@ -96,12 +97,18 @@ func cleanXtCompat(exec executor.Executor, distro *detect.DistroInfo, log *loggi
 	log.Info("backed up %s to %s", confPath, backupPath)
 
 	// Replace with clean NFTBan include
+	// ⛔ v1.229.13 Lane 3D.4 — SECOND WRITER OF BOOT AUTHORITY.
+	// This path REPLACES the whole distro conf, so it writes a boot include too. It
+	// previously hardcoded the legacy path; after the authority transition that would
+	// either resurrect a retired include or clobber the generated one written by
+	// render.IntegrateSystemConf — two boot authorities, or none valid.
+	// It now takes the SINGLE authority constant, so the include target can never be
+	// moved in one writer and forgotten in the other.
 	cleanConf := `#!/usr/sbin/nft -f
 # NFTBan v1.76.0 - Clean nftables config (auto-fixed by installer)
 # Original backed up with .xt-backup.* extension
 # xt target rules removed to prevent nftables.service failure
-include "/etc/nftban/nftables.conf"
-`
+` + render.IncludeDirective + "\n"
 	if err := exec.WriteFileAtomic(confPath, []byte(cleanConf), 0644); err != nil {
 		log.Warn("cannot write clean %s: %v", confPath, err)
 		return
