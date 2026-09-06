@@ -311,4 +311,4 @@ EXECUTABLE, FALSIFIABLE, FAIL-CLOSED gate.
 ```
 
 **Provenance of these rules:** each was derived from a measured defect in the v1.229.4–v1.229.6
-release train, not from theory. See `NFTBAN_ROADMAP/V1_229_6_RELEASE_CLOSURE.md`.
+release train, not from theory.
