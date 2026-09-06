@@ -1,11 +1,11 @@
-# NFTBan — SSH-port lifecycle (socket activation, invariants, and the srv1 gate)
+# NFTBan — SSH-port lifecycle (socket activation and invariants)
 
 **Status:** operator note. **Added:** v1.155 lane (cluster 3, SSH-port lifecycle). **Class:** SSH-port-change correctness + lockout-adjacent **host-config** debt — **not** an NFTBan regression. Daemon byte-identical to v1.154.0.
 
 This page is the companion to [`SSH-EXTERNAL-ADMIN-PORT.md`](SSH-EXTERNAL-ADMIN-PORT.md). That page covers the **external `:55000 → :22` redirect** class. This page covers two adjacent things:
 
 1. the **socket-activation port-change pitfall** that v1.155 PR-1 warns about, and the **lifecycle invariants** that the v1.155 PR-2 validator checks;
-2. the **read-only observation procedure** and the **decision matrix** for the two srv1 gates, recording that the on-host srv1 proof is a **separate read-only gate after this release**.
+2. the **read-only observation procedure** for hosts reached through an external port redirect.
 
 Throughout: NFTBan is an ingress IPS, **not a NAT manager**. The external redirect stays host-managed, `:22` is never at risk, and `ssh_ports` only ever holds the **real `sshd` listeners**.
 
@@ -55,7 +55,7 @@ sudo bash tools/validation/ssh_port_change_lifecycle_validate.sh
 
 ---
 
-## 3. OBS-SSHPORT observation procedure (srv1 / dns2, read-only)
+## 3. OBS-SSHPORT observation procedure (read-only)
 
 This is the procedure to **observe** the external `:55000 → :22` behaviour around a rebuild on the affected hosts. It is **strictly read-only — capture, do not mutate.** Do **not** run `nftban firewall rebuild`/`reload`/`takeover`, do not edit `sshd_config`, do not touch the host redirect. The point of this gate is to *watch*, not to change.
 
@@ -71,26 +71,14 @@ Capture, **before** any rebuild (and keep `:22` open in a second session through
 6. **Lifecycle invariants:** `sudo bash tools/validation/ssh_port_change_lifecycle_validate.sh`.
 7. **Conntrack for the admin source:** `conntrack -L 2>/dev/null | grep <admin-ip>` (or `ss -tnp` for the established admin connection) — shows the admin path is held by established conntrack regardless of port.
 
-If a rebuild is later performed **under the separate gate** (§4), repeat steps 1–7 **after** it and diff: confirm `sshd`/`:22` never moved, `ssh_ports` stayed `{ 22 }`, no `:55000` rule exists inside NFTBan's ruleset, and whether the **host-layer** `:55000` redirect survived (that is the host's responsibility, not NFTBan's).
+If a rebuild is later performed, repeat steps 1–7 **after** it and diff: confirm `sshd`/`:22` never moved, `ssh_ports` stayed `{ 22 }`, no `:55000` rule exists inside NFTBan's ruleset, and whether the **host-layer** `:55000` redirect survived (that is the host's responsibility, not NFTBan's).
 
-> Why this is read-only here: the actual rebuild on srv1 is a **separate gate after this release** (next section). v1.155 ships the warning + validator + this procedure; the on-host proof is run later by the operator.
-
----
-
-## 4. Decision matrix — the two srv1 gates
-
-The operator tracks two named gates for the srv1 external-`:55000` question. They are mutually exclusive choices about *how much proof* the srv1 rebuild gate requires:
-
-| Gate token | Meaning | What it requires | Selected? |
-|------------|---------|------------------|-----------|
-| `OPEN_SSHPORT_55000_EXTERNAL_REDIRECT_SURVIVES_REBUILD_SCOPE` | **Full lifecycle proof** | Run the §3 observation procedure **before and after** an actual rebuild on srv1; diff every capture; record whether the host-layer `:55000` redirect survived and how it was restored if not. The strongest evidence. | **Selected** (`SELECT_V155_SRV1_GATE_AFTER_RELEASE = full_lifecycle_proof`) |
-| `MARK_V150_SRV1_REBUILD_RETEST_PASS_WITH_OBS_SSHPORT` | Lighter retest mark | Re-confirm the v1.150 OBS-SSHPORT observation on srv1 (audit + ruleset grep) without a fresh full before/after rebuild diff. | not selected |
-
-**Recorded decision:** the operator selected the **full lifecycle proof** path, and the on-host srv1 proof is a **SEPARATE read-only gate that runs AFTER this v1.155 release** — it is not part of this lane. v1.155 delivers the code (PR-1 warning, PR-2 validator) and this documentation; the srv1 rebuild observation is performed and recorded under `OPEN_SSHPORT_55000_EXTERNAL_REDIRECT_SURVIVES_REBUILD_SCOPE` once v1.155 is shipped.
+> Why this is read-only here: performing the rebuild is a separate, deliberate step. This
+> procedure only records the before/after picture so a change can be attributed.
 
 ---
 
-## 5. What stays true (the non-negotiables)
+## 4. What stays true (the non-negotiables)
 
 - **NFTBan is not a NAT manager.** It does not create, recreate, or preserve the external `:55000 → :22` redirect. That rule lives in the host layer (firewalld / iptables-nft / panel / provider) and stays there.
 - **The external redirect stays host-managed.** If a rebuild disturbs `:55000`, restore it in its own layer (see `SSH-EXTERNAL-ADMIN-PORT.md` §5).
@@ -99,7 +87,7 @@ The operator tracks two named gates for the srv1 external-`:55000` question. The
 
 ---
 
-## 6. Related
+## 5. Related
 
 - External admin redirect class: [`SSH-EXTERNAL-ADMIN-PORT.md`](SSH-EXTERNAL-ADMIN-PORT.md) — the `:55000 → :22` warn-only + lockout-net behaviour.
 - nftables single-writer policy: [`ARCHITECTURE-NFT-POLICY.md`](ARCHITECTURE-NFT-POLICY.md).

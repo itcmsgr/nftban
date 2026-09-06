@@ -76,7 +76,7 @@ path. **Pre-v1.124 history:** earlier versions of this doc described
 the wrapper as invoking `--mode=upgrade --panel-auto-takeover`. That
 was the actual code at the time and did NOT trigger the takeover
 branch on hosts arriving with `install_state INSTALL_STATE=COMMITTED`;
-the dns2 source-install → RPM migration (2026-05-20) surfaced the
+a production source-install → RPM migration (2026-05-20) surfaced the
 gap.
 
 For each conflicting service (CSF emits two entries — `csf.service`
@@ -113,7 +113,7 @@ DirectAdmin-specific disarm (`disarmPanelCSF()`):
 - **Flip `lfd=ON` → `lfd=OFF`** in `/usr/local/directadmin/data/admin/services.status`
   (PR26.6.1, PANEL-WATCHDOG-COHERENCE-001). Without this, `dataskq`
   emits `error=service "lfd": Unit lfd.service is masked.` every 60
-  seconds. The dns2 host evidence (2026-04-30 → 2026-05-01) showed 14+
+  seconds. Production host evidence (2026-04-30 → 2026-05-01) showed 14+
   hours of that noise on a host where the codified path was not used.
 - Run `custombuild/build set csf no` to flip `csf=yes` → `csf=no` in
   `/usr/local/directadmin/custombuild/options.conf` so that

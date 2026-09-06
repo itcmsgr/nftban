@@ -16,7 +16,7 @@ This page explains, in plain English, **why a `nftban firewall rebuild` can brie
 
 **One sentence:** the `:55000 → :22` redirect is owned by the host's *other* firewall layer, not NFTBan; a rebuild that tidies up those other layers can disturb `:55000`, even though `sshd`/`:22` are never at risk.
 
-Confirmed on **srv1** (CentOS Stream 10, +firewalld +iptables-nft layers) and **dns2** (CentOS Stream 9). Both: `ss` shows `sshd` on `:22` only; NFTBan renders `ssh_ports = { 22 }`; there is **no `:55000` rule anywhere in NFTBan's ruleset** (grep confirms none).
+Confirmed on two production hosts: CentOS Stream 10 (with firewalld and iptables-nft layers present) and CentOS Stream 9. Both: `ss` shows `sshd` on `:22` only; NFTBan renders `ssh_ports = { 22 }`; there is **no `:55000` rule anywhere in NFTBan's ruleset** (grep confirms none).
 
 ---
 
@@ -81,7 +81,7 @@ The same lockout-net line (`✓ lockout-net: <ip> session-whitelisted …`) prin
 | `NFTBAN_NO_PREREBUILD_LOCKOUT=1` | Opt out of the pre-rebuild lockout-net entirely. | `0` (lockout-net on) |
 | `NFTBAN_PREREBUILD_LOCKOUT_TTL=2h` | TTL of the session-whitelist entry added before a rebuild. | `1h` |
 
-Recommended on srv1/dns2-class hosts: set `NFTBAN_EXTERNAL_ADMIN_SSH_PORTS` to the real external port in `/etc/nftban/nftban.conf.local` (or a `conf.d/*.local`), and **keep the `:55000 → :22` redirect in firewalld/iptables-nft/panel** — that is the layer that owns it.
+Recommended on hosts reached through an external port redirect: set `NFTBAN_EXTERNAL_ADMIN_SSH_PORTS` to the real external port in `/etc/nftban/nftban.conf.local` (or a `conf.d/*.local`), and **keep the `:55000 → :22` redirect in firewalld/iptables-nft/panel** — that is the layer that owns it.
 
 ---
 
@@ -97,7 +97,7 @@ Recommended on srv1/dns2-class hosts: set `NFTBAN_EXTERNAL_ADMIN_SSH_PORTS` to t
 
 ## 6. Related
 
-- SSH-port lifecycle (socket activation + invariants + srv1 gate): [`SSH-PORT-LIFECYCLE.md`](SSH-PORT-LIFECYCLE.md) — v1.155 companion: the socket-activation Port-change pitfall, the lifecycle invariants the validator checks, the read-only OBS-SSHPORT observation procedure, and the srv1 decision matrix.
+- SSH-port lifecycle (socket activation + invariants): [`SSH-PORT-LIFECYCLE.md`](SSH-PORT-LIFECYCLE.md) — v1.155 companion: the socket-activation Port-change pitfall, the lifecycle invariants the validator checks, and the read-only OBS-SSHPORT observation procedure.
 - nftables single-writer policy: [`ARCHITECTURE-NFT-POLICY.md`](ARCHITECTURE-NFT-POLICY.md) — the lockout-net writes only through the sanctioned IPC `whitelist-session` path (no direct nft).
 - SSH-port detection authority: `cli/lib/nftban/lib/ssh_port_detect.sh`, `cmd/nftban-detect-ssh-ports` (sources: `ss` listeners + `sshd_config` Port/ListenAddress + state + `conf.local`; **no conntrack source**).
 - Register entry: `OBS-SSHPORT-55000-FAMILY` in `NFTBAN_PENDINGS_AND_BUGS_CURRENT.md` (cluster 3, SSH-port lifecycle).
