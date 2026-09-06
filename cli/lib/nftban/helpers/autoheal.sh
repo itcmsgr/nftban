@@ -411,32 +411,40 @@ if [ -n "$NFT_CONFIG" ]; then
     NFT_CHECK=$(nft -c -f "$NFT_CONFIG" 2>&1 || true)
     if echo "$NFT_CHECK" | grep -qE "xt target|xtables compat"; then
         log_warn "Detected incompatible xt target rules in $NFT_CONFIG"
-        log_info "AUTO-FIXING: Backing up and replacing config..."
-
-        # Backup original
-        cp "$NFT_CONFIG" "${NFT_CONFIG}.xt-backup.$(date +%Y%m%d%H%M%S)"
-        log_info "Backup saved to ${NFT_CONFIG}.xt-backup.*"
-
-        # Replace with clean include of NFTBan config
-        cat > "$NFT_CONFIG" << 'NFTCLEAN'
-#!/usr/sbin/nft -f
-# NFTBan v1.17.5 - Clean nftables config (auto-fixed by autoheal)
-# Original backed up with .xt-backup.* extension
-# xt target rules removed to prevent nftables.service failure
-include "/etc/nftban/nftables.conf"
-NFTCLEAN
-
-        log_info "✅ Fixed $NFT_CONFIG - xt target rules removed"
-
-        # Restart nftables service if it was failed
-        if systemctl is-failed --quiet nftables.service 2>/dev/null; then
-            log_info "Restarting nftables.service after fix..."
-            if systemctl restart nftables.service 2>/dev/null; then
-                log_info "✅ nftables.service restarted successfully"
-            else
-                log_warn "nftables.service restart failed - check: journalctl -u nftables.service"
-            fi
-        fi
+        # =====================================================================
+        # v1.229.13 Lane 3E rule P7 — THIS NO LONGER REWRITES THE DISTRO CONFIG.
+        #
+        # It used to replace $NFT_CONFIG wholesale with a heredoc containing a
+        # bare unfenced include of the LEGACY NFTBan path. That was wrong three
+        # ways, and Lane 3D.4 made the third one load-bearing:
+        #
+        #   1. THIRD INCLUDE MECHANISM. The managed include is owned by
+        #      render.IntegrateSystemConf, which fences it in BEGIN/END markers.
+        #      This wrote an UNFENCED include, so neither the Go writer nor the
+        #      postrm / %postun strip twin could see or remove it.
+        #   2. DESTROYED OPERATOR CONTENT. Every non-NFTBan rule in the distro
+        #      file was replaced; a timestamped backup is not preservation.
+        #   3. RESURRECTED A RETIRED AUTHORITY. Since Lane 3D.4 the boot include
+        #      is /etc/nftban/generated/nftban-boot.nft. Rewriting the file with
+        #      the legacy path silently REVERTS boot authority and undoes the
+        #      migration on any host that trips this branch — and this runs from
+        #      nftban-maintenance.timer, so it is scheduled, not incidental.
+        #
+        # The canonical authority is Go, invoked by the installer, and is not
+        # reachable from a shell helper. So this branch DETECTS AND REPORTS: a
+        # helper must fail safely rather than invent a competing mechanism.
+        # ⛔ DO NOT REINSTATE AN AUTO-REWRITE HERE. scripts/ci/
+        # check-system-include-writer-authority.sh fails the build if it returns.
+        # =====================================================================
+        log_warn "NOT auto-fixing: rewriting that file would discard operator rules and"
+        log_warn "  write an unfenced include outside NFTBan's managed marker block."
+        log_info "  Affected file : $NFT_CONFIG"
+        log_info "  Symptom       : nftables.service fails to load (xt target / xtables compat)"
+        log_info "  Repair        : /usr/lib/nftban/bin/nftban-installer --repair"
+        log_info "  Manual review : remove the xt target rules from $NFT_CONFIG, then"
+        log_info "                  systemctl restart nftables.service"
+        AUTOHEAL_XT_UNRESOLVED=1
+        export AUTOHEAL_XT_UNRESOLVED
     else
         log_info "✅ No incompatible xt target rules detected"
     fi
