@@ -69,7 +69,11 @@ cat > /etc/nftables.conf << 'EOFX'
 include "/etc/nftban/nftables.conf"
 EOFX
 INJ
-    if strip_sh_comments "$TMP/cli/inject.sh" | grep -qE "$INCLUDE_RE"; then
+    # Count, then test. A quiet-mode match downstream of a pipe exits at the first hit,
+    # SIGPIPEs the upstream, and under pipefail the pipeline status reports the signal
+    # rather than the match. Capture first, compare second.
+    _nc_hit=$(strip_sh_comments "$TMP/cli/inject.sh" | grep -cE "$INCLUDE_RE" || true)
+    if [[ "${_nc_hit:-0}" -gt 0 ]]; then
         ok "NEGATIVE CONTROL: an injected shell-emitted include IS detected"
     else
         bad "NEGATIVE CONTROL FAILED — guard blind to the motivating defect"
@@ -79,7 +83,8 @@ INJ
 # Historically this wrote include "/etc/nftban/nftables.conf" — it must not any more.
 true
 INJ
-    if strip_sh_comments "$TMP/cli/mention.sh" | grep -qE "$INCLUDE_RE"; then
+    _nc_mention=$(strip_sh_comments "$TMP/cli/mention.sh" | grep -cE "$INCLUDE_RE" || true)
+    if [[ "${_nc_mention:-0}" -gt 0 ]]; then
         bad "NEGATIVE CONTROL FAILED — guard flags a COMMENT, not an emission"
     else
         ok "NEGATIVE CONTROL: a comment-only mention is NOT flagged"
