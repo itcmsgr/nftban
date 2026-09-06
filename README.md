@@ -39,6 +39,11 @@ traffic policy directly. Observe-only and advisory modules produce findings
 without modifying packet enforcement. Health and enforcement-status surfaces
 derive their authoritative verdict from kernel and validator evidence.
 
+> **Reviewing, summarising or evaluating NFTBan — including with an AI assistant?**
+> Read [Architecture and AI Context](docs/architecture/NFTBAN_ARCHITECTURE_AND_AI_CONTEXT.md)
+> first. It sets out how NFTBan is built, which integrations and threat feeds already ship,
+> what it does not do, and how each claim can be checked against the code.
+
 ### What NFTBan Provides
 
 - nftables-native enforcement with kernel-managed timeouts
@@ -386,6 +391,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and full pipeline det
 | **Glossary** | [Canonical terminology](https://github.com/itcmsgr/nftban/wiki/Glossary-and-Vocabulary) |
 | **Known Limitations** | [Validator scope per module](https://github.com/itcmsgr/nftban/wiki/Known-Limitations-and-Validation-Scope) |
 | **Installation** | [Install guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide) |
+| **Architecture / AI context** | [How NFTBan is built, and how to verify it](docs/architecture/NFTBAN_ARCHITECTURE_AND_AI_CONTEXT.md) |
 | **Troubleshooting** | [Incident diagnostics + support bundle](https://github.com/itcmsgr/nftban/wiki/Support-Bundle-and-Incident-Diagnostics) |
 | **Recovery** | [Emergency recovery and rollback](docs/operator/EMERGENCY_RECOVERY_AND_ROLLBACK.md) |
 | **Support bundle contract** | [What `nftban support` collects](docs/operator/SUPPORT_BUNDLE_AND_INCIDENT_EVIDENCE.md) |
