@@ -154,6 +154,16 @@ jobs:
       - name: Check system-include writer authority — falsifiability
         run: ./scripts/ci/check-system-include-writer-authority.sh --self-test
 
+      # v1.229.13 Lane 3E rule P6, BLOCKING, assurance-only. Two invariants:
+      #  P6-A the boot projection is rendered+published by the SHELL authority; Go
+      #       orchestrates by delegation and must not write/rename/substitute/validate it
+      #  P6-B the shipped policy maps the ONE boot-projection file to
+      #       nftban_nftables_conf_t and does NOT broaden that type to generated/
+      # Runtime SELinux enforcement is NOT claimed here — that was proven
+      # package-natively on EL10 Enforcing in Lane 3D.5.
+      - name: Check boot-projection publication + label authority (P12-FPA P6)
+        run: ./scripts/ci/check-boot-projection-publication-authority.sh
+
       # v1.229.13 Lane 1B GUARD-THE-GUARD, BLOCKING. The guard above landed in
       # #1352 WITHOUT its falsifiability twin, leaving GUARD=YES /
       # GUARD_THE_GUARD=NO against a codebase convention that pairs every such
