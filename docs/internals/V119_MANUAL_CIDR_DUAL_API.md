@@ -73,7 +73,7 @@ set looks identical pre vs post. The behavior change is at the Go
 daemon's decision-point layer — and it is in the operator's favor (the
 intent of the /27 ban is now realized).
 
-Empirical observation from V121 fleet rollout: srv1 had 5 `/27`
+Empirical observation from V121 fleet rollout: one production host had 5 `/27`
 CIDR entries in `99-manual.conf` (exim-bruteforce blocks). Pre-V121
 the kernel `blacklist_manual_ipv4` set had 0 elements; post-V121 the
 set still has 0 elements and the same `flags timeout`, but the daemon

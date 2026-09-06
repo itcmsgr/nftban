@@ -237,7 +237,7 @@ independently.
 
 > **Superseded on main only.** Up to and including v1.229.11 all four ND types are
 > gated on `ip6 saddr fe80::/10`. That rule dropped legitimate global-sourced NS/NA from
-> same-subnet neighbours and every DAD solicitation. Measured on lab4
+> same-subnet neighbours and every DAD solicitation. Measured on a lab host
 > (Rocky 9.8, kernel 5.14, nft 1.0.9): an on-link IPv6 peer could not resolve
 > the host, the neighbour entry stayed `INCOMPLETE`, and TCP never established.
 > **Every currently deployed host still carries that rule.** v1.229.11 is the latest

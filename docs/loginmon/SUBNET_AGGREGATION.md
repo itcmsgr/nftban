@@ -1,6 +1,6 @@
 # LoginMon Subnet Aggregation (v1.113)
 
-> Closes **`D-LOGINMON-EXIM-SUBNET-ROTATION-GAP`** from the srv1 production incident on 2026-05-13: a distributed `203.0.113.0/24` SMTP brute force where each individual IP made only 1-2 attempts and never crossed the per-IP ban threshold.
+> Closes **`D-LOGINMON-EXIM-SUBNET-ROTATION-GAP`** from a production incident on 2026-05-13: a distributed `203.0.113.0/24` SMTP brute force where each individual IP made only 1-2 attempts and never crossed the per-IP ban threshold.
 
 ## What it does
 
