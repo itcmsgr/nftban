@@ -22,6 +22,24 @@
 # context on the final path after publication. See _firewall_publish_conf().
 /etc/nftban/nftables\.conf                              --  gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
 
+# v1.229.13 Lane 3D.5A — the boot projection is the SECOND artifact consumed by the
+# distro nftables.service (iptables_t), after Lane 3D.4 moved boot authority to it.
+#
+# ⛔ WITHOUT THIS RULE THE FPA TRANSITION IS UNREACHABLE ON EL. restorecon on the
+# published projection resolves to the /etc/nftban(/.*)? catch-all (nftban_conf_t),
+# _firewall_publish_conf's type verification then fails, render-boot exits 1,
+# bootProjectionReady stays false, and IntegrateSystemConf correctly refuses the
+# include transition. Measured on a Rocky 9.8 host, 2026-09-06.
+#
+# DELIBERATELY NARROW: this names the ONE file, not /etc/nftban/generated(/.*)?.
+# The directory and anything else generated under it stay nftban_conf_t and remain
+# unreadable by iptables_t, preserving type separation.
+#
+# Same caveat as the line above: the renderer publishes via temp file + rename, which
+# PRESERVES the source type, so this declaration alone is NOT sufficient —
+# _firewall_publish_conf() must restorecon the final path. It does.
+/etc/nftban/generated/nftban-boot\.nft                  --  gen_context(system_u:object_r:nftban_nftables_conf_t,s0)
+
 # State files (var/lib)
 /var/lib/nftban(/.*)?                                       gen_context(system_u:object_r:nftban_var_lib_t,s0)
 /var/lib/nftban/feeds(/.*)?                                 gen_context(system_u:object_r:nftban_var_lib_t,s0)

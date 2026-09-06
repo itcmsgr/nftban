@@ -266,6 +266,7 @@ ruleset_fingerprint_v138_test	cli/lib/nftban/tests/ruleset_fingerprint_v138_test
 sbom_no_fabrication_v1229_4_test	cli/lib/nftban/tests/sbom_no_fabrication_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sbom_shipped_subject_scope_v1229_5_test	cli/lib/nftban/tests/sbom_shipped_subject_scope_v1229_5_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 secure_go_gate_coverage_v1229_4_test	cli/lib/nftban/tests/secure_go_gate_coverage_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+selinux_boot_projection_fcontext_v1229_13_test	cli/lib/nftban/tests/selinux_boot_projection_fcontext_v1229_13_test.sh	firewall	test	selinux-policy	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 selinux_geoip_map_v1228_5_test	cli/lib/nftban/tests/selinux_geoip_map_v1228_5_test.sh	security	test	selinux-geoip-map	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 service_alerts_v138_test	cli/lib/nftban/tests/service_alerts_v138_test.sh	firewall	test	firewall-conflicts	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 session_whitelist_flock_v173_test	cli/lib/nftban/tests/session_whitelist_flock_v173_test.sh	firewall	test	session-whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
