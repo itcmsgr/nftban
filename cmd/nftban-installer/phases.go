@@ -424,12 +424,18 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 
 	// 7. Integrate NFTBan include into system nftables.conf
 	if pd.distro != nil && pd.distro.NftConfPath != "" {
-		// SHIPPING DEPENDENCY IS LEGACY. The included artifact does not depend on the
-		// generated projection, so a failed render-boot must NOT suppress this write —
-		// that would regress a currently-valid path before the authority actually
-		// moves. Lane 3D.4 changes IncludeDirective and this dependency together.
+		// v1.229.13 Lane 3D.4 — THE GATE IS NOW ARMED IN PRODUCTION.
+		// The include target became the generated boot projection, so the include now
+		// DEPENDS on that projection having been established in this run. Changed
+		// atomically with render.IncludeDirective; neither half is valid alone.
+		//
+		// Consequence, deliberately: when render-boot fails, bootProjectionReady is
+		// false and IntegrateSystemConf REFUSES pre-mutation. An existing legacy
+		// include is therefore left intact rather than being removed in favour of a
+		// projection that was never established — a failed transition must never
+		// leave the host with no valid boot include.
 		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath,
-			render.IncludeDependencyLegacy, pd.bootProjectionReady, log); err != nil {
+			render.IncludeDependencyBootProjection, pd.bootProjectionReady, log); err != nil {
 			log.Warn("system conf integration: %v", err)
 			// Non-fatal — system conf might not exist
 		}
