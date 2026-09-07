@@ -59,7 +59,7 @@ for rel in "${ROUTERS[@]}"; do
     f="$ROOT/$rel"
     if [[ ! -f "$f" ]]; then bad "known routing site missing: $rel"; continue; fi
     body=$(strip_go_comments "$f")
-    if printf '%s' "$body" | grep -q 'bansource\.'; then
+    if [[ "$(printf '%s' "$body" | grep -c 'bansource\.' || true)" -gt 0 ]]; then
         ok "$rel consults the canonical authority"
     else
         bad "$rel selects blacklist storage WITHOUT consulting internal/bansource — \
@@ -69,7 +69,7 @@ sets and erased by feed sync"
 done
 
 echo "== RAW_SOURCE_DIRECTLY_DECIDES_STORAGE == NO =="
-if strip_go_comments "$CANON" | grep -qE 'func UsesReplaceManagedStorage\(k Kind\) bool'; then
+if [[ "$(strip_go_comments "$CANON" | grep -cE 'func UsesReplaceManagedStorage\(k Kind\) bool' || true)" -gt 0 ]]; then
     ok "the storage predicate takes a Kind, not a string"
 else
     bad "UsesReplaceManagedStorage must take a Kind — taking a string would reinstate \
@@ -94,7 +94,7 @@ INJ
     # Inversion: strip the authority reference from a known router and confirm detection.
     cp "$ROOT/internal/opqueue/types.go" "$TMP/types.go.orig"
     sed 's/bansource\./REMOVED_/g' "$ROOT/internal/opqueue/types.go" > "$TMP/types_nc.go"
-    if strip_go_comments "$TMP/types_nc.go" | grep -q 'bansource\.'; then
+    if [[ "$(strip_go_comments "$TMP/types_nc.go" | grep -c 'bansource\.' || true)" -gt 0 ]]; then
         bad "NEGATIVE CONTROL FAILED — could not construct the inversion"
     else
         ok "NEGATIVE CONTROL: a router stripped of the authority reference IS detected"
@@ -106,7 +106,7 @@ package fake
 func fine() {}
 INJ
     body2=$(strip_go_comments "$TMP/internal/fake/mention.go")
-    if printf '%s' "$body2" | grep -q 'blacklist_manual_ipv4'; then
+    if [[ "$(printf '%s' "$body2" | grep -c 'blacklist_manual_ipv4' || true)" -gt 0 ]]; then
         bad "NEGATIVE CONTROL FAILED — guard flags a COMMENT, not an implementation"
     else
         ok "NEGATIVE CONTROL: a comment-only mention is NOT flagged"
