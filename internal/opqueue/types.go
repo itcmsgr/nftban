@@ -12,6 +12,7 @@
 package opqueue
 
 import (
+	"github.com/itcmsgr/nftban/internal/bansource"
 	"sync"
 	"time"
 
@@ -57,9 +58,9 @@ type SetOp struct {
 type PendingOp struct {
 	Type      OpType
 	Element   string
-	TTL       uint32   // Seconds, 0 = permanent (infinity in comparisons)
-	Source    string   // Latest source (for logging)
-	Reason    string   // Latest reason (for logging)
+	TTL       uint32 // Seconds, 0 = permanent (infinity in comparisons)
+	Source    string // Latest source (for logging)
+	Reason    string // Latest reason (for logging)
 	CreatedAt time.Time
 }
 
@@ -77,8 +78,8 @@ type SetBuffer struct {
 	barrierGen uint64 // Operations with gen <= barrierGen are pre-barrier
 
 	// Replace/Flush operations (take precedence)
-	replaceOp *SetOp // If non-nil, replace entire set
-	flushPending bool // If true, flush before any ops
+	replaceOp    *SetOp // If non-nil, replace entire set
+	flushPending bool   // If true, flush before any ops
 
 	// Post-barrier ops (queued after barrier set, applied after barrier)
 	postBarrier []*SetOp
@@ -105,10 +106,10 @@ func DefaultQueueConfig() QueueConfig {
 
 // QueueStats holds queue statistics
 type QueueStats struct {
-	PendingCount  int64
-	TotalQueued   uint64
-	TotalApplied  uint64
-	TotalDropped  uint64
+	PendingCount int64
+	TotalQueued  uint64
+	TotalApplied uint64
+	TotalDropped uint64
 	// L2b: number of replace_set applies that flushed then applied fewer elements than
 	// intended (partial/fail-open). Non-zero = degraded; the set is short of requested.
 	ReplacePartialFailures uint64
@@ -135,9 +136,9 @@ type FlushResult struct {
 
 // SetElement represents an element to add/delete from nftables
 type SetElement struct {
-	Value   string
-	TTL     uint32
-	IsIPv6  bool
+	Value  string
+	TTL    uint32
+	IsIPv6 bool
 }
 
 // NetlinkBackend interface for nftables operations (allows mocking in tests)
@@ -179,7 +180,8 @@ type sourceConfig struct {
 
 // sourceConfigs maps source names to their configuration
 // v1.33.0: Manual/auto-detect sources route to hash sets (O(1))
-//          Feed/geoban sources route to interval sets (CIDR aggregation)
+//
+//	Feed/geoban sources route to interval sets (CIDR aggregation)
 var sourceConfigs = map[string]sourceConfig{
 	// Bulk sources → interval set (CIDR aggregation, auto-merge)
 	"feeds": {
@@ -293,6 +295,20 @@ func GetSourceConfig(source string) (sourceConfig, bool) {
 func GetTargetSet(source, ip string) string {
 	cfg, _ := GetSourceConfig(source)
 
+	// ⛔ v1.229.13 LANE-BST — SINGLE STORAGE-ROUTING AUTHORITY.
+	// sourceConfigs still supplies CAPABILITY flags (AllowBulk / AllowBan /
+	// DefaultTTL), which are genuinely per-source. It must NOT also decide storage:
+	// this map and nftbackend's routing previously disagreed on the same question,
+	// and on OPPOSITE defaults — an unknown source defaulted to HASH here and to
+	// INTERVAL there. The measured symptom was `nftban ban --source loginmon`
+	// PRINTING "hash set" while the daemon WROTE the interval set.
+	// Set selection now derives from the canonical Kind, exactly as nftbackend does.
+	if bansource.UsesReplaceManagedStorage(bansource.Resolve(source, bansource.OriginUnspecified)) {
+		cfg.IPv4Set, cfg.IPv6Set = "blacklist_ipv4", "blacklist_ipv6"
+	} else {
+		cfg.IPv4Set, cfg.IPv6Set = "blacklist_manual_ipv4", "blacklist_manual_ipv6"
+	}
+
 	isIPv6 := false
 	for _, c := range ip {
 		if c == ':' {
@@ -331,4 +347,3 @@ func GetAllSets() []string {
 		"blacklist_manual_ipv4", "blacklist_manual_ipv6",
 	}
 }
-

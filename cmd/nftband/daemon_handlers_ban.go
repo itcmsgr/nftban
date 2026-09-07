@@ -29,12 +29,13 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/analytics"
 	"github.com/itcmsgr/nftban/internal/banlog"
+	"github.com/itcmsgr/nftban/internal/bansource"
+	"github.com/itcmsgr/nftban/internal/escalation"
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/geoip"
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/persistence"
-	"github.com/itcmsgr/nftban/internal/escalation"
 	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/internal/whitelist"
 )
@@ -129,6 +130,10 @@ func (d *Daemon) checkAndEscalate(ip, source, country string) {
 		Timeout: 0, // permanent
 		Reason:  reason,
 		Source:  "persistent",
+		// v1.229.13 LANE-BST: an operator/IPC command produced this ban, so the label
+		// is ARBITRARY and must not be pattern-matched. `--source customer-rule` is a
+		// manual decision because an operator made it.
+		Origin: bansource.OriginOperator,
 	})
 	if err != nil {
 		log.Printf("[ESCALATE] Failed to permanent-ban %s: %v", ip, err)
@@ -213,6 +218,10 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		Timeout: timeout,
 		Reason:  reason,
 		Source:  source,
+		// v1.229.13 LANE-BST: an operator/IPC command produced this ban, so the label
+		// is ARBITRARY and must not be pattern-matched. `--source customer-rule` is a
+		// manual decision because an operator made it.
+		Origin: bansource.OriginOperator,
 	})
 	if err != nil {
 		return SocketResponse{

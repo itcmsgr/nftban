@@ -37,6 +37,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/stats"
 
 	"github.com/itcmsgr/nftban/internal/banlog"
+	"github.com/itcmsgr/nftban/internal/bansource"
 	"github.com/itcmsgr/nftban/internal/botguard"
 	"github.com/itcmsgr/nftban/internal/ddos"
 	"github.com/itcmsgr/nftban/internal/eventbus"
@@ -179,6 +180,10 @@ func (d *Daemon) Run() error {
 			Timeout: timeout,
 			Reason:  reason,
 			Source:  e.Source,
+			// v1.229.13 LANE-BST: this subscription only ever receives EventBan from a
+			// DETECTOR MODULE, so the producer context is known here and must not be
+			// re-derived downstream from the label. e.Source stays as provenance.
+			Origin: bansource.OriginDetector,
 		})
 		switch {
 		case err != nil:
