@@ -1091,7 +1091,7 @@ nftban_ddos_status() {
     echo "    DDOS_ENABLED=true|false     - Enable/disable DDoS protection"
     echo "    DDOS_MODE=auto|classic|suricata   (hybrid = legacy, refuses)"
     echo "    DDOS_SYN_RATE=25            - SYN packets per second limit"
-    echo "    DDOS_CONN_LIMIT=100         - Max connections per IP"
+    echo "    DDOS_CONN_LIMIT=100         - Max concurrent connections, host-wide (not per source)"
     echo ""
     echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
     echo ""

@@ -52,7 +52,7 @@ derive their authoritative verdict from kernel and validator evidence.
 - Login brute-force detection across SSH, mail, FTP, panel services
 - Port scan detection (classic + Suricata modes)
 - Network and transport-layer rate limiting and connection limits
-- Set-driven SSH brute-force connection-rate-limit (`tcp dport @ssh_ports ct count`) — follows every detected sshd listener port across IPv4/IPv6
+- Set-driven SSH concurrent-connection cap (`tcp dport @ssh_ports ct count`) — follows every detected sshd listener port across IPv4/IPv6. Host-wide, not per source IP, and it drops over the cap without logging or banning
 - HTTP bot classification (BotGuard) using dedicated nftables HTTP signal sets
 - Malicious-HTTP / exploit-probe scanning (BotScan) with durable ban-evidence handoff to the daemon
 - Server public IPv4/IPv6 reputation monitoring via DNSBL/RBL checks, with explicit degraded-coverage reporting — observe-only and non-enforcing

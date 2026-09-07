@@ -87,7 +87,11 @@ PROTECTION TYPES:
     The DDoS module includes multiple protection layers:
 
     • SYN Flood Protection - Rate limits TCP SYN packets
-    • Connection Limits - Limits concurrent connections per IP/port
+    • Connection Limits - Caps concurrent connections per service port.
+      HOST-WIDE, not per source IP: the `ct count over N` rules carry no
+      `ip saddr` key, so the allowance is shared across all sources and
+      ESTABLISHED connections count toward it. Over the cap the packet is
+      dropped silently — no log, no event, no ban.
     • ICMP Rate Limiting - Prevents ping floods
     • UDP Flood Protection - Rate limits UDP traffic
 
@@ -98,10 +102,10 @@ PROTECTION TYPES:
     Key configuration variables:
       DDOS_ENABLED="true"                        # Master enable/disable
       DDOS_MODE="auto"                           # auto|classic|suricata|hybrid
-      DDOS_CLASSIC_SYN_RATE="25/second"         # SYN flood rate limit
-      DDOS_CLASSIC_SYN_BURST="50"               # Burst allowance
-      DDOS_CLASSIC_SSH_CONN_LIMIT="10"          # Max SSH connections/IP
-      DDOS_CLASSIC_HTTP_CONN_LIMIT="100"        # Max HTTP connections/IP
+      DDOS_CLASSIC_SYN_RATE="100/second"        # SYN flood rate limit (per source IP)
+      DDOS_CLASSIC_SYN_BURST="200"              # Burst allowance
+      DDOS_CLASSIC_SSH_CONN_LIMIT="15"          # Max concurrent SSH conns (host-wide)
+      DDOS_CLASSIC_HTTP_CONN_LIMIT="200"        # Max concurrent HTTP conns (host-wide)
       DDOS_CLASSIC_ICMP_RATE="10/second"        # ICMP rate limit
       DDOS_CLASSIC_UDP_RATE="100/second"        # UDP rate limit
 
@@ -113,8 +117,8 @@ CONFIGURATION:
       /etc/nftban/nftban.conf.local
 
     Example overrides:
-      DDOS_CLASSIC_HTTP_CONN_LIMIT="200"   # Increase HTTP limit
-      DDOS_CLASSIC_SYN_RATE="50/second"    # Increase SYN rate limit
+      DDOS_CLASSIC_HTTP_CONN_LIMIT="400"   # Raise the HTTP cap (default 200)
+      DDOS_CLASSIC_SYN_RATE="200/second"   # Raise the SYN rate limit (default 100/second)
       DDOS_MODE="classic"                   # Force classic mode
 
 PROFILE SELECTION:

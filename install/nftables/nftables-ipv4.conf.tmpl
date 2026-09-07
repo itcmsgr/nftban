@@ -34,10 +34,10 @@ table ip nftban {
         elements = { 22, 80, 443 }
     }
 
-    # v1.145 PR-A: set-driven SSH brute-force rate-limit (closes Gap 2).
+    # v1.145 PR-A: set-driven SSH concurrent-connection cap (closes Gap 2).
     set ssh_ports {
         type inet_service
-        comment "SSH ports for set-driven brute-force rate-limit"
+        comment "SSH ports for the set-driven concurrent-connection cap"
         elements = { __SSH_PORT__ }
     }
 
@@ -90,12 +90,16 @@ table ip nftban {
         # 7. ICMP (ping, traceroute, etc.)
         ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded } counter accept comment "ICMPv4"
 
-        # 8. CT LIMITS (DDoS protection - SSH)
-        ct state new tcp dport @ssh_ports ct count over 15 counter drop comment "SSH: max 15 concurrent per IP — v1.145 PR-A set-driven"
+        # 8. CT LIMITS - shared concurrent-connection cap (SSH)
+        # Bare `ct count over N`, no `ip saddr` key: HOST-WIDE across the
+        # matched service, not per source IP; ESTABLISHED connections count
+        # toward it; over the cap the packet is dropped silently (no log, no
+        # event, no ban). v1.229.13 A02-2 — wording only.
+        ct state new tcp dport @ssh_ports ct count over 15 counter drop comment "SSH: max 15 concurrent (host-wide, not per IP) — v1.145 PR-A set-driven"
 
-        # 9. CT LIMITS (DDoS protection - HTTP/HTTPS/MAIL)
-        ct state new tcp dport { 80, 443 } ct count over 150 counter drop comment "HTTP(S): max 150 concurrent per IP"
-        ct state new tcp dport { 25, 465, 587 } ct count over 150 counter drop comment "MAIL: max 150 concurrent per IP"
+        # 9. CT LIMITS - shared concurrent-connection caps (HTTP/HTTPS/MAIL)
+        ct state new tcp dport { 80, 443 } ct count over 150 counter drop comment "HTTP(S): max 150 concurrent (host-wide, not per IP)"
+        ct state new tcp dport { 25, 465, 587 } ct count over 150 counter drop comment "MAIL: max 150 concurrent (host-wide, not per IP)"
 
         # 10. RATE LIMITS (portscan detection)
         tcp flags syn ct state new limit rate 100/second burst 200 packets log prefix "NFTBAN_PORTSCAN: "

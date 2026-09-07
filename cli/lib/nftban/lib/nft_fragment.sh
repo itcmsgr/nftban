@@ -991,9 +991,10 @@ nft_fragment_render_ddos_classic() {
 # Managed by nftband - DO NOT EDIT MANUALLY
 #
 # v1.67.1: Removed duplicate SYN/SSH/HTTP/HTTPS rules (base input handles these).
-# Remaining unique thresholds:
-#   SMTP Conn: max ${smtp_limit}/IP (tighter than base 150)
-#   DNS Conn: max ${dns_limit}/IP (TCP+UDP, unique)
+# Remaining unique thresholds (every ct count below is host-wide, NOT per source
+# IP: no ip saddr key, ESTABLISHED counts toward it, over-cap DROPs silently):
+#   SMTP Conn: max ${smtp_limit} concurrent, shared across all sources
+#   DNS Conn: max ${dns_limit} concurrent, shared across all sources (TCP+UDP, unique)
 #   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
 #   UDP Rate: ${udp_rate} burst ${udp_burst}
 
@@ -1019,14 +1020,17 @@ add set ${table_ipv4} ${udp_meter} { type ipv4_addr; size 65535; flags dynamic,t
 # Base input DETECT phase already enforces:
 #   - SYN rate (syn_meter_v4, 25/sec) — tighter, fires first, terminal accept
 #   - SSH ct count (base __CT_LIMIT_SSH__) — same threshold, fires first
-#   - HTTP/HTTPS ct count (base __CT_LIMIT_HTTP__) — tighter (150 vs 200), fires first
+#   - HTTP/HTTPS ct count (base __CT_LIMIT_HTTP__) — same threshold, fires first
+#     (cmd_firewall.sh substitutes DDOS_CLASSIC_HTTP_CONN_LIMIT into that
+#      placeholder, so the base cap and the classic cap are one value)
 # Only unique protections remain below.
 
-# SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
-add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent NEW conns (host-wide, not per IP)"
+# SMTP Connection Limit — same value as the base MAIL cap: cmd_firewall.sh
+# substitutes DDOS_CLASSIC_SMTP_CONN_LIMIT into __CT_LIMIT_MAIL__.
+add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent (host-wide, not per IP)"
 
 # DNS Protection (unique — no base schema equivalent)
-add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent NEW conns (host-wide, not per IP)"
+add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent (host-wide, not per IP)"
 add rule ${table_ipv4} ${chain} udp dport 53 update @ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv4} ${chain} udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
@@ -1054,11 +1058,12 @@ add set ${table_ipv6} ${udp_meter}6 { type ipv6_addr; size 65535; flags dynamic,
 
 # v1.67.1: Same deduplication as IPv4 — removed SYN meter + SSH/HTTP/HTTPS conn limits.
 
-# SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
-add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent NEW conns (host-wide, not per IP)"
+# SMTP Connection Limit — same value as the base MAIL cap: cmd_firewall.sh
+# substitutes DDOS_CLASSIC_SMTP_CONN_LIMIT into __CT_LIMIT_MAIL__.
+add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent (host-wide, not per IP)"
 
 # DNS Protection (unique)
-add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent NEW conns (host-wide, not per IP)"
+add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent (host-wide, not per IP)"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 update @ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 

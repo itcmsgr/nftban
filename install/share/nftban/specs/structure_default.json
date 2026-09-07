@@ -204,10 +204,12 @@
     "connection_limits": {
       "enabled": true,
       "mode": "ct_count",
-      "default_threshold": 100,
+      "default_thresholds": { "ssh": 15, "http": 200, "mail": 30 },
+      "scope": "host_wide",
+      "action": "drop",
       "applies_to": ["ip nftban:input", "ip6 nftban:input"],
-      "configurable_via": "ddos.conf",
-      "note": "Connection limits remain chain rules (not sets). Whitelisted IPs bypass all limits."
+      "configurable_via": "conf.d/ddos/classic.conf",
+      "note": "Connection limits remain chain rules (not sets). Each is a bare `ct count over N` with no `ip saddr` key, so the allowance is shared host-wide across all sources, ESTABLISHED connections count toward it, and exceeding it drops the packet without logging, eventing or banning. Whitelisted IPs bypass all limits."
     },
 
     "directional_ports": {

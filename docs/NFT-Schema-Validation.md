@@ -140,7 +140,7 @@ Priority | Rule                            | Purpose
 6        | ICMPv4/ICMPv6 accept            | Control plane (ND gate is release-dependent: v1.229.11 = fe80::/10; hop-limit 255 is unpublished v1.229.12 — see §7)
 7a       | /64 prefix SYN gate (IPv6)      | Anti-rotation: drops /64 >100 SYN/sec
 7b       | Per-IP SYN rate limit           | 25/sec terminal accept
-7c       | CT limits (SSH/HTTP/HTTPS)      | Connection count limits
+7c       | CT limits (SSH/HTTP/MAIL)       | Host-wide concurrent-connection caps (drop only)
 8        | Services (ports) accept         | Public services
 9        | default deny                    | Drop everything else
 ```
@@ -155,24 +155,41 @@ If blacklist appears AFTER `ct state established`, a banned attacker can keep ac
 
 As of v1.67.0, the base input chain enforces these limits in the DETECT phase:
 
-| Rule | Limit | Notes |
-|------|-------|-------|
-| SYN rate (per IP) | 25/second burst 50 | `syn_meter_v4`/`syn_meter_v6`, terminal accept |
-| SYN /64 prefix (IPv6) | 100/second burst 200 | `syn_prefix_meter_v6`, anti-rotation gate |
-| SSH ct count | configurable (default 15) | Per `__CT_LIMIT_SSH__` in template |
-| HTTP/HTTPS ct count | configurable (default 150) | Per `__CT_LIMIT_HTTP__` in template |
+| Rule | Limit | Scope | Notes |
+|------|-------|-------|-------|
+| SYN rate | 25/second burst 50 | per source IP | `syn_meter_v4`/`syn_meter_v6`, terminal accept |
+| SYN /64 prefix (IPv6) | 100/second burst 200 | per /64 prefix | `syn_prefix_meter_v6`, anti-rotation gate |
+| SSH ct count | configurable (default 15) | host-wide | Per `__CT_LIMIT_SSH__` in template |
+| HTTP/HTTPS ct count | configurable (default 200) | host-wide | Per `__CT_LIMIT_HTTP__` in template |
+| MAIL ct count | configurable (default 30) | host-wide | Per `__CT_LIMIT_MAIL__` in template |
+
+#### `ct count` scope: host-wide, not per source IP
+
+The SYN rows above are keyed meters (`{ ip saddr limit rate ... }`), so they are
+genuinely per source. The `ct count` rows are not. Each is a bare
+`ct count over N` with no `ip saddr` key, so:
+
+- the allowance is **shared** across every source matching the rule — one busy
+  source can consume all of it, and every other source is then dropped;
+- **ESTABLISHED connections count** toward the cap; it is not a new-connection
+  rate limit;
+- exceeding the cap **DROPs** the packet. There is no log, no event and no
+  detector input, so a `ct count` limit never produces a ban.
+
+A per-source concurrent-connection limit would require a keyed
+`meter { ip saddr ct count ... }`. NFTBan ships none.
 
 ### DDoS Module Limits (when `nftban ddos enable`)
 
 As of v1.67.1, the DDoS classic module only adds limits that are **not covered** by the base schema:
 
-| Service | Limit | Config Variable |
-|---------|-------|-----------------|
-| SMTP | 30 concurrent/IP | `DDOS_CLASSIC_SMTP_CONN_LIMIT` |
-| DNS/TCP | 50 concurrent/IP | `DDOS_CLASSIC_DNS_CONN_LIMIT` |
-| DNS/UDP | 50/second | `DDOS_CLASSIC_DNS_CONN_LIMIT` |
-| ICMP | 10/second burst 20 | `DDOS_CLASSIC_ICMP_RATE` |
-| UDP | 100/second burst 200 | `DDOS_CLASSIC_UDP_RATE` |
+| Service | Limit | Scope | Config Variable |
+|---------|-------|-------|-----------------|
+| SMTP | 30 concurrent | host-wide | `DDOS_CLASSIC_SMTP_CONN_LIMIT` |
+| DNS/TCP | 50 concurrent | host-wide | `DDOS_CLASSIC_DNS_CONN_LIMIT` |
+| DNS/UDP | 50/second | per source IP | `DDOS_CLASSIC_DNS_CONN_LIMIT` |
+| ICMP | 10/second burst 20 | per source IP | `DDOS_CLASSIC_ICMP_RATE` |
+| UDP | 100/second burst 200 | per source IP | `DDOS_CLASSIC_UDP_RATE` |
 
 ### Whitelisted IPs Bypass All Limits
 
