@@ -6,22 +6,24 @@ This document describes how to reproduce and verify NFTBan release binaries from
 
 ### Go Version
 
-The project requires **Go 1.23.0** or later (as specified in `go.mod`).
+The project requires **Go 1.25.13** (as specified in `go.mod`). Release binaries are
+built with exactly this toolchain, and a pre-publication gate rejects any shipped binary
+whose embedded compiler is not the `go.mod` version.
 
 ```bash
 # Verify your Go version
 go version
-# Expected output: go version go1.23.x linux/amd64
+# Expected output: go version go1.25.13 linux/amd64
 ```
 
 ### Required System Packages
 
 **For CGO-disabled builds (nftban-core):**
-- Go 1.23+
+- Go 1.25.13
 - No additional system dependencies
 
 **For CGO-enabled builds (nftband):**
-- Go 1.23+
+- Go 1.25.13
 - GCC compiler (build-essential on Debian/Ubuntu)
 
 ```bash
@@ -227,7 +229,7 @@ sha256sum nftban-core-linux-amd64
 
 | Factor | Impact | Mitigation |
 |--------|--------|------------|
-| Go version | Different binaries | Pin to Go 1.23 |
+| Go version | Different binaries | Pin to Go 1.25.13 (enforced pre-publication) |
 | `-trimpath` flag | Removes local paths | Always use `-trimpath` |
 | `-s -w` ldflags | Strips debug info | Always use both flags |
 | Build timestamp | May be embedded | Stripped by `-s -w` |
@@ -254,3 +256,34 @@ It does **not** guarantee:
 - [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
 - [Sigstore](https://www.sigstore.dev/)
 - [Go Build Reproducibility](https://go.dev/doc/go1.21#build)
+
+---
+
+## Build-Tree Cleanliness and `vcs.modified`
+
+Go's VCS stamper records `vcs.modified=true` when the working tree is not clean at the moment
+of compilation, and the module version gains a `+dirty` suffix. That marker is a provenance
+qualification: it does not mean the binary is corrupt or built from the wrong revision, but it
+does mean the tree contained something git did not track.
+
+Two distinct producers were found and fixed in this project, and they are **not** the same
+cause:
+
+| build path | producer | fixed in | confirmed |
+|---|---|---|---|
+| `release.yml` (`nftband`) | CI runs Python authorities; Python writes `__pycache__/` | v1.229.4 | v1.229.4 artifact |
+| SLSA builder (`nftban-core`) | `builder_go_slsa3.yml` runs `go mod vendor` in the project checkout before compiling | v1.229.6 | v1.229.6 artifact |
+
+Both directories are ignored, so neither tool dirties the tree it is about to have stamped.
+
+As of v1.229.6, every declared shipped Go binary is checked **before publication**: the
+embedded compiler must be the `go.mod` toolchain and `vcs.modified` must be `false`. Metadata
+that cannot be read is a failure, not a skip. The check reads embedded build information; it
+does not execute the binary.
+
+You can observe the same values on any published binary without running it:
+
+```bash
+grep -aoE 'go1\.[0-9.]+' nftban-core-linux-amd64 | sort -u
+grep -aoE 'vcs\.(modified|revision)=[^[:space:]]*' nftban-core-linux-amd64 | sort -u
+```
