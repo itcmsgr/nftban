@@ -34,6 +34,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/itcmsgr/nftban/internal/bansource"
 	"log"
 	"net"
 	"os"
@@ -207,21 +208,37 @@ func (b *Backend) ensureNetlink() error {
 	return nil
 }
 
-// isManualSource returns true if the source routes to hash sets (manual/auto-detect)
-func isManualSource(source string) bool {
-	switch source {
-	case "manual", "cli", "login", "portscan", "portscan-classic", "portscan-suricata",
-		"ddos", "ddos-classic", "ddos-suricata", "suricata", "persistent":
-		return true
-	default:
+// storageIsReplaceManaged reports whether a ban belongs in the INTERVAL sets that
+// bulk synchronisation (feeds / geoban / blacklist.d CIDRs) flushes and
+// repopulates wholesale.
+//
+// ⛔ v1.229.13 LANE-BST. This replaced isManualSource(), an EXACT-MATCH switch over
+// a legacy shell vocabulary (it knew "login", "login-monitor", "nftban-sshd" —
+// labels no current producer emits — and did not know "loginmon", "botguard",
+// "botscan", "portscan-aggregate", or any per-service login name). Everything it
+// failed to match defaulted to the interval sets, so those detector bans were
+// erased by the next feed sync.
+//
+// Routing now consumes a KIND from the canonical authority. The raw source string
+// is preserved untouched as provenance for the ban log, metrics and the on-disk
+// source index — it simply no longer decides storage.
+func storageIsReplaceManaged(source string, origin bansource.Origin) bool {
+	kind := bansource.Resolve(source, origin)
+	if kind == bansource.Unclassified {
+		// ⛔ FAIL-SAFE, NOT A CLASSIFICATION. An unrecognised label with no producer
+		// context has no lifecycle, and this layer must not invent one. We therefore
+		// pick the NON-DESTRUCTIVE side: hash storage, which bulk sync never touches.
+		// Getting this wrong the other way loses enforcement silently, which is the
+		// exact defect this lane removes. The caller should supply an Origin.
 		return false
 	}
+	return bansource.UsesReplaceManagedStorage(kind)
 }
 
 // getBlacklistSetForSource returns the appropriate set based on source + IP family
 // v1.33.0: Manual/auto-detect sources → hash set, feeds/geoban → interval set
 // v1.39.0: CIDRs always route to interval set (hash sets don't support ranges)
-func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set, string, bool, error) {
+func (b *Backend) getBlacklistSetForSource(ipStr, source string, origin bansource.Origin) (*nftables.Set, string, bool, error) {
 	ip := net.ParseIP(ipStr)
 	isIPv6 := false
 	isCIDR := strings.Contains(ipStr, "/")
@@ -233,7 +250,8 @@ func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set,
 	}
 
 	// v1.39.0: CIDRs must use interval sets (hash sets don't support ranges)
-	manual := isManualSource(source) && !isCIDR
+	// CIDRs always need interval storage regardless of Kind — hash sets cannot hold ranges.
+	manual := !storageIsReplaceManaged(source, origin) && !isCIDR
 
 	if isIPv6 {
 		if manual {
@@ -266,7 +284,13 @@ type BanRequest struct {
 	IP      string
 	Timeout int // seconds, 0 = permanent
 	Reason  string
-	Source  string
+	// Source is PROVENANCE ONLY — it is recorded in the ban log, metrics and the
+	// source index, and must never decide storage. Origin decides storage.
+	Source string
+	// Origin is the PRODUCER CONTEXT (v1.229.13 LANE-BST). The producer knows what
+	// it is; a string table can only guess. Zero value is OriginUnspecified, which
+	// falls back to label inference for legacy callers.
+	Origin bansource.Origin
 }
 
 // BanResult contains the result of a ban operation
@@ -348,7 +372,7 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 	if source == "" {
 		source = "manual"
 	}
-	set, setName, isIPv6, err := b.getBlacklistSetForSource(req.IP, source)
+	set, setName, isIPv6, err := b.getBlacklistSetForSource(req.IP, source, req.Origin)
 	if err != nil {
 		b.stats.Errors++
 		b.stats.LastError = err.Error()
