@@ -730,9 +730,9 @@ fi
 
 # DDoS: uses connection limit (ct count equivalent)
 if _has 'CONN_LIMIT|conn_limit' "$DDOS_CLASSIC"; then
-    check "DDoS classic uses connection limits per IP" 0
+    check "DDoS classic declares connection limits (host-wide ct count)" 0
 else
-    check "DDoS classic uses connection limits per IP" 1
+    check "DDoS classic declares connection limits (host-wide ct count)" 1
 fi
 
 # DDoS config: meter names declared

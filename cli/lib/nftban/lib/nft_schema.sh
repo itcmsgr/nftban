@@ -122,10 +122,10 @@ declare -g -A NFTBAN_IPV4_SETS=(
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
     ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
 
-    # SSH brute-force rate-limit ports (v1.145 PR-A — set-driven ct-count dport)
-    # The input chain's brute-force rule reads `tcp dport @ssh_ports ct count`,
+    # SSH concurrent-connection-cap ports (v1.145 PR-A — set-driven ct-count dport)
+    # The input chain's cap rule reads `tcp dport @ssh_ports ct count`,
     # so this set must exist alongside tcp_ports_in for the base ruleset to load.
-    ["ssh_ports"]="inet_service||SSH ports for set-driven brute-force rate-limit"
+    ["ssh_ports"]="inet_service||SSH ports for the set-driven concurrent-connection cap"
 
     # HTTP Bot Guard sets (v1.21.4 — always in base schema, empty when disabled)
     ["http_bot_suspect"]="ipv4_addr|timeout|Kernel-populated HTTP bot suspects"
@@ -192,10 +192,10 @@ declare -g -A NFTBAN_IPV6_SETS=(
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
     ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
 
-    # SSH brute-force rate-limit ports (v1.145 PR-A — set-driven ct-count dport)
-    # The input chain's brute-force rule reads `tcp dport @ssh_ports ct count`,
+    # SSH concurrent-connection-cap ports (v1.145 PR-A — set-driven ct-count dport)
+    # The input chain's cap rule reads `tcp dport @ssh_ports ct count`,
     # so this set must exist alongside tcp_ports_in for the base ruleset to load.
-    ["ssh_ports"]="inet_service||SSH ports for set-driven brute-force rate-limit"
+    ["ssh_ports"]="inet_service||SSH ports for the set-driven concurrent-connection cap"
 
     # HTTP Bot Guard sets (v1.21.4 — always in base schema, empty when disabled)
     ["http_bot_suspect6"]="ipv6_addr|timeout|Kernel-populated HTTP bot suspects"
@@ -286,19 +286,25 @@ declare -g -A NFTBAN_IPTABLES_NFT_TABLES=(
 # Connection tracking and rate limiting are ESSENTIAL for DDoS protection.
 # These limits should be applied in the input chain BEFORE service rules.
 #
-# CT LIMITS (per source IP):
-# ---------------------------
-# Purpose: Limit concurrent connections per IP to prevent resource exhaustion
+# CT LIMITS (host-wide, NOT per source IP):
+# -----------------------------------------
+# Purpose: cap the number of concurrent connections to a service.
+# A bare `ct count over N` carries no `ip saddr` key, so the count is shared
+# across every source matching the rule: one busy source can consume the whole
+# allowance and every other source is then dropped. ESTABLISHED connections
+# count toward the cap. Exceeding it DROPs the packet — no log, no event, no
+# detector input, so a CT limit never produces a ban. Only a keyed
+# `meter { ip saddr ct count ... }` would be per-source; NFTBan ships none.
 #
 # Example rules for input chain:
 #   ct state new tcp dport @tcp_ports_in \
 #     meter syn_flood { ip saddr limit rate 100/second burst 200 } accept
 #
 #   ct state new tcp dport 22 \
-#     ct count over 5 drop comment "SSH: max 5 concurrent connections per IP"
+#     ct count over 5 drop comment "SSH: max 5 concurrent (host-wide, not per IP)"
 #
 #   ct state new tcp dport { 80, 443 } \
-#     ct count over 50 drop comment "HTTP(S): max 50 concurrent connections per IP"
+#     ct count over 50 drop comment "HTTP(S): max 50 concurrent (host-wide, not per IP)"
 #
 # RATE LIMITS (connection rate per IP):
 # --------------------------------------
@@ -1488,10 +1494,10 @@ export -f nftban_nft_report_status
 #       log prefix "nftban: portscan: "
 #
 #     ct state new tcp dport 22 ct count over 5 drop \
-#       comment "SSH: max 5 concurrent NEW conns (host-wide, not per IP)"
+#       comment "SSH: max 5 concurrent (host-wide, not per IP)"
 #
 #     ct state new tcp dport { 80, 443 } ct count over 50 drop \
-#       comment "HTTP(S): max 50 concurrent NEW conns (host-wide, not per IP)"
+#       comment "HTTP(S): max 50 concurrent (host-wide, not per IP)"
 #
 #     # 9. TCP SERVICES (with ct limits applied above)
 #     tcp dport @tcp_ports_in accept comment "TCP services"

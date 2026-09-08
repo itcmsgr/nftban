@@ -36,7 +36,7 @@
 # - Top CPU/Memory Processes (from /proc/[pid]/*)
 #
 # **What OTHER Modules Handle (we don't touch these)**
-# - Connection per IP: nftban_ddos_classic.sh
+# - Concurrent-connection caps (host-wide, not per IP): nftban_ddos_classic.sh
 # - Ban rate alerts: nftban_stats.sh
 # - Service health: nftban_health.sh
 # =============================================================================

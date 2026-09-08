@@ -493,7 +493,7 @@
     "DDOS_CLASSIC_HTTPS_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "100",
+      "default": "200",
       "description": "D C H C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -503,7 +503,7 @@
     "DDOS_CLASSIC_HTTP_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "100",
+      "default": "200",
       "description": "D C H C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -643,7 +643,7 @@
     "DDOS_CLASSIC_SMTP_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "20",
+      "default": "30",
       "description": "D C S C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -653,7 +653,7 @@
     "DDOS_CLASSIC_SSH_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "10",
+      "default": "15",
       "description": "D C S C L",
       "introduced_in": "1.0.0",
       "category": "modules",

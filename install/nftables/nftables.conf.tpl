@@ -46,7 +46,7 @@
 #   4. blacklist drop      <- BEFORE established (CVE protection)
 #   5. ct state established,related accept
 #   6. ICMP/ICMPv6 essentials
-#   7. CT limits (DDoS protection)
+#   7. CT limits (shared concurrent-connection caps, DROP)
 #   8. Service ports
 #   9. Default deny (policy drop)
 #
@@ -67,6 +67,14 @@
 #   __CT_LIMIT_SSH__   default: 15 (or DDoS SSH limit when DDoS active)
 #   __CT_LIMIT_HTTP__  default: 200 (or DDoS HTTP limit when DDoS active)
 #   __CT_LIMIT_MAIL__  default: 30  (or DDoS SMTP limit when DDoS active)
+#
+#   SCOPE: each of these rules is a bare `ct count over N` with NO `ip saddr`
+#   key, so the count is HOST-WIDE across the matched service population, not
+#   per source IP. ESTABLISHED connections count toward it. Over the cap the
+#   action is a silent DROP: no log, no event, no detector input, so a CT limit
+#   never produces a ban. One busy source can consume the whole allowance and
+#   every other source is then dropped. (v1.229.13 A02-2 — wording only; the
+#   thresholds and the rules themselves are unchanged.)
 #
 #   v1.49.0 FIX-F: Base limits were dead when DDoS module active because
 #   DDoS helper chain had stricter limits (SSH:10 vs base:15). Now both
@@ -132,14 +140,14 @@ table ip nftban {
         elements = { __SSH_PORT__, 80, 443 }
     }
 
-    # v1.145 PR-A: set-driven SSH brute-force rate-limit (closes Gap 2).
+    # v1.145 PR-A: set-driven SSH concurrent-connection cap (closes Gap 2).
     # The ct-count SSH rule below now reads dport from @ssh_ports instead of
     # a hardcoded __SSH_PORT__ literal, so a single atomic set update covers
-    # both the allow-set (tcp_ports_in) and the rate-limit dport without a
+    # both the allow-set (tcp_ports_in) and the cap dport without a
     # full ruleset reload.
     set ssh_ports {
         type inet_service
-        comment "SSH ports for set-driven brute-force rate-limit"
+        comment "SSH ports for the set-driven concurrent-connection cap"
         elements = { __SSH_PORT__ }
     }
 
@@ -439,10 +447,15 @@ table ip nftban {
         # ── Phase 4: DETECT ───────────────────────────────────────
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
 
-        # 6. CT LIMITS - DDoS protection (per source IP limits)
-        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent NEW conns (host-wide, not per IP) — v1.145 PR-A set-driven"
-        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent NEW conns (host-wide, not per IP)"
-        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent NEW conns (host-wide, not per IP)"
+        # 6. CT LIMITS - shared concurrent-connection caps (DROP)
+        # Bare `ct count over N`, no `ip saddr` key: the count is HOST-WIDE
+        # across the matched service, not per source IP, and ESTABLISHED
+        # connections count toward it. Over the cap the packet is dropped
+        # silently — no log, no event, no ban. One busy source can consume
+        # the whole allowance. (v1.229.13 A02-2 — wording only.)
+        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent (host-wide, not per IP) — v1.145 PR-A set-driven"
+        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent (host-wide, not per IP)"
+        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent (host-wide, not per IP)"
 
         # 7. SYN RATE LIMIT - Portscan detection (per source IP)
         # v1.46.0 FIX-B: Two-rule pattern — accept within limit, log+drop exceeded
@@ -540,10 +553,10 @@ table ip6 nftban {
         elements = { __SSH_PORT__, 80, 443 }
     }
 
-    # v1.145 PR-A: set-driven SSH brute-force rate-limit (v6 — closes Gap 2).
+    # v1.145 PR-A: set-driven SSH concurrent-connection cap (v6 — closes Gap 2).
     set ssh_ports {
         type inet_service
-        comment "SSH ports for set-driven brute-force rate-limit (v6)"
+        comment "SSH ports for the set-driven concurrent-connection cap (v6)"
         elements = { __SSH_PORT__ }
     }
 
@@ -855,10 +868,15 @@ table ip6 nftban {
         # ── Phase 4: DETECT ───────────────────────────────────────
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
 
-        # 6. CT LIMITS - DDoS protection (per source IP limits)
-        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent NEW conns (host-wide, not per IP) — v1.145 PR-A set-driven"
-        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent NEW conns (host-wide, not per IP)"
-        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent NEW conns (host-wide, not per IP)"
+        # 6. CT LIMITS - shared concurrent-connection caps (DROP)
+        # Bare `ct count over N`, no `ip saddr` key: the count is HOST-WIDE
+        # across the matched service, not per source IP, and ESTABLISHED
+        # connections count toward it. Over the cap the packet is dropped
+        # silently — no log, no event, no ban. One busy source can consume
+        # the whole allowance. (v1.229.13 A02-2 — wording only.)
+        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent (host-wide, not per IP) — v1.145 PR-A set-driven"
+        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent (host-wide, not per IP)"
+        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent (host-wide, not per IP)"
 
         # 7a. IPv6 /64 PREFIX SYN GATE — anti-address-rotation (v1.67.0)
         # A hostile source rotating addresses within one /64 is caught here
