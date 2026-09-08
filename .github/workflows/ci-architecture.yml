@@ -279,6 +279,25 @@ jobs:
       - name: Check control enforcement (v1.228.8 PR4, BLOCKING)
         run: ./scripts/ci/check-control-enforcement.sh
 
+      # v1.229.13 LANE-BST BLOCKING — the canonical ban-source classification
+      # authority. Detector bans were stored in the replace-managed interval set,
+      # so every feed sync ERASED them (proven on a live host: pre-fix daemon
+      # routed `--source loginmon` into blacklist_ipv4, and the sync's unified
+      # replace wiped it). The fix collapses source->storage routing into one
+      # Resolve() authority; this asserts that authority stays single, that the
+      # superseded isManualSource predicate has not returned, that both known
+      # routers consult it, and that the storage predicate takes a Kind.
+      # It shipped with the fix and had NO workflow consumer, so it enforced
+      # nothing — CONTROL_IMPLEMENTATION IS NOT CONTROL_ENFORCEMENT.
+      - name: Check ban-source classification authority (v1.229.13 LANE-BST, BLOCKING)
+        run: ./scripts/ci/check-ban-source-classification-authority.sh
+
+      # Pre-existing orphan found by the same sweep: a merge-deciding gate that
+      # was only ever run by hand (it is cited as evidence in release-prep
+      # verification blocks). A gate nothing invokes cannot decide a merge.
+      - name: Check runtime placeholder substitution authority (BLOCKING)
+        run: ./scripts/ci/check-placeholder-substitution-authority.sh
+
       # v1.228.7 BLOCKING — VERSION_DATE coherence. The operator-visible Release
       # Date lagged the real release (v1.227.0 shipped 2026-07-24 with
       # VERSION_DATE=2026-07-20; v1.228.6 shipped 2026-08-08 with VERSION_DATE
