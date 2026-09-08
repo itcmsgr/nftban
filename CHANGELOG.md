@@ -11,6 +11,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.14] - 2026-09-08 — rebuild and verification truth
+
+A hotfix for three defects found by the v1.229.13 fleet rollout, all of the same shape: a
+failed or rolled-back rebuild must be **truthful, non-silent, and diagnostically recoverable**.
+No enforcement behaviour changes.
+
+On 2 of 9 production hosts the package upgraded and the boot projection was correct, but the
+rebuild did not commit, so the live kernel kept pre-.12 state. The firewall stayed up and
+durable bans were intact throughout; what failed was the system's account of itself.
+
+### Fixed — verification could report success over a failed install
+
+- **`nftban update verify` returned 6/6 VERIFIED on hosts whose installer had recorded
+  `INSTALL_STATE=FAILED_REBUILD`.** `nftban update` itself was correct — it exited 2 and
+  printed `Install/upgrade FAILED` — but the standalone verification consulted none of that.
+  Its six checks asked whether nftban was present and healthy (table exists, SSH port present,
+  health, daemon active, VERSION *file* matches, invariants); none asked whether the version
+  had actually committed.
+
+  Verification now consults the installer's own persisted terminal verdict. That is the
+  authoritative record rather than a proxy, and it holds for *any* reason a rebuild fails to
+  commit, not only the two seen here. A host carrying a terminal failure state fails
+  verification and is told how to recover.
+
+### Fixed — the rebuild could fail to publish its result and still report success
+
+- **A rebuild that could not publish its transaction record exited 0.** The Go installer
+  establishes `COMMITTED` from exactly one artifact: the per-operation record published under
+  `/run/nftban/rebuild-results`. Both failure paths in the publisher — a failed temporary file
+  and a failed atomic rename — returned success with no record written, and the caller then
+  reported completion on top of a record that did not exist.
+
+  Publication is now part of the contract: if it fails, the operation exits non-zero and says
+  so. The message deliberately does not overstate — at that point the generation is already
+  committed to the kernel, so it reports that the apply may well have succeeded while the
+  installer cannot establish `COMMITTED`, and points at `nftban firewall validate`.
+
+### Added — regression evidence survives the rollback that discards it
+
+- **The observation that explains a rolled-back rebuild was deleted immediately after use.**
+  When a rebuild is classified `REGRESSION`, the post-apply validator state naming the missing
+  module was a temporary file removed as soon as the disposition was computed. The pre-rebuild
+  state survives in the rebuild snapshot; the post state did not — which is why the production
+  regression could not be root-caused. The rollback was correct; the observability was not.
+
+  That state is now preserved under the existing per-run forensic tree
+  (`/var/log/nftban/update-runs/<run_id>/regression-post-validator.json`), carrying the
+  disposition, reason codes, run and operation identifiers, candidate version and the full
+  module attribution. It is **forensic evidence only and never an authority**: nothing consults
+  it to decide whether the firewall is currently committed. A `COMPLETE` rebuild writes no such
+  record, and if preservation itself fails the rollback outcome is unchanged — it warns and
+  continues.
+
+### Known — root cause of the original regression remains open
+
+The trigger that produced the production regression is **not reproducible from configuration**.
+A four-arm matrix over the DDoS and PortScan module combinations rebuilt cleanly in every arm,
+including the exact production topology, and again under installer context and with the daemon
+stopped. The earlier suspicion that a particular module profile caused it is **falsified**. What
+is established: the missing module was DDoS, the classifier's attribution was correct, and the
+rollback was correct. The handle stays open pending recurrence — this release removes the
+observability gap that made it unanswerable, and does not claim to fix the cause.
+
 ## [v1.229.13] - 2026-09-08 — ban durability, boot-projection authority, and claim truth
 
 Two enforcement-correctness fixes and the completion of the firewall boot-projection
