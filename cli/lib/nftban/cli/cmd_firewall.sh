@@ -4172,6 +4172,15 @@ _firewall_rebuild_core() {
     # The invariant is enforced by tools/check-disposition-write-once.sh (CI) and made SAFE
     # at runtime by the result contract: an aborted shell writes no result, and a missing
     # result is FATAL to the installer.
+    # ⛔ v1.229.14: PRESERVE THE POST-APPLY OBSERVATION BEFORE DISCARDING IT.
+    # This mktemp file is the ONLY record of which module was structurally missing after
+    # apply. Deleting it unconditionally is why the v1.229.13 production REGRESSION could not
+    # be root-caused: the rollback was correct, but the decisive evidence was gone.
+    # FORENSIC ONLY — never an authority (see _rebuild_preserve_regression_evidence).
+    if declare -f _rebuild_preserve_regression_evidence >/dev/null 2>&1; then
+        _rebuild_preserve_regression_evidence \
+            "$_post_vjson" "$_disposition" "$_disposition_reasons" "$post_status" || true
+    fi
     rm -f "$_post_vjson" 2>/dev/null || true
     [[ "$quiet" == "false" ]] && echo "    CONTINUATION: $_disposition${_disposition_reasons:+ (${_disposition_reasons})}"
 
@@ -4334,7 +4343,16 @@ _firewall_rebuild_core() {
                 fi
             fi
             # FINAL RECORD — the generation is committed at this point, not merely intended.
-            _rebuild_emit_result "$RD_COMPLETE" "" "false" "true" "NONE"
+            # ⛔ v1.229.14: publication is part of the contract, not a courtesy. The Go
+            # installer establishes COMMITTED from this artifact alone; if it cannot be
+            # published, this operation MUST NOT exit 0, or the caller reads success from a
+            # record that does not exist. The apply itself already succeeded here, so the
+            # message deliberately does not claim otherwise.
+            if ! _rebuild_emit_result "$RD_COMPLETE" "" "false" "true" "NONE"; then
+                echo "  Generation was committed to the kernel, but its transaction record" >&2
+                echo "  could not be published; this operation cannot be reported as complete." >&2
+                return 2
+            fi
             return 0
             ;;
         degraded)

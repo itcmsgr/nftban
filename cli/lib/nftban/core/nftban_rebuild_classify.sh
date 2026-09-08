@@ -468,6 +468,104 @@ readonly REBUILD_RESULT_SCHEMA_VERSION="1"
 # pre_status/post_status are read from the caller's scope (bash dynamic scoping) so the record
 # carries the comparison the disposition was derived from, without duplicating the observation.
 #
+
+
+# =============================================================================
+# REGRESSION FORENSIC EVIDENCE (v1.229.14)
+# =============================================================================
+# ⛔ FORENSIC EVIDENCE ONLY. THIS ARTIFACT IS NOT AN AUTHORITY.
+#     FORENSIC_EVIDENCE        = YES
+#     RUNTIME_AUTHORITY        = NO
+#     INSTALL_STATE_AUTHORITY  = NO
+#     REBUILD_COMMIT_AUTHORITY = NO
+# Nothing may later consult this file to decide whether the firewall is currently committed.
+# `nft list ruleset` is the runtime authority; install_state is the terminal install-transaction
+# record; /run/nftban/rebuild-results is the per-operation transaction contract. This is a
+# post-mortem artifact and must never join that hierarchy.
+#
+# WHY IT EXISTS. v1.229.13 rollout, 2 of 9 hosts: one host classified REGRESSION with reason
+# UNATTRIBUTABLE_ABSENCE:1 and correctly rolled back — but the POST-APPLY validator state that
+# named the missing module was an mktemp file deleted immediately after classification. The PRE
+# state survives in the rebuild snapshot; the POST state did not, so root cause could not be
+# established. The rollback was right; the observability was not.
+#
+# Durable location is the EXISTING per-run forensic tree (/var/log/nftban/update-runs/<run_id>),
+# not a new hierarchy. Ephemeral transaction coordination stays in /run.
+#
+# ⛔ PRESERVATION FAILURE MUST NOT ALTER THE FIREWALL OUTCOME. A rollback that executed
+# correctly stays a correct rollback; if evidence cannot be written we warn and return 0.
+_rebuild_preserve_regression_evidence() {
+    # NOTE: named reason_codes, NOT `reasons` — that identifier is a local ARRAY in
+    # _rebuild_disposition_classify in this same file, and a scalar reuse trips SC2178/SC2128
+    # under the repo gate (shellcheck -x -S warning), which is stricter than -S error.
+    local vjson="${1:-}" disposition="${2:-}" reason_codes="${3:-}" post_status="${4:-}"
+    [[ -n "$vjson" && -s "$vjson" ]] || return 0
+    [[ "$disposition" == "REGRESSION" ]] || return 0     # never for COMPLETE/DEFERRED
+
+    local base="${NFTBAN_LOG_DIR:-/var/log/nftban}/update-runs"
+    local run_id="${NFTBAN_RUN_ID:-}"
+    [[ -n "$run_id" ]] || run_id="rebuild-${_NFTBAN_REBUILD_OPERATION_ID:-unknown}-$(date -u +%Y%m%dT%H%M%SZ)"
+    local dir="$base/$run_id"
+    mkdir -p "$dir" 2>/dev/null || {
+        echo "WARNING: could not create forensic evidence directory $dir — the rollback stands; evidence not preserved." >&2
+        return 0
+    }
+    local out="$dir/regression-post-validator.json" tmp
+    tmp=$(mktemp "${dir}/.eviXXXXXX" 2>/dev/null) || {
+        echo "WARNING: could not stage regression forensic evidence in $dir — the rollback stands; evidence not preserved." >&2
+        return 0
+    }
+    local ver; ver=$(tr -d '[:space:]' < "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null)
+    {
+        printf '{\n'
+        printf '  "artifact": "regression-post-validator",\n'
+        printf '  "authority": "FORENSIC_EVIDENCE_ONLY — never consult to decide current commit state",\n'
+        printf '  "operation_id": "%s",\n' "${_NFTBAN_REBUILD_OPERATION_ID:-}"
+        printf '  "run_id": "%s",\n' "$run_id"
+        printf '  "candidate_version": "%s",\n' "${ver:-unknown}"
+        printf '  "context": "%s",\n' "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}"
+        printf '  "disposition": "%s",\n' "$disposition"
+        printf '  "reason_codes": "%s",\n' "$reason_codes"
+        printf '  "post_status": "%s",\n' "$post_status"
+        printf '  "captured_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '  "post_validator_state": '
+        cat "$vjson" 2>/dev/null || printf 'null'
+        printf '\n}\n'
+    } > "$tmp" 2>/dev/null
+    sync -f "$tmp" 2>/dev/null || sync 2>/dev/null || true
+    mv -f "$tmp" "$out" 2>/dev/null || {
+        rm -f "$tmp" 2>/dev/null
+        echo "WARNING: could not publish regression forensic evidence to $out — the rollback stands; evidence not preserved." >&2
+        return 0
+    }
+    echo "  Regression forensic evidence preserved: $out" >&2
+    return 0
+}
+
+# ⛔ PUBLICATION FAILURE IS NEVER SILENT.
+# v1.229.14. `_rebuild_emit_result` previously swallowed both failure paths with `return 0`:
+# a failed mktemp and a failed rename each produced NO record while the rebuild went on to
+# report success. MEASURED 2026-09-08 on a lab host: with the result path's parent replaced
+# by a regular file (mktemp: "Not a directory"), `nftban firewall rebuild` exited 0 and
+# printed "Final status: IDLE (all checks passed)" while publishing nothing — which the Go
+# installer then reads as "rebuild result missing … the rebuild did not publish a final
+# record". The installer DEPENDS on this artifact; a publisher that cannot publish must not
+# report success.
+#
+# ⛔ AND THE MESSAGE MUST NOT OVERSTATE. If the apply already succeeded, publication failure
+# does NOT mean the firewall failed to apply — the kernel may be entirely correct. Say only
+# what is known: the transaction record could not be published, so COMMITTED cannot be
+# established by the caller.
+_rebuild_result_publish_failed() {
+    local out="${1:-}" why="${2:-unknown}"
+    echo "REBUILD RESULT PUBLICATION FAILED: $why ($out)" >&2
+    echo "  The runtime apply may have SUCCEEDED — this is not evidence that it did not." >&2
+    echo "  What is known: the transaction result record could not be published, so the" >&2
+    echo "  installer cannot establish COMMITTED for this operation." >&2
+    echo "  Verify the live state with: nftban firewall validate" >&2
+    return 0
+}
+
 # _rebuild_emit_result <disposition> <reasons> <rollback_performed> <generation_committed> <retry_reason>
 _rebuild_emit_result() {
     local disposition="${1:-}" reason_list="${2:-}" rollback="${3:-false}"
@@ -476,7 +574,10 @@ _rebuild_emit_result() {
     [[ -n "$out" ]] || return 0                      # not requested -> legacy caller, no-op
     local dir tmp; dir=$(dirname "$out")
     mkdir -p "$dir" 2>/dev/null || true
-    tmp=$(mktemp "${dir}/.result.XXXXXX" 2>/dev/null) || return 0
+    tmp=$(mktemp "${dir}/.result.XXXXXX" 2>/dev/null) || {
+        _rebuild_result_publish_failed "$out" "could not create a temporary file in $dir"
+        return 1
+    }
 
     # reasons is a comma-separated internal list; emit as a JSON array without inventing fields.
     local codes="[]"
@@ -500,6 +601,10 @@ _rebuild_emit_result() {
 JSON
     # fsync-ish: flush before rename so a reader cannot see a truncated record
     sync -f "$tmp" 2>/dev/null || sync 2>/dev/null || true
-    mv -f "$tmp" "$out" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 0; }
+    mv -f "$tmp" "$out" 2>/dev/null || {
+        rm -f "$tmp" 2>/dev/null
+        _rebuild_result_publish_failed "$out" "atomic rename into place failed"
+        return 1
+    }
     return 0
 }
