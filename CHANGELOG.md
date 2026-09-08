@@ -11,6 +11,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.229.13] - 2026-09-08 — ban durability, boot-projection authority, and claim truth
+
+Two enforcement-correctness fixes and the completion of the firewall boot-projection
+authority. Detector-sourced bans no longer disappear on a feed sync, and the ruleset's
+connection-limit rules now say what they actually do.
+
+### Fixed — detector bans did not survive a feed sync
+
+- **A ban applied by a detector was erased by the next feed synchronisation.**
+  Source-to-storage routing was decided independently in two places — `isManualSource`
+  in the nft backend and a parallel `sourceConfigs` map in the operation queue — by
+  string matching, with no single authority and no fail-safe for an unrecognised label.
+  Detector sources fell through to the replace-managed interval set
+  (`blacklist_ipv4` / `blacklist_ipv6`), which the feed sync rebuilds wholesale, so
+  every sync dropped them.
+
+  Measured on a live host: a ban carrying `--source loginmon` was written to
+  `blacklist_ipv4`, and the sync's unified replace removed it. A negative control run
+  on the same binary and the same sync — a ban deliberately forced into the interval
+  set — was likewise erased while hash-set bans survived, in both address families.
+
+  Routing is now derived from one authority, `bansource.Resolve()`. Producers supply a
+  semantic origin (operator / detector / bulk sync) that takes precedence over label
+  matching, so classification no longer depends on which string a producer happened to
+  pass. An unclassified source resolves to durable hash-set storage — a documented
+  fail-safe, not a classification: an unrecognised label is never swept by a sync.
+
+  A second defect closes with it. The CLI verified a ban's presence in a different set
+  than the daemon had written to, so a ban that *was* in force reported
+  "ENFORCEMENT COULD NOT BE VERIFIED". Verification and enforcement now consult the
+  same target.
+
+### Fixed — SSH authentication-failure detection
+
+- **Modern OpenSSH pre-authentication failures were not detected.** The `Too many
+  authentication failures` matcher still required a trailing `from ` field that current
+  OpenSSH no longer emits, and there was no matcher at all for `maximum authentication
+  attempts exceeded` or for pre-auth `authenticating user` disconnects. Those lines are
+  the ones a key-based brute force actually produces on an EL host with
+  `PasswordAuthentication no`. All three are now matched.
+
+### Changed — firewall boot authority
+
+- **Boot-time enforcement is published to one generated artifact.** The authority moved
+  from the operator-visible `/etc/nftban/nftables.conf` to
+  `/etc/nftban/generated/nftban-boot.nft`, rendered by a single runtime substitution
+  authority and consumed through a managed include. The readiness interlock, the SELinux
+  file-context label for the new path, and the publication/label guards land with it.
+
+  `nftban firewall autoheal` no longer rewrites the boot include: it previously wrote a
+  hardcoded legacy include and restarted nftables, silently reverting the boot authority
+  it was meant to repair. It now detects and reports that condition instead.
+
+### Fixed — connection-limit claims
+
+- **The shipped text described `ct count` as per-source protection; it is not.** A bare
+  `ct count over N` carries no `ip saddr` key, so the count is host-wide across the
+  matched service population — one busy source can consume the whole allowance and every
+  other source is then dropped. Established connections count toward it, and exceeding it
+  drops the packet with no log, no event and no detector input, so it can never produce a
+  ban. Only a keyed `meter { ip saddr ct count … }` is per-source, and none is shipped.
+
+  Comments, help text, generated config headers and operator documentation are corrected
+  across the four nft artifacts and the schema registry, and stale limit values are
+  reconciled to the enforced 15 (SSH) / 200 (HTTP) / 30 (MAIL). **No `ct count` value,
+  rule or threshold changed** — this corrects the description, not the enforcement.
+
+  A divergent copy of the configuration schema carried SSH 10 / HTTP 100 / HTTPS 100 /
+  SMTP 20, none of which matched any enforced value; it is reconciled to 15 / 200 / 200 / 30.
+
+### Fixed — reporting and verdict truth
+
+- **The Zabbix exporter dropped the last word of every multi-word string.**
+- **Module re-apply warned on success and stayed silent on failure** — the warning
+  precedence was inverted.
+- **Release totals in `nftban stats` were ordered lexically**, so v1.229.10 sorted before
+  v1.229.9. They are ordered semantically.
+
+### Performance
+
+- Firewall predicates that copied the entire ruleset to answer a single boolean question
+  now read a bounded prefix. The payload they were copying is unbounded by declaration,
+  not merely large in practice; a guard blocks reintroduction.
+
+### Internal — CI and tests
+
+- Two merge-deciding guards had no workflow consumer and enforced nothing: the ban-source
+  classification authority guard (shipped inert with its own fix) and the runtime
+  placeholder-substitution guard (run by hand, its result reported as though a gate had
+  passed). Both are now wired. `check-control-enforcement.sh` covers only the v1.228.8
+  controls by design, which is how they were missed.
+- A CIDR-merge test coupled correctness to absolute CPU speed and is decoupled from wall
+  clock. DirectAdmin CSF transition boundaries are frozen by test.
+- GitHub Actions dependency updates are throttled without weakening Go CVE response.
+
+### Documentation
+
+- Architecture, schema-ownership, support-evidence and current-state documentation are
+  reconciled with the shipped code. Internal host names and gate tracking are removed from
+  shipped documentation. `.claude/CLAUDE.md` derives the current version instead of
+  hard-coding a value that had gone stale (it read v1.195.0 against a VERSION of 1.229.12).
+
 ## [v1.229.12] - 2026-08-31 — reliability, recovery, and release-safety fixes
 
 Installer verdict correctness, recovery truth, and evidence recovery. The
