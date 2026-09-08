@@ -1637,6 +1637,26 @@ _cmd_update_verify() {
         _vf_check "Invariant validator: nftban command not available" "FAIL"
     fi
 
+    # VF7: THE INSTALLER'S OWN VERDICT.
+    # v1.229.14. Observed on 2 of 9 production hosts during the v1.229.13 rollout: the
+    # installer wrote INSTALL_STATE=FAILED_REBUILD / INSTALL_VERIFIED=NO and `nftban update`
+    # correctly exited 2 — yet THIS verifier reported 6/6 VERIFIED, because not one check
+    # consulted the record the installer had just written. A verifier that ignores the
+    # authority's own terminal verdict is not verifying; it is guessing and agreeing.
+    local _vf_state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
+    if [[ -f "$_vf_state_file" ]]; then
+        local _vf_istate
+        _vf_istate=$(grep -m1 '^INSTALL_STATE=' "$_vf_state_file" 2>/dev/null | cut -d= -f2- || true)
+        case "$_vf_istate" in
+            COMMITTED|"")
+                _vf_check "installer verdict: ${_vf_istate:-none recorded} (no terminal failure)" "PASS" ;;
+            *)
+                _vf_check "installer verdict: $_vf_istate — the installer did NOT commit this version. Recover with: nftban firewall rebuild   (then re-run this verification)" "FAIL" ;;
+        esac
+    else
+        _vf_check "installer verdict: no state file (older install)" "PASS"
+    fi
+
     # Summary
     echo ""
     echo "  Result: ${_vf_pass}/${_vf_count} checks passed"
