@@ -59,12 +59,18 @@ for rel in "${ROUTERS[@]}"; do
     f="$ROOT/$rel"
     if [[ ! -f "$f" ]]; then bad "known routing site missing: $rel"; continue; fi
     body=$(strip_go_comments "$f")
-    if [[ "$(printf '%s' "$body" | grep -c 'bansource\.' || true)" -gt 0 ]]; then
-        ok "$rel consults the canonical authority"
+    # Require an actual CALL into the authority, not merely a reference to the
+    # package. MEASURED 2026-09-08: the earlier `grep -c 'bansource\.'` form passed a
+    # router whose every Resolve() call had been removed but which still carried one
+    # `bansource.Origin` type reference — i.e. it asserted "imports the package", not
+    # "routes through it", and would have gone green on the exact regression it exists
+    # to prevent. Both known routers call bansource.Resolve( exactly once today.
+    if [[ "$(printf '%s' "$body" | grep -c 'bansource\.Resolve(' || true)" -gt 0 ]]; then
+        ok "$rel routes through the canonical authority (calls bansource.Resolve)"
     else
-        bad "$rel selects blacklist storage WITHOUT consulting internal/bansource — \
+        bad "$rel selects blacklist storage WITHOUT calling bansource.Resolve() — \
 a second routing table is how detector bans were routed into the feed-owned interval \
-sets and erased by feed sync"
+sets and erased by feed sync. A type reference to the package is NOT routing through it."
     fi
 done
 
