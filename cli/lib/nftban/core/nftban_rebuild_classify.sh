@@ -495,7 +495,10 @@ readonly REBUILD_RESULT_SCHEMA_VERSION="1"
 # ⛔ PRESERVATION FAILURE MUST NOT ALTER THE FIREWALL OUTCOME. A rollback that executed
 # correctly stays a correct rollback; if evidence cannot be written we warn and return 0.
 _rebuild_preserve_regression_evidence() {
-    local vjson="${1:-}" disposition="${2:-}" reasons="${3:-}" post_status="${4:-}"
+    # NOTE: named reason_codes, NOT `reasons` — that identifier is a local ARRAY in
+    # _rebuild_disposition_classify in this same file, and a scalar reuse trips SC2178/SC2128
+    # under the repo gate (shellcheck -x -S warning), which is stricter than -S error.
+    local vjson="${1:-}" disposition="${2:-}" reason_codes="${3:-}" post_status="${4:-}"
     [[ -n "$vjson" && -s "$vjson" ]] || return 0
     [[ "$disposition" == "REGRESSION" ]] || return 0     # never for COMPLETE/DEFERRED
 
@@ -522,7 +525,7 @@ _rebuild_preserve_regression_evidence() {
         printf '  "candidate_version": "%s",\n' "${ver:-unknown}"
         printf '  "context": "%s",\n' "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}"
         printf '  "disposition": "%s",\n' "$disposition"
-        printf '  "reason_codes": "%s",\n' "$reasons"
+        printf '  "reason_codes": "%s",\n' "$reason_codes"
         printf '  "post_status": "%s",\n' "$post_status"
         printf '  "captured_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         printf '  "post_validator_state": '
