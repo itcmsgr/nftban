@@ -4334,7 +4334,16 @@ _firewall_rebuild_core() {
                 fi
             fi
             # FINAL RECORD — the generation is committed at this point, not merely intended.
-            _rebuild_emit_result "$RD_COMPLETE" "" "false" "true" "NONE"
+            # ⛔ v1.229.14: publication is part of the contract, not a courtesy. The Go
+            # installer establishes COMMITTED from this artifact alone; if it cannot be
+            # published, this operation MUST NOT exit 0, or the caller reads success from a
+            # record that does not exist. The apply itself already succeeded here, so the
+            # message deliberately does not claim otherwise.
+            if ! _rebuild_emit_result "$RD_COMPLETE" "" "false" "true" "NONE"; then
+                echo "  Generation was committed to the kernel, but its transaction record" >&2
+                echo "  could not be published; this operation cannot be reported as complete." >&2
+                return 2
+            fi
             return 0
             ;;
         degraded)

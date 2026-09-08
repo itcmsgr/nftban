@@ -468,6 +468,31 @@ readonly REBUILD_RESULT_SCHEMA_VERSION="1"
 # pre_status/post_status are read from the caller's scope (bash dynamic scoping) so the record
 # carries the comparison the disposition was derived from, without duplicating the observation.
 #
+
+# ⛔ PUBLICATION FAILURE IS NEVER SILENT.
+# v1.229.14. `_rebuild_emit_result` previously swallowed both failure paths with `return 0`:
+# a failed mktemp and a failed rename each produced NO record while the rebuild went on to
+# report success. MEASURED 2026-09-08 on a lab host: with the result path's parent replaced
+# by a regular file (mktemp: "Not a directory"), `nftban firewall rebuild` exited 0 and
+# printed "Final status: IDLE (all checks passed)" while publishing nothing — which the Go
+# installer then reads as "rebuild result missing … the rebuild did not publish a final
+# record". The installer DEPENDS on this artifact; a publisher that cannot publish must not
+# report success.
+#
+# ⛔ AND THE MESSAGE MUST NOT OVERSTATE. If the apply already succeeded, publication failure
+# does NOT mean the firewall failed to apply — the kernel may be entirely correct. Say only
+# what is known: the transaction record could not be published, so COMMITTED cannot be
+# established by the caller.
+_rebuild_result_publish_failed() {
+    local out="${1:-}" why="${2:-unknown}"
+    echo "REBUILD RESULT PUBLICATION FAILED: $why ($out)" >&2
+    echo "  The runtime apply may have SUCCEEDED — this is not evidence that it did not." >&2
+    echo "  What is known: the transaction result record could not be published, so the" >&2
+    echo "  installer cannot establish COMMITTED for this operation." >&2
+    echo "  Verify the live state with: nftban firewall validate" >&2
+    return 0
+}
+
 # _rebuild_emit_result <disposition> <reasons> <rollback_performed> <generation_committed> <retry_reason>
 _rebuild_emit_result() {
     local disposition="${1:-}" reason_list="${2:-}" rollback="${3:-false}"
@@ -476,7 +501,10 @@ _rebuild_emit_result() {
     [[ -n "$out" ]] || return 0                      # not requested -> legacy caller, no-op
     local dir tmp; dir=$(dirname "$out")
     mkdir -p "$dir" 2>/dev/null || true
-    tmp=$(mktemp "${dir}/.result.XXXXXX" 2>/dev/null) || return 0
+    tmp=$(mktemp "${dir}/.result.XXXXXX" 2>/dev/null) || {
+        _rebuild_result_publish_failed "$out" "could not create a temporary file in $dir"
+        return 1
+    }
 
     # reasons is a comma-separated internal list; emit as a JSON array without inventing fields.
     local codes="[]"
@@ -500,6 +528,10 @@ _rebuild_emit_result() {
 JSON
     # fsync-ish: flush before rename so a reader cannot see a truncated record
     sync -f "$tmp" 2>/dev/null || sync 2>/dev/null || true
-    mv -f "$tmp" "$out" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 0; }
+    mv -f "$tmp" "$out" 2>/dev/null || {
+        rm -f "$tmp" 2>/dev/null
+        _rebuild_result_publish_failed "$out" "atomic rename into place failed"
+        return 1
+    }
     return 0
 }
