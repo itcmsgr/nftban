@@ -183,9 +183,23 @@ jobs:
       # defect in a subsystem whose tests do not run is inert, and "test file
       # added" is explicitly insufficient under the R0 spec.
       #
-      # fhs_lane_v175_test.sh is deliberately NOT wired here: despite the
-      # name it guards the FHS install layout, not the FHS report. Different
-      # subsystem, different owner.
+      # CENSUS RECONCILIATION - 10 vs 9. The reporting audit's census counted TEN
+      # tests; NINE are wired here. The difference is named, not rounded off:
+      #
+      #   original census                10
+      #   enforceable reporting population 9
+      #   difference                       fhs_lane_v175_test.sh
+      #   classification                   MISCLASSIFIED BY THE CENSUS
+      #
+      # It was swept in by a filename match on "fhs". Its subject is the FHS
+      # INSTALL LAYOUT, not the FHS REPORT: it locks tmpfiles.d ownership and the
+      # systemd-tmpfiles "unsafe path transition" / exit-73 class, and it contains
+      # zero references to any report generator. It is already registered in
+      # scripts/ci/test-authority-index.tsv, so it has an owner -- wiring it here
+      # would claim another lane's subject under a reporting gate.
+      #
+      # Not removed, not renamed, not non-hermetic, not duplicate. The census was
+      # wrong; the population is 9.
       # ------------------------------------------------------------------
       - name: Reporting - writer truth and output validation (v1.228.5)
         run: |
