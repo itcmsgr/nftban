@@ -124,10 +124,10 @@
             background-color: #6c757d;
             color: #fff;
         }
-        /* v1.229.15: a module's enabled state is not currently determinable from
-           this report's subject (shell source files carrying meta: tags). An
-           undetermined state renders as UNKNOWN rather than as a confirmed
-           DISABLED, which is what this column previously showed for every row. */
+        /* v1.229.15: this column is CONFIGURATION state, not runtime health. It
+           reports what the authoritative module configuration says, and UNKNOWN
+           when that could not be established. ENABLED never means running or
+           healthy, and a collection failure never renders as DISABLED. */
         .badge-unknown {
             background-color: #f0ad4e;
             color: #1a1a1a;
@@ -252,7 +252,7 @@
                     <th>Module Name</th>
                     <th>Version</th>
                     <th>Type</th>
-                    <th>Status</th>
+                    <th>Configured</th>
                     <th>Created</th>
                     <th>Path</th>
                     <th>Dependencies</th>

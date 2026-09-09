@@ -776,6 +776,42 @@ nftban_module_render_detailed() {
 # HTML REPORT GENERATION
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# _nftban_module_configured_state <module-name> -> ENABLED | DISABLED | UNKNOWN
+#
+# Configuration state ONLY. This deliberately does not consult the filesystem,
+# process table or systemd: this report's subject is shell source files, and an
+# executable bit is not an enablement decision.
+#
+# nftban_module_effective_enabled is the single authority. It returns 0 enabled,
+# 1 disabled, 2 for a module outside its population. Its coverage is partial
+# (see P12-A04), so most scanned files legitimately resolve UNKNOWN -- which is
+# the honest answer, not a defect of this function.
+#
+# ⛔ EVERY failure path resolves UNKNOWN. An absent authority, an unreadable
+#    config or an unrecognised module must never render as DISABLED: that would
+#    present a failed observation as a configuration decision the operator made.
+# -----------------------------------------------------------------------------
+_nftban_module_configured_state() {
+    local module="${1:-}"
+    [[ -n "$module" ]] || { printf 'UNKNOWN\n'; return 0; }
+
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+        local _auth="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh"
+        # shellcheck source=/dev/null
+        [[ -r "$_auth" ]] && source "$_auth" >/dev/null 2>&1 || true
+    fi
+    declare -F nftban_module_effective_enabled >/dev/null 2>&1 || { printf 'UNKNOWN\n'; return 0; }
+
+    local rc=0
+    nftban_module_effective_enabled "$module" >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+        0) printf 'ENABLED\n'  ;;
+        1) printf 'DISABLED\n' ;;
+        *) printf 'UNKNOWN\n'  ;;
+    esac
+}
+
 nftban_module_generate_html_report() {
     # Generate HTML report from module data
     # Returns: Path to generated HTML file
@@ -806,11 +842,9 @@ nftban_module_generate_html_report() {
 
     # Calculate statistics
     local total_modules=${#NFTBAN_MODULE_INVENTORY[@]}
-    # v1.229.15: see the status-badge note below. Enabled/disabled cannot be
-    # determined for this report's subject, so the KPI cards say so rather than
-    # reporting a count of zero, which would read as a measurement.
-    local enabled_modules="n/a"
-    local disabled_modules="n/a"
+    local enabled_modules=0
+    local disabled_modules=0
+    local unknown_modules=0
     local core_modules=0
 
     # v1.229.15: the inventory tuple written at nftban_module_scan carries EIGHT
@@ -825,6 +859,15 @@ nftban_module_generate_html_report() {
         local info="${NFTBAN_MODULE_INVENTORY[$module_path]}"
         IFS='|' read -r name version type created depends owner homepage description <<< "$info"
 
+        # Counted from the same three-valued authority the rows render, so the KPI
+        # cards and the table can never disagree. UNKNOWN is counted as UNKNOWN --
+        # it is not folded into disabled, which would turn an unestablished state
+        # into a reported operator decision.
+        case "$(_nftban_module_configured_state "$name")" in
+            ENABLED)  enabled_modules=$((enabled_modules + 1))  ;;
+            DISABLED) disabled_modules=$((disabled_modules + 1)) ;;
+            *)        unknown_modules=$((unknown_modules + 1))   ;;
+        esac
         [[ "$type" == "core" ]] && core_modules=$((core_modules + 1)) || true
     done
 
@@ -837,26 +880,23 @@ nftban_module_generate_html_report() {
         # Type badge
         local type_badge="<span class=\"badge badge-${type}\">${type}</span>"
 
-        # v1.229.15: this column previously rendered DISABLED for every module,
-        # including healthy core ones, because it tested a variable that held a
-        # date. It is NOT corrected to ENABLED here.
-        #
-        # nftban_module_check_enabled -- which the terminal renderer calls -- does
-        # not determine enablement either: it returns ENABLED when the file is
-        # executable or when its path matches /core/, /cli/, /lib/, /helpers/,
-        # /cron/, /setup/ or /exporters/, which is nearly every shipped file.
-        # Wiring it in would replace one wrong constant with another.
-        #
-        # The subject of this report is SHELL SOURCE FILES carrying meta: tags,
-        # and a shell file has no enabled/disabled state; the column measures a
-        # property that does not exist for its subject. Whether to drop it, rename
-        # it to what it can actually observe, or define a real oracle is an open
-        # decision recorded against
-        # BUG-REPORT-MODULE-HTML-TUPLE-ARITY-FORCES-DISABLED.
-        #
-        # Until that is decided the honest rendering is UNKNOWN. A failed or
-        # absent determination must not be presented as a confirmed state.
-        local status_badge="<span class=\"badge badge-unknown\">UNKNOWN</span>"
+        # v1.229.15: CONFIGURED state, not runtime health. Contract:
+        #   ENABLED   the authoritative module configuration says enabled
+        #   DISABLED  the authoritative module configuration says disabled
+        #   UNKNOWN   configuration state could not be established
+        # ENABLED never means running or healthy, and a collection failure -- an
+        # unreadable config, a missing authority, a module outside the authority's
+        # population -- resolves to UNKNOWN, never to DISABLED. This column
+        # previously rendered DISABLED for every module including healthy core ones,
+        # because it tested a variable that held a date.
+        local configured_state
+        configured_state="$(_nftban_module_configured_state "$name")"
+        local status_badge
+        case "$configured_state" in
+            ENABLED)  status_badge="<span class=\"badge badge-enabled\">ENABLED</span>" ;;
+            DISABLED) status_badge="<span class=\"badge badge-disabled\">DISABLED</span>" ;;
+            *)        status_badge="<span class=\"badge badge-unknown\">UNKNOWN</span>" ;;
+        esac
 
         table_rows+="                <tr>
                     <td><strong>${name}</strong></td>
@@ -898,6 +938,7 @@ nftban_module_generate_html_report() {
     html_content="${html_content//\{TOTAL_MODULES\}/$total_modules}"
     html_content="${html_content//\{ENABLED_MODULES\}/$enabled_modules}"
     html_content="${html_content//\{DISABLED_MODULES\}/$disabled_modules}"
+    html_content="${html_content//\{UNKNOWN_MODULES\}/$unknown_modules}"
     html_content="${html_content//\{CORE_MODULES\}/$core_modules}"
 
     # Table rows

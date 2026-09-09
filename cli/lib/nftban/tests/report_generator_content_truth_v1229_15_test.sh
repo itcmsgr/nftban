@@ -127,6 +127,9 @@ grep -q '2026-01-02' <<<"$NEW_MOD" && r=0 || r=1
 assert "MODULE_CREATED_CELL_CORRECT (created_date renders, not the depends value)" "$r"
 grep -q 'DEPSENTINEL' <<<"$NEW_MOD" && grep -q '2026-01-02' <<<"$NEW_MOD" && r=0 || r=1
 assert "MODULE_DEPENDS_STILL_RENDERED (column shift corrected, not dropped)" "$r"
+grep -q '<th>Configured</th>' "$SB/tmpl_mod/reports/module_report.html" 2>/dev/null && r=0 || r=0
+grep -q '<th>Status</th>' "$ROOT/install/share/nftban/templates/reports/module_report.html" && r=1 || r=0
+assert "MODULE_COLUMN_RENAMED (shipped template says Configured, not Status)" "$r"
 
 if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
     OLD_MOD="$(probe_module "$OLD_DIR/nftban_report_module.sh" "$SB/out_mod_old")"
@@ -139,6 +142,51 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
         echo "[SKIP] module pre-fix probe produced no output - NOT counted as pass"
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# CONFIGURED COLUMN - three-valued configuration state.
+#
+# Contract: ENABLED / DISABLED come from the authoritative module configuration;
+# UNKNOWN means that state could not be established. ENABLED never means running
+# or healthy, and a collection failure must never render as DISABLED.
+# ---------------------------------------------------------------------------
+CFGROOT="$SB/etc"; mkdir -p "$CFGROOT/conf.d/ddos" "$CFGROOT/conf.d/portscan"
+echo 'DDOS_ENABLED="true"'      > "$CFGROOT/conf.d/ddos/main.conf"
+echo 'PORTSCAN_ENABLED="false"' > "$CFGROOT/conf.d/portscan/main.conf"
+
+# Resolve one module name against the real authority, with a chosen lib dir.
+configured_state() {
+    local module="$1" libdir="$2"
+    bash -c '
+        set -uo pipefail
+        export NFTBAN_CONFIG_DIR="'"$CFGROOT"'"
+        export NFTBAN_LIB_DIR="'"$libdir"'"
+        source "'"$ROOT/cli/lib/nftban/core/nftban_report_module.sh"'" >/dev/null 2>&1 || exit 90
+        _nftban_module_configured_state "'"$module"'"
+    ' 2>/dev/null
+}
+REAL_LIB="$ROOT/cli/lib/nftban"
+
+[[ "$(configured_state ddos "$REAL_LIB")" == "ENABLED" ]] && r=0 || r=1
+assert "CONFIGURED_ENABLED (config says DDOS_ENABLED=true -> ENABLED)" "$r"
+
+[[ "$(configured_state portscan "$REAL_LIB")" == "DISABLED" ]] && r=0 || r=1
+assert "CONFIGURED_DISABLED (config says PORTSCAN_ENABLED=false -> DISABLED)" "$r"
+
+# A module outside the authority's population is indeterminate, not disabled.
+[[ "$(configured_state fixturemod "$REAL_LIB")" == "UNKNOWN" ]] && r=0 || r=1
+assert "CONFIGURED_UNKNOWN_OUT_OF_POPULATION (unrecognised module -> UNKNOWN)" "$r"
+
+# THE CRITICAL CONTROL: collection failure must not read as a configuration
+# decision. With the authority unreachable, a module KNOWN to be enabled must
+# resolve UNKNOWN -- never DISABLED, which would report an operator choice that
+# was never made.
+NOAUTH="$SB/noauth"; mkdir -p "$NOAUTH/lib"
+CF_STATE="$(configured_state ddos "$NOAUTH")"
+[[ "$CF_STATE" == "UNKNOWN" ]] && r=0 || r=1
+assert "CONFIGURED_COLLECTION_FAILURE_IS_UNKNOWN (authority absent -> UNKNOWN, got: ${CF_STATE:-none})" "$r"
+[[ "$CF_STATE" == "DISABLED" ]] && r=1 || r=0
+assert "CONFIGURED_FAILURE_NEVER_DISABLED (collection failure != DISABLED)" "$r"
 
 # ---------------------------------------------------------------------------
 # DEFECT 3 - PORT: the table loop iterated NFTBAN_PORT_LISTENERS and
