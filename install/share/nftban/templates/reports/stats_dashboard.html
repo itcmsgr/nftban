@@ -277,6 +277,24 @@
     </footer>
 
     <script>
+        /* v1.229.15: every value below reaches innerHTML through a template
+           literal. The generator's \u003c/\u003e escaping in cmd_report.sh exists
+           only to stop the JSON from closing the <script> tag early -- its own
+           comment says it is deliberately NOT HTML-entity escaping -- and the
+           browser decodes those sequences back to "<" and ">" before this code
+           runs. Banned IPs, GeoIP country strings and the bans.log source tag are
+           externally sourced, so they are escaped at the sink, which is where an
+           innerHTML injection is actually decided. */
+        function esc(v) {
+            if (v === null || v === undefined) return '';
+            return String(v)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Data will be injected here by bash script
         window.__NFTBAN_DATA__ = {
             // Placeholder - will be replaced
@@ -500,11 +518,11 @@
             tbody.innerHTML = topIPs.slice(0, 10).map((ip, index) => `
                 <tr>
                     <td>${index + 1}</td>
-                    <td><code>${ip.ip}</code></td>
-                    <td>${ip.country || '--'}</td>
+                    <td><code>${esc(ip.ip)}</code></td>
+                    <td>${esc(ip.country || '--')}</td>
                     <td><strong>${ip.count}</strong></td>
-                    <td>${ip.source || '-'}</td>
-                    <td>${ip.last_seen || '-'}</td>
+                    <td>${esc(ip.source || '-')}</td>
+                    <td>${esc(ip.last_seen || '-')}</td>
                 </tr>
             `).join('');
         }

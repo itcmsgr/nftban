@@ -102,6 +102,18 @@ cat > "$MODLIB/core/fixturemod.sh" <<'MOD'
 # meta:homepage="https://example.invalid"
 # meta:description="fixture"
 MOD
+cat > "$MODLIB/core/xssmod.sh" <<'MOD'
+#!/usr/bin/env bash
+# meta:name="<script>alert(1)</script>"
+# meta:version="1.0"
+# meta:type="core"
+# meta:created_date="2026-01-03"
+# meta:depends="a&b"
+# meta:owner="o"
+# meta:homepage="h"
+# meta:description="d"
+MOD
+
 mk_template "$SB/tmpl_mod/reports/module_report.html" MODULE_TABLE_ROWS TOTAL_MODULES \
     ENABLED_MODULES DISABLED_MODULES CORE_MODULES DATE TIME HOSTNAME SERVER_IP \
     NFTBAN_VERSION COMPANY_NAME LOGO_HTML VERSION_HTML DEPENDENCY_SECTION 2>/dev/null \
@@ -142,6 +154,65 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
         echo "[SKIP] module pre-fix probe produced no output - NOT counted as pass"
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# HTML ESCAPING - all report HTML is shell string substitution, so nothing
+# escapes by default. Values read from meta: comments reach the document raw.
+# ---------------------------------------------------------------------------
+grep -q '&lt;script&gt;alert(1)&lt;/script&gt;' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_MODULE_NAME (HTML metacharacters render as entities)" "$r"
+
+grep -qF '<script>alert(1)</script>' <<<"$NEW_MOD" && r=1 || r=0
+assert "ESCAPING_NO_RAW_SCRIPT_TAG (no unescaped script tag in the document)" "$r"
+
+grep -q 'a&amp;b' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_AMPERSAND_FIRST (a&b -> a&amp;b, not double-escaped)" "$r"
+
+if [[ "$OLD_AVAILABLE" -eq 1 && -n "${OLD_MOD:-}" ]]; then
+    grep -qF '<script>alert(1)</script>' <<<"$OLD_MOD" && r=0 || r=1
+    assert "NEGATIVE_CONTROL_ESCAPING (${BASE_REF} emits the raw script tag)" "$r"
+fi
+
+# The dashboard escapes at the sink: its values reach innerHTML via template
+# literals, which the generator's \u003c escaping does not protect.
+grep -q 'function esc' "$ROOT/install/share/nftban/templates/reports/stats_dashboard.html" && r=0 || r=1
+assert "ESCAPING_DASHBOARD_HAS_SINK_ESCAPER (esc() defined in the template)" "$r"
+
+RAWSINK="$(grep -cE '\$\{ip\.(ip|country|source|last_seen)' "$ROOT/install/share/nftban/templates/reports/stats_dashboard.html" 2>/dev/null | tr -d '[:space:]')"
+RAWSINK="${RAWSINK:-0}"
+[[ "${RAWSINK:-0}" -eq 0 ]] && r=0 || r=1
+assert "ESCAPING_DASHBOARD_NO_RAW_SINKS (no unwrapped \${ip.*} interpolation, got ${RAWSINK:-0})" "$r"
+
+# PLACEHOLDER INJECTION VIA & -- a value containing an ampersand used to inject
+# the PLACEHOLDER NAME into the document, because bash expands an unescaped & in
+# the replacement to the matched text. No attacker required: depends="curl&jq".
+grep -qF '{MODULE_TABLE_ROWS}' <<<"$NEW_MOD" && r=1 || r=0
+assert "NO_PLACEHOLDER_NAME_IN_DATA (a value containing & does not inject the placeholder)" "$r"
+
+if [[ "$OLD_AVAILABLE" -eq 1 && -n "${OLD_MOD:-}" ]]; then
+    grep -qF '{MODULE_TABLE_ROWS}' <<<"$OLD_MOD" && r=0 || r=1
+    assert "NEGATIVE_CONTROL_PLACEHOLDER_INJECTION (${BASE_REF} injects the placeholder name)" "$r"
+fi
+
+# The inline escaper must stay byte-identical to nftban_sanitize_html, the
+# project's escaping authority. It is inline so escaping cannot fail open when
+# validation.sh is unreachable; this assertion is what stops the two drifting.
+# It also catches the bash-version trap: an unescaped & in a ${var//pat/repl}
+# replacement expands to the MATCHED TEXT on bash 5.2+, so "&lt;" silently
+# becomes "<lt;" and a raw < reaches the document.
+ESC_DIVERGE=0
+for probe in '<script>' 'a&b' 'x"y' "it's" '' 'plain' '<>&"' '&amp;' 'a&&b' '<&>'; do
+    A="$(bash -c '
+        source "'"$ROOT/cli/lib/nftban/lib/validation.sh"'" >/dev/null 2>&1
+        source "'"$ROOT/cli/lib/nftban/core/nftban_report_fhs.sh"'" >/dev/null 2>&1
+        _nftban_report_esc "'"$probe"'"' 2>/dev/null)"
+    B="$(bash -c '
+        source "'"$ROOT/cli/lib/nftban/lib/validation.sh"'" >/dev/null 2>&1
+        nftban_sanitize_html "'"$probe"'"' 2>/dev/null)"
+    [[ "$A" == "$B" ]] || { ESC_DIVERGE=1; echo "    diverged on: $probe (inline=$A authority=$B)"; }
+done
+[[ "$ESC_DIVERGE" -eq 0 ]] && r=0 || r=1
+assert "ESCAPING_INLINE_MATCHES_AUTHORITY (10 probes byte-identical to nftban_sanitize_html)" "$r"
 
 # ---------------------------------------------------------------------------
 # CONFIGURED COLUMN - three-valued configuration state.

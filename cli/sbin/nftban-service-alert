@@ -204,9 +204,30 @@ send_email_alert() {
     if [[ -f "$template_file" ]]; then
         alert_content=$(cat "$template_file")
         # Replace template variables
-        alert_content="${alert_content//\{SERVICE_NAME\}/$FAILED_SERVICE}"
-        alert_content="${alert_content//\{SERVICE_STATUS\}/$service_status}"
-        alert_content="${alert_content//\{JOURNAL_EXCERPT\}/$journal_excerpt}"
+        local svc_name_html="$FAILED_SERVICE" svc_status_html="$service_status"
+        if declare -F nftban_sanitize_html >/dev/null 2>&1; then
+            svc_name_html="$(nftban_sanitize_html "$FAILED_SERVICE")"
+            svc_status_html="$(nftban_sanitize_html "$service_status")"
+        fi
+        alert_content="${alert_content//\{SERVICE_NAME\}/$svc_name_html}"
+        alert_content="${alert_content//\{SERVICE_STATUS\}/$svc_status_html}"
+        # v1.229.15: the journal excerpt is up to 30 lines of the FAILED SERVICE's
+        # own log output, substituted verbatim into an HTML email body
+        # (NFTBAN_MAIL_USE_HTML defaults to YES). It is the least controlled input
+        # in the reporting surface: whatever an attacker got the failing service to
+        # log -- request data, a failed-auth username, the malformed input that
+        # caused the crash -- arrived here as raw HTML. Escaped through the single
+        # authority, with the raw value preserved for the plain-text path.
+        local journal_excerpt_html="$journal_excerpt"
+        if ! declare -F nftban_sanitize_html >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/validation.sh" ]] &&
+                source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/validation.sh" >/dev/null 2>&1 || true
+        fi
+        if declare -F nftban_sanitize_html >/dev/null 2>&1; then
+            journal_excerpt_html="$(nftban_sanitize_html "$journal_excerpt")"
+        fi
+        alert_content="${alert_content//\{JOURNAL_EXCERPT\}/$journal_excerpt_html}"
         alert_content="${alert_content//\{DIAG_FILE\}/$diag_file}"
         alert_content="${alert_content//\{MEMORY_INFO\}/$memory_info}"
         alert_content="${alert_content//\{DISK_INFO\}/$disk_info}"
