@@ -162,3 +162,81 @@ jobs:
           echo "=== Executing: uninstall_firewall_ownership_message_v225_test.sh ==="
           chmod +x cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh
           bash cli/lib/nftban/tests/uninstall_firewall_ownership_message_v225_test.sh
+
+      # ------------------------------------------------------------------
+      # v1.229.15 - EXECUTE the reporting-subsystem tests.
+      #
+      # A 2026-09-06 audit of the reporting subsystem (frozen at 80e4766a)
+      # found three generators emitting structurally wrong output on every
+      # run, and established that NO test would have caught any of them: the
+      # affected functions are never invoked by any test, and not one of the
+      # tests guarding this surface was executed by CI.
+      #
+      # Every test below was measured on 2026-09-08 at v1.229.14: all pass,
+      # and all declare meta:ta.hermetic="true" with
+      # ta.execution_class="CI_HERMETIC_SHELL". They are wired as named
+      # invocations, consistent with the R0 gate above and NOT as a glob over
+      # tests/ - this workflow executes declared tests, it is not a
+      # discovery-based runner.
+      #
+      # WIRING MUST COME BEFORE THE FIXES. A regression test added for a
+      # defect in a subsystem whose tests do not run is inert, and "test file
+      # added" is explicitly insufficient under the R0 spec.
+      #
+      # fhs_lane_v175_test.sh is deliberately NOT wired here: despite the
+      # name it guards the FHS install layout, not the FHS report. Different
+      # subsystem, different owner.
+      # ------------------------------------------------------------------
+      - name: Reporting - writer truth and output validation (v1.228.5)
+        run: |
+          echo "=== Executing: report_writer_truth_v1228_5_test.sh ==="
+          chmod +x cli/lib/nftban/tests/report_writer_truth_v1228_5_test.sh
+          bash cli/lib/nftban/tests/report_writer_truth_v1228_5_test.sh
+
+      - name: Reporting - JSON-in-script breakout safety (v1.227)
+        run: |
+          echo "=== Executing: report_html_json_script_safe_v1227_test.sh ==="
+          chmod +x cli/lib/nftban/tests/report_html_json_script_safe_v1227_test.sh
+          bash cli/lib/nftban/tests/report_html_json_script_safe_v1227_test.sh
+
+      - name: Reporting - retention cleanup call-graph reachability (v1.229.3)
+        run: |
+          echo "=== Executing: cleanup_reachability_v1229_3_test.sh ==="
+          chmod +x cli/lib/nftban/tests/cleanup_reachability_v1229_3_test.sh
+          bash cli/lib/nftban/tests/cleanup_reachability_v1229_3_test.sh
+
+      - name: Reporting - mail delivery wording honesty (v1.227)
+        run: |
+          echo "=== Executing: mail_honest_wording_v1227_test.sh ==="
+          chmod +x cli/lib/nftban/tests/mail_honest_wording_v1227_test.sh
+          bash cli/lib/nftban/tests/mail_honest_wording_v1227_test.sh
+
+      - name: Reporting - mail subject authority (v1.227)
+        run: |
+          echo "=== Executing: mail_subject_authority_v1227_test.sh ==="
+          chmod +x cli/lib/nftban/tests/mail_subject_authority_v1227_test.sh
+          bash cli/lib/nftban/tests/mail_subject_authority_v1227_test.sh
+
+      - name: Reporting - FHS report long-tail code bugs (V131 PR-A)
+        run: |
+          echo "=== Executing: v131_pr_a_long_tail_code_bug_fix_test.sh ==="
+          chmod +x cli/lib/nftban/tests/v131_pr_a_long_tail_code_bug_fix_test.sh
+          bash cli/lib/nftban/tests/v131_pr_a_long_tail_code_bug_fix_test.sh
+
+      - name: Reporting - module report write-guard refusal (V133 PR-B)
+        run: |
+          echo "=== Executing: v133_pr_b_write_guard_refusal_test.sh ==="
+          chmod +x cli/lib/nftban/tests/v133_pr_b_write_guard_refusal_test.sh
+          bash cli/lib/nftban/tests/v133_pr_b_write_guard_refusal_test.sh
+
+      - name: Reporting - module meta-tag parser hardening (v150)
+        run: |
+          echo "=== Executing: cli_hardening_v150_test.sh ==="
+          chmod +x cli/lib/nftban/tests/cli_hardening_v150_test.sh
+          bash cli/lib/nftban/tests/cli_hardening_v150_test.sh
+
+      - name: Reporting - port report ssh_ports exposure invariant (V145 PR-G)
+        run: |
+          echo "=== Executing: v145_pr_g_ssh_ports_invariants_test.sh ==="
+          chmod +x cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
+          bash cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
