@@ -170,6 +170,15 @@ nftban_fhs_check_directory() {
     act_owner="$(nftban_fhs_get_owner "$path")"
     act_group="$(nftban_fhs_get_group "$path")"
 
+    # v1.229.15: record what was actually observed. The HTML and JSON reports
+    # read NFTBAN_FHS_ACTUAL[$path]; until now nothing ever wrote to it, so the
+    # "Actual" column rendered the :-N/A fallback for every directory including
+    # ones that had just been probed successfully. The declaration was added by
+    # V131 PR-A CB-2 to stop a crash; it did not populate the data.
+    # A directory that is MISSING or NOT_DIR returns above without reaching here,
+    # so its N/A remains honest: not probed, rather than probed-and-unknown.
+    NFTBAN_FHS_ACTUAL["$path"]="${act_perms}|${act_owner}|${act_group}"
+
     # Compare
     local issues=()
     # Skip permission check if expected is "*" (OS-managed directory)
@@ -179,8 +188,14 @@ nftban_fhs_check_directory() {
     [[ "$exp_perms" != "*" && "$act_perms_normalized" != "$exp_perms_normalized" ]] && issues+=("perms")
     # v1.24.1: Accept nftban/root as owner when expected user doesn't exist on system
     if [[ "$act_owner" != "$exp_owner" ]]; then
-        if ! id "$exp_owner" &>/dev/null && [[ "$act_owner" == "nftban" || "$act_owner" == "root" ]]; then
-            : # acceptable fallback owner
+        # v1.229.15: `! id "$exp_owner"` is true both when the expected user does
+        # not exist AND when `id` itself cannot run. Conflating them let a real
+        # ownership mismatch register as OK whenever the probe tool was the thing
+        # that failed. Absence of the tool is not absence of the user.
+        if ! command -v id >/dev/null 2>&1; then
+            issues+=("owner-unverifiable")
+        elif ! id "$exp_owner" &>/dev/null && [[ "$act_owner" == "nftban" || "$act_owner" == "root" ]]; then
+            : # expected user genuinely absent; nftban/root is an accepted fallback
         else
             issues+=("owner")
         fi
@@ -386,11 +401,27 @@ nftban_fhs_generate_html_report() {
     # Generate HTML table rows
     local table_rows=""
     for path in $(printf '%s\n' "${!NFTBAN_FHS_DIRECTORIES[@]}" | sort); do
-        local expected="${NFTBAN_FHS_DIRECTORIES[$path]}"
-        local actual="${NFTBAN_FHS_ACTUAL[$path]:-N/A}"
+        local expected_raw="${NFTBAN_FHS_DIRECTORIES[$path]}"
+        local actual_raw="${NFTBAN_FHS_ACTUAL[$path]:-}"
         local status="${NFTBAN_FHS_STATUS[$path]}"
 
-        # Status badge and row class
+        # v1.229.15: render both columns in the same shape the terminal renderer
+        # uses ("perms owner:group"). The HTML previously printed the raw stored
+        # tuple, which for the expected column also carried the purpose text.
+        local e_perms e_owner e_group
+        IFS='|' read -r e_perms e_owner e_group _ <<< "$expected_raw"
+        local expected="${e_perms} ${e_owner}:${e_group}"
+        local actual="N/A"
+        if [[ -n "$actual_raw" ]]; then
+            local a_perms a_owner a_group
+            IFS='|' read -r a_perms a_owner a_group <<< "$actual_raw"
+            actual="${a_perms} ${a_owner}:${a_group}"
+        fi
+
+        # v1.229.15: issues is reset per row. It was assigned only inside the
+        # ERROR branch but read on every row, so an OK row following an ERROR row
+        # inherited and displayed the previous directory's issue list.
+        local row_issues=""
         local status_badge
         local row_class=""
         if [[ "$status" == "OK" ]]; then
@@ -402,8 +433,7 @@ nftban_fhs_generate_html_report() {
             status_badge="<span class=\"badge badge-error\">✖ ERROR</span>"
             row_class=' class="error-row"'
             # Extract issues from status
-            # shellcheck disable=SC2178,SC2128  # Intentional string from array
-            local issues="${status#ERROR:}"
+            row_issues="${status#ERROR:}"
         fi
 
         table_rows+="                <tr${row_class}>
@@ -411,7 +441,7 @@ nftban_fhs_generate_html_report() {
                     <td class=\"perm-text\">${expected}</td>
                     <td class=\"perm-text\">${actual}</td>
                     <td>${status_badge}</td>
-                    <td>${issues:-—}</td>
+                    <td>${row_issues:-—}</td>
                 </tr>
 "
     done

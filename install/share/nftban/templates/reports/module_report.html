@@ -124,6 +124,14 @@
             background-color: #6c757d;
             color: #fff;
         }
+        /* v1.229.15: a module's enabled state is not currently determinable from
+           this report's subject (shell source files carrying meta: tags). An
+           undetermined state renders as UNKNOWN rather than as a confirmed
+           DISABLED, which is what this column previously showed for every row. */
+        .badge-unknown {
+            background-color: #f0ad4e;
+            color: #1a1a1a;
+        }
         .badge-core {
             background-color: #0066cc;
             color: #fff;

@@ -31,6 +31,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # v1.229.15: the reporting content test extracts the PRE-FIX generators
+          # from the v1.229.14 tag to prove its negative controls discriminate.
+          # actions/checkout defaults to a depth-1 clone with no tags, under which
+          # `git show v1.229.14:...` fails and those controls SKIP -- the suite would
+          # stay green while the half that proves it works never ran. Full history
+          # and tags are a precondition of the control, not a convenience.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -254,3 +263,13 @@ jobs:
           echo "=== Executing: v145_pr_g_ssh_ports_invariants_test.sh ==="
           chmod +x cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
           bash cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
+
+      # v1.229.15: content assertions for the three fixed generators. Unlike the
+      # tests above, every negative case here is run against the pre-fix
+      # implementation extracted from the v1.229.14 tag, so the harness proves it
+      # discriminates instead of asserting into a vacuum.
+      - name: Reporting - generator content truth and negative controls (v1.229.15)
+        run: |
+          echo "=== Executing: report_generator_content_truth_v1229_15_test.sh ==="
+          chmod +x cli/lib/nftban/tests/report_generator_content_truth_v1229_15_test.sh
+          bash cli/lib/nftban/tests/report_generator_content_truth_v1229_15_test.sh

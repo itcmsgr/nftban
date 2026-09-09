@@ -806,15 +806,25 @@ nftban_module_generate_html_report() {
 
     # Calculate statistics
     local total_modules=${#NFTBAN_MODULE_INVENTORY[@]}
-    local enabled_modules=0
-    local disabled_modules=0
+    # v1.229.15: see the status-badge note below. Enabled/disabled cannot be
+    # determined for this report's subject, so the KPI cards say so rather than
+    # reporting a count of zero, which would read as a measurement.
+    local enabled_modules="n/a"
+    local disabled_modules="n/a"
     local core_modules=0
 
+    # v1.229.15: the inventory tuple written at nftban_module_scan carries EIGHT
+    # fields and contains no status field at all:
+    #     name|version|module_type|created|depends|owner|homepage|description
+    # This loop previously destructured SEVEN names, the fourth of which was
+    # called `status`. It therefore received `created` -- a date -- so the test
+    # `[[ "$status" == "ENABLED" ]]` was unreachable and every module counted as
+    # disabled. The shift also pushed `depends` into `created` and `owner` into
+    # `depends` in the rendered table.
     for module_path in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
         local info="${NFTBAN_MODULE_INVENTORY[$module_path]}"
-        IFS='|' read -r name version type status created depends owner <<< "$info"
+        IFS='|' read -r name version type created depends owner homepage description <<< "$info"
 
-        [[ "$status" == "ENABLED" ]] && enabled_modules=$((enabled_modules + 1)) || disabled_modules=$((disabled_modules + 1))
         [[ "$type" == "core" ]] && core_modules=$((core_modules + 1)) || true
     done
 
@@ -822,18 +832,31 @@ nftban_module_generate_html_report() {
     local table_rows=""
     for module_path in $(printf '%s\n' "${!NFTBAN_MODULE_INVENTORY[@]}" | sort); do
         local info="${NFTBAN_MODULE_INVENTORY[$module_path]}"
-        IFS='|' read -r name version type status created depends owner <<< "$info"
+        IFS='|' read -r name version type created depends owner homepage description <<< "$info"
 
         # Type badge
         local type_badge="<span class=\"badge badge-${type}\">${type}</span>"
 
-        # Status badge
-        local status_badge
-        if [[ "$status" == "ENABLED" ]]; then
-            status_badge="<span class=\"badge badge-enabled\">ENABLED</span>"
-        else
-            status_badge="<span class=\"badge badge-disabled\">DISABLED</span>"
-        fi
+        # v1.229.15: this column previously rendered DISABLED for every module,
+        # including healthy core ones, because it tested a variable that held a
+        # date. It is NOT corrected to ENABLED here.
+        #
+        # nftban_module_check_enabled -- which the terminal renderer calls -- does
+        # not determine enablement either: it returns ENABLED when the file is
+        # executable or when its path matches /core/, /cli/, /lib/, /helpers/,
+        # /cron/, /setup/ or /exporters/, which is nearly every shipped file.
+        # Wiring it in would replace one wrong constant with another.
+        #
+        # The subject of this report is SHELL SOURCE FILES carrying meta: tags,
+        # and a shell file has no enabled/disabled state; the column measures a
+        # property that does not exist for its subject. Whether to drop it, rename
+        # it to what it can actually observe, or define a real oracle is an open
+        # decision recorded against
+        # BUG-REPORT-MODULE-HTML-TUPLE-ARITY-FORCES-DISABLED.
+        #
+        # Until that is decided the honest rendering is UNKNOWN. A failed or
+        # absent determination must not be presented as a confirmed state.
+        local status_badge="<span class=\"badge badge-unknown\">UNKNOWN</span>"
 
         table_rows+="                <tr>
                     <td><strong>${name}</strong></td>

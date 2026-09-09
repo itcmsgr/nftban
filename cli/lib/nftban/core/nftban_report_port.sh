@@ -48,6 +48,11 @@ declare -g -A NFTBAN_PORT_NFT_RULES=()     # key: port_proto_chain_family -> act
 declare -g -A NFTBAN_PORT_NFT_GENERIC=()   # key: port_proto_chain -> action
 declare -g -A NFTBAN_PORT_SEEN=()          # key: port_proto -> 1
 declare -g -A NFTBAN_PORT_SERVICE_NAME=()  # key: port_proto -> service name
+# v1.229.15: this array had eight writes and zero reads. Its only reader sat inside
+# the HTML generator's table loop, which never ran because that loop iterated an
+# array that was never declared -- a dead loop concealing a dead array. The HTML
+# generator now populates and reads it, which is what "populated in caller" always
+# intended: the state survives the call so a caller can inspect it.
 declare -g -A NFTBAN_PORT_STATUS=()        # key: port/proto/family/direction -> status (populated in caller, not subshell)
 
 # shellcheck disable=SC2034  # Reserved for report headers
@@ -1549,66 +1554,87 @@ nftban_port_generate_html_report() {
         return 1
     fi
 
-    # Gather data if not already gathered
-    if [[ ${#NFTBAN_PORT_LISTENERS[@]} -eq 0 ]]; then
+    # v1.229.15: this function previously read NFTBAN_PORT_LISTENERS and
+    # NFTBAN_PORT_SERVICE_MAP. Neither array is declared or assigned anywhere in
+    # the tree -- six reads, all inside this one function, no writer. Because this
+    # file sets `set -Eeuo pipefail` at line 30, dereferencing them did not yield an
+    # empty table: it raised "unbound variable" and ABORTED the function before it
+    # wrote anything. Measured at v1.229.14: `nftban port html-report` produced no
+    # artifact at all, so this report has been entirely non-functional rather than
+    # silently wrong.
+    #
+    # The gathered data lives in NFTBAN_PORT_SEEN (key: port_proto),
+    # NFTBAN_PORT_LISTEN_MAP / NFTBAN_PORT_BIND_ADDR (key: proto_port_family) and
+    # is resolved per port by nftban_port_detect_service. Rather than re-derive
+    # any of that here, this mirrors nftban_port_render_table, the renderer that
+    # works, and uses the same two resolvers it does.
+    if [[ ${#NFTBAN_PORT_SEEN[@]} -eq 0 ]]; then
         nftban_port_gather_listeners
         nftban_port_gather_nft_rules
     fi
 
-    # Calculate statistics
-    local total_ports=${#NFTBAN_PORT_LISTENERS[@]}
+    # Sorted iteration over the canonical key set, matching the terminal renderer.
+    local -a _seen_keys=() _sorted_keys=()
+    local _k
+    for _k in "${!NFTBAN_PORT_SEEN[@]}"; do _seen_keys+=("$_k"); done
+    if [[ ${#_seen_keys[@]} -gt 0 ]]; then
+        IFS=$'\n' read -r -d '' -a _sorted_keys \
+            < <(printf '%s\n' "${_seen_keys[@]}" | sort -t_ -k1n -k2 && printf '\0') || true
+    fi
+
+    local total_ports=${#_sorted_keys[@]}
     local running_services=0
     local public_ports=0
     local local_ports=0
-
-    for key in "${!NFTBAN_PORT_LISTENERS[@]}"; do
-        IFS='/' read -r port proto <<< "$key"
-        local bind="${NFTBAN_PORT_BIND_ADDR[$key]:-unknown}"
-
-        [[ "$bind" != "-" ]] && running_services=$((running_services + 1)) || true
-
-        if [[ "$bind" == "0.0.0.0" ]] || [[ "$bind" == "::" ]] || [[ "$bind" == "*" ]]; then
-            public_ports=$((public_ports + 1)) || true
-        elif [[ "$bind" != "-" ]]; then
-            local_ports=$((local_ports + 1)) || true
-        fi
-    done
-
-    # Generate HTML table rows
     local table_rows=""
-    for key in $(printf '%s\n' "${!NFTBAN_PORT_LISTENERS[@]}" | sort -t'/' -k1 -n); do
-        IFS='/' read -r port proto <<< "$key"
 
-        local service="${NFTBAN_PORT_SERVICE_MAP[$port]:-unknown}"
-        local process="${NFTBAN_PORT_LISTENERS[$key]:-}"
-        local bind="${NFTBAN_PORT_BIND_ADDR[$key]:-}"
+    local entry
+    for entry in "${_sorted_keys[@]}"; do
+        local port="${entry%%_*}" proto="${entry##*_}"
 
-        # Get firewall status
-        local ipv4_in="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]:-?}"
-        local ipv4_out="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]:-?}"
-        local ipv6_in="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]:-?}"
-        local ipv6_out="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]:-?}"
+        local svcinfo
+        svcinfo="$(nftban_port_detect_service "$port" "$proto")"
+        local service running process bind scope
+        service="$(cut -d'|' -f1 <<< "$svcinfo")"
+        running="$(cut -d'|' -f2 <<< "$svcinfo")"
+        process="$(cut -d'|' -f3 <<< "$svcinfo")"
+        bind="$(cut -d'|' -f4 <<< "$svcinfo")"
+        scope="$(cut -d'|' -f5 <<< "$svcinfo")"
 
-        # Status badges
+        [[ "$running" == "yes" ]] && running_services=$((running_services + 1)) || true
+        case "$scope" in
+            public) public_ports=$((public_ports + 1)) ;;
+            local)  local_ports=$((local_ports + 1)) ;;
+            *)      : ;;
+        esac
+
+        local status_line
+        status_line="$(nftban_port_determine_status "$port" "$proto")"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]="$(cut -d'|' -f1 <<< "$status_line")"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]="$(cut -d'|' -f2 <<< "$status_line")"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]="$(cut -d'|' -f3 <<< "$status_line")"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]="$(cut -d'|' -f4 <<< "$status_line")"
+
+        local ipv4_in ipv4_out ipv6_in ipv6_out
+        ipv4_in="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]:-?}"
+        ipv4_out="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]:-?}"
+        ipv6_in="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]:-?}"
+        ipv6_out="${NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]:-?}"
+
         local status_badge="<span class=\"badge badge-stopped\">Stopped</span>"
-        [[ -n "$process" && "$process" != "-" ]] && status_badge="<span class=\"badge badge-running\">Running</span>"
+        [[ "$running" == "yes" ]] && status_badge="<span class=\"badge badge-running\">Running</span>"
 
-        # Bind badge
         local bind_badge="-"
-        if [[ "$bind" == "0.0.0.0" ]] || [[ "$bind" == "::" ]] || [[ "$bind" == "*" ]]; then
-            bind_badge="<span class=\"badge badge-public\">PUBLIC</span>"
-        elif [[ -n "$bind" && "$bind" != "-" ]]; then
-            bind_badge="<span class=\"badge badge-local\">LOCAL</span>"
-        fi
+        case "$scope" in
+            public) bind_badge="<span class=\"badge badge-public\">PUBLIC</span>" ;;
+            local)  bind_badge="<span class=\"badge badge-local\">LOCAL</span>" ;;
+            *)      : ;;
+        esac
 
-        # Status cells with colors
-        local ipv4_in_html
+        local ipv4_in_html ipv4_out_html ipv6_in_html ipv6_out_html
         ipv4_in_html="<span class=\"status-${ipv4_in}\">$(nftban_port_status_symbol "$ipv4_in")</span>"
-        local ipv4_out_html
         ipv4_out_html="<span class=\"status-${ipv4_out}\">$(nftban_port_status_symbol "$ipv4_out")</span>"
-        local ipv6_in_html
         ipv6_in_html="<span class=\"status-${ipv6_in}\">$(nftban_port_status_symbol "$ipv6_in")</span>"
-        local ipv6_out_html
         ipv6_out_html="<span class=\"status-${ipv6_out}\">$(nftban_port_status_symbol "$ipv6_out")</span>"
 
         table_rows+="                <tr>
@@ -1622,7 +1648,7 @@ nftban_port_generate_html_report() {
                     <td>${ipv6_out_html}</td>
                     <td>${bind_badge}</td>
                     <td class=\"perm-text\">${process:-N/A}</td>
-                    <td>-</td>
+                    <td>${bind:--}</td>
                 </tr>
 "
     done
