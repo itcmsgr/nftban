@@ -273,3 +273,14 @@ jobs:
           echo "=== Executing: report_generator_content_truth_v1229_15_test.sh ==="
           chmod +x cli/lib/nftban/tests/report_generator_content_truth_v1229_15_test.sh
           bash cli/lib/nftban/tests/report_generator_content_truth_v1229_15_test.sh
+
+      # v1.229.15: nftban_sanitize_html is the escaping authority the report
+      # generators depend on, and this is its only test. It was RED at v1.229.14 --
+      # it built a doubled path and exited before asserting anything, so the
+      # authority shipped unproven. The path is fixed and the assertions now cover
+      # all five entities by exact expected output; wiring it makes that permanent.
+      - name: Reporting - validation library and escaping authority
+        run: |
+          echo "=== Executing: test_validation.sh ==="
+          chmod +x cli/lib/nftban/tests/test_validation.sh
+          bash cli/lib/nftban/tests/test_validation.sh

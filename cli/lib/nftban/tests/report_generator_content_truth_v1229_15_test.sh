@@ -105,10 +105,10 @@ MOD
 cat > "$MODLIB/core/xssmod.sh" <<'MOD'
 #!/usr/bin/env bash
 # meta:name="<script>alert(1)</script>"
-# meta:version="1.0"
+# meta:version="A&B"
 # meta:type="core"
 # meta:created_date="2026-01-03"
-# meta:depends="a&b"
+# meta:depends="curl&jq"
 # meta:owner="o"
 # meta:homepage="h"
 # meta:description="d"
@@ -165,8 +165,26 @@ assert "ESCAPING_MODULE_NAME (HTML metacharacters render as entities)" "$r"
 grep -qF '<script>alert(1)</script>' <<<"$NEW_MOD" && r=1 || r=0
 assert "ESCAPING_NO_RAW_SCRIPT_TAG (no unescaped script tag in the document)" "$r"
 
-grep -q 'a&amp;b' <<<"$NEW_MOD" && r=0 || r=1
-assert "ESCAPING_AMPERSAND_FIRST (a&b -> a&amp;b, not double-escaped)" "$r"
+# The declared fixture set: a literal ampersand is a first-class case, not an
+# afterthought to XSS-shaped input. curl&jq is ordinary operator data.
+grep -q 'curl&amp;jq' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_LITERAL_AMPERSAND (curl&jq -> curl&amp;jq, operator data preserved)" "$r"
+
+grep -q 'A&amp;B' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_AMPERSAND_PAIR (A&B -> A&amp;B)" "$r"
+
+# Quote and apostrophe escaping is asserted by EXACT EXPECTED OUTPUT in
+# test_validation.sh (_sanitize_case "double quote" / "apostrophe") and is bound
+# to this path by ESCAPING_INLINE_MATCHES_AUTHORITY below. It is deliberately not
+# re-asserted through a rendered column: no module meta field can carry an
+# embedded quote -- the extractor parses a quoted string -- so a fixture built to
+# exercise it here would be testing a shape the subject cannot produce.
+
+# No placeholder token may survive OR be created. An unresolved {TOKEN} means the
+# template was not fully rendered; an injected one means & ate the placeholder.
+UNRESOLVED="$(grep -oE '\{[A-Z_]+\}' <<<"$NEW_MOD" | sort -u | tr '\n' ' ')"
+[[ -z "$UNRESOLVED" ]] && r=0 || r=1
+assert "NO_UNRESOLVED_OR_INJECTED_TOKEN (no {TOKEN} anywhere, found: ${UNRESOLVED:-none})" "$r"
 
 if [[ "$OLD_AVAILABLE" -eq 1 && -n "${OLD_MOD:-}" ]]; then
     grep -qF '<script>alert(1)</script>' <<<"$OLD_MOD" && r=0 || r=1
