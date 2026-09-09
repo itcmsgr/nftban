@@ -21,10 +21,23 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# v1.229.15: PROJECT_ROOT was "$SCRIPT_DIR/..", i.e. cli/lib/nftban -- and the
+# source line below then prepended cli/lib/nftban/ a SECOND time, producing
+# cli/lib/nftban/cli/lib/nftban/lib/validation.sh. The library never loaded, so
+# this file exited before asserting anything. This test is the ONLY test of
+# nftban_sanitize_html, the escaping authority the report generators now depend
+# on: while it was red, that authority shipped unproven.
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
-# Load validation library
-source "$PROJECT_ROOT/cli/lib/nftban/lib/validation.sh" || return 1
+# Load validation library.
+# `return` is only valid in a function or a sourced file; this runs as a script,
+# so a genuinely missing library reported "can only return from a function"
+# instead of a usable failure. That path is reachable now that the source can
+# actually be attempted.
+source "$PROJECT_ROOT/cli/lib/nftban/lib/validation.sh" || {
+    echo "FATAL: cannot load $PROJECT_ROOT/cli/lib/nftban/lib/validation.sh" >&2
+    exit 1
+}
 
 pass_count=0
 fail_count=0
@@ -174,6 +187,38 @@ else
     # v1.19.20 FIX
     ((fail_count++)) || true
 fi
+
+# v1.229.15: the check above only proves a raw <script> is absent. It would pass
+# for an implementation that deleted characters, mangled them, or escaped only
+# "<". The report generators now depend on this function for every interpolated
+# field, so each of the five entities is asserted by exact expected output.
+#
+# An ampersand is checked FIRST and separately because & is the entity that every
+# other escape emits: if it were escaped last, "<" would render "&amp;lt;". It is
+# also the character that produced a measured renderer defect elsewhere in this
+# lane, so a literal & is a required fixture, not just XSS-shaped input.
+_sanitize_case() {
+    local label="$1" input="$2" expected="$3" got
+    got="$(nftban_sanitize_html "$input")"
+    if [[ "$got" == "$expected" ]]; then
+        echo "✅ sanitize: $label"
+        ((pass_count++)) || true
+    else
+        echo "❌ sanitize: $label (expected '$expected', got '$got')"
+        ((fail_count++)) || true
+    fi
+}
+_sanitize_case "ampersand"        'curl&jq'                 'curl&amp;jq'
+_sanitize_case "ampersand pair"   'A&B'                     'A&amp;B'
+_sanitize_case "less-than"        '<'                       '&lt;'
+_sanitize_case "greater-than"     '>'                       '&gt;'
+_sanitize_case "double quote"     '"quoted"'                '&quot;quoted&quot;'
+_sanitize_case "apostrophe"       "it's"                    'it&#39;s'
+_sanitize_case "script tag"       '<script>'                '&lt;script&gt;'
+_sanitize_case "all five"         '<>&"'"'"                 '&lt;&gt;&amp;&quot;&#39;'
+_sanitize_case "no double-escape" '&amp;'                   '&amp;amp;'
+_sanitize_case "empty"            ''                        ''
+_sanitize_case "plain passthrough" 'plain text 123'         'plain text 123' 
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
