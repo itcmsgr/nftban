@@ -323,5 +323,51 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
     assert "NEGATIVE_CONTROL_PORT_ABORTS (${BASE_REF} writes no report at all, got ${OLD_FILES:-0} file(s))" "$r"
 fi
 
+# ---------------------------------------------------------------------------
+# PUBLICATION DISCIPLINE - atomic, mode-correct, and validated before rename.
+# ---------------------------------------------------------------------------
+NEWFILE="$(find "$SB/out_mod_new" -name 'module_report_*.html' 2>/dev/null | head -1)"
+if [[ -n "$NEWFILE" ]]; then
+    MODE="$(stat -c '%a' "$NEWFILE" 2>/dev/null)"
+    [[ "$MODE" == "640" ]] && r=0 || r=1
+    assert "PUBLISH_MODE_0640 (published report is 0640, got ${MODE:-none})" "$r"
+else
+    echo "[SKIP] no published report to stat - NOT counted as pass"
+fi
+
+# No temporary may survive publication, and none may carry a predictable name.
+LEFTOVER="$(find "$SB/out_mod_new" -name '.nftban-report.*' -o -name '*.tmp' 2>/dev/null | wc -l)"
+[[ "${LEFTOVER:-0}" -eq 0 ]] && r=0 || r=1
+assert "PUBLISH_NO_TEMP_LEFT (no temporary survives, got ${LEFTOVER:-0})" "$r"
+
+# A document with an unresolved placeholder must NOT be published. Driven with a
+# template carrying a placeholder the generator never substitutes.
+mkdir -p "$SB/tmpl_bad/reports" "$SB/out_bad"
+printf '<html>{MODULE_TABLE_ROWS}{NEVER_SUBSTITUTED_TOKEN}</html>\n' > "$SB/tmpl_bad/reports/module_report.html"
+bash -c '
+    export NFTBAN_TEMPLATE_DIR="'"$SB/tmpl_bad"'" NFTBAN_REPORT_DIR="'"$SB/out_bad"'" NFTBAN_LIB_DIR="'"$MODLIB"'"
+    source "'"$ROOT/cli/lib/nftban/core/nftban_report_module.sh"'" >/dev/null 2>&1 || exit 90
+    nftban_module_generate_html_report >/dev/null 2>&1 || true
+' >/dev/null 2>&1
+BADFILES="$(find "$SB/out_bad" -name 'module_report_*.html' 2>/dev/null | wc -l)"
+[[ "${BADFILES:-0}" -eq 0 ]] && r=0 || r=1
+assert "PUBLISH_REFUSES_UNRESOLVED_PLACEHOLDER (nothing published, got ${BADFILES:-0} file(s))" "$r"
+
+BADTMP="$(find "$SB/out_bad" -name '.nftban-report.*' 2>/dev/null | wc -l)"
+[[ "${BADTMP:-0}" -eq 0 ]] && r=0 || r=1
+assert "PUBLISH_CLEANS_UP_ON_REFUSAL (no temporary left behind, got ${BADTMP:-0})" "$r"
+
+if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
+    mkdir -p "$SB/out_bad_old"
+    bash -c '
+        export NFTBAN_TEMPLATE_DIR="'"$SB/tmpl_bad"'" NFTBAN_REPORT_DIR="'"$SB/out_bad_old"'" NFTBAN_LIB_DIR="'"$MODLIB"'"
+        source "'"$OLD_DIR/nftban_report_module.sh"'" >/dev/null 2>&1 || exit 90
+        nftban_module_generate_html_report >/dev/null 2>&1 || true
+    ' >/dev/null 2>&1
+    OLDBAD="$(find "$SB/out_bad_old" -name 'module_report_*.html' 2>/dev/null | wc -l)"
+    [[ "${OLDBAD:-0}" -ge 1 ]] && r=0 || r=1
+    assert "NEGATIVE_CONTROL_PUBLISHES_BROKEN_DOC (${BASE_REF} publishes it anyway, got ${OLDBAD:-0})" "$r"
+fi
+
 echo "=== report_generator_content_truth_v1229_15: PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]]

@@ -825,6 +825,53 @@ _nftban_report_esc() {
     printf '%s' "$v"
 }
 
+# -----------------------------------------------------------------------------
+# _nftban_report_publish <report_file> <html_content> -- validate, then publish.
+#
+# Mirrors the discipline cmd_report.sh already documents, which was the only
+# generator that had it:
+#
+#   mktemp IN THE DESTINATION DIRECTORY  rename(2) is atomic only within one
+#                                        filesystem, and an unpredictable name
+#                                        cannot be pre-created as a symlink in a
+#                                        directory writable by the nftban user
+#   chmod BEFORE publish                 mktemp creates 0600; the previous
+#                                        `echo >` form produced 0640 under this
+#                                        file's umask 027. Setting the mode
+#                                        explicitly keeps publication from
+#                                        depending on how the temporary happened
+#                                        to be created.
+#   VALIDATE BEFORE RENAME               success must mean the document is
+#                                        semantically complete, not that a file
+#                                        appeared. `[[ -f ]]` is what let three
+#                                        generators ship wrong content for
+#                                        releases.
+#
+# On any failure the temporary is removed and the PREVIOUS report is left intact:
+# a stale-but-valid report beats a truncated one presented as current.
+# -----------------------------------------------------------------------------
+_nftban_report_publish() {
+    local report_file="$1" content="$2"
+    local report_dir; report_dir="$(dirname "$report_file")"
+    local tmp
+    tmp="$(mktemp "${report_dir}/.nftban-report.XXXXXX" 2>/dev/null)" || {
+        echo "ERROR: cannot create a temporary in $report_dir" >&2
+        return 1
+    }
+    chmod 0640 "$tmp" 2>/dev/null || { rm -f "$tmp"; echo "ERROR: cannot set mode on $tmp" >&2; return 1; }
+    printf '%s\n' "$content" > "$tmp" || { rm -f "$tmp"; echo "ERROR: write failed: $tmp" >&2; return 1; }
+
+    [[ -s "$tmp" ]] || { rm -f "$tmp"; echo "ERROR: refusing to publish an empty report" >&2; return 1; }
+    if grep -qE '\{[A-Z_][A-Z0-9_]*\}' "$tmp"; then
+        echo "ERROR: refusing to publish, unresolved placeholder(s): $(grep -oE '\{[A-Z_][A-Z0-9_]*\}' "$tmp" | sort -u | tr '\n' ' ')" >&2
+        rm -f "$tmp"; return 1
+    fi
+    grep -qi '</html>' "$tmp" || { rm -f "$tmp"; echo "ERROR: refusing to publish an unterminated document" >&2; return 1; }
+
+    mv -f "$tmp" "$report_file" || { rm -f "$tmp"; echo "ERROR: publish failed: $report_file" >&2; return 1; }
+    return 0
+}
+
 _nftban_module_configured_state() {
     local module="${1:-}"
     [[ -n "$module" ]] || { printf 'UNKNOWN\n'; return 0; }
@@ -1011,10 +1058,10 @@ nftban_module_generate_html_report() {
     html_content="${html_content//\{DEPENDENCY_SECTION\}/}"
 
     # Write HTML file
-    echo "$html_content" > "${report_file}.tmp" && mv -f "${report_file}.tmp" "$report_file"
+    _nftban_report_publish "$report_file" "$html_content" || return 1
 
     # Set permissions
-    chmod 640 "$report_file" 2>/dev/null || true
+    # mode is set on the temporary before publish by _nftban_report_publish
 
     echo "$report_file"
 }
