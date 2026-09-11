@@ -18,6 +18,8 @@ fi
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
+    # v1.230.0 PR-5c-A: single set-or-append authority
+    source "${NFTBAN_LIB_DIR}/lib/nftban_config_kv.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
@@ -529,10 +531,15 @@ nftban_report_cmd_email_setup() {
         fi
 
         # Update mail system based on user choice
-        if [[ "$mail_method" == "1" ]]; then
-            sed -i 's|^NFTBAN_MAIL_SYSTEM=.*|NFTBAN_MAIL_SYSTEM="sendmail"|g' "$mail_conf"
-        else
-            sed -i 's|^NFTBAN_MAIL_SYSTEM=.*|NFTBAN_MAIL_SYSTEM="smtp"|g' "$mail_conf"
+        # v1.230.0 PR-5c-A: these two seds had NO absent-key guard, while their sibling
+        # NFTBAN_MAIL_RECIPIENT above does. The enclosing `grep -q NFTBAN_MAIL_RECIPIENT`
+        # proves only that RECIPIENT exists — never that MAIL_SYSTEM does — so on a config
+        # carrying RECIPIENT but not MAIL_SYSTEM the request was silently dropped at rc=0.
+        _mail_system="smtp"
+        [[ "$mail_method" == "1" ]] && _mail_system="sendmail"
+        if ! nftban_config_kv_set "$mail_conf" NFTBAN_MAIL_SYSTEM "$_mail_system"; then
+            echo "✗ Mail system NOT configured — $mail_conf was not updated"
+            return 1
         fi
 
     else
