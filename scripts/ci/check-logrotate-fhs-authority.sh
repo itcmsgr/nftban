@@ -270,23 +270,29 @@ if [[ "$R5_TEST_OUTSIDE" -ne 0 ]]; then
 fi
 
 R5_RAW_CORPUS="$(_r5_build_corpus)"
+# Membership via an associative array, NOT `... | grep -q`. Under `set -o pipefail` a
+# `grep -q` downstream of a pipe exits on first match and SIGPIPEs the writer, so the
+# pipeline status can report failure for a line that DID match — the guard would then
+# treat a fixture line as production. check-pipefail-epipe-shortcircuit.sh rejects that
+# construct outright (it caught this exact code). A hash lookup has no pipe and no
+# early-exit semantics, so the class cannot recur here.
+declare -A R5_IS_TEST=()
+while IFS= read -r _tp; do
+    [[ -n "$_tp" ]] && R5_IS_TEST["$_tp"]=1
+done <<< "$R5_TEST_PATHS"
+
 # Partition, never silently drop: fixture lines are counted and reported.
 R5_FIXTURE_LINES=0
-R5_CORPUS="$(
-    printf '%s\n' "$R5_RAW_CORPUS" | while IFS= read -r _l; do
-        [[ -z "$_l" ]] && continue
-        _f="${_l%%:*}"
-        if printf '%s\n' "$R5_TEST_PATHS" | grep -qxF "$_f"; then continue; fi
-        printf '%s\n' "$_l"
-    done
-)"
-R5_FIXTURE_LINES="$(
-    printf '%s\n' "$R5_RAW_CORPUS" | while IFS= read -r _l; do
-        [[ -z "$_l" ]] && continue
-        _f="${_l%%:*}"
-        printf '%s\n' "$R5_TEST_PATHS" | grep -qxF "$_f" && printf 'x\n'
-    done | grep -c . || true
-)"
+R5_CORPUS=""
+while IFS= read -r _l; do
+    [[ -z "$_l" ]] && continue
+    _f="${_l%%:*}"
+    if [[ -n "${R5_IS_TEST[$_f]:-}" ]]; then
+        R5_FIXTURE_LINES=$((R5_FIXTURE_LINES + 1))
+        continue
+    fi
+    R5_CORPUS+="$_l"$'\n'
+done <<< "$R5_RAW_CORPUS"
 echo "  [INFO] R-5 subject model: ${R5_TEST_COUNT} declared test subjects (all under cli/lib/nftban/tests/); ${R5_FIXTURE_LINES} fixture line(s) excluded from the production corpus"
 
 # Legitimate state-class artifacts that DO belong under /var/lib/nftban/reports: these are
