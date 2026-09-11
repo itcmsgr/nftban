@@ -232,7 +232,62 @@ _r5_build_corpus() {
         [[ -n "${txt//[[:space:]]/}" ]] && printf '%s:%s:%s\n' "$f" "$n" "$txt"
     done
 }
-R5_CORPUS="$(_r5_build_corpus)"
+# ── SUBJECT MODEL (v1.230.0, CI-LOGROTATE-FHS-R5-TEST-FIXTURE-FALSE-POSITIVE) ──────────
+# R-5 exists to catch a PRODUCTION configuration declaration that resolves the report
+# destination outside /var/log. It had no notion of WHO declares: an assignment built
+# inside a test sandbox was judged as if it configured the product. MEASURED failure —
+#     report_generator_content_truth_v1229_15_test.sh:348
+#         export NFTBAN_TEMPLATE_DIR="$SB/tmpl_bad" NFTBAN_REPORT_DIR="$SB/out_bad"
+# where $SB is a mktemp sandbox, not the data dir. The widening that lets R-5 catch
+# variable-derived production destinations (NFTBAN_REPORTS_DIR="${NFTBAN_DATA_DIR}/reports")
+# cannot tell a sandbox variable from the state tree, so the SUBJECT had to be narrowed
+# instead of the pattern.
+#
+# ⛔ The fix is NOT a path glob and NOT "tests do not matter" — cli/lib/nftban/tests/ IS
+#    shipped. The predicate is the repository's own DECLARED TEST AUTHORITY: a file listed
+#    in scripts/ci/test-authority-index.tsv is a test subject, so its assignments are
+#    FIXTURE CONSTRUCTION, not product configuration. That index is itself guarded
+#    (test-authority.py check = INDEX_FRESH, plus check-test-count-floor.sh parity), so the
+#    exemption cannot be widened by editing a path — a file must become a declared test
+#    subject, carrying ta.* metadata, to be excluded.
+R5_TEST_INDEX="scripts/ci/test-authority-index.tsv"
+if [[ ! -r "$R5_TEST_INDEX" ]]; then
+    fail "R-5 cannot establish its subject model: $R5_TEST_INDEX unreadable"
+fi
+# CLOSURE PROOF, asserted not assumed: every declared subject must live under the test
+# tree. If a declared subject ever sits outside it, the exemption population is no longer
+# test-only and R-5 must refuse rather than quietly exempt production code.
+# The index carries a leading "# GENERATED FILE" comment AND a column-header row, so a
+# bare NR>1 keeps the literal string "path" and inflates the population by one.
+R5_TEST_PATHS="$(awk -F'\t' '$1 !~ /^#/ && $2 != "" && $2 != "path" {print $2}' "$R5_TEST_INDEX" | sort -u)"
+R5_TEST_COUNT="$(printf '%s\n' "$R5_TEST_PATHS" | grep -c . || true)"
+R5_TEST_OUTSIDE="$(printf '%s\n' "$R5_TEST_PATHS" | grep -vc '^cli/lib/nftban/tests/' || true)"
+if [[ "$R5_TEST_COUNT" -lt 100 ]]; then
+    fail "R-5 test-authority population is $R5_TEST_COUNT (expected >=100) — index is broken, not the tree"
+fi
+if [[ "$R5_TEST_OUTSIDE" -ne 0 ]]; then
+    fail "R-5 exemption population is NOT test-only: $R5_TEST_OUTSIDE declared subject(s) outside cli/lib/nftban/tests/"
+fi
+
+R5_RAW_CORPUS="$(_r5_build_corpus)"
+# Partition, never silently drop: fixture lines are counted and reported.
+R5_FIXTURE_LINES=0
+R5_CORPUS="$(
+    printf '%s\n' "$R5_RAW_CORPUS" | while IFS= read -r _l; do
+        [[ -z "$_l" ]] && continue
+        _f="${_l%%:*}"
+        if printf '%s\n' "$R5_TEST_PATHS" | grep -qxF "$_f"; then continue; fi
+        printf '%s\n' "$_l"
+    done
+)"
+R5_FIXTURE_LINES="$(
+    printf '%s\n' "$R5_RAW_CORPUS" | while IFS= read -r _l; do
+        [[ -z "$_l" ]] && continue
+        _f="${_l%%:*}"
+        printf '%s\n' "$R5_TEST_PATHS" | grep -qxF "$_f" && printf 'x\n'
+    done | grep -c . || true
+)"
+echo "  [INFO] R-5 subject model: ${R5_TEST_COUNT} declared test subjects (all under cli/lib/nftban/tests/); ${R5_FIXTURE_LINES} fixture line(s) excluded from the production corpus"
 
 # Legitimate state-class artifacts that DO belong under /var/lib/nftban/reports: these are
 # daemon state, not operational history, and tmpfiles.d creates them there by design.

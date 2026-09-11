@@ -184,6 +184,7 @@ logretention_terminology_guard_gateb_test	cli/lib/nftban/tests/logretention_term
 logretention_wiring_gateb_test	cli/lib/nftban/tests/logretention_wiring_gateb_test.sh	packaging	test	logretention	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logrotate_behavioral_gateb_test	cli/lib/nftban/tests/logrotate_behavioral_gateb_test.sh	health	test	logrotate	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logrotate_config_v137_test	cli/lib/nftban/tests/logrotate_config_v137_test.sh	packaging	test	logrotate	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+logrotate_fhs_r5_subject_model_test	cli/lib/nftban/tests/logrotate_fhs_r5_subject_model_test.sh	core	test	logrotate-fhs-authority	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false				
 logs_truth_v150_test	cli/lib/nftban/tests/logs_truth_v150_test.sh	health	test	log-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 mac_posture_v158_test	cli/lib/nftban/tests/mac_posture_v158_test.sh	security	test	mac-posture	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 mail_honest_wording_v1227_test	cli/lib/nftban/tests/mail_honest_wording_v1227_test.sh	mail	test	mail-honest-wording	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
