@@ -31,7 +31,9 @@ SB="$(mktemp -d)"; trap 'rm -rf "$SB"' EXIT INT TERM
 
 # B1-1 governed family. Values are deliberately NON-EMPTY: `: "${K:=default}"` treats empty
 # as unset, and empty-value semantics are separate debt (CONFIG-LOCAL-EMPTY-VALUE-SEMANTICS).
-_mk(){ rm -rf "$SB/etc"; mkdir -p "$SB/etc/conf.d/rbl" "$SB/etc/conf.d/geoban" "$SB/etc/conf.d/tunnel"; printf '# base\n' > "$SB/etc/nftban.conf"; }
+# ⛔ "${SB:?}" not "$SB": an empty SB would make this `rm -rf /etc`. A destructive path
+#    must fail to expand rather than widen (SC2115).
+_mk(){ rm -rf "${SB:?}/etc"; mkdir -p "$SB/etc/conf.d/rbl" "$SB/etc/conf.d/geoban" "$SB/etc/conf.d/tunnel"; printf '# base\n' > "$SB/etc/nftban.conf"; }
 _eff(){ # $1=module file  $2=key  $3=extra load cmd
   NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
     cd '$ROOT'
