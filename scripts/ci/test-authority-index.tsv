@@ -116,6 +116,7 @@ comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	t
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 conffile_mutation_guard_test	cli/lib/nftban/tests/conffile_mutation_guard_test.sh	packaging	test	release-safety-conffile	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 config_authority_guard_controls_test	cli/lib/nftban/tests/config_authority_guard_controls_test.sh	core	test	config-authority-guards	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+config_final_overlay_precedence_test	cli/lib/nftban/tests/config_final_overlay_precedence_test.sh	core	test	config-precedence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_kv_mutation_truth_test	cli/lib/nftban/tests/config_kv_mutation_truth_test.sh	core	test	config-mutation-safety	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_impl2_test	cli/lib/nftban/tests/config_local_impl2_test.sh	core	test	config-local	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_local_source_helper_impl1_test	cli/lib/nftban/tests/config_local_source_helper_impl1_test.sh	core	test	config-local-source	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

@@ -61,6 +61,17 @@ nftban_tunnel_load_config() {
         declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     fi
+
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. This function's whole body is the
+    # transaction — base then module-local, with no value consumed inside it — so the single
+    # central operator override is applied LAST, giving it the contracted precedence:
+    #     shipped base < module-local < central operator override
+    # ⛔ NO NEW env.sh SOURCE SITE. env.sh is not a side-effect-free function library — it
+    #    participates in configuration initialisation, so sourcing it here merely to reach the
+    #    helper could itself change load order and create the very defect class B1 removes.
+    #    This consumer already loads env.sh for _source_local; guard on definedness and call.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 }
 
 # =============================================================================
