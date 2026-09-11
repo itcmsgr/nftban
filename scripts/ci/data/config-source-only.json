@@ -1,0 +1,67 @@
+{
+  "description": "CI authority for repository config artifacts that intentionally do NOT belong to the runtime population. Separate from cli/lib/nftban/data/config-registry.json, which is the RUNTIME config-surface inventory. Two authorities on purpose: one file must never define both a population and its own completeness.",
+  "declared_in": "v1.230.0 PR-5a-2",
+  "classifications": [
+    "BUILD_INPUT_ONLY",
+    "DUPLICATE_SOURCE_INPUT",
+    "LIVE_DEFECT",
+    "RETIRED_SURFACE"
+  ],
+  "note": "Not installed to /etc/nftban and not runtime configuration. Production-consumer census 2026-09-11 proved NO production code reads config-registry.json ENTRIES: the three production consumers validate JSON syntax only (cmd_health_components.sh:444-448, health/check_registries.sh:118) and NFTBAN_REGISTRY_FILE (nftban_config_schema.sh:59) is declared once and never used.",
+  "subjects": {
+    "conf.d/rbl/main.conf.local": {
+      "source_path": "etc/nftban/conf.d/rbl/main.conf.local",
+      "classification": "BUILD_INPUT_ONLY",
+      "owner": "PACKAGING",
+      "disposition_evidence": "*.conf.local is deleted from the buildroot by design at packaging/build_nftban.sh:593; ships to no host."
+    },
+    "modules/actions.conf": {
+      "source_path": "etc/nftban/modules/actions.conf",
+      "classification": "RETIRED_SURFACE",
+      "owner": "CONFIG-WATCHDOG-N/A",
+      "disposition_evidence": "Suricata policy input; reader internal/suricata/policy.go:100 LoadPolicy is DEFINED_UNREACHED (zero callers). Surface retired by owner ruling D2, service_control.sh:594-600."
+    },
+    "modules/detection.conf": {
+      "source_path": "etc/nftban/modules/detection.conf",
+      "classification": "RETIRED_SURFACE",
+      "owner": "CONFIG-WATCHDOG-N/A",
+      "disposition_evidence": "Reader internal/suricata/policy.go:89 (constructed path, keys consumed generically via TrimPrefix 'detect_'); LoadPolicy has zero callers. Retired surface D2."
+    },
+    "modules/inline_exceptions.conf": {
+      "source_path": "etc/nftban/modules/inline_exceptions.conf",
+      "classification": "LIVE_DEFECT",
+      "owner": "BUG-INLINE-EXCEPTIONS-CONFIG-NOT-CONSUMED",
+      "disposition_evidence": "NOT an intentional source-only artifact. inline.go:30 CLAIMS the file is parsed and no parser exists; the consumer API IS reachable (IsEffectivelyEnabled, 3 external callers) and runs on DefaultInlineConfig(). Moving it out of the runtime registry is CLASSIFICATION, not resolution."
+    },
+    "service-security.conf": {
+      "source_path": "install/config/service-security.conf",
+      "classification": "BUILD_INPUT_ONLY",
+      "owner": "CI-ASSURANCE-VALIDATORS-DEFINED-BUT-NOT-AUTOMATICALLY-EXERCISED",
+      "disposition_evidence": "Repo-side CI contract consumed by tools/validate-service-security.sh:31 as CONTRACT_FILE; read-only, never staged. Absent from all 788 package entries."
+    },
+    "suricata/routing.conf": {
+      "source_path": "etc/nftban/suricata/routing.conf",
+      "classification": "RETIRED_SURFACE",
+      "owner": "CONFIG-WATCHDOG-N/A",
+      "disposition_evidence": "Reader internal/suricata/router.go:510 LoadRoutingConfig is DEFINED_UNREACHED (zero callers). Retired surface D2."
+    },
+    "suricata/rules/disable.conf": {
+      "source_path": "etc/nftban/suricata/rules/disable.conf",
+      "classification": "RETIRED_SURFACE",
+      "owner": "CONFIG-WATCHDOG-N/A",
+      "disposition_evidence": "EXTERNAL_TOOL_ONLY (suricata-update); zero payload lines; no NFTBan invocation of --disable-conf anywhere. Retired surface D2."
+    },
+    "suricata/rules/enable.conf": {
+      "source_path": "etc/nftban/suricata/rules/enable.conf",
+      "classification": "RETIRED_SURFACE",
+      "owner": "CONFIG-WATCHDOG-N/A",
+      "disposition_evidence": "EXTERNAL_TOOL_ONLY (suricata-update); zero payload lines; no NFTBan invocation of --enable-conf anywhere. Retired surface D2."
+    },
+    "update.conf": {
+      "source_path": "install/config/update.conf",
+      "classification": "DUPLICATE_SOURCE_INPUT",
+      "owner": "CONFIG-REGISTRY-UPDATE-DUPLICATE-RUNTIME-SUBJECT",
+      "disposition_evidence": "Source input install/config/update.conf has no install line; the runtime subject is conf.d/update.conf (proven shipped). Moving this key out is CLASSIFICATION - it does NOT declare the duplicate identity healthy."
+    }
+  }
+}
