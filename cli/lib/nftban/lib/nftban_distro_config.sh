@@ -146,6 +146,27 @@ nftban_distro_parse_config() {
             value="${value#"${value%%[![:space:]]*}"}"
             value="${value%"${value##*[![:space:]]}"}"
 
+            # v1.230.0: strip an inline comment, QUOTE-AWARE.
+            #
+            # Full-line comments were handled above, but an inline comment was
+            # never removed, so `pkg = name  # why` stored the literal
+            # "name  # why" as the package name. MEASURED: no shipped distro
+            # config currently uses inline comments (0/21) and no shipped value
+            # contains a literal #, so this was latent -- but an operator editing
+            # a distro profile would have silently corrupted the value, and the
+            # shipped fixture test-comments.conf has always asserted this works.
+            #
+            # ⛔ NOT `value="${value%%#*}"`. A fully quoted value may legitimately
+            #    contain #, and the quote stripping directly below would then hand
+            #    back a truncated string. Detect quoting FIRST; only an unquoted
+            #    value treats # as the start of a comment.
+            if [[ ( "$value" == \"*\" || "$value" == \'*\' ) && ${#value} -ge 2 ]]; then
+                :   # fully quoted: # is literal content, leave it alone
+            else
+                value="${value%%#*}"
+                value="${value%"${value##*[![:space:]]}"}"
+            fi
+
             # Remove quotes
             value="${value#\"}"
             value="${value%\"}"

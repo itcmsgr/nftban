@@ -348,13 +348,66 @@ nftban_config_sensitive_keys_json() {
 # Parse KEY=VALUE config file to JSON
 # Args: $1 = config file path
 # Returns: JSON object on stdout
+# -----------------------------------------------------------------------------
+# _nftban_config_is_simple_assignment_subject <file> -> 0 if this parser may read it
+#
+# Mirrors the deterministic classifier used to census all 82 shipped config
+# subjects. Executable-shell constructs disqualify a subject even when most of its
+# lines look like assignments: install/config/nftban.conf carries 98 bare
+# assignments AND a re-entry guard plus `: "${VAR:=default}"` declarations, so
+# extracting the 98 and calling it complete would present partial evidence as the
+# whole subject.
+# -----------------------------------------------------------------------------
+_nftban_config_is_simple_assignment_subject() {
+    local f="$1" body
+    # ⛔ `grep -v` EXITS 1 WHEN IT SELECTS NO LINES. A comments-only file is EMPTY
+    #    AND VALID, not unsupported -- treating that exit as failure would have
+    #    classified every shipped .conf.local template as an unreadable subject.
+    body="$(grep -vE '^[[:space:]]*(#|$)' "$f" 2>/dev/null || true)"
+    [[ -z "$body" ]] && return 0                      # comments only: empty but valid
+    grep -qE '^[[:space:]]*(\[\[|if |fi$|then$|else$|: "\$\{|export |source |\. |return )' <<< "$body" && return 1
+    grep -qE '^[[:space:]]*\[[A-Za-z_][A-Za-z0-9_]*\][[:space:]]*$' <<< "$body" && return 1
+    grep -qvE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' <<< "$body" && return 1
+    return 0
+}
+
+# v1.230.0 result vocabulary. An observation failure must be distinguishable from
+# an empty observation -- these are different facts and callers may treat them
+# differently. Exit 0 still means the JSON on stdout is trustworthy, so the 16
+# existing call sites keep working unchanged.
+: "${NFTBAN_CONFIG_PARSE_OK:=0}"                 # PARSED / EMPTY_VALID
+: "${NFTBAN_CONFIG_PARSE_UNPARSEABLE:=2}"        # content cannot be represented
+: "${NFTBAN_CONFIG_PARSE_UNSUPPORTED_FORMAT:=3}" # not a simple-assignment subject
+: "${NFTBAN_CONFIG_PARSE_IO_ERROR:=4}"           # absent or unreadable
+
 nftban_config_parse_to_json() {
     local config_file="$1"
 
-    if [[ ! -f "$config_file" ]]; then
-        echo "{}"
-        return 0
+    # ABSENT/UNREADABLE IS NOT EMPTY. A caller asking about a file it cannot read
+    # has learned nothing; it must not be told the file has no keys.
+    if [[ ! -e "$config_file" ]]; then
+        printf '{}\n'
+        return "$NFTBAN_CONFIG_PARSE_IO_ERROR"
     fi
+    if [[ ! -f "$config_file" || ! -r "$config_file" ]]; then
+        printf 'nftban: config parse IO_ERROR: %s (not a readable regular file)\n' "$config_file" >&2
+        printf '{}\n'
+        return "$NFTBAN_CONFIG_PARSE_IO_ERROR"
+    fi
+
+    # FORMAT GATE. This parser understands ONE family: simple KEY=VALUE assignment
+    # subjects. Presented with an INI, pipe-delimited, colon-delimited, bare-token
+    # or executable-shell subject it previously produced a confident wrong answer
+    # -- an INI distro profile yielded 70 bogus "keys", a pipe-record file yielded
+    # zero. Refuse the subject instead of mis-describing it.
+    if ! _nftban_config_is_simple_assignment_subject "$config_file"; then
+        printf 'nftban: config parse UNSUPPORTED_FORMAT: %s (not a simple-assignment subject)\n' "$config_file" >&2
+        printf '{}\n'
+        return "$NFTBAN_CONFIG_PARSE_UNSUPPORTED_FORMAT"
+    fi
+
+    local _p2j_raw
+    _p2j_raw="$(mktemp)" || { printf '{}\n'; return "$NFTBAN_CONFIG_PARSE_IO_ERROR"; }
 
     # Parse KEY=VALUE format, handle quotes, skip comments
     awk -F= '
@@ -395,7 +448,28 @@ nftban_config_parse_to_json() {
 
             print "\"" key "\": \"" val "\","
         }
-    ' "$config_file" | sed '$ s/,$//' | { echo "{"; cat; echo "}"; } | jq -c '.' 2>/dev/null || echo "{}"
+    ' "$config_file" | sed '$ s/,$//' | { echo "{"; cat; echo "}"; } > "$_p2j_raw" 2>/dev/null
+
+    # v1.230.0: the tail of this function used to be
+    #     | jq -c '.' 2>/dev/null || echo "{}"
+    # so ANY failure -- a shell construct the awk cannot key, a quoting shape that
+    # produces invalid JSON, an unreadable file -- emitted an EMPTY OBJECT and
+    # returned success. MEASURED on the shipped install/config/nftban.conf: 98 bare
+    # assignments and 107 awk-matching lines produced {} because three
+    # `: "${VAR:=default}"` lines yield a key containing an unescaped quote. Every
+    # caller then reported zero keys as a valid empty configuration.
+    #
+    # ⛔ {} MAY ONLY MEAN "parsed successfully, genuinely no keys".
+    #    An observation failure is not an empty result.
+    if jq -c '.' "$_p2j_raw" 2>/dev/null; then
+        rm -f "$_p2j_raw"
+        return 0                      # PARSED or EMPTY_VALID
+    fi
+    rm -f "$_p2j_raw"
+    printf 'nftban: config parse UNPARSEABLE: %s (contains syntax the assignment parser cannot represent; refusing to report it as empty)\n' \
+        "$config_file" >&2
+    printf '{}\n'
+    return "$NFTBAN_CONFIG_PARSE_UNPARSEABLE"
 }
 
 # Merge two JSON config objects (second wins)
