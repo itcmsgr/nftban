@@ -14,6 +14,7 @@
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # meta:inventory.files="scripts/ci/check-logrotate-fhs-authority.sh,scripts/ci/test-authority-index.tsv"
 # meta:inventory.binaries="bash,awk,grep"
 # meta:inventory.env_vars=""

@@ -14,6 +14,7 @@
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # meta:inventory.files="scripts/ci/check-config-format-coverage.sh,cli/lib/nftban/data/config-registry.json"
 # meta:inventory.binaries="jq,git"
 # meta:inventory.env_vars=""

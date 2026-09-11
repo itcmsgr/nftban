@@ -14,6 +14,7 @@
 # meta:ta.requires_network="false"
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
 # meta:inventory.files="cli/lib/nftban/tests/test_distro_integration.sh,cli/lib/nftban/lib/nftban_distro_config.sh,etc/nftban/distros"
 # meta:inventory.binaries="bash,find"
 # meta:inventory.env_vars="NFTBAN_DISTRO_CONF_DIR"
