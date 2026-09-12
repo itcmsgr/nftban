@@ -94,6 +94,12 @@ _source_local "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
 source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local"
 
+# v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+# transaction are complete and no value has been consumed yet, so the single central
+# operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+    && nftban_config_apply_final_operator_overlay
+
 # =============================================================================
 # CONFIGURATION DEFAULTS (from metrics.conf, with fallbacks)
 # =============================================================================
