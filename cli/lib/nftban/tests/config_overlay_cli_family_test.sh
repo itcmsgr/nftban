@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="config-overlay-cli-family"
 # meta:type="test"
-# meta:description="v1.230.0 PR-5c-B1 (CLI family). Locks the shell config precedence contract BASE < MODULE_LOCAL < CENTRAL_OPERATOR_OVERRIDE for the SOURCE_ENV config-load transactions in cmd_report.sh, cmd_update.sh, cmd_status.sh and cmd_zabbix.sh. Precedence is observed as a POST-LOAD EFFECTIVE VALUE: the real consumer file is sourced and the real transaction function is invoked in a subshell whose NFTBAN_CONFIG_DIR points at a mktemp fixture, and the resulting variable (or the value the consumer actually emits) is read back. Source text is never asserted on for the behavioural claims. A negative control resolves the same fixtures against the pre-fix subject (git show of the branch base, with a declared inversion as fallback for a shallow checkout) and REQUIRES the old code to resolve the lower-precedence layer — without it a passing suite would not distinguish the repair from an unreachable one. The bootstrap invariant is asserted structurally: the repair must not add an env.sh source site, because env.sh participates in configuration initialisation and a fresh source solely to reach the helper would itself change load order — the defect class this increment removes."
+# meta:description="v1.230.0 PR-5c-B1 (CLI family). Locks the shell config precedence contract BASE < MODULE_LOCAL < CENTRAL_OPERATOR_OVERRIDE for the SOURCE_ENV config-load transactions in cmd_report.sh, cmd_update.sh, cmd_status.sh and cmd_zabbix.sh. Precedence is observed as a POST-LOAD EFFECTIVE VALUE: the real consumer file is sourced and the real transaction function is invoked in a subshell whose NFTBAN_CONFIG_DIR points at a mktemp fixture, and the resulting variable (or the value the consumer actually emits) is read back. Source text is never asserted on for the behavioural claims. A negative control resolves the same fixtures against the pre-fix subject (git show of the branch base, with a declared inversion as fallback for a shallow checkout) and REQUIRES the old code to resolve the lower-precedence layer — without it a passing suite would not distinguish the repair from an unreachable one. The bootstrap invariant is asserted structurally: the repair must not add an env.sh source site, because env.sh participates in configuration initialisation and a fresh source solely to reach the helper would itself change load order — the defect class this increment removes. Section 4b is a DIFFERENTIAL regression for the update-status recipient cascade: the same fixture is resolved against both the pre-fix and the post-fix subject and the two outputs are compared value-for-value, because the recipient resolves into a function-local observable only through the emitted \"Notify email:\" line. With no central override present (including non-empty base + EMPTY module-local) the post-fix output must be IDENTICAL to the pre-fix output — the overlay must not redefine what an empty value means, which is a separate owned subject — while a non-empty central override must newly win."
 # meta:ta.id="config_overlay_cli_family_test"
 # meta:ta.owner="core"
 # meta:ta.module="config-precedence"
@@ -81,6 +81,26 @@ _eff_emitted(){
         set +e +u +o pipefail; trap - ERR
         output_json 2>/dev/null | grep -m1 'master_enabled'" 2>/dev/null \
       | sed 's/.*: *//; s/,$//'
+}
+
+# _eff_update_email <consumer file> — the update auto-status recipient cascade resolves
+# into `global_mail_recipient`, which is a FUNCTION-LOCAL: it is not observable as a
+# variable after the call. Its only externally observable effect is the "Notify email:"
+# line the report emits, so that is what the differential regression reads. Observing
+# NFTBAN_MAIL_RECIPIENT instead would watch the OVERLAY rather than the CASCADE, and would
+# pass identically whichever capture form the file used — i.e. it could not detect the
+# empty-value regression this section exists to exclude.
+_eff_update_email(){
+    env NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" \
+        NFTBAN_LOG_DIR="$SB/log" NFTBAN_DATA_DIR="$SB/data" NFTBAN_CACHE_DIR="$SB/cache" \
+        timeout 180 bash -c "
+        cd '$ROOT'
+        source cli/lib/nftban/lib/env.sh 2>/dev/null || true
+        source '$1' 2>/dev/null || true
+        source cli/lib/nftban/core/nftban_output.sh 2>/dev/null || true
+        set +e +u +o pipefail; trap - ERR
+        _update_auto_status 2>/dev/null" 2>/dev/null \
+      | sed -n 's/^[[:space:]]*Notify email:[[:space:]]*//p' | head -1
 }
 
 # Pre-fix subject. PRIMARY: the immutable base SHA. FALLBACK (shallow checkout, where
@@ -178,6 +198,68 @@ printf 'NFTBAN_MAIL_RECIPIENT=""\n'             > "$SB/etc/conf.d/mail.conf"
 printf 'NFTBAN_MAIL_RECIPIENT="ops@example.test"\n' > "$SB/etc/nftban.conf.local"
 r=$(_eff "$CUR_UPDATE" _update_auto_status NFTBAN_MAIL_RECIPIENT)
 [[ "$r" == "ops@example.test" ]] && ok "update auto-status: central recipient survives the empty shipped base" || bad "update auto-status: shipped empty base erased the central recipient (got '$r')"
+
+echo "=== 4b. DIFFERENTIAL REGRESSION — the overlay must not redefine what EMPTY means ==="
+# The recipient cascade is `global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$prior}"`,
+# applied once per load layer. Collapsing those captures into a single post-transaction
+# read would ALSO silently change empty-value handling: with a non-empty base and an empty
+# module-local, the cascade keeps the base value while a bare capture yields "". Empty-value
+# semantics are owned elsewhere (CONFIG-LOCAL-EMPTY-VALUE-SEMANTICS) and are NOT in scope
+# for B1, so this section pins the two behaviours apart:
+#   central ABSENT  -> post-fix MUST equal pre-fix, value for value  (nothing may drift)
+#   central PRESENT -> post-fix MUST take the central value          (the repair works)
+PRE_UPDATE="$(_prefix cli/lib/nftban/cli/cmd_update.sh)"
+
+# (a) the motivating shape: non-empty base + EMPTY module-local + no central override
+_mk
+printf 'NFTBAN_UPDATE_AUTO_ENABLED="BASEVAL"\n' > "$SB/etc/conf.d/update.conf"
+printf 'NFTBAN_MAIL_RECIPIENT="base@example.test"\n' > "$SB/etc/conf.d/mail.conf"
+printf 'NFTBAN_MAIL_RECIPIENT=""\n'                 > "$SB/etc/conf.d/mail.conf.local"
+before=$(_eff_update_email "$PRE_UPDATE")
+after=$(_eff_update_email "$CUR_UPDATE")
+[[ -n "$before" && "$before" == "$after" ]] \
+  && ok "differential: base+empty-local, no central — pre-fix '$before' == post-fix '$after' [$(_prefix_mode)]" \
+  || bad "differential: base+empty-local drifted, pre-fix '$before' vs post-fix '$after' — B1 redefined empty [$(_prefix_mode)]"
+[[ "$after" == "base@example.test" ]] \
+  && ok "differential: the empty module-local does NOT erase the base recipient" \
+  || bad "differential: empty module-local erased the base recipient (got '$after')"
+
+# (b) non-empty base + non-empty module-local + no central override
+_mk
+printf 'NFTBAN_UPDATE_AUTO_ENABLED="BASEVAL"\n' > "$SB/etc/conf.d/update.conf"
+printf 'NFTBAN_MAIL_RECIPIENT="base@example.test"\n'  > "$SB/etc/conf.d/mail.conf"
+printf 'NFTBAN_MAIL_RECIPIENT="local@example.test"\n' > "$SB/etc/conf.d/mail.conf.local"
+before=$(_eff_update_email "$PRE_UPDATE")
+after=$(_eff_update_email "$CUR_UPDATE")
+[[ "$before" == "local@example.test" && "$after" == "$before" ]] \
+  && ok "differential: base+local, no central — unchanged at '$after'" \
+  || bad "differential: module-local layer drifted, pre-fix '$before' vs post-fix '$after'"
+
+# (c) recipient absent everywhere: the "(not configured)" branch must also be unchanged
+_mk
+printf 'NFTBAN_UPDATE_AUTO_ENABLED="BASEVAL"\n' > "$SB/etc/conf.d/update.conf"
+printf 'NFTBAN_MAIL_RECIPIENT=""\n'             > "$SB/etc/conf.d/mail.conf"
+before=$(_eff_update_email "$PRE_UPDATE")
+after=$(_eff_update_email "$CUR_UPDATE")
+[[ "$before" == "$after" ]] \
+  && ok "differential: no recipient anywhere — unchanged at '$after'" \
+  || bad "differential: unconfigured branch drifted, pre-fix '$before' vs post-fix '$after'"
+
+# (d) the repair itself: a NON-EMPTY central override must now win, and must be the
+#     ONLY input whose presence changes the outcome relative to the pre-fix subject.
+_mk
+printf 'NFTBAN_UPDATE_AUTO_ENABLED="BASEVAL"\n' > "$SB/etc/conf.d/update.conf"
+printf 'NFTBAN_MAIL_RECIPIENT="base@example.test"\n' > "$SB/etc/conf.d/mail.conf"
+printf 'NFTBAN_MAIL_RECIPIENT=""\n'                  > "$SB/etc/conf.d/mail.conf.local"
+printf 'NFTBAN_MAIL_RECIPIENT="central@example.test"\n' > "$SB/etc/nftban.conf.local"
+before=$(_eff_update_email "$PRE_UPDATE")
+after=$(_eff_update_email "$CUR_UPDATE")
+[[ "$after" == "central@example.test" ]] \
+  && ok "differential: non-empty central override WINS post-fix" \
+  || bad "differential: central override lost post-fix (got '$after')"
+[[ "$before" != "$after" ]] \
+  && ok "differential: pre-fix ignored the central override ('$before') — control hits the defect [$(_prefix_mode)]" \
+  || bad "differential: pre-fix already honoured the central override — control does NOT hit the defect [$(_prefix_mode)]"
 
 echo "=== 5. cmd_status.sh _status_section_protection — six subjects, six sub-transactions ==="
 _mk

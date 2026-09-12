@@ -2213,31 +2213,30 @@ _update_auto_status() {
 
     # Load mail config for global recipient fallback
     local global_mail_recipient=""
-    local mail_conf_present=0
     if [[ -f "$mail_config" ]]; then
         source "$mail_config" || true
-        mail_conf_present=1
+        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
     fi
     if [[ -f "$mail_config_local" ]]; then
         _source_local "$mail_config_local"
-        mail_conf_present=1
+        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$global_mail_recipient}"
     fi
 
     # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
-    # transaction are complete and no value has been consumed yet, so the single central
-    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    # transaction are complete, so the single central operator override is applied LAST:
+    # BASE < MODULE_LOCAL < CENTRAL.
     declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
         && nftban_config_apply_final_operator_overlay
 
-    # v1.230.0 PR-5c-B1: the recipient used to be captured INSIDE each load branch, which
-    # froze it before the later layers were applied — there was therefore no point in the
-    # function that was both "after every load" and "before the first read". The capture is
-    # moved past the whole transaction so the overlay has a valid site. mail_conf_present
-    # preserves the previous semantics exactly: the global fallback is taken only when the
-    # mail config surface exists, never from an unrelated ambient variable.
-    if [[ $mail_conf_present -eq 1 ]]; then
-        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
-    fi
+    # ⛔ The two capture lines above are DELIBERATELY LEFT AS THEY WERE, and this third
+    #    capture repeats the IDENTICAL "${VAR:-$prior}" cascade form. An earlier attempt
+    #    replaced all three with a single post-transaction capture; that silently changed
+    #    empty-value handling — with base="ops@example.com" and an empty module-local, the
+    #    cascade keeps the base value while a bare capture yields "". What an empty value
+    #    MEANS is owned by CONFIG-LOCAL-EMPTY-VALUE-SEMANTICS and must not be redefined here.
+    #    Repeating the same cascade lets the central override win when it sets a NON-EMPTY
+    #    value, and changes nothing otherwise.
+    global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$global_mail_recipient}"
 
     enabled="${NFTBAN_UPDATE_AUTO_ENABLED:-false}"
     channel="${NFTBAN_UPDATE_CHANNEL:-stable}"
