@@ -2213,13 +2213,30 @@ _update_auto_status() {
 
     # Load mail config for global recipient fallback
     local global_mail_recipient=""
+    local mail_conf_present=0
     if [[ -f "$mail_config" ]]; then
         source "$mail_config" || true
-        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
+        mail_conf_present=1
     fi
     if [[ -f "$mail_config_local" ]]; then
         _source_local "$mail_config_local"
-        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$global_mail_recipient}"
+        mail_conf_present=1
+    fi
+
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
+
+    # v1.230.0 PR-5c-B1: the recipient used to be captured INSIDE each load branch, which
+    # froze it before the later layers were applied — there was therefore no point in the
+    # function that was both "after every load" and "before the first read". The capture is
+    # moved past the whole transaction so the overlay has a valid site. mail_conf_present
+    # preserves the previous semantics exactly: the global fallback is taken only when the
+    # mail config surface exists, never from an unrelated ambient variable.
+    if [[ $mail_conf_present -eq 1 ]]; then
+        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
     fi
 
     enabled="${NFTBAN_UPDATE_AUTO_ENABLED:-false}"
@@ -2353,6 +2370,11 @@ _cmd_update_auto_run() {
     # Load mail config for global email fallback
     source "$mail_config" 2>/dev/null || true
     _source_local "$mail_config_local"
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 
     log_file="${NFTBAN_UPDATE_LOG_FILE:-$log_file}"
 

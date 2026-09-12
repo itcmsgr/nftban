@@ -1087,6 +1087,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
         rbl_status="ENABLED"
     fi
@@ -1128,6 +1133,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     botguard_enabled="${HTTP_BOTGUARD_ENABLED:-false}"
     if [[ "$botguard_enabled" == "true" ]]; then
         if nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
@@ -1165,6 +1175,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     botscan_enabled="${BOTSCAN_ENABLED:-false}"
     botscan_mode="${BOTSCAN_ACTION_MODE:-both}"
     if [[ "$botscan_enabled" == "true" ]]; then
@@ -1250,6 +1265,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     if [[ "${NFTBAN_TUNNEL_ENABLED:-NO}" == "YES" ]]; then
         local tunnel_high=0 tunnel_med=0
         local tunnel_state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/tunnel"
@@ -1309,6 +1329,11 @@ _status_section_protection() {
     local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
     _source_local "$zabbix_local"
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
         if _unit_is_active nftban-unified-exporter.timer; then
@@ -1331,6 +1356,11 @@ _status_section_protection() {
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
     _source_local "$connectors_local"
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" == "true" ]]; then
         local connector_count=0
@@ -2095,6 +2125,11 @@ output_json() {
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
+        # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+        # transaction are complete and no value has been consumed yet, so the single central
+        # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+        declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+            && nftban_config_apply_final_operator_overlay
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
