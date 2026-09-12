@@ -77,5 +77,62 @@ for f in cmd_connector.sh cmd_report.sh; do
 done
 
 echo
+echo "=== B2 (v1.230.0): the two mutation paths repaired for PR-5c-B2 ==="
+# Both were REGISTERED defects, not hypotheses:
+#   CONFIG-UPDATE-AUTO-DISABLE-EXACT-MATCH-SILENT-DROP   cmd_update.sh
+#   CONFIG-MAIL-SETUP-MUTATES-PACKAGE-OWNED-BASE         cmd_report.sh
+# The contract is WRITE_SUCCESS != MUTATION_SUCCESS: rc=0 proves nothing on its own,
+# MUTATION_SUCCESS requires REQUESTED == PERSISTED == EFFECTIVE.
+
+# --- structural: no executable exact-literal sed survives in the disable path ---
+_b2_seds=$(awk '/^[[:space:]]*#/ {next} /sed -i .*NFTBAN_UPDATE_AUTO_ENABLED/ {c++} END {print c+0}' \
+           "$ROOT/cli/lib/nftban/cli/cmd_update.sh")
+[[ "$_b2_seds" -eq 0 ]] \
+    && ok "B2-05 no executable exact-match sed remains for NFTBAN_UPDATE_AUTO_ENABLED" \
+    || bad "B2-05 $_b2_seds executable exact-match sed(s) remain — the value-form drop can return"
+
+# --- structural: the mail wizard must not write the dpkg-tracked base ---
+# conf.d/mail.conf is enrolled as a conffile by packaging/build_nftban.sh (every *.conf
+# under /etc/nftban; *.local explicitly excluded). A runtime writer against it makes the
+# shipped file diverge from its packaged checksum.
+_b2_base=$(awk '/^[[:space:]]*#/ {next} /(sed -i|>>|\} >)[^#]*"\$mail_conf"/ {c++} END {print c+0}' \
+           "$ROOT/cli/lib/nftban/cli/cmd_report.sh")
+[[ "$_b2_base" -eq 0 ]] \
+    && ok "B2-03 no writer targets the package-owned conf.d/mail.conf" \
+    || bad "B2-03 $_b2_base writer(s) still mutate the packaged base conffile"
+
+# --- structural: the full-regeneration branch is gone, not retargeted ---
+grep -q 'Old format or empty file - write new configuration' "$ROOT/cli/lib/nftban/cli/cmd_report.sh" \
+    && bad "B2-03 the wizard still regenerates the whole mail config (discards operator edits)" \
+    || ok "B2-03 full-regeneration branch removed, not retargeted"
+
+# --- behavioural: every value form the exact-literal sed used to drop ---
+# These are the measured pre-fix drops. Each must now persist as an EFFECTIVE "false".
+for _b2_seed in 'NFTBAN_UPDATE_AUTO_ENABLED="true"' 'NFTBAN_UPDATE_AUTO_ENABLED=true' \
+                "NFTBAN_UPDATE_AUTO_ENABLED='true'" 'NFTBAN_UPDATE_AUTO_ENABLED = "true"'; do
+    _b2_d="$(mktemp -d)"; printf '%s\n' "$_b2_seed" > "$_b2_d/update.conf.local"
+    if nftban_config_kv_set "$_b2_d/update.conf.local" NFTBAN_UPDATE_AUTO_ENABLED "false" >/dev/null 2>&1; then
+        _b2_n=$(grep -cE '^[[:space:]]*NFTBAN_UPDATE_AUTO_ENABLED=' "$_b2_d/update.conf.local")
+        _b2_v=$(grep -E '^[[:space:]]*NFTBAN_UPDATE_AUTO_ENABLED=' "$_b2_d/update.conf.local" | tail -1 | sed 's/^[^=]*=//; s/^"//; s/"$//')
+        [[ "$_b2_v" == "false" ]] \
+            && ok "B2-05 seed [$_b2_seed] -> persisted false (cardinality $_b2_n)" \
+            || bad "B2-05 seed [$_b2_seed] -> persisted [$_b2_v], request dropped"
+    else
+        bad "B2-05 seed [$_b2_seed] -> authority refused the write"
+    fi
+    rm -rf "$_b2_d"
+done
+
+# --- behavioural: absent target file must still persist (the second drop) ---
+# Pre-fix the sed sat inside `[[ -f "$config_local" ]]`, so with no .local NOTHING was
+# written while the timers were disabled anyway: TIMERS OFF / CONFIG SAYS ENABLED.
+_b2_d="$(mktemp -d)"; : > "$_b2_d/update.conf.local"
+nftban_config_kv_set "$_b2_d/update.conf.local" NFTBAN_UPDATE_AUTO_ENABLED "false" >/dev/null 2>&1
+_b2_v=$(grep -E '^[[:space:]]*NFTBAN_UPDATE_AUTO_ENABLED=' "$_b2_d/update.conf.local" 2>/dev/null | tail -1 | sed 's/^[^=]*=//; s/"//g')
+[[ "$_b2_v" == "false" ]] \
+    && ok "B2-05 empty target file: key appended, value persisted" \
+    || bad "B2-05 empty target file: nothing persisted (got [$_b2_v])"
+rm -rf "$_b2_d"
+
 printf 'config-kv-mutation-truth: %s (passed=%d failed=%d)\n' "$([[ $F -eq 0 ]] && echo PASS || echo FAIL)" "$P" "$F"
 exit $(( F > 0 ? 1 : 0 ))

@@ -453,6 +453,7 @@ nftban_report_cmd_email_setup() {
     echo ""
 
     local mail_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    local mail_conf_local="${mail_conf}.local"   # v1.230.0 PR-5c-B2: the writable operator surface
 
     # Check if mail.conf exists
     if [[ ! -f "$mail_conf" ]]; then
@@ -517,71 +518,46 @@ nftban_report_cmd_email_setup() {
         echo "✓ Backed up existing configuration"
     fi
 
-    # Check if file already has the standard NFTBan variables
-    if grep -q "NFTBAN_MAIL_RECIPIENT" "$mail_conf" 2>/dev/null; then
-        # File uses standard NFTBan variables - update in place
-        echo "✓ Updating existing mail configuration..."
-
-        # Update recipient (proper escaping for sed)
-        if grep -q "^NFTBAN_MAIL_RECIPIENT=" "$mail_conf"; then
-            # Use different delimiter and proper escaping
-            sed -i "s|^NFTBAN_MAIL_RECIPIENT=.*|NFTBAN_MAIL_RECIPIENT=\"${user_email}\"|g" "$mail_conf"
-        else
-            echo "NFTBAN_MAIL_RECIPIENT=\"$user_email\"" >> "$mail_conf"
-        fi
-
-        # Update mail system based on user choice
-        # v1.230.0 PR-5c-A: these two seds had NO absent-key guard, while their sibling
-        # NFTBAN_MAIL_RECIPIENT above does. The enclosing `grep -q NFTBAN_MAIL_RECIPIENT`
-        # proves only that RECIPIENT exists — never that MAIL_SYSTEM does — so on a config
-        # carrying RECIPIENT but not MAIL_SYSTEM the request was silently dropped at rc=0.
-        _mail_system="smtp"
-        [[ "$mail_method" == "1" ]] && _mail_system="sendmail"
-        if ! nftban_config_kv_set "$mail_conf" NFTBAN_MAIL_SYSTEM "$_mail_system"; then
-            echo "✗ Mail system NOT configured — $mail_conf was not updated"
-            return 1
-        fi
-
-    else
-        # Old format or empty file - write new configuration using STANDARD variables
-        {
-            echo "# ============================================================================="
-            echo "# NFTBan Mail Configuration"
-            echo "# Generated: $(date)"
-            echo "# ============================================================================="
-            echo ""
-            echo "# Recipient email (STANDARD VARIABLE)"
-            echo "NFTBAN_MAIL_RECIPIENT=\"$user_email\""
-            echo ""
-
-            if [[ "$mail_method" == "1" ]]; then
-                echo "# Use sendmail"
-                echo "NFTBAN_MAIL_SYSTEM=\"sendmail\""
-            else
-                echo "# Use SMTP (requires additional configuration)"
-                echo "NFTBAN_MAIL_SYSTEM=\"smtp\""
-                echo ""
-                echo "# SMTP Configuration (edit these in /etc/nftban/nftban.conf.local)"
-                echo "# NFTBAN_SMTP_HOST=\"smtp.example.com\""
-                echo "# NFTBAN_SMTP_PORT=\"587\""
-                echo "# NFTBAN_SMTP_USER=\"user@example.com\""
-                echo "# NFTBAN_SMTP_PASS=\"your-password\""
-                echo "# NFTBAN_SMTP_TLS=\"yes\""
-            fi
-        } > "$mail_conf"
+    # v1.230.0 PR-5c-B2: the operator surface is the .local override, NEVER the packaged base.
+    # conf.d/mail.conf is a dpkg-tracked conffile — packaging/build_nftban.sh:2310-2347
+    # GENERATES the conffiles list from the staged tree, enrolling every *.conf under
+    # /etc/nftban and explicitly EXCLUDING *.local with the comment "operator override
+    # files, dpkg must never touch". RPM protects the same set with %config(noreplace).
+    # Writing the base made the shipped file diverge from its packaged checksum, which is
+    # the documented trigger for the dpkg conffile prompt on the next upgrade.
+    #
+    # ⛔ The previous code ALSO had a full-regeneration branch that rewrote the entire file
+    #    from a heredoc whenever it judged the existing content "old format or empty". That
+    #    branch is REMOVED, not retargeted: regenerating an operator surface from a wizard
+    #    discards any hand edit wherever it points.
+    #
+    # Both keys now go through the single set-or-append authority (PR-5c-A1), which appends
+    # when the key is absent, refuses ambiguous cardinality, and re-reads to verify
+    # REQUESTED == EFFECTIVE before reporting success.
+    local _mail_system="smtp"
+    [[ "$mail_method" == "1" ]] && _mail_system="sendmail"
+    mkdir -p "$(dirname "$mail_conf_local")" 2>/dev/null || true
+    [[ -f "$mail_conf_local" ]] || : > "$mail_conf_local"
+    if ! nftban_config_kv_set "$mail_conf_local" NFTBAN_MAIL_RECIPIENT "$user_email"; then
+        echo "✗ Recipient NOT configured — $mail_conf_local was not updated"
+        return 1
+    fi
+    if ! nftban_config_kv_set "$mail_conf_local" NFTBAN_MAIL_SYSTEM "$_mail_system"; then
+        echo "✗ Mail system NOT configured — $mail_conf_local was not updated"
+        return 1
     fi
 
-    chmod 640 "$mail_conf"
-    chown root:nftban "$mail_conf" 2>/dev/null || true
+    chmod 640 "$mail_conf_local"
+    chown root:nftban "$mail_conf_local" 2>/dev/null || true
 
-    echo "✓ Configuration saved to $mail_conf"
+    echo "✓ Configuration saved to $mail_conf_local"
     echo ""
 
     if [[ "$mail_method" == "2" ]]; then
         echo "⚠️  SMTP configuration incomplete!"
         echo ""
         echo "Next steps:"
-        echo "  1. Edit $mail_conf"
+        echo "  1. Edit $mail_conf_local"
         echo "  2. Update SMTP settings (host, port, username, password)"
         echo "  3. Test: nftban mail test"
         echo ""

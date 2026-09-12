@@ -2153,11 +2153,34 @@ _update_auto_disable() {
         return 1
     fi
 
-    # Update local config
-    if [[ -f "$config_local" ]]; then
-        # Update the enabled flag in local config
-        sed -i 's/NFTBAN_UPDATE_AUTO_ENABLED="true"/NFTBAN_UPDATE_AUTO_ENABLED="false"/' "$config_local"
-        _update_log OK "Configuration updated: $config_local"
+    # v1.230.0 PR-5c-B2: WRITE_SUCCESS != MUTATION_SUCCESS.
+    # The previous form was an EXACT LITERAL sed guarded by `[[ -f "$config_local" ]]`:
+    #     sed -i 's/NFTBAN_UPDATE_AUTO_ENABLED="true"/...="false"/' "$config_local"
+    # It carried TWO independent silent drops, both measured:
+    #   1. Value-form mismatch — `=true`, `='true'` and `= "true"` were all left
+    #      UNCHANGED at rc=0 while the CLI still printed "Configuration updated".
+    #   2. Missing target — when update.conf.local did not exist NOTHING was written at
+    #      all, while the timers below were disabled anyway, leaving the durable split
+    #      TIMERS OFF / CONFIG SAYS ENABLED. Any later path that re-derives timer state
+    #      from configuration could then silently resume auto-update.
+    # Both are replaced by the single set-or-append authority (PR-5c-A1), which appends
+    # when the key is absent, REFUSES ambiguous cardinality, and re-reads the file to
+    # verify REQUESTED == EFFECTIVE before reporting success.
+    local _auto_disable_persisted=1
+    declare -F nftban_config_kv_set >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_config_kv.sh" 2>/dev/null || true
+    if ! declare -F nftban_config_kv_set >/dev/null 2>&1; then
+        _auto_disable_persisted=0
+        _update_log ERROR "Mutation authority unavailable; auto-update state NOT persisted"
+    else
+        mkdir -p "$(dirname "$config_local")" 2>/dev/null || true
+        [[ -f "$config_local" ]] || : > "$config_local"
+        if nftban_config_kv_set "$config_local" NFTBAN_UPDATE_AUTO_ENABLED "false"; then
+            _update_log OK "Configuration updated: $config_local"
+        else
+            _auto_disable_persisted=0
+            _update_log ERROR "Auto-update state NOT persisted to $config_local"
+        fi
     fi
 
     # Disable both update timers
@@ -2179,6 +2202,11 @@ _update_auto_disable() {
     echo ""
     echo "  Re-enable with: nftban update auto enable --email EMAIL"
     echo ""
+    # ⛔ The timers ARE still disabled when the persist fails: stopping auto-update is the
+    # protective action the operator asked for, and skipping it would fail OPEN. The
+    # failure is surfaced as a non-zero return so an inconsistent state is never
+    # reported as success.
+    [[ $_auto_disable_persisted -eq 1 ]] || return 1
 }
 
 _update_auto_status() {
