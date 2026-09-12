@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="config-kv-mutation-truth"
 # meta:type="test"
-# meta:description="v1.230.0 PR-5c-A. Locks CONFIG-MUTATION-SILENT-DROP-WHEN-KEY-ABSENT. `sed -i \"s|^KEY=.*|KEY=v|\"` substitutes ONLY when the key already exists; against an absent key it changes nothing and still exits 0, so the caller reports success for a request that was never written. Asserts both branches of nftban_config_kv_set (replace-exactly-once / append-exactly-once), the exactly-one cardinality invariant that stops a naive append converting silent-drop into duplicate-key ambiguity, fail-closed refusal on ambiguous or malformed input, and post-write verification. Negative control reproduces the OLD sed idiom and proves it silently drops — so a regression to that idiom fails here. SCOPE: REQUESTED == PERSISTED. It does NOT assert REQUESTED == EFFECTIVE; that is PR-5c-B (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE)."
+# meta:description="v1.230.0 PR-5c-A. Locks CONFIG-MUTATION-SILENT-DROP-WHEN-KEY-ABSENT. `sed -i \"s|^KEY=.*|KEY=v|\"` substitutes ONLY when the key already exists; against an absent key it changes nothing and still exits 0, so the caller reports success for a request that was never written. Asserts both branches of nftban_config_kv_set (replace-exactly-once / append-exactly-once), the exactly-one cardinality invariant that stops a naive append converting silent-drop into duplicate-key ambiguity, fail-closed refusal on ambiguous or malformed input, and post-write verification. Negative control reproduces the OLD sed idiom and proves it silently drops — so a regression to that idiom fails here. SCOPE of the PR-5c-A sections: REQUESTED == PERSISTED. They do NOT assert REQUESTED == EFFECTIVE; that is PR-5c-B (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE). The B3 section locks the OTHER disposition available to a mutation entry point: FAIL_CLOSED_SPLIT_AUTHORITY. watchdog and login are each served by TWO runtime planes (shell and Go) whose config chains disagree, so no write can be proven to reach every owner; the mutation must be refused BEFORE any state change, leave the target byte-identical (asserted on sha256, never on rc alone), name both conflicting authorities, and exit non-zero. Negative controls re-run the SAME command functions with the guard call removed by declared inversion and prove the pre-B3 behaviour: rc=0 plus a real mutation. It does NOT choose a plane, synchronise owners or redirect writes — CONFIG-WATCHDOG-DUAL-RUNTIME-AUTHORITY-SPLIT stays BLOCKED_BY = OWNER_DECISION."
 # meta:ta.id="config_kv_mutation_truth_test"
 # meta:ta.owner="core"
 # meta:ta.module="config-mutation-safety"
@@ -15,7 +15,7 @@
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:inventory.files="cli/lib/nftban/lib/nftban_config_kv.sh,cli/lib/nftban/cli/cmd_connector.sh,cli/lib/nftban/cli/cmd_report.sh"
+# meta:inventory.files="cli/lib/nftban/lib/nftban_config_kv.sh,cli/lib/nftban/lib/nftban_config_split_authority.sh,cli/lib/nftban/cli/cmd_connector.sh,cli/lib/nftban/cli/cmd_report.sh,cli/lib/nftban/cli/cmd_watchdog.sh,cli/lib/nftban/cli/cmd_login.sh"
 # meta:inventory.binaries="bash,grep,mktemp"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -133,6 +133,191 @@ _b2_v=$(grep -E '^[[:space:]]*NFTBAN_UPDATE_AUTO_ENABLED=' "$_b2_d/update.conf.l
     && ok "B2-05 empty target file: key appended, value persisted" \
     || bad "B2-05 empty target file: nothing persisted (got [$_b2_v])"
 rm -rf "$_b2_d"
+
+
+echo
+echo "=== B3 (v1.230.0): SPLIT RUNTIME AUTHORITY must fail closed BEFORE mutation ==="
+# CONFIG-WATCHDOG-DUAL-RUNTIME-AUTHORITY-SPLIT (BLOCKED_BY = OWNER_DECISION).
+# Two subjects are served by TWO runtime planes whose config chains disagree:
+#   watchdog  conf.d/watchdog.conf / NFTBAN_WATCHDOG_ENABLED
+#             shell owner  core/nftban_watchdog.sh:81,:590 consumes the key but loads only
+#                          conf.d/watchdog/main.conf[.local]  (:71-77) — never the subject
+#             go owner     internal/watchdog/config_loader.go:36-62 reads the subject but
+#                          consumes NFTBAN_DYNAMIC_WATCHDOG_ENABLED (:106) — never the key
+#             => 0 of 2 owners observe the write: STRUCTURAL split
+#   login     conf.d/login/main.conf.local / LOGIN_ENABLED
+#             shell owner  core/nftban_login.sh:113-121,:433,:504 — nftban.conf.local is
+#                          applied BEFORE the module base (:68) and never re-applied
+#             go owner     internal/loginmon/module.go:699-720,:754 — nftban.conf.local is
+#                          applied LAST (:722-727)
+#             => the planes invert central precedence: STATE-DEPENDENT split, present
+#                exactly when nftban.conf.local also declares LOGIN_ENABLED
+# SCOPE: refusal only. B3 does not choose a plane, synchronise owners or redirect writes.
+GUARD="$ROOT/cli/lib/nftban/lib/nftban_config_split_authority.sh"
+[[ -r "$GUARD" ]] && ok "B3-00 split-authority guard is present" || bad "B3-00 guard missing: $GUARD"
+
+# --- unit: verdicts and fail-closed vocabulary -------------------------------
+if [[ -r "$GUARD" ]]; then
+  _b3_rc(){ ( set +e
+              NFTBAN_CONFIG_DIR="$1" bash -c '
+                 source "$1" || exit 90
+                 nftban_config_split_guard "$2" >/dev/null 2>&1
+                 echo $?' _ "$GUARD" "$2" ); }
+  _b3_msg(){ ( set +e
+               NFTBAN_CONFIG_DIR="$1" bash -c '
+                 source "$1" || exit 90
+                 nftban_config_split_guard "$2" 2>&1 >/dev/null' _ "$GUARD" "$2" ); }
+
+  _b3_empty="$(mktemp -d)"
+  [[ "$(_b3_rc "$_b3_empty" watchdog)" -eq 9 ]] \
+      && ok "B3-01 watchdog: structural split REFUSED (rc=9)" \
+      || bad "B3-01 watchdog split not refused (rc=$(_b3_rc "$_b3_empty" watchdog))"
+  [[ "$(_b3_rc "$_b3_empty" nosuchsubject)" -eq 8 ]] \
+      && ok "B3-02 unregistered subject fails closed (rc=8), never silently permitted" \
+      || bad "B3-02 unregistered subject did not fail closed"
+
+  _b3_d="$(_b3_msg "$_b3_empty" watchdog)"
+  { grep -q 'SPLIT RUNTIME AUTHORITY' <<<"$_b3_d" \
+    && grep -q 'core/nftban_watchdog.sh' <<<"$_b3_d" \
+    && grep -q 'internal/watchdog/config_loader.go' <<<"$_b3_d" \
+    && grep -q 'NFTBAN_DYNAMIC_WATCHDOG_ENABLED' <<<"$_b3_d"; } \
+      && ok "B3-03 watchdog diagnostic NAMES both conflicting runtime authorities" \
+      || bad "B3-03 watchdog diagnostic does not name both authorities"
+
+  # login is STATE-dependent: no central declaration -> no split -> the guard must NOT refuse.
+  # (A guard that refuses unconditionally would pass a refusal test while breaking the command.)
+  printf 'NFTBAN_UNRELATED="x"\n' > "$_b3_empty/nftban.conf.local"
+  [[ "$(_b3_rc "$_b3_empty" login)" -eq 0 ]] \
+      && ok "B3-04 login: no central LOGIN_ENABLED -> both owners agree -> guard permits" \
+      || bad "B3-04 login guard refused a state with no proven split (blanket refusal)"
+  printf 'LOGIN_ENABLED="false"\n' >> "$_b3_empty/nftban.conf.local"
+  [[ "$(_b3_rc "$_b3_empty" login)" -eq 9 ]] \
+      && ok "B3-05 login: central LOGIN_ENABLED present -> chains invert -> REFUSED (rc=9)" \
+      || bad "B3-05 login split not refused (rc=$(_b3_rc "$_b3_empty" login))"
+  _b3_d="$(_b3_msg "$_b3_empty" login)"
+  { grep -q 'core/nftban_login.sh' <<<"$_b3_d" \
+    && grep -q 'internal/loginmon/module.go' <<<"$_b3_d"; } \
+      && ok "B3-06 login diagnostic NAMES both conflicting runtime authorities" \
+      || bad "B3-06 login diagnostic does not name both authorities"
+  rm -rf "$_b3_empty"
+fi
+
+# --- structural: the guard is MANDATORY and runs FIRST ------------------------
+# Located by CONTENT, never by line number: the first executable statement of each
+# mutation entry point must be the guard, so nothing (not even a mkdir/touch of a
+# .local file, not even systemctl) can run ahead of the refusal.
+_b3_first_stmt(){ # <file> <function>
+    awk -v fn="$2" '
+        $0 ~ "^"fn"\\(\\) \\{" {inf=1; next}
+        inf && /^\}/ {exit}
+        inf {
+            line=$0
+            sub(/^[[:space:]]+/,"",line)
+            if (line=="" || line ~ /^#/) next
+            print line; exit
+        }' "$1"
+}
+for _b3_pair in "cmd_watchdog.sh:nftban_watchdog_cmd_enable:watchdog" \
+                "cmd_watchdog.sh:nftban_watchdog_cmd_disable:watchdog" \
+                "cmd_login.sh:nftban_login_cmd_enable:login" \
+                "cmd_login.sh:nftban_login_cmd_disable:login"; do
+    _b3_f="${_b3_pair%%:*}"; _b3_rest="${_b3_pair#*:}"
+    _b3_fn="${_b3_rest%%:*}"; _b3_subj="${_b3_rest##*:}"
+    _b3_got="$(_b3_first_stmt "$ROOT/cli/lib/nftban/cli/$_b3_f" "$_b3_fn")"
+    [[ "$_b3_got" == "nftban_config_split_guard ${_b3_subj} || return \$?" ]] \
+        && ok "B3-07 $_b3_fn: guard is the FIRST executable statement" \
+        || bad "B3-07 $_b3_fn: first statement is [$_b3_got], not the split guard"
+done
+for _b3_f in cmd_watchdog.sh cmd_login.sh; do
+    # MANDATORY source: an `if [[ -f ... ]]` wrapper would silently fail OPEN when the
+    # guard is absent. The module must refuse to load instead.
+    grep -qE '^source "\$\{NFTBAN_LIB_DIR\}/lib/nftban_config_split_authority\.sh" \|\| return 1$' \
+        "$ROOT/cli/lib/nftban/cli/$_b3_f" \
+        && ok "B3-08 $_b3_f sources the guard unconditionally (fail closed if absent)" \
+        || bad "B3-08 $_b3_f does not source the guard unconditionally"
+done
+
+# --- behavioural: REFUSAL LEAVES THE TARGET BYTE-IDENTICAL --------------------
+# rc!=0 does not prove "no file change", so both arms assert on sha256, not on rc alone.
+# Both arms run the REAL command function from the REAL module, over an identical
+# sandbox, with the SAME accommodations (systemctl stubbed, the root gate neutralised).
+# The ONLY difference in the negative-control arm is the DECLARED INVERSION: the guard
+# call is removed, reproducing the pre-B3 code exactly.
+_b3_sb="$(mktemp -d)"
+mkdir -p "$_b3_sb/bin" "$_b3_sb/lib/cli"
+printf '#!/bin/sh\nexit 0\n' > "$_b3_sb/bin/systemctl"; chmod +x "$_b3_sb/bin/systemctl"
+for _b3_d in lib core helpers exporters data setup health cron; do
+    [[ -d "$ROOT/cli/lib/nftban/$_b3_d" ]] && ln -s "$ROOT/cli/lib/nftban/$_b3_d" "$_b3_sb/lib/$_b3_d"
+done
+_b3_tree(){ ( cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum ) | sha256sum | cut -d' ' -f1; }
+_b3_run(){ # <cmdfile> <configdir> <call...>  -> prints rc
+    ( set +e
+      PATH="$_b3_sb/bin:$PATH" NFTBAN_LIB_DIR="$_b3_sb/lib" NFTBAN_CONFIG_DIR="$2" \
+      bash -c 'source "$1" >/dev/null 2>&1 || exit 90
+               shift
+               _rc=0; "$@" >/dev/null 2>&1 || _rc=$?
+               echo "$_rc"' _ "$1" "${@:3}" )
+}
+
+# ---- watchdog: disable() flips "true"->"false" pre-fix, so a byte change is visible
+_b3_wd="$_b3_sb/wd"; mkdir -p "$_b3_wd/conf.d"
+cp "$ROOT/etc/nftban/conf.d/watchdog.conf" "$_b3_wd/conf.d/watchdog.conf"
+cp "$ROOT/cli/lib/nftban/cli/cmd_watchdog.sh" "$_b3_sb/lib/cli/cmd_watchdog.sh"
+_b3_h0="$(sha256sum "$_b3_wd/conf.d/watchdog.conf" | cut -d' ' -f1)"
+_b3_r="$(_b3_run "$_b3_sb/lib/cli/cmd_watchdog.sh" "$_b3_wd" nftban_watchdog_cmd_disable)"
+_b3_h1="$(sha256sum "$_b3_wd/conf.d/watchdog.conf" | cut -d' ' -f1)"
+[[ "$_b3_r" -ne 0 ]] && ok "B3-09 watchdog disable REFUSED (rc=$_b3_r)" \
+                     || bad "B3-09 watchdog disable returned success despite the split"
+[[ "$_b3_h0" == "$_b3_h1" ]] \
+    && ok "B3-10 refused watchdog mutation left conf.d/watchdog.conf BYTE-IDENTICAL" \
+    || bad "B3-10 refused watchdog mutation changed the packaged conffile"
+
+# NEGATIVE CONTROL — declared inversion of the guard call only.
+grep -v 'nftban_config_split_guard watchdog || return \$?' \
+     "$ROOT/cli/lib/nftban/cli/cmd_watchdog.sh" > "$_b3_sb/lib/cli/cmd_watchdog.sh"
+grep -q 'nftban_config_split_guard' "$_b3_sb/lib/cli/cmd_watchdog.sh" \
+    && bad "B3-11 inversion failed: the guard call is still present" \
+    || ok "B3-11 negative control built (guard call removed, nothing else changed)"
+cp "$ROOT/etc/nftban/conf.d/watchdog.conf" "$_b3_wd/conf.d/watchdog.conf"
+_b3_h0="$(sha256sum "$_b3_wd/conf.d/watchdog.conf" | cut -d' ' -f1)"
+_b3_r="$(_b3_run "$_b3_sb/lib/cli/cmd_watchdog.sh" "$_b3_wd" nftban_watchdog_cmd_disable)"
+_b3_h1="$(sha256sum "$_b3_wd/conf.d/watchdog.conf" | cut -d' ' -f1)"
+{ [[ "$_b3_r" -eq 0 ]] && [[ "$_b3_h0" != "$_b3_h1" ]]; } \
+    && ok "B3-12 pre-B3 behaviour reproduced: rc=0 AND the conffile was mutated" \
+    || bad "B3-12 negative control did not hit the defect (rc=$_b3_r, changed=$([[ "$_b3_h0" == "$_b3_h1" ]] && echo no || echo yes))"
+
+# ---- login: split state = central override ALSO declares LOGIN_ENABLED
+_b3_lg="$_b3_sb/lg"; mkdir -p "$_b3_lg/conf.d/login"
+cp "$ROOT/etc/nftban/conf.d/login/main.conf" "$_b3_lg/conf.d/login/main.conf"
+cp "$ROOT/etc/nftban/conf.d/login_alert.conf" "$_b3_lg/conf.d/login_alert.conf" 2>/dev/null || true
+printf 'LOGIN_ENABLED="false"\n' > "$_b3_lg/nftban.conf.local"
+# Environment accommodation applied to BOTH arms: the root gate cannot be satisfied in
+# CI, and neutralising it identically in both arms cannot manufacture the difference.
+sed 's/\[\[ \$EUID -ne 0 \]\]/[[ 0 -ne 0 ]]/' \
+    "$ROOT/cli/lib/nftban/cli/cmd_login.sh" > "$_b3_sb/lib/cli/cmd_login.sh"
+_b3_h0="$(_b3_tree "$_b3_lg")"
+_b3_r="$(_b3_run "$_b3_sb/lib/cli/cmd_login.sh" "$_b3_lg" nftban_login_cmd_enable service)"
+_b3_h1="$(_b3_tree "$_b3_lg")"
+[[ "$_b3_r" -ne 0 ]] && ok "B3-13 login enable REFUSED under the split (rc=$_b3_r)" \
+                     || bad "B3-13 login enable returned success despite the split"
+[[ "$_b3_h0" == "$_b3_h1" ]] \
+    && ok "B3-14 refused login mutation left the whole config tree BYTE-IDENTICAL" \
+    || bad "B3-14 refused login mutation changed the config tree"
+[[ ! -e "$_b3_lg/conf.d/login/main.conf.local" ]] \
+    && ok "B3-15 refusal created no override file (no state change, not just no write)" \
+    || bad "B3-15 refusal still created conf.d/login/main.conf.local"
+
+# NEGATIVE CONTROL — same accommodation, guard call additionally removed.
+sed 's/\[\[ \$EUID -ne 0 \]\]/[[ 0 -ne 0 ]]/' "$ROOT/cli/lib/nftban/cli/cmd_login.sh" \
+  | grep -v 'nftban_config_split_guard login || return \$?' > "$_b3_sb/lib/cli/cmd_login.sh"
+_b3_h0="$(_b3_tree "$_b3_lg")"
+_b3_r="$(_b3_run "$_b3_sb/lib/cli/cmd_login.sh" "$_b3_lg" nftban_login_cmd_enable service)"
+_b3_h1="$(_b3_tree "$_b3_lg")"
+{ [[ "$_b3_r" -eq 0 ]] && [[ "$_b3_h0" != "$_b3_h1" ]] \
+  && [[ -f "$_b3_lg/conf.d/login/main.conf.local" ]]; } \
+    && ok "B3-16 pre-B3 behaviour reproduced: rc=0, tree mutated, override file created" \
+    || bad "B3-16 login negative control did not hit the defect (rc=$_b3_r)"
+rm -rf "$_b3_sb"
 
 printf 'config-kv-mutation-truth: %s (passed=%d failed=%d)\n' "$([[ $F -eq 0 ]] && echo PASS || echo FAIL)" "$P" "$F"
 exit $(( F > 0 ? 1 : 0 ))
