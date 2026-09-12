@@ -198,6 +198,12 @@ nftban_health_check_metrics() {
     declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
     _source_local "$metrics_local"
 
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
+
     # PROMETHEUS EXPORT CHECK (OPTIONAL - only if enabled)
     # Note: Prometheus export is OPTIONAL. NFTBan's default is nc-based unified export.
     local prometheus_export="${NFTBAN_EXPORT_PROMETHEUS:-auto}"
@@ -388,6 +394,12 @@ nftban_health_check_zabbix() {
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
     _source_local "$zabbix_local"
 
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
+
     # Check if Zabbix export is enabled
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" != "true" ]]; then
         if [[ -f "$zabbix_conf" ]]; then
@@ -514,6 +526,12 @@ nftban_health_check_connectors() {
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
     _source_local "$connectors_local"
+
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 
     # Check if connector framework is enabled
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" != "true" ]]; then
