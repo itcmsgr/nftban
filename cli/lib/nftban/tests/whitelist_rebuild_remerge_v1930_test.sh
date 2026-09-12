@@ -68,8 +68,8 @@ DELEGATE='_nftban_whitelist_reconcile_and_verify[[:space:]]'
 
 echo "=== T1: rebuild reconciles manual whitelist.d via core 'sync --quick' ==="
 # Two-part now: rebuild must DELEGATE, and the delegate must do the reconcile.
-if printf '%s\n' "$REBUILD" | grep -qE "$DELEGATE"; then
-  printf '%s\n' "$HELPER" | grep -qE 'sync --quick' \
+if grep -qE "$DELEGATE" <<<"$REBUILD"; then
+  grep -qE 'sync --quick' <<<"$HELPER" \
     && ok "rebuild delegates to the reconcile helper, which invokes core 'sync --quick'" \
     || bad "reconcile helper MISSING 'sync --quick' (manual --static whitelist would be dropped)"
 else
@@ -87,12 +87,12 @@ fi
 
 echo "=== T3: parity — firewall_reload also reconciles via 'sync --quick' ==="
 # Parity is now STRUCTURAL: one helper, so the two paths cannot silently diverge.
-printf '%s\n' "$RELOAD" | grep -qE "$DELEGATE" \
+grep -qE "$DELEGATE" <<<"$RELOAD" \
   && ok "reload delegates to the same reconcile helper (parity is structural)" \
   || bad "reload does NOT delegate to the shared helper (parity broken — investigate)"
 
 echo "=== T4: reconcile is guarded by core-binary existence (no hard failure if absent) ==="
-printf '%s\n' "$HELPER" | grep -qE '\[\[ ! -x "\$_core" \]\]|\[\[ -x .*core.* \]\]' \
+grep -qE '\[\[ ! -x "\$_core" \]\]|\[\[ -x .*core.* \]\]' <<<"$HELPER" \
   && ok "reconcile helper guarded by -x core check" \
   || bad "reconcile not guarded (could hard-fail when core binary absent)"
 
@@ -102,10 +102,10 @@ printf '%s\n' "$HELPER" | grep -E '"\$_core" sync|nftban-core.*sync' | grep -qE 
   || bad "reconcile not --quick"
 
 echo "=== T6 (v1.228.5): the reconcile result is no longer discarded ==="
-printf '%s\n' "$HELPER" | grep -qE 'sync --quick[^|]*\|\|[[:space:]]*true' \
+grep -qE 'sync --quick[^|]*\|\|[[:space:]]*true' <<<"$HELPER" \
   && bad "helper still swallows the reconcile failure with '|| true'" \
   || ok "reconcile failure is no longer swallowed"
-printf '%s\n' "$REBUILD" | grep -qE "_rebuild_whitelist_converged|if ! ${DELEGATE}" \
+grep -qE "_rebuild_whitelist_converged|if ! ${DELEGATE}" <<<"$REBUILD" \
   && ok "rebuild BRANCHES on the reconcile outcome" \
   || bad "rebuild ignores the reconcile outcome (it would report success regardless)"
 
@@ -132,6 +132,75 @@ printf '%s\n' "$_synth_b" | code_only | grep -qE 'sync --quick' \
   || bad "T7-C helper extraction empty/degenerate — T1/T4/T5 would be meaningless"
 
 echo ""
+echo "=== T8 (v1.230.0): CONTROLS — the SIGPIPE/pipefail assertion race is gone ==="
+# WHY THIS SECTION EXISTS. Under `set -o pipefail` (:33) the form
+#     printf '%s\n' "$VAR" | grep -q PATTERN
+# can report FAILURE EVEN WHEN THE PATTERN MATCHES: grep -q exits 0 at the first
+# match and closes the pipe, printf is then killed by SIGPIPE, and pipefail
+# propagates printf's non-zero status as the pipeline's status — so `&& ok` is
+# skipped and `|| bad` runs. Whether printf has finished writing before grep exits
+# is a SCHEDULING RACE, so the verdict depends on machine load.
+#
+# MEASURED on this file before the fix: 12/12 PASS standalone, but 1/16 FAIL under
+# 16 concurrent runs, and a DIFFERENT assertion failed each time (a real defect
+# fails the same assertion every time). It also flipped a full ci-bash suite
+# verdict on an unchanged tree: run1 PASS, run2 FAIL, run3 PASS.
+#
+# The repair is not "replace pipes with here-strings" — it is REMOVE AN IRRELEVANT
+# PRODUCER PROCESS while preserving the consumer's matching semantics. It applies
+# only where the producer is a pure emitter whose exit status carries no meaning.
+# Sites where a producer computes, filters, reads files or runs commands whose rc
+# matters are NOT in this class and are NOT rewritten here.
+_t8_pat="whitelist-sigpipe-control-token"
+
+# T8-A structural: this file must contain no pure-emitter early-exit pipeline.
+# ⛔ THE CHECKER MUST NOT BE ITS OWN SUBJECT. The detector's regex necessarily
+#    contains the very literal it searches for, so a naive scan matches its own
+#    source line and reports a phantom hazard — which is exactly what happened on
+#    the first run of this control (24/24 deterministic FAIL). Lines carrying the
+#    sentinel below are therefore excluded, and T8-E proves the exclusion did not
+#    blind the detector.
+_t8_haz=$(awk '/T8_SELF_EXCLUDE/ {next} /^[[:space:]]*#/ {next} /(printf|echo|cat)[^|]*\|[^|]*grep -q/ {c++} END {print c+0}' "${BASH_SOURCE[0]}")  # T8_SELF_EXCLUDE
+[[ "$_t8_haz" -eq 0 ]] \
+    && ok "T8-A no pure-emitter | grep -q sites remain in this file (0)" \
+    || bad "T8-A $_t8_haz pure-emitter | grep -q site(s) remain — the race can return"
+
+# T8-B negative control: the OLD form must be demonstrably capable of reporting
+# failure on a successful match. `yes` never stops emitting, so grep -q's early
+# exit ALWAYS delivers SIGPIPE — this makes the mechanism deterministic rather
+# than load-dependent, so the control cannot itself be flaky.
+_t8_rc=0
+( set -o pipefail; yes "$_t8_pat" | grep -q "$_t8_pat" ) || _t8_rc=$?
+[[ "$_t8_rc" -ne 0 ]] \
+    && ok "T8-B pre-fix form reports FAILURE despite a successful match (rc=$_t8_rc) — mechanism reproduced" \
+    || bad "T8-B pre-fix form returned 0; the control no longer demonstrates the motivating defect"
+
+# T8-C corrected form: same match, no producer process, so no SIGPIPE is possible.
+_t8_big="$(printf 'filler-%s\n' $(seq 1 5000); printf '%s\n' "$_t8_pat")"
+_t8_rc=0
+( set -o pipefail; grep -q "$_t8_pat" <<<"$_t8_big" ) || _t8_rc=$?
+[[ "$_t8_rc" -eq 0 ]] \
+    && ok "T8-C here-string form returns success on match under pipefail, at size" \
+    || bad "T8-C here-string form returned $_t8_rc — the repair does not hold"
+
+# T8-D the corrected form must still be able to FAIL when there is genuinely no
+# match, otherwise T8-C would pass vacuously for a predicate that never fails.
+_t8_rc=0
+( set -o pipefail; grep -q "absent-${_t8_pat}" <<<"$_t8_big" ) || _t8_rc=$?
+[[ "$_t8_rc" -ne 0 ]] \
+    && ok "T8-D here-string form still reports no-match correctly (rc=$_t8_rc)" \
+    || bad "T8-D here-string form returned 0 for an absent pattern — assertions would be vacuous"
+
+# T8-E positive control for T8-A: the self-exclusion must not have disabled the
+# detector. Feed it a fixture that DOES contain the hazardous form and require a
+# non-zero count — otherwise T8-A would pass trivially on any file.
+_t8_fx="$(mktemp)"; printf '%s\n' 'printf "%s" "$V" | grep -q needle' > "$_t8_fx"  # T8_SELF_EXCLUDE
+_t8_fxc=$(awk '/T8_SELF_EXCLUDE/ {next} /^[[:space:]]*#/ {next} /(printf|echo|cat)[^|]*\|[^|]*grep -q/ {c++} END {print c+0}' "$_t8_fx")  # T8_SELF_EXCLUDE
+rm -f "$_t8_fx"
+[[ "$_t8_fxc" -ge 1 ]] \
+    && ok "T8-E detector still finds the hazardous form in a positive fixture ($_t8_fxc)" \
+    || bad "T8-E detector found 0 in a fixture that contains the hazard — T8-A is blind"
+
 echo "=== whitelist rebuild re-merge v1.193.0: PASS=$PASS FAIL=$FAIL ==="
 [[ "$FAIL" -eq 0 ]] || exit 1
 exit 0
