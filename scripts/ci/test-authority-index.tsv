@@ -258,6 +258,7 @@ rebuild_module_evidence_test	cli/lib/nftban/tests/rebuild_module_evidence_test.s
 rebuild_nft_lock_participation_v1229_3_test	cli/lib/nftban/tests/rebuild_nft_lock_participation_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_ordinary_history_v1229_3_test	cli/lib/nftban/tests/rebuild_no_ordinary_history_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_no_syn_drop_v192_test	cli/lib/nftban/tests/rebuild_no_syn_drop_v192_test.sh	firewall	test	firewall-rebuild	ROOT_LAB	lab-manual	false	true	false	false	true	false			
+rebuild_refusal_contract_v1230_test	cli/lib/nftban/tests/rebuild_refusal_contract_v1230_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_snapshot_hard_gate_v1228_10_test	cli/lib/nftban/tests/rebuild_snapshot_hard_gate_v1228_10_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 rebuild_terminal_discriminator_v1229_3_test	cli/lib/nftban/tests/rebuild_terminal_discriminator_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 recovery_legacy_reconcile_v12012_test	cli/lib/nftban/tests/recovery_legacy_reconcile_v12012_test.sh	firewall	test	recovery	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

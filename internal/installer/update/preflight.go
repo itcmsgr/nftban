@@ -234,7 +234,10 @@ func rebuildRecoveryAvailable(exec executor.Executor) bool {
 	switch s {
 	case "COMMITTED", "DEGRADED",
 		"FAILED_SSH_UNKNOWN", "FAILED_AUTHORITY_ABORT", "FAILED_RENDER",
-		"FAILED_REBUILD", "FAILED_NO_FIREWALL", "FAILED_TAKEOVER":
+		"FAILED_REBUILD", "FAILED_NO_FIREWALL", "FAILED_TAKEOVER",
+		// v1.230.0 Gate 6R: deferred-rebuild terminals ARE terminal. Omitting them
+		// would make a refused install read as a stale in-progress marker.
+		"REBUILD_REFUSED_BUSY", "REBUILD_NOT_EXECUTED":
 		return true
 	}
 	return false
@@ -281,7 +284,9 @@ func isStaleInProgress(exec executor.Executor) bool {
 	switch s {
 	case "", "COMMITTED", "DEGRADED",
 		"FAILED_SSH_UNKNOWN", "FAILED_AUTHORITY_ABORT", "FAILED_RENDER",
-		"FAILED_REBUILD", "FAILED_NO_FIREWALL", "FAILED_TAKEOVER":
+		"FAILED_REBUILD", "FAILED_NO_FIREWALL", "FAILED_TAKEOVER",
+		// v1.230.0 Gate 6R: terminal, therefore not "in progress".
+		"REBUILD_REFUSED_BUSY", "REBUILD_NOT_EXECUTED":
 		return false
 	}
 	return true

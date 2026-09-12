@@ -36,6 +36,37 @@ const (
 	StateFailedNoFirewall InstallState = "FAILED_NO_FIREWALL"
 	StateFailedTakeover   InstallState = "FAILED_TAKEOVER"
 
+	// ═════════════════════════════════════════════════════════════════════
+	// v1.230.0 Gate 6R — DEFERRED REBUILD TERMINALS (NOT failures)
+	// ═════════════════════════════════════════════════════════════════════
+	// ⛔ NEITHER OF THESE MAY EVER BE COLLAPSED INTO StateFailedRebuild.
+	// FAILED_REBUILD asserts that a rebuild EXECUTED and failed. Both states
+	// below assert the opposite: no rebuild executed, so the firewall was not
+	// modified and existing enforcement is unchanged. On dns1 the first of
+	// these was reported as FAILED_REBUILD on a host whose enforcement had
+	// never been touched.
+	//
+	// ⛔ AND NEITHER IS COMMITTED. Enforcement still being in force is NOT a
+	// completed transaction — the convergence is owed and a retry is required.
+	//     PROTECTED != TRANSACTION COMPLETE.
+	//
+	// Both are terminal, both are NOT failures (refusal is a correct outcome,
+	// the same discipline as StateRestoreRefused), and both resume at
+	// PhaseSwitch so --repair re-runs the rebuild that never ran.
+
+	// StateRebuildRefusedBusy — every rebuild attempt inside the installer's
+	// deadline was REFUSED because another nft operation held the convergence
+	// lock. Established from the shell's REFUSED result contract, never from
+	// stderr text and never from an exit code.
+	StateRebuildRefusedBusy InstallState = "REBUILD_REFUSED_BUSY"
+
+	// StateRebuildNotExecuted — no result contract AND no execution witness.
+	// The root-cause guard for a missing record: "no record" means one of two
+	// opposite things, and this state is the one where execution was NOT
+	// established. When the witness DOES prove execution, a missing record
+	// stays FAILED_REBUILD and stays fatal.
+	StateRebuildNotExecuted InstallState = "REBUILD_NOT_EXECUTED"
+
 	// StateFailedPreflightDiskSpace (V125 R-5) is the terminal failure
 	// produced when the disk-space preflight at the end of phaseDetect
 	// determines that the state-dir's filesystem has insufficient free
@@ -258,6 +289,12 @@ func (s InstallState) IsApplyTerminal() bool {
 		// fleet operators can see "this host refused-install due to
 		// disk space" alongside other failure terminals.
 		StateFailedPreflightDiskSpace,
+		// v1.230.0 Gate 6R: an apply was attempted and reached a definitive
+		// outcome — "the rebuild never ran, retry owed". Fleet operators need
+		// that in history, and it must be visibly DISTINCT from install_fail's
+		// meaning of "a rebuild executed and failed".
+		StateRebuildRefusedBusy,
+		StateRebuildNotExecuted,
 		// PR-23: uninstall terminal states represent completed apply
 		// outcomes too. IsApplyTerminal participates in the
 		// history-write gate, but the uninstall-history Option A lock
@@ -306,6 +343,24 @@ func (s InstallState) IsRestoreExecuted() bool {
 // IsRestoreExecuted is a package-level alias for the (InstallState) method.
 func IsRestoreExecuted(s InstallState) bool { return s.IsRestoreExecuted() }
 
+// IsDeferredRebuild reports whether the state is a v1.230.0 Gate 6R deferred-rebuild
+// terminal: the rebuild did NOT execute, the firewall was NOT modified, and the
+// convergence is still owed.
+//
+// ⛔ IT IS NOT A FAILURE PREDICATE. IsFailed() stays false for both states. This exists
+// so control flow that must STOP (the phase runner) and diagnostics that must SPEAK (the
+// state file's reason) can act on them without pretending a rebuild failed.
+func (s InstallState) IsDeferredRebuild() bool {
+	switch s {
+	case StateRebuildRefusedBusy, StateRebuildNotExecuted:
+		return true
+	}
+	return false
+}
+
+// IsDeferredRebuild is a package-level alias for the (InstallState) method.
+func IsDeferredRebuild(s InstallState) bool { return s.IsDeferredRebuild() }
+
 // IsFailed returns true if the state represents a failure.
 //
 // PR-24: restore policy-engine terminal states (StateRestoreRefused,
@@ -342,6 +397,11 @@ func (s InstallState) IsTerminal() bool {
 		return true
 	}
 	if s == StateRestoreRefused || s == StateRestoreIntentRequired {
+		return true
+	}
+	// v1.230.0 Gate 6R: terminal for THIS run. The convergence is still owed, but
+	// this run has stopped and will not transition further without a new invocation.
+	if s == StateRebuildRefusedBusy || s == StateRebuildNotExecuted {
 		return true
 	}
 	// PR-25: all four restore execution outcomes are terminal. The two
@@ -390,6 +450,17 @@ func (s InstallState) ExitCode() int {
 		return ExitDegraded
 	case StateFailedAbort:
 		return ExitAborted
+	// v1.230.0 Gate 6R: DEFERRED IS NOT SUCCESS. The install did not complete, so the
+	// process exit must be non-zero and must never read as COMMITTED.
+	//
+	// ⛔ THE EXISTING ExitFailed=2 IS REUSED DELIBERATELY. A new code would have to be
+	// proven safe across install.sh, the RPM/DEB postinst wrappers and the lifecycle
+	// bridge, and nothing in this lane has done that work. The truthful distinction
+	// lives where it is actually consumed: install_state, report() and history carry
+	// REBUILD_REFUSED_BUSY / REBUILD_NOT_EXECUTED, never FAILED_REBUILD.
+	//     rc IS PROCESS EVIDENCE; THE STATE IS THE AUTHORITY.
+	case StateRebuildRefusedBusy, StateRebuildNotExecuted:
+		return ExitFailed
 	default:
 		if s.IsFailed() {
 			return ExitFailed
@@ -409,6 +480,8 @@ func (s InstallState) ResumePhase() Phase {
 	case StateSwitchComplete:
 		return PhaseConfigure
 	case StateFailedRebuild, StateFailedNoFirewall, StateFailedTakeover,
+		// v1.230.0 Gate 6R: the rebuild never ran — resume where it would have.
+		StateRebuildRefusedBusy, StateRebuildNotExecuted,
 		StatePrepareComplete:
 		return PhaseSwitch
 	case StateFailedRender, StateDetectComplete:

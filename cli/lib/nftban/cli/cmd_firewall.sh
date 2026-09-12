@@ -3357,6 +3357,132 @@ _rebuild_tx_is_terminal() {
 # path of a 731-line function with many `return` sites, without restructuring it. Uses fd 8: this file's
 # session-whitelist critical sections use fd 9, and although those are subshell-scoped
 # a distinct descriptor removes any doubt.
+# =============================================================================
+# v1.230.0 Gate 6R — REFUSAL PRODUCES A CONTRACT, NOT A SENTENCE
+# =============================================================================
+# ⛔ THE DEFECT THIS CLOSES (dns1, v1.229.13 -> v1.229.14, installer log):
+#
+#     [CMD] FAIL nftban firewall rebuild --install-context (exit=1)
+#     stderr=ERROR: convergence already in progress — this rebuild was REFUSED.
+#
+# The convergence lock was held, so the rebuild was refused BEFORE any firewall
+# mutation. Enforcement was unchanged. But refusal happens in the wrapper, ABOVE
+# the core that owns result publication, so NO result record was published — and
+# the installer, which treats a missing record as fatal by design, collapsed
+# ABSENCE OF CONTRACT into FAILED_REBUILD.
+#
+#     REFUSED  the rebuild NEVER STARTED, the firewall was NOT modified
+#     FAILED   the rebuild EXECUTED and failed
+#     TIMEOUT  the rebuild EXECUTED and did not finish in budget
+#
+# These three must never collapse into one another. The fix is a MACHINE-READABLE
+# refusal record; the stderr text above is kept for operators and is NOT an
+# interface. ⛔ NOTHING MAY PARSE IT.
+
+# _rebuild_optval <flag> "$@" — value of <flag> in the rebuild argv, or empty.
+#
+# The wrapper runs ABOVE the core's own option parser and must not duplicate it;
+# it needs exactly two values (where to publish, and which operation this is) and
+# reads only those. Unknown options stay the core's business.
+_rebuild_optval() {
+    local _want="$1"; shift
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "$_want" ]]; then printf '%s' "${2:-}"; return 0; fi
+        shift
+    done
+    return 1
+}
+
+# _rebuild_write_execution_witness <path> <operation_id>
+#
+# ⛔ WHY A WITNESS EXISTS AT ALL: "no result record" has TWO root causes with
+# OPPOSITE safety meanings —
+#
+#     the rebuild never started        -> the firewall was NOT touched
+#     the rebuild started and aborted  -> the firewall MAY have been touched
+#
+# Reading both as FAILED_REBUILD is the same category error as the refusal defect.
+# The witness is written ONLY after the convergence lock is HELD and immediately
+# before the core is entered, so its PRESENCE proves execution began and its
+# ABSENCE proves nothing downstream of the lock ran.
+#
+# ⛔ IT IS NOT A PROVISIONAL RESULT RECORD. It carries no disposition, is a
+# different artifact from the result contract, and is never rewritten. The
+# one-operation/one-final-record rule is untouched.
+#
+# It carries the operation id so the consumer can bind it to THIS operation
+# instead of trusting a bare file's existence.
+#     EXISTENCE IS NOT IDENTITY.
+_rebuild_write_execution_witness() {
+    local _path="${1:-}" _opid="${2:-}"
+    [[ -n "$_path" ]] || return 0
+    local _dir; _dir=$(dirname "$_path")
+    mkdir -p "$_dir" 2>/dev/null || true
+    printf 'operation_id=%s\n' "$_opid" > "$_path" 2>/dev/null || {
+        # Non-fatal, and deliberately so: a witness that cannot be written makes the
+        # consumer MORE conservative (execution not established -> retry required),
+        # never less. It must not itself abort a rebuild that is about to run.
+        echo "WARNING: could not write the rebuild execution witness ($_path)" >&2
+        return 1
+    }
+    return 0
+}
+
+# _rebuild_have_emitter — is the single result emitter loaded in this shell?
+#
+# A PREDICATE, NOT A CALL SITE. The wrapper runs above the point where the core
+# sources the classification library, so it must ask before it publishes. Kept as a
+# named predicate so the structural guard that requires every emit site to be
+# immediately terminal (tools/check-rebuild-result-authority.sh) sees exactly one
+# emit site in this file's refusal path, not three textual matches.
+_rebuild_have_emitter() {
+    declare -f _rebuild_emit_result >/dev/null 2>&1
+    return $?
+}
+
+# _rebuild_publish_refusal "$@" — publish the REFUSED contract for this operation.
+#
+# Runs in the wrapper, so the classification library the core normally sources has
+# NOT been loaded yet; it is sourced here. If it cannot be sourced there is no
+# emitter, and the caller is left with exactly the pre-v1.230.0 behaviour (rc only)
+# rather than a half-formed record.
+_rebuild_publish_refusal() {
+    local _NFTBAN_REBUILD_RESULT_FILE _NFTBAN_REBUILD_OPERATION_ID _NFTBAN_REBUILD_CONTEXT
+    _NFTBAN_REBUILD_RESULT_FILE=$(_rebuild_optval --result-file "$@") || _NFTBAN_REBUILD_RESULT_FILE=""
+    [[ -n "$_NFTBAN_REBUILD_RESULT_FILE" ]] || return 0     # no contract requested
+    _NFTBAN_REBUILD_OPERATION_ID=$(_rebuild_optval --operation-id "$@") || _NFTBAN_REBUILD_OPERATION_ID=""
+    _NFTBAN_REBUILD_CONTEXT="runtime-required"
+    _rebuild_is_update_lifecycle "$@" && _NFTBAN_REBUILD_CONTEXT="install-deferred"
+
+    if ! _rebuild_have_emitter; then
+        local _lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_rebuild_classify.sh"
+        # ⛔ SOURCING MUST NOT CHANGE THE CALLER'S SHELL OPTIONS.
+        # nftban_rebuild_classify.sh sets `-Eeuo pipefail` at FILE scope. The core can
+        # live with that because it sources the library on its own execution path and
+        # runs under it deliberately. The refusal path cannot: it returns non-zero by
+        # design, and leaving errexit armed would make that `return 1` terminate the
+        # CLI process at `_firewall_rebuild_serialized "$@"` in firewall_rebuild —
+        # before its caller ever reads the exit status.
+        #     A DIAGNOSTIC PATH MUST NOT REWRITE THE EXECUTION SEMANTICS AROUND IT.
+        local _saved_opts; _saved_opts="$(set +o)"
+        # shellcheck source=/dev/null
+        [[ -f "$_lib" ]] && source "$_lib" 2>/dev/null
+        eval "$_saved_opts" 2>/dev/null || true
+    fi
+    if ! _rebuild_have_emitter; then
+        echo "WARNING: cannot publish the REFUSED result contract — classification library unavailable" >&2
+        return 1
+    fi
+
+    # pre_status/post_status are read from the caller's scope by the emitter. A refusal
+    # OBSERVED NEITHER, and must not imply it did.
+    local pre_status="not-observed" post_status="not-observed"
+    # modified=false / enforcement_unchanged=true are PROVEN here, not assumed: the
+    # convergence lock was never acquired, so no code path that touches nft ran.
+    _rebuild_emit_result "$RD_REFUSED" "$CR_CONVERGENCE_LOCK_HELD" "false" "false" "REFUSED_CONVERGENCE_LOCK" "false" "true"
+    return $?
+}
+
 _firewall_rebuild_serialized() {
     local _nftlock_path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
     # ⛔ v1.229.11 LANE 7: THE POLICY LIVES HERE TOO, OR IT DOES NOT EXIST.
@@ -3397,6 +3523,15 @@ _firewall_rebuild_serialized() {
         echo "       Another nft operation (reconciliation, queue drain or rebuild) holds it." >&2
         echo "       The firewall was NOT modified; existing enforcement is unchanged." >&2
         exec 8>&-
+        # ⛔ v1.230.0 Gate 6R: PUBLISH THE REFUSAL AS A CONTRACT. The three lines above
+        # are for a human; the record below is the interface. Publication failure is
+        # reported by the helper and leaves NO record, which the consumer already
+        # treats fail-closed — it must not change the refusal verdict itself.
+        _rebuild_publish_refusal "$@" || true
+        # rc STAYS 1. A dedicated code is at most secondary here and would change the
+        # rc-only consumers of `firewall rebuild` (service_control.sh, autoheal.sh)
+        # in ways nothing in this lane has proven.
+        #     THE CONTRACT IS THE AUTHORITY; rc IS PROCESS EVIDENCE.
         return 1
     fi
     # ⛔ v1.229.11 LANE 7: DECLARE THE HOLD. nftban_plan_txn_begin now takes this
@@ -3409,6 +3544,17 @@ _firewall_rebuild_serialized() {
     # EXPORTED because the lane converges modules via `nftban <mod> reload`
     # SUBPROCESSES, which own transactions of their own and must also stand down.
     export NFTBAN_NFTLOCK_HELD=1
+
+    # ⛔ v1.230.0 Gate 6R: THE EXECUTION BOUNDARY IS RECORDED HERE, AND ONLY HERE.
+    # Past this line the rebuild has STARTED. Everything before it — including the
+    # refusal above — provably touched nothing. See _rebuild_write_execution_witness.
+    local _rebuild_witness
+    _rebuild_witness=$(_rebuild_optval --execution-witness "$@") || _rebuild_witness=""
+    if [[ -n "$_rebuild_witness" ]]; then
+        local _rebuild_witness_opid
+        _rebuild_witness_opid=$(_rebuild_optval --operation-id "$@") || _rebuild_witness_opid=""
+        _rebuild_write_execution_witness "$_rebuild_witness" "$_rebuild_witness_opid" || true
+    fi
 
     _REBUILD_SNAPSHOT_DIR=""
     _firewall_rebuild_core "$@"
@@ -3528,6 +3674,12 @@ _firewall_rebuild_core() {
                 ;;
             --operation-id)
                 _NFTBAN_REBUILD_OPERATION_ID="${2:-}"
+                shift 2
+                ;;
+            --execution-witness)
+                # v1.230.0 Gate 6R. CONSUMED BY THE WRAPPER, which writes the witness
+                # once the convergence lock is held. Accepted (and ignored) here so the
+                # core's parser does not reject an argv the wrapper legitimately reads.
                 shift 2
                 ;;
             --install-context)

@@ -88,26 +88,41 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 			// schema_version and a disposition; a bare {"status":"ok"} is rejected as
 			// "no usable result contract", which would make every case here fail for a
 			// reason unrelated to deadlines.
-			opID, resultPath := "", ""
+			opID, resultPath, witnessPath := "", "", ""
 			for i := 0; i < len(args)-1; i++ {
 				switch args[i] {
 				case "--result-file":
 					resultPath = args[i+1]
 				case "--operation-id":
 					opID = args[i+1]
+				case "--execution-witness":
+					witnessPath = args[i+1]
 				}
 			}
+			// v1.230.0 Gate 6R: THIS SIMULATION IS A REBUILD THAT EXECUTED.
+			// The real wrapper writes the execution witness the moment the convergence
+			// lock is held, before the core runs. Omitting it here would model a rebuild
+			// that never started, and every failing case below would be reclassified as
+			// REBUILD_NOT_EXECUTED — proving nothing about deadlines.
+			if witnessPath != "" && opID != "" {
+				_ = os.WriteFile(witnessPath, []byte("operation_id="+opID+"\n"), 0o640)
+			}
 			if resultPath != "" {
-				disp, committed, txReason := "COMPLETE", "true", "COMMITTED"
+				// ⛔ THE DISPOSITION MUST BE ONE THE CONTRACT DEFINES. This fixture used
+				// to emit "FAILED", which is NOT in the enum — the consumer rejected it as
+				// an unknown disposition, so these cases were passing through the
+				// malformed-record branch rather than through a real failure verdict.
+				disp, committed, txReason, rollback := "COMPLETE", "true", "COMMITTED", "false"
 				if sim.exit != 0 {
-					disp, committed, txReason = "FAILED", "false", "NONE"
+					disp, committed, txReason, rollback = "REGRESSION", "false", "FAILURE", "true"
 				}
 				body := fmt.Sprintf(`{"schema_version":"1","operation_id":%q,`+
 					`"context":"install-deferred","disposition":%q,"reason_codes":["TEST"],`+
-					`"rollback_performed":false,"transaction":{"committed":%s,"reason":%q},`+
+					`"rollback_performed":%s,"modified":true,"enforcement_unchanged":false,`+
+					`"transaction":{"committed":%s,"reason":%q},`+
 					`"retry":{"reason":"NONE"},"pre_status":"protected",`+
 					`"post_status":"protected","emitted_at":"2026-08-30T00:00:00Z"}`,
-					opID, disp, committed, txReason)
+					opID, disp, rollback, committed, txReason)
 				_ = os.WriteFile(resultPath, []byte(body), 0o640)
 			}
 			return executor.Result{ExitCode: sim.exit}, true

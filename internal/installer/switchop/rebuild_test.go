@@ -27,6 +27,7 @@
 package switchop
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,7 @@ func TestRebuild_Success(t *testing.T) {
 	mock.StrictUnregistered = true
 	publishResult(t, mock, "COMPLETE", 0, nil)
 
-	err := Rebuild(mock, newTestLogger())
+	err := Rebuild(context.Background(), mock, newTestLogger())
 	if err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestRebuild_Degraded(t *testing.T) {
 	mock.StrictUnregistered = true
 	runNoRecord(t, mock, 1, "DEGRADED", "")
 
-	err := Rebuild(mock, newTestLogger())
+	err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("rc=1 with NO result record must ABORT the install (A01b falsifier)")
 	}
@@ -81,7 +82,7 @@ func TestRebuild_Failure(t *testing.T) {
 	mock.StrictUnregistered = true
 	mock.RunResults["/usr/sbin/nftban:firewall:rebuild:--install-context"] = executor.Result{ExitCode: 2, Stderr: "rebuild failed"}
 
-	err := Rebuild(mock, newTestLogger())
+	err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("exit 2 (FAILED) should return error, got nil")
 	}
@@ -119,7 +120,7 @@ func TestRebuild_DegradedReason_FromStdout_NoContradiction(t *testing.T) {
 	// contract that made rc semantic.
 	runNoRecord(t, mock, 1, "", "base schema applied\nmodule chains pending daemon")
 	log, _ := readLog(t)
-	if err := Rebuild(mock, log); err == nil {
+	if err := Rebuild(context.Background(), mock, log); err == nil {
 		t.Fatal("stdout/stderr wording must NOT authorize continuation without a result record")
 	}
 }
@@ -130,7 +131,7 @@ func TestRebuild_DegradedEmptyOutput_StaticReason(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.StrictUnregistered = true
 	runNoRecord(t, mock, 1, "", "")
-	if err := Rebuild(mock, newTestLogger()); err == nil {
+	if err := Rebuild(context.Background(), mock, newTestLogger()); err == nil {
 		t.Fatal("empty output + rc=1 + no result record must ABORT (no synthesised verdict)")
 	}
 
@@ -143,7 +144,7 @@ func TestRebuild_Success_PlainCompleted(t *testing.T) {
 	mock.StrictUnregistered = true
 	publishResult(t, mock, "COMPLETE", 0, nil)
 	log, dump := readLog(t)
-	if err := Rebuild(mock, log); err != nil {
+	if err := Rebuild(context.Background(), mock, log); err != nil {
 		t.Fatalf("exit 0 must not error: %v", err)
 	}
 	out := dump()

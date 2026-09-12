@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -545,15 +546,29 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 
 	// 7. REBUILD — FATAL on failure (v1.70.0 invariant)
 	rebuildStart := time.Now()
-	rebuildErr := switchop.Rebuild(exec, log)
+	// v1.230.0 Gate 6R: ctx is passed so a REFUSED rebuild can be RETRIED inside the
+	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —
+	// switchop.Rebuild still runs the shell on context.Background() (LANE 6A), because a
+	// long rebuild is not a hung one. Only the wait between refusals is bounded.
+	rebuildErr := switchop.Rebuild(ctx, exec, log)
 	pd.exemptOpName = "firewall rebuild"
 	pd.exemptOpDuration = time.Since(rebuildStart)
 	pd.exemptOpSucceeded = rebuildErr == nil
 	log.Info("exempt operation %s completed: duration=%s success=%t",
 		pd.exemptOpName, pd.exemptOpDuration.Round(time.Second), pd.exemptOpSucceeded)
 	if err := rebuildErr; err != nil {
-		// Emergency table LEFT IN PLACE — SSH still safe
-		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, err.Error())
+		// Emergency table LEFT IN PLACE — SSH still safe.
+		//
+		// ⛔ v1.230.0 Gate 6R — REFUSED / NOT-EXECUTED ARE NOT FAILED_REBUILD.
+		// FAILED_REBUILD asserts that a rebuild EXECUTED and failed. These two assert
+		// that no rebuild ran at all, so the firewall was not modified and existing
+		// enforcement is unchanged. Mapping them onto FAILED_REBUILD is the production
+		// defect this gate closes (dns1, v1.229.13 -> v1.229.14): it slanders a host
+		// whose enforcement is intact and sends --repair to redo work that never ran.
+		//
+		// The classification is taken from a TYPED ERROR produced from the shell's
+		// machine-readable contract. ⛔ It is never derived from message text.
+		return sf.Transition(stateForRebuildError(err), state.PhaseSwitch, err.Error())
 	}
 
 	// 8. Post-rebuild: re-assert SSH in live sets (belt-and-suspenders)
@@ -567,6 +582,28 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	log.PhaseEnd("Switch")
 	phaseEndMarker(log, "switch")
 	return sf.Transition(state.StateSwitchComplete, state.PhaseSwitch, "")
+}
+
+// stateForRebuildError maps a switchop.Rebuild error onto the install state it
+// actually describes.
+//
+// ⛔ THREE OUTCOMES, THREE STATES, NEVER ONE.
+//
+//	REFUSED_BUSY   no rebuild executed (lock held)      -> REBUILD_REFUSED_BUSY
+//	NOT_EXECUTED   no contract AND no witness           -> REBUILD_NOT_EXECUTED
+//	anything else  a rebuild executed and did not pass  -> FAILED_REBUILD
+//
+// The discriminator is a TYPED ERROR derived from the shell's machine-readable
+// contract. ⛔ It is never message text: the production defect was diagnosed from an
+// stderr sentence, which is exactly why the fix must not read one.
+func stateForRebuildError(err error) state.InstallState {
+	switch {
+	case errors.Is(err, switchop.ErrRebuildRefusedBusy):
+		return state.StateRebuildRefusedBusy
+	case errors.Is(err, switchop.ErrRebuildNotExecuted):
+		return state.StateRebuildNotExecuted
+	}
+	return state.StateFailedRebuild
 }
 
 // phaseConfigure starts daemon, timers, panel, login, whitelist sync.

@@ -176,7 +176,11 @@ const degradedReasonFallback = "degraded: post-install assertions failed (reason
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
 	sf.State = newState
 	sf.PhaseReached = string(phase)
-	if newState.IsFailed() {
+	if newState.IsFailed() || newState.IsDeferredRebuild() {
+		// v1.230.0 Gate 6R: a DEFERRED terminal is not a failure, but it still owes the
+		// operator a machine-readable cause. FailureReason is the existing diagnostic
+		// carrier in this file; leaving it empty would produce a terminal state file
+		// that says the install stopped and refuses to say why.
 		sf.FailureReason = reason
 	} else if newState == StateCommitted || newState == StateDegraded {
 		// V108 Item 5: clear stale pre-failure carry-over fields when reaching
@@ -211,7 +215,15 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		}
 	}
 	// Failure states must return an error so the phase runner stops execution.
-	if newState.IsFailed() {
+	//
+	// v1.230.0 Gate 6R: a DEFERRED rebuild terminal must stop the runner too. Without
+	// this it returns nil, phaseSwitch returns nil, and the run walks on to Configure
+	// and Validate — which is how an install with NO CONVERGENCE could still reach a
+	// COMMITTED verdict because enforcement happened to still be in force.
+	//     PROTECTED != TRANSACTION COMPLETE.
+	// The sentinel is a STOP signal, not a claim of failure: the state itself carries
+	// the truthful classification and IsFailed() stays false for it.
+	if newState.IsFailed() || newState.IsDeferredRebuild() {
 		return fmt.Errorf("%s: %s", newState, reason)
 	}
 	return nil
