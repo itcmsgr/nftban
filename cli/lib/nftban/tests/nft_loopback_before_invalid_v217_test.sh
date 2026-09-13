@@ -111,6 +111,81 @@ echo "== validator carries the loopback<invalid CRITICAL assertion =="
 grep -q 'LOOPBACK_BEFORE_INVALID' "$SCHEMA" && grep -qE 'Loopback \(iif lo\) MUST come BEFORE .ct state invalid' "$SCHEMA" && ok "validator has loopback<invalid CRITICAL check" || no "validator assertion missing"
 grep -q "loopback before invalid, blacklist before established" "$SCHEMA" && ok "health message updated" || no "health message not updated"
 
+# =============================================================================
+# P12-A02 ORDERING INSURANCE (v1.230.0) — accept-before-enforcement
+# =============================================================================
+# ⛔ WHY THIS EXISTS. P12-A02 (unkeyed host-wide `ct count`) is DEFERRED to v1.231:
+#    five rules across two chains share one budget, so a single source can consume
+#    it. Whitelisted operators are protected TODAY only because the whitelist ACCEPT
+#    is evaluated BEFORE both the in-chain ct-count rules and the `jump` into the
+#    chain that holds the SMTP/DNS pair. Measured live on dns1: accept is handle 55,
+#    the ct-count rules are 66/68/70, and `jump ddos_protection` is 121 — and that
+#    chain has NO whitelist accept of its own.
+#
+#    ⛔ THAT PROTECTION IS ORDERING-DEPENDENT, NOT STRUCTURAL. Moving or duplicating
+#    the jump above the accept would silently expose whitelisted sources to the MAIL
+#    and DNS caps with NO other symptom — no error, no counter, nothing in a log.
+#    This is the cheap insurance that keeps the deferral safe.
+#
+#    Scope: ORDERING ONLY. It asserts nothing about whether the counts are keyed;
+#    that is P12-A02's own lane. It must keep passing when P12-A02 lands.
+echo ""
+echo "=== P12-A02 INSURANCE: whitelist accept precedes enforcement (both families) ==="
+
+# ⛔ These must NEVER return non-zero. Under `set -e` an absent pattern would abort the
+#    whole suite mid-section — which it did on the first run of this block, printing the
+#    header and nothing else. Absence is a VALUE to be judged below, not an error.
+_p12_first(){ grep -nE "$2" "$1" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '^[0-9]+' | head -1 || true; }
+_p12_last(){  grep -nE "$2" "$1" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '^[0-9]+' | tail -1 || true; }
+
+# Per family, the accept must precede EVERY enforcement site, so compare against the
+# LAST enforcement line, not the first — a single early rule would mask a later one.
+for _p12_f in "$ROOT/install/nftables/nftables.conf" "$ROOT/install/nftables/nftables-safe.conf"; do
+    [[ -r "$_p12_f" ]] || { bad "P12-A02 subject unreadable: $_p12_f"; continue; }
+    _p12_b=$(basename "$_p12_f")
+    for _p12_fam in ip ip6; do
+        if [[ "$_p12_fam" == ip ]]; then _p12_wl='ip saddr @whitelist_ipv4[^,]*accept'
+        else _p12_wl='ip6 saddr @whitelist_ipv6[^,]*accept'; fi
+        _p12_a=$(_p12_first "$_p12_f" "$_p12_wl")
+        _p12_c=$(_p12_last  "$_p12_f" 'ct count over [0-9]+')
+        _p12_j=$(_p12_last  "$_p12_f" 'jump ddos_protection')
+        if [[ -z "$_p12_a" ]]; then
+            bad "P12-A02 $_p12_b/$_p12_fam: no whitelist accept found — the ordering premise is gone"
+            continue
+        fi
+        # PRECONDITION before the capability claim: an absent enforcement site would
+        # make the comparison vacuously true, which must not read as a pass.
+        if [[ -z "$_p12_c" && -z "$_p12_j" ]]; then
+            bad "P12-A02 $_p12_b/$_p12_fam: no ct-count and no jump found — test would pass vacuously"
+            continue
+        fi
+        if [[ -n "$_p12_c" ]]; then
+            [[ "$_p12_a" -lt "$_p12_c" ]] \
+                && ok "P12-A02 $_p12_b/$_p12_fam: accept :$_p12_a precedes last ct-count :$_p12_c" \
+                || bad "P12-A02 $_p12_b/$_p12_fam: accept :$_p12_a is NOT before ct-count :$_p12_c — whitelisted sources exposed"
+        fi
+        # `jump ddos_protection` is rendered by lib/nft_fragment.sh (the ddos module),
+        # not by the base template, so its absence here is EXPECTED and not a failure —
+        # the ct-count assertion above already covers this file.
+        if [[ -n "$_p12_j" ]]; then
+            [[ "$_p12_a" -lt "$_p12_j" ]] \
+                && ok "P12-A02 $_p12_b/$_p12_fam: accept :$_p12_a precedes jump ddos_protection :$_p12_j" \
+                || bad "P12-A02 $_p12_b/$_p12_fam: accept :$_p12_a is NOT before the jump :$_p12_j — ddos_protection has no accept of its own"
+        fi
+    done
+done
+
+# NEGATIVE CONTROL — the comparison must be able to FAIL. Reorder a copy so the
+# accept lands after the enforcement site and require the predicate to reject it.
+_p12_tmp="$(mktemp)"
+{ echo 'ct state new tcp dport { 25 } ct count over 30 drop'; echo 'ip saddr @whitelist_ipv4 counter accept'; } > "$_p12_tmp"
+_p12_ia=$(_p12_first "$_p12_tmp" 'ip saddr @whitelist_ipv4[^,]*accept')
+_p12_ic=$(_p12_last  "$_p12_tmp" 'ct count over [0-9]+')
+[[ -n "$_p12_ia" && -n "$_p12_ic" && "$_p12_ia" -gt "$_p12_ic" ]] \
+    && ok "P12-A02 negative control: inverted order IS detected (accept :$_p12_ia after ct-count :$_p12_ic)" \
+    || bad "P12-A02 negative control did not detect an inverted order — the check cannot fail"
+rm -f "$_p12_tmp"
+
 echo ""
 echo "=== nft_loopback_before_invalid_v217: PASS=$P FAIL=$F ==="
 [[ "$F" -eq 0 ]]

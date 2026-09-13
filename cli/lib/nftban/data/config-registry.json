@@ -48,126 +48,60 @@
     "metrics": "Metrics collection, export, and retention settings"
   },
   "files": {
-    "nftban.conf": {
-      "description": "Main NFTBan configuration (paths, system settings, feature toggles)",
-      "active_when": "always",
-      "category": "system",
-      "key_count": 85,
-      "comment": "Core system config - defines all NFTBAN_* path variables and feature enables",
-      "format": "EXECUTABLE_SHELL",
-      "source_path": "install/config/nftban.conf"
-    },
-    "update.conf": {
-      "description": "NFTBan auto-update configuration",
-      "active_when": "always",
-      "category": "system",
-      "key_count": 6,
-      "comment": "Controls auto-update behavior, channels, and scheduling",
-      "format": "SIMPLE_ASSIGNMENT",
-      "source_path": "install/config/update.conf"
-    },
-    "conf.d/feeds.conf": {
-      "description": "Threat feed configuration (blocklists, IP reputation feeds)",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 32,
-      "comment": "Threat intelligence feed sources, intervals, and processing rules",
-      "format": "SIMPLE_ASSIGNMENT",
-      "source_path": "install/config/feeds.conf"
-    },
-    "conf.d/watchdog.conf": {
-      "description": "Service watchdog configuration (health monitoring, auto-restart)",
-      "active_when": "always",
-      "category": "system",
-      "key_count": 18,
-      "comment": "Monitors core services and auto-restarts on failure",
-      "format": "SIMPLE_ASSIGNMENT"
+    "blacklist.d/99-manual.conf": {
+      "format": "EMPTY_TEMPLATE",
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     },
     "conf.d/banner.conf": {
       "description": "CLI banner configuration",
       "active_when": "always",
       "category": "system",
       "key_count": 29,
-      "format": "SIMPLE_ASSIGNMENT"
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/mail.conf": {
-      "description": "Email notification settings",
-      "active_when": "always",
-      "category": "notifications",
-      "key_count": 24,
-      "format": "SIMPLE_ASSIGNMENT"
+    "conf.d/botguard/allowed_crawlers.conf": {
+      "format": "PIPE_DELIMITED",
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     },
-    "conf.d/stats.conf": {
-      "description": "Statistics and reporting settings",
-      "active_when": "always",
-      "category": "system",
-      "key_count": 24,
-      "format": "SIMPLE_ASSIGNMENT"
+    "conf.d/botguard/denied_crawlers.conf": {
+      "format": "PIPE_DELIMITED",
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     },
-    "conf.d/rbl/main.conf": {
-      "description": "RBL (Real-time Blackhole List) checking",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 18,
-      "format": "SIMPLE_ASSIGNMENT"
+    "conf.d/botguard/main.conf": {
+      "format": "SIMPLE_ASSIGNMENT",
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/rbl/rbls.conf": {
-      "description": "RBL provider list (DNSBL servers, lookup domains)",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 12,
-      "depends_on": "conf.d/rbl/main.conf",
-      "comment": "Defines which DNSBL providers to query",
-      "format": "COLON_DELIMITED"
-    },
-    "conf.d/rbl/custom.conf": {
-      "description": "Custom RBL entries (user-defined blacklists)",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 4,
-      "depends_on": "conf.d/rbl/main.conf",
-      "comment": "User-defined custom RBL entries",
-      "format": "EMPTY_TEMPLATE"
-    },
-    "conf.d/rbl/watchlist.conf": {
-      "description": "RBL watchlist (monitor-only IPs and domains)",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 6,
-      "depends_on": "conf.d/rbl/main.conf",
-      "comment": "IPs monitored but not auto-blocked via RBL",
-      "format": "EMPTY_TEMPLATE"
-    },
-    "conf.d/portscan/main.conf": {
-      "description": "Portscan module main configuration (MODE selector)",
+    "conf.d/botscan/main.conf": {
+      "description": "Bot scanner module configuration (URL and User-Agent detection)",
       "active_when": "always",
       "category": "modules",
-      "key_count": 26,
-      "mode_key": "PORTSCAN_MODE",
-      "mode_values": [
-        "auto",
-        "classic",
-        "suricata",
-        "hybrid"
-      ],
-      "format": "SIMPLE_ASSIGNMENT"
+      "key_count": 25,
+      "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis. v1.177: panel-aware multi-log discovery (DirectAdmin/cPanel/Plesk per-domain logs); optional override BOTSCAN_LOG_PATHS (space/newline glob list) falls back to auto-detect if it resolves no readable file (never silently blind); legacy BOTSCAN_LOG_APACHE/APACHE_ALT/NGINX still honored.",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/portscan/classic.conf": {
-      "description": "Portscan classic mode (log-based detection)",
-      "active_when": "portscan_classic",
-      "category": "detection",
-      "key_count": 44,
-      "depends_on": "conf.d/portscan/main.conf",
-      "format": "SIMPLE_ASSIGNMENT"
+    "conf.d/connectors.conf": {
+      "description": "Generic connector export configuration (Elasticsearch, Kafka, file)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 36,
+      "comment": "Export metrics to external systems with auto-firewall configuration",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/portscan/suricata.conf": {
-      "description": "Portscan suricata mode (IDS-based detection)",
-      "active_when": "portscan_suricata",
+    "conf.d/ddos/classic.conf": {
+      "description": "DDoS classic mode (rate limiting, SYN flood protection)",
+      "active_when": "ddos_classic",
       "category": "detection",
-      "key_count": 52,
-      "depends_on": "conf.d/portscan/main.conf",
-      "requires_runtime": "suricata_detected",
-      "format": "SIMPLE_ASSIGNMENT"
+      "key_count": 33,
+      "depends_on": "conf.d/ddos/main.conf",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/ddos/main.conf": {
       "description": "DDoS module main configuration (MODE selector)",
@@ -181,15 +115,8 @@
         "suricata",
         "hybrid"
       ],
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/ddos/classic.conf": {
-      "description": "DDoS classic mode (rate limiting, SYN flood protection)",
-      "active_when": "ddos_classic",
-      "category": "detection",
-      "key_count": 33,
-      "depends_on": "conf.d/ddos/main.conf",
-      "format": "SIMPLE_ASSIGNMENT"
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/ddos/suricata.conf": {
       "description": "DDoS suricata mode (IDS-based detection)",
@@ -198,7 +125,47 @@
       "key_count": 44,
       "depends_on": "conf.d/ddos/main.conf",
       "requires_runtime": "suricata_detected",
-      "format": "SIMPLE_ASSIGNMENT"
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/feeds.conf": {
+      "description": "Threat feed configuration (blocklists, IP reputation feeds)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 32,
+      "comment": "Threat intelligence feed sources, intervals, and processing rules",
+      "format": "SIMPLE_ASSIGNMENT",
+      "source_path": "install/config/feeds.conf",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/geoban/main.conf": {
+      "description": "GeoBan module - country-based IP blocking",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 8,
+      "comment": "Country-based IP blocking using GeoIP database (DBIP/MaxMind)",
+      "legacy_name": "nftban-go.conf",
+      "note": "Replaces legacy 'nftban-go.conf' naming",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/geoip/main.conf": {
+      "description": "GeoIP database configuration",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 12,
+      "comment": "GeoIP database source (DBIP/MaxMind), auto-updates, lookup settings",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/login/classic.conf": {
+      "description": "Login classic mode (auth log monitoring)",
+      "active_when": "login_classic",
+      "category": "detection",
+      "key_count": 59,
+      "depends_on": "conf.d/login/main.conf",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/login/main.conf": {
       "description": "Login monitor main configuration (MODE selector). v1.177: WordPress monitor uses the shared panel-aware HTTP access-log discovery (parity with BotScan); optional override LOGIN_SERVICE_WORDPRESS_LOG_PATHS (glob list) + LOGIN_SERVICE_WORDPRESS_MAX_MONITORS (bounded live-tail count, default 50); legacy LOGIN_SERVICE_WORDPRESS_LOG_APACHE/HTTPD/NGINX still honored as fallback.",
@@ -212,130 +179,8 @@
         "suricata",
         "hybrid"
       ],
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/login/classic.conf": {
-      "description": "Login classic mode (auth log monitoring)",
-      "active_when": "login_classic",
-      "category": "detection",
-      "key_count": 59,
-      "depends_on": "conf.d/login/main.conf",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/login/suricata.conf": {
-      "description": "Login suricata mode (IDS-based detection)",
-      "active_when": "login_suricata",
-      "category": "detection",
-      "key_count": 54,
-      "depends_on": "conf.d/login/main.conf",
-      "requires_runtime": "suricata_detected",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/login/services.conf": {
-      "description": "Per-service login configuration (SSH, Dovecot, Exim, etc.)",
-      "active_when": "always",
-      "category": "detection",
-      "key_count": 253,
-      "depends_on": "conf.d/login/main.conf",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/botscan/main.conf": {
-      "description": "Bot scanner module configuration (URL and User-Agent detection)",
-      "active_when": "always",
-      "category": "modules",
-      "key_count": 25,
-      "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis. v1.177: panel-aware multi-log discovery (DirectAdmin/cPanel/Plesk per-domain logs); optional override BOTSCAN_LOG_PATHS (space/newline glob list) falls back to auto-detect if it resolves no readable file (never silently blind); legacy BOTSCAN_LOG_APACHE/APACHE_ALT/NGINX still honored.",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/trust.conf": {
-      "description": "Trusted provider IP whitelist (CDN, Cloud providers)",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 28,
-      "comment": "Auto-whitelist IP ranges from Cloudflare, AWS, Google Cloud, Azure, etc.",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/geoban/main.conf": {
-      "description": "GeoBan module - country-based IP blocking",
-      "active_when": "always",
-      "category": "modules",
-      "key_count": 8,
-      "comment": "Country-based IP blocking using GeoIP database (DBIP/MaxMind)",
-      "legacy_name": "nftban-go.conf",
-      "note": "Replaces legacy 'nftban-go.conf' naming",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/geoip/main.conf": {
-      "description": "GeoIP database configuration",
-      "active_when": "always",
-      "category": "features",
-      "key_count": 12,
-      "comment": "GeoIP database source (DBIP/MaxMind), auto-updates, lookup settings",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/directadmin/main.conf": {
-      "description": "DirectAdmin panel integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 22,
-      "panel_name": "directadmin",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/cpanel/main.conf": {
-      "description": "cPanel/WHM integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 25,
-      "panel_name": "cpanel",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/cwp/main.conf": {
-      "description": "CentOS Web Panel integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 23,
-      "panel_name": "cwp",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/cyberpanel/main.conf": {
-      "description": "CyberPanel integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 21,
-      "panel_name": "cyberpanel",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/interworx/main.conf": {
-      "description": "InterWorx panel integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 21,
-      "panel_name": "interworx",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/vesta/main.conf": {
-      "description": "VestaCP/HestiaCP integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 20,
-      "panel_name": "vesta",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/plesk/main.conf": {
-      "description": "Plesk panel integration",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 28,
-      "panel_name": "plesk",
-      "format": "SIMPLE_ASSIGNMENT"
-    },
-    "conf.d/panels/generic/main.conf": {
-      "description": "Generic panel integration template",
-      "active_when": "panel_detected",
-      "category": "panels",
-      "key_count": 20,
-      "panel_name": "generic",
-      "format": "SIMPLE_ASSIGNMENT"
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/login/scorer.conf": {
       "description": "Login scorer configuration (high-performance score-based detection)",
@@ -344,23 +189,45 @@
       "key_count": 21,
       "depends_on": "conf.d/login/main.conf",
       "comment": "Score-based login failure detection with decay and thresholds",
-      "format": "SIMPLE_ASSIGNMENT"
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/zabbix.conf": {
-      "description": "Zabbix trapper export configuration",
+    "conf.d/login/services.conf": {
+      "description": "Per-service login configuration (SSH, Dovecot, Exim, etc.)",
       "active_when": "always",
-      "category": "features",
-      "key_count": 19,
-      "comment": "Native Zabbix integration with multi-target support, LLD, and auto-firewall",
-      "format": "SIMPLE_ASSIGNMENT"
+      "category": "detection",
+      "key_count": 253,
+      "depends_on": "conf.d/login/main.conf",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/connectors.conf": {
-      "description": "Generic connector export configuration (Elasticsearch, Kafka, file)",
+    "conf.d/login/suricata.conf": {
+      "description": "Login suricata mode (IDS-based detection)",
+      "active_when": "login_suricata",
+      "category": "detection",
+      "key_count": 54,
+      "depends_on": "conf.d/login/main.conf",
+      "requires_runtime": "suricata_detected",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/login_alert.conf": {
+      "format": "SIMPLE_ASSIGNMENT",
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/logs.conf": {
+      "format": "SIMPLE_ASSIGNMENT",
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/mail.conf": {
+      "description": "Email notification settings",
       "active_when": "always",
-      "category": "features",
-      "key_count": 36,
-      "comment": "Export metrics to external systems with auto-firewall configuration",
-      "format": "SIMPLE_ASSIGNMENT"
+      "category": "notifications",
+      "key_count": 24,
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/metrics.conf": {
       "description": "Unified metrics collection and export configuration",
@@ -368,7 +235,80 @@
       "category": "metrics",
       "key_count": 42,
       "comment": "Central configuration for collectors, component detection, exports, retention, and reports",
-      "format": "SIMPLE_ASSIGNMENT"
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/cpanel/main.conf": {
+      "description": "cPanel/WHM integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 25,
+      "panel_name": "cpanel",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/cwp/main.conf": {
+      "description": "CentOS Web Panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 23,
+      "panel_name": "cwp",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/cyberpanel/main.conf": {
+      "description": "CyberPanel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 21,
+      "panel_name": "cyberpanel",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/directadmin/main.conf": {
+      "description": "DirectAdmin panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 22,
+      "panel_name": "directadmin",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/generic/main.conf": {
+      "description": "Generic panel integration template",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 20,
+      "panel_name": "generic",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/interworx/main.conf": {
+      "description": "InterWorx panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 21,
+      "panel_name": "interworx",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/plesk/main.conf": {
+      "description": "Plesk panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 28,
+      "panel_name": "plesk",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/panels/vesta/main.conf": {
+      "description": "VestaCP/HestiaCP integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 20,
+      "panel_name": "vesta",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/persistent.conf": {
       "description": "Persistent offender escalation configuration",
@@ -376,184 +316,284 @@
       "category": "features",
       "key_count": 4,
       "comment": "Auto-escalate repeat temp-ban offenders to permanent bans (threshold, period, per-filter overrides)",
-      "format": "INI"
+      "format": "INI",
+      "validator_disposition": "STRUCTURED_DATA_NO_KEY_SCHEMA"
     },
-    "blacklist.d/99-manual.conf": {
+    "conf.d/portscan/classic.conf": {
+      "description": "Portscan classic mode (log-based detection)",
+      "active_when": "portscan_classic",
+      "category": "detection",
+      "key_count": 44,
+      "depends_on": "conf.d/portscan/main.conf",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/portscan/main.conf": {
+      "description": "Portscan module main configuration (MODE selector)",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 26,
+      "mode_key": "PORTSCAN_MODE",
+      "mode_values": [
+        "auto",
+        "classic",
+        "suricata",
+        "hybrid"
+      ],
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/portscan/suricata.conf": {
+      "description": "Portscan suricata mode (IDS-based detection)",
+      "active_when": "portscan_suricata",
+      "category": "detection",
+      "key_count": 52,
+      "depends_on": "conf.d/portscan/main.conf",
+      "requires_runtime": "suricata_detected",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/rbl/custom.conf": {
+      "description": "Custom RBL entries (user-defined blacklists)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 4,
+      "depends_on": "conf.d/rbl/main.conf",
+      "comment": "User-defined custom RBL entries",
       "format": "EMPTY_TEMPLATE",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     },
-    "conf.d/botguard/allowed_crawlers.conf": {
-      "format": "PIPE_DELIMITED",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "conf.d/botguard/denied_crawlers.conf": {
-      "format": "PIPE_DELIMITED",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "conf.d/botguard/main.conf": {
+    "conf.d/rbl/main.conf": {
+      "description": "RBL (Real-time Blackhole List) checking",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 18,
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
-    "conf.d/login_alert.conf": {
-      "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "conf.d/logs.conf": {
-      "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "conf.d/rbl/main.conf.local": {
-      "format": "EMPTY_TEMPLATE",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+    "conf.d/rbl/rbls.conf": {
+      "description": "RBL provider list (DNSBL servers, lookup domains)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 12,
+      "depends_on": "conf.d/rbl/main.conf",
+      "comment": "Defines which DNSBL providers to query",
+      "format": "COLON_DELIMITED",
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     },
     "conf.d/rbl/registry.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "STRUCTURED_DATA_NO_KEY_SCHEMA"
+    },
+    "conf.d/rbl/watchlist.conf": {
+      "description": "RBL watchlist (monitor-only IPs and domains)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 6,
+      "depends_on": "conf.d/rbl/main.conf",
+      "comment": "IPs monitored but not auto-blocked via RBL",
+      "format": "EMPTY_TEMPLATE",
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     },
     "conf.d/recovery.conf": {
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/services.conf": {
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/stats.conf": {
+      "description": "Statistics and reporting settings",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 24,
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/suricata/interfaces.conf": {
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/trust.conf": {
+      "description": "Trusted provider IP whitelist (CDN, Cloud providers)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 28,
+      "comment": "Auto-whitelist IP ranges from Cloudflare, AWS, Google Cloud, Azure, etc.",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/tunnel/main.conf": {
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "conf.d/update.conf": {
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/watchdog.conf": {
+      "description": "Service watchdog configuration (health monitoring, auto-restart)",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 18,
+      "comment": "Monitors core services and auto-restarts on failure",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
+    },
+    "conf.d/zabbix.conf": {
+      "description": "Zabbix trapper export configuration",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 19,
+      "comment": "Native Zabbix integration with multi-target support, LLD, and auto-firewall",
+      "format": "SIMPLE_ASSIGNMENT",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "distros/almalinux-10.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/almalinux-9.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/centos-10.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/centos-9.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/centos-stream-10.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/centos-stream-9.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/centos.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/debian-11.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/debian-12.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/debian-13.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/debian-14.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/debian.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/fedora-43.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/fedora.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/rocky-10.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/rocky-8.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/rocky-9.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/ubuntu-22.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/ubuntu-24.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/ubuntu-26.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
     "distros/ubuntu.conf": {
       "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_owner": "cli/lib/nftban/tests/validate_distro_configs.sh"
     },
-    "modules/actions.conf": {
-      "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+    "nftables.conf": {
+      "description": "Base nftables ruleset shipped by NFTBan (tables, chains, sets, directional policy)",
+      "active_when": "always",
+      "category": "system",
+      "comment": "Runtime config subject consumed by the nft binary (EXTERNAL_TOOL), not by the generic config parser. Added v1.230.0 PR-5a-2 — handle CONFIG-REGISTRY-RUNTIME-SUBJECT-MISSING-NFTABLES.",
+      "format": "NFT_RULESET",
+      "source_path": "install/nftables/nftables.conf",
+      "validator_disposition": "EXTERNAL_TOOL_SYNTAX"
     },
-    "modules/detection.conf": {
-      "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "modules/inline_exceptions.conf": {
-      "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+    "nftban.conf": {
+      "description": "Main NFTBan configuration (paths, system settings, feature toggles)",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 85,
+      "comment": "Core system config - defines all NFTBAN_* path variables and feature enables",
+      "format": "EXECUTABLE_SHELL",
+      "source_path": "install/config/nftban.conf",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "ports.d/00-ssh.conf": {
       "format": "BARE_TOKEN",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "GENERATED_NO_OPERATOR_SCHEMA"
     },
     "suricata/config/profile.conf": {
       "format": "SIMPLE_ASSIGNMENT",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "suricata/routing.conf": {
-      "format": "INI",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "suricata/rules/disable.conf": {
-      "format": "EMPTY_TEMPLATE",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "suricata/rules/enable.conf": {
-      "format": "EMPTY_TEMPLATE",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
+      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
+      "validator_disposition": "KEY_SCHEMA_ONLY"
     },
     "whitelist.d/99-manual.conf": {
       "format": "EMPTY_TEMPLATE",
-      "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2"
-    },
-    "service-security.conf": {
-      "format": "INI",
       "description": "format classified v1.230.0 PR-5a-1; role/owner pending PR-5a-2",
-      "source_path": "install/config/service-security.conf"
+      "validator_disposition": "OPERATOR_DATA_NO_SCHEMA"
     }
   },
   "key_prefixes": {
@@ -807,10 +847,30 @@
       "EMPTY_TEMPLATE",
       "EXECUTABLE_SHELL",
       "INI",
+      "NFT_RULESET",
       "PIPE_DELIMITED",
       "SIMPLE_ASSIGNMENT"
-    ]
+    ],
+    "nft_ruleset_note": "v1.230.0 PR-5a-2: /etc/nftban/nftables.conf is a shipped runtime config subject written as an nft ruleset (#!/usr/sbin/nft -f), consumed by the nft binary, not by the generic assignment parser, which correctly refuses it as UNSUPPORTED_FORMAT. It had NO registry entry while the R-1 source predicate could not see install/nftables/ at all."
   },
   "key_semantics_authority": "config-schema.json — single authority for deprecated/renamed/type/default/active_when. The duplicate deprecated_keys and renamed_keys maps were removed in v1.230.0 PR-5a-1 after data-flow verification showed zero jq/field extractions anywhere in the tree.",
-  "key_convention": "files[] is keyed by INSTALLED path relative to /etc/nftban, not by source path. install/config/* subjects are registered under the path packaging installs them to (build_nftban.sh:569,594,2468,2484) and carry source_path. Keying discovery on the source tree created three duplicate entries in v1.230.0 PR-5a-1; they were merged."
+  "key_convention": "files[] is keyed by INSTALLED path relative to /etc/nftban, not by source path. install/config/* subjects are registered under the path packaging installs them to (build_nftban.sh:569,594,2468,2484) and carry source_path. Keying discovery on the source tree created three duplicate entries in v1.230.0 PR-5a-1; they were merged.",
+  "validator_classification": {
+    "declared_in": "v1.230.0 PR-5a-2",
+    "note": "Every runtime subject carries EITHER validator_owner (an explicit validator path/symbol/tool) OR validator_disposition (a bounded reason no generic validator applies). Generic values such as NONE, N/A or free-form prose are rejected by scripts/ci/check-config-format-coverage.sh R-8.",
+    "dispositions": [
+      "EXTERNAL_TOOL_SYNTAX",
+      "GENERATED_NO_OPERATOR_SCHEMA",
+      "KEY_SCHEMA_ONLY",
+      "OPERATOR_DATA_NO_SCHEMA",
+      "STRUCTURED_DATA_NO_KEY_SCHEMA"
+    ],
+    "disposition_meaning": {
+      "EXTERNAL_TOOL_SYNTAX": "Syntax is owned by an external tool, not by an NFTBan validator (e.g. nft for an NFT_RULESET subject). Correctly refused by the generic assignment parser.",
+      "GENERATED_NO_OPERATOR_SCHEMA": "Written by NFTBan at runtime, not authored by an operator, so no operator-facing schema applies.",
+      "KEY_SCHEMA_ONLY": "Keys are declared in config-schema.json (verified present), but NO file-level validator executes against this subject. This is explicit assurance debt, not a clean state.",
+      "OPERATOR_DATA_NO_SCHEMA": "Policy/data list (templates, delimited lists). Content is operator data, not NFTBAN_* settings, so the key schema does not apply.",
+      "STRUCTURED_DATA_NO_KEY_SCHEMA": "Section-scoped structured data whose keys are deliberately outside the NFTBAN_* key schema."
+    }
+  }
 }

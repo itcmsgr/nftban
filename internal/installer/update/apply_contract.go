@@ -121,6 +121,52 @@ var ApplyForbiddenWritePaths = []ApplyForbiddenWritePath{
 // so violations stand out in audit output.
 const ApplyForbiddenConfLocalSuffix = ".conf.local"
 
+// ApplyWhitelistPerRunArgs names whitelisted commands whose ARGUMENTS are allocated
+// per run and therefore cannot be enumerated as fixed strings.
+//
+// ⛔ v1.230.0 Gate 6R. `nftban firewall rebuild` now carries --result-file,
+// --operation-id and --execution-witness, whose values are unique per operation BY
+// DESIGN (a fixed name reintroduces the stale-record and cross-run hazards the
+// per-operation contract removed). An exact-string whitelist cannot express that.
+//
+// ⛔ THIS IS SHAPE VALIDATION, NOT A LOOSE PREFIX MATCH. A bare prefix would accept any
+// tail whatsoever — PREFIX-MATCH UNDER-MATCHES. Every argument after the whitelisted
+// head must be one of the declared flags, each at most once, each with a non-empty
+// single-token value. Anything else is still a violation.
+//
+// See internal/installer/update/apply_contract.md §"per-run arguments".
+var ApplyWhitelistPerRunArgs = map[string][]string{
+	"nftban firewall rebuild": {"--result-file", "--operation-id", "--execution-witness"},
+}
+
+// matchesPerRunArgvShape reports whether cmd is a whitelisted head followed only by
+// declared flag/value pairs.
+func matchesPerRunArgvShape(cmd string) bool {
+	for head, flags := range ApplyWhitelistPerRunArgs {
+		if cmd != head && !strings.HasPrefix(cmd, head+" ") {
+			continue
+		}
+		tail := strings.Fields(strings.TrimSpace(strings.TrimPrefix(cmd, head)))
+		allowed := make(map[string]bool, len(flags))
+		for _, f := range flags {
+			allowed[f] = true
+		}
+		seen := make(map[string]bool, len(flags))
+		for i := 0; i < len(tail); i += 2 {
+			f := tail[i]
+			if !allowed[f] || seen[f] || i+1 >= len(tail) {
+				return false
+			}
+			if v := tail[i+1]; v == "" || strings.HasPrefix(v, "--") {
+				return false
+			}
+			seen[f] = true
+		}
+		return true
+	}
+	return false
+}
+
 // AuditRecordedCommands runs the full command-trace audit against a
 // whitespace-flattened list of "name arg1 arg2 ..." strings. Used by
 // contract tests in this package AND the main-package runUpdateApply
@@ -130,7 +176,7 @@ const ApplyForbiddenConfLocalSuffix = ".conf.local"
 func AuditRecordedCommands(cmds []string) []string {
 	var violations []string
 	for _, c := range cmds {
-		if _, ok := ApplyWhitelist[c]; !ok {
+		if _, ok := ApplyWhitelist[c]; !ok && !matchesPerRunArgvShape(c) {
 			violations = append(violations,
 				"non-whitelisted command: "+c+
 					" — add to ApplyWhitelist only after apply_contract.md is updated")
