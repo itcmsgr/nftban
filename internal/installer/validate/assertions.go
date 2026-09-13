@@ -112,6 +112,16 @@ type AssertionOpts struct {
 	// evaluate this dimension. "" is never read as CONVERGED and never converted
 	// into a FAILED. It mirrors the nil-HealthResource SKIP convention above.
 	WhitelistConvergence string
+
+	// ConvergenceVerified is the v1.230.0 Gate 6R post-update convergence verdict as
+	// persisted in install_state CONVERGENCE_VERIFIED. DATA only — the verification
+	// itself (switchop.VerifyPostUpdateConvergence) runs in phaseSwitch, where the
+	// BEFORE reading of the effective generation exists; re-probing here could only see
+	// the AFTER value and would prove nothing.
+	//
+	// "" means NOT EVALUATED — a pre-v1.230.0 install_state, or a caller that does not
+	// evaluate this dimension. ⛔ Never read as VERIFIED, never converted into a FAIL.
+	ConvergenceVerified string
 }
 
 // WithPanelPolicy returns a copy of opts with PanelPolicy set and the
@@ -200,6 +210,10 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// ("") is the legacy/not-evaluated case and PASSES as UNKNOWN, so every
 	// existing caller (RunAssertions, RunWithBoundedFix, fixtures) is unchanged.
 	results = append(results, assertWhitelistConvergence(opts, log))
+	// v1.230.0 Gate 6R: end-to-end convergence verdict → final-state effect. DATA-only
+	// (opts.ConvergenceVerified); issues no commands. "" is the legacy/not-evaluated
+	// case and PASSES as UNKNOWN, so every existing caller is unchanged.
+	results = append(results, assertPostUpdateConvergence(opts, log))
 
 	passed := 0
 	for _, r := range results {
@@ -537,6 +551,101 @@ func assertWhitelistConvergence(opts AssertionOpts, log *logging.Logger) Asserti
 		r.Passed = false
 		r.Detail = fmt.Sprintf("unrecognized WHITELIST_CONVERGENCE value %q — failing closed rather than reading an unknown verdict as converged", opts.WhitelistConvergence)
 		log.Error("ASSERT whitelist_convergence_ok: FAIL-CLOSED — %s", r.Detail)
+	}
+	return r
+}
+
+const (
+	convergenceVerified     = "VERIFIED"
+	convergenceNotConverged = "NOT_CONVERGED"
+	convergenceDeferred     = "DEFERRED"
+	convergenceUnverified   = "UNVERIFIED"
+)
+
+// assertPostUpdateConvergence (v1.230.0 Gate 6R) turns the post-update convergence
+// verdict into a final-state effect, exactly as assertWhitelistConvergence does for the
+// whitelist verdict.
+//
+// ⛔ THE FACT IT DEFENDS:
+//
+//	PACKAGE UPDATED != PROJECTION GENERATED != PROJECTION VALIDATED
+//	                != KERNEL RULESET APPLIED != RUNTIME CONVERGED
+//
+// Without it the installer could report a successful update while convergence was never
+// proven — the dns1 shape, where every surface said PASS.
+//
+// Verdict mapping:
+//
+//	VERIFIED       → PASS (the only value that may support COMMITTED)
+//	NOT_CONVERGED  → FAIL (T3/T4/T6; blocks COMMITTED via AllPassed)
+//	DEFERRED       → PASS + WARN — see the note below
+//	UNVERIFIED     → PASS + WARN (a leg could not be OBSERVED; absence of evidence)
+//	""             → PASS-as-UNKNOWN (legacy/not-evaluated; explicitly NOT "verified")
+//	other          → FAIL closed
+//
+// ⛔ WHY DEFERRED DOES NOT FAIL.
+// DEFERRED_RUNTIME is the EXPECTED pre-daemon module-projection deferral, and v1.229.12
+// P12-A01 exists precisely because escalating it to a fatal outcome was a production
+// defect. Failing it here would re-commit that error for every upgrade. It is equally
+// not a verified convergence, so it PASSES with an explicit WARN rather than silently.
+//
+// ⛔ OWNER RULING (v1.230.0) — THE POLICY QUESTION IS ANSWERED; DO NOT RE-DECIDE IT HERE.
+// This arm is the enforcement point of the ruling documented at the top of
+// internal/installer/state/machine.go:
+//
+//	COMPLETE                        -> eligible for COMMITTED
+//	DEFERRED_RUNTIME                -> eligible for COMMITTED ONLY when the deferral is
+//	                                   explicitly EXPECTED AND the post-start
+//	                                   convergence contract proves the runtime converged
+//	REFUSED / NOT_EXECUTED / FAILED
+//	  / unknown                     -> NEVER COMMITTED
+//
+// `DEFERRED_RUNTIME == success` IS INCORRECT. This arm passing is NOT that claim: it
+// is a PERMITTED INTERMEDIATE DISPOSITION being allowed to continue, while the verdict
+// recorded in install_state stays DEFERRED and the WARN stays on the record. Two edits
+// are forbidden here, in opposite directions:
+//   - setting r.Passed = false on this arm re-introduces P12-A01 for every upgrade;
+//   - folding this arm into the convergenceVerified case (or rewriting its Detail to
+//     claim convergence) manufactures proof that the deferral itself denies.
+//
+// What still has to hold before COMMITTED on a deferred run is enforced by the OTHER
+// assertions this one deliberately does not duplicate — chiefly
+// assertWhitelistConvergence above, which runs on the POST-DAEMON-START verdict
+// recorded by phaseConfigure (cmd/nftban-installer/phases.go SyncWhitelist) and FAILS
+// on FAILED, on a surviving DEFERRED and on any unrecognised value.
+//
+// Pinned by the Ruling-1 arms in internal/installer/switchop/convergence_v1230_test.go
+// and cmd/nftban-installer/convergence_contract_v1230_test.go.
+func assertPostUpdateConvergence(opts AssertionOpts, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "post_update_convergence_verified", Passed: true}
+	switch opts.ConvergenceVerified {
+	case convergenceVerified:
+		r.Detail = "VERIFIED — projection generated and nft -c valid, apply confirmed, effective convergence generation advanced, kernel tables present"
+		log.Debug("ASSERT post_update_convergence_verified: PASS — %s", r.Detail)
+
+	case "":
+		r.Detail = "UNKNOWN — no CONVERGENCE_VERIFIED verdict for this path (install_state predates v1.230.0, or this caller does not evaluate it); NOT a convergence claim"
+		log.Warn("ASSERT post_update_convergence_verified: UNKNOWN — no post-update convergence verdict is available for this path; recorded as not-evaluated, NOT as VERIFIED")
+
+	case convergenceNotConverged:
+		r.Passed = false
+		r.Detail = "NOT_CONVERGED — end-to-end nftables convergence was NOT established for this transaction; the update is INCOMPLETE"
+		log.Error("ASSERT post_update_convergence_verified: FAIL — install_state records CONVERGENCE_VERIFIED=NOT_CONVERGED")
+		log.Error("  the package may be current and the daemon may be active; neither is evidence that the kernel converged")
+		log.Error("  remediation: re-run the rebuild ('nftban firewall rebuild') or the install/update; the verdict is re-recorded only by an installer run")
+
+	case convergenceDeferred:
+		r.Detail = "DEFERRED — the rebuild deferred its module projection; convergence debt is outstanding and this is NOT a verified convergence"
+		log.Warn("ASSERT post_update_convergence_verified: DEFERRED — the generation was deliberately not advanced; convergence debt outstanding, NOT recorded as VERIFIED")
+
+	case convergenceUnverified:
+		r.Detail = "UNVERIFIED — a convergence leg could not be OBSERVED; absence of evidence, recorded as neither pass nor failure"
+		log.Warn("ASSERT post_update_convergence_verified: UNVERIFIED — convergence could not be observed on this path; NOT recorded as VERIFIED")
+
+	default:
+		r.Passed = false
+		r.Detail = fmt.Sprintf("unrecognized CONVERGENCE_VERIFIED value %q — failing closed rather than reading an unknown verdict as converged", opts.ConvergenceVerified)
+		log.Error("ASSERT post_update_convergence_verified: FAIL-CLOSED — %s", r.Detail)
 	}
 	return r
 }

@@ -1198,8 +1198,11 @@ nftban_portscan_status() {
         local yesterday today scan_bans
         yesterday=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
         today=$(date '+%Y-%m-%d')
-        # Count portscan bans from last 24 hours
-        scan_bans=$(grep "|portscan|" "$ban_log" 2>/dev/null | grep -cE "^($yesterday|$today)" || true)
+        # Count portscan bans from last 24 hours.
+        # v1.230.0 P1-1: -a on the FIRST grep — it emits to stdout, so a NUL run in
+        # the ban log would blind it (exit 0, count silently 0). -a on the second is
+        # defence in depth: a matched line may itself carry a NUL.
+        scan_bans=$(grep -a "|portscan|" "$ban_log" 2>/dev/null | grep -a -cE "^($yesterday|$today)" || true)
         [[ -z "$scan_bans" ]] && scan_bans=0
         echo "  Port scans detected: $scan_bans"
     else

@@ -21,6 +21,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -513,6 +514,100 @@ func TestInstallState_PR25_NotApplyTerminal(t *testing.T) {
 	for _, s := range pr25 {
 		if s.IsApplyTerminal() {
 			t.Errorf("%s must NOT be IsApplyTerminal (restore-mode is gated separately)", s)
+		}
+	}
+}
+
+// =============================================================================
+// OWNER RULING (v1.230.0) — DEFERRED_RUNTIME MAY REACH COMMITTED, NEVER PROVES IT
+// =============================================================================
+// These arms PIN the ruling documented at the top of machine.go. They do not
+// re-implement it: each asserts an externally observable consequence that a
+// "simplification" would have to break.
+
+// TestRuling_DeferredRuntimeNeverProvesSuccess pins the half of the ruling this
+// package owns: COMMITTED is the only install-class success, and no rebuild outcome
+// short of it may borrow ExitCommitted.
+//
+// ⛔ The restore/uninstall classes are EXCLUDED by name, not by accident: PR-23/PR-24
+// deliberately map StateUninstallReleased and StateRestoreDecided to ExitCommitted
+// for operations that are not installs. Sweeping every state would make this arm fail
+// for a reason that has nothing to do with the ruling.
+func TestRuling_DeferredRuntimeNeverProvesSuccess(t *testing.T) {
+	installClass := []InstallState{
+		StateFilesInstalled, StateDetectComplete, StatePrepareComplete,
+		StateSwitchComplete, StateServicesComplete, StateDegraded,
+		StateFailedSSH, StateFailedAbort, StateFailedRender, StateFailedRebuild,
+		StateFailedNoFirewall, StateFailedTakeover, StateFailedPreflightDiskSpace,
+		StateRebuildRefusedBusy, StateRebuildNotExecuted,
+	}
+	for _, s := range installClass {
+		if s == StateCommitted {
+			t.Fatalf("fixture error: COMMITTED must not be in the non-success list")
+		}
+		if s.ExitCode() == ExitCommitted {
+			t.Errorf("%s returns ExitCommitted(0) — only StateCommitted may mean install success", s)
+		}
+	}
+	if StateCommitted.ExitCode() != ExitCommitted {
+		t.Errorf("StateCommitted.ExitCode() = %d, want %d", StateCommitted.ExitCode(), ExitCommitted)
+	}
+}
+
+// TestRuling_RefusedAndNotExecutedAreNeverCommitted pins the third line of the model:
+//
+//	REFUSED / NOT_EXECUTED / FAILED / unknown -> NEVER COMMITTED
+//
+// ⛔ AND THEY STAY DISTINCT FROM FAILED_REBUILD. Collapsing them is the dns1 defect
+// (a host whose enforcement was never touched reported as a failed rebuild), and
+// collapsing them into COMMITTED is the ruling violation. Both must stay impossible.
+func TestRuling_RefusedAndNotExecutedAreNeverCommitted(t *testing.T) {
+	for _, s := range []InstallState{StateRebuildRefusedBusy, StateRebuildNotExecuted} {
+		if s == StateCommitted {
+			t.Errorf("%s must never be StateCommitted", s)
+		}
+		if !s.IsTerminal() {
+			t.Errorf("%s must be terminal for this run — the convergence is owed, not done", s)
+		}
+		if !s.IsDeferredRebuild() {
+			t.Errorf("%s must be recognised as a deferred-rebuild terminal", s)
+		}
+		// The rebuild never ran, so --repair must re-run it rather than resume past it.
+		if got := s.ResumePhase(); got != PhaseSwitch {
+			t.Errorf("%s resumes at %s, want SWITCH — a rebuild that never ran must be re-run", s, got)
+		}
+		if s == StateFailedRebuild {
+			t.Errorf("%s must stay distinct from FAILED_REBUILD", s)
+		}
+	}
+	// An unknown / never-defined literal must not fall through to success either.
+	if unknown := InstallState("RULING_UNDECLARED_STATE"); unknown.ExitCode() == ExitCommitted {
+		t.Error("an unrecognised state must not produce ExitCommitted — unknown is never COMMITTED")
+	}
+}
+
+// TestRuling_DeferredRuntimeRulingIsDocumentedInTheStateMachine is a STRUCTURAL guard.
+// The owner asked for the ruling to live where a future developer reading the state
+// machine cannot miss it; a behavioural test cannot notice the comment being deleted.
+//
+// ⛔ It matches SENTENCES OF THE RULING, not a line number and not the whole block —
+// locating a guard subject by line number is forbidden in this repository, and an
+// exact-block match would fail on any harmless rewrap.
+func TestRuling_DeferredRuntimeRulingIsDocumentedInTheStateMachine(t *testing.T) {
+	src, err := os.ReadFile("machine.go")
+	if err != nil {
+		t.Fatalf("cannot read machine.go: %v", err)
+	}
+	for _, want := range []string{
+		"`DEFERRED_RUNTIME == success`",
+		"IS INCORRECT AND MUST NOT BE SIMPLIFIED INTO THAT",
+		"PERMITTED INTERMEDIATE DISPOSITION",
+		"NEVER COMMITTED",
+		"P12-A01",
+		"convergence-generation",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("machine.go no longer documents the owner ruling: missing %q", want)
 		}
 	}
 }

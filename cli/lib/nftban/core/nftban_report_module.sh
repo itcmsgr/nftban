@@ -776,6 +776,142 @@ nftban_module_render_detailed() {
 # HTML REPORT GENERATION
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# _nftban_module_configured_state <module-name> -> ENABLED | DISABLED | UNKNOWN
+#
+# Configuration state ONLY. This deliberately does not consult the filesystem,
+# process table or systemd: this report's subject is shell source files, and an
+# executable bit is not an enablement decision.
+#
+# nftban_module_effective_enabled is the single authority. It returns 0 enabled,
+# 1 disabled, 2 for a module outside its population. Its coverage is partial
+# (see P12-A04), so most scanned files legitimately resolve UNKNOWN -- which is
+# the honest answer, not a defect of this function.
+#
+# ⛔ EVERY failure path resolves UNKNOWN. An absent authority, an unreadable
+#    config or an unrecognised module must never render as DISABLED: that would
+#    present a failed observation as a configuration decision the operator made.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# _nftban_report_esc <value> -- HTML-escape one interpolated value.
+#
+# All report HTML is built by shell string substitution, so nothing escapes by
+# default and every interpolated field is a potential sink.
+#
+# ⛔ THIS MUST NOT FAIL OPEN. An earlier form of this helper delegated to
+#    nftban_sanitize_html and silently returned the value UNESCAPED when
+#    lib/validation.sh could not be sourced -- a missing dependency would have
+#    quietly disabled escaping across every report. Escaping is done inline so it
+#    cannot degrade, and report_generator_content_truth asserts this produces
+#    output IDENTICAL to nftban_sanitize_html, so the two cannot drift apart.
+#
+# Order matters: & FIRST. Escaping it after the others would re-escape the
+# ampersands they introduce and "<" would render as "&amp;lt;".
+# -----------------------------------------------------------------------------
+_nftban_report_esc() {
+    local v="${1-}"
+    # ⛔ THE BACKSLASHES ARE LOAD-BEARING. In bash 5.2+ an unescaped & in the
+    # replacement of ${var//pat/repl} expands to the MATCHED TEXT, exactly as in
+    # sed -- so "${v//</&lt;}" yields "<lt;", silently emitting a raw "<" into the
+    # document while looking like it escapes. \& forces a literal ampersand and is
+    # correct on older bash too. This is why the sed-based authority was written
+    # the way it was; the equivalence assertion in the test binds the two forms.
+    v="${v//&/\&amp;}"
+    v="${v//</\&lt;}"
+    v="${v//>/\&gt;}"
+    v="${v//\"/\&quot;}"
+    v="${v//\'/\&#39;}"
+    printf '%s' "$v"
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_report_publish <report_file> <html_content> -- validate, then publish.
+#
+# Mirrors the discipline cmd_report.sh already documents, which was the only
+# generator that had it:
+#
+#   mktemp IN THE DESTINATION DIRECTORY  rename(2) is atomic only within one
+#                                        filesystem, and an unpredictable name
+#                                        cannot be pre-created as a symlink in a
+#                                        directory writable by the nftban user
+#   chmod BEFORE publish                 mktemp creates 0600; the previous
+#                                        `echo >` form produced 0640 under this
+#                                        file's umask 027. Setting the mode
+#                                        explicitly keeps publication from
+#                                        depending on how the temporary happened
+#                                        to be created.
+#   VALIDATE BEFORE RENAME               success must mean the document is
+#                                        semantically complete, not that a file
+#                                        appeared. `[[ -f ]]` is what let three
+#                                        generators ship wrong content for
+#                                        releases.
+#
+# On any failure the temporary is removed and the PREVIOUS report is left intact:
+# a stale-but-valid report beats a truncated one presented as current.
+# -----------------------------------------------------------------------------
+_nftban_report_publish() {
+    local report_file="$1" content="$2"
+    local report_dir; report_dir="$(dirname "$report_file")"
+    local tmp
+    tmp="$(mktemp "${report_dir}/.nftban-report.XXXXXX" 2>/dev/null)" || {
+        echo "ERROR: cannot create a temporary in $report_dir" >&2
+        return 1
+    }
+    chmod 0640 "$tmp" 2>/dev/null || { rm -f "$tmp"; echo "ERROR: cannot set mode on $tmp" >&2; return 1; }
+    printf '%s\n' "$content" > "$tmp" || { rm -f "$tmp"; echo "ERROR: write failed: $tmp" >&2; return 1; }
+
+    [[ -s "$tmp" ]] || { rm -f "$tmp"; echo "ERROR: refusing to publish an empty report" >&2; return 1; }
+    if grep -qE '\{[A-Z_][A-Z0-9_]*\}' "$tmp"; then
+        echo "ERROR: refusing to publish, unresolved placeholder(s): $(grep -oE '\{[A-Z_][A-Z0-9_]*\}' "$tmp" | sort -u | tr '\n' ' ')" >&2
+        rm -f "$tmp"; return 1
+    fi
+    grep -qi '</html>' "$tmp" || { rm -f "$tmp"; echo "ERROR: refusing to publish an unterminated document" >&2; return 1; }
+
+    mv -f "$tmp" "$report_file" || { rm -f "$tmp"; echo "ERROR: publish failed: $report_file" >&2; return 1; }
+    return 0
+}
+
+_nftban_module_configured_state() {
+    local module="${1:-}"
+    [[ -n "$module" ]] || { printf 'UNKNOWN\n'; return 0; }
+
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+        local _auth="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh"
+        # shellcheck source=/dev/null
+        [[ -r "$_auth" ]] && source "$_auth" >/dev/null 2>&1 || true
+    fi
+    declare -F nftban_module_effective_enabled >/dev/null 2>&1 || { printf 'UNKNOWN\n'; return 0; }
+
+    local rc=0
+    nftban_module_effective_enabled "$module" >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+        0) printf 'ENABLED\n'  ;;
+        1) printf 'DISABLED\n' ;;
+        *) printf 'UNKNOWN\n'  ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_report_lit <varname>... -- make each named variable safe to use as the
+# REPLACEMENT half of ${doc//placeholder/value}.
+#
+# ⛔ PRE-EXISTING DEFECT, not introduced by escaping. In bash 5.2+ an unescaped &
+#    in the replacement expands to the MATCHED TEXT, so a value containing "&"
+#    injects the PLACEHOLDER NAME into the operator's data. Measured at v1.229.14:
+#    a module declaring depends="curl&jq" rendered as "curl{DEPENDENCY_SECTION}jq".
+#    Any report value containing an ampersand has always corrupted the document.
+#    HTML-escaping makes every escaped character produce an "&", so the fault goes
+#    from occasional to constant -- it must be fixed alongside, not after.
+# -----------------------------------------------------------------------------
+_nftban_report_lit() {
+    local _n
+    for _n in "$@"; do
+        local -n _ref="$_n"
+        _ref="${_ref//&/\\&}"
+    done
+}
+
 nftban_module_generate_html_report() {
     # Generate HTML report from module data
     # Returns: Path to generated HTML file
@@ -808,13 +944,30 @@ nftban_module_generate_html_report() {
     local total_modules=${#NFTBAN_MODULE_INVENTORY[@]}
     local enabled_modules=0
     local disabled_modules=0
+    local unknown_modules=0
     local core_modules=0
 
+    # v1.229.15: the inventory tuple written at nftban_module_scan carries EIGHT
+    # fields and contains no status field at all:
+    #     name|version|module_type|created|depends|owner|homepage|description
+    # This loop previously destructured SEVEN names, the fourth of which was
+    # called `status`. It therefore received `created` -- a date -- so the test
+    # `[[ "$status" == "ENABLED" ]]` was unreachable and every module counted as
+    # disabled. The shift also pushed `depends` into `created` and `owner` into
+    # `depends` in the rendered table.
     for module_path in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
         local info="${NFTBAN_MODULE_INVENTORY[$module_path]}"
-        IFS='|' read -r name version type status created depends owner <<< "$info"
+        IFS='|' read -r name version type created depends owner homepage description <<< "$info"
 
-        [[ "$status" == "ENABLED" ]] && enabled_modules=$((enabled_modules + 1)) || disabled_modules=$((disabled_modules + 1))
+        # Counted from the same three-valued authority the rows render, so the KPI
+        # cards and the table can never disagree. UNKNOWN is counted as UNKNOWN --
+        # it is not folded into disabled, which would turn an unestablished state
+        # into a reported operator decision.
+        case "$(_nftban_module_configured_state "$name")" in
+            ENABLED)  enabled_modules=$((enabled_modules + 1))  ;;
+            DISABLED) disabled_modules=$((disabled_modules + 1)) ;;
+            *)        unknown_modules=$((unknown_modules + 1))   ;;
+        esac
         [[ "$type" == "core" ]] && core_modules=$((core_modules + 1)) || true
     done
 
@@ -822,27 +975,46 @@ nftban_module_generate_html_report() {
     local table_rows=""
     for module_path in $(printf '%s\n' "${!NFTBAN_MODULE_INVENTORY[@]}" | sort); do
         local info="${NFTBAN_MODULE_INVENTORY[$module_path]}"
-        IFS='|' read -r name version type status created depends owner <<< "$info"
+        IFS='|' read -r name version type created depends owner homepage description <<< "$info"
 
         # Type badge
         local type_badge="<span class=\"badge badge-${type}\">${type}</span>"
 
-        # Status badge
+        # v1.229.15: CONFIGURED state, not runtime health. Contract:
+        #   ENABLED   the authoritative module configuration says enabled
+        #   DISABLED  the authoritative module configuration says disabled
+        #   UNKNOWN   configuration state could not be established
+        # ENABLED never means running or healthy, and a collection failure -- an
+        # unreadable config, a missing authority, a module outside the authority's
+        # population -- resolves to UNKNOWN, never to DISABLED. This column
+        # previously rendered DISABLED for every module including healthy core ones,
+        # because it tested a variable that held a date.
+        local configured_state
+        configured_state="$(_nftban_module_configured_state "$name")"
         local status_badge
-        if [[ "$status" == "ENABLED" ]]; then
-            status_badge="<span class=\"badge badge-enabled\">ENABLED</span>"
-        else
-            status_badge="<span class=\"badge badge-disabled\">DISABLED</span>"
-        fi
+        case "$configured_state" in
+            ENABLED)  status_badge="<span class=\"badge badge-enabled\">ENABLED</span>" ;;
+            DISABLED) status_badge="<span class=\"badge badge-disabled\">DISABLED</span>" ;;
+            *)        status_badge="<span class=\"badge badge-unknown\">UNKNOWN</span>" ;;
+        esac
+
+        # Every one of these is read from a "# meta:" comment in a shipped .sh
+        # file, so anyone able to write under NFTBAN_LIB_DIR controls them.
+        local e_name e_version e_created e_path e_depends
+        e_name="$(_nftban_report_esc "$name")"
+        e_version="$(_nftban_report_esc "$version")"
+        e_created="$(_nftban_report_esc "$created")"
+        e_path="$(_nftban_report_esc "$module_path")"
+        e_depends="$(_nftban_report_esc "$depends")"
 
         table_rows+="                <tr>
-                    <td><strong>${name}</strong></td>
-                    <td>${version}</td>
+                    <td><strong>${e_name}</strong></td>
+                    <td>${e_version}</td>
                     <td>${type_badge}</td>
                     <td>${status_badge}</td>
-                    <td>${created:-N/A}</td>
-                    <td class=\"path-text\">${module_path}</td>
-                    <td>${depends:-none}</td>
+                    <td>${e_created:-N/A}</td>
+                    <td class=\"path-text\">${e_path}</td>
+                    <td>${e_depends:-none}</td>
                 </tr>
 "
     done
@@ -862,6 +1034,7 @@ nftban_module_generate_html_report() {
     current_time=$(date +%H:%M:%S)
 
     # Substitute placeholders
+    _nftban_report_lit table_rows hostname server_ip current_date current_time
     html_content="${html_content//\{HOSTNAME\}/$hostname}"
     html_content="${html_content//\{SERVER_IP\}/$server_ip}"
     html_content="${html_content//\{DATE\}/$current_date}"
@@ -875,6 +1048,7 @@ nftban_module_generate_html_report() {
     html_content="${html_content//\{TOTAL_MODULES\}/$total_modules}"
     html_content="${html_content//\{ENABLED_MODULES\}/$enabled_modules}"
     html_content="${html_content//\{DISABLED_MODULES\}/$disabled_modules}"
+    html_content="${html_content//\{UNKNOWN_MODULES\}/$unknown_modules}"
     html_content="${html_content//\{CORE_MODULES\}/$core_modules}"
 
     # Table rows
@@ -884,10 +1058,10 @@ nftban_module_generate_html_report() {
     html_content="${html_content//\{DEPENDENCY_SECTION\}/}"
 
     # Write HTML file
-    echo "$html_content" > "${report_file}.tmp" && mv -f "${report_file}.tmp" "$report_file"
+    _nftban_report_publish "$report_file" "$html_content" || return 1
 
     # Set permissions
-    chmod 640 "$report_file" 2>/dev/null || true
+    # mode is set on the temporary before publish by _nftban_report_publish
 
     echo "$report_file"
 }

@@ -86,7 +86,13 @@ gf '_has_structural=true'                           "T6 structural-degraded dete
 gf 'non-structural degradation'                     "T6 non-structural warning path preserved"
 
 # T7: no duplicate/conflicting readiness verdict — single consolidated case; generic helper NOT called here
-if [[ "$(grep -c 'case "\$_installer_state" in' "$CU")" -eq 1 ]]; then ok "T7 single consolidated install_state verdict (one case)"; else bad "T7 unexpected number of verdict case blocks"; fi
+# v1.230.0 P0-D2: the verdict no longer dispatches on the raw install_state
+# literal (that shape produced the FAILED_*|FAILED glob that INSTALL_FAILED did
+# not match, and the catch-all green arm behind it). It dispatches ONCE on the
+# class adjudicated by the positive assertion nftban_install_state_classify.
+# The invariant this test guards is unchanged: exactly ONE consolidated verdict.
+if [[ "$(grep -c 'case "\$_verdict_class" in' "$CU")" -eq 1 ]]; then ok "T7 single consolidated install-state verdict (one dispatch case)"; else bad "T7 unexpected number of verdict case blocks"; fi
+if [[ "$(grep -c 'case "\$_installer_state" in' "$CU")" -eq 0 ]]; then ok "T7c the verdict no longer dispatches on the raw install_state literal"; else bad "T7c raw-literal dispatch reintroduced"; fi
 # the helper may be NAMED in a comment ("NOT the generic helper…") but must never be CALLED here
 if grep 'nftban_render_operator_readiness' "$CU" | grep -qvE '^[[:space:]]*#'; then bad "T7 generic readiness helper CALLED (non-comment) in update (contradiction risk)"; else ok "T7 generic readiness helper NOT called in cmd_update.sh (no contradiction)"; fi
 
