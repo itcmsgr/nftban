@@ -1593,8 +1593,16 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} — FAILED"
         echo "[NFTBan] ========================================"
         echo "[NFTBan] See log: /var/log/nftban/installer.log"
-        echo "[NFTBan] To retry: /usr/lib/nftban/bin/nftban-installer --repair"
-        echo "[NFTBan] Or: nftban firewall rebuild"
+        # ⛔ v1.230.0 Gate 6R F2: THE RECOVERY INSTRUCTION IS NOT DUPLICATED HERE.
+        # This branch sees only an EXIT CODE, and REBUILD_REFUSED_BUSY exits 2 exactly
+        # like FAILED_REBUILD — so a hardcoded "--repair" here is printed blind. Measured
+        # on lab3: --repair from REBUILD_REFUSED_BUSY resumes at SWITCH, skips the
+        # boot-projection render, and ends DEGRADED instead of COMMITTED.
+        # The Go installer already printed a state-accurate block declaring its
+        # RECOVERY_CLASS; it is the single source of truth, the same rule this file
+        # already applies to the FAILED_AUTHORITY_ABORT block above.
+        #     AN INSTRUCTION CHOSEN WITHOUT THE STATE CANNOT BE STATE-CORRECT.
+        echo "[NFTBan] Recovery: follow the RECOVERY_CLASS line printed above by the installer."
     fi
 
     # --- v1.145 PR-A.1: upgrade-path SSH rate-limit migration ---

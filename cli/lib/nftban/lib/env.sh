@@ -65,6 +65,39 @@ _source_local() {
 }
 
 # =============================================================================
+# FINAL OPERATOR OVERLAY (v1.230.0 PR-5c-B1)
+# =============================================================================
+# THE PRECEDENCE CONTRACT THIS EXISTS TO MAKE EXPLICIT:
+#
+#     shipped/module base  <  module-local override  <  central operator override
+#
+# The Go plane already implements exactly that, last-wins, with nftban.conf.local as the
+# highest-priority layer (internal/nftbanconf/loader.go:484 — "the SINGLE user override
+# file"). The shell plane did NOT: env.sh loads nftban.conf.local once at startup, and any
+# consumer that later sources its own base `conf.d/X.conf` overwrites it, because every
+# shipped base file uses PLAIN assignments. Bash is last-assignment-wins, so the operator's
+# supported override lost to a shipped default. MEASURED: operator sets STATS_ENABLED=false
+# via `nftban config set`; after the central load the value is false; after
+# cmd_report.sh:1076 sources conf.d/stats.conf it is true again.
+#
+# ⛔ NOT fixed by rewriting base files to `: "${KEY:=...}"`. Empty-value semantics are
+#    key-specific in this tree, and := treats empty as unset — that would silently change a
+#    second contract while repairing this one.
+# ⛔ NOT fixed by scattering `source nftban.conf.local` through consumers: that recreates
+#    the scattered authority the central file exists to remove.
+#
+# Instead the override is applied ONCE MORE, deliberately, at the point where a consumer has
+# finished loading its subject base and subject-local configuration. The startup load in
+# env.sh is deliberately left in place — removing it would turn this into a change to global
+# initialisation semantics rather than a precedence repair.
+#
+# Re-application is safe: _source_local is idempotent for assignment files, keeps the
+# `bash -n` candidate gate, and honours NFTBAN_IGNORE_LOCAL_CONFIG.
+nftban_config_apply_final_operator_overlay() {
+    _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+}
+
+# =============================================================================
 # LOAD CONFIG (if not already loaded by main CLI)
 # =============================================================================
 # Only load config if the main nftban script hasn't already done it

@@ -343,6 +343,106 @@ nftban_fhs_render_table() {
 # HTML REPORT GENERATION
 # =============================================================================
 
+
+# -----------------------------------------------------------------------------
+# _nftban_report_esc <value> -- HTML-escape one interpolated value.
+#
+# All report HTML is built by shell string substitution, so nothing escapes by
+# default and every interpolated field is a potential sink.
+#
+# ⛔ THIS MUST NOT FAIL OPEN. An earlier form of this helper delegated to
+#    nftban_sanitize_html and silently returned the value UNESCAPED when
+#    lib/validation.sh could not be sourced -- a missing dependency would have
+#    quietly disabled escaping across every report. Escaping is done inline so it
+#    cannot degrade, and report_generator_content_truth asserts this produces
+#    output IDENTICAL to nftban_sanitize_html, so the two cannot drift apart.
+#
+# Order matters: & FIRST. Escaping it after the others would re-escape the
+# ampersands they introduce and "<" would render as "&amp;lt;".
+# -----------------------------------------------------------------------------
+_nftban_report_esc() {
+    local v="${1-}"
+    # ⛔ THE BACKSLASHES ARE LOAD-BEARING. In bash 5.2+ an unescaped & in the
+    # replacement of ${var//pat/repl} expands to the MATCHED TEXT, exactly as in
+    # sed -- so "${v//</&lt;}" yields "<lt;", silently emitting a raw "<" into the
+    # document while looking like it escapes. \& forces a literal ampersand and is
+    # correct on older bash too. This is why the sed-based authority was written
+    # the way it was; the equivalence assertion in the test binds the two forms.
+    v="${v//&/\&amp;}"
+    v="${v//</\&lt;}"
+    v="${v//>/\&gt;}"
+    v="${v//\"/\&quot;}"
+    v="${v//\'/\&#39;}"
+    printf '%s' "$v"
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_report_lit <varname>... -- make each named variable safe to use as the
+# REPLACEMENT half of ${doc//placeholder/value}.
+#
+# ⛔ PRE-EXISTING DEFECT, not introduced by escaping. In bash 5.2+ an unescaped &
+#    in the replacement expands to the MATCHED TEXT, so a value containing "&"
+#    injects the PLACEHOLDER NAME into the operator's data. Measured at v1.229.14:
+#    a module declaring depends="curl&jq" rendered as "curl{DEPENDENCY_SECTION}jq".
+#    Any report value containing an ampersand has always corrupted the document.
+#    HTML-escaping makes every escaped character produce an "&", so the fault goes
+#    from occasional to constant -- it must be fixed alongside, not after.
+# -----------------------------------------------------------------------------
+_nftban_report_lit() {
+    local _n
+    for _n in "$@"; do
+        local -n _ref="$_n"
+        _ref="${_ref//&/\\&}"
+    done
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_report_publish <report_file> <html_content> -- validate, then publish.
+#
+# Mirrors the discipline cmd_report.sh already documents, which was the only
+# generator that had it:
+#
+#   mktemp IN THE DESTINATION DIRECTORY  rename(2) is atomic only within one
+#                                        filesystem, and an unpredictable name
+#                                        cannot be pre-created as a symlink in a
+#                                        directory writable by the nftban user
+#   chmod BEFORE publish                 mktemp creates 0600; the previous
+#                                        `echo >` form produced 0640 under this
+#                                        file's umask 027. Setting the mode
+#                                        explicitly keeps publication from
+#                                        depending on how the temporary happened
+#                                        to be created.
+#   VALIDATE BEFORE RENAME               success must mean the document is
+#                                        semantically complete, not that a file
+#                                        appeared. `[[ -f ]]` is what let three
+#                                        generators ship wrong content for
+#                                        releases.
+#
+# On any failure the temporary is removed and the PREVIOUS report is left intact:
+# a stale-but-valid report beats a truncated one presented as current.
+# -----------------------------------------------------------------------------
+_nftban_report_publish() {
+    local report_file="$1" content="$2"
+    local report_dir; report_dir="$(dirname "$report_file")"
+    local tmp
+    tmp="$(mktemp "${report_dir}/.nftban-report.XXXXXX" 2>/dev/null)" || {
+        echo "ERROR: cannot create a temporary in $report_dir" >&2
+        return 1
+    }
+    chmod 0640 "$tmp" 2>/dev/null || { rm -f "$tmp"; echo "ERROR: cannot set mode on $tmp" >&2; return 1; }
+    printf '%s\n' "$content" > "$tmp" || { rm -f "$tmp"; echo "ERROR: write failed: $tmp" >&2; return 1; }
+
+    [[ -s "$tmp" ]] || { rm -f "$tmp"; echo "ERROR: refusing to publish an empty report" >&2; return 1; }
+    if grep -qE '\{[A-Z_][A-Z0-9_]*\}' "$tmp"; then
+        echo "ERROR: refusing to publish, unresolved placeholder(s): $(grep -oE '\{[A-Z_][A-Z0-9_]*\}' "$tmp" | sort -u | tr '\n' ' ')" >&2
+        rm -f "$tmp"; return 1
+    fi
+    grep -qi '</html>' "$tmp" || { rm -f "$tmp"; echo "ERROR: refusing to publish an unterminated document" >&2; return 1; }
+
+    mv -f "$tmp" "$report_file" || { rm -f "$tmp"; echo "ERROR: publish failed: $report_file" >&2; return 1; }
+    return 0
+}
+
 nftban_fhs_generate_html_report() {
     # Generate HTML report from FHS data
     # Returns: Path to generated HTML file
@@ -436,12 +536,22 @@ nftban_fhs_generate_html_report() {
             row_issues="${status#ERROR:}"
         fi
 
+        # Lower reachability than the other two -- these originate from the shipped
+        # spec and from stat(1) -- but escaped for the same reason: nothing in this
+        # pipeline escapes by default, so an unescaped field is one spec edit away
+        # from being a sink.
+        local e_path e_expected e_actual e_issues
+        e_path="$(_nftban_report_esc "$path")"
+        e_expected="$(_nftban_report_esc "$expected")"
+        e_actual="$(_nftban_report_esc "$actual")"
+        e_issues="$(_nftban_report_esc "$row_issues")"
+
         table_rows+="                <tr${row_class}>
-                    <td class=\"path-text\">${path}</td>
-                    <td class=\"perm-text\">${expected}</td>
-                    <td class=\"perm-text\">${actual}</td>
+                    <td class=\"path-text\">${e_path}</td>
+                    <td class=\"perm-text\">${e_expected}</td>
+                    <td class=\"perm-text\">${e_actual}</td>
                     <td>${status_badge}</td>
-                    <td>${row_issues:-—}</td>
+                    <td>${e_issues:-—}</td>
                 </tr>
 "
     done
@@ -484,6 +594,7 @@ nftban_fhs_generate_html_report() {
     current_time=$(date +%H:%M:%S)
 
     # Substitute placeholders
+    _nftban_report_lit table_rows hostname server_ip current_date current_time
     html_content="${html_content//\{HOSTNAME\}/$hostname}"
     html_content="${html_content//\{SERVER_IP\}/$server_ip}"
     html_content="${html_content//\{DATE\}/$current_date}"
@@ -507,10 +618,10 @@ nftban_fhs_generate_html_report() {
     html_content="${html_content//\{FHS_TABLE_ROWS\}/$table_rows}"
 
     # Write HTML file
-    echo "$html_content" > "${report_file}.tmp" && mv -f "${report_file}.tmp" "$report_file"
+    _nftban_report_publish "$report_file" "$html_content" || return 1
 
     # Set permissions
-    chmod 640 "$report_file" 2>/dev/null || true
+    # mode is set on the temporary before publish by _nftban_report_publish
 
     echo "$report_file"
 }

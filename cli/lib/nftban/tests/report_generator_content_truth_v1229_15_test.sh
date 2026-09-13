@@ -16,7 +16,12 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="unprivileged"
 # meta:ta.id="report_generator_content_truth_v1229_15_test"
-# meta:ta.owner="reporting"
+# v1.230.0: ta.owner was "reporting", which is NOT in the declared OWNERS vocabulary
+# (scripts/ci/test-authority.py:41), so `test-authority.py validate --mode strict`
+# rejected it. Pre-existing since this file entered the stack; never seen because
+# stacked PRs skip the main-base gates. Relabelled to an EXISTING valid owner rather
+# than widening the vocabulary — the report generators live under core/.
+# meta:ta.owner="core"
 # meta:ta.module="report-generator-content-truth"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
 # meta:ta.gate="ci-bash"
@@ -102,6 +107,18 @@ cat > "$MODLIB/core/fixturemod.sh" <<'MOD'
 # meta:homepage="https://example.invalid"
 # meta:description="fixture"
 MOD
+cat > "$MODLIB/core/xssmod.sh" <<'MOD'
+#!/usr/bin/env bash
+# meta:name="<script>alert(1)</script>"
+# meta:version="A&B"
+# meta:type="core"
+# meta:created_date="2026-01-03"
+# meta:depends="curl&jq"
+# meta:owner="o"
+# meta:homepage="h"
+# meta:description="d"
+MOD
+
 mk_template "$SB/tmpl_mod/reports/module_report.html" MODULE_TABLE_ROWS TOTAL_MODULES \
     ENABLED_MODULES DISABLED_MODULES CORE_MODULES DATE TIME HOSTNAME SERVER_IP \
     NFTBAN_VERSION COMPANY_NAME LOGO_HTML VERSION_HTML DEPENDENCY_SECTION 2>/dev/null \
@@ -142,6 +159,83 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
         echo "[SKIP] module pre-fix probe produced no output - NOT counted as pass"
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# HTML ESCAPING - all report HTML is shell string substitution, so nothing
+# escapes by default. Values read from meta: comments reach the document raw.
+# ---------------------------------------------------------------------------
+grep -q '&lt;script&gt;alert(1)&lt;/script&gt;' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_MODULE_NAME (HTML metacharacters render as entities)" "$r"
+
+grep -qF '<script>alert(1)</script>' <<<"$NEW_MOD" && r=1 || r=0
+assert "ESCAPING_NO_RAW_SCRIPT_TAG (no unescaped script tag in the document)" "$r"
+
+# The declared fixture set: a literal ampersand is a first-class case, not an
+# afterthought to XSS-shaped input. curl&jq is ordinary operator data.
+grep -q 'curl&amp;jq' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_LITERAL_AMPERSAND (curl&jq -> curl&amp;jq, operator data preserved)" "$r"
+
+grep -q 'A&amp;B' <<<"$NEW_MOD" && r=0 || r=1
+assert "ESCAPING_AMPERSAND_PAIR (A&B -> A&amp;B)" "$r"
+
+# Quote and apostrophe escaping is asserted by EXACT EXPECTED OUTPUT in
+# test_validation.sh (_sanitize_case "double quote" / "apostrophe") and is bound
+# to this path by ESCAPING_INLINE_MATCHES_AUTHORITY below. It is deliberately not
+# re-asserted through a rendered column: no module meta field can carry an
+# embedded quote -- the extractor parses a quoted string -- so a fixture built to
+# exercise it here would be testing a shape the subject cannot produce.
+
+# No placeholder token may survive OR be created. An unresolved {TOKEN} means the
+# template was not fully rendered; an injected one means & ate the placeholder.
+UNRESOLVED="$(grep -oE '\{[A-Z_]+\}' <<<"$NEW_MOD" | sort -u | tr '\n' ' ')"
+[[ -z "$UNRESOLVED" ]] && r=0 || r=1
+assert "NO_UNRESOLVED_OR_INJECTED_TOKEN (no {TOKEN} anywhere, found: ${UNRESOLVED:-none})" "$r"
+
+if [[ "$OLD_AVAILABLE" -eq 1 && -n "${OLD_MOD:-}" ]]; then
+    grep -qF '<script>alert(1)</script>' <<<"$OLD_MOD" && r=0 || r=1
+    assert "NEGATIVE_CONTROL_ESCAPING (${BASE_REF} emits the raw script tag)" "$r"
+fi
+
+# The dashboard escapes at the sink: its values reach innerHTML via template
+# literals, which the generator's \u003c escaping does not protect.
+grep -q 'function esc' "$ROOT/install/share/nftban/templates/reports/stats_dashboard.html" && r=0 || r=1
+assert "ESCAPING_DASHBOARD_HAS_SINK_ESCAPER (esc() defined in the template)" "$r"
+
+RAWSINK="$(grep -cE '\$\{ip\.(ip|country|source|last_seen)' "$ROOT/install/share/nftban/templates/reports/stats_dashboard.html" 2>/dev/null | tr -d '[:space:]')"
+RAWSINK="${RAWSINK:-0}"
+[[ "${RAWSINK:-0}" -eq 0 ]] && r=0 || r=1
+assert "ESCAPING_DASHBOARD_NO_RAW_SINKS (no unwrapped \${ip.*} interpolation, got ${RAWSINK:-0})" "$r"
+
+# PLACEHOLDER INJECTION VIA & -- a value containing an ampersand used to inject
+# the PLACEHOLDER NAME into the document, because bash expands an unescaped & in
+# the replacement to the matched text. No attacker required: depends="curl&jq".
+grep -qF '{MODULE_TABLE_ROWS}' <<<"$NEW_MOD" && r=1 || r=0
+assert "NO_PLACEHOLDER_NAME_IN_DATA (a value containing & does not inject the placeholder)" "$r"
+
+if [[ "$OLD_AVAILABLE" -eq 1 && -n "${OLD_MOD:-}" ]]; then
+    grep -qF '{MODULE_TABLE_ROWS}' <<<"$OLD_MOD" && r=0 || r=1
+    assert "NEGATIVE_CONTROL_PLACEHOLDER_INJECTION (${BASE_REF} injects the placeholder name)" "$r"
+fi
+
+# The inline escaper must stay byte-identical to nftban_sanitize_html, the
+# project's escaping authority. It is inline so escaping cannot fail open when
+# validation.sh is unreachable; this assertion is what stops the two drifting.
+# It also catches the bash-version trap: an unescaped & in a ${var//pat/repl}
+# replacement expands to the MATCHED TEXT on bash 5.2+, so "&lt;" silently
+# becomes "<lt;" and a raw < reaches the document.
+ESC_DIVERGE=0
+for probe in '<script>' 'a&b' 'x"y' "it's" '' 'plain' '<>&"' '&amp;' 'a&&b' '<&>'; do
+    A="$(bash -c '
+        source "'"$ROOT/cli/lib/nftban/lib/validation.sh"'" >/dev/null 2>&1
+        source "'"$ROOT/cli/lib/nftban/core/nftban_report_fhs.sh"'" >/dev/null 2>&1
+        _nftban_report_esc "'"$probe"'"' 2>/dev/null)"
+    B="$(bash -c '
+        source "'"$ROOT/cli/lib/nftban/lib/validation.sh"'" >/dev/null 2>&1
+        nftban_sanitize_html "'"$probe"'"' 2>/dev/null)"
+    [[ "$A" == "$B" ]] || { ESC_DIVERGE=1; echo "    diverged on: $probe (inline=$A authority=$B)"; }
+done
+[[ "$ESC_DIVERGE" -eq 0 ]] && r=0 || r=1
+assert "ESCAPING_INLINE_MATCHES_AUTHORITY (10 probes byte-identical to nftban_sanitize_html)" "$r"
 
 # ---------------------------------------------------------------------------
 # CONFIGURED COLUMN - three-valued configuration state.
@@ -232,6 +326,52 @@ if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
     # writing anything. `nftban port html-report` produced no artifact at all.
     [[ "${OLD_FILES:-0}" -eq 0 ]] && r=0 || r=1
     assert "NEGATIVE_CONTROL_PORT_ABORTS (${BASE_REF} writes no report at all, got ${OLD_FILES:-0} file(s))" "$r"
+fi
+
+# ---------------------------------------------------------------------------
+# PUBLICATION DISCIPLINE - atomic, mode-correct, and validated before rename.
+# ---------------------------------------------------------------------------
+NEWFILE="$(find "$SB/out_mod_new" -name 'module_report_*.html' 2>/dev/null | head -1)"
+if [[ -n "$NEWFILE" ]]; then
+    MODE="$(stat -c '%a' "$NEWFILE" 2>/dev/null)"
+    [[ "$MODE" == "640" ]] && r=0 || r=1
+    assert "PUBLISH_MODE_0640 (published report is 0640, got ${MODE:-none})" "$r"
+else
+    echo "[SKIP] no published report to stat - NOT counted as pass"
+fi
+
+# No temporary may survive publication, and none may carry a predictable name.
+LEFTOVER="$(find "$SB/out_mod_new" -name '.nftban-report.*' -o -name '*.tmp' 2>/dev/null | wc -l)"
+[[ "${LEFTOVER:-0}" -eq 0 ]] && r=0 || r=1
+assert "PUBLISH_NO_TEMP_LEFT (no temporary survives, got ${LEFTOVER:-0})" "$r"
+
+# A document with an unresolved placeholder must NOT be published. Driven with a
+# template carrying a placeholder the generator never substitutes.
+mkdir -p "$SB/tmpl_bad/reports" "$SB/out_bad"
+printf '<html>{MODULE_TABLE_ROWS}{NEVER_SUBSTITUTED_TOKEN}</html>\n' > "$SB/tmpl_bad/reports/module_report.html"
+bash -c '
+    export NFTBAN_TEMPLATE_DIR="'"$SB/tmpl_bad"'" NFTBAN_REPORT_DIR="'"$SB/out_bad"'" NFTBAN_LIB_DIR="'"$MODLIB"'"
+    source "'"$ROOT/cli/lib/nftban/core/nftban_report_module.sh"'" >/dev/null 2>&1 || exit 90
+    nftban_module_generate_html_report >/dev/null 2>&1 || true
+' >/dev/null 2>&1
+BADFILES="$(find "$SB/out_bad" -name 'module_report_*.html' 2>/dev/null | wc -l)"
+[[ "${BADFILES:-0}" -eq 0 ]] && r=0 || r=1
+assert "PUBLISH_REFUSES_UNRESOLVED_PLACEHOLDER (nothing published, got ${BADFILES:-0} file(s))" "$r"
+
+BADTMP="$(find "$SB/out_bad" -name '.nftban-report.*' 2>/dev/null | wc -l)"
+[[ "${BADTMP:-0}" -eq 0 ]] && r=0 || r=1
+assert "PUBLISH_CLEANS_UP_ON_REFUSAL (no temporary left behind, got ${BADTMP:-0})" "$r"
+
+if [[ "$OLD_AVAILABLE" -eq 1 ]]; then
+    mkdir -p "$SB/out_bad_old"
+    bash -c '
+        export NFTBAN_TEMPLATE_DIR="'"$SB/tmpl_bad"'" NFTBAN_REPORT_DIR="'"$SB/out_bad_old"'" NFTBAN_LIB_DIR="'"$MODLIB"'"
+        source "'"$OLD_DIR/nftban_report_module.sh"'" >/dev/null 2>&1 || exit 90
+        nftban_module_generate_html_report >/dev/null 2>&1 || true
+    ' >/dev/null 2>&1
+    OLDBAD="$(find "$SB/out_bad_old" -name 'module_report_*.html' 2>/dev/null | wc -l)"
+    [[ "${OLDBAD:-0}" -ge 1 ]] && r=0 || r=1
+    assert "NEGATIVE_CONTROL_PUBLISHES_BROKEN_DOC (${BASE_REF} publishes it anyway, got ${OLDBAD:-0})" "$r"
 fi
 
 echo "=== report_generator_content_truth_v1229_15: PASS=$PASS FAIL=$FAIL ==="

@@ -215,9 +215,14 @@ export NFTBAN_DISTRO_AUTO_INIT=false
 export NFTBAN_DEBUG_MODE=false
 export NFTBAN_DISTRO_CONF_DIR="$TEST_DIR/distros"
 
-# Source the module
+# Source the module.
+# v1.230.0: this read "$SCRIPT_DIR/nftban_distro_config.sh" -- SCRIPT_DIR is the
+# TESTS directory, while the module ships in lib/. The file was never found, so
+# this suite aborted at load and asserted nothing. Same shape as the doubled path
+# in test_validation.sh: a test that cannot reach its subject reports a failure
+# about itself, and the subject goes untested.
 # shellcheck source=/dev/null
-source "$SCRIPT_DIR/nftban_distro_config.sh" || {
+source "$SCRIPT_DIR/../lib/nftban_distro_config.sh" || {
     echo -e "${RED}FATAL: Failed to load module${NC}"
     exit 1
 }
@@ -320,6 +325,26 @@ fi
 # =============================================================================
 
 test_start "Full Module Initialization"
+
+# v1.230.0 HERMETICITY: nftban_distro_init detects the HOST distro from
+# /etc/os-release and resolves ${id}-${version}.conf -> ${id}-${major}.conf ->
+# ${id}.conf inside NFTBAN_DISTRO_CONF_DIR. This suite points that variable at a
+# fixture directory, so the test previously passed or failed according to whether
+# the RUNNER's distro happened to have a fixture -- on a fedora-44 host it failed
+# while the same code returns rc=0 against the shipped profiles.
+#
+# A test whose verdict depends on the machine it runs on is not evidence. Rather
+# than add a product profile to satisfy the harness, synthesise a fixture for
+# whatever identity this host reports, using the already-supported
+# NFTBAN_DISTRO_CONF_DIR seam. The ${id}.conf fallback then always resolves.
+_host_id="$( . /etc/os-release 2>/dev/null; printf '%s' "${ID:-unknown}" )"
+cat > "$TEST_DIR/distros/${_host_id}.conf" <<HOSTFIXTURE
+[distro]
+id = ${_host_id}
+name = Synthetic Test Fixture
+[package_manager]
+type = testpkg
+HOSTFIXTURE
 
 # Clear arrays
 unset DISTRO_INFO DISTRO_PKGMGR DISTRO_PACKAGES DISTRO_SERVICES DISTRO_PATHS DISTRO_REPOSITORY DISTRO_FEATURES

@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -544,16 +545,111 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	}
 
 	// 7. REBUILD — FATAL on failure (v1.70.0 invariant)
+	//
+	// ⛔ v1.230.0 Gate 6R: READ THE EFFECTIVE CONVERGENCE GENERATION FIRST.
+	// It is the ONE post-update fact not sourced from the rebuild's own report — the
+	// counter is written by nftban_plan_txn_commit, which the rebuild reaches only from
+	// disposition COMPLETE. Without a BEFORE reading there is no delta, and the AFTER
+	// value alone proves nothing.
+	//     A COMPONENT'S OWN SUCCESS CLAIM IS NOT VERIFICATION OF THAT CLAIM.
+	// ⛔ v1.230.0 Gate 6R F1 — CLEAR THE PRIOR RUN'S CONVERGENCE VERDICT FIRST.
+	//
+	// LIVE-OBSERVED ON lab3: a REBUILD_REFUSED_BUSY record carried
+	// CONVERGENCE_VERIFIED=VERIFIED inherited from an EARLIER successful run. The field
+	// is assigned only after a successful rebuild; every path that returns before that
+	// re-persisted whatever Read() loaded from disk, because WriteAtomic serialises the
+	// struct verbatim. That defeats the field's own contract ("" means NOT EVALUATED,
+	// and it is never read as VERIFIED) — which only holds if it is CLEARED on the
+	// paths that do not evaluate it.
+	//
+	//	HISTORICAL STATE MAY INFORM DIAGNOSIS, BUT MUST NEVER SATISFY A
+	//	CURRENT-RUN PROOF OBLIGATION.
+	//
+	// The invariant, ruled:
+	//
+	//	a new rebuild attempt begins                     -> ""
+	//	rebuild succeeded AND convergence check passed   -> VERIFIED
+	//	refused / not executed / failed before the check -> ""
+	//
+	// ⛔ NEVER "FAILED" for a refusal. Refusal means NOT EVALUATED; recording a failed
+	// evaluation for something never evaluated is false evidence in the other direction.
+	//
+	// This assignment must precede every path that can persist a rebuild disposition —
+	// the three below (REFUSED_BUSY, NOT_EXECUTED, FAILED_REBUILD) all return after it.
+	sf.ConvergenceVerified = ""
+
+	generationBefore := switchop.ReadConvergenceGeneration(exec)
+	log.Info("effective convergence generation before rebuild: %d (-1 = not observable)", generationBefore)
 	rebuildStart := time.Now()
-	rebuildErr := switchop.Rebuild(exec, log)
+	// v1.230.0 Gate 6R: ctx is passed so a REFUSED rebuild can be RETRIED inside the
+	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —
+	// switchop.Rebuild still runs the shell on context.Background() (LANE 6A), because a
+	// long rebuild is not a hung one. Only the wait between refusals is bounded.
+	rebuildObs, rebuildErr := switchop.Rebuild(ctx, exec, log)
 	pd.exemptOpName = "firewall rebuild"
 	pd.exemptOpDuration = time.Since(rebuildStart)
 	pd.exemptOpSucceeded = rebuildErr == nil
 	log.Info("exempt operation %s completed: duration=%s success=%t",
 		pd.exemptOpName, pd.exemptOpDuration.Round(time.Second), pd.exemptOpSucceeded)
+
+	// ⛔ v1.230.0 Gate 6R — RECORD WHAT WAS MEASURED, ON EVERY PATH.
+	// REBUILD_EXIT_CODE and REBUILD_DURATION_MS had NO writer anywhere in the tree, so
+	// every install persisted the struct zero-values in the shape of measurements. On
+	// dns1 that produced one file asserting `(exit 1)` in FAILURE_REASON beside
+	// REBUILD_EXIT_CODE=0 / REBUILD_DURATION_MS=0, against an installer.log recording
+	// exit=1 and elapsed=31.22s. Automation reads the structured field.
+	//
+	//	A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT. IT IS A FABRICATED MEASUREMENT.
+	//
+	// Assigned BEFORE the Transition below, because Transition is what persists the
+	// record — and the failing paths are exactly the ones that were wrong.
+	// ⛔ Only when a subprocess ACTUALLY RAN. If it never did, the fields keep their
+	// unobserved value rather than gaining a manufactured one.
+	if rebuildObs.Observed {
+		sf.RebuildExitCode = rebuildObs.ExitCode
+		sf.RebuildDurationMs = rebuildObs.Duration.Milliseconds()
+		log.Info("recorded rebuild evidence: REBUILD_EXIT_CODE=%d REBUILD_DURATION_MS=%d attempts=%d",
+			sf.RebuildExitCode, sf.RebuildDurationMs, rebuildObs.Attempts)
+	}
 	if err := rebuildErr; err != nil {
-		// Emergency table LEFT IN PLACE — SSH still safe
-		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, err.Error())
+		// Emergency table LEFT IN PLACE — SSH still safe.
+		//
+		// ⛔ v1.230.0 Gate 6R — REFUSED / NOT-EXECUTED ARE NOT FAILED_REBUILD.
+		// FAILED_REBUILD asserts that a rebuild EXECUTED and failed. These two assert
+		// that no rebuild ran at all, so the firewall was not modified and existing
+		// enforcement is unchanged. Mapping them onto FAILED_REBUILD is the production
+		// defect this gate closes (dns1, v1.229.13 -> v1.229.14): it slanders a host
+		// whose enforcement is intact and sends --repair to redo work that never ran.
+		//
+		// The classification is taken from a TYPED ERROR produced from the shell's
+		// machine-readable contract. ⛔ It is never derived from message text.
+		return sf.Transition(stateForRebuildError(err), state.PhaseSwitch, err.Error())
+	}
+
+	// 7b. ⛔ v1.230.0 Gate 6R — POST-UPDATE CONVERGENCE CONTRACT.
+	//
+	//	PACKAGE UPDATED != PROJECTION GENERATED != PROJECTION VALIDATED
+	//	                != KERNEL RULESET APPLIED != RUNTIME CONVERGED
+	//
+	// The rebuild has reported success. That is a CLAIM. This verifies it against
+	// evidence the rebuild did not produce: the projection's own nft -c validity, an
+	// observed advance of the effective convergence generation, and the presence of the
+	// required kernel tables. The verdict is persisted and gates COMMITTED through the
+	// post_update_convergence_verified assertion in phaseValidate — the same route
+	// WHITELIST_CONVERGENCE takes.
+	//
+	// Read-only, and NON-FATAL to this phase: the SSH-safety chain from Rebuild to
+	// RemoveEmergencySSH must not gain a new abort point, and a verification result is
+	// not a reason to leave the host mid-transition. The verdict owns the outcome.
+	conv := switchop.VerifyPostUpdateConvergence(exec, log, switchop.ConvergenceInputs{
+		ProjectionGenerated:  pd.bootProjectionReady,
+		ApplyClaimedComplete: rebuildObs.Disposition == switchop.DispositionComplete && rebuildObs.Committed,
+		ApplyDeferred:        rebuildObs.Disposition == switchop.DispositionDeferredRuntime,
+		GenerationBefore:     generationBefore,
+	})
+	sf.ConvergenceVerified = string(conv.Verdict)
+	if conv.Verdict != switchop.ConvergenceVerified {
+		log.Warn("post-update convergence %s: %s", conv.Verdict, conv.Detail)
 	}
 
 	// 8. Post-rebuild: re-assert SSH in live sets (belt-and-suspenders)
@@ -567,6 +663,28 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	log.PhaseEnd("Switch")
 	phaseEndMarker(log, "switch")
 	return sf.Transition(state.StateSwitchComplete, state.PhaseSwitch, "")
+}
+
+// stateForRebuildError maps a switchop.Rebuild error onto the install state it
+// actually describes.
+//
+// ⛔ THREE OUTCOMES, THREE STATES, NEVER ONE.
+//
+//	REFUSED_BUSY   no rebuild executed (lock held)      -> REBUILD_REFUSED_BUSY
+//	NOT_EXECUTED   no contract AND no witness           -> REBUILD_NOT_EXECUTED
+//	anything else  a rebuild executed and did not pass  -> FAILED_REBUILD
+//
+// The discriminator is a TYPED ERROR derived from the shell's machine-readable
+// contract. ⛔ It is never message text: the production defect was diagnosed from an
+// stderr sentence, which is exactly why the fix must not read one.
+func stateForRebuildError(err error) state.InstallState {
+	switch {
+	case errors.Is(err, switchop.ErrRebuildRefusedBusy):
+		return state.StateRebuildRefusedBusy
+	case errors.Is(err, switchop.ErrRebuildNotExecuted):
+		return state.StateRebuildNotExecuted
+	}
+	return state.StateFailedRebuild
 }
 
 // phaseConfigure starts daemon, timers, panel, login, whitelist sync.
@@ -734,6 +852,12 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// recorded convergence truth, and "" on a pre-v1.228.5 record, which the
 	// assertion reports as UNKNOWN rather than as a pass or a failure.
 	opts.WhitelistConvergence = sf.WhitelistConvergence
+	// v1.230.0 Gate 6R: feed the post-update convergence verdict recorded by phaseSwitch
+	// so an unproven convergence ends the run DEGRADED instead of COMMITTED. On a
+	// repair/resume that starts at PhaseValidate this is the value read from disk — the
+	// last recorded convergence truth, and "" on a pre-v1.230.0 record, which the
+	// assertion reports as UNKNOWN rather than as a pass or a failure.
+	opts.ConvergenceVerified = sf.ConvergenceVerified
 	// v1.223.0 verdict-truth (owner ruling: per-pass resolution): VALIDATE_1
 	// resolves ONE authoritative health verdict for the health_resource_policy_active
 	// assertion. When phaseConfigure ran this process pd.healthResource is populated

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -66,6 +67,7 @@ func LockFilePath(stateDir string) string {
 //	PHASE_REACHED       — last phase name reached
 //	FAILURE_REASON      — human-readable failure description or ""
 //	PREFLIGHT_PASSED    — "1" or "0"
+//	CONVERGENCE_VERIFIED — post-update convergence verdict (v1.230.0 Gate 6R)
 //	REBUILD_EXIT_CODE   — rebuild process exit code (int)
 //	REBUILD_DURATION_MS — rebuild wall-clock duration in milliseconds
 //	SERVICES_ENABLED    — comma-separated list of enabled service units
@@ -77,6 +79,15 @@ type StateFile struct {
 	// evaluates the default as persisted evidence would report a fabricated
 	// state for a file that never carried one. Set only by Read().
 	stateFieldSeen bool
+
+	// rebuildEvidenceRejected records that the record READ FROM DISK contradicts
+	// itself about the rebuild (see RebuildEvidenceContradiction). It is IN-MEMORY
+	// ONLY and is never written: the on-disk artifact is forensic material and must
+	// survive verbatim, while no consumer in this process may go on treating
+	// REBUILD_EXIT_CODE / REBUILD_DURATION_MS as measurements. Same discipline as
+	// stateFieldSeen above — a value that exists is not automatically a value that
+	// was observed.
+	rebuildEvidenceRejected string
 
 	State             InstallState
 	Mode              string
@@ -109,6 +120,19 @@ type StateFile struct {
 	// the projection). CONVERGED | FAILED | "" (not evaluated). A FAILED value means
 	// configured management IPs are not projected into the running set.
 	WhitelistConvergence string
+
+	// ConvergenceVerified — v1.230.0 Gate 6R. The POST-UPDATE CONVERGENCE verdict
+	// (switchop.VerifyPostUpdateConvergence), persisted as CONVERGENCE_VERIFIED.
+	//
+	// ⛔ PACKAGE UPDATED != PROJECTION GENERATED != PROJECTION VALIDATED
+	//    != KERNEL RULESET APPLIED != RUNTIME CONVERGED.
+	// The installer used to collapse those, so an update could be reported successful
+	// with convergence never proven. This carries the phase verdict to the assertion
+	// that gates COMMITTED, exactly as WHITELIST_CONVERGENCE above does.
+	//
+	// "" means NOT EVALUATED (a pre-v1.230.0 record, or a path that does not evaluate
+	// it). ⛔ It is never read as VERIFIED.
+	ConvergenceVerified string
 
 	HealthResourceState         string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
 	HealthResourceProfile       string // resource tier: small/medium/large
@@ -176,7 +200,11 @@ const degradedReasonFallback = "degraded: post-install assertions failed (reason
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
 	sf.State = newState
 	sf.PhaseReached = string(phase)
-	if newState.IsFailed() {
+	if newState.IsFailed() || newState.IsDeferredRebuild() {
+		// v1.230.0 Gate 6R: a DEFERRED terminal is not a failure, but it still owes the
+		// operator a machine-readable cause. FailureReason is the existing diagnostic
+		// carrier in this file; leaving it empty would produce a terminal state file
+		// that says the install stopped and refuses to say why.
 		sf.FailureReason = reason
 	} else if newState == StateCommitted || newState == StateDegraded {
 		// V108 Item 5: clear stale pre-failure carry-over fields when reaching
@@ -211,7 +239,15 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		}
 	}
 	// Failure states must return an error so the phase runner stops execution.
-	if newState.IsFailed() {
+	//
+	// v1.230.0 Gate 6R: a DEFERRED rebuild terminal must stop the runner too. Without
+	// this it returns nil, phaseSwitch returns nil, and the run walks on to Configure
+	// and Validate — which is how an install with NO CONVERGENCE could still reach a
+	// COMMITTED verdict because enforcement happened to still be in force.
+	//     PROTECTED != TRANSACTION COMPLETE.
+	// The sentinel is a STOP signal, not a claim of failure: the state itself carries
+	// the truthful classification and IsFailed() stays false for it.
+	if newState.IsFailed() || newState.IsDeferredRebuild() {
 		return fmt.Errorf("%s: %s", newState, reason)
 	}
 	return nil
@@ -273,6 +309,7 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "PHASE_REACHED=%s\n", sf.PhaseReached)
 	fmt.Fprintf(w, "FAILURE_REASON=%s\n", sf.FailureReason)
 	fmt.Fprintf(w, "PREFLIGHT_PASSED=%s\n", fmtBool(sf.PreflightPassed))
+	fmt.Fprintf(w, "CONVERGENCE_VERIFIED=%s\n", sf.ConvergenceVerified)
 	fmt.Fprintf(w, "REBUILD_EXIT_CODE=%d\n", sf.RebuildExitCode)
 	fmt.Fprintf(w, "REBUILD_DURATION_MS=%d\n", sf.RebuildDurationMs)
 	fmt.Fprintf(w, "SERVICES_ENABLED=%s\n", sf.ServicesEnabled)
@@ -356,6 +393,8 @@ func (sf *StateFile) Read() error {
 			sf.FailureReason = val
 		case "PREFLIGHT_PASSED":
 			sf.PreflightPassed = (val == "1" || val == "true")
+		case "CONVERGENCE_VERIFIED":
+			sf.ConvergenceVerified = val
 		case "REBUILD_EXIT_CODE":
 			sf.RebuildExitCode, _ = strconv.Atoi(val)
 		case "REBUILD_DURATION_MS":
@@ -404,8 +443,77 @@ func (sf *StateFile) Read() error {
 			sf.HealthResourceError = val
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	// ⛔ REJECT AT THE READ BOUNDARY, LIKE ReadRebuildResult DOES — and DO NOT fail the
+	// read. A contradictory record still carries the state, phase and resume point that
+	// `--repair` needs, and refusing to parse it would strand exactly the hosts that
+	// have the defect. What is withheld is the discredited MEASUREMENT PAIR, nothing else.
+	sf.rebuildEvidenceRejected = sf.RebuildEvidenceContradiction()
+	return nil
 }
+
+// nonZeroExitInProse matches an exit code an installer-authored FAILURE_REASON
+// asserts, in the two forms this tree emits: "(exit N)" and "exit=N".
+//
+// ⛔ IT IS A CONSISTENCY AUDIT OF OUR OWN RECORD, NOT AN INTERFACE.
+// The Gate 6R rule against reading message text bans deriving a VERDICT from a
+// subprocess's stderr. This is the opposite direction: it reads a field WE wrote, and
+// its only permitted output is REJECTION. ⛔ Nothing may use it to POPULATE a field —
+// that would make prose the source of a structured value, which is the very inversion
+// this limb exists to remove.
+var nonZeroExitInProse = regexp.MustCompile(`(?:\(exit |exit=)([0-9]+)\)?`)
+
+// RebuildEvidenceContradiction returns a description when this record contradicts
+// itself about the rebuild, or "" when it does not.
+//
+// ⛔ THE DEFECT IT REJECTS (dns1, one file, one run):
+//
+//	FAILURE_REASON=... produced no usable result contract (exit 1): ...
+//	REBUILD_EXIT_CODE=0
+//	REBUILD_DURATION_MS=0
+//
+// while installer.log recorded `(exit=1)` and `elapsed=31.22s`. The prose was right and
+// the machine-readable pair was wrong — and automation reads the machine-readable pair.
+//
+// This is the install_state counterpart of the rejection ReadRebuildResult already
+// applies to the rebuild RESULT contract (a REFUSED record that also claims a mutation
+// is refused rather than believed). ONE VALIDATOR PER CONTRACT: this is the only place
+// install_state is checked against itself, exactly as that is the only place the result
+// record is.
+//
+// ⛔ IT REJECTS, IT NEVER REPAIRS. Adopting the prose's number would make an
+// unstructured field the authority for a structured one.
+func (sf *StateFile) RebuildEvidenceContradiction() string {
+	if sf.FailureReason == "" {
+		return ""
+	}
+	m := nonZeroExitInProse.FindStringSubmatch(sf.FailureReason)
+	if m == nil {
+		return ""
+	}
+	claimed, err := strconv.Atoi(m[1])
+	if err != nil || claimed == 0 {
+		return ""
+	}
+	if sf.RebuildExitCode == 0 {
+		return fmt.Sprintf("FAILURE_REASON asserts a non-zero rebuild exit (%d) while REBUILD_EXIT_CODE=0"+
+			" (REBUILD_DURATION_MS=%d) — the structured evidence was never populated and must not be read as a measurement",
+			claimed, sf.RebuildDurationMs)
+	}
+	return ""
+}
+
+// RebuildEvidenceUsable reports whether REBUILD_EXIT_CODE / REBUILD_DURATION_MS from
+// THIS record may be consumed as measurements.
+//
+// ⛔ CONSULT THIS BEFORE READING EITHER FIELD. A rejected pair is not "probably fine";
+// it is a pair we have positively shown to disagree with the rest of its own record.
+func (sf *StateFile) RebuildEvidenceUsable() bool { return sf.rebuildEvidenceRejected == "" }
+
+// RebuildEvidenceRejection returns why the rebuild evidence was rejected, or "".
+func (sf *StateFile) RebuildEvidenceRejection() string { return sf.rebuildEvidenceRejected }
 
 func fmtBool(b bool) string {
 	if b {

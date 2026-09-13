@@ -42,6 +42,12 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
 fi
+
+# v1.230.0 PR-5c-B3: split runtime authority guard. MANDATORY, not best-effort —
+# a missing guard must never silently re-open the mutation path, so this command
+# module refuses to load without it (fail closed).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_config_split_authority.sh" || return 1
 # NFTBan - Login Alert CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
@@ -316,6 +322,12 @@ nftban_login_cmd_enable() {
     # Enable monitoring for specific type or service
     # Usage: nftban login enable [ssh|su|sudo|console|service|all]
 
+    # v1.230.0 PR-5c-B3 — FAIL CLOSED BEFORE ANY STATE CHANGE.
+    # This must stay the FIRST executable statement: the split is refused before the
+    # .local override files are created and before any key is written, so a refusal
+    # leaves the whole /etc/nftban tree byte-identical.
+    nftban_config_split_guard login || return $?
+
     local target="${1:-}"
     local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
@@ -425,6 +437,9 @@ nftban_login_cmd_enable() {
 nftban_login_cmd_disable() {
     # Disable monitoring for specific type or service
     # Usage: nftban login disable [ssh|su|sudo|console|service|all]
+
+    # v1.230.0 PR-5c-B3 — FAIL CLOSED BEFORE ANY STATE CHANGE (see cmd_enable).
+    nftban_config_split_guard login || return $?
 
     local target="${1:-}"
     local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
