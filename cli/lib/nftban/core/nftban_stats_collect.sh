@@ -518,10 +518,13 @@ nftban_stats_top_ips() {
         local first_seen
         local last_seen
 
-        # Get first and last seen (use subshell to avoid errexit issues)
-        first_seen=$(grep "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null | awk -F'|' 'NR==1 {print $1; exit}' || true)
+        # Get first and last seen (use subshell to avoid errexit issues).
+        # v1.230.0 P1-1: -a — a NUL run from an unclean shutdown makes GNU grep
+        # stop emitting matches on stdout (exit 0, no stderr here), which would
+        # silently degrade first_seen/last_seen to "--" for every IP after it.
+        first_seen=$(grep -a "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null | awk -F'|' 'NR==1 {print $1; exit}' || true)
         [[ -z "$first_seen" ]] && first_seen="--"
-        last_seen=$(grep "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null | awk -F'|' 'END {print $1}' || true)
+        last_seen=$(grep -a "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null | awk -F'|' 'END {print $1}' || true)
         [[ -z "$last_seen" ]] && last_seen="--"
 
         # GeoIP lookup if enabled
@@ -569,13 +572,26 @@ nftban_stats_ip_history() {
     # so the `|| echo "[]"` fired IN ADDITION to awk's already-printed "[]",
     # returning "[]\n[]" → caller's `jq length` → "0\n0" → `[[ -eq ]]` arith
     # crash (cmd_stats.sh). zgrep transparently reads plain + .gz archives.
+    #
+    # v1.230.0 P1-1 (BAN-LOG READER BLINDNESS): -a is LOAD-BEARING, not cosmetic.
+    # An unclean shutdown leaves a run of NUL bytes in the ban log (measured:
+    # 182 contiguous NULs in a rotated bans.log.1 that `file` still calls "ASCII
+    # text"). GNU grep then classifies the input binary and STOPS WRITING MATCHES
+    # TO STDOUT while still exiting 0 — the count is right, the listing is not.
+    # Measured on that file: `grep -ah` 3055 records vs `zgrep -h` 87 (97.2% lost),
+    # and the loss is SILENT (the "binary file matches" notice is stdout-shape
+    # dependent and every reader here writes 2>/dev/null). -a forces text mode on
+    # plain members; zgrep still decompresses real .gz members, so BOTH the
+    # NUL-bearing plain log and the genuinely-binary archives read correctly.
+    # INVARIANT: records represented by COUNT == records in the PER-IP LISTING.
+    # Locked by stats_ip_history_v170_test.sh (7)-(10) incl. a declared inversion.
     local _matches=""
     if command -v zgrep >/dev/null 2>&1; then
-        _matches=$(zgrep -h "|${ip}|" "${_logs[@]}" 2>/dev/null || true)
+        _matches=$(zgrep -a -h "|${ip}|" "${_logs[@]}" 2>/dev/null || true)
     else
         # Graceful degrade (source/minimal installs without gzip): live log only.
         echo "Warning: zgrep not found (gzip); ban history limited to ${NFTBAN_BAN_LOG} — rotated/compressed archives skipped." >&2
-        _matches=$(grep -h "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null || true)
+        _matches=$(grep -a -h "|${ip}|" "$NFTBAN_BAN_LOG" 2>/dev/null || true)
     fi
 
     # awk emits a valid "[]" on EMPTY input, so NO "|| echo []" fallback is
