@@ -57,6 +57,29 @@ runUpdateApply  (new — orchestration only)
 PR-21 will migrate `firewall_rebuild` to Go and delete the shell layer.
 PR-18 must not pre-empt that migration — orchestrate the shell path today.
 
+### Per-run arguments (v1.230.0 Gate 6R)
+
+`nftban firewall rebuild` is invoked with three arguments whose VALUES are allocated
+per operation and cannot be enumerated as a fixed whitelist string:
+
+| Argument | Why the value varies |
+|---|---|
+| `--result-file` | the per-operation result contract path; a fixed name reintroduces the stale-record and cross-run hazards the contract removed |
+| `--operation-id` | binds the record to THIS operation, so a foreign or stale record is refused |
+| `--execution-witness` | records that the rebuild crossed the execution boundary, so "no contract" can be told apart from "never started" |
+
+`ApplyWhitelistPerRunArgs` in `apply_contract.go` declares the allowed flags, and
+`matchesPerRunArgvShape` validates the SHAPE of the tail: only declared flags, each at
+most once, each with a non-empty single-token value. It is deliberately **not** a bare
+prefix match — a prefix would accept any tail at all.
+
+Apply still passes **no** `--install-context`: this plane keeps the interactive
+fail-fast lock policy, and no refusal retry happens here.
+
+`nft -c` is **not** whitelisted, so the projection-validity leg of the post-update
+convergence contract is **not** applied on this plane. Adding it is a contract decision,
+not an implementation detail.
+
 ---
 
 ## Forbidden patterns (automatic NO-GO on PR-18)

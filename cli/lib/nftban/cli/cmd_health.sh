@@ -599,7 +599,32 @@ nftban_health_cmd_truth() {
     if declare -F _health_eval_communication_component >/dev/null 2>&1; then
         _health_eval_communication_component _comms_code _comms_line _comms_reason
     fi
-    nftban_render_operator_readiness "$output" "" "$validator_rc" "$_fth_code" "$_comms_code"
+    # v1.230.0 P0-D1/D3/D4 (RELEASE BLOCKER): argument 2 used to be the empty
+    # string — this command NEVER told the readiness verdict anything about the
+    # install transaction, so a host whose last upgrade did not commit still read
+    # "Upgrade readiness: PASS / Action needed: NONE". Pass the CLASS TOKEN from
+    # the single shared authority (a positive assertion on COMMITTED), so an
+    # unreadable state file reaches INDETERMINATE and any non-COMMITTED literal —
+    # including one no build recognises yet — reaches FAIL.
+    local _istate_file="${NFTBAN_STATE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/state}/install_state"
+    # Fail-closed default: if the classifier is somehow absent (it lives in the
+    # same core/nftban_output.sh that defines the renderer called below, so this
+    # is unreachable on any load path that gets here), the outcome is UNKNOWN —
+    # which is INDETERMINATE, never PASS.
+    local _istate_class="INDETERMINATE"
+    if declare -F nftban_install_state_classify >/dev/null 2>&1; then
+        _istate_class=$(nftban_install_state_classify "$_istate_file")
+    fi
+    nftban_render_operator_readiness "$output" "$_istate_class" "$validator_rc" "$_fth_code" "$_comms_code"
+
+    # v1.230.0 P0-D4: when the transaction is not committed, the verdict lines
+    # above are followed by the state, when it was recorded, ENFORCEMENT truth
+    # stated separately from TRANSACTION truth, the cause, the exact recovery
+    # command, and the reboot warning. Silent on a committed transaction.
+    if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
+        nftban_render_install_transaction_truth "$_istate_file" \
+            "the four-axis table above is the enforcement truth for this host — it is NOT evidence that the last install/upgrade completed" || true
+    fi
 
     echo ""
     echo "  Module       Config     Structure  Runtime    Effective"

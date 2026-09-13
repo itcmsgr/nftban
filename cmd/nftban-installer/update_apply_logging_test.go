@@ -65,7 +65,7 @@ func readLog(t *testing.T, logPath string) string {
 // T-L1 — from → to version line emitted after preflight detection.
 func TestUpdateApplyLog_EmitsFromToLine(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	// Source install — DetectVersions reads VERSION from sourceDir too.
 	mock.Files["/tmp/srcdir/VERSION"] = []byte("2.0.0\n")
 	mock.Files["/usr/lib/nftban/VERSION"] = []byte("1.99.0\n")
@@ -86,7 +86,7 @@ func TestUpdateApplyLog_EmitsFromToLine(t *testing.T) {
 // T-L2 — "already up-to-date" marker when current == target.
 func TestUpdateApplyLog_AlreadyUpToDateMarker(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	// current == target == 1.99.0
 	mock.Files["/tmp/srcdir/VERSION"] = []byte("1.99.0\n")
 	mock.Files["/usr/lib/nftban/VERSION"] = []byte("1.99.0\n")
@@ -110,7 +110,7 @@ func TestUpdateApplyLog_AlreadyUpToDateMarker(t *testing.T) {
 // T-L3 — per-phase duration_ms + result line at PhaseEnd.
 func TestUpdateApplyLog_PhaseDurationAndResult(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
@@ -134,7 +134,7 @@ func TestUpdateApplyLog_PhaseDurationAndResult(t *testing.T) {
 // T-L4 — trailer contains the documented key=value pairs.
 func TestUpdateApplyLog_TrailerFields(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
@@ -162,16 +162,16 @@ func TestUpdateApplyLog_TrailerFields(t *testing.T) {
 func TestUpdateApplyLog_TrailerFiresOnEveryBranch(t *testing.T) {
 	branches := []struct {
 		name  string
-		setup func(*executor.MockExecutor)
+		setup func(*testing.T, *executor.MockExecutor)
 	}{
-		{"happy", func(m *executor.MockExecutor) {}},
-		{"preflight-fail", func(m *executor.MockExecutor) {
+		{"happy", func(_ *testing.T, m *executor.MockExecutor) {}},
+		{"preflight-fail", func(_ *testing.T, m *executor.MockExecutor) {
 			delete(m.NftTables, "ip:nftban")
 		}},
-		{"rebuild-fail", func(m *executor.MockExecutor) {
-			m.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 2}
+		{"rebuild-fail", func(t *testing.T, m *executor.MockExecutor) {
+			applyRebuildShell(t, m, "REGRESSION", 2)
 		}},
-		{"validator-fail", func(m *executor.MockExecutor) {
+		{"validator-fail", func(_ *testing.T, m *executor.MockExecutor) {
 			m.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{ExitCode: 2}
 		}},
 	}
@@ -179,8 +179,8 @@ func TestUpdateApplyLog_TrailerFiresOnEveryBranch(t *testing.T) {
 		b := b
 		t.Run(b.name, func(t *testing.T) {
 			mock := executor.NewMockExecutor()
-			seedHappyApplyHost(mock)
-			b.setup(mock)
+			seedHappyApplyHost(t, mock)
+			b.setup(t, mock)
 			cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 			sf := state.NewStateFile(cfg.stateDir)
 
@@ -199,7 +199,7 @@ func TestUpdateApplyLog_TrailerFiresOnEveryBranch(t *testing.T) {
 // T-L6 — logging additions did not broaden the call path.
 func TestUpdateApplyLog_CallPathPurityPreserved(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)

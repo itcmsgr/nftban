@@ -169,7 +169,10 @@ _count_unique_ips_24h() {
     if [[ -f "$ban_log" ]]; then
         # pipefail-safe single-emit: wrap zero-match grep so wc emits exactly one count,
         # never "0\n0" (grep-fail + trailing `|| echo 0`) which crashed the caller's arith.
-        { grep "^${since}" "$ban_log" 2>/dev/null || true; } | cut -d'|' -f4 | sort -u | wc -l
+        # v1.230.0 P1-1: -a — this grep EMITS to stdout (unlike the `grep -c` at :149,
+        # which is NUL-safe). Without -a a NUL run from an unclean shutdown truncates
+        # the stream and undercounts unique IPs while still exiting 0.
+        { grep -a "^${since}" "$ban_log" 2>/dev/null || true; } | cut -d'|' -f4 | sort -u | wc -l
     else
         echo 0
     fi

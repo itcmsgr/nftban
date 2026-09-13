@@ -102,6 +102,18 @@ _source_local "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local"
 source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
 
+# v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. Every base/module-local load for
+# this subject is complete and no value has been consumed yet, so the single central
+# operator override is applied LAST to give it the precedence the contract requires:
+#     shipped base < module-local < central operator override
+# Without this the shipped base (plain assignments) silently defeats the operator.
+# ⛔ NO NEW env.sh SOURCE SITE. env.sh is not a side-effect-free function library — it
+#    participates in configuration initialisation, so sourcing it here merely to reach the
+#    helper could itself change load order and create the very defect class B1 removes.
+#    This consumer already loads env.sh for _source_local; guard on definedness and call.
+declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+    && nftban_config_apply_final_operator_overlay
+
 # =============================================================================
 # CONFIGURATION DEFAULTS (uses central config paths)
 # =============================================================================
