@@ -41,6 +41,11 @@ CONFIG_DIR="${1:-./}"
 ERRORS=0
 WARNINGS=0
 PASSED=0
+# v1.230.0 PR-5a-2: subjects discovered but NOT of the distro family. Counted
+# SEPARATELY and never as PASSED — a skip is not a pass.
+SKIPPED_NOT_DISTRO_FAMILY=0
+VALIDATED_DISTRO_FAMILY=0
+DISCOVERED_DISTRO_FAMILY=0
 
 # Required sections
 REQUIRED_SECTIONS=("distro" "package_manager" "packages" "services" "paths")
@@ -80,7 +85,26 @@ print_summary() {
     echo -e "${GREEN}✓ Passed: ${PASSED}${NC}"
     echo -e "${YELLOW}⚠ Warnings: ${WARNINGS}${NC}"
     echo -e "${RED}✗ Errors: ${ERRORS}${NC}"
+    echo -e "  Distro-family subjects discovered: ${DISCOVERED_DISTRO_FAMILY}"
+    echo -e "  Distro-family subjects validated:  ${VALIDATED_DISTRO_FAMILY}"
+    echo -e "  Skipped (other family): ${SKIPPED_NOT_DISTRO_FAMILY}"
     echo ""
+
+    # ⛔ FLOOR ASSERTION. A run that validated ZERO distro-family subjects must never
+    #    read as success — that is an enumeration failure, not a clean tree.
+    # ⛔ NON-VACUITY: every DISCOVERED authoritative distro subject must have been
+    #    VALIDATED. The population identity is
+    #        discovered distro subjects == validated + invalid
+    #    and explicitly NOT "files containing [distro] == distro subjects".
+    if [[ $DISCOVERED_DISTRO_FAMILY -ne $VALIDATED_DISTRO_FAMILY ]]; then
+        echo -e "${RED}FAIL: ${DISCOVERED_DISTRO_FAMILY} distro subjects discovered but ${VALIDATED_DISTRO_FAMILY} validated — a family member escaped validation${NC}"
+        return 1
+    fi
+
+    if [[ $VALIDATED_DISTRO_FAMILY -eq 0 ]]; then
+        echo -e "${RED}FAIL: zero distro-family subjects validated (${SKIPPED_NOT_DISTRO_FAMILY} skipped) — enumeration is broken, not the tree${NC}"
+        return 1
+    fi
 
     if [[ $ERRORS -eq 0 ]]; then
         echo -e "${GREEN}All validations passed!${NC}"
@@ -89,6 +113,37 @@ print_summary() {
         echo -e "${RED}Validation failed with ${ERRORS} error(s)${NC}"
         return 1
     fi
+}
+
+# =============================================================================
+# FAMILY ROUTING (v1.230.0 PR-5a-2)
+# =============================================================================
+# BUG-VALIDATE-DISTRO-CONFIGS-WRONG-FILE-FAMILY: discovery was an unfiltered
+# `find -name "*.conf"` over CONFIG_DIR (default "./"), so ANY .conf in the tree
+# was evaluated against distro INI grammar. A valid systemd tmpfiles.d record
+# (`d /var/lib/nftban 0750 root nftban -`) matches neither "[section]" nor
+# "key=value" and was reported as a syntax ERROR — a wrong-family verdict, not a
+# real defect. The validator must know which family it is validating.
+#
+# ⛔ MEMBERSHIP MUST NOT DEPEND ON VALIDITY. An earlier form of this fix decided
+# family membership by grepping for the [distro] section -- i.e. by the very marker
+# the validator exists to check. That is an EVASION PATH: a genuine distro subject
+# whose [distro] section was deleted or corrupted would be re-classified as "not
+# distro" and SKIPPED instead of FAILED, letting a malformed subject remove itself
+# from the validation population.
+#
+# Membership is therefore decided by an authority INDEPENDENT of file contents: the
+# distro family is the set of *.conf living in the authoritative distros directory.
+# That authority is proven twice over -- packaging stages exactly that directory
+# (build_nftban.sh:627, `cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/`)
+# and the runtime loader resolves only within it (nftban_distro_config.sh:20,
+# NFTBAN_DISTRO_CONF_DIR, consumed at :85/:93/:100). A file in that directory is a
+# distro subject whatever its contents, so corruption yields FAIL, never SKIP.
+_is_distro_family() {
+    local file="$1"
+    local parent
+    parent="$(basename "$(dirname "$file")")"
+    [[ "$parent" == "distros" ]]
 }
 
 # Check if section exists in config
@@ -302,23 +357,27 @@ validate_config() {
 
     # 1. Syntax validation
     echo "Checking syntax..."
-    validate_syntax "$file"
+    # v1.230.0 PR-5a-2: these return non-zero on a FAILED SUBJECT. Called bare under
+    # `set -Eeuo pipefail` that aborted the whole run on the first malformed subject,
+    # so a corrupted distro config killed the validator instead of being REPORTED and
+    # the summary/population assertions never ran. Failure counts live in $ERRORS.
+    validate_syntax "$file" || true
 
     # 2. Section validation
     echo ""
     echo "Checking required sections..."
-    validate_sections "$file"
+    validate_sections "$file" || true
 
     # 3. Field validation per section
     for section in "${REQUIRED_SECTIONS[@]}"; do
         if has_section "$file" "$section"; then
             echo ""
             echo "Checking [$section] fields..."
-            validate_fields "$file" "$section"
+            validate_fields "$file" "$section" || true
 
             # Special validations
             if [[ "$section" == "distro" ]]; then
-                validate_family "$file"
+                validate_family "$file" || true
             elif [[ "$section" == "package_manager" ]]; then
                 validate_pkgmgr "$file"
                 validate_query_cmd "$file"
@@ -374,7 +433,14 @@ echo "Found ${#config_files[@]} config file(s)"
 
 # Validate each config
 for config in "${config_files[@]}"; do
-    validate_config "$config"
+    if _is_distro_family "$config"; then
+        DISCOVERED_DISTRO_FAMILY=$((DISCOVERED_DISTRO_FAMILY+1))
+        VALIDATED_DISTRO_FAMILY=$((VALIDATED_DISTRO_FAMILY+1))
+        validate_config "$config"
+    else
+        SKIPPED_NOT_DISTRO_FAMILY=$((SKIPPED_NOT_DISTRO_FAMILY+1))
+        echo -e "${YELLOW}  ○ SKIPPED (outside the authoritative distros/ family): $(basename "$config")${NC}"
+    fi
 done
 
 # Print summary

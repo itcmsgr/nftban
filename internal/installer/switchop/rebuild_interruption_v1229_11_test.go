@@ -19,6 +19,7 @@
 package switchop
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestRebuild_TimedOut_IsFatalToTheInstall(t *testing.T) {
 		return executor.Result{}, false
 	}
 
-	err := Rebuild(mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("an INTERRUPTED rebuild must fail the install — convergence did not complete")
 	}
@@ -66,7 +67,7 @@ func TestRebuild_TimedOut_IsNotReportedAsDegraded(t *testing.T) {
 	mock.RunResults[rebuildKey] = executor.Result{ExitCode: -1, TimedOut: true}
 
 	log, dump := readLog(t)
-	_ = Rebuild(mock, log)
+	_, _ = Rebuild(context.Background(), mock, log)
 	out := dump()
 
 	for _, forbidden := range []string{
@@ -87,7 +88,7 @@ func TestRebuild_NoExitStatus_IsFatal(t *testing.T) {
 	mock.StrictUnregistered = true
 	mock.RunResults[rebuildKey] = executor.Result{ExitCode: -1, Stderr: "signal: killed"}
 
-	err := Rebuild(mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("a rebuild that produced no exit status must fail the install")
 	}
@@ -100,7 +101,7 @@ func TestRebuild_NoExitStatus_IsFatal(t *testing.T) {
 // the tests above would pass on a Rebuild that simply fails everything.
 func TestRebuild_SurvivingClassesUnchanged(t *testing.T) {
 	cases := []struct {
-		name    string
+		name        string
 		res         executor.Result
 		wantErr     bool
 		marker      bool
@@ -127,7 +128,7 @@ func TestRebuild_SurvivingClassesUnchanged(t *testing.T) {
 				publishResult(t, mock, tc.disposition, tc.res.ExitCode, nil)
 			}
 
-			err := Rebuild(mock, newTestLogger())
+			_, err := Rebuild(context.Background(), mock, newTestLogger())
 			if tc.wantErr && err == nil {
 				t.Fatalf("%s must return an error", tc.name)
 			}

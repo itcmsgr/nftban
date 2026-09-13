@@ -291,6 +291,19 @@ readonly RD_COMPLETE="COMPLETE"
 readonly RD_DEFERRED_RUNTIME="DEFERRED_RUNTIME"
 readonly RD_REGRESSION="REGRESSION"
 readonly RD_FATAL="FATAL"
+# v1.230.0 Gate 6R — REFUSED IS ITS OWN CLASS, NOT A FLAVOUR OF FAILURE.
+#
+#     REFUSED  the rebuild NEVER STARTED; the firewall was NOT modified
+#     FAILED   the rebuild EXECUTED and failed
+#     TIMEOUT  the rebuild EXECUTED and did not finish in budget
+#
+# Measured on dns1 during the v1.229.13 -> v1.229.14 upgrade: the convergence lock
+# was held, `firewall rebuild --install-context` was REFUSED BEFORE any mutation,
+# published NO result record, and returned a generic rc=1. The installer collapsed
+# ABSENCE OF CONTRACT into FAILED_REBUILD on a host whose enforcement was untouched.
+#     ABSENCE OF A CONTRACT IS NOT EVIDENCE OF A FAILED TRANSACTION.
+# shellcheck disable=SC2034  # consumed by cmd_firewall.sh (_rebuild_publish_refusal)
+readonly RD_REFUSED="REFUSED"
 
 # Internal reason codes (diagnostics; not additional continuation outcomes)
 readonly CR_FATAL_STAGE="FATAL_STAGE"
@@ -299,6 +312,11 @@ readonly CR_UNATTRIBUTABLE_ABSENCE="UNATTRIBUTABLE_ABSENCE"
 readonly CR_RUNTIME_DEFERRED="RUNTIME_MODULE_PROJECTION_DEFERRED"
 readonly CR_DAEMON_UNAVAILABLE="DAEMON_UNAVAILABLE"
 readonly CR_SCHEMA_UNUSABLE="VALIDATOR_SCHEMA_UNUSABLE"
+# v1.230.0 Gate 6R. The MACHINE-READABLE reason a rebuild was refused. The consumer
+# reads THIS, never the stderr sentence next to it.
+#     ⛔ NEVER PARSE STDERR. A human-readable message is not an interface.
+# shellcheck disable=SC2034  # consumed by cmd_firewall.sh (_rebuild_publish_refusal)
+readonly CR_CONVERGENCE_LOCK_HELD="CONVERGENCE_LOCK_HELD"
 
 # _rebuild_join_reasons <item>...
 # Joins reason codes with "," WITHOUT mutating IFS.
@@ -566,10 +584,25 @@ _rebuild_result_publish_failed() {
     return 0
 }
 
-# _rebuild_emit_result <disposition> <reasons> <rollback_performed> <generation_committed> <retry_reason>
+# _rebuild_emit_result <disposition> <reasons> <rollback_performed> <generation_committed> \
+#                      <retry_reason> [<modified>] [<enforcement_unchanged>]
+#
+# v1.230.0 Gate 6R — TWO MACHINE-READABLE MUTATION FACTS.
+#
+#   modified               did THIS operation change the firewall?
+#   enforcement_unchanged  is the enforcement in force identical to before it?
+#
+# ⛔ THE DEFAULTS ARE FAIL-CLOSED, NOT DESCRIPTIVE. Callers that do not pass them get
+# modified=true / enforcement_unchanged=false, i.e. "assume the kernel was touched".
+# Only the REFUSED site can prove otherwise, because the convergence lock was never
+# acquired and NOTHING downstream of it ran. The Go consumer therefore VALIDATES and
+# CONSUMES these two fields for REFUSED ONLY; for every other disposition they are
+# conservative placeholders and are not interpreted.
+#     A FIELD MAY ONLY BE CONSUMED WHERE ITS VALUE IS PROVEN, NOT MERELY PRESENT.
 _rebuild_emit_result() {
     local disposition="${1:-}" reason_list="${2:-}" rollback="${3:-false}"
     local committed="${4:-false}" retry_reason="${5:-}"
+    local modified="${6:-true}" enforcement_unchanged="${7:-false}"
     local out="${_NFTBAN_REBUILD_RESULT_FILE:-}"
     [[ -n "$out" ]] || return 0                      # not requested -> legacy caller, no-op
     local dir tmp; dir=$(dirname "$out")
@@ -592,7 +625,9 @@ _rebuild_emit_result() {
   "disposition": "$disposition",
   "reason_codes": $codes,
   "rollback_performed": $rollback,
-  "transaction": { "committed": $committed, "reason": "$( [[ "$committed" == "true" ]] && echo COMMITTED || { [[ "$disposition" == "DEFERRED_RUNTIME" ]] && echo DEFERRED_CONVERGENCE || echo FAILURE; } )" },
+  "modified": $modified,
+  "enforcement_unchanged": $enforcement_unchanged,
+  "transaction": { "committed": $committed, "reason": "$( [[ "$committed" == "true" ]] && echo COMMITTED || { [[ "$disposition" == "DEFERRED_RUNTIME" ]] && echo DEFERRED_CONVERGENCE || { [[ "$disposition" == "REFUSED" ]] && echo NOT_STARTED || echo FAILURE; }; } )" },
   "retry": { "reason": "${retry_reason:-NONE}" },
   "pre_status": "${pre_status:-unknown}",
   "post_status": "${post_status:-unknown}",

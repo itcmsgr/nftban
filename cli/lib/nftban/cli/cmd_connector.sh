@@ -41,6 +41,8 @@ readonly NFTBAN_CONNECTORS_DIR="${NFTBAN_CONFIG_DIR}/connectors"
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
     # shellcheck source=/dev/null
     source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
+    # v1.230.0 PR-5c-A: single set-or-append authority (exactly-once + post-write verify)
+    source "${NFTBAN_LIB_DIR}/lib/nftban_config_kv.sh" || return 1
 fi
 
 # =============================================================================
@@ -401,7 +403,13 @@ _cmd_connector_enable() {
     local config_file
     config_file=$(_connector_config_path "$name")
 
-    sed -i 's/^CONNECTOR_ENABLED=.*/CONNECTOR_ENABLED="true"/' "$config_file"
+    # v1.230.0 PR-5c-A: the bare sed substituted ONLY when CONNECTOR_ENABLED already
+    # existed; on a connector config without that key it changed nothing, exited 0, and the
+    # success line below still printed. _connector_exists proves the FILE exists, never the KEY.
+    if ! nftban_config_kv_set "$config_file" CONNECTOR_ENABLED "true"; then
+        _connector_print_error "Connector '$name' NOT enabled — configuration was not updated"
+        return 1
+    fi
     _connector_print_success "Connector '$name' enabled"
 }
 
@@ -421,7 +429,13 @@ _cmd_connector_disable() {
     local config_file
     config_file=$(_connector_config_path "$name")
 
-    sed -i 's/^CONNECTOR_ENABLED=.*/CONNECTOR_ENABLED="false"/' "$config_file"
+    # v1.230.0 PR-5c-A: the bare sed substituted ONLY when CONNECTOR_ENABLED already
+    # existed; on a connector config without that key it changed nothing, exited 0, and the
+    # success line below still printed. _connector_exists proves the FILE exists, never the KEY.
+    if ! nftban_config_kv_set "$config_file" CONNECTOR_ENABLED "false"; then
+        _connector_print_error "Connector '$name' NOT disabled — configuration was not updated"
+        return 1
+    fi
     _connector_print_success "Connector '$name' disabled"
 }
 

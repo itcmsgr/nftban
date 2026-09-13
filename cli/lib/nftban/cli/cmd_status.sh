@@ -45,6 +45,48 @@ fi
 declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
     nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
 
+# v1.230.0 P0-D3: the install-transaction truth authority (positive assertion
+# `state == COMMITTED`, classifier, operator block) lives in
+# core/nftban_output.sh. cli/sbin/nftban:1188-1195 sources it unconditionally
+# before dispatching here, but the --json path of this file never sources it
+# itself, so load it explicitly rather than depending on a caller. There is no
+# fallback copy of the predicate: the surfaces below degrade to an explicit
+# UNKNOWN, never to a claim of success.
+if ! declare -F nftban_install_state_classify >/dev/null 2>&1; then
+    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" 2>/dev/null || true
+    fi
+fi
+
+# v1.230.0 P0-D3: the new install_transaction JSON object carries operator-written
+# text (FAILURE_REASON), so it must be escaped. Loader pair, matching the
+# convention above and in lib/shell_predicates.sh: a soft source of the canonical
+# helper plus a `declare -F` fallback whose body is byte-identical to
+# helpers/json_output.sh:404-420. Without the fallback an absent helper returns 127
+# and the JSON surface emits a bare, unescaped value.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/json_output.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/helpers/json_output.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/json_output.sh" 2>/dev/null || true
+fi
+declare -F json_escape >/dev/null 2>&1 || \
+json_escape() {
+    local str="$1"
+
+    # Escape backslash first
+    str="${str//\\/\\\\}"
+    # Escape quotes
+    str="${str//\"/\\\"}"
+    # Escape newlines
+    str="${str//$'\n'/\\n}"
+    # Escape tabs
+    str="${str//$'\t'/\\t}"
+    # Escape carriage returns
+    str="${str//$'\r'/\\r}"
+
+    echo "$str"
+}
+
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
@@ -542,6 +584,128 @@ output_brief() {
 # Placed before output_terminal() to allow forward references.
 # =============================================================================
 
+# =============================================================================
+# INSTALL-TRANSACTION SURFACE (v1.230.0 P0-D3 / P0-D4)
+# =============================================================================
+# Before v1.230.0 this command read AUTHORITY= and CONFLICTS= out of
+# /var/lib/nftban/state/install_state but NEVER the INSTALL_STATE= key, and
+# `nftban status --json` exposed only an "authority" object. NO STRUCTURED
+# SURFACE EXPOSED THE INSTALL STATE AT ALL, so fleet automation could not see
+# that a host's last transaction had failed. Both surfaces below adjudicate
+# through the single shared authority in core/nftban_output.sh — the POSITIVE
+# assertion `state == COMMITTED` — so a state literal that does not exist today
+# is reported as not-committed by construction.
+# =============================================================================
+
+# Canonical path of the machine-written install state for this command.
+_status_install_state_file() {
+    printf '%s' "${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/install_state"
+}
+
+# Class token, or UNKNOWN when the shared authority is unavailable. Never
+# degrades to a success claim.
+_status_install_txn_class() {
+    declare -F nftban_install_state_classify >/dev/null 2>&1 || { printf 'UNKNOWN'; return 0; }
+    nftban_install_state_classify "$(_status_install_state_file)"
+}
+
+# One line for the SYSTEM block.
+_status_install_txn_summary() {
+    local _f _class _state _ts
+    _f="$(_status_install_state_file)"
+    _class="$(_status_install_txn_class)"
+    _state=""
+    if declare -F nftban_install_state_field >/dev/null 2>&1; then
+        _state=$(nftban_install_state_field "$_f" "INSTALL_STATE") || _state=""
+        _ts=$(nftban_install_state_field "$_f" "INSTALL_TIMESTAMP") || _ts=""
+    fi
+    case "$_class" in
+        COMMITTED)
+            if [[ -n "${_ts:-}" ]]; then
+                printf 'COMMITTED (recorded %s)' "$_ts"
+            else
+                printf 'COMMITTED'
+            fi
+            ;;
+        NOT_COMMITTED)
+            printf '%s — NOT COMMITTED (see below)' "${_state:-UNKNOWN}"
+            ;;
+        CONTRADICTORY)
+            printf '%s — CONTRADICTORY, NOT COMMITTED (see below)' "${_state:-UNKNOWN}"
+            ;;
+        INDETERMINATE)
+            printf 'INDETERMINATE — no readable install state (see below)'
+            ;;
+        *)
+            printf 'UNKNOWN — install-state authority unavailable (see below)'
+            ;;
+    esac
+}
+
+# JSON object for `nftban status --json`. v1.230.0 P0-D3: before this, the only
+# thing this command exposed from install_state was the "authority" object; the
+# INSTALL_STATE= key was never read, so fleet automation was blind to a host
+# whose last transaction failed. `committed` is the machine-readable verdict and
+# it is TRUE ONLY for the COMMITTED class — an unrecognised or future literal is
+# false, not absent.
+_status_json_install_transaction() {
+    local _f _class _state _ts _reason _phase _ver _committed _known
+    _f="$(_status_install_state_file)"
+    _class="$(_status_install_txn_class)"
+    _state=""; _ts=""; _reason=""; _phase=""; _ver=""
+    if declare -F nftban_install_state_field >/dev/null 2>&1; then
+        _state=$(nftban_install_state_field "$_f" "INSTALL_STATE") || _state=""
+        _ts=$(nftban_install_state_field "$_f" "INSTALL_TIMESTAMP") || _ts=""
+        _reason=$(nftban_install_state_field "$_f" "FAILURE_REASON") || _reason=""
+        _phase=$(nftban_install_state_field "$_f" "PHASE_REACHED") || _phase=""
+        _ver=$(nftban_install_state_field "$_f" "INSTALL_VERSION") || _ver=""
+    fi
+    _committed=false
+    [[ "$_class" == "COMMITTED" ]] && _committed=true
+    _known=false
+    if declare -F nftban_install_state_is_known_literal >/dev/null 2>&1 \
+       && nftban_install_state_is_known_literal "$_state"; then
+        _known=true
+    fi
+    echo "  \"install_transaction\": {"
+    echo "    \"state\": \"$(json_escape "$_state")\","
+    echo "    \"class\": \"$(json_escape "$_class")\","
+    echo "    \"committed\": $_committed,"
+    echo "    \"known_state_literal\": $_known,"
+    echo "    \"recorded_at\": \"$(json_escape "$_ts")\","
+    echo "    \"install_version\": \"$(json_escape "$_ver")\","
+    echo "    \"phase_reached\": \"$(json_escape "$_phase")\","
+    echo "    \"reason\": \"$(json_escape "$_reason")\","
+    echo "    \"state_file\": \"$(json_escape "$_f")\","
+    echo "    \"recovery_command\": \"$(json_escape "${NFTBAN_INSTALL_REPAIR_CMD:-/usr/lib/nftban/bin/nftban-installer --repair}")\""
+    echo "  },"
+}
+
+_status_section_install_transaction() {
+    # ─────────────────────────────────────────────────────────────────────
+    # INSTALL TRANSACTION (v1.230.0 P0-D4)
+    # ─────────────────────────────────────────────────────────────────────
+    # Silent on a committed transaction; the full operator block otherwise.
+    local _class
+    _class="$(_status_install_txn_class)"
+    [[ "$_class" == "COMMITTED" ]] && return 0
+    declare -F nftban_render_install_transaction_truth >/dev/null 2>&1 || {
+        echo "INSTALL TRANSACTION"
+        echo "───────────────────────────────────────────────────────────────"
+        echo "  Transaction state:   UNKNOWN — the install-state authority"
+        echo "                       (core/nftban_output.sh) could not be loaded."
+        echo "  Recovery:            /usr/lib/nftban/bin/nftban-installer --repair"
+        echo ""
+        return 0
+    }
+    # The shared renderer carries its own heading, so this section adds none.
+    # ENFORCEMENT truth is the headline + FIREWALL section of this same command;
+    # TRANSACTION truth is this block. Naming both, separately, is the point.
+    nftban_render_install_transaction_truth "$(_status_install_state_file)" \
+        "reported above by this command's own headline and FIREWALL section — an enforcing firewall is NOT evidence that this transaction completed" || true
+    echo ""
+}
+
 _status_section_system() {
     # ─────────────────────────────────────────────────────────────────────
     # SYSTEM
@@ -562,6 +726,13 @@ _status_section_system() {
     printf "  %-20s %s\n" "Uptime.............." "$(uptime -p 2>/dev/null | sed 's/^up //' || uptime | awk '{print $3, $4}' | sed 's/,$//')"
     printf "  %-20s %s\n" "NFTBan.............." "v${NFTBAN_VERSION:-unknown}"
     printf "  %-20s %s\n" "State..............." "$state_display"
+    # v1.230.0 P0-D3/D4: the headline above reports ENFORCEMENT (PROTECTED /
+    # DEGRADED / DOWN). It says nothing about whether the last install or upgrade
+    # TRANSACTION completed, and the two genuinely differ — a host can enforce
+    # correctly while its last upgrade never committed. ⛔ PROTECTED IS NEVER
+    # PRINTED WITHOUT THE TRANSACTION LINE BESIDE IT, so this line is
+    # unconditional; the detail block below appears only when it is not COMMITTED.
+    printf "  %-20s %s\n" "Install txn........." "$(_status_install_txn_summary)"
 
     # v1.66.0: Config divergence hint
     local _divergence
@@ -1087,6 +1258,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
         rbl_status="ENABLED"
     fi
@@ -1128,6 +1304,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     botguard_enabled="${HTTP_BOTGUARD_ENABLED:-false}"
     if [[ "$botguard_enabled" == "true" ]]; then
         if nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
@@ -1165,6 +1346,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     botscan_enabled="${BOTSCAN_ENABLED:-false}"
     botscan_mode="${BOTSCAN_ACTION_MODE:-both}"
     if [[ "$botscan_enabled" == "true" ]]; then
@@ -1250,6 +1436,11 @@ _status_section_protection() {
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     fi
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
     if [[ "${NFTBAN_TUNNEL_ENABLED:-NO}" == "YES" ]]; then
         local tunnel_high=0 tunnel_med=0
         local tunnel_state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/tunnel"
@@ -1309,6 +1500,11 @@ _status_section_protection() {
     local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
     _source_local "$zabbix_local"
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
         if _unit_is_active nftban-unified-exporter.timer; then
@@ -1331,6 +1527,11 @@ _status_section_protection() {
     local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
     [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
     _source_local "$connectors_local"
+    # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+    # transaction are complete and no value has been consumed yet, so the single central
+    # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+    declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+        && nftban_config_apply_final_operator_overlay
 
     if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" == "true" ]]; then
         local connector_count=0
@@ -1890,6 +2091,9 @@ output_terminal() {
     echo ""
 
     _status_section_system "$protection_state"
+    # v1.230.0 P0-D4: immediately after the headline/SYSTEM block, so a failed or
+    # incomplete transaction is never buried below a reassuring PROTECTED line.
+    _status_section_install_transaction
     _status_section_firewall "$quiet_mode"
     _status_section_authority
     _status_section_services
@@ -2090,11 +2294,20 @@ output_json() {
     echo "    \"ambiguous_with_conflicts\": $_json_auth_ambig"
     echo "  },"
 
+    # Install transaction (v1.230.0 P0-D3) — the structured surface fleet
+    # automation needs. Emitted from the SAME adjudication the text path uses.
+    _status_json_install_transaction
+
     # Master control
     local master_enabled="true"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
+        # v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+        # transaction are complete and no value has been consumed yet, so the single central
+        # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+        declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+            && nftban_config_apply_final_operator_overlay
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
