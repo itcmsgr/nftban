@@ -11,7 +11,7 @@
 # meta:description="Test parser module with distribution configs"
 # meta:inventory.files=""
 # meta:inventory.binaries="bash"
-# meta:inventory.env_vars="NFTBAN_DISTRO_CONFIG_DIR"
+# meta:inventory.env_vars="NFTBAN_DISTRO_CONF_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -39,8 +39,34 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Configuration
-PARSER_PATH="${1:-../track1/nftban_distro_config.sh}"
-CONFIG_DIR="${2:-../track2}"
+# v1.230.0 PR-5a-2 (TEST-SUBJECT-REACHABILITY instance): the defaults were
+# ../track1/nftban_distro_config.sh and ../track2 -- a repository layout that no
+# longer exists, so every run tested NOTHING and reported "Parser file not found".
+# Resolved with the same seam already applied to test_distro_config.sh:225,
+# anchored on BASH_SOURCE rather than on the caller's working directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARSER_PATH="${1:-$SCRIPT_DIR/../lib/nftban_distro_config.sh}"
+# Fixture dir: repo checkout first, installed tree second. No production hook is
+# introduced -- both are real locations the parser already uses.
+if [[ -n "${2:-}" ]]; then
+    CONFIG_DIR="$2"
+elif [[ -d "$SCRIPT_DIR/../../../../etc/nftban/distros" ]]; then
+    CONFIG_DIR="$(cd "$SCRIPT_DIR/../../../../etc/nftban/distros" && pwd)"
+else
+    CONFIG_DIR="/etc/nftban/distros"
+fi
+
+# PRECONDITION ASSERTED BEFORE ANY CAPABILITY TEST. A missing subject or fixture is
+# a FAILED RUN, never a quiet skip: a test that cannot reach its subject must not
+# be able to report success.
+if [[ ! -f "$PARSER_PATH" ]]; then
+    echo "FAIL: parser subject not reachable: $PARSER_PATH" >&2
+    exit 1
+fi
+if [[ ! -d "$CONFIG_DIR" ]] || [[ -z "$(find "$CONFIG_DIR" -name '*.conf' -type f -print -quit 2>/dev/null)" ]]; then
+    echo "FAIL: distro fixture population is empty or absent: $CONFIG_DIR" >&2
+    exit 1
+fi
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
@@ -191,14 +217,25 @@ test_config_detection() {
     echo "───────────────────────────────────────────────────────────"
 
     # Override config dir for testing
-    export NFTBAN_DISTRO_CONFIG_DIR="$CONFIG_DIR"
+    # v1.230.0 PR-5a-2: this exported NFTBAN_DISTRO_CONFIG_DIR, which has exactly ONE
+    # occurrence in the whole tree -- this line. The parser reads NFTBAN_DISTRO_CONF_DIR
+    # (nftban_distro_config.sh:20), so the test steered nothing and the parser silently
+    # used /etc/nftban/distros. GUARD SUBJECT MUST EQUAL GUARD INPUT.
+    export NFTBAN_DISTRO_CONF_DIR="$CONFIG_DIR"
 
-    # Test with mock OS info
-    export MOCK_OS_ID="centos"
-    export MOCK_OS_VERSION_ID="9"
+    # v1.230.0 PR-5a-2: this exported MOCK_OS_ID/MOCK_OS_VERSION_ID and then called
+    # nftban_distro_find_config with NO ARGUMENTS. Neither worked:
+    #   - the parser never reads MOCK_OS_* (zero occurrences in nftban_distro_config.sh),
+    #     so the "centos 9" scenario was never actually selected;
+    #   - find_config REQUIRES a detection string (nftban_distro_config.sh:79-81,
+    #     `local detection="$1"`), so under `set -u` the bare call died with
+    #     "$1: unbound variable" and errexit aborted the whole run at this line.
+    # Fixed by using the DOCUMENTED interface, exactly as the production caller does
+    # at nftban_distro_config.sh:216 -- no test hook is added to production code.
+    local detection="centos:9"
 
     local config_file
-    config_file=$(nftban_distro_find_config 2>/dev/null)
+    config_file=$(nftban_distro_find_config "$detection" 2>/dev/null) || config_file=""
 
     if [[ -n "$config_file" ]]; then
         echo -e "${GREEN}  ✓ Config file detected: $(basename "$config_file")${NC}"

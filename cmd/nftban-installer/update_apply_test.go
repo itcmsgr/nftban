@@ -38,12 +38,16 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/update"
 )
 
@@ -56,7 +60,67 @@ func newApplyTestLogger() *logging.Logger {
 //   - nftban firewall rebuild returns exit 0
 //   - nftban-validate --json returns exit 0 with a valid "protected" body
 //   - post-state inspection finds expected kernel + service state
-func seedHappyApplyHost(mock *executor.MockExecutor) {
+//
+// applyRebuildShell installs a RunHook that plays the SHELL for this plane's
+// `nftban firewall rebuild` invocation.
+//
+// ⛔ v1.230.0 Gate 6R: apply now consumes the RESULT CONTRACT, not the exit code. A
+// fixture that only sets an rc models a shell that published nothing, which is a
+// different event entirely (execution not established) and would make every case here
+// prove something other than what it claims.
+//
+// It also advances /run/nftban/convergence-generation on a COMPLETE, because that is
+// what nftban_plan_txn_commit does and apply now cross-checks the claim against it.
+func applyRebuildShell(t *testing.T, m *executor.MockExecutor, disposition string, rc int) {
+	t.Helper()
+	t.Cleanup(switchop.SetRebuildResultBaseDirForTest(t.TempDir()))
+	m.Files[switchop.ConvergenceGenerationPath] = []byte("7\n")
+	m.RunHook = func(name string, args []string) (executor.Result, bool) {
+		if name != "nftban" || len(args) < 2 || args[0] != "firewall" || args[1] != "rebuild" {
+			return executor.Result{}, false
+		}
+		var resultPath, opID, witness string
+		for i := 0; i < len(args)-1; i++ {
+			switch args[i] {
+			case "--result-file":
+				resultPath = args[i+1]
+			case "--operation-id":
+				opID = args[i+1]
+			case "--execution-witness":
+				witness = args[i+1]
+			}
+		}
+		if witness != "" && disposition != "REFUSED" {
+			_ = os.MkdirAll(filepath.Dir(witness), 0o750)
+			_ = os.WriteFile(witness, []byte("operation_id="+opID+"\n"), 0o640)
+		}
+		if resultPath != "" && disposition != "" {
+			committed, txReason, rollback := "false", "FAILURE", "false"
+			modified, unchanged := "true", "false"
+			switch disposition {
+			case "COMPLETE":
+				committed, txReason = "true", "COMMITTED"
+				m.Files[switchop.ConvergenceGenerationPath] = []byte("8\n")
+			case "REGRESSION":
+				rollback = "true"
+			case "REFUSED":
+				txReason, modified, unchanged = "NOT_STARTED", "false", "true"
+			}
+			body := fmt.Sprintf(`{"schema_version":"1","operation_id":%q,"context":"runtime-required",`+
+				`"disposition":%q,"reason_codes":["TEST"],"rollback_performed":%s,`+
+				`"modified":%s,"enforcement_unchanged":%s,`+
+				`"transaction":{"committed":%s,"reason":%q},"retry":{"reason":"NONE"},`+
+				`"pre_status":"protected","post_status":"protected","emitted_at":"2026-09-13T00:00:00Z"}`,
+				opID, disposition, rollback, modified, unchanged, committed, txReason)
+			_ = os.MkdirAll(filepath.Dir(resultPath), 0o750)
+			_ = os.WriteFile(resultPath, []byte(body), 0o640)
+		}
+		return executor.Result{ExitCode: rc}, true
+	}
+}
+
+func seedHappyApplyHost(t *testing.T, mock *executor.MockExecutor) {
+	t.Helper()
 	// Preflight surface (mirrors PR-16/PR-17 tests).
 	mock.NftTables["ip:nftban"] = true
 	mock.Services["nftband.service"] = true
@@ -69,8 +133,8 @@ func seedHappyApplyHost(mock *executor.MockExecutor) {
 	mock.RunResults["dpkg:-s:nftban-core"] = executor.Result{ExitCode: 127}
 	mock.RunResults["dpkg:-s:nftban"] = executor.Result{ExitCode: 127}
 
-	// Canonical rebuild entry — success.
-	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 0, Stdout: "rebuild ok"}
+	// Canonical rebuild entry — success, WITH the result contract the plane now consumes.
+	applyRebuildShell(t, mock, "COMPLETE", 0)
 
 	// Validator gate — success with a plausible JSON body.
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
@@ -100,7 +164,7 @@ func writtenPaths(mock *executor.MockExecutor) []string {
 // T1 — Happy path.
 func TestUpdateApply_HappyPath_Exits0(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
@@ -123,7 +187,7 @@ func TestUpdateApply_HappyPath_Exits0(t *testing.T) {
 // state↔exit agreement (PR-19 G3-U11 regression guard).
 func TestUpdateApply_PreflightFail_DoesNotInvokeRebuild(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	// Break P-1 (authority_nftban): remove ip nftban table.
 	delete(mock.NftTables, "ip:nftban")
 
@@ -154,11 +218,8 @@ func TestUpdateApply_PreflightFail_DoesNotInvokeRebuild(t *testing.T) {
 // T3 — Rebuild failure short-circuits before validator invocation.
 func TestUpdateApply_RebuildFail_DoesNotInvokeValidator(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
-	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{
-		ExitCode: 2,
-		Stderr:   "rebuild failed",
-	}
+	seedHappyApplyHost(t, mock)
+	applyRebuildShell(t, mock, "REGRESSION", 2)
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
@@ -183,9 +244,9 @@ func TestUpdateApply_RebuildFail_DoesNotInvokeValidator(t *testing.T) {
 // over rebuild. No success coercion, no error downgrading.
 func TestUpdateApply_ValidatorFail_OverridesRebuildSuccess(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	// Rebuild succeeds, but validator rejects post-state.
-	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 0}
+	applyRebuildShell(t, mock, "COMPLETE", 0)
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
 		ExitCode: 2, // validator exits 2 when state is "down"
 		Stderr:   "post-state rejected",
@@ -207,20 +268,20 @@ func TestUpdateApply_ValidatorFail_OverridesRebuildSuccess(t *testing.T) {
 func TestUpdateApply_CallPathPurity_AllBranches(t *testing.T) {
 	branches := []struct {
 		name  string
-		setup func(*executor.MockExecutor)
+		setup func(*testing.T, *executor.MockExecutor)
 	}{
-		{"happy", func(m *executor.MockExecutor) {}},
-		{"preflight-fail", func(m *executor.MockExecutor) {
+		{"happy", func(_ *testing.T, m *executor.MockExecutor) {}},
+		{"preflight-fail", func(_ *testing.T, m *executor.MockExecutor) {
 			// Blocker #2 (code review): T5 must audit this branch too —
 			// a non-whitelisted command or forbidden write slipping into
 			// the preflight-fail path was previously uncaught by the
 			// mechanical contract layer.
 			delete(m.NftTables, "ip:nftban")
 		}},
-		{"rebuild-fail", func(m *executor.MockExecutor) {
-			m.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 2}
+		{"rebuild-fail", func(t *testing.T, m *executor.MockExecutor) {
+			applyRebuildShell(t, m, "REGRESSION", 2)
 		}},
-		{"validator-fail", func(m *executor.MockExecutor) {
+		{"validator-fail", func(_ *testing.T, m *executor.MockExecutor) {
 			m.RunResults["nftban-validate:--json"] = executor.Result{ExitCode: 2}
 		}},
 	}
@@ -228,8 +289,8 @@ func TestUpdateApply_CallPathPurity_AllBranches(t *testing.T) {
 		b := b
 		t.Run(b.name, func(t *testing.T) {
 			mock := executor.NewMockExecutor()
-			seedHappyApplyHost(mock)
-			b.setup(mock)
+			seedHappyApplyHost(t, mock)
+			b.setup(t, mock)
 			cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 			sf := state.NewStateFile(cfg.stateDir)
 
@@ -253,11 +314,8 @@ func TestUpdateApply_CallPathPurity_AllBranches(t *testing.T) {
 // propagator of rebuild's exit code.
 func TestUpdateApply_RebuildFail_NoRetryNoRecovery(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
-	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{
-		ExitCode: 2,
-		Stderr:   "synthetic rebuild failure",
-	}
+	seedHappyApplyHost(t, mock)
+	applyRebuildShell(t, mock, "REGRESSION", 2)
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
@@ -295,7 +353,7 @@ func TestUpdateApply_RebuildFail_NoRetryNoRecovery(t *testing.T) {
 // change "helpfully" inspects the JSON body and overrides the exit.
 func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	// Exit says FAIL (2), but JSON says "protected". Apply must honour
 	// the exit code, not the body.
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
@@ -321,7 +379,7 @@ func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 // (state↔process truth must not contradict).
 func TestUpdateApply_ValidatorExit1_TransitionsToStateDegraded(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{ExitCode: 1}
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
@@ -344,7 +402,7 @@ func TestUpdateApply_ValidatorExit1_TransitionsToStateDegraded(t *testing.T) {
 // weaker StateDegraded.
 func TestUpdateApply_ValidatorExit2_TransitionsToStateFailedRebuild(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{ExitCode: 2}
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
@@ -385,7 +443,7 @@ func TestStateForValidatorExit_Mapping(t *testing.T) {
 // Apply must never write to any *.conf.local path, regardless of outcome.
 func TestUpdateApply_NeverTouchesConfLocal(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	seedHappyApplyHost(mock)
+	seedHappyApplyHost(t, mock)
 	// Pre-seed a .conf.local so the post-run audit can observe it.
 	preContent := []byte("OPERATOR_EDITED=1\n")
 	mock.Files["/etc/nftban/nftban.conf.local"] = append([]byte{}, preContent...)

@@ -58,6 +58,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" || return 1
 fi
 
+# v1.230.0 PR-5c-B3: split runtime authority guard. MANDATORY, not best-effort —
+# a missing guard must never silently re-open the mutation path, so this command
+# module refuses to load without it (fail closed).
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_config_split_authority.sh" || return 1
+
 # =============================================================================
 # HELP TEXT
 # =============================================================================
@@ -477,6 +483,12 @@ nftban_watchdog_cmd_enable() {
     # LOCAL capability always enables immediately
     # PERF capability requires metrics pipeline
 
+    # v1.230.0 PR-5c-B3 — FAIL CLOSED BEFORE ANY STATE CHANGE.
+    # This must stay the FIRST executable statement: the split is refused before the
+    # timer is touched and before the config file is written, so a refusal leaves both
+    # the unit state and conf.d/watchdog.conf byte-identical.
+    nftban_config_split_guard watchdog || return $?
+
     echo "Enabling NFTBan Watchdog..."
     echo ""
 
@@ -601,6 +613,9 @@ nftban_watchdog_cmd_enable() {
 
 nftban_watchdog_cmd_disable() {
     # Disable watchdog timer
+
+    # v1.230.0 PR-5c-B3 — FAIL CLOSED BEFORE ANY STATE CHANGE (see cmd_enable).
+    nftban_config_split_guard watchdog || return $?
 
     echo "Disabling NFTBan Watchdog..."
 

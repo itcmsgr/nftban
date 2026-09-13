@@ -40,13 +40,38 @@ const testBudget = 120 * time.Millisecond
 type rebuildSim struct {
 	dur  time.Duration // scaled wall-clock the rebuild occupies
 	exit int           // its exit code
+
+	// v1.230.0 Gate 6R knobs. Zero values keep the pre-existing behaviour: a
+	// successful rebuild that also advances the effective convergence generation,
+	// exactly as nftban_plan_txn_commit does on a real COMPLETE.
+	//
+	// claimOnly models T3 — the rebuild reports COMPLETE while the kernel-side
+	// generation does NOT move. That combination is impossible if the shell is
+	// correct, which is precisely why it is the check that cannot be satisfied by
+	// trusting the rebuild's own claim.
+	claimOnly bool
+	// projectionInvalid models T4 — a published projection that `nft -c` rejects.
+	projectionInvalid bool
+	// noProjection models a run where the authoritative render did not establish the
+	// projection IN THIS RUN.
+	noProjection bool
+	// deferred models the LEGITIMATE pre-daemon deferral: the shell publishes
+	// disposition DEFERRED_RUNTIME with an uncommitted transaction and rc=1 (the pair
+	// RebuildResult.ContradictsExitCode requires), and the effective convergence
+	// generation is deliberately NOT advanced — which is what the deferral MEANS.
+	//
+	// ⛔ It is set INDEPENDENTLY of exit: the caller must pass exit:1 with it, because
+	// a fixture that emitted DEFERRED_RUNTIME beside rc=0 would be rejected as a
+	// contract violation and would prove nothing about the deferral.
+	deferred bool
 }
 
 type e2eResult struct {
 	sf             *state.StateFile
 	rc             int
 	log            string
-	reachedRebuild bool // the mocked rebuild was actually invoked
+	reachedRebuild bool   // the mocked rebuild was actually invoked
+	stateDir       string // so a caller can re-read the PERSISTED record, not only the struct
 }
 
 // driveInstall runs the real runInstall loop against the all-pass fixture, with the
@@ -78,9 +103,31 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 	}
 	m.Files["/etc/os-release"] = []byte("ID=ubuntu\nVERSION_ID=\"24.04\"\n")
 
+	// v1.230.0 Gate 6R fixture surface. A real host has a published boot projection
+	// and an effective convergence generation; without them the convergence contract
+	// would report NOT_CONVERGED for reasons unrelated to what each case is testing.
+	// ⛔ The projection is /etc/nftban/generated/nftban-boot.nft — NOT the retired
+	// legacy include /etc/nftban/nftables.conf.
+	if !sim.noProjection {
+		m.Files[switchop.BootProjectionPath] = []byte("table ip nftban {\n}\n")
+	}
+	m.Files[switchop.ConvergenceGenerationPath] = []byte("7\n")
+	m.NftTables["ip:nftban"] = true
+	m.NftTables["ip6:nftban"] = true
+	if sim.projectionInvalid {
+		m.NftCheckErr = fmt.Errorf("syntax error, unexpected junk")
+	}
+
 	// Intercept the rebuild: occupy `dur`, then return `exit`.
 	invoked := false
 	m.RunHook = func(name string, args []string) (executor.Result, bool) {
+		// The authoritative render fails, so bootProjectionReady is FALSE for this run.
+		// ⛔ Modelled through the AUTHORITATIVE OPERATION, not by deleting a file:
+		// readiness is established by the render succeeding in this run, never by
+		// os.Stat / existence / mtime.
+		if sim.noProjection && name == fhs.NftbanCLI && len(args) >= 2 && args[0] == "firewall" && args[1] == "render-boot" {
+			return executor.Result{ExitCode: 1, Stderr: "render refused"}, true
+		}
 		if name == fhs.NftbanCLI && len(args) >= 2 && args[0] == "firewall" && args[1] == "rebuild" {
 			invoked = true
 			time.Sleep(sim.dur)
@@ -88,26 +135,52 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 			// schema_version and a disposition; a bare {"status":"ok"} is rejected as
 			// "no usable result contract", which would make every case here fail for a
 			// reason unrelated to deadlines.
-			opID, resultPath := "", ""
+			opID, resultPath, witnessPath := "", "", ""
 			for i := 0; i < len(args)-1; i++ {
 				switch args[i] {
 				case "--result-file":
 					resultPath = args[i+1]
 				case "--operation-id":
 					opID = args[i+1]
+				case "--execution-witness":
+					witnessPath = args[i+1]
 				}
 			}
+			// v1.230.0 Gate 6R: THIS SIMULATION IS A REBUILD THAT EXECUTED.
+			// The real wrapper writes the execution witness the moment the convergence
+			// lock is held, before the core runs. Omitting it here would model a rebuild
+			// that never started, and every failing case below would be reclassified as
+			// REBUILD_NOT_EXECUTED — proving nothing about deadlines.
+			if witnessPath != "" && opID != "" {
+				_ = os.WriteFile(witnessPath, []byte("operation_id="+opID+"\n"), 0o640)
+			}
+			// The generation advances only where a real COMPLETE would advance it.
+			// ⛔ claimOnly deliberately withholds it while still reporting COMPLETE.
+			if sim.exit == 0 && !sim.claimOnly {
+				m.Files[switchop.ConvergenceGenerationPath] = []byte("8\n")
+			}
 			if resultPath != "" {
-				disp, committed, txReason := "COMPLETE", "true", "COMMITTED"
+				// ⛔ THE DISPOSITION MUST BE ONE THE CONTRACT DEFINES. This fixture used
+				// to emit "FAILED", which is NOT in the enum — the consumer rejected it as
+				// an unknown disposition, so these cases were passing through the
+				// malformed-record branch rather than through a real failure verdict.
+				disp, committed, txReason, rollback := "COMPLETE", "true", "COMMITTED", "false"
 				if sim.exit != 0 {
-					disp, committed, txReason = "FAILED", "false", "NONE"
+					disp, committed, txReason, rollback = "REGRESSION", "false", "FAILURE", "true"
+				}
+				// v1.230.0 OWNER RULING: the legitimate pre-daemon deferral. Checked
+				// AFTER the failure branch so it wins over the rc!=0 default — a
+				// deferral is reported with rc=1, which is also a failing rc.
+				if sim.deferred {
+					disp, committed, txReason, rollback = "DEFERRED_RUNTIME", "false", "DEFERRED_CONVERGENCE", "false"
 				}
 				body := fmt.Sprintf(`{"schema_version":"1","operation_id":%q,`+
 					`"context":"install-deferred","disposition":%q,"reason_codes":["TEST"],`+
-					`"rollback_performed":false,"transaction":{"committed":%s,"reason":%q},`+
+					`"rollback_performed":%s,"modified":true,"enforcement_unchanged":false,`+
+					`"transaction":{"committed":%s,"reason":%q},`+
 					`"retry":{"reason":"NONE"},"pre_status":"protected",`+
 					`"post_status":"protected","emitted_at":"2026-08-30T00:00:00Z"}`,
-					opID, disp, committed, txReason)
+					opID, disp, rollback, committed, txReason)
 				_ = os.WriteFile(resultPath, []byte(body), 0o640)
 			}
 			return executor.Result{ExitCode: sim.exit}, true
@@ -128,7 +201,7 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 	rc := runInstall(ctx, m, sf, cfg, log)
 
 	b, _ := os.ReadFile(logPath)
-	return e2eResult{sf: sf, rc: rc, log: string(b), reachedRebuild: invoked}
+	return e2eResult{sf: sf, rc: rc, log: string(b), reachedRebuild: invoked, stateDir: dir}
 }
 
 func (r e2eResult) says(s string) bool { return strings.Contains(r.log, s) }

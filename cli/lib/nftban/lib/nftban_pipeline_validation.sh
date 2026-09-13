@@ -36,6 +36,12 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" 2>/dev/null || tr
 declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local"
 
+# v1.230.0 PR-5c-B1: END OF CONFIG LOAD TRANSACTION. All base/module-local loads for this
+# transaction are complete and no value has been consumed yet, so the single central
+# operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
+declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+    && nftban_config_apply_final_operator_overlay
+
 # Pipeline defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROM_FILE:=/var/lib/node_exporter/textfile_collector/nftban.prom}"
 : "${NFTBAN_METRICS_WATCHDOG_FILE:=/var/lib/nftban/metrics/watchdog.prom}"

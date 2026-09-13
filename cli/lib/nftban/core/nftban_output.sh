@@ -1270,6 +1270,247 @@ nftban_render_findings() {
 export -f nftban_render_findings 2>/dev/null || true
 
 # =============================================================================
+# INSTALL-TRANSACTION TRUTH (v1.230.0 P0 operator-surface truth)
+# =============================================================================
+# ⛔ POSITIVE ASSERTION — NOT A FAILURE LIST.
+#
+#     WRONG    state is not the one failure I know      -> therefore healthy
+#     CORRECT  state == COMMITTED and the writer's own
+#              COMMITTED invariants hold                -> therefore committed
+#
+# An install/upgrade transaction may be reported as successful IF AND ONLY IF
+# the machine-written state file says INSTALL_STATE=COMMITTED. EVERY other value
+# is NOT COMMITTED: today's DEGRADED / FAILED_* / RESTORE_* / UNINSTALL_*
+# literals; the intermediate FILES_INSTALLED / DETECT_COMPLETE /
+# PREPARE_COMPLETE / SWITCH_COMPLETE / SERVICES_COMPLETE literals a killed
+# installer leaves behind; the post-install verdict literals (INSTALL_FAILED,
+# INSTALL_DEGRADED, …); and ANY literal a future Go release introduces.
+#
+# WHY THIS SHAPE. Both pre-v1.230.0 operator surfaces tested for ONE known
+# failure and treated the entire remaining state space as healthy:
+#
+#   core/nftban_output.sh   [[ "$_install_state" == "DEGRADED" ]]   (one literal)
+#   cli/cmd_update.sh       case … FAILED_*|FAILED)                 (one prefix)
+#
+# A production host carrying INSTALL_STATE=FAILED_REBUILD printed
+# "Upgrade readiness: PASS / Action needed: NONE / Findings: none" from the
+# first, and a literal not prefixed FAILED_ reached the second's `*)` arm, which
+# logged "falling back to legacy green verdict", wrote update history as
+# "success" and DELETED state/update_failed. A LONGER FAILURE LIST REPRODUCES
+# BOTH ONE RELEASE LATER. Only the positive assertion survives a new literal.
+#
+# Prior art copied from in-tree: cli/cmd_update_detection.sh:160-167
+# _probe_install_state_committed_update_authority() — positively asserts
+# state == COMMITTED && authority == UPDATE and returns 1 on an unreadable file
+# rather than assuming fine.
+#
+# Field authority:
+#   internal/installer/state/machine.go:24-178   the InstallState literals
+#   internal/installer/state/file.go:243-300     the writer (field set + order)
+#   internal/installer/state/file.go:176-240     Transition() + applyTerminalHygiene:
+#       on COMMITTED the writer CLEARS FailureReason. A file that says COMMITTED
+#       *and* carries a non-empty FAILURE_REASON therefore cannot have come from
+#       the writer — it is contradictory, and contradictory is never success.
+#
+# ⛔ SCHEMA_VERSION is deliberately NOT read or written here. It is empty on
+#    production hosts and belongs to the contract owner.
+# =============================================================================
+
+# The exact operator recovery command for an incomplete transaction.
+NFTBAN_INSTALL_REPAIR_CMD="/usr/lib/nftban/bin/nftban-installer --repair"
+
+# ⛔ WORDING ONLY — THIS LIST IS NEVER THE VERDICT.
+# It exists so the operator text can distinguish "a failure state this build
+# recognises" from "a state literal this build has never heard of". A literal
+# missing from this list changes the SENTENCE, never the decision: an unknown
+# literal is already not COMMITTED and is therefore already not a success.
+# Superset of internal/installer/state/machine.go's enum (asserted repo-static
+# by the regression suite) plus the post-install verdict literals from
+# internal/installer/postinstall/verify.go:70-95 that appear as terminal tokens.
+NFTBAN_INSTALL_STATE_KNOWN_LITERALS="\
+COMMITTED DEGRADED DETECT_COMPLETE FAILED_AUTHORITY_ABORT FAILED_NO_FIREWALL \
+FAILED_PREFLIGHT_DISK_SPACE FAILED_REBUILD FAILED_RENDER FAILED_SSH_UNKNOWN \
+FAILED_TAKEOVER FILES_INSTALLED PREPARE_COMPLETE RESTORE_DECIDED \
+REBUILD_REFUSED_BUSY REBUILD_NOT_EXECUTED \
+RESTORE_DEGRADED RESTORE_EXECUTED RESTORE_FAILED_EXECUTION \
+RESTORE_FAILED_VERIFICATION RESTORE_INTENT_REQUIRED RESTORE_REFUSED \
+SERVICES_COMPLETE SWITCH_COMPLETE UNINSTALL_FAILED_RELEASE UNINSTALL_PLANNING \
+UNINSTALL_RELEASED CURRENT_COMMITTED STALE_STATE VERSION_MISMATCH \
+INSTALL_FAILED INSTALL_DEGRADED MISSING_STATE INVALID_STATE \
+DRY_RUN_NOT_APPLIED STATE_READ_ERROR INVALID_INVOCATION"
+
+# -----------------------------------------------------------------------------
+# nftban_install_state_is_committed <state-literal>
+#
+# THE verdict predicate. rc=0 iff the supplied literal is exactly COMMITTED —
+# the one InstallState that means "this transaction committed"
+# (internal/installer/state/machine.go:30 StateCommitted).
+#
+# The literal is written inline and NOT read from a variable on purpose: the
+# verdict must not be reconfigurable by anything a caller can set.
+# Safe under `set -u` with no argument (an absent argument is not COMMITTED).
+# -----------------------------------------------------------------------------
+nftban_install_state_is_committed() {
+    [[ "${1-}" == "COMMITTED" ]]
+}
+export -f nftban_install_state_is_committed 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# nftban_install_state_is_known_literal <state-literal>
+# ⛔ WORDING ONLY. See NFTBAN_INSTALL_STATE_KNOWN_LITERALS above. Never call
+#    this to decide PASS/FAIL.
+# -----------------------------------------------------------------------------
+nftban_install_state_is_known_literal() {
+    local _s="${1-}"
+    [[ -n "$_s" ]] || return 1
+    [[ " ${NFTBAN_INSTALL_STATE_KNOWN_LITERALS} " == *" ${_s} "* ]]
+}
+export -f nftban_install_state_is_known_literal 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# nftban_install_state_field <state-file> <KEY>
+#
+# Echoes the value of KEY= from the machine-written state file. rc=1 (and no
+# output) when the file is absent or unreadable — an unreadable file is NEVER
+# reported as an empty/benign value. rc=0 with empty output means the file was
+# readable and the key was absent or empty; the caller decides what that means.
+# No `grep -q` and no pipe into a short-reading consumer: under
+# `set -o pipefail` that is a SIGPIPE race.
+# -----------------------------------------------------------------------------
+nftban_install_state_field() {
+    local _f="${1-}" _k="${2-}" _line=""
+    [[ -n "$_f" && -n "$_k" && -r "$_f" ]] || return 1
+    _line=$(grep -m1 -- "^${_k}=" "$_f" 2>/dev/null) || _line=""
+    printf '%s' "${_line#*=}"
+    return 0
+}
+export -f nftban_install_state_field 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# nftban_install_state_classify <state-file>
+#
+# Echoes exactly one class token. This is the single adjudication point every
+# operator surface consumes.
+#
+#   COMMITTED       INSTALL_STATE=COMMITTED and the writer's COMMITTED
+#                   invariants hold.                        -> may report success
+#   NOT_COMMITTED   a readable state file whose INSTALL_STATE is any other
+#                   literal — recognised or not.            -> never success
+#   CONTRADICTORY   INSTALL_STATE=COMMITTED beside a field the writer clears on
+#                   COMMITTED (non-empty FAILURE_REASON).   -> never success
+#   INDETERMINATE   no readable state file, or no INSTALL_STATE key in it. The
+#                   outcome of the last transaction cannot be established. This
+#                   is NOT "failed" and NOT "fine".         -> never success
+#
+# A single token is returned rather than a packed record precisely so no
+# delimiter can ever be injected by FAILURE_REASON; callers read the individual
+# fields with nftban_install_state_field.
+# -----------------------------------------------------------------------------
+nftban_install_state_classify() {
+    local _f="${1-}" _state="" _reason=""
+    if [[ -z "$_f" || ! -r "$_f" ]]; then
+        printf 'INDETERMINATE'
+        return 0
+    fi
+    _state=$(nftban_install_state_field "$_f" "INSTALL_STATE") || _state=""
+    if [[ -z "$_state" ]]; then
+        printf 'INDETERMINATE'
+        return 0
+    fi
+    if nftban_install_state_is_committed "$_state"; then
+        _reason=$(nftban_install_state_field "$_f" "FAILURE_REASON") || _reason=""
+        if [[ -n "$_reason" ]]; then
+            printf 'CONTRADICTORY'
+            return 0
+        fi
+        printf 'COMMITTED'
+        return 0
+    fi
+    printf 'NOT_COMMITTED'
+    return 0
+}
+export -f nftban_install_state_classify 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# nftban_render_install_transaction_truth <state-file> [enforcement-line]
+#
+# The operator block for an install/upgrade transaction. Renders NOTHING and
+# returns 0 when the transaction is COMMITTED (a committed transaction needs no
+# operator text); renders the full block otherwise.
+#
+# ⛔ TRANSACTION TRUTH AND ENFORCEMENT TRUTH ARE PRINTED AS SEPARATE LINES.
+#    They genuinely differ — a host can be enforcing correctly while its last
+#    upgrade never completed — and conflating them IS the original defect. The
+#    caller supplies its own enforcement sentence; when it supplies none this
+#    block says where enforcement is reported instead of guessing.
+#
+# Returns 0 when COMMITTED, 1 otherwise, so a caller can gate on it.
+# -----------------------------------------------------------------------------
+nftban_render_install_transaction_truth() {
+    local _f="${1-}" _enf="${2-}"
+    local _class _state _ts _reason _phase _ver
+    _class=$(nftban_install_state_classify "$_f")
+    [[ "$_class" == "COMMITTED" ]] && return 0
+
+    _state=$(nftban_install_state_field "$_f" "INSTALL_STATE") || _state=""
+    _ts=$(nftban_install_state_field "$_f" "INSTALL_TIMESTAMP") || _ts=""
+    _reason=$(nftban_install_state_field "$_f" "FAILURE_REASON") || _reason=""
+    _phase=$(nftban_install_state_field "$_f" "PHASE_REACHED") || _phase=""
+    _ver=$(nftban_install_state_field "$_f" "INSTALL_VERSION") || _ver=""
+
+    local _state_display="$_state"
+    [[ -z "$_state_display" ]] && _state_display="UNKNOWN"
+    if [[ -n "$_state" ]] && ! nftban_install_state_is_known_literal "$_state"; then
+        _state_display="${_state} (UNKNOWN STATE — not a literal this build recognises)"
+    fi
+
+    local _when="recorded time unknown"
+    [[ -n "$_ts" ]] && _when="recorded ${_ts}"
+    [[ -n "$_phase" ]] && _when="${_when}, last phase ${_phase}"
+    [[ -n "$_ver" ]] && _when="${_when}, version ${_ver}"
+
+    local _status_line _cause_line
+    case "$_class" in
+        CONTRADICTORY)
+            _status_line="NOT COMMITTED — the state file says COMMITTED but also records a failure reason; the installer never writes that combination"
+            _cause_line="contradictory state file: ${_reason}"
+            ;;
+        INDETERMINATE)
+            _status_line="INDETERMINATE — the outcome of the last install/upgrade cannot be established (this is not a pass)"
+            _cause_line="no readable INSTALL_STATE at ${_f:-<no path supplied>}"
+            ;;
+        *)
+            _status_line="NOT COMMITTED — this install/upgrade transaction did not complete"
+            if [[ -n "$_reason" ]]; then
+                _cause_line="$_reason"
+            elif [[ -n "$_phase" ]]; then
+                _cause_line="no FAILURE_REASON recorded; the transaction stopped at phase ${_phase}"
+            else
+                _cause_line="no FAILURE_REASON recorded in the state file"
+            fi
+            ;;
+    esac
+
+    local _enf_line="$_enf"
+    if [[ -z "$_enf_line" ]]; then
+        _enf_line="reported separately by 'nftban health' — kernel enforcement is NOT evidence that this transaction completed"
+    fi
+
+    echo ""
+    echo "  Install transaction"
+    echo "  ─────────────────────────────────────────"
+    printf "  %-20s %s\n" "Transaction state:" "$_state_display"
+    printf "  %-20s %s\n" "Recorded:" "$_when"
+    printf "  %-20s %s\n" "Transaction status:" "$_status_line"
+    printf "  %-20s %s\n" "Enforcement:" "$_enf_line"
+    printf "  %-20s %s\n" "Cause:" "$_cause_line"
+    printf "  %-20s %s\n" "Recovery:" "$NFTBAN_INSTALL_REPAIR_CMD"
+    printf "  %-20s %s\n" "Reboot:" "NOT NEUTRAL while the transaction is incomplete — services, firewall render and enabled units are only guaranteed by a committed transaction. Repair before rebooting."
+    return 1
+}
+export -f nftban_render_install_transaction_truth 2>/dev/null || true
+
+# =============================================================================
 # OPERATOR-READINESS SUMMARY (v1.198 R1b-2)
 # =============================================================================
 # A concise top-level operator verdict computed ENTIRELY shell-side from the
@@ -1287,12 +1528,34 @@ export -f nftban_render_findings 2>/dev/null || true
 #   Operational      : YES if status in {protected,idle,degraded}; else NO.
 #   Upgrade readiness : FAIL if  not-operational  OR status==degraded
 #                              OR max-severity in {error,critical}
-#                              OR install_state==DEGRADED  OR rc>=2;
+#                              OR the install transaction is NOT COMMITTED
+#                              OR rc>=2;
+#                       INDETERMINATE if the install transaction cannot be
+#                              established (and nothing above forced FAIL);
 #                       PASS_WITH_WARN if max-severity==warn;  else PASS.
-#   Action needed    : FAIL / WARN / NONE mirroring readiness.
+#   Action needed    : FAIL / VERIFY / WARN / NONE mirroring readiness.
 #   IDLE is explained inline ("running, no active bans currently").
 #
-# Usage: nftban_render_operator_readiness "<validator_json>" [install_state] [rc]
+# v1.230.0 P0-D1 (RELEASE BLOCKER). Argument 2 used to be tested with a SINGLE
+# exact literal — [[ "$_install_state" == "DEGRADED" ]] — against an open-ended
+# state space. Production host dns1 carried INSTALL_STATE=FAILED_REBUILD and
+# this function printed "Upgrade readiness: PASS / Action needed: NONE /
+# Findings: none": every FAILED_* literal, every intermediate literal a killed
+# installer leaves behind, and every literal a future release adds fell through
+# to PASS. FAIL-OPEN — the error always read reassuring. It is now a POSITIVE
+# ASSERTION against COMMITTED (nftban_install_state_is_committed); see the
+# INSTALL-TRANSACTION TRUTH block above for why a longer failure list is not a
+# fix.
+#
+# Argument 2 accepts EITHER a class token from nftban_install_state_classify
+# (COMMITTED / NOT_COMMITTED / CONTRADICTORY / INDETERMINATE) OR a raw
+# INSTALL_STATE literal; only COMMITTED permits PASS in either spelling. Empty
+# means the CALLER SUPPLIED NO INSTALL-STATE INPUT AT ALL (this function then
+# says nothing about the transaction) — it is not "the file said fine". Callers
+# that have a state file MUST pass the classify token so an unreadable file
+# reaches INDETERMINATE rather than silence.
+#
+# Usage: nftban_render_operator_readiness "<validator_json>" [install_state_or_class] [rc]
 nftban_render_operator_readiness() {
     local _json="${1:-}"
     local _install_state="${2:-}"
@@ -1320,10 +1583,30 @@ nftban_render_operator_readiness() {
     local _rc_fail=0
     [[ "$_rc" =~ ^[0-9]+$ ]] && (( _rc >= 2 )) && _rc_fail=1
 
+    # v1.230.0 P0-D1: POSITIVE ASSERTION on the install transaction.
+    #   ""            -> NOT_SUPPLIED, this function adjudicates nothing here
+    #   COMMITTED     -> committed (identical as a class token and as a literal)
+    #   INDETERMINATE -> outcome unknown; never PASS, never asserted FAIL
+    #   anything else -> NOT COMMITTED; never PASS
+    # The final branch is what makes a state literal that does not exist yet
+    # (or a NOT_COMMITTED / CONTRADICTORY class token) safe by construction.
+    local _istate_verdict="NOT_SUPPLIED"
+    if [[ -n "$_install_state" ]]; then
+        if nftban_install_state_is_committed "$_install_state"; then
+            _istate_verdict="COMMITTED"
+        elif [[ "$_install_state" == "INDETERMINATE" ]]; then
+            _istate_verdict="INDETERMINATE"
+        else
+            _istate_verdict="NOT_COMMITTED"
+        fi
+    fi
+
     if [[ "$operational" == "NO" || "$status" == "degraded" \
           || "$max_sev" == "error" || "$max_sev" == "critical" \
-          || "$_install_state" == "DEGRADED" || "$_rc_fail" -eq 1 ]]; then
+          || "$_istate_verdict" == "NOT_COMMITTED" || "$_rc_fail" -eq 1 ]]; then
         readiness="FAIL"
+    elif [[ "$_istate_verdict" == "INDETERMINATE" ]]; then
+        readiness="INDETERMINATE"
     elif [[ "$max_sev" == "warn" ]]; then
         readiness="PASS_WITH_WARN"
     else
@@ -1352,8 +1635,44 @@ nftban_render_operator_readiness() {
         [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
     fi
 
+    # =========================================================================
+    # OWNER RULING (v1.230.0) — KEEP INDETERMINATE. DO NOT COLLAPSE IT INTO FAIL.
+    # =========================================================================
+    # The evidence model here is THREE-VALUED, deliberately:
+    #
+    #   PASS           the evidence establishes that the requirement is met
+    #   FAIL           the evidence positively establishes that the requirement
+    #                  is VIOLATED
+    #   INDETERMINATE  the system could NOT OBTAIN sufficient trustworthy
+    #                  evidence to decide either way
+    #
+    # ⛔ INDETERMINATE IS NOT A SOFTER FAIL AND NOT A QUIETER PASS. Operationally
+    #    both FAIL and INDETERMINATE stop — neither is success, and the action
+    #    verdict below is non-NONE for both. For FORENSICS they are materially
+    #    different: FAIL says "we looked and it is broken"; INDETERMINATE says
+    #    "we could not look". Its action is VERIFY precisely because the operator's
+    #    next move differs — obtain the evidence, rather than repair a known break.
+    #
+    # ⛔ WHY COLLAPSING IT IS THE SAME MISTAKE AS THE ONE THIS RELEASE JUST FIXED.
+    #    v1.230.0 found REBUILD_EXIT_CODE and REBUILD_DURATION_MS being round-
+    #    tripped through the install_state format while NEVER being populated by
+    #    production code, so struct zero-values masqueraded as real measurements
+    #    and produced fake one-second history records. That INVENTED evidence
+    #    provenance. Collapsing INDETERMINATE into FAIL is the SAME semantic error
+    #    in the opposite direction — it DESTROYS evidence-provenance information,
+    #    asserting a finding the system never actually made.
+    #
+    #       A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT.
+    #       AN OUTCOME THAT WAS NEVER OBSERVED IS NOT A FAILURE.
+    #
+    # The producer of the INDETERMINATE class is nftban_install_state_classify
+    # above (no readable state file, or no INSTALL_STATE key in it). The parallel
+    # rc-level contract lives in _update_finalize_verdict (cli/cmd_update.sh),
+    # where INDETERMINATE is rc=3 and stays distinct from the failure codes.
+    # Pinned by cli/lib/nftban/tests/nftban_operator_readiness_r1b2_test.sh.
     case "$readiness" in
         FAIL)           action="FAIL" ;;
+        INDETERMINATE)  action="VERIFY" ;;
         PASS_WITH_WARN) action="WARN" ;;
         *)              action="NONE" ;;
     esac
@@ -1373,6 +1692,22 @@ nftban_render_operator_readiness() {
     # the VERDICT surface only — it no longer re-renders the per-finding detail
     # (that duplicated the canonical "Findings:" section in cmd_health). It now
     # emits a one-line pointer so the operator knows where the detail is.
+    # v1.230.0 P0-D4: the verdict line must never stand alone when the install
+    # transaction did not commit. Name the state, and point at the block that
+    # carries the cause, the recovery command and the reboot warning.
+    if [[ "$_istate_verdict" == "NOT_COMMITTED" ]]; then
+        # Argument 2 may be a raw INSTALL_STATE literal or a class token. Name the
+        # literal when we were given one; never echo a class token back as if it
+        # were the recorded state (the block below always prints the literal).
+        local _istate_named=""
+        case "$_install_state" in
+            NOT_COMMITTED|CONTRADICTORY) _istate_named="" ;;
+            *)                           _istate_named="${_install_state} — " ;;
+        esac
+        printf "  %-20s %s\n" "" "→ install transaction: ${_istate_named}NOT COMMITTED; see 'Install transaction' below (recover: ${NFTBAN_INSTALL_REPAIR_CMD})"
+    elif [[ "$_istate_verdict" == "INDETERMINATE" ]]; then
+        printf "  %-20s %s\n" "" "→ install transaction: INDETERMINATE — the last install/upgrade outcome cannot be established; see 'Install transaction' below (recover: ${NFTBAN_INSTALL_REPAIR_CMD})"
+    fi
     if [[ "$_fth_alarm" -eq 1 ]]; then
         printf "  %-20s %s\n" "" "→ firewall-transition alarm: see 'Firewall Transition' below (clear: nftban firewall rebuild)"
     fi
