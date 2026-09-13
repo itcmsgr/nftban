@@ -16,7 +16,12 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="unprivileged"
 # meta:ta.id="report_generator_content_truth_v1229_15_test"
-# meta:ta.owner="reporting"
+# v1.230.0: ta.owner was "reporting", which is NOT in the declared OWNERS vocabulary
+# (scripts/ci/test-authority.py:41), so `test-authority.py validate --mode strict`
+# rejected it. Pre-existing since this file entered the stack; never seen because
+# stacked PRs skip the main-base gates. Relabelled to an EXISTING valid owner rather
+# than widening the vocabulary — the report generators live under core/.
+# meta:ta.owner="core"
 # meta:ta.module="report-generator-content-truth"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
 # meta:ta.gate="ci-bash"

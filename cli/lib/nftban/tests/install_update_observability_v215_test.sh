@@ -84,11 +84,17 @@ outC=$(_update_final_summary "FAILED" "1.214.0" "1.215.0" "3" "1" "FAILED")
 grep -q "Result:.*FAILED"   <<<"$outC" && ok "C result FAILED"  || no "C result"
 grep -q "Log dir:.*update-runs" <<<"$outC" && ok "C log dir"    || no "C log dir"
 
-# --- D: static — 4 call sites wired (COMMITTED/DEGRADED/FAILED/UNKNOWN) + legacy line preserved ---
-grep -q '_update_final_summary "COMMITTED"' "$CMD_UPDATE" && ok "D COMMITTED call wired"  || no "D COMMITTED call"
-grep -q '_update_final_summary "DEGRADED"'  "$CMD_UPDATE" && ok "D DEGRADED call wired"   || no "D DEGRADED call"
-grep -q '_update_final_summary "FAILED"'    "$CMD_UPDATE" && ok "D FAILED call wired"     || no "D FAILED call"
-grep -q '_update_final_summary "COMMITTED" .* "UNKNOWN"' "$CMD_UPDATE" && ok "D fallback call wired" || no "D fallback call"
+# --- D: static — a summary call on every terminal arm ---
+# v1.230.0 P0-D2: the fourth arm used to be a catch-all that summarised an
+# unrecognised install_state as _update_final_summary "COMMITTED" … "UNKNOWN" —
+# i.e. it reported a transaction of unknown outcome as committed, while also
+# writing update history as "success" and deleting state/update_failed. It is
+# replaced by an INDETERMINATE arm that claims neither success nor failure.
+grep -q '_update_final_summary "COMMITTED"'     "$CMD_UPDATE" && ok "D COMMITTED call wired"     || no "D COMMITTED call"
+grep -q '_update_final_summary "DEGRADED"'      "$CMD_UPDATE" && ok "D DEGRADED call wired"      || no "D DEGRADED call"
+grep -q '_update_final_summary "FAILED"'        "$CMD_UPDATE" && ok "D FAILED call wired"        || no "D FAILED call"
+grep -q '_update_final_summary "INDETERMINATE"' "$CMD_UPDATE" && ok "D INDETERMINATE call wired" || no "D INDETERMINATE call"
+grep -q '_update_final_summary "COMMITTED" .* "UNKNOWN"' "$CMD_UPDATE" && no "D the catch-all COMMITTED/UNKNOWN summary is gone" "legacy green fallback still present" || ok "D the catch-all COMMITTED/UNKNOWN summary is gone"
 grep -q 'Updated: v\$current_version → v\$new_version' "$CMD_UPDATE" && ok "D legacy 'Updated: vX → vY' preserved" || no "D legacy line"
 
 # --- E: renderer emits no lifecycle-JSON routing (does not touch run.jsonl / FORENSIC_JSONL) ---

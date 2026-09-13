@@ -72,6 +72,20 @@ const (
 	DispositionDeferredRuntime RebuildDisposition = "DEFERRED_RUNTIME"
 	DispositionRegression      RebuildDisposition = "REGRESSION"
 	DispositionFatal           RebuildDisposition = "FATAL"
+
+	// DispositionRefused — v1.230.0 Gate 6R. THE REBUILD NEVER STARTED.
+	//
+	//	REFUSED  rebuild NEVER STARTED, firewall NOT modified (convergence lock held)
+	//	FAILED   rebuild EXECUTED and failed
+	//	TIMEOUT  rebuild EXECUTED and did not finish in budget
+	//
+	// Before this existed, a refusal published NO record at all and the consumer
+	// collapsed ABSENCE OF CONTRACT into FAILED_REBUILD on a host whose enforcement
+	// had not been touched (dns1, v1.229.13 -> v1.229.14).
+	//
+	// ⛔ THE CONSUMER READS THIS FIELD, NOT THE STDERR SENTENCE. No code on this path
+	// may match "convergence already in progress" or any other message text.
+	DispositionRefused RebuildDisposition = "REFUSED"
 )
 
 // InstallerContinuation is GO's policy decision. This is the authority that moved.
@@ -81,11 +95,17 @@ const (
 	ContinueComplete InstallerContinuation = "CONTINUE_COMPLETE"
 	ContinueDeferred InstallerContinuation = "CONTINUE_DEFERRED"
 	Abort            InstallerContinuation = "ABORT"
+
+	// RetryRefused — v1.230.0 Gate 6R. NOT a continuation and NOT an abort: nothing
+	// happened, so the convergence is still entirely owed. The caller retries within
+	// the deadline it already has; if every attempt is refused the install is DEFERRED,
+	// never FAILED.
+	RetryRefused InstallerContinuation = "RETRY_REFUSED"
 )
 
 type rebuildTransaction struct {
 	Committed bool   `json:"committed"`
-	Reason    string `json:"reason"` // COMMITTED | DEFERRED_CONVERGENCE | FAILURE
+	Reason    string `json:"reason"` // COMMITTED | DEFERRED_CONVERGENCE | NOT_STARTED | FAILURE
 }
 
 type rebuildRetry struct {
@@ -100,11 +120,20 @@ type RebuildResult struct {
 	Disposition       RebuildDisposition `json:"disposition"`
 	ReasonCodes       []string           `json:"reason_codes"`
 	RollbackPerformed bool               `json:"rollback_performed"`
-	Transaction       rebuildTransaction `json:"transaction"`
-	Retry             rebuildRetry       `json:"retry"`
-	PreStatus         string             `json:"pre_status"`
-	PostStatus        string             `json:"post_status"`
-	EmittedAt         string             `json:"emitted_at"`
+	// Modified / EnforcementUnchanged — v1.230.0 Gate 6R mutation facts.
+	//
+	// ⛔ CONSUMED FOR REFUSED ONLY. The producer can PROVE them there (the convergence
+	// lock was never acquired, so nothing downstream of it ran) and emits fail-closed
+	// placeholders — modified=true, enforcement_unchanged=false — everywhere else.
+	// Reading them for any other disposition would be reading a placeholder as a fact.
+	//     A FIELD MAY ONLY BE CONSUMED WHERE ITS VALUE IS PROVEN, NOT MERELY PRESENT.
+	Modified             bool               `json:"modified"`
+	EnforcementUnchanged bool               `json:"enforcement_unchanged"`
+	Transaction          rebuildTransaction `json:"transaction"`
+	Retry                rebuildRetry       `json:"retry"`
+	PreStatus            string             `json:"pre_status"`
+	PostStatus           string             `json:"post_status"`
+	EmittedAt            string             `json:"emitted_at"`
 }
 
 // ReadRebuildResult loads and validates the per-operation record.
@@ -154,6 +183,16 @@ func ReadRebuildResult(path, wantOperationID string) (*RebuildResult, error) {
 	}
 	switch r.Disposition {
 	case DispositionComplete, DispositionDeferredRuntime, DispositionRegression, DispositionFatal:
+	case DispositionRefused:
+		// ⛔ A REFUSAL CLAIM MUST BE SELF-CONSISTENT OR IT IS NOT A REFUSAL.
+		// REFUSED asserts the strongest safety property in this contract — that the
+		// firewall was not touched. A record that asserts it while also reporting a
+		// mutation or a commit is a broken producer, and the safe reading of a broken
+		// producer is never "nothing happened".
+		if r.Modified || !r.EnforcementUnchanged || r.Transaction.Committed {
+			return nil, fmt.Errorf("REFUSED record is self-contradictory (modified=%t enforcement_unchanged=%t committed=%t) — refusing to read it as an untouched firewall",
+				r.Modified, r.EnforcementUnchanged, r.Transaction.Committed)
+		}
 	default:
 		return nil, fmt.Errorf("rebuild result disposition %q is unknown — aborting rather than guessing", r.Disposition)
 	}
@@ -171,6 +210,8 @@ func (r *RebuildResult) Continuation() InstallerContinuation {
 		return ContinueDeferred
 	case DispositionRegression, DispositionFatal:
 		return Abort
+	case DispositionRefused:
+		return RetryRefused
 	default:
 		return Abort
 	}
@@ -188,6 +229,12 @@ func (r *RebuildResult) ContradictsExitCode(rc int) bool {
 		return rc != 1
 	case DispositionRegression, DispositionFatal:
 		return rc < 2
+	case DispositionRefused:
+		// The refusal path returns the wrapper's existing rc=1. A DEDICATED CODE WAS
+		// DELIBERATELY NOT INTRODUCED: rc is secondary here, and the rc-only consumers of
+		// `nftban firewall rebuild` (lib/service_control.sh, helpers/autoheal.sh) have not
+		// been analysed under a new code in this lane.
+		return rc != 1
 	}
 	return true
 }

@@ -323,12 +323,23 @@ else
     _t_assert "1.6 cmd_update.sh contains install_state consolidation block" 1 "block missing"
 fi
 
-if grep -q 'case "$_installer_state" in' "$_update_cli" && \
+# v1.230.0 P0-D2 (RELEASE BLOCKER): UX-1 item 1.6's requirement — one
+# consolidated verdict driven by install_state — is unchanged, but the SHAPE it
+# used to be written in was the defect. A start-anchored FAILED-prefix case glob
+# the literal, so INSTALL_FAILED never matched it and reached a catch-all green
+# arm that recorded a failed update as successful. The verdict now dispatches on
+# the class from the positive assertion `state == COMMITTED`, which covers every
+# non-COMMITTED literal including ones no build recognises yet. Asserting the old
+# glob here would require the defect to stay.
+if grep -q 'case "$_verdict_class" in' "$_update_cli" && \
+   grep -q 'COMMITTED)' "$_update_cli" && \
    grep -q 'DEGRADED)' "$_update_cli" && \
-   grep -q 'FAILED_\*|FAILED)' "$_update_cli"; then
-    _t_assert "1.6 case-block handles COMMITTED / DEGRADED / FAILED_* states" 0
+   grep -q 'NOT_COMMITTED)' "$_update_cli" && \
+   grep -q 'INDETERMINATE)' "$_update_cli" && \
+   ! grep -qE '^[[:space:]]+FAILED_\*\|FAILED\)' "$_update_cli"; then
+    _t_assert "1.6 verdict dispatches on the adjudicated install-state class (COMMITTED / DEGRADED / NOT_COMMITTED / INDETERMINATE), not the FAILED_* glob" 0
 else
-    _t_assert "1.6 case-block handles COMMITTED / DEGRADED / FAILED_* states" 1 "case-branches missing"
+    _t_assert "1.6 verdict dispatches on the adjudicated install-state class (COMMITTED / DEGRADED / NOT_COMMITTED / INDETERMINATE), not the FAILED_* glob" 1 "class-branches missing or the FAILED_*|FAILED glob is back"
 fi
 
 # Canonical recovery path is the full-path form since v1.131.4
