@@ -196,6 +196,13 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// its INTERACTIVE FAIL-FAST lock policy and there is deliberately NO refusal retry
 	// here — retrying would invent a lifecycle wait this plane never declared. What does
 	// travel is the contract and the measurement.
+	// ⛔ v1.230.0 Gate 6R F1 — same invariant on this plane: a new rebuild attempt
+	// begins, so any convergence verdict inherited from an earlier run stops describing
+	// this transaction NOW, before any disposition below can persist it.
+	//     HISTORICAL STATE MAY INFORM DIAGNOSIS, BUT MUST NEVER SATISFY A
+	//     CURRENT-RUN PROOF OBLIGATION.
+	sf.ConvergenceVerified = ""
+
 	generationBefore := switchop.ReadConvergenceGeneration(exec)
 	once := switchop.RebuildOnceNoRetry(exec, log, rebuildCmd, []string{rebuildArg1, rebuildArg2})
 	rebuildRes := once.Observation

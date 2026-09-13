@@ -552,6 +552,32 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// disposition COMPLETE. Without a BEFORE reading there is no delta, and the AFTER
 	// value alone proves nothing.
 	//     A COMPONENT'S OWN SUCCESS CLAIM IS NOT VERIFICATION OF THAT CLAIM.
+	// ⛔ v1.230.0 Gate 6R F1 — CLEAR THE PRIOR RUN'S CONVERGENCE VERDICT FIRST.
+	//
+	// LIVE-OBSERVED ON lab3: a REBUILD_REFUSED_BUSY record carried
+	// CONVERGENCE_VERIFIED=VERIFIED inherited from an EARLIER successful run. The field
+	// is assigned only after a successful rebuild; every path that returns before that
+	// re-persisted whatever Read() loaded from disk, because WriteAtomic serialises the
+	// struct verbatim. That defeats the field's own contract ("" means NOT EVALUATED,
+	// and it is never read as VERIFIED) — which only holds if it is CLEARED on the
+	// paths that do not evaluate it.
+	//
+	//	HISTORICAL STATE MAY INFORM DIAGNOSIS, BUT MUST NEVER SATISFY A
+	//	CURRENT-RUN PROOF OBLIGATION.
+	//
+	// The invariant, ruled:
+	//
+	//	a new rebuild attempt begins                     -> ""
+	//	rebuild succeeded AND convergence check passed   -> VERIFIED
+	//	refused / not executed / failed before the check -> ""
+	//
+	// ⛔ NEVER "FAILED" for a refusal. Refusal means NOT EVALUATED; recording a failed
+	// evaluation for something never evaluated is false evidence in the other direction.
+	//
+	// This assignment must precede every path that can persist a rebuild disposition —
+	// the three below (REFUSED_BUSY, NOT_EXECUTED, FAILED_REBUILD) all return after it.
+	sf.ConvergenceVerified = ""
+
 	generationBefore := switchop.ReadConvergenceGeneration(exec)
 	log.Info("effective convergence generation before rebuild: %d (-1 = not observable)", generationBefore)
 	rebuildStart := time.Now()
