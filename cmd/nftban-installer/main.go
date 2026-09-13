@@ -886,14 +886,30 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		log.Result("    nft ruleset includes \"nftban\" rules")
 		log.Result("")
 		log.Result("════════════════════════════════════════════════════════════════════════════════")
+	case state.StateRebuildRefusedBusy:
+		// ⛔ v1.230.0 Gate 6R F2 — MEASURED ON lab3: this state used to print
+		// "To retry: nftban-installer --repair". Executed live, the rebuild ran and
+		// committed (generation 6 -> 7), but --repair resumes at SWITCH and skips the
+		// boot-projection render, so projection_generated FAILED, the verdict was
+		// NOT_CONVERGED and the host landed on DEGRADED, exit 1.
+		//     AN INSTRUCTION THAT CANNOT REACH THE STATE IT PROMISES IS NOT A RECOVERY PATH.
+		log.Result("[NFTBan] Install/upgrade did NOT complete.")
+		log.Result("[NFTBan] State: %s", sf.State)
+		log.Result("[NFTBan] The firewall rebuild was REFUSED because another convergence")
+		log.Result("[NFTBan] operation held the lock. It never started, so EXISTING ENFORCEMENT")
+		log.Result("[NFTBan] WAS LEFT UNCHANGED — the firewall you had is the firewall you have.")
+		log.Result("[NFTBan] Convergence for this update was NOT performed and is still owed.")
+		if sf.FailureReason != "" {
+			log.Result("[NFTBan] Reason: %s", sf.FailureReason)
+		}
+		emitRecovery(sf.State, log)
 	default:
 		log.Result("[NFTBan] Install/upgrade FAILED.")
 		log.Result("[NFTBan] State: %s", sf.State)
 		if sf.FailureReason != "" {
 			log.Result("[NFTBan] Reason: %s", sf.FailureReason)
 		}
-		log.Result("[NFTBan] To retry: /usr/lib/nftban/bin/nftban-installer --repair")
-		log.Result("[NFTBan] Or: nftban firewall rebuild")
+		emitRecovery(sf.State, log)
 	}
 
 	log.Info("state file: %s", sf.Path())
@@ -901,6 +917,33 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 	log.Info("history: %s", history.DefaultHistoryPath)
 
 	return sf.State.ExitCode()
+}
+
+// emitRecovery prints the recovery instruction for a state, declaring its
+// RECOVERY_CLASS.
+//
+// ⛔ THE CLASS IS DERIVED, NOT WRITTEN HERE. state.InstallState.RecoveryClass() reads
+// ResumePhase — the same function --repair itself uses — so this surface cannot promise
+// a mechanism whose route to COMMITTED is not established. That is the whole point:
+// the lab3 defect was prose that drifted away from what recovery actually does.
+//
+// ⛔ WORDED BY OPERATION, NOT BY PACKAGE MANAGER. report() does not receive the config
+// and cannot RELIABLY determine whether this host came from dpkg or rpm, so no concrete
+// package command is printed. A specific command may only ever be an ADDITIONAL HINT
+// where the originating package manager is actually known — never the contract.
+func emitRecovery(s state.InstallState, log *logging.Logger) {
+	class := s.RecoveryClass()
+	log.Result("[NFTBan] RECOVERY_CLASS=%s", class)
+	switch class {
+	case state.RecoveryRepair:
+		log.Result("[NFTBan] To retry: /usr/lib/nftban/bin/nftban-installer --repair")
+	default:
+		log.Result("[NFTBan] To retry: re-run the normal NFTBan update/install transaction")
+		log.Result("[NFTBan]   once the active convergence operation has finished.")
+		log.Result("[NFTBan] Do NOT use --repair for this state: it resumes at the switch phase")
+		log.Result("[NFTBan]   and skips the boot-projection render, so convergence cannot be")
+		log.Result("[NFTBan]   established and the run would end DEGRADED rather than COMMITTED.")
+	}
 }
 
 // writeHistory writes a JSON entry to /var/lib/nftban/update-history.json
