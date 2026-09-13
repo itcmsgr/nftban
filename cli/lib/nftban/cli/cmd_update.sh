@@ -431,9 +431,17 @@ _cmd_update_main() {
 # LOCAL render helper only — NOT a general state-file parsing authority.
 #
 # Reachability: this runs only inside the DEGRADED branch, entered only after INSTALL_STATE
-# was read as "DEGRADED" from a readable file (a missing/unreadable state file defaults to
-# COMMITTED upstream — see out-of-scope UPDATE-STATE-READ-FAILURE-DEFAULTS-COMMITTED), so
-# file-missing / file-unreadable CANNOT reach here — those cases are not handled here.
+# was read as "DEGRADED" from a readable file, so file-missing / file-unreadable CANNOT reach
+# here — those cases are not handled here.
+#
+# ⛔ CORRECTED v1.230.0 P0-D2. This comment used to read "a missing/unreadable state file
+#    defaults to COMMITTED upstream". THAT IS NO LONGER TRUE AND MUST NOT BE RESTORED: the
+#    fail-open COMMITTED acquisition default was REMOVED, and an absent or unreadable state
+#    file now resolves to INDETERMINATE (rc=3), never to success. Pre-fix, a missing state
+#    file produced rc=0, DELETED state/update_failed and wrote history "success" — a measured
+#    defect, not a hypothetical. The stale sentence survived the fix and was a standing
+#    invitation to re-introduce it; see UPDATE-STATE-READ-FAILURE-DEFAULTS-COMMITTED for the
+#    original defect this closed.
 #
 # E1a (BUG-V1_222_1-UPDATE-STATEFILE-GREP-UNGUARDED): a bare `x=$(grep '^KEY=' file | cut ...)`
 #   aborts the renderer under `set -Eeuo pipefail` when KEY is ABSENT (grep rc=1 → pipefail →
