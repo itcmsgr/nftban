@@ -36,6 +36,12 @@ on:
     # analyze RAN, govulncheck RAN, gate reason "freshness event (schedule)".
     - cron: '0 6 * * 1'  # Weekly: Monday 6:00 AM UTC
   workflow_dispatch:
+    inputs:
+      force_full_analysis:
+        description: "Force full Go release proof regardless of change detection"
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: secure-go-${{ github.ref }}
@@ -89,8 +95,9 @@ jobs:
     # false, analyze is skipped — and the gate below classifies that as UNKNOWN, not "OK".
     if: >-
       always() && (
-        needs.filter.outputs.go_changed == 'true' ||
+        inputs.force_full_analysis ||
         needs.filter.outputs.release_changed == 'true' ||
+        needs.filter.outputs.go_changed == 'true' ||
         github.event_name == 'schedule' ||
         github.event_name == 'workflow_dispatch'
       )
@@ -364,7 +371,8 @@ jobs:
           RELEASE_CHANGED="${{ needs.filter.outputs.release_changed }}"
           ANALYZE_RESULT="${{ needs.analyze.result }}"
           EVENT="${{ github.event_name }}"
-          echo "filter.result=${FILTER_RESULT} go_changed='${GO_CHANGED}' release_changed='${RELEASE_CHANGED}' analyze.result=${ANALYZE_RESULT} event=${EVENT}"
+          FORCE_FULL="${{ inputs.force_full_analysis }}"
+          echo "filter.result=${FILTER_RESULT} go_changed='${GO_CHANGED}' release_changed='${RELEASE_CHANGED}' analyze.result=${ANALYZE_RESULT} event=${EVENT} force_full='${FORCE_FULL}'"
 
           # ---- EVENT AUTHORITY (evaluated FIRST, independent of the filter) ----
           # A freshness event requires the scan because of the EVENT, never because the
@@ -372,7 +380,10 @@ jobs:
           # runs from depending on paths-filter health, which has no diff base on schedule.
           SCAN_REQUIRED=false
           REQUIRED_BECAUSE=""
-          if [[ "$EVENT" == "schedule" || "$EVENT" == "workflow_dispatch" ]]; then
+          if [[ "$FORCE_FULL" == "true" ]]; then
+            SCAN_REQUIRED=true
+            REQUIRED_BECAUSE="explicit force_full_analysis"
+          elif [[ "$EVENT" == "schedule" || "$EVENT" == "workflow_dispatch" ]]; then
             SCAN_REQUIRED=true
             REQUIRED_BECAUSE="freshness event (${EVENT})"
           else
