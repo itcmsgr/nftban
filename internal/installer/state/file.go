@@ -67,6 +67,7 @@ func LockFilePath(stateDir string) string {
 //	PHASE_REACHED       — last phase name reached
 //	FAILURE_REASON      — human-readable failure description or ""
 //	PREFLIGHT_PASSED    — "1" or "0"
+//	CONVERGENCE_VERIFIED — post-update convergence verdict (v1.230.0 Gate 6R)
 //	REBUILD_EXIT_CODE   — rebuild process exit code (int)
 //	REBUILD_DURATION_MS — rebuild wall-clock duration in milliseconds
 //	SERVICES_ENABLED    — comma-separated list of enabled service units
@@ -119,6 +120,19 @@ type StateFile struct {
 	// the projection). CONVERGED | FAILED | "" (not evaluated). A FAILED value means
 	// configured management IPs are not projected into the running set.
 	WhitelistConvergence string
+
+	// ConvergenceVerified — v1.230.0 Gate 6R. The POST-UPDATE CONVERGENCE verdict
+	// (switchop.VerifyPostUpdateConvergence), persisted as CONVERGENCE_VERIFIED.
+	//
+	// ⛔ PACKAGE UPDATED != PROJECTION GENERATED != PROJECTION VALIDATED
+	//    != KERNEL RULESET APPLIED != RUNTIME CONVERGED.
+	// The installer used to collapse those, so an update could be reported successful
+	// with convergence never proven. This carries the phase verdict to the assertion
+	// that gates COMMITTED, exactly as WHITELIST_CONVERGENCE above does.
+	//
+	// "" means NOT EVALUATED (a pre-v1.230.0 record, or a path that does not evaluate
+	// it). ⛔ It is never read as VERIFIED.
+	ConvergenceVerified string
 
 	HealthResourceState         string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
 	HealthResourceProfile       string // resource tier: small/medium/large
@@ -295,6 +309,7 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "PHASE_REACHED=%s\n", sf.PhaseReached)
 	fmt.Fprintf(w, "FAILURE_REASON=%s\n", sf.FailureReason)
 	fmt.Fprintf(w, "PREFLIGHT_PASSED=%s\n", fmtBool(sf.PreflightPassed))
+	fmt.Fprintf(w, "CONVERGENCE_VERIFIED=%s\n", sf.ConvergenceVerified)
 	fmt.Fprintf(w, "REBUILD_EXIT_CODE=%d\n", sf.RebuildExitCode)
 	fmt.Fprintf(w, "REBUILD_DURATION_MS=%d\n", sf.RebuildDurationMs)
 	fmt.Fprintf(w, "SERVICES_ENABLED=%s\n", sf.ServicesEnabled)
@@ -378,6 +393,8 @@ func (sf *StateFile) Read() error {
 			sf.FailureReason = val
 		case "PREFLIGHT_PASSED":
 			sf.PreflightPassed = (val == "1" || val == "true")
+		case "CONVERGENCE_VERIFIED":
+			sf.ConvergenceVerified = val
 		case "REBUILD_EXIT_CODE":
 			sf.RebuildExitCode, _ = strconv.Atoi(val)
 		case "REBUILD_DURATION_MS":

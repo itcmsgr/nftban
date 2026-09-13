@@ -545,6 +545,15 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	}
 
 	// 7. REBUILD — FATAL on failure (v1.70.0 invariant)
+	//
+	// ⛔ v1.230.0 Gate 6R: READ THE EFFECTIVE CONVERGENCE GENERATION FIRST.
+	// It is the ONE post-update fact not sourced from the rebuild's own report — the
+	// counter is written by nftban_plan_txn_commit, which the rebuild reaches only from
+	// disposition COMPLETE. Without a BEFORE reading there is no delta, and the AFTER
+	// value alone proves nothing.
+	//     A COMPONENT'S OWN SUCCESS CLAIM IS NOT VERIFICATION OF THAT CLAIM.
+	generationBefore := switchop.ReadConvergenceGeneration(exec)
+	log.Info("effective convergence generation before rebuild: %d (-1 = not observable)", generationBefore)
 	rebuildStart := time.Now()
 	// v1.230.0 Gate 6R: ctx is passed so a REFUSED rebuild can be RETRIED inside the
 	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —
@@ -589,6 +598,32 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 		// The classification is taken from a TYPED ERROR produced from the shell's
 		// machine-readable contract. ⛔ It is never derived from message text.
 		return sf.Transition(stateForRebuildError(err), state.PhaseSwitch, err.Error())
+	}
+
+	// 7b. ⛔ v1.230.0 Gate 6R — POST-UPDATE CONVERGENCE CONTRACT.
+	//
+	//	PACKAGE UPDATED != PROJECTION GENERATED != PROJECTION VALIDATED
+	//	                != KERNEL RULESET APPLIED != RUNTIME CONVERGED
+	//
+	// The rebuild has reported success. That is a CLAIM. This verifies it against
+	// evidence the rebuild did not produce: the projection's own nft -c validity, an
+	// observed advance of the effective convergence generation, and the presence of the
+	// required kernel tables. The verdict is persisted and gates COMMITTED through the
+	// post_update_convergence_verified assertion in phaseValidate — the same route
+	// WHITELIST_CONVERGENCE takes.
+	//
+	// Read-only, and NON-FATAL to this phase: the SSH-safety chain from Rebuild to
+	// RemoveEmergencySSH must not gain a new abort point, and a verification result is
+	// not a reason to leave the host mid-transition. The verdict owns the outcome.
+	conv := switchop.VerifyPostUpdateConvergence(exec, log, switchop.ConvergenceInputs{
+		ProjectionGenerated:  pd.bootProjectionReady,
+		ApplyClaimedComplete: rebuildObs.Disposition == switchop.DispositionComplete && rebuildObs.Committed,
+		ApplyDeferred:        rebuildObs.Disposition == switchop.DispositionDeferredRuntime,
+		GenerationBefore:     generationBefore,
+	})
+	sf.ConvergenceVerified = string(conv.Verdict)
+	if conv.Verdict != switchop.ConvergenceVerified {
+		log.Warn("post-update convergence %s: %s", conv.Verdict, conv.Detail)
 	}
 
 	// 8. Post-rebuild: re-assert SSH in live sets (belt-and-suspenders)
@@ -791,6 +826,12 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// recorded convergence truth, and "" on a pre-v1.228.5 record, which the
 	// assertion reports as UNKNOWN rather than as a pass or a failure.
 	opts.WhitelistConvergence = sf.WhitelistConvergence
+	// v1.230.0 Gate 6R: feed the post-update convergence verdict recorded by phaseSwitch
+	// so an unproven convergence ends the run DEGRADED instead of COMMITTED. On a
+	// repair/resume that starts at PhaseValidate this is the value read from disk — the
+	// last recorded convergence truth, and "" on a pre-v1.230.0 record, which the
+	// assertion reports as UNKNOWN rather than as a pass or a failure.
+	opts.ConvergenceVerified = sf.ConvergenceVerified
 	// v1.223.0 verdict-truth (owner ruling: per-pass resolution): VALIDATE_1
 	// resolves ONE authoritative health verdict for the health_resource_policy_active
 	// assertion. When phaseConfigure ran this process pd.healthResource is populated

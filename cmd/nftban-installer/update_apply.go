@@ -46,12 +46,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/update"
 )
 
@@ -184,24 +186,92 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// door. A production rebuild measured 318s. 219bd781 exempted switchop.Rebuild
 	// but not this path. Rebuild is bounded by its own operations, not by a caller
 	// wall-clock guess.
-	rebuildRes := exec.RunContext(context.Background(), rebuildCmd, rebuildArg1, rebuildArg2)
+	// ⛔ v1.230.0 Gate 6R — THIS PLANE CARRIED BOTH LIMBS OF THE dns1 DEFECT.
+	// It mapped `rc != 0` straight to FAILED_REBUILD (so a REFUSED rebuild that never
+	// started and never touched the firewall was recorded as a failed one), and it never
+	// went through the contract-bearing entry point, so every failure here also persisted
+	// REBUILD_EXIT_CODE=0 / REBUILD_DURATION_MS=0.
+	//
+	// ⛔ THE PLANES ARE NOT FLATTENED. No --install-context is passed, so the shell keeps
+	// its INTERACTIVE FAIL-FAST lock policy and there is deliberately NO refusal retry
+	// here — retrying would invent a lifecycle wait this plane never declared. What does
+	// travel is the contract and the measurement.
+	generationBefore := switchop.ReadConvergenceGeneration(exec)
+	once := switchop.RebuildOnceNoRetry(exec, log, rebuildCmd, []string{rebuildArg1, rebuildArg2})
+	rebuildRes := once.Observation
 	log.PhaseEnd("Rebuild")
 	meta.endPhase(log, "Rebuild", rebuildRes.ExitCode == 0)
 
-	if rebuildRes.ExitCode != 0 {
-		// Rebuild failed. Its own recovery/rollback path already ran
-		// (nftban_rebuild_recovery.sh). We propagate the exit code WITHOUT
-		// reinterpretation — no retry, no "helpful" fallback, no error
-		// downgrading. The installer state machine transitions to a
-		// rebuild-failure state so the outer audit trail is honest.
-		log.Error("update apply: rebuild FAILED (exit=%d) — rebuild recovery already ran", rebuildRes.ExitCode)
-		if rebuildRes.Stderr != "" {
-			log.Error("  rebuild stderr: %s", truncate(rebuildRes.Stderr, 500))
+	// RECORD THE MEASUREMENT BEFORE ANY TRANSITION PERSISTS THE RECORD.
+	if rebuildRes.Observed {
+		sf.RebuildExitCode = rebuildRes.ExitCode
+		sf.RebuildDurationMs = rebuildRes.Duration.Milliseconds()
+		log.Info("recorded rebuild evidence: REBUILD_EXIT_CODE=%d REBUILD_DURATION_MS=%d",
+			sf.RebuildExitCode, sf.RebuildDurationMs)
+	}
+
+	// ── REFUSED: the rebuild NEVER STARTED and the firewall was NOT modified ──────
+	if once.Result != nil && once.Result.Disposition == switchop.DispositionRefused {
+		log.Error("update apply: rebuild REFUSED (%s) — it did not start; the firewall was not modified and existing enforcement is unchanged",
+			strings.Join(once.Result.ReasonCodes, ","))
+		log.Error("  this plane is fail-fast by policy: no retry is attempted here. Re-run 'nftban update apply' once the convergence lock is free.")
+		_ = sf.Transition(state.StateRebuildRefusedBusy, state.PhaseSwitch,
+			"rebuild REFUSED during update apply: the convergence lock was held; no rebuild executed and the effective kernel generation is NOT attributable to this transaction")
+		fmt.Fprintln(os.Stderr, "update apply: rebuild REFUSED — no rebuild ran, the firewall was not modified; retry when the convergence lock is free")
+		return state.StateRebuildRefusedBusy.ExitCode()
+	}
+
+	// ── NO CONTRACT: classify by whether execution occurred, never by rc alone ────
+	if once.ReadErr != nil {
+		if !once.Executed {
+			log.Error("update apply: no rebuild result contract AND no execution witness — execution was NOT established (%v)", once.ReadErr)
+			_ = sf.Transition(state.StateRebuildNotExecuted, state.PhaseSwitch,
+				"rebuild produced no contract and no execution witness during update apply: execution was NOT established, so this is not a rebuild failure")
+			fmt.Fprintln(os.Stderr, "update apply: the rebuild did not execute — nothing was modified; retry")
+			return state.StateRebuildNotExecuted.ExitCode()
+		}
+		log.Error("update apply: rebuild EXECUTED but published no usable result contract (exit=%d): %v", rebuildRes.ExitCode, once.ReadErr)
+		_ = sf.Transition(state.StateFailedRebuild, state.PhaseSwitch,
+			fmt.Sprintf("rebuild produced no usable result contract during update apply (exit %d); execution WAS established by the witness", rebuildRes.ExitCode))
+		fmt.Fprintf(os.Stderr, "update apply: rebuild failed (exit %d)\n", rebuildRes.ExitCode)
+		return state.StateFailedRebuild.ExitCode()
+	}
+
+	// ── A REBUILD THAT EXECUTED AND DID NOT COMPLETE ─────────────────────────────
+	// Its own recovery/rollback path already ran (nftban_rebuild_recovery.sh). No retry,
+	// no "helpful" fallback, no error downgrading.
+	if once.Result.Disposition != switchop.DispositionComplete {
+		log.Error("update apply: rebuild %s (exit=%d) — rebuild recovery already ran", once.Result.Disposition, rebuildRes.ExitCode)
+		if once.Stderr != "" {
+			log.Error("  rebuild stderr: %s", truncate(once.Stderr, 500))
 		}
 		_ = sf.Transition(state.StateFailedRebuild, state.PhaseSwitch,
-			"rebuild failed during update apply")
+			fmt.Sprintf("rebuild did not complete during update apply: disposition %s (exit %d)", once.Result.Disposition, rebuildRes.ExitCode))
 		fmt.Fprintf(os.Stderr, "update apply: rebuild failed (exit %d)\n", rebuildRes.ExitCode)
-		return rebuildRes.ExitCode
+		return state.StateFailedRebuild.ExitCode()
+	}
+
+	// ── T3: THE CLAIM IS NOT THE VERIFICATION ────────────────────────────────────
+	// The rebuild says COMPLETE. The effective convergence generation is written by a
+	// DIFFERENT function (nftban_plan_txn_commit), which the rebuild reaches only from
+	// COMPLETE — so a COMPLETE that did not advance it is a claim the kernel-side record
+	// does not corroborate.
+	//
+	// ⛔ SCOPE NOTE: only this leg of the post-update convergence contract is applied on
+	// this plane. The projection nft -c leg would require `nft -c` to enter the apply
+	// command whitelist (internal/installer/update/apply_contract.go), which is a
+	// contract-document decision this lane does not take on its own.
+	generationAfter := switchop.ReadConvergenceGeneration(exec)
+	if generationAfter >= 0 && generationBefore >= 0 && generationAfter <= generationBefore {
+		log.Error("update apply: the rebuild reported COMPLETE but the effective convergence generation did NOT advance (%d -> %d)",
+			generationBefore, generationAfter)
+		log.Error("  the commit that advances it is reachable only from COMPLETE; the kernel-side record does not corroborate the claim")
+		sf.ConvergenceVerified = string(switchop.ConvergenceNotConverged)
+		_ = sf.Transition(state.StateFailedRebuild, state.PhaseValidate,
+			fmt.Sprintf("rebuild claimed COMPLETE but the effective convergence generation did not advance (%d -> %d) — convergence NOT verified",
+				generationBefore, generationAfter))
+		fmt.Fprintln(os.Stderr, "update apply: rebuild claimed success but convergence was NOT verified")
+		return state.StateFailedRebuild.ExitCode()
 	}
 
 	// 3. Validator gate — truth gate per G3-U8.

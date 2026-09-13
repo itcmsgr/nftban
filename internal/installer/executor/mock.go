@@ -87,6 +87,9 @@ type MockExecutor struct {
 
 	// NftTables maps "family:table" -> exists.
 	NftTables map[string]bool
+
+	// NftCheckErr is returned by NftCheck when non-nil (test affordance only).
+	NftCheckErr error
 	// NftDeleteTableCalls records every NftDeleteTable invocation as
 	// "family:table", in order. Deletion is destructive, so tests assert on
 	// the CALL rather than only on the resulting state: a guard that must not
@@ -428,7 +431,14 @@ func (m *MockExecutor) NftDeleteTable(family, table string) error {
 	return nil
 }
 
-func (m *MockExecutor) NftCheck(_ string) error { return nil }
+// NftCheckErr, when set, is returned by NftCheck. The real executor runs `nft -c`;
+// without a way to make that FAIL, the post-update convergence contract's
+// projection_valid leg could only ever be tested in its passing direction.
+func (m *MockExecutor) NftCheck(_ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.NftCheckErr
+}
 
 // --- systemd ---
 

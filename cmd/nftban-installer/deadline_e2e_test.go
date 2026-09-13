@@ -40,6 +40,21 @@ const testBudget = 120 * time.Millisecond
 type rebuildSim struct {
 	dur  time.Duration // scaled wall-clock the rebuild occupies
 	exit int           // its exit code
+
+	// v1.230.0 Gate 6R knobs. Zero values keep the pre-existing behaviour: a
+	// successful rebuild that also advances the effective convergence generation,
+	// exactly as nftban_plan_txn_commit does on a real COMPLETE.
+	//
+	// claimOnly models T3 — the rebuild reports COMPLETE while the kernel-side
+	// generation does NOT move. That combination is impossible if the shell is
+	// correct, which is precisely why it is the check that cannot be satisfied by
+	// trusting the rebuild's own claim.
+	claimOnly bool
+	// projectionInvalid models T4 — a published projection that `nft -c` rejects.
+	projectionInvalid bool
+	// noProjection models a run where the authoritative render did not establish the
+	// projection IN THIS RUN.
+	noProjection bool
 }
 
 type e2eResult struct {
@@ -79,9 +94,31 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 	}
 	m.Files["/etc/os-release"] = []byte("ID=ubuntu\nVERSION_ID=\"24.04\"\n")
 
+	// v1.230.0 Gate 6R fixture surface. A real host has a published boot projection
+	// and an effective convergence generation; without them the convergence contract
+	// would report NOT_CONVERGED for reasons unrelated to what each case is testing.
+	// ⛔ The projection is /etc/nftban/generated/nftban-boot.nft — NOT the retired
+	// legacy include /etc/nftban/nftables.conf.
+	if !sim.noProjection {
+		m.Files[switchop.BootProjectionPath] = []byte("table ip nftban {\n}\n")
+	}
+	m.Files[switchop.ConvergenceGenerationPath] = []byte("7\n")
+	m.NftTables["ip:nftban"] = true
+	m.NftTables["ip6:nftban"] = true
+	if sim.projectionInvalid {
+		m.NftCheckErr = fmt.Errorf("syntax error, unexpected junk")
+	}
+
 	// Intercept the rebuild: occupy `dur`, then return `exit`.
 	invoked := false
 	m.RunHook = func(name string, args []string) (executor.Result, bool) {
+		// The authoritative render fails, so bootProjectionReady is FALSE for this run.
+		// ⛔ Modelled through the AUTHORITATIVE OPERATION, not by deleting a file:
+		// readiness is established by the render succeeding in this run, never by
+		// os.Stat / existence / mtime.
+		if sim.noProjection && name == fhs.NftbanCLI && len(args) >= 2 && args[0] == "firewall" && args[1] == "render-boot" {
+			return executor.Result{ExitCode: 1, Stderr: "render refused"}, true
+		}
 		if name == fhs.NftbanCLI && len(args) >= 2 && args[0] == "firewall" && args[1] == "rebuild" {
 			invoked = true
 			time.Sleep(sim.dur)
@@ -107,6 +144,11 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 			// REBUILD_NOT_EXECUTED — proving nothing about deadlines.
 			if witnessPath != "" && opID != "" {
 				_ = os.WriteFile(witnessPath, []byte("operation_id="+opID+"\n"), 0o640)
+			}
+			// The generation advances only where a real COMPLETE would advance it.
+			// ⛔ claimOnly deliberately withholds it while still reporting COMPLETE.
+			if sim.exit == 0 && !sim.claimOnly {
+				m.Files[switchop.ConvergenceGenerationPath] = []byte("8\n")
 			}
 			if resultPath != "" {
 				// ⛔ THE DISPOSITION MUST BE ONE THE CONTRACT DEFINES. This fixture used

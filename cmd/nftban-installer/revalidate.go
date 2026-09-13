@@ -122,6 +122,13 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// assertion logs the remediation, which requires an installer run to re-record.
 	// A pre-v1.228.5 record has no such line → "" → reported UNKNOWN, never FAILED.
 	opts.WhitelistConvergence = cur.WhitelistConvergence
+	// v1.230.0 Gate 6R: same discipline as the whitelist verdict above — carry the
+	// PERSISTED convergence verdict, never re-derive it. The BEFORE reading of the
+	// effective generation belongs to the run that did the rebuild; revalidate has no
+	// rebuild and could only see an AFTER value, which proves nothing. A recorded
+	// NOT_CONVERGED therefore keeps the record DEGRADED (revalidate must not launder it
+	// into COMMITTED); "" is reported UNKNOWN, never VERIFIED.
+	opts.ConvergenceVerified = cur.ConvergenceVerified
 	results := validate.RunAssertionsWithOpts(exec, sshPort, log, opts)
 
 	// Preserve recorded identity the Transition writer re-emits. main() blanked

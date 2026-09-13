@@ -246,6 +246,14 @@ type RebuildObservation struct {
 	ExitCode int
 	Duration time.Duration
 	Attempts int
+
+	// Disposition is the shell's own report for the verdict-bearing attempt, "" when no
+	// usable contract was obtained. ⛔ IT IS A CLAIM, NOT A VERIFICATION — carried so the
+	// post-update convergence contract can TEST it against kernel-side evidence
+	// (VerifyPostUpdateConvergence), never so a caller can trust it.
+	Disposition RebuildDisposition
+	// Committed is the contract's own transaction.committed flag. Same warning.
+	Committed bool
 }
 
 // Rebuild runs "nftban firewall rebuild" and returns an error if it fails.
@@ -291,6 +299,9 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) (
 		// the measurement that actually happened, including the fatal ones — the dns1
 		// record was wrong precisely on a fatal path.
 		obs = RebuildObservation{Observed: true, ExitCode: last.res.ExitCode, Duration: last.elapsed, Attempts: attempt}
+		if last.result != nil {
+			obs.Disposition, obs.Committed = last.result.Disposition, last.result.Transaction.Committed
+		}
 
 		// ⛔ INTERRUPTION IS CLASSIFIED FIRST, AND IT IS FATAL.
 		//
@@ -474,7 +485,59 @@ func markInstallFailed(exec executor.Executor, log *logging.Logger) {
 // ⛔ EVERY ATTEMPT IS ITS OWN OPERATION: fresh operation id, fresh result path, fresh
 // witness path. Reusing them across a retry would recreate exactly the stale-record and
 // cross-run hazards the per-operation contract was introduced to remove.
+// RebuildOnceResult is one contract-bearing rebuild invocation, for a caller plane that
+// owns its own classification.
+type RebuildOnceResult struct {
+	Observation RebuildObservation
+	// Result is the parsed contract, or nil when none was usable.
+	Result *RebuildResult
+	// ReadErr is why no usable contract was obtained.
+	ReadErr error
+	// Executed — did the rebuild cross the execution boundary? Established from the
+	// witness, or trivially from a contract that exists at all.
+	Executed bool
+	Stderr   string
+}
+
+// RebuildOnceNoRetry runs ONE rebuild on the CALLER'S OWN command path, obtains the
+// result contract and the execution witness, and DOES NOT RETRY.
+//
+// ⛔ THE TWO PLANES ARE NOT FLATTENED, DELIBERATELY.
+// `nftban update apply` invokes the rebuild WITHOUT --install-context, so the shell
+// wrapper applies the INTERACTIVE FAIL-FAST lock policy: it refuses immediately instead
+// of waiting out a bounded queue. Retrying under that policy would be inventing a
+// lifecycle wait the plane never declared, and the doctrine here is that context is
+// PASSED, never inferred. So the refusal RETRY behaviour of the installer plane does not
+// travel; a refusal on this plane is reported to the caller at once.
+//
+// What DOES apply on every plane: a refusal is a CONTRACT, not a bare rc, and an
+// observation is a MEASUREMENT, not a zero-value.
+//
+//	SAME FEATURE NAME != SAME RUNTIME AUTHORITY.
+func RebuildOnceNoRetry(exec executor.Executor, log *logging.Logger, command string, baseArgs []string) RebuildOnceResult {
+	out := RebuildOnceResult{}
+	resultDir := rebuildResultBaseDir
+	if err := os.MkdirAll(resultDir, 0o750); err != nil {
+		out.ReadErr = fmt.Errorf("cannot allocate rebuild result directory %s: %w", resultDir, err)
+		return out
+	}
+	a := runRebuildAttemptOn(exec, log, resultDir, command, baseArgs, false)
+	out.Observation = RebuildObservation{
+		Observed: true, ExitCode: a.res.ExitCode, Duration: a.elapsed, Attempts: 1,
+	}
+	if a.result != nil {
+		out.Observation.Disposition, out.Observation.Committed = a.result.Disposition, a.result.Transaction.Committed
+	}
+	out.Result, out.ReadErr, out.Executed, out.Stderr = a.result, a.readErr, a.executed, a.res.Stderr
+	return out
+}
+
 func runRebuildAttempt(exec executor.Executor, log *logging.Logger, resultDir string) rebuildAttempt {
+	return runRebuildAttemptOn(exec, log, resultDir, fhs.NftbanCLI, []string{"firewall", "rebuild"}, true)
+}
+
+func runRebuildAttemptOn(exec executor.Executor, log *logging.Logger, resultDir string,
+	command string, baseArgs []string, installContext bool) rebuildAttempt {
 	// v1.229.12 P12-A01: THE CALLER ALLOCATES A UNIQUE PER-OPERATION RESULT PATH.
 	// ⛔ Never a fixed global path — a shared name reintroduces stale-result and
 	// concurrency hazards across runs.
@@ -497,12 +560,18 @@ func runRebuildAttempt(exec executor.Executor, log *logging.Logger, resultDir st
 	// deadline bounds the REFUSAL RETRIES, never the execution of a rebuild that has
 	// actually started.
 	a := rebuildAttempt{}
-	started := time.Now()
-	a.res = exec.RunContext(context.Background(), fhs.NftbanCLI, "firewall", "rebuild",
-		"--install-context", "--result-file", resultPath, "--operation-id", opID,
+	args := append([]string{}, baseArgs...)
+	label := command + " " + strings.Join(baseArgs, " ")
+	if installContext {
+		args = append(args, "--install-context")
+		label += " --install-context"
+	}
+	args = append(args, "--result-file", resultPath, "--operation-id", opID,
 		"--execution-witness", witnessPath)
+	started := time.Now()
+	a.res = exec.RunContext(context.Background(), command, args...)
 	a.elapsed = time.Since(started)
-	log.CmdResult("nftban firewall rebuild --install-context", a.res.ExitCode, a.res.Stderr)
+	log.CmdResult(label, a.res.ExitCode, a.res.Stderr)
 	// The measurement goes in the log NEXT TO the exit code it belongs with, so the log
 	// and install_state can be checked against each other rather than taken on trust.
 	log.Info("rebuild subprocess observed: exit=%d elapsed=%s", a.res.ExitCode, a.elapsed.Round(time.Millisecond))
