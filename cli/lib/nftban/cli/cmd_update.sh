@@ -99,6 +99,21 @@ done
 # Cleanup temporary variables
 unset _UPDATE_CLI_DIR _update_modules _module _module_path
 
+# v1.230.0 P0-D2: the install-transaction truth authority (the positive
+# assertion `state == COMMITTED`, its classifier and its operator block) lives in
+# core/nftban_output.sh. On the real CLI path it is ALREADY loaded: cli/sbin/nftban
+# sources core/nftban_output.sh unconditionally — and hard-exits when it is absent —
+# BEFORE dispatching to any cli/cmd_*.sh (cli/sbin/nftban:1188-1195). This soft load
+# covers direct-source contexts (tests, tooling) so there is never a SECOND COPY of
+# the predicate to drift. If it still cannot be resolved, _update_finalize_verdict
+# fails CLOSED to INDETERMINATE — it never falls back to the success arm.
+if ! declare -F nftban_install_state_classify >/dev/null 2>&1; then
+    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" 2>/dev/null || true
+    fi
+fi
+
 # =============================================================================
 # HELPERS
 # =============================================================================
@@ -866,9 +881,18 @@ _cmd_update_main_locked() {
     # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.6)
     _update_phase 6 "Finalize"
     local _install_state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
-    local _installer_state="COMMITTED"  # default: green if state file absent (older installs)
-    if [[ -f "$_install_state_file" ]]; then
-        _installer_state=$(grep -m1 '^INSTALL_STATE=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "COMMITTED")
+    # v1.230.0 P0-D2 (RELEASE BLOCKER): the pre-v1.230.0 acquisition defaulted
+    # _installer_state to COMMITTED when the state file was absent or unreadable
+    # — "I could not read the outcome" was spelled "the outcome was success".
+    # ABSENT_QUERY IS NOT RESOURCE_ABSENT and an unreadable file is not a pass.
+    # It now reports the literal verbatim, or the empty string when there is no
+    # readable INSTALL_STATE; the classifier below turns that into
+    # INDETERMINATE, which writes no success and deletes no failure marker.
+    local _installer_state=""
+    if declare -F nftban_install_state_field >/dev/null 2>&1; then
+        _installer_state=$(nftban_install_state_field "$_install_state_file" "INSTALL_STATE") || _installer_state=""
+    elif [[ -r "$_install_state_file" ]]; then
+        _installer_state=$(grep -m1 '^INSTALL_STATE=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "")
     fi
 
     # v1.199 forensics: post-verify snapshot (binary swapped, timers restored,
@@ -889,7 +913,80 @@ _cmd_update_main_locked() {
     # the summary and operator-readiness reflect only warnings that actually need action.
     _update_classify_warnings "$_ilog_file" "$_ilog_before_lines"
 
-    case "$_installer_state" in
+    # v1.230.0 P0-D2: the terminal verdict and the STATE MUTATIONS it authorises
+    # live in a separately callable function so a regression can assert the
+    # FILESYSTEM EFFECTS of each state class (the history row that gets written,
+    # the failure marker that does or does not get deleted) rather than only the
+    # printed text. Every variable it reads is a local of this function and is
+    # visible to it through bash dynamic scoping.
+    local _fv_rc=0
+    _update_finalize_verdict || _fv_rc=$?
+    return $_fv_rc
+}
+
+# -----------------------------------------------------------------------------
+# _update_finalize_verdict  (v1.230.0 P0-D2, RELEASE BLOCKER)
+#
+# ⛔ POSITIVE ASSERTION. Exactly one class — COMMITTED — authorises the success
+#    verdict, the history row "success" and the deletion of state/update_failed.
+#    Everything else is not-success, INCLUDING a state literal that does not
+#    exist yet.
+#
+# What this replaces, and why a longer failure list would not have been a fix:
+# the pre-v1.230.0 case dispatched on the raw literal with the arms
+# COMMITTED, DEGRADED, a start-anchored FAILED-prefix glob, and a catch-all. The
+# glob anchors at the start of the literal, so INSTALL_FAILED (a terminal token — see
+# internal/installer/postinstall/verify.go:80 and
+# scripts/ci/tests/lifecycle_deb_matrix.sh:970) did not match it and fell to
+# `*)`, which logged "falling back to legacy green verdict", called
+# _update_write_history … "success" AND `rm -f state/update_failed`. A FAILED
+# UPDATE WAS RECORDED AS SUCCESSFUL AND ITS FAILURE MARKER WAS DELETED. Every
+# non-FAILED_-prefixed literal in internal/installer/state/machine.go inherits
+# that, and so would every literal a future release adds.
+#
+# Reads (locals of _cmd_update_main_locked, via dynamic scoping):
+#   _install_state_file _installer_state current_version new_version
+#   install_type _update_duration _summary_warnings health_status
+#   _ilog_file _ilog_before_lines UPDATE_LOG_FILE
+# Returns: 0 committed · 1 degraded · 2 not committed · 3 indeterminate
+# -----------------------------------------------------------------------------
+_update_finalize_verdict() {
+    # Adjudicate ONCE, from the single shared authority in
+    # core/nftban_output.sh. If that authority is somehow not loaded we fail
+    # CLOSED to INDETERMINATE — never to the success arm.
+    local _verdict_class="INDETERMINATE"
+    if declare -F nftban_install_state_classify >/dev/null 2>&1; then
+        _verdict_class=$(nftban_install_state_classify "$_install_state_file")
+    else
+        _update_log WARN "install-state classifier unavailable; treating the transaction outcome as INDETERMINATE (never as success)"
+    fi
+
+    # Wording only — the verdict is already decided above.
+    local _verdict_unknown_note=""
+    if [[ "$_verdict_class" == "NOT_COMMITTED" ]] \
+       && declare -F nftban_install_state_is_known_literal >/dev/null 2>&1 \
+       && ! nftban_install_state_is_known_literal "$_installer_state"; then
+        _verdict_unknown_note=" (UNKNOWN STATE — not a literal this build recognises)"
+    fi
+
+    # Route the classes onto the operator blocks. DEGRADED keeps its own
+    # long-standing block; CONTRADICTORY joins the not-committed block (a state
+    # file that says COMMITTED while recording a failure reason cannot have come
+    # from the writer — internal/installer/state/file.go applyTerminalHygiene).
+    # (if/elif, not a second `case`: there must be exactly ONE consolidated verdict
+    #  case in this file — the dispatch below — and a structural guard counts it.)
+    if [[ "$_verdict_class" == "COMMITTED" ]]; then
+        :
+    elif [[ "$_verdict_class" == "CONTRADICTORY" ]]; then
+        _verdict_class="NOT_COMMITTED"
+        _verdict_unknown_note=" (CONTRADICTORY — COMMITTED recorded beside a FAILURE_REASON)"
+    elif [[ "$_verdict_class" == "NOT_COMMITTED" ]]; then
+        [[ "$_installer_state" == "DEGRADED" ]] && _verdict_class="DEGRADED"
+    else
+        _verdict_class="INDETERMINATE"
+    fi
+
+    case "$_verdict_class" in
         COMMITTED)
             # Clean success path — emit the green block (existing behavior)
             _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
@@ -979,6 +1076,14 @@ _cmd_update_main_locked() {
             printf "  %-20s %s\n" "Operational:" "YES (kernel firewall may be active)"
             printf "  %-20s %s\n" "Upgrade readiness:" "FAIL"
             printf "  %-20s %s\n" "Action needed:" "review / repair (below)"
+            # v1.230.0 P0-D4: DEGRADED is not COMMITTED, so the same operator block
+            # applies — the state and when it was recorded, TRANSACTION truth kept
+            # separate from ENFORCEMENT truth, the cause, the exact recovery command,
+            # and the fact that a reboot is not neutral while it stands.
+            if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
+                nftban_render_install_transaction_truth "$_install_state_file" \
+                    "kernel firewall may well be active — verify with 'nftban health'; that is NOT evidence this upgrade completed" || true
+            fi
             echo ""
             if [[ -n "$_failure_reason" ]]; then
                 echo "  Reason: $_failure_reason"
@@ -1014,8 +1119,16 @@ _cmd_update_main_locked() {
             return 1
             ;;
 
-        FAILED_*|FAILED)
-            # Installer reported terminal failure — single consolidated FAILED block
+        NOT_COMMITTED)
+            # v1.230.0 P0-D2: this arm is now reached by POSITIVE ASSERTION —
+            # every readable install_state literal that is not COMMITTED, whether
+            # this build recognises it or not. It replaces the glob
+            # the start-anchored FAILED-prefix glob, which so
+            # did NOT match INSTALL_FAILED (nor UNINSTALL_*, RESTORE_*, the
+            # intermediate FILES_INSTALLED/SWITCH_COMPLETE literals a killed
+            # installer leaves behind, nor any literal a future Go release adds):
+            # all of those reached the legacy `*)` green arm, which wrote history
+            # "success" and DELETED state/update_failed. That arm is gone.
             _update_log ERROR "=== Update FAILED: v${current_version} → v${new_version} (${_update_duration}s); install_state=${_installer_state} ==="
             _update_write_history "$current_version" "$new_version" "install_fail" "$install_type" "$_update_duration"
 
@@ -1024,12 +1137,20 @@ _cmd_update_main_locked() {
 
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Update FAILED: v$current_version → v$new_version"
-            echo "  install_state: ${_installer_state}"
+            echo "  Update did NOT complete: v$current_version → v$new_version"
+            echo "  install_state: ${_installer_state}${_verdict_unknown_note}"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             if [[ -n "$_failure_reason" ]]; then
                 echo "  Reason: $_failure_reason"
+                echo ""
+            fi
+            # v1.230.0 P0-D4: state + when, ENFORCEMENT truth stated SEPARATELY from
+            # TRANSACTION truth, the cause in one line, the exact recovery command,
+            # and the reboot warning. Never a bare verdict word.
+            if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
+                nftban_render_install_transaction_truth "$_install_state_file" \
+                    "unchanged by this verdict — check it with 'nftban health'; an active firewall is NOT evidence this upgrade completed" || true
                 echo ""
             fi
             echo "  See the installer output above for the canonical recovery path."
@@ -1045,25 +1166,37 @@ _cmd_update_main_locked() {
             return 2
             ;;
 
-        *)
-            # Unknown state — fall through to the original green block with a note
-            _update_log WARN "Unrecognized install_state value: ${_installer_state}; falling back to legacy green verdict"
-            _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
-            _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
-            rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
+        INDETERMINATE)
+            # v1.230.0 P0-D2: no readable INSTALL_STATE. THE OUTCOME OF THIS
+            # TRANSACTION IS UNKNOWN, which is neither success nor failure — so
+            # this arm asserts neither. Critically it does NOT write history as
+            # "success" and does NOT delete state/update_failed; the pre-v1.230.0
+            # code reached the legacy green arm here (an absent file defaulted to
+            # COMMITTED) and did both.
+            _update_log WARN "=== Update outcome INDETERMINATE: v${current_version} → v${new_version} (${_update_duration}s); no readable INSTALL_STATE at ${_install_state_file} ==="
+            _update_write_history "$current_version" "$new_version" "indeterminate" "$install_type" "$_update_duration"
 
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
-            echo "  (install_state: ${_installer_state})"
+            echo "  Update outcome INDETERMINATE: v$current_version → v$new_version"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
+                nftban_render_install_transaction_truth "$_install_state_file" \
+                    "unchanged by this verdict — check it with 'nftban health'; an active firewall is NOT evidence this upgrade completed" || true
+            fi
+            echo ""
+            echo "  This run cannot claim the upgrade succeeded and does not claim it failed."
+            echo "  Re-establish the transaction record before treating the host as upgraded:"
+            echo "      /usr/lib/nftban/bin/nftban-installer --repair   # re-runs post-install validation and rewrites install_state"
+            echo "      nftban support                                  # diagnostic bundle"
             echo ""
             echo "  Log: $UPDATE_LOG_FILE"
             echo "  History: nftban update history"
             echo ""
-            _update_final_summary "COMMITTED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "UNKNOWN"
-            return 0
+            _update_final_summary "INDETERMINATE" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "INDETERMINATE"
+            return 3
             ;;
+
     esac
 }
 

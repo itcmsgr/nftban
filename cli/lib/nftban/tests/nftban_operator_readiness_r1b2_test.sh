@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-21"
-# meta:description="Hermetic tests for core/nftban_output.sh::nftban_render_operator_readiness (R1b-2): shell-side Operational/Upgrade-readiness/Action-needed verdict + IDLE explanation, computed from canned validator JSON + mocked install_state/rc. Plus guards that cmd_health.sh wires it text-only (--json unaffected) and cmd_status.sh semantic findings usage is untouched."
+# meta:description="Hermetic tests for core/nftban_output.sh::nftban_render_operator_readiness (R1b-2): shell-side Operational/Upgrade-readiness/Action-needed verdict + IDLE explanation, computed from canned validator JSON + mocked install_state/rc. Plus guards that cmd_health.sh wires it text-only (--json unaffected) and cmd_status.sh semantic findings usage is untouched. v1.230.0 P0 operator-surface truth (RELEASE BLOCKER) extends it to the install transaction: the POSITIVE ASSERTION nftban_install_state_is_committed (state == COMMITTED) that replaced the single-literal test [[ install_state == DEGRADED ]] under which production host dns1, carrying INSTALL_STATE=FAILED_REBUILD, printed Upgrade readiness PASS / Action needed NONE; the nftban_install_state_classify taxonomy (COMMITTED / NOT_COMMITTED / CONTRADICTORY / INDETERMINATE); the D4 operator block (state, when recorded, ENFORCEMENT truth stated separately from TRANSACTION truth, cause, the exact --repair command, and that a reboot is not neutral); the D3 nftban status --json install_transaction object; and A4 — an INVENTED literal that exists in no state source must still never reach PASS, which an enumeration-shaped fix cannot satisfy. Carries a declared-inversion negative control reproducing the pre-fix single-literal rule."
 # meta:input="None (canned validator JSON, self-contained)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,jq,grep"
@@ -99,7 +99,12 @@ ar "$OUT" "Upgrade readiness:[[:space:]]+FAIL$"     "T5b down -> readiness FAIL"
 
 # T6: cmd_health.sh wires the summary in the TEXT path; --json passthrough intact
 HC="${NFTBAN_LIB_DIR}/cli/cmd_health.sh"
-if grep -qF 'nftban_render_operator_readiness "$output" "" "$validator_rc"' "$HC"; then ok "T6 cmd_health.sh calls the readiness helper (text path)"; else bad "T6 cmd_health.sh does not wire the helper"; fi
+# v1.230.0 P0-D1: argument 2 was the empty string until v1.230.0 — cmd_health
+# never told the verdict anything about the install transaction. It must now pass
+# the class token from the shared authority, so passing "" here is a REGRESSION.
+if grep -qF 'nftban_render_operator_readiness "$output" "$_istate_class" "$validator_rc"' "$HC"; then ok "T6 cmd_health.sh calls the readiness helper with the install-state class (text path)"; else bad "T6 cmd_health.sh does not wire the helper with the install-state class"; fi
+if grep -qF 'nftban_render_operator_readiness "$output" "" "$validator_rc"' "$HC"; then bad "T6b cmd_health.sh regressed to passing an empty install state"; else ok "T6b cmd_health.sh no longer passes an empty install state"; fi
+if grep -qF 'nftban_install_state_classify "$_istate_file"' "$HC"; then ok "T6c cmd_health.sh adjudicates through the shared classifier"; else bad "T6c cmd_health.sh does not use the shared classifier"; fi
 if grep -qF 'schema_version, status, service_state, modules, consistency, counters_phase' "$HC"; then ok "T6 --json passthrough branch intact (unfiltered)"; else bad "T6 --json passthrough changed"; fi
 
 # T7: cmd_status.sh semantic findings usage intact; no forced renderer block added
@@ -109,6 +114,209 @@ if grep -qE 'nftban_render_(findings|operator_readiness)' "$ST"; then bad "T7 cm
 
 # T8: helper defined+exported
 if declare -F nftban_render_operator_readiness >/dev/null 2>&1; then ok "T8 nftban_render_operator_readiness defined+sourced"; else bad "T8 helper not defined"; fi
+
+# =============================================================================
+# v1.230.0 P0 — OPERATOR-SURFACE TRUTH (RELEASE BLOCKER)
+# =============================================================================
+# Subject: the POSITIVE ASSERTION `state == COMMITTED` that replaced two
+# one-failure tests, and the operator text an incomplete transaction must carry.
+#
+# Defects reproduced on production host dns1 (v1.229.14, INSTALL_STATE=FAILED_REBUILD):
+#   D1 core/nftban_output.sh   [[ "$_install_state" == "DEGRADED" ]] — ONE literal
+#      against an open-ended state space; the host printed "Upgrade readiness:
+#      PASS / Action needed: NONE / Findings: none". FAIL-OPEN.
+#   D3 cmd_status.sh read AUTHORITY=/CONFLICTS= from install_state but never
+#      INSTALL_STATE=, and --json exposed only an authority object.
+#   D4 flipping PASS->FAIL is not enough: the surface must carry the state and
+#      when it was recorded, ENFORCEMENT truth SEPARATE from TRANSACTION truth,
+#      the cause, the exact recovery command, and the reboot warning.
+#
+# ⛔ A4 IS THE CASE THAT SEPARATES A REAL FIX FROM A LONGER FAILURE LIST: an
+#    INVENTED literal that exists nowhere in internal/installer/state/machine.go
+#    must still never reach PASS. An enumeration-shaped fix passes A2 and A3 and
+#    FAILS A4.
+# =============================================================================
+echo ""
+echo "v1.230.0 P0 operator-surface truth (D1/D3/D4):"
+
+P0TMP="$(mktemp -d)"
+trap 'rm -rf "$P0TMP"' EXIT
+p0_state() { printf '%b' "$1" > "$P0TMP/install_state"; printf '%s' "$P0TMP/install_state"; }
+
+# --- the predicate itself -----------------------------------------------------
+if declare -F nftban_install_state_is_committed >/dev/null 2>&1; then ok "P0-0 positive-assertion predicate defined"; else bad "P0-0 nftban_install_state_is_committed missing"; fi
+nftban_install_state_is_committed "COMMITTED"        && ok "P0-0a COMMITTED asserts true"           || bad "P0-0a COMMITTED must assert true"
+nftban_install_state_is_committed "FAILED_REBUILD"   && bad "P0-0b FAILED_REBUILD must not assert"  || ok "P0-0b FAILED_REBUILD does not assert"
+nftban_install_state_is_committed ""                 && bad "P0-0c empty must not assert"           || ok "P0-0c empty does not assert"
+nftban_install_state_is_committed                    && bad "P0-0d no-argument must not assert"     || ok "P0-0d no argument does not assert (set -u safe)"
+
+# --- A1 COMMITTED: the positive control, and it must not be vacuous -----------
+SF="$(p0_state 'INSTALL_STATE=COMMITTED\nINSTALL_TIMESTAMP=2026-09-08T10:00:00Z\nFAILURE_REASON=\n')"
+[[ "$(nftban_install_state_classify "$SF")" == "COMMITTED" ]] && ok "A1 COMMITTED classifies COMMITTED" || bad "A1 COMMITTED misclassified"
+OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$SF")" 0)
+ar "$OUT" "Upgrade readiness:[[:space:]]+PASS$"  "A1 COMMITTED -> readiness PASS (positive control not vacuous)"
+ar "$OUT" "Action needed:[[:space:]]+NONE$"      "A1 COMMITTED -> action NONE"
+nf "$OUT" "install transaction"                  "A1 COMMITTED -> no transaction warning line"
+OUT=$(nftban_render_install_transaction_truth "$SF" || true)
+[[ -z "$OUT" ]] && ok "A1 COMMITTED -> transaction block renders nothing" || bad "A1 COMMITTED rendered a block: [$OUT]"
+
+# --- A2 FAILED_REBUILD (the dns1 state) ---------------------------------------
+SF="$(p0_state 'INSTALL_STATE=FAILED_REBUILD\nINSTALL_VERSION=1.229.14\nINSTALL_TIMESTAMP=2026-09-08T11:22:33.123456789Z\nPHASE_REACHED=switch\nFAILURE_REASON=rebuild failed: ruleset rejected by the kernel (exit 1)\n')"
+[[ "$(nftban_install_state_classify "$SF")" == "NOT_COMMITTED" ]] && ok "A2 FAILED_REBUILD classifies NOT_COMMITTED" || bad "A2 FAILED_REBUILD misclassified"
+OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$SF")" 0)
+nr "$OUT" "Upgrade readiness:[[:space:]]+PASS"   "A2 FAILED_REBUILD -> never PASS (the dns1 defect)"
+ar "$OUT" "Upgrade readiness:[[:space:]]+FAIL$"  "A2 FAILED_REBUILD -> readiness FAIL"
+nr "$OUT" "Action needed:[[:space:]]+NONE"       "A2 FAILED_REBUILD -> action is never NONE"
+af "$OUT" "install transaction"                  "A2 readiness names the install transaction"
+BLK=$(nftban_render_install_transaction_truth "$SF" || true)
+af "$BLK" "FAILED_REBUILD"                                     "A2 D4: the block states the state"
+af "$BLK" "2026-09-08T11:22:33.123456789Z"                     "A2 D4: the block states when it was recorded"
+af "$BLK" "rebuild failed: ruleset rejected by the kernel (exit 1)"                    "A2 D4: the block states the cause in one line"
+af "$BLK" "/usr/lib/nftban/bin/nftban-installer --repair"      "A2 D4: the block states the exact recovery command"
+af "$BLK" "NOT NEUTRAL"                                        "A2 D4: the block states a reboot is not neutral"
+af "$BLK" "Enforcement:"                                       "A2 D4: ENFORCEMENT truth is a separate line"
+af "$BLK" "Transaction status:"                                "A2 D4: TRANSACTION truth is its own line"
+# ⛔ PROTECTED must never stand alone: an enforcing firewall is not evidence the
+#    transaction completed, and the block must say so rather than imply it.
+af "$BLK" "NOT evidence"                                       "A2 D4: enforcement is explicitly not evidence of a committed transaction"
+
+# --- A3 INSTALL_FAILED --------------------------------------------------------
+# (the filesystem effects of this state — history row, failure marker — are
+#  asserted in tests/update_degraded_render_truth_v225_test.sh, which drives the
+#  mutating update verdict itself.)
+SF="$(p0_state 'INSTALL_STATE=INSTALL_FAILED\nINSTALL_TIMESTAMP=2026-09-08T10:00:00Z\n')"
+[[ "$(nftban_install_state_classify "$SF")" == "NOT_COMMITTED" ]] && ok "A3 INSTALL_FAILED classifies NOT_COMMITTED" || bad "A3 INSTALL_FAILED misclassified"
+OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$SF")" 0)
+nr "$OUT" "Upgrade readiness:[[:space:]]+PASS"   "A3 INSTALL_FAILED -> never PASS"
+
+# --- A4 AN INVENTED LITERAL — the enumeration-killer --------------------------
+# FUTURE_STATE_XYZ exists in NO source of truth: not machine.go, not verify.go,
+# not this file's wording list. A fix built from a list of failure literals
+# reaches PASS here; a positive assertion cannot.
+if grep -rqF 'FUTURE_STATE_XYZ' "${REPO_ROOT}/internal" 2>/dev/null; then
+    bad "A4 fixture literal FUTURE_STATE_XYZ must NOT exist in internal/ (it would stop being an unknown state)"
+else
+    ok "A4 fixture literal FUTURE_STATE_XYZ exists in no Go state source (genuinely unknown)"
+fi
+nftban_install_state_is_known_literal "FUTURE_STATE_XYZ" && bad "A4 invented literal must not be a known literal" || ok "A4 invented literal is not a known literal"
+SF="$(p0_state 'INSTALL_STATE=FUTURE_STATE_XYZ\nINSTALL_TIMESTAMP=2026-09-08T10:00:00Z\n')"
+[[ "$(nftban_install_state_classify "$SF")" == "NOT_COMMITTED" ]] && ok "A4 invented literal classifies NOT_COMMITTED" || bad "A4 invented literal misclassified"
+OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$SF")" 0)
+nr "$OUT" "Upgrade readiness:[[:space:]]+PASS"   "A4 invented literal -> never PASS (positive-assertion shape)"
+ar "$OUT" "Upgrade readiness:[[:space:]]+FAIL$"  "A4 invented literal -> readiness FAIL"
+BLK=$(nftban_render_install_transaction_truth "$SF" || true)
+af "$BLK" "FUTURE_STATE_XYZ"                     "A4 the block names the unrecognised literal verbatim"
+af "$BLK" "UNKNOWN STATE"                        "A4 the block surfaces it AS UNKNOWN, not as a known failure"
+
+# --- A5 unreadable / missing state file ---------------------------------------
+[[ "$(nftban_install_state_classify "$P0TMP/does-not-exist")" == "INDETERMINATE" ]] && ok "A5 missing file classifies INDETERMINATE" || bad "A5 missing file misclassified"
+[[ "$(nftban_install_state_classify "")" == "INDETERMINATE" ]] && ok "A5 empty path classifies INDETERMINATE" || bad "A5 empty path misclassified"
+printf 'AUTHORITY=UPDATE\nCONFLICTS=\n' > "$P0TMP/nokey"
+[[ "$(nftban_install_state_classify "$P0TMP/nokey")" == "INDETERMINATE" ]] && ok "A5 readable file with no INSTALL_STATE key classifies INDETERMINATE" || bad "A5 no-key file misclassified"
+if [[ "$(id -u)" != "0" ]]; then
+    printf 'INSTALL_STATE=COMMITTED\n' > "$P0TMP/unreadable"; chmod 000 "$P0TMP/unreadable"
+    [[ "$(nftban_install_state_classify "$P0TMP/unreadable")" == "INDETERMINATE" ]] && ok "A5 unreadable file classifies INDETERMINATE (never a success claim)" || bad "A5 unreadable file misclassified"
+    chmod 644 "$P0TMP/unreadable"
+else
+    ok "A5 unreadable-file case SKIPPED as root (chmod 000 is not a read barrier for uid 0) — not counted as a pass of the barrier"
+fi
+OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$P0TMP/does-not-exist")" 0)
+nr "$OUT" "Upgrade readiness:[[:space:]]+PASS"          "A5 missing state file -> never PASS"
+ar "$OUT" "Upgrade readiness:[[:space:]]+INDETERMINATE$" "A5 missing state file -> INDETERMINATE (not a false FAIL either)"
+ar "$OUT" "Action needed:[[:space:]]+VERIFY$"            "A5 missing state file -> action VERIFY"
+
+# --- contradictory fields ------------------------------------------------------
+# internal/installer/state/file.go applyTerminalHygiene CLEARS FailureReason on
+# COMMITTED, so this combination cannot come from the writer.
+SF="$(p0_state 'INSTALL_STATE=COMMITTED\nFAILURE_REASON=takeover not approved\n')"
+[[ "$(nftban_install_state_classify "$SF")" == "CONTRADICTORY" ]] && ok "A5b COMMITTED beside a FAILURE_REASON classifies CONTRADICTORY" || bad "A5b contradictory fields misclassified"
+OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$SF")" 0)
+nr "$OUT" "Upgrade readiness:[[:space:]]+PASS"   "A5b contradictory fields -> never PASS"
+
+# --- A6 nftban status --json exposes the authoritative install state ----------
+# D3: before v1.230.0 this command read AUTHORITY=/CONFLICTS= out of install_state
+# and never INSTALL_STATE=, so no structured surface carried it and fleet
+# automation was blind. The emitter is driven directly (hermetic: no nft, no
+# systemd, no root) with NFTBAN_STATE_DIR pointed at the fixture.
+ST="${NFTBAN_LIB_DIR}/cli/cmd_status.sh"
+a6() { # $1=fixture body ("-" = no file) $2=jq filter $3=expected $4=label
+    local body="$1" filter="$2" want="$3" label="$4" dir got
+    dir="$P0TMP/a6"; rm -rf "$dir"; mkdir -p "$dir"
+    [[ "$body" == "-" ]] || printf '%b' "$body" > "$dir/install_state"
+    got=$(NFTBAN_STATE_DIR="$dir" bash -c '
+        set -Eeuo pipefail
+        export NFTBAN_LIB_DIR="'"$NFTBAN_LIB_DIR"'"
+        source "$NFTBAN_LIB_DIR/core/nftban_output.sh"
+        eval "$(sed -n "/^_status_install_state_file() {/,/^}/p;/^_status_install_txn_class() {/,/^}/p;/^_status_json_install_transaction() {/,/^}/p" "'"$ST"'")"
+        json_escape() { local str="$1"; str="${str//\\/\\\\}"; str="${str//"/\\"}"; printf "%s\n" "$str"; }
+        printf "{\n"; _status_json_install_transaction; printf "  \"end\": true\n}\n"
+    ' | jq -r "$filter" 2>/dev/null) || got="<JQ-FAILED>"
+    if [[ "$got" == "$want" ]]; then ok "$label"; else bad "$label (got [$got] want [$want])"; fi
+}
+a6 'INSTALL_STATE=COMMITTED\n'                          '.install_transaction.committed' 'true'            'A6/A1 --json committed=true for COMMITTED'
+a6 'INSTALL_STATE=COMMITTED\n'                          '.install_transaction.state'     'COMMITTED'       'A6/A1 --json exposes the state literal'
+a6 'INSTALL_STATE=FAILED_REBUILD\nFAILURE_REASON=rebuild failed: ruleset rejected by the kernel (exit 1)\n' '.install_transaction.committed' 'false' 'A6/A2 --json committed=false for FAILED_REBUILD'
+a6 'INSTALL_STATE=FAILED_REBUILD\nFAILURE_REASON=rebuild failed: ruleset rejected by the kernel (exit 1)\n' '.install_transaction.reason'    'rebuild failed: ruleset rejected by the kernel (exit 1)' 'A6/A2 --json exposes the reason'
+a6 'INSTALL_STATE=INSTALL_FAILED\n'                     '.install_transaction.committed' 'false'           'A6/A3 --json committed=false for INSTALL_FAILED'
+a6 'INSTALL_STATE=FUTURE_STATE_XYZ\n'                   '.install_transaction.committed' 'false'           'A6/A4 --json committed=false for an invented literal'
+a6 'INSTALL_STATE=FUTURE_STATE_XYZ\n'                   '.install_transaction.known_state_literal' 'false' 'A6/A4 --json flags the literal as unknown'
+a6 '-'                                                   '.install_transaction.class'     'INDETERMINATE'   'A6/A5 --json class=INDETERMINATE with no state file'
+a6 '-'                                                   '.install_transaction.committed' 'false'           'A6/A5 --json committed=false with no state file'
+a6 'INSTALL_STATE=COMMITTED\nFAILURE_REASON=takeover not approved\n' '.install_transaction.class' 'CONTRADICTORY' 'A6/A5b --json class=CONTRADICTORY'
+
+# D3 static: the command must actually read INSTALL_STATE and emit the object.
+if grep -qF '_status_json_install_transaction' "$ST"; then ok "A6 cmd_status.sh emits install_transaction in --json"; else bad "A6 cmd_status.sh has no install_transaction JSON surface"; fi
+if grep -qF 'nftban_install_state_classify' "$ST"; then ok "D3 cmd_status.sh adjudicates through the shared classifier"; else bad "D3 cmd_status.sh does not use the shared classifier"; fi
+# ⛔ PROTECTED alone: the SYSTEM block must carry the transaction line unconditionally.
+if grep -qF '_status_install_txn_summary' "$ST"; then ok "D4 cmd_status.sh SYSTEM block carries the install-transaction line beside the state headline"; else bad "D4 cmd_status.sh prints its state headline without a transaction line"; fi
+
+# --- NEGATIVE CONTROL (declared inversion) ------------------------------------
+# ⛔ The A1-A6 greens above are only evidence if they can go red. This is the
+#    PRE-v1.230.0 install-state rule, reconstructed verbatim: ONE exact literal
+#    tested against an open-ended state space. It must green-light FAILED_REBUILD
+#    (the dns1 state), INSTALL_FAILED and an invented literal — the defect — while
+#    correctly failing DEGRADED. A declared inversion rather than a checkout,
+#    because origin/main stops being "pre-fix" the moment the fix merges.
+_p0_prefix_install_state_rule() {   # returns 0 when the PRE-FIX code would say FAIL
+    local _install_state="${1-}"
+    [[ "$_install_state" == "DEGRADED" ]]
+}
+_p0_prefix_prefix_verdict() {       # PASS/FAIL as the pre-fix helper would render it
+    if _p0_prefix_install_state_rule "$1"; then printf 'FAIL'; else printf 'PASS'; fi
+}
+for _lit in FAILED_REBUILD INSTALL_FAILED FUTURE_STATE_XYZ FAILED_NO_FIREWALL SWITCH_COMPLETE RESTORE_REFUSED; do
+    if [[ "$(_p0_prefix_prefix_verdict "$_lit")" == "PASS" ]]; then
+        ok "NEG-D1 pre-fix rule green-lights ${_lit} (the assertions above are live)"
+    else
+        bad "NEG-D1 pre-fix rule did NOT green-light ${_lit} — the A2/A3/A4 assertions may be vacuous"
+    fi
+    # and the fixed predicate must disagree with it on every one of them
+    nftban_install_state_is_committed "$_lit" \
+        && bad "NEG-D1 fixed predicate wrongly asserts COMMITTED for ${_lit}" \
+        || ok "NEG-D1 fixed predicate refuses ${_lit}"
+done
+if [[ "$(_p0_prefix_prefix_verdict "DEGRADED")" == "FAIL" ]]; then
+    ok "NEG-D1 the inversion is faithful, not a strawman (it did catch DEGRADED)"
+else
+    bad "NEG-D1 inversion misbuilt — it does not even catch the one literal the pre-fix rule named"
+fi
+
+# --- the wording list must not silently fall behind the Go enum ---------------
+# ⛔ This list is WORDING ONLY and is never the verdict — an unlisted literal is
+#    already not-COMMITTED. The check exists so "UNKNOWN STATE" keeps meaning
+#    "the Go installer never emits this", not "our list rotted".
+MG="${REPO_ROOT}/internal/installer/state/machine.go"
+if [[ -r "$MG" ]]; then
+    _missing=""
+    while IFS= read -r _lit; do
+        [[ -n "$_lit" ]] || continue
+        nftban_install_state_is_known_literal "$_lit" || _missing="${_missing} ${_lit}"
+    done < <(grep -oE 'InstallState = "[A-Z_]+"' "$MG" | sed 's/.*"\(.*\)"/\1/' | sort -u)
+    if [[ -z "$_missing" ]]; then ok "P0-W every internal/installer/state/machine.go literal is in the wording list"
+    else bad "P0-W wording list is behind machine.go:${_missing}"; fi
+else
+    bad "P0-W could not read $MG to cross-check the wording list"
+fi
 
 echo "-----------------------------------------------"
 printf 'R1b-2 readiness tests: %d passed, %d failed\n' "$PASS" "$FAIL"

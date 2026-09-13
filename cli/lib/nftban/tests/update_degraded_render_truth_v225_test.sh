@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-07-22"
-# meta:description="Regression guard for v1.225.0 PR-A. E1a (BUG-V1_222_1-UPDATE-STATEFILE-GREP-UNGUARDED): _render_degraded_failed_units must NOT abort under set -Eeuo pipefail when SERVICES_FAILED is ABSENT from a readable DEGRADED install_state (grep rc=1 = key absent, not a read error), and must not fabricate success on a missing/unreadable file. E1b (BUG-V1_222_1-UPDATE-DEGRADED-ALL-UNITS-FILTERED-NO-HINT): a non-empty raw SERVICES_FAILED whose tokens are all non-canonical must still print a truthful 'recorded-but-all-filtered' hint distinct from the 'no list recorded' fallback; canonical units render; no false-health claims. Hermetic: sources cmd_update.sh, drives the helper with temp fixtures, no root/systemd/network/real state."
+# meta:description="Regression guard for v1.225.0 PR-A. E1a (BUG-V1_222_1-UPDATE-STATEFILE-GREP-UNGUARDED): _render_degraded_failed_units must NOT abort under set -Eeuo pipefail when SERVICES_FAILED is ABSENT from a readable DEGRADED install_state (grep rc=1 = key absent, not a read error), and must not fabricate success on a missing/unreadable file. E1b (BUG-V1_222_1-UPDATE-DEGRADED-ALL-UNITS-FILTERED-NO-HINT): a non-empty raw SERVICES_FAILED whose tokens are all non-canonical must still print a truthful 'recorded-but-all-filtered' hint distinct from the 'no list recorded' fallback; canonical units render; no false-health claims. Hermetic: sources cmd_update.sh, drives the helper with temp fixtures, no root/systemd/network/real state. v1.230.0 P0-D2 (RELEASE BLOCKER) adds the update terminal verdict itself: _update_finalize_verdict must authorise the success verdict, the update-history \"success\" row and the deletion of state/update_failed ONLY on a positively asserted INSTALL_STATE=COMMITTED. The pre-v1.230.0 case dispatched on the raw literal with a FAILED_*|FAILED glob that anchors at the start, so INSTALL_FAILED fell to the catch-all green arm which recorded a failed update as successful and deleted its failure marker; an absent/unreadable state file defaulted to COMMITTED and took the same arm. The cases assert FILESYSTEM EFFECTS (the status actually written into update-history.json, and whether state/update_failed survives) for COMMITTED, FAILED_REBUILD, INSTALL_FAILED, an INVENTED literal, a missing file and a file with no INSTALL_STATE key, plus a declared-inversion negative control that reproduces the pre-fix mutations. Hermetic: throwaway NFTBAN_DATA_DIR per case, no root/systemd/network/real state."
 # meta:inventory.files="cli/lib/nftban/cli/cmd_update.sh"
 # meta:inventory.binaries="bash,grep,cut"
 # meta:inventory.env_vars=""
@@ -41,6 +41,15 @@ ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }
 no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 
 echo "v1.225.0 PR-A update DEGRADED render truth (E1a+E1b):"
+
+# v1.230.0 P0-D2: point NFTBAN_LIB_DIR at the repo tree BEFORE the single source.
+# cmd_update.sh carries a readonly double-load guard (NFTBAN_CLI_UPDATE_LOADED), so
+# it can only be sourced once per process — the P0-D2 section at the end of this
+# file drives the update verdict, which needs cmd_update_helpers.sh
+# (_update_write_history) and core/nftban_output.sh (the shared install-state
+# authority) resolvable from that one load. The E1a/E1b cases below are unaffected:
+# they exercise a helper defined in cmd_update.sh itself.
+export NFTBAN_LIB_DIR="$REPO_ROOT/cli/lib/nftban"
 
 # Source only the function (definitions only; the file auto-runs nothing when sourced).
 # shellcheck disable=SC1090
@@ -130,6 +139,240 @@ run_render $'SERVICES_FAILED=\n'; NOLIST="$LAST_OUT"
 # whitespace-only field → deterministic (non-empty → all-filtered hint), rc0
 run_render $'SERVICES_FAILED=   \n'
 [[ $LAST_RC -eq 0 ]] && ok "E1b whitespace-only field → deterministic rc0" || no "E1b whitespace-only" "rc=$LAST_RC"
+
+# =============================================================================
+# v1.230.0 P0-D2 — THE UPDATE VERDICT MUST NOT MUTATE STATE ON A NON-COMMITTED
+# TRANSACTION  (RELEASE BLOCKER)
+# =============================================================================
+# Subject: _update_finalize_verdict in cli/cmd_update.sh.
+#
+# THE DEFECT. The pre-v1.230.0 verdict dispatched on the raw install_state
+# literal with the arms COMMITTED) / DEGRADED) / FAILED_*|FAILED) / *). The glob
+# anchors at the START of the literal, so INSTALL_FAILED did NOT match it and
+# reached `*)`, which logged "falling back to legacy green verdict" and then
+#
+#     _update_write_history … "success"                       <- records a FAILED
+#     rm -f "${NFTBAN_DATA_DIR}/state/update_failed"              update as SUCCESSFUL
+#                                                                 and DELETES the
+#                                                                 failure marker
+#
+# The acquisition above it also defaulted _installer_state to COMMITTED when the
+# state file was absent or unreadable, so "I could not read the outcome" took the
+# same green arm. Every literal not prefixed FAILED_ — INSTALL_FAILED, the
+# RESTORE_*/UNINSTALL_* terminals, the intermediate FILES_INSTALLED /
+# SWITCH_COMPLETE literals a killed installer leaves behind, and any literal a
+# future Go release adds — inherited it.
+#
+# ⛔ THESE ASSERT FILESYSTEM EFFECTS, NOT EXIT CODES OR PRINTED TEXT: the status
+#    actually written into update-history.json, and whether state/update_failed
+#    still exists afterwards. A verdict that merely PRINTS "failed" while still
+#    recording success would pass a text assertion and fail these.
+#
+# NEGATIVE CONTROL: the same four fixtures run against the verbatim pre-fix block
+# at immutable SHA 9162f2a0 produce RC=0 / marker DELETED / history "success" for
+# INSTALL_FAILED, for an invented literal, and for a missing state file.
+# =============================================================================
+echo ""
+echo "v1.230.0 P0-D2 update verdict — filesystem effects:"
+
+# Every function these cases need must be resolvable from the single source at the
+# top of this file, or the cases below would prove nothing.
+for _fn in _update_finalize_verdict _update_write_history nftban_install_state_classify nftban_install_state_field; do
+    if declare -F "$_fn" >/dev/null; then
+        ok "$_fn resolvable for the verdict cases"
+    else
+        no "$_fn resolvable for the verdict cases" "not found — the cases below would prove nothing"
+        echo "RESULT: $PASS passed, $FAIL failed"; exit 1
+    fi
+done
+
+# p0_run <state-body|-> ; sets P0_RC / P0_MARKER / P0_HISTORY_STATUS / P0_SUCCESS_ROWS
+# Runs in a SUBSHELL against a throwaway NFTBAN_DATA_DIR so nothing here can touch
+# the real /var/lib/nftban and the stubs cannot leak into the cases above.
+p0_run() {
+    local body="$1" sb res
+    sb="$(mktemp -d "$TMP/p0.XXXXXX")"
+    mkdir -p "$sb/state"
+    # PRE-STATE: a failure marker exists and the newest history row is a failure.
+    # If the verdict wrongly takes the success arm it must visibly destroy both.
+    date -u '+%Y-%m-%dT%H:%M:%SZ' > "$sb/state/update_failed"
+    printf '[{"timestamp":"2026-01-01T00:00:00Z","from":"1.0.0","to":"1.0.1","status":"install_fail","type":"rpm","duration_s":1,"host":"h"}]\n' \
+        > "$sb/update-history.json"
+    [[ "$body" == "-" ]] || printf '%b' "$body" > "$sb/state/install_state"
+
+    res=$(
+        set +e
+        export NFTBAN_DATA_DIR="$sb"
+        _install_state_file="$sb/state/install_state"
+        _installer_state=""
+        [[ -r "$_install_state_file" ]] && \
+            _installer_state=$(nftban_install_state_field "$_install_state_file" INSTALL_STATE)
+        current_version="1.229.14"; new_version="1.230.0"; install_type="rpm"
+        # These stand in for locals of _cmd_update_main_locked. The verdict function
+        # reads them through bash DYNAMIC SCOPING, which shellcheck cannot follow.
+        # shellcheck disable=SC2034
+        { _update_duration=7; _summary_warnings=0; health_status=0
+          _ilog_file="$sb/installer.log"; : > "$_ilog_file"; _ilog_before_lines=0
+          UPDATE_LOG_FILE="$sb/update.log"; _NFTBAN_WARN_REAL=0; FORENSIC_RUN_DIR=""; }
+        _update_final_summary() { :; }
+        _update_render_actionable_warnings() { :; }
+        _update_log() { :; }
+        _update_finalize_verdict >/dev/null 2>&1
+        printf 'rc=%s' "$?"
+    )
+    P0_RC="${res#rc=}"
+    P0_MARKER=absent; [[ -e "$sb/state/update_failed" ]] && P0_MARKER=present
+    P0_HISTORY_STATUS=$(jq -r '.[0].status // "?"' "$sb/update-history.json" 2>/dev/null || echo "?")
+    P0_SUCCESS_ROWS=$(jq -r '[.[] | select(.status == "success")] | length' "$sb/update-history.json" 2>/dev/null || echo "?")
+    rm -rf "$sb"
+}
+
+# ---- A1 COMMITTED: the positive control. It MUST still record success and MUST
+#      still clear the marker, or the fix has simply broken the success path.
+p0_run 'INSTALL_STATE=COMMITTED\n'
+[[ "$P0_RC" == "0" ]]                    && ok "A1 COMMITTED → rc 0"                                  || no "A1 COMMITTED rc" "rc=$P0_RC"
+[[ "$P0_HISTORY_STATUS" == "success" ]]  && ok "A1 COMMITTED → history row written as success"        || no "A1 COMMITTED history" "status=$P0_HISTORY_STATUS"
+[[ "$P0_MARKER" == "absent" ]]           && ok "A1 COMMITTED → state/update_failed cleared"           || no "A1 COMMITTED marker" "marker=$P0_MARKER"
+
+# ---- A2 FAILED_REBUILD (the state measured on production host dns1) ----------
+p0_run 'INSTALL_STATE=FAILED_REBUILD\nFAILURE_REASON=rebuild failed: ruleset rejected by the kernel (exit 1)\n'
+[[ "$P0_RC" != "0" ]]                    && ok "A2 FAILED_REBUILD → non-zero rc (never success)"      || no "A2 FAILED_REBUILD rc" "rc=$P0_RC"
+[[ "$P0_SUCCESS_ROWS" == "0" ]]          && ok "A2 FAILED_REBUILD → NO success row written"           || no "A2 FAILED_REBUILD history" "success rows=$P0_SUCCESS_ROWS"
+[[ "$P0_MARKER" == "present" ]]          && ok "A2 FAILED_REBUILD → failure marker NOT deleted"       || no "A2 FAILED_REBUILD marker" "marker=$P0_MARKER"
+
+# ---- A3 INSTALL_FAILED: the exact literal the FAILED_*|FAILED glob missed ----
+p0_run 'INSTALL_STATE=INSTALL_FAILED\nINSTALL_TIMESTAMP=2026-09-08T10:00:00Z\nPHASE_REACHED=switch\n'
+[[ "$P0_RC" != "0" ]]                    && ok "A3 INSTALL_FAILED → non-zero rc (never success)"      || no "A3 INSTALL_FAILED rc" "rc=$P0_RC"
+[[ "$P0_HISTORY_STATUS" != "success" ]]  && ok "A3 INSTALL_FAILED → history NOT written as success"   || no "A3 INSTALL_FAILED history" "status=$P0_HISTORY_STATUS"
+[[ "$P0_SUCCESS_ROWS" == "0" ]]          && ok "A3 INSTALL_FAILED → no success row anywhere in history" || no "A3 INSTALL_FAILED success rows" "rows=$P0_SUCCESS_ROWS"
+[[ "$P0_MARKER" == "present" ]]          && ok "A3 INSTALL_FAILED → state/update_failed NOT deleted"  || no "A3 INSTALL_FAILED marker" "marker=$P0_MARKER"
+
+# ---- A4 an INVENTED literal — the case a longer failure list cannot pass -----
+# FUTURE_STATE_XYZ appears in no state source; only a POSITIVE assertion on
+# COMMITTED can classify it correctly.
+p0_run 'INSTALL_STATE=FUTURE_STATE_XYZ\n'
+[[ "$P0_RC" != "0" ]]                    && ok "A4 invented literal → non-zero rc (never success)"    || no "A4 invented literal rc" "rc=$P0_RC"
+[[ "$P0_SUCCESS_ROWS" == "0" ]]          && ok "A4 invented literal → NO success row written"         || no "A4 invented literal history" "rows=$P0_SUCCESS_ROWS"
+[[ "$P0_MARKER" == "present" ]]          && ok "A4 invented literal → failure marker NOT deleted"     || no "A4 invented literal marker" "marker=$P0_MARKER"
+
+# ---- A5 missing state file: the fail-open acquisition default ----------------
+p0_run '-'
+[[ "$P0_RC" != "0" ]]                    && ok "A5 missing install_state → non-zero rc (never success)" || no "A5 missing state rc" "rc=$P0_RC"
+[[ "$P0_SUCCESS_ROWS" == "0" ]]          && ok "A5 missing install_state → NO success row written"      || no "A5 missing state history" "rows=$P0_SUCCESS_ROWS"
+[[ "$P0_MARKER" == "present" ]]          && ok "A5 missing install_state → failure marker NOT deleted"  || no "A5 missing state marker" "marker=$P0_MARKER"
+[[ "$P0_HISTORY_STATUS" == "indeterminate" ]] \
+    && ok "A5 missing install_state → recorded as indeterminate, neither success nor a fabricated failure" \
+    || no "A5 missing state history status" "status=$P0_HISTORY_STATUS"
+
+# ---- A5b readable file with no INSTALL_STATE key -----------------------------
+p0_run 'AUTHORITY=UPDATE\nCONFLICTS=\n'
+[[ "$P0_SUCCESS_ROWS" == "0" ]]          && ok "A5b no INSTALL_STATE key → NO success row written"    || no "A5b no-key history" "rows=$P0_SUCCESS_ROWS"
+[[ "$P0_MARKER" == "present" ]]          && ok "A5b no INSTALL_STATE key → failure marker NOT deleted" || no "A5b no-key marker" "marker=$P0_MARKER"
+
+# ---- NEGATIVE CONTROL (declared inversion) -----------------------------------
+# ⛔ The assertions above are only worth their green if they can go red. This
+#    reconstructs the PRE-v1.230.0 DECISION — the FAILED_*|FAILED glob plus the
+#    catch-all green arm carrying both mutations, and the fail-open COMMITTED
+#    acquisition default — and drives THE SAME fixtures through it. The inverted
+#    subject must record INSTALL_FAILED as a success and delete the failure
+#    marker; if it does not, these assertions are not testing what they claim.
+#
+#    A declared inversion, not a checkout of the old file: origin/main stops being
+#    "pre-fix" the moment the fix merges, and a shipped tree in CI has no pre-fix
+#    copy to point at.
+_p0_inverted_verdict() {          # verbatim pre-fix shape, mutations included
+    local _st="COMMITTED"         # <- the fail-open acquisition default
+    if [[ -f "$_install_state_file" ]]; then
+        _st=$(grep -m1 '^INSTALL_STATE=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "COMMITTED")
+    fi
+    case "$_st" in
+        COMMITTED)
+            _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
+            rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
+            return 0 ;;
+        DEGRADED)
+            _update_write_history "$current_version" "$new_version" "verify_fail" "$install_type" "$_update_duration"
+            return 1 ;;
+        FAILED_*|FAILED)
+            _update_write_history "$current_version" "$new_version" "install_fail" "$install_type" "$_update_duration"
+            return 2 ;;
+        *)                        # <- the legacy green fall-through
+            _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
+            rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
+            return 0 ;;
+    esac
+}
+p0_run_inverted() {
+    local body="$1" sb res
+    sb="$(mktemp -d "$TMP/p0inv.XXXXXX")"
+    mkdir -p "$sb/state"
+    date -u '+%Y-%m-%dT%H:%M:%SZ' > "$sb/state/update_failed"
+    printf '[{"timestamp":"2026-01-01T00:00:00Z","from":"1.0.0","to":"1.0.1","status":"install_fail","type":"rpm","duration_s":1,"host":"h"}]\n' \
+        > "$sb/update-history.json"
+    [[ "$body" == "-" ]] || printf '%b' "$body" > "$sb/state/install_state"
+    res=$(
+        set +e
+        export NFTBAN_DATA_DIR="$sb"
+        _install_state_file="$sb/state/install_state"
+        current_version="1.229.14"; new_version="1.230.0"; install_type="rpm"; _update_duration=7
+        _p0_inverted_verdict >/dev/null 2>&1
+        printf 'rc=%s' "$?"
+    )
+    P0_RC="${res#rc=}"
+    P0_MARKER=absent; [[ -e "$sb/state/update_failed" ]] && P0_MARKER=present
+    P0_HISTORY_STATUS=$(jq -r '.[0].status // "?"' "$sb/update-history.json" 2>/dev/null || echo "?")
+    rm -rf "$sb"
+}
+
+# The inversion must REPRODUCE the motivating defect on the motivating literal.
+p0_run_inverted 'INSTALL_STATE=INSTALL_FAILED\n'
+{ [[ "$P0_RC" == "0" && "$P0_HISTORY_STATUS" == "success" && "$P0_MARKER" == "absent" ]]; } \
+  && ok "NEG-A3 pre-fix shape DOES record INSTALL_FAILED as success and DOES delete the marker (assertions are live)" \
+  || no "NEG-A3 inversion did not reproduce the motivating defect" "rc=$P0_RC history=$P0_HISTORY_STATUS marker=$P0_MARKER — the A3 assertions may be vacuous"
+
+p0_run_inverted 'INSTALL_STATE=FUTURE_STATE_XYZ\n'
+{ [[ "$P0_RC" == "0" && "$P0_HISTORY_STATUS" == "success" && "$P0_MARKER" == "absent" ]]; } \
+  && ok "NEG-A4 pre-fix shape DOES green-light an invented literal (A4 assertions are live)" \
+  || no "NEG-A4 inversion did not reproduce the defect for an invented literal" "rc=$P0_RC history=$P0_HISTORY_STATUS marker=$P0_MARKER"
+
+p0_run_inverted '-'
+{ [[ "$P0_RC" == "0" && "$P0_HISTORY_STATUS" == "success" && "$P0_MARKER" == "absent" ]]; } \
+  && ok "NEG-A5 pre-fix shape DOES green-light a missing state file (A5 assertions are live)" \
+  || no "NEG-A5 inversion did not reproduce the fail-open default" "rc=$P0_RC history=$P0_HISTORY_STATUS marker=$P0_MARKER"
+
+# ...and it must NOT fire on the positive control, or the inversion is just broken.
+p0_run_inverted 'INSTALL_STATE=FAILED_REBUILD\n'
+{ [[ "$P0_RC" == "2" && "$P0_HISTORY_STATUS" == "install_fail" && "$P0_MARKER" == "present" ]]; } \
+  && ok "NEG-A2 pre-fix shape already handled FAILED_REBUILD correctly (the inversion is faithful, not a strawman)" \
+  || no "NEG-A2 inversion misbehaves on a literal the pre-fix glob did match" "rc=$P0_RC history=$P0_HISTORY_STATUS marker=$P0_MARKER"
+
+# ---- the legacy green fall-through must be GONE from the source --------------
+# ⛔ Structural, not behavioural: a future edit that reinstates a catch-all arm
+#    reintroduces the defect for every literal the arms above do not name.
+# Count the two MUTATIONS themselves. Exactly ONE call site each — the COMMITTED
+# arm. Any second occurrence means some other arm can record a success or destroy
+# the failure marker again. (Counting the mutations, not a log phrase, because
+# this test file's own commentary quotes the old log phrase.)
+_n_hist=$(grep -c '_update_write_history "$current_version" "$new_version" "success"' "$CMD_UPDATE" || true)
+_n_rm=$(grep -c 'rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"' "$CMD_UPDATE" || true)
+[[ "$_n_hist" == "1" ]] && ok "P0-D2 exactly one arm writes history as success" || no "P0-D2 success-history call sites" "found $_n_hist, expected 1"
+[[ "$_n_rm"  == "1" ]] && ok "P0-D2 exactly one arm deletes state/update_failed" || no "P0-D2 marker-deletion call sites" "found $_n_rm, expected 1"
+# and that one arm must be the COMMITTED one.
+if awk '/^        COMMITTED\)$/{f=1} f&&/_update_write_history "\$current_version" "\$new_version" "success"/{print;exit}' "$CMD_UPDATE" | grep -q success; then
+    ok "P0-D2 the single success-history write lives in the COMMITTED arm"
+else
+    no "P0-D2 the single success-history write lives in the COMMITTED arm" "not found under COMMITTED)"
+fi
+if grep -qE '^\s*FAILED_\*\|FAILED\)' "$CMD_UPDATE"; then
+    no "P0-D2 the FAILED_*|FAILED glob is replaced by a positive assertion" "the glob arm is still present"
+else
+    ok "P0-D2 the FAILED_*|FAILED glob is replaced by a positive assertion"
+fi
+if grep -qF 'default: green if state file absent' "$CMD_UPDATE"; then
+    no "P0-D2 the fail-open COMMITTED acquisition default is removed" "still defaults to COMMITTED"
+else
+    ok "P0-D2 the fail-open COMMITTED acquisition default is removed"
+fi
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
