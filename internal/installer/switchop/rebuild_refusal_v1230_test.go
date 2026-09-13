@@ -157,7 +157,7 @@ func TestR1_RefusalNeedsNoStderr(t *testing.T) {
 		// Stderr deliberately EMPTY.
 		return executor.Result{ExitCode: 1}, true
 	}
-	err := Rebuild(context.Background(), mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if !errors.Is(err, ErrRebuildRefusedBusy) {
 		t.Fatalf("a refusal with EMPTY stderr must still classify as REFUSED_BUSY; got %v", err)
 	}
@@ -192,7 +192,7 @@ func TestR2_RefusalClears_RetrySucceeds(t *testing.T) {
 	defer SetRefusalBackoffForTest(time.Millisecond, 4*time.Millisecond)()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := Rebuild(ctx, mock, newTestLogger()); err != nil {
+	if _, err := Rebuild(ctx, mock, newTestLogger()); err != nil {
 		t.Fatalf("a refusal that clears within the deadline must be retried to success; got %v", err)
 	}
 	if got := atomic.LoadInt32(&attempts); got != 2 {
@@ -227,7 +227,7 @@ func TestR3_RefusedThroughDeadline_IsDeferredNotFailed(t *testing.T) {
 	defer cancel()
 
 	log, dump := readLog(t)
-	err := Rebuild(ctx, mock, log)
+	_, err := Rebuild(ctx, mock, log)
 	out := dump()
 
 	if !errors.Is(err, ErrRebuildRefusedBusy) {
@@ -268,7 +268,7 @@ func TestR4_ExecutedAndFailed_StaysFailed(t *testing.T) {
 		publishRaw(t, args, regressionRecord(argOf(args, "--operation-id")))
 		return executor.Result{ExitCode: 2, Stderr: "rollback performed"}, true
 	}
-	err := Rebuild(context.Background(), mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("an executed-and-failed rebuild must fail the install")
 	}
@@ -300,7 +300,7 @@ func TestR5_TimeoutStaysTimeout(t *testing.T) {
 		writeWitness(t, args)
 		return executor.Result{ExitCode: -1, TimedOut: true}, true
 	}
-	err := Rebuild(context.Background(), mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil || !strings.Contains(err.Error(), "INTERRUPTED") {
 		t.Fatalf("an interrupted rebuild must stay an interruption; got %v", err)
 	}
@@ -328,7 +328,7 @@ func TestR5_TimeoutBeatsAStaleRefusalRecord(t *testing.T) {
 		publishRaw(t, args, refusalRecord(argOf(args, "--operation-id")))
 		return executor.Result{ExitCode: -1, TimedOut: true}, true
 	}
-	err := Rebuild(context.Background(), mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil || !strings.Contains(err.Error(), "INTERRUPTED") {
 		t.Fatalf("a published REFUSED record must not turn a killed rebuild into a refusal; got %v", err)
 	}
@@ -363,7 +363,7 @@ func TestR6_MissingContract_ClassifiedByExecutionWitness(t *testing.T) {
 				}
 				return executor.Result{ExitCode: 1, Stderr: "aborted"}, true
 			}
-			err := Rebuild(context.Background(), mock, newTestLogger())
+			_, err := Rebuild(context.Background(), mock, newTestLogger())
 			if err == nil {
 				t.Fatal("a missing contract must never authorize continuation")
 			}
@@ -415,5 +415,123 @@ func TestRefusalBackoffIsBounded(t *testing.T) {
 	}
 	if refusalBackoff(1) != refusalBackoffBase {
 		t.Errorf("first backoff = %v, want %v", refusalBackoff(1), refusalBackoffBase)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R7 — the RECORDED EVIDENCE limb: the observation must be MEASURED, not defaulted
+// ─────────────────────────────────────────────────────────────────────────────
+// dns1 persisted REBUILD_EXIT_CODE=0 / REBUILD_DURATION_MS=0 for a run whose
+// installer.log recorded exit=1 and elapsed=31.22s, because nothing ever assigned
+// those fields. The verdict limb and this limb compound: a reader could take the
+// verdict as wrong AND the exit code as right, and be inverted on both.
+//
+//	A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT. IT IS A FABRICATED MEASUREMENT.
+func TestR7_ObservationCarriesTheRealExitCodeAndDuration(t *testing.T) {
+	const simulated = 40 * time.Millisecond
+	cases := []struct {
+		name     string
+		exit     int
+		publish  func(t *testing.T, args []string)
+		wantExit int
+	}{
+		{"executed and failed", 2, func(t *testing.T, args []string) {
+			writeWitness(t, args)
+			publishRaw(t, args, regressionRecord(argOf(args, "--operation-id")))
+		}, 2},
+		// THE dns1 SHAPE: exit 1, no usable contract. The verdict is an error AND the
+		// recorded evidence must still be the observed 1, never 0.
+		{"no contract, exit 1", 1, func(t *testing.T, args []string) {
+			writeWitness(t, args)
+		}, 1},
+		{"success", 0, func(t *testing.T, args []string) {
+			writeWitness(t, args)
+			publishRaw(t, args, completeRecord(argOf(args, "--operation-id")))
+		}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := executor.NewMockExecutor()
+			mock.StrictUnregistered = true
+			redirectResultDir(t)
+			mock.RunHook = func(_ string, args []string) (executor.Result, bool) {
+				if argOf(args, "--result-file") == "" {
+					return executor.Result{}, false
+				}
+				time.Sleep(simulated)
+				tc.publish(t, args)
+				return executor.Result{ExitCode: tc.exit}, true
+			}
+			obs, _ := Rebuild(context.Background(), mock, newTestLogger())
+			if !obs.Observed {
+				t.Fatal("a subprocess ran, so the observation must be marked observed")
+			}
+			if obs.ExitCode != tc.wantExit {
+				t.Errorf("observed ExitCode = %d, want %d — the recorded evidence must be the MEASURED rc", obs.ExitCode, tc.wantExit)
+			}
+			// ⛔ NOT merely "non-zero": a wrong-but-populated duration passes that.
+			// It must plausibly bound the simulated subprocess time.
+			if obs.Duration < simulated {
+				t.Errorf("observed Duration = %v, want >= %v — 0 ms for a subprocess that slept is the dns1 defect", obs.Duration, simulated)
+			}
+			if obs.Duration.Milliseconds() == 0 {
+				t.Error("REBUILD_DURATION_MS would be recorded as 0 for a subprocess that took real time")
+			}
+			if obs.Attempts != 1 {
+				t.Errorf("Attempts = %d, want 1", obs.Attempts)
+			}
+		})
+	}
+}
+
+// Nothing ran -> nothing may be reported as measured.
+func TestR7_NoSubprocess_NoManufacturedMeasurement(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	restore := SetRebuildResultBaseDirForTest(filepath.Join(t.TempDir(), "file-not-a-dir", "x"))
+	defer restore()
+	// Make the parent a FILE so MkdirAll fails and no subprocess is ever launched.
+	parent := filepath.Dir(filepath.Dir(rebuildResultBaseDir))
+	if err := os.WriteFile(filepath.Join(parent, "file-not-a-dir"), []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := Rebuild(context.Background(), mock, newTestLogger())
+	if err == nil {
+		t.Fatal("an unusable result directory must fail the rebuild")
+	}
+	if obs.Observed {
+		t.Error("no subprocess ran — the observation must not claim to have observed one")
+	}
+	if obs.ExitCode != 0 || obs.Duration != 0 {
+		t.Errorf("unobserved observation carries values (%d, %v) — they would be persisted as measurements", obs.ExitCode, obs.Duration)
+	}
+}
+
+// The refusal path must also carry the measurement: it is the path that produced the
+// dns1 record in the first place.
+func TestR7_RefusalExhaustedStillRecordsTheObservation(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.StrictUnregistered = true
+	redirectResultDir(t)
+	defer SetRefusalBackoffForTest(time.Millisecond, 2*time.Millisecond)()
+	mock.RunHook = func(_ string, args []string) (executor.Result, bool) {
+		if argOf(args, "--result-file") == "" {
+			return executor.Result{}, false
+		}
+		time.Sleep(5 * time.Millisecond)
+		publishRaw(t, args, refusalRecord(argOf(args, "--operation-id")))
+		return executor.Result{ExitCode: 1}, true
+	}
+	obs, err := Rebuild(context.Background(), mock, newTestLogger())
+	if !errors.Is(err, ErrRebuildRefusedBusy) {
+		t.Fatalf("want REFUSED_BUSY, got %v", err)
+	}
+	if !obs.Observed || obs.ExitCode != 1 {
+		t.Errorf("refusal observation = %+v, want observed exit 1", obs)
+	}
+	if obs.Duration.Milliseconds() == 0 {
+		t.Error("the refused subprocess took real time; recording 0 ms is the dns1 defect")
+	}
+	if obs.Attempts != refusalMaxAttempts {
+		t.Errorf("Attempts = %d, want %d", obs.Attempts, refusalMaxAttempts)
 	}
 }

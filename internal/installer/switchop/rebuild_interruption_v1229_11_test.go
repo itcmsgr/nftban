@@ -48,7 +48,7 @@ func TestRebuild_TimedOut_IsFatalToTheInstall(t *testing.T) {
 		return executor.Result{}, false
 	}
 
-	err := Rebuild(context.Background(), mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("an INTERRUPTED rebuild must fail the install — convergence did not complete")
 	}
@@ -67,7 +67,7 @@ func TestRebuild_TimedOut_IsNotReportedAsDegraded(t *testing.T) {
 	mock.RunResults[rebuildKey] = executor.Result{ExitCode: -1, TimedOut: true}
 
 	log, dump := readLog(t)
-	_ = Rebuild(context.Background(), mock, log)
+	_, _ = Rebuild(context.Background(), mock, log)
 	out := dump()
 
 	for _, forbidden := range []string{
@@ -88,7 +88,7 @@ func TestRebuild_NoExitStatus_IsFatal(t *testing.T) {
 	mock.StrictUnregistered = true
 	mock.RunResults[rebuildKey] = executor.Result{ExitCode: -1, Stderr: "signal: killed"}
 
-	err := Rebuild(context.Background(), mock, newTestLogger())
+	_, err := Rebuild(context.Background(), mock, newTestLogger())
 	if err == nil {
 		t.Fatal("a rebuild that produced no exit status must fail the install")
 	}
@@ -128,7 +128,7 @@ func TestRebuild_SurvivingClassesUnchanged(t *testing.T) {
 				publishResult(t, mock, tc.disposition, tc.res.ExitCode, nil)
 			}
 
-			err := Rebuild(context.Background(), mock, newTestLogger())
+			_, err := Rebuild(context.Background(), mock, newTestLogger())
 			if tc.wantErr && err == nil {
 				t.Fatalf("%s must return an error", tc.name)
 			}

@@ -46,7 +46,8 @@ type e2eResult struct {
 	sf             *state.StateFile
 	rc             int
 	log            string
-	reachedRebuild bool // the mocked rebuild was actually invoked
+	reachedRebuild bool   // the mocked rebuild was actually invoked
+	stateDir       string // so a caller can re-read the PERSISTED record, not only the struct
 }
 
 // driveInstall runs the real runInstall loop against the all-pass fixture, with the
@@ -143,7 +144,7 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 	rc := runInstall(ctx, m, sf, cfg, log)
 
 	b, _ := os.ReadFile(logPath)
-	return e2eResult{sf: sf, rc: rc, log: string(b), reachedRebuild: invoked}
+	return e2eResult{sf: sf, rc: rc, log: string(b), reachedRebuild: invoked, stateDir: dir}
 }
 
 func (r e2eResult) says(s string) bool { return strings.Contains(r.log, s) }

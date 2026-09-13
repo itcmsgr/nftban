@@ -21,7 +21,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
@@ -159,5 +163,128 @@ func TestR3_RevalidateRefusesDeferredRebuildStates(t *testing.T) {
 		if got.State != s {
 			t.Errorf("%s: revalidate rewrote the record to %s — refusal must not mutate it", s, got.State)
 		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R7 — the persisted contract must be INTERNALLY CONSISTENT
+// ─────────────────────────────────────────────────────────────────────────────
+// ⛔ NOT "the field is populated". A wrong-but-populated value passes that. These arms
+// cross-check the THREE surfaces that disagreed on dns1:
+//
+//	prose             FAILURE_REASON
+//	structured        REBUILD_EXIT_CODE / REBUILD_DURATION_MS
+//	installer.log     the observed subprocess line
+func TestR7_PersistedRebuildEvidenceIsInternallyConsistent(t *testing.T) {
+	// A rebuild that executed, took real time and failed. driveInstall gives us the
+	// state file AND the log from the same run, so the three surfaces can be compared
+	// against each other rather than each against an expectation.
+	r := driveInstall(t, testBudget, rebuildSim{dur: 25 * time.Millisecond, exit: 2})
+	r.mustHaveReachedRebuild(t)
+
+	if r.sf.RebuildExitCode != 2 {
+		t.Errorf("REBUILD_EXIT_CODE = %d, want the observed 2 (dns1 recorded 0 for a failed rebuild)", r.sf.RebuildExitCode)
+	}
+	if r.sf.RebuildDurationMs <= 0 {
+		t.Errorf("REBUILD_DURATION_MS = %d — a subprocess that occupied real time was recorded as instantaneous", r.sf.RebuildDurationMs)
+	}
+	// LEG 3: the log must corroborate the structured pair.
+	if !r.says("rebuild subprocess observed: exit=2") {
+		t.Errorf("installer.log does not carry the observed exit that install_state claims\n%s", r.log)
+	}
+	// LEG 1 vs LEG 2: whatever the prose asserts must not contradict the fields.
+	if c := r.sf.RebuildEvidenceContradiction(); c != "" {
+		t.Errorf("persisted record is self-contradictory: %s\nFAILURE_REASON=%s", c, r.sf.FailureReason)
+	}
+	// And the persisted file — not just the in-memory struct — must agree.
+	reread := state.NewStateFile(r.stateDir)
+	if err := reread.Read(); err != nil {
+		t.Fatalf("cannot re-read install_state: %v", err)
+	}
+	if reread.RebuildExitCode != r.sf.RebuildExitCode || reread.RebuildDurationMs != r.sf.RebuildDurationMs {
+		t.Errorf("on-disk evidence (%d, %d) != in-memory (%d, %d)",
+			reread.RebuildExitCode, reread.RebuildDurationMs, r.sf.RebuildExitCode, r.sf.RebuildDurationMs)
+	}
+	if !reread.RebuildEvidenceUsable() {
+		t.Errorf("a correctly written record must not be rejected: %s", reread.RebuildEvidenceRejection())
+	}
+}
+
+// A successful run must record the measurement too — otherwise history keeps
+// inheriting the 1-second fallback for every install.
+func TestR7_SuccessAlsoRecordsTheMeasurement(t *testing.T) {
+	r := driveInstall(t, testBudget, rebuildSim{dur: 25 * time.Millisecond, exit: 0})
+	r.mustHaveReachedRebuild(t)
+	if r.sf.RebuildExitCode != 0 {
+		t.Errorf("REBUILD_EXIT_CODE = %d, want the observed 0", r.sf.RebuildExitCode)
+	}
+	if r.sf.RebuildDurationMs <= 0 {
+		t.Errorf("REBUILD_DURATION_MS = %d — a 25ms rebuild was recorded as instantaneous", r.sf.RebuildDurationMs)
+	}
+	if !r.says("rebuild subprocess observed: exit=0") {
+		t.Errorf("installer.log does not corroborate the recorded evidence\n%s", r.log)
+	}
+}
+
+// THE dns1 RECORD ITSELF, replayed byte-for-byte from the forensic quote, must be
+// REJECTED rather than read as a clean rebuild.
+//
+// ⛔ NEGATIVE CONTROL FIRST: the same record with the field populated correctly must be
+// ACCEPTED, or the rejection would be indiscriminate rather than a contradiction test.
+func TestR7_Dns1ShapedRecordIsRejected(t *testing.T) {
+	write := func(t *testing.T, exitLine string) *state.StateFile {
+		t.Helper()
+		dir := t.TempDir()
+		body := "INSTALL_STATE=FAILED_REBUILD\n" +
+			"INSTALL_VERSION=1.229.14\n" +
+			"PHASE_REACHED=SWITCH\n" +
+			"FAILURE_REASON=nftban firewall rebuild produced no usable result contract (exit 1): rebuild result missing\n" +
+			exitLine +
+			"REBUILD_DURATION_MS=0\n"
+		if err := os.WriteFile(filepath.Join(dir, "install_state"), []byte(body), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		sf := state.NewStateFile(dir)
+		if err := sf.Read(); err != nil {
+			t.Fatalf("a contradictory record must still PARSE — --repair depends on it: %v", err)
+		}
+		return sf
+	}
+
+	bad := write(t, "REBUILD_EXIT_CODE=0\n")
+	if bad.RebuildEvidenceUsable() {
+		t.Error("the dns1 record asserts exit 1 in prose and 0 in the structured field — it must be rejected")
+	}
+	if !strings.Contains(bad.RebuildEvidenceRejection(), "REBUILD_EXIT_CODE=0") {
+		t.Errorf("the rejection must name what contradicted what; got %q", bad.RebuildEvidenceRejection())
+	}
+	// ⛔ REJECT, NEVER REPAIR: adopting the prose's 1 would make unstructured text the
+	// authority for a structured field.
+	if bad.RebuildExitCode != 0 {
+		t.Errorf("the rejected field was REWRITTEN to %d — rejection must not repair", bad.RebuildExitCode)
+	}
+	// The rest of the record stays usable, or --repair could not run on the affected host.
+	if bad.State != state.StateFailedRebuild || bad.PhaseReached != "SWITCH" {
+		t.Errorf("rejection discarded unrelated fields: state=%s phase=%s", bad.State, bad.PhaseReached)
+	}
+
+	good := write(t, "REBUILD_EXIT_CODE=1\n")
+	if !good.RebuildEvidenceUsable() {
+		t.Errorf("a consistent record must be accepted (non-vacuity); rejected with %q", good.RebuildEvidenceRejection())
+	}
+}
+
+// A record with no failure prose at all has nothing to contradict.
+func TestR7_NoProseNoContradiction(t *testing.T) {
+	sf := state.NewStateFile(t.TempDir())
+	sf.FailureReason = ""
+	sf.RebuildExitCode = 0
+	if c := sf.RebuildEvidenceContradiction(); c != "" {
+		t.Errorf("a clean record must not be flagged: %s", c)
+	}
+	// Prose that names exit 0 is not a contradiction either.
+	sf.FailureReason = "post-update validator rejected state (exit 0)"
+	if c := sf.RebuildEvidenceContradiction(); c != "" {
+		t.Errorf("exit 0 in prose beside REBUILD_EXIT_CODE=0 is consistent: %s", c)
 	}
 }

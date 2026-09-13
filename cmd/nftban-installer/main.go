@@ -925,8 +925,17 @@ func writeHistory(sf *state.StateFile, cfg *config, previousVersion, hostname st
 	// mislabeled as rpm/deb (G3-U13).
 	installType := historyInstallType(cfg)
 
-	// Duration from state file timestamp.
-	durationSecs := sf.RebuildDurationMs / 1000
+	// Duration from the recorded rebuild measurement.
+	// ⛔ v1.230.0 Gate 6R: CONSULT THE REJECTION FIRST. A record whose FAILURE_REASON
+	// asserts a non-zero exit beside REBUILD_EXIT_CODE=0 has been shown to disagree with
+	// itself, and its duration is not a measurement either. Copying it into history would
+	// propagate the fabricated value into a second artifact.
+	durationSecs := int64(0)
+	if sf.RebuildEvidenceUsable() {
+		durationSecs = sf.RebuildDurationMs / 1000
+	} else {
+		log.Warn("rebuild evidence rejected, not copied into update history: %s", sf.RebuildEvidenceRejection())
+	}
 	if durationSecs == 0 {
 		// Fallback: use wall clock from run start (captured in logger).
 		durationSecs = 1

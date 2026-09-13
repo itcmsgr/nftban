@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -77,6 +78,15 @@ type StateFile struct {
 	// evaluates the default as persisted evidence would report a fabricated
 	// state for a file that never carried one. Set only by Read().
 	stateFieldSeen bool
+
+	// rebuildEvidenceRejected records that the record READ FROM DISK contradicts
+	// itself about the rebuild (see RebuildEvidenceContradiction). It is IN-MEMORY
+	// ONLY and is never written: the on-disk artifact is forensic material and must
+	// survive verbatim, while no consumer in this process may go on treating
+	// REBUILD_EXIT_CODE / REBUILD_DURATION_MS as measurements. Same discipline as
+	// stateFieldSeen above — a value that exists is not automatically a value that
+	// was observed.
+	rebuildEvidenceRejected string
 
 	State             InstallState
 	Mode              string
@@ -416,8 +426,77 @@ func (sf *StateFile) Read() error {
 			sf.HealthResourceError = val
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	// ⛔ REJECT AT THE READ BOUNDARY, LIKE ReadRebuildResult DOES — and DO NOT fail the
+	// read. A contradictory record still carries the state, phase and resume point that
+	// `--repair` needs, and refusing to parse it would strand exactly the hosts that
+	// have the defect. What is withheld is the discredited MEASUREMENT PAIR, nothing else.
+	sf.rebuildEvidenceRejected = sf.RebuildEvidenceContradiction()
+	return nil
 }
+
+// nonZeroExitInProse matches an exit code an installer-authored FAILURE_REASON
+// asserts, in the two forms this tree emits: "(exit N)" and "exit=N".
+//
+// ⛔ IT IS A CONSISTENCY AUDIT OF OUR OWN RECORD, NOT AN INTERFACE.
+// The Gate 6R rule against reading message text bans deriving a VERDICT from a
+// subprocess's stderr. This is the opposite direction: it reads a field WE wrote, and
+// its only permitted output is REJECTION. ⛔ Nothing may use it to POPULATE a field —
+// that would make prose the source of a structured value, which is the very inversion
+// this limb exists to remove.
+var nonZeroExitInProse = regexp.MustCompile(`(?:\(exit |exit=)([0-9]+)\)?`)
+
+// RebuildEvidenceContradiction returns a description when this record contradicts
+// itself about the rebuild, or "" when it does not.
+//
+// ⛔ THE DEFECT IT REJECTS (dns1, one file, one run):
+//
+//	FAILURE_REASON=... produced no usable result contract (exit 1): ...
+//	REBUILD_EXIT_CODE=0
+//	REBUILD_DURATION_MS=0
+//
+// while installer.log recorded `(exit=1)` and `elapsed=31.22s`. The prose was right and
+// the machine-readable pair was wrong — and automation reads the machine-readable pair.
+//
+// This is the install_state counterpart of the rejection ReadRebuildResult already
+// applies to the rebuild RESULT contract (a REFUSED record that also claims a mutation
+// is refused rather than believed). ONE VALIDATOR PER CONTRACT: this is the only place
+// install_state is checked against itself, exactly as that is the only place the result
+// record is.
+//
+// ⛔ IT REJECTS, IT NEVER REPAIRS. Adopting the prose's number would make an
+// unstructured field the authority for a structured one.
+func (sf *StateFile) RebuildEvidenceContradiction() string {
+	if sf.FailureReason == "" {
+		return ""
+	}
+	m := nonZeroExitInProse.FindStringSubmatch(sf.FailureReason)
+	if m == nil {
+		return ""
+	}
+	claimed, err := strconv.Atoi(m[1])
+	if err != nil || claimed == 0 {
+		return ""
+	}
+	if sf.RebuildExitCode == 0 {
+		return fmt.Sprintf("FAILURE_REASON asserts a non-zero rebuild exit (%d) while REBUILD_EXIT_CODE=0"+
+			" (REBUILD_DURATION_MS=%d) — the structured evidence was never populated and must not be read as a measurement",
+			claimed, sf.RebuildDurationMs)
+	}
+	return ""
+}
+
+// RebuildEvidenceUsable reports whether REBUILD_EXIT_CODE / REBUILD_DURATION_MS from
+// THIS record may be consumed as measurements.
+//
+// ⛔ CONSULT THIS BEFORE READING EITHER FIELD. A rejected pair is not "probably fine";
+// it is a pair we have positively shown to disagree with the rest of its own record.
+func (sf *StateFile) RebuildEvidenceUsable() bool { return sf.rebuildEvidenceRejected == "" }
+
+// RebuildEvidenceRejection returns why the rebuild evidence was rejected, or "".
+func (sf *StateFile) RebuildEvidenceRejection() string { return sf.rebuildEvidenceRejected }
 
 func fmtBool(b bool) string {
 	if b {

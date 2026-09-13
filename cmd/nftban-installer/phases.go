@@ -550,12 +550,32 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —
 	// switchop.Rebuild still runs the shell on context.Background() (LANE 6A), because a
 	// long rebuild is not a hung one. Only the wait between refusals is bounded.
-	rebuildErr := switchop.Rebuild(ctx, exec, log)
+	rebuildObs, rebuildErr := switchop.Rebuild(ctx, exec, log)
 	pd.exemptOpName = "firewall rebuild"
 	pd.exemptOpDuration = time.Since(rebuildStart)
 	pd.exemptOpSucceeded = rebuildErr == nil
 	log.Info("exempt operation %s completed: duration=%s success=%t",
 		pd.exemptOpName, pd.exemptOpDuration.Round(time.Second), pd.exemptOpSucceeded)
+
+	// ⛔ v1.230.0 Gate 6R — RECORD WHAT WAS MEASURED, ON EVERY PATH.
+	// REBUILD_EXIT_CODE and REBUILD_DURATION_MS had NO writer anywhere in the tree, so
+	// every install persisted the struct zero-values in the shape of measurements. On
+	// dns1 that produced one file asserting `(exit 1)` in FAILURE_REASON beside
+	// REBUILD_EXIT_CODE=0 / REBUILD_DURATION_MS=0, against an installer.log recording
+	// exit=1 and elapsed=31.22s. Automation reads the structured field.
+	//
+	//	A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT. IT IS A FABRICATED MEASUREMENT.
+	//
+	// Assigned BEFORE the Transition below, because Transition is what persists the
+	// record — and the failing paths are exactly the ones that were wrong.
+	// ⛔ Only when a subprocess ACTUALLY RAN. If it never did, the fields keep their
+	// unobserved value rather than gaining a manufactured one.
+	if rebuildObs.Observed {
+		sf.RebuildExitCode = rebuildObs.ExitCode
+		sf.RebuildDurationMs = rebuildObs.Duration.Milliseconds()
+		log.Info("recorded rebuild evidence: REBUILD_EXIT_CODE=%d REBUILD_DURATION_MS=%d attempts=%d",
+			sf.RebuildExitCode, sf.RebuildDurationMs, rebuildObs.Attempts)
+	}
 	if err := rebuildErr; err != nil {
 		// Emergency table LEFT IN PLACE — SSH still safe.
 		//

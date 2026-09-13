@@ -213,6 +213,39 @@ type rebuildAttempt struct {
 	// executed — did this attempt cross the execution boundary? Established from the
 	// witness (or, trivially, from a contract that exists at all).
 	executed bool
+	// elapsed — wall clock actually spent in THIS subprocess. Measured, never derived.
+	elapsed time.Duration
+}
+
+// RebuildObservation is WHAT WAS ACTUALLY OBSERVED of the rebuild subprocess, for the
+// caller to RECORD. It is evidence, not a verdict — the verdict is the returned error.
+//
+// ⛔ WHY IT EXISTS (dns1, same transaction as the refusal above).
+// install_state carried, in ONE file, for ONE run:
+//
+//	FAILURE_REASON=... produced no usable result contract (exit 1): ...
+//	REBUILD_EXIT_CODE=0
+//	REBUILD_DURATION_MS=0
+//
+// against an installer.log that recorded `(exit=1)` and `elapsed=31.22s`. The prose was
+// right and the MACHINE-READABLE FIELDS WERE WRONG — because nothing in the tree ever
+// assigned them. They were struct zero-values persisted in the shape of measurements.
+// Automation reads the structured field in preference to the prose, so a failed install
+// read as a clean rebuild.
+//
+//	A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT. IT IS A FABRICATED MEASUREMENT.
+//
+// ⛔ ExitCode AND Duration DESCRIBE THE SAME ATTEMPT — the last one, the one the verdict
+// came from. They are deliberately NOT mixed (a last-attempt rc beside a summed duration
+// would be a fresh internal contradiction of exactly the kind this closes). Attempts
+// carries the count so a reader can see there were earlier, refused tries.
+type RebuildObservation struct {
+	// Observed is false ONLY when no rebuild subprocess ever ran, in which case
+	// ExitCode and Duration are meaningless and MUST NOT be recorded as measurements.
+	Observed bool
+	ExitCode int
+	Duration time.Duration
+	Attempts int
 }
 
 // Rebuild runs "nftban firewall rebuild" and returns an error if it fails.
@@ -234,8 +267,12 @@ type rebuildAttempt struct {
 // constant is correct across that range. A REFUSED attempt executed nothing, so
 // waiting to try again is legitimately bounded by the installer's existing deadline —
 // there is no second, independent timeout here.
-func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) error {
+func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) (RebuildObservation, error) {
 	log.Info("running nftban firewall rebuild (no outer deadline; bounded by its own operations)")
+
+	// ⛔ NOTHING RAN YET, SO NOTHING MAY BE REPORTED AS MEASURED. Observed stays false
+	// until a subprocess has actually returned.
+	var obs RebuildObservation
 
 	resultDir := rebuildResultBaseDir
 	if err := os.MkdirAll(resultDir, 0o750); err != nil {
@@ -244,12 +281,16 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 		if werr := exec.WriteFileAtomic(fhs.InstallFailedMarker, []byte("NFTBAN_INSTALL_FAILED=1\n"), 0644); werr != nil {
 			log.Warn("failed to write install-failed marker: %v", werr)
 		}
-		return fmt.Errorf("cannot allocate rebuild result directory %s: %w", resultDir, err)
+		return obs, fmt.Errorf("cannot allocate rebuild result directory %s: %w", resultDir, err)
 	}
 
 	var last rebuildAttempt
 	for attempt := 1; ; attempt++ {
 		last = runRebuildAttempt(exec, log, resultDir)
+		// RECORD THE OBSERVATION BEFORE CLASSIFYING IT. Every return below then carries
+		// the measurement that actually happened, including the fatal ones — the dns1
+		// record was wrong precisely on a fatal path.
+		obs = RebuildObservation{Observed: true, ExitCode: last.res.ExitCode, Duration: last.elapsed, Attempts: attempt}
 
 		// ⛔ INTERRUPTION IS CLASSIFIED FIRST, AND IT IS FATAL.
 		//
@@ -266,13 +307,13 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 		// refusal — the two differ on whether anything ran at all.
 		if last.res.TimedOut {
 			markInstallFailed(exec, log)
-			return fmt.Errorf("nftban firewall rebuild was INTERRUPTED before completion — convergence did not complete; the generation was not advanced and the host retains its last completed convergence")
+			return obs, fmt.Errorf("nftban firewall rebuild was INTERRUPTED before completion — convergence did not complete; the generation was not advanced and the host retains its last completed convergence")
 		}
 		// A process that died by signal without a deadline is equally incomplete:
 		// it never chose an exit code, so it never reported a verdict.
 		if last.res.ExitCode < 0 {
 			markInstallFailed(exec, log)
-			return fmt.Errorf("nftban firewall rebuild did not produce an exit status (killed, or not executable): %s", last.res.Stderr)
+			return obs, fmt.Errorf("nftban firewall rebuild did not produce an exit status (killed, or not executable): %s", last.res.Stderr)
 		}
 
 		if last.readErr != nil || last.result == nil {
@@ -292,7 +333,7 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 			log.Error("firewall rebuild REFUSED on every one of %d attempts — no rebuild executed", attempt)
 			logAttributionNotEstablished(log)
 			markInstallIncomplete(exec, log)
-			return fmt.Errorf("%w (reasons=%s, attempts=%d)", ErrRebuildRefusedBusy,
+			return obs, fmt.Errorf("%w (reasons=%s, attempts=%d)", ErrRebuildRefusedBusy,
 				strings.Join(last.result.ReasonCodes, ","), attempt)
 		}
 		wait := refusalBackoff(attempt)
@@ -304,7 +345,7 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 			log.Error("installer deadline expired while the convergence lock was held — every attempt was REFUSED, no rebuild executed")
 			logAttributionNotEstablished(log)
 			markInstallIncomplete(exec, log)
-			return fmt.Errorf("%w (reasons=%s, attempts=%d, deadline: %v)", ErrRebuildRefusedBusy,
+			return obs, fmt.Errorf("%w (reasons=%s, attempts=%d, deadline: %v)", ErrRebuildRefusedBusy,
 				strings.Join(last.result.ReasonCodes, ","), attempt, ctx.Err())
 		case <-timer.C:
 		}
@@ -331,10 +372,10 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 			log.Error("firewall rebuild produced no usable result contract AND no execution witness — execution was NOT established")
 			logAttributionNotEstablished(log)
 			markInstallIncomplete(exec, log)
-			return fmt.Errorf("%w (exit %d): %v", ErrRebuildNotExecuted, last.res.ExitCode, last.readErr)
+			return obs, fmt.Errorf("%w (exit %d): %v", ErrRebuildNotExecuted, last.res.ExitCode, last.readErr)
 		}
 		markInstallFailed(exec, log)
-		return fmt.Errorf("nftban firewall rebuild produced no usable result contract (exit %d; execution WAS established by the witness): %w",
+		return obs, fmt.Errorf("nftban firewall rebuild produced no usable result contract (exit %d; execution WAS established by the witness): %w",
 			last.res.ExitCode, last.readErr)
 	}
 	result := last.result
@@ -344,7 +385,7 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 	// pick a winner.
 	if result.ContradictsExitCode(last.res.ExitCode) {
 		markInstallFailed(exec, log)
-		return fmt.Errorf("rebuild contract violation: disposition %q contradicts exit code %d",
+		return obs, fmt.Errorf("rebuild contract violation: disposition %q contradicts exit code %d",
 			result.Disposition, last.res.ExitCode)
 	}
 
@@ -359,7 +400,7 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 			result.Transaction.Reason)
 	default: // Abort
 		markInstallFailed(exec, log)
-		return fmt.Errorf("nftban firewall rebuild %s (exit %d, rollback_performed=%t, reasons=%s): %s",
+		return obs, fmt.Errorf("nftban firewall rebuild %s (exit %d, rollback_performed=%t, reasons=%s): %s",
 			result.Disposition, last.res.ExitCode, result.RollbackPerformed,
 			strings.Join(result.ReasonCodes, ","), last.res.Stderr)
 	}
@@ -390,7 +431,7 @@ func Rebuild(ctx context.Context, exec executor.Executor, log *logging.Logger) e
 		}
 	}
 
-	return nil
+	return obs, nil
 }
 
 // logAttributionNotEstablished states, in the installer log, the leg of the
@@ -456,10 +497,15 @@ func runRebuildAttempt(exec executor.Executor, log *logging.Logger, resultDir st
 	// deadline bounds the REFUSAL RETRIES, never the execution of a rebuild that has
 	// actually started.
 	a := rebuildAttempt{}
+	started := time.Now()
 	a.res = exec.RunContext(context.Background(), fhs.NftbanCLI, "firewall", "rebuild",
 		"--install-context", "--result-file", resultPath, "--operation-id", opID,
 		"--execution-witness", witnessPath)
+	a.elapsed = time.Since(started)
 	log.CmdResult("nftban firewall rebuild --install-context", a.res.ExitCode, a.res.Stderr)
+	// The measurement goes in the log NEXT TO the exit code it belongs with, so the log
+	// and install_state can be checked against each other rather than taken on trust.
+	log.Info("rebuild subprocess observed: exit=%d elapsed=%s", a.res.ExitCode, a.elapsed.Round(time.Millisecond))
 
 	a.result, a.readErr = ReadRebuildResult(resultPath, opID)
 	// A contract that exists is itself proof the rebuild ran; otherwise the witness is
