@@ -949,6 +949,53 @@ _cmd_update_main_locked() {
 #   install_type _update_duration _summary_warnings health_status
 #   _ilog_file _ilog_before_lines UPDATE_LOG_FILE
 # Returns: 0 committed · 1 degraded · 2 not committed · 3 indeterminate
+#
+# =============================================================================
+# OWNER RULING (v1.230.0) — KEEP INDETERMINATE AND rc=3. DO NOT COLLAPSE INTO FAIL.
+# =============================================================================
+# The rc contract is a THREE-VALUED EVIDENCE MODEL, deliberately:
+#
+#   0 = PASS           the evidence establishes the requirement is met
+#   1 = FAIL           the evidence positively establishes the requirement is
+#                      VIOLATED   (here: rc 1 DEGRADED and rc 2 NOT_COMMITTED are
+#                                  both members of this FAIL class — two distinct
+#                                  positively-established failures, not two
+#                                  evidence classes)
+#   3 = INDETERMINATE  the system could NOT OBTAIN sufficient trustworthy
+#                      evidence to decide
+#
+# ⛔ ALL CALLERS MUST TREAT ANYTHING OTHER THAN 0 AS NON-SUCCESS, unless a caller
+#    has an EXPLICIT reason to differentiate. `rc -ne 0` is the correct test;
+#    `rc -eq 1` / `rc -eq 2` as a stand-in for "failed" is not.
+#
+# ⛔ INDETERMINATE MUST NOT BE COLLAPSED INTO FAIL. Operationally both stop: rc=3
+#    is non-zero, this arm writes NO "success" history row and does NOT delete
+#    state/update_failed, exactly like the failure arms. For FORENSICS they are
+#    materially different — rc=2 means "the install_state says it failed"; rc=3
+#    means "there was no readable install_state to adjudicate", which is a
+#    different defect with a different recovery (re-establish the record via
+#    --repair, not roll back a known-failed upgrade).
+#
+# ⛔ WHY COLLAPSING IT IS THE SAME MISTAKE AS THE ONE THIS RELEASE JUST FIXED.
+#    v1.230.0 found REBUILD_EXIT_CODE and REBUILD_DURATION_MS being round-tripped
+#    through the install_state format while NEVER being populated by production
+#    code, so zero-values masqueraded as real measurements and produced fake
+#    one-second history records. That INVENTED evidence provenance. Collapsing
+#    INDETERMINATE into FAIL is the SAME semantic mistake in the opposite
+#    direction — DESTROYING evidence-provenance information rather than inventing
+#    it, by asserting a failure the system never actually established.
+#
+#       A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT.
+#       AN OUTCOME THAT WAS NEVER OBSERVED IS NOT A FAILURE.
+#
+# The "indeterminate" history status this arm writes is likewise NOT a success
+# token: the only history consumer that adjudicates outcome,
+# _read_history_last_successful_type (cli/cmd_update_detection.sh), selects
+# POSITIVELY on status == "success" in all three of its jq / python3 / grep
+# implementations, so an "indeterminate" row is skipped like any failure row.
+# The parallel operator-surface contract is the INDETERMINATE -> action VERIFY
+# mapping in nftban_render_operator_readiness (core/nftban_output.sh).
+# Pinned by cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh.
 # -----------------------------------------------------------------------------
 _update_finalize_verdict() {
     # Adjudicate ONCE, from the single shared authority in
@@ -1194,6 +1241,10 @@ _update_finalize_verdict() {
             echo "  History: nftban update history"
             echo ""
             _update_final_summary "INDETERMINATE" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "INDETERMINATE"
+            # ⛔ rc=3 IS THE CONTRACT, NOT A SPARE NUMBER. See the OWNER RULING in
+            # this function's header: INDETERMINATE must stay distinct from the FAIL
+            # codes (1 and 2). Do not renumber it and do not merge this arm into one
+            # of them — non-zero already makes it non-success for every caller.
             return 3
             ;;
 

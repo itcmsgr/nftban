@@ -55,6 +55,15 @@ type rebuildSim struct {
 	// noProjection models a run where the authoritative render did not establish the
 	// projection IN THIS RUN.
 	noProjection bool
+	// deferred models the LEGITIMATE pre-daemon deferral: the shell publishes
+	// disposition DEFERRED_RUNTIME with an uncommitted transaction and rc=1 (the pair
+	// RebuildResult.ContradictsExitCode requires), and the effective convergence
+	// generation is deliberately NOT advanced — which is what the deferral MEANS.
+	//
+	// ⛔ It is set INDEPENDENTLY of exit: the caller must pass exit:1 with it, because
+	// a fixture that emitted DEFERRED_RUNTIME beside rc=0 would be rejected as a
+	// contract violation and would prove nothing about the deferral.
+	deferred bool
 }
 
 type e2eResult struct {
@@ -158,6 +167,12 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 				disp, committed, txReason, rollback := "COMPLETE", "true", "COMMITTED", "false"
 				if sim.exit != 0 {
 					disp, committed, txReason, rollback = "REGRESSION", "false", "FAILURE", "true"
+				}
+				// v1.230.0 OWNER RULING: the legitimate pre-daemon deferral. Checked
+				// AFTER the failure branch so it wins over the rc!=0 default — a
+				// deferral is reported with rc=1, which is also a failing rc.
+				if sim.deferred {
+					disp, committed, txReason, rollback = "DEFERRED_RUNTIME", "false", "DEFERRED_CONVERGENCE", "false"
 				}
 				body := fmt.Sprintf(`{"schema_version":"1","operation_id":%q,`+
 					`"context":"install-deferred","disposition":%q,"reason_codes":["TEST"],`+

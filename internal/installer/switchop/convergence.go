@@ -66,6 +66,38 @@ import (
 //
 //	⛔ A COMPONENT'S OWN SUCCESS CLAIM IS NOT VERIFICATION OF THAT CLAIM.
 
+// ═════════════════════════════════════════════════════════════════════════════════
+// OWNER RULING (v1.230.0) — DEFERRED_RUNTIME MAY REACH COMMITTED, BUT NEVER PROVES IT
+// ═════════════════════════════════════════════════════════════════════════════════
+// This file is where the rebuild's disposition is INTERPRETED into a convergence
+// verdict, so the ruling is restated here at the point of interpretation.
+//
+// ⛔ `DEFERRED_RUNTIME == success` IS INCORRECT AND MUST NOT BE SIMPLIFIED INTO THAT.
+// It is a PERMITTED INTERMEDIATE DISPOSITION, not proof of successful runtime
+// application. ApplyDeferred is an INPUT to this verifier; it is never a verdict.
+//
+//	COMPLETE                            -> eligible for COMMITTED
+//	DEFERRED_RUNTIME                    -> eligible for COMMITTED ONLY when the
+//	                                       deferral is explicitly EXPECTED AND the
+//	                                       post-start convergence contract proves the
+//	                                       runtime converged
+//	REFUSED / NOT_EXECUTED / FAILED
+//	  / unknown                         -> NEVER COMMITTED
+//
+// ⛔ DO NOT "SIMPLIFY" IN EITHER DIRECTION:
+//   - making ApplyDeferred a fail() call re-introduces v1.229.12 P12-A01 (escalating
+//     an EXPECTED pre-daemon deferral into a fatal outcome) on every upgrade;
+//   - making it a pass() call — or deleting the ConvergenceDeferred verdict and
+//     letting a deferred run fall through as ConvergenceVerified — asserts a runtime
+//     convergence that demonstrably did not happen.
+//
+// The dominance rule at the end of VerifyPostUpdateConvergence is the mechanism that
+// keeps both errors out: a deferred run can never be VERIFIED, and a deferral can
+// never soften a positive failure.
+//
+// Pinned by the Ruling-1 arms in convergence_v1230_test.go.
+// ═════════════════════════════════════════════════════════════════════════════════
+
 // BootProjectionPath is the boot projection the include authority points at.
 // ⛔ NOT /etc/nftban/nftables.conf — that is the retired legacy include.
 const BootProjectionPath = "/etc/nftban/generated/nftban-boot.nft"
@@ -88,6 +120,11 @@ const (
 	// ConvergenceDeferred — the rebuild deliberately deferred its module projection
 	// (DEFERRED_RUNTIME), so the generation was intentionally not advanced. Convergence
 	// debt is outstanding; this is NOT a verified convergence.
+	//
+	// ⛔ THIS VERDICT IS THE RULING MADE MACHINE-READABLE. It exists so a deferral can
+	// be carried forward as an INTERMEDIATE DISPOSITION without ever being spelled
+	// VERIFIED. Deleting it — or folding it into ConvergenceVerified because "the run
+	// was clean otherwise" — is exactly the simplification the owner ruling forbids.
 	ConvergenceDeferred ConvergenceVerdict = "DEFERRED"
 	// ConvergenceUnverified — a leg could not be OBSERVED at all. ⛔ Not a pass and not
 	// a failure: an unobservable leg is an absence of evidence, and manufacturing either
@@ -118,6 +155,10 @@ type ConvergenceInputs struct {
 	// because this claim was true while the kernel was unchanged.
 	ApplyClaimedComplete bool
 	// ApplyDeferred is true when the rebuild reported DEFERRED_RUNTIME.
+	//
+	// ⛔ AN EXPECTED DEFERRAL, NOT A SUCCESS SIGNAL. It suppresses the T6 "nothing
+	// converged" failure (an unadvanced generation is what a deferral MEANS) and
+	// nothing more — it never satisfies a leg and never produces ConvergenceVerified.
 	ApplyDeferred bool
 	// GenerationBefore is the counter read BEFORE the rebuild ran, from
 	// ReadConvergenceGeneration. -1 means it could not be read.
@@ -290,9 +331,14 @@ func VerifyPostUpdateConvergence(exec executor.Executor, log *logging.Logger, in
 		unknown("kernel_tables_present", fmt.Sprintf("ip=%t ip6=%t and no completed apply to compare against", v4, v6))
 	}
 
+	// ⛔ OWNER RULING ENFORCEMENT POINT (see the block above the constants).
 	// DEFERRED dominates a clean run: a deferred projection is not a verified
 	// convergence, and calling it VERIFIED would be the false-COMMITTED shape again.
 	// It does NOT override a positive failure.
+	//
+	// ⛔ DO NOT DELETE THIS AS REDUNDANT. It is the only line that stops an otherwise
+	// all-PASS deferred run — including one where the generation advanced for some
+	// unrelated reason — from being reported as a proven convergence.
 	if in.ApplyDeferred && res.Verdict == ConvergenceVerified {
 		res.Verdict = ConvergenceDeferred
 		res.Detail = "the rebuild deferred its module projection; convergence debt is outstanding"

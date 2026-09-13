@@ -318,6 +318,80 @@ else
     bad "P0-W could not read $MG to cross-check the wording list"
 fi
 
+
+# =============================================================================
+# OWNER RULING (v1.230.0) — KEEP INDETERMINATE. DO NOT COLLAPSE IT INTO FAIL.
+# =============================================================================
+# Subject: nftban_render_operator_readiness in core/nftban_output.sh.
+#
+#   PASS           evidence establishes the requirement is met
+#   FAIL           evidence positively establishes the requirement is VIOLATED
+#   INDETERMINATE  the system could not obtain sufficient trustworthy evidence
+#
+# ⛔ OPERATIONALLY BOTH STOP: neither reaches PASS and neither reaches action NONE.
+# ⛔ FORENSICALLY THEY DIFFER: FAIL means "we looked and it is broken"; INDETERMINATE
+#    means "we could not look", so its action is VERIFY (obtain the evidence), not
+#    FAIL (repair a known break). Collapsing them destroys evidence provenance —
+#    the mirror image of the v1.230.0 defect where never-written fields masqueraded
+#    as measurements.
+# =============================================================================
+echo ""
+echo "v1.230.0 OWNER RULING — three-valued readiness (INDETERMINATE is not FAIL):"
+
+R2_JSON='{"status":"protected","findings":[]}'
+R2_INDET=$(nftban_render_operator_readiness "$R2_JSON" "INDETERMINATE" 0)
+R2_FAILED=$(nftban_render_operator_readiness "$R2_JSON" "FAILED_REBUILD" 0)
+R2_OK=$(nftban_render_operator_readiness "$R2_JSON" "COMMITTED" 0)
+
+# --- the three classes each land on their own verdict/action pair -------------
+ar "$R2_OK"    "Upgrade readiness:[[:space:]]+PASS$"          "R2 COMMITTED -> readiness PASS"
+ar "$R2_OK"    "Action needed:[[:space:]]+NONE$"              "R2 COMMITTED -> action NONE"
+ar "$R2_FAILED" "Upgrade readiness:[[:space:]]+FAIL$"         "R2 a positively-violated state -> readiness FAIL"
+ar "$R2_FAILED" "Action needed:[[:space:]]+FAIL$"             "R2 a positively-violated state -> action FAIL"
+ar "$R2_INDET" "Upgrade readiness:[[:space:]]+INDETERMINATE$" "R2 unobtainable evidence -> readiness INDETERMINATE"
+ar "$R2_INDET" "Action needed:[[:space:]]+VERIFY$"            "R2 unobtainable evidence -> action VERIFY"
+
+# --- operationally, INDETERMINATE is NON-SUCCESS ------------------------------
+nr "$R2_INDET" "Upgrade readiness:[[:space:]]+PASS"  "R2 INDETERMINATE never reaches PASS (non-zero-evidence is non-success)"
+nr "$R2_INDET" "Action needed:[[:space:]]+NONE"      "R2 INDETERMINATE never reaches action NONE"
+
+# --- forensically, INDETERMINATE is DISTINCT from FAIL ------------------------
+# ⛔ THIS IS THE ARM A COLLAPSE BREAKS. Folding INDETERMINATE into FAIL makes the
+#    two renderings agree on the action word, and lands here.
+nr "$R2_INDET" "Action needed:[[:space:]]+FAIL"      "R2 INDETERMINATE is NOT rendered as FAIL (evidence provenance preserved)"
+af "$R2_INDET" "cannot be established"               "R2 the INDETERMINATE pointer says the outcome could not be ESTABLISHED"
+nf "$R2_INDET" "NOT COMMITTED;"                      "R2 INDETERMINATE does not borrow the asserted-failure sentence"
+af "$R2_FAILED" "NOT COMMITTED;"                     "R2 an asserted failure keeps its own sentence"
+
+# --- structural: the rationale must stay at the mapping site ------------------
+OUT_SH="${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+for _s in "KEEP INDETERMINATE. DO NOT COLLAPSE IT INTO FAIL" \
+          "INDETERMINATE IS NOT A SOFTER FAIL AND NOT A QUIETER PASS" \
+          "AN OUTCOME THAT WAS NEVER OBSERVED IS NOT A FAILURE"; do
+    if grep -qF -- "$_s" "$OUT_SH"; then ok "R2 nftban_output.sh still documents the ruling: ${_s:0:40}..."
+    else bad "R2 nftban_output.sh ruling rationale removed — missing: $_s"; fi
+done
+
+# --- NEGATIVE CONTROL (declared inversion) ------------------------------------
+# ⛔ The greens above are only evidence if they can go red. This is the forbidden
+#    collapse — INDETERMINATE mapped onto the FAIL action — over the SAME input.
+#    It must make the INDETERMINATE and FAIL renderings agree; if it does not, the
+#    distinctness assertions above are vacuous.
+_r2_collapsed_action() {
+    case "$1" in
+        FAIL|INDETERMINATE) echo "FAIL" ;;
+        PASS_WITH_WARN)     echo "WARN" ;;
+        *)                  echo "NONE" ;;
+    esac
+}
+_r2_inv_indet="$(_r2_collapsed_action INDETERMINATE)"
+_r2_inv_fail="$(_r2_collapsed_action FAIL)"
+if [[ "$_r2_inv_indet" == "$_r2_inv_fail" ]] && grep -qE "Action needed:[[:space:]]+VERIFY$" <<<"$R2_INDET"; then
+    ok "NEG-R2 the collapsed mapping DOES erase the VERIFY action (both become $_r2_inv_indet) while the real one keeps it — the distinctness assertions are live"
+else
+    bad "NEG-R2 inversion did not reproduce the collapse (inverted: $_r2_inv_indet vs $_r2_inv_fail) — the R2 distinctness assertions may be vacuous"
+fi
+
 echo "-----------------------------------------------"
 printf 'R1b-2 readiness tests: %d passed, %d failed\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

@@ -20,6 +20,7 @@ package switchop
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -181,5 +182,118 @@ func TestConvergence_ProjectionPathIsTheGeneratedArtifact(t *testing.T) {
 	}
 	if strings.HasSuffix(BootProjectionPath, "/etc/nftban/nftables.conf") {
 		t.Error("/etc/nftban/nftables.conf is the RETIRED legacy include, not the boot authority")
+	}
+}
+
+// =============================================================================
+// OWNER RULING (v1.230.0) — DEFERRED_RUNTIME MAY REACH COMMITTED, NEVER PROVES IT
+// =============================================================================
+// Pins for the ruling documented in convergence.go and at the top of
+// internal/installer/state/machine.go. Each arm asserts a consequence that a
+// "simplification" in EITHER direction would have to break.
+
+// ⛔ THE STRONGEST ARM. An otherwise PERFECT deferred run — projection generated,
+// nft -c clean, kernel tables present, AND a generation counter that advanced —
+// still must not be reported as VERIFIED.
+//
+// A future reader who deletes the DEFERRED-dominance rule as "redundant, every leg
+// passed anyway" breaks exactly here. The deferral asserts the module projection has
+// not happened yet; no amount of surrounding green converts that into proof.
+func TestRuling_DeferredNeverVerifiedEvenWhenEveryLegPasses(t *testing.T) {
+	m := convergedHost() // generation 8 vs GenerationBefore 7 => genAdvanced
+	got := VerifyPostUpdateConvergence(m, newTestLogger(), ConvergenceInputs{
+		ProjectionGenerated: true, ApplyDeferred: true, GenerationBefore: 7,
+	})
+	if got.Verdict == ConvergenceVerified {
+		t.Fatalf("a DEFERRED_RUNTIME rebuild was reported VERIFIED (legs: %s) — "+
+			"DEFERRED_RUNTIME is a permitted INTERMEDIATE disposition, never proof of success",
+			strings.Join(got.Legs, " | "))
+	}
+	if got.Verdict != ConvergenceDeferred {
+		t.Fatalf("verdict = %s, want DEFERRED", got.Verdict)
+	}
+}
+
+// ⛔ AND THE OPPOSITE SIMPLIFICATION IS EQUALLY FORBIDDEN. Turning the deferral into a
+// failure re-introduces v1.229.12 P12-A01 — escalating an EXPECTED pre-daemon deferral
+// — on every upgrade. DEFERRED must stay its own verdict, distinct from NOT_CONVERGED.
+func TestRuling_DeferredIsNotEscalatedToNotConverged(t *testing.T) {
+	m := convergedHost()
+	m.Files[ConvergenceGenerationPath] = []byte("7\n") // a deferral does not advance it
+	got := VerifyPostUpdateConvergence(m, newTestLogger(), ConvergenceInputs{
+		ProjectionGenerated: true, ApplyDeferred: true, GenerationBefore: 7,
+	})
+	if got.Verdict == ConvergenceNotConverged {
+		t.Fatalf("an EXPECTED deferral was escalated to NOT_CONVERGED — that is the "+
+			"v1.229.12 P12-A01 defect, re-committed for every upgrade (legs: %s)",
+			strings.Join(got.Legs, " | "))
+	}
+	if got.Verdict != ConvergenceDeferred {
+		t.Fatalf("verdict = %s, want DEFERRED", got.Verdict)
+	}
+	// The four verdicts must stay four distinct tokens: a collapse shows up here first.
+	seen := map[ConvergenceVerdict]bool{}
+	for _, v := range []ConvergenceVerdict{
+		ConvergenceVerified, ConvergenceNotConverged, ConvergenceDeferred, ConvergenceUnverified,
+	} {
+		if seen[v] {
+			t.Errorf("convergence verdict %q is duplicated — the four classes have been collapsed", v)
+		}
+		seen[v] = true
+	}
+}
+
+// The disposition -> installer-policy map, pinned whole. This is the table that
+// decides which rebuild outcomes may continue at all.
+//
+//	COMPLETE          -> CONTINUE_COMPLETE   (eligible for COMMITTED)
+//	DEFERRED_RUNTIME  -> CONTINUE_DEFERRED   (permitted to continue; NOT success)
+//	REFUSED           -> RETRY_REFUSED       (nothing ran; retry, never COMMITTED here)
+//	REGRESSION/FATAL  -> ABORT
+//	unknown           -> ABORT               (⛔ schema evolution defaults to safe)
+func TestRuling_DispositionToContinuationMap(t *testing.T) {
+	for _, c := range []struct {
+		disp RebuildDisposition
+		want InstallerContinuation
+	}{
+		{DispositionComplete, ContinueComplete},
+		{DispositionDeferredRuntime, ContinueDeferred},
+		{DispositionRefused, RetryRefused},
+		{DispositionRegression, Abort},
+		{DispositionFatal, Abort},
+		{RebuildDisposition("NOT_EXECUTED"), Abort},
+		{RebuildDisposition(""), Abort},
+		{RebuildDisposition("FUTURE_DISPOSITION_XYZ"), Abort},
+	} {
+		r := &RebuildResult{Disposition: c.disp}
+		if got := r.Continuation(); got != c.want {
+			t.Errorf("disposition %q -> %s, want %s", c.disp, got, c.want)
+		}
+	}
+	// ⛔ CONTINUE_DEFERRED IS NOT CONTINUE_COMPLETE. If these ever compare equal, a
+	// caller switching on the continuation can no longer tell a deferral from a success.
+	if ContinueDeferred == ContinueComplete {
+		t.Error("CONTINUE_DEFERRED and CONTINUE_COMPLETE have been collapsed into one value")
+	}
+}
+
+// STRUCTURAL guard: the ruling must stay written where the disposition is interpreted.
+// ⛔ Sentences, never a line number — line numbers drift and a guard located by one is
+// invalid in this repository.
+func TestRuling_ConvergenceDocumentsTheOwnerRuling(t *testing.T) {
+	src, err := os.ReadFile("convergence.go")
+	if err != nil {
+		t.Fatalf("cannot read convergence.go: %v", err)
+	}
+	for _, want := range []string{
+		"`DEFERRED_RUNTIME == success`",
+		"IS INCORRECT AND MUST NOT BE SIMPLIFIED INTO THAT",
+		"PERMITTED INTERMEDIATE DISPOSITION",
+		"NEVER COMMITTED",
+		"P12-A01",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("convergence.go no longer documents the owner ruling: missing %q", want)
+		}
 	}
 }

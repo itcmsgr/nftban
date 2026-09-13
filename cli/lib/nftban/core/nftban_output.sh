@@ -1635,6 +1635,41 @@ nftban_render_operator_readiness() {
         [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
     fi
 
+    # =========================================================================
+    # OWNER RULING (v1.230.0) — KEEP INDETERMINATE. DO NOT COLLAPSE IT INTO FAIL.
+    # =========================================================================
+    # The evidence model here is THREE-VALUED, deliberately:
+    #
+    #   PASS           the evidence establishes that the requirement is met
+    #   FAIL           the evidence positively establishes that the requirement
+    #                  is VIOLATED
+    #   INDETERMINATE  the system could NOT OBTAIN sufficient trustworthy
+    #                  evidence to decide either way
+    #
+    # ⛔ INDETERMINATE IS NOT A SOFTER FAIL AND NOT A QUIETER PASS. Operationally
+    #    both FAIL and INDETERMINATE stop — neither is success, and the action
+    #    verdict below is non-NONE for both. For FORENSICS they are materially
+    #    different: FAIL says "we looked and it is broken"; INDETERMINATE says
+    #    "we could not look". Its action is VERIFY precisely because the operator's
+    #    next move differs — obtain the evidence, rather than repair a known break.
+    #
+    # ⛔ WHY COLLAPSING IT IS THE SAME MISTAKE AS THE ONE THIS RELEASE JUST FIXED.
+    #    v1.230.0 found REBUILD_EXIT_CODE and REBUILD_DURATION_MS being round-
+    #    tripped through the install_state format while NEVER being populated by
+    #    production code, so struct zero-values masqueraded as real measurements
+    #    and produced fake one-second history records. That INVENTED evidence
+    #    provenance. Collapsing INDETERMINATE into FAIL is the SAME semantic error
+    #    in the opposite direction — it DESTROYS evidence-provenance information,
+    #    asserting a finding the system never actually made.
+    #
+    #       A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT.
+    #       AN OUTCOME THAT WAS NEVER OBSERVED IS NOT A FAILURE.
+    #
+    # The producer of the INDETERMINATE class is nftban_install_state_classify
+    # above (no readable state file, or no INSTALL_STATE key in it). The parallel
+    # rc-level contract lives in _update_finalize_verdict (cli/cmd_update.sh),
+    # where INDETERMINATE is rc=3 and stays distinct from the failure codes.
+    # Pinned by cli/lib/nftban/tests/nftban_operator_readiness_r1b2_test.sh.
     case "$readiness" in
         FAIL)           action="FAIL" ;;
         INDETERMINATE)  action="VERIFY" ;;

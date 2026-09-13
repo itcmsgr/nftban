@@ -583,13 +583,39 @@ const (
 //	""             → PASS-as-UNKNOWN (legacy/not-evaluated; explicitly NOT "verified")
 //	other          → FAIL closed
 //
-// ⛔ WHY DEFERRED DOES NOT FAIL, AND WHY THAT IS FLAGGED RATHER THAN DECIDED HERE.
+// ⛔ WHY DEFERRED DOES NOT FAIL.
 // DEFERRED_RUNTIME is the EXPECTED pre-daemon module-projection deferral, and v1.229.12
 // P12-A01 exists precisely because escalating it to a fatal outcome was a production
 // defect. Failing it here would re-commit that error for every upgrade. It is equally
 // not a verified convergence, so it PASSES with an explicit WARN rather than silently.
-// Whether a deferred convergence may reach COMMITTED is a POLICY DECISION for the owner
-// of the deferral contract, not one to be taken inside an assertion.
+//
+// ⛔ OWNER RULING (v1.230.0) — THE POLICY QUESTION IS ANSWERED; DO NOT RE-DECIDE IT HERE.
+// This arm is the enforcement point of the ruling documented at the top of
+// internal/installer/state/machine.go:
+//
+//	COMPLETE                        -> eligible for COMMITTED
+//	DEFERRED_RUNTIME                -> eligible for COMMITTED ONLY when the deferral is
+//	                                   explicitly EXPECTED AND the post-start
+//	                                   convergence contract proves the runtime converged
+//	REFUSED / NOT_EXECUTED / FAILED
+//	  / unknown                     -> NEVER COMMITTED
+//
+// `DEFERRED_RUNTIME == success` IS INCORRECT. This arm passing is NOT that claim: it
+// is a PERMITTED INTERMEDIATE DISPOSITION being allowed to continue, while the verdict
+// recorded in install_state stays DEFERRED and the WARN stays on the record. Two edits
+// are forbidden here, in opposite directions:
+//   - setting r.Passed = false on this arm re-introduces P12-A01 for every upgrade;
+//   - folding this arm into the convergenceVerified case (or rewriting its Detail to
+//     claim convergence) manufactures proof that the deferral itself denies.
+//
+// What still has to hold before COMMITTED on a deferred run is enforced by the OTHER
+// assertions this one deliberately does not duplicate — chiefly
+// assertWhitelistConvergence above, which runs on the POST-DAEMON-START verdict
+// recorded by phaseConfigure (cmd/nftban-installer/phases.go SyncWhitelist) and FAILS
+// on FAILED, on a surviving DEFERRED and on any unrecognised value.
+//
+// Pinned by the Ruling-1 arms in internal/installer/switchop/convergence_v1230_test.go
+// and cmd/nftban-installer/convergence_contract_v1230_test.go.
 func assertPostUpdateConvergence(opts AssertionOpts, log *logging.Logger) AssertionResult {
 	r := AssertionResult{Name: "post_update_convergence_verified", Passed: true}
 	switch opts.ConvergenceVerified {

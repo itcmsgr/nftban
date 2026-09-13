@@ -177,3 +177,109 @@ func TestT5_ContradictoryContractNeverPasses(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// OWNER RULING (v1.230.0) — DEFERRED_RUNTIME MAY REACH COMMITTED, NEVER PROVES IT
+// =============================================================================
+// The end-to-end half of the pin. The unit arms in internal/installer/switchop and
+// internal/installer/state cover the pieces; this one drives the REAL runInstall loop
+// so a "simplification" anywhere along disposition -> verdict -> assertion -> state
+// shows up as a failing install-level outcome, not just a changed constant.
+
+// ⛔ BOTH HALVES OF THE RULING IN ONE RUN, because they are only meaningful together:
+//
+//	the deferral DOES NOT BLOCK THE COMMIT   (collapsing it to a failure = P12-A01,
+//	                                          re-committed on every upgrade)
+//	and it is NOT RECORDED AS VERIFIED       (collapsing it to success = the false-
+//	                                          COMMITTED shape this gate exists to stop)
+//
+// The record keeps the truth: CONVERGENCE_VERIFIED=DEFERRED, convergence debt named in
+// the log, and the generation deliberately not advanced.
+//
+// ⛔ THE FIRST HALF IS A SCOPED CLAIM — "the deferral did not block", not "the install
+// committed". This harness is not a full all-pass host and T1 (a fully VERIFIED run)
+// makes the same scoped claim for the same reason. Asserting COMMITTED here would fail
+// on an unrelated fixture assertion and would prove nothing about the ruling.
+func TestRuling_DeferredRuntimeReachesCommittedButRecordsDeferred(t *testing.T) {
+	// exit:1 is REQUIRED alongside deferred — DEFERRED_RUNTIME/1 is the consistent pair
+	// RebuildResult.ContradictsExitCode enforces; any other rc aborts as a contract
+	// violation and this case would prove nothing.
+	r := driveInstall(t, testBudget, rebuildSim{dur: 5 * time.Millisecond, exit: 1, deferred: true})
+	r.mustHaveReachedRebuild(t)
+
+	// ── half 1: the expected deferral must NOT be escalated into a failure ──────
+	// ⛔ SCOPED CLAIM, same discipline as T1 above: this harness is NOT a full all-pass
+	// host (health_resource_policy_active legitimately ends it DEGRADED on a mock with
+	// no real cgroup limits), so asserting sf.State == COMMITTED here would fail for a
+	// reason that has nothing to do with the ruling. The honest claim is that the
+	// DEFERRAL did not stop the run and did not block the commit.
+	//     CLAIM ONLY WHAT THE SYSTEM KNOWS.
+	if r.sf.State == state.StateFailedRebuild {
+		t.Fatalf("an EXPECTED pre-daemon deferral was recorded FAILED_REBUILD — that is the "+
+			"v1.229.12 P12-A01 defect, re-committed for every upgrade\n%s", r.log)
+	}
+	if r.sf.State.IsDeferredRebuild() {
+		t.Fatalf("state = %s — a DEFERRED_RUNTIME rebuild EXECUTED; it must not be classified "+
+			"with the terminals that mean no rebuild ran\n%s", r.sf.State, r.log)
+	}
+	// The run must have carried on PAST the switch phase. Without this the two
+	// assertions above could pass on a run that died even earlier.
+	if !r.says("[PHASE] validate") {
+		t.Fatalf("VACUOUS: the deferred run never reached Validate, so nothing here shows the "+
+			"deferral was allowed to continue\n%s", r.log)
+	}
+	if r.says("ASSERT post_update_convergence_verified: FAIL") {
+		t.Errorf("the convergence assertion FAILED on an expected deferral — it must WARN, "+
+			"not block\n%s", r.log)
+	}
+	if strings.Contains(r.sf.FailureReason, "post_update_convergence_verified") {
+		t.Errorf("convergence named in the failure reason of a deferred run: %s", r.sf.FailureReason)
+	}
+
+	// ── half 2: and it must never be recorded as proof of runtime application ───
+	if got := r.sf.ConvergenceVerified; got != string(switchop.ConvergenceDeferred) {
+		t.Fatalf("CONVERGENCE_VERIFIED = %q, want DEFERRED — DEFERRED_RUNTIME is a permitted "+
+			"INTERMEDIATE disposition and must never itself constitute proof of successful "+
+			"runtime application\n%s", got, r.log)
+	}
+	if r.sf.ConvergenceVerified == string(switchop.ConvergenceVerified) {
+		t.Fatal("a deferred rebuild was recorded as a VERIFIED convergence")
+	}
+	// The evidence the operator needs must be ON the record, not only in the verdict.
+	if !r.says("DEFERRED apply_confirmed") {
+		t.Errorf("the apply leg must state that the projection was deliberately deferred\n%s", r.log)
+	}
+	if !r.says("convergence debt outstanding") {
+		t.Errorf("the run must name the outstanding convergence debt\n%s", r.log)
+	}
+	// ⛔ AND THE INDEPENDENT COUNTER MUST NOT HAVE MOVED. This is what makes the
+	// deferral safe to allow: the generation is written by nftban_plan_txn_commit,
+	// which is reachable only from COMPLETE, so it is evidence the rebuild cannot
+	// fabricate. A deferred run that advanced it would mean the contract is broken.
+	if !r.says("DEFERRED effective_generation: not advanced") {
+		t.Errorf("a deferred run must record the generation as NOT advanced\n%s", r.log)
+	}
+}
+
+// The third line of the model, end to end: a REFUSED rebuild — the disposition that
+// means "nothing ran at all" — must never reach COMMITTED, and must not be laundered
+// into a convergence verdict on the way out.
+func TestRuling_RefusedNeverReachesCommitted(t *testing.T) {
+	if state.StateRebuildRefusedBusy.ExitCode() == state.ExitCommitted {
+		t.Error("REBUILD_REFUSED_BUSY must never exit 0 — the convergence is still owed")
+	}
+	if state.StateRebuildNotExecuted.ExitCode() == state.ExitCommitted {
+		t.Error("REBUILD_NOT_EXECUTED must never exit 0 — execution was never established")
+	}
+	// historyStatusForState is the other place a state could silently become "success".
+	for _, s := range []state.InstallState{
+		state.StateRebuildRefusedBusy,
+		state.StateRebuildNotExecuted,
+		state.StateFailedRebuild,
+		state.InstallState("RULING_UNDECLARED_STATE"),
+	} {
+		if got := historyStatusForState(s); got == "success" {
+			t.Errorf("historyStatusForState(%s) = %q — only COMMITTED may be recorded as success", s, got)
+		}
+	}
+}

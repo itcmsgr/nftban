@@ -374,5 +374,158 @@ else
     ok "P0-D2 the fail-open COMMITTED acquisition default is removed"
 fi
 
+# =============================================================================
+# OWNER RULING (v1.230.0) — KEEP INDETERMINATE AND rc=3. DO NOT COLLAPSE INTO FAIL.
+# =============================================================================
+# Subject: _update_finalize_verdict in cli/cmd_update.sh (same subject, same
+# p0_run harness as the P0-D2 cases above — these PIN the rc contract itself
+# rather than the filesystem effects).
+#
+# THE MODEL:
+#   0 = PASS           evidence establishes the requirement is met
+#   1 = FAIL           evidence positively establishes the requirement is VIOLATED
+#                      (rc 1 DEGRADED and rc 2 NOT_COMMITTED are two distinct
+#                       positively-established failures inside this one class)
+#   3 = INDETERMINATE  the system could not obtain sufficient trustworthy
+#                      evidence to decide
+#
+# ⛔ EVERY NON-ZERO IS NON-SUCCESS — the operational rule. rc=3 is NOT softer
+#    than rc=1: it writes no success row and does not delete the failure marker.
+# ⛔ AND rc=3 STAYS DISTINCT FROM rc=1 AND rc=2 — the forensic rule. Collapsing
+#    INDETERMINATE into FAIL destroys evidence provenance: it asserts a finding
+#    the system never made. That is the mirror image of the v1.230.0 defect where
+#    REBUILD_EXIT_CODE / REBUILD_DURATION_MS were round-tripped through the state
+#    format while never being written, so zero-values masqueraded as measurements
+#    and produced fake one-second history records.
+#
+#       A FIELD THAT IS NEVER WRITTEN IS NOT A DEFAULT.
+#       AN OUTCOME THAT WAS NEVER OBSERVED IS NOT A FAILURE.
+# =============================================================================
+echo ""
+echo "v1.230.0 OWNER RULING — three-valued evidence model (rc contract):"
+
+# --- the four rc classes, each pinned to its own value ------------------------
+p0_run 'INSTALL_STATE=COMMITTED\n'
+R_COMMITTED="$P0_RC"
+p0_run 'INSTALL_STATE=DEGRADED\n'
+R_DEGRADED="$P0_RC"; D_ROWS="$P0_SUCCESS_ROWS"; D_MARKER="$P0_MARKER"
+p0_run 'INSTALL_STATE=FAILED_REBUILD\n'
+R_FAILED="$P0_RC"
+p0_run '-'
+R_INDET="$P0_RC"; I_ROWS="$P0_SUCCESS_ROWS"; I_MARKER="$P0_MARKER"; I_STATUS="$P0_HISTORY_STATUS"
+p0_run 'AUTHORITY=UPDATE\nCONFLICTS=\n'
+R_INDET_NOKEY="$P0_RC"
+
+[[ "$R_COMMITTED" == "0" ]] && ok "R2 COMMITTED -> rc 0 (PASS is the only success value)"        || no "R2 COMMITTED rc" "rc=$R_COMMITTED, want 0"
+[[ "$R_DEGRADED"  == "1" ]] && ok "R2 DEGRADED -> rc 1 (FAIL class)"                             || no "R2 DEGRADED rc" "rc=$R_DEGRADED, want 1"
+[[ "$R_FAILED"    == "2" ]] && ok "R2 NOT_COMMITTED -> rc 2 (FAIL class, distinct from DEGRADED)" || no "R2 NOT_COMMITTED rc" "rc=$R_FAILED, want 2"
+[[ "$R_INDET"     == "3" ]] && ok "R2 no readable install_state -> rc 3 INDETERMINATE"           || no "R2 INDETERMINATE rc" "rc=$R_INDET, want 3"
+[[ "$R_INDET_NOKEY" == "3" ]] && ok "R2 readable file with no INSTALL_STATE key -> rc 3 INDETERMINATE" || no "R2 INDETERMINATE (no key) rc" "rc=$R_INDET_NOKEY, want 3"
+
+# --- rc=3 must be DISTINCT from the failure codes (the forensic rule) ---------
+# ⛔ THIS IS THE ARM A COLLAPSE BREAKS. Anyone "simplifying" INDETERMINATE into
+#    FAIL makes rc=3 equal rc=1 (or rc=2) and lands here.
+[[ "$R_INDET" != "$R_DEGRADED" ]] \
+    && ok "R2 rc=3 INDETERMINATE is DISTINCT from rc=1 FAIL (evidence provenance preserved)" \
+    || no "R2 INDETERMINATE collapsed into FAIL" "rc=$R_INDET equals the DEGRADED rc — 'could not decide' is not 'positively violated'"
+[[ "$R_INDET" != "$R_FAILED" ]] \
+    && ok "R2 rc=3 INDETERMINATE is DISTINCT from rc=2 NOT_COMMITTED" \
+    || no "R2 INDETERMINATE collapsed into NOT_COMMITTED" "rc=$R_INDET equals the NOT_COMMITTED rc"
+[[ "$R_DEGRADED" != "$R_FAILED" ]] \
+    && ok "R2 the two FAIL-class codes stay distinct from each other" \
+    || no "R2 DEGRADED and NOT_COMMITTED share an rc" "both=$R_DEGRADED"
+
+# --- every non-zero is NON-SUCCESS (the operational rule) ---------------------
+# ⛔ Asserted as FILESYSTEM EFFECTS, not as text: a verdict that merely prints a
+#    warning while still recording success would pass a text check and fail this.
+for _pair in "DEGRADED:$D_ROWS:$D_MARKER" "INDETERMINATE:$I_ROWS:$I_MARKER"; do
+    _cls="${_pair%%:*}"; _rest="${_pair#*:}"; _rows="${_rest%%:*}"; _mk="${_rest#*:}"
+    [[ "$_rows" == "0" ]]     && ok "R2 $_cls -> NO success row written (non-zero is non-success)" || no "R2 $_cls success rows" "rows=$_rows"
+    [[ "$_mk" == "present" ]] && ok "R2 $_cls -> state/update_failed NOT deleted"                  || no "R2 $_cls marker" "marker=$_mk"
+done
+[[ "$I_STATUS" == "indeterminate" ]] \
+    && ok "R2 INDETERMINATE records its OWN history token — neither 'success' nor a fabricated failure" \
+    || no "R2 INDETERMINATE history token" "status=$I_STATUS"
+
+# --- the sole success-adjudicating history consumer selects POSITIVELY --------
+# ⛔ Verified against CURRENT source, not assumed: an "indeterminate" row is only
+#    safe because no consumer treats "not install_fail" as success. All three
+#    implementations of _read_history_last_successful_type (jq / python3 / grep)
+#    must select on status == "success".
+_DET="${NFTBAN_LIB_DIR}/cli/cmd_update_detection.sh"
+if [[ -r "$_DET" ]]; then
+    # Each implementation checked with ITS OWN pattern — a single loose regex would
+    # count the surrounding comment and miss the grep fallback entirely.
+    if grep -qF 'select(.status == "success")' "$_DET"; then
+        ok "R2 history consumer (jq) selects POSITIVELY on status == success"
+    else
+        no "R2 history consumer (jq) positive selection" "the jq implementation no longer selects on status == success"
+    fi
+    if grep -qF "ent.get('status') == 'success'" "$_DET"; then
+        ok "R2 history consumer (python3 fallback) selects POSITIVELY on status == success"
+    else
+        no "R2 history consumer (python3 fallback) positive selection" "no positive success test found"
+    fi
+    if grep -qF '\"status\"[[:space:]]*:[[:space:]]*\"success\"' "$_DET"; then
+        ok "R2 history consumer (grep fallback) selects POSITIVELY on status == success"
+    else
+        no "R2 history consumer (grep fallback) positive selection" "no positive success test found"
+    fi
+    # ⛔ AND NO CONSUMER MAY INFER SUCCESS BY EXCLUDING KNOWN FAILURES. That shape is
+    #    what would silently read an "indeterminate" row as a successful upgrade.
+    if grep -qE 'status[^!]*!=[^=]*"(install_fail|verify_fail)"' "$_DET"; then
+        no "R2 no consumer infers success by excluding known failures" "a negative status test is present — it would read 'indeterminate' as success"
+    else
+        ok "R2 no consumer infers success by excluding known failures"
+    fi
+else
+    no "R2 cmd_update_detection.sh readable" "not found at $_DET — the consumer claim is UNVERIFIED"
+fi
+
+# --- structural: the arms and their return codes must stay where they are -----
+# ⛔ Sentences and arm bodies, never line numbers.
+_n_ret3=$(grep -c '^            return 3$' "$CMD_UPDATE" || true)
+[[ "$_n_ret3" == "1" ]] && ok "R2 exactly one verdict arm returns 3" || no "R2 rc=3 arm count" "found $_n_ret3, expected 1"
+if awk '/^        INDETERMINATE\)$/{f=1} f&&/^            return 3$/{print;exit}' "$CMD_UPDATE" | grep -q 3; then
+    ok "R2 the rc=3 return lives in the INDETERMINATE arm"
+else
+    no "R2 the rc=3 return lives in the INDETERMINATE arm" "not found under INDETERMINATE)"
+fi
+for _s in "KEEP INDETERMINATE AND rc=3. DO NOT COLLAPSE INTO FAIL" \
+          "ALL CALLERS MUST TREAT ANYTHING OTHER THAN 0 AS NON-SUCCESS" \
+          "AN OUTCOME THAT WAS NEVER OBSERVED IS NOT A FAILURE"; do
+    if grep -qF -- "$_s" "$CMD_UPDATE"; then
+        ok "R2 cmd_update.sh still documents the ruling: ${_s:0:44}..."
+    else
+        no "R2 cmd_update.sh ruling rationale removed" "missing: $_s"
+    fi
+done
+
+# --- NEGATIVE CONTROL (declared inversion) ------------------------------------
+# ⛔ The greens above are only evidence if they can go red. This is the collapse
+#    the ruling forbids — INDETERMINATE folded into the FAIL arm — driven by the
+#    SAME fixture. It must produce rc=2 and destroy the distinction; if it does
+#    not, the distinctness assertions above are vacuous.
+_r2_collapsed_verdict() {
+    local _cls="INDETERMINATE"
+    declare -F nftban_install_state_classify >/dev/null 2>&1 && \
+        _cls=$(nftban_install_state_classify "$_install_state_file")
+    case "$_cls" in
+        COMMITTED) return 0 ;;
+        *)         return 2 ;;   # <- the forbidden collapse: "could not decide" == "violated"
+    esac
+}
+_r2_sb="$(mktemp -d "$TMP/r2inv.XXXXXX")"; mkdir -p "$_r2_sb/state"
+_r2_rc=$(
+    set +e
+    _install_state_file="$_r2_sb/state/install_state"   # deliberately absent
+    _r2_collapsed_verdict >/dev/null 2>&1
+    printf '%s' "$?"
+)
+rm -rf "$_r2_sb"
+[[ "$_r2_rc" == "2" && "$_r2_rc" != "$R_INDET" ]] \
+    && ok "NEG-R2 the collapsed shape DOES erase the INDETERMINATE code (rc $_r2_rc vs $R_INDET) — the distinctness assertions are live" \
+    || no "NEG-R2 inversion did not reproduce the collapse" "inverted rc=$_r2_rc, real rc=$R_INDET — the R2 distinctness assertions may be vacuous"
+
 echo "RESULT: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

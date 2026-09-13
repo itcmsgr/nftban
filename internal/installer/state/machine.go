@@ -18,6 +18,67 @@
 // =============================================================================
 package state
 
+// ═════════════════════════════════════════════════════════════════════════════════
+// OWNER RULING (v1.230.0) — DEFERRED_RUNTIME MAY REACH COMMITTED, BUT NEVER PROVES IT
+// ═════════════════════════════════════════════════════════════════════════════════
+// ⛔ `DEFERRED_RUNTIME == success` IS INCORRECT AND MUST NOT BE SIMPLIFIED INTO THAT.
+// `DEFERRED_RUNTIME` is a PERMITTED INTERMEDIATE DISPOSITION, never a proof of
+// successful runtime application. It is one input to the COMMITTED decision; it is
+// never the decision.
+//
+// THE MODEL THIS PACKAGE PARTICIPATES IN — all four lines are load-bearing:
+//
+//	COMPLETE                         -> eligible for COMMITTED
+//	DEFERRED_RUNTIME                 -> eligible for COMMITTED **ONLY** when the
+//	                                    deferral is explicitly EXPECTED **AND** the
+//	                                    post-start convergence contract proves the
+//	                                    runtime converged
+//	REFUSED / NOT_EXECUTED / FAILED
+//	  / unknown                      -> NEVER COMMITTED
+//
+// ⛔ THE TWO OPPOSITE MISTAKES, AND WHY NEITHER EDIT IS SAFE:
+//
+//  1. Collapsing DEFERRED_RUNTIME into a hard failure re-introduces v1.229.12
+//     P12-A01 — escalating an EXPECTED pre-daemon deferral into a fatal outcome —
+//     on every single upgrade. The upgrade flow has a legitimate pre-daemon phase
+//     where module application is intentionally deferred
+//     (switchop.Rebuild ContinueDeferred; validate.assertPostUpdateConvergence's
+//     DEFERRED arm). DO NOT make the deferral an unconditional failure.
+//
+//  2. Collapsing DEFERRED_RUNTIME into success is the failure this ruling exists to
+//     forbid. A deferral asserts that the module projection did NOT happen yet.
+//
+// ⛔ WHY ALLOWING (1) IS SAFE — THE EVIDENCE IS NOT THE REBUILD'S OWN OUTPUT.
+// The effective convergence generation is INDEPENDENT of anything the rebuild
+// reports about itself. /run/nftban/convergence-generation advances only via
+// nftban_plan_txn_commit (cli/lib/nftban/lib/module_authority.sh, documented there
+// as "THE ONLY PLACE THE GENERATION EVER ADVANCES"), and cli/lib/nftban/cli/
+// cmd_firewall.sh structurally refuses to reach that commit from any disposition
+// other than COMPLETE. So the final success evidence is a fact the rebuild CANNOT
+// FABRICATE, read before/after by switchop.VerifyPostUpdateConvergence.
+//
+//	A COMPONENT'S OWN SUCCESS CLAIM IS NOT VERIFICATION OF THAT CLAIM.
+//
+// WHERE EACH LINE IS ENFORCED (verify before editing — these are the real consumers):
+//   - disposition -> policy:  switchop.(*RebuildResult).Continuation
+//     (internal/installer/switchop/rebuildresult.go) — unknown dispositions Abort.
+//   - deferral -> verdict:    switchop.VerifyPostUpdateConvergence
+//     (internal/installer/switchop/convergence.go) — ApplyDeferred can only ever
+//     produce ConvergenceDeferred, NEVER ConvergenceVerified.
+//   - verdict -> COMMITTED:   validate.assertPostUpdateConvergence
+//     (internal/installer/validate/assertions.go) via validate.AllPassed, which is
+//     the sole gate on the StateCommitted transitions in cmd/nftban-installer/
+//     phases.go (phaseValidate).
+//   - REFUSED / NOT_EXECUTED: stateForRebuildError (cmd/nftban-installer/phases.go)
+//     terminates at StateRebuildRefusedBusy / StateRebuildNotExecuted, both of which
+//     end the run before phaseValidate and therefore can never reach StateCommitted.
+//
+// Pinned by TestRuling_DeferredRuntimeNeverProvesSuccess (machine_test.go), the
+// Ruling-1 arms in internal/installer/switchop/convergence_v1230_test.go, and the
+// end-to-end TestRuling_DeferredRuntimeReachesCommittedButRecordsDeferred
+// (cmd/nftban-installer/convergence_contract_v1230_test.go).
+// ═════════════════════════════════════════════════════════════════════════════════
+
 // InstallState represents the current state of the installation process.
 type InstallState string
 
@@ -27,6 +88,9 @@ const (
 	StatePrepareComplete  InstallState = "PREPARE_COMPLETE"
 	StateSwitchComplete   InstallState = "SWITCH_COMPLETE"
 	StateServicesComplete InstallState = "SERVICES_COMPLETE"
+	// StateCommitted is the ONLY install-class state that means "this transaction
+	// succeeded". ⛔ See the OWNER RULING at the top of this file before making any
+	// rebuild disposition — DEFERRED_RUNTIME above all — sufficient for it.
 	StateCommitted        InstallState = "COMMITTED"
 	StateDegraded         InstallState = "DEGRADED"
 	StateFailedSSH        InstallState = "FAILED_SSH_UNKNOWN"
