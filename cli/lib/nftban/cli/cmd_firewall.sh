@@ -284,7 +284,46 @@ _firewall_substitute_placeholders() {
         -e "s/__CT_LIMIT_SSH__/${_ct_ssh}/g" \
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
-        "$input" > "$output"
+        "$input" > "$output" || return 1
+
+    # v1.231.0 F-01 — FORWARD-HOOK CAPABILITY GATE.
+    #
+    # The schema ships an EMPTY `chain forward` with `policy drop` in both families.
+    # At a shared hook, nftables evaluates every base chain and `drop` is terminal
+    # across tables while `accept` is not — so on a host that routes (Docker, podman,
+    # libvirt/KVM, LXC, k8s, or a plain router) that chain vetoes every other table's
+    # accept and blackholes ALL forwarded traffic. Reproduced in network namespaces on
+    # EL9, EL10 and Ubuntu 24.04. Nothing in the product read ip_forward before this.
+    #
+    # ⛔ IT BELONGS HERE, NOT IN THE REBUILD CALLER. This function is the ONE render
+    # authority: `firewall rebuild`, `firewall reload` AND the boot projection
+    # (boot_projection.sh, which refuses to run if this function is not loaded) all
+    # reach the kernel through it. Gating here makes install-time and rebuild-time
+    # detection the same code, re-evaluated on every render, with no second path for
+    # check-firewall-projection-authority.sh to find.
+    #
+    # NON-FORWARDING HOST: byte-identical no-op — the renderer returns early and the
+    # chain keeps `policy drop` with zero rules, exactly as shipped.
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/forward_capability.sh" 2>/dev/null || true
+    if declare -F nftban_forward_render >/dev/null 2>&1; then
+        if ! nftban_forward_render "$output"; then
+            # FAIL-CLOSED on the AVAILABILITY side: the host forwards and the forward
+            # chain could not be made safe. Publishing this render would blackhole the
+            # host's routed traffic, so the render itself fails and the caller keeps
+            # the existing firewall.
+            echo "[NFTBan ERROR] forward-hook capability gate failed — render aborted" >&2
+            rm -f "$output" 2>/dev/null || true
+            return 1
+        fi
+    else
+        # The authority is part of the same package as this file. Its absence means a
+        # broken/partial install, and on a routing host proceeding would silently
+        # reinstate F-01 — so say so rather than render an unaudited forward chain.
+        echo "[NFTBan WARNING] lib/forward_capability.sh not loaded — the hook-forward" >&2
+        echo "  capability gate did NOT run. On a forwarding host this ruleset will" >&2
+        echo "  blackhole routed traffic. Reinstall the nftban package." >&2
+    fi
 }
 
 # _firewall_set_elements <conf_file> <set_name> <csv>
@@ -2445,7 +2484,15 @@ FIREWALL_RELOAD_HELP
     if [[ -f "$_template" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema from template..."
         local _tmp_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/.nftables.conf.tmp"
-        _firewall_substitute_placeholders "$_template" "$_tmp_conf"
+        # v1.231.0 F-01: the render authority is now fail-closed (it also runs the
+        # forward-hook capability gate), so its exit status must be honoured. A
+        # failed render here keeps the existing live ruleset — the reload becomes a
+        # safe no-op rather than applying an unrendered or forwarding-unsafe config.
+        if ! _firewall_substitute_placeholders "$_template" "$_tmp_conf"; then
+            echo "Warning: schema render failed — existing ruleset kept. Try: nftban firewall rebuild" >&2
+            rm -f "$_tmp_conf" 2>/dev/null || true
+            return 1
+        fi
         # v1.192.1 inc4 (D-V192-RESIDUAL-REBUILD-DROP): complete the service-port
         # sets INSIDE this atomic reload (config authority). FAIL-CLOSED — if the
         # effective-port render fails we do NOT apply a skeletal ruleset; the
@@ -2478,7 +2525,12 @@ FIREWALL_RELOAD_HELP
             # Legacy: live config has placeholders, no template — render in place
             local _tmp_conf
             _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
-            _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"
+            # v1.231.0 F-01: fail-closed render (includes the forward-hook gate).
+            if ! _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"; then
+                echo "Warning: schema render failed — existing ruleset kept. Try: nftban firewall rebuild" >&2
+                rm -f "$_tmp_conf"
+                return 1
+            fi
             # v1.192.1 inc4: complete service-port sets (fail-closed — no skeletal apply).
             if ! _firewall_complete_service_ports "$_tmp_conf"; then
                 echo "Warning: effective service-port render failed — NOT applying skeletal reload. Try: nftban firewall rebuild" >&2
@@ -3871,10 +3923,34 @@ _firewall_rebuild_core() {
 
     if [[ -n "$source_file" ]]; then
         if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$source_file" 2>/dev/null; then
-            _firewall_substitute_placeholders "$source_file" "$tmp_conf"
+            # v1.231.0 F-01: this call can now fail (the forward-hook capability gate
+            # is part of the render authority and is fail-closed). It was previously
+            # unchecked, which would have let a failed render fall through to nft -f.
+            if ! _firewall_substitute_placeholders "$source_file" "$tmp_conf"; then
+                echo "ERROR: schema render FAILED — existing firewall preserved!" >&2
+                echo "  Source: $source_file" >&2
+                rm -f "$tmp_conf" 2>/dev/null || true
+                return 1
+            fi
             [[ "$quiet" == "false" ]] && echo "    Substituted placeholders (SSH port + CT limits)"
         else
-            cp "$source_file" "$tmp_conf"
+            cp "$source_file" "$tmp_conf" || {
+                echo "ERROR: could not stage $source_file — existing firewall preserved!" >&2
+                return 1
+            }
+            # v1.231.0 F-01 — a placeholder-free source (--use-new .rpmnew, or a legacy
+            # pre-template config) bypasses _firewall_substitute_placeholders entirely,
+            # so the capability gate must be applied to this branch too. SAME function,
+            # not a second implementation: one authority, two call sites.
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/forward_capability.sh" 2>/dev/null || true
+            if declare -F nftban_forward_render >/dev/null 2>&1; then
+                if ! nftban_forward_render "$tmp_conf"; then
+                    echo "ERROR: forward-hook capability gate FAILED — existing firewall preserved!" >&2
+                    rm -f "$tmp_conf" 2>/dev/null || true
+                    return 1
+                fi
+            fi
         fi
 
         # v1.192.1 (D-V192-RESIDUAL-REBUILD-DROP): complete the service-port sets

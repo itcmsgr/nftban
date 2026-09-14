@@ -151,6 +151,8 @@ fetch_verified_v157_test	cli/lib/nftban/tests/fetch_verified_v157_test.sh	packag
 fhs_lane_v175_test	cli/lib/nftban/tests/fhs_lane_v175_test.sh	packaging	test	fhs	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 firewall_transition_health_cli_v1921_test	cli/lib/nftban/tests/firewall_transition_health_cli_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 firewall_transition_health_v1921_test	cli/lib/nftban/tests/firewall_transition_health_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+forward_capability_render_v1231_test	cli/lib/nftban/tests/forward_capability_render_v1231_test.sh	firewall	test	forward-capability	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
+forward_chain_routing_host_f01_test	cli/lib/nftban/tests/forward_chain_routing_host_f01_test.sh	firewall	test	forward-capability	ROOT_LAB	lab-manual	false	true	true	false	true	false	180		
 fpa_render_boot_v1229_13_test	cli/lib/nftban/tests/fpa_render_boot_v1229_13_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fsync_residual_guard_v176_test	cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh	cross-cutting	test	durability-fsync	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 fullruleset_predicate_v1229_13_test	cli/lib/nftban/tests/fullruleset_predicate_v1229_13_test.sh	cross-cutting	test	shell-predicates	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

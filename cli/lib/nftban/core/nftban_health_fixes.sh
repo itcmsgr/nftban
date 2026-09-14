@@ -1285,12 +1285,22 @@ nftban_health_fix_nftables() {
         fi
     done
 
+    # v1.231.0 F-01 — this repair path RECREATES a missing base chain from the static
+    # schema, so it is a second emitter of the hook-forward policy. Left ungated it
+    # would recreate `forward` with `policy drop` on a routing host and reinstate the
+    # blackhole that the render authority had just removed. It asks the same authority.
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/forward_capability.sh" 2>/dev/null || true
+
     # Fix 4: Create missing chains (IPv4)
     local chain_name chain_spec chain_type chain_hook chain_priority chain_policy
     for chain_name in "${!NFTBAN_IPV4_CHAINS[@]}"; do
         if ! nft list chain ${NFTBAN_TABLE_IPV4} "$chain_name" &>/dev/null; then
             chain_spec="${NFTBAN_IPV4_CHAINS[$chain_name]}"
             IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+            if [[ "$chain_name" == "forward" ]] && declare -F nftban_forward_chain_policy >/dev/null 2>&1; then
+                chain_policy="$(nftban_forward_chain_policy ipv4)"
+            fi
 
             echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV4} $chain_name"
             if nft add chain ${NFTBAN_TABLE_IPV4} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
@@ -1307,6 +1317,9 @@ nftban_health_fix_nftables() {
         if ! nft list chain ${NFTBAN_TABLE_IPV6} "$chain_name" &>/dev/null; then
             chain_spec="${NFTBAN_IPV6_CHAINS[$chain_name]}"
             IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+            if [[ "$chain_name" == "forward" ]] && declare -F nftban_forward_chain_policy >/dev/null 2>&1; then
+                chain_policy="$(nftban_forward_chain_policy ipv6)"
+            fi
 
             echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV6} $chain_name"
             if nft add chain ${NFTBAN_TABLE_IPV6} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then

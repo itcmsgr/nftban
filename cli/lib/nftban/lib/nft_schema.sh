@@ -145,6 +145,11 @@ declare -g -A NFTBAN_IPV4_SETS=(
 # PRIORITY 0: Standard filter priority (v1.18.0 schema consolidation)
 declare -g -A NFTBAN_IPV4_CHAINS=(
     ["input"]="filter|input|0|drop|Main IPv4 input chain (priority 0: standard filter)"
+    # v1.231.0 F-01 — `drop` here is the NON-FORWARDING BASELINE, not an absolute.
+    # On a host with ip_forward=1 the render authority emits `accept` plus the ban
+    # sets instead, because an empty policy-drop chain at hook forward is terminal
+    # across tables and blackholes all routed traffic. Ask nftban_forward_chain_policy
+    # (lib/forward_capability.sh) for the effective policy; never assume this field.
     ["forward"]="filter|forward|0|drop|IPv4 forward chain (priority 0: standard filter)"
     ["output"]="filter|output|0|accept|IPv4 output chain"
 )
@@ -215,6 +220,11 @@ declare -g -A NFTBAN_IPV6_SETS=(
 # PRIORITY 0: Standard filter priority (v1.18.0 schema consolidation)
 declare -g -A NFTBAN_IPV6_CHAINS=(
     ["input"]="filter|input|0|drop|Main IPv6 input chain (priority 0: standard filter)"
+    # v1.231.0 F-01 — `drop` here is the NON-FORWARDING BASELINE, not an absolute.
+    # On a host with ip_forward=1 the render authority emits `accept` plus the ban
+    # sets instead, because an empty policy-drop chain at hook forward is terminal
+    # across tables and blackholes all routed traffic. Ask nftban_forward_chain_policy
+    # (lib/forward_capability.sh) for the effective policy; never assume this field.
     ["forward"]="filter|forward|0|drop|IPv6 forward chain (priority 0: standard filter)"
     ["output"]="filter|output|0|accept|IPv6 output chain"
 )
@@ -987,6 +997,20 @@ nftban_nft_validate_chains() {
         local chain_info
         chain_info=$(nft list chain ip nftban "$chain_name" 2>/dev/null || true)
         chain_info=$(echo "$chain_info" | head -3)
+
+        # v1.231.0 F-01 — the hook-forward policy is HOST-DERIVED, not static.
+        # NFTBAN_IPV4_CHAINS records the non-forwarding baseline (`drop`). On a host
+        # that routes, the render authority emits `accept` plus the ban sets, because
+        # an empty policy-drop chain at a shared hook is terminal across tables and
+        # blackholes all forwarded traffic. Comparing against the static field there
+        # would report a CORRECTLY rendered router as a policy violation.
+        if [[ "$chain_name" == "forward" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/forward_capability.sh" 2>/dev/null || true
+            if declare -F nftban_forward_chain_policy >/dev/null 2>&1; then
+                chain_policy="$(nftban_forward_chain_policy ipv4)"
+            fi
+        fi
 
         # Check policy
         actual_policy=$(echo "$chain_info" | grep -oP 'policy \K[a-z]+' || echo "")

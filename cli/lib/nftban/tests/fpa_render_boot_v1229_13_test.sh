@@ -41,6 +41,9 @@ no(){ fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; }
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 mkdir -p "$SB/lib/lib" "$SB/lib/templates" "$SB/conf"
 cp "$ROOT/cli/lib/nftban/lib/boot_projection.sh" "$SB/lib/lib/"
+# v1.231.0 F-01: the forward-hook capability gate is part of the render
+# authority, so the sandbox must carry it or the render degrades to a warning.
+cp "$ROOT/cli/lib/nftban/lib/forward_capability.sh" "$SB/lib/lib/"
 cp "$ROOT/install/nftables/nftables.conf.tpl"    "$SB/lib/templates/"
 # The historical conffile, present exactly as a migrated host would have it.
 cp "$ROOT/install/nftables/nftables.conf"        "$SB/conf/nftables.conf"
