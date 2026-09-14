@@ -699,20 +699,81 @@ nftban_health_check_login_monitor_ipc() {
     # Bug found: Error message "nftban command not found" is misleading - actual issue is IPC
     # Returns: 0=OK, 2=Error (IPC broken)
 
+    # ⛔ v1.231.0 (P1S-D). This check ONLY reports OK when the IPC probe below
+    #    actually ran and found nothing wrong. Every path that does not reach
+    #    the probe is reported as NOT EVALUATED with a stated reason.
+    #
+    #    Pre-v1.231.0 `status` was initialised to HEALTH_OK and the probe was
+    #    skipped unless a grep matched, so "config unreadable", "key absent",
+    #    "module disabled" and "IPC proven healthy" ALL rendered as
+    #    `Login Monitor IPC .......... OK`.
+    #
+    #    That grep could also essentially never match, because it read the
+    #    WRONG KEY FROM THE WRONG FILE:
+    #      - it grepped NFTBAN_LOGIN_MONITOR_ENABLED in conf.d/login/main.conf,
+    #        which ships LOGIN_ENABLED and has never defined that key;
+    #      - NFTBAN_LOGIN_MONITOR_ENABLED is declared in the central
+    #        install/config/nftban.conf -> /etc/nftban/nftban.conf, and is read
+    #        by the Go loader (internal/nftbanconf/loader.go) into
+    #        cfg.LoginMonitorEnabled.
+    #    The two are DELIBERATELY distinct facts, not aliases (loader.go:342,
+    #    "Login is intentionally NOT aliased here"), so reading one for the
+    #    other is a category error, not a spelling slip. The identical grep was
+    #    already corrected in cli/sbin/nftban (V127 UX-1), which records that it
+    #    produced "Login Mon: Disabled" while `nftban health` showed loginmon
+    #    running; this health check was simply never migrated with it.
+    #
+    #    Net effect: the probe that exists to detect "LoginMon cannot ban IPs"
+    #    never ran, and reported OK while doing so.
+    #
+    # ⛔ AUTHORITY: the subject here is the GO LoginMon that runs inside
+    #    nftband.service and bans over nftband.sock — NOT the shell-classic
+    #    login monitor (cli/lib/nftban/core/nftban_login_classic.sh), which is
+    #    cursor-driven, has no IPC socket, and is gated by LOGIN_ENABLED in
+    #    conf.d/login/main.conf. Same feature name, different runtime authority.
+    #    Do not "simplify" this back to the conf.d/login gate.
     local status=$HEALTH_OK
     local ipc_issues=()
     local socket="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
 
+    # Resolve the Go LoginMon gate to one of: true | false | undetermined.
+    # `undetermined` is a THIRD state on purpose — an unreadable config is not
+    # a disabled module, and must not be answered with OK.
+    _lm_gate() {
+        local base="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+        local f v
+        for f in "${base}.local" "$base"; do
+            [[ -f "$f" ]] || continue
+            [[ -r "$f" ]] || { echo "undetermined"; return; }
+            v=$(grep -m1 -E '^[[:space:]]*NFTBAN_LOGIN_MONITOR_ENABLED=' "$f" 2>/dev/null) || continue
+            [[ -n "$v" ]] || continue
+            v="${v#*=}"; v="${v%%#*}"                 # strip key and trailing comment
+            v="${v//\"/}"; v="${v//\'/}"              # strip quotes — the old
+            # `cut -d'"' -f2` printed the WHOLE LINE for an unquoted value, so a
+            # legitimately-enabled module read as "not true".
+            v="${v//[[:space:]]/}"
+            case "$v" in true|1|yes|on) echo "true"; return ;; esac
+            case "$v" in false|0|no|off) echo "false"; return ;; esac
+            echo "undetermined"; return
+        done
+        echo "undetermined"
+    }
+
     # v1.52.0: Login monitor runs inside nftband (not standalone service since v1.23.0)
-    # Check if daemon is running AND login monitor is enabled in config
-    local _lm_active=false
-    if systemctl is-active --quiet nftband.service 2>/dev/null; then
-        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
-        local _lm_en="false"
-        [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
-        [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
-        [[ "$_lm_en" == "true" ]] && _lm_active=true
+    local _lm_active=false _skip_reason=""
+    if ! systemctl is-active --quiet nftband.service 2>/dev/null; then
+        # The daemon check owns this verdict; do not double-report it as an IPC
+        # fault, and do not report OK either — nothing was measured here.
+        _skip_reason="not evaluated: nftband.service is not active (see the Daemon check)"
+    else
+        case "$(_lm_gate)" in
+            true)  _lm_active=true ;;
+            false) _skip_reason="not evaluated: NFTBAN_LOGIN_MONITOR_ENABLED is false in ${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ;;
+            *)     _skip_reason="UNDETERMINED: could not read NFTBAN_LOGIN_MONITOR_ENABLED from ${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf — IPC health was NOT verified" ;;
+        esac
     fi
+    unset -f _lm_gate
+
     if [[ "$_lm_active" == "true" ]]; then
         # Check if daemon socket exists
         if [[ ! -S "$socket" ]]; then
@@ -736,6 +797,18 @@ nftban_health_check_login_monitor_ipc() {
                 ipc_issues+=("IPC socket permissions: $sock_perms (expected 660 or 770)")
             fi
         fi
+    else
+        # The probe did not run. Say so, with the reason, instead of reporting
+        # a clean bill of health for something that was never inspected.
+        ipc_issues+=("$_skip_reason")
+        case "$_skip_reason" in
+            UNDETERMINED:*)
+                # Could not establish the gate. This is a real gap in coverage,
+                # not a benign "off", so it must be visible.
+                status=$HEALTH_WARNING ;;
+            *)
+                status=$HEALTH_DISABLED ;;
+        esac
     fi
 
     NFTBAN_HEALTH_RESULTS["login_monitor_ipc"]=$status

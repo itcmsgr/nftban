@@ -184,6 +184,7 @@ lifecycle_forensics_v1199_test	cli/lib/nftban/tests/lifecycle_forensics_v1199_te
 lifecycle_matrix_observation_semantics_v1229_test	cli/lib/nftban/tests/lifecycle_matrix_observation_semantics_v1229_test.sh	packaging	test	uninstall-lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 list_ipv6_clamp_v153_test	cli/lib/nftban/tests/list_ipv6_clamp_v153_test.sh	cli	test	list	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logdir_foreign_content_safety_v1228_10_test	cli/lib/nftban/tests/logdir_foreign_content_safety_v1228_10_test.sh	packaging	test	fhs-permissions	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+loginmon_ipc_health_truth_v1231_test	cli/lib/nftban/tests/loginmon_ipc_health_truth_v1231_test.sh	health	test	login-monitor	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logretention_packaging_derivedstate_gateb_test	cli/lib/nftban/tests/logretention_packaging_derivedstate_gateb_test.sh	packaging	test	logretention	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 logretention_terminology_guard_gateb_test	cli/lib/nftban/tests/logretention_terminology_guard_gateb_test.sh	core	test	logretention	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logretention_wiring_gateb_test	cli/lib/nftban/tests/logretention_wiring_gateb_test.sh	packaging	test	logretention	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

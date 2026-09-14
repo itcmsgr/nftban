@@ -122,10 +122,18 @@ nftban_health_render_terminal() {
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
 
+            # v1.231.0: this loop knew only 0/1/2 and rendered everything else
+            # as UNKNOWN, so a check that deliberately reported NOT EVALUATED
+            # was indistinguishable from one that returned a code nobody
+            # recognised. The vocabulary below is the same one the module loop
+            # already uses, so the two surfaces agree.
             case $status in
                 0) status_text="OK" ;;
                 1) status_text="WARNING" ;;
                 2) status_text="ERROR" ;;
+                3) status_text="CRITICAL" ;;
+                4) status_text="NOT INSTALLED" ;;
+                5) status_text="DISABLED" ;;
                 *) status_text="UNKNOWN" ;;
             esac
 

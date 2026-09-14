@@ -536,7 +536,13 @@ nftban_health_check_all() {
     nftban_health_check_timers "$auto_heal" || { ((warnings++)) || true; }
     nftban_health_check_protection || { ((warnings++)) || true; }
     nftban_health_check_maintenance_lock "$auto_heal" || { ((warnings++)) || true; }
-    nftban_health_check_login_monitor_ipc || { ((errors++)) || true; }
+    # v1.231.0 (P1S-D): the check now returns HEALTH_DISABLED (5) for "not
+    # evaluated" — daemon inactive, or the Go LoginMon gate is off. That is not
+    # an IPC error and must not be counted as one; a genuinely unreadable gate
+    # returns HEALTH_WARNING (1) instead, which still lands in this branch.
+    nftban_health_check_login_monitor_ipc || {
+        [[ $? -eq 5 ]] || { ((errors++)) || true; }
+    }
     nftban_health_check_hung_processes "$auto_heal" || { ((warnings++)) || true; }
     nftban_health_check_suricata 2>/dev/null || { ((warnings++)) || true; }
     nftban_health_check_suricata_capture 2>/dev/null || { ((warnings++)) || true; }
