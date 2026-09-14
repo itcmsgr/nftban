@@ -714,8 +714,8 @@ nftban_stats_export_json() {
   "summary": {
     "total_bans": $(nftban_stats_count_bans "$since" "$until"),
     "unique_ips": $(nftban_stats_count_unique_ips "$since" "$until"),
-    "active_bans": $(nftban_stats_count_active_bans),
-    "whitelist_total": $(nftban_stats_count_whitelist)
+    "active_bans": $(nftban_count_json "$(nftban_stats_count_active_bans)"),
+    "whitelist_total": $(nftban_count_json "$(nftban_stats_count_whitelist)")
   },
   "ban_sources": $(nftban_stats_ban_sources "$since" "$until"),
   "top_sources": $(nftban_stats_top_sources 10 "$since" "$until"),

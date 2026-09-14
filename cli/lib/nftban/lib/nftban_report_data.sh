@@ -79,12 +79,18 @@ nftban_report_collect_all() {
 
     # Parse ban counts
     if command -v jq &>/dev/null && [[ -n "$counts_json" ]]; then
-        _data[BANS_IPV4]=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
-        _data[BANS_IPV6]=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
-        _data[ACTIVE_BANS]=$(echo "$counts_json" | jq -r '.blacklist.total // 0')
-        _data[BANS_TEMP]=$(echo "$counts_json" | jq -r '.temporary.total // 0')
-        _data[BANS_PERM]=$(echo "$counts_json" | jq -r '.permanent.total // 0')
-        _data[WHITELIST_COUNT]=$(echo "$counts_json" | jq -r '.whitelist.total // 0')
+        # ⛔ `// 0` IS LAUNDERING ON A COUNT FIELD. nftban_count_json emits null for
+        # "could not read the kernel"; `// 0` turns that into "measured zero" — the
+        # ORIGINAL P1S-C defect one layer downstream. jq treats only null/false as
+        # falsy, so a REAL 0 still survives `// "UNKNOWN"`, while an unknown stays
+        # distinguishable. Only counts_json-derived fields are converted here: load,
+        # memory, disk and latency come from other producers and are NOT unknown-capable.
+        _data[BANS_IPV4]=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // "UNKNOWN"')
+        _data[BANS_IPV6]=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // "UNKNOWN"')
+        _data[ACTIVE_BANS]=$(echo "$counts_json" | jq -r '.blacklist.total // "UNKNOWN"')
+        _data[BANS_TEMP]=$(echo "$counts_json" | jq -r '.temporary.total // "UNKNOWN"')
+        _data[BANS_PERM]=$(echo "$counts_json" | jq -r '.permanent.total // "UNKNOWN"')
+        _data[WHITELIST_COUNT]=$(echo "$counts_json" | jq -r '.whitelist.total // "UNKNOWN"')
     else
         # Fallback without jq
         _data[BANS_IPV4]=0

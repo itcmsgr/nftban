@@ -128,6 +128,7 @@ config_show_secret_redaction_v1227_test	cli/lib/nftban/tests/config_show_secret_
 convergence_commit_transaction_v1229_11_test	cli/lib/nftban/tests/convergence_commit_transaction_v1229_11_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	90		
 convergence_serialization_v1229_11_test	cli/lib/nftban/tests/convergence_serialization_v1229_11_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 core_ownership_identity_v1228_9_test	cli/lib/nftban/tests/core_ownership_identity_v1228_9_test.sh	core	test	legal-identity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
+count_unknown_propagation_v1231_test	cli/lib/nftban/tests/count_unknown_propagation_v1231_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 csf_observation_purity_v1229_test	cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 daemon_callable_neutrality_v1229_7_test	cli/lib/nftban/tests/daemon_callable_neutrality_v1229_7_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 ddos_connlimit_label_global_v1229_10_test	cli/lib/nftban/tests/ddos_connlimit_label_global_v1229_10_test.sh	ddos	test	ddos-status-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
