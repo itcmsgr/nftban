@@ -504,6 +504,69 @@ _nftban_migrate_reports_to_log() {
         _nftban_migrate_reports_to_log || true
         _nftban_generate_logretention || true
 
+        # --- v1.231.0 Item 2b: durable package-transaction receipt --------------------
+        # ⛔ THE SCRIPTLET STILL EXITS 0. THAT IS A RULING, NOT AN OVERSIGHT — and this
+        # block is the compensating control that makes the ruling honest.
+        #
+        # MEASURED 2026-09-14, both families, against a scriptlet that exits 1:
+        #   DEB  Ubuntu 24.04.3 / dpkg 1.22.6 : apt rc=100 and the package is left `iF`
+        #        (half-configured). The NEXT, UNRELATED `apt-get install` ALSO returns
+        #        100, because dpkg re-attempts the broken configure on every run, and
+        #        `dpkg --configure -a` re-runs this scriptlet, fails again and stays
+        #        wedged. A failed NFTBan install would therefore block the host's own
+        #        security updates — unattended-upgrades reads that exit code.
+        #   RPM  Rocky 9.8 / rpm 4.16.1 (EL9) : dnf rc=0, "Complete!", package Installed.
+        #        A bare `rpm -i` is rc=0 too. Only a `warning:` line on stderr.
+        #        Propagating the exit code buys NOTHING AT ALL on this family.
+        #
+        # Propagating rc would therefore wedge one family's package management while
+        # changing nothing on the other: the same defect reported two incompatible ways.
+        # The exit-0 rationale already written into both scriptlets stands.
+        #
+        # What was missing is the READING side. The verdict existed only on scriptlet
+        # stdout, which apt/dnf bury and which no automation can retrieve once the
+        # transaction ends — and it CANNOT be reconstructed afterwards. On a same-version
+        # reinstall, or a retry after lock contention, the persisted install_state still
+        # reads COMMITTED with a matching version, and only the transaction-start
+        # timestamp — known here and nowhere else — separates that from a fresh commit.
+        #
+        #     A VERDICT THAT IS ONLY PRINTED HAS NOT BEEN RECORDED.
+        #
+        # So the boundary records its own verdict durably, beside install_state, on EVERY
+        # path. The verifier's tokens are transcribed VERBATIM ($8) and never re-derived
+        # here: the installer remains the sole authority on state interpretation. The
+        # write is atomic (temp file + rename within the same directory) and CANNOT fail
+        # the scriptlet — every step is guarded and the function always returns 0.
+        #
+        # ⛔ DRIFT-CHECKED TWIN of the copy in the other family's scriptlet. The two must
+        # be BYTE-IDENTICAL after leading-whitespace and spec-escape removal;
+        # scripts/ci/tests/package_postinstall_verify_test.sh asserts exactly that.
+        _nftban_write_package_receipt() {
+            # $1 family  $2 mode  $3 version  $4 transaction start (UTC)
+            # $5 installer exit  $6 verify exit  $7 verified  $8 verifier tokens, verbatim
+            _nftban_receipt="/var/lib/nftban/state/package_transaction"
+            _nftban_receipt_tmp="${_nftban_receipt}.tmp.$$"
+            mkdir -p "/var/lib/nftban/state" 2>/dev/null || true
+            {
+                echo "PACKAGE_TRANSACTION_SCHEMA=1"
+                echo "PACKAGE_FAMILY=$1"
+                echo "PACKAGE_MODE=$2"
+                echo "PACKAGE_VERSION=$3"
+                echo "PACKAGE_SCRIPT_START_UTC=$4"
+                echo "NFTBAN_PACKAGE_INSTALLER_EXIT=$5"
+                echo "NFTBAN_PACKAGE_VERIFY_EXIT=$6"
+                echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=$7"
+                if [ -n "$8" ]; then printf '%s\n' "$8"; fi
+                # LAST line by construction. A reader that does not find it is holding a
+                # truncated receipt and must report INDETERMINATE, never a pass.
+                echo "PACKAGE_RECEIPT_COMPLETE=1"
+            } > "$_nftban_receipt_tmp" 2>/dev/null || true
+            chmod 0640 "$_nftban_receipt_tmp" 2>/dev/null || true
+            mv -f "$_nftban_receipt_tmp" "$_nftban_receipt" 2>/dev/null || rm -f "$_nftban_receipt_tmp" 2>/dev/null || true
+            return 0
+        }
+        # --- end Item 2b -------------------------------------------------------------
+
         if [ -x "$NFTBAN_INSTALLER" ]; then
             log_info "Running nftban-installer --deb (mode=$INSTALL_MODE)..."
 
@@ -539,21 +602,29 @@ _nftban_migrate_reports_to_log() {
             # here.
             NFTBAN_PKG_VERSION="$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo unknown)"
             VERIFY_EXIT=0
-            "$NFTBAN_INSTALLER" \
+            VERIFY_OUT="$("$NFTBAN_INSTALLER" \
                 --verify-install-state \
                 --expected-version "$NFTBAN_PKG_VERSION" \
                 --not-before "$PACKAGE_SCRIPT_START_UTC" \
-                --state-dir "/var/lib/nftban/state" || VERIFY_EXIT=$?
+                --state-dir "/var/lib/nftban/state")" || VERIFY_EXIT=$?
+            # v1.231.0: stdout is CAPTURED so Item 2b below can record it durably,
+            # then re-emitted here VERBATIM, in the position it already occupied,
+            # so every existing reader of the transaction log sees no change.
+            if [ -n "$VERIFY_OUT" ]; then printf '%s\n' "$VERIFY_OUT"; fi
 
             # Execution context summary. VERIFIED is derived ONLY from the verifier: a
             # successful package transaction is not evidence of a verified installation.
             echo "NFTBAN_PACKAGE_INSTALLER_EXIT=${INSTALLER_EXIT}"
             echo "NFTBAN_PACKAGE_VERIFY_EXIT=${VERIFY_EXIT}"
             if [ "${VERIFY_EXIT}" -eq 0 ]; then
-                echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=YES"
+                NFTBAN_PACKAGE_VERIFIED=YES
             else
-                echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO"
+                NFTBAN_PACKAGE_VERIFIED=NO
             fi
+            echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=${NFTBAN_PACKAGE_VERIFIED}"
+            _nftban_write_package_receipt "deb" "$INSTALL_MODE" "$NFTBAN_PKG_VERSION" \
+                "$PACKAGE_SCRIPT_START_UTC" "$INSTALLER_EXIT" "$VERIFY_EXIT" \
+                "$NFTBAN_PACKAGE_VERIFIED" "$VERIFY_OUT"
             # --- end Item 2 --------------------------------------------------------------
 
             if [ $INSTALLER_EXIT -eq 0 ]; then
@@ -666,6 +737,15 @@ _nftban_migrate_reports_to_log() {
             echo "NFTBAN_PACKAGE_INSTALLER_EXIT=127"
             echo "NFTBAN_PACKAGE_VERIFY_EXIT=127"
             echo "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=NO"
+            # v1.231.0 Item 2b: this path must leave a receipt too. A corrupt package
+            # whose installer never ran is exactly the "files unpacked, firewall never
+            # came up" case, and a MISSING receipt is indistinguishable from a
+            # pre-v1.231 package. There are no verifier tokens to transcribe (the
+            # installer never ran), so the eighth argument is deliberately empty.
+            NFTBAN_NOINST_START_UTC="$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')"
+            NFTBAN_NOINST_PKG_VERSION="$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo unknown)"
+            _nftban_write_package_receipt "deb" "$INSTALL_MODE" "$NFTBAN_NOINST_PKG_VERSION" \
+                "$NFTBAN_NOINST_START_UTC" "127" "127" "NO" ""
             # --- end Item 2 no-installer -------------------------------------------------
         fi
 

@@ -1511,6 +1511,166 @@ nftban_render_install_transaction_truth() {
 export -f nftban_render_install_transaction_truth 2>/dev/null || true
 
 # =============================================================================
+# PACKAGE-TRANSACTION TRUTH (v1.231.0 Item 2b)
+# =============================================================================
+# ⛔ THIS IS A DIFFERENT AUTHORITY FROM install_state. DO NOT MERGE THEM.
+#
+#   install_state           what the INSTALLER last did, whenever that was.
+#   package_transaction     what the PACKAGE MANAGER's last transaction on this
+#                           host concluded, and WHEN it began.
+#
+# They answer different questions and they can disagree — which is the entire
+# reason this file exists. The disagreement that matters:
+#
+#   prior transaction COMMITTED v1.230.0
+#   -> upgrade to v1.231.0; the installer hits lock contention and exits 75
+#      BEFORE writing any state (internal/installer/state/file.go is never
+#      reached), so install_state is left untouched
+#   -> dpkg records `ii nftban-core 1.231.0`, apt exits 0
+#   -> install_state still reads COMMITTED, so every reader downstream of
+#      nftban_install_state_classify reports a clean host
+#
+# On a SAME-VERSION reinstall or a retry the recorded version matches too, so
+# not even a version comparison separates that from a fresh commit. The ONLY
+# discriminator is the transaction-start timestamp, and the only place that is
+# known is the package scriptlet — which is why the scriptlet records its own
+# verdict rather than leaving it on stdout for apt/dnf to bury.
+#
+#     A VERDICT THAT IS ONLY PRINTED HAS NOT BEEN RECORDED.
+#
+# The receipt is written by packaging/deb/postinst and the RPM %post in
+# packaging/build_nftban.sh (drift-checked twins), atomically, on EVERY path.
+NFTBAN_PACKAGE_TRANSACTION_FILE="${NFTBAN_PACKAGE_TRANSACTION_FILE:-${NFTBAN_STATE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/state}/package_transaction}"
+
+# -----------------------------------------------------------------------------
+# nftban_package_transaction_classify <receipt-file> [installed-version]
+#
+# Echoes exactly one class token.
+#
+#   VERIFIED       the receipt describes THIS installed version and the package
+#                  boundary positively verified the transaction.  -> may pass
+#   NOT_VERIFIED   the boundary positively established that the transaction was
+#                  NOT verified, OR the receipt describes a DIFFERENT version
+#                  than the one installed (so a later transaction wrote no
+#                  receipt at all).                               -> never pass
+#   INDETERMINATE  a receipt exists but cannot be trusted: truncated, or missing
+#                  the verdict key. "Cannot read" is not "fine".  -> never pass
+#   NO_RECEIPT     no receipt at all.                             -> see below
+#
+# ⛔ NO_RECEIPT IS NOT A FAILURE AND NOT A PASS — IT IS "NOT APPLICABLE HERE".
+#    Source installs never go through a package scriptlet, and a host last
+#    touched by a pre-v1.231.0 package predates the receipt entirely. Reporting
+#    either as a failed package transaction would be a fabricated finding, the
+#    same error in reverse as reporting an unwritten field as a measurement.
+#    Callers treat NO_RECEIPT as "this axis says nothing", exactly as
+#    nftban_render_operator_readiness treats an unsupplied argument.
+#
+# POSITIVE ASSERTION, like the install_state classifier: only the exact literal
+# YES can yield VERIFIED. Any other value — including one no build recognises —
+# lands on NOT_VERIFIED.
+# -----------------------------------------------------------------------------
+nftban_package_transaction_classify() {
+    local _f="${1-}" _installed="${2-}" _verified="" _complete="" _recver=""
+    if [[ -z "$_f" || ! -r "$_f" ]]; then
+        printf 'NO_RECEIPT'
+        return 0
+    fi
+    # PROVENANCE FIRST. The recorder writes PACKAGE_RECEIPT_COMPLETE=1 as the
+    # LAST line by construction, so its absence means the bytes on disk are not
+    # the whole verdict. A truncated receipt must never be read for its content.
+    _complete=$(nftban_install_state_field "$_f" "PACKAGE_RECEIPT_COMPLETE") || _complete=""
+    if [[ "$_complete" != "1" ]]; then
+        printf 'INDETERMINATE'
+        return 0
+    fi
+    _verified=$(nftban_install_state_field "$_f" "NFTBAN_PACKAGE_POSTINSTALL_VERIFIED") || _verified=""
+    if [[ -z "$_verified" ]]; then
+        printf 'INDETERMINATE'
+        return 0
+    fi
+    # A receipt for a different version means some LATER transaction installed
+    # what is on disk now and left no receipt. The newest evidence is therefore
+    # absent, not favourable.
+    if [[ -n "$_installed" ]]; then
+        _recver=$(nftban_install_state_field "$_f" "PACKAGE_VERSION") || _recver=""
+        if [[ -n "$_recver" && "$_recver" != "$_installed" ]]; then
+            printf 'NOT_VERIFIED'
+            return 0
+        fi
+    fi
+    if [[ "$_verified" == "YES" ]]; then
+        printf 'VERIFIED'
+        return 0
+    fi
+    printf 'NOT_VERIFIED'
+    return 0
+}
+export -f nftban_package_transaction_classify 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# nftban_render_package_transaction_truth <receipt-file> [installed-version]
+#
+# Renders NOTHING and returns 0 when the package transaction VERIFIED, and also
+# when there is NO_RECEIPT (nothing to report is not a report). Renders the
+# operator block and returns 1 otherwise, so a caller can gate on it.
+#
+# ⛔ THE BLOCK NEVER CLAIMS THE HOST IS UNPROTECTED. A package transaction that
+#    did not verify says nothing about whether the kernel is currently
+#    enforcing — a host can be enforcing correctly from a previous, committed
+#    install while its newest upgrade never ran. Conflating the two is the
+#    original defect, so enforcement is named as a separate line here exactly as
+#    it is in the install-transaction block above.
+# -----------------------------------------------------------------------------
+nftban_render_package_transaction_truth() {
+    local _f="${1-}" _installed="${2-}"
+    local _class _verdict _iexit _vexit _family _mode _recver _start
+    _class=$(nftban_package_transaction_classify "$_f" "$_installed")
+    [[ "$_class" == "VERIFIED" || "$_class" == "NO_RECEIPT" ]] && return 0
+
+    _verdict=$(nftban_install_state_field "$_f" "NFTBAN_INSTALL_ATTEMPT_VERDICT") || _verdict=""
+    _iexit=$(nftban_install_state_field "$_f" "NFTBAN_PACKAGE_INSTALLER_EXIT") || _iexit=""
+    _vexit=$(nftban_install_state_field "$_f" "NFTBAN_PACKAGE_VERIFY_EXIT") || _vexit=""
+    _family=$(nftban_install_state_field "$_f" "PACKAGE_FAMILY") || _family=""
+    _mode=$(nftban_install_state_field "$_f" "PACKAGE_MODE") || _mode=""
+    _recver=$(nftban_install_state_field "$_f" "PACKAGE_VERSION") || _recver=""
+    _start=$(nftban_install_state_field "$_f" "PACKAGE_SCRIPT_START_UTC") || _start=""
+
+    local _what _status_line _cause_line
+    _what="last package transaction"
+    [[ -n "$_family" ]] && _what="last ${_family} transaction"
+    [[ -n "$_mode" ]] && _what="${_what} (${_mode})"
+
+    case "$_class" in
+        INDETERMINATE)
+            _status_line="INDETERMINATE — the package transaction left a receipt that cannot be read (this is not a pass)"
+            _cause_line="the receipt at ${_f} is truncated or carries no verdict"
+            ;;
+        *)
+            if [[ -n "$_installed" && -n "$_recver" && "$_recver" != "$_installed" ]]; then
+                _status_line="NOT VERIFIED — the receipt describes ${_recver} but ${_installed} is installed"
+                _cause_line="a later package transaction installed ${_installed} and recorded no verdict at all"
+            else
+                _status_line="NOT VERIFIED — the package manager reported success, the installer did not"
+                _cause_line="${_verdict:-no verdict recorded} (installer exit ${_iexit:-?}, verifier exit ${_vexit:-?})"
+            fi
+            ;;
+    esac
+
+    echo ""
+    echo "  Package transaction"
+    echo "  ─────────────────────────────────────────"
+    printf "  %-20s %s\n" "Transaction:" "$_what${_start:+, began ${_start}}"
+    printf "  %-20s %s\n" "Package verdict:" "$_status_line"
+    printf "  %-20s %s\n" "Cause:" "$_cause_line"
+    printf "  %-20s %s\n" "Enforcement:" "reported separately above — a package transaction that did not verify is NOT evidence that the kernel stopped enforcing"
+    printf "  %-20s %s\n" "Why apt/dnf said OK:" "they report that the payload unpacked. dpkg and rpm both keep a package installed when a post-install scriptlet fails, so their exit code can never carry this verdict."
+    printf "  %-20s %s\n" "Recovery:" "$NFTBAN_INSTALL_REPAIR_CMD"
+    return 1
+}
+export -f nftban_render_package_transaction_truth 2>/dev/null || true
+
+
+# =============================================================================
 # OPERATOR-READINESS SUMMARY (v1.198 R1b-2)
 # =============================================================================
 # A concise top-level operator verdict computed ENTIRELY shell-side from the
@@ -1555,7 +1715,8 @@ export -f nftban_render_install_transaction_truth 2>/dev/null || true
 # that have a state file MUST pass the classify token so an unreadable file
 # reaches INDETERMINATE rather than silence.
 #
-# Usage: nftban_render_operator_readiness "<validator_json>" [install_state_or_class] [rc]
+# Usage: nftban_render_operator_readiness "<validator_json>" [install_state_or_class] [rc] \
+#            [fth_severity] [comms_severity] [package_transaction_class]
 nftban_render_operator_readiness() {
     local _json="${1:-}"
     local _install_state="${2:-}"
@@ -1635,6 +1796,27 @@ nftban_render_operator_readiness() {
         [[ "$readiness" == "PASS" ]] && readiness="PASS_WITH_WARN"
     fi
 
+    # v1.231.0 Item 2b: 6th arg = the PACKAGE-TRANSACTION class token from
+    # nftban_package_transaction_classify. A SEPARATE AXIS from argument 2 on
+    # purpose — install_state answers "what did the installer last do", this
+    # answers "did the last package transaction on this host verify". They
+    # disagree exactly when the installer never reached a terminal state, which
+    # leaves argument 2 reading a previous transaction's COMMITTED.
+    #
+    #   NOT_VERIFIED   positively established failure at the package boundary
+    #                  -> FAIL, the same weight as NOT_COMMITTED
+    #   INDETERMINATE  a receipt exists but cannot be read -> never PASS
+    #   NO_RECEIPT     no package boundary to speak of (source install, or a
+    #   ""             pre-v1.231.0 package) -> this axis asserts NOTHING; it
+    #                  must not fabricate a finding out of an absent file
+    local _pkg_class="${6:-}"
+    case "$_pkg_class" in
+        NOT_VERIFIED)
+            readiness="FAIL" ;;
+        INDETERMINATE)
+            [[ "$readiness" == "PASS" || "$readiness" == "PASS_WITH_WARN" ]] && readiness="INDETERMINATE" ;;
+    esac
+
     # =========================================================================
     # OWNER RULING (v1.230.0) — KEEP INDETERMINATE. DO NOT COLLAPSE IT INTO FAIL.
     # =========================================================================
@@ -1708,6 +1890,12 @@ nftban_render_operator_readiness() {
     elif [[ "$_istate_verdict" == "INDETERMINATE" ]]; then
         printf "  %-20s %s\n" "" "→ install transaction: INDETERMINATE — the last install/upgrade outcome cannot be established; see 'Install transaction' below (recover: ${NFTBAN_INSTALL_REPAIR_CMD})"
     fi
+    case "$_pkg_class" in
+        NOT_VERIFIED)
+            printf "  %-20s %s\n" "" "→ package transaction: NOT VERIFIED; see 'Package transaction' below (recover: ${NFTBAN_INSTALL_REPAIR_CMD})" ;;
+        INDETERMINATE)
+            printf "  %-20s %s\n" "" "→ package transaction: INDETERMINATE — the last package transaction's verdict cannot be read; see 'Package transaction' below" ;;
+    esac
     if [[ "$_fth_alarm" -eq 1 ]]; then
         printf "  %-20s %s\n" "" "→ firewall-transition alarm: see 'Firewall Transition' below (clear: nftban firewall rebuild)"
     fi

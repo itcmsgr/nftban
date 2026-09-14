@@ -615,7 +615,29 @@ nftban_health_cmd_truth() {
     if declare -F nftban_install_state_classify >/dev/null 2>&1; then
         _istate_class=$(nftban_install_state_classify "$_istate_file")
     fi
-    nftban_render_operator_readiness "$output" "$_istate_class" "$validator_rc" "$_fth_code" "$_comms_code"
+    # v1.231.0 Item 2b: the PACKAGE-TRANSACTION axis. install_state above answers
+    # "what did the installer last do"; this answers "did the last package
+    # transaction on this host actually verify". They diverge exactly when the
+    # installer never reached a terminal state — lock contention (exit 75), a
+    # panic, a flag error, or a package whose installer binary is missing — in
+    # which case install_state still carries the PREVIOUS transaction's
+    # COMMITTED and the line above reads clean for a host that never ran the
+    # installer for the version dpkg/rpm now say is installed.
+    #
+    # The installed version is passed so a receipt left by an OLDER transaction
+    # cannot answer for a newer one. Absent file -> NO_RECEIPT -> the axis
+    # asserts nothing (source installs and pre-v1.231.0 packages have none).
+    local _pkgtx_file="${NFTBAN_PACKAGE_TRANSACTION_FILE:-${NFTBAN_STATE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/state}/package_transaction}"
+    local _pkgtx_version=""
+    [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" ]] && \
+        _pkgtx_version="$(tr -d '[:space:]' < "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo "")"
+    # Fail-closed default, matching _istate_class above: if the classifier is
+    # somehow absent the outcome is INDETERMINATE, never a silent pass.
+    local _pkgtx_class="INDETERMINATE"
+    if declare -F nftban_package_transaction_classify >/dev/null 2>&1; then
+        _pkgtx_class=$(nftban_package_transaction_classify "$_pkgtx_file" "$_pkgtx_version")
+    fi
+    nftban_render_operator_readiness "$output" "$_istate_class" "$validator_rc" "$_fth_code" "$_comms_code" "$_pkgtx_class"
 
     # v1.230.0 P0-D4: when the transaction is not committed, the verdict lines
     # above are followed by the state, when it was recorded, ENFORCEMENT truth
@@ -624,6 +646,14 @@ nftban_health_cmd_truth() {
     if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
         nftban_render_install_transaction_truth "$_istate_file" \
             "the four-axis table above is the enforcement truth for this host — it is NOT evidence that the last install/upgrade completed" || true
+    fi
+
+    # v1.231.0 Item 2b: printed SEPARATELY from the install-transaction block
+    # above, never merged into it. The two are different authorities and their
+    # disagreement is the finding, not a formatting problem. Silent when the
+    # package transaction verified and when there is no receipt at all.
+    if declare -F nftban_render_package_transaction_truth >/dev/null 2>&1; then
+        nftban_render_package_transaction_truth "$_pkgtx_file" "$_pkgtx_version" || true
     fi
 
     echo ""

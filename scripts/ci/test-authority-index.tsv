@@ -220,6 +220,7 @@ nftban_da_help_ssh_port_r1a2_test	cli/lib/nftban/tests/nftban_da_help_ssh_port_r
 nftban_file_cleanup_r1a5_test	cli/lib/nftban/tests/nftban_file_cleanup_r1a5_test.sh	packaging	test	shipped-config-hygiene	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_geoip_help_path_r1a1_test	cli/lib/nftban/tests/nftban_geoip_help_path_r1a1_test.sh	geoip	test	geoip	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_operator_readiness_r1b2_test	cli/lib/nftban/tests/nftban_operator_readiness_r1b2_test.sh	health	test	operator-readiness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+nftban_package_transaction_truth_v1231_test	cli/lib/nftban/tests/nftban_package_transaction_truth_v1231_test.sh	health	test	package-transaction-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_rbl_json_escaping_r1a3_test	cli/lib/nftban/tests/nftban_rbl_json_escaping_r1a3_test.sh	rbl	test	rbl-json-escaping	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_render_findings_r1b1_test	cli/lib/nftban/tests/nftban_render_findings_r1b1_test.sh	health	test	health-findings-render	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftban_update_progress_r1b3_test	cli/lib/nftban/tests/nftban_update_progress_r1b3_test.sh	update	test	update-progress	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

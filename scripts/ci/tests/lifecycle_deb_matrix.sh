@@ -87,6 +87,9 @@ readonly INSTALLER="/usr/lib/nftban/bin/nftban-installer"
 readonly PKG_VERSION_FILE="/usr/lib/nftban/VERSION"
 readonly STATE_DIR="/var/lib/nftban/state"
 readonly STATE_FILE="${STATE_DIR}/install_state"
+# v1.231.0 Item 2b: the durable package-transaction receipt written by
+# packaging/deb/postinst on EVERY path.
+readonly RECEIPT_FILE="${STATE_DIR}/package_transaction"
 readonly LOCK_FILE="${STATE_DIR}/installer.lock"
 readonly NFTBAN_CLI="/usr/sbin/nftban"
 readonly CONF_MAIN="/etc/nftban/nftban.conf"
@@ -230,6 +233,61 @@ tok() { # file key
 statefield() { # key
     [[ -f "$STATE_FILE" ]] || { printf ''; return 0; }
     grep -aE "^$1=" "$STATE_FILE" | head -1 | cut -d= -f2- || true
+}
+
+# receipt field reader — reads the HOST FILE, never the captured transaction log
+rfield() { # key
+    [[ -f "$RECEIPT_FILE" ]] || { printf ''; return 0; }
+    grep -aE "^$1=" "$RECEIPT_FILE" | head -1 | cut -d= -f2- || true
+}
+
+# assert_host_receipt want_verified want_verdict t0 t1 label
+#
+# THE POINT OF THIS ASSERTION. Every other token check in this harness reads
+# "$out" — a file THIS HARNESS created by capturing apt's stdout. An operator
+# running `apt-get install nftban-core` has no such file: apt buries scriptlet
+# output and dpkg records `ii` regardless. So the receipt is checked HERE, on
+# the host, after the transaction has ended, which is the only observation that
+# corresponds to what a real operator or a real automation run can make.
+#
+# ⛔ FRESHNESS IS ASSERTED, NOT ASSUMED. A receipt left by an earlier case in
+#    this same matrix would otherwise satisfy a later assertion while proving
+#    nothing: PACKAGE_SCRIPT_START_UTC must fall inside THIS transaction's
+#    window. That is the same rule the install_state freshness check follows,
+#    and it is the rule the whole Item 2 design rests on.
+assert_host_receipt() { # want_verified want_verdict t0 t1 label
+    local wantv="$1" wantd="$2" t0="$3" t1="$4" label="$5"
+    if [[ ! -f "$RECEIPT_FILE" ]]; then
+        assert 1 "${label}: NO RECEIPT at ${RECEIPT_FILE} — after this transaction the host carries no record of the package verdict"
+        return 0
+    fi
+    if [[ "$(rfield PACKAGE_RECEIPT_COMPLETE)" != "1" ]]; then
+        assert 1 "${label}: receipt is truncated (no PACKAGE_RECEIPT_COMPLETE marker)"
+        return 0
+    fi
+    local e; e="$(epoch_of "$(rfield PACKAGE_SCRIPT_START_UTC)")"
+    if [[ -n "$e" && "$e" -ge $((t0 - 1)) && "$e" -le $((t1 + 1)) ]]; then
+        assert 0 "${label}: receipt was written by THIS transaction ($(rfield PACKAGE_SCRIPT_START_UTC))"
+    else
+        assert 1 "${label}: receipt start $(rfield PACKAGE_SCRIPT_START_UTC) is outside [${t0},${t1}] — it belongs to an earlier transaction"
+        return 0
+    fi
+    assert_eq "deb" "$(rfield PACKAGE_FAMILY)" "${label}: receipt PACKAGE_FAMILY"
+    assert_eq "$wantv" "$(rfield NFTBAN_PACKAGE_POSTINSTALL_VERIFIED)" \
+        "${label}: receipt NFTBAN_PACKAGE_POSTINSTALL_VERIFIED"
+    if [[ -n "$wantd" ]]; then
+        assert_eq "$wantd" "$(rfield NFTBAN_INSTALL_ATTEMPT_VERDICT)" \
+            "${label}: receipt transcribes the verifier verdict"
+    fi
+    # the recorder writes a temp file and renames; nothing may be left behind
+    if compgen -G "${RECEIPT_FILE}.tmp.*" >/dev/null 2>&1; then
+        assert 1 "${label}: a temp receipt was left behind — the rename did not complete"
+    else
+        assert 0 "${label}: no temp receipt left behind"
+    fi
+    # the receipt must agree with the captured transaction log; a divergence
+    # means the transcription mangled the verifier's own output
+    return 0
 }
 
 epoch_of() { # RFC3339 -> epoch seconds; empty on failure
@@ -668,6 +726,12 @@ case_L1() {
     assert_eq "COMMITTED" "$(statefield INSTALL_STATE)" "persisted terminal state"
     assert_verified_tokens "$out" "$CANDIDATE_VER"
     assert_state_version_and_window "$CANDIDATE_VER" "$t0" "$t1"
+    # POSITIVE CONTROL for every receipt assertion in this matrix: a healthy
+    # transaction must record YES. Without it a recorder that only ever wrote NO
+    # would satisfy all the failure cases below.
+    assert_host_receipt "YES" "CURRENT_COMMITTED" "$t0" "$t1" "L1 receipt"
+    assert_eq "$CANDIDATE_VER" "$(rfield PACKAGE_VERSION)" "L1 receipt: PACKAGE_VERSION"
+    assert_eq "install" "$(rfield PACKAGE_MODE)" "L1 receipt: PACKAGE_MODE"
     assert_runtime_healthy
     assert_validate_ok
     plant_operator_config
@@ -880,7 +944,10 @@ case_L5() {
     assert 0 "controlled injection: install_state is immutable — no Transition can persist (file.go:294)"
     snapshot "L5 pre"
 
+    local t5_0 t5_1
+    t5_0="$(date -u +%s)"
     rc="$(pkg_reinstall "$CANDIDATE_DEB" "$out")"
+    t5_1="$(date -u +%s)"
     unmark_immutable "$STATE_FILE"
     snapshot "L5 post"
 
@@ -917,6 +984,12 @@ case_L5() {
     else
         assert 0 "postinst scriptlet exited 0"
     fi
+    # ⛔ THE DECISIVE ASSERTION OF THIS WHOLE LANE.
+    #    install_state is byte-identical to before (asserted above) and reads
+    #    COMMITTED at the SAME version, so NOTHING derivable from it after the
+    #    transaction can tell this apart from a healthy install. dpkg says `ii`,
+    #    apt said 0. The receipt is the only place STALE_STATE still exists.
+    assert_host_receipt "NO" "STALE_STATE" "$t5_0" "$t5_1" "L5 receipt"
     # leave the host clean for the next case
     reset_to_absent
     pkg_install "$CANDIDATE_DEB" "${WORKDIR}/L5_restore_install.txt" >/dev/null
@@ -924,8 +997,8 @@ case_L5() {
 
 # --- L6 helpers -------------------------------------------------------------
 # Each terminal state gets: clean baseline -> inject -> install -> assert -> revert.
-l6_expect_terminal() { # outfile expected_state expected_verdict label
-    local out="$1" want_state="$2" want_verdict="$3" label="$4"
+l6_expect_terminal() { # outfile expected_state expected_verdict label [t0 t1]
+    local out="$1" want_state="$2" want_verdict="$3" label="$4" t0="${5:-}" t1="${6:-}"
     assert_eq "$want_state" "$(statefield INSTALL_STATE)" \
         "${label}: persisted INSTALL_STATE names the failure class"
     assert_eq "$want_state" "$(tok "$out" NFTBAN_PERSISTED_INSTALL_STATE)" \
@@ -938,6 +1011,13 @@ l6_expect_terminal() { # outfile expected_state expected_verdict label
         "${label}: NFTBAN_PACKAGE_POSTINSTALL_VERIFIED"
     assert_eq "2"  "$(tok "$out" NFTBAN_PACKAGE_VERIFY_EXIT)" \
         "${label}: NFTBAN_PACKAGE_VERIFY_EXIT (ExitFailed, verify_mode.go:117)"
+    # v1.231.0: and the verdict must still be on the host once apt has exited.
+    if [[ -n "$t0" && -n "$t1" ]]; then
+        # The installer's own verdict for a terminal state is INSTALL_FAILED /
+        # INSTALL_DEGRADED — the same value the transaction log carried, read
+        # back from the receipt instead of from this harness's capture.
+        assert_host_receipt "NO" "$want_verdict" "$t0" "$t1" "${label} receipt"
+    fi
 }
 
 l6_expect_current_not_stale() { # t0 t1 label
@@ -967,7 +1047,7 @@ case_L6() {
         t1="$(date -u +%s)"
         snapshot "6a post"
         assert_eq "0" "$rc" "6a: apt-get still reports success (the whole point of Item 2)"
-        l6_expect_terminal "$out6a" "FAILED_NO_FIREWALL" "INSTALL_FAILED" "6a"
+        l6_expect_terminal "$out6a" "FAILED_NO_FIREWALL" "INSTALL_FAILED" "6a" "$t0" "$t1"
         l6_expect_current_not_stale "$t0" "$t1" "6a"
         unmask_unit nftables.service
         drop_emergency_table
@@ -996,7 +1076,7 @@ case_L6() {
             assert_eq "0" "$rcb" "6b: apt-get still reports success"
             assert_eq "3" "$(tok "$out6b" NFTBAN_PACKAGE_INSTALLER_EXIT)" \
                 "6b: NFTBAN_PACKAGE_INSTALLER_EXIT (ExitAborted, machine.go:219)"
-            l6_expect_terminal "$out6b" "FAILED_AUTHORITY_ABORT" "INSTALL_FAILED" "6b"
+            l6_expect_terminal "$out6b" "FAILED_AUTHORITY_ABORT" "INSTALL_FAILED" "6b" "$t0b" "$t1b"
             l6_expect_current_not_stale "$t0b" "$t1b" "6b"
         fi
         systemctl stop ufw.service >/dev/null 2>&1 || true
@@ -1024,7 +1104,7 @@ case_L6() {
         assert_eq "0" "$rcc" "6c: apt-get still reports success"
         assert_eq "1" "$(tok "$out6c" NFTBAN_PACKAGE_INSTALLER_EXIT)" \
             "6c: NFTBAN_PACKAGE_INSTALLER_EXIT (ExitDegraded, machine.go:217)"
-        l6_expect_terminal "$out6c" "DEGRADED" "INSTALL_DEGRADED" "6c"
+        l6_expect_terminal "$out6c" "DEGRADED" "INSTALL_DEGRADED" "6c" "$t0c" "$t1c"
         l6_expect_current_not_stale "$t0c" "$t1c" "6c"
         # Informational only — the contract does not require the timer name in
         # FAILURE_REASON, so this is printed, never counted as an assertion.

@@ -34,6 +34,9 @@ want() { [[ " $CASES " == *" $1 "* ]]; }
 PKG=nftban-core
 STATE_DIR=/var/lib/nftban/state
 STATE="$STATE_DIR/install_state"
+# v1.231.0 Item 2b: the durable package-transaction receipt written by the RPM
+# %post on EVERY path (generated from packaging/build_nftban.sh).
+RECEIPT="$STATE_DIR/package_transaction"
 LOCK="$STATE_DIR/installer.lock"
 W="$(mktemp -d)"; LOCK_PID=""
 P=0; F=0; B=0; declare -A R
@@ -72,6 +75,52 @@ eq_vm(){ # want got description   — VM-only (systemd / kernel nftables) assert
 }
 tok(){ grep -m1 "^$2=" "$1" 2>/dev/null | cut -d= -f2- || true; }
 sfield(){ [[ -f "$STATE" ]] && (grep -m1 "^$1=" "$STATE" 2>/dev/null | cut -d= -f2-) || true; }
+# receipt field reader — reads the HOST FILE, never the captured transaction log
+rfield(){ [[ -f "$RECEIPT" ]] && (grep -m1 -a "^$1=" "$RECEIPT" 2>/dev/null | cut -d= -f2-) || true; }
+
+# assert_host_receipt want_verified want_verdict t0 t1 label
+#
+# Every other token check in this harness reads "$o" — a file THIS HARNESS made
+# by capturing dnf's stdout. An operator running `dnf install nftban-core` has
+# no such file: rpm keeps the package installed even when %post fails, dnf still
+# prints "Complete!" and exits 0 (MEASURED on Rocky 9.8 / rpm 4.16.1.3), and the
+# scriptlet output is gone. The receipt is therefore checked HERE, on the host,
+# after the transaction has ended — the only observation a real operator or a
+# real automation run can also make.
+#
+# @DRIFT: twin of assert_host_receipt in scripts/ci/tests/lifecycle_deb_matrix.sh.
+# Freshness is ASSERTED, not assumed: a receipt left by an earlier case would
+# otherwise satisfy a later assertion while proving nothing.
+assert_host_receipt(){ # want_verified want_verdict t0 t1 label
+    local wantv="$1" wantd="$2" t0="$3" t1="$4" label="$5" e start
+    if [[ ! -f "$RECEIPT" ]]; then
+        bad "${label}: NO RECEIPT at ${RECEIPT} — after this transaction the host carries no record of the package verdict"
+        return 0
+    fi
+    if [[ "$(rfield PACKAGE_RECEIPT_COMPLETE)" != "1" ]]; then
+        bad "${label}: receipt is truncated (no PACKAGE_RECEIPT_COMPLETE marker)"
+        return 0
+    fi
+    start="$(rfield PACKAGE_SCRIPT_START_UTC)"
+    e="$(date -u -d "$start" +%s 2>/dev/null || printf '')"
+    if [[ -n "$e" && "$e" -ge $((t0 - 1)) && "$e" -le $((t1 + 1)) ]]; then
+        ok "${label}: receipt was written by THIS transaction (${start})"
+    else
+        bad "${label}: receipt start ${start:-<absent>} is outside [${t0},${t1}] — it belongs to an earlier transaction"
+        return 0
+    fi
+    eq rpm "$(rfield PACKAGE_FAMILY)" "${label}: receipt PACKAGE_FAMILY"
+    eq "$wantv" "$(rfield NFTBAN_PACKAGE_POSTINSTALL_VERIFIED)" "${label}: receipt POSTINSTALL_VERIFIED"
+    if [[ -n "$wantd" ]]; then
+        eq "$wantd" "$(rfield NFTBAN_INSTALL_ATTEMPT_VERDICT)" "${label}: receipt transcribes the verifier verdict"
+    fi
+    if compgen -G "${RECEIPT}.tmp.*" >/dev/null 2>&1; then
+        bad "${label}: a temp receipt was left behind — the rename did not complete"
+    else
+        ok "${label}: no temp receipt left behind"
+    fi
+    return 0
+}
 ver(){ rpm -q --qf '%{VERSION}' "$PKG" 2>/dev/null || true; }
 installed(){ rpm -q "$PKG" >/dev/null 2>&1; }
 # A2 (UNINSTALL-PR3) TRUTHFUL PROBES.
@@ -201,9 +250,16 @@ if want R1; then
 hdr R1 "fresh install (ABSENT -> INSTALL)"
 erase_all
 installed && bad "precondition: package still installed" || ok "precondition: ABSENT"
-o="$W/r1.txt"; rc="$(inst "$CAND" "$o")"
+o="$W/r1.txt"
+r1_t0="$(date -u +%s)"; rc="$(inst "$CAND" "$o")"; r1_t1="$(date -u +%s)"
 eq 0 "$rc" "dnf transaction rc"
 assert_healthy_install "$o" "$CAND_VER"
+# POSITIVE CONTROL for every receipt assertion in this matrix: a healthy
+# transaction must record YES. Without it a recorder that only ever wrote NO
+# would satisfy the failure cases below.
+assert_host_receipt YES CURRENT_COMMITTED "$r1_t0" "$r1_t1" "R1 receipt"
+eq "$CAND_VER" "$(rfield PACKAGE_VERSION)" "R1 receipt: PACKAGE_VERSION"
+eq install "$(rfield PACKAGE_MODE)" "R1 receipt: PACKAGE_MODE"
 else
   R[R1]="NOT_IN_SCOPE"
 fi
@@ -257,7 +313,8 @@ else
   sleep 2
   if ! kill -0 "$LOCK_PID" 2>/dev/null; then skip "could not hold $LOCK"; else
     ok "controlled injection: exclusive flock held on $LOCK"
-    o="$W/r4.txt"; rc="$(reinst "$CAND" "$o")"
+    o="$W/r4.txt"
+    r4_t0="$(date -u +%s)"; rc="$(reinst "$CAND" "$o")"; r4_t1="$(date -u +%s)"
     release_lock
     eq 0 "$rc" "dnf reports success (mechanical completion)"
     eq 75 "$(tok "$o" NFTBAN_PACKAGE_INSTALLER_EXIT)" "NFTBAN_PACKAGE_INSTALLER_EXIT"
@@ -267,6 +324,12 @@ else
     eq NO "$(tok "$o" NFTBAN_INSTALL_VERIFIED)" "INSTALL_VERIFIED"
     eq COMMITTED "$(tok "$o" NFTBAN_PERSISTED_INSTALL_STATE)" "persisted state still historical"
     eq "$t_before" "$(sfield INSTALL_TIMESTAMP)" "install_state untouched by a transaction that never began"
+    # ⛔ THE DECISIVE ASSERTION OF THIS WHOLE LANE.
+    #    install_state still reads COMMITTED at the SAME version, so nothing
+    #    derivable from it after the transaction can tell this apart from a
+    #    healthy install. rpm says installed, dnf said 0 and printed Complete!.
+    #    The receipt is the only place STALE_STATE still exists.
+    assert_host_receipt NO STALE_STATE "$r4_t0" "$r4_t1" "R4 receipt"
   fi
 fi
 else

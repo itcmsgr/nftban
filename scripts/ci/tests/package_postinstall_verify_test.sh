@@ -75,6 +75,15 @@ awk '/# --- v1\.228\.0 Item 2: post-install outcome truth/,/# --- end Item 2/' \
 awk '/# --- v1\.228\.0 Item 2: post-install outcome truth/,/# --- end Item 2/' \
     packaging/build_nftban.sh | sed 's/^[[:space:]]*//; s/\\\$/$/g; s/%%/%/g' > "$WORK/rpm_block.sh"
 
+# v1.231.0 Item 2b: the DURABLE RECEIPT block. Extracted from its OWN markers
+# because it is defined OUTSIDE the Item 2 markers — it must be in scope for both
+# the main path and the no-installer path, so it precedes the installer guard.
+awk '/# --- v1\.231\.0 Item 2b: durable package-transaction receipt/,/# --- end Item 2b/' \
+    packaging/deb/postinst | sed 's/^[[:space:]]*//' > "$WORK/deb_2b.sh"
+awk '/# --- v1\.231\.0 Item 2b: durable package-transaction receipt/,/# --- end Item 2b/' \
+    packaging/build_nftban.sh > "$WORK/rpm_2b_raw.sh"
+sed 's/^[[:space:]]*//; s/\\\$/$/g; s/%%/%/g' "$WORK/rpm_2b_raw.sh" > "$WORK/rpm_2b.sh"
+
 FAMILIES=(deb rpm)
 extract_ok=1
 for f in "${FAMILIES[@]}"; do
@@ -290,6 +299,159 @@ pred_family_independent "$WORK/mutant.sh" deb \
     || ok  "negative-control: family-flag mutant correctly fails the family-independence check"
 
 # =============================================================================
+# TIER 1b — v1.231.0 Item 2b: the DURABLE PACKAGE-TRANSACTION RECEIPT
+# =============================================================================
+# WHY THIS TIER EXISTS
+#
+# Before v1.231.0 the boundary's verdict existed ONLY on scriptlet stdout. apt
+# and dnf bury it, and nothing on the host retains it: after the transaction
+# ends there is no way for an operator or for automation to learn that
+# NFTBAN_PACKAGE_POSTINSTALL_VERIFIED was NO. It is also not reconstructible —
+# on a same-version reinstall, or a retry after lock contention, the persisted
+# install_state still reads COMMITTED at the matching version, and only the
+# transaction-start timestamp separates that from a fresh commit.
+#
+# The scriptlet still exits 0 (measured: propagating rc wedges dpkg into iF and
+# poisons every later apt run, while rpm ignores it entirely). The receipt is
+# the compensating control, so these checks are the ones that make the exit-0
+# ruling defensible rather than merely convenient.
+echo "=== tier 1b: durable package-transaction receipt (static) ==="
+
+for f in "${FAMILIES[@]}"; do
+    if [[ -s "$WORK/${f}_2b.sh" ]]; then
+        ok "receipt/${f}: Item 2b block found"
+    else
+        bad "receipt/${f}: Item 2b block is EMPTY — the boundary records nothing durably"
+    fi
+done
+
+# 1b-a. TWIN PARITY. The two families must carry the SAME recorder, byte for
+#       byte, after the two transformations that stand between the source text
+#       and what the target host executes. A per-family recorder is two
+#       authorities: the DEB and RPM receipts would drift apart silently.
+if diff -u "$WORK/deb_2b.sh" "$WORK/rpm_2b.sh" > "$WORK/2bdiff" 2>&1; then
+    ok "receipt/parity: DEB and RPM recorders are BYTE-IDENTICAL after unescaping"
+else
+    bad "receipt/parity: the two recorders differ — the families would record different receipts"
+    sed 's/^/    /' "$WORK/2bdiff" | head -20
+fi
+# negative control: a one-field divergence must be caught, or the diff is decorative
+sed 's/PACKAGE_TRANSACTION_SCHEMA=1/PACKAGE_TRANSACTION_SCHEMA=2/' "$WORK/rpm_2b.sh" > "$WORK/2b_drift_mutant.sh"
+if diff -q "$WORK/deb_2b.sh" "$WORK/2b_drift_mutant.sh" >/dev/null 2>&1; then
+    bad "negative-control: a drifted recorder compared EQUAL — the twin-parity check is decorative"
+else
+    ok "negative-control: a one-field recorder drift is detected by the twin-parity check"
+fi
+
+# 1b-b. The recorder must be DEFINED BEFORE the installer guard in the SHIPPED
+#       file. Both the main path and the no-installer path call it, and the
+#       no-installer path is precisely the corrupt-package case — a recorder
+#       defined inside the guard would be missing exactly there.
+pred_defined_before_guard() { # shipped-file guard-regex
+    local def guard
+    def="$(grep -n '^[[:space:]]*_nftban_write_package_receipt() {' "$1" | head -1 | cut -d: -f1)"
+    guard="$(grep -nE "$2" "$1" | head -1 | cut -d: -f1)"
+    [[ -n "$def" && -n "$guard" && "$def" -lt "$guard" ]]
+}
+pred_defined_before_guard packaging/deb/postinst '^[[:space:]]*if \[ -x "\$NFTBAN_INSTALLER" \]; then' \
+    && ok  "receipt/deb: recorder is defined BEFORE the installer guard (in scope on every path)" \
+    || bad "receipt/deb: recorder is not defined before the installer guard — the no-installer path cannot call it"
+pred_defined_before_guard packaging/build_nftban.sh '^[[:space:]]*if \[ -x "\\\$NFTBAN_INSTALLER" \]; then' \
+    && ok  "receipt/rpm: recorder is defined BEFORE the installer guard (in scope on every path)" \
+    || bad "receipt/rpm: recorder is not defined before the installer guard — the no-installer path cannot call it"
+
+# 1b-c. THE WRITE MUST BE ATOMIC. A reader can open this file at any moment,
+#       including while a second transaction is running. Writing the final path
+#       in place publishes a half-written verdict.
+pred_atomic_write() { # 2b-block
+    grep -q '_nftban_receipt_tmp="\${_nftban_receipt}\.tmp\.\$\$"' "$1" || return 1
+    grep -Eq '^\} > "\$_nftban_receipt_tmp"' "$1" || return 1
+    grep -q 'mv -f "\$_nftban_receipt_tmp" "\$_nftban_receipt"' "$1" || return 1
+    # and NEVER a redirect straight at the final path
+    ! grep -Eq '> *"\$_nftban_receipt"' "$1"
+}
+pred_atomic_write "$WORK/deb_2b.sh" \
+    && ok  "receipt: written to a temp file in the same directory and renamed into place" \
+    || bad "receipt: the write is not atomic — a reader can observe a half-written verdict"
+# negative control
+sed 's#} > "\$_nftban_receipt_tmp"#} > "$_nftban_receipt"#' "$WORK/deb_2b.sh" > "$WORK/2b_inplace_mutant.sh"
+pred_atomic_write "$WORK/2b_inplace_mutant.sh" \
+    && bad "negative-control: an in-place-write mutant PASSED the atomicity check — the check is decorative" \
+    || ok  "negative-control: an in-place-write mutant correctly fails the atomicity check"
+
+# 1b-d. THE RECORDER MUST NOT BE ABLE TO FAIL THE SCRIPTLET. The entire ruling
+#       is that the transaction still exits 0; a recorder that can abort the
+#       postinst under `set -e` would convert an observability control into the
+#       exact iF/half-configured failure the ruling rejects.
+pred_cannot_fail() { # 2b-block
+    # the block is extracted with leading whitespace stripped
+    grep -Eq '^return 0$' "$1" || return 1
+    # every mutating step guarded
+    grep -q 'mkdir -p "/var/lib/nftban/state" 2>/dev/null || true' "$1" || return 1
+    grep -q 'chmod 0640 "\$_nftban_receipt_tmp" 2>/dev/null || true' "$1" || return 1
+    # a bare `[ ... ] && cmd` as a standalone statement returns 1 when false and
+    # aborts under set -e; the recorder must use an if instead
+    ! grep -Eq '^[[:space:]]*\[ .* \] &&' "$1"
+}
+pred_cannot_fail "$WORK/deb_2b.sh" \
+    && ok  "receipt: recorder always returns 0 and guards every mutating step" \
+    || bad "receipt: recorder can abort the scriptlet — it would cause the very iF state the ruling rejects"
+# negative control
+sed 's#^if \[ -n "\$8" \]; then printf .*$#[ -n "$8" ] \&\& printf "%s" "$8"#' \
+    "$WORK/deb_2b.sh" > "$WORK/2b_setE_mutant.sh"
+# the mutant must actually differ, or the "negative control" below is decorative
+if diff -q "$WORK/deb_2b.sh" "$WORK/2b_setE_mutant.sh" >/dev/null 2>&1; then
+    bad "negative-control: the set-e mutant is identical to the original — the mutation did not apply"
+fi
+pred_cannot_fail "$WORK/2b_setE_mutant.sh" \
+    && bad "negative-control: a set-e-unsafe recorder mutant PASSED — the cannot-fail check is decorative" \
+    || ok  "negative-control: a set-e-unsafe '[ ] &&' recorder mutant is detected"
+
+# 1b-e. THE RECEIPT LIVES BESIDE install_state. Same directory means the same
+#       lifecycle: postrm purges /var/lib/nftban, so a purged host cannot be
+#       left holding a receipt that outlives the package.
+if grep -q '_nftban_receipt="/var/lib/nftban/state/package_transaction"' "$WORK/deb_2b.sh"; then
+    ok "receipt: stored at /var/lib/nftban/state/package_transaction, beside install_state"
+else
+    bad "receipt: not stored in the installer state directory — it would survive a purge"
+fi
+
+# 1b-f. NO DUPLICATE AUTHORITY. The verifier's eight canonical tokens are
+#       transcribed VERBATIM through argument 8. A recorder that re-derived any
+#       of them would be a second authority on state interpretation, which is
+#       the rule Item 2 already established for stdout.
+if grep -Eq 'echo "NFTBAN_(PERSISTED|EXPECTED|NOT_BEFORE|INSTALL_ATTEMPT|INSTALL_VERIFIED)' "$WORK/deb_2b.sh"; then
+    bad "receipt: the recorder re-derives a canonical installer token — duplicate authority"
+else
+    ok "receipt: the recorder transcribes the verifier's tokens verbatim, never re-derives them"
+fi
+
+# 1b-g. BOTH CALL SITES. The main path AND the no-installer path must record.
+for f in "${FAMILIES[@]}"; do
+    src="packaging/deb/postinst"; [[ "$f" == "rpm" ]] && src="packaging/build_nftban.sh"
+    main_calls="$(grep -c '_nftban_write_package_receipt "'"$f"'"' "$src" || true)"
+    if [[ "$main_calls" -ge 2 ]]; then
+        ok "receipt/${f}: recorded on BOTH the installer path and the no-installer path"
+    else
+        bad "receipt/${f}: only ${main_calls} call site(s) — a path leaves no durable verdict"
+    fi
+done
+
+# 1b-h. The verifier's stdout must be CAPTURED (so it can be recorded) AND
+#       re-emitted (so the transaction log is unchanged for existing readers).
+#       Capturing without re-emitting would silently delete the tokens the
+#       lifecycle matrices and operators already read.
+for f in "${FAMILIES[@]}"; do
+    b="$WORK/${f}_block.sh"
+    if grep -q 'VERIFY_OUT="\$("\$NFTBAN_INSTALLER" \\' "$b" \
+       && grep -q 'printf .%s\\n. "\$VERIFY_OUT"' "$b"; then
+        ok "receipt/${f}: verifier stdout is captured for the receipt AND re-emitted verbatim"
+    else
+        bad "receipt/${f}: verifier stdout is not both captured and re-emitted"
+    fi
+done
+
+# =============================================================================
 # TIER 2 — control flow under the interpreters the block actually meets
 # =============================================================================
 # The stub stands in for BOTH invocations: the mutating one exits 75 having
@@ -324,11 +486,23 @@ chmod +x "$STUB_FAKE"
 # scriptlet interpreter (rpm supplies the flags; we do not assume which).
 run_block() {
     local block="$1" interp="$2" stub="$3" vdir="$4" sdir="$5" out="$6"
+    local prelude="${7:-}"
     local run="${block%.sh}_run.sh"
     # Redirect the block's absolute paths into the fixture WITHOUT editing the
     # logic: the text under test stays the text that ships.
+    #
+    # v1.231.0: the Item 2b recorder is defined outside the Item 2 markers (it
+    # must be in scope on the no-installer path too), so the runner composes the
+    # two in the SAME ORDER the shipped scriptlet does. That composition is not a
+    # convenience — check 1b-b asserts the definition really does precede the
+    # guard in the shipped file, so this cannot paper over a missing definition.
+    : > "$run"
+    if [[ -n "$prelude" ]]; then
+        sed -e "s#/usr/lib/nftban/VERSION#${vdir}/VERSION#" \
+            -e "s#/var/lib/nftban/state#${sdir}#" "$prelude" >> "$run"
+    fi
     sed -e "s#/usr/lib/nftban/VERSION#${vdir}/VERSION#" \
-        -e "s#/var/lib/nftban/state#${sdir}#" "$block" > "$run"
+        -e "s#/var/lib/nftban/state#${sdir}#" "$block" >> "$run"
     local rc=0
     env NFTBAN_INSTALLER="$stub" INSTALL_MODE=install \
         $interp "$run" >"$out" 2>&1 || rc=$?
@@ -338,12 +512,62 @@ run_block() {
 declare -A INTERP=( [deb]="bash -Eeuo pipefail" [rpm]="sh -e" )
 mkdir -p "$WORK/t2_v" "$WORK/t2_s"; echo "1.228.0" > "$WORK/t2_v/VERSION"
 
+# Reads one key out of a receipt FILE (not out of captured stdout — the entire
+# point of the receipt is that it survives after stdout is gone).
+rfield() { # receipt-file key
+    [[ -r "$1" ]] || { printf ''; return 0; }
+    local line; line="$(grep -m1 -a "^${2}=" "$1" || true)"
+    printf '%s' "${line#*=}"
+}
+
+# assert_receipt <state-dir> <want-verified> <want-verdict-or-empty> <label>
+#
+# ⛔ EVERY CALLER MUST PASS A STATE DIR THIS RUN CREATED. A receipt left by an
+#    earlier iteration would satisfy a later assertion while proving nothing
+#    about the run under test.
+assert_receipt() {
+    local sdir="$1" want_verified="$2" want_verdict="$3" label="$4"
+    local r="${sdir}/package_transaction"
+    if [[ ! -f "$r" ]]; then
+        bad "${label}: NO RECEIPT at ${r#$WORK/} — the boundary verdict exists only on stdout and is lost with it"
+        return 0
+    fi
+    if [[ "$(rfield "$r" PACKAGE_RECEIPT_COMPLETE)" != "1" ]]; then
+        bad "${label}: receipt is truncated (no PACKAGE_RECEIPT_COMPLETE marker)"
+        return 0
+    fi
+    local gotv; gotv="$(rfield "$r" NFTBAN_PACKAGE_POSTINSTALL_VERIFIED)"
+    if [[ "$gotv" == "$want_verified" ]]; then
+        ok "${label}: receipt records NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=${want_verified}"
+    else
+        bad "${label}: receipt records VERIFIED=${gotv:-<absent>} (want ${want_verified})"
+    fi
+    if [[ -n "$want_verdict" ]]; then
+        local gotd; gotd="$(rfield "$r" NFTBAN_INSTALL_ATTEMPT_VERDICT)"
+        if [[ "$gotd" == "$want_verdict" ]]; then
+            ok "${label}: receipt transcribes the verifier verdict ${want_verdict}"
+        else
+            bad "${label}: receipt verdict=${gotd:-<absent>} (want ${want_verdict}) — the verifier's tokens were not recorded"
+        fi
+    fi
+    # the atomic write must leave nothing behind
+    if compgen -G "${sdir}/package_transaction.tmp.*" >/dev/null 2>&1; then
+        bad "${label}: a temp receipt was left behind — the rename did not complete"
+    else
+        ok "${label}: no temp receipt left behind"
+    fi
+}
+
 for f in "${FAMILIES[@]}"; do
     interps=("${INTERP[$f]}")
     [[ "$f" == "rpm" ]] && interps+=("sh")   # rpm's flags are not ours to assume
     for it in "${interps[@]}"; do
         out="$WORK/t2_${f}_$(tr -d ' -' <<<"$it").txt"
-        rc="$(run_block "$WORK/${f}_block.sh" "$it" "$STUB_FAKE" "$WORK/t2_v" "$WORK/t2_s" "$out")"
+        # FRESH state dir per run: a receipt from a previous iteration must never
+        # be able to satisfy this one.
+        sdir="$WORK/t2_s_${f}_$(tr -d ' -' <<<"$it")"
+        rm -rf "$sdir"; mkdir -p "$sdir"
+        rc="$(run_block "$WORK/${f}_block.sh" "$it" "$STUB_FAKE" "$WORK/t2_v" "$sdir" "$out" "$WORK/${f}_2b.sh")"
         label="control-flow/${f} under '${it}'"
         if [[ "$rc" != "0" ]]; then
             bad "$label: block aborted rc=$rc — the verifier's output never reached the boundary"
@@ -364,6 +588,8 @@ for f in "${FAMILIES[@]}"; do
         else
             ok "$label: survives, propagates installer exit 75, reports VERIFIED=NO"
         fi
+        # THE v1.231.0 CONTRACT: the verdict must also survive the transaction.
+        assert_receipt "$sdir" "NO" "STALE_STATE" "$label"
     done
 done
 
@@ -375,13 +601,17 @@ STUB_OK="$WORK/installer-stub-ok"
 sed 's/^        exit 2$/        exit 0/; s/^exit 75$/exit 0/' "$STUB_FAKE" > "$STUB_OK"
 chmod +x "$STUB_OK"
 out="$WORK/t2_control_yes.txt"
-rc="$(run_block "$WORK/deb_block.sh" "${INTERP[deb]}" "$STUB_OK" "$WORK/t2_v" "$WORK/t2_s" "$out")"
+sdir_yes="$WORK/t2_s_yes"; rm -rf "$sdir_yes"; mkdir -p "$sdir_yes"
+rc="$(run_block "$WORK/deb_block.sh" "${INTERP[deb]}" "$STUB_OK" "$WORK/t2_v" "$sdir_yes" "$out" "$WORK/deb_2b.sh")"
 got="$(grep -m1 '^NFTBAN_PACKAGE_POSTINSTALL_VERIFIED=' "$out" | cut -d= -f2- || true)"
 if [[ "$rc" == "0" && "$got" == "YES" ]]; then
     ok "negative-control: VERIFIED tracks the verifier's exit (0 -> YES), not a hardcoded NO"
 else
     bad "negative-control: verifier exit 0 gave VERIFIED=${got:-<absent>} rc=$rc — VERIFIED is not derived from the verifier"
 fi
+# The same control applied to the RECEIPT: a receipt that always said NO would
+# make every tier-2 receipt assertion above pass against a constant.
+assert_receipt "$sdir_yes" "YES" "" "negative-control/receipt"
 
 # 2c. NEGATIVE CONTROL, and the empirical basis for check 1a. Whether rpm runs
 #     scriptlets with -e is rpm's business, not ours; what IS measurable here is
@@ -445,7 +675,7 @@ STUBEOF
         } > "$sd/install_state"
 
         out="$WORK/t3_${f}.txt"
-        rc="$(run_block "$WORK/${f}_block.sh" "${INTERP[$f]}" "$STUB_REAL" "$vd" "$sd" "$out")"
+        rc="$(run_block "$WORK/${f}_block.sh" "${INTERP[$f]}" "$STUB_REAL" "$vd" "$sd" "$out" "$WORK/${f}_2b.sh")"
         label="T8/${f}"
 
         if [[ "$rc" == "0" ]]; then
@@ -484,7 +714,38 @@ STUBEOF
         else
             bad "$label: precondition broken — state=${ps:-?} version=${pv:-?}; not a freshness test"
         fi
+
+        # v1.231.0 — THE POINT OF T8 AFTER THE TRANSACTION ENDS.
+        # install_state still reads COMMITTED at the matching version here, so
+        # no post-transaction reader can derive STALE_STATE from it. The receipt
+        # is the only place that verdict can still be found, and the real
+        # verifier — not a stub — is what put it there.
+        assert_receipt "$sd" "NO" "STALE_STATE" "$label/receipt"
+        if [[ "$(rfield "$sd/package_transaction" PACKAGE_FAMILY)" == "$f" ]]; then
+            ok "$label/receipt: PACKAGE_FAMILY=${f}"
+        else
+            bad "$label/receipt: PACKAGE_FAMILY=$(rfield "$sd/package_transaction" PACKAGE_FAMILY) (want ${f})"
+        fi
+        # A receipt whose persisted-state fields disagree with the stdout tokens
+        # would mean the transcription mangled them.
+        if [[ "$(rfield "$sd/package_transaction" NFTBAN_PERSISTED_INSTALL_STATE)" == "$ps" ]]; then
+            ok "$label/receipt: transcription matches the verifier's own stdout"
+        else
+            bad "$label/receipt: transcription diverges from the verifier's stdout"
+        fi
     done
+
+    # receipt-level parity: the two families must record the same verdict fields
+    rparity_fail=0
+    for k in PACKAGE_TRANSACTION_SCHEMA NFTBAN_PACKAGE_VERIFY_EXIT \
+             NFTBAN_PACKAGE_POSTINSTALL_VERIFIED NFTBAN_INSTALL_ATTEMPT_VERDICT \
+             NFTBAN_INSTALL_VERIFIED NFTBAN_PERSISTED_INSTALL_STATE; do
+        d="$(rfield "$WORK/t3_deb_s/package_transaction" "$k")"
+        r="$(rfield "$WORK/t3_rpm_s/package_transaction" "$k")"
+        if [[ -z "$d$r" ]]; then bad "receipt-parity: $k absent from both families"; rparity_fail=1
+        elif [[ "$d" != "$r" ]]; then bad "receipt-parity: $k deb=$d rpm=$r"; rparity_fail=1; fi
+    done
+    [[ "$rparity_fail" -eq 0 ]] && ok "receipt-parity: recorded verdict fields identical across DEB and RPM"
 
     # semantic parity: identical verdict fields from both families
     parity_fail=0
