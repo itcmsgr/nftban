@@ -465,7 +465,7 @@ assert_dpkg_installed() {
 # operator-override fixtures (conffiles: build_nftban.sh:2024-2048; *.local excluded)
 OPERATOR_MARK="# NFTBAN-LIFECYCLE-HARNESS-OPERATOR-MARK"
 is_immutable() { # file -> 0 if the immutable flag is set
-    lsattr -d "$1" 2>/dev/null | awk '{print $1}' | grep -q 'i'
+    { _ls="$(lsattr -d "$1" 2>/dev/null || true)"; _fl="$(printf '%s' "$_ls" | awk '{print $1}')"; case "$_fl" in *i*) true ;; *) false ;; esac; }
 }
 
 plant_operator_config() {

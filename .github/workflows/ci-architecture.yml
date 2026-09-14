@@ -222,6 +222,17 @@ jobs:
       - name: Check ldflags -X targets are declared string vars (v1.231.0, BLOCKING)
         run: ./scripts/ci/check-ldflags-target-authority.sh
 
+      # v1.231.0 OBSERVATION-TRUTH BLOCKING — `producer | grep -q P` inverts its own
+      # verdict when the producer is still writing: grep -q exits on the first match,
+      # the producer takes SIGPIPE, and pipefail reports the PRODUCER's failure, so a
+      # SUCCESSFUL match reads as "not found". In a guard whose match means VIOLATION
+      # that direction is fail-OPEN. Scoped to scripts/ci deliberately; see the header.
+      - name: Check observation truth (v1.231.0, BLOCKING)
+        run: ./scripts/ci/check-observation-truth.sh
+
+      - name: Check observation-truth guard is falsifiable (v1.231.0, BLOCKING)
+        run: ./scripts/ci/check-observation-truth-falsifiability.sh
+
       # v1.228.6 GUARD-THE-GUARD, BLOCKING — same discipline as the logrotate guard
       # above: inject each violation class, require a FAIL that names it; inject prose
       # mentioning the construct, require a PASS; verify restoration.
