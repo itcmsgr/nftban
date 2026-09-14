@@ -99,9 +99,20 @@ const (
 	CoreEngineName = "nftban-core"
 )
 
-// FullVersion includes the 'v' prefix (e.g., "v1.0.5")
+// FullVersion includes the 'v' prefix (e.g., "v1.0.5") exactly once, whether or
+// not the build-injected Version already carries it.
+//
+// The two shipped build paths inject DIFFERENT forms into Version:
+//
+//	build.sh:106,127                 $(cat VERSION)        -> "1.230.0"   (bare)
+//	.github/workflows/release.yml:626  github.ref_name     -> "v1.230.0"  (prefixed)
+//
+// A bare "v"+Version rendered the second form as "vv1.230.0". TrimPrefix makes
+// the function total over both, which is also what parseVersion() has always
+// done (:79). It does not change the bare or uninjected cases: "1.25.0" ->
+// "v1.25.0" and the "dev" default -> "vdev", both test-locked below.
 func FullVersion() string {
-	return "v" + Version
+	return "v" + strings.TrimPrefix(Version, "v")
 }
 
 // Major returns the major version number

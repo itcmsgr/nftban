@@ -134,6 +134,16 @@ func TestFullVersion(t *testing.T) {
 	if got := FullVersion(); got != "vdev" {
 		t.Errorf("FullVersion() = %q, want %q", got, "vdev")
 	}
+
+	// The SLSA release path injects github.ref_name, which on a tag push
+	// already carries the 'v' (release.yml:626), while build.sh injects the
+	// bare $(cat VERSION). FullVersion must render one 'v', not two.
+	// Negative control for the pre-fix implementation: "v"+Version would
+	// return "vv1.25.0" here.
+	Version = "v1.25.0"
+	if got := FullVersion(); got != "v1.25.0" {
+		t.Errorf("FullVersion() = %q, want %q (prefixed input must not double the v)", got, "v1.25.0")
+	}
 }
 
 // =============================================================================

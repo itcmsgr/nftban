@@ -19,9 +19,27 @@ flags:
 # Linker flags (inject version info)
 # Note: Only {{ .Env.VERSION }} is supported (passed via evaluated-envs)
 # {{ .Commit }} and {{ .CommitDate }} are not valid SLSA builder templates
+#
+# ⛔ THE -X TARGET MUST BE A STRING *VARIABLE*. This previously read
+#    `...pkg/version.FullVersion=`, but FullVersion is a FUNC (version.go:103).
+#    `-X` only rewrites string vars; naming a func symbol is a SILENT NO-OP --
+#    the link succeeds, emits no warning, and the binary keeps the "dev"
+#    default. Measured on lab4 (go1.25.12) against the exact package shape:
+#
+#      -X ...version.FullVersion=v9.9.9  -> build rc=0, Version=dev,  FullVersion=vdev
+#      -X ...version.Version=v9.9.9      -> build rc=0, Version=v9.9.9
+#
+#    So every nftban-core the SLSA builder has ever produced reported "vdev".
+#    A green build is not an injected build.
+#
+#    VERSION here is github.ref_name (release.yml:626), which on a tag push
+#    carries the 'v'; build.sh:106 injects the bare $(cat VERSION). Both render
+#    correctly because FullVersion() is prefix-idempotent as of v1.231.0. The
+#    raw `version.Version` string still differs in FORM between the two build
+#    paths -- see the note on release.yml:306 -- which is tracked separately.
 ldflags:
   - -s -w
-  - -X github.com/itcmsgr/nftban/pkg/version.FullVersion={{ .Env.VERSION }}
+  - -X github.com/itcmsgr/nftban/pkg/version.Version={{ .Env.VERSION }}
 
 # Build targets (single target per config - SLSA builder requirement)
 goos: linux
