@@ -49,6 +49,12 @@ scan_temp_rename_writers() {
         case "$f" in
             *_test.go) continue ;;
             */internal/safety/*) continue ;;
+            # GUARD SUBJECT == GUARD INPUT. `.claude/` holds tooling state, not
+            # product code — and when parallel lanes run in git worktrees rooted
+            # at .claude/worktrees/, every baseline writer appears once per
+            # worktree and reads as a NEW unguarded writer. That is a scoping
+            # artefact of the harness, never a finding about the product.
+            */.claude/*) continue ;;
         esac
         if grep -qE 'os\.Rename\(' "$f" 2>/dev/null \
            && grep -qE 'CreateTemp|\.tmp"' "$f" 2>/dev/null; then

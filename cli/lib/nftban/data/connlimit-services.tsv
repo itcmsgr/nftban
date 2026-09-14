@@ -1,0 +1,33 @@
+# NFTBan — CANONICAL PER-SOURCE CONNLIMIT SERVICE DECLARATIONS
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
+# meta:name="connlimit-services"
+# meta:type="data"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-09-14"
+# meta:description="P12-A02 canonical connlimit declarations. DATA, never executable code. Carries the NAME of the policy variable, never its value: conf.d/ddos/classic.conf remains the sole value authority. Consumed by the connlimit renderer, which owns nft syntax only. One row per service class; MAIL owns port 25 (the fragment SMTP/25 rule was a duplicate projection of this row and is removed)."
+# meta:inventory.files="cli/lib/nftban/data/connlimit-services.tsv"
+# meta:inventory.privileges="none"
+# =============================================================================
+#
+# ⛔ MUST NOT appear in this file: fallback numeric values · shell commands ·
+#    sed expressions · package-specific syntax · runtime set members.
+#
+# ⛔ PROJECTED_BY is declarative ownership, not a hint:
+#      base     -> emitted into install/nftables/nftables.conf.tpl
+#      fragment -> emitted by cli/lib/nftban/lib/nft_fragment.sh
+#    A service must be projected by EXACTLY ONE of them. MAIL is base-only and
+#    already covers port 25; a second SMTP projection is a duplicate, not an extra
+#    protection (v1.67.1 applied this same criterion to SSH and HTTP).
+#
+# ⛔ SET_V4/SET_V6 are DYNAMIC sets. Their MEMBERS are created by nftables at packet
+#    evaluation via `add @set { ip saddr ct count over N }`. They must NEVER be
+#    populated by _firewall_set_elements() or the Go set-normalisation code, which
+#    own static config-derived sets such as @ssh_ports.
+#
+# SERVICE  PORT_EXPR              LIMIT_VAR                      SET_V4              SET_V6              PROJECTED_BY
+ssh	@ssh_ports	DDOS_CLASSIC_SSH_CONN_LIMIT	connlimit_ssh_v4	connlimit_ssh_v6	base
+http	{ 80, 443 }	DDOS_CLASSIC_HTTP_CONN_LIMIT	connlimit_http_v4	connlimit_http_v6	base
+mail	{ 25, 465, 587 }	DDOS_CLASSIC_SMTP_CONN_LIMIT	connlimit_mail_v4	connlimit_mail_v6	base
+dns	53	DDOS_CLASSIC_DNS_CONN_LIMIT	connlimit_dns_v4	connlimit_dns_v6	fragment

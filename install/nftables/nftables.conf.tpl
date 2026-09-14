@@ -297,6 +297,21 @@ table ip nftban {
         comment "Per-IP UDP access accepted"
     }
 
+    # >>> NFTBAN-GENERATED connlimit base-sets (family 4) — regenerate with scripts/ci/gen-connlimit-projection.sh
+    set connlimit_ssh_v4 {
+        type ipv4_addr
+        flags dynamic
+    }
+    set connlimit_http_v4 {
+        type ipv4_addr
+        flags dynamic
+    }
+    set connlimit_mail_v4 {
+        type ipv4_addr
+        flags dynamic
+    }
+    # <<< NFTBAN-GENERATED connlimit base-sets (family 4)
+
     counter input_ct_ssh_drop {
         comment "SSH conn limit drops"
     }
@@ -453,9 +468,11 @@ table ip nftban {
         # connections count toward it. Over the cap the packet is dropped
         # silently — no log, no event, no ban. One busy source can consume
         # the whole allowance. (v1.229.13 A02-2 — wording only.)
-        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent (host-wide, not per IP) — v1.145 PR-A set-driven"
-        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent (host-wide, not per IP)"
-        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent (host-wide, not per IP)"
+        # >>> NFTBAN-GENERATED connlimit base-rules (family 4) — regenerate with scripts/ci/gen-connlimit-projection.sh
+        ct state new tcp dport @ssh_ports add @connlimit_ssh_v4 { ip saddr ct count over __CT_LIMIT_SSH__ } counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent PER SOURCE"
+        ct state new tcp dport { 80, 443 } add @connlimit_http_v4 { ip saddr ct count over __CT_LIMIT_HTTP__ } counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP: max __CT_LIMIT_HTTP__ concurrent PER SOURCE"
+        ct state new tcp dport { 25, 465, 587 } add @connlimit_mail_v4 { ip saddr ct count over __CT_LIMIT_MAIL__ } counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent PER SOURCE"
+        # <<< NFTBAN-GENERATED connlimit base-rules (family 4)
 
         # 7. SYN RATE LIMIT - Portscan detection (per source IP)
         # v1.46.0 FIX-B: Two-rule pattern — accept within limit, log+drop exceeded
@@ -690,6 +707,21 @@ table ip6 nftban {
         comment "Per-IP UDP access accepted"
     }
 
+    # >>> NFTBAN-GENERATED connlimit base-sets (family 6) — regenerate with scripts/ci/gen-connlimit-projection.sh
+    set connlimit_ssh_v6 {
+        type ipv6_addr
+        flags dynamic
+    }
+    set connlimit_http_v6 {
+        type ipv6_addr
+        flags dynamic
+    }
+    set connlimit_mail_v6 {
+        type ipv6_addr
+        flags dynamic
+    }
+    # <<< NFTBAN-GENERATED connlimit base-sets (family 6)
+
     counter input_ct_ssh_drop {
         comment "SSH conn limit drops"
     }
@@ -874,9 +906,11 @@ table ip6 nftban {
         # connections count toward it. Over the cap the packet is dropped
         # silently — no log, no event, no ban. One busy source can consume
         # the whole allowance. (v1.229.13 A02-2 — wording only.)
-        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent (host-wide, not per IP) — v1.145 PR-A set-driven"
-        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent (host-wide, not per IP)"
-        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent (host-wide, not per IP)"
+        # >>> NFTBAN-GENERATED connlimit base-rules (family 6) — regenerate with scripts/ci/gen-connlimit-projection.sh
+        ct state new tcp dport @ssh_ports add @connlimit_ssh_v6 { ip6 saddr ct count over __CT_LIMIT_SSH__ } counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent PER SOURCE"
+        ct state new tcp dport { 80, 443 } add @connlimit_http_v6 { ip6 saddr ct count over __CT_LIMIT_HTTP__ } counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP: max __CT_LIMIT_HTTP__ concurrent PER SOURCE"
+        ct state new tcp dport { 25, 465, 587 } add @connlimit_mail_v6 { ip6 saddr ct count over __CT_LIMIT_MAIL__ } counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent PER SOURCE"
+        # <<< NFTBAN-GENERATED connlimit base-rules (family 6)
 
         # 7a. IPv6 /64 PREFIX SYN GATE — anti-address-rotation (v1.67.0)
         # A hostile source rotating addresses within one /64 is caught here
