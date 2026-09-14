@@ -668,9 +668,14 @@ EOF
 
         kafka)
             if command -v kafka-console-producer.sh &>/dev/null; then
-                echo "$event_json" | kafka-console-producer.sh \
+                # Same defect, same file, different transport: the producer's exit
+                # status was discarded and `2>/dev/null` hid the reason as well.
+                if ! echo "$event_json" | kafka-console-producer.sh \
                     --broker-list "$CONNECTOR_KAFKA_BROKERS" \
-                    --topic "$CONNECTOR_KAFKA_TOPIC" 2>/dev/null
+                    --topic "$CONNECTOR_KAFKA_TOPIC" 2>/dev/null; then
+                    _connector_print_error "Failed to push event to Kafka"
+                    return 1
+                fi
                 _connector_print_success "Event pushed to Kafka"
             else
                 _connector_print_warning "kafka-console-producer.sh not found"
@@ -686,11 +691,28 @@ EOF
             local msg
             msg="<14>1 $timestamp $(hostname) nftban - - - $event_json"
 
+            # ⛔ THE TRANSPORT'S STATUS IS THE VERDICT. Previously this arm ran nc
+            # and then announced success UNCONDITIONALLY. Measured live on lab4 with
+            # nc absent: stderr "nc: command not found", stdout "✅ Event pushed to
+            # syslog", rc=0 — a delivery claim for a byte that was never sent.
+            # `set -Eeuo pipefail` does NOT save this: errexit is suppressed inside a
+            # function whose result the CLI dispatcher consumes conditionally, which
+            # is exactly how this code is reached.
+            # The transport is also DECLARED, not assumed: `nc` is absent on a
+            # default EL9 install, so "command not found" is a supported state that
+            # must be reported, not a can't-happen.
+            if ! command -v nc >/dev/null 2>&1; then
+                _connector_print_error "syslog transport 'nc' is not installed — nothing was sent"
+                return 1
+            fi
             if [[ "$proto" == "udp" ]]; then
                 echo "$msg" | nc -u -w1 "$host" "$port"
             else
                 echo "$msg" | nc -w1 "$host" "$port"
-            fi
+            fi || {
+                _connector_print_error "Failed to push event to syslog (transport exit $?)"
+                return 1
+            }
             _connector_print_success "Event pushed to syslog"
             ;;
 
