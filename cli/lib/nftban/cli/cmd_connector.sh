@@ -668,9 +668,24 @@ EOF
 
         kafka)
             if command -v kafka-console-producer.sh &>/dev/null; then
-                echo "$event_json" | kafka-console-producer.sh \
+                # v1.231.0 SUCCESS_CLAIM_REQUIRES_PROVEN_SUCCESS.
+                # The producer's exit status is the ONLY evidence this host has
+                # that the event left it. Pre-v1.231.0 that status was DISCARDED
+                # and `2>/dev/null` threw away the broker's own diagnostic, so a
+                # producer exiting 1 still printed "Event pushed to Kafka" and
+                # returned 0. Proven on lab4 with a producer stub exiting 1:
+                # stdout claimed success, rc=0, and the operator was never told.
+                # The stderr is now CAPTURED rather than suppressed — it is the
+                # only description of WHY a push failed.
+                local _kafka_rc=0 _kafka_err=""
+                _kafka_err=$(echo "$event_json" | kafka-console-producer.sh \
                     --broker-list "$CONNECTOR_KAFKA_BROKERS" \
-                    --topic "$CONNECTOR_KAFKA_TOPIC" 2>/dev/null
+                    --topic "$CONNECTOR_KAFKA_TOPIC" 2>&1 >/dev/null) || _kafka_rc=$?
+                if [[ $_kafka_rc -ne 0 ]]; then
+                    _connector_print_error "Failed to push event to Kafka (kafka-console-producer.sh exit ${_kafka_rc})"
+                    [[ -n "$_kafka_err" ]] && printf '%s\n' "$_kafka_err" >&2
+                    return 1
+                fi
                 _connector_print_success "Event pushed to Kafka"
             else
                 _connector_print_warning "kafka-console-producer.sh not found"
@@ -686,12 +701,40 @@ EOF
             local msg
             msg="<14>1 $timestamp $(hostname) nftban - - - $event_json"
 
-            if [[ "$proto" == "udp" ]]; then
-                echo "$msg" | nc -u -w1 "$host" "$port"
-            else
-                echo "$msg" | nc -w1 "$host" "$port"
+            # v1.231.0 SUCCESS_CLAIM_REQUIRES_PROVEN_SUCCESS.
+            # Pre-v1.231.0 this arm ran `nc` and then claimed success
+            # unconditionally. On a host without netcat — the default on Rocky
+            # Linux 9, where this was proven — the shell printed
+            # "nc: command not found" to stderr, this function printed
+            # "Event pushed to syslog" to stdout, and returned 0.
+            # PRESENCE IS CHECKED FIRST because "command not found" is a
+            # different operator action (install a package) from "the collector
+            # refused" (fix the collector), and the two must not be merged.
+            if ! command -v nc >/dev/null 2>&1; then
+                _connector_print_error "Cannot push to syslog: 'nc' is not installed on this host"
+                echo "Install nmap-ncat (EL) or netcat-openbsd (Debian/Ubuntu), or use a connector type that does not require it" >&2
+                return 1
             fi
-            _connector_print_success "Event pushed to syslog"
+            local _syslog_rc=0
+            if [[ "$proto" == "udp" ]]; then
+                echo "$msg" | nc -u -w1 "$host" "$port" || _syslog_rc=$?
+            else
+                echo "$msg" | nc -w1 "$host" "$port" || _syslog_rc=$?
+            fi
+            if [[ $_syslog_rc -ne 0 ]]; then
+                _connector_print_error "Failed to push event to syslog ${proto}://${host}:${port} (nc exit ${_syslog_rc})"
+                return 1
+            fi
+            # TRUTHFUL SCOPE. Over UDP an rc of 0 means the datagram was handed
+            # to the kernel, NOT that the collector received it — UDP is
+            # unacknowledged and nc cannot observe the far end. Say exactly that
+            # and no more; a stronger word here would be the same defect in a
+            # smaller font.
+            if [[ "$proto" == "udp" ]]; then
+                _connector_print_success "Event sent to syslog ${host}:${port}/udp (UDP is unacknowledged: not a delivery receipt)"
+            else
+                _connector_print_success "Event pushed to syslog ${host}:${port}/tcp"
+            fi
             ;;
 
         webhook)

@@ -268,6 +268,28 @@ jobs:
       - name: Check gates have no EPIPE short-circuits (v1.228.9 PR4, BLOCKING)
         run: ./scripts/ci/check-pipefail-epipe-shortcircuit.sh
 
+      # v1.231.0 BLOCKING — SUCCESS_CLAIM_REQUIRES_PROVEN_SUCCESS. Two connector
+      # push arms ran a transport and then emitted an affirmative success line
+      # unconditionally; on a host without netcat the CLI printed
+      # "Event pushed to syslog" and exited 0 while nothing left the host
+      # (proven on lab4), and a Kafka producer exiting 1 was hidden entirely by
+      # `2>/dev/null`. NARROW BY RULING: the subject list is the canonical
+      # emitter with the proven defect, not every success helper in the tree.
+      # It does NOT prove control-flow dominance — see the guard's own header
+      # for the five things it does not prove.
+      - name: Check success claims are status-proven (v1.231.0, BLOCKING)
+        run: ./scripts/ci/check-success-claim-proof.sh
+
+      # v1.231.0 GUARD-THE-GUARD, BLOCKING. The guard ships at zero violations,
+      # the state in which a broken matcher looks exactly like a clean tree.
+      # This requires a TRIP on a negative fixture that NAMES the transport, a
+      # PASS on a positive fixture carrying the SAME verbs, a TRIP on a declared
+      # inversion of the REAL module (the negative control must hit the
+      # motivating defect, not a toy), and rc=2 rather than a silent pass when
+      # the subject or its call sites disappear.
+      - name: Check success-claim guard is falsifiable (v1.231.0, BLOCKING)
+        run: ./scripts/ci/check-success-claim-proof-falsifiability.sh
+
       # v1.228.8 PR4 BLOCKING — control-enforcement meta-gate. The parser gate
       # shipped in PR1 with a selftest, was manually falsified, was called
       # BLOCKING in its PR body and register, and had NO workflow consumer
