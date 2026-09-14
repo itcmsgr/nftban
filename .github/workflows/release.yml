@@ -219,6 +219,14 @@ jobs:
     name: Build Go binaries
     needs: release-preflight
     runs-on: ubuntu-latest
+    # v1.231.0 SLSA-IDENTITY: the SLSA config needs a V-LESS version. pkg/version
+    # composes FullVersion() as "v"+Version, and build.sh feeds it the bare VERSION
+    # file, so injecting the v-PREFIXED github.ref_name would render "vv1.231.0".
+    # GitHub expressions have no string-replace, so the stripped value is published
+    # here as a job output. release-preflight has already asserted the tag and the
+    # VERSION file agree, so both sources are interchangeable at this point.
+    outputs:
+      version_bare: ${{ steps.slsa_version.outputs.version_bare }}
     # v1.226.0: this job runs the fail-closed publication privacy gate, whose
     # secrets (NFTBAN_PRIVACY_DENYLIST / NFTBAN_PRIVACY_FP_KEY) live ONLY on the
     # protected `privacy-gate` environment (not repo-level, by design). Declare the
@@ -231,6 +239,25 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
+
+      # v1.231.0 SLSA-IDENTITY — publish the bare (v-less) release version.
+      - name: Resolve bare version for SLSA ldflags
+        id: slsa_version
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME:-}"
+          BARE="${REF#v}"
+          if [ -z "$BARE" ] || [ "$BARE" = "$REF" ] && [ -f VERSION ]; then
+            # manual dispatch (no tag) or an unprefixed ref: fall back to the file,
+            # which release-preflight has already reconciled with the tag.
+            BARE="$(cat VERSION)"
+          fi
+          case "$BARE" in
+            v*) echo "::error::bare version still carries a 'v' prefix: $BARE"; exit 1 ;;
+            "") echo "::error::could not resolve a bare version"; exit 1 ;;
+          esac
+          echo "version_bare=$BARE" >> "$GITHUB_OUTPUT"
+          echo "SLSA bare version: $BARE"
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -623,7 +650,9 @@ jobs:
       # third-party reusable workflow, so it is left to the builder.
       go-version: "1.25.13"
       config-file: .github/slsa/nftban-core.yml
-      evaluated-envs: "VERSION:${{ github.ref_name }}"
+      # v1.231.0 SLSA-IDENTITY: VERSION is now BARE (see build-binaries.outputs)
+      # and GIT_COMMIT carries chain-of-custody back to the provenance subject.
+      evaluated-envs: "VERSION:${{ needs.build-binaries.outputs.version_bare }}, GIT_COMMIT:${{ github.sha }}"
       # ⛔ DO NOT REMOVE. See the block above: absent == true == third-party publisher ON.
       upload-assets: false
 

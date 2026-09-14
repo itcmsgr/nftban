@@ -21,7 +21,21 @@ flags:
 # {{ .Commit }} and {{ .CommitDate }} are not valid SLSA builder templates
 ldflags:
   - -s -w
-  - -X github.com/itcmsgr/nftban/pkg/version.FullVersion={{ .Env.VERSION }}
+  # ⛔ -X SETS STRING VARIABLES ONLY. Targeting a FUNCTION is a SILENT NO-OP: the
+  #    linker emits no error and the binary keeps its defaults. This config
+  #    previously targeted pkg/version.FullVersion, which is
+  #    `func FullVersion() string` (pkg/version/version.go:103), so every
+  #    SLSA-built nftban-core shipped "vdev (git dev, build unknown)".
+  #    Proven empirically: -X on the func -> "vdev"; -X on the var -> "v1.231.0".
+  #    The -X-able vars are Version, GitCommit, BuildDate. FullVersion() composes
+  #    "v" + Version, so VERSION here MUST be BARE (release.yml strips the tag's
+  #    'v' and publishes build-binaries.outputs.version_bare).
+  - -X github.com/itcmsgr/nftban/pkg/version.Version={{ .Env.VERSION }}
+  - -X github.com/itcmsgr/nftban/pkg/version.GitCommit={{ .Env.GIT_COMMIT }}
+  # BuildDate is DELIBERATELY NOT injected here. A build timestamp would make the
+  # binary differ byte-for-byte between rebuilds of the same source, defeating the
+  # reproducibility that gives this provenance its value. It stays "unknown" for
+  # SLSA builds; GitCommit carries the chain of custody instead.
 
 # Build targets (single target per config - SLSA builder requirement)
 goos: linux

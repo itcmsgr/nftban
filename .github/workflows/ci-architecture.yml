@@ -216,6 +216,12 @@ jobs:
       - name: Check nft bounded limiters (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters.sh
 
+      # v1.231.0 SLSA-IDENTITY BLOCKING — `-X` sets string VARIABLES only. Aiming it
+      # at a func/const/absent symbol is a SILENT no-op with no linker diagnostic,
+      # which is how the SLSA build shipped "vdev" while build.sh was correct.
+      - name: Check ldflags -X targets are declared string vars (v1.231.0, BLOCKING)
+        run: ./scripts/ci/check-ldflags-target-authority.sh
+
       # v1.228.6 GUARD-THE-GUARD, BLOCKING — same discipline as the logrotate guard
       # above: inject each violation class, require a FAIL that names it; inject prose
       # mentioning the construct, require a PASS; verify restoration.
