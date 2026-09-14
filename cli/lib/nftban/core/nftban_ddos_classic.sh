@@ -540,6 +540,14 @@ _nftban_ddos_classic_setup_via_ipc() {
     nft flush chain $table_v6 "$chain" 2>/dev/null || true
     nft delete set $table_v6 "${syn_meter}6" 2>/dev/null || true
     nft delete set $table_v6 "${icmp_meter}6" 2>/dev/null || true
+    # v1.231.0: the IPv6 UDP meter was missing from this block while its IPv4
+    # sibling (:539) was deleted. nft treats `add set` on an existing set as a
+    # no-op, so ddos_udp_flood6 (created nft_fragment.sh:1057, referenced :1075)
+    # survived re-enable carrying its PREVIOUS size/timeout definition: a changed
+    # DDOS_CLASSIC_UDP_* setting took effect on IPv4 and silently did not on
+    # IPv6, with no operator signal. Element staleness self-healed via the set's
+    # own `timeout 5m`; the set DEFINITION did not.
+    nft delete set $table_v6 "${udp_meter}6" 2>/dev/null || true
 
     # Render the fragment with all config values
     local fragment_path
