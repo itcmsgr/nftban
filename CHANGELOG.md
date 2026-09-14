@@ -11,6 +11,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.230.0] - 2026-09-14 — operator-surface truth and post-update convergence
+
+Gate 6R makes an update tell the truth about itself. The v1.229.13→.14 rollout left dns1 in
+`FAILED_REBUILD` while the machine-readable record said the rebuild exited 0 — measured across
+all 9 production hosts, `REBUILD_EXIT_CODE` and `REBUILD_DURATION_MS` were never written by
+anything, so a consumer reading the state saw success on the one host where the rebuild
+demonstrably failed.
+
+### Rebuild and update truth
+- A refused rebuild is now a contract, not a generic `rc=1`: `REBUILD_REFUSED_BUSY` is distinct
+  from `FAILED_REBUILD`, with `modified=false` and `enforcement_unchanged=true` asserted.
+- `REBUILD_EXIT_CODE` and `REBUILD_DURATION_MS` are actually populated.
+- A `REFUSED` record no longer inherits the previous run's convergence verdict.
+- `RECOVERY_CLASS` distinguishes a demonstrated route to `COMMITTED` from a required full retry,
+  so the advertised recovery is one that actually recovers.
+- Post-update convergence contract (T1..T6): `PACKAGE UPDATED` != `PROJECTION GENERATED` !=
+  `PROJECTION VALIDATED` != `KERNEL RULESET APPLIED` != `RUNTIME CONVERGED`.
+
+### Operator-surface truth
+- The install-state verdict is now a positive assertion of `COMMITTED` rather than "not the one
+  failure I know about", and an unreadable or absent state file reports `INDETERMINATE` instead
+  of defaulting to green.
+- The "unrecognized install_state → legacy green verdict" fallback is removed.
+
+### Configuration authority
+- The central operator overlay (`/etc/nftban/nftban.conf.local`) is applied consistently across
+  the CLI load transactions; precedence is `BASE < MODULE_LOCAL < CENTRAL_OPERATOR_OVERRIDE`.
+- Configuration mutation no longer reports success for a request it never wrote
+  (`REQUESTED == PERSISTED == EFFECTIVE`), and split runtime authority fails closed.
+- Runtime and source-only configuration authority are separated, with load-bearing guards.
+
+### Reporting
+- Three HTML report generators produced empty content; they now produce true content.
+- Report HTML is escaped at the sink, and reports publish atomically — a reader can no longer
+  observe a partially written document.
+
+### Evidence integrity
+- A NUL byte in the ban log silently truncated every listing while `grep` still exited 0;
+  ban-log readers are now NUL-tolerant (P1-1).
+
 ## [v1.229.14] - 2026-09-08 — rebuild and verification truth
 
 A hotfix for three defects found by the v1.229.13 fleet rollout, all of the same shape: a
