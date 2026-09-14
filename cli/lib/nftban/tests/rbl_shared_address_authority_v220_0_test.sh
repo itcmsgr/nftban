@@ -159,10 +159,37 @@ done
 [[ $_scope_ok -eq 1 ]] && ok "scope classification correct (incl ULA fc00::/7, CGNAT, doc)" || no "scope classification wrong"
 
 # inventory has no side effects (read-only): run twice, identical, no files written
-snap_before="$(ls -la /tmp 2>/dev/null | wc -l)"
-_a="$(nftban_hostaddr_inventory)"; _b="$(nftban_hostaddr_inventory)"
-snap_after="$(ls -la /tmp 2>/dev/null | wc -l)"
-[[ "$_a" == "$_b" && "$snap_before" == "$snap_after" ]] && ok "inventory deterministic + side-effect-free" || no "inventory non-deterministic or wrote files"
+#
+# v1.231.0 — GUARD SUBJECT == GUARD INPUT. This previously read:
+#     snap_before="$(ls -la /tmp | wc -l)" ... snap_after="$(ls -la /tmp | wc -l)"
+#     [[ "$_a" == "$_b" && "$snap_before" == "$snap_after" ]]
+# The stated subject is "did nftban_hostaddr_inventory write files"; the input was
+# the entry COUNT of the SHARED SYSTEM /tmp. Any unrelated process creating or
+# removing a file in the window flipped the verdict and attributed it to the
+# subject. Reproduced: with the subject NOT INVOKED AT ALL, the old expression
+# returned FAIL (tmp_before=1501 tmp_after=1504) — ASSERT over an input the
+# subject does not touch. It also failed in the other direction: a product write
+# coinciding with an unrelated deletion nets to zero and passes.
+#
+# The replacement is STRICTER, not laxer:
+#   * a PRIVATE, EMPTY temp dir is the observation subject, and TMPDIR points at
+#     it, so only the subject can write there;
+#   * a full recursive LISTING is compared, not a count, so a create+delete pair
+#     no longer cancels out;
+#   * determinism and side-effect-freedom are SEPARATE assertions — the old
+#     conjunction collapsed two distinct verdicts into one label, so a real
+#     non-determinism defect was indistinguishable from /tmp churn.
+_sfx_dir="$(mktemp -d)"
+_sfx_before="$(find "$_sfx_dir" | sort)"
+_a="$(TMPDIR="$_sfx_dir" nftban_hostaddr_inventory)"
+_b="$(TMPDIR="$_sfx_dir" nftban_hostaddr_inventory)"
+_sfx_after="$(find "$_sfx_dir" | sort)"
+rm -rf "$_sfx_dir"
+
+[[ "$_a" == "$_b" ]] && ok "inventory deterministic (two runs byte-identical)" \
+    || no "inventory non-deterministic across two runs"
+[[ "$_sfx_before" == "$_sfx_after" ]] && ok "inventory side-effect-free (private TMPDIR unchanged)" \
+    || { no "inventory wrote into its TMPDIR"; diff <(printf '%s\n' "$_sfx_before") <(printf '%s\n' "$_sfx_after") | head; }
 
 # JSON projection carries same addresses
 J="$(nftban_hostaddr_inventory --json)"
