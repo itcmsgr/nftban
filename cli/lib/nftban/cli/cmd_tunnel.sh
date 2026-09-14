@@ -147,7 +147,7 @@ _tunnel_cmd_status() {
     local log_file="${NFTBAN_TUNNEL_LOG:-/var/log/nftban/tunnel.log}"
     if [[ -f "$log_file" ]]; then
         local last_line
-        last_line=$(grep "|INFO|Scan complete" "$log_file" 2>/dev/null | tail -1 || true)
+        last_line=$(grep -a "|INFO|Scan complete" "$log_file" 2>/dev/null | tail -1 || true)
         if [[ -n "$last_line" ]]; then
             last_scan=$(echo "$last_line" | cut -d'|' -f1)
         fi

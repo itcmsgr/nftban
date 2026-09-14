@@ -175,11 +175,11 @@ nftban_trace_find_orphans() {
 
     # Get all START trace IDs
     local start_ids
-    start_ids=$(grep '\[START\]' "$trace_log" | sed 's/.*\[\([^]]*\)\].*/\1/' | grep -E '^[a-z_]+-[0-9]+_[0-9]+_[0-9]+-[0-9]+$')
+    start_ids=$(grep -a '\[START\]' "$trace_log" | sed 's/.*\[\([^]]*\)\].*/\1/' | grep -a -E '^[a-z_]+-[0-9]+_[0-9]+_[0-9]+-[0-9]+$')
 
     # Get all END trace IDs
     local end_ids
-    end_ids=$(grep '\[END\]' "$trace_log" | sed 's/.*\[\([^]]*\)\].*/\1/' | grep -E '^[a-z_]+-[0-9]+_[0-9]+_[0-9]+-[0-9]+$')
+    end_ids=$(grep -a '\[END\]' "$trace_log" | sed 's/.*\[\([^]]*\)\].*/\1/' | grep -a -E '^[a-z_]+-[0-9]+_[0-9]+_[0-9]+-[0-9]+$')
 
     local orphan_count=0
     local current_time
@@ -191,7 +191,7 @@ nftban_trace_find_orphans() {
         if ! echo "$end_ids" | grep -q "^${trace_id}$"; then
             # Found orphan - check age
             local trace_time
-            trace_time=$(grep "\[${trace_id}\]" "$trace_log" | head -1 | sed 's/\[\([^]]*\)\].*/\1/')
+            trace_time=$(grep -a "\[${trace_id}\]" "$trace_log" | head -1 | sed 's/\[\([^]]*\)\].*/\1/')
             local trace_epoch
             trace_epoch=$(date -d "$trace_time" '+%s' 2>/dev/null || echo "0")
 
@@ -203,7 +203,7 @@ nftban_trace_find_orphans() {
                     echo "ORPHAN #${orphan_count}:"
                     echo "  Trace ID: $trace_id"
                     echo "  Age: $((age / 60))m $((age % 60))s"
-                    grep "\[${trace_id}\]" "$trace_log" | sed 's/^/  /'
+                    grep -a "\[${trace_id}\]" "$trace_log" | sed 's/^/  /'
                     echo ""
                 fi
             fi
@@ -251,7 +251,7 @@ nftban_trace_stats() {
     echo "=== Traces by Module (last 24h) ==="
     local yesterday
     yesterday=$(date -d '1 day ago' '+%Y-%m-%d')
-    grep '\[START\]' "$trace_log" | grep -E "^\[$yesterday|^\[$(date '+%Y-%m-%d')" | \
+    grep -a '\[START\]' "$trace_log" | grep -a -E "^\[$yesterday|^\[$(date '+%Y-%m-%d')" | \
         sed 's/.*\] \([^:]*\)::.*/\1/' | sort | uniq -c | sort -rn | head -10
 }
 

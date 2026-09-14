@@ -309,7 +309,7 @@ _get_module_activity() {
 
     if [[ -f "$action_log" ]]; then
         local count
-        count=$(grep "$module" "$action_log" 2>/dev/null | grep -c "^${since}" || true)
+        count=$(grep -a "$module" "$action_log" 2>/dev/null | grep -a -c "^${since}" || true)
         count=${count:-0}
         echo "${count} events"
     else

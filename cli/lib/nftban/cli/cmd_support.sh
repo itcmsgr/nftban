@@ -102,7 +102,7 @@ _support_write_lifecycle_timelines() {
         echo "# render -> apply -> validation -> rollback -> final live state"
         echo
         if [[ -r "$log" ]]; then
-            grep -nE 'render|nft -f|apply|Post-rebuild validation|PRE state|POST state|rollback|snapshot' "$log" \
+            grep -a -nE 'render|nft -f|apply|Post-rebuild validation|PRE state|POST state|rollback|snapshot' "$log" \
                 | tail -40 | _support_scrub_stream
         else
             echo "UNAVAILABLE: $log not readable"
@@ -153,10 +153,10 @@ _support_write_lifecycle_timelines() {
         echo
         if [[ -r "$log" ]]; then
             echo "## phase markers, last run"
-            grep -E '\[PHASE\]|Phase:' "$log" | tail -20 | _support_scrub_stream
+            grep -a -E '\[PHASE\]|Phase:' "$log" | tail -20 | _support_scrub_stream
             echo
             echo "## cancellation / deadline observations"
-            grep -nE 'timed out or cancelled|context deadline|DeadlineExceeded|cancelled' "$log" | tail -10 | _support_scrub_stream
+            grep -a -nE 'timed out or cancelled|context deadline|DeadlineExceeded|cancelled' "$log" | tail -10 | _support_scrub_stream
         fi
     } > "$d/timeline_installer_run.txt" 2>&1
 
@@ -280,7 +280,7 @@ _support_collect_incident_evidence() {
             # explain WHY a run continued past an exhausted budget. Without them a bundle
             # shows a >budget rebuild next to a success and leaves the reader to guess
             # whether the deadline logic worked or was simply not reached.
-            grep -E '\[PHASE\]|Phase:|running nftban firewall rebuild|firewall rebuild --install-context|timed out or cancelled|phase .* failed|exempt operation|exempt by policy|granting a single fresh budget|deadline expired after phase' "$log" \
+            grep -a -E '\[PHASE\]|Phase:|running nftban firewall rebuild|firewall rebuild --install-context|timed out or cancelled|phase .* failed|exempt operation|exempt by policy|granting a single fresh budget|deadline expired after phase' "$log" \
                 | tail -80 | _support_scrub_stream
             echo
             echo "# rebuild durations (start -> end), computed"
@@ -389,13 +389,13 @@ _support_collect_incident_evidence() {
         echo
         echo "# by input class (heuristic: dash range vs other)"
         if [[ -r "$log" ]]; then
-            grep -o "skip unparseable element '[^']*'" "$log" 2>/dev/null \
+            grep -a -o "skip unparseable element '[^']*'" "$log" 2>/dev/null \
               | sed "s/.*element '//; s/'$//" \
               | awk '{ if ($0 ~ /^[0-9.]+-[0-9.]+$/) c["dash_range"]++; else c["other"]++ }
                      END { for (k in c) printf "  input_class=%s count=%d\n", k, c[k] }'
             echo
             echo "# bounded samples (max 5 per class)"
-            grep -o "skip unparseable element '[^']*'" "$log" 2>/dev/null \
+            grep -a -o "skip unparseable element '[^']*'" "$log" 2>/dev/null \
               | sed "s/.*element '//; s/'$//" | sort -u | head -5 | sed 's/^/  sample=/'
         fi
     } > "$d/parser_rejections.txt" 2>&1
@@ -414,7 +414,7 @@ _support_installer_budget() {
     local log="${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
     if [[ -r "$log" ]]; then
         local b
-        b=$(grep -oE 'global (budget|timeout)=[0-9]+[a-z]*' "$log" 2>/dev/null | tail -1)
+        b=$(grep -a -oE 'global (budget|timeout)=[0-9]+[a-z]*' "$log" 2>/dev/null | tail -1)
         [[ -n "$b" ]] && { echo "${b#*=}"; return 0; }
     fi
     # Single line: this is consumed as key=value. A multi-line value made
@@ -1579,7 +1579,7 @@ _collect_recent_errors() {
 
         echo "=== Log File Errors ==="
         if [[ -d ${NFTBAN_LOG_DIR} ]]; then
-            grep -h -i -E '(error|fail|critical|warn)' ${NFTBAN_LOG_DIR}/*.log 2>/dev/null | tail -50 || echo "No errors in log files"
+            grep -a -h -i -E '(error|fail|critical|warn)' ${NFTBAN_LOG_DIR}/*.log 2>/dev/null | tail -50 || echo "No errors in log files"
         fi
 
     } > "$bundle_dir/recent-errors.txt"

@@ -251,7 +251,7 @@ nftban_audit_search() {
     local n="${2:-100}"
 
     if [[ -f "$NFTBAN_AUDIT_LOG" ]]; then
-        grep "\"action\":\"$action\"" "$NFTBAN_AUDIT_LOG" | tail -n "$n"
+        grep -a "\"action\":\"$action\"" "$NFTBAN_AUDIT_LOG" | tail -n "$n"
     fi
 }
 
@@ -262,7 +262,7 @@ nftban_audit_search_target() {
     local n="${2:-100}"
 
     if [[ -f "$NFTBAN_AUDIT_LOG" ]]; then
-        grep "\"target\":\"$target\"" "$NFTBAN_AUDIT_LOG" | tail -n "$n"
+        grep -a "\"target\":\"$target\"" "$NFTBAN_AUDIT_LOG" | tail -n "$n"
     fi
 }
 
@@ -273,7 +273,7 @@ nftban_audit_search_user() {
     local n="${2:-100}"
 
     if [[ -f "$NFTBAN_AUDIT_LOG" ]]; then
-        grep "\"user\":\"$user\"" "$NFTBAN_AUDIT_LOG" | tail -n "$n"
+        grep -a "\"user\":\"$user\"" "$NFTBAN_AUDIT_LOG" | tail -n "$n"
     fi
 }
 
@@ -297,7 +297,7 @@ nftban_audit_summary() {
         jq -r '.action' "$NFTBAN_AUDIT_LOG" 2>/dev/null | sort | uniq -c | sort -rn
     else
         # Fallback to grep
-        grep -oP '"action":"[^"]*"' "$NFTBAN_AUDIT_LOG" | cut -d'"' -f4 | sort | uniq -c | sort -rn
+        grep -a -oP '"action":"[^"]*"' "$NFTBAN_AUDIT_LOG" | cut -d'"' -f4 | sort | uniq -c | sort -rn
     fi
 }
 

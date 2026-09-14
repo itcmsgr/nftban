@@ -513,7 +513,7 @@ nftban_cmd_portscan() {
                 local cutoff_time
                 cutoff_time=$(date -d "24 hours ago" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -v-24H "+%Y-%m-%d %H:%M:%S")
 
-                grep "Port scanner detected" "$log_file" 2>/dev/null | \
+                grep -a "Port scanner detected" "$log_file" 2>/dev/null | \
                     awk -v cutoff="$cutoff_time" '$0 >= cutoff' | \
                     tail -n 50 | \
                     sed 's/^/  /' || echo "  (no recent detections)"

@@ -574,7 +574,7 @@ _nftban_botscan_cmd_history() {
     else
         echo "Format: TIMESTAMP|SOURCE|IP|DURATION|ACTION|REASON"
         echo ""
-        grep "BANNED" "$log_file" | tail -n "$lines" | sed 's/^/  /'
+        grep -a "BANNED" "$log_file" | tail -n "$lines" | sed 's/^/  /'
     fi
 
     echo ""
