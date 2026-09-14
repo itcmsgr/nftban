@@ -164,8 +164,18 @@ nftban_stats_cmd_brief() {
         json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
         # v1.150 13.1-shell: include blacklist_manual (manual + auto-detect
         # bans, disjoint hash set) so the headline matches `nftban status`.
-        banned=$(echo "$json" | jq -r '(.blacklist.total // 0) + (.blacklist_manual.total // 0)' 2>/dev/null || echo 0)
-        whitelisted=$(echo "$json" | jq -r '.whitelist.total // 0' 2>/dev/null || echo 0)
+        # ⛔ `// 0` IS LAUNDERING ON A COUNT FIELD. nftban_count_json emits null for
+        # "could not read the kernel"; `// 0` turns that into "measured zero" — the
+        # ORIGINAL P1S-C defect one layer downstream. jq treats only null/false as
+        # falsy, so a REAL 0 still survives `// "UNKNOWN"`, while an unknown stays
+        # distinguishable. Only counts_json-derived fields are converted here: load,
+        # memory, disk and latency come from other producers and are NOT unknown-capable.
+        # UNKNOWN IS ABSORBING IN AN AGGREGATE. `("UNKNOWN") + 3` is a jq type
+        # error, and `// 0` on either operand would fabricate a total that omits
+        # an unreadable component — a fabricated total, not a partial one. Branch
+        # on type: any non-number makes the whole sum UNKNOWN. A real 0 + 0 is 0.
+        banned=$(echo "$json" | jq -r 'if (.blacklist.total|type)!="number" or (.blacklist_manual.total|type)!="number" then "UNKNOWN" else (.blacklist.total + .blacklist_manual.total) end' 2>/dev/null || echo UNKNOWN)
+        whitelisted=$(echo "$json" | jq -r '.whitelist.total // "UNKNOWN"' 2>/dev/null || echo UNKNOWN)
     else
         # Fallback: count from cache or nft directly
         local cache_file="/var/cache/nftban/set_counts.json"
@@ -397,11 +407,11 @@ nftban_stats_cmd_dashboard() {
             counts_json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
 
             if command -v jq &>/dev/null && [[ -n "$counts_json" ]]; then
-                black_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
-                black_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+                black_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // "UNKNOWN"')
+                black_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // "UNKNOWN"')
                 # v1.150 13.1-shell: manual + auto-detect bans (blacklist_manual).
-                temp_v4=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv4 // 0')
-                temp_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // 0')
+                temp_v4=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv4 // "UNKNOWN"')
+                temp_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // "UNKNOWN"')
 
                 # Whitelist from centralized function
                 local wl_counts

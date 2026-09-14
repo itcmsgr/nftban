@@ -368,7 +368,14 @@ _verify_ban_counts() {
 
     echo "  1. Getting baseline count..."
     before=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-    before=${before:-0}
+    # ⛔ NOT `${before:-0}`. UNKNOWN is NON-EMPTY, so :- passes it through into the
+    # arithmetic below, which aborts under set -u. An unreadable kernel is not a
+    # baseline of zero — say so and stop, rather than assert against a fiction.
+    if ! nftban_count_is_known "$before"; then
+        printf "     ⚠️  NOT ESTABLISHED: baseline blacklist count unavailable (kernel read failed)\n"
+        printf "        skipping the ban-count assertions — they would compare against a fabricated baseline\n"
+        return 0
+    fi
     printf "     Baseline: %d IPs in blacklist\n" "$before"
 
     # Test: Add IP should increase count by 1
@@ -376,7 +383,10 @@ _verify_ban_counts() {
     if nftban ban "$test_ip" --reason "smoke-verify-test" >/dev/null 2>&1; then
         sleep 0.5  # Allow nftables to sync
         after=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-        after=${after:-0}
+        if ! nftban_count_is_known "$after"; then
+            printf "     ⚠️  NOT ESTABLISHED: post-ban count unavailable (kernel read failed)\n"
+            return 0
+        fi
         expected=$((before + 1))
 
         if [[ "$after" -eq "$expected" ]]; then
@@ -398,7 +408,12 @@ _verify_ban_counts() {
     if nftban unban "$test_ip" >/dev/null 2>&1; then
         sleep 0.5
         after=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-        after=${after:-0}
+        # ⛔ NOT `${after:-0}`: UNKNOWN is NON-EMPTY, so :- lets it through into the
+        # numeric use below. An unreadable kernel is not a count of zero.
+        if ! nftban_count_is_known "$after"; then
+            printf "     ⚠️  NOT ESTABLISHED: post-operation count unavailable (kernel read failed)\n"
+            return 0
+        fi
         expected=$((before_unban - 1))
 
         if [[ "$after" -eq "$expected" ]]; then
@@ -418,11 +433,13 @@ _verify_ban_counts() {
     echo "  4. Verifying baseline restored..."
     local final
     final=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-    final=${final:-0}
-    if [[ "$final" -eq "$before" ]]; then
+    if ! nftban_count_is_known "$final"; then
+        printf "     ⚠️  NOT ESTABLISHED: final blacklist count unavailable (kernel read failed)\n"
+    elif [[ "$final" -eq "$before" ]]; then
         printf "     ✅ PASS: Count restored to baseline (%d)\n" "$before"
     else
-        printf "     ⚠️  WARN: Count is %d, baseline was %d (delta: %d)\n" "$final" "$before" "$((final - before))"
+        printf "     ⚠️  WARN: Count is %d, baseline was %d (delta: %s)\n" \
+            "$final" "$before" "$(nftban_count_delta "$final" "$before")"
     fi
 
     echo ""
@@ -441,7 +458,12 @@ _verify_whitelist_counts() {
 
     echo "  1. Getting baseline count..."
     before=$(nftban_nft_count_whitelist 2>/dev/null | awk '{print $3}')
-    before=${before:-0}
+    # ⛔ NOT `${before:-0}`: UNKNOWN is NON-EMPTY, so :- lets it through into the
+    # numeric use below. An unreadable kernel is not a count of zero.
+    if ! nftban_count_is_known "$before"; then
+        printf "     ⚠️  NOT ESTABLISHED: baseline count unavailable (kernel read failed)\n"
+        return 0
+    fi
     printf "     Baseline: %d IPs in whitelist\n" "$before"
 
     # Test: Add to whitelist should increase count by 1
@@ -449,7 +471,12 @@ _verify_whitelist_counts() {
     if nftban whitelist add "$test_ip" >/dev/null 2>&1; then
         sleep 0.5
         after=$(nftban_nft_count_whitelist 2>/dev/null | awk '{print $3}')
-        after=${after:-0}
+        # ⛔ NOT `${after:-0}`: UNKNOWN is NON-EMPTY, so :- lets it through into the
+        # numeric use below. An unreadable kernel is not a count of zero.
+        if ! nftban_count_is_known "$after"; then
+            printf "     ⚠️  NOT ESTABLISHED: post-operation count unavailable (kernel read failed)\n"
+            return 0
+        fi
         expected=$((before + 1))
 
         if [[ "$after" -eq "$expected" ]]; then
@@ -470,7 +497,12 @@ _verify_whitelist_counts() {
     if nftban whitelist remove "$test_ip" >/dev/null 2>&1; then
         sleep 0.5
         after=$(nftban_nft_count_whitelist 2>/dev/null | awk '{print $3}')
-        after=${after:-0}
+        # ⛔ NOT `${after:-0}`: UNKNOWN is NON-EMPTY, so :- lets it through into the
+        # numeric use below. An unreadable kernel is not a count of zero.
+        if ! nftban_count_is_known "$after"; then
+            printf "     ⚠️  NOT ESTABLISHED: post-operation count unavailable (kernel read failed)\n"
+            return 0
+        fi
         expected=$((before_remove - 1))
 
         if [[ "$after" -eq "$expected" ]]; then
@@ -540,7 +572,12 @@ _verify_feeds() {
     # Get loaded count from nftables (blacklist includes feeds)
     local blacklist_count
     blacklist_count=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-    blacklist_count=${blacklist_count:-0}
+    # ⛔ NOT `${blacklist_count:-0}`: UNKNOWN is NON-EMPTY, so :- lets it through into the
+    # numeric use below. An unreadable kernel is not a count of zero.
+    if ! nftban_count_is_known "$blacklist_count"; then
+        printf "     ⚠️  NOT ESTABLISHED: blacklist count unavailable (kernel read failed)\n"
+        return 0
+    fi
     printf "     IPs in blacklist:   %'d\n" "$blacklist_count"
 
     # Note: blacklist may contain more than just feeds (manual bans, geoban, etc.)
@@ -618,7 +655,12 @@ _verify_geoban() {
     echo "  4. Verifying country blocks in nftables..."
     local blacklist_count
     blacklist_count=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-    blacklist_count=${blacklist_count:-0}
+    # ⛔ NOT `${blacklist_count:-0}`: UNKNOWN is NON-EMPTY, so :- lets it through into the
+    # numeric use below. An unreadable kernel is not a count of zero.
+    if ! nftban_count_is_known "$blacklist_count"; then
+        printf "     ⚠️  NOT ESTABLISHED: blacklist count unavailable (kernel read failed)\n"
+        return 0
+    fi
 
     if [[ $blacklist_count -gt 0 ]]; then
         printf "     ✅ PASS: Blacklist has %'d entries (includes country blocks)\n" "$blacklist_count"

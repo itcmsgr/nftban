@@ -189,10 +189,19 @@ nftban_stats_count_active_bans() {
     fi
 
     # Fallback: Use nft_schema.sh centralized counting (SINGLE SOURCE OF TRUTH)
-    # nftban_nft_count_blacklist returns: "ipv4_count ipv6_count total_count"
-    local counts
-    counts=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
-    echo "${counts##* }"  # Return total (last field)
+    # nftban_nft_count_blacklist returns: "ipv4_count ipv6_count total_count",
+    # any field of which may be UNKNOWN.
+    #
+    # v1.231.0: the `|| echo "0 0 0"` default fabricated a measurement. It did
+    # not even fire on the path that mattered — the helper exits 0 while
+    # printing UNKNOWN — so this returned a number only by accident of bash
+    # arithmetic upstream. Either way an unreadable kernel reported as
+    # "no bans are active", which is the headline enforcement figure.
+    local counts total
+    counts=$(nftban_nft_count_blacklist 2>/dev/null) || { echo "UNKNOWN"; return 0; }
+    total="${counts##* }"
+    nftban_count_is_known "$total" || { echo "UNKNOWN"; return 0; }
+    echo "$total"
 }
 
 nftban_stats_count_whitelist() {
@@ -210,10 +219,15 @@ nftban_stats_count_whitelist() {
     fi
 
     # Fallback: Use nft_schema.sh centralized counting (SINGLE SOURCE OF TRUTH)
-    # nftban_nft_count_whitelist returns: "ipv4_count ipv6_count total_count"
-    local counts
-    counts=$(nftban_nft_count_whitelist 2>/dev/null || echo "0 0 0")
-    echo "${counts##* }"  # Return total (last field)
+    # nftban_nft_count_whitelist returns: "ipv4_count ipv6_count total_count",
+    # any field of which may be UNKNOWN. See the note in
+    # nftban_stats_count_active_bans — a fabricated 0 here reads as
+    # "nothing is whitelisted", which invites exactly the wrong remediation.
+    local counts total
+    counts=$(nftban_nft_count_whitelist 2>/dev/null) || { echo "UNKNOWN"; return 0; }
+    total="${counts##* }"
+    nftban_count_is_known "$total" || { echo "UNKNOWN"; return 0; }
+    echo "$total"
 }
 
 # =============================================================================
@@ -228,15 +242,27 @@ nftban_stats_get_blacklist_breakdown() {
     #
     # SINGLE SOURCE OF TRUTH: Uses nft_schema.sh nftban_nft_count_all_sets()
 
+    # v1.231.0: nftban_nft_count_all_sets now renders unestablished counts as
+    # JSON `null`. `// 0` treats null as absent and substitutes zero, which is
+    # exactly the false zero this lane exists to remove — the default must be
+    # `null`, not 0, so "could not read" survives the hop.
     local json
-    json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{"blacklist":{"ipv4":0,"ipv6":0,"total":0},"temporary":{"total":0},"permanent":{"total":0}}')
+    json=$(nftban_nft_count_all_sets 2>/dev/null) \
+        || json='{"blacklist":{"ipv4":null,"ipv6":null,"total":null},"temporary":{"total":null},"permanent":{"total":null}}'
 
     local ipv4 ipv6 temp perm total
-    ipv4=$(echo "$json" | jq -r '.blacklist.ipv4 // 0')
-    ipv6=$(echo "$json" | jq -r '.blacklist.ipv6 // 0')
-    temp=$(echo "$json" | jq -r '.temporary.total // 0')
-    perm=$(echo "$json" | jq -r '.permanent.total // 0')
-    total=$(echo "$json" | jq -r '.blacklist.total // 0')
+    ipv4=$(echo "$json" | jq -r '.blacklist.ipv4 // null')
+    ipv6=$(echo "$json" | jq -r '.blacklist.ipv6 // null')
+    temp=$(echo "$json" | jq -r '.temporary.total // null')
+    perm=$(echo "$json" | jq -r '.permanent.total // null')
+    total=$(echo "$json" | jq -r '.blacklist.total // null')
+
+    # A jq failure (unparseable upstream document) must not become a count
+    # either; normalise anything non-numeric to the JSON null literal.
+    local f
+    for f in ipv4 ipv6 temp perm total; do
+        nftban_count_is_known "${!f}" || printf -v "$f" 'null'
+    done
 
     echo "{\"ipv4\":$ipv4,\"ipv6\":$ipv6,\"temporary\":$temp,\"permanent\":$perm,\"total\":$total}"
 }
@@ -248,15 +274,19 @@ nftban_stats_get_whitelist_breakdown() {
     #
     # SINGLE SOURCE OF TRUTH: Uses nft_schema.sh nftban_nft_count_whitelist()
 
+    # v1.231.0: any field may be UNKNOWN, and `${x:-0}` turned both "empty"
+    # and "unreadable" into a published zero. Unestablished counts render as
+    # the JSON null literal so the document stays parseable and the consumer
+    # can tell "none" from "not measured".
     local counts ipv4 ipv6 total
-    counts=$(nftban_nft_count_whitelist 2>/dev/null || echo "0 0 0")
+    counts=$(nftban_nft_count_whitelist 2>/dev/null) || counts="UNKNOWN UNKNOWN UNKNOWN"
 
     # Parse "ipv4 ipv6 total" format
     ipv4=$(echo "$counts" | cut -d' ' -f1)
     ipv6=$(echo "$counts" | cut -d' ' -f2)
     total=$(echo "$counts" | cut -d' ' -f3)
 
-    echo "{\"ipv4\":${ipv4:-0},\"ipv6\":${ipv6:-0},\"total\":${total:-0}}"
+    echo "{\"ipv4\":$(nftban_count_json "$ipv4"),\"ipv6\":$(nftban_count_json "$ipv6"),\"total\":$(nftban_count_json "$total")}"
 }
 
 nftban_stats_count_rules() {
