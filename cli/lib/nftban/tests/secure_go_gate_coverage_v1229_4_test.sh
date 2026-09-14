@@ -72,6 +72,16 @@ PY
 [[ -s "$TMP/gate.txt" ]] || { fail "G0 could not extract secure-go-gate logic from the production workflow"; echo "RESULT: FAIL"; exit 1; }
 pass "G0 gate logic extracted from the production workflow"
 
+# v1.230.0: the gate grew two authorities (release_changed, force_full_analysis).
+# They are substituted at the NO-RELEASE-CHANGE BASELINE - release_changed=false,
+# force_full empty - so every scenario below keeps EXACTLY the semantics it had:
+# these cases are about Go-subject and event authority, not release authority.
+# Release authority has its own guard: secure_go_release_proof_authority_v1230_test.sh
+#
+# COMPLETENESS IS NOW ASSERTED. Previously an expression the renderer did not model
+# survived into the generated bash as a literal expression, which bash reports as
+# "bad substitution" - three scenarios then failed against a CORRECT gate and the real
+# cause was buried in stderr. Any unsubstituted expression is now a named failure.
 # Render GitHub's expression substitution, then execute.
 # $1 filter.result  $2 go_changed  $3 analyze.result  $4 event_name
 render_run(){
@@ -79,12 +89,22 @@ render_run(){
 import sys
 src=open(sys.argv[1]).read()
 sub={"needs.filter.result":sys.argv[3],"needs.filter.outputs.go_changed":sys.argv[4],
-     "needs.analyze.result":sys.argv[5],"github.event_name":sys.argv[6]}
+     "needs.analyze.result":sys.argv[5],"github.event_name":sys.argv[6],
+     "needs.filter.outputs.release_changed":"false","inputs.force_full_analysis":""}
 for k,v in sub.items():
     for form in ("${{ %s }}"%k, "${{%s}}"%k):
         src=src.replace(form,v)
+import re
+left=re.findall(r"\$\{\{[^}]*\}\}", src)
+if left:
+    sys.stderr.write("UNSUBSTITUTED_EXPRESSION %s\n" % sorted(set(left)))
+    sys.exit(3)
 open(sys.argv[2],"w").write(src)
 PY
+    if [[ $? -ne 0 ]]; then
+        echo "RENDER_INCOMPLETE - the gate script uses an expression this guard does not model."
+        return 90
+    fi
     bash "$TMP/r.sh" 2>&1
 }
 rc_of(){ render_run "$1" "$2" "$3" "$4" >/dev/null 2>&1; }
