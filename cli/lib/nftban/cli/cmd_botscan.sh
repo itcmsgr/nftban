@@ -785,7 +785,8 @@ _nftban_botscan_cmd_logs() {
             return 2 ;;
         UNKNOWN)
             echo "  Verdict: UNKNOWN — cannot test readability as service account '${svc}' from this context."
-            echo "    Re-run as root (so it can drop to '${svc}' via runuser) for an authoritative result."
+            echo "    Re-run with elevated privileges (members of the nftban group are authorized via"
+            echo "    PolicyKit/polkit rules) so it can drop to '${svc}' via runuser for an authoritative result."
             return 0 ;;
         INVALID_SOURCE)
             echo "  Verdict: INVALID-SOURCE — ${n} file(s) matched but NONE are valid HTTP access logs."

@@ -130,11 +130,54 @@ _t_assert "A4: zero 'must run as root' / 'Run as root' in CLI surfaces (got: $hi
 # Allowed (allowlist via grep -E): 'sudo nftban-installer' (installer/bootstrap
 # binary; not the main CLI and not polkit-covered the same way; documented
 # in feedback_polkit_not_sudo_in_help.md "Allowlist exception").
+#
+# GUARD SUBJECT == GUARD INPUT (v1.231.0): the subject is EXAMPLE lines — lines
+# that TELL the operator to run `sudo nftban X`. A line that names the string in
+# order to warn AGAINST it is the opposite of an example, and forbidding it would
+# put this guard in direct contradiction with cli_sudo_hint_v142_test.sh:95/162,
+# which REQUIRES the `_v142_sudo_hint` helpers to print that anti-pattern warning
+# verbatim. Two shipped guards cannot both be authority over the same string.
+#
+# The negation-marker filter below is not new policy: it is the SAME filter
+# cli_sudo_hint_v142_test.sh:180 already applies for exactly this reason
+# ("anti-pat|do not use|DO NOT use|Do NOT use|the export is dropped"). Adopting
+# it here makes the two guards consistent instead of contradictory, and every
+# excluded line carries its negation marker ON THE SAME LINE — no multi-line
+# context is inferred. A prescriptive example never carries such a marker, so a
+# genuine reintroduction is still caught (negative control: A5c below).
+_a5_negation_filter() {
+    grep -vE 'anti-?pattern|[Dd][Oo] NOT use|do not use|the export is dropped'
+}
 hits=$(grep -rn 'sudo nftban ' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
-       | grep -v "/tests/" | _apply_allowlist | wc -l)
+       | grep -v "/tests/" | _apply_allowlist | _a5_negation_filter | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
 _t_assert "A5: zero 'sudo nftban X' example lines in main-CLI examples (got: $hits; 'sudo nftban-installer' allowlisted separately)" "$?"
+
+# A5c (v1.231.0) — NEGATIVE CONTROL for A5's negation-marker exclusion.
+# Hermetic; runs the SAME filter A5 uses over a temp fixture. It must DROP the
+# warning shapes and KEEP every prescriptive example shape. If this fails, the
+# exclusion has become a blanket exemption and the motivating defect (main-CLI
+# examples that tell operators to run `sudo nftban X`) could re-enter unseen.
+_a5c_td="$(mktemp -d)"
+cat > "${_a5c_td}/subject.sh" <<'A5C_EOF'
+#!/usr/bin/env bash
+# PRESCRIPTIVE (must be KEPT by the filter — these are the defect):
+help1() { echo "  Re-run:   sudo nftban permissions enforce"; }
+help2() { echo "Example: sudo nftban ban 203.0.113.10"; }
+help3() { echo "   sudo nftban status --json"; }
+# PROSCRIPTIVE (must be DROPPED by the filter — these are warnings):
+warn1() { echo "(Do NOT use \`export VAR=value; sudo nftban X\` — export drops at sudo.)"; }
+warn2() { echo " \`export VAR=value; sudo nftban X\` — the export is dropped.)"; }
+warn3() { echo "the anti-pattern \`export NFTBAN_FORCE=1; sudo nftban update\`"; }
+A5C_EOF
+_a5c_kept="$(grep -rn 'sudo nftban ' "${_a5c_td}/subject.sh" | _a5_negation_filter || true)"
+_a5c_kept_n=$(printf '%s\n' "$_a5c_kept" | grep -c . || true)
+_a5c_warn_n=$(printf '%s\n' "$_a5c_kept" | grep -cE 'warn[123]' || true)
+rm -rf "${_a5c_td}"
+# Expect: 3 prescriptive examples kept, 0 warning lines kept.
+[[ "$_a5c_kept_n" -eq 3 && "$_a5c_warn_n" -eq 0 ]]
+_t_assert "A5c (negative control): negation filter drops all 3 warning shapes ($_a5c_warn_n kept, want 0) and keeps all 3 prescriptive examples (got: $_a5c_kept_n, want 3)" "$?"
 
 # A5b: 'sudo nftban-installer' (installer/bootstrap) — informational count
 # (allowlisted; reported for visibility but not asserted to zero)
@@ -166,14 +209,59 @@ _t_assert "A9: zero 'needs root' / 'need root privileges' in operator-facing str
 # A10 (v1.133 PR-B): zero 'Must be root' framing in operator-facing strings
 # (case-insensitive). Excludes # comments and the get_live_ruleset A15 reframe,
 # which legitimately STRIPS the kernel fragment "(you must be root)".
+#
+# GUARD SUBJECT == GUARD INPUT (v1.231.0): the assertion's subject is strings the
+# operator SEES. A shell `case` glob arm is an INPUT CLASSIFIER — it matches the
+# kernel's own stderr and is never printed — so it is not in the subject. This is
+# the same class the 'you must be root' exclusion above already covers; it only
+# spells the kernel fragment shorter (nft_probe.sh
+# `*"Operation not permitted"*|*"must be root"*|*"EPERM"*)`). The exclusion is
+# deliberately narrow: the line must, after the grep `path:lineno:` prefix, BEGIN
+# with a quoted glob alternative `*"..."*` and END with the arm's `)`. An echo /
+# printf / ui_msg emission can never take that shape, so a genuine reintroduction
+# of operator-facing "Must be root" wording is still caught — PROVEN by A10b
+# below, which is this exclusion's negative control.
+_a10_case_arm_filter() {
+    grep -vE ':[[:space:]]*\*"[^"]*"\*[^)]*\)[[:space:]]*(;;)?[[:space:]]*$'
+}
 hits=$(grep -rniE 'must be root' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist \
        | grep -v ':\s*#' \
        | grep -v 'you must be root' \
+       | _a10_case_arm_filter \
        | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
 _t_assert "A10: zero 'Must be root' in operator-facing strings, case-insensitive (got: $hits; A15 strip + # comments excluded)" "$?"
+
+# A10b (v1.231.0) — NEGATIVE CONTROL for A10's case-arm exclusion.
+# Hermetic: builds the two shapes in a temp dir and runs the SAME filter the
+# A10 assertion uses. It must DROP the classifier arm and KEEP every emission
+# shape. If this ever fails, A10's exclusion has become a blanket exemption and
+# the motivating defect (operator-facing "Must be root" wording) could re-enter
+# undetected. No repo file is read or written.
+_a10b_td="$(mktemp -d)"
+cat > "${_a10b_td}/subject.sh" <<'A10B_EOF'
+#!/usr/bin/env bash
+classify() {
+    case "$1" in
+        *"Operation not permitted"*|*"must be root"*|*"EPERM"*)
+            printf 'PERMISSION_DENIED' ;;
+    esac
+}
+emit_echo()   { echo "Must be root to do this"; }
+emit_printf() { printf '%s\n' "must be root"; }
+emit_uimsg()  { ui_msg "Denied" "You Must Be Root for that"; }
+A10B_EOF
+_a10b_kept="$(grep -rniE 'must be root' "${_a10b_td}/subject.sh" \
+              | grep -v ':\s*#' | grep -v 'you must be root' \
+              | _a10_case_arm_filter)"
+_a10b_kept_n=$(printf '%s\n' "$_a10b_kept" | grep -c . || true)
+_a10b_arm_n=$(printf '%s\n' "$_a10b_kept" | grep -c 'EPERM' || true)
+rm -rf "${_a10b_td}"
+# Expect: 3 emission sites kept (echo / printf / ui_msg), 0 classifier arms kept.
+[[ "$_a10b_kept_n" -eq 3 && "$_a10b_arm_n" -eq 0 ]]
+_t_assert "A10b (negative control): case-arm exclusion drops the classifier arm ($_a10b_arm_n kept, want 0) and keeps all 3 emission shapes (got: $_a10b_kept_n, want 3)" "$?"
 
 # A6: Zero "(sudo)" parenthetical hints
 hits=$(grep -rn 'privileges (sudo)\|root/sudo' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \

@@ -431,7 +431,7 @@ nftban_whitelist_add_static_ip() {
         return 1
     fi
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: writing $_NFTBAN_MANUAL_WHITELIST_PATH requires root (permanent whitelist)." >&2
+        echo "ERROR: writing $_NFTBAN_MANUAL_WHITELIST_PATH requires elevated privileges (permanent whitelist); members of the nftban group are authorized via PolicyKit/polkit rules." >&2
         return 1
     fi
 
@@ -491,7 +491,7 @@ nftban_whitelist_remove_static_ip() {
         return 1
     fi
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: editing $_NFTBAN_MANUAL_WHITELIST_PATH requires root." >&2
+        echo "ERROR: editing $_NFTBAN_MANUAL_WHITELIST_PATH requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules." >&2
         return 1
     fi
 
@@ -599,7 +599,7 @@ nftban_whitelist_mgmt_add_ip() {
     fi
     _nftban_wl_reject_overbroad "$ip" || return 1
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: writing $_NFTBAN_MGMT_WHITELIST_PATH requires root (permanent management whitelist)." >&2
+        echo "ERROR: writing $_NFTBAN_MGMT_WHITELIST_PATH requires elevated privileges (permanent management whitelist); members of the nftban group are authorized via PolicyKit/polkit rules." >&2
         return 1
     fi
 
@@ -646,7 +646,7 @@ nftban_whitelist_mgmt_remove_ip() {
         echo "ERROR: Invalid IP/CIDR format: $ip" >&2; return 1
     fi
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: editing $_NFTBAN_MGMT_WHITELIST_PATH requires root." >&2; return 1
+        echo "ERROR: editing $_NFTBAN_MGMT_WHITELIST_PATH requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules." >&2; return 1
     fi
 
     local removed="false"
