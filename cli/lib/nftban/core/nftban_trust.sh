@@ -57,6 +57,65 @@ readonly _TRUST_TABLE_IPV4="${NFTBAN_TABLE_IPV4:-ip nftban}"
 readonly _TRUST_TABLE_IPV6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
 # =============================================================================
+# TRUST BREADTH POLICY  (v1.231.0 BUG-TRUST-WHITELIST-NO-CIDR-VALIDATION)
+# =============================================================================
+# These are NOT generic CIDR syntax limits. Syntax is decided by
+# nftban_validate_ip / nftban_validate_cidr (lib/validation.sh). These two
+# constants are a TRUST-POLICY constraint: how broad a range an AUTOMATIC
+# PROVIDER FEED is permitted to make exempt from every protection NFTBan
+# enforces. A blocklist accepting a broad prefix and a whitelist exempting
+# millions of addresses have opposite failure consequences, so this floor is
+# deliberately NOT setsync.MinAllowedPrefixLen — that constant belongs to a
+# different policy domain and must not be reused here.
+#
+# SEPARATION OF AUTHORITY: these floors bound AUTOMATIC PROVIDER INGESTION
+# only. Manual operator trust (nftban whitelist add) is a different authority
+# with its own explicit-intent contract; automatic ingestion does not inherit
+# manual trust power.
+#
+# Both floors are the broadest prefix any declared provider was MEASURED to
+# publish (census 2026-09-14, against the provider URLs declared in
+# TRUST_PROVIDERS above plus the Google source that publishes the broadest
+# block in both families). Accept prefix >= floor; reject prefix < floor.
+#
+#   IPv4 — measured broadest legitimate provider prefix: /10
+#     Google  34.64.0.0/10, 34.128.0.0/10   (gstatic ipranges)
+#     AWS     44.192.0.0/11
+#     Cloudflare 104.16.0.0/13
+#     Fastly  151.101.0.0/16
+#
+#   IPv6 — measured broadest legitimate provider prefix: /28
+#     Google     2600:1900::/28              (gstatic ipranges)
+#     Cloudflare 2a06:98c0::/29
+#     AWS        2406:da1e::/32
+#     Fastly     2a04:4e40::/32
+#     Azure/DigitalOcean/QUIC.cloud publish NO IPv6 through their declared
+#     TRUST_PROVIDERS[*_IPV6_URL] (all three are the empty string).
+#
+# Rejecting /0 alone is necessary but NOT sufficient: a /1 or /8 IPv4 entry, or
+# a /3 IPv6 entry, in a whitelist would still be catastrophic.
+readonly TRUST_PROVIDER_MIN_PREFIX_V4=10
+readonly TRUST_PROVIDER_MIN_PREFIX_V6=28
+
+# -----------------------------------------------------------------------------
+# Canonical input validation (lib/validation.sh).
+# Sourced guarded, same shape as cmd_whitelist.sh. The repo layout
+# (cli/lib/nftban/core -> ../lib) and the installed layout
+# (/usr/lib/nftban/core -> ../lib) have the SAME relative shape, so the
+# BASH_SOURCE-relative fallback resolves in both.
+if ! type -t nftban_validate_cidr >/dev/null 2>&1; then
+    _trust_validation_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/validation.sh"
+    if [[ ! -f "$_trust_validation_lib" ]]; then
+        _trust_validation_lib="$(dirname "${BASH_SOURCE[0]}")/../lib/validation.sh"
+    fi
+    if [[ -f "$_trust_validation_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$_trust_validation_lib" || true
+    fi
+    unset _trust_validation_lib
+fi
+
+# =============================================================================
 # PROVIDER DEFINITIONS
 # =============================================================================
 # Each provider has: name, ipv4_url, ipv6_url, parser, min_ranges, max_ranges
@@ -379,6 +438,126 @@ _trust_download_provider() {
 }
 
 # =============================================================================
+# PROVIDER CACHE SANITISER  (v1.231.0 BUG-TRUST-WHITELIST-NO-CIDR-VALIDATION)
+# =============================================================================
+# _trust_valid_elements <cache_file> <4|6>
+#
+# The single read-time choke point for provider-controlled text. Every consumer
+# of a trust cache file goes through this: the durable whitelist.d writer (the
+# PRIMARY daemon path) and the IPC-fallback nft fragment builders, add and
+# remove. Read-time — not download-time — is the correct choke point because it
+# ALSO neutralises a cache already poisoned on disk by an earlier version.
+#
+# Emits one validated token per line on stdout. Per-entry rejection: a bad line
+# is dropped and the rest of the file still ships. Never let one malformed line
+# abort the batch, and never rely on nft to do the rejecting — `nft -f` is
+# all-or-nothing per file, so one bad element destroys the good elements in the
+# same statement, and on the removal path the rc is discarded entirely.
+#
+# Line semantics deliberately match feeds.ParseFeedLine (internal/feeds/parser.go)
+# so the shell path and the Go path agree on what a comment is:
+#   - '#' or ';' at ANY column starts a comment (not just column 0)
+#   - leading/trailing whitespace ignored
+#   - whitespace-separated trailing fields ignored; field 1 is the token
+#
+# Diagnostics are written to the trust log by _trust_log. Every _trust_log call
+# below is additionally redirected to stderr, because _trust_log also forwards
+# to nftban_log_* when that is loaded and those may print to stdout — and this
+# function's stdout IS the element stream, consumed by command substitution. A
+# single stray line there would become an nft operand.
+_trust_valid_elements() {
+    local cache="$1"
+    local family="$2"
+    local floor
+
+    case "$family" in
+        4) floor="$TRUST_PROVIDER_MIN_PREFIX_V4" ;;
+        6) floor="$TRUST_PROVIDER_MIN_PREFIX_V6" ;;
+        *) _trust_log "ERROR" "_trust_valid_elements: bad family '$family'" >&2
+           return 1 ;;
+    esac
+
+    [[ -f "$cache" ]] || return 0
+
+    # FAIL-CLOSED: without the canonical validator nothing may be emitted.
+    # Emitting unvalidated provider text would be the defect this exists to fix.
+    if ! type -t nftban_validate_ip >/dev/null 2>&1 || \
+       ! type -t nftban_validate_cidr >/dev/null 2>&1; then
+        _trust_log "ERROR" "validation.sh unavailable — refusing to emit unvalidated trust elements from $cache" >&2
+        return 1
+    fi
+
+    local line token prefix tfam
+    local kept=0 dropped=0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+
+        # Comment at any column, inline or full-line (Go: HasPrefix + Index).
+        line="${line%%#*}"
+        line="${line%%;*}"
+
+        # Field 1 only. IFS is forced here: the module sets IFS=$'\n\t'
+        # globally, which would NOT split on a plain space.
+        token=""
+        IFS=$' \t' read -r token _ <<< "$line"
+
+        # Blank or comment-only: skip silently, exactly as ParseFeedLine
+        # returns (nil, nil). Not a dropped entry.
+        [[ -n "$token" ]] || continue
+
+        # --- family routing -------------------------------------------------
+        # A ':' makes it IPv6. A v6 token in the v4 cache is DROPPED, never
+        # emitted into an ip/whitelist_ipv4 statement (and vice versa).
+        if [[ "$token" == *:* ]]; then tfam=6; else tfam=4; fi
+        if [[ "$tfam" != "$family" ]]; then
+            dropped=$((dropped + 1))
+            continue
+        fi
+
+        # --- syntactic validity (canonical validator) -----------------------
+        # Bare IPs are legitimate: QUIC.cloud publishes bare IPv4.
+        if ! nftban_validate_ip "$token" && ! nftban_validate_cidr "$token"; then
+            dropped=$((dropped + 1))
+            continue
+        fi
+
+        # --- nft STATEMENT INJECTION assertion ------------------------------
+        # Highest-severity consequence: provider-controlled text becoming
+        # root-privileged nft commands. Asserted EXPLICITLY and independently
+        # of the validator, as a positive charset allowlist. No emitted operand
+        # may carry '}', '{', ';', ',', whitespace or a newline.
+        if [[ ! "$token" =~ ^[0-9a-fA-F:./]+$ ]]; then
+            _trust_log "ERROR" "trust cache $cache: rejected token carrying nft metacharacters" >&2
+            dropped=$((dropped + 1))
+            continue
+        fi
+
+        # --- trust breadth policy (family-specific floor) -------------------
+        if [[ "$token" == */* ]]; then
+            prefix="${token##*/}"
+            if [[ ! "$prefix" =~ ^[0-9]+$ ]] || (( 10#$prefix < floor )); then
+                _trust_log "WARN" "trust cache $cache: rejected over-broad IPv${family} prefix ${token} (floor /${floor})" >&2
+                dropped=$((dropped + 1))
+                continue
+            fi
+        fi
+
+        printf '%s\n' "$token"
+        kept=$((kept + 1))
+    done < "$cache"
+
+    # A silent regression must be visible: always report the drop count.
+    if (( dropped > 0 )); then
+        _trust_log "WARN" "trust cache $(basename "$cache"): IPv${family} kept=${kept} dropped=${dropped}" >&2
+    else
+        _trust_log "INFO" "trust cache $(basename "$cache"): IPv${family} kept=${kept} dropped=0" >&2
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # WRITE TO WHITELIST
 # =============================================================================
 _trust_write_whitelist() {
@@ -414,14 +593,14 @@ EOF
 
     # Append IPv4 ranges (read once to avoid TOCTOU double-read)
     local _v4_content=""
-    if [[ -f "$ipv4_cache" ]] && _v4_content=$(cat "$ipv4_cache" 2>/dev/null) && [[ -n "$_v4_content" ]]; then
+    if [[ -f "$ipv4_cache" ]] && _v4_content=$(_trust_valid_elements "$ipv4_cache" 4 2>/dev/null) && [[ -n "$_v4_content" ]]; then
         printf '# %s IPv4 Ranges\n%s\n\n' "$name" "$_v4_content" >> "$_wl_tmp"
         total=$((total + $(printf '%s\n' "$_v4_content" | wc -l)))
     fi
 
     # Append IPv6 ranges (read once to avoid TOCTOU double-read)
     local _v6_content=""
-    if [[ -f "$ipv6_cache" ]] && _v6_content=$(cat "$ipv6_cache" 2>/dev/null) && [[ -n "$_v6_content" ]]; then
+    if [[ -f "$ipv6_cache" ]] && _v6_content=$(_trust_valid_elements "$ipv6_cache" 6 2>/dev/null) && [[ -n "$_v6_content" ]]; then
         printf '# %s IPv6 Ranges\n%s\n\n' "$name" "$_v6_content" >> "$_wl_tmp"
         total=$((total + $(printf '%s\n' "$_v6_content" | wc -l)))
     fi
@@ -490,22 +669,24 @@ _trust_apply_to_nft() {
 
     # IPv4 CIDRs
     if [[ -f "$ipv4_cache" ]] && [[ -s "$ipv4_cache" ]]; then
-        local ipv4_elements
-        ipv4_elements=$(grep -v '^#' "$ipv4_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        local ipv4_valid ipv4_elements
+        ipv4_valid=$(_trust_valid_elements "$ipv4_cache" 4) || ipv4_valid=""
+        ipv4_elements=$(printf '%s' "$ipv4_valid" | tr '\n' ',' | sed 's/,$//')
         if [[ -n "$ipv4_elements" ]]; then
             echo "add element ${_TRUST_TABLE_IPV4} whitelist_ipv4 { ${ipv4_elements} }" >> "$nft_fragment"
-            ipv4_count=$(grep -cv '^\s*$\|^#' "$ipv4_cache" 2>/dev/null || true)
+            ipv4_count=$(printf '%s' "$ipv4_valid" | grep -c . || true)
             ipv4_count=${ipv4_count:-0}
         fi
     fi
 
     # IPv6 CIDRs
     if [[ -f "$ipv6_cache" ]] && [[ -s "$ipv6_cache" ]]; then
-        local ipv6_elements
-        ipv6_elements=$(grep -v '^#' "$ipv6_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        local ipv6_valid ipv6_elements
+        ipv6_valid=$(_trust_valid_elements "$ipv6_cache" 6) || ipv6_valid=""
+        ipv6_elements=$(printf '%s' "$ipv6_valid" | tr '\n' ',' | sed 's/,$//')
         if [[ -n "$ipv6_elements" ]]; then
             echo "add element ${_TRUST_TABLE_IPV6} whitelist_ipv6 { ${ipv6_elements} }" >> "$nft_fragment"
-            ipv6_count=$(grep -cv '^\s*$\|^#' "$ipv6_cache" 2>/dev/null || true)
+            ipv6_count=$(printf '%s' "$ipv6_valid" | grep -c . || true)
             ipv6_count=${ipv6_count:-0}
         fi
     fi
@@ -561,7 +742,7 @@ _trust_remove_from_nft() {
     # IPv4 CIDRs
     if [[ -f "$ipv4_cache" ]] && [[ -s "$ipv4_cache" ]]; then
         local ipv4_elements
-        ipv4_elements=$(grep -v '^#' "$ipv4_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        ipv4_elements=$(_trust_valid_elements "$ipv4_cache" 4 | tr '\n' ',' | sed 's/,$//') || ipv4_elements=""
         if [[ -n "$ipv4_elements" ]]; then
             echo "delete element ${_TRUST_TABLE_IPV4} whitelist_ipv4 { ${ipv4_elements} }" >> "$nft_fragment"
         fi
@@ -570,7 +751,7 @@ _trust_remove_from_nft() {
     # IPv6 CIDRs
     if [[ -f "$ipv6_cache" ]] && [[ -s "$ipv6_cache" ]]; then
         local ipv6_elements
-        ipv6_elements=$(grep -v '^#' "$ipv6_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        ipv6_elements=$(_trust_valid_elements "$ipv6_cache" 6 | tr '\n' ',' | sed 's/,$//') || ipv6_elements=""
         if [[ -n "$ipv6_elements" ]]; then
             echo "delete element ${_TRUST_TABLE_IPV6} whitelist_ipv6 { ${ipv6_elements} }" >> "$nft_fragment"
         fi

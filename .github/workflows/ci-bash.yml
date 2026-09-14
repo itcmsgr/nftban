@@ -284,3 +284,17 @@ jobs:
           echo "=== Executing: test_validation.sh ==="
           chmod +x cli/lib/nftban/tests/test_validation.sh
           bash cli/lib/nftban/tests/test_validation.sh
+
+      # v1.231.0 Lane 1B — BUG-TRUST-WHITELIST-NO-CIDR-VALIDATION.
+      # Provider-controlled cache text reached nft add/delete element operands
+      # and the durable whitelist.d conf with no validation: 0.0.0.0/0 confers
+      # membership on every address, and a crafted cache line executed as a
+      # root-privileged nft STATEMENT. Wired here because a test file that is
+      # merely present is inert — this workflow executes named tests. Every
+      # negative case is run against the pre-fix module during development, so
+      # the harness is known to discriminate rather than assert into a vacuum.
+      - name: Trust - provider CIDR validation and breadth floor (v1.231.0 Lane 1B)
+        run: |
+          echo "=== Executing: trust_cidr_validation_v1231_test.sh ==="
+          chmod +x cli/lib/nftban/tests/trust_cidr_validation_v1231_test.sh
+          bash cli/lib/nftban/tests/trust_cidr_validation_v1231_test.sh
