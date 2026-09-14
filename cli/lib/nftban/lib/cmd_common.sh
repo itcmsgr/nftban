@@ -216,7 +216,7 @@ _require_root_or_sudo_hint() {
     local json_mode="${2:-false}"
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         if [[ "$json_mode" != "true" ]]; then
-            echo "ERROR: '${operation}' requires root privileges" >&2
+            echo "ERROR: '${operation}' requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)" >&2
         fi
         _v142_sudo_hint "$operation" "$json_mode"
         return 1

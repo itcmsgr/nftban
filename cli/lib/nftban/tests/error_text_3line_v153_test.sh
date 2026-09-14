@@ -122,8 +122,17 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         _require_root_or_sudo_hint "ban an IP" false 2>&1
         echo "RC=$?"
     ) || true
-    printf '%s\n' "$out" | grep -q "requires root privileges" \
-        && ok "emits a root-required line when EUID!=0" || no "root-required line missing" "$out"
+    # v1.231.0 — the literal was "requires root privileges". That string is
+    # FORBIDDEN by the polkit wording authority (v128_polkit_aware_wording_sweep
+    # A3 + A8), so the two guards contradicted each other over the same operator
+    # string and this one kept the defect alive. The wording authority wins; the
+    # proxy literal moves to the canonical phrasing. The assertion is not weaker
+    # — it now requires BOTH the privilege-required line AND the canonical
+    # PolicyKit/polkit attribution, where before it required only the former.
+    printf '%s\n' "$out" | grep -q "requires elevated privileges" \
+        && ok "emits a privilege-required line when EUID!=0" || no "privilege-required line missing" "$out"
+    printf '%s\n' "$out" | grep -q "PolicyKit/polkit" \
+        && ok "privilege-required line carries the canonical polkit attribution" || no "polkit attribution missing" "$out"
     printf '%s\n' "$out" | grep -q "Re-run with one of:" \
         && ok "emits the inline sudo / root-shell re-run guidance" || no "sudo hint missing" "$out"
     printf '%s\n' "$out" | grep -q "RC=1" \

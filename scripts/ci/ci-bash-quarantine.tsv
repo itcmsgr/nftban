@@ -26,7 +26,33 @@
 #     (R20). The test now passes in full; a passing quarantined test BLOCKS, so
 #     the entry is retired and the ceiling lowered 3 -> 2.
 #
+#   2026-09-14  v128_polkit_aware_wording_sweep_test  (V1226-CIBASH-PRODDEF-02,
+#     POLKIT_WORDING_DRIFT, lane OPEN_POLKIT_WORDING_REWORD).
+#     Reproduced at v1.230.0: 19 PASS / 5 FAIL (A3 5 hits, A4 1, A5 6, A8 1,
+#     A10 1). Of the 14 hits, 7 were real operator-facing wording defects and
+#     were fixed PRODUCT-SIDE: cmd_common.sh:219, cmd_whitelist.sh:434/494/
+#     602/649, cmd_botscan.sh:788, cmd_permissions.sh:275. That alone moved the
+#     test to 23 PASS / 1 FAIL.
+#     The remaining 7 hits were NOT product defects; they were two guard
+#     subject/input mismatches, each corrected with its own in-test negative
+#     control (A5c, A10b) and re-proven end-to-end by injecting the four
+#     forbidden shapes into a live CLI file (all five assertions went RED, then
+#     GREEN again on revert):
+#       * A5 matched the `_v142_sudo_hint` ANTI-PATTERN WARNINGS, putting it in
+#         direct contradiction with cli_sudo_hint_v142_test.sh:95/162, which
+#         REQUIRES that exact string to be printed. A5 now applies the same
+#         negation-marker filter cli_sudo_hint_v142_test.sh:180 already shipped.
+#       * A10 matched an nft stderr CLASSIFIER arm (nft_probe.sh:101), which is
+#         never printed. A10 now excludes shell `case` glob arms only.
+#     One sibling guard had to move with the wording authority:
+#     error_text_3line_v153_test.sh:125 pinned the literal "requires root
+#     privileges" that A3/A8 forbid — two shipped guards claiming authority over
+#     one operator string, which is what kept this defect alive. The proxy
+#     literal moved to the canonical phrasing and the assertion got STRONGER (it
+#     now also requires the PolicyKit/polkit attribution).
+#     The test now passes in full; a passing quarantined test BLOCKS, so the
+#     entry is retired and the ceiling lowered 2 -> 1.
+#
 # Columns: QT id path owner reason finding introduced review_or_expiry disposition expected_failure_class remediation_lane expected_failure_pattern
-QUARANTINE_CEILING=2
+QUARANTINE_CEILING=1
 QT	botscan_throughput_v187_test	cli/lib/nftban/tests/botscan_throughput_v187_test.sh	nftban-maintainers	prefilter-count invariant requires the Go nftban-botscan-matcher binary which is not built in the hermetic ci-bash environment. v1.229.10: the test now ASSERTS this precondition explicitly instead of surfacing it as a wrong count, so the bound pattern moved from the count mismatch to the named precondition. Section A (forward cursor) now PASSES here; only B/C need the binary.	V1226-CIBASH-ENV-01	2026-07-22	2026-10-31	ENVIRONMENT_SENSITIVE	MISSING_MATCHER_BINARY	OPEN_BOTSCAN_MATCHER_CI_PROVISIONING	PRECONDITION UNMET: nftban-botscan-matcher
-QT	v128_polkit_aware_wording_sweep_test	cli/lib/nftban/tests/v128_polkit_aware_wording_sweep_test.sh	nftban-maintainers	confirmed product defect: 5 operator-facing CLI surfaces reintroduced root/sudo wording after the v1.133 polkit sweep, undetected while this test was unwired from CI	V1226-CIBASH-PRODDEF-02	2026-07-22	2026-10-31	CONFIRMED_PRODUCT_DEFECT	POLKIT_WORDING_DRIFT	OPEN_POLKIT_WORDING_REWORD	requires root [privileges]' in CLI surfaces

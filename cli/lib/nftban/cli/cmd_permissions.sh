@@ -272,7 +272,7 @@ nftban_permissions_cmd_enforce() {
             echo "❌ Permission enforcement failed with errors"
             echo "   See log: ${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
             echo "   Re-check: nftban permissions check"
-            echo "   Re-run:   sudo nftban permissions enforce"
+            echo "   Re-run:   nftban permissions enforce"
         } >&2
     fi
 
