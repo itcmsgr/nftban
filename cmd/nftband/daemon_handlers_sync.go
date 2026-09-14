@@ -33,6 +33,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/geoban"
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/netutil"
+	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/opqueue"
 	"github.com/itcmsgr/nftban/internal/ports"
 	"github.com/itcmsgr/nftban/internal/runtime"
@@ -464,7 +465,32 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// blacklist.d CIDRs survive feed reload. Skipped if a source was memory-pressure
 	// skipped (the union would be incomplete → don't partial-replace and wipe the
 	// skipped source's prior content) or in quickMode (feeds/geoban deferred). IPv4+IPv6.
+	var exemptSubtractedV4, exemptSubtractedV6 int
 	if !quickMode && !feedsSkipped && !geobanSkipped {
+		// P1S-A NEVER-BAN ON THE BULK PATH (v1.231.0).
+		//
+		// Every producer feeding this replace — blacklist.d CIDRs, feeds (single IPs
+		// were rewritten to "<ip>/32" above), geoban — reached the kernel with NO
+		// never-ban check. backend.Ban and backend.AddElement each consult the
+		// exemption authority, but both take a single ADDRESS, and this path carries
+		// only PREFIXES: IsExempt returns false for all of them, so there was no
+		// guard here to bypass — there was no guard at all. An exempt address inside
+		// any feed or geoban prefix was written to blacklist_ipv4/_ipv6, which
+		// install/nftables/nftables.conf.tpl drops BEFORE the
+		// "ct state established,related accept" — i.e. it cuts the live admin SSH
+		// session, not merely future connections.
+		//
+		// SubtractExempt splits each covering prefix around the exempt addresses
+		// instead of dropping it, so one admin IP inside a wide feed prefix cannot
+		// disable that prefix's protection. Fail-safe: an unloaded or empty exempt
+		// snapshot subtracts nothing and the feed load proceeds unchanged.
+		unifiedBlacklistV4, exemptSubtractedV4 = d.backend.SubtractExempt(unifiedBlacklistV4)
+		unifiedBlacklistV6, exemptSubtractedV6 = d.backend.SubtractExempt(unifiedBlacklistV6)
+		if exemptSubtractedV4 > 0 || exemptSubtractedV6 > 0 {
+			log.Printf("[SYNC] NEVER-BAN: %d IPv4 + %d IPv6 input CIDRs covered a never-ban-exempt address and were split/dropped before the unified blacklist replace",
+				exemptSubtractedV4, exemptSubtractedV6)
+		}
+
 		if len(unifiedBlacklistV4) > 0 {
 			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, unifiedBlacklistV4); err != nil {
 				log.Printf("[SYNC] Warning: unified blacklist_ipv4 replace failed: %v", err)
@@ -531,6 +557,12 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		"udp_ports_in":           len(allPorts.UDPPortsIn),
 		"udp_ports_out":          len(allPorts.UDPPortsOut),
 		"pressure_level":         safety.GetMemoryPressureLevel().String(),
+		// P1S-A: per-sync count of input CIDRs that covered a never-ban-exempt
+		// address and were split/dropped. Reported unconditionally (including as 0)
+		// so an operator can tell "the guard ran and found nothing" apart from "the
+		// guard is not there" — a silent regression must be visible, not inferred.
+		"exempt_subtracted_ipv4": exemptSubtractedV4,
+		"exempt_subtracted_ipv6": exemptSubtractedV6,
 	}
 
 	// Add protection status to response for CLI visibility
@@ -713,6 +745,26 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		setNameV6 = "blacklist_ipv6"
 	}
 
+	// P1S-A NEVER-BAN ON THE load_cidrs VERB (v1.231.0).
+	//
+	// This is the SECOND independent writer of blacklist_ipv4/_ipv6 from feed data
+	// (handleLoadCIDRsRequest loads /var/lib/nftban/feeds itself when the caller
+	// sends no explicit list), so guarding only the sync handler would have left a
+	// live bypass of the same invariant. Scoped by target set, not by verb: the
+	// whitelist form of this call must NOT be subtracted — removing an admin IP from
+	// a whitelist replace would be the very lockout this guard exists to prevent.
+	var exemptSubtracted int
+	if nftbackend.IsEnforcementSet(setNameV4) || nftbackend.IsEnforcementSet(setNameV6) {
+		var n4, n6 int
+		ipv4CIDRs, n4 = d.backend.SubtractExempt(ipv4CIDRs)
+		ipv6CIDRs, n6 = d.backend.SubtractExempt(ipv6CIDRs)
+		exemptSubtracted = n4 + n6
+		if exemptSubtracted > 0 {
+			log.Printf("[LOAD_CIDRS] NEVER-BAN: %d IPv4 + %d IPv6 input CIDRs covered a never-ban-exempt address and were split/dropped before loading into %s/%s",
+				n4, n6, setNameV4, setNameV6)
+		}
+	}
+
 	var ipv4Stats, ipv6Stats *nftsync.MergeStats
 
 	// Load IPv4 CIDRs
@@ -764,6 +816,10 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		"ipv4_input":  len(ipv4CIDRs),
 		"ipv6_input":  len(ipv6CIDRs),
 		"total_input": totalInput,
+		// P1S-A: inputs that covered a never-ban-exempt address and were
+		// split/dropped. Always present for an enforcement target so the guard's
+		// presence is observable, not inferred.
+		"exempt_subtracted": exemptSubtracted,
 	}
 
 	// BUG-008 FIX: Update CIDR metrics for Prometheus

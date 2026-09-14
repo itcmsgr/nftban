@@ -128,6 +128,220 @@ func (r *exemptResolver) IsExempt(ipStr string) (bool, string) {
 	return false, ""
 }
 
+// =============================================================================
+// P1S-A — PREFIX-AWARE NEVER-BAN AUTHORITY (v1.231.0)
+// =============================================================================
+//
+// WHY A SECOND METHOD EXISTS, AND WHY IsExempt COULD NOT BE REUSED.
+//
+// IsExempt answers "is THIS ADDRESS exempt". Every bulk producer of
+// blacklist_ipv4/_ipv6 content emits PREFIXES, never addresses:
+// cmd/nftband/daemon_handlers_sync.go rewrites every feed single IP to "<ip>/32"
+// before the unified replace, geoban is CIDR-native, and blacklist.d CIDRs are
+// CIDRs by definition. IsExempt returns false for all of them (it fails the
+// netip.ParseAddr at :89), so dropping an IsExempt call into the unified replace
+// loop would have been a NO-OP that merely looked like a guard.
+//
+// Making IsExempt itself prefix-aware was REJECTED: IsExempt is also the input to
+// Backend.Ban and to exemptAddRejection, where a true answer REFUSES the whole
+// operation. A wide feed prefix containing one admin IP would then be refused
+// outright — a denial of service caused by the exemption itself, and a silent
+// regression for the legitimate "add a CIDR to an enforcement set" path.
+//
+// So the prefix question gets its own answer with its own remedy: SUBTRACT the
+// exempt address space from the prefix and keep the rest. The exempt snapshot,
+// its TTL, its canonicalisation and its fail-safe semantics are shared with
+// IsExempt — there is exactly ONE exemption source.
+
+// maxSplitPerPrefix bounds the output of a single subtraction. Splitting a prefix
+// around k holes costs O(k * prefixlen) output prefixes, so a pathological input
+// (a very wide IPv6 prefix riddled with exempt singletons) could otherwise
+// allocate without bound on a path that already accepts up to 1M feed CIDRs.
+// Exceeding the bound DROPS the input prefix rather than emitting it: the
+// invariant that nothing covering an exempt address reaches a drop set is
+// absolute, and the bound is far above anything a real exempt snapshot produces.
+const maxSplitPerPrefix = 4096
+
+// SubtractExempt removes never-ban-exempt address space from a list of elements
+// destined for an enforcement (drop) set.
+//
+// Each input is kept, split, or dropped:
+//   - covers no exempt address      -> kept VERBATIM (the original string, untouched)
+//   - covers some exempt addresses  -> SPLIT into the minimal set of prefixes that
+//     cover the input minus the exempt addresses
+//   - is entirely exempt (an exempt /32, or any prefix inside an exempt CIDR)
+//     -> dropped, emitting nothing
+//
+// removed counts INPUT elements that covered exempt space and were therefore split
+// or dropped. It is not the number of addresses withheld and not the number of
+// output prefixes; it is the count a silent regression would drive to zero.
+//
+// FAIL-SAFE (this must never block a legitimate feed load): a nil resolver, an
+// empty input, a snapshot that has never loaded, or a snapshot with nothing in it
+// all subtract NOTHING and return the input unchanged. There is no error return —
+// a resolver problem degrades to the pre-existing behaviour, never to a refusal.
+//
+// Accepts both "a.b.c.d/nn" and a bare "a.b.c.d"; an input it cannot parse is
+// passed through untouched for the downstream CIDR filter to reject or keep.
+// v4 + v6 parity, and IPv4-mapped-IPv6 inputs are canonicalised through the same
+// canonPrefix the snapshot is stored with — but a mapped input that gets split is
+// re-emitted in mapped form, because the caller has already routed it to the v6
+// set and rewriting its family there would corrupt the element.
+func (r *exemptResolver) SubtractExempt(cidrs []string) ([]string, int) {
+	if r == nil || len(cidrs) == 0 {
+		return cidrs, 0
+	}
+	r.maybeRefresh()
+
+	r.mu.RLock()
+	loaded := r.loaded
+	holes := make([]netip.Prefix, 0, len(r.exact)+len(r.prefixes))
+	for ip := range r.exact {
+		a, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue
+		}
+		a = a.Unmap()
+		holes = append(holes, netip.PrefixFrom(a, a.BitLen()))
+	}
+	holes = append(holes, r.prefixes...)
+	r.mu.RUnlock()
+
+	if !loaded || len(holes) == 0 {
+		return cidrs, 0
+	}
+
+	kept := make([]string, 0, len(cidrs))
+	removed := 0
+	for _, raw := range cidrs {
+		p, mapped, ok := parseElementPrefix(raw)
+		if !ok {
+			kept = append(kept, raw)
+			continue
+		}
+		if !anyHoleInside(p, holes) && !anyHoleCovers(p, holes) {
+			// FAST PATH — and the ONLY path that reaches the kernel byte-for-byte
+			// as the producer wrote it. Never re-render an element we did not change.
+			kept = append(kept, raw)
+			continue
+		}
+		removed++
+		var out []netip.Prefix
+		subtractPrefix(p, holes, &out)
+		if len(out) > maxSplitPerPrefix {
+			continue
+		}
+		for _, q := range out {
+			kept = append(kept, formatElement(q, mapped))
+		}
+	}
+	return kept, removed
+}
+
+// parseElementPrefix canonicalises one set element into the identity form the
+// exempt snapshot uses. wasMapped records that the caller's element was
+// IPv4-mapped-IPv6 so a split can be re-emitted in the family the caller routed it
+// to.
+func parseElementPrefix(s string) (p netip.Prefix, wasMapped, ok bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return netip.Prefix{}, false, false
+	}
+	if strings.Contains(s, "/") {
+		q, err := netip.ParsePrefix(s)
+		if err != nil {
+			return netip.Prefix{}, false, false
+		}
+		c := canonPrefix(q)
+		return c, q.Addr().Is4In6() && c.Addr().Is4(), c.IsValid()
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, false, false
+	}
+	mapped := a.Is4In6()
+	a = a.Unmap()
+	return netip.PrefixFrom(a, a.BitLen()), mapped, true
+}
+
+// formatElement renders a subtraction result, restoring IPv4-mapped-IPv6 form when
+// the input carried it.
+func formatElement(p netip.Prefix, remap bool) string {
+	if remap && p.Addr().Is4() {
+		if m := netip.PrefixFrom(netip.AddrFrom16(p.Addr().As16()), p.Bits()+96); m.IsValid() {
+			return m.String()
+		}
+	}
+	return p.String()
+}
+
+// anyHoleCovers reports whether some hole contains p ENTIRELY (p is wholly exempt).
+func anyHoleCovers(p netip.Prefix, holes []netip.Prefix) bool {
+	for _, h := range holes {
+		if h.Bits() <= p.Bits() && h.Contains(p.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyHoleInside reports whether some hole lies strictly INSIDE p (p must be split).
+func anyHoleInside(p netip.Prefix, holes []netip.Prefix) bool {
+	for _, h := range holes {
+		if p.Bits() < h.Bits() && p.Contains(h.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
+// subtractPrefix appends to out the minimal prefix cover of p minus every hole.
+// Two prefixes are either disjoint or nested, so at each step p is wholly exempt
+// (emit nothing), wholly clean (emit p), or straddling (halve and recurse).
+// Recursion is bounded by p.Addr().BitLen() — 32 for IPv4, 128 for IPv6.
+func subtractPrefix(p netip.Prefix, holes []netip.Prefix, out *[]netip.Prefix) {
+	if anyHoleCovers(p, holes) {
+		return
+	}
+	if !anyHoleInside(p, holes) {
+		*out = append(*out, p)
+		return
+	}
+	lo, hi, ok := splitPrefix(p)
+	if !ok {
+		// Cannot narrow further yet a hole is reportedly inside: withhold rather
+		// than emit. Unreachable for well-formed prefixes; fails toward the
+		// never-ban invariant, not away from it.
+		return
+	}
+	subtractPrefix(lo, holes, out)
+	subtractPrefix(hi, holes, out)
+}
+
+// splitPrefix halves p into its two immediate sub-prefixes.
+func splitPrefix(p netip.Prefix) (netip.Prefix, netip.Prefix, bool) {
+	newBits := p.Bits() + 1
+	if newBits > p.Addr().BitLen() {
+		return netip.Prefix{}, netip.Prefix{}, false
+	}
+	lo := netip.PrefixFrom(p.Addr(), newBits)
+	raw := p.Addr().AsSlice() // fresh slice; safe to mutate
+	idx := (newBits - 1) / 8
+	if idx >= len(raw) {
+		return netip.Prefix{}, netip.Prefix{}, false
+	}
+	raw[idx] |= byte(1) << (7 - uint((newBits-1)%8))
+	hiAddr, ok := netip.AddrFromSlice(raw)
+	if !ok {
+		return netip.Prefix{}, netip.Prefix{}, false
+	}
+	hi := netip.PrefixFrom(hiAddr, newBits)
+	if !lo.IsValid() || !hi.IsValid() {
+		return netip.Prefix{}, netip.Prefix{}, false
+	}
+	return lo, hi, true
+}
+
 func (r *exemptResolver) maybeRefresh() {
 	r.mu.RLock()
 	fresh := r.loaded && time.Since(r.loadedAt) <= r.ttl

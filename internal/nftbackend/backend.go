@@ -103,7 +103,13 @@ type Stats struct {
 	// L3a: add_element requests refused because a single exempt IP targeted an
 	// enforcement set (never-ban invariant enforced on the generic add path too).
 	AddElementExemptSkips int64
-	LastError             string
+	// P1S-A: bulk CIDR elements (feeds / geoban / blacklist.d / load_cidrs) that
+	// COVERED a never-ban-exempt address on their way to blacklist_ipv4/_ipv6 and
+	// were therefore split around it or dropped. Counts input elements, not
+	// addresses. Exists so the guard's effect is observable: a silent regression
+	// of the prefix-aware authority shows up here as a stat that stops moving.
+	BlacklistExemptSubtractions int64
+	LastError                   string
 }
 
 // EnableExemptionGuard wires the authoritative never-ban exemption guard. configDir is
@@ -607,6 +613,42 @@ func (b *Backend) IsExempt(ip string) (bool, string) {
 		return false, ""
 	}
 	return b.exempt.IsExempt(ip)
+}
+
+// SubtractExempt removes never-ban-exempt address space from a list of CIDR/IP
+// elements bound for an enforcement (drop) set, returning the surviving elements and
+// the count of inputs that covered exempt space (and were split or dropped).
+//
+// This is the PREFIX-shaped counterpart to IsExempt, for the bulk producers —
+// feeds, geoban, blacklist.d CIDRs, the load_cidrs verb — that emit prefixes and
+// which IsExempt therefore cannot answer for (see the note above
+// exemptResolver.SubtractExempt). It resolves through the SAME snapshot as Ban,
+// AddElement and the opqueue; there is no second exemption source.
+//
+// Remedy is SUBTRACTION, not refusal: a wide prefix containing one admin address is
+// split around it and the rest still enforces. Refusing the whole prefix would turn
+// the exemption into a denial of service.
+//
+// Nil-safe and fail-safe: no backend, no resolver, or an unloaded/empty snapshot
+// returns the input unchanged with removed=0 — a broken resolver must never block a
+// legitimate feed load.
+func (b *Backend) SubtractExempt(cidrs []string) ([]string, int) {
+	if b == nil {
+		return cidrs, 0
+	}
+	b.mu.Lock()
+	r := b.exempt
+	b.mu.Unlock()
+	if r == nil {
+		return cidrs, 0
+	}
+	kept, removed := r.SubtractExempt(cidrs)
+	if removed > 0 {
+		b.mu.Lock()
+		b.stats.BlacklistExemptSubtractions += int64(removed)
+		b.mu.Unlock()
+	}
+	return kept, removed
 }
 
 // exemptAddRejection reports whether adding element to set must be refused by the
