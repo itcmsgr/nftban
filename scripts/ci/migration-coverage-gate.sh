@@ -335,7 +335,13 @@ echo "============================================================"
     # staging / install unit lists" — a non-source artifact dir does not
     # re-introduce the unit and is out of H3.2 scope.
     for d in cmd/nftban-ui cmd/nftban-ui-auth; do
-        if [ -d "$d" ] && find "$d" -maxdepth 3 -name '*.go' -type f 2>/dev/null | grep -q .; then
+        # ⛔ NOT `find ... | grep -q .`. grep -q exits on the first match and SIGPIPEs
+        # find; under `set -o pipefail` the pipeline then reports find's failure, so a
+        # FOUND violation reads as "none" and this guard reports PASS. That direction
+        # is fail-OPEN. Capture first, decide second.
+        _go_src=""
+        [ -d "$d" ] && _go_src="$(find "$d" -maxdepth 3 -name '*.go' -type f 2>/dev/null || true)"
+        if [ -n "$_go_src" ]; then
             fail_detail+="$d/ contains Go source (deprecated cmd target reintroduced); "
         fi
     done

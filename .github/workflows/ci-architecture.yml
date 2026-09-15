@@ -222,6 +222,7 @@ jobs:
       - name: Check ldflags -X targets are declared string vars (v1.231.0, BLOCKING)
         run: ./scripts/ci/check-ldflags-target-authority.sh
 
+
       # v1.228.6 GUARD-THE-GUARD, BLOCKING — same discipline as the logrotate guard
       # above: inject each violation class, require a FAIL that names it; inject prose
       # mentioning the construct, require a PASS; verify restoration.
@@ -273,6 +274,12 @@ jobs:
       # in a gate changes a merge decision, which is a truth defect.
       - name: Check gates have no EPIPE short-circuits (v1.228.9 PR4, BLOCKING)
         run: ./scripts/ci/check-pipefail-epipe-shortcircuit.sh
+
+      # v1.231.0 GUARD-THE-GUARD — the population above is DERIVED from CI wiring.
+      # Arm 1 plants an out-of-prefix, CI-wired gate carrying the forbidden form and
+      # requires detection: that is the exact defect the old check-*.sh scope missed.
+      - name: Check EPIPE guard population is correct (v1.231.0, BLOCKING)
+        run: ./scripts/ci/check-pipefail-epipe-falsifiability.sh
 
       # v1.228.8 PR4 BLOCKING — control-enforcement meta-gate. The parser gate
       # shipped in PR1 with a selftest, was manually falsified, was called

@@ -57,7 +57,7 @@ nyv(){  echo "[NYV ] $1"; _escalate NOT_YET_VERIFIED; }
 
 # set membership — necessary but NOT sufficient for enforcement
 in_set(){ # table set ip  -> 0 if present
-    $TARGET_RUN "sudo nft list set $1 nftban $2 2>/dev/null | grep -qF '$3'"
+    $TARGET_RUN "_s=\$(sudo nft list set $1 nftban $2 2>/dev/null || true); printf '%s' \"\$_s\" | grep -qF '$3'"
 }
 
 # the ENFORCEMENT proof: the set is referenced by a drop/reject rule whose chain
