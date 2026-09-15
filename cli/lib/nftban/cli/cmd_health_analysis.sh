@@ -532,8 +532,13 @@ nftban_health_cmd_rbl() {
     # protected" while RBL is blind.
     local rbl_degraded_ips=0 rbl_listed_ips=0
     if [[ -f "$rbl_state_file" ]]; then
-        rbl_degraded_ips=$(grep -c '=degraded|' "$rbl_state_file" 2>/dev/null || echo 0)
-        rbl_listed_ips=$(grep -c '=listed|' "$rbl_state_file" 2>/dev/null || echo 0)
+        # `grep -c` PRINTS "0" and EXITS 1 on no-match, so `|| echo 0` appended a
+        # SECOND zero and the value became $'0\n0'. That reached `[[ ... -gt 0 ]]`
+        # below as an arithmetic syntax error, and the operator line rendered
+        # across two lines. `|| true` keeps grep's own "0" and suppresses only the
+        # exit status; an unreadable file yields empty, absorbed by ${...:-0}.
+        rbl_degraded_ips=$(grep -c '=degraded|' "$rbl_state_file" 2>/dev/null || true)
+        rbl_listed_ips=$(grep -c '=listed|' "$rbl_state_file" 2>/dev/null || true)
     fi
     if [[ "$rbl_enabled" == "YES" ]] && [[ "${rbl_degraded_ips:-0}" -gt 0 ]] \
        && [[ "$overall_status" == "PROTECTED" ]]; then
@@ -556,7 +561,7 @@ nftban_health_cmd_rbl() {
     printf "  RBL State:       %s degraded / %s listed (authoritative: %s)\n" \
         "${rbl_degraded_ips:-0}" "${rbl_listed_ips:-0}" "$rbl_state_file"
     [[ "${rbl_degraded_ips:-0}" -gt 0 ]] && \
-        printf "  Note: RBL coverage DEGRADED — reputation not fully verified for %s IP(s); not 'fully protected'.\n" "${rbl_degraded_ips}"
+        printf "  Note: RBL coverage DEGRADED — reputation not fully verified for %s IP(s); not 'fully protected'.\n" "${rbl_degraded_ips:-0}"
     echo ""
     printf "  Status: %b%s%b\n" "$status_color" "$overall_status" "\033[0m"
     echo ""
