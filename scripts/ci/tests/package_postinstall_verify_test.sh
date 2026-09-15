@@ -153,7 +153,13 @@ pred_unconditional() { # file family
     mut="$(grep -n -- "--${2} --mode=" "$1" | head -1 | cut -d: -f1)"
     ver="$(grep -n -- '--verify-install-state' "$1" | head -1 | cut -d: -f1)"
     [[ -n "$mut" && -n "$ver" && "$ver" -gt "$mut" ]] || return 1
-    ! sed -n "$((mut+1)),$((ver))p" "$1" | grep -Eq '^(if|case|while|until) |&&'
+    # ⛔ v1.231.0: DRAIN. This predicate's RETURN VALUE is the verdict, and it is
+    #    NEGATED: a match means VIOLATION FOUND. With `grep -Eq` the producer takes
+    #    SIGPIPE on a successful match, pipefail yields 141, and `!` inverts that to
+    #    TRUE — so a real violation reports as "assertion satisfied". Measured on a
+    #    63,001-line producer with a violation planted at line 3001: 20/20 "no
+    #    violation found" with -q, 20/20 "violation DETECTED" when drained.
+    ! sed -n "$((mut+1)),$((ver))p" "$1" | grep -E '^(if|case|while|until) |&&' >/dev/null
 }
 
 # 1c. The verification invocation must be family-independent. The family flag
@@ -164,7 +170,8 @@ pred_family_independent() { # file _family
     ver="$(grep -n -- '--verify-install-state' "$1" | head -1 | cut -d: -f1)"
     [[ -n "$ver" ]] || return 1
     # the invocation spans the backslash continuations that follow it
-    ! sed -n "$((ver-1)),$((ver+5))p" "$1" | grep -Eq -- '--(deb|rpm)\b'
+    # v1.231.0: DRAIN — same negated-verdict shape as pred_unconditional above.
+    ! sed -n "$((ver-1)),$((ver+5))p" "$1" | grep -E -- '--(deb|rpm)\b' >/dev/null
 }
 
 for f in "${FAMILIES[@]}"; do
