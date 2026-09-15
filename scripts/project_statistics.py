@@ -18,7 +18,7 @@
 # Missing/denied traffic auth is RECORDED, never silently omitted.
 # =============================================================================
 import os, re, sys, json, csv, subprocess, argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 OWNER_REPO = "itcmsgr/nftban"
 
@@ -119,16 +119,73 @@ def read_csv(path):
 
 def write_csv(path, rows, fields):
     with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, restval="", extrasaction="ignore")
         w.writeheader()
         for r in rows:
             w.writerow(r)
 
 
+def fetch_referrers(token_env):
+    """External referrer views. KNOWN for the rolling 14d window only."""
+    data, err = gh(f"repos/{OWNER_REPO}/traffic/popular/referrers", token_env=token_env)
+    if data is None:
+        return None, err
+    return [{"referrer": r.get("referrer"), "views": r.get("count"),
+             "uniques": r.get("uniques")} for r in data], None
+
+
+def fetch_ci_runs(since_date):
+    """Our own workflow-run count. Used ONLY to attribute clone contamination.
+
+    Clone counts are dominated by CI checkouts (observed ~2-7 clones per run),
+    so clones must never be read as third-party interest without this denominator.
+    """
+    data, err = gh(f"repos/{OWNER_REPO}/actions/runs?created=>={since_date}&per_page=1")
+    if data is None:
+        return None, err
+    return data.get("total_count"), None
+
+
+def rolling_windows(outdir):
+    """DERIVED rolling aggregates from the daily CSV.
+
+    rolling_*_visitor_days is a SUM OF DAILY UNIQUES. That is visitor-days, NOT
+    distinct people: GitHub deduplicates only within a window and exposes no
+    cross-window identity, so distinct-visitor counts over any period longer than
+    the API window are NOT_MEASURABLE.
+    """
+    rows = read_csv(os.path.join(outdir, "github-traffic-daily.csv"))
+    rows = sorted(rows, key=lambda r: r["date"])
+    out = {}
+    for n in (7, 14, 45):
+        tail = rows[-n:]
+        v = sum(int(r.get("view_count", 0) or 0) for r in tail)
+        vd = sum(int(r.get("unique_visitors", 0) or 0) for r in tail)
+        c = sum(int(r.get("clone_count", 0) or 0) for r in tail)
+        cd = sum(int(r.get("unique_cloners", 0) or 0) for r in tail)
+        out[f"rolling_{n}d_views"] = v
+        out[f"rolling_{n}d_visitor_days"] = vd
+        out[f"rolling_{n}d_clones"] = c
+        out[f"rolling_{n}d_cloner_days"] = cd
+        out[f"rolling_{n}d_views_per_visitor_day"] = round(v / vd, 2) if vd else None
+        out[f"rolling_{n}d_days_observed"] = len(tail)
+    return out
+
+
 def merge_daily_traffic(outdir, clones, views, report):
     path = os.path.join(outdir, "github-traffic-daily.csv")
-    fields = ["date", "clone_count", "unique_cloners", "view_count", "unique_visitors", "note"]
-    existing = {r["date"]: r for r in read_csv(path)}
+    # views_per_daily_unique is DERIVED. It is views divided by the uniques GitHub
+    # deduplicated FOR THAT DAY. It is an engagement-depth ratio, NOT an adoption
+    # measure: with ~30 reported uniques/week a few repeat readers move it materially.
+    fields = ["date", "clone_count", "unique_cloners", "view_count", "unique_visitors",
+              "views_per_daily_unique", "note"]
+    raw = read_csv(path)
+    seen, dup_raw = set(), 0
+    for r in raw:                      # count duplicates BEFORE the dict collapses them
+        if r.get("date") in seen:
+            dup_raw += 1
+        seen.add(r.get("date"))
+    existing = {r["date"]: r for r in raw}
     cl = {d["date"]: d for d in (clones["days"] if clones else [])}
     vw = {d["date"]: d for d in (views["days"] if views else [])}
     for date in sorted(set(cl) | set(vw) | set(existing)):
@@ -144,11 +201,20 @@ def merge_daily_traffic(outdir, clones, views, report):
                         report.append(f"ANOMALY {date} {k}: observed {newv} < stored {oldv}; kept {oldv}")
                     else:
                         row[k] = newv
+        uv = int(row.get("unique_visitors", 0) or 0)
+        vc = int(row.get("view_count", 0) or 0)
+        row["views_per_daily_unique"] = f"{vc / uv:.2f}" if uv > 0 else ""
         row["note"] = note
         existing[date] = row
+    if dup_raw:
+        # Refuse BEFORE writing: the on-disk series is already corrupt and a silent
+        # dict-collapse would rewrite it as if it had always been clean, destroying
+        # the evidence that duplicates existed.
+        report.append(f"FATAL duplicate dates in {path}: {dup_raw}")
+        return None, dup_raw
     rows = [existing[d] for d in sorted(existing)]
     write_csv(path, rows, fields)
-    return len(rows), len(set(r["date"] for r in rows))
+    return len(rows), dup_raw
 
 
 def main():
@@ -190,8 +256,27 @@ def main():
     traffic_ok = clones is not None and views is not None
     report.append(f"traffic_auth: {'PASS' if traffic_ok else 'FAIL'}"
                   + ("" if traffic_ok else f" (clones:{cerr} views:{verr}) -> need PAT with Administration:Read as STATS_TRAFFIC_TOKEN"))
-    ndaily, nuniq = merge_daily_traffic(args.out, clones, views, report)
-    dup_dates = ndaily - nuniq
+    ndaily, dup_dates = merge_daily_traffic(args.out, clones, views, report)
+    if ndaily is None:
+        print(f"GATE FAILURE: {dup_dates} duplicate date(s) in the on-disk daily series; "
+              "every rolling aggregate derived from it would be wrong.", file=sys.stderr)
+        print("REFUSING TO EMIT: nothing written back; the corrupt file is preserved "
+              "for inspection rather than silently de-duplicated.", file=sys.stderr)
+        sys.exit(2)
+
+    # 3b) contamination denominator + referrer attribution + derived rollups
+    since = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+    ci_runs, ci_err = fetch_ci_runs(since)
+    referrers, ref_err = fetch_referrers("STATS_TRAFFIC_TOKEN")
+    rolling = rolling_windows(args.out)
+    clones_per_run = (round(rolling["rolling_14d_clones"] / ci_runs, 2)
+                      if ci_runs else None)
+    ext_ref_views = (sum(r["views"] for r in referrers
+                         if r["referrer"] not in ("github.com",))
+                     if referrers else None)
+    report.append(f"ci_workflow_runs_14d={ci_runs} clones_per_workflow_run={clones_per_run}"
+                  + ("" if ci_runs else f" (ci_runs unavailable: {ci_err})"))
+    report.append("clones are CI-CONTAMINATED and must not be read as third-party interest")
 
     # 4) snapshots.csv (one row per UTC date; deterministic update-in-place; delta vs previous)
     snap_path = os.path.join(args.out, "snapshots.csv")
@@ -289,6 +374,40 @@ def main():
                         "unique_visitors": views["uniques"] if views else None},
         "traffic_auth": "PASS" if traffic_ok else "FAIL",
         "reconciles": recon,
+        "rolling_derived": rolling,
+        "ci_workflow_runs_14d": ci_runs,
+        "clones_per_workflow_run": clones_per_run,
+        "external_referrer_views_14d": ext_ref_views,
+        "referrers_14d": referrers,
+        "metric_semantics": {
+            "_": "How far each number may be pushed. Consumers MUST NOT promote a metric "
+                 "to a stronger class than listed here.",
+            "views": "KNOWN — page/repo views for the window.",
+            "daily_unique_visitors": "KNOWN — GitHub-deduplicated for that DAY only.",
+            "rolling_14d_unique_visitors": "KNOWN — GitHub-deduplicated within the current "
+                                           "14-day window only.",
+            "rolling_Nd_visitor_days": "DERIVED — a SUM OF DAILY UNIQUES. This is VISITOR-DAYS, "
+                                       "not distinct people. One person returning on five days "
+                                       "contributes five.",
+            "distinct_visitors_over_any_period_longer_than_the_api_window":
+                "NOT_MEASURABLE — the traffic API exposes a rolling window and no downloader or "
+                "visitor identity, so cross-window deduplication is impossible. Never state a "
+                "45-day distinct-visitor count.",
+            "views_per_daily_unique": "DERIVED — engagement-depth ratio. At ~30 reported uniques "
+                                      "per week a few repeat readers move it materially; a "
+                                      "multi-week move is NOT a demonstrated trend without a "
+                                      "variance check against daily noise.",
+            "clones": "KNOWN_BUT_CI_CONTAMINATED — dominated by our own workflow checkouts "
+                      "(observed ~2-7 clones per run). See clones_per_workflow_run.",
+            "unique_cloners": "KNOWN_BUT_AUTOMATION_CONTAMINATED — mirrors, scrapers and CI "
+                              "runners each register.",
+            "package_downloads": "KNOWN — .deb/.rpm asset downloads only.",
+            "all_release_asset_downloads": "KNOWN — includes SHA256SUMS, SBOM, manifests and "
+                                           "standalone binaries. ALWAYS label which of the two "
+                                           "is quoted; they differ materially.",
+            "installations": "NOT_MEASURABLE — a download is not an install.",
+            "users": "NOT_MEASURABLE — no identity is exposed at any layer.",
+        },
     }
     json.dump(current, open(os.path.join(args.out, "current.json"), "w"), indent=2)
 
@@ -303,6 +422,36 @@ def main():
     print("\n".join(report))
     print(f"GATE reconcile={'PASS' if recon else 'FAIL'} traffic_auth={'PASS' if traffic_ok else 'FAIL'} "
           f"dup_dates={dup_dates} unclassified_pkg_alarm={len(rel['unclassified'])}")
+
+    # ---- FAIL-LOUDLY GATE -----------------------------------------------------
+    # Until now this gate only PRINTED. The workflow then ran `git add` + `git commit`
+    # unconditionally, so an invalid collection was committed to the stats branch and
+    # read back later as fact. That is a failed observation rendering as a successful
+    # result — the exact class of defect these statistics are used to reason about.
+    #
+    # Two conditions make the OUTPUT semantically invalid, and both now exit non-zero
+    # so the workflow stops BEFORE committing:
+    #   * reconcile FAIL  — package_downloads != sum(platforms) != DEB+RPM
+    #   * dup_dates > 0   — the daily series would carry duplicate dates
+    #
+    # traffic_auth FAIL is deliberately NOT fatal: collecting without a traffic PAT is a
+    # documented degraded mode, and merge_daily_traffic adds no rows when traffic is
+    # absent, so it cannot write zeros that would later read as real zeros. It is
+    # reported loudly instead.
+    fatal = []
+    if not recon:
+        fatal.append("reconcile=FAIL: package_downloads != sum(per_platform) != DEB+RPM; "
+                     "download totals are internally inconsistent")
+    if not traffic_ok:
+        print("WARNING: traffic_auth=FAIL — collecting in documented degraded mode "
+              "(no STATS_TRAFFIC_TOKEN). Release/star data still valid; traffic rows "
+              "unchanged, NOT zero-filled.", file=sys.stderr)
+    if fatal:
+        for f in fatal:
+            print(f"GATE FAILURE: {f}", file=sys.stderr)
+        print("REFUSING TO EMIT: collection is semantically invalid and must not be "
+              "committed. No partial data written back.", file=sys.stderr)
+        sys.exit(2)
 
 
 def package_badge(total):
