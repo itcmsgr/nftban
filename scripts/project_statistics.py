@@ -146,6 +146,36 @@ def fetch_ci_runs(since_date):
     return data.get("total_count"), None
 
 
+def window_population(rows, n, today):
+    """Assert the window's POPULATION, three-valued. Never a tolerance band.
+
+    A population defined by what the collector *reports* can shrink in the same
+    direction as the code that reads it. So derive it from the raw rows and compare
+    against the calendar, not against a counter the collector increments.
+
+    Returns (state, observed, expected):
+      KNOWN                -- every calendar day in the window is present
+      BOOTSTRAP_INCOMPLETE -- the series itself is younger than the window; legitimate,
+                              but NAMED and carrying its count, not silently tolerated
+      SHORT                -- the series is old enough to have filled the window and
+                              did not. This is a real gap and is fatal.
+    """
+    from datetime import date, timedelta
+    dates = sorted({date.fromisoformat(r["date"]) for r in rows if r.get("date")})
+    if not dates:
+        return "UNKNOWN", 0, n
+    end = dates[-1]
+    start = end - timedelta(days=n - 1)
+    want = {start + timedelta(days=i) for i in range(n)}
+    have = want & set(dates)
+    observed, expected = len(have), n
+    if observed == expected:
+        return "KNOWN", observed, expected
+    if dates[0] > start:                      # series younger than the window
+        return "BOOTSTRAP_INCOMPLETE", observed, expected
+    return "SHORT", observed, expected
+
+
 def rolling_windows(outdir):
     """DERIVED rolling aggregates from the daily CSV.
 
@@ -169,6 +199,10 @@ def rolling_windows(outdir):
         out[f"rolling_{n}d_cloner_days"] = cd
         out[f"rolling_{n}d_views_per_visitor_day"] = round(v / vd, 2) if vd else None
         out[f"rolling_{n}d_days_observed"] = len(tail)
+        st, obs, exp = window_population(rows, n, None)
+        out[f"rolling_{n}d_population_state"] = st
+        out[f"rolling_{n}d_population_observed"] = obs
+        out[f"rolling_{n}d_population_expected"] = exp
     return out
 
 
@@ -405,6 +439,11 @@ def main():
             "all_release_asset_downloads": "KNOWN — includes SHA256SUMS, SBOM, manifests and "
                                            "standalone binaries. ALWAYS label which of the two "
                                            "is quoted; they differ materially.",
+            "rolling_Nd_population_state": "KNOWN | BOOTSTRAP_INCOMPLETE | SHORT | UNKNOWN. "
+                                           "Derived from the raw rows against the calendar, not "
+                                           "from a counter. SHORT and UNKNOWN are FATAL; "
+                                           "BOOTSTRAP_INCOMPLETE is a named legitimate state "
+                                           "carrying its count, never a tolerance band.",
             "installations": "NOT_MEASURABLE — a download is not an install.",
             "users": "NOT_MEASURABLE — no identity is exposed at any layer.",
         },
@@ -439,6 +478,23 @@ def main():
     # absent, so it cannot write zeros that would later read as real zeros. It is
     # reported loudly instead.
     fatal = []
+    # FLOOR ASSERTION on window population. `rolling_Nd_days_observed` was previously
+    # EMITTED but never ASSERTED — a recorded fact nothing fails on is a fact nobody
+    # reads, the same distance as a GATE line that printed and exited 0.
+    for n in (7, 14, 45):
+        st = rolling.get(f"rolling_{n}d_population_state")
+        obs = rolling.get(f"rolling_{n}d_population_observed")
+        exp = rolling.get(f"rolling_{n}d_population_expected")
+        if st == "SHORT":
+            fatal.append(f"rolling_{n}d population SHORT: {obs}/{exp} calendar days present "
+                         f"while the series is old enough to have filled the window. Every "
+                         f"aggregate over this window silently under-counts.")
+        elif st == "UNKNOWN":
+            fatal.append(f"rolling_{n}d population UNKNOWN: no dated rows to derive it from.")
+        elif st == "BOOTSTRAP_INCOMPLETE":
+            print(f"NOTE: rolling_{n}d population BOOTSTRAP_INCOMPLETE {obs}/{exp} — the series "
+                  f"is younger than the window. Legitimate; reported, not tolerated silently.",
+                  file=sys.stderr)
     if not recon:
         fatal.append("reconcile=FAIL: package_downloads != sum(per_platform) != DEB+RPM; "
                      "download totals are internally inconsistent")
