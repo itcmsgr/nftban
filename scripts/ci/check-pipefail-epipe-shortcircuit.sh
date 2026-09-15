@@ -41,8 +41,14 @@
 # An EPIPE there empties fail_detail and the gate reports check_pass. The rule was
 # right the whole time; the subject population was wrong.
 #
-# The population is now DERIVED: every scripts/ci/*.sh a workflow actually invokes,
-# UNION the historical check-*.sh set so nothing previously covered is dropped.
+# The population is now DERIVED from workflow invocation, UNION the historical
+# check-*.sh set so nothing previously covered is dropped.
+#
+# ⛔ CORRECTION (v1.231.0, third pass): as originally written this claimed "every
+#    scripts/ci/*.sh a workflow actually invokes". That was FALSE — the matching
+#    regex forbade '/', so anything below scripts/ci/ was silently excluded. The
+#    claim is corrected and now ASSERTED by assert_no_depth_exclusion() below
+#    rather than stated.
 #
 # The shape was measured repo-wide first: 506 occurrences, 495 of them in test
 # suites and 7 in gates (plus the 7 already fixed in the .8/.9 control plane).
@@ -61,11 +67,60 @@ cd "$REPO_ROOT"
 # gate_population — the authority is CI WIRING, not a naming convention.
 # Mechanically derived so it cannot drift into a hand-curated list, which would
 # just replace one proxy with another.
+# ⛔ v1.231.0 THIRD POPULATION CORRECTION — PATH DEPTH WAS A SILENT EXCLUSION.
+#
+# The regex below previously read `scripts/ci/[A-Za-z0-9._-]+\.sh`. That character
+# class EXCLUDES '/', so it matched only ROOT-LEVEL scripts/ci scripts. FOUR
+# workflow-invoked scripts live one directory deeper and were therefore invisible
+# to BOTH the original filename proxy AND the first two corrections:
+#
+#     scripts/ci/tests/lifecycle_deb_matrix.sh             1 site
+#     scripts/ci/tests/package_postinstall_verify_test.sh   2 sites
+#     scripts/ci/tests/lifecycle_rpm_matrix.sh              0
+#     scripts/ci/tests/check-repo-authority_test.sh         0
+#
+# lifecycle_deb_matrix.sh backs build-packages.yml -> lifecycle-layer-a, i.e. the
+# REQUIRED contexts "Lifecycle Layer A — package-native remove (deb-ubuntu24.04)"
+# and "(rpm-el9)". These were merge-deciding gates carrying the defect this guard
+# exists to prevent.
+#
+# Two of those three sites are NEGATED (`! producer | grep -q ...`), which makes the
+# failure DETERMINISTIC rather than probabilistic: a successful match returns 141,
+# `!` inverts it to true, and a real violation reads as "assertion satisfied" EVERY
+# time the producer is large enough to take SIGPIPE. Measured on a 63,001-line
+# subject with a violation planted at line 3001: 20/20 "no violation found" before,
+# 20/20 "violation DETECTED" after draining.
+#
+# The population is DEPTH-AGNOSTIC now. The class permits '/' so any workflow-invoked
+# script is in scope regardless of how deeply it is nested; depth is not a property
+# that should decide whether a merge-deciding gate is inspected.
 gate_population() {
     {
         git ls-files 'scripts/ci/check-*.sh' 2>/dev/null
-        grep -rhoE 'scripts/ci/[A-Za-z0-9._-]+\.sh' .github/workflows/ 2>/dev/null
+        grep -rhoE 'scripts/ci/[A-Za-z0-9._/-]+\.sh' .github/workflows/ 2>/dev/null
     } | sort -u
+}
+
+# DEPTH-EXCLUSION ASSERTION. A population bug of this shape is invisible: the guard
+# still runs, still prints OK, and simply inspects less. So the guard now PROVES that
+# nothing workflow-invoked was dropped, rather than trusting its own regex.
+assert_no_depth_exclusion() {
+    local referenced pop missing=0 f
+    referenced="$(grep -rhoE 'scripts/ci/[A-Za-z0-9._/-]+\.sh' .github/workflows/ 2>/dev/null | sort -u)"
+    # Materialise the population ONCE into a variable. Writing this as
+    # `gate_population | grep -qxF "$f"` would be the very shape this guard bans —
+    # and exempting it with `# epipe-ok` would be the guard excusing itself. A
+    # here-string has no pipeline, so no producer can be EPIPE'd.
+    pop="$(gate_population)"
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        [[ -f "$f" ]] || continue
+        if ! grep -qxF "$f" <<< "$pop"; then
+            printf 'FAIL [EPIPE_POPULATION_DEPTH_EXCLUSION] %s is workflow-invoked but not in the scanned population\n' "$f"
+            missing=$((missing + 1))
+        fi
+    done <<< "$referenced"
+    printf '%d' "$missing"
 }
 
 # ⛔ v1.231.0 SECOND POPULATION CORRECTION (D4).
@@ -155,6 +210,16 @@ count_sites() {
              | grep -vE '(^|[^A-Za-z_])(echo|printf)[^|]*\|[[:space:]]*grep' || true)
     printf '%d' "$n"
 }
+
+echo "== population depth-exclusion assertion =="
+depth_missing="$(assert_no_depth_exclusion)"
+if [[ "$depth_missing" -eq 0 ]]; then
+    echo "  [OK] every workflow-invoked scripts/ci script is in the scanned population (any depth)"
+else
+    echo "  $depth_missing workflow-invoked script(s) excluded by path depth"
+fi
+printf 'PIPEFAIL_EPIPE_DEPTH_EXCLUSIONS = %d\n' "$depth_missing"
+fail=$((fail + depth_missing))
 
 echo "== executed-test corpus vs recorded inventory =="
 corpus_fail=0

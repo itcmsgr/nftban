@@ -163,5 +163,35 @@ if [[ -n "$_victim" && -f "$_victim" ]]; then
     cp "$D/.victim.bak" "$_victim"
 fi
 
+# --- D4b ARMS: PATH DEPTH must not decide whether a gate is inspected -----------
+# The population regex previously forbade '/', so four workflow-invoked scripts one
+# directory down were never scanned. Depth is not a property that should determine
+# whether a merge-deciding gate is checked.
+
+# 9: a NESTED, workflow-invoked script carrying the forbidden shape must be caught.
+mkdir -p scripts/ci/tests
+{ printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+  printf 'if find . -name "*.c" %s %s .; then echo hit; fi\n' "$BAR" "$GQ"
+} > scripts/ci/tests/zz-nested-falsifier.sh
+printf 'name: y\non: [push]\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash scripts/ci/tests/zz-nested-falsifier.sh\n' \
+    > .github/workflows/zz-nested-falsifier.yml
+git add -A >/dev/null 2>&1
+_o="$(run_guard)"
+if [[ "$_o" == *"zz-nested-falsifier"* ]]; then
+    ok "9 DEPTH: a NESTED workflow-invoked gate IS scanned and fails"
+else
+    bad "9 DEPTH HOLE: scripts below scripts/ci/ are still invisible to the guard"
+fi
+
+# 10: the depth-exclusion assertion must report the nested file as IN population
+#     (it is the assertion that converts "my regex is fine" into a proof).
+if [[ "$_o" == *"DEPTH_EXCLUSIONS = 0"* ]]; then
+    ok "10 DEPTH ASSERTION: nested workflow-invoked script counted as in-population"
+else
+    bad "10 DEPTH ASSERTION did not account for the nested script"
+fi
+rm -f scripts/ci/tests/zz-nested-falsifier.sh .github/workflows/zz-nested-falsifier.yml
+git add -A >/dev/null 2>&1
+
 echo "=== guard-the-guard: FAILS=$FAILS ==="
 [ "$FAILS" -eq 0 ]
