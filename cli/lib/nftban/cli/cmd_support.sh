@@ -1472,9 +1472,12 @@ _collect_module_status() {
             for pf in "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns; do
                 [[ -f "$pf" ]] || continue
                 local _en _tot
-                _tot=$(grep -cE '^[A-Za-z]' "$pf" 2>/dev/null || echo 0)
-                _en=$(grep -cE '\|true\|[^|]*$' "$pf" 2>/dev/null || echo 0)
-                echo "$(basename "$pf"): ${_en} enabled / ${_tot} records"
+                # `|| echo 0` appended a second zero to grep -c's own "0" on
+                # no-match, so an empty pattern file reported "0\n0 enabled" —
+                # a support bundle stating a count it never measured.
+                _tot=$(grep -cE '^[A-Za-z]' "$pf" 2>/dev/null || true)
+                _en=$(grep -cE '\|true\|[^|]*$' "$pf" 2>/dev/null || true)
+                echo "$(basename "$pf"): ${_en:-0} enabled / ${_tot:-0} records"
                 awk -F'|' '/^[A-Za-z]/{print "    "$1" ["$(NF-5)"]"}' "$pf" 2>/dev/null | head -60
             done
         } > "$mod_dir/botscan.txt"

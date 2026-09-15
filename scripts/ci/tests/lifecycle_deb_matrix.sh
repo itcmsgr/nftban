@@ -872,7 +872,11 @@ case_L5() {
         case_skip "chattr +i on ${STATE_FILE} refused (filesystem may not support immutability) — NOT_YET_VERIFIED"
         return 0
     fi
-    if ! lsattr "$STATE_FILE" 2>/dev/null | grep -q -- '-i-'; then
+    # v1.231.0: DRAIN, do not short-circuit. `grep -q` exits on the first match,
+    # the producer takes SIGPIPE, and pipefail turns a SUCCESSFUL match into 141 —
+    # which `!` then inverts into "flag not observable", skipping a check that
+    # could have run. SKIP is not PASS, so this direction loses coverage silently.
+    if ! lsattr "$STATE_FILE" 2>/dev/null | grep -- '-i-' >/dev/null; then
         unmark_immutable "$STATE_FILE"
         case_skip "immutable flag not observable on ${STATE_FILE} — injection unverifiable, NOT_YET_VERIFIED"
         return 0

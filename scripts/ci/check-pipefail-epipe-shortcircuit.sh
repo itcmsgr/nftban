@@ -41,8 +41,14 @@
 # An EPIPE there empties fail_detail and the gate reports check_pass. The rule was
 # right the whole time; the subject population was wrong.
 #
-# The population is now DERIVED: every scripts/ci/*.sh a workflow actually invokes,
-# UNION the historical check-*.sh set so nothing previously covered is dropped.
+# The population is now DERIVED from workflow invocation, UNION the historical
+# check-*.sh set so nothing previously covered is dropped.
+#
+# ⛔ CORRECTION (v1.231.0, third pass): as originally written this claimed "every
+#    scripts/ci/*.sh a workflow actually invokes". That was FALSE — the matching
+#    regex forbade '/', so anything below scripts/ci/ was silently excluded. The
+#    claim is corrected and now ASSERTED by assert_no_depth_exclusion() below
+#    rather than stated.
 #
 # The shape was measured repo-wide first: 506 occurrences, 495 of them in test
 # suites and 7 in gates (plus the 7 already fixed in the .8/.9 control plane).
@@ -61,12 +67,98 @@ cd "$REPO_ROOT"
 # gate_population — the authority is CI WIRING, not a naming convention.
 # Mechanically derived so it cannot drift into a hand-curated list, which would
 # just replace one proxy with another.
+# ⛔ v1.231.0 THIRD POPULATION CORRECTION — PATH DEPTH WAS A SILENT EXCLUSION.
+#
+# The regex below previously read `scripts/ci/[A-Za-z0-9._-]+\.sh`. That character
+# class EXCLUDES '/', so it matched only ROOT-LEVEL scripts/ci scripts. FOUR
+# workflow-invoked scripts live one directory deeper and were therefore invisible
+# to BOTH the original filename proxy AND the first two corrections:
+#
+#     scripts/ci/tests/lifecycle_deb_matrix.sh             1 site
+#     scripts/ci/tests/package_postinstall_verify_test.sh   2 sites
+#     scripts/ci/tests/lifecycle_rpm_matrix.sh              0
+#     scripts/ci/tests/check-repo-authority_test.sh         0
+#
+# lifecycle_deb_matrix.sh backs build-packages.yml -> lifecycle-layer-a, i.e. the
+# REQUIRED contexts "Lifecycle Layer A — package-native remove (deb-ubuntu24.04)"
+# and "(rpm-el9)". These were merge-deciding gates carrying the defect this guard
+# exists to prevent.
+#
+# Two of those three sites are NEGATED (`! producer | grep -q ...`), which makes the
+# failure DETERMINISTIC rather than probabilistic: a successful match returns 141,
+# `!` inverts it to true, and a real violation reads as "assertion satisfied" EVERY
+# time the producer is large enough to take SIGPIPE. Measured on a 63,001-line
+# subject with a violation planted at line 3001: 20/20 "no violation found" before,
+# 20/20 "violation DETECTED" after draining.
+#
+# The population is DEPTH-AGNOSTIC now. The class permits '/' so any workflow-invoked
+# script is in scope regardless of how deeply it is nested; depth is not a property
+# that should decide whether a merge-deciding gate is inspected.
 gate_population() {
     {
         git ls-files 'scripts/ci/check-*.sh' 2>/dev/null
-        grep -rhoE 'scripts/ci/[A-Za-z0-9._-]+\.sh' .github/workflows/ 2>/dev/null
+        grep -rhoE 'scripts/ci/[A-Za-z0-9._/-]+\.sh' .github/workflows/ 2>/dev/null
     } | sort -u
 }
+
+# DEPTH-EXCLUSION ASSERTION. A population bug of this shape is invisible: the guard
+# still runs, still prints OK, and simply inspects less. So the guard now PROVES that
+# nothing workflow-invoked was dropped, rather than trusting its own regex.
+assert_no_depth_exclusion() {
+    local referenced pop missing=0 f
+    referenced="$(grep -rhoE 'scripts/ci/[A-Za-z0-9._/-]+\.sh' .github/workflows/ 2>/dev/null | sort -u)"
+    # Materialise the population ONCE into a variable. Writing this as
+    # `gate_population | grep -qxF "$f"` would be the very shape this guard bans —
+    # and exempting it with `# epipe-ok` would be the guard excusing itself. A
+    # here-string has no pipeline, so no producer can be EPIPE'd.
+    pop="$(gate_population)"
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        [[ -f "$f" ]] || continue
+        if ! grep -qxF "$f" <<< "$pop"; then
+            printf 'FAIL [EPIPE_POPULATION_DEPTH_EXCLUSION] %s is workflow-invoked but not in the scanned population\n' "$f"
+            missing=$((missing + 1))
+        fi
+    done <<< "$referenced"
+    printf '%d' "$missing"
+}
+
+# ⛔ v1.231.0 SECOND POPULATION CORRECTION (D4).
+#
+# The note above says "a flaky assertion inside a test is noise; a flaky
+# assertion inside a gate changes a MERGE decision". That is FALSE for the
+# shell tests the CI runner executes as BLOCKING evidence — their verdicts ARE
+# merge decisions.
+#
+# MEASURED: cli/lib/nftban/tests/v131_pr_a_2_double_zero_sweep_test.sh carried
+# exactly this shape in its A1/A2 scan arms. `grep -q` exited on a SUCCESSFUL
+# match, `sed` took SIGPIPE, pipefail reported 141, and the arm read "offender
+# found" as "no offender". Detection rate measured under load: 11/150 and 6/150
+# — the guard was ~95% blind AND non-deterministic. It reported PASS 6/0 on a
+# tree carrying FOUR real `grep -c ... || echo 0` sites (cmd_health_analysis.sh
+# 535-536, cmd_support.sh 1475-1476), and intermittently went red and blocked
+# an unrelated PR. One inverted assertion, both failure directions.
+#
+# POPULATION = EXECUTION AUTHORITY, same principle as the first correction:
+# the tests the runner actually executes for a BLOCKING gate, read from the
+# canonical authority index — not a filename pattern, not "every .sh".
+test_corpus_population() {
+    awk -F'\t' '$7=="ci-bash" || $7=="policy-gates" { print $2 }' \
+        scripts/ci/test-authority-index.tsv 2>/dev/null | sort -u
+}
+
+# RATCHET, not amnesty. There are pre-existing sites in this corpus; wiring them
+# all as hard failures would block every change on inherited debt (the reason
+# the first correction stopped at the gate plane). So the test corpus is bound
+# to a RECORDED INVENTORY of per-file counts:
+#   count > recorded  -> FAIL: new timing-dependent assertion introduced
+#   count < recorded  -> FAIL: inventory stale; regenerate so the gain is locked in
+#   file not listed   -> FAIL: undeclared population change
+# A decrease failing is deliberate — it is what stops the debt silently
+# re-accumulating after someone fixes a file. Counts, not line numbers: line
+# numbers drift on any edit and would locate the subject by position
+# (see feedback_test_subject_location_and_complete_condition).
+INVENTORY="scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv"
 
 ALLOW="scripts/ci/data/pipefail-epipe-allowlist.txt"
 
@@ -102,4 +194,66 @@ done < <(gate_population)
 
 [[ $fail -eq 0 ]] && echo "  [OK] no timing-dependent grep -q pipelines in the control plane"
 printf 'PIPEFAIL_EPIPE_SHORT_CIRCUIT_SITES = %d\n' "$fail"
-exit $(( fail > 0 ? 1 : 0 ))
+
+# --- D4: executed-test corpus, bound to the recorded inventory ----------------
+count_sites() {
+    local f="$1" n=0 ln line _stripped
+    grep -qE '^[[:space:]]*set[[:space:]]+-[A-Za-z]*o?[[:space:]]*pipefail|set[[:space:]]+-o[[:space:]]+pipefail' "$f" || { printf '0'; return; }
+    while IFS=: read -r ln _; do
+        [[ -z "$ln" ]] && continue
+        line="$(sed -n "${ln}p" "$f")"
+        _stripped="${line#"${line%%[![:space:]]*}"}"
+        case "$_stripped" in \#*) continue ;; esac
+        case "$line" in *"# epipe-ok"*) continue ;; esac
+        n=$((n + 1))
+    done < <(grep -nE '[^|]\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q' "$f" \
+             | grep -vE '(^|[^A-Za-z_])(echo|printf)[^|]*\|[[:space:]]*grep' || true)
+    printf '%d' "$n"
+}
+
+echo "== population depth-exclusion assertion =="
+depth_missing="$(assert_no_depth_exclusion)"
+if [[ "$depth_missing" -eq 0 ]]; then
+    echo "  [OK] every workflow-invoked scripts/ci script is in the scanned population (any depth)"
+else
+    echo "  $depth_missing workflow-invoked script(s) excluded by path depth"
+fi
+printf 'PIPEFAIL_EPIPE_DEPTH_EXCLUSIONS = %d\n' "$depth_missing"
+fail=$((fail + depth_missing))
+
+echo "== executed-test corpus vs recorded inventory =="
+corpus_fail=0
+if [[ ! -f "$INVENTORY" ]]; then
+    echo "FAIL [EPIPE_INVENTORY_MISSING] $INVENTORY absent — cannot ratchet an unmeasured population"
+    corpus_fail=1
+else
+    declare -A RECORDED=()
+    while IFS=$'\t' read -r _f _n; do
+        [[ "$_f" == \#* || -z "$_f" ]] && continue
+        RECORDED["$_f"]="$_n"
+    done < "$INVENTORY"
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        n="$(count_sites "$f")"
+        r="${RECORDED[$f]-}"
+        if [[ -z "$r" ]]; then
+            if [[ "$n" -gt 0 ]]; then
+                printf 'FAIL [EPIPE_UNDECLARED] %s — %d timing-dependent site(s), not in the inventory\n' "$f" "$n"
+                corpus_fail=$((corpus_fail + 1))
+            fi
+        elif [[ "$n" -gt "$r" ]]; then
+            printf 'FAIL [EPIPE_NEW_DEBT] %s — %d site(s), inventory records %d\n' "$f" "$n" "$r"
+            corpus_fail=$((corpus_fail + 1))
+        elif [[ "$n" -lt "$r" ]]; then
+            printf 'FAIL [EPIPE_INVENTORY_STALE] %s — %d site(s), inventory records %d; regenerate to lock the improvement in\n' "$f" "$n" "$r"
+            corpus_fail=$((corpus_fail + 1))
+        fi
+    done < <(test_corpus_population)
+    for f in "${!RECORDED[@]}"; do
+        [[ -f "$f" ]] || { printf 'FAIL [EPIPE_INVENTORY_STALE] %s — recorded but no longer present; regenerate\n' "$f"; corpus_fail=$((corpus_fail + 1)); }
+    done
+fi
+[[ $corpus_fail -eq 0 ]] && echo "  [OK] executed-test corpus matches the recorded inventory (no new timing-dependent assertions)"
+printf 'PIPEFAIL_EPIPE_TEST_CORPUS_DEVIATIONS = %d\n' "$corpus_fail"
+
+exit $(( (fail + corpus_fail) > 0 ? 1 : 0 ))

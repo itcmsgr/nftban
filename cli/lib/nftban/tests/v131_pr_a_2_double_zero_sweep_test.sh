@@ -34,6 +34,25 @@ set -uo pipefail
 _repo_root=$(cd "${BASH_SOURCE[0]%/*}/../../../.." && pwd)
 _scan_root="$_repo_root/cli/lib/nftban"
 
+# ⛔ D3 (v1.231.0): the scan root is derived from BASH_SOURCE, so a copy of this
+#    file run from anywhere else resolved to a NON-EXISTENT directory, found 0
+#    subjects, and reported "Passed: 6  Failed: 0". A guard that scanned nothing
+#    is indistinguishable from one that scanned everything and found nothing.
+#    Zero subjects is NOT_EXECUTED -- exit 2 (tool/precondition failure), never PASS.
+_MIN_SUBJECTS=200          # main carries 248 non-test *.sh; a collapse to a handful
+                           # means the root resolved somewhere unintended.
+if [[ ! -d "$_scan_root" ]]; then
+    echo "INVALID: scan root does not exist: $_scan_root" >&2
+    echo "  (this guard derives its root from BASH_SOURCE and cannot run relocated)" >&2
+    exit 2
+fi
+_subject_count=$(find "$_scan_root" -type f -name '*.sh' ! -name '*_test.sh' | wc -l)
+if [[ "$_subject_count" -lt "$_MIN_SUBJECTS" ]]; then
+    echo "INVALID: scan population collapsed to $_subject_count (expected >= $_MIN_SUBJECTS)" >&2
+    echo "  root=$_scan_root" >&2
+    exit 2
+fi
+
 _pass=0
 _fail=0
 _t_assert() {
@@ -64,8 +83,15 @@ echo "==========================================================================
 _A1_RE='grep[[:space:]]+-c[a-zA-Z]*.*\|\|[[:space:]]*echo[[:space:]]+("0"|0)([[:space:]]|\)|;|\||$)'
 _offenders=""
 while IFS= read -r f; do
+    # ⛔ D2 (v1.231.0): NEVER `| grep -q` here. `grep -q` exits the instant it
+    #    MATCHES; `sed` then takes SIGPIPE and exits 141, and `set -o pipefail`
+    #    reports the whole pipeline as FAILED -- inverting a successful match
+    #    into "no match". Measured on this very file set: the `grep -q` form
+    #    detected a known offender in only 11/150 and 6/150 trials under load,
+    #    i.e. this guard was ~95% blind and FLAKY, not merely wrong.
+    #    The consumer must DRAIN the producer: no -q, output to /dev/null.
     if sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*#.*$//' "$f" \
-        | grep -qE "$_A1_RE"; then
+        | grep -E "$_A1_RE" >/dev/null; then
         _offenders+="$f"$'\n'
     fi
 done < <(find "$_scan_root" -type f -name '*.sh' ! -name '*_test.sh')
@@ -83,8 +109,9 @@ fi
 # token; the safe form hoists the count into a variable first.
 _a2=""
 while IFS= read -r f; do
+    # D2: same drain requirement as A1 -- see the comment there.
     if sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*#.*$//' "$f" \
-        | grep -qE '\$\(\(.*\$\([^)]*grep[[:space:]]+-c'; then
+        | grep -E '\$\(\(.*\$\([^)]*grep[[:space:]]+-c' >/dev/null; then
         _a2+="$f"$'\n'
     fi
 done < <(find "$_scan_root" -type f -name '*.sh' ! -name '*_test.sh')
