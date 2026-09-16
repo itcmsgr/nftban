@@ -121,10 +121,56 @@ if awk '/HTTP Exploit Scanner \(BotScan\)/,/BotGuard disabled != BotScan disable
 else ok "cheap-read invariant: status row has NO access-log content read"; fi
 
 # ---- Counter truth-fix wiring ----
-grep -q '_BOTSCAN_SIGNALS_EMITTED=0' "$BOTSCAN" && ok "counter: signals counter reset in init_state" || no "counter reset"
-grep -q '_BOTSCAN_SIGNALS_EMITTED=$(( ${_BOTSCAN_SIGNALS_EMITTED:-0} + 1 ))' "$BOTSCAN" && ok "counter: write_signal increments" || no "write_signal increment"
-grep -q 'signals="${_BOTSCAN_SIGNALS_EMITTED:-0}"' "$BOTSCAN" && ok "counter: signals passed to record_runstate" || no "signals passed"
-grep -q 'unique_ips="${#_BOTSCAN_IP_HITS\[@\]}"' "$BOTSCAN" && ok "counter: unique_ips passed to record_runstate" || no "unique_ips passed"
+# ⛔ SUPERSEDED v1.231.0 P0-B. Three arms used to live here:
+#     grep -q '_BOTSCAN_SIGNALS_EMITTED=0'                       (reset present)
+#     grep -q '_BOTSCAN_SIGNALS_EMITTED=$(( ... + 1 ))'          (increment present)
+#     grep -q 'signals="${_BOTSCAN_SIGNALS_EMITTED:-0}"'         (value passed on)
+# All three string literals were present in the source, and all three passed, for
+# the entire life of the v1.219.0 counter — while both counters were numerically
+# DEAD on every host. The increment ran inside the fork created by the command
+# substitution that invoked nftban_botscan_analyze, so it could never reach the
+# parent that read the variable. A source-text grep proved only that somebody had
+# typed the line; it CERTIFIED THE BROKEN IMPLEMENTATION. They are replaced with
+# a behavioral arm that exercises the same claim across a real process boundary.
+#
+# Full end-to-end liveness (real log fixtures, runstate.json, trend, per-cycle
+# delta == batch-signal appends) is owned by
+# cli/lib/nftban/tests/botscan_emission_count_truth_v1231_0_test.sh.
+_ctr_sb="$SB/ctr"; mkdir -p "$_ctr_sb"
+_ctr_rc=0
+_ctr_out="$(bash -c '
+  set -Eeuo pipefail
+  export NFTBAN_DATA_DIR="$2/data" BOTSCAN_COUNTER_DIR="$2/counters" \
+         NFTBAN_CONFIG_DIR="$2/noetc" BOTSCAN_ENABLED=true \
+         NFTBAN_LIB_DIR="$3"
+  # shellcheck source=/dev/null
+  source "$1"
+  nftban_botscan_load_config
+  nftban_botscan_init_state
+  # Mutate the counter ONLY inside a child process — the exact boundary the
+  # v1.219.0 counter could not cross.
+  ( nftban_botscan_counter_add signals_emitted 2
+    nftban_botscan_counter_add bans_emitted 3 )
+  printf "%s %s\n" \
+    "$(nftban_botscan_counter_get signals_emitted)" \
+    "$(nftban_botscan_counter_get bans_emitted)"
+' _ "$BOTSCAN" "$_ctr_sb" "$REPO/cli/lib/nftban" 2>/dev/null)" || _ctr_rc=$?
+if [[ "$_ctr_rc" -ne 0 ]]; then
+  no "counter (behavioral): probe exited rc=$_ctr_rc — UNMEASURED, not a pass"
+elif [[ "$_ctr_out" == "2 3" ]]; then
+  ok "counter (behavioral): child-process increments reach the parent (signals=2 bans=3)"
+else
+  no "counter (behavioral): parent observed '$_ctr_out', expected '2 3' — counts do not cross the execution boundary"
+fi
+# STRUCTURAL COMPANION — ⛔ THIS ARM CANNOT PROVE LIVENESS. It only pins the shape
+# of the two channels so a future edit cannot quietly reintroduce the defect class:
+# a COUNT must never be returned as an exit status (mod-256, and indistinguishable
+# from failure), and record_runstate must be fed the named counters.
+grep -qE '^[[:space:]]*return \$banned\b' "$BOTSCAN" \
+  && no "structural companion: analyze still returns a COUNT as its exit status" \
+  || ok "structural companion: analyze no longer encodes a count in its exit status"
+grep -q 'signals="${_BOTSCAN_SIGNALS_EMITTED:-0}"' "$BOTSCAN" && ok "structural companion: signals passed to record_runstate (shape only)" || no "signals passed"
+grep -q 'unique_ips="${#_BOTSCAN_IP_HITS\[@\]}"' "$BOTSCAN" && ok "structural companion: unique_ips passed to record_runstate (shape only)" || no "unique_ips passed"
 grep -q 'unique_ips_flagged_last' "$ADAPT" && ok "runstate: unique_ips_flagged_last field" || no "unique_ips field"
 grep -q 'RESERVED_NO_PRODUCER' "$ADAPT" && ok "runstate: lines_prefiltered marked RESERVED (not faked)" || no "lines_prefiltered honesty"
 

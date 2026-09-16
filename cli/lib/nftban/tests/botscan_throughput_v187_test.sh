@@ -41,7 +41,13 @@ LIB_CORE="$NFTBAN_LIB_DIR/core/nftban_botscan.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 procof() { sed -n 's/^Processed: \([0-9]*\) entries.*/\1/p' <<<"$1"; }
 # In batch-signal mode each ban is appended as a JSONL line to this file; that is the
-# authoritative ban evidence (the "Banned:" echo carries analyze stdout, not a count).
+# authoritative ban evidence for THIS test's per-IP assertions.
+# ⛔ CORRECTED v1.231.0 P0-B — the note that used to sit here ("the 'Banned:' echo
+# carries analyze stdout, not a count") described a real defect, not a design: the
+# count was encoded in analyze's EXIT STATUS while the caller captured stdout, so
+# the echo rendered "" or 0 on every host. The ban count now travels on an explicit
+# data channel and the echo does carry a count. Per-IP evidence still belongs here;
+# the count contract is owned by botscan_emission_count_truth_v1231_0_test.sh.
 sigfile() { printf '%s\n' "${NFTBAN_DATA_DIR}/botguard/batch_signals.jsonl"; }
 banned_has() { grep -q "\"ip\":\"$1\"" "$(sigfile)" 2>/dev/null; }
 

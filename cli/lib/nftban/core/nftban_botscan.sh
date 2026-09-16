@@ -148,7 +148,14 @@ nftban_botscan_load_config() {
 
 # Associative arrays for tracking
 declare -gA _BOTSCAN_IP_HITS        # IP -> hit count
-declare -gi _BOTSCAN_SIGNALS_EMITTED=0   # v1.219.0 truth-fix: batch signals emitted this cycle
+# v1.219.0 truth-fix: batch signals emitted this cycle.
+# v1.231.0 P0-B: this variable is now a PARENT-SIDE MIRROR of the durable counter
+# sink below, reconciled in nftban_botscan_process_logs once the analyze fork has
+# exited. It is NOT the authority — see the sink block for why it cannot be.
+declare -gi _BOTSCAN_SIGNALS_EMITTED=0
+# v1.231.0 P0-B — cross-boundary counter sink state (see the sink block below).
+declare -g  _BOTSCAN_COUNTER_FILE=""
+declare -gi _BOTSCAN_COUNTER_OWNED=0   # 1 = this process created it and must remove it
 declare -gA _BOTSCAN_IP_PATTERNS    # IP -> matched patterns
 declare -gA _BOTSCAN_IP_FIRST_SEEN  # IP -> first seen timestamp
 declare -gA _BOTSCAN_IP_LAST_SEEN   # IP -> last seen timestamp
@@ -178,6 +185,122 @@ nftban_botscan_init_state() {
     # IFS=' ' is REQUIRED: the module runs under strict IFS=$'\n\t' (no space) → a bare
     # read -ra would yield ONE token "xmlrpc.php wp-login.php" that never matches (v1.186.1 class).
     [[ "${BOTSCAN_ENDPOINT_FLOOD_ENABLED:-true}" == "true" ]] && IFS=' ' read -ra _BOTSCAN_ENDPOINT_FLOOD_LIST <<< "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:-}"
+    # v1.231.0 P0-B — open this cycle's cross-boundary counter sink.
+    nftban_botscan_counters_reset
+    # ⛔ EXPLICIT: the `[[ ... ]] && ...` above is the reason this `return 0` exists.
+    # With BOTSCAN_ENDPOINT_FLOOD_ENABLED=false that AND-list is the value of the
+    # function and init_state returned 1. cli/lib/nftban/cli/cmd_botscan.sh arms
+    # `set -Eeuo pipefail` and calls nftban_botscan_check -> process_logs ->
+    # init_state as a BARE command, so a documented config key aborted the entire
+    # scan cycle before a single log line was read. A function's terminal status is
+    # part of its contract — state it, never inherit it from the last conditional.
+    return 0
+}
+
+# =============================================================================
+# CROSS-BOUNDARY COUNTER SINK (v1.231.0 P0-B)
+# =============================================================================
+# WHY A FILE AND NOT A VARIABLE
+#   nftban_botscan_analyze is invoked from nftban_botscan_process_logs across a
+#   FORK. Every emitted signal and every ban is counted inside that fork. Shell
+#   variable propagation is parent -> child ONLY, so 100% of those mutations were
+#   discarded and signals_emitted_total / bans_emitted_total were structurally 0
+#   on every host, forever. `declare -g` and `export` cannot fix this; only a
+#   channel that outlives the child can. A file-backed sink is proven to cross
+#   this exact boundary in-tree: nftban_http_logs.sh commits its read cursor from
+#   inside the process substitution feeding the scan loop and it survives.
+#
+# WHY APPEND-ONLY
+#   Increments append one "<name> <delta>" record; a read SUMS the records. There
+#   is NO read-modify-write on the increment path, so a lost update is impossible
+#   BY CONSTRUCTION rather than by discipline. (Contrast _ptf_state_incr in
+#   nftban_portscan_trusted_flow.sh: its lock helper _ptf_state_lock is defined
+#   and never called, so that increment is an unlocked read-modify-write. A
+#   lost-counter defect must not be repaired with a lost-update defect.)
+#   flock is still taken when available so parallel writers sharing one sink
+#   serialize cleanly; its absence degrades ordering, never correctness.
+#
+# BOUNDING
+#   The sink is PER CYCLE and PER PROCESS: nftban_botscan_init_state truncates or
+#   creates it, process_logs removes it, and the record count cannot exceed the
+#   signals + bans emitted in that one cycle. Orphans from a process that died
+#   mid-cycle are reaped by age under an exact name pattern.
+#
+# fd HANDLING
+#   The lock fd is AUTO-ALLOCATED (`exec {fd}>>`). lib/module_authority.sh:785-786
+#   documents fd 8 = rebuild nftlock and fd 9 = session whitelist; neither is
+#   hardcoded here.
+#
+# GENERALITY
+#   _nftban_counter_file_add/_get take the sink path explicitly and address NAMED
+#   counters, so a second consumer binds its own file. (Reuse for P0-A4 telemetry
+#   is anticipated; A4 itself is NOT implemented here.)
+
+# _nftban_counter_file_add <file> <name> <delta>
+_nftban_counter_file_add() {
+    local f="${1:-}" name="${2:-}" delta="${3:-1}"
+    [[ -n "$f" && -n "$name" ]] || return 0
+    [[ "$delta" =~ ^-?[0-9]+$ ]] || return 0
+    local rec; printf -v rec '%s %s\n' "$name" "$delta"
+    local lfd=""
+    if command -v flock >/dev/null 2>&1 && exec {lfd}>>"${f}.lock" 2>/dev/null; then
+        # A lock timeout is NOT a drop: the append is atomic on its own.
+        flock -w 5 "$lfd" 2>/dev/null || true
+        printf '%s' "$rec" >> "$f" 2>/dev/null || { exec {lfd}>&- 2>/dev/null; return 1; }
+        exec {lfd}>&- 2>/dev/null
+        return 0
+    fi
+    printf '%s' "$rec" >> "$f" 2>/dev/null || return 1
+    return 0
+}
+
+# _nftban_counter_file_get <file> <name>  -> integer on stdout (0 if unknown)
+_nftban_counter_file_get() {
+    local f="${1:-}" name="${2:-}" v=0
+    if [[ -n "$f" && -n "$name" && -s "$f" ]]; then
+        v="$(awk -v k="$name" '$1==k { s += $2 } END { printf "%d", s+0 }' "$f" 2>/dev/null)" || v=0
+    fi
+    [[ "$v" =~ ^-?[0-9]+$ ]] || v=0
+    printf '%s' "$v"
+}
+
+# BotScan bindings.
+nftban_botscan_counter_add() { _nftban_counter_file_add "${_BOTSCAN_COUNTER_FILE:-}" "${1:-}" "${2:-1}"; }
+nftban_botscan_counter_get() { _nftban_counter_file_get "${_BOTSCAN_COUNTER_FILE:-}" "${1:-}"; }
+
+# Open (and zero) this cycle's sink. Called from nftban_botscan_init_state, i.e.
+# in the PARENT, before the fork — the child inherits the resolved path.
+nftban_botscan_counters_reset() {
+    nftban_botscan_counters_release
+    local dir="${BOTSCAN_COUNTER_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/counters}"
+    local f=""
+    # $$ is the ORIGINAL shell's pid and is stable inside subshells, so the child
+    # writes to the same per-cycle file the parent will read.
+    if mkdir -p "$dir" 2>/dev/null && : > "${dir}/cycle.$$.counters" 2>/dev/null; then
+        f="${dir}/cycle.$$.counters"
+        # Bounded orphan reap: EXACT basename shape, this directory only, age-floored
+        # so a live writer's sink is out of scope. Never a directory-wide glob.
+        find "$dir" -maxdepth 1 -type f \( -name 'cycle.*.counters' -o -name 'cycle.*.counters.lock' \) \
+             -mmin +60 ! -name "cycle.$$.counters" ! -name "cycle.$$.counters.lock" -delete 2>/dev/null || true
+    else
+        # Data dir unwritable (unprivileged interactive run): fall back to TMPDIR so
+        # the boundary-crossing channel still exists.
+        f="$(mktemp "${TMPDIR:-/tmp}/nftban-botscan-counters.XXXXXX" 2>/dev/null)" || f=""
+        [[ -z "$f" ]] && echo "[botscan] WARN: no writable counter sink (${dir}, ${TMPDIR:-/tmp}) — per-cycle signal/ban counts will report 0" >&2
+    fi
+    _BOTSCAN_COUNTER_FILE="$f"
+    [[ -n "$f" ]] && _BOTSCAN_COUNTER_OWNED=1 || _BOTSCAN_COUNTER_OWNED=0
+    return 0
+}
+
+# Close this cycle's sink. Safe to call when none is open.
+nftban_botscan_counters_release() {
+    if [[ "${_BOTSCAN_COUNTER_OWNED:-0}" -eq 1 && -n "${_BOTSCAN_COUNTER_FILE:-}" ]]; then
+        rm -f -- "${_BOTSCAN_COUNTER_FILE}" "${_BOTSCAN_COUNTER_FILE}.lock" 2>/dev/null || true
+    fi
+    _BOTSCAN_COUNTER_FILE=""
+    _BOTSCAN_COUNTER_OWNED=0
+    return 0
 }
 
 # =============================================================================
@@ -1100,6 +1223,7 @@ nftban_botscan_analyze() {
             nftban_botscan_ban_ip "$ip" "$ban_duration" "botscan" "Matched patterns: $patterns (hits: $hits)"
             BOTSCAN_SIGNAL_REQUEST_CLASS=""
             banned=$((banned + 1))
+            nftban_botscan_counter_add bans_emitted 1 || true
         fi
     done
 
@@ -1131,6 +1255,7 @@ nftban_botscan_analyze() {
                 nftban_botscan_ban_ip "$ip" "$BOTSCAN_404_BAN" "botscan-404" "$_reason"
                 BOTSCAN_SIGNAL_REQUEST_CLASS=""
                 banned=$((banned + 1))
+                nftban_botscan_counter_add bans_emitted 1 || true
             fi
         done
     fi
@@ -1159,10 +1284,18 @@ nftban_botscan_analyze() {
                 echo "$(date -Iseconds)|botscan-endpoint-flood|${_efip}|${BOTSCAN_ENDPOINT_FLOOD_BAN}|SIGNAL|${_efreason}" >> "$BOTSCAN_LOG_FILE"
             fi
             banned=$((banned + 1))
+            nftban_botscan_counter_add bans_emitted 1 || true
         done
     fi
 
-    return $banned
+    # v1.231.0 P0-B — B2. This function USED TO `return $banned`, i.e. it encoded a
+    # COUNT in its EXIT STATUS while its only caller captured STDOUT. Consequences,
+    # all measured: count>0 made rc!=0 which tripped the caller's `|| banned=0`;
+    # count==0 left stdout empty on the batch-signal path; so the caller's value was
+    # ALWAYS "" or 0. Exit status is additionally mod-256, so the channel silently
+    # wrapped at 256 bans. The count now travels on the explicit sink channel and the
+    # exit status means only what an exit status may mean: did this run succeed.
+    return 0
 }
 
 # v1.187 Lane A — build a C-speed candidate prefilter (ERE) from the ENABLED patterns
@@ -1398,7 +1531,11 @@ nftban_botscan_write_signal() {
     local reasons=("$@")
 
     # v1.219.0 truth-fix: count every emitted batch signal for signals_emitted_total.
+    # v1.231.0 P0-B: every caller of this function runs inside the analyze fork, so the
+    # variable below NEVER reaches the parent. The sink is the authority; the variable is
+    # kept only so an in-fork reader still sees a consistent value.
     _BOTSCAN_SIGNALS_EMITTED=$(( ${_BOTSCAN_SIGNALS_EMITTED:-0} + 1 ))
+    nftban_botscan_counter_add signals_emitted 1 || true
 
     local signal_file="${BOTSCAN_BATCH_SIGNAL_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/batch_signals.jsonl}"
 
@@ -1744,8 +1881,21 @@ nftban_botscan_process_logs() {
 
     # Analyze and ban — ALWAYS runs (even on a partial/deadline-bounded batch) so a
     # high-volume host still produces bans every cycle instead of zero.
-    local banned
-    banned=$(nftban_botscan_analyze) || banned=0
+    # v1.231.0 P0-B — THE EXECUTION BOUNDARY.
+    # analyze still runs in its own process, so its variable scope stays isolated
+    # exactly as it was under `$( )`. What changed is the channel:
+    #   * its stdout is NO LONGER captured, so BOTSCAN_ACTION_MODE=alert prose now
+    #     reaches the operator instead of being swallowed — and can no longer be
+    #     interpolated into the $(( )) arithmetic in record_runstate;
+    #   * both counts are read back from the durable sink, not from a variable the
+    #     fork could never write and not from an exit status.
+    local banned=0 _analyze_rc=0
+    ( nftban_botscan_analyze ) || _analyze_rc=$?
+    [[ "$_analyze_rc" -ne 0 ]] && echo "[botscan] WARN: analyze exited rc=${_analyze_rc} — counts below may be partial" >&2
+    banned="$(nftban_botscan_counter_get bans_emitted)"
+    # Reconcile the parent-side mirror so every in-process reader of the documented
+    # v1.219.0 variable sees this cycle's real count.
+    _BOTSCAN_SIGNALS_EMITTED="$(nftban_botscan_counter_get signals_emitted)"
     echo "Banned: $banned IPs"
 
     # v1.207 — record run-state + health (recording-discipline honored in the writer).
@@ -1764,6 +1914,10 @@ nftban_botscan_process_logs() {
             pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
             backlog_state="$_BS_BACKLOG" health_state="$_health" load_ratio="${_lr:-0}"
     fi
+
+    # v1.231.0 P0-B — close this cycle's counter sink. Everything durable has been
+    # written by now; keeping the journal past the cycle would only unbound it.
+    nftban_botscan_counters_release
 
     return 0
 }
