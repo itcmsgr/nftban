@@ -33,6 +33,14 @@ readonly NFTBAN_IP_AND_STATS_LOADED=1
 # KERNEL QUERY HELPER (used by check_ip_or_port + get_firewall_stats)
 # =============================================================================
 
+# nftban_count_argjson — render a possibly-UNKNOWN count as VALID JSON for
+# `jq --argjson`. An unknown is JSON null, never the bare word UNKNOWN:
+# `jq --argjson x UNKNOWN` is a hard parse error that kills the WHOLE emission,
+# so one unreadable set would take the entire stats document with it.
+nftban_count_argjson() {
+    if nftban_count_is_known "${1-}"; then printf '%s' "$1"; else printf 'null'; fi
+}
+
 get_live_ruleset() {
     # Get live nftables ruleset as JSON
     # Returns: Full ruleset in JSON format
@@ -602,14 +610,14 @@ get_firewall_stats() {
             --argjson chains "$chain_count" \
             --argjson sets "$set_count" \
             --argjson rules "$rule_count" \
-            --argjson whitelist_ipv4 "$whitelist_ipv4_count" \
-            --argjson whitelist_ipv6 "$whitelist_ipv6_count" \
-            --argjson blacklist_ipv4 "$blacklist_ipv4_count" \
-            --argjson blacklist_ipv6 "$blacklist_ipv6_count" \
-            --argjson tcp_ports_in "$tcp_ports_in_count" \
-            --argjson tcp_ports_out "$tcp_ports_out_count" \
-            --argjson udp_ports_in "$udp_ports_in_count" \
-            --argjson udp_ports_out "$udp_ports_out_count" \
+            --argjson whitelist_ipv4 "$(nftban_count_argjson "$whitelist_ipv4_count")" \
+            --argjson whitelist_ipv6 "$(nftban_count_argjson "$whitelist_ipv6_count")" \
+            --argjson blacklist_ipv4 "$(nftban_count_argjson "$blacklist_ipv4_count")" \
+            --argjson blacklist_ipv6 "$(nftban_count_argjson "$blacklist_ipv6_count")" \
+            --argjson tcp_ports_in "$(nftban_count_argjson "$tcp_ports_in_count")" \
+            --argjson tcp_ports_out "$(nftban_count_argjson "$tcp_ports_out_count")" \
+            --argjson udp_ports_in "$(nftban_count_argjson "$udp_ports_in_count")" \
+            --argjson udp_ports_out "$(nftban_count_argjson "$udp_ports_out_count")" \
             '{
                 summary: {
                     tables: $tables,

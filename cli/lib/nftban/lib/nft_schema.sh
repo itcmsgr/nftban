@@ -605,6 +605,74 @@ nftban_nft_get_set_name() {
 #   FAST: nft -j list set ... | jq '.nftables[1].set.elem | length' → 0.05 seconds
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# THREE-VALUED COUNT ARITHMETIC (v1.231.0 — P1S-C shell half)
+# -----------------------------------------------------------------------------
+# Every nftban_nft_count_* function below emits EITHER a decimal integer OR the
+# literal string UNKNOWN. UNKNOWN means "the kernel could not be read", which is
+# NOT the same claim as "the set is empty".
+#
+# ⛔ NEVER feed such a value to `$(( ))` directly. Bash arithmetic resolves a
+#    bare identifier as a VARIABLE NAME, so the string UNKNOWN is looked up as
+#    $UNKNOWN. MEASURED on bash 5.3.9(1)-release:
+#
+#      set -Eo pipefail : $((UNKNOWN + UNKNOWN))  -> 0      (silent false zero)
+#      set -Eo pipefail : $((1510 + UNKNOWN))     -> 1510   (silent UNDERCOUNT)
+#      set -Eeuo pipefail: $((UNKNOWN + UNKNOWN)) -> aborts the caller with
+#                          "UNKNOWN: unbound variable", exit 1
+#
+#    All three launder "could not read" into something else, and which one you
+#    get depends on the CALLER's shell options rather than on the kernel. The
+#    sourced libraries here set `set -Eeuo pipefail` process-wide, so a caller
+#    cannot rely on either arm.
+#
+# ⛔ NEVER interpolate such a value into JSON. `"ipv4": UNKNOWN` is not valid
+#    JSON; the document fails to parse and every downstream `// 0` default then
+#    manufactures the same zero by a longer route.
+#
+# Use nftban_count_is_known() to branch, and nftban_count_sum() to add.
+# -----------------------------------------------------------------------------
+
+# nftban_count_is_known — true iff the value is an established decimal count.
+# Usage: if nftban_count_is_known "$c"; then ... else ...UNKNOWN path... fi
+nftban_count_is_known() {
+    [[ ${1-} =~ ^[0-9]+$ ]]
+}
+
+# nftban_count_sum — add counts that may be UNKNOWN.
+# Emits the integer sum, or UNKNOWN if ANY operand is not an established count.
+# UNKNOWN is ABSORBING: a total that silently omits an unreadable component is
+# a fabricated total, not a partial one. With zero arguments the sum is 0.
+nftban_count_sum() {
+    local _t=0 _v
+    for _v in "$@"; do
+        nftban_count_is_known "$_v" || { echo "UNKNOWN"; return 0; }
+        _t=$(( _t + _v ))
+    done
+    echo "$_t"
+}
+
+# nftban_count_json — render a count as a JSON value.
+# An established count renders as a JSON number; UNKNOWN renders as JSON `null`,
+# which is the only in-band way to say "no value was established" while keeping
+# the document parseable. Consumers MUST test for null rather than applying a
+# `// 0` default, which would re-manufacture the false zero.
+# nftban_count_delta — subtract counts that may be UNKNOWN.
+# Emits the integer difference, or UNKNOWN if EITHER operand is not an
+# established count. Like nftban_count_sum, UNKNOWN is ABSORBING: a delta
+# computed against an unreadable baseline is a fabricated delta, not a
+# partial one. Callers MUST NOT substitute 0 for an unknown operand —
+# `${x:-0}` does not help, because "UNKNOWN" is non-empty and passes straight
+# through it into the arithmetic that aborts.
+nftban_count_delta() {
+    nftban_count_is_known "${1-}" && nftban_count_is_known "${2-}" || { printf 'UNKNOWN'; return 0; }
+    printf '%s' "$(( $1 - $2 ))"
+}
+
+nftban_count_json() {
+    if nftban_count_is_known "${1-}"; then printf '%s' "$1"; else printf 'null'; fi
+}
+
 nftban_nft_count_set() {
     # Fast count of elements in an nftables set using JSON API
     # Usage: nftban_nft_count_set <family> <table> <set>
@@ -677,7 +745,9 @@ nftban_nft_count_set() {
 nftban_nft_count_set_elements() {
     # Count elements in an nft set using JSON API with cross-version normalization
     # Usage: nftban_nft_count_set_elements <family> <table> <set>
-    # Returns: Integer count (0 on error/empty)
+    # Returns: Integer count, or UNKNOWN when the count could not be established.
+    #          (Pre-v1.231.0 this said "0 on error/empty" and the code agreed —
+    #           that conflation IS the defect this function now avoids.)
     #
     # This is the CANONICAL way to count set elements across all nft versions.
     # Unlike nftban_nft_count_set() which uses .nftables[1].set.elem (position-based),
@@ -704,12 +774,24 @@ nftban_nft_count_set_elements() {
     #   - .elem may be array (normal), absent (empty set), or nested differently
     #   - .nftables[] may have metainfo objects before the set object
     #   - Use select(.set?) to skip non-set objects (metainfo, etc.)
+    # A jq failure means the document could not be understood, which is not a
+    # statement about how many elements the set holds. Falling back to 0 here
+    # made a malformed/unexpected nft JSON dialect indistinguishable from an
+    # empty set — the same false zero the read-failure path above guards.
     local count
     count=$(echo "$json_output" | jq -r '
         [.nftables[] | select(.set?) | .set.elem[]? // empty] | length
-    ' 2>/dev/null) || count=0
+    ' 2>/dev/null) || { echo "UNKNOWN"; return; }
 
-    echo "${count:-0}"
+    # ⛔ INLINE regex, deliberately NOT nftban_count_is_known. This is a PER-SET
+    #    primitive and must stay self-contained: perset_predicate_v1229_13_test
+    #    drives it by extracting this single function body, and callers may
+    #    source it without the rest of the library. A helper call here made a
+    #    READABLE set report UNKNOWN whenever the helper was not in scope —
+    #    trading one false answer for another. Helper use belongs to the
+    #    aggregate/JSON layers below, which always run with the file sourced.
+    [[ "$count" =~ ^[0-9]+$ ]] || { echo "UNKNOWN"; return; }
+    echo "$count"
 }
 
 # =============================================================================
@@ -736,9 +818,16 @@ nftban_nft_count_set_cached() {
         local cache_age
         cache_age=$(( $(date +%s) - $(stat -c %Y "$_NFTBAN_SET_COUNTS_CACHE" 2>/dev/null || echo 0) ))
         if [[ "$cache_age" -lt 120 ]]; then
+            # v1.231.0: the cache is a file the daemon writes; a truncated or
+            # half-written document can yield a non-numeric field. Emitting it
+            # verbatim put a non-count into callers that then did arithmetic on
+            # it. Only an established integer is accepted; anything else falls
+            # through to the kernel read below rather than being published.
             local count
             count=$(jq -r --arg s "$set_name" '.sets[$s].count // empty' "$_NFTBAN_SET_COUNTS_CACHE" 2>/dev/null)
-            if [[ -n "$count" ]]; then
+            # Inline regex, not the helper — per-set primitive, see the note in
+            # nftban_nft_count_set_elements.
+            if [[ "$count" =~ ^[0-9]+$ ]]; then
                 echo "$count"
                 return 0
             fi
@@ -787,12 +876,24 @@ nftban_nft_count_set_with_timeout() {
     local table="${2:-nftban}"
     local set="${3:-blacklist_ipv4}"
 
-    # Count lines containing "timeout" keyword
-    # V131 PR-A.2: capture + numeric fallback so the function always emits a
-    # single integer (grep -c on no-match prints "0"; on error → empty → 0).
-    local _twc
-    _twc=$(nft list set "$family" "$table" "$set" 2>/dev/null | grep -c "timeout" || true)
-    echo "${_twc:-0}"
+    # ⛔ This counts LINES containing the word "timeout" in the text dump, which
+    #    is a lower bound on timeout-wrapped elements and says nothing at all
+    #    about plain elements. It is retained only because the perm/temp split
+    #    has no cheaper source; do not promote it to a membership count.
+    #
+    # v1.231.0: separate "nft could not be read" from "no timeout elements".
+    # The old form ran the read inside a pipeline whose exit status belonged to
+    # grep, so a failed or absent read landed on `|| true` and emitted 0 — an
+    # unreadable set reported as holding zero temporary bans, which the exporter
+    # then subtracted to present every ban as permanent.
+    local _raw _twc
+    _raw=$(nft list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
+    nftban_has_non_whitespace "$_raw" || { echo "UNKNOWN"; return 0; }
+    _twc=$(printf '%s\n' "$_raw" | grep -c "timeout" || true)
+    # Inline regex, not the helper — per-set primitive, see the note in
+    # nftban_nft_count_set_elements.
+    [[ "$_twc" =~ ^[0-9]+$ ]] || { echo "UNKNOWN"; return 0; }
+    echo "$_twc"
 }
 
 nftban_nft_count_blacklist() {
@@ -800,15 +901,18 @@ nftban_nft_count_blacklist() {
     # v1.33.0: Counts both hash (manual) and interval (feeds) sets
     # Returns: "ipv4_count ipv6_count total_count"
 
+    # Any field may be UNKNOWN. UNKNOWN is absorbing (see nftban_count_sum):
+    # "Banned IPs" is the headline enforcement figure, so a total that quietly
+    # drops an unreadable set reads as "fewer IPs are banned than really are".
     local v4_interval v4_manual v6_interval v6_manual v4_count v6_count
     v4_interval=$(nftban_nft_count_set ip nftban blacklist_ipv4)
     v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4)
     v6_interval=$(nftban_nft_count_set ip6 nftban blacklist_ipv6)
     v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6)
-    v4_count=$((v4_interval + v4_manual))
-    v6_count=$((v6_interval + v6_manual))
+    v4_count=$(nftban_count_sum "$v4_interval" "$v4_manual")
+    v6_count=$(nftban_count_sum "$v6_interval" "$v6_manual")
 
-    echo "$v4_count $v6_count $((v4_count + v6_count))"
+    echo "$v4_count $v6_count $(nftban_count_sum "$v4_count" "$v6_count")"
 }
 
 nftban_nft_count_whitelist() {
@@ -819,7 +923,7 @@ nftban_nft_count_whitelist() {
     v4_count=$(nftban_nft_count_set ip nftban whitelist_ipv4)
     v6_count=$(nftban_nft_count_set ip6 nftban whitelist_ipv6)
 
-    echo "$v4_count $v6_count $((v4_count + v6_count))"
+    echo "$v4_count $v6_count $(nftban_count_sum "$v4_count" "$v6_count")"
 }
 
 nftban_nft_count_all_sets() {
@@ -861,28 +965,36 @@ nftban_nft_count_all_sets() {
     bg6_emergency=$(nftban_nft_count_set ip6 nftban http_bot_emergency6 2>/dev/null || echo 0)
     bg6_pending=$(nftban_nft_count_set ip6 nftban http_bot_pending6 2>/dev/null || echo 0)
 
+    # v1.231.0: any field above may be UNKNOWN. Two things were wrong here:
+    #   1. UNKNOWN was interpolated straight into the document, so `"ipv4": UNKNOWN`
+    #      made the WHOLE payload unparseable — and every consumer's `// 0`
+    #      default then produced the same false zero by a longer route.
+    #   2. Every total used `$(( ))`, which resolves UNKNOWN as a variable name
+    #      and yields 0 (or aborts under `set -u`). See the arithmetic banner.
+    # Counts now render via nftban_count_json (integer, or JSON `null`) and
+    # totals via nftban_count_sum (UNKNOWN absorbing -> `null`).
     cat <<EOF
 {
-  "schema_version": "2.2",
-  "whitelist": {"ipv4": $wl_v4, "ipv6": $wl_v6, "total": $((wl_v4 + wl_v6))},
-  "blacklist": {"ipv4": $bl_v4, "ipv6": $bl_v6, "total": $((bl_v4 + bl_v6)), "note": "feed and geoban bans (interval set)"},
-  "blacklist_manual": {"ipv4": $bl_manual_v4, "ipv6": $bl_manual_v6, "total": $((bl_manual_v4 + bl_manual_v6)), "note": "manual and auto-detect bans (hash set)"},
+  "schema_version": "2.3",
+  "whitelist": {"ipv4": $(nftban_count_json "$wl_v4"), "ipv6": $(nftban_count_json "$wl_v6"), "total": $(nftban_count_json "$(nftban_count_sum "$wl_v4" "$wl_v6")")},
+  "blacklist": {"ipv4": $(nftban_count_json "$bl_v4"), "ipv6": $(nftban_count_json "$bl_v6"), "total": $(nftban_count_json "$(nftban_count_sum "$bl_v4" "$bl_v6")"), "note": "feed and geoban bans (interval set)"},
+  "blacklist_manual": {"ipv4": $(nftban_count_json "$bl_manual_v4"), "ipv6": $(nftban_count_json "$bl_manual_v6"), "total": $(nftban_count_json "$(nftban_count_sum "$bl_manual_v4" "$bl_manual_v6")"), "note": "manual and auto-detect bans (hash set)"},
   "ports": {
-    "tcp_in": $tcp_in, "tcp_out": $tcp_out,
-    "udp_in": $udp_in, "udp_out": $udp_out,
-    "total_open": $((tcp_in + udp_in))
+    "tcp_in": $(nftban_count_json "$tcp_in"), "tcp_out": $(nftban_count_json "$tcp_out"),
+    "udp_in": $(nftban_count_json "$udp_in"), "udp_out": $(nftban_count_json "$udp_out"),
+    "total_open": $(nftban_count_json "$(nftban_count_sum "$tcp_in" "$udp_in")")
   },
   "botguard": {
-    "suspect": {"ipv4": $bg_suspect, "ipv6": $bg6_suspect}, "pending": {"ipv4": $bg_pending, "ipv6": $bg6_pending},
-    "allow": {"ipv4": $bg_allow, "ipv6": $bg6_allow}, "grey": {"ipv4": $bg_grey, "ipv6": $bg6_grey},
-    "ban": {"ipv4": $bg_ban, "ipv6": $bg6_ban}, "emergency": {"ipv4": $bg_emergency, "ipv6": $bg6_emergency},
-    "total_tracked": $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency + bg6_suspect + bg6_pending + bg6_allow + bg6_grey + bg6_ban + bg6_emergency))
+    "suspect": {"ipv4": $(nftban_count_json "$bg_suspect"), "ipv6": $(nftban_count_json "$bg6_suspect")}, "pending": {"ipv4": $(nftban_count_json "$bg_pending"), "ipv6": $(nftban_count_json "$bg6_pending")},
+    "allow": {"ipv4": $(nftban_count_json "$bg_allow"), "ipv6": $(nftban_count_json "$bg6_allow")}, "grey": {"ipv4": $(nftban_count_json "$bg_grey"), "ipv6": $(nftban_count_json "$bg6_grey")},
+    "ban": {"ipv4": $(nftban_count_json "$bg_ban"), "ipv6": $(nftban_count_json "$bg6_ban")}, "emergency": {"ipv4": $(nftban_count_json "$bg_emergency"), "ipv6": $(nftban_count_json "$bg6_emergency")},
+    "total_tracked": $(nftban_count_json "$(nftban_count_sum "$bg_suspect" "$bg_pending" "$bg_allow" "$bg_grey" "$bg_ban" "$bg_emergency" "$bg6_suspect" "$bg6_pending" "$bg6_allow" "$bg6_grey" "$bg6_ban" "$bg6_emergency")")
   },
   "totals": {
-    "blocked_ipv4": $((bl_v4 + bl_manual_v4)),
-    "blocked_ipv6": $((bl_v6 + bl_manual_v6)),
-    "blocked_total": $((bl_v4 + bl_v6 + bl_manual_v4 + bl_manual_v6)),
-    "whitelisted": $((wl_v4 + wl_v6))
+    "blocked_ipv4": $(nftban_count_json "$(nftban_count_sum "$bl_v4" "$bl_manual_v4")"),
+    "blocked_ipv6": $(nftban_count_json "$(nftban_count_sum "$bl_v6" "$bl_manual_v6")"),
+    "blocked_total": $(nftban_count_json "$(nftban_count_sum "$bl_v4" "$bl_v6" "$bl_manual_v4" "$bl_manual_v6")"),
+    "whitelisted": $(nftban_count_json "$(nftban_count_sum "$wl_v4" "$wl_v6")")
   }
 }
 EOF
@@ -951,6 +1063,12 @@ nftban_is_blacklisted() {
 }
 
 # Export functions
+# The three-valued count contract travels with the counters it governs: a
+# subshell that inherits nftban_nft_count_* but not these would be handed
+# UNKNOWN with no way to test for it.
+export -f nftban_count_is_known
+export -f nftban_count_sum
+export -f nftban_count_json
 export -f nftban_nft_count_set
 export -f nftban_nft_count_set_cached
 export -f nftban_nft_count_set_with_timeout

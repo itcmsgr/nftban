@@ -96,16 +96,21 @@ collect_all_metrics() {
     local conntrack_entries=0 conntrack_max=0 conntrack_utilization=0
     local softnet_drops_total=0 softnet_drops_rate=0
     # Whitelist metrics (declared at function level for JSON cache access - LIVE group)
-    local whitelist_v4=0 whitelist_v6=0
+    # v1.231.0: initialised UNKNOWN, not 0. When the LIVE group does not run,
+    # these are values nobody measured; a 0 here was published as a measurement.
+    local whitelist_v4=UNKNOWN whitelist_v6=UNKNOWN
     # Feeds metrics (declared at function level for JSON cache access - LIVE group)
     local feeds_enabled=0 feeds_loaded=0 feeds_failed=0
     local feeds_ips=0 feeds_ipv4_total=0 feeds_ipv6_total=0
     # Blacklist active counts (declared at function level for JSON cache and EXTENDED group)
-    local active_v4=0 active_v6=0 active_total=0
-    local blacklist_v4_perm=0 blacklist_v4_temp=0 blacklist_v6_perm=0 blacklist_v6_temp=0
+    # v1.231.0: UNKNOWN until something establishes them — see the whitelist note.
+    local active_v4=UNKNOWN active_v6=UNKNOWN active_total=UNKNOWN
+    local blacklist_v4_perm=UNKNOWN blacklist_v4_temp=UNKNOWN
+    local blacklist_v6_perm=UNKNOWN blacklist_v6_temp=UNKNOWN
     # v1.150 F3: manual hash-set subset (blacklist_manual_ipv4/_ipv6), exposed in
     # the cache so the cache-hit dashboard can surface it. IPv4 + IPv6 symmetric.
-    local manual_v4=0 manual_v6=0
+    # v1.231.0: UNKNOWN until measured, consistent with active_*/whitelist_*.
+    local manual_v4=UNKNOWN manual_v6=UNKNOWN
     if group_active "live"; then
 
         # --- Daemon Metrics ---
@@ -181,13 +186,17 @@ collect_all_metrics() {
                 if echo "$counts_json" | jq -e '.sets' &>/dev/null; then
                     # Daemon cache format: .sets.<setname>.count
                     # v1.33.0: Sum interval (feeds) + hash (manual) sets
+                    # v1.231.0: `// 0` fires for an ABSENT or null field, so a
+                    # set the daemon is not tracking was published as holding
+                    # zero elements. Default to UNKNOWN and let the sample be
+                    # withheld instead.
                     local bl_interval_v4 bl_manual_v4 bl_interval_v6 bl_manual_v6
-                    bl_interval_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv4.count // 0')
-                    bl_manual_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv4.count // 0')
-                    bl_interval_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv6.count // 0')
-                    bl_manual_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv6.count // 0')
-                    active_v4=$((bl_interval_v4 + bl_manual_v4))
-                    active_v6=$((bl_interval_v6 + bl_manual_v6))
+                    bl_interval_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv4.count // "UNKNOWN"')
+                    bl_manual_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv4.count // "UNKNOWN"')
+                    bl_interval_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv6.count // "UNKNOWN"')
+                    bl_manual_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv6.count // "UNKNOWN"')
+                    active_v4=$(nftban_count_sum "$bl_interval_v4" "$bl_manual_v4")
+                    active_v6=$(nftban_count_sum "$bl_interval_v6" "$bl_manual_v6")
                     # v1.150 F3: expose the manual subset (already summed into active_*).
                     manual_v4=$bl_manual_v4
                     manual_v6=$bl_manual_v6
@@ -198,15 +207,19 @@ collect_all_metrics() {
                     blacklist_v6_perm=$active_v6
                 else
                     # Legacy kernel format: .blacklist.ipv4
-                    active_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
-                    active_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+                    # v1.231.0: nftban_nft_count_all_sets now renders an
+                    # unestablished count as JSON null, and `// 0` treats null
+                    # as absent — converting "could not read" straight back
+                    # into "zero bans" one hop after the library refused to.
+                    active_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // "UNKNOWN"')
+                    active_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // "UNKNOWN"')
                     # v1.150 F3: legacy format omitted the manual hash set — fold it in for
                     # parity with the other branches (.blacklist.*.total = interval + manual)
                     # and expose the subset. IPv4 + IPv6 symmetric.
-                    manual_v4=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv4 // .sets.blacklist_manual_ipv4.count // 0')
-                    manual_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // .sets.blacklist_manual_ipv6.count // 0')
-                    active_v4=$((active_v4 + manual_v4))
-                    active_v6=$((active_v6 + manual_v6))
+                    manual_v4=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv4 // .sets.blacklist_manual_ipv4.count // "UNKNOWN"')
+                    manual_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // .sets.blacklist_manual_ipv6.count // "UNKNOWN"')
+                    active_v4=$(nftban_count_sum "$active_v4" "$manual_v4")
+                    active_v6=$(nftban_count_sum "$active_v6" "$manual_v6")
                     # v1.152 (13.10): the legacy `.blacklist.<fam>` format carries NO
                     # perm/temp split — the old `.permanent`/`.temporary` reads were
                     # ALWAYS absent → 0, so total (active) never reconciled with
@@ -224,62 +237,92 @@ collect_all_metrics() {
         elif command -v nft &>/dev/null; then
             # Fallback: Use direct nft_schema.sh counting functions
             # v1.33.0: Sum interval (feeds) + hash (manual) sets
+            # v1.231.0 (P1S-C): these helpers emit UNKNOWN when the kernel could
+            # not be read. `|| echo 0` never fired for that case — the helper
+            # exits 0 while printing UNKNOWN — and the sums below then resolved
+            # UNKNOWN as a variable name, publishing 0 bans (or aborting the
+            # exporter under `set -u`, which is in force here). Both outcomes
+            # reach a dashboard as "this host is not blocking anything".
             local fb_interval_v4 fb_manual_v4 fb_interval_v6 fb_manual_v6
-            fb_interval_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
-            fb_manual_v4=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
-            fb_interval_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
-            fb_manual_v6=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
-            active_v4=$((fb_interval_v4 + fb_manual_v4))
-            active_v6=$((fb_interval_v6 + fb_manual_v6))
+            fb_interval_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)
+            fb_manual_v4=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo UNKNOWN)
+            fb_interval_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)
+            fb_manual_v6=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo UNKNOWN)
+            active_v4=$(nftban_count_sum "$fb_interval_v4" "$fb_manual_v4")
+            active_v6=$(nftban_count_sum "$fb_interval_v6" "$fb_manual_v6")
             # v1.150 F3: expose the manual subset (already summed into active_*).
             manual_v4=$fb_manual_v4
             manual_v6=$fb_manual_v6
-            blacklist_v4_temp=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo 0)
-            blacklist_v6_temp=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
-            blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
-            blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
-            [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
-            [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
+            blacklist_v4_temp=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)
+            blacklist_v6_temp=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)
+            # perm = active - temp, but only when BOTH operands are established.
+            # Subtracting an unknown temp count from a known total previously
+            # presented every ban as permanent.
+            if nftban_count_is_known "$active_v4" && nftban_count_is_known "$blacklist_v4_temp"; then
+                blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
+                [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
+            else
+                blacklist_v4_perm=UNKNOWN
+            fi
+            if nftban_count_is_known "$active_v6" && nftban_count_is_known "$blacklist_v6_temp"; then
+                blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
+                [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
+            else
+                blacklist_v6_perm=UNKNOWN
+            fi
         fi
-        active_total=$((active_v4 + active_v6))
+        active_total=$(nftban_count_sum "$active_v4" "$active_v6")
 
-        metrics+="nftban_active_count $active_total\n"
+        # v1.231.0 (P1S-C): publish a sample ONLY for a count that was actually
+        # established. An UNKNOWN sample is dropped, which in both Prometheus
+        # and Zabbix means "no data for this interval" — a state both systems
+        # already model, alert on, and distinguish from a real zero. Emitting 0
+        # instead asserts a measurement that was never taken, and a `== 0` alert
+        # on "host is not blocking anything" cannot then fire.
+        _emit_count() { # $1=metric name  $2=value
+            nftban_count_is_known "$2" || return 0
+            metrics+="$1 $2\n"
+        }
+
+        _emit_count "nftban_active_count" "$active_total"
         # Zabbix-specific: nftban.blocks.total is what the template expects
-        metrics+="nftban_blocks_total $active_total\n"
+        _emit_count "nftban_blocks_total" "$active_total"
         # Prometheus-style with labels (for Prometheus)
-        metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4\n"
-        metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6\n"
+        _emit_count "nftban_active_bans{family=\"ipv4\"}" "$active_v4"
+        _emit_count "nftban_active_bans{family=\"ipv6\"}" "$active_v6"
         # Zabbix-specific: separate keys without labels (template expects nftban.active.bans)
-        metrics+="nftban.active.bans $active_total\n"
-        metrics+="nftban.active.bans.ipv4 $active_v4\n"
-        metrics+="nftban.active.bans.ipv6 $active_v6\n"
+        _emit_count "nftban.active.bans" "$active_total"
+        _emit_count "nftban.active.bans.ipv4" "$active_v4"
+        _emit_count "nftban.active.bans.ipv6" "$active_v6"
 
         # Perm/temp breakdown (aligned with nftban stats dashboard)
-        metrics+="nftban_blacklist_ipv4_perm $blacklist_v4_perm\n"
-        metrics+="nftban_blacklist_ipv4_temp $blacklist_v4_temp\n"
-        metrics+="nftban_blacklist_ipv6_perm $blacklist_v6_perm\n"
-        metrics+="nftban_blacklist_ipv6_temp $blacklist_v6_temp\n"
+        _emit_count "nftban_blacklist_ipv4_perm" "$blacklist_v4_perm"
+        _emit_count "nftban_blacklist_ipv4_temp" "$blacklist_v4_temp"
+        _emit_count "nftban_blacklist_ipv6_perm" "$blacklist_v6_perm"
+        _emit_count "nftban_blacklist_ipv6_temp" "$blacklist_v6_temp"
 
         # --- Whitelist Metrics (moved to LIVE for real-time consistency with nftban stats) ---
         # Use fast JSON API for O(1) counting (same as blacklist)
-        whitelist_v4=0
-        whitelist_v6=0
+        # v1.231.0 (P1S-C): the `=0` normalisations below were applied to the
+        # SAME branch that catches UNKNOWN, so an unreadable whitelist was
+        # published as "0 IPs are whitelisted" — a figure an operator may act
+        # on by re-adding entries that are in fact already present.
+        whitelist_v4=UNKNOWN
+        whitelist_v6=UNKNOWN
         # v1.32.0: Prefer cached counting (0 kernel calls)
         if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
-            whitelist_v4=$(nftban_nft_count_set_cached whitelist_ipv4 2>/dev/null) || whitelist_v4=0
-            [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
-            whitelist_v6=$(nftban_nft_count_set_cached whitelist_ipv6 2>/dev/null) || whitelist_v6=0
-            [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
+            whitelist_v4=$(nftban_nft_count_set_cached whitelist_ipv4 2>/dev/null) || whitelist_v4=UNKNOWN
+            whitelist_v6=$(nftban_nft_count_set_cached whitelist_ipv6 2>/dev/null) || whitelist_v6=UNKNOWN
         elif declare -f nftban_nft_count_set_elements >/dev/null 2>&1; then
             # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
-            whitelist_v4=$(nftban_nft_count_set_elements ip nftban whitelist_ipv4) || whitelist_v4=0
-            [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
-            whitelist_v6=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6) || whitelist_v6=0
-            [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
+            whitelist_v4=$(nftban_nft_count_set_elements ip nftban whitelist_ipv4) || whitelist_v4=UNKNOWN
+            whitelist_v6=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6) || whitelist_v6=UNKNOWN
         fi
-        metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4\n"
-        metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6\n"
-        metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6))\n"
+        nftban_count_is_known "$whitelist_v4" || whitelist_v4=UNKNOWN
+        nftban_count_is_known "$whitelist_v6" || whitelist_v6=UNKNOWN
+        _emit_count "nftban_whitelist{family=\"ipv4\"}" "$whitelist_v4"
+        _emit_count "nftban_whitelist{family=\"ipv6\"}" "$whitelist_v6"
+        _emit_count "nftban_whitelist_total" "$(nftban_count_sum "$whitelist_v4" "$whitelist_v6")"
 
         # --- Botguard Metrics (LIVE - real-time bot classification set counts) ---
         local bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
@@ -918,9 +961,15 @@ collect_all_metrics() {
             [[ "$_v6_sets" =~ ^[0-9]+$ ]] || _v6_sets=0
             sets_count=$((_v4_sets + _v6_sets))
             # Total elements across all standard sets (use function-level whitelist_v4/v6 from LIVE)
-            elements_total=$((${active_v4:-0} + ${active_v6:-0} + ${whitelist_v4:-0} + ${whitelist_v6:-0}))
+            # v1.231.0: `${x:-0}` substitutes only when x is unset or EMPTY — it
+            # does not fire for the string UNKNOWN, which then reached `$(( ))`
+            # and resolved as a variable name. nftban_count_sum is UNKNOWN-
+            # absorbing, and the sample is withheld rather than published as 0.
+            elements_total=$(nftban_count_sum "${active_v4:-UNKNOWN}" "${active_v6:-UNKNOWN}" \
+                                              "${whitelist_v4:-UNKNOWN}" "${whitelist_v6:-UNKNOWN}")
             metrics+="nftban_nft_sets_total $sets_count\n"
-            metrics+="nftban_nft_elements_total $elements_total\n"
+            nftban_count_is_known "$elements_total" \
+                && metrics+="nftban_nft_elements_total $elements_total\n"
         fi
 
         # --- Feed Health Metrics (Phase 1) ---
@@ -1594,26 +1643,26 @@ collect_all_metrics() {
   },
   "blacklist": {
     "ipv4": {
-      "total": ${active_v4:-0},
-      "permanent": ${blacklist_v4_perm:-0},
-      "temporary": ${blacklist_v4_temp:-0}
+      "total": $(nftban_count_json "${active_v4:-UNKNOWN}"),
+      "permanent": $(nftban_count_json "${blacklist_v4_perm:-UNKNOWN}"),
+      "temporary": $(nftban_count_json "${blacklist_v4_temp:-UNKNOWN}")
     },
     "ipv6": {
-      "total": ${active_v6:-0},
-      "permanent": ${blacklist_v6_perm:-0},
-      "temporary": ${blacklist_v6_temp:-0}
+      "total": $(nftban_count_json "${active_v6:-UNKNOWN}"),
+      "permanent": $(nftban_count_json "${blacklist_v6_perm:-UNKNOWN}"),
+      "temporary": $(nftban_count_json "${blacklist_v6_temp:-UNKNOWN}")
     },
-    "total": ${active_total:-0}
+    "total": $(nftban_count_json "${active_total:-UNKNOWN}")
   },
   "blacklist_manual": {
-    "ipv4": ${manual_v4:-0},
-    "ipv6": ${manual_v6:-0},
-    "total": $(( ${manual_v4:-0} + ${manual_v6:-0} ))
+    "ipv4": $(nftban_count_json "${manual_v4:-UNKNOWN}"),
+    "ipv6": $(nftban_count_json "${manual_v6:-UNKNOWN}"),
+    "total": $(nftban_count_json "$(nftban_count_sum "${manual_v4:-UNKNOWN}" "${manual_v6:-UNKNOWN}")")
   },
   "whitelist": {
-    "ipv4": ${whitelist_v4:-0},
-    "ipv6": ${whitelist_v6:-0},
-    "total": $((${whitelist_v4:-0} + ${whitelist_v6:-0}))
+    "ipv4": $(nftban_count_json "${whitelist_v4:-UNKNOWN}"),
+    "ipv6": $(nftban_count_json "${whitelist_v6:-UNKNOWN}"),
+    "total": $(nftban_count_json "$(nftban_count_sum "${whitelist_v4:-UNKNOWN}" "${whitelist_v6:-UNKNOWN}")")
   },
   "feeds": {
     "enabled": ${feeds_enabled:-0},

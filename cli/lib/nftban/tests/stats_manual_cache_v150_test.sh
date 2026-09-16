@@ -54,8 +54,20 @@ have "$EXP" 'manual_v6=$fb_manual_v6'  "fallback branch sets manual_v6"
 have "$EXP" 'blacklist_manual.ipv4 // .sets.blacklist_manual_ipv4.count' "legacy branch reads manual ipv4"
 have "$EXP" 'blacklist_manual.ipv6 // .sets.blacklist_manual_ipv6.count' "legacy branch reads manual ipv6"
 have "$EXP" '"blacklist_manual": {' "cache emits blacklist_manual block"
-have "$EXP" '"ipv4": ${manual_v4:-0}' "cache blacklist_manual.ipv4"
-have "$EXP" '"ipv6": ${manual_v6:-0}' "cache blacklist_manual.ipv6"
+# v1.231.0 (P1S-C): these two pinned the LITERAL `${manual_v4:-0}` as a proxy
+# for "the cache emits the manual count". That default is now UNKNOWN, not 0,
+# and the value is rendered through nftban_count_json so an unestablished count
+# emits JSON null instead of a zero nobody measured. The proxy moves with the
+# authority and is STRENGTHENED rather than relaxed: it now requires BOTH that
+# the field is still emitted from manual_v*, AND that it goes through the
+# three-valued renderer — a plain `${manual_v4:-0}` would now FAIL this.
+have "$EXP" 'nftban_count_json "${manual_v4:-UNKNOWN}"' "cache blacklist_manual.ipv4 (count-json rendered)"
+have "$EXP" 'nftban_count_json "${manual_v6:-UNKNOWN}"' "cache blacklist_manual.ipv6 (count-json rendered)"
+if grep -qE '"ipv[46]": \$\{manual_v[46]:-0\}' "$EXP"; then
+    no "a raw \${manual_v*:-0} default came back in the manual cache block"
+else
+    ok "no raw zero-default remains in the manual cache block"
+fi
 # existing .blacklist block preserved (compat)
 have "$EXP" '"blacklist": {' "existing .blacklist block preserved"
 
