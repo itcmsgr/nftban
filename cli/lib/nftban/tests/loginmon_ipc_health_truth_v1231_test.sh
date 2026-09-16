@@ -44,7 +44,12 @@ fn(){ awk -v f="$2" '$0 ~ "^[[:space:]]*"f"\\(\\)[[:space:]]*\\{"{d=1}
 # ⛔ SUBJECT-EXECUTION GUARD: every arm reads captured stdout, and a subject
 #    that failed to extract produces the same empty output as one that printed
 #    nothing. Without this the whole file could pass while testing nothing.
-if fn "$HS" nftban_health_check_login_monitor_ipc | grep -q 'NFTBAN_HEALTH_RESULTS'; then
+    # v1.231.0: DRAIN, never `| grep -q`. grep -q exits on the first MATCH, the producer
+    # takes SIGPIPE, and pipefail reports 141 — a SUCCESSFUL match read as failure. These
+    # arms are POSITIVE, so the inversion fails a healthy tree rather than passing a broken
+    # one; a flaky red in the lane's own evidence is still a defect, and the first arm here
+    # is the vacuity guard.
+if fn "$HS" nftban_health_check_login_monitor_ipc | grep -F 'NFTBAN_HEALTH_RESULTS' >/dev/null; then
     ok "subject extracted from source (arms below are not vacuous)"
 else
     no "could not extract nftban_health_check_login_monitor_ipc"
@@ -153,12 +158,12 @@ r=$(drive yes 'NFTBAN_LOGIN_MONITOR_ENABLED=true' "$CLASSIC" no nftban 660); t=$
                       || no "C3 an unquoted but enabled gate was not honoured" "$r"
 
 echo "--- D. the verdict survives rendering and error accounting ---"
-if awk '/for check in binaries/,/esac/' "$HR" | grep -q '5) status_text="DISABLED"'; then
+if awk '/for check in binaries/,/esac/' "$HR" | grep -F '5) status_text="DISABLED"' >/dev/null; then
     ok "D1 the SYSTEM CHECKS render loop knows code 5 (was rendered 'UNKNOWN')"
 else
     no "D1 code 5 still renders as UNKNOWN in the SYSTEM CHECKS loop"
 fi
-if grep -A3 'nftban_health_check_login_monitor_ipc ||' "$HC" | grep -q '5'; then
+if grep -A3 'nftban_health_check_login_monitor_ipc ||' "$HC" | grep -F '5' >/dev/null; then
     ok "D2 not-evaluated (5) is not counted as an IPC error at the dispatch site"
 else
     no "D2 the dispatch site still counts not-evaluated as an error"
