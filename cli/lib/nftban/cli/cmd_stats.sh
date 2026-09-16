@@ -168,7 +168,7 @@ nftban_stats_cmd_brief() {
         # "could not read the kernel"; `// 0` turns that into "measured zero" — the
         # ORIGINAL P1S-C defect one layer downstream. jq treats only null/false as
         # falsy, so a REAL 0 still survives `// "UNKNOWN"`, while an unknown stays
-        # distinguishable. Only counts_json-derived fields are converted here: load,
+        # distinguishable. Only fields that come FROM counts_json are converted here: load,
         # memory, disk and latency come from other producers and are NOT unknown-capable.
         # UNKNOWN IS ABSORBING IN AN AGGREGATE. `("UNKNOWN") + 3` is a jq type
         # error, and `// 0` on either operand would fabricate a total that omits
