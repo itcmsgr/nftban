@@ -492,6 +492,71 @@ nftban_http_cursor_resolve() {
     printf '%s|ABSENT\n' "$cur"
 }
 
+# =============================================================================
+# Bounded read with EXPECTED-SIGPIPE normalization (v1.231.0 P0-A)
+# =============================================================================
+# ⛔ `producer | head -c N` is a BOUNDED read. When the producer still holds data,
+#    `head` exits DELIBERATELY once satisfied and the producer receives SIGPIPE
+#    (141). Under `pipefail` the pipeline then reports FAILURE for a read that
+#    SUCCEEDED, and under `errexit` the caller aborts before its next statement.
+#
+#    MEASURED (lab2, window 16 KiB): sizes 131 KB .. 20 MB all yield
+#        tail_rc=141  head_rc=0  actual_bytes == requested_bytes
+#    and the statement after the pipeline DOES NOT EXECUTE. In this reader that
+#    statement is the cursor checkpoint, so already-delivered bytes were replayed
+#    every cycle: offsets never reached EOF, completion authority never existed,
+#    the (correct, conservative) BotScan reaper never retired anything, and the
+#    spool stayed latched at its cap with backpressure asserted. Two production
+#    hosts sat in that state for 22 and 75 days.
+#
+#    NORMALIZE EXACTLY ONE CONJUNCTION — nothing else:
+#        producer_rc == 141  AND  head_rc == 0  AND  actual_bytes == requested
+#    A short read, a head failure, or any other producer status REMAINS A FAILURE.
+#    Normalizing more would convert replay (safe, visible) into SKIPPED INPUT
+#    (silent blindness) — the strictly worse trade.
+#
+#    Bytes are spilled to a bounded scratch file (<= NFTBAN_HTTP_LOG_MAX_BYTES) and
+#    emitted ONLY after the read is validated, so a rejected read emits nothing.
+#
+# ⛔ NO COUNTERS HERE — P0-A4 IS DELIBERATELY LEFT OPEN.
+#    This reader is routinely invoked inside a process substitution. A shell
+#    variable incremented here dies with that subshell — the EXACT defect that
+#    made signals_emitted_total structurally 0 since v1.219.0 (P0-B). Shipping
+#    `bounded_read_expected_sigpipe_total` as a shell variable would recreate
+#    that operator-truth defect inside the change that fixes it. Accounting needs
+#    a DURABLE SINK that survives the execution boundary; until it exists, this
+#    function reports nothing rather than reporting zero.
+#
+# The scratch path is derived from the caller's statefile, so there is at most ONE
+# per cursor subject and it is overwritten in place — bounded by construction, no
+# accumulation even if a process is killed between read and cleanup.
+# Args: file start want scratch  ->  stdout = bytes; rc 0 = window obtained, 1 = failure
+nftban_http_bounded_read() {
+    local _f="$1" _start="$2" _want="$3" _tmp="$4"
+    local _act _had_e=0
+    local -a _ps=()
+    [[ "$_want" -gt 0 ]] || return 0
+    [[ -n "$_tmp" ]] || return 1
+    : > "$_tmp" 2>/dev/null || return 1
+    case $- in *e*) _had_e=1 ;; esac
+    set +e
+    tail -c +$(( _start + 1 )) "$_f" 2>/dev/null | head -c "$_want" > "$_tmp"
+    # ⛔ CAPTURE THE WHOLE ARRAY IN ONE COMMAND. Any other command in between —
+    #    including `x="${PIPESTATUS[0]}"` — RESETS PIPESTATUS to its own status,
+    #    after which [1] is unbound and `set -u` aborts the caller.
+    _ps=("${PIPESTATUS[@]}")
+    [[ "$_had_e" == "1" ]] && set -e
+    _act="$(stat -c %s "$_tmp" 2>/dev/null || echo -1)"
+    if { [[ "${_ps[0]:-x}" == "141" ]] || [[ "${_ps[0]:-x}" == "0" ]]; } \
+       && [[ "${_ps[1]:-x}" == "0" ]] && [[ "$_act" == "$_want" ]]; then
+        cat "$_tmp" 2>/dev/null
+        rm -f "$_tmp" 2>/dev/null
+        return 0
+    fi
+    rm -f "$_tmp" 2>/dev/null
+    return 1
+}
+
 nftban_http_read_incremental() {
     local file="$1"
     [[ -f "$file" && -r "$file" ]] || return 0
@@ -541,7 +606,8 @@ nftban_http_read_incremental() {
             end=$((start + NFTBAN_HTTP_LOG_MAX_BYTES))
         fi
         if [[ "$end" -gt "$start" ]]; then
-            tail -c +$((start + 1)) "$file" 2>/dev/null | head -c $((end - start))
+            # P0-A: an expected bounded-read SIGPIPE must not skip the checkpoint.
+            nftban_http_bounded_read "$file" "$start" "$((end - start))" "${statefile}.rd" || return 1
         fi
         new_off="$end"
     else
@@ -550,7 +616,12 @@ nftban_http_read_incremental() {
             start=$((size - NFTBAN_HTTP_LOG_MAX_BYTES))
         fi
         if [[ "$size" -gt "$start" ]]; then
-            tail -c +$((start + 1)) "$file" 2>/dev/null | head -c "${NFTBAN_HTTP_LOG_MAX_BYTES}"
+            # P0-A: identical pipeline SHAPE as the forward branch, so identical
+            # exposure. Fixed by shape identity; the collector path that uses this
+            # branch needs its own verification before it is called proven.
+            _rd_want=$(( size - start ))
+            [[ "$_rd_want" -gt "${NFTBAN_HTTP_LOG_MAX_BYTES}" ]] && _rd_want="${NFTBAN_HTTP_LOG_MAX_BYTES}"
+            nftban_http_bounded_read "$file" "$start" "$_rd_want" "${statefile}.rd" || return 1
         fi
         new_off="$size"
     fi
