@@ -509,11 +509,32 @@ nftban_http_cursor_resolve() {
 #    spool stayed latched at its cap with backpressure asserted. Two production
 #    hosts sat in that state for 22 and 75 days.
 #
-#    NORMALIZE EXACTLY ONE CONJUNCTION — nothing else:
-#        producer_rc == 141  AND  head_rc == 0  AND  actual_bytes == requested
-#    A short read, a head failure, or any other producer status REMAINS A FAILURE.
-#    Normalizing more would convert replay (safe, visible) into SKIPPED INPUT
-#    (silent blindness) — the strictly worse trade.
+#    SUCCESS BELONGS TO THE BOUNDED CONSUMER, NOT TO THE PRODUCER WE DELIBERATELY
+#    CUT OFF. The acceptance predicate is the data contract and nothing else:
+#        head_rc == 0  AND  actual_bytes == requested_bytes
+#
+#    ⛔ PRODUCER EXIT STATUS IS DIAGNOSTIC ONLY — IT MUST NOT GATE ACCEPTANCE.
+#    The SAME logical read reports a DIFFERENT producer status depending purely on
+#    the SIGPIPE disposition it inherits, which is a property of who launched the
+#    process, not of the data:
+#        SSH / interactive   SIGPIPE default   tail dies on signal   -> 141
+#        systemd service     SIGPIPE IGNORED   tail gets EPIPE       ->   1
+#    `IgnoreSIGPIPE=` defaults to YES in systemd and an ignored signal is inherited
+#    across exec, so nftban-botscan.service (Type=oneshot, shell ExecStart) runs in
+#    the SECOND shape. MEASURED 2026-09-16: a systemd-launched bash has
+#    SigIgn=0000000000001000 (bit 12 = SIGPIPE). An earlier revision of this helper
+#    accepted only {141,0} and was therefore INERT on exactly the hosts it was
+#    written for — the defect survived under a different disposition. Requiring a
+#    particular producer status ties correctness to signal disposition instead of
+#    to the bytes actually obtained.
+#
+#    THIS IS NOT `|| true`. Every one of these REMAINS A FAILURE:
+#        head_rc != 0                      the consumer itself failed
+#        actual_bytes <  requested         short read — the window was NOT obtained
+#        actual_bytes >  requested         invariant violation
+#        scratch unusable / setup failure  no validated buffer to emit from
+#    A rejected read emits NOTHING, so replay (safe, visible) is never silently
+#    converted into SKIPPED INPUT (blindness) — the strictly worse trade.
 #
 #    Bytes are spilled to a bounded scratch file (<= NFTBAN_HTTP_LOG_MAX_BYTES) and
 #    emitted ONLY after the read is validated, so a rejected read emits nothing.
@@ -547,8 +568,15 @@ nftban_http_bounded_read() {
     _ps=("${PIPESTATUS[@]}")
     [[ "$_had_e" == "1" ]] && set -e
     _act="$(stat -c %s "$_tmp" 2>/dev/null || echo -1)"
-    if { [[ "${_ps[0]:-x}" == "141" ]] || [[ "${_ps[0]:-x}" == "0" ]]; } \
-       && [[ "${_ps[1]:-x}" == "0" ]] && [[ "$_act" == "$_want" ]]; then
+    # DIAGNOSTIC ONLY — never consulted below. Readable by the caller in this same
+    # shell; it is NOT telemetry and does not survive a process boundary (see the
+    # P0-A4 note above), so nothing may treat its absence as a measurement.
+    NFTBAN_HTTP_LAST_PRODUCER_RC="${_ps[0]:-unknown}"
+    NFTBAN_HTTP_LAST_CONSUMER_RC="${_ps[1]:-unknown}"
+    # ACCEPTANCE = THE CONSUMER CONTRACT. `head` exited cleanly AND delivered exactly
+    # the requested window => those N bytes were obtained, whatever the producer did
+    # after we deliberately stopped accepting more.
+    if [[ "${_ps[1]:-x}" == "0" ]] && [[ "$_act" == "$_want" ]]; then
         cat "$_tmp" 2>/dev/null
         rm -f "$_tmp" 2>/dev/null
         return 0

@@ -14,7 +14,7 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# meta:description="v1.231.0 P0-A. A bounded read `producer | head -c N` succeeds by making the producer stop: head exits once satisfied and the producer takes SIGPIPE (141). Under pipefail that SUCCESSFUL read reports failure, and under errexit the caller aborts before its next statement - which in nftban_http_read_incremental is the cursor checkpoint. Delivered bytes were therefore replayed every cycle: offsets never reached EOF, completion authority never existed, the conservative BotScan reaper correctly retained every object, and the spool stayed latched at cap with backpressure asserted. Two production hosts sat in that state for 22 and 75 days. MEASURED pre-fix: 32 reads entered, 9 reached the checkpoint. This test locks the ONLY safe normalization - producer_rc==141 AND head_rc==0 AND actual==requested - and proves every other shape still FAILS, so the fix can never degenerate into a blanket `|| true`. Hermetic."
+# meta:description="v1.231.0 P0-A. A bounded read `producer | head -c N` succeeds by making the producer stop: head exits once satisfied and the producer takes SIGPIPE (141). Under pipefail that SUCCESSFUL read reports failure, and under errexit the caller aborts before its next statement - which in nftban_http_read_incremental is the cursor checkpoint. Delivered bytes were therefore replayed every cycle: offsets never reached EOF, completion authority never existed, the conservative BotScan reaper correctly retained every object, and the spool stayed latched at cap with backpressure asserted. Two production hosts sat in that state for 22 and 75 days. MEASURED pre-fix: 32 reads entered, 9 reached the checkpoint. Acceptance is the BOUNDED CONSUMER CONTRACT - head_rc==0 AND actual==requested - and producer exit status is DIAGNOSTIC ONLY: the same logical read reports 141 under a default SIGPIPE disposition and 1 under systemd's IgnoreSIGPIPE=yes, so gating on it ties correctness to who launched the process rather than to the bytes obtained. Every arm therefore runs under BOTH dispositions. Short reads, consumer failure and unusable scratch all still FAIL, so the fix can never degenerate into a blanket `|| true`. Hermetic."
 # meta:ta.id="bounded_read_checkpoint_v1231_test"
 # meta:ta.owner="cross-cutting"
 # meta:ta.module="http-logs"
@@ -64,62 +64,138 @@ mk(){
     rm -f "$_b" "$_b.x" 2>/dev/null
 }
 
-echo "=== T1 LARGE bounded read: producer SIGPIPEs, full window obtained -> SUCCESS ==="
-big="$W/big"; mk 2097152 "$big"; out="$W/o1"
-if nftban_http_bounded_read "$big" 0 16384 "$W/s1" > "$out" 2>/dev/null; then
-    [[ "$(stat -c %s "$out")" == "16384" ]] && ok "T1 accepted; exactly 16384 bytes emitted" \
-        || no "T1 accepted but wrong byte count" "$(stat -c %s "$out")"
+# =============================================================================
+# THE BATTERY RUNS TWICE — ONCE PER SIGPIPE DISPOSITION.
+#
+#   D=default   SIGPIPE default     tail dies on the signal   producer rc = 141
+#   D=ignored   SIGPIPE SIG_IGN     tail gets EPIPE           producer rc =   1
+#
+# IgnoreSIGPIPE= defaults to YES in systemd and an ignored signal is INHERITED
+# ACROSS exec, so nftban-botscan.service (Type=oneshot, shell ExecStart) runs in
+# the SECOND shape — as does the GitHub Actions runner tree. `trap "" PIPE` sets
+# SIG_IGN in this shell and every child inherits it, reproducing production with
+# no extra dependency (MEASURED: SigIgn=0000000000001000, PIPESTATUS="1 0").
+#
+# A REVISION OF THIS HELPER THAT ACCEPTED ONLY producer rc {141,0} PASSED THIS
+# SUITE STANDALONE AND WAS INERT ON THE PRODUCTION HOSTS. Running one disposition
+# is not running the contract. Do not collapse these back into a single run.
+# =============================================================================
+battery() {
+    local D="$1"                        # default | ignored
+    [[ "$D" == "ignored" ]] && trap '' PIPE
+    # Tally PER BATTERY. These are subshell-local copies; without resetting them the
+    # second run would inherit the first run's totals and the driver would add them
+    # a second time.
+    P=0; F=0
+
+echo "=== [$D] T1 LARGE bounded read: full window obtained -> SUCCESS ==="
+big="$W/big"; mk 2097152 "$big"; out="$W/$D.o1"
+if nftban_http_bounded_read "$big" 0 16384 "$W/$D.s1" > "$out" 2>/dev/null; then
+    [[ "$(stat -c %s "$out")" == "16384" ]] && ok "[$D] T1 accepted; exactly 16384 bytes emitted" \
+        || no "[$D] T1 accepted but wrong byte count" "$(stat -c %s "$out")"
 else
-    no "T1 REJECTED — the historical defect is present (successful bounded read treated as failure)"
+    no "[$D] T1 REJECTED — a full window was obtained but the read was refused (producer status must not gate acceptance)"
 fi
 
-echo "=== T2 SMALL read, clean EOF -> SUCCESS ==="
-sm="$W/small"; mk 4096 "$sm"; out="$W/o2"
-if nftban_http_bounded_read "$sm" 0 4096 "$W/s2" > "$out" 2>/dev/null; then
-    [[ "$(stat -c %s "$out")" == "4096" ]] && ok "T2 accepted; 4096 bytes emitted" || no "T2 byte count" "$(stat -c %s "$out")"
-else no "T2 rejected a clean full read"; fi
+echo "=== [$D] T2 SMALL read, clean EOF -> SUCCESS ==="
+sm="$W/small"; mk 4096 "$sm"; out="$W/$D.o2"
+if nftban_http_bounded_read "$sm" 0 4096 "$W/$D.s2" > "$out" 2>/dev/null; then
+    [[ "$(stat -c %s "$out")" == "4096" ]] && ok "[$D] T2 accepted; 4096 bytes emitted" || no "[$D] T2 byte count" "$(stat -c %s "$out")"
+else no "[$D] T2 rejected a clean full read"; fi
 
-echo "=== T3 SHORT bounded read (actual < requested) -> FAILURE, emit nothing ==="
-out="$W/o3"
-if nftban_http_bounded_read "$sm" 0 16384 "$W/s3" > "$out" 2>/dev/null; then
-    no "T3 ACCEPTED a short read — cursor could jump past unscanned bytes"
+echo "=== [$D] T3 SHORT bounded read (actual < requested) -> FAILURE, emit nothing ==="
+out="$W/$D.o3"
+if nftban_http_bounded_read "$sm" 0 16384 "$W/$D.s3" > "$out" 2>/dev/null; then
+    no "[$D] T3 ACCEPTED a short read — cursor could jump past unscanned bytes"
 else
-    [[ "$(stat -c %s "$out")" == "0" ]] && ok "T3 rejected AND emitted nothing" \
-        || no "T3 rejected but emitted bytes" "$(stat -c %s "$out")"
+    [[ "$(stat -c %s "$out")" == "0" ]] && ok "[$D] T3 rejected AND emitted nothing" \
+        || no "[$D] T3 rejected but emitted bytes" "$(stat -c %s "$out")"
 fi
 
-echo "=== T4 unreadable/absent source -> FAILURE, emit nothing ==="
-out="$W/o4"
-if nftban_http_bounded_read "$W/does-not-exist" 0 4096 "$W/s4" > "$out" 2>/dev/null; then
-    no "T4 accepted a read of a non-existent file"
+echo "=== [$D] T4 unreadable/absent source -> FAILURE, emit nothing ==="
+out="$W/$D.o4"
+if nftban_http_bounded_read "$W/does-not-exist" 0 4096 "$W/$D.s4" > "$out" 2>/dev/null; then
+    no "[$D] T4 accepted a read of a non-existent file"
 else
-    [[ "$(stat -c %s "$out")" == "0" ]] && ok "T4 rejected AND emitted nothing" || no "T4 emitted bytes"
+    [[ "$(stat -c %s "$out")" == "0" ]] && ok "[$D] T4 rejected AND emitted nothing" || no "[$D] T4 emitted bytes"
 fi
 
-echo "=== T5 unusable scratch path -> FAILURE ==="
-out="$W/o5"
-if nftban_http_bounded_read "$big" 0 16384 "$W/nodir/deep/s5" > "$out" 2>/dev/null; then
-    no "T5 accepted despite an unwritable scratch path"
-else ok "T5 rejected when the scratch path is unusable"; fi
+echo "=== [$D] T5 unusable scratch path -> FAILURE ==="
+out="$W/$D.o5"
+if nftban_http_bounded_read "$big" 0 16384 "$W/$D.nodir/deep/s5" > "$out" 2>/dev/null; then
+    no "[$D] T5 accepted despite an unwritable scratch path"
+else ok "[$D] T5 rejected when the scratch path is unusable"; fi
 
-echo "=== T6 scratch is bounded: one per subject, no accumulation ==="
-for _ in 1 2 3 4 5; do nftban_http_bounded_read "$big" 0 16384 "$W/reuse.rd" >/dev/null 2>&1; done
-leftover=$(find "$W" -maxdepth 1 -name 'reuse.rd' 2>/dev/null | wc -l)
-[[ "$leftover" -le 1 ]] && ok "T6 five reads left at most one scratch file (no accumulation)" \
-    || no "T6 scratch files accumulated" "$leftover"
+echo "=== [$D] T6 scratch is bounded: one per subject, no accumulation ==="
+# ⛔ CALL IT IN AN errexit-SAFE SHAPE. The library arms `set -e` when sourced, and
+#    a bare rejected call here would KILL THE SUITE instead of reporting — T3/T4/T5
+#    survive a rejection only because an `if` condition disarms errexit. Capturing
+#    rc explicitly keeps this arm able to report a regression rather than die on it.
+#    (`|| true` would also survive, but it hides WHY it survived.)
+_t6rc=0
+for _ in 1 2 3 4 5; do
+    nftban_http_bounded_read "$big" 0 16384 "$W/$D.reuse.rd" >/dev/null 2>&1 || _t6rc=$?
+done
+leftover=$(find "$W" -maxdepth 1 -name "$D.reuse.rd" 2>/dev/null | wc -l)
+[[ "$leftover" -le 1 ]] && ok "[$D] T6 five reads left at most one scratch file (no accumulation)" \
+    || no "[$D] T6 scratch files accumulated" "$leftover"
 
-echo "=== T7 HISTORICAL MECHANISM: the statement AFTER the bounded read must execute ==="
+echo "=== [$D] T7 HISTORICAL MECHANISM: the statement AFTER the bounded read must execute ==="
 # This is the exact shape that failed in production: under set -Eeuo pipefail the
 # raw pipeline aborts the caller before its next line (the cursor checkpoint).
-marker="$W/reached"; rm -f "$marker"
-( set -Eeuo pipefail
+marker="$W/$D.reached"; rm -f "$marker"
+# ⛔ A SEPARATE PROCESS, NOT `( ... ) || true`. errexit must stay ARMED inside — that
+#    is the whole assertion — but a rejected read must not kill the suite. Placing a
+#    SUBSHELL on the left of `||` disarms errexit INSIDE it and silently turns this
+#    arm into a no-op; an external `bash -c` has its own errexit, so `|| rc=$?`
+#    protects only the parent.
+_t7rc=0
+bash -c '
+  set -Eeuo pipefail
   # shellcheck source=/dev/null
-  . "$LIB" >/dev/null 2>&1
-  nftban_http_bounded_read "$big" 0 16384 "$W/s7" >/dev/null
-  : > "$marker"          # stands in for the cursor checkpoint
-) 2>/dev/null
-[[ -f "$marker" ]] && ok "T7 checkpoint-position statement EXECUTED under set -Eeuo pipefail" \
-    || no "T7 caller still aborts before the checkpoint — production defect NOT fixed"
+  . "$1" >/dev/null 2>&1
+  nftban_http_bounded_read "$2" 0 16384 "$3" >/dev/null
+  : > "$4"               # stands in for the cursor checkpoint
+' _ "$LIB" "$big" "$W/$D.s7" "$marker" 2>/dev/null || _t7rc=$?
+[[ -f "$marker" ]] && ok "[$D] T7 checkpoint-position statement EXECUTED under set -Eeuo pipefail" \
+    || no "[$D] T7 caller still aborts before the checkpoint — production defect NOT fixed"
+
+echo "=== [$D] T9 producer status is RECORDED but MUST NOT gate acceptance ==="
+# T1 already proves acceptance holds under BOTH producer statuses. T9 proves the
+# status was actually OBSERVED and that it genuinely DIFFERS by disposition —
+# without this the two battery runs could be silently identical and the whole
+# dual-disposition design would be vacuous.
+NFTBAN_HTTP_LAST_PRODUCER_RC=""; NFTBAN_HTTP_LAST_CONSUMER_RC=""
+_t9rc=0
+nftban_http_bounded_read "$big" 0 16384 "$W/$D.s9" >/dev/null 2>&1 || _t9rc=$?
+if [[ -z "${NFTBAN_HTTP_LAST_PRODUCER_RC:-}" ]]; then
+    no "[$D] T9 producer status was not recorded at all"
+elif [[ "$D" == "default" && "$NFTBAN_HTTP_LAST_PRODUCER_RC" == "141" ]]; then
+    ok "[$D] T9 producer rc=141 recorded (signal shape) and accepted anyway"
+elif [[ "$D" == "ignored" && "$NFTBAN_HTTP_LAST_PRODUCER_RC" == "1" ]]; then
+    ok "[$D] T9 producer rc=1 recorded (EPIPE shape) and accepted anyway"
+else
+    no "[$D] T9 unexpected producer rc for this disposition" "$NFTBAN_HTTP_LAST_PRODUCER_RC"
+fi
+if [[ "${NFTBAN_HTTP_LAST_CONSUMER_RC:-}" == "0" ]]; then
+    ok "[$D] T9 consumer rc=0 recorded — this is the authoritative half"
+else
+    no "[$D] T9 consumer rc not recorded as 0" "${NFTBAN_HTTP_LAST_CONSUMER_RC:-}"
+fi
+
+echo "=== [$D] T10 byte count is compared for EXACT EQUALITY, never an inequality ==="
+# `actual > requested` is UNCONSTRUCTIBLE through this helper — `head -c N` cannot
+# emit more than N — so it cannot be exercised behaviourally. Assert it structurally
+# rather than pretend an arm covers it: an inequality here would silently admit an
+# over-read as success if the pipeline shape ever changed.
+_pred="$(awk '/^nftban_http_bounded_read\(\)/,/^}/' "$LIB" | grep -F '_act' | grep -F '_want' | grep -F '[[')"
+if [[ -z "$_pred" ]]; then
+    no "[$D] T10 could not locate the byte-count comparison — the guard is blind"
+elif printf '%s' "$_pred" | grep -qE '[-](ge|gt|le|lt)[[:space:]]'; then
+    no "[$D] T10 byte count uses an inequality; an over-read would be accepted" "$_pred"
+else
+    ok "[$D] T10 byte count is exact equality"
+fi
 
 # ⛔ T8 (negative control proving T7 is not a no-op) is DELIBERATELY NOT RUN HERE.
 #    The raw shipping shape terminates its process by SIGPIPE, and on this platform
@@ -133,6 +209,24 @@ marker="$W/reached"; rm -f "$marker"
 #    is ever re-armed in-suite it must keep errexit ARMED: `( ... ) || true` places
 #    the subshell on the left of `||`, which SUPPRESSES errexit and silently turns
 #    the arm into a no-op.
+
+}
+
+# Each disposition runs in its OWN subshell: `trap "" PIPE` must not leak from the
+# second run back into the reporting shell, and the two runs must not share scratch.
+# A subshell cannot write the parent's counters, so each tallies to a file — and a
+# MISSING tally is itself a failure (the battery did not run to completion), never
+# silently zero.
+for _D in default ignored; do
+    ( battery "$_D"; printf '%s %s\n' "$P" "$F" > "$W/.tally.$_D" )
+    if [[ -r "$W/.tally.$_D" ]]; then
+        read -r _p _f < "$W/.tally.$_D"
+        P=$(( P + _p )); F=$(( F + _f ))
+    else
+        echo "  [FAIL] battery '$_D' produced no tally — it did not run to completion"
+        F=$(( F + 1 ))
+    fi
+done
 
 echo
 echo "=== PASS=$P FAIL=$F ==="
