@@ -40,6 +40,15 @@ source "${NFTBAN_LIB_DIR}/lib/cmd_common.sh" || return 1
 # Initialize CLI environment
 cmd_init
 
+# Load NFT schema for the THREE-VALUED COUNT ARITHMETIC (v1.231.0 FU-5).
+# nftban_count_is_known / nftban_count_sum / nftban_count_json are the single
+# authority for "known-0 vs known-N vs UNKNOWN"; BotGuard's counters must be
+# able to say UNKNOWN, so this library is a hard dependency of this file.
+# shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
+fi
+
 # =============================================================================
 # HELP TEXT
 # =============================================================================
@@ -164,7 +173,8 @@ ${key}=\"${value}\""
 # =============================================================================
 
 # Count elements in an nftables set directly from kernel (v1.79.0 + v1.80.0 fix)
-# Returns: integer count of elements in set
+# Returns: an integer count, OR the literal string UNKNOWN when the kernel could
+#          not be read at all (nft missing, permission denied, set absent).
 # Usage: _botguard_kernel_set_count "ip nftban" "http_bot_suspect"
 # v1.80.0: Fixed regex that matched metadata (size, flags) instead of actual IPs
 # v1.231.0 ARGV SPLIT. `$table` carries "<family> <table>" as ONE string that has
@@ -178,6 +188,16 @@ ${key}=\"${value}\""
 # held. Measured with an argv-faithful nft stub: ARGC=4, third word "ip nftban".
 # Split on an EXPLICITLY PINNED IFS rather than inheriting whatever the caller
 # left in the ambient one.
+#
+# v1.231.0 (FU-5): the unreadable arm used to `echo "0"`. "I could not look" and
+# "I looked and the set is empty" are DIFFERENT claims, and only one of them is a
+# measurement. A BotGuard status that prints 0 suspects because nft could not be
+# reached reads to an operator as "nothing is being classified" — the same report
+# a healthy idle host produces. Callers MUST branch with nftban_count_is_known
+# and MUST NOT coerce UNKNOWN back to 0.
+#
+# The `elements = {` absent branch below is NOT this case: the set was read and
+# genuinely holds nothing, which is a legitimate known 0 and stays 0.
 _botguard_kernel_set_count() {
     local table="$1"
     local set_name="$2"
@@ -187,7 +207,13 @@ _botguard_kernel_set_count() {
 
     # Get set content
     local output
-    output=$(nft list set "${_tbl[@]+"${_tbl[@]}"}" "$set_name" 2>/dev/null) || { echo "0"; return; }
+    # COMPOSED v1.231.0: F's argv split supplies the READ, C's three-valued
+    # contract supplies the VERDICT when the read does not happen. The two are
+    # not alternatives -- before the argv fix this call could never succeed, so
+    # the UNKNOWN arm below was the ONLY arm ever taken and would have reported
+    # UNKNOWN for every set on a healthy host. Fixing HOW the value is obtained
+    # is what makes "could not obtain it" a rare and therefore meaningful answer.
+    output=$(nft list set "${_tbl[@]+"${_tbl[@]}"}" "$set_name" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
 
     # v1.80.0 FIX: Only count elements within "elements = { ... }" section
     # If no elements section exists, the set is empty
@@ -221,8 +247,15 @@ _botguard_kernel_set_count() {
 
     # Count by matching " timeout " pattern - each element has exactly one
     # This avoids matching "flags timeout" which appears in set definition
+    # v1.231.0 (FU-5): `grep -o` exits 1 when it matches nothing, and this file
+    # runs under `set -Eeuo pipefail`, so an `elements = {` block with no
+    # ` timeout ` occurrence made the PIPELINE fail and aborted the caller
+    # mid-report. `wc -l` has already printed 0 by then, so the correct recovery
+    # is 0 — the set WAS read and it holds no timed elements. This is a known 0,
+    # not UNKNOWN. `_nftban_botguard_stats` previously carried its own `|| true`
+    # for the same reason; routing it through this helper moves that guard here.
     local count
-    count=$(echo "$elements_section" | grep -o ' timeout ' | wc -l)
+    count=$(echo "$elements_section" | grep -o ' timeout ' | wc -l) || count=0
     echo "${count:-0}"
 }
 
@@ -404,54 +437,58 @@ _nftban_botguard_status() {
     # v1.79.0 BUG-3 FIX: Read kernel sets directly for counts (INV-BOT-002)
     # Previous code used "grep -c timeout" which could count wrong elements.
     # Now we count actual IP elements from kernel truth.
-    local freshness_at
-    freshness_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    local source="kernel"
+    # v1.231.0 (FU-5): `source` and `freshness_at` are AUTHORITY CLAIMS about the
+    # numbers printed beside them. They used to be stamped unconditionally, before
+    # a single set was read, so a host where nft could not be reached at all still
+    # published twelve zeros labelled source="kernel" with a current timestamp —
+    # a reading that was never taken, presented as the freshest possible one.
+    # Both are now DERIVED from what the reads actually returned.
+    #
+    # Each counter is read directly. _botguard_kernel_set_count already returns
+    # UNKNOWN when `nft list set` fails, which covers both "set absent" and "nft
+    # unreadable" — the two cases the previous _botguard_kernel_set_exists probe
+    # collapsed into the integer 0. A set that exists and is empty still returns 0.
+    local ipv4_suspects ipv6_suspects
+    local ipv4_pending ipv6_pending
+    local ipv4_allow ipv6_allow
+    local ipv4_grey ipv6_grey
+    local ipv4_ban ipv6_ban
+    local ipv4_emergency ipv6_emergency
 
-    # Count elements from kernel directly
-    local ipv4_suspects=0 ipv6_suspects=0
-    local ipv4_pending=0 ipv6_pending=0
-    local ipv4_allow=0 ipv6_allow=0
-    local ipv4_grey=0 ipv6_grey=0
-    local ipv4_ban=0 ipv6_ban=0
-    local ipv4_emergency=0 ipv6_emergency=0
+    ipv4_suspects=$(_botguard_kernel_set_count "ip nftban" "http_bot_suspect")
+    ipv6_suspects=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_suspect6")
+    ipv4_pending=$(_botguard_kernel_set_count "ip nftban" "http_bot_pending")
+    ipv6_pending=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_pending6")
+    ipv4_allow=$(_botguard_kernel_set_count "ip nftban" "http_bot_allow")
+    ipv6_allow=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_allow6")
+    ipv4_grey=$(_botguard_kernel_set_count "ip nftban" "http_bot_grey")
+    ipv6_grey=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_grey6")
+    ipv4_ban=$(_botguard_kernel_set_count "ip nftban" "http_bot_ban")
+    ipv6_ban=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_ban6")
+    ipv4_emergency=$(_botguard_kernel_set_count "ip nftban" "http_bot_emergency")
+    ipv6_emergency=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_emergency6")
 
-    # Check if sets exist and count elements from kernel
-    if _botguard_kernel_set_exists "ip nftban" "http_bot_suspect"; then
-        ipv4_suspects=$(_botguard_kernel_set_count "ip nftban" "http_bot_suspect")
-    fi
-    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_suspect6"; then
-        ipv6_suspects=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_suspect6")
-    fi
-    if _botguard_kernel_set_exists "ip nftban" "http_bot_pending"; then
-        ipv4_pending=$(_botguard_kernel_set_count "ip nftban" "http_bot_pending")
-    fi
-    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_pending6"; then
-        ipv6_pending=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_pending6")
-    fi
-    if _botguard_kernel_set_exists "ip nftban" "http_bot_allow"; then
-        ipv4_allow=$(_botguard_kernel_set_count "ip nftban" "http_bot_allow")
-    fi
-    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_allow6"; then
-        ipv6_allow=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_allow6")
-    fi
-    if _botguard_kernel_set_exists "ip nftban" "http_bot_grey"; then
-        ipv4_grey=$(_botguard_kernel_set_count "ip nftban" "http_bot_grey")
-    fi
-    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_grey6"; then
-        ipv6_grey=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_grey6")
-    fi
-    if _botguard_kernel_set_exists "ip nftban" "http_bot_ban"; then
-        ipv4_ban=$(_botguard_kernel_set_count "ip nftban" "http_bot_ban")
-    fi
-    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_ban6"; then
-        ipv6_ban=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_ban6")
-    fi
-    if _botguard_kernel_set_exists "ip nftban" "http_bot_emergency"; then
-        ipv4_emergency=$(_botguard_kernel_set_count "ip nftban" "http_bot_emergency")
-    fi
-    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_emergency6"; then
-        ipv6_emergency=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_emergency6")
+    # Derive the authority claim from the readings themselves.
+    #   kernel          — every counter was established from the kernel
+    #   kernel-partial  — some were; the timestamp applies to those only
+    #   unavailable     — none were; there is nothing for a timestamp to date
+    local _known=0 _total=0 _c
+    for _c in "$ipv4_suspects" "$ipv6_suspects" "$ipv4_pending" "$ipv6_pending" \
+              "$ipv4_allow" "$ipv6_allow" "$ipv4_grey" "$ipv6_grey" \
+              "$ipv4_ban" "$ipv6_ban" "$ipv4_emergency" "$ipv6_emergency"; do
+        _total=$((_total + 1))
+        nftban_count_is_known "$_c" && _known=$((_known + 1))
+    done
+
+    local source freshness_at freshness_json
+    if [[ "$_known" -eq 0 ]]; then
+        source="unavailable"
+        freshness_at=""
+        freshness_json="null"
+    else
+        [[ "$_known" -eq "$_total" ]] && source="kernel" || source="kernel-partial"
+        freshness_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        freshness_json="\"${freshness_at}\""
     fi
 
     # Check daemon status via IPC
@@ -468,15 +505,20 @@ _nftban_botguard_status() {
 
     if [[ "$json_mode" == "true" ]]; then
         # v1.79.0: Enhanced JSON with kernel truth metadata
-        printf '{"enabled":%s,"daemon_running":%s,"loop_interval":%s,"pressure_interval":%s,"suspect_rate":"%s","source":"%s","freshness_at":"%s","structural_present":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
+        # v1.231.0 (FU-5): counts render through nftban_count_json, so an
+        # unestablished count is JSON `null` and never the number 0. Consumers
+        # MUST test for null; a `// 0` default re-manufactures the false zero by
+        # a longer route. freshness_at is likewise `null` (not "") when nothing
+        # was measured — an empty string is still a claim that a read happened.
+        printf '{"enabled":%s,"daemon_running":%s,"loop_interval":%s,"pressure_interval":%s,"suspect_rate":"%s","source":"%s","freshness_at":%s,"structural_present":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
             "$enabled" "$daemon_running" "$loop_interval" "$pressure_interval" \
-            "$suspect_rate" "$source" "$freshness_at" "$structural_present" \
-            "$ipv4_suspects" "$ipv6_suspects" \
-            "$ipv4_pending" "$ipv6_pending" \
-            "$ipv4_allow" "$ipv6_allow" \
-            "$ipv4_grey" "$ipv6_grey" \
-            "$ipv4_ban" "$ipv6_ban" \
-            "$ipv4_emergency" "$ipv6_emergency"
+            "$suspect_rate" "$source" "$freshness_json" "$structural_present" \
+            "$(nftban_count_json "$ipv4_suspects")" "$(nftban_count_json "$ipv6_suspects")" \
+            "$(nftban_count_json "$ipv4_pending")" "$(nftban_count_json "$ipv6_pending")" \
+            "$(nftban_count_json "$ipv4_allow")" "$(nftban_count_json "$ipv6_allow")" \
+            "$(nftban_count_json "$ipv4_grey")" "$(nftban_count_json "$ipv6_grey")" \
+            "$(nftban_count_json "$ipv4_ban")" "$(nftban_count_json "$ipv6_ban")" \
+            "$(nftban_count_json "$ipv4_emergency")" "$(nftban_count_json "$ipv6_emergency")"
     else
         echo "=== HTTP Bot Guard Status ==="
         echo ""
@@ -486,15 +528,24 @@ _nftban_botguard_status() {
         echo "  Loop interval:      ${loop_interval}s (${pressure_interval}s under pressure)"
         echo "  Suspect rate:       $suspect_rate"
         echo ""
-        echo "  Kernel Sets (source: $source, $freshness_at):"
-        printf "    %-12s  %6s  %6s\n" "" "IPv4" "IPv6"
-        printf "    %-12s  %6s  %6s\n" "───────────" "──────" "──────"
-        printf "    %-12s  %6s  %6s\n" "suspect" "$ipv4_suspects" "$ipv6_suspects"
-        printf "    %-12s  %6s  %6s\n" "pending" "$ipv4_pending" "$ipv6_pending"
-        printf "    %-12s  %6s  %6s\n" "allow" "$ipv4_allow" "$ipv6_allow"
-        printf "    %-12s  %6s  %6s\n" "grey" "$ipv4_grey" "$ipv6_grey"
-        printf "    %-12s  %6s  %6s\n" "ban" "$ipv4_ban" "$ipv6_ban"
-        printf "    %-12s  %6s  %6s\n" "emergency" "$ipv4_emergency" "$ipv6_emergency"
+        # v1.231.0 (FU-5): a counter that was never established prints UNKNOWN,
+        # not 0. The header states what the reading actually was rather than
+        # asserting "kernel" with a current timestamp regardless of outcome.
+        echo "  Kernel Sets (source: $source, ${freshness_at:-not read}):"
+        printf "    %-12s  %7s  %7s\n" "" "IPv4" "IPv6"
+        printf "    %-12s  %7s  %7s\n" "───────────" "───────" "───────"
+        printf "    %-12s  %7s  %7s\n" "suspect" "$ipv4_suspects" "$ipv6_suspects"
+        printf "    %-12s  %7s  %7s\n" "pending" "$ipv4_pending" "$ipv6_pending"
+        printf "    %-12s  %7s  %7s\n" "allow" "$ipv4_allow" "$ipv6_allow"
+        printf "    %-12s  %7s  %7s\n" "grey" "$ipv4_grey" "$ipv6_grey"
+        printf "    %-12s  %7s  %7s\n" "ban" "$ipv4_ban" "$ipv6_ban"
+        printf "    %-12s  %7s  %7s\n" "emergency" "$ipv4_emergency" "$ipv6_emergency"
+        if [[ "$_known" -lt "$_total" ]]; then
+            echo ""
+            echo "    ❌ UNKNOWN = the set could not be read from nftables."
+            echo "       This is NOT the same as an empty set; no count was taken."
+            echo "       FIX: systemctl restart nftband"
+        fi
         echo ""
         echo "  Config:             $_BOTGUARD_CONF"
         if [[ -f "$_BOTGUARD_CONF_LOCAL" ]]; then
@@ -748,13 +799,19 @@ _nftban_botguard_config() {
 _nftban_botguard_stats() {
     local json_mode="${1:-false}"
 
-    # Count IPs in each set
-    local suspect_v4=0 suspect_v6=0
-    local allow_v4=0 allow_v6=0
-    local ban_v4=0 ban_v6=0
-    local grey_v4=0 grey_v6=0
-    local pending_v4=0 pending_v6=0
-    local emergency_v4=0 emergency_v6=0
+    # Count IPs in each set.
+    #
+    # v1.231.0 (FU-5): the pre-seeded zeros below were only overwritten when
+    # `nft list set` succeeded, so an unreadable kernel published twelve zeros
+    # that no read produced. They now start at UNKNOWN, which is what an
+    # unperformed measurement is, and _botguard_kernel_set_count supplies the
+    # same three-valued result used by `nftban botguard status`.
+    local suspect_v4=UNKNOWN suspect_v6=UNKNOWN
+    local allow_v4=UNKNOWN allow_v6=UNKNOWN
+    local ban_v4=UNKNOWN ban_v6=UNKNOWN
+    local grey_v4=UNKNOWN grey_v6=UNKNOWN
+    local pending_v4=UNKNOWN pending_v6=UNKNOWN
+    local emergency_v4=UNKNOWN emergency_v6=UNKNOWN
 
     for set_pair in \
         "http_bot_suspect:suspect_v4:suspect_v6" \
@@ -769,15 +826,17 @@ _nftban_botguard_stats() {
         local v4_var="${rest%%:*}"
         local v6_var="${rest#*:}"
 
-        local v4_count=0 v6_count=0
-        if nft list set ip nftban "$set_name" &>/dev/null; then
-            v4_count=$(nft list set ip nftban "$set_name" 2>/dev/null | grep -c "timeout" || true)
-            v4_count=${v4_count:-0}
-        fi
-        if nft list set ip6 nftban "${set_name}6" &>/dev/null; then
-            v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || true)
-            v6_count=${v6_count:-0}
-        fi
+        # v1.231.0 (FU-5): one read per set instead of an exists-probe followed
+        # by a count, and the result is the shared three-valued count. The old
+        # `grep -c "timeout"` also counted the set's OWN `flags timeout` and
+        # `timeout <n>` header lines as if they were elements — the same defect
+        # v1.80.0 fixed for `botguard status` but never applied here — so these
+        # figures were inflated on every non-empty set as well as fabricated on
+        # an unreadable one. _botguard_kernel_set_count counts only elements
+        # inside `elements = { ... }`.
+        local v4_count v6_count
+        v4_count=$(_botguard_kernel_set_count "ip nftban" "$set_name")
+        v6_count=$(_botguard_kernel_set_count "ip6 nftban" "${set_name}6")
 
         declare "$v4_var=$v4_count"
         declare "$v6_var=$v6_count"
@@ -789,28 +848,42 @@ _nftban_botguard_stats() {
     fi
 
     if [[ "$json_mode" == "true" ]]; then
+        # v1.231.0 (FU-5): null, never 0, for a count nobody established.
         printf '{"daemon_running":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
             "$daemon_running" \
-            "$suspect_v4" "$suspect_v6" \
-            "$allow_v4" "$allow_v6" \
-            "$ban_v4" "$ban_v6" \
-            "$grey_v4" "$grey_v6" \
-            "$pending_v4" "$pending_v6" \
-            "$emergency_v4" "$emergency_v6"
+            "$(nftban_count_json "$suspect_v4")" "$(nftban_count_json "$suspect_v6")" \
+            "$(nftban_count_json "$allow_v4")" "$(nftban_count_json "$allow_v6")" \
+            "$(nftban_count_json "$ban_v4")" "$(nftban_count_json "$ban_v6")" \
+            "$(nftban_count_json "$grey_v4")" "$(nftban_count_json "$grey_v6")" \
+            "$(nftban_count_json "$pending_v4")" "$(nftban_count_json "$pending_v6")" \
+            "$(nftban_count_json "$emergency_v4")" "$(nftban_count_json "$emergency_v6")"
     else
         echo "Bot Guard Statistics"
         echo "===================="
         echo ""
         echo "  Daemon Running:   $daemon_running"
         echo ""
-        printf "  %-12s  %6s  %6s\n" "Set" "IPv4" "IPv6"
-        printf "  %-12s  %6s  %6s\n" "───────────" "──────" "──────"
-        printf "  %-12s  %6s  %6s\n" "suspect" "$suspect_v4" "$suspect_v6"
-        printf "  %-12s  %6s  %6s\n" "pending" "$pending_v4" "$pending_v6"
-        printf "  %-12s  %6s  %6s\n" "allow" "$allow_v4" "$allow_v6"
-        printf "  %-12s  %6s  %6s\n" "grey" "$grey_v4" "$grey_v6"
-        printf "  %-12s  %6s  %6s\n" "ban" "$ban_v4" "$ban_v6"
-        printf "  %-12s  %6s  %6s\n" "emergency" "$emergency_v4" "$emergency_v6"
+        printf "  %-12s  %7s  %7s\n" "Set" "IPv4" "IPv6"
+        printf "  %-12s  %7s  %7s\n" "───────────" "───────" "───────"
+        printf "  %-12s  %7s  %7s\n" "suspect" "$suspect_v4" "$suspect_v6"
+        printf "  %-12s  %7s  %7s\n" "pending" "$pending_v4" "$pending_v6"
+        printf "  %-12s  %7s  %7s\n" "allow" "$allow_v4" "$allow_v6"
+        printf "  %-12s  %7s  %7s\n" "grey" "$grey_v4" "$grey_v6"
+        printf "  %-12s  %7s  %7s\n" "ban" "$ban_v4" "$ban_v6"
+        printf "  %-12s  %7s  %7s\n" "emergency" "$emergency_v4" "$emergency_v6"
+        # v1.231.0 (FU-5): name what UNKNOWN means where the operator reads it.
+        local _s
+        for _s in "$suspect_v4" "$suspect_v6" "$pending_v4" "$pending_v6" \
+                  "$allow_v4" "$allow_v6" "$grey_v4" "$grey_v6" \
+                  "$ban_v4" "$ban_v6" "$emergency_v4" "$emergency_v6"; do
+            if ! nftban_count_is_known "$_s"; then
+                echo ""
+                echo "  ❌ UNKNOWN = the set could not be read from nftables."
+                echo "     This is NOT the same as an empty set; no count was taken."
+                echo "     FIX: systemctl restart nftband"
+                break
+            fi
+        done
         echo ""
     fi
 }

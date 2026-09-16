@@ -325,16 +325,28 @@ collect_all_metrics() {
         _emit_count "nftban_whitelist_total" "$(nftban_count_sum "$whitelist_v4" "$whitelist_v6")"
 
         # --- Botguard Metrics (LIVE - real-time bot classification set counts) ---
-        local bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
+        # v1.231.0 (P1S-C / FU-5): these six started at 0 and were only ever
+        # overwritten on a successful read, so an absent counts document, an
+        # absent jq, an unrecognised shape or a jq call killed mid-pipeline all
+        # published six zeros plus a zero total — an assertion that BotGuard
+        # classified nothing, which is exactly what a healthy idle host reports.
+        # They now start at UNKNOWN and the `// 0` defaults are gone: a field
+        # that is null or missing in the counts document is an unestablished
+        # count, not a measured zero.
+        local bg_suspect=UNKNOWN bg_pending=UNKNOWN bg_allow=UNKNOWN
+        local bg_grey=UNKNOWN bg_ban=UNKNOWN bg_emergency=UNKNOWN
         if [[ -n "${counts_json:-}" ]] && command -v jq &>/dev/null; then
             if echo "$counts_json" | jq -e '.sets' &>/dev/null; then
                 # v1.32.0: Daemon cache format — .sets.http_bot_suspect.count
-                bg_suspect=$(echo "$counts_json" | jq -r '((.sets.http_bot_suspect.count // 0) + (.sets.http_bot_suspect6.count // 0))')
-                bg_pending=$(echo "$counts_json" | jq -r '((.sets.http_bot_pending.count // 0) + (.sets.http_bot_pending6.count // 0))')
-                bg_allow=$(echo "$counts_json" | jq -r '((.sets.http_bot_allow.count // 0) + (.sets.http_bot_allow6.count // 0))')
-                bg_grey=$(echo "$counts_json" | jq -r '((.sets.http_bot_grey.count // 0) + (.sets.http_bot_grey6.count // 0))')
-                bg_ban=$(echo "$counts_json" | jq -r '((.sets.http_bot_ban.count // 0) + (.sets.http_bot_ban6.count // 0))')
-                bg_emergency=$(echo "$counts_json" | jq -r '((.sets.http_bot_emergency.count // 0) + (.sets.http_bot_emergency6.count // 0))')
+                # UNKNOWN is ABSORBING: if either family is unestablished the
+                # pair total is unestablished, because a total that silently
+                # omits one family is a fabricated total, not a partial one.
+                bg_suspect=$(echo "$counts_json"   | jq -r '[.sets.http_bot_suspect.count,   .sets.http_bot_suspect6.count]   | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_suspect=UNKNOWN
+                bg_pending=$(echo "$counts_json"   | jq -r '[.sets.http_bot_pending.count,   .sets.http_bot_pending6.count]   | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_pending=UNKNOWN
+                bg_allow=$(echo "$counts_json"     | jq -r '[.sets.http_bot_allow.count,     .sets.http_bot_allow6.count]     | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_allow=UNKNOWN
+                bg_grey=$(echo "$counts_json"      | jq -r '[.sets.http_bot_grey.count,      .sets.http_bot_grey6.count]      | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_grey=UNKNOWN
+                bg_ban=$(echo "$counts_json"       | jq -r '[.sets.http_bot_ban.count,       .sets.http_bot_ban6.count]       | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_ban=UNKNOWN
+                bg_emergency=$(echo "$counts_json" | jq -r '[.sets.http_bot_emergency.count, .sets.http_bot_emergency6.count] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_emergency=UNKNOWN
             else
                 # Legacy kernel format: .botguard.suspect.ipv4
                 # v1.143.1 EXPORTER-PHASE-3 (Site A): validate the legacy-
@@ -353,30 +365,38 @@ collect_all_metrics() {
                 # §4.1 Option (a); operator-selected
                 # SELECT_V1_143_EXPORTER_PHASE_3_SITE_A =
                 #   single-validity-gate-plus-belt-and-suspenders.
+                # v1.231.0 (FU-5): the belt-and-suspenders fallback is still
+                # here, but it now falls back to UNKNOWN. A jq killed by SIGTERM
+                # mid-pipeline did not measure zero — it did not measure.
                 if echo "$counts_json" | jq -e '.botguard' &>/dev/null; then
-                    bg_suspect=$(echo "$counts_json"   | jq -r '((.botguard.suspect.ipv4 // 0)   + (.botguard.suspect.ipv6 // 0))'   2>/dev/null) || bg_suspect=0
-                    bg_pending=$(echo "$counts_json"   | jq -r '((.botguard.pending.ipv4 // 0)   + (.botguard.pending.ipv6 // 0))'   2>/dev/null) || bg_pending=0
-                    bg_allow=$(echo "$counts_json"     | jq -r '((.botguard.allow.ipv4 // 0)     + (.botguard.allow.ipv6 // 0))'     2>/dev/null) || bg_allow=0
-                    bg_grey=$(echo "$counts_json"      | jq -r '((.botguard.grey.ipv4 // 0)      + (.botguard.grey.ipv6 // 0))'      2>/dev/null) || bg_grey=0
-                    bg_ban=$(echo "$counts_json"       | jq -r '((.botguard.ban.ipv4 // 0)       + (.botguard.ban.ipv6 // 0))'       2>/dev/null) || bg_ban=0
-                    bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))' 2>/dev/null) || bg_emergency=0
+                    bg_suspect=$(echo "$counts_json"   | jq -r '[.botguard.suspect.ipv4,   .botguard.suspect.ipv6]   | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_suspect=UNKNOWN
+                    bg_pending=$(echo "$counts_json"   | jq -r '[.botguard.pending.ipv4,   .botguard.pending.ipv6]   | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_pending=UNKNOWN
+                    bg_allow=$(echo "$counts_json"     | jq -r '[.botguard.allow.ipv4,     .botguard.allow.ipv6]     | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_allow=UNKNOWN
+                    bg_grey=$(echo "$counts_json"      | jq -r '[.botguard.grey.ipv4,      .botguard.grey.ipv6]      | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_grey=UNKNOWN
+                    bg_ban=$(echo "$counts_json"       | jq -r '[.botguard.ban.ipv4,       .botguard.ban.ipv6]       | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_ban=UNKNOWN
+                    bg_emergency=$(echo "$counts_json" | jq -r '[.botguard.emergency.ipv4, .botguard.emergency.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_emergency=UNKNOWN
                 fi
             fi
-            # Validate numeric — fall back to 0 if jq returns non-numeric
-            [[ "$bg_suspect" =~ ^[0-9]+$ ]] || bg_suspect=0
-            [[ "$bg_pending" =~ ^[0-9]+$ ]] || bg_pending=0
-            [[ "$bg_allow" =~ ^[0-9]+$ ]] || bg_allow=0
-            [[ "$bg_grey" =~ ^[0-9]+$ ]] || bg_grey=0
-            [[ "$bg_ban" =~ ^[0-9]+$ ]] || bg_ban=0
-            [[ "$bg_emergency" =~ ^[0-9]+$ ]] || bg_emergency=0
+            # Validate numeric — anything else is an unestablished count, NOT 0.
+            nftban_count_is_known "$bg_suspect"   || bg_suspect=UNKNOWN
+            nftban_count_is_known "$bg_pending"   || bg_pending=UNKNOWN
+            nftban_count_is_known "$bg_allow"     || bg_allow=UNKNOWN
+            nftban_count_is_known "$bg_grey"      || bg_grey=UNKNOWN
+            nftban_count_is_known "$bg_ban"       || bg_ban=UNKNOWN
+            nftban_count_is_known "$bg_emergency" || bg_emergency=UNKNOWN
         fi
-        metrics+="nftban_botguard_set_count{category=\"suspect\"} $bg_suspect\n"
-        metrics+="nftban_botguard_set_count{category=\"pending\"} $bg_pending\n"
-        metrics+="nftban_botguard_set_count{category=\"allow\"} $bg_allow\n"
-        metrics+="nftban_botguard_set_count{category=\"grey\"} $bg_grey\n"
-        metrics+="nftban_botguard_set_count{category=\"ban\"} $bg_ban\n"
-        metrics+="nftban_botguard_set_count{category=\"emergency\"} $bg_emergency\n"
-        metrics+="nftban_botguard_total_tracked $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency))\n"
+        # Publication decision is _emit_count's: an UNKNOWN sample is WITHHELD,
+        # which Prometheus and Zabbix both model as no-data for the interval and
+        # already alert on. Publishing 0 instead would assert a measurement that
+        # was never taken, and a `== 0` alert could not then fire.
+        _emit_count "nftban_botguard_set_count{category=\"suspect\"}" "$bg_suspect"
+        _emit_count "nftban_botguard_set_count{category=\"pending\"}" "$bg_pending"
+        _emit_count "nftban_botguard_set_count{category=\"allow\"}" "$bg_allow"
+        _emit_count "nftban_botguard_set_count{category=\"grey\"}" "$bg_grey"
+        _emit_count "nftban_botguard_set_count{category=\"ban\"}" "$bg_ban"
+        _emit_count "nftban_botguard_set_count{category=\"emergency\"}" "$bg_emergency"
+        _emit_count "nftban_botguard_total_tracked" \
+            "$(nftban_count_sum "$bg_suspect" "$bg_pending" "$bg_allow" "$bg_grey" "$bg_ban" "$bg_emergency")"
 
         # --- Feeds Metrics (moved to LIVE for real-time consistency with nftban stats) ---
         # Check for feed data files in /var/lib/nftban/feeds/ (primary) or /var/cache/nftban/feeds/
@@ -1714,7 +1734,7 @@ collect_all_metrics() {
   },
   "firewall": {
     "sets_total": ${sets_count:-0},
-    "elements_total": ${elements_total:-0}
+    "elements_total": $(nftban_count_json "${elements_total:-UNKNOWN}")
   },
   "modules": {
     "enabled": ${mod_enabled:-0},
@@ -1732,13 +1752,13 @@ collect_all_metrics() {
     "botguard": ${module_botguard_status:-0}
   },
   "botguard": {
-    "suspect": ${bg_suspect:-0},
-    "pending": ${bg_pending:-0},
-    "allow": ${bg_allow:-0},
-    "grey": ${bg_grey:-0},
-    "ban": ${bg_ban:-0},
-    "emergency": ${bg_emergency:-0},
-    "total_tracked": $((${bg_suspect:-0} + ${bg_pending:-0} + ${bg_allow:-0} + ${bg_grey:-0} + ${bg_ban:-0} + ${bg_emergency:-0}))
+    "suspect": $(nftban_count_json "${bg_suspect:-UNKNOWN}"),
+    "pending": $(nftban_count_json "${bg_pending:-UNKNOWN}"),
+    "allow": $(nftban_count_json "${bg_allow:-UNKNOWN}"),
+    "grey": $(nftban_count_json "${bg_grey:-UNKNOWN}"),
+    "ban": $(nftban_count_json "${bg_ban:-UNKNOWN}"),
+    "emergency": $(nftban_count_json "${bg_emergency:-UNKNOWN}"),
+    "total_tracked": $(nftban_count_json "$(nftban_count_sum "${bg_suspect:-UNKNOWN}" "${bg_pending:-UNKNOWN}" "${bg_allow:-UNKNOWN}" "${bg_grey:-UNKNOWN}" "${bg_ban:-UNKNOWN}" "${bg_emergency:-UNKNOWN}")")
   },
   "memory": {
     "rss_bytes": ${rss:-0},

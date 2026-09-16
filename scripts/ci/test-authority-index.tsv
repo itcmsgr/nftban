@@ -15,6 +15,7 @@ blacklist_flush_manual_truth_v218_10_test	cli/lib/nftban/tests/blacklist_flush_m
 blacklist_range_roundtrip_test	cli/lib/nftban/tests/blacklist_range_roundtrip_test.sh	firewall	test	blacklist-range-restore	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 blacklist_refresh_no_failopen_v192_test	cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test.sh	blacklist	test	blacklist-refresh-atomicity	ROOT_LAB	lab-manual	false	true	false	false	true	false			
 boot_projection_v1229_13_test	cli/lib/nftban/tests/boot_projection_v1229_13_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+botguard_count_truth_v1231_test	cli/lib/nftban/tests/botguard_count_truth_v1231_test.sh	botguard	test	botguard-count-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botguard_diag_6b2_test	cli/lib/nftban/tests/botguard_diag_6b2_test.sh	botguard	test	botguard-explain-diag	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botguard_epipe_failzero_v1231_0_test	cli/lib/nftban/tests/botguard_epipe_failzero_v1231_0_test.sh	botguard	test	botguard-epipe-failzero	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botguard_explain_shell_6b1_test	cli/lib/nftban/tests/botguard_explain_shell_6b1_test.sh	botguard	test	botguard-explain-client	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

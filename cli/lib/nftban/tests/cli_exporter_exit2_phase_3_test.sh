@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-01"
-# meta:description="v1.143.1 EXPORTER-PHASE-3 — asserts that the two new ERR-trap-pinpointed exporter SIGTERM sites surfaced during the v1.142.0 fleet rollout are now resilient. Site A: botguard legacy-kernel jq pipeline at cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh — validity gate (jq -e '.botguard') ONCE plus per-call '|| bg_X=0' belt-and-suspenders. Site B: systemctl-show ActiveEnterTimestamp — bounded 'timeout 2s' caps the dbus query so SIGTERM mid-systemctl-show falls through to the '|| echo ""' fallback (operator-selected SELECT_V1_143_EXPORTER_PHASE_3_SITE_B = bounded-timeout, TIMEOUT_SECONDS = 2). Stubbed-callable mirror pattern (same as v1.142 PR-FS + v1.143 PR-A/B tests). Hermetic — no host contact; no real systemctl, no real jq pipe to real daemon. T-DRIFT row asserts the two PR markers stay in the live file."
+# meta:description="v1.143.1 EXPORTER-PHASE-3 — asserts that the two new ERR-trap-pinpointed exporter SIGTERM sites surfaced during the v1.142.0 fleet rollout are now resilient. Site A: botguard legacy-kernel jq pipeline at cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh — validity gate (jq -e '.botguard') ONCE plus per-call belt-and-suspenders. v1.231.0 (FU-5) retargeted the fallback VALUE from 0 to UNKNOWN — the Phase-3 resilience property (single gate, per-call fallback, rc=0, no ERR-trap fire) is unchanged, but a jq killed by SIGTERM no longer publishes a measurement of zero that nobody took; the T-DRIFT rows now assert both the UNKNOWN fallback and the ABSENCE of any '|| bg_X=0'. Site B: systemctl-show ActiveEnterTimestamp — bounded 'timeout 2s' caps the dbus query so SIGTERM mid-systemctl-show falls through to the '|| echo ""' fallback (operator-selected SELECT_V1_143_EXPORTER_PHASE_3_SITE_B = bounded-timeout, TIMEOUT_SECONDS = 2). Stubbed-callable mirror pattern (same as v1.142 PR-FS + v1.143 PR-A/B tests). Hermetic — no host contact; no real systemctl, no real jq pipe to real daemon. T-DRIFT row asserts the two PR markers stay in the live file."
 # meta:input="cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep,jq,timeout"
@@ -79,8 +79,15 @@ if [[ -n "${NF_JQ_FAIL_PAT:-}" ]]; then
     }
 fi
 
-# Locals init exactly like the live exporter at line 234
-bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
+# Locals init exactly like the live exporter.
+# v1.231.0 (FU-5): the live exporter now initialises these to UNKNOWN, not 0.
+# The Phase-3 RESILIENCE property this file guards is unchanged — the validity
+# gate still runs once, each jq call still has a per-call fallback, and no arm
+# may fire the ERR trap. What changed is the VALUE the fallback lands on: a jq
+# killed by SIGTERM did not measure zero, it did not measure, and publishing 0
+# asserted a count nobody took. Mirrors live lines 336-349 / 381-386.
+bg_suspect=UNKNOWN bg_pending=UNKNOWN bg_allow=UNKNOWN
+bg_grey=UNKNOWN bg_ban=UNKNOWN bg_emergency=UNKNOWN
 
 # Mirror of v1.143.1 EXPORTER-PHASE-3 (Site A) legacy-kernel branch.
 if [[ -n "${counts_json:-}" ]] && command -v jq &>/dev/null; then
@@ -89,21 +96,24 @@ if [[ -n "${counts_json:-}" ]] && command -v jq &>/dev/null; then
         :
     else
         if echo "$counts_json" | jq -e '.botguard' &>/dev/null; then
-            bg_suspect=$(echo "$counts_json"   | jq -r '((.botguard.suspect.ipv4 // 0)   + (.botguard.suspect.ipv6 // 0))'   2>/dev/null) || bg_suspect=0
-            bg_pending=$(echo "$counts_json"   | jq -r '((.botguard.pending.ipv4 // 0)   + (.botguard.pending.ipv6 // 0))'   2>/dev/null) || bg_pending=0
-            bg_allow=$(echo "$counts_json"     | jq -r '((.botguard.allow.ipv4 // 0)     + (.botguard.allow.ipv6 // 0))'     2>/dev/null) || bg_allow=0
-            bg_grey=$(echo "$counts_json"      | jq -r '((.botguard.grey.ipv4 // 0)      + (.botguard.grey.ipv6 // 0))'      2>/dev/null) || bg_grey=0
-            bg_ban=$(echo "$counts_json"       | jq -r '((.botguard.ban.ipv4 // 0)       + (.botguard.ban.ipv6 // 0))'       2>/dev/null) || bg_ban=0
-            bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))' 2>/dev/null) || bg_emergency=0
+            bg_suspect=$(echo "$counts_json" | jq -r '[.botguard.suspect.ipv4, .botguard.suspect.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_suspect=UNKNOWN
+            bg_pending=$(echo "$counts_json" | jq -r '[.botguard.pending.ipv4, .botguard.pending.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_pending=UNKNOWN
+            bg_allow=$(echo "$counts_json" | jq -r '[.botguard.allow.ipv4, .botguard.allow.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_allow=UNKNOWN
+            bg_grey=$(echo "$counts_json" | jq -r '[.botguard.grey.ipv4, .botguard.grey.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_grey=UNKNOWN
+            bg_ban=$(echo "$counts_json" | jq -r '[.botguard.ban.ipv4, .botguard.ban.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_ban=UNKNOWN
+            bg_emergency=$(echo "$counts_json" | jq -r '[.botguard.emergency.ipv4, .botguard.emergency.ipv6] | if all(type=="number") then add else "UNKNOWN" end' 2>/dev/null) || bg_emergency=UNKNOWN
         fi
     fi
-    # Pre-existing numeric-validity sweep (unchanged by Phase-3)
-    [[ "$bg_suspect" =~ ^[0-9]+$ ]] || bg_suspect=0
-    [[ "$bg_pending" =~ ^[0-9]+$ ]] || bg_pending=0
-    [[ "$bg_allow" =~ ^[0-9]+$ ]] || bg_allow=0
-    [[ "$bg_grey" =~ ^[0-9]+$ ]] || bg_grey=0
-    [[ "$bg_ban" =~ ^[0-9]+$ ]] || bg_ban=0
-    [[ "$bg_emergency" =~ ^[0-9]+$ ]] || bg_emergency=0
+    # Numeric-validity sweep. `^[0-9]+$` IS the body of nftban_count_is_known
+    # (cli/lib/nftban/lib/nft_schema.sh); the mirror inlines it because this
+    # standalone script deliberately sources no library. v1.231.0: the sweep
+    # now lands on UNKNOWN, matching the live file.
+    [[ "$bg_suspect"   =~ ^[0-9]+$ ]] || bg_suspect=UNKNOWN
+    [[ "$bg_pending"   =~ ^[0-9]+$ ]] || bg_pending=UNKNOWN
+    [[ "$bg_allow"     =~ ^[0-9]+$ ]] || bg_allow=UNKNOWN
+    [[ "$bg_grey"      =~ ^[0-9]+$ ]] || bg_grey=UNKNOWN
+    [[ "$bg_ban"       =~ ^[0-9]+$ ]] || bg_ban=UNKNOWN
+    [[ "$bg_emergency" =~ ^[0-9]+$ ]] || bg_emergency=UNKNOWN
 fi
 
 # Emit one line per counter for assertion
@@ -214,42 +224,46 @@ assert_eq "T1-A1 bg_suspect (3+2=5)" bg_suspect 5
 assert_eq "T1-A1 bg_pending (1+0=1)" bg_pending 1
 assert_eq "T1-A1 bg_ban (12+3=15)"   bg_ban     15
 
-echo "--- T1-A2: valid counts_json but .botguard key MISSING → all six stay at 0 ---"
+echo "--- T1-A2: valid counts_json but .botguard key MISSING → all six stay UNKNOWN ---"
+# v1.231.0 (FU-5): an absent .botguard key means the counts document carried no
+# botguard reading. That is not a reading of zero, and it used to be published
+# as one. rc=0 (the Phase-3 property) is unchanged.
 NF_COUNTS_JSON='{"some_other_root_key":{"x":1}}' run "$MIRROR/site_a.sh"
 assert_rc "T1-A2 site_a missing-key rc=0" 0
-assert_eq "T1-A2 bg_suspect stays 0"   bg_suspect   0
-assert_eq "T1-A2 bg_pending stays 0"   bg_pending   0
-assert_eq "T1-A2 bg_allow stays 0"     bg_allow     0
-assert_eq "T1-A2 bg_grey stays 0"      bg_grey      0
-assert_eq "T1-A2 bg_ban stays 0"       bg_ban       0
-assert_eq "T1-A2 bg_emergency stays 0" bg_emergency 0
+assert_eq "T1-A2 bg_suspect stays UNKNOWN"   bg_suspect   UNKNOWN
+assert_eq "T1-A2 bg_pending stays UNKNOWN"   bg_pending   UNKNOWN
+assert_eq "T1-A2 bg_allow stays UNKNOWN"     bg_allow     UNKNOWN
+assert_eq "T1-A2 bg_grey stays UNKNOWN"      bg_grey      UNKNOWN
+assert_eq "T1-A2 bg_ban stays UNKNOWN"       bg_ban       UNKNOWN
+assert_eq "T1-A2 bg_emergency stays UNKNOWN" bg_emergency UNKNOWN
 
 echo "--- T1-A3: truncated counts_json → outer validity gate fails; no ERR trap fire ---"
 NF_COUNTS_JSON='{"botguard":{"suspect":{"ipv4":3' run "$MIRROR/site_a.sh"
 assert_rc "T1-A3 site_a truncated-json rc=0 (no abort)" 0
-assert_eq "T1-A3 bg_suspect stays 0"   bg_suspect   0
-assert_eq "T1-A3 bg_pending stays 0"   bg_pending   0
+assert_eq "T1-A3 bg_suspect stays UNKNOWN"   bg_suspect   UNKNOWN
+assert_eq "T1-A3 bg_pending stays UNKNOWN"   bg_pending   UNKNOWN
 
 echo "--- T1-A4: per-call jq returns empty (stub forces failure on specific counter) ---"
 NF_COUNTS_JSON='{"botguard":{"suspect":{"ipv4":3,"ipv6":2}}}' \
 NF_JQ_FAIL_PAT='allow' run "$MIRROR/site_a.sh"
 # This test exercises the belt-and-suspenders pattern: most counters succeed,
-# but the "allow" counter's jq call is forced to fail. The `|| bg_allow=0`
-# fallback catches it; rc still 0.
+# but the "allow" counter's jq call is forced to fail. The `|| bg_allow=UNKNOWN`
+# fallback catches it; rc still 0. v1.231.0 (FU-5): the fallback lands on
+# UNKNOWN — a jq that was killed did not measure zero.
 assert_rc "T1-A4 site_a per-jq-fail rc=0 (belt-suspenders catches)" 0
 assert_eq "T1-A4 bg_suspect (3+2=5) still works" bg_suspect 5
-assert_eq "T1-A4 bg_allow stays 0 (forced fail)" bg_allow   0
+assert_eq "T1-A4 bg_allow UNKNOWN (forced fail)" bg_allow   UNKNOWN
 
-echo "--- T1-A5: counts_json with non-numeric (jq returns 'null' or string) → final sweep catches ---"
-# jq's `// 0` defaulting makes this hard to hit naturally; verify the post-sweep
-# numeric-validity gate is unchanged-by-Phase-3 and still catches edge cases.
-# Force a malformed shape that jq returns 'null' for.
+echo "--- T1-A5: counts_json with non-numeric shape → final sweep catches ---"
+# Verify the post-sweep numeric-validity gate is unchanged-by-Phase-3 and still
+# catches edge cases. Force a malformed shape.
 NF_COUNTS_JSON='{"botguard":{"suspect":"not-a-number"}}' run "$MIRROR/site_a.sh"
 assert_rc "T1-A5 site_a malformed-shape rc=0" 0
-# jq's `(.botguard.suspect.ipv4 // 0) + …` on a string field returns an error;
-# `// 0` only fires on null/missing. So `|| bg_suspect=0` fallback OR the
-# final numeric-validity sweep catches it. Either way: 0.
-assert_eq "T1-A5 bg_suspect=0 on malformed shape" bg_suspect 0
+# v1.231.0 (FU-5): the `// 0` defaults are gone. `.botguard.suspect.ipv4` on a
+# string field errors, so the per-call fallback OR the final numeric-validity
+# sweep catches it. Either way the result is UNKNOWN — an unreadable shape is
+# not a measurement of zero.
+assert_eq "T1-A5 bg_suspect=UNKNOWN on malformed shape" bg_suspect UNKNOWN
 
 # ──────────────────────────────────────────────────────────────────────────
 # T2 — Site B systemctl-show with bounded timeout
@@ -313,10 +327,18 @@ else
 fi
 
 # Verify Site A has the `|| bg_X=0` belt-suspenders on at least one counter
-if grep -qE '\|\| bg_suspect=0' "$LIVE"; then
-    ok "T-DRIFT Site A belt-suspenders '|| bg_suspect=0' present"
+# v1.231.0 (FU-5): the belt-suspenders fallback is still required, but it must
+# land on UNKNOWN. A re-introduced `|| bg_suspect=0` is the defect this row now
+# guards against, so BOTH conditions are asserted.
+if grep -qE '\|\| bg_suspect=UNKNOWN' "$LIVE"; then
+    ok "T-DRIFT Site A belt-suspenders '|| bg_suspect=UNKNOWN' present"
 else
     no "T-DRIFT Site A belt-suspenders" "per-call fallback not landed"
+fi
+if grep -qE '\|\| bg_[a-z]+=0\b' "$LIVE"; then
+    no "T-DRIFT Site A fail-to-zero" "a '|| bg_X=0' fallback was reintroduced"
+else
+    ok "T-DRIFT Site A: no '|| bg_X=0' fail-to-zero fallback in the live file"
 fi
 
 # Verify the v1.136 Phase 2 :642 set_counts.json fix is UNCHANGED (regression guard)

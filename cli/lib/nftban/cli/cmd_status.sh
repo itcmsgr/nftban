@@ -1311,32 +1311,59 @@ _status_section_protection() {
         && nftban_config_apply_final_operator_overlay
     botguard_enabled="${HTTP_BOTGUARD_ENABLED:-false}"
     if [[ "$botguard_enabled" == "true" ]]; then
-        if nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
-            local v4_suspects=0 v6_suspects=0
-            # v1.80.0 FIX: Only count within "elements = { }" section
-            local _bg_out_v4 _bg_out_v6
-            _bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null)
-            _bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null)
-            # v1.231.0 EPIPE FAIL-TO-ZERO FIX (see cmd_botguard.sh
-            # _botguard_kernel_set_count for the full derivation). The presence
-            # test MUST NOT be a pipeline: `grep -q` exits at the first match,
-            # which is near the TOP of `nft list set` output, so the producing
-            # subshell dies of SIGPIPE while writing the rest. `cli/sbin/nftban`
-            # arms `set -Eeuo pipefail` for this whole dispatch, so pipefail
-            # adopts 141 as the pipeline status even though grep MATCHED, the
-            # `if` takes the false branch, and the suspect count stays at its 0
-            # initialiser. Measured threshold on this output shape: 929 elements
-            # / 43,677 B. Pure-bash substring match is one process with no pipe,
-            # so it is size-independent.
+        # v1.231.0 (FU-5): two defects here, one root cause.
+        #  - only the IPv4 set was probed. A readable v4 set gated the v6 read as
+        #    well, so an ABSENT or unreadable http_bot_suspect6 was reported as
+        #    "0v6 suspects" — a count of a set that was never successfully read.
+        #  - the outer probe's failure arm claimed "sets not loaded", which is a
+        #    conclusion about the ruleset drawn from a command that may have
+        #    failed for any reason (nft missing, EPERM, netns).
+        # Each family is now read independently, and a read that did not succeed
+        # stays UNKNOWN rather than becoming 0. A set that IS readable and holds
+        # no elements is still a legitimate 0.
+        #
+        # v1.231.0 EPIPE FAIL-TO-ZERO FIX, COMPOSED WITH THE ABOVE (see
+        # cmd_botguard.sh _botguard_kernel_set_count for the full derivation).
+        # The `elements = {` presence test MUST NOT be a pipeline: `grep -q`
+        # exits at the first match, which is near the TOP of `nft list set`
+        # output, so the producing subshell dies of SIGPIPE while writing the
+        # rest. `cli/sbin/nftban` arms `set -Eeuo pipefail` for this whole
+        # dispatch, so pipefail adopts 141 as the pipeline status even though
+        # grep MATCHED, the `if` takes the false branch, and the count stays at
+        # its initialiser. Measured threshold on this output shape: 929 elements
+        # / 43,677 B. Pure-bash substring match is one process with no pipe, so
+        # it is size-independent.
+        #
+        # The two fixes are orthogonal and BOTH are required. Without the
+        # pure-bash presence test, a large READABLE set silently takes the
+        # else-branch and reports its initialiser; changing that initialiser from
+        # 0 to UNKNOWN would only relabel the same wrong answer. Without the
+        # per-family UNKNOWN split, a set that truly could not be read still
+        # publishes a fabricated 0. Read each family independently, then decide
+        # presence without a short-circuiting consumer.
+        local v4_suspects=UNKNOWN v6_suspects=UNKNOWN
+        # v1.80.0 FIX: Only count within "elements = { }" section
+        local _bg_out_v4 _bg_out_v6
+        if _bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null); then
+            v4_suspects=0
             if [[ "$_bg_out_v4" == *'elements = {'* ]]; then
-                v4_suspects=$(echo "$_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+                # `grep -o` exits 1 on zero matches and this file runs under
+                # pipefail, so the pipeline fails where the set is readable but
+                # holds no timed element. wc -l has already printed 0; that is a
+                # KNOWN 0 (the set was read), never UNKNOWN.
+                v4_suspects=$(echo "$_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l) || v4_suspects=0
             fi
+        fi
+        if _bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null); then
+            v6_suspects=0
             if [[ "$_bg_out_v6" == *'elements = {'* ]]; then
-                v6_suspects=$(echo "$_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+                v6_suspects=$(echo "$_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l) || v6_suspects=0
             fi
+        fi
+        if nftban_count_is_known "$v4_suspects" || nftban_count_is_known "$v6_suspects"; then
             botguard_status="ACTIVE (${v4_suspects}v4+${v6_suspects}v6 suspects)"
         else
-            botguard_status="ENABLED (sets not loaded)"
+            botguard_status="ENABLED (suspect sets UNREADABLE — FIX: systemctl restart nftband)"
         fi
     fi
     # v1.229.10 — lead with the name the operator TYPES. `nftban botguard ...` is
@@ -2546,27 +2573,45 @@ output_json() {
         [[ -z "$bg_val" ]] && bg_val=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
         [[ "$bg_val" == "true" ]] && json_botguard_enabled=true || true
     fi
-    local json_bg_v4=0 json_bg_v6=0
+    # v1.231.0 (FU-5): this is the MACHINE-READABLE surface and it had NO
+    # existence probe at all. `nft list set ...` failing left the pre-seeded 0 in
+    # place, and the grep on an empty capture then confirmed it, so an unreadable
+    # or absent suspect set was published to every JSON consumer as the measured
+    # figure 0. Unestablished counts now render as JSON null; a readable but
+    # empty set still renders 0. Consumers MUST test for null — a `// 0` default
+    # manufactures the same false zero by a longer route.
+    local json_bg_v4=UNKNOWN json_bg_v6=UNKNOWN
     if [[ "$json_botguard_enabled" == "true" ]]; then
         # v1.80.0 FIX: Only count within "elements = { }" section
         local _json_bg_out_v4 _json_bg_out_v6
-        _json_bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null)
-        _json_bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null)
-        # v1.231.0 EPIPE FAIL-TO-ZERO FIX. Same defect and same derivation as the
-        # human-render path above: a short-circuiting `grep -q` consumer kills the
-        # producing subshell with SIGPIPE, and pipefail reports a SUCCESSFUL MATCH
-        # as a failed pipeline once the set exceeds ~43.7 KB. On this path the
-        # consequence is a JSON document asserting ipv4_suspects: 0 for a set
-        # holding thousands -- machine-readable, so consumed without a human
-        # sanity check. Pure-bash substring match: no pipe, size-independent.
-        if [[ "$_json_bg_out_v4" == *'elements = {'* ]]; then
-            json_bg_v4=$(echo "$_json_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+        # v1.231.0 EPIPE FAIL-TO-ZERO FIX, COMPOSED WITH THE UNKNOWN CONTRACT.
+        # Same defect and same derivation as the human-render path above: a
+        # short-circuiting `grep -q` consumer kills the producing subshell with
+        # SIGPIPE, and pipefail reports a SUCCESSFUL MATCH as a failed pipeline
+        # once the set exceeds ~43.7 KB. On this path the consequence is a JSON
+        # document asserting ipv4_suspects: 0 for a set holding thousands --
+        # machine-readable, so consumed without a human sanity check. Pure-bash
+        # substring match: no pipe, size-independent.
+        #
+        # The read itself is now the existence probe (one `nft list set` per
+        # family, its exit status kept), so "could not read" leaves UNKNOWN and
+        # renders as JSON null, while "read it, holds nothing" is a known 0. The
+        # pure-bash presence test is what keeps a large READABLE set from falling
+        # through to the initialiser and being published as that 0.
+        if _json_bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null); then
+            json_bg_v4=0
+            if [[ "$_json_bg_out_v4" == *'elements = {'* ]]; then
+                json_bg_v4=$(echo "$_json_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l) || json_bg_v4=0
+            fi
         fi
-        if [[ "$_json_bg_out_v6" == *'elements = {'* ]]; then
-            json_bg_v6=$(echo "$_json_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+        if _json_bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null); then
+            json_bg_v6=0
+            if [[ "$_json_bg_out_v6" == *'elements = {'* ]]; then
+                json_bg_v6=$(echo "$_json_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l) || json_bg_v6=0
+            fi
         fi
     fi
-    echo "    \"botguard\": {\"enabled\": $json_botguard_enabled, \"ipv4_suspects\": $json_bg_v4, \"ipv6_suspects\": $json_bg_v6},"
+    echo "    \"botguard\": {\"enabled\": $json_botguard_enabled, \"ipv4_suspects\": $(nftban_count_json "$json_bg_v4"), \"ipv6_suspects\": $(nftban_count_json "$json_bg_v6")},"
 
     # Tunnel Suspicion
     local json_tunnel_enabled=false

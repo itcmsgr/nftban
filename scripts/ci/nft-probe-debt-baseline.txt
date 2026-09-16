@@ -19,7 +19,14 @@
 # The maintenance path (cron/maintenance.sh, helpers/autoheal.sh,
 # lib/ssh_port_detect.sh) is already fully typed and is enforced separately by
 # rule G-1 — it must stay at ZERO regardless of this count.
-UNTYPED_PROBE_COUNT=93
+# v1.231.0 (FU-5) LOWERED 93 -> 90. The BotGuard count-truth lane removed three
+# untyped boolean nft reads: `nftban botguard status` no longer calls
+# _botguard_kernel_set_exists at all (the count itself now reports UNKNOWN when
+# the read fails, so a separate existence probe had nothing left to decide),
+# `nftban botguard stats` no longer probes-then-counts, and the `nftban status`
+# human row no longer gates the IPv6 read on an IPv4 probe. The ratchet is
+# tightened to 90 in the same change, per the rule above.
+UNTYPED_PROBE_COUNT=90
 
 # -----------------------------------------------------------------------------
 # G-2a ALLOWLIST — failure-to-mutation sites that PRE-DATE PR-3
