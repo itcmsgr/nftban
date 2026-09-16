@@ -53,14 +53,19 @@ HELPERS='nftban_count_is_known nftban_count_sum nftban_count_json'
 #    failed to extract the subject would look exactly like a subject that
 #    printed nothing, and the whole file would pass while testing nothing.
 echo "--- 0. the harness can actually extract its subjects ---"
+# ⛔ v1.231.0: no `| grep -q` under pipefail here. grep -q exits on the FIRST MATCH, the
+#    producer takes SIGPIPE, pipefail reports 141 — a SUCCESSFUL match read as failure.
+#    In THIS arm that would report a PRESENT helper as missing — and this is the vacuity
+#    guard, so an inverted result claims the suite is vacuous when it is not. Presence is
+#    now tested with a command substitution: no pipeline exists, so nothing can be EPIPE'd.
 _missing=""
 for _f in $HELPERS nftban_nft_count_set nftban_nft_count_blacklist \
           nftban_nft_count_whitelist nftban_nft_count_all_sets; do
-    fn "$NS" "$_f" | grep -q . || _missing="$_missing $_f"
+    [[ -n "$(fn "$NS" "$_f")" ]] || _missing="$_missing $_f"
 done
 for _f in nftban_stats_count_active_bans nftban_stats_count_whitelist \
           nftban_stats_get_whitelist_breakdown; do
-    fn "$SC" "$_f" | grep -q . || _missing="$_missing $_f"
+    [[ -n "$(fn "$SC" "$_f")" ]] || _missing="$_missing $_f"
 done
 if [[ -z "$_missing" ]]; then
     ok "all subjects extracted from source (no arm can pass by vacuity)"
@@ -226,7 +231,7 @@ for f in "$NS" "$SC" "$EX"; do
         [[ -z "$line" ]] && continue
         ln="${line%%:*}"
         # allow if a nftban_count_is_known guard appears within 3 lines above
-        if sed -n "$((ln>3 ? ln-3 : 1)),${ln}p" "$f" | grep -q 'nftban_count_is_known'; then
+        if sed -n "$((ln>3 ? ln-3 : 1)),${ln}p" "$f" | grep -F 'nftban_count_is_known' >/dev/null; then
             continue
         fi
         hits="$hits$line"$'\n'
