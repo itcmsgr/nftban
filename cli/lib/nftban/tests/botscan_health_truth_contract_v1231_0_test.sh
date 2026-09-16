@@ -1,0 +1,554 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan - BotScan HEALTH TRUTH CONTRACT (v1.231.0 P0-C)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
+# meta:name="botscan-health-truth-contract-v1231-0-test"
+# meta:type="test"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:ta.id="botscan_health_truth_contract_v1231_0_test"
+# meta:ta.owner="botscan"
+# meta:ta.module="botscan-adaptive"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# meta:description="v1.231.0 P0-C — encodes the owner-ruled BotScan HEALTH TRUTH CONTRACT as falsifiable arms over the real classifier (nftban_botscan_health_state) and the real readers (_nftban_health_botscan_facts / _nftban_health_render_botscan / nftban_health_check_botscan, extracted from source, never retyped). Clauses: (1) no valid progress evidence NEVER yields OK; (2) a stalled run with a capped/backpressured backlog is DEGRADED; (3) incomplete measurement authority is UNKNOWN or DEGRADED, never OK; (4) a consumer stale_backlog=false must not override independent stall evidence; (5) no fall-through OK — a health state must be POSITIVELY asserted. Arms that require a telemetry field with no producer at HEAD report NOT_EXECUTED naming the field (never PASS). Violations that are already present at HEAD are DECLARED in an explicit gap registry and reported [GAP-OPEN]; the registry is a TWO-WAY tripwire — an undeclared gap FAILS, a declared gap that reality has CLOSED FAILS with an instruction to promote the arm, and a declared gap no arm consumes FAILS. Negative controls are DECLARED INVERSIONS written in this file; no arm resolves an inversion through git."
+# meta:inventory.files="cli/lib/nftban/core/nftban_botscan_adaptive.sh,cli/lib/nftban/core/nftban_botscan.sh,cli/lib/nftban/core/nftban_health_checks_modules.sh,cli/lib/nftban/cli/cmd_health_analysis.sh"
+# meta:inventory.binaries="awk,jq,grep,sed"
+# meta:inventory.privileges="none"
+# =============================================================================
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(cd "$SCRIPT_DIR/../../../.." && pwd)
+ADAPT="$REPO/cli/lib/nftban/core/nftban_botscan_adaptive.sh"
+BOTSCAN="$REPO/cli/lib/nftban/core/nftban_botscan.sh"
+HMOD="$REPO/cli/lib/nftban/core/nftban_health_checks_modules.sh"
+HANA="$REPO/cli/lib/nftban/cli/cmd_health_analysis.sh"
+
+SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
+PASS=0; FAIL=0; NOTEXEC=0; GAPOPEN=0; FAILED=()
+
+ok(){ PASS=$((PASS+1)); printf '  [PASS] %s\n' "$1"; }
+no(){ FAIL=$((FAIL+1)); FAILED+=("$1"); printf '  [FAIL] %s%s\n' "$1" "${2:+ — $2}"; }
+nx(){ NOTEXEC=$((NOTEXEC+1)); printf '  [NOT_EXECUTED] %s — REQUIRED FIELD HAS NO PRODUCER AT HEAD: %s\n' "$1" "$2"; }
+
+# ---------------------------------------------------------------------------
+# DECLARED GAP REGISTRY.
+#
+# Every entry is a contract violation that is ALREADY PRESENT at HEAD and whose
+# fix is owned by a named work item — NOT a licence to pass. Each entry is a
+# TWO-WAY tripwire:
+#   violation still observed  -> [GAP-OPEN]  (suite stays green; gap is visible)
+#   violation no longer observed -> [FAIL]   (promote the arm to a hard assertion
+#                                             and delete the registry row)
+#   entry that no arm consumes   -> [FAIL]   (registry may not grow silently)
+# An observed violation with NO registry row is [FAIL]. There is no third state.
+# ---------------------------------------------------------------------------
+declare -A GAPS_DECLARED=(
+  [G-01]="clause 1+4 — run-age staleness is MEASURED (nftban_health_checks_modules.sh:989) and then DISCARDED: no verdict branch consults it, so an ancient last_run_ts renders healthy. Owner: P0-C implementation."
+  [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
+  [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
+  [G-04]="clause 1+5 — ERROR_RUNTIME_FAILURE (nftban_botscan_adaptive.sh:115) matches neither DEGRADED_* nor NO_INPUT_* in the reader, so a runtime FAILURE reports HEALTH_OK. Owner: P0-C implementation."
+  [G-05]="clause 3 — health_state=UNKNOWN (synthesised at nftban_health_checks_modules.sh:987 when run-state is absent or unreadable) reads HEALTH_OK: incomplete measurement authority is reported as a passing control. Owner: P0-C implementation."
+  [G-06]="clause 1+2 — bans_emitted_total and signals_emitted_total are STRUCTURALLY ZERO, so no progress counter can carry stall evidence. Owner: P0-B durable counter sink."
+  [G-07]="clause 2 — spool backpressure IS produced every collector cycle (cli/sbin/nftban-botscan-collector) but reaches no health verdict: nftban_botscan_health_state takes no such argument and nftban_health_checks_modules.sh never opens spool.status. Only cmd_health_analysis.sh reads it, and only for its own return code. Owner: P0-C implementation."
+)
+declare -A GAPS_CONSUMED=()
+
+# gap <id> <arm> <violation-observed:yes|no> <observation>
+gap(){
+  local id="$1" arm="$2" seen="$3" obs="$4"
+  GAPS_CONSUMED["$id"]=1
+  if [[ -z "${GAPS_DECLARED[$id]:-}" ]]; then
+    no "$arm" "UNDECLARED GAP $id — a contract violation with no registry row"
+    return
+  fi
+  if [[ "$seen" == "yes" ]]; then
+    GAPOPEN=$((GAPOPEN+1))
+    printf '  [GAP-OPEN] %s — %s\n             (declared %s) %s\n' "$arm" "$obs" "$id" "${GAPS_DECLARED[$id]}"
+  else
+    no "$arm" "CLAUSE NOW SATISFIED — declared gap $id is CLOSED; promote this arm to a hard assertion and delete its registry row"
+  fi
+}
+
+echo "==========================================================="
+echo "v1.231.0 P0-C — BotScan HEALTH TRUTH CONTRACT"
+echo "==========================================================="
+
+for f in "$ADAPT" "$BOTSCAN" "$HMOD" "$HANA"; do
+  [[ -f "$f" ]] || { echo "  FATAL: subject missing: $f"; exit 2; }
+done
+if ! command -v jq >/dev/null 2>&1; then
+  echo "  FATAL: jq unavailable — the readers are jq-driven; a jq-less run would assert nothing"
+  exit 2
+fi
+
+# ---------------------------------------------------------------------------
+# SUBJECT BINDING. The classifier is SOURCED (it is a pure function). The
+# readers are EXTRACTED FROM SOURCE — never retyped — so editing them without
+# this test is detectable. Extraction emptiness is asserted before any arm runs
+# (an arm over an empty subject would be vacuous, not passing).
+# ---------------------------------------------------------------------------
+export NFTBAN_DATA_DIR="$SB/data"; mkdir -p "$NFTBAN_DATA_DIR/botscan"
+# shellcheck source=/dev/null
+source "$ADAPT"
+
+echo "[S] subject binding"
+declare -F nftban_botscan_health_state >/dev/null \
+  && ok "S.1 classifier nftban_botscan_health_state sourced from $ADAPT" \
+  || { no "S.1 classifier not defined"; exit 1; }
+
+awk '/^_nftban_health_botscan_facts\(\)/{c=1} c{print} /^_nftban_health_render_botscan\(\)/{r=1} r&&/^}/{print "";exit}' \
+    "$HMOD" > "$SB/render.sh"
+awk '/^nftban_health_check_botscan\(\)/{c=1} c{print} c&&/^}/{exit}' "$HMOD" > "$SB/check.sh"
+[[ -s "$SB/render.sh" ]] && grep -q '_nftban_health_render_botscan' "$SB/render.sh" \
+  && ok "S.2 facts+render block extracted from nftban_health_checks_modules.sh" \
+  || { no "S.2 render extraction empty — every reader arm would be vacuous"; exit 1; }
+[[ -s "$SB/check.sh" ]] && grep -q 'NFTBAN_HEALTH_RESULTS' "$SB/check.sh" \
+  && ok "S.3 nftban_health_check_botscan extracted from nftban_health_checks_modules.sh" \
+  || { no "S.3 check extraction empty — every reader arm would be vacuous"; exit 1; }
+
+# ---------------------------------------------------------------------------
+# READER DRIVER.
+#   fixture <enabled> <health_state|NORUNSTATE> <run_age_sec> <handoff|MISSING> <stale>
+#   reader_check   -> prints "rc|<issue text>"      (machine verdict)
+#   reader_render  -> prints the operator-facing verdict block
+# errexit stays ARMED in this shell; the subject runs under `bash -c` with
+# `set +e` so a non-zero reader return is DATA, not a suite abort.
+# ---------------------------------------------------------------------------
+fixture(){
+  local enabled="$1" hs="$2" age="$3" ho="$4" stale="$5"
+  rm -rf "$SB/fx"; mkdir -p "$SB/fx/conf.d/botscan" "$SB/fx/data/botscan" "$SB/fx/data/botguard"
+  printf 'BOTSCAN_ENABLED="%s"\nBOTSCAN_ACTION_MODE="both"\n' "$enabled" > "$SB/fx/conf.d/botscan/main.conf"
+  if [[ "$hs" != "NORUNSTATE" ]]; then
+    printf '{"health_state":"%s","last_run_ts":%s,"bans_emitted_total":0,"lines_scanned_total":100}\n' \
+      "$hs" "$(( $(date +%s) - age ))" > "$SB/fx/data/botscan/runstate.json"
+  fi
+  [[ "$ho" == "MISSING" ]] || printf '{"batch_handoff_errors":%s,"batch_consumer_stale_backlog":%s}\n' \
+      "$ho" "$stale" > "$SB/fx/data/botguard/botscan_consumer_status.json"
+}
+
+reader_check(){
+  NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
+    set +e
+    systemctl(){ return 0; }          # timer ACTIVE — isolates the health axis
+    HEALTH_OK=0; HEALTH_WARNING=1
+    declare -A NFTBAN_HEALTH_RESULTS NFTBAN_HEALTH_ISSUES
+    . "$SRC/render.sh"; . "$SRC/check.sh"
+    nftban_health_check_botscan >/dev/null 2>&1
+    printf "%s|%s\n" "$?" "${NFTBAN_HEALTH_ISSUES[botscan]:-}"
+  '
+}
+
+reader_render(){
+  NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
+    set +e
+    systemctl(){ return 0; }
+    . "$SRC/render.sh"
+    _nftban_health_render_botscan 2>&1
+  '
+}
+
+# ---------------------------------------------------------------------------
+# DECLARED INVERSIONS. Written HERE, in this file. No arm resolves a negative
+# control through git: an origin/main control inverts the instant a fix merges.
+# ---------------------------------------------------------------------------
+inv_classifier_always_ok(){ echo "OK_SCANNED_NO_BOTS"; }   # inverts clauses 1,2,3,5
+inv_classifier_never_backlog(){                            # inverts clause 2 only
+  # shellcheck disable=SC2034  # $1 (enabled) is deliberately ignored by the inversion
+  local en="${1:-true}" scanned="${2:-0}"
+  [[ "${scanned:-0}" -eq 0 ]] && { echo "DEGRADED_INPUT_BLIND"; return; }
+  echo "OK_SCANNED_NO_BOTS"
+}
+
+# assert_not_ok <label> <state-producer-output>
+assert_not_ok(){ [[ "$2" != OK_* ]]; }
+
+# ---------------------------------------------------------------------------
+# C0 — FIELD CENSUS. Decides PASS vs NOT_EXECUTED for the arms below. Census
+# lines are OBSERVATIONS, not verdicts; the hard assertions that back them are
+# the numbered arms.
+# ---------------------------------------------------------------------------
+echo "[C0] measurement-authority census (which fields the contract may depend on TODAY)"
+
+# spool backpressure. A FILENAME GREP IS NOT A PRODUCER CENSUS: the collector
+# writes this file through a VARIABLE (SPOOL_STATUS_FILE), so a literal-path
+# redirect search reports "no writer" and would wrongly park clause 2's spool arm
+# as pending-field. The census below resolves the indirection: assignment ->
+# redirect through that variable -> atomic rename -> the key actually emitted.
+SPOOL_COLLECTOR="$REPO/cli/sbin/nftban-botscan-collector"
+SPOOL_FIELD=ABSENT
+if [[ -f "$SPOOL_COLLECTOR" ]]; then
+  _sv=$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*botscan/spool\.status' "$SPOOL_COLLECTOR" \
+        | sed -E 's/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=.*/\1/' | head -1)
+  _swrite=no; _smv=no; _skey=no
+  if [[ -n "${_sv:-}" ]]; then
+    grep -qE "(>|>>)[[:space:]]*\"?\\\$\{?${_sv}[:}\"]" "$SPOOL_COLLECTOR" && _swrite=yes
+    grep -qE "mv -f[[:space:]]+\"\\\$\{${_sv}\}\.tmp\"" "$SPOOL_COLLECTOR" && _smv=yes
+    grep -qE "printf '[^']*backpressure=%s" "$SPOOL_COLLECTOR" && _skey=yes
+  fi
+  if [[ "$_swrite" == yes && "$_smv" == yes && "$_skey" == yes ]]; then
+    SPOOL_FIELD=PRESENT
+    ok "C0.1 botscan/spool.status HAS a producer: $SPOOL_COLLECTOR writes \$$_sv (redirect+atomic mv) and emits the backpressure= key"
+  else
+    no "C0.1 spool.status producer chain broke (var=${_sv:-none} redirect=$_swrite mv=$_smv key=$_skey) — re-derive before trusting clause 2's spool arms"
+  fi
+else
+  no "C0.1 $SPOOL_COLLECTOR missing — the spool-backpressure producer cannot be located"
+fi
+# The two health surfaces disagree about this field: cmd_health_analysis.sh reads
+# it, nftban_health_checks_modules.sh does not open it at all.
+grep -q 'botscan/spool\.status' "$HANA" \
+  && ok "C0.1b cmd_health_analysis.sh READS spool.status" \
+  || no "C0.1b cmd_health_analysis.sh no longer reads spool.status"
+grep -q 'spool\.status' "$HMOD" \
+  && no "C0.1c nftban_health_checks_modules.sh now reads spool.status — promote arm C2.4d to a hard assertion" \
+  || ok "C0.1c nftban_health_checks_modules.sh does NOT read spool.status (the nftban health verdict never sees backpressure)"
+
+# progress counters: structurally zero. Two independent defect shapes.
+ANALYZE_RETURNS_COUNT=no
+awk '/^nftban_botscan_analyze\(\)/{c=1} c{print} c&&/^}/{exit}' "$BOTSCAN" | grep -q 'return \$banned' \
+  && ANALYZE_RETURNS_COUNT=yes
+CALLER_READS_STDOUT=no
+grep -q 'banned=\$(nftban_botscan_analyze)' "$BOTSCAN" && CALLER_READS_STDOUT=yes
+SIGNAL_INC_IN_SUBSHELL=no
+awk '/^nftban_botscan_write_signal\(\)/{c=1} c{print} c&&/^}/{exit}' "$BOTSCAN" \
+  | grep -q '_BOTSCAN_SIGNALS_EMITTED=\$((' && [[ "$CALLER_READS_STDOUT" == yes ]] \
+  && SIGNAL_INC_IN_SUBSHELL=yes
+COUNTERS_FIELD=BROKEN
+[[ "$ANALYZE_RETURNS_COUNT" == yes && "$CALLER_READS_STDOUT" == yes ]] || COUNTERS_FIELD=REPAIRED
+
+# run-age: produced (ts="$(date +%s)" at the single record_runstate call site) and
+# read by the reader. This one the contract MAY depend on today.
+RUNAGE_FIELD=ABSENT
+grep -q 'ts="\$(date +%s)"' "$BOTSCAN" && grep -q '\.last_run_ts//0' "$HMOD" && RUNAGE_FIELD=PRESENT
+[[ "$RUNAGE_FIELD" == PRESENT ]] \
+  && ok "C0.2 last_run_ts has a producer (nftban_botscan.sh record_runstate call site) AND a reader — safe to depend on today" \
+  || no "C0.2 last_run_ts producer/reader binding not found — clause 1+4 arms lose their input"
+
+# backlog_state: produced in parent scope, consumed by the classifier.
+BACKLOG_FIELD=ABSENT
+grep -q 'backlog_state="\$_BS_BACKLOG"' "$BOTSCAN" && BACKLOG_FIELD=PRESENT
+[[ "$BACKLOG_FIELD" == PRESENT ]] \
+  && ok "C0.3 backlog_state has a producer and reaches the classifier — safe to depend on today" \
+  || no "C0.3 backlog_state producer not found — clause 2 loses its only live input"
+
+printf '  [CENSUS] spool.status:backpressure=%s  progress_counters=%s  last_run_ts=%s  backlog_state=%s\n' \
+  "$SPOOL_FIELD" "$COUNTERS_FIELD" "$RUNAGE_FIELD" "$BACKLOG_FIELD"
+
+# ---------------------------------------------------------------------------
+# CLAUSE 1 — NO VALID PROGRESS EVIDENCE -> NEVER OK
+# Scope: an ENABLED module. The disabled axis is a separate owner ruling and is
+# deliberately NOT asserted here.
+# ---------------------------------------------------------------------------
+echo "[C1] clause 1 — no valid progress evidence NEVER yields OK"
+
+assert_not_ok c1 "$(nftban_botscan_health_state true 0 0 0 STABLE 1 0)" \
+  && ok "C1.1 POSITIVE: enabled, input present, 0 scanned -> $(nftban_botscan_health_state true 0 0 0 STABLE 1 0) (not OK_*)" \
+  || no "C1.1 enabled + 0 scanned classified OK_*"
+
+assert_not_ok c1 "$(nftban_botscan_health_state true 0 0 0 STABLE 0 0)" \
+  && ok "C1.2 POSITIVE: enabled, no input seen, 0 scanned -> $(nftban_botscan_health_state true 0 0 0 STABLE 0 0) (not OK_*)" \
+  || no "C1.2 enabled + 0 scanned + no input classified OK_*"
+
+# FALSIFIER: the same predicate, over a DECLARED INVERSION that always says OK.
+# If this does NOT trip, C1.1/C1.2 are not looking at anything.
+if assert_not_ok c1 "$(inv_classifier_always_ok true 0 0 0 STABLE 1 0)"; then
+  no "C1.3 FALSIFIER DID NOT TRIP — the clause-1 predicate accepts an always-OK classifier; C1.1/C1.2 are vacuous"
+else
+  ok "C1.3 FALSIFIER: declared always-OK inversion is rejected by the clause-1 predicate"
+fi
+
+# READER arm: progress evidence 30 days stale, everything else nominal.
+fixture true OK_SCANNED_NO_BOTS 2592000 0 false
+C1R=$(reader_check); C1R_RC="${C1R%%|*}"
+C1RENDER=$(reader_render)
+if [[ "$C1R_RC" == "0" ]]; then
+  gap G-01 "C1.4 READER: last_run_ts 30d stale + timer active -> reader verdict" yes \
+      "reader returned HEALTH_OK($C1R_RC) and rendered: $(printf '%s' "$C1RENDER" | sed -n 's/^  State:  *//p')"
+else
+  gap G-01 "C1.4 READER: last_run_ts 30d stale + timer active -> reader verdict" no \
+      "reader returned rc=$C1R_RC"
+fi
+
+# FALSIFIER for the reader probe: prove the probe can observe a NON-OK return,
+# i.e. it is reading the subject's verdict and not a constant.
+fixture true DEGRADED_BUDGET_HIT 10 0 false
+C1N="$(reader_check)"; C1N_RC="${C1N%%|*}"
+[[ "$C1N_RC" != "0" ]] \
+  && ok "C1.5 FALSIFIER: the same reader probe reports rc=$C1N_RC for DEGRADED_BUDGET_HIT (probe is not constant-OK)" \
+  || no "C1.5 reader probe returned OK for an explicitly DEGRADED state — probe cannot distinguish verdicts"
+
+# ERROR state — a runtime FAILURE is, by definition, not progress evidence.
+fixture true ERROR_RUNTIME_FAILURE 10 0 false
+C1E="$(reader_check)"; C1E_RC="${C1E%%|*}"
+if [[ "$C1E_RC" == "0" ]]; then
+  gap G-04 "C1.6 READER: health_state=ERROR_RUNTIME_FAILURE -> reader verdict" yes \
+      "reader returned HEALTH_OK($C1E_RC); issue text: ${C1E#*|}"
+else
+  gap G-04 "C1.6 READER: health_state=ERROR_RUNTIME_FAILURE -> reader verdict" no "rc=$C1E_RC"
+fi
+
+# ---------------------------------------------------------------------------
+# CLAUSE 2 — STALLED + CAPPED/BACKPRESSURED BACKLOG -> DEGRADED
+# ---------------------------------------------------------------------------
+echo "[C2] clause 2 — a stalled run with a capped/backpressured backlog is DEGRADED"
+
+C2A=$(nftban_botscan_health_state true 5000 0 0 GROWING 1 0)
+[[ "$C2A" == DEGRADED_* ]] \
+  && ok "C2.1 POSITIVE: backlog GROWING -> $C2A" \
+  || no "C2.1 backlog GROWING did not classify DEGRADED_*" "got $C2A"
+
+C2B=$(nftban_botscan_health_state true 5000 0 0 STARVED 1 0)
+[[ "$C2B" == DEGRADED_* ]] \
+  && ok "C2.2 POSITIVE: backlog STARVED (>64MiB behind) -> $C2B" \
+  || no "C2.2 backlog STARVED did not classify DEGRADED_*" "got $C2B"
+
+# FALSIFIER: a declared inversion that ignores the backlog argument entirely.
+# If C2.1/C2.2's predicate passes it, the backlog axis is not being consulted.
+if [[ "$(inv_classifier_never_backlog true 5000 0 0 GROWING 1 0)" == DEGRADED_* ]]; then
+  no "C2.3 FALSIFIER DID NOT TRIP — a backlog-blind inversion satisfies the clause-2 predicate"
+else
+  ok "C2.3 FALSIFIER: declared backlog-blind inversion fails the clause-2 predicate (the axis is real)"
+fi
+
+# The SPOOL axis — the srv3-shaped failure: the spool latched at its cap with
+# backpressure asserted while the access-log forward cursor reports no backlog,
+# so backlog_state reads DRAINING (nftban_botscan_adaptive.sh backlog_state: 0
+# bytes behind -> DRAINING) and the run classifies OK. The field IS produced
+# (C0.1); the classifier simply takes no such argument.
+C2_ARITY_OK=no
+grep -q '# Args: enabled(true/false) lines_scanned bots_found budget_hit backlog_state has_input(0/1) error(0/1)' "$ADAPT" \
+  && C2_ARITY_OK=yes
+[[ "$C2_ARITY_OK" == yes ]] \
+  && ok "C2.4a classifier signature pinned at 7 args with NO spool/backpressure parameter (nftban_botscan_adaptive.sh)" \
+  || no "C2.4a classifier signature changed — re-derive whether a spool axis was added before trusting C2.4b"
+
+# Premise of the srv3 shape: an empty forward-cursor backlog classifies DRAINING,
+# which the health model treats as healthy. Asserted, not assumed.
+C2D=$(nftban_botscan_backlog_state 0 100000000)
+[[ "$C2D" == "DRAINING" ]] \
+  && ok "C2.4b PREMISE: zero forward-cursor backlog classifies $C2D even after a 100MB prior — the access-log axis cannot see a latched spool" \
+  || no "C2.4b backlog_state premise changed" "got $C2D"
+
+if [[ "$SPOOL_FIELD" == PRESENT ]]; then
+  # POSITIVE arm, executable TODAY: backpressure=1 + an OK health_state must not
+  # render a healthy verdict on the `nftban health` surface.
+  fixture true OK_SCANNED_NO_BOTS 10 0 false
+  printf 'total_bytes=1170000000\nfile_count=4210\noldest_age_sec=1900000\ncap_bytes=1073741824\ncap_pct=108\nbackpressure=1\nts=%s\n' \
+    "$(date +%s)" > "$SB/fx/data/botscan/spool.status"
+  [[ -s "$SB/fx/data/botscan/spool.status" ]] && grep -q '^backpressure=1$' "$SB/fx/data/botscan/spool.status" \
+    && ok "C2.4c FIXTURE: spool.status written with backpressure=1 (the arm below is not vacuous)" \
+    || no "C2.4c spool.status fixture not written — C2.4d would assert nothing"
+  C2S="$(reader_check)"; C2S_RC="${C2S%%|*}"
+  if [[ "$C2S_RC" == "0" ]]; then
+    gap G-07 "C2.4d READER: spool backpressure=1 at 108% of cap -> reader verdict" yes \
+        "reader returned HEALTH_OK($C2S_RC); the nftban health verdict never opens spool.status, so a latched spool is invisible to health_state"
+  else
+    gap G-07 "C2.4d READER: spool backpressure=1 at 108% of cap -> reader verdict" no "rc=$C2S_RC"
+  fi
+else
+  nx "C2.4c/d spool-backpressure axis" "/var/lib/nftban/botscan/spool.status:backpressure (producer chain not resolvable at HEAD)"
+fi
+
+# The stall half of clause 2 wants a monotone progress counter. It has none.
+if [[ "$COUNTERS_FIELD" == BROKEN ]]; then
+  gap G-06 "C2.5 stall-by-counter: non-advancing bans/signals as stall evidence" yes \
+      "analyze_returns_count_as_exit_status=$ANALYZE_RETURNS_COUNT caller_reads_stdout=$CALLER_READS_STDOUT signal_increment_inside_that_subshell=$SIGNAL_INC_IN_SUBSHELL — nftban_botscan_analyze returns its count as an EXIT STATUS while the caller reads stdout, and the signal counter is incremented inside that same command substitution, so both totals are structurally 0"
+  nx "C2.5b stall-by-counter arm" "bans_emitted_total / signals_emitted_total (present in the schema, structurally 0 — blocked on P0-B)"
+else
+  gap G-06 "C2.5 stall-by-counter: non-advancing bans/signals as stall evidence" no \
+      "the counter plumbing no longer matches the declared defect shape"
+fi
+
+# ---------------------------------------------------------------------------
+# CLAUSE 3 — INCOMPLETE MEASUREMENT AUTHORITY -> UNKNOWN or DEGRADED, NEVER OK
+# ---------------------------------------------------------------------------
+echo "[C3] clause 3 — incomplete measurement authority is UNKNOWN or DEGRADED, never OK"
+
+# The FACTS layer is honest: absent run-state -> UNKNOWN, absent consumer status
+# -> handoff/stale UNKNOWN. Assert that first, so a later failure is localised to
+# the VERDICT layer rather than to collection.
+fixture true NORUNSTATE 0 MISSING false
+C3F=$(NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
+  set +e; systemctl(){ return 0; }; . "$SRC/render.sh"; _nftban_health_botscan_facts')
+IFS='|' read -r _c3en _c3mo _c3ti C3HS _c3la _c3ba _c3sp C3HO C3ST <<<"$C3F"
+[[ "$C3HS" == "UNKNOWN" ]] \
+  && ok "C3.1 POSITIVE: run-state absent -> facts emit health_state=UNKNOWN (never assumed clean)" \
+  || no "C3.1 run-state absent did not yield UNKNOWN" "got '$C3HS'"
+[[ "$C3HO" == "UNKNOWN" && "$C3ST" == "UNKNOWN" ]] \
+  && ok "C3.2 POSITIVE: consumer status absent -> handoff=UNKNOWN stale=UNKNOWN (never assumed healthy)" \
+  || no "C3.2 absent consumer status did not yield UNKNOWN/UNKNOWN" "got '$C3HO'/'$C3ST'"
+
+# FALSIFIER: the facts layer must NOT report UNKNOWN when authority IS complete.
+fixture true OK_SCANNED_NO_BOTS 10 0 false
+C3F2=$(NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
+  set +e; systemctl(){ return 0; }; . "$SRC/render.sh"; _nftban_health_botscan_facts')
+IFS='|' read -r _ _ _ C3HS2 _ _ _ C3HO2 _ <<<"$C3F2"
+[[ "$C3HS2" != "UNKNOWN" && "$C3HO2" != "UNKNOWN" ]] \
+  && ok "C3.3 FALSIFIER: with complete authority the same facts probe reports hs=$C3HS2 handoff=$C3HO2 (UNKNOWN is measured, not constant)" \
+  || no "C3.3 facts probe reports UNKNOWN even with complete authority — C3.1/C3.2 are vacuous"
+
+# The VERDICT layer: UNKNOWN authority must not be a passing control.
+fixture true NORUNSTATE 0 MISSING false
+C3V="$(reader_check)"; C3V_RC="${C3V%%|*}"
+if [[ "$C3V_RC" == "0" ]]; then
+  gap G-05 "C3.4 VERDICT: health_state=UNKNOWN (run-state absent) -> reader verdict" yes \
+      "reader returned HEALTH_OK($C3V_RC); issue text: ${C3V#*|}"
+else
+  gap G-05 "C3.4 VERDICT: health_state=UNKNOWN (run-state absent) -> reader verdict" no "rc=$C3V_RC"
+fi
+
+# ---------------------------------------------------------------------------
+# CLAUSE 4 — CONSUMER stale_backlog=false MUST NOT OVERRIDE INDEPENDENT STALL
+# ---------------------------------------------------------------------------
+echo "[C4] clause 4 — stale_backlog=false does not override independent stall evidence"
+
+# POSITIVE: an independent DEGRADED coverage verdict survives stale_backlog=false.
+fixture true DEGRADED_BACKLOG_GROWING 10 0 false
+C4A="$(reader_check)"; C4A_RC="${C4A%%|*}"
+[[ "$C4A_RC" != "0" ]] \
+  && ok "C4.1 POSITIVE: stale_backlog=false did NOT clear an independent DEGRADED_BACKLOG_GROWING (rc=$C4A_RC)" \
+  || no "C4.1 stale_backlog=false cleared an independent DEGRADED verdict"
+
+# FALSIFIER: the consumer axis is live in the other direction — stale_backlog=true
+# is honoured even when health_state is OK. If this does not trip, C4.1 proves
+# nothing about the consumer field being consulted at all.
+fixture true OK_SCANNED_NO_BOTS 10 0 true
+C4B="$(reader_check)"; C4B_RC="${C4B%%|*}"
+[[ "$C4B_RC" != "0" && "${C4B#*|}" == *"HAND-OFF BROKEN"* ]] \
+  && ok "C4.2 FALSIFIER: stale_backlog=true overrides an OK health_state (the consumer axis IS consulted)" \
+  || no "C4.2 stale_backlog=true did not change the verdict — the consumer axis is not wired" "rc=$C4B_RC issue=${C4B#*|}"
+
+# The gap: stall evidence that is INDEPENDENT of health_state — a 30-day-old
+# last_run_ts — is discarded the moment stale_backlog=false and health_state=OK.
+fixture true OK_SCANNED_NO_BOTS 2592000 0 false
+C4C="$(reader_check)"; C4C_RC="${C4C%%|*}"
+if [[ "$C4C_RC" == "0" ]]; then
+  gap G-01 "C4.3 stale_backlog=false + 30d-stale last_run_ts -> reader verdict" yes \
+      "reader returned HEALTH_OK($C4C_RC): the consumer's negative answer is the only stall input consulted"
+else
+  gap G-01 "C4.3 stale_backlog=false + 30d-stale last_run_ts -> reader verdict" no "rc=$C4C_RC"
+fi
+
+# ---------------------------------------------------------------------------
+# CLAUSE 5 — NO FALL-THROUGH OK; A HEALTH STATE IS POSITIVELY ASSERTED
+# ---------------------------------------------------------------------------
+echo "[C5] clause 5 — no fall-through OK"
+
+# 5a. EMITTABLE-STATE CLOSURE. The declared set is the population; a new emit
+# site that is not declared FAILS rather than silently widening the contract.
+declare -a DECLARED_STATES=(
+  DEGRADED_BACKLOG_GROWING DEGRADED_BUDGET_HIT DEGRADED_INPUT_BLIND
+  DISABLED_BY_CONFIG ERROR_RUNTIME_FAILURE OK_SCANNED_BOTS_FOUND OK_SCANNED_NO_BOTS
+)
+EMITTED=$(awk '/^nftban_botscan_health_state\(\)/{c=1} c{print} c&&/^}/{exit}' "$ADAPT" \
+          | grep -oE 'echo "[A-Z_]+"' | sed -e 's/^echo "//' -e 's/"$//' | sort -u)
+DECLARED=$(printf '%s\n' "${DECLARED_STATES[@]}" | sort -u)
+if [[ "$EMITTED" == "$DECLARED" ]]; then
+  ok "C5.1 emittable-state closure: classifier emits exactly the declared $(printf '%s\n' "$DECLARED" | wc -l) states"
+else
+  no "C5.1 emittable-state population changed" "emitted=[$(printf '%s' "$EMITTED" | tr '\n' ' ')] declared=[$(printf '%s' "$DECLARED" | tr '\n' ' ')]"
+fi
+# Plus the two states written directly by nftban_botscan.sh, bypassing the classifier.
+for s in DISABLED_BY_CONFIG NO_INPUT_DISCOVERED; do
+  grep -q "health_state=\"$s\"" "$BOTSCAN" \
+    && ok "C5.2 direct-write state $s is present in nftban_botscan.sh (bypasses the classifier)" \
+    || no "C5.2 direct-write state $s no longer written — reader coverage assumptions change"
+done
+
+# 5b. THE WRITER'S OWN DEFAULT. A record with no health_state must not become OK.
+W="$SB/w"; mkdir -p "$W/botscan"
+C5W=$(NFTBAN_DATA_DIR="$W" BOTSCAN_ENABLED=true bash -c '
+  set -Eeuo pipefail
+  . "$1" >/dev/null 2>&1
+  nftban_botscan_record_runstate ts=1 dur=1 lines_scanned=0 >/dev/null 2>&1 || true
+  jq -r ".health_state" "$2/botscan/runstate.json" 2>/dev/null || echo "NOFILE"
+' _ "$ADAPT" "$W")
+if [[ "$C5W" == OK_* ]]; then
+  gap G-02 "C5.3 WRITER: record_runstate with NO health_state argument" yes \
+      "recorded health_state=$C5W — a state reached by parameter default, not by assertion"
+else
+  gap G-02 "C5.3 WRITER: record_runstate with NO health_state argument" no "recorded health_state=$C5W"
+fi
+
+# FALSIFIER for the writer probe: an explicitly supplied state must be recorded
+# verbatim, proving the probe reads the file the writer actually wrote.
+W2="$SB/w2"; mkdir -p "$W2/botscan"
+C5W2=$(NFTBAN_DATA_DIR="$W2" BOTSCAN_ENABLED=true bash -c '
+  set -Eeuo pipefail
+  . "$1" >/dev/null 2>&1
+  nftban_botscan_record_runstate ts=1 dur=1 lines_scanned=0 health_state=DEGRADED_INPUT_BLIND >/dev/null 2>&1 || true
+  jq -r ".health_state" "$2/botscan/runstate.json" 2>/dev/null || echo "NOFILE"
+' _ "$ADAPT" "$W2")
+[[ "$C5W2" == "DEGRADED_INPUT_BLIND" ]] \
+  && ok "C5.4 FALSIFIER: an explicitly supplied health_state round-trips verbatim ($C5W2) — the probe reads real output" \
+  || no "C5.4 writer probe did not round-trip an explicit state — C5.3 is vacuous" "got '$C5W2'"
+
+# 5c. THE READER'S TERMINAL ELSE. A state the reader does not NAME must not be
+# reached by default. WARN_PARTIAL_PROGRESS is referenced by the advisory in
+# nftban_botscan_adaptive.sh but emitted by no producer — it is the cleanest
+# probe for the fall-through itself.
+grep -q 'WARN_PARTIAL_PROGRESS' "$ADAPT" \
+  && ok "C5.5a WARN_PARTIAL_PROGRESS is a state the codebase already reasons about (advisory branch) — a valid fall-through probe" \
+  || no "C5.5a WARN_PARTIAL_PROGRESS no longer referenced — choose another unnamed state for the fall-through probe"
+fixture true WARN_PARTIAL_PROGRESS 10 0 false
+C5R="$(reader_check)"; C5R_RC="${C5R%%|*}"
+if [[ "$C5R_RC" == "0" ]]; then
+  gap G-03 "C5.5b READER: a health_state the reader does not name" yes \
+      "unnamed state reached HEALTH_OK($C5R_RC) through the terminal else; issue text: ${C5R#*|}"
+else
+  gap G-03 "C5.5b READER: a health_state the reader does not name" no "rc=$C5R_RC"
+fi
+
+# 5d. POSITIVE ASSERTION COVERAGE. For every state the system can actually
+# record, the reader must reach its verdict through a branch that NAMES the
+# state class. Executed, not grepped: OK_* may return OK; nothing else may.
+echo "  --- clause 5 positive-assertion coverage matrix (enabled, timer active, handoff clean) ---"
+for s in DEGRADED_BACKLOG_GROWING DEGRADED_BUDGET_HIT DEGRADED_INPUT_BLIND NO_INPUT_DISCOVERED; do
+  fixture true "$s" 10 0 false
+  r="$(reader_check)"; r="${r%%|*}"
+  [[ "$r" != "0" ]] \
+    && ok "C5.6 coverage: $s -> non-OK verdict (rc=$r), reached by a NAMED branch" \
+    || no "C5.6 coverage: $s reached OK by fall-through"
+done
+fixture true OK_SCANNED_NO_BOTS 10 0 false
+r="$(reader_check)"; r="${r%%|*}"
+[[ "$r" == "0" ]] \
+  && ok "C5.7 coverage: OK_SCANNED_NO_BOTS with fresh evidence -> OK (rc=$r) — the matrix is not uniformly non-OK" \
+  || no "C5.7 coverage matrix returns non-OK for every input — C5.6 proves nothing"
+
+# ---------------------------------------------------------------------------
+# REGISTRY CLOSURE — no declared gap may go unconsumed.
+# ---------------------------------------------------------------------------
+echo "[R] gap-registry closure"
+for id in "${!GAPS_DECLARED[@]}"; do
+  [[ -n "${GAPS_CONSUMED[$id]:-}" ]] \
+    && ok "R.1 declared gap $id is consumed by at least one arm" \
+    || no "R.1 declared gap $id is consumed by NO arm — registry rows may not exist without an arm that observes them"
+done
+
+# ---------------------------------------------------------------------------
+echo "==========================================================="
+printf 'PASS=%s  FAIL=%s  NOT_EXECUTED=%s  GAP-OPEN=%s\n' "$PASS" "$FAIL" "$NOTEXEC" "$GAPOPEN"
+if (( NOTEXEC > 0 )); then
+  echo "NOT_EXECUTED arms are NOT passes: the named field has no producer at HEAD."
+fi
+if (( GAPOPEN > 0 )); then
+  echo "GAP-OPEN arms are DECLARED contract violations present at HEAD, not passes."
+fi
+if (( FAIL > 0 )); then
+  printf 'FAILED ARMS:\n'; printf '  - %s\n' "${FAILED[@]}"
+  echo "=== botscan_health_truth_contract_v1231_0: FAIL ==="
+  exit 1
+fi
+echo "=== botscan_health_truth_contract_v1231_0: PASS ==="
+exit 0
