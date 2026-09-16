@@ -571,8 +571,11 @@ nftban_http_bounded_read() {
     # DIAGNOSTIC ONLY — never consulted below. Readable by the caller in this same
     # shell; it is NOT telemetry and does not survive a process boundary (see the
     # P0-A4 note above), so nothing may treat its absence as a measurement.
-    NFTBAN_HTTP_LAST_PRODUCER_RC="${_ps[0]:-unknown}"
-    NFTBAN_HTTP_LAST_CONSUMER_RC="${_ps[1]:-unknown}"
+    # `export`: shellcheck's own prescribed remedy for SC2034 and the accurate one —
+    # these are read EXTERNALLY (the regression test asserts on them), never by this
+    # library. They are the module's diagnostic surface, not internal state.
+    export NFTBAN_HTTP_LAST_PRODUCER_RC="${_ps[0]:-unknown}"
+    export NFTBAN_HTTP_LAST_CONSUMER_RC="${_ps[1]:-unknown}"
     # ACCEPTANCE = THE CONSUMER CONTRACT. `head` exited cleanly AND delivered exactly
     # the requested window => those N bytes were obtained, whatever the producer did
     # after we deliberately stopped accepting more.

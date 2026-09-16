@@ -36,10 +36,30 @@ ok(){ echo "  [PASS] $1"; P=$((P+1)); }
 no(){ echo "  [FAIL] $1${2:+ — $2}"; F=$((F+1)); }
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
 export NFTBAN_HTTP_LOG_OFFSET_DIR="$W/off"; mkdir -p "$NFTBAN_HTTP_LOG_OFFSET_DIR"
+# ⛔ PROBE THE AMBIENT SIGPIPE DISPOSITION BEFORE SOURCING THE LIBRARY.
+#    The library arms `set -Eeuo pipefail` at file scope, after which a raw bounded
+#    pipeline returning 141 would kill this script. More importantly: an INHERITED
+#    SIG_IGN CANNOT BE RESTORED TO DEFAULT from inside the process, so this harness
+#    does not get to choose the first disposition — it can only ADD the ignore.
+#    MEASURED: the GitHub Actions runner tree already ignores SIGPIPE, so there the
+#    ambient shape is EPIPE (1), not signal death (141). Asserting 141 for the first
+#    battery would encode an assumption about ambient state we do not control.
+_probe="$(mktemp)"; head -c 262144 /dev/zero > "$_probe" 2>/dev/null
+tail -c +1 "$_probe" 2>/dev/null | head -c 1024 >/dev/null
+AMBIENT_RC="${PIPESTATUS[0]}"
+rm -f "$_probe"
+
 set +u
 # shellcheck source=/dev/null
 . "$LIB" >/dev/null 2>&1
 set -u
+
+echo "=== 0b ambient SIGPIPE disposition probed BEFORE any assertion ==="
+case "$AMBIENT_RC" in
+    141) ok "ambient producer rc=141 — SIGPIPE defaulted (signal shape)" ;;
+    1)   ok "ambient producer rc=1 — SIGPIPE already IGNORED here (EPIPE shape, e.g. a CI runner or a systemd service)" ;;
+    *)   no "ambient producer rc is neither 141 nor 1" "$AMBIENT_RC — the disposition model does not describe this host" ;;
+esac
 
 echo "=== 0. subject exists (no arm may pass by vacuity) ==="
 if declare -F nftban_http_bounded_read >/dev/null 2>&1; then
@@ -67,8 +87,16 @@ mk(){
 # =============================================================================
 # THE BATTERY RUNS TWICE — ONCE PER SIGPIPE DISPOSITION.
 #
-#   D=default   SIGPIPE default     tail dies on the signal   producer rc = 141
-#   D=ignored   SIGPIPE SIG_IGN     tail gets EPIPE           producer rc =   1
+#   D=ambient   whatever we INHERITED — probed above, NOT assumed. 141 on a normal
+#               shell; 1 on a CI runner or systemd service that already ignores it.
+#   D=ignored   SIGPIPE SIG_IGN forced here   tail gets EPIPE   producer rc = 1
+#
+# An inherited SIG_IGN cannot be restored to default from inside the process, so the
+# harness can only ADD the ignore. On a host whose ambient disposition is already
+# ignored BOTH batteries see rc=1 — that is correct and not a vacuity, because the
+# predicate under test never consults producer status at all; the differentiation is
+# carried by the probe (arm 0b) and by the declared-inversion control, not by this
+# harness pretending it can choose the ambient disposition.
 #
 # IgnoreSIGPIPE= defaults to YES in systemd and an ignored signal is INHERITED
 # ACROSS exec, so nftban-botscan.service (Type=oneshot, shell ExecStart) runs in
@@ -170,12 +198,14 @@ _t9rc=0
 nftban_http_bounded_read "$big" 0 16384 "$W/$D.s9" >/dev/null 2>&1 || _t9rc=$?
 if [[ -z "${NFTBAN_HTTP_LAST_PRODUCER_RC:-}" ]]; then
     no "[$D] T9 producer status was not recorded at all"
-elif [[ "$D" == "default" && "$NFTBAN_HTTP_LAST_PRODUCER_RC" == "141" ]]; then
-    ok "[$D] T9 producer rc=141 recorded (signal shape) and accepted anyway"
+elif [[ "$D" == "ambient" && "$NFTBAN_HTTP_LAST_PRODUCER_RC" == "$AMBIENT_RC" ]]; then
+    ok "[$D] T9 producer rc=$AMBIENT_RC recorded (the probed ambient shape) and accepted anyway"
 elif [[ "$D" == "ignored" && "$NFTBAN_HTTP_LAST_PRODUCER_RC" == "1" ]]; then
+    # deterministic: `trap "" PIPE` guarantees SIG_IGN regardless of what we inherited
     ok "[$D] T9 producer rc=1 recorded (EPIPE shape) and accepted anyway"
 else
-    no "[$D] T9 unexpected producer rc for this disposition" "$NFTBAN_HTTP_LAST_PRODUCER_RC"
+    no "[$D] T9 producer rc does not match this disposition" \
+       "observed=$NFTBAN_HTTP_LAST_PRODUCER_RC ambient=$AMBIENT_RC"
 fi
 if [[ "${NFTBAN_HTTP_LAST_CONSUMER_RC:-}" == "0" ]]; then
     ok "[$D] T9 consumer rc=0 recorded — this is the authoritative half"
@@ -217,7 +247,7 @@ fi
 # A subshell cannot write the parent's counters, so each tallies to a file — and a
 # MISSING tally is itself a failure (the battery did not run to completion), never
 # silently zero.
-for _D in default ignored; do
+for _D in ambient ignored; do
     ( battery "$_D"; printf '%s %s\n' "$P" "$F" > "$W/.tally.$_D" )
     if [[ -r "$W/.tally.$_D" ]]; then
         read -r _p _f < "$W/.tally.$_D"
