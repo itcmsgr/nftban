@@ -267,6 +267,23 @@ jobs:
       # and those are compared, not the raw strings.
       - name: Check Core ownership identity (v1.228.9 PR2, BLOCKING)
         run: ./scripts/ci/check-core-ownership-identity.sh
+
+      # v1.231.0 Lane E BLOCKING — AI co-author trailer guard, PR RANGE ONLY.
+      # v1.228.5 ordered this control ("AI co-author trailer guard (PR range
+      # only)", inversion N9) and it was never built: both guards named
+      # "identity" above inspect FILES and contain zero references to `git log`,
+      # `%B` or `Co-Authored`, so commit metadata had no gate at all.
+      # ⛔ This is NOT a history auditor. Its population is BASE..HEAD — the
+      # commits the PR would INTRODUCE. Legacy trailers stay by owner ruling and
+      # history is never rewritten; the guard's T3 control proves an
+      # out-of-range trailer cannot fail the gate. The selftest runs FIRST
+      # because a blind detector passes everything.
+      # Requires the fetch-depth: 0 checkout above: merge-base is not computable
+      # in a shallow clone, and the guard fails loudly rather than guessing.
+      - name: Check AI co-author trailers in the PR range (v1.231.0, BLOCKING)
+        run: |
+          ./scripts/ci/check-ai-coauthor-trailers.sh --selftest
+          ./scripts/ci/check-ai-coauthor-trailers.sh
       # v1.228.9 PR4 BLOCKING — no timing-dependent gate results. `grep -q`
       # downstream of a pipe under pipefail gives the producer EPIPE, which
       # pipefail reports as a failed pipeline; whether it fires depends on
