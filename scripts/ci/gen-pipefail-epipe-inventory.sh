@@ -2,50 +2,183 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
-# gen-pipefail-epipe-inventory.sh — regenerate the recorded per-file inventory of
-# `producer | grep -q` sites in the BLOCKING shell-test corpus (v1.231.0 D4).
+# gen-pipefail-epipe-inventory.sh — regenerate the two ratchet baselines consumed
+# by scripts/ci/check-pipefail-epipe-shortcircuit.sh:
 #
-# The inventory is the ratchet baseline consumed by
-# scripts/ci/check-pipefail-epipe-shortcircuit.sh. It is GENERATED so it cannot
-# drift into a hand-curated list, and so "fix a file, regenerate" is a mechanical
-# step rather than an editorial one.
+#   scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv
+#       per-file COUNTS for the BLOCKING shell-test corpus
+#   scripts/ci/data/pipefail-epipe-exposure-registry.tsv
+#       content-anchored DECLARED EXPOSURE rows for the gate and product planes
 #
-# The matcher here MUST stay identical to count_sites() in the guard. It is
-# duplicated rather than sourced because the guard is a standalone merge gate
-# that must not depend on a generator being present; the falsifiability suite
-# asserts the two agree.
+# Both are GENERATED so they cannot drift into hand-curated lists, and so
+# "fix a site, regenerate" is a mechanical step rather than an editorial one.
+#
+# v1.231.0 LANE G: the matcher is no longer duplicated here. The guard is sourced
+# with EPIPE_GUARD_LIB_ONLY=1 and its detector and populations are used directly,
+# because a second copy of a matcher is how a generated baseline silently stops
+# describing the population the gate actually scans. The dependency is one-way:
+# the gate does not need this generator to run.
+#
+# The class and note columns of the registry are CARRIED FORWARD from the
+# existing file whenever a row's (plane, file, fingerprint) identity survives, so
+# regenerating never discards a classification someone earned by measuring.
 set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
-OUT="scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv"
 
-count_sites() {
-    local f="$1" n=0 ln line _stripped
-    grep -qE '^[[:space:]]*set[[:space:]]+-[A-Za-z]*o?[[:space:]]*pipefail|set[[:space:]]+-o[[:space:]]+pipefail' "$f" || { printf '0'; return; }
-    while IFS=: read -r ln _; do
-        [[ -z "$ln" ]] && continue
-        line="$(sed -n "${ln}p" "$f")"
-        _stripped="${line#"${line%%[![:space:]]*}"}"
-        case "$_stripped" in \#*) continue ;; esac
-        case "$line" in *"# epipe-ok"*) continue ;; esac
-        n=$((n + 1))
-    done < <(grep -nE '[^|]\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q' "$f" \
-             | grep -vE '(^|[^A-Za-z_])(echo|printf)[^|]*\|[[:space:]]*grep' || true)
-    printf '%d' "$n"
+# Named OUT_* so they cannot collide with any name the sourced guard owns.
+OUT_INV="scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv"
+OUT_REG="scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+
+EPIPE_GUARD_LIB_ONLY=1
+# shellcheck source=scripts/ci/check-pipefail-epipe-shortcircuit.sh
+. scripts/ci/check-pipefail-epipe-shortcircuit.sh
+
+# ---- carry forward existing classifications ---------------------------------
+declare -A PRIOR_CLASS=() PRIOR_NOTE=()
+if [[ -f "$OUT_REG" ]]; then
+    while IFS=$'\t' read -r _plane _file _fp _n _cons _class _note; do
+        [[ -z "$_plane" || "$_plane" == \#* ]] && continue
+        PRIOR_CLASS["$_plane|$_file|$_fp"]="$_class"
+        PRIOR_NOTE["$_plane|$_file|$_fp"]="$_note"
+    done < "$OUT_REG"
+fi
+
+# ---- census seed (optional, first run only) ---------------------------------
+# EPIPE_CENSUS_TSV may point at the read-only classification census so a first
+# generation is seeded with its A/B/C/D/E classes instead of UNCLASSIFIED. It is
+# keyed by file:line, which only resolves against the tree the census was run on;
+# after the first run the registry's own carried-forward classes are authority.
+declare -A SEED_CLASS=() SEED_NOTE=()
+if [[ -n "${EPIPE_CENSUS_TSV:-}" && -f "${EPIPE_CENSUS_TSV:-}" ]]; then
+    while IFS=$'\t' read -r _f _l _c _fn _pf _ee _class _thr _sec _rest; do
+        [[ -z "$_f" || "$_f" == "file" ]] && continue
+        [[ -n "$_class" ]] || continue
+        cur="${SEED_CLASS["$_f:$_l"]:-}"
+        # most severe wins when a line carries more than one census row
+        case "$cur" in A) continue ;; esac
+        SEED_CLASS["$_f:$_l"]="$_class"
+        if [[ "$_class" == "A" ]]; then
+            SEED_NOTE["$_f:$_l"]="fn=${_fn:--}; security_or_count_surface=${_sec:--}; ${_thr:--}"
+        elif [[ "$_class" == "E" ]]; then
+            SEED_NOTE["$_f:$_l"]="fn=${_fn:--}; needs a producer-size probe on a representative host"
+        fi
+    done < "$EPIPE_CENSUS_TSV"
+fi
+
+emit_plane() {
+    local plane="$1" require_pipefail="$2" popfn="$3"
+    local f ln cons line fp key n
+    local -a LINES=()
+    declare -A SEEN=() CONS=() CLS=() NTE=()
+    while IFS= read -r p; do
+        [[ -n "$p" ]] || continue
+        [[ -f "$p" ]] || continue
+        f="$p"
+        if [[ "$require_pipefail" == "yes" ]]; then
+            declares_pipefail "$f" || continue
+        fi
+        mapfile -t LINES < "$f" 2>/dev/null || continue
+        while IFS=$'\t' read -r ln cons; do
+            [[ -n "$ln" ]] || continue
+            line="${LINES[$((ln - 1))]}"
+            fp="$(epipe_fingerprint "$line")"
+            key="$plane|$f|$fp"
+            SEEN["$key"]=$(( ${SEEN["$key"]:-0} + 1 ))
+            CONS["$key"]="$cons"
+            if [[ "${CLS["$key"]:-}" != "A" ]]; then
+                CLS["$key"]="${SEED_CLASS["$f:$ln"]:-}"
+                NTE["$key"]="${SEED_NOTE["$f:$ln"]:-}"
+            fi
+        done < <(detect_sites "$f")
+    done < <("$popfn")
+    local class note kplane krest kfile kfp
+    for key in "${!SEEN[@]}"; do
+        n="${SEEN[$key]}"
+        class="${PRIOR_CLASS[$key]:-}"
+        [[ -z "$class" ]] && class="${CLS[$key]:-}"
+        [[ -z "$class" ]] && class="UNCLASSIFIED"
+        note="${PRIOR_NOTE[$key]:-}"
+        [[ -z "$note" || "$note" == "-" ]] && note="${NTE[$key]:-}"
+        [[ -z "$note" ]] && note="-"
+        kplane="${key%%|*}"; krest="${key#*|}"; kfile="${krest%|*}"; kfp="${krest##*|}"
+        printf '%s\t%s\t%s\t%d\t%s\t%s\t%s\n' "$kplane" "$kfile" "$kfp" "$n" "${CONS[$key]}" "$class" "$note"
+    done
 }
 
 {
-    echo "# GENERATED by scripts/ci/gen-pipefail-epipe-inventory.sh — do not hand-edit."
-    echo "# Per-file count of timing-dependent \`producer | grep -q\` sites in the"
-    echo "# BLOCKING shell-test corpus (test-authority-index gate = ci-bash|policy-gates)."
-    echo "# Ratchet: a count may only go DOWN, and a decrease must be recorded here."
+    cat <<'HDR'
+# GENERATED by scripts/ci/gen-pipefail-epipe-inventory.sh — do not hand-edit
+# except to improve the class/note columns, which regeneration carries forward.
+#
+# DECLARED EXPOSURE REGISTRY — every `producer | <short-circuiting consumer>`
+# pipeline in the gate plane (CI-wired scripts/ci scripts) and the product plane
+# (what packaging ships to /usr/lib/nftban + /usr/sbin and what systemd units
+# ExecStart). Under `pipefail` such a pipeline can return 141 while its answer
+# was correct; see the header of check-pipefail-epipe-shortcircuit.sh for the
+# measured thresholds.
+#
+# ⛔ THIS IS A DEBT REGISTER, NOT AN ALLOWLIST. A row here means the exposure is
+# KNOWN and OWED, not that it is safe. The class column is the disposition:
+#
+#   A             SIGPIPE-SENSITIVE — the producer can exceed the pipe buffer on
+#                 a real host. Owed remediation. 39 of these sit on a security-
+#                 or count-reporting surface.
+#   B             structurally safe — producer bounded small by construction
+#   C             already normalised — `|| true` / `|| echo` fallback, or a
+#                 local/declare that masks the status
+#   D             shipped but not on an automatic product execution path
+#   E             UNKNOWN — producer size is host-dependent; needs a probe on a
+#                 representative host before it can be classified
+#   UNCLASSIFIED  detected but never classified; treat as E until measured
+#
+# Identity is (plane, file, fingerprint) where fingerprint is the first 16 hex of
+# the sha256 of the whitespace-normalised line. Line NUMBERS are deliberately not
+# part of identity: they drift on any edit and would locate the subject by
+# position. occurrences counts identical lines in the same file.
+#
+# Ratchet, three directions — see the guard's ARM 1:
+#   detected but not declared       -> FAIL (new exposure)
+#   declared but no longer detected -> FAIL (reconcile; locks a real fix in and
+#                                     makes a disappearance explainable)
+#   declared, file no longer in the -> FAIL (rotting row; nothing consumes it)
+#   population
+#
+# Regenerate: scripts/ci/gen-pipefail-epipe-inventory.sh
+#
+# plane	file	fingerprint	occurrences	consumers	class	note
+HDR
+    { emit_plane gate yes gate_population; emit_plane product no product_population; } | sort
+} > "$OUT_REG"
+
+{
+    cat <<'HDR'
+# GENERATED by scripts/ci/gen-pipefail-epipe-inventory.sh — do not hand-edit.
+# Per-file count of `producer | <short-circuiting consumer>` sites in the
+# BLOCKING shell-test corpus (test-authority-index gate = ci-bash|policy-gates).
+#
+# Counts, not content-anchored rows: a test's identity is not what is at stake
+# here, its GROWTH is, and content-anchoring ~700 test lines would make every
+# test edit a registry edit. The security-bearing sites live in the product
+# plane, which IS content-anchored — see pipefail-epipe-exposure-registry.tsv.
+#
+# Ratchet: a count may only go DOWN, and a decrease must be recorded here.
+HDR
     while IFS= read -r f; do
         [[ -f "$f" ]] || continue
-        n="$(count_sites "$f")"
+        declares_pipefail "$f" || continue
+        n=0
+        while IFS=$'\t' read -r _ln _cons; do
+            [[ -n "$_ln" ]] || continue
+            n=$((n + 1))
+        done < <(detect_sites "$f")
         [[ "$n" -gt 0 ]] && printf '%s\t%s\n' "$f" "$n"
-    done < <(awk -F'\t' '$7=="ci-bash" || $7=="policy-gates" { print $2 }' \
-                 scripts/ci/test-authority-index.tsv | sort -u)
-} > "$OUT"
-printf 'wrote %s (%d files, %d sites)\n' "$OUT" \
-    "$(grep -vc '^#' "$OUT")" \
-    "$(awk -F'\t' '!/^#/{s+=$2} END{print s+0}' "$OUT")"
+    done < <(test_corpus_population)
+} > "$OUT_INV"
+
+printf 'wrote %s (%d rows, %d sites)\n' "$OUT_REG" \
+    "$(grep -vc '^#' "$OUT_REG" || true)" \
+    "$(awk -F'\t' '!/^#/{s+=$4} END{print s+0}' "$OUT_REG")"
+printf 'wrote %s (%d files, %d sites)\n' "$OUT_INV" \
+    "$(grep -vc '^#' "$OUT_INV" || true)" \
+    "$(awk -F'\t' '!/^#/{s+=$2} END{print s+0}' "$OUT_INV")"

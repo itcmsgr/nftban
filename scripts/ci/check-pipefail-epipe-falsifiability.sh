@@ -30,20 +30,40 @@ BAR='|'; GQ='grep -q'; GQFX='grep -qFx'
 D="$(mktemp -d)"; trap 'rm -rf "$D"' EXIT
 # v1.231.0 D4: the corpus arms need the executed test files themselves, or the
 # inventory check sees 66 "recorded but missing" files and every arm is noise.
-mkdir -p "$D/cli/lib/nftban"
-cp -a "$ROOT/.github" "$ROOT/scripts" "$D/" 2>/dev/null
-cp -a "$ROOT/cli/lib/nftban/tests" "$D/cli/lib/nftban/" 2>/dev/null
+# v1.231.0 LANE G: and the PRODUCT arms need cli/ + packaging/ + install/, or
+# product_population() resolves empty. That must not be quietly tolerated here —
+# the guard's own A1 assertion FAILS LOUDLY on an empty product plane, which is
+# the point of it, so an under-populated fixture would show up as a red control
+# rather than as a silently weaker test.
+cp -a "$ROOT/.github" "$ROOT/scripts" "$ROOT/cli" "$ROOT/packaging" "$ROOT/install" "$D/" 2>/dev/null
 cd "$D"; git init -q . 2>/dev/null; git add -A >/dev/null 2>&1
 
 run_guard(){ ( cd "$D" && bash scripts/ci/check-pipefail-epipe-shortcircuit.sh 2>&1 ) || true; }
 
 # --- control: the tree as-shipped must be clean, or every arm below is noise ---
+# v1.231.0 LANE G: every counter is checked by NAME. The old control matched the
+# substrings "SITES = 0" and "DEVIATIONS = 0", which a second counter reporting a
+# non-zero value would still satisfy — a control that can pass while the subject
+# fails is not a control.
 _out="$(run_guard)"
-if [[ "$_out" == *"SITES = 0"* && "$_out" == *"DEVIATIONS = 0"* ]]; then
-    ok "0 control: the shipped tree is clean (arms below are meaningful)"
+_ctl_bad=0
+for _c in PIPEFAIL_EPIPE_SHORT_CIRCUIT_SITES PIPEFAIL_EPIPE_REGISTRY_DEVIATIONS \
+          PIPEFAIL_EPIPE_DEPTH_EXCLUSIONS PIPEFAIL_EPIPE_PRODUCT_POPULATION_FAILURES \
+          PIPEFAIL_EPIPE_TEST_CORPUS_DEVIATIONS; do
+    [[ "$_out" == *"$_c = 0"* ]] || { _ctl_bad=1; printf '        counter not zero/absent: %s\n' "$_c"; }
+done
+if [[ "$_ctl_bad" -eq 0 ]]; then
+    ok "0 control: the shipped tree is clean on all five counters (arms below are meaningful)"
 else
     bad "0 control: the shipped tree already fails — cannot attribute the arms"
-    printf '%s\n' "$_out" | grep FAIL | head -3 | sed 's/^/        /' || true
+    # Drained into an array first: `… | grep FAIL | head -3` is the very shape
+    # this suite exists to police, and it sat here until v1.231.0 Lane G. No
+    # pipeline, so nothing can be EPIPE'd and no evidence can be lost.
+    _ctl_fails="$(grep FAIL <<< "$_out" || true)"
+    mapfile -t _ctl_lines <<< "$_ctl_fails"
+    for _i in 0 1 2; do
+        [[ -n "${_ctl_lines[$_i]:-}" ]] && printf '        %s\n' "${_ctl_lines[$_i]}"
+    done
 fi
 
 # --- THE DECISIVE ARM: out-of-prefix, CI-wired, unsafe --------------------------
@@ -87,12 +107,27 @@ _o="$(run_guard)"
 if [[ "$_o" == *"check-zz-oroperator"* ]]; then bad "3 the OR operator '||' is matched as a pipe"; else ok "3 '||' is not treated as a pipe (grep reads a FILE here)"; fi
 rm -f scripts/ci/check-zz-oroperator.sh; git add -A >/dev/null 2>&1
 
+# 4 — INVERTED at v1.231.0 LANE G. This arm used to PIN the builtin-producer
+# exemption ("a BUILTIN producer cannot be EPIPE'd in practice"). That claim is
+# MEASURED FALSE: with the producer written in the real `nft list set` line shape
+# and the marker on line 1, `echo "$v" | grep -q` returned rc=141 19/20 at 72,953
+# bytes and 20/20 at 202,399 and 407,281; `printf` the same. A builtin writes
+# through the same 64 KiB pipe buffer as anything else. The exemption described a
+# small test case, not a mechanism — and it hid 21 of the census's 74
+# SIGPIPE-sensitive product sites, including cmd_botguard.sh:180, which reports
+# 0 elements for a production-sized security set. The arm now asserts the
+# OPPOSITE, so the exemption cannot be reintroduced by anyone who has not first
+# had to delete this measurement.
 { printf '#!/usr/bin/env bash\nset -Eeuo pipefail\nh="a b c"\n'
   printf 'if echo "$h" %s %s "b"; then true; fi\n' "$BAR" "$GQFX"
 } > scripts/ci/check-zz-builtin.sh
 git add -A >/dev/null 2>&1
 _o="$(run_guard)"
-if [[ "$_o" == *"check-zz-builtin"* ]]; then bad "4 a BUILTIN producer was flagged (cannot EPIPE in practice)"; else ok "4 builtin producer exempt by mechanism"; fi
+if [[ "$_o" == *"check-zz-builtin"* ]]; then
+    ok "4 a BUILTIN producer IS flagged (the 'cannot EPIPE' exemption was measured false)"
+else
+    bad "4 the false builtin-producer exemption is back — 21 measured product sites go invisible"
+fi
 rm -f scripts/ci/check-zz-builtin.sh; git add -A >/dev/null 2>&1
 
 # --- NOT BLINDED: the original motivating form must STILL fail ------------------
