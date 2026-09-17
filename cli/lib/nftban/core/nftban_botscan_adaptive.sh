@@ -136,6 +136,24 @@ nftban_botscan_should_record() {
 
 # --- write additive run-state/counters (schema-free) ------------------------
 # Reads prior counters to accumulate *_total. Honors recording discipline.
+#
+# v1.231.0 P0-C (G-02) — THE WRITER MUST NOT MINT AN OK IT WAS NEVER TOLD.
+# health_state used to default to OK_SCANNED_NO_BOTS when the caller supplied
+# none, so a run that never classified itself recorded a clean verdict as DURABLE
+# TRUTH in runstate.json — the health reader's primary input surface. A fall-
+# through OK at the writer is worse than one at a reader: it outlives the process,
+# and every downstream surface then faithfully reports it.
+#
+# The default is now UNKNOWN. That is not a new state: it is exactly what
+# _nftban_health_botscan_facts already synthesises when run-state is absent or
+# unreadable, and what the reader already NAMES as non-OK (P0-C G-05). "The run
+# did not say" and "there is nothing to read" are the same epistemic position and
+# now carry the same value.
+#
+# All three production call sites pass health_state explicitly
+# (nftban_botscan.sh:1661 DISABLED_BY_CONFIG, :1682 NO_INPUT_DISCOVERED, :1908 the
+# classifier's verdict), so this changes no classified run — only the unclassified
+# one that should never have read as clean.
 nftban_botscan_record_runstate() {
     # k=v pairs on argv: ts dur lines_seen lines_scanned lines_prefiltered
     #   lines_skipped_pressure backlog_bytes backlog_lines vhosts_scanned
@@ -175,7 +193,7 @@ nftban_botscan_record_runstate() {
   "pressure_state": "${v[pressure_state]:-NORMAL}",
   "scan_mode": "${v[scan_mode]:-FULL}",
   "backlog_state": "${v[backlog_state]:-STABLE}",
-  "health_state": "${v[health_state]:-OK_SCANNED_NO_BOTS}",
+  "health_state": "${v[health_state]:-UNKNOWN}",
   "disabled_reason": "${v[disabled_reason]:-}"
 }
 EOF
@@ -189,7 +207,12 @@ EOF
 # Args: name of the assoc array `v` populated in record_runstate (passed by name).
 nftban_botscan_trend_append() {
     local -n _v="$1" 2>/dev/null || return 0
-    local hs="${_v[health_state]:-OK_SCANNED_NO_BOTS}"
+    # v1.231.0 P0-C (G-02) — the trend writer repeated record_runstate's OK default
+    # verbatim, so a caller that supplied no health_state minted a durable OK on
+    # BOTH surfaces. Same rule, same reason: see record_runstate's health_state
+    # field above. UNKNOWN is what the health reader already synthesises for
+    # unmeasured authority and already names as non-OK.
+    local hs="${_v[health_state]:-UNKNOWN}"
     mkdir -p "${_BS_TREND%/*}" 2>/dev/null || true
     # Dedupe consecutive identical ZERO-PROGRESS records. A no-web host (no logs →
     # NO_INPUT_DISCOVERED) or an empty-log host (logs found, 0 scanned →

@@ -63,9 +63,18 @@ nx(){ NOTEXEC=$((NOTEXEC+1)); printf '  [NOT_EXECUTED] %s — REQUIRED FIELD HAS
 #   entry that no arm consumes   -> [FAIL]   (registry may not grow silently)
 # An observed violation with NO registry row is [FAIL]. There is no third state.
 # ---------------------------------------------------------------------------
-declare -A GAPS_DECLARED=(
-  [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
-)
+#
+# ⛔ THE REGISTRY IS EMPTY, AND THAT IS A RESULT, NOT AN OVERSIGHT. It opened with
+#    seven rows (G-01..G-07). Every one was closed by v1.231.0 P0-B/P0-C and each
+#    closure was FORCED by this ratchet: the fix landed, the "violation no longer
+#    observed" branch FAILED the arm with "CLAUSE NOW SATISFIED — promote this arm
+#    and delete its registry row", and only then was the arm promoted to a hard
+#    assertion. The provenance of each promotion is written at the arm itself
+#    (C1.4/C1.6/C2.4d/C2.5/C3.4/C4.3/C5.3/C5.5b) so no future reader mistakes a
+#    promoted arm for one that always passed.
+#    The machinery below is DELIBERATELY RETAINED: a NEW violation with no row is
+#    still [FAIL], so the registry cannot be used to park a regression.
+declare -A GAPS_DECLARED=()
 declare -A GAPS_CONSUMED=()
 
 # gap <id> <arm> <violation-observed:yes|no> <observation>
@@ -655,12 +664,32 @@ C5W=$(NFTBAN_DATA_DIR="$W" BOTSCAN_ENABLED=true bash -c '
   nftban_botscan_record_runstate ts=1 dur=1 lines_scanned=0 >/dev/null 2>&1 || true
   jq -r ".health_state" "$2/botscan/runstate.json" 2>/dev/null || echo "NOFILE"
 ' _ "$ADAPT" "$W")
-if [[ "$C5W" == OK_* ]]; then
-  gap G-02 "C5.3 WRITER: record_runstate with NO health_state argument" yes \
-      "recorded health_state=$C5W — a state reached by parameter default, not by assertion"
-else
-  gap G-02 "C5.3 WRITER: record_runstate with NO health_state argument" no "recorded health_state=$C5W"
-fi
+# ---------------------------------------------------------------------------
+# C5.3 — PROMOTED FROM DECLARED GAP G-02.  PROVENANCE, KEPT DELIBERATELY:
+#
+# ⛔ THIS ARM DID NOT ALWAYS PASS. Until v1.231.0 P0-C it was a DECLARED OPEN GAP
+#    (registry id G-02). nftban_botscan_record_runstate defaulted health_state to
+#    OK_SCANNED_NO_BOTS when the caller supplied none, and
+#    nftban_botscan_trend_append repeated the same default, so a run that never
+#    classified itself minted a clean verdict as DURABLE TRUTH in runstate.json —
+#    the health reader's primary input surface — and in trend.jsonl.
+#    A fall-through OK at the WRITER is worse than one at a reader: it outlives
+#    the process, and every downstream surface then faithfully reports it.
+#    P0-C changed both defaults to UNKNOWN, which is not a new state — it is what
+#    _nftban_health_botscan_facts already synthesises for absent authority and
+#    what the reader already names as non-OK (G-05). The gap ratchet then FAILED
+#    this arm by itself — "CLAUSE NOW SATISFIED, promote and delete the registry
+#    row" — so the promotion was FORCED by evidence. The G-02 row was deleted in
+#    the same change, emptying the registry.
+#
+# ⛔ THE PROMOTED ARM EXECUTES, IT DOES NOT INSPECT. It calls the real writer with
+#    no health_state and reads back the file the writer actually wrote. C5.4 is
+#    its falsifier: an explicitly supplied state must still round-trip verbatim,
+#    so an arm that passed by breaking the writer outright would be caught.
+# ---------------------------------------------------------------------------
+[[ "$C5W" != OK_* && -n "$C5W" && "$C5W" != "NOFILE" ]] \
+  && ok "C5.3 WRITER: record_runstate with NO health_state argument recorded health_state=$C5W — not an OK_* reached by parameter default" \
+  || no "C5.3 the run-state writer minted a health verdict it was never given" "recorded health_state='$C5W' — G-02 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
 
 # FALSIFIER for the writer probe: an explicitly supplied state must be recorded
 # verbatim, proving the probe reads the file the writer actually wrote.
@@ -735,11 +764,19 @@ r="$(reader_check)"; r="${r%%|*}"
 # REGISTRY CLOSURE — no declared gap may go unconsumed.
 # ---------------------------------------------------------------------------
 echo "[R] gap-registry closure"
-for id in "${!GAPS_DECLARED[@]}"; do
+for id in ${!GAPS_DECLARED[@]+"${!GAPS_DECLARED[@]}"}; do
   [[ -n "${GAPS_CONSUMED[$id]:-}" ]] \
     && ok "R.1 declared gap $id is consumed by at least one arm" \
     || no "R.1 declared gap $id is consumed by NO arm — registry rows may not exist without an arm that observes them"
 done
+# R.2 — assert the empty registry POSITIVELY. Without this the [R] section would
+# simply print nothing once the last row was deleted, and "no rows" would be
+# indistinguishable from "this section stopped running".
+if (( ${#GAPS_DECLARED[@]} == 0 )); then
+  ok "R.2 gap registry is EMPTY — all seven declared contract violations (G-01..G-07) were closed and their arms promoted to hard assertions; a new violation now has no row to park in and FAILS"
+else
+  ok "R.2 gap registry holds ${#GAPS_DECLARED[@]} declared row(s): $(printf '%s\n' "${!GAPS_DECLARED[@]}" | sort | tr '\n' ' ')"
+fi
 
 # ---------------------------------------------------------------------------
 echo "==========================================================="
