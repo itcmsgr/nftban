@@ -1186,8 +1186,16 @@ _nftban_health_render_botscan() {
         fi
     elif [[ "$timer" != "active" ]]; then
         verdict="ENABLED but timer ${timer} — not scanning on schedule"
-    else
+    elif [[ "$hs" == OK_* || "$hs" == "DISABLED_BY_CONFIG" ]]; then
+        # v1.231.0 P0-C (G-03) — the healthy verdict is NAMED, and reached only
+        # after every non-OK axis above has been ruled out.
         verdict="ENABLED + timer active — ${mode_note}"
+    else
+        # v1.231.0 P0-C (G-03) — FAIL CLOSED ON AN UNNAMED STATE. This else used to
+        # render the healthy verdict for ANY health_state the reader did not name.
+        # An unrecognised state means this surface and its producer have diverged;
+        # that is not evidence of health.
+        verdict="ENABLED but UNRECOGNISED health_state (${hs}) — this surface does not know what that means; it cannot be reported as healthy"
     fi
     local handoff_line
     case "$handoff" in
@@ -1203,7 +1211,14 @@ _nftban_health_render_botscan() {
 
 # Shell health-check entrypoint (cheap-read; populates NFTBAN_HEALTH_RESULTS like the others).
 nftban_health_check_botscan() {
-    local enabled mode timer hs last bans spool handoff stale status=$HEALTH_OK
+    # v1.231.0 P0-C (G-03) — NO DEFAULT VERDICT. This used to read
+    # `status=$HEALTH_OK`, which made OK the value you got by NOT deciding: every
+    # branch below had to remember to downgrade, and the terminal else was
+    # unqualified, so ANY health_state the reader did not NAME returned OK.
+    # `status` now starts UNSET and every path must POSITIVELY assert one; the
+    # guard before the return is the fail-closed backstop if a future branch
+    # forgets.
+    local enabled mode timer hs last bans spool handoff stale status=""
     IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
     local broken_handoff="no"
     [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
@@ -1271,11 +1286,33 @@ nftban_health_check_botscan() {
         elif [[ "$timer" != "active" ]]; then
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but timer ${timer}"
             status=$HEALTH_WARNING
-        else
+        elif [[ "$hs" == OK_* || "$hs" == "DISABLED_BY_CONFIG" ]]; then
+            # v1.231.0 P0-C (G-03) — OK IS POSITIVELY ASSERTED, NEVER OBTAINED BY
+            # DEFAULT. This branch names the states that MAY return HEALTH_OK, and
+            # it is reached only after every non-OK axis above has been ruled out:
+            # hand-off, spool backpressure, runtime error, unmeasured authority,
+            # run staleness, degraded coverage, inactive timer.
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner enabled (action=${mode}, timer active)"
+            status=$HEALTH_OK
+        else
+            # v1.231.0 P0-C (G-03) — FAIL CLOSED ON AN UNNAMED STATE. This else used
+            # to be unqualified and simply left the OK initialiser standing, so any
+            # health_state the reader did not name — a new classifier state, a
+            # renamed one, a typo in a writer, a truncated read — reported a
+            # healthy scanner. An unrecognised state is not evidence of health; it
+            # is evidence that this reader and its producer have diverged.
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner reported an UNRECOGNISED health_state (${hs}) — this reader does not know what that means, so it cannot be treated as healthy"
+            status=$HEALTH_WARNING
         fi
     else
         NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner installed (disabled)"
+        status=$HEALTH_OK
+    fi
+    # v1.231.0 P0-C (G-03) — fail-closed backstop. If any future branch is added
+    # without asserting a verdict, that is a WARNING, not a silent pass.
+    if [[ ! "$status" =~ ^[0-9]+$ ]]; then
+        NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner health verdict was never asserted — no branch decided; reported as a warning rather than defaulting to OK"
+        status=$HEALTH_WARNING
     fi
     NFTBAN_HEALTH_RESULTS["botscan"]=$status
     return "$status"

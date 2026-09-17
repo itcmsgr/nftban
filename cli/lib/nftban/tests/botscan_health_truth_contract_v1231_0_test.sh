@@ -65,7 +65,6 @@ nx(){ NOTEXEC=$((NOTEXEC+1)); printf '  [NOT_EXECUTED] %s — REQUIRED FIELD HAS
 # ---------------------------------------------------------------------------
 declare -A GAPS_DECLARED=(
   [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
-  [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
 )
 declare -A GAPS_CONSUMED=()
 
@@ -683,14 +682,37 @@ C5W2=$(NFTBAN_DATA_DIR="$W2" BOTSCAN_ENABLED=true bash -c '
 grep -q 'WARN_PARTIAL_PROGRESS' "$ADAPT" \
   && ok "C5.5a WARN_PARTIAL_PROGRESS is a state the codebase already reasons about (advisory branch) — a valid fall-through probe" \
   || no "C5.5a WARN_PARTIAL_PROGRESS no longer referenced — choose another unnamed state for the fall-through probe"
+# ---------------------------------------------------------------------------
+# C5.5b — PROMOTED FROM DECLARED GAP G-03.  PROVENANCE, KEPT DELIBERATELY:
+#
+# ⛔ THIS ARM DID NOT ALWAYS PASS. Until v1.231.0 P0-C it was a DECLARED OPEN GAP
+#    (registry id G-03) and it is the fall-through itself, not one of its
+#    symptoms. nftban_health_check_botscan initialised `status=$HEALTH_OK` and
+#    terminated in an UNQUALIFIED else, so OK was the value you got by NOT
+#    deciding: every branch had to remember to downgrade, and ANY health_state the
+#    reader did not NAME — a new classifier state, a renamed one, a writer typo, a
+#    truncated read — returned HEALTH_OK and rendered "enabled (action=both, timer
+#    active)". G-04 and G-05 were two instances of this one defect; this arm is
+#    the defect itself, probed with WARN_PARTIAL_PROGRESS (C5.5a asserts the
+#    codebase already reasons about that name while no producer emits it, which is
+#    what makes it a clean fall-through probe).
+#    P0-C made `status` start UNSET, gave OK its own NAMED branch, made the
+#    terminal else fail closed on an unrecognised state, and added a fail-closed
+#    backstop before the return for any future branch that forgets to decide. The
+#    gap ratchet then FAILED this arm by itself — "CLAUSE NOW SATISFIED, promote
+#    and delete the registry row" — so the promotion was FORCED by evidence. The
+#    G-03 row was deleted in the same change.
+#
+# ⛔ THE PROMOTED ARM EXECUTES, IT DOES NOT INSPECT. It drives the real reader with
+#    a real unnamed state. C5.7 is its indispensable falsifier: without it, a
+#    reader that returned non-OK for EVERYTHING would satisfy this arm while
+#    proving nothing about positive assertion.
+# ---------------------------------------------------------------------------
 fixture true WARN_PARTIAL_PROGRESS 10 0 false
 C5R="$(reader_check)"; C5R_RC="${C5R%%|*}"
-if [[ "$C5R_RC" == "0" ]]; then
-  gap G-03 "C5.5b READER: a health_state the reader does not name" yes \
-      "unnamed state reached HEALTH_OK($C5R_RC) through the terminal else; issue text: ${C5R#*|}"
-else
-  gap G-03 "C5.5b READER: a health_state the reader does not name" no "rc=$C5R_RC"
-fi
+[[ "$C5R_RC" != "0" ]] \
+  && ok "C5.5b READER: a health_state the reader does not name -> non-OK verdict (rc=$C5R_RC), fail-closed rather than through a terminal else — issue: ${C5R#*|}" \
+  || no "C5.5b an unnamed health_state reached HEALTH_OK by fall-through" "rc=$C5R_RC issue=${C5R#*|} — G-03 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
 
 # 5d. POSITIVE ASSERTION COVERAGE. For every state the system can actually
 # record, the reader must reach its verdict through a branch that NAMES the
