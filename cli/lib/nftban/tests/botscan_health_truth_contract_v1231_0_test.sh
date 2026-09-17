@@ -66,7 +66,6 @@ nx(){ NOTEXEC=$((NOTEXEC+1)); printf '  [NOT_EXECUTED] %s — REQUIRED FIELD HAS
 declare -A GAPS_DECLARED=(
   [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
   [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
-  [G-07]="clause 2 — spool backpressure IS produced every collector cycle (cli/sbin/nftban-botscan-collector) but reaches no health verdict: nftban_botscan_health_state takes no such argument and nftban_health_checks_modules.sh never opens spool.status. Only cmd_health_analysis.sh reads it, and only for its own return code. Owner: P0-C implementation."
 )
 declare -A GAPS_CONSUMED=()
 
@@ -214,14 +213,21 @@ if [[ -f "$SPOOL_COLLECTOR" ]]; then
 else
   no "C0.1 $SPOOL_COLLECTOR missing — the spool-backpressure producer cannot be located"
 fi
-# The two health surfaces disagree about this field: cmd_health_analysis.sh reads
-# it, nftban_health_checks_modules.sh does not open it at all.
+# Both health surfaces now read this field. ⛔ C0.1c IS INVERTED FROM ITS ORIGINAL
+# SENSE, DELIBERATELY: until v1.231.0 P0-C the two surfaces DISAGREED —
+# cmd_health_analysis.sh read spool.status while nftban_health_checks_modules.sh
+# did not open it at all, so `nftban health` could never see a latched spool. This
+# arm was written as the census tripwire for exactly that, reading
+#   "now reads spool.status — promote arm C2.4d to a hard assertion"
+# and it FIRED the moment G-07 was fixed. It is kept in its promoted sense: the
+# nftban health verdict MUST retain an input path to backpressure. This is a
+# census observation of the wiring; C2.4d is the arm that EXECUTES the verdict.
 grep -q 'botscan/spool\.status' "$HANA" \
   && ok "C0.1b cmd_health_analysis.sh READS spool.status" \
   || no "C0.1b cmd_health_analysis.sh no longer reads spool.status"
 grep -q 'spool\.status' "$HMOD" \
-  && no "C0.1c nftban_health_checks_modules.sh now reads spool.status — promote arm C2.4d to a hard assertion" \
-  || ok "C0.1c nftban_health_checks_modules.sh does NOT read spool.status (the nftban health verdict never sees backpressure)"
+  && ok "C0.1c nftban_health_checks_modules.sh READS spool.status — the nftban health verdict has an input path to backpressure (G-07, closed in v1.231.0 P0-C)" \
+  || no "C0.1c nftban_health_checks_modules.sh no longer reads spool.status — G-07 has REGRESSED; the health verdict is blind to a latched spool again"
 
 # progress counters: structurally zero. Two independent defect shapes.
 ANALYZE_RETURNS_COUNT=no
@@ -420,13 +426,39 @@ if [[ "$SPOOL_FIELD" == PRESENT ]]; then
   [[ -s "$SB/fx/data/botscan/spool.status" ]] && grep -q '^backpressure=1$' "$SB/fx/data/botscan/spool.status" \
     && ok "C2.4c FIXTURE: spool.status written with backpressure=1 (the arm below is not vacuous)" \
     || no "C2.4c spool.status fixture not written — C2.4d would assert nothing"
+  # -------------------------------------------------------------------------
+  # C2.4d — PROMOTED FROM DECLARED GAP G-07.  PROVENANCE, KEPT DELIBERATELY:
+  #
+  # ⛔ THIS ARM DID NOT ALWAYS PASS. Until v1.231.0 P0-C it was a DECLARED OPEN
+  #    GAP (registry id G-07). The field was never missing — C0.1 proves the
+  #    collector writes it EVERY cycle through $SPOOL_STATUS_FILE — it simply
+  #    reached no verdict. nftban_botscan_health_state takes no spool argument
+  #    (C2.4a still pins that signature) and nftban_health_checks_modules.sh did
+  #    not open spool.status at all; only cmd_health_analysis.sh read it, and only
+  #    for its own return code. This is the srv3 shape: the spool latches at its
+  #    cap with backpressure asserted while the access-log forward cursor reports
+  #    0 bytes behind, so backlog_state reads DRAINING (C2.4b is that premise,
+  #    asserted not assumed) and `nftban health` returned HEALTH_OK.
+  #    P0-C gave the FACTS layer a cheap keyed read of spool.status and both
+  #    verdict surfaces a NAMED backpressure branch, ahead of the coverage branch
+  #    because health_state structurally cannot see the spool. The gap ratchet
+  #    then FAILED this arm by itself — and C0.1c fired alongside it with its own
+  #    "promote arm C2.4d" instruction — so the promotion was FORCED by evidence.
+  #    The G-07 row was deleted in the same change.
+  #
+  # ⛔ CAUSAL PRECEDENCE IS PART OF THE CLAIM. The fixture asserts backpressure=1
+  #    at 108% of cap WITH consumer stale_backlog=false. That false is not a
+  #    clearance: it says only that the consumer saw no stale work in what it
+  #    drained, which is exactly what a blocked queue produces. If a later change
+  #    lets the consumer field override this, THIS ARM FAILS.
+  #
+  # ⛔ THE PROMOTED ARM EXECUTES, IT DOES NOT INSPECT. It drives the real reader
+  #    over a real spool.status; C2.4c proves the fixture is non-vacuous first.
+  # -------------------------------------------------------------------------
   C2S="$(reader_check)"; C2S_RC="${C2S%%|*}"
-  if [[ "$C2S_RC" == "0" ]]; then
-    gap G-07 "C2.4d READER: spool backpressure=1 at 108% of cap -> reader verdict" yes \
-        "reader returned HEALTH_OK($C2S_RC); the nftban health verdict never opens spool.status, so a latched spool is invisible to health_state"
-  else
-    gap G-07 "C2.4d READER: spool backpressure=1 at 108% of cap -> reader verdict" no "rc=$C2S_RC"
-  fi
+  [[ "$C2S_RC" != "0" ]] \
+    && ok "C2.4d READER: spool backpressure=1 at 108% of cap + stale_backlog=false -> non-OK verdict (rc=$C2S_RC) — issue: ${C2S#*|}" \
+    || no "C2.4d a latched spool at 108% of cap reported HEALTH_OK" "rc=$C2S_RC issue=${C2S#*|} — G-07 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
 else
   nx "C2.4c/d spool-backpressure axis" "/var/lib/nftban/botscan/spool.status:backpressure (producer chain not resolvable at HEAD)"
 fi

@@ -991,6 +991,22 @@ _nftban_health_botscan_facts() {
     fi
     local spool="${BOTSCAN_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool}" spool_state="absent"
     [[ -d "$spool" ]] && { spool_state="present"; [[ -r "$spool" ]] || spool_state="present/UNREADABLE"; }
+    # v1.231.0 P0-C (G-07) — SPOOL BACKPRESSURE REACHES THE HEALTH VERDICT.
+    # cli/sbin/nftban-botscan-collector writes this record EVERY cycle (through
+    # $SPOOL_STATUS_FILE, which is why a literal-filename grep finds no writer) and
+    # sets backpressure=1 exactly when the spool total exceeds its cap, refusing to
+    # append for that cycle. Until now only cmd_health_analysis.sh:619 opened it,
+    # and only for its own return code: `nftban health` never saw a latched spool.
+    # This is a cheap keyed read of one small file — it does NOT violate the
+    # CHEAP-READ contract at the top of this section (no access-log content).
+    local _ss="${BOTSCAN_SPOOL_STATUS_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool.status}"
+    if [[ -r "$_ss" ]]; then
+        local _sk _sv _sbp=0 _spct=0
+        while IFS='=' read -r _sk _sv; do case "$_sk" in
+            backpressure) _sbp="$_sv" ;; cap_pct) _spct="$_sv" ;;
+        esac; done < "$_ss"
+        [[ "${_sbp:-0}" == "1" ]] && spool_state="${spool_state}/BACKPRESSURED@${_spct:-0}%"
+    fi
     # v1.219.0 PR-B — consumer hand-off truth from the daemon status snapshot (cheap jq read).
     # handoff=UNKNOWN when the daemon hasn't written it yet (honest, never assumed-healthy).
     local cs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_consumer_status.json"
@@ -1099,6 +1115,34 @@ _nftban_health_render_botscan() {
         verdict="DISABLED (not scanning; no bans)"
     elif [[ "$broken_handoff" == "yes" ]]; then
         verdict="ENABLED but CONSUMER HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+    elif [[ "$spool" == *BACKPRESSURED* ]]; then
+        # v1.231.0 P0-C (G-07) — CAUSAL PRECEDENCE, STATED EXPLICITLY:
+        #
+        #   spool backpressure=1  +  cap exceeded  +  no demonstrated recovery
+        #     =>  THIS CANNOT BE OK
+        #
+        # All three conjuncts are carried by the record itself. The collector sets
+        # backpressure=1 only when the spool total is already OVER its cap and then
+        # SKIPS appending for that cycle (nftban-botscan-collector, the total-dir
+        # cap gate), so backpressure=1 IS "cap exceeded"; cap_pct is the
+        # independent post-collection measurement of the same footprint, surfaced
+        # here so the operator sees how far over it sits. The file is rewritten
+        # EVERY cycle and backpressure self-clears once the scanner reaps enough
+        # files, so a record that still says 1 is the collector's LATEST statement
+        # and is itself the absence of demonstrated recovery.
+        #
+        # ⛔ consumer_status.stale_backlog=false MUST NOT OVERRIDE THIS, and does
+        #    not reach here. That field says only that the consumer observed no
+        #    stale work IN WHAT IT DRAINED. It is not evidence that the spool is
+        #    healthy — in the srv3 shape it is precisely the opposite: nothing
+        #    drains, so the consumer sees nothing stale and answers "false" while
+        #    the spool sits latched at its cap. A quiet consumer downstream of a
+        #    blocked queue is a symptom, never a clearance.
+        #
+        # This precedes the coverage branch because health_state cannot see the
+        # spool at all: the classifier takes no such argument, and the forward
+        # cursor it does see reads 0 bytes behind -> DRAINING -> "healthy".
+        verdict="ENABLED but SPOOL BACKPRESSURED (${spool}) — the collector is over its spool cap and is NOT appending new input; coverage is silently incomplete"
     elif [[ "$hs" == ERROR_* ]]; then
         # v1.231.0 P0-C (G-04) — A RUNTIME FAILURE IS NOT PROGRESS EVIDENCE.
         # ERROR_RUNTIME_FAILURE is emitted by the classifier
@@ -1172,6 +1216,18 @@ nftban_health_check_botscan() {
     if [[ "$enabled" == "true" ]]; then
         if [[ "$broken_handoff" == "yes" ]]; then
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner consumer HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+            status=$HEALTH_WARNING
+        elif [[ "$spool" == *BACKPRESSURED* ]]; then
+            # v1.231.0 P0-C (G-07) — CAUSAL PRECEDENCE:
+            #   backpressure=1 + cap exceeded + no demonstrated recovery => NOT OK.
+            # See the renderer above for why all three conjuncts are carried by the
+            # collector's own record, and for why consumer stale_backlog=false must
+            # not override this: it reports only that the consumer saw no stale work
+            # in WHAT IT DRAINED, which is exactly what a blocked queue produces. A
+            # quiet consumer downstream of a latched spool is a symptom, not a
+            # clearance. health_state cannot see the spool at all — the classifier
+            # takes no such argument and the forward cursor reads DRAINING.
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner SPOOL BACKPRESSURED (${spool}) — the collector is over its spool cap and is NOT appending new input; coverage is silently incomplete"
             status=$HEALTH_WARNING
         elif [[ "$hs" == ERROR_* ]]; then
             # v1.231.0 P0-C (G-04) — see the renderer above. A runtime FAILURE is
