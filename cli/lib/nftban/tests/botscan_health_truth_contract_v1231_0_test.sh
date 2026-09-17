@@ -58,12 +58,13 @@ declare -A GAPS_DECLARED=(
   [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
   [G-04]="clause 1+5 — ERROR_RUNTIME_FAILURE (nftban_botscan_adaptive.sh:115) matches neither DEGRADED_* nor NO_INPUT_* in the reader, so a runtime FAILURE reports HEALTH_OK. Owner: P0-C implementation."
   [G-05]="clause 3 — health_state=UNKNOWN (synthesised at nftban_health_checks_modules.sh:987 when run-state is absent or unreadable) reads HEALTH_OK: incomplete measurement authority is reported as a passing control. Owner: P0-C implementation."
-  [G-06]="clause 1+2 — bans_emitted_total and signals_emitted_total are STRUCTURALLY ZERO, so no progress counter can carry stall evidence. Owner: P0-B durable counter sink."
   [G-07]="clause 2 — spool backpressure IS produced every collector cycle (cli/sbin/nftban-botscan-collector) but reaches no health verdict: nftban_botscan_health_state takes no such argument and nftban_health_checks_modules.sh never opens spool.status. Only cmd_health_analysis.sh reads it, and only for its own return code. Owner: P0-C implementation."
 )
 declare -A GAPS_CONSUMED=()
 
 # gap <id> <arm> <violation-observed:yes|no> <observation>
+declare -A GAPS_OPEN_IDS=()
+
 gap(){
   local id="$1" arm="$2" seen="$3" obs="$4"
   GAPS_CONSUMED["$id"]=1
@@ -73,6 +74,7 @@ gap(){
   fi
   if [[ "$seen" == "yes" ]]; then
     GAPOPEN=$((GAPOPEN+1))
+    GAPS_OPEN_IDS["$id"]=1        # distinct gaps, not arms — see the summary note
     printf '  [GAP-OPEN] %s — %s\n             (declared %s) %s\n' "$arm" "$obs" "$id" "${GAPS_DECLARED[$id]}"
   else
     no "$arm" "CLAUSE NOW SATISFIED — declared gap $id is CLOSED; promote this arm to a hard assertion and delete its registry row"
@@ -359,14 +361,78 @@ else
   nx "C2.4c/d spool-backpressure axis" "/var/lib/nftban/botscan/spool.status:backpressure (producer chain not resolvable at HEAD)"
 fi
 
-# The stall half of clause 2 wants a monotone progress counter. It has none.
+# ---------------------------------------------------------------------------
+# C2.5 — PROMOTED FROM DECLARED GAP G-06.  PROVENANCE, KEPT DELIBERATELY:
+#
+# ⛔ THIS ARM DID NOT ALWAYS PASS. Until v1.231.0 P0-B it was a DECLARED OPEN GAP
+#    (registry id G-06) and C2.5b was NOT_EXECUTED. Not because the clause was
+#    unimportant — because bans_emitted_total and signals_emitted_total were
+#    STRUCTURALLY ZERO, so no progress counter could carry stall evidence at all:
+#        nftban_botscan_analyze returned its count as an EXIT STATUS (`return $banned`)
+#        while the caller read STDOUT (`banned=$(nftban_botscan_analyze) || banned=0`),
+#        and the signal counter was incremented inside that same command
+#        substitution, so the parent's read was always 0.
+#    P0-B replaced that with an append/sum sink that survives the fork. The gap
+#    ratchet then FAILED this arm by itself — "CLAUSE NOW SATISFIED, promote and
+#    delete the registry row" — so the promotion was FORCED by evidence, not
+#    remembered by a human. The G-06 row was deleted in the same change.
+#
+# ⛔ THE PROMOTED ARM EXECUTES, IT DOES NOT INSPECT. Asserting that P0-B's code is
+#    PRESENT would trade a declared NOT_EXECUTED gap for a source-shape check —
+#    strictly worse, because it would read green while proving nothing about whether
+#    a progress signal can reach the health contract. C2.5 drives the real sink
+#    across a real process boundary; C2.5b carries the value through to
+#    runstate.json, which is the health contract's actual input surface.
+# ---------------------------------------------------------------------------
 if [[ "$COUNTERS_FIELD" == BROKEN ]]; then
-  gap G-06 "C2.5 stall-by-counter: non-advancing bans/signals as stall evidence" yes \
-      "analyze_returns_count_as_exit_status=$ANALYZE_RETURNS_COUNT caller_reads_stdout=$CALLER_READS_STDOUT signal_increment_inside_that_subshell=$SIGNAL_INC_IN_SUBSHELL — nftban_botscan_analyze returns its count as an EXIT STATUS while the caller reads stdout, and the signal counter is incremented inside that same command substitution, so both totals are structurally 0"
-  nx "C2.5b stall-by-counter arm" "bans_emitted_total / signals_emitted_total (present in the schema, structurally 0 — blocked on P0-B)"
+  no "C2.5 PRECONDITION: the P0-B counter repair is absent at HEAD" \
+     "analyze_returns_count=$ANALYZE_RETURNS_COUNT caller_reads_stdout=$CALLER_READS_STDOUT signal_increment_inside_that_subshell=$SIGNAL_INC_IN_SUBSHELL — this arm was promoted from G-06 and must never silently revert to a gap"
 else
-  gap G-06 "C2.5 stall-by-counter: non-advancing bans/signals as stall evidence" no \
-      "the counter plumbing no longer matches the declared defect shape"
+  ok "C2.5 PRECONDITION: the exit-status/stdout counter defect no longer reproduces at HEAD"
+fi
+
+C25_SINK="$SB/c25_counters"; : > "$C25_SINK"
+C25_RC=0
+bash -c '
+  set -Eeuo pipefail
+  . "$1" >/dev/null 2>&1
+  _unused=$( _nftban_counter_file_add "$2" bans 3; _nftban_counter_file_add "$2" sig 7; echo x )
+  printf "%s %s\n" "$(_nftban_counter_file_get "$2" bans)" "$(_nftban_counter_file_get "$2" sig)"
+' _ "$BOTSCAN" "$C25_SINK" > "$SB/c25.out" 2>/dev/null || C25_RC=$?
+C25_BANS=""; C25_SIG=""
+# ⛔ IFS=' ' IS REQUIRED: this module runs under strict IFS=$'\n\t' (no space), so a
+#    bare `read -r a b` yields ONE token "3 7" in $a and leaves $b empty. Same class
+#    as the v1.186.1 endpoint-list defect called out in nftban_botscan.sh.
+[[ -s "$SB/c25.out" ]] && IFS=' ' read -r C25_BANS C25_SIG < "$SB/c25.out"
+if [[ "$C25_RC" != "0" ]]; then
+  nx "C2.5 progress counter across a real fork" "the P0-B sink could not be exercised (rc=$C25_RC) — NOT a pass"
+elif [[ "$C25_BANS" == "3" && "$C25_SIG" == "7" ]]; then
+  ok "C2.5 progress counters CROSS a real command-substitution boundary (bans=$C25_BANS sig=$C25_SIG) — stall evidence is now expressible"
+else
+  no "C2.5 progress counter lost across the fork" "bans='$C25_BANS' sig='$C25_SIG', expected 3 and 7"
+fi
+
+C25B_DIR="$SB/c25b"; mkdir -p "$C25B_DIR/botscan"
+C25B_RC=0
+NFTBAN_DATA_DIR="$C25B_DIR" bash -c '
+  set +e
+  . "$1" >/dev/null 2>&1
+  nftban_botscan_record_runstate health_state=OK_SCANNED_BOTS_FOUND bans=3 signals=7 \
+      lines_scanned=100 last_run_ts="$(date +%s)" >/dev/null 2>&1
+' _ "$ADAPT" || C25B_RC=$?
+C25B_FILE="$C25B_DIR/botscan/runstate.json"
+if [[ ! -s "$C25B_FILE" ]]; then
+  nx "C2.5b progress counter reaches the health-contract input surface" \
+     "record_runstate wrote no runstate.json (rc=$C25B_RC) — NOT a pass"
+else
+  C25B_BANS=$(sed -n 's/.*"bans_emitted_total"[[:space:]]*:[[:space:]]*\([0-9-]*\).*/\1/p' "$C25B_FILE" | head -1)
+  C25B_SIG=$(sed -n 's/.*"signals_emitted_total"[[:space:]]*:[[:space:]]*\([0-9-]*\).*/\1/p' "$C25B_FILE" | head -1)
+  if [[ "${C25B_BANS:-0}" -gt 0 && "${C25B_SIG:-0}" -gt 0 ]]; then
+    ok "C2.5b a NON-ZERO progress signal reaches runstate.json (bans_emitted_total=$C25B_BANS signals_emitted_total=$C25B_SIG) — the health contract now has a stall axis to consume"
+  else
+    no "C2.5b runstate.json still carries zero progress counters" \
+       "bans_emitted_total=${C25B_BANS:-<absent>} signals_emitted_total=${C25B_SIG:-<absent>} — the input surface is still dead"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -538,12 +604,18 @@ done
 
 # ---------------------------------------------------------------------------
 echo "==========================================================="
-printf 'PASS=%s  FAIL=%s  NOT_EXECUTED=%s  GAP-OPEN=%s\n' "$PASS" "$FAIL" "$NOTEXEC" "$GAPOPEN"
+printf 'PASS=%s  FAIL=%s  NOT_EXECUTED=%s  GAP-OPEN=%s arm(s) over %s distinct gap(s)\n' \
+  "$PASS" "$FAIL" "$NOTEXEC" "$GAPOPEN" "${#GAPS_OPEN_IDS[@]}"
 if (( NOTEXEC > 0 )); then
   echo "NOT_EXECUTED arms are NOT passes: the named field has no producer at HEAD."
 fi
 if (( GAPOPEN > 0 )); then
   echo "GAP-OPEN arms are DECLARED contract violations present at HEAD, not passes."
+  # ⛔ ARMS != DEFECTS. One gap may be consumed by several arms (G-01 is observed
+  #    both by the clause-1 reader arm and by the clause-4 override arm), so the arm
+  #    count OVERSTATES the number of distinct defects. Always read the second
+  #    number. The distinct ids currently open are printed below.
+  printf '  distinct open gaps: %s\n' "$(printf '%s\n' "${!GAPS_OPEN_IDS[@]}" | sort | tr '\n' ' ')"
 fi
 if (( FAIL > 0 )); then
   printf 'FAILED ARMS:\n'; printf '  - %s\n' "${FAILED[@]}"
