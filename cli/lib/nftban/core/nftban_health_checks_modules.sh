@@ -1002,6 +1002,66 @@ _nftban_health_botscan_facts() {
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state" "$handoff" "$stale"
 }
 
+# =============================================================================
+# v1.231.0 P0-C (G-01) — RUN-AGE STALENESS. THRESHOLD DERIVED, NOT HARDCODED.
+# =============================================================================
+# _nftban_health_botscan_facts MEASURES the run age (the last= field) and, before
+# this block, nothing consulted it: an ancient last_run_ts rendered healthy. The
+# threshold below is expressed as N MISSED EXECUTION CYCLES, reading the
+# configured cadence where one exists and falling back to the timer's documented
+# cadence — never a literal age:
+#
+#   configured  HTTP_BOT_BOTSCAN_INTERVAL in conf.d/botguard/main.conf[.local],
+#               same key and same local-overrides-main precedence the botguard
+#               CLI uses (cmd_botguard.sh:610, default 600)
+#   scheduled   install/systemd/nftban-botscan.timer — OnUnitActiveSec=10min,
+#               i.e. the same 600s, which is the fallback when nothing is set
+#
+# N = 6 (one hour at the default cadence). The worst LEGITIMATE gap between two
+# runs is OnUnitActiveSec(600) + RandomizedDelaySec(120) + AccuracySec(30) = 750s,
+# all three declared in that timer unit, so six cycles is ~4.8x the documented
+# scheduling-jitter envelope: normal variance can never trip it, and the unit's
+# Persistent=true absorbs a short reboot or maintenance window. What it buys is a
+# BOUND: a stalled scanner is visible within an hour instead of never.
+#
+# ⛔ THE 30-DAY REPRODUCER IS A WITNESS, NOT THE THRESHOLD. It demonstrated that
+#    the age was discarded entirely; it says nothing about where the boundary
+#    belongs. The boundary belongs to the cadence authority, and moves with it.
+_NFTBAN_BOTSCAN_STALE_CYCLES=6
+_NFTBAN_BOTSCAN_CADENCE_FALLBACK_SEC=600   # nftban-botscan.timer OnUnitActiveSec=10min
+
+_nftban_health_botscan_stale_threshold() {
+    local cfgdir="${NFTBAN_CONFIG_DIR:-/etc/nftban}" v="" f
+    for f in "$cfgdir/conf.d/botguard/main.conf.local" "$cfgdir/conf.d/botguard/main.conf"; do
+        [[ -n "$v" || ! -r "$f" ]] && continue
+        v=$(grep -m1 '^HTTP_BOT_BOTSCAN_INTERVAL=' "$f" 2>/dev/null | cut -d= -f2- | tr -d '"') || v=""
+    done
+    [[ "$v" =~ ^[0-9]+$ && "$v" -gt 0 ]] || v="$_NFTBAN_BOTSCAN_CADENCE_FALLBACK_SEC"
+    printf '%s' "$(( v * _NFTBAN_BOTSCAN_STALE_CYCLES ))"
+}
+
+# Classify the facts layer's `last` field ("-" or "<N>s") against that threshold.
+# Emits three space-separated tokens: "<FRESH|STALE|UNKNOWN> <age_sec> <threshold_sec>".
+# UNKNOWN means the run-state carried no usable last_run_ts — an unmeasured axis,
+# which clause 3 forbids collapsing to OK just as firmly as a stale one.
+_nftban_health_botscan_run_staleness() {
+    local last="${1:--}" thr age
+    thr="$(_nftban_health_botscan_stale_threshold)"
+    if [[ ! "$last" =~ ^[0-9]+s$ ]]; then printf 'UNKNOWN 0 %s' "$thr"; return 0; fi
+    age="${last%s}"
+    if [[ "$age" -gt "$thr" ]]; then printf 'STALE %s %s' "$age" "$thr"
+    else printf 'FRESH %s %s' "$age" "$thr"; fi
+    return 0
+}
+
+# Human age, following the RBL staleness convention in this file
+# ("Last RBL check was ${hours_ago}h ago (stale)").
+_nftban_health_botscan_age_human() {
+    local age="${1:-0}"
+    [[ "$age" =~ ^[0-9]+$ ]] || { printf 'unknown'; return 0; }
+    if (( age >= 3600 )); then printf '%sh' "$(( age / 3600 ))"; else printf '%ss' "$age"; fi
+}
+
 _nftban_health_render_botscan() {
     echo ""
     echo "  HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (bans via blacklist_manual)"
@@ -1027,6 +1087,13 @@ _nftban_health_render_botscan() {
     local broken_handoff="no"
     [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
     [[ "$stale" == "true" ]] && broken_handoff="yes"
+    # v1.231.0 P0-C (G-01) — INDEPENDENT stall evidence, derived from the run age
+    # the facts layer already measures. IFS is pinned: this module is sourced into
+    # callers that run under strict IFS=$'\n\t' (no space), where a bare read over
+    # "STALE 2592000 3600" would yield ONE token.
+    local _bs_age_state _bs_age _bs_age_thr
+    IFS=' ' read -r _bs_age_state _bs_age _bs_age_thr \
+        < <(_nftban_health_botscan_run_staleness "$last")
     local verdict
     if [[ "$enabled" != "true" ]]; then
         verdict="DISABLED (not scanning; no bans)"
@@ -1048,6 +1115,25 @@ _nftban_health_render_botscan() {
         # OK it would be indistinguishable from a healthy scan on a host where the
         # scanner has never run at all.
         verdict="ENABLED but NOT MEASURED — run-state absent or unreadable (${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json); coverage is UNKNOWN, not clean"
+    elif [[ "$_bs_age_state" == "UNKNOWN" ]]; then
+        # v1.231.0 P0-C (G-01) — run-state readable but carrying no usable
+        # last_run_ts: the stall axis is UNMEASURED, which clause 3 forbids
+        # collapsing to OK exactly as firmly as a measured-and-stale one.
+        verdict="ENABLED but LAST RUN TIME UNKNOWN — run-state carries no usable last_run_ts; staleness cannot be evaluated"
+    elif [[ "$_bs_age_state" == "STALE" ]]; then
+        # v1.231.0 P0-C (G-01 / clause 4) — STALENESS IS INDEPENDENT STALL EVIDENCE.
+        # The run age was already measured above and then discarded: no branch
+        # consulted it, so a last_run_ts from a month ago rendered
+        # "ENABLED + timer active". The consumer's stale_backlog=false does NOT
+        # reach this branch and must not: it only says the consumer saw no stale
+        # work in what it drained, which is trivially true when the scanner has
+        # produced nothing for weeks. A quiet consumer is not proof of a running
+        # scanner.
+        #
+        # This branch sits AHEAD of the coverage branch on purpose: a
+        # DEGRADED_*/NO_INPUT_* verdict that is itself weeks old describes nothing
+        # current, so the age is the more truthful thing to report.
+        verdict="ENABLED but NOT SCANNING — last scan was $(_nftban_health_botscan_age_human "$_bs_age") ago (stale; no run within ${_NFTBAN_BOTSCAN_STALE_CYCLES} scan cycles / ${_bs_age_thr}s)"
     elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
         if [[ "$_bs_enf" == "PROVEN" ]]; then
             verdict="ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement PROVEN by durable ban evidence"
@@ -1078,6 +1164,11 @@ nftban_health_check_botscan() {
     local broken_handoff="no"
     [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
     [[ "$stale" == "true" ]] && broken_handoff="yes"
+    # v1.231.0 P0-C (G-01) — see the renderer above. IFS=' ' is required: callers
+    # may run under strict IFS=$'\n\t'.
+    local _bs_age_state _bs_age _bs_age_thr
+    IFS=' ' read -r _bs_age_state _bs_age _bs_age_thr \
+        < <(_nftban_health_botscan_run_staleness "$last")
     if [[ "$enabled" == "true" ]]; then
         if [[ "$broken_handoff" == "yes" ]]; then
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner consumer HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
@@ -1094,6 +1185,19 @@ nftban_health_check_botscan() {
             # measurement authority must be reported as UNKNOWN or DEGRADED, never
             # as a passing control: "not measured" is not "measured and fine".
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but NOT MEASURED — run-state absent or unreadable (${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json); coverage is UNKNOWN, not clean"
+            status=$HEALTH_WARNING
+        elif [[ "$_bs_age_state" == "UNKNOWN" ]]; then
+            # v1.231.0 P0-C (G-01) — see the renderer above.
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but LAST RUN TIME UNKNOWN — run-state carries no usable last_run_ts; staleness cannot be evaluated"
+            status=$HEALTH_WARNING
+        elif [[ "$_bs_age_state" == "STALE" ]]; then
+            # v1.231.0 P0-C (G-01 / clause 4) — INDEPENDENT stall evidence. The
+            # consumer's stale_backlog=false does not reach here and must not
+            # override this: it reports only that the consumer saw no stale work
+            # in what it drained, which is trivially true when the scanner has
+            # emitted nothing for weeks. See the renderer for the full reasoning
+            # and for why this precedes the coverage branch.
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but NOT SCANNING — last scan was $(_nftban_health_botscan_age_human "$_bs_age") ago (stale; no run within ${_NFTBAN_BOTSCAN_STALE_CYCLES} scan cycles / ${_bs_age_thr}s)"
             status=$HEALTH_WARNING
         elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
             # Same authority rule as the verdict renderer above: a coverage verdict
@@ -1122,6 +1226,7 @@ nftban_health_check_botscan() {
 }
 
 export -f _nftban_health_botscan_facts _nftban_health_render_botscan nftban_health_check_botscan
+export -f _nftban_health_botscan_stale_threshold _nftban_health_botscan_run_staleness _nftban_health_botscan_age_human
 export -f nftban_health_check_communication _health_eval_communication_component
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases

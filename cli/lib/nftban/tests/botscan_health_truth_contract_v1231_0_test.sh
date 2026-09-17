@@ -64,7 +64,6 @@ nx(){ NOTEXEC=$((NOTEXEC+1)); printf '  [NOT_EXECUTED] %s — REQUIRED FIELD HAS
 # An observed violation with NO registry row is [FAIL]. There is no third state.
 # ---------------------------------------------------------------------------
 declare -A GAPS_DECLARED=(
-  [G-01]="clause 1+4 — run-age staleness is MEASURED (nftban_health_checks_modules.sh:989) and then DISCARDED: no verdict branch consults it, so an ancient last_run_ts renders healthy. Owner: P0-C implementation."
   [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
   [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
   [G-07]="clause 2 — spool backpressure IS produced every collector cycle (cli/sbin/nftban-botscan-collector) but reaches no health verdict: nftban_botscan_health_state takes no such argument and nftban_health_checks_modules.sh never opens spool.status. Only cmd_health_analysis.sh reads it, and only for its own return code. Owner: P0-C implementation."
@@ -278,16 +277,62 @@ else
   ok "C1.3 FALSIFIER: declared always-OK inversion is rejected by the clause-1 predicate"
 fi
 
-# READER arm: progress evidence 30 days stale, everything else nominal.
+# ---------------------------------------------------------------------------
+# C1.4 / C4.3 — PROMOTED FROM DECLARED GAP G-01.  PROVENANCE, KEPT DELIBERATELY:
+#
+# ⛔ THESE ARMS DID NOT ALWAYS PASS. Until v1.231.0 P0-C G-01 was a DECLARED OPEN
+#    GAP consumed by BOTH of them. The run age was MEASURED by
+#    _nftban_health_botscan_facts (the `last` field) and then DISCARDED: no
+#    verdict branch in the renderer or in nftban_health_check_botscan ever looked
+#    at it, so a last_run_ts from thirty days ago still rendered
+#    "ENABLED + timer active — enforces via blacklist_manual" and returned
+#    HEALTH_OK. C4.3 is the same defect seen from clause 4: with
+#    stale_backlog=false the consumer's negative answer was the ONLY stall input
+#    consulted, and it cannot see a scanner that stopped producing.
+#    P0-C added _nftban_health_botscan_run_staleness and a NAMED STALE branch
+#    ahead of the coverage branch on both surfaces. Its threshold is DERIVED —
+#    N=6 missed cycles over the configured HTTP_BOT_BOTSCAN_INTERVAL, falling back
+#    to nftban-botscan.timer's OnUnitActiveSec=10min — never a literal age.
+#    The gap ratchet then FAILED BOTH arms by itself ("CLAUSE NOW SATISFIED —
+#    declared gap G-01 is CLOSED"), so the promotion was FORCED by evidence. The
+#    single G-01 row was deleted once both arms were promoted.
+#
+# ⛔ THE 30-DAY FIXTURE IS A WITNESS, NOT THE THRESHOLD. It proves the age reaches
+#    a verdict; it does not encode where the boundary sits. The boundary lives in
+#    the product, bound to the cadence authority.
+#
+# ⛔ THE PROMOTED ARMS EXECUTE, THEY DO NOT INSPECT. They drive the real reader
+#    over a real runstate.json; neither asserts that the new branch's source text
+#    is present. C1.5 and C5.7 remain the falsifiers proving the same probe
+#    reports non-OK for a DEGRADED state and OK for a FRESH one.
+# ---------------------------------------------------------------------------
 fixture true OK_SCANNED_NO_BOTS 2592000 0 false
 C1R=$(reader_check); C1R_RC="${C1R%%|*}"
 C1RENDER=$(reader_render)
-if [[ "$C1R_RC" == "0" ]]; then
-  gap G-01 "C1.4 READER: last_run_ts 30d stale + timer active -> reader verdict" yes \
-      "reader returned HEALTH_OK($C1R_RC) and rendered: $(printf '%s' "$C1RENDER" | sed -n 's/^  State:  *//p')"
+[[ "$C1R_RC" != "0" ]] \
+  && ok "C1.4 READER: last_run_ts 30d stale + timer active -> non-OK verdict (rc=$C1R_RC), rendered: $(printf '%s' "$C1RENDER" | sed -n 's/^  State:  *//p')" \
+  || no "C1.4 a 30-day-stale last_run_ts rendered healthy" "rc=$C1R_RC rendered: $(printf '%s' "$C1RENDER" | sed -n 's/^  State:  *//p') — G-01 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
+
+# C1.4b — THE THRESHOLD MUST BE DERIVED, NOT A LITERAL. G-01's fix is only
+# correct if the staleness boundary tracks the cadence authority: a hardcoded
+# 3600 would satisfy C1.4 and C4.3 and still be wrong on any host that retunes
+# the interval. EXECUTED, NOT GREPPED — drive the real derivation over real
+# config fixtures and prove the boundary MOVES, and that the .local override
+# beats the shipped file (the same key and precedence cmd_botguard.sh:610 uses).
+C14B_DIR="$SB/thr"; mkdir -p "$C14B_DIR/conf.d/botguard"
+thr_at(){   # $1 shipped value|MISSING   $2 .local value|MISSING
+  rm -f "$C14B_DIR/conf.d/botguard/main.conf" "$C14B_DIR/conf.d/botguard/main.conf.local"
+  [[ "$1" == MISSING ]] || printf 'HTTP_BOT_BOTSCAN_INTERVAL="%s"\n' "$1" > "$C14B_DIR/conf.d/botguard/main.conf"
+  [[ "$2" == MISSING ]] || printf 'HTTP_BOT_BOTSCAN_INTERVAL="%s"\n' "$2" > "$C14B_DIR/conf.d/botguard/main.conf.local"
+  NFTBAN_CONFIG_DIR="$C14B_DIR" SRC="$SB" bash -c 'set +e; . "$SRC/render.sh"; _nftban_health_botscan_stale_threshold'
+}
+T_DEF=$(thr_at MISSING MISSING); T_300=$(thr_at 300 MISSING); T_LOC=$(thr_at 300 1200)
+if [[ "$T_DEF" =~ ^[0-9]+$ && "$T_300" =~ ^[0-9]+$ && "$T_LOC" =~ ^[0-9]+$ ]] \
+   && (( T_DEF > 0 && T_300 < T_DEF && T_LOC > T_DEF )); then
+  ok "C1.4b threshold is DERIVED from the cadence authority — unset=${T_DEF}s · interval=300 -> ${T_300}s · shipped=300 + .local=1200 -> ${T_LOC}s (.local wins)"
 else
-  gap G-01 "C1.4 READER: last_run_ts 30d stale + timer active -> reader verdict" no \
-      "reader returned rc=$C1R_RC"
+  no "C1.4b the staleness boundary did not move with the configured cadence — it is a literal, not a derivation" \
+     "unset=$T_DEF interval300=$T_300 shipped300+local1200=$T_LOC"
 fi
 
 # FALSIFIER for the reader probe: prove the probe can observe a NON-OK return,
@@ -534,16 +579,16 @@ C4B="$(reader_check)"; C4B_RC="${C4B%%|*}"
   && ok "C4.2 FALSIFIER: stale_backlog=true overrides an OK health_state (the consumer axis IS consulted)" \
   || no "C4.2 stale_backlog=true did not change the verdict — the consumer axis is not wired" "rc=$C4B_RC issue=${C4B#*|}"
 
-# The gap: stall evidence that is INDEPENDENT of health_state — a 30-day-old
-# last_run_ts — is discarded the moment stale_backlog=false and health_state=OK.
+# C4.3 — the clause-4 face of G-01; see the promotion provenance at C1.4 above.
+# Stall evidence that is INDEPENDENT of health_state — a 30-day-old last_run_ts —
+# used to be discarded the moment stale_backlog=false and health_state=OK. A
+# consumer that saw no stale work in what it drained has said nothing about
+# whether the scanner ran at all.
 fixture true OK_SCANNED_NO_BOTS 2592000 0 false
 C4C="$(reader_check)"; C4C_RC="${C4C%%|*}"
-if [[ "$C4C_RC" == "0" ]]; then
-  gap G-01 "C4.3 stale_backlog=false + 30d-stale last_run_ts -> reader verdict" yes \
-      "reader returned HEALTH_OK($C4C_RC): the consumer's negative answer is the only stall input consulted"
-else
-  gap G-01 "C4.3 stale_backlog=false + 30d-stale last_run_ts -> reader verdict" no "rc=$C4C_RC"
-fi
+[[ "$C4C_RC" != "0" ]] \
+  && ok "C4.3 stale_backlog=false did NOT override a 30d-stale last_run_ts (rc=$C4C_RC) — issue: ${C4C#*|}" \
+  || no "C4.3 the consumer's stale_backlog=false overrode independent stall evidence" "rc=$C4C_RC — G-01 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
 
 # ---------------------------------------------------------------------------
 # CLAUSE 5 — NO FALL-THROUGH OK; A HEALTH STATE IS POSITIVELY ASSERTED
