@@ -33,6 +33,17 @@ BOTSCAN="$REPO/cli/lib/nftban/core/nftban_botscan.sh"
 HMOD="$REPO/cli/lib/nftban/core/nftban_health_checks_modules.sh"
 HANA="$REPO/cli/lib/nftban/cli/cmd_health_analysis.sh"
 
+# ⛔ HARNESS PRECONDITION, NOT A SUBJECT FACT. nftban_botscan.sh calls
+#    nftban_botscan_load_config at file scope, which resolves _source_local out of
+#    ${NFTBAN_LIB_DIR}/lib/env.sh. Without this binding the source aborts at
+#    "_source_local: command not found" (rc=127) under the errexit the C2.5 child
+#    arms itself with, and C2.5 reported [NOT_EXECUTED] "the P0-B sink could not be
+#    exercised" — a HARNESS failure wearing a missing-producer label, while
+#    _nftban_counter_file_add/_get were present all along (nftban_botscan.sh:240,258).
+#    A FAST failure implicates the precondition, not the subject: bind the lib dir
+#    to THIS repo so the sink arm actually executes.
+export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban"
+
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 PASS=0; FAIL=0; NOTEXEC=0; GAPOPEN=0; FAILED=()
 
