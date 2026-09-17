@@ -278,6 +278,57 @@ else
   fi
 fi
 
+echo "=== A11 CONCURRENCY: the sink claims LOST-UPDATE-IMPOSSIBLE-BY-CONSTRUCTION ==="
+# The design claim must be EXERCISED, not asserted. This sink was chosen over
+# repairing an unlocked read-modify-write primitive precisely because appending
+# "<name> <delta>" and summing on read makes a lost update structurally impossible.
+# An unexercised "impossible by construction" is indistinguishable from a bug nobody
+# has triggered yet. N concurrent writers must sum EXACTLY — no tolerance.
+_A11_DIR="$(mktemp -d)"
+_A11_WRITERS=8; _A11_EACH=50; _A11_WANT=$(( _A11_WRITERS * _A11_EACH ))
+_a11_run() {                       # $1 = PATH for the writers, $2 = sink file
+    local _p="$1" _f="$2"
+    : > "$_f"
+    for _ in $(seq 1 "$_A11_WRITERS"); do
+        (
+            PATH="$_p"
+            for _ in $(seq 1 "$_A11_EACH"); do
+                _nftban_counter_file_add "$_f" "sig" 1
+            done
+        ) &
+    done
+    wait
+    _nftban_counter_file_get "$_f" "sig"
+}
+_A11_GOT="$(_a11_run "$PATH" "$_A11_DIR/counters")"
+if [[ "$_A11_GOT" == "$_A11_WANT" ]]; then
+    ok "A11 $_A11_WRITERS concurrent writers x $_A11_EACH increments summed EXACTLY to $_A11_WANT"
+else
+    no "A11 concurrent sum is $_A11_GOT, expected $_A11_WANT" "LOST UPDATE — the sink is not append-atomic here"
+fi
+
+echo "=== A11b CONCURRENCY WITHOUT flock: the degraded path must ALSO be exact ==="
+# The claim is BY CONSTRUCTION, not by locking. Removing flock must not change the
+# result. If this arm needs flock to pass, the sink is merely "locked" — which is
+# exactly what _ptf_state_incr was rejected for.
+_A11_BIN="$_A11_DIR/nolock"; mkdir -p "$_A11_BIN"
+for _t in awk stat cat seq mktemp rm; do
+    _src="$(command -v "$_t" 2>/dev/null)"
+    [[ -n "$_src" ]] && ln -sf "$_src" "$_A11_BIN/$_t" 2>/dev/null
+done
+if PATH="$_A11_BIN" command -v flock >/dev/null 2>&1; then
+    no "A11b precondition: flock is still resolvable on the stripped PATH" "arm would be vacuous"
+else
+    _A11B_GOT="$(_a11_run "$_A11_BIN" "$_A11_DIR/counters_nolock")"
+    if [[ "$_A11B_GOT" == "$_A11_WANT" ]]; then
+        ok "A11b without flock, $_A11_WRITERS concurrent writers still summed EXACTLY to $_A11_WANT"
+    else
+        no "A11b no-flock concurrent sum is $_A11B_GOT, expected $_A11_WANT" \
+           "the sink depends on LOCKING, not on append atomicity — the stated design claim is FALSE"
+    fi
+fi
+rm -rf "$_A11_DIR" 2>/dev/null
+
 echo
 echo "=== RESULTS: $PASS passed, $FAIL failed ==="
 if [[ $FAIL -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}"; exit 1; fi
