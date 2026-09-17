@@ -1039,6 +1039,15 @@ _nftban_health_render_botscan() {
         # NO_INPUT_* below. Without this branch the last scan could have aborted
         # outright and this surface still read "ENABLED + timer active".
         verdict="ENABLED but LAST RUN FAILED (${hs}) — the scan did not complete; coverage for that cycle is unknown"
+    elif [[ "$hs" == "UNKNOWN" ]]; then
+        # v1.231.0 P0-C (G-05) — INCOMPLETE MEASUREMENT AUTHORITY IS NOT A PASS.
+        # The facts layer synthesises UNKNOWN when runstate.json is absent or
+        # unreadable (see hs's initialiser and the jq default above). That is an
+        # honest collection result and must stay honest at the VERDICT layer:
+        # "we have not measured" is not "we measured and it was fine". Reported as
+        # OK it would be indistinguishable from a healthy scan on a host where the
+        # scanner has never run at all.
+        verdict="ENABLED but NOT MEASURED — run-state absent or unreadable (${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json); coverage is UNKNOWN, not clean"
     elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
         if [[ "$_bs_enf" == "PROVEN" ]]; then
             verdict="ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement PROVEN by durable ban evidence"
@@ -1078,6 +1087,13 @@ nftban_health_check_botscan() {
             # not progress evidence and matches neither DEGRADED_* nor NO_INPUT_*,
             # so it needs its own NAMED branch or it reaches OK by fall-through.
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner LAST RUN FAILED (${hs}) — the scan did not complete; coverage for that cycle is unknown"
+            status=$HEALTH_WARNING
+        elif [[ "$hs" == "UNKNOWN" ]]; then
+            # v1.231.0 P0-C (G-05) — see the renderer above. UNKNOWN is what the
+            # facts layer emits when run-state is absent or unreadable. Incomplete
+            # measurement authority must be reported as UNKNOWN or DEGRADED, never
+            # as a passing control: "not measured" is not "measured and fine".
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner ENABLED but NOT MEASURED — run-state absent or unreadable (${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json); coverage is UNKNOWN, not clean"
             status=$HEALTH_WARNING
         elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
             # Same authority rule as the verdict renderer above: a coverage verdict

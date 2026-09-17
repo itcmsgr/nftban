@@ -67,7 +67,6 @@ declare -A GAPS_DECLARED=(
   [G-01]="clause 1+4 — run-age staleness is MEASURED (nftban_health_checks_modules.sh:989) and then DISCARDED: no verdict branch consults it, so an ancient last_run_ts renders healthy. Owner: P0-C implementation."
   [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
   [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
-  [G-05]="clause 3 — health_state=UNKNOWN (synthesised at nftban_health_checks_modules.sh:987 when run-state is absent or unreadable) reads HEALTH_OK: incomplete measurement authority is reported as a passing control. Owner: P0-C implementation."
   [G-07]="clause 2 — spool backpressure IS produced every collector cycle (cli/sbin/nftban-botscan-collector) but reaches no health verdict: nftban_botscan_health_state takes no such argument and nftban_health_checks_modules.sh never opens spool.status. Only cmd_health_analysis.sh reads it, and only for its own return code. Owner: P0-C implementation."
 )
 declare -A GAPS_CONSUMED=()
@@ -489,15 +488,30 @@ IFS='|' read -r _ _ _ C3HS2 _ _ _ C3HO2 _ <<<"$C3F2"
   && ok "C3.3 FALSIFIER: with complete authority the same facts probe reports hs=$C3HS2 handoff=$C3HO2 (UNKNOWN is measured, not constant)" \
   || no "C3.3 facts probe reports UNKNOWN even with complete authority — C3.1/C3.2 are vacuous"
 
-# The VERDICT layer: UNKNOWN authority must not be a passing control.
+# ---------------------------------------------------------------------------
+# C3.4 — PROMOTED FROM DECLARED GAP G-05.  PROVENANCE, KEPT DELIBERATELY:
+#
+# ⛔ THIS ARM DID NOT ALWAYS PASS. Until v1.231.0 P0-C it was a DECLARED OPEN GAP
+#    (registry id G-05). The FACTS layer was already honest — absent or unreadable
+#    run-state synthesises health_state=UNKNOWN (nftban_health_checks_modules.sh,
+#    the hs initialiser and its jq default) — and C3.1 proves that. The defect was
+#    localised entirely in the VERDICT layer: UNKNOWN matched no branch, fell
+#    through the terminal else and returned HEALTH_OK, so a host where BotScan had
+#    NEVER RUN was indistinguishable from one scanning cleanly.
+#    P0-C added a NAMED UNKNOWN branch to the renderer and to
+#    nftban_health_check_botscan. The gap ratchet then FAILED this arm by itself
+#    — "CLAUSE NOW SATISFIED, promote and delete the registry row" — so the
+#    promotion was FORCED by evidence. The G-05 row was deleted in the same change.
+#
+# ⛔ THE PROMOTED ARM EXECUTES, IT DOES NOT INSPECT. It removes the real
+#    runstate.json and drives the real reader; C3.3 is its falsifier, proving the
+#    same probe reports a non-UNKNOWN state when authority IS complete.
+# ---------------------------------------------------------------------------
 fixture true NORUNSTATE 0 MISSING false
 C3V="$(reader_check)"; C3V_RC="${C3V%%|*}"
-if [[ "$C3V_RC" == "0" ]]; then
-  gap G-05 "C3.4 VERDICT: health_state=UNKNOWN (run-state absent) -> reader verdict" yes \
-      "reader returned HEALTH_OK($C3V_RC); issue text: ${C3V#*|}"
-else
-  gap G-05 "C3.4 VERDICT: health_state=UNKNOWN (run-state absent) -> reader verdict" no "rc=$C3V_RC"
-fi
+[[ "$C3V_RC" != "0" ]] \
+  && ok "C3.4 VERDICT: health_state=UNKNOWN (run-state absent) -> non-OK verdict (rc=$C3V_RC) via a NAMED UNKNOWN branch — issue: ${C3V#*|}" \
+  || no "C3.4 incomplete measurement authority reported HEALTH_OK" "rc=$C3V_RC issue=${C3V#*|} — G-05 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
 
 # ---------------------------------------------------------------------------
 # CLAUSE 4 — CONSUMER stale_backlog=false MUST NOT OVERRIDE INDEPENDENT STALL
