@@ -361,6 +361,166 @@ for site in "_bg_out_v4:v4_suspects" "_bg_out_v6:v6_suspects" \
   fi
 done
 
+# ---------------------------------------------------------------------------
+# A8 `nftban botguard test <ip>` -- the SIXTH site. Same BotGuard surface, and
+# the only one of the six whose wrong answer is a SECURITY FALSE NEGATIVE: it
+# told an operator an address was absent from every bot guard set while the
+# kernel held it. Here the pipeline's producer is `nft` ITSELF, so the SIGPIPE
+# lands on the real process rather than on an `echo` subshell.
+#
+# The defect is POSITION-dependent as well as size-dependent: `grep -q` leaves at
+# its FIRST match, so the EARLIER the address sits in a large set, the more
+# certainly nft is still writing when the pipe closes. An address at the END is
+# found even by the broken shape -- which is exactly why this survived testing.
+# ---------------------------------------------------------------------------
+# Fixture whose FIRST element and LAST element are both known.
+FIRST_IP="11.0.0.1"                       # element 0 of gen_fixture
+# Derive the last element's address from the generator's own arithmetic so the
+# arm cannot silently drift if the generator changes.
+_li=$((BIG_N-1))
+LAST_IP="$(( (_li/65536) % 200 + 11 )).$(( (_li/256) % 256 )).$(( _li % 256 )).$(( _li % 250 + 1 ))"
+
+cat > "$tmp/run_test_cmd.sh" <<'CHILD'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# shellcheck source=/dev/null
+source "$NFTBAN_LIB_DIR/cli/cmd_botguard.sh"
+[[ -n "${INVERSION_CODE:-}" ]] && eval "$INVERSION_CODE"
+out="$(_nftban_botguard_test "$PROBE_IP" true)" || true
+printf '%s\n' "$out" > "$RESULT_FILE"
+exit 0
+CHILD
+chmod +x "$tmp/run_test_cmd.sh"
+
+# The pre-fix membership test, DECLARED INLINE (never read from origin/main).
+# argv is left CORRECT here so the arm isolates the pipeline/regex defect rather
+# than re-proving the argv one, which A7 already owns.
+INVERT_MEMBERSHIP=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  printf \'%s\\n\' "$output" | grep -q "$needle"\n}'
+
+probe_membership() {  # $1 fixture, $2 ip, $3 optional inversion
+  local rf="$tmp/tc.result"; rm -f "$rf"
+  NFT_FIXTURE="$1" PROBE_IP="$2" INVERSION_CODE="${3:-}" RESULT_FILE="$rf" \
+    bash "$tmp/run_test_cmd.sh" >/dev/null 2>&1 || true
+  [[ -f "$rf" ]] || { printf '__NO_RESULT__'; return 1; }
+  case "$(cat "$rf")" in
+    *'"found":true'*)  printf 'FOUND'  ;;
+    *'"found":false'*) printf 'ABSENT' ;;
+    *)                 printf '__UNPARSEABLE__' ;;
+  esac
+}
+
+# --- A8a EPIPE at this site: first element of a large set must be FOUND -------
+got="$(probe_membership "$BIG" "$FIRST_IP")" || true
+if [[ "$got" == "FOUND" ]]; then
+  ok "A8a first element $FIRST_IP of a $BIG_BYTES B set -> FOUND"
+else
+  no "A8a first element $FIRST_IP of a $BIG_BYTES B set -> $got (expected FOUND; security false negative)"
+fi
+inv="$(probe_membership "$BIG" "$FIRST_IP" "$INVERT_MEMBERSHIP")" || true
+if [[ "$inv" == "ABSENT" ]]; then
+  ok "A8a-INV pipeline shape reported $FIRST_IP ABSENT from the set that holds it -- arm is discriminating"
+else
+  no "A8a-INV pipeline shape reported '$inv', expected ABSENT -- control is inert"
+fi
+
+# --- A8b position dependence: the LAST element is found even when broken ------
+# This is what makes A8a's failure mode invisible to a casual test, and it is
+# why the arm must probe the FIRST element specifically.
+inv_last="$(probe_membership "$BIG" "$LAST_IP" "$INVERT_MEMBERSHIP")" || true
+fix_last="$(probe_membership "$BIG" "$LAST_IP")" || true
+if [[ "$fix_last" == "FOUND" && "$inv_last" == "FOUND" ]]; then
+  ok "A8b last element $LAST_IP -> FOUND under BOTH shapes -- the defect is position-dependent, not a parse bug"
+else
+  no "A8b last element $LAST_IP: fixed=$fix_last inverted=$inv_last, both expected FOUND"
+fi
+
+# ---------------------------------------------------------------------------
+# A9 SEMANTICS: the regex->literal change is a DELIBERATE TIGHTENING, asserted
+# as such. The old spelling searched the whole rendered set for an unanchored
+# BASIC REGULAR EXPRESSION, so it could answer "member" on text that is not an
+# element. These arms are run on a SMALL fixture so no EPIPE is in play and the
+# only thing under test is matching semantics.
+# ---------------------------------------------------------------------------
+SEM="$tmp/sem.nft"
+{
+  printf 'table ip nftban {\n\tset http_bot_suspect {\n\t\ttype ipv4_addr\n'
+  printf '\t\tflags dynamic,timeout\n\t\tsize 65535\n\t\ttimeout 1h\n\t\telements = {'
+  printf '\n\t\t\t     10.0.0.12 timeout 1h expires 59m58s,'
+  printf '\n\t\t\t     192.168.10.5 timeout 1h expires 59m57s }\n\t}\n}\n'
+} > "$SEM"
+
+# A9a exact membership still works. This arm is also the VACUITY GATE for every
+# "-> ABSENT" arm below: a subject that answers ABSENT to everything (which is
+# precisely what the argv defect produced) would satisfy all of them while
+# proving nothing. If A9a does not hold, the negative arms are NOT_EXECUTED.
+a9a_ok=0
+got="$(probe_membership "$SEM" "10.0.0.12")" || true
+if [[ "$got" == "FOUND" ]]; then
+  a9a_ok=1; ok "A9a exact element 10.0.0.12 -> FOUND (vacuity gate for the ABSENT arms)"
+else
+  no "A9a exact element 10.0.0.12 -> $got (expected FOUND)"
+fi
+
+# Assert a negative membership arm, but only where a positive lookup is known to
+# work; otherwise say so instead of banking a meaningless pass.
+neg_arm() {  # $1 label, $2 fixture, $3 needle
+  local label="$1" fixture="$2" needle="$3" r
+  if [[ "$a9a_ok" -ne 1 ]]; then
+    nx "$label" "VACUOUS_NEGATIVE: the subject answered ABSENT to a known member (A9a failed), so an ABSENT answer here proves nothing"
+    return 0
+  fi
+  r="$(probe_membership "$fixture" "$needle")" || true
+  [[ "$r" == "ABSENT" ]] && ok "$label" || no "$label -- got $r, expected ABSENT"
+}
+
+# A9b CONTAINMENT IS NOT MEMBERSHIP. 10.0.0.1 is a prefix-sharing DIFFERENT
+# address; the set holds only 10.0.0.12. A substring search says "member".
+neg_arm "A9b 10.0.0.1 -> ABSENT (set holds 10.0.0.12) -- containment no longer reported as membership" \
+        "$SEM" "10.0.0.1"
+inv="$(probe_membership "$SEM" "10.0.0.1" "$INVERT_MEMBERSHIP")" || true
+if [[ "$inv" == "FOUND" ]]; then
+  ok "A9b-INV old shape reported 10.0.0.1 FOUND -- the false positive was real, and is now closed"
+else
+  no "A9b-INV old shape reported '$inv', expected FOUND -- control is inert"
+fi
+
+# A9c the other direction: a LONGER address that merely contains a member.
+neg_arm "A9c 192.168.10.55 -> ABSENT (set holds 192.168.10.5)" "$SEM" "192.168.10.55"
+
+# A9d `.` MUST NOT ACT AS A WILDCARD. 10x0y0z12 is not an address in the set,
+# but it is matched by the BRE `10.0.0.12`.
+DOTF="$tmp/dot.nft"
+{
+  printf 'table ip nftban {\n\tset http_bot_suspect {\n\t\ttype ipv4_addr\n'
+  printf '\t\tcomment "10x0y0z12 seen"\n\t\telements = {'
+  printf '\n\t\t\t     192.168.10.5 timeout 1h }\n\t}\n}\n'
+} > "$DOTF"
+neg_arm "A9d 10.0.0.12 -> ABSENT though the rendered set contains 10x0y0z12 -- '.' is no longer a wildcard" \
+        "$DOTF" "10.0.0.12"
+inv="$(probe_membership "$DOTF" "10.0.0.12" "$INVERT_MEMBERSHIP")" || true
+if [[ "$inv" == "FOUND" ]]; then
+  ok "A9d-INV old shape matched 10x0y0z12 via '.' as a wildcard -- regex interpretation was real"
+else
+  no "A9d-INV old shape reported '$inv', expected FOUND -- control is inert"
+fi
+
+# A9e A NEEDLE CARRYING METACHARACTERS IS DATA, NOT A PATTERN. `.*` and `[0-9]`
+# must be compared literally and must match nothing here.
+for meta in '.*' '10.0.0.[0-9]' '.*timeout.*'; do
+  neg_arm "A9e needle '$meta' -> ABSENT -- treated as a literal string, not a pattern" "$SEM" "$meta"
+done
+inv="$(probe_membership "$SEM" '.*' "$INVERT_MEMBERSHIP")" || true
+if [[ "$inv" == "FOUND" ]]; then
+  ok "A9e-INV old shape let the needle '.*' match the whole set -- pattern injection was real"
+else
+  no "A9e-INV old shape reported '$inv', expected FOUND -- control is inert"
+fi
+
+# A9f MATCHING IS CONFINED TO THE ELEMENTS BLOCK. `65535` appears in the set's
+# `size` header; it is not an element and must never be reported as a member.
+neg_arm "A9f header text '65535' (the set's size) -> ABSENT -- non-element text is not membership" \
+        "$SEM" "65535"
+
 echo
 printf 'PASS=%s FAIL=%s NOT_EXECUTED=%s\n' "$PASS" "$FAIL" "$NOTEXEC"
 if [[ "$FAIL" -gt 0 ]]; then

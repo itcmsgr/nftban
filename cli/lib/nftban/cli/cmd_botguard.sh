@@ -226,6 +226,68 @@ _botguard_kernel_set_count() {
     echo "${count:-0}"
 }
 
+# v1.231.0: SET MEMBERSHIP, not text containment.
+#
+# `nftban botguard test <ip>` used to ask the question by piping an unquoted
+# `nft list set $table "$set_name"` straight into a quiet grep for the address,
+# which was wrong in three independent ways, two of them producing a SECURITY
+# FALSE NEGATIVE -- "IP not found in any bot guard set" for an IP that is in it:
+#
+#  1. ARGV. Unquoted `$table` under strict.sh's IFS=$'\n\t' reached nft as one
+#     word ("ip nftban"), so every lookup failed and every answer was "not found".
+#     See _botguard_kernel_set_count for the full derivation.
+#  2. EPIPE. `grep -q` exits at its FIRST match. Here the producer is `nft`
+#     itself, so on a large set nft is still writing when grep leaves, takes
+#     SIGPIPE, and pipefail adopts 141 -- A MATCH BECOMES A MISS. The earlier the
+#     IP sits in the set, the more reliably it is missed: position-dependent as
+#     well as size-dependent.
+#  3. CONTAINMENT != MEMBERSHIP. This one is independent of the pipe, and it cuts
+#     the other way -- a FALSE POSITIVE. `grep` searched the ENTIRE rendered set
+#     (headers, `type ipv4_addr`, `size`, flags, timeouts, expiry stamps) for the
+#     needle as an unanchored BASIC REGULAR EXPRESSION:
+#       - `.` is a wildcard, so 10.0.0.1 matched a rendered 10x0y0z1;
+#       - the match was a substring, so 10.0.0.1 matched the DIFFERENT address
+#         10.0.0.12, and reported membership in a set that does not hold it;
+#       - a needle carrying regex metacharacters (`.*`, `[0-9]`) was interpreted,
+#         not compared.
+#
+# The replacement answers the question that was actually being asked: is there an
+# ELEMENT of this set whose address is EXACTLY this string. It narrows to the
+# `elements = { ... }` block, walks the comma-separated elements, takes each
+# element's first whitespace-delimited field (the address; `timeout`/`expires`
+# metadata follows it) and compares with `==` against a QUOTED right-hand side,
+# which is a literal string comparison and not a pattern match.
+#
+# Pure parameter expansion throughout: no pipeline, no subshell producer, no
+# word-splitting and no globbing over kernel-derived text. Size- and
+# position-independent by construction.
+#
+# An element spelled as an interval ("a-b") or prefix ("a/len") is compared as
+# the literal element text; this helper answers membership, not containment.
+_botguard_set_contains_ip() {
+    local output="$1"
+    local needle="$2"
+
+    [[ -n "$needle" ]] || return 1
+
+    # Narrow to the elements block. No block -> the set was read and is empty.
+    local body="${output#*elements = \{}"
+    [[ "$body" != "$output" ]] || return 1
+    body="${body%%\}*}"
+
+    local rest="$body" elem field
+    while [[ -n "$rest" ]]; do
+        elem="${rest%%,*}"
+        if [[ "$elem" == "$rest" ]]; then rest=""; else rest="${rest#*,}"; fi
+        # Trim leading whitespace (elements are rendered indented, one per line).
+        elem="${elem#"${elem%%[![:space:]]*}"}"
+        # The address is the first whitespace-delimited field of the element.
+        field="${elem%%[[:space:]]*}"
+        [[ "$field" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
 # Check if nftables set exists (v1.79.0)
 _botguard_kernel_set_exists() {
     local table="$1"
@@ -460,7 +522,12 @@ _nftban_botguard_test() {
             set_name="${set_name}6"
         fi
 
-        if nft list set $table "$set_name" 2>/dev/null | grep -q "$ip"; then
+        local _set_out=""
+        local -a _tbl=()
+        IFS=' ' read -r -a _tbl <<< "$table"
+        _set_out=$(nft list set "${_tbl[@]+"${_tbl[@]}"}" "$set_name" 2>/dev/null) || _set_out=""
+
+        if [[ -n "$_set_out" ]] && _botguard_set_contains_ip "$_set_out" "$ip"; then
             found_in="$set_name"
             break
         fi
@@ -825,6 +892,8 @@ export -f _botguard_config_set
 # v1.79.0: Kernel truth helpers (BUG-3 fix)
 export -f _botguard_kernel_set_count
 export -f _botguard_kernel_set_exists
+# v1.231.0: set-membership predicate for `botguard test`
+export -f _botguard_set_contains_ip
 
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
