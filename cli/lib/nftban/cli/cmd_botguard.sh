@@ -191,7 +191,24 @@ _botguard_kernel_set_count() {
 
     # v1.80.0 FIX: Only count elements within "elements = { ... }" section
     # If no elements section exists, the set is empty
-    if ! echo "$output" | grep -q 'elements = {'; then
+    #
+    # v1.231.0 EPIPE FAIL-TO-ZERO FIX. This test MUST NOT be a pipeline.
+    # Piping the captured output into a quiet grep short-circuits: grep -q exits
+    # at the FIRST match, and that match is on the 6th line of `nft list set`.
+    # The producing subshell still has the whole element list to write, blocks on
+    # the 64 KiB pipe buffer, and dies of SIGPIPE (128+13=141). This file runs
+    # under `set -Eeuo pipefail` (see the `set` at the top of this file), so
+    # pipefail adopts 141 as the PIPELINE's status even though grep MATCHED, and
+    # the `!` then inverts a successful match into "no elements section" -> "0".
+    # Measured on this shape: 928 elements / 43,629 B -> rc 0; 929 elements /
+    # 43,677 B -> rc 141. Production rulesets are 168-196 KB, so `nftban botguard
+    # status` reported 0 suspects for a set holding thousands. Present since
+    # v1.80.0. Ignoring SIGPIPE does NOT help: the producer then takes EPIPE and
+    # returns 1, which pipefail adopts just the same. The defect is in the
+    # SHORT-CIRCUITING CONSUMER, not in the signal disposition -- so the fix is to
+    # have no pipe at all. Pure-bash substring match: one process, no producer,
+    # no buffer, size-independent.
+    if [[ "$output" != *'elements = {'* ]]; then
         echo "0"
         return
     fi
