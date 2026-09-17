@@ -167,13 +167,27 @@ ${key}=\"${value}\""
 # Returns: integer count of elements in set
 # Usage: _botguard_kernel_set_count "ip nftban" "http_bot_suspect"
 # v1.80.0: Fixed regex that matched metadata (size, flags) instead of actual IPs
+# v1.231.0 ARGV SPLIT. `$table` carries "<family> <table>" as ONE string that has
+# to reach nft as TWO argv words. The historical spelling relied on the AMBIENT
+# IFS to split an unquoted `$table` -- but line 38 of this file sources
+# lib/cmd_common.sh, which sources lib/strict.sh, which sets IFS=$'\n\t': NO
+# SPACE. So `nft list set $table "$set_name"` expanded to the four-word argv
+#   list / set / "ip nftban" / http_bot_suspect
+# and nft rejected it. EVERY call failed, and the failure arm of this helper
+# returns a count, so the count was structurally 0 no matter what the kernel
+# held. Measured with an argv-faithful nft stub: ARGC=4, third word "ip nftban".
+# Split on an EXPLICITLY PINNED IFS rather than inheriting whatever the caller
+# left in the ambient one.
 _botguard_kernel_set_count() {
     local table="$1"
     local set_name="$2"
 
+    local -a _tbl=()
+    IFS=' ' read -r -a _tbl <<< "$table"
+
     # Get set content
     local output
-    output=$(nft list set $table "$set_name" 2>/dev/null) || { echo "0"; return; }
+    output=$(nft list set "${_tbl[@]+"${_tbl[@]}"}" "$set_name" 2>/dev/null) || { echo "0"; return; }
 
     # v1.80.0 FIX: Only count elements within "elements = { ... }" section
     # If no elements section exists, the set is empty
@@ -199,7 +213,13 @@ _botguard_kernel_set_count() {
 _botguard_kernel_set_exists() {
     local table="$1"
     local set_name="$2"
-    nft list set $table "$set_name" &>/dev/null
+    # v1.231.0 ARGV SPLIT — see _botguard_kernel_set_count above. Under strict.sh's
+    # IFS=$'\n\t' the unquoted `$table` was ONE argv word, so this predicate was
+    # FALSE for every set that exists. It gates all twelve counters in
+    # _nftban_botguard_stats, each of which therefore kept its 0 initialiser.
+    local -a _tbl=()
+    IFS=' ' read -r -a _tbl <<< "$table"
+    nft list set "${_tbl[@]+"${_tbl[@]}"}" "$set_name" &>/dev/null
 }
 
 # =============================================================================
