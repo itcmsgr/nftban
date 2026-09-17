@@ -67,7 +67,6 @@ declare -A GAPS_DECLARED=(
   [G-01]="clause 1+4 — run-age staleness is MEASURED (nftban_health_checks_modules.sh:989) and then DISCARDED: no verdict branch consults it, so an ancient last_run_ts renders healthy. Owner: P0-C implementation."
   [G-02]="clause 5 — the run-state WRITER defaults health_state to OK_SCANNED_NO_BOTS when the caller supplies none (nftban_botscan_adaptive.sh:178) and the trend writer repeats the default (nftban_botscan_adaptive.sh:192). A fall-through OK is recorded as durable truth. Owner: P0-C implementation."
   [G-03]="clause 5 — nftban_health_check_botscan initialises status=\$HEALTH_OK (nftban_health_checks_modules.sh:1060) and terminates in an unqualified else (nftban_health_checks_modules.sh:1085), so ANY health_state the reader does not name reads OK by default. Owner: P0-C implementation."
-  [G-04]="clause 1+5 — ERROR_RUNTIME_FAILURE (nftban_botscan_adaptive.sh:115) matches neither DEGRADED_* nor NO_INPUT_* in the reader, so a runtime FAILURE reports HEALTH_OK. Owner: P0-C implementation."
   [G-05]="clause 3 — health_state=UNKNOWN (synthesised at nftban_health_checks_modules.sh:987 when run-state is absent or unreadable) reads HEALTH_OK: incomplete measurement authority is reported as a passing control. Owner: P0-C implementation."
   [G-07]="clause 2 — spool backpressure IS produced every collector cycle (cli/sbin/nftban-botscan-collector) but reaches no health verdict: nftban_botscan_health_state takes no such argument and nftban_health_checks_modules.sh never opens spool.status. Only cmd_health_analysis.sh reads it, and only for its own return code. Owner: P0-C implementation."
 )
@@ -300,15 +299,31 @@ C1N="$(reader_check)"; C1N_RC="${C1N%%|*}"
   && ok "C1.5 FALSIFIER: the same reader probe reports rc=$C1N_RC for DEGRADED_BUDGET_HIT (probe is not constant-OK)" \
   || no "C1.5 reader probe returned OK for an explicitly DEGRADED state — probe cannot distinguish verdicts"
 
-# ERROR state — a runtime FAILURE is, by definition, not progress evidence.
+# ---------------------------------------------------------------------------
+# C1.6 — PROMOTED FROM DECLARED GAP G-04.  PROVENANCE, KEPT DELIBERATELY:
+#
+# ⛔ THIS ARM DID NOT ALWAYS PASS. Until v1.231.0 P0-C it was a DECLARED OPEN GAP
+#    (registry id G-04). ERROR_RUNTIME_FAILURE is emitted by the classifier
+#    (nftban_botscan_adaptive.sh:115) — a runtime FAILURE, by definition not
+#    progress evidence — but the reader's verdict chain tested only
+#    `DEGRADED_* || NO_INPUT_*`, and ERROR_* matches neither. A scan that aborted
+#    outright therefore fell through the terminal else and returned HEALTH_OK,
+#    rendering "HTTP Exploit Scanner enabled (action=both, timer active)".
+#    P0-C added a NAMED ERROR_* branch to both the renderer and
+#    nftban_health_check_botscan. The gap ratchet then FAILED this arm by itself
+#    — "CLAUSE NOW SATISFIED, promote and delete the registry row" — so the
+#    promotion was FORCED by evidence, not remembered by a human. The G-04 row
+#    was deleted in the same change.
+#
+# ⛔ THE PROMOTED ARM EXECUTES, IT DOES NOT INSPECT. It drives the real reader
+#    over a real runstate.json; it does not assert that the new branch's source
+#    text is present, which would read green while proving nothing.
+# ---------------------------------------------------------------------------
 fixture true ERROR_RUNTIME_FAILURE 10 0 false
 C1E="$(reader_check)"; C1E_RC="${C1E%%|*}"
-if [[ "$C1E_RC" == "0" ]]; then
-  gap G-04 "C1.6 READER: health_state=ERROR_RUNTIME_FAILURE -> reader verdict" yes \
-      "reader returned HEALTH_OK($C1E_RC); issue text: ${C1E#*|}"
-else
-  gap G-04 "C1.6 READER: health_state=ERROR_RUNTIME_FAILURE -> reader verdict" no "rc=$C1E_RC"
-fi
+[[ "$C1E_RC" != "0" ]] \
+  && ok "C1.6 READER: health_state=ERROR_RUNTIME_FAILURE -> non-OK verdict (rc=$C1E_RC) via a NAMED ERROR_* branch — issue: ${C1E#*|}" \
+  || no "C1.6 a runtime FAILURE reported HEALTH_OK" "rc=$C1E_RC issue=${C1E#*|} — G-04 has REGRESSED; it was closed in v1.231.0 P0-C and must never silently revert to a gap"
 
 # ---------------------------------------------------------------------------
 # CLAUSE 2 — STALLED + CAPPED/BACKPRESSURED BACKLOG -> DEGRADED

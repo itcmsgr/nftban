@@ -1032,6 +1032,13 @@ _nftban_health_render_botscan() {
         verdict="DISABLED (not scanning; no bans)"
     elif [[ "$broken_handoff" == "yes" ]]; then
         verdict="ENABLED but CONSUMER HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+    elif [[ "$hs" == ERROR_* ]]; then
+        # v1.231.0 P0-C (G-04) — A RUNTIME FAILURE IS NOT PROGRESS EVIDENCE.
+        # ERROR_RUNTIME_FAILURE is emitted by the classifier
+        # (nftban_botscan_adaptive.sh:115) but is matched by NEITHER DEGRADED_* nor
+        # NO_INPUT_* below. Without this branch the last scan could have aborted
+        # outright and this surface still read "ENABLED + timer active".
+        verdict="ENABLED but LAST RUN FAILED (${hs}) — the scan did not complete; coverage for that cycle is unknown"
     elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
         if [[ "$_bs_enf" == "PROVEN" ]]; then
             verdict="ENABLED · ${hs} — COVERAGE DEGRADED (some sources not scanned); enforcement PROVEN by durable ban evidence"
@@ -1065,6 +1072,12 @@ nftban_health_check_botscan() {
     if [[ "$enabled" == "true" ]]; then
         if [[ "$broken_handoff" == "yes" ]]; then
             NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner consumer HAND-OFF BROKEN (handoff_errors=${handoff}, stale_backlog=${stale}) — bans NOT reaching the kernel"
+            status=$HEALTH_WARNING
+        elif [[ "$hs" == ERROR_* ]]; then
+            # v1.231.0 P0-C (G-04) — see the renderer above. A runtime FAILURE is
+            # not progress evidence and matches neither DEGRADED_* nor NO_INPUT_*,
+            # so it needs its own NAMED branch or it reaches OK by fall-through.
+            NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner LAST RUN FAILED (${hs}) — the scan did not complete; coverage for that cycle is unknown"
             status=$HEALTH_WARNING
         elif [[ "$hs" == DEGRADED_* || "$hs" == NO_INPUT_* ]]; then
             # Same authority rule as the verdict renderer above: a coverage verdict
