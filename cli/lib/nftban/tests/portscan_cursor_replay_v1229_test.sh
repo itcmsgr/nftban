@@ -238,15 +238,34 @@ n9b=$( set -Eeuo pipefail; { PORTSCAN_CLASSIC_CURSOR_MAX_BYTES=65536 _nftban_por
 [ "${n9b:-0}" -eq 0 ] && ok "second pipeline read emits 0 — replay eliminated in the production context" \
                       || no "second pipeline read emitted $n9b" "replay persists under production shell options"
 
-echo "── ARM 9i INVERSION: forward mode loses the cursor under pipefail ─────"
-rm -f "$(_cursor_path "$BIG")"
-(
-  set -Eeuo pipefail
-  while IFS= read -r _l; do :; done < <( { NFTBAN_HTTP_LOG_READ_FORWARD=true PORTSCAN_CLASSIC_CURSOR_MAX_BYTES=65536 _nftban_portscan_classic_read_file_source "$BIG"; } | { tail -5000 || true; } | { grep -E -- "NFTBAN_PORTSCAN:" 2>/dev/null || true; } | { tail -1000 || true; } )
-) 2>/dev/null
-[ -s "$(_cursor_path "$BIG")" ] \
-    && no "control BROKEN: forward mode persisted a cursor here" "arm 9 cannot prove D1" \
-    || ok "control: forward mode loses the cursor under errexit+pipefail — arm 9 is falsifiable"
+echo "── ARM 9i INVERSION: a FAILED bounded read must persist NO cursor ─────"
+# ⛔ DECLARED INVERSION — NEVER ANCHOR A CONTROL ON ANOTHER MODULE'S LIVE DEFECT.
+#    This arm previously asserted "forward mode loses the cursor under
+#    errexit+pipefail". That was true only while the BotScan bounded-read defect
+#    (v1.231.0 P0-A) was unfixed: the read aborted before the checkpoint. The hour
+#    P0-A shipped, the premise became false, this control reported itself BROKEN,
+#    and a PortScan gate went red because a BotScan bug was fixed. The assertions
+#    were never wrong — the SUBJECT was borrowed and mutable.
+#    Invert the MECHANISM locally instead: force the bounded read to fail in-process
+#    and prove the checkpoint does not happen. Immutable by construction, no
+#    dependency on any other module's state.
+#    Guard the inversion first: if the helper is gone, this no longer describes the
+#    code and must refuse rather than pass vacuously.
+_inv_n=$(grep -cE '^nftban_http_bounded_read\(\)' "$REPO_ROOT/cli/lib/nftban/lib/nftban_http_logs.sh") || _inv_n=0
+if [[ ! "$_inv_n" =~ ^[0-9]+$ ]] || [ "$_inv_n" -ne 1 ]; then
+    no "control UNANCHORED: expected exactly 1 nftban_http_bounded_read definition" "found $_inv_n — the inversion no longer describes the fix"
+else
+    rm -f "$(_cursor_path "$BIG")"
+    (
+      set -Eeuo pipefail
+      # the declared inversion: the bounded read fails, nothing is obtained
+      nftban_http_bounded_read() { return 1; }
+      while IFS= read -r _l; do :; done < <( { PORTSCAN_CLASSIC_CURSOR_MAX_BYTES=65536 _nftban_portscan_classic_read_file_source "$BIG"; } | { tail -5000 || true; } | { grep -E -- "NFTBAN_PORTSCAN:" 2>/dev/null || true; } | { tail -1000 || true; } )
+    ) 2>/dev/null
+    [ -s "$(_cursor_path "$BIG")" ] \
+        && no "control BROKEN: a cursor was persisted although the bounded read failed" "arm 9 cannot prove D1" \
+        || ok "control: a failed bounded read persists NO cursor — arm 9 is falsifiable"
+fi
 
 echo "── ARM 10 EMPTY source: no cursor damage, no fabricated records ───────"
 EMPTY="$SBX/empty.log"; : > "$EMPTY"

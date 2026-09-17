@@ -492,6 +492,102 @@ nftban_http_cursor_resolve() {
     printf '%s|ABSENT\n' "$cur"
 }
 
+# =============================================================================
+# Bounded read with EXPECTED-SIGPIPE normalization (v1.231.0 P0-A)
+# =============================================================================
+# ⛔ `producer | head -c N` is a BOUNDED read. When the producer still holds data,
+#    `head` exits DELIBERATELY once satisfied and the producer receives SIGPIPE
+#    (141). Under `pipefail` the pipeline then reports FAILURE for a read that
+#    SUCCEEDED, and under `errexit` the caller aborts before its next statement.
+#
+#    MEASURED (lab2, window 16 KiB): sizes 131 KB .. 20 MB all yield
+#        tail_rc=141  head_rc=0  actual_bytes == requested_bytes
+#    and the statement after the pipeline DOES NOT EXECUTE. In this reader that
+#    statement is the cursor checkpoint, so already-delivered bytes were replayed
+#    every cycle: offsets never reached EOF, completion authority never existed,
+#    the (correct, conservative) BotScan reaper never retired anything, and the
+#    spool stayed latched at its cap with backpressure asserted. Two production
+#    hosts sat in that state for 22 and 75 days.
+#
+#    SUCCESS BELONGS TO THE BOUNDED CONSUMER, NOT TO THE PRODUCER WE DELIBERATELY
+#    CUT OFF. The acceptance predicate is the data contract and nothing else:
+#        head_rc == 0  AND  actual_bytes == requested_bytes
+#
+#    ⛔ PRODUCER EXIT STATUS IS DIAGNOSTIC ONLY — IT MUST NOT GATE ACCEPTANCE.
+#    The SAME logical read reports a DIFFERENT producer status depending purely on
+#    the SIGPIPE disposition it inherits, which is a property of who launched the
+#    process, not of the data:
+#        SSH / interactive   SIGPIPE default   tail dies on signal   -> 141
+#        systemd service     SIGPIPE IGNORED   tail gets EPIPE       ->   1
+#    `IgnoreSIGPIPE=` defaults to YES in systemd and an ignored signal is inherited
+#    across exec, so nftban-botscan.service (Type=oneshot, shell ExecStart) runs in
+#    the SECOND shape. MEASURED 2026-09-16: a systemd-launched bash has
+#    SigIgn=0000000000001000 (bit 12 = SIGPIPE). An earlier revision of this helper
+#    accepted only {141,0} and was therefore INERT on exactly the hosts it was
+#    written for — the defect survived under a different disposition. Requiring a
+#    particular producer status ties correctness to signal disposition instead of
+#    to the bytes actually obtained.
+#
+#    THIS IS NOT `|| true`. Every one of these REMAINS A FAILURE:
+#        head_rc != 0                      the consumer itself failed
+#        actual_bytes <  requested         short read — the window was NOT obtained
+#        actual_bytes >  requested         invariant violation
+#        scratch unusable / setup failure  no validated buffer to emit from
+#    A rejected read emits NOTHING, so replay (safe, visible) is never silently
+#    converted into SKIPPED INPUT (blindness) — the strictly worse trade.
+#
+#    Bytes are spilled to a bounded scratch file (<= NFTBAN_HTTP_LOG_MAX_BYTES) and
+#    emitted ONLY after the read is validated, so a rejected read emits nothing.
+#
+# ⛔ NO COUNTERS HERE — P0-A4 IS DELIBERATELY LEFT OPEN.
+#    This reader is routinely invoked inside a process substitution. A shell
+#    variable incremented here dies with that subshell — the EXACT defect that
+#    made signals_emitted_total structurally 0 since v1.219.0 (P0-B). Shipping
+#    `bounded_read_expected_sigpipe_total` as a shell variable would recreate
+#    that operator-truth defect inside the change that fixes it. Accounting needs
+#    a DURABLE SINK that survives the execution boundary; until it exists, this
+#    function reports nothing rather than reporting zero.
+#
+# The scratch path is derived from the caller's statefile, so there is at most ONE
+# per cursor subject and it is overwritten in place — bounded by construction, no
+# accumulation even if a process is killed between read and cleanup.
+# Args: file start want scratch  ->  stdout = bytes; rc 0 = window obtained, 1 = failure
+nftban_http_bounded_read() {
+    local _f="$1" _start="$2" _want="$3" _tmp="$4"
+    local _act _had_e=0
+    local -a _ps=()
+    [[ "$_want" -gt 0 ]] || return 0
+    [[ -n "$_tmp" ]] || return 1
+    : > "$_tmp" 2>/dev/null || return 1
+    case $- in *e*) _had_e=1 ;; esac
+    set +e
+    tail -c +$(( _start + 1 )) "$_f" 2>/dev/null | head -c "$_want" > "$_tmp"
+    # ⛔ CAPTURE THE WHOLE ARRAY IN ONE COMMAND. Any other command in between —
+    #    including `x="${PIPESTATUS[0]}"` — RESETS PIPESTATUS to its own status,
+    #    after which [1] is unbound and `set -u` aborts the caller.
+    _ps=("${PIPESTATUS[@]}")
+    [[ "$_had_e" == "1" ]] && set -e
+    _act="$(stat -c %s "$_tmp" 2>/dev/null || echo -1)"
+    # DIAGNOSTIC ONLY — never consulted below. Readable by the caller in this same
+    # shell; it is NOT telemetry and does not survive a process boundary (see the
+    # P0-A4 note above), so nothing may treat its absence as a measurement.
+    # `export`: shellcheck's own prescribed remedy for SC2034 and the accurate one —
+    # these are read EXTERNALLY (the regression test asserts on them), never by this
+    # library. They are the module's diagnostic surface, not internal state.
+    export NFTBAN_HTTP_LAST_PRODUCER_RC="${_ps[0]:-unknown}"
+    export NFTBAN_HTTP_LAST_CONSUMER_RC="${_ps[1]:-unknown}"
+    # ACCEPTANCE = THE CONSUMER CONTRACT. `head` exited cleanly AND delivered exactly
+    # the requested window => those N bytes were obtained, whatever the producer did
+    # after we deliberately stopped accepting more.
+    if [[ "${_ps[1]:-x}" == "0" ]] && [[ "$_act" == "$_want" ]]; then
+        cat "$_tmp" 2>/dev/null
+        rm -f "$_tmp" 2>/dev/null
+        return 0
+    fi
+    rm -f "$_tmp" 2>/dev/null
+    return 1
+}
+
 nftban_http_read_incremental() {
     local file="$1"
     [[ -f "$file" && -r "$file" ]] || return 0
@@ -541,7 +637,8 @@ nftban_http_read_incremental() {
             end=$((start + NFTBAN_HTTP_LOG_MAX_BYTES))
         fi
         if [[ "$end" -gt "$start" ]]; then
-            tail -c +$((start + 1)) "$file" 2>/dev/null | head -c $((end - start))
+            # P0-A: an expected bounded-read SIGPIPE must not skip the checkpoint.
+            nftban_http_bounded_read "$file" "$start" "$((end - start))" "${statefile}.rd" || return 1
         fi
         new_off="$end"
     else
@@ -550,7 +647,12 @@ nftban_http_read_incremental() {
             start=$((size - NFTBAN_HTTP_LOG_MAX_BYTES))
         fi
         if [[ "$size" -gt "$start" ]]; then
-            tail -c +$((start + 1)) "$file" 2>/dev/null | head -c "${NFTBAN_HTTP_LOG_MAX_BYTES}"
+            # P0-A: identical pipeline SHAPE as the forward branch, so identical
+            # exposure. Fixed by shape identity; the collector path that uses this
+            # branch needs its own verification before it is called proven.
+            _rd_want=$(( size - start ))
+            [[ "$_rd_want" -gt "${NFTBAN_HTTP_LOG_MAX_BYTES}" ]] && _rd_want="${NFTBAN_HTTP_LOG_MAX_BYTES}"
+            nftban_http_bounded_read "$file" "$start" "$_rd_want" "${statefile}.rd" || return 1
         fi
         new_off="$size"
     fi

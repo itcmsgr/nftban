@@ -45,6 +45,7 @@ botscan_status_label_v218_12_test	cli/lib/nftban/tests/botscan_status_label_v218
 botscan_throughput_v187_test	cli/lib/nftban/tests/botscan_throughput_v187_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_trend_v208_test	cli/lib/nftban/tests/botscan_trend_v208_test.sh	botscan	test	botscan-trend	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_wpadmin_context_gate_v1922_test	cli/lib/nftban/tests/botscan_wpadmin_context_gate_v1922_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+bounded_read_checkpoint_v1231_test	cli/lib/nftban/tests/bounded_read_checkpoint_v1231_test.sh	cross-cutting	test	http-logs	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 build_tree_cleanliness_v1229_4_test	cli/lib/nftban/tests/build_tree_cleanliness_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 checksum_population_v1229_4_test	cli/lib/nftban/tests/checksum_population_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cidr_merge_bounded_test	cli/lib/nftban/tests/cidr_merge_bounded_test.sh	geoban	test	cidr-conversion-boundedness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	300		
