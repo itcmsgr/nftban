@@ -83,9 +83,47 @@ has "$HM" 'bans NOT reaching the kernel' \
 # --- P6 severity not weakened -------------------------------------------------
 # Degraded coverage remains an operator concern. Fixing the wording must not
 # quietly downgrade the health status.
-awk '/elif \[\[ "\$hs" == DEGRADED_\*/,/status=\$HEALTH_WARNING/' "$HM" | grep -q 'status=$HEALTH_WARNING' \
-  && ok "P6 DEGRADED still raises HEALTH_WARNING (verdict softened, severity not)" \
-  || no "P6 severity was weakened along with the wording"
+#
+# ⛔ THIS ARM WAS A RACE AND IT REPORTED A FALSE REGRESSION. It used to be:
+#       awk '/elif .. DEGRADED_../,/status=$HEALTH_WARNING/' "$HM" | grep -q '...'
+#    under this file's `set -uo pipefail`. `grep -q` exits on the FIRST match; awk
+#    still has lines to write; awk takes SIGPIPE; pipefail turns a SUCCESSFUL match
+#    into a failure. The rate depends purely on how many lines follow the match, so
+#    it changed when the subject file legitimately grew.
+#    MEASURED 2026-09-17, 30 runs per tree, same host:
+#        main  (3c5d9286)  0/30 failures   range 47 lines, match at line 34
+#        P0-C lane         9/30 failures   range 67 lines, match at line 54
+#    The health change was CORRECT; this guard was the defective component. Under
+#    `bash -x` it passed every time, because tracing slowed the producer.
+#    Fixed by doing the whole job in ONE process with NO pipeline, so there is no
+#    consumer that can exit early and no producer that can be signalled.
+_p6_check() {           # $1 = file -> rc 0 if DEGRADED_* still raises HEALTH_WARNING
+    awk '
+        /elif \[\[ "\$hs" == DEGRADED_\*/ { inrange = 1 }
+        inrange && /status=\$HEALTH_WARNING/ { found = 1; exit }
+        END { exit(found ? 0 : 1) }
+    ' "$1"
+}
+if _p6_check "$HM"; then
+    ok "P6 DEGRADED still raises HEALTH_WARNING (verdict softened, severity not)"
+else
+    no "P6 severity was weakened along with the wording"
+fi
+
+# P6i FALSIFIER: the check must be able to FAIL, or it is a source-shape green.
+# Declared inversion of the CURRENT subject — never read from origin/main, which
+# would invert the moment this merges.
+_p6_inv="$(mktemp)"
+sed 's/^\([[:space:]]*\)status=\$HEALTH_WARNING/\1status=$HEALTH_OK/' "$HM" > "$_p6_inv"
+if [[ ! -s "$_p6_inv" ]]; then
+    no "P6i falsifier could not be constructed" "NOT_EXECUTED — the inversion fixture is empty"
+elif _p6_check "$_p6_inv"; then
+    no "P6i FALSIFIER FAILED: the check still passes with every HEALTH_WARNING downgraded" \
+       "P6 cannot detect the defect it exists to prevent"
+else
+    ok "P6i falsifier: with HEALTH_WARNING downgraded to HEALTH_OK the check FAILS — P6 is meaningful"
+fi
+rm -f "$_p6_inv" 2>/dev/null
 
 # --- N1 NEGATIVE CONTROL: the guard must reject the pre-fix text --------------
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
