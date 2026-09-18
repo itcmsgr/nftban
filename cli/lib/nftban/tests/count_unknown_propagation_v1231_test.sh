@@ -245,11 +245,51 @@ done
 
 # `// 0` on the count fields of the unified document turns a deliberate null
 # straight back into a measurement.
-if grep -nE '\.(blacklist|whitelist)\.(ipv4|ipv6|total)[^|]*// 0' "$EX" "$SC" >/dev/null 2>&1; then
-    no "a '// 0' default was reintroduced over a nullable count field" \
-       "$(grep -nE '\.(blacklist|whitelist)\.(ipv4|ipv6|total)[^|]*// 0' "$EX" "$SC" | head -2 | tr '\n' ' ')"
+#
+# v1.231.0 (FU-5): the field scope was blacklist/whitelist only, so the SAME
+# defect shape over the BotGuard fields was ungoverned — and the exporter was in
+# fact carrying six `// 0` defaults over `.sets.http_bot_*.count` and
+# `.botguard.*.ipv4|.ipv6` the whole time. Field scope now covers them, and the
+# subject files now include the two CLI surfaces that render the same counts.
+NULLABLE_COUNT_FIELD='(\.(blacklist|whitelist)\.(ipv4|ipv6|total)|\.sets\.http_bot_[a-z0-9]*\.count|\.botguard\.[a-z]+\.(ipv4|ipv6))[^|]*// 0'
+CB="$ROOT/cli/lib/nftban/cli/cmd_botguard.sh"
+CS="$ROOT/cli/lib/nftban/cli/cmd_status.sh"
+for f in "$CB" "$CS"; do
+    [[ -f "$f" ]] || { echo "  FATAL: $f missing (declared subject of the extended field scope)"; exit 2; }
+done
+
+# NEGATIVE CONTROL for the EXTENDED field scope. Synthesised by DECLARED
+# INVERSION of the current exporter text: restore the `// 0` defaults the FU-5
+# change removed. If the widened pattern cannot see this, the extension is
+# decorative and must not be reported as coverage.
+cat > "$WORK/bg_defect.sh" <<'BGDEFECT'
+bg_suspect=$(echo "$counts_json" | jq -r '((.sets.http_bot_suspect.count // 0) + (.sets.http_bot_suspect6.count // 0))')
+bg_ban=$(echo "$counts_json" | jq -r '((.botguard.ban.ipv4 // 0) + (.botguard.ban.ipv6 // 0))')
+BGDEFECT
+_bgn=$(grep -cE "$NULLABLE_COUNT_FIELD" "$WORK/bg_defect.sh") || _bgn=0
+if [[ "$_bgn" -ge 2 ]]; then
+    ok "negative control: extended field scope DOES detect the botguard '// 0' form ($_bgn lines)"
 else
-    ok "no '// 0' default over a nullable count field"
+    no "negative control FAILED — the extended field scope cannot see the botguard defect" "matched $_bgn of 2"
+    echo "  FATAL: an undetecting guard must not be reported as a pass"; exit 2
+fi
+
+if grep -nE "$NULLABLE_COUNT_FIELD" "$EX" "$SC" "$CB" "$CS" >/dev/null 2>&1; then
+    no "a '// 0' default was reintroduced over a nullable count field" \
+       "$(grep -nE "$NULLABLE_COUNT_FIELD" "$EX" "$SC" "$CB" "$CS" | head -2 | tr '\n' ' ')"
+else
+    ok "no '// 0' default over a nullable count field (blacklist/whitelist/botguard)"
+fi
+
+# `${x:-0}` is the same laundering by another route, and it is WORSE: `:-`
+# substitutes only when x is unset or EMPTY, so it does NOT fire for the string
+# UNKNOWN — which then reaches JSON as a bare word, or `$(( ))` as a variable
+# name. Governed over the botguard counters of the unified document.
+if grep -nE '\$\{bg_[a-z]+:-0\}' "$EX" >/dev/null 2>&1; then
+    no "a '\${bg_X:-0}' default was reintroduced over a botguard count" \
+       "$(grep -nE '\$\{bg_[a-z]+:-0\}' "$EX" | head -2 | tr '\n' ' ')"
+else
+    ok "no '\${bg_X:-0}' default over a botguard count in the exporter"
 fi
 
 # The arithmetic rationale must stay next to the helper it explains.

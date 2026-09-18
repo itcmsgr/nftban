@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-17"
-# meta:description="BEHAVIORAL (not source-text) regression guard for the v1.231.0 BotGuard fail-to-zero pair, both of which made a security counter report 0 for a set holding thousands. (F1) SIZE-DEPENDENT EPIPE: the presence test for the 'elements = {' section was a pipeline whose consumer was 'grep -q'. grep -q exits at the FIRST match, and that match is on the 6th line of 'nft list set' output; the producing subshell still has the whole element list to write, blocks on the 64 KiB pipe buffer and dies of SIGPIPE (141). Both cmd_botguard.sh and the cmd_status.sh render/JSON paths run under 'set -Eeuo pipefail' (file scope, and cli/sbin/nftban:30 for the dispatch), so pipefail adopts 141 as the PIPELINE status even though grep MATCHED -- a successful match is reported as a failure and the counter falls back to its 0 initialiser. Measured threshold on this output shape: 928 elements / 43,629 B passes, 929 elements / 43,677 B fails; production rulesets are 168-196 KB, so this fired every time. Ignoring SIGPIPE does NOT help: the producer then takes EPIPE and returns 1, which pipefail adopts identically -- the defect is in the SHORT-CIRCUITING CONSUMER, not the signal disposition. (F2) ARGV SPLIT: _botguard_kernel_set_count and _botguard_kernel_set_exists passed their '<family> <table>' argument as an UNQUOTED \$table, relying on the ambient IFS to split it -- but cmd_botguard.sh sources lib/cmd_common.sh which sources lib/strict.sh which sets IFS=\$'\\n\\t' (NO SPACE), so nft received 'ip nftban' as ONE argv word, every call failed, and the failure arm returns a count. F2 is strictly UPSTREAM of F1 and MASKED it: all twelve counters in _nftban_botguard_stats gate on the _exists predicate and kept their 0 initialiser regardless of kernel truth. This test drives the REAL exported helpers in real child shells (production errexit/pipefail/IFS/traps stay armed inside the subject while the harness stays alive to report), over generated 'nft list set'-shaped fixtures delivered by FILE through an ARGV-FAITHFUL nft stub that serves content only when it receives the family and table as SEPARATE words. It asserts a large set counts correctly, a read-and-empty set stays a known 0 (over-applying UNKNOWN is its own truth defect), an unreadable set never fabricates a nonzero, and the four equivalent cmd_status.sh guards -- located BY SHAPE, extracted from the shipped file and EXECUTED, never inspected -- take their true branch on a large fixture. Closes with a DECLARED INVERSION negative control that restores the pipeline shape INLINE (never read from origin/main, which inverts the moment this merges) and proves the large-fixture arms then report 0, plus a size-dependence control showing a small fixture passes under BOTH shapes while a large one passes only under the fixed shape."
+# meta:description="BEHAVIORAL (not source-text) regression guard for the v1.231.0 BotGuard fail-to-zero pair, both of which made a security counter report 0 for a set holding thousands. (F1) SIZE-DEPENDENT EPIPE: the presence test for the 'elements = {' section was a pipeline whose consumer was 'grep -q'. grep -q exits at the FIRST match, and that match is on the 6th line of 'nft list set' output; the producing subshell still has the whole element list to write, blocks on the 64 KiB pipe buffer and dies of SIGPIPE (141). Both cmd_botguard.sh and the cmd_status.sh render/JSON paths run under 'set -Eeuo pipefail' (file scope, and cli/sbin/nftban:30 for the dispatch), so pipefail adopts 141 as the PIPELINE status even though grep MATCHED -- a successful match is reported as a failure and the counter falls back to its 0 initialiser. Measured threshold on this output shape: 928 elements / 43,629 B passes, 929 elements / 43,677 B fails; production rulesets are 168-196 KB, so this fired every time. Ignoring SIGPIPE does NOT help: the producer then takes EPIPE and returns 1, which pipefail adopts identically -- the defect is in the SHORT-CIRCUITING CONSUMER, not the signal disposition. (F2) ARGV SPLIT: _botguard_kernel_set_count and _botguard_kernel_set_exists passed their '<family> <table>' argument as an UNQUOTED \$table, relying on the ambient IFS to split it -- but cmd_botguard.sh sources lib/cmd_common.sh which sources lib/strict.sh which sets IFS=\$'\\n\\t' (NO SPACE), so nft received 'ip nftban' as ONE argv word, every call failed, and the failure arm returns a count. F2 is strictly UPSTREAM of F1 and MASKED it: all twelve counters in _nftban_botguard_stats gate on the _exists predicate and kept their 0 initialiser regardless of kernel truth. This test drives the REAL exported helpers in real child shells (production errexit/pipefail/IFS/traps stay armed inside the subject while the harness stays alive to report), over generated 'nft list set'-shaped fixtures delivered by FILE through an ARGV-FAITHFUL nft stub that serves content only when it receives the family and table as SEPARATE words. It asserts a large set counts correctly, a read-and-empty set stays a known 0 (over-applying UNKNOWN is its own truth defect), an unreadable set never fabricates a nonzero, and the four equivalent cmd_status.sh guards -- located BY SHAPE, extracted from the shipped file and EXECUTED, never inspected -- take their true branch on a large fixture. Closes with a DECLARED INVERSION negative control that restores the pipeline shape INLINE (never read from origin/main, which inverts the moment this merges) and proves the large-fixture arms then report 0, plus a size-dependence control showing a small fixture passes under BOTH shapes while a large one passes only under the fixed shape.Every probe answers through a UNIQUE per-call result file and carries a SUBJECT-SERVED WITNESS: the child records, immediately before the subject runs, how many bytes the subject's own read of ip/nftban/http_bot_suspect returned. A `found:false` over a zero-byte read is NOT_EXECUTED (FIXTURE_NOT_SERVED) with that byte count and the child rc, never the verdict ABSENT -- an unserved fixture and a correct negative are the same string otherwise, and the needle '.*' matches the empty string, so the pattern-injection control would have read FOUND over nothing. An inversion control that WAS served and still answers wrongly still FAILS loudly, and now reports the byte count that proves it was served."
 #
 # meta:input="Generated nft-list-set-shaped fixtures in a mktemp sandbox; argv-faithful nft stub on PATH"
 # meta:output="Pass/fail/not-executed assertions; exit 0 on all-pass"
@@ -380,12 +380,22 @@ FIRST_IP="11.0.0.1"                       # element 0 of gen_fixture
 _li=$((BIG_N-1))
 LAST_IP="$(( (_li/65536) % 200 + 11 )).$(( (_li/256) % 256 )).$(( _li % 256 )).$(( _li % 250 + 1 ))"
 
+# SUBJECT-SERVED WITNESS. `found:false` is a legitimate product answer AND what
+# this child emits when the fixture never reached the subject at all -- the stub
+# not on PATH, NFT_FIXTURE unreadable, the sandbox gone. Those are NOT_EXECUTED,
+# and reporting them as ABSENT hands an arm a verdict nobody measured. So the
+# child records, immediately BEFORE the subject runs, how many bytes the subject's
+# OWN read of the suspect set returns. The witness is taken through the same stub
+# on the same PATH, so it cannot agree with the subject by construction; it is an
+# observation, never a substitute for the subject's answer.
 cat > "$tmp/run_test_cmd.sh" <<'CHILD'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 # shellcheck source=/dev/null
 source "$NFTBAN_LIB_DIR/cli/cmd_botguard.sh"
 [[ -n "${INVERSION_CODE:-}" ]] && eval "$INVERSION_CODE"
+_witness="$(nft list set ip nftban http_bot_suspect 2>/dev/null)" || _witness=""
+printf 'SETBYTES=%s\n' "${#_witness}" > "$RESULT_FILE.diag"
 out="$(_nftban_botguard_test "$PROBE_IP" true)" || true
 printf '%s\n' "$out" > "$RESULT_FILE"
 exit 0
@@ -393,20 +403,98 @@ CHILD
 chmod +x "$tmp/run_test_cmd.sh"
 
 # The pre-fix membership test, DECLARED INLINE (never read from origin/main).
-# argv is left CORRECT here so the arm isolates the pipeline/regex defect rather
-# than re-proving the argv one, which A7 already owns.
-INVERT_MEMBERSHIP=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  printf \'%s\\n\' "$output" | grep -q "$needle"\n}'
+# argv is left CORRECT in both shapes below so these arms isolate the
+# pipeline/regex defect rather than re-proving the argv one, which A7 already owns.
+#
+# =============================================================================
+# TWO INVERSIONS, DELIBERATELY. DO NOT MERGE THEM BACK INTO ONE.
+# =============================================================================
+# The pre-fix spelling had TWO independent defects layered on one line: a
+# SHORT-CIRCUIT PIPELINE (timing) and UNANCHORED-BRE CONTAINMENT (semantics).
+# Different arms exist to prove different ones, and a single combined inversion
+# forced every arm to carry both.
+#
+#   _PIPE — `printf … | grep -q`. Reproduces the EPIPE mechanism. Used ONLY by
+#           A8a-INV and A8b, on the LARGE fixture, where the producer has
+#           hundreds of KB still to write when the consumer short-circuits, so
+#           the race is a CERTAINTY and the control is deterministic.
+#
+#   _BRE  — `grep -q "$needle" <<< "$output"`. Reproduces the MATCHING SEMANTICS
+#           and nothing else. Used by the A9 arms. A here-string is fully written
+#           by the shell BEFORE grep is exec'd, so there is no concurrent
+#           producer, no pipe, and no SIGPIPE -- while grep still sees the same
+#           bytes (`<<<` appends the same trailing newline `printf '%s\n'` did)
+#           and applies the same unanchored BRE to the WHOLE rendered set: `.`
+#           is a wildcard, metacharacters in the needle are interpreted, and
+#           non-element text (the `size 65535` header) is matchable.
+#
+# WHY. A9 validates MEMBERSHIP SEMANTICS only. Driving it through a producer
+# pipeline imported an unrelated timing-dependent mechanism and made a SEMANTIC
+# control flaky. Measured on the 222-byte A9 fixture under `set -Eeuo pipefail`:
+# the _PIPE shape returns rc=141 (SIGPIPE, adopted by pipefail, inverting a
+# successful match into "not found") 1-4 times per 4000 iterations under CPU
+# saturation and 0 times per 4000 idle -- and the `10.0.0.1` and `.*` needles are
+# hit at the SAME rate, so which A9 arm fails on a given run is a draw, not a
+# property of the needle. The _BRE shape is 0/4000 under the same load.
+#
+# This is NOT changing a product acceptance criterion to make CI green. No arm's
+# pass condition moved: A9b-INV must still report FOUND, and A8's arms keep the
+# real `producer | short-circuit-consumer` inversion on the large fixture. What
+# changed is the EXECUTION MECHANISM of the semantic controls -- an unrelated
+# nondeterministic mechanism is removed from the test that was not built to
+# exercise it, and RETAINED in the test that was.
+INVERT_MEMBERSHIP_PIPE=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  printf \'%s\\n\' "$output" | grep -q "$needle"\n}'
+INVERT_MEMBERSHIP_BRE=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  grep -q "$needle" <<< "$output"\n}'
 
+# The witness travels through a FILE, not a variable. Every caller invokes
+# probe_membership inside a command substitution -- `r="$(probe_membership ...)"`
+# -- which runs it in a SUBSHELL, so any variable it assigned would be discarded
+# the moment it returned and every reader would see the empty string. That is the
+# same class of mistake the witness exists to catch, so it is worth naming: a
+# diagnostic that cannot survive its own call site reports "unknown" forever and
+# looks exactly like the condition it was added to detect.
+PROBE_WITNESS="$tmp/probe.witness"
+probe_setbytes() { sed -n 's/^SETBYTES=//p' "$PROBE_WITNESS" 2>/dev/null; }
+probe_childrc()  { sed -n 's/^RC=//p'       "$PROBE_WITNESS" 2>/dev/null; }
+# true iff the subject's own read came back with bytes in it
+probe_served() { local b; b="$(probe_setbytes)"; [[ -n "$b" && "$b" != "0" ]]; }
 probe_membership() {  # $1 fixture, $2 ip, $3 optional inversion
-  local rf="$tmp/tc.result"; rm -f "$rf"
+  # A UNIQUE result path per call. The previous fixed `$tmp/tc.result` was
+  # correct only for as long as `rm -f` never failed: any surviving file would be
+  # read as THIS probe's verdict, and the arm that runs immediately before every
+  # inversion control is a `-> ABSENT` arm, so a stale read is indistinguishable
+  # from an inert control. Not a bug that was observed -- a shape in which that
+  # bug could not have been seen. `run_count` already randomises for this reason.
+  local rf="$tmp/tc.$RANDOM$RANDOM.result"
+  rm -f "$rf" "$rf.diag"
+  local _crc=0 _sb=""
+  rm -f "$PROBE_WITNESS"
   NFT_FIXTURE="$1" PROBE_IP="$2" INVERSION_CODE="${3:-}" RESULT_FILE="$rf" \
-    bash "$tmp/run_test_cmd.sh" >/dev/null 2>&1 || true
-  [[ -f "$rf" ]] || { printf '__NO_RESULT__'; return 1; }
+    bash "$tmp/run_test_cmd.sh" >/dev/null 2>&1 || _crc=$?
+  [[ -f "$rf.diag" ]] && _sb="$(sed -n 's/^SETBYTES=//p' "$rf.diag")"
+  printf 'SETBYTES=%s\nRC=%s\n' "${_sb:-}" "$_crc" > "$PROBE_WITNESS"
+  # The child never reached its own write: a harness/precondition failure with a
+  # name, never a product verdict.
+  [[ -f "$rf" ]] || { printf '__CHILD_DIED__'; return 1; }
   case "$(cat "$rf")" in
     *'"found":true'*)  printf 'FOUND'  ;;
     *'"found":false'*) printf 'ABSENT' ;;
     *)                 printf '__UNPARSEABLE__' ;;
   esac
+}
+
+# An inversion control asserts that the PRE-FIX shape produced a wrong answer.
+# It can only assert that if the pre-fix shape was actually handed the fixture.
+# If the subject's own read came back empty, the control neither passed nor
+# failed -- it never ran, and says so with the byte count and the child's rc.
+inv_arm() {  # $1 label-on-pass, $2 label-stem, $3 observed verdict
+  if [[ "$3" == "FOUND" ]]; then
+    ok "$1"
+  elif ! probe_served; then
+    nx "$2" "FIXTURE_NOT_SERVED: the subject's own read of ip/nftban/http_bot_suspect returned '$(probe_setbytes)' bytes (child rc=$(probe_childrc)), so the pre-fix shape was never given the set to match against -- '$3' is not a measurement of the control"
+  else
+    no "$2 reported '$3', expected FOUND -- control is inert (subject read $(probe_setbytes) bytes, so it WAS served)"
+  fi
 }
 
 # --- A8a EPIPE at this site: first element of a large set must be FOUND -------
@@ -416,7 +504,7 @@ if [[ "$got" == "FOUND" ]]; then
 else
   no "A8a first element $FIRST_IP of a $BIG_BYTES B set -> $got (expected FOUND; security false negative)"
 fi
-inv="$(probe_membership "$BIG" "$FIRST_IP" "$INVERT_MEMBERSHIP")" || true
+inv="$(probe_membership "$BIG" "$FIRST_IP" "$INVERT_MEMBERSHIP_PIPE")" || true
 if [[ "$inv" == "ABSENT" ]]; then
   ok "A8a-INV pipeline shape reported $FIRST_IP ABSENT from the set that holds it -- arm is discriminating"
 else
@@ -426,7 +514,7 @@ fi
 # --- A8b position dependence: the LAST element is found even when broken ------
 # This is what makes A8a's failure mode invisible to a casual test, and it is
 # why the arm must probe the FIRST element specifically.
-inv_last="$(probe_membership "$BIG" "$LAST_IP" "$INVERT_MEMBERSHIP")" || true
+inv_last="$(probe_membership "$BIG" "$LAST_IP" "$INVERT_MEMBERSHIP_PIPE")" || true
 fix_last="$(probe_membership "$BIG" "$LAST_IP")" || true
 
 # ⛔ ONLY THE FIXED SHAPE IS ASSERTED HERE. An earlier revision also REQUIRED the
@@ -488,6 +576,13 @@ neg_arm() {  # $1 label, $2 fixture, $3 needle
     return 0
   fi
   r="$(probe_membership "$fixture" "$needle")" || true
+  # ABSENT is also what an unserved fixture produces. A9a gates the SYSTEMATIC
+  # case (a subject that answers ABSENT to everything); this gates the PER-PROBE
+  # case, where this particular child was handed nothing.
+  if ! probe_served; then
+    nx "$label" "FIXTURE_NOT_SERVED: the subject's own read returned '$(probe_setbytes)' bytes (child rc=$(probe_childrc)); an ABSENT answer over nothing proves nothing"
+    return 0
+  fi
   [[ "$r" == "ABSENT" ]] && ok "$label" || no "$label -- got $r, expected ABSENT"
 }
 
@@ -495,12 +590,9 @@ neg_arm() {  # $1 label, $2 fixture, $3 needle
 # address; the set holds only 10.0.0.12. A substring search says "member".
 neg_arm "A9b 10.0.0.1 -> ABSENT (set holds 10.0.0.12) -- containment no longer reported as membership" \
         "$SEM" "10.0.0.1"
-inv="$(probe_membership "$SEM" "10.0.0.1" "$INVERT_MEMBERSHIP")" || true
-if [[ "$inv" == "FOUND" ]]; then
-  ok "A9b-INV old shape reported 10.0.0.1 FOUND -- the false positive was real, and is now closed"
-else
-  no "A9b-INV old shape reported '$inv', expected FOUND -- control is inert"
-fi
+inv="$(probe_membership "$SEM" "10.0.0.1" "$INVERT_MEMBERSHIP_BRE")" || true
+inv_arm "A9b-INV old shape reported 10.0.0.1 FOUND -- the false positive was real, and is now closed" \
+        "A9b-INV old shape" "$inv"
 
 # A9c the other direction: a LONGER address that merely contains a member.
 neg_arm "A9c 192.168.10.55 -> ABSENT (set holds 192.168.10.5)" "$SEM" "192.168.10.55"
@@ -515,23 +607,27 @@ DOTF="$tmp/dot.nft"
 } > "$DOTF"
 neg_arm "A9d 10.0.0.12 -> ABSENT though the rendered set contains 10x0y0z12 -- '.' is no longer a wildcard" \
         "$DOTF" "10.0.0.12"
-inv="$(probe_membership "$DOTF" "10.0.0.12" "$INVERT_MEMBERSHIP")" || true
-if [[ "$inv" == "FOUND" ]]; then
-  ok "A9d-INV old shape matched 10x0y0z12 via '.' as a wildcard -- regex interpretation was real"
-else
-  no "A9d-INV old shape reported '$inv', expected FOUND -- control is inert"
-fi
+inv="$(probe_membership "$DOTF" "10.0.0.12" "$INVERT_MEMBERSHIP_BRE")" || true
+inv_arm "A9d-INV old shape matched 10x0y0z12 via '.' as a wildcard -- regex interpretation was real" \
+        "A9d-INV old shape" "$inv"
 
 # A9e A NEEDLE CARRYING METACHARACTERS IS DATA, NOT A PATTERN. `.*` and `[0-9]`
 # must be compared literally and must match nothing here.
 for meta in '.*' '10.0.0.[0-9]' '.*timeout.*'; do
   neg_arm "A9e needle '$meta' -> ABSENT -- treated as a literal string, not a pattern" "$SEM" "$meta"
 done
-inv="$(probe_membership "$SEM" '.*' "$INVERT_MEMBERSHIP")" || true
-if [[ "$inv" == "FOUND" ]]; then
+# NOTE the asymmetry with A9b-INV: the needle `.*` matches the EMPTY STRING, so
+# under the pre-fix shape this arm reports FOUND even for an empty read. It is
+# therefore the one inversion arm that CANNOT distinguish "served" from "not
+# served" by its own verdict, which is exactly why the witness is consulted here
+# too rather than trusting the FOUND.
+inv="$(probe_membership "$SEM" '.*' "$INVERT_MEMBERSHIP_BRE")" || true
+if ! probe_served; then
+  nx "A9e-INV old shape" "FIXTURE_NOT_SERVED: the subject's own read returned '$(probe_setbytes)' bytes (child rc=$(probe_childrc)); '.*' matches the empty string, so a FOUND here would have been vacuous"
+elif [[ "$inv" == "FOUND" ]]; then
   ok "A9e-INV old shape let the needle '.*' match the whole set -- pattern injection was real"
 else
-  no "A9e-INV old shape reported '$inv', expected FOUND -- control is inert"
+  no "A9e-INV old shape reported '$inv', expected FOUND -- control is inert (subject read $(probe_setbytes) bytes, so it WAS served)"
 fi
 
 # A9f MATCHING IS CONFINED TO THE ELEMENTS BLOCK. `65535` appears in the set's
