@@ -117,9 +117,7 @@ gate	scripts/ci/tests/package_postinstall_verify_test.sh	90a75c3e87b1c288	2	head
 gate	scripts/ci/tests/package_postinstall_verify_test.sh	a406255794bf06d1	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_blacklist.sh	3c6aac682d8d0069	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_blacklist.sh	ea6a2f89d95dec7e	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_cmd_blacklist; needs a producer-size probe on a representative host
-product	cli/lib/nftban/cli/cmd_botguard.sh	1b69ca02fba0e12c	1	grep-q	A	n/a	UNVERIFIED	fn=_botguard_kernel_set_count; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_botguard.sh	45772b65e846a702	1	head	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/cli/cmd_botguard.sh	90bfd4fa961bd515	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_botguard_test; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_botguard.sh	cb48257bec03f716	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_botscan.sh	f7e567b4a2866bd6	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_connector.sh	2d19f2964ecba7f5	1	grep-q	E	n/a	UNVERIFIED	fn=_cmd_connector_add; needs a producer-size probe on a representative host
@@ -218,15 +216,12 @@ product	cli/lib/nftban/cli/cmd_status.sh	44faed496b505360	1	head	E	n/a	UNVERIFIE
 product	cli/lib/nftban/cli/cmd_status.sh	4606fefd8245169a	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	4a5cfccadd9b3a81	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	518f20ed6fa25ff8	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
-product	cli/lib/nftban/cli/cmd_status.sh	525ccd7a059ff104	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
-product	cli/lib/nftban/cli/cmd_status.sh	759920c145a68a79	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_status.sh	7bb5e25323de2708	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	7e28ddcfc833ade5	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	8246aeba97093831	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_status.sh	90864b7a4c96a2f1	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	917d1151000ee6e6	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_status.sh	925c97db9643d092	1	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/cli/cmd_status.sh	9584e0826e93c6be	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_status.sh	98c6ea61ad1fe862	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	9c8d680e1e18a3fb	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_status.sh	af54aca9e277f7ee	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
@@ -235,7 +230,6 @@ product	cli/lib/nftban/cli/cmd_status.sh	b11b73f79c007806	1	grep-q	E	n/a	UNVERIF
 product	cli/lib/nftban/cli/cmd_status.sh	bed9d4604f71bfc4	1	head	E	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_status.sh	bf3b60d567526ead	2	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_status.sh	d3b8d0b49abe7898	1	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/cli/cmd_status.sh	f518a64715ea832f	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_support.sh	00e4fd5ded5193e5	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_support.sh	132875827f626703	1	head	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_support.sh	1d45e39acdea184f	1	head	A	n/a	UNVERIFIED	fn=_support_correlation_header; security_or_count_surface=assign; INFERRED ~65024
@@ -327,8 +321,6 @@ product	cli/lib/nftban/core/nftban_config_doctor.sh	eea28f1d5c01cdd3	1	grep-q	B	
 product	cli/lib/nftban/core/nftban_config_local.sh	d715398d1eda6d6e	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_ddos.sh	9b201d02c882cd13	1	head	B	shared	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_ddos.sh	e89e1836060593e6	1	head	B	shared	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_ddos_classic.sh	460be55d193022fe	1	grep-q	A	classic	PROVEN	fn=nftban_ddos_list_banned; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
-product	cli/lib/nftban/core/nftban_ddos_classic.sh	9701a769b004c6a6	1	grep-q	A	classic	PROVEN	fn=nftban_ddos_list_banned; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/core/nftban_ddos_suricata.sh	3f7a22209d0e3454	1	grep-q	E	suricata	UNVERIFIED	fn=nftban_ddos_suricata_enable; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_ddos_suricata.sh	49d2708d636b4f64	1	head	B	suricata	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_ddos_suricata.sh	5ae69cd26be3f55f	1	grep-q	E	suricata	UNVERIFIED	fn=_nftban_ddos_suricata_process_alerts; needs a producer-size probe on a representative host
@@ -343,18 +335,10 @@ product	cli/lib/nftban/core/nftban_emulate.sh	f48d2a0c6948d511	1	head	E	n/a	UNVE
 product	cli/lib/nftban/core/nftban_feeds.sh	0cd3cb7825638bb3	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	1a54887afabda790	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	1d16d682ddc877b2	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	3a90fb406c268ba5	1	grep-q	A	n/a	PROVEN	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record) | RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	446eba4bd3da79e3	1	grep-q	A	n/a	PROVEN	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record) | RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	4728157d7a7b6271	1	head	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	4f4a33fa8f27c685	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	541c3071f3613c9f	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	8cc01d06669bc74a	1	grep-q	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	900cb14ee83c57b6	1	grep-q	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	95d881a4c8be72e4	1	grep-q	A	n/a	PROVEN	fn=nftban_detect_xt_compat; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record)
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	b40cf07a4da5053e	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	d56d82085e9c0ec8	1	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	f37bffa5069aff6b	1	grep-q	A	n/a	PROVEN	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record) | RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	fb2896e195b3ed48	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_transition_health.sh	3cf0f381d385f2aa	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_transition_health.sh	726fdaed96d53255	1	head	E	n/a	UNVERIFIED	fn=_fth_json_get; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_firewall_transition_health.sh	865bee4e21e806e1	1	grep-q	B	n/a	UNVERIFIED	-

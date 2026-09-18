@@ -16,10 +16,12 @@ cli/lib/nftban/tests/banner_nobanner_v153_test.sh	1
 cli/lib/nftban/tests/blacklist_flush_manual_truth_v218_10_test.sh	1
 cli/lib/nftban/tests/blacklist_range_roundtrip_test.sh	1
 cli/lib/nftban/tests/boot_projection_v1229_13_test.sh	3
+cli/lib/nftban/tests/botguard_count_truth_v1231_test.sh	3
+cli/lib/nftban/tests/botguard_epipe_failzero_v1231_0_test.sh	5
 cli/lib/nftban/tests/botscan_collector_gather_stream_v2092_test.sh	1
 cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh	5
-cli/lib/nftban/tests/botscan_enforcement_claim_evidence_backed_v1229_10_test.sh	1
 cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	4
+cli/lib/nftban/tests/botscan_health_truth_contract_v1231_0_test.sh	5
 cli/lib/nftban/tests/botscan_operator_truth_contract_v219_0_test.sh	1
 cli/lib/nftban/tests/botscan_read_authority_v178_test.sh	5
 cli/lib/nftban/tests/botscan_revslider_fp_v218_10_test.sh	3
@@ -76,7 +78,7 @@ cli/lib/nftban/tests/config_kv_mutation_truth_test.sh	1
 cli/lib/nftban/tests/config_local_impl2_test.sh	2
 cli/lib/nftban/tests/config_overlay_cli_family_test.sh	2
 cli/lib/nftban/tests/config_overlay_maintenance_family_test.sh	1
-cli/lib/nftban/tests/count_unknown_propagation_v1231_test.sh	3
+cli/lib/nftban/tests/count_unknown_propagation_v1231_test.sh	4
 cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	2
 cli/lib/nftban/tests/deprecated_unit_failed_latch_v1228_2_test.sh	1
 cli/lib/nftban/tests/derived_state_reconcile_v1228_8_test.sh	1
@@ -125,6 +127,7 @@ cli/lib/nftban/tests/operator_config_not_package_owned_v1229_test.sh	3
 cli/lib/nftban/tests/osv_observability_v1229_4_test.sh	4
 cli/lib/nftban/tests/panel_group_retirement_v137_test.sh	2
 cli/lib/nftban/tests/perset_predicate_v1229_13_test.sh	1
+cli/lib/nftban/tests/pipefail_epipe_product_truth_v1231_0_test.sh	5
 cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	2
 cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	2
 cli/lib/nftban/tests/portscan_trusted_flow_test.sh	5
