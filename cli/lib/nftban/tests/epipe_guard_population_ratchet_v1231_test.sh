@@ -187,6 +187,20 @@ if [[ "$PRE_OK" -eq 1 ]]; then
         printf '    printf "%%s" "$n"\n}\n'
     } > "$FIX/cli/lib/nftban/core/nftban_fixture_safe.sh"
 
+    # BULK SITES — enough distinct fingerprints that ORDERING nondeterminism is
+    # detectable by L6. MEASURED: the first version of this fixture carried two
+    # product rows, and the L6 negative control (replacing the output `sort` with
+    # `shuf`) PASSED — with two rows a shuffle reproduces the original order half
+    # the time, so the arm was green on a broken subject. A control that cannot
+    # fail is not a control; the fixture, not the assertion, was the weak part.
+    {
+        printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+        for _i in 1 2 3 4 5 6 7 8; do
+            printf '_bulk_%s() { if nft list set ip nftban s%s 2>/dev/null %s %s "e%s"; then true; fi; }\n' \
+                "$_i" "$_i" "$BAR" "$GQ" "$_i"
+        done
+    } > "$FIX/cli/lib/nftban/core/nftban_fixture_bulk.sh"
+
     # The declared-exclusion coverage assertion (A5 in the guard) needs the test
     # subtree to be owned by the executed-test corpus.
     printf '#!/usr/bin/env bash\nset -Eeuo pipefail\ntrue\n' > "$FIX/cli/lib/nftban/tests/fixture_test.sh"
@@ -493,72 +507,156 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# GROUP G — REMEDIATED LEDGER: a removal must leave a RECORD
+# GROUP L — THE LEDGER IS NOT A WRITE-ONLY ARCHIVE
 # -----------------------------------------------------------------------------
-# The gate fails with EPIPE_REGISTRY_STALE when a declared site stops being
-# detected, and the reconciliation for that failure is "regenerate". Before the
-# ledger, regeneration recorded the removal by simply not emitting the row — so
-# the ratchet caught the change and the fix then threw the evidence away. A site
-# reproduced as a real security defect would vanish with the same absence as a
-# line someone reformatted.
-echo "-- G. remediated ledger"
+# A ledger that nothing validates is the same failure it was created to prevent,
+# one level up: the registry stopped losing removals, and the file recording them
+# would have been unchecked. Six invariants, each caused and then observed.
+#
+# ⛔ AUTHORITATIVE STATE MACHINE (definition lives in the ledger's header):
+#     ACTIVE REGISTRY -> (shape gone, source file survives) -> REMEDIATED LEDGER
+#     REMEDIATED LEDGER -> (same fingerprint returns) -> FAIL
+#     source file itself gone -> ORPHAN -> human review, never REMEDIATED
+# A fingerprint is in EXACTLY ONE state.
+echo "-- L. remediated ledger invariants"
 LEDGER_FIX="$FIX/scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
 if [[ "$D_READY" -ne 1 ]]; then
-    skip "G1 a removed declared site is RECORDED, not silently dropped" "control arm did not establish a clean baseline"
-    skip "G2 a remediated site that REAPPEARS FAILS" "control arm did not establish a clean baseline"
-    skip "G3 a row whose file left the population is NOT auto-absorbed" "control arm did not establish a clean baseline"
+    for _a in "L1 a fingerprint cannot be ACTIVE and REMEDIATED at once" \
+              "L2 a moved row preserves EVERY field and never upgrades status" \
+              "L3 a remediated fingerprint DETECTED AGAIN hard-FAILs" \
+              "L4 malformed ledger vocabulary hard-FAILs" \
+              "L5 a deleted source file is ORPHAN, never REMEDIATED" \
+              "L6 regeneration is IDEMPOTENT (byte-identical registry AND ledger)"; do
+        skip "$_a" "control arm did not establish a clean baseline"
+    done
 else
-    _victim="$FIX/cli/lib/nftban/cli/cmd_fixture_builtin.sh"
     _reg="$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+    _vb="$FIX/cli/lib/nftban/cli/cmd_fixture_builtin.sh"        # grep-q site
+    _vh="$FIX/cli/lib/nftban/core/nftban_fixture_head.sh"       # head site
+    _F_B="cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+    _F_H="cli/lib/nftban/core/nftban_fixture_head.sh"
 
-    # G1 — remove the pipeline (what a real fix looks like), regenerate, and
-    # require the row to be in the ledger WITH its measured columns intact.
-    cp "$_victim" "$FIX/.victim.bak"
-    cp "$_reg" "$FIX/.reg.pre"
-    _fp_gone="$(awk -F'\t' '$2=="cli/lib/nftban/cli/cmd_fixture_builtin.sh"{print $3; exit}' "$_reg")"
-    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_victim")"
-    printf '%s\n' "$_fixed" > "$_victim"
-    if regen_in_fixture && [[ -n "$_fp_gone" ]]; then
-        _in_ledger=0; _in_reg=0
-        _in_ledger="$(awk -F'\t' -v fp="$_fp_gone" '$3==fp' "$LEDGER_FIX" 2>/dev/null | grep -c '')" || _in_ledger=0
-        _in_reg="$(awk -F'\t' -v fp="$_fp_gone" '$3==fp' "$_reg" 2>/dev/null | grep -c '')" || _in_reg=0
-        if [[ "$_in_ledger" -ge 1 && "$_in_reg" -eq 0 ]]; then
-            pass "G1 a removed declared site is RECORDED in the ledger and dropped from the registry"
+    # ---- L6 first: a no-op regeneration must not move a single byte ----------
+    # Ordered first because every arm below reads the generator's output, and a
+    # generator that drifts on a no-op run makes each of them unattributable.
+    # Bytes, not counts: the schema-migration defect earlier in this lane had an
+    # identical row count, an identical site count and an identical exit code
+    # while every row was corrupted.
+    _h1r="$(sha256sum "$_reg" | cut -d' ' -f1)"
+    _h1l="$(sha256sum "$LEDGER_FIX" 2>/dev/null | cut -d' ' -f1)" || _h1l=""
+    if regen_in_fixture; then
+        _h2r="$(sha256sum "$_reg" | cut -d' ' -f1)"
+        _h2l="$(sha256sum "$LEDGER_FIX" 2>/dev/null | cut -d' ' -f1)" || _h2l=""
+        if [[ "$_h1r" == "$_h2r" && "$_h1l" == "$_h2l" ]]; then
+            pass "L6 regeneration is IDEMPOTENT — registry and ledger byte-identical on a no-op run"
         else
-            fail "G1 removal not recorded: in_ledger=$_in_ledger in_registry=$_in_reg — regeneration discards the evidence"
+            fail "L6 regeneration DRIFTS on an unchanged tree: registry $_h1r -> $_h2r, ledger $_h1l -> $_h2l"
         fi
     else
-        skip "G1 a removed declared site is RECORDED, not silently dropped" "regeneration did not run or no fingerprint to track"
+        skip "L6 regeneration is IDEMPOTENT (byte-identical registry AND ledger)" "regeneration did not run"
     fi
 
-    # G2 — put the pipeline back. A remediated fingerprint that is DETECTED AGAIN
-    # must fail as a REGRESSION, not land as an ordinary undeclared row that has
-    # forgotten what it already cost.
-    cp "$FIX/.victim.bak" "$_victim"
+    # ---- L2: a lossless move that never upgrades a disposition ---------------
+    # One row is marked PROVEN and one UNVERIFIED, both carrying a distinctive
+    # evidence note with fn= and the security_or_count flag. Both pipelines are
+    # then removed. "Shape eliminated" and "defect reproduced" are separate facts:
+    # the UNVERIFIED row must NOT be promoted because someone deleted the line.
+    _NOTE_P="fn=_fixture_count; security_or_count_surface=YES; MEASURED 65024; canary-P"
+    _NOTE_U="fn=_fixture_oldest; security_or_count_surface=NO; canary-U"
+    _tmp="$FIX/.reg.edit"
+    awk -F'\t' -v OFS='\t' -v fb="$_F_B" -v fh="$_F_H" -v np="$_NOTE_P" -v nu="$_NOTE_U" \
+        '/^#/ {print; next}
+         $2==fb {$6="A"; $7="classic"; $8="PROVEN";     $9=np}
+         $2==fh {$6="B"; $7="n/a";     $8="UNVERIFIED"; $9=nu}
+         {print}' "$_reg" > "$_tmp" && cp "$_tmp" "$_reg"
+    _fp_b="$(awk -F'\t' -v f="$_F_B" '$2==f{print $3; exit}' "$_reg")"
+    _fp_h="$(awk -F'\t' -v f="$_F_H" '$2==f{print $3; exit}' "$_reg")"
+    _occ_b="$(awk -F'\t' -v f="$_F_B" '$2==f{print $4; exit}' "$_reg")"
+    _cons_b="$(awk -F'\t' -v f="$_F_B" '$2==f{print $5; exit}' "$_reg")"
+    cp "$_vb" "$FIX/.vb.bak"; cp "$_vh" "$FIX/.vh.bak"; cp "$_reg" "$FIX/.reg.pre"
+    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_vb")"; printf '%s\n' "$_fixed" > "$_vb"
+    _fixed="$(sed "s@${BAR}[[:space:]]*${HEAD1}@${BAR} wc -l@" "$_vh")";  printf '%s\n' "$_fixed" > "$_vh"
+    if regen_in_fixture && [[ -n "$_fp_b" && -n "$_fp_h" ]]; then
+        _row_b="$(awk -F'\t' -v fp="$_fp_b" '$3==fp' "$LEDGER_FIX")"
+        _row_h="$(awk -F'\t' -v fp="$_fp_h" '$3==fp' "$LEDGER_FIX")"
+        _lost=""
+        [[ "$_row_b" == *"$_F_B"*      ]] || _lost="$_lost file"
+        [[ "$_row_b" == *"$_fp_b"*     ]] || _lost="$_lost fingerprint"
+        [[ "$_row_b" == *"$_occ_b"*    ]] || _lost="$_lost occurrences"
+        [[ "$_row_b" == *"$_cons_b"*   ]] || _lost="$_lost consumers"
+        [[ "$_row_b" == *$'\t'"A"$'\t'* ]] || _lost="$_lost class"
+        [[ "$_row_b" == *"classic"*    ]] || _lost="$_lost mode"
+        [[ "$_row_b" == *"PROVEN"*     ]] || _lost="$_lost reproduction_status"
+        [[ "$_row_b" == *"fn=_fixture_count"* ]] || _lost="$_lost function"
+        [[ "$_row_b" == *"security_or_count_surface=YES"* ]] || _lost="$_lost security_flag"
+        [[ "$_row_b" == *"canary-P"*   ]] || _lost="$_lost note"
+        _upgraded=0
+        [[ "$_row_h" == *"UNVERIFIED"* ]] || _upgraded=1
+        if [[ -z "$_lost" && "$_upgraded" -eq 0 ]]; then
+            pass "L2 the move is LOSSLESS (file/fn/fingerprint/occurrences/consumers/class/mode/status/security-flag/note) and UNVERIFIED was not upgraded"
+        else
+            fail "L2 fields lost:${_lost:- none}; unverified_upgraded=$_upgraded"
+        fi
+    else
+        skip "L2 a moved row preserves EVERY field and never upgrades status" "regeneration did not run"
+    fi
+
+    # ---- L1: ACTIVE and REMEDIATED at the same time is a contradiction -------
+    # The generator cannot produce this, but a hand-edit or a merge can — and a
+    # fingerprint in both states makes every question about it answerable two
+    # ways. Re-add the ledgered row to the ACTIVE registry and require a failure.
+    cp "$_reg" "$FIX/.reg.l1"
+    awk -F'\t' -v OFS='\t' -v fp="$_fp_b" -v f="$_F_B" \
+        'END{print "product", f, fp, "1", "grep-q", "A", "classic", "PROVEN", "double-state injection"}' \
+        /dev/null >> "$_reg"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.reg.l1" "$_reg"
+    if [[ "$_o" == *"EPIPE_LEDGER_DOUBLE_STATE"* ]]; then
+        pass "L1 a fingerprint present in BOTH the active registry and the ledger FAILS"
+    else
+        fail "L1 a fingerprint can be ACTIVE and REMEDIATED at once — the state machine is not enforced"
+    fi
+
+    # ---- L4: the ledger vocabulary is closed, exactly like the registry's ----
+    cp "$LEDGER_FIX" "$FIX/.ledger.bak"
+    printf 'product\t%s\tfeedfacefeedface\t1\tgrep-q\tA\tnot-a-mode\tPROVEN\tmalformed injection\n' "$_F_B" >> "$LEDGER_FIX"
+    _o="$(run_guard_in_fixture)" || true
+    if [[ "$_o" == *"EPIPE_REGISTRY_SCHEMA"* && "$_o" == *"not-a-mode"* ]]; then
+        pass "L4 a malformed ledger vocabulary FAILS"
+    else
+        fail "L4 the ledger vocabulary is unchecked — a typo reads as 'no opinion'"
+    fi
+    cp "$FIX/.ledger.bak" "$LEDGER_FIX"
+
+    # ---- L3: the removed shape comes back --------------------------------------
+    cp "$FIX/.vb.bak" "$_vb"
     _o="$(run_guard_in_fixture)" || true
     if [[ "$_o" == *"EPIPE_REMEDIATION_REGRESSED"* ]]; then
-        pass "G2 a remediated site that REAPPEARS FAILS as a regression"
+        pass "L3 a remediated fingerprint DETECTED AGAIN hard-FAILs"
     else
-        fail "G2 a reintroduced remediated pipeline is not recognised as a regression"
+        fail "L3 a reintroduced remediated pipeline is not recognised as a regression"
     fi
+    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_vb")"; printf '%s\n' "$_fixed" > "$_vb"
 
-    # G3 — a row whose FILE has left the population must NOT be auto-absorbed into
-    # the ledger. "The file is gone" is not evidence that a defect was fixed;
-    # that is the ORPHAN case and a person decides.
+    # ---- L5: the source file itself disappears -------------------------------
+    # "The file is gone" is not evidence that a defect was fixed. That is the
+    # ORPHAN case and a person decides; auto-absorbing it manufactures a claim.
     : > "$LEDGER_FIX"
     cp "$FIX/.reg.pre" "$_reg"
     printf 'product\tcli/lib/nftban/core/nftban_fixture_deleted.sh\t0123456789abcdef\t1\tgrep-q\tA\tclassic\tPROVEN\tinjected orphan\n' >> "$_reg"
     if regen_in_fixture; then
-        _orphan_absorbed=0
-        _orphan_absorbed="$(grep -c 'nftban_fixture_deleted' "$LEDGER_FIX" 2>/dev/null)" || _orphan_absorbed=0
-        if [[ "$_orphan_absorbed" -eq 0 ]]; then
-            pass "G3 a row whose file left the population is NOT auto-absorbed as remediated"
+        _absorbed=0
+        _absorbed="$(grep -c 'nftban_fixture_deleted' "$LEDGER_FIX" 2>/dev/null)" || _absorbed=0
+        _o="$(run_guard_in_fixture)" || true
+        if [[ "$_absorbed" -eq 0 ]]; then
+            pass "L5 a deleted source file stays ORPHAN and is NEVER recorded as remediated"
         else
-            fail "G3 an ORPHAN row was silently recorded as remediated — that manufactures a fix claim"
+            fail "L5 an ORPHAN row was silently recorded as remediated — that manufactures a fix claim"
         fi
     else
-        skip "G3 a row whose file left the population is NOT auto-absorbed" "regeneration did not run"
+        skip "L5 a deleted source file is ORPHAN, never REMEDIATED" "regeneration did not run"
     fi
+    cp "$FIX/.vb.bak" "$_vb"; cp "$FIX/.vh.bak" "$_vh"
 fi
 
 # -----------------------------------------------------------------------------

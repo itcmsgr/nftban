@@ -655,10 +655,21 @@ fi
 # which for three v1.231.0 rows is a reproduced security defect. Without this
 # check a reintroduction would land as an ordinary EPIPE_UNDECLARED row and lose
 # the entire history of what it already cost.
+#
+# ⛔ AUTHORITATIVE STATE MACHINE (the ledger's own header carries the definition):
+#     ACTIVE REGISTRY -> (shape gone, source file survives) -> REMEDIATED LEDGER
+#     REMEDIATED LEDGER -> (same fingerprint returns) -> FAIL
+#     source file itself gone -> ORPHAN -> human review, never REMEDIATED
+# A fingerprint is in EXACTLY ONE state. Both at once is a contradiction.
 ledger_regressed=0
 if [[ -f "$LEDGER" ]]; then
-    while IFS=$'\t' read -r _lp _lf _lfp _lcls _lmode _lrepro _lnote; do
+    while IFS=$'\t' read -r _lp _lf _lfp _locc _lcons _lcls _lmode _lrepro _lnote; do
         [[ -z "$_lp" || "$_lp" == \#* ]] && continue
+        if [[ -n "${REG_ROWS["$_lp|$_lf|$_lfp"]:-}" ]]; then
+            printf 'FAIL [EPIPE_LEDGER_DOUBLE_STATE] %s %s %s — present in the ACTIVE registry AND the remediated ledger; a fingerprint is in exactly one state\n' \
+                "$_lp" "$_lf" "$_lfp"
+            ledger_regressed=$((ledger_regressed + 1))
+        fi
         case "$_lmode" in classic|suricata|shared|n/a) : ;;
             *) printf 'FAIL [EPIPE_REGISTRY_SCHEMA] ledger %s — mode=%q is not one of classic|suricata|shared|n/a\n' "$_lf" "$_lmode"
                registry_schema_bad=$((registry_schema_bad + 1)) ;;
