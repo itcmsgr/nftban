@@ -428,11 +428,29 @@ fi
 # why the arm must probe the FIRST element specifically.
 inv_last="$(probe_membership "$BIG" "$LAST_IP" "$INVERT_MEMBERSHIP")" || true
 fix_last="$(probe_membership "$BIG" "$LAST_IP")" || true
-if [[ "$fix_last" == "FOUND" && "$inv_last" == "FOUND" ]]; then
-  ok "A8b last element $LAST_IP -> FOUND under BOTH shapes -- the defect is position-dependent, not a parse bug"
+
+# ⛔ ONLY THE FIXED SHAPE IS ASSERTED HERE. An earlier revision also REQUIRED the
+#    broken shape to return FOUND for the last element, on the reasoning that a
+#    match at the very end leaves the producer nothing more to write. That is NOT a
+#    robust invariant: whether the producer still holds a pending chunk when grep
+#    exits depends on pipe-buffer alignment at that instant, so it is host- and
+#    size-dependent. MEASURED 2026-09-17: FOUND on the authoring host, ABSENT on
+#    lab2 (Ubuntu 24.04) for the same fixture — and ABSENT is the broken shape
+#    failing MORE, not the fix failing. Asserting it turned a property of the
+#    DEFECT into a pass criterion for the FIX.
+#    The discriminating claim is already carried by A8a-INV (first element must be
+#    ABSENT under the broken shape). Here the inverted result is RECORDED, not
+#    required.
+if [[ "$fix_last" == "FOUND" ]]; then
+  ok "A8b last element $LAST_IP -> FOUND under the fixed shape (broken shape observed: $inv_last)"
 else
-  no "A8b last element $LAST_IP: fixed=$fix_last inverted=$inv_last, both expected FOUND"
+  no "A8b last element $LAST_IP -> $fix_last under the FIXED shape (expected FOUND)"
 fi
+case "$inv_last" in
+  FOUND)  echo "      [OBSERVED] broken shape still found the LAST element here — the defect is position-dependent on this host, which is why A8a probes the FIRST element" ;;
+  ABSENT) echo "      [OBSERVED] broken shape missed even the LAST element on this host — buffer alignment made it fail regardless of position; strictly worse than position-dependence" ;;
+  *)      echo "      [OBSERVED] broken shape returned '$inv_last' for the LAST element" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # A9 SEMANTICS: the regex->literal change is a DELIBERATE TIGHTENING, asserted
