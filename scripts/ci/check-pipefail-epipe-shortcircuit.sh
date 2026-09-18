@@ -49,10 +49,14 @@
 #        assert_no_depth_exclusion() rather than claimed.
 #   4th  (THIS CHANGE) the union of the two populations was 428 files, of which
 #        ZERO were product code. The guard governed the control plane and the
-#        product's TESTS — never the product. A read-only census over every
-#        shell file under cli/ (551 sites, 121 files) found 74 SIGPIPE-SENSITIVE
-#        sites, 39 of them on a security- or count-reporting surface, all of
-#        them outside every population this guard had ever scanned.
+#        product's TESTS — never the product. A read-only census over every shell
+#        file under cli/ recorded 551 candidate rows; after collapsing duplicate
+#        file:line rows and dropping one data line that was never a pipeline, the
+#        classified population is 547 sites — A=73 SIGPIPE-SENSITIVE, B=167
+#        structurally safe, C=105 already normalised, D=41 off any automatic
+#        execution path, E=161 needing a host probe. 39 of the class-A sites sit
+#        on a security- or count-reporting surface, and every one of them was
+#        outside every population this guard had ever scanned.
 #
 # THE DETECTOR WAS ALSO WRONG, INDEPENDENTLY OF THE POPULATION.
 #
@@ -76,16 +80,18 @@
 #     takes SIGPIPE like anything else. The exemption did not describe a
 #     mechanism; it described a small test case. cli/lib/nftban/cli/cmd_botguard.sh
 #     is exactly that shape and reports 0 elements for a production-sized set.
+#     It hid 21 of the 73 SIGPIPE-sensitive product sites.
 #
 #     The replacement rule is about the CONSUMER, which is where the correctness
 #     property actually lives: a consumer that can stop reading before EOF can
 #     EPIPE its producer, whatever the producer is. No producer is exempt.
 #
 # (b) THE CONSUMER SET WAS TOO NARROW. The old matcher recognised only
-#     `grep -[a-zA-Z]*q`. Replaying it over the census's 74 SIGPIPE-sensitive
-#     sites caught 35: 21 were lost to the false builtin exemption above and 18
-#     because the consumer was `head`, which the matcher never looked for.
-#     47% detection. Now recognised, each because it can exit before EOF:
+#     `grep -[a-zA-Z]*q`. Replaying it over the census's 73 SIGPIPE-sensitive
+#     sites (74 rows) caught 35: 21 were lost to the false builtin exemption
+#     above and 18 because the consumer was `head`, which the matcher never
+#     looked for. 47% detection; it is 73/73 now. Recognised, each because it
+#     can exit before EOF:
 #         grep -q / -qF / -qE / -qw / -qxF     stops at the first match
 #         grep -m N / --max-count              stops after N matches
 #         grep -l                              stops at the first match (stdin)
@@ -101,8 +107,19 @@
 #     bytes WITH THE CORRECT VALUE on stdout, which is the whole hazard: the
 #     answer is right and the status is wrong.
 #
+# (c) COVERAGE IS PER MODE. DDoS and PortScan each run in exactly one of two
+#     operating modes (DDOS_MODE / PORTSCAN_MODE = auto|classic|suricata), so the
+#     registry carries a `mode` column and every row states which mode it belongs
+#     to. Without it a Classic-only finding and a whole-component finding are the
+#     same row. ⛔ NOTHING IN THIS GATE SUPPORTS "DDoS is covered" OR "PortScan is
+#     covered", and neither phrase may be said on the strength of it. A finding in
+#     Classic says nothing about Suricata and vice versa. THE ABSENCE OF A ROW FOR
+#     A MODE MEANS UNVERIFIED, NEVER SAFE. A second column, `reproduction_status`,
+#     separates what has been REPRODUCED from what is merely suspected; its
+#     default, UNVERIFIED, is a statement about the evidence, not a clearance.
+#
 # WHAT THIS CHANGE DOES **NOT** CLAIM. The EPIPE class is NOT closed. The census
-# proves the opposite: 74 sensitive sites plus 162 that need a host probe to
+# proves the opposite: 73 sensitive sites plus 161 that need a host probe to
 # classify at all. Active release-blocking instances are fixed in other lanes;
 # what this file does is bring the product population under an enforceable
 # ratchet and register the remaining classified debt explicitly, so it is owed
@@ -124,6 +141,20 @@ ALLOW="scripts/ci/data/pipefail-epipe-allowlist.txt"
 # assert_product_population() closure check PROVES that claim rather than
 # repeating it.
 PRODUCT_EXCLUDED_DIR="cli/lib/nftban/tests"
+
+# The declared TWO-MODE components. DDoS and PortScan each run in exactly one of
+# two modes (DDOS_MODE / PORTSCAN_MODE = auto|classic|suricata), so a row in one
+# of these files that carries no mode leaves a silent hole in the axis.
+#
+# ⛔ COVERAGE IS PER MODE. Nothing in this gate supports "DDoS is covered" or
+# "PortScan is covered". A finding in Classic says nothing about Suricata and
+# vice versa, and THE ABSENCE OF A ROW FOR A MODE MEANS UNVERIFIED, NEVER SAFE.
+MODE_COMPONENT_DDOS_DISPATCH="cli/lib/nftban/core/nftban_ddos.sh"
+MODE_COMPONENT_DDOS_CLASSIC="cli/lib/nftban/core/nftban_ddos_classic.sh"
+MODE_COMPONENT_DDOS_SURICATA="cli/lib/nftban/core/nftban_ddos_suricata.sh"
+MODE_COMPONENT_PS_DISPATCH="cli/lib/nftban/core/nftban_portscan.sh"
+MODE_COMPONENT_PS_CLASSIC="cli/lib/nftban/core/nftban_portscan_classic.sh"
+MODE_COMPONENT_PS_SURICATA="cli/lib/nftban/core/nftban_portscan_suricata.sh"
 
 # =============================================================================
 # DETECTOR — shared by every population, so a plane cannot be scanned by a
@@ -545,13 +576,42 @@ scan_plane product no product_population
 
 declare -A REG_ROWS=()
 registry_missing=0
+registry_schema_bad=0
 if [[ ! -f "$REGISTRY" ]]; then
     printf 'FAIL [EPIPE_REGISTRY_MISSING] %s absent — cannot ratchet an undeclared population\n' "$REGISTRY"
     registry_missing=1
 else
-    while IFS=$'\t' read -r _plane _file _fp _n _cons _class _note; do
+    while IFS=$'\t' read -r _plane _file _fp _n _cons _class _mode _repro _note; do
         [[ -z "$_plane" || "$_plane" == \#* ]] && continue
         REG_ROWS["$_plane|$_file|$_fp"]="$_n"
+        # VOCABULARY VALIDATION. mode and reproduction_status only mean anything
+        # if they are drawn from a closed set: a typo, a blank, or a row still on
+        # the 7-column schema would read as "no opinion" and quietly rejoin the
+        # undifferentiated mass these two columns exist to break up.
+        case "$_mode" in
+            classic|suricata|shared|n/a) : ;;
+            *) printf 'FAIL [EPIPE_REGISTRY_SCHEMA] %s %s — mode=%q is not one of classic|suricata|shared|n/a\n' \
+                   "$_plane" "$_file" "$_mode"
+               registry_schema_bad=$((registry_schema_bad + 1)) ;;
+        esac
+        case "$_repro" in
+            PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED) : ;;
+            *) printf 'FAIL [EPIPE_REGISTRY_SCHEMA] %s %s — reproduction_status=%q is not one of PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED\n' \
+                   "$_plane" "$_file" "$_repro"
+               registry_schema_bad=$((registry_schema_bad + 1)) ;;
+        esac
+        # A row inside a declared two-mode component must carry a mode. `n/a`
+        # there is only admissible with a note saying what was measured instead —
+        # otherwise the per-mode axis has a silent hole in the exact component it
+        # was added for.
+        case "$_file" in
+            "$MODE_COMPONENT_DDOS_DISPATCH"|"$MODE_COMPONENT_DDOS_CLASSIC"|"$MODE_COMPONENT_DDOS_SURICATA"|\
+            "$MODE_COMPONENT_PS_DISPATCH"|"$MODE_COMPONENT_PS_CLASSIC"|"$MODE_COMPONENT_PS_SURICATA")
+                if [[ "$_mode" == "n/a" && ( -z "$_note" || "$_note" == "-" ) ]]; then
+                    printf 'FAIL [EPIPE_REGISTRY_SCHEMA] %s — inside a declared two-mode component but mode=n/a with no note explaining what was measured\n' "$_file"
+                    registry_schema_bad=$((registry_schema_bad + 1))
+                fi ;;
+        esac
     done < "$REGISTRY"
 fi
 
@@ -589,10 +649,12 @@ fi
 
 [[ $((undeclared + registry_missing)) -eq 0 ]] && echo "  [OK] every short-circuiting pipeline in the gate and product planes is declared"
 [[ $registry_dev -eq 0 ]] && echo "  [OK] no declared exposure disappeared or rotted without reconciliation"
+[[ $registry_schema_bad -eq 0 ]] && echo "  [OK] every declared row carries a valid mode and reproduction_status (coverage is PER MODE)"
 printf 'PIPEFAIL_EPIPE_SHORT_CIRCUIT_SITES = %d\n' "$((undeclared + registry_missing))"
 printf 'PIPEFAIL_EPIPE_REGISTRY_DEVIATIONS = %d\n' "$registry_dev"
+printf 'PIPEFAIL_EPIPE_REGISTRY_SCHEMA_VIOLATIONS = %d\n' "$registry_schema_bad"
 
-fail=$((undeclared + registry_missing + registry_dev))
+fail=$((undeclared + registry_missing + registry_dev + registry_schema_bad))
 
 # =============================================================================
 # ARM 2 — population assertions

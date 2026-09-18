@@ -48,12 +48,13 @@ run_guard(){ ( cd "$D" && bash scripts/ci/check-pipefail-epipe-shortcircuit.sh 2
 _out="$(run_guard)"
 _ctl_bad=0
 for _c in PIPEFAIL_EPIPE_SHORT_CIRCUIT_SITES PIPEFAIL_EPIPE_REGISTRY_DEVIATIONS \
+          PIPEFAIL_EPIPE_REGISTRY_SCHEMA_VIOLATIONS \
           PIPEFAIL_EPIPE_DEPTH_EXCLUSIONS PIPEFAIL_EPIPE_PRODUCT_POPULATION_FAILURES \
           PIPEFAIL_EPIPE_TEST_CORPUS_DEVIATIONS; do
     [[ "$_out" == *"$_c = 0"* ]] || { _ctl_bad=1; printf '        counter not zero/absent: %s\n' "$_c"; }
 done
 if [[ "$_ctl_bad" -eq 0 ]]; then
-    ok "0 control: the shipped tree is clean on all five counters (arms below are meaningful)"
+    ok "0 control: the shipped tree is clean on all six counters (arms below are meaningful)"
 else
     bad "0 control: the shipped tree already fails — cannot attribute the arms"
     # Drained into an array first: `… | grep FAIL | head -3` is the very shape

@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-17"
-# meta:description="Pins the v1.231.0 Lane G correction of check-pipefail-epipe-shortcircuit.sh. Before it, the union of the guard's two populations was 428 files containing ZERO product code: the guard governed the control plane and the product's TESTS, never the product, while a read-only census found 74 SIGPIPE-sensitive sites under cli/, 39 of them on a security- or count-reporting surface. Two independent defects are pinned. POPULATION: product_population() is derived from the packaging manifest and systemd ExecStart targets and must contain named product files the census proved were excluded; an EMPTY product plane must FAIL LOUDLY rather than pass vacuously. DETECTOR: the builtin-producer exemption was MEASURED FALSE (echo of a 202,399-byte variable into grep -q returns 141, 20/20) so a builtin producer must now be flagged, and `head` — 19 of the 74 sensitive sites — must be recognised as a short-circuiting consumer. RATCHET: all three directions are proven BY INJECTION into an isolated fixture — a new undeclared site, a declared site that disappears, and a registry row nothing consumes. Also asserts no false positive on read-to-EOF consumers. Hermetic: builds its own fixture tree, never touches the repo."
+# meta:description="Pins the v1.231.0 Lane G correction of check-pipefail-epipe-shortcircuit.sh. Before it, the union of the guard's two populations was 428 files containing ZERO product code: the guard governed the control plane and the product's TESTS, never the product, while a read-only census found 73 SIGPIPE-sensitive sites under cli/, 39 of them on a security- or count-reporting surface. Two independent defects are pinned. POPULATION: product_population() is derived from the packaging manifest and systemd ExecStart targets and must contain named product files the census proved were excluded; an EMPTY product plane must FAIL LOUDLY rather than pass vacuously. DETECTOR: the builtin-producer exemption was MEASURED FALSE (echo of a 202,399-byte variable into grep -q returns 141, 20/20) so a builtin producer must now be flagged, and `head` — 19 of the 73 sensitive sites — must be recognised as a short-circuiting consumer. RATCHET: all three directions are proven BY INJECTION into an isolated fixture — a new undeclared site, a declared site that disappears, and a registry row nothing consumes. MODE AXIS: DDoS and PortScan each run in one of TWO modes, so the registry carries mode (classic|suricata|shared|n/a) and reproduction_status (PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED); the vocabulary is enforced, the owner's rulings are pinned, and both columns are proven to SURVIVE a regeneration — a regeneration that reset them would erase the evidence invisibly. COVERAGE IS PER MODE: nothing here supports 'DDoS is covered' or 'PortScan is covered', and the absence of a row for a mode means UNVERIFIED, never safe. Also asserts no false positive on read-to-EOF consumers, and carries a PERMANENT arm proving a failing assertion's FAIL text reaches stdout AND its counter counts — the guard once reported green while failing because the count came back through a command substitution. Hermetic: builds its own fixture tree, never touches the repo."
 # meta:input="None (fixture tree under mktemp -d; repo files are read only)"
 # meta:output="PASS/FAIL/NOT_EXECUTED per arm; exit 0 only when every arm PASSed"
 # meta:depends="bash,git,grep,sed,awk,sha256sum"
@@ -242,7 +242,7 @@ else
     fi
 
     if [[ "$BASE_OUT" == *"nftban_fixture_head.sh"* ]]; then
-        pass "B2 a 'head' consumer IS detected (19 of the census's 74 sensitive sites)"
+        pass "B2 a 'head' consumer IS detected (19 of the census's 73 sensitive sites)"
     else
         fail "B2 'head' is still unrecognised as a short-circuiting consumer"
     fi
@@ -378,6 +378,117 @@ else
         pass "D3 a registry row that no site consumes FAILS"
     else
         fail "D3 the registry may rot — rows can outlive the population they describe"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP E — MODE AXIS and the schema that carries it
+# -----------------------------------------------------------------------------
+# DDoS and PortScan each run in one of TWO modes. Without a mode axis a
+# Classic-only finding and a whole-component finding are the same row — which is
+# how "DDoS is covered" gets said about a component where only one of two modes
+# was ever looked at. COVERAGE IS PER MODE; the absence of a row for a mode means
+# UNVERIFIED, never safe.
+echo "-- E. mode axis"
+REG_REAL="$REPO_ROOT/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+if [[ ! -f "$REG_REAL" ]]; then
+    skip "E1 every registry row carries a valid mode and reproduction_status" "registry absent"
+    skip "E2 the owner's mode and reproduction rulings are seeded" "registry absent"
+else
+    _bad=0
+    while IFS=$'\t' read -r _p _fl _fpr _num _cns _cls _md _rp _nt; do
+        [[ -z "$_p" || "$_p" == \#* ]] && continue
+        case "$_md" in classic|suricata|shared|n/a) : ;; *) _bad=$((_bad+1)) ;; esac
+        case "$_rp" in PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED) : ;; *) _bad=$((_bad+1)) ;; esac
+    done < "$REG_REAL"
+    if [[ "$_bad" -eq 0 ]]; then
+        pass "E1 every registry row carries a valid mode and reproduction_status"
+    else
+        fail "E1 $_bad registry field(s) outside the declared vocabulary"
+    fi
+
+    # The two PROVEN DDoS sites are CLASSIC-mode only. If this ever reads
+    # `shared` or `suricata` without someone re-deriving the execution authority,
+    # a Classic finding has silently been restated as a whole-component finding.
+    _pc=0; _pc="$(awk -F'\t' '$2=="cli/lib/nftban/core/nftban_ddos_classic.sh" && $7=="classic" && $8=="PROVEN"' "$REG_REAL" | grep -c '')" || _pc=0
+    # suricata_effective_config.sh is NOT labelled suricata: its only in-tree
+    # caller is the watchdog, so both-mode reach is unproven. n/a WITH A NOTE.
+    _sn=0; _sn="$(awk -F'\t' '$2=="cli/lib/nftban/helpers/suricata_effective_config.sh" && $7=="n/a" && $9!="-" && $9!=""' "$REG_REAL" | grep -c '')" || _sn=0
+    _nd=0; _nd="$(awk -F'\t' '$2=="cli/lib/nftban/lib/nft_schema.sh" && $8=="NOT_A_DEFECT"' "$REG_REAL" | grep -c '')" || _nd=0
+    if [[ "$_pc" -eq 2 && "$_sn" -ge 1 && "$_nd" -ge 1 ]]; then
+        pass "E2 rulings seeded: 2 classic/PROVEN DDoS rows, suricata_effective_config n/a WITH a note, nft_schema NOT_A_DEFECT"
+    else
+        fail "E2 ruling seeds wrong: classic+PROVEN=$_pc (want 2), n/a+noted=$_sn (want >=1), NOT_A_DEFECT=$_nd (want >=1)"
+    fi
+fi
+
+if [[ "$D_READY" -ne 1 ]]; then
+    skip "E3 an invalid mode value FAILS" "control arm did not establish a clean baseline"
+    skip "E4 mode and reproduction_status SURVIVE a regeneration" "control arm did not establish a clean baseline"
+else
+    _reg="$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+
+    # E3 — vocabulary is closed. A typo, a blank, or a row left on the old
+    # 7-column schema would read as "no opinion" and rejoin the undifferentiated
+    # mass the axis exists to break up.
+    cp "$_reg" "$FIX/.reg.bak"
+    printf 'product\tcli/lib/nftban/cli/cmd_fixture_builtin.sh\tdeadbeefdeadbeef\t1\tgrep-q\tA\tbogus-mode\tPROVEN\tinjected\n' >> "$_reg"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.reg.bak" "$_reg"
+    if [[ "$_o" == *"EPIPE_REGISTRY_SCHEMA"* && "$_o" == *"bogus-mode"* ]]; then
+        pass "E3 a mode outside classic|suricata|shared|n/a FAILS"
+    else
+        fail "E3 the mode vocabulary is not enforced — a typo reads as 'no opinion'"
+    fi
+
+    # E4 — THE COORDINATOR'S EXPLICIT CONCERN. mode and reproduction_status are
+    # measurements. A regeneration that reset them to defaults would erase the
+    # evidence the columns exist to hold, and would do it invisibly: same row
+    # count, same site count, same exit code. Set them by hand, regenerate, and
+    # require them back.
+    _victim_file="cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+    _tmp="$FIX/.reg.edit"
+    awk -F'\t' -v OFS='\t' -v f="$_victim_file" \
+        '/^#/ {print; next} $2==f {$7="classic"; $8="PROVEN"; $9="carry-forward canary"} {print}' \
+        "$_reg" > "$_tmp" && cp "$_tmp" "$_reg"
+    if regen_in_fixture; then
+        _survived=0
+        _survived="$(awk -F'\t' -v f="$_victim_file" '$2==f && $7=="classic" && $8=="PROVEN" && $9=="carry-forward canary"' "$_reg" | grep -c '')" || _survived=0
+        if [[ "$_survived" -ge 1 ]]; then
+            pass "E4 mode, reproduction_status and note SURVIVE a regeneration"
+        else
+            fail "E4 regeneration RESET the measured columns — the evidence the axis exists to hold is erased"
+        fi
+    else
+        skip "E4 mode and reproduction_status SURVIVE a regeneration" "generator did not run in the fixture"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP F — PERMANENT REGRESSION ARM: an assertion's FAIL text must REACH STDOUT
+# -----------------------------------------------------------------------------
+# Kept permanently by instruction, and worth it. The assertion helpers once
+# returned their failure COUNT through stdout, so a caller writing
+# `n="$(assert_…)"` swallowed every FAIL line into the variable and then compared
+# a multi-line string with `-eq 0` — which bash evaluates as 0. The guard printed
+# [OK] and exited 0 while the assertion was failing. This arm fails if the FAIL
+# text ever stops being visible OR if the counter stops counting; either alone
+# would restore the silent-green mode.
+echo "-- F. assertion output integrity (permanent regression arm)"
+if [[ "$FIX_OK" -ne 1 ]]; then
+    skip "F1 a failing assertion prints its FAIL line AND counts it" "fixture tree was not built"
+else
+    cp "$FIX/scripts/ci/test-authority-index.tsv" "$FIX/.idx.bak"
+    : > "$FIX/scripts/ci/test-authority-index.tsv"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.idx.bak" "$FIX/scripts/ci/test-authority-index.tsv"
+    _text_visible=0; _count_nonzero=0
+    [[ "$_o" == *"FAIL [EPIPE_EXCLUSION_UNCOVERED]"* ]] && _text_visible=1
+    [[ "$_o" == *"PIPEFAIL_EPIPE_PRODUCT_POPULATION_FAILURES = 0"* ]] || _count_nonzero=1
+    if [[ "$_text_visible" -eq 1 && "$_count_nonzero" -eq 1 ]]; then
+        pass "F1 a failing assertion prints its FAIL line AND its counter is non-zero"
+    else
+        fail "F1 assertion output swallowed: fail_text_visible=$_text_visible counter_nonzero=$_count_nonzero — the guard can report green while failing"
     fi
 fi
 
