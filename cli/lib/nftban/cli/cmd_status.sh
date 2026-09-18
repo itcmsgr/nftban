@@ -1317,10 +1317,21 @@ _status_section_protection() {
             local _bg_out_v4 _bg_out_v6
             _bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null)
             _bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null)
-            if echo "$_bg_out_v4" | grep -q 'elements = {'; then
+            # v1.231.0 EPIPE FAIL-TO-ZERO FIX (see cmd_botguard.sh
+            # _botguard_kernel_set_count for the full derivation). The presence
+            # test MUST NOT be a pipeline: `grep -q` exits at the first match,
+            # which is near the TOP of `nft list set` output, so the producing
+            # subshell dies of SIGPIPE while writing the rest. `cli/sbin/nftban`
+            # arms `set -Eeuo pipefail` for this whole dispatch, so pipefail
+            # adopts 141 as the pipeline status even though grep MATCHED, the
+            # `if` takes the false branch, and the suspect count stays at its 0
+            # initialiser. Measured threshold on this output shape: 929 elements
+            # / 43,677 B. Pure-bash substring match is one process with no pipe,
+            # so it is size-independent.
+            if [[ "$_bg_out_v4" == *'elements = {'* ]]; then
                 v4_suspects=$(echo "$_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
             fi
-            if echo "$_bg_out_v6" | grep -q 'elements = {'; then
+            if [[ "$_bg_out_v6" == *'elements = {'* ]]; then
                 v6_suspects=$(echo "$_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
             fi
             botguard_status="ACTIVE (${v4_suspects}v4+${v6_suspects}v6 suspects)"
@@ -2541,10 +2552,17 @@ output_json() {
         local _json_bg_out_v4 _json_bg_out_v6
         _json_bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null)
         _json_bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null)
-        if echo "$_json_bg_out_v4" | grep -q 'elements = {'; then
+        # v1.231.0 EPIPE FAIL-TO-ZERO FIX. Same defect and same derivation as the
+        # human-render path above: a short-circuiting `grep -q` consumer kills the
+        # producing subshell with SIGPIPE, and pipefail reports a SUCCESSFUL MATCH
+        # as a failed pipeline once the set exceeds ~43.7 KB. On this path the
+        # consequence is a JSON document asserting ipv4_suspects: 0 for a set
+        # holding thousands -- machine-readable, so consumed without a human
+        # sanity check. Pure-bash substring match: no pipe, size-independent.
+        if [[ "$_json_bg_out_v4" == *'elements = {'* ]]; then
             json_bg_v4=$(echo "$_json_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
         fi
-        if echo "$_json_bg_out_v6" | grep -q 'elements = {'; then
+        if [[ "$_json_bg_out_v6" == *'elements = {'* ]]; then
             json_bg_v6=$(echo "$_json_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
         fi
     fi
