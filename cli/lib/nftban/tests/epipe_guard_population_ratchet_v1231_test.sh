@@ -405,6 +405,16 @@ fi
 # UNVERIFIED, never safe.
 echo "-- E. mode axis"
 REG_REAL="$REPO_ROOT/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+# ⛔ THE RULINGS LIVE IN THE UNION, NOT IN THE ACTIVE REGISTRY ALONE.
+#    A seeded row MOVES to the remediated ledger the moment the product fix lands —
+#    that is the whole point of the ledger. Asserting the row is still ACTIVE would
+#    mean the arm fails precisely when the defect is FIXED, which is a property of
+#    the defect, not of the contract. MEASURED 2026-09-18: after the v1.231.0
+#    reconciliation the two classic/PROVEN ddos_classic rows read 0 in the registry
+#    and 2 in the ledger, and E2 failed while L2 correctly proved the move lossless.
+#    The claim E2 owns is "the ruling was applied and survives", so it reads BOTH.
+LED_REAL="$REPO_ROOT/scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
+_ruling_union() { cat "$REG_REAL" "${LED_REAL}" 2>/dev/null; }
 if [[ ! -f "$REG_REAL" ]]; then
     skip "E1 every registry row carries a valid mode and reproduction_status" "registry absent"
     skip "E2 the owner's mode and reproduction rulings are seeded" "registry absent"
@@ -424,11 +434,11 @@ else
     # The two PROVEN DDoS sites are CLASSIC-mode only. If this ever reads
     # `shared` or `suricata` without someone re-deriving the execution authority,
     # a Classic finding has silently been restated as a whole-component finding.
-    _pc=0; _pc="$(awk -F'\t' '$2=="cli/lib/nftban/core/nftban_ddos_classic.sh" && $7=="classic" && $8=="PROVEN"' "$REG_REAL" | grep -c '')" || _pc=0
+    _pc=0; _pc="$(awk -F'\t' '$2=="cli/lib/nftban/core/nftban_ddos_classic.sh" && $7=="classic" && $8=="PROVEN"' <(_ruling_union) | grep -c '')" || _pc=0
     # suricata_effective_config.sh is NOT labelled suricata: its only in-tree
     # caller is the watchdog, so both-mode reach is unproven. n/a WITH A NOTE.
-    _sn=0; _sn="$(awk -F'\t' '$2=="cli/lib/nftban/helpers/suricata_effective_config.sh" && $7=="n/a" && $9!="-" && $9!=""' "$REG_REAL" | grep -c '')" || _sn=0
-    _nd=0; _nd="$(awk -F'\t' '$2=="cli/lib/nftban/lib/nft_schema.sh" && $8=="NOT_A_DEFECT"' "$REG_REAL" | grep -c '')" || _nd=0
+    _sn=0; _sn="$(awk -F'\t' '$2=="cli/lib/nftban/helpers/suricata_effective_config.sh" && $7=="n/a" && $9!="-" && $9!=""' <(_ruling_union) | grep -c '')" || _sn=0
+    _nd=0; _nd="$(awk -F'\t' '$2=="cli/lib/nftban/lib/nft_schema.sh" && $8=="NOT_A_DEFECT"' <(_ruling_union) | grep -c '')" || _nd=0
     if [[ "$_pc" -eq 2 && "$_sn" -ge 1 && "$_nd" -ge 1 ]]; then
         pass "E2 rulings seeded: 2 classic/PROVEN DDoS rows, suricata_effective_config n/a WITH a note, nft_schema NOT_A_DEFECT"
     else
