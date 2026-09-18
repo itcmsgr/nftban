@@ -66,6 +66,11 @@
 #
 # Regenerate: scripts/ci/gen-pipefail-epipe-inventory.sh
 #
+# A declared exposure that STOPS being detected does not simply vanish from this
+# file: it is moved to scripts/ci/data/pipefail-epipe-remediated-ledger.tsv with
+# the class, mode and reproduction_status it carried, so a removal is recorded
+# rather than absorbed. See that file's header for why.
+#
 # plane	file	fingerprint	occurrences	consumers	class	mode	reproduction_status	note
 gate	scripts/ci/check-core-ownership-identity.sh	4338c5c5393e3d58	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-core-ownership-identity.sh	5159e3dc219d34ac	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
@@ -338,8 +343,8 @@ product	cli/lib/nftban/core/nftban_emulate.sh	f48d2a0c6948d511	1	head	E	n/a	UNVE
 product	cli/lib/nftban/core/nftban_feeds.sh	0cd3cb7825638bb3	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	1a54887afabda790	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	1d16d682ddc877b2	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	3a90fb406c268ba5	1	grep-q	A	n/a	DEBT	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record)
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	446eba4bd3da79e3	1	grep-q	A	n/a	DEBT	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record)
+product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	3a90fb406c268ba5	1	grep-q	A	n/a	PROVEN	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record) | RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070
+product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	446eba4bd3da79e3	1	grep-q	A	n/a	PROVEN	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record) | RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	4728157d7a7b6271	1	head	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	4f4a33fa8f27c685	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	541c3071f3613c9f	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
@@ -348,7 +353,7 @@ product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	900cb14ee83c57b6	1	grep
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	95d881a4c8be72e4	1	grep-q	A	n/a	PROVEN	fn=nftban_detect_xt_compat; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record)
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	b40cf07a4da5053e	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	d56d82085e9c0ec8	1	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	f37bffa5069aff6b	1	grep-q	A	n/a	DEBT	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record)
+product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	f37bffa5069aff6b	1	grep-q	A	n/a	PROVEN	fn=nftban_report_conflicts; security_or_count_surface=YES; MEASURED 65024 on the shape; prod ruleset 168-196KB (fleet record) | RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	fb2896e195b3ed48	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_transition_health.sh	3cf0f381d385f2aa	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_transition_health.sh	726fdaed96d53255	1	head	E	n/a	UNVERIFIED	fn=_fth_json_get; needs a producer-size probe on a representative host

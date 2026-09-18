@@ -132,6 +132,7 @@ cd "$REPO_ROOT"
 
 PKG_MANIFEST="packaging/build_nftban.sh"
 REGISTRY="scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+LEDGER="scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
 INVENTORY="scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv"
 ALLOW="scripts/ci/data/pipefail-epipe-allowlist.txt"
 
@@ -647,6 +648,35 @@ if [[ "$registry_missing" -eq 0 ]]; then
     done
 fi
 
+# --- REMEDIATION REGRESSION -------------------------------------------------
+# A row in the remediated ledger is a pipeline that was declared, then stopped
+# being detected. If the SAME fingerprint is detected again, the removed shape
+# has come back — and it comes back carrying whatever the ledger says it was,
+# which for three v1.231.0 rows is a reproduced security defect. Without this
+# check a reintroduction would land as an ordinary EPIPE_UNDECLARED row and lose
+# the entire history of what it already cost.
+ledger_regressed=0
+if [[ -f "$LEDGER" ]]; then
+    while IFS=$'\t' read -r _lp _lf _lfp _lcls _lmode _lrepro _lnote; do
+        [[ -z "$_lp" || "$_lp" == \#* ]] && continue
+        case "$_lmode" in classic|suricata|shared|n/a) : ;;
+            *) printf 'FAIL [EPIPE_REGISTRY_SCHEMA] ledger %s — mode=%q is not one of classic|suricata|shared|n/a\n' "$_lf" "$_lmode"
+               registry_schema_bad=$((registry_schema_bad + 1)) ;;
+        esac
+        case "$_lrepro" in PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED) : ;;
+            *) printf 'FAIL [EPIPE_REGISTRY_SCHEMA] ledger %s — reproduction_status=%q is not one of PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED\n' "$_lf" "$_lrepro"
+               registry_schema_bad=$((registry_schema_bad + 1)) ;;
+        esac
+        if [[ -n "${DETECTED["$_lp|$_lf|$_lfp"]:-}" ]]; then
+            printf 'FAIL [EPIPE_REMEDIATION_REGRESSED] %s %s — recorded as remediated (last seen class=%s mode=%s status=%s) but the same pipeline is DETECTED AGAIN\n' \
+                "$_lp" "$_lf" "$_lcls" "$_lmode" "$_lrepro"
+            ledger_regressed=$((ledger_regressed + 1))
+        fi
+    done < "$LEDGER"
+fi
+[[ $ledger_regressed -eq 0 ]] && echo "  [OK] no remediated exposure has reappeared"
+printf 'PIPEFAIL_EPIPE_REMEDIATION_REGRESSIONS = %d\n' "$ledger_regressed"
+
 [[ $((undeclared + registry_missing)) -eq 0 ]] && echo "  [OK] every short-circuiting pipeline in the gate and product planes is declared"
 [[ $registry_dev -eq 0 ]] && echo "  [OK] no declared exposure disappeared or rotted without reconciliation"
 [[ $registry_schema_bad -eq 0 ]] && echo "  [OK] every declared row carries a valid mode and reproduction_status (coverage is PER MODE)"
@@ -654,7 +684,7 @@ printf 'PIPEFAIL_EPIPE_SHORT_CIRCUIT_SITES = %d\n' "$((undeclared + registry_mis
 printf 'PIPEFAIL_EPIPE_REGISTRY_DEVIATIONS = %d\n' "$registry_dev"
 printf 'PIPEFAIL_EPIPE_REGISTRY_SCHEMA_VIOLATIONS = %d\n' "$registry_schema_bad"
 
-fail=$((undeclared + registry_missing + registry_dev + registry_schema_bad))
+fail=$((undeclared + registry_missing + registry_dev + registry_schema_bad + ledger_regressed))
 
 # =============================================================================
 # ARM 2 — population assertions

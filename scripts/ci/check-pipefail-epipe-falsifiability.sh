@@ -48,13 +48,13 @@ run_guard(){ ( cd "$D" && bash scripts/ci/check-pipefail-epipe-shortcircuit.sh 2
 _out="$(run_guard)"
 _ctl_bad=0
 for _c in PIPEFAIL_EPIPE_SHORT_CIRCUIT_SITES PIPEFAIL_EPIPE_REGISTRY_DEVIATIONS \
-          PIPEFAIL_EPIPE_REGISTRY_SCHEMA_VIOLATIONS \
+          PIPEFAIL_EPIPE_REGISTRY_SCHEMA_VIOLATIONS PIPEFAIL_EPIPE_REMEDIATION_REGRESSIONS \
           PIPEFAIL_EPIPE_DEPTH_EXCLUSIONS PIPEFAIL_EPIPE_PRODUCT_POPULATION_FAILURES \
           PIPEFAIL_EPIPE_TEST_CORPUS_DEVIATIONS; do
     [[ "$_out" == *"$_c = 0"* ]] || { _ctl_bad=1; printf '        counter not zero/absent: %s\n' "$_c"; }
 done
 if [[ "$_ctl_bad" -eq 0 ]]; then
-    ok "0 control: the shipped tree is clean on all six counters (arms below are meaningful)"
+    ok "0 control: the shipped tree is clean on all seven counters (arms below are meaningful)"
 else
     bad "0 control: the shipped tree already fails — cannot attribute the arms"
     # Drained into an array first: `… | grep FAIL | head -3` is the very shape
@@ -114,7 +114,7 @@ rm -f scripts/ci/check-zz-oroperator.sh; git add -A >/dev/null 2>&1
 # and the marker on line 1, `echo "$v" | grep -q` returned rc=141 19/20 at 72,953
 # bytes and 20/20 at 202,399 and 407,281; `printf` the same. A builtin writes
 # through the same 64 KiB pipe buffer as anything else. The exemption described a
-# small test case, not a mechanism — and it hid 21 of the census's 74
+# small test case, not a mechanism — and it hid 21 of the census's 73
 # SIGPIPE-sensitive product sites, including cmd_botguard.sh:180, which reports
 # 0 elements for a production-sized security set. The arm now asserts the
 # OPPOSITE, so the exemption cannot be reintroduced by anyone who has not first

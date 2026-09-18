@@ -31,6 +31,10 @@ cd "$REPO_ROOT"
 # Named OUT_* so they cannot collide with any name the sourced guard owns.
 OUT_INV="scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv"
 OUT_REG="scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+OUT_LEDGER="scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
+ROWS_TMP="$(mktemp)"
+LEDGER_TMP="$(mktemp)"
+trap 'rm -f "$ROWS_TMP" "$LEDGER_TMP"' EXIT
 
 EPIPE_GUARD_LIB_ONLY=1
 # shellcheck source=scripts/ci/check-pipefail-epipe-shortcircuit.sh
@@ -169,6 +173,50 @@ declare -A SEED_REPRO_NOTE=(
     ["cli/lib/nftban/lib/nft_schema.sh:721"]="NOT_A_DEFECT: producer provably bounded, <=1 element, 79 B — cannot reach the pipe buffer"
 )
 
+# ---- owner rulings that OVERRIDE a carried-forward disposition ----------------
+# Keyed by (file, fingerprint) — content-anchored, so a ruling survives the line
+# moving. Applied AFTER carry-forward, because a ruling is the one thing that
+# legitimately overrides a previously recorded measurement: it is a REVERSAL, not
+# a default.
+#
+# ⛔ REVERSAL, v1.231.0: cli/lib/nftban/core/nftban_firewall_conflicts.sh:1397-1399
+# move DEBT -> PROVEN. The DEBT verdict is WITHDRAWN; it rested on a false
+# reachability premise — that the skip above the parse keeps a large ruleset away
+# from it. VERIFIED IN THE TREE: that skip is
+#     case "$tspec" in "ip nftban"|"ip6 nftban"|"ip raw"|"ip6 raw") continue ;;
+# which excludes ONLY NFTBan's own tables, and the next comment reads "Foreign
+# table found — inspect its actual base chains". The quantity reaching the parse
+# is a FOREIGN competing firewall's table content — precisely what the detector
+# exists to catch. MEASURED against the real nftban_validate_hook_authority, by
+# foreign table size:
+#     4 K  20/20 CRITICAL detected        64 K   9/20
+#    16 K  20/20 CRITICAL detected       128 K   0/20
+#                                        192 K   0/20
+# The detector fails exactly when the threat is largest: a foreign input hook is
+# silently downgraded to "CLEAR (no hooks)". The shape in the tree is
+# `echo "$table_content" | grep -qE "hook…" && has_input=true`, so an EPIPE stops
+# the `&&` firing and the CLEAR branch is taken — the mechanism is visible in the
+# source, not only in the measurement.
+#
+# The ruling is APPENDED to the note, never substituted: the census note records
+# the THRESHOLD OF THE SHAPE, the ruling is about THIS site's producer. Losing
+# either loses a true fact. The same handling as nft_schema.sh:721.
+#
+# It also corrects the census's `fn=` provenance. VERIFIED: the only function
+# definition between line 1319 and line 1400 is nftban_validate_hook_authority()
+# at :1319, so these sites are inside it — not inside nftban_report_conflicts.
+declare -A RULING_REPRO=(
+    ["cli/lib/nftban/core/nftban_firewall_conflicts.sh|3a90fb406c268ba5"]="PROVEN"
+    ["cli/lib/nftban/core/nftban_firewall_conflicts.sh|446eba4bd3da79e3"]="PROVEN"
+    ["cli/lib/nftban/core/nftban_firewall_conflicts.sh|f37bffa5069aff6b"]="PROVEN"
+)
+RULING_NOTE_1397="RULING v1.231.0: DEBT WITHDRAWN -> PROVEN; fn= is nftban_validate_hook_authority (:1319), NOT nftban_report_conflicts; reproduced against a FOREIGN competing-firewall table (4K/16K 20/20 detected; 64K 9/20; 128K and 192K 0/20), so the earlier 'NFTBan ruleset is skipped' premise was false; fixed in Lane H 0f97c070"
+declare -A RULING_NOTE=(
+    ["cli/lib/nftban/core/nftban_firewall_conflicts.sh|3a90fb406c268ba5"]="$RULING_NOTE_1397"
+    ["cli/lib/nftban/core/nftban_firewall_conflicts.sh|446eba4bd3da79e3"]="$RULING_NOTE_1397"
+    ["cli/lib/nftban/core/nftban_firewall_conflicts.sh|f37bffa5069aff6b"]="$RULING_NOTE_1397"
+)
+
 # ---- census seed (optional, first run only) ---------------------------------
 # EPIPE_CENSUS_TSV may point at the read-only classification census so a first
 # generation is seeded with its A/B/C/D/E classes instead of UNCLASSIFIED. It is
@@ -223,7 +271,7 @@ emit_plane() {
             fi
         done < <(detect_sites "$f")
     done < <("$popfn")
-    local class note mode repro kplane krest kfile kfp
+    local class note mode repro kplane krest kfile kfp _rk
     for key in "${!SEEN[@]}"; do
         n="${SEEN[$key]}"
         kplane="${key%%|*}"; krest="${key#*|}"; kfile="${krest%|*}"; kfp="${krest##*|}"
@@ -251,10 +299,27 @@ emit_plane() {
             if [[ "$note" == "-" ]]; then note="${RPR_NOTE[$key]}"
             else note="$note | ${RPR_NOTE[$key]}"; fi
         fi
+        # An owner RULING overrides a carried-forward disposition — the one thing
+        # that legitimately does, because it is a reversal of a prior measurement
+        # rather than a default filling a gap. Its note is appended, not
+        # substituted, for the same reason every other ruling note is.
+        _rk="$kfile|$kfp"
+        if [[ -n "${RULING_REPRO[$_rk]:-}" ]]; then
+            repro="${RULING_REPRO[$_rk]}"
+            if [[ -n "${RULING_NOTE[$_rk]:-}" && "$note" != *"${RULING_NOTE[$_rk]}"* ]]; then
+                if [[ "$note" == "-" ]]; then note="${RULING_NOTE[$_rk]}"
+                else note="$note | ${RULING_NOTE[$_rk]}"; fi
+            fi
+        fi
         printf '%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n' \
             "$kplane" "$kfile" "$kfp" "$n" "${CONS[$key]}" "$class" "$mode" "$repro" "$note"
     done
 }
+
+# Rows go to a FILE, not straight down a pipe, because the ledger step below needs
+# to know which keys were emitted — and `{ … } | sort > file` would compute that
+# in a subshell whose variables never come back.
+{ emit_plane gate yes gate_population; emit_plane product no product_population; } > "$ROWS_TMP"
 
 {
     cat <<'HDR'
@@ -326,10 +391,103 @@ emit_plane() {
 #
 # Regenerate: scripts/ci/gen-pipefail-epipe-inventory.sh
 #
+# A declared exposure that STOPS being detected does not simply vanish from this
+# file: it is moved to scripts/ci/data/pipefail-epipe-remediated-ledger.tsv with
+# the class, mode and reproduction_status it carried, so a removal is recorded
+# rather than absorbed. See that file's header for why.
+#
 # plane	file	fingerprint	occurrences	consumers	class	mode	reproduction_status	note
 HDR
-    { emit_plane gate yes gate_population; emit_plane product no product_population; } | sort
+    sort < "$ROWS_TMP"
 } > "$OUT_REG"
+
+# =============================================================================
+# REMEDIATED LEDGER — a declared exposure that DISAPPEARS must leave a record
+# =============================================================================
+#
+# ⛔ WITHOUT THIS, REGENERATION IS THE SILENT ERASURE IT EXISTS TO PREVENT. The
+# gate FAILS with EPIPE_REGISTRY_STALE when a declared site stops being detected,
+# which is correct and is the whole point — but the reconciliation for that
+# failure is "regenerate", and regeneration used to record the removal by simply
+# not emitting the row. The ratchet caught the change and then the fix threw the
+# evidence away: three sites reproduced as real security defects would have
+# vanished from the record with the same absence as a line someone reformatted.
+#
+# A row moves here ONLY when its file is STILL IN THE SCANNED POPULATION. A row
+# whose file left the population entirely is the ORPHAN case — the gate fails on
+# it and a person decides, because "the file is gone" is not evidence that a
+# defect was fixed, and auto-absorbing it would manufacture that claim.
+#
+# The wording is deliberate: this records that a declared exposure is NO LONGER
+# DETECTED. It does not by itself assert a fix. The carried class, mode and
+# reproduction_status say what was known when it was last seen, and the note says
+# who changed it.
+declare -A POP_FILES=()
+while IFS= read -r _pf; do [[ -n "$_pf" ]] && POP_FILES["$_pf"]=1; done < <(gate_population)
+while IFS= read -r _pf; do [[ -n "$_pf" ]] && POP_FILES["$_pf"]=1; done < <(product_population)
+
+declare -A EMITTED=()
+while IFS=$'\t' read -r _p _f _fp _rest; do
+    [[ -z "$_p" || "$_p" == \#* ]] && continue
+    EMITTED["$_p|$_f|$_fp"]=1
+done < "$ROWS_TMP"
+
+declare -A LEDGER_SEEN=()
+if [[ -f "$OUT_LEDGER" ]]; then
+    while IFS= read -r _line; do
+        [[ -z "$_line" || "$_line" == \#* ]] && continue
+        IFS=$'\t' read -r -a _lf <<< "$_line"
+        [[ "${#_lf[@]}" -ge 3 ]] || continue
+        LEDGER_SEEN["${_lf[0]}|${_lf[1]}|${_lf[2]}"]=1
+        printf '%s\n' "$_line" >> "$LEDGER_TMP"
+    done < "$OUT_LEDGER"
+fi
+
+_newly_remediated=0
+for _key in "${!PRIOR_CLASS[@]}"; do
+    [[ -n "${EMITTED[$_key]:-}" ]] && continue          # still detected
+    [[ -n "${LEDGER_SEEN[$_key]:-}" ]] && continue      # already recorded
+    _kp="${_key%%|*}"; _kr="${_key#*|}"; _kf="${_kr%|*}"; _kfp="${_kr##*|}"
+    [[ -n "${POP_FILES[$_kf]:-}" ]] || continue         # ORPHAN — a person decides
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$_kp" "$_kf" "$_kfp" "${PRIOR_CLASS[$_key]:-UNCLASSIFIED}" \
+        "${PRIOR_MODE[$_key]:-n/a}" "${PRIOR_REPRO[$_key]:-UNVERIFIED}" \
+        "${PRIOR_NOTE[$_key]:--}" >> "$LEDGER_TMP"
+    _newly_remediated=$((_newly_remediated + 1))
+done
+
+{
+    cat <<'HDR'
+# GENERATED by scripts/ci/gen-pipefail-epipe-inventory.sh — do not hand-edit
+# except to improve the note column, which regeneration carries forward.
+#
+# REMEDIATED LEDGER — declared exposures that are NO LONGER DETECTED, with the
+# class, mode and reproduction_status they carried when last seen.
+#
+# ⛔ THIS RECORDS A DISAPPEARANCE, NOT A CERTIFICATE. A row here means the exact
+# pipeline is gone from the scanned population. It does not by itself assert that
+# the underlying behaviour is correct, and it says NOTHING about any other mode
+# of the same component — COVERAGE IS PER MODE, and the absence of a row for a
+# mode means UNVERIFIED, never safe.
+#
+# Why it exists: the gate fails with EPIPE_REGISTRY_STALE when a declared site
+# stops being detected, and the reconciliation for that failure is to regenerate.
+# Without this file, regenerating recorded the removal by simply not emitting the
+# row — so the ratchet caught the change and the fix then discarded the evidence.
+# A site reproduced as a real security defect would disappear with exactly the
+# same absence as a line someone reformatted.
+#
+# A row is moved here ONLY if its file is still in the scanned population. If the
+# file left the population the gate raises EPIPE_REGISTRY_ORPHAN instead and a
+# person decides: "the file is gone" is not evidence that a defect was fixed.
+#
+# The gate re-checks every row here: a remediated fingerprint that is DETECTED
+# AGAIN fails as EPIPE_REMEDIATION_REGRESSED.
+#
+# plane	file	fingerprint	last_class	last_mode	last_reproduction_status	note
+HDR
+    sort < "$LEDGER_TMP"
+} > "$OUT_LEDGER"
 
 {
     cat <<'HDR'
@@ -359,6 +517,8 @@ HDR
 printf 'wrote %s (%d rows, %d sites)\n' "$OUT_REG" \
     "$(grep -vc '^#' "$OUT_REG" || true)" \
     "$(awk -F'\t' '!/^#/{s+=$4} END{print s+0}' "$OUT_REG")"
+printf 'wrote %s (%d rows, %d newly recorded this run)\n' "$OUT_LEDGER" \
+    "$(grep -vc '^#' "$OUT_LEDGER" || true)" "$_newly_remediated"
 printf 'wrote %s (%d files, %d sites)\n' "$OUT_INV" \
     "$(grep -vc '^#' "$OUT_INV" || true)" \
     "$(awk -F'\t' '!/^#/{s+=$2} END{print s+0}' "$OUT_INV")"

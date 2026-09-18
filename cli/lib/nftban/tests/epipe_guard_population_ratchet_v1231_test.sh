@@ -493,6 +493,75 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# GROUP G — REMEDIATED LEDGER: a removal must leave a RECORD
+# -----------------------------------------------------------------------------
+# The gate fails with EPIPE_REGISTRY_STALE when a declared site stops being
+# detected, and the reconciliation for that failure is "regenerate". Before the
+# ledger, regeneration recorded the removal by simply not emitting the row — so
+# the ratchet caught the change and the fix then threw the evidence away. A site
+# reproduced as a real security defect would vanish with the same absence as a
+# line someone reformatted.
+echo "-- G. remediated ledger"
+LEDGER_FIX="$FIX/scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
+if [[ "$D_READY" -ne 1 ]]; then
+    skip "G1 a removed declared site is RECORDED, not silently dropped" "control arm did not establish a clean baseline"
+    skip "G2 a remediated site that REAPPEARS FAILS" "control arm did not establish a clean baseline"
+    skip "G3 a row whose file left the population is NOT auto-absorbed" "control arm did not establish a clean baseline"
+else
+    _victim="$FIX/cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+    _reg="$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+
+    # G1 — remove the pipeline (what a real fix looks like), regenerate, and
+    # require the row to be in the ledger WITH its measured columns intact.
+    cp "$_victim" "$FIX/.victim.bak"
+    cp "$_reg" "$FIX/.reg.pre"
+    _fp_gone="$(awk -F'\t' '$2=="cli/lib/nftban/cli/cmd_fixture_builtin.sh"{print $3; exit}' "$_reg")"
+    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_victim")"
+    printf '%s\n' "$_fixed" > "$_victim"
+    if regen_in_fixture && [[ -n "$_fp_gone" ]]; then
+        _in_ledger=0; _in_reg=0
+        _in_ledger="$(awk -F'\t' -v fp="$_fp_gone" '$3==fp' "$LEDGER_FIX" 2>/dev/null | grep -c '')" || _in_ledger=0
+        _in_reg="$(awk -F'\t' -v fp="$_fp_gone" '$3==fp' "$_reg" 2>/dev/null | grep -c '')" || _in_reg=0
+        if [[ "$_in_ledger" -ge 1 && "$_in_reg" -eq 0 ]]; then
+            pass "G1 a removed declared site is RECORDED in the ledger and dropped from the registry"
+        else
+            fail "G1 removal not recorded: in_ledger=$_in_ledger in_registry=$_in_reg — regeneration discards the evidence"
+        fi
+    else
+        skip "G1 a removed declared site is RECORDED, not silently dropped" "regeneration did not run or no fingerprint to track"
+    fi
+
+    # G2 — put the pipeline back. A remediated fingerprint that is DETECTED AGAIN
+    # must fail as a REGRESSION, not land as an ordinary undeclared row that has
+    # forgotten what it already cost.
+    cp "$FIX/.victim.bak" "$_victim"
+    _o="$(run_guard_in_fixture)" || true
+    if [[ "$_o" == *"EPIPE_REMEDIATION_REGRESSED"* ]]; then
+        pass "G2 a remediated site that REAPPEARS FAILS as a regression"
+    else
+        fail "G2 a reintroduced remediated pipeline is not recognised as a regression"
+    fi
+
+    # G3 — a row whose FILE has left the population must NOT be auto-absorbed into
+    # the ledger. "The file is gone" is not evidence that a defect was fixed;
+    # that is the ORPHAN case and a person decides.
+    : > "$LEDGER_FIX"
+    cp "$FIX/.reg.pre" "$_reg"
+    printf 'product\tcli/lib/nftban/core/nftban_fixture_deleted.sh\t0123456789abcdef\t1\tgrep-q\tA\tclassic\tPROVEN\tinjected orphan\n' >> "$_reg"
+    if regen_in_fixture; then
+        _orphan_absorbed=0
+        _orphan_absorbed="$(grep -c 'nftban_fixture_deleted' "$LEDGER_FIX" 2>/dev/null)" || _orphan_absorbed=0
+        if [[ "$_orphan_absorbed" -eq 0 ]]; then
+            pass "G3 a row whose file left the population is NOT auto-absorbed as remediated"
+        else
+            fail "G3 an ORPHAN row was silently recorded as remediated — that manufactures a fix claim"
+        fi
+    else
+        skip "G3 a row whose file left the population is NOT auto-absorbed" "regeneration did not run"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
 echo "=== PASS=$PASS FAIL=$FAIL NOT_EXECUTED=$SKIP ==="
 if [[ "$FAIL" -gt 0 ]]; then
     echo "RESULT: FAIL"
