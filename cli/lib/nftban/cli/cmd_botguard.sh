@@ -327,8 +327,17 @@ _botguard_kernel_set_exists() {
     local set_name="$2"
     # v1.231.0 ARGV SPLIT — see _botguard_kernel_set_count above. Under strict.sh's
     # IFS=$'\n\t' the unquoted `$table` was ONE argv word, so this predicate was
-    # FALSE for every set that exists. It gates all twelve counters in
+    # FALSE for every set that exists. It gated all twelve counters in
     # _nftban_botguard_stats, each of which therefore kept its 0 initialiser.
+    #
+    # v1.231.0 COMPOSITION NOTE: the count-truth lane RETIRED that gating. An
+    # exists-probe followed by a count answers a three-valued question with two
+    # reads and then collapses "absent" and "unreadable" into the same integer,
+    # so `botguard status` and `botguard stats` now call
+    # _botguard_kernel_set_count directly and let it report UNKNOWN. This helper
+    # has no remaining production caller; it stays exported, and stays argv-
+    # correct, because the predicate itself was defective and a broken helper
+    # left in the tree is a trap for the next caller.
     local -a _tbl=()
     IFS=' ' read -r -a _tbl <<< "$table"
     nft list set "${_tbl[@]+"${_tbl[@]}"}" "$set_name" &>/dev/null
