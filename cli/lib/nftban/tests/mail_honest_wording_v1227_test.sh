@@ -60,7 +60,24 @@ assert "NO 'digest sent successfully' in login_alert.sh" '! grep -q "digest sent
 # --- honest 'submitted / delivery not confirmed' wording present at each site ---
 assert "SUBMITTED wording in nftban_mail.sh"             'grep -q "Email submitted to transport for.*(delivery not confirmed)" "$MAIL"'
 assert "SUBMITTED wording in cmd_report.sh (x2)"         '[[ "$(grep -c "Email submitted to .*(delivery not confirmed)" "$REPORT")" -eq 2 ]]'
-assert "SUBMITTED wording in nftban_report_email.sh"     'grep -q "Report submitted to .*(delivery not confirmed)" "$REPORT_EMAIL"'
+# ⛔ ASSERTION UPDATED, AND DELIBERATELY STRENGTHENED — NOT RELAXED.
+# This line used to require nftban_report_email.sh to CONTAIN the honest
+# "Report submitted to ... (delivery not confirmed)" wording. That encoded an
+# assumption the operator-verdict fix invalidates: that this file addresses the
+# operator at all. A single `nftban report email` produced THREE success lines
+# (nftban_mail.sh transport, this file, and cmd_report.sh), so a report that had
+# already lost a section to a parse failure was confirmed to the operator three
+# times over. The command layer is now the SOLE operator-verdict authority and
+# this file is silent.
+# The guard's INTENT — a transport-accept path must never claim delivery — is
+# preserved and tightened: previously this file was ALLOWED a success line
+# provided the wording was honest; it is now allowed NONE. The negative
+# assertions above ("NO 'Report sent to'") still hold, and cmd_report.sh is
+# still required to carry the honest wording twice (asserted immediately above).
+assert "nftban_report_email.sh makes NO operator success claim (verdict moved to the command layer)" \
+    '! grep -qE "^[[:space:]]*echo \"\[SUCCESS\]" "$REPORT_EMAIL"'
+assert "nftban_report_email.sh suppresses transport stdout at its send site" \
+    'grep -q "nftban_mail_send \"\$html\" \"\$recipient\" >/dev/null 2>&1" "$REPORT_EMAIL"'
 assert "SUBMITTED wording in login_alert.sh"             'grep -q "Login digest submitted .*delivery not confirmed" "$LOGIN_ALERT"'
 
 # --- RBL honest model preserved (untouched) ---
