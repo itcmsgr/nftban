@@ -1,0 +1,686 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan — v1.231.0 Lane G: EPIPE guard population + detector + ratchet
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
+# meta:name="epipe_guard_population_ratchet_v1231_test"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-09-17"
+# meta:description="Pins the v1.231.0 Lane G correction of check-pipefail-epipe-shortcircuit.sh. Before it, the union of the guard's two populations was 428 files containing ZERO product code: the guard governed the control plane and the product's TESTS, never the product, while a read-only census found 73 SIGPIPE-sensitive sites under cli/, 39 of them on a security- or count-reporting surface. Two independent defects are pinned. POPULATION: product_population() is derived from the packaging manifest and systemd ExecStart targets and must contain named product files the census proved were excluded; an EMPTY product plane must FAIL LOUDLY rather than pass vacuously. DETECTOR: the builtin-producer exemption was MEASURED FALSE (echo of a 202,399-byte variable into grep -q returns 141, 20/20) so a builtin producer must now be flagged, and `head` — 19 of the 73 sensitive sites — must be recognised as a short-circuiting consumer. RATCHET: all three directions are proven BY INJECTION into an isolated fixture — a new undeclared site, a declared site that disappears, and a registry row nothing consumes. MODE AXIS: DDoS and PortScan each run in one of TWO modes, so the registry carries mode (classic|suricata|shared|n/a) and reproduction_status (PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED); the vocabulary is enforced, the owner's rulings are pinned, and both columns are proven to SURVIVE a regeneration — a regeneration that reset them would erase the evidence invisibly. COVERAGE IS PER MODE: nothing here supports 'DDoS is covered' or 'PortScan is covered', and the absence of a row for a mode means UNVERIFIED, never safe. Also asserts no false positive on read-to-EOF consumers, and carries a PERMANENT arm proving a failing assertion's FAIL text reaches stdout AND its counter counts — the guard once reported green while failing because the count came back through a command substitution. Hermetic: builds its own fixture tree, never touches the repo."
+# meta:input="None (fixture tree under mktemp -d; repo files are read only)"
+# meta:output="PASS/FAIL/NOT_EXECUTED per arm; exit 0 only when every arm PASSed"
+# meta:depends="bash,git,grep,sed,awk,sha256sum"
+# meta:inventory.files="scripts/ci/check-pipefail-epipe-shortcircuit.sh,scripts/ci/gen-pipefail-epipe-inventory.sh,scripts/ci/data/pipefail-epipe-exposure-registry.tsv,scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv,packaging/build_nftban.sh"
+# meta:inventory.binaries="bash,git,grep,sed,awk,sha256sum"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# meta:ta.id="epipe_guard_population_ratchet_v1231_test"
+# meta:ta.owner="architecture"
+# meta:ta.module="epipe-shortcircuit"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="policy-gates"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# =============================================================================
+#
+# ⛔ THE FORBIDDEN SHAPE IS ASSEMBLED, NEVER WRITTEN LITERALLY. A `producer |
+#    short-circuit-consumer` pipeline written literally in this file would be a
+#    real site in a real merge-deciding test, and the guard would flag its own
+#    fixtures. It is built from $BAR at runtime, as data. This file's own code
+#    uses here-strings, single processes and read-to-EOF consumers only.
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$TEST_DIR/../../../.." && pwd)"
+GUARD="$REPO_ROOT/scripts/ci/check-pipefail-epipe-shortcircuit.sh"
+GEN="$REPO_ROOT/scripts/ci/gen-pipefail-epipe-inventory.sh"
+
+PASS=0; FAIL=0; SKIP=0
+pass(){ printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
+fail(){ printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
+# NOT_EXECUTED is its own verdict class. A precondition that did not hold is not
+# a pass and not a failure — recording it as either would be a false statement
+# about what was measured.
+skip(){ printf '  [NOT_EXECUTED] %s — %s\n' "$1" "$2"; SKIP=$((SKIP+1)); }
+
+BAR='|'
+GQ='grep -q'
+HEAD1='head -1'
+
+echo "=== v1.231.0 Lane G — EPIPE guard population, detector, ratchet ==="
+
+# -----------------------------------------------------------------------------
+# Preconditions
+# -----------------------------------------------------------------------------
+PRE_OK=1
+for _b in git grep sed awk sha256sum; do
+    command -v "$_b" >/dev/null 2>&1 || { PRE_OK=0; MISSING="$_b"; }
+done
+[[ -f "$GUARD" ]] || { PRE_OK=0; MISSING="${MISSING:-$GUARD}"; }
+[[ -f "$GEN" ]] || { PRE_OK=0; MISSING="${MISSING:-$GEN}"; }
+
+# -----------------------------------------------------------------------------
+# GROUP A — POPULATION: the product execution plane is actually scanned
+# -----------------------------------------------------------------------------
+# Sourcing the guard in lib-only mode gives us the REAL population functions, so
+# this arm measures the shipped guard rather than a re-implementation of it.
+# It arms errexit in this shell, so every subsequent status is captured
+# explicitly rather than relied upon.
+echo "-- A. population"
+if [[ "$PRE_OK" -ne 1 ]]; then
+    skip "A1 named product files are in the scanned population" "missing ${MISSING:-precondition}"
+    skip "A2 an empty product plane fails loudly" "missing ${MISSING:-precondition}"
+else
+    POP=""
+    POP_RC=0
+    POP="$( cd "$REPO_ROOT" && EPIPE_GUARD_LIB_ONLY=1 bash -c '
+        . scripts/ci/check-pipefail-epipe-shortcircuit.sh
+        product_population
+    ' )" || POP_RC=$?
+
+    if [[ "$POP_RC" -ne 0 || -z "$POP" ]]; then
+        skip "A1 named product files are in the scanned population" "product_population() did not execute (rc=$POP_RC)"
+    else
+        # Each of these was proven ABSENT from the guard's population at
+        # origin/main 4654bb21: the union of gate_population() and
+        # test_corpus_population() was 428 files with zero under cli/sbin or
+        # cli/lib/nftban/{cli,core,lib,setup,helpers,cron,exporters,health}.
+        _missing=""
+        for _f in \
+            cli/sbin/nftban \
+            cli/sbin/nftban-botscan-processor \
+            cli/lib/nftban/cli/cmd_botguard.sh \
+            cli/lib/nftban/cli/cmd_status.sh \
+            cli/lib/nftban/core/nftban_firewall_conflicts.sh \
+            cli/lib/nftban/core/nftban_ddos_classic.sh \
+            cli/lib/nftban/lib/ssh_port_detect.sh \
+            cli/lib/nftban/lib/nft_schema.sh \
+            cli/lib/nftban/cron/maintenance.sh \
+            cli/lib/nftban/core/nftban_health_checks_security.sh
+        do
+            grep -qxF "$_f" <<< "$POP" || _missing="${_missing:+$_missing }$_f"
+        done
+        _n=0; _n="$(grep -c '' <<< "$POP")" || _n=0
+        if [[ -z "$_missing" ]]; then
+            pass "A1 product plane scanned ($_n files) and contains every named census-excluded file"
+        else
+            fail "A1 still outside the population: $_missing"
+        fi
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# Fixture — an isolated tree with its own packaging manifest, product files and
+# registry. Built from scratch so no arm can be satisfied by the real repo.
+# -----------------------------------------------------------------------------
+FIX=""
+FIX_OK=0
+if [[ "$PRE_OK" -eq 1 ]]; then
+    FIX="$(mktemp -d)"
+    trap 'rm -rf "$FIX"' EXIT
+    mkdir -p "$FIX/scripts/ci/data" "$FIX/packaging" "$FIX/install/systemd" \
+             "$FIX/cli/sbin" "$FIX/cli/lib/nftban/cli" "$FIX/cli/lib/nftban/core" \
+             "$FIX/cli/lib/nftban/tests" "$FIX/.github/workflows"
+
+    cp "$GUARD" "$FIX/scripts/ci/check-pipefail-epipe-shortcircuit.sh"
+    cp "$GEN"   "$FIX/scripts/ci/gen-pipefail-epipe-inventory.sh"
+
+    # Packaging manifest stub — only the %files payload lines matter; they are
+    # the authority product_population() derives the subtrees from.
+    {
+        printf '#!/usr/bin/env bash\n# fixture packaging manifest\n'
+        printf '/usr/lib/nftban/bin/*\n'
+        printf '/usr/lib/nftban/sbin/*\n'
+        printf '/usr/lib/nftban/cli/*\n'
+        printf '/usr/lib/nftban/core/*\n'
+        printf '/usr/lib/nftban/tests/*\n'
+    } > "$FIX/packaging/build_nftban.sh"
+
+    printf '[Service]\nExecStart=/usr/lib/nftban/sbin/nftban-fixture-helper\n' \
+        > "$FIX/install/systemd/nftban-fixture.service"
+
+    printf '#!/usr/bin/env bash\nset -Eeuo pipefail\ntrue\n' > "$FIX/cli/sbin/nftban"
+    printf '#!/usr/bin/env bash\nset -Eeuo pipefail\ntrue\n' > "$FIX/cli/sbin/nftban-fixture-helper"
+
+    # The BUILTIN-PRODUCER site, in the exact shape of cmd_botguard.sh:180 —
+    # `if ! echo "$output" | grep -q 'elements = {'`. Negated, so an EPIPE is a
+    # DETERMINISTIC wrong answer rather than a flaky one: 141 inverts to true and
+    # a populated set reports zero elements every time.
+    {
+        printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+        printf '_count() {\n    local output\n    output="$(nft list set ip nftban bl_v4 2>/dev/null)" || { echo 0; return; }\n'
+        printf '    if ! echo "$output" %s %s "elements = {"; then echo 0; return; fi\n' "$BAR" "$GQ"
+        printf '    echo 1\n}\n'
+    } > "$FIX/cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+
+    # The HEAD consumer site. `head` stops after the requested amount, so the
+    # producer takes SIGPIPE with the CORRECT value already on stdout — the
+    # answer is right and the status is wrong, which is the whole hazard.
+    {
+        printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+        printf '_oldest() {\n    local f\n    f="$(find /var/lib/nftban -type f -printf "%%T@ %%p\\n" 2>/dev/null %s sort -n %s %s)"\n' "$BAR" "$BAR" "$HEAD1"
+        printf '    printf "%%s" "$f"\n}\n'
+    } > "$FIX/cli/lib/nftban/core/nftban_fixture_head.sh"
+
+    # A genuinely SAFE file: read-to-EOF consumers and a grep that reads a FILE.
+    # If this is ever flagged the guard has stopped distinguishing the shape it
+    # bans from ordinary shell, and every arm above becomes noise.
+    {
+        printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+        printf '_safe() {\n'
+        printf '    local n\n'
+        printf '    n="$(nft list ruleset 2>/dev/null %s wc -l)" || n=0\n' "$BAR"
+        printf '    grep -qF nftban /etc/nftban/nftban.conf || true\n'
+        printf '    [ -z "$n" ] || grep -qF x /etc/hostname || true\n'
+        printf '    nft list ruleset 2>/dev/null %s sort -u %s tail -5 >/dev/null || true\n' "$BAR" "$BAR"
+        printf '    printf "%%s" "$n"\n}\n'
+    } > "$FIX/cli/lib/nftban/core/nftban_fixture_safe.sh"
+
+    # BULK SITES — enough distinct fingerprints that ORDERING nondeterminism is
+    # detectable by L6. MEASURED: the first version of this fixture carried two
+    # product rows, and the L6 negative control (replacing the output `sort` with
+    # `shuf`) PASSED — with two rows a shuffle reproduces the original order half
+    # the time, so the arm was green on a broken subject. A control that cannot
+    # fail is not a control; the fixture, not the assertion, was the weak part.
+    {
+        printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+        for _i in 1 2 3 4 5 6 7 8; do
+            printf '_bulk_%s() { if nft list set ip nftban s%s 2>/dev/null %s %s "e%s"; then true; fi; }\n' \
+                "$_i" "$_i" "$BAR" "$GQ" "$_i"
+        done
+    } > "$FIX/cli/lib/nftban/core/nftban_fixture_bulk.sh"
+
+    # The declared-exclusion coverage assertion (A5 in the guard) needs the test
+    # subtree to be owned by the executed-test corpus.
+    printf '#!/usr/bin/env bash\nset -Eeuo pipefail\ntrue\n' > "$FIX/cli/lib/nftban/tests/fixture_test.sh"
+    printf 'fixture_test\tcli/lib/nftban/tests/fixture_test.sh\tcli\ttest\tfixture\tCI_HERMETIC_SHELL\tci-bash\ttrue\tfalse\tfalse\tfalse\tfalse\tfalse\n' \
+        > "$FIX/scripts/ci/test-authority-index.tsv"
+
+    # EMPTY baselines, not absent ones. An absent registry makes the guard report
+    # EPIPE_REGISTRY_MISSING and stop before it names any site, which would make
+    # the detector arms below pass or fail for the wrong reason. Empty means
+    # "nothing is declared yet", so every detected site must surface by name.
+    printf '# fixture registry — intentionally empty\n' \
+        > "$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+    printf '# fixture inventory — intentionally empty\n' \
+        > "$FIX/scripts/ci/data/pipefail-epipe-test-corpus-inventory.tsv"
+
+    (
+        cd "$FIX" || exit 1
+        git init -q . >/dev/null 2>&1
+        git config user.email fixture@example.invalid >/dev/null 2>&1
+        git config user.name fixture >/dev/null 2>&1
+        git add -A >/dev/null 2>&1
+    ) && FIX_OK=1
+fi
+
+run_guard_in_fixture() {
+    local out rc=0
+    out="$( cd "$FIX" && bash scripts/ci/check-pipefail-epipe-shortcircuit.sh 2>&1 )" || rc=$?
+    printf '%s\n' "$out"
+    return "$rc"
+}
+regen_in_fixture() {
+    ( cd "$FIX" && bash scripts/ci/gen-pipefail-epipe-inventory.sh >/dev/null 2>&1 )
+}
+
+# -----------------------------------------------------------------------------
+# GROUP B — DETECTOR: the two corrections, proven on the fixture
+# -----------------------------------------------------------------------------
+echo "-- B. detector"
+BASE_OUT=""
+if [[ "$FIX_OK" -ne 1 ]]; then
+    skip "B1 a BUILTIN producer is detected" "fixture tree was not built"
+    skip "B2 a head consumer is detected" "fixture tree was not built"
+    skip "B3 no false positive on read-to-EOF consumers" "fixture tree was not built"
+else
+    # No registry yet: every fixture site must surface as UNDECLARED. That is
+    # also the cheapest possible proof that the sites are SEEN at all.
+    BASE_OUT="$(run_guard_in_fixture)" || true
+
+    if [[ "$BASE_OUT" == *"cmd_fixture_builtin.sh"* ]]; then
+        pass "B1 a BUILTIN producer (echo \"\$output\" into grep -q) IS detected"
+    else
+        fail "B1 the builtin-producer exemption is back — 21 measured product sites go invisible"
+    fi
+
+    if [[ "$BASE_OUT" == *"nftban_fixture_head.sh"* ]]; then
+        pass "B2 a 'head' consumer IS detected (19 of the census's 73 sensitive sites)"
+    else
+        fail "B2 'head' is still unrecognised as a short-circuiting consumer"
+    fi
+
+    if [[ "$BASE_OUT" == *"nftban_fixture_safe.sh"* ]]; then
+        fail "B3 FALSE POSITIVE: wc/sort/tail and a file-reading grep were flagged"
+    else
+        pass "B3 no false positive: read-to-EOF consumers and '||' are not flagged"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP C — POPULATION ASSERTION: empty must fail LOUDLY
+# -----------------------------------------------------------------------------
+echo "-- C. population assertion"
+# ⛔ Each arm matches the assertion's OWN failure token, never a prefix of the
+# counter line. `EPIPE_PRODUCT_POPULATION` is a substring of
+# `PIPEFAIL_EPIPE_PRODUCT_POPULATION_FAILURES = 0`, so matching it would have
+# passed on a GREEN run — this arm read as proven while proving nothing until the
+# token was tightened. A control that can pass while the subject is clean is not
+# a control.
+if [[ "$FIX_OK" -ne 1 ]]; then
+    skip "C1 an empty product plane FAILS" "fixture tree was not built"
+    skip "C2 an uncovered declared exclusion FAILS" "fixture tree was not built"
+    skip "C3 an entrypoint that drops pipefail FAILS" "fixture tree was not built"
+else
+    # C1 — every authority for the plane removed at once: no packaging manifest,
+    # no cli/sbin, no units. The derived population collapses to nothing. A guard
+    # that went green here would be green because it inspects nothing — the exact
+    # failure mode of the three previous population corrections, each of which
+    # had to be found by hand instead of being reported.
+    mv "$FIX/packaging/build_nftban.sh" "$FIX/away-manifest"
+    mv "$FIX/cli/sbin" "$FIX/away-sbin"
+    mv "$FIX/install/systemd" "$FIX/away-units"
+    _o="$(run_guard_in_fixture)" || true
+    mv "$FIX/away-manifest" "$FIX/packaging/build_nftban.sh"
+    mv "$FIX/away-sbin" "$FIX/cli/sbin"
+    mv "$FIX/away-units" "$FIX/install/systemd"
+    if [[ "$_o" == *"EPIPE_PRODUCT_POPULATION_EMPTY"* ]]; then
+        pass "C1 a collapsed product population FAILS loudly instead of passing vacuously"
+    else
+        fail "C1 the product population can silently shrink to nothing"
+    fi
+
+    # C2 — cli/lib/nftban/tests is kept out of the product plane ONLY because the
+    # executed-test corpus owns it. Take that away and the exclusion becomes a
+    # hole; the guard must say so rather than keep excluding.
+    cp "$FIX/scripts/ci/test-authority-index.tsv" "$FIX/.idx.bak"
+    : > "$FIX/scripts/ci/test-authority-index.tsv"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.idx.bak" "$FIX/scripts/ci/test-authority-index.tsv"
+    if [[ "$_o" == *"EPIPE_EXCLUSION_UNCOVERED"* ]]; then
+        pass "C2 a declared exclusion nothing else covers FAILS"
+    else
+        fail "C2 the tests exclusion can become an unscanned hole silently"
+    fi
+
+    # C3 — the product plane is scanned without a per-file pipefail precondition
+    # because sourced libraries inherit it from the entrypoints. That premise is
+    # asserted, not assumed: drop pipefail from an entrypoint and the guard must
+    # report that the premise no longer holds.
+    cp "$FIX/cli/sbin/nftban" "$FIX/.entry.bak"
+    printf '#!/usr/bin/env bash\nset -eu\ntrue\n' > "$FIX/cli/sbin/nftban"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.entry.bak" "$FIX/cli/sbin/nftban"
+    if [[ "$_o" == *"EPIPE_PIPEFAIL_PREMISE"* ]]; then
+        pass "C3 an entrypoint that drops pipefail FAILS (the inherited-pipefail premise is asserted)"
+    else
+        fail "C3 the inherited-pipefail premise is assumed, not asserted"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP D — RATCHET, three directions, each BY INJECTION
+# -----------------------------------------------------------------------------
+# Inspecting a ratchet does not show that it ratchets. Each direction is caused,
+# then observed, then reverted.
+echo "-- D. ratchet (injection)"
+D_READY=0
+if [[ "$FIX_OK" -eq 1 ]] && regen_in_fixture; then
+    _ctl="$(run_guard_in_fixture)" && D_READY=1 || D_READY=0
+    if [[ "$D_READY" -ne 1 ]]; then
+        skip "D control: the seeded fixture is clean" "guard is red on the freshly generated baseline"
+        printf '%s\n' "$_ctl" > "$FIX/.control.log"
+    else
+        pass "D0 control: the fixture is clean once its registry is generated"
+    fi
+else
+    skip "D control: the seeded fixture is clean" "fixture or generator did not run"
+fi
+
+if [[ "$D_READY" -ne 1 ]]; then
+    skip "D1 a NEW undeclared site FAILS" "control arm did not establish a clean baseline"
+    skip "D2 a declared site that DISAPPEARS FAILS" "control arm did not establish a clean baseline"
+    skip "D3 a registry row nothing consumes FAILS" "control arm did not establish a clean baseline"
+else
+    _victim="$FIX/cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+    _reg="$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+
+    # D1 — a NEW exposed site that nobody declared.
+    cp "$_victim" "$FIX/.victim.bak"
+    printf '_extra() { if systemctl list-units --all %s %s nftban; then true; fi; }\n' "$BAR" "$GQ" >> "$_victim"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.victim.bak" "$_victim"
+    if [[ "$_o" == *"EPIPE_UNDECLARED"* && "$_o" == *"cmd_fixture_builtin.sh"* ]]; then
+        pass "D1 a NEW undeclared exposed site FAILS"
+    else
+        fail "D1 new exposure is accepted silently — the ratchet does not ratchet up"
+    fi
+
+    # D2 — a DECLARED site that disappears without reconciliation. Deleting the
+    # site is what a real fix looks like; the registry must be reconciled with
+    # it, or a disappearance is unexplainable and the debt silently re-accumulates.
+    cp "$_victim" "$FIX/.victim.bak"
+    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_victim")"
+    printf '%s\n' "$_fixed" > "$_victim"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.victim.bak" "$_victim"
+    if [[ "$_o" == *"EPIPE_REGISTRY_STALE"* && "$_o" == *"cmd_fixture_builtin.sh"* ]]; then
+        pass "D2 a declared site that DISAPPEARS without reconciliation FAILS"
+    else
+        fail "D2 declared exposure can vanish unrecorded — silent drift is accepted"
+    fi
+
+    # D3 — a registry row nothing consumes. The file is not in any population, so
+    # the row can never constrain anything again; a registry that keeps such rows
+    # rots into decoration.
+    cp "$_reg" "$FIX/.reg.bak"
+    printf 'product\tcli/lib/nftban/core/nftban_fixture_deleted.sh\t0123456789abcdef\t1\tgrep-q\tA\tinjected rotting row\n' >> "$_reg"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.reg.bak" "$_reg"
+    if [[ "$_o" == *"EPIPE_REGISTRY_ORPHAN"* && "$_o" == *"nftban_fixture_deleted.sh"* ]]; then
+        pass "D3 a registry row that no site consumes FAILS"
+    else
+        fail "D3 the registry may rot — rows can outlive the population they describe"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP E — MODE AXIS and the schema that carries it
+# -----------------------------------------------------------------------------
+# DDoS and PortScan each run in one of TWO modes. Without a mode axis a
+# Classic-only finding and a whole-component finding are the same row — which is
+# how "DDoS is covered" gets said about a component where only one of two modes
+# was ever looked at. COVERAGE IS PER MODE; the absence of a row for a mode means
+# UNVERIFIED, never safe.
+echo "-- E. mode axis"
+REG_REAL="$REPO_ROOT/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+# ⛔ THE RULINGS LIVE IN THE UNION, NOT IN THE ACTIVE REGISTRY ALONE.
+#    A seeded row MOVES to the remediated ledger the moment the product fix lands —
+#    that is the whole point of the ledger. Asserting the row is still ACTIVE would
+#    mean the arm fails precisely when the defect is FIXED, which is a property of
+#    the defect, not of the contract. MEASURED 2026-09-18: after the v1.231.0
+#    reconciliation the two classic/PROVEN ddos_classic rows read 0 in the registry
+#    and 2 in the ledger, and E2 failed while L2 correctly proved the move lossless.
+#    The claim E2 owns is "the ruling was applied and survives", so it reads BOTH.
+LED_REAL="$REPO_ROOT/scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
+_ruling_union() { cat "$REG_REAL" "${LED_REAL}" 2>/dev/null; }
+if [[ ! -f "$REG_REAL" ]]; then
+    skip "E1 every registry row carries a valid mode and reproduction_status" "registry absent"
+    skip "E2 the owner's mode and reproduction rulings are seeded" "registry absent"
+else
+    _bad=0
+    while IFS=$'\t' read -r _p _fl _fpr _num _cns _cls _md _rp _nt; do
+        [[ -z "$_p" || "$_p" == \#* ]] && continue
+        case "$_md" in classic|suricata|shared|n/a) : ;; *) _bad=$((_bad+1)) ;; esac
+        case "$_rp" in PROVEN|DEBT|NOT_A_DEFECT|UNVERIFIED) : ;; *) _bad=$((_bad+1)) ;; esac
+    done < "$REG_REAL"
+    if [[ "$_bad" -eq 0 ]]; then
+        pass "E1 every registry row carries a valid mode and reproduction_status"
+    else
+        fail "E1 $_bad registry field(s) outside the declared vocabulary"
+    fi
+
+    # The two PROVEN DDoS sites are CLASSIC-mode only. If this ever reads
+    # `shared` or `suricata` without someone re-deriving the execution authority,
+    # a Classic finding has silently been restated as a whole-component finding.
+    _pc=0; _pc="$(awk -F'\t' '$2=="cli/lib/nftban/core/nftban_ddos_classic.sh" && $7=="classic" && $8=="PROVEN"' <(_ruling_union) | grep -c '')" || _pc=0
+    # suricata_effective_config.sh is NOT labelled suricata: its only in-tree
+    # caller is the watchdog, so both-mode reach is unproven. n/a WITH A NOTE.
+    _sn=0; _sn="$(awk -F'\t' '$2=="cli/lib/nftban/helpers/suricata_effective_config.sh" && $7=="n/a" && $9!="-" && $9!=""' <(_ruling_union) | grep -c '')" || _sn=0
+    _nd=0; _nd="$(awk -F'\t' '$2=="cli/lib/nftban/lib/nft_schema.sh" && $8=="NOT_A_DEFECT"' <(_ruling_union) | grep -c '')" || _nd=0
+    if [[ "$_pc" -eq 2 && "$_sn" -ge 1 && "$_nd" -ge 1 ]]; then
+        pass "E2 rulings seeded: 2 classic/PROVEN DDoS rows, suricata_effective_config n/a WITH a note, nft_schema NOT_A_DEFECT"
+    else
+        fail "E2 ruling seeds wrong: classic+PROVEN=$_pc (want 2), n/a+noted=$_sn (want >=1), NOT_A_DEFECT=$_nd (want >=1)"
+    fi
+fi
+
+if [[ "$D_READY" -ne 1 ]]; then
+    skip "E3 an invalid mode value FAILS" "control arm did not establish a clean baseline"
+    skip "E4 mode and reproduction_status SURVIVE a regeneration" "control arm did not establish a clean baseline"
+else
+    _reg="$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+
+    # E3 — vocabulary is closed. A typo, a blank, or a row left on the old
+    # 7-column schema would read as "no opinion" and rejoin the undifferentiated
+    # mass the axis exists to break up.
+    cp "$_reg" "$FIX/.reg.bak"
+    printf 'product\tcli/lib/nftban/cli/cmd_fixture_builtin.sh\tdeadbeefdeadbeef\t1\tgrep-q\tA\tbogus-mode\tPROVEN\tinjected\n' >> "$_reg"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.reg.bak" "$_reg"
+    if [[ "$_o" == *"EPIPE_REGISTRY_SCHEMA"* && "$_o" == *"bogus-mode"* ]]; then
+        pass "E3 a mode outside classic|suricata|shared|n/a FAILS"
+    else
+        fail "E3 the mode vocabulary is not enforced — a typo reads as 'no opinion'"
+    fi
+
+    # E4 — THE COORDINATOR'S EXPLICIT CONCERN. mode and reproduction_status are
+    # measurements. A regeneration that reset them to defaults would erase the
+    # evidence the columns exist to hold, and would do it invisibly: same row
+    # count, same site count, same exit code. Set them by hand, regenerate, and
+    # require them back.
+    _victim_file="cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+    _tmp="$FIX/.reg.edit"
+    awk -F'\t' -v OFS='\t' -v f="$_victim_file" \
+        '/^#/ {print; next} $2==f {$7="classic"; $8="PROVEN"; $9="carry-forward canary"} {print}' \
+        "$_reg" > "$_tmp" && cp "$_tmp" "$_reg"
+    if regen_in_fixture; then
+        _survived=0
+        _survived="$(awk -F'\t' -v f="$_victim_file" '$2==f && $7=="classic" && $8=="PROVEN" && $9=="carry-forward canary"' "$_reg" | grep -c '')" || _survived=0
+        if [[ "$_survived" -ge 1 ]]; then
+            pass "E4 mode, reproduction_status and note SURVIVE a regeneration"
+        else
+            fail "E4 regeneration RESET the measured columns — the evidence the axis exists to hold is erased"
+        fi
+    else
+        skip "E4 mode and reproduction_status SURVIVE a regeneration" "generator did not run in the fixture"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP F — PERMANENT REGRESSION ARM: an assertion's FAIL text must REACH STDOUT
+# -----------------------------------------------------------------------------
+# Kept permanently by instruction, and worth it. The assertion helpers once
+# returned their failure COUNT through stdout, so a caller writing
+# `n="$(assert_…)"` swallowed every FAIL line into the variable and then compared
+# a multi-line string with `-eq 0` — which bash evaluates as 0. The guard printed
+# [OK] and exited 0 while the assertion was failing. This arm fails if the FAIL
+# text ever stops being visible OR if the counter stops counting; either alone
+# would restore the silent-green mode.
+echo "-- F. assertion output integrity (permanent regression arm)"
+if [[ "$FIX_OK" -ne 1 ]]; then
+    skip "F1 a failing assertion prints its FAIL line AND counts it" "fixture tree was not built"
+else
+    cp "$FIX/scripts/ci/test-authority-index.tsv" "$FIX/.idx.bak"
+    : > "$FIX/scripts/ci/test-authority-index.tsv"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.idx.bak" "$FIX/scripts/ci/test-authority-index.tsv"
+    _text_visible=0; _count_nonzero=0
+    [[ "$_o" == *"FAIL [EPIPE_EXCLUSION_UNCOVERED]"* ]] && _text_visible=1
+    [[ "$_o" == *"PIPEFAIL_EPIPE_PRODUCT_POPULATION_FAILURES = 0"* ]] || _count_nonzero=1
+    if [[ "$_text_visible" -eq 1 && "$_count_nonzero" -eq 1 ]]; then
+        pass "F1 a failing assertion prints its FAIL line AND its counter is non-zero"
+    else
+        fail "F1 assertion output swallowed: fail_text_visible=$_text_visible counter_nonzero=$_count_nonzero — the guard can report green while failing"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# GROUP L — THE LEDGER IS NOT A WRITE-ONLY ARCHIVE
+# -----------------------------------------------------------------------------
+# A ledger that nothing validates is the same failure it was created to prevent,
+# one level up: the registry stopped losing removals, and the file recording them
+# would have been unchecked. Six invariants, each caused and then observed.
+#
+# ⛔ AUTHORITATIVE STATE MACHINE (definition lives in the ledger's header):
+#     ACTIVE REGISTRY -> (shape gone, source file survives) -> REMEDIATED LEDGER
+#     REMEDIATED LEDGER -> (same fingerprint returns) -> FAIL
+#     source file itself gone -> ORPHAN -> human review, never REMEDIATED
+# A fingerprint is in EXACTLY ONE state.
+echo "-- L. remediated ledger invariants"
+LEDGER_FIX="$FIX/scripts/ci/data/pipefail-epipe-remediated-ledger.tsv"
+if [[ "$D_READY" -ne 1 ]]; then
+    for _a in "L1 a fingerprint cannot be ACTIVE and REMEDIATED at once" \
+              "L2 a moved row preserves EVERY field and never upgrades status" \
+              "L3 a remediated fingerprint DETECTED AGAIN hard-FAILs" \
+              "L4 malformed ledger vocabulary hard-FAILs" \
+              "L5 a deleted source file is ORPHAN, never REMEDIATED" \
+              "L6 regeneration is IDEMPOTENT (byte-identical registry AND ledger)"; do
+        skip "$_a" "control arm did not establish a clean baseline"
+    done
+else
+    _reg="$FIX/scripts/ci/data/pipefail-epipe-exposure-registry.tsv"
+    _vb="$FIX/cli/lib/nftban/cli/cmd_fixture_builtin.sh"        # grep-q site
+    _vh="$FIX/cli/lib/nftban/core/nftban_fixture_head.sh"       # head site
+    _F_B="cli/lib/nftban/cli/cmd_fixture_builtin.sh"
+    _F_H="cli/lib/nftban/core/nftban_fixture_head.sh"
+
+    # ---- L6 first: a no-op regeneration must not move a single byte ----------
+    # Ordered first because every arm below reads the generator's output, and a
+    # generator that drifts on a no-op run makes each of them unattributable.
+    # Bytes, not counts: the schema-migration defect earlier in this lane had an
+    # identical row count, an identical site count and an identical exit code
+    # while every row was corrupted.
+    _h1r="$(sha256sum "$_reg" | cut -d' ' -f1)"
+    _h1l="$(sha256sum "$LEDGER_FIX" 2>/dev/null | cut -d' ' -f1)" || _h1l=""
+    if regen_in_fixture; then
+        _h2r="$(sha256sum "$_reg" | cut -d' ' -f1)"
+        _h2l="$(sha256sum "$LEDGER_FIX" 2>/dev/null | cut -d' ' -f1)" || _h2l=""
+        if [[ "$_h1r" == "$_h2r" && "$_h1l" == "$_h2l" ]]; then
+            pass "L6 regeneration is IDEMPOTENT — registry and ledger byte-identical on a no-op run"
+        else
+            fail "L6 regeneration DRIFTS on an unchanged tree: registry $_h1r -> $_h2r, ledger $_h1l -> $_h2l"
+        fi
+    else
+        skip "L6 regeneration is IDEMPOTENT (byte-identical registry AND ledger)" "regeneration did not run"
+    fi
+
+    # ---- L2: a lossless move that never upgrades a disposition ---------------
+    # One row is marked PROVEN and one UNVERIFIED, both carrying a distinctive
+    # evidence note with fn= and the security_or_count flag. Both pipelines are
+    # then removed. "Shape eliminated" and "defect reproduced" are separate facts:
+    # the UNVERIFIED row must NOT be promoted because someone deleted the line.
+    _NOTE_P="fn=_fixture_count; security_or_count_surface=YES; MEASURED 65024; canary-P"
+    _NOTE_U="fn=_fixture_oldest; security_or_count_surface=NO; canary-U"
+    _tmp="$FIX/.reg.edit"
+    awk -F'\t' -v OFS='\t' -v fb="$_F_B" -v fh="$_F_H" -v np="$_NOTE_P" -v nu="$_NOTE_U" \
+        '/^#/ {print; next}
+         $2==fb {$6="A"; $7="classic"; $8="PROVEN";     $9=np}
+         $2==fh {$6="B"; $7="n/a";     $8="UNVERIFIED"; $9=nu}
+         {print}' "$_reg" > "$_tmp" && cp "$_tmp" "$_reg"
+    _fp_b="$(awk -F'\t' -v f="$_F_B" '$2==f{print $3; exit}' "$_reg")"
+    _fp_h="$(awk -F'\t' -v f="$_F_H" '$2==f{print $3; exit}' "$_reg")"
+    _occ_b="$(awk -F'\t' -v f="$_F_B" '$2==f{print $4; exit}' "$_reg")"
+    _cons_b="$(awk -F'\t' -v f="$_F_B" '$2==f{print $5; exit}' "$_reg")"
+    cp "$_vb" "$FIX/.vb.bak"; cp "$_vh" "$FIX/.vh.bak"; cp "$_reg" "$FIX/.reg.pre"
+    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_vb")"; printf '%s\n' "$_fixed" > "$_vb"
+    _fixed="$(sed "s@${BAR}[[:space:]]*${HEAD1}@${BAR} wc -l@" "$_vh")";  printf '%s\n' "$_fixed" > "$_vh"
+    if regen_in_fixture && [[ -n "$_fp_b" && -n "$_fp_h" ]]; then
+        _row_b="$(awk -F'\t' -v fp="$_fp_b" '$3==fp' "$LEDGER_FIX")"
+        _row_h="$(awk -F'\t' -v fp="$_fp_h" '$3==fp' "$LEDGER_FIX")"
+        _lost=""
+        [[ "$_row_b" == *"$_F_B"*      ]] || _lost="$_lost file"
+        [[ "$_row_b" == *"$_fp_b"*     ]] || _lost="$_lost fingerprint"
+        [[ "$_row_b" == *"$_occ_b"*    ]] || _lost="$_lost occurrences"
+        [[ "$_row_b" == *"$_cons_b"*   ]] || _lost="$_lost consumers"
+        [[ "$_row_b" == *$'\t'"A"$'\t'* ]] || _lost="$_lost class"
+        [[ "$_row_b" == *"classic"*    ]] || _lost="$_lost mode"
+        [[ "$_row_b" == *"PROVEN"*     ]] || _lost="$_lost reproduction_status"
+        [[ "$_row_b" == *"fn=_fixture_count"* ]] || _lost="$_lost function"
+        [[ "$_row_b" == *"security_or_count_surface=YES"* ]] || _lost="$_lost security_flag"
+        [[ "$_row_b" == *"canary-P"*   ]] || _lost="$_lost note"
+        _upgraded=0
+        [[ "$_row_h" == *"UNVERIFIED"* ]] || _upgraded=1
+        if [[ -z "$_lost" && "$_upgraded" -eq 0 ]]; then
+            pass "L2 the move is LOSSLESS (file/fn/fingerprint/occurrences/consumers/class/mode/status/security-flag/note) and UNVERIFIED was not upgraded"
+        else
+            fail "L2 fields lost:${_lost:- none}; unverified_upgraded=$_upgraded"
+        fi
+    else
+        skip "L2 a moved row preserves EVERY field and never upgrades status" "regeneration did not run"
+    fi
+
+    # ---- L1: ACTIVE and REMEDIATED at the same time is a contradiction -------
+    # The generator cannot produce this, but a hand-edit or a merge can — and a
+    # fingerprint in both states makes every question about it answerable two
+    # ways. Re-add the ledgered row to the ACTIVE registry and require a failure.
+    cp "$_reg" "$FIX/.reg.l1"
+    awk -F'\t' -v OFS='\t' -v fp="$_fp_b" -v f="$_F_B" \
+        'END{print "product", f, fp, "1", "grep-q", "A", "classic", "PROVEN", "double-state injection"}' \
+        /dev/null >> "$_reg"
+    _o="$(run_guard_in_fixture)" || true
+    cp "$FIX/.reg.l1" "$_reg"
+    if [[ "$_o" == *"EPIPE_LEDGER_DOUBLE_STATE"* ]]; then
+        pass "L1 a fingerprint present in BOTH the active registry and the ledger FAILS"
+    else
+        fail "L1 a fingerprint can be ACTIVE and REMEDIATED at once — the state machine is not enforced"
+    fi
+
+    # ---- L4: the ledger vocabulary is closed, exactly like the registry's ----
+    cp "$LEDGER_FIX" "$FIX/.ledger.bak"
+    printf 'product\t%s\tfeedfacefeedface\t1\tgrep-q\tA\tnot-a-mode\tPROVEN\tmalformed injection\n' "$_F_B" >> "$LEDGER_FIX"
+    _o="$(run_guard_in_fixture)" || true
+    if [[ "$_o" == *"EPIPE_REGISTRY_SCHEMA"* && "$_o" == *"not-a-mode"* ]]; then
+        pass "L4 a malformed ledger vocabulary FAILS"
+    else
+        fail "L4 the ledger vocabulary is unchecked — a typo reads as 'no opinion'"
+    fi
+    cp "$FIX/.ledger.bak" "$LEDGER_FIX"
+
+    # ---- L3: the removed shape comes back --------------------------------------
+    cp "$FIX/.vb.bak" "$_vb"
+    _o="$(run_guard_in_fixture)" || true
+    if [[ "$_o" == *"EPIPE_REMEDIATION_REGRESSED"* ]]; then
+        pass "L3 a remediated fingerprint DETECTED AGAIN hard-FAILs"
+    else
+        fail "L3 a reintroduced remediated pipeline is not recognised as a regression"
+    fi
+    _fixed="$(sed "s@${BAR}[[:space:]]*grep -q@${BAR} grep -c@" "$_vb")"; printf '%s\n' "$_fixed" > "$_vb"
+
+    # ---- L5: the source file itself disappears -------------------------------
+    # "The file is gone" is not evidence that a defect was fixed. That is the
+    # ORPHAN case and a person decides; auto-absorbing it manufactures a claim.
+    : > "$LEDGER_FIX"
+    cp "$FIX/.reg.pre" "$_reg"
+    printf 'product\tcli/lib/nftban/core/nftban_fixture_deleted.sh\t0123456789abcdef\t1\tgrep-q\tA\tclassic\tPROVEN\tinjected orphan\n' >> "$_reg"
+    if regen_in_fixture; then
+        _absorbed=0
+        _absorbed="$(grep -c 'nftban_fixture_deleted' "$LEDGER_FIX" 2>/dev/null)" || _absorbed=0
+        _o="$(run_guard_in_fixture)" || true
+        if [[ "$_absorbed" -eq 0 ]]; then
+            pass "L5 a deleted source file stays ORPHAN and is NEVER recorded as remediated"
+        else
+            fail "L5 an ORPHAN row was silently recorded as remediated — that manufactures a fix claim"
+        fi
+    else
+        skip "L5 a deleted source file is ORPHAN, never REMEDIATED" "regeneration did not run"
+    fi
+    cp "$FIX/.vb.bak" "$_vb"; cp "$FIX/.vh.bak" "$_vh"
+fi
+
+# -----------------------------------------------------------------------------
+echo "=== PASS=$PASS FAIL=$FAIL NOT_EXECUTED=$SKIP ==="
+if [[ "$FAIL" -gt 0 ]]; then
+    echo "RESULT: FAIL"
+    exit 1
+fi
+if [[ "$SKIP" -gt 0 ]]; then
+    # A skipped arm is not a passed arm. An unmeasured control cannot clear the
+    # subject, so an incomplete run is reported as a failure of the RUN, not as
+    # a verdict on the guard.
+    echo "RESULT: NOT_EXECUTED ($SKIP arm(s) had unmet preconditions) — no verdict"
+    exit 1
+fi
+echo "RESULT: PASS"
+exit 0
