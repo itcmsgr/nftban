@@ -27,6 +27,81 @@
 
 set -Eeuo pipefail
 
+# =============================================================================
+# PARSE-FAILURE TRUTH CONTRACT  (defect B — operator-reported, monitor v1.231.0)
+# =============================================================================
+# ⛔ THE DEFECT THIS CLOSES. `nftban report email` printed
+#     jq: parse error: Expected separator between values at line 1, column 78
+# and then told the operator [SUCCESS] three times. The section whose JSON failed
+# to parse was delivered EMPTY, and nothing in the verdict said so.
+#
+# ⛔ WHY `// "0"` DEFAULTS DO NOT FIX THIS — MEASURED, NOT ASSUMED. jq's alternative
+# operator guards a MISSING FIELD. When the DOCUMENT cannot be parsed jq emits
+# nothing at all and the alternative never runs, so `.load["5m"] // "0"` yields
+# "" and not "0". Injected on lab2 at v1.231.0: valid input -> load_5m=0.65
+# cpus=8 mem=22 disk=15; malformed input -> ALL FIVE EMPTY, exit status 0.
+# Adding more `//` defaults is ineffective BY CONSTRUCTION. jq's EXIT STATUS is
+# the only thing that distinguishes "field absent" from "document unparseable".
+#
+# ⛔ AND errexit CANNOT BE RELIED ON HERE, ALSO MEASURED. This file sets
+# `set -Eeuo pipefail`, so a failing `x=$(... jq ...)` aborts when the function is
+# called bare. But its ONLY caller invokes it as
+#     if ! nftban_report_email_generate "$recipient"; then      (cmd_report.sh)
+# and `if` DISARMS errexit for the whole call tree. Measured both ways on lab2:
+# bare -> aborts at the failing assignment; under `if !` -> continues to the
+# terminator with empty values and returns 0. The file's own errexit is therefore
+# inert at the exact place it matters. Explicit rc checks, always.
+_NFTBAN_REPORT_DEGRADED_SECTIONS=""
+
+_nftban_report_mark_degraded() {
+    case " ${_NFTBAN_REPORT_DEGRADED_SECTIONS} " in
+        *" $1 "*) : ;;
+        *) _NFTBAN_REPORT_DEGRADED_SECTIONS="${_NFTBAN_REPORT_DEGRADED_SECTIONS} $1" ;;
+    esac
+}
+
+# Instrumentation for defect A (producer intermittently emits malformed JSON;
+# root cause UNKNOWN and NOT reproducible on demand). Persist a BOUNDED copy of
+# the unparseable payload so the next real occurrence is captured instead of
+# merely observed. ⛔ This MUST NOT influence the verdict: every path returns 0.
+_nftban_report_capture_unparseable() {
+    local _section="$1" _payload="$2" _dir _f
+    _dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports/parse-failures"
+    mkdir -p "$_dir" 2>/dev/null || return 0
+    _f="${_dir}/$(date -u +%Y%m%dT%H%M%SZ)-$$-${_section}.raw"
+    {
+        printf '# section=%s run_pid=%s captured_at=%s\n' \
+            "$_section" "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '%s' "${_payload:0:4096}"
+    } >"$_f" 2>/dev/null || return 0
+    chmod 0640 "$_f" 2>/dev/null || true
+    return 0
+}
+
+# Guarded jq. Returns the value on success. On a PARSE FAILURE it marks the
+# section degraded, captures the payload, emits the caller's fallback and
+# returns 1 — so "unparseable" can never be mistaken for "absent" or for zero.
+_nftban_report_jq() {
+    local _json="$1" _filter="$2" _section="$3" _fallback="${4-}"
+    local _out _rc=0
+    _out=$(printf '%s\n' "$_json" | jq -r "$_filter" 2>/dev/null) || _rc=$?
+    if (( _rc != 0 )); then
+        # ⛔ THIS FUNCTION CANNOT MARK THE SECTION ITSELF. Every call site invokes
+        # it inside COMMAND SUBSTITUTION, so it runs in a SUBSHELL and any shell
+        # variable it sets dies with that subshell. A first version of this fix
+        # marked here and the regression test caught it: rc propagated correctly
+        # while the section list came back empty. Marking is therefore done by the
+        # CALLER, in the parent shell, keyed off this return status. The capture
+        # below is safe because it is FILE-BACKED, and a file crosses the subshell
+        # boundary where a variable does not.
+        _nftban_report_capture_unparseable "$_section" "$_json"
+        printf '%s' "$_fallback"
+        return 1
+    fi
+    printf '%s' "$_out"
+    return 0
+}
+
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
@@ -407,12 +482,22 @@ nftban_report_email_generate() {
         resources_json=$(nftban_check_system_resources 2>/dev/null)
         if command -v jq &>/dev/null && [[ -n "$resources_json" ]]; then
             local data
-            data=$(echo "$resources_json" | jq -r '.data // {}')
-            load_5m=$(echo "$data" | jq -r '.load["5m"] // "0"')
-            cpu_count=$(echo "$data" | jq -r '.load.cpus // 1')
-            mem_used_percent=$(echo "$data" | jq -r '.memory.used_percent // 0')
-            disk_used_percent=$(echo "$data" | jq -r '.disk.used_percent // 0')
-            disk_path=$(echo "$data" | jq -r '.disk.path // "/var/log"')
+            # Stage 1 is the call that actually failed in production: its input is
+            # the producer's SINGLE-LINE document, which is why the operator saw
+            # "line 1, column 78". Stage 2's input is pretty-printed (16 lines), so
+            # an error at line 1 column 78 is structurally impossible there.
+            # Each `|| _nftban_report_mark_degraded` runs in THIS shell, not the
+            # substitution subshell, so the mark survives. See the note in
+            # _nftban_report_jq.
+            if data=$(_nftban_report_jq "$resources_json" '.data // {}' "system_resources"); then
+                load_5m=$(_nftban_report_jq "$data" '.load["5m"] // "0"' "system_resources" "$load_5m") || _nftban_report_mark_degraded "system_resources"
+                cpu_count=$(_nftban_report_jq "$data" '.load.cpus // 1' "system_resources" "$cpu_count") || _nftban_report_mark_degraded "system_resources"
+                mem_used_percent=$(_nftban_report_jq "$data" '.memory.used_percent // 0' "system_resources" "$mem_used_percent") || _nftban_report_mark_degraded "system_resources"
+                disk_used_percent=$(_nftban_report_jq "$data" '.disk.used_percent // 0' "system_resources" "$disk_used_percent") || _nftban_report_mark_degraded "system_resources"
+                disk_path=$(_nftban_report_jq "$data" '.disk.path // "/var/log"' "system_resources" "$disk_path") || _nftban_report_mark_degraded "system_resources"
+            else
+                _nftban_report_mark_degraded "system_resources"
+            fi
         fi
     else
         # Fallback to direct reads
@@ -446,12 +531,15 @@ nftban_report_email_generate() {
         local suricata_json
         suricata_json=$(nftban_check_suricata_status 2>/dev/null)
         if command -v jq &>/dev/null && [[ -n "$suricata_json" ]]; then
-            local sdata installed active status rules
-            sdata=$(echo "$suricata_json" | jq -r '.data // {}')
-            installed=$(echo "$sdata" | jq -r '.installed // false')
-            active=$(echo "$sdata" | jq -r '.service_active // false')
-            status=$(echo "$sdata" | jq -r '.status // "unknown"')
-            rules=$(echo "$sdata" | jq -r '.rules_loaded // 0')
+            local sdata installed="false" active="false" status="unknown" rules="0"
+            if sdata=$(_nftban_report_jq "$suricata_json" '.data // {}' "suricata"); then
+                installed=$(_nftban_report_jq "$sdata" '.installed // false' "suricata" "false") || _nftban_report_mark_degraded "suricata"
+                active=$(_nftban_report_jq "$sdata" '.service_active // false' "suricata" "false") || _nftban_report_mark_degraded "suricata"
+                status=$(_nftban_report_jq "$sdata" '.status // "unknown"' "suricata" "unknown") || _nftban_report_mark_degraded "suricata"
+                rules=$(_nftban_report_jq "$sdata" '.rules_loaded // 0' "suricata" "0") || _nftban_report_mark_degraded "suricata"
+            else
+                _nftban_report_mark_degraded "suricata"
+            fi
 
             if [[ "$installed" == "true" ]]; then
                 local suri_status_color="#22c55e" suri_status_text="Active"
@@ -534,8 +622,25 @@ nftban_report_email_generate() {
     # ==========================================================================
 
     # Send via NFTBan unified mail mechanism (subject embedded in HTML)
-    if NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Statistics Report" nftban_mail_send "$html" "$recipient" 2>/dev/null; then
-        echo "[SUCCESS] Report submitted to ${recipient} (delivery not confirmed)"
+    # ⛔ ONE AUTHORITATIVE SUCCESS LINE PER SEND (defect C). Three layers used to
+    # address the operator for a single send — nftban_mail.sh (transport),
+    # this function, and cmd_report.sh. Triplicated confirmation made a DEGRADED
+    # result look trebly confirmed: in the witnessed run the report had already
+    # lost its system-resources section and the operator was told SUCCESS three
+    # times. The transport layer's stdout is an inner detail and is suppressed
+    # here; this function no longer addresses the operator at all. The COMMAND
+    # layer owns the operator verdict. nftban_mail_send has 16 other callers and
+    # is deliberately NOT modified.
+    if NFTBAN_MAIL_SUBJECT_OVERRIDE="NFTBan Statistics Report" nftban_mail_send "$html" "$recipient" >/dev/null 2>&1; then
+        # Publish which sections, if any, could not be parsed, so the command
+        # layer can NAME them instead of asserting an unqualified success.
+        NFTBAN_REPORT_DEGRADED_SECTIONS="${_NFTBAN_REPORT_DEGRADED_SECTIONS# }"
+        export NFTBAN_REPORT_DEGRADED_SECTIONS
+        # rc=2 is SENT-BUT-INCOMPLETE. It is deliberately distinct from both 0
+        # (sent, complete) and 1 (not sent): a report whose content could not be
+        # parsed must not terminate in an unqualified SUCCESS, and it equally
+        # must not be reported as a send failure, because it WAS delivered.
+        [[ -n "$NFTBAN_REPORT_DEGRADED_SECTIONS" ]] && return 2
         return 0
     else
         echo "ERROR: Failed to send report email" >&2

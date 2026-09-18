@@ -376,10 +376,33 @@ nftban_report_cmd_email() {
 
     # Try to use the full HTML report generator
     if declare -f nftban_report_email_generate >/dev/null 2>&1; then
-        if ! nftban_report_email_generate "$recipient"; then
+        # ⛔ THREE-VALUED VERDICT (defect B). The generator now distinguishes
+        # SENT-AND-COMPLETE (0) from SENT-BUT-INCOMPLETE (2) from NOT-SENT (1).
+        # Previously any non-zero was a send failure and everything else was an
+        # unqualified SUCCESS, so a report that lost a section to a parse failure
+        # was announced as success. ⛔ The rc MUST be captured explicitly: `if !`
+        # and `||` both DISARM errexit for the whole call tree, so the generator's
+        # own `set -Eeuo pipefail` cannot be relied on to stop it mid-report —
+        # measured on lab2 at v1.231.0, bare call aborts, `if !` call continues.
+        local _gen_rc=0
+        nftban_report_email_generate "$recipient" || _gen_rc=$?
+
+        if (( _gen_rc == 1 )); then
             echo "ERROR: Failed to send email" >&2
             rm -rf "$temp_dir"
             return 1
+        fi
+
+        if (( _gen_rc == 2 )); then
+            local _degraded="${NFTBAN_REPORT_DEGRADED_SECTIONS:-unknown}"
+            if type -t nftban_print_status >/dev/null 2>&1; then
+                nftban_print_status "warn" "Report emailed to ${recipient} but INCOMPLETE — unparseable section(s): ${_degraded}"
+            else
+                echo "[PARTIAL] Report submitted to ${recipient} (delivery not confirmed) — INCOMPLETE: could not parse section(s): ${_degraded}"
+            fi
+            echo "          Those section(s) were delivered EMPTY, not as zero values." >&2
+            rm -rf "$temp_dir"
+            return 2
         fi
 
         if type -t nftban_print_status >/dev/null 2>&1; then
