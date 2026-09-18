@@ -263,7 +263,18 @@ nftban_detect_xt_compat() {
     fi
 
     # Check live ruleset for xt target or xtables compat markers
-    if nft list ruleset 2>/dev/null | grep -qE "xt target|xtables compat"; then
+    #
+    # v1.231.0 (Lane H): NO PIPELINE. `nft list ruleset | grep -q` under
+    # `set -o pipefail` yields 141 on a MATCH -- grep exits at the first hit,
+    # nft keeps writing, fills the 64 KiB pipe buffer and takes SIGPIPE -- and
+    # the if-TRUE branch below IS the detection, so a MATCH read as no-match.
+    # Measured against this function with a stubbed `nft`: 30/30 false "no
+    # conflict" at 131 KB and at 193 KB (fleet ruleset size) with the marker on
+    # line 3; correct at <=64 KB. This is the same ruling already recorded at
+    # the CSF and cPHulk detectors below -- the sweep had not reached here.
+    local _xt_ruleset
+    _xt_ruleset=$(nft list ruleset 2>/dev/null) || _xt_ruleset=""
+    if [[ "$_xt_ruleset" == *"xt target"* || "$_xt_ruleset" == *"xtables compat"* ]]; then
         status=1
         NFTBAN_FIREWALL_CONFLICTS+=("XT-COMPAT: iptables-nft compatibility rules detected in live ruleset")
         NFTBAN_FIREWALL_CONFLICTS+=("  └─ These rules are created by iptables-nft and may conflict with NFTBan")
@@ -314,7 +325,20 @@ nftban_detect_conflicting_tables() {
     # Check for known conflicting tables with PRIORITY-BASED SAFETY
 
     # 1. ip filter (created by iptables-nft, Plesk, CSF, etc.)
-    if echo "$tables" | grep -q "^table ip filter"; then
+    #
+    # v1.231.0 (Lane H) -- SHAPE ELIMINATION, not a reproduced defect.
+    # The three table-presence tests below and the ghost-table test in
+    # nftban_cleanup_ghost_tables were `echo "$tables" | grep -q ...`, the same
+    # short-circuit shape this file already banned at the CSF/cPHulk detectors.
+    # Their producer is `nft list tables` -- one short line per table -- so the
+    # 32 KB where that shape first misses (measured: 6/20 at 32 KB, 14/20 at
+    # 64 KB, 20/20 at 96 KB) needs ~1,100 tables and is not production-
+    # plausible. They are de-pipelined so the shape does not survive the sweep,
+    # NOT because a miss was observed here.
+    #
+    # `$'\n'"$tables"` + a leading-newline needle reproduces grep's `^` anchor
+    # exactly: a prefix match at the start of some line. Semantics unchanged.
+    if [[ $'\n'"$tables" == *$'\n'"table ip filter"* ]]; then
         # v1.53.0: Check if table has an INPUT chain before checking priority.
         # Empty tables (no chains) are INFO, not CRITICAL — iptables-nft creates
         # empty tables on any iptables invocation but they have no hooks.
@@ -346,8 +370,8 @@ nftban_detect_conflicting_tables() {
         fi
     fi
 
-    # 2. ip6 filter
-    if echo "$tables" | grep -q "^table ip6 filter"; then
+    # 2. ip6 filter  (see the shape note at the `ip filter` test above)
+    if [[ $'\n'"$tables" == *$'\n'"table ip6 filter"* ]]; then
         if nft list chain ip6 filter INPUT &>/dev/null; then
             local filter6_prio
             filter6_prio=$(nft -j list chain ip6 filter INPUT 2>/dev/null | jq -r '.nftables[]? | select(.chain?) | .chain.prio // 0' 2>/dev/null | head -1)
@@ -375,7 +399,7 @@ nftban_detect_conflicting_tables() {
     fi
 
     # 3. firewalld tables (always critical - it manages the entire firewall)
-    if echo "$tables" | grep -q "^table inet firewalld"; then
+    if [[ $'\n'"$tables" == *$'\n'"table inet firewalld"* ]]; then
         status=2
         NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: firewalld table exists - conflicts with NFTBan")
         NFTBAN_FIREWALL_CONFLICTS+=("  └─ FIX: systemctl stop firewalld && systemctl disable firewalld")
@@ -1266,7 +1290,12 @@ nftban_cleanup_ghost_tables() {
     # delete, matching the Go CleanGhostTables posture exactly.
     local preserved=0 unreadable=0
     for ghost in "${_NFTBAN_KNOWN_GHOST_TABLES[@]}"; do
-        if echo "$live_tables" | grep -qx "table $ghost"; then
+        # v1.231.0 (Lane H) -- SHAPE ELIMINATION (see the note in
+        # nftban_detect_conflicting_tables). `grep -qx` is a WHOLE-LINE match,
+        # so both the leading and the trailing newline are part of the needle;
+        # the trailing $'\n' appended to $live_tables makes the final line
+        # matchable after command substitution stripped its newline.
+        if [[ $'\n'"$live_tables"$'\n' == *$'\n'"table $ghost"$'\n'* ]]; then
             ((found++)) || true
             if [[ "$report_only" == "true" ]]; then
                 [[ "$quiet" == "false" ]] && echo "  Ghost table found: $ghost"
@@ -1394,9 +1423,26 @@ nftban_validate_hook_authority() {
         # Parse for base chains with hook registrations
         local has_input=false has_forward=false has_output=false
         # Match "type filter hook input" / "type nat hook input" etc.
-        echo "$table_content" | grep -qE "hook[[:space:]]+input" && has_input=true
-        echo "$table_content" | grep -qE "hook[[:space:]]+forward" && has_forward=true
-        echo "$table_content" | grep -qE "hook[[:space:]]+output" && has_output=true
+        #
+        # v1.231.0 (Lane H): NO PIPELINE. `echo "$var" | grep -q` short-circuits
+        # exactly like the external-producer form -- `echo` runs in a forked
+        # subshell, blocks once the 64 KiB pipe buffer is full and takes SIGPIPE
+        # when grep exits at the first match. Measured against THIS function
+        # with a stubbed `nft`: a foreign table whose content carries
+        # "hook input" on line 3 is reported CRITICAL 20/20 at 4 KB and 16 KB,
+        # only 9/20 at 64 KB, and 0/20 at 128 KB and 192 KB -- a competing
+        # filtering authority silently downgraded to "CLEAR (no hooks)".
+        #
+        # The earlier "unreachable at size" reading of this site does not hold.
+        # The skip above excludes NFTBan's OWN tables (ip/ip6 nftban, ip/ip6
+        # raw), so the 168-196 KB figure for NFTBan's ruleset never applies
+        # here; what reaches this parse is a FOREIGN table's content, and a
+        # large foreign firewall (iptables-nft/CSF `ip filter` carrying a deny
+        # list, firewalld with rich rules) is precisely the case this detector
+        # exists to catch. Bigger competing firewall => more certain the miss.
+        if [[ "$table_content" =~ hook[[:space:]]+input ]]; then has_input=true; fi
+        if [[ "$table_content" =~ hook[[:space:]]+forward ]]; then has_forward=true; fi
+        if [[ "$table_content" =~ hook[[:space:]]+output ]]; then has_output=true; fi
 
         if [[ "$has_input" == "true" || "$has_forward" == "true" ]]; then
             # CRITICAL: foreign table has input or forward hooks.
