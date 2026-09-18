@@ -7,7 +7,7 @@ cli/lib/nftban/tests/audit_rotate_retired_gateb_test.sh	1
 cli/lib/nftban/tests/b2_badbot_aibot_v188_test.sh	1
 cli/lib/nftban/tests/banner_nobanner_v153_test.sh	1
 cli/lib/nftban/tests/boot_projection_v1229_13_test.sh	1
-cli/lib/nftban/tests/botscan_enforcement_claim_evidence_backed_v1229_10_test.sh	1
+cli/lib/nftban/tests/botscan_health_truth_contract_v1231_0_test.sh	2
 cli/lib/nftban/tests/botscan_operator_truth_contract_v219_0_test.sh	1
 cli/lib/nftban/tests/cleanup_reachability_v1229_3_test.sh	8
 cli/lib/nftban/tests/cli_error_with_hint_v144_test.sh	1
