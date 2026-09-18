@@ -11,6 +11,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.231.0] - 2026-09-18 — evidence integrity: counts that were structurally zero, health that reported OK while blind
+
+A release about surfaces that reported success without having observed anything. The BotScan
+cursor never advanced because a *successful* bounded read was treated as fatal; emission and ban
+counters were structurally incapable of being non-zero; BotGuard reported 0 suspects for a
+populated nftables set; and the health surface could say OK while blind, stalled, or
+backpressured.
+
+⛔ **Operationally this release is NOT closed by publication.** P0-A, P0-B and P0-C are fixed in
+code and proven in lab, but their production proof is the incident hosts (`srv3`/`srv4`), where
+the observable claims are cursor advance, object convergence, spool drain, backpressure clearing
+and truthful counts. Until that is measured, treat the defects as FIXED-IN-RELEASE, not
+operationally verified.
+
+### BotScan ingestion and checkpointing (P0-A)
+- A bounded read that obtained exactly the bytes it requested was treated as a fatal error, so
+  the cursor was never persisted and the same input was re-read indefinitely.
+- Root cause is `producer | short-circuiting-consumer` under `pipefail`: the consumer exits at
+  first match, the producer takes SIGPIPE, and `pipefail` converts a SUCCESSFUL match into a
+  pipeline failure.
+- Acceptance is keyed on the **consumer contract** — `consumer_rc == 0` and
+  `actual_bytes == requested_bytes`. Producer exit status is recorded as a diagnostic and is
+  never authoritative, because SIGPIPE disposition is execution-plane state: systemd defaults
+  `IgnoreSIGPIPE=yes`, so the identical read reports `1` (EPIPE) inside a service and `141`
+  (signal) over SSH.
+
+### Counts and health truth (P0-B, P0-C)
+- `bans_emitted_total` and the signal-emission counters were structurally zero — a false green
+  on the health surface rather than a measurement.
+- BotScan health could report OK while blind, stalled, unknown, or backpressured. Each of those
+  is now a distinct, asserted state rather than an absence read as success.
+- UNKNOWN is preserved through aggregation, rendering and JSON as `null` / `"UNKNOWN"`, and is
+  never coerced to `0`.
+
+### BotGuard and firewall conflict detection
+- Three stacked fail-to-zero defects made BotGuard report 0 suspects for a populated set: an
+  unquoted `nft list set` argument under a strict `IFS`, an `echo | grep -q` pipeline that failed
+  once output outgrew the pipe buffer (measured: passes at 43,629 B, fails at 43,677 B), and
+  containment being used as set membership.
+- An unreadable nftables set is reported as UNKNOWN, never as the number 0.
+- `xt target` / `xtables compat` detection failed 30/30 at a 192,935 B ruleset, and foreign-table
+  hook parsing returned CRITICAL 20/20 at 4K but 0/20 at 128K+ — the same pipe-buffer boundary.
+
+### Evidence machinery
+- The double-zero detector was approximately 95% blind and could pass with zero subjects.
+- A PR-range identity guard now rejects AI co-author trailers before they enter `main`.
+- The EPIPE short-circuit guard derives its population from execution authority (packaging
+  manifest + `ExecStart` closure) and asserts that derivation, rather than trusting a
+  representation that can silently shrink. The exposure registry carries a required **mode**
+  column, so a Classic DDoS finding can no longer read as coverage of the whole component.
+
+⛔ **The EPIPE class is not closed.** 73 class-A and 161 class-E sites remain as declared,
+tracked debt across 551 registry rows / 596 sites. What ships is the ratchet that prevents the
+population from shrinking without a declaration — not the remediation.
+
+---
+
 ## [v1.230.0] - 2026-09-14 — operator-surface truth and post-update convergence
 
 Gate 6R makes an update tell the truth about itself. The v1.229.13→.14 rollout left dns1 in
