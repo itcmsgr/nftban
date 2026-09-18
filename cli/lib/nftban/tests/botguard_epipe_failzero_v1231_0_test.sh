@@ -403,9 +403,48 @@ CHILD
 chmod +x "$tmp/run_test_cmd.sh"
 
 # The pre-fix membership test, DECLARED INLINE (never read from origin/main).
-# argv is left CORRECT here so the arm isolates the pipeline/regex defect rather
-# than re-proving the argv one, which A7 already owns.
-INVERT_MEMBERSHIP=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  printf \'%s\\n\' "$output" | grep -q "$needle"\n}'
+# argv is left CORRECT in both shapes below so these arms isolate the
+# pipeline/regex defect rather than re-proving the argv one, which A7 already owns.
+#
+# =============================================================================
+# TWO INVERSIONS, DELIBERATELY. DO NOT MERGE THEM BACK INTO ONE.
+# =============================================================================
+# The pre-fix spelling had TWO independent defects layered on one line: a
+# SHORT-CIRCUIT PIPELINE (timing) and UNANCHORED-BRE CONTAINMENT (semantics).
+# Different arms exist to prove different ones, and a single combined inversion
+# forced every arm to carry both.
+#
+#   _PIPE — `printf … | grep -q`. Reproduces the EPIPE mechanism. Used ONLY by
+#           A8a-INV and A8b, on the LARGE fixture, where the producer has
+#           hundreds of KB still to write when the consumer short-circuits, so
+#           the race is a CERTAINTY and the control is deterministic.
+#
+#   _BRE  — `grep -q "$needle" <<< "$output"`. Reproduces the MATCHING SEMANTICS
+#           and nothing else. Used by the A9 arms. A here-string is fully written
+#           by the shell BEFORE grep is exec'd, so there is no concurrent
+#           producer, no pipe, and no SIGPIPE -- while grep still sees the same
+#           bytes (`<<<` appends the same trailing newline `printf '%s\n'` did)
+#           and applies the same unanchored BRE to the WHOLE rendered set: `.`
+#           is a wildcard, metacharacters in the needle are interpreted, and
+#           non-element text (the `size 65535` header) is matchable.
+#
+# WHY. A9 validates MEMBERSHIP SEMANTICS only. Driving it through a producer
+# pipeline imported an unrelated timing-dependent mechanism and made a SEMANTIC
+# control flaky. Measured on the 222-byte A9 fixture under `set -Eeuo pipefail`:
+# the _PIPE shape returns rc=141 (SIGPIPE, adopted by pipefail, inverting a
+# successful match into "not found") 1-4 times per 4000 iterations under CPU
+# saturation and 0 times per 4000 idle -- and the `10.0.0.1` and `.*` needles are
+# hit at the SAME rate, so which A9 arm fails on a given run is a draw, not a
+# property of the needle. The _BRE shape is 0/4000 under the same load.
+#
+# This is NOT changing a product acceptance criterion to make CI green. No arm's
+# pass condition moved: A9b-INV must still report FOUND, and A8's arms keep the
+# real `producer | short-circuit-consumer` inversion on the large fixture. What
+# changed is the EXECUTION MECHANISM of the semantic controls -- an unrelated
+# nondeterministic mechanism is removed from the test that was not built to
+# exercise it, and RETAINED in the test that was.
+INVERT_MEMBERSHIP_PIPE=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  printf \'%s\\n\' "$output" | grep -q "$needle"\n}'
+INVERT_MEMBERSHIP_BRE=$'_botguard_set_contains_ip() {\n  local output="$1"; local needle="$2"\n  grep -q "$needle" <<< "$output"\n}'
 
 # The witness travels through a FILE, not a variable. Every caller invokes
 # probe_membership inside a command substitution -- `r="$(probe_membership ...)"`
@@ -465,7 +504,7 @@ if [[ "$got" == "FOUND" ]]; then
 else
   no "A8a first element $FIRST_IP of a $BIG_BYTES B set -> $got (expected FOUND; security false negative)"
 fi
-inv="$(probe_membership "$BIG" "$FIRST_IP" "$INVERT_MEMBERSHIP")" || true
+inv="$(probe_membership "$BIG" "$FIRST_IP" "$INVERT_MEMBERSHIP_PIPE")" || true
 if [[ "$inv" == "ABSENT" ]]; then
   ok "A8a-INV pipeline shape reported $FIRST_IP ABSENT from the set that holds it -- arm is discriminating"
 else
@@ -475,7 +514,7 @@ fi
 # --- A8b position dependence: the LAST element is found even when broken ------
 # This is what makes A8a's failure mode invisible to a casual test, and it is
 # why the arm must probe the FIRST element specifically.
-inv_last="$(probe_membership "$BIG" "$LAST_IP" "$INVERT_MEMBERSHIP")" || true
+inv_last="$(probe_membership "$BIG" "$LAST_IP" "$INVERT_MEMBERSHIP_PIPE")" || true
 fix_last="$(probe_membership "$BIG" "$LAST_IP")" || true
 
 # ⛔ ONLY THE FIXED SHAPE IS ASSERTED HERE. An earlier revision also REQUIRED the
@@ -551,7 +590,7 @@ neg_arm() {  # $1 label, $2 fixture, $3 needle
 # address; the set holds only 10.0.0.12. A substring search says "member".
 neg_arm "A9b 10.0.0.1 -> ABSENT (set holds 10.0.0.12) -- containment no longer reported as membership" \
         "$SEM" "10.0.0.1"
-inv="$(probe_membership "$SEM" "10.0.0.1" "$INVERT_MEMBERSHIP")" || true
+inv="$(probe_membership "$SEM" "10.0.0.1" "$INVERT_MEMBERSHIP_BRE")" || true
 inv_arm "A9b-INV old shape reported 10.0.0.1 FOUND -- the false positive was real, and is now closed" \
         "A9b-INV old shape" "$inv"
 
@@ -568,7 +607,7 @@ DOTF="$tmp/dot.nft"
 } > "$DOTF"
 neg_arm "A9d 10.0.0.12 -> ABSENT though the rendered set contains 10x0y0z12 -- '.' is no longer a wildcard" \
         "$DOTF" "10.0.0.12"
-inv="$(probe_membership "$DOTF" "10.0.0.12" "$INVERT_MEMBERSHIP")" || true
+inv="$(probe_membership "$DOTF" "10.0.0.12" "$INVERT_MEMBERSHIP_BRE")" || true
 inv_arm "A9d-INV old shape matched 10x0y0z12 via '.' as a wildcard -- regex interpretation was real" \
         "A9d-INV old shape" "$inv"
 
@@ -582,7 +621,7 @@ done
 # therefore the one inversion arm that CANNOT distinguish "served" from "not
 # served" by its own verdict, which is exactly why the witness is consulted here
 # too rather than trusting the FOUND.
-inv="$(probe_membership "$SEM" '.*' "$INVERT_MEMBERSHIP")" || true
+inv="$(probe_membership "$SEM" '.*' "$INVERT_MEMBERSHIP_BRE")" || true
 if ! probe_served; then
   nx "A9e-INV old shape" "FIXTURE_NOT_SERVED: the subject's own read returned '$(probe_setbytes)' bytes (child rc=$(probe_childrc)); '.*' matches the empty string, so a FOUND here would have been vacuous"
 elif [[ "$inv" == "FOUND" ]]; then
