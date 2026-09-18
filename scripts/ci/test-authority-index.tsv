@@ -274,6 +274,7 @@ rebuild_terminal_discriminator_v1229_3_test	cli/lib/nftban/tests/rebuild_termina
 recovery_legacy_reconcile_v12012_test	cli/lib/nftban/tests/recovery_legacy_reconcile_v12012_test.sh	firewall	test	recovery	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 release_population_completeness_v1229_5_test	cli/lib/nftban/tests/release_population_completeness_v1229_5_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 render_authority_ssh_union_v1229_13_test	cli/lib/nftban/tests/render_authority_ssh_union_v1229_13_test.sh	firewall	test	render-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+report_email_parse_failure_truth_test	cli/lib/nftban/tests/report_email_parse_failure_truth_test.sh	mail	test	mail-report-parse-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 report_generator_content_truth_v1229_15_test	cli/lib/nftban/tests/report_generator_content_truth_v1229_15_test.sh	core	test	report-generator-content-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 report_html_json_script_safe_v1227_test	cli/lib/nftban/tests/report_html_json_script_safe_v1227_test.sh	mail	test	report-html-script-safe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 report_writer_truth_v1228_5_test	cli/lib/nftban/tests/report_writer_truth_v1228_5_test.sh	mail	test	report-writer-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -379,4 +380,3 @@ zabbix_lifecycle_verb_parity_v1229_10_test	cli/lib/nftban/tests/zabbix_lifecycle
 zabbix_lld_population_authority_v1229_11_test	cli/lib/nftban/tests/zabbix_lld_population_authority_v1229_11_test.sh	metrics	test	zabbix-lld-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 zabbix_status_shared_timer_verdict_v1229_10_test	cli/lib/nftban/tests/zabbix_status_shared_timer_verdict_v1229_10_test.sh	metrics	test	zabbix-status-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 zabbix_string_truncation_v1229_13_test	cli/lib/nftban/tests/zabbix_string_truncation_v1229_13_test.sh	cross-cutting	test	exporter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
-report_email_parse_failure_truth_test	cli/lib/nftban/tests/report_email_parse_failure_truth_test.sh	mail	test	mail-report-parse-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
