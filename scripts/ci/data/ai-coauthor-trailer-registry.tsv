@@ -1,0 +1,52 @@
+# NFTBan AI co-author trailer registry (v1.231.0, Lane E)
+#
+# DECLARED AUTHORITY for scripts/ci/check-ai-coauthor-trailers.sh. The guard
+# reads THIS FILE; it hardcodes no identity of its own. Enforcement and policy
+# cannot silently diverge because there is only one place to change.
+#
+# POLICY SOURCE — AI_ASSISTED_DEVELOPMENT.md, "Commit metadata policy":
+#
+#     Commit metadata MUST NOT credit AI tools as authors. Do not add
+#     `Co-Authored-By: Claude`, `Co-Authored-By: ChatGPT`, or any equivalent
+#     AI/`OpenAI`/`Anthropic` co-author trailer to commits going forward.
+#
+# The four prohibited identities below are the FOUR THE POLICY NAMES IN TEXT:
+# Claude, ChatGPT, OpenAI, Anthropic. Nothing else is listed.
+#
+# ⛔ DECLARED GAP — NOT SILENTLY WIDENED. The policy's closing clause, "or any
+# equivalent AI ... co-author trailer", is an open category, not an enumerable
+# list. A guard cannot derive "equivalent AI tool" from the text without
+# inventing policy (is `Copilot` an AI tool? `Gemini`? a fine-tuned internal
+# model with a product name?). Widening the registry on a CI author's judgement
+# would make the machine the policy holder. So: this registry enforces exactly
+# what the policy NAMES, and any further identity is added HERE, deliberately,
+# by whoever also edits AI_ASSISTED_DEVELOPMENT.md. An unlisted AI identity is
+# a POLICY gap, not a detector bug.
+#
+# ⛔ SCOPE IS THE CO-AUTHOR TRAILER. `Claude-Session:` and similar provenance
+# trailers are NOT co-authorship claims and are NOT prohibited by the policy
+# text; they are out of scope here. Prose that merely mentions an AI tool is
+# likewise out of scope — the subject of this gate is git trailer syntax.
+#
+# ⛔ POPULATION IS THE INCOMING PR RANGE (BASE..HEAD) ONLY. Historical commits
+# keep their legacy trailers; the policy says history is NOT rewritten.
+#
+# MATCHING
+#   - Only lines whose key matches git trailer syntax for the co-author token
+#     are considered (case-insensitive, leading whitespace and whitespace before
+#     the colon tolerated). Substring matches in ordinary prose are ignored.
+#   - `pattern` is a POSIX ERE matched CASE-INSENSITIVELY against the trailer
+#     VALUE (everything after the colon).
+#   - `class=allowed-automation` is evaluated FIRST and exempts the line. These
+#     are real automation identities, not authorship claims by an AI tool.
+#   - A human contributor who is genuinely named Claude is not an AI tool: add
+#     them as an `allowed-automation`-style exemption row here (class
+#     `allowed-human`) rather than weakening a prohibited pattern.
+#
+# class<TAB>pattern<TAB>label<TAB>note
+allowed-automation	github-actions\[bot\]	github-actions[bot]	GitHub's own workflow identity; not an authorship claim by an AI tool
+allowed-automation	dependabot\[bot\]	dependabot[bot]	Dependency update bot; not an authorship claim by an AI tool
+prohibited-ai-identity	(^|[^[:alnum:]])claude([^[:alnum:]]|$)	Claude	Named verbatim in AI_ASSISTED_DEVELOPMENT.md
+prohibited-ai-identity	(^|[^[:alnum:]])chatgpt([^[:alnum:]]|$)	ChatGPT	Named verbatim in AI_ASSISTED_DEVELOPMENT.md
+prohibited-ai-identity	(^|[^[:alnum:]])openai([^[:alnum:]]|$)	OpenAI	Named verbatim in AI_ASSISTED_DEVELOPMENT.md (covers chatgpt@openai.com)
+prohibited-ai-identity	(^|[^[:alnum:]])anthropic([^[:alnum:]]|$)	Anthropic	Named verbatim in AI_ASSISTED_DEVELOPMENT.md (covers noreply@anthropic.com)

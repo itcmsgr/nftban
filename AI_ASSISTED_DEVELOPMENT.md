@@ -29,6 +29,40 @@ ChatGPT and Claude).
   **legacy metadata only** and are not authorship or copyright assignments. Git
   history is **not** rewritten to remove them.
 
+### Enforcement of the commit metadata policy
+
+As of v1.231.0 the policy above is enforced in CI, and this section states the
+transition plainly rather than claiming the repository is clean.
+
+- **The repository is not free of AI co-author trailers, and no claim is made
+  that it is.** Measured at commit `3c5d9286`: 2,734 of 4,219 commits carry an
+  AI `Co-Authored-By` trailer, 26 of them in the last 100. Those commits are
+  **not rewritten**. Published tags, including `v1.228.2`, stay as published.
+- **Enforcement begins at the enforcement commit**
+  `<ENFORCEMENT_COMMIT_SHA — placeholder; fill in with the SHA of the commit
+  that introduced scripts/ci/check-ai-coauthor-trailers.sh once it is merged>`.
+  Commits before that commit retain their historical AI trailers as legacy
+  metadata, exactly as the clause above provides.
+- **Scope is the incoming pull-request range only.**
+  `scripts/ci/check-ai-coauthor-trailers.sh` inspects `BASE..HEAD`, where `BASE`
+  is the merge base of the pull request with its target branch. It never
+  inspects history outside that range, so the gate cannot become a demand to
+  rewrite published commits. A test control asserts exactly that
+  (`cli/lib/nftban/tests/ai_coauthor_trailer_guard_v1231_test.sh`, T3).
+- **What is prohibited is declared, not inferred.** The identities are listed in
+  `scripts/ci/data/ai-coauthor-trailer-registry.tsv` and are the ones this
+  document names in text: Claude, ChatGPT, OpenAI, Anthropic. The clause "or any
+  equivalent AI ... co-author trailer" is an open category that a script cannot
+  enumerate on its own; an AI identity not listed in the registry is a gap in
+  this policy to be closed by editing both files, not a detector bug.
+- **Detection is on git trailer syntax**, case- and whitespace-tolerant as git
+  itself is. A commit message that merely discusses an AI tool in prose is not a
+  violation. `github-actions[bot]` and `dependabot[bot]` are automation
+  identities, not authorship claims, and are allowlisted.
+- The gate runs in the `Policy Gates` job of
+  `.github/workflows/ci-architecture.yml` on the `pull_request` event, and is
+  blocking.
+
 ---
 
 Copyright © 2024-2026 Antonios Voulvoulis.

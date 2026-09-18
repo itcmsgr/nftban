@@ -2,6 +2,7 @@
 # Source authority: meta:ta.* headers in tracked shell test files (cli/lib/nftban/tests/*_test.sh)
 # Regenerate: scripts/ci/test-authority.py generate   |   Verify: scripts/ci/test-authority.py check
 id	path	owner	type	module	execution_class	gate	hermetic	requires_root	requires_network	requires_systemd	requires_nftables	requires_package	timeout	exclusion_reason	activation_condition
+ai_coauthor_trailer_guard_v1231_test	cli/lib/nftban/tests/ai_coauthor_trailer_guard_v1231_test.sh	cross-cutting	test	commit-identity	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 alert_bookkeeping_nonfatal_v174_test	cli/lib/nftban/tests/alert_bookkeeping_nonfatal_v174_test.sh	health	test	alert	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 alert_logger_devlog_sandbox_v1981_test	cli/lib/nftban/tests/alert_logger_devlog_sandbox_v1981_test.sh	health	test	alert	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 audit_rotate_retired_gateb_test	cli/lib/nftban/tests/audit_rotate_retired_gateb_test.sh	core	test	audit	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
