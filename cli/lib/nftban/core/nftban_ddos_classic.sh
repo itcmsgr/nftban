@@ -1088,8 +1088,29 @@ nftban_ddos_list_banned() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
+    # v1.231.0 (Lane H): the two presence GATES below were
+    #   `timeout 10s nft list set ... | grep -q "elements"`.
+    # Under this file's `set -Eeuo pipefail` (:30) that short-circuits: grep
+    # exits at the first match, nft keeps writing, fills the 64 KiB pipe buffer
+    # and takes SIGPIPE, so pipefail reports the pipeline FAILED even though
+    # PIPESTATUS[1]=0 proves the match succeeded -- and the if-TRUE branch IS
+    # the "are there bans?" decision. A POPULATED ban list then renders
+    # "  (none)": an enforcement-visibility truth defect, the operator told
+    # nothing is banned while thousands are.
+    # Measured against THIS function with a stubbed `nft` streaming real
+    # `nft list set` rendering, 20 trials per size:
+    #     100 el /   4.8 KB  -> entries 20/20      1000 el /  47.7 KB -> 20/20
+    #     500 el /  23.9 KB  -> entries 20/20      2000 el /  95.3 KB -> 20/20
+    #    5000 el / 240.4 KB  -> "(none)" 20/20   20000 el / 969.0 KB -> 20/20 "(none)"
+    # `cat` is the CONSERVATIVE producer; the real `timeout 10s nft list set`
+    # is slower and misses lower.
+    # Only the GATE changes. The body pipeline is left byte-identical: its
+    # consumers (grep -A100 / grep -v / tr / sed) all read to EOF, so none of
+    # them short-circuits and none of them can send the producer SIGPIPE.
+    local _v4_set_out _v6_set_out
     echo "IPv4 banned IPs (${ban_set}):"
-    if timeout 10s nft list set "${table_v4}" "${ban_set}" 2>/dev/null | grep -q "elements"; then
+    _v4_set_out=$(timeout 10s nft list set "${table_v4}" "${ban_set}" 2>/dev/null) || _v4_set_out=""
+    if [[ "$_v4_set_out" == *elements* ]]; then
         timeout 10s nft list set "${table_v4}" "${ban_set}" 2>/dev/null | grep -A100 "elements" | grep -v "elements" | tr ',' '\n' | sed 's/[{}]//g' | sed 's/^[ \t]*/  /'
     else
         echo "  (none)"
@@ -1097,7 +1118,8 @@ nftban_ddos_list_banned() {
 
     echo ""
     echo "IPv6 banned IPs (${ban_set}6):"
-    if timeout 10s nft list set "${table_v6}" "${ban_set}6" 2>/dev/null | grep -q "elements"; then
+    _v6_set_out=$(timeout 10s nft list set "${table_v6}" "${ban_set}6" 2>/dev/null) || _v6_set_out=""
+    if [[ "$_v6_set_out" == *elements* ]]; then
         timeout 10s nft list set "${table_v6}" "${ban_set}6" 2>/dev/null | grep -A100 "elements" | grep -v "elements" | tr ',' '\n' | sed 's/[{}]//g' | sed 's/^[ \t]*/  /'
     else
         echo "  (none)"
