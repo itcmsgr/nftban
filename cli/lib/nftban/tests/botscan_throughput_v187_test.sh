@@ -120,11 +120,25 @@ o1="$(nftban_botscan_process_logs "" 60 2>&1)" || fail "A cycle1 rc!=0: $o1"
 o2="$(nftban_botscan_process_logs "" 60 2>&1)" || fail "A cycle2 rc!=0: $o2"
 o3="$(nftban_botscan_process_logs "" 60 2>&1)" || fail "A cycle3 rc!=0: $o3"
 p1="$(procof "$o1")"; p2="$(procof "$o2")"; p3="$(procof "$o3")"
-[[ "$p1" == "3" ]] || fail "A: cycle1 should process 3 (cap), got '$p1' ($o1)"
-[[ "$p2" == "3" ]] || fail "A: cycle2 should process the NEXT 3 (forward, no tail-skip), got '$p2' ($o2)"
+# ⛔ EXPECTATIONS UPDATED IN v1.232 — THE PRODUCT CONTRACT DELIBERATELY CHANGED.
+# This arm required EXACTLY 3 lines per cycle, i.e. ONE bounded read per object
+# per cycle, and treated "the next 3 arrive next cycle" as correct. That is the
+# defect v1.232 fixes: an object of K chunks needed at least K CYCLES to reach
+# EOF, so nothing retired and srv3 sat at 47 objects / 1.09 GB with at_eof=0 for
+# 24 days. The scan now DRAINS an object across consecutive reads within one
+# cycle, bounded by the cycle deadline; this fixture sets BOTSCAN_SCAN_BUDGET_SECS=0
+# (unlimited), so one cycle completes it.
+#
+# ⛔ THE INVARIANT THIS ARM OWNS IS UNCHANGED AND STILL ASSERTED: FORWARD progress
+# with NO SKIPPED BYTES — all 6 lines examined, none tail-skipped, object fully
+# drained. Only the per-cycle SHAPE moved. NOT a relaxation: the total is still
+# pinned at exactly 6, and cycles 2 and 3 must now find NOTHING, which is a
+# STRICTER statement about completion than "3 then 3".
+[[ "$p1" == "6" ]] || fail "A: cycle1 should DRAIN all 6 (depth-first, unlimited budget), got '$p1' ($o1)"
+[[ "$p2" == "0" ]] || fail "A: cycle2 should process 0 (already drained in cycle 1), got '$p2' ($o2)"
 [[ "$p3" == "0" ]] || fail "A: cycle3 should process 0 (drained), got '$p3'"
-[[ $(( p1 + p2 )) -eq 6 ]] || fail "A: total processed must equal all 6 lines (no skip), got $((p1+p2))"
-echo "PASS A: forward cursor drains backlog across cycles with no skipped bytes"
+[[ $(( p1 + p2 + p3 )) -eq 6 ]] || fail "A: total processed must equal all 6 lines (no skip), got $((p1+p2+p3))"
+echo "PASS A: forward cursor drains the backlog to EOF with no skipped bytes"
 
 # ---------------------------------------------------------------------------
 # (B) PREFILTER soundness — candidate kept (hit recorded), unrelated dropped
