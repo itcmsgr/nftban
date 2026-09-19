@@ -181,6 +181,7 @@ health_timers_truth_v150_test	cli/lib/nftban/tests/health_timers_truth_v150_test
 help_verb_icons_v153_test	cli/lib/nftban/tests/help_verb_icons_v153_test.sh	cli	test	help-render	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 hostname_fallback_v1_139_1_test	cli/lib/nftban/tests/hostname_fallback_v1_139_1_test.sh	metrics	test	exporter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 http_log_discovery_v177_test	cli/lib/nftban/tests/http_log_discovery_v177_test.sh	botscan	test	http-logs	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+http_logs_record_boundary_v1232_test	cli/lib/nftban/tests/http_logs_record_boundary_v1232_test.sh	botscan	test	http-logs-record-boundary	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 immutable_health_verify_v163_test	cli/lib/nftban/tests/immutable_health_verify_v163_test.sh	health	test	immutable-flags-health	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 install_update_observability_v215_test	cli/lib/nftban/tests/install_update_observability_v215_test.sh	update	test	update-observability	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 installer_wording_v153_test	cli/lib/nftban/tests/installer_wording_v153_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
