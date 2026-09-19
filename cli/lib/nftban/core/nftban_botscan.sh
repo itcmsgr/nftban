@@ -1648,6 +1648,30 @@ nftban_botscan_ban_ip() {
 # =============================================================================
 
 # Process logs (main entry point)
+# =============================================================================
+# v1.232 — CURSOR OFFSET READBACK (completion-priority input)
+# =============================================================================
+# Mirrors the READER's cursor identity exactly. ⛔ Deriving a second, independent
+# path-based identity here is precisely how the v1.209.3 relocation orphaned the
+# cursor set fleet-wide; this calls nftban_http_cursor_key with the SAME namespace
+# the reader uses for the same subject, and never pattern-matches a neighbour.
+_nftban_botscan_cursor_offset() {
+    local f="$1" ns="" key sf v
+    [[ "$f" == "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}"/* ]] \
+        && ns="${BOTSCAN_SPOOL_CURSOR_NS:-_botscan_spool_}"
+    if declare -F nftban_http_cursor_key >/dev/null 2>&1; then
+        key="$(NFTBAN_HTTP_CURSOR_NS="$ns" nftban_http_cursor_key "$f")"
+    else
+        printf '0'; return 0
+    fi
+    sf="${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}/${key}"
+    [[ -r "$sf" ]] || { printf '0'; return 0; }
+    IFS= read -r v < "$sf" 2>/dev/null || v=""
+    v="${v#*:}"
+    [[ "$v" =~ ^[0-9]+$ ]] || v=0
+    printf '%s' "$v"
+}
+
 nftban_botscan_process_logs() {
     local log_file="${1:-}"
     local time_window="${2:-60}"
@@ -1796,6 +1820,32 @@ nftban_botscan_process_logs() {
         rot=$(( rot % n ))
     fi
 
+    # =========================================================================
+    # v1.232 COMPLETION PRIORITY — finish what is already started, first.
+    # =========================================================================
+    # Objects that already hold durable progress but have NOT reached EOF are
+    # moved to the front of this cycle's order. Rationale: the whole point of the
+    # depth drain below is that an object reaches EOF and RETIRES, which is what
+    # actually reduces the spool and clears backpressure. Spending a bounded cycle
+    # on untouched objects while half-finished ones wait is how "everyone a
+    # little, nobody to the end" happens.
+    if [[ -z "$log_file" && "$n" -gt 1 ]]; then
+        local -a _bs_inprog=() _bs_fresh=()
+        local _bs_j _bs_f _bs_off _bs_sz
+        for (( _bs_j=0; _bs_j<n; _bs_j++ )); do
+            _bs_f="${logs[$(( (rot + _bs_j) % n ))]}"
+            _bs_off="$(_nftban_botscan_cursor_offset "$_bs_f")"
+            _bs_sz="$(stat -c%s "$_bs_f" 2>/dev/null || echo 0)"
+            if [[ "$_bs_off" -gt 0 && "$_bs_off" -lt "$_bs_sz" ]]; then
+                _bs_inprog+=("$_bs_f")
+            else
+                _bs_fresh+=("$_bs_f")
+            fi
+        done
+        logs=( ${_bs_inprog[@]+"${_bs_inprog[@]}"} ${_bs_fresh[@]+"${_bs_fresh[@]}"} )
+        rot=0   # the order above already encodes where to start
+    fi
+
     local processed=0 files_done=0 i idx f
     for (( i=0; i<n; i++ )); do
         # Deadline check BETWEEN files only (clean boundary). A whole file is always read+
@@ -1806,7 +1856,36 @@ nftban_botscan_process_logs() {
         fi
         idx=$(( (rot + i) % n ))
         f="${logs[$idx]}"
+        # =====================================================================
+        # v1.232 DEPTH-FIRST DRAIN — the root cause this release closes.
+        # =====================================================================
+        # ⛔ THE DEFECT. This loop used to perform EXACTLY ONE bounded read per
+        # object per cycle and then move on, so an object of K chunks needed at
+        # least K CYCLES to reach EOF — unconditionally. FALSIFIED on lab2 against
+        # main eb909b4d: ONE object, ONE cycle, BOTSCAN_SCAN_BUDGET_SECS=0
+        # (UNLIMITED) and nothing else in the spool still advanced the cursor by
+        # EXACTLY ONE CAP (4096 of 41040 B). With the budget unlimited and the
+        # object alone, the stop was STRUCTURAL, not a deadline. Consequence on
+        # srv3: 47 objects x 1.09 GB never retired anything, so the spool never
+        # fell and backpressure never cleared.
+        #
+        # ⛔ SURVIVAL AND ROTATION WERE AMPLIFIERS, NOT THE CAUSE. The falsifier
+        # ran in mode=FULL covering 47/47 files with the budget never hit — the
+        # most favourable conditions available — and STILL reached at_EOF=0 with
+        # the spool unchanged. The SURVIVAL cap division and the rotation breadth
+        # multiply K; they do not create it. Fixing either ALONE would have left
+        # the one-chunk-per-cycle law intact.
+        #
+        # THE CONTRACT: keep reading the SAME object until it reaches EOF, then
+        # let it retire, and only then advance. Bounded by the EXISTING cycle
+        # deadline — never a second independent budget — and the reader persists
+        # the cursor on every pass, so a mid-object stop leaves durable progress
+        # and the next cycle resumes the SAME object rather than replaying it.
+        local _bs_pass=0 _bs_chunk_lines
+        while :; do
+        _bs_chunk_lines=0
         while IFS= read -r line; do
+            _bs_chunk_lines=$((_bs_chunk_lines + 1))
             nftban_botscan_parse_line_g "$line" || continue   # v1.187.1 no-fork (was $(parse_line))
             nftban_botscan_process_entry "$_BS_IP" "$_BS_URL" "$_BS_METHOD" "$_BS_STATUS" "$_BS_UA"
             processed=$((processed + 1))
@@ -1830,6 +1909,19 @@ nftban_botscan_process_logs() {
                 else tail -1000 -- "$f" 2>/dev/null; fi
             } | { if [[ -n "$_bs_pf_bin" ]]; then "$_bs_pf_bin" --filter "$_pf" 2>/dev/null || cat; else cat; fi; }
         )
+            _bs_pass=$(( _bs_pass + 1 ))
+            # EOF: in FORWARD mode the reader emits nothing once the cursor has
+            # reached the object's size. An empty pass is therefore "drained".
+            (( _bs_chunk_lines == 0 )) && break
+            # A PINNED single file uses a fixed `tail` read, not the incremental
+            # cursor, so draining it would re-read the same tail forever.
+            [[ -n "$log_file" ]] && break
+            # Bounded by the EXISTING cycle deadline. Stopping here is SAFE: the
+            # cursor was persisted by the reader on this pass.
+            if [[ "$budget" -gt 0 && $(( SECONDS - start_secs )) -ge "$budget" ]]; then
+                deadline_hit=1; break
+            fi
+        done
         files_done=$((files_done + 1))
         # v1.209.3: reap this spool file if it is now fully consumed, so the disk-backed
         # spool does not accumulate. SAFE: only the BATCH (processor) path runs this, it
@@ -1839,9 +1931,30 @@ nftban_botscan_process_logs() {
         # unit tests that re-scan a STATIC spool across cycles, and an operator safety
         # valve (bounding then relies on the collector total-dir cap + backpressure).
         if [[ "${BOTSCAN_BATCH_SIGNAL_MODE:-}" == "true" && -z "$log_file" && "${BOTSCAN_SPOOL_REAP:-true}" == "true" ]]; then
+            # ⛔ `|| true` IS LOAD-BEARING — DO NOT REMOVE IT AS REDUNDANT.
+            # The reaper returns 1 for KEPT, which is a NORMAL outcome, not an
+            # error: "ABSENT -> UNKNOWN completion -> KEEP", not-yet-at-EOF, a
+            # symlink, or a cursor conflict all return 1 while behaving exactly
+            # as intended. This file sets `set -Eeuo pipefail` at line 28, which
+            # arms errexit in ANY shell that sources it, so an UNGUARDED call
+            # aborted the whole scan cycle at the FIRST object that was merely
+            # KEPT — the overwhelmingly common case on a backlogged host, where
+            # almost nothing is complete yet.
+            # MEASURED on lab2: reaper rc=1 for a not-completed object (file
+            # correctly retained); the same call under `set -Eeuo pipefail`
+            # terminated the enclosing shell before the next statement ran.
+            # The sibling call site at :833 already avoids this by using
+            # `if nftban_botscan_reap_consumed_spool ...; then`, and
+            # botscan_spool_cursor_identity_v1229_10_test guards every call with
+            # `|| true` for exactly this reason. This site was the outlier.
+            # ⛔ REACHABILITY IS CALLER-DEPENDENT AND NOT YET PROVEN IN PRODUCTION:
+            # a caller that invokes the scan via `if`/`||` disarms errexit and
+            # would not abort. srv3 cycles reached 6-7 files, so it was NOT
+            # aborting there. Fixed regardless — a normal outcome must never be
+            # able to terminate the cycle, whatever the caller happens to do.
             nftban_botscan_reap_consumed_spool "$f" \
                 "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
-                "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}"
+                "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}" || true
         fi
     done
 
@@ -1863,7 +1976,13 @@ nftban_botscan_process_logs() {
             echo "Spool reclaimed: ${_rc_n} object(s) retired, ${_rc_k} kept"
     fi
 
-    # Persist rotation cursor: next cycle starts at the first file we did NOT finish.
+    # Persist rotation cursor: next cycle starts at the first file we did not TOUCH.
+    # ⛔ This comment previously claimed "the first file we did NOT finish", which
+    # the code did not implement: `rot` advances by files_done, and files_done
+    # counts every file TOUCHED, including one left far from EOF. That gap is now
+    # closed from the other side — the drain above finishes an object before
+    # advancing — so touched and finished coincide except when the deadline stops
+    # a drain mid-object, and COMPLETION PRIORITY puts that object first next cycle.
     if [[ -z "$log_file" && "$n" -gt 0 ]]; then
         printf '%s\n' "$(( (rot + files_done) % n ))" > "${rot_file}.tmp" 2>/dev/null \
             && mv -f "${rot_file}.tmp" "$rot_file" 2>/dev/null || true
