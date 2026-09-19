@@ -104,37 +104,44 @@ B1=$(du -sb "$SPOOL"|cut -f1); N1=$(find "$SPOOL" -type f|wc -l)
 [[ "$N1" -lt "$N0" ]] && ok "B objects retired in-cycle ($N0 -> $N1)" || no "B nothing retired ($N0 -> $N1)"
 [[ "$B1" -lt "$B0" ]] && ok "B spool bytes DECREASED ($B0 -> $B1, reclaimed $(( B0 - B1 )) B)" || no "B spool unchanged at $B0 B"
 
-echo "=== C — deadline mid-object: durable resume, and NO REPLAY INTRODUCED ==="
-reset; export BOTSCAN_SPOOL_REAP=false BOTSCAN_SCAN_BUDGET_SECS=1
+echo "=== C — resume from a durable mid-object offset, with NO REPLAY ==="
+# ⛔ THIS ARM MUST NOT DEPEND ON WHEN THE DEADLINE FIRES. A previous version asserted
+# "cycle 1 stopped mid-object", produced by setting a 1s budget. That is a TIMING
+# PROPERTY, not a contract: on a 2-core lab the deadline bit mid-object, on the faster
+# CI runner the same cycle drained all 79200 B and the assertion failed. Whether a
+# deadline lands mid-object is a property of host speed.
+# The CONTRACT being tested is "a durable mid-object offset is resumed, not replayed".
+# So the mid-object state is CONSTRUCTED directly by seeding the cursor, which is
+# deterministic on any host, and the deadline is left out of it entirely.
+reset; export BOTSCAN_SPOOL_REAP=false BOTSCAN_SCAN_BUDGET_SECS=0
 h="$SPOOL/_var_log_c.log"; NL=900; mkuniq "$h" "$NL"; HZ=$(stat -c%s "$h")
-c=0; prev=0; back=0; first=0
+# Seed a durable cursor part-way in, exactly as a deadline-interrupted cycle would leave it.
+SEED=$(( CAP * 3 )); HINO=$(stat -c%i "$h")
+printf '%s:%s\n' "$HINO" "$SEED" > "$OFF/_botscan_spool__var_log_c.log"
+[[ "$(offof "$h")" == "$SEED" ]] && ok "C seeded a durable mid-object offset ($SEED of $HZ B)" || no "C could not seed the cursor"
+c=0; prev=$SEED; back=0
 while (( c < 40 )); do
   cycle "" 60 >/dev/null 2>&1; c=$((c+1)); cur=$(offof "$h")
-  (( c == 1 )) && first=$cur
   (( cur < prev )) && { back=1; break; }
   prev=$cur; (( cur >= HZ )) && break
 done
-[[ "$first" -gt 0 && "$first" -lt "$HZ" ]] \
-  && ok "C the deadline stopped the drain MID-OBJECT with a durable offset ($first of $HZ B)" \
-  || no "C cycle 1 did not stop mid-object (offset $first of $HZ) — the resume checks below are vacuous"
 [[ "$back" -eq 0 ]] && ok "C cursor never moved backwards across $c cycles" || no "C cursor REGRESSED (replay)"
-[[ "$prev" == "$HZ" ]] && ok "C resumed after the deadline and reached EOF ($c cycles)" || no "C never reached EOF (offset $prev of $HZ)"
+[[ "$prev" == "$HZ" ]] && ok "C resumed from the seeded offset and reached EOF ($c cycles)" || no "C never reached EOF (offset $prev of $HZ)"
 tot=$(wc -l < "$SEEN"); uq=$(sort -u "$SEEN" | wc -l); dup=$(( tot - uq ))
 [[ "$dup" -eq 0 ]] && ok "C ZERO duplicate examinations — the drain introduces no replay" || no "C $dup duplicate examinations (replay introduced)"
+# ⛔ THE SHARPEST NO-REPLAY CHECK: nothing BEFORE the seeded offset may be re-read.
+# A resume that restarted at 0 would re-examine those lines and still show no
+# duplicates within this run, so counting duplicates alone cannot catch it.
+pre=$(( SEED / (HZ / NL) ))
+early=$(awk -F'seq-' 'NF>1{n=$2+0; if (n < '"$pre"'-2) c++} END{print c+0}' "$SEEN")
+[[ "$early" -eq 0 ]] && ok "C nothing before the seeded offset was re-examined (true resume, not a restart)" \
+                     || no "C $early line(s) before the seed were re-read — the cursor was not honoured"
 # ⛔ RELATIVE loss rule (owner 2026-09-18). A PRE-EXISTING reader defect drops data at
-# chunk boundaries — tracked separately as
-# OPEN-BOTSCAN-BOUNDED-READ-DROPS-A-LINE-AT-EVERY-CHUNK-BOUNDARY, and NOT this lane's
-# to fix (it changes shared ingestion semantics used by the collector). This lane must
-# only prove it adds NO FURTHER loss, so the bound is per-boundary, not absolute.
-# ⛔ THE BOUNDARY COUNT MUST USE THE *EFFECTIVE* CAP, NOT THE CONFIGURED ONE.
-# The adaptive block divides the per-file cap by 2 (FAIR_SHARE) or 4 (SURVIVAL)
-# each cycle, so the real window can be CAP/4 and the object is then crossed ~4x
-# more often. An earlier version of this arm computed boundaries from CAP and
-# reported 42 losses against a ~20 bound as "the drain ADDED loss" — it had not,
-# the bound was simply wrong. Use the worst-case effective cap so the assertion
-# stays a genuine per-boundary rate check rather than a mode-dependent flake.
-bnd=$(( HZ / (CAP / 4) + 1 )); miss=$(( NL - uq ))
-[[ "$miss" -le "$bnd" ]] && ok "C loss stays within the PRE-EXISTING per-boundary rate ($miss missed over <=$bnd worst-case boundaries; separate handle owns the fix)" \
+# chunk boundaries — tracked as OPEN-BOTSCAN-BOUNDED-READ-DROPS-A-LINE-AT-EVERY-CHUNK-BOUNDARY
+# and NOT this lane's to fix. This lane must only prove it adds NO FURTHER loss, so the
+# bound is per-boundary, using the WORST-CASE effective cap (mode may divide it by 4).
+bnd=$(( HZ / (CAP / 4) + 1 )); seen_expected=$(( NL - pre )); miss=$(( seen_expected - uq ))
+[[ "$miss" -le "$bnd" ]] && ok "C loss stays within the PRE-EXISTING per-boundary rate ($miss over <=$bnd worst-case boundaries)" \
                          || no "C loss $miss EXCEEDS ~$bnd boundaries — the drain ADDED loss"
 
 echo "=== D — SURVIVAL: deadline still authoritative AND convergence occurs ==="
