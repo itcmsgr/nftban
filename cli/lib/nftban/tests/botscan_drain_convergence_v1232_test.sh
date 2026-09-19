@@ -71,7 +71,7 @@ nftban_botscan_process_entry(){ printf '%s\n' "$2" >> "$SEEN"; return 0; }   # i
 
 mkuniq(){ : >"$1"; local i; for ((i=1;i<=$2;i++)); do
     printf '1.2.3.4 - - [18/Sep/2026:10:00:00 +0000] "GET /seq-%06d HTTP/1.1" 404 12 "-" "curl/8"\n' "$i" >>"$1"; done; }
-offof(){ local c="$OFF/_botscan_spool_$(basename "$1")"; [[ -f "$c" ]] || { echo 0; return; }; local v; v=$(cat "$c" 2>/dev/null); echo "${v#*:}"; }
+offof(){ local c v; c="$OFF/_botscan_spool_$(basename "$1")"; [[ -f "$c" ]] || { echo 0; return; }; v=$(cat "$c" 2>/dev/null); echo "${v#*:}"; }
 reset(){ rm -f "$SPOOL"/* "$OFF"/* 2>/dev/null; : >"$SEEN"; }
 
 echo "=== A — DEPTH: one object drains to EOF within ONE cycle ==="
@@ -114,6 +114,9 @@ while (( c < 40 )); do
   (( cur < prev )) && { back=1; break; }
   prev=$cur; (( cur >= HZ )) && break
 done
+[[ "$first" -gt 0 && "$first" -lt "$HZ" ]] \
+  && ok "C the deadline stopped the drain MID-OBJECT with a durable offset ($first of $HZ B)" \
+  || no "C cycle 1 did not stop mid-object (offset $first of $HZ) — the resume checks below are vacuous"
 [[ "$back" -eq 0 ]] && ok "C cursor never moved backwards across $c cycles" || no "C cursor REGRESSED (replay)"
 [[ "$prev" == "$HZ" ]] && ok "C resumed after the deadline and reached EOF ($c cycles)" || no "C never reached EOF (offset $prev of $HZ)"
 tot=$(wc -l < "$SEEN"); uq=$(sort -u "$SEEN" | wc -l); dup=$(( tot - uq ))
