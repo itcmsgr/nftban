@@ -1821,32 +1821,71 @@ nftban_botscan_process_logs() {
     fi
 
     # =========================================================================
-    # v1.232 COMPLETION PRIORITY — finish what is already started, first.
+    # v1.232 INTER-CYCLE RESUME — hold the rotation on an unfinished object.
     # =========================================================================
-    # Objects that already hold durable progress but have NOT reached EOF are
-    # moved to the front of this cycle's order. Rationale: the whole point of the
-    # depth drain below is that an object reaches EOF and RETIRES, which is what
-    # actually reduces the spool and clears backpressure. Spending a bounded cycle
-    # on untouched objects while half-finished ones wait is how "everyone a
-    # little, nobody to the end" happens.
-    if [[ -z "$log_file" && "$n" -gt 1 ]]; then
-        local -a _bs_inprog=() _bs_fresh=()
-        local _bs_j _bs_f _bs_off _bs_sz
-        for (( _bs_j=0; _bs_j<n; _bs_j++ )); do
-            _bs_f="${logs[$(( (rot + _bs_j) % n ))]}"
-            _bs_off="$(_nftban_botscan_cursor_offset "$_bs_f")"
-            _bs_sz="$(stat -c%s "$_bs_f" 2>/dev/null || echo 0)"
-            if [[ "$_bs_off" -gt 0 && "$_bs_off" -lt "$_bs_sz" ]]; then
-                _bs_inprog+=("$_bs_f")
-            else
-                _bs_fresh+=("$_bs_f")
-            fi
+    # ⛔ THE DEFECT THIS REPLACES. The first attempt at completion priority used a
+    # BINARY predicate — "off > 0 && off < size" — to put in-progress objects first.
+    # On a real backlog EVERY object is already in-progress, so the partition
+    # separated nothing, plain rotation order applied, and after a deadline stop
+    # `rot` advanced past the half-drained object, which then waited a FULL rotation
+    # (~40 cycles on srv3) before being touched again. Per-object progress stayed
+    # effectively round-robin: measured ~40 KiB/object/cycle against the published
+    # artifact's ~39 KiB — the same to within noise, because throughput is
+    # DEADLINE-bound, not read-pattern-bound. THE PREDICATE HAD NO DISCRIMINATORY
+    # POWER IN EXACTLY THE STATE IT WAS WRITTEN FOR, and no lab fixture could expose
+    # that because every fixture's objects finished inside one cycle.
+    #
+    # THE CONTRACT: if a cycle stops mid-object, PIN that object; the next cycle
+    # resumes IT FIRST and keeps resuming it until EOF and retirement; only then does
+    # rotation advance.
+    #
+    # ⛔ TWO CONSTRAINTS, both load-bearing:
+    #   (1) A PIN MUST NEVER BE PERMANENT. An object that becomes unreadable, is
+    #       retired, is replaced (inode change), completes, or simply refuses to
+    #       finish must release the pin — otherwise one bad object deadlocks the
+    #       whole queue and starves every other object, which is a worse failure
+    #       than the one being fixed. Every escape below is explicit and logged.
+    #   (2) THE PIN CHANGES ORDER, NEVER THE RESOURCE CEILING. The cycle deadline is
+    #       untouched; a pinned object gets the same bounded budget any object gets.
+    local _bs_pin_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/scan-pin"
+    local _bs_pinned="" _bs_pin_tries=0
+    if [[ -z "$log_file" && "$n" -gt 0 && -r "$_bs_pin_file" ]]; then
+        IFS='|' read -r _bs_pinned _bs_pin_tries < "$_bs_pin_file" 2>/dev/null || true
+        [[ "${_bs_pin_tries:-}" =~ ^[0-9]+$ ]] || _bs_pin_tries=0
+    fi
+    if [[ -n "$_bs_pinned" ]]; then
+        local _bs_pp="" _bs_e _bs_drop=""
+        for _bs_e in "${logs[@]}"; do
+            [[ "$(basename "$_bs_e")" == "$_bs_pinned" ]] && { _bs_pp="$_bs_e"; break; }
         done
-        logs=( ${_bs_inprog[@]+"${_bs_inprog[@]}"} ${_bs_fresh[@]+"${_bs_fresh[@]}"} )
-        rot=0   # the order above already encodes where to start
+        if   [[ -z "$_bs_pp"    ]]; then _bs_drop="no longer in the scan set (retired or rotated out)"
+        elif [[ ! -f "$_bs_pp"  ]]; then _bs_drop="not a regular file"
+        elif [[ ! -r "$_bs_pp"  ]]; then _bs_drop="unreadable"
+        elif (( _bs_pin_tries >= ${BOTSCAN_SCAN_PIN_MAX_CYCLES:-64} )); then
+            _bs_drop="pin budget exhausted after ${_bs_pin_tries} cycles"
+        else
+            local _bs_po _bs_ps
+            _bs_po="$(_nftban_botscan_cursor_offset "$_bs_pp")"
+            _bs_ps="$(stat -c%s "$_bs_pp" 2>/dev/null || echo 0)"
+            [[ "$_bs_po" =~ ^[0-9]+$ ]] || _bs_drop="cursor unreadable or conflicted"
+            [[ -z "$_bs_drop" && "$_bs_po" -ge "$_bs_ps" ]] && _bs_drop="already complete"
+        fi
+        if [[ -n "$_bs_drop" ]]; then
+            echo "[botscan] releasing pinned object ${_bs_pinned}: ${_bs_drop}"
+            rm -f "$_bs_pin_file" 2>/dev/null || true
+            _bs_pinned=""; _bs_pin_tries=0
+        else
+            # Pinned object first; every other object keeps its rotation order behind
+            # it. A NEWLY ARRIVED object therefore cannot take priority from a pinned
+            # one — it queues behind, exactly as an old object does.
+            local -a _bs_ord=("$_bs_pp")
+            for _bs_e in "${logs[@]}"; do [[ "$_bs_e" == "$_bs_pp" ]] || _bs_ord+=("$_bs_e"); done
+            logs=("${_bs_ord[@]}")
+            rot=0
+        fi
     fi
 
-    local processed=0 files_done=0 i idx f
+    local processed=0 files_done=0 i idx f _bs_last_f=''
     for (( i=0; i<n; i++ )); do
         # Deadline check BETWEEN files only (clean boundary). A whole file is always read+
         # processed atomically so the cursor offset reflects exactly what was processed;
@@ -1856,6 +1895,7 @@ nftban_botscan_process_logs() {
         fi
         idx=$(( (rot + i) % n ))
         f="${logs[$idx]}"
+        _bs_last_f="$f"
         # =====================================================================
         # v1.232 DEPTH-FIRST DRAIN — the root cause this release closes.
         # =====================================================================
@@ -1974,6 +2014,22 @@ nftban_botscan_process_logs() {
         _rc_n="${_rc_out%% *}"; _rc_k="${_rc_out##* }"
         [[ "${_rc_n:-0}" =~ ^[0-9]+$ ]] && [[ "${_rc_n:-0}" -gt 0 ]] && \
             echo "Spool reclaimed: ${_rc_n} object(s) retired, ${_rc_k} kept"
+    fi
+
+    # v1.232 INTER-CYCLE RESUME — set or clear the pin for the next cycle.
+    # Pin ONLY when the object we were on is still short of EOF; clearing on
+    # completion is what lets rotation advance after a retirement.
+    if [[ -z "$log_file" && -n "${_bs_last_f:-}" ]]; then
+        local _bs_lo _bs_ls
+        _bs_lo="$(_nftban_botscan_cursor_offset "$_bs_last_f")"
+        _bs_ls="$(stat -c%s "$_bs_last_f" 2>/dev/null || echo 0)"
+        if [[ -f "$_bs_last_f" && "$_bs_lo" =~ ^[0-9]+$ && "$_bs_lo" -lt "$_bs_ls" ]]; then
+            printf '%s|%s\n' "$(basename "$_bs_last_f")" "$(( _bs_pin_tries + 1 ))" \
+                > "${_bs_pin_file}.tmp" 2>/dev/null \
+                && mv -f "${_bs_pin_file}.tmp" "$_bs_pin_file" 2>/dev/null || true
+        else
+            rm -f "$_bs_pin_file" 2>/dev/null || true
+        fi
     fi
 
     # Persist rotation cursor: next cycle starts at the first file we did not TOUCH.
