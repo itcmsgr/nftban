@@ -34,6 +34,7 @@ botscan_enforcement_claim_evidence_backed_v1229_10_test	cli/lib/nftban/tests/bot
 botscan_exp_rfi_fp_v218_13_test	cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	botscan	test	botscan-pattern-exp-rfi	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_fcrdns_v189_test	cli/lib/nftban/tests/botscan_fcrdns_v189_test.sh	botscan	test	botscan-fcrdns-crawler	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_health_truth_contract_v1231_0_test	cli/lib/nftban/tests/botscan_health_truth_contract_v1231_0_test.sh	botscan	test	botscan-adaptive	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+botscan_intercycle_resume_v1232_test	cli/lib/nftban/tests/botscan_intercycle_resume_v1232_test.sh	botscan	test	botscan-intercycle-resume	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_logsource_validity_r22a_test	cli/lib/nftban/tests/botscan_logsource_validity_r22a_test.sh	botscan	test	botscan-logsource-validity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_name_discoverable_v1229_10_test	cli/lib/nftban/tests/botscan_name_discoverable_v1229_10_test.sh	botscan	test	botscan-operator-discoverability	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 botscan_nofork_parity_v1871_test	cli/lib/nftban/tests/botscan_nofork_parity_v1871_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
