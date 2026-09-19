@@ -51,7 +51,17 @@ declare -F nftban_botscan_process_logs >/dev/null || { ne "process_logs undefine
 nftban_botscan_process_entry(){ return 0; }
 
 L='1.2.3.4 - - [18/Sep/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 404 12 "-" "curl/8"'
-mk(){ : >"$1"; while (( $(stat -c%s "$1") < $2 )); do printf '%s\n' "$L" >>"$1"; done; }
+LLEN=$(( ${#L} + 1 ))
+# ⛔ FIXTURE GENERATION MUST BE O(FILES), NOT O(LINES). A first version appended
+# line-by-line with `printf >>` inside a `stat` loop: 42 objects x ~1700 lines is
+# ~71,000 appends plus 71,000 stat calls, and the test TIMED OUT in CI against the
+# 120s per-test budget. A timeout is its own verdict class — it is neither PASS nor
+# FAIL — so a slow fixture does not merely waste time, it destroys the result.
+# Build each distinct size ONCE with `yes | head -n`, then copy.
+proto(){ local out="$1" bytes="$2"; [[ -s "$out" ]] && return 0
+         yes "$L" 2>/dev/null | head -n "$(( bytes / LLEN ))" > "$out"; }
+mk(){ local tgt="$1" bytes="$2"; local pr="$SB/.proto_$bytes"   # separate local: $bytes is not in scope within its own declaration
+     proto "$pr" "$bytes"; cp -f "$pr" "$tgt"; }
 offof(){ local c="$OFF/_botscan_spool_$1"; [[ -f "$c" ]] || { echo 0; return; }; local v; v=$(cat "$c" 2>/dev/null); echo "${v#*:}"; }
 seed(){ local f="$1"; printf '%s:%s\n' "$(stat -c%i "$f")" "$2" > "$OFF/_botscan_spool_$(basename "$f")"; }
 snap(){ local f b; for f in "$SPOOL"/*; do [[ -f "$f" ]] || continue; b=$(basename "$f"); echo "$b=$(offof "$b")"; done | sort; }
