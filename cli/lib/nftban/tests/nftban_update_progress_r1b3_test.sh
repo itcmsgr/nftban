@@ -57,8 +57,12 @@ echo "R1b-3 update progress + readiness — tests"
 # T1 (unit): _update_phase format + default total
 OUT=$(_update_phase 1 "Backup")
 ar "$OUT" '\[1/6\] Backup$'                         "T1 phase marker format [1/6] Backup"
-OUT=$(_update_phase 2 "Install" "package install may take up to 60s")
-ar "$OUT" '\[2/6\] Install — package install may take up to 60s$' "T1 phase marker with long-step hint"
+# v1.232.0: the hint here is a FORMAT fixture only. It deliberately no longer
+# uses the old "package install may take up to 60s" text — that bound was false
+# on every large-ruleset host (monitor 244s, srv3 277s) and must not survive in
+# the repo even as test data.
+OUT=$(_update_phase 2 "Install" "example hint")
+ar "$OUT" '\[2/6\] Install — example hint$' "T1 phase marker with long-step hint"
 
 # T2: ordered fixed-phase markers wired in cmd_update.sh (success path)
 gf '_update_phase 1 "Backup"'                       "T2 phase 1 Backup wired"

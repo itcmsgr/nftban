@@ -588,7 +588,15 @@ _cmd_update_main_locked() {
     # Execute update based on source
     # V108 Item 6: when source resolves to "github" (direct package-manager path),
     # only proceed for rpm/deb install types. Reject source/mixed/unknown.
-    _update_phase 2 "Install" "package install may take up to 60s"
+    # v1.232.0 (BUG-LONG-CONVERGENCE-OPERATION-NO-PROGRESS-VISIBILITY): the old
+    # hint claimed "package install may take up to 60s". Measured: monitor 244s,
+    # srv3 277s, dns1 79s. The bound was false on every large-ruleset host and is
+    # what made a working installer indistinguishable from a hang.
+    _update_phase 2 "Install"
+    _update_log INFO "Package installation can take several minutes on systems with large nftables rulesets."
+    _update_log INFO "Progress will be shown while the installer is working."
+    local _install_started=$SECONDS
+    _update_heartbeat_start "package install"
     local result=0
     # v1.198.3 PR-A (BUG-WATCHDOG-TIMER-UPDATE-SWAP-EXEC203-RACE): inhibit the
     # racing cadence timers (watchdog @120s, maintenance @15m) across the binary
@@ -599,7 +607,7 @@ _cmd_update_main_locked() {
     # must not be clobbered (scoped trap only, cleared right after restore).
     _forensic_snapshot "$_RUN_ID" pre-swap
     _update_inhibit_cadence_timers
-    trap '_update_restore_cadence_timers' INT TERM
+    trap '_update_heartbeat_stop; _update_restore_cadence_timers' INT TERM
     _forensic_event "$_RUN_ID" inhibit "timers=$_NFTBAN_INHIBITED_TIMERS"
     case "$source" in
         github)
@@ -643,6 +651,7 @@ _cmd_update_main_locked() {
             result=1
             ;;
     esac
+    _update_heartbeat_stop $(( SECONDS - _install_started ))
     # v1.198.3 PR-A: binary swap complete — restore exactly the timers we stopped
     # (covers success AND handled-failure; the failure block below returns AFTER
     # this) and clear the scoped interrupt trap.
