@@ -178,7 +178,9 @@ prov_resolve_source_kind() {
 prov_binary_embedded_commit() {
 	local bin="$1" out c
 	out="$("$bin" --version 2>/dev/null || true)"
-	# format: "<component> <ver> (git <COMMIT>, build <DATE>)"
+	# format: "<component> <ver> (git <COMMIT>, build <DATE>, source <SOURCE>)"
+	# The trailing ", source <SOURCE>" was added in v1.232.0; this matcher keys
+	# only on the "git <40-hex>" segment, so it reads both shapes.
 	c="$(printf '%s' "$out" | grep -oiE 'git [0-9a-f]{40}' | head -1 | awk '{print $2}')"
 	[[ -n "$c" ]] || { _prov_err "$bin: no embedded 40-hex commit in --version (uninjected/'dev' build?)"; return 1; }
 	printf '%s\n' "$c"
