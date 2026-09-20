@@ -120,13 +120,22 @@ if ! prov_resolve_source_identity "$SCRIPT_DIR"; then
     error "For an offline/exported source bundle, write bin/../SOURCE_COMMIT (full 40-hex) at archive time."
     exit 1
 fi
+# v1.232.0: resolve WHICH SOURCE as well as which commit, so the artifact can
+# answer "am I the published release, or a post-release main build?" without
+# reference to anything outside itself.
+if ! prov_resolve_source_kind "$SCRIPT_DIR"; then
+    error "Cannot resolve source kind (tag / main / branch / archive)."
+    exit 1
+fi
 GIT_COMMIT="$PROV_SOURCE_COMMIT"
+BUILD_SOURCE="$PROV_SOURCE_KIND"
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS="-s -w \
   -X github.com/itcmsgr/nftban/pkg/version.Version=$VERSION \
   -X github.com/itcmsgr/nftban/pkg/version.GitCommit=$GIT_COMMIT \
-  -X github.com/itcmsgr/nftban/pkg/version.BuildDate=$BUILD_DATE"
+  -X github.com/itcmsgr/nftban/pkg/version.BuildDate=$BUILD_DATE \
+  -X github.com/itcmsgr/nftban/pkg/version.BuildSource=$BUILD_SOURCE"
 
 # Component to build (default: all)
 COMPONENT="${1:-all}"
