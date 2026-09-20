@@ -25,6 +25,8 @@ package setsync
 
 import (
 	"fmt"
+	"log"
+	"net"
 	"time"
 
 	"github.com/google/nftables"
@@ -101,6 +103,46 @@ func remainingTimeout(expiry map[string]time.Time, ip string, now time.Time) (ti
 	return exp.Sub(now), true // timed (may be <= 0 if already past)
 }
 
+// RejectOverBroadWhitelist splits desired whitelist entries into those that may
+// become kernel whitelist elements and those that must not.
+//
+// A whitelist element is an EXEMPTION FROM BANNING. A /0 therefore does not
+// widen the whitelist, it DISABLES ENFORCEMENT: every blacklist, feed, RBL and
+// detector verdict is nullified for every source address. That is a protection
+// bypass reachable from any whitelist source — a provider feed, a MITM of that
+// feed, or a mistaken hand edit of a whitelist.d file.
+//
+// The product already refuses */0 for operator-supplied entries at the CLI
+// (cmd_whitelist.sh :: _nftban_wl_reject_overbroad). This is the same policy
+// applied at the LAST gate before the kernel, so no whitelist source can
+// bypass it. It closes a real asymmetry: blacklist CIDRs are filtered on the
+// way in (AddCIDRElementsWithStats -> MergeCIDRsSafe -> FilterProblematicCIDRs),
+// whitelist CIDRs were not filtered at all.
+//
+// Scope is deliberately narrow — ONLY /0 is refused here. A stricter minimum
+// prefix belongs on the provider path (NFTBAN_TRUST_MIN_PREFIX_V4/V6), because
+// a broad-but-bounded range can be a legitimate deliberate operator choice in a
+// hand-managed whitelist.d file, whereas /0 never is.
+func RejectOverBroadWhitelist(desired []string) (kept, rejected []string) {
+	kept = make([]string, 0, len(desired))
+	for _, e := range desired {
+		_, ipNet, err := net.ParseCIDR(e)
+		if err != nil {
+			// Not a CIDR (a bare address, i.e. a single host) or unparseable.
+			// Either way it cannot be a whole-internet entry; leave the
+			// existing behaviour for it untouched.
+			kept = append(kept, e)
+			continue
+		}
+		if ones, _ := ipNet.Mask.Size(); ones == 0 {
+			rejected = append(rejected, e)
+			continue
+		}
+		kept = append(kept, e)
+	}
+	return kept, rejected
+}
+
 // SyncWhitelistSetToNFT performs a differential sync of a whitelist set,
 // applying a per-element kernel timeout to entries that carry an absolute
 // expiry (CLI-BUG-2, v1.168). Permanent entries (no expiry) are added in a
@@ -114,6 +156,15 @@ func remainingTimeout(expiry map[string]time.Time, ip string, now time.Time) (ti
 // entry never reverts to permanent.
 func SyncWhitelistSetToNFT(nft *NFTManager, set *nftables.Set, desiredIPs []string, expiry map[string]time.Time) (*SyncStats, error) {
 	startTime := time.Now()
+
+	// Refuse whole-internet entries before anything is computed from them, so
+	// the diff, the apply and the post-apply coverage check all agree on the
+	// same admissible desired state. Never silent.
+	if kept, rejected := RejectOverBroadWhitelist(desiredIPs); len(rejected) > 0 {
+		log.Printf("[SYNC] whitelist %s: REFUSED %d whole-internet entry/entries %v — a /0 whitelist would exempt every source from banning",
+			set.Name, len(rejected), rejected)
+		desiredIPs = kept
+	}
 
 	stats := &SyncStats{
 		SetName:      set.Name,
