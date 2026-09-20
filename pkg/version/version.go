@@ -44,6 +44,24 @@ var GitCommit = "dev"
 // "unknown" pairs with GitCommit="dev" to flag uninjected builds.
 var BuildDate = "unknown"
 
+// BuildSource is injected at build time (-X) with the SOURCE the artifact was
+// built from — "tag:v1.231.0", "main", "branch:<name>", "detached" or
+// "archive" — as resolved by packaging/lib/provenance.sh.
+//
+// v1.232.0 (OPEN-BUILD-PROVENANCE-VERSION-STRING-CANNOT-DISTINGUISH-POST-RELEASE-SOURCE).
+// GitCommit already carried WHICH COMMIT. What was missing is WHICH SOURCE, and
+// that is the half an operator actually asks for: the published v1.231.0 tag was
+// 805c6bba while origin/main was eb909b4d, VERSION read 1.231.0 on both, and the
+// trees differed by two shipped product files. A host reporting "1.231.0" could
+// be either artifact and nothing in the operator surface distinguished them.
+//
+//	A VERSION NAMES AN INTENT. IT DOES NOT IDENTIFY AN ARTIFACT.
+//
+// Default "unknown" pairs with GitCommit="dev" to flag an uninjected build. It
+// deliberately does NOT default to anything release-looking: an artifact whose
+// provenance was never recorded must never be mistaken for a tag build.
+var BuildSource = "unknown"
+
 // Commit returns the build-injected git commit SHA, or "dev" when
 // the binary was built without ldflag injection. Use this rather than
 // reading the package var directly so tests can swap implementations
@@ -63,7 +81,7 @@ func BuildTimestamp() string { return BuildDate }
 // Examples:
 //
 //	nftband v1.100.4-dev (git 2d8bbc7c, build 2026-05-01T08:30:00Z)
-//	nftban-core v1.100.4-dev (git dev, build unknown)   # uninjected
+//	nftban-core v1.100.4-dev (git dev, build unknown, source unknown)  # uninjected
 //
 // Component is the binary name (e.g., "nftband", "nftban-core",
 // "nftban-installer", "nftban-validate"). Empty component prints
@@ -72,7 +90,7 @@ func Line(component string) string {
 	if component == "" {
 		component = ProductName
 	}
-	return fmt.Sprintf("%s %s (git %s, build %s)", component, FullVersion(), GitCommit, BuildDate)
+	return fmt.Sprintf("%s %s (git %s, build %s, source %s)", component, FullVersion(), GitCommit, BuildDate, BuildSource)
 }
 
 // parseVersion splits Version into [major, minor, patch] integers.

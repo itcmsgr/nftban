@@ -7,7 +7,7 @@
 # meta:description="Build provenance: source-identity resolution, embedded-commit verification, prebuilt-manifest gen/verify, allowlisted bin cleanup — the anti-stale-prebuilt guard shared by build.sh and packaging/build_nftban.sh"
 # meta:inventory.files="bin/*, build-manifest.json, SOURCE_COMMIT"
 # meta:inventory.binaries="go, sha256sum, file, jq"
-# meta:inventory.env_vars="PROV_SOURCE_COMMIT, PROV_SOURCE_VERSION"
+# meta:inventory.env_vars="PROV_SOURCE_COMMIT, PROV_SOURCE_VERSION, PROV_SOURCE_KIND"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -100,6 +100,79 @@ prov_resolve_source_identity() {
 	return 0
 }
 
+# prov_resolve_source_kind <repo_root>
+# Sets PROV_SOURCE_KIND — WHICH SOURCE the artifact was built from, as distinct
+# from which commit. Requires prov_resolve_source_identity to have run first.
+#
+# v1.232.0 (OPEN-BUILD-PROVENANCE-VERSION-STRING-CANNOT-DISTINGUISH-POST-RELEASE-SOURCE).
+# The published v1.231.0 tag was 805c6bba and origin/main was eb909b4d; VERSION
+# read 1.231.0 on BOTH, while the trees differed by five files of which TWO were
+# shipped product files. A package built from main declared a version identical
+# to the published artifact without being that artifact, so the version string
+# alone could no longer answer "WHICH ARTIFACT AM I RUNNING?".
+#
+#   A VERSION NAMES AN INTENT. IT DOES NOT IDENTIFY AN ARTIFACT.
+#
+# ⛔ The fix is deliberately NOT bumping VERSION after every post-release commit
+# (owner ruling): that would make VERSION a commit counter, break the
+# CHANGELOG-heading authority check-version-date-coherence enforces, and STILL
+# not answer the provenance question.
+#
+# A build is a TAG build only when a tag named for THIS VERSION points at THIS
+# commit. Any weaker rule — "some tag exists here", or an env override — would
+# let a main build claim release provenance, which is the exact second direction
+# the CI guard has to be able to refuse. The kind is therefore DERIVED, never
+# accepted from the environment.
+prov_resolve_source_kind() {
+	local root="$1" kind="" branch="" want="" at=""
+
+	if [[ -z "${PROV_SOURCE_COMMIT:-}" ]]; then
+		_prov_err "prov_resolve_source_kind: call prov_resolve_source_identity first"
+		return 1
+	fi
+
+	if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
+		if [[ -n "${PROV_SOURCE_VERSION:-}" ]]; then
+			want="v${PROV_SOURCE_VERSION}"
+			at="$(git -C "$root" rev-parse -q --verify "refs/tags/${want}^{commit}" 2>/dev/null || echo "")"
+			if [[ -n "$at" && "$at" == "$PROV_SOURCE_COMMIT" ]]; then
+				kind="tag:${want}"
+			fi
+		fi
+		if [[ -z "$kind" ]]; then
+			branch="$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+			if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+				kind="detached"
+			elif [[ "$branch" == "main" ]]; then
+				kind="main"
+			else
+				kind="branch:${branch}"
+			fi
+		fi
+	elif [[ -f "$root/SOURCE_REF" ]]; then
+		# Exported/offline bundle: the archiver records the ref it exported, the
+		# same way SOURCE_COMMIT records the commit.
+		kind="$(tr -d "[:space:]" < "$root/SOURCE_REF")"
+		[[ -n "$kind" ]] || kind="archive"
+	else
+		# No .git and no recorded ref. "archive" is the TRUTHFUL answer — an
+		# unknown provenance must never default to a release-looking one.
+		kind="archive"
+	fi
+
+	# The value is embedded into -ldflags; keep it to a charset that cannot carry
+	# whitespace or shell/linker-significant characters.
+	kind="${kind//[^A-Za-z0-9._:\/-]/_}"
+	if [[ -z "$kind" ]]; then
+		_prov_err "source kind resolved empty after sanitisation"
+		return 1
+	fi
+	# shellcheck disable=SC2034  # consumed by build.sh (ldflags) and the CI
+	# provenance guard, i.e. outside this file.
+	PROV_SOURCE_KIND="$kind"
+	return 0
+}
+
 # prov_binary_embedded_commit <binary> → prints the 40-hex commit the binary was built from.
 # Reads it from `--version` (works without Go, on the static linux/amd64 ELF).
 prov_binary_embedded_commit() {
@@ -109,6 +182,24 @@ prov_binary_embedded_commit() {
 	c="$(printf '%s' "$out" | grep -oiE 'git [0-9a-f]{40}' | head -1 | awk '{print $2}')"
 	[[ -n "$c" ]] || { _prov_err "$bin: no embedded 40-hex commit in --version (uninjected/'dev' build?)"; return 1; }
 	printf '%s\n' "$c"
+}
+
+# prov_binary_embedded_source <binary> → prints the BUILD_SOURCE the binary
+# declares. Reads `--version`, like prov_binary_embedded_commit, so it works on
+# the static ELF without Go present.
+# Format: "<component> <ver> (git <COMMIT>, build <DATE>, source <SOURCE>)"
+prov_binary_embedded_source() {
+	local bin="$1" out src
+	out="$("$bin" --version 2>/dev/null || true)"
+	# A here-string, and `p;q` instead of `| head -1`: a short-circuiting
+	# consumer downstream of a pipe makes the producer's EPIPE part of the
+	# verdict under pipefail.
+	src="$(sed -n 's/.*, source \([^)]*\))[[:space:]]*$/\1/p;q' <<< "$out")"
+	if [[ -z "$src" ]]; then
+		_prov_err "$bin: no 'source <kind>' field in --version (pre-v1.232.0 or uninjected build?)"
+		return 1
+	fi
+	printf '%s\n' "$src"
 }
 
 # prov_check_elf_arch <binary> — regular file (not symlink), ELF, linux, expected arch.

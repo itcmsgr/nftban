@@ -238,14 +238,16 @@ func TestCommit_BuildTimestamp_Accessors(t *testing.T) {
 }
 
 func TestLine_FormatStable(t *testing.T) {
-	origVersion, origCommit, origDate := Version, GitCommit, BuildDate
+	origVersion, origCommit, origDate, origSource := Version, GitCommit, BuildDate, BuildSource
 	defer func() {
-		Version, GitCommit, BuildDate = origVersion, origCommit, origDate
+		Version, GitCommit, BuildDate, BuildSource = origVersion, origCommit, origDate, origSource
 	}()
 
 	Version = "1.100.4-dev"
 	GitCommit = "abc1234"
 	BuildDate = "2026-05-01T08:30:00Z"
+	// v1.232.0: the line now carries WHICH SOURCE as well as which commit.
+	BuildSource = "tag:v1.100.4-dev"
 
 	cases := []struct {
 		name      string
@@ -255,17 +257,17 @@ func TestLine_FormatStable(t *testing.T) {
 		{
 			name:      "named component",
 			component: "nftband",
-			want:      "nftband v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z)",
+			want:      "nftband v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z, source tag:v1.100.4-dev)",
 		},
 		{
 			name:      "another named component",
 			component: "nftban-core",
-			want:      "nftban-core v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z)",
+			want:      "nftban-core v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z, source tag:v1.100.4-dev)",
 		},
 		{
 			name:      "empty component falls back to ProductName",
 			component: "",
-			want:      "NFTBan v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z)",
+			want:      "NFTBan v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z, source tag:v1.100.4-dev)",
 		},
 	}
 	for _, tc := range cases {
@@ -283,17 +285,20 @@ func TestLine_FormatStable(t *testing.T) {
 // shape so they can distinguish "build with no metadata" from a
 // genuine version line.
 func TestLine_UninjectedBuild_StableShape(t *testing.T) {
-	origVersion, origCommit, origDate := Version, GitCommit, BuildDate
+	origVersion, origCommit, origDate, origSource := Version, GitCommit, BuildDate, BuildSource
 	defer func() {
-		Version, GitCommit, BuildDate = origVersion, origCommit, origDate
+		Version, GitCommit, BuildDate, BuildSource = origVersion, origCommit, origDate, origSource
 	}()
 
 	Version = "dev"
 	GitCommit = "dev"
 	BuildDate = "unknown"
+	BuildSource = "unknown"
 
 	got := Line("nftban-core")
-	want := "nftban-core vdev (git dev, build unknown)"
+	// v1.232.0: an uninjected build must read "unknown" here — NEVER anything
+	// release-looking. Unrecorded provenance must not resemble a tag build.
+	want := "nftban-core vdev (git dev, build unknown, source unknown)"
 	if got != want {
 		t.Errorf("Line on uninjected build:\n  got  %q\n  want %q", got, want)
 	}

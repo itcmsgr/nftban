@@ -106,6 +106,14 @@ jobs:
       - name: Check rebuild evidence authority (v1.228.5, BLOCKING)
         run: ./scripts/ci/check-rebuild-evidence-authority.sh
 
+      # v1.232.0 build provenance. VERSION names an INTENT; it does not identify
+      # an ARTIFACT. Published v1.231.0 (805c6bba) and origin/main (eb909b4d)
+      # both read 1.231.0 while differing by two shipped product files. Both
+      # directions are enforced: a tag build must declare its tag, and a non-tag
+      # build must NOT claim tag provenance.
+      - name: Check build provenance source is self-describing (v1.232.0, BLOCKING)
+        run: ./scripts/ci/check-build-provenance-source.sh
+
       # v1.228.5 FHS/log authority. A logrotate stanza may only target /var/log:
       # nftban_var_lib_t has no logrotate_t access, so ONE bad stanza fails the whole
       # system-wide logrotate run. Reads the GENERATOR (inventory.go), not just the
