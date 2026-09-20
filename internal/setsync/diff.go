@@ -247,14 +247,14 @@ func SyncWhitelistSetToNFT(nft *NFTManager, set *nftables.Set, desiredIPs []stri
 
 // SyncStats holds statistics about a sync operation
 type SyncStats struct {
-	SetName       string
-	IPsAdded      int
-	IPsRemoved    int
-	IPsUnchanged  int
-	TotalDesired  int
-	TotalCurrent  int
-	Duration      time.Duration
-	Error         error
+	SetName      string
+	IPsAdded     int
+	IPsRemoved   int
+	IPsUnchanged int
+	TotalDesired int
+	TotalCurrent int
+	Duration     time.Duration
+	Error        error
 }
 
 // SyncSetToNFT performs differential sync of a set
