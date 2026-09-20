@@ -44,7 +44,10 @@
 # =============================================================================
 
 set -Eeuo pipefail
-IFS=$'\n\t'
+# No global IFS assignment: nothing here depends on word-splitting (every
+# expansion is quoted), no other scripts/ci guard sets it, and setting it
+# globally is flagged by bash.lang.security.ifs-tampering. Scope IFS locally at
+# the point of use if a future reader ever needs it.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=/dev/null
