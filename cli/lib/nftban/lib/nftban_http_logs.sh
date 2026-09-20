@@ -552,6 +552,120 @@ nftban_http_cursor_resolve() {
 # per cursor subject and it is overwritten in place — bounded by construction, no
 # accumulation even if a process is killed between read and cleanup.
 # Args: file start want scratch  ->  stdout = bytes; rc 0 = window obtained, 1 = failure
+# =============================================================================
+# v1.232 RECORD-BOUNDARY-SAFE BOUNDED READ (forward cursor only)
+# =============================================================================
+# ⛔ THE DEFECT THIS CLOSES, characterised on lab2 2026-09-19. The forward branch
+# emitted a RAW BYTE WINDOW [start, start+MAX_BYTES), which CUTS A LOG LINE IN
+# HALF at every chunk boundary. Measured over 62 boundaries on 600 fixed-length
+# lines: 37 boundaries LOST the line entirely, 15 produced a FALSE ENTRY, ~10 lost
+# nothing — which outcome occurs depends purely on WHERE in the line the cut lands.
+#
+# ⛔ THE FALSE ENTRIES ARE THE SERIOUS HALF, AND THEY ARE NOT A COVERAGE GAP.
+# The parser splits on whitespace, so after a mid-line cut the FIELDS SHIFT and
+# whatever token lands first becomes the "IP". Measured false source identities:
+# 00, 0:00, :00:00, 10:00:00, 6:10:00:00, 026:10:00:00, .0.0.1, .1, 18, e — all
+# TIMESTAMP FRAGMENTS — carrying a WELL-FORMED URL and a correct 404 status. Those
+# entries feed pattern matching and 404-flood counting UNDER THE WRONG IDENTITY,
+# so the module does not merely miss data, it MANUFACTURES ATTRIBUTION.
+# None of the observed fragments was a valid dotted quad, so none was bannable in
+# that fixture — but a real log can carry an IP LATER in the line (X-Forwarded-For,
+# referrer, user-agent) and a cut before it would leave a VALID, BANNABLE address
+# in field 1. Not observed; NOT EXCLUDED.
+#
+# THE CONTRACT: read from the durable offset, take the bounded window, locate the
+# LAST COMPLETE NEWLINE, emit ONLY complete records, and report exactly how many
+# bytes were emitted so the caller advances the cursor to a RECORD-SAFE offset.
+# The trailing fragment is DEFERRED to the next read, never discarded.
+#
+# ⛔ DELIBERATELY A SEPARATE FUNCTION. nftban_http_bounded_read is left byte-for-byte
+# unchanged because the tail-biased branch and the PRIVILEGED COLLECTOR use it; this
+# change is scoped to the forward cursor that BotScan's scanner owns.
+#
+# Publishes NFTBAN_HTTP_LAST_EMITTED_BYTES (bytes actually emitted, always a record
+# boundary) and NFTBAN_HTTP_LAST_DEFERRED_BYTES (the trailing fragment held back).
+# ⛔ OVERSIZED-RECORD SKIP — must land AFTER the whole logical record.
+# A record longer than MAX_BYTES cannot be emitted, but "skip one window and
+# resume" is WRONG and re-opens the very corruption this lane closes: for a record
+# of 3x the cap, window 1 skips mid-record, window 2 skips still mid-record, and
+# window 3 finds the terminating newline and EMITS FROM MID-RECORD — a fragment
+# parsed as a record, with the field-shift that manufactures a false source IP.
+# So the discard walks forward until the record's OWN terminating newline is found
+# and the cursor lands immediately AFTER it. Bounded by file size; at EOF with no
+# newline the whole tail is one oversized record and the cursor goes to EOF.
+# Echoes the safe resume offset.
+_nftban_http_skip_oversized() {
+    local _f="$1" _from="$2" _size="$3" _cap="$4" _tmp="$5"
+    local _pos="$_from" _w _act _first _lastc
+    while [[ "$_pos" -lt "$_size" ]]; do
+        _w=$(( _size - _pos )); [[ "$_w" -gt "$_cap" ]] && _w="$_cap"
+        : > "$_tmp" 2>/dev/null || { printf '%s' "$_size"; return 0; }
+        tail -c +$(( _pos + 1 )) "$_f" 2>/dev/null | head -c "$_w" > "$_tmp" 2>/dev/null
+        _act="$(stat -c %s "$_tmp" 2>/dev/null || echo 0)"
+        [[ "$_act" -gt 0 ]] || break
+        # length of the first line INCLUDING its newline, when one is present
+        _first="$(LC_ALL=C head -n 1 "$_tmp" 2>/dev/null | wc -c)"
+        _lastc="$(LC_ALL=C tail -c 1 "$_tmp" 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')"
+        if [[ "$_first" -lt "$_act" ]] || [[ "$_lastc" == "0a" ]]; then
+            rm -f "$_tmp" 2>/dev/null
+            printf '%s' "$(( _pos + _first ))"      # immediately AFTER that newline
+            return 0
+        fi
+        _pos=$(( _pos + _act ))
+    done
+    rm -f "$_tmp" 2>/dev/null
+    printf '%s' "$_size"
+}
+
+nftban_http_bounded_read_records() {
+    local _f="$1" _start="$2" _want="$3" _tmp="$4" _at_eof="${5:-0}"
+    local _act _had_e=0 _emit=0 _frag=0 _lastc
+    local -a _ps=()
+    export NFTBAN_HTTP_LAST_EMITTED_BYTES=0 NFTBAN_HTTP_LAST_DEFERRED_BYTES=0
+    [[ "$_want" -gt 0 ]] || return 0
+    [[ -n "$_tmp" ]] || return 1
+    : > "$_tmp" 2>/dev/null || return 1
+    case $- in *e*) _had_e=1 ;; esac
+    set +e
+    tail -c +$(( _start + 1 )) "$_f" 2>/dev/null | head -c "$_want" > "$_tmp"
+    _ps=("${PIPESTATUS[@]}")
+    [[ "$_had_e" == "1" ]] && set -e
+    _act="$(stat -c %s "$_tmp" 2>/dev/null || echo -1)"
+    # P0-A: acceptance is the CONSUMER contract (bytes obtained), never the
+    # producer's exit status — SIGPIPE disposition is execution-plane state.
+    export NFTBAN_HTTP_LAST_PRODUCER_RC="${_ps[0]:-unknown}"
+    export NFTBAN_HTTP_LAST_CONSUMER_RC="${_ps[1]:-unknown}"
+    if [[ "${_ps[1]:-x}" != "0" ]] || [[ "$_act" != "$_want" ]]; then
+        rm -f "$_tmp" 2>/dev/null
+        return 1
+    fi
+
+    if [[ "$_at_eof" == "1" ]]; then
+        # The window reaches EOF, so the final bytes ARE a complete record even if
+        # the file has no trailing newline. Emitting them here is what stops the
+        # last line of every file being deferred forever.
+        _emit="$_act"
+    else
+        _lastc="$(LC_ALL=C tail -c 1 "$_tmp" 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')"
+        if [[ "$_lastc" == "0a" ]]; then
+            _emit="$_act"                       # window ends exactly on a record boundary
+        else
+            _frag="$(LC_ALL=C tail -n 1 "$_tmp" 2>/dev/null | wc -c)"
+            [[ "$_frag" =~ ^[0-9]+$ ]] || _frag=0
+            _emit=$(( _act - _frag ))
+            [[ "$_emit" -lt 0 ]] && _emit=0
+        fi
+    fi
+
+    if [[ "$_emit" -gt 0 ]]; then
+        head -c "$_emit" "$_tmp" 2>/dev/null
+    fi
+    export NFTBAN_HTTP_LAST_EMITTED_BYTES="$_emit"
+    export NFTBAN_HTTP_LAST_DEFERRED_BYTES=$(( _act - _emit ))
+    rm -f "$_tmp" 2>/dev/null
+    return 0
+}
+
 nftban_http_bounded_read() {
     local _f="$1" _start="$2" _want="$3" _tmp="$4"
     local _act _had_e=0
@@ -632,15 +746,42 @@ nftban_http_read_incremental() {
         # successive cycles instead of tail-biased). Used by the BotScan processor with
         # its OWN dedicated offset dir; the default tail-biased branch below is unchanged
         # so the privileged collector is byte-identical.
-        local end="$size"
+        local end="$size" _at_eof=0
         if [[ $((size - start)) -gt ${NFTBAN_HTTP_LOG_MAX_BYTES} ]]; then
             end=$((start + NFTBAN_HTTP_LOG_MAX_BYTES))
+        else
+            _at_eof=1
         fi
         if [[ "$end" -gt "$start" ]]; then
             # P0-A: an expected bounded-read SIGPIPE must not skip the checkpoint.
-            nftban_http_bounded_read "$file" "$start" "$((end - start))" "${statefile}.rd" || return 1
+            nftban_http_bounded_read_records "$file" "$start" "$((end - start))" \
+                "${statefile}.rd" "$_at_eof" || return 1
+            # ⛔ THE CURSOR ADVANCES BY WHAT WAS EMITTED, NOT BY THE WINDOW. That is
+            # the whole fix: the offset now lands on a RECORD boundary, so the
+            # deferred trailing fragment is re-read WHOLE next time instead of being
+            # split into a lost line or a false, misattributed entry.
+            new_off=$(( start + ${NFTBAN_HTTP_LAST_EMITTED_BYTES:-0} ))
+            if [[ "${NFTBAN_HTTP_LAST_EMITTED_BYTES:-0}" -le 0 ]]; then
+                # No complete record in a FULL window => this single record exceeds
+                # MAX_BYTES and can never be emitted. Deferring again would stall
+                # this file forever.
+                # ⛔ DO NOT simply advance by the window. That leaves the cursor
+                # INSIDE the oversized record, and a later window containing its
+                # terminating newline would then emit FROM MID-RECORD — exactly the
+                # fragment-parsed-as-a-record corruption this lane exists to remove.
+                # Walk forward to the record's own terminating newline instead, so
+                # the cursor resumes at a REAL boundary.
+                new_off="$(_nftban_http_skip_oversized "$file" "$start" "$size" \
+                            "${NFTBAN_HTTP_LOG_MAX_BYTES}" "${statefile}.skip")"
+                [[ "$new_off" =~ ^[0-9]+$ ]] || new_off="$size"
+                # ⛔ COUNTED ONCE PER RECORD, not once per window, and never silent:
+                # an intentional discard must not vanish into lines_seen/lines_scanned.
+                export NFTBAN_HTTP_OVERSIZED_RECORDS_SKIPPED=$(( ${NFTBAN_HTTP_OVERSIZED_RECORDS_SKIPPED:-0} + 1 ))
+                echo "[http-logs] oversized record exceeds ${NFTBAN_HTTP_LOG_MAX_BYTES} B in ${file}; discarded whole, resumed at record boundary ${new_off} (oversized_records_skipped=${NFTBAN_HTTP_OVERSIZED_RECORDS_SKIPPED})" >&2
+            fi
+        else
+            new_off="$end"
         fi
-        new_off="$end"
     else
         # Default (tail-biased): read the newest MAX_BYTES if the gap is huge; offset → size.
         if [[ $((size - start)) -gt ${NFTBAN_HTTP_LOG_MAX_BYTES} ]]; then
