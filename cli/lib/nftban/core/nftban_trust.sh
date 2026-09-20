@@ -381,6 +381,107 @@ _trust_download_provider() {
 # =============================================================================
 # WRITE TO WHITELIST
 # =============================================================================
+# =============================================================================
+# PROVIDER RANGE ADMISSION (v1.232.0)
+# =============================================================================
+# Provider feeds are REMOTE, MUTABLE input. Everything they contain eventually
+# becomes an element of whitelist_ipv4/_ipv6, and a whitelist element is an
+# EXEMPTION FROM BANNING — so an over-broad provider range does not merely add
+# noise, it withdraws enforcement. A single 0.0.0.0/0 in a provider feed exempts
+# every source on the internet from every blacklist, feed and detector.
+#
+# The product already holds this policy for operator-supplied entries
+# (cmd_whitelist.sh :: _nftban_wl_reject_overbroad refuses */0 because "a /0
+# whole-internet whitelist would exempt every source from banning"). It was
+# simply never applied on the provider path, which reached the durable
+# whitelist source by `cat` with no validation at all. These helpers apply the
+# SAME policy to provider data, at the boundary where it becomes authority.
+#
+# Admission is never silent: every rejected token is counted and logged.
+: "${NFTBAN_TRUST_MIN_PREFIX_V4:=8}"
+: "${NFTBAN_TRUST_MIN_PREFIX_V6:=16}"
+
+# Validate one provider token for admission as whitelist authority.
+# Prints a human reason on rejection. rc: 0=accept, 1=malformed, 2=over-broad.
+_trust_validate_cidr() {
+    local tok="$1" ip prefix minp
+
+    if [[ "$tok" != */* ]]; then
+        # A bare address is a single host — the narrowest possible entry.
+        if nftban_validate_ip "$tok"; then
+            return 0
+        fi
+        printf 'malformed address'
+        return 1
+    fi
+
+    if ! nftban_validate_cidr "$tok"; then
+        printf 'malformed CIDR'
+        return 1
+    fi
+
+    ip="${tok%/*}"
+    prefix="${tok##*/}"
+
+    if nftban_validate_ipv4 "$ip"; then
+        minp="$NFTBAN_TRUST_MIN_PREFIX_V4"
+    else
+        minp="$NFTBAN_TRUST_MIN_PREFIX_V6"
+    fi
+
+    # 10# forces base-10: a zero-padded prefix must never be read as octal.
+    if (( 10#$prefix < 10#$minp )); then
+        local scope="an excessive range"
+        (( 10#$prefix == 0 )) && scope="every source on the internet"
+        printf 'over-broad /%s (minimum /%s) — would exempt %s from banning' \
+            "$prefix" "$minp" "$scope"
+        return 2
+    fi
+
+    return 0
+}
+
+# Filter a provider cache file into $2, keeping only admissible entries.
+# Publishes _TRUST_FILTER_{SEEN,ACCEPTED,REJECTED} in the CALLER's shell.
+# rc 1 = the feed carried entries but NONE survived (unusable/hostile feed).
+_trust_filter_cache() {
+    local src="$1" dst="$2" provider="${3:-unknown}"
+    local line tok reason
+    local seen=0 accepted=0 rejected=0
+    # The module sets IFS=$'\n\t'; token splitting here must also break on
+    # spaces, otherwise "1.2.3.0/24 comment" is read as one token.
+    local IFS=$' \t\n'
+
+    : > "$dst" || return 1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line//$'\r'/}"
+        line="${line%%#*}"
+        # shellcheck disable=SC2086  # deliberate split to take the first token
+        set -- $line
+        tok="${1:-}"
+        [[ -z "$tok" ]] && continue
+        seen=$((seen + 1))
+        if reason=$(_trust_validate_cidr "$tok"); then
+            printf '%s\n' "$tok" >> "$dst"
+            accepted=$((accepted + 1))
+        else
+            rejected=$((rejected + 1))
+            _trust_log "WARNING" "provider ${provider}: REJECTED '${tok}' — ${reason}"
+        fi
+    done < "$src"
+
+    _TRUST_FILTER_SEEN=$seen
+    _TRUST_FILTER_ACCEPTED=$accepted
+    _TRUST_FILTER_REJECTED=$rejected
+
+    if (( seen > 0 && accepted == 0 )); then
+        _trust_log "ERROR" "provider ${provider}: ${seen} entries supplied, 0 admissible — refusing to treat the feed as authority"
+        return 1
+    fi
+    return 0
+}
+
 _trust_write_whitelist() {
     local provider="${1^^}"
     local name="${TRUST_PROVIDERS[${provider}_NAME]:-$provider}"
@@ -410,20 +511,56 @@ _trust_write_whitelist() {
 
 EOF
 
-    local total=0
+    local total=0 rejected=0
+
+    # v1.232.0: provider content is validated BEFORE it becomes the durable
+    # whitelist source. Previously both families were `cat`-ed in verbatim, so
+    # any line a provider (or a MITM of its feed) supplied became a whitelist
+    # element — including 0.0.0.0/0, which exempts every source from banning.
+    local _v4_ok=1 _v6_ok=1
+    local _v4_filtered="${_wl_tmp}.v4" _v6_filtered="${_wl_tmp}.v6"
 
     # Append IPv4 ranges (read once to avoid TOCTOU double-read)
     local _v4_content=""
-    if [[ -f "$ipv4_cache" ]] && _v4_content=$(cat "$ipv4_cache" 2>/dev/null) && [[ -n "$_v4_content" ]]; then
-        printf '# %s IPv4 Ranges\n%s\n\n' "$name" "$_v4_content" >> "$_wl_tmp"
-        total=$((total + $(printf '%s\n' "$_v4_content" | wc -l)))
+    if [[ -f "$ipv4_cache" ]]; then
+        if _trust_filter_cache "$ipv4_cache" "$_v4_filtered" "$name"; then
+            rejected=$((rejected + ${_TRUST_FILTER_REJECTED:-0}))
+            _v4_content=$(cat "$_v4_filtered" 2>/dev/null) || _v4_content=""
+            if [[ -n "$_v4_content" ]]; then
+                printf '# %s IPv4 Ranges\n%s\n\n' "$name" "$_v4_content" >> "$_wl_tmp"
+                total=$((total + ${_TRUST_FILTER_ACCEPTED:-0}))
+            fi
+        else
+            _v4_ok=0
+        fi
     fi
 
     # Append IPv6 ranges (read once to avoid TOCTOU double-read)
     local _v6_content=""
-    if [[ -f "$ipv6_cache" ]] && _v6_content=$(cat "$ipv6_cache" 2>/dev/null) && [[ -n "$_v6_content" ]]; then
-        printf '# %s IPv6 Ranges\n%s\n\n' "$name" "$_v6_content" >> "$_wl_tmp"
-        total=$((total + $(printf '%s\n' "$_v6_content" | wc -l)))
+    if [[ -f "$ipv6_cache" ]]; then
+        if _trust_filter_cache "$ipv6_cache" "$_v6_filtered" "$name"; then
+            rejected=$((rejected + ${_TRUST_FILTER_REJECTED:-0}))
+            _v6_content=$(cat "$_v6_filtered" 2>/dev/null) || _v6_content=""
+            if [[ -n "$_v6_content" ]]; then
+                printf '# %s IPv6 Ranges\n%s\n\n' "$name" "$_v6_content" >> "$_wl_tmp"
+                total=$((total + ${_TRUST_FILTER_ACCEPTED:-0}))
+            fi
+        else
+            _v6_ok=0
+        fi
+    fi
+
+    rm -f "$_v4_filtered" "$_v6_filtered"
+
+    # FAIL CLOSED. A feed that supplied entries of which none were admissible is
+    # an UNUSABLE observation, not an empty whitelist. Replacing the durable
+    # source here would silently withdraw the provider's real ranges (and, on a
+    # hostile feed, is exactly the state the attacker wants). Keep what we have.
+    if (( _v4_ok == 0 || _v6_ok == 0 )); then
+        rm -f "$_wl_tmp"
+        _trust_log "ERROR" "$name: no admissible ranges in the downloaded feed — keeping the previous whitelist unchanged"
+        echo "[X] $name: downloaded feed contained no admissible ranges — whitelist left unchanged" >&2
+        return 1
     fi
 
     # Set correct permissions then atomic move
@@ -432,6 +569,13 @@ EOF
     mv -f "$_wl_tmp" "$whitelist_file" 2>/dev/null || rm -f "$_wl_tmp"
 
     _trust_log "INFO" "Wrote $total $name IP ranges to whitelist"
+    if (( rejected > 0 )); then
+        # Never silent: an operator must be able to see that provider content
+        # was withheld from the whitelist, and how much.
+        _trust_log "WARNING" "$name: withheld $rejected inadmissible range(s) from the whitelist (see WARNING lines above)"
+        echo "[!] $name: $rejected provider range(s) rejected as malformed or over-broad — see $TRUST_LOG" >&2
+    fi
+    return 0
 }
 
 # =============================================================================
@@ -490,8 +634,14 @@ _trust_apply_to_nft() {
 
     # IPv4 CIDRs
     if [[ -f "$ipv4_cache" ]] && [[ -s "$ipv4_cache" ]]; then
-        local ipv4_elements
-        ipv4_elements=$(grep -v '^#' "$ipv4_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        # v1.232.0: the legacy additive path applies the SAME admission policy
+        # as the durable source. An add-element fragment reaches the kernel set
+        # directly, so an unvalidated cache here bypasses every later check.
+        local ipv4_elements="" _v4_adm="${nft_fragment}.v4"
+        if _trust_filter_cache "$ipv4_cache" "$_v4_adm" "trust"; then
+            ipv4_elements=$(tr '\n' ',' < "$_v4_adm" | sed 's/,$//')
+        fi
+        rm -f "$_v4_adm"
         if [[ -n "$ipv4_elements" ]]; then
             echo "add element ${_TRUST_TABLE_IPV4} whitelist_ipv4 { ${ipv4_elements} }" >> "$nft_fragment"
             ipv4_count=$(grep -cv '^\s*$\|^#' "$ipv4_cache" 2>/dev/null || true)
@@ -501,8 +651,11 @@ _trust_apply_to_nft() {
 
     # IPv6 CIDRs
     if [[ -f "$ipv6_cache" ]] && [[ -s "$ipv6_cache" ]]; then
-        local ipv6_elements
-        ipv6_elements=$(grep -v '^#' "$ipv6_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        local ipv6_elements="" _v6_adm="${nft_fragment}.v6"
+        if _trust_filter_cache "$ipv6_cache" "$_v6_adm" "trust"; then
+            ipv6_elements=$(tr '\n' ',' < "$_v6_adm" | sed 's/,$//')
+        fi
+        rm -f "$_v6_adm"
         if [[ -n "$ipv6_elements" ]]; then
             echo "add element ${_TRUST_TABLE_IPV6} whitelist_ipv6 { ${ipv6_elements} }" >> "$nft_fragment"
             ipv6_count=$(grep -cv '^\s*$\|^#' "$ipv6_cache" 2>/dev/null || true)
@@ -555,6 +708,12 @@ _trust_remove_from_nft() {
     fi
 
     # Build atomic nft fragment to delete elements
+    #
+    # DELIBERATELY UNFILTERED (v1.232.0): the admission policy applied on the ADD
+    # paths must NOT be applied here. Removal is never a bypass, and a host
+    # upgraded from a pre-v1.232.0 version may still carry an over-broad element
+    # that an earlier release admitted. Filtering this fragment would make that
+    # element permanently undeletable by the module that installed it.
     local nft_fragment
     nft_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_trust_frag_XXXXXX.nft") || return 1
 
@@ -685,7 +844,10 @@ nftban_trust_enable() {
 
     # Write to whitelist
     echo "[*] Writing to whitelist..."
-    _trust_write_whitelist "$provider"
+    if ! _trust_write_whitelist "$provider"; then
+        echo "[X] Whitelist not updated"
+        return 1
+    fi
     echo "[OK] Whitelist updated"
 
     # Update configuration
@@ -796,7 +958,10 @@ nftban_trust_update() {
         return 1
     fi
 
-    _trust_write_whitelist "$provider"
+    if ! _trust_write_whitelist "$provider"; then
+        echo "[X] $name not updated"
+        return 1
+    fi
     echo "[OK] $name updated"
 
     _trust_log "INFO" "$name IP ranges updated"
