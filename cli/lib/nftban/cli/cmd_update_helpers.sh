@@ -67,6 +67,9 @@ _update_log() {
         WARN)  echo "  ⚠ $msg" ;;
         ERROR) echo "  ✗ $msg" >&2 ;;
     esac
+    # v1.232.0: every real line pushes the next heartbeat back — the heartbeat
+    # speaks only into silence, never over live output.
+    _update_mark_output
 }
 
 # v1.198 R1b-3: fixed-phase progress marker for the full `nftban update` run.
@@ -80,6 +83,131 @@ _update_phase() {
     local n="$1" name="$2" hint="${3:-}"
     _NFTBAN_UPDATE_PHASE_DONE="$n"   # side-effect only; the emitted marker string is unchanged
     _update_log INFO "[${n}/${_NFTBAN_UPDATE_PHASE_TOTAL}] ${name}${hint:+ — ${hint}}"
+}
+
+# =============================================================================
+# PROGRESS VISIBILITY (v1.232.0)
+# =============================================================================
+# BUG-LONG-CONVERGENCE-OPERATION-NO-PROGRESS-VISIBILITY.
+#
+# The Install phase announced "package install may take up to 60s". Measured
+# wall-clock on the 2026-09-18 fleet run: monitor 244s (rebuild alone ~3m12s),
+# srv3 277s, dns1 79s, srv1 75s, lab4 73s, lab2 39s. The 60s figure is wrong on
+# every large-ruleset host, and it is the specific string that manufactured the
+# operator's false expectation: on monitor the terminal printed "Installing DEB
+# package..." and then nothing for over three minutes, so a working installer
+# and a hung one looked identical.
+#
+#   A BOUND THE SYSTEM DOES NOT ENFORCE IS NOT A PROGRESS INDICATOR.
+#
+# The replacement is deliberately NOT a percentage — nothing here can measure
+# fractional completion, and a fabricated bar would repeat the same error in a
+# friendlier font. What is emitted instead is only what is actually known:
+# elapsed time, liveness, and the inner installer's own phase.
+_NFTBAN_UPDATE_HEARTBEAT_SECS="${NFTBAN_UPDATE_HEARTBEAT_SECS:-25}"
+# Poll cadence. Deliberately finer than the emit interval so the silence test is
+# accurate; overridable so the contract can be exercised without real waits.
+_NFTBAN_UPDATE_HEARTBEAT_POLL="${NFTBAN_UPDATE_HEARTBEAT_POLL:-5}"
+_NFTBAN_UPDATE_HEARTBEAT_PID=""
+_NFTBAN_UPDATE_HEARTBEAT_LABEL=""
+_NFTBAN_UPDATE_OUTPUT_STAMP=""
+
+# Record that SOMETHING was printed. The heartbeat speaks only into silence, so
+# every real line must push the next beat back.
+_update_mark_output() {
+    [[ -n "$_NFTBAN_UPDATE_OUTPUT_STAMP" ]] || return 0
+    date +%s > "$_NFTBAN_UPDATE_OUTPUT_STAMP" 2>/dev/null || true
+}
+
+# Seconds -> "3m12s" / "45s". Operators read durations, not raw seconds.
+_update_fmt_elapsed() {
+    local s="${1:-0}"
+    if (( s < 60 )); then
+        printf '%ds' "$s"
+    else
+        printf '%dm%02ds' $(( s / 60 )) $(( s % 60 ))
+    fi
+}
+
+# Newest inner-installer phase, or empty. The installer writes greppable
+# "[PHASE] <name> start|end" lines (cmd/nftban-installer/phases.go); surfacing
+# the newest START is how the outer updater reports what the inner one is doing
+# instead of leaving the operator with a blank terminal.
+_update_installer_phase() {
+    local f="${FORENSIC_ILOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log}"
+    [[ -r "$f" ]] || return 0
+    local line
+    line=$(tail -n 200 "$f" 2>/dev/null | grep -F '[PHASE]' | tail -n 1) || return 0
+    [[ -n "$line" ]] || return 0
+    case "$line" in
+        *"[PHASE]"*" start"*)
+            line="${line##*\[PHASE\] }"
+            printf '%s' "${line% start*}"
+            ;;
+    esac
+    return 0
+}
+
+# _update_heartbeat_start <label>
+# Emits ONE line per interval, and ONLY when nothing else has printed in that
+# interval. Never floods; never claims progress it cannot observe.
+_update_heartbeat_start() {
+    _NFTBAN_UPDATE_HEARTBEAT_LABEL="${1:-installation}"
+    command -v date >/dev/null 2>&1 || return 0
+    [[ -z "$_NFTBAN_UPDATE_HEARTBEAT_PID" ]] || return 0
+
+    _NFTBAN_UPDATE_OUTPUT_STAMP=$(mktemp "${TMPDIR:-/tmp}/nftban_update_hb_XXXXXX" 2>/dev/null) || {
+        _NFTBAN_UPDATE_OUTPUT_STAMP=""; return 0; }
+    date +%s > "$_NFTBAN_UPDATE_OUTPUT_STAMP" 2>/dev/null || true
+
+    local started label stamp interval poll
+    started=$(date +%s)
+    label="$_NFTBAN_UPDATE_HEARTBEAT_LABEL"
+    stamp="$_NFTBAN_UPDATE_OUTPUT_STAMP"
+    interval="$_NFTBAN_UPDATE_HEARTBEAT_SECS"
+    poll="$_NFTBAN_UPDATE_HEARTBEAT_POLL"
+
+    (
+        # Poll faster than the interval so the silence test is accurate, but
+        # still emit at most one line per interval.
+        while sleep "$poll"; do
+            [[ -f "$stamp" ]] || exit 0
+            local now last quiet
+            now=$(date +%s 2>/dev/null) || exit 0
+            last=$(cat "$stamp" 2>/dev/null) || exit 0
+            [[ -n "$last" ]] || exit 0
+            quiet=$(( now - last ))
+            if (( quiet >= interval )); then
+                local phase suffix=""
+                phase=$(_update_installer_phase)
+                [[ -n "$phase" ]] && suffix=" — installer phase: ${phase}"
+                printf '  … still running: %s (%s elapsed)%s\n' \
+                    "$label" "$(_update_fmt_elapsed $(( now - started )))" "$suffix"
+                date +%s > "$stamp" 2>/dev/null || true
+            fi
+        done
+    ) &
+    _NFTBAN_UPDATE_HEARTBEAT_PID=$!
+    return 0
+}
+
+# Stop the heartbeat. Kills by the EXACT recorded PID — never a pattern match —
+# and removes the stamp first so the child exits even if the signal is missed.
+_update_heartbeat_stop() {
+    local total="${1:-}"
+    [[ -n "$_NFTBAN_UPDATE_OUTPUT_STAMP" ]] && rm -f "$_NFTBAN_UPDATE_OUTPUT_STAMP" 2>/dev/null
+    if [[ -n "$_NFTBAN_UPDATE_HEARTBEAT_PID" ]]; then
+        kill "$_NFTBAN_UPDATE_HEARTBEAT_PID" 2>/dev/null || true
+        wait "$_NFTBAN_UPDATE_HEARTBEAT_PID" 2>/dev/null || true
+    fi
+    _NFTBAN_UPDATE_HEARTBEAT_PID=""
+    _NFTBAN_UPDATE_OUTPUT_STAMP=""
+    if [[ -n "$total" ]] && [[ -n "$_NFTBAN_UPDATE_HEARTBEAT_LABEL" ]]; then
+        printf '  ✓ %s completed in %s\n' \
+            "$_NFTBAN_UPDATE_HEARTBEAT_LABEL" "$(_update_fmt_elapsed "$total")"
+    fi
+    _NFTBAN_UPDATE_HEARTBEAT_LABEL=""
+    return 0
 }
 
 # v1.215.0 (OPEN_INSTALL_UPDATE_OBSERVABILITY, PR-1): the up-front progress contract —

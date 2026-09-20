@@ -104,7 +104,17 @@ echo "== F: static guards on cmd_update.sh (wraps the install phase; scoped trap
 awk '/_update_phase 2 "Install"/{i=NR} /_update_inhibit_cadence_timers/&&!h{h=NR} /^    case "\$source" in/{c=NR} END{exit !(i>0 && h>i && c>h)}' "$CMDUPD" && ok "F inhibit sits between phase-2 and the install case (order)" || no "F inhibit placement"
 grep -q "_update_inhibit_cadence_timers" "$CMDUPD" && ok "F cmd_update calls inhibit" || no "F inhibit not wired"
 grep -q "_update_restore_cadence_timers" "$CMDUPD" && ok "F cmd_update calls restore" || no "F restore not wired"
-grep -q "trap '_update_restore_cadence_timers' INT TERM" "$CMDUPD" && ok "F scoped INT/TERM trap present" || no "F scoped trap missing"
+# v1.232.0: the guarantee is that the cadence-timer RESTORE runs on INT/TERM in
+# a SCOPED trap — not that the handler is spelled with exactly one call. The
+# progress heartbeat now shares that trap so an interrupt cannot orphan its
+# background process mid-swap. Pinning the old literal would have forced the
+# heartbeat OUT of the trap (leaking a process on SIGTERM to the main PID) to
+# satisfy a string, so the pattern now states the invariant instead.
+# NOT a weakening: restore is still required, still INT/TERM, still scoped; the
+# EXIT-trap prohibition and the "cleared after restore" arm below are unchanged;
+# and the heartbeat's presence in that same trap is now asserted in its own arm.
+grep -qE "trap '[^']*_update_restore_cadence_timers[^']*' INT TERM" "$CMDUPD" && ok "F scoped INT/TERM trap restores the cadence timers" || no "F scoped trap missing"
+grep -qE "trap '[^']*_update_heartbeat_stop[^']*' INT TERM" "$CMDUPD" && ok "F scoped trap also stops the progress heartbeat (no orphan on interrupt)" || no "F heartbeat not stopped on interrupt"
 grep -qE "trap '_update_restore_cadence_timers' (INT TERM )?EXIT" "$CMDUPD" && no "F uses an EXIT trap (clobbers lock cleanup)" || ok "F no EXIT trap (lock cleanup not clobbered)"
 grep -q "trap - INT TERM" "$CMDUPD" && ok "F scoped trap cleared after restore" || no "F trap not cleared"
 grep -q "_update_verify_watchdog" "$CMDUPD" && ok "F post-update watchdog verification wired" || no "F verify not wired"
