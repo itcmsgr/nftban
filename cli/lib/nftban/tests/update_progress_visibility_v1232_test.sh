@@ -77,8 +77,12 @@ echo ""
 echo "=== A. the false bound is gone, the honest wording is present ==="
 
 # The live call site must no longer pass a duration bound.
-live_call=$(grep -n '_update_phase 2 "Install"' "$UPD_SRC" | head -1)
-if printf '%s' "$live_call" | grep -q '60s'; then
+# `grep -m1` rather than `grep | head -1`, and a here-string rather than
+# `printf | grep -q`: both of those pipe shapes short-circuit the consumer,
+# which under pipefail makes the producer's EPIPE a timing-dependent verdict.
+# The exposure is removed, not declared as inventory debt.
+live_call=$(grep -m1 -n '_update_phase 2 "Install"' "$UPD_SRC")
+if grep -q '60s' <<< "$live_call"; then
     bad "A1 the live Install phase carries no duration bound" "still present: $live_call"
 else
     ok "A1 the live Install phase carries no duration bound"
