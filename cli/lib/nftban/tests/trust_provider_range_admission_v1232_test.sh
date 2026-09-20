@@ -109,6 +109,8 @@ source "$VALIDATION_SRC"
 
 TRUST_LOG="$SANDBOX/trust.log"
 _trust_log() { printf '%s %s\n' "$1" "$2" >> "$TRUST_LOG"; }
+# shellcheck disable=SC2034  # read by the EXTRACTED _trust_write_whitelist body,
+# which shellcheck cannot see because it is sourced at runtime from $EXTRACT.
 declare -A TRUST_PROVIDERS=([TESTP_NAME]="TestProvider")
 _trust_get_whitelist_file() { printf '%s/30-trust-testp.conf' "$SANDBOX"; }
 _trust_get_cache_file() { printf '%s/%s-%s.cache' "$SANDBOX" "$1" "$2"; }
