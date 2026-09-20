@@ -228,7 +228,7 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 	// v1.229.7 PR-3A: the classic chain set is the expectation for CLASSIC mode
 	// only. In suricata mode those chains are correctly ABSENT -- demanding them
 	// would false-fail every properly configured Suricata host.
-	ddosMode := readEffectiveMode("ddos", "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE")
+	ddosMode, ddosBasis := readEffectiveModeWithBasis("ddos", "conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_MODE")
 	if h.Config == ConfigEnabled && (ddosMode == "auto" || ddosMode == "unknown" || ddosMode == "") {
 		// ⛔ Unresolved. This process MUST NOT resolve `auto` -- that would make
 		// the validator a second mode authority, the exact defect this lane
@@ -242,7 +242,13 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 		// would suppress evidence we actually have.
 		//   UNKNOWN MUST NOT BE CONTAGIOUS ACROSS AXES
 		h.Structural = StructuralUnknown
-		h.StructuralReason = ReasonExpectationUnknown
+		// Converging is a DIFFERENT unknown from unestablished: it resolves on
+		// its own, and it must not be reported as a quiet/idle system.
+		if ddosBasis == nftbanconf.BasisConverging {
+			h.StructuralReason = ReasonConverging
+		} else {
+			h.StructuralReason = ReasonExpectationUnknown
+		}
 	} else if h.Config == ConfigEnabled && ddosMode == "suricata" {
 		// Suricata mode contributes no classic objects. Structural expectation is
 		// the ABSENCE of the classic pipeline; its presence is cross-mode DRIFT.
@@ -363,12 +369,16 @@ func evaluatePortscan(doc *RulesetDocument) *ModuleHealth {
 	// with no regard for PORTSCAN_MODE -- so a correctly configured Suricata
 	// host reported StructuralMissing. Same defect class as the DDoS arm above,
 	// on the other half of the same subject population.
-	psMode := readEffectiveMode("portscan", "conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_MODE")
+	psMode, psBasis := readEffectiveModeWithBasis("portscan", "conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_MODE")
 	if h.Config == ConfigEnabled && (psMode == modeUnknown || psMode == "auto" || psMode == "") {
 		// Expectation unestablished. Scoped to the structural axis: the
 		// effective assignment below is unconditional and unaffected.
 		h.Structural = StructuralUnknown
-		h.StructuralReason = ReasonExpectationUnknown
+		if psBasis == nftbanconf.BasisConverging {
+			h.StructuralReason = ReasonConverging
+		} else {
+			h.StructuralReason = ReasonExpectationUnknown
+		}
 	} else if h.Config == ConfigEnabled && psMode == "suricata" {
 		// Suricata mode contributes no classic portscan chain. Its presence is
 		// cross-mode DRIFT -- EXPECTED MISSING + OBSERVED PRESENT -- not absence.
@@ -801,13 +811,33 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 // BROKEN CONTRACT, not evidence of absence, so it must not be treated as if no
 // record existed.
 func readEffectiveMode(module, localPath, basePath, key string) string {
+	mode, _ := readEffectiveModeWithBasis(module, localPath, basePath, key)
+	return mode
+}
+
+// readEffectiveModeWithBasis returns the effective mode AND the basis on which
+// it was decided.
+//
+// v1.232.0: readEffectiveMode used to discard the basis with `_`. That single
+// underscore was the whole defect behind "convergence window reported as IDLE":
+// nftbanconf.ReadEffectiveMode returns (ModeUnknown, BasisConverging) while a
+// convergence is in flight, the basis was dropped here, the module fell into
+// the generic unknown branch, no module registered as active, and computeStatus
+// fell through to StatusIdle. The mode was unknowable and the health surface
+// said "quiet".
+//
+//	A DISCARDED REASON IS A DISCARDED TRUTH.
+//
+// The mode value itself is unchanged, so every existing caller and the whole
+// mode-resolution contract behave exactly as before; only the reason survives
+// now, which is what lets the caller distinguish converging from unresolved.
+func readEffectiveModeWithBasis(module, localPath, basePath, key string) (string, string) {
 	// v1.229.7 PR-4B: DELEGATES to the single Go implementation in nftbanconf.
 	// This function previously carried its own copy of the rule set; the daemon
 	// then needed the same rules, and three copies of one contract is three
 	// chances to drift. localPath/basePath/key are retained for call-site
 	// compatibility -- the shared reader derives them from the module name.
-	mode, _ := nftbanconf.ReadEffectiveMode(module, ConfigDir, RunDir)
-	return mode
+	return nftbanconf.ReadEffectiveMode(module, ConfigDir, RunDir)
 }
 
 // NOTE (v1.229.7 PR-4B): readConfiguredMode lived here and was removed when

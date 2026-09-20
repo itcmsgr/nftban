@@ -615,7 +615,37 @@ func evaluateOverallStatus(result *ValidationResult) Status {
 	if hasActiveModule {
 		return StatusProtected
 	}
+
+	// v1.232.0: CONVERGING must never fall through to IDLE.
+	//
+	// IDLE is a positive claim — "all axes pass, no relevant traffic observed".
+	// When a mode plan is mid-convergence the effective mode is not yet knowable,
+	// so no module can register as active, and the old unconditional fall-through
+	// turned "we cannot tell yet" into "quiet and healthy". An operator watching
+	// a reload saw IDLE and had no way to know the mode authority had not settled.
+	//
+	// Checked only HERE, at the fall-through: a module that is actually enforcing
+	// still reports PROTECTED above (protection genuinely exists), and DOWN /
+	// DEGRADED still win earlier (a real fault outranks a transient window).
+	if hasConvergingModule(result) {
+		return StatusConverging
+	}
 	return StatusIdle
+}
+
+// hasConvergingModule reports whether any module's structural verdict is unknown
+// SPECIFICALLY because a convergence window is in progress, as opposed to an
+// expectation that is genuinely unestablished. Only the former resolves itself.
+func hasConvergingModule(result *ValidationResult) bool {
+	for _, h := range []*ModuleHealth{
+		result.Modules.DDoS,
+		result.Modules.Portscan,
+	} {
+		if h != nil && h.StructuralReason == ReasonConverging {
+			return true
+		}
+	}
+	return false
 }
 
 // computeSummary calculates summary counts.
