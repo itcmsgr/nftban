@@ -808,7 +808,7 @@ nftban_community_build_payload() {
     # Protection state — authoritative, from validator (kernel truth)
     # INVARIANT: health_state is the KERNEL protection verdict, NOT the
     # community enrollment state. These are separate axes:
-    #   health_state = PROTECTED | IDLE | DEGRADED | DOWN  (kernel truth)
+    #   health_state = PROTECTED | IDLE | CONVERGING | DEGRADED | DOWN  (kernel truth)
     #   community    = ENABLED | DISABLED | ERROR          (enrollment status)
     # They MUST NOT be conflated or derived from each other.
     local health_state
@@ -946,7 +946,9 @@ nftban_community_build_payload_v3() {
         vstatus=UNKNOWN; vschema=unknown
     fi
     local overall
-    case "$vstatus" in PROTECTED|IDLE|OK) overall=OK ;; DEGRADED) overall=DEGRADED ;; DOWN|FATAL) overall=FATAL ;; WARN*) overall=WARN ;; *) overall=UNKNOWN ;; esac
+    # v1.232.0: CONVERGING maps to OK. It is a transient window, not a fault;
+    # without it the default arm would report UNKNOWN on every reload.
+    case "$vstatus" in PROTECTED|IDLE|CONVERGING|OK) overall=OK ;; DEGRADED) overall=DEGRADED ;; DOWN|FATAL) overall=FATAL ;; WARN*) overall=WARN ;; *) overall=UNKNOWN ;; esac
     local daemon_active=unknown nft_present=unknown failed_units=0 validate_age=unknown
     systemctl is-active nftband >/dev/null 2>&1 && daemon_active=true || { systemctl list-unit-files 2>/dev/null | grep -q nftband && daemon_active=false; }
     if command -v nft >/dev/null 2>&1; then nft list tables 2>/dev/null | grep -q 'table .* nftban' && nft_present=true || nft_present=false; fi

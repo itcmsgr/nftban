@@ -168,6 +168,10 @@ func detectAuthority() lifecycle.AuthorityState {
 			auth.Health = lifecycle.HealthProtected
 		case "idle":
 			auth.Health = lifecycle.HealthIdle
+		case "converging":
+			// v1.232.0: must be explicit — the default arm below is HealthDown,
+			// so an unmapped convergence window would read as no protection.
+			auth.Health = lifecycle.HealthConverging
 		case "degraded":
 			auth.Health = lifecycle.HealthDegraded
 		case "down":
@@ -245,7 +249,10 @@ func getValidatorHealth() string {
 		return "down"
 	}
 	// Output is the status string
-	for _, status := range []string{"protected", "idle", "degraded", "down"} {
+	// v1.232.0: "converging" MUST be listed. An unlisted status falls through to
+	// the `return "down"` below, so omitting it would report a routine
+	// convergence window as no-viable-protection.
+	for _, status := range []string{"protected", "idle", "converging", "degraded", "down"} {
 		if len(out) >= len(status) && out[:len(status)] == status {
 			return status
 		}

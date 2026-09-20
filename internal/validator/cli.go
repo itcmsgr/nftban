@@ -53,6 +53,8 @@ func (r *ValidationResult) StatusString() string {
 		return "PROTECTED"
 	case StatusIdle:
 		return "IDLE"
+	case StatusConverging:
+		return "CONVERGING"
 	case StatusDegraded:
 		return "DEGRADED"
 	case StatusDown:
@@ -63,11 +65,17 @@ func (r *ValidationResult) StatusString() string {
 }
 
 // ExitCode returns the appropriate exit code for the status.
-// 0 = PROTECTED or IDLE, 1 = DEGRADED, 2 = DOWN
+// 0 = PROTECTED, IDLE or CONVERGING, 1 = DEGRADED, 2 = DOWN
 // Per M81-4: IDLE is exit 0 (not an error).
+//
+// v1.232.0: CONVERGING is listed EXPLICITLY, not left to the default. The
+// default arm returns 2 (DOWN), so a new status that is merely forgotten here
+// would report every routine convergence window as "no viable protection" —
+// turning a truthfulness fix into a false alarm. Convergence is transient and
+// expected, so it is exit 0; the distinction is carried by the LABEL.
 func (r *ValidationResult) ExitCode() int {
 	switch r.Status {
-	case StatusProtected, StatusIdle:
+	case StatusProtected, StatusIdle, StatusConverging:
 		return 0
 	case StatusDegraded:
 		return 1

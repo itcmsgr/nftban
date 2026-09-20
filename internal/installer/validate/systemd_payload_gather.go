@@ -242,7 +242,8 @@ func parseLiveHealthClean(out string) (clean bool, known bool) {
 			fields := strings.Fields(strings.ToUpper(strings.TrimSpace(t[len("overall:"):])))
 			if len(fields) > 0 {
 				switch fields[0] {
-				case "OK", "IDLE", "PROTECTED":
+				// v1.232.0: CONVERGING is healthy — a transient, expected window.
+				case "OK", "IDLE", "PROTECTED", "CONVERGING":
 					overallHealthy = true
 				}
 			}

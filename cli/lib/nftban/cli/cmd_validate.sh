@@ -146,7 +146,7 @@ EXAMPLES:
   nftban validate --json       # JSON output for scripts/API
 
 EXIT STATUS:
-  0  PROTECTED / IDLE — all checks passed (warnings allowed)
+  0  PROTECTED / IDLE / CONVERGING — all checks passed (warnings allowed)
   1  DEGRADED — validation errors or partial protection
   2  DOWN — no viable protection detected
   3  Validator binary crashed or was unreachable

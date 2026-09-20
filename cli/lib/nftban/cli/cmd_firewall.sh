@@ -3768,7 +3768,7 @@ _firewall_rebuild_core() {
         # rollback ran and nothing was destroyed, so this is never FAILED_FATAL.
         if declare -f _rebuild_marker_write &>/dev/null; then
             local _snap_result="$OR_FAILED_DEGRADED"
-            if [[ "$pre_status" == "protected" || "$pre_status" == "idle" ]]; then
+            if [[ "$pre_status" == "protected" || "$pre_status" == "idle" || "$pre_status" == "converging" ]]; then
                 _snap_result="$OR_FAILED_RECOVERED"
             fi
             _rebuild_marker_write "$FC_SNAPSHOT_FAILED" "$_snap_result" "$snapshot_dir" "$pre_status"
@@ -3800,7 +3800,7 @@ _firewall_rebuild_core() {
         echo "       The firewall was NOT modified; the effective whitelist is preserved." >&2
         if declare -f _rebuild_marker_write &>/dev/null; then
             local _wl_result="$OR_FAILED_DEGRADED"
-            if [[ "$pre_status" == "protected" || "$pre_status" == "idle" ]]; then
+            if [[ "$pre_status" == "protected" || "$pre_status" == "idle" || "$pre_status" == "converging" ]]; then
                 _wl_result="$OR_FAILED_RECOVERED"
             fi
             _rebuild_marker_write "${FC_SNAPSHOT_FAILED:-SNAPSHOT_FAILED}" "$_wl_result" "$snapshot_dir" "$pre_status"
@@ -4358,8 +4358,13 @@ _firewall_rebuild_core() {
     # just no traffic observed yet after rebuild). Do not treat idle as regression.
     # v1.229.12: the verdict is now the authority; the pre/post shape is retained only as a
     # guard against a classifier that says CONTINUE while the state visibly regressed.
+    # v1.232.0: 'converging' joins 'idle' as a NON-REGRESSION post state. A
+    # rebuild is itself what opens a convergence window, so without this a
+    # perfectly good rebuild would satisfy the regression shape and trigger an
+    # automatic rollback from snapshot. CONVERGING is "not settled yet", never
+    # "protection lost".
     if [[ "$_disposition" == "REGRESSION" || "$_disposition" == "FATAL" ]] \
-       || [[ "$pre_status" == "protected" && "$post_status" != "protected" && "$post_status" != "idle" ]]; then
+       || [[ "$pre_status" == "protected" && "$post_status" != "protected" && "$post_status" != "idle" && "$post_status" != "converging" ]]; then
         echo "" >&2
         echo "═══════════════════════════════════════════════════════════════════" >&2
         echo "REBUILD FAILED: Post-rebuild validation returned $post_status" >&2

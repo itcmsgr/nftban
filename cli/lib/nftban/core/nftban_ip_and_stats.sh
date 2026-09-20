@@ -86,7 +86,7 @@ validate_structure() {
     #   JSON: {status:"OK"|"WARNING"|"ERROR", errors:[], warnings:[], info:[]}
     #   Text: "NFTBan Structure Validation" header + status + error/warning lists
     #   Exit (documented `nftban validate` contract — see cmd_validate.sh):
-    #     0 OK/WARNING (PROTECTED/IDLE) · 1 ERROR or Go status degraded (DEGRADED)
+    #     0 OK/WARNING (PROTECTED/IDLE/CONVERGING) · 1 ERROR or Go status degraded (DEGRADED)
     #     2 Go status down (DOWN) · 3 validator binary missing/empty/crashed
     #
     # Full removal of this shell file (including the still-independent

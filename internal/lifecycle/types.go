@@ -135,6 +135,10 @@ type LifecycleHealth string
 const (
 	HealthProtected LifecycleHealth = "PROTECTED"
 	HealthIdle      LifecycleHealth = "IDLE"
+	// HealthConverging — a convergence window is in progress; the effective mode
+	// is not yet knowable. Transient and EXPECTED, so it is healthy for the
+	// purpose of allowing operations (see IsHealthy).
+	HealthConverging LifecycleHealth = "CONVERGING"
 	HealthDegraded  LifecycleHealth = "DEGRADED"
 	HealthDown      LifecycleHealth = "DOWN"
 )
@@ -152,9 +156,13 @@ func (a AuthorityState) IsOwned() bool {
 	return a.Owner == AuthorityNFTBan
 }
 
-// IsHealthy returns true if health is PROTECTED or IDLE.
+// IsHealthy returns true if health is PROTECTED, IDLE or CONVERGING.
+//
+// v1.232.0: CONVERGING is healthy here. It means "the mode authority has not
+// settled YET", not "protection is absent" — treating a transient window as
+// unhealthy would block routine lifecycle operations on every reload.
 func (a AuthorityState) IsHealthy() bool {
-	return a.Health == HealthProtected || a.Health == HealthIdle
+	return a.Health == HealthProtected || a.Health == HealthIdle || a.Health == HealthConverging
 }
 
 // NormalizeNone ensures that Owner=NONE has health=DOWN unless

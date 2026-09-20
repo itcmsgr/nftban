@@ -28,6 +28,21 @@ const (
 	StatusProtected Status = "protected"
 	// StatusIdle means all axes pass but no relevant traffic observed. Exit 0.
 	StatusIdle Status = "idle"
+	// StatusConverging means a configuration convergence window is in progress,
+	// so the effective mode of at least one module is NOT YET KNOWABLE. Exit 0.
+	//
+	// This exists because IDLE is a POSITIVE claim — "all axes pass, no relevant
+	// traffic observed" — and making it the fall-through for an unknowable mode
+	// stated something the system did not know. A host mid-convergence reported
+	// IDLE, which an operator reads as "healthy and quiet" at exactly the moment
+	// the mode authority has not settled.
+	//
+	//   CONVERGING != IDLE. Unknown-yet is not quiet.
+	//
+	// It is deliberately exit 0: convergence is transient and expected, and every
+	// legitimate reload passes through it. The truth is carried by the LABEL, not
+	// by an exit code that would make routine reloads look like failures.
+	StatusConverging Status = "converging"
 	// StatusDegraded means partial protection - some checks failed.
 	StatusDegraded Status = "degraded"
 	// StatusDown means no viable nftban protection detected.
@@ -188,6 +203,14 @@ const (
 	// ReasonObservationUnknown — the expectation is known but the runtime state
 	// could not be observed. The OBSERVATION side failed.
 	ReasonObservationUnknown StructuralReason = "observation_incomplete"
+	// ReasonConverging — the mode plan is mid-convergence: the committed
+	// generation moved under the read, so no plan record is authoritative YET.
+	// Distinct from ReasonExpectationUnknown, which means the expectation is
+	// genuinely unestablished (MODE=auto with no resolved plan at all). One
+	// resolves itself in seconds; the other needs an operator. Collapsing them
+	// loses exactly the distinction the operator needs to decide whether to act.
+	// Value matches nftbanconf.BasisConverging so the two planes read alike.
+	ReasonConverging StructuralReason = "convergence_in_progress"
 )
 
 // EffectiveState represents the module's activity level based on evidence.
