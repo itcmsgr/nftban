@@ -67,13 +67,17 @@ assert_eq() {
     local got="$1" want="$2" name="$3"
     if [[ "$got" == "$want" ]]; then ok "$name"; else bad "$name" "expected '$want', got '$got'"; fi
 }
+# A here-string, not a pipe. `grep -q` short-circuits on its first match, which
+# under `pipefail` makes `producer | grep -q` a timing-dependent EPIPE site. The
+# here-string has no upstream producer to receive SIGPIPE, so the exposure is
+# REMOVED rather than declared as debt.
 assert_contains() {
     local hay="$1" needle="$2" name="$3"
-    if printf '%s' "$hay" | grep -F -q -- "$needle"; then ok "$name"; else bad "$name" "expected to contain: $needle"; fi
+    if grep -F -q -- "$needle" <<< "$hay"; then ok "$name"; else bad "$name" "expected to contain: $needle"; fi
 }
 assert_not_contains() {
     local hay="$1" needle="$2" name="$3"
-    if printf '%s' "$hay" | grep -F -q -- "$needle"; then bad "$name" "did NOT expect: $needle"; else ok "$name"; fi
+    if grep -F -q -- "$needle" <<< "$hay"; then bad "$name" "did NOT expect: $needle"; else ok "$name"; fi
 }
 
 # --- PRECONDITION: the subject must exist and be extractable -----------------
