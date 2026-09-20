@@ -144,10 +144,22 @@ if [[ "$beats" -le 4 ]]; then ok "D3 emits at most one line per interval (no flo
     bad "D3 emits at most one line per interval (no flood)" "got $beats lines in ~3s at interval=1"; fi
 
 # D4: while other output is flowing, the heartbeat must stay silent.
+#
+# The silence test compares whole-second stamps (date +%s), so the margin
+# between the output cadence and the emit interval must be larger than one
+# second of quantisation — otherwise a mark at t=0.9 and a poll at t=1.0 read
+# as a full second of silence and the heartbeat fires CORRECTLY, failing the
+# arm for a clock artifact rather than a defect. Observed exactly that: this
+# arm passed on lab2 and failed on the faster CI runner at interval=1.
+#
+# The assertion is unchanged — ZERO beats while output flows. Only the margin
+# is made expressible: output every 0.5s against a 4s interval leaves at most
+# ~1s of measured silence, well inside the interval even with quantisation.
 out2="$SANDBOX/quiet.out"
 (
+    _NFTBAN_UPDATE_HEARTBEAT_SECS=4
     _update_heartbeat_start "package install"
-    for _ in 1 2 3 4 5 6; do _update_mark_output; sleep 0.5; done
+    for _ in $(seq 1 10); do _update_mark_output; sleep 0.5; done
     _update_heartbeat_stop
 ) > "$out2" 2>&1
 beats2=$(grep -c 'still working' "$out2" || true)
