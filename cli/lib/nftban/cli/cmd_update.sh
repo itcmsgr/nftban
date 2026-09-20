@@ -594,7 +594,7 @@ _cmd_update_main_locked() {
     # what made a working installer indistinguishable from a hang.
     _update_phase 2 "Install"
     _update_log INFO "Package installation can take several minutes on systems with large nftables rulesets."
-    _update_log INFO "Progress will be shown while the installer is working."
+    _update_log INFO "Progress will be shown while the installation runs."
     local _install_started=$SECONDS
     _update_heartbeat_start "package install"
     local result=0

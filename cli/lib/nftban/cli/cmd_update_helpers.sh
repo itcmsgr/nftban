@@ -68,7 +68,7 @@ _update_log() {
         ERROR) echo "  ✗ $msg" >&2 ;;
     esac
     # v1.232.0: every real line pushes the next heartbeat back — the heartbeat
-    # speaks only into silence, never over working output.
+    # speaks only into silence, never over live output.
     _update_mark_output
 }
 
@@ -152,7 +152,7 @@ _update_installer_phase() {
 # Emits ONE line per interval, and ONLY when nothing else has printed in that
 # interval. Never floods; never claims progress it cannot observe.
 _update_heartbeat_start() {
-    _NFTBAN_UPDATE_HEARTBEAT_LABEL="${1:-working}"
+    _NFTBAN_UPDATE_HEARTBEAT_LABEL="${1:-installation}"
     command -v date >/dev/null 2>&1 || return 0
     [[ -z "$_NFTBAN_UPDATE_HEARTBEAT_PID" ]] || return 0
 
@@ -181,7 +181,7 @@ _update_heartbeat_start() {
                 local phase suffix=""
                 phase=$(_update_installer_phase)
                 [[ -n "$phase" ]] && suffix=" — installer phase: ${phase}"
-                printf '  … still working: %s (%s elapsed)%s\n' \
+                printf '  … still running: %s (%s elapsed)%s\n' \
                     "$label" "$(_update_fmt_elapsed $(( now - started )))" "$suffix"
                 date +%s > "$stamp" 2>/dev/null || true
             fi

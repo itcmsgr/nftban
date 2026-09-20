@@ -93,7 +93,7 @@ if grep -q 'Package installation can take several minutes on systems with large 
 else
     bad "A2 owner-specified replacement wording is emitted" "not found in $UPD_SRC"
 fi
-if grep -q 'Progress will be shown while the installer is working' "$UPD_SRC"; then
+if grep -q 'Progress will be shown while the installation runs' "$UPD_SRC"; then
     ok "A3 replacement wording promises progress"
 else
     bad "A3 replacement wording promises progress" "not found in $UPD_SRC"
@@ -129,7 +129,7 @@ printf '[2026-09-20] [INFO] [PHASE] switch start\n' > "$FORENSIC_ILOG_FILE"
 # D1: silence for longer than the interval must produce output.
 out_file="$SANDBOX/beat.out"
 ( _update_heartbeat_start "package install" ; sleep 3 ; _update_heartbeat_stop ) > "$out_file" 2>&1
-beats=$(grep -c 'still working' "$out_file" || true)
+beats=$(grep -c 'still running' "$out_file" || true)
 if [[ "$beats" -ge 1 ]]; then ok "D1 silence produces at least one heartbeat line"; else
     bad "D1 silence produces at least one heartbeat line" "got $beats lines"; fi
 
@@ -162,7 +162,7 @@ out2="$SANDBOX/quiet.out"
     for _ in $(seq 1 10); do _update_mark_output; sleep 0.5; done
     _update_heartbeat_stop
 ) > "$out2" 2>&1
-beats2=$(grep -c 'still working' "$out2" || true)
+beats2=$(grep -c 'still running' "$out2" || true)
 if [[ "$beats2" -eq 0 ]]; then ok "D4 stays silent while other output is flowing"; else
     bad "D4 stays silent while other output is flowing" "emitted $beats2 lines over working output"; fi
 
@@ -200,7 +200,7 @@ echo "=== F. NEGATIVE CONTROL: the pre-v1.232.0 experience ==="
 # this arm ever produced output, D1 would prove nothing.
 out4="$SANDBOX/control.out"
 ( sleep 3 ) > "$out4" 2>&1
-ctrl=$(grep -c 'still working' "$out4" || true)
+ctrl=$(grep -c 'still running' "$out4" || true)
 if [[ "$ctrl" -eq 0 ]]; then
     ok "F1 CONTROL: without a heartbeat a silent interval emits nothing"
 else
