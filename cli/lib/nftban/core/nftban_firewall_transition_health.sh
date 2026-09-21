@@ -53,7 +53,17 @@ set -Eeuo pipefail
 
 # _fth_norm: normalize a port list (stdin) to sorted-unique CSV.
 _fth_norm() {
-    tr -cd '0-9,\n ' | tr ',\n ' '\n\n\n' | grep -E '^[0-9]+$' | sort -n -u | paste -sd,
+    # ⛔ AN EMPTY PORT LIST IS AN ANSWER, NOT AN ERROR. This library is sourced into
+    # `set -Eeuo pipefail` callers. With pipefail, a `grep` that matches nothing makes
+    # the WHOLE pipeline return 1, and since this pipeline is the function body, the
+    # caller's errexit kills the entire gather mid-way — silently, with every
+    # remaining FTH_* fact left unset.
+    #
+    # Measured: lab2 (Ubuntu) passed only because its port sets happened to be
+    # non-empty; lab4 (EL9) has an empty udp_ports_in and the gather died there. The
+    # difference between the two hosts was DATA, not code.
+    tr -cd '0-9,\n ' | tr ',\n ' '\n\n\n' | { grep -E '^[0-9]+$' || true; } | sort -n -u | paste -sd,
+    return 0
 }
 
 # _fth_missing <effective_csv> <live_csv>: echo space-separated ports present in
@@ -141,8 +151,12 @@ _fth_ssh_ports() {
 }
 
 _fth_live_set() { # <family ip|ip6> <setname>  (collapse newlines: nft wraps long lists)
+    # Same rule as _fth_norm: an ABSENT set and an EMPTY set are both answers.
+    # `nft list set` fails for a set that does not exist and the `grep` matches
+    # nothing for a set with no elements — neither is a reason to abort the caller.
     "$FTH_NFT" list set "$1" nftban "$2" 2>/dev/null | tr '\n' ' ' \
-        | grep -oE 'elements = \{[^}]*\}' | _fth_norm
+        | { grep -oE 'elements = \{[^}]*\}' || true; } | _fth_norm
+    return 0
 }
 
 _fth_floor_present() { # <family ip|ip6> -> Y/N

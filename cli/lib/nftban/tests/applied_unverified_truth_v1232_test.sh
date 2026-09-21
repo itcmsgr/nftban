@@ -248,6 +248,61 @@ else
     bad "3d FAILED_REBUILD lost its failure wording"
 fi
 
+# -----------------------------------------------------------------------------
+# Section 4 — an EMPTY or ABSENT nft set must not kill the gather under errexit.
+#
+# ⛔ THE DIFFERENCE BETWEEN THE TWO LAB HOSTS WAS DATA, NOT CODE. lab2 (Ubuntu)
+#    passed the whole gather because its port sets happened to be non-empty; lab4
+#    (EL9) has an empty udp_ports_in, `grep` matched nothing, pipefail turned that
+#    into a failing pipeline, and the caller's errexit killed the gather with every
+#    remaining FTH_* fact unset. A health surface that reports NOTHING is
+#    indistinguishable from one that reports "all clear".
+#
+#        AN EMPTY SET IS AN ANSWER. AN ABSENT SET IS AN ANSWER.
+#
+#    These arms run the helpers with errexit ARMED, exactly as production sources
+#    them, so a regression aborts this test instead of silently passing.
+# -----------------------------------------------------------------------------
+echo "== 4. empty/absent nft sets must not abort the gather (errexit armed) =="
+
+( set -Eeuo pipefail
+  # shellcheck source=/dev/null
+  source "$FTH"
+  out=$(printf '' | _fth_norm); rc=$?
+  [[ $rc -eq 0 && -z "$out" ]] || exit 1
+) && ok "4a _fth_norm on EMPTY input returns 0 and empty (no abort)"   || bad "4a _fth_norm aborted or returned non-zero on empty input"
+
+( set -Eeuo pipefail
+  # shellcheck source=/dev/null
+  source "$FTH"
+  out=$(printf 'elements = { }' | _fth_norm); rc=$?
+  [[ $rc -eq 0 ]] || exit 1
+) && ok "4b _fth_norm on a set with NO numeric elements returns 0"   || bad "4b _fth_norm aborted on an element-less set"
+
+( set -Eeuo pipefail
+  # shellcheck source=/dev/null
+  source "$FTH"
+  FTH_NFT=/bin/false                      # every `nft list set` fails => ABSENT set
+  out=$(_fth_live_set ip tcp_ports_in); rc=$?
+  [[ $rc -eq 0 && -z "$out" ]] || exit 1
+) && ok "4c _fth_live_set on an ABSENT set returns 0 and empty (no abort)"   || bad "4c _fth_live_set aborted when the set does not exist"
+
+# The load-bearing one: a FULL gather with every set empty must still populate
+# the install-state facts. This is the lab4 failure, reproduced hermetically.
+( set -Eeuo pipefail
+  # shellcheck source=/dev/null
+  source "$FTH"
+  FTH_NFT=/bin/false
+  FTH_CORE=/bin/true
+  _fth_ssh_ports(){ echo "22"; }
+  export FTH_INSTALL_STATE="$SB/is_empty_sets"
+  printf 'INSTALL_STATE=APPLIED_UNVERIFIED
+AUTHORITY=
+' > "$FTH_INSTALL_STATE"
+  _fth_gather
+  [[ "$FTH_APPLIED_UNVERIFIED" == Y && "$FTH_EXPECT_TABLE_PRESENT" == Y ]] || exit 1
+) && ok "4d FULL gather completes with every set empty/absent (the lab4 failure)"   || bad "4d gather aborted with empty/absent sets — the lab4 failure is back"
+
 echo ""
 echo "PASS=$PASS FAIL=$FAIL"
 [[ "$FAIL" -eq 0 ]]
