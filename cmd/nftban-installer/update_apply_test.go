@@ -161,16 +161,29 @@ func writtenPaths(mock *executor.MockExecutor) []string {
 	return out
 }
 
-// T1 — Happy path.
-func TestUpdateApply_HappyPath_Exits0(t *testing.T) {
+// T1 — Success path: everything passes, and the run still does NOT commit.
+//
+// ⛔ THIS TEST USED TO ASSERT THE DEFECT. It required rc == ExitCommitted(0) on a
+// run that never evaluated convergence, which is exactly the contract v1.232.2
+// removes — the test was pinning the bug in place. Renamed as well as re-asserted:
+// leaving it called "_Exits0" would have left the old claim readable in the suite
+// index even after the body changed.
+func TestUpdateApply_AllPhasesPass_TerminatesAppliedUnverified(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	seedHappyApplyHost(t, mock)
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
-	if rc != state.ExitCommitted {
-		t.Errorf("happy path rc = %d; want ExitCommitted (0)", rc)
+	if rc != state.ExitAppliedUnverified {
+		t.Errorf("all-pass rc = %d; want ExitAppliedUnverified (%d) — preflight+rebuild+validator "+
+			"passing is not a convergence proof", rc, state.ExitAppliedUnverified)
+	}
+	if sf.State != state.StateAppliedUnverified {
+		t.Errorf("persisted state = %s; want %s", sf.State, state.StateAppliedUnverified)
+	}
+	if got := sf.State.ExitCode(); got != rc {
+		t.Errorf("state.ExitCode() = %d but process exit = %d — state↔exit contradiction", got, rc)
 	}
 
 	// Contract audit: every recorded command must be in the whitelist.

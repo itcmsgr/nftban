@@ -53,7 +53,17 @@ set -Eeuo pipefail
 
 # _fth_norm: normalize a port list (stdin) to sorted-unique CSV.
 _fth_norm() {
-    tr -cd '0-9,\n ' | tr ',\n ' '\n\n\n' | grep -E '^[0-9]+$' | sort -n -u | paste -sd,
+    # ⛔ AN EMPTY PORT LIST IS AN ANSWER, NOT AN ERROR. This library is sourced into
+    # `set -Eeuo pipefail` callers. With pipefail, a `grep` that matches nothing makes
+    # the WHOLE pipeline return 1, and since this pipeline is the function body, the
+    # caller's errexit kills the entire gather mid-way — silently, with every
+    # remaining FTH_* fact left unset.
+    #
+    # Measured: lab2 (Ubuntu) passed only because its port sets happened to be
+    # non-empty; lab4 (EL9) has an empty udp_ports_in and the gather died there. The
+    # difference between the two hosts was DATA, not code.
+    tr -cd '0-9,\n ' | tr ',\n ' '\n\n\n' | { grep -E '^[0-9]+$' || true; } | sort -n -u | paste -sd,
+    return 0
 }
 
 # _fth_missing <effective_csv> <live_csv>: echo space-separated ports present in
@@ -100,7 +110,20 @@ _fth_json_get() {
 # Gather live + effective + floor + table state into FTH_* globals.
 # Sets: FTH_EFF_{TCPIN,TCPOUT,UDPIN,UDPOUT}, FTH_LIVE_<set>_<4|6>,
 #       FTH_FLOOR_4, FTH_FLOOR_6 (Y/N), FTH_TABLE_PRESENT (Y/N),
-#       FTH_COMMITTED (Y/N), FTH_IN_RECOVERY (Y/N).
+#       FTH_COMMITTED (Y/N), FTH_APPLIED_UNVERIFIED (Y/N),
+#       FTH_EXPECT_TABLE_PRESENT (Y/N), FTH_TABLE_EXPECT_BASIS,
+#       FTH_IN_RECOVERY (Y/N).
+#
+# v1.232.2 truth split. FTH_COMMITTED used to mean "AUTHORITY is EXCLUSIVE or
+# UPDATE" while being *named* as an install_state assertion. Two different
+# facts were riding one variable, so a state that is NOT committed could only
+# be represented by lying about one of them. They are now separate:
+#   FTH_COMMITTED            — install_state literally says COMMITTED.
+#   FTH_APPLIED_UNVERIFIED   — install_state says APPLIED_UNVERIFIED.
+#   FTH_EXPECT_TABLE_PRESENT — the *expectation* the table-absence breach
+#                              actually needs. Derived, never impersonated.
+# Nothing may set FTH_COMMITTED=Y to obtain an expectation; set the
+# expectation predicate instead.
 # Tests may set FTH_SKIP_GATHER=1 and pre-populate these vars instead.
 # -----------------------------------------------------------------------------
 _fth_ssh_ports() {
@@ -114,12 +137,26 @@ _fth_ssh_ports() {
     done
     # Fallback to the durable ports.d SSH file.
     local sf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/00-ssh.conf"
-    [[ -r "$sf" ]] && grep -oE '^[0-9]+' "$sf" 2>/dev/null | tr '\n' ',' | sed 's/,$//'
+    if [[ -r "$sf" ]]; then
+        grep -oE '^[0-9]+' "$sf" 2>/dev/null | tr '\n' ',' | sed 's/,$//'
+    fi
+    # ⛔ MUST RETURN 0. This library is sourced into `set -Eeuo pipefail` callers,
+    # and _fth_gather consumes this as `ssh_csv=$(_fth_ssh_ports)`. The previous
+    # `[[ -r ... ]] && grep ...` form returned 1 whenever the SSH ports file was
+    # absent, which errexit turns into a SILENT ABORT of the whole gather — every
+    # FTH_* fact left unset, and a health surface that reports nothing rather than
+    # reporting that it could not read. "No SSH ports file" is an ANSWER (empty),
+    # not an error. Found while building the v1.232.2 gather falsifiers.
+    return 0
 }
 
 _fth_live_set() { # <family ip|ip6> <setname>  (collapse newlines: nft wraps long lists)
+    # Same rule as _fth_norm: an ABSENT set and an EMPTY set are both answers.
+    # `nft list set` fails for a set that does not exist and the `grep` matches
+    # nothing for a set with no elements — neither is a reason to abort the caller.
     "$FTH_NFT" list set "$1" nftban "$2" 2>/dev/null | tr '\n' ' ' \
-        | grep -oE 'elements = \{[^}]*\}' | _fth_norm
+        | { grep -oE 'elements = \{[^}]*\}' || true; } | _fth_norm
+    return 0
 }
 
 _fth_floor_present() { # <family ip|ip6> -> Y/N
@@ -163,14 +200,50 @@ _fth_gather() {
         FTH_TABLE_PRESENT=N
     fi
 
-    # COMMITTED = install_state declares NFTBan the active authority.
+    # Install-state facts, read once and reported as themselves.
     FTH_COMMITTED=N
-    if [[ -r "$FTH_INSTALL_STATE" ]] && grep -qE '^AUTHORITY=(EXCLUSIVE|UPDATE)$' "$FTH_INSTALL_STATE" 2>/dev/null; then
-        FTH_COMMITTED=Y
+    FTH_APPLIED_UNVERIFIED=N
+    FTH_EXPECT_TABLE_PRESENT=N
+    FTH_TABLE_EXPECT_BASIS=""
+    local _fth_auth=N
+    if [[ -r "$FTH_INSTALL_STATE" ]]; then
+        # ⛔ `if grep`, NOT `grep && var=Y`. Under the `set -Eeuo pipefail` this
+        # library is sourced into, a bare `cmd && assign` whose cmd fails is a
+        # FAILING SIMPLE COMMAND — errexit would abort gather on the perfectly
+        # ordinary case of "this host is not COMMITTED". The `if` form makes the
+        # grep a condition, where a non-match is an answer rather than an error.
+        if grep -qE '^INSTALL_STATE=COMMITTED$' "$FTH_INSTALL_STATE" 2>/dev/null; then
+            FTH_COMMITTED=Y
+        elif grep -qE '^INSTALL_STATE=APPLIED_UNVERIFIED$' "$FTH_INSTALL_STATE" 2>/dev/null; then
+            FTH_APPLIED_UNVERIFIED=Y
+        fi
+        if grep -qE '^AUTHORITY=(EXCLUSIVE|UPDATE)$' "$FTH_INSTALL_STATE" 2>/dev/null; then
+            _fth_auth=Y
+        fi
+    fi
+    # The table must exist whenever this host has taken firewall authority OR
+    # has an applied transaction on record — including APPLIED_UNVERIFIED,
+    # whose mutation landed even though convergence was never certified.
+    if [[ "$_fth_auth" == Y ]]; then
+        FTH_EXPECT_TABLE_PRESENT=Y; FTH_TABLE_EXPECT_BASIS="install_state AUTHORITY"
+    fi
+    if [[ "$FTH_COMMITTED" == Y ]]; then
+        FTH_EXPECT_TABLE_PRESENT=Y; FTH_TABLE_EXPECT_BASIS="install_state COMMITTED"
+    elif [[ "$FTH_APPLIED_UNVERIFIED" == Y ]]; then
+        FTH_EXPECT_TABLE_PRESENT=Y; FTH_TABLE_EXPECT_BASIS="install_state APPLIED_UNVERIFIED"
     fi
     # In an active recovery window the table may legitimately be mid-restore.
     FTH_IN_RECOVERY=N
-    [[ -f "$FTH_RECOVERY_MARKER" ]] && FTH_IN_RECOVERY=Y
+    # ⛔ `if`, NOT `[[ ]] && assign`. This is the LAST statement of _fth_gather, so
+    # under the `set -Eeuo pipefail` this library is sourced into, the ordinary case
+    # "no recovery marker present" made the whole function return 1 and errexit
+    # aborted the caller — AFTER every FTH_* fact had been correctly gathered. Third
+    # instance of this shape found in this one function; see
+    # OPEN-FTH-GATHER-ABORTS-SILENTLY-UNDER-ERREXIT-WHEN-SSH-PORTS-FILE-ABSENT.
+    if [[ -f "$FTH_RECOVERY_MARKER" ]]; then
+        FTH_IN_RECOVERY=Y
+    fi
+    return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -200,9 +273,20 @@ _fth_compute_breaches() {
     # Floor breach (either family missing lo/established/ssh).
     if [[ "${FTH_FLOOR_4:-Y}" == N ]]; then FTH_B_FLOOR=$((FTH_B_FLOOR+1)); reasons+=("mgmt floor absent (ip)"); fi
     if [[ "${FTH_FLOOR_6:-Y}" == N ]]; then FTH_B_FLOOR=$((FTH_B_FLOOR+1)); reasons+=("mgmt floor absent (ip6)"); fi
-    # Table absent while COMMITTED (exempt during an active recovery window).
-    if [[ "${FTH_TABLE_PRESENT:-Y}" == N && "${FTH_COMMITTED:-N}" == Y && "${FTH_IN_RECOVERY:-N}" == N ]]; then
-        FTH_B_TABLE=$((FTH_B_TABLE+1)); reasons+=("nftban table absent while install_state COMMITTED")
+    # Table absent while it was expected to be present (exempt during an active
+    # recovery window). The predicate is the expectation, NOT the COMMITTED
+    # assertion: APPLIED_UNVERIFIED must breach here too, and it must do so
+    # without anything claiming the transaction committed.
+    local expect=${FTH_EXPECT_TABLE_PRESENT:-}
+    if [[ -z "$expect" ]]; then
+        # Callers predating the truth split only set FTH_COMMITTED. COMMITTED
+        # does imply the table must be present, so derive it — one direction
+        # only; FTH_COMMITTED is never derived back from the expectation.
+        expect=${FTH_COMMITTED:-N}
+    fi
+    if [[ "${FTH_TABLE_PRESENT:-Y}" == N && "$expect" == Y && "${FTH_IN_RECOVERY:-N}" == N ]]; then
+        FTH_B_TABLE=$((FTH_B_TABLE+1))
+        reasons+=("nftban table absent while expected present (${FTH_TABLE_EXPECT_BASIS:-install_state COMMITTED})")
     fi
     FTH_REASON=$(IFS='; '; echo "${reasons[*]}")
 }

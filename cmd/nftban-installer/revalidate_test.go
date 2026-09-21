@@ -35,6 +35,13 @@ func writeRevalState(t *testing.T, dir string, st state.InstallState, ver string
 	sf.Version = ver
 	sf.Mode = "upgrade"
 	sf.SSHPort = 22
+	// v1.232.2: a record written by a real post-v1.230.0 install CARRIES the
+	// convergence verdict that install established. revalidate renders nothing and
+	// can only carry that verdict forward, so a fixture omitting it is not modelling
+	// "a degraded install" — it models "a record with no proof", which has its own
+	// dedicated falsifier (TestRevalidate_AllAssertionsPass_NoCarryableVerdict_
+	// DoesNotCommit in verdict_truth_revalidate_test.go).
+	sf.ConvergenceVerified = state.ConvergenceVerifiedValue
 	if err := sf.WriteAtomic(); err != nil {
 		t.Fatalf("write state: %v", err)
 	}

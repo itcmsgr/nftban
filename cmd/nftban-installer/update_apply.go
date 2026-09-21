@@ -108,7 +108,13 @@ var (
 //
 // Exit-code contract (explicit, no merging):
 //
-//	state.ExitCommitted (0) — preflight + rebuild + validator all passed
+//	state.ExitAppliedUnverified (14)
+//	                        — preflight + rebuild + validator all passed, and
+//	                          convergence was NOT evaluated on this path.
+//	                          ⛔ NOT 0. This plane cannot render the boot
+//	                          projection, so it can never certify convergence;
+//	                          exiting 0 would let every rc==0 consumer read
+//	                          "verified" from a run that verified nothing.
 //	state.ExitDegraded  (1) — preflight failed before apply could start
 //	rebuild's own RC    (*) — rebuild failed; its recovery already ran
 //	                          and propagated through its own exit code
@@ -317,10 +323,40 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// have evidence without pulling logs. NO mutation, NO retry, NO fix.
 	postStateInspection(exec, log)
 
-	// Success — preflight passed, rebuild passed, validator passed.
+	// Applied — preflight passed, rebuild passed, validator passed.
+	//
+	// ⛔ THIS IS NOT COMMITTED, AND MUST NOT BE (v1.232.2). This plane is a thin
+	// sequencer that owns neither rendering nor authority, so it never calls
+	// switchop.RenderBoot and therefore can NEVER establish the
+	// projection_generated leg — that render lives in phasePrepare, reachable only
+	// through runInstall (i.e. a package-manager --deb/--rpm transaction).
+	//
+	// Until v1.232.2 this path transitioned straight to StateCommitted on the
+	// weaker predicate below while CONVERGENCE_VERIFIED stayed EMPTY. Measured on
+	// production srv3: COMMITTED with no verdict and only 3 phases executed.
+	//
+	//	A VALIDATOR REPORTS KERNEL HEALTH. IT CANNOT REPORT WHETHER
+	//	*THIS* TRANSACTION CONVERGED.
+	//
+	// The verdict is recorded EXPLICITLY as NOT_EVALUATED rather than left empty:
+	// empty reads as an omission, NOT_EVALUATED states the intent, and the
+	// Transition invariant refuses COMMITTED for anything but VERIFIED.
 	log.Info("update apply complete — preflight + rebuild + validator all passed")
-	_ = sf.Transition(state.StateCommitted, state.PhaseValidate, "update apply committed")
-	return state.ExitCommitted
+	log.Info("  convergence NOT certified by this transaction path (no current-run boot projection is rendered here); recording APPLIED_UNVERIFIED")
+	sf.ConvergenceVerified = string(switchop.ConvergenceNotEvaluated)
+	_ = sf.Transition(state.StateAppliedUnverified, state.PhaseValidate,
+		"update apply: mutation applied and validated; convergence not certified by this transaction")
+
+	// ⛔ THE OPERATOR BLOCK IS EMITTED HERE, NOT LEFT TO report(). run() returns this
+	// function's exit code directly — report() is only reached through runInstall /
+	// runRepair / runRevalidate — so without this call the operator of a real
+	// `nftban-installer --mode=upgrade` sees only the trailer, and the RECOVERY_CLASS
+	// line never prints on the single path that can produce this state. Proven on
+	// lab2 against the packaged binary before this call existed.
+	log.Result("")
+	emitAppliedUnverifiedBlock(sf, log)
+
+	return state.ExitAppliedUnverified
 }
 
 // postStateInspection emits read-only evidence lines. Every call here MUST
@@ -362,7 +398,9 @@ func stateForPreflightFailure(_ *update.PreflightResult) state.InstallState {
 // the InstallState this apply run should persist. Local and narrow by
 // design (PR-18 review blocker #1):
 //
-//	rc == 0       — validator passed; caller uses StateCommitted directly
+//	rc == 0       — validator passed; the caller does NOT use this helper on
+//	                that branch, and since v1.232.2 it terminates as
+//	                StateAppliedUnverified, never StateCommitted
 //	rc == 1       — DEGRADED (post-state valid enough to classify as degraded)
 //	rc >= 2       — FAILED_REBUILD (apply produced a post-update state
 //	                that cannot be accepted as protected and cannot be

@@ -1578,6 +1578,17 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan] to generate a diagnostic bundle for review."
         echo ""
         echo "[NFTBan] To fix: /usr/lib/nftban/bin/nftban-installer --repair"
+    elif [ \$INSTALLER_EXIT -eq 14 ]; then
+        # v1.232.2 ExitAppliedUnverified — see the matching DEB postinst arm.
+        # ⛔ NOT "COMMITTED" AND NOT "FAILED". The mutation landed; convergence was
+        # never evaluated. Naming it as either of the two existing outcomes would
+        # recreate, in shell, exactly the collapse this release removed from Go.
+        echo "[NFTBan] ========================================"
+        echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} — APPLIED (convergence not certified)"
+        echo "[NFTBan] ========================================"
+        echo "[NFTBan] Files installed and validated; this run did not verify that the"
+        echo "[NFTBan] running firewall matches them."
+        echo "[NFTBan] Recovery: follow the RECOVERY_CLASS line printed above by the installer."
     elif [ \$INSTALLER_EXIT -eq 3 ]; then
         # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
         # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)
@@ -1621,7 +1632,7 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # safe/handoff state. \`nftban firewall reload\` is atomic (nft -f — the
     # kernel never sees an empty/partial ruleset) and this call is NON-FATAL:
     # a reload failure is warned and the package upgrade continues.
-    if [ "\$INSTALL_MODE" = "upgrade" ] && [ "\${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ]; then
+    if [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
         echo "[NFTBan] v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
         if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
             echo "[NFTBan] v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
@@ -1642,7 +1653,7 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # the live whitelist_ipv4 set still shows \`flags interval\`, recreate it with
     # an explicit, SSH-guarded full rebuild. Idempotent: a no-op once the flag is
     # present. NON-FATAL: a failed rebuild is warned and the upgrade continues.
-    if [ "\$INSTALL_MODE" = "upgrade" ] && [ "\${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ] && command -v nft >/dev/null 2>&1; then
+    if [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ] && command -v nft >/dev/null 2>&1; then
         if nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -qE 'flags[[:space:]]+interval[[:space:]]*\$'; then
             echo "[NFTBan] v1.168: whitelist sets lack the timeout flag; rebuilding to enable --ttl expiry..."
             # v1.228.5: rebuild now returns non-zero with the CAUSE on stderr (e.g.

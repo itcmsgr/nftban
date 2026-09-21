@@ -1331,7 +1331,7 @@ NFTBAN_INSTALL_STATE_KNOWN_LITERALS="\
 COMMITTED DEGRADED DETECT_COMPLETE FAILED_AUTHORITY_ABORT FAILED_NO_FIREWALL \
 FAILED_PREFLIGHT_DISK_SPACE FAILED_REBUILD FAILED_RENDER FAILED_SSH_UNKNOWN \
 FAILED_TAKEOVER FILES_INSTALLED PREPARE_COMPLETE RESTORE_DECIDED \
-REBUILD_REFUSED_BUSY REBUILD_NOT_EXECUTED \
+REBUILD_REFUSED_BUSY REBUILD_NOT_EXECUTED APPLIED_UNVERIFIED \
 RESTORE_DEGRADED RESTORE_EXECUTED RESTORE_FAILED_EXECUTION \
 RESTORE_FAILED_VERIFICATION RESTORE_INTENT_REQUIRED RESTORE_REFUSED \
 SERVICES_COMPLETE SWITCH_COMPLETE UNINSTALL_FAILED_RELEASE UNINSTALL_PLANNING \
@@ -1480,13 +1480,26 @@ nftban_render_install_transaction_truth() {
             _cause_line="no readable INSTALL_STATE at ${_f:-<no path supplied>}"
             ;;
         *)
-            _status_line="NOT COMMITTED — this install/upgrade transaction did not complete"
-            if [[ -n "$_reason" ]]; then
-                _cause_line="$_reason"
-            elif [[ -n "$_phase" ]]; then
-                _cause_line="no FAILURE_REASON recorded; the transaction stopped at phase ${_phase}"
+            # v1.232.2: APPLIED_UNVERIFIED classifies as NOT_COMMITTED — correctly —
+            # but "did not complete" is FALSE about it. The mutation applied and the
+            # validator passed; what is missing is the convergence verdict. Stating
+            # the generic sentence here would send an operator to look for a failure
+            # that did not occur.
+            if [[ "$_state" == "APPLIED_UNVERIFIED" ]]; then
+                local _conv
+                _conv=$(nftban_install_state_field "$_f" "CONVERGENCE_VERIFIED") || _conv=""
+                [[ -n "$_conv" ]] || _conv="(absent)"
+                _status_line="APPLIED, NOT CERTIFIED — the mutation applied and the validator passed; this transaction never evaluated convergence"
+                _cause_line="CONVERGENCE_VERIFIED=${_conv}; no current-run boot projection was rendered on this path"
             else
-                _cause_line="no FAILURE_REASON recorded in the state file"
+                _status_line="NOT COMMITTED — this install/upgrade transaction did not complete"
+                if [[ -n "$_reason" ]]; then
+                    _cause_line="$_reason"
+                elif [[ -n "$_phase" ]]; then
+                    _cause_line="no FAILURE_REASON recorded; the transaction stopped at phase ${_phase}"
+                else
+                    _cause_line="no FAILURE_REASON recorded in the state file"
+                fi
             fi
             ;;
     esac

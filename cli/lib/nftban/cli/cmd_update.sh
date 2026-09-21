@@ -1046,6 +1046,14 @@ _update_finalize_verdict() {
         _verdict_unknown_note=" (CONTRADICTORY — COMMITTED recorded beside a FAILURE_REASON)"
     elif [[ "$_verdict_class" == "NOT_COMMITTED" ]]; then
         [[ "$_installer_state" == "DEGRADED" ]] && _verdict_class="DEGRADED"
+        # v1.232.2: APPLIED_UNVERIFIED is not-COMMITTED — correctly — but it is
+        # also not FAILED. The mutation landed and the validator passed; only the
+        # convergence verdict is missing. Routing it to the FAILED block would
+        # tell an operator to roll back an upgrade that actually applied, which is
+        # the same "one truthful state wearing another's label" defect in the
+        # opposite direction.
+        [[ "$_installer_state" == "APPLIED_UNVERIFIED" ]] && _verdict_class="APPLIED_UNVERIFIED"
+        :
     else
         _verdict_class="INDETERMINATE"
     fi
@@ -1228,6 +1236,53 @@ _update_finalize_verdict() {
             echo ""
             _update_final_summary "FAILED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "FAILED"
             return 2
+            ;;
+
+        APPLIED_UNVERIFIED)
+            # v1.232.2 (BUG-UPDATE-APPLY-CAN-COMMIT-WITHOUT-CONVERGENCE-VERDICT).
+            #
+            # ⛔ NOT success, NOT failure, NOT indeterminate. Each of those three
+            # would be a false statement here:
+            #   success       — nothing observed that this transaction converged;
+            #   failure       — the mutation applied and the validator passed;
+            #   indeterminate — the outcome IS known, and the state file says so.
+            #
+            # Like the FAILED arm it writes NO success history row and does NOT
+            # delete state/update_failed, and it returns non-zero. Unlike it, the
+            # operator is not sent to roll back.
+            _update_log WARN "=== Update APPLIED (convergence not certified): v${current_version} → v${new_version} (${_update_duration}s); install_state=${_installer_state} ==="
+            _update_write_history "$current_version" "$new_version" "applied_unverified" "$install_type" "$_update_duration"
+
+            local _conv_verdict
+            _conv_verdict=$(grep -m1 '^CONVERGENCE_VERIFIED=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "")
+            [[ -n "$_conv_verdict" ]] || _conv_verdict="(absent)"
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Update APPLIED — convergence not certified"
+            echo "  v$current_version → v$new_version"
+            echo "  install_state: ${_installer_state}   CONVERGENCE_VERIFIED: ${_conv_verdict}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  The new files are installed and the validator passed."
+            echo "  This run did NOT verify that the running firewall matches them."
+            echo ""
+            if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
+                nftban_render_install_transaction_truth "$_install_state_file" \
+                    "unchanged by this verdict — check it with 'nftban health'; an active firewall is NOT evidence this upgrade converged" || true
+                echo ""
+            fi
+            echo "  See the installer output above for its RECOVERY_CLASS line — it is"
+            echo "  the authority on which recovery mechanism applies to this state."
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo "  History: nftban update history"
+            echo ""
+            _update_final_summary "APPLIED_UNVERIFIED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "UNVERIFIED"
+            # 14 matches the installer's ExitAppliedUnverified. The same outcome
+            # carries the same number on both planes — and 14 is the lowest value
+            # free in BOTH exit-code namespaces (installer 0-10, update 0-3/10-13).
+            return 14
             ;;
 
         INDETERMINATE)
@@ -2719,6 +2774,29 @@ _cmd_update_auto_run() {
         update_result=$?
     fi
 
+    # ⛔ v1.232.2: 14 (APPLIED_UNVERIFIED) IS NOT A FAILED UPDATE AND MUST NOT BE
+    # ROLLED BACK. `set -Eeuo pipefail` is in force, so the pipeline above does
+    # propagate _cmd_update_main's rc — which means a bare `-eq 0` test would send
+    # this outcome down the else-arm, and NFTBAN_UPDATE_AUTO_ROLLBACK defaults to
+    # true. That reverses a mutation that applied and validated, on the strength of
+    # a MISSING PROOF rather than an observed failure.
+    #
+    #     AN OUTCOME THAT WAS NEVER VERIFIED IS NOT AN OUTCOME THAT FAILED.
+    #
+    # Handled before the success test so neither arm can claim it.
+    if [[ $update_result -eq 14 ]]; then
+        local new_version
+        new_version=$(_get_current_version)
+        _update_log WARN "Update APPLIED but convergence was not certified: $pre_update_version -> $new_version"
+        _update_log WARN "  NOT rolling back: the files applied and the validator passed."
+        _update_log WARN "  Run 'nftban health' and re-run the full update transaction to obtain a verdict."
+        if [[ "${NFTBAN_UPDATE_NOTIFY_SUCCESS:-true}" == "true" ]]; then
+            _update_notify_email "applied_unverified" "$pre_update_version" "$new_version" \
+                "Update applied and validated; this transaction did not certify convergence"
+        fi
+        return 14
+    fi
+
     if [[ $update_result -eq 0 ]]; then
         local new_version
         new_version=$(_get_current_version)
@@ -2755,7 +2833,7 @@ _cmd_update_auto_run() {
 
 _update_notify_email() {
     # Send email notification about update status
-    # Args: $1 = status (success|failure)
+    # Args: $1 = status (success|applied_unverified|failure)
     #       $2 = old_version
     #       $3 = new_version
     #       $4 = additional message (optional)
@@ -2783,6 +2861,34 @@ Current:  v$new_version
 Time:     $(date '+%Y-%m-%d %H:%M:%S %Z')
 
 The update was applied automatically and all health checks passed.
+
+View update log: ${NFTBAN_LOG_DIR}/update.log
+View apply log: journalctl -u nftban-update-apply.service"
+    elif [[ "$status" == "applied_unverified" ]]; then
+        # ⛔ v1.232.2: its own message. The two existing arms are "successful" and
+        # "FAILED", and this outcome is neither — sending either one would put a
+        # false statement in an operator's inbox, which is the least recoverable
+        # surface in the whole chain.
+        subject="[NFTBan] Update APPLIED, convergence NOT certified on $hostname_val"
+        body="NFTBan auto-update applied, but this transaction did not certify convergence.
+
+Server:   $hostname_val
+Previous: v$old_version
+Current:  v$new_version
+Time:     $(date '+%Y-%m-%d %H:%M:%S %Z')
+${extra_msg:+
+Details: $extra_msg}
+
+WHAT THIS MEANS
+  The new files are installed and the validator passed.
+  This run did NOT verify that the running firewall matches them.
+  Enforcement may well be correct — it has simply not been PROVEN by this run.
+
+NOTHING WAS ROLLED BACK. The mutation applied; there is no failure to undo.
+
+What to do:
+  nftban health                 # current enforcement state
+  nftban update                 # re-run the full transaction to obtain a verdict
 
 View update log: ${NFTBAN_LOG_DIR}/update.log
 View apply log: journalctl -u nftban-update-apply.service"

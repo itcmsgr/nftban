@@ -130,6 +130,21 @@ const (
 	// a failure: an unobservable leg is an absence of evidence, and manufacturing either
 	// verdict from it is the error this whole gate exists to remove.
 	ConvergenceUnverified ConvergenceVerdict = "UNVERIFIED"
+
+	// ConvergenceNotEvaluated — v1.232.2. This transaction PATH does not evaluate
+	// convergence at all; the contract was never run.
+	//
+	// ⛔ DISTINCT FROM ITS NEIGHBOURS, and the distinction is the point:
+	//	NOT_CONVERGED  the contract RAN and a leg FAILED
+	//	UNVERIFIED     the contract RAN but a leg could not be OBSERVED
+	//	NOT_EVALUATED  the contract NEVER RAN for this caller
+	//
+	// It replaces the EMPTY string for this condition. Empty means "someone forgot
+	// to establish a verdict", which is exactly how a COMMITTED-without-proof state
+	// became representable; a value that cannot express intent cannot be enforced.
+	// A state carrying this verdict must terminate as APPLIED_UNVERIFIED, never
+	// COMMITTED.
+	ConvergenceNotEvaluated ConvergenceVerdict = "NOT_EVALUATED"
 )
 
 // generationObservation is the tri-state read of the effective generation counter.

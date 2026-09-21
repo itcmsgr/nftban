@@ -74,4 +74,22 @@ TimeoutStartSec=600
 MemoryMax=512M
 CPUQuota=80%
 
+# ⛔ 14 (APPLIED_UNVERIFIED) IS DELIBERATELY NOT LISTED HERE (v1.232.2).
+#
+# `nftban update auto-apply` returns 14 when the mutation applied and the
+# validator passed but the transaction certified no convergence. Adding 14 to
+# this list would mark the unit `active (exited)` — i.e. would have systemd
+# state that the update succeeded — which is the exact impersonation this
+# release removed from the Go state model. The unit failing is CORRECT: an
+# uncertified transaction is something an operator must look at.
+#
+# Consequence, accepted knowingly: ExecStartPost above does not run on 14, so
+# `nftban update verify` is not executed automatically. That is not a loss worth
+# fixing here. verify is a SIX-CHECK HEALTH REPORT, and printing a green
+# "6/6 passed" immediately below "convergence not certified" is precisely the
+# conflation this lane exists to remove —
+#     A VALIDATOR REPORTS KERNEL HEALTH. IT CANNOT REPORT WHETHER
+#     *THIS* TRANSACTION CONVERGED.
+# The operator is alerted by the unit failure, and the journal already carries
+# the APPLIED_UNVERIFIED block and its RECOVERY_CLASS line from the run itself.
 SuccessExitStatus=0

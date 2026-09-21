@@ -91,14 +91,39 @@ const (
 	// StateCommitted is the ONLY install-class state that means "this transaction
 	// succeeded". ⛔ See the OWNER RULING at the top of this file before making any
 	// rebuild disposition — DEFERRED_RUNTIME above all — sufficient for it.
-	StateCommitted        InstallState = "COMMITTED"
-	StateDegraded         InstallState = "DEGRADED"
-	StateFailedSSH        InstallState = "FAILED_SSH_UNKNOWN"
-	StateFailedAbort      InstallState = "FAILED_AUTHORITY_ABORT"
-	StateFailedRender     InstallState = "FAILED_RENDER"
-	StateFailedRebuild    InstallState = "FAILED_REBUILD"
-	StateFailedNoFirewall InstallState = "FAILED_NO_FIREWALL"
-	StateFailedTakeover   InstallState = "FAILED_TAKEOVER"
+	StateCommitted InstallState = "COMMITTED"
+
+	// StateAppliedUnverified — v1.232.2 TRANSACTION-TRUTH. The requested mutation
+	// completed, the rebuild returned successfully and the validator passed, and
+	// the resulting kernel state is operationally healthy — BUT this transaction
+	// did NOT establish the post-update convergence proof, so it is NOT COMMITTED.
+	//
+	//	COMMITTED          = mutation completed + THIS transaction's convergence certified
+	//	APPLIED_UNVERIFIED = mutation completed + resulting state validated
+	//	                     + convergence NOT certified by this transaction
+	//
+	// ⛔ WHY IT EXISTS. runUpdateApply is a thin sequencer that by design owns
+	// neither rendering nor authority ("config rendering: all owned by
+	// firewall_rebuild; PR-18 owns NONE of them"), so it can never establish the
+	// projection_generated leg — that render lives in phasePrepare. It previously
+	// reached StateCommitted anyway, on the weaker predicate
+	// "preflight + rebuild + validator passed", leaving CONVERGENCE_VERIFIED EMPTY.
+	// Measured on production srv3 2026-09-21: INSTALL_STATE=COMMITTED with an empty
+	// verdict and only 3 phases run. That is an authoritative success state asserted
+	// without the evidence it represents.
+	//
+	// ⛔ A HEALTH CHECK IS NOT A SUBSTITUTE. The validator reports KERNEL HEALTH,
+	// which can be true from a PREVIOUS transaction. projection_generated asks
+	// whether the projection was rendered IN THIS RUN — a question no post-hoc
+	// health check can answer.
+	StateAppliedUnverified InstallState = "APPLIED_UNVERIFIED"
+	StateDegraded          InstallState = "DEGRADED"
+	StateFailedSSH         InstallState = "FAILED_SSH_UNKNOWN"
+	StateFailedAbort       InstallState = "FAILED_AUTHORITY_ABORT"
+	StateFailedRender      InstallState = "FAILED_RENDER"
+	StateFailedRebuild     InstallState = "FAILED_REBUILD"
+	StateFailedNoFirewall  InstallState = "FAILED_NO_FIREWALL"
+	StateFailedTakeover    InstallState = "FAILED_TAKEOVER"
 
 	// ═════════════════════════════════════════════════════════════════════
 	// v1.230.0 Gate 6R — DEFERRED REBUILD TERMINALS (NOT failures)
@@ -322,6 +347,37 @@ const (
 	ExitRestoreFailedExecution    = 8
 	ExitRestoreDegraded           = 9
 	ExitRestoreFailedVerification = 10
+
+	// ExitAppliedUnverified — v1.232.2. Distinct on purpose: the mutation was
+	// applied and validated, but convergence was NOT certified by this transaction.
+	// It is NOT full success and NOT a failure, and collapsing it into either
+	// recreates at the process boundary exactly the truth loss this state removes.
+	//
+	// ⛔ 14, NOT 11. The installer Exit* domain allocates 0-10, and `nftban update`
+	// carries its OWN operator-facing vocabulary through the same process exit —
+	// 10 NOT_APPLICABLE_SOURCE_INSTALL, 11 NOT_APPLICABLE_UNKNOWN_INSTALL_METHOD,
+	// 12 PRECONDITION_MISMATCH_PACKAGER_FAMILY, 13 PRECONDITION_MISMATCH_REQUIRES_OPERATOR
+	// (cmd_update_detection.sh). 14 is the lowest value free in BOTH domains.
+	// The overlap between those two numbering schemes is tracked separately.
+	ExitAppliedUnverified = 14
+)
+
+// Convergence verdict values as PERSISTED in CONVERGENCE_VERIFIED.
+//
+// ⛔ Mirrored from switchop.ConvergenceVerdict deliberately: neither package
+// imports the other, and the state machine must be able to enforce the
+// transaction-truth invariant without taking that dependency. A drift guard in
+// the state tests pins these against the switchop constants, so the mirror can
+// never silently diverge from the producer.
+const (
+	// ConvergenceVerifiedValue — the ONLY verdict that may accompany COMMITTED.
+	ConvergenceVerifiedValue = "VERIFIED"
+	// ConvergenceNotEvaluatedValue — this transaction path does not evaluate
+	// convergence at all. ⛔ NOT "the test ran and failed" (that is NOT_CONVERGED)
+	// and NOT "a leg could not be observed" (that is UNVERIFIED). It is also the
+	// replacement for the EMPTY string, which is how this defect became
+	// representable: empty reads as "someone forgot", so it cannot carry intent.
+	ConvergenceNotEvaluatedValue = "NOT_EVALUATED"
 )
 
 // IsApplyTerminal reports whether a state represents the terminal
@@ -359,6 +415,10 @@ func (s InstallState) IsApplyTerminal() bool {
 		// meaning of "a rebuild executed and failed".
 		StateRebuildRefusedBusy,
 		StateRebuildNotExecuted,
+		// v1.232.2: an apply WAS attempted and reached a definitive outcome — the
+		// mutation landed. Fleet operators must see it in history, and it must be
+		// visibly DISTINCT from "success": the transaction never proved convergence.
+		StateAppliedUnverified,
 		// PR-23: uninstall terminal states represent completed apply
 		// outcomes too. IsApplyTerminal participates in the
 		// history-write gate, but the uninstall-history Option A lock
@@ -468,6 +528,12 @@ func (s InstallState) IsTerminal() bool {
 	if s == StateRebuildRefusedBusy || s == StateRebuildNotExecuted {
 		return true
 	}
+	// v1.232.2: APPLIED_UNVERIFIED is terminal for THIS run in the same sense —
+	// the transaction has stopped and will not advance without a new invocation.
+	// The convergence proof is still owed; a terminal state is not a satisfied one.
+	if s == StateAppliedUnverified {
+		return true
+	}
 	// PR-25: all four restore execution outcomes are terminal. The two
 	// failure-class terminals are already covered via IsFailed() above;
 	// add the two success-class terminals here.
@@ -512,6 +578,8 @@ func (s InstallState) ExitCode() int {
 		return ExitRestoreFailedVerification
 	case StateDegraded:
 		return ExitDegraded
+	case StateAppliedUnverified:
+		return ExitAppliedUnverified
 	case StateFailedAbort:
 		return ExitAborted
 	// v1.230.0 Gate 6R: DEFERRED IS NOT SUCCESS. The install did not complete, so the
@@ -539,7 +607,7 @@ func (s InstallState) ResumePhase() Phase {
 	switch s {
 	case StateCommitted:
 		return PhaseReport
-	case StateDegraded, StateServicesComplete:
+	case StateDegraded, StateAppliedUnverified, StateServicesComplete:
 		return PhaseValidate
 	case StateSwitchComplete:
 		return PhaseConfigure

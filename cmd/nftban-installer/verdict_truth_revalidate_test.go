@@ -39,8 +39,53 @@ func writeRevalStateHealth(t *testing.T, dir, persistedHealth string, protection
 	sf.HealthResourceProfile = string(coresafety.ResourceTierMedium)
 	sf.HealthResourceProtection = protection
 	sf.HealthMemMaxEffective = mediumProfile().MemoryMax
+	// v1.232.2: a DEGRADED record produced by a real post-v1.230.0 install CARRIES
+	// the convergence verdict its install recorded. revalidate can only ever carry
+	// that verdict forward — it renders nothing — so a fixture that omits it is not
+	// modelling "a degraded install", it is modelling "a record with no proof",
+	// which is a different case and has its own test below.
+	sf.ConvergenceVerified = state.ConvergenceVerifiedValue
 	if err := sf.WriteAtomic(); err != nil {
 		t.Fatalf("write state: %v", err)
+	}
+}
+
+// ⛔ THE CASE THE INVARIANT EXPOSED. revalidate reached COMMITTED from LIVE
+// ASSERTIONS ALONE on a record carrying no convergence verdict — a second path to
+// the srv3 shape, found by the v1.232.2 Transition invariant rather than by review.
+// All assertions pass here; the run must still refuse to certify what it did not
+// observe.
+func TestRevalidate_AllAssertionsPass_NoCarryableVerdict_DoesNotCommit(t *testing.T) {
+	inj, m, cleanup := newAllAssertionsPassFixture(t)
+	defer cleanup()
+	inj.healthProfile = mediumProfilePtr()
+	setHealthActiveMatch(m, mediumProfile())
+
+	dir := t.TempDir()
+	writeRevalStateHealth(t, dir, string(healthresource.StateActiveMatch), true)
+
+	// Strip the verdict: this is the pre-v1.230.0 / never-evaluated record shape.
+	stripped := state.NewStateFile(dir)
+	if err := stripped.Read(); err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	stripped.ConvergenceVerified = ""
+	if err := stripped.WriteAtomic(); err != nil {
+		t.Fatalf("rewrite state: %v", err)
+	}
+
+	got, rc := driveRevalidateDir(t, dir, inj, m)
+
+	if got.State == state.StateCommitted {
+		t.Fatalf("revalidate recommitted COMMITTED with CONVERGENCE_VERIFIED=%q — passing live "+
+			"assertions are not a convergence proof", got.ConvergenceVerified)
+	}
+	if rc == state.ExitCommitted {
+		t.Fatalf("revalidate returned ExitCommitted (0) on a record with no convergence verdict")
+	}
+	if got.State != state.StateAppliedUnverified || rc != state.ExitAppliedUnverified {
+		t.Errorf("state=%s rc=%d; want %s / %d — the assertions DID all pass, so DEGRADED would "+
+			"be false too", got.State, rc, state.StateAppliedUnverified, state.ExitAppliedUnverified)
 	}
 }
 

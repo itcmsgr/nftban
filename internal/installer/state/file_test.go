@@ -47,6 +47,13 @@ func TestTransitionToCommittedClearsCarryOverFields(t *testing.T) {
 	sf.PreflightPassed = false
 	sf.Authority = "UPDATE"
 
+	// v1.232.2: COMMITTED now requires a convergence proof. These hygiene tests
+	// describe a run that DID converge — that is the only kind of run that reaches
+	// COMMITTED — so the fixture states it. Set here rather than in
+	// newDryStateFile() so the precondition stays visible at each call site and a
+	// future test cannot inherit the ability to commit by accident.
+	sf.ConvergenceVerified = ConvergenceVerifiedValue
+
 	if err := sf.Transition(StateCommitted, PhaseValidate, ""); err != nil {
 		t.Fatalf("Transition returned unexpected error: %v", err)
 	}
@@ -74,6 +81,13 @@ func TestTransitionToCommittedPreservesConflictsWhenAuthorityAmbiguous(t *testin
 	sf.Conflicts = "UFW"
 	sf.PreflightPassed = false
 	sf.Authority = "AMBIGUOUS"
+
+	// v1.232.2: COMMITTED now requires a convergence proof. These hygiene tests
+	// describe a run that DID converge — that is the only kind of run that reaches
+	// COMMITTED — so the fixture states it. Set here rather than in
+	// newDryStateFile() so the precondition stays visible at each call site and a
+	// future test cannot inherit the ability to commit by accident.
+	sf.ConvergenceVerified = ConvergenceVerifiedValue
 
 	if err := sf.Transition(StateCommitted, PhaseValidate, ""); err != nil {
 		t.Fatalf("Transition returned unexpected error: %v", err)
@@ -236,6 +250,13 @@ func TestTransitionToIntermediateStatePreservesAllFields(t *testing.T) {
 func TestTransitionFromCleanIdleToCommittedIdempotent(t *testing.T) {
 	sf := newDryStateFile(t)
 	// Fields default to zero values; no prior failure.
+
+	// v1.232.2: COMMITTED now requires a convergence proof. These hygiene tests
+	// describe a run that DID converge — that is the only kind of run that reaches
+	// COMMITTED — so the fixture states it. Set here rather than in
+	// newDryStateFile() so the precondition stays visible at each call site and a
+	// future test cannot inherit the ability to commit by accident.
+	sf.ConvergenceVerified = ConvergenceVerifiedValue
 
 	if err := sf.Transition(StateCommitted, PhaseValidate, ""); err != nil {
 		t.Fatalf("Transition returned unexpected error: %v", err)

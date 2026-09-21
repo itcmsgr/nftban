@@ -143,8 +143,44 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	}
 
 	if validate.AllPassed(results) {
-		log.Info("revalidate: all live post-install assertions passed — recommitting install_state COMMITTED")
+		// ⛔ v1.232.2 (BUG-UPDATE-APPLY-CAN-COMMIT-WITHOUT-CONVERGENCE-VERDICT).
+		// FOUND BY THE INVARIANT, NOT BY INSPECTION: this path was a SECOND caller
+		// able to reach COMMITTED without a convergence proof. It runs no rebuild and
+		// no render — by its own contract, "no install, no daemon restart" — so it can
+		// only ever CARRY FORWARD the verdict the original install recorded. When
+		// there is none to carry, passing assertions are not a substitute:
+		//
+		//	A HEALTHY DAEMON IS NOT EVIDENCE THAT A TRANSACTION CONVERGED.
+		//
+		// This is the same reasoning the file already applies, two blocks up, to the
+		// whitelist and convergence verdicts it refuses to RE-DERIVE. The rule was
+		// stated there and then not applied to the terminal itself.
 		_ = exec.Remove(fhs.InstallFailedMarker)
+
+		// ⛔ ASK THE AUTHORITY, DO NOT RESTATE IT. This gate previously read
+		// `!= state.ConvergenceVerifiedValue`, which refuses DEFERRED and UNVERIFIED —
+		// both of which Transition PERMITS. A deferring host could then never clear a
+		// DEGRADED record here while committing fine through the install chain.
+		if !state.ConvergenceVerdictPermitsCommit(sf.ConvergenceVerified) {
+			log.Info("revalidate: all live post-install assertions passed")
+			log.Warn("revalidate: the record carries CONVERGENCE_VERIFIED=%q, which is not a verdict any",
+				sf.ConvergenceVerified)
+			log.Warn("  run established — there is no convergence proof to carry forward, and revalidate")
+			log.Warn("  renders nothing and cannot establish one.")
+			log.Warn("  Recording APPLIED_UNVERIFIED: the install is as healthy as this run can observe,")
+			log.Warn("  and this run certified no convergence. Re-run the full install/update transaction")
+			log.Warn("  to obtain a verdict.")
+			if err := sf.Transition(state.StateAppliedUnverified, state.PhaseValidate,
+				"revalidate: live assertions pass but no convergence verdict exists to carry forward"); err != nil {
+				log.Error("revalidate: failed to persist APPLIED_UNVERIFIED state: %v", err)
+				return state.ExitFatal
+			}
+			return state.ExitAppliedUnverified
+		}
+
+		log.Info("revalidate: all live post-install assertions passed and the record carries a "+
+			"commit-eligible convergence verdict (%s) — recommitting install_state COMMITTED",
+			sf.ConvergenceVerified)
 		if err := sf.Transition(state.StateCommitted, state.PhaseValidate, ""); err != nil {
 			log.Error("revalidate: failed to persist COMMITTED state: %v", err)
 			return state.ExitFatal

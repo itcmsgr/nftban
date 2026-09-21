@@ -197,7 +197,92 @@ func (sf *StateFile) Path() string {
 // (v1.135 scope §5: every DEGRADED has a non-empty machine-readable reason).
 const degradedReasonFallback = "degraded: post-install assertions failed (reason unavailable)"
 
+// commitEligibleConvergenceVerdicts is the ALLOWLIST of CONVERGENCE_VERIFIED values
+// from which COMMITTED may be reached. Each member names a state in which the
+// post-update convergence contract ACTUALLY RAN; the values it excludes — "" and
+// NOT_EVALUATED — name states in which it did not, and NOT_CONVERGED names one in
+// which it ran and failed.
+//
+// ⛔ MIRRORS, IT DOES NOT OWN. switchop.ConvergenceVerdict is the authority; these are
+// duplicated here only because internal/installer/state must not import switchop
+// (switchop already depends on state). internal/installer/switchop/convergence.go
+// carries a matching note.
+var commitEligibleConvergenceVerdicts = []string{
+	ConvergenceVerifiedValue,
+	"DEFERRED",
+	"UNVERIFIED",
+}
+
+// ConvergenceVerdictPermitsCommit is the EXPORTED predicate. Any caller that needs
+// to know "could this record reach COMMITTED?" BEFORE attempting the transition must
+// ask this function rather than comparing to a literal.
+//
+// ⛔ ADDED BECAUSE A SECOND AUTHORITY DISAGREED WITH THE FIRST. runRevalidate's
+// carry-forward gate was written as `!= ConvergenceVerifiedValue`, which refuses
+// DEFERRED and UNVERIFIED — verdicts the boundary invariant PERMITS. Result: a host
+// whose install legitimately deferred could never clear a DEGRADED record through
+// --revalidate, while the same verdict committed fine through the install chain.
+// Caught only by the package-native matrix; the unit test used "" , which both
+// spellings refuse, so it passed.
+//
+//	ONE PREDICATE, ONE AUTHORITY. A pre-check that reimplements the invariant it
+//	is pre-checking will drift away from it.
+func ConvergenceVerdictPermitsCommit(v string) bool { return convergenceVerdictPermitsCommit(v) }
+
+func convergenceVerdictPermitsCommit(v string) bool {
+	for _, ok := range commitEligibleConvergenceVerdicts {
+		if v == ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
+	// ⛔ TRANSACTION-TRUTH INVARIANT (v1.232.2). COMMITTED may only be reached from a
+	// state in which a convergence verdict was ACTUALLY ESTABLISHED. Enforced HERE, at
+	// the state-machine boundary, so it holds for EVERY caller — including future ones
+	// — rather than depending on each path remembering the rule.
+	//
+	// ⛔ THIS IS AN ALLOWLIST, AND IT IS DELIBERATELY NOT `== VERIFIED`.
+	//
+	// The first version of this guard required VERIFIED. That is a stronger claim than
+	// the defect warrants and it BREAKS PRODUCTION: assertPostUpdateConvergence has
+	// long treated DEFERRED and UNVERIFIED as permitted intermediate dispositions
+	// (see its contract block — "setting r.Passed = false on this arm re-introduces
+	// P12-A01 for every upgrade"), and phaseSwitch writes exactly those verdicts on
+	// ordinary hosts. Requiring VERIFIED here would have left every deferring upgrade
+	// stuck at SERVICES_COMPLETE. Whether DEFERRED and UNVERIFIED *should* be
+	// commit-eligible is a real, separate question with its own documented history;
+	// re-deciding it inside a bug fix would change fleet-wide upgrade behaviour under
+	// cover of something else. Tracked as its own handle.
+	//
+	// WHAT THE DEFECT ACTUALLY IS: COMMITTED reached when NO VERDICT WAS EVER
+	// ESTABLISHED. That is what production srv3 held — COMMITTED beside an EMPTY
+	// CONVERGENCE_VERIFIED — and what update_apply produced.
+	//
+	//	VERIFIED        permitted   the contract ran and every leg passed
+	//	DEFERRED        permitted   ran; debt recorded, gated by other assertions
+	//	UNVERIFIED      permitted   ran; a leg was unobservable, gated likewise
+	//	""              REFUSED     no verdict exists — the srv3 shape
+	//	NOT_EVALUATED   REFUSED     the path declines to evaluate convergence
+	//	NOT_CONVERGED   REFUSED     it ran and the answer was NO
+	//	anything else   REFUSED     fail closed; an unknown verdict is not a proof
+	//
+	// An allowlist rather than a denylist so a future verdict value cannot inherit
+	// permission by being unrecognised.
+	//
+	// ⛔ THE STATE IS NOT MUTATED ON REFUSAL. Every caller writes
+	// `_ = sf.Transition(...)`, so an error return alone would be ignored and
+	// COMMITTED would still land. Refusing to ASSIGN is what makes the false-green
+	// structurally impossible; the state stays at its prior, truthful value.
+	if newState == StateCommitted && !convergenceVerdictPermitsCommit(sf.ConvergenceVerified) {
+		return fmt.Errorf(
+			"refusing COMMITTED: CONVERGENCE_VERIFIED=%q is not a verdict that was established by "+
+				"any run — COMMITTED requires one of %v. A completed mutation and a healthy daemon "+
+				"are not evidence that THIS transaction converged",
+			sf.ConvergenceVerified, commitEligibleConvergenceVerdicts)
+	}
 	sf.State = newState
 	sf.PhaseReached = string(phase)
 	if newState.IsFailed() || newState.IsDeferredRebuild() {

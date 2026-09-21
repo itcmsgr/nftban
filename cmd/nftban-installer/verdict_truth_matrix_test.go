@@ -63,6 +63,13 @@ func driveRepair(t *testing.T, startState state.InstallState, inj *assertionTest
 	sf.State = startState
 	sf.Version = version.Version
 	sf.SSHPort = 22
+	// v1.232.2: a record that has reached this point on a REAL host carries the
+	// convergence verdict phaseSwitch wrote (phases.go: sf.ConvergenceVerified =
+	// string(conv.Verdict)). Neither driver runs phaseSwitch, so the fixture has to
+	// state it. Omitting it does not model "a degraded/services-complete install" —
+	// it models "a record with no verdict", which is the srv3 shape and has its own
+	// falsifiers in internal/installer/state.
+	sf.ConvergenceVerified = state.ConvergenceVerifiedValue
 	if seedPersisted != nil {
 		seedPersisted(sf)
 	}
@@ -184,6 +191,13 @@ func drivePhaseValidate(t *testing.T, inj *assertionTestInjection, m *executor.M
 	sf.State = state.StateServicesComplete
 	sf.Version = version.Version
 	sf.SSHPort = 22
+	// v1.232.2: a record that has reached this point on a REAL host carries the
+	// convergence verdict phaseSwitch wrote (phases.go: sf.ConvergenceVerified =
+	// string(conv.Verdict)). Neither driver runs phaseSwitch, so the fixture has to
+	// state it. Omitting it does not model "a degraded/services-complete install" —
+	// it models "a record with no verdict", which is the srv3 shape and has its own
+	// falsifiers in internal/installer/state.
+	sf.ConvergenceVerified = state.ConvergenceVerifiedValue
 	globalPhaseData = phaseData{sshPort: 22, inject: inj}
 	log := logging.New(dir+"/installer.log", false)
 	err := phaseValidate(context.Background(), m, sf, log)

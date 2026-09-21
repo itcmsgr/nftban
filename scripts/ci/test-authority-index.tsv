@@ -5,6 +5,7 @@ id	path	owner	type	module	execution_class	gate	hermetic	requires_root	requires_n
 ai_coauthor_trailer_guard_v1231_test	cli/lib/nftban/tests/ai_coauthor_trailer_guard_v1231_test.sh	cross-cutting	test	commit-identity	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 alert_bookkeeping_nonfatal_v174_test	cli/lib/nftban/tests/alert_bookkeeping_nonfatal_v174_test.sh	health	test	alert	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 alert_logger_devlog_sandbox_v1981_test	cli/lib/nftban/tests/alert_logger_devlog_sandbox_v1981_test.sh	health	test	alert	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+applied_unverified_truth_v1232_test	cli/lib/nftban/tests/applied_unverified_truth_v1232_test.sh	installer	test	install-state-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 audit_rotate_retired_gateb_test	cli/lib/nftban/tests/audit_rotate_retired_gateb_test.sh	core	test	audit	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 b1_text_ux_v1872_test	cli/lib/nftban/tests/b1_text_ux_v1872_test.sh	cli	test	banner	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 b1b_banner_compact_v1873_test	cli/lib/nftban/tests/b1b_banner_compact_v1873_test.sh	cli	test	banner	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
