@@ -143,8 +143,38 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	}
 
 	if validate.AllPassed(results) {
-		log.Info("revalidate: all live post-install assertions passed — recommitting install_state COMMITTED")
+		// ⛔ v1.232.2 (BUG-UPDATE-APPLY-CAN-COMMIT-WITHOUT-CONVERGENCE-VERDICT).
+		// FOUND BY THE INVARIANT, NOT BY INSPECTION: this path was a SECOND caller
+		// able to reach COMMITTED without a convergence proof. It runs no rebuild and
+		// no render — by its own contract, "no install, no daemon restart" — so it can
+		// only ever CARRY FORWARD the verdict the original install recorded. When
+		// there is none to carry, passing assertions are not a substitute:
+		//
+		//	A HEALTHY DAEMON IS NOT EVIDENCE THAT A TRANSACTION CONVERGED.
+		//
+		// This is the same reasoning the file already applies, two blocks up, to the
+		// whitelist and convergence verdicts it refuses to RE-DERIVE. The rule was
+		// stated there and then not applied to the terminal itself.
 		_ = exec.Remove(fhs.InstallFailedMarker)
+
+		if sf.ConvergenceVerified != state.ConvergenceVerifiedValue {
+			log.Info("revalidate: all live post-install assertions passed")
+			log.Warn("revalidate: the record carries CONVERGENCE_VERIFIED=%q, so there is no convergence",
+				sf.ConvergenceVerified)
+			log.Warn("  proof to carry forward — revalidate renders nothing and cannot establish one.")
+			log.Warn("  Recording APPLIED_UNVERIFIED: the install is as healthy as this run can observe,")
+			log.Warn("  and this run certified no convergence. Re-run the full install/update transaction")
+			log.Warn("  to obtain a verdict.")
+			if err := sf.Transition(state.StateAppliedUnverified, state.PhaseValidate,
+				"revalidate: live assertions pass but no convergence verdict exists to carry forward"); err != nil {
+				log.Error("revalidate: failed to persist APPLIED_UNVERIFIED state: %v", err)
+				return state.ExitFatal
+			}
+			return state.ExitAppliedUnverified
+		}
+
+		log.Info("revalidate: all live post-install assertions passed and the record carries a VERIFIED "+
+			"convergence verdict — recommitting install_state COMMITTED")
 		if err := sf.Transition(state.StateCommitted, state.PhaseValidate, ""); err != nil {
 			log.Error("revalidate: failed to persist COMMITTED state: %v", err)
 			return state.ExitFatal

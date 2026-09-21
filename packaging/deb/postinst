@@ -627,7 +627,7 @@ _nftban_migrate_reports_to_log() {
             # (nft -f — the kernel never sees an empty/partial ruleset) and this
             # call is NON-FATAL: a reload failure is warned and the package
             # upgrade continues (nft -f retains the previous ruleset on error).
-            if [ "$INSTALL_MODE" = "upgrade" ] && [ "${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ]; then
+            if [ "$INSTALL_MODE" = "upgrade" ] && { [ "${INSTALLER_EXIT:-0}" -le 1 ] || [ "${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
                 log_info "v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
                 if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
                     log_info "v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
@@ -651,7 +651,7 @@ _nftban_migrate_reports_to_log() {
             # lockout guard). Idempotent: a no-op once the flag is present.
             # NON-FATAL: a failed rebuild is warned and the upgrade continues
             # (nft -f retains the prior ruleset on error).
-            if [ "$INSTALL_MODE" = "upgrade" ] && [ "${INSTALLER_EXIT:-0}" -le 1 ] \
+            if [ "$INSTALL_MODE" = "upgrade" ] && { [ "${INSTALLER_EXIT:-0}" -le 1 ] || [ "${INSTALLER_EXIT:-0}" -eq 14 ]; } \
                && [ -x /usr/sbin/nftban ] && command -v nft >/dev/null 2>&1; then
                 if nft list set ip nftban whitelist_ipv4 2>/dev/null \
                    | grep -qE 'flags[[:space:]]+interval[[:space:]]*$'; then
