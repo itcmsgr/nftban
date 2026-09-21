@@ -730,6 +730,27 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		// the COMMITTED/DEGRADED state selection itself is unchanged.
 		log.Result("%s", committedSummaryLine(log.WarnCount(), log.LogPath()))
 		log.Result("[NFTBan] State: COMMITTED")
+	case state.StateAppliedUnverified:
+		// v1.232.2 (BUG-UPDATE-APPLY-CAN-COMMIT-WITHOUT-CONVERGENCE-VERDICT).
+		//
+		// ⛔ NEVER "completed". NEVER "COMMITTED". The mutation landed and the
+		// validator passed, and that is ALL this run is entitled to say: convergence
+		// was never evaluated on this path, so nothing here has observed that the
+		// kernel state this transaction intended is the kernel state in force.
+		// The previous wording reported this outcome as a completed install.
+		log.Result("[NFTBan] Update APPLIED — convergence not certified by this transaction.")
+		log.Result("[NFTBan] State: APPLIED_UNVERIFIED")
+		log.Result("[NFTBan] CONVERGENCE_VERIFIED=%s", sf.ConvergenceVerified)
+		log.Result("")
+		log.Result("[NFTBan] What this means:")
+		log.Result("[NFTBan]   The new files are installed and the validator passed.")
+		log.Result("[NFTBan]   This run did NOT verify that the running firewall matches them.")
+		log.Result("[NFTBan]   Enforcement may be correct — it has simply not been PROVEN by this run.")
+		log.Result("")
+		emitRecovery(sf.State, log)
+		log.Result("")
+		log.Result("[NFTBan] To inspect current enforcement: nftban status && nftban health")
+
 	case state.StateDegraded:
 		// v1.153 UX-T4 (message wording only): DEGRADED is the
 		// committed-with-non-fatal-warnings outcome — say "with warnings"
@@ -939,10 +960,15 @@ func emitRecovery(s state.InstallState, log *logging.Logger) {
 		log.Result("[NFTBan] To retry: /usr/lib/nftban/bin/nftban-installer --repair")
 	default:
 		log.Result("[NFTBan] To retry: re-run the normal NFTBan update/install transaction")
-		log.Result("[NFTBan]   once the active convergence operation has finished.")
-		log.Result("[NFTBan] Do NOT use --repair for this state: it resumes at the switch phase")
-		log.Result("[NFTBan]   and skips the boot-projection render, so convergence cannot be")
-		log.Result("[NFTBan]   established and the run would end DEGRADED rather than COMMITTED.")
+		log.Result("[NFTBan]   (a FULL transaction — preflight, render, rebuild, validate, converge).")
+		// ⛔ THE REASON IS DERIVED, LIKE THE CLASS. This branch used to hardcode
+		// "resumes at the switch phase and skips the boot-projection render" — true of
+		// REBUILD_REFUSED_BUSY, FALSE of APPLIED_UNVERIFIED, which resumes at VALIDATE
+		// and is refused for an entirely different reason. One surface printing a
+		// reason the authority did not give it is exactly the drift RECOVERY_CLASS
+		// exists to prevent.
+		log.Result("[NFTBan] Do NOT use --repair for this state:")
+		log.Result("[NFTBan]   %s.", s.RepairRefusalReason())
 	}
 }
 
@@ -1013,8 +1039,22 @@ func historyStatusForState(s state.InstallState) string {
 		return history.StatusSuccess
 	case state.StateDegraded:
 		return history.StatusVerifyFail
-	default:
+	// v1.232.2: EXPLICIT arm. Without it APPLIED_UNVERIFIED fell through to the
+	// default and was recorded as install_fail — asserting a failure for a
+	// transaction whose mutation demonstrably succeeded.
+	case state.StateAppliedUnverified:
+		return history.StatusAppliedUnverified
+	// v1.232.2: the failure states this mapper is meant to classify, named
+	// explicitly so the default no longer has to guess for them.
+	case state.StateFailedRebuild, state.StateFailedRender, state.StateFailedSSH,
+		state.StateFailedAbort, state.StateFailedNoFirewall, state.StateFailedTakeover,
+		state.StateRebuildRefusedBusy, state.StateRebuildNotExecuted:
 		return history.StatusInstallFail
+	default:
+		// ⛔ NOT install_fail. A state this mapper does not recognise is an
+		// UNKNOWN, not a failure; defaulting to a verdict is how an unhandled
+		// new state silently becomes a false factual claim in the history record.
+		return history.StatusUnknownState
 	}
 }
 

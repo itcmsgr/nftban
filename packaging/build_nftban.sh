@@ -1578,6 +1578,17 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan] to generate a diagnostic bundle for review."
         echo ""
         echo "[NFTBan] To fix: /usr/lib/nftban/bin/nftban-installer --repair"
+    elif [ \$INSTALLER_EXIT -eq 14 ]; then
+        # v1.232.2 ExitAppliedUnverified — see the matching DEB postinst arm.
+        # ⛔ NOT "COMMITTED" AND NOT "FAILED". The mutation landed; convergence was
+        # never evaluated. Naming it as either of the two existing outcomes would
+        # recreate, in shell, exactly the collapse this release removed from Go.
+        echo "[NFTBan] ========================================"
+        echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} — APPLIED (convergence not certified)"
+        echo "[NFTBan] ========================================"
+        echo "[NFTBan] Files installed and validated; this run did not verify that the"
+        echo "[NFTBan] running firewall matches them."
+        echo "[NFTBan] Recovery: follow the RECOVERY_CLASS line printed above by the installer."
     elif [ \$INSTALLER_EXIT -eq 3 ]; then
         # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
         # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)

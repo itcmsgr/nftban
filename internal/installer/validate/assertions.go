@@ -560,6 +560,10 @@ const (
 	convergenceNotConverged = "NOT_CONVERGED"
 	convergenceDeferred     = "DEFERRED"
 	convergenceUnverified   = "UNVERIFIED"
+	// v1.232.2: this transaction path does not evaluate convergence at all.
+	// Distinct from NOT_CONVERGED (ran and failed) and UNVERIFIED (ran, leg
+	// unobservable). Replaces the EMPTY string for that condition.
+	convergenceNotEvaluated = "NOT_EVALUATED"
 )
 
 // assertPostUpdateConvergence (v1.230.0 Gate 6R) turns the post-update convergence
@@ -637,6 +641,15 @@ func assertPostUpdateConvergence(opts AssertionOpts, log *logging.Logger) Assert
 	case convergenceDeferred:
 		r.Detail = "DEFERRED — the rebuild deferred its module projection; convergence debt is outstanding and this is NOT a verified convergence"
 		log.Warn("ASSERT post_update_convergence_verified: DEFERRED — the generation was deliberately not advanced; convergence debt outstanding, NOT recorded as VERIFIED")
+
+	case convergenceNotEvaluated:
+		// v1.232.2. Explicit, and deliberately NOT a failure: this transaction
+		// path does not evaluate convergence (e.g. update_apply, which renders no
+		// current-run boot projection). Such a run terminates APPLIED_UNVERIFIED,
+		// never COMMITTED, so the absence of a verdict here is expected and
+		// already reflected in the transaction state.
+		r.Detail = "NOT_EVALUATED — this transaction path does not evaluate convergence; the run terminates APPLIED_UNVERIFIED, NOT COMMITTED. This is NOT a convergence claim"
+		log.Warn("ASSERT post_update_convergence_verified: NOT_EVALUATED — convergence was not evaluated by this path; recorded as not-evaluated, NOT as VERIFIED")
 
 	case convergenceUnverified:
 		r.Detail = "UNVERIFIED — a convergence leg could not be OBSERVED; absence of evidence, recorded as neither pass nor failure"

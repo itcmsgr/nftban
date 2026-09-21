@@ -63,27 +63,57 @@ const (
 	RecoveryRetryFullTransaction RecoveryClass = "RETRY_FULL_TRANSACTION"
 )
 
-// repairResumeReRendersProjection reports whether a --repair that resumes at `p`
-// re-runs the authoritative boot-projection render.
+// repairEvidenceRoute names HOW a --repair resuming at a given phase can end up with
+// the evidence COMMITTED requires. There are three distinct answers, and the first
+// version of this file collapsed two of them into one boolean `true` — which is what
+// would have mis-classified APPLIED_UNVERIFIED as REPAIR.
+type repairEvidenceRoute int
+
+const (
+	// routeRenders — the resume re-runs the authoritative boot-projection render
+	// itself, so it MANUFACTURES the evidence regardless of what was persisted.
+	routeRenders repairEvidenceRoute = iota
+
+	// routeSkipsRender — ⛔ the lab3 defect. The resume begins at or after SWITCH, so
+	// switchop.RenderBoot never runs, phaseData.bootProjectionReady stays false, and
+	// the projection_generated leg of the post-update convergence contract can never
+	// pass in that run.
+	routeSkipsRender
+
+	// routeCarriesForward — no rebuild runs, so nothing INVALIDATES a convergence
+	// verdict; the resume reaches COMMITTED by carrying forward the verdict already on
+	// record. This route is conditional: it is only a route at all if such a verdict
+	// exists. That is how a DEGRADED host legitimately recovers through --repair, and
+	// precisely why APPLIED_UNVERIFIED cannot.
+	routeCarriesForward
+)
+
+// repairEvidenceRouteFor maps the resume phase to its route.
 //
 // ⛔ THE ONE LOAD-BEARING FACT. The render is phasePrepare step 6
 // (switchop.RenderBoot); it establishes phaseData.bootProjectionReady, which the
-// post-update convergence contract requires for its projection_generated leg. A resume
-// that begins at or after SWITCH never runs it, so bootProjectionReady is false and
-// convergence cannot be verified — which is precisely what lab3 observed.
-//
-// PhaseConfigure and PhaseValidate resumes are different: they do not run a rebuild
-// either, so they never clear the convergence verdict and the persisted one still
-// applies. That is how a DEGRADED host legitimately recovers through --repair today.
-func repairResumeReRendersProjection(p Phase) bool {
+// post-update convergence contract requires for its projection_generated leg.
+func repairEvidenceRouteFor(p Phase) repairEvidenceRoute {
 	switch p {
 	case PhaseDetect, PhasePrepare:
-		return true // the full chain runs, render included
+		return routeRenders // the full chain runs, render included
 	case PhaseSwitch:
-		return false // ⛔ render is SKIPPED — the lab3 defect
+		return routeSkipsRender // ⛔ render is SKIPPED — the lab3 defect
 	default: // PhaseConfigure, PhaseValidate, PhaseReport
-		return true // no rebuild runs, so no convergence verdict is invalidated
+		return routeCarriesForward
 	}
+}
+
+// DeclaresNoConvergenceVerdict reports whether the state's OWN DEFINITION is that no
+// convergence verdict exists for the transaction that produced it.
+//
+// ⛔ THIS IS NOT A RECOVERY LOOKUP TABLE. It is the state's meaning, read back. The
+// whole point of StateAppliedUnverified is "the mutation landed and validated, and
+// convergence was never evaluated" — CONVERGENCE_VERIFIED=NOT_EVALUATED is written in
+// the same breath as the transition. A carry-forward recovery route has nothing to
+// carry from such a state, so it is not a route.
+func (s InstallState) DeclaresNoConvergenceVerdict() bool {
+	return s == StateAppliedUnverified
 }
 
 // RepairReachesCommitted reports whether --repair from this state can establish every
@@ -96,7 +126,41 @@ func (s InstallState) RepairReachesCommitted() bool {
 	if s == StateCommitted {
 		return false // nothing to recover; --repair is a no-op, not a recovery path
 	}
-	return repairResumeReRendersProjection(s.ResumePhase())
+	switch repairEvidenceRouteFor(s.ResumePhase()) {
+	case routeRenders:
+		return true
+	case routeSkipsRender:
+		return false
+	default: // routeCarriesForward
+		return !s.DeclaresNoConvergenceVerdict()
+	}
+}
+
+// RepairRefusalReason explains, in the terms that actually apply to `s`, why --repair
+// has no demonstrated route to COMMITTED from it. Returns "" when it does have one.
+//
+// The two refusals are NOT the same defect and must not share wording: one is "the
+// resume skips the render", the other is "there is no verdict to carry forward".
+// It is EXPORTED because the operator-facing recovery surface must print THIS
+// reason rather than its own copy of it: cmd/nftban-installer/emitRecovery used to
+// hardcode "resumes at the switch phase and skips the boot-projection render", which
+// is true of REBUILD_REFUSED_BUSY and false of APPLIED_UNVERIFIED.
+func (s InstallState) RepairRefusalReason() string {
+	if s.RepairReachesCommitted() {
+		return ""
+	}
+	if s == StateCommitted {
+		return "the transaction already committed; --repair is a no-op, not a recovery path"
+	}
+	if repairEvidenceRouteFor(s.ResumePhase()) == routeSkipsRender {
+		return fmt.Sprintf(
+			"--repair resumes at %s, which does not re-establish the boot-projection render that the "+
+				"post-update convergence contract requires", s.ResumePhase())
+	}
+	return fmt.Sprintf(
+		"--repair resumes at %s, which runs no rebuild and therefore RENDERS NOTHING; it could only reach "+
+			"COMMITTED by carrying forward a convergence verdict, and %s is defined as having none "+
+			"(CONVERGENCE_VERIFIED=%s)", s.ResumePhase(), s, ConvergenceNotEvaluatedValue)
 }
 
 // RecoveryClass returns the mechanism whose route to COMMITTED is established.
@@ -122,10 +186,9 @@ func ValidateRecoveryClass(s InstallState, declared RecoveryClass) string {
 	}
 	if declared == RecoveryRepair {
 		return fmt.Sprintf(
-			"%s declared RECOVERY_CLASS=REPAIR, but --repair resumes at %s, which does not re-establish "+
-				"the boot-projection render that the post-update convergence contract requires — "+
-				"there is no demonstrated route to COMMITTED through --repair from this state",
-			s, s.ResumePhase())
+			"%s declared RECOVERY_CLASS=REPAIR, but %s — there is no demonstrated route to COMMITTED "+
+				"through --repair from this state",
+			s, s.RepairRefusalReason())
 	}
 	return fmt.Sprintf(
 		"%s declared RECOVERY_CLASS=%s, but --repair resumes at %s and DOES re-establish everything "+

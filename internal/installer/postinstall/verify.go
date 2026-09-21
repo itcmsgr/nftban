@@ -80,6 +80,16 @@ const (
 	InstallFailed Verdict = "INSTALL_FAILED"
 	// InstallDegraded means the installer completed with issues.
 	InstallDegraded Verdict = "INSTALL_DEGRADED"
+	// AppliedUnverified means the mutation landed and the validator passed, but the
+	// transaction never evaluated convergence — so nothing has observed that the
+	// running firewall matches what was installed.
+	//
+	// ⛔ NOT Verified(). It falls OUTSIDE the success verdict deliberately: the
+	// package-native surface must not report "installed successfully" for a state
+	// whose entire meaning is that the mutation was never witnessed. Before this
+	// verdict existed it fell to InvalidState, which is not verified either — but
+	// whose detail line ("is not a terminal outcome") was simply false about it.
+	AppliedUnverified Verdict = "APPLIED_UNVERIFIED"
 	// MissingState means no state file exists.
 	MissingState Verdict = "MISSING_STATE"
 	// InvalidState means the state file exists but cannot be read or understood.
@@ -215,6 +225,12 @@ func Verify(opt Options) Result {
 		res.Verdict = CurrentCommitted
 		res.Detail = fmt.Sprintf("installation committed in this transaction at %s",
 			res.PersistedTimestamp.Format(time.RFC3339Nano))
+	case sf.State == state.StateAppliedUnverified:
+		res.Verdict = AppliedUnverified
+		res.Detail = fmt.Sprintf(
+			"update applied and validated in this transaction at %s, but convergence was NOT evaluated "+
+				"(CONVERGENCE_VERIFIED=%s) — the running firewall has not been observed to match what was installed",
+			res.PersistedTimestamp.Format(time.RFC3339Nano), sf.ConvergenceVerified)
 	case sf.State == state.StateDegraded:
 		res.Verdict = InstallDegraded
 		res.Detail = "installation completed with issues (DEGRADED) — see the installer log"

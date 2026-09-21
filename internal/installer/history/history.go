@@ -38,6 +38,18 @@ const (
 	StatusSuccess    = "success"
 	StatusInstallFail = "install_fail"
 	StatusVerifyFail  = "verify_fail"
+
+	// StatusAppliedUnverified — v1.232.2. The mutation was applied and validated,
+	// but convergence was NOT certified by that transaction. It is neither a
+	// success nor a failure, and recording it as either is a false claim.
+	StatusAppliedUnverified = "applied_unverified"
+
+	// StatusUnknownState — v1.232.2. A terminal state this mapper does not
+	// recognise. ⛔ The previous default was install_fail, which turned "the switch
+	// was never updated for a new state" into the factual assertion "the install
+	// failed". A mapper must not invent a verdict for a state it does not know:
+	// an unhandled state is an UNKNOWN, not a failure.
+	StatusUnknownState = "unknown_state"
 )
 
 // Entry represents one install/update history record.

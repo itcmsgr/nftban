@@ -566,6 +566,20 @@ _nftban_migrate_reports_to_log() {
                 log_info "========================================"
                 log_info "Some post-install checks failed."
                 log_info "To fix: /usr/lib/nftban/bin/nftban-installer --repair"
+            elif [ $INSTALLER_EXIT -eq 14 ]; then
+                # v1.232.2 ExitAppliedUnverified. The mutation landed and the validator
+                # passed, and convergence was NEVER EVALUATED.
+                #
+                # ⛔ NOT "COMMITTED" AND NOT "FAILED". Reporting it as COMMITTED is the
+                # defect this exit code exists to remove; reporting it as FAILED would
+                # send an operator to undo a mutation that actually applied. The state
+                # is its own outcome and is named as itself.
+                log_info "========================================"
+                log_info " NFTBan — APPLIED (convergence not certified)"
+                log_info "========================================"
+                log_info "Files installed and validated; this run did not verify that the"
+                log_info "running firewall matches them."
+                log_info "Recovery: follow the RECOVERY_CLASS line printed above by the installer."
             elif [ $INSTALLER_EXIT -eq 3 ]; then
                 # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
                 # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)

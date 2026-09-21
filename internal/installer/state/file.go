@@ -198,6 +198,26 @@ func (sf *StateFile) Path() string {
 const degradedReasonFallback = "degraded: post-install assertions failed (reason unavailable)"
 
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
+	// ⛔ TRANSACTION-TRUTH INVARIANT (v1.232.2). COMMITTED is reserved EXCLUSIVELY
+	// for transactions that certified their own convergence. Enforced HERE, at the
+	// state-machine boundary, so it holds for EVERY caller — including future ones
+	// and tests — rather than depending on each path remembering the rule.
+	//
+	//	COMMITTED + VERIFIED        valid
+	//	COMMITTED + ""              REFUSED (the shape that produced this defect)
+	//	COMMITTED + NOT_EVALUATED   REFUSED (path does not evaluate convergence)
+	//	COMMITTED + NOT_CONVERGED   REFUSED (the test ran and failed)
+	//
+	// ⛔ THE STATE IS NOT MUTATED ON REFUSAL. Every caller writes `_ = sf.Transition(...)`,
+	// so an error return alone would be ignored and COMMITTED would still land.
+	// Refusing to assign is what makes the false-green structurally impossible;
+	// the state stays at its prior, truthful value.
+	if newState == StateCommitted && sf.ConvergenceVerified != ConvergenceVerifiedValue {
+		return fmt.Errorf(
+			"refusing COMMITTED: CONVERGENCE_VERIFIED=%q, but COMMITTED requires %q — "+
+				"a completed mutation and a healthy daemon are not evidence that THIS transaction converged",
+			sf.ConvergenceVerified, ConvergenceVerifiedValue)
+	}
 	sf.State = newState
 	sf.PhaseReached = string(phase)
 	if newState.IsFailed() || newState.IsDeferredRebuild() {

@@ -1046,6 +1046,14 @@ _update_finalize_verdict() {
         _verdict_unknown_note=" (CONTRADICTORY — COMMITTED recorded beside a FAILURE_REASON)"
     elif [[ "$_verdict_class" == "NOT_COMMITTED" ]]; then
         [[ "$_installer_state" == "DEGRADED" ]] && _verdict_class="DEGRADED"
+        # v1.232.2: APPLIED_UNVERIFIED is not-COMMITTED — correctly — but it is
+        # also not FAILED. The mutation landed and the validator passed; only the
+        # convergence verdict is missing. Routing it to the FAILED block would
+        # tell an operator to roll back an upgrade that actually applied, which is
+        # the same "one truthful state wearing another's label" defect in the
+        # opposite direction.
+        [[ "$_installer_state" == "APPLIED_UNVERIFIED" ]] && _verdict_class="APPLIED_UNVERIFIED"
+        :
     else
         _verdict_class="INDETERMINATE"
     fi
@@ -1228,6 +1236,53 @@ _update_finalize_verdict() {
             echo ""
             _update_final_summary "FAILED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "FAILED"
             return 2
+            ;;
+
+        APPLIED_UNVERIFIED)
+            # v1.232.2 (BUG-UPDATE-APPLY-CAN-COMMIT-WITHOUT-CONVERGENCE-VERDICT).
+            #
+            # ⛔ NOT success, NOT failure, NOT indeterminate. Each of those three
+            # would be a false statement here:
+            #   success       — nothing observed that this transaction converged;
+            #   failure       — the mutation applied and the validator passed;
+            #   indeterminate — the outcome IS known, and the state file says so.
+            #
+            # Like the FAILED arm it writes NO success history row and does NOT
+            # delete state/update_failed, and it returns non-zero. Unlike it, the
+            # operator is not sent to roll back.
+            _update_log WARN "=== Update APPLIED (convergence not certified): v${current_version} → v${new_version} (${_update_duration}s); install_state=${_installer_state} ==="
+            _update_write_history "$current_version" "$new_version" "applied_unverified" "$install_type" "$_update_duration"
+
+            local _conv_verdict
+            _conv_verdict=$(grep -m1 '^CONVERGENCE_VERIFIED=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "")
+            [[ -n "$_conv_verdict" ]] || _conv_verdict="(absent)"
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Update APPLIED — convergence not certified"
+            echo "  v$current_version → v$new_version"
+            echo "  install_state: ${_installer_state}   CONVERGENCE_VERIFIED: ${_conv_verdict}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  The new files are installed and the validator passed."
+            echo "  This run did NOT verify that the running firewall matches them."
+            echo ""
+            if declare -F nftban_render_install_transaction_truth >/dev/null 2>&1; then
+                nftban_render_install_transaction_truth "$_install_state_file" \
+                    "unchanged by this verdict — check it with 'nftban health'; an active firewall is NOT evidence this upgrade converged" || true
+                echo ""
+            fi
+            echo "  See the installer output above for its RECOVERY_CLASS line — it is"
+            echo "  the authority on which recovery mechanism applies to this state."
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo "  History: nftban update history"
+            echo ""
+            _update_final_summary "APPLIED_UNVERIFIED" "$current_version" "$new_version" "$_update_duration" "$_summary_warnings" "UNVERIFIED"
+            # 14 matches the installer's ExitAppliedUnverified. The same outcome
+            # carries the same number on both planes — and 14 is the lowest value
+            # free in BOTH exit-code namespaces (installer 0-10, update 0-3/10-13).
+            return 14
             ;;
 
         INDETERMINATE)
