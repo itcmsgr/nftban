@@ -11,6 +11,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.232.0] - 2026-09-20 — closure: draining a backlog that could not drain, and surfaces that named the wrong thing
+
+A stabilization release. Every entry corrects something the system reported, enforced, or drained
+incorrectly; there are no new features.
+
+The BotScan work is the core of it. A host carrying a 1.09 GB spool had produced zero bans for 22
+days while consuming CPU: the drain could not keep up because each object got one bounded read per
+cycle, rotation abandoned whatever was half-finished, and the reader cut records at the chunk
+boundary so the fragments either side were parsed as observations. Those are three independent
+defects that only together explain the incident.
+
+### BotScan convergence
+- **One bounded read per object per cycle meant a backlog could never drain.** The scanner advanced
+  a fixed window on each file in turn, so any object larger than the per-cycle budget fell further
+  behind every cycle. The drain now stays on an object until EOF or the cycle deadline.
+- **Rotation abandoned the half-drained object.** The next cycle restarted at the first file not
+  TOUCHED rather than the first file not FINISHED, so progress stayed round-robin. A pin records the
+  unfinished object so the next cycle resumes it, with a bounded escape budget.
+- **The bounded reader cut records in half.** Fragments either side of a chunk boundary were parsed
+  as records. This is attribution corruption, not merely lost coverage: a trailing fragment still
+  begins with a real client address, so a fragment can be read as a different source than the one
+  that produced it. Reads are trimmed to the last complete record, and an oversized record is
+  skipped to its own terminating newline rather than leaving the cursor mid-record.
+
+Verified in production, not only in lab: the pinned 21,729,154-byte object reached EOF, was retired
+by exact-object reap (the reap only retires when the cursor proves `offset >= size`), the pin
+cleared by completion rather than by escape, the next object became authoritative, and backpressure
+stayed clear while collection continued — with sustained retirement across cycles and a net spool
+reduction.
+
+### Enforcement
+- **Trust provider ranges became nftables authority unvalidated.** Provider feed content reached the
+  durable whitelist source verbatim and the additive fragment through a comment filter. A whitelist
+  element is an exemption from banning, so an over-broad range does not widen the whitelist — it
+  withdraws enforcement, and a `0.0.0.0/0` would exempt every source from every blacklist. Provider
+  ranges are now validated before they can become authority, over-broad ranges are refused on both
+  planes, and a feed with no admissible entries leaves the previous whitelist unchanged rather than
+  publishing an empty one.
+
+### Truth of what the system reports
+- **A report section that failed to parse was dropped and the operator was told SUCCESS.** Report
+  generation now has a third outcome — sent but INCOMPLETE — and names the sections it could not
+  parse.
+- **A convergence window was reported as IDLE.** While a mode plan is converging the effective mode
+  is not yet knowable, but the reason was discarded and the overall status fell through to IDLE — a
+  positive claim that all axes pass and no relevant traffic was observed. Convergence now reports
+  CONVERGING, at exit 0: the state is transient and expected, so the truth is carried by the label,
+  not by an exit code that would make routine reloads look like failures.
+- **The install phase promised 60 seconds and then went silent for minutes.** Measured wall-clock on
+  the same fleet run was 244s, 277s and 79s on the larger hosts, so the bound was wrong wherever the
+  ruleset was large — and during the silence a working installer was indistinguishable from a hang.
+  The claim is removed, and progress is now reported from what is actually known: elapsed time, the
+  inner installer's own phase, and a heartbeat that speaks only into silence. Deliberately not a
+  percentage; nothing here can measure fractional completion.
+
+### Build provenance
+- **The version string could not identify which artifact is running.** Published v1.231.0 was tag
+  commit `805c6bba` while `origin/main` was `eb909b4d`; VERSION read 1.231.0 on both and the trees
+  differed by two shipped product files. A host reporting "1.231.0" could be either artifact. A
+  version names an intent; it does not identify an artifact. Artifacts now declare BUILD_SOURCE
+  alongside BUILD_COMMIT (`source tag:v1.232.0` / `main` / `branch:<n>` / `detached` / `archive`),
+  and a build counts as a tag build only when a tag named for that VERSION points at that commit.
+
+### Known deferred debt
+
+This release does not close the register. Carried forward deliberately:
+
+- `OPEN-RELEASE-TAG-PATH-DOES-NOT-AUTOMATICALLY-VERIFY-BUILD-SOURCE` (MAJOR, v1.233) — BUILD_COMMIT
+  is machine-verified at tag time; BUILD_SOURCE is asserted manually during this cut, not yet by the
+  tag workflow.
+- `OPEN-BOTSCAN-SCAN-PIN-RETRY-BUDGET-IS-GLOBAL-NOT-PER-OBJECT` (MINOR) — a newly pinned object
+  inherits the previous object's try counter, so the escape budget bounds cycles rather than
+  cycles-per-object.
+- `FORWARD-CHAIN-EMPTY-POLICY-DROP-BLACKHOLES-ROUTED-TRAFFIC` (CRITICAL) — deferred by ruling as a
+  forwarding-semantics change too broad for a stabilization release.
+- `P12-C05` — a whole-surface operator-message audit, untriaged.
+- `OPEN_PACKAGE_VERIFY_SIGNAL_CLASSIFICATION` — retained as VALIDATION_REQUIRED: its subject is not
+  recoverable from the record, so it is neither fixed nor refuted.
+
+---
+
 ## [v1.231.0] - 2026-09-18 — evidence integrity: counts that were structurally zero, health that reported OK while blind
 
 A release about surfaces that reported success without having observed anything. The BotScan
