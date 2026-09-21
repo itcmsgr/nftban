@@ -91,7 +91,7 @@ const (
 	// StateCommitted is the ONLY install-class state that means "this transaction
 	// succeeded". ⛔ See the OWNER RULING at the top of this file before making any
 	// rebuild disposition — DEFERRED_RUNTIME above all — sufficient for it.
-	StateCommitted        InstallState = "COMMITTED"
+	StateCommitted InstallState = "COMMITTED"
 
 	// StateAppliedUnverified — v1.232.2 TRANSACTION-TRUTH. The requested mutation
 	// completed, the rebuild returned successfully and the validator passed, and
@@ -117,13 +117,13 @@ const (
 	// whether the projection was rendered IN THIS RUN — a question no post-hoc
 	// health check can answer.
 	StateAppliedUnverified InstallState = "APPLIED_UNVERIFIED"
-	StateDegraded         InstallState = "DEGRADED"
-	StateFailedSSH        InstallState = "FAILED_SSH_UNKNOWN"
-	StateFailedAbort      InstallState = "FAILED_AUTHORITY_ABORT"
-	StateFailedRender     InstallState = "FAILED_RENDER"
-	StateFailedRebuild    InstallState = "FAILED_REBUILD"
-	StateFailedNoFirewall InstallState = "FAILED_NO_FIREWALL"
-	StateFailedTakeover   InstallState = "FAILED_TAKEOVER"
+	StateDegraded          InstallState = "DEGRADED"
+	StateFailedSSH         InstallState = "FAILED_SSH_UNKNOWN"
+	StateFailedAbort       InstallState = "FAILED_AUTHORITY_ABORT"
+	StateFailedRender      InstallState = "FAILED_RENDER"
+	StateFailedRebuild     InstallState = "FAILED_REBUILD"
+	StateFailedNoFirewall  InstallState = "FAILED_NO_FIREWALL"
+	StateFailedTakeover    InstallState = "FAILED_TAKEOVER"
 
 	// ═════════════════════════════════════════════════════════════════════
 	// v1.230.0 Gate 6R — DEFERRED REBUILD TERMINALS (NOT failures)

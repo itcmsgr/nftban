@@ -35,7 +35,7 @@ const MaxEntries = 9
 
 // Status values matching the shell CLI contract.
 const (
-	StatusSuccess    = "success"
+	StatusSuccess     = "success"
 	StatusInstallFail = "install_fail"
 	StatusVerifyFail  = "verify_fail"
 
