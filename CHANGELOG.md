@@ -11,6 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.232.1] - 2026-09-21 — provenance completeness: one published artifact could not name its source
+
+v1.232.0 is SUPERSEDED and must not be deployed. Its packaged artifacts were correct, but the
+standalone `nftban-core-linux-amd64` asset reported `source unknown`, so it could not answer the
+one question the v1.232.0 provenance work exists to answer.
+
+### Fixed
+- **The SLSA builder never injected BuildSource.** `build.sh` was instrumented in v1.232.0 but
+  `.github/slsa/nftban-core.yml` is a SECOND, independent producer with its own linker flags, and
+  it was not. Every artifact built through `build.sh` — the DEB and RPM payloads that operators
+  actually install, plus the standalone `nftband` — carried `source tag:v1.232.0` correctly; only
+  the SLSA-built standalone `nftban-core` did not. It now composes BuildSource from `SOURCE_KIND`
+  and `SOURCE_REF`, both supplied by the release workflow.
+
+  `SOURCE_KIND` is **derived from `github.ref_type`**, not hardcoded: `release.yml` also runs on
+  `workflow_dispatch` from a branch, and a hardcoded `tag` would make a branch build claim release
+  provenance — the false-tag case the guard's D2 direction refuses.
+
+  `BuildDate` remains deliberately uninjected on the SLSA path. A wall-clock timestamp would make
+  the binary differ between rebuilds of identical source and defeat the reproducibility that gives
+  SLSA provenance its value. BuildSource does not have that property: it is a deterministic
+  function of the source ref.
+
+### Not affected
+No functional change. Every fix shipped in v1.232.0 is unchanged and carried forward. Artifact
+integrity in v1.232.0 was verified clean — all listed assets present, all hashes matching, both
+manifests agreeing — so this is a provenance-completeness failure, not artifact corruption.
+
+### Process
+- `OPEN-RELEASE-BUILD-PRODUCER-ENUMERATION-INCOMPLETE` — the second instance of one pattern in a
+  single cut: first a VERSION-coupled generator was missed (the FHS spec), then an independent
+  binary producer. Cut validation must enumerate every artifact producer and every generated-file
+  gate, not only `build.sh`.
+
+---
+
 ## [v1.232.0] - 2026-09-20 — closure: draining a backlog that could not drain, and surfaces that named the wrong thing
 
 A stabilization release. Every entry corrects something the system reported, enforced, or drained

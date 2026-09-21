@@ -652,7 +652,13 @@ jobs:
       config-file: .github/slsa/nftban-core.yml
       # v1.231.0 SLSA-IDENTITY: VERSION is now BARE (see build-binaries.outputs)
       # and GIT_COMMIT carries chain-of-custody back to the provenance subject.
-      evaluated-envs: "VERSION:${{ needs.build-binaries.outputs.version_bare }}, GIT_COMMIT:${{ github.sha }}"
+      # v1.232.1 D1 FIX: SOURCE_KIND/SOURCE_REF feed pkg/version.BuildSource so the
+      # SLSA artifact can identify WHICH SOURCE built it, not only which commit.
+      # ⛔ SOURCE_KIND is DERIVED from ref_type. This workflow also runs on
+      # workflow_dispatch (dry-run) from a branch, and hardcoding "tag" would make
+      # a branch build claim release provenance — the false-tag case D2 refuses.
+      # Both values stay colon-free; the ":" separator lives in the ldflags literal.
+      evaluated-envs: "VERSION:${{ needs.build-binaries.outputs.version_bare }}, GIT_COMMIT:${{ github.sha }}, SOURCE_KIND:${{ github.ref_type == 'tag' && 'tag' || 'branch' }}, SOURCE_REF:${{ github.ref_name }}"
       # ⛔ DO NOT REMOVE. See the block above: absent == true == third-party publisher ON.
       upload-assets: false
 
