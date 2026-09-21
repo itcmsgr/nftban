@@ -346,6 +346,16 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	sf.ConvergenceVerified = string(switchop.ConvergenceNotEvaluated)
 	_ = sf.Transition(state.StateAppliedUnverified, state.PhaseValidate,
 		"update apply: mutation applied and validated; convergence not certified by this transaction")
+
+	// ⛔ THE OPERATOR BLOCK IS EMITTED HERE, NOT LEFT TO report(). run() returns this
+	// function's exit code directly — report() is only reached through runInstall /
+	// runRepair / runRevalidate — so without this call the operator of a real
+	// `nftban-installer --mode=upgrade` sees only the trailer, and the RECOVERY_CLASS
+	// line never prints on the single path that can produce this state. Proven on
+	// lab2 against the packaged binary before this call existed.
+	log.Result("")
+	emitAppliedUnverifiedBlock(sf, log)
+
 	return state.ExitAppliedUnverified
 }
 

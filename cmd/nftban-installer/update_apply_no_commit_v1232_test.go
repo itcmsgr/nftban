@@ -148,3 +148,53 @@ func TestEmitRecoveryReasonIsStateSpecific(t *testing.T) {
 		t.Error("APPLIED_UNVERIFIED must be RETRY_FULL_TRANSACTION")
 	}
 }
+
+// ⛔ REACHABILITY, NOT WORDING. The operator block for APPLIED_UNVERIFIED lived in
+// report(), and run() returns runUpdateApply's exit code DIRECTLY — report() is only
+// reached via runInstall / runRepair / runRevalidate. So the block, RECOVERY_CLASS
+// line included, was dead code on the ONE path that produces the state. Measured on
+// lab2 against the packaged binary: a real `nftban-installer --mode=upgrade` printed
+// the trailer and nothing else.
+//
+// This test fails if the emitter is ever detached from the terminal again.
+func TestUpdateApply_SuccessPath_EmitsOperatorBlockAndRecoveryClass(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedHappyApplyHost(t, mock)
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
+	sf := state.NewStateFile(cfg.stateDir)
+
+	log, logPath := newLoggingTestLogger(t)
+	rc := runUpdateApply(context.Background(), mock, sf, cfg, log)
+	log.Close()
+
+	if rc != state.ExitAppliedUnverified {
+		t.Fatalf("precondition: rc = %d; want ExitAppliedUnverified", rc)
+	}
+
+	content := readLog(t, logPath)
+	for _, needle := range []string{
+		"Update APPLIED — convergence not certified by this transaction.",
+		"State: APPLIED_UNVERIFIED",
+		"CONVERGENCE_VERIFIED=" + string(switchop.ConvergenceNotEvaluated),
+		// The RECOVERY_CLASS line is the operator's single authority on which
+		// recovery mechanism applies; losing it is how the lab3 defect recurs.
+		"RECOVERY_CLASS=" + string(state.RecoveryRetryFullTransaction),
+	} {
+		if !strings.Contains(content, needle) {
+			t.Errorf("operator block missing %q — the block is not reachable from the terminal that produces this state:\n%s",
+				needle, content)
+		}
+	}
+
+	// ⛔ AND IT MUST NOT ADVERTISE --repair. This state resumes at VALIDATE, renders
+	// nothing, and has no verdict to carry; --repair has no route to COMMITTED.
+	if strings.Contains(content, "To retry: /usr/lib/nftban/bin/nftban-installer --repair") {
+		t.Error("operator block advertises --repair for a state whose RecoveryClass refuses it")
+	}
+	// Nor may it claim success anywhere.
+	for _, forbidden := range []string{"State: COMMITTED", "Install/upgrade completed"} {
+		if strings.Contains(content, forbidden) {
+			t.Errorf("operator block contains a success claim %q", forbidden)
+		}
+	}
+}

@@ -731,25 +731,7 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		log.Result("%s", committedSummaryLine(log.WarnCount(), log.LogPath()))
 		log.Result("[NFTBan] State: COMMITTED")
 	case state.StateAppliedUnverified:
-		// v1.232.2 (BUG-UPDATE-APPLY-CAN-COMMIT-WITHOUT-CONVERGENCE-VERDICT).
-		//
-		// ⛔ NEVER "completed". NEVER "COMMITTED". The mutation landed and the
-		// validator passed, and that is ALL this run is entitled to say: convergence
-		// was never evaluated on this path, so nothing here has observed that the
-		// kernel state this transaction intended is the kernel state in force.
-		// The previous wording reported this outcome as a completed install.
-		log.Result("[NFTBan] Update APPLIED — convergence not certified by this transaction.")
-		log.Result("[NFTBan] State: APPLIED_UNVERIFIED")
-		log.Result("[NFTBan] CONVERGENCE_VERIFIED=%s", sf.ConvergenceVerified)
-		log.Result("")
-		log.Result("[NFTBan] What this means:")
-		log.Result("[NFTBan]   The new files are installed and the validator passed.")
-		log.Result("[NFTBan]   This run did NOT verify that the running firewall matches them.")
-		log.Result("[NFTBan]   Enforcement may be correct — it has simply not been PROVEN by this run.")
-		log.Result("")
-		emitRecovery(sf.State, log)
-		log.Result("")
-		log.Result("[NFTBan] To inspect current enforcement: nftban status && nftban health")
+		emitAppliedUnverifiedBlock(sf, log)
 
 	case state.StateDegraded:
 		// v1.153 UX-T4 (message wording only): DEGRADED is the
@@ -938,6 +920,35 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 	log.Info("history: %s", history.DefaultHistoryPath)
 
 	return sf.State.ExitCode()
+}
+
+// emitAppliedUnverifiedBlock is the SINGLE operator-facing authority for the
+// APPLIED_UNVERIFIED terminal (v1.232.2).
+//
+// ⛔ IT EXISTS BECAUSE report() DOES NOT RUN ON THE PATH THAT PRODUCES THIS STATE.
+// run() returns runUpdateApply's exit code directly; report() is only reached via
+// runInstall / runRepair / runRevalidate. Measured on lab2: a real
+// `nftban-installer --mode=upgrade` wrote APPLIED_UNVERIFIED and printed only the
+// trailer — the whole operator block, RECOVERY_CLASS included, was dead code on the
+// one path that can reach it. Factored into one function so the two call sites
+// cannot drift into two different descriptions of one state.
+func emitAppliedUnverifiedBlock(sf *state.StateFile, log *logging.Logger) {
+	// ⛔ NEVER "completed". NEVER "COMMITTED". The mutation landed and the validator
+	// passed, and that is ALL this run is entitled to say: convergence was never
+	// evaluated on this path, so nothing here has observed that the kernel state this
+	// transaction intended is the kernel state in force.
+	log.Result("[NFTBan] Update APPLIED — convergence not certified by this transaction.")
+	log.Result("[NFTBan] State: APPLIED_UNVERIFIED")
+	log.Result("[NFTBan] CONVERGENCE_VERIFIED=%s", sf.ConvergenceVerified)
+	log.Result("")
+	log.Result("[NFTBan] What this means:")
+	log.Result("[NFTBan]   The new files are installed and the validator passed.")
+	log.Result("[NFTBan]   This run did NOT verify that the running firewall matches them.")
+	log.Result("[NFTBan]   Enforcement may be correct — it has simply not been PROVEN by this run.")
+	log.Result("")
+	emitRecovery(sf.State, log)
+	log.Result("")
+	log.Result("[NFTBan] To inspect current enforcement: nftban status && nftban health")
 }
 
 // emitRecovery prints the recovery instruction for a state, declaring its
