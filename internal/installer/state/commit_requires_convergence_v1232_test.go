@@ -30,15 +30,23 @@ func TestCommittedRefusesEveryNonVerifiedConvergenceVerdict(t *testing.T) {
 		why     string
 		permit  bool
 	}{
-		{"", "EMPTY — the srv3 value; an omission is not a proof", false},
-		{ConvergenceNotEvaluatedValue, "NOT_EVALUATED — the path declined to evaluate", false},
+		// REFUSED — no verdict was ever established, or it was established as NO.
+		{"", "EMPTY — the srv3 value; an omission is not a verdict", false},
+		{ConvergenceNotEvaluatedValue, "NOT_EVALUATED — the path declines to evaluate", false},
 		{"NOT_CONVERGED", "NOT_CONVERGED — it ran and the answer was no", false},
-		{"UNVERIFIED", "UNVERIFIED — it ran and a leg was unobservable", false},
-		{"DEFERRED", "DEFERRED — the verdict is owed, not given", false},
 		{"verified", "lowercase — the comparison must not be case-insensitive", false},
 		{"VERIFIED ", "trailing space — must not be trimmed into acceptance", false},
 		{"PROBABLY_VERIFIED", "a superstring must not satisfy a prefix/contains test", false},
-		{ConvergenceVerifiedValue, "VERIFIED — the one verdict that is a proof", true},
+		{"SOME_FUTURE_VERDICT", "unrecognised — must fail CLOSED, not inherit permission", false},
+
+		// PERMITTED — the contract RAN. DEFERRED and UNVERIFIED are permitted
+		// intermediate dispositions whose commit-eligibility this release did NOT
+		// re-decide (see the allowlist comment in file.go); they are gated by the
+		// other assertions, not by this boundary. Their presence here is the control
+		// that proves the guard was narrowed deliberately rather than left broad.
+		{ConvergenceVerifiedValue, "VERIFIED — every leg passed", true},
+		{"DEFERRED", "DEFERRED — ran; debt recorded (P12-A01: refusing this breaks every deferring upgrade)", true},
+		{"UNVERIFIED", "UNVERIFIED — ran; a leg was unobservable", true},
 	}
 
 	for _, c := range cases {

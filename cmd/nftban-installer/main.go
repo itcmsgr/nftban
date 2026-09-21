@@ -1048,7 +1048,15 @@ func historyStatusForState(s state.InstallState) string {
 	// explicitly so the default no longer has to guess for them.
 	case state.StateFailedRebuild, state.StateFailedRender, state.StateFailedSSH,
 		state.StateFailedAbort, state.StateFailedNoFirewall, state.StateFailedTakeover,
-		state.StateRebuildRefusedBusy, state.StateRebuildNotExecuted:
+		state.StateRebuildRefusedBusy, state.StateRebuildNotExecuted,
+		state.StateFailedPreflightDiskSpace,
+		// v1.232.2: the INTERMEDIATE states, named explicitly rather than being
+		// swept up by a default. An interrupted apply (timeout / signal) leaves the
+		// record on one of these, and "the installer stopped mid-flight" IS an
+		// install failure — this is a KNOWN classification, not a guess, which is
+		// exactly why it belongs in an arm and not in the fallback.
+		state.StateFilesInstalled, state.StateDetectComplete, state.StatePrepareComplete,
+		state.StateSwitchComplete, state.StateServicesComplete:
 		return history.StatusInstallFail
 	default:
 		// ⛔ NOT install_fail. A state this mapper does not recognise is an

@@ -220,7 +220,16 @@ _fth_gather() {
     fi
     # In an active recovery window the table may legitimately be mid-restore.
     FTH_IN_RECOVERY=N
-    [[ -f "$FTH_RECOVERY_MARKER" ]] && FTH_IN_RECOVERY=Y
+    # ⛔ `if`, NOT `[[ ]] && assign`. This is the LAST statement of _fth_gather, so
+    # under the `set -Eeuo pipefail` this library is sourced into, the ordinary case
+    # "no recovery marker present" made the whole function return 1 and errexit
+    # aborted the caller — AFTER every FTH_* fact had been correctly gathered. Third
+    # instance of this shape found in this one function; see
+    # OPEN-FTH-GATHER-ABORTS-SILENTLY-UNDER-ERREXIT-WHEN-SSH-PORTS-FILE-ABSENT.
+    if [[ -f "$FTH_RECOVERY_MARKER" ]]; then
+        FTH_IN_RECOVERY=Y
+    fi
+    return 0
 }
 
 # -----------------------------------------------------------------------------
