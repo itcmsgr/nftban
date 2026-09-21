@@ -173,7 +173,7 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 			return state.ExitAppliedUnverified
 		}
 
-		log.Info("revalidate: all live post-install assertions passed and the record carries a VERIFIED "+
+		log.Info("revalidate: all live post-install assertions passed and the record carries a VERIFIED " +
 			"convergence verdict — recommitting install_state COMMITTED")
 		if err := sf.Transition(state.StateCommitted, state.PhaseValidate, ""); err != nil {
 			log.Error("revalidate: failed to persist COMMITTED state: %v", err)
