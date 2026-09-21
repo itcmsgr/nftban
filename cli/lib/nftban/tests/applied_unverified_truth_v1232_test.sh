@@ -11,7 +11,7 @@
 # meta:description="FTH truth split (COMMITTED vs EXPECT_TABLE_PRESENT), known-literal closure for APPLIED_UNVERIFIED, and the transaction-truth renderer refusing to call an applied transaction incomplete"
 # meta:inventory.files=""
 # meta:inventory.binaries="bash"
-# meta:inventory.env_vars="FTH_STATE_FILE,FTH_SKIP_GATHER,FTH_INSTALL_STATE"
+# meta:inventory.env_vars="FTH_STATE_FILE,FTH_SKIP_GATHER,FTH_INSTALL_STATE,NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -46,8 +46,21 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-FTH="$SCRIPT_DIR/../core/nftban_firewall_transition_health.sh"
-OUT="$SCRIPT_DIR/../core/nftban_output.sh"
+
+# ⛔ POINT THE LIBRARY AT THE REPO, NOT AT AN INSTALL. core/nftban_output.sh
+# sources "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh", so without this the
+# test silently consumes the INSTALLED product. That is exactly what happened:
+# this suite passed on lab2 and lab4 — where nftban IS installed — and FAILED in
+# CI, where it is not, with "/usr/lib/nftban/lib/env.sh: No such file or
+# directory". The header already declared ta.hermetic="true"; the declaration was
+# wrong, not the CI runner.
+#
+#     A TEST THAT PASSES ONLY WHERE THE PRODUCT IS ALREADY INSTALLED IS NOT
+#     HERMETIC, AND ITS PASS SAYS NOTHING ABOUT THE CODE UNDER REVIEW.
+NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
+
+FTH="$NFTBAN_LIB_DIR/core/nftban_firewall_transition_health.sh"
+OUT="$NFTBAN_LIB_DIR/core/nftban_output.sh"
 for f in "$FTH" "$OUT"; do
     [[ -f "$f" ]] || { echo "FAIL: helper not found at $f"; exit 1; }
 done
