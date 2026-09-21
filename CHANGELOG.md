@@ -11,6 +11,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.232.2] - 2026-09-21 — COMMITTED could be asserted without a convergence verdict
+
+Proven on production srv3: `INSTALL_STATE=COMMITTED` written beside `CONVERGENCE_VERIFIED=""` after
+a three-phase run that never rendered a boot projection. The host was enforcing correctly — but
+nothing had observed that the kernel state the transaction intended was the kernel state in force,
+and the record said otherwise.
+
+### Fixed
+- **`COMMITTED` was overloaded across two callers with different evidence.** The full install chain
+  renders the boot projection and then verifies convergence. `update_apply` is a thin sequencer that
+  renders nothing, so it can never establish the `projection_generated` leg — yet it reached the same
+  terminal on the weaker predicate "preflight + rebuild + validator all passed".
+
+      A VALIDATOR REPORTS KERNEL HEALTH. IT CANNOT REPORT WHETHER
+      *THIS* TRANSACTION CONVERGED.
+
+  `state.StateFile.Transition` now **refuses to assign** `COMMITTED` without a convergence verdict.
+  Refusing to assign is the load-bearing detail: every production caller writes
+  `_ = sf.Transition(...)`, so an error-only guard would have been inert in production while looking
+  correct in tests.
+
+  The predicate is an **allowlist**, deliberately not `== VERIFIED`. `phaseSwitch` writes `DEFERRED`
+  and `UNVERIFIED` on ordinary hosts and both have long been ruled commit-eligible — requiring
+  `VERIFIED` would have left every deferring upgrade stuck short of `COMMITTED`. Permitted:
+  `VERIFIED`, `DEFERRED`, `UNVERIFIED` (the contract ran). Refused: `""`, `NOT_EVALUATED`,
+  `NOT_CONVERGED`, and anything unrecognised, so a future verdict cannot inherit permission by being
+  unknown.
+
+- **`revalidate` reached `COMMITTED` from live assertions alone.** A second path to the same shape,
+  found because the new invariant failed an existing test rather than by review. It runs no rebuild
+  and renders nothing, so it can only carry forward a verdict already on record; passing assertions
+  are not a substitute. A healthy daemon is not evidence that a transaction converged.
+
+- **An empty or absent nft set silently killed the transition-health gather.** `_fth_norm`'s `grep`
+  matches nothing for an empty set; under the `set -Eeuo pipefail` the library is sourced into,
+  `pipefail` turns that into a failing pipeline and `errexit` aborts the whole gather, leaving every
+  `FTH_*` fact unset. A health surface that reports nothing is indistinguishable from one reporting
+  "all clear". Three further instances of the same shape in that function are fixed with it.
+
+### Added
+- **`APPLIED_UNVERIFIED`** — a truthful terminal for "the mutation applied and the validator passed,
+  and convergence was never evaluated". Exit code **14**, the lowest value free in both exit-code
+  namespaces (installer 0–10, `nftban update` 0–3/10–13). `CONVERGENCE_VERIFIED=NOT_EVALUATED` is
+  recorded explicitly rather than left empty: an empty field reads as an omission, which is how an
+  unprovable `COMMITTED` became representable in the first place.
+
+  Every reader is mapped explicitly, none by default: history records `applied_unverified` (and an
+  unrecognised state now records `unknown_state` rather than asserting `install_fail`); the
+  package-native verifier reports it and is **not** `Verified()`; the DEB and RPM scriptlets have
+  their own arm that claims neither `COMMITTED` nor `FAILED`; `nftban update` gets its own verdict
+  class and does **not** advise a rollback; auto-update no longer rolls back on it; the notification
+  email carries its own subject and body; and `nftban-update-apply.service` deliberately does **not**
+  whitelist 14 as success.
+
+### Operator impact
+`nftban update` and a direct `nftban-installer --mode=upgrade` now exit **14** instead of 0 on a run
+that applies cleanly but certifies no convergence. **This is not a failure and must not be rolled
+back** — the files are installed and the validator passed. Re-run the full install/update transaction
+to obtain a verdict. Automation that treats any non-zero exit as a failed upgrade should be taught
+about 14 before deploying this release.
+
+---
+
 ## [v1.232.1] - 2026-09-21 — provenance completeness: one published artifact could not name its source
 
 v1.232.0 is SUPERSEDED and must not be deployed. Its packaged artifacts were correct, but the
