@@ -204,3 +204,34 @@ func TestExitAppliedUnverifiedIsUnique(t *testing.T) {
 		seen[code] = s
 	}
 }
+
+// ⛔ THE TWO AUTHORITIES MUST NOT DRIFT. Any caller that pre-checks "could this
+// record commit?" before calling Transition is reimplementing the invariant. When
+// runRevalidate did that by hand (`!= VERIFIED`) it silently refused DEFERRED and
+// UNVERIFIED — verdicts Transition permits — so a deferring host could never clear a
+// DEGRADED record through --revalidate while the same verdict committed fine through
+// the install chain. The unit tests missed it because they used "", which BOTH
+// spellings refuse; only the package-native matrix on lab2 exposed it.
+//
+// This test compares the exported pre-check against the ACTUAL transition outcome for
+// every verdict, so the two cannot disagree again.
+func TestExportedPredicateAgreesWithTheTransitionItPreChecks(t *testing.T) {
+	verdicts := []string{
+		ConvergenceVerifiedValue, "DEFERRED", "UNVERIFIED",
+		"", ConvergenceNotEvaluatedValue, "NOT_CONVERGED",
+		"SOME_FUTURE_VERDICT", "verified", "VERIFIED ",
+	}
+	for _, v := range verdicts {
+		predicted := ConvergenceVerdictPermitsCommit(v)
+
+		sf := NewStateFile(t.TempDir())
+		sf.ConvergenceVerified = v
+		actual := sf.Transition(StateCommitted, PhaseValidate, "agreement check") == nil
+
+		if predicted != actual {
+			t.Errorf("CONVERGENCE_VERIFIED=%q: pre-check says permitted=%v but Transition actually "+
+				"permitted=%v — a pre-check that disagrees with the invariant it guards is worse "+
+				"than no pre-check", v, predicted, actual)
+		}
+	}
+}

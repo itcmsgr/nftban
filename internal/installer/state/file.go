@@ -213,6 +213,22 @@ var commitEligibleConvergenceVerdicts = []string{
 	"UNVERIFIED",
 }
 
+// ConvergenceVerdictPermitsCommit is the EXPORTED predicate. Any caller that needs
+// to know "could this record reach COMMITTED?" BEFORE attempting the transition must
+// ask this function rather than comparing to a literal.
+//
+// ⛔ ADDED BECAUSE A SECOND AUTHORITY DISAGREED WITH THE FIRST. runRevalidate's
+// carry-forward gate was written as `!= ConvergenceVerifiedValue`, which refuses
+// DEFERRED and UNVERIFIED — verdicts the boundary invariant PERMITS. Result: a host
+// whose install legitimately deferred could never clear a DEGRADED record through
+// --revalidate, while the same verdict committed fine through the install chain.
+// Caught only by the package-native matrix; the unit test used "" , which both
+// spellings refuse, so it passed.
+//
+//	ONE PREDICATE, ONE AUTHORITY. A pre-check that reimplements the invariant it
+//	is pre-checking will drift away from it.
+func ConvergenceVerdictPermitsCommit(v string) bool { return convergenceVerdictPermitsCommit(v) }
+
 func convergenceVerdictPermitsCommit(v string) bool {
 	for _, ok := range commitEligibleConvergenceVerdicts {
 		if v == ok {

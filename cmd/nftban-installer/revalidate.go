@@ -157,11 +157,16 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 		// stated there and then not applied to the terminal itself.
 		_ = exec.Remove(fhs.InstallFailedMarker)
 
-		if sf.ConvergenceVerified != state.ConvergenceVerifiedValue {
+		// ⛔ ASK THE AUTHORITY, DO NOT RESTATE IT. This gate previously read
+		// `!= state.ConvergenceVerifiedValue`, which refuses DEFERRED and UNVERIFIED —
+		// both of which Transition PERMITS. A deferring host could then never clear a
+		// DEGRADED record here while committing fine through the install chain.
+		if !state.ConvergenceVerdictPermitsCommit(sf.ConvergenceVerified) {
 			log.Info("revalidate: all live post-install assertions passed")
-			log.Warn("revalidate: the record carries CONVERGENCE_VERIFIED=%q, so there is no convergence",
+			log.Warn("revalidate: the record carries CONVERGENCE_VERIFIED=%q, which is not a verdict any",
 				sf.ConvergenceVerified)
-			log.Warn("  proof to carry forward — revalidate renders nothing and cannot establish one.")
+			log.Warn("  run established — there is no convergence proof to carry forward, and revalidate")
+			log.Warn("  renders nothing and cannot establish one.")
 			log.Warn("  Recording APPLIED_UNVERIFIED: the install is as healthy as this run can observe,")
 			log.Warn("  and this run certified no convergence. Re-run the full install/update transaction")
 			log.Warn("  to obtain a verdict.")
@@ -173,8 +178,9 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 			return state.ExitAppliedUnverified
 		}
 
-		log.Info("revalidate: all live post-install assertions passed and the record carries a VERIFIED " +
-			"convergence verdict — recommitting install_state COMMITTED")
+		log.Info("revalidate: all live post-install assertions passed and the record carries a "+
+			"commit-eligible convergence verdict (%s) — recommitting install_state COMMITTED",
+			sf.ConvergenceVerified)
 		if err := sf.Transition(state.StateCommitted, state.PhaseValidate, ""); err != nil {
 			log.Error("revalidate: failed to persist COMMITTED state: %v", err)
 			return state.ExitFatal
