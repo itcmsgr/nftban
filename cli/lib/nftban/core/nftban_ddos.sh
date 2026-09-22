@@ -1091,7 +1091,14 @@ nftban_ddos_status() {
     echo "    DDOS_ENABLED=true|false     - Enable/disable DDoS protection"
     echo "    DDOS_MODE=auto|classic|suricata   (hybrid = legacy, refuses)"
     echo "    DDOS_SYN_RATE=25            - SYN packets per second limit"
-    echo "    DDOS_CONN_LIMIT=100         - Max concurrent connections, host-wide (not per source)"
+    # ⛔ v1.233.0: this line is REMOVED, not corrected. DDOS_CONN_LIMIT does not
+    # exist — `grep -rn DDOS_CONN_LIMIT /etc/nftban/` returns nothing and no
+    # renderer consumes it. It documented a setting that was never real AND
+    # attached a scope claim that is now false. Measured on lab4: on a host with
+    # DDOS_ENABLED=false this was the ONLY connlimit-scope statement the CLI
+    # produced, so a default operator was told "host-wide (not per source)" while
+    # the kernel enforced per-source. The real keys are DDOS_CLASSIC_*_CONN_LIMIT
+    # and their scope is reported by nftban_ddos_classic_status().
     echo ""
     echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
     echo ""

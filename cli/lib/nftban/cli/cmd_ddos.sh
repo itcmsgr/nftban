@@ -88,10 +88,15 @@ PROTECTION TYPES:
 
     • SYN Flood Protection - Rate limits TCP SYN packets
     • Connection Limits - Caps concurrent connections per service port.
-      HOST-WIDE, not per source IP: the `ct count over N` rules carry no
-      `ip saddr` key, so the allowance is shared across all sources and
-      ESTABLISHED connections count toward it. Over the cap the packet is
-      dropped silently — no log, no event, no ban.
+      PER SOURCE IP (v1.233.0): each rule is keyed with `ip saddr` / `ip6 saddr`
+      into a named dynamic set, so every source gets its own allowance and one
+      busy source can no longer consume another's. ESTABLISHED connections still
+      count toward that source's own cap. Over the cap the packet is dropped
+      silently — no log, no event, no ban.
+      Scope is the NETWORK SOURCE ADDRESS. nftables cannot see the HTTP Host
+      header, so this is not per-website, per-account or per-vhost: many sites
+      behind one shared IP share one source identity, and a NAT/CDN egress counts
+      as a single source.
     • ICMP Rate Limiting - Prevents ping floods
     • UDP Flood Protection - Rate limits UDP traffic
 
@@ -104,8 +109,8 @@ PROTECTION TYPES:
       DDOS_MODE="auto"                           # auto|classic|suricata|hybrid
       DDOS_CLASSIC_SYN_RATE="100/second"        # SYN flood rate limit (per source IP)
       DDOS_CLASSIC_SYN_BURST="200"              # Burst allowance
-      DDOS_CLASSIC_SSH_CONN_LIMIT="15"          # Max concurrent SSH conns (host-wide)
-      DDOS_CLASSIC_HTTP_CONN_LIMIT="200"        # Max concurrent HTTP conns (host-wide)
+      DDOS_CLASSIC_SSH_CONN_LIMIT="15"          # Max concurrent SSH conns PER SOURCE
+      DDOS_CLASSIC_HTTP_CONN_LIMIT="200"        # Max concurrent HTTP conns PER SOURCE
       DDOS_CLASSIC_ICMP_RATE="10/second"        # ICMP rate limit
       DDOS_CLASSIC_UDP_RATE="100/second"        # UDP rate limit
 

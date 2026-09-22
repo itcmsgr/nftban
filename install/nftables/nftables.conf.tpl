@@ -68,21 +68,16 @@
 #   __CT_LIMIT_HTTP__  default: 200 (or DDoS HTTP limit when DDoS active)
 #   __CT_LIMIT_MAIL__  default: 30  (or DDoS SMTP limit when DDoS active)
 #
-#   SCOPE: each of these rules is a bare `ct count over N` with NO `ip saddr`
-#   key, so the count is HOST-WIDE across the matched service population, not
-#   per source IP. ESTABLISHED connections count toward it. Over the cap the
-#   action is a silent DROP: no log, no event, no detector input, so a CT limit
-#   never produces a ban. One busy source can consume the whole allowance and
-#   every other source is then dropped. (v1.229.13 A02-2 — wording only; the
-#   thresholds and the rules themselves are unchanged.)
-#
-#   v1.49.0 FIX-F: Base limits were dead when DDoS module active because
-#   DDoS helper chain had stricter limits (SSH:10 vs base:15). Now both
-#   use the same configurable values. Override via:
-#     /etc/nftban/conf.d/ddos/classic.conf.local:
-#       DDOS_CLASSIC_SSH_CONN_LIMIT="20"
-#
-# =============================================================================
+#   SCOPE: v1.233.0 — each of these rules is KEYED with `ip saddr` / `ip6 saddr`
+#   into a named dynamic set, so the count is PER SOURCE IP, not host-wide.
+#   One busy source can no longer consume another source's allowance.
+#   ESTABLISHED connections count toward that source's OWN cap. Over the cap
+#   the packet is dropped silently — no log, no event, no detector input, so a
+#   CT limit still never produces a ban.
+#   Scope is the NETWORK SOURCE ADDRESS: nftables cannot see the HTTP Host
+#   header, so this is not per-website/per-account; a NAT or CDN egress counts
+#   as ONE source. Capacity is declared (size 65535) per service per family and
+#   each set exhausts INDEPENDENTLY, fail-open for new identities at capacity.
 
 # Clean slate - delete existing NFTBan tables
 table ip nftban { }
@@ -466,11 +461,10 @@ table ip nftban {
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
 
         # 6. CT LIMITS - shared concurrent-connection caps (DROP)
-        # Bare `ct count over N`, no `ip saddr` key: the count is HOST-WIDE
-        # across the matched service, not per source IP, and ESTABLISHED
-        # connections count toward it. Over the cap the packet is dropped
-        # silently — no log, no event, no ban. One busy source can consume
-        # the whole allowance. (v1.229.13 A02-2 — wording only.)
+        # v1.233.0: KEYED per source. Each rule inserts the source address into
+        # its named dynamic set and counts that source's own connections, so a
+        # busy source cannot consume another's allowance. Capacity is declared
+        # (size 65535) and exhausts per service, failing OPEN for new sources.
         # >>> NFTBAN-GENERATED connlimit base-rules (family 4) — regenerate with scripts/ci/gen-connlimit-projection.sh
         ct state new tcp dport @ssh_ports add @connlimit_ssh_v4 { ip saddr ct count over __CT_LIMIT_SSH__ } counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent PER SOURCE"
         ct state new tcp dport { 80, 443 } add @connlimit_http_v4 { ip saddr ct count over __CT_LIMIT_HTTP__ } counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP: max __CT_LIMIT_HTTP__ concurrent PER SOURCE"
@@ -907,11 +901,10 @@ table ip6 nftban {
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
 
         # 6. CT LIMITS - shared concurrent-connection caps (DROP)
-        # Bare `ct count over N`, no `ip saddr` key: the count is HOST-WIDE
-        # across the matched service, not per source IP, and ESTABLISHED
-        # connections count toward it. Over the cap the packet is dropped
-        # silently — no log, no event, no ban. One busy source can consume
-        # the whole allowance. (v1.229.13 A02-2 — wording only.)
+        # v1.233.0: KEYED per source. Each rule inserts the source address into
+        # its named dynamic set and counts that source's own connections, so a
+        # busy source cannot consume another's allowance. Capacity is declared
+        # (size 65535) and exhausts per service, failing OPEN for new sources.
         # >>> NFTBAN-GENERATED connlimit base-rules (family 6) — regenerate with scripts/ci/gen-connlimit-projection.sh
         ct state new tcp dport @ssh_ports add @connlimit_ssh_v6 { ip6 saddr ct count over __CT_LIMIT_SSH__ } counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent PER SOURCE"
         ct state new tcp dport { 80, 443 } add @connlimit_http_v6 { ip6 saddr ct count over __CT_LIMIT_HTTP__ } counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP: max __CT_LIMIT_HTTP__ concurrent PER SOURCE"

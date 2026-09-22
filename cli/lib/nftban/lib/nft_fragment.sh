@@ -991,10 +991,12 @@ nft_fragment_render_ddos_classic() {
 # Managed by nftband - DO NOT EDIT MANUALLY
 #
 # v1.67.1: Removed duplicate SYN/SSH/HTTP/HTTPS rules (base input handles these).
-# Remaining unique thresholds (every ct count below is host-wide, NOT per source
-# IP: no ip saddr key, ESTABLISHED counts toward it, over-cap DROPs silently):
-#   SMTP Conn: max ${smtp_limit} concurrent, shared across all sources
-#   DNS Conn: max ${dns_limit} concurrent, shared across all sources (TCP+UDP, unique)
+# Remaining unique thresholds (v1.233.0: every ct count below is PER SOURCE IP —
+# keyed with ip saddr / ip6 saddr into a named dynamic set; ESTABLISHED counts
+# toward that source's own cap; over-cap DROPs silently):
+#   DNS Conn: max ${dns_limit} concurrent PER SOURCE (TCP+UDP, no base equivalent)
+# SMTP/25 is NOT emitted here: the unconditional base MAIL rule {25,465,587} is
+# the sole connlimit authority for TCP/25 (FSI-DUPLICATE-ENFORCEMENT).
 #   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
 #   UDP Rate: ${udp_rate} burst ${udp_burst}
 

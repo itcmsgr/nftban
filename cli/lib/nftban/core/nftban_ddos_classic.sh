@@ -695,6 +695,12 @@ nftban_ddos_classic_enable() {
     # and is NOT touched here — this PR must not change rule semantics.
     echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent PER SOURCE"
     echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent PER SOURCE"
+    # ⛔ MAIL WAS MISSING ENTIRELY (found on lab3). TCP {25,465,587} is enforced
+    # per-source by the base MAIL rule exactly like SSH and HTTP, but no operator
+    # line reported it — so a surface that is supposed to state the enforcement
+    # contract silently omitted one third of it. An unreported control is not a
+    # reported control.
+    echo "    MAIL Conn: max ${DDOS_CLASSIC_SMTP_CONN_LIMIT} concurrent PER SOURCE (25/465/587)"
     echo "               keyed by source address; one source cannot consume another's allowance"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
     echo ""
@@ -981,6 +987,12 @@ nftban_ddos_classic_status() {
     # and is NOT touched here — this PR must not change rule semantics.
     echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent PER SOURCE"
     echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent PER SOURCE"
+    # ⛔ MAIL WAS MISSING ENTIRELY (found on lab3). TCP {25,465,587} is enforced
+    # per-source by the base MAIL rule exactly like SSH and HTTP, but no operator
+    # line reported it — so a surface that is supposed to state the enforcement
+    # contract silently omitted one third of it. An unreported control is not a
+    # reported control.
+    echo "    MAIL Conn: max ${DDOS_CLASSIC_SMTP_CONN_LIMIT} concurrent PER SOURCE (25/465/587)"
     echo "               keyed by source address; one source cannot consume another's allowance"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
     echo "    Auto-tune: ${DDOS_CLASSIC_AUTO_TUNE}"

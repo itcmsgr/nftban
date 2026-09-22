@@ -29,6 +29,26 @@ F="$SD/../core/nftban_ddos_classic.sh"
 TPL="$SD/../../../../install/nftables/nftables.conf.tpl"
 CONF="$SD/../../../../install/nftables/nftables.conf"
 FRAG="$SD/../lib/nft_fragment.sh"
+
+# ⛔ THE CLAIM-SURFACE POPULATION. This test's own thesis is
+#     SECURITY CLAIM == RUNTIME STRUCTURE == OPERATOR REPORT
+# and until v1.233.0 it enforced only two thirds of that: the operator-report
+# arms read ONE file ($F) while three OTHER files print connlimit scope claims to
+# the operator. Measured on lab2/lab3/lab4 with a fully green gate: `nftban ddos
+# help` asserted the rules "carry no ip saddr key" while the kernel carried it,
+# and on a DDOS_ENABLED=false host the ONLY scope line the CLI produced said
+# "host-wide (not per source)".
+#
+#     THE OPERATOR-REPORT LIMB WAS GUARDED OVER A SUBSET OF ITSELF.
+#
+# Any file that PRINTS a connlimit scope claim belongs here, not just the one
+# that prints the good claim.
+CLAIM_SURFACES=(
+    "$F"
+    "$SD/../core/nftban_ddos.sh"
+    "$SD/../cli/cmd_ddos.sh"
+    "$SD/../cli/cmd_port.sh"
+)
 PASS=0; FAIL=0
 ok(){ printf '  ok    %s\n' "$1"; PASS=$((PASS+1)); }
 no(){ printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
@@ -59,6 +79,43 @@ for f in "$TPL" "$CONF" "$FRAG"; do
     [[ "$c" -eq 0 ]] || { no "P2 $(basename "$f") has $c bare host-wide ct count rule(s)"; surfaces_bare=1; }
 done
 [[ "$surfaces_bare" -eq 0 ]] && ok "P2 no bare host-wide ct count in any emission surface"
+
+# --- P0 NO CLAIM SURFACE MAY CONTRADICT THE KERNEL ---------------------------
+# ⛔ Scans EVERY file that prints a connlimit scope claim, not just the one that
+# prints the correct one. Reads raw text (NOT strip()) on purpose: these claims
+# live inside `echo`/heredoc help text, and for the GENERATED fragment header
+# they are emitted verbatim into /etc/nftban/rules.d/*.nft as operator-visible
+# output. A comment that reaches the operator is a claim, not a comment — which
+# is precisely the case MENTION!=CODE was blind to.
+contradictions=0
+for cs in "${CLAIM_SURFACES[@]}" "$FRAG" "$TPL" "$CONF"; do
+    [[ -r "$cs" ]] || continue
+    # "not per source"/"host-wide" asserted as CURRENT scope. Historical notes
+    # explaining what v1.233.0 changed are permitted and must say so explicitly.
+    # ⛔ MATCH ONLY AN ASSERTION OF HOST-WIDE SCOPE. The first version of this
+    # detector matched the bare substring 'host-wide' and therefore flagged the
+    # CORRECT text "PER SOURCE IP, not host-wide" — an over-match is as broken as
+    # a miss (this is what N4 exists to catch, and it caught me). Negations and
+    # dated historical notes are legitimate and must not fire.
+    hits=$(grep -nE '(is|are|count is|remains?|stays?) +(HOST-WIDE|host-wide)|host-wide, not per|not per source IP:|concurrent GLOBAL' "$cs" 2>/dev/null \
+           | grep -vE 'not host-wide|NOT host-wide|v1\.233|was told|previously|until v1|historical|no longer|PER SOURCE' || true)
+    if [[ -n "$hits" ]]; then
+        no "P0 $(basename "$cs") still asserts host-wide scope:"
+        printf '        %s\n' "$hits" | head -3
+        contradictions=1
+    fi
+done
+[[ "$contradictions" -eq 0 ]] && ok "P0 no claim surface contradicts the keyed kernel contract"
+
+# --- N6 NON-VACUITY FOR P0 ---------------------------------------------------
+tmp_claim=$(mktemp)
+printf 'echo "ct count over N — host-wide, not per source IP"\n' > "$tmp_claim"
+if grep -qE 'host-wide|not per source' "$tmp_claim"; then
+    ok "N6 negative control: the P0 detector fires on a synthesised stale claim"
+else
+    no "N6 negative control FAILED — P0 cannot detect a stale claim"
+fi
+rm -f "$tmp_claim"
 
 # --- P3 THE OPERATOR SURFACE MUST POSITIVELY STATE THE NEW CONTRACT ----------
 # ⛔ ABSENCE OF THE WRONG CLAIM IS NOT PRESENCE OF THE RIGHT ONE. N1/N2 below
