@@ -286,25 +286,42 @@ declare -g -A NFTBAN_IPTABLES_NFT_TABLES=(
 # Connection tracking and rate limiting are ESSENTIAL for DDoS protection.
 # These limits should be applied in the input chain BEFORE service rules.
 #
-# CT LIMITS (host-wide, NOT per source IP):
+# CT LIMITS — PER SOURCE IP as of v1.233.0:
 # -----------------------------------------
-# Purpose: cap the number of concurrent connections to a service.
-# A bare `ct count over N` carries no `ip saddr` key, so the count is shared
-# across every source matching the rule: one busy source can consume the whole
-# allowance and every other source is then dropped. ESTABLISHED connections
-# count toward the cap. Exceeding it DROPs the packet — no log, no event, no
-# detector input, so a CT limit never produces a ban. Only a keyed
-# `meter { ip saddr ct count ... }` would be per-source; NFTBan ships none.
+# Purpose: cap the number of concurrent connections to a service, per source.
+# ESTABLISHED connections count toward the cap. Exceeding it DROPs the packet —
+# no log, no event, no detector input, so a CT limit never produces a ban.
 #
-# Example rules for input chain:
-#   ct state new tcp dport @tcp_ports_in \
-#     meter syn_flood { ip saddr limit rate 100/second burst 200 } accept
+# Scope is the NETWORK SOURCE ADDRESS: one address, both families. It is not
+# per-prefix, per-account or per-vhost; nftables cannot see an HTTP Host header.
 #
-#   ct state new tcp dport 22 \
-#     ct count over 5 drop comment "SSH: max 5 concurrent (host-wide, not per IP)"
+# ⛔ v1.233.0 CORRECTION. This block previously read "host-wide, NOT per source
+# IP" and ended "Only a keyed `meter { ip saddr ct count ... }` would be
+# per-source; NFTBan ships none." Both statements described the defect, not a
+# design: NFTBan now ships SIX keyed sets (ssh/http/mail × v4/v6) plus DNS in
+# the fragment path. A maintainer reading this block to learn the connlimit
+# design was being taught the retired model by the schema reference itself.
+#
+# The shipped form keys the count into a named dynamic set, so each source gets
+# its own allowance and one busy source cannot consume another's:
+#
+#   ct state new tcp dport @ssh_ports \
+#     add @connlimit_ssh_v4 { ip saddr ct count over 15 } drop comment "SSH: max 15 concurrent PER SOURCE"
 #
 #   ct state new tcp dport { 80, 443 } \
-#     ct count over 50 drop comment "HTTP(S): max 50 concurrent (host-wide, not per IP)"
+#     add @connlimit_http_v4 { ip saddr ct count over 200 } drop comment "HTTP: max 200 concurrent PER SOURCE"
+#
+# The set carries an explicit `size` and fails OPEN for NEW sources once full;
+# sources already tracked stay governed. `ct count` and `timeout` cannot be
+# combined — the kernel rejects that on the RULE, not on the set declaration.
+# The rules are PROJECTED from cli/lib/nftban/data/connlimit-services.tsv by
+# scripts/ci/gen-connlimit-projection.sh — edit the declaration, not this text.
+#
+# A bare `ct count over N`, with no `ip saddr` key, shares one count across every
+# source matching the rule. That is the pre-v1.233.0 form and must not return.
+#
+#   ct state new tcp dport @tcp_ports_in \
+#     meter syn_flood { ip saddr limit rate 100/second burst 200 } accept
 #
 # RATE LIMITS (connection rate per IP):
 # --------------------------------------
@@ -1611,11 +1628,13 @@ export -f nftban_nft_report_status
 #       meter syn_flood { ip saddr limit rate 100/second burst 200 } \
 #       log prefix "nftban: portscan: "
 #
-#     ct state new tcp dport 22 ct count over 5 drop \
-#       comment "SSH: max 5 concurrent (host-wide, not per IP)"
+#     ct state new tcp dport 22 \
+#       add @connlimit_ssh_v4 { ip saddr ct count over 15 } drop \
+#       comment "SSH: max 15 concurrent PER SOURCE"
 #
-#     ct state new tcp dport { 80, 443 } ct count over 50 drop \
-#       comment "HTTP(S): max 50 concurrent (host-wide, not per IP)"
+#     ct state new tcp dport { 80, 443 } \
+#       add @connlimit_http_v4 { ip saddr ct count over 200 } drop \
+#       comment "HTTP: max 200 concurrent PER SOURCE"
 #
 #     # 9. TCP SERVICES (with ct limits applied above)
 #     tcp dport @tcp_ports_in accept comment "TCP services"

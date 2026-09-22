@@ -26,9 +26,38 @@ set -uo pipefail
 
 SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 F="$SD/../core/nftban_ddos_classic.sh"
-TPL="$SD/../../../../install/nftables/nftables.conf.tpl"
-CONF="$SD/../../../../install/nftables/nftables.conf"
 FRAG="$SD/../lib/nft_fragment.sh"
+
+# ⛔ REQUIRED SOURCE UNAVAILABLE != PASS  (v1.233.0 G1)
+# Measured on lab4: run from an INSTALLED tree (/usr/lib/nftban/tests), $TPL and
+# $CONF resolved to /install/nftables/* — which does not exist there. P0 silently
+# `continue`d past them and P2's bare_count() on an unreadable file returned 0,
+# so TWO OF SEVEN claimed surfaces were never inspected while the banner still
+# printed 13/0. A gate that reports green over surfaces it never opened is the
+# exact failure class this release exists to eliminate.
+#
+# Both surfaces ARE shipped, at different paths, so resolve rather than skip:
+#     nftables.conf.tpl  source install/nftables/  ->  installed /usr/lib/nftban/templates/
+#     nftables.conf      source install/nftables/  ->  installed /etc/nftban/
+# Only when NEITHER exists is a verdict owed, and it is never PASS:
+#     source tree (repo sentinel present) -> FAIL, the surface is required
+#     otherwise                           -> NOT_TESTED, reported and excluded
+ROOT="$SD/../../../.."
+# A repo-only file: packaging/ is never installed, so its presence discriminates
+# a source checkout from an installed package without consulting the surfaces
+# under test (which would be circular).
+IS_SOURCE_TREE=0; [[ -r "$ROOT/packaging/build_nftban.sh" ]] && IS_SOURCE_TREE=1
+NOTTESTED=0; NOTTESTED_NAMES=()
+resolve_surface(){  # resolve_surface <candidate>...  -> echoes the first readable path, or empty
+    local c
+    for c in "$@"; do [[ -r "$c" ]] && { printf '%s' "$c"; return 0; }; done
+    printf ''
+    return 1
+}
+TPL="$(resolve_surface "$ROOT/install/nftables/nftables.conf.tpl" \
+                            /usr/lib/nftban/templates/nftables.conf.tpl || true)"
+CONF="$(resolve_surface "$ROOT/install/nftables/nftables.conf" \
+                             /etc/nftban/nftables.conf || true)"
 
 # ⛔ THE CLAIM-SURFACE POPULATION. This test's own thesis is
 #     SECURITY CLAIM == RUNTIME STRUCTURE == OPERATOR REPORT
@@ -52,6 +81,17 @@ CLAIM_SURFACES=(
 PASS=0; FAIL=0
 ok(){ printf '  ok    %s\n' "$1"; PASS=$((PASS+1)); }
 no(){ printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
+# NOT_TESTED is its own verdict class. It is never PASS and never FAIL; it is the
+# honest answer when a surface is legitimately absent from this layout.
+nt(){ printf '  ....  NOT_TESTED  %s\n' "$1"; NOTTESTED=$((NOTTESTED+1)); NOTTESTED_NAMES+=("$1"); }
+# Adjudicate an unresolved required surface ONCE, at the point of use.
+unresolved(){  # unresolved <label>
+    if [[ "$IS_SOURCE_TREE" -eq 1 ]]; then
+        no "$1 REQUIRED surface missing from the source tree"
+    else
+        nt "$1 not present in this installed layout"
+    fi
+}
 
 # MENTION != CODE: comments describe history and must never satisfy an assertion.
 strip(){ grep -vE '^[[:space:]]*#' "$1" 2>/dev/null || true; }
@@ -73,12 +113,21 @@ grep -q 'one source cannot consume' <<<"$body" \
 
 # --- P2 EVERY emission surface is actually keyed ------------------------------
 # This is the half the v1.229.10 test could not assert, because it was false then.
-surfaces_bare=0
-for f in "$TPL" "$CONF" "$FRAG"; do
+# ⛔ bare_count() on an UNREADABLE file returns 0, which is indistinguishable
+# from "inspected and clean". Adjudicate resolvability FIRST, per surface.
+surfaces_bare=0; surfaces_seen=0
+for lbl in tpl conf frag; do
+    case "$lbl" in tpl) f="$TPL";; conf) f="$CONF";; frag) f="$FRAG";; esac
+    if [[ -z "$f" || ! -r "$f" ]]; then unresolved "P2 $lbl"; continue; fi
+    surfaces_seen=$((surfaces_seen+1))
     c=$(bare_count "$f")
     [[ "$c" -eq 0 ]] || { no "P2 $(basename "$f") has $c bare host-wide ct count rule(s)"; surfaces_bare=1; }
 done
-[[ "$surfaces_bare" -eq 0 ]] && ok "P2 no bare host-wide ct count in any emission surface"
+if [[ "$surfaces_seen" -eq 0 ]]; then
+    no "P2 vacuous: no emission surface was inspected at all"
+elif [[ "$surfaces_bare" -eq 0 ]]; then
+    ok "P2 no bare host-wide ct count in any inspected emission surface ($surfaces_seen/3)"
+fi
 
 # --- P0 NO CLAIM SURFACE MAY CONTRADICT THE KERNEL ---------------------------
 # ⛔ Scans EVERY file that prints a connlimit scope claim, not just the one that
@@ -88,8 +137,16 @@ done
 # output. A comment that reaches the operator is a claim, not a comment — which
 # is precisely the case MENTION!=CODE was blind to.
 contradictions=0
-for cs in "${CLAIM_SURFACES[@]}" "$FRAG" "$TPL" "$CONF"; do
-    [[ -r "$cs" ]] || continue
+claim_seen=0
+# Labelled so an unresolved surface is NAMED in the coverage report; a bare
+# basename of an empty path reads as "<unresolved>" and tells the reader nothing.
+for entry in "${CLAIM_SURFACES[@]/#/claim:}" "frag:$FRAG" "tpl:$TPL" "conf:$CONF"; do
+    lbl="${entry%%:*}"; cs="${entry#*:}"
+    [[ "$lbl" == claim ]] && lbl="$(basename "$cs")"
+    # ⛔ was `[[ -r "$cs" ]] || continue` — a silent skip that let P0 report a
+    # clean sweep over surfaces it never opened. Absence is now adjudicated.
+    if [[ -z "$cs" || ! -r "$cs" ]]; then unresolved "P0 $lbl"; continue; fi
+    claim_seen=$((claim_seen+1))
     # "not per source"/"host-wide" asserted as CURRENT scope. Historical notes
     # explaining what v1.233.0 changed are permitted and must say so explicitly.
     # ⛔ MATCH ONLY AN ASSERTION OF HOST-WIDE SCOPE. The first version of this
@@ -97,7 +154,15 @@ for cs in "${CLAIM_SURFACES[@]}" "$FRAG" "$TPL" "$CONF"; do
     # CORRECT text "PER SOURCE IP, not host-wide" — an over-match is as broken as
     # a miss (this is what N4 exists to catch, and it caught me). Negations and
     # dated historical notes are legitimate and must not fire.
-    hits=$(grep -nE '(is|are|count is|remains?|stays?) +(HOST-WIDE|host-wide)|host-wide, not per|not per source IP:|concurrent GLOBAL' "$cs" 2>/dev/null \
+    # ⛔ DETECTOR case-INsensitive (v1.233.0 G3): 'NOT per source IP:' at
+    # nft_schema.sh:289 escaped the case-sensitive 'not per source IP:' pattern.
+    # The alternation (HOST-WIDE|host-wide) already showed the intent was to
+    # match either casing; -i makes that uniform.
+    # ⛔ The EXCLUSION list stays case-SENSITIVE on purpose. Under -i the allow
+    # term 'PER SOURCE' would match the 'per source' inside a stale claim such as
+    # 'host-wide, not per source', excluding the very lines P0 exists to catch —
+    # a detector disarmed by its own allow-list. N6 pins this.
+    hits=$(grep -niE '(is|are|count is|remains?|stays?) +host-wide|host-wide, not per|not per source IP:|concurrent GLOBAL' "$cs" 2>/dev/null \
            | grep -vE 'not host-wide|NOT host-wide|v1\.233|was told|previously|until v1|historical|no longer|PER SOURCE' || true)
     if [[ -n "$hits" ]]; then
         no "P0 $(basename "$cs") still asserts host-wide scope:"
@@ -105,7 +170,11 @@ for cs in "${CLAIM_SURFACES[@]}" "$FRAG" "$TPL" "$CONF"; do
         contradictions=1
     fi
 done
-[[ "$contradictions" -eq 0 ]] && ok "P0 no claim surface contradicts the keyed kernel contract"
+if [[ "$claim_seen" -eq 0 ]]; then
+    no "P0 vacuous: no claim surface was inspected at all"
+elif [[ "$contradictions" -eq 0 ]]; then
+    ok "P0 no claim surface contradicts the keyed kernel contract ($claim_seen surfaces inspected)"
+fi
 
 # --- N6 NON-VACUITY FOR P0 ---------------------------------------------------
 tmp_claim=$(mktemp)
@@ -201,5 +270,11 @@ fi
 rm -f "$tmp_comment"
 
 echo ""
-echo "  PASS=$PASS FAIL=$FAIL"
+echo "  PASS=$PASS FAIL=$FAIL NOT_TESTED=$NOTTESTED"
+# ⛔ Never let a PASS count stand in for coverage. If anything went uninspected,
+# say so on the same line a reader uses to judge the run.
+if [[ "$NOTTESTED" -gt 0 ]]; then
+    echo "  ⚠ COVERAGE INCOMPLETE — these surfaces were NOT inspected in this layout:"
+    printf '      - %s\n' "${NOTTESTED_NAMES[@]}"
+fi
 [[ "$FAIL" -eq 0 ]]

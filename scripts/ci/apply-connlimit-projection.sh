@@ -44,7 +44,7 @@ render() {  # render <medium> <family|-> <resolve_scalars:0|1>
     printf '%s\n' "$out"
 }
 
-rewrite() {  # rewrite <file> <medium> <family|-> <resolve>
+_rewrite() {  # _rewrite <file> <medium> <family|-> <resolve>
     local file="$1" medium="$2" fam="$3" resolve="$4"
     local famlabel="$fam"; [[ "$fam" == "-" ]] && famlabel=""
     local blockfile; blockfile=$(mktemp)
@@ -74,6 +74,8 @@ if [[ "$MODE" == "--check" ]]; then
     for f in "$TPL" "$CONF" "$FRAG"; do cp "$f" "$TMPD/$(basename "$f").orig"; done
 fi
 
+BLOCKS=0
+rewrite(){ _rewrite "$@"; BLOCKS=$((BLOCKS+1)); }
 rewrite "$TPL"  base-sets  4 0
 rewrite "$TPL"  base-sets  6 0
 rewrite "$TPL"  base-rules 4 0
@@ -95,7 +97,7 @@ if [[ "$MODE" == "--check" ]]; then
             rc=1
         fi
     done
-    [[ $rc -eq 0 ]] && echo "connlimit projection: NO DRIFT (3 surfaces, 9 blocks)"
+    [[ $rc -eq 0 ]] && echo "connlimit projection: NO DRIFT (3 surfaces, $BLOCKS blocks)"
     exit $rc
 fi
-echo "connlimit projection applied (3 surfaces, 9 blocks)"
+echo "connlimit projection applied (3 surfaces, $BLOCKS blocks)"
