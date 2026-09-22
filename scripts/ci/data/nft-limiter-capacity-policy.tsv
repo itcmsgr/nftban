@@ -33,3 +33,22 @@ http_bot_pending_meter	ip	fragment	FAIL_CLOSED_VISIBLE	throttle population bound
 http_bot_pending_meter6	ip6	fragment	FAIL_CLOSED_VISIBLE	v6 pair
 http_bot_meter	ip	fragment	FAIL_OPEN_VISIBLE	rate-over suspect marker; at capacity marking stops, traffic unaffected
 http_bot_meter6	ip6	fragment	FAIL_OPEN_VISIBLE	v6 pair
+# --- P12-A02 per-source connection limiters (v1.231.0) ------------------------
+# AT_CAPACITY measured on lab4 (nftables 1.0.9, kernel 5.14) in isolated network
+# namespaces, positive and negative controls green FIRST:
+#   set size 1, limit 5, three distinct sources -> the 2nd and 3rd sources
+#   CONNECT and the rule counter stays 0. Insertion failure means the expression
+#   does not match, so the rule does not act => FAIL_OPEN.
+# Growth is bounded by CONCURRENT distinct sources, not cumulative: 8 sources
+# connected+closed produced 8 elements, reclaimed to 0 within 30s while their
+# conntrack entries were still present. These sets therefore carry NO timeout by
+# design (a timeout could expire an element with live connections) and are not
+# subject to the 2026-08-04 monotonic-growth failure mode.
+connlimit_ssh_v4	ip	base	FAIL_OPEN_VISIBLE	per-source SSH cap; at capacity the cap stops applying rather than blackholing SSH
+connlimit_ssh_v6	ip6	base	FAIL_OPEN_VISIBLE	v4 pair
+connlimit_http_v4	ip	base	FAIL_OPEN_VISIBLE	per-source HTTP(S) cap; highest concurrent-source count of the base set
+connlimit_http_v6	ip6	base	FAIL_OPEN_VISIBLE	v4 pair
+connlimit_mail_v4	ip	base	FAIL_OPEN_VISIBLE	per-source MAIL cap across 25/465/587
+connlimit_mail_v6	ip6	base	FAIL_OPEN_VISIBLE	v4 pair
+connlimit_dns_v4	ip	fragment	FAIL_OPEN_VISIBLE	per-source DNS/TCP cap; DDoS-classic fragment only
+connlimit_dns_v6	ip6	fragment	FAIL_OPEN_VISIBLE	v4 pair

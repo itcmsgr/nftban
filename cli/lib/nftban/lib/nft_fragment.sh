@@ -1025,12 +1025,11 @@ add set ${table_ipv4} ${udp_meter} { type ipv4_addr; size 65535; flags dynamic,t
 #      placeholder, so the base cap and the classic cap are one value)
 # Only unique protections remain below.
 
-# SMTP Connection Limit — same value as the base MAIL cap: cmd_firewall.sh
-# substitutes DDOS_CLASSIC_SMTP_CONN_LIMIT into __CT_LIMIT_MAIL__.
-add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent (host-wide, not per IP)"
-
 # DNS Protection (unique — no base schema equivalent)
-add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent (host-wide, not per IP)"
+# >>> NFTBAN-GENERATED connlimit fragment (family 4) — regenerate with scripts/ci/gen-connlimit-projection.sh
+add set ${table_ipv4} connlimit_dns_v4 { type ipv4_addr; size 65535; flags dynamic; }
+add rule ${table_ipv4} ${chain} ct state new tcp dport 53 add @connlimit_dns_v4 { ip saddr ct count over ${dns_limit} } counter name total_input_drop counter drop comment "DNS: max ${dns_limit} concurrent PER SOURCE"
+# <<< NFTBAN-GENERATED connlimit fragment (family 4)
 add rule ${table_ipv4} ${chain} udp dport 53 update @ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv4} ${chain} udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
@@ -1058,12 +1057,11 @@ add set ${table_ipv6} ${udp_meter}6 { type ipv6_addr; size 65535; flags dynamic,
 
 # v1.67.1: Same deduplication as IPv4 — removed SYN meter + SSH/HTTP/HTTPS conn limits.
 
-# SMTP Connection Limit — same value as the base MAIL cap: cmd_firewall.sh
-# substitutes DDOS_CLASSIC_SMTP_CONN_LIMIT into __CT_LIMIT_MAIL__.
-add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} concurrent (host-wide, not per IP)"
-
 # DNS Protection (unique)
-add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} concurrent (host-wide, not per IP)"
+# >>> NFTBAN-GENERATED connlimit fragment (family 6) — regenerate with scripts/ci/gen-connlimit-projection.sh
+add set ${table_ipv6} connlimit_dns_v6 { type ipv6_addr; size 65535; flags dynamic; }
+add rule ${table_ipv6} ${chain} ct state new tcp dport 53 add @connlimit_dns_v6 { ip6 saddr ct count over ${dns_limit} } counter name total_input_drop counter drop comment "DNS: max ${dns_limit} concurrent PER SOURCE"
+# <<< NFTBAN-GENERATED connlimit fragment (family 6)
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 update @ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
