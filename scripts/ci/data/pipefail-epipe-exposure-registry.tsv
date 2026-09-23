@@ -72,6 +72,7 @@
 # rather than absorbed. See that file's header for why.
 #
 # plane	file	fingerprint	occurrences	consumers	class	mode	reproduction_status	note
+gate	scripts/ci/apply-connlimit-projection.sh	d608bc787559952f	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-core-ownership-identity.sh	4338c5c5393e3d58	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-core-ownership-identity.sh	5159e3dc219d34ac	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-firewall-projection-authority-falsifiability.sh	ca2cb583921fbd0b	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-

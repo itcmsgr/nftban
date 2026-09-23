@@ -87,13 +87,17 @@ for setname in tcp_ports_in ssh_ports; do
     if [[ "$n" == "2" ]]; then ok "V145 $setname present in BOTH families (ip + ip6)"
     else no "V145 $setname: found $n block(s), want 2 (ip + ip6)"; fi
 done
-grep -q 'tcp dport @ssh_ports ct count' "$OUT" \
+# v1.231.0 P12-A02: `dport` and `ct count` are no longer ADJACENT — the per-source
+# set insertion (`add @connlimit_<svc>_v4 { ip saddr ...`) sits between them. The
+# invariant asserted here is set-driven vs hardcoded ports, which is unchanged;
+# adjacency was incidental to the old rule shape.
+grep -qE 'tcp dport @ssh_ports .*ct count' "$OUT" \
     && ok "V145 brute-force rule stays set-driven (@ssh_ports)" \
     || no "V145 set-driven @ssh_ports ct-count rule missing"
-if grep -qE 'tcp dport (22|55000) ct count' "$OUT"; then
+if grep -qE 'tcp dport (22|55000) .*ct count' "$OUT"; then
     no "V145 literal SSH port in a ct-count rule — must read @ssh_ports"
 else ok "V145 no literal SSH port ct-count rule"; fi
-grep -q 'tcp dport { 25, 465, 587 } ct count' "$OUT" \
+grep -qE 'tcp dport \{ 25, 465, 587 \} .*ct count' "$OUT" \
     && ok "V145 MAIL anonymous set { 25, 465, 587 } untouched by substitution" \
     || no "V145 MAIL anonymous set was altered"
 udp_leak=0
@@ -142,7 +146,7 @@ done < <(set_elements ssh_ports "$OUTS")
 [[ "$single_ok" == "1" && "$n" == "2" ]] \
     && ok "V162 single-port compat: exactly one token 22, no stray multi-port element" \
     || no "V162 single-port compat failed (blocks=$n)"
-grep -q 'tcp dport @ssh_ports ct count' "$OUTS" \
+grep -qE 'tcp dport @ssh_ports .*ct count' "$OUTS" \
     && ok "V162 single-port render keeps the set-driven SSH rule" \
     || no "V162 single-port render lost the set-driven SSH rule"
 

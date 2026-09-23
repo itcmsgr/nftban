@@ -84,12 +84,38 @@ for f in "${TEMPLATES[@]}"; do
 done
 
 # 4. Each template's SSH ct-count rule is set-driven via @ssh_ports.
+# v1.231.0 P12-A02: `@ssh_ports` and `ct count` are no longer ADJACENT — the
+# per-source set insertion (`add @connlimit_ssh_v4 { ip saddr ...`) now sits
+# between them. The invariant this guard exists for is unchanged: the SSH cap
+# reads its ports from the set and never from a hardcoded literal. Matching on
+# adjacency was incidental to the old rule shape, so the pattern is widened to
+# the invariant — and a keying assertion is added, which this guard could not
+# make before the rules were keyed.
 for f in "${TEMPLATES[@]}"; do
-    if grep -Eq 'tcp dport @ssh_ports ct count' "$f"; then
+    if grep -Eq 'tcp dport @ssh_ports .*ct count over' "$f"; then
         ok "$f: SSH ct-count uses @ssh_ports"
     else
         bad "$f: SSH ct-count rule does not use @ssh_ports"
     fi
+    # P12-A02 keying applies to the artifacts that actually REACH A HOST.
+    # packaging/build_nftban.sh installs exactly two of these three, in both the
+    # RPM (:580,:583) and DEB (:2559,:2562) paths: nftables.conf and
+    # nftables.conf.tpl. nftables-safe.conf and nftables-ipv4.conf.tmpl are
+    # repo-only today, so asserting keying on them would fail the gate over
+    # artifacts no host can receive. Their disposition is tracked separately —
+    # see A02-SAFE-CONF-UNCONVERTED / A02-IPV4-TMPL-DEAD-AUTHORITY.
+    case "$(basename "$f")" in
+        nftables.conf|nftables.conf.tpl)
+            if grep -Eq 'tcp dport @ssh_ports .*ip6?[[:space:]]+saddr[[:space:]]+ct count over' "$f"; then
+                ok "$f: SSH ct-count is keyed per source"
+            else
+                bad "$f: SSH ct-count rule is not keyed by source address"
+            fi
+            ;;
+        *)
+            ok "$f: not packaged — keying assertion out of scope (see A02 disposition)"
+            ;;
+    esac
 done
 
 # 5. ssh_ports must be in the generated validator inventory (required + all).

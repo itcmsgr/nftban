@@ -205,11 +205,11 @@
       "enabled": true,
       "mode": "ct_count",
       "default_thresholds": { "ssh": 15, "http": 200, "mail": 30 },
-      "scope": "host_wide",
+      "scope": "per_source_address",
       "action": "drop",
       "applies_to": ["ip nftban:input", "ip6 nftban:input"],
       "configurable_via": "conf.d/ddos/classic.conf",
-      "note": "Connection limits remain chain rules (not sets). Each is a bare `ct count over N` with no `ip saddr` key, so the allowance is shared host-wide across all sources, ESTABLISHED connections count toward it, and exceeding it drops the packet without logging, eventing or banning. Whitelisted IPs bypass all limits."
+      "note": "As of v1.233.0 each connection limit is KEYED BY SOURCE ADDRESS: the rule adds to a named dynamic set (`add @connlimit_<svc>_<fam> { ip|ip6 saddr ct count over N }`), so every source gets its own allowance and unrelated sources do not consume one another's. Scope is the network source address, one address, both families - not per-prefix, per-account or per-vhost. Each set declares `size 65535` and exhausts per service, failing OPEN for sources not yet tracked while sources already tracked stay governed. ESTABLISHED connections count toward the limit, and exceeding it drops the packet without logging, eventing or banning. Whitelisted IPs bypass all limits. Before v1.233.0 this field read host_wide and the rules were bare `ct count over N` with no source key, so one busy source could consume an entire service allowance."
     },
 
     "directional_ports": {

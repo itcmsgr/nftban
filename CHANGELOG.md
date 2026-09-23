@@ -11,6 +11,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.233.0] - 2026-09-22 — critical firewall and lifecycle correctness
+
+Two independent correctness defects, both proven package-natively on three platforms. This
+release absorbs the unpublished v1.232.2 fix; **v1.232.2 is not published separately** and
+issue #1417 is superseded by this release.
+
+### Fixed
+
+- **Connection limits were host-wide, not per source.** Every `ct count over N` rule shipped
+  without an `ip saddr` key, so a single service's allowance was shared across all sources: one
+  busy source could consume the entire cap and every other source was then dropped. The
+  configuration, comments and help text described the limits as per-source throughout. The
+  defect shipped in v1.0.0 and was present in every release since.
+
+  Rules are now projected from `cli/lib/nftban/data/connlimit-services.tsv` as
+  `add @connlimit_<svc>_<fam> { ip|ip6 saddr ct count over N }` — a named dynamic set per
+  service and family, with an explicit `size`. Each source gets its own allowance.
+
+  Measured: under the old rule an innocent second source was admitted 0/1; under the keyed rule,
+  1/1. Reproducing the srv4 shape on lab3 turned **10/21 admitted with 9 innocent sources denied**
+  into **21/21 admitted with zero innocent sources denied**. Thresholds are unchanged (SSH 15,
+  HTTP 200, MAIL 30); only the scope of the count changed.
+
+  **Capacity, stated plainly:** each set carries `size 65535` and exhausts independently per
+  service — which can be reached long before `nf_conntrack_max`. On exhaustion the set fails
+  **OPEN** for *new* sources; sources already tracked remain governed. `ct count` cannot be
+  combined with `timeout` — the kernel rejects that on the rule.
+
+  **Scope is the network source address**, one address, both families. It is not per-prefix,
+  per-account or per-vhost: nftables cannot see an HTTP Host header. Base SSH/HTTP/MAIL
+  connection limits are part of the base ruleset and remain **active independently of
+  `DDOS_ENABLED`** — disabling the DDoS module does not disable them.
+
+- **`COMMITTED` could be asserted without a convergence verdict** (absorbed from the unpublished
+  v1.232.2). The installer state machine now refuses to *assign* `COMMITTED` unless
+  `CONVERGENCE_VERIFIED` holds a verdict some run actually established. A new terminal state
+  `APPLIED_UNVERIFIED` (exit 14) reports "applied but not verified" truthfully instead of
+  letting an unverified apply impersonate a committed one. Exit 14 is threaded through the DEB
+  and RPM scriptlets and the systemd unit, where it remains non-success without triggering
+  auto-rollback.
+
+### Changed
+
+- `nft_schema.sh`'s CT-limits reference block described the pre-v1.233.0 host-wide model and
+  stated "NFTBan ships none" of the keyed form. It now documents the shipped per-source design.
+- The connlimit claim guard gained a `NOT_TESTED` verdict class. Run from an installed tree it
+  previously reported PASS over two emission surfaces it had never opened, because an unreadable
+  file returned a bare-rule count of zero. A required surface that cannot be resolved is now a
+  FAIL in a source tree and an explicitly reported `NOT_TESTED` elsewhere — never a PASS.
+
+### Known limitations
+
+- With `DDOS_ENABLED=false`, `nftban ddos status` makes no connection-limit scope statement. The
+  previous line asserted host-wide scope and named a `DDOS_CONN_LIMIT` setting that does not
+  exist, so it was removed rather than corrected. `nftban port help` states the per-source
+  contract and is module-independent.
+- `install/nftables/nftables-safe.conf` still carries the pre-v1.233.0 unkeyed form. It is not
+  packaged and has no runtime reader; it is marked historical pending cleanup.
+- `nftban ddos disable` leaves empty sets and chains behind. Proven non-enforcing; cleanup is
+  deferred.
+
+---
+
 ## [v1.232.1] - 2026-09-21 — provenance completeness: one published artifact could not name its source
 
 v1.232.0 is SUPERSEDED and must not be deployed. Its packaged artifacts were correct, but the

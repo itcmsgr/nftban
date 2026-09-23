@@ -679,19 +679,29 @@ nftban_ddos_classic_enable() {
     fi
     echo "  Stage 2 - Rate Limiting:"
     echo "    SYN Rate:  ${DDOS_CLASSIC_SYN_RATE} burst ${DDOS_CLASSIC_SYN_BURST}"
-    # v1.229.10 — S4 of STATUS-HEALTH-TRUTH-AUDIT-2026-08-20. These lines claimed
-    # "/IP". The shipped rules are `ct count over N` with NO `ip saddr` key, so the
-    # limit is GLOBAL: one busy source can consume the whole allowance and every
-    # other source is then dropped. Kernel-confirmed on srv3 2026-08-25 — five live
-    # rules (SSH, HTTP(S), MAIL, SMTP, DNS/TCP), none keyed by source.
+    # v1.231.0 P12-A02 — the ENFORCEMENT limb is now closed, so this wording moves
+    # with it. v1.229.10 correctly reported GLOBAL because the shipped rules were
+    # `ct count over N` with NO `ip saddr` key. They are now keyed per source:
+    #   ct state new tcp dport <p> add @connlimit_<svc>_v4 { ip saddr ct count over N } drop
+    # projected from cli/lib/nftban/data/connlimit-services.tsv.
     #
     #   REPORT WHAT THE RULE ACTUALLY KEYS ON, NOT WHAT IT WAS MEANT TO.
     #
-    # WORDING ONLY. The keying defect itself is OPEN_CT_COUNT_CONNLIMIT_GLOBAL_KEY_SCOPE
+    # The rule stayed the authority for this text in BOTH directions: the claim was
+    # downgraded when it overstated protection, and is restored only now that the
+    # keying is proven — nft --check on 1.0.9 and 1.1.6, and behaviourally measured
+    # in netns. At set capacity the limiter FAILS OPEN (measured), so the cap stops
+    # applying rather than denying service; see nft-limiter-capacity-policy.tsv.
     # and is NOT touched here — this PR must not change rule semantics.
-    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent GLOBAL (not per-source)"
-    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent GLOBAL (not per-source)"
-    echo "               one busy source can consume the whole allowance"
+    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent PER SOURCE"
+    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent PER SOURCE"
+    # ⛔ MAIL WAS MISSING ENTIRELY (found on lab3). TCP {25,465,587} is enforced
+    # per-source by the base MAIL rule exactly like SSH and HTTP, but no operator
+    # line reported it — so a surface that is supposed to state the enforcement
+    # contract silently omitted one third of it. An unreported control is not a
+    # reported control.
+    echo "    MAIL Conn: max ${DDOS_CLASSIC_SMTP_CONN_LIMIT} concurrent PER SOURCE (25/465/587)"
+    echo "               keyed by source address; one source cannot consume another's allowance"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
     echo ""
     echo "  Penalty Ladder:"
@@ -961,19 +971,29 @@ nftban_ddos_classic_status() {
     echo ""
     echo "  Rate Limiting:"
     echo "    SYN Rate:  ${DDOS_CLASSIC_SYN_RATE} burst ${DDOS_CLASSIC_SYN_BURST}"
-    # v1.229.10 — S4 of STATUS-HEALTH-TRUTH-AUDIT-2026-08-20. These lines claimed
-    # "/IP". The shipped rules are `ct count over N` with NO `ip saddr` key, so the
-    # limit is GLOBAL: one busy source can consume the whole allowance and every
-    # other source is then dropped. Kernel-confirmed on srv3 2026-08-25 — five live
-    # rules (SSH, HTTP(S), MAIL, SMTP, DNS/TCP), none keyed by source.
+    # v1.231.0 P12-A02 — the ENFORCEMENT limb is now closed, so this wording moves
+    # with it. v1.229.10 correctly reported GLOBAL because the shipped rules were
+    # `ct count over N` with NO `ip saddr` key. They are now keyed per source:
+    #   ct state new tcp dport <p> add @connlimit_<svc>_v4 { ip saddr ct count over N } drop
+    # projected from cli/lib/nftban/data/connlimit-services.tsv.
     #
     #   REPORT WHAT THE RULE ACTUALLY KEYS ON, NOT WHAT IT WAS MEANT TO.
     #
-    # WORDING ONLY. The keying defect itself is OPEN_CT_COUNT_CONNLIMIT_GLOBAL_KEY_SCOPE
+    # The rule stayed the authority for this text in BOTH directions: the claim was
+    # downgraded when it overstated protection, and is restored only now that the
+    # keying is proven — nft --check on 1.0.9 and 1.1.6, and behaviourally measured
+    # in netns. At set capacity the limiter FAILS OPEN (measured), so the cap stops
+    # applying rather than denying service; see nft-limiter-capacity-policy.tsv.
     # and is NOT touched here — this PR must not change rule semantics.
-    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent GLOBAL (not per-source)"
-    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent GLOBAL (not per-source)"
-    echo "               one busy source can consume the whole allowance"
+    echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT} concurrent PER SOURCE"
+    echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT} concurrent PER SOURCE"
+    # ⛔ MAIL WAS MISSING ENTIRELY (found on lab3). TCP {25,465,587} is enforced
+    # per-source by the base MAIL rule exactly like SSH and HTTP, but no operator
+    # line reported it — so a surface that is supposed to state the enforcement
+    # contract silently omitted one third of it. An unreported control is not a
+    # reported control.
+    echo "    MAIL Conn: max ${DDOS_CLASSIC_SMTP_CONN_LIMIT} concurrent PER SOURCE (25/465/587)"
+    echo "               keyed by source address; one source cannot consume another's allowance"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
     echo "    Auto-tune: ${DDOS_CLASSIC_AUTO_TUNE}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

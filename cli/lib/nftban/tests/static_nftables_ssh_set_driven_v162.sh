@@ -41,12 +41,24 @@ else
   no "expected 2 'set ssh_ports' blocks (ip+ip6), found $defs"
 fi
 
-echo "=== (b) SSH ct-count rule is set-driven (@ssh_ports) in both tables ==="
-uses=$(grep -cE 'ct state new tcp dport @ssh_ports ct count' "$CONF" || true)
-if [[ "$uses" -eq 2 ]]; then
-  ok "SSH ct-count uses @ssh_ports in both tables, found $uses"
+# v1.233.0: `ct state new tcp dport @ssh_ports ct count` was an ACCIDENTAL
+# ADJACENCY; the keyed form interposes `add @connlimit_ssh_v4 { ip saddr `.
+# The v1.162 intent (set-driven, never a literal port) is preserved and
+# STRENGTHENED with per-source keying and EXPLICIT family correlation — a
+# combined `v[46] \{ ip6? saddr` pattern would accept a v4 set keyed on ip6.
+echo "=== (b) SSH connlimit is set-driven + keyed per source, family-correct ==="
+u4=$(grep -cE 'ct state new tcp dport @ssh_ports add @connlimit_ssh_v4 \{ ip saddr ct count' "$CONF" || true)
+u6=$(grep -cE 'ct state new tcp dport @ssh_ports add @connlimit_ssh_v6 \{ ip6 saddr ct count' "$CONF" || true)
+if [[ "$u4" -eq 1 && "$u6" -eq 1 ]]; then
+  ok "SSH connlimit keyed + set-driven in both tables (v4=$u4 v6=$u6)"
 else
-  no "expected 2 set-driven SSH ct-count rules, found $uses"
+  no "expected 1 keyed set-driven SSH rule per family, found v4=$u4 v6=$u6"
+fi
+# NEGATIVE: the pre-v1.233.0 bare form must not satisfy this guard.
+if grep -qE 'ct state new tcp dport @ssh_ports ct count' "$CONF"; then
+  no "BARE host-wide SSH ct-count rule present (no source key)"
+else
+  ok "no bare host-wide SSH ct-count rule remains"
 fi
 
 echo "=== (c) no literal 'tcp dport 22 ct count' rule survives ==="
@@ -64,7 +76,7 @@ report=$(awk '
   /^table ip nftban/   { tbl="ip";  defline=0; useline=0 }
   /^table ip6 nftban/  { tbl="ip6"; defline=0; useline=0 }
   /^[[:space:]]*set ssh_ports \{/ { if (tbl!="" && defline==0) defline=NR }
-  /ct state new tcp dport @ssh_ports ct count/ { if (tbl!="" && useline==0) { useline=NR; printf "%s %d %d\n", tbl, defline, useline } }
+  /ct state new tcp dport @ssh_ports add @connlimit_ssh_v[46] \{/ { if (tbl!="" && useline==0) { useline=NR; printf "%s %d %d\n", tbl, defline, useline } }
 ' "$CONF")
 [[ -n "$report" ]] || { no "could not locate set/use pairs per table"; }
 # Split each "tbl def use" record on whitespace (the script-wide IFS excludes

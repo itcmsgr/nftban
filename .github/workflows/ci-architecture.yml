@@ -237,6 +237,33 @@ jobs:
       - name: Check bounded-limiter guard is falsifiable (v1.228.6, BLOCKING)
         run: ./scripts/ci/check-nft-bounded-limiters-falsifiability.sh
 
+      # v1.231.0 P12-A02 BLOCKING — per-source connection limits. The connlimit
+      # rules must be projected from the canonical declaration
+      # (cli/lib/nftban/data/connlimit-services.tsv) through the single renderer,
+      # and no emission surface may carry a bare host-wide `ct count over N`.
+      - name: Check connlimit emission authority (v1.231.0 P12-A02, BLOCKING)
+        run: ./scripts/ci/check-connlimit-emission-authority.sh
+
+      # The projection is only AUTHORITATIVE if what is committed equals what the
+      # generator produces. A hand-edited block, or a declaration change that was
+      # never projected, both fail here.
+      - name: Check connlimit projection has no drift (v1.231.0 P12-A02, BLOCKING)
+        run: ./scripts/ci/apply-connlimit-projection.sh --check
+
+      # v1.233.0 BLOCKING — SHIPPED STRUCTURED SPECS ARE CLAIM SURFACES TOO. The
+      # connlimit claim guard governs files that PRINT a scope claim to an
+      # operator, so it had no opinion about install/share/nftban/specs/
+      # structure_default.json — which ships in every package and declared
+      # "scope": "host_wide" while the same package enforced per-source keying.
+      # No runtime reader consumed it, so it was not an enforcement defect; it
+      # was a FALSE SECURITY CONTRACT in the released product. The gap was
+      # categorical: the claim population understood executable and
+      # operator-printing surfaces and ignored shipped machine-readable
+      # contracts. Any shipped artifact stating security semantics must agree
+      # with the effective packet-path authority.
+      - name: Check shipped spec claim authority (v1.233.0, BLOCKING)
+        run: ./scripts/ci/check-shipped-spec-claim-authority.sh
+
       # v1.228.7 BLOCKING — INCOMPLETE_SHELL_TO_GO_MIGRATION guard. A shell->Go
       # migration is complete only when EVERY consumer is repointed. GeoIP moved
       # into `nftban-core geoip` but six consumers kept resolving the retired

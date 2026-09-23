@@ -78,6 +78,7 @@ cli/lib/nftban/tests/config_kv_mutation_truth_test.sh	1
 cli/lib/nftban/tests/config_local_impl2_test.sh	2
 cli/lib/nftban/tests/config_overlay_cli_family_test.sh	2
 cli/lib/nftban/tests/config_overlay_maintenance_family_test.sh	1
+cli/lib/nftban/tests/connlimit_claim_matches_keying_v1231_test.sh	1
 cli/lib/nftban/tests/count_unknown_propagation_v1231_test.sh	4
 cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	2
 cli/lib/nftban/tests/deprecated_unit_failed_latch_v1228_2_test.sh	1
