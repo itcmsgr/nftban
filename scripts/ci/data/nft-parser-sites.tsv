@@ -70,6 +70,8 @@ internal/installer/authority/classify.go	1
 internal/installer/detect/cve_inet_filter.go	1
 internal/installer/executor/real.go	2
 internal/installer/extfw/detect.go	1
+internal/installer/reconcile/reconcile.go	1
+internal/installer/structure/fingerprint.go	1
 internal/installer/switchop/classify.go	2
 internal/installer/validate/assertions.go	1
 internal/metrics/collector.go	2

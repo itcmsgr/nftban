@@ -76,7 +76,25 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 		// the one recoverable terminal — proceed
 	default:
 		log.Error("revalidate: install_state=%s is not DEGRADED — recommit only recomputes a DEGRADED record", cur.State)
-		log.Info("revalidate: for a failed install use 'nftban update repair' or re-run the upgrade; revalidate will not touch %s", cur.State)
+		// ⛔ THE RECOMMENDATION IS DERIVED, NEVER HARDCODED. This line used to read
+		// "for a failed install use 'nftban update repair' or re-run the upgrade" for
+		// EVERY non-DEGRADED state. For REBUILD_REFUSED_BUSY that is a proven dead end:
+		// recovery.go records the lab3 measurement that --repair resumes at SWITCH,
+		// skips the boot-projection render, and lands on DEGRADED. A host in that state
+		// was therefore sent, by the product, to the one path that cannot work.
+		//
+		//	AN INSTRUCTION THAT CANNOT REACH THE STATE IT PROMISES IS NOT A RECOVERY PATH.
+		switch {
+		case cur.State.ReconcileEligible():
+			log.Info("revalidate: %s asserts no rebuild executed and the firewall was not modified", cur.State)
+			log.Info("revalidate: use 'nftban-installer --reconcile-lifecycle --dry-run' to prove whether live " +
+				"reality already satisfies this transaction, then without --dry-run to record it")
+		case cur.State.RepairReachesCommitted():
+			log.Info("revalidate: use 'nftban update repair'; revalidate will not touch %s", cur.State)
+		default:
+			log.Info("revalidate: --repair has no route to COMMITTED from %s (%s)", cur.State, cur.State.RepairRefusalReason())
+			log.Info("revalidate: re-run the normal NFTBan update/install transaction; revalidate will not touch %s", cur.State)
+		}
 		return state.ExitRefused
 	}
 
