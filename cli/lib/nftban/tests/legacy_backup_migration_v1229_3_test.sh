@@ -206,7 +206,8 @@ fi
 #     as a behavioural witness (a run that touched it would block and refuse);
 #   * classification work is counted by wrapping _lbm_classify.
 mk_old93(){ mkdir -p "$BK/rebuild_$1"; for f in ruleset.json ruleset.nft sets validator_state; do : > "$BK/rebuild_$1/$f"; done; }
-field(){ sed -n "s/.*[[:space:]]$1=\([^[:space:]]*\).*/\1/p" <<<"$2" | head -1; }
+# bash regex, no pipe: `producer | head -1` under pipefail is the SIGPIPE shape the EPIPE gate forbids
+field(){ local _re="(^|[[:space:]])$1=([^[:space:]]*)"; [[ "$2" =~ $_re ]] && printf '%s\n' "${BASH_REMATCH[2]}"; }
 FLOCK_CALLS="$TMP/flock.calls"; FLOCK_SENTINEL=""
 flock(){ echo x >> "$FLOCK_CALLS"; [[ -n "$FLOCK_SENTINEL" ]] && : > "$FLOCK_SENTINEL"; "$FLOCK_BIN" "$@"; }
 eval "$(declare -f _lbm_classify | sed '1s/_lbm_classify/_lbm_classify_real/')"
