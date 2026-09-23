@@ -125,13 +125,37 @@ for p in "${SSH_UNION_PORTS[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
-# (b) SSH ct-count rule renders set-driven @ssh_ports (not a literal port)
+# (b) SSH connlimit is set-driven @ssh_ports (not a literal port) AND keyed
+#     per source, with the address family CORRELATED to the set family.
 # -----------------------------------------------------------------------------
-echo "=== (b) SSH ct-count rule is set-driven (tcp dport @ssh_ports) ==="
-if grep -Eq 'tcp dport @ssh_ports ct count' "$OUT"; then
-  ok "ct-count rule reads @ssh_ports"
+# v1.233.0: the original pattern was `tcp dport @ssh_ports ct count` — an
+# ACCIDENTAL ADJACENCY. The keyed form interposes `add @connlimit_ssh_v4 { ip
+# saddr ` between the dport selector and `ct count`, so the literal stopped
+# matching even though the property it guarded ("set-driven, not a literal
+# port") was still true. The v1.162 INTENT is preserved and STRENGTHENED here:
+# a test must encode the security property it protects, not one incidental
+# textual representation of it.
+#
+# ⛔ FAMILY CORRELATION IS ASSERTED EXPLICITLY. A combined pattern such as
+# `connlimit_ssh_v[46] \{ ip6? saddr` would accept `connlimit_ssh_v4 { ip6
+# saddr ... }` — a family mismatch that proves nothing. v4 and v6 are therefore
+# checked as separate, fully-spelled assertions.
+echo "=== (b) SSH connlimit is set-driven + keyed per source, family-correct ==="
+if grep -Eq 'tcp dport @ssh_ports add @connlimit_ssh_v4 \{ ip saddr ct count' "$OUT"; then
+  ok "IPv4 SSH connlimit: @ssh_ports + keyed @connlimit_ssh_v4 { ip saddr }"
 else
-  no 'set-driven tcp dport @ssh_ports ct count rule not found'
+  no 'IPv4 set-driven KEYED SSH connlimit not found (@ssh_ports + @connlimit_ssh_v4 { ip saddr ct count })'
+fi
+if grep -Eq 'tcp dport @ssh_ports add @connlimit_ssh_v6 \{ ip6 saddr ct count' "$OUT"; then
+  ok "IPv6 SSH connlimit: @ssh_ports + keyed @connlimit_ssh_v6 { ip6 saddr }"
+else
+  no 'IPv6 set-driven KEYED SSH connlimit not found (@ssh_ports + @connlimit_ssh_v6 { ip6 saddr ct count })'
+fi
+# NEGATIVE: the pre-v1.233.0 BARE form must no longer satisfy this test.
+if grep -Eq 'tcp dport @ssh_ports ct count' "$OUT"; then
+  no 'BARE host-wide SSH ct-count rule present (tcp dport @ssh_ports ct count with no source key)'
+else
+  ok "no bare host-wide SSH ct-count rule (source key is mandatory)"
 fi
 for p in "${SSH_UNION_PORTS[@]}"; do
   if grep -Eq "tcp dport ${p} ct count" "$OUT"; then
