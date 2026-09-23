@@ -521,7 +521,14 @@ func appendEvent(path string, ev Event) {
 		fmt.Fprintf(os.Stderr, "reconcile: forensic log dir unavailable: %v\n", mkErr)
 		return
 	}
-	f, oerr := os.OpenFile(filepath.Clean(path), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640) // #nosec G304
+	// ⛔ 0600, NOT 0640. Every other nftban log is 0640 `nftban:nftban-auditor` — a
+	// DELIBERATE auditor-read group. This file is created by the installer running as
+	// root and is never chowned, so a group bit here would be `root:root 0640`, which
+	// grants nothing (root already reads everything) while reading as though auditor
+	// access had been wired up. Granting the auditor role real access is a separate,
+	// explicit decision: it needs a chown to nftban-auditor and the group to exist.
+	//	PERMISSIVE MODE BITS ARE NOT AN ACCESS-CONTROL DESIGN.
+	f, oerr := os.OpenFile(filepath.Clean(path), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) // #nosec G304
 	if oerr != nil {
 		fmt.Fprintf(os.Stderr, "reconcile: forensic log unwritable: %v\n", oerr)
 		return
