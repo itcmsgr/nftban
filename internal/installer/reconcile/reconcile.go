@@ -11,7 +11,7 @@
 // meta:inventory.files="internal/installer/reconcile/reconcile.go"
 // meta:inventory.binaries="nft,systemctl"
 // meta:inventory.env_vars=""
-// meta:inventory.config_files="/var/lib/nftban/state/install_state"
+// meta:inventory.config_files="/var/lib/nftban/state/install_state,/var/lib/nftban/state/lifecycle-reconcile.jsonl"
 // meta:inventory.systemd_units="nftband.service"
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
@@ -65,13 +65,27 @@ import (
 //	LIFECYCLE STATE MUST BE DERIVED FROM PROVEN LIVE REALITY;
 //	LIVE REALITY MUST NEVER BE ALTERED MERELY TO SATISFY LIFECYCLE STATE.
 
-// ForensicLogPath is the append-only RECONCILE event log.
+// ForensicRecordPath is the append-only RECONCILE event record.
 //
 // ⛔ IT IS NOT OPTIONAL BOOKKEEPING. state.Transition clears FAILURE_REASON when it
 // reaches COMMITTED (V108 Item 5 terminal hygiene), so after a successful reconciliation
-// the record itself no longer says the original SWITCH ever failed. This log is the ONLY
+// the record itself no longer says the original SWITCH ever failed. This file is the ONLY
 // place that fact survives. RECONCILIATION MUST NOT ERASE THE HISTORY IT RECONCILES.
-const ForensicLogPath = "/var/log/nftban/lifecycle-reconcile.jsonl"
+//
+// ⛔ DELIBERATELY NOT IN /var/log/nftban. It is a LIFECYCLE RECORD, not a log stream:
+//
+//  1. install/config/nftban.logrotate enumerates EXACT paths, not a *.log wildcard —
+//     "every nftban-owned log must be listed in an explicit stanza or it is NOT
+//     rotated". An unlisted log there is ungoverned by construction.
+//  2. Listing it would be WORSE. Rotation EXPIRES files, and expiring this one deletes
+//     the only surviving evidence that the original SWITCH failed — defeating the exact
+//     requirement the record exists to satisfy.
+//
+// /var/lib/nftban/state is where the other lifecycle records live (install_state,
+// authority), is FHS-declared, and is PRESERVED across upgrades by packaging. Growth is
+// bounded in practice: reconciliation is operator-invoked and appends one or two lines
+// per run, not a stream.
+var ForensicRecordPath = filepath.Join(fhs.StateDir, "lifecycle-reconcile.jsonl")
 
 // DefaultLockTimeout bounds how long reconciliation waits for the convergence lock.
 //
@@ -510,7 +524,7 @@ func short(s string) string {
 // reconciliation itself — but it is never silent either.
 func appendEvent(path string, ev Event) {
 	if path == "" {
-		path = ForensicLogPath
+		path = ForensicRecordPath
 	}
 	b, err := json.Marshal(ev)
 	if err != nil {

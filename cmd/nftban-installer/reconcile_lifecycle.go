@@ -11,7 +11,7 @@
 // meta:inventory.files="cmd/nftban-installer/reconcile_lifecycle.go"
 // meta:inventory.binaries="nftban-installer"
 // meta:inventory.env_vars=""
-// meta:inventory.config_files="/var/lib/nftban/state/install_state"
+// meta:inventory.config_files="/var/lib/nftban/state/install_state,/var/lib/nftban/state/lifecycle-reconcile.jsonl"
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
@@ -75,7 +75,7 @@ func runReconcileLifecycle(ctx context.Context, exec executor.Executor, cfg *con
 			out.Event.PreviousState)
 		log.Info("reconcile-lifecycle: structure %s %s", out.Event.StructureSchema, out.Event.StructureFingerprint)
 		log.Info("reconcile-lifecycle: runtime_mutated=false — the firewall was not touched")
-		log.Info("reconcile-lifecycle: the original failure is preserved in %s", reconcile.ForensicLogPath)
+		log.Info("reconcile-lifecycle: the original failure is preserved in %s", reconcile.ForensicRecordPath)
 		return state.ExitCommitted
 
 	case cfg.dryRun && out.Refusal == "":
