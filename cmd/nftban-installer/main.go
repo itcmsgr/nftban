@@ -285,7 +285,9 @@ func main() {
 	// history writes for this mode. The explicit mode check here is
 	// belt-and-braces defense in case a future edit inadvertently
 	// marks a restore state apply-terminal.
-	if !cfg.dryRun && cfg.mode != "uninstall" && cfg.mode != "restore" && state.IsApplyTerminal(sf.State) {
+	//
+	// v1.234.0 R1: --reconcile-lifecycle is ALSO excluded — see historyWriteAllowed.
+	if historyWriteAllowed(cfg, sf.State) {
 		writeHistory(sf, cfg, previousVersion, hostname, log)
 	}
 
@@ -987,6 +989,27 @@ func emitRecovery(s state.InstallState, log *logging.Logger) {
 		log.Result("[NFTBan] Do NOT use --repair for this state:")
 		log.Result("[NFTBan]   %s.", s.RepairRefusalReason())
 	}
+}
+
+// historyWriteAllowed is the SINGLE gate for update-history.json writes.
+//
+// ⛔ v1.234.0 R1 — --reconcile-lifecycle NEVER writes update-history.json, whatever
+// its outcome. MEASURED package-native on DEB + RPM (v1.234 C1): the reconcile path
+// is dispatched without main()'s StateFile, so main() recorded the state it had read
+// BEFORE the reconcile — a successful REBUILD_REFUSED_BUSY -> COMMITTED reconcile was
+// written as install_fail, a refused reconcile on a COMMITTED host as success, every
+// entry as type "rpm" (no --deb/--rpm), and a --state-dir fixture COPY wrote into the
+// REAL host history. The history is capped, so those entries evicted genuine updates.
+//
+// update-history.json is UPDATE-TRANSACTION history. A reconcile performs no package
+// transaction, no rebuild, no reinstall and no restart; its durable audit authority is
+// the lifecycle-reconcile forensic record. It is excluded FIRST, before any state is
+// consulted, so no reconcile outcome can reach writeHistory.
+func historyWriteAllowed(cfg *config, s state.InstallState) bool {
+	if cfg.reconcileLifecycle {
+		return false
+	}
+	return !cfg.dryRun && cfg.mode != "uninstall" && cfg.mode != "restore" && state.IsApplyTerminal(s)
 }
 
 // writeHistory writes a JSON entry to /var/lib/nftban/update-history.json
