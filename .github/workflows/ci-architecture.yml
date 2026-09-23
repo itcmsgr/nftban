@@ -250,6 +250,20 @@ jobs:
       - name: Check connlimit projection has no drift (v1.231.0 P12-A02, BLOCKING)
         run: ./scripts/ci/apply-connlimit-projection.sh --check
 
+      # v1.233.0 BLOCKING — SHIPPED STRUCTURED SPECS ARE CLAIM SURFACES TOO. The
+      # connlimit claim guard governs files that PRINT a scope claim to an
+      # operator, so it had no opinion about install/share/nftban/specs/
+      # structure_default.json — which ships in every package and declared
+      # "scope": "host_wide" while the same package enforced per-source keying.
+      # No runtime reader consumed it, so it was not an enforcement defect; it
+      # was a FALSE SECURITY CONTRACT in the released product. The gap was
+      # categorical: the claim population understood executable and
+      # operator-printing surfaces and ignored shipped machine-readable
+      # contracts. Any shipped artifact stating security semantics must agree
+      # with the effective packet-path authority.
+      - name: Check shipped spec claim authority (v1.233.0, BLOCKING)
+        run: ./scripts/ci/check-shipped-spec-claim-authority.sh
+
       # v1.228.7 BLOCKING — INCOMPLETE_SHELL_TO_GO_MIGRATION guard. A shell->Go
       # migration is complete only when EVERY consumer is repointed. GeoIP moved
       # into `nftban-core geoip` but six consumers kept resolving the retired
