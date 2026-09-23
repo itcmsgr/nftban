@@ -134,6 +134,27 @@ type StateFile struct {
 	// it). ⛔ It is never read as VERIFIED.
 	ConvergenceVerified string
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// v1.233.x Lane B — DURABLE STRUCTURE ATTRIBUTION
+	// ─────────────────────────────────────────────────────────────────────────
+	// WHICH static enforcement structure this record certifies. Written together
+	// with CONVERGENCE_VERIFIED, never instead of it.
+	//
+	// ⛔ THE SCHEMA TOKEN IS NOT OPTIONAL METADATA. A digest is comparable only to
+	// another digest produced by the SAME canonicalisation. Storing the bare hash
+	// would make every historical record uninterpretable the moment normalisation
+	// changes — a reader could not distinguish "the structure changed" from "the
+	// ruler changed". Both fields move together or neither is meaningful.
+	//
+	// ⛔ AND IT IS ATTRIBUTION, NOT VALIDATION. A matching fingerprint identifies
+	// the structure that was proven correct; it is never evidence that it IS
+	// correct, and must never short-circuit the semantic assertions.
+	//
+	// "" on both means NOT ATTRIBUTED (every pre-v1.233.x record, and every path
+	// that does not derive a structure identity). It is never read as agreement.
+	ConvergenceStructureSchema      string
+	ConvergenceStructureFingerprint string
+
 	HealthResourceState         string // effective state: ACTIVE_MATCH/FALLBACK_MATCH/FALLBACK_UNDERSIZED/EXTERNAL_OVERRIDE_CONFLICT/…
 	HealthResourceProfile       string // resource tier: small/medium/large
 	HealthResourceAuthority     string // always internal/safety
@@ -395,6 +416,8 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "FAILURE_REASON=%s\n", sf.FailureReason)
 	fmt.Fprintf(w, "PREFLIGHT_PASSED=%s\n", fmtBool(sf.PreflightPassed))
 	fmt.Fprintf(w, "CONVERGENCE_VERIFIED=%s\n", sf.ConvergenceVerified)
+	fmt.Fprintf(w, "CONVERGENCE_STRUCTURE_SCHEMA=%s\n", sf.ConvergenceStructureSchema)
+	fmt.Fprintf(w, "CONVERGENCE_STRUCTURE_FINGERPRINT=%s\n", sf.ConvergenceStructureFingerprint)
 	fmt.Fprintf(w, "REBUILD_EXIT_CODE=%d\n", sf.RebuildExitCode)
 	fmt.Fprintf(w, "REBUILD_DURATION_MS=%d\n", sf.RebuildDurationMs)
 	fmt.Fprintf(w, "SERVICES_ENABLED=%s\n", sf.ServicesEnabled)
@@ -480,6 +503,10 @@ func (sf *StateFile) Read() error {
 			sf.PreflightPassed = (val == "1" || val == "true")
 		case "CONVERGENCE_VERIFIED":
 			sf.ConvergenceVerified = val
+		case "CONVERGENCE_STRUCTURE_SCHEMA":
+			sf.ConvergenceStructureSchema = val
+		case "CONVERGENCE_STRUCTURE_FINGERPRINT":
+			sf.ConvergenceStructureFingerprint = val
 		case "REBUILD_EXIT_CODE":
 			sf.RebuildExitCode, _ = strconv.Atoi(val)
 		case "REBUILD_DURATION_MS":

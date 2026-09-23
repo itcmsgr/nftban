@@ -336,6 +336,12 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	if cfg.revalidate {
 		return runRevalidate(ctx, exec, sf, cfg, log)
 	}
+	// v1.233.x Lane B. Dispatched beside revalidate because it shares the same
+	// property: it neither installs nor restarts anything. It differs in what it
+	// PROVES — see runReconcileLifecycle.
+	if cfg.reconcileLifecycle {
+		return runReconcileLifecycle(ctx, exec, cfg, log)
+	}
 	if cfg.repair {
 		return runRepair(ctx, exec, sf, cfg, log)
 	}

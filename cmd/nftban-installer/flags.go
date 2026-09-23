@@ -44,17 +44,21 @@ type config struct {
 	force         bool   // re-run all phases ignoring state (V125 R-4 + V126 Lane A: requires --allow-recommit when state IN {COMMITTED, DEGRADED})
 	allowRecommit bool   // V125 R-4 + V126 Lane A: companion to --force; explicit operator confirmation for re-running phases on a completed install state (COMMITTED or DEGRADED)
 	revalidate    bool   // v1.198.1 PR-B (D-V198-STICKY-DEGRADED-NO-RECOMMIT-PATH): recompute install_state from LIVE post-install assertions only — no install, no daemon restart. DEGRADED→COMMITTED only if all live assertions pass; never masks a real failure.
-	takeover      bool   // approve takeover of conflicting firewalls
-	dryRun        bool   // show what would happen without changes
-	verbose       bool   // full diagnostic logging
-	quiet         bool   // minimal output
-	jsonOutput    bool   // machine-readable JSON output
-	stateDir      string // override state directory
-	logPath       string // override log file path
-	showVersion   bool   // print version and exit
-	lifecycle     bool   // v1.98: use canonized lifecycle flow (feature flag)
-	source        bool   // v1.98.x PR-14-pre: source install (stage payload + users from repo tree)
-	sourceDir     string // v1.98.x PR-14-pre: source tree root for --source (resolved in parseFlags)
+	// v1.233.x Lane B: derive a REBUILD_REFUSED_BUSY record from PROVEN LIVE
+	// REALITY. ⛔ Not a --force and not a hand-edit: it is strictly harder to
+	// satisfy than either, and it mutates the RECORD ONLY.
+	reconcileLifecycle bool
+	takeover           bool   // approve takeover of conflicting firewalls
+	dryRun             bool   // show what would happen without changes
+	verbose            bool   // full diagnostic logging
+	quiet              bool   // minimal output
+	jsonOutput         bool   // machine-readable JSON output
+	stateDir           string // override state directory
+	logPath            string // override log file path
+	showVersion        bool   // print version and exit
+	lifecycle          bool   // v1.98: use canonized lifecycle flow (feature flag)
+	source             bool   // v1.98.x PR-14-pre: source install (stage payload + users from repo tree)
+	sourceDir          string // v1.98.x PR-14-pre: source tree root for --source (resolved in parseFlags)
 	// v1.100 PR-22: uninstall scaffold flags. All plan-only in PR-22 —
 	// no mutation code consumes these; they only influence the rendered
 	// release plan.
@@ -125,6 +129,7 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.expectedVersion, "expected-version", "", "Version the package manager just installed (with --verify-install-state)")
 	flag.StringVar(&cfg.notBefore, "not-before", "", "RFC3339Nano UTC timestamp captured immediately before invoking the installer (with --verify-install-state)")
 	flag.BoolVar(&cfg.revalidate, "revalidate", false, "Recompute install_state from LIVE post-install assertions only (no install, no daemon restart). Transitions a stale DEGRADED → COMMITTED only when every live assertion passes (version match, validate clean, 0 failed nftban units, ip/ip6 tables, daemon active); otherwise leaves DEGRADED with the current live reason. Does not mask real failures.")
+	flag.BoolVar(&cfg.reconcileLifecycle, "reconcile-lifecycle", false, "Derive a REBUILD_REFUSED_BUSY install_state from proven live reality (no rebuild, no reinstall; use with --dry-run to prove only)")
 	flag.BoolVar(&cfg.force, "force", false, "Re-run all phases ignoring state")
 	// V125 R-4 + V126 Lane A: companion safety flag for --force on a completed
 	// install. When install_state is COMMITTED or DEGRADED, --force alone is
@@ -245,7 +250,7 @@ func parseFlags() *config {
 		os.Exit(state.ExitFatal)
 	}
 
-	if !cfg.showVersion && !cfg.repair && !cfg.revalidate {
+	if !cfg.showVersion && !cfg.repair && !cfg.revalidate && !cfg.reconcileLifecycle {
 		// v1.100 PR-24: --mode=restore — authority restoration policy
 		// decision engine (pure, no mutation). Validation rules here
 		// exist to keep the invocation surface tight per seed §2: the
