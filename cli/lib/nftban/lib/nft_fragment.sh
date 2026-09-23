@@ -967,7 +967,8 @@ nft_fragment_render_ddos_classic() {
 
     # Connection limits per service
     # v1.67.1: Removed ssh_limit, http_limit, https_limit (deduped to base input)
-    local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-30}"
+    # v1.233.0: Removed smtp_limit — the SMTP:25 fragment rule was deduped to the
+    #           base MAIL rule, leaving this producer with no consumer.
     local dns_limit="${DDOS_CLASSIC_DNS_CONN_LIMIT:-50}"
 
     # v1.67.1: Removed SSH port detection — no longer needed (SSH ct count deduped to base)

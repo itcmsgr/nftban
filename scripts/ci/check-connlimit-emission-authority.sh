@@ -71,6 +71,7 @@ fi
 
 # --- 6 · every declared service projected by its declared owner, v4+v6 -------
 if [[ -f "$DECL" ]]; then
+    # shellcheck disable=SC2034  # positional TSV fields retained for column alignment
     while IFS=$'\t' read -r svc ports var s4 s6 by; do
         [[ -z "${svc:-}" ]] && continue
         case "$by" in base) tgt="$TPL"; rel="nftables.conf.tpl" ;; fragment) tgt="$FRAG"; rel="nft_fragment.sh" ;; *) bad "$svc: unknown PROJECTED_BY '$by'"; continue ;; esac
