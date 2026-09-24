@@ -869,112 +869,41 @@ nftban_portscan_apply() {
 #           twice: "✅ disabled", rc 0, while the kernel kept the rules and the
 #           plan committed `inactive` over them.
 #
-# THE TRANSACTION (L1, eleven steps):
-#    1 acquire the CANONICAL convergence lock — _nftban_plan_lock_acquire,
-#      /run/nftban/nft_operations.lock. No new lock.
-#    2 write the transaction record (runtime only, /run/nftban, mode 0600)
-#    3 persist the requested intent through the single durable-intent writer
-#    4 run THE reconcile root, nftban_portscan_reconcile, in-process and under
-#      the lock, against the SAVED intent. It is not a second algorithm.
-#    5 verify under the lock: the intent, the committed plan generation and its
-#      effective mode, and the KERNEL through a typed query whose own success is
-#      checked
-#    6 record the reconcile result
-#    7 release the lock
-#    8 restart nftband as a LIFECYCLE action only (enable; disable needs none)
-#    9 observe daemon readiness, bounded
-#   10 verify the daemon observes the committed plan and does not contradict the
-#      kernel
-#   11 derive EXACTLY ONE terminal outcome; the printed verdict and the exit
-#      code are both rendered from it
-#
-# WHY STEP 4 CANNOT SELF-DEADLOCK (proven from code, not assumed):
-#   * The only lock the reconcile root takes is nftban_plan_txn_begin ->
-#     _nftban_plan_lock_acquire, which RETURNS WITHOUT RE-ACQUIRING when
-#     NFTBAN_NFTLOCK_HELD is set (lib/module_authority.sh). Step 1 sets it, so
-#     the root JOINS. Its commit/abort release nothing, because the joined lock
-#     fd is empty; only step 7 releases.
-#   * Everything the reconcile reaches that writes the kernel either runs the
-#     nft binary directly (nft takes no flock) or goes through IPC
-#     apply_ruleset. That daemon handler (cmd/nftband/daemon_handlers_elements.go
-#     handleApplyRulesetRequest -> internal/nftbackend ApplyRuleset) takes the
-#     backend mutex only, never internal/nftlock. The daemon paths that DO take
-#     nftlock (periodic reconciliation, OpQueue drain) take it BEFORE any
-#     backend mutex, so they wait on us and cannot hold what we need.
-#   * The standalone `nftban portscan reload` already held this same lock
-#     across these same IPC calls (txn_begin -> apply -> commit).
-#   The restart (step 8) comes AFTER the release because the restarted daemon's
-#   own reconcile takes this lock fail-fast.
+# THE TRANSACTION (L1, eleven steps) lives in lib/module_txn.sh
+# (nftban_module_txn), shared with DDoS since v1.233.1 so both modules use ONE
+# lock acquisition, ONE transaction-record writer/format, ONE outcome
+# derivation + rc table. It was written here first and moved there unchanged in
+# behaviour. What stays here is only what is portscan-specific: the kernel
+# observation, the expected kernel class per effective mode, the input loader
+# and the labels (the hooks the engine names).
 #
 # OUTCOMES -> exit code:
 #   CONVERGED 0 · FAILED_ROLLED_BACK 1 · DEGRADED 3 · PENDING_TIMED_OUT 4
 #   REFUSED 7 (convergence lock busy) or 5 (another precondition).
-#   REFUSED means the transaction never began: nothing was mutated and the
-#   transaction record is left untouched (it may belong to the lock holder).
 # L3: an unobservable kernel is UNMEASURED -> DEGRADED. It is never a success,
 # and it is never treated as absence.
 # =============================================================================
 
+# shellcheck source=/usr/lib/nftban/lib/module_txn.sh
+if ! declare -F nftban_module_txn >/dev/null 2>&1 && \
+   [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_txn.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_txn.sh" || return 1
+fi
+
 _nftban_portscan_txn_record_path() {
-    printf '%s/module-txn-portscan.env' "${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}"
+    nftban_mtxn_record_path portscan
 }
 
-_nftban_portscan_txn_reset() {
-    _PS_TXN_ID=""; _PS_TXN_OP=""; _PS_TXN_WANT=""; _PS_TXN_PREV=""
-    _PS_TXN_STARTED=""; _PS_TXN_GEN_BEFORE=""; _PS_TXN_GEN_AFTER=""
-    _PS_TXN_PHASE=""; _PS_TXN_OUTCOME=""; _PS_TXN_REASON=""; _PS_TXN_EFFECTIVE=""
-    _PS_TXN_PRE_EFFECTIVE=""; _PS_TXN_PRE_KCLASS=""; _PS_TXN_RECORD_OK="true"
-    _PS_TXN_OPENED="false"; _PS_TXN_STAGE=""; _PS_TXN_KDETAIL=""; _PS_TXN_REFUSE_RC=5
-}
-
-# _nftban_portscan_txn_record_write — atomic (tmp + rename), root-only (0600),
-# mirroring the plan-record publication in nftban_portscan_reconcile.
-_nftban_portscan_txn_record_write() {
-    local path tmp boot="" now reason
-    path="$(_nftban_portscan_txn_record_path)"
-    tmp="${path}.tmp.$$"
-    if [[ -r /proc/sys/kernel/random/boot_id ]]; then
-        read -r boot < /proc/sys/kernel/random/boot_id || boot=""
-    fi
-    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    reason="${_PS_TXN_REASON//$'\n'/ }"
-    if ! ( umask 077
-           {
-               printf 'NFTBAN_TXN_ID=%s\n'                  "$_PS_TXN_ID"
-               printf 'NFTBAN_TXN_MODULE=%s\n'              "portscan"
-               printf 'NFTBAN_TXN_OP=%s\n'                  "$_PS_TXN_OP"
-               printf 'NFTBAN_TXN_REQUESTED_INTENT=%s\n'    "$_PS_TXN_WANT"
-               printf 'NFTBAN_TXN_PREVIOUS_INTENT=%s\n'     "$_PS_TXN_PREV"
-               printf 'NFTBAN_TXN_STARTED_AT=%s\n'          "$_PS_TXN_STARTED"
-               printf 'NFTBAN_TXN_UPDATED_AT=%s\n'          "$now"
-               printf 'NFTBAN_TXN_PID=%s\n'                 "$$"
-               printf 'NFTBAN_TXN_BOOT_ID=%s\n'             "$boot"
-               printf 'NFTBAN_TXN_GENERATION_BEFORE=%s\n'   "$_PS_TXN_GEN_BEFORE"
-               printf 'NFTBAN_TXN_EXPECTED_GENERATION=%s\n' "$(( ${_PS_TXN_GEN_BEFORE:-0} + 1 ))"
-               printf 'NFTBAN_TXN_RESULTING_GENERATION=%s\n' "$_PS_TXN_GEN_AFTER"
-               printf 'NFTBAN_TXN_EFFECTIVE_MODE=%s\n'      "$_PS_TXN_EFFECTIVE"
-               printf 'NFTBAN_TXN_PHASE=%s\n'               "$_PS_TXN_PHASE"
-               printf 'NFTBAN_TXN_OUTCOME=%s\n'             "$_PS_TXN_OUTCOME"
-               printf 'NFTBAN_TXN_REASON=%s\n'              "$reason"
-           } > "$tmp" ) 2>/dev/null; then
-        rm -f "$tmp"; _PS_TXN_RECORD_OK="false"; return 1
-    fi
-    if ! chmod 0600 "$tmp" 2>/dev/null || ! mv -f "$tmp" "$path" 2>/dev/null; then
-        rm -f "$tmp"; _PS_TXN_RECORD_OK="false"; return 1
-    fi
-    return 0
-}
-
-# _nftban_portscan_txn_phase <PHASE> — advance and persist the phase. A failed
-# write is remembered (_PS_TXN_RECORD_OK=false) and caps the outcome below
-# CONVERGED: interruption visibility is part of the contract.
-_nftban_portscan_txn_phase() {
-    _PS_TXN_PHASE="$1"
-    _nftban_portscan_txn_record_write
+# Engine hooks (see lib/module_txn.sh, MODULE HOOKS).
+_nftban_portscan_txn_record_write() { nftban_mtxn_record_write; }
+_nftban_portscan_txn_prepare() { _nftban_portscan_load_modules; }
+_nftban_portscan_txn_labels() {
+    _MT_TITLE="Portscan Detection"; _MT_NAME="Portscan"
+    _MT_LOWER="Portscan detection"; _MT_WHAT="detection"
 }
 
 # _nftban_portscan_kernel_observe — classify the module-owned kernel state.
-# Sets _PS_KOBS_CLASS and _PS_KOBS_DETAIL; always returns 0 (read the class).
+# Sets NFTBAN_MTXN_KCLASS and NFTBAN_MTXN_KDETAIL; always returns 0.
 #   EMPTY          every family: chain absent, or present with zero rules. The
 #                  empty chain and its input jump may remain: the shipped cleanup
 #                  deliberately flushes and keeps the chain "for reference
@@ -987,10 +916,10 @@ _nftban_portscan_kernel_observe() {
     local prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
     local spec fam tbl total=0 empty=0 active=0 unmeasured=0 detail="" syn udp rules
-    _PS_KOBS_CLASS="UNMEASURED"; _PS_KOBS_DETAIL=""
+    NFTBAN_MTXN_KCLASS="UNMEASURED"; NFTBAN_MTXN_KDETAIL=""
     if ! declare -F nft_fragment_observe_chain >/dev/null 2>&1 \
        || ! declare -F nft_fragment_observe_jumps >/dev/null 2>&1; then
-        _PS_KOBS_DETAIL="kernel observation authority unavailable"
+        NFTBAN_MTXN_KDETAIL="kernel observation authority unavailable"
         return 0
     fi
     for spec in "${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}" "${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"; do
@@ -1019,15 +948,15 @@ _nftban_portscan_kernel_observe() {
             active=$((active + 1))
         fi
     done
-    _PS_KOBS_DETAIL="${detail% }"
+    NFTBAN_MTXN_KDETAIL="${detail% }"
     if (( unmeasured )); then
-        _PS_KOBS_CLASS="UNMEASURED"
+        NFTBAN_MTXN_KCLASS="UNMEASURED"
     elif (( empty == total )); then
-        _PS_KOBS_CLASS="EMPTY"
+        NFTBAN_MTXN_KCLASS="EMPTY"
     elif (( active == total )); then
-        _PS_KOBS_CLASS="CLASSIC_ACTIVE"
+        NFTBAN_MTXN_KCLASS="CLASSIC_ACTIVE"
     else
-        _PS_KOBS_CLASS="PARTIAL"
+        NFTBAN_MTXN_KCLASS="PARTIAL"
     fi
     return 0
 }
@@ -1043,408 +972,9 @@ _nftban_portscan_expected_kclass() {
     esac
 }
 
-# _nftban_portscan_txn_read_plan <generation> — read the COMMITTED record for a
-# generation. Sets _PS_PLAN_ENABLED / _PS_PLAN_EFF / _PS_PLAN_BOUND.
-_nftban_portscan_txn_read_plan() {
-    local gen="$1" pf line k v
-    _PS_PLAN_ENABLED=""; _PS_PLAN_EFF=""; _PS_PLAN_BOUND=""
-    pf="$(nftban_plan_record_path portscan "$gen")"
-    [[ -r "$pf" ]] || return 1
-    while IFS= read -r line; do
-        k="${line%%=*}"; v="${line#*=}"
-        case "$k" in
-            NFTBAN_PLAN_ENABLED)          _PS_PLAN_ENABLED="$v" ;;
-            NFTBAN_PLAN_EFFECTIVE_MODE)   _PS_PLAN_EFF="$v" ;;
-            NFTBAN_PLAN_BOUND_GENERATION) _PS_PLAN_BOUND="$v" ;;
-        esac
-    done < "$pf"
-    [[ "$_PS_PLAN_BOUND" == "$gen" && -n "$_PS_PLAN_EFF" && -n "$_PS_PLAN_ENABLED" ]]
-}
-
-# _nftban_portscan_txn_intent — echo true|false|unknown for the effective intent.
-_nftban_portscan_txn_intent() {
-    local irc=0
-    nftban_module_effective_enabled portscan || irc=$?
-    case "$irc" in
-        0) printf 'true' ;;
-        1) printf 'false' ;;
-        *) printf 'unknown' ;;
-    esac
-}
-
-# _nftban_portscan_txn_rollback <why> — re-establish the PREVIOUS state through
-# the same primitives, then VERIFY it. Rollback is recovery, not success:
-#   verified     -> FAILED_ROLLED_BACK
-#   not verified -> DEGRADED (every axis that could not be shown is named)
-# Runs under the lock (called from the locked phase only).
-_nftban_portscan_txn_rollback() {
-    local why="$1" ok="true" notes="" cur gen_now kcls rb_rc=0
-    echo "  ERROR: ${why} — rolling back to the previous state (intent ${_PS_TXN_PREV})." >&2
-    _nftban_portscan_log "ERROR" "txn ${_PS_TXN_ID}: ${why}; rolling back"
-    _nftban_portscan_txn_phase "ROLLING_BACK" || _PS_TXN_RECORD_OK="false"
-    # A failed forward reconcile normally aborts its own convergence
-    # transaction; if one is still open, discard its staged records first so the
-    # rollback reconcile opens (and commits) a transaction of its own.
-    if [[ -n "${NFTBAN_PLAN_TARGET_GENERATION:-}" ]]; then
-        nftban_plan_txn_abort
-    fi
-
-    cur="$(_nftban_portscan_txn_intent)"
-    if [[ "$cur" != "$_PS_TXN_PREV" ]]; then
-        if ! nftban_module_set_enabled portscan "$_PS_TXN_PREV"; then
-            ok="false"; notes="${notes}restoring intent=${_PS_TXN_PREV} FAILED; "
-        fi
-        cur="$(_nftban_portscan_txn_intent)"
-        if [[ "$cur" != "$_PS_TXN_PREV" ]]; then
-            ok="false"; notes="${notes}intent resolves ${cur}, previous was ${_PS_TXN_PREV}; "
-        fi
-    fi
-    [[ "$cur" == "true" || "$cur" == "false" ]] && PORTSCAN_ENABLED="$cur"
-
-    gen_now="$(nftban_plan_generation_current)"
-    _nftban_portscan_kernel_observe
-    kcls="$_PS_KOBS_CLASS"
-    if [[ "$ok" == "true" ]] \
-       && [[ "$gen_now" != "$_PS_TXN_GEN_BEFORE" || "$kcls" != "$_PS_TXN_PRE_KCLASS" ]]; then
-        if [[ "$kcls" == "UNMEASURED" ]]; then
-            ok="false"; notes="${notes}kernel unobservable (${_PS_KOBS_DETAIL}) — not re-reconciling blind; "
-        else
-            # Re-establish through THE reconcile root, now resolving the restored
-            # intent. Never a hand-rolled undo.
-            nftban_portscan_reconcile || rb_rc=$?
-            if (( rb_rc != 0 )); then
-                ok="false"; notes="${notes}rollback reconcile FAILED (rc=${rb_rc}); "
-            fi
-            gen_now="$(nftban_plan_generation_current)"
-            _nftban_portscan_kernel_observe
-            kcls="$_PS_KOBS_CLASS"
-        fi
-    fi
-
-    # VERIFY. Nothing below is assumed from the steps above having returned 0.
-    if [[ "$ok" == "true" ]]; then
-        if [[ "$kcls" == "UNMEASURED" || "$_PS_TXN_PRE_KCLASS" == "UNMEASURED" ]]; then
-            ok="false"; notes="${notes}kernel state not measurable (before=${_PS_TXN_PRE_KCLASS} now=${kcls}: ${_PS_KOBS_DETAIL}); "
-        elif [[ "$kcls" != "$_PS_TXN_PRE_KCLASS" ]]; then
-            ok="false"; notes="${notes}kernel is ${kcls}, previously ${_PS_TXN_PRE_KCLASS} (${_PS_KOBS_DETAIL}); "
-        fi
-    fi
-    if [[ "$ok" == "true" && "$gen_now" != "$_PS_TXN_GEN_BEFORE" ]]; then
-        if ! _nftban_portscan_txn_read_plan "$gen_now"; then
-            ok="false"; notes="${notes}plan generation ${gen_now} has no valid record; "
-        elif [[ "$_PS_PLAN_ENABLED" != "$_PS_TXN_PREV" ]]; then
-            ok="false"; notes="${notes}plan generation ${gen_now} says enabled=${_PS_PLAN_ENABLED}; "
-        elif [[ "$_PS_TXN_PREV" == "false" && "$_PS_PLAN_EFF" != "inactive" ]] \
-          || [[ "$_PS_TXN_PREV" == "true" && "$_PS_PLAN_EFF" != "$_PS_TXN_PRE_EFFECTIVE" ]]; then
-            ok="false"; notes="${notes}plan generation ${gen_now} effective=${_PS_PLAN_EFF}, previously ${_PS_TXN_PRE_EFFECTIVE}; "
-        fi
-    fi
-
-    if [[ "$ok" == "true" ]]; then
-        _PS_TXN_STAGE="FAILED_ROLLED_BACK"
-        _PS_TXN_REASON="${why}; previous state re-established and verified (intent=${_PS_TXN_PREV}, plan generation ${gen_now}, kernel ${kcls})"
-        _nftban_portscan_txn_phase "ROLLED_BACK" || _PS_TXN_RECORD_OK="false"
-    else
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="${why}; rollback NOT verified: ${notes% }"
-        _nftban_portscan_txn_phase "ROLLBACK_UNVERIFIED" || _PS_TXN_RECORD_OK="false"
-    fi
-    return 0
-}
-
-# _nftban_portscan_txn_locked — steps 2-6. Runs with the canonical lock held.
-# Sets _PS_TXN_STAGE to RECONCILED (continue) or to a terminal outcome.
-_nftban_portscan_txn_locked() {
-    local rrc=0 expect
-    _PS_TXN_STAGE="REFUSED"
-
-    # Inputs the observation and the pre-snapshot need. The reconcile root calls
-    # this same loader; it adds no system mutation.
-    if ! _nftban_portscan_load_modules; then
-        _PS_TXN_REASON="portscan mode modules failed to load — nothing was changed"
-        return 0
-    fi
-    _PS_TXN_PREV="$(_nftban_portscan_txn_intent)"
-    if [[ "$_PS_TXN_PREV" != "true" && "$_PS_TXN_PREV" != "false" ]]; then
-        _PS_TXN_REASON="the current intent could not be resolved — nothing was changed"
-        return 0
-    fi
-    _PS_TXN_GEN_BEFORE="$(nftban_plan_generation_current)"
-    if [[ "$_PS_TXN_PREV" == "true" ]]; then
-        eval "$(nftban_module_report_modes portscan)"
-        _PS_TXN_PRE_EFFECTIVE="${NFTBAN_REPORT_EFFECTIVE_MODE:-unknown}"
-    else
-        _PS_TXN_PRE_EFFECTIVE="inactive"
-    fi
-    _nftban_portscan_kernel_observe
-    _PS_TXN_PRE_KCLASS="$_PS_KOBS_CLASS"
-
-    # STEP 2 — the record exists BEFORE anything is mutated.
-    _PS_TXN_PHASE="OPEN"
-    if ! _nftban_portscan_txn_record_write; then
-        _PS_TXN_REASON="the transaction record could not be written to $(_nftban_portscan_txn_record_path) — nothing was changed"
-        # The write may have landed even though it reported failure. Mark the
-        # record as ours so the terminal write closes it: an OPEN record must
-        # never outlive a transaction that ended.
-        _PS_TXN_OPENED="true"
-        return 0
-    fi
-    _PS_TXN_OPENED="true"
-    echo "  Transaction ${_PS_TXN_ID}: ${_PS_TXN_OP} (intent ${_PS_TXN_PREV} -> ${_PS_TXN_WANT})"
-
-    # STEP 3 — persist the requested intent, then prove it resolves.
-    if ! nftban_module_set_enabled portscan "$_PS_TXN_WANT"; then
-        _nftban_portscan_txn_rollback "persisting intent=${_PS_TXN_WANT} failed"
-        return 0
-    fi
-    if [[ "$(_nftban_portscan_txn_intent)" != "$_PS_TXN_WANT" ]]; then
-        _nftban_portscan_txn_rollback "intent=${_PS_TXN_WANT} was written but does not resolve as the effective intent"
-        return 0
-    fi
-    PORTSCAN_ENABLED="$_PS_TXN_WANT"
-    _nftban_portscan_txn_phase "INTENT_PERSISTED" || _PS_TXN_RECORD_OK="false"
-
-    # STEP 4 — THE reconcile root, against the saved intent, joining our lock.
-    nftban_portscan_reconcile || rrc=$?
-    if (( rrc != 0 )); then
-        _nftban_portscan_txn_rollback "reconcile against the saved intent failed (rc=${rrc})"
-        return 0
-    fi
-
-    # STEP 5 — postconditions that are safe to inspect under the lock.
-    _PS_TXN_GEN_AFTER="$(nftban_plan_generation_current)"
-    if [[ ! "$_PS_TXN_GEN_AFTER" =~ ^[0-9]+$ || ! "$_PS_TXN_GEN_BEFORE" =~ ^[0-9]+$ ]] \
-       || (( _PS_TXN_GEN_AFTER <= _PS_TXN_GEN_BEFORE )); then
-        _nftban_portscan_txn_rollback "reconcile returned 0 but committed no new plan generation (before=${_PS_TXN_GEN_BEFORE} after=${_PS_TXN_GEN_AFTER})"
-        return 0
-    fi
-    if ! _nftban_portscan_txn_read_plan "$_PS_TXN_GEN_AFTER"; then
-        _nftban_portscan_txn_rollback "the committed plan record for generation ${_PS_TXN_GEN_AFTER} is missing or malformed"
-        return 0
-    fi
-    if [[ "$_PS_PLAN_ENABLED" != "$_PS_TXN_WANT" ]] \
-       || [[ "$_PS_TXN_WANT" == "false" && "$_PS_PLAN_EFF" != "inactive" ]] \
-       || [[ "$_PS_TXN_WANT" == "true" && "$_PS_PLAN_EFF" != "classic" && "$_PS_PLAN_EFF" != "suricata" ]]; then
-        _nftban_portscan_txn_rollback "the committed plan (enabled=${_PS_PLAN_ENABLED}, effective=${_PS_PLAN_EFF}) contradicts intent=${_PS_TXN_WANT}"
-        return 0
-    fi
-    _PS_TXN_EFFECTIVE="$_PS_PLAN_EFF"
-    expect="$(_nftban_portscan_expected_kclass "$_PS_TXN_EFFECTIVE")"
-    _nftban_portscan_kernel_observe
-    if [[ "$_PS_KOBS_CLASS" == "UNMEASURED" ]]; then
-        # L3: we cannot tell whether the kernel converged. Rolling back blind
-        # could make it worse, so the state is reported, not guessed.
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="kernel postcondition UNMEASURED after reconcile (${_PS_KOBS_DETAIL}); intent=${_PS_TXN_WANT} and plan generation ${_PS_TXN_GEN_AFTER} (effective=${_PS_TXN_EFFECTIVE}) are committed, the kernel state is NOT proven"
-        _nftban_portscan_txn_phase "RECONCILE_UNVERIFIED" || _PS_TXN_RECORD_OK="false"
-        return 0
-    fi
-    if [[ "$_PS_KOBS_CLASS" != "$expect" ]]; then
-        _nftban_portscan_txn_rollback "kernel postcondition failed: expected ${expect}, observed ${_PS_KOBS_CLASS} (${_PS_KOBS_DETAIL})"
-        return 0
-    fi
-    _PS_TXN_KDETAIL="$_PS_KOBS_DETAIL"
-
-    # STEP 6
-    _nftban_portscan_txn_phase "RECONCILED" || _PS_TXN_RECORD_OK="false"
-    _PS_TXN_STAGE="RECONCILED"
-    return 0
-}
-
-# _nftban_portscan_txn_lifecycle — steps 8-10 (enable only), OUTSIDE the lock.
-# The restart is lifecycle evidence only: it is never what makes the requested
-# state true, and a restart exit code is never a verdict on enforcement.
-_nftban_portscan_txn_lifecycle() {
-    local i ready="false" expect gen_now
-    if ! systemctl is-active --quiet nftband 2>/dev/null; then
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="kernel rules verified (${_PS_TXN_KDETAIL}), but nftband is not running — detection is NOT active. Start it: systemctl start nftband"
-        return 0
-    fi
-    echo "  Restarting nftband daemon (lifecycle action)..."
-    _nftban_portscan_txn_phase "LIFECYCLE" || _PS_TXN_RECORD_OK="false"
-    if ! systemctl restart nftband; then
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="kernel rules verified (${_PS_TXN_KDETAIL}), but the nftband restart FAILED — detection is not running on the new intent. Run: systemctl restart nftband"
-        return 0
-    fi
-    # STEP 9 — bounded readiness: the unit is active AND the IPC socket answers.
-    for (( i = 0; i < 30; i++ )); do
-        if systemctl is-active --quiet nftband 2>/dev/null \
-           && declare -F nft_ipc_is_daemon_running >/dev/null 2>&1 \
-           && nft_ipc_is_daemon_running; then
-            ready="true"; break
-        fi
-        sleep 1
-    done
-    if [[ "$ready" != "true" ]]; then
-        _PS_TXN_STAGE="PENDING_TIMED_OUT"
-        _PS_TXN_REASON="kernel rules verified, nftband restarted, but the daemon was not ready within 30s (unit active + IPC ping) — detection readiness is UNPROVEN"
-        return 0
-    fi
-    # STEP 10 — the daemon's own start-up reconcile must agree with us.
-    for (( i = 0; i < 5; i++ )); do
-        eval "$(nftban_module_report_modes portscan)"
-        [[ "${NFTBAN_REPORT_EFFECTIVE_BASIS:-}" != "convergence_in_progress" ]] && break
-        sleep 1
-    done
-    if [[ "${NFTBAN_REPORT_EFFECTIVE_MODE:-}" != "$_PS_TXN_EFFECTIVE" \
-          || "${NFTBAN_REPORT_EFFECTIVE_BASIS:-}" != "current_plan" ]]; then
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="after the restart the committed plan reports effective=${NFTBAN_REPORT_EFFECTIVE_MODE:-?} (${NFTBAN_REPORT_EFFECTIVE_BASIS:-?}), contradicting this transaction's ${_PS_TXN_EFFECTIVE}"
-        return 0
-    fi
-    gen_now="$(nftban_plan_generation_current)"
-    if [[ ! "$gen_now" =~ ^[0-9]+$ ]] || (( gen_now < _PS_TXN_GEN_AFTER )); then
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="after the restart the convergence generation is ${gen_now}, older than this transaction's ${_PS_TXN_GEN_AFTER}"
-        return 0
-    fi
-    expect="$(_nftban_portscan_expected_kclass "$_PS_TXN_EFFECTIVE")"
-    _nftban_portscan_kernel_observe
-    if [[ "$_PS_KOBS_CLASS" == "UNMEASURED" ]]; then
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="after the restart the kernel is UNMEASURED (${_PS_KOBS_DETAIL}) — the enforcement state is not proven"
-        return 0
-    fi
-    if [[ "$_PS_KOBS_CLASS" != "$expect" ]]; then
-        _PS_TXN_STAGE="DEGRADED"
-        _PS_TXN_REASON="after the restart the kernel is ${_PS_KOBS_CLASS} (${_PS_KOBS_DETAIL}), contradicting the converged ${expect}"
-        return 0
-    fi
-    _PS_TXN_STAGE="CONVERGED"
-    _PS_TXN_REASON="intent=true; plan generation ${gen_now} effective=${_PS_TXN_EFFECTIVE}; kernel ${_PS_KOBS_CLASS} (${_PS_KOBS_DETAIL}); nftband ready"
-    return 0
-}
-
-# _nftban_portscan_txn_finish <OUTCOME> <reason> — STEP 11. The ONLY place a
-# verdict is printed and the ONLY source of the exit code.
-_nftban_portscan_txn_finish() {
-    local outcome="$1" reason="$2" rc
-    if [[ "$outcome" == "CONVERGED" && "$_PS_TXN_RECORD_OK" != "true" ]]; then
-        outcome="DEGRADED"
-        reason="${reason}; the transaction record could not be kept current — interruption visibility was lost"
-    fi
-    if [[ "$_PS_TXN_OPENED" == "true" ]]; then
-        _PS_TXN_OUTCOME="$outcome"; _PS_TXN_REASON="$reason"; _PS_TXN_PHASE="CLOSED"
-        if ! _nftban_portscan_txn_record_write && [[ "$outcome" == "CONVERGED" ]]; then
-            # A success that cannot be recorded is not a success. Downgrade, and
-            # try once more so the record and the printed verdict agree.
-            outcome="DEGRADED"
-            reason="${reason}; the terminal transaction record could not be written"
-            _PS_TXN_OUTCOME="$outcome"; _PS_TXN_REASON="$reason"
-            _nftban_portscan_txn_record_write || reason="${reason} (retry failed too)"
-        fi
-    fi
-    case "$outcome" in
-        CONVERGED)          rc=0 ;;
-        FAILED_ROLLED_BACK) rc=1 ;;
-        DEGRADED)           rc=3 ;;
-        PENDING_TIMED_OUT)  rc=4 ;;
-        REFUSED)            rc="${_PS_TXN_REFUSE_RC:-5}" ;;
-        *)                  outcome="DEGRADED"; rc=3; reason="unrecognised outcome; ${reason}" ;;
-    esac
-
-    local want_word="enabled"
-    [[ "$_PS_TXN_WANT" == "false" ]] && want_word="disabled"
-    echo ""
-    case "$outcome" in
-        CONVERGED)
-            if [[ "$_PS_TXN_OP" == "enable" ]]; then
-                echo "╔══════════════════════════════════════════════════════════╗"
-                echo "║  ✅ Portscan Detection ENABLED (${_PS_TXN_EFFECTIVE^^})"
-                echo "╚══════════════════════════════════════════════════════════╝"
-            else
-                echo "  ✅ Portscan detection DISABLED — module rules verified absent/empty in the kernel"
-            fi
-            echo "  Verified: ${reason}"
-            ;;
-        FAILED_ROLLED_BACK)
-            echo "  ❌ Portscan ${_PS_TXN_OP} FAILED — nothing changed: the previous state was restored and verified."
-            echo "     Reason: ${reason}"
-            ;;
-        DEGRADED)
-            echo "  ⚠️  Portscan ${_PS_TXN_OP} DEGRADED — the requested state (${want_word}) is NOT proven."
-            echo "     Reason: ${reason}"
-            echo "     'nftban portscan status' shows this transaction (${_PS_TXN_ID})."
-            ;;
-        PENDING_TIMED_OUT)
-            echo "  ⏳ Portscan ${_PS_TXN_OP} PENDING — convergence was not confirmed in time."
-            echo "     Reason: ${reason}"
-            ;;
-        REFUSED)
-            echo "  ❌ Portscan ${_PS_TXN_OP} REFUSED — nothing was changed."
-            echo "     Reason: ${reason}"
-            ;;
-    esac
-    echo ""
-    printf 'NFTBAN_OUTCOME=%s module=portscan op=%s txn=%s rc=%s reason=%s\n' \
-        "$outcome" "$_PS_TXN_OP" "${_PS_TXN_ID:-none}" "$rc" "${reason//$'\n'/ }"
-    _nftban_portscan_log "INFO" "txn ${_PS_TXN_ID:-none} ${_PS_TXN_OP}: ${outcome} rc=${rc} (${reason})"
-    return "$rc"
-}
-
-# _nftban_portscan_txn <enable|disable> — the whole transaction.
+# _nftban_portscan_txn <enable|disable> — the whole transaction (engine).
 _nftban_portscan_txn() {
-    local op="${1:-}" lockfd=""
-    _nftban_portscan_txn_reset
-    _PS_TXN_OP="$op"
-    case "$op" in
-        enable)  _PS_TXN_WANT="true" ;;
-        disable) _PS_TXN_WANT="false" ;;
-        *) echo "  ERROR: unknown portscan transaction '${op}'" >&2; return 2 ;;
-    esac
-    _PS_TXN_ID="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)" || _PS_TXN_ID=""
-    [[ -n "$_PS_TXN_ID" ]] || _PS_TXN_ID="txn-$$-$(date +%s)"
-    _PS_TXN_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-    local fn
-    for fn in nftban_module_set_enabled nftban_module_effective_enabled \
-              nftban_module_report_modes nftban_plan_generation_current \
-              nftban_plan_record_path _nftban_plan_lock_acquire _nftban_plan_lock_release; do
-        if ! declare -F "$fn" >/dev/null 2>&1; then
-            _nftban_portscan_txn_finish "REFUSED" "module authority unavailable (${fn} is not loaded)"
-            return $?
-        fi
-    done
-    if [[ -n "${NFTBAN_PLAN_TARGET_GENERATION:-}" ]]; then
-        _nftban_portscan_txn_finish "REFUSED" "a convergence transaction is already open in this process tree (target ${NFTBAN_PLAN_TARGET_GENERATION})"
-        return $?
-    fi
-    if [[ ! -d "${NFTBAN_PLAN_RECORD_DIR:-/run/nftban}" ]]; then
-        _nftban_portscan_txn_finish "REFUSED" "runtime directory ${NFTBAN_PLAN_RECORD_DIR:-/run/nftban} is absent (owned by systemd-tmpfiles: systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf)"
-        return $?
-    fi
-
-    # STEP 1 — the canonical lock. Direct call (never $(...)): a lock taken in
-    # a subshell is released when the subshell exits.
-    if ! _nftban_plan_lock_acquire; then
-        _PS_TXN_REFUSE_RC=7
-        _nftban_portscan_txn_finish "REFUSED" "the convergence lock is held by another nft operation"
-        return $?
-    fi
-    lockfd="${NFTBAN_PLAN_TXN_LOCKFD:-}"
-    unset NFTBAN_PLAN_TXN_LOCKFD
-
-    _nftban_portscan_txn_locked
-
-    # STEP 7 — release (a no-op when an ancestor holds the lock and we joined).
-    _nftban_plan_lock_release "$lockfd"
-
-    if [[ "$_PS_TXN_STAGE" != "RECONCILED" ]]; then
-        _nftban_portscan_txn_finish "$_PS_TXN_STAGE" "$_PS_TXN_REASON"
-        return $?
-    fi
-    if [[ "$op" == "enable" ]]; then
-        _nftban_portscan_txn_lifecycle
-    else
-        # Disable needs no lifecycle action: the running daemon's detection cycle
-        # consults the intent (nftban_portscan_run), and the kernel is verified.
-        _PS_TXN_STAGE="CONVERGED"
-        _PS_TXN_REASON="intent=false; plan generation ${_PS_TXN_GEN_AFTER} effective=${_PS_TXN_EFFECTIVE}; kernel EMPTY (${_PS_TXN_KDETAIL})"
-    fi
-    _nftban_portscan_txn_finish "$_PS_TXN_STAGE" "$_PS_TXN_REASON"
-    return $?
+    nftban_module_txn portscan "${1:-}"
 }
 
 # -----------------------------------------------------------------------------
@@ -1527,53 +1057,16 @@ nftban_portscan_disable() {
 # =============================================================================
 
 # _nftban_portscan_txn_status_lines — v1.233.1. Reports the runtime transaction
-# record (/run/nftban/module-txn-portscan.env). Sets _PS_TXN_UNSETTLED=true when
-# the record shows a transaction that is OPEN (in progress or interrupted) in
-# this boot, or whose terminal outcome is DEGRADED / PENDING_TIMED_OUT.
+# record (/run/nftban/module-txn-portscan.env) through the shared engine
+# (nftban_mtxn_status_lines). Sets _PS_TXN_UNSETTLED=true when the record shows a
+# transaction that is OPEN (in progress or interrupted) in this boot, or whose
+# terminal outcome is DEGRADED / PENDING_TIMED_OUT.
 # Read-only: it never takes the convergence lock.
 _nftban_portscan_txn_status_lines() {
-    local rec line k v r_id="" r_op="" r_phase="" r_out="" r_pid="" r_boot=""
-    local r_started="" r_reason="" boot="" state
     _PS_TXN_UNSETTLED="false"
-    rec="$(_nftban_portscan_txn_record_path)"
-    [[ -r "$rec" ]] || return 0
-    while IFS= read -r line; do
-        k="${line%%=*}"; v="${line#*=}"
-        case "$k" in
-            NFTBAN_TXN_ID)         r_id="$v" ;;
-            NFTBAN_TXN_OP)         r_op="$v" ;;
-            NFTBAN_TXN_PHASE)      r_phase="$v" ;;
-            NFTBAN_TXN_OUTCOME)    r_out="$v" ;;
-            NFTBAN_TXN_PID)        r_pid="$v" ;;
-            NFTBAN_TXN_BOOT_ID)    r_boot="$v" ;;
-            NFTBAN_TXN_STARTED_AT) r_started="$v" ;;
-            NFTBAN_TXN_REASON)     r_reason="$v" ;;
-        esac
-    done < "$rec"
-    if [[ -r /proc/sys/kernel/random/boot_id ]]; then
-        read -r boot < /proc/sys/kernel/random/boot_id || boot=""
-    fi
-    # /run does not survive a reboot; a record from another boot is not ours.
-    if [[ -n "$boot" && -n "$r_boot" && "$boot" != "$r_boot" ]]; then
-        return 0
-    fi
-    if [[ "$r_phase" != "CLOSED" ]]; then
-        state="INTERRUPTED"
-        if [[ "$r_pid" =~ ^[0-9]+$ ]] && kill -0 "$r_pid" 2>/dev/null; then state="IN PROGRESS"; fi
-        _PS_TXN_UNSETTLED="true"
-        echo "  Transaction: ⚠️  ${state} — portscan ${r_op:-?} ${r_id:-?} (started ${r_started:-?}, pid ${r_pid:-?}, phase ${r_phase:-?})"
-        echo "               Intent, plan and kernel may disagree until it is re-run: nftban portscan ${r_op:-enable|disable}"
-        echo ""
-        return 0
-    fi
-    case "$r_out" in
-        DEGRADED|PENDING_TIMED_OUT)
-            _PS_TXN_UNSETTLED="true"
-            echo "  Transaction: ⚠️  last portscan ${r_op:-?} ended ${r_out} (${r_id:-?})"
-            echo "               ${r_reason}"
-            echo ""
-            ;;
-    esac
+    declare -F nftban_mtxn_status_lines >/dev/null 2>&1 || return 0
+    nftban_mtxn_status_lines portscan
+    _PS_TXN_UNSETTLED="${NFTBAN_MTXN_UNSETTLED:-false}"
     return 0
 }
 
