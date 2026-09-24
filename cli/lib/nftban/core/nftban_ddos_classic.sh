@@ -278,6 +278,86 @@ _nftban_ddos_prefix_chain_exists() {
 }
 
 # =============================================================================
+# v1.233.1 — OBSERVED, IDEMPOTENT STAGE REMOVAL (DDoS enable/disable transaction)
+# =============================================================================
+# Each `_remove_via_ipc` used to apply its cleanup fragment and, when that FAILED,
+# print "WARNING: Failed to apply ... cleanup" and RETURN 0 — and classic_disable
+# added `|| true` on top. With IPC down, lab3 (v1.233.0) printed four such
+# warnings, then "✅ DDoS Protection DISABLED" rc 0, while 9 DROP rules per
+# family (ddos_sanity 5 + ddos_penalty 4, ip and ip6) stayed jumped from input.
+#   A CHILD FAILURE MAY NEVER BECOME PARENT SUCCESS.
+# The cleanup fragments also flushed BOTH families unconditionally, and `flush
+# chain` on a chain that does not exist rejects the whole `nft -f` — so a real
+# failure and "nothing to remove" were indistinguishable, and a disable that
+# propagated the result would fail on every host where a stage was never
+# projected (synproxy is off by default). Each family is now OBSERVED first
+# through the typed query (nft_fragment_observe_chain):
+#   ABSENT, or PRESENT with 0 rules -> already the requested end state, no write
+#   PRESENT with rules              -> flushed through the sanctioned IPC writer
+#   UNMEASURED                      -> REFUSE (rc 1): absent != unobservable
+# Only a successful query may decide that nothing needs removing. The
+# transaction re-verifies the kernel afterwards (nftban_ddos.sh
+# _nftban_ddos_kernel_observe); these functions only do not lie about the step.
+
+# _nftban_ddos_stage_remove <label> <chain> <cleanup-renderer>
+# Sets _NFTBAN_DDOS_STAGE_FLUSHED to the table specs it flushed (one per line).
+_nftban_ddos_stage_remove() {
+    local label="$1" chain="$2" renderer="$3" spec fam tbl path
+    local -a flush_tables=()
+    _NFTBAN_DDOS_STAGE_FLUSHED=""
+    if ! declare -F nft_fragment_observe_chain >/dev/null 2>&1 \
+       || ! declare -F "$renderer" >/dev/null 2>&1; then
+        echo "  ERROR: ${label}: observation or cleanup authority unavailable — cannot establish what to remove." >&2
+        _nftban_ddos_classic_log "ERROR" "${label} removal refused: authority unavailable"
+        return 1
+    fi
+    for spec in "${DDOS_NFT_TABLE_IPV4:-ip nftban}" "${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"; do
+        IFS=' ' read -r fam tbl <<<"$spec"
+        if ! nft_fragment_observe_chain "$fam" "$tbl" "$chain"; then
+            echo "  ERROR: ${label}: cannot observe ${fam} ${tbl} ${chain} (${NFT_FRAGMENT_OBS_REASON}) — removal UNMEASURED." >&2
+            _nftban_ddos_classic_log "ERROR" "${label} removal refused: ${fam} ${tbl} ${chain} unobservable (${NFT_FRAGMENT_OBS_REASON})"
+            return 1
+        fi
+        if [[ "$NFT_FRAGMENT_OBS_STATE" == "PRESENT" ]] && (( NFT_FRAGMENT_OBS_RULES > 0 )); then
+            flush_tables+=("$spec")
+        fi
+    done
+    if (( ${#flush_tables[@]} == 0 )); then
+        echo "     ${label}: already absent or empty in every family (verified by query)"
+        return 0
+    fi
+    path="$("$renderer" "${flush_tables[@]}")" || {
+        echo "  ERROR: ${label}: failed to render the cleanup fragment — its rules are still in the kernel." >&2
+        return 1
+    }
+    if ! nft_fragment_apply "$path"; then
+        echo "  ERROR: ${label}: cleanup apply FAILED — its rules are still in the kernel." >&2
+        _nftban_ddos_classic_log "ERROR" "${label} cleanup apply failed (${flush_tables[*]})"
+        return 1
+    fi
+    _NFTBAN_DDOS_STAGE_FLUSHED="$(printf '%s\n' "${flush_tables[@]}")"
+    echo "     ${label}: flushed (${#flush_tables[@]} table(s))"
+    return 0
+}
+
+# _nftban_ddos_raw_notrack_count <family> — count nftban's SYNPROXY notrack rules
+# in <family> raw prerouting. Sets _NFTBAN_DDOS_RAW_N; returns 1 when UNMEASURED
+# (an absent raw table is a measured 0).
+_nftban_ddos_raw_notrack_count() {
+    local fam="$1" line n=0
+    _NFTBAN_DDOS_RAW_N=""
+    declare -F nft_fragment_observe_chain >/dev/null 2>&1 || return 1
+    nft_fragment_observe_chain "$fam" raw prerouting || return 1
+    if [[ "$NFT_FRAGMENT_OBS_STATE" == "PRESENT" ]]; then
+        while IFS= read -r line; do
+            [[ "$line" == *'"SYNPROXY:'* ]] && n=$((n + 1))
+        done <<<"$NFT_FRAGMENT_OBS_TEXT"
+    fi
+    _NFTBAN_DDOS_RAW_N="$n"
+    return 0
+}
+
+# =============================================================================
 # SANITY CHECK SETUP (Fragment+IPC approach) - Stage 3
 # =============================================================================
 
@@ -325,25 +405,15 @@ _nftban_ddos_sanity_setup_via_ipc() {
 }
 
 _nftban_ddos_sanity_remove_via_ipc() {
+    # v1.233.1: observed + idempotent; the result is propagated (see above).
     if ! _nftban_ddos_sanity_has_ipc; then
-        return 0
-    fi
-
-    echo "  Removing sanity check protection..."
-
-    local cleanup_path
-    cleanup_path=$(nft_fragment_render_ddos_sanity_cleanup) || {
-        echo "  ERROR: Failed to render sanity check cleanup fragment"
+        echo "  ERROR: sanity check cleanup authority unavailable — cannot remove the sanity stage." >&2
         return 1
-    }
-
-    if nft_fragment_apply "$cleanup_path"; then
-        echo "     Flushed sanity check chains"
-    else
-        echo "  WARNING: Failed to apply sanity check cleanup"
     fi
-
-    _nftban_ddos_classic_log "INFO" "Sanity check protection disabled"
+    echo "  Removing sanity check protection..."
+    _nftban_ddos_stage_remove "sanity" "${DDOS_SANITY_CHAIN:-ddos_sanity}" \
+        nft_fragment_render_ddos_sanity_cleanup || return 1
+    _nftban_ddos_classic_log "INFO" "Sanity check stage removed or already empty (verified by query)"
     return 0
 }
 
@@ -421,25 +491,42 @@ _nftban_ddos_synproxy_setup_via_ipc() {
 }
 
 _nftban_ddos_synproxy_remove_via_ipc() {
+    # v1.233.1: observed + idempotent; the result is propagated (see above).
+    # The raw-table notrack rules are part of this stage: the cleanup fragment
+    # only flushes ddos_synproxy and its own comment defers raw prerouting to
+    # _nft_cleanup_synproxy_raw — which this path never called, so a disable left
+    # nftban's "SYNPROXY: notrack SYN" rules in raw prerouting.
     if ! _nftban_ddos_synproxy_has_ipc; then
-        return 0
-    fi
-
-    echo "  Removing SYNPROXY protection..."
-
-    local cleanup_path
-    cleanup_path=$(nft_fragment_render_synproxy_cleanup) || {
-        echo "  ERROR: Failed to render SYNPROXY cleanup fragment"
+        echo "  ERROR: SYNPROXY cleanup authority unavailable — cannot remove the SYNPROXY stage." >&2
         return 1
-    }
-
-    if nft_fragment_apply "$cleanup_path"; then
-        echo "     Flushed SYNPROXY chains and raw rules"
-    else
-        echo "  WARNING: Failed to apply SYNPROXY cleanup"
     fi
-
-    _nftban_ddos_classic_log "INFO" "SYNPROXY protection disabled"
+    echo "  Removing SYNPROXY protection..."
+    local rc=0 fam
+    _nftban_ddos_stage_remove "synproxy" "${DDOS_SYNPROXY_CHAIN:-ddos_synproxy}" \
+        nft_fragment_render_synproxy_cleanup || rc=1
+    for fam in ip ip6; do
+        if ! _nftban_ddos_raw_notrack_count "$fam"; then
+            echo "  ERROR: synproxy: cannot observe ${fam} raw prerouting (${NFT_FRAGMENT_OBS_REASON}) — notrack removal UNMEASURED." >&2
+            rc=1; continue
+        fi
+        (( _NFTBAN_DDOS_RAW_N > 0 )) || continue
+        if ! declare -F _nft_cleanup_synproxy_raw >/dev/null 2>&1; then
+            echo "  ERROR: synproxy: raw notrack cleanup unavailable." >&2
+            rc=1; break
+        fi
+        # Per-handle deletes are individually tolerant (fragment authority);
+        # absence is VERIFIED right after, never assumed.
+        _nft_cleanup_synproxy_raw
+        if ! _nftban_ddos_raw_notrack_count "$fam" || (( _NFTBAN_DDOS_RAW_N > 0 )); then
+            echo "  ERROR: synproxy: ${_NFTBAN_DDOS_RAW_N:-unmeasured} notrack rule(s) remain in ${fam} raw prerouting." >&2
+            rc=1
+        fi
+    done
+    if (( rc != 0 )); then
+        _nftban_ddos_classic_log "ERROR" "SYNPROXY stage removal FAILED"
+        return 1
+    fi
+    _nftban_ddos_classic_log "INFO" "SYNPROXY stage removed or already empty (verified by query)"
     return 0
 }
 
@@ -599,25 +686,15 @@ ${pre_v6}") || {
 }
 
 _nftban_ddos_prefix_remove_via_ipc() {
+    # v1.233.1: observed + idempotent; the result is propagated (see above).
     if ! _nftban_ddos_prefix_has_ipc; then
-        return 0
-    fi
-
-    echo "  Removing prefix aggregation protection..."
-
-    local cleanup_path
-    cleanup_path=$(nft_fragment_render_ddos_prefix_cleanup) || {
-        echo "  ERROR: Failed to render prefix aggregation cleanup fragment"
+        echo "  ERROR: prefix aggregation cleanup authority unavailable — cannot remove the prefix stage." >&2
         return 1
-    }
-
-    if nft_fragment_apply "$cleanup_path"; then
-        echo "     Flushed prefix aggregation chains"
-    else
-        echo "  WARNING: Failed to apply prefix aggregation cleanup"
     fi
-
-    _nftban_ddos_classic_log "INFO" "Prefix aggregation protection disabled"
+    echo "  Removing prefix aggregation protection..."
+    _nftban_ddos_stage_remove "prefix" "${DDOS_PREFIX_CHAIN:-ddos_prefix}" \
+        nft_fragment_render_ddos_prefix_cleanup || return 1
+    _nftban_ddos_classic_log "INFO" "Prefix aggregation stage removed or already empty (verified by query)"
     return 0
 }
 
@@ -690,23 +767,36 @@ ${pre_v6}") || {
 # =============================================================================
 
 _nftban_ddos_classic_remove_via_ipc() {
+    # v1.233.1: observed + idempotent; the result is propagated (see above).
     echo "  Removing Classic DDoS protection via IPC..."
+    _nftban_ddos_stage_remove "protection" "${DDOS_NFT_CHAIN:-ddos_protection}" \
+        nft_fragment_render_ddos_classic_cleanup || return 1
+    _nftban_ddos_classic_log "INFO" "Classic protection stage removed or already empty (verified by query)"
+    return 0
+}
 
-    # Render the cleanup fragment
-    local cleanup_path
-    cleanup_path=$(nft_fragment_render_ddos_classic_cleanup) || {
-        echo "  ERROR: Failed to render cleanup fragment"
+# _nftban_ddos_penalty_remove_via_ipc — v1.233.1. The penalty ladder used to be
+# removed by `nft_fragment_disable_module ddos-penalty 2>/dev/null || true`: the
+# lab3 witness kept its 4 DROP rules per family with nothing printed at all.
+# Same observed + idempotent removal as the other stages (the cleanup fragment
+# flushes the chain and deletes that family's penalty sets in ONE nft
+# transaction). Then, as nft_fragment_disable_module did, the now-empty chain's
+# jump and the chain itself are removed so no empty jump target is left.
+_nftban_ddos_penalty_remove_via_ipc() {
+    local chain="${DDOS_PENALTY_CHAIN:-ddos_penalty}" spec fam
+    if ! declare -F nft_fragment_render_ddos_penalty_cleanup >/dev/null 2>&1; then
+        echo "  ERROR: penalty ladder cleanup authority unavailable — cannot remove the penalty stage." >&2
         return 1
-    }
-
-    # Apply via IPC (this flushes the chains)
-    if nft_fragment_apply "$cleanup_path"; then
-        echo "     Flushed DDoS protection chains"
-    else
-        echo "  WARNING: Failed to apply cleanup fragment"
     fi
-
-    _nftban_ddos_classic_log "INFO" "Classic protection disabled via IPC"
+    echo "  Removing penalty ladder..."
+    _nftban_ddos_stage_remove "penalty" "$chain" nft_fragment_render_ddos_penalty_cleanup || return 1
+    while IFS= read -r spec; do
+        [[ -n "$spec" ]] || continue
+        IFS=' ' read -r fam _ <<<"$spec"
+        # nftban:rc-suppression-ok: structural hygiene AFTER the penalty rules were flushed by a verified apply; a residual empty chain satisfies the disable postcondition, which the transaction re-verifies by query
+        nft_fragment_delete_object "$fam" chain "$chain"
+    done <<<"$_NFTBAN_DDOS_STAGE_FLUSHED"
+    _nftban_ddos_classic_log "INFO" "Penalty ladder removed or already empty (verified by query)"
     return 0
 }
 
@@ -722,49 +812,74 @@ nftban_ddos_classic_enable() {
     echo "Enabling Classic DDoS Protection..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+    # v1.233.1: every stage's result is PROPAGATED. Stage failures used to be
+    # WARNINGs ("continuing without packet validation", "Penalty ladder setup
+    # failed (non-fatal)") and the enable returned 0, so the reconcile root
+    # committed a plan generation for protection that was never projected
+    # (the DDoS twin of BUG-PORTSCAN-RECONCILE-COMMITS-GENERATION-ON-FAILED-APPLY).
+    # Every stage is still ATTEMPTED — a failed sanity stage must not also cost
+    # the rate limits — but a failure of any makes the enable fail.
+    local failed=""
     # Use IPC if available (single-writer architecture)
     if _nftban_ddos_classic_has_ipc; then
         # Stage 3: Sanity checks (drop invalid/malformed packets)
         # Applied FIRST to filter garbage before any other processing
-        _nftban_ddos_sanity_setup_via_ipc || {
-            echo "  WARNING: Sanity check setup failed, continuing without packet validation"
-        }
+        if ! _nftban_ddos_sanity_setup_via_ipc; then
+            echo "  ERROR: Sanity check stage FAILED" >&2
+            failed="${failed} sanity"
+        fi
 
         echo ""
 
         # Stage 1: SYNPROXY (kernel-level SYN flood protection)
         # Applied BEFORE rate limiting for maximum efficiency
-        _nftban_ddos_synproxy_setup_via_ipc || {
-            echo "  WARNING: SYNPROXY setup failed, continuing with classic protection"
-        }
+        if ! _nftban_ddos_synproxy_setup_via_ipc; then
+            echo "  ERROR: SYNPROXY stage FAILED" >&2
+            failed="${failed} synproxy"
+        fi
 
         echo ""
 
         # Stage 1.5: Prefix Aggregation (distributed attack detection)
         # Tracks by /24 (IPv4) and /64 (IPv6) to detect botnets
-        _nftban_ddos_prefix_setup_via_ipc || {
-            echo "  WARNING: Prefix aggregation setup failed, continuing without subnet-level protection"
-        }
+        if ! _nftban_ddos_prefix_setup_via_ipc; then
+            echo "  ERROR: Prefix aggregation stage FAILED" >&2
+            failed="${failed} prefix"
+        fi
 
         echo ""
 
         # Stage 2: Classic rate limiting and connection limits
-        _nftban_ddos_classic_setup_via_ipc || return 1
+        if ! _nftban_ddos_classic_setup_via_ipc; then
+            echo "  ERROR: Classic rate-limiting stage FAILED" >&2
+            failed="${failed} protection"
+        fi
 
         echo ""
 
         # Penalty Ladder: Graduated response sets (populated by maintenance timer)
         if declare -f nft_fragment_enable_module >/dev/null 2>&1; then
             echo "  Setting up Penalty Ladder sets..."
-            if nft_fragment_enable_module ddos-penalty 2>/dev/null; then
+            if nft_fragment_enable_module ddos-penalty; then
                 echo "     Penalty ladder: 4-tier sets deployed"
             else
-                echo "  WARNING: Penalty ladder setup failed (non-fatal)"
+                echo "  ERROR: Penalty ladder stage FAILED" >&2
+                failed="${failed} penalty"
             fi
+        else
+            echo "  ERROR: nft_fragment_enable_module unavailable — penalty ladder not deployed" >&2
+            failed="${failed} penalty"
         fi
     else
         echo "  WARNING: IPC not available, DDoS classic cannot be enabled"
         echo "  Ensure nftband daemon is running and nft_fragment.sh is loaded"
+        return 1
+    fi
+
+    if [[ -n "$failed" ]]; then
+        echo "" >&2
+        echo "  ERROR: Classic DDoS enable FAILED for stage(s):${failed}" >&2
+        _nftban_ddos_classic_log "ERROR" "Classic enable FAILED:${failed}"
         return 1
     fi
 
@@ -828,10 +943,11 @@ nftban_ddos_classic_enable() {
 }
 
 nftban_ddos_classic_disable() {
-    # Prevent duplicate disable calls (causes double logging)
-    [[ -n "${_NFTBAN_DDOS_CLASSIC_DISABLED:-}" ]] && return 0
-    _NFTBAN_DDOS_CLASSIC_DISABLED=1
-
+    # v1.233.1: the "prevent duplicate disable calls" guard is gone. It made a
+    # SECOND call in the same process return 0 without doing anything — e.g. a
+    # suricata apply ran classic_disable for exclusivity, and a later teardown in
+    # the same transaction was then a silent no-op. Removal is now observed and
+    # idempotent, so a repeated call costs queries, not writes.
     _nftban_ddos_classic_load_config
 
     echo ""
@@ -839,34 +955,28 @@ nftban_ddos_classic_disable() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # Use IPC if available (single-writer architecture)
-    if _nftban_ddos_classic_has_ipc; then
-        # Remove in reverse order of enable
-
-        # Remove penalty ladder first (added last during enable)
-        if declare -f nft_fragment_disable_module >/dev/null 2>&1; then
-            nft_fragment_disable_module ddos-penalty 2>/dev/null || true
-        fi
-
-        # Remove classic rate limiting
-        _nftban_ddos_classic_remove_via_ipc || true
-
-        # Remove prefix aggregation
-        _nftban_ddos_prefix_remove_via_ipc || true
-
-        # Then remove SYNPROXY
-        _nftban_ddos_synproxy_remove_via_ipc || true
-
-        # Finally remove sanity checks (applied first, removed last)
-        _nftban_ddos_sanity_remove_via_ipc || true
-    else
-        echo "  WARNING: IPC not available, cannot disable properly"
+    if ! _nftban_ddos_classic_has_ipc; then
+        echo "  ERROR: IPC/fragment authority not available — cannot remove the classic DDoS rules." >&2
         return 1
     fi
 
-    echo ""
-    echo "Classic DDoS protection disabled"
-    echo ""
+    # Remove in reverse order of enable. EVERY stage is attempted, so one
+    # failure does not leave the others in place, and EVERY result counts.
+    local failed=""
+    _nftban_ddos_penalty_remove_via_ipc  || failed="${failed} penalty"
+    _nftban_ddos_classic_remove_via_ipc  || failed="${failed} protection"
+    _nftban_ddos_prefix_remove_via_ipc   || failed="${failed} prefix"
+    _nftban_ddos_synproxy_remove_via_ipc || failed="${failed} synproxy"
+    _nftban_ddos_sanity_remove_via_ipc   || failed="${failed} sanity"
 
+    if [[ -n "$failed" ]]; then
+        echo "  ERROR: classic DDoS teardown FAILED for:${failed} — those rules may still be active." >&2
+        _nftban_ddos_classic_log "ERROR" "Classic teardown FAILED:${failed}"
+        return 1
+    fi
+    echo ""
+    echo "Classic DDoS teardown step completed (every stage absent or empty by query)"
+    echo ""
     return 0
 }
 
