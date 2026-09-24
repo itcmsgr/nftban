@@ -902,41 +902,55 @@ nftban_portscan_enable() {
 # nftban_portscan_teardown -- NEUTRAL RUNTIME TEARDOWN. Daemon-callable.
 # v1.229.7 PR-2: removes runtime enforcement ONLY. No config write, no restart.
 # -----------------------------------------------------------------------------
+#
+# v1.233.1 — THE RESULT IS PROPAGATED, AND THIS FUNCTION CLAIMS NOTHING.
+# It used to ignore classic_disable's status and always print
+# "✅ Portscan detection disabled" + return 0, so a disable whose nft flush failed
+# (IPC down) reported success while the rules stayed live (lab3 ARM2, v1.233.0).
+# Now:
+#   * the CLASSIC projection is removed in EVERY mode. DISABLED means the
+#     module-owned kernel objects converge to empty, whatever mode last ran;
+#     classic removal is idempotent (an absent/empty chain is verified by query
+#     and needs no write), so this costs nothing where there is nothing to do.
+#   * the Suricata side projects no nft object; its disable is a state save and
+#     runs only when that mode was active.
+#   * a missing entrypoint is a FAILURE, never an rc0 no-op.
+#   * success prints a progress line only; the operator-facing verdict belongs
+#     to the transaction that verifies the kernel (nftban_portscan_enable/disable).
 nftban_portscan_teardown() {
-    local mode="${_PORTSCAN_ACTIVE_MODE:-classic}"
+    local mode="${_PORTSCAN_ACTIVE_MODE:-classic}" _rc=0
 
     echo ""
-    echo "  Disabling portscan detection (${mode})..."
+    echo "  Removing portscan runtime (${mode})..."
 
     _nftban_portscan_log "INFO" "Disabling portscan detection"
 
+    if type -t nftban_portscan_classic_disable &>/dev/null; then
+        nftban_portscan_classic_disable || _rc=$?
+    else
+        echo "  ERROR: nftban_portscan_classic_disable unavailable — cannot remove the classic projection." >&2
+        _rc=1
+    fi
     case "$mode" in
-        classic)
-            if type -t nftban_portscan_classic_disable &>/dev/null; then
-                nftban_portscan_classic_disable
-            fi
-            ;;
-        suricata)
+        suricata|hybrid)
             if type -t nftban_portscan_suricata_disable &>/dev/null; then
-                nftban_portscan_suricata_disable
-            fi
-            ;;
-        hybrid)
-            if type -t nftban_portscan_classic_disable &>/dev/null; then
-                nftban_portscan_classic_disable
-            fi
-            if type -t nftban_portscan_suricata_disable &>/dev/null; then
-                nftban_portscan_suricata_disable
+                nftban_portscan_suricata_disable || _rc=$?
+            else
+                echo "  ERROR: nftban_portscan_suricata_disable unavailable." >&2
+                _rc=1
             fi
             ;;
     esac
 
     _PORTSCAN_INITIALIZED=0
 
-    echo "  ✅ Portscan detection disabled"
-    echo ""
-
-    _nftban_portscan_log "INFO" "Portscan detection disabled"
+    if (( _rc != 0 )); then
+        echo "  ERROR: portscan runtime teardown FAILED (rc=${_rc}) — module rules may still be active." >&2
+        _nftban_portscan_log "ERROR" "Portscan teardown FAILED (rc=${_rc})"
+        return "$_rc"
+    fi
+    echo "  Portscan runtime teardown step completed."
+    _nftban_portscan_log "INFO" "Portscan teardown step completed"
     return 0
 }
 
