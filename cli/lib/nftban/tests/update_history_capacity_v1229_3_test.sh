@@ -329,6 +329,15 @@ reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t";
 run_update_prune 20260104_000004
 [[ "$(prune_line)" == *"boundary_deferred_batch_bound"* && -d "$BK/rebuild_20260103_000003" && ! -d "$BK/rebuild_20260101_000001" ]] \
     && pass "R10 K=1 with a full batch: boundary DEFERRED and reported, never silently kept as policy" || fail "R10 deferral $(prune_line)"
+# R10c · K=1 + boundary witness mismatch: under K=1 the boundary is a DELETION candidate,
+# so a changed boundary must abort the whole batch (R7 covers only the K=2 floor role)
+_RBP_MAX_PRUNE_BATCH=$SAVED
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+run_update_prune 20260104_000004 'sleep 0.02; _rebuild_tx_state_write "$BK/rebuild_20260103_000003" TERMINAL_SUCCESS'
+[[ "$(prune_line)" == *"ABORTED reason=witness_mismatch"* && "$(prune_line)" == *"keep=1"* \
+   && -d "$BK/rebuild_20260101_000001" && -d "$BK/rebuild_20260103_000003" && -d "$BK/rebuild_20260104_000004" ]] \
+    && pass "R10c K=1: boundary (a deletion candidate) changed -> whole batch ABORTED; own + boundary + batch intact" \
+    || fail "R10c K=1 boundary mismatch not aborted: $(prune_line)"
 _RBP_MAX_PRUNE_BATCH=$SAVED; unset -f _bcap_verdict
 # shellcheck source=/dev/null
 source "$CAP"
@@ -358,6 +367,14 @@ _REBUILD_SNAPSHOT_DIR="$BK/rebuild_20260102_000002"
 _rebuild_update_history_prune 2>"$TMP/prune.err"; rc=$?
 [[ $rc -eq 0 && "$(prune_line)" == *"NFTBAN_PRUNE=ABORTED reason=population_changed"* ]] \
     && pass "R12 an aborted prune returns 0 and reports (never fails the rebuild)" || fail "R12 rc=$rc $(prune_line)"
+
+# R12b · the prune path cannot touch install_state (structural: no reference in any prune function)
+_pr=""; for _fn in _rbp_witness _rbp_emit _rebuild_prune_plan _rebuild_prune_parent_check _rebuild_update_history_prune; do _pr+="$(fn_body "$_fn" "$FW")"$'\n'; done
+if grep -qE 'install_state|INSTALL_STATE|_rebuild_tx_state_write|Transition' <<<"$_pr"; then
+    fail "R12b a prune function references install_state / lifecycle writes"
+else
+    pass "R12b no prune function references install_state or writes lifecycle state (rebuild rc/install_state cannot be altered by pruning)"
+fi
 
 # R13 · UNREADABLE snapshot_state is never history (as before)
 if [[ "$(id -u)" != 0 ]]; then
