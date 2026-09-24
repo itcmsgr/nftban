@@ -265,7 +265,7 @@ _nftban_mtxn_rollback() {
 
     if [[ "$ok" == "true" ]]; then
         _MT_STAGE="FAILED_ROLLED_BACK"
-        _MT_REASON="${why}; previous state re-established and verified (intent=${_MT_PREV}, plan generation ${gen_now}, kernel ${kcls})"
+        _MT_REASON="${why}; previous state re-established and verified (intent=${_MT_PREV}, plan generation ${gen_now}, kernel ${kcls}: ${NFTBAN_MTXN_KDETAIL})"
         _nftban_mtxn_phase "ROLLED_BACK" || _MT_RECORD_OK="false"
     else
         _MT_STAGE="DEGRADED"
@@ -585,6 +585,7 @@ nftban_module_txn() {
 # Sets NFTBAN_MTXN_UNSETTLED=true when the record shows a transaction that is
 # OPEN (in progress or interrupted) in this boot, or whose terminal outcome is
 # DEGRADED / PENDING_TIMED_OUT. Read-only: it never takes the convergence lock.
+# shellcheck disable=SC2034  # NFTBAN_MTXN_UNSETTLED is read by the module status callers
 nftban_mtxn_status_lines() {
     local mod="${1:-}" rec line k v r_id="" r_op="" r_phase="" r_out="" r_pid="" r_boot=""
     local r_started="" r_reason="" boot="" state

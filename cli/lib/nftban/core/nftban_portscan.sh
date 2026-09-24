@@ -912,6 +912,7 @@ _nftban_portscan_txn_labels() {
 #                  configured prefix, and at least one input jump to the chain.
 #   PARTIAL        anything else that was measured.
 #   UNMEASURED     any query failed, timed out, was refused or was unparseable.
+# shellcheck disable=SC2034  # sets NFTBAN_MTXN_KCLASS/KDETAIL for lib/module_txn.sh
 _nftban_portscan_kernel_observe() {
     local prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
