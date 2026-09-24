@@ -224,8 +224,29 @@ declare -gA _PORTSCAN_CLASSIC_IP_EVENTS=()      # IP -> "ts,port,target ..." (ev
 # Freshness cutoff (epoch) of the running cycle: evidence older than this is not
 # eligible for realtime classification. Set once per cycle by process_logs.
 declare -g _PORTSCAN_CLASSIC_EVIDENCE_CUTOFF=""
+# D = ACCEPTED-AGE POLICY BOUND (seconds): how old a record may be when a cycle
+# first sees it and still count as CURRENT evidence. It is an explicit internal
+# POLICY, NOT a proven maximum delivery latency, and it is NOT the scan span W
+# (PORTSCAN_CLASSIC_TIME_WINDOW, which bounds how far apart one scan's events
+# may be). Derived mechanically from the scheduling authority:
+#   D = 2 x constants.PortscanCheckInterval (60 s, internal/constants/timeouts.go)
+# i.e. it tolerates ONE missed 60 s daemon cycle (the Go loop in
+# internal/portscan/module.go runs each bash cycle synchronously off a
+# time.Ticker, which drops ticks while a cycle overruns) plus start-up jitter.
+# It is NOT a scheduler maximum: the bash cycle has no timeout, so a longer
+# overrun delivers older records. Such records are a counted false-negative
+# residual (reported as stale= in PORTSCAN_EVENT_TIME), never "impossible".
+# Eligibility: cycle_start - max(W, D) <= ts <= processing now.
+# DRIFT GUARD: portscan_classic_event_time_v1233_1_test parses
+# PortscanCheckInterval from timeouts.go and fails if this != 2 x it.
+# Internal constant (leading underscore), deliberately not a config key.
+declare -g _PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S=120
+# Cutoff of the last pressure cleanup (a repeat with the same cutoff is a no-op).
+declare -g _PORTSCAN_CLASSIC_PRESSURE_CUTOFF=""
 # Upper eligibility bound ("processing now"), sampled after the cycle's read.
 declare -g _PORTSCAN_CLASSIC_EVIDENCE_NOW=""
+# Cycle start (epoch): the reference for year-less syslog stamps.
+declare -g _PORTSCAN_CLASSIC_EVIDENCE_START=""
 declare -g _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED=0 _PORTSCAN_CLASSIC_EXCLUDED_STALE=0 _PORTSCAN_CLASSIC_EXCLUDED_FUTURE=0
 declare -ga _PORTSCAN_CLASSIC_EVIDENCE_WINDOWS=()
 declare -g _PORTSCAN_CLASSIC_EVENT_EPOCH="" _PORTSCAN_CLASSIC_EPOCH_CACHE_KEY="" _PORTSCAN_CLASSIC_EPOCH_CACHE_VAL=""
@@ -528,11 +549,19 @@ _nftban_portscan_extract_timestamp() {
 # is exactly the defect this lane removes, so an unparseable line is EXCLUDED
 # from realtime classification instead. Same two stamp shapes as the extractor.
 # No subshell for the cache: consecutive kernel lines usually share a second.
+#
+# YEAR-LESS syslog stamps ("Mon DD HH:MM:SS"): the year is inferred as the most
+# recent year that puts the stamp at or before processing now (standard syslog
+# practice), so a Dec 31 record read on Jan 1 is 40 s old, not ~1 year in the
+# future. Consequently a year-less stamp is never "future"; if even the cycle
+# year is ahead of now, the previous year is used and the stale rule applies.
+# ISO stamps carry their year and keep the strict future exclusion.
 _nftban_portscan_classic_line_epoch() {
-    local line="$1" stamp="" ep=""
+    local line="$1" stamp="" ep="" yearless=false
     _PORTSCAN_CLASSIC_EVENT_EPOCH=""
-    if [[ "$line" =~ ^([A-Z][a-z]{2}\ +[0-9]+\ [0-9:]+) ]]; then
-        stamp="${BASH_REMATCH[1]}"
+    if [[ "$line" =~ ^([A-Z][a-z]{2})\ +([0-9]+)\ ([0-9:]+) ]]; then
+        stamp="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"
+        yearless=true
     elif [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+) ]]; then
         stamp="${BASH_REMATCH[1]}"
     else
@@ -542,8 +571,44 @@ _nftban_portscan_classic_line_epoch() {
         _PORTSCAN_CLASSIC_EVENT_EPOCH="$_PORTSCAN_CLASSIC_EPOCH_CACHE_VAL"
         return 0
     fi
-    ep=$(date -d "$stamp" +%s 2>/dev/null) || return 1
-    [[ "$ep" =~ ^[0-9]+$ ]] || return 1
+    if [[ "$yearless" == "true" ]]; then
+        # Most recent NON-FUTURE occurrence: try the cycle's year, then earlier
+        # years (up to 8 back, so a "Feb 29" reaches the previous leap year).
+        # A text that is not a valid date in any of those years (Feb 30,
+        # Apr 31, hour 25, ...) is malformed. Never a fallback to now.
+        local ref="${_PORTSCAN_CLASSIC_EVIDENCE_START:-}" year now="" y cand cacheable=true
+        if [[ ! "$ref" =~ ^[0-9]+$ ]]; then
+            if declare -f nftban_timestamp_unix &>/dev/null; then ref=$(nftban_timestamp_unix); else ref=$(date +%s); fi
+        fi
+        printf -v year '%(%Y)T' "$ref"
+        local mon="${stamp%% *}" rest="${stamp#* }"
+        local day="${rest%% *}" hms="${rest#* }"
+        ep=""
+        for (( y = year; y >= year - 8; y-- )); do
+            cand=$(date -d "${mon} ${day} ${y} ${hms}" +%s 2>/dev/null) || continue
+            [[ "$cand" =~ ^[0-9]+$ ]] || continue
+            if (( cand > ref )); then
+                # Ahead of cycle start: compare with the real processing now (a
+                # record written during the read is legitimately after ref).
+                # The decision depends on the moment of the read: not cached.
+                cacheable=false
+                if [[ -z "$now" ]]; then
+                    if declare -f nftban_timestamp_unix &>/dev/null; then now=$(nftban_timestamp_unix); else now=$(date +%s); fi
+                fi
+                (( cand > now )) && continue
+            fi
+            ep="$cand"
+            break
+        done
+        [[ -n "$ep" ]] || return 1
+        if [[ "$cacheable" != "true" ]]; then
+            _PORTSCAN_CLASSIC_EVENT_EPOCH="$ep"
+            return 0
+        fi
+    else
+        ep=$(date -d "$stamp" +%s 2>/dev/null) || return 1
+        [[ "$ep" =~ ^[0-9]+$ ]] || return 1
+    fi
     _PORTSCAN_CLASSIC_EPOCH_CACHE_KEY="$stamp"
     _PORTSCAN_CLASSIC_EPOCH_CACHE_VAL="$ep"
     _PORTSCAN_CLASSIC_EVENT_EPOCH="$ep"
@@ -751,17 +816,24 @@ nftban_portscan_classic_process_logs() {
     local cutoff_time
     cutoff_time=$((current_time - time_window))
     # v1.233.1 EVENT-TIME FRESHNESS: evidence whose EVENT time is older than
-    # (cycle start - PORTSCAN_CLASSIC_TIME_WINDOW) is not eligible for realtime
-    # classification. This is the bound the code already declares for a cycle:
-    # the journal bootstrap reads "--since TIME_WINDOW seconds ago" and the
-    # cleanup prunes at now - TIME_WINDOW; the daemon cadence (Go
-    # constants.PortscanCheckInterval = 60 s) equals the shipped TIME_WINDOW, so
-    # every record appended since the previous cycle is inside it. A resumed
-    # --after-cursor backlog or a bootstrap tail is still EMITTED as micro-events
-    # (stealth aggregation is unchanged) but cannot be classified as one current scan.
+    # cycle start - max(W, D) is not eligible for realtime classification.
+    # W = PORTSCAN_CLASSIC_TIME_WINDOW (scan span; bounds the class windows),
+    # D = _PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S (accepted-age policy bound
+    # derived from the daemon cadence, see its declaration). This also makes
+    # offline input (`nftban portscan check <file>`) safe by construction:
+    # offline historical input is not automatically current enforcement
+    # evidence -- it is still parsed, emitted and reported, but older lines
+    # are counted stale and cannot ban now. A resumed --after-cursor backlog or a
+    # bootstrap tail older than that is still EMITTED as micro-events (stealth
+    # aggregation is unchanged) but cannot be classified as one current scan.
     # The upper bound ("processing now") is sampled AFTER the read, below: a
     # record appended while this cycle was reading is not "future".
-    _PORTSCAN_CLASSIC_EVIDENCE_CUTOFF="$cutoff_time"
+    local fresh_span="$time_window"
+    (( _PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S > fresh_span )) && fresh_span="$_PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S"
+    _PORTSCAN_CLASSIC_EVIDENCE_CUTOFF=$((current_time - fresh_span))
+    _PORTSCAN_CLASSIC_EVIDENCE_START="$current_time"
+    _PORTSCAN_CLASSIC_PRESSURE_CUTOFF=""
+    _PORTSCAN_CLASSIC_EPOCH_CACHE_KEY=""; _PORTSCAN_CLASSIC_EPOCH_CACHE_VAL=""
     _PORTSCAN_CLASSIC_EVIDENCE_NOW=""
     _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED=0
     _PORTSCAN_CLASSIC_EXCLUDED_STALE=0
@@ -941,7 +1013,14 @@ nftban_portscan_classic_record_connection() {
 
     # Check if we're tracking too many IPs
     if [[ ${#_PORTSCAN_CLASSIC_IP_PORTS[@]} -ge $max_tracked ]]; then
-        nftban_portscan_classic_cleanup_old_entries
+        # v1.233.1: within a cycle the cutoff is fixed and stale evidence is
+        # never admitted (above), so a second pressure cleanup with the same
+        # cutoff cannot remove anything; skip it instead of rescanning every
+        # tracked IP on every record (O(records x evidence)).
+        if [[ -z "$cutoff" || "$cutoff" != "${_PORTSCAN_CLASSIC_PRESSURE_CUTOFF:-}" ]]; then
+            nftban_portscan_classic_cleanup_old_entries
+            _PORTSCAN_CLASSIC_PRESSURE_CUTOFF="$cutoff"
+        fi
     fi
 
     # Add port to tracked list for this IP
@@ -990,7 +1069,9 @@ nftban_portscan_classic_cleanup_old_entries() {
         else
             current_time=$(date +%s)
         fi
-        cutoff_time=$((current_time - time_window))
+        local fresh_span="$time_window"
+        (( _PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S > fresh_span )) && fresh_span="$_PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S"
+        cutoff_time=$((current_time - fresh_span))
     fi
 
     # Upper bound: only once the cycle has sampled "processing now" (after the
