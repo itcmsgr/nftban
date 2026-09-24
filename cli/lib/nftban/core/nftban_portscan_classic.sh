@@ -217,6 +217,18 @@ declare -gA _PORTSCAN_CLASSIC_IP_TIMESTAMPS=()  # IP -> timestamps (space-separa
 declare -gA _PORTSCAN_CLASSIC_IP_TARGETS=()     # IP -> target IPs (space-separated)
 declare -gA _PORTSCAN_CLASSIC_IP_BLOCKED=()     # IP -> block timestamp
 declare -gA _PORTSCAN_CLASSIC_IP_BAN_COUNT=()   # IP -> number of times banned
+# v1.233.1 EVENT-TIME: per-connection evidence, one "ts,port,target" token per
+# recorded connection (space-separated), ts = the log line's OWN event time.
+# The aggregate arrays above are derived views of this list (kept for callers).
+declare -gA _PORTSCAN_CLASSIC_IP_EVENTS=()      # IP -> "ts,port,target ..." (event time)
+# Freshness cutoff (epoch) of the running cycle: evidence older than this is not
+# eligible for realtime classification. Set once per cycle by process_logs.
+declare -g _PORTSCAN_CLASSIC_EVIDENCE_CUTOFF=""
+# Upper eligibility bound ("processing now"), sampled after the cycle's read.
+declare -g _PORTSCAN_CLASSIC_EVIDENCE_NOW=""
+declare -g _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED=0 _PORTSCAN_CLASSIC_EXCLUDED_STALE=0 _PORTSCAN_CLASSIC_EXCLUDED_FUTURE=0
+declare -ga _PORTSCAN_CLASSIC_EVIDENCE_WINDOWS=()
+declare -g _PORTSCAN_CLASSIC_EVENT_EPOCH="" _PORTSCAN_CLASSIC_EPOCH_CACHE_KEY="" _PORTSCAN_CLASSIC_EPOCH_CACHE_VAL=""
 
 # Initialize state tracking
 nftban_portscan_classic_init_state() {
@@ -225,6 +237,7 @@ nftban_portscan_classic_init_state() {
     _PORTSCAN_CLASSIC_IP_TARGETS=()
     _PORTSCAN_CLASSIC_IP_BLOCKED=()
     _PORTSCAN_CLASSIC_IP_BAN_COUNT=()
+    _PORTSCAN_CLASSIC_IP_EVENTS=()
 
     # Load persistent state if exists
     if [[ -f "${PORTSCAN_CLASSIC_STATE_FILE}" ]]; then
@@ -507,6 +520,36 @@ _nftban_portscan_extract_timestamp() {
     echo "$ts"
 }
 
+# v1.233.1 EVENT-TIME: parse the line's OWN event time to epoch seconds into the
+# global _PORTSCAN_CLASSIC_EVENT_EPOCH. Returns 1 when the line carries no
+# parseable timestamp. There is deliberately NO "now" fallback here:
+# _nftban_portscan_extract_timestamp falls back to the current time (acceptable
+# for the micro-event it feeds), but re-stamping evidence with processing time
+# is exactly the defect this lane removes, so an unparseable line is EXCLUDED
+# from realtime classification instead. Same two stamp shapes as the extractor.
+# No subshell for the cache: consecutive kernel lines usually share a second.
+_nftban_portscan_classic_line_epoch() {
+    local line="$1" stamp="" ep=""
+    _PORTSCAN_CLASSIC_EVENT_EPOCH=""
+    if [[ "$line" =~ ^([A-Z][a-z]{2}\ +[0-9]+\ [0-9:]+) ]]; then
+        stamp="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+) ]]; then
+        stamp="${BASH_REMATCH[1]}"
+    else
+        return 1
+    fi
+    if [[ "$stamp" == "$_PORTSCAN_CLASSIC_EPOCH_CACHE_KEY" ]]; then
+        _PORTSCAN_CLASSIC_EVENT_EPOCH="$_PORTSCAN_CLASSIC_EPOCH_CACHE_VAL"
+        return 0
+    fi
+    ep=$(date -d "$stamp" +%s 2>/dev/null) || return 1
+    [[ "$ep" =~ ^[0-9]+$ ]] || return 1
+    _PORTSCAN_CLASSIC_EPOCH_CACHE_KEY="$stamp"
+    _PORTSCAN_CLASSIC_EPOCH_CACHE_VAL="$ep"
+    _PORTSCAN_CLASSIC_EVENT_EPOCH="$ep"
+    return 0
+}
+
 # Process log entries and detect portscans
 # =============================================================================
 # v1.229.x PORTSCAN-CURSOR — replay elimination
@@ -707,6 +750,22 @@ nftban_portscan_classic_process_logs() {
     fi
     local cutoff_time
     cutoff_time=$((current_time - time_window))
+    # v1.233.1 EVENT-TIME FRESHNESS: evidence whose EVENT time is older than
+    # (cycle start - PORTSCAN_CLASSIC_TIME_WINDOW) is not eligible for realtime
+    # classification. This is the bound the code already declares for a cycle:
+    # the journal bootstrap reads "--since TIME_WINDOW seconds ago" and the
+    # cleanup prunes at now - TIME_WINDOW; the daemon cadence (Go
+    # constants.PortscanCheckInterval = 60 s) equals the shipped TIME_WINDOW, so
+    # every record appended since the previous cycle is inside it. A resumed
+    # --after-cursor backlog or a bootstrap tail is still EMITTED as micro-events
+    # (stealth aggregation is unchanged) but cannot be classified as one current scan.
+    # The upper bound ("processing now") is sampled AFTER the read, below: a
+    # record appended while this cycle was reading is not "future".
+    _PORTSCAN_CLASSIC_EVIDENCE_CUTOFF="$cutoff_time"
+    _PORTSCAN_CLASSIC_EVIDENCE_NOW=""
+    _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED=0
+    _PORTSCAN_CLASSIC_EXCLUDED_STALE=0
+    _PORTSCAN_CLASSIC_EXCLUDED_FUTURE=0
 
     # Escape regex metacharacters in log prefixes for safe use in grep -E
     # This prevents injection attacks if config values contain special characters
@@ -760,8 +819,15 @@ nftban_portscan_classic_process_logs() {
             log_ts=$(_nftban_portscan_extract_timestamp "$line")
             _nftban_portscan_emit_event "$src_ip" "$dst_ip" "$dst_port" "$proto" "SYN" "$log_ts"
 
-            # Record this connection for realtime detection
-            nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
+            # Record this connection for realtime detection at its OWN event time
+            # (v1.233.1: was the per-run $current_time, which collapsed every
+            # batch to duration 0 and made any STROBE_PORTS ports a "strobe").
+            # A line without a parseable event time is excluded, never re-stamped.
+            if _nftban_portscan_classic_line_epoch "$line"; then
+                nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$_PORTSCAN_CLASSIC_EVENT_EPOCH"
+            else
+                _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED=$((_PORTSCAN_CLASSIC_EXCLUDED_MALFORMED + 1))
+            fi
 
         # v1.229.x PORTSCAN-CURSOR: resume after the last COMMITTED cursor so
         # already-consumed records are not re-emitted. tail caps retained as a
@@ -806,8 +872,15 @@ nftban_portscan_classic_process_logs() {
             log_ts=$(_nftban_portscan_extract_timestamp "$line")
             _nftban_portscan_emit_event "$src_ip" "$dst_ip" "$dst_port" "$proto" "SYN" "$log_ts"
 
-            # Record this connection for realtime detection
-            nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
+            # Record this connection for realtime detection at its OWN event time
+            # (v1.233.1: was the per-run $current_time, which collapsed every
+            # batch to duration 0 and made any STROBE_PORTS ports a "strobe").
+            # A line without a parseable event time is excluded, never re-stamped.
+            if _nftban_portscan_classic_line_epoch "$line"; then
+                nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$_PORTSCAN_CLASSIC_EVENT_EPOCH"
+            else
+                _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED=$((_PORTSCAN_CLASSIC_EXCLUDED_MALFORMED + 1))
+            fi
 
         # v1.82 Step 5: Performance fix for high-volume log files.
         # Previously: grep entire file then tail -1000 (scans 300K+ lines).
@@ -820,6 +893,19 @@ nftban_portscan_classic_process_logs() {
         # via the canonical incremental reader). AT-MOST-ONCE — see the commit
         # semantics note above. tail caps retained as a volume bound.
         done < <({ _nftban_portscan_classic_read_file_source "$log_source"; } | { tail -5000 || true; } | { grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" 2>/dev/null || true; } | { tail -1000 || true; })
+    fi
+
+    # v1.233.1 EVENT-TIME: sample "processing now" once the read is complete and
+    # drop evidence stamped after it (future-dated records never take part in
+    # current enforcement), then report every exclusion so none is silent.
+    if declare -f nftban_timestamp_unix &>/dev/null; then
+        _PORTSCAN_CLASSIC_EVIDENCE_NOW=$(nftban_timestamp_unix)
+    else
+        _PORTSCAN_CLASSIC_EVIDENCE_NOW=$(date +%s)
+    fi
+    nftban_portscan_classic_cleanup_old_entries
+    if (( _PORTSCAN_CLASSIC_EXCLUDED_MALFORMED + _PORTSCAN_CLASSIC_EXCLUDED_STALE + _PORTSCAN_CLASSIC_EXCLUDED_FUTURE > 0 )); then
+        _nftban_portscan_classic_log "INFO" "PORTSCAN_EVENT_TIME excluded from realtime classification: malformed=${_PORTSCAN_CLASSIC_EXCLUDED_MALFORMED} stale=${_PORTSCAN_CLASSIC_EXCLUDED_STALE} future=${_PORTSCAN_CLASSIC_EXCLUDED_FUTURE} eligible=[${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF},${_PORTSCAN_CLASSIC_EVIDENCE_NOW}] (micro-events still emitted)"
     fi
 
     # Analyze and block if needed
@@ -843,6 +929,15 @@ nftban_portscan_classic_record_connection() {
     local timestamp="$4"
 
     local max_tracked="${PORTSCAN_CLASSIC_MAX_TRACKED_IPS}"
+
+    # v1.233.1 EVENT-TIME: evidence older than the cycle's freshness cutoff is not
+    # eligible for realtime classification, so it is not tracked at all (its
+    # micro-event was already emitted by the caller for stealth aggregation).
+    local cutoff="${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF:-}"
+    if [[ "$cutoff" =~ ^[0-9]+$ && "$timestamp" =~ ^[0-9]+$ ]] && (( timestamp < cutoff )); then
+        _PORTSCAN_CLASSIC_EXCLUDED_STALE=$(( ${_PORTSCAN_CLASSIC_EXCLUDED_STALE:-0} + 1 ))
+        return 0
+    fi
 
     # Check if we're tracking too many IPs
     if [[ ${#_PORTSCAN_CLASSIC_IP_PORTS[@]} -ge $max_tracked ]]; then
@@ -869,23 +964,82 @@ nftban_portscan_classic_record_connection() {
         fi
     fi
 
+    # Per-connection evidence (event time, port, target) for event-time windows.
+    _PORTSCAN_CLASSIC_IP_EVENTS["$src_ip"]="${_PORTSCAN_CLASSIC_IP_EVENTS[$src_ip]:-} ${timestamp},${dst_port},${dst_ip}"
+
     return 0
 }
 
 # Cleanup old tracking entries
+#
+# v1.233.1 EVENT-TIME: the cutoff is the SAME freshness cutoff the classifier
+# uses (optional $1, else the running cycle's _PORTSCAN_CLASSIC_EVIDENCE_CUTOFF,
+# else now - TIME_WINDOW). Tracked timestamps are real event times now, so a
+# cutoff taken from a later wall-clock "now" would evict evidence that is still
+# eligible. For an IP with per-connection evidence, stale connections are
+# dropped and the aggregate views (ports/targets/timestamps) are REBUILT from
+# the survivors -- previously ports/targets were never pruned at all.
 nftban_portscan_classic_cleanup_old_entries() {
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
-    local current_time
-    # Use timestamp library if available, fallback to date
-    if declare -f nftban_timestamp_unix &>/dev/null; then
-        current_time=$(nftban_timestamp_unix)
-    else
-        current_time=$(date +%s)
+    local cutoff_time="${1:-${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF:-}}"
+    if [[ ! "$cutoff_time" =~ ^[0-9]+$ ]]; then
+        local current_time
+        # Use timestamp library if available, fallback to date
+        if declare -f nftban_timestamp_unix &>/dev/null; then
+            current_time=$(nftban_timestamp_unix)
+        else
+            current_time=$(date +%s)
+        fi
+        cutoff_time=$((current_time - time_window))
     fi
-    local cutoff_time
-    cutoff_time=$((current_time - time_window))
 
+    # Upper bound: only once the cycle has sampled "processing now" (after the
+    # read). A mid-ingest cleanup has no upper bound yet and removes nothing
+    # that could still be eligible.
+    local now_bound="${_PORTSCAN_CLASSIC_EVIDENCE_NOW:-}"
+    [[ "$now_bound" =~ ^[0-9]+$ ]] || now_bound=""
+
+    local ip
+    for ip in "${!_PORTSCAN_CLASSIC_IP_EVENTS[@]}"; do
+        local -a ev_array=()
+        IFS=$' \t\n' read -ra ev_array <<< "${_PORTSCAN_CLASSIC_IP_EVENTS[$ip]}"
+        local kept="" kept_ts="" kept_ports=" " kept_targets=" " ev ev_ts ev_rest ev_port ev_tgt
+        for ev in "${ev_array[@]}"; do
+            ev_ts="${ev%%,*}"; ev_rest="${ev#*,}"
+            ev_port="${ev_rest%%,*}"; ev_tgt="${ev_rest#*,}"
+            [[ "$ev_ts" =~ ^[0-9]+$ ]] || continue
+            (( ev_ts >= cutoff_time )) || continue
+            if [[ -n "$now_bound" ]] && (( ev_ts > now_bound )); then
+                _PORTSCAN_CLASSIC_EXCLUDED_FUTURE=$(( ${_PORTSCAN_CLASSIC_EXCLUDED_FUTURE:-0} + 1 ))
+                continue
+            fi
+            kept+=" ${ev}"
+            kept_ts+=" ${ev_ts}"
+            [[ "$kept_ports" == *" ${ev_port} "* ]] || kept_ports+="${ev_port} "
+            if [[ -n "$ev_tgt" && "$kept_targets" != *" ${ev_tgt} "* ]]; then
+                kept_targets+="${ev_tgt} "
+            fi
+        done
+        if [[ -n "$kept" ]]; then
+            _PORTSCAN_CLASSIC_IP_EVENTS["$ip"]="$kept"
+            _PORTSCAN_CLASSIC_IP_TIMESTAMPS["$ip"]="$kept_ts"
+            _PORTSCAN_CLASSIC_IP_PORTS["$ip"]="${kept_ports% }"
+            if [[ "$kept_targets" =~ [^[:space:]] ]]; then
+                _PORTSCAN_CLASSIC_IP_TARGETS["$ip"]="${kept_targets% }"
+            else
+                unset "_PORTSCAN_CLASSIC_IP_TARGETS[$ip]"
+            fi
+        else
+            unset "_PORTSCAN_CLASSIC_IP_EVENTS[$ip]"
+            unset "_PORTSCAN_CLASSIC_IP_PORTS[$ip]"
+            unset "_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]"
+            unset "_PORTSCAN_CLASSIC_IP_TARGETS[$ip]"
+        fi
+    done
+
+    # Aggregate-only entries (no per-connection evidence): legacy pruning.
     for ip in "${!_PORTSCAN_CLASSIC_IP_TIMESTAMPS[@]}"; do
+        [[ -n "${_PORTSCAN_CLASSIC_IP_EVENTS[$ip]:-}" ]] && continue
         local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]}"
         local new_timestamps=""
         local has_recent=false
@@ -976,12 +1130,30 @@ _nftban_portscan_classic_go_verdict() {
     IFS=$' \t\n' read -ra parr <<< "$ports"
     IFS=$' \t\n' read -ra tarr <<< "$timestamps"
     local events="" i=0 sep=""
+    if [[ -n "${_PORTSCAN_CLASSIC_IP_EVENTS[$ip]:-}" ]]; then
+        # v1.233.1 EVENT-TIME: one event per recorded connection carrying its
+        # REAL event time, restricted to the same eligibility bounds the shell
+        # classifier uses (cutoff <= ts <= processing now). The Go classifier
+        # takes min/max over these, so its strobe span is the true event span.
+        # Target pairing is unchanged (the IP's first target).
+        local -a garr=()
+        IFS=$' \t\n' read -ra garr <<< "${_PORTSCAN_CLASSIC_IP_EVENTS[$ip]}"
+        local g_cut="${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF:-}" g_now="${_PORTSCAN_CLASSIC_EVIDENCE_NOW:-}" gev g_ts g_rest g_port
+        for gev in "${garr[@]}"; do
+            g_ts="${gev%%,*}"; g_rest="${gev#*,}"; g_port="${g_rest%%,*}"
+            [[ "$g_ts" =~ ^[0-9]+$ && "$g_port" =~ ^[0-9]+$ ]] || continue
+            [[ "$g_cut" =~ ^[0-9]+$ ]] && (( g_ts < g_cut )) && continue
+            [[ "$g_now" =~ ^[0-9]+$ ]] && (( g_ts > g_now )) && continue
+            events+="${sep}{\"port\":${g_port},\"target\":\"${one_target}\",\"ts\":${g_ts}}"; sep=","
+        done
+    else
     for p in "${parr[@]}"; do
         [[ "$p" =~ ^[0-9]+$ ]] || continue
         local ts="${tarr[$i]:-0}"; [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
         events+="${sep}{\"port\":${p},\"target\":\"${one_target}\",\"ts\":${ts}}"; sep=","
         i=$((i+1))
     done
+    fi
     local ko_json; ko_json=$(echo "$known_open" | tr ' ' '\n' | grep -E '^[0-9]+$' | paste -sd, -)
 
     local req
@@ -1005,6 +1177,91 @@ _nftban_portscan_classic_go_verdict() {
     [[ "$action" == "ban" ]] && echo "$scan_type" || echo ""
 }
 
+# v1.233.1 EVENT-TIME WINDOWS
+# Builds, from the IP's per-connection evidence, the candidate windows the
+# classifier evaluates, into _PORTSCAN_CLASSIC_EVIDENCE_WINDOWS as
+# "<kind> <distinct_ports> <distinct_targets>" entries:
+#   W  every maximal window whose EVENT-time span <= PORTSCAN_CLASSIC_TIME_WINDOW
+#      (block / vertical / horizontal / generic are evaluated per W window)
+#   S  every maximal window whose EVENT-time span < 10 s (strobe; same literal
+#      as the classifier's historical strobe rule and the Go request's
+#      strobe_window_sec)
+# Windows are anchored at each distinct event time over the events sorted by
+# event time, so span = max - min of the events inside, never array order.
+# Only eligible evidence participates: cutoff <= ts <= processing now.
+_nftban_portscan_classic_evidence_windows() {
+    local ip="$1"
+    local window="${PORTSCAN_CLASSIC_TIME_WINDOW:-60}"
+    local strobe_span=10
+    local cutoff="${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF:-}" now_bound="${_PORTSCAN_CLASSIC_EVIDENCE_NOW:-}"
+    _PORTSCAN_CLASSIC_EVIDENCE_WINDOWS=()
+    [[ "$window" =~ ^[0-9]+$ ]] || return 1
+
+    local -a ev_array=() fresh=()
+    IFS=$' \t\n' read -ra ev_array <<< "${_PORTSCAN_CLASSIC_IP_EVENTS[$ip]:-}"
+    local ev ev_ts
+    for ev in "${ev_array[@]}"; do
+        ev_ts="${ev%%,*}"
+        [[ "$ev_ts" =~ ^[0-9]+$ ]] || continue
+        [[ "$cutoff" =~ ^[0-9]+$ ]] && (( ev_ts < cutoff )) && continue
+        [[ "$now_bound" =~ ^[0-9]+$ ]] && (( ev_ts > now_bound )) && continue
+        fresh+=("$ev")
+    done
+    (( ${#fresh[@]} > 0 )) || return 0
+
+    local sorted_out
+    sorted_out=$(printf '%s\n' "${fresh[@]}" | sort -t, -k1,1n) || return 1
+    local -a sorted=() ts_l=() port_l=() tgt_l=()
+    mapfile -t sorted <<< "$sorted_out"
+    local rest
+    for ev in "${sorted[@]}"; do
+        [[ -n "$ev" ]] || continue
+        ts_l+=("${ev%%,*}"); rest="${ev#*,}"
+        port_l+=("${rest%%,*}"); tgt_l+=("${rest#*,}")
+    done
+
+    local n=${#ts_l[@]} kind i j d p t c P T
+    local -A seen=() pc=() tc=()
+    for kind in W S; do
+        pc=(); tc=()
+        P=0; T=0; j=0
+        for (( i = 0; i < n; i++ )); do
+            while (( j < n )); do
+                d=$(( ts_l[j] - ts_l[i] ))
+                if [[ "$kind" == "W" ]]; then
+                    (( d <= window )) || break
+                else
+                    (( d < strobe_span )) || break
+                fi
+                p="${port_l[j]}"; c="${pc[$p]:-0}"; pc[$p]=$(( c + 1 ))
+                [[ "$c" == "0" ]] && P=$(( P + 1 ))
+                t="${tgt_l[j]}"
+                if [[ -n "$t" ]]; then
+                    c="${tc[$t]:-0}"; tc[$t]=$(( c + 1 ))
+                    [[ "$c" == "0" ]] && T=$(( T + 1 ))
+                fi
+                j=$(( j + 1 ))
+            done
+            # One window per distinct anchor time (the maximal one).
+            if (( i == 0 )) || [[ "${ts_l[i]}" != "${ts_l[i-1]}" ]]; then
+                if [[ -z "${seen["$kind $P $T"]:-}" ]]; then
+                    seen["$kind $P $T"]=1
+                    _PORTSCAN_CLASSIC_EVIDENCE_WINDOWS+=("$kind $P $T")
+                fi
+            fi
+            # Slide: drop event i from the window.
+            p="${port_l[i]}"; c="${pc[$p]:-0}"
+            if (( c <= 1 )); then unset "pc[$p]"; P=$(( P - 1 )); else pc[$p]=$(( c - 1 )); fi
+            t="${tgt_l[i]}"
+            if [[ -n "$t" ]]; then
+                c="${tc[$t]:-0}"
+                if (( c <= 1 )); then unset "tc[$t]"; T=$(( T - 1 )); else tc[$t]=$(( c - 1 )); fi
+            fi
+        done
+    done
+    return 0
+}
+
 # Detect what type of scan an IP is performing
 nftban_portscan_classic_detect_scan_type() {
     local ip="$1"
@@ -1024,82 +1281,104 @@ nftban_portscan_classic_detect_scan_type() {
         # shadow: comparison logged above; legacy shell logic below still enforces.
     fi
 
-    local ports="${_PORTSCAN_CLASSIC_IP_PORTS[$ip]:-}"
-    local targets="${_PORTSCAN_CLASSIC_IP_TARGETS[$ip]:-}"
-
-    # Count unique ports
-    local port_count
-    port_count=$(echo "$ports" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
-
-    # Count unique targets
-    local target_count
-    target_count=$(echo "$targets" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
-
     local vertical_threshold="${PORTSCAN_CLASSIC_VERTICAL_PORTS}"
     local horizontal_threshold="${PORTSCAN_CLASSIC_HORIZONTAL_TARGETS}"
     local block_threshold="${PORTSCAN_CLASSIC_BLOCK_RANGE}"
     local strobe_ports="${PORTSCAN_CLASSIC_STROBE_PORTS}"
+    local min_ports="${PORTSCAN_CLASSIC_MIN_PORTS}"
 
-    # Check for block scan (scanning port ranges)
-    if [[ $port_count -ge $block_threshold ]]; then
-        echo "block"
-        return 0
-    fi
+    # v1.233.1 EVENT-TIME: the thresholds are evaluated per EVENT-time window
+    # (see _nftban_portscan_classic_evidence_windows) instead of over the whole
+    # batch, so a class only fires when its port/target count falls within one
+    # TIME_WINDOW span (strobe: within a span < 10 s) of real event time.
+    local -a windows=()
+    if declare -p _PORTSCAN_CLASSIC_IP_EVENTS &>/dev/null \
+       && [[ -n "${_PORTSCAN_CLASSIC_IP_EVENTS[$ip]:-}" ]] \
+       && declare -F _nftban_portscan_classic_evidence_windows >/dev/null; then
+        _nftban_portscan_classic_evidence_windows "$ip" || return 1
+        windows=("${_PORTSCAN_CLASSIC_EVIDENCE_WINDOWS[@]}")
+    else
+        # Aggregate-only view (no per-connection evidence recorded for this IP,
+        # e.g. a caller that populated the aggregate arrays directly): the whole
+        # set is one window, and the strobe span is max - min of its timestamps.
+        local ports="${_PORTSCAN_CLASSIC_IP_PORTS[$ip]:-}"
+        local targets="${_PORTSCAN_CLASSIC_IP_TARGETS[$ip]:-}"
 
-    # Check for vertical scan (many ports on one target)
-    if [[ $port_count -ge $vertical_threshold && $target_count -le 1 ]]; then
-        echo "vertical"
-        return 0
-    fi
+        # Count unique ports
+        local port_count
+        port_count=$(echo "$ports" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
 
-    # Check for horizontal scan (same ports across many targets)
-    if [[ $target_count -ge $horizontal_threshold && $port_count -le 3 ]]; then
-        echo "horizontal"
-        return 0
-    fi
+        # Count unique targets
+        local target_count
+        target_count=$(echo "$targets" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
 
-    # Check for strobe scan (rapid scanning of common ports)
-    if [[ $port_count -ge $strobe_ports ]]; then
-        local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]}"
+        windows=("W ${port_count} ${target_count}")
+
+        local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]:-}"
         # Convert to array, filtering empty elements. v1.156 PR-D: timestamps
         # are space-joined, so split on whitespace EXPLICITLY — a bare read -ra
         # would collapse them into one element under a strict IFS=$'\n\t' caller.
         local -a ts_array
         IFS=$' \t\n' read -ra ts_array <<< "$timestamps"
         local ts_count=${#ts_array[@]}
-
         if [[ $ts_count -gt 1 ]]; then
-            # Get first and last timestamps (ensure single values)
-            local first_ts="${ts_array[0]}"
-            local last_ts="${ts_array[$((ts_count-1))]}"
-
-            # Validate timestamps are numeric before arithmetic
-            if [[ "$first_ts" =~ ^[0-9]+$ ]] && [[ "$last_ts" =~ ^[0-9]+$ ]]; then
-                local duration=$((last_ts - first_ts))
-
-                # If many connections in short time
-                if [[ $duration -lt 10 && $port_count -ge $strobe_ports ]]; then
-                    echo "strobe"
-                    return 0
-                fi
+            local ts_min="" ts_max="" one_ts
+            for one_ts in "${ts_array[@]}"; do
+                [[ "$one_ts" =~ ^[0-9]+$ ]] || continue
+                if [[ -z "$ts_min" ]] || (( one_ts < ts_min )); then ts_min="$one_ts"; fi
+                if [[ -z "$ts_max" ]] || (( one_ts > ts_max )); then ts_max="$one_ts"; fi
+            done
+            # Strobe span = max - min (never first/last array order).
+            if [[ -n "$ts_min" ]] && (( ts_max - ts_min < 10 )); then
+                windows+=("S ${port_count} ${target_count}")
             fi
         fi
     fi
 
-    # Check minimum port threshold
-    local min_ports="${PORTSCAN_CLASSIC_MIN_PORTS}"
-    if [[ $port_count -ge $min_ports ]]; then
-        # v1.149.0 false-ban hardening: the "generic" remainder here is non-rapid
-        # (rapid low-port bursts were already caught by the strobe path above),
-        # single-target (horizontal caught multi-target above), with MIN_PORTS..
-        # (VERTICAL-1) distinct ports — the bursty/NAT/admin multi-service profile.
-        # Require DIVERSITY corroboration before this auto-bans; otherwise downgrade
-        # to log/alert only so a legitimate source is not banned on port-count alone.
-        if _nftban_portscan_classic_generic_corroborated "$port_count"; then
-            echo "generic"
-        else
-            echo "generic-observe"
+    # Evaluate every window with the unchanged per-class rules and keep the
+    # highest-precedence class (block > vertical > horizontal > strobe >
+    # generic > generic-observe), i.e. the historical check order.
+    local best="" best_rank=0 w kind wp wt cand rank
+    for w in "${windows[@]}"; do
+        IFS=' ' read -r kind wp wt <<< "$w"
+        [[ "$wp" =~ ^[0-9]+$ && "$wt" =~ ^[0-9]+$ ]] || continue
+        cand=""; rank=0
+        if [[ "$kind" == "S" ]]; then
+            # Check for strobe scan (rapid scanning of common ports): the S
+            # window already guarantees an event-time span < 10 s.
+            if [[ $wp -ge $strobe_ports ]]; then
+                cand="strobe"; rank=3
+            fi
+        # Check for block scan (scanning port ranges)
+        elif [[ $wp -ge $block_threshold ]]; then
+            cand="block"; rank=6
+        # Check for vertical scan (many ports on one target)
+        elif [[ $wp -ge $vertical_threshold && $wt -le 1 ]]; then
+            cand="vertical"; rank=5
+        # Check for horizontal scan (same ports across many targets)
+        elif [[ $wt -ge $horizontal_threshold && $wp -le 3 ]]; then
+            cand="horizontal"; rank=4
+        # Check minimum port threshold
+        elif [[ $wp -ge $min_ports ]]; then
+            # v1.149.0 false-ban hardening: the "generic" remainder here is non-rapid
+            # (rapid low-port bursts were already caught by the strobe path above),
+            # single-target (horizontal caught multi-target above), with MIN_PORTS..
+            # (VERTICAL-1) distinct ports — the bursty/NAT/admin multi-service profile.
+            # Require DIVERSITY corroboration before this auto-bans; otherwise downgrade
+            # to log/alert only so a legitimate source is not banned on port-count alone.
+            if _nftban_portscan_classic_generic_corroborated "$wp"; then
+                cand="generic"; rank=2
+            else
+                cand="generic-observe"; rank=1
+            fi
         fi
+        if (( rank > best_rank )); then
+            best="$cand"; best_rank=$rank
+        fi
+    done
+
+    if [[ -n "$best" ]]; then
+        echo "$best"
         return 0
     fi
 
