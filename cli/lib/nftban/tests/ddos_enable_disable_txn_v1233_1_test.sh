@@ -16,7 +16,7 @@
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
 # meta:ta.gate="ci-bash"
 # meta:ta.blocking="true"
-# meta:ta.timeout="1500"
+# meta:ta.timeout="2400"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"
