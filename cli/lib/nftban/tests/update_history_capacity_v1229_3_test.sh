@@ -49,6 +49,13 @@ eval "$(fn_body _rebuild_tx_state_write "$FW")"
 eval "$(fn_body _rebuild_tx_last_state "$FW")"
 eval "$(fn_body _rebuild_is_update_lifecycle "$FW")"
 eval "$(fn_body _rebuild_update_history_prune "$FW")"
+# v1.234.0 RBLD: plan (before the lock) / parent check (first under it) / witness helpers
+for _fn in _rbp_ms_into _rbp_parent_witness _rbp_witness _rbp_emit _rebuild_prune_plan _rebuild_prune_parent_check; do
+    _body="$(fn_body "$_fn" "$FW")"; [[ -n "$_body" ]] || { echo "  SUBJECT_NOT_FOUND: $_fn"; exit 1; }; eval "$_body"
+done
+eval "$(grep -E '^_RBP_MAX_PRUNE_BATCH=[0-9]+$' "$FW")"
+[[ "${_RBP_MAX_PRUNE_BATCH:-}" =~ ^[0-9]+$ ]] || { echo "  SUBJECT_NOT_FOUND: _RBP_MAX_PRUNE_BATCH"; exit 1; }
+declare -gA _RBP_W=()
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export NFTBAN_DATA_DIR="$TMP/lib" NFTBAN_LOG_DIR="$TMP/log"
@@ -56,6 +63,17 @@ mkdir -p "$NFTBAN_DATA_DIR/backup" "$NFTBAN_LOG_DIR"
 BK="$NFTBAN_DATA_DIR/backup"
 mkhist(){ mkdir -p "$BK/rebuild_$1"; printf 'state=VALID\ncaptured_at=x\n' > "$BK/rebuild_$1/snapshot_state"; _rebuild_tx_state_write "$BK/rebuild_$1" TERMINAL_SUCCESS; }
 reset(){ rm -rf "$BK"; mkdir -p "$BK"; }
+# The REAL order of an install-context rebuild: plan (before the lock) -> parent check
+# (first thing under it) -> this rebuild's OWN snapshot reaches TERMINAL_SUCCESS -> prune.
+# $1 = own timestamp; optional $2 = a command run between the plan and the parent check.
+run_update_prune(){
+    _rebuild_prune_plan
+    [[ -n "${2:-}" ]] && eval "$2"
+    _rebuild_prune_parent_check
+    mkhist "$1"; _REBUILD_SNAPSHOT_DIR="$BK/rebuild_$1"
+    _rebuild_update_history_prune 2>"$TMP/prune.err"
+}
+prune_line(){ grep -o 'NFTBAN_PRUNE=.*' "$TMP/prune.err" | tail -1; }
 
 # --- C1 · context is PASSED, never inferred -----------------------------------
 _rebuild_is_update_lifecycle --install-context && pass "C1 --install-context recognised as update lifecycle" \
@@ -69,8 +87,8 @@ else
 fi
 
 # --- C2 · MAX 2 completed generations -----------------------------------------
-reset; for t in 20260101_000001 20260102_000002 20260103_000003 20260104_000004 20260105_000005; do mkhist "$t"; done
-_rebuild_update_history_prune 2>/dev/null
+reset; for t in 20260101_000001 20260102_000002 20260103_000003 20260104_000004; do mkhist "$t"; done
+run_update_prune 20260105_000005
 n=$(find "$BK" -maxdepth 1 -name 'rebuild_*' | wc -l)
 surv=$(find "$BK" -maxdepth 1 -name 'rebuild_*' -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ')
 if [[ "$n" -le 2 && "$surv" == *20260105_000005* ]]; then
@@ -80,25 +98,25 @@ else
 fi
 
 # --- C3 · MIN 1 mandatory floor never removed ---------------------------------
-reset; mkhist 20260101_000001
-_rebuild_update_history_prune 2>/dev/null
+reset
+run_update_prune 20260101_000001
 [[ -d "$BK/rebuild_20260101_000001" ]] \
     && pass "C3 single generation is the mandatory floor and is never removed" \
     || fail "C3 removed the mandatory recovery floor"
 
 # --- C4 · ordering authority is the NAME, not mtime ---------------------------
 reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
-touch -d '2020-01-01' "$BK/rebuild_20260103_000003"
-_rebuild_update_history_prune 2>/dev/null
-[[ -d "$BK/rebuild_20260103_000003" ]] \
+touch -d '2020-01-01' "$BK/rebuild_20260103_000003"          # newest by NAME, oldest by mtime
+run_update_prune 20260104_000004
+[[ -d "$BK/rebuild_20260103_000003" && -d "$BK/rebuild_20260104_000004" && ! -d "$BK/rebuild_20260101_000001" ]] \
     && pass "C4 name order governs; a touched mtime cannot evict the newest generation" \
     || fail "C4 mtime perturbation evicted the newest generation"
 
 # --- C5 · non-TERMINAL_SUCCESS is never treated as history --------------------
-reset; mkhist 20260101_000001; mkhist 20260102_000002; mkhist 20260103_000003
+reset; mkhist 20260101_000001; mkhist 20260102_000002
 mkdir -p "$BK/rebuild_20260104_000004"; printf 'state=VALID\ntx_state=ACTIVE\n' > "$BK/rebuild_20260104_000004/snapshot_state"
 mkdir -p "$BK/rebuild_20260105_000005"; printf 'state=VALID\ntx_state=TERMINAL_FAILURE\n' > "$BK/rebuild_20260105_000005/snapshot_state"
-_rebuild_update_history_prune 2>/dev/null
+run_update_prune 20260106_000006
 c5=0
 for keep in 20260104_000004 20260105_000005; do
     [[ -d "$BK/rebuild_$keep" ]] || { fail "C5 pruned a non-history object: rebuild_$keep"; c5=1; }
@@ -202,6 +220,153 @@ if [[ ! -d "$BK/rebuild_20260101_000001" ]]; then
     pass "C12 INVERSION: a floor-less prune DOES destroy the last generation (C3 is falsifiable)"
 else
     fail "C12 inversion did not reproduce the defect — C3 may be vacuous"
+fi
+
+# =============================================================================
+# v1.234.0 RBLD — plan outside the lock, O(1) parent witness, identity witness
+# =============================================================================
+CNT="$TMP/cnt"; : > "$CNT"
+find(){ echo "find $1" >> "$CNT"; command find "$@"; }
+basename(){ echo basename >> "$CNT"; command basename "$@"; }
+sed(){ echo sed >> "$CNT"; command sed "$@"; }
+cnt(){ grep -cxF -- "$1" "$CNT"; }
+unwrap(){ unset -f find basename sed; }
+mkunknown(){ local i; for (( i = 0; i < $1; i++ )); do printf -v _n 'rebuild_2024%04d_%06d' "$(( i / 1000 + 101 ))" "$i"; mkdir -p "$BK/$_n"; : > "$BK/$_n/ruleset.nft"; done; }
+
+# R1 · POSITIVE DISCOVERY: the plan's process count does not grow with the population
+reset; mkunknown 1500; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+: > "$CNT"; _rebuild_prune_plan
+if [[ "$_RBP_STATUS" == PLANNED && "$_RBP_HIST_N" -eq 3 && $(cnt "find $BK") -eq 1 && $(cnt basename) -eq 0 && $(cnt sed) -eq 0 ]]; then
+    pass "R1 plan over 1,503 dirs: 3 history found with ONE find, ZERO basename/sed (no per-dir process)"
+else
+    fail "R1 plan status=$_RBP_STATUS hist=$_RBP_HIST_N find=$(cnt "find $BK") basename=$(cnt basename) sed=$(cnt sed)"
+fi
+
+# R2 · NO POPULATION WORK UNDER THE LOCK: the consumer never enumerates backup/
+_rebuild_prune_parent_check; mkhist 20260104_000004; _REBUILD_SNAPSHOT_DIR="$BK/rebuild_20260104_000004"
+: > "$CNT"; _rebuild_update_history_prune 2>"$TMP/prune.err"
+[[ $(cnt "find $BK") -eq 0 && $(cnt basename) -eq 0 ]] \
+    && pass "R2 in-lock consumer: 0 walks of backup/, 0 basename ($(prune_line | cut -c1-80))" \
+    || fail "R2 consumer walked the population (find-backup=$(cnt "find $BK") basename=$(cnt basename))"
+unwrap
+
+# R3 · PARENT-POPULATION-CHANGE: a child created or removed after the plan -> ABORTED, nothing deleted
+for mut in 'mkdir "$BK/rebuild_20251231_235959"' 'rm -rf -- "$BK/rebuild_20240101_000009"'; do
+    reset; mkunknown 20; for t in 20260101_000001 20260102_000002 20260103_000003 20260104_000004; do mkhist "$t"; done
+    run_update_prune 20260105_000005 "sleep 0.02; $mut"
+    if [[ "$(prune_line)" == *"NFTBAN_PRUNE=ABORTED reason=population_changed"* && -d "$BK/rebuild_20260101_000001" && -d "$BK/rebuild_20260102_000002" ]]; then
+        pass "R3 PARENT-POPULATION-CHANGE ($mut) -> ABORTED population_changed, nothing deleted"
+    else fail "R3 ($mut): $(prune_line)"; fi
+done
+
+# R4 · PARENT WITNESS NO-FALSE-ABORT: a stable population is not refused
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+run_update_prune 20260104_000004
+[[ "$(prune_line)" == *"NFTBAN_PRUNE=DONE"* && ! -d "$BK/rebuild_20260101_000001" && ! -d "$BK/rebuild_20260102_000002" && -d "$BK/rebuild_20260103_000003" ]] \
+    && pass "R4 stable population: DONE, oldest 2 removed, boundary + own kept ($(prune_line | cut -c1-60))" \
+    || fail "R4 stable population refused or wrong: $(prune_line)"
+
+# R5 · SAME-NAME-FULL-CYCLE: same path, same inodes, byte-identical completion -> still ABORTED
+full_cycle='sleep 0.02; d="$BK/rebuild_20260101_000001"; cp "$d/snapshot_state" "$TMP/orig"; mkdir -p "$d"; printf "state=VALID\ncaptured_at=x\n" > "$d/snapshot_state"; _rebuild_tx_state_write "$d" ACTIVE; cat "$TMP/orig" > "$d/snapshot_state"'
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+ino0=$(stat -c %i "$BK/rebuild_20260101_000001/snapshot_state"); sha0=$(sha256sum < "$BK/rebuild_20260101_000001/snapshot_state")
+run_update_prune 20260104_000004 "$full_cycle"
+ino1=$(stat -c %i "$BK/rebuild_20260101_000001/snapshot_state"); sha1=$(sha256sum < "$BK/rebuild_20260101_000001/snapshot_state")
+[[ "$sha0" == "$sha1" ]] && pass "R5 precondition: the reused object completed BYTE-IDENTICAL (sha unchanged)" || fail "R5 precondition: content differs — the arm would not test the hard case"
+if [[ "$(prune_line)" == *"NFTBAN_PRUNE=ABORTED reason=witness_mismatch"* && -d "$BK/rebuild_20260101_000001" && "$ino0" == "$ino1" ]]; then
+    pass "R5 SAME-NAME-FULL-CYCLE: same file inode, completed TERMINAL_SUCCESS, still ABORTED witness_mismatch, nothing deleted"
+else fail "R5 full-cycle reuse not caught: $(prune_line) ino $ino0->$ino1"; fi
+# non-vacuity: a witness WITHOUT mtime/ctime cannot see that reuse
+reset; mkhist 20260101_000001; d="$BK/rebuild_20260101_000001"
+weak(){ printf '%s|%s|%s\n' "$(stat -c %i "$d")" "$(stat -c %i "$d/snapshot_state")" "$(sha256sum < "$d/snapshot_state" | cut -c1-64)"; }
+w0=$(weak); sleep 0.02; eval "$full_cycle"; w1=$(weak)
+[[ "$w0" == "$w1" ]] && pass "R5 INVERSION: an inode+sha witness is BLIND to the same full cycle (ctime/mtime are necessary)" \
+                     || fail "R5 inversion: the weak witness changed ($w0 vs $w1) — the arm is not proving ctime necessary"
+
+# R6 · STATE TRANSITION of a candidate -> ABORTED
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+run_update_prune 20260104_000004 'sleep 0.02; _rebuild_tx_state_write "$BK/rebuild_20260101_000001" ACTIVE'
+[[ "$(prune_line)" == *"ABORTED reason=witness_mismatch"* && -d "$BK/rebuild_20260101_000001" ]] \
+    && pass "R6 candidate state transition -> ABORTED, kept" || fail "R6 $(prune_line)"
+
+# R7 · BOUNDARY (floor member) rewritten -> ABORTED, batch not deleted
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+run_update_prune 20260104_000004 'sleep 0.02; _rebuild_tx_state_write "$BK/rebuild_20260103_000003" TERMINAL_SUCCESS'
+[[ "$(prune_line)" == *"ABORTED reason=witness_mismatch"* && -d "$BK/rebuild_20260101_000001" && -d "$BK/rebuild_20260102_000002" ]] \
+    && pass "R7 floor/boundary member changed -> whole batch ABORTED" || fail "R7 $(prune_line)"
+
+# R8 · OWN-SNAPSHOT COLLISION: this rebuild re-entered a planned candidate's path
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+_rebuild_prune_plan; _rebuild_prune_parent_check
+mkhist 20260101_000001; _REBUILD_SNAPSHOT_DIR="$BK/rebuild_20260101_000001"
+_rebuild_update_history_prune 2>"$TMP/prune.err"
+[[ "$(prune_line)" == *"ABORTED reason=own_snapshot_collision"* && -d "$BK/rebuild_20260101_000001" ]] \
+    && pass "R8 own snapshot collides with a planned candidate -> ABORTED, live snapshot intact" || fail "R8 $(prune_line)"
+
+# R9 · BATCH-BOUND: at most _RBP_MAX_PRUNE_BATCH per rebuild, oldest first; the next rebuild advances
+SAVED=$_RBP_MAX_PRUNE_BATCH; _RBP_MAX_PRUNE_BATCH=3
+reset; for i in 01 02 03 04 05 06 07 08 09; do mkhist "202601${i}_000000"; done
+run_update_prune 20260201_000000; l1=$(prune_line)
+g1=$(find "$BK" -maxdepth 1 -name 'rebuild_2026010*' | wc -l)
+# survivors of run 1 are checked NOW -- run 2 legitimately removes the next-oldest batch
+[[ ! -d "$BK/rebuild_20260103_000000" && -d "$BK/rebuild_20260104_000000" ]] && r9_order=1 || r9_order=0
+run_update_prune 20260202_000000; l2=$(prune_line)
+g2=$(find "$BK" -maxdepth 1 -name 'rebuild_2026010*' | wc -l)
+if [[ "$l1" == *"removed=3"* && $g1 -eq 6 && $r9_order -eq 1 && "$l2" == *"removed=3"* && $g2 -eq 3 && ! -d "$BK/rebuild_20260106_000000" && -d "$BK/rebuild_20260107_000000" ]]; then
+    pass "R9 BATCH-BOUND: 3 per rebuild, oldest first (9 -> 6 -> $g2 of the oldest), next rebuild advances"
+else fail "R9 l1=[$l1] g1=$g1 l2=[$l2] g2=$g2"; fi
+_RBP_MAX_PRUNE_BATCH=$SAVED
+
+# R10 · EXACT CAPACITY: K=1 deletes the boundary too; with a full batch it is DEFERRED (reported)
+_bcap_verdict(){ echo NO_FIT; }
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+run_update_prune 20260104_000004
+left=$(find "$BK" -maxdepth 1 -name 'rebuild_*' -printf '%f\n' | tr '\n' ' ')
+[[ "$(prune_line)" == *"keep=1"* && "$left" == "rebuild_20260104_000004 " ]] \
+    && pass "R10 K=1 (NO_FIT): only own survives — boundary deleted, policy exact" || fail "R10 K=1 left=[$left] $(prune_line)"
+_RBP_MAX_PRUNE_BATCH=2
+reset; for t in 20260101_000001 20260102_000002 20260103_000003; do mkhist "$t"; done
+run_update_prune 20260104_000004
+[[ "$(prune_line)" == *"boundary_deferred_batch_bound"* && -d "$BK/rebuild_20260103_000003" && ! -d "$BK/rebuild_20260101_000001" ]] \
+    && pass "R10 K=1 with a full batch: boundary DEFERRED and reported, never silently kept as policy" || fail "R10 deferral $(prune_line)"
+_RBP_MAX_PRUNE_BATCH=$SAVED; unset -f _bcap_verdict
+# shellcheck source=/dev/null
+source "$CAP"
+
+# R11 · CLASSIFIER EQUIVALENCE: awk last-tx_state == sed|tail on the corpus
+cdir="$TMP/corpus"; mkdir -p "$cdir"
+printf 'state=VALID\n' > "$cdir/none"
+printf 'tx_state=ACTIVE\ntx_state=TERMINAL_SUCCESS\n' > "$cdir/multi"
+printf 'tx_state=TERMINAL_SUCCESS \n' > "$cdir/trailing_space"
+printf 'tx_state=TERMINAL_SUCCESS\r\n' > "$cdir/crlf"
+printf 'tx_state=\n' > "$cdir/empty_value"
+printf 'tx_state=GARBAGE\nx=1\n' > "$cdir/garbage"
+printf 'tx_state=TERMINAL_SUCCESS\ntx_state=ACTIVE\n' > "$cdir/success_then_active"
+: > "$cdir/empty_file"
+eq=0
+for f in "$cdir"/*; do
+    a=$(command sed -n 's/^tx_state=//p' "$f" | tail -1)
+    b=$(awk 'FNR==1{g=FILENAME; l[g]=""} /^tx_state=/{l[g]=substr($0,10)} END{for(g in l) print l[g]}' "$f")
+    [[ "$a" == "$b" ]] || { fail "R11 classifier differs on ${f##*/}: sed=[$a] awk=[$b]"; eq=1; }
+done
+[[ $eq -eq 0 ]] && pass "R11 awk last-tx_state is equivalent to sed|tail -1 on all $(ls "$cdir" | wc -l) corpus cases"
+
+# R12 · FAILURE CONTRACT: every outcome returns 0 and reports one PRUNE line
+reset; mkhist 20260101_000001; mkhist 20260102_000002
+_RBP_STATUS=ABORTED; _RBP_REASON=population_changed
+_REBUILD_SNAPSHOT_DIR="$BK/rebuild_20260102_000002"
+_rebuild_update_history_prune 2>"$TMP/prune.err"; rc=$?
+[[ $rc -eq 0 && "$(prune_line)" == *"NFTBAN_PRUNE=ABORTED reason=population_changed"* ]] \
+    && pass "R12 an aborted prune returns 0 and reports (never fails the rebuild)" || fail "R12 rc=$rc $(prune_line)"
+
+# R13 · UNREADABLE snapshot_state is never history (as before)
+if [[ "$(id -u)" != 0 ]]; then
+    reset; mkhist 20260101_000001; mkhist 20260102_000002; chmod 0000 "$BK/rebuild_20260101_000001/snapshot_state"
+    _rebuild_prune_plan
+    [[ "$_RBP_HIST_N" -eq 1 ]] && pass "R13 unreadable snapshot_state is not history" || fail "R13 hist=$_RBP_HIST_N"
+    chmod 0644 "$BK/rebuild_20260101_000001/snapshot_state"
+else
+    echo "  SKIP  R13 running as root: DAC_OVERRIDE makes every file readable"
 fi
 
 echo
