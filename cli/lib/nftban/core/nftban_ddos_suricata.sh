@@ -572,7 +572,14 @@ nftban_ddos_suricata_enable() {
     if ! timeout 10s nft list set $table "$set" &>/dev/null; then
         local set_fragment="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-set-$$.nft"
         echo "add set $table $set { type ipv4_addr; flags timeout; }" > "${set_fragment}.tmp" && mv -f "${set_fragment}.tmp" "$set_fragment"
-        nft_ipc_apply_ruleset "$set_fragment" 2>/dev/null || true
+        # v1.233.1: the apply result is PROPAGATED (was `2>/dev/null || true`,
+        # after which "Suricata DDoS Protection ENABLED" was printed regardless).
+        if ! nft_ipc_apply_ruleset "$set_fragment"; then
+            rm -f "$set_fragment" 2>/dev/null
+            echo "  ERROR: failed to create the Suricata block set ${set} via IPC." >&2
+            _nftban_ddos_suricata_log "ERROR" "block set creation failed"
+            return 1
+        fi
         rm -f "$set_fragment" 2>/dev/null
     fi
 
@@ -580,7 +587,12 @@ nftban_ddos_suricata_enable() {
     if ! nft list chain $table input 2>/dev/null | grep -q "@$set drop"; then
         local rule_fragment="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-rule-$$.nft"
         echo "add rule $table input ip saddr @$set counter drop comment \"DDoS Suricata blocked\"" > "${rule_fragment}.tmp" && mv -f "${rule_fragment}.tmp" "$rule_fragment"
-        nft_ipc_apply_ruleset "$rule_fragment" 2>/dev/null || true
+        if ! nft_ipc_apply_ruleset "$rule_fragment"; then
+            rm -f "$rule_fragment" 2>/dev/null
+            echo "  ERROR: failed to add the Suricata block-set drop rule via IPC." >&2
+            _nftban_ddos_suricata_log "ERROR" "block-set drop rule apply failed"
+            return 1
+        fi
         rm -f "$rule_fragment" 2>/dev/null
     fi
 
@@ -616,14 +628,40 @@ nftban_ddos_suricata_disable() {
     # Flush block set via IPC
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
+    local fam tbl
+    IFS=' ' read -r fam tbl <<<"$table"
 
-    nft_ipc_flush_set "$table" "$set" 2>/dev/null || true
+    # v1.233.1 — OBSERVED, IDEMPOTENT, PROPAGATED. This was
+    # `nft_ipc_flush_set ... 2>/dev/null || true` followed by "disabled": a flush
+    # that failed (IPC down) and a set that never existed were both success.
+    # The set's existence is read through the typed probe first:
+    #   ABSENT      -> nothing to flush (the requested end state), no write
+    #   PRESENT     -> flushed through IPC; a failed flush FAILS the disable
+    #   CANNOT_READ -> REFUSE (rc 1): absent != unobservable
+    # The shared drop rule over this set is left in place, as before: over an
+    # empty set it matches nothing (the transaction verifies the set is empty).
+    if ! declare -F nftban_nft_probe_set >/dev/null 2>&1; then
+        echo "  ERROR: typed set probe unavailable — cannot establish whether ${set} must be flushed." >&2
+        return 1
+    fi
+    if ! nftban_nft_probe_set "$fam" "$tbl" "$set" "ddos_suricata_disable"; then
+        echo "  ERROR: cannot observe ${fam} ${tbl} ${set} (${NFTBAN_NFT_PROBE_CLASS:-UNKNOWN}) — flush UNMEASURED." >&2
+        _nftban_ddos_suricata_log "ERROR" "block set unobservable (${NFTBAN_NFT_PROBE_CLASS:-UNKNOWN})"
+        return 1
+    fi
+    if [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" == "PRESENT" ]]; then
+        if ! nft_ipc_flush_set "$table" "$set"; then
+            echo "  ERROR: flushing the Suricata block set ${set} FAILED — its bans may still be enforced." >&2
+            _nftban_ddos_suricata_log "ERROR" "block set flush failed"
+            return 1
+        fi
+        echo "     Suricata block set ${set} flushed"
+    else
+        echo "     Suricata block set ${set} absent (verified by query) — nothing to flush"
+    fi
 
     echo ""
-    echo "Suricata DDoS protection disabled"
-    echo ""
-
-    _nftban_ddos_suricata_log "INFO" "Suricata DDoS protection disabled"
+    _nftban_ddos_suricata_log "INFO" "Suricata DDoS teardown step completed"
 
     return 0
 }
