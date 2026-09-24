@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-24"
-# meta:description="Hermetic test of scripts/ci/check-mutation-rc-suppression.sh (claim-truth C-f). Proves each rule can FAIL and can PASS on fixture trees: `|| true` and `2>/dev/null || true` on a mutation primitive before a success claim, a bare call whose status is discarded, the motivating v1.233.0 portscan teardown shape (bare classic_disable inside a guard, then an unconditional success mark), a new finding against the baseline, a stale baseline row, and an exception annotation without a justification. Also proves what must NOT be flagged: a captured rc, a tested call, the last statement of a function, a read-only IPC predicate, a primitive named inside a message, and a suppression with no later success claim. Finally gates the REAL tree against its baseline, with a positive control that the known nftban_ddos_teardown finding is still reported (the guard is not silently empty)."
+# meta:description="Hermetic test of scripts/ci/check-mutation-rc-suppression.sh (claim-truth C-f). Proves each rule can FAIL and can PASS on fixture trees: `|| true` and `2>/dev/null || true` on a mutation primitive before a success claim, a bare call whose status is discarded, the motivating v1.233.0 portscan teardown shape (bare classic_disable inside a guard, then an unconditional success mark), a new finding against the baseline, a stale baseline row, and an exception annotation without a justification. Also proves what must NOT be flagged: a captured rc, a tested call, the last statement of a function, a read-only IPC predicate, a primitive named inside a message, and a suppression with no later success claim. Finally gates the REAL tree against its baseline, with a positive control that a known open finding (nftban_login_enable) is still reported (the guard is not silently empty), and regression checks that the fixed nftban_portscan_teardown and nftban_ddos_teardown stay clean."
 # meta:ta.id="mutation_rc_suppression_guard_v1233_1_test"
 # meta:ta.owner="cli"
 # meta:ta.module="claim-truth"
@@ -202,11 +202,16 @@ rc=0; bash "$GUARD" --root "$ROOT" >"$TMPD/tree.out" 2>&1 || rc=$?
 if [[ "$rc" == "0" ]]; then ok "T1 the shipped tree matches its baseline"
 else fail "T1 the shipped tree fails the guard (rc=$rc): $(grep -E 'FAIL|NEW|STALE' "$TMPD/tree.out" | tr '\n' '|')"; fi
 # Positive control: an EMPTY finding set would also "match" an empty baseline.
-if grep -q 'nftban_ddos_teardown()  nftban_ddos_classic_disable' "$TMPD/tree.out"; then
-    ok "T2 positive control: the known nftban_ddos_teardown suppression is still reported"
+# (v1.233.1 DDoS lane: the control moved from nftban_ddos_teardown, now fixed, to
+# a still-open baselined finding.)
+if grep -q 'nftban_login_enable()  nftban_login_classic_enable' "$TMPD/tree.out"; then
+    ok "T2 positive control: the known nftban_login_enable suppression is still reported"
 else
-    fail "T2 positive control lost: nftban_ddos_teardown is no longer reported — fixed (remove its baseline row) or the guard went blind"
+    fail "T2 positive control lost: nftban_login_enable is no longer reported — fixed (remove its baseline row and pick another control) or the guard went blind"
 fi
+if grep -q 'nftban_ddos_teardown()' "$TMPD/tree.out"; then
+    fail "T4 nftban_ddos_teardown is reported again — the v1.233.1 DDoS fix regressed"
+else ok "T4 nftban_ddos_teardown carries no suppression finding"; fi
 if grep -q 'nftban_portscan_teardown' "$TMPD/tree.out"; then
     fail "T3 nftban_portscan_teardown is reported again — the v1.233.1 fix regressed"
 else ok "T3 nftban_portscan_teardown carries no suppression finding"; fi
