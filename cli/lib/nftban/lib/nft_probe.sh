@@ -326,6 +326,17 @@ nftban_nft_probe_set() {
             "nft exited 0 but listed no sets — absence is unproven"
         return 1
     fi
+    # v1.233.1 — the output must look like a set listing at all (the same
+    # MALFORMED_OUTPUT rule nftban_nft_probe_table applies). Garbage that exits 0
+    # contains no set header, and was read as ABSENT: the DDoS transaction's
+    # T1 model (UNMEASURED arm, malformed answer on the last query) turned it
+    # into a CONVERGED disable. A listing of family <f> always names its tables,
+    # so a missing table header is parser uncertainty, not a finding.
+    if ! printf '%s\n' "$_out" | grep -qE "^table[[:space:]]+${_family}[[:space:]]+"; then
+        _probe_fail_closed "MALFORMED_OUTPUT" \
+            "nft exited 0 but output is not a recognisable set listing"
+        return 1
+    fi
 
     NFTBAN_NFT_PROBE_RC=0
     NFTBAN_NFT_PROBE_CLASS="NONE"
