@@ -9,8 +9,8 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-24"
-# meta:description="BUG-PORTSCAN-CLASSIC-REALTIME-RECORDS-SCAN-TIME-STROBE-ALWAYS-RAPID. Drives the REAL classic processing path (nftban_portscan_classic_run / process_logs over a fixture kernel log, file and journald sources) with only side effects stubbed (ban -> witness file; journalctl/nft/logger shims; clock frozen) under set -Eeuo pipefail and the strict.sh IFS. Proves each connection is recorded at its own event time; strobe uses the min/max event span; block/vertical/horizontal/generic are bounded by PORTSCAN_CLASSIC_TIME_WINDOW of event time; stale (resumed/bootstrap), future-dated and malformed-time evidence is excluded (and reported); mid-ingest cleanup keeps still-eligible evidence and expires stale evidence; the Go-shadow request carries the real event times. NFTBAN_TEST_SUBJECT_MODULE selects another module file for inversion runs."
-# meta:input="cli/lib/nftban/core/nftban_portscan_classic.sh,cli/lib/nftban/lib/strict.sh,etc/nftban/conf.d/portscan/classic.conf"
+# meta:description="BUG-PORTSCAN-CLASSIC-REALTIME-RECORDS-SCAN-TIME-STROBE-ALWAYS-RAPID. Drives the REAL classic processing path (nftban_portscan_classic_run / process_logs over a fixture kernel log, file and journald sources) with only side effects stubbed (ban -> witness file; journalctl/nft/logger shims; clock frozen) under set -Eeuo pipefail and the strict.sh IFS. Proves each connection is recorded at its own event time; strobe uses the min/max event span; block/vertical/horizontal/generic are bounded by PORTSCAN_CLASSIC_TIME_WINDOW of event time; stale (resumed/bootstrap), future-dated and malformed-time evidence is excluded (and reported); mid-ingest cleanup keeps still-eligible evidence and expires stale evidence; the Go-shadow request carries the real event times; delivery freshness D (= 2 x Go PortscanCheckInterval, drift-guarded against internal/constants/timeouts.go) is separate from the scan span W, so a skipped daemon tick does not drop fresh evidence; year-less syslog stamps infer the most recent year <= now (Dec 31 read on Jan 1 is current). NFTBAN_TEST_SUBJECT_MODULE selects another module file for inversion runs."
+# meta:input="cli/lib/nftban/core/nftban_portscan_classic.sh,cli/lib/nftban/lib/strict.sh,etc/nftban/conf.d/portscan/classic.conf,internal/constants/timeouts.go"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,date,grep,sort,mktemp,tail,sed"
 # meta:inventory.files=""
@@ -70,6 +70,41 @@ fi
 [[ -f "$SUBJECT" ]] || { echo "PRECONDITION FAILED: subject module missing: $SUBJECT"; exit 2; }
 [[ -f "$SHIPPED_CONF" ]] || { echo "PRECONDITION FAILED: shipped classic.conf missing"; exit 2; }
 
+# ---------------------------------------------------------------------------
+# D DRIFT GUARD — the module's delivery-freshness constant D must equal
+# 2 x the Go daemon cadence (internal/constants/timeouts.go
+# PortscanCheckInterval). A cadence change without updating D fails here.
+# ---------------------------------------------------------------------------
+echo; echo "[D-DRIFT] accepted-age policy D == 2 x PortscanCheckInterval (tolerates one missed cycle; NOT a proven scheduler maximum)"
+TIMEOUTS_GO="$REPO_ROOT/internal/constants/timeouts.go"
+# go_interval_sec "<go source line>" -> seconds (Second/Minute units), rc 1 if unparseable
+go_interval_sec() {
+    local re='PortscanCheckInterval[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*\*[[:space:]]*time\.(Second|Minute)'
+    [[ "$1" =~ $re ]] || return 1
+    if [[ "${BASH_REMATCH[2]}" == "Minute" ]]; then echo $(( BASH_REMATCH[1] * 60 )); else echo "${BASH_REMATCH[1]}"; fi
+}
+go_line=$(grep -m1 -E '^[[:space:]]*PortscanCheckInterval[[:space:]]*=' "$TIMEOUTS_GO" 2>/dev/null) || go_line=""
+go_sec=$(go_interval_sec "$go_line") || go_sec=""
+d_line=$(grep -m1 -E '^declare -g _PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S=[0-9]+$' "$SUBJECT" 2>/dev/null) || d_line=""
+d_sec="${d_line##*=}"
+if [[ -z "$go_sec" ]]; then
+    no "D-DRIFT: PortscanCheckInterval not parseable from timeouts.go" "line='$go_line'"
+elif [[ ! "$d_sec" =~ ^[0-9]+$ ]]; then
+    no "D-DRIFT: module has no _PORTSCAN_CLASSIC_ACCEPTED_AGE_POLICY_S constant" "$SUBJECT"
+elif (( d_sec == 2 * go_sec )); then
+    ok "D-DRIFT: D=${d_sec}s == 2 x PortscanCheckInterval (${go_sec}s)"
+else
+    no "D-DRIFT: D=${d_sec}s != 2 x PortscanCheckInterval (${go_sec}s)" "update the module constant and its derivation comment"
+fi
+# Falsifiability of the guard: a changed cadence must be detected as drift.
+fake=$(go_interval_sec "	PortscanCheckInterval = 90 * time.Second") || fake=""
+if [[ "$fake" == "90" && "$d_sec" =~ ^[0-9]+$ ]] && (( d_sec != 2 * fake )); then
+    ok "D-DRIFT guard is falsifiable (a 90 s cadence would be flagged)"
+else
+    no "D-DRIFT guard vacuous" "fake=$fake d=$d_sec"
+fi
+[[ "$(go_interval_sec "PortscanCheckInterval = 1 * time.Minute" || true)" == "60" ]] && ok "D-DRIFT parser handles time.Minute" || no "D-DRIFT parser: time.Minute"
+
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/ps-evtime.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -105,6 +140,13 @@ set -Eeuo pipefail
 eval "$STRICT_IFS_LINE"
 # shellcheck source=/dev/null
 source "$SUBJECT"
+if [[ "${ENTRY:-run}" == "check" ]]; then
+    # The `nftban portscan check <file>` entry point (cmd_portscan.sh ->
+    # nftban_portscan_check). The subject is already loaded, so the dispatcher
+    # reuses it instead of sourcing the installed module.
+    # shellcheck source=/dev/null
+    source "$NFTBAN_LIB_DIR/core/nftban_portscan.sh"
+fi
 nftban_ban()  { local IFS=' '; echo "BAN $*" >> "$S/ban.witness"; }
 nft_ipc_ban() { local IFS=' '; echo "IPCBAN $*" >> "$S/ban.witness"; }
 nftban_timestamp_unix() {
@@ -123,12 +165,17 @@ nftban_portscan_classic_detect_scan_type() {
 _f=$(declare -f nftban_portscan_classic_cleanup_old_entries)
 eval "_ps_real_cleanup${_f#nftban_portscan_classic_cleanup_old_entries}"
 nftban_portscan_classic_cleanup_old_entries() {
-    echo "cleanup tracked=${#_PORTSCAN_CLASSIC_IP_PORTS[@]}" >> "$S/cleanup.calls"
+    local mid=0; [[ -z "${_PORTSCAN_CLASSIC_EVIDENCE_NOW:-}" ]] && mid=1
+    echo "cleanup tracked=${#_PORTSCAN_CLASSIC_IP_PORTS[@]} mid=$mid" >> "$S/cleanup.calls"
     _ps_real_cleanup "$@"
 }
 nftban_portscan_classic_load_config
 nftban_portscan_classic_init_state
-nftban_portscan_classic_run
+if [[ "${ENTRY:-run}" == "check" ]]; then
+    nftban_portscan_check "$S/kern.log" > "$S/check.out"
+else
+    nftban_portscan_classic_run
+fi
 declare -p _PORTSCAN_CLASSIC_IP_PORTS > "$S/state1.dump" 2>/dev/null || true
 if [[ -f "$S/cycle2.lines" ]]; then
     cat "$S/cycle2.lines" >> "$S/kern.log"
@@ -156,7 +203,7 @@ run_arm() {
         [[ -n "$extra" ]] && printf '%s\n' "$extra"
     } > "$S/cfg/conf.d/portscan/classic.conf.local"
     cp "$fixture" "$S/kern.log"
-    echo "$NOW" > "$S/clock_base"
+    echo "${ARM_NOW:-$NOW}" > "$S/clock_base"
     printf '#!/bin/sh\necho "logger $*" >> "%s/logger.calls"\n' "$S" > "$S/bin/logger"
     printf '#!/bin/sh\necho "nft $*" >> "%s/nft.calls"\nexit 0\n' "$S" > "$S/bin/nft"
     printf '#!/bin/sh\necho "$@" >> "%s/journalctl.args"\ncat "%s/kern.log"\necho "-- cursor: s=fixture;i=2"\n' "$S" "$S" > "$S/bin/journalctl"
@@ -170,7 +217,7 @@ run_arm() {
         NFTBAN_LOG_DIR="$S/log" NFTBAN_DATA_DIR="$S/data" NFTBAN_CORE_BIN="$core_bin" TMPDIR="$S" \
         PORTSCAN_CLASSIC_CURSOR_DIR="$S/data/portscan/log-cursors" \
         S="$S" SUBJECT="$SUBJECT" STRICT_IFS_LINE="$STRICT_IFS_LINE" READ_SECS="$read_secs" \
-        CYCLE2_BASE="${CYCLE2_BASE:-0}" \
+        CYCLE2_BASE="${CYCLE2_BASE:-0}" ENTRY="${ENTRY:-run}" \
         bash "$DRIVER" > "$S/stdout" 2> "$S/stderr" || rc=$?
     echo "$rc" > "$S/rc"
 }
@@ -208,6 +255,8 @@ for a in SLOW_STROBE SLOW_STROBE_J; do
     if arm_complete "$a"; then
         not_banned "$a" $IP && ok "$a: not banned" || no "$a: FALSE BAN" "$(witness "$a")"
         [[ "$(classify_of "$a" $IP)" != *strobe* ]] && ok "$a: not classified strobe" || no "$a: classified strobe" "$(classify_of "$a" $IP)"
+        [[ "$(classify_of "$a" $IP)" == "none" ]] && ok "$a: all 5 events eligible (age <= D) but <= 3 ports per W window -> no class" \
+            || no "$a: expected no class" "$(classify_of "$a" $IP)"
     fi
 done
 
@@ -288,8 +337,12 @@ offs_eq=(-60 -53 -46 -39 -32 -25 -18 -11 -4 0)
 offs_p1=(-60 -53 -46 -39 -32 -25 -18 -11 -4 1)
 : > "$FX/beq"; : > "$FX/bp1"
 for i in "${!offs_eq[@]}"; do kline "${offs_eq[$i]}" $((100 + i)) $IP >> "$FX/beq"; kline "${offs_p1[$i]}" $((100 + i)) $IP >> "$FX/bp1"; done
+offs_p1b=(-61 -54 -47 -40 -33 -26 -19 -12 -5 0)
+: > "$FX/bp1b"
+for i in "${!offs_p1b[@]}"; do kline "${offs_p1b[$i]}" $((100 + i)) $IP >> "$FX/bp1b"; done
 run_arm BOUNDARY_EQ file "$FX/beq" 5
 run_arm BOUNDARY_P1 file "$FX/bp1" 5
+run_arm BOUNDARY_P1B file "$FX/bp1b" 0
 if arm_complete BOUNDARY_EQ; then
     banned_as BOUNDARY_EQ $IP vertical && ok "BOUNDARY_EQ: span 60 = window -> vertical ban" || no "BOUNDARY_EQ: expected vertical" "$(witness BOUNDARY_EQ)"
 fi
@@ -297,6 +350,46 @@ if arm_complete BOUNDARY_P1; then
     not_banned BOUNDARY_P1 $IP && ok "BOUNDARY_P1: span 61 = window+1 -> not banned" || no "BOUNDARY_P1: FALSE BAN" "$(witness BOUNDARY_P1)"
     [[ "$(classify_of BOUNDARY_P1 $IP)" == "generic-observe" ]] && ok "BOUNDARY_P1: 9 ports per window -> generic-observe" \
         || no "BOUNDARY_P1: expected generic-observe" "$(classify_of BOUNDARY_P1 $IP)"
+fi
+if arm_complete BOUNDARY_P1B; then
+    not_banned BOUNDARY_P1B $IP && ok "BOUNDARY_P1B: span 61 (all past, all within D) -> not banned" || no "BOUNDARY_P1B: FALSE BAN" "$(witness BOUNDARY_P1B)"
+    [[ "$(classify_of BOUNDARY_P1B $IP)" == "generic-observe" ]] && ok "BOUNDARY_P1B: W bounds the class, not freshness" \
+        || no "BOUNDARY_P1B: expected generic-observe" "$(classify_of BOUNDARY_P1B $IP)"
+fi
+
+# ---------------------------------------------------------------------------
+# SKIPPED-TICK — the Go ticker dropped a tick: the cycle starts ~120 s after
+# the last read. Events aged 61..119 s at cycle start form a real strobe and a
+# real vertical inside W; they are fresh deliveries and must still be detected.
+# ---------------------------------------------------------------------------
+echo; echo "[SKIPPED-TICK] fresh deliveries aged 61..119 s (one dropped tick)"
+ST=203.0.113.70; SV=203.0.113.71
+{
+    kline -100 22 $ST; kline -99 80 $ST; kline -99 443 $ST; kline -98 3306 $ST; kline -98 8080 $ST
+    for i in 0 1 2 3 4 5 6 7 8 9; do kline $(( -119 + i * 6 )) $((200 + i)) $SV; done
+} > "$FX/skipped"
+run_arm SKIPPED_TICK file "$FX/skipped"
+if arm_complete SKIPPED_TICK; then
+    banned_as SKIPPED_TICK $ST strobe && ok "SKIPPED_TICK: strobe aged ~100 s detected" || no "SKIPPED_TICK: strobe dropped as stale" "$(witness SKIPPED_TICK)"
+    banned_as SKIPPED_TICK $SV vertical && ok "SKIPPED_TICK: vertical aged 65..119 s (span 54 <= W) detected" || no "SKIPPED_TICK: vertical dropped" "$(witness SKIPPED_TICK)"
+fi
+
+# ---------------------------------------------------------------------------
+# D-BOUNDARY — age == D (120 s) eligible; age == D + 1 stale.
+# ---------------------------------------------------------------------------
+echo; echo "[D-BOUNDARY] age = D eligible, D + 1 stale"
+DB=203.0.113.72
+{ kline -120 22 $DB; kline -119 80 $DB; kline -119 443 $DB; kline -118 3306 $DB; kline -118 8080 $DB; } > "$FX/deq"
+{ kline -121 22 $DB; kline -120 80 $DB; kline -120 443 $DB; kline -119 3306 $DB; kline -119 8080 $DB; } > "$FX/dp1"
+run_arm D_EQ file "$FX/deq"
+run_arm D_P1 file "$FX/dp1"
+if arm_complete D_EQ; then
+    banned_as D_EQ $DB strobe && ok "D_EQ: oldest event age = D -> eligible, strobe" || no "D_EQ: age = D excluded" "$(witness D_EQ)"
+fi
+if arm_complete D_P1; then
+    not_banned D_P1 $DB && ok "D_P1: oldest event age = D+1 -> stale, 4 ports left, no ban" || no "D_P1: stale event counted" "$(witness D_P1)"
+    modlog_has D_P1 "stale=1" && ok "D_P1: stale exclusion visible (stale=1)" \
+        || no "D_P1: exclusion not reported" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/D_P1/log/portscan-classic.log" 2>/dev/null || true)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -317,8 +410,8 @@ mkdir -p "$WORK/CLEANUP"
 { kline 115 22 $E; kline 116 23 $E; kline 117 25 $E; kline 118 22 203.0.113.26; kline 118 22 203.0.113.27; } > "$WORK/CLEANUP/cycle2.lines"
 CYCLE2_BASE=$((NOW + 120)) run_arm CLEANUP file "$FX/pressure" 10 'PORTSCAN_CLASSIC_MAX_TRACKED_IPS="2"'
 if arm_complete CLEANUP; then
-    ncl=0; [[ -f "$WORK/CLEANUP/cleanup.calls" ]] && ncl=$(grep -c '^cleanup tracked=' "$WORK/CLEANUP/cleanup.calls" || true)
-    (( ncl >= 3 )) && ok "CLEANUP: precondition — cleanup ran under pressure ($ncl calls)" || no "CLEANUP: pressure cleanup did not run" "calls=$ncl"
+    ncl=0; [[ -f "$WORK/CLEANUP/cleanup.calls" ]] && ncl=$(grep -c ' mid=1$' "$WORK/CLEANUP/cleanup.calls" || true)
+    (( ncl >= 2 )) && ok "CLEANUP: precondition — mid-ingest pressure cleanup ran in both cycles ($ncl calls)" || no "CLEANUP: pressure cleanup did not run mid-ingest" "calls=$ncl"
     banned_as CLEANUP $A strobe && ok "CLEANUP half 1: still-eligible (55 s old) evidence survived -> strobe ban" \
         || no "CLEANUP half 1: eligible evidence lost" "$(witness CLEANUP) / $(classify_of CLEANUP $A)"
     not_banned CLEANUP $SX && ok "CLEANUP: stale source (25 ports, 1 h old) not banned" || no "CLEANUP: stale source banned" "$(witness CLEANUP)"
@@ -394,10 +487,13 @@ fi
 # FUTURE-TIME — event time > processing now is excluded; ts == now counts.
 # ---------------------------------------------------------------------------
 echo; echo "[FUTURE-TIME] +1 s future excluded; == now eligible"
+# Year-bearing (ISO) stamps: strict future exclusion.
+isostamp() { date -d "@$1" "+%Y-%m-%dT%H:%M:%S"; }
+kline_iso() { rawline "$(isostamp $((NOW + $1))) " "$2" "$3"; }
 F1=203.0.113.60; F0=203.0.113.61
 {
-    kline 1 22 $F1; kline 1 80 $F1; kline 2 443 $F1; kline 2 3306 $F1; kline 3 8080 $F1
-    kline 0 22 $F0; kline 0 80 $F0; kline 0 443 $F0; kline 0 3306 $F0; kline 0 8080 $F0
+    kline_iso 1 22 $F1; kline_iso 1 80 $F1; kline_iso 2 443 $F1; kline_iso 2 3306 $F1; kline_iso 3 8080 $F1
+    kline_iso 0 22 $F0; kline_iso 0 80 $F0; kline_iso 0 443 $F0; kline_iso 0 3306 $F0; kline_iso 0 8080 $F0
 } > "$FX/future"
 run_arm FUTURE file "$FX/future"
 if arm_complete FUTURE; then
@@ -405,6 +501,120 @@ if arm_complete FUTURE; then
     banned_as FUTURE $F0 strobe && ok "FUTURE: boundary ts == now eligible -> strobe" || no "FUTURE: ts == now excluded" "$(witness FUTURE)"
     modlog_has FUTURE "future=5" && ok "FUTURE: exclusion visible (future=5)" \
         || no "FUTURE: exclusion not reported" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/FUTURE/log/portscan-classic.log" 2>/dev/null || true)"
+fi
+
+# Year-less (syslog) stamps ahead of now: the most recent year <= now is the
+# previous one, so the record is ~1 year old -> stale, never enforced.
+echo; echo "[YEARLESS-FUTURE] year-less stamp ahead of now -> previous year -> stale"
+YF=203.0.113.62
+{ kline 1 22 $YF; kline 1 80 $YF; kline 2 443 $YF; kline 2 3306 $YF; kline 3 8080 $YF; } > "$FX/ylfuture"
+run_arm YEARLESS_FUTURE file "$FX/ylfuture"
+if arm_complete YEARLESS_FUTURE; then
+    not_banned YEARLESS_FUTURE $YF && ok "YEARLESS_FUTURE: not enforced" || no "YEARLESS_FUTURE: enforced" "$(witness YEARLESS_FUTURE)"
+    modlog_has YEARLESS_FUTURE "stale=5" && ok "YEARLESS_FUTURE: excluded as stale (previous year), visible" \
+        || no "YEARLESS_FUTURE: exclusion not reported as stale" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/YEARLESS_FUTURE/log/portscan-classic.log" 2>/dev/null || true)"
+fi
+
+# ---------------------------------------------------------------------------
+# YEAR-ROLLOVER — "Dec 31 23:59:50" read at Jan 1 00:00:30 (current year) is
+# 40 s old and eligible, not ~1 year in the future.
+# ---------------------------------------------------------------------------
+echo; echo "[YEAR-ROLLOVER] Dec 31 23:59:50 read at Jan 1 00:00:30"
+RY=$(date +%Y)
+ROLL_NOW=$(date -d "${RY}-01-01 00:00:30" +%s)
+YR=203.0.113.63
+{
+    rawline "Dec 31 23:59:50 " 22 $YR; rawline "Dec 31 23:59:50 " 80 $YR; rawline "Dec 31 23:59:51 " 443 $YR
+    rawline "Dec 31 23:59:51 " 3306 $YR; rawline "Dec 31 23:59:52 " 8080 $YR
+} > "$FX/rollover"
+ARM_NOW="$ROLL_NOW" run_arm YEAR_ROLLOVER file "$FX/rollover"
+if arm_complete YEAR_ROLLOVER; then
+    banned_as YEAR_ROLLOVER $YR strobe && ok "YEAR_ROLLOVER: Dec 31 burst (age 38..40 s) eligible -> strobe" \
+        || no "YEAR_ROLLOVER: rollover burst lost" "$(witness YEAR_ROLLOVER) / $(grep -F PORTSCAN_EVENT_TIME "$WORK/YEAR_ROLLOVER/log/portscan-classic.log" 2>/dev/null || true)"
+    if modlog_has YEAR_ROLLOVER "PORTSCAN_EVENT_TIME"; then
+        no "YEAR_ROLLOVER: events excluded" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/YEAR_ROLLOVER/log/portscan-classic.log")"
+    else
+        ok "YEAR_ROLLOVER: no event excluded (neither future nor stale)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# YEAR-LESS contract: most recent NON-FUTURE occurrence (deterministic clocks).
+# ---------------------------------------------------------------------------
+burst() {  # burst <stamp-prefix> <src>  -> 5 ports, same stamp text
+    local p; for p in 22 80 443 3306 8080; do rawline "$1 " "$p" "$2"; done
+}
+echo; echo "[YEAR-JAN1-ON-DEC31] 'Jan 01 00:00:10' read at Dec 31 23:59:30 -> current year's Jan 1 -> stale"
+YJ=203.0.113.64
+burst "Jan 01 00:00:10" $YJ > "$FX/jan1"
+ARM_NOW=$(date -d "$(date +%Y)-12-31 23:59:30" +%s) run_arm YEAR_JAN1_ON_DEC31 file "$FX/jan1"
+if arm_complete YEAR_JAN1_ON_DEC31; then
+    not_banned YEAR_JAN1_ON_DEC31 $YJ && ok "YEAR_JAN1_ON_DEC31: ~1 year old -> not enforced" || no "YEAR_JAN1_ON_DEC31: enforced" "$(witness YEAR_JAN1_ON_DEC31)"
+    modlog_has YEAR_JAN1_ON_DEC31 "stale=5" && ok "YEAR_JAN1_ON_DEC31: counted stale=5" \
+        || no "YEAR_JAN1_ON_DEC31: not reported stale" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/YEAR_JAN1_ON_DEC31/log/portscan-classic.log" 2>/dev/null || true)"
+fi
+
+echo; echo "[LEAP-SAME-YEAR] 'Feb 29 23:59:50' read at 2028-03-01 00:00:30 -> 2028, age 40 s"
+YL=203.0.113.65
+burst "Feb 29 23:59:50" $YL > "$FX/leap"
+ARM_NOW=$(date -d "2028-03-01 00:00:30" +%s) run_arm LEAP_SAME_YEAR file "$FX/leap"
+if arm_complete LEAP_SAME_YEAR; then
+    banned_as LEAP_SAME_YEAR $YL strobe && ok "LEAP_SAME_YEAR: resolved to Feb 29 2028 (eligible) -> strobe" \
+        || no "LEAP_SAME_YEAR: not eligible" "$(witness LEAP_SAME_YEAR) / $(grep -F PORTSCAN_EVENT_TIME "$WORK/LEAP_SAME_YEAR/log/portscan-classic.log" 2>/dev/null || true)"
+fi
+
+echo; echo "[LEAP-NONLEAP] 'Feb 29 23:59:50' read at 2027-03-01 00:00:30 -> 2024 (most recent leap year) -> stale"
+burst "Feb 29 23:59:50" $YL > "$FX/leapn"
+ARM_NOW=$(date -d "2027-03-01 00:00:30" +%s) run_arm LEAP_NONLEAP file "$FX/leapn"
+if arm_complete LEAP_NONLEAP; then
+    not_banned LEAP_NONLEAP $YL && ok "LEAP_NONLEAP: not enforced" || no "LEAP_NONLEAP: enforced" "$(witness LEAP_NONLEAP)"
+    modlog_has LEAP_NONLEAP "malformed=0 stale=5" && ok "LEAP_NONLEAP: resolved (not malformed) and counted stale=5" \
+        || no "LEAP_NONLEAP: wrong disposition" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/LEAP_NONLEAP/log/portscan-classic.log" 2>/dev/null || true)"
+fi
+
+echo; echo "[IMPOSSIBLE-DATE] Feb 30 / Apr 31 / hour 25 -> malformed, excluded, never now"
+YI=203.0.113.66
+{
+    rawline "Feb 30 10:00:00 " 22 $YI; rawline "Apr 31 10:00:01 " 80 $YI; rawline "Mar 10 25:00:00 " 443 $YI
+    rawline "Feb 30 10:00:02 " 3306 $YI; rawline "Apr 31 10:00:03 " 8080 $YI; rawline "Mar 10 25:00:04 " 8443 $YI
+} > "$FX/impossible"
+ARM_NOW=$(date -d "2027-06-01 12:00:00" +%s) run_arm IMPOSSIBLE_DATE file "$FX/impossible"
+if arm_complete IMPOSSIBLE_DATE; then
+    not_banned IMPOSSIBLE_DATE $YI && ok "IMPOSSIBLE_DATE: no ban" || no "IMPOSSIBLE_DATE: banned (re-stamped?)" "$(witness IMPOSSIBLE_DATE)"
+    modlog_has IMPOSSIBLE_DATE "malformed=6" && ok "IMPOSSIBLE_DATE: counted malformed=6 (UNMEASURED, excluded)" \
+        || no "IMPOSSIBLE_DATE: not reported malformed" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/IMPOSSIBLE_DATE/log/portscan-classic.log" 2>/dev/null || true)"
+fi
+
+# ---------------------------------------------------------------------------
+# OFFLINE `nftban portscan check <file>` (nftban_portscan_check -> process_logs,
+# which can ban). Intended safety semantic: offline historical input is not
+# automatically current enforcement evidence; the analysis/report is still
+# produced. A recent valid scan in the file is enforced per normal policy.
+# ---------------------------------------------------------------------------
+echo; echo "[OFFLINE-STALE-FILE] historical threshold-crossing scan -> report, no current ban"
+OS=203.0.113.80
+: > "$FX/offline_stale"
+for i in $(seq 1 25); do kline $(( -172800 + i / 5 )) $((5000 + i)) $OS >> "$FX/offline_stale"; done
+ENTRY=check run_arm OFFLINE_STALE file "$FX/offline_stale"
+if arm_complete OFFLINE_STALE; then
+    co=""; [[ -f "$WORK/OFFLINE_STALE/check.out" ]] && co=$(<"$WORK/OFFLINE_STALE/check.out")
+    [[ "$co" == *"Processing log file: $WORK/OFFLINE_STALE/kern.log"* ]] && ok "OFFLINE_STALE: precondition — check entry point processed the file" \
+        || no "OFFLINE_STALE: check entry point not exercised" "$co"
+    not_banned OFFLINE_STALE $OS && ok "OFFLINE_STALE: 25-port scan from 2 days ago -> NO current ban" || no "OFFLINE_STALE: historical file banned now" "$(witness OFFLINE_STALE)"
+    modlog_has OFFLINE_STALE "stale=25" && ok "OFFLINE_STALE: analysis reported (stale=25)" \
+        || no "OFFLINE_STALE: exclusion not reported" "$(grep -F PORTSCAN_EVENT_TIME "$WORK/OFFLINE_STALE/log/portscan-classic.log" 2>/dev/null || true)"
+    ev=0; [[ -f "$WORK/OFFLINE_STALE/log/portscan-events.log" ]] && ev=$(grep -c 'src=' "$WORK/OFFLINE_STALE/log/portscan-events.log" || true)
+    [[ "$ev" == "25" ]] && ok "OFFLINE_STALE: all 25 lines still emitted as micro-events" || no "OFFLINE_STALE: emission changed" "ev=$ev"
+fi
+echo; echo "[OFFLINE-FRESH-FILE] recent valid scan in the file -> enforced per policy"
+OF=203.0.113.81
+{ kline -2 22 $OF; kline -1 80 $OF; kline -1 443 $OF; kline 0 3306 $OF; kline 0 8080 $OF; } > "$FX/offline_fresh"
+ENTRY=check run_arm OFFLINE_FRESH file "$FX/offline_fresh"
+if arm_complete OFFLINE_FRESH; then
+    co=""; [[ -f "$WORK/OFFLINE_FRESH/check.out" ]] && co=$(<"$WORK/OFFLINE_FRESH/check.out")
+    [[ "$co" == *"Processing log file: $WORK/OFFLINE_FRESH/kern.log"* ]] && ok "OFFLINE_FRESH: precondition — check entry point processed the file" \
+        || no "OFFLINE_FRESH: check entry point not exercised" "$co"
+    banned_as OFFLINE_FRESH $OF strobe && ok "OFFLINE_FRESH: recent strobe enforced" || no "OFFLINE_FRESH: recent scan not enforced" "$(witness OFFLINE_FRESH)"
 fi
 
 echo; echo "================================================================="
