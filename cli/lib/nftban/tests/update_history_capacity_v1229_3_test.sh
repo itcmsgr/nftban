@@ -62,7 +62,7 @@ declare -gA _RBP_W=()
 # every rebuild; this suite passed because it ran under bash's default IFS. The subjects now
 # run under the IFS taken from strict.sh itself (the execution authority), not a copy of it.
 STRICT="$SCRIPT_DIR/../lib/strict.sh"
-_ifs_line="$(grep -E "^IFS=" "$STRICT" | head -1)"
+_ifs_line="$(grep -m1 -E "^IFS=" "$STRICT")"
 [[ -n "$_ifs_line" ]] || { echo "  SUBJECT_NOT_FOUND: IFS assignment in lib/strict.sh"; exit 1; }
 eval "$_ifs_line"
 [[ "$IFS" != *' '* ]] || { echo "  PRECONDITION: strict.sh IFS contains a space -- harness premise changed"; exit 1; }
@@ -408,7 +408,7 @@ rm -f "$TMP/r14.done"
   mkhist 20260105_000005; _REBUILD_SNAPSHOT_DIR="$BK/rebuild_20260105_000005"
   _rebuild_update_history_prune 2>"$TMP/prune.err"
   : > "$TMP/r14.done" ) || true
-_surv="$(cd "$BK" && ls -1d rebuild_* | tr '\n' ' ')"
+_surv=""; for _d in "$BK"/rebuild_*; do [[ -d "$_d" ]] && _surv+="${_d##*/} "; done   # glob, no pipe (EPIPE gate)
 if [[ -f "$TMP/r14.done" ]] && grep -q 'NFTBAN_PRUNE=DONE .*removed=3 ' "$TMP/prune.err" \
    && [[ "$_surv" == "rebuild_20260104_000004 rebuild_20260105_000005 " ]]; then
     pass "R14 strict mode (set -Eeuo pipefail + strict.sh IFS): sequence completes and prunes oldest-first to K=2"
