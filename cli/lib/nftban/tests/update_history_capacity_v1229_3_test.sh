@@ -56,6 +56,16 @@ done
 eval "$(grep -E '^_RBP_MAX_PRUNE_BATCH=[0-9]+$' "$FW")"
 [[ "${_RBP_MAX_PRUNE_BATCH:-}" =~ ^[0-9]+$ ]] || { echo "  SUBJECT_NOT_FOUND: _RBP_MAX_PRUNE_BATCH"; exit 1; }
 declare -gA _RBP_W=()
+# v1.234.0 RBLD — THE HARNESS IS PART OF THE SUBJECT. cmd_firewall.sh sources lib/strict.sh,
+# so every rebuild runs with IFS=$'\n\t' (no space). Package-native lab runs on DEB and RPM
+# proved the witness could not parse sha256sum output under that IFS and the prune SKIPPED on
+# every rebuild; this suite passed because it ran under bash's default IFS. The subjects now
+# run under the IFS taken from strict.sh itself (the execution authority), not a copy of it.
+STRICT="$SCRIPT_DIR/../lib/strict.sh"
+_ifs_line="$(grep -E "^IFS=" "$STRICT" | head -1)"
+[[ -n "$_ifs_line" ]] || { echo "  SUBJECT_NOT_FOUND: IFS assignment in lib/strict.sh"; exit 1; }
+eval "$_ifs_line"
+[[ "$IFS" != *' '* ]] || { echo "  PRECONDITION: strict.sh IFS contains a space -- harness premise changed"; exit 1; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export NFTBAN_DATA_DIR="$TMP/lib" NFTBAN_LOG_DIR="$TMP/log"
@@ -384,6 +394,26 @@ if [[ "$(id -u)" != 0 ]]; then
     chmod 0644 "$BK/rebuild_20260101_000001/snapshot_state"
 else
     echo "  SKIP  R13 running as root: DAC_OVERRIDE makes every file readable"
+fi
+
+# R14 · PRODUCTION SHELL SEMANTICS: the whole plan -> parent check -> own TERMINAL_SUCCESS ->
+# prune sequence under the rebuild's own mode (set -Eeuo pipefail, strict.sh IFS, umask 027),
+# in a subshell. It must REACH the end (completion marker; a truncated run is not a pass) and
+# actually delete: 4 history + own -> keep 2 (FITS) -> 3 removed, oldest first.
+reset; for _t in 20260101_000001 20260102_000002 20260103_000003 20260104_000004; do mkhist "$_t"; done
+rm -f "$TMP/r14.done"
+( set -Eeuo pipefail; umask 027
+  _rebuild_prune_plan
+  _rebuild_prune_parent_check
+  mkhist 20260105_000005; _REBUILD_SNAPSHOT_DIR="$BK/rebuild_20260105_000005"
+  _rebuild_update_history_prune 2>"$TMP/prune.err"
+  : > "$TMP/r14.done" ) || true
+_surv="$(cd "$BK" && ls -1d rebuild_* | tr '\n' ' ')"
+if [[ -f "$TMP/r14.done" ]] && grep -q 'NFTBAN_PRUNE=DONE .*removed=3 ' "$TMP/prune.err" \
+   && [[ "$_surv" == "rebuild_20260104_000004 rebuild_20260105_000005 " ]]; then
+    pass "R14 strict mode (set -Eeuo pipefail + strict.sh IFS): sequence completes and prunes oldest-first to K=2"
+else
+    fail "R14 strict mode: done=$([[ -f "$TMP/r14.done" ]] && echo yes || echo NO) surv=[$_surv] $(prune_line)"
 fi
 
 echo

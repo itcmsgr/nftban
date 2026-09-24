@@ -3297,7 +3297,9 @@ _rbp_witness() {
         [[ -n "$_k" ]] || continue
         if [[ "$_k" == */snapshot_state ]]; then _fmeta[${_k%/snapshot_state}]="$_v|$_l"; else _dirid[$_k]="$_v"; fi
     done <<< "$_st"
-    while read -r _v _k; do [[ -n "$_k" ]] && _fsha[${_k%/snapshot_state}]="$_v"; done <<< "$_sh"
+    # sha256sum separates hash and name with SPACES. The rebuild runs under lib/strict.sh
+    # (IFS=$'\n\t', no space), so the split must name its own separator.
+    while IFS=$' \t' read -r _v _k; do [[ -n "$_k" ]] && _fsha[${_k%/snapshot_state}]="$_v"; done <<< "$_sh"
     while IFS='|' read -r _k _v; do [[ -n "$_k" ]] && _ftx[${_k%/snapshot_state}]="$_v"; done <<< "$_tx"
     for _d in "$@"; do
         [[ -n "${_dirid[$_d]:-}" && -n "${_fmeta[$_d]:-}" && -n "${_fsha[$_d]:-}" ]] || return 1
