@@ -1479,6 +1479,23 @@ file_permissions:
     install_enforce: false
     logrotate_create: true
 
+  # v1.234.0 R2 — the legacy-backup-migration OBSERVATION CACHE (a single file).
+  # Written ONLY by nftban_legacy_backup_migration.sh (maintenance 9c, runs as root), which
+  # sets root:root 0600 at creation (mktemp + chmod, then fsync -> rename -> fsync dir).
+  # Declared here so the file has an FHS authority; install_enforce:false because file
+  # ownership belongs to the writer (see the doctrine above). The generator emits nothing.
+  # Lifecycle follows /var/lib/nftban: removed by DEB purge; PRESERVED by DEB remove and RPM
+  # erase (UNINSTALL-PR2 D1). A preserved cache is harmless -- a hit needs the live population
+  # fingerprint and CLASSIFIER_VERSION to match, and can only ever cause inaction.
+  # Not a completion marker: it certifies one fingerprinted observation only.
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "legacy-backup-migration.state"
+    mode: "0600"
+    owner: root
+    group: root
+    install_enforce: false
+
   # /var/log/nftban/suricata - suricata writes
   - path: /var/log/nftban/suricata
     artifact_class: log

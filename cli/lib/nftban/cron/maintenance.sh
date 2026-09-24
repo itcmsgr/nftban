@@ -1038,27 +1038,31 @@ EOF
     fi
 
     # ==========================================================================
-    # 9c. Legacy rebuild_* backup migration (v1.229.3 0C) — ONE-TIME, bounded
+    # 9c. Legacy rebuild_* backup migration (v1.229.3 0C; lock scope v1.234.0 R2)
     # ==========================================================================
     # Resolves the pre-0B recovery population that carries no transaction terminal
     # discriminator and is therefore permanently non-prunable under 0B's
     # fail-closed rule. Runs inside the EXISTING maintenance authority -- no new
-    # service, timer or cleaner -- and takes the canonical nft_operations.lock, so
-    # a participating rebuild cannot execute its protected section concurrently.
+    # service, timer or cleaner.
     #
-    # Structurally idempotent: once only the protected floor remains, the
-    # candidate set is empty and later cycles delete nothing. No completion
-    # marker is written, because a marker would assert historical facts this
-    # migration deliberately does not claim.
+    # ⛔ v1.234.0 R2: it classifies WITHOUT the canonical nft_operations.lock and takes
+    # it ONLY for one bounded batch of already-decided deletions (zero candidates =
+    # zero acquisitions). Holding the lock across the whole scan cost ~8 min per
+    # cycle on srv3 and starved security updates into REBUILD_REFUSED_BUSY. An
+    # observation cache lets an unchanged population skip re-classification; it is
+    # not a completion marker and asserts no historical fact.
+    #
+    # ⛔ Every result is logged, INCLUDING removed=0: that silent arm is how an
+    # ~8-minute critical section went undiagnosed through a whole rollout.
     if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_legacy_backup_migration.sh" ]]; then
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_legacy_backup_migration.sh" 2>/dev/null || true
         if declare -f nftban_legacy_backup_migrate &>/dev/null; then
             local _lbm_out
             _lbm_out=$(nftban_legacy_backup_migrate 2>/dev/null) || true
             case "$_lbm_out" in
-                *"LBM_RESULT=OK removed=0"*)  : ;;   # steady state, stay quiet
-                *"LBM_RESULT=OK"*)            log "INFO" "Legacy backup migration: ${_lbm_out}" ;;
-                *"REFUSED"*)                  log "INFO" "Legacy backup migration: deferred (${_lbm_out})" ;;
+                *"LBM_RESULT=OK "*)  log "INFO" "Legacy backup migration: ${_lbm_out}" ;;
+                *"LBM_RESULT="*)     log "INFO" "Legacy backup migration: deferred (${_lbm_out})" ;;
+                *)                   log "WARN" "Legacy backup migration: produced no result line (${_lbm_out:-empty}) — outcome UNKNOWN" ;;
             esac
         fi
     fi
