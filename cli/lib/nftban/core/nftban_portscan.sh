@@ -698,6 +698,7 @@ _nftban_portscan_purge_projection() {
                 echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
                 return 1
             fi
+            # nftban:rc-suppression-ok: per-object best effort; absence is VERIFIED by the residue census below, which fails the call
             nft_fragment_delete_object "$fam" "$kind" "$name" || true
         done < <(_nftban_portscan_live_objects "$fam")
     done

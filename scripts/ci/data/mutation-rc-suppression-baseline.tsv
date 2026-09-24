@@ -1,0 +1,34 @@
+# mutation-rc-suppression-baseline.tsv — OPEN findings of scripts/ci/check-mutation-rc-suppression.sh
+# A RATCHET, not an allowlist: every row is a live defect (a mutation result suppressed or
+# discarded inside a function that later claims success). A new finding fails the gate;
+# a row that stops reproducing fails the gate until it is removed. Fix the code, then
+# delete the row. Regenerate: scripts/ci/check-mutation-rc-suppression.sh --emit-baseline
+# key = file|function|primitive|form
+cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_classic_setup_via_ipc|nft_delete|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_classic_setup_via_ipc|nft_flush|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_prefix_setup_via_ipc|nft_delete|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_prefix_setup_via_ipc|nft_flush|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos.sh|_nftban_ddos_purge_projection|nft_fragment_delete_object|OR_TRUE
+cli/lib/nftban/core/nftban_ddos.sh|nftban_ddos_teardown|nftban_ddos_classic_disable|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos.sh|nftban_ddos_teardown|nftban_ddos_suricata_disable|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos_suricata.sh|nftban_ddos_suricata_disable|nft_ipc_flush_set|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_ddos_suricata.sh|nftban_ddos_suricata_enable|nft_ipc_apply_ruleset|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_csf|systemctl_stop|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_fail2ban|systemctl_stop|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_firewalld|systemctl_stop|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_iptables|systemctl_stop|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_ufw|systemctl_stop|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_health_fixes.sh|nftban_health_fix_metrics|systemctl_restart|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_health_fixes.sh|nftban_health_fix_metrics|systemctl_start|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_health_fixes.sh|nftban_health_fix_polkit|systemctl_restart|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_health_fixes.sh|nftban_health_fix_services|systemctl_restart|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_health_fixes.sh|nftban_health_fix_services|systemctl_start|STDERR_HIDDEN_OR_TRUE
+cli/lib/nftban/core/nftban_login.sh|nftban_login_disable|nftban_login_classic_disable|DISCARDED_RC
+cli/lib/nftban/core/nftban_login.sh|nftban_login_disable|nftban_login_suricata_disable|DISCARDED_RC
+cli/lib/nftban/core/nftban_login.sh|nftban_login_enable|nftban_login_classic_enable|DISCARDED_RC
+cli/lib/nftban/core/nftban_login.sh|nftban_login_enable|nftban_login_suricata_enable|DISCARDED_RC
+cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_block_ip|nft_ipc_ban|DISCARDED_RC
+cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_enable|nftban_portscan_classic_add_jump|DISCARDED_RC
+cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_enable|nftban_portscan_classic_add_rules|DISCARDED_RC
+cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_enable|nftban_portscan_classic_create_chain|DISCARDED_RC
+cli/lib/nftban/core/nftban_trust.sh|_trust_remove_from_nft|nft_ipc_sync_or_apply|STDERR_HIDDEN_OR_TRUE
