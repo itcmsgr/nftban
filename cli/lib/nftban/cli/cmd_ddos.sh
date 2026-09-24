@@ -378,14 +378,18 @@ nftban_cmd_ddos() {
 
     # Handle commands
     case "$action" in
+        # v1.233.1: the transaction's exit code IS the verdict. The router calls
+        # this function in an `||` context, which suspends errexit for the whole
+        # call tree — a bare call here let a failed enable/disable fall through
+        # to the `return 0` below.
         enable)
             # Enable all DDoS protections (granular controls not implemented)
-            nftban_ddos_enable
+            nftban_ddos_enable || return $?
             ;;
 
         disable)
             # Disable all DDoS protections
-            nftban_ddos_disable
+            nftban_ddos_disable || return $?
             ;;
 
         reload)
