@@ -28,7 +28,4 @@ cli/lib/nftban/core/nftban_login.sh|nftban_login_disable|nftban_login_suricata_d
 cli/lib/nftban/core/nftban_login.sh|nftban_login_enable|nftban_login_classic_enable|DISCARDED_RC
 cli/lib/nftban/core/nftban_login.sh|nftban_login_enable|nftban_login_suricata_enable|DISCARDED_RC
 cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_block_ip|nft_ipc_ban|DISCARDED_RC
-cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_enable|nftban_portscan_classic_add_jump|DISCARDED_RC
-cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_enable|nftban_portscan_classic_add_rules|DISCARDED_RC
-cli/lib/nftban/core/nftban_portscan_classic.sh|nftban_portscan_classic_enable|nftban_portscan_classic_create_chain|DISCARDED_RC
 cli/lib/nftban/core/nftban_trust.sh|_trust_remove_from_nft|nft_ipc_sync_or_apply|STDERR_HIDDEN_OR_TRUE

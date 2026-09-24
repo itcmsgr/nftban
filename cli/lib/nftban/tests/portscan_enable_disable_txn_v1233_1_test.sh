@@ -664,6 +664,35 @@ for op in enable disable; do
     unset FAIL_AT FAULT_KIND FAKE_FAST_SLEEP
 done
 
+# -----------------------------------------------------------------------------
+# 2b. BUG-PORTSCAN-RECONCILE-COMMITS-GENERATION-ON-FAILED-APPLY
+# The classic apply (add_rules via IPC) fails. The forward reconcile must NOT
+# commit a plan generation for it: between the injected fault and the rollback's
+# first intent write, no plan:commit may appear in the primitive trace.
+# -----------------------------------------------------------------------------
+say ""; say "2b. enable with the classic rule apply failing (no commit on a failed apply)..."
+KA="$(awk '$2 ~ /^ipc:apply_ruleset:10-portscan-classic/ {print $1; exit}' <<<"$ENABLE_PRIMS")"
+if [[ -z "$KA" ]]; then
+    fail "A1 the enable pass never reached the classic rule apply — arm cannot be executed"
+else
+    restore DISABLED_ABSENT; reset_counters
+    A1_G="$(oracle_gen)"
+    FAIL_AT="$KA" FAULT_KIND=before FAKE_FAST_SLEEP=1 run_cmd enable
+    check_invariants "A1 enable, add_rules apply fails" enable false EMPTY "$A1_G" none
+    A1_OC="$(outcome_of)"
+    committed_before_rollback="$(awk -v k="$KA" '
+        $1 > k && $2 ~ /^intent:set/ {exit}
+        $1 > k && $2 == "plan:commit" {print $1; exit}' "$FAKE_T/ptrace")"
+    if [[ -n "$committed_before_rollback" ]]; then
+        fail "A1 COMMIT ON FAILED APPLY: plan:commit (#$committed_before_rollback) after the failed classic apply (#$KA), before any rollback — outcome ${A1_OC}"
+    else ok "A1 no generation committed for the failed apply"; fi
+    [[ "$A1_OC" == "FAILED_ROLLED_BACK" || "$A1_OC" == "DEGRADED" ]] \
+        || fail "A1 expected FAILED_ROLLED_BACK or DEGRADED, got '$A1_OC'"
+    [[ "$(cat "$RCF")" != "0" ]] || fail "A1 rc 0 for an enable whose rules were never applied"
+    [[ "$(oracle_gen)" == "$A1_G" ]] || say "   A1 note: generation moved $A1_G -> $(oracle_gen) (rollback reconcile)"
+    say "   A1: outcome=$A1_OC rc=$(cat "$RCF") state: $(oracle_state) gen=$(oracle_gen)"
+fi
+
 # =============================================================================
 # 3. UNMEASURED ARMS — every kernel query from j onward fails
 # =============================================================================

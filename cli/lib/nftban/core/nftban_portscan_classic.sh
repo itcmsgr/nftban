@@ -359,6 +359,30 @@ nftban_portscan_classic_add_jump() {
         return 1
     fi
 
+    # v1.233.1 (BUG-PORTSCAN-RECONCILE-COMMITS-GENERATION-ON-FAILED-APPLY): the
+    # jump renderer inserts inline and only WARNS on a failed insert or a missing
+    # ANCHOR_DETECT, then returns /dev/null, so "applied" above proves nothing.
+    # Verify the jump in EVERY family through a typed query; an unobservable
+    # input chain is a failure, not a pass.
+    local spec fam tbl
+    if ! declare -F nft_fragment_observe_jumps >/dev/null 2>&1; then
+        _nftban_portscan_classic_log "ERROR" "jump verification unavailable (nft_fragment_observe_jumps missing)"
+        return 1
+    fi
+    for spec in "${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}" "${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"; do
+        IFS=' ' read -r fam tbl <<<"$spec"
+        if ! nft_fragment_observe_jumps "$fam" "$tbl" "$chain"; then
+            echo "  ERROR: cannot verify the ${fam} portscan jump (${NFT_FRAGMENT_OBS_REASON})." >&2
+            _nftban_portscan_classic_log "ERROR" "jump unverified in ${fam} (${NFT_FRAGMENT_OBS_REASON})"
+            return 1
+        fi
+        if (( NFT_FRAGMENT_OBS_JUMPS < 1 )); then
+            echo "  ERROR: the ${fam} input chain has no jump to ${chain} after the insert." >&2
+            _nftban_portscan_classic_log "ERROR" "jump absent in ${fam} after insert"
+            return 1
+        fi
+    done
+
     _nftban_portscan_classic_log "INFO" "Jump rules applied via IPC"
     return 0
 }
@@ -1344,10 +1368,23 @@ nftban_portscan_classic_enable() {
     # Initialize state
     nftban_portscan_classic_init_state
 
-    # Create nftables chain and rules
-    nftban_portscan_classic_create_chain
-    nftban_portscan_classic_add_rules
-    nftban_portscan_classic_add_jump
+    # Create nftables chain and rules.
+    # v1.233.1 (BUG-PORTSCAN-RECONCILE-COMMITS-GENERATION-ON-FAILED-APPLY): these
+    # were bare calls, so a failed apply returned 0 and the reconcile root
+    # COMMITTED a new plan generation for rules that were never projected.
+    #   A CHILD FAILURE MAY NEVER BECOME PARENT SUCCESS.
+    if ! nftban_portscan_classic_create_chain; then
+        _nftban_portscan_classic_log "ERROR" "Classic enable FAILED: chain creation"
+        return 1
+    fi
+    if ! nftban_portscan_classic_add_rules; then
+        _nftban_portscan_classic_log "ERROR" "Classic enable FAILED: portscan rules were not applied"
+        return 1
+    fi
+    if ! nftban_portscan_classic_add_jump; then
+        _nftban_portscan_classic_log "ERROR" "Classic enable FAILED: portscan jump not established"
+        return 1
+    fi
 
     # Verify prefix is in live ruleset (prevents silent "no detections")
     _nftban_portscan_verify_prefix || {
