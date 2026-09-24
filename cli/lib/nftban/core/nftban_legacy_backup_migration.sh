@@ -80,9 +80,12 @@ _LBM_LEGACY_FLOOR=2
 
 # One lock window deletes at most this many dirs; the next maintenance cycle takes
 # the next batch. Bounds the hold by a constant, never by population or candidates.
-# ⛔ PROVISIONAL -- frozen, together with the numeric lock ceiling, from the measured
-#    DEB + RPM re-classify+delete cost (V1_234_0_R2_DESIGN.md §7).
-_LBM_MAX_MUTATION_BATCH=64
+# FROZEN at 32 (owner, 2026-09-24): correctness / bounded lock ownership > drain speed.
+#   Measured with 64, package-native, clean: DEB 2.5-2.7 s, RPM up to 4.14 s per window;
+#   srv3 runs this path ~6x slower (projection ~25 s -- too close to the installer's
+#   30 s per-attempt wait). Contract: lab window <= 5.0 s at 32 (measured on DEB + RPM),
+#   production target <= 15 s. Never raise it to make a slow host pass.
+_LBM_MAX_MUTATION_BATCH=32
 
 # Observation cache (NOT a completion marker -- see the header).
 _LBM_CACHE_SCHEMA="legacy-backup-migration-v1"
