@@ -21,7 +21,7 @@
 # meta:ta.requires_network="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:description="v1.233.1 BUG-DDOS-DAEMON-SHUTDOWN-RECONCILE-FAILURE-LEAVES-PROTECTION-CHAINS-FLUSHED (witnessed lab3 2026-09-24). Drives the REAL nftban_ddos_classic.sh enable/disable (under lib/strict.sh, called exactly as nftban_ddos_apply calls it) against a STATEFUL fake kernel: a fake nft that keeps a chain/rule/set store, applies -f fragments atomically (all-or-nothing, with set/chain reference checks), records every committed kernel state, and a fake socat daemon whose listener can be closed while its socket file remains (the witnessed state). Arms: STOP-PRESERVES-PROTECTION (what Stop() runs is DERIVED from internal/ddos/module.go and the listener state from gracefulShutdown ordering), RESTART-NO-HOLE (no recorded state with ddos_prefix/ddos_protection empty), DISABLE-STILL-TEARS-DOWN, STOP-vs-DISABLE, IPC-CLOSED (rc!=0 and no partial state), UNINSTALL-STILL-REMOVES (the DEB postrm/RPM %postun table deletions, extracted and executed), and the SYNPROXY raw-notrack uninstall dependency pinned as a KNOWN_GAP. Every defect arm is inverted against the v1.233.0 subject (eef635a6), extracted from git: the direct-flush + IPC-closed path must reproduce empty prefix/protection."
+# meta:description="v1.233.1 BUG-DDOS-DAEMON-SHUTDOWN-RECONCILE-FAILURE-LEAVES-PROTECTION-CHAINS-FLUSHED (witnessed lab3 2026-09-24). Drives the REAL nftban_ddos_classic.sh enable/disable (under lib/strict.sh, called exactly as nftban_ddos_apply calls it) against a STATEFUL fake kernel: a fake nft that keeps a chain/rule/set store, applies -f fragments atomically (all-or-nothing, with set/chain reference checks), records every committed kernel state, and a fake socat daemon whose listener can be closed while its socket file remains (the witnessed state). Arms: STOP-PRESERVES-PROTECTION (what Stop() runs is DERIVED from internal/ddos/module.go and the listener state from gracefulShutdown ordering), RESTART-NO-HOLE (no recorded state with ddos_prefix/ddos_protection empty), DISABLE-STILL-TEARS-DOWN, STOP-vs-DISABLE, IPC-CLOSED (rc!=0 and no partial state), UNINSTALL-STILL-REMOVES (the DEB postrm/RPM %postun table deletions, extracted and executed), and UNINSTALL-REMOVES-SYNPROXY-RAW (A7, formerly a KNOWN_GAP: the DEB postrm remove) arm's own comment-scoped raw cleanup removes the NFTBan notrack rule while an operator notrack rule in ip/ip6 raw prerouting survives; I5 proves lane Stop() + the v1.233.0 postrm leaves it). Every defect arm is inverted against the v1.233.0 subject (eef635a6), extracted from git: the direct-flush + IPC-closed path must reproduce empty prefix/protection."
 # meta:inventory.files="cli/lib/nftban/core/nftban_ddos_classic.sh,cli/lib/nftban/lib/nft_fragment.sh,cli/lib/nftban/lib/nft_ipc.sh,cli/lib/nftban/lib/strict.sh,internal/ddos/module.go,cmd/nftband/daemon_lifecycle.go,packaging/deb/postrm,packaging/build_nftban.sh"
 # meta:inventory.binaries="bash,git,tar,jq,python3,grep,awk,cp,find"
 set -uo pipefail
@@ -144,6 +144,10 @@ print_chain(){ # td name
 if [[ -z "$file" ]]; then
     IFS=' ' read -ra t <<<"$cmd"
     case "${t[0]:-} ${t[1]:-}" in
+        "list tables")
+            if [[ "${FAKE_NFT_READ_FAIL:-0}" == 1 ]]; then err "Operation not permitted"; exit 1; fi
+            for d in "$ST"/*__*; do [[ -d "$d" ]] || continue; b="${d##*/}"; printf 'table %s %s\n' "${b%%__*}" "${b#*__}"; done
+            exit 0 ;;
         "list table"|"list chain")
             if [[ "${FAKE_NFT_READ_FAIL:-0}" == 1 ]]; then err "Operation not permitted"; exit 1; fi
             td="$(tdir "$ST" "${t[2]:-}" "${t[3]:-}")"
@@ -428,28 +432,49 @@ else
     ok "A6b removal statements are direct table deletions (no daemon, no module entry point)"
 fi
 
-# --- A7 KNOWN_GAP (STOP evidence): SYNPROXY raw notrack rules at uninstall -------
-# ip/ip6 raw prerouting are FOREIGN tables; no uninstall path deletes them. On
-# v1.233.0 the prerm daemon stop reached _nft_cleanup_synproxy_raw via
-# Stop() -> reconcile -> classic_enable, which removed them as a side effect.
+# --- A7 UNINSTALL-REMOVES-SYNPROXY-RAW (was KNOWN_GAP) -------------------------
+# ip/ip6 raw prerouting are FOREIGN tables. On v1.233.0 the prerm daemon stop
+# removed NFTBan's notrack rule as a side effect (Stop() -> reconcile ->
+# classic_enable -> _nft_cleanup_synproxy_raw). Stop() no longer does that, so
+# the DEB postrm now removes it explicitly (_nftban_uninstall_synproxy_raw,
+# comment-scoped, by handle). An OPERATOR notrack rule in the same chain is the
+# positive control: it must survive.
 seed_raw(){
     for fam in ip ip6; do
         "$FK/bin/nft" add table "$fam" raw
         "$FK/bin/nft" add chain "$fam" raw prerouting
+        "$FK/bin/nft" add rule "$fam" raw prerouting udp dport 53 notrack comment '"operator: keep"'
         "$FK/bin/nft" add rule "$fam" raw prerouting tcp dport 443 notrack comment '"SYNPROXY: notrack SYN"'
     done
 }
-package_remove(){ # <lib> <module.go> <lifecycle.go> — prerm stop, then postrm remove)
+extract_raw_cleanup(){ # <postrm> -> the self-contained raw cleanup function (empty on v1.233.0)
+    awk '/^# >>> NFTBAN_SYNPROXY_RAW_CLEANUP_BEGIN >>>$/{f=1} f{print} /^# <<< NFTBAN_SYNPROXY_RAW_CLEANUP_END <<<$/{f=0}' "$1"
+}
+package_remove(){ # <lib> <module.go> <lifecycle.go> <postrm> — prerm stop, then that postrm's remove)
+    local fn
     simulate_daemon_stop "$1" "$2" "$3" || true
     while IFS= read -r s; do IFS=' ' read -ra a <<<"$s"; "$FK/bin/nft" "${a[@]:1}" 2>/dev/null || true
-    done <<<"$(extract_removals "$ROOT/packaging/deb/postrm")"
+    done <<<"$(extract_removals "$4")"
+    fn="$(extract_raw_cleanup "$4")"
+    if [[ -n "$fn" ]] && awk '/^    remove\)/{i=1;next} i&&/^        ;;/{exit} i{print}' "$4" | grep -qE '^[[:space:]]*_nftban_uninstall_synproxy_raw[[:space:]]*$'; then
+        printf 'set -e\n%s\n_nftban_uninstall_synproxy_raw\n' "$fn" >"$TMP/raw_cleanup.sh"
+        RAW_CLEANUP_OUT="$(sh "$TMP/raw_cleanup.sh" 2>&1)"; RAW_CLEANUP_RC=$?
+    else
+        RAW_CLEANUP_OUT="<no raw cleanup in this postrm remove) arm>"; RAW_CLEANUP_RC=0
+    fi
 }
-reset_converged; seed_raw; package_remove "$LANE_LIB" "$LANE_MOD" "$LANE_LC"
-if grep -qs 'SYNPROXY: notrack' "$ST"/ip__raw/chains/prerouting; then
-    ok "A7 KNOWN_GAP pinned: after package remove the SYNPROXY raw notrack rule REMAINS on the lane (Stop() no longer removes it; uninstall needs explicit teardown — follow-up)"
+raw_has(){ grep -qs -- "$2" "$ST/${1}__raw/chains/prerouting"; }
+reset_converged; seed_raw; package_remove "$LANE_LIB" "$LANE_MOD" "$LANE_LC" "$ROOT/packaging/deb/postrm"
+if [[ "$RAW_CLEANUP_RC" -eq 0 ]] && ! raw_has ip 'SYNPROXY: notrack' && ! raw_has ip6 'SYNPROXY: notrack' \
+   && raw_has ip 'operator: keep' && raw_has ip6 'operator: keep' && [[ -d "$ST/ip__raw" && -d "$ST/ip6__raw" ]]; then
+    ok "A7 UNINSTALL removes the NFTBan SYNPROXY raw notrack rules (ip+ip6) with the daemon's Stop() no longer touching them"
+    ok "A7b positive control: the operator notrack rule in ip/ip6 raw prerouting and the raw tables survive"
 else
-    no "A7 pinned gap changed: raw notrack rule no longer survives uninstall — update this pin (follow-up landed?)"
+    no "A7 package remove left NFTBan raw rules or removed operator rules (rc=$RAW_CLEANUP_RC): $RAW_CLEANUP_OUT"
 fi
+[[ "$STOP_FACTS" == *"stop_reaches_reconcile=no"* ]] \
+    && ok "A7c the removal is the postrm's own: lane Stop() does not reach the reconcile ($STOP_FACTS)" \
+    || no "A7c lane Stop() reaches the reconcile again ($STOP_FACTS)"
 
 # --- INVERSIONS against the v1.233.0 subject ------------------------------------
 echo ""
@@ -487,11 +512,19 @@ else
         fi
     fi
     # I4: v1.233.0 package remove DID clean the raw notrack rule via the Stop() side effect
-    reset_converged; seed_raw; package_remove "$HIST_LIB" "$HIST_MOD" "$HIST_LC"
-    if ! grep -qs 'SYNPROXY: notrack' "$ST"/ip__raw/chains/prerouting; then
-        ok "I4 v1.233.0 package remove removed the raw notrack rule ONLY through Stop() — the dependency A7 pins is real"
+    reset_converged; seed_raw; package_remove "$HIST_LIB" "$HIST_MOD" "$HIST_LC" "$HIST/packaging/deb/postrm"
+    if ! raw_has ip 'SYNPROXY: notrack' && [[ "$RAW_CLEANUP_OUT" == "<no raw cleanup"* ]]; then
+        ok "I4 v1.233.0 package remove removed the raw notrack rule ONLY through Stop() (its postrm has no raw cleanup)"
     else
-        no "I4 v1.233.0 did not remove the raw rule either — A7's attribution is wrong"
+        no "I4 v1.233.0 did not remove the raw rule, or its postrm already cleans raw — A7's attribution is wrong"
+    fi
+    # I5: lane Stop() + the v1.233.0 postrm = the gap. A7 passes because of the
+    # new postrm cleanup, not because of anything else in the harness.
+    reset_converged; seed_raw; package_remove "$LANE_LIB" "$LANE_MOD" "$LANE_LC" "$HIST/packaging/deb/postrm"
+    if raw_has ip 'SYNPROXY: notrack' && raw_has ip6 'SYNPROXY: notrack'; then
+        ok "I5 lane Stop() with the v1.233.0 postrm LEAVES the raw notrack rule — A7 discriminates"
+    else
+        no "I5 raw rule vanished without the new postrm cleanup — A7 would be vacuous"
     fi
 fi
 
