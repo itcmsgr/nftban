@@ -133,6 +133,85 @@ safe_rm_rf() {
 # UNINSTALL FUNCTIONS
 # =============================================================================
 
+# >>> NFTBAN_SYNPROXY_RAW_CLEANUP_BEGIN >>>
+# v1.233.1 BUG-UNINSTALL-DOES-NOT-REMOVE-SYNPROXY-RAW-NOTRACK-RULES.
+# NFTBan's SYNPROXY notrack rules live in the FOREIGN tables ip/ip6 raw, chain
+# prerouting, outside the nftban tables that uninstall deletes. Until v1.233.0
+# they disappeared at uninstall only as a side effect of the daemon Stop()
+# re-running the DDoS reconcile; Stop() no longer does that (Stop != Disable).
+# SCOPE: delete ONLY rules in <family> raw prerouting whose comment carries the
+# NFTBan marker "SYNPROXY: - the comment scope of _nft_cleanup_synproxy_raw
+# (cli/lib/nftban/lib/nft_fragment.sh) - by handle, after a successful listing.
+# The raw tables, their chains and every other rule are never touched.
+# SELF-CONTAINED: DEB postrm and RPM postun run after the payload is gone, so nothing
+# here may source a product library. Needs only nft and awk.
+# REPORT, DO NOT ABORT: when the kernel cannot be observed (nft missing, listing
+# refused) or a delete fails, a WARN naming the residue goes to stderr and the
+# function still returns 0 - the package removal itself must not fail on it.
+# Byte-identical copies: packaging/deb/postrm, packaging/build_nftban.sh
+# (RPM postun), uninstall.sh - drift-checked by
+# cli/lib/nftban/tests/uninstall_synproxy_raw_cleanup_v1233_1_test.sh.
+_nftban_uninstall_synproxy_raw() {
+    _nsr_handles_prog='
+        $1 == "chain" && $2 == "prerouting" { inchain = 1; next }
+        inchain && $1 == "}" { inchain = 0; next }
+        inchain && tolower($0) ~ /comment.*"synproxy:/ && NF >= 3 && $(NF-2) == "#" && $(NF-1) == "handle" && $NF ~ /^[0-9]+$/ { print $NF }'
+    if ! command -v nft >/dev/null 2>&1; then
+        echo "nftban: WARN: SYNPROXY raw notrack cleanup NOT_OBSERVED: nft not found - check with: nft -a list chain ip raw prerouting; nft -a list chain ip6 raw prerouting" >&2
+        return 0
+    fi
+    if ! _nsr_tables=$(nft list tables 2>&1); then
+        echo "nftban: WARN: SYNPROXY raw notrack cleanup NOT_OBSERVED: nft list tables failed: $_nsr_tables" >&2
+        return 0
+    fi
+    for _nsr_fam in ip ip6; do
+        _nsr_present=$(awk -v want="table $_nsr_fam raw" '$0 == want { found = 1 } END { print found + 0 }' <<_NFTBAN_NSR_
+$_nsr_tables
+_NFTBAN_NSR_
+)
+        [ "$_nsr_present" = 1 ] || continue
+        if ! _nsr_list=$(nft -a list table "$_nsr_fam" raw 2>&1); then
+            echo "nftban: WARN: SYNPROXY raw notrack cleanup NOT_OBSERVED ($_nsr_fam raw): $_nsr_list" >&2
+            continue
+        fi
+        _nsr_handles=$(awk "$_nsr_handles_prog" <<_NFTBAN_NSR_
+$_nsr_list
+_NFTBAN_NSR_
+)
+        [ -n "$_nsr_handles" ] || continue
+        _nsr_removed=0
+        _nsr_failed=0
+        for _nsr_h in $_nsr_handles; do
+            if _nsr_err=$(nft delete rule "$_nsr_fam" raw prerouting handle "$_nsr_h" 2>&1); then
+                _nsr_removed=$((_nsr_removed + 1))
+            else
+                _nsr_failed=$((_nsr_failed + 1))
+                echo "nftban: WARN: could not delete NFTBan SYNPROXY rule ($_nsr_fam raw prerouting handle $_nsr_h): $_nsr_err" >&2
+            fi
+        done
+        if ! _nsr_list=$(nft -a list table "$_nsr_fam" raw 2>&1); then
+            echo "nftban: WARN: SYNPROXY raw notrack cleanup ($_nsr_fam): removed=$_nsr_removed failed=$_nsr_failed remaining=NOT_OBSERVED: $_nsr_list" >&2
+            continue
+        fi
+        _nsr_rest=$(awk "$_nsr_handles_prog" <<_NFTBAN_NSR_
+$_nsr_list
+_NFTBAN_NSR_
+)
+        _nsr_left=0
+        for _nsr_h in $_nsr_rest; do
+            _nsr_left=$((_nsr_left + 1))
+        done
+        if [ "$_nsr_left" -eq 0 ] && [ "$_nsr_failed" -eq 0 ]; then
+            echo "nftban: removed $_nsr_removed NFTBan SYNPROXY notrack rule(s) from $_nsr_fam raw prerouting; other raw rules left untouched."
+        else
+            echo "nftban: WARN: SYNPROXY raw notrack cleanup ($_nsr_fam): removed=$_nsr_removed failed=$_nsr_failed remaining=$_nsr_left - remove manually: nft -a list chain $_nsr_fam raw prerouting" >&2
+        fi
+    done
+    return 0
+}
+# <<< NFTBAN_SYNPROXY_RAW_CLEANUP_END <<<
+
+
 uninstall_package_manager() {
     log "Removing package from system package manager..."
 
@@ -315,6 +394,13 @@ uninstall_nftables() {
     else
         ok "No NFTBan nftables found"
     fi
+
+    # v1.233.1: NFTBan SYNPROXY notrack rules live in the FOREIGN ip/ip6 raw
+    # tables, not in the tables deleted above. `rpm -e --noscripts` (see
+    # uninstall_package_manager) never runs the RPM postun that removes them,
+    # so this script removes them itself. Comment-scoped; reports NOT_OBSERVED
+    # and continues when the kernel cannot be read.
+    _nftban_uninstall_synproxy_raw
 
     # Remove nftables.conf if it looks like NFTBan's
     if [[ -f "/etc/nftables.conf" ]] && grep -q "NFTBan" /etc/nftables.conf 2>/dev/null; then
