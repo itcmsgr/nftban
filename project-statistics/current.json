@@ -1,6 +1,6 @@
 {
-  "snapshot_at": "2026-09-25T08:46:18Z",
-  "snapshot_date": "2026-09-25",
+  "snapshot_at": "2026-09-26T08:32:49Z",
+  "snapshot_date": "2026-09-26",
   "disclosure": "GitHub Release asset download requests and repository traffic counters. These INCLUDE NFTBan-operated infrastructure: an ~11-host fleet (dns1-4, srv1-4, monitor, lab2, lab4) self-updates by downloading DEB/RPM assets from GitHub Releases, and package-native validation downloads official assets too. GitHub exposes aggregate counts only, with no downloader identity or IP, so NFTBan-owned traffic cannot be identified or removed and historical counts are NOT retroactively adjusted. Do not read raw package downloads or clones as purely external adoption, or as unique users, installations, active systems, mirrors, CI jobs, or fleet size. Unique visitors are substantially less fleet-contaminated (automated hosts do not browse the repository web UI); non-release-day package-download deltas are the cleanest external-interest signal. A typical release-day internal baseline is approximately 11 fleet hosts plus validation downloads -- this is an ESTIMATE and is never subtracted from the reported counts. Future mirror routing of fleet updates can reduce this contamination prospectively (see OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE).",
   "fleet_contamination": {
     "raw_counts_include_nftban_infrastructure": true,
@@ -28,20 +28,20 @@
     "historical_counts_retroactively_adjusted": false,
     "fabricated_fleet_excluded_metric": false
   },
-  "package_downloads": 8196,
-  "package_delta": 1,
-  "deb_downloads": 5645,
-  "rpm_downloads": 2551,
+  "package_downloads": 8199,
+  "package_delta": 3,
+  "deb_downloads": 5647,
+  "rpm_downloads": 2552,
   "standalone_binary_downloads": 868,
-  "metadata_downloads": 4127,
-  "all_release_asset_downloads": 13604,
+  "metadata_downloads": 4129,
+  "all_release_asset_downloads": 13609,
   "per_platform": {
     "Ubuntu 22.04": 912,
-    "Ubuntu 24.04": 2718,
+    "Ubuntu 24.04": 2720,
     "Ubuntu 26.04": 351,
     "Debian 12": 840,
     "Debian 13": 824,
-    "EL9": 1332,
+    "EL9": 1333,
     "EL10": 1167,
     "Fedora 42": 26,
     "Fedora 43": 26
@@ -50,7 +50,7 @@
   "assets_scanned": 6875,
   "stars": 7,
   "forks": 2,
-  "open_issues": 15,
+  "open_issues": 14,
   "rolling_14d": {
     "clones": 8644,
     "unique_cloners": 681,
