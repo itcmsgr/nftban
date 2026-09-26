@@ -247,6 +247,7 @@ perset_predicate_v1229_13_test	cli/lib/nftban/tests/perset_predicate_v1229_13_te
 pipefail_epipe_product_truth_v1231_0_test	cli/lib/nftban/tests/pipefail_epipe_product_truth_v1231_0_test.sh	cross-cutting	test	pipefail-epipe-product-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migration_ownership_boundary_v1228_10_test.sh	packaging	test	package-migration-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 plan_projection_v1229_7_test	cli/lib/nftban/tests/plan_projection_v1229_7_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	90		
+portscan_classic_event_time_v1233_1_test	cli/lib/nftban/tests/portscan_classic_event_time_v1233_1_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_generic_corroborate_v149_test	cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_trusted_flow_test	cli/lib/nftban/tests/portscan_trusted_flow_test.sh	portscan	test	portscan-trusted-flow	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
