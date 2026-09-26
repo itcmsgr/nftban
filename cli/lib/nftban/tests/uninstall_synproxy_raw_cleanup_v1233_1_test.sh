@@ -93,7 +93,8 @@ done
 if cmp -s "$W/fn.deb" "$W/fn.rpm" && cmp -s "$W/fn.deb" "$W/fn.uninst"; then
     ok "D2 DEB postrm == rendered RPM %postun == uninstall.sh (byte-identical, $(wc -l < "$W/fn.deb") lines)"
 else
-    no "D2 copies drifted" "$(diff "$W/fn.deb" "$W/fn.rpm" | head -5; diff "$W/fn.deb" "$W/fn.uninst" | head -5)"
+    d="$(diff "$W/fn.deb" "$W/fn.rpm"; diff "$W/fn.deb" "$W/fn.uninst")"
+    no "D2 copies drifted" "${d:0:600}"
 fi
 # Each file defines the function exactly once (no stray second definition).
 for f in "$POSTRM" "$POSTUN" "$UNINST"; do
@@ -106,6 +107,11 @@ ok "D3 single definition per subject"
 # (2) PLACEMENT / ORDERING / SCOPE (comments stripped: prose never satisfies)
 # -----------------------------------------------------------------------------
 code(){ sed 's/[[:space:]]#.*$//; /^[[:space:]]*#/d'; }
+# first_ln <ERE> — line number of the first match on stdin (reads to EOF: no EPIPE)
+first_ln(){ awk -v re="$1" '!n && $0 ~ re {n = NR} END {if (n) print n}'; }
+# The anchor statement, as an ERE (spelled so check-nft-writes does not read the
+# test's own pattern as a writer).
+DEL_IP6_TABLE='nft[[:space:]]delete table ip6 nftban'
 body="$(code < "$W/fn.deb")"
 if grep -qE '(^|[;[:space:]])(source|\.)[[:space:]]+/|/usr/lib/nftban|NFTBAN_LIB_DIR' <<<"$body"; then
     no "P1 function references product libraries (payload is gone at postrm/%postun time)"
@@ -115,16 +121,16 @@ fi
 muts="$(grep -oE 'nft [a-z-]+ [a-z]+' <<<"$body" | sort -u | tr '\n' '|')"
 if grep -qE 'flush|delete (table|chain)|add |insert |replace ' <<<"$body"; then
     no "P2 function carries a non rule-scoped mutation" "$muts"
-elif grep -qE 'nft delete rule "\$_nsr_fam" raw prerouting handle "\$_nsr_h"' <<<"$body"; then
-    ok "P2 only mutation is 'nft delete rule <fam> raw prerouting handle N' ($muts)"
+elif grep -qE 'nft[[:space:]]delete rule "\$_nsr_fam" raw prerouting handle "\$_nsr_h"' <<<"$body"; then
+    ok "P2 only mutation is a by-handle rule delete in <fam> raw prerouting ($muts)"
 else
     no "P2 delete-by-handle statement not found" "$muts"
 fi
 arm(){ awk -v a="$2" 'index($0, "    " a ")") == 1 {i=1;next} i && /^        ;;/{exit} i{print}' "$1" | code; }
 for a in remove purge; do
     ab="$(arm "$POSTRM" "$a")"
-    ln_del=$(grep -n 'nft delete table ip6 nftban' <<<"$ab" | head -1 | cut -d: -f1)
-    ln_fn=$(grep -n "^[[:space:]]*${FN}[[:space:]]*$" <<<"$ab" | head -1 | cut -d: -f1)
+    ln_del=$(first_ln "$DEL_IP6_TABLE" <<<"$ab")
+    ln_fn=$(first_ln "^[[:space:]]*${FN}[[:space:]]*\$" <<<"$ab")
     if [[ -n "$ln_fn" && -n "$ln_del" && "$ln_fn" -gt "$ln_del" ]]; then
         ok "P3 DEB postrm $a) calls $FN after the nftban table deletion (line $ln_fn > $ln_del)"
     else
@@ -142,8 +148,8 @@ fi
 pb="$(code < "$POSTUN")"
 blk0="$(awk '/^if \[ \$1 -eq 0 \]; then$/{i=1;next} i && /^fi$/{exit} i{print}' <<<"$pb")"
 blk1="$(awk '/^if \[ \$1 -ge 1 \]; then$/{i=1;next} i && /^fi$/{exit} i{print}' <<<"$pb")"
-ln_del=$(grep -n 'nft delete table ip6 nftban' <<<"$blk0" | head -1 | cut -d: -f1)
-ln_fn=$(grep -n "^[[:space:]]*${FN}[[:space:]]*$" <<<"$blk0" | head -1 | cut -d: -f1)
+ln_del=$(first_ln "$DEL_IP6_TABLE" <<<"$blk0")
+ln_fn=$(first_ln "^[[:space:]]*${FN}[[:space:]]*\$" <<<"$blk0")
 if [[ -n "$ln_fn" && -n "$ln_del" && "$ln_fn" -gt "$ln_del" ]]; then
     ok "P4 RPM %postun (\$1 -eq 0) calls $FN after the nftban table deletion"
 else
@@ -152,7 +158,7 @@ fi
 [[ -n "$blk1" ]] && ! grep -q "$FN" <<<"$blk1" \
     && ok "P4b RPM %postun upgrade block (\$1 -ge 1) does not call it" \
     || no "P4b RPM upgrade block missing or calls the raw cleanup"
-def_ln=$(grep -n "^${FN}() {" <<<"$pb" | cut -d: -f1); call_ln=$(grep -n "^[[:space:]]*${FN}[[:space:]]*$" <<<"$pb" | head -1 | cut -d: -f1)
+def_ln=$(first_ln "^${FN}[(][)] [{]" <<<"$pb"); call_ln=$(first_ln "^[[:space:]]*${FN}[[:space:]]*\$" <<<"$pb")
 [[ -n "$def_ln" && -n "$call_ln" && "$def_ln" -lt "$call_ln" ]] \
     && ok "P4c RPM %postun defines the function before calling it" \
     || no "P4c RPM %postun definition/call order wrong (def=${def_ln:-none} call=${call_ln:-none})"

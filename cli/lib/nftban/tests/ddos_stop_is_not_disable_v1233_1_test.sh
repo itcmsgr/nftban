@@ -451,12 +451,13 @@ extract_raw_cleanup(){ # <postrm> -> the self-contained raw cleanup function (em
     awk '/^# >>> NFTBAN_SYNPROXY_RAW_CLEANUP_BEGIN >>>$/{f=1} f{print} /^# <<< NFTBAN_SYNPROXY_RAW_CLEANUP_END <<<$/{f=0}' "$1"
 }
 package_remove(){ # <lib> <module.go> <lifecycle.go> <postrm> — prerm stop, then that postrm's remove)
-    local fn
+    local fn remove_arm
     simulate_daemon_stop "$1" "$2" "$3" || true
     while IFS= read -r s; do IFS=' ' read -ra a <<<"$s"; "$FK/bin/nft" "${a[@]:1}" 2>/dev/null || true
     done <<<"$(extract_removals "$4")"
     fn="$(extract_raw_cleanup "$4")"
-    if [[ -n "$fn" ]] && awk '/^    remove\)/{i=1;next} i&&/^        ;;/{exit} i{print}' "$4" | grep -qE '^[[:space:]]*_nftban_uninstall_synproxy_raw[[:space:]]*$'; then
+    remove_arm="$(awk '/^    remove\)/{i=1;next} i&&/^        ;;/{exit} i{print}' "$4")"
+    if [[ -n "$fn" ]] && grep -qE '^[[:space:]]*_nftban_uninstall_synproxy_raw[[:space:]]*$' <<<"$remove_arm"; then
         printf 'set -e\n%s\n_nftban_uninstall_synproxy_raw\n' "$fn" >"$TMP/raw_cleanup.sh"
         RAW_CLEANUP_OUT="$(sh "$TMP/raw_cleanup.sh" 2>&1)"; RAW_CLEANUP_RC=$?
     else
