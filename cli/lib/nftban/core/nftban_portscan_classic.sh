@@ -1060,7 +1060,7 @@ nftban_portscan_classic_record_connection() {
 # the survivors -- previously ports/targets were never pruned at all.
 nftban_portscan_classic_cleanup_old_entries() {
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
-    local cutoff_time="${1:-${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF:-}}"
+    local cutoff_time="${_PORTSCAN_CLASSIC_EVIDENCE_CUTOFF:-}"
     if [[ ! "$cutoff_time" =~ ^[0-9]+$ ]]; then
         local current_time
         # Use timestamp library if available, fallback to date
