@@ -24,7 +24,7 @@ name: Socket Supply Chain Scan
 on:
   workflow_dispatch: {}
   pull_request:
-    branches: ["main"]
+    branches: ["main", 'hotfix/**']
 
 permissions: read-all
 
