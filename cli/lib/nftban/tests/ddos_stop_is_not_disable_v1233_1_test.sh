@@ -141,6 +141,19 @@ print_chain(){ # td name
     done <"$td/chains/$c"
     printf '\t}\n'
 }
+print_set_spec(){ # name specfile — the stored `{ type ...; flags ...; }` as real nft prints it,
+    # one property per line. This fake models no elements (no `add element`), so
+    # no `elements = { ... }` line is ever printed.
+    local n="$1" spec p
+    spec="$(cat "$2")"; spec="${spec#*\{}"; spec="${spec%\}*}"
+    printf '\tset %s {\n' "$n"
+    IFS=';' read -ra props <<<"$spec"
+    for p in "${props[@]}"; do
+        p="${p#"${p%%[![:space:]]*}"}"; p="${p%"${p##*[![:space:]]}"}"
+        [[ -n "$p" ]] && printf '\t\t%s\n' "$p"
+    done
+    printf '\t}\n'
+}
 if [[ -z "$file" ]]; then
     IFS=' ' read -ra t <<<"$cmd"
     case "${t[0]:-} ${t[1]:-}" in
@@ -160,6 +173,36 @@ if [[ -z "$file" ]]; then
             for s in "$td"/sets/*; do printf '\tset %s {\n\t\t%s\n\t}\n' "${s##*/}" "$(cat "$s")"; done
             for c in "$td"/chains/*; do print_chain "$td" "${c##*/}"; done
             printf '}\n'; exit 0 ;;
+        # Typed observation reads used by lib/nft_fragment.sh
+        # (nft_fragment_observe_chain -> `list chains <fam>`, nft_fragment_observe_set
+        # -> nftban_nft_probe_set `list sets <fam>` + `list set <fam> <tbl> <set>`).
+        # Real nft text shapes: a per-family listing names every table of that family
+        # as `table <fam> <tbl> {` with its chains/sets as `\tchain|set <name> {` ...
+        # `\t}`; a family with no tables prints nothing and exits 0; a missing set is
+        # `Error: No such file or directory` + the echoed command, rc 1.
+        "list chains"|"list sets")
+            if [[ "${FAKE_NFT_READ_FAIL:-0}" == 1 ]]; then err "Operation not permitted"; exit 1; fi
+            fam="${t[2]:-}"
+            [[ -n "$fam" ]] || { err "fake nft: $cmd without a family is not modelled"; exit 1; }
+            for d in "$ST"/"${fam}"__*; do
+                [[ -d "$d" ]] || continue; b="${d##*/}"
+                printf 'table %s %s {\n' "$fam" "${b#*__}"
+                if [[ "${t[1]}" == chains ]]; then
+                    for c in "$d"/chains/*; do printf '\tchain %s {\n\t}\n' "${c##*/}"; done
+                else
+                    for s in "$d"/sets/*; do print_set_spec "${s##*/}" "$s"; done
+                fi
+                printf '}\n'
+            done
+            exit 0 ;;
+        "list set")
+            if [[ "${FAKE_NFT_READ_FAIL:-0}" == 1 ]]; then err "Operation not permitted"; exit 1; fi
+            td="$(tdir "$ST" "${t[2]:-}" "${t[3]:-}")"
+            if [[ ! -d "$td" || ! -f "$td/sets/${t[4]:-}" ]]; then
+                printf 'Error: No such file or directory\nlist set %s %s %s\n' "${t[2]:-}" "${t[3]:-}" "${t[4]:-}" >&2; exit 1
+            fi
+            printf 'table %s %s {\n' "${t[2]}" "${t[3]}"; print_set_spec "${t[4]}" "$td/sets/${t[4]}"; printf '}\n'
+            exit 0 ;;
         "list "*) err "fake nft: unsupported read: $cmd"; exit 1 ;;
     esac
     txn "direct: $cmd" <<<"$cmd"; exit $?
@@ -370,6 +413,20 @@ if run_child "$LANE_LIB" disable; then
     fi
 fi
 DISABLE_DUMP="$(dump)"; DISABLE_PREFIX="$(cnt ip ddos_prefix)"
+
+# --- A3b DISABLE-UNMEASURED-REFUSES (lane): negative control for A3 -----------
+# A3 passes only because the fake answers the typed observation reads. With every
+# read failing, the product must stay UNMEASURED: disable fails and removes nothing.
+reset_converged
+export FAKE_NFT_READ_FAIL=1
+if run_child "$LANE_LIB" disable; then
+    if [[ "$CHILD_RC" -ne 0 && "$(dump)" == "$CONVERGED_DUMP" ]] && grep -q 'UNMEASURED' <<<"$CHILD_OUT"; then
+        ok "A3b DISABLE-UNMEASURED-REFUSES: unreadable kernel -> rc=$CHILD_RC, UNMEASURED reported, kernel byte-identical"
+    else
+        no "A3b disable over an unreadable kernel did not refuse (rc=$CHILD_RC prefix=$(cnt ip ddos_prefix))"
+    fi
+fi
+unset FAKE_NFT_READ_FAIL
 
 # --- A4 STOP-vs-DISABLE -------------------------------------------------------
 if [[ "$STOP_DUMP" != "$DISABLE_DUMP" && "$STOP_PREFIX" =~ ^[1-9] && "$DISABLE_PREFIX" == 0 ]]; then
