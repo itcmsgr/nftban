@@ -48,7 +48,7 @@ name: CI Fresh-Install Namespace Guard
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'hotfix/**']
     paths:
       - 'packaging/**'
       - 'install/**'

@@ -33,7 +33,7 @@ on:
   push:
     branches: [main, master, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'hotfix/**']
   workflow_dispatch:  # allow on-branch validation of architecture gates pre-PR
 
 concurrency:

@@ -33,7 +33,7 @@ name: Restore Canonization Gate
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'hotfix/**']
     paths:
       - 'cmd/nftban-installer/**'
       - 'internal/installer/restore/**'
