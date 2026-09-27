@@ -291,7 +291,9 @@ jobs:
   # the complete DDoS transaction failure-injection matrix on PRs into
   # hotfix/** so the patch is qualified BEFORE merge; the v* tag push is
   # qualified again by release.yml (release-ddos-txn-matrix gates
-  # build-binaries). Measured 1540 s serial; bound 60 min. No arm is trimmed.
+  # build-binaries). Measured 1540 s serial; bound 60 min. Every fault-matrix
+  # arm runs; the unmeasured arms are sampled (j=1, j=Q, stride Q/16) because
+  # DDOS_TXN_TEST_FULL is not set.
   ddos-txn-matrix-hotfix:
     name: DDoS transaction failure-injection matrix (hotfix PR)
     if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'hotfix/')
