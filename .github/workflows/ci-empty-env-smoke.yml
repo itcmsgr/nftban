@@ -24,7 +24,7 @@ name: Empty-Env Smoke Guard (H4)
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'hotfix/**']
     paths:
       - 'cli/**'
       - 'cmd/nftban-installer/**'

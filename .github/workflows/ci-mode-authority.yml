@@ -29,7 +29,7 @@ name: Runtime Mode Authority Gate
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'hotfix/**']
     paths:
       - 'internal/ddos/**'
       - 'internal/portscan/**'
