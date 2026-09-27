@@ -16,6 +16,7 @@ on:
     branches:
       - main
       - master
+      - 'hotfix/**'
 
 concurrency:
   group: shellcheck-${{ github.ref }}

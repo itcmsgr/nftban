@@ -15,6 +15,7 @@ on:
     branches:
       - main
       - master
+      - 'hotfix/**'
   workflow_dispatch:
 
 concurrency:
