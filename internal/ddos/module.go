@@ -360,8 +360,25 @@ func (m *Module) Stop() error {
 		m.cancel()
 	}
 
-	// Disable DDoS protection
-	m.disable()
+	// ⛔ v1.233.1 — STOP() != DISABLE().
+	// BUG-DDOS-DAEMON-SHUTDOWN-RECONCILE-FAILURE-LEAVES-PROTECTION-CHAINS-FLUSHED
+	// (witnessed lab3 2026-09-24). This used to call m.disable(), which ran the
+	// SAME nftban_ddos_reconcile as enable(): every graceful daemon stop with
+	// DDOS_ENABLED=true RE-APPLIED the DDoS layer. gracefulShutdown has already
+	// closed the IPC listener by the time modules stop, so the re-apply's IPC
+	// call to this very daemon failed after the shell had flushed ddos_prefix
+	// and ddos_protection -- protection stayed empty for the whole downtime, and
+	// the ignored return value meant nothing surfaced.
+	//
+	//   THE DAEMON IS THE CONTROL PLANE; CONVERGED RULES ARE THE ENFORCEMENT
+	//   PLANE. FIREWALL PROTECTION MUST NOT HAVE THE LIFETIME OF THE PROCESS.
+	//
+	// Stop() stops userspace only. Kernel protection stays at the last
+	// converged state while the daemon is offline. Changing intent (and the
+	// teardown that goes with it) belongs to the operator path
+	// (nftban_ddos_disable -> nftban_ddos_reconcile -> nftban_ddos_teardown),
+	// uninstall deletes the nftban tables itself, and the next Start()
+	// re-converges from the persisted intent.
 
 	m.mu.Lock()
 	m.status.MarkStopped()
@@ -423,16 +440,21 @@ func (m *Module) detectMode() {
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 
-// enable enables DDoS protection
-func (m *Module) enable() error {
+// runReconcile invokes the shell reconcile root (nftban_ddos_reconcile). It is
+// a package variable only so tests can observe WHICH lifecycle methods reach
+// it; production never reassigns it.
+var runReconcile = func() error {
 	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_reconcile", "_", getDDOSScript())
 	return cmd.Run()
 }
 
-// disable disables DDoS protection
-func (m *Module) disable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_ddos_reconcile", "_", getDDOSScript())
-	return cmd.Run()
+// enable converges DDoS protection to the persisted intent (Start() only).
+//
+// v1.233.1: the former disable() is gone. It ran the very same reconcile and
+// its only caller was Stop() -- see Stop() for why a service stop must not
+// reach the reconcile root at all.
+func (m *Module) enable() error {
+	return runReconcile()
 }
 
 // runPeriodicCheck runs periodic status checks

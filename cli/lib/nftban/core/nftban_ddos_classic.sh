@@ -59,6 +59,18 @@ source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
 # render as a determination. Loaded with the same tolerant pattern as its
 # siblings — the caller guards on `declare -f` and falls back to UNKNOWN.
 source "${NFTBAN_LIB_DIR}/lib/nft_probe.sh" 2>/dev/null || true
+# v1.233.1: bounded non-whitespace predicate for the replace-preamble read.
+# Loaded soft, matching this file's existing tolerance for an absent lib file.
+# The fallback body is BYTE-IDENTICAL to the canonical definition in
+# lib/shell_predicates.sh. Without it an absent helper returns 127, the predicate
+# evaluates FALSE, and a readable table would be silently reported UNKNOWN.
+# scripts/ci/check-predicate-loader-authority.sh enforces this pairing.
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/shell_predicates.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/shell_predicates.sh" 2>/dev/null || true
+fi
+declare -F nftban_has_non_whitespace >/dev/null 2>&1 || \
+    nftban_has_non_whitespace() { [[ ${1-} =~ [^[:space:]] ]]; }
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -519,6 +531,87 @@ _nftban_ddos_synproxy_remove_via_ipc() {
 }
 
 # =============================================================================
+# v1.233.1 — ONE TRANSACTION FOR REPLACE (flush + stale-set delete + re-add)
+# =============================================================================
+# BUG-DDOS-DAEMON-SHUTDOWN-RECONCILE-FAILURE-LEAVES-PROTECTION-CHAINS-FLUSHED
+# (witnessed lab3 2026-09-24). The prefix and classic setup used to run
+#     nft flush chain <table> <chain> 2>/dev/null || true
+#     nft delete set  <table> <meter> 2>/dev/null || true
+# DIRECTLY, outside the fragment transaction, and only THEN hand the fragment
+# to the daemon over IPC. Whenever that IPC apply failed (daemon listener
+# already closed during graceful shutdown) ddos_prefix and ddos_protection were
+# left EMPTY, with their jumps still in place, for the whole outage — and the
+# swallowed rc meant nothing surfaced.
+#
+#   A REPLACE IS ONE TRANSACTION: EITHER THE NEW RULES, OR THE OLD ONES.
+#
+# The same flush + delete-stale-set semantics now travel INSIDE the fragment
+# that nft applies atomically (the pattern ddos_sanity already uses: flush and
+# add in one fragment, lib/nft_fragment.sh). If the apply fails, nothing moved.
+#
+# The only thing done outside the transaction is a READ: which of the named
+# sets currently exist, because `delete set` of an absent set would abort the
+# whole transaction. That read is table-scoped and three-state:
+#   read OK + name listed      -> emit `delete set` (PRESENT)
+#   read OK + name not listed  -> emit nothing     (ABSENT, positive observation)
+#   read failed / empty output -> rc 1, emit nothing, caller refuses to mutate
+# A wrong answer here can only make the transaction FAIL ATOMICALLY (loud, rc 1,
+# old rules intact) — it can never produce a partial state.
+
+# _nftban_ddos_replace_preamble <table> <chain> [set...]
+# Prints the in-transaction preamble for ONE family on stdout. rc 1 = UNKNOWN.
+_nftban_ddos_replace_preamble() {
+    local _table="$1" _chain="$2"
+    shift 2
+    local _listing="" _rc=0
+    _listing=$(nft -t list table $_table 2>/dev/null) || _rc=$?
+    if [[ "$_rc" -ne 0 ]] || ! nftban_has_non_whitespace "$_listing"; then
+        echo "  ERROR: cannot read ${_table} (rc=${_rc}); existing DDoS sets are UNKNOWN — refusing to build the replace transaction" >&2
+        return 1
+    fi
+
+    # Names of every set-like object in THIS table. nft prints implicit meter
+    # sets as `meter NAME {` on some versions, so both spellings count.
+    local _present=" " _kw _nm _rest
+    while IFS=$' \t' read -r _kw _nm _rest; do
+        case "$_kw" in
+            set|meter|map) _present+="${_nm} " ;;
+        esac
+    done <<< "$_listing"
+
+    printf 'add chain %s %s\n' "$_table" "$_chain"
+    printf 'flush chain %s %s\n' "$_table" "$_chain"
+    local _s
+    for _s in "$@"; do
+        if [[ "$_present" == *" ${_s} "* ]]; then
+            printf 'delete set %s %s\n' "$_table" "$_s"
+        fi
+    done
+    return 0
+}
+
+# _nftban_ddos_compose_replace_txn <rendered_fragment> <preamble>
+# Writes <preamble> + the rendered fragment as ONE file next to the rendered
+# fragment and prints its path. The rendered fragment itself is not modified.
+_nftban_ddos_compose_replace_txn() {
+    local _rendered="$1" _preamble="$2"
+    local _body=""
+    _body=$(<"$_rendered") || {
+        echo "  ERROR: cannot read rendered fragment: $_rendered" >&2
+        return 1
+    }
+    local _txn="${_rendered%.nft}-txn.nft"
+    _nft_fragment_write "$_txn" "#!/usr/sbin/nft -f
+# NFTBan v1.233.1 — atomic replace transaction (generated; DO NOT EDIT)
+${_preamble}
+${_body}" || {
+        echo "  ERROR: cannot write replace transaction: $_txn" >&2
+        return 1
+    }
+    printf '%s\n' "$_txn"
+}
+
+# =============================================================================
 # PREFIX AGGREGATION SETUP (Fragment+IPC approach) - Stage 1.5
 # =============================================================================
 
@@ -541,16 +634,7 @@ _nftban_ddos_prefix_setup_via_ipc() {
 
     echo "  Setting up prefix aggregation protection (Stage 1.5)..."
 
-    # Clean up stale meters from previous enable (flush chain first, then delete meters)
-    # Meters are stored as sets internally — must flush referencing rules before deleting
-    nft flush chain $table_v4 "$chain" 2>/dev/null || true
-    nft delete set $table_v4 "$syn_meter" 2>/dev/null || true
-    nft delete set $table_v4 "$conn_meter" 2>/dev/null || true
-    nft flush chain $table_v6 "$chain" 2>/dev/null || true
-    nft delete set $table_v6 "${syn_meter}6" 2>/dev/null || true
-    nft delete set $table_v6 "${conn_meter}6" 2>/dev/null || true
-
-    # Render and apply prefix aggregation fragment
+    # Render prefix aggregation fragment
     local fragment_path
     fragment_path=$(nft_fragment_render_ddos_prefix) || {
         echo "  ERROR: Failed to render prefix aggregation fragment"
@@ -558,8 +642,27 @@ _nftban_ddos_prefix_setup_via_ipc() {
     }
     echo "     Fragment: $fragment_path"
 
-    if ! nft_fragment_apply "$fragment_path"; then
-        echo "  ERROR: Failed to apply prefix aggregation rules"
+    # v1.233.1: stale meters are replaced INSIDE the applied transaction
+    # (flush the referencing rules, delete the stale meter set, re-add) — never
+    # by a direct, rc-swallowed flush ahead of an apply that may fail.
+    # Meters are stored as sets internally — the flush must precede the delete.
+    local pre_v4 pre_v6 txn_path
+    pre_v4=$(_nftban_ddos_replace_preamble "$table_v4" "$chain" "$syn_meter" "$conn_meter") || {
+        echo "  ERROR: prefix aggregation not applied (existing state unreadable); previous rules left intact"
+        return 1
+    }
+    pre_v6=$(_nftban_ddos_replace_preamble "$table_v6" "$chain" "${syn_meter}6" "${conn_meter}6") || {
+        echo "  ERROR: prefix aggregation not applied (existing state unreadable); previous rules left intact"
+        return 1
+    }
+    txn_path=$(_nftban_ddos_compose_replace_txn "$fragment_path" "${pre_v4}
+${pre_v6}") || {
+        echo "  ERROR: Failed to compose prefix aggregation transaction"
+        return 1
+    }
+
+    if ! nft_fragment_apply "$txn_path"; then
+        echo "  ERROR: Failed to apply prefix aggregation rules (transaction not applied; previous rules left intact)"
         return 1
     fi
     echo "     Applied prefix aggregation rules"
@@ -609,15 +712,6 @@ _nftban_ddos_classic_setup_via_ipc() {
 
     echo "  Setting up Classic DDoS protection via IPC..."
 
-    # Clean up stale meters from previous enable (flush chain first, then delete meters)
-    nft flush chain $table_v4 "$chain" 2>/dev/null || true
-    nft delete set $table_v4 "$syn_meter" 2>/dev/null || true
-    nft delete set $table_v4 "$icmp_meter" 2>/dev/null || true
-    nft delete set $table_v4 "$udp_meter" 2>/dev/null || true
-    nft flush chain $table_v6 "$chain" 2>/dev/null || true
-    nft delete set $table_v6 "${syn_meter}6" 2>/dev/null || true
-    nft delete set $table_v6 "${icmp_meter}6" 2>/dev/null || true
-
     # Render the fragment with all config values
     local fragment_path
     fragment_path=$(nft_fragment_render_ddos_classic) || {
@@ -626,9 +720,26 @@ _nftban_ddos_classic_setup_via_ipc() {
     }
     echo "     Fragment: $fragment_path"
 
-    # Apply via IPC
-    if ! nft_fragment_apply "$fragment_path"; then
-        echo "  ERROR: Failed to apply fragment via IPC"
+    # v1.233.1: stale meters are replaced INSIDE the applied transaction, with
+    # the same object list as before (v4: syn/icmp/udp meters; v6: syn/icmp).
+    local pre_v4 pre_v6 txn_path
+    pre_v4=$(_nftban_ddos_replace_preamble "$table_v4" "$chain" "$syn_meter" "$icmp_meter" "$udp_meter") || {
+        echo "  ERROR: Classic DDoS protection not applied (existing state unreadable); previous rules left intact"
+        return 1
+    }
+    pre_v6=$(_nftban_ddos_replace_preamble "$table_v6" "$chain" "${syn_meter}6" "${icmp_meter}6") || {
+        echo "  ERROR: Classic DDoS protection not applied (existing state unreadable); previous rules left intact"
+        return 1
+    }
+    txn_path=$(_nftban_ddos_compose_replace_txn "$fragment_path" "${pre_v4}
+${pre_v6}") || {
+        echo "  ERROR: Failed to compose Classic DDoS transaction"
+        return 1
+    }
+
+    # Apply via IPC — one transaction: new rules, or the old ones untouched
+    if ! nft_fragment_apply "$txn_path"; then
+        echo "  ERROR: Failed to apply fragment via IPC (transaction not applied; previous rules left intact)"
         return 1
     fi
     echo "     Applied DDoS protection rules"

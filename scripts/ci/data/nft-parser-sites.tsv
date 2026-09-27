@@ -29,7 +29,7 @@ cli/lib/nftban/cli/cmd_update.sh	7
 cli/lib/nftban/cli/cmd_whitelist.sh	7
 cli/lib/nftban/cli/cmd_zabbix.sh	4
 cli/lib/nftban/core/nftban_config_doctor.sh	3
-cli/lib/nftban/core/nftban_ddos_classic.sh	16
+cli/lib/nftban/core/nftban_ddos_classic.sh	17
 cli/lib/nftban/core/nftban_ddos_suricata.sh	3
 cli/lib/nftban/core/nftban_emulate.sh	3
 cli/lib/nftban/core/nftban_feeds.sh	2
@@ -73,6 +73,7 @@ internal/installer/extfw/detect.go	1
 internal/installer/reconcile/reconcile.go	1
 internal/installer/structure/fingerprint.go	1
 internal/installer/switchop/classify.go	2
+internal/installer/uninstall/apply.go	3
 internal/installer/validate/assertions.go	1
 internal/metrics/collector.go	2
 internal/metrics/evidence_chains.go	2
