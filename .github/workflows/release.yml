@@ -213,11 +213,37 @@ jobs:
           echo "self-test OK: drift detected when injected, clean once restored"
 
   # ==========================================================================
+  # RELEASE QUALIFICATION — DDoS enable/disable failure-injection matrix
+  # ==========================================================================
+  # v1.233.1: ddos_enable_disable_txn_v1233_1_test runs the complete T1 model
+  # (every mutation primitive of the enable and disable passes failed before
+  # AND after its effect, plus the unmeasured arms). It is a ci-bash row, and
+  # ci-bash runs only from ci-architecture.yml (push to main/master/develop and
+  # pull_request) — NOT on tags. release.yml ran none of it, so a tag could be
+  # built and published without the matrix ever executing on the tagged commit.
+  # It runs here on every v* tag push (including the v1.233.1 patch vehicle)
+  # and on the workflow_dispatch dry-run, and gates build-binaries: nothing is
+  # built or published without it. No arm is trimmed: the test iterates every
+  # primitive reached in pass 1, both kinds, and fails if pass 1 reached none or
+  # if an injected fault never fired. Measured 1540 s serial (ta.timeout 2400);
+  # the job bound is 60 min.
+  release-ddos-txn-matrix:
+    name: Release qualification (DDoS transaction failure-injection matrix)
+    needs: release-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: DDoS enable/disable transaction — complete fault matrix
+        run: timeout 3000 bash cli/lib/nftban/tests/ddos_enable_disable_txn_v1233_1_test.sh
+
+  # ==========================================================================
   # BUILD GO BINARIES
   # ==========================================================================
   build-binaries:
     name: Build Go binaries
-    needs: release-preflight
+    needs: [release-preflight, release-ddos-txn-matrix]
     runs-on: ubuntu-latest
     # v1.231.0 SLSA-IDENTITY: the SLSA config needs a V-LESS version. pkg/version
     # composes FullVersion() as "v"+Version, and build.sh feeds it the bare VERSION
