@@ -500,10 +500,6 @@ product	cli/lib/nftban/helpers/suricata_effective_config.sh	c8942c969cb46fba	1	g
 product	cli/lib/nftban/helpers/suricata_effective_config.sh	e217e393cf94043b	1	grep-q	A	n/a	UNVERIFIED	fn=_suricata_get_server_role; security_or_count_surface=condition; INFERRED ~65024
 product	cli/lib/nftban/lib/derived_state_reconcile.sh	77c182092b10fadc	1	head	E	n/a	UNVERIFIED	fn=_nftban_dsr_plan_get; needs a producer-size probe on a representative host
 product	cli/lib/nftban/lib/nft_fragment.sh	0855bc4fef8b3f5f	8	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/lib/nft_probe.sh	323ad0874e5c301a	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host
-product	cli/lib/nftban/lib/nft_probe.sh	88294984ad502035	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host
-product	cli/lib/nftban/lib/nft_probe.sh	a3a9c5b0b5bec270	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host
-product	cli/lib/nftban/lib/nft_probe.sh	ee575ad5c094d74b	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host
 product	cli/lib/nftban/lib/nft_schema.sh	131cdcabfa88a5b5	2	head	E	n/a	UNVERIFIED	fn=nftban_nft_validate_set_flags; needs a producer-size probe on a representative host
 product	cli/lib/nftban/lib/nft_schema.sh	1490ca09ea3564a1	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/lib/nft_schema.sh	2fc534e10083ed54	1	grep-q	B	n/a	UNVERIFIED	-
