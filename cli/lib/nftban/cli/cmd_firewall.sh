@@ -3217,34 +3217,178 @@ _rebuild_is_update_lifecycle() {
     return 1
 }
 
-# _rebuild_update_history_prune — v1.229.3 P0-2B + P0-3.
-#
+# =============================================================================
+# UPDATE-HISTORY PRUNE — plan OUTSIDE the lock, verify + mutate INSIDE it (v1.234.0 RBLD)
+# =============================================================================
 #   POLICY (lifecycle, not capacity-derived): MIN 1, MAX 2 completed generations.
 #   CAPACITY (P0-3) may only answer "can 1..2 safely fit here?" -- free space never
 #   authorizes MORE history, and pressure never removes the mandatory floor.
 #
 # Ordinary successful rebuilds are disposed at once (P0-2A), so every surviving
 # TERMINAL_SUCCESS generation IS update history; no separate marking is needed.
-#
 # Ordering is the directory NAME (rebuild_YYYYMMDD_HHMMSS is fixed-width, so a
 # lexicographic sort is chronological, total and touch(1)-proof), matching 0C.
-_rebuild_update_history_prune() {
-    local _bk="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup"
-    [[ -d "$_bk" && -r "$_bk" && -x "$_bk" ]] || return 1
+#
+# ⛔ MEASURED (v1.234 RBLD recon, lab4): the previous prune walked EVERY rebuild_* dir
+#    under nft_operations.lock, one `basename` exec per dir, so an install-context
+#    rebuild went 2.45 s -> 144 s from 12 to 40,000 dirs, holding the convergence lock
+#    throughout (98.5 % of it in the prune). Only dirs that HAVE a snapshot_state can
+#    ever be history, and deciding which ones are needs no lock. So:
+#      PLAN   (before the lock, constant processes): positive discovery of the
+#             state-bearing dirs, classification, a bounded batch, identity witnesses;
+#      CHECK  (first thing under the rebuild's EXISTING lock, before its own snapshot):
+#             O(1) parent-directory witness -- no rebuild_* created/removed since the plan;
+#      VERIFY + MUTATE (after TERMINAL_SUCCESS, same lock window): re-witness the batch and
+#             the boundary, then delete at most _RBP_MAX_PRUNE_BATCH, oldest first.
+#    No population-wide operation runs under the lock, and no new lock acquisition is made.
+#
+#     A PATHNAME IS NOT A SNAPSHOT IDENTITY -- AND NEITHER IS AN INODE.
+#    A same-second rebuild re-enters the same path with `mkdir -p` and truncate-rewrites
+#    snapshot_state in place: dir inode, file inode, size and even sha256 can all survive
+#    a full ACTIVE -> TERMINAL_SUCCESS cycle (measured on DEB + RPM). The file's ctime
+#    cannot be preserved by a rewrite, so it is part of the witness. Any mismatch,
+#    missing path or read error aborts the WHOLE batch; nothing is deleted on a name.
+#
+# Pruning is housekeeping of recovery history: every outcome is reported on one
+# NFTBAN_PRUNE line and NONE of them changes the rebuild's exit code (call site: `|| true`).
 
-    local _hist=() _d
+# One rebuild deletes at most this many history dirs; later install-context rebuilds
+# continue. ⛔ PROVISIONAL -- frozen with the incremental in-lock ceiling from measured
+#    DEB + RPM cost (V1_234_0_RBLD_DESIGN.md §7).
+_RBP_MAX_PRUNE_BATCH=32
+
+_RBP_STATUS=""      # "" | PLANNED | SKIPPED | ABORTED
+_RBP_REASON=""
+_RBP_PW=""          # parent witness of backup/ at plan time
+_RBP_BOUNDARY=""    # newest pre-existing history dir: floor if K=2, deletable if K=1
+_RBP_BATCH=()       # oldest-first base candidates (deletable under either K)
+_RBP_HIST_N=0
+_RBP_CAND_N=0
+_RBP_PLAN_MS=0
+# -g: global even if this file is sourced inside a function (an indexed array would
+# silently evaluate a path as an arithmetic subscript).
+declare -gA _RBP_W=()
+
+_rbp_ms_into() {
+    local _t="${EPOCHREALTIME/[.,]/}"
+    printf -v "$1" '%d' "$(( _t / 1000 ))"
+}
+
+# _rbp_parent_witness DIR — dev:inode|mtime_ns|ctime_ns of the backup directory itself.
+# Creating or removing a direct child changes it; rewriting a child in place does not.
+_rbp_parent_witness() {
+    stat -c '%d:%i|%.9Y|%.9Z' -- "$1" 2>/dev/null
+}
+
+# _rbp_witness DIR... — one line per dir, constant processes (stat, sha256sum, awk):
+#   dir|dir dev:inode|file dev:inode|size|mtime_ns|ctime_ns|sha256|last tx_state
+# Non-zero if ANY component of ANY dir cannot be observed.
+_rbp_witness() {
+    (( $# > 0 )) || return 0
+    local _d _files=() _st _sh _tx _l _k _v
+    for _d in "$@"; do _files+=("$_d/snapshot_state"); done
+    _st=$(stat -c '%n|%d:%i|%s|%.9Y|%.9Z' -- "$@" "${_files[@]}" 2>/dev/null) || return 1
+    _sh=$(sha256sum -- "${_files[@]}" 2>/dev/null) || return 1
+    # last tx_state, byte-equivalent to `sed -n 's/^tx_state=//p' | tail -1` (see tests)
+    _tx=$(awk 'FNR==1{f=FILENAME; l[f]=""} /^tx_state=/{l[f]=substr($0,10)} END{for(f in l) print f "|" l[f]}' \
+          "${_files[@]}" 2>/dev/null) || return 1
+    local -A _dirid=() _fmeta=() _fsha=() _ftx=()
+    while IFS='|' read -r _k _v _l; do
+        [[ -n "$_k" ]] || continue
+        if [[ "$_k" == */snapshot_state ]]; then _fmeta[${_k%/snapshot_state}]="$_v|$_l"; else _dirid[$_k]="$_v"; fi
+    done <<< "$_st"
+    # sha256sum separates hash and name with SPACES. The rebuild runs under lib/strict.sh
+    # (IFS=$'\n\t', no space), so the split must name its own separator.
+    while IFS=$' \t' read -r _v _k; do [[ -n "$_k" ]] && _fsha[${_k%/snapshot_state}]="$_v"; done <<< "$_sh"
+    while IFS='|' read -r _k _v; do [[ -n "$_k" ]] && _ftx[${_k%/snapshot_state}]="$_v"; done <<< "$_tx"
+    for _d in "$@"; do
+        [[ -n "${_dirid[$_d]:-}" && -n "${_fmeta[$_d]:-}" && -n "${_fsha[$_d]:-}" ]] || return 1
+        printf '%s|%s|%s|%s|%s\n' "$_d" "${_dirid[$_d]}" "${_fmeta[$_d]}" "${_fsha[$_d]}" "${_ftx[$_d]:-}"
+    done
+}
+
+_rbp_emit() {   # $1 status  $2 reason  [removed] [keep] [verify_ms] [mutate_ms]
+    printf 'NFTBAN_PRUNE=%s reason=%s history=%d candidates=%d batch=%d removed=%d keep=%s plan_ms=%d verify_ms=%d mutate_ms=%d prune_in_lock_ms=%d\n' \
+        "$1" "$2" "$_RBP_HIST_N" "$_RBP_CAND_N" "${#_RBP_BATCH[@]}" "${3:-0}" "${4:-NA}" "$_RBP_PLAN_MS" \
+        "${5:-0}" "${6:-0}" "$(( ${5:-0} + ${6:-0} ))" >&2
+}
+
+# _rebuild_prune_plan — BEFORE the lock. Never fails the rebuild: any observation
+# problem leaves _RBP_STATUS=SKIPPED with a reason, and the prune then does nothing.
+_rebuild_prune_plan() {
+    _RBP_STATUS=SKIPPED; _RBP_REASON=""; _RBP_PW=""; _RBP_BOUNDARY=""; _RBP_BATCH=()
+    _RBP_HIST_N=0; _RBP_CAND_N=0; _RBP_PLAN_MS=0; declare -gA _RBP_W=()
+    local _bk="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup" _t0 _t1 _list _d _tx _k _v _w
+    _rbp_ms_into _t0
+    [[ -d "$_bk" && -r "$_bk" && -x "$_bk" ]] || { _RBP_REASON=backup_unobservable; return 0; }
+    _RBP_PW=$(_rbp_parent_witness "$_bk") && [[ -n "$_RBP_PW" ]] || { _RBP_REASON=parent_unobservable; return 0; }
+    # Positive discovery: only dirs that HAVE a snapshot_state can be history.
+    _list=$( set -o pipefail
+             find "$_bk" -mindepth 2 -maxdepth 2 -path "$_bk/rebuild_*/snapshot_state" -type f -printf '%h\n' 2>/dev/null \
+               | LC_ALL=C sort ) || { _RBP_REASON=discovery_failed; return 0; }
+    local _cand=() _files=()
     while IFS= read -r _d; do
         [[ -n "$_d" ]] || continue
-        [[ "$(basename -- "$_d")" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ ]] || continue
-        [[ "$(_rebuild_tx_last_state "$_d" 2>/dev/null)" == "TERMINAL_SUCCESS" ]] && _hist+=("$_d")
-    done < <(find "$_bk" -mindepth 1 -maxdepth 1 -type d -name 'rebuild_*' 2>/dev/null | LC_ALL=C sort)
+        [[ "${_d##*/}" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ && "${_d%/*}" == "$_bk" ]] || continue
+        [[ -r "$_d/snapshot_state" ]] || continue          # unreadable: never history (as before)
+        _cand+=("$_d"); _files+=("$_d/snapshot_state")
+    done <<< "$_list"
+    local _hist=()
+    if (( ${#_files[@]} > 0 )); then
+        _tx=$(awk 'FNR==1{f=FILENAME; l[f]=""} /^tx_state=/{l[f]=substr($0,10)} END{for(f in l) print f "|" l[f]}' \
+              "${_files[@]}" 2>/dev/null) || { _RBP_REASON=classify_failed; return 0; }
+        local -A _last=()
+        while IFS='|' read -r _k _v; do [[ -n "$_k" ]] && _last[${_k%/snapshot_state}]="$_v"; done <<< "$_tx"
+        for _d in "${_cand[@]}"; do [[ "${_last[$_d]:-}" == "TERMINAL_SUCCESS" ]] && _hist+=("$_d"); done
+    fi
+    _RBP_HIST_N=${#_hist[@]}
+    if (( _RBP_HIST_N > 0 )); then
+        _RBP_BOUNDARY="${_hist[$((_RBP_HIST_N-1))]}"
+        _RBP_CAND_N=$(( _RBP_HIST_N - 1 ))
+        local _i _n=$(( _RBP_CAND_N < _RBP_MAX_PRUNE_BATCH ? _RBP_CAND_N : _RBP_MAX_PRUNE_BATCH ))
+        for (( _i = 0; _i < _n; _i++ )); do _RBP_BATCH+=("${_hist[$_i]}"); done
+        _w=$(_rbp_witness "${_RBP_BATCH[@]}" "$_RBP_BOUNDARY") || { _RBP_REASON=witness_unobservable; _RBP_BATCH=(); return 0; }
+        while IFS= read -r _v; do
+            [[ -n "$_v" ]] || continue
+            [[ "${_v##*|}" == "TERMINAL_SUCCESS" ]] || { _RBP_REASON=plan_inconsistent; _RBP_BATCH=(); return 0; }
+            _RBP_W[${_v%%|*}]="$_v"
+        done <<< "$_w"
+    fi
+    _rbp_ms_into _t1; _RBP_PLAN_MS=$(( _t1 - _t0 ))
+    _RBP_STATUS=PLANNED; _RBP_REASON=planned
+    return 0
+}
 
-    local _n=${#_hist[@]}
-    (( _n >= 1 )) || return 0
+# _rebuild_prune_parent_check — the FIRST thing under the rebuild's existing lock, BEFORE
+# the rebuild creates its own snapshot dir. O(1): one stat of backup/. A changed parent
+# means a rebuild_* child was created or removed since the plan (another rebuild, 9c):
+# the plan no longer describes the population, so it is dropped. The rebuild continues.
+_rebuild_prune_parent_check() {
+    [[ "$_RBP_STATUS" == PLANNED ]] || return 0
+    local _now
+    _now=$(_rbp_parent_witness "${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup") || _now=""
+    if [[ -z "$_now" ]]; then _RBP_STATUS=ABORTED; _RBP_REASON=parent_unobservable
+    elif [[ "$_now" != "$_RBP_PW" ]]; then _RBP_STATUS=ABORTED; _RBP_REASON=population_changed
+    fi
+    return 0
+}
 
-    # MANDATORY FLOOR: the newest completed generation is never removable.
+# _rebuild_update_history_prune — UNDER the lock, after this rebuild's TERMINAL_SUCCESS.
+# Consumes the plan; never walks the population. Bounded: one witness pass over at most
+# _RBP_MAX_PRUNE_BATCH + 1 dirs and at most _RBP_MAX_PRUNE_BATCH deletions.
+_rebuild_update_history_prune() {
+    local _bk="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup" _t0 _t1 _t2 _vms=0 _mms=0
+    _rbp_ms_into _t0
+    if [[ "$_RBP_STATUS" != PLANNED ]]; then _rbp_emit "${_RBP_STATUS:-SKIPPED}" "${_RBP_REASON:-no_plan}"; return 0; fi
+
+    # The live rollback snapshot: this rebuild's own, the newest, and always kept.
+    local _newest="${_REBUILD_SNAPSHOT_DIR:-}"
+    if [[ -z "$_newest" || "$(_rebuild_tx_last_state "$_newest" 2>/dev/null)" != "TERMINAL_SUCCESS" ]]; then
+        _rbp_emit ABORTED own_snapshot_not_terminal; return 0
+    fi
+
+    # MANDATORY FLOOR: the newest completed generation (own) is never removable.
     local _keep=2
-    local _newest="${_hist[$((_n-1))]}"
     local _cost _cb _ce _verdict
     if _cost=$(_bcap_object_cost "$_newest"); then
         _cb=$(awk '{print $1}' <<<"$_cost"); _ce=$(awk '{print $2}' <<<"$_cost")
@@ -3266,12 +3410,39 @@ _rebuild_update_history_prune() {
         echo "NFTBAN_BACKUP_CAPACITY=UNKNOWN (cost unreadable; retaining mandatory floor only)" >&2
     fi
 
-    (( _n > _keep )) || return 0
-    local _i
-    for (( _i = 0; _i < _n - _keep; _i++ )); do
-        [[ "$(basename -- "${_hist[$_i]}")" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ ]] || continue
-        rm -rf -- "${_hist[$_i]}" 2>/dev/null || true
+    # Exact capacity policy: K=2 keeps own + boundary; K=1 keeps own only, so the boundary
+    # joins the deletion set -- unless the batch bound is full, then it is DEFERRED (reported).
+    local _del=("${_RBP_BATCH[@]}") _note=""
+    if [[ -n "$_RBP_BOUNDARY" ]] && (( _keep == 1 )); then
+        if (( ${#_del[@]} < _RBP_MAX_PRUNE_BATCH )); then _del+=("$_RBP_BOUNDARY"); else _note="+boundary_deferred_batch_bound"; fi
+    fi
+    if (( ${#_del[@]} == 0 )); then _rbp_emit NONE "nothing_to_prune$_note" 0 "$_keep"; return 0; fi
+
+    # The live snapshot can never be a planned object: a collision means the path was re-entered.
+    local _x
+    for _x in "${_del[@]}" "$_RBP_BOUNDARY"; do
+        [[ "$_x" == "$_newest" ]] && { _rbp_emit ABORTED own_snapshot_collision 0 "$_keep"; return 0; }
     done
+
+    # Re-witness EVERY planned object (batch + boundary, whatever its role). Whole-batch abort.
+    local _w _l _seen=0
+    _w=$(_rbp_witness "${_RBP_BATCH[@]}" "$_RBP_BOUNDARY") || { _rbp_ms_into _t1; _vms=$(( _t1 - _t0 )); _rbp_emit ABORTED witness_unobservable 0 "$_keep" "$_vms"; return 0; }
+    while IFS= read -r _l; do
+        [[ -n "$_l" ]] || continue
+        [[ "${_RBP_W[${_l%%|*}]:-}" == "$_l" ]] || { _rbp_ms_into _t1; _vms=$(( _t1 - _t0 )); _rbp_emit ABORTED witness_mismatch 0 "$_keep" "$_vms"; return 0; }
+        _seen=$(( _seen + 1 ))
+    done <<< "$_w"
+    (( _seen == ${#_RBP_W[@]} )) || { _rbp_ms_into _t1; _vms=$(( _t1 - _t0 )); _rbp_emit ABORTED witness_incomplete 0 "$_keep" "$_vms"; return 0; }
+    _rbp_ms_into _t1; _vms=$(( _t1 - _t0 ))
+
+    # Mutate: oldest first (batch is name-sorted; the boundary, when included, is newest).
+    local _removed=0 _st=DONE _why="pruned$_note"
+    for _x in "${_del[@]}"; do
+        [[ "${_x##*/}" =~ ^rebuild_[0-9]{8}_[0-9]{6}$ && "${_x%/*}" == "$_bk" ]] || { _st=PARTIAL; _why=namespace_recheck_failed; break; }
+        if rm -rf -- "$_x" 2>/dev/null; then _removed=$(( _removed + 1 )); else _st=PARTIAL; _why=rm_failed; break; fi
+    done
+    _rbp_ms_into _t2; _mms=$(( _t2 - _t1 ))
+    _rbp_emit "$_st" "$_why" "$_removed" "$_keep" "$_vms" "$_mms"
     return 0
 }
 
@@ -3484,6 +3655,10 @@ _rebuild_publish_refusal() {
 }
 
 _firewall_rebuild_serialized() {
+    # v1.234.0 RBLD: plan the update-history prune BEFORE the lock (population work never
+    # runs under it). Plain rebuilds never prune and never plan.
+    _RBP_STATUS=""
+    if _rebuild_is_update_lifecycle "$@"; then _rebuild_prune_plan; fi
     local _nftlock_path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
     # ⛔ v1.229.11 LANE 7: THE POLICY LIVES HERE TOO, OR IT DOES NOT EXIST.
     # Making nftban_plan_txn_begin fail-fast changed NOTHING for `firewall
@@ -3544,6 +3719,9 @@ _firewall_rebuild_serialized() {
     # EXPORTED because the lane converges modules via `nftban <mod> reload`
     # SUBPROCESSES, which own transactions of their own and must also stand down.
     export NFTBAN_NFTLOCK_HELD=1
+    # v1.234.0 RBLD: O(1) population-stability check, BEFORE this rebuild creates its own
+    # snapshot dir (which legitimately changes backup/).
+    _rebuild_prune_parent_check
 
     # ⛔ v1.230.0 Gate 6R: THE EXECUTION BOUNDARY IS RECORDED HERE, AND ONLY HERE.
     # Past this line the rebuild has STARTED. Everything before it — including the
