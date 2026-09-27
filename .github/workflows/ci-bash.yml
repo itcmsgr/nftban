@@ -284,3 +284,20 @@ jobs:
           echo "=== Executing: test_validation.sh ==="
           chmod +x cli/lib/nftban/tests/test_validation.sh
           bash cli/lib/nftban/tests/test_validation.sh
+
+  # v1.233.1 patch vehicle: a PR into hotfix/** does not trigger
+  # ci-architecture.yml (pull_request: main/master only), which is where the
+  # ci-bash gate row ddos_enable_disable_txn_v1233_1_test runs. This job runs
+  # the complete DDoS transaction failure-injection matrix on PRs into
+  # hotfix/** so the patch is qualified BEFORE merge; the v* tag push is
+  # qualified again by release.yml (release-ddos-txn-matrix gates
+  # build-binaries). Measured 1540 s serial; bound 60 min. No arm is trimmed.
+  ddos-txn-matrix-hotfix:
+    name: DDoS transaction failure-injection matrix (hotfix PR)
+    if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'hotfix/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: DDoS enable/disable transaction — complete fault matrix
+        run: timeout 3000 bash cli/lib/nftban/tests/ddos_enable_disable_txn_v1233_1_test.sh
