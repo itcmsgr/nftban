@@ -23,7 +23,7 @@ name: Runtime Truth Gate
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'hotfix/**']
     paths:
       - 'cli/**'
       - 'cmd/**'

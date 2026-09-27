@@ -16,7 +16,7 @@ name: Dependency Review
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'hotfix/**']
 
 permissions:
   contents: read

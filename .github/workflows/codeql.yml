@@ -23,7 +23,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, 'hotfix/**']
   schedule:
     - cron: '0 3 * * 0'  # Weekly: Sunday 3:00 AM UTC
 
