@@ -223,9 +223,10 @@ jobs:
   # built and published without the matrix ever executing on the tagged commit.
   # It runs here on every v* tag push (including the v1.233.1 patch vehicle)
   # and on the workflow_dispatch dry-run, and gates build-binaries: nothing is
-  # built or published without it. No arm is trimmed: the test iterates every
-  # primitive reached in pass 1, both kinds, and fails if pass 1 reached none or
-  # if an injected fault never fired. Measured 1540 s serial (ta.timeout 2400);
+  # built or published without it. The fault matrix is not trimmed: the test
+  # iterates every primitive reached in pass 1, both kinds, and fails if pass 1
+  # reached none or if an injected fault never fired. The unmeasured arms are
+  # sampled (j=1, j=Q, stride Q/16) because DDOS_TXN_TEST_FULL is not set. Measured 1540 s serial (ta.timeout 2400);
   # the job bound is 60 min.
   release-ddos-txn-matrix:
     name: Release qualification (DDoS transaction failure-injection matrix)
