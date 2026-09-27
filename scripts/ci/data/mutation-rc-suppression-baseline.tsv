@@ -4,10 +4,6 @@
 # a row that stops reproducing fails the gate until it is removed. Fix the code, then
 # delete the row. Regenerate: scripts/ci/check-mutation-rc-suppression.sh --emit-baseline
 # key = file|function|primitive|form
-cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_classic_setup_via_ipc|nft_delete|STDERR_HIDDEN_OR_TRUE
-cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_classic_setup_via_ipc|nft_flush|STDERR_HIDDEN_OR_TRUE
-cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_prefix_setup_via_ipc|nft_delete|STDERR_HIDDEN_OR_TRUE
-cli/lib/nftban/core/nftban_ddos_classic.sh|_nftban_ddos_prefix_setup_via_ipc|nft_flush|STDERR_HIDDEN_OR_TRUE
 cli/lib/nftban/core/nftban_ddos.sh|_nftban_ddos_purge_projection|nft_fragment_delete_object|OR_TRUE
 cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_csf|systemctl_stop|STDERR_HIDDEN_OR_TRUE
 cli/lib/nftban/core/nftban_firewall_conflicts.sh|nftban_remove_fail2ban|systemctl_stop|STDERR_HIDDEN_OR_TRUE
