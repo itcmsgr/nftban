@@ -877,7 +877,9 @@ say ""
 say "fault matrix (op k kind primitive -> outcome):"
 for l in "${FMATRIX[@]}"; do say "   $l"; done
 say "fault matrix summary: $(printf '%s\n' "${FMATRIX[@]}" | awk '{for(i=1;i<=NF;i++) if($i=="->") print $1" "$(i+1)" "$(i+2)}' | sort | uniq -c | tr '\n' ';')"
-say "unmeasured matrix: $(printf '%s\n' "${UMATRIX[@]}" | awk '{print $1" "$NF" "$(NF-1)}' | sort | uniq -c | tr '\n' ';')"
+say "unmeasured matrix (op j kind -> outcome):"
+for l in "${UMATRIX[@]}"; do say "   $l"; done
+say "unmeasured matrix summary: $(printf '%s\n' "${UMATRIX[@]}" | awk '{print $1" "$NF" "$(NF-1)}' | sort | uniq -c | tr '\n' ';')"
 say ""
 say "runs=$RUNS checks=$CHECKS failures=$FAILURES"
 if (( FAILURES > 0 )); then
