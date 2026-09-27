@@ -93,14 +93,17 @@ IFS=$' \t\n'
 K="$FAKE_K"
 # shellcheck source=/dev/null
 . "$FAKE_T/prim.sh"
-annot=0; check=0; file=""
+annot=0; check=0; terse=0; file=""
 args=("$@")
 while (( ${#args[@]} )); do
     case "${args[0]}" in
         -a) annot=1; args=("${args[@]:1}") ;;
         -c) check=1; args=("${args[@]:1}") ;;
+        # -t/--terse: real nft omits set CONTENTS (the elements line) and
+        # nothing else. The DDoS replace preamble reads `nft -t list table`.
+        -t|--terse) terse=1; args=("${args[@]:1}") ;;
         -f) file="${args[1]:-}"; args=("${args[@]:2}") ;;
-        -j|-t|-n|-s) echo "UNSUPPORTED flag ${args[0]} in: $*" >> "$FAKE_T/unsupported"
+        -j|-n|-s) echo "UNSUPPORTED flag ${args[0]} in: $*" >> "$FAKE_T/unsupported"
                      echo "fake nft: unsupported flag ${args[0]}" >&2; exit 99 ;;
         *) break ;;
     esac
@@ -203,7 +206,7 @@ print_chain() {  # <fam> <table> <chain> <annot>
 print_set() {  # <fam> <table> <set>
     local sf; sf="$(sdir "$K" "$1" "$2")/$3"
     printf '\tset %s {\n\t\ttype %s\n\t\tflags timeout\n' "$3" "$([[ "$1" == ip6 ]] && echo ipv6_addr || echo ipv4_addr)"
-    if [[ -s "$sf" ]]; then printf '\t\telements = { %s }\n' "$(paste -sd, "$sf" | sed 's/,/, /g')"; fi
+    if (( terse == 0 )) && [[ -s "$sf" ]]; then printf '\t\telements = { %s }\n' "$(paste -sd, "$sf" | sed 's/,/, /g')"; fi
     printf '\t}\n'
 }
 
