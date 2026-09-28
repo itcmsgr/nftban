@@ -737,52 +737,210 @@ nftban_ddos_apply() {
     return 0
 }
 
+# =============================================================================
+# v1.233.1 — THE OPERATOR TRANSACTION for `nftban ddos enable|disable`
+# =============================================================================
+# Contract: V1_234_0_CLAIM_TRUTH_AND_TRANSACTIONAL_CONTRACT.md §6/§7 (owner
+# rulings L1-L3). Handle: BUG-DDOS-ENABLE-DISABLE-STALE-INTENT-AND-SWALLOWED-
+# TEARDOWN.
+#
+# WHAT WAS WRONG (witnessed lab3, v1.233.0):
+#   enable  ran nftban_ddos_reconcile BEFORE persisting intent, so it resolved
+#           the OLD `disabled` intent and TORE DOWN on an enable request (four
+#           swallowed cleanup WARNINGs and "✅ DDoS Protection DISABLED"), then
+#           printed "now active" from the `systemctl restart` exit code and the
+#           banner "ENABLED (INACTIVE)" from that stale plan.
+#   disable persisted intent, then ran a teardown that discarded both children
+#           (`nftban_ddos_classic_disable 2>/dev/null || true`, suricata
+#           likewise) and printed "✅ DDoS Protection DISABLED" rc 0. With IPC
+#           down, 9 DROP rules per family (ddos_sanity 5 + ddos_penalty 4, ip
+#           and ip6) stayed jumped from input and survived a daemon restart.
+#
+# THE TRANSACTION is the one PortScan proved (lib/module_txn.sh,
+# nftban_module_txn): the same canonical lock, the same runtime record
+# (/run/nftban/module-txn-ddos.env), the same outcome derivation and rc table
+#   CONVERGED 0 · FAILED_ROLLED_BACK 1 · DEGRADED 3 · PENDING_TIMED_OUT 4
+#   REFUSED 7 (convergence lock busy) or 5 (another precondition)
+# and exactly one terminal NFTBAN_OUTCOME line. What is DDoS-specific is below:
+# the inputs, the kernel observation and the expected kernel class.
+# =============================================================================
+
+# shellcheck source=/usr/lib/nftban/lib/module_txn.sh
+if ! declare -F nftban_module_txn >/dev/null 2>&1 && \
+   [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_txn.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_txn.sh" || return 1
+fi
+
+# Engine hooks (see lib/module_txn.sh, MODULE HOOKS).
+_nftban_ddos_txn_record_write() { nftban_mtxn_record_write; }
+_nftban_ddos_txn_labels() {
+    _MT_TITLE="DDoS Protection"; _MT_NAME="DDoS"
+    _MT_LOWER="DDoS protection"; _MT_WHAT="DDoS protection"
+}
+# The observation needs the classic stage names/switches; the reconcile root
+# loads the same files. No system mutation.
+_nftban_ddos_txn_prepare() {
+    _nftban_ddos_load_config || return 1
+    declare -F _nftban_ddos_classic_load_config >/dev/null 2>&1 || return 1
+    _nftban_ddos_classic_load_config || return 1
+    declare -F nftban_ddos_classic_disable >/dev/null 2>&1 || return 1
+    declare -F nftban_ddos_suricata_disable >/dev/null 2>&1 || return 1
+    return 0
+}
+
+# _nftban_ddos_kernel_observe — classify the module-owned kernel state through
+# typed queries only (lib/nft_fragment.sh nft_fragment_observe_*). Sets
+# NFTBAN_MTXN_KCLASS and NFTBAN_MTXN_KDETAIL; always returns 0.
+#
+#   stage       chain                  enforcing rule          required on enable
+#   sanity      DDOS_SANITY_CHAIN      drop                    always
+#   synproxy    DDOS_SYNPROXY_CHAIN    synproxy statement      DDOS_SYNPROXY_ENABLED=true
+#               + <fam> raw prerouting "SYNPROXY:" notrack     (same)
+#   prefix      DDOS_PREFIX_CHAIN      drop                    DDOS_PREFIX_ENABLED=true
+#   protection  DDOS_NFT_CHAIN         drop                    always
+#   penalty     DDOS_PENALTY_CHAIN     drop                    always
+#   blocked set DDOS_CLASSIC_BLOCK_SET (ip) elements           (suricata mode)
+#
+#   CLASSIC_ACTIVE     every REQUIRED stage, in every family, has a rule and an
+#                      enforcing rule and at least one input jump (and, with
+#                      synproxy on, notrack rules in raw prerouting).
+#   EMPTY              no classic stage chain holds a rule in any family, no
+#                      notrack rule remains, the blocked set is absent or holds no
+#                      element. Empty chains and their jumps may remain — the
+#                      shipped cleanup flushes "for reference safety".
+#   SURICATA_READY     as EMPTY, and the ip input chain drops @blocked-set
+#                      (suricata's projection; with an empty set it enforces
+#                      nothing, so it also satisfies a disable).
+#   SURICATA_BLOCKING  no classic rule, no notrack, the blocked set holds elements.
+#   PARTIAL            anything else that was measured.
+#   UNMEASURED         any query failed, timed out, was refused or was unparseable.
+# shellcheck disable=SC2034  # sets NFTBAN_MTXN_KCLASS/KDETAIL for lib/module_txn.sh
+_nftban_ddos_kernel_observe() {
+    NFTBAN_MTXN_KCLASS="UNMEASURED"; NFTBAN_MTXN_KDETAIL=""
+    local fn
+    for fn in nft_fragment_observe_chain nft_fragment_observe_jumps nft_fragment_observe_set \
+              _nftban_ddos_raw_notrack_count; do
+        if ! declare -F "$fn" >/dev/null 2>&1; then
+            NFTBAN_MTXN_KDETAIL="kernel observation authority unavailable (${fn})"
+            return 0
+        fi
+    done
+    local -a stages=(
+        "sanity ${DDOS_SANITY_CHAIN:-ddos_sanity} true"
+        "synproxy ${DDOS_SYNPROXY_CHAIN:-ddos_synproxy} ${DDOS_SYNPROXY_ENABLED:-false}"
+        "prefix ${DDOS_PREFIX_CHAIN:-ddos_prefix} ${DDOS_PREFIX_ENABLED:-true}"
+        "protection ${DDOS_NFT_CHAIN:-ddos_protection} true"
+        "penalty ${DDOS_PENALTY_CHAIN:-ddos_penalty} true"
+    )
+    local spec fam tbl st name chain req rules enf line detail="" any=0 req_ok=1
+    for spec in "${DDOS_NFT_TABLE_IPV4:-ip nftban}" "${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"; do
+        IFS=' ' read -r fam tbl <<<"$spec"
+        for st in "${stages[@]}"; do
+            IFS=' ' read -r name chain req <<<"$st"
+            if ! nft_fragment_observe_chain "$fam" "$tbl" "$chain"; then
+                NFTBAN_MTXN_KDETAIL="${detail}${fam}/${name}=UNMEASURED(${NFT_FRAGMENT_OBS_REASON})"
+                return 0
+            fi
+            rules="$NFT_FRAGMENT_OBS_RULES"
+            if [[ "$NFT_FRAGMENT_OBS_STATE" == "ABSENT" ]]; then
+                detail="${detail}${fam}/${name}=absent "
+                [[ "$req" == "true" ]] && req_ok=0
+                continue
+            fi
+            if (( rules == 0 )); then
+                detail="${detail}${fam}/${name}=empty "
+                [[ "$req" == "true" ]] && req_ok=0
+                continue
+            fi
+            any=1; enf=0
+            while IFS= read -r line; do
+                if [[ "$name" == "synproxy" ]]; then
+                    [[ "$line" =~ (^|[[:space:]])synproxy([[:space:]]|$) ]] && enf=$((enf + 1))
+                else
+                    [[ "$line" =~ (^|[[:space:]])drop([[:space:]]|$) ]] && enf=$((enf + 1))
+                fi
+            done <<<"$NFT_FRAGMENT_OBS_TEXT"
+            if ! nft_fragment_observe_jumps "$fam" "$tbl" "$chain"; then
+                NFTBAN_MTXN_KDETAIL="${detail}${fam}/${name}=UNMEASURED(jump:${NFT_FRAGMENT_OBS_REASON})"
+                return 0
+            fi
+            local enf_word="drops"; [[ "$name" == "synproxy" ]] && enf_word="synproxy"
+            detail="${detail}${fam}/${name}=rules:${rules},${enf_word}:${enf},jumps:${NFT_FRAGMENT_OBS_JUMPS} "
+            if [[ "$req" == "true" ]] && (( enf < 1 || NFT_FRAGMENT_OBS_JUMPS < 1 )); then
+                req_ok=0
+            fi
+        done
+        if ! _nftban_ddos_raw_notrack_count "$fam"; then
+            NFTBAN_MTXN_KDETAIL="${detail}${fam}/raw=UNMEASURED(${NFT_FRAGMENT_OBS_REASON})"
+            return 0
+        fi
+        detail="${detail}${fam}/raw_notrack=${_NFTBAN_DDOS_RAW_N} "
+        (( _NFTBAN_DDOS_RAW_N > 0 )) && any=1
+        if [[ "${DDOS_SYNPROXY_ENABLED:-false}" == "true" ]] && (( _NFTBAN_DDOS_RAW_N < 1 )); then
+            req_ok=0
+        fi
+    done
+
+    local bspec bfam btbl bset="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}" belems bstate
+    bspec="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    IFS=' ' read -r bfam btbl <<<"$bspec"
+    if ! nft_fragment_observe_set "$bfam" "$btbl" "$bset"; then
+        NFTBAN_MTXN_KDETAIL="${detail}${bfam}/${bset}=UNMEASURED(${NFT_FRAGMENT_OBS_REASON})"
+        return 0
+    fi
+    bstate="$NFT_FRAGMENT_OBS_STATE"; belems="$NFT_FRAGMENT_OBS_ELEMENTS"
+    detail="${detail}${bfam}/${bset}=${bstate,,}"
+    (( belems > 0 )) && detail="${detail}+elements"
+    detail="${detail} "
+
+    if (( req_ok == 1 )); then
+        NFTBAN_MTXN_KCLASS="CLASSIC_ACTIVE"
+    elif (( any == 1 )); then
+        NFTBAN_MTXN_KCLASS="PARTIAL"
+    elif (( belems > 0 )); then
+        NFTBAN_MTXN_KCLASS="SURICATA_BLOCKING"
+    elif [[ "$bstate" == "PRESENT" ]]; then
+        # Suricata's projection is one input rule over the shared set.
+        if ! nft_fragment_observe_chain "$bfam" "$btbl" input; then
+            NFTBAN_MTXN_KDETAIL="${detail}${bfam}/input=UNMEASURED(${NFT_FRAGMENT_OBS_REASON})"
+            return 0
+        fi
+        local srule=0
+        while IFS= read -r line; do
+            [[ "$line" == *"@${bset}"* && "$line" =~ (^|[[:space:]])drop([[:space:]]|$) ]] && srule=1
+        done <<<"$NFT_FRAGMENT_OBS_TEXT"
+        detail="${detail}${bfam}/input_blocked_drop=${srule} "
+        if (( srule == 1 )); then NFTBAN_MTXN_KCLASS="SURICATA_READY"; else NFTBAN_MTXN_KCLASS="EMPTY"; fi
+    else
+        NFTBAN_MTXN_KCLASS="EMPTY"
+    fi
+    NFTBAN_MTXN_KDETAIL="${detail% }"
+    return 0
+}
+
+# _nftban_ddos_expected_kclass <effective-mode> — the kernel postcondition.
+#   classic  -> CLASSIC_ACTIVE
+#   suricata -> SURICATA_READY|SURICATA_BLOCKING (the classic projection is purged
+#               by the apply; the shared blocked set may or may not hold bans)
+#   inactive -> EMPTY|SURICATA_READY (zero enforcement: a drop rule over an empty
+#               set matches nothing; the suricata disable flushes the set and has
+#               never removed the rule)
+_nftban_ddos_expected_kclass() {
+    case "${1:-}" in
+        classic)  printf 'CLASSIC_ACTIVE' ;;
+        suricata) printf 'SURICATA_READY|SURICATA_BLOCKING' ;;
+        inactive) printf 'EMPTY|SURICATA_READY' ;;
+        *)        printf 'NONE' ;;
+    esac
+}
+
 # -----------------------------------------------------------------------------
 # nftban_ddos_enable -- OPERATOR ORCHESTRATION. CLI-ONLY.
-# v1.229.7 PR-2: persists intent, calls the neutral apply, then performs the
-# service lifecycle action. NOT daemon-callable.
+# v1.233.1: the 11-step transaction (lib/module_txn.sh). NOT daemon-callable:
+# the daemon enters through nftban_ddos_reconcile.
 # -----------------------------------------------------------------------------
 nftban_ddos_enable() {
-    _nftban_ddos_load_config
-    nftban_ddos_reconcile || return 1
-
-    # v1.229.7 PR-2a: `mode` is local to nftban_ddos_apply, so the success
-    # banner below referenced an UNBOUND variable. Under `set -Eeuo pipefail`
-    # (:41) that is fatal -- the command aborted AFTER persisting intent and
-    # AFTER restarting nftband, returning non-zero to its caller.
-    # ⛔ v1.229.7 PR-3B: REPORT WHAT THE TRANSACTION DID, NOT A FRESH GUESS.
-    # This called the local detector purely to label the success banner, so the
-    # operator could be told "SURICATA" while the transaction had actually
-    # applied CLASSIC (or the reverse) whenever availability changed between the
-    # two independent resolutions. Only the plan the root published is entitled
-    # to answer "which mode did we just enable?".
-    #   A REPORT MUST DESCRIBE THE ACTION THAT HAPPENED.
-    local mode="${NFTBAN_PLAN_EFFECTIVE_MODE:-unknown}"
-
-    # Step 3: Persist DDOS_ENABLED=true ONLY after nft rules succeed.
-    # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
-    nftban_module_set_enabled ddos true || return 1
-    DDOS_ENABLED="true"
-
-    # Step 4: Auto-restart nftband to activate immediately
-    if systemctl is-active nftband &>/dev/null; then
-        echo "  Restarting nftband daemon..."
-        if systemctl restart nftband 2>/dev/null; then
-            echo "  ✅ Daemon restarted — DDoS protection is now active"
-        else
-            echo "  ⚠️  Daemon restart failed — run: systemctl restart nftband" >&2
-        fi
-    else
-        echo "  ⚠️  nftband not running — start with: systemctl start nftband"
-    fi
-
-    echo ""
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  ✅ DDoS Protection ENABLED (${mode^^})"
-    echo "╚══════════════════════════════════════════════════════════╝"
-    echo ""
-
-    return 0
+    nftban_module_txn ddos enable
 }
 
 # =============================================================================
@@ -794,49 +952,59 @@ nftban_ddos_enable() {
 # v1.229.7 PR-2: removes runtime enforcement ONLY. Writes no config and
 # restarts no service. Stopping a service must not turn a module off durably.
 # -----------------------------------------------------------------------------
+#
+# v1.233.1 — THE RESULT IS PROPAGATED, AND THIS FUNCTION CLAIMS NOTHING.
+# It ran `nftban_ddos_classic_disable 2>/dev/null || true` (and the suricata
+# twin), then printed "✅ DDoS Protection DISABLED" and returned 0 — the lab3
+# witness: rc 0 with 9 DROP rules per family still live. Now:
+#   * both projections are removed (teardown stays mode-independent); each
+#     removal is observed and idempotent, so an absent/empty stage needs no write
+#   * a missing entrypoint is a FAILURE, never an rc0 no-op
+#   * stderr is no longer hidden
+#   * success prints a progress line only; the operator-facing verdict belongs to
+#     the transaction that verifies the kernel (nftban_ddos_enable/disable)
 nftban_ddos_teardown() {
     _nftban_ddos_load_config
     _nftban_ddos_banner
 
-    # v1.229.7 PR-3B: the mode detection here was DEAD -- its result was never
-    # read, and teardown removes BOTH pipelines unconditionally (correct:
-    # teardown is mode-independent). Removing it also removes a second-authority
-    # invocation from a mutation path.
-
+    local _rc=0
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Disabling DDoS Protection..."
+    echo "  Removing DDoS runtime (classic + suricata projections)..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     _nftban_ddos_log "INFO" "Disabling DDoS protection"
 
-    # Disable both modes to ensure clean state
     if type -t nftban_ddos_classic_disable &>/dev/null; then
-        nftban_ddos_classic_disable 2>/dev/null || true
+        nftban_ddos_classic_disable || _rc=$?
+    else
+        echo "  ERROR: nftban_ddos_classic_disable unavailable — cannot remove the classic projection." >&2
+        _rc=1
     fi
-
     if type -t nftban_ddos_suricata_disable &>/dev/null; then
-        nftban_ddos_suricata_disable 2>/dev/null || true
+        nftban_ddos_suricata_disable || _rc=$?
+    else
+        echo "  ERROR: nftban_ddos_suricata_disable unavailable — cannot remove the suricata projection." >&2
+        _rc=1
     fi
 
-    echo ""
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  ✅ DDoS Protection DISABLED                             ║"
-    echo "╚══════════════════════════════════════════════════════════╝"
-    echo ""
-
+    if (( _rc != 0 )); then
+        echo "  ERROR: DDoS runtime teardown FAILED (rc=${_rc}) — DDoS rules may still be active." >&2
+        _nftban_ddos_log "ERROR" "DDoS teardown FAILED (rc=${_rc})"
+        return "$_rc"
+    fi
+    echo "  DDoS runtime teardown step completed."
+    _nftban_ddos_log "INFO" "DDoS teardown step completed"
     return 0
 }
 
 # -----------------------------------------------------------------------------
 # nftban_ddos_disable -- OPERATOR ORCHESTRATION. CLI-ONLY.
-# v1.229.7 PR-2: persists intent, then tears down runtime. NOT daemon-callable.
+# v1.233.1: the same 11-step transaction as enable (lib/module_txn.sh).
+# DISABLED = module-owned DDoS enforcement converged to zero, confirmed by query.
 # -----------------------------------------------------------------------------
 nftban_ddos_disable() {
-    _nftban_ddos_load_config
-    nftban_module_set_enabled ddos false || return 1
-    DDOS_ENABLED="false"
-    nftban_ddos_reconcile
+    nftban_module_txn ddos disable
 }
 
 # =============================================================================
@@ -1162,10 +1330,10 @@ _nftban_ddos_cli() {
 
     case "$cmd" in
         enable)
-            nftban_ddos_enable "$@"
+            nftban_ddos_enable "$@" || return $?
             ;;
         disable)
-            nftban_ddos_disable "$@"
+            nftban_ddos_disable "$@" || return $?
             ;;
         status)
             nftban_ddos_status "$@"

@@ -201,16 +201,40 @@ nft_fragment_render_portscan_classic_jump() {
 }
 
 # Render portscan classic cleanup fragment (for disable)
+# Usage: nft_fragment_render_portscan_classic_cleanup [table-spec ...]
+#
+# v1.233.1: the flush is rendered ONLY for the tables the caller names (e.g.
+# "ip nftban"). With no argument both families are rendered, as before.
+#
+# ⛔ WHY. `flush chain` on a chain that does not exist is an nft ERROR, and the
+# whole `nft -f` transaction is rejected. The fragment used to flush both
+# families unconditionally, so disabling on a host where the chain was never
+# projected FAILED ("flush chain ip nftban portscan_detection: No such file or
+# directory") — witnessed on dns4 and lab3 (v1.233.0). Teardown must be
+# idempotent: an already-absent chain is the requested end state.
+# The caller (nftban_portscan_classic_remove_rules) decides which tables need a
+# flush from a SUCCESSFUL kernel query (nft_fragment_observe_chain) — never
+# from a failed one: absent != unobservable.
+# shellcheck disable=SC2120  # callers in core/nftban_portscan_classic.sh pass table specs
 nft_fragment_render_portscan_classic_cleanup() {
     local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
+    local -a tables=("$@")
+    if (( ${#tables[@]} == 0 )); then
+        tables=("$table_ipv4" "$table_ipv6")
+    fi
 
     nft_fragment_init || return 1
 
     local fragment_path="${NFTBAN_FRAGMENT_DIR}/99-portscan-classic-cleanup.nft"
     local timestamp
     timestamp=$(date -Iseconds)
+
+    local flush_lines="" t
+    for t in "${tables[@]}"; do
+        flush_lines="${flush_lines}flush chain ${t} ${chain}"$'\n'
+    done
 
     local content
     content=$(cat <<EOF
@@ -220,8 +244,7 @@ nft_fragment_render_portscan_classic_cleanup() {
 # Managed by nftband
 
 # Flush chains (removes all rules but keeps chain for reference safety)
-flush chain ${table_ipv4} ${chain}
-flush chain ${table_ipv6} ${chain}
+${flush_lines}
 EOF
     )
 
@@ -301,6 +324,255 @@ nft_fragment_delete_object() {
             return 1
             ;;
     esac
+    return 0
+}
+
+# =============================================================================
+# v1.233.1 — TYPED READ-SIDE OBSERVATION OF A MODULE CHAIN
+# =============================================================================
+# The disable/enable transaction must PROVE its kernel postcondition, and an
+# idempotent teardown must know whether there is anything to remove. Both need
+# the same three-valued answer:
+#
+#     ABSENT      the ruleset was read successfully and the chain is not there
+#     PRESENT     the chain was read successfully (rule count is exact)
+#     UNMEASURED  the read failed, timed out, was refused, or was unparseable
+#
+# ⛔ UNOBSERVABLE != ABSENT · UNAVAILABLE != ZERO · TIMEOUT != SUCCESS.
+# A failed `nft list chain` exits non-zero for BOTH "no such chain" and "cannot
+# talk to the kernel", so absence is never inferred from a failure. Readability
+# is established POSITIVELY instead, exactly as lib/nft_probe.sh does for
+# tables: the table is probed through the typed authority, and the chain's
+# absence is then read from a chain LISTING that succeeded.
+#
+# Results are returned in variables, never on stdout: a caller that captured the
+# answer with $(...) would run the probe in a subshell and lose the evidence
+# (the same rule nft_probe.sh documents).
+# shellcheck disable=SC2034  # result variables, read by callers in other files
+NFT_FRAGMENT_OBS_STATE=""; NFT_FRAGMENT_OBS_RULES=""; NFT_FRAGMENT_OBS_TEXT=""
+# shellcheck disable=SC2034
+NFT_FRAGMENT_OBS_REASON=""; NFT_FRAGMENT_OBS_JUMPS=""
+# shellcheck disable=SC2034
+NFT_FRAGMENT_OBS_ELEMENTS=""
+
+# _nft_fragment_obs_probe_ready — make the typed table probe available.
+_nft_fragment_obs_probe_ready() {
+    if ! declare -F nftban_nft_probe_table >/dev/null 2>&1 \
+       && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" ]]; then
+        # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" || return 1
+    fi
+    declare -F nftban_nft_probe_table >/dev/null 2>&1
+}
+
+# _nft_fragment_obs_errclass <stderr-file> <rc> — bounded, redacted evidence.
+_nft_fragment_obs_errclass() {
+    local _ef="$1" _rc="$2" _e=""
+    [[ -r "$_ef" ]] && _e="$(cat "$_ef" 2>/dev/null)" || _e=""
+    if [[ "$_rc" -eq 124 ]]; then printf 'TIMEOUT'; return 0; fi
+    if declare -F nftban_nft_probe_error_class >/dev/null 2>&1; then
+        nftban_nft_probe_error_class "$_e" "$_rc"
+    else
+        printf 'rc=%s' "$_rc"
+    fi
+}
+
+# nft_fragment_observe_chain <family> <table> <chain>
+# Sets NFT_FRAGMENT_OBS_STATE / _RULES / _TEXT / _REASON.
+# Returns 0 when a determination was made (ABSENT or PRESENT), 1 when UNMEASURED.
+# shellcheck disable=SC2034  # sets NFT_FRAGMENT_OBS_* for callers in other files
+nft_fragment_observe_chain() {
+    local fam="$1" tbl="$2" chain="$3"
+    NFT_FRAGMENT_OBS_STATE="UNMEASURED"; NFT_FRAGMENT_OBS_RULES=""
+    NFT_FRAGMENT_OBS_TEXT=""; NFT_FRAGMENT_OBS_REASON=""
+
+    if ! _nft_fragment_obs_probe_ready; then
+        NFT_FRAGMENT_OBS_REASON="probe_authority_unavailable"; return 1
+    fi
+    # STEP 1 — the table, through the typed authority (readability proven
+    # positively by a successful `nft list tables`).
+    if ! nftban_nft_probe_table "$fam" "$tbl" "nft_fragment_observe_chain"; then
+        NFT_FRAGMENT_OBS_REASON="table_unreadable:${NFTBAN_NFT_PROBE_CLASS:-UNKNOWN}"; return 1
+    fi
+    if [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" == "ABSENT" ]]; then
+        NFT_FRAGMENT_OBS_STATE="ABSENT"; NFT_FRAGMENT_OBS_RULES=0
+        NFT_FRAGMENT_OBS_REASON="table_absent"; return 0
+    fi
+    if [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" != "PRESENT" ]]; then
+        NFT_FRAGMENT_OBS_REASON="table_verdict_unrecognised"; return 1
+    fi
+
+    local ef out rc=0 line in_tbl=0 seen_tbl=0 found=0
+    ef="$(mktemp "${TMPDIR:-/tmp}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
+
+    # STEP 2 — chain membership, from a listing that SUCCEEDED.
+    out="$(nft list chains "$fam" 2>"$ef")" || rc=$?
+    if (( rc != 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_chains_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
+        rm -f "$ef"; return 1
+    fi
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^table[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]*\{ ]]; then
+            in_tbl=0
+            if [[ "${BASH_REMATCH[1]}" == "$fam" && "${BASH_REMATCH[2]}" == "$tbl" ]]; then
+                in_tbl=1; seen_tbl=1
+            fi
+            continue
+        fi
+        if (( in_tbl )) && [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]*\{ ]]; then
+            [[ "${BASH_REMATCH[1]}" == "$chain" ]] && found=1
+        fi
+    done <<<"$out"
+    if (( seen_tbl == 0 )); then
+        # The table was proven present a moment ago but the listing does not
+        # show it: the listing is not a recognisable answer. Parser uncertainty
+        # is not a finding.
+        NFT_FRAGMENT_OBS_REASON="list_chains_malformed"; rm -f "$ef"; return 1
+    fi
+    if (( found == 0 )); then
+        NFT_FRAGMENT_OBS_STATE="ABSENT"; NFT_FRAGMENT_OBS_RULES=0
+        NFT_FRAGMENT_OBS_REASON="chain_absent"; rm -f "$ef"; return 0
+    fi
+
+    # STEP 3 — the chain's rules. Depth-tracked so a rule printed across several
+    # lines (a long anonymous set) is counted once.
+    rc=0
+    out="$(nft list chain "$fam" "$tbl" "$chain" 2>"$ef")" || rc=$?
+    if (( rc != 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_chain_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
+        rm -f "$ef"; return 1
+    fi
+    rm -f "$ef"
+    local hdr=0 closed=0 depth=0 opens closes stripped n=0 text=""
+    while IFS= read -r line; do
+        if (( hdr == 0 )); then
+            if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]*\{ ]] \
+               && [[ "${BASH_REMATCH[1]}" == "$chain" ]]; then
+                hdr=1; depth=1
+            fi
+            continue
+        fi
+        stripped="${line//[[:space:]]/}"
+        if (( depth == 1 )) && [[ "$stripped" == "}" ]]; then closed=1; break; fi
+        if (( depth == 1 )) && [[ -n "$stripped" ]] \
+           && [[ ! "$line" =~ ^[[:space:]]*(type|policy)[[:space:]] ]]; then
+            n=$((n + 1)); text="${text}${line}"$'\n'
+        fi
+        opens="${line//[^\{]/}"; closes="${line//[^\}]/}"
+        depth=$(( depth + ${#opens} - ${#closes} ))
+        if (( depth < 1 )); then closed=1; break; fi
+    done <<<"$out"
+    if (( hdr == 0 || closed == 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_chain_malformed"; return 1
+    fi
+    NFT_FRAGMENT_OBS_STATE="PRESENT"; NFT_FRAGMENT_OBS_RULES="$n"
+    NFT_FRAGMENT_OBS_TEXT="$text"; NFT_FRAGMENT_OBS_REASON="chain_present"
+    return 0
+}
+
+# nft_fragment_observe_jumps <family> <table> <target-chain>
+# Sets NFT_FRAGMENT_OBS_JUMPS (count of `jump <target>` in <table>'s input chain)
+# and NFT_FRAGMENT_OBS_REASON. Returns 0 measured, 1 UNMEASURED.
+# shellcheck disable=SC2034  # sets NFT_FRAGMENT_OBS_* for callers in other files
+nft_fragment_observe_jumps() {
+    local fam="$1" tbl="$2" target="$3"
+    NFT_FRAGMENT_OBS_JUMPS=""; NFT_FRAGMENT_OBS_REASON=""
+    if ! _nft_fragment_obs_probe_ready; then
+        NFT_FRAGMENT_OBS_REASON="probe_authority_unavailable"; return 1
+    fi
+    if ! nftban_nft_probe_table "$fam" "$tbl" "nft_fragment_observe_jumps"; then
+        NFT_FRAGMENT_OBS_REASON="table_unreadable:${NFTBAN_NFT_PROBE_CLASS:-UNKNOWN}"; return 1
+    fi
+    if [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" == "ABSENT" ]]; then
+        NFT_FRAGMENT_OBS_JUMPS=0; NFT_FRAGMENT_OBS_REASON="table_absent"; return 0
+    fi
+    local ef out rc=0 line hdr=0 closed=0 n=0 depth=0 opens closes
+    ef="$(mktemp "${TMPDIR:-/tmp}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
+    out="$(nft list chain "$fam" "$tbl" input 2>"$ef")" || rc=$?
+    if (( rc != 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_input_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
+        rm -f "$ef"; return 1
+    fi
+    rm -f "$ef"
+    while IFS= read -r line; do
+        if (( hdr == 0 )); then
+            if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+input[[:space:]]*\{ ]]; then
+                hdr=1; depth=1
+            fi
+            continue
+        fi
+        if (( depth == 1 )) && [[ "${line//[[:space:]]/}" == "}" ]]; then closed=1; break; fi
+        if (( depth == 1 )) \
+           && [[ "$line" =~ (^|[[:space:]])jump[[:space:]]+${target}([[:space:]]|$) ]]; then
+            n=$((n + 1))
+        fi
+        opens="${line//[^\{]/}"; closes="${line//[^\}]/}"
+        depth=$(( depth + ${#opens} - ${#closes} ))
+        if (( depth < 1 )); then closed=1; break; fi
+    done <<<"$out"
+    if (( hdr == 0 || closed == 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_input_malformed"; return 1
+    fi
+    NFT_FRAGMENT_OBS_JUMPS="$n"; NFT_FRAGMENT_OBS_REASON="measured"
+    return 0
+}
+
+# nft_fragment_observe_set <family> <table> <set>
+# v1.233.1 (DDoS enable/disable transaction). Sets NFT_FRAGMENT_OBS_STATE
+# (ABSENT | PRESENT), NFT_FRAGMENT_OBS_ELEMENTS (0 = the set holds no element,
+# 1 = it holds at least one) and NFT_FRAGMENT_OBS_REASON.
+# Returns 0 when a determination was made, 1 when UNMEASURED.
+# Existence comes from the typed set probe (readability proven positively by a
+# successful `nft list sets <family>`); the element state from a `nft list set`
+# whose rc is captured separately and whose listing must carry the set header
+# and its closing brace. A failed, timed-out or unparseable read is UNMEASURED —
+# never ABSENT and never "no elements".
+# shellcheck disable=SC2034  # sets NFT_FRAGMENT_OBS_* for callers in other files
+nft_fragment_observe_set() {
+    local fam="$1" tbl="$2" set="$3"
+    NFT_FRAGMENT_OBS_STATE="UNMEASURED"; NFT_FRAGMENT_OBS_ELEMENTS=""; NFT_FRAGMENT_OBS_REASON=""
+    if ! _nft_fragment_obs_probe_ready || ! declare -F nftban_nft_probe_set >/dev/null 2>&1; then
+        NFT_FRAGMENT_OBS_REASON="probe_authority_unavailable"; return 1
+    fi
+    if ! nftban_nft_probe_set "$fam" "$tbl" "$set" "nft_fragment_observe_set"; then
+        NFT_FRAGMENT_OBS_REASON="sets_unreadable:${NFTBAN_NFT_PROBE_CLASS:-UNKNOWN}"; return 1
+    fi
+    if [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" == "ABSENT" ]]; then
+        NFT_FRAGMENT_OBS_STATE="ABSENT"; NFT_FRAGMENT_OBS_ELEMENTS=0
+        NFT_FRAGMENT_OBS_REASON="set_absent"; return 0
+    fi
+    if [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" != "PRESENT" ]]; then
+        NFT_FRAGMENT_OBS_REASON="set_verdict_unrecognised"; return 1
+    fi
+    local ef out rc=0 line hdr=0 closed=0 depth=0 opens closes elems=0
+    ef="$(mktemp "${TMPDIR:-/tmp}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
+    out="$(nft list set "$fam" "$tbl" "$set" 2>"$ef")" || rc=$?
+    if (( rc != 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_set_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
+        rm -f "$ef"; return 1
+    fi
+    rm -f "$ef"
+    while IFS= read -r line; do
+        if (( hdr == 0 )); then
+            if [[ "$line" =~ ^[[:space:]]*set[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]*\{ ]] \
+               && [[ "${BASH_REMATCH[1]}" == "$set" ]]; then
+                hdr=1; depth=1
+            fi
+            continue
+        fi
+        if (( depth == 1 )) && [[ "$line" =~ ^[[:space:]]*elements[[:space:]]*= ]]; then elems=1; fi
+        opens="${line//[^\{]/}"; closes="${line//[^\}]/}"
+        depth=$(( depth + ${#opens} - ${#closes} ))
+        if (( depth < 1 )); then closed=1; break; fi
+    done <<<"$out"
+    if (( hdr == 0 || closed == 0 )); then
+        NFT_FRAGMENT_OBS_REASON="list_set_malformed"; return 1
+    fi
+    NFT_FRAGMENT_OBS_STATE="PRESENT"; NFT_FRAGMENT_OBS_ELEMENTS="$elems"
+    NFT_FRAGMENT_OBS_REASON="set_present"
     return 0
 }
 
@@ -465,10 +737,25 @@ nft_fragment_render_ddos_sanity_jump() {
 }
 
 # Render DDoS sanity cleanup fragment (for disable)
+# v1.233.1: optional [table-spec ...] (e.g. "ip nftban") limits the flush to the
+# tables the caller names; with no argument both families are rendered, as
+# before. `flush chain` on a chain that does not exist is an nft ERROR that
+# rejects the whole `nft -f`, so an idempotent teardown flushes only the tables a
+# SUCCESSFUL typed query (nft_fragment_observe_chain) showed holding rules —
+# same contract as nft_fragment_render_portscan_classic_cleanup.
+# shellcheck disable=SC2120  # core/nftban_ddos_classic.sh passes table specs
 nft_fragment_render_ddos_sanity_cleanup() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_SANITY_CHAIN:-ddos_sanity}"
+    local -a tables=("$@")
+    if (( ${#tables[@]} == 0 )); then
+        tables=("$table_ipv4" "$table_ipv6")
+    fi
+    local flush_lines="" t
+    for t in "${tables[@]}"; do
+        flush_lines="${flush_lines}flush chain ${t} ${chain}"$'\n'
+    done
 
     nft_fragment_init || return 1
 
@@ -484,8 +771,7 @@ nft_fragment_render_ddos_sanity_cleanup() {
 # Managed by nftband
 
 # Flush chains (removes all rules but keeps chain for reference safety)
-flush chain ${table_ipv4} ${chain}
-flush chain ${table_ipv6} ${chain}
+${flush_lines}
 EOF
     )
 
@@ -718,10 +1004,25 @@ _nft_cleanup_synproxy_raw() {
 }
 
 # Render SYNPROXY cleanup fragment (for disable)
+# v1.233.1: optional [table-spec ...] (e.g. "ip nftban") limits the flush to the
+# tables the caller names; with no argument both families are rendered, as
+# before. `flush chain` on a chain that does not exist is an nft ERROR that
+# rejects the whole `nft -f`, so an idempotent teardown flushes only the tables a
+# SUCCESSFUL typed query (nft_fragment_observe_chain) showed holding rules —
+# same contract as nft_fragment_render_portscan_classic_cleanup.
+# shellcheck disable=SC2120  # core/nftban_ddos_classic.sh passes table specs
 nft_fragment_render_synproxy_cleanup() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_SYNPROXY_CHAIN:-ddos_synproxy}"
+    local -a tables=("$@")
+    if (( ${#tables[@]} == 0 )); then
+        tables=("$table_ipv4" "$table_ipv6")
+    fi
+    local flush_lines="" t
+    for t in "${tables[@]}"; do
+        flush_lines="${flush_lines}flush chain ${t} ${chain}"$'\n'
+    done
 
     nft_fragment_init || return 1
 
@@ -737,9 +1038,7 @@ nft_fragment_render_synproxy_cleanup() {
 # Managed by nftband
 
 # Flush SYNPROXY chains (nftban-owned, safe to flush entirely)
-flush chain ${table_ipv4} ${chain}
-flush chain ${table_ipv6} ${chain}
-
+${flush_lines}
 # NOTE: Raw prerouting cleanup is handled by _nft_cleanup_synproxy_raw()
 # which deletes only nftban-managed rules (matching comment "SYNPROXY:")
 # to avoid destroying Docker/K8s/other rules in the raw prerouting chain.
@@ -914,10 +1213,25 @@ nft_fragment_render_ddos_prefix_jump() {
 }
 
 # Render DDoS prefix aggregation cleanup fragment (for disable)
+# v1.233.1: optional [table-spec ...] (e.g. "ip nftban") limits the flush to the
+# tables the caller names; with no argument both families are rendered, as
+# before. `flush chain` on a chain that does not exist is an nft ERROR that
+# rejects the whole `nft -f`, so an idempotent teardown flushes only the tables a
+# SUCCESSFUL typed query (nft_fragment_observe_chain) showed holding rules —
+# same contract as nft_fragment_render_portscan_classic_cleanup.
+# shellcheck disable=SC2120  # core/nftban_ddos_classic.sh passes table specs
 nft_fragment_render_ddos_prefix_cleanup() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_PREFIX_CHAIN:-ddos_prefix}"
+    local -a tables=("$@")
+    if (( ${#tables[@]} == 0 )); then
+        tables=("$table_ipv4" "$table_ipv6")
+    fi
+    local flush_lines="" t
+    for t in "${tables[@]}"; do
+        flush_lines="${flush_lines}flush chain ${t} ${chain}"$'\n'
+    done
 
     nft_fragment_init || return 1
 
@@ -933,8 +1247,7 @@ nft_fragment_render_ddos_prefix_cleanup() {
 # Managed by nftband
 
 # Flush prefix aggregation chains
-flush chain ${table_ipv4} ${chain}
-flush chain ${table_ipv6} ${chain}
+${flush_lines}
 EOF
     )
 
@@ -1128,10 +1441,25 @@ nft_fragment_render_ddos_classic_jump() {
 }
 
 # Render DDoS classic cleanup fragment (for disable)
+# v1.233.1: optional [table-spec ...] (e.g. "ip nftban") limits the flush to the
+# tables the caller names; with no argument both families are rendered, as
+# before. `flush chain` on a chain that does not exist is an nft ERROR that
+# rejects the whole `nft -f`, so an idempotent teardown flushes only the tables a
+# SUCCESSFUL typed query (nft_fragment_observe_chain) showed holding rules —
+# same contract as nft_fragment_render_portscan_classic_cleanup.
+# shellcheck disable=SC2120  # core/nftban_ddos_classic.sh passes table specs
 nft_fragment_render_ddos_classic_cleanup() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
+    local -a tables=("$@")
+    if (( ${#tables[@]} == 0 )); then
+        tables=("$table_ipv4" "$table_ipv6")
+    fi
+    local flush_lines="" t
+    for t in "${tables[@]}"; do
+        flush_lines="${flush_lines}flush chain ${t} ${chain}"$'\n'
+    done
 
     nft_fragment_init || return 1
 
@@ -1147,8 +1475,7 @@ nft_fragment_render_ddos_classic_cleanup() {
 # Managed by nftband
 
 # Flush chains (removes all rules but keeps chain for reference safety)
-flush chain ${table_ipv4} ${chain}
-flush chain ${table_ipv6} ${chain}
+${flush_lines}
 EOF
     )
 
@@ -1554,6 +1881,13 @@ nft_fragment_render_ddos_penalty_jump() {
 }
 
 # Render penalty ladder cleanup fragment (for disable)
+# v1.233.1: optional [table-spec ...] (e.g. "ip nftban") limits the flush (and that family's penalty-set deletion) to the
+# tables the caller names; with no argument both families are rendered, as
+# before. `flush chain` on a chain that does not exist is an nft ERROR that
+# rejects the whole `nft -f`, so an idempotent teardown flushes only the tables a
+# SUCCESSFUL typed query (nft_fragment_observe_chain) showed holding rules —
+# same contract as nft_fragment_render_portscan_classic_cleanup.
+# shellcheck disable=SC2120  # core/nftban_ddos_classic.sh passes table specs
 nft_fragment_render_ddos_penalty_cleanup() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
@@ -1564,6 +1898,21 @@ nft_fragment_render_ddos_penalty_cleanup() {
     local set_limit_5m="${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m}"
     local set_drop_5m="${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m}"
     local set_ban_1h="${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}"
+    local -a tables=("$@")
+    if (( ${#tables[@]} == 0 )); then
+        tables=("$table_ipv4" "$table_ipv6")
+    fi
+    local body="" t sfx
+    for t in "${tables[@]}"; do
+        body="${body}flush chain ${t} ${chain}"$'\n'
+    done
+    for t in "${tables[@]}"; do
+        sfx=""; [[ "${t%% *}" == "ip6" ]] && sfx="6"
+        body="${body}delete set ${t} ${set_limit_10s}${sfx}"$'\n'
+        body="${body}delete set ${t} ${set_limit_5m}${sfx}"$'\n'
+        body="${body}delete set ${t} ${set_drop_5m}${sfx}"$'\n'
+        body="${body}delete set ${t} ${set_ban_1h}${sfx}"$'\n'
+    done
 
     nft_fragment_init || return 1
 
@@ -1581,20 +1930,7 @@ nft_fragment_render_ddos_penalty_cleanup() {
 # Flushes penalty chain and deletes penalty sets
 
 # Flush enforcement chains
-flush chain ${table_ipv4} ${chain}
-flush chain ${table_ipv6} ${chain}
-
-# Delete IPv4 penalty sets
-delete set ${table_ipv4} ${set_limit_10s}
-delete set ${table_ipv4} ${set_limit_5m}
-delete set ${table_ipv4} ${set_drop_5m}
-delete set ${table_ipv4} ${set_ban_1h}
-
-# Delete IPv6 penalty sets
-delete set ${table_ipv6} ${set_limit_10s}6
-delete set ${table_ipv6} ${set_limit_5m}6
-delete set ${table_ipv6} ${set_drop_5m}6
-delete set ${table_ipv6} ${set_ban_1h}6
+${body}
 EOF
     )
 

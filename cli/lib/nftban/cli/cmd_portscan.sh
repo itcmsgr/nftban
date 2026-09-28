@@ -431,12 +431,16 @@ nftban_cmd_portscan() {
 
     # Handle commands
     case "$action" in
+        # v1.233.1: the transaction's exit code IS the verdict. The router calls
+        # this function in an `||` context, which suspends errexit for the whole
+        # call tree — a bare call here let a failed enable/disable fall through
+        # to the `return 0` below.
         enable)
-            nftban_portscan_enable
+            nftban_portscan_enable || return $?
             ;;
 
         disable)
-            nftban_portscan_disable
+            nftban_portscan_disable || return $?
             ;;
 
         status)
