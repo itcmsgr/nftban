@@ -698,6 +698,7 @@ _nftban_portscan_purge_projection() {
                 echo "  ERROR: nft_fragment_delete_object unavailable — cannot establish mode-exclusive projection." >&2
                 return 1
             fi
+            # nftban:rc-suppression-ok: per-object best effort; absence is VERIFIED by the residue census below, which fails the call
             nft_fragment_delete_object "$fam" "$kind" "$name" || true
         done < <(_nftban_portscan_live_objects "$fam")
     done
@@ -852,49 +853,138 @@ nftban_portscan_apply() {
     return 0
 }
 
+# =============================================================================
+# v1.233.1 — THE OPERATOR TRANSACTION for `nftban portscan enable|disable`
+# =============================================================================
+# Contract: V1_234_0_CLAIM_TRUTH_AND_TRANSACTIONAL_CONTRACT.md §6/§7 (owner
+# rulings L1-L3). Handle: BUG-PORTSCAN-ENABLE-TEARS-DOWN-AGAINST-STALE-INTENT-
+# AND-SWALLOWS-NFT-FAILURE.
+#
+# WHAT WAS WRONG (witnessed dns4 + lab3, v1.233.0):
+#   enable  reconciled BEFORE persisting intent, so it resolved the OLD
+#           `disabled` intent and tore the module DOWN on an enable request; the
+#           banner mode came from that stale plan ("ENABLED (INACTIVE)"); "now
+#           active" came from the `systemctl restart` exit code alone.
+#   disable persisted intent, then ran a teardown whose failure was swallowed
+#           twice: "✅ disabled", rc 0, while the kernel kept the rules and the
+#           plan committed `inactive` over them.
+#
+# THE TRANSACTION (L1, eleven steps) lives in lib/module_txn.sh
+# (nftban_module_txn), shared with DDoS since v1.233.1 so both modules use ONE
+# lock acquisition, ONE transaction-record writer/format, ONE outcome
+# derivation + rc table. It was written here first and moved there unchanged in
+# behaviour. What stays here is only what is portscan-specific: the kernel
+# observation, the expected kernel class per effective mode, the input loader
+# and the labels (the hooks the engine names).
+#
+# OUTCOMES -> exit code:
+#   CONVERGED 0 · FAILED_ROLLED_BACK 1 · DEGRADED 3 · PENDING_TIMED_OUT 4
+#   REFUSED 7 (convergence lock busy) or 5 (another precondition).
+# L3: an unobservable kernel is UNMEASURED -> DEGRADED. It is never a success,
+# and it is never treated as absence.
+# =============================================================================
+
+# shellcheck source=/usr/lib/nftban/lib/module_txn.sh
+if ! declare -F nftban_module_txn >/dev/null 2>&1 && \
+   [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_txn.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_txn.sh" || return 1
+fi
+
+_nftban_portscan_txn_record_path() {
+    nftban_mtxn_record_path portscan
+}
+
+# Engine hooks (see lib/module_txn.sh, MODULE HOOKS).
+_nftban_portscan_txn_record_write() { nftban_mtxn_record_write; }
+_nftban_portscan_txn_prepare() { _nftban_portscan_load_modules; }
+_nftban_portscan_txn_labels() {
+    _MT_TITLE="Portscan Detection"; _MT_NAME="Portscan"
+    _MT_LOWER="Portscan detection"; _MT_WHAT="detection"
+}
+
+# _nftban_portscan_kernel_observe — classify the module-owned kernel state.
+# Sets NFTBAN_MTXN_KCLASS and NFTBAN_MTXN_KDETAIL; always returns 0.
+#   EMPTY          every family: chain absent, or present with zero rules. The
+#                  empty chain and its input jump may remain: the shipped cleanup
+#                  deliberately flushes and keeps the chain "for reference
+#                  safety" (lib/nft_fragment.sh, portscan cleanup renderer).
+#   CLASSIC_ACTIVE every family: the SYN and UDP log rules carrying the
+#                  configured prefix, and at least one input jump to the chain.
+#   PARTIAL        anything else that was measured.
+#   UNMEASURED     any query failed, timed out, was refused or was unparseable.
+# shellcheck disable=SC2034  # sets NFTBAN_MTXN_KCLASS/KDETAIL for lib/module_txn.sh
+_nftban_portscan_kernel_observe() {
+    local prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
+    local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
+    local spec fam tbl total=0 empty=0 active=0 unmeasured=0 detail="" syn udp rules
+    NFTBAN_MTXN_KCLASS="UNMEASURED"; NFTBAN_MTXN_KDETAIL=""
+    if ! declare -F nft_fragment_observe_chain >/dev/null 2>&1 \
+       || ! declare -F nft_fragment_observe_jumps >/dev/null 2>&1; then
+        NFTBAN_MTXN_KDETAIL="kernel observation authority unavailable"
+        return 0
+    fi
+    for spec in "${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}" "${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"; do
+        IFS=' ' read -r fam tbl <<<"$spec"
+        total=$((total + 1))
+        if ! nft_fragment_observe_chain "$fam" "$tbl" "$chain"; then
+            unmeasured=1; detail="${detail}${fam}=UNMEASURED(${NFT_FRAGMENT_OBS_REASON}) "
+            continue
+        fi
+        if [[ "$NFT_FRAGMENT_OBS_STATE" == "ABSENT" ]]; then
+            empty=$((empty + 1)); detail="${detail}${fam}=absent "; continue
+        fi
+        rules="$NFT_FRAGMENT_OBS_RULES"
+        if (( rules == 0 )); then
+            empty=$((empty + 1)); detail="${detail}${fam}=empty "; continue
+        fi
+        syn=0; udp=0
+        if [[ "$NFT_FRAGMENT_OBS_TEXT" == *"${prefix}SYN"* ]]; then syn=1; fi
+        if [[ "$NFT_FRAGMENT_OBS_TEXT" == *"${prefix}UDP"* ]]; then udp=1; fi
+        if ! nft_fragment_observe_jumps "$fam" "$tbl" "$chain"; then
+            unmeasured=1; detail="${detail}${fam}=UNMEASURED(jump:${NFT_FRAGMENT_OBS_REASON}) "
+            continue
+        fi
+        detail="${detail}${fam}=rules:${rules},syn:${syn},udp:${udp},jumps:${NFT_FRAGMENT_OBS_JUMPS} "
+        if (( syn == 1 && udp == 1 && NFT_FRAGMENT_OBS_JUMPS >= 1 )); then
+            active=$((active + 1))
+        fi
+    done
+    NFTBAN_MTXN_KDETAIL="${detail% }"
+    if (( unmeasured )); then
+        NFTBAN_MTXN_KCLASS="UNMEASURED"
+    elif (( empty == total )); then
+        NFTBAN_MTXN_KCLASS="EMPTY"
+    elif (( active == total )); then
+        NFTBAN_MTXN_KCLASS="CLASSIC_ACTIVE"
+    else
+        NFTBAN_MTXN_KCLASS="PARTIAL"
+    fi
+    return 0
+}
+
+# _nftban_portscan_expected_kclass <effective-mode> — the kernel postcondition.
+# Suricata projects NO portscan nft object (see _nftban_portscan_purge_projection),
+# so suricata and inactive both require the classic projection to be EMPTY.
+_nftban_portscan_expected_kclass() {
+    case "${1:-}" in
+        classic)           printf 'CLASSIC_ACTIVE' ;;
+        suricata|inactive) printf 'EMPTY' ;;
+        *)                 printf 'NONE' ;;
+    esac
+}
+
+# _nftban_portscan_txn <enable|disable> — the whole transaction (engine).
+_nftban_portscan_txn() {
+    nftban_module_txn portscan "${1:-}"
+}
+
 # -----------------------------------------------------------------------------
 # nftban_portscan_enable -- OPERATOR ORCHESTRATION. CLI-ONLY.
-# v1.229.7 PR-2: persists intent, calls the neutral apply, then performs the
-# service lifecycle action. NOT daemon-callable.
+# v1.233.1: the 11-step transaction above. NOT daemon-callable (the daemon
+# enters through nftban_portscan_reconcile).
 # -----------------------------------------------------------------------------
 nftban_portscan_enable() {
-    nftban_portscan_reconcile || return 1
-
-    # v1.229.7 PR-2a: see nftban_ddos_enable -- same unbound-`mode` defect.
-    # ⛔ v1.229.7 PR-3B: REPORT WHAT THE TRANSACTION DID, NOT A FRESH GUESS.
-    # This called the local detector purely to label the success banner, so the
-    # operator could be told "SURICATA" while the transaction had actually
-    # applied CLASSIC (or the reverse) whenever availability changed between the
-    # two independent resolutions. Only the plan the root published is entitled
-    # to answer "which mode did we just enable?".
-    #   A REPORT MUST DESCRIBE THE ACTION THAT HAPPENED.
-    local mode="${NFTBAN_PLAN_EFFECTIVE_MODE:-${_PORTSCAN_ACTIVE_MODE:-unknown}}"
-
-    # Step 3: Persist PORTSCAN_ENABLED=true ONLY after nft rules succeed.
-    # v1.229.7 PR-2: routed through the SINGLE durable-intent writer.
-    nftban_module_set_enabled portscan true || return 1
-    PORTSCAN_ENABLED="true"
-
-    # Step 4: Auto-restart nftband to activate immediately
-    if systemctl is-active nftband &>/dev/null; then
-        echo "  Restarting nftband daemon..."
-        if systemctl restart nftband 2>/dev/null; then
-            echo "  ✅ Daemon restarted — portscan detection is now active"
-        else
-            echo "  ⚠️  Daemon restart failed — run: systemctl restart nftband" >&2
-        fi
-    else
-        echo "  ⚠️  nftband not running — start with: systemctl start nftband"
-    fi
-
-    echo ""
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  ✅ Portscan Detection ENABLED (${mode^^})"
-    echo "╚══════════════════════════════════════════════════════════╝"
-    echo ""
-
-    _nftban_portscan_log "INFO" "Portscan detection enabled successfully"
-    return 0
+    _nftban_portscan_txn enable
 }
 
 # Disable portscan detection
@@ -902,57 +992,84 @@ nftban_portscan_enable() {
 # nftban_portscan_teardown -- NEUTRAL RUNTIME TEARDOWN. Daemon-callable.
 # v1.229.7 PR-2: removes runtime enforcement ONLY. No config write, no restart.
 # -----------------------------------------------------------------------------
+#
+# v1.233.1 — THE RESULT IS PROPAGATED, AND THIS FUNCTION CLAIMS NOTHING.
+# It used to ignore classic_disable's status and always print
+# "✅ Portscan detection disabled" + return 0, so a disable whose nft flush failed
+# (IPC down) reported success while the rules stayed live (lab3 ARM2, v1.233.0).
+# Now:
+#   * the CLASSIC projection is removed in EVERY mode. DISABLED means the
+#     module-owned kernel objects converge to empty, whatever mode last ran;
+#     classic removal is idempotent (an absent/empty chain is verified by query
+#     and needs no write), so this costs nothing where there is nothing to do.
+#   * the Suricata side projects no nft object; its disable is a state save and
+#     runs only when that mode was active.
+#   * a missing entrypoint is a FAILURE, never an rc0 no-op.
+#   * success prints a progress line only; the operator-facing verdict belongs
+#     to the transaction that verifies the kernel (nftban_portscan_enable/disable).
 nftban_portscan_teardown() {
-    local mode="${_PORTSCAN_ACTIVE_MODE:-classic}"
+    local mode="${_PORTSCAN_ACTIVE_MODE:-classic}" _rc=0
 
     echo ""
-    echo "  Disabling portscan detection (${mode})..."
+    echo "  Removing portscan runtime (${mode})..."
 
     _nftban_portscan_log "INFO" "Disabling portscan detection"
 
+    if type -t nftban_portscan_classic_disable &>/dev/null; then
+        nftban_portscan_classic_disable || _rc=$?
+    else
+        echo "  ERROR: nftban_portscan_classic_disable unavailable — cannot remove the classic projection." >&2
+        _rc=1
+    fi
     case "$mode" in
-        classic)
-            if type -t nftban_portscan_classic_disable &>/dev/null; then
-                nftban_portscan_classic_disable
-            fi
-            ;;
-        suricata)
+        suricata|hybrid)
             if type -t nftban_portscan_suricata_disable &>/dev/null; then
-                nftban_portscan_suricata_disable
-            fi
-            ;;
-        hybrid)
-            if type -t nftban_portscan_classic_disable &>/dev/null; then
-                nftban_portscan_classic_disable
-            fi
-            if type -t nftban_portscan_suricata_disable &>/dev/null; then
-                nftban_portscan_suricata_disable
+                nftban_portscan_suricata_disable || _rc=$?
+            else
+                echo "  ERROR: nftban_portscan_suricata_disable unavailable." >&2
+                _rc=1
             fi
             ;;
     esac
 
     _PORTSCAN_INITIALIZED=0
 
-    echo "  ✅ Portscan detection disabled"
-    echo ""
-
-    _nftban_portscan_log "INFO" "Portscan detection disabled"
+    if (( _rc != 0 )); then
+        echo "  ERROR: portscan runtime teardown FAILED (rc=${_rc}) — module rules may still be active." >&2
+        _nftban_portscan_log "ERROR" "Portscan teardown FAILED (rc=${_rc})"
+        return "$_rc"
+    fi
+    echo "  Portscan runtime teardown step completed."
+    _nftban_portscan_log "INFO" "Portscan teardown step completed"
     return 0
 }
 
 # -----------------------------------------------------------------------------
 # nftban_portscan_disable -- OPERATOR ORCHESTRATION. CLI-ONLY.
-# v1.229.7 PR-2: persists intent, then tears down runtime. NOT daemon-callable.
+# v1.233.1: the same 11-step transaction as enable (see _nftban_portscan_txn).
+# DISABLED = module-owned kernel rules converged to empty, confirmed by query.
 # -----------------------------------------------------------------------------
 nftban_portscan_disable() {
-    nftban_module_set_enabled portscan false || return 1
-    PORTSCAN_ENABLED="false"
-    nftban_portscan_reconcile
+    _nftban_portscan_txn disable
 }
 
 # =============================================================================
 # STATUS
 # =============================================================================
+
+# _nftban_portscan_txn_status_lines — v1.233.1. Reports the runtime transaction
+# record (/run/nftban/module-txn-portscan.env) through the shared engine
+# (nftban_mtxn_status_lines). Sets _PS_TXN_UNSETTLED=true when the record shows a
+# transaction that is OPEN (in progress or interrupted) in this boot, or whose
+# terminal outcome is DEGRADED / PENDING_TIMED_OUT.
+# Read-only: it never takes the convergence lock.
+_nftban_portscan_txn_status_lines() {
+    _PS_TXN_UNSETTLED="false"
+    declare -F nftban_mtxn_status_lines >/dev/null 2>&1 || return 0
+    nftban_mtxn_status_lines portscan
+    _PS_TXN_UNSETTLED="${NFTBAN_MTXN_UNSETTLED:-false}"
+    return 0
+}
 
 # v1.141 PR-B (J-PORT) — JSON renderer for `nftban portscan status --json`.
 # Built with jq -n (no string concatenation) so output is valid JSON. Fields
@@ -1039,7 +1156,14 @@ nftban_portscan_status() {
     local is_enabled="${PORTSCAN_ENABLED:-false}"
     local auto_ban="${PORTSCAN_AUTO_BAN:-true}"
 
-    if [[ "$is_enabled" == "true" ]]; then
+    # v1.233.1: an OPEN/interrupted enable/disable transaction in this boot, or
+    # a last transaction that did not converge, must never render as success.
+    _PS_TXN_UNSETTLED="false"
+    _nftban_portscan_txn_status_lines
+
+    if [[ "$is_enabled" == "true" && "$_PS_TXN_UNSETTLED" == "true" ]]; then
+        echo "  Status:      ⚠️  ENABLED (intent) - last enable/disable transaction did NOT converge (see above)"
+    elif [[ "$is_enabled" == "true" ]]; then
         echo "  Status:      ✅ ENABLED - Port scan detection is active"
     else
         echo "  Status:      ❌ DISABLED - Port scan detection is OFF"
@@ -1441,10 +1565,11 @@ nftban_portscan_cli() {
 
     case "$cmd" in
         enable)
-            nftban_portscan_enable
+            # v1.233.1: the transaction's rc IS the verdict — propagate it.
+            nftban_portscan_enable || return $?
             ;;
         disable)
-            nftban_portscan_disable
+            nftban_portscan_disable || return $?
             ;;
         status)
             nftban_portscan_status

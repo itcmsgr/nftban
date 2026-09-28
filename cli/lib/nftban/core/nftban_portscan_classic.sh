@@ -393,18 +393,74 @@ nftban_portscan_classic_add_jump() {
         return 1
     fi
 
+    # v1.233.1 (BUG-PORTSCAN-RECONCILE-COMMITS-GENERATION-ON-FAILED-APPLY): the
+    # jump renderer inserts inline and only WARNS on a failed insert or a missing
+    # ANCHOR_DETECT, then returns /dev/null, so "applied" above proves nothing.
+    # Verify the jump in EVERY family through a typed query; an unobservable
+    # input chain is a failure, not a pass.
+    local spec fam tbl
+    if ! declare -F nft_fragment_observe_jumps >/dev/null 2>&1; then
+        _nftban_portscan_classic_log "ERROR" "jump verification unavailable (nft_fragment_observe_jumps missing)"
+        return 1
+    fi
+    for spec in "${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}" "${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"; do
+        IFS=' ' read -r fam tbl <<<"$spec"
+        if ! nft_fragment_observe_jumps "$fam" "$tbl" "$chain"; then
+            echo "  ERROR: cannot verify the ${fam} portscan jump (${NFT_FRAGMENT_OBS_REASON})." >&2
+            _nftban_portscan_classic_log "ERROR" "jump unverified in ${fam} (${NFT_FRAGMENT_OBS_REASON})"
+            return 1
+        fi
+        if (( NFT_FRAGMENT_OBS_JUMPS < 1 )); then
+            echo "  ERROR: the ${fam} input chain has no jump to ${chain} after the insert." >&2
+            _nftban_portscan_classic_log "ERROR" "jump absent in ${fam} after insert"
+            return 1
+        fi
+    done
+
     _nftban_portscan_classic_log "INFO" "Jump rules applied via IPC"
     return 0
 }
 
 # Remove portscan rules
 # Uses fragment renderer + IPC instead of direct nft calls
+#
+# v1.233.1 — IDEMPOTENT AND OBSERVED. The cleanup fragment flushed both families
+# unconditionally, and `flush chain` on a never-projected chain is an nft error
+# that rejects the whole transaction (dns4 / lab3 witness, v1.233.0). Each
+# family is now OBSERVED first through a typed query:
+#   ABSENT, or PRESENT with 0 rules -> already the requested end state, no write
+#   PRESENT with rules              -> flushed through the sanctioned IPC writer
+#   UNMEASURED                      -> REFUSE (rc 1): absent != unobservable
+# Only a successful query may decide that nothing needs removing.
 nftban_portscan_classic_remove_rules() {
     _nftban_portscan_classic_log "INFO" "Removing portscan rules via IPC"
 
+    local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}" spec fam tbl
+    local -a flush_tables=()
+    if ! declare -F nft_fragment_observe_chain >/dev/null 2>&1; then
+        echo "  ERROR: nft_fragment_observe_chain unavailable — cannot establish what to remove." >&2
+        _nftban_portscan_classic_log "ERROR" "removal refused: observation authority unavailable"
+        return 1
+    fi
+    for spec in "${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}" "${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"; do
+        IFS=' ' read -r fam tbl <<<"$spec"
+        if ! nft_fragment_observe_chain "$fam" "$tbl" "$chain"; then
+            echo "  ERROR: cannot observe ${fam} ${tbl} ${chain} (${NFT_FRAGMENT_OBS_REASON}) — removal UNMEASURED." >&2
+            _nftban_portscan_classic_log "ERROR" "removal refused: ${fam} ${tbl} ${chain} unobservable (${NFT_FRAGMENT_OBS_REASON})"
+            return 1
+        fi
+        if [[ "$NFT_FRAGMENT_OBS_STATE" == "PRESENT" ]] && (( NFT_FRAGMENT_OBS_RULES > 0 )); then
+            flush_tables+=("$spec")
+        fi
+    done
+    if (( ${#flush_tables[@]} == 0 )); then
+        _nftban_portscan_classic_log "INFO" "Portscan chain already absent or empty in every family (verified by query) — nothing to remove"
+        return 0
+    fi
+
     # Render cleanup fragment
     local fragment_path
-    fragment_path=$(nft_fragment_render_portscan_classic_cleanup) || {
+    fragment_path=$(nft_fragment_render_portscan_classic_cleanup "${flush_tables[@]}") || {
         _nftban_portscan_classic_log "ERROR" "Failed to render cleanup fragment"
         return 1
     }
@@ -1672,10 +1728,23 @@ nftban_portscan_classic_enable() {
     # Initialize state
     nftban_portscan_classic_init_state
 
-    # Create nftables chain and rules
-    nftban_portscan_classic_create_chain
-    nftban_portscan_classic_add_rules
-    nftban_portscan_classic_add_jump
+    # Create nftables chain and rules.
+    # v1.233.1 (BUG-PORTSCAN-RECONCILE-COMMITS-GENERATION-ON-FAILED-APPLY): these
+    # were bare calls, so a failed apply returned 0 and the reconcile root
+    # COMMITTED a new plan generation for rules that were never projected.
+    #   A CHILD FAILURE MAY NEVER BECOME PARENT SUCCESS.
+    if ! nftban_portscan_classic_create_chain; then
+        _nftban_portscan_classic_log "ERROR" "Classic enable FAILED: chain creation"
+        return 1
+    fi
+    if ! nftban_portscan_classic_add_rules; then
+        _nftban_portscan_classic_log "ERROR" "Classic enable FAILED: portscan rules were not applied"
+        return 1
+    fi
+    if ! nftban_portscan_classic_add_jump; then
+        _nftban_portscan_classic_log "ERROR" "Classic enable FAILED: portscan jump not established"
+        return 1
+    fi
 
     # Verify prefix is in live ruleset (prevents silent "no detections")
     _nftban_portscan_verify_prefix || {
@@ -1687,14 +1756,26 @@ nftban_portscan_classic_enable() {
 }
 
 # Disable classic portscan detection
+#
+# v1.233.1: the rule-removal result is PROPAGATED. This returned 0 whatever
+# remove_rules did, so a failed flush (IPC down, nft error) became a successful
+# disable while the rules stayed live (lab3 witness ARM2, v1.233.0).
+#   A CHILD FAILURE MAY NEVER BECOME PARENT SUCCESS.
 nftban_portscan_classic_disable() {
     _nftban_portscan_classic_log "INFO" "Disabling classic portscan detection"
 
-    # Save state before disabling
-    nftban_portscan_classic_save_state
+    # Save state before disabling. This persists detection COUNTERS (blocked /
+    # ban-count history), not enforcement; the disable postcondition is the
+    # kernel, which remove_rules owns. A failed save is reported, not fatal.
+    if ! nftban_portscan_classic_save_state; then
+        _nftban_portscan_classic_log "WARN" "detection state not saved before disable (counters only; enforcement unaffected)"
+    fi
 
     # Remove rules
-    nftban_portscan_classic_remove_rules
+    if ! nftban_portscan_classic_remove_rules; then
+        _nftban_portscan_classic_log "ERROR" "Classic portscan rule removal FAILED — module rules may still be active"
+        return 1
+    fi
 
     _nftban_portscan_classic_log "INFO" "Classic portscan detection disabled"
     return 0

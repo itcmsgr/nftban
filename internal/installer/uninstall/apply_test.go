@@ -43,6 +43,12 @@ func seedAuthoritativeHost(m *executor.MockExecutor) {
 	m.NftTables["ip6:nftban"] = true
 	m.Services["nftband.service"] = true
 	hookEmergencySSHInject(m)
+	// v1.233.1 step 7 (remove_synproxy_raw) reads the table inventory and
+	// requires it to show the emergency table step 1 installed. No raw
+	// tables here: the SYNPROXY arms live in apply_synproxy_raw_v1233_1_test.go.
+	m.RunResults["nft:list:tables"] = executor.Result{
+		Stdout: "table ip nftban\ntable ip6 nftban\ntable inet nftban_install_emergency\n",
+	}
 }
 
 // hookEmergencySSHInject registers a mock callback that mirrors what
@@ -76,18 +82,20 @@ func TestApply_HappyPath_KernelAndServiceReleased(t *testing.T) {
 		t.Error("happy path: EmergencyInjected must be true after apply")
 	}
 	// Every step must be recorded as success. v1.100.4
-	// (UPSTREAM-UNINSTALL-INCOMPLETE-001) inserted "remove_artifacts" at
-	// position 8 between "disable_nftband" and "mask_nftband"; the
-	// 11-step sequence is documented in apply.go's docstring.
+	// (UPSTREAM-UNINSTALL-INCOMPLETE-001) inserted "remove_artifacts"
+	// between "disable_nftband" and "mask_nftband"; v1.233.1 inserted
+	// "remove_synproxy_raw" right after the nftban tables are deleted. The
+	// 12-step sequence is documented in apply.go's docstring.
 	wantSteps := []string{
 		"inject_emergency_ssh", "stop_nftband",
 		"flush_ip_nftban", "flush_ip6_nftban",
 		"delete_ip_nftban", "delete_ip6_nftban",
+		"remove_synproxy_raw",
 		"disable_nftband", "remove_artifacts", "mask_nftband",
 		"validate_end_state", "remove_emergency_ssh",
 	}
 	if len(r.Steps) != len(wantSteps) {
-		t.Fatalf("step count = %d; want %d (happy path must execute all 11 steps)", len(r.Steps), len(wantSteps))
+		t.Fatalf("step count = %d; want %d (happy path must execute all 12 steps)", len(r.Steps), len(wantSteps))
 	}
 	for i, want := range wantSteps {
 		if r.Steps[i].Name != want {

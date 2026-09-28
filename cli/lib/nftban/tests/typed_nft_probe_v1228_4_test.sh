@@ -187,6 +187,36 @@ grep -q 'nftban_nft_probe_session_degraded' "$MAINT" \
     && ok "M8 maintenance consults the monotonic latch" \
     || no "M8 maintenance consults the latch" "it reads the last VERDICT and can recover"
 
+echo "=== P. a listing larger than a pipe buffer keeps its verdict (v1.233.1) ==="
+# The probe runs under the caller's pipefail. Piping a >64 KiB listing into
+# `grep -q` let grep exit on the first match while the writer was still
+# writing; the writer then died on SIGPIPE (141) or EPIPE, the pipeline failed,
+# and a valid listing read as MALFORMED_OUTPUT (table) or ABSENT (set). A ~200 KiB
+# listing (production scale: 168-196 KB) whose match is on its FIRST line makes
+# that race likely on the old code; the in-shell match has no writer to kill.
+stub biglist '#!/bin/sh
+echo "table ip nftban"
+echo "	set ddos_syn_flood {"
+i=0; while [ $i -lt 3500 ]; do echo "		elements = { 192.0.2.1 } # padding line for pipe-buffer size"; i=$((i+1)); done
+echo "}"'
+for r in 1 2 3; do
+    verdict biglist ip
+    [[ "$NFTBAN_NFT_PROBE_VERDICT" == "PRESENT" ]] \
+        && ok "P1.$r large listing, table on line 1 -> PRESENT" \
+        || no "P1.$r large listing -> PRESENT" "got $NFTBAN_NFT_PROBE_VERDICT / $NFTBAN_NFT_PROBE_CLASS"
+    NFTBAN_NFT_BIN="$WORK/biglist/nft"
+    nftban_nft_probe_set ip nftban ddos_syn_flood test || true
+    [[ "$NFTBAN_NFT_PROBE_VERDICT" == "PRESENT" ]] \
+        && ok "P2.$r large listing, set on line 2 -> PRESENT" \
+        || no "P2.$r large listing set -> PRESENT" "got $NFTBAN_NFT_PROBE_VERDICT / $NFTBAN_NFT_PROBE_CLASS"
+done
+NFTBAN_NFT_BIN="$WORK/biglist/nft"
+nftban_nft_probe_set ip nftban no_such_set test || true
+[[ "$NFTBAN_NFT_PROBE_VERDICT" == "ABSENT" ]] \
+    && ok "P3 large listing, set not listed -> ABSENT (negative)" \
+    || no "P3 large listing absent set -> ABSENT" "got $NFTBAN_NFT_PROBE_VERDICT / $NFTBAN_NFT_PROBE_CLASS"
+nftban_nft_probe_session_reset
+
 echo "=== F. call-site invariants (static) ==="
 grep -qE 'nft list table \$_tbl|nft list table \$\{NFTBAN_TABLE_IPV4\}' "$MAINT" "$SSHDET" \
     && no "F1 no untyped collapsing probe remains" "an old boolean nft probe survived" \

@@ -257,7 +257,17 @@ nftban_nft_probe_table() {
     fi
     # The output must look like a table listing at all. Unparseable output that
     # happens to exit 0 is parser uncertainty, not a finding.
-    if ! printf '%s\n' "$_out" | grep -qE '^table[[:space:]]+[a-z0-9]+[[:space:]]+'; then
+    #
+    # v1.233.1 — every match below is in-shell. `printf | grep -q` under the
+    # caller's pipefail failed whenever grep quit before the writer finished (a
+    # listing larger than a pipe buffer): SIGPIPE/EPIPE turned a valid listing
+    # into MALFORMED_OUTPUT here and a listed table/set into ABSENT below.
+    # Equivalence with the line-oriented grep: the subject is framed by
+    # newlines, `^`/`$` become a newline, and whitespace/any-char are
+    # restricted to one line (grep never lets them match a newline).
+    local _nl=$'\n' _ws=$' \t\r\v\f' _re
+    _re="${_nl}table[${_ws}]+[a-z0-9]+[${_ws}]+"
+    if ! [[ "${_nl}${_out}${_nl}" =~ $_re ]]; then
         _probe_fail_closed "MALFORMED_OUTPUT" \
             "nft exited 0 but output is not a recognisable table listing"
         return 1
@@ -266,7 +276,8 @@ nftban_nft_probe_table() {
     NFTBAN_NFT_PROBE_RC=0
     NFTBAN_NFT_PROBE_CLASS="NONE"
     NFTBAN_NFT_PROBE_STDERR=""
-    if printf '%s\n' "$_out" | grep -qE "^table[[:space:]]+${_family}[[:space:]]+${_table}([[:space:]]|\$)"; then
+    _re="${_nl}table[${_ws}]+${_family}[${_ws}]+${_table}([${_ws}]|${_nl})"
+    if [[ "${_nl}${_out}${_nl}" =~ $_re ]]; then
         NFTBAN_NFT_PROBE_VERDICT="$NFTBAN_NFT_PROBE_PRESENT"
     else
         NFTBAN_NFT_PROBE_VERDICT="$NFTBAN_NFT_PROBE_ABSENT"
@@ -326,12 +337,29 @@ nftban_nft_probe_set() {
             "nft exited 0 but listed no sets — absence is unproven"
         return 1
     fi
+    # v1.233.1 — the output must look like a set listing at all (the same
+    # MALFORMED_OUTPUT rule nftban_nft_probe_table applies). Garbage that exits 0
+    # contains no set header, and was read as ABSENT: the DDoS transaction's
+    # T1 model (UNMEASURED arm, malformed answer on the last query) turned it
+    # into a CONVERGED disable. A listing of family <f> always names its tables,
+    # so a missing table header is parser uncertainty, not a finding.
+    # In-shell match (no pipe into grep -q: pipefail EPIPE rule).
+    local _hdr_re=$'\n''table[[:space:]]+'"${_family}"'[[:space:]]'
+    if ! [[ $'\n'"$_out" =~ $_hdr_re ]]; then
+        _probe_fail_closed "MALFORMED_OUTPUT" \
+            "nft exited 0 but output is not a recognisable set listing"
+        return 1
+    fi
 
     NFTBAN_NFT_PROBE_RC=0
     NFTBAN_NFT_PROBE_CLASS="NONE"
     NFTBAN_NFT_PROBE_STDERR=""
-    if printf '%s\n' "$_out" | grep -qE "^[[:space:]]*set[[:space:]]+${_set}[[:space:]]*\{" \
-       || printf '%s\n' "$_out" | grep -qE "table[[:space:]]+${_family}[[:space:]]+${_table}.*${_set}"; then
+    # In-shell, framed and line-restricted exactly as in nftban_nft_probe_table.
+    local _nl=$'\n' _ws=$' \t\r\v\f' _re_set _re_tab
+    _re_set="${_nl}[${_ws}]*set[${_ws}]+${_set}[${_ws}]*[{]"
+    _re_tab="table[${_ws}]+${_family}[${_ws}]+${_table}[^${_nl}]*${_set}"
+    if [[ "${_nl}${_out}${_nl}" =~ $_re_set ]] \
+       || [[ "${_nl}${_out}${_nl}" =~ $_re_tab ]]; then
         NFTBAN_NFT_PROBE_VERDICT="$NFTBAN_NFT_PROBE_PRESENT"
     else
         NFTBAN_NFT_PROBE_VERDICT="$NFTBAN_NFT_PROBE_ABSENT"
