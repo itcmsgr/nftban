@@ -11,6 +11,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.233.1] - 2026-09-28 — module lifecycle truth and PortScan false bans
+
+A patch release on v1.233.0. Every fix below was proven package-natively on DEB (Ubuntu 24.04)
+and RPM (Rocky 9) from the release candidate's own packages, with kernel state as the verdict.
+
+### Fixed
+
+- **PortScan Classic could ban on stale or out-of-order log events.** Event age is now taken
+  from the log line's own timestamp. An event is counted only if it falls inside the configured
+  detection window and is at most 120 s old when read. Slow strobes, steady low-rate traffic and
+  malformed lines no longer produce bans, while a fresh strobe is still banned.
+- **`nftban portscan enable|disable` and `nftban ddos enable|disable` could report success while
+  rules remained in the kernel.** Both now run as one locked transaction. The kernel postcondition
+  is read back before success is reported. Outcomes and exit codes:
+  - `CONVERGED` → 0;
+  - `FAILED_ROLLED_BACK` → 1;
+  - `DEGRADED` → 3;
+  - `PENDING_TIMED_OUT` → 4;
+  - `REFUSED` → 5 or 7.
+
+  A postcondition that cannot be read is reported as `DEGRADED`, never as success. After a DDoS
+  disable, no DDoS DROP rules remain in either family (v1.233.0 left 9 per family).
+- **Stopping the daemon removed or re-applied DDoS protection.** `systemctl stop nftband` now
+  leaves the DDoS rules in the kernel unchanged, and starting the daemon again does not duplicate
+  them. Only `nftban ddos disable` removes them.
+- **Uninstall left NFTBan's SYNPROXY raw-table rules behind.** They are now removed in every
+  package path (DEB, RPM, `uninstall.sh`, installer).
+- **Table and set checks could answer wrongly on large rulesets.** On listings of production
+  size (~200 KiB and above), a present table could read as unreadable and a present set as
+  absent. The checks now match in-process and give the same answer at any listing size. The
+  module transactions above rely on these checks.
+- **Prevent long legacy-backup migration scans from blocking PortScan/DDoS lifecycle commands.**
+  On hosts with many legacy `rebuild_*` backups, the maintenance migration held the firewall
+  convergence lock for most of each 15-minute cycle, so lifecycle commands were refused (exit 7).
+  The migration now scans without the lock, takes it only to delete a bounded batch of at most
+  32, and skips an unchanged population.
+
+### Known issues (not changed by this release)
+
+- **Reinstall immediately after a package uninstall** (the state directory is kept), witnessed on
+  Rocky 9 (RPM) and Ubuntu 24.04 (DEB), ends with install state `FAILED_REBUILD`. The cause: the
+  installer's firewall rebuild checks timer liveness before the timers are running again.
+  - Impact: the firewall remains in place, but the NFTBan timers stay inactive. On RPM the units are
+    also left disabled. The package manager still reports success.
+  - Recovery exercised on both families:
+    1. start the NFTBan timers (on RPM, enable the units first);
+    2. reinstall the same package, which then ends `COMMITTED`.
+
+  Upgrades of an installed system do not take this path.
+
 ## [v1.233.0] - 2026-09-22 — critical firewall and lifecycle correctness
 
 Two independent correctness defects, both proven package-natively on three platforms. This
