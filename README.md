@@ -126,15 +126,19 @@ for the full protection-domain / evidence / runtime taxonomy.
 
 ### Tier 0 — Primary Platforms
 
+> **Debian/Ubuntu:** always run `sudo apt update` first (joined with `&&`, so the install does not run if the refresh fails). On a fresh or long-idle server the local APT index can be stale, and `apt install ./nftban-*.deb` then fails with `Depends: jq but it is not installable` (likewise `socat`), even though the dependencies exist in the archive.
+
 #### Ubuntu 24.04 LTS (Noble)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-ubuntu24.04-amd64.deb
 ```
 
 #### Debian 12 (Bookworm)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-debian12-amd64.deb
 ```
 
@@ -149,12 +153,14 @@ sudo dnf install -y ./nftban-el9-x86_64.rpm
 #### Ubuntu 26.04 LTS (Resolute Raccoon)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu26.04-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-ubuntu26.04-amd64.deb
 ```
 
 #### Debian 13 (Trixie)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-debian13-amd64.deb
 ```
 
@@ -169,6 +175,7 @@ sudo dnf install -y ./nftban-el10-x86_64.rpm
 #### Ubuntu 22.04 LTS (Jammy)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-ubuntu22.04-amd64.deb
 ```
 

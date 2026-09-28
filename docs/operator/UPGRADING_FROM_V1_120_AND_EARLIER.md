@@ -65,6 +65,7 @@ the release asset is the documented escape hatch:
 dnf install -y https://github.com/itcmsgr/nftban/releases/download/v1.121.0/nftban-el9-x86_64.rpm
 
 # DEB hosts
+apt-get update &&
 NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive \
   apt-get install -y ./nftban-ubuntu22.04-amd64.deb
 ```
