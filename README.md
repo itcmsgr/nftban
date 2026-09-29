@@ -126,15 +126,19 @@ for the full protection-domain / evidence / runtime taxonomy.
 
 ### Tier 0 — Primary Platforms
 
+> **Debian/Ubuntu:** always run `sudo apt update` first (joined with `&&`, so the install does not run if the refresh fails). On a fresh or long-idle server the local APT index can be stale, and `apt install ./nftban-*.deb` then fails with `Depends: jq but it is not installable` (likewise `socat`), even though the dependencies exist in the archive.
+
 #### Ubuntu 24.04 LTS (Noble)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-ubuntu24.04-amd64.deb
 ```
 
 #### Debian 12 (Bookworm)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-debian12-amd64.deb
 ```
 
@@ -149,12 +153,14 @@ sudo dnf install -y ./nftban-el9-x86_64.rpm
 #### Ubuntu 26.04 LTS (Resolute Raccoon)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu26.04-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-ubuntu26.04-amd64.deb
 ```
 
 #### Debian 13 (Trixie)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-debian13-amd64.deb
 ```
 
@@ -169,7 +175,96 @@ sudo dnf install -y ./nftban-el10-x86_64.rpm
 #### Ubuntu 22.04 LTS (Jammy)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
+sudo apt update &&
 sudo apt install -y ./nftban-ubuntu22.04-amd64.deb
+```
+
+
+### ⚠️ Known issue in v1.233.1: a fresh installation may not complete
+
+**What was reproduced:** on the fresh installations tested below, the NFTBan install transaction does not complete. Upgrades of a running
+installation whose core timers are already active may avoid this failure; this has not been proven for every upgrade path.
+
+#### Symptom
+The package manager (`dnf` / `apt`) reports success, but NFTBan's install transaction does not complete:
+
+- `/var/lib/nftban/state/install_state` shows `INSTALL_STATE=FAILED_REBUILD` (not `COMMITTED`)
+- the installer log reports the post-rebuild validation finding `VAL-TIMER-001` ("no active nftban timers")
+- NFTBan's timers are left disabled, so maintenance, watchdog and feed updates do not run
+- the `nftban` tables are loaded, and a temporary table, `inet nftban_install_emergency`, that keeps SSH open is left in place
+
+**Cause:** the installer validates the firewall before it enables NFTBan's timers. A related defect is that re-running the package
+transaction (a reinstall) does not remove the temporary SSH table. Both are scheduled to be fixed in v1.234.
+
+#### Tested results (v1.233.1)
+
+**Fresh installs on clean images:**
+
+| Platform | Initial condition | Package (sha256) | Result |
+|---|---|---|---|
+| AlmaLinux 9.8, SELinux enforcing | clean image, no firewall service | `nftban-el9-x86_64.rpm` (`be493675563c9b6b…`) | `FAILED_REBUILD` (VAL-TIMER-001), dnf rc 0 |
+| Ubuntu 24.04.4 | clean image, `ufw` disabled first | `nftban-ubuntu24.04-amd64.deb` (`8cdea1a750402238…`) | `FAILED_REBUILD` (VAL-TIMER-001), apt rc 0 |
+| Ubuntu 24.04.4 | clean image, stock `ufw` unit enabled (inactive) | `nftban-ubuntu24.04-amd64.deb` (`8cdea1a750402238…`) | `FAILED_AUTHORITY_ABORT` (UFW detected; takeover not approved) |
+
+**Other paths observed separately:**
+
+| Path | Platform | Result |
+|---|---|---|
+| Recovery after an authority abort (UFW takeover approved with `NFTBAN_TAKEOVER=1 … --repair`) | Ubuntu 26.04.1 (`nftban-ubuntu26.04-amd64.deb`, `43ddf512c941c65c…`) | `FAILED_REBUILD` (VAL-TIMER-001) |
+| Reinstall after an uninstall (state directory kept) | Ubuntu 24.04 (DEB), Rocky 9 (RPM) | `FAILED_REBUILD` (VAL-TIMER-001) |
+
+Other distributions share the same installer but have not been tested on a clean image.
+
+#### Recovery (validated only for `FAILED_REBUILD` on AlmaLinux 9.8 with SELinux enforcing and on Ubuntu 24.04.4, SSH on port 22)
+**Not validated** for other distributions, custom SSH ports, or installs that stopped with `FAILED_AUTHORITY_ABORT`. For
+`FAILED_AUTHORITY_ABORT`, first decide whether NFTBan should take over the other firewall; see the installer's printed guidance.
+
+Keep an existing SSH session (or console access) open throughout. Keep the downloaded package in `/tmp`.
+
+**1. Enable NFTBan's core timers.** These are exactly the timers a completed install enables. Leave every other `nftban-*.timer` unchanged:
+the optional timers (anonymous community stats, weekly auto-update apply, Pro, and the others) keep their opt-in state.
+```
+sudo systemctl enable --now nftban-maintenance.timer nftban-health.timer nftban-unified-exporter.timer \
+  nftban-core-geoip.timer nftban-core-feeds.timer nftban-watchdog.timer nftban-queue.timer \
+  nftban-update-check.timer nftban-geoban-refresh.timer nftban-botscan.timer nftban-botscan-collector.timer
+```
+
+**2. Confirm NFTBan's rules permit your SSH port, then remove the temporary table.** All of the following must print `yes`:
+```
+P=$(sudo sshd -T | awk '$1=="port"{print $2}'); echo "sshd port: $P"
+for fam in ip ip6; do
+  sudo nft get element $fam nftban tcp_ports_in "{ $P }" >/dev/null 2>&1 && echo "$fam port $P allowed: yes" || echo "$fam port $P allowed: NO"
+  sudo nft list chain $fam nftban input | grep -qF 'tcp dport @tcp_ports_in ct state new' && echo "$fam accept rule: yes" || echo "$fam accept rule: NO"
+done
+```
+Only if every line says `yes`:
+```
+sudo nft delete table inet nftban_install_emergency
+```
+Now, **without closing your current session**, open a **new** SSH connection to the server. If it fails, stop and restore access from the still-open
+session or the console before doing anything else.
+
+**3. Re-run the package transaction once:**
+```
+# AlmaLinux / Rocky / RHEL 9
+sudo dnf -y reinstall /tmp/nftban-el9-x86_64.rpm
+# Ubuntu 24.04
+sudo apt-get install --reinstall -y /tmp/nftban-ubuntu24.04-amd64.deb
+```
+
+In testing, the commands above, run verbatim, reached `COMMITTED` on both platforms, including a new SSH connection after step 2, and the
+state was unchanged after a reboot. Across all runs, 6 of 6 reached `COMMITTED`. If the check in step 2 prints `NO`, the temporary table
+must stay, and the procedure stops there. On Ubuntu, if `apt` reports that the dpkg lock is held (for example by unattended-upgrades),
+wait until it is released and re-run step 3.
+
+Step 2 is required: without it, the reinstall ends `DEGRADED` (`no_emergency_table`). Re-running the installation without step 1 fails
+again.
+
+#### Verify
+```
+grep INSTALL_STATE /var/lib/nftban/state/install_state    # expect COMMITTED
+systemctl is-active nftband                                # expect active
+nft list tables                                            # expect ip nftban and ip6 nftban, and no nftban_install_emergency
 ```
 
 ---
