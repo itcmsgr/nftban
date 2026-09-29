@@ -549,6 +549,13 @@ func TestV1234_FailedFreshInstallRecoversByTheNamedTransactionOnly(t *testing.T)
 	if sf2.State == state.StateCommitted {
 		t.Fatalf("--repair from FAILED_REBUILD reached COMMITTED; RETRY_FULL_TRANSACTION would then be the wrong class")
 	}
+	// The EXPECTED refusal, asserted rather than merely logged: --repair resumes at
+	// SWITCH, skips the Prepare render, so convergence cannot be established. Any other
+	// non-COMMITTED outcome would be a different (unexplained) failure of the fixture.
+	if sf2.State != state.StateDegraded || !strings.Contains(sf2.FailureReason, "post_update_convergence_verified") {
+		t.Fatalf("--repair from FAILED_REBUILD ended %s (%q); want DEGRADED on post_update_convergence_verified (render skipped)",
+			sf2.State, sf2.FailureReason)
+	}
 }
 
 func tail(s string, n int) string {
