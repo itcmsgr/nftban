@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-08-28"
-# meta:description="Locks `nftban firewall render-boot`, the P12-FPA Phase 2 render-only entry point. D positive control: renders the canonical schema and publishes the boot projection. E render authority missing -> refuses. F render failure -> refuses, previous projection preserved. G nft -c failure -> refuses, previous projection preserved. I unresolved placeholder never reaches disk. K the historical /etc/nftban/nftables.conf is byte-identical before and after. Also asserts the entry point NEVER loads a ruleset (no nft -f), which is its entire reason for existing. Hermetic: TMPDIR sandbox with a fake NFTBAN_LIB_DIR; no host, kernel or systemd state touched."
+# meta:description="Locks `nftban firewall render-boot`, the P12-FPA Phase 2 render-only entry point. D positive control: renders the canonical schema and publishes the boot projection. E render authority missing -> refuses. F render failure -> refuses, previous projection preserved. G nft -c failure -> refuses, previous projection preserved. I unresolved placeholder never reaches disk. K the historical /etc/nftban/nftables.conf is byte-identical before and after. R11 (v1.234) the projection carries the effective service ports, and refuses without the port authority (no template fallback). Also asserts the entry point NEVER loads a ruleset (no nft -f), which is its entire reason for existing. Hermetic: TMPDIR sandbox with a fake NFTBAN_LIB_DIR; no host, kernel or systemd state touched."
 # meta:input="cli/lib/nftban/cli/cmd_firewall.sh, cli/lib/nftban/lib/boot_projection.sh, install/nftables/nftables.conf.tpl"
 # meta:output="PASS/FAIL per assertion; exit 1 on any failure"
 # meta:depends="bash,nft,mktemp,sha256sum"
@@ -47,6 +47,24 @@ cp "$ROOT/install/nftables/nftables.conf"        "$SB/conf/nftables.conf"
 LEGACY_BEFORE=$(sha256sum "$SB/conf/nftables.conf" | cut -d' ' -f1)
 
 export NFTBAN_LIB_DIR="$SB/lib" NFTBAN_CONFIG_DIR="$SB/conf"
+
+# v1.234 R-11: the projection now carries the COMPLETE effective service ports
+# (same authority as rebuild), so render-boot needs the effective-port authority.
+# A deterministic stand-in for `nftban-core ports render-effective` (the Go side
+# is covered by internal/ports) plus the durable SSH-port file the shell reads.
+mkdir -p "$SB/lib/bin" "$SB/conf/ports.d"
+printf '22/T/I\n' > "$SB/conf/ports.d/00-ssh.conf"
+cat > "$SB/lib/bin/nftban-core" <<'CORE'
+#!/usr/bin/env bash
+[[ "$1 $2" == "ports render-effective" ]] || exit 2
+[[ -n "${NFTBAN_EFFECTIVE_SSH_PORTS:-}" ]] || exit 1
+echo "NFTBAN_SVC_TCP_IN=${NFTBAN_EFFECTIVE_SSH_PORTS}, 80, 443, 8443"
+echo "NFTBAN_SVC_TCP_OUT=53, 80, 443"
+echo "NFTBAN_SVC_UDP_IN="
+echo "NFTBAN_SVC_UDP_OUT=53, 123"
+CORE
+chmod +x "$SB/lib/bin/nftban-core"
+
 # shellcheck source=/dev/null
 source "$ROOT/cli/lib/nftban/cli/cmd_firewall.sh"
 
@@ -96,6 +114,13 @@ TARGET="$SB/conf/generated/nftban-boot.nft"
 grep -q "DO NOT EDIT" "$TARGET" 2>/dev/null && ok "artifact carries the DO-NOT-EDIT header" \
                   || no "artifact missing the header"
 
+echo "== R11  projection carries the effective service ports, not the template literals =="
+if grep -qE 'elements = \{ 22, 80, 443, 8443 \}' "$TARGET" 2>/dev/null; then
+    ok "tcp_ports_in carries the effective set (8443 is not a template literal)"
+else
+    no "tcp_ports_in is not the effective set:"; grep -n -m4 'elements' "$TARGET" 2>/dev/null | sed 's/^/        /'
+fi
+
 echo "== I  no unresolved placeholder reaches disk =="
 [[ -z "$(grep -oE '__[A-Z0-9_]+__' "$TARGET" 2>/dev/null)" ]] \
   && ok "no unresolved placeholders in the published artifact" \
@@ -140,6 +165,16 @@ echo "== F  render failure -> refuse, previous projection preserved =="
 [[ "$(sha256sum "$TARGET" | cut -d' ' -f1)" == "$GOOD_SUM" ]] \
   && ok "previous projection intact after render failure" \
   || no "previous projection was damaged by a failed render"
+
+echo "== R11  effective-port authority unavailable -> refuse, NO template fallback =="
+mv "$SB/lib/bin/nftban-core" "$SB/nftban-core.off"
+_firewall_render_boot --quiet >/dev/null 2>&1 \
+  && no "published without the effective-port authority (template fallback)" \
+  || ok "refuses when the effective service ports cannot be rendered"
+[[ "$(sha256sum "$TARGET" | cut -d' ' -f1)" == "$GOOD_SUM" ]] \
+  && ok "previous projection intact after a port-authority failure" \
+  || no "previous projection was damaged by a port-authority failure"
+mv "$SB/nftban-core.off" "$SB/lib/bin/nftban-core"
 
 echo "== G  nft -c failure -> refuse, previous projection preserved =="
 cp "$SB/lib/templates/nftables.conf.tpl" "$SB/tpl.bak"

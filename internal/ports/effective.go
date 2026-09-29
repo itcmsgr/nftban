@@ -72,9 +72,24 @@ type EffectivePortSets struct {
 // (1..65535), and sorted so the render and the daemon agree byte-for-byte and a
 // re-render is idempotent.
 func ComputeEffective(all *PortConfig, sshPorts []int) *EffectivePortSets {
+	return ComputeEffectiveWithInboundFloor(all, sshPorts, baselineTCPIn)
+}
+
+// ComputeEffectiveWithInboundFloor is ComputeEffective with the INBOUND TCP floor
+// supplied by the caller instead of the package default.
+//
+// v1.234 R-11 (BUG-BOOT-PROJECTION-CARRIES-ONLY-TEMPLATE-PORTS, owner acceptance
+// 2026-09-29): "a configured removal of 80/443 must NOT be silently reversed by
+// template defaults". The {80,443} inbound floor used to be unconditional, so an
+// administrator had NO way to close them: every rebuild re-added them, and now that
+// the boot projection is published from the same render, every boot would too. The
+// floor is therefore resolved from configuration (ResolveInboundFloor). The SSH
+// ports are NOT part of this floor and are never removable here: they are the
+// explicit SSH-access safeguard and always come from the SSH-detection authority.
+func ComputeEffectiveWithInboundFloor(all *PortConfig, sshPorts []int, tcpInFloor []int) *EffectivePortSets {
 	var tcpIn, tcpOut, udpIn, udpOut []int
 
-	tcpIn = append(tcpIn, baselineTCPIn...)
+	tcpIn = append(tcpIn, tcpInFloor...)
 	tcpIn = append(tcpIn, sshPorts...)
 	tcpOut = append(tcpOut, baselineTCPOut...)
 	udpIn = append(udpIn, baselineUDPIn...)
@@ -100,11 +115,56 @@ func ComputeEffective(all *PortConfig, sshPorts []int) *EffectivePortSets {
 // effective sets. This is the entry point the atomic rebuild render will consume
 // (Increment 3) so it installs the complete sets inside the single `nft -f`.
 func EffectiveServicePorts(configDir string, sshPorts []int) (*EffectivePortSets, error) {
+	return EffectiveServicePortsWithInboundFloor(configDir, sshPorts, baselineTCPIn)
+}
+
+// EffectiveServicePortsWithInboundFloor is EffectiveServicePorts with a resolved
+// inbound floor (see ResolveInboundFloor).
+func EffectiveServicePortsWithInboundFloor(configDir string, sshPorts []int, tcpInFloor []int) (*EffectivePortSets, error) {
 	all, err := LoadAllPorts(configDir)
 	if err != nil {
 		return nil, err
 	}
-	return ComputeEffective(all, sshPorts), nil
+	return ComputeEffectiveWithInboundFloor(all, sshPorts, tcpInFloor), nil
+}
+
+// InboundFloorKey is the nftban.conf(.local) key that authorizes the inbound TCP
+// floor. It is an EXPLICIT authorization, resolved as follows:
+//
+//	key absent              -> the package default {80, 443}. Unchanged behaviour:
+//	                           an upgrade must not silently CLOSE web ports on a
+//	                           host that never declared them anywhere else.
+//	key = "" or "none"      -> NO inbound floor; 80/443 are open only when ports.d
+//	                           or an enabled panel profile authorizes them.
+//	key = "443" / "80,8443" -> exactly those ports.
+//
+// An invalid value is an ERROR, never a fallback to the default: rendering a floor
+// the administrator did not ask for is the defect this key exists to prevent.
+const InboundFloorKey = "NFTBAN_BASELINE_TCP_IN"
+
+// DefaultInboundFloor returns a copy of the package-default inbound TCP floor.
+func DefaultInboundFloor() []int { return append([]int{}, baselineTCPIn...) }
+
+// ResolveInboundFloor resolves the configured inbound TCP floor. set reports
+// whether the key was present at all: absent and empty mean different things.
+func ResolveInboundFloor(value string, set bool) ([]int, error) {
+	if !set {
+		return DefaultInboundFloor(), nil
+	}
+	v := strings.TrimSpace(value)
+	if v == "" || strings.EqualFold(v, "none") {
+		return []int{}, nil
+	}
+	out := []int{}
+	sep := func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }
+	for _, tok := range strings.FieldsFunc(v, sep) {
+		n, err := strconv.Atoi(tok)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("%s: invalid port %q (expected a comma-separated list of 1-65535, an empty value, or none)", InboundFloorKey, tok)
+		}
+		out = append(out, n)
+	}
+	return normalizePortList(out), nil
 }
 
 // portCSV renders a sorted port slice as a comma-separated list ("22, 80, 443").
@@ -149,7 +209,15 @@ func renderEffectiveElements(sets *EffectivePortSets) string {
 // returns the KEY=CSV element lines the shell render substitutes into the set
 // blocks. sshPorts is the SSH-detection authority's output (required upstream).
 func RenderEffectiveElements(configDir string, sshPorts []int) (string, error) {
-	sets, err := EffectiveServicePorts(configDir, sshPorts)
+	return RenderEffectiveElementsWithInboundFloor(configDir, sshPorts, baselineTCPIn)
+}
+
+// RenderEffectiveElementsWithInboundFloor is RenderEffectiveElements with a
+// resolved inbound floor. `nftban-core ports render-effective` calls this, so the
+// rebuild render, the boot projection (published from that render) and the
+// transition-health verifier all honour the administrator's floor decision.
+func RenderEffectiveElementsWithInboundFloor(configDir string, sshPorts []int, tcpInFloor []int) (string, error) {
+	sets, err := EffectiveServicePortsWithInboundFloor(configDir, sshPorts, tcpInFloor)
 	if err != nil {
 		return "", err
 	}

@@ -53,8 +53,15 @@ func (d IncludeDependency) String() string {
 	return "LEGACY"
 }
 
-// IncludeDirective is the line nftban adds to the distro nftables.conf so a
-// plain `systemctl reload nftables.service` re-includes the nftban ruleset.
+// IncludeDirective is the line nftban adds to the distro nftables.conf so
+// nftables.service loads the nftban ruleset at boot.
+//
+// ⛔ v1.234 R-11: a plain `systemctl restart|reload nftables.service` re-includes
+// the BOOT PROJECTION only. It does not reconcile live state: detector TTL bans,
+// reconciled whitelist entries and module rules are dropped until something
+// re-applies them. The supported runtime path is `nftban nftables restart`
+// (the atomic, locked, snapshot-first `firewall rebuild`), which also refreshes
+// the projection this directive includes.
 //
 // v1.229.13 Lane 3D.4 — AUTHORITATIVE INCLUDE TRANSITION. Boot authority moved from
 // the legacy runtime artifact to the VALIDATED generated boot projection. This
@@ -172,7 +179,9 @@ func inetFilterEmptySkeleton(block []string) bool {
 // neutralizeDistroSkeleton implements v1.146 Shape B (reboot-proven required by
 // V146_BOOT_SUFFICIENCY_GATE2_REBOOT_PROOF_RECORD.md). It:
 //   - comments out a bare `flush ruleset` so a `systemctl reload nftables.service`
-//     cannot wipe the daemon-managed ip/ip6 nftban runtime tables, and
+//     cannot wipe the daemon-managed ip/ip6 nftban runtime tables (the included
+//     boot projection still REPLACES them with its own contents — v1.234 R-11;
+//     the supported runtime path is `nftban nftables restart`), and
 //   - removes the distro default EMPTY `table inet filter` skeleton (which would
 //     shadow nftban blocking and trip the CVE-2025-NFTBAN-001 guard).
 //

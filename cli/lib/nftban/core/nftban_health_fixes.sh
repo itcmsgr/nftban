@@ -1118,7 +1118,9 @@ nftban_health_fix_whitelist() {
     # Check if nftban tables exist (IPv4 + IPv6)
     if ! nft list table ip nftban &>/dev/null && ! nft list table ip6 nftban &>/dev/null; then
         echo "  ⚠️  nftban nftables tables not found (neither IPv4 nor IPv6)"
-        echo "    Run: systemctl restart nftables"
+        # v1.234 R-11: the tables are rebuilt by the atomic rebuild, not by a raw
+        # service restart (which loads the boot projection and drops live state).
+        echo "    Run: nftban firewall rebuild"
         return 1
     fi
 

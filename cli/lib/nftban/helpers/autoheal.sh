@@ -441,8 +441,10 @@ if [ -n "$NFT_CONFIG" ]; then
         log_info "  Affected file : $NFT_CONFIG"
         log_info "  Symptom       : nftables.service fails to load (xt target / xtables compat)"
         log_info "  Repair        : /usr/lib/nftban/bin/nftban-installer --repair"
+        # v1.234 R-11: never `systemctl restart nftables.service` — it re-loads the
+        # boot projection and drops live bans/ports/whitelist without reconciling.
         log_info "  Manual review : remove the xt target rules from $NFT_CONFIG, then"
-        log_info "                  systemctl restart nftables.service"
+        log_info "                  nftban nftables restart   (atomic rebuild; state preserved)"
         AUTOHEAL_XT_UNRESOLVED=1
         export AUTOHEAL_XT_UNRESOLVED
     else

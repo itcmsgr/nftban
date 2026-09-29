@@ -83,10 +83,10 @@ USAGE:
     nftban nftables <command>
 
 COMMANDS:
-    start               Start nftables service
+    start               Start nftables service, then converge NFTBan state
     stop                Stop nftables service
-    restart             Restart nftables service
-    reload              Reload nftables ruleset
+    restart             Rebuild the NFTBan ruleset atomically (state preserved)
+    reload              Same as restart
 
     enable              Enable nftables service at boot
     disable             Disable nftables service at boot
@@ -102,11 +102,20 @@ DESCRIPTION:
     underlying firewall system. These commands allow you to control the
     nftables systemd service and view the current ruleset.
 
+    restart and reload do NOT restart nftables.service while it is running.
+    A service restart re-loads the boot projection and drops the live NFTBan
+    state (timed bans, reconciled sets). Both verbs run the atomic
+    `nftban firewall rebuild` instead: it takes the NFTBan operations lock,
+    snapshots the live sets first, loads the complete ruleset in one
+    transaction, restores bans and whitelist, re-applies modules and refreshes
+    the boot projection. Success is printed only after the rebuild succeeded
+    and the effective service ports were verified live.
+
 EXAMPLES:
     # Check nftables status
     nftban nftables status
 
-    # Restart nftables service
+    # Rebuild the NFTBan ruleset without losing bans, whitelist or ports
     nftban nftables restart
 
     # Enable nftables at boot
@@ -126,7 +135,7 @@ NOTES:
 SERVICE INFORMATION:
     Service:  nftables.service
     Binary:   /usr/sbin/nft
-    Config:   /etc/nftables/nftban.nft
+    Boot:     /etc/nftban/generated/nftban-boot.nft (generated; refreshed by rebuild)
 
 HELP
 }
@@ -137,17 +146,113 @@ HELP
 # =============================================================================
 
 
+# -----------------------------------------------------------------------------
+# v1.234 R-11 (BUG-NFTABLES-RESTART-RELOADS-BOOT-FILE-DROPS-PORTS-BANS-WHITELIST)
+#
+# `nftban nftables restart|reload` used to be `systemctl restart|reload nftables`.
+# That re-loads the kernel from the boot projection WITHOUT any reconciliation:
+# measured on lab4/lab2, open service ports 16 -> 3, persisted bans 7/68 -> 0,
+# a whitelist entry lost — and the verb still printed "restarted successfully".
+# Nothing re-applied the state until an explicit `nftban sync`.
+#
+# The verbs now converge through the EXISTING atomic rebuild, which already owns
+# every property the restart lacked:
+#   - serialization on the canonical /run/nftban/nft_operations.lock (it refuses,
+#     never queues silently, when another convergence holds it);
+#   - a snapshot of the LIVE kernel before anything changes, so detector TTL bans
+#     are restored with their remaining timeout (a service restart destroys them
+#     before any later sync or rebuild could snapshot them);
+#   - one atomic `nft -f` with the complete effective service ports;
+#   - durable whitelist.d/blacklist.d reconcile + member-level verification;
+#   - module re-apply and post-validation with rollback;
+#   - republication of the boot projection.
+# Success is reported only when the rebuild exits 0 AND the independent
+# effective-state check below passes.
+#
+# ⛔ NO RECURSION: this file must never call `systemctl restart|reload nftables`
+#    for these verbs, and the rebuild never calls back into `nftban nftables`.
+# ⛔ DO NOT add `ExecStartPost=nftban sync` to nftables.service instead: at boot
+#    nftband is ordered After=nftables.service, so the IPC would wait on a daemon
+#    that cannot start until nftables finishes (ordering deadlock).
+# -----------------------------------------------------------------------------
+
+# _nftban_nftables_verify_effective
+# Independent post-convergence check through the EXISTING transition-health
+# probe (the same one the rebuild records): every effective service port must be
+# live in both families, the management floor must be present, and both nftban
+# tables must exist. An observation that cannot be made is UNMEASURED, and
+# UNMEASURED is never reported as success.
+_nftban_nftables_verify_effective() {
+    local helper="${NFTBAN_LIB_DIR}/core/nftban_firewall_transition_health.sh"
+    if [[ ! -r "$helper" ]]; then
+        echo "ERROR: effective state UNMEASURED — verifier not found: $helper" >&2
+        return 1
+    fi
+    # shellcheck source=/dev/null
+    if ! source "$helper"; then
+        echo "ERROR: effective state UNMEASURED — verifier could not be loaded" >&2
+        return 1
+    fi
+    if ! declare -F _fth_gather >/dev/null 2>&1 || ! declare -F _fth_compute_breaches >/dev/null 2>&1; then
+        echo "ERROR: effective state UNMEASURED — verifier interface missing" >&2
+        return 1
+    fi
+    if ! _fth_gather; then
+        echo "ERROR: effective state UNMEASURED — the live ruleset could not be observed" >&2
+        return 1
+    fi
+    # tcp_ports_in always carries at least the SSH safeguard. Empty means the
+    # effective-port authority produced nothing, which would make every port
+    # comparison below vacuously "complete".
+    if [[ -z "${FTH_EFF_TCPIN:-}" ]]; then
+        echo "ERROR: effective state UNMEASURED — the effective service-port authority returned nothing" >&2
+        return 1
+    fi
+    if [[ "${FTH_TABLE_PRESENT:-N}" != "Y" ]]; then
+        echo "ERROR: the nftban tables are NOT present after the rebuild" >&2
+        return 1
+    fi
+    _fth_compute_breaches
+    if (( ${FTH_B_SVC:-1} + ${FTH_B_FLOOR:-1} + ${FTH_B_TABLE:-1} > 0 )); then
+        echo "ERROR: effective state NOT converged: ${FTH_REASON:-unspecified breach}" >&2
+        return 1
+    fi
+    echo "  Verified: effective service ports live (tcp_in: ${FTH_EFF_TCPIN}); management floor present (ip, ip6)"
+    return 0
+}
+
+# _nftban_nftables_converge <verb>
+_nftban_nftables_converge() {
+    local verb="$1" rc=0
+    local cli="${NFTBAN_BIN:-/usr/sbin/nftban}"
+    if ! command -v "$cli" >/dev/null 2>&1; then
+        echo "ERROR: nftban CLI not found ($cli) — cannot run the atomic rebuild; nothing was changed" >&2
+        return 1
+    fi
+    echo "  Converging through the atomic rebuild (locked, snapshot-first)..."
+    "$cli" firewall rebuild --quiet || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        echo "ERROR: nftables $verb FAILED — firewall rebuild exited $rc" >&2
+        echo "  The rebuild output above states what was changed and whether it rolled back." >&2
+        echo "  Nothing was reported as restarted." >&2
+        return "$rc"
+    fi
+    _nftban_nftables_verify_effective || return $?
+    return 0
+}
+
 _nftban_nftables_cmd_start() {
     echo "Starting nftables service..."
-    systemctl start "${NFTABLES_SERVICE}"
-    local result=$?
-
-    if [[ $result -eq 0 ]]; then
-        echo "✓ nftables service started successfully"
-    else
+    local result=0
+    systemctl start "${NFTABLES_SERVICE}" || result=$?
+    if [[ $result -ne 0 ]]; then
         echo "ERROR: Failed to start nftables service" >&2
         return $result
     fi
+    # The unit loaded the boot projection; converge to the current effective
+    # configuration (persisted bans, whitelist, modules) before claiming success.
+    _nftban_nftables_converge start || return $?
+    echo "✓ nftables service started and NFTBan state converged"
 }
 
 _nftban_nftables_cmd_stop() {
@@ -163,33 +268,35 @@ _nftban_nftables_cmd_stop() {
     fi
 }
 
-_nftban_nftables_cmd_restart() {
-    echo "Restarting nftables service..."
-    systemctl restart "${NFTABLES_SERVICE}"
-    local result=$?
-
-    if [[ $result -eq 0 ]]; then
-        echo "✓ nftables service restarted successfully"
-    else
-        echo "ERROR: Failed to restart nftables service" >&2
-        return $result
+# _nftban_nftables_restart_or_reload <restart|reload>
+# Both verbs converge the SAME way. nftables.service is NOT restarted/reloaded
+# while it is active: that is precisely the reset R-11 measured. If the unit is
+# not active it is started first (there is no unit-loaded state to preserve), and
+# the rebuild then converges on top of what it loaded.
+_nftban_nftables_restart_or_reload() {
+    local verb="$1" result=0
+    echo "Converging NFTBan firewall (nftables ${verb})..."
+    if ! systemctl is-active --quiet "${NFTABLES_SERVICE}" 2>/dev/null; then
+        echo "  ${NFTABLES_SERVICE} is not active — starting it first..."
+        systemctl start "${NFTABLES_SERVICE}" || result=$?
+        if [[ $result -ne 0 ]]; then
+            echo "ERROR: Failed to start ${NFTABLES_SERVICE}" >&2
+            return $result
+        fi
     fi
+    _nftban_nftables_converge "$verb" || return $?
+    echo "✓ nftables ${verb} complete — ruleset rebuilt atomically, effective state verified"
+}
+
+_nftban_nftables_cmd_restart() {
+    _nftban_nftables_restart_or_reload restart
 }
 
 _nftban_nftables_cmd_reload() {
-    echo "Reloading nftables ruleset..."
-    if ! systemctl reload "${NFTABLES_SERVICE}" 2>/dev/null; then
-        # Fallback: use IPC to apply ruleset
-        nft_ipc_apply_ruleset "/etc/nftables/nftban.nft" 2>/dev/null
-    fi
-    local result=$?
-
-    if [[ $result -eq 0 ]]; then
-        echo "✓ nftables ruleset reloaded successfully"
-    else
-        echo "ERROR: Failed to reload nftables ruleset" >&2
-        return $result
-    fi
+    # v1.234 R-11: the former fallback `nft_ipc_apply_ruleset /etc/nftables/nftban.nft`
+    # is REMOVED — that file is not the boot authority, and the fallback reported
+    # the result of whichever path ran last.
+    _nftban_nftables_restart_or_reload reload
 }
 
 _nftban_nftables_cmd_enable() {
@@ -330,7 +437,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_start
+            _nftban_nftables_cmd_start || return $?
             ;;
 
         stop)
@@ -338,7 +445,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_stop
+            _nftban_nftables_cmd_stop || return $?
             ;;
 
         restart)
@@ -346,7 +453,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_restart
+            _nftban_nftables_cmd_restart || return $?
             ;;
 
         reload)
@@ -354,7 +461,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_reload
+            _nftban_nftables_cmd_reload || return $?
             ;;
 
         enable)
@@ -362,7 +469,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_enable
+            _nftban_nftables_cmd_enable || return $?
             ;;
 
         disable)
@@ -370,7 +477,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_disable
+            _nftban_nftables_cmd_disable || return $?
             ;;
 
         status)
@@ -390,7 +497,7 @@ nftban_cmd_nftables() {
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
-            _nftban_nftables_cmd_check
+            _nftban_nftables_cmd_check || return $?
             ;;
 
         list)
