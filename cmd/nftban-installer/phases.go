@@ -655,9 +655,26 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// 8. Post-rebuild: re-assert SSH in live sets (belt-and-suspenders)
 	switchop.AssertSSHInLiveSet(exec, pd.sshPort, log)
 
-	// 9. Remove emergency SSH table — nftban rules proven in kernel
-	if emergencyInjected {
-		switchop.RemoveEmergencySSH(exec, log)
+	// 9. Hand SSH protection off from the emergency table to NFTBan's own rules.
+	//
+	// ⛔ v1.234.0 BUG-INSTALL-EMERGENCY-SSH-TABLE-LEFT-AFTER-REINSTALL. This used to run
+	// only when THIS run injected the table (Takeover/Fresh/Ambiguous). A reinstall is
+	// decided UPDATE, so a table left behind by an earlier failed run was never removed
+	// and every later transaction ended DEGRADED on no_emergency_table. It now runs on
+	// EVERY decision whenever the table is present — and on every decision only after
+	// switchop.SSHHandoffProven (sshd port(s) in ip+ip6 tcp_ports_in AND the
+	// `tcp dport @tcp_ports_in ct state new … accept` rule, read from the kernel).
+	// Unproven => the table is KEPT (and assertNoEmergencyTable reports DEGRADED):
+	// the failure-path protection is preserved, never traded for a clean verdict.
+	if emergencyInjected || switchop.EmergencyTablePresent(exec) {
+		ports := pd.sshPorts
+		if len(ports) == 0 && pd.sshPort > 0 {
+			ports = []int{pd.sshPort}
+		}
+		if len(ports) == 0 && sf.SSHPort > 0 {
+			ports = []int{sf.SSHPort}
+		}
+		switchop.HandOffEmergencySSH(exec, ports, log)
 	}
 
 	log.PhaseEnd("Switch")

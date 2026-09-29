@@ -161,7 +161,7 @@ OUT=$(nftban_render_install_transaction_truth "$SF" || true)
 [[ -z "$OUT" ]] && ok "A1 COMMITTED -> transaction block renders nothing" || bad "A1 COMMITTED rendered a block: [$OUT]"
 
 # --- A2 FAILED_REBUILD (the dns1 state) ---------------------------------------
-SF="$(p0_state 'INSTALL_STATE=FAILED_REBUILD\nINSTALL_VERSION=1.229.14\nINSTALL_TIMESTAMP=2026-09-08T11:22:33.123456789Z\nPHASE_REACHED=switch\nFAILURE_REASON=rebuild failed: ruleset rejected by the kernel (exit 1)\n')"
+SF="$(p0_state 'INSTALL_STATE=FAILED_REBUILD\nINSTALL_VERSION=1.229.14\nINSTALL_TIMESTAMP=2026-09-08T11:22:33.123456789Z\nPHASE_REACHED=switch\nFAILURE_REASON=rebuild failed: ruleset rejected by the kernel (exit 1)\nRECOVERY_CLASS=RETRY_FULL_TRANSACTION\n')"
 [[ "$(nftban_install_state_classify "$SF")" == "NOT_COMMITTED" ]] && ok "A2 FAILED_REBUILD classifies NOT_COMMITTED" || bad "A2 FAILED_REBUILD misclassified"
 OUT=$(nftban_render_operator_readiness '{"status":"protected","findings":[]}' "$(nftban_install_state_classify "$SF")" 0)
 nr "$OUT" "Upgrade readiness:[[:space:]]+PASS"   "A2 FAILED_REBUILD -> never PASS (the dns1 defect)"
@@ -172,7 +172,20 @@ BLK=$(nftban_render_install_transaction_truth "$SF" || true)
 af "$BLK" "FAILED_REBUILD"                                     "A2 D4: the block states the state"
 af "$BLK" "2026-09-08T11:22:33.123456789Z"                     "A2 D4: the block states when it was recorded"
 af "$BLK" "rebuild failed: ruleset rejected by the kernel (exit 1)"                    "A2 D4: the block states the cause in one line"
-af "$BLK" "/usr/lib/nftban/bin/nftban-installer --repair"      "A2 D4: the block states the exact recovery command"
+# v1.234.0 BUG-INSTALL-GUIDANCE-CONTRADICTS-DO-NOT-USE-REPAIR: the recovery line is the
+# installer's persisted RECOVERY_CLASS, never a hardcoded --repair. FAILED_REBUILD is
+# RETRY_FULL_TRANSACTION (the installer prints "Do NOT use --repair" for it).
+af "$BLK" "RECOVERY_CLASS=RETRY_FULL_TRANSACTION"              "A2 D4: the block states the installer's recovery class"
+af "$BLK" "Do NOT use --repair"                                "A2 D4: the block agrees with the installer (no --repair)"
+nf "$BLK" "/usr/lib/nftban/bin/nftban-installer --repair"      "A2 D4: the block does NOT recommend --repair for FAILED_REBUILD"
+SFR="$(p0_state 'INSTALL_STATE=DEGRADED\nINSTALL_TIMESTAMP=2026-09-08T10:00:00Z\nFAILURE_REASON=failed assertions\nRECOVERY_CLASS=REPAIR\n')"
+BLK=$(nftban_render_install_transaction_truth "$SFR" || true)
+af "$BLK" "/usr/lib/nftban/bin/nftban-installer --repair"      "A2 D4: RECOVERY_CLASS=REPAIR -> the exact --repair command"
+SFU="$(p0_state 'INSTALL_STATE=FAILED_REBUILD\nINSTALL_TIMESTAMP=2026-09-08T10:00:00Z\n')"
+BLK=$(nftban_render_install_transaction_truth "$SFU" || true)
+nf "$BLK" "/usr/lib/nftban/bin/nftban-installer --repair"      "A2 D4: UNRECORDED class never falls back to --repair"
+af "$BLK" "installer.log"                                      "A2 D4: UNRECORDED class points at the installer's own RECOVERY_CLASS line"
+BLK=$(nftban_render_install_transaction_truth "$SF" || true)
 af "$BLK" "NOT NEUTRAL"                                        "A2 D4: the block states a reboot is not neutral"
 af "$BLK" "Enforcement:"                                       "A2 D4: ENFORCEMENT truth is a separate line"
 af "$BLK" "Transaction status:"                                "A2 D4: TRANSACTION truth is its own line"
