@@ -9,7 +9,7 @@
 # meta:version="1.234.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-29"
-# meta:description="R-11 BUG-BOOT-PROJECTION-CARRIES-ONLY-TEMPLATE-PORTS. Scenario: SSH on 55000, port 22 absent everywhere, 80/443 removed by the administrator (NFTBAN_BASELINE_TCP_IN=none, emulated by the effective-port stand-in; the Go resolution is covered by internal/ports). B1 `firewall render-boot` publishes the effective ports (55000 + ports.d 18765) and NONE of 22/80/443, in both families. B2 the rebuild's refresh step republishes the projection from the exact ruleset the rebuild loaded (new configured port 9090 appears); B2b it never creates a projection the installer did not; B2c a publication failure is reported as failed and the previous projection survives. B3 the SSH-access safeguard is intact: ssh_ports = {55000}, tcp_ports_in carries 55000, the set-driven SSH rule is present, and the render refuses without an SSH-port authority. B4 wiring: the rebuild calls the refresh after the atomic load and cannot report success when it failed. On v1.233.1 the projection held the template ports {SSH, 80, 443} and the rebuild never refreshed it, so B1, B2 and B4 fail there."
+# meta:description="R-11 BUG-BOOT-PROJECTION-CARRIES-ONLY-TEMPLATE-PORTS. Scenario: SSH on 55000, port 22 absent everywhere, 80/443 removed by the administrator (NFTBAN_BASELINE_TCP_IN=none, emulated by the effective-port stand-in; the Go resolution is covered by internal/ports). B1 `firewall render-boot` publishes the effective ports (55000 + ports.d 18765) and NONE of 22/80/443, in both families. B2 the rebuild's refresh step republishes the projection from the exact ruleset the rebuild loaded (new configured port 9090 appears); B2b it never creates a projection the installer did not; B2c a publication failure is reported as failed and the previous projection survives. B3 the SSH-access safeguard is intact: ssh_ports = {55000}, tcp_ports_in carries 55000, the set-driven SSH rule is present, and the render refuses without an SSH-port authority. B4 wiring: the rebuild calls the refresh after the atomic load and cannot report success when it failed. B5 owner ruling (unset / explicit 8443 / explicit empty) x {rebuild render, render-boot, rebuild refresh}: tcp_ports_in is EXACTLY what render-effective emits in both families (nothing appended, no 22); B5-NC a render that re-adds 80/443 fails the explicit-empty predicate; B6 no shell surface interprets NFTBAN_BASELINE_TCP_IN (the Go loader is the single interpreter). On v1.233.1 the projection held the template ports {SSH, 80, 443} and the rebuild never refreshed it, so B1, B2 and B4 fail there."
 # meta:input="cli/lib/nftban/cli/cmd_firewall.sh, cli/lib/nftban/lib/boot_projection.sh, install/nftables/nftables.conf.tpl"
 # meta:output="PASS/FAIL per assertion; exit 1 on any failure"
 # meta:depends="bash,nft,mktemp,sha256sum,awk"
@@ -55,6 +55,11 @@ cat > "$SB/lib/bin/nftban-core" <<'CORE'
 #!/usr/bin/env bash
 [[ "$1 $2" == "ports render-effective" ]] || exit 2
 [[ -n "${NFTBAN_EFFECTIVE_SSH_PORTS:-}" ]] || exit 1
+# B5: emit exactly what the real Go authority emits for a given configuration.
+if [[ -n "${R11_TCP_IN+set}" ]]; then
+    echo "NFTBAN_SVC_TCP_IN=$R11_TCP_IN"; echo "NFTBAN_SVC_TCP_OUT=53, 80, 443"
+    echo "NFTBAN_SVC_UDP_IN="; echo "NFTBAN_SVC_UDP_OUT=53, 123"; exit 0
+fi
 tin=$( { tr ',' '\n' <<<"$NFTBAN_EFFECTIVE_SSH_PORTS"
          cat "$NFTBAN_CONFIG_DIR"/ports.d/*.conf 2>/dev/null | grep -oE '^[0-9]+/T(/I)?$' | cut -d/ -f1; } \
        | tr -d ' ' | grep -E '^[0-9]+$' | sort -n -u | paste -sd, | sed 's/,/, /g')
@@ -186,6 +191,61 @@ if [[ -n "$l_gate" && -n "$l_case" && "$l_gate" -lt "$l_case" ]] \
 else
     no "a failed refresh can still reach the success branch"
 fi
+
+echo "== B5  owner ruling x {rebuild render, boot projection, rebuild refresh}: placed EXACTLY, nothing appended =="
+# The three configurations, as `nftban-core ports render-effective` emits them for
+# SSH=55000 + ports.d 18765 (proven in cmd/nftban-core OwnerRulingMatrix):
+#   unset -> 80, 443, 18765, 55000 · "8443" -> 8443, 18765, 55000 · "" -> 18765, 55000
+# The shell must place that set verbatim: no template 80/443, no 22, no fallback.
+exact_all(){ # <file> <want-csv-no-spaces>  -> 0 when tcp_ports_in == want in ip AND ip6
+    local f
+    for f in ip ip6; do [[ "$(set_elems "$1" "$f" tcp_ports_in)" == "$2" ]] || return 1; done
+    return 0
+}
+b5_arm(){ # <label> <emitted> <want>  (errexit off; every step checks)
+    local label="$1" want="$3" R="$SB/b5.nft" st
+    export R11_TCP_IN="$2"
+    _firewall_substitute_placeholders "$TPL" "$R" 2>/dev/null && _firewall_complete_service_ports "$R" 2>/dev/null \
+        && exact_all "$R" "$want" && ok "$label: rebuild render tcp_ports_in = {$want} (ip+ip6)" \
+        || no "$label: rebuild render = {$(set_elems "$R" ip tcp_ports_in)} want {$want}"
+    _firewall_render_boot --quiet 2>/dev/null && exact_all "$TARGET" "$want" \
+        && ok "$label: boot projection (render-boot) = {$want}" \
+        || no "$label: boot projection = {$(set_elems "$TARGET" ip tcp_ports_in)} want {$want}"
+    if declare -F _firewall_rebuild_refresh_boot_projection >/dev/null 2>&1; then
+        st=$(_firewall_rebuild_refresh_boot_projection "$TPL" "$R" true 2>/dev/null) || true
+        [[ "$st" == "refreshed" ]] && exact_all "$TARGET" "$want" \
+            && ok "$label: boot projection (rebuild refresh) = {$want}" \
+            || no "$label: rebuild refresh state=${st:-none} projection={$(set_elems "$TARGET" ip tcp_ports_in)}"
+    else
+        no "$label: SUBJECT_NOT_FOUND — the rebuild has no boot-projection refresh"
+    fi
+    unset R11_TCP_IN
+}
+b5_arm "unset"          "80, 443, 18765, 55000" "80,443,18765,55000"
+b5_arm "explicit 8443"  "8443, 18765, 55000"    "8443,18765,55000"
+b5_arm "explicit empty" "18765, 55000"          "18765,55000"
+
+echo "== B5-NC negative control: a render that restores 80/443 fails B5 =="
+( _real_complete=$(declare -f _firewall_complete_service_ports)
+  eval "${_real_complete/_firewall_complete_service_ports/_r11_real_complete}"
+  _firewall_complete_service_ports(){        # the ${VAR:-80,443} defect shape
+      _r11_real_complete "$@" || return 1
+      _firewall_set_elements "$1" tcp_ports_in "$(set_elems "$1" ip tcp_ports_in | sed 's/,/, /g'), 80, 443"
+  }
+  export R11_TCP_IN="18765, 55000"
+  _firewall_substitute_placeholders "$TPL" "$SB/nc.nft" 2>/dev/null
+  _firewall_complete_service_ports "$SB/nc.nft" 2>/dev/null
+  got=$(set_elems "$SB/nc.nft" ip tcp_ports_in)
+  # Right reason only: the defect really injected 80/443 AND the predicate rejects it.
+  has "$got" 80 && has "$got" 443 && ! exact_all "$SB/nc.nft" "18765,55000" ) \
+    && ok "negative control: a render that re-adds 80/443 FAILS the explicit-empty predicate" \
+    || no "negative control did not bite (defect not injected, or the predicate accepted it)"
+
+echo "== B6  the shell never interprets NFTBAN_BASELINE_TCP_IN (single interpreter: the Go loader) =="
+hits=$(grep -rn 'NFTBAN_BASELINE_TCP_IN' "$ROOT/cli/lib/nftban" "$ROOT/install" "$ROOT/cli/sbin" 2>/dev/null \
+       | grep -v '/tests/' | grep -v 'data/config-schema.json') || true
+[[ -z "$hits" ]] && ok "no shell/install surface reads the key (no \${VAR:-} default can exist)" \
+                 || { no "a shell surface reads the key — it must use \${VAR+set}, prove it:"; printf '        %s\n' "$hits"; }
 
 echo
 echo "TOTAL: pass=$pass fail=$fail"

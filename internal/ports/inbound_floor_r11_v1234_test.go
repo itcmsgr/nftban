@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -131,5 +132,120 @@ func TestR11InboundFloor_RenderHonoursFloor(t *testing.T) {
 	v, ok := elemLine(out, "NFTBAN_SVC_TCP_IN")
 	if !ok || v != "55000" {
 		t.Fatalf("NFTBAN_SVC_TCP_IN must be exactly the SSH safeguard, got %q (ok=%v)\n%s", v, ok, out)
+	}
+}
+
+// r11FloorContract is the owner ruling (2026-09-29) as an executable predicate,
+// applied to ANY resolver so the negative controls below can prove it bites.
+//
+//	unset              -> {80, 443}
+//	explicit non-empty -> exactly the configured ports (80/443 NOT appended)
+//	explicit empty     -> nothing (defaults NOT restored)
+func r11FloorContract(resolve func(string, bool) ([]int, error)) []string {
+	var bad []string
+	check := func(label, v string, set bool, want []int) {
+		got, err := resolve(v, set)
+		if err != nil {
+			bad = append(bad, label+": error "+err.Error())
+			return
+		}
+		if len(got) != len(want) {
+			bad = append(bad, label)
+			return
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				bad = append(bad, label)
+				return
+			}
+		}
+	}
+	check("unset", "", false, []int{80, 443})
+	check("explicit 8443", "8443", true, []int{8443})
+	check("explicit empty", "", true, []int{})
+	return bad
+}
+
+func TestR11InboundFloor_OwnerRulingContract(t *testing.T) {
+	if bad := r11FloorContract(ResolveInboundFloor); len(bad) > 0 {
+		t.Fatalf("ResolveInboundFloor violates the owner ruling: %v", bad)
+	}
+}
+
+// NEGATIVE CONTROLS: the contract must reject the two wrong designs it exists to
+// exclude, or TestR11InboundFloor_OwnerRulingContract proves nothing.
+func TestR11InboundFloor_NegativeControls(t *testing.T) {
+	restoresOnEmpty := func(v string, set bool) ([]int, error) {
+		if !set || strings.TrimSpace(v) == "" { // the ${VAR:-default} shape
+			return DefaultInboundFloor(), nil
+		}
+		return ResolveInboundFloor(v, set)
+	}
+	appendsDefaults := func(v string, set bool) ([]int, error) {
+		got, err := ResolveInboundFloor(v, set)
+		if err != nil || !set || len(got) == 0 {
+			return got, err
+		}
+		return normalizePortList(append(got, DefaultInboundFloor()...)), nil
+	}
+	if bad := r11FloorContract(restoresOnEmpty); len(bad) == 0 {
+		t.Fatal("negative control: a resolver that restores 80/443 on an explicit empty value PASSED the contract")
+	} else if bad[0] != "explicit empty" {
+		t.Fatalf("negative control failed for the wrong reason: %v", bad)
+	}
+	if bad := r11FloorContract(appendsDefaults); len(bad) == 0 {
+		t.Fatal("negative control: a resolver that appends 80/443 to an explicit value PASSED the contract")
+	} else if bad[0] != "explicit 8443" {
+		t.Fatalf("negative control failed for the wrong reason: %v", bad)
+	}
+}
+
+// SYNC PATH (`nftban sync` and the nftband startup auto-sync): the daemon adds
+// exactly ports.LoadAllPorts (ports.d + enabled panels) and never the floor, so
+// NO configuration of the key can make sync add 80/443 or 22. With SSH on 55000
+// and 22/80/443 absent from ports.d, sync contributes {18765, 55000} only.
+func TestR11SyncPath_LoadAllPortsNeverAddsFloorOrPort22(t *testing.T) {
+	dir := t.TempDir()
+	pd := filepath.Join(dir, "ports.d")
+	if err := os.MkdirAll(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pd, "00-ssh.conf"), []byte("55000/T/I\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pd, "90-custom.conf"), []byte("18765/T/I\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	all, err := LoadAllPorts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []int{22, 80, 443} {
+		if contains(all.TCPPortsIn, bad) {
+			t.Errorf("sync source carries %d although nothing configures it: %v", bad, all.TCPPortsIn)
+		}
+	}
+	for _, want := range []int{55000, 18765} {
+		if !contains(all.TCPPortsIn, want) {
+			t.Errorf("sync source lost %d: %v", want, all.TCPPortsIn)
+		}
+	}
+}
+
+// STRUCTURAL: the daemon full sync takes its ports from LoadAllPorts and from
+// nothing that carries a floor or a template literal.
+func TestR11SyncPath_DaemonPortSourceIsLoadAllPortsOnly(t *testing.T) {
+	src, err := os.ReadFile("../../cmd/nftband/daemon_handlers_sync.go")
+	if err != nil {
+		t.Fatalf("subject not found: %v", err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "ports.LoadAllPorts(configDir)") {
+		t.Fatal("daemon sync no longer loads ports via ports.LoadAllPorts — re-derive this proof")
+	}
+	for _, forbidden := range []string{"EffectiveServicePorts", "ComputeEffective", "DefaultInboundFloor", "ResolveInboundFloor", "baselineTCPIn", "[]int{80", "80, 443"} {
+		if strings.Contains(s, forbidden) {
+			t.Fatalf("daemon sync references %q — the sync path would carry a floor", forbidden)
+		}
 	}
 }

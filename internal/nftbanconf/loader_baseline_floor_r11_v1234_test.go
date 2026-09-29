@@ -45,6 +45,25 @@ func TestR11BaselineFloorKey_EmptyIsSet(t *testing.T) {
 	}
 }
 
+// Owner ruling: an explicit empty value in nftban.conf.local must beat a value
+// in nftban.conf — the overlay must not skip empty values.
+func TestR11BaselineFloorKey_LocalEmptyBeatsConfValue(t *testing.T) {
+	cfg, err := loadFromFile(writeConf(t, "NFTBAN_BASELINE_TCP_IN=\"8443\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlayFromFile(cfg, writeConf(t, "NFTBAN_BASELINE_TCP_IN=\"\"\n"))
+	if !cfg.BaselineTCPInSet || cfg.BaselineTCPIn != "" {
+		t.Fatalf(".local empty must win over .conf 8443, got set=%v value=%q", cfg.BaselineTCPInSet, cfg.BaselineTCPIn)
+	}
+	// And an overlay that does not mention the key leaves the .conf value alone.
+	cfg2, _ := loadFromFile(writeConf(t, "NFTBAN_BASELINE_TCP_IN=\"8443\"\n"))
+	overlayFromFile(cfg2, writeConf(t, "NFTBAN_LOG_LEVEL=info\n"))
+	if !cfg2.BaselineTCPInSet || cfg2.BaselineTCPIn != "8443" {
+		t.Fatalf("an overlay without the key must not change it, got set=%v value=%q", cfg2.BaselineTCPInSet, cfg2.BaselineTCPIn)
+	}
+}
+
 func TestR11BaselineFloorKey_LocalOverlayOverrides(t *testing.T) {
 	cfg, err := loadFromFile(writeConf(t, "NFTBAN_LOG_LEVEL=info\n"))
 	if err != nil {
