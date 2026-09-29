@@ -73,6 +73,7 @@ internal/installer/extfw/detect.go	1
 internal/installer/reconcile/reconcile.go	1
 internal/installer/structure/fingerprint.go	1
 internal/installer/switchop/classify.go	2
+internal/installer/switchop/sshguard.go	2
 internal/installer/uninstall/apply.go	3
 internal/installer/validate/assertions.go	1
 internal/metrics/collector.go	2
