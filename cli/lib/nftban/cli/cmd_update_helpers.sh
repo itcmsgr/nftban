@@ -582,7 +582,7 @@ _update_fs_restriction_preflight() {
         local -A ro_seen=()
         local tgt opts
         for d in "${!seen_dir[@]}"; do
-            read -r tgt opts < <("$findmnt_bin" -no TARGET,OPTIONS -T "$d" 2>/dev/null | head -1) || true
+            read -r tgt opts < <("$findmnt_bin" -no TARGET,OPTIONS -T "$d" 2>/dev/null) || true
             if [[ -z "$tgt" ]]; then unmeasured+=("mount options for $d"); continue; fi
             [[ ",$opts," == *",ro,"* ]] || continue
             if [[ -n "${ro_seen[$tgt]:-}" ]]; then continue; fi
