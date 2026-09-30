@@ -138,6 +138,13 @@ PATTERN FORMAT:
       url-post   = Match POST requests only
       url-get    = Match GET requests only
       useragent  = Match against User-Agent header (for bad bots)
+      path-404|path-any|path-get|path-post
+                 = Match the request PATH only (the query string is ignored)
+      distinct-404|distinct-any|distinct-get|distinct-post
+                 = Match the full request target; each DISTINCT target counts
+                   once per IP (for probing/enumeration; one URL requested again
+                   and again is not multiplied). Put route boundaries in the regex.
+    THRESHOLD and WINDOW are evaluated on the log lines' own request times.
 
 PATTERN FILES:
 

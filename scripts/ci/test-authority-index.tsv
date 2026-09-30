@@ -27,6 +27,7 @@ botscan_admin_ip_exemption_test	cli/lib/nftban/tests/botscan_admin_ip_exemption_
 botscan_collector_gather_stream_v2092_test	cli/lib/nftban/tests/botscan_collector_gather_stream_v2092_test.sh	botscan		botscan-collector-gather	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_daemon_truth_v219_0_test	cli/lib/nftban/tests/botscan_daemon_truth_v219_0_test.sh	botscan	test	botscan-health-consumer-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_deadline_rotation_v185_test	cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh	botscan	test	botscan-deadline-rotation	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+botscan_detection_correctness_v1234_test	cli/lib/nftban/tests/botscan_detection_correctness_v1234_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_direct_ban_flag_v1903_test	cli/lib/nftban/tests/botscan_direct_ban_flag_v1903_test.sh	botscan	test	botscan-direct-ban-flag	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_drain_convergence_v1232_test	cli/lib/nftban/tests/botscan_drain_convergence_v1232_test.sh	botscan	test	botscan-drain-convergence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_emission_count_truth_v1231_0_test	cli/lib/nftban/tests/botscan_emission_count_truth_v1231_0_test.sh	botscan	test	botscan-emission-count-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

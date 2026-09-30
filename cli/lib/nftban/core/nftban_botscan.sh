@@ -91,19 +91,17 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_ENDPOINT_FLOOD_WINDOW:=60}"
     : "${BOTSCAN_ENDPOINT_FLOOD_BAN:=3600}"
     : "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:=xmlrpc.php wp-login.php}"
-    # v1.192.2 — authenticated WordPress admin/editor context gate (BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE).
-    # A legitimate logged-in admin using Gutenberg/Elementor/wp-admin legitimately trips the WP
-    # REST/admin SCANNER patterns (the block editor fetches /wp-json/wp/v2/users → EXP_WPREST;
-    # editor calls trip WS_WPADMIN). When this IP proves a successful login THIS cycle
-    # (POST <login_path> → 302 redirect = creds accepted; a failed/probing login returns 200),
-    # suppress ONLY those WP-admin-context pattern hits for this IP in analyze(). This is a
-    # per-IP CONTEXT gate, NOT a global threshold/weight change: unauthenticated /wp-json
-    # enumeration, exploit/webshell/CVE patterns, 404-flood and endpoint-flood are UNCHANGED
-    # and still ban (mixed exploit still bans). Owner: BotScan (same access-log event class it
-    # already parses; uses the already-available status field — no new source/identity).
-    : "${BOTSCAN_WPADMIN_CONTEXT_GATE:=true}"
-    : "${BOTSCAN_WPADMIN_CONTEXT_PATTERNS:=EXP_WPREST WS_WPADMIN}"  # pattern names suppressed ONLY under proven admin session
-    : "${BOTSCAN_WPADMIN_LOGIN_PATH:=/wp-login.php}"
+    # v1.234.0 — the v1.192.2 WP-admin "authenticated context" gate is RETIRED
+    # (BUG-BOTSCAN-WPADMIN-AUTH-CONTEXT-IS-CYCLE-SCOPED-BANS-LOGGED-IN-EDITORS).
+    # It inferred a login from `POST /wp-login.php -> 302` and then suppressed EXP_WPREST /
+    # WS_WPADMIN for that IP for one cycle. An access log cannot prove an application
+    # session: a 302 is also returned for lost-password, logout and interim flows, and a
+    # real session outlives both the 10-minute cycle and the client's IP (measured on a
+    # production host: three false bans of one editor in one day). BotScan now reports
+    # authentication context as UNKNOWN and does not need it: the false positive came
+    # from a substring match (`/wp-json/wp/v2/users` matched `/users/me`, which the
+    # editor polls), which the pattern contract below corrects for every client.
+    # BOTSCAN_WPADMIN_CONTEXT_GATE / _PATTERNS / _LOGIN_PATH are no longer read.
     # v1.187 Lane A — BOTSCAN-SCAN-THROUGHPUT. Forward-cursor per-file per-cycle window
     # (drains backlog forward instead of the v1.185 64 KiB tail-bias), a C-speed candidate
     # prefilter before the per-line bash matcher, and an independent 404 fixed-tail re-read
@@ -167,8 +165,28 @@ declare -gA _BOTSCAN_IP_CRAWLER_CLAIM  # v1.189 FCrDNS: IP -> claimed search-cra
 declare -gA _BOTSCAN_IP_ENDPOINT_COUNT      # BOTSCAN-ENDPOINT-FLOOD: "ip|endpoint" -> POST count (status-independent)
 declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> EARLIEST counted REQUEST time (cycle-scoped, reset by count_404_tail)
 declare -gA _BOTSCAN_IP_ENDPOINT_LAST_SEEN  # "ip|endpoint" -> LATEST counted REQUEST time (v1.234)
-declare -gA _BOTSCAN_IP_ADMIN_SESSION       # v1.192.2: IP -> "1" if a successful WP login (POST login_path → 302) seen this cycle (authenticated WP-admin context gate)
 declare -ga _BOTSCAN_ENDPOINT_FLOOD_LIST    # parsed endpoint tokens (rebuilt per cycle)
+# v1.234.0 — pattern evidence in REQUEST time (BUG-BOTSCAN-PATTERN-WINDOW-USES-SCAN-TIME-NOT-REQUEST-TIME)
+declare -gA _BOTSCAN_IP_EVT_TS              # IP -> space-separated request epochs of contributing pattern events
+declare -gA _BOTSCAN_DISTINCT_SEEN          # "ip<US>pattern<US>target" -> 1 (distinct-* patterns count a target once)
+declare -g  _BS_CYCLE_NOW=""                # the cycle's reference "now" (nftban_timestamp_unix), set by init_state
+declare -gi _BS_T_PAT_STALE=0 _BS_T_PAT_UNREADABLE=0 _BS_T_PAT_FUTURE=0 _BS_T_PAT_REPEAT=0
+declare -gi _BS_T_TAIL_UNREADABLE=0 _BS_T_TAIL_FUTURE=0
+
+# v1.234.0 — EVIDENCE HORIZON D for URL/UA pattern evidence (design V1_234_0_BOTSCAN404_DESIGN.md
+# §15 C3: a burst is actionable iff max(ts)-min(ts) <= W AND 0 <= now-max(ts) <= D).
+# Pattern lines arrive through the FORWARD cursor, so each byte is examined once and a
+# normal delivery delay (collector period + processor period + one run) is expected; D must
+# cover it or real attacks go undetected. Evidence older than D (a drained backlog, a
+# re-delivered object) is out of contract: it is COUNTED as stale and REPORTED, never
+# enforced. D is DERIVED from the shipped timer units, not a tunable (owner: no new config key
+# for D in this release); botscan_detection_correctness_v1234_test fails if the units drift
+# above these bounds. PROVISIONAL: the deterministic service bound is PR-1 work.
+readonly _BS_COLLECTOR_PERIOD_MAX=390     # nftban-botscan-collector.timer OnUnitActiveSec 5min + RandomizedDelaySec 1min + AccuracySec 30s
+readonly _BS_PROCESSOR_PERIOD_MAX=750     # nftban-botscan.timer OnUnitActiveSec 10min + RandomizedDelaySec 2min + AccuracySec 30s
+readonly _BS_PROCESSOR_RUN_MAX=300        # nftban-botscan.service TimeoutStartSec
+# One skipped cycle of each timer (shared lock contention) plus one full processor run.
+readonly _BS_PATTERN_EVIDENCE_HORIZON=$(( 2 * _BS_COLLECTOR_PERIOD_MAX + 2 * _BS_PROCESSOR_PERIOD_MAX + _BS_PROCESSOR_RUN_MAX ))
 
 # Initialize state
 nftban_botscan_init_state() {
@@ -184,8 +202,14 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_ENDPOINT_COUNT=()
     _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
     _BOTSCAN_IP_ENDPOINT_LAST_SEEN=()
-    _BOTSCAN_IP_ADMIN_SESSION=()
     _BOTSCAN_ENDPOINT_FLOOD_LIST=()
+    _BOTSCAN_IP_EVT_TS=()
+    _BOTSCAN_DISTINCT_SEEN=()
+    _BS_T_PAT_STALE=0; _BS_T_PAT_UNREADABLE=0; _BS_T_PAT_FUTURE=0; _BS_T_PAT_REPEAT=0
+    _BS_T_TAIL_UNREADABLE=0; _BS_T_TAIL_FUTURE=0
+    # One reference "now" per cycle (overridable through nftban_timestamp_unix, like the tail).
+    _BS_CYCLE_NOW="$(nftban_timestamp_unix 2>/dev/null || date +%s)"
+    [[ "$_BS_CYCLE_NOW" =~ ^[0-9]+$ ]] || printf -v _BS_CYCLE_NOW '%(%s)T' -1
     # IFS=' ' is REQUIRED: the module runs under strict IFS=$'\n\t' (no space) → a bare
     # read -ra would yield ONE token "xmlrpc.php wp-login.php" that never matches (v1.186.1 class).
     [[ "${BOTSCAN_ENDPOINT_FLOOD_ENABLED:-true}" == "true" ]] && IFS=' ' read -ra _BOTSCAN_ENDPOINT_FLOOD_LIST <<< "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:-}"
@@ -320,7 +344,16 @@ nftban_botscan_counters_release() {
 # _BOTSCAN_PATTERNS representation is joined/split on ASCII Unit Separator (\x1f) — which a
 # regex can never contain — so the hot-path/threshold/prefilter re-splits never re-corrupt it.
 readonly _BS_US=$'\x1f'                                        # internal '|'-safe field delimiter
-readonly _BS_VALID_MATCH_TYPES=" url-404 url-any url-get url-post useragent "  # supported set (matcher case at match_url_g)
+# v1.234.0 adds two generic families (see nftban_botscan_match_url_g):
+#   path-*      the regex is applied to the request PATH only (query string excluded), so a
+#               route signature cannot be satisfied by, or evaded through, the query;
+#   distinct-*  the regex is applied to the raw request target (path?query) and each
+#               DISTINCT target counts once per IP per pattern -- enumeration and probing
+#               are evidenced by VARIETY, so an application polling one URL cannot multiply
+#               its own evidence.
+# An older module does not know these types and skips such a record with a visible WARN
+# (never mis-applies it).
+readonly _BS_VALID_MATCH_TYPES=" url-404 url-any url-get url-post path-404 path-any path-get path-post distinct-404 distinct-any distinct-get distinct-post useragent "  # supported set (matcher case at match_url_g)
 
 # _botscan_parse_record <record-line> — anchored parse of ONE shipped/operator .patterns
 # record. Peels NAME from the FRONT (first '|') and the 6 constrained trailing fields from
@@ -1087,6 +1120,10 @@ nftban_botscan_match_url_g() {
     local status="$3"
     local ua="${4:-}"
     _BS_MATCHED=""
+    _BS_MATCHED_MODE="hits"
+    # v1.234.0 — the request PATH (the target without its query string). path-* patterns
+    # match it; distinct-* patterns match the raw target and count distinct targets.
+    local path="${url%%\?*}"
 
     local name def pattern match_type
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
@@ -1096,6 +1133,36 @@ nftban_botscan_match_url_g() {
 
         # Check match type
         case "$match_type" in
+            path-404)
+                [[ "$status" != "404" ]] && continue
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                ;;
+            path-post)
+                [[ "$method" != "POST" ]] && continue
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                ;;
+            path-get)
+                [[ "$method" != "GET" ]] && continue
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                ;;
+            path-any)
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                ;;
+            distinct-404)
+                [[ "$status" != "404" ]] && continue
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                ;;
+            distinct-post)
+                [[ "$method" != "POST" ]] && continue
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                ;;
+            distinct-get)
+                [[ "$method" != "GET" ]] && continue
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                ;;
+            distinct-any)
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                ;;
             url-404)
                 [[ "$status" != "404" ]] && continue
                 # Match URL pattern
@@ -1130,58 +1197,78 @@ nftban_botscan_match_url() {
 }
 
 # Process log entry
+# Args: ip url method status ua [request_epoch]
+# v1.234.0 — the 6th argument is the REQUEST time of the line (nftban_botscan_request_epoch).
+# The scan loop always passes it; an empty or non-numeric value means the line's time could
+# not be read and the line contributes NO pattern evidence (it is counted and reported as
+# unreadable, never placed at "now"). A caller that passes only 5 arguments (interactive
+# emulate, unit tests) is an API caller with no log line: its event is placed at the cycle's
+# "now". Evidence whose request time is in the future, or older than the evidence horizon D,
+# is excluded and reported.
 nftban_botscan_process_entry() {
     local ip="$1"
     local url="$2"
     local method="$3"
     local status="$4"
     local ua="$5"
-    # v1.187.1 — fork-free per-line timestamp (was now=$(nftban_timestamp_unix||date), a third
-    # subshell fork per log line). printf '%(%s)T' is a bash builtin (4.2+, all targets 5.x);
-    # falls back to the old fork only on ancient bash. Same epoch-seconds value.
-    local now
-    printf -v now '%(%s)T' -1 2>/dev/null || now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
+    local now="${_BS_CYCLE_NOW:-}"
+    [[ "$now" =~ ^[0-9]+$ ]] || printf -v now '%(%s)T' -1 2>/dev/null || now=$(date +%s)
+    local req_ts
+    if [[ $# -ge 6 ]]; then req_ts="$6"; else req_ts="$now"; fi
 
     # Check whitelists
     nftban_botscan_is_whitelisted "$ip" "$ua" && return 0
     nftban_botscan_is_path_whitelisted "$url" && return 0
 
-    # v1.192.2 — authenticated WP-admin context signal. A successful WordPress login
-    # (POST <login_path> → 302 redirect to wp-admin) marks this IP as an authenticated
-    # admin for THIS cycle, so analyze() can context-gate the WP REST/admin scanner
-    # patterns its editor legitimately trips. 302 = credentials accepted; a failed or
-    # probing login returns 200 (the form re-rendered), so this never flags brute-force.
-    # Status field is already parsed; no new log source. The URL carries the query
-    # (e.g. /wp-login.php?redirect_to=...), so match the path prefix.
-    if [[ "${BOTSCAN_WPADMIN_CONTEXT_GATE:-true}" == "true" && "$method" == "POST" && "$status" == "302" ]]; then
-        local _bs_lp="${BOTSCAN_WPADMIN_LOGIN_PATH:-/wp-login.php}"
-        case "$url" in
-            "$_bs_lp"|"$_bs_lp"\?*) _BOTSCAN_IP_ADMIN_SESSION["$ip"]=1 ;;
-        esac
-    fi
-
-    # Track 404s
-    if [[ "$BOTSCAN_404_TRACKING" == "true" && "$status" == "404" ]]; then
-        _BOTSCAN_IP_404_COUNT["$ip"]=$(( ${_BOTSCAN_IP_404_COUNT[$ip]:-0} + 1 ))
-        [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$ip"]="$now"
-    fi
+    # (v1.234.0: the dead main-loop 404 counter is removed -- design §5; the 404 arrays are
+    #  owned by nftban_botscan_count_404_tail, which resets them before counting.)
 
     # Match against patterns (URL and user-agent) — v1.187.1 no-fork matcher (was a per-line
     # command-substitution fork). errexit-safe: the && only assigns on a match.
     local matched_pattern=""
     nftban_botscan_match_url_g "$url" "$method" "$status" "$ua" && matched_pattern="$_BS_MATCHED"
+    [[ -n "$matched_pattern" ]] || return 0
 
-    if [[ -n "$matched_pattern" ]]; then
-        # Update tracking
-        _BOTSCAN_IP_HITS["$ip"]=$(( ${_BOTSCAN_IP_HITS[$ip]:-0} + 1 ))
-        _BOTSCAN_IP_PATTERNS["$ip"]="${_BOTSCAN_IP_PATTERNS[$ip]:-} $matched_pattern"
-        _BOTSCAN_IP_LAST_SEEN["$ip"]="$now"
-        [[ -z "${_BOTSCAN_IP_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_FIRST_SEEN["$ip"]="$now"
+    # v1.234.0 — place the evidence in REQUEST time.
+    if [[ ! "$req_ts" =~ ^[0-9]+$ ]]; then _BS_T_PAT_UNREADABLE=$(( _BS_T_PAT_UNREADABLE + 1 )); return 0; fi
+    if (( req_ts > now )); then _BS_T_PAT_FUTURE=$(( _BS_T_PAT_FUTURE + 1 )); return 0; fi
+    if (( now - req_ts > _BS_PATTERN_EVIDENCE_HORIZON )); then _BS_T_PAT_STALE=$(( _BS_T_PAT_STALE + 1 )); return 0; fi
 
-        [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] $ip matched $matched_pattern: $url" >&2
+    # v1.234.0 — distinct-* patterns: an identical target already counted for this IP and
+    # pattern adds no evidence (a client polling one route is not enumerating).
+    if [[ "${_BS_MATCHED_MODE:-hits}" == "distinct" ]]; then
+        local _dk="${ip}${_BS_US}${matched_pattern}${_BS_US}${url}"
+        if [[ -n "${_BOTSCAN_DISTINCT_SEEN[$_dk]:-}" ]]; then _BS_T_PAT_REPEAT=$(( _BS_T_PAT_REPEAT + 1 )); return 0; fi
+        _BOTSCAN_DISTINCT_SEEN["$_dk"]=1
     fi
 
+    # Update tracking (first/last seen are REQUEST times, never scan time)
+    _BOTSCAN_IP_HITS["$ip"]=$(( ${_BOTSCAN_IP_HITS[$ip]:-0} + 1 ))
+    _BOTSCAN_IP_PATTERNS["$ip"]="${_BOTSCAN_IP_PATTERNS[$ip]:-} $matched_pattern"
+    _BOTSCAN_IP_EVT_TS["$ip"]="${_BOTSCAN_IP_EVT_TS[$ip]:-} $req_ts"
+    if [[ -z "${_BOTSCAN_IP_FIRST_SEEN[$ip]:-}" ]] || (( req_ts < ${_BOTSCAN_IP_FIRST_SEEN[$ip]} )); then _BOTSCAN_IP_FIRST_SEEN["$ip"]="$req_ts"; fi
+    if [[ -z "${_BOTSCAN_IP_LAST_SEEN[$ip]:-}" ]] || (( req_ts > ${_BOTSCAN_IP_LAST_SEEN[$ip]} )); then _BOTSCAN_IP_LAST_SEEN["$ip"]="$req_ts"; fi
+
+    [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] $ip matched $matched_pattern: $url" >&2
+
     return 0
+}
+
+# v1.234.0 — nftban_botscan_max_in_window <window> <epoch>...
+# Echoes the largest number of the given request epochs that fit in ANY window of <window>
+# seconds (max(ts)-min(ts) <= window, both ends inclusive). A sliding window over REQUEST
+# time: it measures density, not how long the scan took.
+nftban_botscan_max_in_window() {
+    local w="$1"; shift
+    local -a ts=()
+    [[ $# -gt 0 ]] || { echo 0; return 0; }
+    mapfile -t ts < <(printf '%s\n' "$@" | sort -n)
+    local n=${#ts[@]} l=0 r best=0
+    for (( r=0; r<n; r++ )); do
+        while (( ts[r] - ts[l] > w )); do l=$(( l + 1 )); done
+        (( r - l + 1 > best )) && best=$(( r - l + 1 ))
+    done
+    echo "$best"
 }
 
 # Analyze tracked IPs and ban if threshold exceeded
@@ -1192,43 +1279,19 @@ nftban_botscan_analyze() {
 
     for ip in "${!_BOTSCAN_IP_HITS[@]}"; do
         local hits="${_BOTSCAN_IP_HITS[$ip]}"
-        local first_seen="${_BOTSCAN_IP_FIRST_SEEN[$ip]:-$now}"
-        local time_window=$((now - first_seen))
         local patterns="${_BOTSCAN_IP_PATTERNS[$ip]:-}"
+        # v1.234.0 — the v1.192.2 per-IP "authenticated WP-admin" suppression is retired (see
+        # load_config). Authentication context is UNKNOWN to an access-log scanner; detection
+        # does not depend on it.
 
-        # v1.192.2 — authenticated WP-admin context gate. If this IP proved a successful
-        # login this cycle (POST <login_path> → 302; set in process_entry), drop ONLY the
-        # WP-admin-context scanner pattern hits (BOTSCAN_WPADMIN_CONTEXT_PATTERNS, default
-        # EXP_WPREST WS_WPADMIN) from its matched set and recompute hits — a real admin's
-        # Gutenberg/Elementor editor legitimately trips those. Exploit/webshell/CVE and any
-        # other scanner patterns are KEPT (mixed exploit still bans); 404-flood and
-        # endpoint-flood (separate loops below) are untouched; unauthenticated IPs (no 302)
-        # are never gated, so /wp-json enumeration still bans. Per-IP context, NOT a global
-        # pattern weakening.
-        if [[ "${BOTSCAN_WPADMIN_CONTEXT_GATE:-true}" == "true" && -n "${_BOTSCAN_IP_ADMIN_SESSION[$ip]:-}" && -n "$patterns" ]]; then
-            local -a _ctx_all=() _ctx_kept=() _ctx_supp=()
-            local _ctx_pn
-            IFS=$' \t\n' read -ra _ctx_all <<< "$patterns"
-            for _ctx_pn in "${_ctx_all[@]}"; do
-                [[ -z "$_ctx_pn" ]] && continue
-                case " ${BOTSCAN_WPADMIN_CONTEXT_PATTERNS:-EXP_WPREST WS_WPADMIN} " in
-                    *" $_ctx_pn "*) _ctx_supp+=("$_ctx_pn") ;;
-                    *) _ctx_kept+=("$_ctx_pn") ;;
-                esac
-            done
-            if [[ "${#_ctx_supp[@]}" -gt 0 ]]; then
-                patterns="${_ctx_kept[*]}"
-                hits="${#_ctx_kept[@]}"
-                [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] wp-admin context gate: $ip authenticated (wp-login 302) — suppressed ${#_ctx_supp[@]} WP-admin pattern hit(s) [${_ctx_supp[*]}], ${#_ctx_kept[@]} hit(s) remain" >&2
-                # Nothing left after suppression → no scanner-pattern ban for this IP.
-                [[ "${#_ctx_kept[@]}" -eq 0 ]] && continue
-            fi
-        fi
-
-        # Get threshold from most severe matched pattern
-        local threshold="$BOTSCAN_DEFAULT_THRESHOLD"
-        local ban_duration="$BOTSCAN_DEFAULT_BAN_SHORT"
-        local window="$BOTSCAN_DEFAULT_WINDOW"
+        # Get threshold from most severe matched pattern.
+        # v1.234.0 — start from the MATCHED patterns' own values, not from the defaults.
+        # Seeding with BOTSCAN_DEFAULT_THRESHOLD (5) / _WINDOW (60) silently capped every
+        # pattern: a documented 20-hit rule banned at 5 hits, and EXP_WPREST's documented
+        # 300 s window became 60 s. The defaults apply only when no matched pattern
+        # carries a definition. (C5: aggregation stays per IP — lowest threshold,
+        # shortest window, longest ban across the matched patterns.)
+        local threshold="" ban_duration="" window=""
 
         # Split the space-joined matched-pattern list IFS-INDEPENDENTLY. The lib sets a
         # global IFS=$'\n\t' (no space) at source time, so an unquoted `for x in $patterns`
@@ -1246,19 +1309,33 @@ nftban_botscan_analyze() {
             IFS="$_BS_US" read -r _ _ p_threshold p_window p_ban _ <<< "$def"  # v1.214.0 '|'-safe internal split
 
             # Use lowest threshold (most sensitive)
-            [[ "$p_threshold" -lt "$threshold" ]] && threshold="$p_threshold"
+            [[ -z "$threshold" || "$p_threshold" -lt "$threshold" ]] && threshold="$p_threshold"
             # Use longest ban
-            [[ "$p_ban" -gt "$ban_duration" ]] && ban_duration="$p_ban"
+            [[ -z "$ban_duration" || "$p_ban" -gt "$ban_duration" ]] && ban_duration="$p_ban"
             # Use shortest window
-            [[ "$p_window" -lt "$window" ]] && window="$p_window"
+            [[ -z "$window" || "$p_window" -lt "$window" ]] && window="$p_window"
         done
+        [[ -n "$threshold" ]] || threshold="$BOTSCAN_DEFAULT_THRESHOLD"
+        [[ -n "$ban_duration" ]] || ban_duration="$BOTSCAN_DEFAULT_BAN_SHORT"
+        [[ -n "$window" ]] || window="$BOTSCAN_DEFAULT_WINDOW"
 
-        # Check threshold
-        if [[ "$hits" -ge "$threshold" && "$time_window" -le "$window" ]]; then
+        # v1.234.0 — decide in REQUEST time: the most events that fit in ANY window of
+        # `window` seconds (a sliding window over the lines' own timestamps). The old test,
+        # `now - first_seen <= window` with first_seen = SCAN time, measured how long the
+        # cycle took and never filtered anything; hits spread over days in one consumed
+        # backlog were banned as a burst. Every event here is already within the evidence
+        # horizon D (process_entry), so max(ts) is recent.
+        local in_window=0
+        if [[ "$hits" -ge "$threshold" ]]; then
+            local -a _ip_ts=()
+            IFS=$' \t\n' read -ra _ip_ts <<< "${_BOTSCAN_IP_EVT_TS[$ip]:-}"
+            in_window="$(nftban_botscan_max_in_window "$window" "${_ip_ts[@]}")"
+        fi
+        if [[ "$in_window" -ge "$threshold" && "$in_window" -gt 0 ]]; then
             # v1.191 8B inc3 — URL/UA pattern bans are scanner/webshell/exploit probes by
             # definition (this module's purpose); label the signal accordingly, then clear.
             BOTSCAN_SIGNAL_REQUEST_CLASS="$(nftban_botscan_classify_request_class "" "" "" "scanner pattern: $patterns")"
-            nftban_botscan_ban_ip "$ip" "$ban_duration" "botscan" "Matched patterns: $patterns (hits: $hits)"
+            nftban_botscan_ban_ip "$ip" "$ban_duration" "botscan" "Matched patterns: $patterns (hits: $hits; ${in_window} within ${window}s request time)"
             BOTSCAN_SIGNAL_REQUEST_CLASS=""
             banned=$((banned + 1))
             nftban_botscan_counter_add bans_emitted 1 || true
@@ -1337,6 +1414,35 @@ nftban_botscan_analyze() {
     return 0
 }
 
+# v1.234.0 — nftban_botscan_prefilter_relax <ERE>
+# Echoes a regex that matches a whole access-log LINE wherever <ERE> matches the request
+# path/target inside it (a sound superset): an anchor `^` at the start of the regex or of a
+# group/alternative is dropped, and an anchor `$` at the end of the regex or of a
+# group/alternative becomes `([ ?"]|$)` (in a log line the target is followed by a space,
+# its path by `?`). Bracket expressions and escapes are copied verbatim.
+nftban_botscan_prefilter_relax() {
+    local p="$1" out="" c nx i len=${#1} inb=0 bpos=0
+    for (( i=0; i<len; i++ )); do
+        c="${p:i:1}"
+        if (( inb )); then
+            out+="$c"
+            # a ']' right after '[' or '[^' is a literal member, not the end
+            if [[ "$c" == "]" ]] && (( i > bpos )); then inb=0; fi
+            continue
+        fi
+        case "$c" in
+            \\) out+="$c"; (( i + 1 < len )) && { i=$(( i + 1 )); out+="${p:i:1}"; } ;;
+            "[")  out+="$c"; inb=1; bpos=$(( i + 1 ))
+                  [[ "${p:i+1:1}" == "^" ]] && { i=$(( i + 1 )); out+="^"; bpos=$(( i + 1 )); } ;;
+            "^")  if [[ -z "$out" || "${out: -1}" == "(" || "${out: -1}" == "|" ]]; then :; else out+="$c"; fi ;;
+            "\$") nx="${p:i+1:1}"
+                  if [[ -z "$nx" || "$nx" == ")" || "$nx" == "|" ]]; then out+='([ ?"]|$)'; else out+="$c"; fi ;;
+            *)    out+="$c" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
 # v1.187 Lane A — build a C-speed candidate prefilter (ERE) from the ENABLED patterns
 # plus a 404-status keeper, into file $1. A line is a CANDIDATE if it could match ANY
 # enabled pattern OR (when 404-tracking is on) carries a 404 status. The filter is a
@@ -1349,12 +1455,20 @@ nftban_botscan_analyze() {
 nftban_botscan_build_prefilter() {
     local out="$1"
     : > "$out" 2>/dev/null || return 1
-    local n=0 name def pat
+    local n=0 name def pat mt
     for name in "${!_BOTSCAN_PATTERNS[@]}"; do
         def="${_BOTSCAN_PATTERNS[$name]}"
-        IFS="$_BS_US" read -r pat _ _ _ _ _ <<< "$def"  # v1.214.0 '|'-safe internal split → intact regex to Go matcher
+        IFS="$_BS_US" read -r pat mt _ _ _ _ <<< "$def"  # v1.214.0 '|'-safe internal split → intact regex to Go matcher
         [[ -z "$pat" ]] && continue
-        pat="${pat#^}"; pat="${pat%\$}"   # strip line-anchors → match the field within the line
+        case "$mt" in
+            # v1.234.0 — path-*/distinct-* regexes carry route boundaries INSIDE groups
+            # (`(\?|$)`, `(^|/)`). Stripping only the outer anchors would leave an inner `$`
+            # that can never match inside a whole log line (the target is followed by a
+            # space), and the prefilter would silently DROP real candidates. Relax every
+            # anchor so the prefilter stays a sound superset.
+            path-*|distinct-*) pat="$(nftban_botscan_prefilter_relax "$pat")" ;;
+            *) pat="${pat#^}"; pat="${pat%\$}" ;;   # strip line-anchors → match the field within the line
+        esac
         [[ -z "$pat" ]] && continue
         printf '%s\n' "$pat" >> "$out"
         n=$((n + 1))
@@ -1484,6 +1598,7 @@ nftban_botscan_count_404_tail() {
     printf '%s\n' "$(( (rot + covered) % n ))" > "${rot_file}.tmp" 2>/dev/null && mv -f "${rot_file}.tmp" "$rot_file" 2>/dev/null || true
     # v1.234.0 — make the request-time gate visible: excluded lines are REPORTED, not silent.
     _BOTSCAN_404_TIME_STATS="counted=${_t_counted} old=${_t_old} unreadable_time=${_t_bad} future=${_t_future} window=${_w404}s"
+    _BS_T_TAIL_UNREADABLE=$_t_bad; _BS_T_TAIL_FUTURE=$_t_future
     [[ "${BOTSCAN_DEBUG:-false}" == "true" ]] && echo "[DEBUG] botscan-404 request-time gate: ${_BOTSCAN_404_TIME_STATS}" >&2
     return 0
 }
@@ -1739,7 +1854,8 @@ _nftban_botscan_cursor_offset() {
 
 nftban_botscan_process_logs() {
     local log_file="${1:-}"
-    local time_window="${2:-60}"
+    # $2 (legacy "time_window") is accepted and ignored: every window is the matched
+    # pattern's own, evaluated in request time (v1.234.0).
 
     [[ "$BOTSCAN_ENABLED" != "true" ]] && {
         echo "Bot scanner is disabled"
@@ -1951,6 +2067,7 @@ nftban_botscan_process_logs() {
     fi
 
     local processed=0 files_done=0 i idx f _bs_last_f=''
+    local -a _bs_reap_after_tail=()
     for (( i=0; i<n; i++ )); do
         # Deadline check BETWEEN files only (clean boundary). A whole file is always read+
         # processed atomically so the cursor offset reflects exactly what was processed;
@@ -1986,13 +2103,15 @@ nftban_botscan_process_logs() {
         # deadline — never a second independent budget — and the reader persists
         # the cursor on every pass, so a mid-object stop leaves durable progress
         # and the next cycle resumes the SAME object rather than replaying it.
-        local _bs_pass=0 _bs_chunk_lines
+        local _bs_pass=0 _bs_chunk_lines _bs_rts
         while :; do
         _bs_chunk_lines=0
         while IFS= read -r line; do
             _bs_chunk_lines=$((_bs_chunk_lines + 1))
             nftban_botscan_parse_line_g "$line" || continue   # v1.187.1 no-fork (was $(parse_line))
-            nftban_botscan_process_entry "$_BS_IP" "$_BS_URL" "$_BS_METHOD" "$_BS_STATUS" "$_BS_UA"
+            # v1.234.0 — the line's own REQUEST time; "" = unreadable (excluded, reported).
+            _bs_rts=""; nftban_botscan_request_epoch "$line" && _bs_rts="$_BS_REQ_TS"
+            nftban_botscan_process_entry "$_BS_IP" "$_BS_URL" "$_BS_METHOD" "$_BS_STATUS" "$_BS_UA" "$_bs_rts"
             processed=$((processed + 1))
         done < <(
             {
@@ -2057,29 +2176,13 @@ nftban_botscan_process_logs() {
             # would not abort. srv3 cycles reached 6-7 files, so it was NOT
             # aborting there. Fixed regardless — a normal outcome must never be
             # able to terminate the cycle, whatever the caller happens to do.
-            nftban_botscan_reap_consumed_spool "$f" \
-                "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
-                "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}" || true
+            # v1.234.0 (BUG-BOTSCAN-REAP-BEFORE-404-TAIL-BLINDS-DRAINED-SPOOL): the reap is
+            # DEFERRED until nftban_botscan_count_404_tail has read this object. Reaping here
+            # deleted a drained object before the 404/endpoint tail could see it, so on a
+            # healthy host (every object drained each cycle) both flood detectors were blind.
+            _bs_reap_after_tail+=("$f")
         fi
     done
-
-    # v1.229.10 — bounded spool reclamation, EVERY cycle. The per-file reap above
-    # only ever sees files this cycle actually reached; with a deadline budget most
-    # of the spool is deferred, and empty spool files are never enumerated at all
-    # (the scan list uses -s). Without this sweep the spool can sit at its cap with
-    # completed work still on disk, backpressure permanently asserted and collection
-    # never resuming. This retires only PROVEN-completed or EMPTY BotScan-owned
-    # objects; it never raises the cap.
-    if [[ -z "$log_file" && "${BOTSCAN_SPOOL_REAP:-true}" == "true" ]] \
-       && declare -F nftban_botscan_reclaim_spool >/dev/null 2>&1; then
-        local _rc_out _rc_n _rc_k
-        _rc_out="$(nftban_botscan_reclaim_spool \
-            "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
-            "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}" 2>/dev/null)" || _rc_out=""
-        _rc_n="${_rc_out%% *}"; _rc_k="${_rc_out##* }"
-        [[ "${_rc_n:-0}" =~ ^[0-9]+$ ]] && [[ "${_rc_n:-0}" -gt 0 ]] && \
-            echo "Spool reclaimed: ${_rc_n} object(s) retired, ${_rc_k} kept"
-    fi
 
     # v1.232 INTER-CYCLE RESUME — set or clear the pin for the next cycle.
     # Pin ONLY when the object we were on is still short of EOF; clearing on
@@ -2118,6 +2221,39 @@ nftban_botscan_process_logs() {
     # cursor only seeing one slice per cycle. Authoritative source for the 404 counters.
     nftban_botscan_count_404_tail "$start_secs" "$budget" "${logs[@]}"
     [[ -n "$_pf" ]] && rm -f "$_pf"
+    # v1.234.0 — count BEFORE cleanup: only now may drained objects be reaped (see above).
+    local _bs_rf
+    for _bs_rf in "${_bs_reap_after_tail[@]}"; do
+        nftban_botscan_reap_consumed_spool "$_bs_rf" \
+            "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
+            "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}" || true
+    done
+    # v1.229.10 — bounded spool reclamation, EVERY cycle. (v1.234.0: moved AFTER the
+    # 404/endpoint tail for the same count-before-cleanup reason as the per-file reap.) The per-file reap above
+    # only ever sees files this cycle actually reached; with a deadline budget most
+    # of the spool is deferred, and empty spool files are never enumerated at all
+    # (the scan list uses -s). Without this sweep the spool can sit at its cap with
+    # completed work still on disk, backpressure permanently asserted and collection
+    # never resuming. This retires only PROVEN-completed or EMPTY BotScan-owned
+    # objects; it never raises the cap.
+    if [[ -z "$log_file" && "${BOTSCAN_SPOOL_REAP:-true}" == "true" ]] \
+       && declare -F nftban_botscan_reclaim_spool >/dev/null 2>&1; then
+        local _rc_out _rc_n _rc_k
+        _rc_out="$(nftban_botscan_reclaim_spool \
+            "${BOTSCAN_SPOOL_DIR:-/var/lib/nftban/botscan/spool}" \
+            "${NFTBAN_HTTP_LOG_OFFSET_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/proc-offsets}" 2>/dev/null)" || _rc_out=""
+        _rc_n="${_rc_out%% *}"; _rc_k="${_rc_out##* }"
+        [[ "${_rc_n:-0}" =~ ^[0-9]+$ ]] && [[ "${_rc_n:-0}" -gt 0 ]] && \
+            echo "Spool reclaimed: ${_rc_n} object(s) retired, ${_rc_k} kept"
+    fi
+
+    # v1.234.0 — ONE aggregate line when any evidence was excluded for its REQUEST time
+    # (owner ruling rev 2: unreadable != zero activity, future != fresh activity; a drained
+    # backlog older than the evidence horizon is OVERDUE, reported, never enforced).
+    # No enforcement effect.
+    if (( _BS_T_PAT_STALE + _BS_T_PAT_UNREADABLE + _BS_T_PAT_FUTURE + _BS_T_TAIL_UNREADABLE + _BS_T_TAIL_FUTURE > 0 )); then
+        echo "BOTSCAN_TIME_FILTER pattern_stale=${_BS_T_PAT_STALE} pattern_unreadable_time=${_BS_T_PAT_UNREADABLE} pattern_future=${_BS_T_PAT_FUTURE} tail_unreadable_time=${_BS_T_TAIL_UNREADABLE} tail_future=${_BS_T_TAIL_FUTURE} horizon=${_BS_PATTERN_EVIDENCE_HORIZON}s"
+    fi
 
     # Analyze and ban — ALWAYS runs (even on a partial/deadline-bounded batch) so a
     # high-volume host still produces bans every cycle instead of zero.

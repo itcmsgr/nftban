@@ -224,11 +224,14 @@ nftban_botscan_process_entry "203.0.113.10" "/cgi-bin/x.sh" "GET" "404" "-"
 [[ "${_BOTSCAN_IP_HITS[203.0.113.10]:-0}" == "1" ]] || fail "F: DOC IP not tracked — re-enabled EXP_CGIBIN not live"
 [[ "${_BOTSCAN_IP_PATTERNS[203.0.113.10]:-}" == *EXP_CGIBIN* ]] || fail "F: DOC IP hit not attributed to EXP_CGIBIN"
 
-# WP-admin context marker (:816) — a proven login (POST login_path -> 302) is recorded.
+# v1.234.0 — the v1.192.2 WP-admin login marker is RETIRED: a POST login -> 302 records no
+# per-IP trust state (BUG-BOTSCAN-WPADMIN-AUTH-CONTEXT-IS-CYCLE-SCOPED-BANS-LOGGED-IN-EDITORS;
+# asserted behaviourally in botscan_wpadmin_context_gate_v1922_test.sh).
 nftban_botscan_init_state
 nftban_botscan_process_entry "203.0.113.30" "/wp-login.php" "POST" "302" "-"
-[[ "${_BOTSCAN_IP_ADMIN_SESSION[203.0.113.30]:-}" == "1" ]] || fail "F: WP-admin session gate (:816) not set"
-echo "PASS F: never-ban guards (loopback/private/exempt/WP-admin) preserved; re-enabled pattern live for non-exempt"
+if declare -p _BOTSCAN_IP_ADMIN_SESSION >/dev/null 2>&1; then fail "F: retired WP-admin session marker still exists"; fi
+[[ -z "${_BOTSCAN_IP_HITS[203.0.113.30]:-}" ]] || fail "F: a login POST 302 became pattern evidence"
+echo "PASS F: never-ban guards (loopback/private/exempt) preserved; re-enabled pattern live for non-exempt; no login-inferred trust state"
 
 # ============================================================================
 # (G) Real shipped copy — active/skipped counts (140 enabled, 3 now intact).
