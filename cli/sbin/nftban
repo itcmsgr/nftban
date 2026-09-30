@@ -1227,6 +1227,57 @@ main() {
         done
         return 1
     }
+    # v1.234 — verb-level help routing (BUG-CLI-HELP-FLAG-EXECUTES-DESTRUCTIVE-
+    # ACTION, CLI audit F6-02). Before v1.234 the router handed `<verb> --help`
+    # to the module as ordinary arguments, and 50 module arms ignored or
+    # misread the help token and ran their action as root: `nftables stop
+    # --help` flushed the ruleset, `metrics enable --help` installed packages,
+    # `update github --help` ran a real update.
+    #
+    # ONE interception point for every module entrypoint (auto-loaded modules
+    # and the alias arms below). When a help token (-h, --help, help) appears
+    # AFTER the verb (before any `--`), the module's own top-level help is
+    # printed instead and the verb never runs. `nftban <cmd> --help` (help as
+    # the FIRST module argument) is passed through unchanged: every module
+    # owns its top-level help.
+    #
+    # A module keeps its own verb-level help text (for the -h/--help flag) only
+    # by naming the verb in `_NFTBAN_HELP_OWNED_VERBS_<module>` (space-
+    # separated). Undeclared verbs fail closed to module help. Every declared verb is swept as root by
+    # cli_help_inertness_universal_test.sh, so a declaration cannot hide a
+    # verb that acts on help.
+    _nftban_verb_help_requested() {
+        local module="$1"; shift
+        (( $# >= 2 )) || return 1
+        case "$1" in -h|--help|help) return 1 ;; esac
+        local a flag=0 word=0
+        for a in "${@:2}"; do
+            case "$a" in
+                --) break ;;
+                -h|--help) flag=1 ;;
+                help) word=1 ;;
+            esac
+        done
+        (( flag || word )) || return 1
+        # An owned verb parses the -h/--help FLAG itself; the bare word `help`
+        # after a verb is not a flag those parsers know, so it gets module help.
+        local owned_var="_NFTBAN_HELP_OWNED_VERBS_${module//-/_}"
+        if (( flag )); then
+            case " ${!owned_var:-} " in *" $1 "*) return 1 ;; esac
+        fi
+        return 0
+    }
+    # Dispatch into nftban_cmd_<module>, routing a verb-level help request to
+    # the module's top-level help. The module must already be sourced.
+    _nftban_dispatch_module() {
+        local module="$1"; shift
+        if _nftban_verb_help_requested "$module" "$@"; then
+            "nftban_cmd_${module}" --help
+            return $?
+        fi
+        "nftban_cmd_${module}" "$@"
+    }
+
     case "$cmd" in
         search|feeds|export|suricata|geoban|install|uninstall|rebuild)
             if _v141_args_have_help_flag "$@"; then
@@ -1316,7 +1367,7 @@ main() {
             # for DOWN on a released host) is propagated cleanly to the
             # caller instead of triggering the ERR trap, which would print
             # "ERROR: Script failed" on top of the command's own output.
-            "nftban_cmd_${func_cmd}" "$@" || return $?
+            _nftban_dispatch_module "$func_cmd" "$@" || return $?
             return 0
         fi
 
@@ -1350,7 +1401,7 @@ main() {
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_trust.sh"
                 shift
-                nftban_cmd_trust "$@"
+                _nftban_dispatch_module trust "$@"
                 return $?
             else
                 echo "ERROR: cmd_trust.sh not found" >&2
@@ -1364,7 +1415,7 @@ main() {
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_system.sh"
                 shift
-                nftban_cmd_system "$cmd" "$@"
+                _nftban_dispatch_module system "$cmd" "$@"
                 return $?
             else
                 echo "ERROR: cmd_system.sh not found" >&2
@@ -1378,7 +1429,7 @@ main() {
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_emulate.sh"
                 shift
-                nftban_cmd_emulate "$@"
+                _nftban_dispatch_module emulate "$@"
                 return $?
             else
                 echo "ERROR: cmd_emulate.sh not found" >&2
@@ -1392,7 +1443,7 @@ main() {
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_services.sh"
                 shift
-                nftban_cmd_services "$@"
+                _nftban_dispatch_module services "$@"
                 return $?
             else
                 echo "ERROR: cmd_services.sh not found" >&2
@@ -1406,7 +1457,7 @@ main() {
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_stats.sh"
                 shift
-                nftban_cmd_stats "export" "$@"
+                _nftban_dispatch_module stats "export" "$@"
                 return $?
             else
                 echo "ERROR: cmd_stats.sh not found" >&2
@@ -1420,7 +1471,7 @@ main() {
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_update.sh"
                 shift
-                nftban_cmd_update "rollback" "$@"
+                _nftban_dispatch_module update "rollback" "$@"
                 return $?
             else
                 echo "ERROR: cmd_update.sh not found" >&2

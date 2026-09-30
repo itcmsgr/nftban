@@ -913,6 +913,15 @@ nftban_cmd_pro_help() {
 # MAIN COMMAND HANDLER
 # =============================================================================
 
+# v1.234 help routing (cli/sbin/nftban _nftban_verb_help_requested): these
+# verbs print their OWN help for `<verb> --help|-h|help` before acting, so the
+# router passes the help token through to them. Every other verb of this module
+# gets the module help. Each listed verb is swept as root for inertness by
+# cli_help_inertness_universal_test.sh (Part B); list a verb here only if its
+# handler checks for help before any mutation.
+# shellcheck disable=SC2034  # read by cli/sbin/nftban via indirect expansion
+_NFTBAN_HELP_OWNED_VERBS_pro="community"
+
 nftban_cmd_pro() {
     local subcommand="${1:-status}"
     shift || true
