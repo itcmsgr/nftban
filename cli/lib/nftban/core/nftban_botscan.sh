@@ -160,11 +160,13 @@ declare -gA _BOTSCAN_IP_PATTERNS    # IP -> matched patterns
 declare -gA _BOTSCAN_IP_FIRST_SEEN  # IP -> first seen timestamp
 declare -gA _BOTSCAN_IP_LAST_SEEN   # IP -> last seen timestamp
 declare -gA _BOTSCAN_IP_404_COUNT      # IP -> 404 count
-declare -gA _BOTSCAN_IP_404_FIRST_SEEN # IP -> 404 first seen timestamp
+declare -gA _BOTSCAN_IP_404_FIRST_SEEN # IP -> EARLIEST counted REQUEST time (v1.234: log-line time, never scan time)
+declare -gA _BOTSCAN_IP_404_LAST_SEEN  # IP -> LATEST counted REQUEST time (v1.234)
 declare -gA _BOTSCAN_PATTERNS          # Pattern name -> pattern definition
 declare -gA _BOTSCAN_IP_CRAWLER_CLAIM  # v1.189 FCrDNS: IP -> claimed search-crawler family (UA-claimed; verified at analyze-time)
 declare -gA _BOTSCAN_IP_ENDPOINT_COUNT      # BOTSCAN-ENDPOINT-FLOOD: "ip|endpoint" -> POST count (status-independent)
-declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> first seen ts (cycle-scoped, reset by count_404_tail)
+declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> EARLIEST counted REQUEST time (cycle-scoped, reset by count_404_tail)
+declare -gA _BOTSCAN_IP_ENDPOINT_LAST_SEEN  # "ip|endpoint" -> LATEST counted REQUEST time (v1.234)
 declare -gA _BOTSCAN_IP_ADMIN_SESSION       # v1.192.2: IP -> "1" if a successful WP login (POST login_path → 302) seen this cycle (authenticated WP-admin context gate)
 declare -ga _BOTSCAN_ENDPOINT_FLOOD_LIST    # parsed endpoint tokens (rebuilt per cycle)
 
@@ -177,9 +179,11 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_LAST_SEEN=()
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
+    _BOTSCAN_IP_404_LAST_SEEN=()
     _BOTSCAN_IP_CRAWLER_CLAIM=()
     _BOTSCAN_IP_ENDPOINT_COUNT=()
     _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
+    _BOTSCAN_IP_ENDPOINT_LAST_SEEN=()
     _BOTSCAN_IP_ADMIN_SESSION=()
     _BOTSCAN_ENDPOINT_FLOOD_LIST=()
     # IFS=' ' is REQUIRED: the module runs under strict IFS=$'\n\t' (no space) → a bare
@@ -848,6 +852,40 @@ nftban_botscan_reclaim_spool() {
 # host no longer forks a subshell per log line (the v1.187.1 cycle-timeout fix: a 4.2 MB DA
 # log was ~123s / 5497 lines = ~22 ms/line, dominated by per-line command-substitution forks
 # — parse + match + timestamp). Regex semantics are byte-identical to the previous version.
+# v1.234.0 — REQUEST time of an access-log line, from its own %t field:
+#     [dd/Mon/yyyy:HH:MM:SS +zzzz]   (Apache/nginx/LiteSpeed common+combined)
+# Sets _BS_REQ_TS (UTC epoch seconds). Returns 1 when the field is missing, malformed or
+# out of range -- the caller then EXCLUDES the line: a line whose time cannot be read is
+# never counted as a fresh event ("parse failure is not now").
+# Fork-free (the tail loop is hot): bash regex + a month table + days-from-civil arithmetic,
+# honouring the line's own UTC offset. 10# everywhere: "08"/"09" are not octal.
+#     MEASURED (dns4, 2026-09-24): without this, 50 404s spread over FIVE WEEKS in the copied
+#     log were counted as "50 in 55s" -- 55 s was the scan duration -- and a legitimate
+#     client was banned every ~3.5 h.
+nftban_botscan_request_epoch() {
+    local _l="$1"
+    [[ "$_l" =~ \[([0-9]{2})/([A-Z][a-z]{2})/([0-9]{4}):([0-9]{2}):([0-9]{2}):([0-9]{2})\ ([+-])([0-9]{2})([0-9]{2})\] ]] || return 1
+    local _d=$((10#${BASH_REMATCH[1]})) _mo=0 _y=$((10#${BASH_REMATCH[3]}))
+    local _H=$((10#${BASH_REMATCH[4]})) _M=$((10#${BASH_REMATCH[5]})) _S=$((10#${BASH_REMATCH[6]}))
+    local _sg="${BASH_REMATCH[7]}" _oh=$((10#${BASH_REMATCH[8]})) _om=$((10#${BASH_REMATCH[9]}))
+    case "${BASH_REMATCH[2]}" in
+        Jan) _mo=1;; Feb) _mo=2;; Mar) _mo=3;; Apr) _mo=4;; May) _mo=5;; Jun) _mo=6;;
+        Jul) _mo=7;; Aug) _mo=8;; Sep) _mo=9;; Oct) _mo=10;; Nov) _mo=11;; Dec) _mo=12;;
+        *) return 1;;
+    esac
+    (( _d >= 1 && _d <= 31 && _H <= 23 && _M <= 59 && _S <= 60 && _oh <= 23 && _om <= 59 && _y >= 1970 )) || return 1
+    # days from civil (proleptic Gregorian; H. Hinnant) -- the year starts in March
+    local _yy=$(( _mo <= 2 ? _y - 1 : _y ))
+    local _era=$(( _yy / 400 )) _yoe _doy _doe _off
+    _yoe=$(( _yy - _era * 400 ))
+    _doy=$(( (153 * (_mo > 2 ? _mo - 3 : _mo + 9) + 2) / 5 + _d - 1 ))
+    _doe=$(( _yoe * 365 + _yoe / 4 - _yoe / 100 + _doy ))
+    _off=$(( _oh * 3600 + _om * 60 ))
+    [[ "$_sg" == "-" ]] && _off=$(( -_off ))
+    _BS_REQ_TS=$(( (_era * 146097 + _doe - 719468) * 86400 + _H * 3600 + _M * 60 + _S - _off ))
+    return 0
+}
+
 nftban_botscan_parse_line_g() {
     local line="$1"
 
@@ -1229,12 +1267,13 @@ nftban_botscan_analyze() {
 
     # Check 404 flood (enforce BOTSCAN_404_WINDOW)
     if [[ "$BOTSCAN_404_TRACKING" == "true" ]]; then
-        local now_ts
-        now_ts=$(date +%s)
+        # v1.234.0: counts hold only events whose REQUEST time is inside the window, and the
+        # span is measured between request times -- never scan time (see count_404_tail).
         for ip in "${!_BOTSCAN_IP_404_COUNT[@]}"; do
             local count="${_BOTSCAN_IP_404_COUNT[$ip]}"
-            local first_seen="${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-$now_ts}"
-            local elapsed=$(( now_ts - first_seen ))
+            local first_seen="${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" last_seen="${_BOTSCAN_IP_404_LAST_SEEN[$ip]:-}"
+            [[ "$first_seen" =~ ^[0-9]+$ && "$last_seen" =~ ^[0-9]+$ ]] || continue   # no request time => no decision
+            local elapsed=$(( last_seen - first_seen ))
             if [[ "$count" -ge "$BOTSCAN_404_THRESHOLD" && "$elapsed" -le "$BOTSCAN_404_WINDOW" ]]; then
                 # v1.189 FCrDNS — a CLAIMED search-crawler that is forward-confirmed-rDNS
                 # verified is exempt from the 404-flood ban ONLY (real crawlers legitimately
@@ -1247,7 +1286,7 @@ nftban_botscan_analyze() {
                     [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] verified crawler ${_claim} (${ip}) — exempt from 404-flood" >&2
                     continue
                 fi
-                local _reason="404 flood: $count in ${elapsed}s"
+                local _reason="404 flood: $count in ${elapsed}s (request time)"
                 [[ -n "$_claim" ]] && _reason="fake_bot_ua (${_claim} unverified) — ${_reason}"
                 # v1.191 8B inc3 — fake_bot_ua → scanner; a plain 404-flood carries no path
                 # evidence here, so it stays the honest fallback (mixed), never guessed.
@@ -1264,15 +1303,15 @@ nftban_botscan_analyze() {
     # count_404_tail in the same proven tail re-read). Emitted via the BATCH-SIGNAL path
     # ONLY — never nftban_botscan_ban_ip's direct branch (BUG-BOTSCAN-DIRECT-BAN-FLAG).
     if [[ "${BOTSCAN_ENDPOINT_FLOOD_ENABLED:-true}" == "true" ]]; then
-        local now_ef _k
-        now_ef=$(date +%s)
+        local _k
         for _k in "${!_BOTSCAN_IP_ENDPOINT_COUNT[@]}"; do
             local _cnt="${_BOTSCAN_IP_ENDPOINT_COUNT[$_k]}"
-            local _fs="${_BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_k]:-$now_ef}"
-            local _el=$(( now_ef - _fs ))
+            local _fs="${_BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_k]:-}" _ls="${_BOTSCAN_IP_ENDPOINT_LAST_SEEN[$_k]:-}"
+            [[ "$_fs" =~ ^[0-9]+$ && "$_ls" =~ ^[0-9]+$ ]] || continue   # no request time => no decision
+            local _el=$(( _ls - _fs ))
             [[ "$_cnt" -ge "$BOTSCAN_ENDPOINT_FLOOD_THRESHOLD" && "$_el" -le "$BOTSCAN_ENDPOINT_FLOOD_WINDOW" ]] || continue
             local _efip="${_k%%|*}" _efep="${_k#*|}"
-            local _efreason="endpoint_flood ${BOTSCAN_ENDPOINT_FLOOD_METHOD} ${_efep}: ${_cnt} in ${_el}s"
+            local _efreason="endpoint_flood ${BOTSCAN_ENDPOINT_FLOOD_METHOD} ${_efep}: ${_cnt} in ${_el}s (request time)"
             if [[ "$BOTSCAN_ACTION_MODE" == "alert" ]]; then
                 echo "[ALERT] Would ban ${_efip} for ${BOTSCAN_ENDPOINT_FLOOD_BAN}s: ${_efreason}"
             else
@@ -1356,11 +1395,18 @@ nftban_botscan_count_404_tail() {
     # Reset so the count reflects ONLY this cycle's scanned tails.
     _BOTSCAN_IP_404_COUNT=()
     _BOTSCAN_IP_404_FIRST_SEEN=()
+    _BOTSCAN_IP_404_LAST_SEEN=()
+    # v1.234.0 — every counted event is placed by its REQUEST time. A line counts toward a
+    # rule only if  0 <= now - request_ts <= WINDOW  (both bounds inclusive). A future
+    # time (even by 1 s) or an unreadable one is excluded and reported -- never "now".
+    local _w404=$(( ${BOTSCAN_404_WINDOW:-300} )) _wef=$(( ${BOTSCAN_ENDPOINT_FLOOD_WINDOW:-60} ))
+    local _t_old=0 _t_bad=0 _t_future=0 _t_counted=0
     # BOTSCAN-ENDPOINT-FLOOD — reset cycle-scoped counts + (re)parse the endpoint token list,
     # and widen the C-speed tail grep so endpoint POST lines (any status) survive alongside
     # 404 lines. Without widening, a POST /xmlrpc.php 200 would be filtered out before counting.
     _BOTSCAN_IP_ENDPOINT_COUNT=()
     _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
+    _BOTSCAN_IP_ENDPOINT_LAST_SEEN=()
     _BOTSCAN_ENDPOINT_FLOOD_LIST=()
     # IFS=' ' REQUIRED under strict IFS=$'\n\t' (else one space-joined token; v1.186.1 class).
     [[ "$_bs_ef_on" == "true" ]] && IFS=' ' read -ra _BOTSCAN_ENDPOINT_FLOOD_LIST <<< "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:-}"
@@ -1398,15 +1444,24 @@ nftban_botscan_count_404_tail() {
         while IFS= read -r line; do
             nftban_botscan_parse_line_g "$line" || continue   # v1.187.1 no-fork
             nftban_botscan_is_whitelisted "$_BS_IP" "$_BS_UA" && continue
+            # v1.234.0 — place the event in REQUEST time (fork-free); unreadable => excluded.
+            if ! nftban_botscan_request_epoch "$line"; then _t_bad=$(( _t_bad + 1 )); continue; fi
+            if (( _BS_REQ_TS > now )); then _t_future=$(( _t_future + 1 )); continue; fi
             # BOTSCAN-ENDPOINT-FLOOD: STATUS-INDEPENDENT POST volume to sensitive endpoints.
             # Fork-free (builtin == only); only POSTs enter the tiny endpoint loop.
             if [[ "$_bs_ef_on" == "true" && "$_BS_METHOD" == "$BOTSCAN_ENDPOINT_FLOOD_METHOD" ]]; then
                 local _efep
                 for _efep in "${_BOTSCAN_ENDPOINT_FLOOD_LIST[@]}"; do
                     if [[ "$_BS_URL" == *"$_efep"* ]]; then
+                        (( _BS_REQ_TS >= now - _wef )) || break      # outside the endpoint window
                         local _efk="${_BS_IP}|${_efep}"
                         _BOTSCAN_IP_ENDPOINT_COUNT["$_efk"]=$(( ${_BOTSCAN_IP_ENDPOINT_COUNT[$_efk]:-0} + 1 ))
-                        [[ -z "${_BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_efk]:-}" ]] && _BOTSCAN_IP_ENDPOINT_FIRST_SEEN["$_efk"]="$now"
+                        if [[ -z "${_BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_efk]:-}" ]] || (( _BS_REQ_TS < _BOTSCAN_IP_ENDPOINT_FIRST_SEEN[$_efk] )); then
+                            _BOTSCAN_IP_ENDPOINT_FIRST_SEEN["$_efk"]="$_BS_REQ_TS"
+                        fi
+                        if [[ -z "${_BOTSCAN_IP_ENDPOINT_LAST_SEEN[$_efk]:-}" ]] || (( _BS_REQ_TS > _BOTSCAN_IP_ENDPOINT_LAST_SEEN[$_efk] )); then
+                            _BOTSCAN_IP_ENDPOINT_LAST_SEEN["$_efk"]="$_BS_REQ_TS"
+                        fi
                         break
                     fi
                 done
@@ -1414,12 +1469,22 @@ nftban_botscan_count_404_tail() {
             # 404 flood (status-specific)
             [[ "$_bs_404_on" == "true" && "$_BS_STATUS" == "404" ]] || continue
             nftban_botscan_is_path_whitelisted "$_BS_URL" && continue
+            if (( _BS_REQ_TS < now - _w404 )); then _t_old=$(( _t_old + 1 )); continue; fi
+            _t_counted=$(( _t_counted + 1 ))
             _BOTSCAN_IP_404_COUNT["$_BS_IP"]=$(( ${_BOTSCAN_IP_404_COUNT[$_BS_IP]:-0} + 1 ))
-            [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$_BS_IP]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$_BS_IP"]="$now"
+            if [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$_BS_IP]:-}" ]] || (( _BS_REQ_TS < _BOTSCAN_IP_404_FIRST_SEEN[$_BS_IP] )); then
+                _BOTSCAN_IP_404_FIRST_SEEN["$_BS_IP"]="$_BS_REQ_TS"
+            fi
+            if [[ -z "${_BOTSCAN_IP_404_LAST_SEEN[$_BS_IP]:-}" ]] || (( _BS_REQ_TS > _BOTSCAN_IP_404_LAST_SEEN[$_BS_IP] )); then
+                _BOTSCAN_IP_404_LAST_SEEN["$_BS_IP"]="$_BS_REQ_TS"
+            fi
         done < <( tail -c "$tail_bytes" -- "$f" 2>/dev/null | LC_ALL=C grep -E "$_bs_tail_grep" 2>/dev/null || true )
     done
     # Persist rotation: next cycle starts after the last file covered this cycle.
     printf '%s\n' "$(( (rot + covered) % n ))" > "${rot_file}.tmp" 2>/dev/null && mv -f "${rot_file}.tmp" "$rot_file" 2>/dev/null || true
+    # v1.234.0 — make the request-time gate visible: excluded lines are REPORTED, not silent.
+    _BOTSCAN_404_TIME_STATS="counted=${_t_counted} old=${_t_old} unreadable_time=${_t_bad} future=${_t_future} window=${_w404}s"
+    [[ "${BOTSCAN_DEBUG:-false}" == "true" ]] && echo "[DEBUG] botscan-404 request-time gate: ${_BOTSCAN_404_TIME_STATS}" >&2
     return 0
 }
 
