@@ -780,7 +780,7 @@ fi
 -- el9-clean an administrator +i on /usr/sbin/nftban made 'dnf install' of the
 -- next version fail AFTER most of /usr/lib/nftban had been replaced, leaving
 -- rpmdb at the old version, new files on disk, the daemon on a deleted inode
--- and install_state still COMMITTED. %pretrans is the last point before any
+-- and install_state still COMMITTED. This scriptlet is the last point before any
 -- file changes, so refuse here, naming every blocked path. NFTBan never clears
 -- a flag it does not own (the pre-v1.234 'chattr -i -R /usr/lib/nftban' sweep
 -- removed administrator flags silently) and never remounts anything.
@@ -843,7 +843,7 @@ else
             nftban_unmeasured = nftban_unmeasured + #args
         else
             for _, l in ipairs(out) do
-                local attrs, path = string.match(l, "^(%S+)%s+(.+)\$")
+                local attrs, path = string.match(l, "^(%%S+)%%s+(.+)\$")
                 if attrs and path and nftban_kind[path] then
                     local imm, app = string.find(attrs, "i", 1, true), string.find(attrs, "a", 1, true)
                     if imm or app then
@@ -1889,10 +1889,10 @@ exit 0
 %preun
 # Remove NFTBan-owned immutable flags before a COMPLETE uninstall only.
 # v1.234 (BUG-RPM-UPGRADE-OLD-PREUN-STRIPS-OWNED-FLAGS): on upgrade/reinstall
-# RPM runs the OLD package's %preun AFTER the NEW package's %post, so an
+# RPM runs the OLD package's preun scriptlet AFTER the NEW package's post scriptlet, so an
 # unconditional strip here undid the +i that the new installer had just set
 # (measured on el9-clean: installer.log "set immutable", lsattr shows none).
-# Upgrade needs no strip here: the new %pretrans already unlocked the files
+# Upgrade needs no strip here: the new pretrans scriptlet already unlocked the files
 # before unpack, and files shared with the new package are not removed.
 if [ "\$1" -eq 0 ]; then
     for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
