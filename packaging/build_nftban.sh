@@ -782,7 +782,7 @@ fi
 -- rpmdb at the old version, new files on disk, the daemon on a deleted inode
 -- and install_state still COMMITTED. This scriptlet is the last point before any
 -- file changes, so refuse here, naming every blocked path. NFTBan never clears
--- a flag it does not own (the pre-v1.234 'chattr -i -R /usr/lib/nftban' sweep
+-- a flag it does not own (the pre-v1.234 recursive unlock of /usr/lib/nftban
 -- removed administrator flags silently) and never remounts anything.
 -- Twin of _update_fs_restriction_preflight (cli/.../cmd_update_helpers.sh).
 local nftban_owned = { ["/etc/nftban/nftban.conf"] = true, ["/usr/lib/nftban/lib/nft_schema.sh"] = true }
