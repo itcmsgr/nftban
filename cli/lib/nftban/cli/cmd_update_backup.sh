@@ -151,10 +151,12 @@ _do_rollback() {
         _update_log WARN "Could not fully repair dpkg state, attempting rollback anyway"
     }
 
-    # Remove immutable flags from ALL nftban files that would block rollback extraction
-    _remove_immutable_flags
+    # v1.234: refuse on restrictions NFTBan does not own (checked over the
+    # backup's own file list); unlock only NFTBan-owned +i, restore it after.
+    _remove_immutable_flags "$latest_backup" || return 1
 
     if tar -xzf "$latest_backup" -C / 2>&1; then
+        _restore_owned_immutable_flags
         _update_log OK "Rollback successful"
 
         # After file rollback, fix dpkg database if this was a deb install
@@ -169,6 +171,7 @@ _do_rollback() {
 
         return 0
     else
+        _restore_owned_immutable_flags
         _update_log ERROR "Rollback failed"
         return 1
     fi

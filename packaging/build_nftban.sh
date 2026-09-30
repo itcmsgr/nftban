@@ -1247,21 +1247,30 @@ esac
 # =============================================================================
 # STEP 0: yq link (must happen before Go installer, used by CLI commands)
 # =============================================================================
+# v1.234 (BUG-DEB-POSTINST-YQ-LINK-FATAL-ON-RESTRICTED-USRBIN, RPM twin): the
+# /usr/bin/yq link is optional. A restricted /usr/bin (chattr +i, read-only
+# mount, MAC denial) is reported with the exact path; NFTBan never changes
+# /usr/bin attributes. Twin of the DEB postinst _nftban_link_yq.
+_nftban_link_yq() {
+    [ -x /usr/lib/nftban/bin/yq ] || return 0
+    if _yq_err=\$(ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq 2>&1); then
+        echo "[NFTBan]   yq v4 linked from bundled binary"
+    else
+        echo "[NFTBan WARN] Could not create /usr/bin/yq -> /usr/lib/nftban/bin/yq: \${_yq_err}" >&2
+        echo "[NFTBan WARN]   /usr/bin refused the link (check: lsattr -d /usr/bin; findmnt -T /usr/bin)." >&2
+        echo "[NFTBan WARN]   Continuing: the link is optional; NFTBan does not change /usr/bin attributes." >&2
+    fi
+    return 0
+}
 if command -v yq >/dev/null 2>&1; then
     YQ_VER=\$(yq --version 2>/dev/null | head -1 || true)
     if echo "\$YQ_VER" | grep -qE "mikefarah|version v4" >/dev/null 2>&1; then
         true  # yq v4 already available
     else
-        if [ -x /usr/lib/nftban/bin/yq ]; then
-            ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-            echo "[NFTBan]   yq v4 linked from bundled binary"
-        fi
+        _nftban_link_yq
     fi
 else
-    if [ -x /usr/lib/nftban/bin/yq ]; then
-        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-        echo "[NFTBan]   yq v4 linked from bundled binary"
-    fi
+    _nftban_link_yq
 fi
 
 # =============================================================================

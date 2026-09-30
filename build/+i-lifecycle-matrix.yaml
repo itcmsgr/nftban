@@ -16,11 +16,19 @@
 #   2. packaging/build_nftban.sh         %pretrans + %preun
 #   3. packaging/deb/preinst, postinst, prerm
 #   4. cli/lib/nftban/cli/cmd_update_helpers.sh::_remove_immutable_flags
-#      (broad sweep — covers any future addition; "covered_by_sweep")
+#      (v1.234: strips ONLY this owned set, after a pre-mutation preflight that
+#      REFUSES on any immutable/append-only flag or read-only mount NFTBan does
+#      not own; the pre-v1.234 broad sweep removed administrator flags. The
+#      owned list there is pinned to this file by
+#      update_fs_restriction_preflight_v1234_test.sh.)
 #
-# Re-application authority: Go SetImmutableFlags is the ONLY direct +i
-# applier. RPM %post and DEB postinst never re-apply +i directly (strip-only
-# design). Item 2's gate verifies this symmetric design holds.
+# Re-application authority: Go SetImmutableFlags is the ONLY applier of the
+# +i POLICY. RPM %post and DEB postinst never re-apply +i directly (strip-only
+# design). Item 2's gate verifies this symmetric design holds. v1.234: the CLI
+# helper _restore_owned_immutable_flags puts back exactly the owned flags the
+# same CLI run removed when no package transaction ran (repair, no-op
+# reinstall, failed update, rollback) — a restoration of prior state, not a
+# policy application.
 #
 # Audit refs:
 #   - V107_PRETRANS_NFTBAN_CONF_SCOPE.md (the v1.107.2 hotfix scope)

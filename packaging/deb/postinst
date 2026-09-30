@@ -258,22 +258,35 @@ case "$1" in
         mkdir -p /var/lib/nftban/state
         mkdir -p /var/log/nftban
 
-        # --- yq v4 linking (CLI commands called by Go installer need yq) ---
+        # --- yq v4 linking (convenience link; optional) ---
+        # v1.234 (BUG-DEB-POSTINST-YQ-LINK-FATAL-ON-RESTRICTED-USRBIN): the
+        # /usr/bin/yq link is a convenience for operators; NFTBan's own yq
+        # consumers are guarded by `command -v yq`. Under `set -e` an
+        # unguarded `ln -sf` into a restricted /usr/bin (chattr +i, read-only
+        # mount, MAC denial) aborted this script BEFORE the Go installer ran:
+        # package left `iF half-configured`, no firewall, no install_state.
+        # The link is now best-effort, and the refusal is reported with the
+        # exact path. NFTBan never alters /usr/bin's attributes.
+        _nftban_link_yq() {
+            [ -x /usr/lib/nftban/bin/yq ] || return 0
+            if _yq_err=$(ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq 2>&1); then
+                log_info "yq v4 linked from bundled binary"
+            else
+                log_warn "Could not create /usr/bin/yq -> /usr/lib/nftban/bin/yq: ${_yq_err}"
+                log_warn "  /usr/bin refused the link (check: lsattr -d /usr/bin; findmnt -T /usr/bin)."
+                log_warn "  Continuing: the link is optional; NFTBan does not change /usr/bin attributes."
+            fi
+            return 0
+        }
         if command -v yq >/dev/null 2>&1; then
             YQ_VER=$(yq --version 2>/dev/null | head -1 || true)
             if echo "$YQ_VER" | grep -qE "mikefarah|version v4" >/dev/null 2>&1; then
                 true  # yq v4 already available
             else
-                if [ -x /usr/lib/nftban/bin/yq ]; then
-                    ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-                    log_info "yq v4 linked from bundled binary"
-                fi
+                _nftban_link_yq
             fi
         else
-            if [ -x /usr/lib/nftban/bin/yq ]; then
-                ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-                log_info "yq v4 linked from bundled binary"
-            fi
+            _nftban_link_yq
         fi
 
         # --- Reload systemd so new unit files are visible ---

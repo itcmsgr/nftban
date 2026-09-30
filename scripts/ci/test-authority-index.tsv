@@ -342,6 +342,7 @@ uninstall_synproxy_raw_cleanup_v1233_1_test	cli/lib/nftban/tests/uninstall_synpr
 update_degraded_render_truth_v225_test	cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 update_failed_units_temporal_truth_v1229_10_test	cli/lib/nftban/tests/update_failed_units_temporal_truth_v1229_10_test.sh	update	test	update-report-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 update_force_delegation_v1223_test	cli/lib/nftban/tests/update_force_delegation_v1223_test.sh	update	test	update-force	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+update_fs_restriction_preflight_v1234_test	cli/lib/nftban/tests/update_fs_restriction_preflight_v1234_test.sh	update	test	immutable-lifecycle	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 update_history_capacity_v1229_3_test	cli/lib/nftban/tests/update_history_capacity_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 update_msg_recovered_v174_test	cli/lib/nftban/tests/update_msg_recovered_v174_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 update_progress_visibility_v1232_test	cli/lib/nftban/tests/update_progress_visibility_v1232_test.sh	update	test	update-progress-visibility	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
