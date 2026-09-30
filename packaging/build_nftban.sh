@@ -775,7 +775,116 @@ if command -v python3 >/dev/null 2>&1 && [ -f scripts/ci/privacy-scan.py ]; then
 fi
 
 %pretrans -p <lua>
--- Remove immutable flag before upgrade (runs FIRST, before old pkg scripts)
+-- v1.234 filesystem-restriction preflight (BUG-RPM-PARTIAL-UPGRADE-ON-RESTRICTED-
+-- DESTINATION). RPM replaces payload files one by one and has no rollback: on
+-- el9-clean an administrator +i on /usr/sbin/nftban made 'dnf install' of the
+-- next version fail AFTER most of /usr/lib/nftban had been replaced, leaving
+-- rpmdb at the old version, new files on disk, the daemon on a deleted inode
+-- and install_state still COMMITTED. %pretrans is the last point before any
+-- file changes, so refuse here, naming every blocked path. NFTBan never clears
+-- a flag it does not own (the pre-v1.234 'chattr -i -R /usr/lib/nftban' sweep
+-- removed administrator flags silently) and never remounts anything.
+-- Twin of _update_fs_restriction_preflight (cli/.../cmd_update_helpers.sh).
+local nftban_owned = { ["/etc/nftban/nftban.conf"] = true, ["/usr/lib/nftban/lib/nft_schema.sh"] = true }
+local function nftban_lines(cmd)
+    local p = io.popen(cmd .. " 2>/dev/null")
+    if not p then return nil end
+    local t = {}
+    for l in p:lines() do t[#t + 1] = l end
+    p:close()
+    return t
+end
+local function nftban_type(path)
+    local ok, st = pcall(posix.stat, path)
+    if ok and type(st) == "table" then return st.type end
+    return nil
+end
+local nftban_conff = {}
+for _, l in ipairs(nftban_lines("rpm -qc nftban-core") or {}) do nftban_conff[l] = true end
+local nftban_listed = {}
+for _, l in ipairs(nftban_lines("rpm -ql nftban-core") or {}) do
+    if string.sub(l, 1, 1) == "/" then nftban_listed[#nftban_listed + 1] = l end
+end
+-- Destination directories of a fresh install that already exist on the host.
+for _, d in ipairs({ "/usr/sbin", "/usr/lib/systemd/system", "/usr/lib/tmpfiles.d", "/etc/sysctl.d",
+                     "/etc/logrotate.d", "/etc/polkit-1/rules.d", "/usr/share/bash-completion/completions",
+                     "/usr/share/licenses", "/usr/lib/nftban", "/usr/share/nftban", "/etc/nftban" }) do
+    nftban_listed[#nftban_listed + 1] = d
+end
+local nftban_check, nftban_kind, nftban_dirs = {}, {}, {}
+local function nftban_add(path, kind)
+    if not nftban_kind[path] then nftban_check[#nftban_check + 1] = path end
+    nftban_kind[path] = kind
+    if kind == "dir" then nftban_dirs[path] = true end
+end
+local nftban_unmeasured = 0
+for _, path in ipairs(nftban_listed) do
+    local ty = nftban_type(path)
+    if ty == "directory" then
+        nftban_add(path, "dir")
+    elseif ty ~= nil then
+        nftban_add(path, "file")
+        local parent = string.match(path, "^(.*)/[^/]*\$")
+        if parent and parent ~= "" and nftban_type(parent) == "directory" then nftban_add(parent, "dir") end
+    end
+end
+local nftban_blocked, nftban_warned = {}, {}
+local nftban_have_lsattr = posix.access("/usr/bin/lsattr", "x") or posix.access("/bin/lsattr", "x")
+if not nftban_have_lsattr then
+    nftban_unmeasured = nftban_unmeasured + #nftban_check
+else
+    local i = 1
+    while i <= #nftban_check do
+        local args = {}
+        for j = i, math.min(i + 199, #nftban_check) do args[#args + 1] = "'" .. nftban_check[j] .. "'" end
+        i = i + 200
+        local out = nftban_lines("lsattr -d -- " .. table.concat(args, " "))
+        if not out then
+            nftban_unmeasured = nftban_unmeasured + #args
+        else
+            for _, l in ipairs(out) do
+                local attrs, path = string.match(l, "^(%S+)%s+(.+)\$")
+                if attrs and path and nftban_kind[path] then
+                    local imm, app = string.find(attrs, "i", 1, true), string.find(attrs, "a", 1, true)
+                    if imm or app then
+                        local what = imm and "IMMUTABLE" or "APPEND-ONLY"
+                        if nftban_owned[path] and not app then
+                            -- NFTBan-owned +i: unlocked below
+                        elseif nftban_kind[path] == "file" and nftban_conff[path] then
+                            nftban_warned[#nftban_warned + 1] = what .. " conffile " .. path
+                        else
+                            nftban_blocked[#nftban_blocked + 1] = what .. " " .. nftban_kind[path] .. " " .. path .. " (" .. attrs .. ")"
+                        end
+                    end
+                end
+            end
+            -- lsattr prints unreadable paths on stderr (discarded): count them as UNMEASURED
+            if #out < #args then nftban_unmeasured = nftban_unmeasured + (#args - #out) end
+        end
+    end
+end
+for d, _ in pairs(nftban_dirs) do
+    local ok, err = posix.access(d, "w")
+    if not ok and err and string.find(err, "Read-only", 1, true) then
+        nftban_blocked[#nftban_blocked + 1] = "READ-ONLY dir " .. d .. " (" .. err .. ")"
+    end
+end
+for _, w in ipairs(nftban_warned) do
+    io.stderr:write("nftban: WARN " .. w .. " (blocks the upgrade only if the new version changes it)\n")
+end
+if nftban_unmeasured > 0 then
+    io.stderr:write("nftban: WARN filesystem restriction preflight UNMEASURED for " .. nftban_unmeasured .. " path(s) - not proof of no restriction\n")
+end
+if #nftban_blocked > 0 then
+    io.stderr:write("nftban: REFUSED before any file change: " .. #nftban_blocked .. " package path(s) cannot be modified:\n")
+    for _, b in ipairs(nftban_blocked) do io.stderr:write("nftban:   " .. b .. "\n") end
+    io.stderr:write("nftban: NFTBan does not remove immutable/append-only flags or remount filesystems it does not own.\n")
+    io.stderr:write("nftban: The owner of that restriction must lift it for the paths above, retry, then re-apply it.\n")
+    io.stderr:write("nftban: Inspect: lsattr -d <path>   findmnt -T <path>\n")
+    error("nftban: filesystem restriction preflight refused the transaction", 0)
+end
+
+-- Remove NFTBan's OWN immutable flag before upgrade (runs FIRST, before old pkg scripts)
 -- The nft_schema.sh file is protected with chattr +i for security.
 -- Without this, RPM fails: "cpio: rename failed - No data available"
 local schema_file = "/usr/lib/nftban/lib/nft_schema.sh"
@@ -785,7 +894,6 @@ if f then
     os.execute("/usr/bin/chattr -i " .. schema_file .. " 2>/dev/null")
     os.execute("/bin/chattr -i " .. schema_file .. " 2>/dev/null")
     os.execute("chattr -i " .. schema_file .. " 2>/dev/null")
-    os.execute("/usr/bin/chattr -i -R /usr/lib/nftban 2>/dev/null")
 end
 -- v1.107.2: strip +i from /etc/nftban/nftban.conf before cpio extracts the
 -- new conffile. SetImmutableFlags (internal/installer/validate/authority.go)

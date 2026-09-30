@@ -229,6 +229,17 @@ else
         || no "T12b RPM %preun on erase unlocks owned files" "$(tr '\n' ';' < "$WORK/chattr.log")"
 fi
 
+# T13 — RPM %pretrans: the pre-v1.234 `chattr -i -R /usr/lib/nftban` sweep removed administrator
+# flags on direct dnf upgrade (measured on el9-clean). The %pretrans must refuse (error()) on a
+# restriction it does not own and strip only the owned files. Behaviour is proven package-natively
+# on el9-clean (FINDINGS.md); this pins the shape so the sweep cannot return.
+pretrans=$(awk '/^%pretrans -p <lua>$/{p=1;next} p && /^%pre$/{exit} p' "$BUILD_SH")
+if grep -qE 'chattr -i -R|chattr -R -i' <<< "$pretrans"; then no "T13 %pretrans has no recursive chattr -i sweep" "sweep present"
+else ok "T13 %pretrans has no recursive chattr -i sweep"; fi
+if grep -q 'error("nftban: filesystem restriction preflight refused' <<< "$pretrans" && grep -q 'lsattr -d --' <<< "$pretrans"; then
+    ok "T13b %pretrans refuses on restrictions before any file change"
+else no "T13b %pretrans refusal present" "no preflight error() in %pretrans"; fi
+
 echo "----------------------------------------------------------"
 echo "RESULT: PASS=$PASS FAIL=$FAIL"
 if (( FAIL > 0 )); then printf '  failed: %s\n' "${FAILED[@]}"; exit 1; fi
