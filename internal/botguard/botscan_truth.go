@@ -106,8 +106,10 @@ func (m *Module) appendBotscanEvidence(sig *BatchSignal, setName string, ttlSec 
 		"request_class": sig.NormalizedRequestClass(),
 		"reasons":       sig.Reasons, // pattern/why: e.g. "wp_probe","404_flood","Matched patterns: …"
 		"set":           setName,
-		"ttl_sec":       ttlSec,
-		"url":           "", // reserved: matched URL/path not in BatchSignal (shell-producer follow-up)
+		"ttl_sec":       ttlSec, // EFFECTIVE (enforced) timeout
+		"url":           "",     // reserved: matched URL/path not in BatchSignal (shell-producer follow-up)
+		// v1.234.0: the rule's REQUESTED duration beside the effective one (0 = not sent by an older producer)
+		"requested_ttl_sec": sig.RequestedTTLSec,
 	}
 	b, err := json.Marshal(rec)
 	if err != nil {

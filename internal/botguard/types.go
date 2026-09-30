@@ -216,4 +216,10 @@ type BatchSignal struct {
 	Family       string `json:"family,omitempty"`        // "ipv4"|"ipv6" (fallback: derived from IP)
 	RequestClass string `json:"request_class,omitempty"` // taxonomy (default/invalid -> "mixed")
 	Confidence   int    `json:"confidence,omitempty"`    // 0-100, optional
+	// v1.234.0: the ban duration (seconds) the BotScan rule that fired REQUESTS — its
+	// per-pattern BAN column, BOTSCAN_404_BAN or BOTSCAN_ENDPOINT_FLOOD_BAN. INFORMATIONAL:
+	// the enforced timeout keeps the established mapping (botscanSignalTTL); the requested
+	// value is logged and recorded beside the effective one so the two are never confused.
+	// Additive: an older producer omits it, an older consumer ignores it.
+	RequestedTTLSec int64 `json:"requested_ttl_sec,omitempty"`
 }
