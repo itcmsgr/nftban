@@ -136,7 +136,23 @@ nftban_botscan_load_config() {
     # shellcheck source=/dev/null
     # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
     declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
+    # v1.234.0 (BUG-BOTSCAN-OVERRIDE-LOCAL-CREATED-UNREADABLE-BY-SCANNER): _source_local
+    # skips an unreadable file without a word, so an operator override that the scanner's
+    # account cannot read looked applied and was not. Say so (never an error: defaults apply).
+    [[ -e "$config_local" && ! -r "$config_local" ]] && _botscan_warn_unreadable "$config_local"
     _source_local "$config_local"
+    return 0
+}
+
+# v1.234.0 — one visible warning (stderr + syslog) for an operator file BotScan must read
+# but cannot (typically root:root 0600 while the scanner runs as the service account).
+_botscan_warn_unreadable() {
+    local f="${1:-?}"
+    printf "[WARN] botscan: %s exists but is NOT readable by %s — its settings are IGNORED (expected mode 0640, group of %s)\n" \
+        "$f" "$(id -un 2>/dev/null || echo "uid $(id -u)")" "$(dirname -- "$f")" >&2
+    if command -v logger >/dev/null 2>&1; then
+        logger -t nftban-botscan -p user.warning "unreadable operator file ignored: $f" 2>/dev/null || true
+    fi
     return 0
 }
 
@@ -167,11 +183,14 @@ declare -gA _BOTSCAN_IP_ENDPOINT_FIRST_SEEN # "ip|endpoint" -> EARLIEST counted 
 declare -gA _BOTSCAN_IP_ENDPOINT_LAST_SEEN  # "ip|endpoint" -> LATEST counted REQUEST time (v1.234)
 declare -ga _BOTSCAN_ENDPOINT_FLOOD_LIST    # parsed endpoint tokens (rebuilt per cycle)
 # v1.234.0 — pattern evidence in REQUEST time (BUG-BOTSCAN-PATTERN-WINDOW-USES-SCAN-TIME-NOT-REQUEST-TIME)
-declare -gA _BOTSCAN_IP_EVT_TS              # IP -> space-separated request epochs of contributing pattern events
 declare -gA _BOTSCAN_DISTINCT_SEEN          # "ip<US>pattern<US>target" -> 1 (distinct-* patterns count a target once)
+declare -gA _BOTSCAN_IPPAT_TS               # "ip<US>pattern" -> space-separated request epochs (each pattern judged on its own evidence)
+declare -ga _BS_MATCHES=() _BS_MATCH_MODES=()   # every pattern the current line matched (match_url_g)
+declare -gA _BOTSCAN_PROBE_TS                 # IP -> request epochs of DISTINCT probe targets across distinct-* rules
+declare -gA _BOTSCAN_PROBE_SEEN               # "ip<US>target" -> 1 (a target counts once in the cross-rule probe aggregate)
 declare -g  _BS_CYCLE_NOW=""                # the cycle's reference "now" (nftban_timestamp_unix), set by init_state
 declare -gi _BS_T_PAT_STALE=0 _BS_T_PAT_UNREADABLE=0 _BS_T_PAT_FUTURE=0 _BS_T_PAT_REPEAT=0
-declare -gi _BS_T_TAIL_UNREADABLE=0 _BS_T_TAIL_FUTURE=0
+declare -gi _BS_T_TAIL_UNREADABLE=0 _BS_T_TAIL_FUTURE=0 _BS_T_UA_UNPARSED=0
 
 # v1.234.0 — EVIDENCE HORIZON D for URL/UA pattern evidence (design V1_234_0_BOTSCAN404_DESIGN.md
 # §15 C3: a burst is actionable iff max(ts)-min(ts) <= W AND 0 <= now-max(ts) <= D).
@@ -203,10 +222,12 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_ENDPOINT_FIRST_SEEN=()
     _BOTSCAN_IP_ENDPOINT_LAST_SEEN=()
     _BOTSCAN_ENDPOINT_FLOOD_LIST=()
-    _BOTSCAN_IP_EVT_TS=()
     _BOTSCAN_DISTINCT_SEEN=()
+    _BOTSCAN_IPPAT_TS=()
+    _BOTSCAN_PROBE_TS=()
+    _BOTSCAN_PROBE_SEEN=()
     _BS_T_PAT_STALE=0; _BS_T_PAT_UNREADABLE=0; _BS_T_PAT_FUTURE=0; _BS_T_PAT_REPEAT=0
-    _BS_T_TAIL_UNREADABLE=0; _BS_T_TAIL_FUTURE=0
+    _BS_T_TAIL_UNREADABLE=0; _BS_T_TAIL_FUTURE=0; _BS_T_UA_UNPARSED=0
     # One reference "now" per cycle (overridable through nftban_timestamp_unix, like the tail).
     _BS_CYCLE_NOW="$(nftban_timestamp_unix 2>/dev/null || date +%s)"
     [[ "$_BS_CYCLE_NOW" =~ ^[0-9]+$ ]] || printf -v _BS_CYCLE_NOW '%(%s)T' -1
@@ -439,6 +460,7 @@ nftban_botscan_load_patterns() {
     # can consult it. It is NOT a *.patterns file, so the glob below never loads it.
     local override_file="${patterns_dir}/override.local"
     local -A _override=()
+    [[ -e "$override_file" && ! -r "$override_file" ]] && _botscan_warn_unreadable "$override_file"
     if [[ -r "$override_file" ]]; then
         local oname ostate
         while IFS='|' read -r oname ostate _; do
@@ -450,6 +472,9 @@ nftban_botscan_load_patterns() {
 
     for pattern_file in "$patterns_dir"/*.patterns; do
         [[ -f "$pattern_file" ]] || continue
+        # v1.234.0 — an unreadable pattern file is reported, not a silent gap (and not an
+        # errexit abort on the redirection below).
+        if [[ ! -r "$pattern_file" ]]; then _botscan_warn_unreadable "$pattern_file"; continue; fi
 
         local _bs_line
         while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
@@ -634,6 +659,12 @@ nftban_botscan_set_override() {
         grep -viE "^[[:space:]]*${name}[[:space:]]*\|" "$override_file" 2>/dev/null >> "$tmp" || true
     fi
     printf '%s|%s\n' "$name" "$state" >> "$tmp"
+    # v1.234.0 (BUG-BOTSCAN-OVERRIDE-LOCAL-CREATED-UNREADABLE-BY-SCANNER): mktemp creates
+    # 0600 root:root, and the scanner runs as the unprivileged service account, so the
+    # override was SILENTLY ignored (`[[ -r ]]` false in load_patterns). Give it the
+    # pattern directory's group and the shipped pattern files' mode (0640).
+    chmod 0640 "$tmp" 2>/dev/null || true
+    chgrp --reference="$dir" "$tmp" 2>/dev/null || true
     mv -f "$tmp" "$override_file" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
     return 0
 }
@@ -931,11 +962,24 @@ nftban_botscan_parse_line_g() {
         _BS_URL="${BASH_REMATCH[3]}"
         _BS_STATUS="${BASH_REMATCH[4]}"
 
-        # Extract user agent
-        if [[ "$line" =~ \"([^\"]+)\"$ ]]; then
+        # Extract user agent — the LAST quoted field. v1.234.0
+        # (BUG-BOTSCAN-UA-PARSE-ESCAPED-QUOTE-BECOMES-DASH): Apache/nginx escape a quote
+        # inside a field as \", so the field is a run of (non-quote, non-backslash) or
+        # (backslash + any char). The old `"([^"]+)"$` failed on any UA containing an
+        # escaped quote at its end and returned "-", which fired SINGLE_DASH on real
+        # visitors and hid the UA from every useragent rule.
+        #   logged "-" or ""        -> "-"  (the client really sent no User-Agent)
+        #   no trailing quoted field -> ""  UNKNOWN (common log format, truncated or
+        #                                   malformed line): never "-", so an unparseable
+        #                                   line is not converted into "empty-UA" evidence;
+        #                                   useragent rules skip an empty UA; counted and
+        #                                   reported (BOTSCAN_PARSE ua_unparsed=N).
+        if [[ "$line" =~ \"(([^\"\\]|\\.)*)\"$ ]]; then
             _BS_UA="${BASH_REMATCH[1]}"
+            [[ -n "$_BS_UA" ]] || _BS_UA="-"
         else
-            _BS_UA="-"
+            _BS_UA=""
+            _BS_T_UA_UNPARSED=$(( ${_BS_T_UA_UNPARSED:-0} + 1 ))
         fi
 
         return 0
@@ -1121,6 +1165,11 @@ nftban_botscan_match_url_g() {
     local ua="${4:-}"
     _BS_MATCHED=""
     _BS_MATCHED_MODE="hits"
+    # v1.234.0 — collect EVERY matching pattern (a line can be evidence for several rules,
+    # e.g. `/.env` for both EXP_ENVFILE and SCAN_HIDDEN). Attributing it only to the first
+    # match in hash order split the evidence of one request between rules arbitrarily.
+    # _BS_MATCHED / _BS_MATCHED_MODE keep the first match (the echo API contract).
+    _BS_MATCHES=(); _BS_MATCH_MODES=()
     # v1.234.0 — the request PATH (the target without its query string). path-* patterns
     # match it; distinct-* patterns match the raw target and count distinct targets.
     local path="${url%%\?*}"
@@ -1135,57 +1184,61 @@ nftban_botscan_match_url_g() {
         case "$match_type" in
             path-404)
                 [[ "$status" != "404" ]] && continue
-                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             path-post)
                 [[ "$method" != "POST" ]] && continue
-                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             path-get)
                 [[ "$method" != "GET" ]] && continue
-                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             path-any)
-                if [[ "$path" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$path" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             distinct-404)
                 [[ "$status" != "404" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("distinct"); fi
                 ;;
             distinct-post)
                 [[ "$method" != "POST" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("distinct"); fi
                 ;;
             distinct-get)
                 [[ "$method" != "GET" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("distinct"); fi
                 ;;
             distinct-any)
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; _BS_MATCHED_MODE="distinct"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("distinct"); fi
                 ;;
             url-404)
                 [[ "$status" != "404" ]] && continue
                 # Match URL pattern
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             url-post)
                 [[ "$method" != "POST" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             url-get)
                 [[ "$method" != "GET" ]] && continue
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             url-any)
-                if [[ "$url" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ "$url" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
             useragent)
                 # Match against user-agent string
-                if [[ -n "$ua" && "$ua" =~ $pattern ]]; then _BS_MATCHED="$name"; return 0; fi
+                if [[ -n "$ua" && "$ua" =~ $pattern ]]; then _BS_MATCHES+=("$name"); _BS_MATCH_MODES+=("hits"); fi
                 ;;
         esac
     done
 
+    if [[ "${#_BS_MATCHES[@]}" -gt 0 ]]; then
+        _BS_MATCHED="${_BS_MATCHES[0]}"; _BS_MATCHED_MODE="${_BS_MATCH_MODES[0]}"
+        return 0
+    fi
     return 1
 }
 
@@ -1225,31 +1278,42 @@ nftban_botscan_process_entry() {
 
     # Match against patterns (URL and user-agent) — v1.187.1 no-fork matcher (was a per-line
     # command-substitution fork). errexit-safe: the && only assigns on a match.
-    local matched_pattern=""
-    nftban_botscan_match_url_g "$url" "$method" "$status" "$ua" && matched_pattern="$_BS_MATCHED"
-    [[ -n "$matched_pattern" ]] || return 0
+    nftban_botscan_match_url_g "$url" "$method" "$status" "$ua" || return 0
 
     # v1.234.0 — place the evidence in REQUEST time.
     if [[ ! "$req_ts" =~ ^[0-9]+$ ]]; then _BS_T_PAT_UNREADABLE=$(( _BS_T_PAT_UNREADABLE + 1 )); return 0; fi
     if (( req_ts > now )); then _BS_T_PAT_FUTURE=$(( _BS_T_PAT_FUTURE + 1 )); return 0; fi
     if (( now - req_ts > _BS_PATTERN_EVIDENCE_HORIZON )); then _BS_T_PAT_STALE=$(( _BS_T_PAT_STALE + 1 )); return 0; fi
 
-    # v1.234.0 — distinct-* patterns: an identical target already counted for this IP and
-    # pattern adds no evidence (a client polling one route is not enumerating).
-    if [[ "${_BS_MATCHED_MODE:-hits}" == "distinct" ]]; then
-        local _dk="${ip}${_BS_US}${matched_pattern}${_BS_US}${url}"
-        if [[ -n "${_BOTSCAN_DISTINCT_SEEN[$_dk]:-}" ]]; then _BS_T_PAT_REPEAT=$(( _BS_T_PAT_REPEAT + 1 )); return 0; fi
-        _BOTSCAN_DISTINCT_SEEN["$_dk"]=1
-    fi
+    local _mi matched_pattern _mm _counted=0
+    for (( _mi=0; _mi<${#_BS_MATCHES[@]}; _mi++ )); do
+        matched_pattern="${_BS_MATCHES[_mi]}"; _mm="${_BS_MATCH_MODES[_mi]}"
+        if [[ "$_mm" == "distinct" ]]; then
+            # distinct-* patterns: an identical target already counted for this IP and
+            # pattern adds no evidence (a client polling one route is not enumerating).
+            local _dk="${ip}${_BS_US}${matched_pattern}${_BS_US}${url}"
+            if [[ -n "${_BOTSCAN_DISTINCT_SEEN[$_dk]:-}" ]]; then _BS_T_PAT_REPEAT=$(( _BS_T_PAT_REPEAT + 1 )); continue; fi
+            _BOTSCAN_DISTINCT_SEEN["$_dk"]=1
+            # Cross-rule probe aggregate: probing is VARIETY, so distinct targets of
+            # DIFFERENT probe rules corroborate each other (each target once).
+            local _pk="${ip}${_BS_US}${url}"
+            if [[ -z "${_BOTSCAN_PROBE_SEEN[$_pk]:-}" ]]; then
+                _BOTSCAN_PROBE_SEEN["$_pk"]=1
+                _BOTSCAN_PROBE_TS["$ip"]="${_BOTSCAN_PROBE_TS[$ip]:-} $req_ts"
+            fi
+        fi
+        _BOTSCAN_IP_PATTERNS["$ip"]="${_BOTSCAN_IP_PATTERNS[$ip]:-} $matched_pattern"
+        _BOTSCAN_IPPAT_TS["${ip}${_BS_US}${matched_pattern}"]="${_BOTSCAN_IPPAT_TS[${ip}${_BS_US}${matched_pattern}]:-} $req_ts"
+        _counted=1
+    done
+    (( _counted )) || return 0
 
-    # Update tracking (first/last seen are REQUEST times, never scan time)
+    # Update tracking (one tracked hit per LINE; first/last seen are REQUEST times)
     _BOTSCAN_IP_HITS["$ip"]=$(( ${_BOTSCAN_IP_HITS[$ip]:-0} + 1 ))
-    _BOTSCAN_IP_PATTERNS["$ip"]="${_BOTSCAN_IP_PATTERNS[$ip]:-} $matched_pattern"
-    _BOTSCAN_IP_EVT_TS["$ip"]="${_BOTSCAN_IP_EVT_TS[$ip]:-} $req_ts"
     if [[ -z "${_BOTSCAN_IP_FIRST_SEEN[$ip]:-}" ]] || (( req_ts < ${_BOTSCAN_IP_FIRST_SEEN[$ip]} )); then _BOTSCAN_IP_FIRST_SEEN["$ip"]="$req_ts"; fi
     if [[ -z "${_BOTSCAN_IP_LAST_SEEN[$ip]:-}" ]] || (( req_ts > ${_BOTSCAN_IP_LAST_SEEN[$ip]} )); then _BOTSCAN_IP_LAST_SEEN["$ip"]="$req_ts"; fi
 
-    [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] $ip matched $matched_pattern: $url" >&2
+    [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] $ip matched ${_BS_MATCHES[*]}: $url" >&2
 
     return 0
 }
@@ -1284,58 +1348,83 @@ nftban_botscan_analyze() {
         # load_config). Authentication context is UNKNOWN to an access-log scanner; detection
         # does not depend on it.
 
-        # Get threshold from most severe matched pattern.
-        # v1.234.0 — start from the MATCHED patterns' own values, not from the defaults.
-        # Seeding with BOTSCAN_DEFAULT_THRESHOLD (5) / _WINDOW (60) silently capped every
-        # pattern: a documented 20-hit rule banned at 5 hits, and EXP_WPREST's documented
-        # 300 s window became 60 s. The defaults apply only when no matched pattern
-        # carries a definition. (C5: aggregation stays per IP — lowest threshold,
-        # shortest window, longest ban across the matched patterns.)
-        local threshold="" ban_duration="" window=""
-
+        # v1.234.0 — EACH PATTERN IS JUDGED ON ITS OWN EVIDENCE
+        # (BUG-BOTSCAN-PATTERN-THRESHOLD-CAPPED-AT-DEFAULT). The old decision seeded the
+        # threshold/window with BOTSCAN_DEFAULT_THRESHOLD (5) / _WINDOW (60), kept the
+        # minimum, and compared the SUM of hits across different patterns: every rule
+        # documented above 5 banned at 5 (measured fleet-wide: 1,155 signals below the
+        # documented threshold), and hits of unrelated rules topped each other up.
+        # Now a pattern fires iff ITS OWN events reach ITS documented threshold within ITS
+        # documented window, measured in REQUEST time (a sliding window over the lines'
+        # own timestamps — the old `now - first_seen` measured how long the scan took).
+        # The ban uses the longest documented duration among the patterns that FIRED.
+        # (Supersedes design ruling C5 "keep per-IP aggregation"; owner to confirm.)
+        #
         # Split the space-joined matched-pattern list IFS-INDEPENDENTLY. The lib sets a
         # global IFS=$'\n\t' (no space) at source time, so an unquoted `for x in $patterns`
-        # over " NAME" keeps the leading space → key lookup misses → the pattern threshold
-        # is never applied → URL/UA pattern bans never fire (only 404-flood did). Use the
-        # same `IFS=$' \t\n' read -ra` idiom already used for the http-log override split.
-        local -a _ip_pats=()
+        # over " NAME" keeps the leading space → key lookup misses (v1.186.1 class).
+        local -a _ip_pats=() _fired=()
+        local -A _ip_pat_seen=()
+        local ban_duration="" _fired_desc=""
         IFS=$' \t\n' read -ra _ip_pats <<< "$patterns"
         for pattern_name in "${_ip_pats[@]}"; do
-            [[ -z "$pattern_name" ]] && continue
+            [[ -z "$pattern_name" || -n "${_ip_pat_seen[$pattern_name]:-}" ]] && continue
+            _ip_pat_seen["$pattern_name"]=1
             local def="${_BOTSCAN_PATTERNS[$pattern_name]:-}"
             [[ -z "$def" ]] && continue
 
             local p_threshold p_window p_ban
             IFS="$_BS_US" read -r _ _ p_threshold p_window p_ban _ <<< "$def"  # v1.214.0 '|'-safe internal split
+            [[ "$p_threshold" =~ ^[0-9]+$ && "$p_window" =~ ^[0-9]+$ && "$p_ban" =~ ^[0-9]+$ ]] || continue
+            (( p_threshold >= 1 )) || p_threshold=1
 
-            # Use lowest threshold (most sensitive)
-            [[ -z "$threshold" || "$p_threshold" -lt "$threshold" ]] && threshold="$p_threshold"
-            # Use longest ban
+            local -a _p_ts=()
+            IFS=$' \t\n' read -ra _p_ts <<< "${_BOTSCAN_IPPAT_TS[${ip}${_BS_US}${pattern_name}]:-}"
+            (( ${#_p_ts[@]} >= p_threshold )) || continue
+            local _p_in
+            _p_in="$(nftban_botscan_max_in_window "$p_window" "${_p_ts[@]}")"
+            (( _p_in >= p_threshold )) || continue
+            _fired+=("$pattern_name")
+            _fired_desc+=" ${pattern_name} ${_p_in}/${p_threshold} in ${p_window}s;"
             [[ -z "$ban_duration" || "$p_ban" -gt "$ban_duration" ]] && ban_duration="$p_ban"
-            # Use shortest window
-            [[ -z "$window" || "$p_window" -lt "$window" ]] && window="$p_window"
         done
-        [[ -n "$threshold" ]] || threshold="$BOTSCAN_DEFAULT_THRESHOLD"
-        [[ -n "$ban_duration" ]] || ban_duration="$BOTSCAN_DEFAULT_BAN_SHORT"
-        [[ -n "$window" ]] || window="$BOTSCAN_DEFAULT_WINDOW"
 
-        # v1.234.0 — decide in REQUEST time: the most events that fit in ANY window of
-        # `window` seconds (a sliding window over the lines' own timestamps). The old test,
-        # `now - first_seen <= window` with first_seen = SCAN time, measured how long the
-        # cycle took and never filtered anything; hits spread over days in one consumed
-        # backlog were banned as a burst. Every event here is already within the evidence
-        # horizon D (process_entry), so max(ts) is recent.
-        local in_window=0
-        if [[ "$hits" -ge "$threshold" ]]; then
-            local -a _ip_ts=()
-            IFS=$' \t\n' read -ra _ip_ts <<< "${_BOTSCAN_IP_EVT_TS[$ip]:-}"
-            in_window="$(nftban_botscan_max_in_window "$window" "${_ip_ts[@]}")"
+        # Cross-rule PROBE aggregate (distinct-* rules only): distinct probe targets of
+        # different rules corroborate each other — a client requesting ten different
+        # backup/admin/shell names is scanning even if no single rule reached its own
+        # threshold. Judged against the LOWEST documented threshold and SHORTEST window
+        # among the probe rules it matched (design ruling C5, kept for the class where
+        # summing is evidence); hit-counting rules (exploit payloads, UA rates) never sum.
+        if [[ -n "${_BOTSCAN_PROBE_TS[$ip]:-}" ]]; then
+            local _pt="" _pw="" _pb="" _pn _pdef _pmt _pth _pwi _pba
+            for _pn in "${!_ip_pat_seen[@]}"; do
+                _pdef="${_BOTSCAN_PATTERNS[$_pn]:-}"; [[ -n "$_pdef" ]] || continue
+                IFS="$_BS_US" read -r _ _pmt _pth _pwi _pba _ <<< "$_pdef"
+                [[ "$_pmt" == distinct-* && "$_pth" =~ ^[0-9]+$ && "$_pwi" =~ ^[0-9]+$ && "$_pba" =~ ^[0-9]+$ ]] || continue
+                [[ -z "$_pt" || "$_pth" -lt "$_pt" ]] && _pt="$_pth"
+                [[ -z "$_pw" || "$_pwi" -lt "$_pw" ]] && _pw="$_pwi"
+                [[ -z "$_pb" || "$_pba" -gt "$_pb" ]] && _pb="$_pba"
+            done
+            if [[ -n "$_pt" ]]; then
+                local -a _pr_ts=()
+                IFS=$' \t\n' read -ra _pr_ts <<< "${_BOTSCAN_PROBE_TS[$ip]}"
+                if (( ${#_pr_ts[@]} >= _pt )); then
+                    local _pr_in
+                    _pr_in="$(nftban_botscan_max_in_window "$_pw" "${_pr_ts[@]}")"
+                    if (( _pr_in >= _pt )); then
+                        _fired+=("probe-variety")
+                        _fired_desc+=" probe-variety ${_pr_in}/${_pt} distinct targets in ${_pw}s;"
+                        [[ -z "$ban_duration" || "$_pb" -gt "$ban_duration" ]] && ban_duration="$_pb"
+                    fi
+                fi
+            fi
         fi
-        if [[ "$in_window" -ge "$threshold" && "$in_window" -gt 0 ]]; then
+
+        if [[ "${#_fired[@]}" -gt 0 ]]; then
             # v1.191 8B inc3 — URL/UA pattern bans are scanner/webshell/exploit probes by
             # definition (this module's purpose); label the signal accordingly, then clear.
             BOTSCAN_SIGNAL_REQUEST_CLASS="$(nftban_botscan_classify_request_class "" "" "" "scanner pattern: $patterns")"
-            nftban_botscan_ban_ip "$ip" "$ban_duration" "botscan" "Matched patterns: $patterns (hits: $hits; ${in_window} within ${window}s request time)"
+            nftban_botscan_ban_ip "$ip" "$ban_duration" "botscan" "Matched patterns: $patterns (hits: $hits; fired (request time):${_fired_desc%;})"
             BOTSCAN_SIGNAL_REQUEST_CLASS=""
             banned=$((banned + 1))
             nftban_botscan_counter_add bans_emitted 1 || true
@@ -1395,7 +1484,7 @@ nftban_botscan_analyze() {
                 # batch-signal path (mirrors ban_ip's batch branch; NOT the direct branch)
                 # v1.191 8B inc3 — real method+endpoint evidence → dynamic_abuse.
                 BOTSCAN_SIGNAL_REQUEST_CLASS="$(nftban_botscan_classify_request_class "${BOTSCAN_ENDPOINT_FLOOD_METHOD}" "${_efep}" "" "endpoint_flood")"
-                nftban_botscan_write_signal "${_efip}" 80 "ban" "botscan-endpoint-flood" "${_efreason}"
+                BOTSCAN_SIGNAL_REQUESTED_TTL="${BOTSCAN_ENDPOINT_FLOOD_BAN}" nftban_botscan_write_signal "${_efip}" 80 "ban" "botscan-endpoint-flood" "${_efreason}"
                 BOTSCAN_SIGNAL_REQUEST_CLASS=""
                 echo "$(date -Iseconds)|botscan-endpoint-flood|${_efip}|${BOTSCAN_ENDPOINT_FLOOD_BAN}|SIGNAL|${_efreason}" >> "$BOTSCAN_LOG_FILE"
             fi
@@ -1746,6 +1835,12 @@ nftban_botscan_write_signal() {
     if [[ -n "${BOTSCAN_SIGNAL_CONFIDENCE:-}" && "${BOTSCAN_SIGNAL_CONFIDENCE}" =~ ^[0-9]+$ ]]; then
         conf_json=",\"confidence\":${BOTSCAN_SIGNAL_CONFIDENCE}"
     fi
+    # v1.234.0 — carry the rule's REQUESTED ban duration (the caller sets
+    # BOTSCAN_SIGNAL_REQUESTED_TTL). Informational: the daemon keeps its established
+    # grey/ban mapping and logs/records requested beside effective.
+    if [[ -n "${BOTSCAN_SIGNAL_REQUESTED_TTL:-}" && "${BOTSCAN_SIGNAL_REQUESTED_TTL}" =~ ^[0-9]+$ && "${BOTSCAN_SIGNAL_REQUESTED_TTL}" -gt 0 ]]; then
+        conf_json+=",\"requested_ttl_sec\":${BOTSCAN_SIGNAL_REQUESTED_TTL}"
+    fi
 
     # v1.212 (OPEN_BOTSCAN_LOST_BAN_SIGNAL) — build the JSONL line once, then append it under a
     # SHARED flock so the Go consumer's atomic rename-then-consume hand-off can never destroy a
@@ -1802,7 +1897,7 @@ nftban_botscan_ban_ip() {
             score=50
             action="grey"
         fi
-        nftban_botscan_write_signal "$ip" "$score" "$action" "$source" "$reason"
+        BOTSCAN_SIGNAL_REQUESTED_TTL="$duration" nftban_botscan_write_signal "$ip" "$score" "$action" "$source" "$reason"
         echo "$(date -Iseconds)|$source|$ip|${duration}|SIGNAL|$reason" >> "$BOTSCAN_LOG_FILE"
         return 0
     fi
@@ -2251,6 +2346,9 @@ nftban_botscan_process_logs() {
     # (owner ruling rev 2: unreadable != zero activity, future != fresh activity; a drained
     # backlog older than the evidence horizon is OVERDUE, reported, never enforced).
     # No enforcement effect.
+    if (( _BS_T_UA_UNPARSED > 0 )); then
+        echo "BOTSCAN_PARSE ua_unparsed=${_BS_T_UA_UNPARSED} (lines without a trailing quoted User-Agent field: useragent rules skipped for them, never read as an empty UA)"
+    fi
     if (( _BS_T_PAT_STALE + _BS_T_PAT_UNREADABLE + _BS_T_PAT_FUTURE + _BS_T_TAIL_UNREADABLE + _BS_T_TAIL_FUTURE > 0 )); then
         echo "BOTSCAN_TIME_FILTER pattern_stale=${_BS_T_PAT_STALE} pattern_unreadable_time=${_BS_T_PAT_UNREADABLE} pattern_future=${_BS_T_PAT_FUTURE} tail_unreadable_time=${_BS_T_TAIL_UNREADABLE} tail_future=${_BS_T_TAIL_FUTURE} horizon=${_BS_PATTERN_EVIDENCE_HORIZON}s"
     fi
@@ -2304,6 +2402,28 @@ nftban_botscan_check() {
     nftban_botscan_process_logs "$@"
 }
 
+# v1.234.0 — requested vs effective ban duration, derived from the daemon's per-ban
+# evidence record (never a claim). The rule's BAN value is what BotScan REQUESTS; the
+# daemon enforces its own grey/ban mapping. Prints one "Ban duration:" line.
+nftban_botscan_duration_truth() {
+    local f="$1" l n=0 withreq=0 longer=0 last_req="" last_eff=""
+    if [[ ! -r "$f" ]]; then
+        echo "Ban duration:   UNMEASURED (no readable ban evidence at $f)"
+        return 0
+    fi
+    while IFS= read -r l; do
+        [[ "$l" =~ \"ttl_sec\":([0-9]+) ]] || continue
+        n=$(( n + 1 )); last_eff="${BASH_REMATCH[1]}"; last_req=""
+        if [[ "$l" =~ \"requested_ttl_sec\":([0-9]+) && "${BASH_REMATCH[1]}" -gt 0 ]]; then
+            last_req="${BASH_REMATCH[1]}"; withreq=$(( withreq + 1 ))
+            (( last_eff > last_req )) && longer=$(( longer + 1 ))
+        fi
+    done < "$f"
+    if (( n == 0 )); then echo "Ban duration:   no BotScan ban recorded yet"; return 0; fi
+    echo "Ban duration:   last ban requested ${last_req:-unknown (older record)}${last_req:+s}, enforced ${last_eff}s; ${longer} of ${withreq} bans with a recorded request were enforced longer than requested (daemon grey/ban mapping)"
+    return 0
+}
+
 # Status
 nftban_botscan_status() {
     nftban_botscan_load_config
@@ -2330,6 +2450,7 @@ nftban_botscan_status() {
     done
 
     echo "Patterns:       $enabled enabled / $total total"
+    nftban_botscan_duration_truth "${BOTSCAN_BAN_EVIDENCE_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_ban_evidence.jsonl}"
     echo ""
 
     # Log source

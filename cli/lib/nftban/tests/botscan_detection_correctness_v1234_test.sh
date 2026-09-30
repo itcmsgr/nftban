@@ -128,6 +128,17 @@ signals() {
     while IFS= read -r l; do [[ "$l" == *"\"ip\":\"$2\""* ]] && n=$(( n + 1 )); done < "$f"
     echo "$n"
 }
+# sigttl SB IP -> requested_ttl_sec carried by the FIRST ban signal for IP ("absent" if none)
+sigttl() {
+    local f="$1/data/botguard/batch_signals.jsonl" l
+    while IFS= read -r l; do
+        if [[ "$l" == *"\"ip\":\"$2\""* ]]; then
+            if [[ "$l" =~ \"requested_ttl_sec\":([0-9]+) ]]; then echo "${BASH_REMATCH[1]}"; else echo absent; fi
+            return 0
+        fi
+    done < "$f"
+    echo absent
+}
 # clf EPOCH -> CLF timestamp (fork-free, UTC, English month)
 clf() { local o; printf -v o '%(%d/%b/%Y:%H:%M:%S +0000)T' "$1"; printf '%s' "$o"; }
 # emit SB IP EPOCH METHOD TARGET STATUS [UA] -> append one access-log line to the spool object
@@ -325,6 +336,16 @@ check "R6 scanner User-Agent banned" "$(signals "$sb6" 45.33.32.68)" ge 1
 check "R6 fresh 404 flood banned" "$(signals "$sb6" 45.33.32.69)" ge 1
 check "R6 fresh endpoint flood banned" "$(signals "$sb6" 45.33.32.70)" ge 1
 
+# (e) duration visibility: every signal carries the duration the rule REQUESTS — the
+# patterns.d BAN column (EXP_WPREST 1800, EXP_GITCONFIG 7200), BOTSCAN_404_BAN (3600) and
+# BOTSCAN_ENDPOINT_FLOOD_BAN (3600). The daemon keeps its grey/ban mapping (asserted in
+# botscan_signal_ttl_v1234_test.go) and records requested beside effective.
+for pair in 61:1800 65:7200 69:3600 70:3600; do
+    got="$(sigttl "$sb6" "45.33.32.${pair%%:*}")"
+    if [[ "$got" == "${pair##*:}" ]]; then ok "R6 signal for .${pair%%:*} carries the requested duration ${pair##*:}s"
+    else bad "R6 signal for .${pair%%:*} carries requested_ttl_sec=$got, rule requests ${pair##*:}s"; fi
+done
+
 arm_begin "R6b latency-realistic delivery: pattern evidence 12 minutes old is still evidence"
 sb6b="$(new_sb latency)"
 t=$(( T0 + 25200 ))
@@ -388,15 +409,108 @@ cycle "$sb8" "$t"
 check "R8 enumeration after a login-looking 302 still banned" "$(signals "$sb8" 45.33.32.91)" ge 1
 
 # =============================================================================
+# R9 — each pattern fires at ITS documented threshold; unrelated patterns never top
+# each other up (BUG-BOTSCAN-PATTERN-THRESHOLD-CAPPED-AT-DEFAULT).
+# =============================================================================
+arm_begin "R9 documented thresholds, judged per pattern"
+sb9="$(new_sb perpattern)"
+t=$(( T0 + 39600 ))
+for (( i=0; i<19; i++ )); do emit "$sb9" 45.33.32.101 $(( t - 60 + i * 2 )) GET "/p$i" 200 'Mozilla/5.0 (compatible; PetalBot)'; done   # 19 < 20
+for (( i=0; i<20; i++ )); do emit "$sb9" 45.33.32.102 $(( t - 60 + i * 2 )) GET "/p$i" 200 'Mozilla/5.0 (compatible; PetalBot)'; done   # 20 == 20
+emit "$sb9" 45.33.32.103 $(( t - 50 )) GET '/.git/HEAD' 200; emit "$sb9" 45.33.32.103 $(( t - 40 )) GET '/server-status' 200         # 1/2 + 1/3
+emit "$sb9" 45.33.32.104 $(( t - 50 )) GET '/.git/HEAD' 200; emit "$sb9" 45.33.32.104 $(( t - 40 )) GET '/.git/index' 200           # 2/2
+cycle "$sb9" "$t"
+check "R9 PetalBot 19 hits (documented 20/60) not banned" "$(signals "$sb9" 45.33.32.101)" eq 0
+check "R9 PetalBot 20 hits banned (fires at T)" "$(signals "$sb9" 45.33.32.102)" ge 1
+check "R9 one hit each of two different rules (T=2, T=3) is not a ban" "$(signals "$sb9" 45.33.32.103)" eq 0
+check "R9 two hits of the T=2 rule banned" "$(signals "$sb9" 45.33.32.104)" ge 1
+
+# =============================================================================
+# R10 — a User-Agent containing escaped quotes is parsed, not read as "-"
+# (BUG-BOTSCAN-UA-PARSE-ESCAPED-QUOTE-BECOMES-DASH).
+# =============================================================================
+arm_begin "R10 escaped-quote User-Agent"
+sb10="$(new_sb uaquote)"
+t=$(( T0 + 43200 ))
+for (( i=0; i<25; i++ )); do emit "$sb10" 45.33.32.105 $(( t - 55 + i * 2 )) GET "/page-$i/" 200 '\"Mozilla/5.0 (Windows NT 10.0) Chrome/140.0\"'; done
+emit "$sb10" 45.33.32.106 $(( t - 30 )) GET '/' 200 '\"sqlmap/1.7#stable\"'
+# common log format (no User-Agent field at all): unparseable UA must not become "-"
+for (( i=0; i<25; i++ )); do printf '45.33.32.107 - - [%s] "GET /page-%d/ HTTP/1.1" 200 512\n' "$(clf $(( t - 55 + i * 2 )))" "$i" >> "$sb10/spool/$OBJ"; done
+# negative control: a client that really sends NO User-Agent ("-") 25x in 50 s still meets
+# SINGLE_DASH's documented 20/60 s
+for (( i=0; i<25; i++ )); do emit "$sb10" 45.33.32.108 $(( t - 55 + i * 2 )) GET "/page-$i/" 200 '-'; done
+cycle "$sb10" "$t"
+check "R10 real visitor with an escaped-quote UA (25 req/50 s) not banned as an empty UA" "$(signals "$sb10" 45.33.32.105)" eq 0
+check "R10 scanner UA inside escaped quotes still matched (sqlmap)" "$(signals "$sb10" 45.33.32.106)" ge 1
+check "R10 common-format lines (no UA field) are not empty-UA evidence" "$(signals "$sb10" 45.33.32.107)" eq 0
+check "R10 NC: a real empty UA (\"-\") at 25/50 s is still banned by SINGLE_DASH" "$(signals "$sb10" 45.33.32.108)" ge 1
+if grep -q '^BOTSCAN_PARSE ua_unparsed=[1-9]' "$LAST_OUT"; then ok "R10 unparseable User-Agent lines are REPORTED"; else bad "R10 unparseable User-Agent lines not reported"; fi
+
+# =============================================================================
+# R11 — a LARGE months-old backlog (the stalled-timer / 1 GiB July spool case) resumed
+# in one cycle: exploit hits, a 404 flood and an endpoint flood, all months old.
+# =============================================================================
+arm_begin "R11 months-old backlog resumed"
+sb11="$(new_sb oldbacklog)"
+t=$(( T0 + 46800 )); jul=$(( t - 80 * 86400 ))
+{
+    for (( i=0; i<1500; i++ )); do printf '45.33.32.199 - - [%s] "GET /page-%d/ HTTP/1.1" 200 512 "-" "Mozilla/5.0"\n' "$(clf $(( jul + i )))" "$i"; done
+    for (( i=0; i<40; i++ )); do printf '45.33.32.1%02d - - [%s] "GET /.git/config HTTP/1.1" 404 512 "-" "x"\n' "$(( 10 + i % 40 ))" "$(clf $(( jul + 2000 + i )))"; done
+    for (( i=0; i<200; i++ )); do printf '45.33.32.111 - - [%s] "GET /miss-%d.php HTTP/1.1" 404 512 "-" "x"\n' "$(clf $(( jul + 3000 + i / 4 )))" "$i"; done
+    for (( i=0; i<200; i++ )); do printf '45.33.32.112 - - [%s] "POST /xmlrpc.php HTTP/1.1" 200 512 "-" "x"\n' "$(clf $(( jul + 4000 + i / 10 )))"; done
+    for (( i=0; i<5; i++ )); do printf '45.33.32.113 - - [%s] "GET / HTTP/1.1" 200 512 "-" "sqlmap/1.7"\n' "$(clf $(( jul + 5000 + i )))"; done
+} >> "$sb11/spool/$OBJ"
+cycle "$sb11" "$t"
+b11=0; for (( i=10; i<50; i++ )); do b11=$(( b11 + $(signals "$sb11" "45.33.32.1$(printf '%02d' "$i")") )); done
+check "R11 80-day-old exploit hits (40 IPs) not banned" "$b11" eq 0
+check "R11 80-day-old 404 flood not banned" "$(signals "$sb11" 45.33.32.111)" eq 0
+check "R11 80-day-old endpoint flood not banned" "$(signals "$sb11" 45.33.32.112)" eq 0
+check "R11 80-day-old scanner UA not banned" "$(signals "$sb11" 45.33.32.113)" eq 0
+if grep -q '^BOTSCAN_TIME_FILTER .*pattern_stale=[1-9]' "$LAST_OUT"; then ok "R11 the stale backlog is REPORTED"; else bad "R11 stale backlog not reported"; fi
+
+# =============================================================================
+# R12 — a spool object kept forever by CURSOR_CONFLICT (two cursor authorities
+# disagree -> the reaper keeps it, measured on a production host for 1,514 cycles).
+# Its 2 MiB tail is re-read every cycle: one burst must be ONE signal, not one per cycle.
+# =============================================================================
+arm_begin "R12 CURSOR_CONFLICT object re-read every cycle"
+sb12="$(new_sb conflict)"
+t=$(( T0 + 50400 ))
+for (( i=0; i<60; i++ )); do emit "$sb12" 45.33.32.121 $(( t - 70 + i )) GET "/gone-$i.html" 404; done
+for (( i=0; i<40; i++ )); do emit "$sb12" 45.33.32.122 $(( t - 40 + i / 2 )) POST '/xmlrpc.php' 200; done
+mkdir -p "$sb12/data/botscan/proc-offsets"
+printf '0:0\n' > "$sb12/data/botscan/proc-offsets/_botscan_spool_$OBJ"                                          # canonical
+printf '1:1\n' > "$sb12/data/botscan/proc-offsets/$(printf '%s/' "$sb12/spool" | tr '/' '_')$OBJ"               # legacy, disagreeing
+cycle "$sb12" "$t"; cycle "$sb12" $(( t + 600 )); cycle "$sb12" $(( t + 1200 ))
+if [[ -f "$sb12/spool/$OBJ" ]] && grep -q 'CURSOR_CONFLICT' "$sb12/botscan.log"; then
+    ok "R12 precondition: the object was KEPT under CURSOR_CONFLICT for 3 cycles"
+    check "R12 404 flood in the kept object: exactly one signal over 3 cycles" "$(signals "$sb12" 45.33.32.121)" eq 1
+    check "R12 endpoint flood in the kept object: exactly one signal over 3 cycles" "$(signals "$sb12" 45.33.32.122)" eq 1
+else
+    bad "R12 precondition NOT met (object reaped or no CURSOR_CONFLICT) — arm not executed"
+fi
+
+# =============================================================================
 # S — STRUCTURAL: evidence horizon vs the shipped timer units; prefilter soundness.
 # =============================================================================
 arm_begin "S1 evidence horizon covers the shipped timer units"
-unit() { local v; v="$(grep -E "^$2=" "$REPO_ROOT/install/systemd/$1" | head -1 | cut -d= -f2)"; case "$v" in *min) echo $(( ${v%min} * 60 ));; *s) echo "${v%s}";; *) echo "$v";; esac; }
-cperiod=$(( $(unit nftban-botscan-collector.timer OnUnitActiveSec) + $(unit nftban-botscan-collector.timer RandomizedDelaySec) + $(unit nftban-botscan-collector.timer AccuracySec) ))
-pperiod=$(( $(unit nftban-botscan.timer OnUnitActiveSec) + $(unit nftban-botscan.timer RandomizedDelaySec) + $(unit nftban-botscan.timer AccuracySec) ))
-prun=$(unit nftban-botscan.service TimeoutStartSec)
-need=$(( 2 * cperiod + 2 * pperiod + prun ))
-if [[ "$D" =~ ^[0-9]+$ ]]; then check "S1 D >= 2*collector + 2*processor period + one processor run (${need}s)" "$D" ge "$need"; else bad "S1 subject defines no evidence horizon"; fi
+unit() { # unit FILE KEY -> seconds (first KEY= line; no pipe into a short-circuiting consumer)
+    local l v=""
+    while IFS= read -r l; do [[ "$l" == "$2="* ]] && { v="${l#*=}"; break; }; done < "$REPO_ROOT/install/systemd/$1"
+    case "$v" in *min) v=$(( ${v%min} * 60 ));; *s) v="${v%s}";; esac
+    [[ "$v" =~ ^[0-9]+$ ]] && echo "$v" || echo "MISSING:$1:$2"   # unreadable is never 0
+}
+U=( "$(unit nftban-botscan-collector.timer OnUnitActiveSec)" "$(unit nftban-botscan-collector.timer RandomizedDelaySec)" "$(unit nftban-botscan-collector.timer AccuracySec)"
+    "$(unit nftban-botscan.timer OnUnitActiveSec)" "$(unit nftban-botscan.timer RandomizedDelaySec)" "$(unit nftban-botscan.timer AccuracySec)"
+    "$(unit nftban-botscan.service TimeoutStartSec)" )
+if [[ "${U[*]}" == *MISSING* ]]; then
+    bad "S1 cannot derive the delivery bound from the timer units: ${U[*]}"
+elif [[ ! "$D" =~ ^[0-9]+$ ]]; then
+    bad "S1 subject defines no evidence horizon"
+else
+    need=$(( 2 * (U[0] + U[1] + U[2]) + 2 * (U[3] + U[4] + U[5]) + U[6] ))
+    check "S1 D >= 2*collector + 2*processor period + one processor run (${need}s)" "$D" ge "$need"
+fi
 
 arm_begin "S2 prefilter keeps every positive-control line (per-pattern relaxed regex)"
 S2_OUT="$(bash -c '
@@ -429,9 +543,72 @@ L
 ' _ "$ROOT/s2" "$SUBJ_PAT" "$SUBJ_LIB" 2>&1 || true)"
 if grep -q '^MISSES=0$' <<<"$S2_OUT"; then ok "S2 prefilter sound for every positive control"; else bad "S2 prefilter drops candidates: $(tr '\n' ' ' <<<"$S2_OUT")"; fi
 
+arm_begin "S3 DirectAdmin nginx_proxy reads one log family"
+S3_OUT="$(bash -c '
+    set -uo pipefail; printf "x=1\nnginx_proxy=1\n" > "$1/da_proxy.conf"
+    source "$2/lib/nftban_http_logs.sh" >/dev/null 2>&1
+    echo "PROXY:$(NFTBAN_DA_CONF="$1/da_proxy.conf" nftban_http_candidate_globs directadmin | tr "\n" " ")"
+    echo "PLAIN:$(NFTBAN_DA_CONF="$1/absent.conf" nftban_http_candidate_globs directadmin | tr "\n" " ")"
+' _ "$ROOT" "$SUBJ_LIB" 2>&1 || true)"
+if grep -q '^PROXY:.*/var/log/nginx/domains/' <<<"$S3_OUT" && ! grep -q '^PROXY:.*/var/log/httpd/domains/' <<<"$S3_OUT"; then
+    ok "S3 nginx_proxy=1: only the nginx (front-end) family is read"; else bad "S3 nginx_proxy=1 still reads both families: $S3_OUT"; fi
+if grep -q '^PLAIN:.*/var/log/httpd/domains/' <<<"$S3_OUT" && grep -q '^PLAIN:.*/var/log/nginx/domains/' <<<"$S3_OUT"; then
+    ok "S3 without nginx_proxy both families are still read"; else bad "S3 plain DirectAdmin lost a family: $S3_OUT"; fi
+
+arm_begin "S4 override.local is readable by the scanner's group"
+S4_OUT="$(bash -c '
+    set -uo pipefail; d="$1/pat_override"; mkdir -p "$d"; chmod 0750 "$d"
+    g2=""; for g in $(id -G); do [[ "$g" != "$(id -g)" ]] && { g2="$g"; break; }; done
+    [[ -n "$g2" ]] && chgrp "$g2" "$d"
+    export NFTBAN_LIB_DIR="$2" NFTBAN_DATA_DIR="$1/s4data" BOTSCAN_PATTERNS_DIR="$d"
+    source "$2/core/nftban_botscan.sh" >/dev/null 2>&1
+    nftban_botscan_set_override EXP_WPREST false; umask 077; nftban_botscan_set_override EXP_WPREST true
+    echo "MODE=$(stat -c %a "$d/override.local") FGRP=$(stat -c %g "$d/override.local") DGRP=$(stat -c %g "$d") G2=${g2:-none}"
+' _ "$ROOT" "$SUBJ_LIB" 2>&1 || true)"
+if [[ "$S4_OUT" =~ MODE=640\ FGRP=([0-9]+)\ DGRP=([0-9]+)\ G2=(.*) ]]; then
+    ok "S4 override.local mode 0640 even under umask 077"
+    if [[ "${BASH_REMATCH[3]}" == none ]]; then echo "   S4 group arm NOT_EXECUTED: no secondary group available on this host (diagnostic)"
+    elif [[ "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]]; then ok "S4 override.local carries the pattern directory's group"
+    else bad "S4 override.local group ${BASH_REMATCH[1]} != directory group ${BASH_REMATCH[2]}"; fi
+else
+    bad "S4 override.local not group-readable: $S4_OUT"
+fi
+
+arm_begin "S5 an unreadable operator override is reported, a readable one applies"
+sb5o="$(new_sb override_vis)"
+t=$(( T0 + 54000 ))
+printf 'SQLMAP|false\n' > "$sb5o/patterns/override.local"; chmod 0640 "$sb5o/patterns/override.local"
+emit "$sb5o" 45.33.32.131 $(( t - 30 )) GET '/' 200 'sqlmap/1.7'
+cycle "$sb5o" "$t"
+check "S5 readable override.local disables the rule (sqlmap not banned)" "$(signals "$sb5o" 45.33.32.131)" eq 0
+if [[ "$(id -u)" -ne 0 ]]; then
+    chmod 0000 "$sb5o/patterns/override.local"
+    emit "$sb5o" 45.33.32.132 $(( t + 570 )) GET '/' 200 'sqlmap/1.7'
+    cycle "$sb5o" $(( t + 600 ))
+    if grep -q 'override.local exists but is NOT readable' "$LAST_OUT"; then ok "S5 unreadable override.local is REPORTED (not silently ignored)"; else bad "S5 unreadable override.local silently ignored"; fi
+    check "S5 with the override unreadable the shipped rule applies (visible, fail-safe)" "$(signals "$sb5o" 45.33.32.132)" ge 1
+    chmod 0640 "$sb5o/patterns/override.local"
+else
+    echo "   S5 unreadable arm NOT_EXECUTED: running as root (root reads a 0000 file)"
+fi
+
+arm_begin "S6 requested vs effective ban duration is visible in status"
+S6_OUT="$(bash -c '
+    export NFTBAN_LIB_DIR="$2" NFTBAN_DATA_DIR="$1/s6data"
+    source "$2/core/nftban_botscan.sh" >/dev/null 2>&1
+    declare -F nftban_botscan_duration_truth >/dev/null || { echo "NOFUNC"; exit 0; }
+    f="$1/s6_evidence.jsonl"
+    printf "%s\n" "{\"ip\":\"45.33.32.61\",\"action\":\"grey\",\"ttl_sec\":3600,\"requested_ttl_sec\":1800}" \
+                  "{\"ip\":\"45.33.32.62\",\"action\":\"ban\",\"ttl_sec\":86400,\"requested_ttl_sec\":3600}" > "$f"
+    nftban_botscan_duration_truth "$f"; nftban_botscan_duration_truth "$1/absent.jsonl"
+' _ "$ROOT" "$SUBJ_LIB" 2>&1 || true)"
+if grep -q 'last ban requested 3600s, enforced 86400s; 2 of 2 bans with a recorded request were enforced longer than requested' <<<"$S6_OUT"; then
+    ok "S6 status shows requested beside effective, from the ban evidence"; else bad "S6 duration visibility missing: $(tr '\n' ' ' <<<"$S6_OUT")"; fi
+if grep -q 'Ban duration:   UNMEASURED' <<<"$S6_OUT"; then ok "S6 no evidence -> UNMEASURED, never a claim"; else bad "S6 absent evidence not reported as UNMEASURED"; fi
+
 # =============================================================================
 echo "----"
-EXPECTED_ARMS=17
+EXPECTED_ARMS=25
 echo "arms run: $ARMS_RUN/$EXPECTED_ARMS  pass=$PASS fail=$FAIL"
 [[ "$ARMS_RUN" -eq "$EXPECTED_ARMS" ]] || { echo "INCOMPLETE: $ARMS_RUN of $EXPECTED_ARMS arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi
