@@ -210,6 +210,25 @@ done
 unguarded=$(grep -nE '^[[:space:]]*ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq[[:space:]]*$' "$POSTINST" "$BUILD_SH" || true)
 [[ -z "$unguarded" ]] && ok "T11 no bare 'ln -sf ... /usr/bin/yq' statement left in the scriptlets" || no "T11 bare ln -sf left" "$unguarded"
 
+# T12 — RPM upgrade ordering: the OLD %preun runs AFTER the NEW %post, so an unconditional
+# owned-flag strip there undid the new installer's +i (measured on el9-clean). Execute the
+# real %preun strip block with $1=1 (upgrade) and $1=0 (erase) over sandbox copies.
+mk_tree
+preun=$(awk '/^%preun$/{p=1;next} p && /^# MFST-C3/{exit} p' "$BUILD_SH" | sed -e 's/\\\$/$/g' \
+    -e "s#/etc/nftban/nftban.conf#$S/etc/nftban/nftban.conf#g" -e "s#/usr/lib/nftban/lib/nft_schema.sh#$S/usr/lib/nftban/lib/nft_schema.sh#g")
+if ! grep -q 'chattr -i' <<< "$preun"; then
+    no "T12 %preun strip block found" "no chattr -i in %preun"
+else
+    : > "$WORK/chattr.log"
+    env -i PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log" sh -c "$preun" _ 1 >/dev/null 2>&1 || true
+    [[ ! -s "$WORK/chattr.log" ]] && ok "T12 RPM %preun on upgrade (\$1=1) leaves NFTBan-owned +i alone" \
+        || no "T12 RPM %preun on upgrade leaves owned +i alone" "$(tr '\n' ';' < "$WORK/chattr.log")"
+    : > "$WORK/chattr.log"
+    env -i PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log" sh -c "$preun" _ 0 >/dev/null 2>&1 || true
+    [[ $(grep -c 'chattr -i' "$WORK/chattr.log") -eq 2 ]] && ok "T12b RPM %preun on erase (\$1=0) still unlocks both owned files" \
+        || no "T12b RPM %preun on erase unlocks owned files" "$(tr '\n' ';' < "$WORK/chattr.log")"
+fi
+
 echo "----------------------------------------------------------"
 echo "RESULT: PASS=$PASS FAIL=$FAIL"
 if (( FAIL > 0 )); then printf '  failed: %s\n' "${FAILED[@]}"; exit 1; fi

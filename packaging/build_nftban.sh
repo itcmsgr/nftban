@@ -1779,12 +1779,20 @@ done
 exit 0
 
 %preun
-# Remove immutable flags before uninstall/upgrade
-for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
-    if [ -f "\$immutable_file" ]; then
-        chattr -i "\$immutable_file" 2>/dev/null || true
-    fi
-done
+# Remove NFTBan-owned immutable flags before a COMPLETE uninstall only.
+# v1.234 (BUG-RPM-UPGRADE-OLD-PREUN-STRIPS-OWNED-FLAGS): on upgrade/reinstall
+# RPM runs the OLD package's %preun AFTER the NEW package's %post, so an
+# unconditional strip here undid the +i that the new installer had just set
+# (measured on el9-clean: installer.log "set immutable", lsattr shows none).
+# Upgrade needs no strip here: the new %pretrans already unlocked the files
+# before unpack, and files shared with the new package are not removed.
+if [ "\$1" -eq 0 ]; then
+    for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+        if [ -f "\$immutable_file" ]; then
+            chattr -i "\$immutable_file" 2>/dev/null || true
+        fi
+    done
+fi
 # MFST-C3: systemd stop/disable/mask cleanup is generated from
 #   install/packaging/systemd/nftban-systemd-install.list (active units)
 #   build/deprecated-units.yaml                            (deprecated units)
