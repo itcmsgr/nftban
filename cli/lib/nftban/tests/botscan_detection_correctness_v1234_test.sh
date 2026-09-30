@@ -160,7 +160,14 @@ check() { # check NAME ACTUAL OP EXPECTED
 }
 arm_begin() { ARMS_RUN=$(( ARMS_RUN + 1 )); echo "== $1"; }
 
-T0=1790740800   # 2026-09-30T00:00:00Z — synthetic arms are placed relative to this day
+# Synthetic arms are placed relative to T0 = YESTERDAY 00:00Z, so every pinned "now" lies in
+# the PAST of the real clock. That matters only for an OLDER subject run through
+# BSDC_SUBJECT_ROOT: v1.233.1 stamps first_seen with the REAL clock (printf '%(%s)T', which
+# no shim can pin) and decides `pinned_now - first_seen <= window`; a pinned now in the real
+# clock's future would make it refuse bans it really makes (measured: an observation artefact,
+# not its behaviour). In the past, that difference is <= 0 and v1.233.1 decides exactly as it
+# does in production. The replay fixture's own dates (2026-09-30) are in the past as well.
+T0=$(( ( $(date -u +%s) / 86400 - 1 ) * 86400 ))
 
 # =============================================================================
 # R1/R2 — REPLAY: the recorded editing session on its recorded timer schedule.
