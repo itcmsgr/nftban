@@ -26,6 +26,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
+	"github.com/itcmsgr/nftban/internal/installer/immutable"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
@@ -53,88 +54,10 @@ func WriteAuthorityFiles(exec executor.Executor, decision authority.Decision, lo
 	}
 }
 
-// ImmutableOwnedRecord is the ownership record of the +i flags NFTBan itself set
-// or cleared (v1.234, PR #1439). Format, one line per file:
-//
-//	<path> TAB <inode> TAB <ctime epoch s> TAB <locked|unlocked> TAB <written at epoch s>
-//
-// The shell side (cli/lib/nftban/lib/nftban_immutable_owned.sh, inlined into the
-// package scripts) only removes or restores a flag whose current inode AND ctime
-// match an entry: ctime changes on every later attribute change, so a match proves
-// nobody touched the flag since NFTBan did. A path name never proves ownership.
-const ImmutableOwnedRecord = fhs.StateDir + "/immutable-owned"
+// ImmutableOwnedRecord / installerLogPath: see internal/installer/immutable.
+const ImmutableOwnedRecord = immutable.RecordPath
 
-// installerLogPath is where pre-v1.234 installers logged "set immutable: <path>".
-const installerLogPath = "/var/log/nftban/installer.log"
-
-type immutEntry struct {
-	path, ino, ctime, state, at string
-}
-
-func readImmutRecord(exec executor.Executor) map[string]immutEntry {
-	out := map[string]immutEntry{}
-	data, err := exec.ReadFile(ImmutableOwnedRecord)
-	if err != nil {
-		return out
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		f := strings.Split(line, "\t")
-		if len(f) != 5 || f[0] == "" {
-			continue
-		}
-		out[f[0]] = immutEntry{f[0], f[1], f[2], f[3], f[4]}
-	}
-	return out
-}
-
-// inoCtime returns "<inode>", "<ctime epoch s>" via stat(1) (executor contract is
-// frozen; stat keeps this mockable).
-func inoCtime(exec executor.Executor, path string) (string, string, bool) {
-	res := exec.Run("stat", "-c", "%i %Z", path)
-	if res.ExitCode != 0 {
-		return "", "", false
-	}
-	f := strings.Fields(strings.TrimSpace(res.Stdout))
-	if len(f) != 2 {
-		return "", "", false
-	}
-	return f[0], f[1], true
-}
-
-// hasImmutable reports (flag present, measured).
-func hasImmutable(exec executor.Executor, path string) (bool, bool) {
-	res := exec.Run("lsattr", "-d", path)
-	if res.ExitCode != 0 {
-		return false, false
-	}
-	f := strings.Fields(res.Stdout)
-	if len(f) < 1 {
-		return false, false
-	}
-	return strings.Contains(f[0], "i"), true
-}
-
-// legacyLogProves reports whether installer.log holds a pre-v1.234 "set immutable"
-// line for path whose timestamp equals the file's ctime (+0..2 s): NFTBan's chattr
-// was then the last change to the inode.
-func legacyLogProves(exec executor.Executor, path, ctime string) bool {
-	ct, err := strconv.ParseInt(ctime, 10, 64)
-	if err != nil {
-		return false
-	}
-	data, err := exec.ReadFile(installerLogPath)
-	if err != nil {
-		return false
-	}
-	log := string(data)
-	for d := int64(0); d <= 2; d++ {
-		ts := time.Unix(ct+d, 0).UTC().Format("2006-01-02T15:04:05Z")
-		if strings.Contains(log, ts+" [DEBUG] set immutable: "+path) {
-			return true
-		}
-	}
-	return false
-}
+const installerLogPath = immutable.InstallerLogPath
 
 // SetImmutableFlags applies NFTBan's +i policy to its security-critical files
 // (G8 parity) and RECORDS each flag it sets, so later removal or restoration can
@@ -156,28 +79,28 @@ func SetImmutableFlags(exec executor.Executor, log *logging.Logger) {
 		"/usr/lib/nftban/lib/nft_schema.sh",
 	}
 
-	prev := readImmutRecord(exec)
+	prev := immutable.ReadRecord(exec)
 	var lines []string
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 	for _, path := range immutableFiles {
 		if !exec.FileExists(path) {
 			continue
 		}
-		has, measured := hasImmutable(exec, path)
+		has, measured := immutable.HasImmutable(exec, path)
 		if !measured {
 			log.Warn("immutable flag on %s UNMEASURED (lsattr failed) — not set, not recorded", path)
 			continue
 		}
 		if has {
-			ino, ct, ok := inoCtime(exec, path)
+			ino, ct, ok := immutable.InoCtime(exec, path)
 			if !ok {
 				continue
 			}
 			e, inRec := prev[path]
 			switch {
-			case inRec && e.state == "locked" && e.ino == ino && e.ctime == ct:
-				lines = append(lines, strings.Join([]string{path, ino, ct, "locked", e.at}, "\t"))
-			case legacyLogProves(exec, path, ct):
+			case inRec && e.State == "locked" && e.Ino == ino && e.Ctime == ct:
+				lines = append(lines, strings.Join([]string{path, ino, ct, "locked", e.At}, "\t"))
+			case !inRec && immutable.LegacyLogProves(exec, path, ct):
 				lines = append(lines, strings.Join([]string{path, ino, ct, "locked", now}, "\t"))
 				log.Debug("adopted pre-v1.234 NFTBan immutable flag into the ownership record: %s", path)
 			default:
@@ -191,7 +114,7 @@ func SetImmutableFlags(exec executor.Executor, log *logging.Logger) {
 			continue
 		}
 		log.Debug("set immutable: %s", path)
-		if ino, ct, ok := inoCtime(exec, path); ok {
+		if ino, ct, ok := immutable.InoCtime(exec, path); ok {
 			lines = append(lines, strings.Join([]string{path, ino, ct, "locked", now}, "\t"))
 		}
 	}

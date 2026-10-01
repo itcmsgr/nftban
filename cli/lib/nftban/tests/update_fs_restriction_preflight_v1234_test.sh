@@ -172,6 +172,49 @@ if [[ $rc -eq 0 ]] && grep -q "^chattr -i -- $SCHEMA" "$WORK/chattr.log"; then
     ok "T5 pre-v1.234 flag adopted only with installer.log proof at its ctime"
 else no "T5 legacy proof" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
 
+# T5b — owner direction: a historical installer.log line proves a historical action,
+# not ownership of TODAY's flag. Every negative case must be REFUSED (no chattr).
+legacy_neg() {  # LABEL — expects refusal with the current tree/log/record
+    local rc=0; run_subject '_remove_immutable_flags' || rc=$?
+    if [[ $rc -ne 0 && ! -s "$WORK/chattr.log" ]]; then ok "$1"; else no "$1" "rc=$rc chattr=$(tr '\n' ';' < "$WORK/chattr.log")"; fi
+}
+ts_of(){ date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+mk_tree; setattr "----i---------e-------" "$SCHEMA"; ct=$(stat -c %Z "$SCHEMA")
+echo "$(ts_of $((ct - 5))) [DEBUG] set immutable: $SCHEMA" > "$WORK/installer.log"
+legacy_neg "T5b-a NFTBan set it earlier, admin removed and re-set it (same inode, ctime moved): refused"
+mk_tree; setattr "----i---------e-------" "$SCHEMA"; ct=$(stat -c %Z "$SCHEMA")
+echo "$(ts_of $((ct + 1))) [DEBUG] set immutable: $SCHEMA" > "$WORK/installer.log"
+legacy_neg "T5b-a2 log line one second off the ctime: refused (no tolerance window)"
+mk_tree; setattr "----i---------e-------" "$SCHEMA"; ct=$(stat -c %Z "$SCHEMA")
+{ echo "$(ts_of "$ct") [DEBUG] set immutable: $SCHEMA"; echo "$(ts_of $((ct + 60))) [DEBUG] set immutable: $SCHEMA"; } > "$WORK/installer.log"
+legacy_neg "T5b-c matching line is not the LAST one for the path: refused"
+mk_tree; setattr "----i---------e-------" "$SCHEMA"; ct=$(stat -c %Z "$SCHEMA")
+echo "$(ts_of "$ct") [DEBUG] set immutable: $SCHEMA.bak" > "$WORK/installer.log"
+legacy_neg "T5b-c2 line for another path with the same prefix: refused"
+mk_tree; old_ino=$(stat -c %i "$SCHEMA"); old_ct=$(stat -c %Z "$SCHEMA")
+printf '%s\t%s\t%s\tlocked\t1\n' "$SCHEMA" "$old_ino" "$old_ct" > "$WORK/record"
+sleep 1; cp "$SCHEMA" "$SCHEMA.new"; mv -f "$SCHEMA.new" "$SCHEMA"; setattr "----i---------e-------" "$SCHEMA"
+echo "$(ts_of "$(stat -c %Z "$SCHEMA")") [DEBUG] set immutable: $SCHEMA" > "$WORK/installer.log"
+legacy_neg "T5b-b admin replaced the file (new inode) and set +i; the record knows the path: refused even with a same-second log line"
+if grep -q 'deliberate removal of one specific protection' "$WORK/out" && ! grep -qi 'clear it with chattr -i and retry' "$WORK/out"; then
+    ok "T5c refusal guidance: a conscious administrator decision on a named path, not a repair step"
+else no "T5c guidance wording" "$(grep -iE 'chattr|deliberate' "$WORK/out" | head -3 | tr '\n' ';')"; fi
+
+# T5d — re-lock is checked: a failing chattr +i or a changed file is REPORTED, never silent.
+mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
+cat > "$WORK/chattr_fail_plus" <<'EOF2'
+#!/usr/bin/env bash
+[[ "$1" == "+i" ]] && { echo "chattr $*" >> "$CHATTR_LOG"; exit 1; }
+exec "$(dirname "$0")/chattr.real" "$@"
+EOF2
+cp "$STUB/chattr" "$STUB/chattr.real"; cp "$WORK/chattr_fail_plus" "$STUB/chattr"; chmod +x "$STUB/chattr"
+rc=0; run_subject '_remove_immutable_flags; _restore_owned_immutable_flags' || rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'Could NOT re-apply' "$WORK/out"; then ok "T5d re-lock failure reported with the path (rc!=0)"; else no "T5d relock failure" "rc=$rc $(tail -c 300 "$WORK/out")"; fi
+cp "$STUB/chattr.real" "$STUB/chattr"; rm -f "$STUB/chattr.real"
+mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
+rc=0; run_subject '_remove_immutable_flags; cp "$NFTBAN_CONFIG_DIR/nftban.conf" /tmp/x.$$ 2>/dev/null; rm -f "$NFTBAN_CONFIG_DIR/nftban.conf"; mv /tmp/x.$$ "$NFTBAN_CONFIG_DIR/nftban.conf"; _restore_owned_immutable_flags' || rc=$?
+if grep -q 'changed since; protection not re-applied' "$WORK/out"; then ok "T5e file changed after NFTBan unlocked it: not re-locked blindly, reported"; else no "T5e NOT_RELOCKED" "rc=$rc $(tail -c 300 "$WORK/out")"; fi
+
 # T6 — distinct causes; an immutable directory blocks its own entries, not the tree.
 mk_tree; setattr "----i------I--e-------" "$S/usr/lib/nftban/bin"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
@@ -179,11 +222,11 @@ if [[ $rc -ne 0 && ! -s "$WORK/chattr.log" ]] && grep -qF "IMMUTABLE dir $S/usr/
     ok "T6a immutable destination directory refused"; else no "T6a immutable dir" "rc=$rc"; fi
 mk_tree; echo "$S/usr/lib/nftban ro,relatime" >> "$WORK/mountdb"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
-if [[ $rc -ne 0 ]] && grep -q "READ-ONLY dir $S/usr/lib/nftban" "$WORK/out" && ! grep -q 'IMMUTABLE' "$WORK/out"; then
+if [[ $rc -ne 0 ]] && grep -q "READ-ONLY dir $S/usr/lib/nftban" "$WORK/out" && ! grep -qE 'IMMUTABLE (file|dir) ' "$WORK/out"; then
     ok "T6b read-only mount refused as READ-ONLY (not immutable)"; else no "T6b read-only" "rc=$rc"; fi
 mk_tree; echo "$S/usr/sbin" > "$WORK/deny"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
-if [[ $rc -ne 0 ]] && grep -q "WRITE-DENIED dir $S/usr/sbin" "$WORK/out" && ! grep -q 'IMMUTABLE' "$WORK/out"; then
+if [[ $rc -ne 0 ]] && grep -q "WRITE-DENIED dir $S/usr/sbin" "$WORK/out" && ! grep -qE 'IMMUTABLE (file|dir) ' "$WORK/out"; then
     ok "T6c permission/MAC denial refused as WRITE-DENIED (not immutable)"; else no "T6c write-denied" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
 mk_tree; setattr "----i------I--e-------" "$S/usr/lib/nftban/data"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
@@ -241,6 +284,28 @@ pretrans=$(awk '/^%pretrans -p <lua>$/{p=1;next} p && /^%pre$/{exit} p' "$BUILD_
 if ! grep -qE 'chattr -i -R|chattr -R -i' <<< "$pretrans" && grep -q 'nftban_immut_pkg_preflight rpm' <<< "$pretrans"; then
     ok "T11e RPM pretrans: shared preflight, no recursive unlock"
 else no "T11e pretrans shape" "recursive unlock present or shared preflight missing"; fi
+
+# T13 — failure exits re-lock what was unlocked: DEB preinst EXIT trap, DEB postrm and
+# postinst abort branches, RPM pre EXIT trap (shape; behaviour is package-native).
+pre_src=$(cat "$REPO/packaging/deb/preinst"); postrm_src=$(cat "$REPO/packaging/deb/postrm")
+rpm_pre=$(awk '$0=="%pre" {p=1; next} p && /^%[a-z]+( |$)/ {exit} p' "$BUILD_SH")
+if grep -q "trap '_nftban_rc=\$?; if \[ \"\$_nftban_rc\" -ne 0 \]; then nftban_immut_relock_owned" <<< "$pre_src" \
+   && grep -A4 'abort-install|abort-upgrade)' <<< "$postrm_src" | grep -q nftban_immut_relock_owned \
+   && grep -A3 'abort-upgrade|abort-remove|abort-deconfigure)' "$POSTINST" | grep -q nftban_immut_relock_owned \
+   && grep -q 'nftban_immut_relock_owned' <<< "$rpm_pre" && grep -q 'trap ' <<< "$rpm_pre"; then
+    ok "T13 every failure exit after an unlock re-applies it (DEB preinst trap, postrm/postinst abort, RPM pre trap)"
+else no "T13 failure-path relock" "missing trap/abort relock"; fi
+
+# T14 — unlock-authority gate: source tree clean, and it catches a planted unchecked unlock.
+GATE="$REPO/scripts/ci/check-immutable-unlock-authority.sh"
+if [[ -f "$GATE" ]] && bash "$GATE" >/dev/null 2>&1; then ok "T14a no chattr -i/-R outside the proven-ownership implementation (source)"; else no "T14a unlock gate on source" "gate missing or FAIL"; fi
+if [[ -f "$GATE" ]]; then
+    F="$WORK/fx"; mkdir -p "$F/scripts/ci" "$F/packaging/deb" "$F/cli" "$F/internal" "$F/cmd"
+    cp "$GATE" "$F/scripts/ci/"; for x in preinst postinst prerm postrm; do echo '#!/bin/sh' > "$F/packaging/deb/$x"; done
+    printf '#!/bin/sh\nchattr -i /etc/nftban/nftban.conf\n' > "$F/packaging/deb/preinst"; : > "$F/packaging/build_nftban.sh"
+    rc=0; bash "$F/scripts/ci/check-immutable-unlock-authority.sh" >/dev/null 2>&1 || rc=$?
+    if [[ $rc -eq 1 ]]; then ok "T14b gate FAILS on a planted unchecked chattr -i (negative control)"; else no "T14b gate negative control" "rc=$rc"; fi
+fi
 
 # T12 — /usr/bin/yq: optional, never fatal, never replaces an existing yq; internal callers bundled.
 extract_fn() { awk -v n="$2" '!p && index($0, n "() {") { p=1; match($0,/^[ \t]*/); pad=substr($0,1,RLENGTH); print; next }

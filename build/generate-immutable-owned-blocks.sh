@@ -8,7 +8,7 @@
 # meta:type="build-script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-01"
-# meta:description="v1.234 (PR #1439): maintainer scripts run before the new package's files exist, so they cannot source cli/lib/nftban/lib/nftban_immutable_owned.sh. This generator copies the library's CODE BODY (never its SPDX/copyright/meta header: maintainer scripts are not legal-identity surfaces) between '# == BEGIN GENERATED immutable-owned lib ==' and '# == END GENERATED immutable-owned lib ==' in packaging/deb/{preinst,prerm,postinst}. The RPM spec receives the same text at build time via --body (packaging/build_nftban.sh). --check fails on drift or on any legal line inside a generated region."
+# meta:description="v1.234 (PR #1439): maintainer scripts run before the new package's files exist, so they cannot source cli/lib/nftban/lib/nftban_immutable_owned.sh. This generator copies the library's CODE BODY (never its SPDX/copyright/meta header: maintainer scripts are not legal-identity surfaces) between '# == BEGIN GENERATED immutable-owned lib ==' and '# == END GENERATED immutable-owned lib ==' in packaging/deb/{preinst,prerm,postinst,postrm}. The RPM spec receives the same text at build time via --body (packaging/build_nftban.sh). --check fails on drift or on any legal line inside a generated region."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh, packaging/deb/preinst, packaging/deb/prerm, packaging/deb/postinst"
 # meta:inventory.binaries="bash,awk,diff,mktemp"
 # meta:inventory.env_vars=""
@@ -30,6 +30,7 @@ END='# == END GENERATED immutable-owned lib =='
 emit_body() {
     printf '%s\n' "# Inlined from cli/lib/nftban/lib/nftban_immutable_owned.sh by build/generate-immutable-owned-blocks.sh - do not edit here."
     awk '/^# =+$/ {n++; next} n >= 3 {print}' "$LIB"
+    printf '%s\n' "# End of inlined nftban_immutable_owned library."
 }
 LEGAL_RE='SPDX-|Copyright|meta:'
 if [[ "$MODE" == "--body" ]]; then emit_body; exit 0; fi
@@ -39,7 +40,7 @@ if [[ $(awk '/^# =+$/ {n++} END {print n+0}' "$LIB") -lt 3 ]] || grep -qE "$LEGA
     echo "ERROR: could not separate the library code body from its legal header" >&2; exit 1
 fi
 rc=0
-for s in preinst prerm postinst; do
+for s in preinst prerm postinst postrm; do
     f="$ROOT/packaging/deb/$s"
     if ! grep -qxF "$BEGIN" "$f" || ! grep -qxF "$END" "$f"; then
         echo "ERROR: $f lacks the immutable-owned sentinel markers" >&2; rc=1; continue

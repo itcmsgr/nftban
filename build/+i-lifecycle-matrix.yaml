@@ -56,8 +56,8 @@ reapplication_authority: go_set_immutable_flags
 # Hook values:
 #   required                — gate FAILs if scriptlet does not strip this file
 #   not_required            — explicitly waived (gate accepts absence)
-#   covered_by_sweep        — covered by directory-level recursive sweep
-#   covered_by_dir_recursion — covered by uninstall artifacts.go chattr -R -i
+#   covered_by_sweep        — (retired v1.234: the CLI no longer sweeps)
+#   covered_by_proven_unlock — uninstall artifacts.go unlocks it only when ownership is proven (internal/installer/immutable); never recursive
 protected_files:
   - path: /etc/nftban/nftban.conf
     go_set_apply: required
@@ -66,8 +66,8 @@ protected_files:
     deb_preinst: required
     deb_postinst: required
     deb_prerm: required
-    cli_remove_helper: covered_by_sweep
-    go_uninstall_artifacts: covered_by_dir_recursion
+    cli_remove_helper: covered_by_proven_unlock
+    go_uninstall_artifacts: covered_by_proven_unlock
 
   - path: /usr/lib/nftban/lib/nft_schema.sh
     go_set_apply: required
@@ -76,5 +76,5 @@ protected_files:
     deb_preinst: required
     deb_postinst: required
     deb_prerm: required
-    cli_remove_helper: covered_by_sweep
-    go_uninstall_artifacts: covered_by_dir_recursion
+    cli_remove_helper: covered_by_proven_unlock
+    go_uninstall_artifacts: covered_by_proven_unlock

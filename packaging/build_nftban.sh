@@ -829,6 +829,11 @@ else
 end
 
 %pre
+# v1.234 (PR #1439): this package's pretrans unlocked NFTBan's own PROVEN
+# immutable flags; any failing exit of this scriptlet re-applies exactly those
+# (record-proven) and reports a re-lock that fails.
+${rpm_immut_lib}
+trap '_nftban_rc=\$?; if [ "\$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owned | sed "s/^/[NFTBan] immutable flag /" >&2; fi' EXIT
 # =============================================================================
 # v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
 # =============================================================================
@@ -2412,51 +2417,11 @@ EOF
     if [[ -f "${PROJECT_ROOT}/packaging/deb/prerm" ]]; then
         cp "${PROJECT_ROOT}/packaging/deb/prerm" "${BUILD_DIR}/deb/DEBIAN/prerm"
     else
-        # Fallback: generate inline prerm
-        cat > "${BUILD_DIR}/deb/DEBIAN/prerm" << 'PRERM'
-#!/bin/sh
-set -e
-for f in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
-    [ -f "$f" ] && chattr -i "$f" 2>/dev/null || true
-done
-case "$1" in
-    remove|deconfigure)
-        for unit in nftband.socket nftband.service \
-            nftban-maintenance.timer nftban-maintenance.service \
-            nftban-health.timer nftban-health.service nftban-health-fix.service \
-            nftban-watchdog.timer nftban-watchdog.service \
-            nftban-login-monitor.service \
-            nftban-core-geoip.timer nftban-core-geoip.service \
-            nftban-core-feeds.timer nftban-core-feeds.service \
-            nftban-unified-exporter.timer nftban-unified-exporter.service \
-            nftban-queue.timer nftban-queue.service \
-            nftban-rbl-check.timer nftban-rbl-check.service \
-            nftban-rollback.timer nftban-rollback.service \
-            nftban-snapshot.timer nftban-snapshot.service \
-            nftban-suricata-update.timer nftban-suricata-update.service \
-            nftban-suricata.service nftban-suricata-stats.service \
-            nftban-pro-inventory.timer nftban-pro-inventory.service \
-            nftban-pro-license.timer nftban-pro-license.service \
-            nftban-update-check.timer nftban-update-check.service \
-            nftban-update-apply.timer nftban-update-apply.service \
-            nftban-api.service nftban-firewall-init.service \
-            nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
-            # v1.100.1b.A transitional: nftban-ui.* units may exist from a prior
-            # install; stop + disable + mask + remove their unit files.
-            deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
-            case "$unit" in
-                nftban-ui*.service|nftban-ui*.socket)
-                    systemctl disable "$unit" 2>/dev/null || true
-                    systemctl mask "$unit" 2>/dev/null || true
-                    rm -f "/lib/systemd/system/$unit" 2>/dev/null || true
-                    ;;
-            esac
-        done
-        systemctl daemon-reload 2>/dev/null || true
-        ;;
-esac
-exit 0
-PRERM
+        # v1.234 (PR #1439): no inline fallback. The old fallback ran an
+        # unchecked `chattr -i` on the owned files; the canonical prerm uses the
+        # proven-ownership library. A missing source file is a build error.
+        log_error "packaging/deb/prerm not found; refusing to generate a prerm without the proven-ownership library"
+        return 1
     fi
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/prerm"
 

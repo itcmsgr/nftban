@@ -33,30 +33,41 @@ _nftban_immut_has_i() {
 # _nftban_immut_inoct PATH -> prints "<inode> <ctime epoch s>"
 _nftban_immut_inoct() { stat -c '%i %Z' -- "$1" 2>/dev/null; }
 
-# _nftban_immut_proven PATH STATE -> 0 when ownership of the current flag state is proven.
-#   STATE=locked   : record says NFTBan set +i at exactly this inode+ctime, OR (pre-v1.234
-#                    flags) installer.log has "<ctime..ctime+2>Z [DEBUG] set immutable: PATH".
-#   STATE=unlocked : record says NFTBan removed its own +i at exactly this inode+ctime.
+# _nftban_immut_proven PATH STATE -> 0 only when ownership is PROVEN. Accepted evidence:
+#   1. record entry for PATH in STATE whose inode AND ctime equal the file's current
+#      inode and ctime (ctime moves on every later attribute change; a replaced file
+#      has a new inode);
+#   2. STATE=locked only, no record entry for PATH at all (pre-v1.234 flag): the LAST
+#      "[DEBUG] set immutable: PATH" line in installer.log (exact path) is timestamped
+#      at exactly the file's ctime second. An older matching line, a line one second
+#      off, or a line for another path is not proof. Pre-v1.234 lines carry no inode,
+#      so an administrator action in that same second is indistinguishable (residual).
+#   Everything else -> not proven (treated as administrator-owned).
 _nftban_immut_proven() {
     _pv_p=$1; _pv_st=$2
     _pv_ic=$(_nftban_immut_inoct "$_pv_p") || return 1
     [ -n "$_pv_ic" ] || return 1
     _pv_ino=${_pv_ic% *}; _pv_ct=${_pv_ic#* }
     _pv_rec=$(_nftban_immut_record)
-    if [ -f "$_pv_rec" ] && awk -F'\t' -v p="$_pv_p" -v i="$_pv_ino" -v c="$_pv_ct" -v s="$_pv_st" \
-            '$1==p && $2==i && $3==c && $4==s {f=1} END {exit f ? 0 : 1}' "$_pv_rec"; then
-        return 0
+    if [ -f "$_pv_rec" ]; then
+        if awk -F'\t' -v p="$_pv_p" -v i="$_pv_ino" -v c="$_pv_ct" -v s="$_pv_st" \
+                '$1==p && $2==i && $3==c && $4==s {f=1} END {exit f ? 0 : 1}' "$_pv_rec"; then
+            return 0
+        fi
+        # the record knows this path: its entry is the only admissible evidence
+        if awk -F'\t' -v p="$_pv_p" '$1==p {f=1} END {exit f ? 0 : 1}' "$_pv_rec"; then
+            return 1
+        fi
     fi
     [ "$_pv_st" = locked ] || return 1
     _pv_log=$(_nftban_immut_ilog)
     [ -f "$_pv_log" ] || return 1
-    for _pv_d in 0 1 2; do
-        _pv_ts=$(date -u -d "@$((_pv_ct + _pv_d))" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || return 1
-        if grep -qF -- "$_pv_ts [DEBUG] set immutable: $_pv_p" "$_pv_log"; then
-            return 0
-        fi
-    done
-    return 1
+    _pv_last=$(awk -v p="$_pv_p" 'index($0, " [DEBUG] set immutable: ") {
+            s=$0; sub(/^.* \[DEBUG\] set immutable: /, "", s); sub(/[ \r]+$/, "", s)
+            if (s == p) last=$1 } END {print last}' "$_pv_log" 2>/dev/null)
+    [ -n "$_pv_last" ] || return 1
+    _pv_ts=$(date -u -d "@$_pv_ct" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || return 1
+    [ "$_pv_last" = "$_pv_ts" ]
 }
 
 # _nftban_immut_record_set PATH STATE [WRITTEN_AT] -> replace PATH's record line with
@@ -94,16 +105,26 @@ nftban_immut_unlock_owned() {
 }
 
 # nftban_immut_relock_owned -> put back +i ONLY where the record proves NFTBan removed
-# it and nothing changed the file since (same inode and ctime). Prints "RELOCKED <path>".
+# it and nothing changed the file since (same inode and ctime). Prints per candidate:
+#   RELOCKED <path>        protection restored
+#   RELOCK_FAILED <path>   proven NFTBan-unlocked, but chattr +i failed
+#   NOT_RELOCKED <path>    NFTBan unlocked it, but the file changed since (new inode
+#                          or ctime) - not restored automatically; reported.
 nftban_immut_relock_owned() {
+    _ro_rec=$(_nftban_immut_record)
     for _ro_f in $(_nftban_immut_candidates); do
         [ -f "$_ro_f" ] && [ ! -L "$_ro_f" ] || continue
         _ro_r=0; _nftban_immut_has_i "$_ro_f" || _ro_r=$?
         [ "$_ro_r" -eq 1 ] || continue
-        _nftban_immut_proven "$_ro_f" unlocked || continue
-        if chattr +i -- "$_ro_f" 2>/dev/null; then
-            _nftban_immut_record_set "$_ro_f" locked || true
-            printf 'RELOCKED %s\n' "$_ro_f"
+        if _nftban_immut_proven "$_ro_f" unlocked; then
+            if chattr +i -- "$_ro_f" 2>/dev/null; then
+                _nftban_immut_record_set "$_ro_f" locked || true
+                printf 'RELOCKED %s\n' "$_ro_f"
+            else
+                printf 'RELOCK_FAILED %s\n' "$_ro_f"
+            fi
+        elif [ -f "$_ro_rec" ] && awk -F'\t' -v p="$_ro_f" '$1==p && $4=="unlocked" {f=1} END {exit f ? 0 : 1}' "$_ro_rec"; then
+            printf 'NOT_RELOCKED %s\n' "$_ro_f"
         fi
     done
     return 0
@@ -244,11 +265,14 @@ EOF_FINDMNT
 # nftban_fs_preflight_report -> human guidance after a refusal (stderr).
 nftban_fs_preflight_report() {
     {
-        printf 'nftban: NFTBan does not remove immutable/append-only flags it cannot prove it set, and never remounts filesystems.\n'
-        printf 'nftban: IMMUTABLE/APPEND-ONLY: the owner of the flag must lift it (chattr -i|-a <path>), retry, then re-apply it.\n'
-        printf 'nftban:   A flag set by NFTBan before v1.234 on nftban.conf or nft_schema.sh is accepted only when installer.log\n'
-        printf 'nftban:   still proves it (rotated logs cannot); if you did not set it, clear it with chattr -i and retry.\n'
-        printf 'nftban: READ-ONLY: remount read-write or install while the mount is writable. WRITE-DENIED: check permissions/ACLs and the audit log.\n'
+        printf 'nftban: Nothing was changed. NFTBan never removes a protection it cannot prove it set itself,\n'
+        printf 'nftban: and never remounts a filesystem. Treat each path above as protected by its administrator.\n'
+        printf 'nftban: IMMUTABLE/APPEND-ONLY: only the administrator responsible for that protection can decide to lift it.\n'
+        printf 'nftban:   That is a deliberate removal of one specific protection on one named path (e.g. chattr -i <path>),\n'
+        printf 'nftban:   followed by this operation and by re-applying the protection. It is not a repair step.\n'
+        printf 'nftban:   An earlier NFTBan version may have set +i on nftban.conf / nft_schema.sh; if installer.log no longer\n'
+        printf 'nftban:   proves it, decide yourself whether that flag is NFTBan'\''s before removing it.\n'
+        printf 'nftban: READ-ONLY: retry while the filesystem is writable. WRITE-DENIED: check permissions/ACLs and the audit log.\n'
         printf 'nftban: Inspect: lsattr -d <path>   findmnt -T <path>   ausearch -m AVC -ts recent\n'
     } >&2
 }
@@ -278,6 +302,7 @@ nftban_immut_pkg_preflight() {
     fi
     return 0
 }
+# End of inlined nftban_immutable_owned library.
 # == END GENERATED immutable-owned lib ==
 
 # v1.234 (PR #1439): filesystem-restriction preflight — FIRST, before this script
@@ -570,6 +595,9 @@ fi
 case "$1" in
     install|upgrade)
         nftban_immut_unlock_owned | while read -r _st _p; do echo "nftban: immutable flag $_st: $_p"; done
+        # Any failing exit of this script below (prerequisite checks) re-applies
+        # exactly what was just unlocked, and reports a re-lock that fails.
+        trap '_nftban_rc=$?; if [ "$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owned | while read -r _st _p; do echo "nftban: immutable flag $_st: $_p" >&2; done; fi' EXIT
         ;;
 esac
 

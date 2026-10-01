@@ -156,7 +156,7 @@ _do_rollback() {
     _remove_immutable_flags "$latest_backup" || return 1
 
     if tar -xzf "$latest_backup" -C / 2>&1; then
-        _restore_owned_immutable_flags
+        _restore_owned_immutable_flags || true
         _update_log OK "Rollback successful"
 
         # After file rollback, fix dpkg database if this was a deb install
@@ -171,7 +171,7 @@ _do_rollback() {
 
         return 0
     else
-        _restore_owned_immutable_flags
+        _restore_owned_immutable_flags || true
         _update_log ERROR "Rollback failed"
         return 1
     fi

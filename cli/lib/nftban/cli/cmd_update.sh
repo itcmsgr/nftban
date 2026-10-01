@@ -617,7 +617,7 @@ _cmd_update_main_locked() {
     # must not be clobbered (scoped trap only, cleared right after restore).
     _forensic_snapshot "$_RUN_ID" pre-swap
     _update_inhibit_cadence_timers
-    trap '_update_heartbeat_stop; _update_restore_cadence_timers' INT TERM
+    trap '_update_heartbeat_stop; _update_restore_cadence_timers; _restore_owned_immutable_flags || true' INT TERM
     _forensic_event "$_RUN_ID" inhibit "timers=$_NFTBAN_INHIBITED_TIMERS"
     case "$source" in
         github)
@@ -670,7 +670,7 @@ _cmd_update_main_locked() {
     trap - INT TERM
     # v1.234: put back exactly the NFTBan-owned +i flags this run removed when
     # no package transaction re-applied them (failed or no-op install).
-    _restore_owned_immutable_flags
+    _restore_owned_immutable_flags || true
     _forensic_snapshot "$_RUN_ID" post-swap
 
     if [[ $result -ne 0 ]]; then
@@ -1527,7 +1527,7 @@ _cmd_update_repair() {
         _update_log INFO "No backup directory found"
     fi
 
-    _restore_owned_immutable_flags
+    _restore_owned_immutable_flags || repair_status=1
 
     # Summary
     echo ""

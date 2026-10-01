@@ -35,8 +35,9 @@
 //   - It unmasks nftband.service before unit-file rm so the mask symlink
 //     does not survive uninstall (paired with services.StartDaemon's
 //     defensive ServiceUnmask call for installs onto unclean state).
-//   - It strips the immutable bit on protected dirs before rm so chattr +i
-//     guards do not silently turn rm into a no-op.
+//   - v1.234: it removes only PROVEN NFTBan-owned immutable flags before rm
+//     and reports every flagged path it leaves behind (administrator-owned or
+//     unproven flags are never removed).
 //   - It does daemon-reload + reset-failed at the end so systemd's view
 //     of the world matches disk.
 //
@@ -61,6 +62,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/immutable"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/payload"
 )
@@ -111,6 +113,11 @@ type RemovalResult struct {
 	// the legacy mask step (mask of an absent unit recreates a phantom
 	// mask symlink that then fails the next reinstall).
 	UnitFileRemoved bool
+	// ImmutableRemaining lists paths under the mode-authorised protected dirs
+	// that still carry an immutable/append-only flag after the removal phase
+	// (administrator-owned or unproven: NFTBan never removes those). Non-empty
+	// means the uninstall is INCOMPLETE for those paths.
+	ImmutableRemaining []string
 	// Steps is an ordered audit trail recorded for evidence/test.
 	Steps []StepResult
 }
@@ -126,7 +133,7 @@ type RemovalResult struct {
 //	c. ServiceUnmask("nftband.service") soft-fail — symmetric counterpart
 //	   of services.StartDaemon's ServiceUnmask, lets unit-file rm proceed
 //	   without a leftover /etc/systemd/system/<unit> -> /dev/null tombstone
-//	d. chattr -R -i on protectedDirs that mode authorises (best-effort)
+//	d. unlock ONLY proven NFTBan-owned immutable flags (never recursive)
 //	e. rm -rf each destination path that mode authorises, deepest-first
 //	f. systemctl daemon-reload + systemctl reset-failed to clear systemd's
 //	   stale unit-file view (the residue-counts.txt's leftover_units=49
@@ -164,16 +171,24 @@ func RemoveArtifacts(exec executor.Executor, mode Mode, distro *detect.DistroInf
 		r.Steps = append(r.Steps, StepResult{Name: "unmask_nftband_service", Success: true, Detail: "unmasked for unit-file removal symmetry"})
 	}
 
-	// (d) Strip immutable bits on protected dirs that mode authorises.
-	// Any operator-owned dir whose contents we are NOT going to touch
-	// in this mode is left alone — chattr -R -i is itself a mutation.
-	for _, dir := range protectedDirs {
-		if !shouldDeletePath(dir, mode) {
-			continue
+	// (d) v1.234 (PR #1439, BUG-UNINSTALL-STRIPS-ADMIN-IMMUTABLE-FLAGS-RECURSIVELY):
+	// remove ONLY immutable flags NFTBan can PROVE it set (ownership record or
+	// pre-v1.234 installer.log proof, internal/installer/immutable), and only on
+	// candidates inside dirs this mode authorises. The pre-v1.234 `chattr -R -i`
+	// over every protected tree removed administrator flags. Any other immutable
+	// or append-only flag is preserved; the paths it keeps in place are reported
+	// after the removal phase (no false success).
+	var owned []string
+	for _, c := range immutable.Candidates {
+		for _, dir := range protectedDirs {
+			if strings.HasPrefix(c, dir+"/") && shouldDeletePath(dir, mode) {
+				owned = append(owned, c)
+			}
 		}
-		exec.Run("chattr", "-R", "-i", dir)
 	}
-	r.Steps = append(r.Steps, StepResult{Name: "strip_immutable_bits", Success: true, Detail: "best-effort chattr -R -i on protected dirs"})
+	unlocked, notProven := immutable.UnlockOwned(exec, owned)
+	r.Steps = append(r.Steps, StepResult{Name: "unlock_proven_owned_immutable", Success: true,
+		Detail: "unlocked NFTBan-owned (proven): " + strings.Join(unlocked, ",") + "; left in place (not proven): " + strings.Join(notProven, ",")})
 
 	// (e) Remove staged payload + runtime-owned paths per mode.
 	//
@@ -314,6 +329,26 @@ func RemoveArtifacts(exec executor.Executor, mode Mode, distro *detect.DistroInf
 		removePolkitFallback(exec, log, r)
 	}
 	r.Steps = append(r.Steps, StepResult{Name: "remove_payload_artifacts", Success: true})
+
+	// (e2) v1.234: report what the preserved flags kept in place (no false success).
+	for _, dir := range protectedDirs {
+		if !shouldDeletePath(dir, mode) || !exec.FileExists(dir) {
+			continue
+		}
+		left, measured := immutable.ListFlagged(exec, dir)
+		if !measured {
+			r.Steps = append(r.Steps, StepResult{Name: "immutable_remaining", Success: true, Detail: "UNMEASURED for " + dir + " (lsattr unavailable)"})
+			continue
+		}
+		r.ImmutableRemaining = append(r.ImmutableRemaining, left...)
+	}
+	if len(r.ImmutableRemaining) > 0 {
+		for _, p := range r.ImmutableRemaining {
+			log.Warn("uninstall INCOMPLETE: %s kept — it carries an immutable/append-only flag NFTBan did not set (or cannot prove it set); NFTBan never removes such a protection. Its administrator decides whether to lift it.", p)
+		}
+		r.Steps = append(r.Steps, StepResult{Name: "immutable_remaining", Success: false,
+			Detail: "INCOMPLETE: protected paths left in place: " + strings.Join(r.ImmutableRemaining, ",")})
+	}
 
 	// (f) daemon-reload + reset-failed clears systemd's stale view.
 	if err := exec.DaemonReload(); err != nil {

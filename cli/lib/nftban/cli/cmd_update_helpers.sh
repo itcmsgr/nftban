@@ -507,11 +507,9 @@ _update_fs_restriction_preflight() {
     done <<< "$out"
     if (( rc != 0 )); then
         _update_log ERROR "Refusing before any change: the NFTBan package path(s) above cannot be modified."
-        _update_log ERROR "NFTBan does not remove immutable/append-only flags it cannot prove it set, and never remounts."
-        _update_log INFO  "The owner of each restriction must lift it for the paths above, retry, then re-apply it."
-        _update_log INFO  "A flag set by NFTBan before v1.234 (nftban.conf / nft_schema.sh) counts as NFTBan's only while"
-        _update_log INFO  "installer.log still proves it; if you did not set it yourself, clear it with chattr -i and retry."
-        _update_log INFO  "Inspect: lsattr -d <path>   findmnt -T <path>   (WRITE-DENIED: permissions/ACL/SELinux audit log)"
+        while IFS= read -r line; do
+            _update_log INFO "${line#nftban: }"
+        done < <(nftban_fs_preflight_report 2>&1)
         return 1
     fi
     return 0
@@ -538,10 +536,15 @@ _remove_immutable_flags() {
 _restore_owned_immutable_flags() {
     declare -F nftban_immut_relock_owned >/dev/null || return 0
     local line
+    local rc=0
     while IFS= read -r line; do
-        [[ "$line" == RELOCKED* ]] && _update_log OK "Re-locked NFTBan-owned file: ${line#RELOCKED }"
+        case "$line" in
+            RELOCKED*)      _update_log OK "Re-applied NFTBan's immutable protection: ${line#RELOCKED }" ;;
+            RELOCK_FAILED*) _update_log ERROR "Could NOT re-apply NFTBan's immutable protection on ${line#RELOCK_FAILED } (chattr +i failed) — the file is unprotected; re-apply it: chattr +i ${line#RELOCK_FAILED }"; rc=1 ;;
+            NOT_RELOCKED*)  _update_log WARN "NFTBan unlocked ${line#NOT_RELOCKED } but the file changed since; protection not re-applied automatically — verify the file, then: chattr +i ${line#NOT_RELOCKED }"; rc=1 ;;
+        esac
     done < <(nftban_immut_relock_owned)
-    return 0
+    return $rc
 }
 
 _load_config() {

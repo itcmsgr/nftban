@@ -14,6 +14,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
+	"github.com/itcmsgr/nftban/internal/installer/immutable"
 )
 
 const schemaPath = "/usr/lib/nftban/lib/nft_schema.sh"
@@ -108,7 +109,7 @@ func TestSetImmutableFlags_KeepsProvenRecordEntry(t *testing.T) {
 
 func TestSetImmutableFlags_AdoptsPreV1234FlagOnlyWithLogProof(t *testing.T) {
 	m := immutMock()
-	// ctime 1790000000 = 2026-09-21T14:13:20Z
+	// ctime 1790000000 = 2026-09-21T14:13:20Z; the LAST line for the path, exact second
 	m.Files[installerLogPath] = []byte("2026-09-21T14:13:20Z [DEBUG] set immutable: " + fhs.MainConf + "\n")
 	setAttr(m, fhs.MainConf, "----i---------e-------", "11", "1790000000")
 	setAttr(m, schemaPath, "----i---------e-------", "22", "1790000300") // log line does not match
@@ -119,5 +120,57 @@ func TestSetImmutableFlags_AdoptsPreV1234FlagOnlyWithLogProof(t *testing.T) {
 	}
 	if _, ok := rec[schemaPath]; ok {
 		t.Errorf("flag without a matching installer.log line must not be adopted")
+	}
+}
+
+// v1.234 owner direction: a historical installer.log line proves a historical
+// action, not ownership of TODAY's flag. Negative cases must NOT be adopted.
+func TestSetImmutableFlags_LegacyLogNegativeCases(t *testing.T) {
+	logLine := func(ts string) []byte { return []byte(ts + " [DEBUG] set immutable: " + fhs.MainConf + "\n") }
+	cases := []struct {
+		name, log, ctime string
+	}{
+		// (a) NFTBan set it at 14:13:20; the admin later removed and re-set it
+		//     (same inode, ctime moved).
+		{"admin re-set later (ctime moved)", string(logLine("2026-09-21T14:13:20Z")), "1790000500"},
+		// (a2) one second off is not proof (the old +0..2 window is gone)
+		{"one second off", string(logLine("2026-09-21T14:13:20Z")), "1790000001"},
+		// (c) the matching line is not the LAST one for this path
+		{"matching line not the latest", string(logLine("2026-09-21T14:13:20Z")) + string(logLine("2026-09-21T14:20:00Z")), "1790000000"},
+		// (c2) a line for another path with the same prefix
+		{"prefix path", "2026-09-21T14:13:20Z [DEBUG] set immutable: " + fhs.MainConf + ".bak\n", "1790000000"},
+	}
+	for _, c := range cases {
+		m := immutMock()
+		m.Files[installerLogPath] = []byte(c.log)
+		setAttr(m, fhs.MainConf, "----i---------e-------", "11", c.ctime)
+		setAttr(m, schemaPath, "--------------e-------", "22", "1790000001")
+		SetImmutableFlags(m, nolog())
+		if _, ok := recordLines(t, m)[fhs.MainConf]; ok {
+			t.Errorf("%s: legacy fallback adopted a flag it cannot prove", c.name)
+		}
+	}
+	// (b) the record knows the path, the admin replaced the file (new inode) and
+	// set +i at exactly a logged second: the record is the only evidence -> refuse.
+	m := immutMock()
+	m.Files[installerLogPath] = logLine("2026-09-21T14:13:20Z")
+	m.Files[ImmutableOwnedRecord] = []byte(fhs.MainConf + "\t11\t1789999000\tlocked\t1\n")
+	setAttr(m, fhs.MainConf, "----i---------e-------", "99", "1790000000")
+	setAttr(m, schemaPath, "--------------e-------", "22", "1790000001")
+	SetImmutableFlags(m, nolog())
+	if _, ok := recordLines(t, m)[fhs.MainConf]; ok {
+		t.Errorf("replaced file (new inode) adopted via the log although the record knows the path")
+	}
+}
+
+func TestImmutableCandidatesMatchPolicyList(t *testing.T) {
+	want := map[string]bool{fhs.MainConf: true, schemaPath: true}
+	if len(immutable.Candidates) != len(want) {
+		t.Fatalf("immutable.Candidates = %v", immutable.Candidates)
+	}
+	for _, c := range immutable.Candidates {
+		if !want[c] {
+			t.Errorf("unexpected candidate %s", c)
+		}
 	}
 }
