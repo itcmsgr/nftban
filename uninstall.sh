@@ -380,7 +380,8 @@ uninstall_binaries() {
     local left=""
     for binary in "${binaries[@]}"; do
         [[ -e "$binary" ]] || continue
-        left+=$(lsattr -Rad "$binary" 2>/dev/null | awk '$1 !~ /[\/:]/ && $1 ~ /[ia]/ {print "    " $2}')$'\n'
+        # -d is NOT combined with -R (lsattr would not descend)
+        left+=$( { lsattr -d "$binary"; lsattr -Ra "$binary"; } 2>/dev/null | awk '$1 !~ /[\/:]/ && $1 ~ /[ia]/ && $2 !~ /\/\.\.?$/ {print "    " $2}')$'\n'
         [[ -e "$binary" ]] && warn "Removal INCOMPLETE: $binary still exists"
     done
     if [[ -n "${left//[$'\n']/}" ]]; then

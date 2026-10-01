@@ -150,16 +150,18 @@ func UnlockOwned(exec executor.Executor, candidates []string) (unlocked, notProv
 	return unlocked, notProven
 }
 
-// ListFlagged returns every path under root carrying an immutable or append-only
-// flag (lsattr -R -a -d), for reporting what an operation could not remove.
-// measured=false when lsattr is unavailable or failed outright.
+// ListFlagged returns root and every path under it carrying an immutable or
+// append-only flag (lsattr -d root, then lsattr -R -a root — `-d` must not be
+// combined with -R or lsattr does not descend), for reporting what an operation
+// could not remove. measured=false when lsattr is unavailable or failed outright.
 func ListFlagged(exec executor.Executor, root string) (paths []string, measured bool) {
-	res := exec.Run("lsattr", "-R", "-a", "-d", root)
-	if res.ExitCode != 0 && strings.TrimSpace(res.Stdout) == "" {
+	self := exec.Run("lsattr", "-d", root)
+	res := exec.Run("lsattr", "-R", "-a", root)
+	if res.ExitCode != 0 && strings.TrimSpace(res.Stdout) == "" && self.ExitCode != 0 {
 		return nil, false
 	}
 	var cur string
-	for _, line := range strings.Split(res.Stdout, "\n") {
+	for _, line := range strings.Split(self.Stdout+"\n"+res.Stdout, "\n") {
 		line = strings.TrimRight(line, " \r")
 		if line == "" {
 			continue
@@ -175,6 +177,10 @@ func ListFlagged(exec executor.Executor, root string) (paths []string, measured 
 		p := f[1]
 		if !strings.HasPrefix(p, "/") && cur != "" {
 			p = cur + "/" + p
+		}
+		base := p[strings.LastIndex(p, "/")+1:]
+		if base == "." || base == ".." {
+			continue
 		}
 		if strings.ContainsAny(f[0], "ia") && !strings.Contains(f[0], "/") {
 			paths = append(paths, p)

@@ -617,7 +617,10 @@ func TestRemoveArtifacts_NeverRecursiveUnlock_OnlyProvenOwned(t *testing.T) {
 	// nftban.conf: administrator flag (no record entry, no installer.log proof)
 	m.RunResults["lsattr:-d:"+conf] = executor.Result{Stdout: "----i---------e------- " + conf + "\n"}
 	m.RunResults["stat:-c:%i %Z:"+conf] = executor.Result{Stdout: "11 1790000500\n"}
-	m.RunResults["lsattr:-R:-a:-d:/etc/nftban"] = executor.Result{Stdout: "----i---------e------- " + conf + "\n"}
+	// lsattr -R must NOT be combined with -d (it would not descend): the report
+	// comes from `lsattr -R -a <dir>` — real lsattr output shape, header lines included.
+	m.RunResults["lsattr:-d:/etc/nftban"] = executor.Result{Stdout: "--------------e------- /etc/nftban\n"}
+	m.RunResults["lsattr:-R:-a:/etc/nftban"] = executor.Result{Stdout: "--------------e------- /etc/nftban/.\n--------------e------- /etc/nftban/..\n----i---------e------- " + conf + "\n--------------e------- /etc/nftban/conf.d\n\n/etc/nftban/conf.d:\n--------------e------- /etc/nftban/conf.d/x.conf\n"}
 
 	r := RemoveArtifacts(m, ModePurgeForceDOC, nil, newTestLogger())
 
@@ -651,6 +654,11 @@ func TestRemoveArtifacts_NeverRecursiveUnlock_OnlyProvenOwned(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("administrator-flagged %s must be reported as remaining (no false success), got %v", conf, r.ImmutableRemaining)
+	}
+	for _, c := range m.Commands {
+		if c.Name == "lsattr" && len(c.Args) > 2 && c.Args[0] == "-R" && (c.Args[1] == "-d" || c.Args[2] == "-d") {
+			t.Errorf("lsattr -R combined with -d does not descend: %v", c.Args)
+		}
 	}
 }
 
