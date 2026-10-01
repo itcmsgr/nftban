@@ -208,13 +208,22 @@ EOF
 # MAIN COMMAND HANDLER
 # =============================================================================
 
+# v1.234 help routing (cli/sbin/nftban _nftban_verb_help_requested): these
+# verbs print their OWN help for `<verb> --help|-h|help` before acting, so the
+# router passes the help token through to them. Every other verb of this module
+# gets the module help. Each listed verb is swept as root for inertness by
+# cli_help_inertness_universal_test.sh (Part B); list a verb here only if its
+# handler checks for help before any mutation.
+# shellcheck disable=SC2034  # read by cli/sbin/nftban via indirect expansion
+_NFTBAN_HELP_OWNED_VERBS_rbl="providers"
+
 nftban_cmd_rbl() {
     # Main RBL command handler
     # Args: subcommand [options]
 
     local subcommand="${1:-}"
 
-    if [[ -z "$subcommand" ]] || [[ "$subcommand" == "help" ]] || [[ "$subcommand" == "--help" ]]; then
+    if [[ -z "$subcommand" ]] || [[ "$subcommand" == "help" ]] || [[ "$subcommand" == "--help" ]] || [[ "$subcommand" == "-h" ]]; then
         nftban_cmd_rbl_help
         return 0
     fi
