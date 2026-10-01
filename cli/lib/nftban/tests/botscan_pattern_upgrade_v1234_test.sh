@@ -173,8 +173,28 @@ grep -q 'add_rc=1' <<<"$out6" && ok "P6 adding a record under a shipped name is 
 grep -q '^MY_NEW|' "$od6/custom.patterns" 2>/dev/null && ok "P6 a new operator record goes to custom.patterns" || bad "P6 operator record not written"
 [[ "$(def_of "$od6" SCAN_ADMIN)" == absent ]] && ok "P6 the disabled shipped rule is not loaded" || bad "P6 disabled rule still loaded"
 
+# =============================================================================
+arm "P7 fresh install and reinstall: vendor defaults separate, operator surface untouched"
+od7="$ROOT/etc_fresh"; mkdir -p "$od7"
+out7="$(run_mod "$od7" 'declare -F nftban_botscan_migrate_legacy_patterns >/dev/null || { echo NOFUNC; exit 0; }; nftban_botscan_migrate_legacy_patterns' 2>&1 || true)"
+if [[ "$out7" == *NOFUNC* ]]; then bad "P7 subject has no install-time step"; else
+    grep -q '^# NFTBan Bot Scanner - Custom User Patterns' "$od7/custom.patterns" 2>/dev/null && ok "P7 fresh install seeds custom.patterns from the template" || bad "P7 custom.patterns not seeded"
+    [[ ! -e "$od7/override.local" && ! -e "$od7/local-migrated.patterns" ]] && ok "P7 fresh install creates no override.local and no migrated file" || bad "P7 fresh install created operator state"
+    [[ -z "$out7" ]] && ok "P7 fresh install prints no migration summary" || bad "P7 unexpected migration output: $out7"
+    n7="$(run_mod "$od7" 'nftban_botscan_load_config; nftban_botscan_load_patterns 2>/dev/null; echo ${#_BOTSCAN_PATTERNS[@]}' 2>/dev/null || echo 0)"
+    s7="$(grep -h -c '|true|' "$ROOT"/ship/botscan_*.patterns | awk '{t+=$1} END {print t+0}')"
+    [[ "$n7" -eq "$s7" && "$n7" -gt 0 ]] && ok "P7 the loader serves exactly the shipped enabled set ($n7)" || bad "P7 loaded $n7, shipped enabled $s7"
+    # operator work after install, then a REINSTALL (same package, scripts run again)
+    printf 'MY_X|/x-probe|url-any|1|60|60|true|mine\n' >> "$od7/custom.patterns"
+    printf 'GPTBOT|false\n' > "$od7/override.local"
+    sum_before="$(sha256sum "$od7/custom.patterns" "$od7/override.local")"
+    run_mod "$od7" 'nftban_botscan_migrate_legacy_patterns' >/dev/null 2>&1 || true
+    [[ "$(sha256sum "$od7/custom.patterns" "$od7/override.local")" == "$sum_before" ]] && ok "P7 reinstall leaves custom.patterns and override.local byte-identical" || bad "P7 reinstall changed operator files"
+    [[ "$(def_of "$od7" GPTBOT)" == absent && "$(def_of "$od7" MY_X)" != absent ]] && ok "P7 operator decisions and records stay effective after reinstall" || bad "P7 operator state not effective after reinstall"
+fi
+
 echo "----"
-EXPECTED=6
+EXPECTED=7
 echo "arms run: $ARMS/$EXPECTED  pass=$PASS fail=$FAIL"
 [[ "$ARMS" -eq "$EXPECTED" ]] || { echo "INCOMPLETE: $ARMS of $EXPECTED arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi
