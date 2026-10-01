@@ -128,7 +128,10 @@ DETECTION CATEGORIES:
 
 PATTERN FORMAT:
 
-    Patterns are stored in /etc/nftban/patterns.d/botscan/
+    Shipped rules: /usr/lib/nftban/data/botscan_*.patterns (package defaults,
+    replaced on upgrade; never edit). Your changes go in /etc/nftban/patterns.d/botscan/:
+    override.local (NAME|true|false; written by patterns enable|disable, allowbot,
+    blockbot) and your own *.patterns files (patterns add writes custom.patterns).
 
     Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
 
@@ -256,9 +259,9 @@ _nftban_botscan_stats_json() {
         [[ -n "$mode_val" ]] && action_mode="$mode_val" || true
     fi
 
-    # Count patterns
-    if [[ -d "$patterns_dir" ]]; then
-        for pattern_file in "$patterns_dir"/*.patterns; do
+    # Count patterns (v1.234.0: shipped defaults under /usr/lib/nftban/data + operator files)
+    if [[ -d "$patterns_dir" || -d "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data" ]]; then
+        for pattern_file in "${NFTBAN_LIB_DIR:-/usr/lib/nftban}"/data/botscan_*.patterns "$patterns_dir"/*.patterns; do
             [[ -f "$pattern_file" ]] || continue
             while IFS='|' read -r name _ _ _ _ _ is_enabled _; do
                 [[ -z "$name" || "$name" =~ ^# ]] && continue

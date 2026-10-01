@@ -13,7 +13,7 @@
 # meta:input="None (reads the shipped exploit.patterns)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep"
-# meta:inventory.files="etc/nftban/patterns.d/botscan/exploit.patterns"
+# meta:inventory.files="cli/lib/nftban/data/botscan_exploit.patterns"
 # meta:inventory.binaries="bash,grep"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -38,7 +38,7 @@ IFS=$'\n\t'
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
-PATTERNS="$REPO_ROOT/etc/nftban/patterns.d/botscan/exploit.patterns"
+PATTERNS="$REPO_ROOT/cli/lib/nftban/data/botscan_exploit.patterns"   # v1.234.0: shipped rules moved to lib data
 
 PASS=0; FAIL=0; FAILED=()
 ok(){ printf "  [PASS] %s\n" "$1"; PASS=$((PASS+1)); }

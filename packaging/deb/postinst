@@ -749,6 +749,13 @@ _nftban_migrate_reports_to_log() {
         _nftban_seed_operator_manual "whitelist.d/99-manual.conf" || true
         _nftban_seed_operator_manual "blacklist.d/99-manual.conf" || true
 
+        # v1.234.0 BotScan patterns: restore/seed custom.patterns and migrate the
+        # pre-v1.234 edited rule files that preinst saved (*.nftban-saved) ONCE.
+        # Twin of the RPM %post block. Never fails the configure step.
+        if [ -f /usr/lib/nftban/core/nftban_botscan.sh ]; then
+            NFTBAN_LIB_DIR=/usr/lib/nftban bash -c 'source /usr/lib/nftban/core/nftban_botscan.sh >/dev/null 2>&1 && nftban_botscan_migrate_legacy_patterns' 2>/dev/null || true
+        fi
+
         ;;
 esac
 

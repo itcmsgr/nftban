@@ -444,6 +444,71 @@ _botscan_warn_bad_record() {
     return 0
 }
 
+# =============================================================================
+# v1.234.0 — PATTERN SOURCES: shipped defaults vs operator files
+# =============================================================================
+# Before v1.234 the shipped rule files lived in /etc/nftban/patterns.d/botscan as
+# package-owned config. Measured on the published v1.233.1 packages:
+#   RPM  %config(noreplace) -> a locally edited file is KEPT on upgrade and the new
+#        defaults land in .rpmnew, so the old (defective) rules stay ACTIVE;
+#   DEB  not a conffile     -> a local edit is silently OVERWRITTEN on upgrade, and
+#        operator records in custom.patterns were lost at every upgrade.
+# Now:
+#   shipped defaults  ${NFTBAN_LIB_DIR}/data/botscan_<category>.patterns
+#                     package payload, replaced on every upgrade, never edited;
+#   operator surface  ${BOTSCAN_PATTERNS_DIR} (/etc/nftban/patterns.d/botscan):
+#                     override.local  NAME|true|false  — the ONE mechanism to enable or
+#                                     disable any rule (unchanged since v1.188);
+#                     *.patterns      operator records (custom.patterns, local files).
+# An operator record that reuses a SHIPPED name is IGNORED and reported: to change a
+# shipped rule, disable it in override.local and add your own record under a new
+# name. That is what keeps a stale copy of an old shipped file from silently
+# re-activating superseded rules. Package upgrades never touch the operator surface;
+# nftban_botscan_migrate_legacy_patterns converts pre-v1.234 edits once.
+readonly _BS_LEGACY_SHIPPED_CATEGORIES=" aibots badbots exploit scanner webshell "
+nftban_botscan_shipped_patterns_dir() {
+    printf '%s' "${BOTSCAN_SHIPPED_PATTERNS_DIR-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data}"
+}
+
+# nftban_botscan_pattern_files -> one "origin<TAB>category<TAB>path" line per file:
+# shipped files first, then operator files (each group in glob order).
+nftban_botscan_pattern_files() {
+    local sd od f cat
+    sd="$(nftban_botscan_shipped_patterns_dir)"; od="${BOTSCAN_PATTERNS_DIR:-}"
+    if [[ -n "$sd" && -d "$sd" ]]; then
+        for f in "$sd"/botscan_*.patterns; do
+            [[ -f "$f" ]] || continue
+            cat="${f##*/}"; cat="${cat#botscan_}"; cat="${cat%.patterns}"
+            printf 'shipped\t%s\t%s\n' "$cat" "$f"
+        done
+    fi
+    if [[ -n "$od" && -d "$od" && "$od" != "$sd" ]]; then
+        for f in "$od"/*.patterns; do
+            [[ -f "$f" ]] || continue
+            cat="${f##*/}"; cat="${cat%.patterns}"
+            printf 'operator\t%s\t%s\n' "$cat" "$f"
+        done
+    fi
+    return 0
+}
+
+# nftban_botscan_pattern_sidecars [all] -> stale pattern files in the operator dir that
+# are NOT loaded: package-manager leftovers (.rpmsave/.rpmnew/.rpmorig/.dpkg-*) and
+# unmigrated pre-v1.234 copies (.nftban-saved). With "all", migrated copies
+# (.migrated-v1234) are listed too. One path per line.
+nftban_botscan_pattern_sidecars() {
+    local od="${BOTSCAN_PATTERNS_DIR:-}" f
+    [[ -n "$od" && -d "$od" ]] || return 0
+    for f in "$od"/*.patterns.rpmsave "$od"/*.patterns.rpmnew "$od"/*.patterns.rpmorig \
+             "$od"/*.patterns.dpkg-* "$od"/*.patterns.nftban-saved; do
+        [[ -e "$f" ]] && printf '%s\n' "$f"
+    done
+    if [[ "${1:-}" == "all" ]]; then
+        for f in "$od"/*.patterns.migrated-v1234; do [[ -e "$f" ]] && printf '%s\n' "$f"; done
+    fi
+    return 0
+}
+
 # Load patterns from file
 # Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
 nftban_botscan_load_patterns() {
@@ -452,12 +517,9 @@ nftban_botscan_load_patterns() {
 
     _BOTSCAN_PATTERNS=()
 
-    # v1.188 B2 — 3-tier no-clobber precedence: shipped *.patterns (config(noreplace))
-    # are the base; operator enable/disable decisions live in override.local
-    # (NAME|true|false), which WINS over the shipped ENABLED column WITHOUT editing
-    # the shipped files. override.local is operator-created (NOT package-owned), so
-    # it survives DEB/RPM upgrades intact. Read first so per-pattern effective-enabled
-    # can consult it. It is NOT a *.patterns file, so the glob below never loads it.
+    # override.local (NAME|true|false) WINS over the ENABLED column of any record —
+    # shipped or operator — without editing a file (v1.188 B2). Operator-created, never
+    # package-owned. It is NOT a *.patterns file, so the glob never loads it as rules.
     local override_file="${patterns_dir}/override.local"
     local -A _override=()
     [[ -e "$override_file" && ! -r "$override_file" ]] && _botscan_warn_unreadable "$override_file"
@@ -470,20 +532,28 @@ nftban_botscan_load_patterns() {
         done < "$override_file"
     fi
 
-    for pattern_file in "$patterns_dir"/*.patterns; do
-        [[ -f "$pattern_file" ]] || continue
+    local -A _origin=()          # NAME -> origin of the record that owns it
+    local src cat pattern_file _dups
+    while IFS=$'\t' read -r src cat pattern_file; do
+        [[ -n "$pattern_file" ]] || continue
         # v1.234.0 — an unreadable pattern file is reported, not a silent gap (and not an
         # errexit abort on the redirection below).
         if [[ ! -r "$pattern_file" ]]; then _botscan_warn_unreadable "$pattern_file"; continue; fi
-
+        _dups=0
         local _bs_line
         while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
             # v1.214.0 anchored parse (rc1=blank/comment skip, rc2=malformed WARN+skip).
             _botscan_parse_record "$_bs_line" || continue
 
-            # override.local wins over the shipped ENABLED column (no-clobber).
+            # v1.234.0 — a shipped name is owned by the shipped record (enabled or not).
+            if [[ "$src" == "operator" && "${_origin[$_BSREC_name]:-}" == "shipped" ]]; then
+                _dups=$(( _dups + 1 )); continue
+            fi
+            _origin["$_BSREC_name"]="$src"
+
+            # override.local wins over the ENABLED column (no-clobber).
             local eff_enabled="${_override[$_BSREC_name]:-$_BSREC_enabled}"
-            [[ "$eff_enabled" != "true" ]] && continue
+            [[ "$eff_enabled" != "true" ]] && { unset "_BOTSCAN_PATTERNS[$_BSREC_name]"; continue; }
 
             # v1.214.0 — store name -> "pattern<US>match_type<US>threshold<US>window<US>ban<US>description"
             # with an ASCII Unit Separator join so the pattern's own '|' survives every downstream
@@ -492,45 +562,180 @@ nftban_botscan_load_patterns() {
             pattern_count=$((pattern_count + 1))
 
         done < "$pattern_file"
-    done
+        if (( _dups > 0 )); then
+            local _hint="to change a shipped rule, disable it in override.local and add your own record under a new name"
+            [[ "$_BS_LEGACY_SHIPPED_CATEGORIES" == *" $cat "* ]] && \
+                _hint="this looks like a pre-v1.234 copy of a shipped file: defaults now ship in $(nftban_botscan_shipped_patterns_dir); remove it (edits are migrated by the package, see 'nftban botscan status')"
+            printf "[WARN] botscan: %s: %d record(s) reuse shipped pattern names and are IGNORED — %s\n" "$pattern_file" "$_dups" "$_hint" >&2
+            command -v logger >/dev/null 2>&1 && logger -t nftban-botscan -p user.warning "$pattern_file: $_dups record(s) reuse shipped pattern names, ignored" 2>/dev/null || true
+        fi
+    done < <(nftban_botscan_pattern_files)
+
+    # v1.234.0 — stale pattern files are NOT loaded; say so every cycle until removed.
+    local _stale=()
+    mapfile -t _stale < <(nftban_botscan_pattern_sidecars)
+    if (( ${#_stale[@]} > 0 )); then
+        printf "[WARN] botscan: %d stale pattern file(s) in %s are NOT active (package-manager or pre-v1.234 copies): %s — see 'nftban botscan status'\n" \
+            "${#_stale[@]}" "$patterns_dir" "${_stale[*]##*/}" >&2
+    fi
 
     [[ "$BOTSCAN_DEBUG" == "true" ]] && echo "[DEBUG] Loaded $pattern_count patterns" >&2
     return 0
 }
 
-# List all patterns
+# =============================================================================
+# v1.234.0 — one-time migration of pre-v1.234 pattern files (package maintainer
+# scripts: DEB postinst, RPM %post; idempotent; never edits a shipped file).
+# =============================================================================
+# Inputs, all in the operator dir:
+#   <cat>.patterns.rpmsave       RPM: a locally edited legacy file (rpm renames it when
+#                                the new package no longer owns it)
+#   <cat>.patterns.nftban-saved  DEB: preinst copied a locally edited legacy file
+#                                before dpkg removed it
+#   <cat>.patterns               a legacy file still present (file-drop / source host)
+# for <cat> in aibots badbots exploit scanner webshell, and custom.patterns(.rpmsave|
+# .nftban-saved), which is operator data and is restored as-is.
+# Per record of a legacy file:
+#   name not shipped                   -> kept ACTIVE: appended to local-migrated.patterns
+#   ENABLED differs from the shipped   -> the operator's decision is kept: NAME|state is
+#   default                               written to override.local (unless already there)
+#   regex/type/threshold/window/ban    -> NOT applied (it would re-activate a superseded
+#   differ                                definition); listed in the report
+# The processed file is renamed <file>.migrated-v1234 (kept for review, not loaded).
+# Report: ${NFTBAN_DATA_DIR}/botscan/pattern-migration.report. Prints a one-line summary.
+nftban_botscan_migrate_legacy_patterns() {
+    local od="${BOTSCAN_PATTERNS_DIR:-${NFTBAN_CONFIG_DIR:-/etc/nftban}/patterns.d/botscan}"
+    local tpl="${BOTSCAN_CUSTOM_PATTERNS_TEMPLATE:-/usr/share/nftban/templates/patterns.d/botscan/custom.patterns}"
+    local rep_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan"
+    local report="${rep_dir}/pattern-migration.report"
+    [[ -d "$od" ]] || return 0
+    mkdir -p "$rep_dir" 2>/dev/null || true
+    local grp_ref="$od"
+    _bs_mig_perm() { chmod 0640 "$1" 2>/dev/null || true; chgrp --reference="$grp_ref" "$1" 2>/dev/null || true; }
+
+    # --- custom.patterns: operator data. Restore a saved copy, else seed if absent.
+    local cs
+    if [[ ! -e "$od/custom.patterns" ]]; then
+        for cs in "$od/custom.patterns.rpmsave" "$od/custom.patterns.nftban-saved"; do
+            if [[ -f "$cs" ]]; then mv -f "$cs" "$od/custom.patterns" && _bs_mig_perm "$od/custom.patterns"; break; fi
+        done
+        if [[ ! -e "$od/custom.patterns" && -f "$tpl" ]]; then
+            cp -p "$tpl" "$od/custom.patterns" 2>/dev/null && _bs_mig_perm "$od/custom.patterns"
+        fi
+    fi
+    rm -f -- "$od/custom.patterns.nftban-saved" 2>/dev/null || true
+
+    # --- shipped defaults (name -> pattern<US>type<US>thr<US>win<US>ban, and enabled)
+    local -A _sdef=() _sen=()
+    local src cat f
+    while IFS=$'\t' read -r src cat f; do
+        [[ "$src" == "shipped" ]] || continue
+        local l
+        while IFS= read -r l || [[ -n "$l" ]]; do
+            _botscan_parse_record "$l" 2>/dev/null || continue
+            _sdef["$_BSREC_name"]="${_BSREC_pattern}${_BS_US}${_BSREC_match_type}${_BS_US}${_BSREC_threshold}${_BS_US}${_BSREC_window}${_BS_US}${_BSREC_ban}"
+            _sen["$_BSREC_name"]="$_BSREC_enabled"
+        done < "$f"
+    done < <(nftban_botscan_pattern_files)
+    if (( ${#_sdef[@]} == 0 )); then
+        echo "botscan pattern migration: shipped defaults not found in $(nftban_botscan_shipped_patterns_dir) — nothing migrated (legacy files left in place)"
+        return 0
+    fi
+
+    # --- existing override.local decisions are never overwritten
+    local -A _ov=()
+    local on os
+    if [[ -r "$od/override.local" ]]; then
+        while IFS='|' read -r on os _; do [[ -z "$on" || "$on" =~ ^# ]] && continue; _ov["${on// /}"]=1; done < "$od/override.local"
+    fi
+
+    local n_files=0 n_state=0 n_kept=0 n_dropped=0 ts c sfx
+    ts="$(date -u +%FT%TZ 2>/dev/null || echo unknown)"
+    # IFS-independent split: the module runs under IFS=$'\n\t' (v1.186.1 class)
+    local -a _cats=()
+    IFS=' ' read -ra _cats <<< "$_BS_LEGACY_SHIPPED_CATEGORIES"
+    for c in "${_cats[@]}"; do
+        for sfx in ".patterns" ".patterns.rpmsave" ".patterns.nftban-saved"; do
+            f="$od/${c}${sfx}"
+            [[ -f "$f" ]] || continue
+            n_files=$(( n_files + 1 ))
+            printf '%s legacy file %s\n' "$ts" "$f" >> "$report" 2>/dev/null || true
+            local l
+            while IFS= read -r l || [[ -n "$l" ]]; do
+                _botscan_parse_record "$l" 2>/dev/null || continue
+                local nm="$_BSREC_name"
+                if [[ -z "${_sdef[$nm]:-}" ]]; then
+                    printf '%s\n' "$l" >> "$od/local-migrated.patterns" 2>/dev/null && n_kept=$(( n_kept + 1 ))
+                    printf '  kept   %s (not a shipped name) -> local-migrated.patterns\n' "$nm" >> "$report" 2>/dev/null || true
+                    continue
+                fi
+                if [[ "$_BSREC_enabled" != "${_sen[$nm]}" && -z "${_ov[$nm]:-}" ]]; then
+                    printf '%s|%s|migrated from %s (v1.234)\n' "$nm" "$_BSREC_enabled" "${f##*/}" >> "$od/override.local" 2>/dev/null \
+                        && { _ov["$nm"]=1; n_state=$(( n_state + 1 )); }
+                    printf '  state  %s -> override.local %s\n' "$nm" "$_BSREC_enabled" >> "$report" 2>/dev/null || true
+                fi
+                if [[ "${_BSREC_pattern}${_BS_US}${_BSREC_match_type}${_BS_US}${_BSREC_threshold}${_BS_US}${_BSREC_window}${_BS_US}${_BSREC_ban}" != "${_sdef[$nm]}" ]]; then
+                    n_dropped=$(( n_dropped + 1 ))
+                    printf '  NOT APPLIED %s: local definition differs from the v1.234 default (%s|%s|%s|%s|%s); re-create it under a new name if still wanted\n' \
+                        "$nm" "$_BSREC_pattern" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" >> "$report" 2>/dev/null || true
+                fi
+            done < "$f"
+            mv -f "$f" "${f}.migrated-v1234" 2>/dev/null || true
+        done
+    done
+    [[ -f "$od/override.local" ]] && _bs_mig_perm "$od/override.local"
+    [[ -f "$od/local-migrated.patterns" ]] && _bs_mig_perm "$od/local-migrated.patterns"
+    if (( n_files > 0 )); then
+        echo "botscan pattern migration: ${n_files} legacy file(s): ${n_state} enable/disable decision(s) -> override.local, ${n_kept} operator record(s) kept, ${n_dropped} edited definition(s) NOT applied (report: ${report})"
+    fi
+    return 0
+}
+
+# v1.234.0 — read override.local into the caller's associative array named $1.
+_botscan_read_overrides() {
+    local -n _ro_out="$1"
+    local f="${BOTSCAN_PATTERNS_DIR}/override.local" on os
+    [[ -r "$f" ]] || return 0
+    while IFS='|' read -r on os _; do
+        [[ -z "$on" || "$on" =~ ^# ]] && continue
+        on="${on// /}"; os="${os// /}"
+        [[ "$os" == "true" || "$os" == "false" ]] && _ro_out["$on"]="$os"
+    done < "$f"
+    return 0
+}
+
+# List all patterns (v1.234.0: shipped + operator files; ENABLED is the EFFECTIVE state,
+# '*' = set by override.local; operator records that reuse a shipped name are ignored,
+# exactly as the loader ignores them).
 nftban_botscan_list_patterns() {
     local filter="${1:-all}"  # all, enabled, disabled, category
     local category="${2:-}"
+    local -A _ov=() _owner=()
+    _botscan_read_overrides _ov
 
     printf "%-20s %-8s %-10s %-6s %-6s %-6s %s\n" "NAME" "ENABLED" "MATCH" "THRESH" "WINDOW" "BAN" "DESCRIPTION"
     printf "%s\n" "$(printf '=%.0s' {1..100})"
 
-    for pattern_file in "$BOTSCAN_PATTERNS_DIR"/*.patterns; do
-        [[ -f "$pattern_file" ]] || continue
-
-        # Category filter
-        if [[ -n "$category" ]]; then
-            local file_category
-            file_category=$(basename "$pattern_file" .patterns)
-            [[ "$file_category" != "$category" ]] && continue
-        fi
-
+    local src cat pattern_file
+    while IFS=$'\t' read -r src cat pattern_file; do
+        [[ -r "$pattern_file" ]] || continue
         local _bs_line
         while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
-            _botscan_parse_record "$_bs_line" || continue
-
-            # Filter
+            _botscan_parse_record "$_bs_line" 2>/dev/null || continue
+            [[ "$src" == "operator" && "${_owner[$_BSREC_name]:-}" == "shipped" ]] && continue
+            _owner["$_BSREC_name"]="$src"
+            [[ -n "$category" && "$cat" != "$category" ]] && continue
+            local eff="${_ov[$_BSREC_name]:-$_BSREC_enabled}" mark
+            mark="$eff"; [[ -n "${_ov[$_BSREC_name]:-}" ]] && mark="${eff}*"
             case "$filter" in
-                enabled)  [[ "$_BSREC_enabled" != "true" ]] && continue ;;
-                disabled) [[ "$_BSREC_enabled" == "true" ]] && continue ;;
+                enabled)  [[ "$eff" != "true" ]] && continue ;;
+                disabled) [[ "$eff" == "true" ]] && continue ;;
             esac
-
             printf "%-20s %-8s %-10s %-6s %-6s %-6s %s\n" \
-                "$_BSREC_name" "$_BSREC_enabled" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" "${_BSREC_description:0:40}"
-
+                "$_BSREC_name" "$mark" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" "${_BSREC_description:0:40}"
         done < "$pattern_file"
-    done
+    done < <(nftban_botscan_pattern_files)
+    return 0
 }
 
 # Add custom pattern
@@ -550,9 +755,24 @@ nftban_botscan_add_pattern() {
         echo "ERROR: Pattern '$name' already exists" >&2
         return 1
     fi
+    # v1.234.0 — a shipped name is owned by the shipped rule; an operator record under
+    # that name would be ignored by the loader, so refuse it here with the way forward.
+    local _src _cat _f _l
+    while IFS=$'\t' read -r _src _cat _f; do
+        [[ "$_src" == shipped && -r "$_f" ]] || continue
+        while IFS= read -r _l || [[ -n "$_l" ]]; do
+            _botscan_parse_record "$_l" 2>/dev/null || continue
+            if [[ "$_BSREC_name" == "$name" ]]; then
+                echo "ERROR: '$name' is a shipped rule. Disable it (nftban botscan patterns disable $name) and add yours under a new name." >&2
+                return 1
+            fi
+        done < "$_f"
+    done < <(nftban_botscan_pattern_files)
 
-    # Add pattern
+    # Add pattern (custom.patterns is operator data since v1.234: never package-owned)
+    local _new=0; [[ -e "$custom_file" ]] || _new=1
     echo "${name}|${pattern}|${match_type}|${threshold}|${window}|${ban}|true|${description}" >> "$custom_file"
+    if (( _new )); then chmod 0640 "$custom_file" 2>/dev/null || true; chgrp --reference="${BOTSCAN_PATTERNS_DIR}" "$custom_file" 2>/dev/null || true; fi
     echo "Added pattern: $name"
     return 0
 }
@@ -575,28 +795,31 @@ nftban_botscan_remove_pattern() {
     return 0
 }
 
-# Enable/disable pattern
+# Enable/disable pattern.
+# v1.234.0 (DEBT-BOTSCAN-CLI-MUTATES-SHIPPED-PATTERN-CONFFILES): this used `sed -i` on the
+# shipped rule file, which made the file "locally modified" (RPM then kept it over every
+# later fix, DEB overwrote the decision at the next upgrade). It now records the decision
+# in override.local — the same mechanism as allowbot/blockbot — and never edits a file
+# that a package ships.
 nftban_botscan_toggle_pattern() {
     local name="$1"
     local action="$2"  # enable or disable
     local new_state
-
     [[ "$action" == "enable" ]] && new_state="true" || new_state="false"
 
-    local found=0
-    for pattern_file in "$BOTSCAN_PATTERNS_DIR"/*.patterns; do
-        [[ -f "$pattern_file" ]] || continue
-
-        if grep -q "^${name}|" "$pattern_file"; then
-            # Toggle the enabled field (7th field)
-            sed -i "s/^\(${name}|[^|]*|[^|]*|[^|]*|[^|]*|[^|]*|\)[^|]*/\1${new_state}/" "$pattern_file"
-            echo "${action^}d pattern: $name"
-            found=1
-            break
-        fi
-    done
-
-    [[ $found -eq 0 ]] && echo "ERROR: Pattern '$name' not found" >&2 && return 1
+    local src cat f found=0
+    while IFS=$'\t' read -r src cat f; do
+        [[ -r "$f" ]] || continue
+        local l
+        while IFS= read -r l || [[ -n "$l" ]]; do
+            _botscan_parse_record "$l" 2>/dev/null || continue
+            [[ "$_BSREC_name" == "$name" ]] && { found=1; break; }
+        done < "$f"
+        (( found )) && break
+    done < <(nftban_botscan_pattern_files)
+    if (( ! found )); then echo "ERROR: Pattern '$name' not found" >&2; return 1; fi
+    nftban_botscan_set_override "$name" "$new_state" || { echo "ERROR: could not write override.local for $name" >&2; return 1; }
+    echo "${action^}d pattern: $name (override.local)"
     return 0
 }
 
@@ -627,9 +850,9 @@ nftban_botscan_neverban_token() {
 nftban_botscan_resolve_name() {
     local q; q=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')
     [[ -z "$q" ]] && return 1
-    local f name pattern lc_name lc_pat
-    for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
-        [[ -f "$f" ]] || continue
+    local f name pattern lc_name lc_pat _src _cat
+    while IFS=$'\t' read -r _src _cat f; do
+        [[ -r "$f" ]] || continue
         local _bs_line
         while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
             _botscan_parse_record "$_bs_line" || continue
@@ -640,7 +863,7 @@ nftban_botscan_resolve_name() {
                 printf '%s' "$name"; return 0
             fi
         done < "$f"
-    done
+    done < <(nftban_botscan_pattern_files)
     return 1
 }
 
@@ -711,26 +934,19 @@ nftban_botscan_bots() {
         esac
     done
     # Load effective state via the override-aware loader.
-    nftban_botscan_load_patterns >/dev/null 2>&1
-    local override_file="${BOTSCAN_PATTERNS_DIR}/override.local"
-    local -A _ov=()
-    if [[ -r "$override_file" ]]; then
-        local on os
-        while IFS='|' read -r on os _; do
-            [[ -z "$on" || "$on" =~ ^# ]] && continue
-            _ov["${on// /}"]="${os// /}"
-        done < "$override_file"
-    fi
+    local -A _ov=() _owner=()
+    _botscan_read_overrides _ov
     printf "%-22s %-9s %-9s %-10s %s\n" "NAME" "CATEGORY" "EFFECTIVE" "MATCH" "DESCRIPTION"
     printf '%s\n' "$(printf '=%.0s' {1..92})"
-    local f cat eff
-    for f in "${BOTSCAN_PATTERNS_DIR}"/*.patterns; do
-        [[ -f "$f" ]] || continue
-        cat=$(basename "$f" .patterns)
+    local f cat eff src
+    while IFS=$'\t' read -r src cat f; do
+        [[ -r "$f" ]] || continue
         [[ -n "$category" && "$cat" != "$category" ]] && continue
         local _bs_line
         while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
-            _botscan_parse_record "$_bs_line" || continue
+            _botscan_parse_record "$_bs_line" 2>/dev/null || continue
+            [[ "$src" == "operator" && "${_owner[$_BSREC_name]:-}" == "shipped" ]] && continue
+            _owner["$_BSREC_name"]="$src"
             eff="${_ov[$_BSREC_name]:-$_BSREC_enabled}"
             case "$filter" in
                 enabled)  [[ "$eff" != "true" ]] && continue ;;
@@ -739,7 +955,7 @@ nftban_botscan_bots() {
             local mark="$eff"; [[ -n "${_ov[$_BSREC_name]:-}" ]] && mark="${eff}*"
             printf "%-22s %-9s %-9s %-10s %s\n" "$_BSREC_name" "$cat" "$mark" "$_BSREC_match_type" "${_BSREC_description:0:38}"
         done < "$f"
-    done
+    done < <(nftban_botscan_pattern_files)
     echo ""
     echo "  EFFECTIVE '*' = set by override.local (your blockbot/allowbot decision)."
     return 0
@@ -1389,12 +1605,21 @@ nftban_botscan_analyze() {
             [[ -z "$ban_duration" || "$p_ban" -gt "$ban_duration" ]] && ban_duration="$p_ban"
         done
 
-        # Cross-rule PROBE aggregate (distinct-* rules only): distinct probe targets of
-        # different rules corroborate each other — a client requesting ten different
-        # backup/admin/shell names is scanning even if no single rule reached its own
-        # threshold. Judged against the LOWEST documented threshold and SHORTEST window
-        # among the probe rules it matched (design ruling C5, kept for the class where
-        # summing is evidence); hit-counting rules (exploit payloads, UA rates) never sum.
+        # PROBE VARIETY — the ONLY cross-rule aggregation (owner-approved definition,
+        # documented in the shipped pattern-file headers):
+        #   rules      every enabled distinct-* record
+        #   counted    DISTINCT request targets (path+query) from this IP that matched any
+        #              of them; each target once (_BOTSCAN_PROBE_SEEN), whatever rules it hit
+        #   threshold  the LOWEST THRESHOLD among the distinct-* rules this IP matched
+        #   window     the SHORTEST WINDOW among them, sliding over request time
+        #   ban        the LONGEST BAN among them; reason "probe-variety N/T distinct targets in Ws"
+        #   configured only through those records (override.local disabling a rule
+        #              removes it); no separate key.
+        # Rationale: probing is evidenced by variety — ten different backup/admin/shell
+        # names from one client is a scan even if no single rule reached its own threshold.
+        # Hit-counting rules (exploit payloads, UA rates) never sum across rules.
+        # Tests: botscan_detection_correctness_v1234_test R13 (positive, N-1, window,
+        # repetition, benign client).
         if [[ -n "${_BOTSCAN_PROBE_TS[$ip]:-}" ]]; then
             local _pt="" _pw="" _pb="" _pn _pdef _pmt _pth _pwi _pba
             for _pn in "${!_ip_pat_seen[@]}"; do
@@ -2434,22 +2659,37 @@ nftban_botscan_status() {
     echo "Enabled:        $BOTSCAN_ENABLED"
     echo "Timer:          $(systemctl is-active nftban-botscan.timer 2>/dev/null || echo inactive) (nftban-botscan.timer)"
     echo "Action Mode:    $BOTSCAN_ACTION_MODE"
-    echo "Patterns Dir:   $BOTSCAN_PATTERNS_DIR"
+    echo "Patterns Dir:   $BOTSCAN_PATTERNS_DIR (operator: override.local + your *.patterns)"
+    echo "Shipped rules:  $(nftban_botscan_shipped_patterns_dir)/botscan_*.patterns (package defaults; never edit)"
     echo ""
 
-    # Count patterns
-    local total=0 enabled=0
-    for pattern_file in "$BOTSCAN_PATTERNS_DIR"/*.patterns; do
-        [[ -f "$pattern_file" ]] || continue
+    # Count patterns (v1.234.0: shipped + operator, EFFECTIVE state, as the loader sees them)
+    local total=0 enabled=0 n_shipped=0 n_oper=0 _src _cat pattern_file
+    local -A _ov=() _owner=()
+    _botscan_read_overrides _ov
+    while IFS=$'\t' read -r _src _cat pattern_file; do
+        [[ -r "$pattern_file" ]] || continue
+        [[ "$_src" == shipped ]] && n_shipped=$((n_shipped + 1)) || n_oper=$((n_oper + 1))
         local _bs_line
         while IFS= read -r _bs_line || [[ -n "$_bs_line" ]]; do
-            _botscan_parse_record "$_bs_line" || continue
+            _botscan_parse_record "$_bs_line" 2>/dev/null || continue
+            [[ "$_src" == "operator" && "${_owner[$_BSREC_name]:-}" == "shipped" ]] && continue
+            _owner["$_BSREC_name"]="$_src"
             total=$((total + 1))
-            [[ "$_BSREC_enabled" == "true" ]] && enabled=$((enabled + 1))
+            [[ "${_ov[$_BSREC_name]:-$_BSREC_enabled}" == "true" ]] && enabled=$((enabled + 1))
         done < "$pattern_file"
-    done
+    done < <(nftban_botscan_pattern_files)
 
-    echo "Patterns:       $enabled enabled / $total total"
+    echo "Patterns:       $enabled enabled / $total total (${n_shipped} shipped file(s), ${n_oper} operator file(s))"
+    local -a _st=() _all=()
+    mapfile -t _st < <(nftban_botscan_pattern_sidecars)
+    mapfile -t _all < <(nftban_botscan_pattern_sidecars all)
+    if (( ${#_st[@]} > 0 )); then
+        echo "Stale patterns: ${#_st[@]} file(s) NOT active — review and remove: ${_st[*]##*/}"
+    fi
+    if (( ${#_all[@]} > ${#_st[@]} )); then
+        echo "Migrated:       $(( ${#_all[@]} - ${#_st[@]} )) pre-v1.234 file(s) converted (kept for review, not loaded); report: ${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/pattern-migration.report"
+    fi
     nftban_botscan_duration_truth "${BOTSCAN_BAN_EVIDENCE_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_ban_evidence.jsonl}"
     echo ""
 

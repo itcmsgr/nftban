@@ -31,6 +31,9 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -46,11 +49,11 @@ export NFTBAN_DATA_DIR="$tmp/data" BOTSCAN_PATTERNS_DIR="$tmp/patterns" NFTBAN_C
        BOTSCAN_BATCH_SIGNAL_MODE=true BOTSCAN_404_THRESHOLD=999 BOTSCAN_ENDPOINT_FLOOD_ENABLED=false
 mkdir -p "$NFTBAN_DATA_DIR/botguard" "$BOTSCAN_PATTERNS_DIR"
 # The SHIPPED records under test (never a hand-written copy that could drift), plus one exploit.
-SHIP="$REPO_ROOT/etc/nftban/patterns.d/botscan"
+SHIP="$REPO_ROOT/cli/lib/nftban/data"   # v1.234.0: shipped rules are lib data
 {
-  grep -h '^EXP_WPREST|' "$SHIP/exploit.patterns"
-  grep -h '^WS_WPADMIN|' "$SHIP/webshell.patterns"
-  grep -h '^CVE_LOG4J|' "$SHIP/exploit.patterns"
+  grep -h '^EXP_WPREST|' "$SHIP/botscan_exploit.patterns"
+  grep -h '^WS_WPADMIN|' "$SHIP/botscan_webshell.patterns"
+  grep -h '^CVE_LOG4J|' "$SHIP/botscan_exploit.patterns"
 } > "$BOTSCAN_PATTERNS_DIR/test.patterns"
 [[ "$(grep -c . "$BOTSCAN_PATTERNS_DIR/test.patterns")" -eq 3 ]] || { echo "NOT_EXECUTED: shipped records not found under $SHIP" >&2; exit 2; }
 

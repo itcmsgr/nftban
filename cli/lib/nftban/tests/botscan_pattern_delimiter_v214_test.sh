@@ -32,10 +32,13 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
 REPO_ROOT="$(cd "$NFTBAN_LIB_DIR/../../.." && pwd)"
-SHIPPED_PATTERNS="$REPO_ROOT/etc/nftban/patterns.d/botscan"
+SHIPPED_PATTERNS="$REPO_ROOT/cli/lib/nftban/data"   # v1.234.0: shipped rules are lib data (botscan_*.patterns)
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 US=$'\x1f'   # internal '|'-safe delimiter (must match _BS_US in the module)

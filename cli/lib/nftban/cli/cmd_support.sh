@@ -1469,7 +1469,7 @@ _collect_module_status() {
             cat "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" 2>/dev/null || echo "(no runstate.json)"
             echo ""
             echo "## pattern inventory (enabled/total per file; names + match_type only, no request data)"
-            for pf in "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns; do
+            for pf in "${NFTBAN_LIB_DIR:-/usr/lib/nftban}"/data/botscan_*.patterns "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns; do
                 [[ -f "$pf" ]] || continue
                 local _en _tot
                 # `|| echo 0` appended a second zero to grep -c's own "0" on
@@ -1480,6 +1480,16 @@ _collect_module_status() {
                 echo "$(basename "$pf"): ${_en:-0} enabled / ${_tot:-0} records"
                 awk -F'|' '/^[A-Za-z]/{print "    "$1" ["$(NF-5)"]"}' "$pf" 2>/dev/null | head -60
             done
+            # v1.234.0: operator enable/disable decisions + stale (inactive) pattern files
+            echo "override.local:"; sed 's/^/    /' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/patterns.d/botscan/override.local" 2>/dev/null || echo "    (none)"
+            echo "stale pattern files (NOT loaded):"
+            local _spf _sn=0
+            for _spf in "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns.{rpmsave,rpmnew,rpmorig,nftban-saved,migrated-v1234} \
+                        "${NFTBAN_CONFIG_DIR:-/etc/nftban}"/patterns.d/botscan/*.patterns.dpkg-*; do
+                [[ -e "$_spf" ]] || continue
+                echo "    ${_spf##*/}"; _sn=$((_sn + 1))
+            done
+            [[ "$_sn" -gt 0 ]] || echo "    (none)"
         } > "$mod_dir/botscan.txt"
 
         _support_log OK "Module status (7 modules incl. BotScan)"

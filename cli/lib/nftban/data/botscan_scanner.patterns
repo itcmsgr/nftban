@@ -15,6 +15,17 @@
 #   useragent                           regex on the User-Agent; every request counts
 # THRESHOLD/WINDOW are evaluated in REQUEST time (the line's own timestamp): THRESHOLD events
 # within any WINDOW-second span.
+# PROBE VARIETY (the only cross-rule aggregation; everything else is judged per rule):
+#   which rules  every enabled record of type distinct-*
+#   what counts  DISTINCT request targets (path+query) from one IP that matched any of
+#                those rules; a target counts once, however many rules it matched
+#   threshold N  the LOWEST THRESHOLD among the distinct-* rules that IP matched
+#   window W     the SHORTEST WINDOW among them (request time, sliding)
+#   ban          the LONGEST BAN among them
+#   configured   only through those records; disabling a rule in override.local
+#                removes it from the aggregate. No separate key.
+#   Example: /a.zip /b.tar.gz /c.bak /d.old /e.orig (five rules, each T=5, W=60 s) from
+#   one IP within 60 s is a ban; four are not; the same five spread over 5 min are not.
 # =============================================================================
 
 # -----------------------------------------------------------------------------

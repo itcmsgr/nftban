@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.234.0 - BotScan shipped rules vs operator edits across package upgrades
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
+#
+# meta:name="botscan_pattern_upgrade_v1234_test"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-10-01"
+# meta:description="v1.234.0 upgrade contract for BotScan rules. Measured on the published v1.233.1 packages: RPM shipped /etc/nftban/patterns.d/botscan/*.patterns as %config(noreplace) (an edited file keeps the old, defective rules active after upgrade; new defaults land in .rpmnew) and DEB shipped them as NON-conffiles (edits and custom.patterns overwritten). Now shipped rules are payload under <lib>/data/botscan_*.patterns, /etc holds only operator files (override.local + own *.patterns), and pre-v1.234 edits are migrated once. Arms: P1 packaging (no /etc pattern file packaged or staged on either family; DEB conffiles cannot include patterns; custom.patterns is a seeded template; both families run the migration); P2 DEB preinst saves only locally edited legacy files (md5sum-proven) and custom.patterns, only on upgrade; P3 RPM leftovers (.rpmsave) and P4 DEB leftovers (.nftban-saved) migrate enable/disable decisions to override.local, keep operator records, restore custom.patterns, NEVER re-activate an edited old definition, report it, and are idempotent; P5 a stale legacy copy left in /etc cannot override shipped rules and stale package-manager files are reported (WARN + status); P6 patterns enable/disable/add never edit a shipped file. Set BSDC_SUBJECT_ROOT to an older tree (v1.233.1) to run the loader arms against it: they FAIL there."
+#
+# meta:inventory.files="botscan_pattern_upgrade_v1234_test.sh"
+# meta:inventory.binaries="bash,sh,md5sum,awk,grep,sha256sum,mktemp"
+# meta:inventory.env_vars="BSDC_SUBJECT_ROOT"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+# meta:ta.id="botscan_pattern_upgrade_v1234_test"
+# meta:ta.owner="botscan"
+# meta:ta.module="botscan"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# =============================================================================
+set -Eeuo pipefail
+export LC_ALL=C
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+SUBJECT_ROOT="${BSDC_SUBJECT_ROOT:-$REPO_ROOT}"
+SUBJ_LIB="$SUBJECT_ROOT/cli/lib/nftban"
+SHIP="$REPO_ROOT/cli/lib/nftban/data"          # the v1.234 shipped set (fixture source)
+OLD_SHIP_EXPLOIT_LINE='EXP_WPREST|/wp-json/wp/v2/users|url-get|5|300|1800|true|WP user enumeration'
+
+notexec() { echo "NOT_EXECUTED: $*" >&2; exit 2; }
+[[ -r "$SUBJ_LIB/core/nftban_botscan.sh" ]] || notexec "subject module missing"
+compgen -G "$SHIP/botscan_*.patterns" >/dev/null || notexec "v1.234 shipped rules missing under $SHIP"
+echo "subject: $SUBJECT_ROOT"
+
+ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
+PASS=0; FAIL=0; ARMS=0; declare -a FAILED=()
+ok()  { PASS=$(( PASS + 1 )); echo "PASS $1"; }
+bad() { FAIL=$(( FAIL + 1 )); FAILED+=("$1"); echo "FAIL $1" >&2; }
+arm() { ARMS=$(( ARMS + 1 )); echo "== $1"; }
+
+# run_mod DIR 'commands' -> runs a fresh shell with the SUBJECT module, operator dir DIR,
+# shipped dir = a copy of the v1.234 shipped set (ignored by an older subject).
+run_mod() {
+    local od="$1" body="$2"
+    mkdir -p "$ROOT/ship" "$ROOT/data"
+    compgen -G "$ROOT/ship/botscan_*.patterns" >/dev/null || cp "$SHIP"/botscan_*.patterns "$ROOT/ship/"
+    bash -c '
+        export LC_ALL=C NFTBAN_LIB_DIR="$1" BOTSCAN_PATTERNS_DIR="$2" BOTSCAN_SHIPPED_PATTERNS_DIR="$3" \
+               NFTBAN_DATA_DIR="$4" NFTBAN_CONFIG_DIR="$5" BOTSCAN_CUSTOM_PATTERNS_TEMPLATE="$6"
+        source "$1/core/nftban_botscan.sh" >/dev/null 2>&1
+        set +e
+        eval "$7"
+    ' _ "$SUBJ_LIB" "$od" "$ROOT/ship" "$ROOT/data" "$ROOT/noetc" "$REPO_ROOT/etc/nftban/patterns.d/botscan/custom.patterns" "$body"
+}
+# def_of DIR NAME -> "<regex>|<type>" of the LOADED record for NAME ("absent" if not loaded)
+def_of() {
+    run_mod "$1" 'nftban_botscan_load_config; nftban_botscan_load_patterns 2>/dev/null; d="${_BOTSCAN_PATTERNS['"$2"']:-}"; if [[ -n "$d" ]]; then IFS=$'"'"'\x1f'"'"' read -r p t _ <<< "$d"; echo "$p|$t"; else echo absent; fi'
+}
+
+# =============================================================================
+arm "P1 packaging: no /etc pattern file is packaged or staged; both families migrate"
+SPEC="$REPO_ROOT/packaging/build_nftban.sh"
+code="$(grep -vE '^[[:space:]]*#' "$SPEC")"
+if grep -qE '%config.*patterns\.d' <<<"$code"; then bad "P1 RPM still declares a %config pattern file"; else ok "P1 RPM declares no %config pattern file"; fi
+if grep -qE 'cp .*patterns\.d/botscan.*\*\.patterns .*(buildroot|deb_root)[^ ]*/etc/' <<<"$code"; then bad "P1 a build path still stages *.patterns under /etc"; else ok "P1 neither family stages *.patterns under /etc"; fi
+if grep -qE '^/usr/lib/nftban/data/\*' <<<"$code"; then ok "P1 RPM ships /usr/lib/nftban/data/* (carries botscan_*.patterns)"; else bad "P1 RPM does not ship the data dir"; fi
+n_tpl="$(grep -cE 'templates/patterns\.d/botscan/custom\.patterns' <<<"$code" || true)"
+[[ "$n_tpl" -ge 3 ]] && ok "P1 custom.patterns ships as a template on both families ($n_tpl refs)" || bad "P1 custom.patterns template missing ($n_tpl refs)"
+grep -q 'nftban_botscan_migrate_legacy_patterns' <<<"$code" && ok "P1 RPM %post runs the migration" || bad "P1 RPM %post does not run the migration"
+grep -q 'nftban_botscan_migrate_legacy_patterns' "$REPO_ROOT/packaging/deb/postinst" && ok "P1 DEB postinst runs the migration" || bad "P1 DEB postinst does not run the migration"
+# DEB conffiles generator: every `find ... -name` it uses selects only *.conf / *.yaml / *.yml
+gen="$(awk '/v1.227 MAIL-F8: GENERATE the DEB conffiles/,/DEBIAN\/conffiles"/' "$SPEC")"
+names="$(grep -oE "\-name '[^']+'" <<<"$gen" | grep -v '! -name' | sort -u | tr '\n' ' ')"
+if [[ -n "$gen" ]] && ! grep -qE "patterns" <<<"$names" && grep -q "'\*\.conf'" <<<"$names"; then
+    ok "P1 DEB conffiles generator cannot select a *.patterns file (selects: $names)"
+else bad "P1 DEB conffiles generator not located or may select patterns: [$names]"; fi
+
+# =============================================================================
+arm "P2 DEB preinst saves only edited legacy files, only on upgrade"
+pre="$REPO_ROOT/packaging/deb/preinst"
+blk="$(awk '/== BEGIN v1.234 botscan legacy pattern save ==/,/== END v1.234 botscan legacy pattern save ==/' "$pre")"
+[[ -n "$blk" ]] || bad "P2 preinst block markers not found"
+printf '%s\n' "$blk" > "$ROOT/preinst_blk.sh"
+if sh -n "$ROOT/preinst_blk.sh" 2>/dev/null; then ok "P2 preinst block parses as POSIX sh"; else bad "P2 preinst block does not parse"; fi
+d2="$ROOT/deb_etc"; mkdir -p "$d2"
+printf '%s\n' "$OLD_SHIP_EXPLOIT_LINE" > "$d2/exploit.patterns"                    # unmodified (md5 matches)
+printf 'SCAN_ADMIN|^/admin|url-404|10|60|1800|false|edited\n' > "$d2/scanner.patterns"   # edited
+printf 'MY_RULE|evil\\.php|url-404|3|60|3600|true|mine\n' > "$d2/custom.patterns"
+md5="$ROOT/md5sums"
+{ printf '%s  etc/nftban/patterns.d/botscan/exploit.patterns\n' "$(md5sum < "$d2/exploit.patterns" | awk '{print $1}')"
+  printf '%s  etc/nftban/patterns.d/botscan/scanner.patterns\n' "0123456789abcdef0123456789abcdef"; } > "$md5"
+NFTBAN_PREINST_PATTERNS_DIR="$d2" NFTBAN_PREINST_MD5SUMS="$md5" sh "$ROOT/preinst_blk.sh" install
+[[ ! -e "$d2/scanner.patterns.nftban-saved" ]] && ok "P2 nothing saved on a fresh install" || bad "P2 preinst saved on install"
+NFTBAN_PREINST_PATTERNS_DIR="$d2" NFTBAN_PREINST_MD5SUMS="$md5" sh "$ROOT/preinst_blk.sh" upgrade
+[[ ! -e "$d2/exploit.patterns.nftban-saved" ]] && ok "P2 an unmodified legacy file (md5 match) is not saved" || bad "P2 unmodified file saved"
+[[ -f "$d2/scanner.patterns.nftban-saved" ]] && ok "P2 a locally edited legacy file is saved" || bad "P2 edited file not saved"
+[[ -f "$d2/custom.patterns.nftban-saved" ]] && ok "P2 custom.patterns (operator data) is saved" || bad "P2 custom.patterns not saved"
+
+# =============================================================================
+mk_legacy() { # DIR SUFFIX -> an edited legacy exploit file + custom.patterns with operator data
+    local d="$1" sfx="$2"
+    mkdir -p "$d"
+    {   echo "# old shipped file, edited by the operator"
+        echo 'EXP_WPREST|/wp-json/wp/v2/users|url-get|5|300|1800|false|WP user enumeration'     # disabled (state edit)
+        echo 'EXP_ENVFILE|/\.env|url-any|20|60|7200|true|.env file exposure'                       # threshold edited (old def)
+        echo 'MY_ADDED|/secret-probe|url-any|1|60|7200|true|operator added inside a shipped file'  # not a shipped name
+    } > "$d/exploit.patterns${sfx}"
+    printf 'MY_CUSTOM|evil\\.php|url-404|3|60|3600|true|mine\n' > "$d/custom.patterns${sfx}"
+}
+for fam in "P3 RPM:.rpmsave" "P4 DEB:.nftban-saved"; do
+    tag="${fam%%:*}"; sfx="${fam#*:}"
+    arm "$tag leftovers ($sfx) migrate once"
+    od="$ROOT/etc_${sfx#.}"; mk_legacy "$od" "$sfx"
+    out="$(run_mod "$od" 'declare -F nftban_botscan_migrate_legacy_patterns >/dev/null || { echo NOFUNC; exit 0; }; nftban_botscan_migrate_legacy_patterns' 2>&1 || true)"
+    if [[ "$out" == *NOFUNC* ]]; then bad "$tag subject has no migration"; continue; fi
+    grep -qx 'EXP_WPREST|false|migrated from exploit.patterns'"$sfx"' (v1.234)' "$od/override.local" 2>/dev/null \
+        && ok "$tag the operator's disable decision is kept in override.local" || bad "$tag disable decision not migrated: $(cat "$od/override.local" 2>/dev/null)"
+    grep -q '^MY_ADDED|' "$od/local-migrated.patterns" 2>/dev/null && ok "$tag an operator record inside a shipped file stays active (local-migrated.patterns)" || bad "$tag operator record lost"
+    grep -q '^MY_CUSTOM|' "$od/custom.patterns" 2>/dev/null && ok "$tag custom.patterns restored" || bad "$tag custom.patterns not restored"
+    [[ ! -e "$od/exploit.patterns${sfx}" && -f "$od/exploit.patterns${sfx}.migrated-v1234" ]] && ok "$tag the saved file is renamed .migrated-v1234 (kept, not loaded)" || bad "$tag saved file not renamed"
+    grep -q 'NOT APPLIED EXP_ENVFILE' "$ROOT/data/botscan/pattern-migration.report" 2>/dev/null && ok "$tag an edited old definition is reported, NOT applied" || bad "$tag edited definition not reported"
+    envdef="$(def_of "$od" EXP_ENVFILE)"; envship="$(grep '^EXP_ENVFILE|' "$SHIP/botscan_exploit.patterns" | cut -d'|' -f2,3)"
+    [[ "$envdef" == "$envship" ]] && ok "$tag the loaded EXP_ENVFILE is the v1.234 definition" || bad "$tag loaded EXP_ENVFILE=[$envdef] want [$envship]"
+    [[ "$(def_of "$od" EXP_WPREST)" == absent ]] && ok "$tag EXP_WPREST is disabled as the operator had it" || bad "$tag EXP_WPREST still active"
+    p_ov="$(stat -c %a "$od/override.local" 2>/dev/null || echo none)"
+    [[ "$p_ov" == 640 ]] && ok "$tag override.local is 0640" || bad "$tag override.local mode $p_ov"
+    run_mod "$od" 'nftban_botscan_migrate_legacy_patterns' >/dev/null 2>&1 || true
+    [[ "$(grep -c '^EXP_WPREST|' "$od/override.local")" -eq 1 && "$(grep -c '^MY_ADDED|' "$od/local-migrated.patterns")" -eq 1 ]] \
+        && ok "$tag a second run changes nothing (idempotent)" || bad "$tag second run duplicated entries"
+done
+
+# =============================================================================
+arm "P5 a stale legacy copy in /etc cannot override the shipped rules; stale files are visible"
+od5="$ROOT/etc_stale"; mkdir -p "$od5"
+printf '%s\n' "$OLD_SHIP_EXPLOIT_LINE" > "$od5/exploit.patterns"          # pre-v1.234 copy left behind
+printf '%s\n' "$OLD_SHIP_EXPLOIT_LINE" > "$od5/exploit.patterns.rpmnew"
+want="$(grep '^EXP_WPREST|' "$SHIP/botscan_exploit.patterns" | cut -d'|' -f2-3)"
+got="$(def_of "$od5" EXP_WPREST)"
+# extract the regex+type of the shipped record robustly (regex contains '|')
+shipped_line="$(grep '^EXP_WPREST|' "$SHIP/botscan_exploit.patterns")"; r="${shipped_line#*|}"; r="${r%|*}"; r="${r%|*}"; r="${r%|*}"; r="${r%|*}"; r="${r%|*}"; t="${r##*|}"; r="${r%|*}"
+[[ "$got" == "$r|$t" ]] && ok "P5 EXP_WPREST loads the shipped v1.234 definition, not the stale copy" || bad "P5 stale copy active: loaded [$got] (shipped [$r|$t])"
+w="$(run_mod "$od5" 'nftban_botscan_load_config; nftban_botscan_load_patterns' 2>&1 || true)"
+grep -q 'reuse shipped pattern names and are IGNORED' <<<"$w" && ok "P5 the stale copy is REPORTED (WARN)" || bad "P5 stale copy not reported"
+grep -q 'stale pattern file(s).*NOT active' <<<"$w" && ok "P5 package-manager leftovers (.rpmnew) are REPORTED" || bad "P5 .rpmnew not reported"
+st="$(run_mod "$od5" 'nftban_botscan_status' 2>&1 || true)"
+grep -q '^Stale patterns: ' <<<"$st" && ok "P5 status lists stale pattern files" || bad "P5 status silent about stale files"
+: "${want:=}"
+
+# =============================================================================
+arm "P6 patterns enable/disable/add never edit a shipped file"
+od6="$ROOT/etc_cli"; mkdir -p "$od6"
+run_mod "$od6" 'true' >/dev/null 2>&1 || true
+before="$(sha256sum "$ROOT"/ship/botscan_*.patterns)"
+out6="$(run_mod "$od6" 'nftban_botscan_load_config; nftban_botscan_toggle_pattern SCAN_ADMIN disable; nftban_botscan_add_pattern EXP_WPREST "x" url-any 1 60 60 dup; echo "add_rc=$?"; nftban_botscan_add_pattern MY_NEW "y\\.php" distinct-404 3 60 3600 mine; echo "add2_rc=$?"' 2>&1 || true)"
+after="$(sha256sum "$ROOT"/ship/botscan_*.patterns)"
+[[ "$before" == "$after" ]] && ok "P6 shipped files byte-identical after disable/add" || bad "P6 a shipped file was modified"
+grep -qx 'SCAN_ADMIN|false' "$od6/override.local" 2>/dev/null && ok "P6 disable is recorded in override.local" || bad "P6 disable not in override.local"
+grep -q 'add_rc=1' <<<"$out6" && ok "P6 adding a record under a shipped name is refused" || bad "P6 shipped-name add not refused: $out6"
+grep -q '^MY_NEW|' "$od6/custom.patterns" 2>/dev/null && ok "P6 a new operator record goes to custom.patterns" || bad "P6 operator record not written"
+[[ "$(def_of "$od6" SCAN_ADMIN)" == absent ]] && ok "P6 the disabled shipped rule is not loaded" || bad "P6 disabled rule still loaded"
+
+echo "----"
+EXPECTED=6
+echo "arms run: $ARMS/$EXPECTED  pass=$PASS fail=$FAIL"
+[[ "$ARMS" -eq "$EXPECTED" ]] || { echo "INCOMPLETE: $ARMS of $EXPECTED arms ran" >&2; exit 1; }
+if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi
+echo "PASS: botscan pattern upgrade contract (shipped payload vs operator surface, migration, visibility)"

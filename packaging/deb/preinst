@@ -626,4 +626,34 @@ echo "[✓] All critical prerequisites satisfied"
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo ""
 
+# == BEGIN v1.234 botscan legacy pattern save ==
+# v1.234.0: the shipped BotScan rule files moved from /etc/nftban/patterns.d/botscan to
+# /usr/lib/nftban/data (payload, replaced on upgrade). They were NOT dpkg conffiles, so
+# dpkg removes the old /etc copies on this upgrade ("obsolete files") — an operator's
+# local edits, and custom.patterns (operator records), would be lost. Save them first;
+# postinst migrates them ONCE (nftban_botscan_migrate_legacy_patterns). A shipped file
+# that still matches the installed package's md5sum carries no edit and is not saved.
+# POSIX sh (dash). Never fails the transaction.
+nftban_save_legacy_botscan_patterns() {
+    _d="${NFTBAN_PREINST_PATTERNS_DIR:-/etc/nftban/patterns.d/botscan}"
+    _md5="${NFTBAN_PREINST_MD5SUMS:-/var/lib/dpkg/info/nftban-core.md5sums}"
+    [ -d "$_d" ] || return 0
+    for _c in aibots badbots exploit scanner webshell custom; do
+        _f="$_d/$_c.patterns"
+        [ -f "$_f" ] || continue
+        [ -e "$_f.nftban-saved" ] && continue
+        if [ "$_c" != custom ] && [ -r "$_md5" ]; then
+            _want="$(awk -v p="etc/nftban/patterns.d/botscan/$_c.patterns" '$2==p {print $1; exit}' "$_md5" 2>/dev/null)"
+            _have="$(md5sum "$_f" 2>/dev/null | awk '{print $1}')"
+            [ -n "$_want" ] && [ "$_want" = "$_have" ] && continue
+        fi
+        cp -p "$_f" "$_f.nftban-saved" 2>/dev/null || true
+    done
+    return 0
+}
+if [ "${1:-}" = "upgrade" ]; then
+    nftban_save_legacy_botscan_patterns || true
+fi
+# == END v1.234 botscan legacy pattern save ==
+
 exit 0

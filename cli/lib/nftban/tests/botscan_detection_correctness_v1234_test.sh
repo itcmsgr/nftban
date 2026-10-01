@@ -39,7 +39,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 SUBJECT_ROOT="${BSDC_SUBJECT_ROOT:-$REPO_ROOT}"
 FIX_DIR="$SCRIPT_DIR/fixtures/botscan"
 SUBJ_LIB="$SUBJECT_ROOT/cli/lib/nftban"
-SUBJ_PAT="$SUBJECT_ROOT/etc/nftban/patterns.d/botscan"
+# Shipped rules: v1.234+ payload under cli/lib/nftban/data/botscan_*.patterns; older subjects
+# shipped them in etc/nftban/patterns.d/botscan/*.patterns. Each sandbox gets a COPY of the
+# subject's full shipped set in its operator dir (BOTSCAN_SHIPPED_PATTERNS_DIR="" in the
+# cycle), so negative controls can add records for any subject alike.
+if compgen -G "$SUBJECT_ROOT/cli/lib/nftban/data/botscan_*.patterns" >/dev/null; then
+    SUBJ_PAT="$SUBJECT_ROOT/cli/lib/nftban/data"; SUBJ_PAT_GLOB="botscan_*.patterns"
+else
+    SUBJ_PAT="$SUBJECT_ROOT/etc/nftban/patterns.d/botscan"; SUBJ_PAT_GLOB="*.patterns"
+fi
 
 notexec() { echo "NOT_EXECUTED: $*" >&2; exit 2; }
 [[ -r "$SUBJ_LIB/core/nftban_botscan.sh" ]] || notexec "subject module missing: $SUBJ_LIB/core/nftban_botscan.sh"
@@ -78,7 +86,7 @@ export NFTBAN_LIB_DIR="$SUBJ_LIB" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LOG_DIR="$SB
        NFTBAN_CONFIG_DIR="$SB/noetc" BOTSCAN_SPOOL_DIR="$SB/spool" BOTSCAN_PATTERNS_DIR="$SB/patterns" \
        BOTSCAN_LOG_FILE="$SB/botscan.log" BOTSCAN_STATE_FILE="$SB/state.db" \
        BOTSCAN_ENABLED=true BOTSCAN_BATCH_SIGNAL_MODE=true BOTSCAN_SCAN_BUDGET_SECS=0 \
-       BOTSCAN_VERIFY_CRAWLERS=false BOTSCAN_USE_GLOBAL_WHITELIST=false
+       BOTSCAN_VERIFY_CRAWLERS=false BOTSCAN_USE_GLOBAL_WHITELIST=false BOTSCAN_SHIPPED_PATTERNS_DIR=""
 [[ -f "$SB/env" ]] && . "$SB/env"
 # shellcheck source=/dev/null
 source "$SUBJ_LIB/core/nftban_botscan.sh"
@@ -99,7 +107,7 @@ OBJ="_var_log_httpd_domains_site.example.log"
 new_sb() {
     local sb="$ROOT/$1"
     mkdir -p "$sb/data/botguard" "$sb/log" "$sb/noetc" "$sb/spool" "$sb/patterns"
-    cp "$SUBJ_PAT"/*.patterns "$sb/patterns/"
+    local _pf; for _pf in "$SUBJ_PAT"/$SUBJ_PAT_GLOB; do cp "$_pf" "$sb/patterns/"; done
     : > "$sb/data/botguard/batch_signals.jsonl"
     printf '%s' "$sb"
 }
@@ -521,7 +529,7 @@ fi
 
 arm_begin "S2 prefilter keeps every positive-control line (per-pattern relaxed regex)"
 S2_OUT="$(bash -c '
-    set -uo pipefail; export LC_ALL=C NFTBAN_DATA_DIR="$1/data" BOTSCAN_PATTERNS_DIR="$2" NFTBAN_CONFIG_DIR=/nonexistent NFTBAN_LIB_DIR="$3"
+    set -uo pipefail; export LC_ALL=C NFTBAN_DATA_DIR="$1/data" BOTSCAN_PATTERNS_DIR="$2" BOTSCAN_SHIPPED_PATTERNS_DIR="" NFTBAN_CONFIG_DIR=/nonexistent NFTBAN_LIB_DIR="$3"
     source "$3/core/nftban_botscan.sh" >/dev/null 2>&1; nftban_botscan_load_config; nftban_botscan_load_patterns
     declare -F nftban_botscan_prefilter_relax >/dev/null || { echo "NORELAX"; exit 0; }
     miss=0
