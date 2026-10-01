@@ -129,6 +129,12 @@ cycle() {
     fi
     grep -q '^Processed: ' "$sb/cycle_${CYC_N}.out" || notexec "cycle produced no 'Processed:' line ($sb)"
     LAST_OUT="$sb/cycle_${CYC_N}.out"
+    # Record ONCE which prefilter engine the subject used: production runs the Go matcher
+    # (CI builds it); without it the module passes every line through (diagnostic, not a verdict).
+    if [[ "$CYC_N" -eq 1 ]]; then
+        local _eng; _eng="$(grep -m1 -aE 'prefilter engine:|prefilter helper unavailable' "$LAST_OUT" || true)"
+        echo "   prefilter: ${_eng:-no prefilter line (engine not reported)}"
+    fi
 }
 # signals SB IP -> number of ban signals for IP (exact JSON key match)
 signals() {
@@ -643,6 +649,72 @@ check "R15 INV: without shared-edge data the same edge IS banned (guard has powe
 if grep -q '^BOTSCAN_SHARED_EDGE ranges=UNMEASURED' "$LAST_OUT"; then ok "R15 INV: missing data is reported as UNMEASURED, never silent"; else bad "R15 INV: missing shared-edge data not reported"; fi
 
 # =============================================================================
+# R16 — EMPTY_UA retired (owner decision v1.234.0). The dns2/srv3 shape: machine clients
+# that send User-Agent "-" or a UA that merely ENDS in "-" (calendar / feed sync) at a
+# steady cadence are NOT banned; an independent .env/.git prober with UA "-" IS banned.
+# SINGLE_DASH is untouched (documented 20/60 s still applies; R10 NC covers it).
+# =============================================================================
+arm_begin "R16 EMPTY_UA retired: feed/calendar sync not banned; probes still banned"
+sb16="$(new_sb empty_ua)"
+t=$(( T0 + 68400 ))
+for c in 0 1 2; do
+    base=$(( t + c * 600 ))
+    for (( s2=0; s2<600; s2+=15 )); do      # 4 per minute, all cycle long (dns2 iCal sync shape)
+        emit "$sb16" 45.33.32.201 $(( base + s2 )) GET "/feeds/calendar/listing-1201.ics" 200 '-'
+    done
+    for (( s2=0; s2<50; s2+=2 )); do        # 25 in 50 s, UA ends in "-" (not empty)
+        emit "$sb16" 45.33.32.202 $(( base + s2 )) GET "/feeds/items.xml?page=$s2" 200 'FeedSync/3.1 (+https://feeds.example) -'
+    done
+    cycle "$sb16" $(( base + 600 + 60 ))
+done
+emit "$sb16" 45.33.32.203 $(( t + 1800 + 600 - 30 )) GET '/.env' 404 '-'
+emit "$sb16" 45.33.32.203 $(( t + 1800 + 600 - 29 )) GET '/.git/config' 404 '-'
+cycle "$sb16" $(( t + 1800 + 600 ))
+check "R16 calendar sync with UA \"-\" at 4/min over 3 cycles not banned" "$(signals "$sb16" 45.33.32.201)" eq 0
+check "R16 feed client whose UA ends in \"-\" (25 in 50 s) not banned (EMPTY_UA retired)" "$(signals "$sb16" 45.33.32.202)" eq 0
+check "R16 independent .env/.git prober with UA \"-\" banned" "$(signals "$sb16" 45.33.32.203)" ge 1
+# override.local compatibility: EMPTY_UA|false is silent; EMPTY_UA|true cannot resurrect it
+sb16o="$(new_sb empty_ua_override)"
+printf 'EMPTY_UA|false\n' > "$sb16o/patterns/override.local"
+for (( s2=0; s2<50; s2+=2 )); do emit "$sb16o" 45.33.32.204 $(( t + s2 )) GET "/feeds/items.xml?p=$s2" 200 'FeedSync/3.1 -'; done
+cycle "$sb16o" $(( t + 60 ))
+if grep -q 'RETIRED' "$LAST_OUT"; then bad "R16 override.local EMPTY_UA|false produced a warning"; else ok "R16 override.local EMPTY_UA|false is accepted silently"; fi
+printf 'EMPTY_UA|true\n' > "$sb16o/patterns/override.local"
+for (( s2=0; s2<50; s2+=2 )); do emit "$sb16o" 45.33.32.205 $(( t + 600 + s2 )) GET "/feeds/items.xml?p=$s2" 200 'FeedSync/3.1 -'; done
+cycle "$sb16o" $(( t + 660 ))
+check "R16 override.local EMPTY_UA|true does NOT resurrect the rule" "$(signals "$sb16o" 45.33.32.205)" eq 0
+if grep -q 'override.local enables EMPTY_UA, a RETIRED rule' "$LAST_OUT"; then ok "R16 EMPTY_UA|true is reported as a retired rule"; else bad "R16 EMPTY_UA|true not reported"; fi
+# negative control: the old EMPTY_UA definition under another name DOES ban .202's traffic
+sb16n="$(new_sb empty_ua_nc)"
+printf 'LOCAL_EMPTY_UA|-$|useragent|20|60|3600|true|old EMPTY_UA definition (negative control)\n' > "$sb16n/patterns/zz_negative_control.patterns"
+for (( s2=0; s2<50; s2+=2 )); do emit "$sb16n" 45.33.32.202 $(( t + s2 )) GET "/feeds/items.xml?page=$s2" 200 'FeedSync/3.1 (+https://feeds.example) -'; done
+cycle "$sb16n" $(( t + 60 ))
+check "R16 NC: the old EMPTY_UA definition bans the feed client (arm has power)" "$(signals "$sb16n" 45.33.32.202)" ge 1
+
+arm_begin "S7 the prefilter filters: ordinary lines dropped, every detection's lines kept"
+S7_OUT="$(bash -c '
+    set -uo pipefail; export LC_ALL=C NFTBAN_DATA_DIR="$1/s7data" BOTSCAN_PATTERNS_DIR="$2" BOTSCAN_SHIPPED_PATTERNS_DIR="" NFTBAN_CONFIG_DIR=/nonexistent NFTBAN_LIB_DIR="$3"
+    source "$3/core/nftban_botscan.sh" >/dev/null 2>&1; nftban_botscan_load_config; nftban_botscan_load_patterns
+    pf="$1/s7.pf"; nftban_botscan_build_prefilter "$pf"
+    L() { printf "45.33.32.99 - - [30/Sep/2026:08:00:00 +0000] \"%s %s HTTP/1.1\" %s 5 \"-\" \"%s\"\n" "$1" "$2" "$3" "$4"; }
+    kept() { local n; n="$(printf "%s\n" "$1" | grep -cEf "$pf" || true)"; echo "${n:-0}"; }
+    drop=0; keep=0
+    for l in "$(L GET /about-us/ 200 "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0")" \
+             "$(L GET /feeds/items.xml 200 "FeedSync/3.1 -")" \
+             "$(L POST /contact/send 200 "Mozilla/5.0 Chrome/140")"; do
+        # (lines under /api/ or /v1/ are legitimately kept: SCAN_API/SCAN_V1 are status-gated
+        #  404 rules whose route the prefilter cannot status-check — a sound superset)
+        [[ "$(kept "$l")" -eq 0 ]] && drop=$((drop+1)) || echo "KEPT-ORDINARY ${l##*\" }"
+    done
+    for l in "$(L GET /cal.ics 200 "-")" "$(L GET / 200 "sqlmap/1.7")" "$(L GET /.git/config 404 "x")" \
+             "$(L GET /wp-json/wp/v2/users/7 200 "x")" "$(L GET /nope.html 404 "x")" "$(L GET /actuator/env 200 "x")"; do
+        [[ "$(kept "$l")" -ge 1 ]] && keep=$((keep+1)) || echo "DROPPED-DETECTION $l"
+    done
+    echo "DROP=$drop KEEP=$keep"
+' _ "$ROOT" "$SUBJ_PAT" "$SUBJ_LIB" 2>&1 || true)"
+if grep -q '^DROP=3 KEEP=6$' <<<"$S7_OUT"; then ok "S7 prefilter drops 3/3 ordinary lines and keeps 6/6 detection lines"; else bad "S7 prefilter: $(tr '\n' ' ' <<<"$S7_OUT")"; fi
+
+# =============================================================================
 # S — STRUCTURAL: evidence horizon vs the shipped timer units; prefilter soundness.
 # =============================================================================
 arm_begin "S1 evidence horizon covers the shipped timer units"
@@ -760,7 +832,7 @@ if grep -q 'Ban duration:   UNMEASURED' <<<"$S6_OUT"; then ok "S6 no evidence ->
 
 # =============================================================================
 echo "----"
-EXPECTED_ARMS=29
+EXPECTED_ARMS=31
 echo "arms run: $ARMS_RUN/$EXPECTED_ARMS  pass=$PASS fail=$FAIL"
 [[ "$ARMS_RUN" -eq "$EXPECTED_ARMS" ]] || { echo "INCOMPLETE: $ARMS_RUN of $EXPECTED_ARMS arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi

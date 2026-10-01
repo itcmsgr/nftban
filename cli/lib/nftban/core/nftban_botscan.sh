@@ -466,6 +466,12 @@ _botscan_warn_bad_record() {
 # re-activating superseded rules. Package upgrades never touch the operator surface;
 # nftban_botscan_migrate_legacy_patterns converts pre-v1.234 edits once.
 readonly _BS_LEGACY_SHIPPED_CATEGORIES=" aibots badbots exploit scanner webshell "
+# RETIRED shipped rule names (owner decisions). A retired name is reserved: no operator
+# record, legacy copy or override.local `NAME|true` can re-activate it (reported, once per
+# cycle); `NAME|false` in override.local is accepted silently (it is already the state).
+#   EMPTY_UA  v1.234.0 — duplicate of SINGLE_DASH; extra coverage ("UA ends in -") over-broad
+readonly _BS_RETIRED_PATTERN_NAMES=" EMPTY_UA "
+nftban_botscan_pattern_retired() { [[ "$_BS_RETIRED_PATTERN_NAMES" == *" ${1:-} "* ]]; }
 nftban_botscan_shipped_patterns_dir() {
     printf '%s' "${BOTSCAN_SHIPPED_PATTERNS_DIR-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data}"
 }
@@ -528,12 +534,16 @@ nftban_botscan_load_patterns() {
         while IFS='|' read -r oname ostate _; do
             [[ -z "$oname" || "$oname" =~ ^# ]] && continue
             oname="${oname// /}"; ostate="${ostate// /}"
+            if nftban_botscan_pattern_retired "$oname"; then
+                [[ "$ostate" == "true" ]] && printf "[WARN] botscan: override.local enables %s, a RETIRED rule — ignored (it cannot be re-activated)\n" "$oname" >&2
+                continue
+            fi
             [[ "$ostate" == "true" || "$ostate" == "false" ]] && _override["$oname"]="$ostate"
         done < "$override_file"
     fi
 
     local -A _origin=()          # NAME -> origin of the record that owns it
-    local src cat pattern_file _dups
+    local src cat pattern_file _dups _retired_hits=""
     while IFS=$'\t' read -r src cat pattern_file; do
         [[ -n "$pattern_file" ]] || continue
         # v1.234.0 — an unreadable pattern file is reported, not a silent gap (and not an
@@ -545,6 +555,11 @@ nftban_botscan_load_patterns() {
             # v1.214.0 anchored parse (rc1=blank/comment skip, rc2=malformed WARN+skip).
             _botscan_parse_record "$_bs_line" || continue
 
+            # v1.234.0 — a retired name is never loaded, from any source.
+            if nftban_botscan_pattern_retired "$_BSREC_name"; then
+                [[ "$_BSREC_enabled" == "true" ]] && _retired_hits+=" ${_BSREC_name}@${pattern_file##*/}"
+                continue
+            fi
             # v1.234.0 — a shipped name is owned by the shipped record (enabled or not).
             if [[ "$src" == "operator" && "${_origin[$_BSREC_name]:-}" == "shipped" ]]; then
                 _dups=$(( _dups + 1 )); continue
@@ -571,6 +586,9 @@ nftban_botscan_load_patterns() {
         fi
     done < <(nftban_botscan_pattern_files)
 
+    if [[ -n "$_retired_hits" ]]; then
+        printf "[WARN] botscan: RETIRED rule record(s) ignored:%s — they cannot be re-activated; remove them\n" "$_retired_hits" >&2
+    fi
     # v1.234.0 — stale pattern files are NOT loaded; say so every cycle until removed.
     local _stale=()
     mapfile -t _stale < <(nftban_botscan_pattern_sidecars)
@@ -664,6 +682,10 @@ nftban_botscan_migrate_legacy_patterns() {
             while IFS= read -r l || [[ -n "$l" ]]; do
                 _botscan_parse_record "$l" 2>/dev/null || continue
                 local nm="$_BSREC_name"
+                if nftban_botscan_pattern_retired "$nm"; then
+                    printf '  retired %s: not migrated (rule retired; cannot be re-activated)\n' "$nm" >> "$report" 2>/dev/null || true
+                    continue
+                fi
                 if [[ -z "${_sdef[$nm]:-}" ]]; then
                     printf '%s\n' "$l" >> "$od/local-migrated.patterns" 2>/dev/null && n_kept=$(( n_kept + 1 ))
                     printf '  kept   %s (not a shipped name) -> local-migrated.patterns\n' "$nm" >> "$report" 2>/dev/null || true
@@ -755,6 +777,10 @@ nftban_botscan_add_pattern() {
         echo "ERROR: Pattern '$name' already exists" >&2
         return 1
     fi
+    if nftban_botscan_pattern_retired "$name"; then
+        echo "ERROR: '$name' is a RETIRED rule name and cannot be re-used." >&2
+        return 1
+    fi
     # v1.234.0 — a shipped name is owned by the shipped rule; an operator record under
     # that name would be ignored by the loader, so refuse it here with the way forward.
     local _src _cat _f _l
@@ -806,6 +832,11 @@ nftban_botscan_toggle_pattern() {
     local action="$2"  # enable or disable
     local new_state
     [[ "$action" == "enable" ]] && new_state="true" || new_state="false"
+    if nftban_botscan_pattern_retired "$name"; then
+        if [[ "$new_state" == "true" ]]; then echo "ERROR: '$name' is a RETIRED rule and cannot be enabled." >&2; return 1; fi
+        echo "Pattern $name is retired (already inactive); nothing to do."
+        return 0
+    fi
 
     local src cat f found=0
     while IFS=$'\t' read -r src cat f; do
@@ -1783,12 +1814,28 @@ nftban_botscan_build_prefilter() {
             # space), and the prefilter would silently DROP real candidates. Relax every
             # anchor so the prefilter stays a sound superset.
             path-*|distinct-*) pat="$(nftban_botscan_prefilter_relax "$pat")" ;;
+            useragent)
+                # v1.234.0 — an ANCHORED UA rule is anchored to the UA FIELD, which in a log
+                # line is the last quoted field: `^-$` -> `"-"$`. Stripping the anchors made it
+                # bare `-`, which is in every common-log line, so the prefilter kept EVERY line
+                # on every host (BUG-BOTSCAN-PREFILTER-KEEPS-EVERY-LINE-EMPTY-UA-ANCHOR-STRIP).
+                local _ua_l="" _ua_r=""
+                [[ "$pat" == ^* ]] && { pat="${pat#^}"; _ua_l='"'; }
+                [[ "$pat" == *\$ && "$pat" != *\\\$ ]] && { pat="${pat%\$}"; _ua_r='"$'; }
+                pat="${_ua_l}${pat}${_ua_r}" ;;
             *) pat="${pat#^}"; pat="${pat%\$}" ;;   # strip line-anchors → match the field within the line
         esac
         [[ -z "$pat" ]] && continue
         printf '%s\n' "$pat" >> "$out"
         n=$((n + 1))
     done
+    # v1.234.0 — keep lines WITHOUT a trailing quoted User-Agent field (common log format,
+    # truncated or malformed): they must reach the parser so they are COUNTED and reported
+    # (BOTSCAN_PARSE ua_unparsed=N) instead of vanishing in the prefilter. On a host that logs
+    # in common format this keeps every line — the prefilter cannot help there, and the
+    # report says why.
+    printf '%s\n' '[^"]$' >> "$out"
+    n=$((n + 1))
     if [[ "${BOTSCAN_404_TRACKING:-true}" == "true" ]]; then
         # Keep every 404-status line (common/combined format: "...REQUEST..." 404 <bytes>),
         # independent of patterns, so the 404-flood path never loses candidates.

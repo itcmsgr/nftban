@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-07-02"
-# meta:description="v1.214.0 OPEN_BOTSCAN_PATTERN_DELIMITER_FIX. BotScan .patterns records are NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION (8 fields, |-delimited), and the PATTERN field legally contains regex alternation |. The old naive IFS='|' read mis-split any |-bearing pattern (EXP_CGIBIN/EXP_SQLBACKUP/SCAN_BACKUP_SQL) → truncated regex → RE2 skipped it (dead). This proves: (A) the anchored _botscan_parse_record peels name from the front + 6 constrained trailing fields from the back so the |-bearing pattern (the middle) survives; (B) the internal _BOTSCAN_PATTERNS join/split uses ASCII Unit Separator \\x1f so the downstream re-splits (hot path :755, threshold :906, prefilter build :1004 that feeds the Go matcher) do NOT re-corrupt the |; (C) the 3 shipped |-patterns + an operator |-body pattern parse+match; (D) negatives do not overmatch; (E) the constrained-field validation guard emits a visible WARN and skips malformed/|-in-description/bad-field records; (F) the never-ban guards (loopback/private/exempt-list/WP-admin session) still gate; (G) active/skipped counts (real shipped copy → 140 enabled, 3 formerly-dead now intact); (H) CRLF + blank/comment lines."
+# meta:description="v1.214.0 OPEN_BOTSCAN_PATTERN_DELIMITER_FIX. BotScan .patterns records are NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION (8 fields, |-delimited), and the PATTERN field legally contains regex alternation |. The old naive IFS='|' read mis-split any |-bearing pattern (EXP_CGIBIN/EXP_SQLBACKUP/SCAN_BACKUP_SQL) → truncated regex → RE2 skipped it (dead). This proves: (A) the anchored _botscan_parse_record peels name from the front + 6 constrained trailing fields from the back so the |-bearing pattern (the middle) survives; (B) the internal _BOTSCAN_PATTERNS join/split uses ASCII Unit Separator \\x1f so the downstream re-splits (hot path :755, threshold :906, prefilter build :1004 that feeds the Go matcher) do NOT re-corrupt the |; (C) the 3 shipped |-patterns + an operator |-body pattern parse+match; (D) negatives do not overmatch; (E) the constrained-field validation guard emits a visible WARN and skips malformed/|-in-description/bad-field records; (F) the never-ban guards (loopback/private/exempt-list/WP-admin session) still gate; (G) active/skipped counts (real shipped copy → 139 enabled since v1.234.0, 3 formerly-dead now intact); (H) CRLF + blank/comment lines."
 #
 # meta:inventory.files="botscan_pattern_delimiter_v214_test.sh"
 # meta:inventory.binaries="bash"
@@ -237,7 +237,7 @@ if declare -p _BOTSCAN_IP_ADMIN_SESSION >/dev/null 2>&1; then fail "F: retired W
 echo "PASS F: never-ban guards (loopback/private/exempt) preserved; re-enabled pattern live for non-exempt; no login-inferred trust state"
 
 # ============================================================================
-# (G) Real shipped copy — active/skipped counts (140 enabled, 3 now intact).
+# (G) Real shipped copy — active/skipped counts (139 enabled since v1.234.0 retired EMPTY_UA; 3 now intact).
 # ============================================================================
 if [[ -d "$SHIPPED_PATTERNS" ]]; then
     ship="$tmp/shipped"; mkdir -p "$ship"
@@ -248,12 +248,12 @@ if [[ -d "$SHIPPED_PATTERNS" ]]; then
         fail "G: shipped patterns produced a malformed WARN: $(cat "$tmp/warn_ship.txt")"
     fi
     loaded="${#_BOTSCAN_PATTERNS[@]}"
-    [[ "$loaded" == "140" ]] || fail "G: expected 140 enabled shipped patterns loaded, got $loaded"
+    [[ "$loaded" == "139" ]] || fail "G: expected 139 enabled shipped patterns loaded (v1.234.0: EMPTY_UA retired), got $loaded"
     for k in EXP_CGIBIN EXP_SQLBACKUP SCAN_BACKUP_SQL; do
         [[ -n "${_BOTSCAN_PATTERNS[$k]:-}" ]] || fail "G: formerly-dead $k not loaded from shipped set"
         [[ "${_BOTSCAN_PATTERNS[$k]}" == *"|"* ]] || fail "G: shipped $k lost its | alternation"
     done
-    echo "PASS G: shipped set → 140 enabled, 3 formerly-dead |-patterns now intact (skipped 0)"
+    echo "PASS G: shipped set → 139 enabled, 3 formerly-dead |-patterns now intact (skipped 0)"
     # restore fixture dir for any later use
     write_fixture
 else

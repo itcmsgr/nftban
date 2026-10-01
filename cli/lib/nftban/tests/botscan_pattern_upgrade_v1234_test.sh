@@ -223,8 +223,31 @@ grep -qF 'filepath.Join("..", "..", "cli", "lib", "nftban", "data")' "$REPO_ROOT
 if grep -qE 'patterns\.d|/usr/lib/nftban/data' "$REPO_ROOT/cmd/nftban-botscan-matcher/main.go" "$REPO_ROOT/internal/botscanmatch/matcher.go" "$REPO_ROOT/internal/botscanmatch/ahocorasick.go"; then
     bad "P8 the matcher runtime hard-codes a rule location"; else ok "P8 the matcher runtime has no hard-coded rule location (prefilter file is passed in)"; fi
 
+# =============================================================================
+arm "P9 retired EMPTY_UA cannot survive an upgrade (RPM, DEB, live legacy, operator copy)"
+for shape in ".rpmsave" ".nftban-saved" ""; do
+    od9="$ROOT/etc_retired${shape:-_live}"; mkdir -p "$od9"
+    {   echo 'EMPTY_UA|-$|useragent|20|60|3600|true|Empty user agent'          # old shipped, enabled
+        echo 'SINGLE_DASH|^-$|useragent|20|60|3600|true|Single dash user agent'
+    } > "$od9/badbots.patterns${shape}"
+    o9="$(run_mod "$od9" 'declare -F nftban_botscan_migrate_legacy_patterns >/dev/null || { echo NOFUNC; exit 0; }; nftban_botscan_migrate_legacy_patterns' 2>&1 || true)"
+    tag="P9 ${shape:-live legacy file}"
+    if [[ "$o9" == *NOFUNC* ]]; then bad "$tag subject has no migration"; continue; fi
+    [[ "$(def_of "$od9" EMPTY_UA)" == absent ]] && ok "$tag: EMPTY_UA is not active after the upgrade" || bad "$tag: EMPTY_UA still active"
+    grep -q '^EMPTY_UA|' "$od9/override.local" "$od9/local-migrated.patterns" 2>/dev/null && bad "$tag: EMPTY_UA carried into operator files" || ok "$tag: EMPTY_UA not carried into override.local or local-migrated.patterns"
+done
+grep -q 'retired EMPTY_UA: not migrated' "$ROOT/data/botscan/pattern-migration.report" 2>/dev/null && ok "P9 the report names the retired rule" || bad "P9 report does not name the retired rule"
+# an operator copy that defines EMPTY_UA under its own file name is ignored and reported
+od9c="$ROOT/etc_retired_copy"; mkdir -p "$od9c"
+echo 'EMPTY_UA|-$|useragent|20|60|3600|true|operator copy' > "$od9c/mine.patterns"
+[[ "$(def_of "$od9c" EMPTY_UA)" == absent ]] && ok "P9 an operator record named EMPTY_UA is not loaded" || bad "P9 operator EMPTY_UA record loaded"
+w9="$(run_mod "$od9c" 'nftban_botscan_load_config; nftban_botscan_load_patterns' 2>&1 || true)"
+grep -q 'RETIRED rule record(s) ignored: EMPTY_UA@mine.patterns' <<<"$w9" && ok "P9 the ignored retired record is reported" || bad "P9 retired record not reported"
+o9a="$(run_mod "$od9c" 'nftban_botscan_add_pattern EMPTY_UA "-$" useragent 20 60 3600 x; echo "rc=$?"; nftban_botscan_toggle_pattern EMPTY_UA enable; echo "rc2=$?"' 2>&1 || true)"
+grep -q 'rc=1' <<<"$o9a" && grep -q 'rc2=1' <<<"$o9a" && ok "P9 patterns add/enable refuse the retired name" || bad "P9 add/enable of retired name not refused: $o9a"
+
 echo "----"
-EXPECTED=8
+EXPECTED=9
 echo "arms run: $ARMS/$EXPECTED  pass=$PASS fail=$FAIL"
 [[ "$ARMS" -eq "$EXPECTED" ]] || { echo "INCOMPLETE: $ARMS of $EXPECTED arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi
