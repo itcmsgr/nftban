@@ -181,6 +181,18 @@ func (m *Module) botscanSharedEdgeSkip(sig *BatchSignal, ip netip.Addr) bool {
 		}
 		m.sharedEdges = newSharedEdgeSet(files)
 	})
+	if m.sharedEdges.Size() == 0 {
+		// No range data readable by the daemon (missing file, or a confinement denial on an
+		// enforcing host): the daemon-side refusal is inactive. The scanner's own guard still
+		// runs before any signal is written. Say so once instead of failing silently.
+		m.sharedEdgesWarnOnce.Do(func() {
+			if m.logger != nil {
+				m.logger.LogEvent("WARN", "botscan shared-edge ranges UNMEASURED in the daemon (no readable data in "+
+					strings.Join(m.sharedEdges.files, ", ")+"): daemon-side CDN edge refusal inactive; the scanner-side guard still applies")
+			}
+		})
+		return false
+	}
 	label, ok := m.sharedEdges.Match(ip)
 	if !ok {
 		return false

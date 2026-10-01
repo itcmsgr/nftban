@@ -21,14 +21,25 @@ import (
 	"testing"
 )
 
+// shippedPatternsDir / shippedPatternsGlob: where the SHIPPED BotScan rules live in the repo.
+// v1.234.0 moved them from etc/nftban/patterns.d/botscan (package config) to package payload
+// cli/lib/nftban/data/botscan_*.patterns (installed as /usr/lib/nftban/data/botscan_*.patterns);
+// /etc/nftban/patterns.d/botscan now holds only operator files. Pinned against the shell
+// loader and packaging by botscan_pattern_upgrade_v1234_test (arm P8).
+var (
+	shippedPatternsDir  = filepath.Join("..", "..", "cli", "lib", "nftban", "data")
+	shippedPatternsGlob = "botscan_*.patterns"
+)
+
 // loadRealPatterns reads the shipped BotScan corpus the way build_prefilter does: field 2 of
 // each `name|pattern|type|...` line, with ^/$ line-anchors stripped (match the field within a line).
+// A missing corpus is a FAILURE, not a skip: a test that silently stops reading the shipped
+// rules (as a location move would cause) must not pass.
 func loadRealPatterns(t *testing.T) []string {
 	t.Helper()
-	dir := filepath.Join("..", "..", "etc", "nftban", "patterns.d", "botscan")
-	files, err := filepath.Glob(filepath.Join(dir, "*.patterns"))
+	files, err := filepath.Glob(filepath.Join(shippedPatternsDir, shippedPatternsGlob))
 	if err != nil || len(files) == 0 {
-		t.Skipf("no pattern files under %s (%v)", dir, err)
+		t.Fatalf("no shipped pattern files %s under %s (%v)", shippedPatternsGlob, shippedPatternsDir, err)
 	}
 	var out []string
 	for _, fp := range files {

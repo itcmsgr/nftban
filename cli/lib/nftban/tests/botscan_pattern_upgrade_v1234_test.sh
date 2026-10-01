@@ -193,8 +193,38 @@ if [[ "$out7" == *NOFUNC* ]]; then bad "P7 subject has no install-time step"; el
     [[ "$(def_of "$od7" GPTBOT)" == absent && "$(def_of "$od7" MY_X)" != absent ]] && ok "P7 operator decisions and records stay effective after reinstall" || bad "P7 operator state not effective after reinstall"
 fi
 
+# =============================================================================
+arm "P8 runtime and packaging agree on where the shipped rules and edge ranges live"
+# One location, stated by every reader: repo source -> packaged path -> runtime default.
+LIBD="$REPO_ROOT/cli/lib/nftban/data"
+n_src="$(compgen -G "$LIBD/botscan_*.patterns" | wc -l)"
+[[ "$n_src" -eq 5 ]] && ok "P8 repo carries the 5 shipped rule files in cli/lib/nftban/data" || bad "P8 repo shipped rule files: $n_src (want 5)"
+[[ -f "$LIBD/botscan_shared_edges.tsv" ]] && ok "P8 repo carries the shared-edge snapshot in cli/lib/nftban/data" || bad "P8 shared-edge snapshot missing"
+compgen -G "$REPO_ROOT/etc/nftban/patterns.d/botscan/*.patterns" >/dev/null && \
+    [[ "$(compgen -G "$REPO_ROOT/etc/nftban/patterns.d/botscan/*.patterns")" == "$REPO_ROOT/etc/nftban/patterns.d/botscan/custom.patterns" ]] \
+    && ok "P8 etc/nftban/patterns.d/botscan holds only the custom.patterns template" || bad "P8 shipped rules still under etc/: $(compgen -G "$REPO_ROOT/etc/nftban/patterns.d/botscan/*.patterns" | tr '\n' ' ')"
+# packaging: cli/lib/nftban/* -> /usr/lib/nftban on RPM and DEB; RPM lists data/*; Go installer stages data/*
+grep -qE '^cp -r cli/lib/nftban/\* %\{buildroot\}/usr/lib/nftban/' "$SPEC" && grep -qE '^/usr/lib/nftban/data/\*' "$SPEC" \
+    && ok "P8 RPM stages cli/lib/nftban/* to /usr/lib/nftban and owns /usr/lib/nftban/data/*" || bad "P8 RPM staging/ownership of data/ not found"
+grep -qE 'cp -r "\$\{PROJECT_ROOT\}/cli/lib/nftban"/\* "\$\{deb_root\}/usr/lib/nftban/"' "$SPEC" && ok "P8 DEB stages cli/lib/nftban/* to /usr/lib/nftban" || bad "P8 DEB staging not found"
+grep -qE 'srcRel: "cli/lib/nftban/data", srcGlob: "\*", dstGlob: "/usr/lib/nftban/data"' "$REPO_ROOT/internal/installer/payload/payload.go" \
+    && ok "P8 Go installer stages cli/lib/nftban/data/* to /usr/lib/nftban/data" || bad "P8 Go installer data entry not found"
+# runtime defaults (shell + Go) point at the packaged location
+grep -qF 'printf '"'"'%s'"'"' "${BOTSCAN_SHIPPED_PATTERNS_DIR-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data}"' "$SUBJ_LIB/core/nftban_botscan.sh" \
+    && grep -qF '"$sd"/botscan_*.patterns' "$SUBJ_LIB/core/nftban_botscan.sh" \
+    && ok "P8 shell loader default = /usr/lib/nftban/data/botscan_*.patterns" || bad "P8 shell loader default differs"
+grep -qF '${BOTSCAN_SHARED_EDGE_FILE-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/botscan_shared_edges.tsv}' "$SUBJ_LIB/core/nftban_botscan.sh" \
+    && grep -qF '"/usr/lib/nftban/data/botscan_shared_edges.tsv",' "$REPO_ROOT/internal/botguard/botscan_shared_edge.go" \
+    && ok "P8 shell and daemon read the same shared-edge snapshot path" || bad "P8 shell/daemon shared-edge paths differ"
+grep -qF 'filepath.Join("..", "..", "cli", "lib", "nftban", "data")' "$REPO_ROOT/internal/botscanmatch/matcher_test.go" \
+    && grep -qF 'shippedPatternsGlob = "botscan_*.patterns"' "$REPO_ROOT/internal/botscanmatch/matcher_test.go" \
+    && ok "P8 the Go matcher corpus test reads the shipped location" || bad "P8 Go matcher corpus test reads another location"
+# the matcher binary itself never reads a fixed rule location (it gets the prefilter file as an argument)
+if grep -qE 'patterns\.d|/usr/lib/nftban/data' "$REPO_ROOT/cmd/nftban-botscan-matcher/main.go" "$REPO_ROOT/internal/botscanmatch/matcher.go" "$REPO_ROOT/internal/botscanmatch/ahocorasick.go"; then
+    bad "P8 the matcher runtime hard-codes a rule location"; else ok "P8 the matcher runtime has no hard-coded rule location (prefilter file is passed in)"; fi
+
 echo "----"
-EXPECTED=7
+EXPECTED=8
 echo "arms run: $ARMS/$EXPECTED  pass=$PASS fail=$FAIL"
 [[ "$ARMS" -eq "$EXPECTED" ]] || { echo "INCOMPLETE: $ARMS of $EXPECTED arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi

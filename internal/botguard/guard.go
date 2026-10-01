@@ -106,8 +106,9 @@ type Module struct {
 	stats GuardStats
 
 	// v1.234.0 — shared CDN edge ranges BotScan must never ban (botscan_shared_edge.go).
-	sharedEdges     *sharedEdgeSet
-	sharedEdgesOnce sync.Once
+	sharedEdges         *sharedEdgeSet
+	sharedEdgesOnce     sync.Once
+	sharedEdgesWarnOnce sync.Once
 }
 
 // New creates a new bot guard module.
