@@ -205,6 +205,22 @@ replay() { # replay SB -> delivers the fixture on the schedule and runs every P 
     REPLAY_DELIVERED=$delivered; REPLAY_TOTAL=$total
     REPLAY_DUE=0; for e in "${FE[@]}"; do if (( e <= REPLAY_LAST_C )); then REPLAY_DUE=$(( REPLAY_DUE + 1 )); fi; done
 }
+arm_begin "R0 replay fixture preconditions (logged-in editor: login in an EARLIER cycle; IP change without login)"
+# The retirement of the v1.192.2 login exemption is accepted only if the replay really
+# contains: a login consumed in an earlier cycle than the later polling (.21, .23), and an
+# IP change with NO login at all (.22). Assert it from the fixture, not from prose.
+FX="$FIX_DIR/wp_editor_session_redacted.tsv"
+r0_login() { local n=0 e l; while IFS=$'\t' read -r e l; do [[ "$l" == "$1 "* && "$l" == *'"POST /wp-login.php'*'" 302 '* ]] && n=$((n+1)); done < "$FX"; echo "$n"; }
+r0_first_login() { local e l; while IFS=$'\t' read -r e l; do [[ "$l" == "$1 "* && "$l" == *'"POST /wp-login.php'*'" 302 '* ]] && { echo "$e"; return 0; }; done < "$FX"; echo 0; }
+r0_last_poll() { local e l last=0; while IFS=$'\t' read -r e l; do [[ "$l" == "$1 "* && "$l" == *'/wp-json/wp/v2/users/me'* ]] && last="$e"; done < "$FX"; echo "$last"; }
+for ip in 45.33.32.21 45.33.32.23; do
+    lg="$(r0_first_login "$ip")"; lp="$(r0_last_poll "$ip")"
+    if [[ "$lg" -gt 0 && $(( lp - lg )) -gt 750 ]]; then ok "R0 $ip logged in once, then polled for $(( lp - lg ))s (> one processor period: login consumed in an earlier cycle)"
+    else bad "R0 $ip fixture lacks a login in an earlier cycle (login=$lg last_poll=$lp)"; fi
+done
+check "R0 45.33.32.22 (same editor, new ISP address) never logged in" "$(r0_login 45.33.32.22)" eq 0
+[[ "$(r0_last_poll 45.33.32.22)" -gt 0 ]] && ok "R0 45.33.32.22 keeps polling the editor API" || bad "R0 45.33.32.22 has no editor polling"
+
 arm_begin "R1/R2 replay: recorded editing session, recorded schedule"
 REPLAY_TRACE=""
 sbR="$(new_sb replay)"
@@ -506,6 +522,65 @@ else
 fi
 
 # =============================================================================
+# R13 — PROBE VARIETY, the one cross-rule aggregation (definition in nftban_botscan_analyze
+# and in the shipped pattern-file header): distinct request targets of DIFFERENT distinct-*
+# rules from one IP corroborate each other; each target counts once; N = the LOWEST
+# documented THRESHOLD among the distinct-* rules that IP matched, W = the SHORTEST WINDOW
+# among them, ban = the LONGEST BAN among them. Configured only through those rules' own
+# records (override.local disabling a rule removes it from the aggregate). Here the five
+# probes hit five different rules (SCAN_BACKUP_ZIP/TAR/BAK/OLD/ORIG, each T=5, W=60 s), so
+# no single rule reaches its own threshold.
+# =============================================================================
+arm_begin "R13 probe variety: positive, boundary, window, repetition, benign client"
+sb13="$(new_sb variety)"
+t=$(( T0 + 57600 ))
+vp=(/a.zip /b.tar.gz /c.bak /d.old /e.orig)
+for (( i=0; i<5; i++ )); do emit "$sb13" 45.33.32.171 $(( t - 50 + i )) GET "${vp[i]}" 404; done          # N distinct
+for (( i=0; i<4; i++ )); do emit "$sb13" 45.33.32.172 $(( t - 50 + i )) GET "${vp[i]}" 404; done          # N-1
+for (( i=0; i<5; i++ )); do emit "$sb13" 45.33.32.173 $(( t - 600 + i * 61 )) GET "${vp[i]}" 404; done    # N, but spread > W
+for (( i=0; i<6; i++ )); do emit "$sb13" 45.33.32.174 $(( t - 50 + i )) GET '/a.zip' 404; done           # one target repeated
+# benign browser: 12 ordinary pages, one missing source map re-requested on every admin page,
+# one missing dashboard link, missing images that match no rule
+for (( i=0; i<12; i++ )); do
+    emit "$sb13" 45.33.32.175 $(( t - 55 + i * 4 )) GET "/docs/page-$i/" 200
+    emit "$sb13" 45.33.32.175 $(( t - 54 + i * 4 )) GET '/admin/assets/app.js.map' 404
+    emit "$sb13" 45.33.32.175 $(( t - 53 + i * 4 )) GET "/img/missing-$i.png" 404
+done
+emit "$sb13" 45.33.32.175 $(( t - 10 )) GET '/dashboard/old-link' 404
+cycle "$sb13" "$t"
+check "R13 positive: N distinct probes across different rules within W banned" "$(signals "$sb13" 45.33.32.171)" ge 1
+check "R13 boundary: N-1 distinct probes not banned" "$(signals "$sb13" 45.33.32.172)" eq 0
+check "R13 window: N distinct probes spread beyond W not banned" "$(signals "$sb13" 45.33.32.173)" eq 0
+check "R13 repetition: one probe target requested 6x is one event, not banned" "$(signals "$sb13" 45.33.32.174)" eq 0
+check "R13 negative: benign client (ordinary pages, a re-requested missing asset, unmatched 404s) not banned" "$(signals "$sb13" 45.33.32.175)" eq 0
+if grep -q 'probe-variety 5/5 distinct targets in 60s' "$sb13/botscan.log" 2>/dev/null; then ok "R13 the ban reason names the probe-variety rule, N and W"; else bad "R13 probe-variety reason missing: $(grep -a 45.33.32.171 "$sb13/botscan.log" 2>/dev/null | tail -1)"; fi
+
+# =============================================================================
+# R14 — logged-in editor, CMS-NEUTRAL paths, across cycles: login in cycle 1, polling and
+# autosave in cycles 1-3, then an IP change with NO new login in cycles 4-5. Nothing about
+# a session is inferred; nothing should be banned. Negative control: a real admin-path
+# scanner in the same cycles IS banned.
+# =============================================================================
+arm_begin "R14 logged-in editor across cycles + IP change (CMS-neutral)"
+sb14="$(new_sb editor_neutral)"
+t=$(( T0 + 61200 ))
+for c in 0 1 2 3 4; do
+    ip=45.33.32.181; [[ "$c" -ge 3 ]] && ip=45.33.32.182
+    base=$(( t + c * 600 ))
+    [[ "$c" -eq 0 ]] && emit "$sb14" "$ip" "$base" POST '/account/login' 302
+    for (( s2=0; s2<600; s2+=30 )); do
+        emit "$sb14" "$ip" $(( base + s2 )) GET "/api/v1/users/me?fields=id,name&_t=$s2" 200
+        emit "$sb14" "$ip" $(( base + s2 + 1 )) GET '/admin/editor/assets/editor.js.map' 404
+        (( s2 % 60 == 0 )) && emit "$sb14" "$ip" $(( base + s2 + 2 )) POST '/api/v1/documents/42/autosave' 200
+    done
+    if [[ "$c" -eq 1 ]]; then for p2 in /admin.php /admin/login.php /administrator/ /admin/config.php /admin/setup /admin1/ /admin2/ /adminer/ /admin/backup.zip /admin/.env; do emit "$sb14" 45.33.32.183 $(( base + 100 )) GET "$p2" 404; done; fi
+    cycle "$sb14" $(( base + 600 + 60 ))
+done
+check "R14 editor (login in cycle 1, polling cycles 1-3) not banned" "$(signals "$sb14" 45.33.32.181)" eq 0
+check "R14 same editor after an IP change, no new login (cycles 4-5) not banned" "$(signals "$sb14" 45.33.32.182)" eq 0
+check "R14 NC: an admin-path scanner (10 distinct probes) in the same cycles is banned" "$(signals "$sb14" 45.33.32.183)" ge 1
+
+# =============================================================================
 # S — STRUCTURAL: evidence horizon vs the shipped timer units; prefilter soundness.
 # =============================================================================
 arm_begin "S1 evidence horizon covers the shipped timer units"
@@ -623,7 +698,7 @@ if grep -q 'Ban duration:   UNMEASURED' <<<"$S6_OUT"; then ok "S6 no evidence ->
 
 # =============================================================================
 echo "----"
-EXPECTED_ARMS=25
+EXPECTED_ARMS=28
 echo "arms run: $ARMS_RUN/$EXPECTED_ARMS  pass=$PASS fail=$FAIL"
 [[ "$ARMS_RUN" -eq "$EXPECTED_ARMS" ]] || { echo "INCOMPLETE: $ARMS_RUN of $EXPECTED_ARMS arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi
