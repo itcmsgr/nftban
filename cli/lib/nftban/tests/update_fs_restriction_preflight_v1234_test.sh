@@ -213,7 +213,7 @@ else no "T10 generated copies current" "build/generate-immutable-owned-blocks.sh
 # T11 — RPM scriptlets (real spec text, library substituted as the build does).
 libtxt=$(tail -n +2 "$LIB" 2>/dev/null || true)
 spec_section() { awk -v s="$1" '$0==s {p=1; next} p && /^%[a-z]+( |$)/ {exit} p' "$BUILD_SH" | sed -e 's/\\\$/$/g'; }
-preun=$(spec_section '%preun' | awk '/^# MFST-C3/{exit} {print}'); preun=${preun//'${rpm_immut_lib}'/$libtxt}
+preun=$(spec_section '%preun'); preun=${preun%%# MFST-C3*}; preun=${preun//'${rpm_immut_lib}'/$libtxt}
 post=$(spec_section '%posttrans'); post=${post//'${rpm_immut_lib}'/$libtxt}
 run_spec() { env -i "${ENVV[@]}" sh -c "$1" _ "$2" >/dev/null 2>&1 || true; }
 mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
