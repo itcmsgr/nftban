@@ -320,6 +320,7 @@ stats_manual_provenance_v206_1_test	cli/lib/nftban/tests/stats_manual_provenance
 stats_producer_reconcile_v152_test	cli/lib/nftban/tests/stats_producer_reconcile_v152_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 stats_status_truth_v150_test	cli/lib/nftban/tests/stats_status_truth_v150_test.sh	cli	test	stats-status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 status_consistency_v153_test	cli/lib/nftban/tests/status_consistency_v153_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+status_installation_consistency_v1234_test	cli/lib/nftban/tests/status_installation_consistency_v1234_test.sh	cli	test	status	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 status_rc_contract_v152_test	cli/lib/nftban/tests/status_rc_contract_v152_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 support_bundle_redaction_test	cli/lib/nftban/tests/support_bundle_redaction_test.sh	security	test	redaction	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 suricata_eve_file_authority_v1229_9_test	cli/lib/nftban/tests/suricata_eve_file_authority_v1229_9_test.sh	suricata	test	suricata-eve-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
