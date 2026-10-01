@@ -75,7 +75,7 @@ cli_fs3_da_v143_test	cli/lib/nftban/tests/cli_fs3_da_v143_test.sh	cli	test	port	
 cli_fs3_mutation_v143_test	cli/lib/nftban/tests/cli_fs3_mutation_v143_test.sh	cli	test	rc-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_hardening_v150_test	cli/lib/nftban/tests/cli_hardening_v150_test.sh	cli	test	cli-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_help_block_reachability_v144_test	cli/lib/nftban/tests/cli_help_block_reachability_v144_test.sh	cli	test	help-reachability	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
-cli_help_inertness_universal_test	cli/lib/nftban/tests/cli_help_inertness_universal_test.sh	cli	test	help-inertness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+cli_help_inertness_universal_test	cli/lib/nftban/tests/cli_help_inertness_universal_test.sh	cli	test	help-inertness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	1200		
 cli_help_inertness_v141_test	cli/lib/nftban/tests/cli_help_inertness_v141_test.sh	cli	test	help-inertness	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_inet_filter_policy_v146_test	cli/lib/nftban/tests/cli_inet_filter_policy_v146_test.sh	packaging	test	inet-filter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_json_clean_output_test	cli/lib/nftban/tests/cli_json_clean_output_test.sh	cli	test	json-output	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
