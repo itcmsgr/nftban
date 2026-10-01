@@ -312,6 +312,16 @@ readonly CR_UNATTRIBUTABLE_ABSENCE="UNATTRIBUTABLE_ABSENCE"
 readonly CR_RUNTIME_DEFERRED="RUNTIME_MODULE_PROJECTION_DEFERRED"
 readonly CR_DAEMON_UNAVAILABLE="DAEMON_UNAVAILABLE"
 readonly CR_SCHEMA_UNUSABLE="VALIDATOR_SCHEMA_UNUSABLE"
+# v1.234.0 installer lifecycle — VAL-TIMER-001 is OWED TO THE INSTALLER, not waived.
+# In install context the rebuild runs in phaseSwitch, BEFORE phaseConfigure enables and
+# starts the core timers (services.ReconcileTimers). A clean install therefore ALWAYS has
+# zero active timers here, and treating that as a firewall REGRESSION made every clean
+# fresh install end FAILED_REBUILD (measured: AlmaLinux 9.8 + Ubuntu 24.04.4, v1.233.1).
+# The finding itself is unchanged; only its OWNER in this one context is: the installer
+# re-asserts the same invariant after Configure (validate.timer_liveness_ok, which DEGRADES
+# the install when no nftban timer is active).
+readonly CR_TIMER_LIVENESS_DEFERRED="TIMER_LIVENESS_DEFERRED_TO_INSTALLER"
+readonly VAL_TIMER_NONE_CODE="VAL-TIMER-001"
 # v1.230.0 Gate 6R. The MACHINE-READABLE reason a rebuild was refused. The consumer
 # reads THIS, never the stderr sentence next to it.
 #     ⛔ NEVER PARSE STDERR. A human-readable message is not an interface.
@@ -449,6 +459,29 @@ _rebuild_disposition_classify() {
             printf '%s\t%s\n' "$RD_REGRESSION" "$CR_UNATTRIBUTABLE_ABSENCE:not-install-context"
         fi
         return 0
+    fi
+
+    # ---- PRECEDENCE 5b (v1.234.0): install context, and the ONLY error-or-worse finding is
+    # VAL-TIMER-001 (no active nftban timer) while every checked family is protected.
+    # ⛔ NARROW BY CONSTRUCTION — each leg below fails closed to PRECEDENCE 6 (REGRESSION):
+    #     context must be install-deferred (passed by the installer, never inferred);
+    #     post_status must be exactly "degraded" (never down / unknown);
+    #     the error+critical finding-code set must be EXACTLY {VAL-TIMER-001};
+    #     service_state.timer_count must be 0 (the fact VAL-TIMER-001 asserts);
+    #     checked_families >= 1 and protected_families == checked_families.
+    # The firewall projection is complete and verified, so this is COMPLETE (the generation
+    # may commit). The reason code records that timer liveness was NOT evaluated here and is
+    # owed to the installer's post-Configure validation. It is never a waiver: outside
+    # install context the same observation stays a REGRESSION.
+    if [[ "$context" == "install-deferred" && "$post_status" == "degraded" ]]; then
+        local _errcodes _tcount _fam_ok
+        _errcodes=$(jq -r '[(.findings // [])[] | select(.severity == "error" or .severity == "critical") | .code] | unique | join(",")' "$vjson" 2>/dev/null) || _errcodes=""
+        _tcount=$(jq -r '.service_state.timer_count // "absent"' "$vjson" 2>/dev/null) || _tcount="absent"
+        _fam_ok=$(jq -r 'if ((.summary.checked_families // 0) >= 1) and ((.summary.protected_families // -1) == (.summary.checked_families // 0)) then "yes" else "no" end' "$vjson" 2>/dev/null) || _fam_ok="no"
+        if [[ "$_errcodes" == "$VAL_TIMER_NONE_CODE" && "$_tcount" == "0" && "$_fam_ok" == "yes" ]]; then
+            printf '%s\t%s\n' "$RD_COMPLETE" "$CR_TIMER_LIVENESS_DEFERRED"
+            return 0
+        fi
     fi
 
     # ---- PRECEDENCE 6: nothing missing. Health must still be acceptable.

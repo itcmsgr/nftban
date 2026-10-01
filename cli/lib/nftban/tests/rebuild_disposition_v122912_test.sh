@@ -64,6 +64,33 @@ chk "UNSUPPORTED schema 99.0.0 -> fail closed"         REGRESSION  install-defer
 mk n "{\"schema_version\":\"2.0.0\",\"status\":\"protected\",\"service_state\":{\"nftband\":\"RUNNING\"},\"modules\":{\"ddos\":{\"config\":\"enabled\",\"structural\":\"present\",\"runtime\":\"running\"}}}"
 chk "UNSUPPORTED schema even when healthy -> closed"   REGRESSION  runtime-required "$T/n.json" "" protected
 
+# ─── v1.234.0 installer lifecycle: VAL-TIMER-001 is owed to the installer in install context ───
+# The m1 clean-fresh-install observation (AlmaLinux 9.8 + Ubuntu 24.04.4, v1.233.1):
+# status degraded, the ONLY error VAL-TIMER-001 (timer_count 0), both families protected.
+# v1.233.1 classified it REGRESSION -> rollback -> FAILED_REBUILD on EVERY clean install.
+TF='"findings":[{"code":"VAL-TIMER-001","severity":"error"},{"code":"VAL-GEOBAN-001","severity":"warn"}]'
+FAM2='"summary":{"checked_families":2,"protected_families":2}'
+mk t1 "{$V,\"status\":\"degraded\",\"service_state\":{\"nftband\":\"RUNNING\",\"timer_count\":0},\"modules\":{\"ddos\":{\"config\":\"disabled\"}},$TF,$FAM2}"
+chk "m1 shape: sole error VAL-TIMER-001, install ctx"  COMPLETE    install-deferred "$T/t1.json" "" degraded
+rchk(){ local name=$1 want=$2 got; total=$((total+1))
+  got=$(_rebuild_disposition_classify install-deferred "$T/t1.json" "" degraded | cut -f2)
+  if [[ "$got" == "$want" ]]; then printf '  PASS  %-48s %s\n' "$name" "$got"
+  else printf '  FAIL  %-48s want %s got %s\n' "$name" "$want" "$got"; fails=$((fails+1)); fi; }
+rchk "m1 shape: reason names the deferral"             TIMER_LIVENESS_DEFERRED_TO_INSTALLER
+chk "same shape OUTSIDE install ctx -> REGRESSION"      REGRESSION  runtime-required "$T/t1.json" "" degraded
+mk t2 "{$V,\"status\":\"degraded\",\"service_state\":{\"nftband\":\"STOPPED\",\"timer_count\":0},\"modules\":{},\"findings\":[{\"code\":\"VAL-TIMER-001\",\"severity\":\"error\"},{\"code\":\"VAL-SERVICE-001\",\"severity\":\"error\"}],$FAM2}"
+chk "VAL-TIMER-001 + another error -> REGRESSION"      REGRESSION  install-deferred "$T/t2.json" "" degraded
+mk t3 "{$V,\"status\":\"degraded\",\"service_state\":{\"nftband\":\"RUNNING\",\"timer_count\":0},\"modules\":{},$TF,\"summary\":{\"checked_families\":2,\"protected_families\":1}}"
+chk "sole VAL-TIMER-001 but a family unprotected"      REGRESSION  install-deferred "$T/t3.json" "" degraded
+mk t4 "{$V,\"status\":\"degraded\",\"service_state\":{\"nftband\":\"RUNNING\",\"timer_count\":3},\"modules\":{},$TF,$FAM2}"
+chk "VAL-TIMER-001 contradicted by timer_count>0"      REGRESSION  install-deferred "$T/t4.json" "" degraded
+mk t5 "{$V,\"status\":\"down\",\"service_state\":{\"nftband\":\"RUNNING\",\"timer_count\":0},\"modules\":{},$TF,$FAM2}"
+chk "sole VAL-TIMER-001 but post_status down"          REGRESSION  install-deferred "$T/t5.json" "" down
+mk t6 "{$V,\"status\":\"degraded\",\"service_state\":{\"nftband\":\"RUNNING\",\"timer_count\":0},\"modules\":{},$TF}"
+chk "sole VAL-TIMER-001 but no family summary"         REGRESSION  install-deferred "$T/t6.json" "" degraded
+mk t7 "{$V,\"status\":\"degraded\",\"service_state\":{\"nftband\":\"RUNNING\",\"timer_count\":0},\"modules\":{},\"findings\":[{\"code\":\"VAL-TIMER-001\",\"severity\":\"critical\"},{\"code\":\"VAL-X\",\"severity\":\"critical\"}],$FAM2}"
+chk "critical finding beside VAL-TIMER-001"            REGRESSION  install-deferred "$T/t7.json" "" degraded
+
 # ─── reason-code JOIN + GRAMMAR (v1.229.12 merge-hygiene: no IFS mutation) ───
 jchk(){ local name=$1 want=$2 got=$3; total=$((total+1))
   if [[ "$want" == "$got" ]]; then printf '  PASS  %-48s [%s]\n' "$name" "$got"
@@ -83,7 +110,8 @@ jchk "caller IFS unchanged"     "same"                "$([[ "$IFS" == "$_ifs_bef
 # ⛔ REASON-CODE GRAMMAR: no declared code may contain a comma, or the joined form is ambiguous.
 _bad=0
 for _cr in "$CR_FATAL_STAGE" "$CR_INSUFFICIENT_EVIDENCE" "$CR_UNATTRIBUTABLE_ABSENCE" \
-           "$CR_RUNTIME_DEFERRED" "$CR_DAEMON_UNAVAILABLE" "$CR_SCHEMA_UNUSABLE" "$CR_SCHEMA_UNSUPPORTED"; do
+           "$CR_RUNTIME_DEFERRED" "$CR_DAEMON_UNAVAILABLE" "$CR_SCHEMA_UNUSABLE" "$CR_SCHEMA_UNSUPPORTED" \
+           "$CR_TIMER_LIVENESS_DEFERRED"; do
   [[ "$_cr" == *,* ]] && { echo "    comma-bearing reason code: $_cr"; _bad=$((_bad+1)); }
 done
 jchk "grammar: no comma in any reason code" "0" "$_bad"

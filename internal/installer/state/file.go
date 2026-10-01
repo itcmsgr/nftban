@@ -66,6 +66,7 @@ func LockFilePath(stateDir string) string {
 //	SCHEMA_VERSION      — nftables schema version (e.g. "0.7.3")
 //	PHASE_REACHED       — last phase name reached
 //	FAILURE_REASON      — human-readable failure description or ""
+//	RECOVERY_CLASS      — derived from INSTALL_STATE: REPAIR | RETRY_FULL_TRANSACTION | NONE (v1.234.0; write-only)
 //	PREFLIGHT_PASSED    — "1" or "0"
 //	CONVERGENCE_VERIFIED — post-update convergence verdict (v1.230.0 Gate 6R)
 //	REBUILD_EXIT_CODE   — rebuild process exit code (int)
@@ -414,6 +415,10 @@ func (sf *StateFile) WriteAtomic() error {
 	fmt.Fprintf(w, "SCHEMA_VERSION=%s\n", sf.SchemaVersion)
 	fmt.Fprintf(w, "PHASE_REACHED=%s\n", sf.PhaseReached)
 	fmt.Fprintf(w, "FAILURE_REASON=%s\n", sf.FailureReason)
+	// v1.234.0: DERIVED from INSTALL_STATE at write time (never a stored field), so the
+	// operator surfaces (`nftban status`, health, update) print the installer's own
+	// recovery class instead of a hardcoded --repair. Read() ignores it on purpose.
+	fmt.Fprintf(w, "RECOVERY_CLASS=%s\n", sf.State.PersistedRecoveryClass())
 	fmt.Fprintf(w, "PREFLIGHT_PASSED=%s\n", fmtBool(sf.PreflightPassed))
 	fmt.Fprintf(w, "CONVERGENCE_VERIFIED=%s\n", sf.ConvergenceVerified)
 	fmt.Fprintf(w, "CONVERGENCE_STRUCTURE_SCHEMA=%s\n", sf.ConvergenceStructureSchema)
