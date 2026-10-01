@@ -171,11 +171,50 @@ func TestLongestLiteral(t *testing.T) {
 		{`(bak)`, "bak", false},
 		{`abc`, "abc", true},
 		{`[0-9]+`, "", false},
+		// v1.234.0 soundness: literals inside alternation / optional parts are NOT required
+		{`/actuator/(env|configprops)(/|$)`, "/actuator/", false},
+		{`a(env|configprops)b`, "a", false},
+		{`(php|data|expect)://|=(https?|ftp)://`, "", false},
+		{`\(\)\s*\{`, "()", false},
+		{`abcx?`, "abc", false},
+		{`(?i)wso\.php`, "", false},
 	}
 	for _, c := range cases {
 		got, pure := longestLiteral(c.in)
 		if got != c.want || pure != c.pure {
 			t.Errorf("longestLiteral(%q) = (%q,%v), want (%q,%v)", c.in, got, pure, c.want, c.pure)
+		}
+	}
+}
+
+// v1.234.0 — the prefilter must keep every line the pattern's RE2 matches (no false
+// negative), including lines that contain only one branch of an alternation, an optional
+// part omitted, or a \s class. Lines are written independently of the anchor chooser (the
+// corpus parity test embeds each pattern's own anchor, so it could not see this class).
+func TestNoFalseNegative_AlternationOptionalAndClasses(t *testing.T) {
+	cases := []struct{ pattern, line string }{
+		{`/actuator/(env|heapdump|threaddump|jolokia|gateway|logfile|trace|httptrace|configprops|beans|mappings|shutdown|restart|refresh|loggers)(/|([ ?"]|$))`,
+			`1.2.3.4 - - [x] "GET /actuator/env?x=1 HTTP/1.1" 200 9 "-" "x"`},
+		{`(php|data|expect|zip|phar|glob|input)://|=(https?|ftp)://[^&]*(\.(txt|log|dat|bin|phtml)(\?|&|$)|%00)`,
+			`1.2.3.4 - - [x] "GET /index.php?page=php://filter/resource=x HTTP/1.1" 200 9 "-" "x"`},
+		{`\(\)\s*\{`, `1.2.3.4 - - [x] "GET /cgi-bin/x HTTP/1.1" 200 9 "-" "() { :; }; echo"`},
+		{`revslider_show_image|client_action=(get_captions_css|update_plugin)`,
+			`1.2.3.4 - - [x] "GET /wp-admin/admin-ajax.php?client_action=update_plugin HTTP/1.1" 200 9 "-" "x"`},
+		{`\.(sql|sql\.gz)(\?|([ ?"]|$))`, `1.2.3.4 - - [x] "GET /db.sql HTTP/1.1" 200 9 "-" "x"`},
+		{`a(env|configprops)b`, `xx aenvb yy`},
+		{`abcx?`, `zz abc zz`},
+	}
+	for _, c := range cases {
+		re := regexp.MustCompile(c.pattern)
+		if !re.MatchString(c.line) {
+			t.Fatalf("fixture error: RE2 %q does not match %q", c.pattern, c.line)
+		}
+		m, err := Compile([]string{c.pattern})
+		if err != nil {
+			t.Fatalf("compile %q: %v", c.pattern, err)
+		}
+		if !m.MatchLine([]byte(c.line)) {
+			t.Errorf("FALSE NEGATIVE: prefilter dropped a line RE2 %q matches: %q", c.pattern, c.line)
 		}
 	}
 }
