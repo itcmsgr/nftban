@@ -114,6 +114,28 @@ APPROVED_INFRA_NETS = {
     "2001:4860:4860::/48": "Google Public DNS (IPv6)",
     "2620:fe::/48":   "Quad9 public resolver (IPv6)",
     "2620:119::/32":  "OpenDNS public resolver range (IPv6; 2620:119:35::35 / :53::53)",
+    # v1.234.0 — Cloudflare's PUBLISHED edge ranges (https://www.cloudflare.com/ips-v4,
+    # /ips-v6), shipped as product data in cli/lib/nftban/data/botscan_shared_edges.tsv so
+    # BotScan never bans a shared CDN edge. Each entry is the exact published CIDR.
+    "173.245.48.0/20":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "103.21.244.0/22":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "103.22.200.0/22":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "103.31.4.0/22":    "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "141.101.64.0/18":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "108.162.192.0/18": "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "190.93.240.0/20":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "188.114.96.0/20":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "197.234.240.0/22": "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "198.41.128.0/17":  "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "162.158.0.0/15":   "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "172.64.0.0/13":    "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "131.0.72.0/22":    "Cloudflare published edge range (BotScan shared-edge snapshot)",
+    "2400:cb00::/32":   "Cloudflare published edge range (IPv6; BotScan shared-edge snapshot)",
+    "2803:f800::/32":   "Cloudflare published edge range (IPv6; BotScan shared-edge snapshot)",
+    "2405:b500::/32":   "Cloudflare published edge range (IPv6; BotScan shared-edge snapshot)",
+    "2405:8100::/32":   "Cloudflare published edge range (IPv6; BotScan shared-edge snapshot)",
+    "2a06:98c0::/29":   "Cloudflare published edge / Workers egress range (IPv6; BotScan shared-edge snapshot)",
+    "2c0f:f248::/32":   "Cloudflare published edge range (IPv6; BotScan shared-edge snapshot)",
 }
 # Canonical synthetic placeholders conventionally used in help/usage text and
 # worked examples. Globally routable but universally understood as stand-ins,
