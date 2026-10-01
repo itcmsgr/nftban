@@ -574,6 +574,16 @@ _cmd_update_main_locked() {
     echo "  Source:        $source"
     echo ""
 
+    # v1.234 (PR #1439): filesystem-restriction preflight BEFORE any change —
+    # before the backup, before cadence timers are inhibited, before the daemon
+    # or any file is touched. Covers the installed payload and every destination
+    # directory; the incoming package is checked again after download.
+    if ! _update_fs_restriction_preflight; then
+        _forensic_end "$_RUN_ID" preflight-refused 3
+        _update_log INFO "Installed version unchanged (v${current_version}); nothing was changed."
+        return 3
+    fi
+
     # Create backup (H14 fix: abort if backup fails unless --force)
     _update_phase 1 "Backup"
     if ! _create_backup; then

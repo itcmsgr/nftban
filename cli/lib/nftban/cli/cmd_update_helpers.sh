@@ -435,52 +435,28 @@ _fix_broken_dpkg() {
 # Filesystem-restriction handling for update / repair / rollback (v1.234)
 # =============================================================================
 # BUG-UPDATE-STRIPS-ADMIN-IMMUTABLE-FLAGS / BUG-UPDATE-OWNED-FLAGS-NOT-RELOCKED.
+# Before v1.234 this helper ran `chattr -i` on EVERY file under /usr/lib/nftban,
+# /etc/nftban and /usr/sbin/nftban, silently removing flags an administrator or
+# vendor had set, and nothing re-applied NFTBan's own flags when no package
+# transaction ran.
 #
-# NFTBan OWNS +i on exactly the files in build/+i-lifecycle-matrix.yaml
-# (protected_files; applied by Go validate.SetImmutableFlags). Before v1.234 the
-# helper below ran `chattr -i` on EVERY file under /usr/lib/nftban, /etc/nftban
-# and /usr/sbin/nftban — silently removing immutable flags an administrator or
-# vendor had set — and nothing re-applied the owned flags when no package
-# transaction ran (`update repair`, a no-op reinstall, a failed update).
-#
-# Contract now:
-#   1. Pre-mutation preflight over the package payload (installed manifest plus
-#      the incoming package / backup when given). An immutable or append-only
-#      flag NFTBan does not own, or a read-only mount, on a destination or its
-#      parent directory => refuse BEFORE the package manager runs, naming each
-#      exact path. NFTBan never clears flags it did not set.
-#   2. Only the owned set is unlocked, and exactly the files that carried +i are
-#      recorded so _restore_owned_immutable_flags can put back that state.
-#   3. An inspection that cannot run (no lsattr, unsupported filesystem) is
-#      reported as UNMEASURED — never as "no restrictions".
-#
-# Keep in sync with build/+i-lifecycle-matrix.yaml (pinned by
-# update_fs_restriction_preflight_v1234_test.sh).
-_nftban_owned_immutable_files() {
-    printf '%s\n' \
-        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" \
-        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh"
-}
-
-# Owned files this run unlocked (had +i immediately before). Restored by
-# _restore_owned_immutable_flags.
-_NFTBAN_UNLOCKED_OWNED=()
-
-_nftban_find_bin() {
-    local name="$1" p
-    p=$(command -v "$name" 2>/dev/null || true)
-    if [[ -z "$p" ]]; then
-        for p in "/usr/bin/$name" "/bin/$name" "/usr/sbin/$name" "/sbin/$name"; do
-            [[ -x "$p" ]] && break
-            p=""
-        done
-    fi
-    printf '%s' "$p"
-}
+# Contract (PR #1439 acceptance): one implementation, shared with the package
+# scripts — cli/lib/nftban/lib/nftban_immutable_owned.sh:
+#   1. Preflight over every package destination BEFORE any change (and before
+#      `nftban update` inhibits timers or touches the daemon): IMMUTABLE,
+#      APPEND-ONLY, READ-ONLY or WRITE-DENIED, each with the exact path.
+#   2. NFTBan removes only flags whose ownership is PROVEN (record entry matched
+#      by inode+ctime, or a pre-v1.234 installer.log 'set immutable' line at the
+#      file's ctime). Unproven flags are administrator-owned: refused, never cleared.
+#   3. _restore_owned_immutable_flags puts back exactly what this run removed.
+_NFTBAN_IMMUT_LIB="${BASH_SOURCE[0]%/*}/../lib/nftban_immutable_owned.sh"
+if [[ -r "$_NFTBAN_IMMUT_LIB" ]]; then
+    # shellcheck source=cli/lib/nftban/lib/nftban_immutable_owned.sh
+    . "$_NFTBAN_IMMUT_LIB"
+fi
 
 # Payload paths the next operation will create, replace or delete.
-# Args: [SOURCE] where SOURCE is a .deb / .rpm package file or a .tar.gz backup.
-# Output: absolute paths, one per line (installed manifest ∪ SOURCE listing).
+# Args: [SOURCE] — a .deb / .rpm package file or a .tar.gz backup.
 _update_payload_paths() {
     local src="${1:-}"
     {
@@ -496,11 +472,10 @@ _update_payload_paths() {
                 *.tar.gz|*.tgz) tar -tzf "$src" ;;
             esac
         fi
+        if declare -F _nftban_immut_fixed_dirs >/dev/null; then _nftban_immut_fixed_dirs; fi
     } 2>/dev/null | grep -v ' ' | sed -e 's#^\./#/#' -e 's#^\([^/]\)#/\1#' -e 's#/$##' -e '/^\/\.$/d' | grep -E '^/.+' | sort -u || true
 }
 
-# Conffiles of the installed package (a flag on an UNCHANGED conffile does not
-# block the transaction — measured on dpkg — so these are warned, not refused).
 _update_installed_conffiles() {
     {
         if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W nftban-core >/dev/null 2>&1; then
@@ -511,100 +486,32 @@ _update_installed_conffiles() {
     } 2>/dev/null || true
 }
 
-# Pre-mutation preflight. Args: [SOURCE] (see _update_payload_paths).
-# Returns 0 = no blocking restriction found (warnings possible), 1 = refused.
-# Prints nothing but log lines; mutates nothing.
+# Read-only preflight. Args: [SOURCE]. Returns 0 = proceed, 1 = refused.
 _update_fs_restriction_preflight() {
-    local src="${1:-}"
-    local lsattr_bin findmnt_bin
-    lsattr_bin=$(_nftban_find_bin lsattr)
-    findmnt_bin=$(_nftban_find_bin findmnt)
-
-    local -A owned=() conff=() check=() seen_dir=()
-    local f
-    while IFS= read -r f; do [[ -n "$f" ]] && owned["$f"]=1; done < <(_nftban_owned_immutable_files)
-    while IFS= read -r f; do [[ -n "$f" ]] && conff["$f"]=1; done < <(_update_installed_conffiles)
-
-    # Targets: every existing non-directory payload entry (replace/delete) and
-    # the parent directory of every payload entry (create/rename/delete).
-    local p d
-    while IFS= read -r p; do
-        [[ -n "$p" ]] || continue
-        if [[ -L "$p" ]]; then
-            :   # attributes do not apply to a symlink itself
-        elif [[ -e "$p" && ! -d "$p" ]]; then
-            check["$p"]="file"
-        fi
-        d=${p%/*}; [[ -n "$d" ]] || d=/
-        while [[ "$d" != "/" && ! -e "$d" ]]; do d=${d%/*}; [[ -n "$d" ]] || d=/; done
-        if [[ -d "$d" && ! -L "$d" ]]; then
-            check["$d"]="dir"; seen_dir["$d"]=1
-        fi
-    done < <(_update_payload_paths "$src")
-
-    if (( ${#check[@]} == 0 )); then
-        _update_log WARN "Filesystem restriction preflight: no package paths resolved — UNMEASURED"
+    local src="${1:-}" conff out rc=0 line
+    if ! declare -F nftban_fs_preflight >/dev/null; then
+        _update_log WARN "Filesystem restriction preflight UNMEASURED (library missing: $_NFTBAN_IMMUT_LIB)"
         return 0
     fi
-
-    local -a blocked=() warned=() unmeasured=()
-    if [[ -z "$lsattr_bin" ]]; then
-        unmeasured+=("attribute flags on ${#check[@]} paths (lsattr not available)")
-    else
-        local out attrs path kind
-        out=$(printf '%s\0' "${!check[@]}" | xargs -0 -r "$lsattr_bin" -d -- 2>&1) || true
-        while IFS= read -r line; do
-            [[ -n "$line" ]] || continue
-            attrs=${line%% *}; path=${line#* }
-            if [[ "$line" == *"lsattr:"* || -z "${check[$path]:-}" ]]; then
-                # e.g. "lsattr: Operation not supported While reading flags on /x"
-                unmeasured+=("${line#*lsattr: }")
-                continue
-            fi
-            kind=${check[$path]}
-            [[ "$attrs" == *i* || "$attrs" == *a* ]] || continue
-            local what="IMMUTABLE"
-            [[ "$attrs" == *i* ]] || what="APPEND-ONLY"
-            if [[ -n "${owned[$path]:-}" && "$attrs" != *a* ]]; then
-                continue    # NFTBan-owned +i: unlocked below, restored after
-            fi
-            if [[ "$kind" == file && -n "${conff[$path]:-}" ]]; then
-                warned+=("$what $path (conffile; blocks the update only if the new version changes it)")
-            else
-                blocked+=("$what $kind $path ($attrs)")
-            fi
-        done <<< "$out"
-    fi
-
-    if [[ -z "$findmnt_bin" ]]; then
-        unmeasured+=("mount options (findmnt not available)")
-    else
-        local -A ro_seen=()
-        local tgt opts
-        for d in "${!seen_dir[@]}"; do
-            read -r tgt opts < <("$findmnt_bin" -no TARGET,OPTIONS -T "$d" 2>/dev/null) || true
-            if [[ -z "$tgt" ]]; then unmeasured+=("mount options for $d"); continue; fi
-            [[ ",$opts," == *",ro,"* ]] || continue
-            if [[ -n "${ro_seen[$tgt]:-}" ]]; then continue; fi
-            ro_seen["$tgt"]=1
-            blocked+=("READ-ONLY mount $tgt (contains $d; options: $opts)")
-        done
-    fi
-
-    local m
-    for m in "${warned[@]}"; do _update_log WARN "Filesystem restriction: $m"; done
-    if (( ${#unmeasured[@]} > 0 )); then
-        _update_log WARN "Filesystem restriction preflight UNMEASURED for ${#unmeasured[@]} item(s) — not proof of no restriction:"
-        for m in "${unmeasured[@]:0:5}"; do _update_log WARN "  $m"; done
-    fi
-
-    if (( ${#blocked[@]} > 0 )); then
-        _update_log ERROR "Refusing before any package change: ${#blocked[@]} NFTBan package path(s) cannot be modified:"
-        for m in "${blocked[@]}"; do _update_log ERROR "  $m"; done
-        _update_log ERROR "NFTBan does not remove immutable/append-only flags or remount filesystems it does not own."
-        _update_log INFO  "The flag or mount was set by an administrator or vendor policy. To update, the owner of that"
-        _update_log INFO  "restriction must lift it for the paths above, run the update, then re-apply it."
-        _update_log INFO  "Inspect: lsattr -d <path>   findmnt -T <path>"
+    conff=$(mktemp) || { _update_log WARN "Filesystem restriction preflight UNMEASURED (mktemp failed)"; return 0; }
+    _update_installed_conffiles > "$conff"
+    out=$(_update_payload_paths "$src" | nftban_fs_preflight "$conff") || rc=$?
+    rm -f "$conff"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in
+            BLOCKED*)    _update_log ERROR "  ${line#BLOCKED }" ;;
+            WARN*)       _update_log WARN "Filesystem restriction: ${line#WARN }" ;;
+            UNMEASURED*) _update_log WARN "Filesystem restriction preflight UNMEASURED (not proof of no restriction): ${line#UNMEASURED }" ;;
+        esac
+    done <<< "$out"
+    if (( rc != 0 )); then
+        _update_log ERROR "Refusing before any change: the NFTBan package path(s) above cannot be modified."
+        _update_log ERROR "NFTBan does not remove immutable/append-only flags it cannot prove it set, and never remounts."
+        _update_log INFO  "The owner of each restriction must lift it for the paths above, retry, then re-apply it."
+        _update_log INFO  "A flag set by NFTBan before v1.234 (nftban.conf / nft_schema.sh) counts as NFTBan's only while"
+        _update_log INFO  "installer.log still proves it; if you did not set it yourself, clear it with chattr -i and retry."
+        _update_log INFO  "Inspect: lsattr -d <path>   findmnt -T <path>   (WRITE-DENIED: permissions/ACL/SELinux audit log)"
         return 1
     fi
     return 0
@@ -612,60 +519,28 @@ _update_fs_restriction_preflight() {
 
 _remove_immutable_flags() {
     # Args: [SOURCE] — package file or backup the caller is about to apply.
-    # Returns 1 (and mutates nothing) when the preflight refuses or an owned
-    # flag cannot be cleared; 0 otherwise.
-    _update_log INFO "Checking NFTBan package paths for immutable/read-only restrictions..."
+    # Returns 1 (and changes nothing) when the preflight refuses; 0 otherwise.
+    _update_log INFO "Checking NFTBan package paths for immutable/read-only/permission restrictions..."
     _update_fs_restriction_preflight "${1:-}" || return 1
-
-    local chattr_bin lsattr_bin
-    chattr_bin=$(_nftban_find_bin chattr)
-    lsattr_bin=$(_nftban_find_bin lsattr)
-    if [[ -z "$chattr_bin" || -z "$lsattr_bin" ]]; then
-        _update_log WARN "chattr/lsattr not available — NFTBan-owned immutable flags not inspected (UNMEASURED)"
-        return 0
-    fi
-
-    local f attrs err
-    _NFTBAN_UNLOCKED_OWNED=()
-    while IFS= read -r f; do
-        [[ -f "$f" && ! -L "$f" ]] || continue
-        attrs=$("$lsattr_bin" -d -- "$f" 2>/dev/null | awk '{print $1}') || attrs=""
-        [[ "$attrs" == *i* ]] || continue
-        if ! err=$("$chattr_bin" -i -- "$f" 2>&1); then
-            _update_log ERROR "Cannot clear NFTBan's own immutable flag on $f: ${err:-chattr failed}"
-            _restore_owned_immutable_flags
-            return 1
-        fi
-        _NFTBAN_UNLOCKED_OWNED+=("$f")
-    done < <(_nftban_owned_immutable_files)
-
-    if (( ${#_NFTBAN_UNLOCKED_OWNED[@]} > 0 )); then
-        _update_log OK "Temporarily unlocked NFTBan-owned file(s): ${_NFTBAN_UNLOCKED_OWNED[*]}"
-    else
-        _update_log INFO "No NFTBan-owned immutable flags set"
-    fi
+    declare -F nftban_immut_unlock_owned >/dev/null || return 0
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            UNLOCKED*)   _update_log OK "Temporarily unlocked NFTBan-owned file: ${line#UNLOCKED }" ;;
+            NOT_PROVEN*) _update_log WARN "Immutable flag left in place (ownership not provable): ${line#NOT_PROVEN }" ;;
+        esac
+    done < <(nftban_immut_unlock_owned)
     return 0
 }
 
-# Put back exactly the owned +i flags this run removed (idempotent). The Go
-# installer re-applies them when a package transaction runs; this covers the
-# paths where none did (repair, no-op reinstall, failed update, rollback).
+# Put back exactly the NFTBan-owned +i flags removed earlier (record-proven: same
+# inode and ctime as when NFTBan removed them). Idempotent; never adds a new flag.
 _restore_owned_immutable_flags() {
-    (( ${#_NFTBAN_UNLOCKED_OWNED[@]} > 0 )) || return 0
-    local chattr_bin lsattr_bin f attrs
-    chattr_bin=$(_nftban_find_bin chattr)
-    lsattr_bin=$(_nftban_find_bin lsattr)
-    for f in "${_NFTBAN_UNLOCKED_OWNED[@]}"; do
-        [[ -f "$f" && ! -L "$f" ]] || { _update_log WARN "Owned immutable file absent, not re-locked: $f"; continue; }
-        attrs=$("$lsattr_bin" -d -- "$f" 2>/dev/null | awk '{print $1}') || attrs=""
-        [[ "$attrs" == *i* ]] && continue
-        if "$chattr_bin" +i -- "$f" 2>/dev/null; then
-            _update_log OK "Re-locked NFTBan-owned file: $f"
-        else
-            _update_log WARN "Could not re-lock NFTBan-owned file $f — run 'nftban-installer --repair' or 'chattr +i $f'"
-        fi
-    done
-    _NFTBAN_UNLOCKED_OWNED=()
+    declare -F nftban_immut_relock_owned >/dev/null || return 0
+    local line
+    while IFS= read -r line; do
+        [[ "$line" == RELOCKED* ]] && _update_log OK "Re-locked NFTBan-owned file: ${line#RELOCKED }"
+    done < <(nftban_immut_relock_owned)
     return 0
 }
 

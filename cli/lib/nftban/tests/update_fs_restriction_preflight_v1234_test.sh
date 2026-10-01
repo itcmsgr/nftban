@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan - update/repair/rollback filesystem-restriction preflight (v1.234)
+# NFTBan - immutable-flag ownership + filesystem-restriction preflight (v1.234)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="update_fs_restriction_preflight_v1234_test"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="2.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-30"
-# meta:description="v1.234 BUG-UPDATE-STRIPS-ADMIN-IMMUTABLE-FLAGS / BUG-UPDATE-OWNED-FLAGS-NOT-RELOCKED / BUG-DEB-POSTINST-YQ-LINK-FATAL-ON-RESTRICTED-USRBIN. Measured on deb-clean (Ubuntu 24.04) with real packages: `nftban update github`, `update repair` and (v1.233.1) `update github|force|repair --help` ran chattr -i on every file under /usr/lib/nftban, /etc/nftban and /usr/sbin/nftban, silently removing administrator-set +i, and never re-applied NFTBan's own +i when no package transaction ran; an immutable /usr/bin made the DEB postinst die on the optional /usr/bin/yq link (package iF, installer never ran). This test drives the real _remove_immutable_flags / _restore_owned_immutable_flags from cmd_update_helpers.sh against stub lsattr/chattr/findmnt/dpkg-query over a sandbox tree (hermetic; the stub attribute DB is the subject's only view of flags, so root cannot defeat it), and executes the real _nftban_link_yq bodies from the DEB postinst and the RPM %post under set -e with a failing ln. FAILS on v1.233.1, PASSES on the fix."
-# meta:input="cli/lib/nftban/cli/cmd_update_helpers.sh, packaging/deb/postinst, packaging/build_nftban.sh, build/+i-lifecycle-matrix.yaml"
+# meta:description="v1.234 PR #1439 acceptance. Drives the REAL cli/lib/nftban/lib/nftban_immutable_owned.sh (through the real CLI helpers in cmd_update_helpers.sh, through the RPM preun/posttrans text in packaging/build_nftban.sh, and through the generated DEB copies) against stub lsattr/chattr/findmnt/dpkg-query/test over a sandbox tree. Pins: (1) NFTBan removes or restores only flags whose ownership is PROVEN by the record (inode+ctime) or the pre-v1.234 installer.log line - a candidate PATH alone is never proof; (2) every blocked destination is refused before any chattr, with its cause - IMMUTABLE, APPEND-ONLY, READ-ONLY, WRITE-DENIED (permission/MAC never reported as immutable) - and an immutable directory blocks its own entries only, not the tree; inspection that cannot run is UNMEASURED; (3) the optional /usr/bin/yq link never aborts a maintainer script, never replaces an existing yq, and internal callers use the bundled yq; (4) the RPM preun strips only on erase, the RPM posttrans restores only flags NFTBan set in this transaction. FAILS on v1.233.1, PASSES on the fix."
+# meta:input="cli/lib/nftban/lib/nftban_immutable_owned.sh, cli/lib/nftban/cli/cmd_update_helpers.sh, packaging/deb/postinst, packaging/deb/preinst, packaging/build_nftban.sh, build/+i-lifecycle-matrix.yaml, build/generate-immutable-owned-blocks.sh"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
-# meta:depends="bash,awk,grep,sed,mktemp"
-# meta:inventory.files="cli/lib/nftban/cli/cmd_update_helpers.sh,packaging/deb/postinst,packaging/build_nftban.sh,build/+i-lifecycle-matrix.yaml"
-# meta:inventory.binaries="bash,awk,grep,sed,mktemp"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR,UPDATE_LOG_FILE"
+# meta:depends="bash,awk,grep,sed,mktemp,stat,date"
+# meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,cli/lib/nftban/cli/cmd_update_helpers.sh,packaging/deb/postinst,packaging/deb/preinst,packaging/build_nftban.sh,build/+i-lifecycle-matrix.yaml"
+# meta:inventory.binaries="bash,awk,grep,sed,mktemp,stat,date"
+# meta:inventory.env_vars="NFTBAN_IMMUT_RECORD,NFTBAN_IMMUT_INSTALLER_LOG,NFTBAN_IMMUT_CANDIDATES,NFTBAN_IMMUT_FIXED_DIRS,NFTBAN_IMMUT_TEST_BIN,UPDATE_LOG_FILE"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -36,36 +36,37 @@ set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$SCRIPT_DIR/../../../.." && pwd)
+LIB="$REPO/cli/lib/nftban/lib/nftban_immutable_owned.sh"
 HELPERS="$REPO/cli/lib/nftban/cli/cmd_update_helpers.sh"
 POSTINST="$REPO/packaging/deb/postinst"
 BUILD_SH="$REPO/packaging/build_nftban.sh"
 MATRIX="$REPO/build/+i-lifecycle-matrix.yaml"
-for f in "$HELPERS" "$POSTINST" "$BUILD_SH" "$MATRIX"; do
-    [[ -f "$f" ]] || { echo "NOT_EXECUTED: missing $f" >&2; exit 1; }
-done
+GEN="$REPO/build/generate-immutable-owned-blocks.sh"
 
 PASS=0; FAIL=0; FAILED=()
 ok(){ printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 no(){ printf '  [FAIL] %s (%s)\n' "$1" "$2"; FAIL=$((FAIL+1)); FAILED+=("$1"); }
+for f in "$HELPERS" "$POSTINST" "$BUILD_SH" "$MATRIX"; do
+    [[ -f "$f" ]] || { echo "NOT_EXECUTED: missing $f" >&2; exit 1; }
+done
+[[ -f "$LIB" ]] || no "L0 shared library cli/lib/nftban/lib/nftban_immutable_owned.sh exists" "absent (path-based ownership)"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# -----------------------------------------------------------------------------
-# Stub toolchain. ATTRDB holds "<attrs> <path>" lines: the subject's only view
-# of attribute flags. chattr edits it and logs every call; findmnt reports the
-# mount options in MOUNTDB; dpkg-query serves the sandbox manifest.
-# -----------------------------------------------------------------------------
+# ---- stub toolchain: ATTRDB is the only view of attribute flags; MOUNTDB of mounts ----
 STUB="$WORK/bin"; mkdir -p "$STUB"
 cat > "$STUB/lsattr" <<'EOF'
 #!/usr/bin/env bash
 [[ "$1" == "-d" ]] && shift; [[ "${1:-}" == "--" ]] && shift
+rc=0
 for p in "$@"; do
   if [[ -n "${STUB_LSATTR_UNSUPPORTED:-}" && "$p" == "$STUB_LSATTR_UNSUPPORTED"* ]]; then
-    echo "lsattr: Operation not supported While reading flags on $p" >&2; continue; fi
+    echo "lsattr: Operation not supported While reading flags on $p" >&2; rc=1; continue; fi
   a=$(awk -v p="$p" '$2==p{print $1}' "$ATTRDB" | tail -1)
   printf '%s %s\n' "${a:---------------e-------}" "$p"
 done
+exit $rc
 EOF
 cat > "$STUB/chattr" <<'EOF'
 #!/usr/bin/env bash
@@ -92,153 +93,175 @@ case "$*" in
   *) exit 1;;
 esac
 EOF
+cat > "$STUB/test" <<'EOF'
+#!/usr/bin/env bash
+# write-access stub: paths listed in $DENYDB are not writable (permission/MAC)
+[[ "$1" == "-w" ]] || exec /usr/bin/test "$@"
+grep -qxF -- "$2" "$DENYDB" && exit 1
+exit 0
+EOF
 chmod +x "$STUB"/*
 
-# Sandbox tree mirroring the package layout.
 S="$WORK/root"
+CONF="$S/etc/nftban/nftban.conf"; SCHEMA="$S/usr/lib/nftban/lib/nft_schema.sh"; BIN="$S/usr/lib/nftban/bin/nftband"
 mk_tree() {
-    rm -rf "$S"; mkdir -p "$S/usr/lib/nftban/bin" "$S/usr/lib/nftban/lib" "$S/etc/nftban/whitelist.d" "$S/usr/sbin" "$S/etc/sysctl.d"
-    : > "$S/usr/lib/nftban/bin/nftband"; : > "$S/usr/lib/nftban/lib/nft_schema.sh"; : > "$S/usr/sbin/nftban"
-    : > "$S/etc/nftban/nftban.conf"; : > "$S/etc/nftban/whitelist.d/99-manual.conf"; : > "$S/etc/sysctl.d/90-nftban.conf"
-    printf '%s\n' "$S/usr/lib/nftban" "$S/usr/lib/nftban/bin" "$S/usr/lib/nftban/bin/nftband" "$S/usr/lib/nftban/lib" \
-        "$S/usr/lib/nftban/lib/nft_schema.sh" "$S/usr/sbin/nftban" "$S/etc/nftban" "$S/etc/nftban/nftban.conf" \
-        "$S/etc/sysctl.d/90-nftban.conf" > "$WORK/manifest"
-    printf '%s\n' "$S/etc/nftban/nftban.conf" "$S/etc/sysctl.d/90-nftban.conf" > "$WORK/conffiles"
-    : > "$WORK/attrdb"; : > "$WORK/chattr.log"; echo "/ rw,relatime" > "$WORK/mountdb"
+    rm -rf "$S"; mkdir -p "$S/usr/lib/nftban/bin" "$S/usr/lib/nftban/lib" "$S/usr/lib/nftban/data" "$S/etc/nftban/whitelist.d" "$S/usr/sbin" "$S/etc/sysctl.d"
+    : > "$BIN"; : > "$SCHEMA"; : > "$S/usr/sbin/nftban"; : > "$CONF"; : > "$S/usr/lib/nftban/data/x.json"
+    : > "$S/etc/nftban/whitelist.d/99-manual.conf"; : > "$S/etc/sysctl.d/90-nftban.conf"
+    printf '%s\n' "$S/usr/lib/nftban/bin" "$BIN" "$S/usr/lib/nftban/lib" "$SCHEMA" "$S/usr/sbin/nftban" \
+        "$S/etc/nftban" "$CONF" "$S/etc/sysctl.d/90-nftban.conf" > "$WORK/manifest"
+    printf '%s\n' "$CONF" "$S/etc/sysctl.d/90-nftban.conf" > "$WORK/conffiles"
+    : > "$WORK/attrdb"; : > "$WORK/chattr.log"; : > "$WORK/deny"; : > "$WORK/record"; : > "$WORK/installer.log"
+    echo "/ rw,relatime" > "$WORK/mountdb"
 }
 setattr(){ echo "$1 $2" >> "$WORK/attrdb"; }
 attr_of(){ awk -v p="$1" '$2==p{print $1}' "$WORK/attrdb" | tail -1; }
-
-# Run the REAL helper functions in a child shell: stub PATH first, sandbox dirs.
-run_subject() {  # $1 = shell snippet run after sourcing the helpers
-    env -i HOME="$WORK" PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log" \
-        MOUNTDB="$WORK/mountdb" MANIFEST="$WORK/manifest" CONFFILES="$WORK/conffiles" \
-        STUB_LSATTR_UNSUPPORTED="${STUB_LSATTR_UNSUPPORTED:-}" \
-        NFTBAN_CONFIG_DIR="$S/etc/nftban" NFTBAN_LIB_DIR="$S/usr/lib/nftban" UPDATE_LOG_FILE="$WORK/update.log" \
+record(){  # PATH STATE [WRITTEN_AT] — an entry for the file's CURRENT inode+ctime
+    printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(stat -c %i "$1")" "$(stat -c %Z "$1")" "$2" "${3:-1}" >> "$WORK/record"
+}
+ENVV=(HOME="$WORK" PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log"
+      MOUNTDB="$WORK/mountdb" MANIFEST="$WORK/manifest" CONFFILES="$WORK/conffiles" DENYDB="$WORK/deny"
+      NFTBAN_IMMUT_RECORD="$WORK/record" NFTBAN_IMMUT_INSTALLER_LOG="$WORK/installer.log"
+      NFTBAN_IMMUT_CANDIDATES="$CONF $SCHEMA" NFTBAN_IMMUT_FIXED_DIRS="$S/usr/sbin $S/usr/lib/nftban"
+      NFTBAN_IMMUT_TEST_BIN="$STUB/test" NFTBAN_CONFIG_DIR="$S/etc/nftban" NFTBAN_LIB_DIR="$S/usr/lib/nftban"
+      UPDATE_LOG_FILE="$WORK/update.log")
+run_subject() {  # $1 = snippet run after sourcing the real CLI helpers
+    env -i "${ENVV[@]}" STUB_LSATTR_UNSUPPORTED="${STUB_LSATTR_UNSUPPORTED:-}" \
         bash -c 'set -Eeuo pipefail; source "$1"; shift; eval "$1"' _ "$HELPERS" "$1" > "$WORK/out" 2>&1
 }
 
 echo "=========================================================="
-echo "v1.234: update filesystem-restriction preflight + owned-flag relock"
+echo "v1.234 PR #1439: proven immutable ownership + restriction preflight"
 echo "=========================================================="
 
-# T1 — administrator +i on a payload file NFTBan does not own => refuse, mutate NOTHING.
-mk_tree
-setattr "----i---------e-------" "$S/usr/lib/nftban/bin/nftband"
-setattr "----i---------e-------" "$S/etc/nftban/nftban.conf"
+# T1 — administrator +i on a payload file: refused, nothing changed.
+mk_tree; setattr "----i---------e-------" "$BIN"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
-if [[ $rc -ne 0 ]]; then ok "T1 admin +i on nftband: refused (rc=$rc)"; else no "T1 admin +i on nftband: refused" "rc=0 — update would proceed"; fi
-if [[ ! -s "$WORK/chattr.log" ]]; then ok "T1 no chattr call at all (nothing mutated before refusal)"
-else no "T1 no chattr call at all" "$(tr '\n' ';' < "$WORK/chattr.log")"; fi
-[[ "$(attr_of "$S/usr/lib/nftban/bin/nftband")" == *i* ]] && ok "T1 admin flag preserved" || no "T1 admin flag preserved" "flag cleared"
-grep -qF "$S/usr/lib/nftban/bin/nftband" "$WORK/out" && grep -q 'IMMUTABLE' "$WORK/out" \
-    && ok "T1 refusal names the exact blocked path" || no "T1 refusal names the exact blocked path" "$(head -c 300 "$WORK/out")"
+if [[ $rc -ne 0 && ! -s "$WORK/chattr.log" && "$(attr_of "$BIN")" == *i* ]] && grep -qF "IMMUTABLE file $BIN" "$WORK/out"; then
+    ok "T1 admin +i on nftband: refused before any chattr, path and cause named"
+else no "T1 admin +i refused" "rc=$rc chattr=$(tr '\n' ';' < "$WORK/chattr.log") out=$(head -c 300 "$WORK/out")"; fi
 
-# T2 — only NFTBan-owned +i => unlock exactly those; restore puts back exactly that state.
-mk_tree
-setattr "----i---------e-------" "$S/etc/nftban/nftban.conf"
-setattr "----i---------e-------" "$S/usr/lib/nftban/lib/nft_schema.sh"
-rc=0; run_subject '_remove_immutable_flags; echo "UNLOCKED=${_NFTBAN_UNLOCKED_OWNED[*]}"; echo "MID_CONF=$(lsattr -d "$NFTBAN_CONFIG_DIR/nftban.conf")"; _restore_owned_immutable_flags' || rc=$?
-[[ $rc -eq 0 ]] && ok "T2 owned-only: rc=0" || no "T2 owned-only: rc=0" "rc=$rc $(head -c 300 "$WORK/out")"
-grep -q "MID_CONF=----------" "$WORK/out" && ok "T2 owned file unlocked during the operation" || no "T2 owned file unlocked during the operation" "$(grep MID_CONF "$WORK/out" || echo none)"
-bad=$(grep -E '^chattr -i' "$WORK/chattr.log" | grep -vF -e "$S/etc/nftban/nftban.conf" -e "$S/usr/lib/nftban/lib/nft_schema.sh" || true)
-[[ -z "$bad" ]] && ok "T2 chattr -i only on the owned set" || no "T2 chattr -i only on the owned set" "$bad"
-[[ "$(attr_of "$S/etc/nftban/nftban.conf")" == *i* && "$(attr_of "$S/usr/lib/nftban/lib/nft_schema.sh")" == *i* ]] \
-    && ok "T2 owned +i restored exactly after a run with no package transaction" || no "T2 owned +i restored" "conf=$(attr_of "$S/etc/nftban/nftban.conf") schema=$(attr_of "$S/usr/lib/nftban/lib/nft_schema.sh")"
-grep -qE "^chattr \+i( --)? .*nftband" "$WORK/chattr.log" && no "T2 +i never applied to a file that was not +i before" "nftband locked" || ok "T2 +i never applied to a file that was not +i before"
-
-# T3 — administrator +i on a parent directory of payload files => refuse naming the directory.
-mk_tree
-setattr "----i------I--e-------" "$S/usr/lib/nftban/bin"
+# T2 — acceptance 1: a candidate PATH is not proof. +i on nft_schema.sh with NO record and
+# NO installer.log proof is administrator-owned: refused, never cleared.
+mk_tree; setattr "----i---------e-------" "$SCHEMA"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
-[[ $rc -ne 0 ]] && grep -qE "IMMUTABLE dir $S/usr/lib/nftban/bin " "$WORK/out" && [[ ! -s "$WORK/chattr.log" ]] \
-    && ok "T3 immutable destination directory: refused, named, unmutated" || no "T3 immutable destination directory" "rc=$rc $(head -c 300 "$WORK/out")"
+if [[ $rc -ne 0 && ! -s "$WORK/chattr.log" ]] && grep -qF "IMMUTABLE file $SCHEMA" "$WORK/out"; then
+    ok "T2 unproven flag on a candidate path (nft_schema.sh): refused, not cleared"
+else no "T2 path alone is not ownership" "rc=$rc chattr=$(tr '\n' ';' < "$WORK/chattr.log")"; fi
 
-# T4 — read-only mount over a destination => refuse, named as READ-ONLY (distinct from immutable).
-mk_tree
-echo "$S/usr/lib/nftban ro,relatime" >> "$WORK/mountdb"
+# T3 — proven by the record: unlocked during the operation, restored exactly after.
+mk_tree; setattr "----i---------e-------" "$CONF"; setattr "----i---------e-------" "$SCHEMA"
+record "$CONF" locked; record "$SCHEMA" locked
+rc=0; run_subject '_remove_immutable_flags; echo "MID=$(lsattr -d "$NFTBAN_CONFIG_DIR/nftban.conf")"; _restore_owned_immutable_flags' || rc=$?
+bad=$(grep -E '^chattr -i' "$WORK/chattr.log" | grep -vF -e "$CONF" -e "$SCHEMA" || true)
+if [[ $rc -eq 0 && -z "$bad" ]] && grep -q 'MID=----------' "$WORK/out" && [[ "$(attr_of "$CONF")" == *i* && "$(attr_of "$SCHEMA")" == *i* ]]; then
+    ok "T3 record-proven flags: unlocked during the operation, restored after"
+else no "T3 proven unlock/relock" "rc=$rc bad=$bad out=$(head -c 300 "$WORK/out")"; fi
+
+# T4 — record entry no longer matches (attributes changed since: ctime moved): not proven.
+mk_tree; setattr "----i---------e-------" "$SCHEMA"
+printf '%s\t%s\t%s\tlocked\t1\n' "$SCHEMA" "$(stat -c %i "$SCHEMA")" "$(( $(stat -c %Z "$SCHEMA") - 100 ))" >> "$WORK/record"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
-[[ $rc -ne 0 ]] && grep -q "READ-ONLY mount $S/usr/lib/nftban" "$WORK/out" && [[ ! -s "$WORK/chattr.log" ]] \
-    && ok "T4 read-only destination: refused as READ-ONLY" || no "T4 read-only destination" "rc=$rc $(head -c 300 "$WORK/out")"
+if [[ $rc -ne 0 && ! -s "$WORK/chattr.log" ]]; then ok "T4 stale record entry (ctime differs) is not proof"; else no "T4 stale record" "rc=$rc"; fi
 
-# T5 — attribute inspection unsupported => UNMEASURED, never reported as "no restrictions".
+# T5 — pre-v1.234 flag: proven only by an installer.log line at the file's ctime.
+mk_tree; setattr "----i---------e-------" "$SCHEMA"
+echo "$(date -u -d "@$(stat -c %Z "$SCHEMA")" +%Y-%m-%dT%H:%M:%SZ) [DEBUG] set immutable: $SCHEMA" > "$WORK/installer.log"
+rc=0; run_subject '_remove_immutable_flags' || rc=$?
+if [[ $rc -eq 0 ]] && grep -q "^chattr -i -- $SCHEMA" "$WORK/chattr.log"; then
+    ok "T5 pre-v1.234 flag adopted only with installer.log proof at its ctime"
+else no "T5 legacy proof" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
+
+# T6 — distinct causes; an immutable directory blocks its own entries, not the tree.
+mk_tree; setattr "----i------I--e-------" "$S/usr/lib/nftban/bin"
+rc=0; run_subject '_remove_immutable_flags' || rc=$?
+if [[ $rc -ne 0 && ! -s "$WORK/chattr.log" ]] && grep -qF "IMMUTABLE dir $S/usr/lib/nftban/bin " "$WORK/out"; then
+    ok "T6a immutable destination directory refused"; else no "T6a immutable dir" "rc=$rc"; fi
+mk_tree; echo "$S/usr/lib/nftban ro,relatime" >> "$WORK/mountdb"
+rc=0; run_subject '_remove_immutable_flags' || rc=$?
+if [[ $rc -ne 0 ]] && grep -q "READ-ONLY dir $S/usr/lib/nftban" "$WORK/out" && ! grep -q 'IMMUTABLE' "$WORK/out"; then
+    ok "T6b read-only mount refused as READ-ONLY (not immutable)"; else no "T6b read-only" "rc=$rc"; fi
+mk_tree; echo "$S/usr/sbin" > "$WORK/deny"
+rc=0; run_subject '_remove_immutable_flags' || rc=$?
+if [[ $rc -ne 0 ]] && grep -q "WRITE-DENIED dir $S/usr/sbin" "$WORK/out" && ! grep -q 'IMMUTABLE' "$WORK/out"; then
+    ok "T6c permission/MAC denial refused as WRITE-DENIED (not immutable)"; else no "T6c write-denied" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
+mk_tree; setattr "----i------I--e-------" "$S/usr/lib/nftban/data"
+rc=0; run_subject '_remove_immutable_flags' || rc=$?
+if [[ $rc -eq 0 ]]; then ok "T6d immutable dir holding no payload entry does not block (not recursive)"; else no "T6d not recursive" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
+
+# T7 — unsupported attribute inspection: UNMEASURED, never "no restriction".
 mk_tree
 rc=0; STUB_LSATTR_UNSUPPORTED="$S/usr/lib/nftban/bin" run_subject '_update_fs_restriction_preflight' || rc=$?
-grep -q 'UNMEASURED' "$WORK/out" && ok "T5 unsupported attribute read reported as UNMEASURED (rc=$rc)" || no "T5 UNMEASURED reported" "$(head -c 300 "$WORK/out")"
+if grep -q 'UNMEASURED' "$WORK/out"; then ok "T7 unsupported attribute read reported UNMEASURED"; else no "T7 UNMEASURED" "$(head -c 300 "$WORK/out")"; fi
 
-# T6 — +i on an UNCHANGED conffile does not block dpkg (measured): warn, do not refuse.
-mk_tree
-setattr "----i---------e-------" "$S/etc/sysctl.d/90-nftban.conf"
-rc=0; run_subject '_remove_immutable_flags' || rc=$?
-[[ $rc -eq 0 ]] && grep -q 'conffile' "$WORK/out" && ok "T6 immutable conffile: warned, not refused" || no "T6 immutable conffile" "rc=$rc $(head -c 300 "$WORK/out")"
-
-# T7 — operator file outside the payload keeps its administrator flag and does not block.
-mk_tree
-setattr "----i---------e-------" "$S/etc/nftban/whitelist.d/99-manual.conf"
+# T8 — unchanged-conffile flag (dpkg leaves it) warns; operator file outside payload untouched.
+mk_tree; setattr "----i---------e-------" "$S/etc/sysctl.d/90-nftban.conf"; setattr "----i---------e-------" "$S/etc/nftban/whitelist.d/99-manual.conf"
 rc=0; run_subject '_remove_immutable_flags; _restore_owned_immutable_flags' || rc=$?
-[[ $rc -eq 0 && "$(attr_of "$S/etc/nftban/whitelist.d/99-manual.conf")" == *i* ]] && ! grep -q '99-manual' "$WORK/chattr.log" \
-    && ok "T7 operator-owned +i outside the payload untouched" || no "T7 operator-owned +i untouched" "rc=$rc log=$(tr '\n' ';' < "$WORK/chattr.log")"
+if [[ $rc -eq 0 && ! -s "$WORK/chattr.log" ]] && grep -q 'conffile' "$WORK/out"; then
+    ok "T8 conffile flag warned; operator-owned flag outside the payload untouched"
+else no "T8 conffile/operator" "rc=$rc log=$(tr '\n' ';' < "$WORK/chattr.log")"; fi
 
-# T8 — the CLI's owned set equals build/+i-lifecycle-matrix.yaml protected_files (drift guard).
+# T9 — library candidates == +i matrix protected_files (drift guard).
 yaml=$(awk '/^protected_files:/{p=1} p && /- path:/{print $3}' "$MATRIX" | sort)
-cli=$(env -i PATH=/usr/bin:/bin UPDATE_LOG_FILE=/dev/null bash -c 'source "$1"; _nftban_owned_immutable_files' _ "$HELPERS" 2>/dev/null | sort || true)
-[[ -n "$yaml" && "$yaml" == "$cli" ]] && ok "T8 owned set == +i matrix protected_files" || no "T8 owned set == +i matrix" "yaml=[$yaml] cli=[$cli]"
+cand=$(env -i PATH=/usr/bin:/bin sh -c '. "$1"; _nftban_immut_candidates' _ "$LIB" 2>/dev/null | sort || true)
+if [[ -n "$yaml" && "$yaml" == "$cand" ]]; then ok "T9 library candidates == +i matrix protected_files"; else no "T9 candidates" "yaml=[$yaml] lib=[$cand]"; fi
 
-# T9/T10 — the optional /usr/bin/yq link must not abort the maintainer script (DEB postinst
-# runs under set -Eeuo pipefail). Execute the REAL function bodies with a failing `ln`.
-extract_fn() {  # $1 file $2 function name — print the function definition (indent-aware)
-    awk -v n="$2" '
-        !p && index($0, n "() {") { p=1; match($0,/^[ \t]*/); pad=substr($0,1,RLENGTH); print; next }
-        p { print; sub(/[ \t]+$/,""); if ($0 == pad "}") exit }' "$1"
-}
+# T10 — generated DEB copies are byte-identical to the library.
+if [[ -f "$GEN" ]] && bash "$GEN" --check >/dev/null 2>&1; then ok "T10 DEB maintainer-script copies of the library are current"
+else no "T10 generated copies current" "build/generate-immutable-owned-blocks.sh --check failed or missing"; fi
+
+# T11 — RPM scriptlets (real spec text, library substituted as the build does).
+libtxt=$(tail -n +2 "$LIB" 2>/dev/null || true)
+spec_section() { awk -v s="$1" '$0==s {p=1; next} p && /^%[a-z]+( |$)/ {exit} p' "$BUILD_SH" | sed -e 's/\\\$/$/g'; }
+preun=$(spec_section '%preun' | awk '/^# MFST-C3/{exit} {print}'); preun=${preun//'${rpm_immut_lib}'/$libtxt}
+post=$(spec_section '%posttrans'); post=${post//'${rpm_immut_lib}'/$libtxt}
+run_spec() { env -i "${ENVV[@]}" sh -c "$1" _ "$2" >/dev/null 2>&1 || true; }
+mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
+run_spec "$preun" 1
+if [[ ! -s "$WORK/chattr.log" ]]; then ok "T11a RPM preun on upgrade (\$1=1) removes nothing"; else no "T11a preun upgrade" "$(tr '\n' ';' < "$WORK/chattr.log")"; fi
+run_spec "$preun" 0
+if grep -q "chattr -i -- $CONF" "$WORK/chattr.log"; then ok "T11b RPM preun on erase removes the PROVEN flag"; else no "T11b preun erase proven" "$(tr '\n' ';' < "$WORK/chattr.log")"; fi
+mk_tree; setattr "----i---------e-------" "$CONF"
+run_spec "$preun" 0
+if [[ ! -s "$WORK/chattr.log" ]]; then ok "T11c RPM preun on erase leaves an unproven flag"; else no "T11c preun erase unproven" "$(tr '\n' ';' < "$WORK/chattr.log")"; fi
+if [[ -n "$post" ]] && grep -q 'nftban_immut_txn_restore' <<< "$post"; then
+    post_t=${post//\/run\/nftban-rpm-txn-start/$WORK\/txn}
+    mk_tree; record "$CONF" locked 2000; record "$SCHEMA" locked 500; echo 1000 > "$WORK/txn"
+    run_spec "$post_t" 0
+    if [[ "$(attr_of "$CONF")" == *i* && "$(attr_of "$SCHEMA")" != *i* ]]; then
+        ok "T11d RPM posttrans restores only flags NFTBan set in this transaction"
+    else no "T11d posttrans restore" "conf=$(attr_of "$CONF") schema=$(attr_of "$SCHEMA")"; fi
+else
+    no "T11d RPM posttrans transition restore present" "no posttrans with nftban_immut_txn_restore"
+fi
+pretrans=$(awk '/^%pretrans -p <lua>$/{p=1;next} p && /^%pre$/{exit} p' "$BUILD_SH")
+if ! grep -qE 'chattr -i -R|chattr -R -i' <<< "$pretrans" && grep -q 'nftban_immut_pkg_preflight rpm' <<< "$pretrans"; then
+    ok "T11e RPM pretrans: shared preflight, no recursive unlock"
+else no "T11e pretrans shape" "recursive unlock present or shared preflight missing"; fi
+
+# T12 — /usr/bin/yq: optional, never fatal, never replaces an existing yq; internal callers bundled.
+extract_fn() { awk -v n="$2" '!p && index($0, n "() {") { p=1; match($0,/^[ \t]*/); pad=substr($0,1,RLENGTH); print; next }
+        p { print; sub(/[ \t]+$/,""); if ($0 == pad "}") exit }' "$1"; }
 cat > "$STUB/ln" <<'EOF'
 #!/usr/bin/env bash
-echo "ln: failed to create symbolic link '/usr/bin/yq': Operation not permitted" >&2; exit 1
+echo "ln: failed to create symbolic link '${@: -1}': Operation not permitted" >&2; exit 1
 EOF
-chmod +x "$STUB/ln"
-for pair in "DEB postinst:$POSTINST" "RPM %post:$BUILD_SH"; do
+chmod +x "$STUB/ln"; mkdir -p "$WORK/usrbin"; : > "$WORK/yq"; chmod +x "$WORK/yq"
+for pair in "DEB postinst:$POSTINST" "RPM post:$BUILD_SH"; do
     label=${pair%%:*}; file=${pair#*:}
     fn=$(extract_fn "$file" _nftban_link_yq | sed 's/\\\$/$/g')
-    if [[ -z "$fn" ]]; then no "T9 $label: _nftban_link_yq present" "not found — unguarded ln -sf into /usr/bin"; continue; fi
-    # Pretend the bundled yq is executable by pointing the test at a temp copy path.
-    body=${fn//\/usr\/lib\/nftban\/bin\/yq/$WORK\/yq}
-    : > "$WORK/yq"; chmod +x "$WORK/yq"
-    rc=0; out=$(env -i PATH="$STUB:/usr/bin:/bin" bash -c 'set -Eeuo pipefail; log_info(){ echo "[I] $*"; }; log_warn(){ echo "[W] $*"; }; eval "$1"; _nftban_link_yq; echo AFTER_LINK_REACHED' _ "$body" 2>&1) || rc=$?
-    [[ $rc -eq 0 && "$out" == *AFTER_LINK_REACHED* ]] && ok "T9 $label: failing /usr/bin/yq link does not abort the script" || no "T9 $label: link failure non-fatal" "rc=$rc out=$out"
-    [[ "$out" == *"/usr/bin/yq"* && "$out" == *"lsattr -d /usr/bin"* ]] && ok "T10 $label: refusal names /usr/bin/yq with a diagnosis" || no "T10 $label: diagnosis" "$out"
+    if [[ -z "$fn" ]]; then no "T12 $label: guarded _nftban_link_yq" "absent"; continue; fi
+    body=${fn//\/usr\/lib\/nftban\/bin\/yq/$WORK\/yq}; body=${body//\/usr\/bin\/yq/$WORK\/usrbin\/yq}
+    rm -f "$WORK/usrbin/yq"
+    rc=0; out=$(env -i PATH="$STUB" /bin/bash -c 'set -Eeuo pipefail; log_info(){ echo "[I] $*"; }; log_warn(){ echo "[W] $*"; }; eval "$1"; _nftban_link_yq; echo REACHED' _ "$body" 2>&1) || rc=$?
+    if [[ $rc -eq 0 && "$out" == *REACHED* && "$out" == *"lsattr -d /usr/bin"* ]]; then ok "T12a $label: refused link is reported, not fatal"; else no "T12a $label" "rc=$rc $out"; fi
+    echo "system-yq" > "$WORK/usrbin/yq"
+    env -i PATH="/usr/bin:/bin" bash -c 'set -Eeuo pipefail; log_info(){ :; }; log_warn(){ :; }; eval "$1"; _nftban_link_yq' _ "$body" >/dev/null 2>&1 || true
+    if [[ ! -L "$WORK/usrbin/yq" && "$(cat "$WORK/usrbin/yq")" == system-yq ]]; then ok "T12b $label: existing /usr/bin/yq never replaced"; else no "T12b $label" "replaced"; fi
 done
-unguarded=$(grep -nE '^[[:space:]]*ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq[[:space:]]*$' "$POSTINST" "$BUILD_SH" || true)
-[[ -z "$unguarded" ]] && ok "T11 no bare 'ln -sf ... /usr/bin/yq' statement left in the scriptlets" || no "T11 bare ln -sf left" "$unguarded"
-
-# T12 — RPM upgrade ordering: the OLD %preun runs AFTER the NEW %post, so an unconditional
-# owned-flag strip there undid the new installer's +i (measured on el9-clean). Execute the
-# real %preun strip block with $1=1 (upgrade) and $1=0 (erase) over sandbox copies.
-mk_tree
-preun=$(awk '/^%preun$/{p=1;next} p && /^# MFST-C3/{exit} p' "$BUILD_SH" | sed -e 's/\\\$/$/g' \
-    -e "s#/etc/nftban/nftban.conf#$S/etc/nftban/nftban.conf#g" -e "s#/usr/lib/nftban/lib/nft_schema.sh#$S/usr/lib/nftban/lib/nft_schema.sh#g")
-if ! grep -q 'chattr -i' <<< "$preun"; then
-    no "T12 %preun strip block found" "no chattr -i in %preun"
-else
-    : > "$WORK/chattr.log"
-    env -i PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log" sh -c "$preun" _ 1 >/dev/null 2>&1 || true
-    [[ ! -s "$WORK/chattr.log" ]] && ok "T12 RPM %preun on upgrade (\$1=1) leaves NFTBan-owned +i alone" \
-        || no "T12 RPM %preun on upgrade leaves owned +i alone" "$(tr '\n' ';' < "$WORK/chattr.log")"
-    : > "$WORK/chattr.log"
-    env -i PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log" sh -c "$preun" _ 0 >/dev/null 2>&1 || true
-    [[ $(grep -c 'chattr -i' "$WORK/chattr.log") -eq 2 ]] && ok "T12b RPM %preun on erase (\$1=0) still unlocks both owned files" \
-        || no "T12b RPM %preun on erase unlocks owned files" "$(tr '\n' ';' < "$WORK/chattr.log")"
-fi
-
-# T13 — RPM %pretrans: the pre-v1.234 `chattr -i -R /usr/lib/nftban` sweep removed administrator
-# flags on direct dnf upgrade (measured on el9-clean). The %pretrans must refuse (error()) on a
-# restriction it does not own and strip only the owned files. Behaviour is proven package-natively
-# on el9-clean (FINDINGS.md); this pins the shape so the sweep cannot return.
-pretrans=$(awk '/^%pretrans -p <lua>$/{p=1;next} p && /^%pre$/{exit} p' "$BUILD_SH")
-if grep -qE 'chattr -i -R|chattr -R -i' <<< "$pretrans"; then no "T13 %pretrans has no recursive chattr -i sweep" "sweep present"
-else ok "T13 %pretrans has no recursive chattr -i sweep"; fi
-if grep -q 'error("nftban: filesystem restriction preflight refused' <<< "$pretrans" && grep -q 'lsattr -d --' <<< "$pretrans"; then
-    ok "T13b %pretrans refuses on restrictions before any file change"
-else no "T13b %pretrans refusal present" "no preflight error() in %pretrans"; fi
+bare=$(grep -nE '(^|[^_A-Za-z/"$-])yq +-r' "$REPO/cli/lib/nftban/core/nftban_health_checks_config.sh" "$REPO/cli/lib/nftban/core/nftban_health_fixes.sh" \
+       "$REPO/scripts/generate-help.sh" "$REPO/scripts/generate-wiki-auditor.sh" "$REPO/scripts/generate-wiki-operator.sh" || true)
+if [[ -z "$bare" ]]; then ok "T12c internal yq callers use the bundled binary (no PATH yq dependency)"; else no "T12c bundled yq" "$bare"; fi
 
 echo "----------------------------------------------------------"
 echo "RESULT: PASS=$PASS FAIL=$FAIL"
