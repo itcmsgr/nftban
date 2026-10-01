@@ -2,25 +2,7 @@
 set -e
 
 # == BEGIN GENERATED immutable-owned lib ==
-# =============================================================================
-# NFTBan - proven ownership of immutable flags + filesystem-restriction preflight
-# =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
-# meta:name="nftban_immutable_owned"
-# meta:type="lib"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2026-10-01"
-# meta:description="POSIX sh library (v1.234, PR #1439). One implementation, used by the CLI update/repair/rollback paths (sourced) and inlined into the DEB preinst/prerm/postinst and the RPM pretrans/preun/posttrans by build/generate-immutable-owned-blocks.sh. NFTBan only removes or restores an immutable flag whose ownership is PROVEN: a record entry written when NFTBan itself set or cleared the flag, matched by inode AND ctime (ctime changes on any later attribute change), or for flags set by NFTBan before v1.234 an installer.log 'set immutable' line whose timestamp equals the file's ctime. A path name never proves ownership. The preflight reports, before any change, every package destination that cannot be modified and why: IMMUTABLE, APPEND-ONLY, READ-ONLY mount, or WRITE-DENIED (permission/ACL/SELinux/AppArmor; never reported as immutable). Inspection that cannot run is UNMEASURED."
-# meta:inventory.files="/var/lib/nftban/state/immutable-owned, /var/log/nftban/installer.log (read)"
-# meta:inventory.binaries="lsattr,chattr,stat,date,findmnt,awk,sort,xargs,test"
-# meta:inventory.env_vars="NFTBAN_IMMUT_RECORD,NFTBAN_IMMUT_INSTALLER_LOG,NFTBAN_IMMUT_CANDIDATES,NFTBAN_IMMUT_TEST_BIN,NFTBAN_IMMUT_FIXED_DIRS"
-# meta:inventory.config_files=""
-# meta:inventory.systemd_units=""
-# meta:inventory.network=""
-# meta:inventory.privileges="root"
-# =============================================================================
+# Inlined from cli/lib/nftban/lib/nftban_immutable_owned.sh by build/generate-immutable-owned-blocks.sh - do not edit here.
 #
 # Record format (/var/lib/nftban/state/immutable-owned), one line per file:
 #   <path> TAB <inode> TAB <ctime epoch s> TAB <locked|unlocked> TAB <written at epoch s>

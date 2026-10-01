@@ -211,7 +211,10 @@ if [[ -f "$GEN" ]] && bash "$GEN" --check >/dev/null 2>&1; then ok "T10 DEB main
 else no "T10 generated copies current" "build/generate-immutable-owned-blocks.sh --check failed or missing"; fi
 
 # T11 — RPM scriptlets (real spec text, library substituted as the build does).
-libtxt=$(tail -n +2 "$LIB" 2>/dev/null || true)
+libtxt=$(bash "$GEN" --body 2>/dev/null || true)
+if [[ -n "$libtxt" ]] && ! grep -qE 'SPDX-|Copyright|meta:' <<< "$libtxt" && ! grep -qE 'SPDX-|Copyright|meta:' < <(awk '/# == BEGIN GENERATED immutable-owned lib ==/{p=1;next} /# == END GENERATED immutable-owned lib ==/{p=0} p' "$REPO/packaging/deb/preinst" "$REPO/packaging/deb/prerm" "$POSTINST"); then
+    ok "T10b injected library copies (DEB regions, RPM body) carry no SPDX/copyright/meta line"
+else no "T10b no legal header in injected copies" "legal lines present or body empty"; fi
 spec_section() { awk -v s="$1" '$0==s {p=1; next} p && /^%[a-z]+( |$)/ {exit} p' "$BUILD_SH" | sed -e 's/\\\$/$/g'; }
 preun=$(spec_section '%preun'); preun=${preun%%# MFST-C3*}; preun=${preun//'${rpm_immut_lib}'/$libtxt}
 post=$(spec_section '%posttrans'); post=${post//'${rpm_immut_lib}'/$libtxt}

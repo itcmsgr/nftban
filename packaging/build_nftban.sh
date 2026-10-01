@@ -413,7 +413,10 @@ create_rpm_spec_nftban_core() {
         log_error "immutable-ownership library not found at $rpm_immut_src"
         return 1
     fi
-    rpm_immut_lib=$(tail -n +2 "$rpm_immut_src" | sed 's/%/%%/g')
+    # Code body only (no SPDX/copyright/meta header: the spec scriptlets are not
+    # legal-identity surfaces) - same extraction as the DEB copies.
+    rpm_immut_lib=$(bash "${PROJECT_ROOT}/build/generate-immutable-owned-blocks.sh" --body | sed 's/%/%%/g') || {
+        log_error "could not extract the immutable-ownership library body"; return 1; }
 
     # Use explicit file descriptor to catch cat errors
     if ! cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
