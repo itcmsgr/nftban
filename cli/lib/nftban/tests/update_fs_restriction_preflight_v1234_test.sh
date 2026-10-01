@@ -198,7 +198,7 @@ echo "$(ts_of "$(stat -c %Z "$SCHEMA")") [DEBUG] set immutable: $SCHEMA" > "$WOR
 legacy_neg "T5b-b admin replaced the file (new inode) and set +i; the record knows the path: refused even with a same-second log line"
 if grep -q 'deliberate removal of one specific protection' "$WORK/out" && ! grep -qi 'clear it with chattr -i and retry' "$WORK/out"; then
     ok "T5c refusal guidance: a conscious administrator decision on a named path, not a repair step"
-else no "T5c guidance wording" "$(grep -iE 'chattr|deliberate' "$WORK/out" | head -3 | tr '\n' ';')"; fi
+else no "T5c guidance wording" "$(grep -m3 -iE 'chattr|deliberate' "$WORK/out" | tr '\n' ';')"; fi
 
 # T5d — re-lock is checked: a failing chattr +i or a changed file is REPORTED, never silent.
 mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
@@ -287,11 +287,11 @@ else no "T11e pretrans shape" "recursive unlock present or shared preflight miss
 
 # T13 — failure exits re-lock what was unlocked: DEB preinst EXIT trap, DEB postrm and
 # postinst abort branches, RPM pre EXIT trap (shape; behaviour is package-native).
-pre_src=$(cat "$REPO/packaging/deb/preinst"); postrm_src=$(cat "$REPO/packaging/deb/postrm")
+pre_src=$(cat "$REPO/packaging/deb/preinst")
 rpm_pre=$(awk '$0=="%pre" {p=1; next} p && /^%[a-z]+( |$)/ {exit} p' "$BUILD_SH")
 if grep -q "trap '_nftban_rc=\$?; if \[ \"\$_nftban_rc\" -ne 0 \]; then nftban_immut_relock_owned" <<< "$pre_src" \
-   && grep -A4 'abort-install|abort-upgrade)' <<< "$postrm_src" | grep -q nftban_immut_relock_owned \
-   && grep -A3 'abort-upgrade|abort-remove|abort-deconfigure)' "$POSTINST" | grep -q nftban_immut_relock_owned \
+   && awk 'index($0, "abort-install|abort-upgrade)") {n=5} n-- > 0 && /nftban_immut_relock_owned/ {f=1} END {exit f ? 0 : 1}' "$REPO/packaging/deb/postrm" \
+   && awk 'index($0, "abort-upgrade|abort-remove|abort-deconfigure)") {n=4} n-- > 0 && /nftban_immut_relock_owned/ {f=1} END {exit f ? 0 : 1}' "$POSTINST" \
    && grep -q 'nftban_immut_relock_owned' <<< "$rpm_pre" && grep -q 'trap ' <<< "$rpm_pre"; then
     ok "T13 every failure exit after an unlock re-applies it (DEB preinst trap, postrm/postinst abort, RPM pre trap)"
 else no "T13 failure-path relock" "missing trap/abort relock"; fi
