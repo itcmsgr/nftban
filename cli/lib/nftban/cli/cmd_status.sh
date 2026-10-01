@@ -677,7 +677,8 @@ _status_json_install_transaction() {
     echo "    \"phase_reached\": \"$(json_escape "$_phase")\","
     echo "    \"reason\": \"$(json_escape "$_reason")\","
     echo "    \"state_file\": \"$(json_escape "$_f")\","
-    echo "    \"recovery_command\": \"$(json_escape "${NFTBAN_INSTALL_REPAIR_CMD:-/usr/lib/nftban/bin/nftban-installer --repair}")\""
+    echo "    \"recovery_class\": \"$(json_escape "$(declare -F nftban_install_recovery_class >/dev/null 2>&1 && nftban_install_recovery_class "$_f" || printf UNRECORDED)")\","
+    echo "    \"recovery_command\": \"$(json_escape "$(declare -F nftban_install_recovery_instruction >/dev/null 2>&1 && nftban_install_recovery_instruction "$_f" || printf "see the RECOVERY_CLASS line in /var/log/nftban/installer.log")")\""
     echo "  },"
 }
 
@@ -694,7 +695,7 @@ _status_section_install_transaction() {
         echo "───────────────────────────────────────────────────────────────"
         echo "  Transaction state:   UNKNOWN — the install-state authority"
         echo "                       (core/nftban_output.sh) could not be loaded."
-        echo "  Recovery:            /usr/lib/nftban/bin/nftban-installer --repair"
+        echo "  Recovery:            see the RECOVERY_CLASS line in /var/log/nftban/installer.log"
         echo ""
         return 0
     }
