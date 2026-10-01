@@ -618,6 +618,21 @@ if grep -q '^BOTSCAN_SHARED_EDGE skipped=[1-9]' "$LAST_OUT"; then ok "R15 one ag
 st15="$(bash -c 'export NFTBAN_LIB_DIR="$1" NFTBAN_DATA_DIR="$2/data" BOTSCAN_PATTERNS_DIR="$2/patterns" BOTSCAN_SHIPPED_PATTERNS_DIR="" BOTSCAN_TRUST_CACHE_DIR="" NFTBAN_CONFIG_DIR="$2/noetc"; source "$1/core/nftban_botscan.sh" >/dev/null 2>&1; nftban_botscan_status 2>&1' _ "$SUBJ_LIB" "$sb15" 2>&1 || true)"
 if grep -qE '^CDN edges: .*bans skipped: last cycle [1-9][0-9]*, total [1-9]' <<<"$st15" && grep -q 'configure real-IP restoration' <<<"$st15"; then
     ok "R15 status shows the skipped edge bans and the real-IP remedy"; else bad "R15 status lacks the shared-edge report: $(grep -a 'CDN' <<<"$st15" | tr '\n' ' ')"; fi
+# Flood paths with the spool object KEPT (BOTSCAN_SPOOL_REAP=false — the production shape on
+# hosts where an object is not reaped, e.g. CURSOR_CONFLICT): an older subject that reaps a
+# drained object before the tail (A4) is blind to floods in the default shape, so this
+# variant is what shows v1.233.1 banning the edges on the 404 and endpoint paths too.
+sb15k="$(new_sb cdn_edge_kept)"
+printf 'export BOTSCAN_SPOOL_REAP=false\n' > "$sb15k/env"
+sbsave="$sb15"; sb15="$sb15k"
+flood404 172.64.5.6; flood404 2606:4700:10::6816:5; floodep 162.158.7.8; floodep 2400:cb00:20::9
+flood404 45.33.32.192; floodep 2600:3c00::f03c:91ff:fe00:194
+sb15="$sbsave"
+cycle "$sb15k" "$t"
+for ip in 172.64.5.6 2606:4700:10::6816:5; do check "R15 404-flood path (object kept): shared edge $ip NOT banned" "$(signals "$sb15k" "$ip")" eq 0; done
+for ip in 162.158.7.8 2400:cb00:20::9;      do check "R15 endpoint-flood path (object kept): shared edge $ip NOT banned" "$(signals "$sb15k" "$ip")" eq 0; done
+check "R15 NC (object kept): non-CDN 404 flood banned" "$(signals "$sb15k" 45.33.32.192)" ge 1
+check "R15 NC (object kept): non-CDN IPv6 endpoint flood banned" "$(signals "$sb15k" 2600:3c00::f03c:91ff:fe00:194)" ge 1
 # in-test inversion: the same edge traffic with NO shared-edge data -> the edge IS banned and
 # the cycle says the edges are unprotected (proves the arm measures the guard)
 sb15n="$(new_sb cdn_edge_nodata)"
