@@ -56,6 +56,9 @@ readonly DEFAULT_BURST="50 packets"
 # HELPER FUNCTIONS
 # =============================================================================
 
+# Prints the error and returns 1. It does NOT exit: every call site must
+# `return 1` itself (v1.234 — `firewall-logs enable --bogus` looped forever
+# printing "Unknown option" because the option loop never terminated).
 _fwlog_die() {
     echo "ERROR: $*" >&2
     return 1
@@ -232,7 +235,7 @@ _fwlog_enable() {
                 shift 2
                 ;;
             *)
-                _fwlog_die "Unknown option: $1"
+                _fwlog_die "Unknown option: $1"; return 1
                 ;;
         esac
     done
@@ -242,7 +245,7 @@ _fwlog_enable() {
         drops|accepts|all|alert|off)
             ;;
         *)
-            _fwlog_die "Invalid level: $level (expected: drops, accepts, all, alert)"
+            _fwlog_die "Invalid level: $level (expected: drops, accepts, all, alert)"; return 1
             ;;
     esac
 
@@ -594,7 +597,7 @@ _fwlog_show() {
                 shift
                 ;;
             *)
-                _fwlog_die "Unknown option: $1"
+                _fwlog_die "Unknown option: $1"; return 1
                 ;;
         esac
     done
