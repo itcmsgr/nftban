@@ -713,7 +713,7 @@ _status_package_consistency() {
         mgr=dpkg
         local q
         q=$(dpkg-query -W -f='${db:Status-Abbrev}|${Version}' nftban-core 2>/dev/null) || q=""
-        abbrev=${q%%|*}; abbrev=${abbrev//[[:space:]]/}; pkg_ver=${q#*|}
+        abbrev=${q%%|*}; read -r abbrev <<< "$abbrev"; pkg_ver=${q#*|}
         case "$abbrev" in
             ii) installed=1 ;;
             i?*)
