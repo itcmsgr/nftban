@@ -86,7 +86,8 @@ export NFTBAN_LIB_DIR="$SUBJ_LIB" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LOG_DIR="$SB
        NFTBAN_CONFIG_DIR="$SB/noetc" BOTSCAN_SPOOL_DIR="$SB/spool" BOTSCAN_PATTERNS_DIR="$SB/patterns" \
        BOTSCAN_LOG_FILE="$SB/botscan.log" BOTSCAN_STATE_FILE="$SB/state.db" \
        BOTSCAN_ENABLED=true BOTSCAN_BATCH_SIGNAL_MODE=true BOTSCAN_SCAN_BUDGET_SECS=0 \
-       BOTSCAN_VERIFY_CRAWLERS=false BOTSCAN_USE_GLOBAL_WHITELIST=false BOTSCAN_SHIPPED_PATTERNS_DIR=""
+       BOTSCAN_VERIFY_CRAWLERS=false BOTSCAN_USE_GLOBAL_WHITELIST=false BOTSCAN_SHIPPED_PATTERNS_DIR="" \
+       BOTSCAN_TRUST_CACHE_DIR=""
 [[ -f "$SB/env" ]] && . "$SB/env"
 # shellcheck source=/dev/null
 source "$SUBJ_LIB/core/nftban_botscan.sh"
@@ -581,6 +582,52 @@ check "R14 same editor after an IP change, no new login (cycles 4-5) not banned"
 check "R14 NC: an admin-path scanner (10 distinct probes) in the same cycles is banned" "$(signals "$sb14" 45.33.32.183)" ge 1
 
 # =============================================================================
+# R15 — SHARED CDN EDGES are never banned, on EVERY ban path, IPv4 and IPv6
+# (BUG-BOTSCAN-BANS-CDN-EDGE-IPS-WHEN-WEB-LOG-RECORDS-PROXY-ADDRESS). The web server logs
+# the CDN edge as the client (no real-IP restoration); the same traffic from a non-CDN
+# scanner IS banned (negative control). Addresses are inside Cloudflare's PUBLISHED ranges
+# (packaged snapshot), incl. the Workers egress 2a06:98c0:3600::103.
+# =============================================================================
+arm_begin "R15 shared CDN edges: patterns, 404 flood, endpoint flood x IPv4/IPv6"
+sb15="$(new_sb cdn_edge)"
+t=$(( T0 + 64800 ))
+# pattern path: exploit route + scanner variety + enumeration
+
+pat_traffic() { local ip="$1" i
+    emit "$sb15" "$ip" $(( t - 100 )) GET '/.git/config' 404
+    for i in 1 2 3 4 5 6; do emit "$sb15" "$ip" $(( t - 90 + i )) GET "/wp-json/wp/v2/users/$i" 200; done
+}
+flood404() { local ip="$1" i; for (( i=0; i<60; i++ )); do emit "$sb15" "$ip" $(( t - 80 + i )) GET "/gone-$i.php" 404; done; }
+floodep()  { local ip="$1" i; for (( i=0; i<40; i++ )); do emit "$sb15" "$ip" $(( t - 40 + i / 2 )) POST '/xmlrpc.php' 200; done; }
+pat_traffic 104.16.10.20;          pat_traffic 2a06:98c0:3600::103      # edges: v4, v6 (Workers egress)
+flood404    172.64.5.6;            flood404    2606:4700:10::6816:5     # edges: v4, v6
+floodep     162.158.7.8;           floodep     2400:cb00:20::9          # edges: v4, v6
+pat_traffic 45.33.32.191;          flood404    45.33.32.192;  floodep 45.33.32.193     # NC v4
+floodep     2600:3c00::f03c:91ff:fe00:194                                               # NC v6 (non-CDN)
+cycle "$sb15" "$t"
+for ip in 104.16.10.20 2a06:98c0:3600::103; do check "R15 pattern path: shared edge $ip NOT banned" "$(signals "$sb15" "$ip")" eq 0; done
+for ip in 172.64.5.6 2606:4700:10::6816:5;  do check "R15 404-flood path: shared edge $ip NOT banned" "$(signals "$sb15" "$ip")" eq 0; done
+for ip in 162.158.7.8 2400:cb00:20::9;      do check "R15 endpoint-flood path: shared edge $ip NOT banned" "$(signals "$sb15" "$ip")" eq 0; done
+check "R15 NC: non-CDN scanner, pattern path, banned" "$(signals "$sb15" 45.33.32.191)" ge 1
+check "R15 NC: non-CDN client, 404 flood, banned" "$(signals "$sb15" 45.33.32.192)" ge 1
+check "R15 NC: non-CDN client, endpoint flood, banned" "$(signals "$sb15" 45.33.32.193)" ge 1
+check "R15 NC: non-CDN IPv6 client, endpoint flood, banned" "$(signals "$sb15" 2600:3c00::f03c:91ff:fe00:194)" ge 1
+n_skip="$(grep -ac 'SKIPPED_SHARED_EDGE|skipped: address is a shared CDN edge (cloudflare ips-v' "$sb15/botscan.log" 2>/dev/null || true)"
+check "R15 every skipped ban has a visible reason in botscan.log (6 edges)" "${n_skip:-0}" ge 6
+if grep -q '^BOTSCAN_SHARED_EDGE skipped=[1-9]' "$LAST_OUT"; then ok "R15 one aggregate BOTSCAN_SHARED_EDGE line in the cycle output"; else bad "R15 aggregate line missing"; fi
+st15="$(bash -c 'export NFTBAN_LIB_DIR="$1" NFTBAN_DATA_DIR="$2/data" BOTSCAN_PATTERNS_DIR="$2/patterns" BOTSCAN_SHIPPED_PATTERNS_DIR="" BOTSCAN_TRUST_CACHE_DIR="" NFTBAN_CONFIG_DIR="$2/noetc"; source "$1/core/nftban_botscan.sh" >/dev/null 2>&1; nftban_botscan_status 2>&1' _ "$SUBJ_LIB" "$sb15" 2>&1 || true)"
+if grep -qE '^CDN edges: .*bans skipped: last cycle [1-9][0-9]*, total [1-9]' <<<"$st15" && grep -q 'configure real-IP restoration' <<<"$st15"; then
+    ok "R15 status shows the skipped edge bans and the real-IP remedy"; else bad "R15 status lacks the shared-edge report: $(grep -a 'CDN' <<<"$st15" | tr '\n' ' ')"; fi
+# in-test inversion: the same edge traffic with NO shared-edge data -> the edge IS banned and
+# the cycle says the edges are unprotected (proves the arm measures the guard)
+sb15n="$(new_sb cdn_edge_nodata)"
+printf 'export BOTSCAN_SHARED_EDGE_FILE=""\n' > "$sb15n/env"
+sbsave="$sb15"; sb15="$sb15n"; pat_traffic 104.16.10.20; sb15="$sbsave"
+cycle "$sb15n" "$t"
+check "R15 INV: without shared-edge data the same edge IS banned (guard has power)" "$(signals "$sb15n" 104.16.10.20)" ge 1
+if grep -q '^BOTSCAN_SHARED_EDGE ranges=UNMEASURED' "$LAST_OUT"; then ok "R15 INV: missing data is reported as UNMEASURED, never silent"; else bad "R15 INV: missing shared-edge data not reported"; fi
+
+# =============================================================================
 # S — STRUCTURAL: evidence horizon vs the shipped timer units; prefilter soundness.
 # =============================================================================
 arm_begin "S1 evidence horizon covers the shipped timer units"
@@ -698,7 +745,7 @@ if grep -q 'Ban duration:   UNMEASURED' <<<"$S6_OUT"; then ok "S6 no evidence ->
 
 # =============================================================================
 echo "----"
-EXPECTED_ARMS=28
+EXPECTED_ARMS=29
 echo "arms run: $ARMS_RUN/$EXPECTED_ARMS  pass=$PASS fail=$FAIL"
 [[ "$ARMS_RUN" -eq "$EXPECTED_ARMS" ]] || { echo "INCOMPLETE: $ARMS_RUN of $EXPECTED_ARMS arms ran" >&2; exit 1; }
 if [[ "$FAIL" -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}" >&2; exit 1; fi

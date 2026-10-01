@@ -78,6 +78,9 @@ func (m *Module) writeBotscanConsumerStatus() {
 		"batch_signals_malformed":      m.stats.BatchSignalsMalformed,
 		"batch_handoff_errors":         m.stats.BatchHandoffErrors,
 		"batch_consumer_stale_backlog": m.stats.BatchConsumerStaleBacklog,
+
+		// v1.234.0: BotScan signals refused because the address is a shared CDN edge
+		"batch_signals_shared_edge_skipped": m.stats.BatchSignalsSharedEdgeSkipped,
 	}
 	m.mu.RUnlock()
 	b, err := json.Marshal(rec)

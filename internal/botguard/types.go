@@ -200,6 +200,9 @@ type GuardStats struct {
 	// let health WARN/DEGRADE on a broken signal handoff instead of reading a false PROTECTED.
 	BatchHandoffErrors           int64 // lock/rename/remove handoff failures (health-degradable)
 	BatchStaleConsumingRecovered int64 // leftover .consuming files processed after a prior crash
+
+	// v1.234.0: BotScan signals refused because the address is a shared CDN edge
+	BatchSignalsSharedEdgeSkipped int64
 }
 
 // BatchSignal represents a signal from the shell botscan (Clock 3).

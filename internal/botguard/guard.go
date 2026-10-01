@@ -104,6 +104,10 @@ type Module struct {
 
 	// Statistics
 	stats GuardStats
+
+	// v1.234.0 — shared CDN edge ranges BotScan must never ban (botscan_shared_edge.go).
+	sharedEdges     *sharedEdgeSet
+	sharedEdgesOnce sync.Once
 }
 
 // New creates a new bot guard module.
@@ -983,6 +987,10 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	if sig.Action != "ban" && sig.Action != "grey" {
 		return false // only ban/grey actions enforce; allow_demote/extend are no-ops here
 	}
+	// v1.234.0 — a shared CDN edge is never banned (visible reason logged + counted).
+	if m.botscanSharedEdgeSkip(sig, ip) {
+		return false
+	}
 	// keep decision-cache observability consistent (harmless; never durable)
 	m.recordDecisionTransition(sig, ip)
 	// browser-like / static / e-shop / admin fan-out → never ban from class alone (fail-safe)
@@ -1230,6 +1238,11 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	ip, err := netip.ParseAddr(sig.IP)
 	if err != nil {
 		log.Printf("[botguard] batch signal invalid IP %q: %v", sig.IP, err)
+		return
+	}
+
+	// v1.234.0 — a BotScan ban/grey of a shared CDN edge is never applied (BotGuard path).
+	if (sig.Action == "ban" || sig.Action == "grey") && m.botscanSharedEdgeSkip(sig, ip) {
 		return
 	}
 

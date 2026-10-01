@@ -164,11 +164,12 @@ nftban_botscan_record_runstate() {
     if ! nftban_botscan_should_record; then return 0; fi
     mkdir -p "${_BS_RUNSTATE%/*}" 2>/dev/null || true
     # accumulate totals from prior file
-    local p_bh=0 p_seen=0 p_scan=0 p_pf=0 p_skip=0 p_sig=0 p_ban=0 p_abs=0
+    local p_bh=0 p_seen=0 p_scan=0 p_pf=0 p_skip=0 p_sig=0 p_ban=0 p_abs=0 p_edge=0
     if [[ -f "$_BS_RUNSTATE" ]] && command -v jq &>/dev/null; then
-        IFS=' ' read -r p_bh p_seen p_scan p_pf p_skip p_sig p_ban p_abs < <(
-            jq -r '"\(.budget_hit_total//0) \(.lines_seen_total//0) \(.lines_scanned_total//0) \(.lines_prefiltered_total//0) \(.lines_skipped_pressure_total//0) \(.signals_emitted_total//0) \(.bans_emitted_total//0) \(.already_banned_skipped_total//0)"' "$_BS_RUNSTATE" 2>/dev/null) || true
+        IFS=' ' read -r p_bh p_seen p_scan p_pf p_skip p_sig p_ban p_abs p_edge < <(
+            jq -r '"\(.budget_hit_total//0) \(.lines_seen_total//0) \(.lines_scanned_total//0) \(.lines_prefiltered_total//0) \(.lines_skipped_pressure_total//0) \(.signals_emitted_total//0) \(.bans_emitted_total//0) \(.already_banned_skipped_total//0) \(.shared_edge_skipped_total//0)"' "$_BS_RUNSTATE" 2>/dev/null) || true
     fi
+    [[ "${p_edge:-0}" =~ ^[0-9]+$ ]] || p_edge=0
     local en="${BOTSCAN_ENABLED:-true}"
     cat > "${_BS_RUNSTATE}.tmp" <<EOF
 {
@@ -189,6 +190,9 @@ nftban_botscan_record_runstate() {
   "signals_emitted_total": $(( p_sig + ${v[signals]:-0} )),
   "bans_emitted_total": $(( p_ban + ${v[bans]:-0} )),
   "already_banned_skipped_total": $(( p_abs + ${v[already_banned_skipped]:-0} )),
+  "shared_edge_skipped_last": ${v[shared_edge_skipped]:-0},
+  "shared_edge_skipped_total": $(( p_edge + ${v[shared_edge_skipped]:-0} )),
+  "shared_edge_ranges": ${v[shared_edge_ranges]:-0},
   "last_budget_hit": ${v[budget_hit]:-0},
   "pressure_state": "${v[pressure_state]:-NORMAL}",
   "scan_mode": "${v[scan_mode]:-FULL}",

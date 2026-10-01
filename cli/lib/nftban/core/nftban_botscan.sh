@@ -1703,6 +1703,8 @@ nftban_botscan_analyze() {
             [[ "$_cnt" -ge "$BOTSCAN_ENDPOINT_FLOOD_THRESHOLD" && "$_el" -le "$BOTSCAN_ENDPOINT_FLOOD_WINDOW" ]] || continue
             local _efip="${_k%%|*}" _efep="${_k#*|}"
             local _efreason="endpoint_flood ${BOTSCAN_ENDPOINT_FLOOD_METHOD} ${_efep}: ${_cnt} in ${_el}s (request time)"
+            # v1.234.0 — never ban a shared CDN edge (endpoint-flood path).
+            nftban_botscan_shared_edge_guard "$_efip" "botscan-endpoint-flood" "$_efreason" && continue
             if [[ "$BOTSCAN_ACTION_MODE" == "alert" ]]; then
                 echo "[ALERT] Would ban ${_efip} for ${BOTSCAN_ENDPOINT_FLOOD_BAN}s: ${_efreason}"
             else
@@ -2101,12 +2103,161 @@ nftban_botscan_write_signal() {
     return 0
 }
 
+# =============================================================================
+# v1.234.0 — SHARED CDN EDGES (BUG-BOTSCAN-BANS-CDN-EDGE-IPS-WHEN-WEB-LOG-RECORDS-PROXY-ADDRESS)
+# =============================================================================
+# Measured on a production host: nginx behind Cloudflare without real-IP restoration logs
+# the Cloudflare EDGE as the client, and BotScan banned 48 edges for 24 h — every visitor
+# routed through them was dropped. An address inside a published CDN edge / platform
+# egress range is a SHARED proxy identity: BotScan never bans it. This is a guard in the
+# ENFORCEMENT path only (every ban BotScan emits passes nftban_botscan_shared_edge_guard;
+# the daemon refuses the same ranges again at apply time). Nothing is whitelisted or
+# accepted by the firewall, and no other detector is affected.
+# Behind a CDN, a firewall ban is in any case not a block: proxied requests arrive from
+# the edge, so banning the visitor's address would not stop them, and banning the edge
+# blocks everyone. The remedy is real-IP restoration in the web server; the skip line says so.
+# Sources (merged, admission-checked: v4 prefix >= /8, v6 >= /16):
+#   1. the packaged snapshot ${NFTBAN_LIB_DIR}/data/botscan_shared_edges.tsv (always present,
+#      works offline; refreshed per release from the provider's published list);
+#   2. a newer published list fetched by `nftban trust` (read-only use of its cache;
+#      optional; BotScan never depends on that path working).
+declare -ga _BS_EDGE4_NET=() _BS_EDGE4_MASK=() _BS_EDGE4_LABEL=() _BS_EDGE6_G=() _BS_EDGE6_LEN=() _BS_EDGE6_LABEL=()
+declare -g  _BS_EDGE_LOADED="" _BS_EDGE_MATCH="" _BS_EDGE_SOURCES=""
+declare -gi _BS_EDGE_REJECTED=0
+
+# _bs_v4_int A.B.C.D -> sets _BS_V4 (integer); rc1 if malformed
+_bs_v4_int() {
+    [[ "$1" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    local a=$((10#${BASH_REMATCH[1]})) b=$((10#${BASH_REMATCH[2]})) c=$((10#${BASH_REMATCH[3]})) d=$((10#${BASH_REMATCH[4]}))
+    (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || return 1
+    _BS_V4=$(( (a << 24) | (b << 16) | (c << 8) | d ))
+    return 0
+}
+# _bs_v6_groups ADDR -> sets _BS_V6 to 8 space-separated decimal groups; rc1 if malformed
+_bs_v6_groups() {
+    local a="${1,,}" head tail i n
+    [[ "$a" =~ ^[0-9a-f:]+$ && "$a" == *:* ]] || return 1
+    local -a H=() T=() G=()
+    if [[ "$a" == *::* ]]; then
+        head="${a%%::*}"; tail="${a#*::}"
+        [[ "$tail" == *::* ]] && return 1
+        [[ -n "$head" ]] && IFS=':' read -ra H <<< "$head"
+        [[ -n "$tail" ]] && IFS=':' read -ra T <<< "$tail"
+        n=$(( 8 - ${#H[@]} - ${#T[@]} )); (( n >= 1 )) || return 1
+        G=("${H[@]}"); for (( i=0; i<n; i++ )); do G+=(0); done; G+=("${T[@]}")
+    else
+        IFS=':' read -ra G <<< "$a"
+    fi
+    (( ${#G[@]} == 8 )) || return 1
+    _BS_V6=""
+    for i in "${G[@]}"; do
+        [[ "$i" =~ ^[0-9a-f]{1,4}$ ]] || return 1
+        _BS_V6+="$((16#$i)) "
+    done
+    _BS_V6="${_BS_V6% }"
+    return 0
+}
+# _bs_edge_admit LABEL CIDR -> appends to the range arrays; counts rejects
+_bs_edge_admit() {
+    local label="$1" cidr="$2" net len
+    net="${cidr%/*}"; len="${cidr##*/}"
+    [[ "$cidr" == */* && "$len" =~ ^[0-9]{1,3}$ ]] || { _BS_EDGE_REJECTED=$(( _BS_EDGE_REJECTED + 1 )); return 0; }
+    len=$((10#$len))
+    if [[ "$net" == *.* ]] && _bs_v4_int "$net" && (( len >= 8 && len <= 32 )); then
+        local mask=$(( (0xFFFFFFFF << (32 - len)) & 0xFFFFFFFF ))
+        _BS_EDGE4_NET+=( $(( _BS_V4 & mask )) ); _BS_EDGE4_MASK+=( "$mask" ); _BS_EDGE4_LABEL+=( "$label $cidr" )
+    elif [[ "$net" == *:* ]] && _bs_v6_groups "$net" && (( len >= 16 && len <= 128 )); then
+        _BS_EDGE6_G+=( "$_BS_V6" ); _BS_EDGE6_LEN+=( "$len" ); _BS_EDGE6_LABEL+=( "$label $cidr" )
+    else
+        _BS_EDGE_REJECTED=$(( _BS_EDGE_REJECTED + 1 ))
+    fi
+    return 0
+}
+# nftban_botscan_load_shared_edges — load once per process (idempotent).
+nftban_botscan_load_shared_edges() {
+    [[ -n "$_BS_EDGE_LOADED" ]] && return 0
+    _BS_EDGE_LOADED=1
+    _BS_EDGE4_NET=(); _BS_EDGE4_MASK=(); _BS_EDGE4_LABEL=(); _BS_EDGE6_G=(); _BS_EDGE6_LEN=(); _BS_EDGE6_LABEL=()
+    _BS_EDGE_REJECTED=0; _BS_EDGE_SOURCES=""
+    local snap="${BOTSCAN_SHARED_EDGE_FILE-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/botscan_shared_edges.tsv}"
+    local prov list cidr l
+    if [[ -n "$snap" && -r "$snap" ]]; then
+        while IFS=$'\t' read -r prov list cidr; do
+            [[ -z "$prov" || "$prov" == \#* ]] && continue
+            _bs_edge_admit "${prov} ${list}" "$cidr"
+        done < "$snap"
+        _BS_EDGE_SOURCES+="snapshot:${snap} "
+    fi
+    local tdir="${BOTSCAN_TRUST_CACHE_DIR-/var/cache/nftban/trust}" f p fam
+    if [[ -n "$tdir" && -d "$tdir" ]]; then
+        for p in cloudflare fastly quiccloud; do
+            for fam in ipv4 ipv6; do
+                f="$tdir/${p}-${fam}.txt"
+                [[ -r "$f" ]] || continue
+                while IFS= read -r l || [[ -n "$l" ]]; do
+                    l="${l%%#*}"; l="${l//[[:space:]]/}"
+                    [[ -n "$l" ]] && _bs_edge_admit "${p} trust-cache-${fam}" "$l"
+                done < "$f"
+                _BS_EDGE_SOURCES+="trust-cache:${f} "
+            done
+        done
+    fi
+    return 0
+}
+# nftban_botscan_shared_edge IP -> rc0 and _BS_EDGE_MATCH="<provider> <list> <cidr>" if IP is
+# inside a shared-edge range (IPv4-mapped IPv6 is checked as IPv4).
+nftban_botscan_shared_edge() {
+    local ip="${1#[}"; ip="${ip%]}"; local i
+    _BS_EDGE_MATCH=""
+    nftban_botscan_load_shared_edges
+    [[ "${ip,,}" == ::ffff:*.* ]] && ip="${ip##*:}"
+    if [[ "$ip" == *.* ]]; then
+        _bs_v4_int "$ip" || return 1
+        for (( i=0; i<${#_BS_EDGE4_NET[@]}; i++ )); do
+            if (( (_BS_V4 & _BS_EDGE4_MASK[i]) == _BS_EDGE4_NET[i] )); then _BS_EDGE_MATCH="${_BS_EDGE4_LABEL[i]}"; return 0; fi
+        done
+        return 1
+    fi
+    _bs_v6_groups "$ip" || return 1
+    local -a A=() N=()
+    IFS=' ' read -ra A <<< "$_BS_V6"
+    local len full rem k ok
+    for (( i=0; i<${#_BS_EDGE6_G[@]}; i++ )); do
+        IFS=' ' read -ra N <<< "${_BS_EDGE6_G[i]}"
+        len="${_BS_EDGE6_LEN[i]}"; full=$(( len / 16 )); rem=$(( len % 16 )); ok=1
+        for (( k=0; k<full; k++ )); do (( A[k] == N[k] )) || { ok=0; break; }; done
+        if (( ok && rem > 0 )); then
+            local m=$(( (0xFFFF << (16 - rem)) & 0xFFFF ))
+            (( (A[full] & m) == (N[full] & m) )) || ok=0
+        fi
+        if (( ok )); then _BS_EDGE_MATCH="${_BS_EDGE6_LABEL[i]}"; return 0; fi
+    done
+    return 1
+}
+# nftban_botscan_shared_edge_guard IP SOURCE REASON -> rc0 = SKIPPED (caller must not ban);
+# rc1 = not a shared edge (proceed). Writes the visible reason to botscan.log
+# (SKIPPED_SHARED_EDGE) and counts it on the cycle's counter sink.
+nftban_botscan_shared_edge_guard() {
+    local ip="$1" source="$2" reason="$3"
+    nftban_botscan_shared_edge "$ip" || return 1
+    local why="skipped: address is a shared CDN edge (${_BS_EDGE_MATCH}); the web log records the proxy, not the client; configure real-IP restoration in the web server"
+    if [[ "${BOTSCAN_ACTION_MODE:-}" == "alert" ]]; then
+        echo "[ALERT] Would NOT ban $ip — ${why} (${reason})"
+    fi
+    echo "$(date -Iseconds)|$source|$ip|0|SKIPPED_SHARED_EDGE|${why} — ${reason}" >> "${BOTSCAN_LOG_FILE:-/dev/null}" 2>/dev/null || true
+    nftban_botscan_counter_add shared_edge_skipped 1 || true
+    return 0
+}
+
 # Ban IP
 nftban_botscan_ban_ip() {
     local ip="$1"
     local duration="$2"
     local source="$3"
     local reason="$4"
+
+    # v1.234.0 — never ban a shared CDN edge (pattern and 404-flood paths; all modes).
+    nftban_botscan_shared_edge_guard "$ip" "$source" "$reason" && return 0
 
     [[ "$BOTSCAN_ACTION_MODE" == "alert" ]] && {
         echo "[ALERT] Would ban $ip for ${duration}s: $reason"
@@ -2592,6 +2743,15 @@ nftban_botscan_process_logs() {
     ( nftban_botscan_analyze ) || _analyze_rc=$?
     [[ "$_analyze_rc" -ne 0 ]] && echo "[botscan] WARN: analyze exited rc=${_analyze_rc} — counts below may be partial" >&2
     banned="$(nftban_botscan_counter_get bans_emitted)"
+    # v1.234.0 — shared CDN edges: one aggregate line when bans were skipped, and a loud
+    # line if no shared-edge data could be loaded (edges are then NOT protected).
+    local _edge_skipped; _edge_skipped="$(nftban_botscan_counter_get shared_edge_skipped)"
+    nftban_botscan_load_shared_edges
+    if (( ${#_BS_EDGE4_NET[@]} + ${#_BS_EDGE6_G[@]} == 0 )); then
+        echo "BOTSCAN_SHARED_EDGE ranges=UNMEASURED (no shared-edge data loaded): CDN edge addresses are NOT protected from BotScan bans"
+    elif [[ "${_edge_skipped:-0}" -gt 0 ]]; then
+        echo "BOTSCAN_SHARED_EDGE skipped=${_edge_skipped} ban(s) of shared CDN edge addresses (the web server logs the proxy, not the visitor; configure real-IP restoration; reasons in ${BOTSCAN_LOG_FILE:-botscan.log} as SKIPPED_SHARED_EDGE)"
+    fi
     # Reconcile the parent-side mirror so every in-process reader of the documented
     # v1.219.0 variable sees this cycle's real count.
     _BOTSCAN_SIGNALS_EMITTED="$(nftban_botscan_counter_get signals_emitted)"
@@ -2611,7 +2771,8 @@ nftban_botscan_process_logs() {
             bans="$banned" signals="${_BOTSCAN_SIGNALS_EMITTED:-0}" \
             unique_ips="${#_BOTSCAN_IP_HITS[@]}" \
             pressure_state="$_BS_PRESSURE" scan_mode="$_BS_MODE" \
-            backlog_state="$_BS_BACKLOG" health_state="$_health" load_ratio="${_lr:-0}"
+            backlog_state="$_BS_BACKLOG" health_state="$_health" load_ratio="${_lr:-0}" \
+            shared_edge_skipped="${_edge_skipped:-0}" shared_edge_ranges="$(( ${#_BS_EDGE4_NET[@]} + ${#_BS_EDGE6_G[@]} ))"
     fi
 
     # v1.231.0 P0-B — close this cycle's counter sink. Everything durable has been
@@ -2691,6 +2852,22 @@ nftban_botscan_status() {
         echo "Migrated:       $(( ${#_all[@]} - ${#_st[@]} )) pre-v1.234 file(s) converted (kept for review, not loaded); report: ${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/pattern-migration.report"
     fi
     nftban_botscan_duration_truth "${BOTSCAN_BAN_EVIDENCE_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_ban_evidence.jsonl}"
+    # v1.234.0 — shared CDN edges: ranges in force + bans skipped (from the run-state record)
+    nftban_botscan_load_shared_edges
+    local _er=$(( ${#_BS_EDGE4_NET[@]} + ${#_BS_EDGE6_G[@]} )) _el="UNMEASURED" _et="UNMEASURED" _rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
+    if [[ -r "$_rs" ]] && command -v jq >/dev/null 2>&1; then
+        _el="$(jq -r '.shared_edge_skipped_last // "UNMEASURED"' "$_rs" 2>/dev/null || echo UNMEASURED)"
+        _et="$(jq -r '.shared_edge_skipped_total // "UNMEASURED"' "$_rs" 2>/dev/null || echo UNMEASURED)"
+    fi
+    if (( _er == 0 )); then
+        echo "CDN edges:      NOT PROTECTED — no shared-edge range data loaded (expected ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/botscan_shared_edges.tsv)"
+    else
+        echo "CDN edges:      ${_er} shared-edge range(s) never banned (${_BS_EDGE_SOURCES% }); bans skipped: last cycle ${_el}, total ${_et}"
+        if [[ "$_et" =~ ^[0-9]+$ && "$_et" -gt 0 ]]; then
+            echo "                A web server here logs a CDN edge as the client: configure real-IP restoration"
+            echo "                (nginx real_ip / Apache mod_remoteip). Behind a CDN a firewall ban does not block proxied requests."
+        fi
+    fi
     echo ""
 
     # Log source
