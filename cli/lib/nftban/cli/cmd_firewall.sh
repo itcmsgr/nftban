@@ -4635,13 +4635,28 @@ _firewall_rebuild_core() {
         return 1
     fi
 
-    case "$post_status" in
+    # v1.234.0 installer lifecycle: the classifier (PRECEDENCE 5b) may return COMPLETE for a
+    # post_status of "degraded" in install context when the SOLE error finding is
+    # VAL-TIMER-001 — the core timers are started by the installer's Configure phase, which
+    # runs AFTER this rebuild, and the installer re-asserts timer liveness afterwards. The
+    # write-once verdict is CONSUMED here, never re-derived: only that exact
+    # (COMPLETE, TIMER_LIVENESS_DEFERRED_TO_INSTALLER) pair reaches the commit branch.
+    local _final_case="$post_status"
+    if [[ "$_disposition" == "COMPLETE" && "$_disposition_reasons" == "${CR_TIMER_LIVENESS_DEFERRED:-TIMER_LIVENESS_DEFERRED_TO_INSTALLER}" && "$post_status" == "degraded" ]]; then
+        _final_case="protected"
+        [[ "$quiet" == "false" ]] && echo "Note: timer liveness (VAL-TIMER-001) DEFERRED to the installer — core timers start in its Configure phase and are validated after it."
+    fi
+
+    case "$_final_case" in
         protected|idle)
             # v1.228.5: "all checks passed" is reserved for ACTUAL convergence. A deferred
             # projection printed its Note above and then fell through to this line, so the
             # summary contradicted it — and the summary is what an operator reads. DEFERRED
             # is not a failure, but it is not "all checks passed" either.
-            if [[ "${_rebuild_whitelist_converged:-true}" == "deferred" ]]; then
+            if [[ "$_final_case" != "$post_status" ]]; then
+                # v1.234.0: validator status is DEGRADED only by VAL-TIMER-001 (see above).
+                [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} validator status; firewall checks passed; timer liveness DEFERRED to the installer${_rebuild_whitelist_converged:+ (whitelist: ${_rebuild_whitelist_converged})}"
+            elif [[ "${_rebuild_whitelist_converged:-true}" == "deferred" ]]; then
                 [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (schema checks passed; whitelist projection DEFERRED)"
             else
                 [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
@@ -4692,7 +4707,7 @@ _firewall_rebuild_core() {
             # published, this operation MUST NOT exit 0, or the caller reads success from a
             # record that does not exist. The apply itself already succeeded here, so the
             # message deliberately does not claim otherwise.
-            if ! _rebuild_emit_result "$RD_COMPLETE" "" "false" "true" "NONE"; then
+            if ! _rebuild_emit_result "$RD_COMPLETE" "${_disposition_reasons:-}" "false" "true" "NONE"; then
                 echo "  Generation was committed to the kernel, but its transaction record" >&2
                 echo "  could not be published; this operation cannot be reported as complete." >&2
                 return 2

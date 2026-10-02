@@ -25,11 +25,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
+	coresafety "github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -193,6 +195,20 @@ func driveInstall(t *testing.T, budget time.Duration, sim rebuildSim) e2eResult 
 	sf.SSHPort = 22
 	cfg := &config{mode: "upgrade", stateDir: dir, inject: inj}
 	globalPhaseData = phaseData{}
+	// ⛔ v1.234.0 FLAKE ROOT CAUSE (TestE2E_RebuildJustInsideBudget_NoFalseFailure, CI
+	// run 36540654722; lab2 -race: 7/400 on origin/main a32f6caa). Mirror the production
+	// wiring at main.go ("globalPhaseData.inject = cfg.inject"): runInstall does not do it,
+	// main() does. Without it the DATA injection never reached phaseValidate, so the
+	// "all assertions pass" fixture ran the REAL logrotate validator and the REAL health
+	// verdict, VALIDATE_1 failed for host reasons, and the run crossed the auto-fix retry's
+	// ctx check with ~20 ms of a 120 ms budget left — a timing coin-flip unrelated to
+	// deadline handling. The health live read is seeded with the canonical profile for the
+	// same reason (recovery_contract_v1230_test.go does both).
+	globalPhaseData.inject = cfg.inject
+	hp := coresafety.HealthServiceMemoryLimits()
+	m.RunResults[healthShowKey()] = executor.Result{
+		Stdout: showOut(hp.MemoryHigh, hp.MemoryMax, 64, healthresource.DropinFile),
+	}
 	logPath := dir + "/installer.log"
 	log := logging.New(logPath, false)
 
@@ -232,6 +248,12 @@ func TestE2E_RebuildFastWithinBudget_NoFalseFailure(t *testing.T) {
 func TestE2E_RebuildJustInsideBudget_NoFalseFailure(t *testing.T) {
 	r := driveInstall(t, testBudget, rebuildSim{dur: 100 * time.Millisecond, exit: 0})
 	r.mustHaveReachedRebuild(t)
+	// Fixture precondition: this case leaves ~20 ms of budget after the rebuild, so it is
+	// only meaningful when validation passes on the first pass. A VALIDATE_1 failure here
+	// is a non-hermetic fixture, not a deadline verdict — say so instead of flaking.
+	if r.says("VALIDATE_1:") {
+		t.Fatalf("TEST_INVALID: the all-pass fixture failed VALIDATE_1 (non-hermetic host dependency)\n%s", r.log)
+	}
 	if r.sf.State == state.StateFailedRebuild {
 		t.Fatalf("rebuild just inside budget recorded FAILED_REBUILD (rc=%d)\n%s", r.rc, r.log)
 	}
