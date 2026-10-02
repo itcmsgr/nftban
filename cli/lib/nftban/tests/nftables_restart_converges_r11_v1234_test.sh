@@ -10,9 +10,9 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-29"
 # meta:description="R-11 BUG-NFTABLES-RESTART-RELOADS-BOOT-FILE-DROPS-PORTS-BANS-WHITELIST. Through the real cmd_nftables.sh verb functions against a fake kernel (fake nft / systemctl / nftban / nftban-core; the REAL transition-health verifier): C0 control proves a raw service restart loses the state in the fake, so the diff discriminates. A1/A2 restart and reload leave ports, persisted bans and whitelist IDENTICAL (state-diff before == after), never restart/reload nftables.service, and converge through `nftban firewall rebuild`. A3 a failing rebuild makes the verb fail with no success line. A4 a rebuild that exits 0 but leaves the ports skeletal is caught by the effective-state verification. A5 an unmeasurable verification is not success. A6 an inactive unit is started, then converged. On v1.233.1 the verb was `systemctl restart nftables` + rc-only success, so A1-A6 fail there."
-# meta:input="cli/lib/nftban/cli/cmd_nftables.sh, cli/lib/nftban/core/nftban_firewall_transition_health.sh"
+# meta:input="cli/lib/nftban/cli/cmd_nftables.sh, cli/lib/nftban/core/nftban_firewall_transition_health.sh, cli/lib/nftban/lib/module_authority.sh"
 # meta:output="PASS/FAIL per assertion; exit 1 on any failure"
-# meta:depends="bash,mktemp,diff,sort,paste"
+# meta:depends="bash,mktemp,diff,sort,paste,jq"
 # meta:ta.id="nftables_restart_converges_r11_v1234_test"
 # meta:ta.owner="firewall"
 # meta:ta.module="nftables-lifecycle"
@@ -25,7 +25,7 @@
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
 # meta:inventory.files=""
-# meta:inventory.binaries="bash,mktemp,diff,sort,paste"
+# meta:inventory.binaries="bash,mktemp,diff,sort,paste,jq"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR,NFTBAN_BIN,PATH"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -36,18 +36,23 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SUBJECT="$ROOT/cli/lib/nftban/cli/cmd_nftables.sh"
 FTH="$ROOT/cli/lib/nftban/core/nftban_firewall_transition_health.sh"
+MODAUTH="$ROOT/cli/lib/nftban/lib/module_authority.sh"
 pass=0; fail=0
 ok(){ pass=$((pass+1)); printf '  PASS  %s\n' "$1"; }
 no(){ fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; }
 
-for f in "$SUBJECT" "$FTH"; do
+for f in "$SUBJECT" "$FTH" "$MODAUTH"; do
     [[ -f "$f" ]] || { echo "  SUBJECT_NOT_FOUND: $f"; echo "TOTAL: pass=0 fail=1"; exit 1; }
 done
+# §6g.4 counts with nft -j + jq; without jq the arms cannot execute (NOT a pass).
+command -v jq >/dev/null 2>&1 || { echo "  NOT_EXECUTED: jq not installed"; echo "TOTAL: pass=0 fail=1"; exit 1; }
 
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 K="$SB/kernel"; LIB="$SB/lib"; CONF="$SB/conf"; BIN="$SB/bin"; LOG="$SB/calls.log"
-mkdir -p "$K" "$LIB/bin" "$LIB/core" "$CONF/ports.d" "$BIN"
+mkdir -p "$K" "$LIB/bin" "$LIB/core" "$LIB/lib" "$CONF/ports.d" "$CONF/conf.d/ddos" "$BIN"
 cp "$FTH" "$LIB/core/"
+cp "$MODAUTH" "$LIB/lib/"
+printf 'DDOS_ENABLED="true"\n' > "$CONF/conf.d/ddos/main.conf"
 printf '22/T/I\n' > "$CONF/ports.d/00-ssh.conf"
 printf '18765/T/I\n' > "$CONF/ports.d/90-custom.conf"
 
@@ -64,6 +69,10 @@ live_state(){      # the operator's converged runtime state before the verb
     done
     put ip.blacklist_manual_ipv4 192.0.2.10 192.0.2.11 192.0.2.12
     put ip6.blacklist_manual_ipv6 2001:db8::10
+    put ip.blacklist_ipv4 203.0.113.0/24
+    put ip6.blacklist_ipv6
+    # nftban chains (family:name); ddos_protection = the enabled DDoS module's chain.
+    put chains ip:input ip:forward ip:output ip:ddos_protection ip6:input ip6:forward ip6:output
     put ip.whitelist_ipv4 127.0.0.1 198.51.100.7
     put ip6.whitelist_ipv6 ::1 2001:db8::7
 }
@@ -73,6 +82,42 @@ export K LOG
 cat > "$BIN/nft" <<'EOF'
 #!/usr/bin/env bash
 echo "nft $*" >> "$LOG"
+# nft -j: JSON listings. Set elements may carry "expires=N" (a timeout element).
+if [[ "$1" == "-j" ]]; then
+    shift
+    [[ -f "$K/nft_json_broken" ]] && exit 1
+    case "$1 $2" in
+        "list tables")
+            if [[ -f "$K/table" ]]; then
+                echo '{"nftables":[{"metainfo":{}},{"table":{"family":"ip","name":"nftban"}},{"table":{"family":"ip6","name":"nftban"}}]}'
+            else
+                echo '{"nftables":[{"metainfo":{}}]}'
+            fi; exit 0 ;;
+        "list chains")
+            [[ -f "$K/table" ]] || { echo '{"nftables":[{"metainfo":{}}]}'; exit 0; }
+            printf '{"nftables":[{"metainfo":{}}'
+            while IFS=: read -r fam name; do
+                [[ -n "$name" ]] && printf ',{"chain":{"family":"%s","table":"nftban","name":"%s"}}' "$fam" "$name"
+            done < "$K/chains"
+            echo ']}'; exit 0 ;;
+        "list set")
+            f="$K/$3.$5"; [[ -f "$K/table" && "$4" == "nftban" && -f "$f" ]] || exit 1
+            printf '{"nftables":[{"metainfo":{}},{"set":{"family":"%s","name":"%s","table":"nftban"' "$3" "$5"
+            if [[ -s "$f" ]]; then
+                printf ',"elem":['; sep=""
+                while read -r v x; do
+                    if [[ "$x" == expires=* ]]; then
+                        printf '%s{"elem":{"val":"%s","timeout":3600,"expires":%s}}' "$sep" "$v" "${x#expires=}"
+                    else
+                        printf '%s"%s"' "$sep" "$v"
+                    fi; sep=","
+                done < "$f"
+                printf ']'
+            fi
+            echo '}}]}'; exit 0 ;;
+    esac
+    exit 1
+fi
 if [[ "$1 $2" == "list set" && "$4" == "nftban" ]]; then
     f="$K/$3.$5"; [[ -f "$K/table" && -f "$f" ]] || exit 1
     printf 'table %s nftban {\n\tset %s {\n\t\ttype inet_service\n' "$3" "$5"
@@ -100,6 +145,8 @@ boot_reset(){
         : > "$K/$fam.udp_ports_in"; printf '53\n123\n' > "$K/$fam.udp_ports_out"
     done
     : > "$K/ip.blacklist_manual_ipv4"; : > "$K/ip6.blacklist_manual_ipv6"
+    : > "$K/ip.blacklist_ipv4"; : > "$K/ip6.blacklist_ipv6"
+    printf '%s\n' ip:input ip:forward ip:output ip6:input ip6:forward ip6:output > "$K/chains"
     echo 127.0.0.1 > "$K/ip.whitelist_ipv4"; echo ::1 > "$K/ip6.whitelist_ipv6"
     : > "$K/unit_active"
 }
@@ -126,6 +173,9 @@ if [[ -f "$K/rebuild_lies" ]]; then
 else
     for fam in ip ip6; do printf '22\n80\n443\n18765\n' > "$K/$fam.tcp_ports_in"; done
 fi
+# §6g.4 knobs: rc 0 but the manual bans / the DDoS module chain did not come back.
+[[ -f "$K/rebuild_drops_bans" ]] && : > "$K/ip.blacklist_manual_ipv4"
+[[ -f "$K/rebuild_drops_chain" ]] && { grep -vx 'ip:ddos_protection' "$K/chains" > "$K/chains.new"; mv "$K/chains.new" "$K/chains"; }
 exit 0
 EOF
 
@@ -151,7 +201,8 @@ snapshot(){
             printf '%s.%s: ' "$fam" "$set"; nft list set "$fam" nftban "$set" 2>/dev/null | tr -d '\n\t'; echo
         done
     done
-    for set in "ip blacklist_manual_ipv4" "ip6 blacklist_manual_ipv6" "ip whitelist_ipv4" "ip6 whitelist_ipv6"; do
+    printf 'chains: '; paste -sd, "$K/chains"
+    for set in "ip blacklist_manual_ipv4" "ip6 blacklist_manual_ipv6" "ip blacklist_ipv4" "ip whitelist_ipv4" "ip6 whitelist_ipv6"; do
         # shellcheck disable=SC2086
         printf '%s: ' "$set"; nft list set ${set%% *} nftban ${set##* } 2>/dev/null | tr -d '\n\t'; echo
     done
@@ -163,7 +214,8 @@ run_verb(){ # <function>
       source "$SUBJECT" >/dev/null 2>&1 || exit 97
       "$1" ) > "$SB/out" 2>&1
 }
-reset_arm(){ rm -f "$K"/rebuild_fail "$K"/rebuild_lies "$K"/core_broken; : > "$LOG"; live_state; : > "$K/unit_active"; }
+reset_arm(){ rm -f "$K"/rebuild_fail "$K"/rebuild_lies "$K"/core_broken "$K"/rebuild_drops_bans "$K"/rebuild_drops_chain "$K"/nft_json_broken
+             printf 'DDOS_ENABLED="true"\n' > "$CONF/conf.d/ddos/main.conf"; : > "$LOG"; live_state; : > "$K/unit_active"; }
 
 echo "== C0  control: the fake reproduces the R-11 reset, so the diff can fail =="
 reset_arm
@@ -235,6 +287,66 @@ if [[ $rc -eq 0 && -n "$s_line" && -n "$r_line" && "$r_line" -gt "$s_line" ]]; t
     ok "inactive unit: started first, then the atomic rebuild converged"
 else
     no "inactive unit handling wrong (rc=$rc start@${s_line:-none} rebuild@${r_line:-none})"
+fi
+
+# =============================================================================
+# §6g.4 — success requires bans and module enforcement to survive (v1.234).
+# =============================================================================
+echo "== A7  success line states that bans and module chains were verified =="
+reset_arm
+rc=0; run_verb _nftban_nftables_cmd_restart || rc=$?
+if [[ $rc -eq 0 ]] && grep -q 'unexpired bans present (ip blacklist_ipv4 ip blacklist_manual_ipv4 ip6 blacklist_manual_ipv6)' "$SB/out" \
+   && grep -q 'module chains present (ddos(ip))' "$SB/out"; then
+    ok "restart verifies the 3 ban sets that held bans and the enabled DDoS chain"
+else
+    no "verification line missing or incomplete (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -4
+fi
+grep -q '^nft -j list set ip nftban blacklist_manual_ipv4' "$LOG" \
+    && ok "ban counts come from nft -j" || no "ban sets were not read through nft -j"
+
+echo "== A8  rc 0 rebuild that loses the bans is NOT success =="
+reset_arm; : > "$K/rebuild_drops_bans"
+rc=0; run_verb _nftban_nftables_cmd_restart || rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'ban set ip blacklist_manual_ipv4 is EMPTY (held 3 unexpired' "$SB/out"; then
+    ok "restart fails and names the emptied ban set"
+else
+    no "lost bans not caught (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -4
+fi
+grep -q '✓' "$SB/out" && no "a success line was printed with bans lost" || ok "no success line with bans lost"
+
+echo "== A9  rc 0 rebuild that loses an enabled module chain is NOT success =="
+reset_arm; : > "$K/rebuild_drops_chain"
+rc=0; run_verb _nftban_nftables_cmd_reload || rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'module chain ip nftban ddos_protection (ddos) is MISSING' "$SB/out"; then
+    ok "reload fails and names the missing DDoS chain"
+else
+    no "missing module chain not caught (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -4
+fi
+grep -q '✓' "$SB/out" && no "a success line was printed with a module chain missing" || ok "no success line with a module chain missing"
+
+echo "== A10 a chain of a DISABLED module may go (no false failure) =="
+reset_arm; : > "$K/rebuild_drops_chain"; printf 'DDOS_ENABLED="false"\n' > "$CONF/conf.d/ddos/main.conf"
+rc=0; run_verb _nftban_nftables_cmd_restart || rc=$?
+[[ $rc -eq 0 ]] && ok "disabled DDoS: its stale chain is not expected after the rebuild" \
+    || { no "disabled module chain caused a failure (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -3; }
+
+echo "== A11 bans about to expire may lapse; unexpired ones may not =="
+reset_arm; put ip.blacklist_manual_ipv4 "192.0.2.10 expires=30"; : > "$K/rebuild_drops_bans"
+rc=0; run_verb _nftban_nftables_cmd_restart || rc=$?
+[[ $rc -eq 0 ]] && ok "a set holding only a ban with 30 s left may be empty afterwards" \
+    || { no "an expiring ban caused a failure (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -3; }
+reset_arm; put ip.blacklist_manual_ipv4 "192.0.2.10 expires=3000"; : > "$K/rebuild_drops_bans"
+rc=0; run_verb _nftban_nftables_cmd_restart || rc=$?
+[[ $rc -ne 0 ]] && ok "a set holding a ban with 3000 s left must not be empty afterwards" \
+    || no "an unexpired timeout ban was lost without failure"
+
+echo "== A12 an unreadable kernel (nft -j fails) is UNMEASURED, never success =="
+reset_arm; : > "$K/nft_json_broken"
+rc=0; run_verb _nftban_nftables_cmd_restart || rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'enforcement UNMEASURED' "$SB/out" && ! grep -q '✓' "$SB/out"; then
+    ok "restart fails UNMEASURED when ban sets / chains cannot be read"
+else
+    no "unreadable enforcement reported as success (rc=$rc)"
 fi
 
 echo

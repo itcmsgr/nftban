@@ -221,6 +221,139 @@ _nftban_nftables_verify_effective() {
     return 0
 }
 
+# -----------------------------------------------------------------------------
+# v1.234 §6g.4 — bans and module enforcement survive the convergence.
+# The port/floor/table check above cannot see a rebuild that returned 0 but left
+# the ban sets empty or a protection module's chain missing. Before the rebuild
+# the current enforcement is snapshotted; after it, every ban set that held
+# UNEXPIRED bans must still hold bans, and every module chain that was present
+# for an effectively-enabled module must still be present. (The whitelist is
+# verified inside the rebuild itself.) Counting is `nft -j` + jq only, never text
+# parsing. A source that cannot be read is UNMEASURED, never zero, and fails.
+# -----------------------------------------------------------------------------
+# Ban sets (family set). Feed/geoban interval sets and manual/auto hash sets.
+_NFTBAN_NFTABLES_BAN_SETS=("ip blacklist_ipv4" "ip blacklist_manual_ipv4" "ip6 blacklist_ipv6" "ip6 blacklist_manual_ipv6")
+# A ban that expires within this many seconds may legitimately lapse during the
+# rebuild; only bans with more remaining time are expected to survive.
+_NFTBAN_NFTABLES_BAN_MARGIN_SEC=600
+
+# _nftban_nftables_json <nft list args...> — the nft JSON document, or rc 1.
+_nftban_nftables_json() {
+    local out
+    command -v jq >/dev/null 2>&1 || return 1
+    out=$(nft -j "$@" 2>/dev/null) || return 1
+    [[ -n "${out//[[:space:]]/}" ]] || return 1
+    jq -e 'type == "object" and has("nftables")' >/dev/null 2>&1 <<<"$out" || return 1
+    printf '%s' "$out"
+}
+
+# _nftban_nftables_ban_count <family> <set> <min_remaining_sec>
+# Elements with no timeout, or with at least <min_remaining_sec> left. Prints an
+# integer, ABSENT (the nftban table of that family does not exist), or UNKNOWN.
+_nftban_nftables_ban_count() {
+    local fam="$1" set="$2" min="$3" tables json n
+    tables=$(_nftban_nftables_json list tables) || { echo UNKNOWN; return 0; }
+    if ! jq -e --arg f "$fam" 'any(.nftables[]?; .table? and .table.family == $f and .table.name == "nftban")' \
+            >/dev/null 2>&1 <<<"$tables"; then
+        echo ABSENT; return 0
+    fi
+    json=$(_nftban_nftables_json list set "$fam" nftban "$set") || { echo UNKNOWN; return 0; }
+    n=$(jq -r --argjson m "$min" '[.nftables[]? | select(.set?) | .set.elem[]?
+            | select((type != "object") or (.elem? == null) or ((.elem.expires // $m) >= $m))] | length' \
+            2>/dev/null <<<"$json")
+    [[ "$n" =~ ^[0-9]+$ ]] && echo "$n" || echo UNKNOWN
+}
+
+# _nftban_nftables_chains — "family:name" per nftban chain, or rc 1 (UNMEASURED).
+_nftban_nftables_chains() {
+    local json
+    json=$(_nftban_nftables_json list chains) || return 1
+    jq -r '.nftables[]? | select(.chain?) | .chain | select(.table == "nftban") | "\(.family):\(.name)"' \
+        2>/dev/null <<<"$json" || return 1
+}
+
+# Module -> chain, the same names the rebuild's module verification uses.
+_nftban_nftables_module_chains() {
+    echo "ddos ${DDOS_NFT_CHAIN:-ddos_protection}"
+    echo "portscan ${PORTSCAN_NFT_CHAIN:-portscan_detection}"
+    echo "botguard ${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
+}
+
+# _nftban_nftables_enforcement_snapshot — prints the pre-convergence snapshot:
+#   ban <family> <set> <count|ABSENT|UNKNOWN>
+#   chains UNKNOWN            (when the chain list could not be read)
+#   chain <family:name>       (one per nftban chain)
+_nftban_nftables_enforcement_snapshot() {
+    local s c
+    for s in "${_NFTBAN_NFTABLES_BAN_SETS[@]}"; do
+        # shellcheck disable=SC2086  # "family set" split on purpose
+        echo "ban $s $(_nftban_nftables_ban_count ${s} "$_NFTBAN_NFTABLES_BAN_MARGIN_SEC")"
+    done
+    if c=$(_nftban_nftables_chains); then
+        while IFS= read -r s; do
+            if [[ -n "$s" ]]; then echo "chain $s"; fi
+        done <<<"$c"
+    else
+        echo "chains UNKNOWN"
+    fi
+    return 0
+}
+
+# _nftban_nftables_verify_enforcement <pre-snapshot>
+_nftban_nftables_verify_enforcement() {
+    local pre="$1" line kind fam set cnt now post_chains mod ch f
+    local -a missing=() unmeasured=() kept=() mods=()
+    while IFS=' ' read -r kind fam set cnt; do
+        [[ "$kind" == "ban" ]] || continue
+        case "$cnt" in
+            UNKNOWN) unmeasured+=("ban set $fam $set before convergence") ;;
+            ABSENT|0) ;;
+            *)  now=$(_nftban_nftables_ban_count "$fam" "$set" 0)
+                case "$now" in
+                    UNKNOWN|ABSENT) unmeasured+=("ban set $fam $set after convergence ($now)") ;;
+                    0) missing+=("ban set $fam $set is EMPTY (held $cnt unexpired ban(s) before)") ;;
+                    *) kept+=("$fam $set") ;;
+                esac ;;
+        esac
+    done <<<"$pre"
+
+    if grep -qx 'chains UNKNOWN' <<<"$pre"; then
+        unmeasured+=("module chains before convergence")
+    else
+        if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/lib/module_authority.sh" 2>/dev/null || true
+        fi
+        if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+            unmeasured+=("module enablement (lib/module_authority.sh not loadable)")
+        elif ! post_chains=$(_nftban_nftables_chains); then
+            unmeasured+=("module chains after convergence")
+        else
+            while IFS=' ' read -r mod ch; do
+                nftban_module_effective_enabled "$mod" || continue
+                for f in ip ip6; do
+                    grep -qx "chain $f:$ch" <<<"$pre" || continue
+                    if grep -qx "$f:$ch" <<<"$post_chains"; then
+                        mods+=("$mod($f)")
+                    else
+                        missing+=("module chain $f nftban $ch ($mod) is MISSING (present before)")
+                    fi
+                done
+            done < <(_nftban_nftables_module_chains)
+        fi
+    fi
+
+    if (( ${#unmeasured[@]} > 0 )); then
+        for line in "${unmeasured[@]}"; do echo "ERROR: enforcement UNMEASURED — $line" >&2; done
+    fi
+    if (( ${#missing[@]} > 0 )); then
+        for line in "${missing[@]}"; do echo "ERROR: enforcement NOT preserved — $line" >&2; done
+    fi
+    (( ${#unmeasured[@]} + ${#missing[@]} == 0 )) || return 1
+    echo "  Verified: unexpired bans present (${kept[*]:-no set held unexpired bans}); module chains present (${mods[*]:-none expected})"
+    return 0
+}
+
 # _nftban_nftables_converge <verb>
 _nftban_nftables_converge() {
     local verb="$1" rc=0
@@ -229,6 +362,9 @@ _nftban_nftables_converge() {
         echo "ERROR: nftban CLI not found ($cli) — cannot run the atomic rebuild; nothing was changed" >&2
         return 1
     fi
+    # §6g.4: what is enforced now (bans, module chains) must still be enforced after.
+    local _enf_pre
+    _enf_pre=$(_nftban_nftables_enforcement_snapshot)
     echo "  Converging through the atomic rebuild (locked, snapshot-first)..."
     "$cli" firewall rebuild --quiet || rc=$?
     if [[ $rc -ne 0 ]]; then
@@ -238,6 +374,7 @@ _nftban_nftables_converge() {
         return "$rc"
     fi
     _nftban_nftables_verify_effective || return $?
+    _nftban_nftables_verify_enforcement "$_enf_pre" || return $?
     return 0
 }
 
