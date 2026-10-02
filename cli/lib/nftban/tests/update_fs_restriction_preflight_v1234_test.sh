@@ -266,7 +266,7 @@ preun=$(spec_section '%preun'); preun=${preun%%# MFST-C3*}; preun=${preun//'${rp
 post=$(spec_section '%posttrans'); post=${post//'${rpm_immut_lib}'/"$libtxt"}
 for _sc in preun post; do
     if [[ -n "${!_sc}" ]] && sh -n -c "${!_sc}" 2>/dev/null; then ok "T11-pre RPM $_sc scriptlet (library substituted) parses"
-    else no "T11-pre RPM $_sc scriptlet parses" "$(sh -n -c "${!_sc}" 2>&1 | head -c 300)"; fi
+    else _sc_err=$(sh -n -c "${!_sc}" 2>&1); no "T11-pre RPM $_sc scriptlet parses" "${_sc_err:0:300}"; fi
 done
 run_spec() { env -i "${ENVV[@]}" sh -c "$1" _ "$2" >/dev/null 2>&1 || true; }
 mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
