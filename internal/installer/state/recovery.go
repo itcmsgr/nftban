@@ -195,3 +195,23 @@ func ValidateRecoveryClass(s InstallState, declared RecoveryClass) string {
 			"COMMITTED requires, so the operator should be sent to the cheaper recovery",
 		s, declared, s.ResumePhase())
 }
+
+// RecoveryClassNone is the persisted RECOVERY_CLASS of a COMMITTED record: there is
+// nothing to recover. v1.234.0.
+const RecoveryClassNone RecoveryClass = "NONE"
+
+// PersistedRecoveryClass is the value written as RECOVERY_CLASS= in install_state.
+//
+// ⛔ v1.234.0 BUG-INSTALL-GUIDANCE-CONTRADICTS-DO-NOT-USE-REPAIR. After FAILED_REBUILD the
+// installer printed "RECOVERY_CLASS=RETRY_FULL_TRANSACTION … Do NOT use --repair", while
+// `nftban status` read the same state file and recommended `nftban-installer --repair`
+// from a hardcoded constant. Two surfaces, two answers. The class is now PERSISTED next
+// to the state it is derived from, at the single write site (WriteAtomic), so every
+// shell surface reads the installer's own answer instead of keeping a second copy.
+// DERIVED AT WRITE, never assigned: it cannot disagree with INSTALL_STATE.
+func (s InstallState) PersistedRecoveryClass() RecoveryClass {
+	if s == StateCommitted {
+		return RecoveryClassNone
+	}
+	return s.RecoveryClass()
+}

@@ -177,14 +177,17 @@ manage_dirs_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 # idiom rather than introducing one - nftban_conf_t (:105) and nftban_nftables_conf_t
 # (:113) already pair manage_files_pattern with file:map. nftban_var_lib_t was the
 # one state type that omitted it, which is precisely where the GeoIP database lives.
-# No log or run type gains map, and no new type is introduced.
+# No log or run type gains map, and no new type is introduced. (v1.234 later grants
+# syslogd_var_run_t:file map for the volatile journal — logging_mmap_journal below.)
 allow nftband_t nftban_var_lib_t:file map;
 
-# Logs append/create. NOTE: the dir:watch (inotify) permission is intentionally
-# omitted — it is undefined for class dir in EL8's refpolicy (3.14.3) and breaks
-# the module compile there. Omitting it keeps ONE portable .te across EL8/9/10;
-# EL9/10 validation confirmed 0 AVC without it (daemon does not inotify-watch
-# these dirs in normal operation). Same rationale for syslogd_var_run_t:dir below.
+# Logs append/create. NOTE: dir:watch (inotify) is not granted on nftban_log_t —
+# the daemon does not inotify-watch its own log dirs. (Historical note corrected in
+# v1.234: this block also claimed "EL9/10 validation confirmed 0 AVC" and applied the
+# same rationale to syslogd_var_run_t:dir. Enforcing EL9/EL10 measurement disproved
+# that for the journal: journalctl -f DOES inotify-watch /run/log/journal, so
+# syslogd_var_run_t:dir watch is now granted via logging_watch_journal_dir below.
+# EL8 is out of scope per the header; if it returns, wrap that call in optional_policy.)
 allow nftband_t nftban_log_t:file { append_file_perms create_file_perms read_file_perms };
 allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms };
 
@@ -277,6 +280,25 @@ logging_read_generic_logs(nftband_t)
 init_use_fds(nftband_t)
 init_read_state(nftband_t)
 init_status(nftband_t)
+
+# v1.234 BUG-SELINUX-NFTBAND-DENIED-SEARCH-SYSCTL-NET (read-only grants).
+# Proven on enforcing EL9 + EL10 (volatile journal): before = WATCHER_DOWN, 0 detections,
+# conntrack gauge 0 vs kernel 65536; after = journal OK, fresh SSH attack banned, gauge == kernel.
+# (1) Watchdog kernel collector (internal/watchdog/collector_kernel.go:69-86) reads
+#     /proc/sys/net/netfilter/nf_conntrack_{count,max} every 5 s. Denied, the read error
+#     is swallowed and nftban_conntrack_{max,used,utilization} export 0 while the kernel
+#     holds the real value; the NET pressure conntrack term is then always 0.
+#     Measured: avc denied { search } comm="nftband" tcontext=sysctl_net_t tclass=dir.
+kernel_read_net_sysctls(nftband_t)
+# (2) LoginMon journal follower (internal/loginmon/module.go:1129-1145) runs
+#     `journalctl -f` inline in nftband_t. On a volatile journal (/run/log/journal,
+#     syslogd_var_run_t) it could not read the journal files and exited in ~5 ms, so the
+#     journal input source stayed WATCHER_DOWN and SSH/auth detection was dark.
+#     Measured: avc denied { read } comm="journalctl" tcontext=syslogd_var_run_t tclass=file.
+#     read + map + dir watch is the set journalctl_t itself holds on syslogd_var_run_t.
+logging_read_syslog_pid(nftband_t)
+logging_mmap_journal(nftband_t)
+logging_watch_journal_dir(nftband_t)
 
 ########################################
 # Shell-outs (ACCEPT_BROAD_DOMAIN_NOW_REDUCE_LATER — see D-V147-REDUCE-NFTBAND-SHELLOUTS)

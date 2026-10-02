@@ -179,7 +179,9 @@ l_load=$(first_line 'if ! nft[[:space:]]+-f "[$]load_conf"')
 l_ref=$(first_line '_firewall_rebuild_refresh_boot_projection ')
 l_post=$(first_line 'post_state=[$][(]_rebuild_get_validator_state[)]')
 l_gate=$(first_line '_boot_proj_state:-}" != "refreshed"')
-l_case=$(grep -n 'case "\$post_status" in' <<<"$CORE" | tail -1 | cut -d: -f1)
+# The final success dispatch: `case "$post_status"` before v1.234 #1435, renamed
+# `case "$_final_case"` by the installer-lifecycle timer-deferral (same dispatch).
+l_case=$(grep -nE 'case "\$(post_status|_final_case)" in' <<<"$CORE" | tail -1 | cut -d: -f1)
 if [[ -n "$l_load" && -n "$l_ref" && -n "$l_post" && "$l_ref" -gt "$l_load" && "$l_ref" -lt "$l_post" ]]; then
     ok "refresh runs after the atomic load and before post-validation"
 else

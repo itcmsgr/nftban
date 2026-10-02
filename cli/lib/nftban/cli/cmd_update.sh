@@ -1226,8 +1226,10 @@ _update_finalize_verdict() {
                 echo ""
             fi
             echo "  See the installer output above for the canonical recovery path."
-            echo "  Common recovery commands:"
-            echo "      /usr/lib/nftban/bin/nftban-installer --repair   # resume from failed phase"
+            # v1.234.0: the installer's persisted RECOVERY_CLASS is the ONLY recovery
+            # authority for this state (the 'Recovery:' line above renders it). A blanket
+            # `--repair` hint here contradicted "Do NOT use --repair" for FAILED_REBUILD.
+            echo "  Other commands:"
             echo "      nftban update rollback                          # restore previous version"
             echo "      nftban support                                  # diagnostic bundle"
             echo ""

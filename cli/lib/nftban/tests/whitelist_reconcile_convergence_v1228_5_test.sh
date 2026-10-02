@@ -124,7 +124,12 @@ if [[ -r "$SRC2" ]]; then
   # `grep -q` can close the pipe before printf finishes -> EPIPE -> pipefail reports
   # printf's failure. Same defect that made T7b flap. Process substitution keeps the
   # early-exiting grep out of a pipeline whose status we consume.
-  if grep -q 'deferred' < <(grep -A3 'case "$post_status" in' <<<"$code2"); then
+  # v1.234.0 (#1435): the final-status dispatch is `case "$_final_case" in` (it maps the
+  # timer-liveness deferral onto the protected arm). Anchor on the final-status dispatch
+  # under either name; the assertion itself (deferral guard within 3 lines) is unchanged,
+  # and a missing anchor still yields no match and therefore FAIL. The window is 4 lines
+  # (was 3): the timer-liveness branch precedes the whitelist-deferral `elif` by one line.
+  if grep -q 'deferred' < <(grep -E -A4 'case "\$(post_status|_final_case)" in' <<<"$code2"); then
     ok "T7a final-status line is gated on the deferred state"
   else
     no "T7a final-status line is NOT deferral-aware — DEFERRED would report 'all checks passed'"
