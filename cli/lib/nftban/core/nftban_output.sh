@@ -1432,6 +1432,48 @@ nftban_install_state_classify() {
 export -f nftban_install_state_classify 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
+# nftban_install_recovery_class <state-file>
+#
+# Echoes the RECOVERY_CLASS the INSTALLER persisted for the recorded state
+# (internal/installer/state/recovery.go PersistedRecoveryClass, written by
+# state/file.go WriteAtomic): REPAIR | RETRY_FULL_TRANSACTION | NONE, or
+# UNRECORDED when the file predates v1.234.0 or is unreadable.
+#
+# ⛔ v1.234.0 BUG-INSTALL-GUIDANCE-CONTRADICTS-DO-NOT-USE-REPAIR. This file used to
+#    print a hardcoded `nftban-installer --repair` for EVERY non-committed state,
+#    while the installer printed "Do NOT use --repair" for FAILED_REBUILD. The class
+#    is never re-derived here from INSTALL_STATE — that would be a second table.
+# -----------------------------------------------------------------------------
+nftban_install_recovery_class() {
+    local _f="${1-}" _c=""
+    _c=$(nftban_install_state_field "$_f" "RECOVERY_CLASS") || _c=""
+    case "$_c" in
+        REPAIR|RETRY_FULL_TRANSACTION|NONE) printf '%s' "$_c" ;;
+        *) printf 'UNRECORDED' ;;
+    esac
+    return 0
+}
+export -f nftban_install_recovery_class 2>/dev/null || true
+
+# nftban_install_recovery_instruction <state-file>
+# One operator line for the recorded RECOVERY_CLASS. UNRECORDED never falls back
+# to --repair: a surface that cannot name the installer's answer points at it.
+nftban_install_recovery_instruction() {
+    case "$(nftban_install_recovery_class "${1-}")" in
+        REPAIR)
+            printf '%s' "$NFTBAN_INSTALL_REPAIR_CMD" ;;
+        RETRY_FULL_TRANSACTION)
+            printf '%s' "re-run the full NFTBan package transaction (RECOVERY_CLASS=RETRY_FULL_TRANSACTION): reinstall or upgrade the nftban package with your package manager, e.g. 'dnf reinstall <pkg>' or 'apt-get install --reinstall <pkg>'. Do NOT use --repair for this state." ;;
+        NONE)
+            printf '%s' "none needed (the recorded transaction is COMMITTED)" ;;
+        *)
+            printf '%s' "not recorded in this state file (written before v1.234.0); follow the RECOVERY_CLASS line in /var/log/nftban/installer.log" ;;
+    esac
+    return 0
+}
+export -f nftban_install_recovery_instruction 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
 # nftban_render_install_transaction_truth <state-file> [enforcement-line]
 #
 # The operator block for an install/upgrade transaction. Renders NOTHING and
@@ -1517,8 +1559,8 @@ nftban_render_install_transaction_truth() {
     printf "  %-20s %s\n" "Transaction status:" "$_status_line"
     printf "  %-20s %s\n" "Enforcement:" "$_enf_line"
     printf "  %-20s %s\n" "Cause:" "$_cause_line"
-    printf "  %-20s %s\n" "Recovery:" "$NFTBAN_INSTALL_REPAIR_CMD"
-    printf "  %-20s %s\n" "Reboot:" "NOT NEUTRAL while the transaction is incomplete — services, firewall render and enabled units are only guaranteed by a committed transaction. Repair before rebooting."
+    printf "  %-20s %s\n" "Recovery:" "$(nftban_install_recovery_instruction "$_f")"
+    printf "  %-20s %s\n" "Reboot:" "NOT NEUTRAL while the transaction is incomplete — services, firewall render and enabled units are only guaranteed by a committed transaction. Recover before rebooting."
     return 1
 }
 export -f nftban_render_install_transaction_truth 2>/dev/null || true

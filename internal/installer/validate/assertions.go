@@ -30,6 +30,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/panelfw"
 	"github.com/itcmsgr/nftban/internal/installer/payload"
+	"github.com/itcmsgr/nftban/internal/installer/services"
 	lr "github.com/itcmsgr/nftban/internal/logretention"
 )
 
@@ -199,6 +200,10 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 	// active/scheduled (or NFTBAN_RECONCILE_CORE_TIMERS=false — intentional).
 	tin := GatherTimerInputs(exec, log)
 	results = append(results, assertCriticalTimersEnabled(ValidateCriticalTimers(tin), log))
+	// v1.234.0: VAL-TIMER-001 parity, evaluated HERE, after phaseConfigure started the
+	// core timers. The install-context rebuild defers exactly this finding to the
+	// installer (TIMER_LIVENESS_DEFERRED_TO_INSTALLER); this is where it is discharged.
+	results = append(results, assertTimerLiveness(exec, log))
 
 	// PR26.2: PANEL-SURVIVAL-001. The framework runs registered
 	// adapters and produces a Fatal verdict per policy; failure
@@ -770,6 +775,46 @@ func assertCriticalTimersEnabled(tvr TimerValidationResult, log *logging.Logger)
 	}
 	r.Detail = "critical core timer(s) not enabled+active: " + strings.Join(tvr.Missing, ", ")
 	log.Warn("ASSERT core_timers_active_or_scheduled_ok: FAIL — %s", r.Detail)
+	return r
+}
+
+// TimerLivenessCode is the validator finding assertTimerLiveness discharges.
+const TimerLivenessCode = "VAL-TIMER-001"
+
+// assertTimerLiveness — VAL-TIMER-001 parity (v1.234.0 installer lifecycle).
+//
+// The kernel validator raises VAL-TIMER-001 (severity ERROR) when NO nftban timer is
+// active. In install context the firewall rebuild runs in phaseSwitch, BEFORE
+// phaseConfigure starts the timers, so it cannot evaluate this truthfully; it records
+// TIMER_LIVENESS_DEFERRED_TO_INSTALLER instead of rolling back. This assertion is the
+// deferred evaluation, after Configure: zero active nftban timers DEGRADES the install.
+// Same predicate as the validator (an active nftban-*.timer), over the canonical
+// shipped timer set (services.KnownTimers, drift-guarded against install/systemd).
+//
+// NFTBAN_RECONCILE_CORE_TIMERS=false is the operator's explicit opt-out of installer
+// timer management: the installer starts nothing, so it cannot owe liveness. PASS as
+// Skipped, exactly like CORE-TIMER-ENABLED-001. The validator still reports
+// VAL-TIMER-001 on such a host; that finding is unchanged.
+func assertTimerLiveness(exec executor.Executor, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "timer_liveness_ok"}
+	if !services.ShouldReconcile(exec) {
+		r.Passed = true
+		log.Debug("ASSERT timer_liveness_ok: PASS (NFTBAN_RECONCILE_CORE_TIMERS=false — intentional)")
+		return r
+	}
+	active := 0
+	for _, t := range services.KnownTimers() {
+		if exec.ServiceActive(t) {
+			active++
+		}
+	}
+	r.Passed = active > 0
+	if r.Passed {
+		log.Debug("ASSERT timer_liveness_ok: PASS (%d active nftban timers)", active)
+		return r
+	}
+	r.Detail = TimerLivenessCode + ": no active nftban timers after Configure — maintenance, watchdog, and exports will not run"
+	log.Warn("ASSERT timer_liveness_ok: FAIL — %s", r.Detail)
 	return r
 }
 
