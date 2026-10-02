@@ -259,8 +259,15 @@ if [[ -n "$libtxt" ]] && ! grep -qE 'SPDX-|Copyright|meta:' <<< "$libtxt" && ! g
     ok "T10b injected library copies (DEB regions, RPM body) carry no SPDX/copyright/meta line"
 else no "T10b no legal header in injected copies" "legal lines present or body empty"; fi
 spec_section() { awk -v s="$1" '$0==s {p=1; next} p && /^%[a-z]+( |$)/ {exit} p' "$BUILD_SH" | sed -e 's/\\\$/$/g'; }
-preun=$(spec_section '%preun'); preun=${preun%%# MFST-C3*}; preun=${preun//'${rpm_immut_lib}'/$libtxt}
-post=$(spec_section '%posttrans'); post=${post//'${rpm_immut_lib}'/$libtxt}
+# The replacement is QUOTED: under bash >= 5.2 (patsub_replacement) an unquoted
+# replacement turns every '&' of the library into the matched pattern, the scriptlet
+# no longer parses, and the "removes nothing" arms pass on a script that never ran.
+preun=$(spec_section '%preun'); preun=${preun%%# MFST-C3*}; preun=${preun//'${rpm_immut_lib}'/"$libtxt"}
+post=$(spec_section '%posttrans'); post=${post//'${rpm_immut_lib}'/"$libtxt"}
+for _sc in preun post; do
+    if [[ -n "${!_sc}" ]] && sh -n -c "${!_sc}" 2>/dev/null; then ok "T11-pre RPM $_sc scriptlet (library substituted) parses"
+    else no "T11-pre RPM $_sc scriptlet parses" "$(sh -n -c "${!_sc}" 2>&1 | head -c 300)"; fi
+done
 run_spec() { env -i "${ENVV[@]}" sh -c "$1" _ "$2" >/dev/null 2>&1 || true; }
 mk_tree; setattr "----i---------e-------" "$CONF"; record "$CONF" locked
 run_spec "$preun" 1

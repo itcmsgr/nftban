@@ -46,6 +46,7 @@ if [[ "${1:-}" == "--package" ]]; then
     tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
     for pkg in "$@"; do
         [[ -f "$pkg" ]] || { echo "NOT_EXECUTED: $pkg not found" >&2; exit 2; }
+        pkg=$(realpath -- "$pkg")   # the DEB branch extracts from inside $tmp
         case "$pkg" in
             *.rpm)
                 command -v rpm >/dev/null || { echo "NOT_EXECUTED: rpm not available for $pkg" >&2; exit 2; }
