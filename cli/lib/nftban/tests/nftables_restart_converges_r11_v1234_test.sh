@@ -349,6 +349,65 @@ else
     no "unreadable enforcement reported as success (rc=$rc)"
 fi
 
+# =============================================================================
+# The real dispatcher runs with IFS=$'\n\t': cmd_check.sh, cmd_config.sh,
+# cmd_egress.sh, cmd_fhs.sh and cmd_firewall_logs.sh set it when sourced. On lab3
+# (EL10 RPM, 6e6bfd36) that turned the unsplit "ip blacklist_ipv4" into an unbound $3,
+# an empty count, and an empty "before" read as held bans: restart failed although
+# nothing was lost. The arms above use the default IFS, so they could not see it.
+# =============================================================================
+run_verb_dispatcher_ifs(){ # <function>
+    ( # shellcheck source=/dev/null
+      source "$SUBJECT" >/dev/null 2>&1 || exit 97
+      IFS=$'\n\t'
+      "$1" ) > "$SB/out" 2>&1
+}
+
+echo "== A13 dispatcher IFS: bans held before are counted and verified =="
+reset_arm
+rc=0; run_verb_dispatcher_ifs _nftban_nftables_cmd_restart || rc=$?
+if [[ $rc -eq 0 ]] && grep -q 'unexpired bans present (ip blacklist_ipv4 ip blacklist_manual_ipv4 ip6 blacklist_manual_ipv6)' "$SB/out"; then
+    ok "IFS=\$'\\n\\t': restart verifies the 3 ban sets that held bans"
+else
+    no "IFS=\$'\\n\\t': restart did not verify the held bans (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -5
+fi
+grep -q 'unbound variable' "$SB/out" && no "IFS=\$'\\n\\t': an unbound variable was hit" || ok "IFS=\$'\\n\\t': no unbound variable"
+
+echo "== A14 dispatcher IFS: empty ban sets before are not 'held' (the lab3 shape) =="
+reset_arm
+put ip.blacklist_manual_ipv4; put ip.blacklist_ipv4; put ip6.blacklist_manual_ipv6; put ip6.blacklist_ipv6
+rc=0; run_verb_dispatcher_ifs _nftban_nftables_cmd_restart || rc=$?
+if [[ $rc -eq 0 ]] && grep -q 'unexpired bans present (no set held unexpired bans)' "$SB/out" \
+   && ! grep -q 'NOT preserved' "$SB/out"; then
+    ok "IFS=\$'\\n\\t': empty ban sets before and after is success, not a lost ban"
+else
+    no "IFS=\$'\\n\\t': empty ban sets caused a failure (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -5
+fi
+
+echo "== A15 dispatcher IFS: lost bans are still caught (the fix does not silence) =="
+reset_arm; : > "$K/rebuild_drops_bans"
+rc=0; run_verb_dispatcher_ifs _nftban_nftables_cmd_restart || rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'ban set ip blacklist_manual_ipv4 is EMPTY (held 3 unexpired' "$SB/out"; then
+    ok "IFS=\$'\\n\\t': restart fails and names the emptied ban set with its count"
+else
+    no "IFS=\$'\\n\\t': lost bans not caught (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -4
+fi
+
+echo "== A16 an empty or non-numeric 'before' count is UNMEASURED, never 'held' =="
+for bad in "" "x1"; do
+    reset_arm
+    rc=0
+    ( # shellcheck source=/dev/null
+      source "$SUBJECT" >/dev/null 2>&1 || exit 97
+      _nftban_nftables_verify_enforcement "ban ip blacklist_ipv4 $bad" ) > "$SB/out" 2>&1 || rc=$?
+    if [[ $rc -ne 0 ]] && grep -q 'enforcement UNMEASURED — ban set ip blacklist_ipv4 before convergence' "$SB/out" \
+       && ! grep -q 'NOT preserved' "$SB/out"; then
+        ok "before count '${bad}': UNMEASURED, not a lost ban"
+    else
+        no "before count '${bad}': not reported UNMEASURED (rc=$rc)"; sed 's/^/        /' "$SB/out" | tail -3
+    fi
+done
+
 echo
 echo "TOTAL: pass=$pass fail=$fail"
 [[ $fail -eq 0 ]] || exit 1

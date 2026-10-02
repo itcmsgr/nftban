@@ -284,10 +284,13 @@ _nftban_nftables_module_chains() {
 #   chains UNKNOWN            (when the chain list could not be read)
 #   chain <family:name>       (one per nftban chain)
 _nftban_nftables_enforcement_snapshot() {
-    local s c
+    # The dispatcher runs with IFS=$'\n\t' (several cmd_*.sh set it when sourced):
+    # never rely on word splitting here.
+    local IFS=$' \t\n'
+    local s c fam set
     for s in "${_NFTBAN_NFTABLES_BAN_SETS[@]}"; do
-        # shellcheck disable=SC2086  # "family set" split on purpose
-        echo "ban $s $(_nftban_nftables_ban_count ${s} "$_NFTBAN_NFTABLES_BAN_MARGIN_SEC")"
+        IFS=' ' read -r fam set <<<"$s"
+        echo "ban $fam $set $(_nftban_nftables_ban_count "$fam" "$set" "$_NFTBAN_NFTABLES_BAN_MARGIN_SEC")"
     done
     if c=$(_nftban_nftables_chains); then
         while IFS= read -r s; do
@@ -301,6 +304,7 @@ _nftban_nftables_enforcement_snapshot() {
 
 # _nftban_nftables_verify_enforcement <pre-snapshot>
 _nftban_nftables_verify_enforcement() {
+    local IFS=$' \t\n'
     local pre="$1" line kind fam set cnt now post_chains mod ch f
     local -a missing=() unmeasured=() kept=() mods=()
     while IFS=' ' read -r kind fam set cnt; do
@@ -308,9 +312,11 @@ _nftban_nftables_verify_enforcement() {
         case "$cnt" in
             UNKNOWN) unmeasured+=("ban set $fam $set before convergence") ;;
             ABSENT|0) ;;
+            # An empty or non-numeric count was never measured: it is not "held bans".
+            ''|*[!0-9]*) unmeasured+=("ban set $fam $set before convergence (${cnt:-empty})") ;;
             *)  now=$(_nftban_nftables_ban_count "$fam" "$set" 0)
                 case "$now" in
-                    UNKNOWN|ABSENT) unmeasured+=("ban set $fam $set after convergence ($now)") ;;
+                    UNKNOWN|ABSENT|''|*[!0-9]*) unmeasured+=("ban set $fam $set after convergence (${now:-empty})") ;;
                     0) missing+=("ban set $fam $set is EMPTY (held $cnt unexpired ban(s) before)") ;;
                     *) kept+=("$fam $set") ;;
                 esac ;;
