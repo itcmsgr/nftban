@@ -100,23 +100,79 @@ nftban_boot_projection_validate() {
 # create exactly the duplicated firewall authority this lane exists to remove,
 # and scripts/ci/check-firewall-projection-authority.sh P2 fails the build for it.
 # -----------------------------------------------------------------------------
+#
+# v1.234 R-11 (BUG-BOOT-PROJECTION-CARRIES-ONLY-TEMPLATE-PORTS): the render now
+# ALSO completes the service-port sets through _firewall_complete_service_ports —
+# the SAME effective-port authority `firewall rebuild` uses (nftban-core ports
+# render-effective = ports.d + enabled panels + the SSH safeguard + the configured
+# inbound floor). Before this, the projection carried the template literals
+# `{ __SSH_PORT__, 80, 443 }`, so every boot came up with the panel/service ports
+# CLOSED until the daemon's delayed auto-sync, and an administrator's removal of
+# 80/443 was reversed at every boot. There is NO template fallback: if the
+# effective ports cannot be rendered, nothing is published.
+# -----------------------------------------------------------------------------
 nftban_boot_projection_generate() {
     local schema="$1" out="$2"
-    local out_dir tmp_render tmp_out rc
+    local tmp_render rc
 
     if [[ ! -f "$schema" ]]; then
         echo "[NFTBan ERROR] boot projection: canonical schema not found: $schema" >&2
         return 1
     fi
     local fn
-    for fn in _firewall_substitute_placeholders _firewall_publish_conf; do
+    for fn in _firewall_substitute_placeholders _firewall_publish_conf _firewall_complete_service_ports; do
         declare -F "$fn" >/dev/null 2>&1 && continue
         echo "[NFTBan ERROR] boot projection: required authority $fn is NOT loaded." >&2
         echo "[NFTBan ERROR]   Source the firewall command file first. This function MUST NOT re-derive" >&2
-        echo "[NFTBan ERROR]   placeholder substitution or SELinux-aware publication — a second path is the" >&2
-        echo "[NFTBan ERROR]   duplicated firewall authority P12-FPA exists to remove." >&2
+        echo "[NFTBan ERROR]   placeholder substitution, service-port completion or SELinux-aware publication —" >&2
+        echo "[NFTBan ERROR]   a second path is the duplicated firewall authority P12-FPA exists to remove." >&2
         return 1
     done
+
+    tmp_render=$(mktemp) || return 1
+
+    # 1. render through the single substitution authority
+    if ! _firewall_substitute_placeholders "$schema" "$tmp_render"; then
+        echo "[NFTBan ERROR] boot projection: render failed — existing projection preserved" >&2
+        rm -f "$tmp_render"
+        return 1
+    fi
+    # 1b. complete the service-port sets through the single effective-port authority
+    if ! _firewall_complete_service_ports "$tmp_render"; then
+        echo "[NFTBan ERROR] boot projection: effective service ports could not be rendered — existing projection preserved (no template fallback)" >&2
+        rm -f "$tmp_render"
+        return 1
+    fi
+
+    nftban_boot_projection_publish "$tmp_render" "$out"; rc=$?
+    rm -f "$tmp_render"
+    return "$rc"
+}
+
+# -----------------------------------------------------------------------------
+# nftban_boot_projection_publish <rendered_ruleset> <output_path>
+#
+# Steps 2-5 of the frozen transaction order, for a ruleset that is ALREADY fully
+# rendered by the render authorities (substitution + service-port completion):
+# assert fully rendered -> header -> nft -c -> atomic publication.
+#
+# v1.234 R-11: `firewall rebuild` calls this with the exact file it has just
+# validated and loaded, so the boot projection carries the same effective state
+# the kernel was given — one render, two consumers, no second render path. It
+# never renders and never loads.
+# -----------------------------------------------------------------------------
+nftban_boot_projection_publish() {
+    local rendered="$1" out="$2"
+    local out_dir tmp_out rc
+
+    if [[ ! -s "$rendered" ]]; then
+        echo "[NFTBan ERROR] boot projection: rendered ruleset not found or empty: $rendered" >&2
+        return 1
+    fi
+    if ! declare -F _firewall_publish_conf >/dev/null 2>&1; then
+        echo "[NFTBan ERROR] boot projection: required authority _firewall_publish_conf is NOT loaded." >&2
+        return 1
+    fi
 
     out_dir="$(dirname "$out")"
     if [[ ! -d "$out_dir" ]]; then
@@ -124,16 +180,13 @@ nftban_boot_projection_generate() {
     fi
     [[ -w "$out_dir" ]] || { echo "[NFTBan ERROR] boot projection: not writable: $out_dir" >&2; return 1; }
 
-    tmp_render=$(mktemp) || return 1
-    tmp_out=$(mktemp "${out}.tmp.XXXXXX") || { rm -f "$tmp_render"; return 1; }
-    # shellcheck disable=SC2064  # expand the paths now, on purpose
-    trap "rm -f '$tmp_render' '$tmp_out'" RETURN
-
-    # 1. render through the single substitution authority
-    if ! _firewall_substitute_placeholders "$schema" "$tmp_render"; then
-        echo "[NFTBan ERROR] boot projection: render failed — existing projection preserved" >&2
-        return 1
-    fi
+    tmp_out=$(mktemp "${out}.tmp.XXXXXX") || return 1
+    # shellcheck disable=SC2064  # expand the path now, on purpose
+    # Self-clearing: a RETURN trap outlives the function that set it, and this one
+    # is reached from inside `firewall rebuild`, whose later returns must not keep
+    # firing it. The CALLER's rendered file is never removed here.
+    trap "rm -f '$tmp_out'; trap - RETURN" RETURN
+    local tmp_render="$rendered"
 
     # 2. a partially rendered projection must never reach disk: nft would reject
     #    __CT_LIMIT_SSH__ at boot and the host would come up with no NFTBan table.
@@ -194,7 +247,7 @@ nftban_boot_projection_generate() {
                 return 1
             fi
             echo "[NFTBan WARN] boot projection: validity could NOT be established, but the candidate is BYTE-IDENTICAL to the existing projection — nothing to publish" >&2
-            trap - RETURN; rm -f "$tmp_render" "$tmp_out"; return 0
+            trap - RETURN; rm -f "$tmp_out"; return 0
             ;;
         *) echo "[NFTBan ERROR] boot projection: candidate REJECTED — existing projection preserved" >&2; return 1 ;;
     esac
@@ -212,6 +265,5 @@ nftban_boot_projection_generate() {
         return 1
     fi
     trap - RETURN
-    rm -f "$tmp_render"
     return 0
 }

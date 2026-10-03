@@ -105,6 +105,13 @@ type Config struct {
 
 	// Distro config
 	DistroConfDir string // NFTBAN_DISTRO_CONF_DIR
+
+	// v1.234 R-11: inbound TCP service-port floor authorization
+	// (NFTBAN_BASELINE_TCP_IN). BaselineTCPInSet distinguishes "key absent"
+	// (package default) from "key present and empty" (no floor) — see
+	// ports.ResolveInboundFloor. Never interpret the value here.
+	BaselineTCPIn    string
+	BaselineTCPInSet bool
 }
 
 // Derived paths (computed from base paths)
@@ -474,6 +481,11 @@ func loadFromFile(path string) (*Config, error) {
 		// Distro
 		case "NFTBAN_DISTRO_CONF_DIR":
 			cfg.DistroConfDir = value
+
+		// v1.234 R-11: inbound TCP floor authorization (presence is meaningful).
+		case "NFTBAN_BASELINE_TCP_IN":
+			cfg.BaselineTCPIn = value
+			cfg.BaselineTCPInSet = true
 		}
 	}
 
@@ -600,6 +612,9 @@ func overlayFromFile(cfg *Config, path string) {
 			cfg.DebugTraceLog = value
 		case "NFTBAN_DISTRO_CONF_DIR":
 			cfg.DistroConfDir = value
+		case "NFTBAN_BASELINE_TCP_IN":
+			cfg.BaselineTCPIn = value
+			cfg.BaselineTCPInSet = true
 		}
 	}
 }

@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-08-28"
-# meta:description="Locks the P12-FPA Phase 1 boot-projection generator. T1 path/header authority. T2 FAIL-CLOSED when the render authority is absent (the generator must never substitute placeholders itself). T3 generation from the REAL canonical schema through the REAL _firewall_substitute_placeholders. T4 DETERMINISM — two generations from identical inputs are byte-identical, which is what makes drift detectable. T5 the generated projection parses under nft -c. T6 a candidate that fails validation must NOT replace an existing good projection, and must leave no temp file. T7 unrendered placeholders never reach disk. T8 atomicity — no .tmp residue. Hermetic: TMPDIR sandbox, NFTBAN_LIB_DIR/NFTBAN_CONFIG_DIR redirected, no host or systemd state touched."
+# meta:description="Locks the P12-FPA Phase 1 boot-projection generator. T1 path/header authority. T2 FAIL-CLOSED when the render authority is absent (the generator must never substitute placeholders itself). T3 generation from the REAL canonical schema through the REAL _firewall_substitute_placeholders. T4 DETERMINISM — two generations from identical inputs are byte-identical, which is what makes drift detectable. T5 the generated projection parses under nft -c. T6 a candidate that fails validation must NOT replace an existing good projection, and must leave no temp file. T7 unrendered placeholders never reach disk. T8 atomicity — no .tmp residue. T2c/T10 (v1.234 R-11) the projection requires the effective service-port authority (no template fallback) and publish-from-rendered carries the rebuild-loaded ruleset verbatim without removing it. Hermetic: TMPDIR sandbox, NFTBAN_LIB_DIR/NFTBAN_CONFIG_DIR redirected, no host or systemd state touched."
 # meta:input="cli/lib/nftban/lib/boot_projection.sh, cli/lib/nftban/cli/cmd_firewall.sh, install/nftables/nftables.conf.tpl"
 # meta:output="PASS/FAIL per assertion; exit 1 on any failure"
 # meta:depends="bash,nft,mktemp,grep,diff"
@@ -141,6 +141,33 @@ fi
   [[ "$RC2B" -ne 0 ]] && grep -q "_firewall_publish_conf" <<<"$ERR2B" && [[ ! -f "$OUT2B" ]]
 ) && ok "T2b FAILS CLOSED without the SELinux-aware publication authority" \
    || bad "T2b published without _firewall_publish_conf (would carry the wrong SELinux type)"
+
+# --- T2c (v1.234 R-11) FAIL-CLOSED without the EFFECTIVE-PORT authority --------
+# The projection must carry the complete effective service ports. Without the
+# port authority it would carry the template literals { __SSH_PORT__, 80, 443 } —
+# the skeletal boot state R-11 measured. No template fallback.
+( _firewall_substitute_placeholders() { cp "$1" "$2"; }
+  _firewall_publish_conf() { mv "$1" "$2"; }
+  OUT2C="$SB/conf/generated/t2c.nft"
+  ERR2C=$(nftban_boot_projection_generate "$TPL" "$OUT2C" 2>&1); RC2C=$?
+  [[ "$RC2C" -ne 0 ]] && grep -q "_firewall_complete_service_ports" <<<"$ERR2C" && [[ ! -f "$OUT2C" ]]
+) && ok "T2c FAILS CLOSED without the effective service-port authority" \
+   || bad "T2c published without _firewall_complete_service_ports (template ports at boot)"
+
+# v1.234 R-11: a deterministic stand-in for `nftban-core ports render-effective`
+# (the Go authority is covered by internal/ports) and the durable SSH-port file.
+mkdir -p "$SB/empty-lib/bin" "$SB/conf/ports.d"
+printf '22/T/I\n' > "$SB/conf/ports.d/00-ssh.conf"
+cat > "$SB/empty-lib/bin/nftban-core" <<'CORE'
+#!/usr/bin/env bash
+[[ "$1 $2" == "ports render-effective" ]] || exit 2
+[[ -n "${NFTBAN_EFFECTIVE_SSH_PORTS:-}" ]] || exit 1
+echo "NFTBAN_SVC_TCP_IN=${NFTBAN_EFFECTIVE_SSH_PORTS}, 80, 443, 8443"
+echo "NFTBAN_SVC_TCP_OUT=53, 80, 443"
+echo "NFTBAN_SVC_UDP_IN="
+echo "NFTBAN_SVC_UDP_OUT=53, 123"
+CORE
+chmod +x "$SB/empty-lib/bin/nftban-core"
 
 # --- load the REAL render authority ----------------------------------------
 # cmd_firewall.sh only defines functions at top level (its guarded sources are
@@ -274,6 +301,32 @@ if [[ -z "$(find "$C" -name '*.tmp.*' 2>/dev/null)" ]]; then
     ok "T9f no temp residue from any refused publication"
 else bad "T9f temp residue left by a refused publication"; fi
 unset -f nftban_boot_projection_validate
+
+# --- T10 (v1.234 R-11) publish-from-rendered: the rebuild's path ----------------
+# `firewall rebuild` publishes the exact file it loaded. The publisher must carry
+# it verbatim (plus the header), must never render, and must never remove the
+# caller's file.
+# T9 replaced (then unset) the validator; reload the real library first.
+unset NFTBAN_BOOT_PROJECTION_LOADED
+# shellcheck source=/dev/null
+source "$LIB"
+# Tested positions, not bare: cmd_firewall.sh enables errexit in this shell.
+R="$SB/rendered.nft"; _rrc=0
+_firewall_substitute_placeholders "$TPL" "$R" 2>/dev/null || _rrc=$?
+_firewall_complete_service_ports "$R" 2>/dev/null || _rrc=$?
+RO="$SB/conf/generated/t10.nft"
+HDR_N=$(nftban_boot_projection_header | wc -l)
+if [[ "$_rrc" -eq 0 ]] && nftban_boot_projection_publish "$R" "$RO" 2>"$SB/t10.err" && [[ -s "$R" ]] \
+   && diff -q <(tail -n +2 "$R") <(tail -n +$((HDR_N + 2)) "$RO") >/dev/null \
+   && grep -qE 'elements = \{ 22, 80, 443, 8443 \}' "$RO"; then
+    ok "T10 publish carries the rendered ruleset verbatim (complete ports), caller's file kept"
+else
+    bad "T10 publish-from-rendered did not carry the rendered ruleset verbatim (render rc=$_rrc)"
+    sed -n '1,5s/^/         /p' "$SB/t10.err" 2>/dev/null
+fi
+_rc=0; nftban_boot_projection_publish "$SB/does-not-exist.nft" "$RO" >/dev/null 2>&1 || _rc=$?
+[[ "$_rc" -ne 0 && -s "$RO" ]] && ok "T10b a missing rendered input is refused, existing kept" \
+                              || bad "T10b a missing rendered input was not refused"
 
 echo "=== boot_projection: FAILS=$FAILS ==="
 [[ "$FAILS" -eq 0 ]] || exit 1
