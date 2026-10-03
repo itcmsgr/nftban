@@ -284,6 +284,39 @@ nftban_cmd_port_help() {
     echo ""
 }
 
+# _nftban_port_live_ssh_reason <port> — v1.234 BUG-PORT-REMOVE-CAN-DELETE-LIVE-SSH-PORT.
+# Prints why and returns 0 when <port> is an SSH port that removing would cut:
+#   - the caller's session port (SSH_CLIENT; `sudo` drops it with env_reset, so it
+#     cannot be the only check),
+#   - a port sshd listens on (nftban_detect_ssh_ports: the authority maintenance uses
+#     to re-apply SSH ports; covers a second Port/ListenAddress),
+#   - the configured SSH port in the protected ports.d/00-ssh.conf.
+# Returns 1 otherwise.
+_nftban_port_live_ssh_reason() {
+    local port="$1" p
+    if [[ -n "${SSH_CLIENT:-}" && "$port" == "${SSH_CLIENT##* }" ]]; then
+        echo "your current SSH session uses it"
+        return 0
+    fi
+    if ! declare -F nftban_detect_ssh_ports >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_detect_ssh_ports >/dev/null 2>&1; then
+        while IFS= read -r p; do
+            if [[ "$p" == "$port" ]]; then
+                echo "sshd is listening on it"
+                return 0
+            fi
+        done < <(nftban_detect_ssh_ports 2>/dev/null || true)
+    fi
+    if grep -qE "^${port}/" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/00-ssh.conf" 2>/dev/null; then
+        echo "it is the configured SSH port (ports.d/00-ssh.conf)"
+        return 0
+    fi
+    return 1
+}
+
 # =============================================================================
 
 # PORT COMMAND HANDLER
@@ -631,17 +664,18 @@ nftban_cmd_port() {
                 return 1
             fi
 
-            # CRITICAL: Protect current SSH port from being removed
-            local current_ssh_port="${SSH_CLIENT:+${SSH_CLIENT##* }}"
-            if [[ "$port" == "$current_ssh_port" ]]; then
-                echo "❌ ERROR: Cannot remove port $port - this is your ACTIVE SSH port!" >&2
+            # CRITICAL: never remove an SSH port (loss of access). Not only the caller's
+            # SSH_CLIENT port: sudo drops it, and a second sshd port has no session.
+            local ssh_reason
+            if ssh_reason=$(_nftban_port_live_ssh_reason "$port"); then
+                echo "❌ ERROR: Cannot remove port $port - it is an SSH port ($ssh_reason)." >&2
                 echo "" >&2
-                echo "⚠️  DANGER: Removing this port will lock you out of the server!" >&2
-                echo "   Your SSH connection is using port $port right now." >&2
+                echo "⚠️  DANGER: Removing it can lock you and other operators out of the server." >&2
+                echo "   Nothing was changed." >&2
                 echo "" >&2
-                echo "If you really need to remove this port:" >&2
-                echo "  1. Connect via console or alternate SSH port" >&2
-                echo "  2. Then run: nftban port remove $port" >&2
+                echo "To stop allowing it: first stop sshd from listening on port $port" >&2
+                echo "(sshd_config Port/ListenAddress) and remove it from ports.d/00-ssh.conf," >&2
+                echo "from a console or another SSH port. Then run: nftban port remove $port" >&2
                 return 1
             fi
 
@@ -723,9 +757,9 @@ nftban_cmd_port() {
                     if nft_ipc_delete_port "$port" "both" "both" 2>/dev/null; then
                         echo "  ✓ Port $port removed from firewall (IPv4 + IPv6)"
                         # v1.145 PR-B both-set parity: also remove from ssh_ports.
-                        # The active SSH_CLIENT port is already guarded above, so
-                        # this cannot drop brute-force protection for the live
-                        # session. No-op if the port was not in ssh_ports.
+                        # Every SSH port is refused above (_nftban_port_live_ssh_reason),
+                        # so this cannot drop brute-force protection for a live
+                        # SSH port. No-op if the port was not in ssh_ports.
                         nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" ssh_ports "$port" 2>/dev/null || true
                         nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" ssh_ports "$port" 2>/dev/null || true
                         echo ""
@@ -763,17 +797,13 @@ nftban_cmd_port() {
                 return 1
             fi
 
-            # CRITICAL: Protect current SSH port from being blocked
-            local current_ssh_port="${SSH_CLIENT:+${SSH_CLIENT##* }}"
-            if [[ "$port" == "$current_ssh_port" ]]; then
-                echo "❌ ERROR: Cannot block port $port - this is your ACTIVE SSH port!" >&2
+            # CRITICAL: never block an SSH port (same authority as remove).
+            local ssh_reason
+            if ssh_reason=$(_nftban_port_live_ssh_reason "$port"); then
+                echo "❌ ERROR: Cannot block port $port - it is an SSH port ($ssh_reason)." >&2
                 echo "" >&2
-                echo "⚠️  DANGER: Blocking this port will lock you out of the server!" >&2
-                echo "   Your SSH connection is using port $port right now." >&2
-                echo "" >&2
-                echo "If you really need to block this port:" >&2
-                echo "  1. Connect via console or alternate SSH port" >&2
-                echo "  2. Then run: nftban port block $port" >&2
+                echo "⚠️  DANGER: Blocking it can lock you and other operators out of the server." >&2
+                echo "   Nothing was changed." >&2
                 return 1
             fi
 
@@ -1848,4 +1878,5 @@ nftban_port_allow_directadmin() {
 
 # Export function for auto-loading
 export -f nftban_cmd_port
+export -f _nftban_port_live_ssh_reason
 export -f nftban_port_allow_directadmin
