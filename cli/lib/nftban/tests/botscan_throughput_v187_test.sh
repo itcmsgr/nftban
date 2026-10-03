@@ -33,6 +33,9 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -74,6 +77,10 @@ mkdir -p "$NFTBAN_DATA_DIR/botscan" "$NFTBAN_DATA_DIR/botguard" "$NFTBAN_DATA_DI
 
 # shellcheck source=/dev/null
 source "$LIB_CORE"
+# v1.234.0: the 404/endpoint window is measured in REQUEST time (the log line's own %t), so
+# "now" is pinned just after this fixture's timestamps -- otherwise real wall-clock "now" makes
+# the fixed-date fixture correctly OLD and nothing counts. Same property, correct semantics.
+nftban_timestamp_unix() { echo 1781431260; }   # 14/Jun/2026:10:00:00 +0000 + 60 s
 
 # Guard the fix itself: if a future edit moves the source above the sandbox, the
 # baked paths silently return to production and this test would once again write

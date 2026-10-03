@@ -65,7 +65,10 @@ SELENIUM|Selenium|useragent|20|60|7200|false|Selenium automation
 # =============================================================================
 # EMPTY OR SUSPICIOUS USER AGENTS
 # =============================================================================
-EMPTY_UA|-$|useragent|20|60|3600|true|Empty user agent
+# EMPTY_UA (`-$`) is RETIRED as of v1.234.0 (owner decision): it matched the same evidence
+# as SINGLE_DASH (an empty/"-" User-Agent parses as "-"), and its only extra coverage — any
+# User-Agent that merely ENDS in "-" — is not an empty User-Agent. The name is reserved: an
+# operator record or override.local `EMPTY_UA|true` cannot re-activate it (reported).
 SINGLE_DASH|^-$|useragent|20|60|3600|true|Single dash user agent
 
 # =============================================================================

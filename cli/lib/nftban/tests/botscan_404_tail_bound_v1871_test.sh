@@ -32,6 +32,9 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -42,6 +45,10 @@ export NFTBAN_DATA_DIR="$tmp/data" BOTSCAN_PATTERNS_DIR="$tmp/patterns" \
 mkdir -p "$NFTBAN_DATA_DIR/botscan" "$BOTSCAN_PATTERNS_DIR" "$tmp/spool"
 # shellcheck source=/dev/null
 source "$NFTBAN_LIB_DIR/core/nftban_botscan.sh"; nftban_botscan_load_config
+# v1.234.0: the 404/endpoint window is measured in REQUEST time (the log line's own %t), so
+# "now" is pinned just after this fixture's timestamps -- otherwise real wall-clock "now" makes
+# the fixed-date fixture correctly OLD and nothing counts. Same property, correct semantics.
+nftban_timestamp_unix() { echo 1781431260; }   # 14/Jun/2026:10:00:00 +0000 + 60 s
 
 # 4 spool files; file "c" carries a 404 flood (5x from 198.51.100.9). One 404 line each elsewhere.
 mk() { printf '%s - - [14/Jun/2026:10:00:0%s +0000] "GET /x%s HTTP/1.1" 404 9 "-" "ua"\n' "$1" "${3:-0}" "${3:-0}"; }

@@ -32,6 +32,9 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"; export NFTBAN_LIB_DIR
 CORE="$NFTBAN_LIB_DIR/core/nftban_botscan.sh"
@@ -70,7 +73,7 @@ source "$CORE"; nftban_botscan_load_config
 # self-contained resolver must pick the fake `host` we put first on PATH (no rbl dependency)
 [[ "$(nftban_botscan_resolver)" == "host" ]] || fail "resolver: expected self-contained selection to pick fake host"
 # (re-)assert associative typing so shellcheck knows these are not indexed arrays
-declare -gA _BOTSCAN_IP_404_COUNT _BOTSCAN_IP_404_FIRST_SEEN _BOTSCAN_IP_CRAWLER_CLAIM _BOTSCAN_IP_HITS
+declare -gA _BOTSCAN_IP_404_COUNT _BOTSCAN_IP_404_FIRST_SEEN _BOTSCAN_IP_404_LAST_SEEN _BOTSCAN_IP_CRAWLER_CLAIM _BOTSCAN_IP_HITS
 
 # ---- (V) verify_crawler matrix ----
 nftban_botscan_verify_crawler 66.249.66.1 googlebot || fail "V1: real Googlebot must verify OK"
@@ -111,8 +114,9 @@ echo "PASS H: claim recorded + counted for verifiable families; legacy whitelist
 nftban_botscan_init_state
 export BOTSCAN_404_TRACKING=true BOTSCAN_404_THRESHOLD=3 BOTSCAN_404_WINDOW=3600 BOTSCAN_404_BAN=3600 BOTSCAN_ACTION_MODE=alert
 now=$(date +%s)
-_BOTSCAN_IP_404_COUNT[66.249.66.1]=50; _BOTSCAN_IP_404_FIRST_SEEN[66.249.66.1]=$now; _BOTSCAN_IP_CRAWLER_CLAIM[66.249.66.1]=googlebot
-_BOTSCAN_IP_404_COUNT[1.2.3.4]=50;     _BOTSCAN_IP_404_FIRST_SEEN[1.2.3.4]=$now;     _BOTSCAN_IP_CRAWLER_CLAIM[1.2.3.4]=googlebot
+# v1.234.0: analyze decides on the REQUEST-time span, so both bounds are supplied
+_BOTSCAN_IP_404_COUNT[66.249.66.1]=50; _BOTSCAN_IP_404_FIRST_SEEN[66.249.66.1]=$now; _BOTSCAN_IP_404_LAST_SEEN[66.249.66.1]=$now; _BOTSCAN_IP_CRAWLER_CLAIM[66.249.66.1]=googlebot
+_BOTSCAN_IP_404_COUNT[1.2.3.4]=50;     _BOTSCAN_IP_404_FIRST_SEEN[1.2.3.4]=$now;     _BOTSCAN_IP_404_LAST_SEEN[1.2.3.4]=$now;     _BOTSCAN_IP_CRAWLER_CLAIM[1.2.3.4]=googlebot
 out="$(nftban_botscan_analyze 2>&1 || true)"
 grep -q "66.249.66.1" <<<"$out" && fail "A: VERIFIED crawler (66.249.66.1) must be EXEMPT from 404-flood (got banned: $out)"
 grep -qE "Would ban 1.2.3.4.*fake_bot_ua|fake_bot_ua.*1.2.3.4" <<<"$out" || fail "A: spoofer (1.2.3.4) must be banned with fake_bot_ua (got: $out)"

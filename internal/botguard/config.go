@@ -80,6 +80,9 @@ type Config struct {
 	AllowedCrawlersFile string
 	DeniedCrawlersFile  string
 
+	// v1.234.0: shared CDN edge range sources (empty = DefaultSharedEdgeFiles()).
+	SharedEdgeFiles []string
+
 	// Logging
 	LogLevel     string
 	LogDecisions bool
