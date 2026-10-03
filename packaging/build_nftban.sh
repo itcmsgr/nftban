@@ -405,6 +405,19 @@ create_rpm_spec_nftban_core() {
     fi
     rpm_pre_deprecated_body=$(cat "$rpm_pre_deprecated_src")
 
+    # v1.234 (PR #1439): proven-ownership immutable-flag library, injected into the
+    # pretrans / preun / posttrans scriptlets ('%' escaped for rpm macro expansion).
+    local rpm_immut_lib
+    local rpm_immut_src="${PROJECT_ROOT}/cli/lib/nftban/lib/nftban_immutable_owned.sh"
+    if [[ ! -f "$rpm_immut_src" ]]; then
+        log_error "immutable-ownership library not found at $rpm_immut_src"
+        return 1
+    fi
+    # Code body only (no SPDX/copyright/meta header: the spec scriptlets are not
+    # legal-identity surfaces) - same extraction as the DEB copies.
+    rpm_immut_lib=$(bash "${PROJECT_ROOT}/build/generate-immutable-owned-blocks.sh" --body | sed 's/%/%%/g') || {
+        log_error "could not extract the immutable-ownership library body"; return 1; }
+
     # Use explicit file descriptor to catch cat errors
     if ! cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
 # Disable debuginfo for Go binary (no debug symbols)
@@ -785,34 +798,52 @@ if command -v python3 >/dev/null 2>&1 && [ -f scripts/ci/privacy-scan.py ]; then
 fi
 
 %pretrans -p <lua>
--- Remove immutable flag before upgrade (runs FIRST, before old pkg scripts)
--- The nft_schema.sh file is protected with chattr +i for security.
--- Without this, RPM fails: "cpio: rename failed - No data available"
-local schema_file = "/usr/lib/nftban/lib/nft_schema.sh"
-local f = io.open(schema_file, "r")
-if f then
-    f:close()
-    os.execute("/usr/bin/chattr -i " .. schema_file .. " 2>/dev/null")
-    os.execute("/bin/chattr -i " .. schema_file .. " 2>/dev/null")
-    os.execute("chattr -i " .. schema_file .. " 2>/dev/null")
-    os.execute("/usr/bin/chattr -i -R /usr/lib/nftban 2>/dev/null")
+-- v1.234 (PR #1439): filesystem-restriction preflight + proven-ownership unlock.
+-- One implementation (cli/lib/nftban/lib/nftban_immutable_owned.sh, injected at
+-- build time) shared with the DEB scripts and the CLI. It runs here, before this
+-- package unpacks anything: every destination that cannot be modified is named with
+-- its cause (IMMUTABLE / APPEND-ONLY / READ-ONLY / WRITE-DENIED) and the scriptlet
+-- fails, which makes RPM skip THIS package. (A failed pretrans does not necessarily
+-- stop other packages or dependency changes in the same transaction.) Only flags
+-- whose ownership NFTBan can PROVE are removed; the pre-v1.234 recursive unlock of
+-- /usr/lib/nftban (which removed administrator flags) is gone.
+local nftban_lib = [==[
+${rpm_immut_lib}
+]==]
+local nftban_main = [==[
+if ! nftban_immut_pkg_preflight rpm; then exit 1; fi
+date -u +%%s > /run/nftban-rpm-txn-start 2>/dev/null || true
+nftban_immut_unlock_owned | sed 's/^/nftban: immutable flag /' >&2
+exit 0
+]==]
+local nftban_sh = nil
+for _, c in ipairs({"/bin/sh", "/usr/bin/sh"}) do
+    if posix.access(c, "x") then nftban_sh = c; break end
 end
--- v1.107.2: strip +i from /etc/nftban/nftban.conf before cpio extracts the
--- new conffile. SetImmutableFlags (internal/installer/validate/authority.go)
--- sets +i on this file post-install/repair, and %preun runs too late to help
--- because cpio extraction happens first. _remove_immutable_flags in the CLI
--- handles this for nftban update callers; this block aligns the direct
--- dnf upgrade / rpm -Uvh path with the same lifecycle invariant.
-local nftban_conf = "/etc/nftban/nftban.conf"
-local g = io.open(nftban_conf, "r")
-if g then
-    g:close()
-    os.execute("/usr/bin/chattr -i " .. nftban_conf .. " 2>/dev/null")
-    os.execute("/bin/chattr -i " .. nftban_conf .. " 2>/dev/null")
-    os.execute("chattr -i " .. nftban_conf .. " 2>/dev/null")
+if not nftban_sh then
+    io.stderr:write("nftban: WARN no /bin/sh during pretrans - filesystem restriction preflight UNMEASURED\n")
+else
+    local tmp = os.tmpname()
+    local fh = io.open(tmp, "w")
+    if not fh then
+        io.stderr:write("nftban: WARN cannot write " .. tmp .. " - filesystem restriction preflight UNMEASURED\n")
+    else
+        fh:write(nftban_lib, "\n", nftban_main)
+        fh:close()
+        local ok, how, code = os.execute(nftban_sh .. " " .. tmp)
+        os.remove(tmp)
+        if ok ~= true and ok ~= 0 then
+            error("nftban: filesystem restriction preflight refused this package (exit " .. tostring(code) .. ")", 0)
+        end
+    end
 end
 
 %pre
+# v1.234 (PR #1439): this package's pretrans unlocked NFTBan's own PROVEN
+# immutable flags; any failing exit of this scriptlet re-applies exactly those
+# (record-proven) and reports a re-lock that fails.
+${rpm_immut_lib}
+trap '_nftban_rc=\$?; if [ "\$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owned | sed "s/^/[NFTBan] immutable flag /" >&2; fi' EXIT
 # =============================================================================
 # v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
 # =============================================================================
@@ -1255,24 +1286,32 @@ case "\$_ifverdict" in
 esac
 
 # =============================================================================
-# STEP 0: yq link (must happen before Go installer, used by CLI commands)
+# STEP 0: optional /usr/bin/yq convenience link (internal callers use the bundled binary)
 # =============================================================================
-if command -v yq >/dev/null 2>&1; then
-    YQ_VER=\$(yq --version 2>/dev/null | head -1 || true)
-    if echo "\$YQ_VER" | grep -qE "mikefarah|version v4" >/dev/null 2>&1; then
-        true  # yq v4 already available
-    else
-        if [ -x /usr/lib/nftban/bin/yq ]; then
-            ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-            echo "[NFTBan]   yq v4 linked from bundled binary"
-        fi
+# v1.234 (PR #1439, RPM twin of the DEB postinst _nftban_link_yq): optional
+# operator convenience link. NFTBan's own yq consumers call the bundled
+# /usr/lib/nftban/bin/yq directly. Created only when no yq is on PATH and
+# /usr/bin/yq does not exist; an existing system yq is never replaced; a
+# restricted /usr/bin is reported, never fatal, and never modified.
+_nftban_link_yq() {
+    [ -x /usr/lib/nftban/bin/yq ] || return 0
+    if [ -e /usr/bin/yq ] || [ -L /usr/bin/yq ]; then
+        return 0
     fi
-else
-    if [ -x /usr/lib/nftban/bin/yq ]; then
-        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+    if command -v yq >/dev/null 2>&1; then
+        echo "[NFTBan]   yq found at \$(command -v yq); /usr/bin/yq link not created (bundled yq is used internally)"
+        return 0
+    fi
+    if _yq_err=\$(ln -s /usr/lib/nftban/bin/yq /usr/bin/yq 2>&1); then
         echo "[NFTBan]   yq v4 linked from bundled binary"
+    else
+        echo "[NFTBan WARN] Could not create /usr/bin/yq -> /usr/lib/nftban/bin/yq: \${_yq_err}" >&2
+        echo "[NFTBan WARN]   /usr/bin refused the link (check: lsattr -d /usr/bin; findmnt -T /usr/bin)." >&2
+        echo "[NFTBan WARN]   Continuing: the link is optional; NFTBan does not change /usr/bin attributes." >&2
     fi
-fi
+    return 0
+}
+_nftban_link_yq
 
 # =============================================================================
 # STEP 0.5: Defensive systemd-tmpfiles --create (v1.114 mirror of v1.112.2 DEB)
@@ -1789,12 +1828,17 @@ fi
 exit 0
 
 %preun
-# Remove immutable flags before uninstall/upgrade
-for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
-    if [ -f "\$immutable_file" ]; then
-        chattr -i "\$immutable_file" 2>/dev/null || true
-    fi
-done
+# Remove NFTBan-owned immutable flags before a COMPLETE uninstall only.
+# v1.234 (BUG-RPM-UPGRADE-OLD-PREUN-STRIPS-OWNED-FLAGS): on upgrade/reinstall
+# RPM runs the OLD package's preun scriptlet AFTER the NEW package's post scriptlet, so an
+# unconditional strip here undid the +i that the new installer had just set
+# (measured on el9-clean: installer.log "set immutable", lsattr shows none).
+# PR #1439: and only flags whose ownership is PROVEN (inlined library); an
+# administrator flag is left in place.
+if [ "\$1" -eq 0 ]; then
+${rpm_immut_lib}
+    nftban_immut_unlock_owned | sed 's/^/[NFTBan] immutable flag /'
+fi
 # MFST-C3: systemd stop/disable/mask cleanup is generated from
 #   install/packaging/systemd/nftban-systemd-install.list (active units)
 #   build/deprecated-units.yaml                            (deprecated units)
@@ -1805,6 +1849,23 @@ done
 if [ \$1 -eq 0 ]; then
 ${rpm_preun_body}
 fi
+
+
+%posttrans
+# v1.234 (PR #1439): post-transaction restore of PROVEN NFTBan-owned +i.
+# On an upgrade FROM v1.233.x or earlier the OLD package's preun strips +i on
+# nftban.conf / nft_schema.sh after this package's installer set it. Restore only
+# when the record shows NFTBan set the flag in THIS transaction (written after this
+# package's pretrans marker) on the same inode. Then re-lock flags this package's
+# scriptlets removed if nothing changed the file since.
+${rpm_immut_lib}
+_nftban_txn_m=\$(cat /run/nftban-rpm-txn-start 2>/dev/null || true)
+if [ -n "\$_nftban_txn_m" ]; then
+    nftban_immut_txn_restore "\$_nftban_txn_m" | sed 's/^/[NFTBan] immutable flag /'
+fi
+nftban_immut_relock_owned | sed 's/^/[NFTBan] immutable flag /'
+rm -f /run/nftban-rpm-txn-start 2>/dev/null || true
+exit 0
 
 %postun
 # >>> NFTBAN_SYNPROXY_RAW_CLEANUP_BEGIN >>>
@@ -2391,51 +2452,11 @@ EOF
     if [[ -f "${PROJECT_ROOT}/packaging/deb/prerm" ]]; then
         cp "${PROJECT_ROOT}/packaging/deb/prerm" "${BUILD_DIR}/deb/DEBIAN/prerm"
     else
-        # Fallback: generate inline prerm
-        cat > "${BUILD_DIR}/deb/DEBIAN/prerm" << 'PRERM'
-#!/bin/sh
-set -e
-for f in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
-    [ -f "$f" ] && chattr -i "$f" 2>/dev/null || true
-done
-case "$1" in
-    remove|deconfigure)
-        for unit in nftband.socket nftband.service \
-            nftban-maintenance.timer nftban-maintenance.service \
-            nftban-health.timer nftban-health.service nftban-health-fix.service \
-            nftban-watchdog.timer nftban-watchdog.service \
-            nftban-login-monitor.service \
-            nftban-core-geoip.timer nftban-core-geoip.service \
-            nftban-core-feeds.timer nftban-core-feeds.service \
-            nftban-unified-exporter.timer nftban-unified-exporter.service \
-            nftban-queue.timer nftban-queue.service \
-            nftban-rbl-check.timer nftban-rbl-check.service \
-            nftban-rollback.timer nftban-rollback.service \
-            nftban-snapshot.timer nftban-snapshot.service \
-            nftban-suricata-update.timer nftban-suricata-update.service \
-            nftban-suricata.service nftban-suricata-stats.service \
-            nftban-pro-inventory.timer nftban-pro-inventory.service \
-            nftban-pro-license.timer nftban-pro-license.service \
-            nftban-update-check.timer nftban-update-check.service \
-            nftban-update-apply.timer nftban-update-apply.service \
-            nftban-api.service nftban-firewall-init.service \
-            nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
-            # v1.100.1b.A transitional: nftban-ui.* units may exist from a prior
-            # install; stop + disable + mask + remove their unit files.
-            deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
-            case "$unit" in
-                nftban-ui*.service|nftban-ui*.socket)
-                    systemctl disable "$unit" 2>/dev/null || true
-                    systemctl mask "$unit" 2>/dev/null || true
-                    rm -f "/lib/systemd/system/$unit" 2>/dev/null || true
-                    ;;
-            esac
-        done
-        systemctl daemon-reload 2>/dev/null || true
-        ;;
-esac
-exit 0
-PRERM
+        # v1.234 (PR #1439): no inline fallback. The old fallback ran an
+        # unchecked `chattr -i` on the owned files; the canonical prerm uses the
+        # proven-ownership library. A missing source file is a build error.
+        log_error "packaging/deb/prerm not found; refusing to generate a prerm without the proven-ownership library"
+        return 1
     fi
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/prerm"
 

@@ -84,8 +84,13 @@ declare -A RISK_ICONS=(
 # HELPER FUNCTIONS
 # =============================================================================
 
+# v1.234 (PR #1439): use the BUNDLED yq when installed; never depend on a
+# /usr/bin/yq link or a different system yq. PATH yq only for repo/dev use.
+YQ_BIN="${NFTBAN_YQ:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq}"
+[[ -x "$YQ_BIN" ]] || YQ_BIN=$(command -v yq 2>/dev/null || true)
+
 check_dependencies() {
-    if ! command -v yq &>/dev/null; then
+    if [[ -z "$YQ_BIN" ]]; then
         echo "ERROR: yq is required for YAML parsing" >&2
         echo "Install: pip install yq  OR  brew install yq" >&2
         return 1
@@ -97,7 +102,7 @@ get_commands_by_category() {
     local profile="${2:-operator}"
 
     # Parse registry and filter by category
-    yq -r "
+    "$YQ_BIN" -r "
         to_entries |
         map(select(.key != \"_metadata\" and .value.category == \"$category\")) |
         map(.key) |
@@ -109,7 +114,7 @@ get_command_info() {
     local command="$1"
     local field="$2"
 
-    yq -r ".\"$command\".\"$field\" // \"\"" "$REGISTRY" 2>/dev/null
+    "$YQ_BIN" -r ".\"$command\".\"$field\" // \"\"" "$REGISTRY" 2>/dev/null
 }
 
 should_show_for_profile() {
@@ -117,7 +122,7 @@ should_show_for_profile() {
     local profile="$2"
 
     local audience
-    audience=$(yq -r ".\"$command\".audience // []" "$REGISTRY" 2>/dev/null)
+    audience=$("$YQ_BIN" -r ".\"$command\".audience // []" "$REGISTRY" 2>/dev/null)
 
     case "$profile" in
         operator)
@@ -135,7 +140,7 @@ should_show_for_profile() {
         panel)
             # Panels see only panel-exposed commands
             local panel_expose
-            panel_expose=$(yq -r ".\"$command\".panel_expose // false" "$REGISTRY" 2>/dev/null)
+            panel_expose=$("$YQ_BIN" -r ".\"$command\".panel_expose // false" "$REGISTRY" 2>/dev/null)
             [[ "$panel_expose" == "true" ]] && return 0 || return 1
             ;;
         *)
@@ -161,7 +166,7 @@ generate_global_options() {
         opt=$(echo "$line" | sed 's/    .*//')
         desc=$(echo "$line" | sed 's/.*    //')
         printf "  %-18s %s\n" "$opt" "$desc"
-    done < <(yq -r '
+    done < <("$YQ_BIN" -r '
         .global_options | to_entries[] |
         "  " + .key + ((.value.aliases | select(.) | ", " + join(", ")) // "") + "    " + .value.description
     ' "$REGISTRY" 2>/dev/null)

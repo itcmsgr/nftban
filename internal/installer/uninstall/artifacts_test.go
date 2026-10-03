@@ -596,33 +596,68 @@ func TestUninstallOwnedRuntimePaths_NoStaleHardcodedDuplication(t *testing.T) {
 	}
 }
 
-// TestRemoveArtifacts_StripsImmutableBitsBeforeRM — third-audit P1
-// (plan-promised test #4). chattr -R -i must be recorded against
-// each protected dir BEFORE any rm command targets that dir.
-func TestRemoveArtifacts_StripsImmutableBitsBeforeRM(t *testing.T) {
+// TestRemoveArtifacts_NeverRecursiveUnlock_OnlyProvenOwned — v1.234 PR #1439
+// (BUG-UNINSTALL-STRIPS-ADMIN-IMMUTABLE-FLAGS-RECURSIVELY). Replaces the
+// third-audit test that REQUIRED `chattr -R -i` on every protected dir: that
+// removed administrator flags. Now: no recursive chattr at all; a proven
+// NFTBan-owned flag is unlocked BEFORE any rm under its dir; an unproven flag is
+// never touched and is reported as remaining. Fails on v1.233.1 (chattr -R -i).
+func TestRemoveArtifacts_NeverRecursiveUnlock_OnlyProvenOwned(t *testing.T) {
 	m := executor.NewMockExecutor()
-	_ = RemoveArtifacts(m, ModePurgeForceDOC, nil, newTestLogger())
+	conf, schema := "/etc/nftban/nftban.conf", "/usr/lib/nftban/lib/nft_schema.sh"
+	m.Files[conf] = []byte("x")
+	m.Files[schema] = []byte("x")
+	m.Files["/etc/nftban"] = []byte("")
+	m.Files["/usr/lib/nftban"] = []byte("")
+	// nft_schema.sh: NFTBan-owned, proven by the record (inode+ctime match)
+	m.Files["/var/lib/nftban/state/immutable-owned"] = []byte(schema + "\t22\t1790000001\tlocked\t1\n")
+	m.RunResults["lsattr:-d:"+schema] = executor.Result{Stdout: "----i---------e------- " + schema + "\n"}
+	m.RunResults["stat:-c:%i %Z:"+schema] = executor.Result{Stdout: "22 1790000001\n"}
+	m.RunResults["chattr:-i:"+schema] = executor.Result{}
+	// nftban.conf: administrator flag (no record entry, no installer.log proof)
+	m.RunResults["lsattr:-d:"+conf] = executor.Result{Stdout: "----i---------e------- " + conf + "\n"}
+	m.RunResults["stat:-c:%i %Z:"+conf] = executor.Result{Stdout: "11 1790000500\n"}
+	// lsattr -R must NOT be combined with -d (it would not descend): the report
+	// comes from `lsattr -R -a <dir>` — real lsattr output shape, header lines included.
+	m.RunResults["lsattr:-d:/etc/nftban"] = executor.Result{Stdout: "--------------e------- /etc/nftban\n"}
+	m.RunResults["lsattr:-R:-a:/etc/nftban"] = executor.Result{Stdout: "--------------e------- /etc/nftban/.\n--------------e------- /etc/nftban/..\n----i---------e------- " + conf + "\n--------------e------- /etc/nftban/conf.d\n\n/etc/nftban/conf.d:\n--------------e------- /etc/nftban/conf.d/x.conf\n"}
 
-	for _, dir := range protectedDirs {
-		chattrIdx := -1
-		for i, c := range m.Commands {
-			if c.Name == "chattr" && len(c.Args) >= 3 && c.Args[0] == "-R" && c.Args[1] == "-i" && c.Args[2] == dir {
-				chattrIdx = i
-				break
-			}
+	r := RemoveArtifacts(m, ModePurgeForceDOC, nil, newTestLogger())
+
+	for _, c := range m.Commands {
+		if c.Name == "chattr" && len(c.Args) > 0 && (c.Args[0] == "-R" || (len(c.Args) > 1 && c.Args[1] == "-R")) {
+			t.Fatalf("recursive chattr recorded: %v", c.Args)
 		}
-		if chattrIdx < 0 {
-			t.Errorf("ModePurgeForceDOC: chattr -R -i %s not recorded", dir)
-			continue
+		if c.Name == "chattr" && len(c.Args) > 1 && c.Args[0] == "-i" && c.Args[1] == conf {
+			t.Errorf("administrator-owned flag on %s was removed", conf)
 		}
-		// Any rm of a path under that dir must come AFTER chattr.
-		for i, c := range m.Commands {
-			if c.Name == "rm" && len(c.Args) >= 2 {
-				target := c.Args[len(c.Args)-1]
-				if strings.HasPrefix(target, dir) && i < chattrIdx {
-					t.Errorf("rm of %q at index %d came BEFORE chattr -R -i %q at index %d", target, i, dir, chattrIdx)
-				}
-			}
+	}
+	unlockIdx := -1
+	for i, c := range m.Commands {
+		if c.Name == "chattr" && len(c.Args) == 2 && c.Args[0] == "-i" && c.Args[1] == schema {
+			unlockIdx = i
+		}
+	}
+	if unlockIdx < 0 {
+		t.Fatalf("proven NFTBan-owned flag on %s was not unlocked", schema)
+	}
+	for i, c := range m.Commands {
+		if c.Name == "rm" && len(c.Args) >= 2 && strings.HasPrefix(c.Args[len(c.Args)-1], "/usr/lib/nftban") && i < unlockIdx {
+			t.Errorf("rm under /usr/lib/nftban at %d before the proven unlock at %d", i, unlockIdx)
+		}
+	}
+	found := false
+	for _, p := range r.ImmutableRemaining {
+		if p == conf {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("administrator-flagged %s must be reported as remaining (no false success), got %v", conf, r.ImmutableRemaining)
+	}
+	for _, c := range m.Commands {
+		if c.Name == "lsattr" && len(c.Args) > 2 && c.Args[0] == "-R" && (c.Args[1] == "-d" || c.Args[2] == "-d") {
+			t.Errorf("lsattr -R combined with -d does not descend: %v", c.Args)
 		}
 	}
 }

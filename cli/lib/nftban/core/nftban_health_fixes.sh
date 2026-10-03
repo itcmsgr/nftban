@@ -942,9 +942,11 @@ nftban_health_fix_registry() {
         fi
     fi
 
-    # Check YAML validity if yq available
-    if command -v yq &>/dev/null; then
-        if ! yq -r '._metadata.version' "$registry" >/dev/null 2>&1; then
+    # Check YAML validity with the BUNDLED yq (v1.234)
+    local yq_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq"
+    [[ -x "$yq_bin" ]] || yq_bin=$(command -v yq 2>/dev/null || true)
+    if [[ -n "$yq_bin" ]]; then
+        if ! "$yq_bin" -r '._metadata.version' "$registry" >/dev/null 2>&1; then
             echo "  ✖ ERROR: Registry has invalid YAML syntax"
             echo "    Please reinstall nftban package to restore registry."
             return 2
@@ -952,8 +954,8 @@ nftban_health_fix_registry() {
             echo "  ✓ Registry YAML is valid"
         fi
     else
-        echo "  ⚠️  Cannot validate YAML (yq not installed)"
-        echo "    Install: pip install yq  OR  brew install yq"
+        echo "  ⚠️  Cannot validate YAML (bundled yq missing: ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq)"
+        echo "    Reinstall the nftban package to restore it"
         status=1
     fi
 

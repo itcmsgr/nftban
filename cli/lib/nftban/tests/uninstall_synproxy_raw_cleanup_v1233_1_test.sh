@@ -137,14 +137,19 @@ for a in remove purge; do
         no "P3 DEB postrm $a) call missing or before the table deletion (fn=${ln_fn:-none} del=${ln_del:-none})"
     fi
 done
-upg="$(arm "$POSTRM" 'upgrade|failed-upgrade|abort-install|abort-upgrade|disappear')"
-if [ -z "$upg" ]; then
-    no "P3b DEB postrm upgrade arm not found - arm extraction is vacuous"
-elif grep -q "$FN" <<<"$upg"; then
-    no "P3b DEB postrm upgrade arm must not clean raw rules (upgrade keeps protection)"
-else
-    ok "P3b DEB postrm upgrade/abort arm exists and does not call it"
-fi
+# v1.234 (#1439) split the former single upgrade/abort arm in two: the abort arm
+# re-locks NFTBan-owned immutable flags. Both arms must exist and neither may clean.
+# Arm presence is proven by the exact case label, not by a non-empty extraction:
+# the upgrade arm holds only a comment, which code() reduces to blank padding.
+for a in 'abort-install|abort-upgrade' 'upgrade|failed-upgrade|disappear'; do
+    if ! grep -qxF "    $a)" "$POSTRM"; then
+        no "P3b DEB postrm $a) arm not found - arm extraction is vacuous"
+    elif grep -q "$FN" <<<"$(arm "$POSTRM" "$a")"; then
+        no "P3b DEB postrm $a) arm must not clean raw rules (upgrade keeps protection)"
+    else
+        ok "P3b DEB postrm $a) arm exists and does not call it"
+    fi
+done
 pb="$(code < "$POSTUN")"
 blk0="$(awk '/^if \[ \$1 -eq 0 \]; then$/{i=1;next} i && /^fi$/{exit} i{print}' <<<"$pb")"
 blk1="$(awk '/^if \[ \$1 -ge 1 \]; then$/{i=1;next} i && /^fi$/{exit} i{print}' <<<"$pb")"

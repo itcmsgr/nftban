@@ -510,8 +510,11 @@ output_brief() {
     # Format: PROTECTED | v1.84.0 | 26 banned | 9 whitelisted | protected
     # Exit codes: 0=PROTECTED, 1=DEGRADED, 2=DOWN
 
-    local protection_state_raw
+    local protection_state_raw _brief_pkg
     protection_state_raw=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e (exit-code mapped from base_state below)
+    # v1.234 (PR #1439): an incomplete installation lowers the overall verdict.
+    _brief_pkg=$(_status_package_consistency 2>/dev/null) || _brief_pkg=""
+    protection_state_raw=$(_status_overall_state "$protection_state_raw" "$_brief_pkg")
     local base_state="${protection_state_raw%%:*}"
     local reason="${protection_state_raw#*:}"
     [[ "$reason" == "$base_state" ]] && reason=""
@@ -682,6 +685,83 @@ _status_json_install_transaction() {
     echo "  },"
 }
 
+# =============================================================================
+# INSTALLATION / PACKAGE CONSISTENCY (v1.234, PR #1439)
+# =============================================================================
+# BUG-STATUS-IGNORES-PACKAGE-MANAGER-TRANSACTION-STATE (+ related
+# BUG-INSTALL-STATE-SAYS-COMMITTED-AFTER-PACKAGE-REMOVE). install_state is written
+# only by nftban-installer, so a package-manager failure before or around it
+# (dpkg iHR/iF/reinstreq, an RPM upgrade that replaced part of the payload and
+# left rpmdb at the old version, a postinst that died, a removed package) left
+# the previous COMMITTED verdict in place and `nftban status` reported the host
+# as PROTECTED/COMMITTED. This probe reads the package database and the on-disk
+# VERSION. It is a SEPARATE indication: firewall runtime protection stays what
+# the validator measured; the overall verdict becomes DEGRADED (D-PACKAGE) when
+# an incomplete installation is confirmed. Read-only.
+#
+# Prints "<CLASS>|<detail>|<recovery>" with CLASS one of
+#   CONSISTENT  INCOMPLETE  UNMEASURED
+_status_package_consistency() {
+    local vfile="${NFTBAN_VERSION_FILE:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION}"
+    local sfile files_ver="" pkg_ver="" mgr="" abbrev="" installed=0 state_ver="" state_txn=""
+    sfile="$(_status_install_state_file)"
+    [[ -r "$vfile" ]] && files_ver=$(tr -d '[:space:]' < "$vfile" 2>/dev/null)
+    if [[ -r "$sfile" ]]; then
+        state_ver=$(awk -F= '$1=="INSTALL_VERSION"{v=$2} END{print v}' "$sfile" 2>/dev/null)
+        state_txn=$(awk -F= '$1=="INSTALL_STATE"{v=$2} END{print v}' "$sfile" 2>/dev/null)
+    fi
+    if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W nftban-core >/dev/null 2>&1; then
+        mgr=dpkg
+        local q
+        q=$(dpkg-query -W -f='${db:Status-Abbrev}|${Version}' nftban-core 2>/dev/null) || q=""
+        abbrev=${q%%|*}; abbrev=${abbrev%% *}; pkg_ver=${q#*|}
+        case "$abbrev" in
+            ii) installed=1 ;;
+            i?*)
+                printf 'INCOMPLETE|dpkg reports nftban-core %s as "%s" (not fully installed: half-installed, half-configured or reinstall-required)|lift the cause the package manager reported, then: dpkg --configure -a (or reinstall the package)\n' "${pkg_ver:-?}" "$abbrev"
+                return 0 ;;
+            *) installed=0 ;;
+        esac
+    elif command -v rpm >/dev/null 2>&1 && rpm -q nftban-core >/dev/null 2>&1; then
+        mgr=rpm; installed=1
+        pkg_ver=$(rpm -q --qf '%{VERSION}\n' nftban-core 2>/dev/null) || pkg_ver=""
+        pkg_ver=${pkg_ver%%$'\n'*}
+    elif ! command -v dpkg-query >/dev/null 2>&1 && ! command -v rpm >/dev/null 2>&1; then
+        printf 'UNMEASURED|no package manager query tool (dpkg-query/rpm)|-\n'; return 0
+    fi
+    if (( installed == 0 )); then
+        if [[ -z "$files_ver" && -n "$state_txn" ]]; then
+            printf 'INCOMPLETE|nftban-core is not installed, but %s still records INSTALL_STATE=%s|reinstall the package, or remove the stale state file after an intended removal\n' "$sfile" "$state_txn"
+        else
+            printf 'UNMEASURED|nftban-core not found in the package database (source install?)|-\n'
+        fi
+        return 0
+    fi
+    pkg_ver=${pkg_ver#*:}; pkg_ver=${pkg_ver%%-*}
+    if [[ -n "$files_ver" && -n "$pkg_ver" && "$files_ver" != "$pkg_ver" ]]; then
+        printf 'INCOMPLETE|package database says nftban-core %s but the installed files say %s (partial upgrade)|lift the cause the package manager reported, then reinstall nftban-core %s or %s\n' "$pkg_ver" "$files_ver" "$pkg_ver" "$files_ver"
+        return 0
+    fi
+    if [[ -n "$state_ver" && -n "$pkg_ver" && "$state_ver" != "$pkg_ver" ]]; then
+        printf 'INCOMPLETE|nftban-core %s is installed but the last installer transaction was for %s (the package installer step did not run or did not finish)|/usr/lib/nftban/bin/nftban-installer --repair\n' "$pkg_ver" "$state_ver"
+        return 0
+    fi
+    printf 'CONSISTENT|nftban-core %s (%s), installed files %s|-\n' "${pkg_ver:-?}" "$mgr" "${files_ver:-?}"
+}
+
+# Overall verdict: the validator's runtime state, lowered to DEGRADED:D-PACKAGE when
+# the installation is confirmed incomplete. Never raised; never claims protection
+# stopped (DOWN stays the validator's call).
+# Args: RUNTIME_STATE PACKAGE_LINE
+_status_overall_state() {
+    local runtime="$1" pkg="$2"
+    if [[ "${runtime%%:*}" == "PROTECTED" && "${pkg%%|*}" == "INCOMPLETE" ]]; then
+        printf 'DEGRADED:D-PACKAGE'
+    else
+        printf '%s' "$runtime"
+    fi
+}
+
 _status_section_install_transaction() {
     # ─────────────────────────────────────────────────────────────────────
     # INSTALL TRANSACTION (v1.230.0 P0-D4)
@@ -712,6 +792,7 @@ _status_section_system() {
     # SYSTEM
     # ─────────────────────────────────────────────────────────────────────
     local protection_state_raw="$1"
+    local runtime_raw="${2:-$1}" pkg_line="${3:-}"
     local base_state="${protection_state_raw%%:*}"
     local reason="${protection_state_raw#*:}"
     [[ "$reason" == "$base_state" ]] && reason=""
@@ -727,6 +808,17 @@ _status_section_system() {
     printf "  %-20s %s\n" "Uptime.............." "$(uptime -p 2>/dev/null | sed 's/^up //' || uptime | awk '{print $3, $4}' | sed 's/,$//')"
     printf "  %-20s %s\n" "NFTBan.............." "v${NFTBAN_VERSION:-unknown}"
     printf "  %-20s %s\n" "State..............." "$state_display"
+    # v1.234 (PR #1439): separate indications. Firewall runtime = what the
+    # validator measured; Installation = package database vs installed files.
+    if [[ -n "$pkg_line" ]]; then
+        local _rt="${runtime_raw%%:*}" _rr="${runtime_raw#*:}"
+        [[ "$_rr" != "$runtime_raw" ]] && _rt="$_rt ($_rr)"
+        local _pc="${pkg_line%%|*}" _rest="${pkg_line#*|}"
+        local _pd="${_rest%%|*}" _prc="${_rest#*|}"
+        printf "  %-20s %s\n" "Firewall runtime...." "$_rt"
+        printf "  %-20s %s\n" "Installation........" "$_pc — $_pd"
+        [[ "$_pc" == "INCOMPLETE" && "$_prc" != "-" ]] && printf "  %-20s %s\n" "" "Recovery: $_prc"
+    fi
     # v1.230.0 P0-D3/D4: the headline above reports ENFORCEMENT (PROTECTED /
     # DEGRADED / DOWN). It says nothing about whether the last install or upgrade
     # TRANSACTION completed, and the two genuinely differ — a host can enforce
@@ -2119,8 +2211,12 @@ output_terminal() {
     local quiet_mode="$1"
 
     # v1.66.0: Use unified protection state function (single source of truth)
-    local protection_state
-    protection_state=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e
+    local protection_state runtime_state pkg_line
+    runtime_state=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e
+    # v1.234 (PR #1439): overall = runtime, lowered to DEGRADED:D-PACKAGE on a
+    # confirmed incomplete installation (firewall runtime shown separately).
+    pkg_line=$(_status_package_consistency 2>/dev/null) || pkg_line="UNMEASURED|package probe failed|-"
+    protection_state=$(_status_overall_state "$runtime_state" "$pkg_line")
     local _base_state="${protection_state%%:*}"
 
     # Header with version and state
@@ -2129,7 +2225,7 @@ output_terminal() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    _status_section_system "$protection_state"
+    _status_section_system "$protection_state" "$runtime_state" "$pkg_line"
     # v1.230.0 P0-D4: immediately after the headline/SYSTEM block, so a failed or
     # incomplete transaction is never buried below a reassuring PROTECTED line.
     _status_section_install_transaction
@@ -2138,7 +2234,7 @@ output_terminal() {
     _status_section_services
     _status_section_protection "$quiet_mode"
     _status_section_communication
-    _status_section_health "$protection_state" "$quiet_mode"
+    _status_section_health "$runtime_state" "$quiet_mode"
     _status_section_activity
     _status_section_timers "$quiet_mode"
     _status_section_logs
@@ -2171,8 +2267,10 @@ output_json() {
     # Output JSON format
 
     # v1.66.0: Use unified protection state function (single source of truth)
-    local json_state_raw
-    json_state_raw=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e (json path)
+    local json_state_raw json_runtime_raw json_pkg_line
+    json_runtime_raw=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e (json path)
+    json_pkg_line=$(_status_package_consistency 2>/dev/null) || json_pkg_line="UNMEASURED|package probe failed|-"
+    json_state_raw=$(_status_overall_state "$json_runtime_raw" "$json_pkg_line")
     local json_base_state="${json_state_raw%%:*}"
     local json_reason="${json_state_raw#*:}"
     [[ "$json_reason" == "$json_base_state" ]] && json_reason=""
@@ -2198,6 +2296,10 @@ output_json() {
     if [[ -n "$json_reason" ]]; then
         echo "  \"degraded_reason\": \"$json_reason\","
     fi
+    # v1.234 (PR #1439): separate indications next to the overall "status".
+    local _jp_rest="${json_pkg_line#*|}"
+    echo "  \"firewall_runtime_status\": \"${json_runtime_raw%%:*}\","
+    echo "  \"installation\": {\"class\": \"$(json_escape "${json_pkg_line%%|*}")\", \"detail\": \"$(json_escape "${_jp_rest%%|*}")\", \"recovery\": \"$(json_escape "${_jp_rest#*|}")\"},"
     echo "  \"config_divergence\": [${_json_div_array}],"
     echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
     echo "  \"hostname\": \"$(hostname)\","
