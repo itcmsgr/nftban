@@ -414,6 +414,54 @@ RBHELP
     return 0
 }
 
+# _firewall_rebuild_refresh_boot_projection <source_file> <loaded_conf> <quiet>
+# v1.234 R-11 (BUG-BOOT-PROJECTION-CARRIES-ONLY-TEMPLATE-PORTS). Called by the
+# rebuild after a successful atomic load. Prints exactly ONE state word on stdout:
+#   refreshed | not-established | failed
+# Since v1.229.13 (#1366) nftables.service includes generated/nftban-boot.nft,
+# which was written once by the installer with the template ports only, while the
+# rebuild rendered the complete ports into /etc/nftban/nftables.conf — a file
+# nothing loads any more. Every reboot and every `systemctl restart nftables`
+# therefore came up with the panel/service ports closed until the daemon's delayed
+# sync, and an administrator's removal of 80/443 was reversed at boot.
+# One render, two consumers: the projection is published from the SAME file the
+# kernel was given (no second render path) through the same publication authority
+# (nftban_boot_projection_publish -> _firewall_publish_conf, SELinux-aware).
+# REFRESH ONLY: the projection is CREATED by `firewall render-boot` (the installer
+# gates the include transition on that); a rebuild never establishes boot
+# authority that the installer did not.
+_firewall_rebuild_refresh_boot_projection() {
+    local source_file="$1" loaded="$2" quiet="${3:-false}" bp
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/boot_projection.sh" 2>/dev/null || true
+    if ! declare -F nftban_boot_projection_publish >/dev/null 2>&1; then
+        if [[ -s "${NFTBAN_CONFIG_DIR:-/etc/nftban}/generated/nftban-boot.nft" ]]; then
+            # A projection exists but its authority cannot be loaded: it can no
+            # longer be kept in step with the rebuild. Never a silent pass.
+            echo "ERROR: boot projection authority (lib/boot_projection.sh) not available — boot projection NOT refreshed" >&2
+            echo failed; return 0
+        fi
+        echo not-established; return 0
+    fi
+    bp="$(nftban_boot_projection_path)"
+    if [[ ! -s "$bp" ]]; then
+        echo not-established; return 0
+    fi
+    if [[ -z "$source_file" ]]; then
+        # Pre-template legacy config: nothing was rendered, so there is no complete
+        # render to publish. Reported, never silently skipped.
+        echo "WARNING: boot projection NOT refreshed — legacy pre-template config has no rendered ruleset" >&2
+        echo failed; return 0
+    fi
+    if nftban_boot_projection_publish "$loaded" "$bp" >&2; then
+        [[ "$quiet" == "false" ]] && echo "    Boot projection refreshed: $bp" >&2
+        echo refreshed; return 0
+    fi
+    echo "ERROR: boot projection could NOT be refreshed — the next boot or nftables.service restart would load stale ports" >&2
+    echo failed
+    return 0
+}
+
 _firewall_set_elements() {
     local conf="$1" name="$2" csv="$3"
     # v1.228.5: fail with the ACTUAL cause. Previously a missing interpreter surfaced
@@ -4406,6 +4454,13 @@ _firewall_rebuild_core() {
         [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)" || true
     fi
 
+    # Step 12b (v1.234 R-11, BUG-BOOT-PROJECTION-CARRIES-ONLY-TEMPLATE-PORTS):
+    # refresh the boot projection from the ruleset validated and loaded at step 5.
+    # Placed AFTER steps 6-12 on purpose: the nft -c of the candidate must not
+    # lengthen the post-load window in which bans/whitelist are re-added.
+    local _boot_proj_state
+    _boot_proj_state=$(_firewall_rebuild_refresh_boot_projection "$source_file" "$load_conf" "$quiet")
+
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
         rm -f "$rpmnew_conf" 2>/dev/null || true
@@ -4631,6 +4686,20 @@ _firewall_rebuild_core() {
         echo "  The firewall schema was rebuilt, but the durable whitelist.d layer is NOT" >&2
         echo "  projected into the running set. Configured management IPs may be unenforced." >&2
         echo "  Fix: systemctl start nftband && nftban firewall reload" >&2
+        _firewall_record_transition_health rebuild "$_fth_t0" 2>/dev/null || true
+        return 1
+    fi
+
+    # v1.234 R-11: the running ruleset converged, but the boot projection did not
+    # follow it. Reporting success here would be exactly the false success R-11
+    # measured: the next boot or nftables.service restart silently reverts ports.
+    # Anything other than the two known-good words (including an empty answer from
+    # a helper that died) is a failure, never a pass.
+    if [[ "${_boot_proj_state:-}" != "refreshed" && "${_boot_proj_state:-}" != "not-established" ]]; then
+        echo "Final status: DEGRADED (boot projection not refreshed: ${_boot_proj_state:-no answer})" >&2
+        echo "  The running firewall was rebuilt, but the boot projection" >&2
+        echo "  still holds the previous ruleset; a reboot would load it." >&2
+        echo "  Fix the error above, then retry: nftban firewall rebuild" >&2
         _firewall_record_transition_health rebuild "$_fth_t0" 2>/dev/null || true
         return 1
     fi

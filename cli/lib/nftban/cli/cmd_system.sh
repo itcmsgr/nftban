@@ -363,9 +363,12 @@ nftban_system_restart() {
             echo "  Restarting nftband.service..."
             systemctl restart nftband.service 2>/dev/null || echo "    (not running)"
 
-            # nftables
-            echo "  Restarting nftables.service..."
-            systemctl restart nftables.service 2>/dev/null || echo "    (not running)"
+            # nftables — v1.234 R-11: NOT `systemctl restart nftables.service`, which
+            # re-loads the boot projection and drops live bans/ports/whitelist. The
+            # supported path converges through the atomic rebuild (after the daemon
+            # restart above, so the rebuild's reconcile can reach it).
+            echo "  Converging nftables (nftban nftables restart)..."
+            "${NFTBAN_BIN:-/usr/sbin/nftban}" nftables restart || echo "    ⚠ nftables convergence FAILED — see above; run: nftban firewall rebuild"
 
             # Suricata (if enabled)
             if declare -f nftban_service_is_enabled &>/dev/null && nftban_service_is_enabled "suricata"; then
@@ -379,8 +382,8 @@ nftban_system_restart() {
             echo "  Login monitor: handled by nftband restart above"
             ;;
         nftables)
-            echo "Restarting nftables..."
-            systemctl restart nftables.service
+            # v1.234 R-11: the supported path (atomic rebuild, state preserved).
+            "${NFTBAN_BIN:-/usr/sbin/nftban}" nftables restart || return $?
             ;;
         suricata)
             echo "Restarting Suricata..."
@@ -400,7 +403,7 @@ nftban_system_restart() {
             echo ""
             echo "Targets:"
             echo "  all       - Restart all NFTBan services (default)"
-            echo "  nftables  - Restart nftables service"
+            echo "  nftables  - Rebuild the NFTBan ruleset atomically (state preserved)"
             echo "  suricata  - Restart Suricata IDS"
             echo "  login     - Restart login monitoring"
             echo "  timers    - Restart all maintenance timers"

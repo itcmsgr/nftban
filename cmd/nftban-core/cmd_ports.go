@@ -89,7 +89,13 @@ func cmdPortsRenderEffective(cfg *nftbanconf.Config) error {
 		return fmt.Errorf("render-effective: no valid SSH ports in NFTBAN_EFFECTIVE_SSH_PORTS")
 	}
 
-	out, err := ports.RenderEffectiveElements(cfg.ConfigDir, sshPorts)
+	// v1.234 R-11: the inbound floor is an explicit authorization, not a template
+	// literal — an administrator who removed 80/443 must not get them back here.
+	floor, err := ports.ResolveInboundFloor(cfg.BaselineTCPIn, cfg.BaselineTCPInSet)
+	if err != nil {
+		return fmt.Errorf("render-effective: %w", err)
+	}
+	out, err := ports.RenderEffectiveElementsWithInboundFloor(cfg.ConfigDir, sshPorts, floor)
 	if err != nil {
 		return fmt.Errorf("render-effective: %w", err)
 	}

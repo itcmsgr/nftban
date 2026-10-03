@@ -10045,6 +10045,15 @@
       "active_when": "always",
       "deprecated": true
     },
+    "NFTBAN_BASELINE_TCP_IN": {
+      "type": "string",
+      "pattern": "^(|none|[0-9]{1,5}([ ,]+[0-9]{1,5})*)$",
+      "default": "80,443",
+      "description": "Inbound TCP ports opened as a floor in every rendered ruleset (rebuild, boot projection). Unset: 80,443. An explicit list is used exactly; 80/443 are not added to it. An explicit empty value (or none) opens no floor ports, and the defaults are not restored. Set it in nftban.conf.local, which beats nftban.conf. ports.d and enabled panels still apply. The detected SSH ports are always kept.",
+      "introduced_in": "1.234.0",
+      "module": "core",
+      "active_when": "always"
+    },
     "NFTBAN_BASELINE_RULES": {
       "type": "string",
       "$ref": "#/definitions/path",
