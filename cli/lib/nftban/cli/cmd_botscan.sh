@@ -128,7 +128,10 @@ DETECTION CATEGORIES:
 
 PATTERN FORMAT:
 
-    Patterns are stored in /etc/nftban/patterns.d/botscan/
+    Shipped rules: /usr/lib/nftban/data/botscan_*.patterns (package defaults,
+    replaced on upgrade; never edit). Your changes go in /etc/nftban/patterns.d/botscan/:
+    override.local (NAME|true|false; written by patterns enable|disable, allowbot,
+    blockbot) and your own *.patterns files (patterns add writes custom.patterns).
 
     Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
 
@@ -138,6 +141,13 @@ PATTERN FORMAT:
       url-post   = Match POST requests only
       url-get    = Match GET requests only
       useragent  = Match against User-Agent header (for bad bots)
+      path-404|path-any|path-get|path-post
+                 = Match the request PATH only (the query string is ignored)
+      distinct-404|distinct-any|distinct-get|distinct-post
+                 = Match the full request target; each DISTINCT target counts
+                   once per IP (for probing/enumeration; one URL requested again
+                   and again is not multiplied). Put route boundaries in the regex.
+    THRESHOLD and WINDOW are evaluated on the log lines' own request times.
 
 PATTERN FILES:
 
@@ -249,9 +259,9 @@ _nftban_botscan_stats_json() {
         [[ -n "$mode_val" ]] && action_mode="$mode_val" || true
     fi
 
-    # Count patterns
-    if [[ -d "$patterns_dir" ]]; then
-        for pattern_file in "$patterns_dir"/*.patterns; do
+    # Count patterns (v1.234.0: shipped defaults under /usr/lib/nftban/data + operator files)
+    if [[ -d "$patterns_dir" || -d "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data" ]]; then
+        for pattern_file in "${NFTBAN_LIB_DIR:-/usr/lib/nftban}"/data/botscan_*.patterns "$patterns_dir"/*.patterns; do
             [[ -f "$pattern_file" ]] || continue
             while IFS='|' read -r name _ _ _ _ _ is_enabled _; do
                 [[ -z "$name" || "$name" =~ ^# ]] && continue

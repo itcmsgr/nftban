@@ -69,12 +69,34 @@ nftban_http_detect_stack() {
     echo "${s% }"
 }
 
+# v1.234.0 — DirectAdmin reverse-proxy mode (nginx in front of Apache). Reads
+# `nginx_proxy=1` from directadmin.conf (path overridable for tests). Absent or
+# unreadable file, or any other value => not proxy mode (both families, as before).
+nftban_http_da_nginx_proxy() {
+    local conf="${NFTBAN_DA_CONF:-/usr/local/directadmin/conf/directadmin.conf}" l
+    [[ -r "$conf" ]] || return 1
+    while IFS= read -r l || [[ -n "$l" ]]; do
+        l="${l%$'\r'}"
+        [[ "$l" == "nginx_proxy=1" ]] && return 0
+    done < "$conf"
+    return 1
+}
+
 # Panel-appropriate + generic candidate globs (one per line). NOT yet existence-checked.
 nftban_http_candidate_globs() {
     local panel="${1:-}"
     case "$panel" in
         directadmin)
-            printf '%s\n' '/var/log/httpd/domains/*.log' '/var/log/nginx/domains/*.log' ;;
+            # v1.234.0 (BUG-BOTSCAN-NGINX-PROXY-DUAL-LOG-FAMILY-DOUBLE-COUNT): with
+            # DirectAdmin nginx_proxy=1, nginx is the front end and logs EVERY request
+            # (static files and requests it blocks included); Apache behind it logs the
+            # proxied subset AGAIN. Reading both families counted each proxied request
+            # twice, which halved every hit threshold. Read the front-end family only.
+            if nftban_http_da_nginx_proxy; then
+                printf '%s\n' '/var/log/nginx/domains/*.log'
+            else
+                printf '%s\n' '/var/log/httpd/domains/*.log' '/var/log/nginx/domains/*.log'
+            fi ;;
         cpanel)
             printf '%s\n' '/usr/local/apache/domlogs/*' '/usr/local/apache/domlogs/*/*' '/var/log/apache2/domlogs/*' ;;
         plesk)

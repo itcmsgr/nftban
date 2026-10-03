@@ -1,0 +1,33 @@
+# BotScan shared-edge ranges (v1.234.0) — published CDN edge / platform egress networks.
+# An address inside one of these ranges is a SHARED proxy: when it appears as the client
+# in a web access log, the web server is logging the CDN, not the visitor. BotScan never
+# bans it (shell emission + daemon apply), and reports the skip with this file's label.
+# This is NOT a firewall whitelist: nothing here is accepted by the firewall, and other
+# detectors (PortScan, DDoS, LoginMon) are unaffected.
+# Authority: the provider's own published list, snapshotted at package build time; a
+# newer copy fetched by `nftban trust` (cache, read-only here) is merged when present.
+# Snapshot: 2026-10-01 from https://www.cloudflare.com/ips-v4 and /ips-v6
+# (same content as https://api.cloudflare.com/client/v4/ips, etag 38f79d050aa027e3be3865e495dcc9bc).
+# Format: provider<TAB>list<TAB>CIDR   (v4 prefix >= /8, v6 prefix >= /16; others are rejected)
+cloudflare	ips-v4	173.245.48.0/20
+cloudflare	ips-v4	103.21.244.0/22
+cloudflare	ips-v4	103.22.200.0/22
+cloudflare	ips-v4	103.31.4.0/22
+cloudflare	ips-v4	141.101.64.0/18
+cloudflare	ips-v4	108.162.192.0/18
+cloudflare	ips-v4	190.93.240.0/20
+cloudflare	ips-v4	188.114.96.0/20
+cloudflare	ips-v4	197.234.240.0/22
+cloudflare	ips-v4	198.41.128.0/17
+cloudflare	ips-v4	162.158.0.0/15
+cloudflare	ips-v4	104.16.0.0/13
+cloudflare	ips-v4	104.24.0.0/14
+cloudflare	ips-v4	172.64.0.0/13
+cloudflare	ips-v4	131.0.72.0/22
+cloudflare	ips-v6	2400:cb00::/32
+cloudflare	ips-v6	2606:4700::/32
+cloudflare	ips-v6	2803:f800::/32
+cloudflare	ips-v6	2405:b500::/32
+cloudflare	ips-v6	2405:8100::/32
+cloudflare	ips-v6	2a06:98c0::/29
+cloudflare	ips-v6	2c0f:f248::/32

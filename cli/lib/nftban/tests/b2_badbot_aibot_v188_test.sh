@@ -38,21 +38,24 @@ REPO_ROOT="$(cd "$NFTBAN_LIB_DIR/../../.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 
-SHIPPED="$REPO_ROOT/etc/nftban/patterns.d/botscan"
-[[ -f "$SHIPPED/aibots.patterns" ]] || fail "aibots.patterns not shipped at $SHIPPED"
+# v1.234.0: the shipped rules are payload under <lib>/data/botscan_*.patterns; the
+# operator dir (BOTSCAN_PATTERNS_DIR) holds override.local and operator files only.
+SHIPPED="$REPO_ROOT/cli/lib/nftban/data"
+[[ -f "$SHIPPED/botscan_aibots.patterns" ]] || fail "botscan_aibots.patterns not shipped at $SHIPPED"
 
-# Hermetic patterns dir = copies of the real shipped files.
-export BOTSCAN_PATTERNS_DIR="$tmp/patterns" NFTBAN_DATA_DIR="$tmp/data" \
+# Hermetic: shipped dir = copies of the real shipped files; operator dir starts empty.
+export BOTSCAN_PATTERNS_DIR="$tmp/patterns" BOTSCAN_SHIPPED_PATTERNS_DIR="$tmp/shipped" NFTBAN_DATA_DIR="$tmp/data" \
        BOTSCAN_STATE_FILE="$tmp/s" BOTSCAN_LOG_FILE="$tmp/b.log" NFTBAN_CONFIG_DIR="$tmp/noetc"
-mkdir -p "$BOTSCAN_PATTERNS_DIR" "$NFTBAN_DATA_DIR"
-cp "$SHIPPED"/*.patterns "$BOTSCAN_PATTERNS_DIR/"
+mkdir -p "$BOTSCAN_PATTERNS_DIR" "$BOTSCAN_SHIPPED_PATTERNS_DIR" "$NFTBAN_DATA_DIR"
+cp "$SHIPPED"/botscan_*.patterns "$BOTSCAN_SHIPPED_PATTERNS_DIR/"
+SP="$BOTSCAN_SHIPPED_PATTERNS_DIR"
 # shellcheck source=/dev/null
 source "$NFTBAN_LIB_DIR/core/nftban_botscan.sh"
 
 # ---- (1) no duplicate AI token across badbots/aibots ----
 for tok in GPTBOT CCBOT BYTESPIDER CLAUDEBOT; do
-    grep -qE "^${tok}\|" "$BOTSCAN_PATTERNS_DIR/aibots.patterns" || fail "1: $tok missing from aibots"
-    grep -qE "^${tok}\|" "$BOTSCAN_PATTERNS_DIR/badbots.patterns" && fail "1: $tok still in badbots (duplicate owner)"
+    grep -qE "^${tok}\|" "$SP/botscan_aibots.patterns" || fail "1: $tok missing from aibots"
+    grep -qE "^${tok}\|" "$SP/botscan_badbots.patterns" && fail "1: $tok still in badbots (duplicate owner)"
 done
 echo "PASS 1: AI tokens have one owner (aibots), not duplicated in badbots"
 
@@ -66,14 +69,14 @@ echo "PASS 2: migration preserved live state (GPTBot/CCBot/Bytespider on, Claude
 
 # ---- (3) new AI tokens observe/disabled by default ----
 [[ -z "${_BOTSCAN_PATTERNS[PERPLEXITYBOT]:-}" ]] || fail "3: PerplexityBot must ship disabled (observe)"
-grep -qE "^PERPLEXITYBOT\|.*\|false\|" "$BOTSCAN_PATTERNS_DIR/aibots.patterns" || fail "3: PerplexityBot not ENABLED=false in file"
+grep -qE "^PERPLEXITYBOT\|.*\|false\|" "$SP/botscan_aibots.patterns" || fail "3: PerplexityBot not ENABLED=false in file"
 echo "PASS 3: new AI token (PerplexityBot) ships observe/disabled"
 
 # ---- (4) robots.txt-only tokens never ban (guard + not a pattern) ----
 nftban_botscan_neverban_token "Google-Extended"  || fail "4: Google-Extended must be guarded"
 nftban_botscan_neverban_token "Applebot-Extended" || fail "4: Applebot-Extended must be guarded"
 # data lines only (NAME|...); comments (#) legitimately document the never-ban list
-grep -rhE '^[A-Za-z]' "$BOTSCAN_PATTERNS_DIR"/*.patterns | grep -iqE "applebot-extended|google-extended" && fail "4: robots.txt-only token must NOT be a ban pattern (data line)"
+grep -rhE '^[A-Za-z]' "$SP"/*.patterns | grep -iqE "applebot-extended|google-extended" && fail "4: robots.txt-only token must NOT be a ban pattern (data line)"
 echo "PASS 4: robots.txt-only tokens guarded + not present as patterns"
 
 # ---- (5) user-action fetchers never ban ----
@@ -95,18 +98,21 @@ grep -qiE "^googlebot\|" "$BOTSCAN_PATTERNS_DIR/override.local" 2>/dev/null && f
 echo "PASS 6: blockbot/allowbot flip effective state via override.local; never-ban refused"
 
 # ---- (7) override.local survives a simulated upgrade ----
-# Upgrade = shipped *.patterns replaced (re-copied), override.local untouched (operator file).
-cp -f "$SHIPPED"/*.patterns "$BOTSCAN_PATTERNS_DIR/"   # simulate package payload refresh
+# Upgrade = shipped files replaced (re-copied), override.local untouched (operator file).
+cp -f "$SHIPPED"/botscan_*.patterns "$SP/"   # simulate package payload refresh
 nftban_botscan_load_patterns
 [[ -n "${_BOTSCAN_PATTERNS[CLAUDEBOT]:-}" ]] || fail "7: override (ClaudeBot on) lost after upgrade"
 [[ -z "${_BOTSCAN_PATTERNS[GPTBOT]:-}" ]]   || fail "7: override (GPTBot off) lost after upgrade"
 echo "PASS 7: override.local decisions survive a simulated package upgrade"
 
-# ---- (8) packaging no-clobber: spec ships *.patterns config(noreplace), NOT override.local ----
+# ---- (8) packaging (v1.234.0): shipped rules are payload under /usr/lib/nftban/data, NOT
+# %config in /etc (a locally edited %config copy kept old rules active over every fix);
+# nothing under /etc/nftban/patterns.d/botscan is packaged, override.local included.
 SPEC="$REPO_ROOT/packaging/build_nftban.sh"
-grep -qE "%config\(noreplace\) /etc/nftban/patterns.d/botscan/\*\.patterns" "$SPEC" \
-    || fail "8: spec must ship *.patterns as config(noreplace) glob (covers aibots.patterns)"
-grep -q "override.local" "$SPEC" && fail "8: spec must NOT package override.local (operator-owned; would clobber on upgrade)"
-echo "PASS 8: aibots.patterns auto-covered by config(noreplace) glob; override.local not packaged"
+code="$(grep -vE '^[[:space:]]*#' "$SPEC")"
+grep -qE "^/usr/lib/nftban/data/\*" <<<"$code" || fail "8: spec must ship /usr/lib/nftban/data/* (carries botscan_*.patterns)"
+grep -qE "/etc/nftban/patterns.d/botscan/[^[:space:]]+" <<<"$(grep -E '^%|^/' <<<"$code")" && fail "8: spec %files must not own any file under /etc/nftban/patterns.d/botscan"
+grep -qE "override\.local" <<<"$code" && fail "8: spec must NOT package override.local (operator-owned; would clobber on upgrade)"
+echo "PASS 8: shipped rules are payload (data/*); no /etc pattern file and no override.local packaged"
 
 echo "PASS: B2 BOTSCAN-BADBOT-EASY-UX Option A (migrate+preserve, observe-default, never-ban guard, override.local no-clobber)"
