@@ -104,6 +104,11 @@ type Module struct {
 
 	// Statistics
 	stats GuardStats
+
+	// v1.234.0 — shared CDN edge ranges BotScan must never ban (botscan_shared_edge.go).
+	sharedEdges         *sharedEdgeSet
+	sharedEdgesOnce     sync.Once
+	sharedEdgesWarnOnce sync.Once
 }
 
 // New creates a new bot guard module.
@@ -708,6 +713,29 @@ const (
 	botscanManualGreyTTLSec uint32 = 1 * 3600
 )
 
+// botscanRequestedTTLText renders the producer's requested duration for logs ("unknown" when
+// an older producer did not send it — never a fabricated value).
+func botscanRequestedTTLText(sig *BatchSignal) string {
+	if sig == nil || sig.RequestedTTLSec <= 0 {
+		return "unknown"
+	}
+	return fmt.Sprintf("%ds", sig.RequestedTTLSec)
+}
+
+// botscanSignalTTL returns the kernel timeout for a BotScan ban signal on the standalone
+// (BotGuard-disabled) path: the ESTABLISHED mapping, 3600 s for "grey" (the rule requested
+// <= 1800 s) and 86400 s for "ban". v1.234.0 keeps this mapping unchanged (owner ruling
+// 2026-09-30: preserve it unless deliberately changed) and only makes the rule's requested
+// duration visible beside it (BatchSignal.RequestedTTLSec, the ban log line, the evidence
+// side-record) — measured on a production host, a rule requesting 1800 s was enforced
+// for 3600 s with nothing on the host saying so.
+func botscanSignalTTL(sig *BatchSignal) uint32 {
+	if sig != nil && sig.Action == "grey" {
+		return botscanManualGreyTTLSec
+	}
+	return botscanManualBanTTLSec
+}
+
 // batchSignalConsumingSuffix is appended to the signal file to form the private, consumer-owned
 // hand-off file. Producers (nftban_botscan.sh) NEVER touch this path — only the daemon renames
 // the live signal file to it, processes it, and removes it.
@@ -960,6 +988,10 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	if sig.Action != "ban" && sig.Action != "grey" {
 		return false // only ban/grey actions enforce; allow_demote/extend are no-ops here
 	}
+	// v1.234.0 — a shared CDN edge is never banned (visible reason logged + counted).
+	if m.botscanSharedEdgeSkip(sig, ip) {
+		return false
+	}
 	// keep decision-cache observability consistent (harmless; never durable)
 	m.recordDecisionTransition(sig, ip)
 	// browser-like / static / e-shop / admin fan-out → never ban from class alone (fail-safe)
@@ -974,10 +1006,7 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	if ip.Is6() {
 		setName = botscanManualSetV6
 	}
-	ttlSec := botscanManualBanTTLSec
-	if sig.Action == "grey" {
-		ttlSec = botscanManualGreyTTLSec
-	}
+	ttlSec := botscanSignalTTL(sig)
 	reason := botscanProvenanceSrc
 	if len(sig.Reasons) > 0 {
 		reason = botscanProvenanceSrc + ":" + sig.Reasons[0]
@@ -999,7 +1028,9 @@ func (m *Module) applyBotscanBanSignal(sig *BatchSignal) bool {
 	m.stats.BanCount++
 	m.mu.Unlock()
 	if m.logger != nil {
-		m.logger.LogEvent("INFO", fmt.Sprintf("botscan ban → %s ip=%s ttl=%ds reason=%s", setName, ip, ttlSec, reason))
+		// v1.234.0: requested (the rule's documented BAN) beside effective (enforced).
+		m.logger.LogEvent("INFO", fmt.Sprintf("botscan ban → %s ip=%s ttl=%ds requested=%s reason=%s",
+			setName, ip, ttlSec, botscanRequestedTTLText(sig), reason))
 	}
 	return true
 }
@@ -1208,6 +1239,11 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	ip, err := netip.ParseAddr(sig.IP)
 	if err != nil {
 		log.Printf("[botguard] batch signal invalid IP %q: %v", sig.IP, err)
+		return
+	}
+
+	// v1.234.0 — a BotScan ban/grey of a shared CDN edge is never applied (BotGuard path).
+	if (sig.Action == "ban" || sig.Action == "grey") && m.botscanSharedEdgeSkip(sig, ip) {
 		return
 	}
 

@@ -159,8 +159,14 @@ printf '%s\n' "$out" | grep -qa 'mode=SURVIVAL' && ok "D SURVIVAL actually engag
 [[ "$D1" -lt "$D0" ]] && ok "D spool decreased under SURVIVAL ($((D0-D1)) B)" || no "D spool unchanged under SURVIVAL"
 
 echo "=== E — a KEPT reaper result must never abort the cycle ==="
-grep -q 'nftban_botscan_reap_consumed_spool "\$f" \\' "$CORE" && \
-  grep -A3 'nftban_botscan_reap_consumed_spool "\$f" \\' "$CORE" | grep -q '|| true' \
-  && ok "E the in-loop reap call is guarded (KEPT=1 is a normal outcome, not an abort)" \
-  || no "E the in-loop reap call is UNGUARDED — a KEPT object aborts the cycle under errexit"
+# v1.234.0: the per-object reap is DEFERRED until after the 404/endpoint tail (count before
+# cleanup, BUG-BOTSCAN-REAP-BEFORE-404-TAIL-BLINDS-DRAINED-SPOOL), so the call site now takes
+# the deferred object variable. The guarded-call property is unchanged and still asserted,
+# for EVERY process_logs reap call site: each unconditional call carries `|| true`, and at
+# least one such call must exist (an empty population is a FAIL, not a pass).
+_e_sites=$(grep -cE '^[[:space:]]+nftban_botscan_reap_consumed_spool "\$[A-Za-z_]+" \\$' "$CORE" || true)
+_e_guarded=$(grep -A3 -E '^[[:space:]]+nftban_botscan_reap_consumed_spool "\$[A-Za-z_]+" \\$' "$CORE" | grep -c '|| true' || true)
+[[ "${_e_sites:-0}" -ge 1 && "${_e_sites}" == "${_e_guarded}" ]] \
+  && ok "E the reap call is guarded (KEPT=1 is a normal outcome, not an abort) [${_e_sites} site(s)]" \
+  || no "E the reap call is UNGUARDED — a KEPT object aborts the cycle under errexit (sites=${_e_sites:-0} guarded=${_e_guarded:-0})"
 fin

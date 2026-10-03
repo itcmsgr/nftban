@@ -306,7 +306,9 @@ CONFIGURATION (/etc/nftban/)
 |  +-- whitelist.d/             # Whitelisted IPs (admin-managed)              |
 |  +-- feeds.d/                 # Threat feed definitions                      |
 |  +-- ports.d/                 # Port allow/deny rules                        |
-|  +-- patterns.d/              # Detection patterns                           |
+|  +-- patterns.d/              # Operator pattern files (BotScan: override.   |
+|  |                            #  local + own *.patterns; shipped rules are   |
+|  |                            #  /usr/lib/nftban/data/botscan_* as of 1.234) |
 |  +-- connectors/              # External connector configs                   |
 |  +-- distros/                 # Distribution-specific configs                |
 |  +-- suricata/                # Suricata rule files                          |

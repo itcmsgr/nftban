@@ -10,6 +10,17 @@
 #   url-any  = Match any HTTP response code
 #   url-post = Match POST requests only
 #   url-get  = Match GET requests only
+#   path-404|path-any|path-get|path-post = the regex sees the request PATH only
+#   distinct-404|distinct-any|distinct-get|distinct-post = each DISTINCT request
+#              target counts once per IP (probing/enumeration)
+#   useragent = Match the User-Agent
+#
+# This file is YOURS (v1.234+): packages never ship, replace or remove it.
+# The shipped rules live in /usr/lib/nftban/data/botscan_*.patterns and are
+# replaced on every upgrade. Do not copy them here: a record that reuses a
+# shipped NAME is ignored. To change a shipped rule, disable it with
+#   nftban botscan patterns disable NAME      (writes override.local)
+# and add your own record below under a new name.
 #
 # Example:
 # MY_PATTERN|malicious\.php|url-404|3|60|3600|true|My custom pattern

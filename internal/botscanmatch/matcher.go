@@ -36,6 +36,7 @@ import (
 	"bufio"
 	"io"
 	"regexp"
+	"regexp/syntax"
 )
 
 const minAnchorLen = 2 // shorter literal runs are too common to be a useful prefilter
@@ -138,59 +139,69 @@ func (m *Matcher) Filter(r io.Reader, w io.Writer) error {
 	return bw.Flush()
 }
 
-// longestLiteral returns the longest literal substring guaranteed to appear in every string
-// the ERE matches, and whether the whole pattern is that literal (no regex metachars at all).
-// Escaped metachars (\.) count as their literal char. Unescaped metachars break the run.
+// longestLiteral returns the longest literal substring REQUIRED in every string the ERE
+// matches, and whether the whole pattern is that literal (an AC hit is then a match).
+//
+// v1.234.0 — soundness fix. The previous scanner took the longest run of non-metachar bytes
+// anywhere in the pattern. That run is NOT required when it sits inside an alternation
+// branch or an optional group, and `\s`/`\d`/`\w` were read as the letters s/d/w. The AC
+// prefilter then dropped lines the RE2 pattern matches — a false negative in production:
+//
+//	/actuator/(env|...|configprops|...)   anchor "configprops" -> /actuator/env dropped
+//	(php|data|expect|...)://|=(https?|ftp)://...   EXP_RFI anchored on one branch
+//	\(\)\s*\{                              EXP_SHELLSHOCK anchored on "()s"
+//
+// Now the pattern is parsed (regexp/syntax, the same Perl syntax regexp.Compile uses) and
+// only literals that every match must contain are candidates: concatenation picks the
+// longest required child; capture and +/{n,} (n>=1) pass their child through; alternation,
+// ?, *, {0,} and character classes contribute nothing; case-folded literals contribute
+// nothing (the automaton is case-sensitive). A pattern with no required literal of at least
+// minAnchorLen runs its RE2 on every line (the "always" set) — never a false negative.
 func longestLiteral(ere string) (string, bool) {
-	var best, cur []byte
-	pure := true
-	flush := func() {
-		if len(cur) > len(best) {
-			best = append(best[:0:0], cur...)
-		}
-		cur = cur[:0]
+	re, err := syntax.Parse(ere, syntax.Perl)
+	if err != nil {
+		return "", false
 	}
-	i := 0
-	for i < len(ere) {
-		c := ere[i]
-		switch c {
-		case '\\':
-			if i+1 < len(ere) {
-				cur = append(cur, ere[i+1]) // \x → literal x (covers \. \/ \- etc.)
-				i += 2
+	pure := re.Op == syntax.OpLiteral && re.Flags&syntax.FoldCase == 0
+	return string(requiredLiteral(re)), pure
+}
+
+// requiredLiteral returns the longest literal that every match of re must contain.
+func requiredLiteral(re *syntax.Regexp) []rune {
+	switch re.Op {
+	case syntax.OpLiteral:
+		if re.Flags&syntax.FoldCase != 0 {
+			return nil
+		}
+		return re.Rune
+	case syntax.OpCapture, syntax.OpPlus:
+		return requiredLiteral(re.Sub[0])
+	case syntax.OpRepeat:
+		if re.Min >= 1 {
+			return requiredLiteral(re.Sub[0])
+		}
+		return nil
+	case syntax.OpConcat:
+		// Adjacent literal children are contiguous in every match: join runs of them, and
+		// keep the longest of those runs and of each child's own required literal.
+		var best, run []rune
+		for _, sub := range re.Sub {
+			if sub.Op == syntax.OpLiteral && sub.Flags&syntax.FoldCase == 0 {
+				run = append(run, sub.Rune...)
+				if len(run) > len(best) {
+					best = append(best[:0:0], run...)
+				}
 				continue
 			}
-			i++
-		case '[':
-			// char class: its contents are NOT a literal substring of matches — skip to ']'
-			pure = false
-			flush()
-			i++
-			if i < len(ere) && ere[i] == '^' {
-				i++
+			run = run[:0]
+			if r := requiredLiteral(sub); len(r) > len(best) {
+				best = append(best[:0:0], r...)
 			}
-			if i < len(ere) && ere[i] == ']' { // literal ']' as first class member
-				i++
-			}
-			for i < len(ere) && ere[i] != ']' {
-				if ere[i] == '\\' && i+1 < len(ere) {
-					i += 2
-				} else {
-					i++
-				}
-			}
-			if i < len(ere) {
-				i++ // consume ']'
-			}
-		case ']', '(', ')', '{', '}', '*', '+', '?', '|', '^', '$', '.':
-			pure = false
-			flush()
-			i++
-		default:
-			cur = append(cur, c)
-			i++
 		}
+		return best
+	default:
+		// OpAlternate, OpQuest, OpStar, char classes, anchors, empty, any-char: no literal
+		// is required of every match.
+		return nil
 	}
-	flush()
-	return string(best), pure
 }

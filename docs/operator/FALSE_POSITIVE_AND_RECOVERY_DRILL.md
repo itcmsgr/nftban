@@ -40,9 +40,11 @@ Prefer per-IP recovery with evidence. **Do not** bulk-flush `blacklist_manual_*`
 
 If a pattern is systematically false-positive, narrow it (mirror the EXP_REVSLIDER / EXP_RFI fixes): anchor to exploit-specific tokens, add an **asset-negative fixture** (a real legit URL that must NOT match) and an **exploit-positive fixture** (a probe that must match). Ship it as a pattern-data hotfix. Generalized pattern-quality CI lint + `nftban botscan test-url <url>` land in v1.222.0.
 
-## 5. RPM config-drift caveat
+## 5. Local pattern changes and upgrades (as of v1.234.0)
 
-If you ever hand-edit `patterns.d/botscan/*` on an RPM host, `%config(noreplace)` will make future **packaged** pattern security fixes silently skip that host. Verify with `rpm -V nftban-core`; reconcile from the packaged file. (Tracked: `OPEN_RPM_PATTERN_CONFIG_DRIFT_RECONCILE_GUARD`.)
+The shipped rules live in `/usr/lib/nftban/data/botscan_*.patterns` and are replaced on every upgrade; do not edit them. Disable a rule with `nftban botscan patterns disable NAME` (writes `/etc/nftban/patterns.d/botscan/override.local`) and add your own records under new names (`nftban botscan patterns add …` writes `custom.patterns`). A record that reuses a shipped name is ignored and reported.
+
+Before v1.234.0 the rules were package config under `/etc`: on RPM a hand-edited file kept the old rules over every fix (`.rpmnew`); on DEB local edits were overwritten. The v1.234.0 upgrade migrates those edits once: enable/disable decisions go to `override.local`, records you added are kept in `local-migrated.patterns`, and edited definitions of shipped rules are **not** re-applied (they are listed in `/var/lib/nftban/botscan/pattern-migration.report`). `nftban botscan status` shows stale and migrated files.
 
 ## Standing gate: FALSE_POSITIVE_AND_RECOVERY_DRILL
 

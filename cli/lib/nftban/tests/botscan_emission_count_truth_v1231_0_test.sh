@@ -35,6 +35,9 @@
 # meta:ta.requires_package="false"
 # =============================================================================
 set -Eeuo pipefail
+# v1.234.0: shipped rules now load from <lib>/data in addition to BOTSCAN_PATTERNS_DIR;
+# this test supplies its OWN isolated record set, so the shipped set is switched off.
+export BOTSCAN_SHIPPED_PATTERNS_DIR=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -115,6 +118,10 @@ sigcount() { local n; n="$(grep -c '' "$SIGFILE" 2>/dev/null)" || n=0
 # shellcheck source=/dev/null
 source "$NFTBAN_LIB_DIR/core/nftban_botscan.sh"
 nftban_botscan_load_config
+# v1.234.0: pattern evidence is placed in REQUEST time (the line's own %t) and must be
+# within the evidence horizon of "now"; this fixed-date fixture is correctly OLD against the
+# real wall clock, so "now" is pinned just after it. Same property, correct semantics.
+nftban_timestamp_unix() { echo 1789552860; }   # 16/Sep/2026:10:01:00 +0000
 
 echo "=== v1.231.0 P0-B BotScan emission-count truth (behavioral) ==="
 
