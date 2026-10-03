@@ -85,6 +85,10 @@ grep -q 'nftban_botscan_migrate_legacy_patterns' "$REPO_ROOT/packaging/deb/posti
 # lab4 2026-10-03: on an rpm UPGRADE the post scriptlet runs before the old package's
 # files are erased, so an edited custom.patterns became .rpmsave only AFTER the migration
 # and was lost. The migration must also run in the posttrans section (after the erase).
+# rpm accepts ONE posttrans per package ("Second %posttrans" fails rpmbuild): the
+# migration must live in THE posttrans, shared with the immutable-flag restore (#1439).
+n_posttrans="$(grep -cE '^%posttrans([[:space:]]|$)' <<<"$code" || true)"
+[[ "$n_posttrans" -eq 1 ]] && ok "P1 RPM spec has exactly one posttrans section" || bad "P1 RPM spec has $n_posttrans posttrans sections (rpmbuild needs exactly one)"
 posttrans_body="$(awk '/^%posttrans([[:space:]]|$)/ { inside = 1; next } inside && /^%[a-z]/ { inside = 0 } inside' <<<"$code")"
 if [[ -n "$posttrans_body" ]] && grep -q 'nftban_botscan_migrate_legacy_patterns' <<<"$posttrans_body"; then
     ok "P1 RPM posttrans runs the migration (after rpm renames edited files to .rpmsave)"
