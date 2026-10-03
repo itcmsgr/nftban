@@ -1779,6 +1779,8 @@ done
 # v1.234.0 BotScan patterns: restore/seed custom.patterns and migrate pre-v1.234 edited
 # rule files ONCE (rpm renamed a locally edited former config-noreplace file to *.rpmsave
 # when this package stopped owning it). Twin of packaging/deb/postinst. Never fails.
+# On an upgrade this pass can run before rpm erases the old files; the posttrans
+# scriptlet below repeats it after the erase.
 if [ -f /usr/lib/nftban/core/nftban_botscan.sh ]; then
     NFTBAN_LIB_DIR=/usr/lib/nftban bash -c 'source /usr/lib/nftban/core/nftban_botscan.sh >/dev/null 2>&1 && nftban_botscan_migrate_legacy_patterns' 2>/dev/null || true
 fi
@@ -2029,6 +2031,20 @@ if [ \$1 -eq 0 ]; then
     echo "[NFTBan] To restore NFTBan protection, reinstall/start NFTBan and validate the rebuilt firewall policy."
     echo "[NFTBan] User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
 fi
+
+%posttrans
+# v1.234.0 BotScan patterns, second pass. On an rpm UPGRADE the new package's post
+# scriptlet runs BEFORE the old package's files are erased: an operator-edited
+# custom.patterns still exists then (restore skipped), and only afterwards does rpm
+# rename it to custom.patterns.rpmsave, after which nothing ran. Measured on lab4,
+# 1.233.1 -> 1.233.91 el9: custom.patterns lost (left as .rpmsave, MY_LOCAL not loaded).
+# This scriptlet runs after the erase and repeats the same idempotent migration
+# (restore when absent, never overwrite override.local, each legacy file renamed once).
+# Never fails.
+if [ -f /usr/lib/nftban/core/nftban_botscan.sh ]; then
+    NFTBAN_LIB_DIR=/usr/lib/nftban bash -c 'source /usr/lib/nftban/core/nftban_botscan.sh >/dev/null 2>&1 && nftban_botscan_migrate_legacy_patterns' 2>/dev/null || true
+fi
+exit 0
 
 %files
 # MFST-C0a: directory ownership comes from generator (build/fhs-spec.yaml -> nftban-files.inc).

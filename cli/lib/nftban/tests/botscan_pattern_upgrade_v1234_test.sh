@@ -82,6 +82,13 @@ n_tpl="$(grep -cE 'templates/patterns\.d/botscan/custom\.patterns' <<<"$code" ||
 [[ "$n_tpl" -ge 3 ]] && ok "P1 custom.patterns ships as a template on both families ($n_tpl refs)" || bad "P1 custom.patterns template missing ($n_tpl refs)"
 grep -q 'nftban_botscan_migrate_legacy_patterns' <<<"$code" && ok "P1 RPM %post runs the migration" || bad "P1 RPM %post does not run the migration"
 grep -q 'nftban_botscan_migrate_legacy_patterns' "$REPO_ROOT/packaging/deb/postinst" && ok "P1 DEB postinst runs the migration" || bad "P1 DEB postinst does not run the migration"
+# lab4 2026-10-03: on an rpm UPGRADE the post scriptlet runs before the old package's
+# files are erased, so an edited custom.patterns became .rpmsave only AFTER the migration
+# and was lost. The migration must also run in the posttrans section (after the erase).
+posttrans_body="$(awk '/^%posttrans([[:space:]]|$)/ { inside = 1; next } inside && /^%[a-z]/ { inside = 0 } inside' <<<"$code")"
+if [[ -n "$posttrans_body" ]] && grep -q 'nftban_botscan_migrate_legacy_patterns' <<<"$posttrans_body"; then
+    ok "P1 RPM posttrans runs the migration (after rpm renames edited files to .rpmsave)"
+else bad "P1 RPM posttrans does not run the migration: an upgrade loses an edited custom.patterns"; fi
 # DEB conffiles generator: every `find ... -name` it uses selects only *.conf / *.yaml / *.yml
 gen="$(awk '/v1.227 MAIL-F8: GENERATE the DEB conffiles/,/DEBIAN\/conffiles"/' "$SPEC")"
 names="$(grep -oE "\-name '[^']+'" <<<"$gen" | grep -v '! -name' | sort -u | tr '\n' ' ')"
