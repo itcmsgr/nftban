@@ -331,12 +331,28 @@ uninstall_binaries() {
     log "Removing binaries..."
 
     # ==========================================================================
-    # SECURITY: Remove immutable flag before deletion
+    # v1.234 (PR #1439): remove ONLY immutable flags NFTBan can PROVE it set
+    # (shared library: ownership record or pre-v1.234 installer.log proof).
+    # An administrator's flag is never removed; what it keeps is reported below.
     # ==========================================================================
-    # Remove immutable flag from nft_schema.sh to allow deletion
-    if [[ -f /usr/lib/nftban/lib/nft_schema.sh ]]; then
-        chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
-        ok "Security: Removed immutable flag from nft_schema.sh"
+    local immut_lib=""
+    for immut_lib in /usr/lib/nftban/lib/nftban_immutable_owned.sh \
+                     "$(dirname "${BASH_SOURCE[0]}")/cli/lib/nftban/lib/nftban_immutable_owned.sh"; do
+        [[ -r "$immut_lib" ]] && break
+        immut_lib=""
+    done
+    if [[ -n "$immut_lib" ]]; then
+        # shellcheck source=cli/lib/nftban/lib/nftban_immutable_owned.sh
+        . "$immut_lib"
+        local st p
+        while read -r st p; do
+            case "$st" in
+                UNLOCKED)   ok "Removed NFTBan's own immutable protection: $p" ;;
+                NOT_PROVEN) warn "Immutable flag on $p is not provably NFTBan's - left in place (its administrator decides)" ;;
+            esac
+        done < <(nftban_immut_unlock_owned)
+    else
+        warn "Immutable-ownership library not found - no immutable flag is removed"
     fi
 
     local removed=0
@@ -359,6 +375,18 @@ uninstall_binaries() {
         ok "Removed $removed binary/library location(s)"
     else
         ok "No binaries found"
+    fi
+    # v1.234: no false success — report what immutable/append-only flags kept.
+    local left=""
+    for binary in "${binaries[@]}"; do
+        [[ -e "$binary" ]] || continue
+        # -d is NOT combined with -R (lsattr would not descend)
+        left+=$( { lsattr -d "$binary"; lsattr -Ra "$binary"; } 2>/dev/null | awk '$1 !~ /[\/:]/ && $1 ~ /[ia]/ && $2 !~ /\/\.\.?$/ {print "    " $2}')$'\n'
+        [[ -e "$binary" ]] && warn "Removal INCOMPLETE: $binary still exists"
+    done
+    if [[ -n "${left//[$'\n']/}" ]]; then
+        warn "These paths carry an immutable/append-only flag NFTBan did not set and were left in place:"
+        printf '%s' "$left" | sed '/^$/d'
     fi
 }
 

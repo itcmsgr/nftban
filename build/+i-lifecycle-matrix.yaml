@@ -16,11 +16,30 @@
 #   2. packaging/build_nftban.sh         %pretrans + %preun
 #   3. packaging/deb/preinst, postinst, prerm
 #   4. cli/lib/nftban/cli/cmd_update_helpers.sh::_remove_immutable_flags
-#      (broad sweep — covers any future addition; "covered_by_sweep")
 #
-# Re-application authority: Go SetImmutableFlags is the ONLY direct +i
-# applier. RPM %post and DEB postinst never re-apply +i directly (strip-only
-# design). Item 2's gate verifies this symmetric design holds.
+# v1.234 (PR #1439): BEING LISTED HERE IS NOT OWNERSHIP. These are the files
+# NFTBan applies its +i policy to (candidates). Every strip and every restore,
+# in every hook above and in the CLI, goes through ONE implementation,
+# cli/lib/nftban/lib/nftban_immutable_owned.sh (nftban_immut_unlock_owned /
+# nftban_immut_relock_owned / nftban_immut_txn_restore), which acts only on a
+# flag whose ownership is PROVEN: an entry in /var/lib/nftban/state/immutable-owned
+# (written by Go SetImmutableFlags and by the library itself) matching the file's
+# current inode AND ctime, or for pre-v1.234 flags an installer.log
+# "set immutable" line at the file's ctime. A flag NFTBan cannot prove it set is
+# administrator-owned: never removed, never restored; the shared preflight refuses
+# the operation instead and names the path. The library's candidate list is
+# pinned to this file by update_fs_restriction_preflight_v1234_test.sh (T9).
+#
+# Re-application authority: Go SetImmutableFlags is the only applier of the +i
+# POLICY (and the only writer of new "locked" ownership records). The package
+# scripts and the CLI only RESTORE a flag they can prove NFTBan removed or set:
+#   - CLI / DEB postinst / RPM posttrans: nftban_immut_relock_owned re-locks a
+#     file whose record says NFTBan unlocked it and whose inode+ctime have not
+#     changed since;
+#   - RPM posttrans: nftban_immut_txn_restore re-locks a file whose record says
+#     NFTBan set +i during THIS transaction (after this package's pretrans
+#     marker) on the same inode — the repair for the old (<= v1.233.x) preun
+#     that strips +i after the new package's installer set it.
 #
 # Audit refs:
 #   - V107_PRETRANS_NFTBAN_CONF_SCOPE.md (the v1.107.2 hotfix scope)
@@ -37,8 +56,8 @@ reapplication_authority: go_set_immutable_flags
 # Hook values:
 #   required                — gate FAILs if scriptlet does not strip this file
 #   not_required            — explicitly waived (gate accepts absence)
-#   covered_by_sweep        — covered by directory-level recursive sweep
-#   covered_by_dir_recursion — covered by uninstall artifacts.go chattr -R -i
+#   covered_by_sweep        — (retired v1.234: the CLI no longer sweeps)
+#   covered_by_proven_unlock — uninstall artifacts.go unlocks it only when ownership is proven (internal/installer/immutable); never recursive
 protected_files:
   - path: /etc/nftban/nftban.conf
     go_set_apply: required
@@ -47,8 +66,8 @@ protected_files:
     deb_preinst: required
     deb_postinst: required
     deb_prerm: required
-    cli_remove_helper: covered_by_sweep
-    go_uninstall_artifacts: covered_by_dir_recursion
+    cli_remove_helper: covered_by_proven_unlock
+    go_uninstall_artifacts: covered_by_proven_unlock
 
   - path: /usr/lib/nftban/lib/nft_schema.sh
     go_set_apply: required
@@ -57,5 +76,5 @@ protected_files:
     deb_preinst: required
     deb_postinst: required
     deb_prerm: required
-    cli_remove_helper: covered_by_sweep
-    go_uninstall_artifacts: covered_by_dir_recursion
+    cli_remove_helper: covered_by_proven_unlock
+    go_uninstall_artifacts: covered_by_proven_unlock

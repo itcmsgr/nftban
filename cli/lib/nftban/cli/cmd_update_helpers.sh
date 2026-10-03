@@ -431,106 +431,120 @@ _fix_broken_dpkg() {
     return 0
 }
 
-_remove_immutable_flags() {
-    # Remove immutable (chattr +i) flags from ALL nftban files
-    # This is needed before any install/update/rollback can modify files
-    # Safe to call even if no immutable flags are set
+# =============================================================================
+# Filesystem-restriction handling for update / repair / rollback (v1.234)
+# =============================================================================
+# BUG-UPDATE-STRIPS-ADMIN-IMMUTABLE-FLAGS / BUG-UPDATE-OWNED-FLAGS-NOT-RELOCKED.
+# Before v1.234 this helper ran `chattr -i` on EVERY file under /usr/lib/nftban,
+# /etc/nftban and /usr/sbin/nftban, silently removing flags an administrator or
+# vendor had set, and nothing re-applied NFTBan's own flags when no package
+# transaction ran.
+#
+# Contract (PR #1439 acceptance): one implementation, shared with the package
+# scripts — cli/lib/nftban/lib/nftban_immutable_owned.sh:
+#   1. Preflight over every package destination BEFORE any change (and before
+#      `nftban update` inhibits timers or touches the daemon): IMMUTABLE,
+#      APPEND-ONLY, READ-ONLY or WRITE-DENIED, each with the exact path.
+#   2. NFTBan removes only flags whose ownership is PROVEN (record entry matched
+#      by inode+ctime, or a pre-v1.234 installer.log 'set immutable' line at the
+#      file's ctime). Unproven flags are administrator-owned: refused, never cleared.
+#   3. _restore_owned_immutable_flags puts back exactly what this run removed.
+_NFTBAN_IMMUT_LIB="${BASH_SOURCE[0]%/*}/../lib/nftban_immutable_owned.sh"
+if [[ -r "$_NFTBAN_IMMUT_LIB" ]]; then
+    # shellcheck source=cli/lib/nftban/lib/nftban_immutable_owned.sh
+    . "$_NFTBAN_IMMUT_LIB"
+fi
 
-    _update_log INFO "Removing immutable flags from nftban files..."
+# Payload paths the next operation will create, replace or delete.
+# Args: [SOURCE] — a .deb / .rpm package file or a .tar.gz backup.
+_update_payload_paths() {
+    local src="${1:-}"
+    {
+        if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W nftban-core >/dev/null 2>&1; then
+            dpkg-query -L nftban-core
+        elif command -v rpm >/dev/null 2>&1 && rpm -q nftban-core >/dev/null 2>&1; then
+            rpm -ql nftban-core
+        fi
+        if [[ -n "$src" && -f "$src" ]]; then
+            case "$src" in
+                *.deb) dpkg-deb -c "$src" | awk '{print $6}' ;;
+                *.rpm) rpm -qlp "$src" ;;
+                *.tar.gz|*.tgz) tar -tzf "$src" ;;
+            esac
+        fi
+        if declare -F _nftban_immut_fixed_dirs >/dev/null; then _nftban_immut_fixed_dirs; fi
+    } 2>/dev/null | grep -v ' ' | sed -e 's#^\./#/#' -e 's#^\([^/]\)#/\1#' -e 's#/$##' -e '/^\/\.$/d' | grep -E '^/.+' | sort -u || true
+}
 
-    # Locate chattr binary (may not be in minimal PATH during package operations)
-    local chattr_bin
-    chattr_bin=$(command -v chattr 2>/dev/null || echo "")
-    if [[ -z "$chattr_bin" ]]; then
-        for p in /usr/bin/chattr /bin/chattr /sbin/chattr /usr/sbin/chattr; do
-            [[ -x "$p" ]] && chattr_bin="$p" && break || true
-        done
-    fi
+_update_installed_conffiles() {
+    {
+        if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W nftban-core >/dev/null 2>&1; then
+            dpkg-query -W -f='${Conffiles}\n' nftban-core | awk 'NF{print $1}'
+        elif command -v rpm >/dev/null 2>&1 && rpm -q nftban-core >/dev/null 2>&1; then
+            rpm -qc nftban-core
+        fi
+    } 2>/dev/null || true
+}
 
-    if [[ -z "$chattr_bin" ]]; then
-        _update_log WARN "chattr not found - cannot remove immutable flags"
+# Read-only preflight. Args: [SOURCE]. Returns 0 = proceed, 1 = refused.
+_update_fs_restriction_preflight() {
+    local src="${1:-}" conff out rc=0 line
+    if ! declare -F nftban_fs_preflight >/dev/null; then
+        _update_log WARN "Filesystem restriction preflight UNMEASURED (library missing: $_NFTBAN_IMMUT_LIB)"
         return 0
     fi
-
-    # Locate lsattr binary
-    local lsattr_bin
-    lsattr_bin=$(command -v lsattr 2>/dev/null || echo "")
-    [[ -z "$lsattr_bin" ]] && for p in /usr/bin/lsattr /bin/lsattr; do
-        [[ -x "$p" ]] && lsattr_bin="$p" && break || true
-    done
-
-    # Critical file that is known to be immutable
-    local schema="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh"
-
-    # Helper to check if file has immutable flag
-    _has_immutable() {
-        local file="$1"
-        [[ -z "$lsattr_bin" ]] && return 1
-        [[ ! -f "$file" ]] && return 1
-        # lsattr output: "----i--------e-- /path/to/file"
-        # The 'i' at position 5 indicates immutable
-        local attrs
-        attrs=$("$lsattr_bin" "$file" 2>/dev/null | awk '{print $1}') || return 1
-        [[ "${attrs:4:1}" == "i" ]]
-    }
-
-    # Remove immutable flag from the critical file first (most common failure point)
-    if [[ -f "$schema" ]] && _has_immutable "$schema"; then
-        local err
-        if ! err=$("$chattr_bin" -i "$schema" 2>&1); then
-            _update_log WARN "chattr -i failed on $schema: $err"
-        fi
+    conff=$(mktemp) || { _update_log WARN "Filesystem restriction preflight UNMEASURED (mktemp failed)"; return 0; }
+    _update_installed_conffiles > "$conff"
+    out=$(_update_payload_paths "$src" | nftban_fs_preflight "$conff") || rc=$?
+    rm -f "$conff"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in
+            BLOCKED*)    _update_log ERROR "  ${line#BLOCKED }" ;;
+            WARN*)       _update_log WARN "Filesystem restriction: ${line#WARN }" ;;
+            UNMEASURED*) _update_log WARN "Filesystem restriction preflight UNMEASURED (not proof of no restriction): ${line#UNMEASURED }" ;;
+        esac
+    done <<< "$out"
+    if (( rc != 0 )); then
+        _update_log ERROR "Refusing before any change: the NFTBan package path(s) above cannot be modified."
+        while IFS= read -r line; do
+            _update_log INFO "${line#nftban: }"
+        done < <(nftban_fs_preflight_report 2>&1)
+        return 1
     fi
+    return 0
+}
 
-    local dirs_to_check=(
-        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-        "/usr/sbin/nftban"
-        "${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-    )
+_remove_immutable_flags() {
+    # Args: [SOURCE] — package file or backup the caller is about to apply.
+    # Returns 1 (and changes nothing) when the preflight refuses; 0 otherwise.
+    _update_log INFO "Checking NFTBan package paths for immutable/read-only/permission restrictions..."
+    _update_fs_restriction_preflight "${1:-}" || return 1
+    declare -F nftban_immut_unlock_owned >/dev/null || return 0
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            UNLOCKED*)   _update_log OK "Temporarily unlocked NFTBan-owned file: ${line#UNLOCKED }" ;;
+            NOT_PROVEN*) _update_log WARN "Immutable flag left in place (ownership not provable): ${line#NOT_PROVEN }" ;;
+        esac
+    done < <(nftban_immut_unlock_owned)
+    return 0
+}
 
-    for path in "${dirs_to_check[@]}"; do
-        if [[ -e "$path" ]]; then
-            if [[ -d "$path" ]]; then
-                # Use find to locate immutable files and remove flag individually
-                # This is more reliable than -R which can fail silently
-                if [[ -n "$lsattr_bin" ]]; then
-                    while IFS= read -r -d '' file; do
-                        "$chattr_bin" -i "$file" 2>/dev/null || true
-                    done < <(find "$path" -type f -print0 2>/dev/null)
-                else
-                    # Fallback: brute-force recursive removal
-                    "$chattr_bin" -i -R "$path" 2>/dev/null || true
-                fi
-            else
-                "$chattr_bin" -i "$path" 2>/dev/null || true
-            fi
-        fi
-    done
-
-    # Verify the critical file is no longer immutable
-    if [[ -f "$schema" ]]; then
-        if _has_immutable "$schema"; then
-            _update_log WARN "Immutable flag on nft_schema.sh persists, retrying with verbose..."
-            # Final attempt - show actual error
-            local err
-            err=$("$chattr_bin" -i "$schema" 2>&1) || true
-            [[ -n "$err" ]] && _update_log WARN "chattr output: $err"
-
-            if _has_immutable "$schema"; then
-                _update_log ERROR "Cannot remove immutable flag from $schema"
-                _update_log ERROR "Possible causes:"
-                _update_log ERROR "  - Filesystem doesn't support extended attributes"
-                _update_log ERROR "  - File is on a read-only mount"
-                _update_log ERROR "  - SELinux/AppArmor policy blocking"
-                _update_log ERROR "Run manually: chattr -i $schema"
-                # Don't fail - let dpkg try anyway, it might work
-                return 0
-            fi
-        fi
-        _update_log OK "Immutable flags cleared"
-    else
-        _update_log INFO "No immutable files found"
-    fi
+# Put back exactly the NFTBan-owned +i flags removed earlier (record-proven: same
+# inode and ctime as when NFTBan removed them). Idempotent; never adds a new flag.
+_restore_owned_immutable_flags() {
+    declare -F nftban_immut_relock_owned >/dev/null || return 0
+    local line
+    local rc=0
+    while IFS= read -r line; do
+        case "$line" in
+            RELOCKED*)      _update_log OK "Re-applied NFTBan's immutable protection: ${line#RELOCKED }" ;;
+            RELOCK_FAILED*) _update_log ERROR "Could NOT re-apply NFTBan's immutable protection on ${line#RELOCK_FAILED } (chattr +i failed) — the file is unprotected; re-apply it: chattr +i ${line#RELOCK_FAILED }"; rc=1 ;;
+            NOT_RELOCKED*)  _update_log WARN "NFTBan unlocked ${line#NOT_RELOCKED } but the file changed since; protection not re-applied automatically — verify the file, then: chattr +i ${line#NOT_RELOCKED }"; rc=1 ;;
+        esac
+    done < <(nftban_immut_relock_owned)
+    return $rc
 }
 
 _load_config() {

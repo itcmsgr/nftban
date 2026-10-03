@@ -56,7 +56,11 @@ fi
 # CHECK DEPENDENCIES
 # =============================================================================
 
-if ! command -v yq &>/dev/null; then
+# v1.234 (PR #1439): use the BUNDLED yq when installed; never depend on a
+# /usr/bin/yq link or a different system yq. PATH yq only for repo/dev use.
+YQ_BIN="${NFTBAN_YQ:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq}"
+[[ -x "$YQ_BIN" ]] || YQ_BIN=$(command -v yq 2>/dev/null || true)
+if [[ -z "$YQ_BIN" ]]; then
     echo "ERROR: yq is required for YAML parsing" >&2
     exit 1
 fi
@@ -141,7 +145,7 @@ is_auditor_visible() {
 
     # Check if auditor is in audience array
     local audience
-    audience=$(yq -r ".\"$cmd\".audience[]?" "$REGISTRY" 2>/dev/null || echo "")
+    audience=$("$YQ_BIN" -r ".\"$cmd\".audience[]?" "$REGISTRY" 2>/dev/null || echo "")
 
     echo "$audience" | grep -q "auditor"
 }
@@ -158,7 +162,7 @@ generate_auditor_group() {
 
     # Get ALL commands for this category
     local all_commands
-    all_commands=$(yq -r "
+    all_commands=$("$YQ_BIN" -r "
         to_entries |
         map(select(.key != \"_metadata\" and .value.category == \"$category\")) |
         map(.key) |
@@ -188,8 +192,8 @@ EOF
 
     for cmd in "${auditor_commands[@]}"; do
         local desc has_json
-        desc=$(yq -r ".\"$cmd\".description" "$REGISTRY")
-        has_json=$(yq -r ".\"$cmd\".has_json" "$REGISTRY")
+        desc=$("$YQ_BIN" -r ".\"$cmd\".description" "$REGISTRY")
+        has_json=$("$YQ_BIN" -r ".\"$cmd\".has_json" "$REGISTRY")
 
         local json_icon
         [[ "$has_json" == "true" ]] && json_icon="✅" || json_icon="❌"
@@ -204,11 +208,11 @@ EOF
     # Generate detailed documentation
     for cmd in "${auditor_commands[@]}"; do
         local desc has_json examples
-        desc=$(yq -r ".\"$cmd\".description" "$REGISTRY")
-        has_json=$(yq -r ".\"$cmd\".has_json" "$REGISTRY")
+        desc=$("$YQ_BIN" -r ".\"$cmd\".description" "$REGISTRY")
+        has_json=$("$YQ_BIN" -r ".\"$cmd\".has_json" "$REGISTRY")
 
         # Get examples array
-        examples=$(yq -r ".\"$cmd\".examples[]?" "$REGISTRY" 2>/dev/null || echo "")
+        examples=$("$YQ_BIN" -r ".\"$cmd\".examples[]?" "$REGISTRY" 2>/dev/null || echo "")
 
         cat <<EOF
 
