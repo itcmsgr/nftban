@@ -61,7 +61,11 @@ fi
 # CHECK DEPENDENCIES
 # =============================================================================
 
-if ! command -v yq &>/dev/null; then
+# v1.234 (PR #1439): use the BUNDLED yq when installed; never depend on a
+# /usr/bin/yq link or a different system yq. PATH yq only for repo/dev use.
+YQ_BIN="${NFTBAN_YQ:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq}"
+[[ -x "$YQ_BIN" ]] || YQ_BIN=$(command -v yq 2>/dev/null || true)
+if [[ -z "$YQ_BIN" ]]; then
     echo "ERROR: yq is required for YAML parsing" >&2
     echo "Install: pip install yq  OR  brew install yq" >&2
     exit 1
@@ -160,7 +164,7 @@ generate_task_group() {
 
     # Get commands for this category
     local commands
-    commands=$(yq -r "
+    commands=$("$YQ_BIN" -r "
         to_entries |
         map(select(.key != \"_metadata\" and .value.category == \"$category\")) |
         map(.key) |
@@ -182,10 +186,10 @@ EOF
 
     for cmd in $commands; do
         local desc risk has_json dry_run
-        desc=$(yq -r ".\"$cmd\".description" "$REGISTRY")
-        risk=$(yq -r ".\"$cmd\".risk" "$REGISTRY")
-        has_json=$(yq -r ".\"$cmd\".has_json" "$REGISTRY")
-        dry_run=$(yq -r ".\"$cmd\".supports_dry_run" "$REGISTRY")
+        desc=$("$YQ_BIN" -r ".\"$cmd\".description" "$REGISTRY")
+        risk=$("$YQ_BIN" -r ".\"$cmd\".risk" "$REGISTRY")
+        has_json=$("$YQ_BIN" -r ".\"$cmd\".has_json" "$REGISTRY")
+        dry_run=$("$YQ_BIN" -r ".\"$cmd\".supports_dry_run" "$REGISTRY")
 
         # Format icons
         local risk_icon
@@ -212,13 +216,13 @@ EOF
     # Generate detailed documentation for each command
     for cmd in $commands; do
         local desc risk has_json examples mutates
-        desc=$(yq -r ".\"$cmd\".description" "$REGISTRY")
-        risk=$(yq -r ".\"$cmd\".risk" "$REGISTRY")
-        has_json=$(yq -r ".\"$cmd\".has_json" "$REGISTRY")
-        mutates=$(yq -r ".\"$cmd\".mutates" "$REGISTRY")
+        desc=$("$YQ_BIN" -r ".\"$cmd\".description" "$REGISTRY")
+        risk=$("$YQ_BIN" -r ".\"$cmd\".risk" "$REGISTRY")
+        has_json=$("$YQ_BIN" -r ".\"$cmd\".has_json" "$REGISTRY")
+        mutates=$("$YQ_BIN" -r ".\"$cmd\".mutates" "$REGISTRY")
 
         # Get examples array
-        examples=$(yq -r ".\"$cmd\".examples[]?" "$REGISTRY" 2>/dev/null || echo "")
+        examples=$("$YQ_BIN" -r ".\"$cmd\".examples[]?" "$REGISTRY" 2>/dev/null || echo "")
 
         cat <<EOF
 
@@ -243,7 +247,7 @@ EOF
 
         # Add subcommands if present
         local subcommands
-        subcommands=$(yq -r ".\"$cmd\".subcommands // empty | if type == \"array\" then .[] else keys[] end" "$REGISTRY" 2>/dev/null || true)
+        subcommands=$("$YQ_BIN" -r ".\"$cmd\".subcommands // empty | if type == \"array\" then .[] else keys[] end" "$REGISTRY" 2>/dev/null || true)
 
         if [[ -n "$subcommands" ]]; then
             echo "**Subcommands:**"

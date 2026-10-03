@@ -214,6 +214,11 @@ region_has_chattr_strip() {
     in_region {
         if (index($0, "chattr -i")) has_chattr=1
         if (index($0, PATH_TO_FIND)) has_path=1
+        # v1.234 (PR #1439): the proven-ownership primitive strips every candidate
+        # (its candidate list is pinned to the matrix yaml by
+        # update_fs_restriction_preflight_v1234_test.sh T8) — only flags NFTBan can
+        # prove it set. Accept it as the hook strip.
+        if (index($0, "nftban_immut_unlock_owned")) { has_chattr=1; has_path=1 }
     }
     END { exit (has_chattr && has_path) ? 0 : 1 }
     ' "$script"
@@ -226,6 +231,7 @@ region_has_chattr_strip() {
 file_has_chattr_strip() {
     local script="$1" path="$2"
     [[ -r "$script" ]] || return 1
+    grep -qF "nftban_immut_unlock_owned" "$script" && return 0
     grep -qF "chattr -i" "$script" || return 1
     grep -qF "$path" "$script"
 }

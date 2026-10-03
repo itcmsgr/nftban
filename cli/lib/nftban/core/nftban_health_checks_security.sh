@@ -1616,7 +1616,7 @@ nftban_health_check_immutable_flags() {
         # token), e.g. "----i---------e----- /etc/nftban/nftban.conf".
         attr_field=${lsattr_out%%[[:space:]]*}
         if [[ "$attr_field" != *i* ]]; then
-            NFTBAN_HEALTH_WARNINGS+=("Immutable flag missing on security-critical file: ${f} — restore tamper-resistance with 'chattr +i ${f}' (or re-run 'nftban update --repair')")
+            NFTBAN_HEALTH_WARNINGS+=("Immutable flag missing on security-critical file: ${f} — restore tamper-resistance with 'chattr +i ${f}'")
             status=$HEALTH_WARNING
         fi
     done

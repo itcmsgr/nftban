@@ -215,22 +215,25 @@ nftban_health_check_registry() {
                 status=$HEALTH_ERROR
             fi
 
-            # Check YAML validity if yq available
-            if command -v yq &>/dev/null; then
-                if ! yq -r '._metadata.version' "$registry" >/dev/null 2>&1; then
+            # Check YAML validity with the BUNDLED yq (v1.234: never depend on a
+            # /usr/bin/yq link or a different system yq)
+            local yq_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq"
+            [[ -x "$yq_bin" ]] || yq_bin=$(command -v yq 2>/dev/null || true)
+            if [[ -n "$yq_bin" ]]; then
+                if ! "$yq_bin" -r '._metadata.version' "$registry" >/dev/null 2>&1; then
                     registry_issues+=("Registry has invalid YAML syntax")
                     status=$HEALTH_ERROR
                 else
                     # Verify metadata
                     local total_commands
-                    total_commands=$(yq -r '._metadata.total_commands // 0' "$registry" 2>/dev/null)
+                    total_commands=$("$yq_bin" -r '._metadata.total_commands // 0' "$registry" 2>/dev/null)
                     if [[ $total_commands -lt 40 ]]; then
                         registry_issues+=("Registry appears incomplete: only $total_commands commands (expected 45+)")
                         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
                     fi
                 fi
             else
-                registry_issues+=("yq not installed - cannot validate YAML (install: pip install yq)")
+                registry_issues+=("bundled yq missing (${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/yq) - cannot validate YAML; reinstall the nftban package")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         fi

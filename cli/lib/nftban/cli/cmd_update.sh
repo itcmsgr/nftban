@@ -574,6 +574,16 @@ _cmd_update_main_locked() {
     echo "  Source:        $source"
     echo ""
 
+    # v1.234 (PR #1439): filesystem-restriction preflight BEFORE any change —
+    # before the backup, before cadence timers are inhibited, before the daemon
+    # or any file is touched. Covers the installed payload and every destination
+    # directory; the incoming package is checked again after download.
+    if ! _update_fs_restriction_preflight; then
+        _forensic_end "$_RUN_ID" preflight-refused 3
+        _update_log INFO "Installed version unchanged (v${current_version}); nothing was changed."
+        return 3
+    fi
+
     # Create backup (H14 fix: abort if backup fails unless --force)
     _update_phase 1 "Backup"
     if ! _create_backup; then
@@ -607,7 +617,7 @@ _cmd_update_main_locked() {
     # must not be clobbered (scoped trap only, cleared right after restore).
     _forensic_snapshot "$_RUN_ID" pre-swap
     _update_inhibit_cadence_timers
-    trap '_update_heartbeat_stop; _update_restore_cadence_timers' INT TERM
+    trap '_update_heartbeat_stop; _update_restore_cadence_timers; _restore_owned_immutable_flags || true' INT TERM
     _forensic_event "$_RUN_ID" inhibit "timers=$_NFTBAN_INHIBITED_TIMERS"
     case "$source" in
         github)
@@ -658,6 +668,9 @@ _cmd_update_main_locked() {
     _forensic_event "$_RUN_ID" restore "timers=$_NFTBAN_INHIBITED_TIMERS"
     _update_restore_cadence_timers
     trap - INT TERM
+    # v1.234: put back exactly the NFTBan-owned +i flags this run removed when
+    # no package transaction re-applied them (failed or no-op install).
+    _restore_owned_immutable_flags || true
     _forensic_snapshot "$_RUN_ID" post-swap
 
     if [[ $result -ne 0 ]]; then
@@ -669,10 +682,16 @@ _cmd_update_main_locked() {
         mkdir -p "$(dirname "$_fail_marker")" 2>/dev/null || true
         date -u '+%Y-%m-%dT%H:%M:%SZ' > "$_fail_marker" 2>/dev/null || true
         echo ""
-        _update_log ERROR "Update failed"
-        _update_log INFO "Run 'nftban update repair' to fix broken install state"
-        _update_log INFO "Run 'nftban update rollback' to restore previous version"
-        _update_log INFO "Run 'nftban update force' to force reinstall"
+        if [[ $result -eq 3 ]]; then
+            # v1.234: preflight refusal — nothing was installed or changed.
+            _update_log ERROR "Update refused before any change: restricted NFTBan package path(s) listed above"
+            _update_log INFO "Installed version unchanged (v${current_version}); repair/rollback/force are not needed"
+        else
+            _update_log ERROR "Update failed"
+            _update_log INFO "Run 'nftban update repair' to fix broken install state"
+            _update_log INFO "Run 'nftban update rollback' to restore previous version"
+            _update_log INFO "Run 'nftban update force' to force reinstall"
+        fi
         echo ""
         echo "  Log: $UPDATE_LOG_FILE"
         echo ""
@@ -1385,9 +1404,13 @@ _cmd_update_repair() {
 
     local repair_status=0
 
-    # Step 1: Remove immutable flags from all nftban files
-    echo "  [1/4] Removing immutable flags..."
-    _remove_immutable_flags
+    # Step 1: v1.234 — refuse on restrictions NFTBan does not own; unlock only
+    # NFTBan-owned +i (re-locked at the end of repair).
+    echo "  [1/4] Checking immutable/read-only restrictions..."
+    if ! _remove_immutable_flags; then
+        _update_log ERROR "Repair refused: see the restricted paths above (nothing was changed)"
+        return 1
+    fi
 
     # Step 2: Fix broken dpkg state (first pass)
     echo ""
@@ -1506,6 +1529,8 @@ _cmd_update_repair() {
         _update_log INFO "No backup directory found"
     fi
 
+    _restore_owned_immutable_flags || repair_status=1
+
     # Summary
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1514,7 +1539,8 @@ _cmd_update_repair() {
     else
         echo "  Repair completed with warnings"
         echo "  If issues persist, try: nftban update force"
-        echo "  Or reinstall: sudo dpkg -i --force-all <package.deb>"
+        echo "  Check package state first: dpkg --audit (DEB) or rpm -V nftban-core (RPM)."
+        echo "  Do not use --force-all / --nodeps: they hide the failure instead of fixing it."
     fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""

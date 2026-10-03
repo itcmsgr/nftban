@@ -214,8 +214,12 @@ _update_via_rpm() {
         return 1
     fi
 
-    # Remove immutable flags before rpm (nft_schema.sh is chattr +i for security)
-    _remove_immutable_flags
+    # v1.234: preflight the payload for restrictions NFTBan does not own and
+    # refuse before the package manager runs; unlock only NFTBan-owned +i.
+    if ! _remove_immutable_flags "$tmp_file"; then
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
+        return 3    # refused before any package change
+    fi
 
     # Install using dnf/yum to automatically resolve dependencies
     # v1.14.0: Changed from rpm -Uvh to dnf/yum install for dependency resolution
@@ -316,9 +320,13 @@ _update_via_deb() {
         return 1
     fi
 
-    # Remove immutable flags before dpkg (nft_schema.sh is chattr +i for security)
-    # This MUST succeed or dpkg will fail with "unable to make backup link"
-    _remove_immutable_flags
+    # v1.234: preflight the payload for restrictions NFTBan does not own and
+    # refuse before the package manager runs; unlock only NFTBan-owned +i
+    # (dpkg cannot make its backup link of an immutable file).
+    if ! _remove_immutable_flags "$tmp_file"; then
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
+        return 3    # refused before any package change
+    fi
 
     # Cleanup old/retired paths from pre-1.8.13 versions
     # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
@@ -403,8 +411,8 @@ _update_via_git() {
         return 1
     fi
 
-    # Remove immutable flags before install (nft_schema.sh is chattr +i for security)
-    _remove_immutable_flags
+    # v1.234: refuse on restrictions NFTBan does not own; unlock only owned +i.
+    _remove_immutable_flags || return 3    # refused before any change
 
     # Run install.sh with --yes for non-interactive update
     local install_script="${NFTBAN_GIT_REPO}/install.sh"
@@ -442,8 +450,8 @@ _update_via_local() {
 
     _update_log INFO "Source: $source_path"
 
-    # Remove immutable flags before install (nft_schema.sh is chattr +i for security)
-    _remove_immutable_flags
+    # v1.234: refuse on restrictions NFTBan does not own; unlock only owned +i.
+    _remove_immutable_flags || return 3    # refused before any change
 
     _update_log INFO "Running installer..."
 

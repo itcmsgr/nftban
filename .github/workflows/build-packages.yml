@@ -327,6 +327,11 @@ jobs:
           done
           ls -la dist/packages/
 
+      - name: Gate — no unchecked immutable-flag unlock in the GENERATED RPM scriptlets (v1.234 PR #1439)
+        run: |
+          set -euo pipefail
+          bash scripts/ci/check-immutable-unlock-authority.sh --package dist/packages/*.rpm
+
       - name: Validate RPM package contains valid binaries
         run: |
           echo "Validating RPM package binaries..."
@@ -494,6 +499,11 @@ jobs:
             fi
           done
           ls -la dist/packages/
+
+      - name: Gate — no unchecked immutable-flag unlock in the GENERATED DEB maintainer scripts (v1.234 PR #1439)
+        run: |
+          set -euo pipefail
+          bash scripts/ci/check-immutable-unlock-authority.sh --package dist/packages/*.deb
 
       - name: Validate DEB package contains valid binaries
         run: |

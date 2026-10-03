@@ -114,6 +114,19 @@ jobs:
       - name: Check build provenance source is self-describing (v1.232.0, BLOCKING)
         run: ./scripts/ci/check-build-provenance-source.sh
 
+      # v1.234 (#1439) immutable-flag ownership. An immutable flag may only be
+      # removed through the proven-ownership library; any other `chattr -i` or
+      # recursive `chattr -R` in the shipped shell/packaging/Go sources fails.
+      # (The built packages are scanned with --package in build-packages.yml.)
+      - name: Check immutable unlock authority (v1.234, BLOCKING)
+        run: ./scripts/ci/check-immutable-unlock-authority.sh
+
+      # v1.234 (#1439) the DEB maintainer scripts carry a GENERATED copy of the
+      # ownership library's code body. A stale copy, or one that carries the
+      # library's SPDX/copyright/meta header, fails.
+      - name: Check generated immutable-ownership blocks are current (v1.234, BLOCKING)
+        run: bash build/generate-immutable-owned-blocks.sh --check
+
       # v1.228.5 FHS/log authority. A logrotate stanza may only target /var/log:
       # nftban_var_lib_t has no logrotate_t access, so ONE bad stanza fails the whole
       # system-wide logrotate run. Reads the GENERATOR (inventory.go), not just the

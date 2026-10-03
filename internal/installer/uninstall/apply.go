@@ -275,10 +275,16 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	}
 	log.Info("uninstall apply: step 9/12 — removing payload artifacts (mode=%s)", mode)
 	rr := RemoveArtifacts(exec, mode, cfg.Distro, log)
+	// v1.234 (PR #1439): paths kept by an immutable flag NFTBan does not own make
+	// the file removal INCOMPLETE — never reported as success.
+	artifactsDetail := fmt.Sprintf("removed=%d preserved=%d failed=%d unit_removed=%t mode=%s", rr.Removed, rr.Preserved, rr.Failed, rr.UnitFileRemoved, mode)
+	if len(rr.ImmutableRemaining) > 0 {
+		artifactsDetail += fmt.Sprintf(" INCOMPLETE: %d path(s) kept by immutable flags NFTBan did not set: %s", len(rr.ImmutableRemaining), strings.Join(rr.ImmutableRemaining, ","))
+	}
 	r.Steps = append(r.Steps, StepResult{
 		Name:    "remove_artifacts",
-		Success: true,
-		Detail:  fmt.Sprintf("removed=%d preserved=%d failed=%d unit_removed=%t mode=%s", rr.Removed, rr.Preserved, rr.Failed, rr.UnitFileRemoved, mode),
+		Success: len(rr.ImmutableRemaining) == 0,
+		Detail:  artifactsDetail,
 	})
 
 	// Step 10 — mask nftband.service ONLY if its unit file still exists.
@@ -340,6 +346,16 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	// All 12 steps green — authority released.
 	r.State = state.StateUninstallReleased
 	r.Reason = "nftban authority released: kernel tables deleted, nftband.service stopped+disabled+masked, emergency SSH cleaned up"
+	if len(rr.ImmutableRemaining) > 0 {
+		// v1.234: the firewall authority is released, but the FILE removal is not
+		// complete — say so instead of "uninstall complete".
+		r.Reason += fmt.Sprintf("; file removal INCOMPLETE: %d path(s) kept by immutable/append-only flags NFTBan did not set: %s", len(rr.ImmutableRemaining), strings.Join(rr.ImmutableRemaining, ", "))
+		log.Result("[NFTBan] uninstall: firewall authority released, but file removal is INCOMPLETE — %d protected path(s) were left in place:", len(rr.ImmutableRemaining))
+		for _, p := range rr.ImmutableRemaining {
+			log.Result("[NFTBan]   %s (immutable/append-only flag not set by NFTBan; its administrator decides whether to lift it)", p)
+		}
+		return r
+	}
 	log.Result("[NFTBan] uninstall complete — nftban authority released")
 	return r
 }
