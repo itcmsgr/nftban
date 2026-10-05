@@ -97,6 +97,7 @@ cli_status_json_no_contradict_test	cli/lib/nftban/tests/cli_status_json_no_contr
 cli_status_kernel_verify_hint_test	cli/lib/nftban/tests/cli_status_kernel_verify_hint_test.sh	cli	test	status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_stderr_contract_v141_test	cli/lib/nftban/tests/cli_stderr_contract_v141_test.sh	cli	test	stderr-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_sudo_hint_v142_test	cli/lib/nftban/tests/cli_sudo_hint_v142_test.sh	cli	test	sudo-hint	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+cli_surface_parity_dispatcher_v1235_test	cli/lib/nftban/tests/cli_surface_parity_dispatcher_v1235_test.sh	cli	test	cli-semantic-parity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_trustfeeds_label_truth_v211_1_test	cli/lib/nftban/tests/cli_trustfeeds_label_truth_v211_1_test.sh	trust	test	trust-feeds-status	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 cli_update_dry_run_hint_v167_test	cli/lib/nftban/tests/cli_update_dry_run_hint_v167_test.sh	update	test	update	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 cli_update_latv_unbound_v149_test	cli/lib/nftban/tests/cli_update_latv_unbound_v149_test.sh	update	test	update	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

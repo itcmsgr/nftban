@@ -77,14 +77,15 @@ run_status ""      ; HUMAN="$OUT"; HUMAN_RC=$RC; HUMAN_ERR="$ERR"
 run_status "--json"; JSON="$OUT";  JSON_RC=$RC;  JSON_ERR="$ERR"
 
 echo "=== A0. NO CRASH — an unreadable kernel is a verdict, not a shell abort ==="
-for surf in HUMAN JSON; do
-    e_var="${surf}_ERR"; r_var="${surf}_RC"
-    if crashed "${!e_var}"; then
-        bad "A0 $surf status CRASHED (rc=${!r_var}): $(grep -m1 -E 'unbound variable|ERROR: Script failed|command not found|syntax error' <<<"${!e_var}" || true)"
+a0_check() { # <surface> <rc> <stderr>
+    if crashed "$3"; then
+        bad "A0 $1 status CRASHED (rc=$2): $(grep -m1 -E 'unbound variable|ERROR: Script failed|command not found|syntax error' <<<"$3" || true)"
     else
-        ok "A0 $surf status completed without a shell error (rc=${!r_var})"
+        ok "A0 $1 status completed without a shell error (rc=$2)"
     fi
-done
+}
+a0_check HUMAN "$HUMAN_RC" "$HUMAN_ERR"
+a0_check JSON  "$JSON_RC"  "$JSON_ERR"
 
 for pair in "Banned IPs:banned_ips" "Rules:rule_count"; do
     hlabel="${pair%%:*}"; jkey="${pair##*:}"
