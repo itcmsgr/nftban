@@ -813,6 +813,27 @@ EOF
     log "INFO" "Active SSH session protection: OK (nftables auto-cleanup after 4h)"
 
     # ==========================================================================
+    # 3b. Per-IP port grants (v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD)
+    # ==========================================================================
+    # Every load of nftables.conf (rebuild, reset, reload, boot) re-creates the
+    # port_allow_* sets EMPTY. This is the self-heal plane: re-apply each live
+    # grant from access.d/port_allow.conf with its REMAINING lifetime (expired
+    # grants are skipped). Re-adding a present element is an upsert in the daemon.
+    log "INFO" "[3b/10] Re-applying per-IP port grants..."
+    if declare -F nftban_port_allow_replay >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_port_allow.sh" 2>/dev/null; then
+        local _pa_out="" _pa_rc=0
+        _pa_out=$(nftban_port_allow_replay 2>&1) || _pa_rc=$?
+        case $_pa_rc in
+            0) log "INFO" "${_pa_out}" ;;
+            2) log "WARN" "${_pa_out}" ;;
+            *) log "ERROR" "${_pa_out} — some per-IP port grants are NOT in the kernel" ;;
+        esac
+    else
+        log "ERROR" "port-allow replay library missing — per-IP port grants NOT re-applied"
+    fi
+
+    # ==========================================================================
     # 4. Auto-Heal (Fix Permissions, Directories)
     # ==========================================================================
     log "INFO" "[4/10] Running auto-heal..."

@@ -4303,6 +4303,23 @@ _firewall_rebuild_core() {
         *) _rebuild_whitelist_converged="false" ;;
     esac
 
+    # Step 6c (v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD): the atomic load
+    # recreated port_allow_{tcp,udp}_{ipv4,ipv6} EMPTY, and nothing re-read
+    # access.d/port_allow.conf, so every per-IP `port allow` grant on a non-SSH
+    # port was lost (measured lab3 2026-10-03: absent after rebuild and still absent
+    # 17 min later across maintenance and watchdog). Replay the live grants now with
+    # their REMAINING lifetime. A failure is reported, never hidden; the maintenance
+    # cycle replays again within 15 minutes.
+    if declare -F nftban_port_allow_replay >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_port_allow.sh" 2>/dev/null; then
+        local _pa_out="" _pa_rc=0
+        _pa_out=$(nftban_port_allow_replay 2>&1) || _pa_rc=$?
+        [[ "$quiet" == "false" ]] && echo "    ${_pa_out}"
+        [[ $_pa_rc -eq 1 ]] && echo "    WARNING: some per-IP port grants were not re-applied (${_pa_out}); maintenance retries within 15 min" >&2
+    else
+        echo "    WARNING: port-allow replay library missing; per-IP port grants NOT re-applied" >&2
+    fi
+
     # Step 7 (L2a): Restore blacklist + blacklist_manual from the pre-rebuild snapshot,
     # preserving remaining TTL. blacklist_manual_* holds detector TTL bans
     # (LoginMon/Portscan/DDoS/Suricata + manual) — it was previously never backed up or
@@ -4978,6 +4995,21 @@ firewall_reset() {
     [[ "$quiet" == "false" ]] && echo "  [11/11] Restarting NFTBan services..."
     systemctl start nftban-maintenance.timer 2>/dev/null || true
     systemctl start nftband 2>/dev/null || true
+
+    # v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD: reset loaded a clean schema, so
+    # the port_allow_* sets are empty. Grants go through the daemon, which was just
+    # started: wait briefly for its socket, then replay. If it is not up yet the
+    # replay reports UNMEASURED and the maintenance cycle applies them.
+    if declare -F nftban_port_allow_replay >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_port_allow.sh" 2>/dev/null; then
+        local _pa_try=0 _pa_out="" _pa_rc=0
+        while [[ $_pa_try -lt 10 ]] && ! nft_ipc_is_daemon_running 2>/dev/null; do
+            sleep 1; _pa_try=$(( _pa_try + 1 ))
+        done
+        _pa_out=$(nftban_port_allow_replay 2>&1) || _pa_rc=$?
+        [[ "$quiet" == "false" ]] && echo "    ${_pa_out}"
+        [[ $_pa_rc -eq 1 ]] && echo "    WARNING: some per-IP port grants were not re-applied (${_pa_out}); maintenance retries within 15 min" >&2
+    fi
 
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Firewall reset complete!"
