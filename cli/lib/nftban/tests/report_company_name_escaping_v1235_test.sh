@@ -79,12 +79,12 @@ else
     if [[ "$doc" == *"Smith &amp; &lt;b&gt;Co&lt;/b&gt;"* && "$doc" != *"{COMPANY_NAME}"* && "$doc" != *"<b>Co</b>"* ]]; then
         ok "E1 company name escaped: '&' kept literally, markup rendered as entities"
     else
-        no "E1 company name not escaped" "$(grep -o 'Smith[^<]*' <<<"$doc" | head -1)"
+        no "E1 company name not escaped" "$(grep -m1 -o 'Smith[^<]*' <<<"$doc" || true)"
     fi
     if [[ "$doc" == *"1.2&amp;3&lt;x&gt;"* && "$doc" != *"{NFTBAN_VERSION}"* ]]; then
         ok "E2 version string escaped the same way"
     else
-        no "E2 version string not escaped" "$(grep -o '1\.2[^<]*' <<<"$doc" | head -1)"
+        no "E2 version string not escaped" "$(grep -m1 -o '1\.2[^<]*' <<<"$doc" || true)"
     fi
 fi
 
