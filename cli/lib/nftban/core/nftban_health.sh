@@ -488,6 +488,33 @@ nftban_health_verify_installation() {
 # MAIN HEALTH CHECK FUNCTION
 # =============================================================================
 
+# _nftban_health_derive_counts — v1.235: the counts and the NAMES of the checks
+# behind them, derived from NFTBAN_HEALTH_RESULTS[] (ground truth, v1.24.1: many
+# checks return 0 while recording a WARNING/ERROR in the array). Exports
+# NFTBAN_HEALTH_{ERROR,WARNING}_COUNT, NFTBAN_HEALTH_TOTAL_CHECKS and
+# NFTBAN_HEALTH_{WARNING,ERROR}_NAMES (sorted, space-separated) for the one-line
+# renderers (brief), which used to guess a cause instead.
+_nftban_health_derive_counts() {
+    local derived_errors=0 derived_warnings=0 derived_total=0 _rk
+    local -a _warn_names=() _err_names=()
+    for _rk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+        derived_total=$((derived_total + 1))
+        case "${NFTBAN_HEALTH_RESULTS[$_rk]}" in
+            2|3) derived_errors=$((derived_errors + 1)); _err_names+=("$_rk") ;;
+            1)   derived_warnings=$((derived_warnings + 1)); _warn_names+=("$_rk") ;;
+        esac
+    done
+    local _w _e
+    _w="$(printf '%s\n' "${_warn_names[@]+"${_warn_names[@]}"}" | sort | tr '\n' ' ')"
+    _e="$(printf '%s\n' "${_err_names[@]+"${_err_names[@]}"}" | sort | tr '\n' ' ')"
+    export NFTBAN_HEALTH_ERROR_COUNT=$derived_errors
+    export NFTBAN_HEALTH_WARNING_COUNT=$derived_warnings
+    export NFTBAN_HEALTH_TOTAL_CHECKS=$derived_total
+    _w="${_w# }"; _e="${_e# }"
+    export NFTBAN_HEALTH_WARNING_NAMES="${_w% }"
+    export NFTBAN_HEALTH_ERROR_NAMES="${_e% }"
+}
+
 nftban_health_check_all() {
     # Run all health checks and collect results
     # Args: $1 = auto_heal (1 to auto-fix, 0 to just report)
@@ -594,33 +621,16 @@ nftban_health_check_all() {
         result=1
     fi
 
-    # v1.24.1: Derive accurate counts from NFTBAN_HEALTH_RESULTS[] (ground truth)
-    # The local errors/warnings counters only count function return codes, but many
-    # check functions return 0 while setting NFTBAN_HEALTH_RESULTS[x]=2 internally.
-    local derived_errors=0
-    local derived_warnings=0
-    local derived_total=0
-    for _rk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
-        derived_total=$((derived_total + 1))
-        case "${NFTBAN_HEALTH_RESULTS[$_rk]}" in
-            2|3) derived_errors=$((derived_errors + 1)) ;;
-            1)   derived_warnings=$((derived_warnings + 1)) ;;
-        esac
-    done
-
-    # Re-derive result from RESULTS[] array (not from local counters)
-    if [[ $derived_errors -gt 0 ]]; then
+    # v1.24.1 / v1.235: counts AND names derived from NFTBAN_HEALTH_RESULTS[]
+    # (ground truth); see _nftban_health_derive_counts.
+    _nftban_health_derive_counts
+    if [[ $NFTBAN_HEALTH_ERROR_COUNT -gt 0 ]]; then
         result=2
-    elif [[ $derived_warnings -gt 0 ]]; then
+    elif [[ $NFTBAN_HEALTH_WARNING_COUNT -gt 0 ]]; then
         result=1
     else
         result=0
     fi
-
-    # Store results for render functions (as scalar values, not arrays)
-    export NFTBAN_HEALTH_ERROR_COUNT=$derived_errors
-    export NFTBAN_HEALTH_WARNING_COUNT=$derived_warnings
-    export NFTBAN_HEALTH_TOTAL_CHECKS=$derived_total
 
     return $result
 }
@@ -631,7 +641,7 @@ nftban_health_check_all() {
 
 # Export main functions
 export -f nftban_health_init
-export -f nftban_health_check_all
+export -f nftban_health_check_all _nftban_health_derive_counts
 
 # Export check functions (from nftban_health_checks.sh)
 export -f nftban_health_check_nftables_security
