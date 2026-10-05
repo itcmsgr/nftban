@@ -11,8 +11,8 @@
 # meta:created_date="2026-10-01"
 # meta:description="POSIX sh library (v1.234, PR #1439). One implementation, used by the CLI update/repair/rollback paths (sourced) and inlined into the DEB preinst/prerm/postinst and the RPM pretrans/preun/posttrans by build/generate-immutable-owned-blocks.sh. NFTBan only removes or restores an immutable flag whose ownership is PROVEN: a record entry written when NFTBan itself set or cleared the flag, matched by inode AND ctime (ctime changes on any later attribute change), or for flags set by NFTBan before v1.234 an installer.log 'set immutable' line whose timestamp equals the file's ctime. A path name never proves ownership. The preflight reports, before any change, every package destination that cannot be modified and why: IMMUTABLE, APPEND-ONLY, READ-ONLY mount, or WRITE-DENIED (permission/ACL/SELinux/AppArmor; never reported as immutable). Inspection that cannot run is UNMEASURED."
 # meta:inventory.files="/var/lib/nftban/state/immutable-owned, /var/log/nftban/installer.log (read)"
-# meta:inventory.binaries="lsattr,chattr,stat,date,findmnt,awk,sort,xargs,test"
-# meta:inventory.env_vars="NFTBAN_IMMUT_RECORD,NFTBAN_IMMUT_INSTALLER_LOG,NFTBAN_IMMUT_CANDIDATES,NFTBAN_IMMUT_TEST_BIN,NFTBAN_IMMUT_FIXED_DIRS"
+# meta:inventory.binaries="lsattr,chattr,stat,date,findmnt,awk,sort,xargs"
+# meta:inventory.env_vars="NFTBAN_IMMUT_RECORD,NFTBAN_IMMUT_INSTALLER_LOG,NFTBAN_IMMUT_CANDIDATES,NFTBAN_IMMUT_FIXED_DIRS"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -238,8 +238,15 @@ nftban_fs_preflight() {
     fi
 
     # 2. read-only mounts and 3. write access, per directory
-    _pf_test=${NFTBAN_IMMUT_TEST_BIN:-/usr/bin/test}
-    [ -x "$_pf_test" ] || _pf_test=""
+    # 3. write access asks the KERNEL: the shell builtin `[ -w ]` is faccessat(2)
+    # with AT_EACCESS (dash: faccessat2, bash: eaccess), which applies the caller's
+    # real privileges (root CAP_DAC_OVERRIDE, ACLs, MAC). v1.235: an external test
+    # binary must never decide this. uutils test (rust-coreutils 0.8.0, /usr/bin/test
+    # on Ubuntu 26.04) never calls access(2); it does mode-bit arithmetic from statx and
+    # ignores root privilege, so it answered "not writable" for 0750 nftban:nftban dirs
+    # that root could write (measured on a production host: create+remove succeeded,
+    # gnutest and the builtins answered writable) and the upgrade was falsely refused.
+    # (BUG-PREFLIGHT-WRITE-DENIED-FALSE-ON-UBUNTU-26-UUTILS-TEST)
     : > "$_pf_tmp/ro_seen"
     awk -F'\t' '$1=="dir" {print $2}' "$_pf_tmp/targets" > "$_pf_tmp/dirs"
     while IFS= read -r _pf_d; do
@@ -265,12 +272,11 @@ EOF_FINDMNT
         else
             printf 'UNMEASURED mount options for %s (findmnt not available)\n' "$_pf_d"
         fi
-        if [ -n "$_pf_test" ] && ! "$_pf_test" -w "$_pf_d"; then
+        if [ ! -w "$_pf_d" ]; then
             printf 'BLOCKED WRITE-DENIED dir %s (no immutable flag and not a read-only mount: permission, ACL or SELinux/AppArmor policy; check the audit log)\n' "$_pf_d"
             _pf_rc=1
         fi
     done < "$_pf_tmp/dirs"
-    [ -n "$_pf_test" ] || printf 'UNMEASURED write access (no %s binary)\n' "${NFTBAN_IMMUT_TEST_BIN:-/usr/bin/test}"
 
     rm -rf "$_pf_tmp"
     return "$_pf_rc"
