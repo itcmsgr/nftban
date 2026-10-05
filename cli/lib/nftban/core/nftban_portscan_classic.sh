@@ -1240,10 +1240,26 @@ nftban_portscan_classic_analyze_all() {
 # v1.204 PORTSCAN GO-CLASSIFIER: read the live known-open service-port set
 # (tcp_ports_in) so the Go classifier can EXCLUDE those ports from scan scoring.
 # These ports are allowed context, never scan evidence.
+#
+# v1.235 (P12-A06 / OPEN_PORTSCAN_IPV6_VERDICT_SCORED_ON_IPV4_PORTS): the set was
+# always read from the IPv4 table, so an IPv6 source was scored against the IPv4
+# host's open ports. Both family tables carry their own tcp_ports_in
+# (nftables.conf.tpl), which differ whenever ports.d differs per family.
 _nftban_portscan_classic_known_open_ports() {
-    local fam_table="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local family="${1:-ipv4}" fam_table
+    if [[ "$family" == "ipv6" ]]; then
+        fam_table="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+    else
+        fam_table="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    fi
+    # Only the elements block is port data: the header names the table, and
+    # "table ip6 nftban" would otherwise contribute a bogus port 6. awk reads to
+    # EOF (no early exit), so the nft producer never takes SIGPIPE under pipefail.
     nft list set ${fam_table} tcp_ports_in 2>/dev/null \
-        | tr ',{}' '\n' | grep -oE '[0-9]+' | sort -un | tr '\n' ' '
+        | awk '/elements = \{/ { f = 1; sub(/.*elements = \{/, "") }
+               f { l = $0; if (l ~ /\}/) { sub(/\}.*/, "", l); f = 0 }
+                   gsub(/[^0-9]+/, " ", l); print l }' \
+        | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -un | tr '\n' ' '
 }
 
 # v1.204: obtain the TYPED Go verdict for one IP. Builds the per-IP request JSON
@@ -1260,7 +1276,7 @@ _nftban_portscan_classic_go_verdict() {
     local targets="${_PORTSCAN_CLASSIC_IP_TARGETS[$ip]:-}"
     local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]:-}"
     local one_target; one_target=$(echo "$targets" | tr ' ' '\n' | grep -v '^$' | head -1)
-    local known_open; known_open=$(_nftban_portscan_classic_known_open_ports)
+    local known_open; known_open=$(_nftban_portscan_classic_known_open_ports "$family")
 
     # Build events[] (pair each port with the IP's first target + a timestamp).
     local -a parr tarr
