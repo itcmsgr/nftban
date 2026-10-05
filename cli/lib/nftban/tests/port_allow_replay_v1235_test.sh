@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-05"
-# meta:description="BEHAVIORAL regression for v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD (measured lab3 2026-10-03: a per-IP `port allow` grant was absent from port_allow_tcp_ipv4 after `firewall rebuild` and stayed absent across maintenance). Drives the REAL cli/lib/nftban/lib/nftban_port_allow.sh with a recording IPC stub: R1 a permanent grant is replayed with timeout 0; R2 a live timed grant is replayed with its REMAINING lifetime (never the full original duration); R3 an expired grant is NOT replayed; R4 an unreadable expiry is NOT replayed as permanent (counted invalid, rc 1); R5 daemon down -> UNMEASURED rc 2, nothing claimed; R6 an IPC failure -> rc 1. D1 removing port 80 keeps the 8080 grant and an IP whose dots differ (pre-v1.235 unanchored sed deleted both); D2 re-adding replaces, never duplicates. W1-W3 the replay is WIRED into firewall rebuild, firewall reset and the maintenance cycle (call-site census from the real files)."
+# meta:description="BEHAVIORAL regression for v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD (measured lab3 2026-10-03: a per-IP `port allow` grant was absent from port_allow_tcp_ipv4 after `firewall rebuild` and stayed absent across maintenance). Drives the REAL cli/lib/nftban/lib/nftban_port_allow.sh with a recording IPC stub: R1 a permanent grant is replayed with timeout 0; R2 a live timed grant is replayed with its REMAINING lifetime (never the full original duration); R3 an expired grant is NOT replayed; R4 an unreadable expiry is NOT replayed as permanent (counted invalid, rc 1); R5 daemon down -> UNMEASURED rc 2, nothing claimed; R6 an IPC failure -> rc 1. D1 removing port 80 keeps the 8080 grant and an IP whose dots differ (pre-v1.235 unanchored sed deleted both); D2 re-adding replaces, never duplicates. W1-W3 the replay is WIRED into firewall rebuild, firewall reset and the maintenance cycle (call-site census from the real files). M1 the maintenance cycle no longer writes the undeclared temp_whitelist sets nor claims active-SSH protection (owner 2026-10-06: dead step removed)."
 # meta:input="None (self-contained sandbox)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,jq,date,mktemp"
@@ -157,6 +157,16 @@ for pair in "W1 firewall rebuild|$rb" "W2 firewall reset|$rs" "W3 maintenance cy
     elif [[ "$body" == *nftban_port_allow_replay* ]]; then ok "$name calls nftban_port_allow_replay"
     else ko "$name does not replay per-IP port grants"; fi
 done
+
+# M1 — v1.235 BUG-MAINTENANCE-ACTIVE-SSH-AUTO-WHITELIST-IS-DEAD-AND-CLAIMS-OK
+# (owner 2026-10-06: remove the step and its false claim). The cycle must not
+# write to the undeclared temp_whitelist_* sets, and must not log a protection
+# that is not applied. Comments are excluded: the removal note may name them.
+echo "[M] maintenance makes no false active-SSH protection claim"
+if [[ -z "$mt" ]]; then ko "M1 maintenance main(): SUBJECT_FUNCTION_NOT_FOUND"
+elif [[ "$mt" == *temp_whitelist_ipv* ]]; then ko "M1 maintenance still writes to the undeclared temp_whitelist sets"
+elif [[ "$mt" == *"session protection: OK"* || "$mt" == *"Protecting active SSH sessions"* ]]; then ko "M1 maintenance still claims active SSH session protection"
+else ok "M1 no write to undeclared temp_whitelist sets and no protection claim"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

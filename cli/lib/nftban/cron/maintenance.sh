@@ -142,45 +142,6 @@ _maint_table_absent_confirmed() {
     return 0   # ABSENT across the whole grace window → genuine
 }
 
-# _maint_active_ssh_peers <port>... — echo the PEER IP of every established SSH
-# session, one per line, loopback excluded. Empty output = genuinely no sessions.
-#
-# RUNTIME_VERIFIED 2026-08-14 (srv2 :55000 + srv3 :22, both v1.228.11): the code
-# this replaces produced an EMPTY result on EVERY host and EVERY port, so the
-# active-session lockout protection was inert fleet-wide. Two layered defects:
-#
-#   1. DOMINANT — the peer was read as $5. `ss -tn state established` OMITS the
-#      State column, so a data row is:
-#          $1 Recv-Q   $2 Send-Q   $3 Local Address:Port   $4 Peer Address:Port
-#      i.e. $5 is empty. $NF is used here because it is the peer column in BOTH
-#      layouts (with State present it is $5, without it is $4).
-#   2. MASKED BY 1 — the filter hardcoded :22 even though step [1/10] has already
-#      detected the real listeners into SSH_PORTS. Once defect 1 is fixed, a host
-#      with SSH on 55000 would still whitelist nothing.
-#
-# Fixing either one alone yields a FALSE "fixed" signal, so both land together.
-#
-# The header line is NOT skipped by row number: its $NF is the literal
-# "Address:Port", which cannot match the IP patterns below. Filtering by shape
-# rather than by NR>1 means a session is still protected on any ss build that
-# omits the header — dropping the only live session there would be a lockout.
-_maint_active_ssh_peers() {
-    local _filter="" _p
-    for _p in "$@"; do
-        [[ "$_p" =~ ^[0-9]+$ ]] || continue
-        [[ -n "$_filter" ]] && _filter+=" or "
-        _filter+="dport = :$_p or sport = :$_p"
-    done
-    [[ -n "$_filter" ]] || _filter="dport = :22 or sport = :22"
-
-    ss -tn state established "( $_filter )" 2>/dev/null | \
-        awk '{print $NF}' | \
-        grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-f:]+:+)+[0-9a-f]+' | \
-        grep -v '^127\.' | \
-        grep -v '^::1' | \
-        sort -u || true
-}
-
 # =============================================================================
 # LOCKING (Prevent concurrent runs)
 # =============================================================================
@@ -753,73 +714,23 @@ EOF
     fi
 
     # ==========================================================================
-    # 3. Active SSH Session Protection (Auto-Whitelist Logged-In Users)
-    # ==========================================================================
-    log "INFO" "[3/10] Protecting active SSH sessions..."
-
-    # File to track active SSH IPs with timestamps
-    ACTIVE_SSH_WHITELIST="${NFTBAN_DATA_DIR}/state/active_ssh_whitelist.state"
-    mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
-
-    # Get all current SSH connections (excluding localhost) on every REAL SSH
-    # listener port, not a hardcoded :22. SSH_PORTS is populated by step [1/10]
-    # above (same function scope, always runs first) and is never empty there;
-    # the :-22 fallback only covers a future reordering.
-    # See _maint_active_ssh_peers for the two defects this replaced.
-    CURRENT_SSH_IPS=$(_maint_active_ssh_peers "${SSH_PORTS[@]:-22}")
-
-    # Update active SSH whitelist timestamp file
-    : > "$ACTIVE_SSH_WHITELIST.new"
-
-    if [[ -n "$CURRENT_SSH_IPS" ]]; then
-        log "INFO" "Found active SSH connections, auto-whitelisting..."
-
-        for ip in $CURRENT_SSH_IPS; do
-            # Add IP to temp_whitelist via daemon IPC (single-writer architecture)
-            # Timeout refreshes every 15min while user stays logged in
-            # 4h = 14400 seconds
-            # v1.32.0: Simplified — nft_ipc_add_element with timeout is idempotent
-            # (upserts: creates if missing, refreshes timeout if exists, 0 kernel reads)
-            if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                # IPv4 - add/refresh with 4 hour timeout via daemon IPC
-                if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" temp_whitelist_ipv4 "$ip" 14400 2>/dev/null; then
-                    log "INFO" "Auto-whitelisted active SSH session: $ip (4h timeout, via daemon)"
-                fi
-            else
-                # IPv6 - add/refresh with 4 hour timeout via daemon IPC
-                if nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" temp_whitelist_ipv6 "$ip" 14400 2>/dev/null; then
-                    log "INFO" "Auto-whitelisted active SSH session: $ip (4h timeout, via daemon)"
-                fi
-            fi
-
-            # Track this IP with current timestamp (for monitoring)
-            local current_ts
-            if declare -f nftban_timestamp_unix >/dev/null 2>&1; then
-                current_ts=$(nftban_timestamp_unix)
-            else
-                current_ts=$(date +%s)
-            fi
-            echo "$ip $current_ts" >> "$ACTIVE_SSH_WHITELIST.new"
-        done
-
-        mv "$ACTIVE_SSH_WHITELIST.new" "$ACTIVE_SSH_WHITELIST"
-    else
-        log "INFO" "No active SSH sessions to protect"
-        : > "$ACTIVE_SSH_WHITELIST"
-    fi
-
-    # Note: Cleanup handled automatically by nftables timeout
-    # IPs expire after 4 hours if not refreshed
-    log "INFO" "Active SSH session protection: OK (nftables auto-cleanup after 4h)"
+    # (v1.235) The former step 3, "Protecting active SSH sessions", is REMOVED.
+    # It wrote active SSH peers to temp_whitelist_ipv4/6, a set the template never
+    # declares and the daemon rejects (not in knownNFTBanSets); the error went to
+    # /dev/null and the step still logged "protection: OK". Fleet logs on the
+    # examined versions/hosts: 0 "Auto-whitelisted" lines vs 515-3294 "OK" lines.
+    # Owner 2026-10-06: remove the step and its false claim; an actual
+    # active-session allow mechanism is a separate backlog feature
+    # (BUG-MAINTENANCE-ACTIVE-SSH-AUTO-WHITELIST-IS-DEAD-AND-CLAIMS-OK).
 
     # ==========================================================================
-    # 3b. Per-IP port grants (v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD)
+    # 3. Per-IP port grants (v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD)
     # ==========================================================================
     # Every load of nftables.conf (rebuild, reset, reload, boot) re-creates the
     # port_allow_* sets EMPTY. This is the self-heal plane: re-apply each live
     # grant from access.d/port_allow.conf with its REMAINING lifetime (expired
     # grants are skipped). Re-adding a present element is an upsert in the daemon.
-    log "INFO" "[3b/10] Re-applying per-IP port grants..."
+    log "INFO" "[3/10] Re-applying per-IP port grants..."
     if declare -F nftban_port_allow_replay >/dev/null 2>&1 \
        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_port_allow.sh" 2>/dev/null; then
         local _pa_out="" _pa_rc=0
