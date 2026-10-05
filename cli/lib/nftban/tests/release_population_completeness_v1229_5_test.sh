@@ -150,16 +150,29 @@ PY
     fi
 fi
 
-# ---- S5 · no versioned image is published on a tag push ---------------------------
-if python3 - "$ROOT/.github/workflows/docker.yml" <<'PY'
-import sys, yaml
-d = yaml.safe_load(open(sys.argv[1]))
-on = d.get('on', d.get(True, {}))
-push = (on or {}).get('push') or {}
-raise SystemExit(0 if not push.get('tags') else 1)
+# ---- S5 · the container image is retired: nothing publishes an image ---------------
+# v1.234.0 (owner): the GHCR image is retired (it was never a supported install path).
+# No workflow may push an image to a registry. Docker stays allowed for the DEB/RPM build
+# and test containers, which only pull and run.
+S5="$(python3 - "$ROOT/.github/workflows" "$ROOT" <<'PY'
+import sys, os
+wf, root = sys.argv[1], sys.argv[2]
+hits = []
+for f in sorted(os.listdir(wf)):
+    if not f.endswith(('.yml', '.yaml')):
+        continue
+    body = "\n".join(l for l in open(os.path.join(wf, f)).read().split("\n") if not l.lstrip().startswith('#'))
+    for tok in ('docker push', 'docker/build-push-action', 'docker/login-action', 'ghcr.io', 'packages: write'):
+        if tok in body:
+            hits.append(f"{f}:{tok}")
+for p in ('Dockerfile', '.github/workflows/docker.yml'):
+    if os.path.exists(os.path.join(root, p)):
+        hits.append(p)
+print(",".join(hits) or "-")
 PY
-then pass "S5 docker.yml does not push on tags (versioned images follow release-publish.yml)"
-else fail "S5 docker.yml still publishes images on a tag push, before acceptance"; fi
+)"
+if [[ "$S5" == "-" ]]; then pass "S5 no workflow builds or pushes a container image (image retired)"
+else fail "S5 a container-image publisher or its inputs are back: $S5"; fi
 
 # ---- extract the production publish step -----------------------------------------
 python3 - "$WF" "$TMP/publish.sh" <<'PY'

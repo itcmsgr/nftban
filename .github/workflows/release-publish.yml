@@ -15,9 +15,8 @@
 #   - refuses unless the release is still a DRAFT;
 #   - refuses unless the tag resolves to the commit the RC assets were built from;
 #   - refuses unless EVERY asset's sha256 matches the manifest recorded at RC-10;
-#   - verifies SHA256SUMS, then clears the draft flag, then dispatches docker.yml on the
-#     tag (docker.yml no longer pushes on tags): the image is a separate artifact, built
-#     once from the accepted commit, checked, and only then pushed.
+#   - verifies SHA256SUMS, then clears the draft flag.
+# v1.234.0 (owner): the container image is RETIRED; no image is built or published.
 #
 # Asset manifest recipe (RC-10 computes the same value from the downloaded draft):
 #   cd <dir holding exactly the release assets>
@@ -62,7 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # clear the draft flag on the existing release (no uploads)
-      actions: write    # dispatch docker.yml for the versioned image
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
@@ -126,11 +124,3 @@ jobs:
           is_draft=$(gh release view "$VERSION" -R "$REPO" --json isDraft --jq .isDraft)
           [[ "$is_draft" == "false" ]] || { echo "::error::publish did not take effect (isDraft=$is_draft)"; exit 1; }
           echo "RELEASE $VERSION PUBLISHED (accepted draft, assets unchanged)"
-
-      - name: Publish the versioned container image (after acceptance)
-        run: |
-          set -euo pipefail
-          # docker.yml builds the image ONCE from this tag, refuses unless the tag ref is the
-          # accepted commit, checks the image, and only then pushes that checked image.
-          gh workflow run docker.yml -R "$REPO" --ref "$VERSION" -f release_commit="$RELEASE_COMMIT"
-          echo "docker.yml dispatched for $VERSION (release_commit $RELEASE_COMMIT)"
