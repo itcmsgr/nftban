@@ -47,13 +47,14 @@ func cmdPorts(action string, cfg *nftbanconf.Config) error {
 	case "list":
 		return cmdPortsList(portsDir)
 	case "load":
-		return cmdPortsLoad(portsDir)
+		// v1.235 B1: retired (flushed every port set, reloaded ports.d without an SSH floor).
+		return fmt.Errorf("'nftban-core ports load' is retired (v1.235): it flushed every port set and reloaded ports.d without an SSH floor; use 'nftban firewall rebuild'")
 	case "status":
 		return cmdPortsStatus(portsDir)
 	case "render-effective":
 		return cmdPortsRenderEffective(cfg)
 	default:
-		return fmt.Errorf("unknown ports action: %s\nUsage: nftban-core ports [list|load|status|render-effective]", action)
+		return fmt.Errorf("unknown ports action: %s\nUsage: nftban-core ports [list|status|render-effective]", action)
 	}
 }
 
@@ -230,100 +231,6 @@ func cmdPortsStatus(portsDir string) error {
 			}
 		}
 	}
-	fmt.Println()
-
-	return nil
-}
-
-func cmdPortsLoad(portsDir string) error {
-	// Check for privilege (root OR CAP_NET_ADMIN capability)
-	if err := checkPrivilege(); err != nil {
-		return err
-	}
-
-	fmt.Println(version.BannerWithEmoji("🔌", "Load Port Rules"))
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println()
-
-	// Step 1: Detect IP family support
-	fmt.Println("Step 1: Detecting IP family support...")
-	ipSupport, err := network.DetectIPFamilySupport()
-	if err != nil {
-		return fmt.Errorf("failed to detect IP families: %w", err)
-	}
-	fmt.Printf("  ✅ System: %s\n", ipSupport.String())
-
-	if !ipSupport.HasIPv4 && !ipSupport.HasIPv6 {
-		return fmt.Errorf("no IP connectivity detected: system has no IPv4 or IPv6 addresses")
-	}
-	fmt.Println()
-
-	// Step 2: Load port configuration
-	fmt.Println("Step 2: Loading port configuration...")
-	config, err := ports.LoadPortsFromDirectory(portsDir)
-	if err != nil {
-		return fmt.Errorf("failed to load ports: %w", err)
-	}
-
-	if len(config.AllRules) == 0 {
-		fmt.Println("  ⚠️  No port rules found")
-		fmt.Println()
-		fmt.Println("Create port configuration in: " + portsDir)
-		fmt.Println("Format: PORT/PROTOCOL (T=TCP, U=UDP, B=Both)")
-		return nil
-	}
-
-	fmt.Printf("  ✅ Loaded %d port rules\n", len(config.AllRules))
-	fmt.Printf("  ✅ TCP ports: %d\n", len(config.TCPPorts))
-	fmt.Printf("  ✅ UDP ports: %d\n", len(config.UDPPorts))
-	fmt.Println()
-
-	// Step 3: Connect to daemon
-	fmt.Println("Step 3: Connecting to nftband daemon...")
-	client := ipc.NewClient()
-	if err := client.Ping(); err != nil {
-		return fmt.Errorf("daemon not running: %w\nStart with: sudo systemctl start nftband", err)
-	}
-	fmt.Println("  ✅ Connected to nftband daemon")
-	fmt.Println()
-
-	// Step 4: Load ports via IPC
-	fmt.Println("Step 4: Loading ports into nftables via daemon...")
-	resp, err := client.LoadPorts()
-	if err != nil {
-		return fmt.Errorf("failed to load ports: %w", err)
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("failed to load ports: %s", resp.Error)
-	}
-
-	// Extract results
-	data, ok := resp.Data.(map[string]any)
-	if !ok {
-		return fmt.Errorf("unexpected response format")
-	}
-
-	fmt.Println()
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Printf("✅ Port rules loaded successfully!\n")
-	fmt.Println()
-
-	if tcpIn, ok := data["tcp_ports_in"].(float64); ok {
-		fmt.Printf("TCP ports (input) loaded: %.0f\n", tcpIn)
-	}
-	if tcpOut, ok := data["tcp_ports_out"].(float64); ok {
-		fmt.Printf("TCP ports (output) loaded: %.0f\n", tcpOut)
-	}
-	if udpIn, ok := data["udp_ports_in"].(float64); ok {
-		fmt.Printf("UDP ports (input) loaded: %.0f\n", udpIn)
-	}
-	if udpOut, ok := data["udp_ports_out"].(float64); ok {
-		fmt.Printf("UDP ports (output) loaded: %.0f\n", udpOut)
-	}
-	fmt.Println()
-	fmt.Println("Port sets are now configured in nftables.")
-	fmt.Println("Use firewall rules to reference @tcp_ports_in, @tcp_ports_out, @udp_ports_in, @udp_ports_out sets.")
 	fmt.Println()
 
 	return nil
