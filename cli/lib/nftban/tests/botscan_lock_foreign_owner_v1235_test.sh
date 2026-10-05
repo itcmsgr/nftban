@@ -61,7 +61,9 @@ fi
 
 WORK="$(mktemp -d)"
 HOLDER_PID=""
-cleanup(){ [[ -n "$HOLDER_PID" ]] && kill "$HOLDER_PID" 2>/dev/null || true; chmod -R u+w "$WORK" 2>/dev/null || true; rm -rf "$WORK"; }
+# The 0444 lock fixtures sit in a writable work dir; unlinking depends on the
+# directory's permissions, so no permission change is needed before removal.
+cleanup(){ [[ -n "$HOLDER_PID" ]] && kill "$HOLDER_PID" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 
 LOCK="$WORK/botscan-processor.lock"
