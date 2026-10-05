@@ -81,7 +81,6 @@ gate	scripts/ci/check-firewall-projection-authority.sh	0ce089dc872807ef	1	head	U
 gate	scripts/ci/check-firewall-projection-authority.sh	474c4e49a316055a	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-firewall-projection-authority.sh	597e11a50fd6df26	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-firewall-projection-authority.sh	c51feac7b3799f4b	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
-gate	scripts/ci/check-license-metadata.sh	873a10539a70138e	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-license-metadata.sh	cf00a3bb42348de8	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-license-metadata.sh	db69d4130fd6123d	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/check-logrotate-fhs-authority.sh	2f5a3ef178b2b7bd	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-

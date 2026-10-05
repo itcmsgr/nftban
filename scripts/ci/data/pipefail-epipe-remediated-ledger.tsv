@@ -50,6 +50,7 @@
 # AGAIN fails as EPIPE_REMEDIATION_REGRESSED.
 #
 # plane	file	fingerprint	occurrences	consumers	last_class	last_mode	last_reproduction_status	note
+gate	scripts/ci/check-license-metadata.sh	873a10539a70138e	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_botguard.sh	1b69ca02fba0e12c	1	grep-q	A	n/a	UNVERIFIED	fn=_botguard_kernel_set_count; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_botguard.sh	90bfd4fa961bd515	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_botguard_test; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_status.sh	525ccd7a059ff104	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
