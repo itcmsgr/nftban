@@ -49,7 +49,8 @@ done
 [[ -f "$POSTRM" && -f "$BUILD" ]] || { echo "  NOT_EXECUTED: subject files missing under $ROOT"; echo "RESULT: NOT_EXECUTED"; exit 3; }
 
 W="$(mktemp -d)"
-cleanup(){ chmod -R u+w "$W" 2>/dev/null || true; rm -rf "$W"; }
+# Only the F3 read-only dirs (ro_*) block removal; restore them by explicit path.
+cleanup(){ local d; for d in "$W"/ro_*; do [[ -d "$d" ]] && chmod u+w "$d"; done; rm -rf "$W"; }
 trap cleanup EXIT
 
 # ---- R0 · render the REAL RPM spec from the REAL generator -------------------------

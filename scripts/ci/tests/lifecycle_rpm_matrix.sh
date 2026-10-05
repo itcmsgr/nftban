@@ -280,6 +280,9 @@ if ! installed; then
   erase_all; o="$W/r7_pre.txt"; inst "$CAND" "$o" >/dev/null
 fi
 if ! installed; then skip "R7 needs an installed package"; else
+  # v1.235 K1: count retired records before, so the erase must add exactly one.
+  r7_pre_state="$(sfield INSTALL_STATE)"; r7_pre_n=0
+  for r7_f in "$STATE_DIR"/install_state.removed-*; do [[ -e "$r7_f" ]] && r7_pre_n=$((r7_pre_n+1)); done
   o="$W/r7.txt"; rc=0; dnf -y remove "$PKG" >"$o" 2>&1 || rc=$?
   eq 0 "$rc" "dnf remove rc"
   installed && bad "package still in the rpm database after erase" || ok "package removed from the rpm database"
@@ -295,6 +298,22 @@ if ! installed; then skip "R7 needs an installed package"; else
       bad "removal output claims CURRENT_COMMITTED"
   else
       ok "removal makes no CURRENT_COMMITTED claim"
+  fi
+
+  # v1.235 K1 (BUG-INSTALL-STATE-SAYS-COMMITTED-AFTER-PACKAGE-REMOVE): the erase
+  # retires install_state (moved aside, never deleted) — parity with DEB L7.
+  if [[ -f "$STATE" ]]; then
+      bad "install_state still present after erase — a host with no package still claims the last install"
+  else
+      ok "install_state retired by the erase (no live claim of the last install)"
+  fi
+  r7_post_n=0; r7_last=""
+  for r7_f in "$STATE_DIR"/install_state.removed-*; do [[ -e "$r7_f" ]] && { r7_post_n=$((r7_post_n+1)); r7_last="$r7_f"; }; done
+  eq 1 "$((r7_post_n - r7_pre_n))" "exactly one install_state.removed-<UTC> created by this erase"
+  if [[ -n "$r7_last" && -n "$r7_pre_state" ]]; then
+      eq "$r7_pre_state" "$(grep -m1 "^INSTALL_STATE=" "$r7_last" | cut -d= -f2-)" "the retired record holds the last INSTALL_STATE"
+  else
+      bad "no retired record, or the pre-erase INSTALL_STATE was empty (pre='${r7_pre_state}')"
   fi
 
   # ---- D1 (UNINSTALL-PR2) PACKAGE-NATIVE PROOF -----------------------------
