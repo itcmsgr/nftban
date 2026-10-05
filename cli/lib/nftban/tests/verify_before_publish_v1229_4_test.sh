@@ -65,7 +65,7 @@ for i,st in enumerate(j.get('steps') or []):
     #    creates the non-public DRAFT in create-release). Matching only the action would
     #    look for a publisher that is not there and report "not found" as a failure —
     #    locate the step that actually makes the release public.
-    if 'publish release' in n or 'action-gh-release' in u: ui=i
+    if 'complete the draft release' in n or 'action-gh-release' in u: ui=i
 print("%d %d" % (vi,ui))
 PY
 )"

@@ -65,7 +65,8 @@ UPLOADS="$(python3 - "$WF" <<'PY'
 import sys, yaml, re
 d = yaml.safe_load(open(sys.argv[1]))
 steps = d['jobs']['verify-release']['steps']
-pub = next((s for s in steps if 'publish release' in str(s.get('name', ''))), None)
+# v1.234.0: this step completes the DRAFT; release-publish.yml is the only publisher.
+pub = next((s for s in steps if 'complete the draft release' in str(s.get('name', ''))), None)
 if pub is None:
     print("NO_PUBLISH_STEP yes"); raise SystemExit
 run = pub.get('run') or ''
@@ -84,30 +85,101 @@ print("UPLOADS_BOTH", "yes" if (loop and up_lines) or
       (any(bn in l for l in up_lines) and any(pn in l for l in up_lines)) else "no")
 
 ui = code.find('gh release upload')
-pi = code.find('--draft=false')
-print("UPLOAD_BEFORE_PUBLISH", "yes" if (0 <= ui < pi) else "no")
 ci = code.find('Published population incomplete')
-print("CHECK_BEFORE_PUBLISH", "yes" if (0 <= ci < pi) else "no")
+print("UPLOAD_BEFORE_CHECK", "yes" if (0 <= ui < ci) else "no")
+# v1.234.0: the draft is completed here and NEVER published here.
+print("NEVER_PUBLISHES", "yes" if '--draft=false' not in code else "no")
 PY
 )"
 dd=$(awk '$1=="DERIVES_FROM_DECL"{print $2}' <<<"$UPLOADS")
 ub=$(awk '$1=="UPLOADS_BOTH"{print $2}' <<<"$UPLOADS")
-uo=$(awk '$1=="UPLOAD_BEFORE_PUBLISH"{print $2}' <<<"$UPLOADS")
-co=$(awk '$1=="CHECK_BEFORE_PUBLISH"{print $2}' <<<"$UPLOADS")
-if [[ "$dd" == "yes" && "$ub" == "yes" && "$uo" == "yes" && "$co" == "yes" ]]; then
-    pass "S1 the sole publisher uploads BOTH declared artifacts, and both the upload and the completeness check precede publication"
+uo=$(awk '$1=="UPLOAD_BEFORE_CHECK"{print $2}' <<<"$UPLOADS")
+np=$(awk '$1=="NEVER_PUBLISHES"{print $2}' <<<"$UPLOADS")
+if [[ "$dd" == "yes" && "$ub" == "yes" && "$uo" == "yes" && "$np" == "yes" ]]; then
+    pass "S1 the draft completer uploads BOTH declared artifacts before the completeness check, and never publishes"
     info "v1.229.4 failed here: no step in the job could upload either one"
 else
-    fail "S1 publisher structure invalid (derives=$dd uploads-both=$ub upload-first=$uo check-first=$co)"
+    fail "S1 draft completer structure invalid (derives=$dd uploads-both=$ub upload-before-check=$uo never-publishes=$np)"
     info "⛔ VERIFIED IS NOT PUBLISHED — this is the exact v1.229.4 defect"
 fi
+
+# ---- S4 · release-publish.yml is the ONLY publisher, and it publishes only checked bytes --
+# v1.234.0 (owner): users get exactly the RC-accepted files. Only release-publish.yml may
+# clear the draft flag; it must never build, upload, replace or delete an asset, and its
+# draft / tag->commit / every-asset-hash / SHA256SUMS checks must all precede the flip.
+PUBWF="$ROOT/.github/workflows/release-publish.yml"
+if [[ ! -f "$PUBWF" ]]; then
+    fail "S4 release-publish.yml missing: no gated publisher"
+else
+    S4="$(python3 - "$PUBWF" "$ROOT/.github/workflows" <<'PY'
+import sys, os, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+code = "\n".join((s.get('run') or '') + "\n" + str(s.get('uses') or '')
+                 for j in d['jobs'].values() for s in j['steps'])
+code = "\n".join(l for l in code.split("\n") if not l.lstrip().startswith('#'))
+flip = code.find('--draft=false')
+def before(tok): i = code.find(tok); return 0 <= i < flip
+ok = {
+  'flips_draft': flip >= 0,
+  'no_upload': 'gh release upload' not in code and 'action-gh-release' not in code,
+  'no_delete': 'delete-asset' not in code and 'gh release delete' not in code,
+  'no_checkout_or_build': 'actions/checkout' not in code and 'go build' not in code and 'build_nftban' not in code,
+  'rc_gates_first': before('not PASS'),
+  # the refusal itself, not the query (isDraft is also read again after the flip)
+  'draft_check_first': before('"$is_draft" == "true"'),
+  'tag_commit_first': before('/commits/'),
+  # the comparison itself, not a mention (MANIFEST_SHA also appears in input validation)
+  'manifest_first': before('== "$MANIFEST_SHA"'),
+  'sha256sums_first': before('sha256sum -c SHA256SUMS'),
+}
+others = []
+for f in sorted(os.listdir(sys.argv[2])):
+    p = os.path.join(sys.argv[2], f)
+    if f.endswith(('.yml', '.yaml')) and os.path.abspath(p) != os.path.abspath(sys.argv[1]):
+        body = "\n".join(l for l in open(p).read().split("\n") if not l.lstrip().startswith('#'))
+        if '--draft=false' in body or 'draft: false' in body:
+            others.append(f)
+ok['sole_publisher'] = not others
+print(" ".join(f"{k}={'yes' if v else 'no'}" for k, v in ok.items()), "others=" + (",".join(others) or "-"))
+PY
+)"
+    if [[ "$S4" != *"=no"* ]]; then
+        pass "S4 release-publish.yml is the only publisher; no build/upload/delete; every check precedes the flip"
+    else
+        fail "S4 publisher gate invalid: $S4"
+    fi
+fi
+
+# ---- S5 · the container image is retired: nothing publishes an image ---------------
+# v1.234.0 (owner): the GHCR image is retired (it was never a supported install path).
+# No workflow may push an image to a registry. Docker stays allowed for the DEB/RPM build
+# and test containers, which only pull and run.
+S5="$(python3 - "$ROOT/.github/workflows" "$ROOT" <<'PY'
+import sys, os
+wf, root = sys.argv[1], sys.argv[2]
+hits = []
+for f in sorted(os.listdir(wf)):
+    if not f.endswith(('.yml', '.yaml')):
+        continue
+    body = "\n".join(l for l in open(os.path.join(wf, f)).read().split("\n") if not l.lstrip().startswith('#'))
+    for tok in ('docker push', 'docker/build-push-action', 'docker/login-action', 'ghcr.io', 'packages: write'):
+        if tok in body:
+            hits.append(f"{f}:{tok}")
+for p in ('Dockerfile', '.github/workflows/docker.yml'):
+    if os.path.exists(os.path.join(root, p)):
+        hits.append(p)
+print(",".join(hits) or "-")
+PY
+)"
+if [[ "$S5" == "-" ]]; then pass "S5 no workflow builds or pushes a container image (image retired)"
+else fail "S5 a container-image publisher or its inputs are back: $S5"; fi
 
 # ---- extract the production publish step -----------------------------------------
 python3 - "$WF" "$TMP/publish.sh" <<'PY'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 for st in d['jobs']['verify-release']['steps']:
-    if 'publish release' in str(st.get('name', '')):
+    if 'complete the draft release' in str(st.get('name', '')):
         open(sys.argv[2], 'w').write(st['run']); sys.exit(0)
 sys.exit(3)
 PY
@@ -139,7 +211,10 @@ case "$2" in
     # the v1.229.4 shape, where the upload authority did not exist at all.
     if [ -n "${DROP_UPLOAD:-}" ] && [ "$f" = "$DROP_UPLOAD" ]; then exit 0; fi
     echo "$f" >> "$PUBLISHED_SET"; exit 0 ;;
-  view)   sort -u "$PUBLISHED_SET" 2>/dev/null; exit 0 ;;
+  view)
+    # the draft completer asks `--json isDraft`: the release under test is a draft
+    for a in "$@"; do [ "$a" = "isDraft" ] && { echo true; exit 0; }; done
+    sort -u "$PUBLISHED_SET" 2>/dev/null; exit 0 ;;
   edit)   echo "PUBLISHED" > "$PWD/PUBLISHED.marker"; exit 0 ;;
   *) exit 0 ;;
 esac
@@ -176,10 +251,11 @@ PROV="$(awk -F'\t' '$1=="subject"{print $3; exit}' "$DECL_SRC")"
 d="$(mk pos)"; seed "$d" "nftban-el9-x86_64.rpm" "nftband-linux-amd64" "$SUBJ"
 printf 'prov\n' > "$d/dist/$PROV"
 out="$(run_pub "$d")"; rc="$(rc_pub "$d")"
-if [[ "$rc" -eq 0 ]] && [[ -f "$d/dist/PUBLISHED.marker" ]]; then
-    pass "POS a complete population uploads the declared subject and PUBLISHES"
+# v1.234.0: a complete population completes the DRAFT and is NOT published here.
+if [[ "$rc" -eq 0 ]] && [[ ! -f "$d/dist/PUBLISHED.marker" ]] && grep -qF 'DRAFT READY (NOT PUBLISHED)' <<<"$out"; then
+    pass "POS a complete population uploads the declared subject and completes the DRAFT without publishing"
 else
-    fail "POS a complete population did not publish (rc=$rc)"; sed 's/^/          /' <<<"$out" | tail -6
+    fail "POS a complete population did not complete the draft as expected (rc=$rc published=$([[ -f "$d/dist/PUBLISHED.marker" ]] && echo yes || echo no))"; sed 's/^/          /' <<<"$out" | tail -6
 fi
 
 # ---- N1 · THE LOAD-BEARING ARM · the exact v1.229.4 shape --------------------------

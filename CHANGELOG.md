@@ -61,6 +61,20 @@ was the verdict wherever a firewall effect is claimed.
 - **SELinux (EL9/EL10, enforcing):** nftband may now read the net sysctls and follow the volatile
   journal. LoginMon's journal source previously went dark while status reported ACTIVE.
 
+### Removed
+
+- **The container image on GitHub Container Registry (`ghcr.io/itcmsgr/nftban`) is retired.** It was
+  never a supported way to install or run NFTBan. Its Alpine base is not a supported distribution, and the
+  CLI in the image reported a missing distribution configuration at start. No image is built or
+  published from v1.234.0 on; install NFTBan with the DEB or RPM packages. Protecting servers that run
+  Docker is a separate topic and is unchanged (see the known issue on forwarding hosts).
+
+### Changed (release process)
+
+- A version tag now builds every release asset into a **draft** release. The draft is published only
+  after the exact assets pass the release-candidate acceptance on the labs, by a separate workflow that
+  verifies every asset's hash and does not rebuild or upload anything.
+
 ### Known issues (not changed by this release)
 
 - **Per-IP grants from `nftban port allow` on non-SSH ports are lost at every firewall rebuild**,

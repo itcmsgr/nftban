@@ -61,7 +61,7 @@ import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 names = [str(s.get('name','')) for s in d['jobs']['verify-release']['steps']]
 gi = next((i for i,n in enumerate(names) if n.startswith('Gate 4')), -1)
-pi = next((i for i,n in enumerate(names) if 'publish release' in n), -1)
+pi = next((i for i,n in enumerate(names) if 'complete the draft release' in n), -1)
 print("%d %d" % (gi, pi))
 PY
 )"

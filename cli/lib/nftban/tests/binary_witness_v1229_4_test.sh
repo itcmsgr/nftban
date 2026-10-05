@@ -78,7 +78,7 @@ wi=pi=-1
 for i,st in enumerate(j.get('steps') or []):
     n=str(st.get('name',''))
     if n.startswith('PR-D binary govulncheck witness'): wi=i
-    if 'publish release' in n: pi=i
+    if 'complete the draft release' in n: pi=i
 print("%d %d"%(wi,pi))
 PY
 )"

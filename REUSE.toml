@@ -47,7 +47,7 @@ SPDX-License-Identifier = "MPL-2.0"
 
 # --- CI, build and packaging metadata -----------------------------------------
 [[annotations]]
-path = [".github/**", "scripts/**", "build/**", "packaging/**", "tools/**", "Makefile", "Dockerfile", ".dockerignore", ".lycheeignore", ".githooks/**", "*.yml", "*.yaml", "*.toml", "*.json"]
+path = [".github/**", "scripts/**", "build/**", "packaging/**", "tools/**", "Makefile", ".lycheeignore", ".githooks/**", "*.yml", "*.yaml", "*.toml", "*.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 SPDX-License-Identifier = "MPL-2.0"

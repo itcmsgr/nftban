@@ -8,8 +8,8 @@
 # meta:type="script"
 # meta:version="1.196.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Static guard preventing Core license-metadata regression. Asserts the RPM spec generator (packaging/build_nftban.sh) and the rendered Core RPM spec declare License: MPL-2.0 (never GPL/LGPL/AGPL), that the spec ships %license LICENSE, and that the high-level public/legal surfaces (README, LICENSE, NOTICE.md, TRADEMARK.md, Dockerfile OCI label) affirm MPL-2.0 without self-declaring a copyleft license. Distinguishes a forbidden self-declaration (License: GPL) from an allowed blocked-license-policy or comparative mention (e.g. 'Unlike GPL'). When no rendered spec exists, it renders the spec's static metadata from the generator heredoc using the same packaging path. Read-only, static. Exit 0 = MPL-2.0 metadata holds, 1 = regression."
-# meta:inventory.files="packaging/build_nftban.sh,README.md,LICENSE,NOTICE.md,TRADEMARK.md,Dockerfile"
+# meta:description="Static guard preventing Core license-metadata regression. Asserts the RPM spec generator (packaging/build_nftban.sh) and the rendered Core RPM spec declare License: MPL-2.0 (never GPL/LGPL/AGPL), that the spec ships %license LICENSE, and that the high-level public/legal surfaces (README, LICENSE, NOTICE.md, TRADEMARK.md) affirm MPL-2.0 without self-declaring a copyleft license. Distinguishes a forbidden self-declaration (License: GPL) from an allowed blocked-license-policy or comparative mention (e.g. 'Unlike GPL'). When no rendered spec exists, it renders the spec's static metadata from the generator heredoc using the same packaging path. Read-only, static. Exit 0 = MPL-2.0 metadata holds, 1 = regression."
+# meta:inventory.files="packaging/build_nftban.sh,README.md,LICENSE,NOTICE.md,TRADEMARK.md"
 # meta:inventory.binaries="bash,grep,sed,awk,mktemp"
 # meta:inventory.env_vars="LICENSE_GENERATOR,LICENSE_SPEC,LICENSE_REPO_ROOT"
 # meta:inventory.config_files=""
@@ -190,16 +190,7 @@ affirm_mpl "$REPO_ROOT/NOTICE.md"               "NOTICE.md"
 affirm_mpl "$REPO_ROOT/TRADEMARK.md"            "TRADEMARK.md"
 affirm_mpl "$REPO_ROOT/packaging/deb/copyright" "packaging/deb/copyright (DEB metadata)"
 
-# Dockerfile OCI license label specifically.
-if [[ -f "$REPO_ROOT/Dockerfile" ]]; then
-  if grep -qE 'org\.opencontainers\.image\.licenses="?MPL-2\.0"?' "$REPO_ROOT/Dockerfile"; then
-    ok "Dockerfile OCI license label = MPL-2.0"
-  elif grep -qE "org\.opencontainers\.image\.licenses.*${COPYLEFT_RE}" "$REPO_ROOT/Dockerfile"; then
-    bad "Dockerfile OCI license label declares a copyleft license"
-  else
-    note "Dockerfile has no OCI license label — skipped"
-  fi
-fi
+# v1.234.0: the container image (Dockerfile) is retired; there is no OCI label surface.
 
 # =============================================================================
 # CROSS-SURFACE LICENCE IDENTITY — string EQUALITY, not four independent greps
@@ -212,9 +203,9 @@ echo "-- cross-surface licence identity (equality)"
 _CANON_LICENSE="MPL-2.0"
 _rpm_lic="$(grep -hoE '^License:[[:space:]]+\S+' "$REPO_ROOT/packaging/build_nftban.sh" 2>/dev/null | head -1 | awk '{print $2}')"
 _dep5_lic="$(grep -hoE '^License:[[:space:]]+\S+' "$REPO_ROOT/packaging/deb/copyright" 2>/dev/null | head -1 | awk '{print $2}')"
-_oci_lic="$(grep -hoE 'org\.opencontainers\.image\.licenses="[^"]+"' "$REPO_ROOT/Dockerfile" 2>/dev/null | head -1 | sed 's/.*="//; s/"$//')"
+# v1.234.0: the container image (Dockerfile OCI label) is retired; rpm and dep5 remain.
 _mismatch=0
-for _pair in "rpm:$_rpm_lic" "dep5:$_dep5_lic" "oci:$_oci_lic"; do
+for _pair in "rpm:$_rpm_lic" "dep5:$_dep5_lic"; do
   _name="${_pair%%:*}"; _val="${_pair#*:}"
   if [[ -z "$_val" ]]; then
     bad "licence identity: $_name surface value NOT FOUND — identity cannot be compared"

@@ -40,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish GitHub release (false = dry-run; assemble + verify, no upload)"
+        description: "Create the DRAFT release with all assets (false = dry-run; assemble + verify, no upload). Publication is ONLY release-publish.yml."
         required: true
         default: false
         type: boolean
@@ -1170,7 +1170,8 @@ jobs:
         # - Upload as DRAFT so no user sees unverified assets
         # - Include SHA256SUMS.build as ground truth reference
         # - verify-release job will: download with retry, verify checksums,
-        #   generate final SHA256SUMS, then publish the release
+        #   generate final SHA256SUMS, and leave the release a DRAFT
+        #   (v1.234.0: publication is release-publish.yml, after RC acceptance)
         # NOTE: nftban-core is uploaded by SLSA workflow with provenance.
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -1189,22 +1190,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================================
-  # VERIFY & PUBLISH RELEASE (Dual-Checksum Integrity Gate)
+  # VERIFY RELEASE — DRAFT ONLY (Dual-Checksum Integrity Gate)
   # ==========================================================================
-  # This job is the ONLY path to publishing a release. It:
+  # This job completes and verifies the DRAFT release. It:
   #   1. Downloads all assets from the DRAFT release (with retry loop)
   #   2. Verifies downloaded checksums match SHA256SUMS.build (upload integrity)
   #   3. Extracts and verifies binaries inside RPM/DEB packages (binary integrity)
   #   4. Generates final SHA256SUMS from downloaded assets (what users will verify)
-  #   5. Uploads SHA256SUMS and publishes the release (draft=false)
+  #   5. Uploads SHA256SUMS and leaves the release a DRAFT
   #
-  # If ANY check fails, the release stays as DRAFT and is never exposed to users.
+  # v1.234.0 (owner): it never publishes. The ONLY path to publication is
+  # release-publish.yml, run after RC acceptance of these exact assets; it publishes
+  # this draft unchanged (no rebuild, no upload, every asset hash pinned).
   verify-release:
-    name: Verify & Publish Release
+    name: Verify Release (draft only)
     needs: [create-release, build-nftban-core]
-    # v1.221.1: this job downloads + verifies + PUBLISHES the draft release. On a
-    # manual dry-run (workflow_dispatch, publish=false) no release exists, so the
-    # whole job is skipped. Tag push always runs it.
+    # v1.221.1: this job downloads + verifies the draft release. On a manual dry-run
+    # (workflow_dispatch, publish=false) no release exists, so the whole job is
+    # skipped. Tag push always runs it.
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
     runs-on: ubuntu-latest
     permissions:
@@ -1878,7 +1881,7 @@ jobs:
           echo ""
           echo "GATE 3 PASSED: SHA256SUMS generated and cross-validated"
 
-      - name: Upload SHA256SUMS and publish release
+      - name: Upload SHA256SUMS and complete the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -1966,21 +1969,26 @@ jobs:
           fi
           echo "OK: every checksummed and declared artifact is present in the release"
 
-          # Publish: remove draft flag
-          echo "Publishing release (draft=false)..."
-          gh release edit "$VERSION" --draft=false \
-            -R "$GITHUB_REPOSITORY"
+          # v1.234.0 (owner): this job NEVER publishes. The release stays a DRAFT so the
+          # exact assets above can be accepted on the labs (RC gates) before any user can
+          # obtain them. Publication is a separate, manual workflow (release-publish.yml)
+          # that publishes THIS draft unchanged: no rebuild, no upload, hashes pinned.
+          is_draft=$(gh release view "$VERSION" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$is_draft" != "true" ]; then
+            echo "::error title=Release not a draft::$VERSION is already public (isDraft=$is_draft). This workflow must never publish."
+            exit 1
+          fi
 
           echo ""
           echo "============================================="
-          echo "RELEASE $VERSION PUBLISHED"
+          echo "RELEASE $VERSION DRAFT READY (NOT PUBLISHED)"
           echo "============================================="
           echo ""
           echo "Integrity verification summary:"
           echo "  Gate 1: Upload integrity    (build == download checksums)"
           echo "  Gate 2: Binary integrity    (standalone == packaged binaries)"
-          echo "  Gate 3: Public SHA256SUMS   (generated from downloaded assets)"
+          echo "  Gate 3: SHA256SUMS          (generated from downloaded assets)"
           echo ""
-          echo "All gates passed. Release is live."
+          echo "Next: RC acceptance on these exact assets, then run release-publish.yml."
 
           rm -rf /tmp/release-verify
