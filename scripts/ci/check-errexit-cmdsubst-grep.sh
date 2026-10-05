@@ -127,8 +127,8 @@ selftest() {
     cat > "$t/fx.sh" <<'FIXTURE'
 u1=$(grep -m1 '^K=' "$f" 2>/dev/null | cut -d= -f2- | tr -d '"')
 u2=$(grep -c x "$f")
-[[ -f "$f" ]] && u3=$(grep '^K=' "$f" | head -1)
-u4=$(grep -E '^[[:space:]]*K=' "$f" 2>/dev/null | head -n1 \
+[[ -f "$f" ]] && u3=$(grep '^K=' "$f" | tr -d x)
+u4=$(grep -E '^[[:space:]]*K=' "$f" 2>/dev/null | tr -d x \
      | cut -d= -f2-)
 g1=$(grep -m1 '^K=' "$f" | cut -d= -f2- || true)
 g2=$(grep -m1 '^K=' "$f" | cut -d= -f2-) || g2=""
@@ -137,7 +137,7 @@ if g4=$(grep '^K=' "$f"); then :; fi
 local g5=$(grep '^K=' "$f")
 g6=$(sed -n 1p "$f" | cut -c1)
 # c1=$(grep x f)
-g7=$(grep -m1 '^K=' "$f" 2>/dev/null | head -n1 \
+g7=$(grep -m1 '^K=' "$f" 2>/dev/null | tr -d x \
      | cut -d= -f2- || true)
 FIXTURE
     local out want got bad=0
