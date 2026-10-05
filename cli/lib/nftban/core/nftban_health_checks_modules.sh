@@ -975,8 +975,13 @@ _nftban_health_botscan_facts() {
         mode=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo both)
         local lconf="$conf.local" le lm
         if [[ -f "$lconf" ]]; then
-            le=$(grep -m1 '^BOTSCAN_ENABLED=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$le" ]] && enabled="$le"
-            lm=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$lm" ]] && mode="$lm"
+            # v1.235 H1 — a .local that does not set the key is the normal case (our own
+            # containment wrote one holding only BOTSCAN_404_TRACKING=false). grep's
+            # no-match exit 1 under pipefail failed the assignment, errexit killed the
+            # process substitution the callers read from, and BotScan rendered DISABLED
+            # with empty fields. No match = keep the main.conf value, as above.
+            le=$(grep -m1 '^BOTSCAN_ENABLED=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true); [[ -n "$le" ]] && enabled="$le"
+            lm=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true); [[ -n "$lm" ]] && mode="$lm"
         fi
     fi
     local timer="inactive"
@@ -984,10 +989,12 @@ _nftban_health_botscan_facts() {
     local rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
     local hs="UNKNOWN" last="-" bans="-"
     if [[ -r "$rs" ]] && command -v jq &>/dev/null; then
-        hs=$(jq -r '.health_state//"UNKNOWN"' "$rs" 2>/dev/null)
-        local lt; lt=$(jq -r '.last_run_ts//0' "$rs" 2>/dev/null)
+        # v1.235 H1 — same failure class: jq exits non-zero on a truncated or
+        # malformed file, which must not abort the facts line either.
+        hs=$(jq -r '.health_state//"UNKNOWN"' "$rs" 2>/dev/null) || hs="UNKNOWN"
+        local lt; lt=$(jq -r '.last_run_ts//0' "$rs" 2>/dev/null) || lt=0
         [[ "$lt" =~ ^[0-9]+$ && "$lt" -gt 0 ]] && last="$(( $(date +%s) - lt ))s"
-        bans=$(jq -r '.bans_emitted_total//0' "$rs" 2>/dev/null)
+        bans=$(jq -r '.bans_emitted_total//0' "$rs" 2>/dev/null) || bans="-"
     fi
     local spool="${BOTSCAN_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool}" spool_state="absent"
     [[ -d "$spool" ]] && { spool_state="present"; [[ -r "$spool" ]] || spool_state="present/UNREADABLE"; }
@@ -1012,8 +1019,8 @@ _nftban_health_botscan_facts() {
     local cs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_consumer_status.json"
     local handoff="UNKNOWN" stale="UNKNOWN"
     if [[ -r "$cs" ]] && command -v jq &>/dev/null; then
-        handoff=$(jq -r '.batch_handoff_errors//0' "$cs" 2>/dev/null)
-        stale=$(jq -r '.batch_consumer_stale_backlog//false' "$cs" 2>/dev/null)
+        handoff=$(jq -r '.batch_handoff_errors//0' "$cs" 2>/dev/null) || handoff="UNKNOWN"
+        stale=$(jq -r '.batch_consumer_stale_backlog//false' "$cs" 2>/dev/null) || stale="UNKNOWN"
     fi
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state" "$handoff" "$stale"
 }
