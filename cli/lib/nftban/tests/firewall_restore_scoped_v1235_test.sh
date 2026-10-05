@@ -57,13 +57,14 @@ grep -q '^_restore_from_file() {' "$FNS" || { echo "  NOT_EXECUTED: _restore_fro
 LOG="$WORK/calls.log"; APPLIED="$WORK/applied"; mkdir -p "$APPLIED"
 NFT_CHECK_RC=0
 nft(){
-    local i=0 a
+    local i=0 a next
+    local -a args=("$@")
     # Log with explicit single spaces: under IFS=$'\n\t' "$*" would join with newlines.
     { printf 'nft'; printf ' %s' "$@"; printf '\n'; } >> "$LOG"
     for a in "$@"; do
         i=$((i+1))
         if [[ "$a" == "-f" ]]; then
-            local next="${@:i+1:1}"
+            next="${args[i]:-}"   # i is the 1-based position of -f; args[i] is the next argument
             [[ -f "$next" ]] && cp "$next" "$APPLIED/$(wc -l < "$LOG" | tr -d ' ').nft"
         fi
     done
