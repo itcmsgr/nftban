@@ -13,7 +13,10 @@ name: Docker
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
+    # v1.234.0 (owner): no push on v* tags. A tag now produces only a DRAFT release;
+    # versioned images (vX.Y.Z / X.Y.Z / X.Y) are published by release-publish.yml,
+    # which dispatches this workflow on the tag ref AFTER RC acceptance.
+  workflow_dispatch:
   pull_request:
     branches: [main, master, 'hotfix/**']
 

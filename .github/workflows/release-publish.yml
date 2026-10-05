@@ -1,0 +1,115 @@
+# =============================================================================
+# NFTBan - Release publish: accepted DRAFT -> public (v1.234.0)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Owner rule (2026-10-05): the files users download are EXACTLY the files that passed
+# the RC acceptance gates on the labs. release.yml builds every asset into a DRAFT and
+# never publishes. This workflow is the ONLY publisher. It:
+#   - builds nothing, uploads nothing, replaces nothing (no checkout, no build tools);
+#   - refuses unless every required RC gate is given as PASS;
+#   - refuses unless the release is still a DRAFT;
+#   - refuses unless the tag resolves to the commit the RC assets were built from;
+#   - refuses unless EVERY asset's sha256 matches the manifest recorded at RC-10;
+#   - verifies SHA256SUMS, then clears the draft flag, then publishes the versioned
+#     container image (docker.yml no longer pushes on tags).
+#
+# Asset manifest recipe (RC-10 computes the same value from the downloaded draft):
+#   cd <dir holding exactly the release assets>
+#   find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort \
+#     | xargs -d '\n' sha256sum | sha256sum | cut -d' ' -f1
+# =============================================================================
+name: Release publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to publish, e.g. v1.234.0 (must be an existing DRAFT)"
+        required: true
+        type: string
+      release_commit:
+        description: "Full 40-hex commit the accepted RC assets were built from (the tag must resolve to it)"
+        required: true
+        type: string
+      assets_manifest_sha256:
+        description: "sha256 of the asset manifest recorded at RC-10 (recipe in this file's header)"
+        required: true
+        type: string
+      rc_gates:
+        description: "RC results, e.g. RC-1=PASS,RC-2=PASS,...,RC-11=PASS (every required row must be PASS)"
+        required: true
+        type: string
+
+permissions: read-all
+
+concurrency:
+  group: release-publish-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish accepted draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # clear the draft flag on the existing release (no uploads)
+      actions: write    # dispatch docker.yml for the versioned image
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+      RELEASE_COMMIT: ${{ inputs.release_commit }}
+      MANIFEST_SHA: ${{ inputs.assets_manifest_sha256 }}
+      RC_GATES: ${{ inputs.rc_gates }}
+    steps:
+      - name: Inputs well-formed and every required RC gate is PASS
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version '$VERSION' is not vX.Y.Z"; exit 1; }
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::release_commit must be a full 40-hex SHA"; exit 1; }
+          [[ "$MANIFEST_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::assets_manifest_sha256 must be 64 hex"; exit 1; }
+          not_pass=0
+          for n in 1 2 3 4 5 6 7 8 9 10 11; do
+            v=$(printf '%s\n' "$RC_GATES" | tr ',' '\n' | tr -d ' ' | awk -F= -v k="RC-$n" '$1 == k { print $2 }')
+            if [[ "$v" != "PASS" ]]; then
+              echo "::error title=RC gate not PASS::RC-$n is '${v:-missing}'. Publication requires every required row PASS."
+              not_pass=$((not_pass + 1))
+            fi
+          done
+          [[ "$not_pass" -eq 0 ]] || exit 1
+          echo "RC-1..RC-11 all PASS"
+
+      - name: Release is a DRAFT and the tag resolves to the accepted commit
+        run: |
+          set -euo pipefail
+          is_draft=$(gh release view "$VERSION" -R "$REPO" --json isDraft --jq .isDraft)
+          [[ "$is_draft" == "true" ]] || { echo "::error::$VERSION is not a draft (isDraft=$is_draft); nothing to publish here."; exit 1; }
+          tag_commit=$(gh api "repos/$REPO/commits/$VERSION" --jq .sha)
+          [[ "$tag_commit" == "$RELEASE_COMMIT" ]] || { echo "::error::tag $VERSION -> $tag_commit, accepted RC commit is $RELEASE_COMMIT"; exit 1; }
+          echo "draft OK; tag $VERSION -> $tag_commit"
+
+      - name: Every asset hash equals the accepted manifest; SHA256SUMS verifies
+        run: |
+          set -euo pipefail
+          d=$(mktemp -d)
+          gh release download "$VERSION" -R "$REPO" -D "$d"
+          cd "$d"
+          echo "assets:"; find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort
+          got=$(find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs -d '\n' sha256sum | sha256sum | cut -d' ' -f1)
+          echo "asset manifest sha256: $got"
+          [[ "$got" == "$MANIFEST_SHA" ]] || { echo "::error title=Asset hash mismatch::manifest $got != accepted $MANIFEST_SHA. The draft differs from the tested files; NOT publishing."; exit 1; }
+          sha256sum -c SHA256SUMS
+
+      - name: Publish the accepted draft (no rebuild, no upload)
+        run: |
+          set -euo pipefail
+          gh release edit "$VERSION" -R "$REPO" --draft=false
+          is_draft=$(gh release view "$VERSION" -R "$REPO" --json isDraft --jq .isDraft)
+          [[ "$is_draft" == "false" ]] || { echo "::error::publish did not take effect (isDraft=$is_draft)"; exit 1; }
+          echo "RELEASE $VERSION PUBLISHED (accepted draft, assets unchanged)"
+
+      - name: Publish the versioned container image (after acceptance)
+        run: |
+          set -euo pipefail
+          gh workflow run docker.yml -R "$REPO" --ref "$VERSION"
+          echo "docker.yml dispatched for $VERSION"
