@@ -119,8 +119,10 @@ chmod 0750 "$SPOOL_DIR" 2>/dev/null || true
 # the skip doubles as natural backpressure. flock -n: never blocks. Fail-SAFE: if the
 # lock file cannot even be opened (e.g. hermetic test with no /run), we proceed
 # WITHOUT the lock rather than skip — we never wedge collection on a lock problem.
-if ( : > "$SCAN_LOCK_FILE" ) 2>/dev/null; then
-    exec 9>"$SCAN_LOCK_FILE"
+# v1.235: a lock file left root:root 0644 by a manual root run is not writable by the
+# nftban unit user; flock(2) works on a read-only descriptor, so open read-only as a
+# fallback instead of dropping mutual exclusion. Braces scope the 2>/dev/null.
+if { exec 9<>"$SCAN_LOCK_FILE"; } 2>/dev/null || { exec 9<"$SCAN_LOCK_FILE"; } 2>/dev/null; then
     if ! flock -n 9 2>/dev/null; then
         audit "scan in progress (lock held) — skipping collect cycle"
         exit 0
