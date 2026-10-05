@@ -205,6 +205,9 @@ type KernelMetrics struct {
 	SoftnetDrops         uint64  `json:"softnet_drops_total"`   // Aggregated across CPUs
 	SoftnetTimeSqueeze   uint64  `json:"softnet_time_squeeze_total"`
 	NICDrops             uint64  `json:"nic_rx_dropped_total"`  // Aggregated across interfaces
+	// ConntrackMeasured is false when count/max could not be read (e.g. a denied
+	// /proc read); the three Conntrack values above are then NOT measurements.
+	ConntrackMeasured bool `json:"conntrack_measured"`
 }
 
 // NFTablesMetrics contains nftables metrics

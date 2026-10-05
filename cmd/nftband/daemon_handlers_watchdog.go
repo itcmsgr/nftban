@@ -60,12 +60,18 @@ func (d *Daemon) handleWatchdogStatusRequest() SocketResponse {
 
 	// Add key metrics if snapshot available
 	if snapshot != nil {
+		// v1.235: conntrack_utilization is null when the read failed, not 0.
+		var ctUtil any
+		if snapshot.Kernel.ConntrackMeasured {
+			ctUtil = snapshot.Kernel.ConntrackUtilization
+		}
 		data["metrics"] = map[string]any{
 			"rss_bytes":             snapshot.Process.RSS,
 			"cpu_percent":           snapshot.Process.CPUPct,
 			"goroutines":            snapshot.Runtime.Goroutines,
 			"heap_alloc_bytes":      snapshot.Runtime.HeapAlloc,
-			"conntrack_utilization": snapshot.Kernel.ConntrackUtilization,
+			"conntrack_utilization": ctUtil,
+			"conntrack_measured":    snapshot.Kernel.ConntrackMeasured,
 			"iowait_percent":        snapshot.System.IOWaitPct,
 		}
 	}
