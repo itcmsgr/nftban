@@ -17,6 +17,11 @@ on:
     # versioned images (vX.Y.Z / X.Y.Z / X.Y) are published by release-publish.yml,
     # which dispatches this workflow on the tag ref AFTER RC acceptance.
   workflow_dispatch:
+    inputs:
+      release_commit:
+        description: "On a tag ref: the accepted release commit (40-hex); the image must be built from it"
+        required: false
+        type: string
   pull_request:
     branches: [main, master, 'hotfix/**']
 
@@ -90,12 +95,63 @@ jobs:
             # in metadata-action@v5).
             type=raw,value=sha-${{ env.SHA_SHORT }},enable=true,priority=100
 
-      - name: Build and push
+      # v1.234.0 (owner): a versioned image is its own artifact. It is built ONCE from the
+      # accepted release commit, checked, and only that checked image is pushed.
+      - name: Release image binds to the accepted commit
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]]; then
+            echo "::error::versioned images are published only by release-publish.yml (workflow_dispatch)"; exit 1
+          fi
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::release_commit (40-hex) is required for a tag ref"; exit 1; }
+          [[ "$GITHUB_SHA" == "$RELEASE_COMMIT" ]] || { echo "::error::tag ref is $GITHUB_SHA, accepted release commit is $RELEASE_COMMIT"; exit 1; }
+          echo "image source = accepted release commit $GITHUB_SHA"
+
+      - name: Build (load locally, no push yet)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Image checks (before any push)
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          img=$(awk 'NF { print; exit }' <<<"$TAGS")
+          rev=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$img")
+          [[ "$rev" == "$GITHUB_SHA" ]] || { echo "::error::image revision label '$rev' != source commit $GITHUB_SHA"; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            ver=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$img")
+            tagver="${GITHUB_REF#refs/tags/}"
+            [[ "${ver#v}" == "${tagver#v}" ]] || { echo "::error::image version label '$ver' != tag $tagver"; exit 1; }
+          fi
+          docker run --rm --entrypoint /bin/sh "$img" -c 'test -x /usr/sbin/nftban && test -x /usr/bin/nftban-core && test -x /usr/bin/nftband'
+          help_out=$(docker run --rm "$img" help 2>&1)
+          # rc 0 is not enough: measured on lab3 (2026-10-05) `help` exits 0 while printing
+          # "ERROR: No configuration file found for alpine …". A RELEASE image must start clean.
+          if [[ "$GITHUB_REF" == refs/tags/* ]] && grep -qE '^ERROR' <<<"$help_out"; then
+            echo "::error title=Release image not usable::'nftban help' reports an error in the image:"
+            grep -E '^ERROR' <<<"$help_out" || true
+            exit 1
+          fi
+          echo "image checks PASS: $img (revision $rev)"
+
+      - name: Push the checked image
+        if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r t; do
+            [[ -n "$t" ]] || continue
+            docker push "$t"
+          done <<<"$TAGS"
