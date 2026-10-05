@@ -26,144 +26,23 @@ import (
 	"strings"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban/internal/ports"
 )
 
-// handleLoadPortsRequest loads ports into nftables port sets
-func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
-	_, configDir, _, _ := getDaemonPaths()
-	portsDir := configDir + "/ports.d"
+// loadPortsRetiredError is the answer to the retired load_ports IPC method.
+//
+// v1.235 B1 (SEC-LOAD-PORTS-TRUSTS-CALLER-SUPPLIED-SSH-AUTHORITY; v1.234 plan
+// L494 ruling): load_ports flushed all eight port sets and re-added only ports.d,
+// with no SSH floor, so a wrong or partial ports.d removed the SSH port from the
+// live firewall (lockout surface). The method stays RECOGNISED so an old client
+// gets this explanation instead of "unknown method", but it no longer touches any
+// set. Port sets are rendered by `nftban firewall rebuild`, which derives the SSH
+// ports itself.
+const loadPortsRetiredError = "load_ports is retired (v1.235): it flushed every port set and reloaded ports.d without an SSH floor. Use: nftban firewall rebuild"
 
-	// Load port configuration
-	config, err := ports.LoadPortsFromDirectory(portsDir)
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to load ports: " + err.Error()}
-	}
-
-	if len(config.AllRules) == 0 {
-		return SocketResponse{
-			Success: true,
-			Data: map[string]any{
-				"message":       "no port rules configured",
-				"tcp_ports_in":  0,
-				"tcp_ports_out": 0,
-				"udp_ports_in":  0,
-				"udp_ports_out": 0,
-			},
-		}
-	}
-
-	// Use backend's shared nftables manager
-	nft := d.backend.GetNFTManager()
-	if nft == nil {
-		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
-	}
-
-	// Create IPv4 table and sets
-	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
-	}
-
-	// Directional port sets for IPv4 (v2.1 schema - NO legacy sets)
-	tcpInSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports_in")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_in set: " + err.Error()}
-	}
-	tcpOutSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports_out")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_out set: " + err.Error()}
-	}
-	udpInSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports_in")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports_in set: " + err.Error()}
-	}
-	udpOutSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports_out")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports_out set: " + err.Error()}
-	}
-
-	// Create IPv6 table and sets
-	ipv6Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
-	}
-
-	// Directional port sets for IPv6 (v2.1 schema - NO legacy sets)
-	tcpInSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports_in")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_in set: " + err.Error()}
-	}
-	tcpOutSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports_out")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_out set: " + err.Error()}
-	}
-	udpInSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports_in")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_in set: " + err.Error()}
-	}
-	udpOutSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports_out")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_out set: " + err.Error()}
-	}
-
-	// IMPORTANT: Flush all port sets first for idempotent reload
-	// This ensures removed ports in config are also removed from nftables
-	allPortSets := []*nftables.Set{
-		tcpInSetV4, tcpOutSetV4, udpInSetV4, udpOutSetV4,
-		tcpInSetV6, tcpOutSetV6, udpInSetV6, udpOutSetV6,
-	}
-	for _, set := range allPortSets {
-		if err := nft.FlushSet(set); err != nil {
-			log.Printf("[load_ports] Warning: failed to flush set %s: %v", set.Name, err)
-			// Continue anyway - set might be empty
-		}
-	}
-
-	// Load directional port sets (v2.1 schema)
-	if len(config.TCPPortsIn) > 0 {
-		if err := nft.AddPortElements(tcpInSetV4, config.TCPPortsIn); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP input ports: " + err.Error()}
-		}
-		if err := nft.AddPortElements(tcpInSetV6, config.TCPPortsIn); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv6 TCP input ports: " + err.Error()}
-		}
-	}
-	if len(config.TCPPortsOut) > 0 {
-		if err := nft.AddPortElements(tcpOutSetV4, config.TCPPortsOut); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP output ports: " + err.Error()}
-		}
-		if err := nft.AddPortElements(tcpOutSetV6, config.TCPPortsOut); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv6 TCP output ports: " + err.Error()}
-		}
-	}
-	if len(config.UDPPortsIn) > 0 {
-		if err := nft.AddPortElements(udpInSetV4, config.UDPPortsIn); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv4 UDP input ports: " + err.Error()}
-		}
-		if err := nft.AddPortElements(udpInSetV6, config.UDPPortsIn); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv6 UDP input ports: " + err.Error()}
-		}
-	}
-	if len(config.UDPPortsOut) > 0 {
-		if err := nft.AddPortElements(udpOutSetV4, config.UDPPortsOut); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv4 UDP output ports: " + err.Error()}
-		}
-		if err := nft.AddPortElements(udpOutSetV6, config.UDPPortsOut); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv6 UDP output ports: " + err.Error()}
-		}
-	}
-
-	return SocketResponse{
-		Success: true,
-		Data: map[string]any{
-			"tcp_ports_in":  len(config.TCPPortsIn),
-			"tcp_ports_out": len(config.TCPPortsOut),
-			"udp_ports_in":  len(config.UDPPortsIn),
-			"udp_ports_out": len(config.UDPPortsOut),
-			"total":         len(config.AllRules),
-		},
-	}
+// handleLoadPortsRetired refuses the retired load_ports method without side effects.
+func (d *Daemon) handleLoadPortsRetired() SocketResponse {
+	log.Printf("[load_ports] refused: method retired in v1.235; use 'nftban firewall rebuild'")
+	return SocketResponse{Success: false, Error: loadPortsRetiredError}
 }
 
 // handleAddPortElementRequest atomically adds port(s) to nftables sets
