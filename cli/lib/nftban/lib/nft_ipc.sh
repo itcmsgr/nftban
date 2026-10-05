@@ -734,20 +734,9 @@ nft_ipc_queue_status() {
     nft_ipc_request "status" "{}"
 }
 
-# Load ports from ports.d into nftables sets
-# Usage: nft_ipc_load_ports
-# This reloads all ports from /etc/nftban/ports.d/*.conf into directional port sets
-nft_ipc_load_ports() {
-    local response
-    response=$(nft_ipc_request "load_ports" "{}")
-
-    if nft_ipc_success "$response"; then
-        return 0
-    else
-        echo "ERROR: $(nft_ipc_error "$response")" >&2
-        return 1
-    fi
-}
+# v1.235 B1: nft_ipc_load_ports removed. The daemon's load_ports method is retired
+# (it flushed every port set and reloaded ports.d without an SSH floor); port sets
+# are rendered by `nftban firewall rebuild`. Nothing in the product called it.
 
 # =============================================================================
 # EXPORTS
@@ -793,7 +782,6 @@ export -f nft_ipc_config_hash
 export -f nft_ipc_supports_reload
 
 # v1.15.0 port management
-export -f nft_ipc_load_ports
 
 # Add port(s) atomically to nftables
 # Usage: nft_ipc_add_port PORT PROTOCOL DIRECTION

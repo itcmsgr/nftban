@@ -48,7 +48,8 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 	case "sync":
 		return d.handleSyncRequest(req.Params)
 	case "load_ports":
-		return d.handleLoadPortsRequest(req.Params)
+		// v1.235 B1: retired; recognised so old clients get the reason.
+		return d.handleLoadPortsRetired()
 	case "add_port_element":
 		return d.handleAddPortElementRequest(req.Params)
 	case "delete_port_element":
