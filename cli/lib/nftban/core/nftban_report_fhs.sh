@@ -389,6 +389,12 @@ _nftban_report_esc() {
 #    from occasional to constant -- it must be fixed alongside, not after.
 # -----------------------------------------------------------------------------
 _nftban_report_lit() {
+    # v1.235: only where & IS special. bash < 5.2 has no patsub_replacement: an
+    # & in the replacement is already literal there and the added backslash was
+    # PRINTED (measured EL9 bash 5.1.8: every escaped value rendered as
+    # "\&amp;", "\&lt;" -- the v1.229.15 escaping assertions fail on EL9). The
+    # same check covers bash 5.2 with the option switched off.
+    shopt -q patsub_replacement 2>/dev/null || return 0
     local _n
     for _n in "$@"; do
         local -n _ref="$_n"
@@ -594,15 +600,23 @@ nftban_fhs_generate_html_report() {
     current_time=$(date +%H:%M:%S)
 
     # Substitute placeholders
-    _nftban_report_lit table_rows hostname server_ip current_date current_time
+    # v1.235 (residual of BUG-REPORT-AMPERSAND-INJECTS-PLACEHOLDER-NAME /
+    # BUG-REPORT-HTML-NO-ESCAPING-SANITIZER-DEFINED-BUT-UNUSED): the operator's
+    # company name and the version string were the last values substituted raw,
+    # so "Smith & Co" rendered as "Smith {COMPANY_NAME} Co" and markup in it
+    # reached the document. Both now go through the same escape + literal path.
+    local company_name version_str
+    company_name="$(_nftban_report_esc "${NFTBAN_COMPANY_NAME:-}")"
+    version_str="$(_nftban_report_esc "${NFTBAN_VERSION:-unknown}")"
+    _nftban_report_lit table_rows hostname server_ip current_date current_time company_name version_str
     html_content="${html_content//\{HOSTNAME\}/$hostname}"
     html_content="${html_content//\{SERVER_IP\}/$server_ip}"
     html_content="${html_content//\{DATE\}/$current_date}"
     html_content="${html_content//\{TIME\}/$current_time}"
-    html_content="${html_content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-unknown}}"
-    html_content="${html_content//\{COMPANY_NAME\}/${NFTBAN_COMPANY_NAME:-}}"
+    html_content="${html_content//\{NFTBAN_VERSION\}/$version_str}"
+    html_content="${html_content//\{COMPANY_NAME\}/$company_name}"
     html_content="${html_content//\{LOGO_HTML\}/}"
-    html_content="${html_content//\{VERSION_HTML\}/<p>Version: <strong>${NFTBAN_VERSION:-unknown}</strong></p>}"
+    html_content="${html_content//\{VERSION_HTML\}/<p>Version: <strong>$version_str</strong></p>}"
 
     # Statistics
     html_content="${html_content//\{TOTAL_DIRECTORIES\}/$total_directories}"
