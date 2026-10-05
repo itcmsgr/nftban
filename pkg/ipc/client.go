@@ -240,7 +240,10 @@ func (c *Client) Sync(quick bool) (*Response, error) {
 	return c.Call("sync", nil)
 }
 
-// LoadPorts loads ports into nftables port sets
+// LoadPorts calls the load_ports method.
+//
+// Deprecated: load_ports is retired since v1.235; the daemon refuses it with
+// Success=false and touches no set. Use `nftban firewall rebuild`.
 func (c *Client) LoadPorts() (*Response, error) {
 	return c.Call("load_ports", nil)
 }

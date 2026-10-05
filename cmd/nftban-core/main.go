@@ -307,7 +307,7 @@ func printUsage() {
 	fmt.Println("  nftban-core unban <IP>           Unban an IP address")
 	fmt.Println("  nftban-core check <IP>           Check IP status (whitelist/blacklist)")
 	fmt.Println("  nftban-core feeds [list|load|stats] Manage threat feeds")
-	fmt.Println("  nftban-core ports [list|load|status] Manage port rules (IPv4/IPv6 auto-detect)")
+	fmt.Println("  nftban-core ports [list|status] Manage port rules (IPv4/IPv6 auto-detect)")
 	fmt.Println("  nftban-core geoip [update|status|lookup] Manage GeoIP database and lookups")
 	fmt.Println("  nftban-core suricata [status|filters|enable|disable] Manage Suricata IDS integration (v1.0)")
 	fmt.Println("  nftban-core analytics [summary|countries|top|ip] Show ban analytics (use --json for GUI)")
