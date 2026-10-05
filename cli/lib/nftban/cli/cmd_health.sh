@@ -670,9 +670,21 @@ nftban_health_cmd_truth() {
     for sub in manual feeds geoban; do
         local state entries
         state=$(echo "$output" | jq -r ".modules.blacklist.${sub}.state // \"-\"" 2>/dev/null)
-        entries=$(echo "$output" | jq -r ".modules.blacklist.${sub}.entries // 0" 2>/dev/null)
+        # v1.235 (BUG-STATS-COUNTERS-MIXED-BASES): an ABSENT entries field is NOT
+        # zero. The validator never counts feeds/geoban per source — both load into
+        # the shared blacklist_ipv4/_ipv6 interval set (internal/validator/
+        # module_health.go, "Feeds share blacklist_ipv4 with geoban") — and the
+        # field is `omitempty`, so `// 0` rendered "feeds loaded 0" next to a
+        # stats page reporting 1,396 feed entries. Only manual idle is a true 0.
+        entries=$(echo "$output" | jq -r ".modules.blacklist.${sub}.entries // \"\"" 2>/dev/null) || entries=""
         [[ "$state" == "null" ]] && state="-"
-        [[ "$entries" == "null" ]] && entries="0"
+        [[ "$entries" == "null" ]] && entries=""
+        if [[ -z "$entries" ]]; then
+            case "$sub" in
+                manual) [[ "$state" == "idle" ]] && entries="0" || entries="n/a" ;;
+                *)      entries="n/a (shared blacklist set; not counted per source — see nftban stats)" ;;
+            esac
+        fi
         printf "  %-11s  %-9s  %s\n" "$sub" "$state" "$entries"
     done
 
