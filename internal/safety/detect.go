@@ -28,8 +28,6 @@ import (
 	"net"
 	"os"
 	"strings"
-
-	"github.com/itcmsgr/nftban/internal/procenv"
 )
 
 // SystemIPs holds all critical IPs that must NEVER be blocked
@@ -157,43 +155,17 @@ func detectCurrentUserIP() (net.IP, error) {
 		}
 	}
 
-	// Method 3: Parse output of 'who' command
-	cmd := procenv.Command("who", "-u")
-	output, err := cmd.Output()
-	if err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			// Look for IP in parentheses: username pts/0 2024-11-26 10:30 (1.2.3.4)
-			if strings.Contains(line, "(") && strings.Contains(line, ")") {
-				start := strings.Index(line, "(")
-				end := strings.Index(line, ")")
-				if start < end {
-					ipStr := line[start+1 : end]
-					ip := net.ParseIP(ipStr)
-					if ip != nil {
-						return ip, nil
-					}
-				}
-			}
-		}
+	// Method 3 (v1.235): logged-in remote users from utmp, read in-process.
+	// Pre-v1.235 this exec'd `who -u` then `w -h`, which SELinux enforcing
+	// denies in the daemon domain (lab3 Rocky 10). Both tools read this same
+	// file, so a denial is now an explicit read error rather than an exec AVC.
+	// The first USER_PROCESS record wins, matching the old `who` order.
+	ips, err := utmpRemoteIPs()
+	if err != nil {
+		return nil, fmt.Errorf("could not detect current user IP: %w", err)
 	}
-
-	// Method 4: Parse output of 'w' command
-	cmd = procenv.Command("w", "-h")
-	output, err = cmd.Output()
-	if err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			fields := strings.Fields(line)
-			if len(fields) >= 3 {
-				// Third field is usually the FROM field (IP or hostname)
-				ipStr := fields[2]
-				ip := net.ParseIP(ipStr)
-				if ip != nil {
-					return ip, nil
-				}
-			}
-		}
+	if len(ips) > 0 {
+		return ips[0], nil
 	}
 
 	return nil, fmt.Errorf("could not detect current user IP")
@@ -201,32 +173,10 @@ func detectCurrentUserIP() (net.IP, error) {
 
 // detectGatewayIPs gets default gateway IPs
 func detectGatewayIPs() ([]net.IP, error) {
-	var ips []net.IP
-
-	// Method 1: Parse 'ip route' output
-	cmd := procenv.Command("ip", "route", "show", "default")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-
-	// Output format: "default via 192.168.1.1 dev eth0"
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "via") {
-			parts := strings.Fields(line)
-			for i, part := range parts {
-				if part == "via" && i+1 < len(parts) {
-					ip := net.ParseIP(parts[i+1])
-					if ip != nil {
-						ips = append(ips, ip)
-					}
-				}
-			}
-		}
-	}
-
-	return ips, nil
+	// v1.235: read the kernel routing tables from procfs instead of exec'ing
+	// `ip route` (denied under SELinux enforcing in the daemon domain). Also
+	// covers the IPv6 default route, which the old IPv4-only parse missed.
+	return procDefaultGateways()
 }
 
 // detectDNSServers gets DNS server IPs from /etc/resolv.conf
