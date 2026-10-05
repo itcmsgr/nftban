@@ -79,11 +79,24 @@ for f in cli/lib/nftban/cron/maintenance.sh cli/lib/nftban/core/nftban_health_ch
 done
 
 echo "== SSH_CLIENT active-port remove guard preserved in cmd_port =="
-if grep -q 'ACTIVE SSH port' cli/lib/nftban/cli/cmd_port.sh; then
-    ok "cmd_port: SSH_CLIENT remove guard intact"
+# v1.234: the guard moved into _nftban_port_live_ssh_reason, which keeps the SSH_CLIENT
+# check and adds the sshd-listener and 00-ssh.conf authorities (sudo drops SSH_CLIENT).
+# Assert the structure, not a message string: the helper exists, still checks
+# SSH_CLIENT, and both `remove` and `block` call it.
+helper_body=$(awk '/^_nftban_port_live_ssh_reason\(\) \{/{c=1} c{print} /^}/{if(c){c=0}}' cli/lib/nftban/cli/cmd_port.sh)
+if [ -n "$helper_body" ] && printf '%s\n' "$helper_body" | grep -q 'SSH_CLIENT'; then
+    ok "cmd_port: SSH_CLIENT remove guard intact (in _nftban_port_live_ssh_reason)"
 else
     bad "cmd_port: SSH_CLIENT remove guard missing"
 fi
+for verb in remove block; do
+    arm=$(awk -v v="        ${verb})" '$0==v{c=1} c{print} c && /^            ;;$/{exit}' cli/lib/nftban/cli/cmd_port.sh)
+    if printf '%s\n' "$arm" | grep -q '_nftban_port_live_ssh_reason "\$port"'; then
+        ok "cmd_port: '$verb' calls the SSH-port guard"
+    else
+        bad "cmd_port: '$verb' does not call the SSH-port guard"
+    fi
+done
 
 echo
 echo "RESULT: pass=$pass fail=$fail"
