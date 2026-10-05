@@ -94,8 +94,7 @@ hold_lock(){
     # child holding it after the flock parent is killed.
     ( exec 7<"$LOCK"; flock -x 7; exec sleep 30 ) &
     HOLDER_PID=$!
-    local i
-    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
         if ! flock -n "$LOCK" -c true 2>/dev/null; then return 0; fi
         sleep 0.1
     done
