@@ -11,6 +11,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.234.0] - 2026-10-05 — clean install, restart truth, BotScan request time, safe updates
+
+A minor release on v1.233.1. Unless noted otherwise, each fix below was accepted package-natively on
+the labs, on DEB (Ubuntu 24.04) and RPM (EL9 / EL10), from the candidate's own packages. Kernel state
+was the verdict wherever a firewall effect is claimed.
+
+### Fixed
+
+- **A clean install of v1.233.1 ended `FAILED_REBUILD`.** The installer's firewall rebuild checked timer
+  liveness before the installer had started the timers. As of v1.234.0 the installer passes its install
+  context explicitly, and only that exact shape (timer liveness the only finding) is accepted; the
+  installer starts the timers afterwards. Fresh installs on EL9 and Ubuntu 24.04 reach `COMMITTED` with
+  11 active timers. The emergency SSH table left after a reinstall is now handed off, and the installer
+  and `nftban status` no longer give contradicting advice about `--repair`.
+- **`nftban <command> <verb> --help` could execute the verb as root**, for example
+  `nftables stop --help` ran `systemctl stop`. Every module entrypoint now goes through one dispatch
+  point that routes help before any verb runs.
+- **`nftban nftables restart|reload` reset the firewall to the boot file**, dropping effective ports,
+  persisted bans and whitelist entries. Both verbs now converge through the atomic firewall rebuild
+  (nftables.service is not restarted while active), and report success only after the effective ports,
+  unexpired bans and enabled module chains are read back from the kernel. The boot projection now
+  carries the effective ports.
+- **`nftban port remove|block` could remove an SSH port.** The check covered only the caller's
+  `SSH_CLIENT` port, which `sudo` drops. A port is now refused when it is the session port, a port sshd
+  listens on, or the configured SSH port in `ports.d/00-ssh.conf`. Nothing is changed on refusal.
+- **BotScan counted 404, endpoint and pattern windows on scan time instead of request time**, so old
+  sparse requests could re-ban a customer every few hours. Windows now use the request time in the log
+  line. Also:
+  - a shared CDN edge (Cloudflare published ranges) is never banned, on all three detection paths,
+    IPv4 and IPv6, and the log says why;
+  - per-rule thresholds are honoured (they were capped at the default);
+  - a logged-in editor is no longer banned across cycles;
+  - a stalled scanner that resumes does not turn expired evidence into bans;
+  - an object with a cursor conflict is no longer replayed every cycle (hermetic test; not measured
+    package-natively);
+  - shipped rules moved out of `/etc`: an upgrade keeps the operator's `custom.patterns`, its
+    enable/disable decisions (moved to `override.local`) and its own rules, and reports edited shipped
+    definitions it did not apply.
+- **An update could strip an administrator's immutable (`+i`) flags, or fail half-way on a restricted
+  destination.** Updates now refuse a restricted destination before any change, never remove an
+  administrator's `+i`, and re-lock only flags NFTBan itself set. Uninstall removes only files NFTBan
+  owns.
+- **A firewall rebuild held its lock for time proportional to the number of saved backups** (144 s at
+  40,000 backups). The prune is now planned outside the lock.
+- **`--reconcile-lifecycle`** adds a guarded, record-only path from `REBUILD_REFUSED_BUSY` back to
+  `COMMITTED` when the runtime is proven converged, and does not write false entries to
+  `update-history.json`.
+- **SELinux (EL9/EL10, enforcing):** nftband may now read the net sysctls and follow the volatile
+  journal. LoginMon's journal source previously went dark while status reported ACTIVE.
+
+### Known issues (not changed by this release)
+
+- **Per-IP grants from `nftban port allow` on non-SSH ports are lost at every firewall rebuild**,
+  including the one an update runs, and are not re-applied. `nftban port allow list` can still show such
+  a grant because it lists the configuration file, not the kernel.
+  - Workaround (verified in the kernel): run the same `nftban port allow add …` again after an update or
+    rebuild. This writes a duplicate line to `access.d/port_allow.conf`, so `list` shows the grant twice;
+    one `port allow remove` clears both and the kernel element.
+  - SSH access is restored by a different path (maintenance re-applies the detected SSH ports and system
+    IPs; the rebuild restores the whitelist). Scheduled for v1.235.
+- **Hosts that forward traffic (Docker, KVM, routers):** NFTBan's forward chain has policy drop with no
+  rules, so forwarded traffic is dropped, and rules added to it by hand are removed by every rebuild or
+  update. Do not update such a host until its forwarding rules are reviewed. Scheduled for v1.235.
+- **BotScan 404 and endpoint floods are counted only while their requests are within the window
+  (300 s / 60 s) of the processor run.** With the default collector and processor timers, a flood can
+  already be older than the window when it is processed and then is not counted. When two processor
+  runs are less than 300 s apart (a manual check, a restart), the same 404 flood can be counted again,
+  which refreshes the ban of the same source.
+- **`nftban nftables start`** verifies only the effective ports reliably: it reads its "before" state
+  after the unit has loaded the boot file, so its ban and module-chain line cannot detect a loss on that
+  path. `restart` and `reload` are not affected.
+- Fresh installs on Ubuntu with UFW enabled stop with a takeover conflict, as designed. Disable UFW
+  (`ufw disable` and `systemctl disable --now ufw`) or approve the takeover first.
+
 ## [v1.233.1] - 2026-09-28 — module lifecycle truth and PortScan false bans
 
 A patch release on v1.233.0. Every fix below was proven package-natively on DEB (Ubuntu 24.04)
