@@ -98,7 +98,7 @@ func (c *KernelCollector) collectConntrack(snapshot *Snapshot) {
 // readProcInt reads one integer from a /proc file; ok is false on any read or
 // parse error.
 func readProcInt(path string) (int, bool) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- fixed /proc/sys/net/netfilter paths (conntrackProcDir), overridden only by tests
 	if err != nil {
 		return 0, false
 	}
