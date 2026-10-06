@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
+# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'; B1 bypass unit not enabled -> DIVERGENCE; B2 boot-bypass.state outcome=backstop-removed -> DIVERGENCE 'rules WERE loaded ... removed at T+Ns', never a successful bypass; B3 outcome primary -> ACTIVE, guarantee met; C1 commit-confirm pending -> apply ID, deadline with remaining seconds, the exact confirm command; C2 rollback-failed -> DIVERGENCE 'host NOT protected by NFTBan'; C3 no record named; C4 rolled-back with conflicts= -> untouched files named; D1 applied baseline (state/applied/meta at=) shown, absent -> 'rebuild --confirm unavailable'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
 # meta:inventory.files="lifecycle_facts_v1235_test.sh"
 # meta:inventory.binaries="bash,jq,cp,mktemp"
 # meta:inventory.env_vars="LF_SUBJECT_ROOT"
@@ -63,7 +63,8 @@ cat > "$W/bin/systemctl" <<'S'
 #!/bin/sh
 case "$1" in
   is-active) echo "${DAEMON:-active}"; [ "${DAEMON:-active}" = active ] ;;
-  is-enabled) echo "${NFTSVC:-enabled}"; [ "${NFTSVC:-enabled}" = enabled ] ;;
+  is-enabled) if [ "$2" = nftban-boot-bypass.service ]; then echo "${BYPASSUNIT:-enabled}"; [ "${BYPASSUNIT:-enabled}" = enabled ]
+              else echo "${NFTSVC:-enabled}"; [ "${NFTSVC:-enabled}" = enabled ]; fi ;;
   list-units) printf 'nftban-watchdog.timer loaded active waiting x\nnftban-maintenance.timer loaded active waiting x\n' ;;
   *) exit 0 ;;
 esac
@@ -132,9 +133,53 @@ STORED=1 PROJ=inert run_lf a8b
 
 if js a2 | jq -e '.stored=="disabled" and .applied.tables=="present" and .on_reboot.projection=="inert" and (.notes|length)>=1' >/dev/null 2>&1; then
     ok "A9 JSON valid and carries the same facts"
-else no "A9 JSON" "$(js a2 | head -c 200)"; fi
+else _j="$(js a2)"; no "A9 JSON" "${_j:0:200}"; fi
 
 ! grep -qiE 'window' <<<"$(txt a1)$(txt a2)$(txt a3)" && ok "A10 recovery never claims a 'window'" || no "A10 a recovery window is claimed"
+
+# ---- B: emergency bypass states (contract §3/§6) ------------------------------------
+BYPASSUNIT=disabled STORED=0 PROJ=active run_lf b1
+[[ "$(txt b1)" == *"DIVERGENCE: the bypass unit is disabled: the emergency bypass would not act before the first load"* ]] \
+    && ok "B1 bypass unit not enabled -> DIVERGENCE" || no "B1 bypass unit state not flagged" "$(txt b1 | grep -m1 'Emergency' || true)"
+printf 'outcome=backstop-removed\nat=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$W/state/boot-bypass.state"
+BYPASS=0 STORED=0 PROJ=inert run_lf b2
+t="$(txt b2)"
+if [[ "$t" == *"DIVERGENCE: emergency bypass DEGRADED: not a successful bypass: NFTBan rules WERE loaded during this bypass boot and removed at T+"* && "$t" != *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]]; then
+    ok "B2 backstop-removed -> DIVERGENCE 'rules WERE loaded … removed at T+Ns', never shown as a successful bypass"
+else no "B2 backstop outcome misreported" "$(grep -E 'Emergency|bypass' <<<"$t" | tr '\n' '|')"; fi
+printf 'outcome=primary\nat=2026-10-06T11:00:00Z\n' > "$W/state/boot-bypass.state"
+BYPASS=0 STORED=1 PROJ=inert run_lf b3
+rm -f "$W/state/boot-bypass.state"
+[[ "$(txt b3)" == *"ACTIVE (guarantee met: outcome=primary at 2026-10-06T11:00:00Z)"* && "$(txt b3)" == *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]] \
+    && ok "B3 outcome primary -> ACTIVE, guarantee met" || no "B3 guarantee-met outcome" "$(txt b3 | grep -m1 Emergency || true)"
+
+# ---- C: commit-confirm (contract §4/§6) --------------------------------------------
+dl=$(( $(date +%s) + 90 ))
+printf 'apply_id=a1b2c3\ndeadline_epoch=%s\nstatus=pending\nat=2026-10-06T11:05:00Z\n' "$dl" > "$W/state/commit-confirm.state"
+STORED=0 PROJ=active run_lf c1
+l="$(txt c1 | grep -m1 'Commit-confirm' || true)"
+[[ "$l" == *"PENDING apply a1b2c3"* && "$l" == *"remaining"* && "$l" == *"nftban firewall confirm a1b2c3"* ]] \
+    && ok "C1 pending apply: ID, deadline with remaining seconds, exact confirm command" || no "C1 pending apply" "$l"
+printf 'apply_id=a1b2c3\ndeadline_epoch=1\nstatus=rollback-failed\nat=2026-10-06T11:07:00Z\n' > "$W/state/commit-confirm.state"
+STORED=0 PROJ=active run_lf c2
+[[ "$(txt c2)" == *"DIVERGENCE: ROLLBACK FAILED: NFTBan rules removed, host NOT protected by NFTBan"* ]] \
+    && ok "C2 rollback-failed -> DIVERGENCE (host NOT protected by NFTBan)" || no "C2 rollback failure not flagged"
+printf 'apply_id=a1b2c3\ndeadline_epoch=1\nstatus=rolled-back\nat=2026-10-06T11:07:00Z\nconflicts=/etc/nftban/conf.d/ddos/main.conf.local\n' > "$W/state/commit-confirm.state"
+STORED=0 PROJ=active run_lf c4
+[[ "$(txt c4)" == *"last outcome: rolled-back at 2026-10-06T11:07:00Z (apply a1b2c3)"* && "$(txt c4)" == *"untouched: /etc/nftban/conf.d/ddos/main.conf.local"* ]] \
+    && ok "C4 rolled-back with conflicts -> last outcome + untouched files named" || no "C4 conflicts not shown"
+rm -f "$W/state/commit-confirm.state"
+STORED=0 PROJ=active run_lf c3
+[[ "$(txt c3 | grep -m1 'Commit-confirm' || true)" == *"no apply awaiting confirmation (no record)"* ]] \
+    && ok "C3 no record -> named as such" || no "C3 absent record"
+
+# ---- D1 applied baseline -------------------------------------------------------------
+mkdir -p "$W/state/applied"; printf 'at=2026-10-06T10:30:00Z\n' > "$W/state/applied/meta"
+STORED=0 PROJ=active run_lf d1a
+rm -rf "$W/state/applied"
+STORED=0 PROJ=active run_lf d1b
+[[ "$(txt d1a)" == *"applied baseline at 2026-10-06T10:30:00Z"* && "$(txt d1b)" == *"no applied baseline (rebuild --confirm unavailable)"* ]] \
+    && ok "D1 applied baseline shown / absent named" || no "D1 applied baseline"
 
 # ---- E1/E2 the real dispatcher ------------------------------------------------------
 if [[ -x "$ROOT/cli/sbin/nftban" ]]; then
