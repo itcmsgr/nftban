@@ -80,9 +80,16 @@ NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 #   LOW-LEVEL-TOOL (extensionless cli/sbin — v1.150 AUTH-2 now in scan scope):
 #     cli/sbin/nftban-apply      — ruleset apply (nft -f)
 #     cli/sbin/nftban-rollback   — emergency rollback (nft -f + table delete)
+#     cli/lib/nftban/lib/commit_confirm.sh — v1.235 commit-confirm rollback: ONE nft -f
+#                      transaction replacing ONLY ip/ip6 nftban with the pre-apply dump
+#                      (takes over the retired nftban-rollback role; daemon may be down)
+#     install/helpers/nftban-boot-early.sh — v1.235 emergency-bypass BACKSTOP: deletes
+#                      ONLY ip/ip6 nftban in early boot (no daemon by design)
 #   TEST-ONLY:
 #     scripts/ci/                 — this gate + CI helpers
 #     scripts/test_server_cleanup.sh — lab teardown (nft delete table)
+#     commit_confirm_v1235_test.sh, row486_disable_bypass_v1235_test.sh — assert ON these
+#                      writers (stubbed nft; contain nft-write command strings)
 #     nft_writer_authority_v150_test.sh — asserts ON this policy (contains nft-write
 #                                   text in descriptions/patterns; never runs in production)
 #     blacklist_refresh_no_failopen_v192_test.sh — v1.192 set-refresh atomicity
@@ -110,7 +117,7 @@ NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 #                                   THROWAWAY network namespace (a1f_$$) deleted on exit,
 #                                   never against the host ruleset; systemctl is stubbed.
 #                                   Same class as the v1.192 throwaway-table precedent.
-ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test\.sh|cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test\.sh|cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test\.sh|cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test\.sh|cli/lib/nftban/tests/firewall_restore_scoped_v1235_test\.sh|cli/lib/nftban/tests/firewall_restore_foreign_tables_netns_v1235_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
+ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test\.sh|cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test\.sh|cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test\.sh|cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test\.sh|cli/lib/nftban/tests/firewall_restore_scoped_v1235_test\.sh|cli/lib/nftban/tests/firewall_restore_foreign_tables_netns_v1235_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh|cli/lib/nftban/lib/commit_confirm\.sh|install/helpers/nftban-boot-early\.sh|cli/lib/nftban/tests/commit_confirm_v1235_test\.sh|cli/lib/nftban/tests/row486_disable_bypass_v1235_test\.sh)'
 
 # =============================================================================
 # MAIN
