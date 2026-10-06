@@ -441,7 +441,6 @@ product	cli/lib/nftban/core/nftban_stats_collect.sh	08a2233973a439f9	1	head	E	n/
 product	cli/lib/nftban/core/nftban_stats_collect.sh	564e6cc47d43719b	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_stats_collect.sh	7d4880197fbb1208	1	head	E	n/a	UNVERIFIED	fn=nftban_stats_top_countries; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_stats_collect.sh	f06b1538adaba4bb	1	awk-exit	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_stats_format.sh	162852f14b3de3d3	1	head	E	n/a	UNVERIFIED	fn=nftban_stats_generate_dashboard; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_sync.sh	438437af907409a6	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_sync.sh	dd7eb2cc39e98694	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_system_ip.sh	0d464b62180a4aaa	1	head	A	n/a	UNVERIFIED	fn=nftban_get_public_ip; security_or_count_surface=assign; INFERRED ~65024; depends on endpoint payload

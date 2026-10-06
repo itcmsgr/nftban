@@ -323,6 +323,7 @@ ssh_port_change_lifecycle_v155_test	cli/lib/nftban/tests/ssh_port_change_lifecyc
 ssh_socket_port_mismatch_v155_test	cli/lib/nftban/tests/ssh_socket_port_mismatch_v155_test.sh	firewall	test	ssh-admin-port-guard	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 state_write_atomicity_v171_test	cli/lib/nftban/tests/state_write_atomicity_v171_test.sh	core	test	state-write-atomicity	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 stats_count_reconcile_v206_2_test	cli/lib/nftban/tests/stats_count_reconcile_v206_2_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+stats_counter_bases_v1235_test	cli/lib/nftban/tests/stats_counter_bases_v1235_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 stats_ip_history_v170_test	cli/lib/nftban/tests/stats_ip_history_v170_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 stats_json_top_sources_v150_test	cli/lib/nftban/tests/stats_json_top_sources_v150_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 stats_manual_cache_v150_test	cli/lib/nftban/tests/stats_manual_cache_v150_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
