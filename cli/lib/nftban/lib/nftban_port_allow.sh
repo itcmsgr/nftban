@@ -75,9 +75,9 @@ nftban_port_allow_replay() {
         printf 'port-allow replay: UNMEASURED (daemon not running; grants NOT applied)\n'
         return 2
     fi
-    local now port ip proto tsec comment iso left params response
+    local now port ip proto tsec iso left params response
     now=$(date -u +%s)
-    while IFS='|' read -r port ip proto tsec comment iso || [[ -n "$port" ]]; do
+    while IFS='|' read -r port ip proto tsec _ iso || [[ -n "$port" ]]; do
         [[ -z "$port" || "$port" == \#* ]] && continue
         proto="${proto,,}"
         if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 || "$port" -gt 65535 ]] \
