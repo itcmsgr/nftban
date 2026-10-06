@@ -292,6 +292,7 @@ rebuild_snapshot_hard_gate_v1228_10_test	cli/lib/nftban/tests/rebuild_snapshot_h
 rebuild_terminal_discriminator_v1229_3_test	cli/lib/nftban/tests/rebuild_terminal_discriminator_v1229_3_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 recovery_legacy_reconcile_v12012_test	cli/lib/nftban/tests/recovery_legacy_reconcile_v12012_test.sh	firewall	test	recovery	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 release_population_completeness_v1229_5_test	cli/lib/nftban/tests/release_population_completeness_v1229_5_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+remove_retires_install_state_v1235_test	cli/lib/nftban/tests/remove_retires_install_state_v1235_test.sh	packaging	test	package-remove-state	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 render_authority_ssh_union_v1229_13_test	cli/lib/nftban/tests/render_authority_ssh_union_v1229_13_test.sh	firewall	test	render-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 report_email_parse_failure_truth_test	cli/lib/nftban/tests/report_email_parse_failure_truth_test.sh	mail	test	mail-report-parse-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 report_generator_content_truth_v1229_15_test	cli/lib/nftban/tests/report_generator_content_truth_v1229_15_test.sh	core	test	report-generator-content-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

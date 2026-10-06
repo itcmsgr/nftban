@@ -232,6 +232,13 @@ statefield() { # key
     grep -aE "^$1=" "$STATE_FILE" | head -1 | cut -d= -f2- || true
 }
 
+# v1.235 K1: package removal retires install_state to install_state.removed-<UTC>.
+retired_state_files() { # sorted (glob order = chronological ISO-8601) retired records
+    local f
+    for f in "$STATE_DIR"/install_state.removed-*; do [[ -e "$f" ]] && printf '%s\n' "$f"; done
+    return 0
+}
+
 epoch_of() { # RFC3339 -> epoch seconds; empty on failure
     local ts="$1"
     [[ -n "$ts" ]] || { printf ''; return 0; }
@@ -1072,6 +1079,10 @@ case_L7() {
     # and reports a false product failure when run alone. plant is idempotent.
     plant_operator_config
     snapshot "L7 pre"
+    # v1.235 K1: the removal must retire exactly this state into a new record.
+    local k1_pre_state k1_pre_retired
+    k1_pre_state="$(statefield INSTALL_STATE)"
+    k1_pre_retired="$(retired_state_files)"
 
     local out="${WORKDIR}/L7_remove.txt" rc t0
     t0="$(date -u +%s)"
@@ -1165,8 +1176,26 @@ case_L7() {
     assert_eq "present" "$([[ -d /etc/nftban ]] && echo present || echo absent)" \
         "after remove: /etc/nftban retained by policy (postrm:223)"
     assert_operator_config_preserved
-    assert_eq "present" "$([[ -f "$STATE_FILE" ]] && echo present || echo absent)" \
-        "after remove: install_state retained (postrm 'remove' branch never touches /var/lib/nftban)"
+    # v1.235 K1 (BUG-INSTALL-STATE-SAYS-COMMITTED-AFTER-PACKAGE-REMOVE): this used to
+    # pin "install_state retained" — the defect itself: a host with no package kept
+    # claiming the last install. The stale-claim intent is kept and tightened: the
+    # live path claims nothing, and the forensic record survives byte-for-byte as
+    # exactly ONE new install_state.removed-<UTC> holding the last INSTALL_STATE.
+    assert_eq "absent" "$([[ -f "$STATE_FILE" ]] && echo present || echo absent)" \
+        "after remove: install_state retired (no live claim of the last install)"
+    local k1_f k1_new="" k1_n=0
+    while IFS= read -r k1_f; do
+        [[ -z "$k1_f" ]] && continue
+        grep -qxF -- "$k1_f" <<<"$k1_pre_retired" && continue
+        k1_new="$k1_f"; k1_n=$((k1_n+1))
+    done < <(retired_state_files)
+    assert_eq "1" "$k1_n" "after remove: exactly one install_state.removed-<UTC> created by this removal"
+    if [[ "$k1_n" == 1 && -n "$k1_pre_state" ]]; then
+        assert_eq "$k1_pre_state" "$(grep -m1 -aE '^INSTALL_STATE=' "$k1_new" | cut -d= -f2-)" \
+            "after remove: the retired record holds the last INSTALL_STATE (${k1_pre_state})"
+    else
+        assert 1 "after remove: no retired record, or the pre-removal INSTALL_STATE was empty (pre='${k1_pre_state}')"
+    fi
 
     # Item 2 must not run on the removal path.
     if grep -aqE 'NFTBAN_PACKAGE_(INSTALLER_EXIT|VERIFY_EXIT|POSTINSTALL_VERIFIED)=' "$out"; then
@@ -1183,15 +1212,15 @@ case_L7() {
     done
     # No stale postinstall verification presented as current: re-run the shipped
     # verifier read-only with this removal as the transaction start.
-    assert_no_stale_success_claim "$t0" "L7"
+    assert_no_stale_success_claim "$t0" "L7" absent_expected
     printf '  (owned-file inventory captured: %s entries -> %s)\n' \
         "$(wc -l <"$inv" | tr -d ' ')" "$inv"
 }
 
 # Runs the shipped verifier read-only against a NEW transaction start. A
 # previously COMMITTED state must resolve to STALE_STATE, never to success.
-assert_no_stale_success_claim() { # not_before_epoch label
-    local t0="$1" label="$2" bin="${WORKDIR}/nftban-installer.copy"
+assert_no_stale_success_claim() { # not_before_epoch label [absent_expected]
+    local t0="$1" label="$2" absent_ok="${3:-}" bin="${WORKDIR}/nftban-installer.copy"
     local nb out rc=0
     # Both early exits are INFORMATIONAL — they must never be counted as passes.
     # F3 (UNINSTALL-PR3): these early exits USED TO return 0 silently, so a run
@@ -1203,10 +1232,13 @@ assert_no_stale_success_claim() { # not_before_epoch label
         case_skip "${label}: no preserved verifier binary — stale-claim probe NOT RUN (zero coverage)"
         return 0
     fi
-    if [[ ! -f "$STATE_FILE" ]]; then
+    if [[ ! -f "$STATE_FILE" && "$absent_ok" != "absent_expected" ]]; then
         case_skip "${label}: no persisted state to misread — stale-claim probe NOT RUN (zero coverage)"
         return 0
     fi
+    # v1.235 K1: after a removal the state is RETIRED on purpose. The probe still
+    # runs (the verifier reads the now-empty state dir) so the property keeps its
+    # coverage: no success claim, and the verifier names the reason (MISSING_STATE).
     nb="$(date -u -d "@${t0}" +'%Y-%m-%dT%H:%M:%S.000000000Z')"
     out="${WORKDIR}/${label}_stale_probe.txt"
     "$bin" --verify-install-state \
@@ -1221,6 +1253,9 @@ assert_no_stale_success_claim() { # not_before_epoch label
     else
         assert 0 "${label}: verdict ${verdict:-<absent>} (non-success), verifier rc=${rc}"
     fi
+    if [[ "$absent_ok" == "absent_expected" && ! -f "$STATE_FILE" ]]; then
+        assert_eq "MISSING_STATE" "$verdict" "${label}: with install_state retired the verifier reports MISSING_STATE"
+    fi
 }
 
 case_L8() {
@@ -1229,11 +1264,18 @@ case_L8() {
         case_skip "L8 needs the 'rc' (removed, config-files) state left by L7; dpkg status is $(dpkg_status)"
         return 0
     fi
-    local ts_before e_before
-    ts_before="$(statefield INSTALL_TIMESTAMP)"
+    # v1.235 K1: the removal retired install_state (L7). The stale record now lives
+    # in the newest install_state.removed-<UTC>; the reinstall must still write a
+    # NEW state and never answer with the retired one.
+    local ts_before e_before k1_last="" k1_f
+    while IFS= read -r k1_f; do [[ -n "$k1_f" ]] && k1_last="$k1_f"; done < <(retired_state_files)
+    assert_eq "absent" "$([[ -f "$STATE_FILE" ]] && echo present || echo absent)" \
+        "precondition: no live install_state after the removal (retired by postrm)"
+    assert_eq "present" "$([[ -n "$k1_last" ]] && echo present || echo absent)" \
+        "precondition: the retired install_state.removed-<UTC> record exists"
+    ts_before=""
+    [[ -n "$k1_last" ]] && ts_before="$(grep -m1 -aE '^INSTALL_TIMESTAMP=' "$k1_last" | cut -d= -f2-)"
     e_before="$(epoch_of "$ts_before")"
-    assert_eq "present" "$([[ -f "$STATE_FILE" ]] && echo present || echo absent)" \
-        "precondition: a stale install_state survived the removal"
     snapshot "L8 pre"
 
     local out="${WORKDIR}/L8_reinstall_after_remove.txt" t0 t1 rc
