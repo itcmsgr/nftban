@@ -1567,13 +1567,19 @@ _status_section_protection() {
     printf "  %-20s %s\n" "BotScan (HTTP Scan)." "$botscan_status"
     if [[ "$botscan_enabled" == "true" && -r "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
         local _r="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
-        printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
-            "$(( $(date +%s) - $(jq -r '.last_run_ts//0' "$_r" 2>/dev/null) ))" \
-            "$(jq -r '.last_duration_sec//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.bans_emitted_total//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.signals_emitted_total//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.budget_hit_total//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.health_state//"UNKNOWN"' "$_r" 2>/dev/null)"
+        # v1.235: one guarded read (six bare jq reads used to abort status on a
+        # damaged run-state: an empty last_run_ts made "$(( now - ))" a syntax
+        # error under errexit). A non-numeric timestamp shows "?", not a number.
+        local _rl="" _r_ts _r_dur _r_bans _r_sig _r_bud _r_hs _r_age="?"
+        _rl=$(jq -r '[(.last_run_ts//0), (.last_duration_sec//0), (.bans_emitted_total//0), (.signals_emitted_total//0), (.budget_hit_total//0), (.health_state//"UNKNOWN")] | map(tostring) | join("|")' "$_r" 2>/dev/null) || _rl=""
+        if [[ -n "$_rl" ]]; then
+            IFS='|' read -r _r_ts _r_dur _r_bans _r_sig _r_bud _r_hs <<<"$_rl"
+            [[ "$_r_ts" =~ ^[0-9]+$ ]] && _r_age=$(( $(date +%s) - _r_ts ))
+            printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
+                "$_r_age" "$_r_dur" "$_r_bans" "$_r_sig" "$_r_bud" "$_r_hs"
+        else
+            printf "      last scan: UNKNOWN (run-state unreadable)\n"
+        fi
     fi
     echo "    (HTTP Guard = BotGuard, live request-time guard; HTTP Exploit Scan = BotScan, periodic"
     echo "     access-log scanner — can ban via the manual blacklist. BotGuard disabled != BotScan disabled.)"
