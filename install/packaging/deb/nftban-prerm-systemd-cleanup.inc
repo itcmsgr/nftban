@@ -65,10 +65,14 @@ remove_unit_file_if_exists() {
 # Templates (*@.service) are skipped: the template itself is not a runnable unit;
 # only instances are stoppable.
 for unit in \
+    nftban-boot-bypass-guard.service \
+    nftban-boot-bypass.service \
+    nftban-boot-normal.service \
     nftban-botscan-collector.service \
     nftban-botscan-collector.timer \
     nftban-botscan.service \
     nftban-botscan.timer \
+    nftban-commit-confirm-boot.service \
     nftban-community-stats.service \
     nftban-community-stats.timer \
     nftban-core-feeds.service \
@@ -96,8 +100,6 @@ for unit in \
     nftban-rebuild-recovery.timer \
     nftban-report-daily.service \
     nftban-report-daily.timer \
-    nftban-rollback.service \
-    nftban-rollback.timer \
     nftban-snapshot.service \
     nftban-snapshot.timer \
     nftban-soak.service \
@@ -147,7 +149,9 @@ for unit in \
     nftban-suricata-stats.service \
     nftban-suricata-update.timer \
     nftban-suricata-update.service \
-    nftban-suricata.service; do
+    nftban-suricata.service \
+    nftban-rollback.timer \
+    nftban-rollback.service; do
     deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
     systemctl disable "$unit" 2>/dev/null || true
     remove_unit_file_if_exists "$unit"

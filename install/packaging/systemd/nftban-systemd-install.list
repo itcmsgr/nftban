@@ -49,8 +49,6 @@ nftban-rebuild-recovery.service
 nftban-rebuild-recovery.timer
 nftban-report-daily.service
 nftban-report-daily.timer
-nftban-rollback.service
-nftban-rollback.timer
 nftban-snapshot.service
 nftban-snapshot.timer
 nftban-soak.service
