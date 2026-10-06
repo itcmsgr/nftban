@@ -863,7 +863,7 @@ _nftban_record_units() {
 # entry = enable). Prints exactly what it did and why.
 _nftban_restore_unit() {
     local u="$1" class="$2" want="on" en="" recst=""
-    systemctl list-unit-files --no-legend "$u" 2>/dev/null | awk 'NF{f=1} END{exit !f}' || return 0
+    [[ -n "$(systemctl list-unit-files --no-legend "$u" 2>/dev/null || true)" ]] || return 0   # unit not installed
     en=$(systemctl is-enabled "$u" 2>/dev/null) || true
     case "$en" in
         masked) echo "  ⏸  left masked (operator choice): $u"; return 0 ;;
