@@ -922,9 +922,20 @@ _status_section_firewall() {
     # Count whitelisted IPs (SINGLE SOURCE OF TRUTH: nftban_stats.sh)
     local whitelist_count=0
     if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
-        whitelist_count=$(nftban_stats_count_whitelist)
+        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null) || whitelist_count=UNKNOWN
+        [[ "$whitelist_count" =~ ^[0-9]+$ ]] || whitelist_count=UNKNOWN
     fi
     printf "  %-20s %s\n" "Whitelisted IPs....." "$whitelist_count"
+    # v1.235 (BUG-CLI-STATUS-UNBOUND-VARIABLE-UNKNOWN-WHEN-RULESET-UNREADABLE):
+    # ban_count is "UNKNOWN" by design when the kernel cannot be read (see
+    # _nftban_sum_or_unknown above), and `[[ $ban_count -gt 0 ]]` evaluates a
+    # non-numeric operand as a VARIABLE NAME: under set -u that aborted the human
+    # status with "UNKNOWN: unbound variable" (production srv1 v1.233.1; reproduced
+    # lab4 @e942f4c3, rc 1 after 32 lines). The hint gates below use numeric
+    # copies; an unestablished count simply shows no hint.
+    local _ban_n=0 _wl_n=0
+    [[ "$ban_count" =~ ^[0-9]+$ ]] && _ban_n=$ban_count
+    [[ "$whitelist_count" =~ ^[0-9]+$ ]] && _wl_n=$whitelist_count
 
     # Check master switch
     # v1.150 MOD-09: source the BASE services.conf first, then the .local
@@ -953,13 +964,13 @@ _status_section_firewall() {
     printf "  %-20s %s\n" "Master Control......" "$master_status"
 
     # Helpful hints (only in non-quiet mode)
-    if [[ $quiet_mode -eq 0 ]] && [[ $ban_count -gt 0 || $whitelist_count -gt 0 ]]; then
+    if [[ $quiet_mode -eq 0 ]] && (( _ban_n > 0 || _wl_n > 0 )); then
         echo ""
         echo "  Quick Commands:"
-        if [[ $ban_count -gt 0 ]]; then
+        if (( _ban_n > 0 )); then
             echo "    View banned IPs:     nftban list banned"
         fi
-        if [[ $whitelist_count -gt 0 ]]; then
+        if (( _wl_n > 0 )); then
             echo "    View whitelist:      nftban list whitelist"
         fi
         echo "    View all:            nftban list all"
@@ -972,7 +983,7 @@ _status_section_firewall() {
     # sets that produced the headline above. Gated on quiet mode AND on
     # ban_count > 0 so a fresh install with zero bans isn't given advice it
     # can't act on. (V1_141_0 §2 D-verify-hint.)
-    if [[ $quiet_mode -eq 0 ]] && [[ $ban_count -gt 0 ]]; then
+    if [[ $quiet_mode -eq 0 ]] && (( _ban_n > 0 )); then
         echo ""
         echo "  Verify kernel (authoritative):"
         echo "    nft list set ip nftban blacklist_ipv4"

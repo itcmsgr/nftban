@@ -48,21 +48,44 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 printf '#!/bin/sh\nexit 1\n' > "$WORK/nft"; chmod +x "$WORK/nft"
 export PATH="$WORK:$PATH"
 
-run_status() { # $1=--json|"" -> stdout in $OUT, rc in $RC
+run_status() { # $1=--json|"" -> stdout in $OUT, rc in $RC, stderr in $ERR
+    # v1.235 (TEST-CONCEALS-STATUS-CRASH-DISCARDS-STDERR-AND-RC): stderr used to go
+    # to /dev/null and RC was captured but never asserted, so the human status
+    # CRASHING mid-render ("UNKNOWN: unbound variable", cmd_status.sh, rc 1 after
+    # 32 lines) still let every assertion below pass on the partial output. stderr
+    # is now kept and the crash signatures are asserted in A0.
     OUT="$(bash -c '
         set +eu
         source '"$LIB"'/cli/cmd_status.sh >/dev/null 2>&1
-        nftban_cmd_status '"$1"' 2>/dev/null
-    ' 2>/dev/null)"
-    RC=$?; : "$RC"   # captured for callers asserting the exit contract
+        nftban_cmd_status '"$1"'
+    ' 2>"$WORK/status_err")"
+    RC=$?
+    ERR="$(cat "$WORK/status_err" 2>/dev/null || true)"
+}
+
+# crashed <stderr> -> 0 when the run aborted (shell error, not a verdict)
+crashed() {
+    [[ "$1" == *"unbound variable"* || "$1" == *"ERROR: Script failed"* \
+       || "$1" == *"command not found"* || "$1" == *"syntax error"* ]]
 }
 
 echo "=== A. REAL DISPATCH — human and JSON must agree on the SAME verdict ==="
 # The kernel is unreadable here, so every count is unestablished. The two
 # surfaces render that differently by design (UNKNOWN vs null) but must not
 # disagree about WHETHER it is established.
-run_status ""      ; HUMAN="$OUT"
-run_status "--json"; JSON="$OUT"
+run_status ""      ; HUMAN="$OUT"; HUMAN_RC=$RC; HUMAN_ERR="$ERR"
+run_status "--json"; JSON="$OUT";  JSON_RC=$RC;  JSON_ERR="$ERR"
+
+echo "=== A0. NO CRASH — an unreadable kernel is a verdict, not a shell abort ==="
+a0_check() { # <surface> <rc> <stderr>
+    if crashed "$3"; then
+        bad "A0 $1 status CRASHED (rc=$2): $(grep -m1 -E 'unbound variable|ERROR: Script failed|command not found|syntax error' <<<"$3" || true)"
+    else
+        ok "A0 $1 status completed without a shell error (rc=$2)"
+    fi
+}
+a0_check HUMAN "$HUMAN_RC" "$HUMAN_ERR"
+a0_check JSON  "$JSON_RC"  "$JSON_ERR"
 
 for pair in "Banned IPs:banned_ips" "Rules:rule_count"; do
     hlabel="${pair%%:*}"; jkey="${pair##*:}"
