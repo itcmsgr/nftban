@@ -140,7 +140,7 @@ else _j="$(js a2)"; no "A9 JSON" "${_j:0:200}"; fi
 # ---- B: emergency bypass states (contract §3/§6) ------------------------------------
 BYPASSUNIT=disabled STORED=0 PROJ=active run_lf b1
 [[ "$(txt b1)" == *"DIVERGENCE: the bypass unit is disabled: the emergency bypass would not act before the first load"* ]] \
-    && ok "B1 bypass unit not enabled -> DIVERGENCE" || no "B1 bypass unit state not flagged" "$(txt b1 | grep -m1 'Emergency' || true)"
+    && ok "B1 bypass unit not enabled -> DIVERGENCE" || no "B1 bypass unit state not flagged" "$(grep -m1 'Emergency' <<<"$(txt b1)" || true)"
 printf 'outcome=backstop-removed\nat=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$W/state/boot-bypass.state"
 BYPASS=0 STORED=0 PROJ=inert run_lf b2
 t="$(txt b2)"
@@ -151,13 +151,13 @@ printf 'outcome=primary\nat=2026-10-06T11:00:00Z\n' > "$W/state/boot-bypass.stat
 BYPASS=0 STORED=1 PROJ=inert run_lf b3
 rm -f "$W/state/boot-bypass.state"
 [[ "$(txt b3)" == *"ACTIVE (guarantee met: outcome=primary at 2026-10-06T11:00:00Z)"* && "$(txt b3)" == *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]] \
-    && ok "B3 outcome primary -> ACTIVE, guarantee met" || no "B3 guarantee-met outcome" "$(txt b3 | grep -m1 Emergency || true)"
+    && ok "B3 outcome primary -> ACTIVE, guarantee met" || no "B3 guarantee-met outcome" "$(grep -m1 Emergency <<<"$(txt b3)" || true)"
 
 # ---- C: commit-confirm (contract §4/§6) --------------------------------------------
 dl=$(( $(date +%s) + 90 ))
 printf 'apply_id=a1b2c3\ndeadline_epoch=%s\nstatus=pending\nat=2026-10-06T11:05:00Z\n' "$dl" > "$W/state/commit-confirm.state"
 STORED=0 PROJ=active run_lf c1
-l="$(txt c1 | grep -m1 'Commit-confirm' || true)"
+l="$(grep -m1 'Commit-confirm' <<<"$(txt c1)" || true)"
 [[ "$l" == *"PENDING apply a1b2c3"* && "$l" == *"remaining"* && "$l" == *"nftban firewall confirm a1b2c3"* ]] \
     && ok "C1 pending apply: ID, deadline with remaining seconds, exact confirm command" || no "C1 pending apply" "$l"
 printf 'apply_id=a1b2c3\ndeadline_epoch=1\nstatus=rollback-failed\nat=2026-10-06T11:07:00Z\n' > "$W/state/commit-confirm.state"
@@ -170,7 +170,7 @@ STORED=0 PROJ=active run_lf c4
     && ok "C4 rolled-back with conflicts -> last outcome + untouched files named" || no "C4 conflicts not shown"
 rm -f "$W/state/commit-confirm.state"
 STORED=0 PROJ=active run_lf c3
-[[ "$(txt c3 | grep -m1 'Commit-confirm' || true)" == *"no apply awaiting confirmation (no record)"* ]] \
+[[ "$(grep -m1 'Commit-confirm' <<<"$(txt c3)" || true)" == *"no apply awaiting confirmation (no record)"* ]] \
     && ok "C3 no record -> named as such" || no "C3 absent record"
 
 # ---- D1 applied baseline -------------------------------------------------------------
