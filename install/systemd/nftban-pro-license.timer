@@ -21,6 +21,9 @@
 # =============================================================================
 
 [Unit]
+# v1.235 R-DEC: kernel parameter nftban=disabled = per-boot emergency bypass of NFTBan.
+# systemd enforces this on every start path (socket, Requires=, timer, installer, self-heal).
+ConditionKernelCommandLine=!nftban=disabled
 Description=NFTBan Pro License Check Timer
 Documentation=man:nftban(8)
 # v1.19.0: Removed Requires= — causes timer to stop when oneshot completes (Task 47)

@@ -29,6 +29,9 @@
 # Lane B; until then it is manageable via `nftban timers`.
 
 [Unit]
+# v1.235 R-DEC: kernel parameter nftban=disabled = per-boot emergency bypass of NFTBan.
+# systemd enforces this on every start path (socket, Requires=, timer, installer, self-heal).
+ConditionKernelCommandLine=!nftban=disabled
 Description=NFTBan - Weekly GeoBan Country CIDR Refresh Timer
 Documentation=https://github.com/itcmsgr/nftban
 # Timer triggers nftban-geoban-refresh.service (implicit by name match)

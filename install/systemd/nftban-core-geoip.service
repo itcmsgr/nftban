@@ -20,6 +20,9 @@
 # =============================================================================
 
 [Unit]
+# v1.235 R-DEC: kernel parameter nftban=disabled = per-boot emergency bypass of NFTBan.
+# systemd enforces this on every start path (socket, Requires=, timer, installer, self-heal).
+ConditionKernelCommandLine=!nftban=disabled
 Description=NFTBan Core - GeoIP Database Update
 Documentation=https://github.com/itcmsgr/nftban
 After=network-online.target

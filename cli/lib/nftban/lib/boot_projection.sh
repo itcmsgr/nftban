@@ -150,6 +150,51 @@ nftban_boot_projection_generate() {
 }
 
 # -----------------------------------------------------------------------------
+# v1.235 row 486 (owner U1, 2026-10-06): while NFTBan is DISABLED the boot
+# projection is INERT: it defines no table, so the operator's nftables.service
+# loads its own rules at boot and no NFTBan rule. The distro config and
+# nftables.service are never touched (owner: NFTBan's disable does not change
+# another manager's service or boot enablement). `nftban enable` re-publishes
+# the active projection through the normal render path.
+#
+# The header stays FROZEN and byte-identical; the state lives in the body as one
+# exact marker line that status/health read. An ACTIVE projection carries no
+# marker (unchanged since v1.234). The same body ships as
+# /usr/lib/nftban/data/nftban-boot-inert.nft for the per-boot emergency bypass
+# (kernel parameter nftban=disabled; nftban-boot-bypass.service).
+# -----------------------------------------------------------------------------
+NFTBAN_BOOT_PROJECTION_INERT_MARKER='# NFTBAN-PROJECTION-STATE: inert'
+
+nftban_boot_projection_inert_body() {
+    printf '%s\n' '#!/usr/sbin/nft -f' \
+        "$NFTBAN_BOOT_PROJECTION_INERT_MARKER" \
+        '# NFTBan is disabled (or bypassed for this boot): no NFTBan table is defined.' \
+        '# Foreign rules loaded by the distro nftables.service are not affected.'
+}
+
+# nftban_boot_projection_state [file] -> active | inert | missing | unknown
+nftban_boot_projection_state() {
+    local f="${1:-$(nftban_boot_projection_path)}"
+    [[ -e "$f" ]] || { echo missing; return 0; }
+    [[ -r "$f" ]] || { echo unknown; return 0; }
+    if grep -qxF -- "$NFTBAN_BOOT_PROJECTION_INERT_MARKER" "$f" 2>/dev/null; then echo inert; return 0; fi
+    if grep -qE '^[[:space:]]*table[[:space:]]+(ip|ip6)[[:space:]]+nftban([[:space:]]|\{|$)' "$f" 2>/dev/null; then echo active; return 0; fi
+    echo unknown
+}
+
+# nftban_boot_projection_publish_inert [output_path]
+# Same publication transaction as an active projection (header, nft -c, atomic
+# SELinux-aware install). Only the body differs.
+nftban_boot_projection_publish_inert() {
+    local out="${1:-$(nftban_boot_projection_path)}" tmp rc=0
+    tmp=$(mktemp) || return 1
+    nftban_boot_projection_inert_body > "$tmp"
+    nftban_boot_projection_publish "$tmp" "$out" || rc=$?   # errexit-safe
+    rm -f "$tmp"
+    return "$rc"
+}
+
+# -----------------------------------------------------------------------------
 # nftban_boot_projection_publish <rendered_ruleset> <output_path>
 #
 # Steps 2-5 of the frozen transaction order, for a ruleset that is ALREADY fully

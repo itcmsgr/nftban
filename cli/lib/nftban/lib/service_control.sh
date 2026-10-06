@@ -64,18 +64,44 @@ _nftban_load_services_config() {
 # MASTER SWITCH FUNCTIONS
 # =============================================================================
 
-# Check if NFTBan is globally enabled
-# Returns: 0 if enabled, 1 if disabled
-nftban_is_enabled() {
+# v1.235 R-DEC (owner 2026-10-06): the kernel parameter nftban=disabled is a REAL
+# per-boot emergency bypass. It never changes NFTBAN_ENABLED and never touches
+# foreign rules; no NFTBan loader, daemon, timer or recovery path may override it.
+# Boot side: nftban-boot-bypass.service (bind-mounts the inert projection before
+# nftables.service) + ConditionKernelCommandLine=!nftban=disabled on every NFTBan
+# unit. CLI side: this function, called by every rule-loading verb.
+# Exact word match: the command line is split on spaces (IFS is pinned because
+# callers run under IFS=$'\n\t', which would not split it).
+nftban_emergency_bypass_active() {
+    local -a _w=()
+    local _x
+    IFS=' ' read -r -a _w < /proc/cmdline 2>/dev/null || return 1
+    for _x in "${_w[@]}"; do
+        [[ "$_x" == "nftban=disabled" ]] && return 0
+    done
+    return 1
+}
+
+# nftban_refuse_under_bypass <action>: rc 1 + message when the bypass is active.
+nftban_refuse_under_bypass() {
+    nftban_emergency_bypass_active || return 0
+    echo "REFUSED: $1 — EMERGENCY BYPASS ACTIVE for this boot (kernel parameter nftban=disabled)." >&2
+    echo "  NFTBan loads no rules during this boot. The stored choice is unchanged;" >&2
+    echo "  reboot without nftban=disabled to return to it." >&2
+    return 1
+}
+
+# The STORED choice only (no kernel parameter): NFTBAN_ENABLED in services.conf(.local).
+nftban_master_switch_on() {
     _nftban_load_services_config
-
-    # Check kernel command line for emergency disable
-    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        return 1
-    fi
-
-    # Check master switch
     [[ "${NFTBAN_ENABLED:-true}" == "true" ]]
+}
+
+# Check if NFTBan is globally enabled
+# Returns: 0 if enabled, 1 if disabled (stored choice off, or the per-boot bypass)
+nftban_is_enabled() {
+    nftban_emergency_bypass_active && return 1
+    nftban_master_switch_on
 }
 
 # Check master switch and exit if disabled

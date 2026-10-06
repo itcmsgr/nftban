@@ -374,20 +374,49 @@ _firewall_publish_conf() {
 #   publication  -> _firewall_publish_conf
 #   orchestration-> nftban_boot_projection_generate (lib/boot_projection.sh)
 # which is why it is ~20 lines rather than a parallel implementation.
+# v1.235 R-DEC: every verb that loads, replaces or publishes NFTBan rules refuses
+# while the per-boot emergency bypass (kernel parameter nftban=disabled) is
+# active. Fail closed: if the shared library cannot be loaded, the exact-word
+# check is done here, so a missing library can never skip the bypass.
+_fw_bypass_guard() {
+    if ! declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
+        nftban_refuse_under_bypass "$1"
+        return
+    fi
+    local -a _w=()
+    local _x
+    IFS=" " read -r -a _w < /proc/cmdline 2>/dev/null || return 0
+    for _x in "${_w[@]}"; do
+        if [[ "$_x" == "nftban=disabled" ]]; then
+            echo "REFUSED: $1 — EMERGENCY BYPASS ACTIVE for this boot (kernel parameter nftban=disabled)." >&2
+            return 1
+        fi
+    done
+    return 0
+}
+
 _firewall_render_boot() {
-    local quiet="false" arg
+    local quiet="false" arg inert="false"
     for arg in "$@"; do
         case "$arg" in
             --quiet|-q) quiet="true" ;;
+            --inert) inert="true" ;;
             --help|-h)
                 cat <<'RBHELP'
-Usage: nftban firewall render-boot [--quiet]
+Usage: nftban firewall render-boot [--quiet] [--inert]
 
 Generate the persistent boot projection from the canonical NFTBan firewall
 schema and publish it atomically. Does NOT load the ruleset into the kernel.
 
   renders   /usr/lib/nftban/templates/nftables.conf.tpl
   publishes /etc/nftban/generated/nftban-boot.nft
+
+  --inert   publish the INERT projection (no NFTBan table; used while NFTBan
+            is disabled — v1.235). `nftban enable` re-publishes the active one.
 
 Use `nftban firewall rebuild` to render AND apply a ruleset.
 RBHELP
@@ -404,6 +433,16 @@ RBHELP
 
     local schema="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
     local target; target="$(nftban_boot_projection_path)"
+
+    if [[ "$inert" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Publishing INERT boot projection (no NFTBan table at boot)..."
+        if ! nftban_boot_projection_publish_inert "$target"; then
+            echo "ERROR: inert boot projection was NOT published — the previous boot path is unchanged" >&2
+            return 1
+        fi
+        [[ "$quiet" == "false" ]] && echo "  published (inert): $target"
+        return 0
+    fi
 
     [[ "$quiet" == "false" ]] && echo "Rendering boot projection from canonical schema..."
     if ! nftban_boot_projection_generate "$schema" "$target"; then
@@ -451,6 +490,21 @@ _firewall_rebuild_refresh_boot_projection() {
         # Pre-template legacy config: nothing was rendered, so there is no complete
         # render to publish. Reported, never silently skipped.
         echo "WARNING: boot projection NOT refreshed — legacy pre-template config has no rendered ruleset" >&2
+        echo failed; return 0
+    fi
+    # v1.235 row 486 (owner U1): while the STORED choice is disabled, the projection
+    # stays INERT, so a manual rebuild of a disabled NFTBan applies rules for the running
+    # system only and cannot make NFTBan come back by itself at the next boot.
+    if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_master_switch_on >/dev/null 2>&1 && ! nftban_master_switch_on; then
+        if nftban_boot_projection_publish_inert "$bp" >&2; then
+            echo "WARNING: NFTBan is DISABLED (stored choice): the rules just loaded apply until the next reboot only; boot projection kept INERT. Run 'nftban enable' to make them persistent." >&2
+            echo refreshed; return 0
+        fi
+        echo "ERROR: NFTBan is disabled but the INERT boot projection could not be published" >&2
         echo failed; return 0
     fi
     if nftban_boot_projection_publish "$loaded" "$bp" >&2; then
@@ -727,21 +781,25 @@ nftban_cmd_firewall() {
             ;;
         reload)
             shift
+            _fw_bypass_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
             firewall_reload "$@"
             ;;
         rebuild)
             shift
+            _fw_bypass_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
             ;;
         render-boot)
             # P12-FPA: render + publish the boot projection WITHOUT loading it.
             shift
+            _fw_bypass_guard "firewall render-boot" || return 1
             _firewall_render_boot "$@"
             ;;
         reset)
             shift
+            _fw_bypass_guard "firewall reset" || return 1
             firewall_reset "$@"
             ;;
         conflicts)
@@ -758,6 +816,7 @@ nftban_cmd_firewall() {
             ;;
         restore)
             shift
+            _fw_bypass_guard "firewall restore" || return 1
             firewall_restore "$@"
             ;;
         record)
@@ -771,6 +830,7 @@ nftban_cmd_firewall() {
             ;;
         takeover)
             shift
+            _fw_bypass_guard "firewall takeover" || return 1
             nftban_ssh_pre_rebuild_lockout_guard takeover "$@" || true
             firewall_takeover "$@"
             ;;
