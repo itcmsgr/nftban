@@ -975,8 +975,13 @@ _nftban_health_botscan_facts() {
         mode=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo both)
         local lconf="$conf.local" le lm
         if [[ -f "$lconf" ]]; then
-            le=$(grep -m1 '^BOTSCAN_ENABLED=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$le" ]] && enabled="$le"
-            lm=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"'); [[ -n "$lm" ]] && mode="$lm"
+            # v1.235 H1 — a .local that does not set the key is the normal case (our own
+            # containment wrote one holding only BOTSCAN_404_TRACKING=false). grep's
+            # no-match exit 1 under pipefail failed the assignment, errexit killed the
+            # process substitution the callers read from, and BotScan rendered DISABLED
+            # with empty fields. No match = keep the main.conf value, as above.
+            le=$(grep -m1 '^BOTSCAN_ENABLED=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true); [[ -n "$le" ]] && enabled="$le"
+            lm=$(grep -m1 '^BOTSCAN_ACTION_MODE=' "$lconf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true); [[ -n "$lm" ]] && mode="$lm"
         fi
     fi
     local timer="inactive"
@@ -984,10 +989,12 @@ _nftban_health_botscan_facts() {
     local rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
     local hs="UNKNOWN" last="-" bans="-"
     if [[ -r "$rs" ]] && command -v jq &>/dev/null; then
-        hs=$(jq -r '.health_state//"UNKNOWN"' "$rs" 2>/dev/null)
-        local lt; lt=$(jq -r '.last_run_ts//0' "$rs" 2>/dev/null)
+        # v1.235 H1 — same failure class: jq exits non-zero on a truncated or
+        # malformed file, which must not abort the facts line either.
+        hs=$(jq -r '.health_state//"UNKNOWN"' "$rs" 2>/dev/null) || hs="UNKNOWN"
+        local lt; lt=$(jq -r '.last_run_ts//0' "$rs" 2>/dev/null) || lt=0
         [[ "$lt" =~ ^[0-9]+$ && "$lt" -gt 0 ]] && last="$(( $(date +%s) - lt ))s"
-        bans=$(jq -r '.bans_emitted_total//0' "$rs" 2>/dev/null)
+        bans=$(jq -r '.bans_emitted_total//0' "$rs" 2>/dev/null) || bans="-"
     fi
     local spool="${BOTSCAN_SPOOL_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/spool}" spool_state="absent"
     [[ -d "$spool" ]] && { spool_state="present"; [[ -r "$spool" ]] || spool_state="present/UNREADABLE"; }
@@ -1012,8 +1019,8 @@ _nftban_health_botscan_facts() {
     local cs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/botscan_consumer_status.json"
     local handoff="UNKNOWN" stale="UNKNOWN"
     if [[ -r "$cs" ]] && command -v jq &>/dev/null; then
-        handoff=$(jq -r '.batch_handoff_errors//0' "$cs" 2>/dev/null)
-        stale=$(jq -r '.batch_consumer_stale_backlog//false' "$cs" 2>/dev/null)
+        handoff=$(jq -r '.batch_handoff_errors//0' "$cs" 2>/dev/null) || handoff="UNKNOWN"
+        stale=$(jq -r '.batch_consumer_stale_backlog//false' "$cs" 2>/dev/null) || stale="UNKNOWN"
     fi
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$enabled" "$mode" "$timer" "$hs" "$last" "$bans" "$spool_state" "$handoff" "$stale"
 }
@@ -1078,12 +1085,59 @@ _nftban_health_botscan_age_human() {
     if (( age >= 3600 )); then printf '%sh' "$(( age / 3600 ))"; else printf '%ss' "$age"; fi
 }
 
+# =============================================================================
+# v1.235 H1 — A FAILED COLLECTION IS VISIBLE, NEVER A VERDICT.
+# =============================================================================
+# Both callers used to read the facts through `IFS='|' read ... < <(facts)`. A
+# process substitution's exit status is lost: when the collector died (v1.234.0,
+# dns4: errexit on a grep no-match), `read` saw an empty line, every field was
+# empty, and the renderer printed "DISABLED (not scanning; no bans)" with empty
+# `key=` fields for an ENABLED scanner. Absence of facts was rendered as a fact.
+#
+# This reads the line so the caller sees the failure (rc and shape), and gives
+# both callers one contract:
+#   rc 0  _NFTBAN_BOTSCAN_FACTS holds exactly 9 '|' fields, enabled in {true,false}
+#   rc 1  _NFTBAN_BOTSCAN_FACTS_ERR says why; the caller renders UNKNOWN
+_nftban_health_botscan_collect() {
+    _NFTBAN_BOTSCAN_FACTS=""
+    _NFTBAN_BOTSCAN_FACTS_ERR=""
+    local line="" rc=0 seps
+    line=$(_nftban_health_botscan_facts) || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        _NFTBAN_BOTSCAN_FACTS_ERR="collector exited rc=${rc}"
+        return 1
+    fi
+    seps="${line//[^|]/}"
+    if [[ -z "$line" || "$line" == *$'\n'* || "${#seps}" -ne 8 ]]; then
+        _NFTBAN_BOTSCAN_FACTS_ERR="malformed facts line ($(( ${#seps} + 1 )) fields, want 9)"
+        return 1
+    fi
+    case "${line%%|*}" in
+        true|false) ;;
+        *) _NFTBAN_BOTSCAN_FACTS_ERR="malformed facts line (enabled='${line%%|*}', want true|false)"
+           return 1 ;;
+    esac
+    _NFTBAN_BOTSCAN_FACTS="$line"
+    return 0
+}
+
 _nftban_health_render_botscan() {
     echo ""
     echo "  HTTP Exploit Scanner (BotScan) — periodic access-log exploit scanner (bans via blacklist_manual)"
     echo "  ────────────────────────────────────────────────────────────────────────────────────────────"
     local enabled mode timer hs last bans spool handoff stale
-    IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
+    if ! _nftban_health_botscan_collect; then
+        # v1.235 H1 — no field is known, so none is printed as if it were; "?" is
+        # the honest value. The Overall line above was computed without BotScan.
+        NFTBAN_HEALTH_INCOMPLETE="${NFTBAN_HEALTH_INCOMPLETE:+${NFTBAN_HEALTH_INCOMPLETE} }botscan"
+        printf "  %-11s  %s\n" "State:" "UNKNOWN (fact collection failed: ${_NFTBAN_BOTSCAN_FACTS_ERR})"
+        printf "  %-11s  enabled=? · action=? · timer=?\n" "Config:"
+        printf "  %-11s  health_state=? · last_scan=? · bans_emitted=? · spool=?\n" "Runtime:"
+        printf "  %-11s  %s\n" "Handoff:" "handoff=?"
+        printf "  %-11s  %s\n" "Health:" "EVALUATION INCOMPLETE — BotScan was not evaluated; the Overall verdict does not cover it"
+        return 0
+    fi
+    IFS='|' read -r enabled mode timer hs last bans spool handoff stale <<<"$_NFTBAN_BOTSCAN_FACTS"
     local mode_note="enforces via blacklist_manual"
     [[ "$mode" == "alert" ]] && mode_note="DETECT-ONLY (does not ban)"
     # v1.229.10 — enforcement proof is read from the daemon's DURABLE per-ban
@@ -1219,7 +1273,14 @@ nftban_health_check_botscan() {
     # guard before the return is the fail-closed backstop if a future branch
     # forgets.
     local enabled mode timer hs last bans spool handoff stale status=""
-    IFS='|' read -r enabled mode timer hs last bans spool handoff stale < <(_nftban_health_botscan_facts)
+    if ! _nftban_health_botscan_collect; then
+        # v1.235 H1 — see _nftban_health_botscan_collect. Not DISABLED, not OK.
+        NFTBAN_HEALTH_INCOMPLETE="${NFTBAN_HEALTH_INCOMPLETE:+${NFTBAN_HEALTH_INCOMPLETE} }botscan"
+        NFTBAN_HEALTH_ISSUES["botscan"]="HTTP Exploit Scanner state UNKNOWN — fact collection failed (${_NFTBAN_BOTSCAN_FACTS_ERR}); health evaluation is INCOMPLETE for BotScan"
+        NFTBAN_HEALTH_RESULTS["botscan"]=$HEALTH_WARNING
+        return "$HEALTH_WARNING"
+    fi
+    IFS='|' read -r enabled mode timer hs last bans spool handoff stale <<<"$_NFTBAN_BOTSCAN_FACTS"
     local broken_handoff="no"
     [[ "$handoff" =~ ^[0-9]+$ && "$handoff" -gt 0 ]] && broken_handoff="yes"
     [[ "$stale" == "true" ]] && broken_handoff="yes"
@@ -1318,7 +1379,7 @@ nftban_health_check_botscan() {
     return "$status"
 }
 
-export -f _nftban_health_botscan_facts _nftban_health_render_botscan nftban_health_check_botscan
+export -f _nftban_health_botscan_facts _nftban_health_botscan_collect _nftban_health_render_botscan nftban_health_check_botscan
 export -f _nftban_health_botscan_stale_threshold _nftban_health_botscan_run_staleness _nftban_health_botscan_age_human
 export -f nftban_health_check_communication _health_eval_communication_component
 export -f nftban_health_check_modules nftban_health_check_geoip

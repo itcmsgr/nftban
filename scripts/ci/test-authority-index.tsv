@@ -182,6 +182,7 @@ geoban_migration_v1228_7_test	cli/lib/nftban/tests/geoban_migration_v1228_7_test
 geoban_refresh_execcondition_v159_test	cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh	geoban	test	geoban	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 ghost_table_foreign_preservation_v1228_11_test	cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test.sh	firewall	test	table-classify	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 govulncheck_native_sarif_v1229_4_test	cli/lib/nftban/tests/govulncheck_native_sarif_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+health_botscan_facts_local_conf_errexit_v1235_test	cli/lib/nftban/tests/health_botscan_facts_local_conf_errexit_v1235_test.sh	health	test	health-botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 health_failed_unit_remediation_v1222_1_test	cli/lib/nftban/tests/health_failed_unit_remediation_v1222_1_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 health_journalctl_bounded_v174_test	cli/lib/nftban/tests/health_journalctl_bounded_v174_test.sh	health	test	health-journalctl-bound	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 health_resource_dropin_packaging_guard_v1222_1_test	cli/lib/nftban/tests/health_resource_dropin_packaging_guard_v1222_1_test.sh	packaging	test	packaging	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
