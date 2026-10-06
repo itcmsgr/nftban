@@ -19,7 +19,7 @@
 # meta:inventory.network=""
 # meta:inventory.privileges=""
 # meta:ta.id="portscan_known_open_ports_family_v1235_test"
-# meta:ta.owner="detection"
+# meta:ta.owner="portscan"
 # meta:ta.module="portscan-classic"
 # meta:ta.execution_class="CI_HERMETIC_SHELL"
 # meta:ta.gate="ci-bash"
