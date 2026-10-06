@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'; B1 bypass unit not enabled -> DIVERGENCE; B2 /run/nftban/boot-bypass.state outcome=backstop-removed -> DIVERGENCE 'rules WERE loaded ... removed (at <UTC>, T+Ns)', never a successful bypass; B4 failed / backstop-failed / backstop-unknown -> DIVERGENCE; B3 outcome primary -> ACTIVE, guarantee met; C1 commit-confirm pending -> apply ID, deadline with remaining seconds, the exact confirm command; C2 rollback-failed -> DIVERGENCE 'host NOT protected by NFTBan'; C3 no record named; C4 rolled-back with conflicts= -> untouched files named; C5 status=abandoned (operator abandoned a failed rollback) -> named last outcome, not UNKNOWN; D1 applied baseline (state/applied/meta at=) shown, absent -> 'rebuild --confirm unavailable'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
+# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'; B1 bypass unit not enabled -> DIVERGENCE; B2 /run/nftban/boot-bypass.state outcome=backstop-removed -> DIVERGENCE 'rules WERE loaded ... removed (at <UTC>, T+Ns)', never a successful bypass; B4 failed / backstop-failed / backstop-unknown -> DIVERGENCE; B3 outcome primary -> ACTIVE, guarantee met; C1 commit-confirm pending -> apply ID, deadline with remaining seconds, the exact confirm command; C2 rollback-failed -> DIVERGENCE 'host NOT protected by NFTBan'; C3 no record named; C4 rolled-back with conflicts= -> untouched files named; C5 status=abandoned (operator abandoned a failed rollback) -> named last outcome, not UNKNOWN; D1 applied baseline (state/applied/meta at=) shown, absent -> 'rebuild --confirm unavailable'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object; E3 through the real dispatcher the stored choice and projection are read from the real lib/service_control.sh and lib/boot_projection.sh (loaded on demand), not UNKNOWN. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
 # meta:inventory.files="lifecycle_facts_v1235_test.sh"
 # meta:inventory.binaries="bash,jq,cp,mktemp"
 # meta:inventory.env_vars="LF_SUBJECT_ROOT"
@@ -75,7 +75,9 @@ printf '# distro\ninclude "/etc/nftban/generated/nftban-boot.nft"\n' > "$W/distr
 # run_lf <out> [authorities: yes|no] ; env STORED=0|1 BYPASS=0|1 PROJ=active|inert|missing
 run_lf(){
     local o="$1" auth="${2:-yes}"
-    env PATH="$W/bin:/usr/bin:/bin" NFTBAN_STATE_DIR="$W/state" NFTBAN_RUN_DIR="$W/run" NFTBAN_LF_DISTRO_CONFS="$W/distro.conf" \
+    # NFTBAN_LIB_DIR -> an empty dir: the on-demand authority load must find nothing,
+    # never the libraries installed on the host running the test.
+    env PATH="$W/bin:/usr/bin:/bin" NFTBAN_LIB_DIR="$W/nolib" NFTBAN_STATE_DIR="$W/state" NFTBAN_RUN_DIR="$W/run" NFTBAN_LF_DISTRO_CONFS="$W/distro.conf" \
         AUTH="$auth" LIBF="$LIBF" bash -c '
         set -Eeuo pipefail
         if [[ "$AUTH" == yes ]]; then
@@ -211,6 +213,15 @@ if [[ -x "$ROOT/cli/sbin/nftban" ]]; then
         && ok "E1 status (real dispatcher) shows the Protection lifecycle block" || no "E1 status shows no lifecycle facts"
     jq -e '.lifecycle | has("stored") and has("on_reboot") and has("recovery")' "$W/e_status_json.out" >/dev/null 2>&1 \
         && ok "E2 status --json carries the lifecycle object" || no "E2 status --json has no lifecycle object"
+    # E3: the dispatcher does not load lib/service_control.sh or lib/boot_projection.sh;
+    # the facts must load them (lab3 runtime pass: all three read UNKNOWN without it).
+    if [[ -f "$W/lib/lib/service_control.sh" && -f "$W/lib/lib/boot_projection.sh" ]]; then
+        e3="$(grep -E 'Stored choice|On reboot|UNKNOWN: (stored choice|boot projection state) not read' "$W/e_status.out" || true)"
+        if [[ "$e3" == *"Stored choice"* && "$e3" != *"Stored choice....... UNKNOWN"* \
+              && "$e3" != *"projection UNKNOWN"* && "$e3" != *"not read"* ]]; then
+            ok "E3 real dispatcher: stored choice and projection read from the real authorities (not UNKNOWN)"
+        else no "E3 authorities not loaded by the real dispatcher path" "$(tr '\n' '|' <<<"$e3")"; fi
+    fi
 fi
 
 echo ""

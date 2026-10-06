@@ -22,7 +22,8 @@
 #   nftban_master_switch_on        lib/service_control.sh   rc 0 on, 1 off
 #   nftban_emergency_bypass_active lib/service_control.sh   rc 0 active, 1 inactive
 #   nftban_boot_projection_state   lib/boot_projection.sh   prints active|inert|missing|unknown
-# When an authority is not loaded, its fact is UNKNOWN (never guessed).
+# Each is loaded on demand from ${NFTBAN_LIB_DIR}/lib when not already defined; when an
+# authority cannot be loaded, its fact is UNKNOWN (never guessed).
 # =============================================================================
 
 [[ -n "${_NFTBAN_LIFECYCLE_FACTS_LOADED:-}" ]] && return 0
@@ -34,10 +35,29 @@ _NFTBAN_LF_INCLUDE='include "/etc/nftban/generated/nftban-boot.nft"'
 # _nftban_lf_rc <cmd...> -> echoes the command's rc (never aborts the caller)
 _nftban_lf_rc() { local rc=0; "$@" >/dev/null 2>&1 || rc=$?; printf '%s' "$rc"; }
 
+# _nftban_lf_load_authorities: status and health do not source lib/service_control.sh
+# or lib/boot_projection.sh themselves (status loads lib/nftban_service_control.sh, a
+# different file). Load each authority on demand, as cmd_firewall.sh does: a lab3
+# runtime pass (v1.235) read all three facts as UNKNOWN because nothing loaded them.
+# A library that is absent or fails to load leaves its fact UNKNOWN.
+_nftban_lf_load_authorities() {
+    local lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib"
+    if ! declare -F nftban_master_switch_on >/dev/null 2>&1 && [[ -r "$lib/service_control.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$lib/service_control.sh" 2>/dev/null || true
+    fi
+    if ! declare -F nftban_boot_projection_state >/dev/null 2>&1 && [[ -r "$lib/boot_projection.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$lib/boot_projection.sh" 2>/dev/null || true
+    fi
+    return 0
+}
+
 # nftban_lifecycle_collect: sets the LF_* globals and the LF_NOTES array.
 nftban_lifecycle_collect() {
     local rc
     LF_NOTES=()
+    _nftban_lf_load_authorities
 
     # --- STORED choice --------------------------------------------------------------
     LF_STORED=UNKNOWN
