@@ -242,12 +242,15 @@ else ko "D24 boot mode (status=$(get status))"; fi
 fresh; stage_pending 120; ID=$(get apply_id); echo 1 > "$SB/nft_f_rc"
 cc "cc_rollback $ID --auto" >/dev/null 2>&1 || true
 : > "$SB/calls.log"; cp -p "$REC" "$SB/rec.before"
-rc=0; cc 'cc_boot' > "$SB/boot.out" 2>&1 || rc=$?
-if [[ $rc -eq 0 ]] && has "$SB/calls.log" "auth.crit" && has "$SB/boot.out" "ROLLBACK FAILED" \
+rc=0; cc 'cc_boot' || rc=$?
+if [[ $rc -eq 0 ]] && has "$SB/calls.log" "auth.crit" && has "$SB/cc.out" "ROLLBACK FAILED" \
    && ! has "$SB/calls.log" "nft -f" && cmp -s "$REC" "$SB/rec.before" \
    && [[ -e "$SB/data/state/commit-confirm.rollback-failed" ]]; then
     ok "D25 boot after a failed rollback: alarm raised again (auth.crit), no nft call, record and marker unchanged"
-else ko "D25 boot after a failed rollback (rc=$rc)"; fi
+else
+    ko "D25 boot after a failed rollback (rc=$rc crit=$(has "$SB/calls.log" auth.crit && echo y || echo n) out=$(has "$SB/cc.out" "ROLLBACK FAILED" && echo y || echo n) nft=$(has "$SB/calls.log" "nft -f" && echo y || echo n) rec_same=$(cmp -s "$REC" "$SB/rec.before" && echo y || echo n) marker=$([[ -e "$SB/data/state/commit-confirm.rollback-failed" ]] && echo y || echo n))"
+    sed 's/^/      cc.out| /' "$SB/cc.out"
+fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

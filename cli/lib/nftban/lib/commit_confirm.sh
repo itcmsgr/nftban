@@ -356,7 +356,8 @@ cc_rollback() {
 cc_boot() {
     [[ -r "$CC_RECORD" ]] || return 0
     if [[ -e "$CC_FAILED_MARK" ]]; then
-        local msg="NFTBan commit-confirm ROLLBACK FAILED for apply $(cc_get apply_id) (since $(cc_get at)); kernel: $(cc_get kernel). NFTBan units are held until recovery."
+        local msg
+        msg="NFTBan commit-confirm ROLLBACK FAILED for apply $(cc_get apply_id) (since $(cc_get at)); kernel: $(cc_get kernel). NFTBan units are held until recovery."
         logger -t nftban -p auth.crit "$msg" 2>/dev/null || true
         echo "❌ $msg" >&2
         cc_refuse_if_rollback_failed "boot" || true
