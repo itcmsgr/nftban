@@ -17,9 +17,9 @@ import (
 // who/w/ip, which SELinux enforcing denies in the daemon domain), and an
 // unreadable source must be an error, never an empty success.
 
-func utmpRecord(typ int16, host string, addr []byte) []byte {
+func utmpRecord(typ uint16, host string, addr []byte) []byte {
 	r := make([]byte, utmpRecordSize)
-	binary.LittleEndian.PutUint16(r[utmpTypeOff:], uint16(typ))
+	binary.LittleEndian.PutUint16(r[utmpTypeOff:], typ)
 	copy(r[utmpHostOff:utmpHostOff+utmpHostLen], host)
 	copy(r[utmpAddrOff:utmpAddrOff+16], addr)
 	return r
@@ -37,11 +37,11 @@ func writeFile(t *testing.T, dir, name string, data []byte) string {
 func TestUtmpRemoteIPs(t *testing.T) {
 	dir := t.TempDir()
 	var data []byte
-	data = append(data, utmpRecord(2, "", nil)...)                                      // BOOT_TIME: ignored
+	data = append(data, utmpRecord(2, "", nil)...)                                             // BOOT_TIME: ignored
 	data = append(data, utmpRecord(utmpUserProcess, "203.0.113.7", []byte{203, 0, 113, 7})...) // v4 in addr
-	data = append(data, utmpRecord(utmpUserProcess, "2001:db8::5", nil)...)             // host text only
-	data = append(data, utmpRecord(utmpUserProcess, ":0", nil)...)                      // local X: no IP
-	data = append(data, utmpRecord(8, "198.51.100.9", []byte{198, 51, 100, 9})...)      // DEAD_PROCESS: ignored
+	data = append(data, utmpRecord(utmpUserProcess, "2001:db8::5", nil)...)                    // host text only
+	data = append(data, utmpRecord(utmpUserProcess, ":0", nil)...)                             // local X: no IP
+	data = append(data, utmpRecord(8, "198.51.100.9", []byte{198, 51, 100, 9})...)             // DEAD_PROCESS: ignored
 	old := utmpPaths
 	defer func() { utmpPaths = old }()
 	utmpPaths = []string{filepath.Join(dir, "absent"), writeFile(t, dir, "utmp", data)}

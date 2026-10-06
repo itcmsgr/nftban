@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -45,8 +46,8 @@ var (
 // for 32/64-bit compatibility). 384 bytes per record.
 const (
 	utmpRecordSize  = 384
-	utmpTypeOff     = 0   // int16 ut_type (+2 pad)
-	utmpHostOff     = 76  // char ut_host[256]
+	utmpTypeOff     = 0  // int16 ut_type (+2 pad)
+	utmpHostOff     = 76 // char ut_host[256]
 	utmpHostLen     = 256
 	utmpAddrOff     = 348 // int32 ut_addr_v6[4]
 	utmpUserProcess = 7   // USER_PROCESS
@@ -58,7 +59,7 @@ const (
 func utmpRemoteIPs() ([]net.IP, error) {
 	var lastErr error
 	for _, p := range utmpPaths {
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(filepath.Clean(p)) // #nosec G304 -- fixed utmp paths (package variables, test-overridable only)
 		if err != nil {
 			lastErr = err
 			continue
@@ -75,7 +76,7 @@ func parseUtmp(data []byte) []net.IP {
 	var ips []net.IP
 	for off := 0; off+utmpRecordSize <= len(data); off += utmpRecordSize {
 		rec := data[off : off+utmpRecordSize]
-		if int16(binary.LittleEndian.Uint16(rec[utmpTypeOff:])) != utmpUserProcess {
+		if binary.LittleEndian.Uint16(rec[utmpTypeOff:]) != utmpUserProcess {
 			continue
 		}
 		if ip := utmpAddr(rec[utmpAddrOff : utmpAddrOff+16]); ip != nil {
@@ -136,7 +137,7 @@ func procDefaultGateways() ([]net.IP, error) {
 // = little-endian on the supported architectures). Default route: Destination
 // 00000000 and Mask 00000000, RTF_GATEWAY (0x2) set.
 func readProcRouteV4(path string) ([]net.IP, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- fixed procfs route table path
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func readProcRouteV4(path string) ([]net.IP, error) {
 // /proc/net/ipv6_route: dest destlen src srclen nexthop metric refcnt use flags iface
 // (32-hex-digit addresses, network order). Default route: dest all-zero, destlen 00.
 func readProcRouteV6(path string) ([]net.IP, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- fixed procfs route table path
 	if err != nil {
 		return nil, err
 	}
