@@ -10,7 +10,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
 # meta:description="Collects and renders the four separate lifecycle facts that status and health must show (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md, 'Status / health must show four separate facts'): STORED choice, APPLIED now, ON REBOOT, RECOVERY; plus the per-boot emergency bypass and the disable unit record. A mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Reads only; never changes state."
-# meta:inventory.files="/etc/nftban/conf.d/services.conf,/etc/nftban/generated/nftban-boot.nft,/var/lib/nftban/state/disable-units.state,/etc/sysconfig/nftables.conf,/etc/nftables.conf"
+# meta:inventory.files="/var/lib/nftban/state/applied/meta,/var/lib/nftban/state/boot-bypass.state,/var/lib/nftban/state/commit-confirm.state,/etc/nftban/conf.d/services.conf,/etc/nftban/generated/nftban-boot.nft,/var/lib/nftban/state/disable-units.state,/etc/sysconfig/nftables.conf,/etc/nftables.conf"
 # meta:inventory.binaries="nft,systemctl,grep"
 # meta:inventory.env_vars="NFTBAN_STATE_DIR,NFTBAN_LIB_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/services.conf"
@@ -46,11 +46,76 @@ nftban_lifecycle_collect() {
         case "$rc" in 0) LF_STORED=enabled ;; 1) LF_STORED=disabled ;; esac
     fi
 
-    # --- per-boot emergency bypass -----------------------------------------------------
-    LF_BYPASS=UNKNOWN
+    # --- per-boot emergency bypass (contract §3/§6) ---------------------------------------
+    # ACTIVE / DEGRADED (the backstop removed loaded NFTBan rules) / not present /
+    # unit not enabled (would not act before the first load). The outcome comes from
+    # state/boot-bypass.state (outcome=primary|fallback-rename|created-inert|backstop-removed, at=<UTC>).
+    LF_BYPASS=UNKNOWN; LF_BYPASS_UNIT=UNKNOWN
+    local bs="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/boot-bypass.state" b_out="" b_at=""
+    if [[ -r "$bs" ]]; then
+        b_out="$(grep -m1 -E '^outcome=' "$bs" 2>/dev/null || true)"; b_out="${b_out#outcome=}"
+        b_at="$(grep -m1 -E '^at=' "$bs" 2>/dev/null || true)"; b_at="${b_at#at=}"
+    fi
+    LF_BYPASS_UNIT="$(systemctl is-enabled nftban-boot-bypass.service 2>/dev/null || true)"; LF_BYPASS_UNIT="${LF_BYPASS_UNIT:-UNKNOWN}"
     if declare -F nftban_emergency_bypass_active >/dev/null 2>&1; then
         rc="$(_nftban_lf_rc nftban_emergency_bypass_active)"
-        case "$rc" in 0) LF_BYPASS=active ;; 1) LF_BYPASS=inactive ;; esac
+        case "$rc" in
+            0) case "$b_out" in
+                   primary|fallback-rename|created-inert)
+                       LF_BYPASS="ACTIVE (guarantee met: outcome=${b_out}${b_at:+ at $b_at})" ;;
+                   backstop-removed)
+                       # NEVER a successful bypass: NFTBan rules were loaded at boot.
+                       local _tn="" _ae="" _be
+                       _ae="$(date -u -d "$b_at" +%s 2>/dev/null || true)"
+                       _be=$(( $(date +%s) - $(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0) ))
+                       [[ "$_ae" =~ ^[0-9]+$ ]] && (( _ae >= _be )) && _tn="T+$(( _ae - _be ))s"
+                       LF_BYPASS="DEGRADED (not a successful bypass: NFTBan rules WERE loaded during this bypass boot and removed at ${_tn:-${b_at:-UNKNOWN time}})" ;;
+                   "") LF_BYPASS="ACTIVE (outcome record absent: guarantee UNKNOWN)" ;;
+                   *)  LF_BYPASS="ACTIVE (unrecognised outcome '${b_out}': guarantee UNKNOWN)" ;;
+               esac ;;
+            1) if [[ "$LF_BYPASS_UNIT" == enabled ]]; then LF_BYPASS="not present (bypass unit enabled)"
+               elif [[ "$LF_BYPASS_UNIT" == UNKNOWN ]]; then LF_BYPASS="not present (bypass unit state UNKNOWN)"
+               else LF_BYPASS="not present; bypass unit ${LF_BYPASS_UNIT}"; fi ;;
+        esac
+    fi
+
+    # --- commit-confirm (contract §4/§6) --------------------------------------------------
+    local cs="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/commit-confirm.state" c_id="" c_dl="" c_st="" c_at="" now rem
+    LF_CC_STATUS=""; LF_CC_CONFLICTS=""
+    # Applied baseline: rebuild --confirm needs a recorded last-known-good.
+    local am="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/applied/meta" a_at=""
+    if [[ ! -e "$am" ]]; then
+        LF_BASELINE="no applied baseline (rebuild --confirm unavailable)"
+    elif [[ ! -r "$am" ]]; then
+        LF_BASELINE=UNKNOWN
+    else
+        a_at="$(grep -m1 -E '^at=' "$am" 2>/dev/null || true)"; a_at="${a_at#at=}"
+        LF_BASELINE="applied baseline at ${a_at:-UNKNOWN time}"
+    fi
+    if [[ ! -e "$cs" ]]; then
+        LF_CC="no apply awaiting confirmation (no record)"
+    elif [[ ! -r "$cs" ]]; then
+        LF_CC=UNKNOWN
+    else
+        c_id="$(grep -m1 -E '^apply_id=' "$cs" 2>/dev/null || true)"; c_id="${c_id#apply_id=}"
+        c_dl="$(grep -m1 -E '^deadline_epoch=' "$cs" 2>/dev/null || true)"; c_dl="${c_dl#deadline_epoch=}"
+        c_st="$(grep -m1 -E '^status=' "$cs" 2>/dev/null || true)"; c_st="${c_st#status=}"
+        c_at="$(grep -m1 -E '^at=' "$cs" 2>/dev/null || true)"; c_at="${c_at#at=}"
+        LF_CC_STATUS="$c_st"
+        local c_cf=""
+        c_cf="$(grep -m1 -E '^conflicts=' "$cs" 2>/dev/null || true)"; c_cf="${c_cf#conflicts=}"
+        LF_CC_CONFLICTS="$c_cf"
+        case "$c_st" in
+            pending)
+                if [[ "$c_dl" =~ ^[0-9]+$ ]]; then
+                    now="$(date +%s)"; rem=$(( c_dl - now ))
+                    LF_CC="PENDING apply ${c_id:-UNKNOWN}: deadline $(date -u -d "@$c_dl" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$c_dl") ($( (( rem >= 0 )) && echo "${rem}s remaining" || echo "passed $(( -rem ))s ago; rollback due")); confirm with: nftban firewall confirm ${c_id:-<apply_id>}"
+                else
+                    LF_CC="PENDING apply ${c_id:-UNKNOWN}: deadline UNKNOWN; confirm with: nftban firewall confirm ${c_id:-<apply_id>}"
+                fi ;;
+            confirmed|rolled-back|rollback-failed) LF_CC="last outcome: ${c_st}${c_at:+ at $c_at}${c_id:+ (apply $c_id)}" ;;
+            *) LF_CC="UNKNOWN (unrecognised record status '${c_st}')" ;;
+        esac
     fi
 
     # --- APPLIED now -------------------------------------------------------------------
@@ -111,11 +176,20 @@ nftban_lifecycle_collect() {
     fi
 
     # --- named mismatches ---------------------------------------------------------------
-    if [[ "$LF_BYPASS" == active ]]; then
+    [[ "$LF_CC_STATUS" == rollback-failed ]] && LF_NOTES+=("DIVERGENCE: ROLLBACK FAILED: NFTBan rules removed, host NOT protected by NFTBan")
+    [[ -n "$LF_CC_CONFLICTS" ]] && LF_NOTES+=("EXPECTED: the rollback left file(s) edited again after the apply untouched: ${LF_CC_CONFLICTS}")
+    [[ "$LF_CC" == UNKNOWN* ]] && LF_NOTES+=("UNKNOWN: commit-confirm record not read")
+    if [[ "$LF_BYPASS" == DEGRADED* ]]; then
+        LF_NOTES+=("DIVERGENCE: emergency bypass DEGRADED: ${LF_BYPASS#DEGRADED (}")
+        LF_NOTES[-1]="${LF_NOTES[-1]%)}"
+        return 0
+    fi
+    if [[ "$LF_BYPASS" == ACTIVE* ]]; then
         LF_NOTES+=("EXPECTED: EMERGENCY BYPASS ACTIVE for this boot (kernel nftban=disabled); stored choice: ${LF_STORED}. The projection reads INERT because the shipped inert file is bind-mounted over it for this boot only")
         return 0
     fi
     [[ "$LF_BYPASS" == UNKNOWN ]] && LF_NOTES+=("UNKNOWN: emergency bypass state not read")
+    [[ "$LF_BYPASS" == "not present; bypass unit "* ]] && LF_NOTES+=("DIVERGENCE: the bypass unit is ${LF_BYPASS_UNIT}: the emergency bypass would not act before the first load")
     case "$LF_STORED" in
         enabled)
             [[ "$LF_TABLES" == absent ]] && LF_NOTES+=("DIVERGENCE: stored enabled, NFTBan tables absent in the kernel")
@@ -150,17 +224,19 @@ nftban_lifecycle_render() {
     printf "  %-20s %s\n" "On reboot..........." "nftables.service ${LF_NFTSVC} · include ${LF_INCLUDE} · projection ${LF_PROJECTION}"
     printf "  %-20s %s\n" "Recovery............" "$LF_RECOVERY"
     printf "  %-20s %s\n" "Emergency bypass...." "$LF_BYPASS"
+    printf "  %-20s %s\n" "Commit-confirm......" "$LF_CC"
+    printf "  %-20s %s\n" "Applied baseline...." "$LF_BASELINE"
     printf "  %-20s %s\n" "Disable record......" "$LF_UNITREC"
     for n in "${LF_NOTES[@]+"${LF_NOTES[@]}"}"; do printf '    %s\n' "$n"; done
 }
 
 # nftban_lifecycle_json: one JSON object (call after nftban_lifecycle_collect)
 nftban_lifecycle_json() {
-    local n notes="" esc
+    local n notes=""
     esc() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
     for n in "${LF_NOTES[@]+"${LF_NOTES[@]}"}"; do notes+="${notes:+,}\"$(esc "$n")\""; done
-    printf '{"stored":"%s","applied":{"tables":"%s","daemon":"%s","timers_active":"%s"},"on_reboot":{"nftables_service":"%s","include":"%s","projection":"%s"},"recovery":"%s","emergency_bypass":"%s","disable_record":"%s","notes":[%s]}' \
+    printf '{"stored":"%s","applied":{"tables":"%s","daemon":"%s","timers_active":"%s"},"on_reboot":{"nftables_service":"%s","include":"%s","projection":"%s"},"recovery":"%s","emergency_bypass":"%s","commit_confirm":"%s","applied_baseline":"%s","disable_record":"%s","notes":[%s]}' \
         "$(esc "$LF_STORED")" "$(esc "$LF_TABLES")" "$(esc "$LF_DAEMON")" "$(esc "$LF_TIMERS")" \
         "$(esc "$LF_NFTSVC")" "$(esc "$LF_INCLUDE")" "$(esc "$LF_PROJECTION")" "$(esc "$LF_RECOVERY")" \
-        "$(esc "$LF_BYPASS")" "$(esc "$LF_UNITREC")" "$notes"
+        "$(esc "$LF_BYPASS")" "$(esc "$LF_CC")" "$(esc "$LF_BASELINE")" "$(esc "$LF_UNITREC")" "$notes"
 }
