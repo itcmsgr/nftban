@@ -266,7 +266,7 @@ portscan_classic_event_time_v1233_1_test	cli/lib/nftban/tests/portscan_classic_e
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_enable_disable_txn_v1233_1_test	cli/lib/nftban/tests/portscan_enable_disable_txn_v1233_1_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	900		
 portscan_generic_corroborate_v149_test	cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
-portscan_known_open_ports_family_v1235_test	cli/lib/nftban/tests/portscan_known_open_ports_family_v1235_test.sh	detection	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+portscan_known_open_ports_family_v1235_test	cli/lib/nftban/tests/portscan_known_open_ports_family_v1235_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_trusted_flow_test	cli/lib/nftban/tests/portscan_trusted_flow_test.sh	portscan	test	portscan-trusted-flow	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 posture_observation_truth_v1229_3_test	cli/lib/nftban/tests/posture_observation_truth_v1229_3_test.sh	health	test	health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 pro_export_profile_authority_v1229_11_test	cli/lib/nftban/tests/pro_export_profile_authority_v1229_11_test.sh	metrics	test	pro-export-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
