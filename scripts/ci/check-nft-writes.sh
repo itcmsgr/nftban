@@ -99,7 +99,18 @@ NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 #                                   sandbox — the real nft binary is never reached, so
 #                                   this is strictly weaker than the v1.192 throwaway-
 #                                   table precedent.
-ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test\.sh|cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test\.sh|cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test\.sh|cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
+#     firewall_restore_scoped_v1235_test.sh — v1.235 A1 hermetic harness. nft and
+#                                   systemctl are shell FUNCTIONS that only record their
+#                                   arguments; the matched text is the recorded-call
+#                                   patterns (`^nft -f`, `^nft -c -f`) and the R5 assertion
+#                                   that names `nft flush ruleset` as the forbidden command.
+#                                   The real nft binary is never reached.
+#     firewall_restore_foreign_tables_netns_v1235_test.sh — v1.235 A1 F-A1-1 kernel arm
+#                                   (ROOT_LAB, lab-manual). Every nft write runs inside a
+#                                   THROWAWAY network namespace (a1f_$$) deleted on exit,
+#                                   never against the host ruleset; systemctl is stubbed.
+#                                   Same class as the v1.192 throwaway-table precedent.
+ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test\.sh|cli/lib/nftban/tests/rebuild_atomic_rollback_v1228_10_test\.sh|cli/lib/nftban/tests/ghost_table_foreign_preservation_v1228_11_test\.sh|cli/lib/nftban/tests/legacy_restore_neutralized_v1229_test\.sh|cli/lib/nftban/tests/firewall_restore_scoped_v1235_test\.sh|cli/lib/nftban/tests/firewall_restore_foreign_tables_netns_v1235_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
 
 # =============================================================================
 # MAIN
