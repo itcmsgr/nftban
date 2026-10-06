@@ -68,6 +68,13 @@ func RestartWedgedTimers(ctx context.Context, exec executor.Executor, log *loggi
 
 	restarted := 0
 	for _, timer := range installedTimers {
+		// v1.235 row 486 / commit-confirm: the rollback timers are armed only by an
+		// apply and must NEVER be (re)started by the installer. Restarting an armed
+		// monotonic-only rollback timer would reset or fire it outside its apply.
+		if isRollbackTimer(timer) {
+			log.Debug("timer hardening: %s is a commit-confirm rollback unit — never restarted by the installer", timer)
+			continue
+		}
 		// Skip timers not installed on this host (pro-/panel-/feature-gated
 		// units that this install did not deploy).
 		if !timerUnitInstalled(exec, timer) {
@@ -215,4 +222,11 @@ func nextElapseSet(v string) bool {
 		return false
 	}
 	return true
+}
+
+// isRollbackTimer reports the commit-confirm rollback units the installer must
+// never restart: the legacy nftban-rollback.timer and any transient
+// nftban-commit-rollback-<applyID> unit (systemd-run --unit name; v1.235 row 486).
+func isRollbackTimer(unit string) bool {
+	return unit == "nftban-rollback.timer" || strings.HasPrefix(unit, "nftban-commit-rollback")
 }

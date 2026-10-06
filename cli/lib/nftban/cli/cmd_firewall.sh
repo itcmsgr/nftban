@@ -378,6 +378,15 @@ _firewall_publish_conf() {
 # while the per-boot emergency bypass (kernel parameter nftban=disabled) is
 # active. Fail closed: if the shared library cannot be loaded, the exact-word
 # check is done here, so a missing library can never skip the bypass.
+# v1.235 D10: while a commit-confirm rollback has FAILED, no other path may load or
+# publish rules (the kernel state is kept for recovery). Retrying the rollback is exempt.
+_fw_cc_guard() {
+    [[ -e "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/commit-confirm.rollback-failed" ]] || return 0
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null || { echo "REFUSED: $1: a commit-confirm rollback FAILED" >&2; return 1; }
+    cc_refuse_if_rollback_failed "$1"
+}
+
 _fw_bypass_guard() {
     if ! declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
         # shellcheck source=/dev/null
@@ -796,12 +805,14 @@ nftban_cmd_firewall() {
         reload)
             shift
             _fw_bypass_guard "firewall reload" || return 1
+            _fw_cc_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
             firewall_reload "$@"
             ;;
         rebuild)
             shift
             _fw_bypass_guard "firewall rebuild" || return 1
+            _fw_cc_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
             ;;
@@ -809,11 +820,13 @@ nftban_cmd_firewall() {
             # P12-FPA: render + publish the boot projection WITHOUT loading it.
             shift
             _fw_bypass_guard "firewall render-boot" || return 1
+            _fw_cc_guard "firewall render-boot" || return 1
             _firewall_render_boot "$@"
             ;;
         reset)
             shift
             _fw_bypass_guard "firewall reset" || return 1
+            _fw_cc_guard "firewall reset" || return 1
             firewall_reset "$@"
             ;;
         conflicts)
@@ -831,7 +844,33 @@ nftban_cmd_firewall() {
         restore)
             shift
             _fw_bypass_guard "firewall restore" || return 1
+            _fw_cc_guard "firewall restore" || return 1
             firewall_restore "$@"
+            ;;
+        confirm)
+            # v1.235 commit-confirm: confirm the pending `rebuild --confirm` apply.
+            shift
+            _fw_bypass_guard "firewall confirm" || return 1
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" || return 1
+            cc_confirm "${1:-}"
+            ;;
+        rollback)
+            # v1.235 commit-confirm: roll back the pending apply now (--auto: deadline unit;
+            # --boot: boot unit; --abandon: operator clears a FAILED rollback after recovery).
+            shift
+            _fw_bypass_guard "firewall rollback" || return 1
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" || return 1
+            local _cc_id="" _cc_mode="manual" _cc_a
+            for _cc_a in "$@"; do
+                case "$_cc_a" in
+                    --auto|--boot) _cc_mode="$_cc_a" ;;
+                    --abandon)     _cc_mode="abandon" ;;
+                    *)             _cc_id="$_cc_a" ;;
+                esac
+            done
+            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"; else cc_rollback "$_cc_id" "$_cc_mode"; fi
             ;;
         record)
             shift
@@ -845,6 +884,7 @@ nftban_cmd_firewall() {
         takeover)
             shift
             _fw_bypass_guard "firewall takeover" || return 1
+            _fw_cc_guard "firewall takeover" || return 1
             nftban_ssh_pre_rebuild_lockout_guard takeover "$@" || true
             firewall_takeover "$@"
             ;;
@@ -3955,6 +3995,9 @@ _firewall_rebuild_core() {
     local force=false
     local quiet=false
     local use_new=false
+    # v1.235 commit-confirm (row 486 section 4): --confirm[=SECONDS] arms an automatic rollback
+    # BEFORE the load and publishes the boot projection only at confirm.
+    local _cc_mode=false _cc_grace=""
     # v1.228.5: execution context for the durable whitelist reconcile. PASSED by the
     # caller, never inferred. The installer runs rebuild BEFORE services.StartDaemon
     # by design, and AddSessionWhitelist writes 00-session.conf AFTER that rebuild —
@@ -3970,6 +4013,10 @@ _firewall_rebuild_core() {
                 force=true
                 shift
                 ;;
+            --confirm)
+                _cc_mode=true; shift ;;
+            --confirm=*)
+                _cc_mode=true; _cc_grace="${1#--confirm=}"; shift ;;
             --quiet|-q)
                 quiet=true
                 shift
@@ -4333,8 +4380,18 @@ _firewall_rebuild_core() {
     # nftban table before this load — see scripts/ci/check-nft-atomicity.sh.
     [[ "$quiet" == "false" ]] && echo "  [5/12] Loading new schema (atomic single transaction)..."
 
+    if [[ "$_cc_mode" == "true" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" || { echo "ERROR: commit-confirm engine not available" >&2; return 1; }
+        [[ -n "$_cc_grace" ]] || _cc_grace="$(cc_grace_default)"
+        if ! [[ "$_cc_grace" =~ ^[0-9]+$ && "$_cc_grace" -ge 30 ]]; then
+            echo "ERROR: --confirm=SECONDS must be an integer >= 30" >&2; return 1
+        fi
+        cc_apply_begin "$_cc_grace" || return 1
+    fi
     if ! nft -f "$load_conf" 2>&1; then
         echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
+        [[ "$_cc_mode" == "true" ]] && cc_apply_abort
         echo "Try: nftban firewall reset --force" >&2
         # v1.96: APPLY_FAILED — validated config failed to load (may be transient)
         if declare -f _rebuild_marker_write &>/dev/null; then
@@ -4550,7 +4607,18 @@ _firewall_rebuild_core() {
     # Placed AFTER steps 6-12 on purpose: the nft -c of the candidate must not
     # lengthen the post-load window in which bans/whitelist are re-added.
     local _boot_proj_state
+    if [[ "$_cc_mode" == "true" ]]; then
+        # Pending candidate: the boot projection is published only at confirm.
+        _boot_proj_state="pending-confirm"
+        cc_apply_loaded "$load_conf" || echo "WARNING: candidate projection could not be staged; confirm will fail and the rollback will run" >&2
+    else
     _boot_proj_state=$(_firewall_rebuild_refresh_boot_projection "$source_file" "$load_conf" "$quiet")
+        # v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
+        # shellcheck source=/dev/null
+        if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
+            cc_record_applied_baseline "$load_conf" || echo "WARNING: applied baseline not recorded (rebuild --confirm will refuse until a rebuild records one)" >&2
+        fi
+    fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
@@ -4786,7 +4854,7 @@ _firewall_rebuild_core() {
     # measured: the next boot or nftables.service restart silently reverts ports.
     # Anything other than the two known-good words (including an empty answer from
     # a helper that died) is a failure, never a pass.
-    if [[ "${_boot_proj_state:-}" != "refreshed" && "${_boot_proj_state:-}" != "not-established" ]]; then
+    if [[ "${_boot_proj_state:-}" != "refreshed" && "${_boot_proj_state:-}" != "not-established" && "${_boot_proj_state:-}" != "pending-confirm" ]]; then
         echo "Final status: DEGRADED (boot projection not refreshed: ${_boot_proj_state:-no answer})" >&2
         echo "  The running firewall was rebuilt, but the boot projection" >&2
         echo "  still holds the previous ruleset; a reboot would load it." >&2
@@ -6225,6 +6293,14 @@ Options:
   --force, -f   Skip confirmation prompts
   --quiet, -q   Suppress progress output
   --use-new     Prefer .rpmnew config over existing (after RPM upgrade)
+  --confirm[=SECONDS]
+                Apply as a PENDING change (commit-confirm, default 300 s,
+                NFTBAN_CONFIRM_GRACE_SECONDS). An automatic rollback to the last
+                applied configuration is armed BEFORE the change; run
+                `nftban firewall confirm <apply_id>` after testing a NEW connection,
+                or it rolls back at the deadline. Only this option has automatic
+                rollback: a plain rebuild, reload, restore, port change or upgrade
+                does not.
   -h, --help    Show this help message
 
 Examples:

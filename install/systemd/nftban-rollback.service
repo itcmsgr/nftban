@@ -23,6 +23,8 @@
 # v1.235 R-DEC: kernel parameter nftban=disabled = per-boot emergency bypass of NFTBan.
 # systemd enforces this on every start path (socket, Requires=, timer, installer, self-heal).
 ConditionKernelCommandLine=!nftban=disabled
+# v1.235 D10: while a commit-confirm rollback has FAILED, nothing may apply another state.
+ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed
 Description=NFTBan Automatic Rollback Service
 Documentation=man:nftban(8)
 Documentation=https://nftban.com/docs
@@ -31,7 +33,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/lib/nftban/sbin/nftban-rollback --force
+ExecStart=/usr/lib/nftban/sbin/nftban-rollback --legacy-unit
 
 # Logging
 StandardOutput=journal
@@ -70,5 +72,5 @@ RestrictAddressFamilies=AF_UNIX AF_NETLINK
 # Filesystem access
 ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
 
-[Install]
-WantedBy=multi-user.target
+# v1.235: no [Install] section: this legacy unit is never enabled (its trigger is retired;
+# commit-confirm uses per-apply transient units nftban-commit-rollback-<id>).

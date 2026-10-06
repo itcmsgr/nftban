@@ -33,6 +33,8 @@
 # v1.235 R-DEC: kernel parameter nftban=disabled = per-boot emergency bypass of NFTBan.
 # systemd enforces this on every start path (socket, Requires=, timer, installer, self-heal).
 ConditionKernelCommandLine=!nftban=disabled
+# v1.235 D10: while a commit-confirm rollback has FAILED, nothing may apply another state.
+ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed
 Description=NFTBan Auto-Update Apply (Privileged, Gated)
 Documentation=man:nftban(8)
 After=network-online.target

@@ -22,7 +22,7 @@ SAVED="${PROJ}.bypassed"
 STATE_DIR="${NFTBAN_BOOT_STATE_DIR:-/run/nftban}"
 STATE="${STATE_DIR}/boot-bypass.state"
 MARKER='# NFTBAN-PROJECTION-STATE: inert'
-SERVICES_CONF="${NFTBAN_SERVICES_CONF:-/etc/nftban/services.conf}"
+SERVICES_CONF="${NFTBAN_SERVICES_CONF:-/etc/nftban/conf.d/services.conf}"   # same file + .local as lib/service_control.sh
 
 log() { echo "nftban-boot-early: $*"; }
 

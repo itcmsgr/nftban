@@ -107,6 +107,56 @@ type phaseData struct {
 	// phaseValidate consults it (nil-safe) to source the systemd-payload assertion
 	// inputs and to force a deterministic health-resource tier for the resolver.
 	inject *assertionTestInjection
+
+	// v1.235 row 486 (owner U1 / R-DEC / D4): lifecycle mode, resolved once per
+	// run (resolveLifecycleMode). While NFTBan is DISABLED (stored choice) or the
+	// per-boot EMERGENCY BYPASS is active, the installer still updates files but
+	// never loads rules, never starts/enables NFTBan units and never changes
+	// nftables.service enablement. The three early-boot guard units are enabled
+	// in every mode.
+	lifecycleResolved bool
+	nftbanDisabled    bool
+	bypassActive      bool
+}
+
+// enforcementSkipped reports whether this run must not touch the firewall or
+// start/enable NFTBan units (disabled stored choice or emergency bypass).
+func (pd *phaseData) enforcementSkipped() bool { return pd.bypassActive || pd.nftbanDisabled }
+
+// skipReason is the operator-facing terminal reason for a run that skipped
+// enforcement. Empty when enforcement was not skipped.
+func (pd *phaseData) skipReason() string {
+	switch {
+	case pd.bypassActive:
+		return "EMERGENCY BYPASS ACTIVE (kernel nftban=disabled): files updated, no rules loaded, no units started; reboot without the parameter"
+	case pd.nftbanDisabled:
+		return "NFTBan is disabled (stored choice): files updated; firewall not applied — run 'nftban enable'"
+	}
+	return ""
+}
+
+// resolveLifecycleMode reads the stored master switch and the kernel bypass
+// once per run. Called at the start of every phase that can mutate the
+// firewall or units, so a repair/resume that skips phaseDetect still gets it.
+// An UNREADABLE stored choice keeps the pre-v1.235 behaviour (enforce) and is
+// logged loudly; an unreadable choice is never silently read as "disabled".
+func resolveLifecycleMode(exec executor.Executor, pd *phaseData, log *logging.Logger) {
+	if pd.lifecycleResolved {
+		return
+	}
+	pd.lifecycleResolved = true
+	pd.bypassActive = services.EmergencyBypassActive(exec)
+	on, known := services.MasterSwitchOn(exec, fhs.EtcDir)
+	if !known {
+		log.Warn("stored master switch NFTBAN_ENABLED could not be read — proceeding as ENABLED (pre-v1.235 behaviour)")
+	}
+	pd.nftbanDisabled = known && !on
+	switch {
+	case pd.bypassActive:
+		log.Warn("EMERGENCY BYPASS ACTIVE (kernel parameter nftban=disabled): this run updates files only — no rule load, no render-boot, no unit start/enable, nftables.service untouched")
+	case pd.nftbanDisabled:
+		log.Info("NFTBan is DISABLED (stored choice NFTBAN_ENABLED=false): this run updates files and keeps the boot projection inert — no rule load, no unit start/enable, nftables.service untouched")
+	}
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -177,6 +227,9 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 		log.Error("phaseDetect: context cancelled before start: %v", err)
 		return sf.Transition(state.StateFailedRebuild, state.PhaseDetect, "context cancelled: "+err.Error())
 	}
+
+	// v1.235 row 486: stored master switch + per-boot emergency bypass, once per run.
+	resolveLifecycleMode(exec, pd, log)
 
 	// 1. Detect SSH port(s). v1.125 R-1: multi-port-aware — captures the
 	// full list of sshd listener ports (e.g. dns2-class hosts on :22 + :55000)
@@ -263,7 +316,13 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	log.Detect("authority", "decision", string(pd.decision))
 	log.StateChange(string(sf.State), string(state.StateDetectComplete), "authority="+string(pd.decision))
 
-	if pd.decision == authority.Abort {
+	// v1.235 row 486: while NFTBan is disabled or bypassed this run takes over nothing
+	// (no conflict is disabled, no rule is loaded), so an unapproved takeover is not a
+	// reason to abort a file update.
+	if pd.decision == authority.Abort && pd.enforcementSkipped() {
+		log.Info("authority=abort ignored for this run: NFTBan is disabled/bypassed, nothing will be taken over")
+	}
+	if pd.decision == authority.Abort && !pd.enforcementSkipped() {
 		return sf.Transition(state.StateFailedAbort, state.PhaseDetect,
 			"conflicts detected, takeover not approved: "+sf.Conflicts)
 	}
@@ -416,11 +475,29 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	// the caller may rely on — which includes the UNKNOWN + byte-identical-existing
 	// PRESERVATION case (boot_projection.sh returns 0 there). The tri-state
 	// VALIDATE=0/1/2 decision tree stays in the shell and is NOT reimplemented here.
-	if err := switchop.RenderBoot(exec, log); err != nil {
-		log.Error("boot projection render failed: %v", err)
+	// v1.235 row 486: bypass = the projection path is bind-mounted inert for THIS
+	// boot, so nothing is published (bootProjectionReady=false makes the include
+	// integration below refuse pre-mutation and keep the existing include).
+	// Disabled (stored choice) = publish the INERT projection (owner U1).
+	resolveLifecycleMode(exec, pd, log)
+	switch {
+	case pd.bypassActive:
+		log.Warn("boot projection NOT published: EMERGENCY BYPASS ACTIVE (projection is bind-mounted inert for this boot)")
 		pd.bootProjectionReady = false
-	} else {
-		pd.bootProjectionReady = true
+	case pd.nftbanDisabled:
+		if err := switchop.RenderBootInert(exec, log); err != nil {
+			log.Error("inert boot projection publish failed: %v", err)
+			pd.bootProjectionReady = false
+		} else {
+			pd.bootProjectionReady = true
+		}
+	default:
+		if err := switchop.RenderBoot(exec, log); err != nil {
+			log.Error("boot projection render failed: %v", err)
+			pd.bootProjectionReady = false
+		} else {
+			pd.bootProjectionReady = true
+		}
 	}
 
 	// 7. Integrate NFTBan include into system nftables.conf
@@ -480,6 +557,27 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	if err := ctx.Err(); err != nil {
 		log.Error("phaseSwitch: context cancelled before start: %v", err)
 		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, "context cancelled: "+err.Error())
+	}
+
+	// v1.235 row 486 (owner U1 / R-DEC / D4): disabled or bypassed = NO kernel or
+	// service mutation in this phase. Nothing is switched, so no emergency SSH table is
+	// injected (the SSH-safety invariant is about the hand-over between authorities,
+	// and there is no hand-over), no conflict is disabled, nftables.service enablement
+	// is untouched and no rebuild runs. An emergency table left by an EARLIER failed
+	// run is accept-only and is NOT removed here: removal requires the SSH hand-off
+	// proof against a loaded NFTBan ruleset, which this run deliberately does not
+	// create; `nftban enable` (or the next enforced install) hands it off.
+	// Convergence was not evaluated: "" (never VERIFIED, never FAILED).
+	resolveLifecycleMode(exec, pd, log)
+	if pd.enforcementSkipped() {
+		sf.ConvergenceVerified = ""
+		if switchop.EmergencyTablePresent(exec) {
+			log.Warn("an emergency SSH table from an earlier run is present and is KEPT (accept-only); it is handed off by the next enforced run")
+		}
+		log.Info("phaseSwitch skipped: %s", pd.skipReason())
+		log.PhaseEnd("Switch")
+		phaseEndMarker(log, "switch")
+		return sf.Transition(state.StateSwitchComplete, state.PhaseSwitch, "")
 	}
 
 	// 1. TAKEOVER / FRESH / AMBIGUOUS: inject emergency SSH table BEFORE any destructive action.
@@ -726,17 +824,29 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 		return sf.Transition(state.StateFailedRebuild, state.PhaseConfigure, "context cancelled: "+err.Error())
 	}
 
-	// 1. Start daemon (socket + service)
-	services.StartDaemon(exec, log)
+	// v1.235 row 486: the early-boot guard units are enabled in EVERY mode (even
+	// disabled or bypassed): the bypass must be able to act at the next boot and the
+	// normal-boot guard keeps a disabled NFTBan from loading at boot. Never started.
+	resolveLifecycleMode(exec, pd, log)
+	services.EnableBootGuards(exec, log)
 
-	// 2. Reconcile timers
-	services.ReconcileTimers(exec, log)
+	if pd.enforcementSkipped() {
+		// Disabled or bypassed: no NFTBan unit is started or enabled (owner D5: the
+		// operator's per-unit choices are restored only by `nftban enable`).
+		log.Info("daemon/timers/panel/login NOT started or enabled: %s", pd.skipReason())
+	} else {
+		// 1. Start daemon (socket + service)
+		services.StartDaemon(exec, log)
 
-	// 3. Enable panel integration
-	services.EnablePanel(exec, pd.panel, log)
+		// 2. Reconcile timers
+		services.ReconcileTimers(exec, log)
 
-	// 4. Enable login monitoring
-	services.EnableLogin(exec, log)
+		// 3. Enable panel integration
+		services.EnablePanel(exec, pd.panel, log)
+
+		// 4. Enable login monitoring
+		services.EnableLogin(exec, log)
+	}
 
 	// v1.98.x PR-14-pre (G-14-H): Safety whitelist seed for source install.
 	// Must run BEFORE SyncWhitelist so the file exists before the sync reads
@@ -781,8 +891,13 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 	// means the durable whitelist (including the operator session IP written just
 	// above by AddSessionWhitelist) never reached the running set. Recorded so the
 	// final install verdict can reflect it instead of reporting a silent COMMITTED.
-	pd.whitelistSyncErr = services.SyncWhitelist(exec, log)
-	if pd.whitelistSyncErr != nil {
+	if pd.enforcementSkipped() {
+		// No daemon runs, so there is nothing to project the durable layer into.
+		// NOT EVALUATED (""), never CONVERGED and never FAILED.
+		pd.whitelistSyncErr = nil
+		sf.WhitelistConvergence = ""
+		log.Info("durable whitelist sync skipped: %s", pd.skipReason())
+	} else if pd.whitelistSyncErr = services.SyncWhitelist(exec, log); pd.whitelistSyncErr != nil {
 		log.Error("durable whitelist convergence FAILED: %v", pd.whitelistSyncErr)
 		log.Error("the configured whitelist.d layer is NOT projected into the running set")
 		log.Error("operator management IPs (including the session IP seeded above) may be unenforced")
@@ -837,6 +952,16 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	if err := ctx.Err(); err != nil {
 		log.Error("phaseValidate: context cancelled before start: %v", err)
 		return sf.Transition(state.StateFailedRebuild, state.PhaseValidate, "context cancelled: "+err.Error())
+	}
+
+	// v1.235 row 486: a disabled or bypassed run loaded no ruleset and started no unit,
+	// so the runtime-health assertions do not apply. It proves the DISABLED invariants
+	// instead and records NOT_APPLICABLE_DISABLED as the convergence verdict (never
+	// VERIFIED). Authority files are NOT rewritten (nothing was taken over) and the
+	// wedged-timer hardening does not run (nothing may be started).
+	resolveLifecycleMode(exec, pd, log)
+	if pd.enforcementSkipped() {
+		return validateDisabledRun(exec, sf, log, pd)
 	}
 
 	// 1. Write authority files
@@ -971,5 +1096,46 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	}
 	reason := "failed assertions after safe auto-fix: " + strings.Join(reasonParts, "; ")
 	log.Warn("VALIDATE_2: %d assertions still failed — DEGRADED: %s", len(failed2), reason)
+	return sf.Transition(state.StateDegraded, state.PhaseValidate, reason)
+}
+
+// validateDisabledRun is phaseValidate for a run that skipped enforcement
+// (v1.235 row 486). It never mutates the firewall or starts a unit.
+//
+//	all disabled invariants pass -> COMMITTED, reason = the skip reason
+//	any fails                    -> DEGRADED,  reason = skip reason + failures
+func validateDisabledRun(exec executor.Executor, sf *state.StateFile, log *logging.Logger, pd *phaseData) error {
+	validate.RunPermissionsEnforce(exec, log)
+
+	mode := validate.ModeStoredDisabled
+	if pd.bypassActive {
+		mode = validate.ModeEmergencyBypass
+	}
+	opts := validate.AssertionOpts{}
+	opts.SystemdPayloadInputs = pd.inject.payload()
+	results := validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
+
+	validate.SetImmutableFlags(exec, log)
+
+	sf.ConvergenceVerified = string(switchop.ConvergenceNotApplicableDisabled)
+	if validate.AllPassed(results) {
+		log.Info("%s — COMMITTED (disabled invariants verified)", pd.skipReason())
+		_ = exec.Remove(fhs.InstallFailedMarker)
+		phaseEndMarker(log, "validate")
+		return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
+	}
+	var parts []string
+	for _, r := range results {
+		if r.Passed {
+			continue
+		}
+		if r.Detail != "" {
+			parts = append(parts, r.Name+" ("+r.Detail+")")
+		} else {
+			parts = append(parts, r.Name)
+		}
+	}
+	reason := pd.skipReason() + " — disabled invariants failed: " + strings.Join(parts, "; ")
+	log.Warn("%s", reason)
 	return sf.Transition(state.StateDegraded, state.PhaseValidate, reason)
 }

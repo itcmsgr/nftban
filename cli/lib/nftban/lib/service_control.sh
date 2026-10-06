@@ -304,6 +304,26 @@ nftban_enable_all() {
     fi
     # v1.235 R-DEC: never enable during the per-boot emergency bypass.
     nftban_refuse_under_bypass "nftban enable" || return 1
+    # v1.235 D10: a FAILED commit-confirm rollback keeps the kernel state for recovery.
+    # While the stored choice is ON, enable refuses (retry or abandon the rollback first).
+    # After the operator recovered with `disable all --flush-rules` (stored choice OFF),
+    # a successful enable is the documented way out: it clears the failed-rollback state.
+    local _cc_failed="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/commit-confirm.rollback-failed"
+    if [[ -e "$_cc_failed" ]]; then
+        if nftban_master_switch_on; then
+            echo "REFUSED: nftban enable: a commit-confirm ROLLBACK FAILED and NFTBan is still enabled." >&2
+            echo "  Retry: nftban firewall rollback   |   after recovery: nftban firewall rollback --abandon" >&2
+            echo "  or remove NFTBan enforcement from the console: nftban disable all --flush-rules" >&2
+            return 1
+        fi
+        rm -f "$_cc_failed"
+        # shellcheck source=/dev/null
+        if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
+            cc_set status abandoned 2>/dev/null || true
+            cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null || true
+        fi
+        echo "  Clearing the failed commit-confirm rollback state (NFTBan was disabled for recovery)."
+    fi
 
     # Track which firewall was disabled for rollback
     local _prev_firewall=""
