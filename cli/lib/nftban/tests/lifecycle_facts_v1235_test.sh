@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'; B1 bypass unit not enabled -> DIVERGENCE; B2 boot-bypass.state outcome=backstop-removed -> DIVERGENCE 'rules WERE loaded ... removed at T+Ns', never a successful bypass; B3 outcome primary -> ACTIVE, guarantee met; C1 commit-confirm pending -> apply ID, deadline with remaining seconds, the exact confirm command; C2 rollback-failed -> DIVERGENCE 'host NOT protected by NFTBan'; C3 no record named; C4 rolled-back with conflicts= -> untouched files named; D1 applied baseline (state/applied/meta at=) shown, absent -> 'rebuild --confirm unavailable'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
+# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'; B1 bypass unit not enabled -> DIVERGENCE; B2 /run/nftban/boot-bypass.state outcome=backstop-removed -> DIVERGENCE 'rules WERE loaded ... removed (at <UTC>, T+Ns)', never a successful bypass; B4 failed / backstop-failed / backstop-unknown -> DIVERGENCE; B3 outcome primary -> ACTIVE, guarantee met; C1 commit-confirm pending -> apply ID, deadline with remaining seconds, the exact confirm command; C2 rollback-failed -> DIVERGENCE 'host NOT protected by NFTBan'; C3 no record named; C4 rolled-back with conflicts= -> untouched files named; D1 applied baseline (state/applied/meta at=) shown, absent -> 'rebuild --confirm unavailable'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
 # meta:inventory.files="lifecycle_facts_v1235_test.sh"
 # meta:inventory.binaries="bash,jq,cp,mktemp"
 # meta:inventory.env_vars="LF_SUBJECT_ROOT"
@@ -43,7 +43,7 @@ no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 echo "=== v1.235: lifecycle facts in status/health (row 486, D8) ==="
 command -v jq >/dev/null || { echo "  NOT_EXECUTED: jq missing"; echo "RESULT: NOT_EXECUTED"; exit 3; }
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
-mkdir -p "$W/bin" "$W/state"
+mkdir -p "$W/bin" "$W/state" "$W/run"
 
 if [[ ! -r "$LIBF" ]]; then
     no "lib/lifecycle_facts.sh absent in the subject: status/health show none of the four facts"
@@ -75,7 +75,7 @@ printf '# distro\ninclude "/etc/nftban/generated/nftban-boot.nft"\n' > "$W/distr
 # run_lf <out> [authorities: yes|no] ; env STORED=0|1 BYPASS=0|1 PROJ=active|inert|missing
 run_lf(){
     local o="$1" auth="${2:-yes}"
-    env PATH="$W/bin:/usr/bin:/bin" NFTBAN_STATE_DIR="$W/state" NFTBAN_LF_DISTRO_CONFS="$W/distro.conf" \
+    env PATH="$W/bin:/usr/bin:/bin" NFTBAN_STATE_DIR="$W/state" NFTBAN_RUN_DIR="$W/run" NFTBAN_LF_DISTRO_CONFS="$W/distro.conf" \
         AUTH="$auth" LIBF="$LIBF" bash -c '
         set -Eeuo pipefail
         if [[ "$AUTH" == yes ]]; then
@@ -141,17 +141,26 @@ else _j="$(js a2)"; no "A9 JSON" "${_j:0:200}"; fi
 BYPASSUNIT=disabled STORED=0 PROJ=active run_lf b1
 [[ "$(txt b1)" == *"DIVERGENCE: the bypass unit is disabled: the emergency bypass would not act before the first load"* ]] \
     && ok "B1 bypass unit not enabled -> DIVERGENCE" || no "B1 bypass unit state not flagged" "$(grep -m1 'Emergency' <<<"$(txt b1)" || true)"
-printf 'outcome=backstop-removed\nat=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$W/state/boot-bypass.state"
+printf 'outcome=backstop-removed\nat=2026-10-06T11:00:05Z\nmonotonic_us=7400000\n' > "$W/run/boot-bypass.state"
 BYPASS=0 STORED=0 PROJ=inert run_lf b2
 t="$(txt b2)"
-if [[ "$t" == *"DIVERGENCE: emergency bypass DEGRADED: not a successful bypass: NFTBan rules WERE loaded during this bypass boot and removed at T+"* && "$t" != *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]]; then
-    ok "B2 backstop-removed -> DIVERGENCE 'rules WERE loaded … removed at T+Ns', never shown as a successful bypass"
+if [[ "$t" == *"DIVERGENCE: emergency bypass DEGRADED: not a successful bypass: NFTBan rules WERE loaded during this bypass boot and removed (at 2026-10-06T11:00:05Z, T+7s)"* && "$t" != *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]]; then
+    ok "B2 backstop-removed -> DIVERGENCE 'rules WERE loaded … removed (at …, T+7s)', never shown as a successful bypass"
 else no "B2 backstop outcome misreported" "$(grep -E 'Emergency|bypass' <<<"$t" | tr '\n' '|')"; fi
-printf 'outcome=primary\nat=2026-10-06T11:00:00Z\n' > "$W/state/boot-bypass.state"
+printf 'outcome=primary\nat=2026-10-06T11:00:00Z\n' > "$W/run/boot-bypass.state"
 BYPASS=0 STORED=1 PROJ=inert run_lf b3
-rm -f "$W/state/boot-bypass.state"
+rm -f "$W/run/boot-bypass.state"
 [[ "$(txt b3)" == *"ACTIVE (guarantee met: outcome=primary at 2026-10-06T11:00:00Z)"* && "$(txt b3)" == *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]] \
     && ok "B3 outcome primary -> ACTIVE, guarantee met" || no "B3 guarantee-met outcome" "$(grep -m1 Emergency <<<"$(txt b3)" || true)"
+
+for oc in "backstop-failed|delete FAILED: NFTBan rules may still be active" "backstop-unknown|the backstop outcome is UNKNOWN" "failed|the primary bypass FAILED: unit timeout"; do
+    printf 'outcome=%s\nat=2026-10-06T11:00:05Z\ndetail=unit timeout\n' "${oc%%|*}" > "$W/run/boot-bypass.state"
+    BYPASS=0 STORED=0 PROJ=inert run_lf b4
+    if [[ "$(txt b4)" == *"DIVERGENCE: emergency bypass DEGRADED"*"${oc#*|}"* && "$(txt b4)" != *"EXPECTED: EMERGENCY BYPASS ACTIVE"* ]]; then
+        ok "B4 outcome ${oc%%|*} -> DIVERGENCE, never a successful bypass"
+    else no "B4 outcome ${oc%%|*} misreported" "$(grep -m1 Emergency <<<"$(txt b4)" || true)"; fi
+done
+rm -f "$W/run/boot-bypass.state"
 
 # ---- C: commit-confirm (contract §4/§6) --------------------------------------------
 dl=$(( $(date +%s) + 90 ))

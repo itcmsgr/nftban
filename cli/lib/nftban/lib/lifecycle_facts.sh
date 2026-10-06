@@ -10,9 +10,9 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
 # meta:description="Collects and renders the four separate lifecycle facts that status and health must show (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md, 'Status / health must show four separate facts'): STORED choice, APPLIED now, ON REBOOT, RECOVERY; plus the per-boot emergency bypass and the disable unit record. A mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Reads only; never changes state."
-# meta:inventory.files="/var/lib/nftban/state/applied/meta,/var/lib/nftban/state/boot-bypass.state,/var/lib/nftban/state/commit-confirm.state,/etc/nftban/conf.d/services.conf,/etc/nftban/generated/nftban-boot.nft,/var/lib/nftban/state/disable-units.state,/etc/sysconfig/nftables.conf,/etc/nftables.conf"
+# meta:inventory.files="/var/lib/nftban/state/applied/meta,/run/nftban/boot-bypass.state,/var/lib/nftban/state/commit-confirm.state,/etc/nftban/conf.d/services.conf,/etc/nftban/generated/nftban-boot.nft,/var/lib/nftban/state/disable-units.state,/etc/sysconfig/nftables.conf,/etc/nftables.conf"
 # meta:inventory.binaries="nft,systemctl,grep"
-# meta:inventory.env_vars="NFTBAN_STATE_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.env_vars="NFTBAN_STATE_DIR,NFTBAN_RUN_DIR,NFTBAN_LIB_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/services.conf"
 # meta:inventory.systemd_units="nftables.service,nftband.service,nftban-*.timer"
 # meta:inventory.network=""
@@ -49,27 +49,36 @@ nftban_lifecycle_collect() {
     # --- per-boot emergency bypass (contract §3/§6) ---------------------------------------
     # ACTIVE / DEGRADED (the backstop removed loaded NFTBan rules) / not present /
     # unit not enabled (would not act before the first load). The outcome comes from
-    # state/boot-bypass.state (outcome=primary|fallback-rename|created-inert|backstop-removed, at=<UTC>).
+    # /run/nftban/boot-bypass.state (per boot, tmpfs: written in early boot, before /var
+    # may be mounted). Keys: outcome= primary|fallback-rename|created-inert|failed|
+    # backstop-removed|backstop-failed|backstop-unknown, at=<UTC>, monotonic_us=, detail=.
     LF_BYPASS=UNKNOWN; LF_BYPASS_UNIT=UNKNOWN
-    local bs="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/boot-bypass.state" b_out="" b_at=""
+    local bs="${NFTBAN_RUN_DIR:-/run/nftban}/boot-bypass.state" b_out="" b_at="" b_mono="" b_det=""
     if [[ -r "$bs" ]]; then
         b_out="$(grep -m1 -E '^outcome=' "$bs" 2>/dev/null || true)"; b_out="${b_out#outcome=}"
         b_at="$(grep -m1 -E '^at=' "$bs" 2>/dev/null || true)"; b_at="${b_at#at=}"
+        b_mono="$(grep -m1 -E '^monotonic_us=' "$bs" 2>/dev/null || true)"; b_mono="${b_mono#monotonic_us=}"
+        b_det="$(grep -m1 -E '^detail=' "$bs" 2>/dev/null || true)"; b_det="${b_det#detail=}"
     fi
     LF_BYPASS_UNIT="$(systemctl is-enabled nftban-boot-bypass.service 2>/dev/null || true)"; LF_BYPASS_UNIT="${LF_BYPASS_UNIT:-UNKNOWN}"
     if declare -F nftban_emergency_bypass_active >/dev/null 2>&1; then
         rc="$(_nftban_lf_rc nftban_emergency_bypass_active)"
         case "$rc" in
-            0) case "$b_out" in
+            0) # GUARANTEE MET = outcome primary|fallback-rename|created-inert (the
+               # authority above already confirmed nftban=disabled on /proc/cmdline).
+               local _when="${b_at:-UNKNOWN time}"
+               [[ "$b_mono" =~ ^[0-9]+$ ]] && _when="${_when}, T+$(( b_mono / 1000000 ))s"
+               case "$b_out" in
                    primary|fallback-rename|created-inert)
                        LF_BYPASS="ACTIVE (guarantee met: outcome=${b_out}${b_at:+ at $b_at})" ;;
                    backstop-removed)
-                       # NEVER a successful bypass: NFTBan rules were loaded at boot.
-                       local _tn="" _ae="" _be
-                       _ae="$(date -u -d "$b_at" +%s 2>/dev/null || true)"
-                       _be=$(( $(date +%s) - $(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0) ))
-                       [[ "$_ae" =~ ^[0-9]+$ ]] && (( _ae >= _be )) && _tn="T+$(( _ae - _be ))s"
-                       LF_BYPASS="DEGRADED (not a successful bypass: NFTBan rules WERE loaded during this bypass boot and removed at ${_tn:-${b_at:-UNKNOWN time}})" ;;
+                       LF_BYPASS="DEGRADED (not a successful bypass: NFTBan rules WERE loaded during this bypass boot and removed (at ${_when}))" ;;
+                   backstop-failed)
+                       LF_BYPASS="DEGRADED (not a successful bypass: NFTBan rules WERE loaded during this bypass boot and the delete FAILED: NFTBan rules may still be active (at ${_when}))" ;;
+                   backstop-unknown)
+                       LF_BYPASS="DEGRADED (not a successful bypass: NFTBan rules were loaded during this bypass boot; the backstop outcome is UNKNOWN (at ${_when}))" ;;
+                   failed)
+                       LF_BYPASS="DEGRADED (the primary bypass FAILED${b_det:+: $b_det} (at ${_when}))" ;;
                    "") LF_BYPASS="ACTIVE (outcome record absent: guarantee UNKNOWN)" ;;
                    *)  LF_BYPASS="ACTIVE (unrecognised outcome '${b_out}': guarantee UNKNOWN)" ;;
                esac ;;
