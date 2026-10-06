@@ -828,6 +828,8 @@ S6_OUT="$(bash -c '
 ' _ "$ROOT" "$SUBJ_LIB" 2>&1 || true)"
 if grep -q 'last ban requested 3600s, enforced 86400s; 2 of 2 bans with a recorded request were enforced longer than requested' <<<"$S6_OUT"; then
     ok "S6 status shows requested beside effective, from the ban evidence"; else bad "S6 duration visibility missing: $(tr '\n' ' ' <<<"$S6_OUT")"; fi
+if grep -qF 'BAN selects a class, <=1800 s -> grey 3600 s, >1800 s -> ban 86400 s; direct mode honours BAN' <<<"$S6_OUT"; then
+    ok "S6b status names the batch-mode class mapping (guard.go botscanSignalTTL)"; else bad "S6b class mapping not disclosed: $(tr '\n' ' ' <<<"$S6_OUT")"; fi
 if grep -q 'Ban duration:   UNMEASURED' <<<"$S6_OUT"; then ok "S6 no evidence -> UNMEASURED, never a claim"; else bad "S6 absent evidence not reported as UNMEASURED"; fi
 
 # =============================================================================
