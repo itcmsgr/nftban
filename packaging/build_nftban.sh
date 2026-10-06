@@ -680,6 +680,8 @@ done < %{_sourcedir}/nftban-systemd-install.list
 # v1.107.1: ship boot-delay helper referenced by nftban-firewall-init.service ExecStart=
 # (matches source-install staging at internal/installer/payload/payload.go install/helpers entry)
 install -D -m 0755 install/helpers/firewall-init-with-delay.sh %{buildroot}/usr/lib/nftban/helpers/firewall-init-with-delay.sh
+# v1.235 row 486: early-boot guard (emergency bypass + disabled-at-boot), referenced by nftban-boot-*.service
+install -D -m 0755 install/helpers/nftban-boot-early.sh %{buildroot}/usr/lib/nftban/helpers/nftban-boot-early.sh
 
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
@@ -2732,6 +2734,8 @@ build_deb() {
     # v1.107.1: ship boot-delay helper referenced by nftban-firewall-init.service ExecStart=
     # (matches source-install staging at internal/installer/payload/payload.go install/helpers entry)
     install -m 0755 "${PROJECT_ROOT}/install/helpers/firewall-init-with-delay.sh" "${deb_root}/usr/lib/nftban/helpers/"
+    # v1.235 row 486: early-boot guard (emergency bypass + disabled-at-boot), referenced by nftban-boot-*.service
+    install -m 0755 "${PROJECT_ROOT}/install/helpers/nftban-boot-early.sh" "${deb_root}/usr/lib/nftban/helpers/"
 
     # v1.148 (5-A): community_stats.conf.default moved into canonical etc/nftban/conf.d/
     # (staged by the cp -r above); explicit line removed.

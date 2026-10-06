@@ -434,6 +434,20 @@ RBHELP
     local schema="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
     local target; target="$(nftban_boot_projection_path)"
 
+    # v1.235 row 486 (owner U1): while the STORED choice is disabled, every publication
+    # is inert, including the installer's render-boot, so an upgrade of a disabled NFTBan
+    # can never make it load at the next boot.
+    if [[ "$inert" != "true" ]]; then
+        if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+        fi
+        if declare -F nftban_master_switch_on >/dev/null 2>&1 && ! nftban_master_switch_on; then
+            inert="true"
+            [[ "$quiet" == "false" ]] && echo "NFTBan is disabled (stored choice): publishing the INERT projection"
+        fi
+    fi
+
     if [[ "$inert" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Publishing INERT boot projection (no NFTBan table at boot)..."
         if ! nftban_boot_projection_publish_inert "$target"; then
