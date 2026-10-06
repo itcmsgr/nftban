@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.235 - status/health show the four lifecycle facts (row 486, D8)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
+#
+# meta:name="lifecycle_facts_v1235_test"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-10-06"
+# meta:description="Row 486 behaviour contract D8 (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md): status and health show STORED choice, APPLIED now, ON REBOOT and RECOVERY as separate facts, plus the per-boot emergency bypass and the disable unit record; a mismatch is a named EXPECTED or DIVERGENCE line; an unread fact is UNKNOWN, never OK/DISABLED/0. Drives the REAL lib/lifecycle_facts.sh with the three authorities it reads (nftban_master_switch_on, nftban_emergency_bypass_active, nftban_boot_projection_state; owned by the 486 lane) STUBBED here, and stub nft/systemctl. Arms: A1 consistent enabled host -> no DIVERGENCE; A2 plain disable (stored off, tables present, projection inert) -> EXPECTED 'removed at next reboot'; A3 stored on + projection inert -> DIVERGENCE; A4 stored off + projection active + tables present -> DIVERGENCE; A5 bypass active -> EXPECTED 'EMERGENCY BYPASS ACTIVE ... stored choice'; A6 authorities not loaded -> stored/projection UNKNOWN, never enabled/active; A7 nft unreadable -> tables UNKNOWN; A8 unit record present (recorded_at) / absent ('prior unit state unknown'); A9 JSON is valid and carries the same facts; A10 recovery never claims a 'window'. E1/E2 the REAL dispatcher: status shows the 'Protection lifecycle' block and status --json carries a 'lifecycle' object. Set LF_SUBJECT_ROOT to an older tree (e.g. e79a1173): every arm FAILS there (the facts do not exist)."
+# meta:inventory.files="lifecycle_facts_v1235_test.sh"
+# meta:inventory.binaries="bash,jq,cp,mktemp"
+# meta:inventory.env_vars="LF_SUBJECT_ROOT"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+# meta:ta.id="lifecycle_facts_v1235_test"
+# meta:ta.owner="health"
+# meta:ta.module="health-truth"
+# meta:ta.execution_class="CI_HERMETIC_SHELL"
+# meta:ta.gate="ci-bash"
+# meta:ta.hermetic="true"
+# meta:ta.requires_root="false"
+# meta:ta.requires_network="false"
+# meta:ta.requires_systemd="false"
+# meta:ta.requires_nftables="false"
+# meta:ta.requires_package="false"
+# =============================================================================
+set -Eeuo pipefail
+IFS=$'\n\t'
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$TEST_DIR/../../../.." && pwd)"
+ROOT="${LF_SUBJECT_ROOT:-$REPO}"
+LIBF="$ROOT/cli/lib/nftban/lib/lifecycle_facts.sh"
+PASS=0; FAIL=0
+ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }
+no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
+
+echo "=== v1.235: lifecycle facts in status/health (row 486, D8) ==="
+command -v jq >/dev/null || { echo "  NOT_EXECUTED: jq missing"; echo "RESULT: NOT_EXECUTED"; exit 3; }
+W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
+mkdir -p "$W/bin" "$W/state"
+
+if [[ ! -r "$LIBF" ]]; then
+    no "lib/lifecycle_facts.sh absent in the subject: status/health show none of the four facts"
+    echo ""; echo "Results: $PASS passed, $FAIL failed"; echo "RESULT: FAIL"; exit 1
+fi
+
+# stub nft / systemctl driven by env (TABLES=both|none|unreadable, DAEMON, NFTSVC)
+cat > "$W/bin/nft" <<'S'
+#!/bin/sh
+case "${TABLES:-both}" in
+  both) printf 'table inet filter\ntable ip nftban\ntable ip6 nftban\n' ;;
+  none) printf 'table inet filter\n' ;;
+  unreadable) exit 1 ;;
+esac
+S
+cat > "$W/bin/systemctl" <<'S'
+#!/bin/sh
+case "$1" in
+  is-active) echo "${DAEMON:-active}"; [ "${DAEMON:-active}" = active ] ;;
+  is-enabled) echo "${NFTSVC:-enabled}"; [ "${NFTSVC:-enabled}" = enabled ] ;;
+  list-units) printf 'nftban-watchdog.timer loaded active waiting x\nnftban-maintenance.timer loaded active waiting x\n' ;;
+  *) exit 0 ;;
+esac
+S
+chmod 0755 "$W/bin/nft" "$W/bin/systemctl"
+printf '# distro\ninclude "/etc/nftban/generated/nftban-boot.nft"\n' > "$W/distro.conf"
+
+# run_lf <out> [authorities: yes|no] ; env STORED=0|1 BYPASS=0|1 PROJ=active|inert|missing
+run_lf(){
+    local o="$1" auth="${2:-yes}"
+    env PATH="$W/bin:/usr/bin:/bin" NFTBAN_STATE_DIR="$W/state" NFTBAN_LF_DISTRO_CONFS="$W/distro.conf" \
+        AUTH="$auth" LIBF="$LIBF" bash -c '
+        set -Eeuo pipefail
+        if [[ "$AUTH" == yes ]]; then
+            nftban_master_switch_on(){ return "${STORED:-0}"; }
+            nftban_emergency_bypass_active(){ return "${BYPASS:-1}"; }
+            nftban_boot_projection_state(){ printf "%s" "${PROJ:-active}"; }
+        fi
+        # shellcheck source=/dev/null
+        . "$LIBF"
+        nftban_lifecycle_collect
+        nftban_lifecycle_render
+        echo "@@JSON"
+        nftban_lifecycle_json
+    ' > "$W/$o.out" 2>"$W/$o.err" || true
+}
+txt(){ sed '/^@@JSON$/,$d' "$W/$1.out"; }
+js(){ sed -n '/^@@JSON$/,$p' "$W/$1.out" | tail -n +2; }
+
+STORED=0 PROJ=active run_lf a1
+t="$(txt a1)"
+if [[ "$t" == *"Stored choice......."*enabled* && "$t" == *"Applied now........."*"tables present"* && "$t" == *"On reboot..........."*"projection active"* && "$t" == *"Recovery............"* && "$t" != *DIVERGENCE* ]]; then
+    ok "A1 consistent enabled host: four facts shown, no DIVERGENCE"
+else no "A1 consistent host" "$(tr '\n' '|' <<<"$t" | cut -c1-300)"; fi
+
+STORED=1 PROJ=inert run_lf a2
+[[ "$(txt a2)" == *"EXPECTED: stored disabled, NFTBan rules still active (expected after plain disable; removed at next reboot)"* ]] \
+    && ok "A2 plain disable -> EXPECTED, removed at next reboot" || no "A2 plain disable not named" "$(txt a2 | tail -3 | tr '\n' '|')"
+
+STORED=0 PROJ=inert run_lf a3
+[[ "$(txt a3)" == *"DIVERGENCE: stored enabled, projection inert"* ]] && ok "A3 stored on + projection inert -> DIVERGENCE" || no "A3 not flagged"
+
+STORED=1 PROJ=active run_lf a4
+[[ "$(txt a4)" == *"DIVERGENCE: stored disabled, NFTBan rules active and projection active"* ]] && ok "A4 stored off + projection active -> DIVERGENCE" || no "A4 not flagged" "$(txt a4 | tail -2 | tr '\n' '|')"
+
+STORED=1 BYPASS=0 PROJ=inert run_lf a5
+[[ "$(txt a5)" == *"EXPECTED: EMERGENCY BYPASS ACTIVE for this boot (kernel nftban=disabled); stored choice: disabled"* && "$(txt a5)" == *"bind-mounted"* ]] \
+    && ok "A5 bypass active -> EXPECTED with stored choice and why the projection reads inert" || no "A5 bypass not shown"
+
+run_lf a6 no
+t="$(txt a6)"
+sline="$(grep -m1 'Stored choice' <<<"$t" || true)"
+if [[ "$sline" == *UNKNOWN* && "$sline" != *enabled* && "$t" == *"projection UNKNOWN"* && "$t" == *"UNKNOWN: stored choice not read"* ]]; then
+    ok "A6 authorities not loaded -> UNKNOWN (never guessed)"
+else no "A6 unread authorities rendered as a value" "$(tr '\n' '|' <<<"$t" | cut -c1-240)"; fi
+
+TABLES=unreadable STORED=0 run_lf a7
+[[ "$(txt a7)" == *"tables UNKNOWN"* && "$(txt a7)" == *"UNKNOWN: kernel tables not read"* ]] && ok "A7 nft unreadable -> tables UNKNOWN, named" || no "A7 unreadable kernel rendered as a value"
+
+printf '# recorded_at=2026-10-06T10:00:00Z\nnftables.service\tenabled\n' > "$W/state/disable-units.state"
+STORED=1 PROJ=inert run_lf a8a
+rm -f "$W/state/disable-units.state"
+STORED=1 PROJ=inert run_lf a8b
+[[ "$(txt a8a)" == *"unit record present (recorded_at 2026-10-06T10:00:00Z)"* && "$(txt a8b)" == *"no record (prior unit state unknown)"* ]] \
+    && ok "A8 disable unit record: present with recorded_at / absent named" || no "A8 unit record"
+
+if js a2 | jq -e '.stored=="disabled" and .applied.tables=="present" and .on_reboot.projection=="inert" and (.notes|length)>=1' >/dev/null 2>&1; then
+    ok "A9 JSON valid and carries the same facts"
+else no "A9 JSON" "$(js a2 | head -c 200)"; fi
+
+! grep -qiE 'window' <<<"$(txt a1)$(txt a2)$(txt a3)" && ok "A10 recovery never claims a 'window'" || no "A10 a recovery window is claimed"
+
+# ---- E1/E2 the real dispatcher ------------------------------------------------------
+if [[ -x "$ROOT/cli/sbin/nftban" ]]; then
+    cp -r "$ROOT/cli/lib/nftban" "$W/lib"; mkdir -p "$W/lib/bin" "$W/etc" "$W/data" "$W/log" "$W/run" "$W/cache"
+    printf '#!/bin/sh\necho "{\\"schema_version\\":\\"1.84.0\\",\\"status\\":\\"protected\\",\\"modules\\":{},\\"service_state\\":{},\\"consistency\\":{}}"\n' > "$W/lib/bin/nftban-validate"
+    chmod 0755 "$W/lib/bin/nftban-validate"
+    for c in status "status --json"; do
+        slug="${c// /_}"; slug="${slug//-/}"
+        local_args=(); IFS=' ' read -r -a local_args <<<"$c"
+        PATH="$W/bin:$PATH" NFTBAN_LIB_DIR="$W/lib" NFTBAN_CONFIG_DIR="$W/etc" NFTBAN_DATA_DIR="$W/data" NFTBAN_STATE_DIR="$W/state" \
+            NFTBAN_LOG_DIR="$W/log" NFTBAN_RUN_DIR="$W/run" NFTBAN_CACHE_DIR="$W/cache" NFTBAN_ENABLE_ERROR_LOGGING=0 \
+            NFTBAN_LF_DISTRO_CONFS="$W/distro.conf" timeout 120 "$ROOT/cli/sbin/nftban" "${local_args[@]}" > "$W/e_$slug.out" 2>/dev/null </dev/null || true
+    done
+    grep -q 'Protection lifecycle' "$W/e_status.out" && grep -q 'Stored choice' "$W/e_status.out" \
+        && ok "E1 status (real dispatcher) shows the Protection lifecycle block" || no "E1 status shows no lifecycle facts"
+    jq -e '.lifecycle | has("stored") and has("on_reboot") and has("recovery")' "$W/e_status_json.out" >/dev/null 2>&1 \
+        && ok "E2 status --json carries the lifecycle object" || no "E2 status --json has no lifecycle object"
+fi
+
+echo ""
+echo "Results: $PASS passed, $FAIL failed"
+if [[ "$FAIL" -eq 0 ]]; then echo "RESULT: PASS"; exit 0; fi
+echo "RESULT: FAIL"; exit 1
