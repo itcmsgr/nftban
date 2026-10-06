@@ -123,6 +123,9 @@ nftban_lifecycle_collect() {
                     LF_CC="PENDING apply ${c_id:-UNKNOWN}: deadline UNKNOWN; confirm with: nftban firewall confirm ${c_id:-<apply_id>}"
                 fi ;;
             confirmed|rolled-back|rollback-failed) LF_CC="last outcome: ${c_st}${c_at:+ at $c_at}${c_id:+ (apply $c_id)}" ;;
+            # commit_confirm.sh `firewall rollback --abandon`: the operator gave up a
+            # failed rollback; normal operation may resume. A last outcome, not a fault.
+            abandoned) LF_CC="last outcome: abandoned (a failed rollback, abandoned by the operator)${c_at:+ at $c_at}${c_id:+ (apply $c_id)}" ;;
             *) LF_CC="UNKNOWN (unrecognised record status '${c_st}')" ;;
         esac
     fi
