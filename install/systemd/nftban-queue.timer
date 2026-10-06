@@ -30,6 +30,13 @@ Documentation=man:nftban(8)
 # OPTIMIZED: 5 minutes (reduces 60% of timer overhead vs original 2min)
 # Queue processing is not latency-critical - 5min is acceptable
 OnBootSec=3min
+# v1.235 T1: also count from TIMER activation. With only OnBootSec + OnUnitActiveSec,
+# a timer started on a long-running host after a remove->install has nothing to
+# fire on: OnBootSec is already past (and is treated as used, because Persistent=true
+# kept the old last-trigger stamp), and OnUnitActiveSec has no base because the
+# reinstalled service has never run. systemd then shows it active with no next
+# elapse until reboot. OnActiveSec gives it a first run 3min after it starts.
+OnActiveSec=3min
 OnUnitActiveSec=5min
 
 # Allow systemd to batch

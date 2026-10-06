@@ -196,6 +196,7 @@ http_logs_record_boundary_v1232_test	cli/lib/nftban/tests/http_logs_record_bound
 immutable_health_verify_v163_test	cli/lib/nftban/tests/immutable_health_verify_v163_test.sh	health	test	immutable-flags-health	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 install_update_observability_v215_test	cli/lib/nftban/tests/install_update_observability_v215_test.sh	update	test	update-observability	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 installer_wording_v153_test	cli/lib/nftban/tests/installer_wording_v153_test.sh	installer	test	installer	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+interval_timers_on_active_sec_v1235_test	cli/lib/nftban/tests/interval_timers_on_active_sec_v1235_test.sh	packaging	test	systemd-timers	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 ipc_sync_coalesce_truth_test	cli/lib/nftban/tests/ipc_sync_coalesce_truth_test.sh	firewall	test	ipc-sync-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 l2e_replace_set_reachability_guard_test	cli/lib/nftban/tests/l2e_replace_set_reachability_guard_test.sh	firewall	test	set-apply-replace	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 l3a_never_ban_add_element_guard_test	cli/lib/nftban/tests/l3a_never_ban_add_element_guard_test.sh	firewall	test	never-ban-guard	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

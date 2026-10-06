@@ -106,41 +106,113 @@ func timerUnitInstalled(exec executor.Executor, timer string) bool {
 		exec.FileExists("/lib/systemd/system/"+timer)
 }
 
-// timerIsWedged reports whether a timer is in the dns2-class wedged state:
-// ACTIVE but with NO scheduled next trigger. Detection uses
+// timerIsWedged reports whether a timer is ACTIVE but has NO scheduled next
+// trigger for any of the trigger kinds it actually has.
 //
-//	systemctl show <timer> -p ActiveState -p NextElapseUSecRealtime --value
+// v1.235 T1 (BUG-INTERVAL-TIMERS-UNSCHEDULED-AFTER-FRESH-START-ON-LONG-UPTIME).
+// The v1.154 probe ran `systemctl show <t> -p ActiveState -p
+// NextElapseUSecRealtime --value` and read the lines positionally as
+// [ActiveState, NextElapse]. systemd prints properties in ITS order, not the
+// requested one (measured on systemd 252, 255 and 257: the Timer properties come
+// before ActiveState), and --value drops the names. A wedged interval timer
+// therefore printed "\nactive\n" (one line after trimming: "not wedged") and a
+// healthy calendar timer "<date>\nactive\n" (ActiveState read as a date: "not
+// wedged"). The probe could never fire. It also only looked at the realtime
+// field, which is always empty for an interval-only timer, healthy or not.
 //
-// A timer is considered wedged when ActiveState=="active" AND the next-elapse
-// value is absent / "0" / "n/a" / "infinity". Inactive timers (disabled or
-// stopped) legitimately have no next trigger and are NOT treated as wedged —
-// re-arming them would be an out-of-scope policy change.
+// Now: one key=value read (order-independent), then
+//   - not active                                      -> not wedged (policy, not a wedge)
+//   - calendar triggers   (TimersCalendar present)    -> NextElapseUSecRealtime must be set
+//   - interval triggers   (TimersMonotonic present)   -> NextElapseUSecMonotonic must be set
+//   - any applicable next elapse set                  -> not wedged
+//   - neither trigger kind visible                    -> not wedged (cannot classify)
+//   - triggered service active/activating/reloading   -> not wedged: a run in progress
+//     or deactivating                                    legitimately has no next elapse
 //
-// On any probe error (non-zero exit, unparseable output) the timer is treated
-// as NOT wedged: warn-only means we never restart on uncertain evidence, which
-// keeps false positives at zero (a healthy timer is never needlessly bounced).
+// Any probe error is still "not wedged": warn-only, never restart on uncertain
+// evidence.
 func timerIsWedged(ctx context.Context, exec executor.Executor, timer string) bool {
 	res := exec.RunContext(ctx, "systemctl", "show", timer,
-		"-p", "ActiveState", "-p", "NextElapseUSecRealtime", "--value")
+		"-p", "ActiveState", "-p", "Unit",
+		"-p", "TimersCalendar", "-p", "TimersMonotonic",
+		"-p", "NextElapseUSecRealtime", "-p", "NextElapseUSecMonotonic")
 	if res.ExitCode != 0 {
 		return false
 	}
+	p := parseShowProperties(res.Stdout)
 
-	// With multiple -p properties and --value, systemctl prints one value per
-	// line in the order requested: ActiveState, then NextElapseUSecRealtime.
-	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
-	if len(lines) < 2 {
+	if p.first("ActiveState") != "active" {
 		return false
 	}
-	activeState := strings.TrimSpace(lines[0])
-	nextElapse := strings.TrimSpace(lines[1])
-
-	if activeState != "active" {
+	hasCalendar := p.nonEmpty("TimersCalendar")
+	hasMonotonic := p.nonEmpty("TimersMonotonic")
+	if !hasCalendar && !hasMonotonic {
 		return false
 	}
-	switch nextElapse {
-	case "", "0", "n/a", "infinity":
+	if hasCalendar && nextElapseSet(p.first("NextElapseUSecRealtime")) {
+		return false
+	}
+	if hasMonotonic && nextElapseSet(p.first("NextElapseUSecMonotonic")) {
+		return false
+	}
+
+	unit := p.first("Unit")
+	if unit == "" {
+		return false
+	}
+	svc := exec.RunContext(ctx, "systemctl", "show", unit, "-p", "ActiveState")
+	if svc.ExitCode != 0 {
+		return false
+	}
+	switch parseShowProperties(svc.Stdout).first("ActiveState") {
+	case "inactive", "failed":
 		return true
 	}
+	// active / activating / reloading / deactivating, or anything unrecognised:
+	// not a wedge we can act on.
 	return false
+}
+
+// showProperties is `systemctl show` output keyed by property name. A name can
+// repeat (TimersMonotonic prints one line per trigger), so values are lists.
+type showProperties map[string][]string
+
+func parseShowProperties(out string) showProperties {
+	p := showProperties{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || k == "" {
+			continue
+		}
+		p[k] = append(p[k], strings.TrimSpace(v))
+	}
+	return p
+}
+
+func (p showProperties) first(k string) string {
+	if v := p[k]; len(v) > 0 {
+		return v[0]
+	}
+	return ""
+}
+
+func (p showProperties) nonEmpty(k string) bool {
+	for _, v := range p[k] {
+		if v != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// nextElapseSet reports whether a NextElapseUSec* value names a scheduled time.
+// systemd prints "" (realtime, none), "0" (monotonic on a calendar timer),
+// "infinity" (monotonic, none), or "n/a" depending on version.
+func nextElapseSet(v string) bool {
+	switch strings.TrimSpace(v) {
+	case "", "0", "n/a", "infinity":
+		return false
+	}
+	return true
 }
