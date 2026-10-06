@@ -597,13 +597,9 @@ nftban_enable_all() {
     # NFTBAN_TIMER_SURICATA_UPDATE is no longer read here: the timer it named
     # was retired in v1.228.2 (owner ruling D2). The key survives in
     # nftban.conf conffile space and is reported as a known stale key.
-    # TMR-01: Snapshot/rollback timers are apply/confirm-managed, NOT
-    # auto-enabled. nftban-rollback.timer is started by nftban-apply and stopped
-    # by nftban-confirm (its unit's [Install] explicitly says "Do NOT
-    # auto-enable" — auto-enabling fails on fresh install before any
-    # backup.rules exists). The snapshot timer is paired with it under the same
-    # apply/confirm lifecycle. They are intentionally omitted from core_timers
-    # below so they stay confirm-managed rather than force-enabled here.
+    # TMR-01: the snapshot timer is NOT auto-enabled and is omitted from the core
+    # timers below. (v1.235: the legacy nftban-rollback.timer/.service pair is
+    # retired; commit-confirm arms a transient per-apply rollback unit instead.)
 
     # v1.235 row 486 (D5): no forced settings. Core timers follow the unit record;
     # module-tied timers follow the module switch AS IT IS NOW; every other NFTBan
@@ -622,7 +618,6 @@ nftban_enable_all() {
         _nftban_restore_unit "$timer" "module:$_bs"; _done[$timer]=1
     done
     _done[nftband.service]=1; _done[nftband.socket]=1; _done["$svc_daemon"]=1
-    _done[nftban-rollback.timer]=1; _done[nftban-rollback.service]=1
     if [[ -f "$NFTBAN_DISABLE_RECORD" ]]; then
         local _u _st _ac
         while IFS=$'\t' read -r _u _st _ac; do

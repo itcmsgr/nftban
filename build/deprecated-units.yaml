@@ -115,3 +115,22 @@ deprecated:
     policy: stop_disable_remove
     removed_in: v1.228.2
     reason: "D1 — ExecStartPre=+/usr/sbin/nftban suricata rules verify --quiet invokes a deleted CLI token; Type=simple + Restart=on-failure with no SuccessExitStatus means an honest non-zero turns unit start into a restart loop. Removed rather than de-fanged: stripping ExecStartPre would leave a service that APPEARS protective while no rule verification exists"
+
+  # ---------------------------------------------------------------------------
+  # v1.235 row 486 consolidation: the legacy auto-rollback unit pair.
+  # Commit-confirm now arms one transient per-apply rollback unit (systemd-run,
+  # nftban-commit-rollback-<apply_id>) and decides a pending apply at boot in
+  # nftban-commit-confirm-boot.service. The legacy pair has no remaining function:
+  # its ExecStart (`nftban-rollback --legacy-unit`) has been a no-op since the
+  # repair, and shipping it kept a dead "Rollback check" timer in status, timers
+  # and health. Timer first, so the loop stops the trigger before its service.
+  # ---------------------------------------------------------------------------
+  - name: nftban-rollback.timer
+    policy: stop_disable_remove
+    removed_in: v1.235.0
+    reason: "Legacy commit-confirm trigger (OnActiveSec=5min after nftban-apply). Replaced by the per-apply transient rollback unit; the pre-v1.235 mechanism merged a stale whole-ruleset backup. Removed, not masked: the unit name stays free."
+
+  - name: nftban-rollback.service
+    policy: stop_disable_remove
+    removed_in: v1.235.0
+    reason: "ExecStart=nftban-rollback --legacy-unit, a no-op since the v1.235 repair. The user-facing nftban-rollback command stays as a wrapper over `nftban firewall rollback`; only the unit is retired."

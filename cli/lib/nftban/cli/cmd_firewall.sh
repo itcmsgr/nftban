@@ -446,12 +446,18 @@ RBHELP
     # v1.235 row 486 (owner U1): while the STORED choice is disabled, every publication
     # is inert, including the installer's render-boot, so an upgrade of a disabled NFTBan
     # can never make it load at the next boot.
+    # Fail closed: if the stored choice cannot be read, nothing is published (an active
+    # projection published while disabled would undo `disable` at the next boot).
     if [[ "$inert" != "true" ]]; then
         if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
             # shellcheck source=/dev/null
-            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" || true
         fi
-        if declare -F nftban_master_switch_on >/dev/null 2>&1 && ! nftban_master_switch_on; then
+        if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+            echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT published; the previous boot path is unchanged" >&2
+            return 1
+        fi
+        if ! nftban_master_switch_on; then
             inert="true"
             [[ "$quiet" == "false" ]] && echo "NFTBan is disabled (stored choice): publishing the INERT projection"
         fi
@@ -518,11 +524,16 @@ _firewall_rebuild_refresh_boot_projection() {
     # v1.235 row 486 (owner U1): while the STORED choice is disabled, the projection
     # stays INERT, so a manual rebuild of a disabled NFTBan applies rules for the running
     # system only and cannot make NFTBan come back by itself at the next boot.
+    # Fail closed, as in render-boot: an unreadable stored choice never publishes.
     if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >&2 || true
     fi
-    if declare -F nftban_master_switch_on >/dev/null 2>&1 && ! nftban_master_switch_on; then
+    if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+        echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT refreshed" >&2
+        echo failed; return 0
+    fi
+    if ! nftban_master_switch_on; then
         if nftban_boot_projection_publish_inert "$bp" >&2; then
             echo "WARNING: NFTBan is DISABLED (stored choice): the rules just loaded apply until the next reboot only; boot projection kept INERT. Run 'nftban enable' to make them persistent." >&2
             echo refreshed; return 0

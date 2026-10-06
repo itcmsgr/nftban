@@ -364,11 +364,21 @@ missing_k=""; missing_d=""
 for f in "$UNITDIR"/nftban*.service "$UNITDIR"/nftban*.timer "$UNITDIR"/nftban*.socket "$UNITDIR"/nftband.service "$UNITDIR"/nftband.socket; do
     b=$(basename "$f")
     case "$b" in nftban-boot-bypass.service|nftban-boot-bypass-guard.service|nftban-boot-normal.service|nftban-commit-confirm-boot.service) continue ;; esac
+    # Read-only diagnosis and failure notification stay available under bypass / D10.
+    case "$b" in nftban-firewall-validate.service|nftban-alert@.service) continue ;; esac
     has_line "$f" 'ConditionKernelCommandLine=!nftban=disabled' || missing_k="$missing_k $b"
     has_line "$f" 'ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed' || missing_d="$missing_d $b"
 done
 [[ -z "$missing_k" ]] && ok "E1 every NFTBan unit carries ConditionKernelCommandLine=!nftban=disabled" || ko "E1 missing bypass condition:$missing_k"
 [[ -z "$missing_d" ]] && ok "E2 every NFTBan unit carries the failed-rollback condition" || ko "E2 missing D10 condition:$missing_d"
+held=""
+for b in nftban-firewall-validate.service nftban-alert@.service nftban-commit-confirm-boot.service; do
+    f="$UNITDIR/$b"
+    [[ -f "$f" ]] || { held="$held $b(absent)"; continue; }
+    has_line "$f" 'ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed' && held="$held $b(D10)"
+    [[ "$b" != nftban-commit-confirm-boot.service ]] && has_line "$f" 'ConditionKernelCommandLine=!nftban=disabled' && held="$held $b(bypass)"
+done
+[[ -z "$held" ]] && ok "E2b diagnosis/alert/recovery units are NOT held by the bypass / D10 conditions" || ko "E2b held:$held"
 bad=""
 for b in nftban-boot-bypass.service nftban-boot-bypass-guard.service nftban-boot-normal.service nftban-commit-confirm-boot.service; do
     f="$UNITDIR/$b"
@@ -377,8 +387,12 @@ for b in nftban-boot-bypass.service nftban-boot-bypass-guard.service nftban-boot
     if [[ "$b" != nftban-boot-bypass-guard.service ]] && grep -E '^(After|Requires|Wants|BindsTo)=.*nftables\.service' "$f" >/dev/null; then bad="$bad $b(orders-after-nftables)"; fi
 done
 [[ -z "$bad" ]] && ok "E3 early units: DefaultDependencies=no, no ordering after nftables.service (except the guard)" || ko "E3 early units:$bad"
-if [[ -f "$UNITDIR/nftban-rollback.service" ]] && ! grep -E '^WantedBy=' "$UNITDIR/nftban-rollback.service" >/dev/null; then ok "E4 legacy nftban-rollback.service has no [Install] WantedBy"
-else ko "E4 legacy rollback unit still installable"; fi
+# E4: the legacy rollback pair is RETIRED: not shipped, and converged away on upgrade.
+_dep="$REPO_ROOT/build/deprecated-units.yaml"
+if [[ ! -e "$UNITDIR/nftban-rollback.service" && ! -e "$UNITDIR/nftban-rollback.timer" ]] \
+   && grep -qxF -- '  - name: nftban-rollback.timer' "$_dep" && grep -qxF -- '  - name: nftban-rollback.service' "$_dep"; then
+    ok "E4 legacy nftban-rollback.timer/.service retired (not shipped; registered stop_disable_remove)"
+else ko "E4 legacy rollback units still shipped or not registered for upgrade cleanup (registry: $_dep)"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

@@ -351,8 +351,17 @@ cc_rollback() {
 }
 
 # nftban-commit-confirm-boot.service: decide a pending apply BEFORE the daemon/timers.
+# Owner D10: while a rollback has FAILED, every boot raises the alarm again (the
+# other NFTBan units are held back by their condition, so this is the one that speaks).
 cc_boot() {
     [[ -r "$CC_RECORD" ]] || return 0
+    if [[ -e "$CC_FAILED_MARK" ]]; then
+        local msg="NFTBan commit-confirm ROLLBACK FAILED for apply $(cc_get apply_id) (since $(cc_get at)); kernel: $(cc_get kernel). NFTBan units are held until recovery."
+        logger -t nftban -p auth.crit "$msg" 2>/dev/null || true
+        echo "❌ $msg" >&2
+        cc_refuse_if_rollback_failed "boot" || true
+        return 0
+    fi
     [[ "$(cc_status)" == "pending" ]] || return 0
     cc_rollback "$(cc_get apply_id)" --boot
 }

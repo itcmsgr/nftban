@@ -483,7 +483,7 @@ _nftban() {
                             # stops, disables and removes it on upgrade. Completing an
                             # operator into `nftban timers enable` for a unit the
                             # package just deleted is a guaranteed failure.
-                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
+                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-snapshot.timer" -- "${cur}"))
                             ;;
                     esac
                     ;;
