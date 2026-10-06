@@ -962,6 +962,13 @@ _status_section_firewall() {
         master_status="DISABLED (config)"
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
+    # v1.235 (row 486 contract D8): stored / applied / on-reboot / recovery as separate
+    # facts, with named EXPECTED/DIVERGENCE lines; an unread fact is UNKNOWN.
+    if [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh"
+        nftban_lifecycle_collect && nftban_lifecycle_render
+    fi
 
     # Helpful hints (only in non-quiet mode)
     if [[ $quiet_mode -eq 0 ]] && (( _ban_n > 0 || _wl_n > 0 )); then
@@ -2339,6 +2346,13 @@ output_json() {
     echo "  \"firewall_runtime_status\": \"${json_runtime_raw%%:*}\","
     echo "  \"installation\": {\"class\": \"$(json_escape "${json_pkg_line%%|*}")\", \"detail\": \"$(json_escape "${_jp_rest%%|*}")\", \"recovery\": \"$(json_escape "${_jp_rest#*|}")\"},"
     echo "  \"config_divergence\": [${_json_div_array}],"
+    # v1.235 (row 486 contract D8): lifecycle facts, same collector as the human view.
+    if [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh"
+        nftban_lifecycle_collect
+        echo "  \"lifecycle\": $(nftban_lifecycle_json),"
+    fi
     echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
     echo "  \"hostname\": \"$(hostname)\","
 

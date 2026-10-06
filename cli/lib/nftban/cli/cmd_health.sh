@@ -730,6 +730,12 @@ nftban_health_cmd_truth() {
         echo "    [$_fth_sev] FW-TRANSITION-HEALTH: ${_fth_reason}"
     fi
 
+    # v1.235 (row 486 contract D8): the lifecycle facts, after the protection truth.
+    if [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh"
+        nftban_lifecycle_collect && nftban_lifecycle_render
+    fi
     echo ""
     # v1.235: return the validator verdict (0/1/2). SF-1's contract (2 after a
     # DOWN table) is kept; a DEGRADED table now returns 1 instead of the old
