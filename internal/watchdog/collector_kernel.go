@@ -66,23 +66,47 @@ func (c *KernelCollector) Collect(ctx context.Context, snapshot *Snapshot) error
 	return nil
 }
 
+// conntrackProcDir is where nf_conntrack_count/max are read. A variable only so
+// tests can point the collector at a fixture directory.
+var conntrackProcDir = "/proc/sys/net/netfilter"
+
+// collectConntrack reads the conntrack count and limit.
+//
+// v1.235 (BUG-WATCHDOG-CONNTRACK-READ-FAILURE-REPORTED-AS-ZERO): a failed read used
+// to return silently and leave the fields at Go zero values, so a DENIED read
+// (measured: SELinux search on sysctl_net_t, lab3 Rocky 10 enforcing) exported
+// nftban_conntrack_max 0 / used 0 / utilization 0 while the kernel held
+// max=65536. "Not measured" was reported as "measured: empty". ConntrackMeasured
+// is now true only when both values were read and parsed and the limit is > 0;
+// consumers must not publish the numbers otherwise.
 func (c *KernelCollector) collectConntrack(snapshot *Snapshot) {
-	countData, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_count")
-	if err != nil {
+	snapshot.Kernel.ConntrackMeasured = false
+	count, okCount := readProcInt(filepath.Join(conntrackProcDir, "nf_conntrack_count"))
+	limit, okLimit := readProcInt(filepath.Join(conntrackProcDir, "nf_conntrack_max"))
+	if !okCount || !okLimit || limit <= 0 {
+		snapshot.Kernel.ConntrackCount = 0
+		snapshot.Kernel.ConntrackMax = 0
+		snapshot.Kernel.ConntrackUtilization = 0
 		return
 	}
-	snapshot.Kernel.ConntrackCount, _ = strconv.Atoi(strings.TrimSpace(string(countData)))
+	snapshot.Kernel.ConntrackCount = count
+	snapshot.Kernel.ConntrackMax = limit
+	snapshot.Kernel.ConntrackUtilization = float64(count) / float64(limit)
+	snapshot.Kernel.ConntrackMeasured = true
+}
 
-	maxData, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_max")
+// readProcInt reads one integer from a /proc file; ok is false on any read or
+// parse error.
+func readProcInt(path string) (int, bool) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return 0, false
 	}
-	snapshot.Kernel.ConntrackMax, _ = strconv.Atoi(strings.TrimSpace(string(maxData)))
-
-	if snapshot.Kernel.ConntrackMax > 0 {
-		snapshot.Kernel.ConntrackUtilization = float64(snapshot.Kernel.ConntrackCount) /
-			float64(snapshot.Kernel.ConntrackMax)
+	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, false
 	}
+	return v, true
 }
 
 func (c *KernelCollector) collectSoftnet(snapshot *Snapshot) {

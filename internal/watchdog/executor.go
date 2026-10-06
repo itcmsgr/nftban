@@ -411,7 +411,7 @@ func (e *ActionExecutor) writeProfileSidecar(profilePath, profileType, reason st
 	}
 
 	// Include conntrack if available
-	if snapshot.Kernel.ConntrackMax > 0 {
+	if snapshot.Kernel.ConntrackMeasured {
 		data["conntrack_util"] = snapshot.Kernel.ConntrackUtilization
 	}
 

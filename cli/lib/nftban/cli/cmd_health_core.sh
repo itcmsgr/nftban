@@ -200,15 +200,17 @@ nftban_health_cmd_brief() {
         echo "ERROR | ${ok_count} checks passed | ${error_count} errors, ${warning_count} warnings"
         return 2
     elif [[ $warning_count -gt 0 ]]; then
-        # v1.38.0: Show specific warning reasons instead of generic "info"
-        local reasons=""
-        # Detect common optional-feature warnings
-        if ! systemctl is-active --quiet nftban-prometheus-exporter.timer 2>/dev/null; then
-            reasons="${reasons:+$reasons, }metrics-inactive"
-        fi
-        if [[ -z "$reasons" ]]; then
-            reasons="optional-features"
-        fi
+        # v1.235 (BUG-HEALTH-BRIEF-NAMES-METRICS-INACTIVE-FROM-A-RETIRED-UNIT): the
+        # reason used to be "metrics-inactive" whenever
+        # nftban-prometheus-exporter.timer was not active. That unit is no longer
+        # shipped (replaced by nftban-unified-exporter.timer), so EVERY brief with
+        # warnings blamed metrics, whatever had actually warned (measured: lab3,
+        # 4 warnings from auditor ACLs / CLI errors / limiter capacity reported as
+        # "metrics-inactive"). The reason is now the names of the checks that
+        # warned, as recorded by nftban_health_check_all.
+        local reasons="${NFTBAN_HEALTH_WARNING_NAMES:-}"
+        reasons="${reasons// /, }"
+        [[ -n "$reasons" ]] || reasons="unnamed"
         echo "OK | ${ok_count} checks passed | ${info_count} info (${reasons})"
         # v1.39.0: --strict makes warnings fail
         [[ $strict_mode -eq 1 ]] && return 1

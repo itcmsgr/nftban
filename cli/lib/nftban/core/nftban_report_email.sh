@@ -587,10 +587,17 @@ nftban_report_email_generate() {
 
     # Escape & in replacement strings (& is special in bash substitution)
     # For variables containing HTML entities like &#10004;, we must escape &
-    local feeds_status_escaped="${feeds_status//&/\\&}"
-    local protection_status_escaped="${protection_status//&/\\&}"
-    local top_ips_escaped="${top_ips//&/\\&}"
-    local suricata_section_escaped="${suricata_section//&/\\&}"
+    # v1.235: ONLY where & is special (bash >= 5.2 with patsub_replacement on).
+    # On bash 5.1 (EL9) & is literal and the backslash was printed into the
+    # mail ("\&#10004;").
+    local feeds_status_escaped="$feeds_status" protection_status_escaped="$protection_status"
+    local top_ips_escaped="$top_ips" suricata_section_escaped="$suricata_section"
+    if shopt -q patsub_replacement 2>/dev/null; then
+        feeds_status_escaped="${feeds_status//&/\\&}"
+        protection_status_escaped="${protection_status//&/\\&}"
+        top_ips_escaped="${top_ips//&/\\&}"
+        suricata_section_escaped="${suricata_section//&/\\&}"
+    fi
 
     html="${html//\{\{HOSTNAME\}\}/$hostname}"
     html="${html//\{\{DATE\}\}/$date_now}"

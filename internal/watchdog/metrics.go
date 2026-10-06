@@ -25,6 +25,8 @@
 package watchdog
 
 import (
+	"math"
+
 	"github.com/itcmsgr/nftban/internal/safeconv"
 	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/prometheus/client_golang/prometheus"
@@ -388,9 +390,17 @@ func (m *MetricsExporter) Update(snapshot *Snapshot, state *PressureState) {
 	}
 
 	// Kernel metrics (canonical names only — _total suffix aliases removed in v1.90)
-	conntrackUsed.Set(float64(snapshot.Kernel.ConntrackCount))
-	conntrackMax.Set(float64(snapshot.Kernel.ConntrackMax))
-	conntrackUtilization.Set(snapshot.Kernel.ConntrackUtilization)
+	// v1.235: an unmeasured conntrack read is published as NaN (Prometheus "no
+	// value"), never as 0, which reads as a real, empty table.
+	if snapshot.Kernel.ConntrackMeasured {
+		conntrackUsed.Set(float64(snapshot.Kernel.ConntrackCount))
+		conntrackMax.Set(float64(snapshot.Kernel.ConntrackMax))
+		conntrackUtilization.Set(snapshot.Kernel.ConntrackUtilization)
+	} else {
+		conntrackUsed.Set(math.NaN())
+		conntrackMax.Set(math.NaN())
+		conntrackUtilization.Set(math.NaN())
+	}
 
 	softnetDrops.Set(float64(snapshot.Kernel.SoftnetDrops))
 	softnetTimeSqueeze.Set(float64(snapshot.Kernel.SoftnetTimeSqueeze))
