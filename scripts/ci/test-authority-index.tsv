@@ -45,6 +45,7 @@ botscan_operator_truth_contract_v219_0_test	cli/lib/nftban/tests/botscan_operato
 botscan_operator_truth_v218_11_test	cli/lib/nftban/tests/botscan_operator_truth_v218_11_test.sh	botscan	test	botscan-status-surface	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_pattern_ban_ifs_v1861_test	cli/lib/nftban/tests/botscan_pattern_ban_ifs_v1861_test.sh	botscan	test	botscan-pattern-ban-ifs	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_pattern_delimiter_v214_test	cli/lib/nftban/tests/botscan_pattern_delimiter_v214_test.sh	botscan	test	botscan-pattern-delimiter	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+botscan_pattern_migration_legacy_v1235_test	cli/lib/nftban/tests/botscan_pattern_migration_legacy_v1235_test.sh	botscan	test	botscan-patterns	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_pattern_upgrade_v1234_test	cli/lib/nftban/tests/botscan_pattern_upgrade_v1234_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_read_authority_v178_test	cli/lib/nftban/tests/botscan_read_authority_v178_test.sh	botscan	test	botscan-read-authority-collector	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 botscan_request_class_classifier_v1913_test	cli/lib/nftban/tests/botscan_request_class_classifier_v1913_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
