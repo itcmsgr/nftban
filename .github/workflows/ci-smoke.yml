@@ -72,8 +72,10 @@ jobs:
           sudo chmod +x /usr/sbin/nftban /usr/lib/nftban/bin/nftban-core
           # Minimal config
           sudo cp -r etc/nftban/* /etc/nftban/ 2>/dev/null || true
-          # The packages install the main config from install/config/ (not etc/);
-          # without it the config check C1 skipped.
+          # The packages install the main config from install/config/ (not etc/),
+          # mode 0640 root:nftban; without it the config check C1 skipped. The
+          # runner user is not an operator (not in group nftban), so every CLI
+          # step below runs as root, as the installed product is operated.
           sudo install -m 0640 install/config/nftban.conf /etc/nftban/nftban.conf
           # VERSION file
           sudo cp VERSION /usr/lib/nftban/
@@ -81,14 +83,14 @@ jobs:
       - name: Smoke test — version
         run: |
           # CLI may exit non-zero without daemon — check output, not exit code
-          OUTPUT=$(nftban version 2>&1) || true
+          OUTPUT=$(sudo nftban version 2>&1) || true
           echo "$OUTPUT"
           echo "$OUTPUT" | grep -qi "version" || { echo "::error::version produced no output"; exit 1; }
 
       - name: Smoke test — version JSON
         run: |
           # CLI wrapper appends "# NFTBAN_CMD_EXIT: ..." to stdout — strip before jq
-          nftban version --json 2>/dev/null | grep -v '^#' > /tmp/version.json || true
+          sudo nftban version --json 2>/dev/null | grep -v '^#' > /tmp/version.json || true
           if [[ -s /tmp/version.json ]]; then
             if jq empty /tmp/version.json 2>/dev/null; then
               echo "✓ version --json: valid JSON"
@@ -103,12 +105,12 @@ jobs:
 
       - name: Smoke test — help
         run: |
-          OUTPUT=$(nftban help 2>&1) || true
+          OUTPUT=$(sudo nftban help 2>&1) || true
           echo "$OUTPUT"
           echo "$OUTPUT" | grep -qi "usage\|command\|help" || { echo "::error::help produced no output"; exit 1; }
 
       - name: Smoke test — fhs verify
-        run: nftban fhs verify 2>&1 | head -20 || true
+        run: sudo nftban fhs verify 2>&1 | head -20 || true
 
       - name: "G20 Smoke Gate — registry-driven smoke"
         run: |
