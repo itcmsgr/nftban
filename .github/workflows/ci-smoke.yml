@@ -54,16 +54,27 @@ jobs:
       - name: Build CLI binary
         run: go build -trimpath -o bin/nftban-core ./cmd/nftban-core/
 
+      # v1.235 batch C (GATE-CLI-SMOKE-G20-PASSES-VACUOUSLY-ALL-SKIPPED, option b):
+      # the validator is what the truth checks T1/T2 run; without it every check
+      # skipped and the gate reported PASS having run nothing.
+      - name: Build validator binary
+        run: go build -trimpath -o bin/nftban-validate ./cmd/nftban-validate/
+
       - name: Install shell components
         run: |
           # Minimal install — CLI scripts + config only (no systemd, no daemon)
           sudo mkdir -p /usr/lib/nftban/bin /usr/lib/nftban/cli /etc/nftban
           sudo cp bin/nftban-core /usr/lib/nftban/bin/
+          # Same path and mode the packages install (build_nftban.sh: bin/nftban-validate)
+          sudo install -m 0755 bin/nftban-validate /usr/lib/nftban/bin/nftban-validate
           sudo cp -r cli/lib/nftban/* /usr/lib/nftban/
           sudo cp cli/sbin/nftban /usr/sbin/nftban
           sudo chmod +x /usr/sbin/nftban /usr/lib/nftban/bin/nftban-core
           # Minimal config
           sudo cp -r etc/nftban/* /etc/nftban/ 2>/dev/null || true
+          # The packages install the main config from install/config/ (not etc/);
+          # without it the config check C1 skipped.
+          sudo install -m 0640 install/config/nftban.conf /etc/nftban/nftban.conf
           # VERSION file
           sudo cp VERSION /usr/lib/nftban/
 
@@ -101,26 +112,11 @@ jobs:
 
       - name: "G20 Smoke Gate — registry-driven smoke"
         run: |
-          # Run Go registry-driven smoke. CI environment will SKIP daemon/module
-          # checks (no systemd, no live daemon) — that's correct behavior.
-          # FAIL on: runtime errors, contract violations, malformed output.
-          SMOKE_OUTPUT=$(bin/nftban-core smoke --json 2>&1) || true
-          echo "$SMOKE_OUTPUT"
-
-          # Validate JSON parseable
-          if ! echo "$SMOKE_OUTPUT" | jq empty 2>/dev/null; then
-            echo "::error::G20 Smoke Gate: smoke --json output is not valid JSON"
-            exit 1
-          fi
-
-          # Check for FAIL or INTERNAL_ERROR
-          FAIL_COUNT=$(echo "$SMOKE_OUTPUT" | jq -r '.summary.fail // 0')
-          if [ "$FAIL_COUNT" != "0" ]; then
-            echo "::error::G20 Smoke Gate: $FAIL_COUNT test(s) FAILED"
-            echo "$SMOKE_OUTPUT" | jq '.tests[] | select(.status == "FAIL")'
-            exit 1
-          fi
-
-          PASS_COUNT=$(echo "$SMOKE_OUTPUT" | jq -r '.summary.pass // 0')
-          SKIP_COUNT=$(echo "$SMOKE_OUTPUT" | jq -r '.summary.skip // 0')
-          echo "G20 Smoke Gate: PASS ($PASS_COUNT pass, $SKIP_COUNT skip, 0 fail)"
+          # Root, like the installed product. Daemon/metrics/module checks still
+          # SKIP here (no systemd daemon) and are printed NOT_IN_SCOPE; the checks
+          # whose prerequisites this job provisions (validator, config) must PASS.
+          # skip != pass: 0 pass or a required SKIP fails (scripts/ci/check-smoke-g20.sh).
+          sudo bin/nftban-core smoke --json > /tmp/g20.json 2> /tmp/g20.err || true
+          cat /tmp/g20.json
+          cat /tmp/g20.err
+          bash scripts/ci/check-smoke-g20.sh /tmp/g20.json

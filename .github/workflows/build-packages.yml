@@ -665,6 +665,11 @@ jobs:
             echo -n "Installer binary exists: "
             test -x /usr/lib/nftban/bin/nftban-installer && echo "PASS" || { echo "FAIL"; exit 1; }
 
+            # v1.235 batch C (GATE-CLI-INSTALLED-PACKAGE-ONLY-RUNS-VERSION): read-only
+            # commands through the INSTALLED entry point; a crash or ERR banner fails.
+            echo "=== Phase 2c: Installed-CLI read-only checks (HARD FAIL) ==="
+            bash /scripts/ci/installed-cli-readonly-checks.sh
+
             echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
             if [[ "$INSTALL_CLEAN" == "true" ]]; then
               echo "[INFO] Postinst succeeded — full install in container"
@@ -844,6 +849,11 @@ jobs:
             echo "=== Phase 2b: Installer Binary (G5 — HARD FAIL) ==="
             echo -n "Installer binary exists: "
             test -x /usr/lib/nftban/bin/nftban-installer && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            # v1.235 batch C (GATE-CLI-INSTALLED-PACKAGE-ONLY-RUNS-VERSION): read-only
+            # commands through the INSTALLED entry point; a crash or ERR banner fails.
+            echo "=== Phase 2c: Installed-CLI read-only checks (HARD FAIL) ==="
+            bash /scripts/ci/installed-cli-readonly-checks.sh
 
             echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
             if [[ "$INSTALL_CLEAN" == "true" ]]; then
