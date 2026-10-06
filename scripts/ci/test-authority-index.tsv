@@ -219,7 +219,6 @@ mail_honest_wording_v1227_test	cli/lib/nftban/tests/mail_honest_wording_v1227_te
 mail_netrc_auth_transport_v1227_test	cli/lib/nftban/tests/mail_netrc_auth_transport_v1227_test.sh	mail	test	mail-smtp-netrc	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 mail_recipient_subject_help_v1223_test	cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh	mail	test	mail	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 mail_subject_authority_v1227_test	cli/lib/nftban/tests/mail_subject_authority_v1227_test.sh	mail	test	mail-subject-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
-maint_active_ssh_peers_v1229_test	cli/lib/nftban/tests/maint_active_ssh_peers_v1229_test.sh	firewall	test	maintenance-active-ssh-whitelist	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 maint_table_absent_noise_v1930_test	cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh	firewall	test	maintenance-table-probe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 maintenance_stats_config_precondition_v1229_8_test	cli/lib/nftban/tests/maintenance_stats_config_precondition_v1229_8_test.sh	core	test	maintenance-orchestration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 managed_authority_invariant_v1229_3_test	cli/lib/nftban/tests/managed_authority_invariant_v1229_3_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -258,6 +257,7 @@ perset_predicate_v1229_13_test	cli/lib/nftban/tests/perset_predicate_v1229_13_te
 pipefail_epipe_product_truth_v1231_0_test	cli/lib/nftban/tests/pipefail_epipe_product_truth_v1231_0_test.sh	cross-cutting	test	pipefail-epipe-product-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migration_ownership_boundary_v1228_10_test.sh	packaging	test	package-migration-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 plan_projection_v1229_7_test	cli/lib/nftban/tests/plan_projection_v1229_7_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	90		
+port_allow_replay_v1235_test	cli/lib/nftban/tests/port_allow_replay_v1235_test.sh	firewall	test	port	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 port_remove_live_ssh_guard_v1234_test	cli/lib/nftban/tests/port_remove_live_ssh_guard_v1234_test.sh	cli	test	ports	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_classic_event_time_v1233_1_test	cli/lib/nftban/tests/portscan_classic_event_time_v1233_1_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
