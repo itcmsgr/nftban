@@ -93,13 +93,16 @@ case "$*" in
   *) exit 1;;
 esac
 EOF
-cat > "$STUB/test" <<'EOF'
+# v1.235: the preflight asks the KERNEL (shell builtin [ -w ]); no stub test binary
+# decides write access any more. LIAR models uutils test (rust-coreutils 0.8.0,
+# Ubuntu 26.04 /usr/bin/test): "not writable" from mode bits, ignoring privilege.
+LIARBIN="$WORK/liarbin"; mkdir -p "$LIARBIN"
+cat > "$LIARBIN/test" <<'EOF'
 #!/usr/bin/env bash
-# write-access stub: paths listed in $DENYDB are not writable (permission/MAC)
-[[ "$1" == "-w" ]] || exec /usr/bin/test "$@"
-grep -qxF -- "$2" "$DENYDB" && exit 1
-exit 0
+[[ "$1" == "-w" ]] && exit 1
+exec /usr/bin/test "$@"
 EOF
+chmod +x "$LIARBIN/test"
 chmod +x "$STUB"/*
 
 S="$WORK/root"
@@ -120,10 +123,10 @@ record(){  # PATH STATE [WRITTEN_AT] — an entry for the file's CURRENT inode+c
     printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(stat -c %i "$1")" "$(stat -c %Z "$1")" "$2" "${3:-1}" >> "$WORK/record"
 }
 ENVV=(HOME="$WORK" PATH="$STUB:/usr/bin:/bin" ATTRDB="$WORK/attrdb" CHATTR_LOG="$WORK/chattr.log"
-      MOUNTDB="$WORK/mountdb" MANIFEST="$WORK/manifest" CONFFILES="$WORK/conffiles" DENYDB="$WORK/deny"
+      MOUNTDB="$WORK/mountdb" MANIFEST="$WORK/manifest" CONFFILES="$WORK/conffiles"
       NFTBAN_IMMUT_RECORD="$WORK/record" NFTBAN_IMMUT_INSTALLER_LOG="$WORK/installer.log"
       NFTBAN_IMMUT_CANDIDATES="$CONF $SCHEMA" NFTBAN_IMMUT_FIXED_DIRS="$S/usr/sbin $S/usr/lib/nftban"
-      NFTBAN_IMMUT_TEST_BIN="$STUB/test" NFTBAN_CONFIG_DIR="$S/etc/nftban" NFTBAN_LIB_DIR="$S/usr/lib/nftban"
+      NFTBAN_CONFIG_DIR="$S/etc/nftban" NFTBAN_LIB_DIR="$S/usr/lib/nftban"
       UPDATE_LOG_FILE="$WORK/update.log")
 run_subject() {  # $1 = snippet run after sourcing the real CLI helpers
     env -i "${ENVV[@]}" STUB_LSATTR_UNSUPPORTED="${STUB_LSATTR_UNSUPPORTED:-}" \
@@ -224,10 +227,29 @@ mk_tree; echo "$S/usr/lib/nftban ro,relatime" >> "$WORK/mountdb"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
 if [[ $rc -ne 0 ]] && grep -q "READ-ONLY dir $S/usr/lib/nftban" "$WORK/out" && ! grep -qE 'IMMUTABLE (file|dir) ' "$WORK/out"; then
     ok "T6b read-only mount refused as READ-ONLY (not immutable)"; else no "T6b read-only" "rc=$rc"; fi
-mk_tree; echo "$S/usr/sbin" > "$WORK/deny"
+# T6c — a REAL kernel denial (v1.235: no stub decides write access). Root holds
+# CAP_DAC_OVERRIDE, so mode bits cannot deny it: the arm needs a non-root runner
+# (CI and the lab runs are non-root) and is NOT_EXECUTED under root, never PASS.
+if [[ $(id -u) -eq 0 ]]; then
+    printf '  [NOT_EXECUTED] T6c real write denial needs a non-root runner (root overrides mode bits)\n'
+else
+    mk_tree; chmod 0555 "$S/usr/sbin"
+    rc=0; run_subject '_remove_immutable_flags' || rc=$?
+    chmod 0755 "$S/usr/sbin"
+    if [[ $rc -ne 0 ]] && grep -q "WRITE-DENIED dir $S/usr/sbin" "$WORK/out" && ! grep -qE 'IMMUTABLE (file|dir) ' "$WORK/out"; then
+        ok "T6c real permission denial refused as WRITE-DENIED (not immutable)"; else no "T6c write-denied" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
+fi
+# U1 — v1.235 (BUG-PREFLIGHT-WRITE-DENIED-FALSE-ON-UBUNTU-26-UUTILS-TEST): an external
+# `test` that answers "not writable" for a directory the kernel lets us write (uutils
+# on Ubuntu 26.04) must NOT refuse the operation. The liar is reachable both through
+# the v1.234 hook variable and first in PATH; only the kernel answer may decide.
+mk_tree
+_u1_save=("${ENVV[@]}"); ENVV+=(NFTBAN_IMMUT_TEST_BIN="$LIARBIN/test" PATH="$LIARBIN:$STUB:/usr/bin:/bin")
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
-if [[ $rc -ne 0 ]] && grep -q "WRITE-DENIED dir $S/usr/sbin" "$WORK/out" && ! grep -qE 'IMMUTABLE (file|dir) ' "$WORK/out"; then
-    ok "T6c permission/MAC denial refused as WRITE-DENIED (not immutable)"; else no "T6c write-denied" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
+ENVV=("${_u1_save[@]}")
+if [[ $rc -eq 0 ]] && ! grep -q 'WRITE-DENIED' "$WORK/out"; then
+    ok "U1 an external test binary answering not-writable (uutils) does not refuse a writable destination"
+else no "U1 uutils false WRITE-DENIED" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
 mk_tree; setattr "----i------I--e-------" "$S/usr/lib/nftban/data"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
 if [[ $rc -eq 0 ]]; then ok "T6d immutable dir holding no payload entry does not block (not recursive)"; else no "T6d not recursive" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
