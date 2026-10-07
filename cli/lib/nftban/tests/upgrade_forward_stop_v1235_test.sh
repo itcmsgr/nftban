@@ -86,7 +86,7 @@ reset; : > "$SB/tables.ip"; : > "$SB/tables.ip6"; chain ip; chain ip6; run "$SB/
 [[ $rc -eq 0 ]] && ok "F3 empty forward chains -> proceed" || no "F3 empty chain" "rc=$rc $(cat "$SB/err")"
 
 reset; : > "$SB/tables.ip"; : > "$SB/tables.ip6"; chain ip 'ip saddr 198.51.100.0/24 accept # handle 94' 'ct state established,related accept # handle 91'; chain ip6; run "$SB/bin"
-if [[ $rc -eq 1 ]] && grep -q 'ip saddr 198.51.100.0/24 accept # handle 94' "$SB/err" && grep -q 'ct state established,related accept # handle 91' "$SB/err" \
+if [[ $rc -eq 1 ]] && grep -q 'RULE ip ip saddr 198.51.100.0/24 accept$' "$SB/err" && grep -q 'RULE ip ct state established,related accept$' "$SB/err" \
    && grep -q 'STOPPED' "$SB/err" && grep -q 'migration plan [0-9a-f]\{12\}' "$SB/err" && grep -q 'UNMAPPED' "$SB/err" && ! grep -q 'chain forward' "$SB/err"; then
     ok "F4 ip forward rules -> STOP, both rules listed in a migration plan (no route for the prefix: UNMAPPED)"
 else no "F4 ip rules" "rc=$rc $(tr '\n' '|' < "$SB/err")"; fi
@@ -101,7 +101,7 @@ reset; : > "$SB/tables.ip"; echo "Error: Could not process rule: Operation not p
 [[ $rc -eq 1 ]] && grep -q 'UNKNOWN' "$SB/err" && ok "F7 forward chain unreadable -> STOP as UNKNOWN (destructive change)" || no "F7 unreadable" "rc=$rc"
 
 reset; : > "$SB/tables.ip"; chain ip 'ip saddr 198.51.100.0/24 accept # handle 94'; run "$SB/bin" NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1
-[[ $rc -eq 0 ]] && grep -q 'accepts the loss' "$SB/err" && grep -q 'handle 94' "$SB/err" && ok "F8 explicit NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed, rules still listed" || no "F8 override" "rc=$rc"
+[[ $rc -eq 0 ]] && grep -q 'accepts the loss' "$SB/err" && grep -q 'RULE ip ip saddr 198.51.100.0/24 accept$' "$SB/err" && ok "F8 explicit NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed, rules still listed" || no "F8 override" "rc=$rc"
 
 # F9: call sites, before anything changes
 PRE="$REPO/packaging/deb/preinst"; SPEC="$REPO/packaging/build_nftban.sh"
