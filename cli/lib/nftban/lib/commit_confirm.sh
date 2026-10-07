@@ -82,10 +82,9 @@ cc_record_applied_baseline() {
     proj="${CC_CONFIG}/generated/nftban-boot.nft"
     [[ -f "$proj" ]] && cp -f "$proj" "$new/projection.nft"
     printf 'at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$new/meta"
-    # The baseline holds rules and config: only root may enter. mktemp -d already
-    # creates the directory 0700; stated explicitly, not recursively (the files
-    # inside are unreachable through it).
-    chmod 0700 "$new" 2>/dev/null || true
+    # No permission change here: mktemp -d creates "$new" 0700 (root-only), and the
+    # stored files keep their ORIGINAL mode and owner (tar -p above, cp -p on restore),
+    # so a rollback restores the metadata as well as the content.
     rm -rf "${CC_BASE}.old"
     [[ -d "$CC_BASE" ]] && mv -f "$CC_BASE" "${CC_BASE}.old"
     if mv -f "$new" "$CC_BASE"; then rm -rf "${CC_BASE}.old"; return 0; fi
@@ -133,7 +132,9 @@ cc_apply_begin() {
         cc_unlock; return 1
     fi
     id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-    rm -rf "$CC_WORK"; mkdir -p "$CC_WORK" || { cc_unlock; return 1; }
+    # Root-only like the baseline: the work dir holds a config copy and the kernel dump
+    # (its parent state dir is 0750 nftban:nftban). -m applies to this one directory.
+    rm -rf "$CC_WORK"; mkdir -p -m 0700 "$CC_WORK" || { cc_unlock; return 1; }
     # Previous kernel rules: the exact NFTBan tables, dumped BEFORE the change.
     # Dump whichever NFTBan tables exist (ip6 may be absent on IPv4-only hosts).
     local _t _fam _ok=0
