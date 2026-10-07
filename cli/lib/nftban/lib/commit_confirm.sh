@@ -82,7 +82,10 @@ cc_record_applied_baseline() {
     proj="${CC_CONFIG}/generated/nftban-boot.nft"
     [[ -f "$proj" ]] && cp -f "$proj" "$new/projection.nft"
     printf 'at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$new/meta"
-    chmod -R go-rwx "$new" 2>/dev/null || true
+    # The baseline holds rules and config: only root may enter. mktemp -d already
+    # creates the directory 0700; stated explicitly, not recursively (the files
+    # inside are unreachable through it).
+    chmod 0700 "$new" 2>/dev/null || true
     rm -rf "${CC_BASE}.old"
     [[ -d "$CC_BASE" ]] && mv -f "$CC_BASE" "${CC_BASE}.old"
     if mv -f "$new" "$CC_BASE"; then rm -rf "${CC_BASE}.old"; return 0; fi
