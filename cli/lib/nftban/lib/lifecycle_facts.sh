@@ -29,8 +29,11 @@
 [[ -n "${_NFTBAN_LIFECYCLE_FACTS_LOADED:-}" ]] && return 0
 _NFTBAN_LIFECYCLE_FACTS_LOADED=1
 
-# The installer's include directive (internal/installer/render/sysconf.go IncludeDirective).
-_NFTBAN_LF_INCLUDE='include "/etc/nftban/generated/nftban-boot.nft"'
+# The installer's include directive (internal/installer/render/sysconf.go IncludeDirective),
+# DETECTED, never emitted: a regex, anchored and whitespace-tolerant, so a commented-out line
+# does not count and this file carries no literal include line (P7 gate,
+# scripts/ci/check-system-include-writer-authority.sh: only the fenced writer emits one).
+_NFTBAN_LF_INCLUDE_RE='^[[:space:]]*include[[:space:]]+"/etc/nftban/generated/nftban-boot\.nft"'
 
 # _nftban_lf_rc <cmd...> -> echoes the command's rc (never aborts the caller)
 _nftban_lf_rc() { local rc=0; "$@" >/dev/null 2>&1 || rc=$?; printf '%s' "$rc"; }
@@ -178,7 +181,7 @@ nftban_lifecycle_collect() {
     for dc in "${_dcs[@]}"; do
         [[ -e "$dc" ]] || continue
         if [[ ! -r "$dc" ]]; then LF_INCLUDE=UNKNOWN; break; fi
-        if grep -qF -- "$_NFTBAN_LF_INCLUDE" "$dc" 2>/dev/null; then LF_INCLUDE=present; else LF_INCLUDE=absent; fi
+        if grep -qE -- "$_NFTBAN_LF_INCLUDE_RE" "$dc" 2>/dev/null; then LF_INCLUDE=present; else LF_INCLUDE=absent; fi
         break
     done
     LF_PROJECTION=UNKNOWN
