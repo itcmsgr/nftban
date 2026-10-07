@@ -1,0 +1,27 @@
+# =============================================================================
+# NFTBan - emergency boot bypass backstop (after nftables.service; a hit is reported as a DIVERGENCE)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-boot-bypass-guard.service"
+# meta:type="systemd"
+# meta:tier="CORE"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-10-06"
+# meta:description="v1.235 row 486 (U1 + R-DEC). emergency boot bypass backstop (after nftables.service; a hit is reported as a DIVERGENCE). Runs /usr/lib/nftban/helpers/nftban-boot-early.sh bypass-guard. DefaultDependencies=no and no ordering on /var or the network, so it never delays the distro nftables.service; it never touches nftables.service, the distro config, foreign tables or NFTBAN_ENABLED."
+# =============================================================================
+
+[Unit]
+Description=NFTBan emergency boot bypass backstop (after nftables.service; a hit is reported as a DIVERGENCE)
+Documentation=man:nftban(8)
+DefaultDependencies=no
+ConditionKernelCommandLine=nftban=disabled
+After=nftables.service nftban-boot-bypass.service
+RequiresMountsFor=/etc/nftban/generated /usr/lib/nftban
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/nftban/helpers/nftban-boot-early.sh bypass-guard
+
+[Install]
+WantedBy=multi-user.target

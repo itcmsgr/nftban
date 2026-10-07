@@ -226,7 +226,7 @@ _nftban_prefetch_unit_states() {
         nftban-update-check.timer nftban-update-apply.timer
         nftban-unified-exporter.timer nftban-unified-exporter.service
         nftban-suricata.service nftban-suricata.timer nftban-suricata-update.timer
-        nftban-snapshot.timer nftban-rollback.timer nftban-rbl-check.timer
+        nftban-snapshot.timer nftban-rbl-check.timer
         nftban-pro-license.timer nftban-pro-inventory.timer
         nftban-tunnel.timer
         suricata.service prometheus victoriametrics
@@ -2031,7 +2031,6 @@ _status_section_timers() {
         ["nftban-queue.timer"]="Queue processing"
         ["nftban-suricata-update.timer"]="Suricata rules update"
         ["nftban-snapshot.timer"]="Snapshot creation"
-        ["nftban-rollback.timer"]="Rollback check"
         ["nftban-rbl-check.timer"]="RBL Check"
         ["nftban-tunnel.timer"]="Tunnel suspicion scan"
         ["nftban-pro-inventory.timer"]="Pro inventory collection"
@@ -2795,7 +2794,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update-check.timer" "nftban-update-apply.timer")
+    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update-check.timer" "nftban-update-apply.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"

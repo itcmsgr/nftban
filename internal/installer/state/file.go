@@ -233,6 +233,9 @@ var commitEligibleConvergenceVerdicts = []string{
 	ConvergenceVerifiedValue,
 	"DEFERRED",
 	"UNVERIFIED",
+	// v1.235 row 486: NFTBan disabled or bypassed — no ruleset was loaded on purpose;
+	// the disabled invariants are asserted instead (validate.RunDisabledAssertions).
+	"NOT_APPLICABLE_DISABLED",
 }
 
 // ConvergenceVerdictPermitsCommit is the EXPORTED predicate. Any caller that needs

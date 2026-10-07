@@ -101,7 +101,9 @@ for unit in \
     nftban-suricata-stats.service \
     nftban-suricata-update.timer \
     nftban-suricata-update.service \
-    nftban-suricata.service; do
+    nftban-suricata.service \
+    nftban-rollback.timer \
+    nftban-rollback.service; do
     if command -v deb-systemd-invoke >/dev/null 2>&1; then
         deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
     else

@@ -40,6 +40,8 @@
 # =============================================================================
 
 [Unit]
+# v1.235: deliberately NOT held by the bypass / rollback-failed conditions: read-only diagnosis,
+# it applies no state, and it must stay available during an emergency bypass or a D10 alarm.
 Description=NFTBan Firewall Validation (read-only, on-demand)
 Documentation=man:nftban(8)
 ConditionPathExists=/usr/lib/nftban/bin/nftban-validate

@@ -29,6 +29,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/panelfw"
 	"github.com/itcmsgr/nftban/internal/installer/services"
 	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
@@ -147,7 +148,21 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// NOT_CONVERGED therefore keeps the record DEGRADED (revalidate must not launder it
 	// into COMMITTED); "" is reported UNKNOWN, never VERIFIED.
 	opts.ConvergenceVerified = cur.ConvergenceVerified
-	results := validate.RunAssertionsWithOpts(exec, sshPort, log, opts)
+	// v1.235 row 486: a disabled or bypassed host is re-validated on its DISABLED
+	// invariants, never on runtime health (which it deliberately does not have).
+	var rvPD phaseData
+	resolveLifecycleMode(exec, &rvPD, log)
+	var results []validate.AssertionResult
+	if rvPD.enforcementSkipped() {
+		mode := validate.ModeStoredDisabled
+		if rvPD.bypassActive {
+			mode = validate.ModeEmergencyBypass
+		}
+		log.Info("revalidate: %s — checking the disabled invariants", rvPD.skipReason())
+		results = validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
+	} else {
+		results = validate.RunAssertionsWithOpts(exec, sshPort, log, opts)
+	}
 
 	// Preserve recorded identity the Transition writer re-emits. main() blanked
 	// sf.Mode to the (empty) --mode for a revalidate run; restore it so the

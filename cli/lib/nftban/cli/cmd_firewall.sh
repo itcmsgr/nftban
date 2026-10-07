@@ -374,20 +374,58 @@ _firewall_publish_conf() {
 #   publication  -> _firewall_publish_conf
 #   orchestration-> nftban_boot_projection_generate (lib/boot_projection.sh)
 # which is why it is ~20 lines rather than a parallel implementation.
+# v1.235 R-DEC: every verb that loads, replaces or publishes NFTBan rules refuses
+# while the per-boot emergency bypass (kernel parameter nftban=disabled) is
+# active. Fail closed: if the shared library cannot be loaded, the exact-word
+# check is done here, so a missing library can never skip the bypass.
+# v1.235 D10: while a commit-confirm rollback has FAILED, no other path may load or
+# publish rules (the kernel state is kept for recovery). Retrying the rollback is exempt.
+_fw_cc_guard() {
+    [[ -e "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/commit-confirm.rollback-failed" ]] || return 0
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null || { echo "REFUSED: $1: a commit-confirm rollback FAILED" >&2; return 1; }
+    cc_refuse_if_rollback_failed "$1"
+}
+
+_fw_bypass_guard() {
+    if ! declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
+        nftban_refuse_under_bypass "$1"
+        return
+    fi
+    local -a _w=()
+    local _x
+    IFS=" " read -r -a _w < /proc/cmdline 2>/dev/null || return 0
+    for _x in "${_w[@]}"; do
+        if [[ "$_x" == "nftban=disabled" ]]; then
+            echo "REFUSED: $1 — EMERGENCY BYPASS ACTIVE for this boot (kernel parameter nftban=disabled)." >&2
+            return 1
+        fi
+    done
+    return 0
+}
+
 _firewall_render_boot() {
-    local quiet="false" arg
+    local quiet="false" arg inert="false"
     for arg in "$@"; do
         case "$arg" in
             --quiet|-q) quiet="true" ;;
+            --inert) inert="true" ;;
             --help|-h)
                 cat <<'RBHELP'
-Usage: nftban firewall render-boot [--quiet]
+Usage: nftban firewall render-boot [--quiet] [--inert]
 
 Generate the persistent boot projection from the canonical NFTBan firewall
 schema and publish it atomically. Does NOT load the ruleset into the kernel.
 
   renders   /usr/lib/nftban/templates/nftables.conf.tpl
   publishes /etc/nftban/generated/nftban-boot.nft
+
+  --inert   publish the INERT projection (no NFTBan table; used while NFTBan
+            is disabled — v1.235). `nftban enable` re-publishes the active one.
 
 Use `nftban firewall rebuild` to render AND apply a ruleset.
 RBHELP
@@ -404,6 +442,36 @@ RBHELP
 
     local schema="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
     local target; target="$(nftban_boot_projection_path)"
+
+    # v1.235 row 486 (owner U1): while the STORED choice is disabled, every publication
+    # is inert, including the installer's render-boot, so an upgrade of a disabled NFTBan
+    # can never make it load at the next boot.
+    # Fail closed: if the stored choice cannot be read, nothing is published (an active
+    # projection published while disabled would undo `disable` at the next boot).
+    if [[ "$inert" != "true" ]]; then
+        if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" || true
+        fi
+        if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+            echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT published; the previous boot path is unchanged" >&2
+            return 1
+        fi
+        if ! nftban_master_switch_on; then
+            inert="true"
+            [[ "$quiet" == "false" ]] && echo "NFTBan is disabled (stored choice): publishing the INERT projection"
+        fi
+    fi
+
+    if [[ "$inert" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Publishing INERT boot projection (no NFTBan table at boot)..."
+        if ! nftban_boot_projection_publish_inert "$target"; then
+            echo "ERROR: inert boot projection was NOT published — the previous boot path is unchanged" >&2
+            return 1
+        fi
+        [[ "$quiet" == "false" ]] && echo "  published (inert): $target"
+        return 0
+    fi
 
     [[ "$quiet" == "false" ]] && echo "Rendering boot projection from canonical schema..."
     if ! nftban_boot_projection_generate "$schema" "$target"; then
@@ -451,6 +519,26 @@ _firewall_rebuild_refresh_boot_projection() {
         # Pre-template legacy config: nothing was rendered, so there is no complete
         # render to publish. Reported, never silently skipped.
         echo "WARNING: boot projection NOT refreshed — legacy pre-template config has no rendered ruleset" >&2
+        echo failed; return 0
+    fi
+    # v1.235 row 486 (owner U1): while the STORED choice is disabled, the projection
+    # stays INERT, so a manual rebuild of a disabled NFTBan applies rules for the running
+    # system only and cannot make NFTBan come back by itself at the next boot.
+    # Fail closed, as in render-boot: an unreadable stored choice never publishes.
+    if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >&2 || true
+    fi
+    if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
+        echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT refreshed" >&2
+        echo failed; return 0
+    fi
+    if ! nftban_master_switch_on; then
+        if nftban_boot_projection_publish_inert "$bp" >&2; then
+            echo "WARNING: NFTBan is DISABLED (stored choice): the rules just loaded apply until the next reboot only; boot projection kept INERT. Run 'nftban enable' to make them persistent." >&2
+            echo refreshed; return 0
+        fi
+        echo "ERROR: NFTBan is disabled but the INERT boot projection could not be published" >&2
         echo failed; return 0
     fi
     if nftban_boot_projection_publish "$loaded" "$bp" >&2; then
@@ -727,21 +815,29 @@ nftban_cmd_firewall() {
             ;;
         reload)
             shift
+            _fw_bypass_guard "firewall reload" || return 1
+            _fw_cc_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
             firewall_reload "$@"
             ;;
         rebuild)
             shift
+            _fw_bypass_guard "firewall rebuild" || return 1
+            _fw_cc_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
             ;;
         render-boot)
             # P12-FPA: render + publish the boot projection WITHOUT loading it.
             shift
+            _fw_bypass_guard "firewall render-boot" || return 1
+            _fw_cc_guard "firewall render-boot" || return 1
             _firewall_render_boot "$@"
             ;;
         reset)
             shift
+            _fw_bypass_guard "firewall reset" || return 1
+            _fw_cc_guard "firewall reset" || return 1
             firewall_reset "$@"
             ;;
         conflicts)
@@ -758,7 +854,34 @@ nftban_cmd_firewall() {
             ;;
         restore)
             shift
+            _fw_bypass_guard "firewall restore" || return 1
+            _fw_cc_guard "firewall restore" || return 1
             firewall_restore "$@"
+            ;;
+        confirm)
+            # v1.235 commit-confirm: confirm the pending `rebuild --confirm` apply.
+            shift
+            _fw_bypass_guard "firewall confirm" || return 1
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" || return 1
+            cc_confirm "${1:-}"
+            ;;
+        rollback)
+            # v1.235 commit-confirm: roll back the pending apply now (--auto: deadline unit;
+            # --boot: boot unit; --abandon: operator clears a FAILED rollback after recovery).
+            shift
+            _fw_bypass_guard "firewall rollback" || return 1
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" || return 1
+            local _cc_id="" _cc_mode="manual" _cc_a
+            for _cc_a in "$@"; do
+                case "$_cc_a" in
+                    --auto|--boot) _cc_mode="$_cc_a" ;;
+                    --abandon)     _cc_mode="abandon" ;;
+                    *)             _cc_id="$_cc_a" ;;
+                esac
+            done
+            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"; else cc_rollback "$_cc_id" "$_cc_mode"; fi
             ;;
         record)
             shift
@@ -771,6 +894,8 @@ nftban_cmd_firewall() {
             ;;
         takeover)
             shift
+            _fw_bypass_guard "firewall takeover" || return 1
+            _fw_cc_guard "firewall takeover" || return 1
             nftban_ssh_pre_rebuild_lockout_guard takeover "$@" || true
             firewall_takeover "$@"
             ;;
@@ -3881,6 +4006,9 @@ _firewall_rebuild_core() {
     local force=false
     local quiet=false
     local use_new=false
+    # v1.235 commit-confirm (row 486 section 4): --confirm[=SECONDS] arms an automatic rollback
+    # BEFORE the load and publishes the boot projection only at confirm.
+    local _cc_mode=false _cc_grace=""
     # v1.228.5: execution context for the durable whitelist reconcile. PASSED by the
     # caller, never inferred. The installer runs rebuild BEFORE services.StartDaemon
     # by design, and AddSessionWhitelist writes 00-session.conf AFTER that rebuild —
@@ -3896,6 +4024,10 @@ _firewall_rebuild_core() {
                 force=true
                 shift
                 ;;
+            --confirm)
+                _cc_mode=true; shift ;;
+            --confirm=*)
+                _cc_mode=true; _cc_grace="${1#--confirm=}"; shift ;;
             --quiet|-q)
                 quiet=true
                 shift
@@ -4259,8 +4391,18 @@ _firewall_rebuild_core() {
     # nftban table before this load — see scripts/ci/check-nft-atomicity.sh.
     [[ "$quiet" == "false" ]] && echo "  [5/12] Loading new schema (atomic single transaction)..."
 
+    if [[ "$_cc_mode" == "true" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" || { echo "ERROR: commit-confirm engine not available" >&2; return 1; }
+        [[ -n "$_cc_grace" ]] || _cc_grace="$(cc_grace_default)"
+        if ! [[ "$_cc_grace" =~ ^[0-9]+$ && "$_cc_grace" -ge 30 ]]; then
+            echo "ERROR: --confirm=SECONDS must be an integer >= 30" >&2; return 1
+        fi
+        cc_apply_begin "$_cc_grace" || return 1
+    fi
     if ! nft -f "$load_conf" 2>&1; then
         echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
+        [[ "$_cc_mode" == "true" ]] && cc_apply_abort
         echo "Try: nftban firewall reset --force" >&2
         # v1.96: APPLY_FAILED — validated config failed to load (may be transient)
         if declare -f _rebuild_marker_write &>/dev/null; then
@@ -4476,7 +4618,18 @@ _firewall_rebuild_core() {
     # Placed AFTER steps 6-12 on purpose: the nft -c of the candidate must not
     # lengthen the post-load window in which bans/whitelist are re-added.
     local _boot_proj_state
+    if [[ "$_cc_mode" == "true" ]]; then
+        # Pending candidate: the boot projection is published only at confirm.
+        _boot_proj_state="pending-confirm"
+        cc_apply_loaded "$load_conf" || echo "WARNING: candidate projection could not be staged; confirm will fail and the rollback will run" >&2
+    else
     _boot_proj_state=$(_firewall_rebuild_refresh_boot_projection "$source_file" "$load_conf" "$quiet")
+        # v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
+        # shellcheck source=/dev/null
+        if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
+            cc_record_applied_baseline "$load_conf" || echo "WARNING: applied baseline not recorded (rebuild --confirm will refuse until a rebuild records one)" >&2
+        fi
+    fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
@@ -4712,7 +4865,7 @@ _firewall_rebuild_core() {
     # measured: the next boot or nftables.service restart silently reverts ports.
     # Anything other than the two known-good words (including an empty answer from
     # a helper that died) is a failure, never a pass.
-    if [[ "${_boot_proj_state:-}" != "refreshed" && "${_boot_proj_state:-}" != "not-established" ]]; then
+    if [[ "${_boot_proj_state:-}" != "refreshed" && "${_boot_proj_state:-}" != "not-established" && "${_boot_proj_state:-}" != "pending-confirm" ]]; then
         echo "Final status: DEGRADED (boot projection not refreshed: ${_boot_proj_state:-no answer})" >&2
         echo "  The running firewall was rebuilt, but the boot projection" >&2
         echo "  still holds the previous ruleset; a reboot would load it." >&2
@@ -4906,9 +5059,39 @@ firewall_reset() {
         return 1
     fi
 
+    # v1.235 (owner 2026-10-07, contract 8.1): reset is ONE kernel transaction. The schema
+    # resets the NFTBan tables INSIDE the loaded file, so a failed load leaves the previous
+    # NFTBan tables exactly as they were; foreign tables are never touched; nothing is
+    # deleted on failure, and the services return to the state they had before.
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    local _rs_err
+    if [[ ! -r "$nftban_conf" ]]; then
+        echo "REFUSED: firewall reset: the NFTBan schema $nftban_conf is missing or unreadable; nothing was changed." >&2
+        echo "  Run 'nftban firewall rebuild' to render it." >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
+    fi
+    if ! grep -qxE '[[:space:]]*delete table ip nftban' "$nftban_conf" \
+       || ! grep -qxE '[[:space:]]*delete table ip6 nftban' "$nftban_conf"; then
+        echo "REFUSED: firewall reset: $nftban_conf does not reset the NFTBan tables inside the file" >&2
+        echo "  (legacy pre-template schema); loading it would merge into the live tables. Nothing was changed." >&2
+        echo "  Run 'nftban firewall rebuild' to render the current schema." >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
+    fi
+    if ! _rs_err=$(nft -c -f "$nftban_conf" 2>&1); then
+        echo "REFUSED: firewall reset: the NFTBan schema does not validate (nft -c); nothing was changed:" >&2
+        printf '  %s\n' "$_rs_err" >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
+    fi
+
     [[ "$quiet" == "false" ]] && echo "Performing complete firewall reset..."
 
-    # Step 1: Stop nftban services temporarily
+    # Step 1: Stop nftban services temporarily, remembering which were active.
+    local _rs_timer_was="inactive" _rs_daemon_was="inactive"
+    systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null && _rs_timer_was="active"
+    systemctl is-active --quiet nftband 2>/dev/null && _rs_daemon_was="active"
     [[ "$quiet" == "false" ]] && echo "  [1/11] Stopping NFTBan services..."
     systemctl stop nftban-maintenance.timer 2>/dev/null || true
     systemctl stop nftband 2>/dev/null || true
@@ -4921,21 +5104,27 @@ firewall_reset() {
     [[ "$quiet" == "false" ]] && echo "  [2/11] Backing up current ruleset..."
     nft list ruleset > "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
 
-    # Step 3: Remove NFTBan tables (preserves Docker/cPanel/foreign tables)
-    [[ "$quiet" == "false" ]] && echo "  [3/11] Removing NFTBan tables..."
-    nft delete table ip nftban 2>/dev/null || true
-    nft delete table ip6 nftban 2>/dev/null || true
+    # Step 3 (v1.235): no separate delete. The schema replaces the NFTBan tables inside
+    # the one transaction of step 4 (check-nft-atomicity.sh no longer exempts reset).
+    [[ "$quiet" == "false" ]] && echo "  [3/11] NFTBan tables are replaced inside the step-4 transaction"
 
-    # Step 4: Reload NFTBan schema
+    # Step 4: Load the clean NFTBan schema (one transaction)
     [[ "$quiet" == "false" ]] && echo "  [4/11] Loading clean NFTBan schema..."
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-    if [[ -f "$nftban_conf" ]]; then
-        if ! nft -f "$nftban_conf" 2>&1; then
-            echo "ERROR: Failed to load NFTBan schema" >&2
-            echo "Restoring backup..." >&2
-            nft -f "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
-            return 1
+    if ! nft -f "$nftban_conf" 2>&1; then
+        echo "ERROR: firewall reset: the NFTBan schema failed to load. The transaction was not committed:" >&2
+        echo "  the previous NFTBan tables are unchanged and no table was deleted." >&2
+        local _rs_tables
+        if _rs_tables=$(nft list tables 2>&1); then
+            echo "  Kernel now: ip nftban $(grep -qx 'table ip nftban' <<<"$_rs_tables" && echo present || echo ABSENT), ip6 nftban $(grep -qx 'table ip6 nftban' <<<"$_rs_tables" && echo present || echo ABSENT)" >&2
+        else
+            echo "  Kernel now: UNKNOWN (the kernel table listing failed)" >&2
         fi
+        [[ "$_rs_timer_was" == "active" ]] && { systemctl start nftban-maintenance.timer 2>/dev/null || true; }
+        [[ "$_rs_daemon_was" == "active" ]] && { systemctl start nftband 2>/dev/null || true; }
+        echo "  Services returned to their previous state (nftband: ${_rs_daemon_was}, maintenance timer: ${_rs_timer_was})." >&2
+        echo "  The pre-reset ruleset dump is kept for inspection only (never loaded automatically): $backup_dir/ruleset_$timestamp.nft" >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
     fi
 
     # Step 5: Re-sync system whitelist (lockout protection)
@@ -4992,9 +5181,10 @@ firewall_reset() {
     fi
 
     # Step 11: Restart services
-    [[ "$quiet" == "false" ]] && echo "  [11/11] Restarting NFTBan services..."
-    systemctl start nftban-maintenance.timer 2>/dev/null || true
-    systemctl start nftband 2>/dev/null || true
+    # Back to the state they had before the reset; never an unrequested start.
+    [[ "$quiet" == "false" ]] && echo "  [11/11] Restoring NFTBan services to their previous state..."
+    [[ "$_rs_timer_was" == "active" ]] && { systemctl start nftban-maintenance.timer 2>/dev/null || true; }
+    [[ "$_rs_daemon_was" == "active" ]] && { systemctl start nftband 2>/dev/null || true; }
 
     # v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD: reset loaded a clean schema, so
     # the port_allow_* sets are empty. Grants go through the daemon, which was just
@@ -6151,6 +6341,14 @@ Options:
   --force, -f   Skip confirmation prompts
   --quiet, -q   Suppress progress output
   --use-new     Prefer .rpmnew config over existing (after RPM upgrade)
+  --confirm[=SECONDS]
+                Apply as a PENDING change (commit-confirm, default 300 s,
+                NFTBAN_CONFIRM_GRACE_SECONDS). An automatic rollback to the last
+                applied configuration is armed BEFORE the change; run
+                `nftban firewall confirm <apply_id>` after testing a NEW connection,
+                or it rolls back at the deadline. Only this option has automatic
+                rollback: a plain rebuild, reload, restore, port change or upgrade
+                does not.
   -h, --help    Show this help message
 
 Examples:

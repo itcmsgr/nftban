@@ -738,6 +738,11 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		// the COMMITTED/DEGRADED state selection itself is unchanged.
 		log.Result("%s", committedSummaryLine(log.WarnCount(), log.LogPath()))
 		log.Result("[NFTBan] State: COMMITTED")
+		// v1.235 row 486: a disabled or bypassed run is COMMITTED on its disabled
+		// invariants, never on runtime health; say so explicitly.
+		if r := globalPhaseData.skipReason(); r != "" {
+			log.Result("[NFTBan] %s", r)
+		}
 	case state.StateAppliedUnverified:
 		emitAppliedUnverifiedBlock(sf, log)
 

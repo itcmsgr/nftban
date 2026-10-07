@@ -46,15 +46,40 @@ import (
 // include names a file that was never created.
 func RenderBoot(exec executor.Executor, log *logging.Logger) error {
 	log.Info("rendering the boot projection from the canonical schema (render-only, no load)")
+	if err := runRenderBoot(exec, false); err != nil {
+		return fmt.Errorf("boot projection render failed %w", err)
+	}
+	log.Info("boot projection published")
+	return nil
+}
 
-	res := exec.Run(fhs.NftbanCLI, "firewall", "render-boot", "--quiet")
+// RenderBootInert runs "nftban firewall render-boot --inert": it publishes the
+// INERT boot projection (no NFTBan table) through the same single shell
+// publication authority. v1.235 row 486 (owner U1): while NFTBan is disabled
+// (stored choice) an install/upgrade keeps the projection inert, so a disabled
+// NFTBan never loads at the next boot. Same failure contract as RenderBoot.
+func RenderBootInert(exec executor.Executor, log *logging.Logger) error {
+	log.Info("publishing the INERT boot projection (NFTBan disabled: no NFTBan table at boot)")
+	if err := runRenderBoot(exec, true); err != nil {
+		return fmt.Errorf("inert boot projection publish failed %w", err)
+	}
+	log.Info("inert boot projection published")
+	return nil
+}
+
+// runRenderBoot is the ONE delegation to the shell publication authority.
+func runRenderBoot(exec executor.Executor, inert bool) error {
+	args := []string{"firewall", "render-boot", "--quiet"}
+	if inert {
+		args = append(args, "--inert")
+	}
+	res := exec.Run(fhs.NftbanCLI, args...)
 	if res.ExitCode != 0 {
 		out := strings.TrimSpace(res.Stderr)
 		if out == "" {
 			out = strings.TrimSpace(res.Stdout)
 		}
-		return fmt.Errorf("boot projection render failed (exit %d): %s", res.ExitCode, out)
+		return fmt.Errorf("(exit %d): %s", res.ExitCode, out)
 	}
-	log.Info("boot projection published")
 	return nil
 }

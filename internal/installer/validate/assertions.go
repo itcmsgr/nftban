@@ -569,6 +569,8 @@ const (
 	// Distinct from NOT_CONVERGED (ran and failed) and UNVERIFIED (ran, leg
 	// unobservable). Replaces the EMPTY string for that condition.
 	convergenceNotEvaluated = "NOT_EVALUATED"
+	// v1.235 row 486: NFTBan disabled or bypassed; no ruleset was loaded on purpose.
+	convergenceNotApplicableDisabled = "NOT_APPLICABLE_DISABLED"
 )
 
 // assertPostUpdateConvergence (v1.230.0 Gate 6R) turns the post-update convergence
@@ -656,6 +658,11 @@ func assertPostUpdateConvergence(opts AssertionOpts, log *logging.Logger) Assert
 		r.Detail = "NOT_EVALUATED — this transaction path does not evaluate convergence; the run terminates APPLIED_UNVERIFIED, NOT COMMITTED. This is NOT a convergence claim"
 		log.Warn("ASSERT post_update_convergence_verified: NOT_EVALUATED — convergence was not evaluated by this path; recorded as not-evaluated, NOT as VERIFIED")
 
+	case convergenceNotApplicableDisabled:
+		// v1.235 row 486: the disabled invariants are asserted separately
+		// (RunDisabledAssertions); there is no convergence to verify, and this is
+		// never recorded as VERIFIED.
+		log.Info("ASSERT post_update_convergence_verified: NOT_APPLICABLE_DISABLED: NFTBan disabled or bypassed; no ruleset loaded by design")
 	case convergenceUnverified:
 		r.Detail = "UNVERIFIED — a convergence leg could not be OBSERVED; absence of evidence, recorded as neither pass nor failure"
 		log.Warn("ASSERT post_update_convergence_verified: UNVERIFIED — convergence could not be observed on this path; NOT recorded as VERIFIED")

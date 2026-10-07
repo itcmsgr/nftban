@@ -92,6 +92,10 @@ classify() { # $1=path -> class
         # bytes are asserted, modelled on a source, or are literal expected output
         *testdata/*|*/fixtures/*|*.golden.json|*.fixture|*expected.report|*expected.exit)
             echo FIXTURE_BYTE_SENSITIVE; return ;;
+        # v1.235 row 486: must stay byte-identical to the boot-projection publisher's
+        # inert output (header is frozen); asserted by row486_disable_bypass_v1235_test B2.
+        cli/lib/nftban/data/nftban-boot-inert.nft)
+            echo FIXTURE_BYTE_SENSITIVE; return ;;
     esac
     case "$f" in
         # no legal/safe inline comment header

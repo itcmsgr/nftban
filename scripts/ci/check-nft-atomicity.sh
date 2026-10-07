@@ -83,7 +83,12 @@ fi
 # `nft flush ruleset` (destroying Docker/raw/operator tables) and then loaded the whole
 # backup. It now extracts only the nftban tables, validates that exact transaction with
 # `nft -c -f`, and loads it in ONE `nft -f`, so it is held to the rule like any writer.
-REBUILD_EXEMPT='firewall_reset _restore_previous_firewall'
+#
+# v1.235 (owner 2026-10-07): firewall_reset REMOVED from this list. It deleted the NFTBan
+# tables BEFORE loading the schema, so a failed load left the host without NFTBan tables,
+# then merged a whole-ruleset dump over the foreign tables. It now validates the schema
+# (which resets the NFTBan tables inside the file) and loads it in ONE `nft -f`.
+REBUILD_EXEMPT='_restore_previous_firewall'
 
 REBUILD_VIOLATIONS="$(
     awk -v exempt="$REBUILD_EXEMPT" '

@@ -1,0 +1,27 @@
+# =============================================================================
+# NFTBan - early boot state guard (undo a bypass swap; a disabled NFTBan never loads at boot)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-boot-normal.service"
+# meta:type="systemd"
+# meta:tier="CORE"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-10-06"
+# meta:description="v1.235 row 486 (U1 + R-DEC). early boot state guard (undo a bypass swap; a disabled NFTBan never loads at boot). Runs /usr/lib/nftban/helpers/nftban-boot-early.sh normal. DefaultDependencies=no and no ordering on /var or the network, so it never delays the distro nftables.service; it never touches nftables.service, the distro config, foreign tables or NFTBAN_ENABLED."
+# =============================================================================
+
+[Unit]
+Description=NFTBan early boot state guard (undo a bypass swap; a disabled NFTBan never loads at boot)
+Documentation=man:nftban(8)
+DefaultDependencies=no
+ConditionKernelCommandLine=!nftban=disabled
+Before=nftables.service sysinit.target
+RequiresMountsFor=/etc/nftban/generated /usr/lib/nftban
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/nftban/helpers/nftban-boot-early.sh normal
+
+[Install]
+WantedBy=sysinit.target

@@ -50,7 +50,6 @@ readonly NFTBAN_TIMERS=(
     "nftban-queue.timer"
     "nftban-suricata-update.timer"
     "nftban-snapshot.timer"
-    "nftban-rollback.timer"
     "nftban-update-check.timer"
     "nftban-update-apply.timer"
     "nftban-watchdog.timer"
@@ -76,7 +75,6 @@ declare -A TIMER_DESC=(
     ["nftban-queue.timer"]="Ban queue processing (every 5m)"
     ["nftban-suricata-update.timer"]="Suricata IDS rules update"
     ["nftban-snapshot.timer"]="Config/state snapshot creation"
-    ["nftban-rollback.timer"]="Rollback availability check"
     ["nftban-update-check.timer"]="Daily update check (03:30 AM)"
     ["nftban-update-apply.timer"]="Weekly auto-update apply (Sunday 4:00 AM)"
     ["nftban-watchdog.timer"]="System watchdog (every 120s)"
@@ -449,7 +447,6 @@ TIMERS:
   nftban-queue.timer               Ban queue processing
   nftban-suricata-update.timer     Suricata IDS rules update
   nftban-snapshot.timer            Config/state snapshot creation
-  nftban-rollback.timer            Rollback availability check
   nftban-update-check.timer        Daily update check (03:30 AM)
   nftban-update-apply.timer        Weekly auto-update apply (Sunday 4:00 AM)
   nftban-watchdog.timer            System watchdog (every 120s)

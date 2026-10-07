@@ -1,0 +1,29 @@
+# =============================================================================
+# NFTBan - commit-confirm boot decision (v1.235, row 486 section 4.5)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-commit-confirm-boot.service"
+# meta:type="systemd"
+# meta:tier="CORE"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-10-06"
+# meta:description="If the host rebooted while a `nftban firewall rebuild --confirm` apply was still PENDING, decide it BEFORE nftband or any NFTBan timer can sync: a confirm that passed its commit point (boot projection = candidate) is completed; otherwise the configuration change set is rolled back to the applied baseline (the old boot projection already loaded the old rules). The decision is durable, so an unconfirmed change cannot come back through daemon sync or maintenance."
+# =============================================================================
+
+[Unit]
+Description=NFTBan commit-confirm boot decision (pending apply)
+Documentation=man:nftban(8)
+DefaultDependencies=no
+ConditionKernelCommandLine=!nftban=disabled
+ConditionPathExists=/var/lib/nftban/state/commit-confirm.state
+After=local-fs.target
+Before=sysinit.target nftband.socket nftband.service
+RequiresMountsFor=/var/lib/nftban /etc/nftban
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nftban firewall rollback --boot
+
+[Install]
+WantedBy=sysinit.target
