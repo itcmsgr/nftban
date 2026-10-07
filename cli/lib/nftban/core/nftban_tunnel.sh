@@ -561,7 +561,15 @@ nftban_tunnel_scan() {
     trap 'rm -rf "$tmp_dir"' RETURN
 
     local all_records="${tmp_dir}/all_records.txt"
-    nftban_tunnel_parse_dns_logs "$TUNNEL_DNS_TYPE" "$TUNNEL_DNS_LOG_PATH" "$since_ts" > "$all_records" 2>/dev/null || true
+    nftban_tunnel_parse_dns_logs "$TUNNEL_DNS_TYPE" "$TUNNEL_DNS_LOG_PATH" "$since_ts" > "$all_records" 2>"${tmp_dir}/parse.err" || true
+    # v1.235: lines whose timestamp could not be read are left out of the window and
+    # reported here, never silently counted or silently dropped.
+    local _unparsed
+    _unparsed=$(grep -m1 '^UNPARSED ' "${tmp_dir}/parse.err" 2>/dev/null || true)
+    if [[ -n "$_unparsed" ]]; then
+        [[ "$quiet" == "false" ]] && echo "WARNING: ${_unparsed#UNPARSED }" >&2
+        echo "$ts_human|WARN|${_unparsed#UNPARSED }" >> "$log_file" 2>/dev/null || true
+    fi
 
     local total_records
     total_records=$(wc -l < "$all_records" 2>/dev/null || echo "0")
