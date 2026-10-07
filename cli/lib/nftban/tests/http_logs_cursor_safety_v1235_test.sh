@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-07"
-# meta:description="BUG-HTTP-READ-INCREMENTAL-STAT-FAILURE-PERSISTS-0-0-TAIL-SKIP-AND-KEY-COLLISION parts (b) and (c1). Drives the REAL nftban_http_read_incremental (lib/nftban_http_logs.sh) with a PATH stat stub. Arms: B1 a stat failure emits nothing, returns 0 and leaves the cursor file byte-identical (before: size=0 inode=0 persisted as 0:0); B2 the next normal read emits ONLY the lines appended since, in forward and in default (tail) mode - no replay from the beginning; C1 a path whose cursor key would exceed NAME_MAX now persists (key <= 200 bytes, deterministic): its lines are read once and the next read emits only new lines (before: the cursor and the .rd temp file names were too long, so such a log was never read at all); C2 an ordinary path keeps exactly its old key (no migration); P1 PortScan's backlog warning finds the cursor of such a long path (it uses the shared key). Set HCS_SUBJECT_ROOT to an older tree (e.g. origin/main before this change): B1, B2 and C1 FAIL there."
+# meta:description="BUG-HTTP-READ-INCREMENTAL-STAT-FAILURE-PERSISTS-0-0-TAIL-SKIP-AND-KEY-COLLISION parts (a), (b) and (c1). Drives the REAL nftban_http_read_incremental (lib/nftban_http_logs.sh) with a PATH stat stub. Arms: B1 a stat failure emits nothing, returns 0 and leaves the cursor file byte-identical (before: size=0 inode=0 persisted as 0:0); B2 the next normal read emits ONLY the lines appended since, in forward and in default (tail) mode - no replay from the beginning; C1 a path whose cursor key would exceed NAME_MAX now persists (key <= 200 bytes, deterministic): its lines are read once and the next read emits only new lines (before: the cursor and the .rd temp file names were too long, so such a log was never read at all); C2 an ordinary path keeps exactly its old key (no migration); P1 PortScan's backlog warning finds the cursor of such a long path (it uses the shared key); T-B0/T-Bm1/T-Bp1 (part a) the tail branch starts at a record start - exact boundary, boundary-1 and boundary+1 - every emitted line is a complete record and the skipped range is counted (NFTBAN_HTTP_TAIL_SKIPPED_BYTES + stderr). Set HCS_SUBJECT_ROOT to an older tree (e.g. origin/main before this change): B1, B2 and C1 FAIL there."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_http_logs.sh,cli/lib/nftban/core/nftban_portscan_classic.sh"
 # meta:inventory.binaries="bash,stat,mktemp,sha256sum,grep"
 # meta:inventory.env_vars="HCS_SUBJECT_ROOT"
@@ -83,6 +83,28 @@ for mode in forward tail; do
     [[ "$out" == "$(lines 4 5)" ]] && ok "B2 ${mode}: the next read emits ONLY the appended lines (no replay)" \
         || no "B2 ${mode}: replay or loss after the stat failure" "got '${out//$'\n'/ }'"
 done
+
+# T — part (a): the collector TAIL branch starts at a RECORD start, never mid-record, and the
+# jumped range is counted. Fixed 20-byte records "R<18 digits>\n" x 50 = 1000 bytes; MAX is
+# chosen so tail = size - MAX lands exactly where each arm needs it. No cursor yet (start 0).
+tf="$SB/tail_src.log"; : > "$tf"; for i in $(seq 0 49); do printf 'R%018d\n' "$i" >> "$tf"; done
+tail_arm(){ # <arm> <MAX> <expected first record index> <expected aligned offset>
+    local arm="$1" max="$2" want="$3" al="$4" out first bad rep
+    rm -rf "$SB/off_t_$arm"
+    out="$(env PATH="$SB/bin:$PATH" NFTBAN_DATA_DIR="$SB" NFTBAN_HTTP_LOG_OFFSET_DIR="$SB/off_t_$arm" \
+        NFTBAN_HTTP_LOG_READ_FORWARD=false NFTBAN_HTTP_LOG_MAX_BYTES="$max" LIB="$LIB" F="$tf" bash -c '
+        source "$LIB/lib/nftban_http_logs.sh" >/dev/null 2>&1 || exit 9
+        nftban_http_read_incremental "$F"; echo "SKIPPED=${NFTBAN_HTTP_TAIL_SKIPPED_BYTES:-unset}" >&2' 2>"$SB/t.err")"
+    first="${out%%$'\n'*}"
+    bad="$(grep -cvE '^R[0-9]{18}$' <<<"$out" || true)"
+    rep="$(grep -o 'SKIPPED=[0-9a-z]*' "$SB/t.err")"
+    if [[ "$first" == "$(printf 'R%018d' "$want")" && "$bad" == 0 && "$rep" == "SKIPPED=$al" ]] && grep -q "tail read skipped $al B" "$SB/t.err"; then
+        ok "T-${arm}: first record #${want}, every line a complete record, skipped ${al} B reported"
+    else no "T-${arm}" "first='${first}' incomplete_lines=${bad} ${rep:-no-counter} stderr='$(grep -m1 'tail read' "$SB/t.err")'"; fi
+}
+tail_arm B0   300 35 700    # tail=700, byte[699]=\n: already a record start, nothing more dropped
+tail_arm Bm1  301 35 700    # tail=699 (the newline ending record 34): the next record start is 700
+tail_arm Bp1  299 36 720    # tail=701 (one byte into record 35): record 35 is partial, dropped
 
 # C1 — a path whose plain key ('/' -> '_') exceeds NAME_MAX.
 long="$SB"; for i in 1 2 3 4 5 6 7; do long="$long/dir_with_a_fairly_long_name_number_$i"; done
