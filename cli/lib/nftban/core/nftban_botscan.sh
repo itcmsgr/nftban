@@ -2853,7 +2853,7 @@ nftban_botscan_duration_truth() {
         fi
     done < "$f"
     if (( n == 0 )); then echo "Ban duration:   no BotScan ban recorded yet"; return 0; fi
-    echo "Ban duration:   last ban requested ${last_req:-unknown (older record)}${last_req:+s}, enforced ${last_eff}s; ${longer} of ${withreq} bans with a recorded request were enforced longer than requested (daemon grey/ban mapping)"
+    echo "Ban duration:   last ban requested ${last_req:-unknown (older record)}${last_req:+s}, enforced ${last_eff}s; ${longer} of ${withreq} bans with a recorded request were enforced longer than requested (batch mode, production: BAN selects a class, <=1800 s -> grey 3600 s, >1800 s -> ban 86400 s; direct mode honours BAN)"
     return 0
 }
 
