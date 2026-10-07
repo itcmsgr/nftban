@@ -33,10 +33,52 @@ cc_utc()   { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "?"; }
 cc_sha()   { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 
 # Grace: NFTBAN_CONFIRM_GRACE_SECONDS; the misnamed legacy key is a deprecated alias.
+# The three commit-confirm knobs of conf.d/recovery.conf, with the precedence the
+# pre-v1.235 nftban-apply documented and honoured (v1.201.x RECOVERY_LEGACY_RECONCILE):
+#   default < recovery.conf < /etc/default/nftban (legacy) < recovery.conf.local
+#   (operator, via _source_local) < environment.
+# Read in a subshell so the files never leak variables into the calling CLI.
+# Sets CC_GRACE_CONF, CC_SSH_TEST, CC_SSH_PORT.
+cc_recovery_settings() {
+    local out
+    out=$(
+        e_g="${NFTBAN_REBOOT_GRACE_PERIOD:-}"; e_s="${NFTBAN_SSH_TEST_BEFORE_APPLY:-}"; e_p="${NFTBAN_SSH_TEST_PORT:-}"
+        rc="${CC_CONFIG}/conf.d/recovery.conf"
+        # shellcheck source=/dev/null
+        [[ -r "$rc" ]] && source "$rc" >/dev/null 2>&1
+        # shellcheck source=/dev/null
+        [[ -r "${CC_LEGACY_DEFAULTS:-/etc/default/nftban}" ]] && source "${CC_LEGACY_DEFAULTS:-/etc/default/nftban}" >/dev/null 2>&1
+        # shellcheck source=/dev/null
+        declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" >/dev/null 2>&1
+        declare -F _source_local >/dev/null 2>&1 && _source_local "${rc}.local" >/dev/null 2>&1
+        printf '%s %s %s' "${e_g:-${NFTBAN_REBOOT_GRACE_PERIOD:-300}}" \
+            "${e_s:-${NFTBAN_SSH_TEST_BEFORE_APPLY:-true}}" "${e_p:-${NFTBAN_SSH_TEST_PORT:-22}}"
+    )
+    IFS=' ' read -r CC_GRACE_CONF CC_SSH_TEST CC_SSH_PORT <<<"$out"
+    return 0
+}
+
 cc_grace_default() {
-    local g="${NFTBAN_CONFIRM_GRACE_SECONDS:-${NFTBAN_REBOOT_GRACE_PERIOD:-300}}"
+    cc_recovery_settings
+    local g="${NFTBAN_CONFIRM_GRACE_SECONDS:-${CC_GRACE_CONF:-300}}"
     [[ "$g" =~ ^[0-9]+$ && "$g" -ge 30 && "$g" -le 86400 ]] || g=300
     printf '%s' "$g"
+}
+
+# The pre-v1.235 nftban-apply probe, kept with its meaning (NFTBAN_SSH_TEST_BEFORE_APPLY,
+# NFTBAN_SSH_TEST_PORT): a LOCAL connect to 127.0.0.1:<port> right after the load.
+# It proves sshd still accepts on that port locally; it does NOT prove that a remote
+# client can reach SSH (loopback is always allowed). Returns 0 = passed or disabled.
+cc_ssh_probe() {
+    cc_recovery_settings
+    [[ "${CC_SSH_TEST:-true}" == "true" ]] || { echo "  SSH probe disabled (NFTBAN_SSH_TEST_BEFORE_APPLY=false)"; return 0; }
+    [[ "${CC_SSH_PORT:-}" =~ ^[0-9]+$ ]] || { echo "  SSH probe: invalid NFTBAN_SSH_TEST_PORT='${CC_SSH_PORT:-}'" >&2; return 1; }
+    if timeout 3 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/${CC_SSH_PORT}" 2>/dev/null; then
+        echo "  SSH probe passed: 127.0.0.1:${CC_SSH_PORT} accepts (local check only; test a NEW remote connection before confirming)"
+        return 0
+    fi
+    echo "  SSH probe FAILED: nothing accepts on 127.0.0.1:${CC_SSH_PORT}" >&2
+    return 1
 }
 
 # key=value record I/O (atomic write)

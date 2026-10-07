@@ -309,6 +309,26 @@ else
     sed 's/^/      cc.out| /' "$SB/cc.out"
 fi
 
+# ---- recovery.conf SSH probe (pre-v1.235 nftban-apply behaviour, restored 2026-10-07)
+probe() { env -i PATH="/usr/bin:/bin" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" "$@" \
+    bash -c 'source "$1" >/dev/null 2>&1; cc_ssh_probe' _ "$CC" >/dev/null 2>&1; }
+fresh
+# a free local port: bind to 0, read it, release it (nothing listens there afterwards)
+_free=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()' 2>/dev/null || echo 1)
+rc=0; probe NFTBAN_SSH_TEST_PORT="$_free" || rc=$?
+[[ $rc -ne 0 ]] && ok "D26 SSH probe FAILS when nothing accepts on 127.0.0.1:<port>" || ko "D26 probe passed on a closed port ($_free)"
+rc=0; probe NFTBAN_SSH_TEST_BEFORE_APPLY=false NFTBAN_SSH_TEST_PORT="$_free" || rc=$?
+[[ $rc -eq 0 ]] && ok "D27 SSH probe disabled (NFTBAN_SSH_TEST_BEFORE_APPLY=false) -> no rollback trigger" || ko "D27 disabled probe returned $rc"
+if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(("127.0.0.1",0));s.listen(5);open("'"$SB"'/lport","w").write(str(s.getsockname()[1]));time.sleep(20)' &
+    _lp=$!; for _i in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$SB/lport" ]] && break; sleep 0.2; done
+    rc=0; probe NFTBAN_SSH_TEST_PORT="$(cat "$SB/lport" 2>/dev/null)" || rc=$?
+    kill "$_lp" 2>/dev/null || true; wait "$_lp" 2>/dev/null || true
+    [[ $rc -eq 0 ]] && ok "D28 SSH probe PASSES when a listener accepts on 127.0.0.1:<port>" || ko "D28 probe failed on a listening port"
+else
+    echo "  [NOT_EXECUTED] D28 listening-port arm (python3 not available)"
+fi
+
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"
 [[ $fail -eq 0 ]]
