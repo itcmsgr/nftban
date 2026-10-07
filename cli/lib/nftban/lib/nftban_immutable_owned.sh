@@ -373,54 +373,76 @@ nftban_forward_unmanaged_rules() {
     return $_nfu_rc
 }
 
+# _nfw_map_rule <fam> <rule> <uplinks> : the mapping of ONE unmanaged rule (plan lines).
+_nfw_map_rule() {
+    _m_fam="$1"; _m_rule="$2"; _m_up="$3"; _m_v=4
+    [ "$_m_fam" = ip6 ] && _m_v=6
+    case "$_m_rule" in
+        "ct state established,related accept"|"ct state related,established accept")
+            echo "COVERED by the NFTBan rule nftban:fwd:ct (return path)"
+            echo "DIFF bans are evaluated BEFORE the return path: an established flow with a banned peer is cut (owner Q1/Q2)"
+            return 0 ;;
+        "ip saddr "*" accept"|"ip6 saddr "*" accept")
+            _nfw_map_prefix "$_m_v" "$_m_rule" "$_m_up"; return 0 ;;
+        "iifname "*)
+            _nfw_map_iif "$_m_rule" "$_m_up"; return 0 ;;
+    esac
+    echo "UNMAPPED no safe equivalent is known for this rule"
+}
+
+_nfw_map_prefix() {  # <4|6> <rule> <uplinks>
+    _p_pfx=$(printf '%s' "$2" | awk '{print $3}')
+    if [ "$2" != "ip saddr $_p_pfx accept" ] && [ "$2" != "ip6 saddr $_p_pfx accept" ]; then
+        echo "UNMAPPED not a plain source-prefix accept"; return 0
+    fi
+    _p_devs=$(_nfw_route_dev "$1" "$_p_pfx")
+    _p_n=$(printf '%s\n' "$_p_devs" | grep -c . || true)
+    if [ "$_p_n" -ne 1 ]; then echo "UNMAPPED $_p_pfx is not the network of exactly one interface (found: ${_p_devs:-none})"; return 0; fi
+    if ! _nfw_recognised_bridge "$_p_devs"; then echo "UNMAPPED $_p_pfx belongs to $_p_devs, not a recognised and tested Docker bridge"; return 0; fi
+    if [ -z "$3" ]; then echo "UNMAPPED no default-route uplink to bind egress of $_p_devs to"; return 0; fi
+    echo "RECORD egress|$_p_devs"
+    for _p_u in $3; do echo "RECORD uplink|$_p_u"; done
+    echo "DIFF NOT EQUIVALENT: the old rule accepted every forwarded packet with source $_p_pfx, to ANY interface; the records accept only traffic from $_p_devs to the uplink(s) $3 (replies via the return path). Traffic from $_p_pfx to other interfaces (other bridges, VPN, LAN), and packets with source $_p_pfx arriving on another interface, will be DROPPED."
+}
+
+_nfw_map_iif() {  # <rule> <uplinks>
+    _i_words=$(printf '%s' "$1" | wc -w | tr -d ' ')
+    _i_iif=$(printf '%s' "$1" | awk '{gsub(/"/,"",$2); print $2}'); _i_oif=""
+    if [ "$_i_words" -eq 3 ] && [ "$(printf '%s' "$1" | awk '{print $3}')" = accept ]; then
+        :
+    elif [ "$_i_words" -eq 5 ] && [ "$(printf '%s' "$1" | awk '{print $3" "$5}')" = "oifname accept" ]; then
+        _i_oif=$(printf '%s' "$1" | awk '{gsub(/"/,"",$4); print $4}')
+    else
+        echo "UNMAPPED unsupported iifname rule shape"; return 0
+    fi
+    if ! _nfw_valid_ifname "$_i_iif" || ! _nfw_recognised_bridge "$_i_iif"; then
+        echo "UNMAPPED $_i_iif is not a recognised and tested Docker bridge"; return 0
+    fi
+    if [ -n "$_i_oif" ]; then
+        _nfw_valid_ifname "$_i_oif" || { echo "UNMAPPED invalid interface $_i_oif"; return 0; }
+        echo "RECORD egress|$_i_iif"; echo "RECORD uplink|$_i_oif"
+        echo "DIFF uplink $_i_oif becomes an uplink for EVERY allowed bridge, not only $_i_iif"
+        return 0
+    fi
+    [ -n "$2" ] || { echo "UNMAPPED no default-route uplink"; return 0; }
+    echo "RECORD egress|$_i_iif"
+    for _i_u in $2; do echo "RECORD uplink|$_i_u"; done
+    echo "DIFF NOT EQUIVALENT: the old rule accepted $_i_iif to ANY interface; the records accept $_i_iif to the uplink(s) $2 only"
+}
+
 # nftban_forward_migration_plan <rules> : prints the plan; rc 1 when any rule is UNMAPPED.
 #   RULE <fam> <rule> | RECORD <record> | COVERED <what> | DIFF <text> | UNMAPPED <why>
 nftban_forward_migration_plan() {
-    _nfp_rules="$1"; _nfp_bad=0
     _nfp_up=$(_nfw_uplinks | tr '\n' ' '); _nfp_up="${_nfp_up% }"
-    _nfp_tmp=$(printf '%s\n' "$_nfp_rules" | while IFS="$(printf '\t')" read -r fam rule; do
-        [ -n "$rule" ] || continue
-        echo "RULE $fam $rule"
-        v=4; [ "$fam" = ip6 ] && v=6
-        case "$rule" in
-            "ct state established,related accept"|"ct state related,established accept")
-                echo "COVERED by the NFTBan rule nftban:fwd:ct (return path)"
-                echo "DIFF bans are evaluated BEFORE the return path: an established flow with a banned peer is cut (owner Q1/Q2)" ;;
-            "ip saddr "*" accept"|"ip6 saddr "*" accept")
-                pfx=$(printf '%s' "$rule" | awk '{print $3}')
-                case "$rule" in "ip saddr $pfx accept"|"ip6 saddr $pfx accept") : ;; *) echo "UNMAPPED not a plain source-prefix accept"; continue ;; esac
-                devs=$(_nfw_route_dev "$v" "$pfx"); n=$(printf '%s\n' "$devs" | grep -c . || true)
-                if [ "$n" -ne 1 ]; then echo "UNMAPPED $pfx is not the network of exactly one interface (found: ${devs:-none})"; continue; fi
-                if ! _nfw_recognised_bridge "$devs"; then echo "UNMAPPED $pfx belongs to $devs, not a recognised and tested Docker bridge"; continue; fi
-                if [ -z "$_nfp_up" ]; then echo "UNMAPPED no default-route uplink to bind egress of $devs to"; continue; fi
-                echo "RECORD egress|$devs"
-                for u in $_nfp_up; do echo "RECORD uplink|$u"; done
-                echo "DIFF NOT EQUIVALENT: the old rule accepted every forwarded packet with source $pfx, to ANY interface; the records accept only traffic from $devs to the uplink(s) $_nfp_up (replies via the return path). Traffic from $pfx to other interfaces (other bridges, VPN, LAN), and packets with source $pfx arriving on another interface, will be DROPPED." ;;
-            "iifname "*)
-                iif=$(printf '%s' "$rule" | awk '{gsub(/"/,"",$2); print $2}'); oif=""
-                case "$rule" in
-                    "iifname "*" accept") [ "$(printf '%s' "$rule" | wc -w)" -eq 3 ] || { echo "UNMAPPED unsupported iifname rule shape"; continue; } ;;
-                    *" oifname "*" accept") oif=$(printf '%s' "$rule" | awk '{gsub(/"/,"",$4); print $4}')
-                        [ "$(printf '%s' "$rule" | wc -w)" -eq 5 ] || { echo "UNMAPPED unsupported iifname/oifname rule shape"; continue; } ;;
-                    *) echo "UNMAPPED unsupported iifname rule shape"; continue ;;
-                esac
-                _nfw_valid_ifname "$iif" && _nfw_recognised_bridge "$iif" || { echo "UNMAPPED $iif is not a recognised and tested Docker bridge"; continue; }
-                echo "RECORD egress|$iif"
-                if [ -n "$oif" ]; then
-                    _nfw_valid_ifname "$oif" || { echo "UNMAPPED invalid interface $oif"; continue; }
-                    echo "RECORD uplink|$oif"
-                    echo "DIFF uplink $oif becomes an uplink for EVERY allowed bridge, not only $iif"
-                else
-                    [ -n "$_nfp_up" ] || { echo "UNMAPPED no default-route uplink"; continue; }
-                    for u in $_nfp_up; do echo "RECORD uplink|$u"; done
-                    echo "DIFF NOT EQUIVALENT: the old rule accepted $iif to ANY interface; the records accept $iif to the uplink(s) $_nfp_up only"
-                fi ;;
-            *) echo "UNMAPPED no safe equivalent is known for this rule" ;;
-        esac
+    _nfp_tab=$(printf '\t')
+    _nfp_out=$(printf '%s\n' "$1" | while IFS="$_nfp_tab" read -r _nfp_fam _nfp_rule; do
+        [ -n "$_nfp_rule" ] || continue
+        echo "RULE $_nfp_fam $_nfp_rule"
+        _nfw_map_rule "$_nfp_fam" "$_nfp_rule" "$_nfp_up"
     done)
-    printf '%s\n' "$_nfp_tmp"
-    printf '%s\n' "$_nfp_tmp" | grep -q '^UNMAPPED ' && _nfp_bad=1
-    return $_nfp_bad
+    printf '%s\n' "$_nfp_out"
+    if printf '%s\n' "$_nfp_out" | grep -q '^UNMAPPED '; then return 1; fi
+    return 0
 }
 
 nftban_forward_plan_id() { printf '%s\n' "$1" | sha256sum | cut -c1-12; }
