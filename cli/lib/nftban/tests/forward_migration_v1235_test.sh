@@ -83,7 +83,7 @@ pre() {  # env... -> rc, stderr in $SB/err
     env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" "$@" \
         sh -c '. "$1"; nftban_forward_unmanaged_preflight' _ "$LIB" 2>"$SB/err" || rc=$?
 }
-plan_id() { sed -n 's/^nftban: migration plan \([0-9a-f]\{12\}\) .*/\1/p' "$SB/err" | head -1; }
+plan_id() { sed -n 's/^nftban: migration plan \([0-9a-f]\{12\}\) .*/\1/p;T;q' "$SB/err"; }
 STORE="$SB/etc/forward.d/forward.conf"
 
 fresh; chain ip "${SRV1[@]}"; pre
@@ -130,7 +130,7 @@ chain ip 'ip saddr 172.18.0.0/16 accept # handle 194' 'ip saddr 172.18.0.0/16 ac
 
 fresh; chain ip "${SRV1[@]}"; pre; pid=$(plan_id)
 cid=$(env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" \
-    bash -c 'source "$1/lib/nftban_forward.sh"; nftban_forward_migrate' _ "$LIBDIR" 2>/dev/null | sed -n 's/^Migration plan \([0-9a-f]\{12\}\) .*/\1/p' | head -1)
+    bash -c 'source "$1/lib/nftban_forward.sh"; nftban_forward_migrate' _ "$LIBDIR" 2>/dev/null | sed -n 's/^Migration plan \([0-9a-f]\{12\}\) .*/\1/p' | sed -n 1p)
 [[ -n "$pid" && "$cid" == "$pid" ]] && ok "M10 CLI migrate prints the SAME plan id as the package path ($pid)" || no "M10 CLI vs package" "cli=$cid pkg=$pid"
 
 echo ""

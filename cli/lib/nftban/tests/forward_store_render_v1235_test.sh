@@ -100,9 +100,10 @@ for fam in ip ip6; do
     blk=$(awk -v t="table $fam nftban {" '$0==t{p=1} p&&/^    chain forward \{/{c=1} c{print} c&&/^    \}/{exit}' "$TPL")
     seq=$(printf '%s\n' "$blk" | grep -oE 'comment "nftban:fwd:[a-z-]+"' | sed 's/.*fwd:\([a-z-]*\)"/\1/' | paste -sd' ' -)
     [[ "$seq" == "ban-manual ban ct invalid egress publish-tcp publish-udp" ]] || { order_ok=0; echo "      $fam order: $seq"; }
-    printf '%s\n' "$blk" | grep -q "policy drop;" || { order_ok=0; echo "      $fam: no policy drop"; }
-    printf '%s\n' "$blk" | grep -qF "$sa != @whitelist_$F $sa @blacklist_$F counter drop" || { order_ok=0; echo "      $fam: ban rule without whitelist exemption"; }
-    printf '%s\n' "$blk" | grep -vE '^[[:space:]]*#' | grep -E 'whitelist' | grep -qw 'accept' && { order_ok=0; echo "      $fam: whitelist ACCEPT present"; }
+    [[ "$blk" == *"policy drop;"* ]] || { order_ok=0; echo "      $fam: no policy drop"; }
+    [[ "$blk" == *"$sa != @whitelist_$F $sa @blacklist_$F counter drop"* ]] || { order_ok=0; echo "      $fam: ban rule without whitelist exemption"; }
+    wla=$(printf '%s\n' "$blk" | grep -vE '^[[:space:]]*#' | grep -E 'whitelist' | grep -cw 'accept' || true)
+    [[ "$wla" -eq 0 ]] || { order_ok=0; echo "      $fam: whitelist ACCEPT present"; }
     untag=$(printf '%s\n' "$blk" | grep -vE '^[[:space:]]*#' | grep -E ' (accept|drop) ' | grep -vc 'nftban:fwd:' || true)
     [[ "$untag" -eq 0 ]] || { order_ok=0; echo "      $fam: $untag untagged rule(s)"; }
 done
@@ -118,7 +119,7 @@ r4=0; lib "nftban_forward_remove 'egress|docker0'" >/dev/null 2>&1 || r4=$?
 
 # S8 recognised bridge only
 rc=0; out=$(lib "nftban_forward_cli allow egress virbr0" 2>&1) || rc=$?
-[[ $rc -ne 0 ]] && printf '%s' "$out" | grep -q 'not a recognised and tested bridge' && ! grep -q virbr0 "$STORE" && ok "S8 allow egress refuses an unrecognised bridge (virbr0), nothing written" || no "S8 unrecognised bridge" "rc=$rc"
+[[ $rc -ne 0 ]] && [[ "$out" == *'not a recognised and tested bridge'* ]] && ! grep -q virbr0 "$STORE" && ok "S8 allow egress refuses an unrecognised bridge (virbr0), nothing written" || no "S8 unrecognised bridge" "rc=$rc"
 
 echo ""
 echo "RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL) (pass=$PASS fail=$FAIL)"
