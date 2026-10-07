@@ -194,17 +194,22 @@ _nftban_login_classic_monitor_journal() {
         journal_cmd+=(--output=json --show-cursor)
         # v1.19.26: Add || true to prevent errexit on pipe close (journalctl -f exits 1 when pipe closes)
         "${journal_cmd[@]}" 2>/dev/null | while read -r line; do
-            # Save cursor for persistence (v1.18.9)
-            local cursor
+            local cursor message done_ok=1
             cursor=$(echo "$line" | jq -r '.__CURSOR // empty' 2>/dev/null)
-            if [[ -n "$cursor" && "${LOGIN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]]; then
+            # v1.235: the cursor (v1.18.9 persistence) is saved only AFTER the entry's
+            # required processing succeeded, so a crash before that replays the entry
+            # on restart instead of losing it. An entry with no usable MESSAGE has
+            # nothing to process and is passed. The cursor is a single position, not a
+            # queue: a later success still moves it past an earlier failure.
+            if message=$(echo "$line" | jq -r '.MESSAGE // empty' 2>/dev/null) && [[ -n "$message" ]]; then
+                if ! _nftban_login_classic_process_message "$service" "$message" "$pattern_failed" "$pattern_invalid"; then
+                    done_ok=0
+                    nftban_login_log "WARN" "$service: processing failed for a journal entry; cursor not advanced"
+                fi
+            fi
+            if [[ "$done_ok" -eq 1 && -n "$cursor" && "${LOGIN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]]; then
                 echo "$cursor" > "${cursor_file}.tmp" 2>/dev/null && mv -f "${cursor_file}.tmp" "$cursor_file" 2>/dev/null || true
             fi
-
-            local message
-            message=$(echo "$line" | jq -r '.MESSAGE // empty' 2>/dev/null) || continue
-            [[ -z "$message" ]] && continue
-            _nftban_login_classic_process_message "$service" "$message" "$pattern_failed" "$pattern_invalid"
         done || true
     else
         # Fallback to text parsing
