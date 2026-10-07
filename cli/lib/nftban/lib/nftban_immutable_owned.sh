@@ -325,10 +325,10 @@ nftban_immut_pkg_preflight() {
 
 # -----------------------------------------------------------------------------
 # v1.235 C20 (owner D5, 2026-10-06): an upgrade STOPS before a destructive change it
-# cannot preserve, and shows the rules. NFTBan's own forward chain is empty in this
-# release (the template declares `chain forward { ... policy drop; }` with no rule),
-# so EVERY rule in the ip/ip6 nftban forward chain was added outside NFTBan, and the
-# rebuild that follows the upgrade erases it. A read failure is UNKNOWN = stop (the
+# cannot preserve, and shows the rules. Every rule NFTBan itself renders in the ip/ip6
+# nftban forward chain carries comment "nftban:fwd:<id>" (v1.235 forwarding policy); a
+# rule WITHOUT that tag was added outside NFTBan, and the rebuild that follows the
+# upgrade erases it. (Before v1.235 that chain had no rule at all.) A read failure is UNKNOWN = stop (the
 # change is destructive); an absent nft, table or chain means there is nothing to
 # erase (the chain listing itself reports a missing table or chain: no separate probe). NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 is the administrator's explicit acceptance.
 # Returns 0 = proceed, 1 = stop. Writes only to stderr; changes nothing.
@@ -344,7 +344,7 @@ nftban_forward_unmanaged_preflight() {
             _nfw_stop=1
             continue
         fi
-        _nfw_rules=$(printf '%s\n' "$_nfw_out" | grep -E '# handle [0-9]+$' | grep -vE '^[[:space:]]*(table|chain)[[:space:]]' || true)
+        _nfw_rules=$(printf '%s\n' "$_nfw_out" | grep -E '# handle [0-9]+$' | grep -vE '^[[:space:]]*(table|chain)[[:space:]]' | grep -vF 'comment "nftban:fwd:' || true)
         [ -n "$_nfw_rules" ] || continue
         echo "nftban: the $_nfw_fam nftban forward chain holds rules NFTBan did not create; the rebuild after this upgrade would ERASE them:" >&2
         printf '%s\n' "$_nfw_rules" | sed 's/^[[:space:]]*/    /' >&2

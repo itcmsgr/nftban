@@ -280,11 +280,39 @@ _firewall_substitute_placeholders() {
     [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _ct_http="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
     [[ -n "${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ]] && _ct_mail="$DDOS_CLASSIC_SMTP_CONN_LIMIT"
 
+    # v1.235 forwarding allows (owner D1-D4): project /etc/nftban/forward.d/forward.conf into
+    # the fwd_* set placeholders, in the SAME render (one transaction with the rules, and the
+    # boot projection). A store that exists but cannot be read REFUSES the render: loading
+    # empty allows would silently cut every approved forwarded flow.
+    local FWD_EL_EGRESS="" FWD_EL_UPLINK="" FWD_EL_PUB_TCP4="" FWD_EL_PUB_UDP4="" FWD_EL_PUB_TCP6="" FWD_EL_PUB_UDP6=""
+    if declare -F nftban_forward_render_elements >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_forward.sh"; then
+        if ! nftban_forward_render_elements; then
+            echo "[NFTBan ERROR] forwarding store unreadable: render refused (the running rules are kept)" >&2
+            return 1
+        fi
+    else
+        echo "[NFTBan ERROR] lib/nftban_forward.sh not available: render refused" >&2
+        return 1
+    fi
+
     sed -e "s/__SSH_PORT__/${_ssh_ports_csv}/g" \
         -e "s/__CT_LIMIT_SSH__/${_ct_ssh}/g" \
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
-        "$input" > "$output"
+        "$input" \
+    | FWD_EL_EGRESS="$FWD_EL_EGRESS" FWD_EL_UPLINK="$FWD_EL_UPLINK" \
+      FWD_EL_PUB_TCP4="$FWD_EL_PUB_TCP4" FWD_EL_PUB_UDP4="$FWD_EL_PUB_UDP4" \
+      FWD_EL_PUB_TCP6="$FWD_EL_PUB_TCP6" FWD_EL_PUB_UDP6="$FWD_EL_PUB_UDP6" \
+      awk '
+        /^__FWD_EGRESS_ELEMENTS__$/       { if (ENVIRON["FWD_EL_EGRESS"]   != "") print ENVIRON["FWD_EL_EGRESS"];   next }
+        /^__FWD_UPLINK_ELEMENTS__$/       { if (ENVIRON["FWD_EL_UPLINK"]   != "") print ENVIRON["FWD_EL_UPLINK"];   next }
+        /^__FWD_PUBLISH_TCP4_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_TCP4"] != "") print ENVIRON["FWD_EL_PUB_TCP4"]; next }
+        /^__FWD_PUBLISH_UDP4_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_UDP4"] != "") print ENVIRON["FWD_EL_PUB_UDP4"]; next }
+        /^__FWD_PUBLISH_TCP6_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_TCP6"] != "") print ENVIRON["FWD_EL_PUB_TCP6"]; next }
+        /^__FWD_PUBLISH_UDP6_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_UDP6"] != "") print ENVIRON["FWD_EL_PUB_UDP6"]; next }
+        { print }
+      ' > "$output"
 }
 
 # _firewall_set_elements <conf_file> <set_name> <csv>
@@ -777,6 +805,13 @@ nftban_cmd_firewall() {
         whitelist-session)
             shift
             firewall_whitelist_session "$@"
+            ;;
+        forward)
+            # v1.235 forwarding policy (owner D1-D5; bans Q1/Q2 2026-10-08).
+            shift
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_forward.sh" || return 1
+            nftban_forward_cli "$@"
             ;;
         ssh-audit|ssh-port-audit)
             # OBS-SSHPORT-55000-FAMILY: read-only report of sshd listeners vs ssh_ports
