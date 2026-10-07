@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-07"
-# meta:description="C20 (owner D5, 2026-10-06): the package upgrade STOPS before the destructive change it cannot preserve and shows the rules. Drives the REAL nftban_forward_unmanaged_preflight (cli/lib/nftban/lib/nftban_immutable_owned.sh, the maintainer-script library inlined into the DEB scripts and the RPM scriptlets) under /bin/sh against a stub nft. Arms: F1 no nft -> proceed; F2 no nftban table -> proceed; F3 empty forward chain -> proceed; F4 ip forward rules -> STOP (rc 1), every rule listed, 'STOPPED' and the explicit-acceptance command printed; F5 ip6 rules only -> STOP; F6 forward chain absent -> proceed; F7 chain unreadable (other error) -> STOP as UNKNOWN; F8 NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed with the acceptance line; F9 the DEB preinst calls it for install|upgrade BEFORE the immutable-flag unlock (nothing changed yet) and the RPM %pre calls it with exit 1. Regression only; the packaged proof is an upgrade of a host with a hand-inserted forward rule."
+# meta:description="C20 (owner D5, 2026-10-06): the package upgrade STOPS before the destructive change it cannot preserve and shows the rules. Drives the REAL nftban_forward_unmanaged_preflight (cli/lib/nftban/lib/nftban_immutable_owned.sh, the maintainer-script library inlined into the DEB scripts and the RPM scriptlets) under /bin/sh against a stub nft. Arms: F1 no nft -> proceed; F2 no nftban table -> proceed; F3 empty forward chain -> proceed; F4 ip forward rules -> STOP (rc 1), every rule listed in the migration plan (UNMAPPED without a route), 'STOPPED'; F5 ip6 rules only -> STOP; F6 forward chain absent -> proceed; F7 chain unreadable (other error) -> STOP as UNKNOWN; F8 NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed with the acceptance line; F9 the DEB preinst calls it for install|upgrade BEFORE the immutable-flag unlock (nothing changed yet) and the RPM %pre calls it with exit 1. Regression only; the packaged proof is an upgrade of a host with a hand-inserted forward rule."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,packaging/deb/preinst,packaging/build_nftban.sh"
 # meta:inventory.binaries="bash,sh,mktemp"
 # meta:inventory.env_vars=""
@@ -87,8 +87,8 @@ reset; : > "$SB/tables.ip"; : > "$SB/tables.ip6"; chain ip; chain ip6; run "$SB/
 
 reset; : > "$SB/tables.ip"; : > "$SB/tables.ip6"; chain ip 'ip saddr 198.51.100.0/24 accept # handle 94' 'ct state established,related accept # handle 91'; chain ip6; run "$SB/bin"
 if [[ $rc -eq 1 ]] && grep -q 'ip saddr 198.51.100.0/24 accept # handle 94' "$SB/err" && grep -q 'ct state established,related accept # handle 91' "$SB/err" \
-   && grep -q 'STOPPED' "$SB/err" && grep -q 'NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1' "$SB/err" && ! grep -q 'chain forward' "$SB/err"; then
-    ok "F4 ip forward rules -> STOP, both rules listed, explicit-acceptance command shown"
+   && grep -q 'STOPPED' "$SB/err" && grep -q 'migration plan [0-9a-f]\{12\}' "$SB/err" && grep -q 'UNMAPPED' "$SB/err" && ! grep -q 'chain forward' "$SB/err"; then
+    ok "F4 ip forward rules -> STOP, both rules listed in a migration plan (no route for the prefix: UNMAPPED)"
 else no "F4 ip rules" "rc=$rc $(tr '\n' '|' < "$SB/err")"; fi
 
 reset; : > "$SB/tables.ip"; : > "$SB/tables.ip6"; chain ip; chain ip6 'ip6 saddr 2001:db8::/32 accept # handle 7'; run "$SB/bin"
