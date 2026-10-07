@@ -133,8 +133,9 @@ cc_apply_begin() {
     fi
     id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     # Root-only like the baseline: the work dir holds a config copy and the kernel dump
-    # (its parent state dir is 0750 nftban:nftban). -m applies to this one directory.
-    rm -rf "$CC_WORK"; mkdir -p -m 0700 "$CC_WORK" || { cc_unlock; return 1; }
+    # (its parent state dir is 0750 nftban:nftban, created by cc_lock). Created fresh,
+    # 0700, this one directory only.
+    rm -rf "$CC_WORK"; mkdir -m 0700 "$CC_WORK" || { cc_unlock; return 1; }
     # Previous kernel rules: the exact NFTBan tables, dumped BEFORE the change.
     # Dump whichever NFTBan tables exist (ip6 may be absent on IPv4-only hosts).
     local _t _fam _ok=0
