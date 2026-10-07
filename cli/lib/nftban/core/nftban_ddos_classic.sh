@@ -253,6 +253,28 @@ _nftban_ddos_classic_chain_exists() {
     nft list chain $table "$chain" &>/dev/null
 }
 
+# v1.235 (BUG-DDOS-STATUS-REPORTS-CHAIN-ACTIVE-WITH-ZERO-RULES): the status line for a
+# stage whose chain AND input jump exist. Existence is not protection: a daemon stop
+# re-applies through a closed IPC listener and leaves ddos_protection/ddos_prefix
+# flushed with their jumps kept (lab3 witness 2026-09-24), and status still said
+# ENABLED. The rules are counted from `nft -j` (never from text):
+#   >0 rules -> ENABLED · 0 rules -> EMPTY, NOT protecting · count unreadable -> UNKNOWN.
+# Status path only; the _exists/_jump predicates used by enable/disable are unchanged.
+_nftban_ddos_status_stage_line() {
+    local label="$1" table="$2" chain="$3" json="" n=""
+    # shellcheck disable=SC2086  # $table is "<family> <name>", split on purpose
+    if command -v jq >/dev/null 2>&1 && json="$(nft -j list chain $table "$chain" 2>/dev/null)"; then
+        n="$(jq -r '[.nftables[]? | select(has("rule"))] | length' <<<"$json" 2>/dev/null)" || n=""
+    fi
+    if [[ ! "$n" =~ ^[0-9]+$ ]]; then
+        echo "  ${label}: UNKNOWN (chain + jump present; rule count unreadable)"
+    elif (( n == 0 )); then
+        echo "  ${label}: EMPTY (chain + jump present, 0 rules: NOT protecting; run 'nftban ddos enable')"
+    else
+        echo "  ${label}: ENABLED (chain + jump active, ${n} rules)"
+    fi
+}
+
 _nftban_ddos_classic_jump_exists() {
     local table="$1"
     local chain="$2"
@@ -999,13 +1021,13 @@ nftban_ddos_classic_status() {
     echo "Stage 3 - Sanity Checks (Packet Validation):"
     if _nftban_ddos_sanity_chain_exists "$table_v4"; then
         if _nftban_ddos_classic_jump_exists "$table_v4" "$sanity_chain"; then
-            echo "  IPv4: ENABLED (chain + jump active)"
+            _nftban_ddos_status_stage_line IPv4 "$table_v4" "$sanity_chain"
         else
             echo "  IPv4: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
         fi
         if _nftban_ddos_sanity_chain_exists "$table_v6"; then
             if _nftban_ddos_classic_jump_exists "$table_v6" "$sanity_chain"; then
-                echo "  IPv6: ENABLED (chain + jump active)"
+                _nftban_ddos_status_stage_line IPv6 "$table_v6" "$sanity_chain"
             else
                 echo "  IPv6: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
             fi
@@ -1024,13 +1046,13 @@ nftban_ddos_classic_status() {
         echo "  Status: DISABLED (config)"
     elif _nftban_ddos_synproxy_chain_exists "$table_v4"; then
         if _nftban_ddos_classic_jump_exists "$table_v4" "$synproxy_chain"; then
-            echo "  IPv4: ENABLED (chain + jump active)"
+            _nftban_ddos_status_stage_line IPv4 "$table_v4" "$synproxy_chain"
         else
             echo "  IPv4: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
         fi
         if _nftban_ddos_synproxy_chain_exists "$table_v6"; then
             if _nftban_ddos_classic_jump_exists "$table_v6" "$synproxy_chain"; then
-                echo "  IPv6: ENABLED (chain + jump active)"
+                _nftban_ddos_status_stage_line IPv6 "$table_v6" "$synproxy_chain"
             else
                 echo "  IPv6: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
             fi
@@ -1049,13 +1071,13 @@ nftban_ddos_classic_status() {
         echo "  Status: DISABLED (config)"
     elif _nftban_ddos_prefix_chain_exists "$table_v4"; then
         if _nftban_ddos_classic_jump_exists "$table_v4" "$prefix_chain"; then
-            echo "  IPv4: ENABLED (chain + jump active)"
+            _nftban_ddos_status_stage_line IPv4 "$table_v4" "$prefix_chain"
         else
             echo "  IPv4: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
         fi
         if _nftban_ddos_prefix_chain_exists "$table_v6"; then
             if _nftban_ddos_classic_jump_exists "$table_v6" "$prefix_chain"; then
-                echo "  IPv6: ENABLED (chain + jump active)"
+                _nftban_ddos_status_stage_line IPv6 "$table_v6" "$prefix_chain"
             else
                 echo "  IPv6: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
             fi
@@ -1072,7 +1094,7 @@ nftban_ddos_classic_status() {
     echo "Stage 2 - Rate Limiting:"
     if _nftban_ddos_classic_chain_exists "$table_v4" "$chain"; then
         if _nftban_ddos_classic_jump_exists "$table_v4" "$chain"; then
-            echo "  IPv4: ENABLED (chain + jump active)"
+            _nftban_ddos_status_stage_line IPv4 "$table_v4" "$chain"
         else
             echo "  IPv4: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
         fi
@@ -1084,7 +1106,7 @@ nftban_ddos_classic_status() {
     if nft list table $table_v6 &>/dev/null; then
         if _nftban_ddos_classic_chain_exists "$table_v6" "$chain"; then
             if _nftban_ddos_classic_jump_exists "$table_v6" "$chain"; then
-                echo "  IPv6: ENABLED (chain + jump active)"
+                _nftban_ddos_status_stage_line IPv6 "$table_v6" "$chain"
             else
                 echo "  IPv6: PARTIAL (chain exists but not active — run 'nftban ddos enable')"
             fi
