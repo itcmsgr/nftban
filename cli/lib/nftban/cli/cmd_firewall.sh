@@ -4622,6 +4622,13 @@ _firewall_rebuild_core() {
         # Pending candidate: the boot projection is published only at confirm.
         _boot_proj_state="pending-confirm"
         cc_apply_loaded "$load_conf" || echo "WARNING: candidate projection could not be staged; confirm will fail and the rollback will run" >&2
+        # recovery.conf NFTBAN_SSH_TEST_BEFORE_APPLY (pre-v1.235 nftban-apply behaviour):
+        # a failed local SSH probe rolls the pending change back at once.
+        if ! cc_ssh_probe; then
+            echo "  Rolling back apply ${CC_APPLY_ID} immediately (SSH probe failed)." >&2
+            cc_rollback "${CC_APPLY_ID}" --auto || true
+            return 3
+        fi
     else
     _boot_proj_state=$(_firewall_rebuild_refresh_boot_projection "$source_file" "$load_conf" "$quiet")
         # v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
