@@ -41,6 +41,16 @@ umask 027
 [[ -n "${NFTBAN_STATS_FORMAT_LOADED:-}" ]] && return 0
 readonly NFTBAN_STATS_FORMAT_LOADED=1
 
+# v1.235 (BUG-STATS-COUNTERS-MIXED-BASES): ONE token = ONE set ELEMENT.
+# `nft list set` prints an interval element as `a.b.c.d-e.f.g.h` (one element);
+# the pre-v1.235 pattern matched each endpoint, so every range counted TWICE in
+# the cache-miss live count and in the "showing X of N" sample. Measured on a
+# production host (v1.234.0): blacklist_ipv4 = 731 elements (47 ranges, 10
+# prefixes) + blacklist_manual_ipv4 1178 + v6 4 = 1913 live, while the endpoint
+# pattern gave 1960. A range or a CIDR prefix is ONE token here.
+_NFTBAN_STATS_V4_ELEM_RE='\d+\.\d+\.\d+\.\d+(?:/\d+|-\d+\.\d+\.\d+\.\d+)?'
+_NFTBAN_STATS_V6_ELEM_RE='(?:[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+)(?:/\d+|-[0-9a-fA-F:]*:[0-9a-fA-F:]*)?'
+
 # =============================================================================
 # DASHBOARD GENERATION
 # =============================================================================
@@ -174,7 +184,7 @@ nftban_stats_generate_dashboard() {
             local v4_output
             v4_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
             black_v4_temp=$(echo "$v4_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
-            black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            black_v4=$(echo "$v4_output" | { grep -oP "$_NFTBAN_STATS_V4_ELEM_RE" || true; } | wc -l 2>/dev/null || echo "0")
             black_v4=${black_v4:-0}
             black_v4_temp=${black_v4_temp:-0}
         fi
@@ -183,7 +193,7 @@ nftban_stats_generate_dashboard() {
             local v4m_output v4m_count v4m_temp
             v4m_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_manual_ipv4 2>/dev/null || true)
             v4m_temp=$(echo "$v4m_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
-            v4m_count=$(echo "$v4m_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            v4m_count=$(echo "$v4m_output" | { grep -oP "$_NFTBAN_STATS_V4_ELEM_RE" || true; } | wc -l 2>/dev/null || echo "0")
             black_v4=$((black_v4 + ${v4m_count:-0}))
             black_v4_temp=$((black_v4_temp + ${v4m_temp:-0}))
             manual_v4=${v4m_count:-0}   # v1.150 F3: expose manual subset (cache-miss)
@@ -194,7 +204,7 @@ nftban_stats_generate_dashboard() {
             local v6_output
             v6_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
             black_v6_temp=$(echo "$v6_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
-            black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            black_v6=$(echo "$v6_output" | { grep -oP "$_NFTBAN_STATS_V6_ELEM_RE" || true; } | wc -l 2>/dev/null || echo "0")
             black_v6=${black_v6:-0}
             black_v6_temp=${black_v6_temp:-0}
         fi
@@ -203,7 +213,7 @@ nftban_stats_generate_dashboard() {
             local v6m_output v6m_count v6m_temp
             v6m_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_manual_ipv6 2>/dev/null || true)
             v6m_temp=$(echo "$v6m_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
-            v6m_count=$(echo "$v6m_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            v6m_count=$(echo "$v6m_output" | { grep -oP "$_NFTBAN_STATS_V6_ELEM_RE" || true; } | wc -l 2>/dev/null || echo "0")
             black_v6=$((black_v6 + ${v6m_count:-0}))
             black_v6_temp=$((black_v6_temp + ${v6m_temp:-0}))
             manual_v6=${v6m_count:-0}   # v1.150 F3: expose manual subset (cache-miss)
@@ -294,7 +304,13 @@ nftban_stats_generate_dashboard() {
             fi
         fi
     fi
-    echo "  Threat Feeds:"
+    # v1.235 (BUG-STATS-COUNTERS-MIXED-BASES): these are FEED SOURCE-LIST entries
+    # (the downloaded files), NOT kernel elements. Feeds are loaded INTO
+    # blacklist_ipv4/_ipv6 (the interval set shared with geoban), so whatever was
+    # loaded is ALREADY inside the Direct Bans figures above. The two are neither
+    # additive nor equal: whitelisted/bogon entries are skipped at load and
+    # adjacent entries merge into one range element.
+    echo "  Threat Feeds (source-list entries; loaded into blacklist_ipv4/_ipv6, already counted above):"
     printf "      %-16s %'d\n" "IPv4............" "$feeds_ipv4_total"
     printf "      %-16s %'d\n" "IPv6............" "$feeds_ipv6_total"
 
@@ -327,11 +343,15 @@ nftban_stats_generate_dashboard() {
         printf "  %-20s %d countries\n" "GeoBan.............." "$geoban_total"
     fi
 
-    local total_ipv4=$((black_v4 + feeds_ipv4_total))
-    local total_ipv6=$((black_v6 + feeds_ipv6_total))
+    # v1.235 (BUG-STATS-COUNTERS-MIXED-BASES): TOTAL is the LIVE kernel element
+    # count — the same base as "Blocked IPs (live)". Pre-v1.235 it added the feed
+    # source-list size to the live sets, counting every loaded feed IP twice
+    # (production v1.234.0: 1913 live + 1396 feed entries = "3,309").
+    local total_ipv4=$(( ${black_v4:-0} ))
+    local total_ipv6=$(( ${black_v6:-0} ))
     local grand_total=$((total_ipv4 + total_ipv6))
     echo "  ─────────────────────────────────────"
-    echo "  TOTAL:"
+    echo "  TOTAL (live kernel set elements; = Blocked IPs (live)):"
     printf "      %-16s %'d\n" "IPv4............" "$total_ipv4"
     printf "      %-16s %'d\n" "IPv6............" "$total_ipv6"
     printf "      %-16s %'d\n" "TOTAL..........." "$grand_total"
@@ -368,14 +388,20 @@ nftban_stats_generate_dashboard() {
         # operator/CLI (manual). It is NOT the manual-hash SET (persistent-offenders
         # live there too) — see PROTECTION BREAKDOWN "Manual-set by:" for set provenance.
         printf "      %-18s %s\n" "Operator/CLI..." "$manual"
-        printf "      %-18s %s\n" "Feeds.........." "$feeds"
         [[ "$suricata_bans" != "0" ]] && printf "      %-18s %s\n" "Suricata......." "$suricata_bans"
+        # v1.235 (BUG-STATS-COUNTERS-MIXED-BASES): the producer's "feeds" field is
+        # REPLACED by the feed source-list size whenever one exists
+        # (nftban_stats_ban_sources: "feeds are bulk-loaded, not logged in
+        # bans.log") — an INVENTORY, not ban events in this period. Printed apart
+        # and kept OUT of the event reconciliation below; summing it with events
+        # produced "by-source total 1602 exceeds New ban events 315" on production.
+        printf "      %-18s %s\n" "Feed list size." "$feeds (inventory, not events; see THREAT FEEDS)"
         # v1.206.2 (BUG-STATS-COUNT-DIVERGENCE): reconcile to New ban events. The
         # by-source breakdown is parsed from bans.log; New ban events is the activity
         # counter. If the breakdown does not sum to the total, surface the remainder
         # as Other/Unclassified rather than silently dropping it.
         if [[ "$total_bans" =~ ^[0-9]+$ ]]; then
-            local _src_sum=$(( login_bans + portscan_bans + ddos_bans + manual + feeds + suricata_bans ))
+            local _src_sum=$(( login_bans + portscan_bans + ddos_bans + manual + suricata_bans ))
             local _other=$(( total_bans - _src_sum ))
             if [[ $_other -gt 0 ]]; then
                 printf "      %-18s %s\n" "Other/Unclass.." "$_other"
@@ -385,7 +411,7 @@ nftban_stats_generate_dashboard() {
             fi
         fi
 
-        if [[ "$login_bans" == "0" ]] && [[ "$portscan_bans" == "0" ]] && [[ "$ddos_bans" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$feeds" == "0" ]] && [[ "$suricata_bans" == "0" ]]; then
+        if [[ "$login_bans" == "0" ]] && [[ "$portscan_bans" == "0" ]] && [[ "$ddos_bans" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$suricata_bans" == "0" ]]; then
             echo ""
             echo "  Summary: No new attacks detected this period."
             if [[ $total_black -gt 0 ]]; then
@@ -610,11 +636,11 @@ nftban_stats_generate_dashboard() {
         # active bans appear; print "showing X of N" and list ALL when N is small.
         local _all _v4 _v6 _n _show
         _v4=$( { for _s in blacklist_ipv4 blacklist_manual_ipv4; do
-                    timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" "$_s" 2>/dev/null
-                 done; } | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' )
+                    timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" "$_s" 2>/dev/null || true
+                 done; } | { grep -oP "$_NFTBAN_STATS_V4_ELEM_RE" || true; } )
         _v6=$( { for _s in blacklist_ipv6 blacklist_manual_ipv6; do
-                    timeout 10s nft list set "${NFTBAN_TABLE_IPV6:-ip6 nftban}" "$_s" 2>/dev/null
-                 done; } | grep -oiP '[0-9a-f]{0,4}:[0-9a-f:]+(/\d+)?' )
+                    timeout 10s nft list set "${NFTBAN_TABLE_IPV6:-ip6 nftban}" "$_s" 2>/dev/null || true
+                 done; } | { grep -oP "$_NFTBAN_STATS_V6_ELEM_RE" || true; } )
         _all=$(printf '%s\n%s\n' "$_v4" "$_v6" | awk 'NF' | sort -u)
         _n=$(printf '%s\n' "$_all" | awk 'NF' | wc -l)
         if [[ "${_n:-0}" -eq 0 ]]; then
@@ -623,10 +649,10 @@ nftban_stats_generate_dashboard() {
             # list all when small (<=10); otherwise show first 10 of N
             local _cap=10
             if [[ "$_n" -le "$_cap" ]]; then
-                echo "  showing $_n of $_n:"; printf '%s\n' "$_all" | sed 's/^/  /'
+                echo "  showing $_n of $_n live set elements (read now; a range or CIDR is one element):"; printf '%s\n' "$_all" | sed 's/^/  /'
             else
-                _show=$(printf '%s\n' "$_all" | head -"$_cap")
-                echo "  showing $_cap of $_n:"; printf '%s\n' "$_show" | sed 's/^/  /'
+                _show=$(printf '%s\n' "$_all" | sed -n "1,${_cap}p")
+                echo "  showing $_cap of $_n live set elements (read now; a range or CIDR is one element):"; printf '%s\n' "$_show" | sed 's/^/  /'
             fi
         fi
         echo ""

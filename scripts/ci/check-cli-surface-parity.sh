@@ -91,6 +91,34 @@ for c in sorted(reg_cmds):
     if c in ALLOW_INTERNAL: continue
     emit("MISSING_FROM_COMPLETION", c, "registry command not offered in completion")
 
+# --- dispatcher: what cli/sbin/nftban can actually reach (v1.235) ---
+# GATE-CLI-SURFACE-PARITY-CHECKER-READS-NO-DISPATCHER: this guard names the
+# dispatcher as its authority and was handed its path, but never opened it, so a
+# registry/completion command with no handler passed as "parity clean". A
+# command is DISPATCHABLE when the dispatcher auto-loads cli/cmd_<cmd>.sh for it
+# (the main path), maps it to another file in an explicit special case, or
+# handles it in one of its own case arms.
+sbin_txt = open(sbin_path, errors="ignore").read()
+special = dict(re.findall(r'\[\[ "\$cmd" == "([a-z0-9_-]+)" \]\]; then\s*\n\s*cmd_file="\$\{NFTBAN_LIB_DIR\}/cli/(cmd_[a-z0-9_]+\.sh)"', sbin_txt))
+arm_labels = set()
+for lab in re.findall(r'^\s*([a-z-][a-z0-9|_-]*)\)\s*$', sbin_txt, re.M):
+    arm_labels.update(lab.split("|"))
+def dispatchable(c):
+    if c in special and os.path.isfile(os.path.join("cli/lib/nftban/cli", special[c])):
+        return True
+    if os.path.isfile(f"cli/lib/nftban/cli/cmd_{c}.sh"):
+        return True
+    return c in arm_labels
+
+print("== dispatcher: every registry/completion command must be reachable ==")
+for c in sorted((reg_cmds | comp_cmds) - KNOWN_NONCMD):
+    if c in alias_flat or c in ALLOW_INTERNAL:
+        continue
+    if dispatchable(c):
+        continue
+    emit("UNREACHABLE_IN_DISPATCHER", c, "no cli/cmd_<cmd>.sh, no special case, no dispatcher case arm")
+print(f"  INFO: dispatcher reach — {len(special)} special-case file mappings, {len(arm_labels)} case-arm labels")
+
 print("== required confirmed fixes (v1.205 / FULL_CLI_SURFACE_PARITY_AUDIT) ==")
 def reg_has_subcmd(cmd, sub, flag=None):
     # scan the registry block for 'cmd:' then its subcommands for 'sub:' (+ optional flag line)
@@ -134,5 +162,5 @@ if fails:
     print(f"RESULT: DRIFT_FOUND — {len(fails)} blocking item(s):")
     for c,i in fails: print(f"  - {c}: {i}")
     sys.exit(1)
-print("RESULT: PASS — CLI surface parity clean (registry ↔ completion ↔ confirmed fixes)")
+print("RESULT: PASS — CLI surface parity clean (registry ↔ completion ↔ dispatcher ↔ confirmed fixes)")
 PY

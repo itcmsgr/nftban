@@ -1957,6 +1957,35 @@ _NFTBAN_NSR_
 }
 # <<< NFTBAN_SYNPROXY_RAW_CLEANUP_END <<<
 
+# >>> NFTBAN_INSTALL_STATE_RETIRE_BEGIN >>>
+# v1.235 BUG-INSTALL-STATE-SAYS-COMMITTED-AFTER-PACKAGE-REMOVE (K1).
+# Package removal used to leave /var/lib/nftban/state/install_state untouched, so a
+# removed host still claimed INSTALL_STATE=COMMITTED (or whatever the last install
+# wrote) with no package behind it. On a COMPLETE removal only (DEB postrm remove,
+# RPM postun \$1 -eq 0) the file is moved aside, not deleted: the forensic record of
+# the last install survives as install_state.removed-<UTC>, and nothing claims a
+# current install any more. A later install starts from no state, exactly like a
+# fresh host. Purge (DEB) removes /var/lib/nftban as before.
+# SELF-CONTAINED: runs after the payload is gone, sources nothing. REPORT, DO NOT
+# ABORT: a failed move is reported on stderr and the removal still succeeds.
+# Byte-identical copies: packaging/deb/postrm, RPM postun scriptlet of the generated spec
+# (rendered from packaging/build_nftban.sh) - drift-checked by
+# cli/lib/nftban/tests/remove_retires_install_state_v1235_test.sh.
+_nftban_retire_install_state() {
+    _nis_dir="\${NFTBAN_INSTALL_STATE_DIR:-/var/lib/nftban/state}"
+    _nis_f="\$_nis_dir/install_state"
+    [ -f "\$_nis_f" ] || return 0
+    _nis_ts=\$(date -u -Iseconds 2>/dev/null) || _nis_ts=unknown
+    _nis_to="\$_nis_dir/install_state.removed-\$_nis_ts"
+    if mv -f "\$_nis_f" "\$_nis_to" 2>/dev/null; then
+        echo "nftban: install state retired (package removed): \$_nis_to"
+    else
+        echo "nftban: WARN: could not retire \$_nis_f - it still records the last install state" >&2
+    fi
+    return 0
+}
+# <<< NFTBAN_INSTALL_STATE_RETIRE_END <<<
+
 # NOTE: %%systemd_postun_with_restart macros removed due to el10 compatibility issues
 # Using explicit systemctl commands instead (same functionality)
 if [ \$1 -ge 1 ]; then
@@ -2087,6 +2116,11 @@ if [ \$1 -eq 0 ]; then
     #                      own files here, this only sweeps generated leftovers
     rm -rf /var/cache/nftban 2>/dev/null || true
     rm -rf /usr/share/nftban 2>/dev/null || true
+
+    # STEP 6b: v1.235 K1 - /var/lib/nftban is preserved above, so its
+    # install_state would keep claiming the last install (COMMITTED) with no
+    # package behind it. Moved aside, not deleted; see the function at the top.
+    _nftban_retire_install_state
 
     # D5 (UNINSTALL-PR2): state only what was observed.
     #

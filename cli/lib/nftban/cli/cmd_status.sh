@@ -922,9 +922,20 @@ _status_section_firewall() {
     # Count whitelisted IPs (SINGLE SOURCE OF TRUTH: nftban_stats.sh)
     local whitelist_count=0
     if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
-        whitelist_count=$(nftban_stats_count_whitelist)
+        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null) || whitelist_count=UNKNOWN
+        [[ "$whitelist_count" =~ ^[0-9]+$ ]] || whitelist_count=UNKNOWN
     fi
     printf "  %-20s %s\n" "Whitelisted IPs....." "$whitelist_count"
+    # v1.235 (BUG-CLI-STATUS-UNBOUND-VARIABLE-UNKNOWN-WHEN-RULESET-UNREADABLE):
+    # ban_count is "UNKNOWN" by design when the kernel cannot be read (see
+    # _nftban_sum_or_unknown above), and `[[ $ban_count -gt 0 ]]` evaluates a
+    # non-numeric operand as a VARIABLE NAME: under set -u that aborted the human
+    # status with "UNKNOWN: unbound variable" (production srv1 v1.233.1; reproduced
+    # lab4 @e942f4c3, rc 1 after 32 lines). The hint gates below use numeric
+    # copies; an unestablished count simply shows no hint.
+    local _ban_n=0 _wl_n=0
+    [[ "$ban_count" =~ ^[0-9]+$ ]] && _ban_n=$ban_count
+    [[ "$whitelist_count" =~ ^[0-9]+$ ]] && _wl_n=$whitelist_count
 
     # Check master switch
     # v1.150 MOD-09: source the BASE services.conf first, then the .local
@@ -953,13 +964,13 @@ _status_section_firewall() {
     printf "  %-20s %s\n" "Master Control......" "$master_status"
 
     # Helpful hints (only in non-quiet mode)
-    if [[ $quiet_mode -eq 0 ]] && [[ $ban_count -gt 0 || $whitelist_count -gt 0 ]]; then
+    if [[ $quiet_mode -eq 0 ]] && (( _ban_n > 0 || _wl_n > 0 )); then
         echo ""
         echo "  Quick Commands:"
-        if [[ $ban_count -gt 0 ]]; then
+        if (( _ban_n > 0 )); then
             echo "    View banned IPs:     nftban list banned"
         fi
-        if [[ $whitelist_count -gt 0 ]]; then
+        if (( _wl_n > 0 )); then
             echo "    View whitelist:      nftban list whitelist"
         fi
         echo "    View all:            nftban list all"
@@ -972,7 +983,7 @@ _status_section_firewall() {
     # sets that produced the headline above. Gated on quiet mode AND on
     # ban_count > 0 so a fresh install with zero bans isn't given advice it
     # can't act on. (V1_141_0 §2 D-verify-hint.)
-    if [[ $quiet_mode -eq 0 ]] && [[ $ban_count -gt 0 ]]; then
+    if [[ $quiet_mode -eq 0 ]] && (( _ban_n > 0 )); then
         echo ""
         echo "  Verify kernel (authoritative):"
         echo "    nft list set ip nftban blacklist_ipv4"
@@ -1498,8 +1509,18 @@ _status_section_protection() {
         # Cheap read only — runstate.json (health_state / last cycle), NEVER an access-log content scan.
         local _bs_rs="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
         if [[ -r "$_bs_rs" ]] && command -v jq &>/dev/null; then
-            local _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips
-            IFS='|' read -r _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips < <(jq -r '"\(.health_state//"UNKNOWN")|\(.last_run_ts//0)|\(.budget_hit_total//0)|\(.bans_emitted_total//0)|\(.unique_ips_flagged_last//0)"' "$_bs_rs" 2>/dev/null)
+            local _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips _bs_line=""
+            # v1.235 (BUG-STATUS-ABORTS-ON-DAMAGED-BOTSCAN-RUNSTATE): this used to read
+            # `< <(jq ...)`. jq exits non-zero on a truncated/partial runstate.json,
+            # errexit killed the process substitution and the ERR trap aborted the whole
+            # status (measured lab3 v1.234.0, RC smoke R1: "ERROR: Script failed",
+            # cmd_status.sh _status_section_protection). Read it with a guard; an
+            # unreadable run-state is SHOWN as such, never silently skipped.
+            _bs_line=$(jq -r '"\(.health_state//"UNKNOWN")|\(.last_run_ts//0)|\(.budget_hit_total//0)|\(.bans_emitted_total//0)|\(.unique_ips_flagged_last//0)"' "$_bs_rs" 2>/dev/null) || _bs_line=""
+            if [[ -z "$_bs_line" ]]; then
+                botscan_status="${botscan_status} · run-state UNREADABLE (${_bs_rs}: not valid JSON) — coverage UNKNOWN"
+            fi
+            IFS='|' read -r _bs_hs _bs_ls _bs_bud _bs_bans _bs_uips <<<"${_bs_line:-UNREADABLE||||}"
             # v1.229.10 — a degraded health state describes SCAN COVERAGE. It is not
             # an observation of enforcement, and this line used to convert it into one:
             # it printed "NOT currently enforcing" purely because health_state matched
@@ -1546,13 +1567,19 @@ _status_section_protection() {
     printf "  %-20s %s\n" "BotScan (HTTP Scan)." "$botscan_status"
     if [[ "$botscan_enabled" == "true" && -r "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json" ]] && command -v jq &>/dev/null; then
         local _r="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/runstate.json"
-        printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
-            "$(( $(date +%s) - $(jq -r '.last_run_ts//0' "$_r" 2>/dev/null) ))" \
-            "$(jq -r '.last_duration_sec//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.bans_emitted_total//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.signals_emitted_total//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.budget_hit_total//0' "$_r" 2>/dev/null)" \
-            "$(jq -r '.health_state//"UNKNOWN"' "$_r" 2>/dev/null)"
+        # v1.235: one guarded read (six bare jq reads used to abort status on a
+        # damaged run-state: an empty last_run_ts made "$(( now - ))" a syntax
+        # error under errexit). A non-numeric timestamp shows "?", not a number.
+        local _rl="" _r_ts _r_dur _r_bans _r_sig _r_bud _r_hs _r_age="?"
+        _rl=$(jq -r '[(.last_run_ts//0), (.last_duration_sec//0), (.bans_emitted_total//0), (.signals_emitted_total//0), (.budget_hit_total//0), (.health_state//"UNKNOWN")] | map(tostring) | join("|")' "$_r" 2>/dev/null) || _rl=""
+        if [[ -n "$_rl" ]]; then
+            IFS='|' read -r _r_ts _r_dur _r_bans _r_sig _r_bud _r_hs <<<"$_rl"
+            [[ "$_r_ts" =~ ^[0-9]+$ ]] && _r_age=$(( $(date +%s) - _r_ts ))
+            printf "      last scan %ss ago · %ss · bans %s · signals %s · budget-hits %s · %s\n" \
+                "$_r_age" "$_r_dur" "$_r_bans" "$_r_sig" "$_r_bud" "$_r_hs"
+        else
+            printf "      last scan: UNKNOWN (run-state unreadable)\n"
+        fi
     fi
     echo "    (HTTP Guard = BotGuard, live request-time guard; HTTP Exploit Scan = BotScan, periodic"
     echo "     access-log scanner — can ban via the manual blacklist. BotGuard disabled != BotScan disabled.)"
@@ -1744,14 +1771,18 @@ _status_section_health() {
     # Reads persisted counters only (cheap, no live nft probe here).
     local _fth_file="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/firewall_transition_health.json"
     if [[ -r "$_fth_file" ]]; then
-        local _fsvc _ffloor _ftbl _fbl _fna _fatomic
+        local _fsvc _ffloor _ftbl _fbl _fna _fatomic _fth_ok=1
         if command -v jq >/dev/null 2>&1; then
-            _fsvc=$(jq -r '.service_port_breach_count // 0' "$_fth_file" 2>/dev/null)
-            _ffloor=$(jq -r '.floor_breach_count // 0' "$_fth_file" 2>/dev/null)
-            _ftbl=$(jq -r '.table_absent_while_committed_count // 0' "$_fth_file" 2>/dev/null)
-            _fbl=$(jq -r '.blacklist_empty_during_refresh_count // 0' "$_fth_file" 2>/dev/null)
-            _fna=$(jq -r '.non_atomic_rebuild_count // 0' "$_fth_file" 2>/dev/null)
-            _fatomic=$(jq -r 'if has("last_rebuild_atomic") then .last_rebuild_atomic else true end' "$_fth_file" 2>/dev/null)
+            # v1.235: one guarded read. Six bare $(jq ...) reads aborted status under
+            # errexit on a damaged file, and where they did not abort, empty values
+            # defaulted to 0 below and rendered "OK" from a file nobody could read.
+            local _fth_line=""
+            _fth_line=$(jq -r '[(.service_port_breach_count // 0), (.floor_breach_count // 0), (.table_absent_while_committed_count // 0), (.blacklist_empty_during_refresh_count // 0), (.non_atomic_rebuild_count // 0), (if has("last_rebuild_atomic") then .last_rebuild_atomic else true end)] | map(tostring) | join("|")' "$_fth_file" 2>/dev/null) || _fth_line=""
+            if [[ -n "$_fth_line" ]]; then
+                IFS='|' read -r _fsvc _ffloor _ftbl _fbl _fna _fatomic <<<"$_fth_line"
+            else
+                _fth_ok=0
+            fi
         else
             _fsvc=$(sed -n 's/.*"service_port_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
             _ffloor=$(sed -n 's/.*"floor_breach_count"[: ]*\([0-9]*\).*/\1/p' "$_fth_file" | head -1)
@@ -1761,7 +1792,14 @@ _status_section_health() {
             _fatomic=$(sed -n 's/.*"last_rebuild_atomic"[: ]*\([a-z]*\).*/\1/p' "$_fth_file" | head -1)
         fi
         _fsvc=${_fsvc:-0}; _ffloor=${_ffloor:-0}; _ftbl=${_ftbl:-0}; _fbl=${_fbl:-0}; _fna=${_fna:-0}
-        if (( _ffloor > 0 || _ftbl > 0 || _fbl > 0 )); then
+        # A non-numeric count would be evaluated as a variable name below.
+        local _fv
+        for _fv in "$_fsvc" "$_ffloor" "$_ftbl" "$_fbl" "$_fna"; do
+            [[ "$_fv" =~ ^[0-9]+$ ]] || _fth_ok=0
+        done
+        if (( _fth_ok == 0 )); then
+            nftban_kv "FW Transition" "UNKNOWN (state file unreadable: ${_fth_file})"
+        elif (( _ffloor > 0 || _ftbl > 0 || _fbl > 0 )); then
             nftban_kv "FW Transition" "🔴 CRITICAL (floor=$_ffloor table=$_ftbl blacklist=$_fbl)"
         elif (( _fsvc > 0 || _fna > 0 )); then
             nftban_kv "FW Transition" "⚠️  DEGRADED (service_port_breach=$_fsvc non_atomic=$_fna)"

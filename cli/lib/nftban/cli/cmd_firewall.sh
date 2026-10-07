@@ -4303,6 +4303,23 @@ _firewall_rebuild_core() {
         *) _rebuild_whitelist_converged="false" ;;
     esac
 
+    # Step 6c (v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD): the atomic load
+    # recreated port_allow_{tcp,udp}_{ipv4,ipv6} EMPTY, and nothing re-read
+    # access.d/port_allow.conf, so every per-IP `port allow` grant on a non-SSH
+    # port was lost (measured lab3 2026-10-03: absent after rebuild and still absent
+    # 17 min later across maintenance and watchdog). Replay the live grants now with
+    # their REMAINING lifetime. A failure is reported, never hidden; the maintenance
+    # cycle replays again within 15 minutes.
+    if declare -F nftban_port_allow_replay >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_port_allow.sh" 2>/dev/null; then
+        local _pa_out="" _pa_rc=0
+        _pa_out=$(nftban_port_allow_replay 2>&1) || _pa_rc=$?
+        [[ "$quiet" == "false" ]] && echo "    ${_pa_out}"
+        [[ $_pa_rc -eq 1 ]] && echo "    WARNING: some per-IP port grants were not re-applied (${_pa_out}); maintenance retries within 15 min" >&2
+    else
+        echo "    WARNING: port-allow replay library missing; per-IP port grants NOT re-applied" >&2
+    fi
+
     # Step 7 (L2a): Restore blacklist + blacklist_manual from the pre-rebuild snapshot,
     # preserving remaining TTL. blacklist_manual_* holds detector TTL bans
     # (LoginMon/Portscan/DDoS/Suricata + manual) — it was previously never backed up or
@@ -4979,6 +4996,21 @@ firewall_reset() {
     systemctl start nftban-maintenance.timer 2>/dev/null || true
     systemctl start nftband 2>/dev/null || true
 
+    # v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD: reset loaded a clean schema, so
+    # the port_allow_* sets are empty. Grants go through the daemon, which was just
+    # started: wait briefly for its socket, then replay. If it is not up yet the
+    # replay reports UNMEASURED and the maintenance cycle applies them.
+    if declare -F nftban_port_allow_replay >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_port_allow.sh" 2>/dev/null; then
+        local _pa_try=0 _pa_out="" _pa_rc=0
+        while [[ $_pa_try -lt 10 ]] && ! nft_ipc_is_daemon_running 2>/dev/null; do
+            sleep 1; _pa_try=$(( _pa_try + 1 ))
+        done
+        _pa_out=$(nftban_port_allow_replay 2>&1) || _pa_rc=$?
+        [[ "$quiet" == "false" ]] && echo "    ${_pa_out}"
+        [[ $_pa_rc -eq 1 ]] && echo "    WARNING: some per-IP port grants were not re-applied (${_pa_out}); maintenance retries within 15 min" >&2
+    fi
+
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Firewall reset complete!"
     [[ "$quiet" == "false" ]] && echo "Backup saved to: $backup_dir/ruleset_$timestamp.nft"
@@ -5087,41 +5119,143 @@ _restore_create_backup() {
     fi
 }
 
+# _restore_extract_nftban_txn <backup_file> <txn_out>
+#
+# v1.235 RESTORE-FROM-FILE-FLUSHES-FOREIGN-TABLES (A1). A backup is a full
+# `nft list ruleset` and `firewall restore <path>` accepts any file, so restore must
+# never apply the file itself. This extracts ONLY `table ip nftban` and
+# `table ip6 nftban`, refuses anything that is not a plain table block, and writes
+# the exact transaction restore will validate and load:
+#
+#   table ip nftban {}      <- idempotent create, so the delete below cannot fail
+#   delete table ip nftban
+#   <the backup's ip nftban block>
+#   (same for ip6)
+#
+# Top level may hold only blank lines, `#` comments and `table <family> <name> {…}`
+# blocks; any other statement (flush/delete/add/include/define/…, a bare rule, an
+# unterminated block) is REFUSED. Braces inside double-quoted strings and after a
+# `#` comment are not counted; an unbalanced quote is REFUSED. Inside the kept
+# blocks, include/define/flush/delete/destroy/reset and `$variable` references are
+# REFUSED. Both nftban families must be present exactly once. Foreign tables are
+# reported on stderr and never applied.
+# Returns 0 on success (txn written), 2 when the backup is refused.
+_restore_extract_nftban_txn() {
+    local backup_file="$1" txn_out="$2"
+    awk -v txn="$txn_out" '
+        function refuse(msg) { printf "REFUSED: %s (line %d)\n", msg, NR > "/dev/stderr"; bad = 1; exit 2 }
+        # Count braces on one line, outside double quotes and before a # comment.
+        # Sets the global `delta`; refuses an unbalanced quote.
+        function scan(s,    i, c, inq, esc) {
+            delta = 0; inq = 0; esc = 0
+            for (i = 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if (inq) {
+                    if (esc) { esc = 0; continue }
+                    if (c == "\\") { esc = 1; continue }
+                    if (c == "\"") inq = 0
+                    continue
+                }
+                if (c == "\"") { inq = 1; continue }
+                if (c == "#") break
+                if (c == "{") delta++
+                else if (c == "}") delta--
+                else if (c == "$" && keep) refuse("variable reference inside an nftban table")
+            }
+            if (inq) refuse("unbalanced double quote")
+        }
+        BEGIN { depth = 0; keep = 0; bad = 0 }
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            t = line; sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+            if (depth == 0) {
+                if (t == "" || substr(t, 1, 1) == "#") next
+                if (t !~ /^table[ \t]+[A-Za-z0-9_]+[ \t]+[A-Za-z0-9_.-]+[ \t]*\{$/)
+                    refuse("unexpected top-level statement: " t)
+                split(t, f, /[ \t]+/); fam = f[2]; name = f[3]; sub(/\{$/, "", name)
+                keep = ((fam == "ip" || fam == "ip6") && name == "nftban")
+                if (keep) {
+                    if (seen[fam]) refuse("duplicate table " fam " nftban")
+                    seen[fam] = 1; cur = fam; buf[cur] = ""
+                } else {
+                    foreign[++nf] = fam " " name
+                }
+                scan(line); depth = delta
+                if (keep) buf[cur] = buf[cur] line "\n"
+                if (depth <= 0) refuse("table block opened and closed on one line")
+                next
+            }
+            if (keep && t ~ /^(include|define|flush|delete|destroy|reset)([ \t]|$)/)
+                refuse("forbidden statement inside an nftban table: " t)
+            scan(line); depth += delta
+            if (depth < 0) refuse("unbalanced closing brace")
+            if (keep) buf[cur] = buf[cur] line "\n"
+            if (depth == 0) keep = 0
+        }
+        END {
+            if (bad) exit 2
+            if (depth != 0) { printf "REFUSED: unterminated table block\n" > "/dev/stderr"; exit 2 }
+            if (!seen["ip"] || !seen["ip6"]) {
+                printf "REFUSED: backup must contain both table ip nftban and table ip6 nftban\n" > "/dev/stderr"; exit 2
+            }
+            for (i = 1; i <= nf; i++) printf "  foreign table in backup — NOT restored: %s\n", foreign[i] > "/dev/stderr"
+            printf "table ip nftban {}\ndelete table ip nftban\n%s", buf["ip"] > txn
+            printf "table ip6 nftban {}\ndelete table ip6 nftban\n%s", buf["ip6"] > txn
+            close(txn)
+        }
+    ' "$backup_file"
+}
+
 _restore_from_file() {
     local backup_file="$1"
 
     echo "Restoring from: $backup_file"
     echo ""
 
-    # Safety: stop NFTBan services first
-    echo "[1/4] Stopping NFTBan services..."
-    systemctl stop nftban-maintenance.timer 2>/dev/null || true
-    systemctl stop nftband 2>/dev/null || true
+    # v1.235 A1: the backup is never applied as a whole. Only the nftban tables are
+    # extracted into one transaction, that exact transaction is validated, and it is
+    # loaded atomically. Foreign tables (Docker, ip raw, operator, panel) are left as
+    # they are live: there is no `flush ruleset` on this path any more.
+    local _txn_dir _txn
+    _txn_dir=$(mktemp -d) || { echo "ERROR: cannot create a private work directory" >&2; return 1; }
+    chmod 0700 "$_txn_dir" 2>/dev/null || true
+    _txn="$_txn_dir/restore-nftban.nft"
 
-    # Flush current ruleset
-    echo "[2/4] Flushing current ruleset..."
-    nft flush ruleset 2>/dev/null || true
-
-    # Restore backup
-    echo "[3/4] Restoring backup..."
-    if ! nft -f "$backup_file" 2>&1; then
-        echo "ERROR: Failed to restore backup" >&2
-        echo "Attempting to reload NFTBan schema..." >&2
-        # v1.50.0: Live config should be rendered (no placeholders). Just load it.
-        local _nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-        if [[ -f "$_nftban_conf" ]]; then
-            nft -f "$_nftban_conf" 2>/dev/null || true
-        fi
+    echo "[1/4] Extracting the nftban tables from the backup..."
+    if ! _restore_extract_nftban_txn "$backup_file" "$_txn"; then
+        echo "ERROR: backup refused — nothing was changed" >&2
+        rm -rf "$_txn_dir"
         return 1
     fi
 
-    # Restart services
+    echo "[2/4] Validating the restore transaction..."
+    if ! nft -c -f "$_txn" 2>&1; then
+        echo "ERROR: restore transaction failed validation — nothing was changed" >&2
+        rm -rf "$_txn_dir"
+        return 1
+    fi
+
+    # Stop NFTBan services only once the transaction is known to be valid.
+    echo "[3/4] Stopping NFTBan services and applying the transaction..."
+    systemctl stop nftban-maintenance.timer 2>/dev/null || true
+    systemctl stop nftband 2>/dev/null || true
+
+    local _rc=0
+    if ! nft -f "$_txn" 2>&1; then
+        # One atomic transaction: on failure the kernel keeps the pre-restore ruleset.
+        echo "ERROR: restore transaction failed to load — the previous ruleset is still active" >&2
+        _rc=1
+    fi
+    rm -rf "$_txn_dir"
+
     echo "[4/4] Restarting NFTBan services..."
     systemctl start nftban-maintenance.timer 2>/dev/null || true
     systemctl start nftband 2>/dev/null || true
 
+    [[ $_rc -eq 0 ]] || return 1
     echo ""
-    echo "Restore complete!"
+    echo "Restore complete! (nftban tables restored; other tables untouched)"
 }
 
 _restore_previous_firewall() {

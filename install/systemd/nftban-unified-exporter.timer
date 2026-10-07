@@ -47,6 +47,13 @@ Conflicts=nftban-connector-exporter.timer
 [Timer]
 # Initial delay after boot (allow services to stabilize)
 OnBootSec=45s
+# v1.235 T1: also count from TIMER activation. With only OnBootSec + OnUnitActiveSec,
+# a timer started on a long-running host after a remove->install has nothing to
+# fire on: OnBootSec is already past (and is treated as used, because Persistent=true
+# kept the old last-trigger stamp), and OnUnitActiveSec has no base because the
+# reinstalled service has never run. systemd then shows it active with no next
+# elapse until reboot. OnActiveSec gives it a first run 45s after it starts.
+OnActiveSec=45s
 
 # Run every 60 seconds
 OnUnitActiveSec=60s

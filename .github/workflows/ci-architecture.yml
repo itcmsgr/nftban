@@ -340,6 +340,16 @@ jobs:
       - name: Check gates have no EPIPE short-circuits (v1.228.9 PR4, BLOCKING)
         run: ./scripts/ci/check-pipefail-epipe-shortcircuit.sh
 
+      # v1.235 H1 BLOCKING — the other half of the pipefail story. `var=$(grep ...)`
+      # under errexit aborts on grep's no-match exit 1 ("the key is not set"); in
+      # v1.234.0 that turned `nftban health` into a false BotScan DISABLED. The EPIPE
+      # guard above cannot see it. Health/status surfaces first; every existing site
+      # is declared in scripts/ci/data/errexit-cmdsubst-grep-registry.tsv (DEBT).
+      - name: Check errexit grep command substitutions are declared (v1.235 H1, BLOCKING)
+        run: |
+          ./scripts/ci/check-errexit-cmdsubst-grep.sh --selftest
+          ./scripts/ci/check-errexit-cmdsubst-grep.sh
+
       # v1.231.0 GUARD-THE-GUARD — the population above is DERIVED from CI wiring.
       # Arm 1 plants an out-of-prefix, CI-wired gate carrying the forbidden form and
       # requires detection: that is the exact defect the old check-*.sh scope missed.

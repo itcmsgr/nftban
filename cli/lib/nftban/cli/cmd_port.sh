@@ -39,6 +39,10 @@ fi
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 
+# v1.235: per-IP port grant helpers + replay (PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_port_allow.sh" 2>/dev/null || true
+
 # NFTBan - Port CLI Handler
 # =============================================================================
 
@@ -1012,6 +1016,13 @@ nftban_port_allow_add() {
     chmod 750 "$(dirname "$NFTBAN_PORT_ALLOW_CONFIG")"
     local iso_date
     iso_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    # v1.235: re-adding the same port/ip/proto REPLACES the entry (new timeout
+    # and start time). Pre-v1.235 it appended a duplicate line, so `list` showed
+    # the grant twice after the documented re-add workaround.
+    nftban_port_allow_drop_entry "$port" "$ip" "$proto" >/dev/null || {
+        echo "ERROR: could not update $NFTBAN_PORT_ALLOW_CONFIG" >&2
+        return 1
+    }
     echo "${port}|${ip}|${proto}|${timeout_seconds}|${comment_text}|${iso_date}" >> "$NFTBAN_PORT_ALLOW_CONFIG"
     chmod 640 "$NFTBAN_PORT_ALLOW_CONFIG"
 
@@ -1038,12 +1049,12 @@ nftban_port_allow_add() {
             [[ -n "$comment_text" ]] && echo "   Comment: $comment_text"
         else
             echo "⚠ Saved to config but IPC failed: $(nft_ipc_error "$response")" >&2
-            echo "  Port will be applied on daemon restart" >&2
+            echo "  Saved: re-applied by the next maintenance cycle (≤15 min) or 'nftban firewall rebuild'" >&2
             _v143_rc=1
         fi
     else
         echo "✅ Port $port ($proto) access saved for $ip"
-        echo "   ℹ Daemon not running — will apply on start"
+        echo "   ℹ Daemon not running — applied by the next maintenance cycle once the daemon runs"
     fi
 
     return $_v143_rc
@@ -1080,10 +1091,15 @@ nftban_port_allow_remove() {
     proto="${proto,,}"
 
     # Remove from config file
+    # v1.235: exact field match. The pre-v1.235 `sed "/${port}|${ip}|${proto}|/d"`
+    # was unanchored with the IP dots as wildcards: removing 80 also removed 8080.
     if [[ -f "$NFTBAN_PORT_ALLOW_CONFIG" ]]; then
-        local pattern="^${port}|${ip}|${proto}|"
-        if grep -q "$pattern" "$NFTBAN_PORT_ALLOW_CONFIG" 2>/dev/null; then
-            sed -i "/${port}|${ip}|${proto}|/d" "$NFTBAN_PORT_ALLOW_CONFIG"
+        local _removed=0
+        _removed=$(nftban_port_allow_drop_entry "$port" "$ip" "$proto") || {
+            echo "ERROR: could not update $NFTBAN_PORT_ALLOW_CONFIG" >&2
+            return 1
+        }
+        if [[ "${_removed:-0}" -gt 0 ]]; then
             echo "✓ Removed from config"
         else
             echo "⚠ Entry not found in config" >&2

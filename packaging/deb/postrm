@@ -223,8 +223,15 @@ nftban_fs_preflight() {
     fi
 
     # 2. read-only mounts and 3. write access, per directory
-    _pf_test=${NFTBAN_IMMUT_TEST_BIN:-/usr/bin/test}
-    [ -x "$_pf_test" ] || _pf_test=""
+    # 3. write access asks the KERNEL: the shell builtin `[ -w ]` is faccessat(2)
+    # with AT_EACCESS (dash: faccessat2, bash: eaccess), which applies the caller's
+    # real privileges (root CAP_DAC_OVERRIDE, ACLs, MAC). v1.235: an external test
+    # binary must never decide this. uutils test (rust-coreutils 0.8.0, /usr/bin/test
+    # on Ubuntu 26.04) never calls access(2); it does mode-bit arithmetic from statx and
+    # ignores root privilege, so it answered "not writable" for 0750 nftban:nftban dirs
+    # that root could write (measured on a production host: create+remove succeeded,
+    # gnutest and the builtins answered writable) and the upgrade was falsely refused.
+    # (BUG-PREFLIGHT-WRITE-DENIED-FALSE-ON-UBUNTU-26-UUTILS-TEST)
     : > "$_pf_tmp/ro_seen"
     awk -F'\t' '$1=="dir" {print $2}' "$_pf_tmp/targets" > "$_pf_tmp/dirs"
     while IFS= read -r _pf_d; do
@@ -250,12 +257,11 @@ EOF_FINDMNT
         else
             printf 'UNMEASURED mount options for %s (findmnt not available)\n' "$_pf_d"
         fi
-        if [ -n "$_pf_test" ] && ! "$_pf_test" -w "$_pf_d"; then
+        if [ ! -w "$_pf_d" ]; then
             printf 'BLOCKED WRITE-DENIED dir %s (no immutable flag and not a read-only mount: permission, ACL or SELinux/AppArmor policy; check the audit log)\n' "$_pf_d"
             _pf_rc=1
         fi
     done < "$_pf_tmp/dirs"
-    [ -n "$_pf_test" ] || printf 'UNMEASURED write access (no %s binary)\n' "${NFTBAN_IMMUT_TEST_BIN:-/usr/bin/test}"
 
     rm -rf "$_pf_tmp"
     return "$_pf_rc"
@@ -417,6 +423,35 @@ _NFTBAN_NSR_
     return 0
 }
 # <<< NFTBAN_SYNPROXY_RAW_CLEANUP_END <<<
+
+# >>> NFTBAN_INSTALL_STATE_RETIRE_BEGIN >>>
+# v1.235 BUG-INSTALL-STATE-SAYS-COMMITTED-AFTER-PACKAGE-REMOVE (K1).
+# Package removal used to leave /var/lib/nftban/state/install_state untouched, so a
+# removed host still claimed INSTALL_STATE=COMMITTED (or whatever the last install
+# wrote) with no package behind it. On a COMPLETE removal only (DEB postrm remove,
+# RPM postun $1 -eq 0) the file is moved aside, not deleted: the forensic record of
+# the last install survives as install_state.removed-<UTC>, and nothing claims a
+# current install any more. A later install starts from no state, exactly like a
+# fresh host. Purge (DEB) removes /var/lib/nftban as before.
+# SELF-CONTAINED: runs after the payload is gone, sources nothing. REPORT, DO NOT
+# ABORT: a failed move is reported on stderr and the removal still succeeds.
+# Byte-identical copies: packaging/deb/postrm, RPM postun scriptlet of the generated spec
+# (rendered from packaging/build_nftban.sh) - drift-checked by
+# cli/lib/nftban/tests/remove_retires_install_state_v1235_test.sh.
+_nftban_retire_install_state() {
+    _nis_dir="${NFTBAN_INSTALL_STATE_DIR:-/var/lib/nftban/state}"
+    _nis_f="$_nis_dir/install_state"
+    [ -f "$_nis_f" ] || return 0
+    _nis_ts=$(date -u -Iseconds 2>/dev/null) || _nis_ts=unknown
+    _nis_to="$_nis_dir/install_state.removed-$_nis_ts"
+    if mv -f "$_nis_f" "$_nis_to" 2>/dev/null; then
+        echo "nftban: install state retired (package removed): $_nis_to"
+    else
+        echo "nftban: WARN: could not retire $_nis_f - it still records the last install state" >&2
+    fi
+    return 0
+}
+# <<< NFTBAN_INSTALL_STATE_RETIRE_END <<<
 
 case "$1" in
     purge)
@@ -608,6 +643,10 @@ case "$1" in
         # here (comment-scoped; see _nftban_uninstall_synproxy_raw). Not gated
         # on nft: the function reports NOT_OBSERVED itself when nft is gone.
         _nftban_uninstall_synproxy_raw
+
+        # v1.235 K1: a removed package must not leave install_state claiming the
+        # last install (COMMITTED). Moved aside, not deleted; see the function.
+        _nftban_retire_install_state
 
         # D5 (UNINSTALL-PR2): the operator message is NOT gated on `nft` being
         # present. It used to sit inside the guard above, so on a host where the

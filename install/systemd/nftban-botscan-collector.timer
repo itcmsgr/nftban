@@ -30,6 +30,13 @@ Documentation=man:nftban(8)
 [Timer]
 # 5-minute interval — keep the spool fresher than the 10-minute scan
 OnBootSec=2min
+# v1.235 T1: also count from TIMER activation. With only OnBootSec + OnUnitActiveSec,
+# a timer started on a long-running host after a remove->install has nothing to
+# fire on: OnBootSec is already past (and is treated as used, because Persistent=true
+# kept the old last-trigger stamp), and OnUnitActiveSec has no base because the
+# reinstalled service has never run. systemd then shows it active with no next
+# elapse until reboot. OnActiveSec gives it a first run 2min after it starts.
+OnActiveSec=2min
 OnUnitActiveSec=5min
 AccuracySec=30s
 RandomizedDelaySec=1min

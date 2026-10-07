@@ -75,9 +75,15 @@ fi
 # it with `nft -c -f`, and commits it in ONE `nft -f`. It therefore needs no exemption
 # and must be held to the same rule as the forward lane.
 #
-# The three remaining entries are operator-invoked, --force-gated paths (B15) and stay
-# exempt for now; they are tracked separately and are NOT in this lane's scope.
-REBUILD_EXEMPT='firewall_reset _restore_from_file _restore_previous_firewall'
+# The two remaining entries are operator-invoked paths (B15) and stay exempt for now;
+# they are tracked separately and are NOT in this lane's scope.
+#
+# v1.235 A1: _restore_from_file REMOVED from this list. It was described here as
+# "--force-gated", but it had no such gate: `firewall restore <file>` ran
+# `nft flush ruleset` (destroying Docker/raw/operator tables) and then loaded the whole
+# backup. It now extracts only the nftban tables, validates that exact transaction with
+# `nft -c -f`, and loads it in ONE `nft -f`, so it is held to the rule like any writer.
+REBUILD_EXEMPT='firewall_reset _restore_previous_firewall'
 
 REBUILD_VIOLATIONS="$(
     awk -v exempt="$REBUILD_EXEMPT" '

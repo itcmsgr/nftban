@@ -507,7 +507,17 @@ nftban_health_cmd_truth() {
     [[ -s "$validator_err_file" ]] && validator_err="$(cat "$validator_err_file")"
     rm -f "$validator_err_file"
 
-    if (( validator_rc != 0 )) || [[ -z "$output" ]]; then
+    # v1.235 (BUG-HEALTH-TREATS-VALIDATOR-DEGRADED-VERDICT-AS-TRUTH-FAILED): the
+    # validator's exit code is a VERDICT for 0/1/2 (internal/validator/cli.go
+    # ExitCode: 0 protected/idle/converging, 1 degraded, 2 down) and an execution
+    # error only for 3 (cmd/nftban-validate/main.go). Any non-zero rc used to land
+    # here: a DEGRADED host was reported "Overall: DOWN / Truth: FAILED" and its
+    # report, with the findings, was discarded (measured lab3 v1.234.0, ddos mode
+    # auto -> VAL-CONS-002). Only an execution error, or no valid JSON document,
+    # is a failed truth collection.
+    local _validator_doc_ok=0
+    [[ -n "$output" ]] && jq -e . >/dev/null 2>&1 <<<"$output" && _validator_doc_ok=1
+    if (( validator_rc >= 3 || _validator_doc_ok == 0 )); then
         local summary_err="${validator_err:0:500}"
         if [[ "$json_mode" == "true" ]]; then
             jq -n \
@@ -553,9 +563,12 @@ nftban_health_cmd_truth() {
         # ALWAYS present (the anti-false-zero gate); counters/nft are added only when
         # present so the contract-phase "absent ≠ zero" rule is preserved. Without this
         # the view would advertise schema_version 1.84.0 while hiding its new fields.
+        local _json_rc=0
         echo "$output" | jq '{schema_version, status, service_state, modules, consistency, counters_phase}
-            + ({counters, nft} | with_entries(select(.value != null)))' 2>/dev/null
-        return $?
+            + ({counters, nft} | with_entries(select(.value != null)))' 2>/dev/null || _json_rc=$?
+        (( _json_rc != 0 )) && return "$_json_rc"
+        # The verdict is the exit code (0/1/2), as on the text path below.
+        return "$validator_rc"
     fi
 
     # Text mode: render four-axis table
@@ -670,9 +683,21 @@ nftban_health_cmd_truth() {
     for sub in manual feeds geoban; do
         local state entries
         state=$(echo "$output" | jq -r ".modules.blacklist.${sub}.state // \"-\"" 2>/dev/null)
-        entries=$(echo "$output" | jq -r ".modules.blacklist.${sub}.entries // 0" 2>/dev/null)
+        # v1.235 (BUG-STATS-COUNTERS-MIXED-BASES): an ABSENT entries field is NOT
+        # zero. The validator never counts feeds/geoban per source — both load into
+        # the shared blacklist_ipv4/_ipv6 interval set (internal/validator/
+        # module_health.go, "Feeds share blacklist_ipv4 with geoban") — and the
+        # field is `omitempty`, so `// 0` rendered "feeds loaded 0" next to a
+        # stats page reporting 1,396 feed entries. Only manual idle is a true 0.
+        entries=$(echo "$output" | jq -r ".modules.blacklist.${sub}.entries // \"\"" 2>/dev/null) || entries=""
         [[ "$state" == "null" ]] && state="-"
-        [[ "$entries" == "null" ]] && entries="0"
+        [[ "$entries" == "null" ]] && entries=""
+        if [[ -z "$entries" ]]; then
+            case "$sub" in
+                manual) [[ "$state" == "idle" ]] && entries="0" || entries="n/a" ;;
+                *)      entries="n/a (shared blacklist set; not counted per source — see nftban stats)" ;;
+            esac
+        fi
         printf "  %-11s  %-9s  %s\n" "$sub" "$state" "$entries"
     done
 
@@ -706,6 +731,10 @@ nftban_health_cmd_truth() {
     fi
 
     echo ""
+    # v1.235: return the validator verdict (0/1/2). SF-1's contract (2 after a
+    # DOWN table) is kept; a DEGRADED table now returns 1 instead of the old
+    # "truth failed" 2. Callers use `|| return $?`, so no ERR banner.
+    return "$validator_rc"
 }
 
 export -f nftban_health_cmd_truth
