@@ -45,9 +45,9 @@ var BootGuardUnits = []string{
 // at a fixture through the mock executor's file map.
 var ProcCmdlinePath = "/proc/cmdline"
 
-// EmergencyBypassKernelArg is the exact kernel-command-line argument of the per-boot bypass
+// NftbanDisabledKernelArg is the exact kernel-command-line argument of the per-boot bypass
 // (a public, documented switch; not a credential).
-const EmergencyBypassKernelArg = "nftban=disabled"
+const NftbanDisabledKernelArg = "nftban=disabled"
 
 // unitInstalled reports whether a unit file is present in any systemd unit dir.
 func unitInstalled(exec executor.Executor, unit string) bool {
@@ -117,7 +117,7 @@ func EmergencyBypassActive(exec executor.Executor) bool {
 		return false
 	}
 	for _, w := range strings.Fields(string(data)) {
-		if w == EmergencyBypassKernelArg {
+		if w == NftbanDisabledKernelArg {
 			return true
 		}
 	}
