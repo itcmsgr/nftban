@@ -53,7 +53,6 @@
 #
 # Usage: check-errexit-cmdsubst-grep.sh [--selftest | --emit-rows]
 set -Eeuo pipefail
-IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REGISTRY="scripts/ci/data/errexit-cmdsubst-grep-registry.tsv"
