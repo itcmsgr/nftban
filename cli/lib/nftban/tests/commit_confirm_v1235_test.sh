@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for the repaired commit-confirm engine (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md section 4; the pre-v1.235 mechanism was orphaned and restored by merging). Drives the REAL lib/commit_confirm.sh in a sandbox with stubbed nft, systemd-run and systemctl. Asserts: last-known-good is the APPLIED BASELINE recorded at a successful load; apply refuses without a baseline, while an apply is pending and while a rollback has failed; the rollback is ARMED (systemd-run) BEFORE any nft -f, and a failed arm leaves no record; the change set lists modified, added and removed config files; confirm commits the candidate projection by rename while the rollback is armed and only then records confirmed; a wrong apply ID and a passed deadline are refused; a failed publication keeps the apply pending; a crash after the commit point is completed (no rollback); rollback restores only the change set, leaves a file edited after the apply untouched and lists it as a conflict, never writes files outside the change set, and its single kernel transaction deletes only ip/ip6 nftban; a failed transaction KEEPS the kernel state, records rollback-failed with the verbatim error and the kernel fact, sets the marker and keeps all artifacts (owner D10); boot mode makes no nft call; a boot after a failed rollback raises the alarm again and changes nothing; abandon clears the marker."
+# meta:description="BEHAVIORAL regression for the repaired commit-confirm engine (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md section 4; the pre-v1.235 mechanism was orphaned and restored by merging). Drives the REAL lib/commit_confirm.sh in a sandbox with stubbed nft, systemd-run and systemctl. Asserts: last-known-good is the APPLIED BASELINE recorded at a successful load; apply refuses without a baseline, while an apply is pending and while a rollback has failed; the rollback is ARMED (systemd-run) BEFORE any nft -f, and a failed arm leaves no record; the change set lists modified, added and removed config files; confirm commits the candidate projection by rename while the rollback is armed and only then records confirmed; a wrong apply ID and a passed deadline are refused; a failed publication keeps the apply pending; a crash after the commit point is completed only with a recorded confirm for that apply ID (an identical projection is not proof); rollback restores only the change set, leaves a file edited after the apply untouched and lists it as a conflict, and an unresolved conflict holds the writers (D10 hold, no daemon restart) until the file is resolved and the rollback retried or abandoned; never writes files outside the change set, and its single kernel transaction deletes only ip/ip6 nftban; a failed transaction KEEPS the kernel state, records rollback-failed with the verbatim error and the kernel fact, sets the marker and keeps all artifacts (owner D10); boot mode makes no nft call; a boot after a failed rollback raises the alarm again and changes nothing; abandon clears the marker."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,tar,sha256sum,flock,join,mktemp"
@@ -221,8 +221,13 @@ fresh; stage_pending 120; ID=$(get apply_id)
 echo 'NEW=edited-after-apply' > "$SB/etc/conf.d/new.conf"       # independent later edit
 : > "$SB/calls.log"
 rc=0; cc "cc_rollback $ID --auto" || rc=$?
-if [[ $rc -eq 0 && "$(get status)" == "rolled-back" ]]; then ok "D14 rollback completes (status rolled-back)"
-else ko "D14 rollback (rc=$rc status=$(get status))"; fi
+# Owner 2026-10-07: an unresolved conflict is an INCOMPLETE rollback -> D10 hold: kernel
+# at the baseline, writers held (marker), no daemon restart, reason recorded, alarm.
+if [[ $rc -ne 0 && "$(get status)" == "rollback-failed" && -e "$SB/data/state/commit-confirm.rollback-failed" ]] \
+   && [[ "$(get error)" == *"unresolved conflicts"*"conf.d/new.conf"* ]] && has "$SB/calls.log" "auth.crit" \
+   && ! has "$SB/calls.log" "restart nftband"; then
+    ok "D14 unresolved conflict -> rollback INCOMPLETE: D10 hold (marker, reason, alarm), no daemon restart"
+else ko "D14 conflict hold (rc=$rc status=$(get status) error=$(get error))"; fi
 if has_line "$SB/etc/conf.d/a.conf" "A=1" && [[ -f "$SB/etc/ports.d/00-ssh.conf" ]]; then ok "D15 change set restored (modified file reverted, removed file restored)"
 else ko "D15 change set restore"; fi
 if has_line "$SB/etc/conf.d/new.conf" "NEW=edited-after-apply" && [[ "$(get conflicts)" == *"conf.d/new.conf"* ]]; then
@@ -236,6 +241,21 @@ if has "$T" "delete table ip nftban" && has "$T" "delete table ip6 nftban" && ! 
 else ko "D18 transaction scope: $(tr '\n' ';' < "$T" 2>/dev/null)"; fi
 if has "$T" "set s"; then ok "D19 transaction reloads the exact pre-apply NFTBan tables"
 else ko "D19 snapshot not reloaded"; fi
+
+# ---- the operator resolves the conflict (new.conf did not exist in the baseline) and retries
+rm -f "$SB/etc/conf.d/new.conf"; : > "$SB/calls.log"
+rc=0; cc "cc_rollback $ID" || rc=$?
+if [[ $rc -eq 0 && "$(get status)" == "rolled-back" && ! -e "$SB/data/state/commit-confirm.rollback-failed" && -z "$(get conflicts)" ]] \
+   && has "$SB/calls.log" "restart nftband"; then
+    ok "D16b resolved file + retry -> rolled back, hold released, daemon restarted"
+else ko "D16b resolve + retry (rc=$rc status=$(get status) conflicts=$(get conflicts))"; fi
+
+# ---- no conflict: the rollback completes and the daemon re-reads the restored config
+fresh; stage_pending 120; ID=$(get apply_id); : > "$SB/calls.log"
+rc=0; cc "cc_rollback $ID --auto" || rc=$?
+if [[ $rc -eq 0 && "$(get status)" == "rolled-back" && ! -e "$SB/data/state/commit-confirm.rollback-failed" ]] && has "$SB/calls.log" "restart nftband"; then
+    ok "D14b no conflict -> rolled back, daemon restarted"
+else ko "D14b plain rollback (rc=$rc status=$(get status))"; fi
 
 # ---- D10: failed transaction
 fresh; stage_pending 120; ID=$(get apply_id); echo 1 > "$SB/nft_f_rc"

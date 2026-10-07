@@ -103,6 +103,7 @@ cc_status() { cc_get status; }
 cc_refuse_if_rollback_failed() {
     [[ -e "$CC_FAILED_MARK" ]] || return 0
     echo "REFUSED: $1: a commit-confirm ROLLBACK FAILED (apply $(cc_get apply_id)); the current kernel state is kept for recovery." >&2
+    echo "  Reason: $(cc_get error)" >&2
     echo "  Recover: 'nftban firewall rollback $(cc_get apply_id)' (retry), or from the console" >&2
     echo "  'nftban disable all --flush-rules', or boot once with nftban=disabled." >&2
     return 1
@@ -270,6 +271,7 @@ cc_restore_changeset() {
         [[ -n "$path" ]] || continue
         local live="${CC_CONFIG}/${path#./}"
         cur=MISSING; [[ -f "$live" ]] && cur="$(cc_sha "$live")"
+        [[ "$cur" == "$base" ]] && continue          # already the baseline (e.g. resolved by the operator)
         if [[ "$cur" != "$cand" ]]; then
             conflicts="${conflicts:+$conflicts,}${path#./}"; continue
         fi
@@ -344,18 +346,37 @@ cc_rollback() {
         cp -f "$CC_BASE/projection.nft" "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" \
           && mv -f "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" "${CC_CONFIG}/generated/nftban-boot.nft"
     fi
+    systemctl stop "nftban-commit-rollback-${rec_id}.timer" >/dev/null 2>&1 || true
+    # Owner 2026-10-07: an UNRESOLVED conflict means the rollback could not restore the
+    # whole change set. The later edit is kept (never overwritten), but the writers that
+    # would apply it (nftband sync, maintenance, autoheal rebuild) must not resume on
+    # their own: this is the D10 hold. The kernel is already the baseline. The operator
+    # resolves the file(s) and retries the rollback, or accepts them with --abandon.
+    if [[ -n "$conflicts" ]]; then
+        cc_set status rollback-failed
+        cc_set error "unresolved conflicts: files edited after the apply: ${conflicts//,/, }"
+        cc_set conflicts "$conflicts"
+        cc_set kernel "baseline restored (NFTBan tables of the applied baseline)"
+        cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        : > "$CC_FAILED_MARK"
+        cc_unlock
+        local msg="NFTBan commit-confirm rollback of apply $rec_id INCOMPLETE: kernel restored to the baseline, but these files were edited after the apply and were NOT restored: ${conflicts//,/, }. NFTBan writers are held."
+        logger -t nftban -p auth.crit "$msg" 2>/dev/null || true
+        echo "⚠️  $msg" >&2
+        echo "   Resolve: bring each file back to what you want, then 'nftban firewall rollback $rec_id' (a file equal to the baseline is no longer a conflict)," >&2
+        echo "   or accept the files as they are now: 'nftban firewall rollback --abandon'." >&2
+        return 1
+    fi
     cc_set status rolled-back
-    cc_set conflicts "$conflicts"
+    cc_set conflicts ""
     cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     rm -f "$CC_FAILED_MARK"
-    systemctl stop "nftban-commit-rollback-${rec_id}.timer" >/dev/null 2>&1 || true
     cc_unlock
     # 4. The daemon re-reads the restored configuration (not at boot: it starts after us).
     if [[ "$mode" != "--boot" ]] && systemctl is-active --quiet nftband.service 2>/dev/null; then
         systemctl restart nftband.service >/dev/null 2>&1 || true
     fi
     echo "↩️  Apply $rec_id ROLLED BACK to the applied baseline."
-    [[ -n "$conflicts" ]] && echo "   NOT restored (edited again after the apply; left as you changed them): ${conflicts//,/, }"
     return 0
 }
 
