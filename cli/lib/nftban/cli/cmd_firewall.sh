@@ -1693,9 +1693,9 @@ firewall_validate() {
             # whole point of Option C) cannot read this unit's journal without
             # systemd-journal/adm membership, so the old journalctl read (D10)
             # returned empty for exactly the users this service exists to serve.
-            # The wrapper writes /run/nftban/firewall-validate/last.json with
+            # The wrapper writes /run/nftban-firewall-validate/last.json with
             # chgrp nftban + chmod 0640 — that file is the PRIMARY source now.
-            local _runfile="${NFTBAN_RUN_DIR:-/run/nftban}/firewall-validate/last.json"
+            local _runfile="${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}/last.json"
             local _output=""
             _output=$(cat "$_runfile" 2>/dev/null)
             # Last-resort fallback ONLY if the file is empty/unreadable (e.g. an
