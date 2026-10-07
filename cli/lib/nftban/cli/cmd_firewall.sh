@@ -284,7 +284,8 @@ _firewall_substitute_placeholders() {
     # the fwd_* set placeholders, in the SAME render (one transaction with the rules, and the
     # boot projection). A store that exists but cannot be read REFUSES the render: loading
     # empty allows would silently cut every approved forwarded flow.
-    local FWD_EL_EGRESS="" FWD_EL_UPLINK="" FWD_EL_PUB_TCP4="" FWD_EL_PUB_UDP4="" FWD_EL_PUB_TCP6="" FWD_EL_PUB_UDP6=""
+    # Exported function-locals: the awk below reads them through ENVIRON (no -v escape processing).
+    local -x FWD_EL_EGRESS="" FWD_EL_UPLINK="" FWD_EL_PUB_TCP4="" FWD_EL_PUB_UDP4="" FWD_EL_PUB_TCP6="" FWD_EL_PUB_UDP6=""
     if declare -F nftban_forward_render_elements >/dev/null 2>&1 \
        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_forward.sh"; then
         if ! nftban_forward_render_elements; then
@@ -301,10 +302,7 @@ _firewall_substitute_placeholders() {
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
         "$input" \
-    | FWD_EL_EGRESS="$FWD_EL_EGRESS" FWD_EL_UPLINK="$FWD_EL_UPLINK" \
-      FWD_EL_PUB_TCP4="$FWD_EL_PUB_TCP4" FWD_EL_PUB_UDP4="$FWD_EL_PUB_UDP4" \
-      FWD_EL_PUB_TCP6="$FWD_EL_PUB_TCP6" FWD_EL_PUB_UDP6="$FWD_EL_PUB_UDP6" \
-      awk '
+    | awk '
         /^__FWD_EGRESS_ELEMENTS__$/       { if (ENVIRON["FWD_EL_EGRESS"]   != "") print ENVIRON["FWD_EL_EGRESS"];   next }
         /^__FWD_UPLINK_ELEMENTS__$/       { if (ENVIRON["FWD_EL_UPLINK"]   != "") print ENVIRON["FWD_EL_UPLINK"];   next }
         /^__FWD_PUBLISH_TCP4_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_TCP4"] != "") print ENVIRON["FWD_EL_PUB_TCP4"]; next }

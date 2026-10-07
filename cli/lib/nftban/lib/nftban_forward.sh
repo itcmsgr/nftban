@@ -132,7 +132,7 @@ nftban_forward_add() {
     comment="${comment//|/ }"; comment="${comment//$'\n'/ }"; comment="${comment:0:120}"
     key="$rec"
     cur=$(nftban_forward_records) || return 2
-    if printf '%s\n' "$cur" | awk -F'|' -v k="$key" '{n=split(k,a,"|"); m=""; for(i=1;i<=n;i++) m=m (i>1?"|":"") $i; if (m==k) f=1} END{exit f?0:1}'; then
+    if [[ $'\n'"$cur"$'\n' == *$'\n'"$key"[$'|\n']* ]]; then
         echo "nftban: already present: $key" >&2; return 3
     fi
     tmp=$(mktemp) || return 2
@@ -263,7 +263,7 @@ nftban_forward_status() {
             case "$out" in *"No such file or directory"*) echo "  $fam: no nftban forward chain";; *) echo "  $fam: UNKNOWN (read failed: ${out%%$'\n'*})";; esac
             continue
         fi
-        rc=$(printf '%s\n' "$out" | grep -oE 'policy [a-z]+' | head -1); rc="${rc#policy }"
+        rc=""; [[ "$out" =~ policy\ ([a-z]+) ]] && rc="${BASH_REMATCH[1]}"
         tag=$(printf '%s\n' "$out" | grep -cF 'comment "nftban:fwd:' || true)
         untag=$(printf '%s\n' "$out" | grep -E '# handle [0-9]+$' | grep -vE '^[[:space:]]*(table|chain)[[:space:]]' | grep -vF 'comment "nftban:fwd:' || true)
         echo "  $fam: policy ${rc:-UNKNOWN}, ${tag} NFTBan rule(s)"
@@ -288,7 +288,7 @@ nftban_forward_status() {
     if [[ -z "$out" ]]; then echo "  none"; else
         while IFS= read -r b; do
             [[ -n "$b" ]] || continue
-            if printf '%s\n' "$recs" | grep -qx "egress|${b}|.*"; then echo "  $b: egress ALLOWED (stored)"
+            if [[ $'\n'"$recs"$'\n' == *$'\n'"egress|${b}"[$'|\n']* ]]; then echo "  $b: egress ALLOWED (stored)"
             elif nftban_forward_recognised_bridge "$b"; then echo "  $b: recognised (Docker bridge); not allowed. To allow: nftban firewall forward allow egress $b"
             else echo "  $b: not a recognised and tested bridge (not supported in v1.235)"; fi
         done <<<"$out"
@@ -298,7 +298,7 @@ nftban_forward_status() {
     if [[ -z "$out" ]]; then echo "  none"; else
         while IFS= read -r u; do
             [[ -n "$u" ]] || continue
-            if printf '%s\n' "$recs" | grep -qx "uplink|${u}|.*"; then echo "  $u: uplink ALLOWED (stored)"
+            if [[ $'\n'"$recs"$'\n' == *$'\n'"uplink|${u}"[$'|\n']* ]]; then echo "  $u: uplink ALLOWED (stored)"
             else echo "  $u: not allowed. To allow: nftban firewall forward allow uplink $u"; fi
         done <<<"$out"
     fi

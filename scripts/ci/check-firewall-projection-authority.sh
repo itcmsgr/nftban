@@ -88,10 +88,13 @@ else
     D_MAIL=$(sed 's/.*_ct_mail=\([0-9]*\).*/\1/' <<<"$DEFLINE")
     D_PORT=$(sed 's/.*_ssh_port=\([0-9]*\).*/\1/' <<<"$SSHLINE")
     inf "install-time fallbacks read from the render authority: ssh=$D_PORT ct_ssh=$D_SSH ct_http=$D_HTTP ct_mail=$D_MAIL"
+    # v1.235: a __FWD_*__ line is a whole-line element slot; the install-time
+    # forward store is empty, so the render authority emits no element line.
     RENDERED=$(mktemp) || exit 1
     trap 'rm -f "$RENDERED"' EXIT
     sed -e "s/__SSH_PORT__/${D_PORT}/g" -e "s/__CT_LIMIT_SSH__/${D_SSH}/g" \
         -e "s/__CT_LIMIT_HTTP__/${D_HTTP}/g" -e "s/__CT_LIMIT_MAIL__/${D_MAIL}/g" \
+        -e '/^__FWD_[A-Z0-9_]*__$/d' \
         "$TPL" > "$RENDERED"
     if [[ -n "$(grep -oE '__[A-Z0-9_]+__' "$RENDERED")" ]]; then
         bad "P3 unrendered placeholders remain after substitution:"
