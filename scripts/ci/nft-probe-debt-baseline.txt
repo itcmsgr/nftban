@@ -26,7 +26,7 @@
 # `nftban botguard stats` no longer probes-then-counts, and the `nftban status`
 # human row no longer gates the IPv6 read on an IPv4 probe. The ratchet is
 # tightened to 90 in the same change, per the rule above.
-UNTYPED_PROBE_COUNT=90
+UNTYPED_PROBE_COUNT=89
 
 # -----------------------------------------------------------------------------
 # G-2a ALLOWLIST — failure-to-mutation sites that PRE-DATE PR-3
