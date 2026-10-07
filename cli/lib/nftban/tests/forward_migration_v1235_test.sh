@@ -71,7 +71,7 @@ chain() {  # fam rules...
       local r; for r in "$@"; do printf '\t\t%s\n' "$r"; done; printf '\t}\n}\n'; } > "$SB/fwd.$fam"
 }
 fresh() {
-    rm -rf "$SB/etc" "$SB"/fwd.* "$SB"/route* "$SB"/default*; mkdir -p "$SB/etc"
+    rm -rf "${SB:?}/etc" "${SB:?}"/fwd.* "${SB:?}"/route* "${SB:?}"/default*; mkdir -p "$SB/etc"
     printf 'default via 192.0.2.1 dev eth0 proto static\n' > "$SB/default-4"
     printf '172.18.0.0/16 dev br-938df9175c79 proto kernel scope link src 172.18.0.1\n' > "$SB/route172.18.0.0_16"
     printf '172.17.0.0/16 dev docker0 proto kernel scope link src 172.17.0.1 linkdown\n' > "$SB/route172.17.0.0_16"

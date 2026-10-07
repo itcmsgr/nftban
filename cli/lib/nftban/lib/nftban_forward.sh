@@ -90,6 +90,7 @@ _nftban_fwd_join() {
 # nftban_forward_render_elements : sets FWD_EL_EGRESS FWD_EL_UPLINK FWD_EL_PUB_TCP4
 # FWD_EL_PUB_UDP4 FWD_EL_PUB_TCP6 FWD_EL_PUB_UDP6 to an `elements = { ... }` line, or
 # to empty when there is no record. rc 2 = the store could not be read (caller refuses).
+# shellcheck disable=SC2034  # the FWD_EL_* assignments ARE the output (read by the caller's render)
 nftban_forward_render_elements() {
     local recs rc=0 kind a b c d src line
     local -a eg=() up=() t4=() u4=() t6=() u6=() f=()
