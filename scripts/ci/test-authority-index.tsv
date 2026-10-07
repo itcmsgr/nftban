@@ -255,6 +255,7 @@ pipefail_epipe_product_truth_v1231_0_test	cli/lib/nftban/tests/pipefail_epipe_pr
 pkg_migration_ownership_boundary_v1228_10_test	cli/lib/nftban/tests/pkg_migration_ownership_boundary_v1228_10_test.sh	packaging	test	package-migration-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 plan_projection_v1229_7_test	cli/lib/nftban/tests/plan_projection_v1229_7_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	90		
 port_remove_live_ssh_guard_v1234_test	cli/lib/nftban/tests/port_remove_live_ssh_guard_v1234_test.sh	cli	test	ports	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+port_report_published_forward_v1235_test	cli/lib/nftban/tests/port_report_published_forward_v1235_test.sh	firewall	test	port-report	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_classic_event_time_v1233_1_test	cli/lib/nftban/tests/portscan_classic_event_time_v1233_1_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_enable_disable_txn_v1233_1_test	cli/lib/nftban/tests/portscan_enable_disable_txn_v1233_1_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	900		
