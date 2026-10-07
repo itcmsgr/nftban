@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-07"
-# meta:description="PORT-REPORT-MISLABELS-DOCKER (v1.235, C19). A port published by a foreign DNAT rule (Docker and others) was reported 'BLOCKED - No firewall rule (default drop)': an input-chain verdict for traffic that takes the forward path. Drives the REAL core/nftban_report_port.sh (its own strict plane, IFS=$'\\n\\t') against a stub nft serving fixture rulesets (documentation address ranges only). Arms: P1 no DNAT -> existing 'No firewall rule (default drop)' kept; P2 foreign DNAT + nftban forward policy drop + 0 accept rules -> 'published by ip nat DNAT -> blocked by NFTBan forward policy (not admin-allowed)'; P3 the same + 2 accept rules (one ct state established,related) -> 'NFTBan verdict UNKNOWN ... 2 accept rule(s) ... (not evaluated)'; P4 no nftban forward chain -> UNKNOWN; P5 nft -j unreadable -> a listening port with no input rule is UNKNOWN, never 'No firewall rule'; P6 text ruleset unreadable -> UNKNOWN; P7 a DNAT dport set {5432, 7700} -> both ports attributed; P8 the table view prints UNKNOWN (not NO-RULE) in the firewall column. Never 'reachable'. Regression only: confirmation is the RC smoke row on the packaged candidate. Set PRP_SUBJECT_ROOT to an older tree (e.g. origin/main before this change): P2-P8 FAIL there."
+# meta:description="PORT-REPORT-MISLABELS-DOCKER (v1.235, C19). A port published by a foreign DNAT rule (Docker and others) was reported 'BLOCKED - No firewall rule (default drop)': an input-chain verdict for traffic that takes the forward path. Drives the REAL core/nftban_report_port.sh (its own strict plane, IFS=$'\\n\\t') against a stub nft serving fixture rulesets (documentation address ranges only). Arms: P1 no DNAT -> existing 'No firewall rule (default drop)' kept; P2 foreign DNAT + nftban forward policy drop + 0 accept rules -> 'published by ip nat DNAT -> blocked by the NFTBan forward policy (drop; no accept rule in the nftban forward chain)'; P3 the same + 2 accept rules (one ct state established,related) -> 'NFTBan verdict UNKNOWN ... 2 accept rule(s) ... (not evaluated)'; P4 no nftban forward chain -> UNKNOWN; P5 nft -j unreadable -> a listening port with no input rule is UNKNOWN, never 'No firewall rule'; P6 text ruleset unreadable -> UNKNOWN; P7 a DNAT dport set {5432, 7700} -> both ports attributed; P8 the table view prints UNKNOWN (not NO-RULE) in the firewall column. Never 'reachable'. Regression only: confirmation is the RC smoke row on the packaged candidate. Set PRP_SUBJECT_ROOT to an older tree (e.g. origin/main before this change): P2-P8 FAIL there."
 # meta:inventory.files="cli/lib/nftban/core/nftban_report_port.sh"
 # meta:inventory.binaries="bash,grep,jq,mktemp"
 # meta:inventory.env_vars="PRP_SUBJECT_ROOT"
@@ -97,8 +97,8 @@ r="$(exposure "$d" 5432 tcp)"
 # P2 — DNAT + nftban forward policy drop + 0 accept rules.
 d="$(mkfix p2 "$(fwd_chain drop),$(dnat_rule ip nat 5432)")"
 r="$(exposure "$d" 5432 tcp)"
-[[ "$r" == "BLOCKED|BLOCKED|x|published by ip nat DNAT -> blocked by NFTBan forward policy (not admin-allowed)" ]] \
-    && ok "P2 published + drop + 0 accepts -> blocked by NFTBan forward policy (not admin-allowed)" || no "P2" "$r"
+[[ "$r" == "BLOCKED|BLOCKED|x|published by ip nat DNAT -> blocked by the NFTBan forward policy (drop; no accept rule in the nftban forward chain)" ]] \
+    && ok "P2 published + drop + 0 accepts -> blocked by the NFTBan forward policy (drop; no accept rule in the nftban forward chain)" || no "P2" "$r"
 
 # P3 — the same with two accept rules, one of them ct established,related (counted, not special-cased).
 d="$(mkfix p3 "$(fwd_chain drop),$(dnat_rule ip nat 5432),$acc_saddr,$acc_ct")"
@@ -126,7 +126,7 @@ r="$(exposure "$d" 5432 tcp)"
 # P7 — a DNAT dport set: every member is attributed.
 d="$(mkfix p7 "$(fwd_chain drop),$(dnat_rule ip nat '{"set":[5432,7700]}')")"
 r1="$(exposure "$d" 5432 tcp)"; r2="$(exposure "$d" 7700 tcp)"
-[[ "$r1" == *"blocked by NFTBan forward policy"* && "$r2" == *"blocked by NFTBan forward policy"* ]] \
+[[ "$r1" == *"blocked by the NFTBan forward policy"* && "$r2" == *"blocked by the NFTBan forward policy"* ]] \
     && ok "P7 dport set {5432, 7700} -> both published ports attributed" || no "P7" "$r1 / $r2"
 
 # P8 — the table view shows UNKNOWN in the firewall column (it used to fall to NO-RULE).

@@ -230,7 +230,7 @@ _nftban_port_forward_verdict() {
     elif (( accepts > 0 )); then
         printf '%s|%s|%s|%s\n' UNKNOWN UNKNOWN "?" "published by ${tables} DNAT -> NFTBan verdict UNKNOWN: the nftban forward chain has ${accepts} accept rule(s) not managed by this report (not evaluated)"
     else
-        printf '%s|%s|%s|%s\n' BLOCKED BLOCKED x "published by ${tables} DNAT -> blocked by NFTBan forward policy (not admin-allowed)"
+        printf '%s|%s|%s|%s\n' BLOCKED BLOCKED x "published by ${tables} DNAT -> blocked by the NFTBan forward policy (drop; no accept rule in the nftban forward chain)"
     fi
 }
 
