@@ -5117,7 +5117,7 @@ firewall_reset() {
         if _rs_tables=$(nft list tables 2>&1); then
             echo "  Kernel now: ip nftban $(grep -qx 'table ip nftban' <<<"$_rs_tables" && echo present || echo ABSENT), ip6 nftban $(grep -qx 'table ip6 nftban' <<<"$_rs_tables" && echo present || echo ABSENT)" >&2
         else
-            echo "  Kernel now: UNKNOWN (nft list tables failed)" >&2
+            echo "  Kernel now: UNKNOWN (the kernel table listing failed)" >&2
         fi
         [[ "$_rs_timer_was" == "active" ]] && { systemctl start nftban-maintenance.timer 2>/dev/null || true; }
         [[ "$_rs_daemon_was" == "active" ]] && { systemctl start nftband 2>/dev/null || true; }
