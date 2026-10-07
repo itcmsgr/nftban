@@ -57,6 +57,19 @@ echo "subject: $SUBJECT_ROOT"
 
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
+# --- v1.235 host isolation (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+# Run as root, this test wrote live host state (2026-10-07 overlay sweep). Every product
+# root it can reach now defaults into the sandbox, EXPORTED so every child shell inherits it;
+# arms that need their own value still override locally.
+_HI="$ROOT/hi"
+export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# Host guard: the HOST config paths this test once wrote must be unchanged at the end
+# (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
+_hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
+_HG_PATHS=("/etc/nftban/patterns.d/botscan/override.local")
+_HG_BEFORE="$(_hg_state "${_HG_PATHS[@]}")"
 [[ -n "${BSDC_KEEP:-}" ]] && { trap - EXIT; echo "sandbox kept: $ROOT"; }
 
 # ---------------------------------------------------------------------------
@@ -830,6 +843,9 @@ if grep -q 'last ban requested 3600s, enforced 86400s; 2 of 2 bans with a record
     ok "S6 status shows requested beside effective, from the ban evidence"; else bad "S6 duration visibility missing: $(tr '\n' ' ' <<<"$S6_OUT")"; fi
 if grep -q 'Ban duration:   UNMEASURED' <<<"$S6_OUT"; then ok "S6 no evidence -> UNMEASURED, never a claim"; else bad "S6 absent evidence not reported as UNMEASURED"; fi
 
+# --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
+else bad "HOST-GUARD host config CHANGED by this test: $(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
 # =============================================================================
 echo "----"
 EXPECTED_ARMS=31
