@@ -157,7 +157,7 @@ cc_apply_begin() {
       | awk '$2!=$3 {print $1"\t"$2"\t"$3}' > "$CC_WORK/changeset"
     now=$(cc_now); deadline=$(( now + grace ))
     cc_write_record "apply_id=$id" "status=pending" "deadline_epoch=$deadline" "grace=$grace" \
-        "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "candidate_projection_sha=" "conflicts=" \
+        "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "candidate_projection_sha=" "confirm_requested=" "conflicts=" \
         || { rm -rf "$CC_WORK"; cc_unlock; return 1; }
     # ARM before any change. A failure to arm aborts with nothing changed.
     if ! systemd-run --quiet --unit="nftban-commit-rollback-${id}" --on-active="${grace}s" \
@@ -243,8 +243,16 @@ cc_confirm() {
     if (( now >= ${dl:-0} )); then
         echo "REFUSED: the confirm deadline of apply $id has passed; the automatic rollback is due." >&2; cc_unlock; return 1
     fi
-    # Commit point FIRST, while the rollback is still armed.
+    # Proof of the administrator's confirm FOR THIS APPLY ID, recorded before the commit
+    # point. A boot projection equal to the candidate is not proof on its own: the
+    # candidate projection can be byte-identical to the baseline's.
+    if ! cc_set confirm_requested "$id"; then
+        echo "CONFIRM FAILED: the confirm could not be recorded. Apply $id is STILL PENDING." >&2
+        cc_unlock; return 1
+    fi
+    # Commit point, while the rollback is still armed.
     if ! cc_commit_projection; then
+        cc_set confirm_requested "" || true
         echo "CONFIRM FAILED: the boot projection could not be published. Apply $id is STILL PENDING;" >&2
         echo "  the automatic rollback stays armed and runs at $(cc_utc "$(cc_get deadline_epoch)")." >&2
         cc_unlock; return 1
@@ -287,10 +295,11 @@ cc_rollback() {
         pending|rollback-failed) : ;;
         *) echo "Unknown commit-confirm state '$st'; nothing done." >&2; cc_unlock; return 1 ;;
     esac
-    # A crash after confirm's commit point: complete the confirm, never roll back.
-    if [[ "$st" == "pending" ]] && cc_projection_is_candidate; then
+    # A crash after confirm's commit point: complete the confirm, never roll back. Both
+    # are required: the recorded confirm for THIS apply ID and the candidate projection.
+    if [[ "$st" == "pending" && "$(cc_get confirm_requested)" == "$rec_id" ]] && cc_projection_is_candidate; then
         cc_finish_confirm; cc_unlock
-        echo "Apply $rec_id had passed its commit point (boot projection = candidate): confirm completed."
+        echo "Apply $rec_id had passed its commit point (confirm recorded, boot projection = candidate): confirm completed."
         return 0
     fi
     # 1. Config: only the change set, never overwriting a later independent edit.

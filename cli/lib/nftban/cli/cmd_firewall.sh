@@ -5059,9 +5059,39 @@ firewall_reset() {
         return 1
     fi
 
+    # v1.235 (owner 2026-10-07, contract 8.1): reset is ONE kernel transaction. The schema
+    # resets the NFTBan tables INSIDE the loaded file, so a failed load leaves the previous
+    # NFTBan tables exactly as they were; foreign tables are never touched; nothing is
+    # deleted on failure, and the services return to the state they had before.
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    local _rs_err
+    if [[ ! -r "$nftban_conf" ]]; then
+        echo "REFUSED: firewall reset: the NFTBan schema $nftban_conf is missing or unreadable; nothing was changed." >&2
+        echo "  Run 'nftban firewall rebuild' to render it." >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
+    fi
+    if ! grep -qxE '[[:space:]]*delete table ip nftban' "$nftban_conf" \
+       || ! grep -qxE '[[:space:]]*delete table ip6 nftban' "$nftban_conf"; then
+        echo "REFUSED: firewall reset: $nftban_conf does not reset the NFTBan tables inside the file" >&2
+        echo "  (legacy pre-template schema); loading it would merge into the live tables. Nothing was changed." >&2
+        echo "  Run 'nftban firewall rebuild' to render the current schema." >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
+    fi
+    if ! _rs_err=$(nft -c -f "$nftban_conf" 2>&1); then
+        echo "REFUSED: firewall reset: the NFTBan schema does not validate (nft -c); nothing was changed:" >&2
+        printf '  %s\n' "$_rs_err" >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
+    fi
+
     [[ "$quiet" == "false" ]] && echo "Performing complete firewall reset..."
 
-    # Step 1: Stop nftban services temporarily
+    # Step 1: Stop nftban services temporarily, remembering which were active.
+    local _rs_timer_was="inactive" _rs_daemon_was="inactive"
+    systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null && _rs_timer_was="active"
+    systemctl is-active --quiet nftband 2>/dev/null && _rs_daemon_was="active"
     [[ "$quiet" == "false" ]] && echo "  [1/11] Stopping NFTBan services..."
     systemctl stop nftban-maintenance.timer 2>/dev/null || true
     systemctl stop nftband 2>/dev/null || true
@@ -5074,21 +5104,27 @@ firewall_reset() {
     [[ "$quiet" == "false" ]] && echo "  [2/11] Backing up current ruleset..."
     nft list ruleset > "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
 
-    # Step 3: Remove NFTBan tables (preserves Docker/cPanel/foreign tables)
-    [[ "$quiet" == "false" ]] && echo "  [3/11] Removing NFTBan tables..."
-    nft delete table ip nftban 2>/dev/null || true
-    nft delete table ip6 nftban 2>/dev/null || true
+    # Step 3 (v1.235): no separate delete. The schema replaces the NFTBan tables inside
+    # the one transaction of step 4 (check-nft-atomicity.sh no longer exempts reset).
+    [[ "$quiet" == "false" ]] && echo "  [3/11] NFTBan tables are replaced inside the step-4 transaction"
 
-    # Step 4: Reload NFTBan schema
+    # Step 4: Load the clean NFTBan schema (one transaction)
     [[ "$quiet" == "false" ]] && echo "  [4/11] Loading clean NFTBan schema..."
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-    if [[ -f "$nftban_conf" ]]; then
-        if ! nft -f "$nftban_conf" 2>&1; then
-            echo "ERROR: Failed to load NFTBan schema" >&2
-            echo "Restoring backup..." >&2
-            nft -f "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
-            return 1
+    if ! nft -f "$nftban_conf" 2>&1; then
+        echo "ERROR: firewall reset: the NFTBan schema failed to load. The transaction was not committed:" >&2
+        echo "  the previous NFTBan tables are unchanged and no table was deleted." >&2
+        local _rs_tables
+        if _rs_tables=$(nft list tables 2>&1); then
+            echo "  Kernel now: ip nftban $(grep -qx 'table ip nftban' <<<"$_rs_tables" && echo present || echo ABSENT), ip6 nftban $(grep -qx 'table ip6 nftban' <<<"$_rs_tables" && echo present || echo ABSENT)" >&2
+        else
+            echo "  Kernel now: UNKNOWN (nft list tables failed)" >&2
         fi
+        [[ "$_rs_timer_was" == "active" ]] && { systemctl start nftban-maintenance.timer 2>/dev/null || true; }
+        [[ "$_rs_daemon_was" == "active" ]] && { systemctl start nftband 2>/dev/null || true; }
+        echo "  Services returned to their previous state (nftband: ${_rs_daemon_was}, maintenance timer: ${_rs_timer_was})." >&2
+        echo "  The pre-reset ruleset dump is kept for inspection only (never loaded automatically): $backup_dir/ruleset_$timestamp.nft" >&2
+        declare -f nftban_plan_txn_abort >/dev/null 2>&1 && nftban_plan_txn_abort || true
+        return 1
     fi
 
     # Step 5: Re-sync system whitelist (lockout protection)
@@ -5145,9 +5181,10 @@ firewall_reset() {
     fi
 
     # Step 11: Restart services
-    [[ "$quiet" == "false" ]] && echo "  [11/11] Restarting NFTBan services..."
-    systemctl start nftban-maintenance.timer 2>/dev/null || true
-    systemctl start nftband 2>/dev/null || true
+    # Back to the state they had before the reset; never an unrequested start.
+    [[ "$quiet" == "false" ]] && echo "  [11/11] Restoring NFTBan services to their previous state..."
+    [[ "$_rs_timer_was" == "active" ]] && { systemctl start nftban-maintenance.timer 2>/dev/null || true; }
+    [[ "$_rs_daemon_was" == "active" ]] && { systemctl start nftband 2>/dev/null || true; }
 
     # v1.235 PORT-ALLOW-NOT-REPLAYED-AFTER-REBUILD: reset loaded a clean schema, so
     # the port_allow_* sets are empty. Grants go through the daemon, which was just

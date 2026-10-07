@@ -182,18 +182,39 @@ rc=0; cc "cc_confirm $ID" || rc=$?
 chmod u+w "$SB/etc/generated"
 if [[ $(id -u) -eq 0 ]]; then
     echo "  [NOT_EXECUTED] D12 publication failure (root ignores the read-only directory)"
-elif [[ $rc -ne 0 && "$(get status)" == "pending" ]] && has "$SB/etc/generated/nftban-boot.nft" "old-projection"; then
-    ok "D12 publication failure -> confirm FAILS, apply stays pending, rollback stays armed"
+elif [[ $rc -ne 0 && "$(get status)" == "pending" && -z "$(get confirm_requested)" ]] && has "$SB/etc/generated/nftban-boot.nft" "old-projection"; then
+    ok "D12 publication failure -> confirm FAILS, apply stays pending, recorded confirm withdrawn, rollback stays armed"
 else ko "D12 publication failure (rc=$rc status=$(get status))"; fi
 
-# ---- crash after commit point
+# ---- crash after commit point (confirm recorded for this apply ID, then the rename)
 fresh; stage_pending 120; ID=$(get apply_id)
+sed -i "s/^confirm_requested=.*/confirm_requested=$ID/" "$REC"
 cp "$SB/data/state/commit-confirm/candidate-projection.nft" "$SB/etc/generated/nftban-boot.nft"
 : > "$SB/calls.log"
 rc=0; cc "cc_rollback $ID --auto" || rc=$?
 if [[ "$(get status)" == "confirmed" ]] && ! has "$SB/calls.log" "nft -f" && has_line "$SB/etc/conf.d/a.conf" "A=2"; then
     ok "D13 crash after the commit point: rollback COMPLETES the confirm, no rollback"
 else ko "D13 crash completion (status=$(get status))"; fi
+
+# ---- owner 2026-10-07: an identical projection is NOT proof of a confirm.
+# The candidate's boot projection is byte-identical to the baseline's while the
+# config differs, and nobody confirmed: the deadline rollback must roll back.
+fresh; stage_pending 120; ID=$(get apply_id)
+cp "$SB/etc/generated/nftban-boot.nft" "$SB/data/state/commit-confirm/candidate-projection.nft"
+sed -i "s/^candidate_projection_sha=.*/candidate_projection_sha=$(sha256sum "$SB/etc/generated/nftban-boot.nft" | awk '{print $1}')/" "$REC"
+: > "$SB/calls.log"
+rc=0; cc "cc_rollback $ID --auto" || rc=$?
+if [[ "$(get status)" == "rolled-back" ]] && has "$SB/calls.log" "nft -f" && has_line "$SB/etc/conf.d/a.conf" "A=1"; then
+    ok "D13b identical projection, no confirm recorded -> ROLLED BACK (not completed as confirmed)"
+else ko "D13b identical projection (status=$(get status))"; fi
+
+# ---- confirm recorded, crash BEFORE the rename (projection still the old one)
+fresh; stage_pending 120; ID=$(get apply_id)
+sed -i "s/^confirm_requested=.*/confirm_requested=$ID/" "$REC"
+rc=0; cc "cc_rollback $ID --auto" || rc=$?
+if [[ "$(get status)" == "rolled-back" ]] && has_line "$SB/etc/conf.d/a.conf" "A=1"; then
+    ok "D13c confirm recorded, commit point not reached -> ROLLED BACK"
+else ko "D13c pre-commit crash (status=$(get status))"; fi
 
 # ---- rollback
 fresh; stage_pending 120; ID=$(get apply_id)
