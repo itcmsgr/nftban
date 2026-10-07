@@ -102,8 +102,8 @@ for fam in ip ip6; do
     [[ "$seq" == "ban-manual ban ct invalid egress publish-tcp publish-udp" ]] || { order_ok=0; echo "      $fam order: $seq"; }
     printf '%s\n' "$blk" | grep -q "policy drop;" || { order_ok=0; echo "      $fam: no policy drop"; }
     printf '%s\n' "$blk" | grep -qF "$sa != @whitelist_$F $sa @blacklist_$F counter drop" || { order_ok=0; echo "      $fam: ban rule without whitelist exemption"; }
-    printf '%s\n' "$blk" | grep -E 'whitelist' | grep -q 'accept' && { order_ok=0; echo "      $fam: whitelist ACCEPT present"; }
-    untag=$(printf '%s\n' "$blk" | grep -E ' (accept|drop) ' | grep -vc 'nftban:fwd:' || true)
+    printf '%s\n' "$blk" | grep -vE '^[[:space:]]*#' | grep -E 'whitelist' | grep -qw 'accept' && { order_ok=0; echo "      $fam: whitelist ACCEPT present"; }
+    untag=$(printf '%s\n' "$blk" | grep -vE '^[[:space:]]*#' | grep -E ' (accept|drop) ' | grep -vc 'nftban:fwd:' || true)
     [[ "$untag" -eq 0 ]] || { order_ok=0; echo "      $fam: $untag untagged rule(s)"; }
 done
 [[ $order_ok -eq 1 ]] && ok "S6/S9 forward order bans -> ct -> invalid -> egress -> publish; whitelist only as ban exemption; all tagged; policy drop (ip, ip6)" || no "S6 chain order"
