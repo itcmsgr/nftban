@@ -96,6 +96,9 @@ fresh(){
     echo 'KEEP=1' > "$SB/etc/conf.d/untouched.conf"
     echo 'old-projection' > "$SB/etc/generated/nftban-boot.nft"
     echo 'baseline-ruleset' > "$SB/loaded.nft"
+    # Metadata the rollback must restore faithfully (owner 2026-10-07).
+    chmod 0640 "$SB/etc/conf.d/a.conf"; chmod 0600 "$SB/etc/ports.d/00-ssh.conf"
+    if [[ $(id -u) -eq 0 ]]; then chown 65534:65534 "$SB/etc/conf.d/a.conf"; fi
 }
 cc(){  # snippet with the REAL engine loaded
     local rc=0
@@ -256,6 +259,19 @@ rc=0; cc "cc_rollback $ID --auto" || rc=$?
 if [[ $rc -eq 0 && "$(get status)" == "rolled-back" && ! -e "$SB/data/state/commit-confirm.rollback-failed" ]] && has "$SB/calls.log" "restart nftband"; then
     ok "D14b no conflict -> rolled back, daemon restarted"
 else ko "D14b plain rollback (rc=$rc status=$(get status))"; fi
+# Faithful restore = content AND metadata (owner 2026-10-07)
+m_a=$(stat -c %a "$SB/etc/conf.d/a.conf" 2>/dev/null); m_p=$(stat -c %a "$SB/etc/ports.d/00-ssh.conf" 2>/dev/null)
+if [[ "$m_a" == 640 && "$m_p" == 600 ]]; then ok "D14m restored files keep their original mode (modified 0640, removed-then-restored 0600)"
+else ko "D14m restored modes (a.conf=$m_a ports=$m_p, expected 640/600)"; fi
+if [[ $(id -u) -eq 0 ]]; then
+    o_a=$(stat -c %u:%g "$SB/etc/conf.d/a.conf" 2>/dev/null)
+    [[ "$o_a" == 65534:65534 ]] && ok "D14o restored file keeps its original owner/group (65534:65534)" || ko "D14o restored ownership ($o_a, expected 65534:65534)"
+else
+    echo "  [NOT_EXECUTED] D14o ownership preservation (needs root; run the suite as root on a lab host)"
+fi
+d_b=$(stat -c %a "$SB/data/state/applied" 2>/dev/null); d_w=$(stat -c %a "$SB/data/state/commit-confirm" 2>/dev/null)
+if [[ "$d_b" == 700 && "$d_w" == 700 ]]; then ok "D14d backup dirs root-only: applied/ and commit-confirm/ are 0700"
+else ko "D14d backup dir modes (applied=$d_b commit-confirm=$d_w, expected 700/700)"; fi
 
 # ---- D10: failed transaction
 fresh; stage_pending 120; ID=$(get apply_id); echo 1 > "$SB/nft_f_rc"
