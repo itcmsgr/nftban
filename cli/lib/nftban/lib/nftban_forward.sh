@@ -179,6 +179,8 @@ Usage: nftban firewall forward <command>
   allow publish <port>/<tcp|udp> --from <addr|prefix|any> --family 4|6 [--comment TEXT]
                                  open one published host port to one source (per family)
   remove egress|uplink|publish ...          same keys as allow
+  migrate [--confirm <plan id>]  map UNMANAGED forward rules to stored allows (shows every
+                                 behaviour difference; writes only with the plan's id)
 
 Writing commands only change the store. Apply with:
   nftban firewall rebuild --confirm      (pending change, rolled back unless confirmed)
@@ -324,13 +326,43 @@ nftban_forward_status() {
     return 0
 }
 
+# nftban firewall forward migrate [--confirm <plan id>] : the SAME mapper and plan id as the
+# package upgrade (cli/lib/nftban/lib/nftban_immutable_owned.sh). Without --confirm it only
+# prints the plan. It never deletes a rule; applying is `nftban firewall rebuild --confirm`.
+nftban_forward_migrate() {
+    local want="" rules plan prc=0 id
+    case "${1:-}" in
+        "") ;;
+        --confirm) want="${2:-}"; [[ -n "$want" ]] || { echo "nftban: forward migrate --confirm <plan id>" >&2; return 1; } ;;
+        *) echo "nftban: forward migrate: unknown argument '$1'" >&2; return 1 ;;
+    esac
+    # shellcheck source=/dev/null
+    declare -F nftban_forward_migration_plan >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_immutable_owned.sh" || return 1
+    rules=$(nftban_forward_unmanaged_rules) || { echo "nftban: forward chain UNKNOWN: nothing done" >&2; return 1; }
+    if [[ -z "$rules" ]]; then echo "No unmanaged rule in the nftban forward chain: nothing to migrate."; return 0; fi
+    plan=$(nftban_forward_migration_plan "$rules") || prc=$?
+    id=$(nftban_forward_plan_id "$plan")
+    echo "Migration plan $id (old rule -> stored record; every DIFF changes behaviour):"
+    printf '%s\n' "$plan" | sed 's/^/    /'
+    if [[ $prc -ne 0 ]]; then echo "At least one rule is UNMAPPED: it cannot be migrated; nothing written."; return 1; fi
+    if [[ -z "$want" ]]; then
+        echo "To record EXACTLY this plan: nftban firewall forward migrate --confirm $id"
+        return 0
+    fi
+    [[ $(id -u) -eq 0 ]] || { echo "nftban: forward migrate --confirm: root required" >&2; return 1; }
+    [[ "$want" == "$id" ]] || { echo "nftban: plan id mismatch (approved $want, current $id): review the plan; nothing written" >&2; return 1; }
+    nftban_forward_apply_plan "$plan" || return 1
+    echo "Recorded in $(nftban_forward_store_path). Apply with: nftban firewall rebuild --confirm"
+}
+
 nftban_forward_cli() {
     local sub="${1:-status}"; [[ $# -gt 0 ]] && shift
     case "$sub" in
         status) nftban_forward_status ;;
         list) nftban_forward_list ;;
         allow|remove) nftban_forward_allow_remove "$sub" "$@" ;;
-        migrate) echo "nftban: forward migrate: not available yet (pending the owner's decision on the upgrade migration path)" >&2; return 1 ;;
+        migrate) nftban_forward_migrate "$@" ;;
         help|-h|--help) nftban_forward_usage ;;
         *) echo "nftban: unknown forward command '$sub'" >&2; nftban_forward_usage >&2; return 1 ;;
     esac

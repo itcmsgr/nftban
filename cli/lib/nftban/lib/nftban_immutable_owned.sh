@@ -324,40 +324,178 @@ nftban_immut_pkg_preflight() {
 }
 
 # -----------------------------------------------------------------------------
-# v1.235 C20 (owner D5, 2026-10-06): an upgrade STOPS before a destructive change it
-# cannot preserve, and shows the rules. Every rule NFTBan itself renders in the ip/ip6
-# nftban forward chain carries comment "nftban:fwd:<id>" (v1.235 forwarding policy); a
-# rule WITHOUT that tag was added outside NFTBan, and the rebuild that follows the
-# upgrade erases it. (Before v1.235 that chain had no rule at all.) A read failure is UNKNOWN = stop (the
-# change is destructive); an absent nft, table or chain means there is nothing to
-# erase (the chain listing itself reports a missing table or chain: no separate probe). NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 is the administrator's explicit acceptance.
-# Returns 0 = proceed, 1 = stop. Writes only to stderr; changes nothing.
+# v1.235 C20 (owner D5, 2026-10-06) + forward migration (owner 2026-10-08).
+# An upgrade STOPS before a destructive change it cannot preserve and shows the rules.
+# Every rule NFTBan itself renders in the ip/ip6 nftban forward chain carries comment
+# "nftban:fwd:<id>"; a rule WITHOUT that tag was added outside NFTBan, and the rebuild
+# that follows the upgrade erases it. A read failure is UNKNOWN = stop; an absent nft,
+# table or chain means there is nothing to erase.
+# Migration (owner conditions, 2026-10-08): ONE mapper (here; the CLI uses the same
+# code) turns each unmanaged rule into stored records, COVERED, or UNMAPPED, and marks
+# every behaviour difference (DIFF). The upgrade proceeds only with the operator's
+# approval of THAT plan: NFTBAN_FORWARD_MIGRATE=<plan id> (the id is a hash of the
+# shown plan, so a changed plan needs a new approval). Any UNMAPPED rule, any invalid
+# existing record or a failed write = STOP before any change. The store is written in
+# ONE atomic replace; no rule is deleted here (the rebuild replaces the chain).
+# NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 stays as the D5 last resort (not the chosen path).
+
+_nfw_norm() {
+    printf '%s\n' "$1" | sed -E 's/[[:space:]]+# handle [0-9]+$//; s/counter packets [0-9]+ bytes [0-9]+ ?//; s/[[:space:]]+/ /g; s/^ //; s/ $//'
+}
+_nfw_valid_ifname() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_.:-]{1,15}$'; }
+_nfw_recognised_bridge() {
+    case "$1" in docker0) return 0 ;; br-*) printf '%s' "$1" | grep -Eq '^br-[0-9a-f]{12}$' ;; *) return 1 ;; esac
+}
+_nfw_uplinks() {
+    { ip -o -4 route show default 2>/dev/null; ip -o -6 route show default 2>/dev/null; } \
+        | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}' | sort -u
+}
+_nfw_route_dev() {  # <4|6> <prefix> -> devices of the exact route
+    ip -o "-$1" route show exact "$2" 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}' | sort -u
+}
+
+# nftban_forward_unmanaged_rules : "<fam>\t<normalized rule>" per unmanaged rule.
+# rc 0 ok, 3 UNKNOWN (a chain could not be read; reason on stderr).
+nftban_forward_unmanaged_rules() {
+    command -v nft >/dev/null 2>&1 || return 0
+    _nfu_rc=0
+    for _nfu_fam in ip ip6; do
+        if ! _nfu_out=$(nft -a list chain "$_nfu_fam" nftban forward 2>&1); then
+            case "$_nfu_out" in *"No such file or directory"*) continue ;; esac
+            echo "nftban: UNKNOWN: the $_nfu_fam nftban forward chain could not be read: $_nfu_out" >&2
+            _nfu_rc=3; continue
+        fi
+        printf '%s\n' "$_nfu_out" | grep -E '# handle [0-9]+$' | grep -vE '^[[:space:]]*(table|chain)[[:space:]]' \
+            | grep -vF 'comment "nftban:fwd:' | while IFS= read -r _nfu_l; do
+                printf '%s\t%s\n' "$_nfu_fam" "$(_nfw_norm "$_nfu_l")"
+            done
+    done
+    return $_nfu_rc
+}
+
+# nftban_forward_migration_plan <rules> : prints the plan; rc 1 when any rule is UNMAPPED.
+#   RULE <fam> <rule> | RECORD <record> | COVERED <what> | DIFF <text> | UNMAPPED <why>
+nftban_forward_migration_plan() {
+    _nfp_rules="$1"; _nfp_bad=0
+    _nfp_up=$(_nfw_uplinks | tr '\n' ' '); _nfp_up="${_nfp_up% }"
+    _nfp_tmp=$(printf '%s\n' "$_nfp_rules" | while IFS="$(printf '\t')" read -r fam rule; do
+        [ -n "$rule" ] || continue
+        echo "RULE $fam $rule"
+        v=4; [ "$fam" = ip6 ] && v=6
+        case "$rule" in
+            "ct state established,related accept"|"ct state related,established accept")
+                echo "COVERED by the NFTBan rule nftban:fwd:ct (return path)"
+                echo "DIFF bans are evaluated BEFORE the return path: an established flow with a banned peer is cut (owner Q1/Q2)" ;;
+            "ip saddr "*" accept"|"ip6 saddr "*" accept")
+                pfx=$(printf '%s' "$rule" | awk '{print $3}')
+                case "$rule" in "ip saddr $pfx accept"|"ip6 saddr $pfx accept") : ;; *) echo "UNMAPPED not a plain source-prefix accept"; continue ;; esac
+                devs=$(_nfw_route_dev "$v" "$pfx"); n=$(printf '%s\n' "$devs" | grep -c . || true)
+                if [ "$n" -ne 1 ]; then echo "UNMAPPED $pfx is not the network of exactly one interface (found: ${devs:-none})"; continue; fi
+                if ! _nfw_recognised_bridge "$devs"; then echo "UNMAPPED $pfx belongs to $devs, not a recognised and tested Docker bridge"; continue; fi
+                if [ -z "$_nfp_up" ]; then echo "UNMAPPED no default-route uplink to bind egress of $devs to"; continue; fi
+                echo "RECORD egress|$devs"
+                for u in $_nfp_up; do echo "RECORD uplink|$u"; done
+                echo "DIFF NOT EQUIVALENT: the old rule accepted every forwarded packet with source $pfx, to ANY interface; the records accept only traffic from $devs to the uplink(s) $_nfp_up (replies via the return path). Traffic from $pfx to other interfaces (other bridges, VPN, LAN), and packets with source $pfx arriving on another interface, will be DROPPED." ;;
+            "iifname "*)
+                iif=$(printf '%s' "$rule" | awk '{gsub(/"/,"",$2); print $2}'); oif=""
+                case "$rule" in
+                    "iifname "*" accept") [ "$(printf '%s' "$rule" | wc -w)" -eq 3 ] || { echo "UNMAPPED unsupported iifname rule shape"; continue; } ;;
+                    *" oifname "*" accept") oif=$(printf '%s' "$rule" | awk '{gsub(/"/,"",$4); print $4}')
+                        [ "$(printf '%s' "$rule" | wc -w)" -eq 5 ] || { echo "UNMAPPED unsupported iifname/oifname rule shape"; continue; } ;;
+                    *) echo "UNMAPPED unsupported iifname rule shape"; continue ;;
+                esac
+                _nfw_valid_ifname "$iif" && _nfw_recognised_bridge "$iif" || { echo "UNMAPPED $iif is not a recognised and tested Docker bridge"; continue; }
+                echo "RECORD egress|$iif"
+                if [ -n "$oif" ]; then
+                    _nfw_valid_ifname "$oif" || { echo "UNMAPPED invalid interface $oif"; continue; }
+                    echo "RECORD uplink|$oif"
+                    echo "DIFF uplink $oif becomes an uplink for EVERY allowed bridge, not only $iif"
+                else
+                    [ -n "$_nfp_up" ] || { echo "UNMAPPED no default-route uplink"; continue; }
+                    for u in $_nfp_up; do echo "RECORD uplink|$u"; done
+                    echo "DIFF NOT EQUIVALENT: the old rule accepted $iif to ANY interface; the records accept $iif to the uplink(s) $_nfp_up only"
+                fi ;;
+            *) echo "UNMAPPED no safe equivalent is known for this rule" ;;
+        esac
+    done)
+    printf '%s\n' "$_nfp_tmp"
+    printf '%s\n' "$_nfp_tmp" | grep -q '^UNMAPPED ' && _nfp_bad=1
+    return $_nfp_bad
+}
+
+nftban_forward_plan_id() { printf '%s\n' "$1" | sha256sum | cut -c1-12; }
+
+# _nfw_store_valid <store> : strict check of the existing store before it is rewritten.
+_nfw_store_valid() {
+    [ -e "$1" ] || return 0
+    [ -r "$1" ] || return 1
+    ! grep -vE '^[[:space:]]*(#.*)?$' "$1" \
+        | grep -vE '^(egress|uplink)\|[A-Za-z0-9_.:-]{1,15}(\|[^|]*){0,2}$' \
+        | grep -vE '^publish\|(tcp|udp)\|[1-9][0-9]{0,4}\|[46]\|[0-9a-fA-F.:/]+(\|[^|]*){0,2}$|^publish\|(tcp|udp)\|[1-9][0-9]{0,4}\|[46]\|any(\|[^|]*){0,2}$' \
+        | grep -q .
+}
+
+# nftban_forward_apply_plan <plan> : appends the plan's records (deduplicated, existing kept)
+# in ONE atomic replace. rc 0 written, 1 refused/failed (nothing changed).
+nftban_forward_apply_plan() {
+    _nfa_store="${NFTBAN_CONFIG_DIR:-/etc/nftban}/forward.d/forward.conf"
+    _nfa_dir=$(dirname "$_nfa_store")
+    if ! _nfw_store_valid "$_nfa_store"; then
+        echo "nftban: STOP: $_nfa_store holds an invalid record; nothing changed" >&2; return 1
+    fi
+    mkdir -p "$_nfa_dir" 2>/dev/null || { echo "nftban: STOP: cannot create $_nfa_dir; nothing changed" >&2; return 1; }
+    _nfa_tmp=$(mktemp "$_nfa_store.XXXXXX" 2>/dev/null) || { echo "nftban: STOP: cannot write in $_nfa_dir; nothing changed" >&2; return 1; }
+    _nfa_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    {
+        [ -e "$_nfa_store" ] && cat "$_nfa_store"
+        printf '%s\n' "$1" | sed -n 's/^RECORD //p' | sort -u | while IFS= read -r _r; do
+            [ -e "$_nfa_store" ] && awk -F'|' -v k="$_r" '{split(k,a,"|"); if ($1==a[1] && $2==a[2]) f=1} END{exit f?0:1}' "$_nfa_store" && continue
+            printf '%s|migrated from an unmanaged forward rule|%s\n' "$_r" "$_nfa_now"
+        done
+    } > "$_nfa_tmp" || { rm -f "$_nfa_tmp"; echo "nftban: STOP: write failed; nothing changed" >&2; return 1; }
+    if ! _nfw_store_valid "$_nfa_tmp"; then rm -f "$_nfa_tmp"; echo "nftban: STOP: the migrated store would be invalid; nothing changed" >&2; return 1; fi
+    chmod 0640 "$_nfa_tmp" 2>/dev/null || true; chgrp nftban "$_nfa_tmp" 2>/dev/null || true
+    mv -f "$_nfa_tmp" "$_nfa_store" || { rm -f "$_nfa_tmp"; echo "nftban: STOP: could not install $_nfa_store; nothing changed" >&2; return 1; }
+    return 0
+}
+
+# Package entry point (DEB preinst / RPM %pre). Returns 0 = proceed, 1 = stop.
 nftban_forward_unmanaged_preflight() {
     command -v nft >/dev/null 2>&1 || return 0
-    _nfw_stop=0
-    for _nfw_fam in ip ip6; do
-        if ! _nfw_out=$(nft -a list chain "$_nfw_fam" nftban forward 2>&1); then
-            case "$_nfw_out" in
-                *"No such file or directory"*) continue ;;
-            esac
-            echo "nftban: UNKNOWN: the $_nfw_fam nftban forward chain could not be read: $_nfw_out" >&2
-            _nfw_stop=1
-            continue
+    _nfw_rc=0
+    _nfw_rules=$(nftban_forward_unmanaged_rules) || _nfw_rc=$?
+    if [ "$_nfw_rc" -ne 0 ]; then
+        [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ] && { echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: proceeding despite an UNKNOWN forward chain." >&2; return 0; }
+        echo "nftban: upgrade STOPPED before any change by this package (forward chain UNKNOWN)." >&2
+        return 1
+    fi
+    [ -n "$_nfw_rules" ] || return 0
+    _nfw_plan_rc=0
+    _nfw_plan=$(nftban_forward_migration_plan "$_nfw_rules") || _nfw_plan_rc=$?
+    _nfw_id=$(nftban_forward_plan_id "$_nfw_plan")
+    echo "nftban: the nftban forward chain holds rules NFTBan did not create; the rebuild after this upgrade would ERASE them." >&2
+    echo "nftban: migration plan $_nfw_id (old rule -> stored record; every DIFF changes behaviour):" >&2
+    printf '%s\n' "$_nfw_plan" | sed 's/^/    /' >&2
+    if [ "$_nfw_plan_rc" -eq 0 ] && [ "${NFTBAN_FORWARD_MIGRATE:-}" = "$_nfw_id" ]; then
+        if nftban_forward_apply_plan "$_nfw_plan"; then
+            echo "nftban: plan $_nfw_id approved and recorded in ${NFTBAN_CONFIG_DIR:-/etc/nftban}/forward.d/forward.conf; continuing." >&2
+            return 0
         fi
-        _nfw_rules=$(printf '%s\n' "$_nfw_out" | grep -E '# handle [0-9]+$' | grep -vE '^[[:space:]]*(table|chain)[[:space:]]' | grep -vF 'comment "nftban:fwd:' || true)
-        [ -n "$_nfw_rules" ] || continue
-        echo "nftban: the $_nfw_fam nftban forward chain holds rules NFTBan did not create; the rebuild after this upgrade would ERASE them:" >&2
-        printf '%s\n' "$_nfw_rules" | sed 's/^[[:space:]]*/    /' >&2
-        _nfw_stop=1
-    done
-    [ "$_nfw_stop" -eq 0 ] && return 0
+        echo "nftban: upgrade STOPPED before any change by this package." >&2
+        return 1
+    fi
     if [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ]; then
         echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: the administrator accepts the loss of the rules above; continuing." >&2
         return 0
     fi
     echo "nftban: upgrade STOPPED before any change by this package; the installed version and the live rules are untouched." >&2
-    echo "nftban: this release does not manage forwarded traffic, so it cannot keep these rules: every rebuild replaces the nftban forward chain." >&2
-    echo "nftban: to continue anyway, accept the loss explicitly and re-apply the rules yourself after the upgrade (and after every rebuild):" >&2
-    echo "nftban:     NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 <your package upgrade command>" >&2
+    if [ "$_nfw_plan_rc" -ne 0 ]; then
+        echo "nftban: at least one rule has no safe equivalent (UNMAPPED above): it cannot be migrated automatically." >&2
+    elif [ -n "${NFTBAN_FORWARD_MIGRATE:-}" ]; then
+        echo "nftban: NFTBAN_FORWARD_MIGRATE='${NFTBAN_FORWARD_MIGRATE}' does not match this plan ($_nfw_id): review the plan above." >&2
+    else
+        echo "nftban: to approve EXACTLY this plan (including every DIFF), repeat the upgrade with:" >&2
+        echo "nftban:     NFTBAN_FORWARD_MIGRATE=$_nfw_id <your package upgrade command>" >&2
+    fi
     return 1
 }
