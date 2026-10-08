@@ -59,6 +59,8 @@ cli/lib/nftban/helpers/autoheal.sh	2
 cli/lib/nftban/lib/commit_confirm.sh	2
 cli/lib/nftban/lib/derived_state_reconcile.sh	2
 cli/lib/nftban/lib/lifecycle_facts.sh	1
+cli/lib/nftban/lib/nftban_forward.sh	3
+cli/lib/nftban/lib/nftban_immutable_owned.sh	1
 cli/lib/nftban/lib/nftban_panel_common.sh	1
 cli/lib/nftban/lib/nftban_panel_directadmin.sh	2
 cli/lib/nftban/lib/nftban_pro.sh	1

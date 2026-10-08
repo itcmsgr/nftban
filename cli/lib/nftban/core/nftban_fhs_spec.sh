@@ -93,6 +93,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/ports.d"]="0750|root|nftban|Port whitelist entries"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/rules.d"]="0750|root|nftban|Custom nftables rules"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/access.d"]="0750|root|nftban|Per-IP port access rules (v1.41.0)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/forward.d"]="0750|root|nftban|Forwarding allows (v1.235, owner D1): forward.conf, operator-owned, written only by `nftban firewall forward allow|remove|migrate` (never shipped, so never a conffile); projected into the nftban forward chain at every render"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/rbl"]="0750|root|nftban|RBL check configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/geoban"]="0750|root|nftban|Geographic ban configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/geoip"]="0750|root|nftban|GeoIP database configuration"
