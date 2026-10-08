@@ -2710,7 +2710,14 @@ nftban_botscan_process_logs() {
         _bs_lo="$(_nftban_botscan_cursor_offset "$_bs_last_f")"
         _bs_ls="$(stat -c%s "$_bs_last_f" 2>/dev/null || echo 0)"
         if [[ -f "$_bs_last_f" && "$_bs_lo" =~ ^[0-9]+$ && "$_bs_lo" -lt "$_bs_ls" ]]; then
-            printf '%s|%s\n' "$(basename "$_bs_last_f")" "$(( _bs_pin_tries + 1 ))" \
+            # v1.235 (OPEN-BOTSCAN-SCAN-PIN-RETRY-BUDGET-IS-GLOBAL-NOT-PER-OBJECT): the attempt
+            # budget is PER OBJECT. The same pinned object continues its count; a different
+            # object starts at 1. Before, a new object inherited the previous object's count
+            # (srv3: ...egialion-iqia.com.log|16 -> ...getsfinance.gr.log|17), so "pin budget
+            # exhausted after N cycles" could name an object pinned for a single cycle.
+            local _bs_next_tries=1
+            [[ "$(basename "$_bs_last_f")" == "$_bs_pinned" ]] && _bs_next_tries=$(( _bs_pin_tries + 1 ))
+            printf '%s|%s\n' "$(basename "$_bs_last_f")" "$_bs_next_tries" \
                 > "${_bs_pin_file}.tmp" 2>/dev/null \
                 && mv -f "${_bs_pin_file}.tmp" "$_bs_pin_file" 2>/dev/null || true
         else
