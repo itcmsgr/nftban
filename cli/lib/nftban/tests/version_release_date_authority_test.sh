@@ -97,7 +97,10 @@ fi
 render_version(){ # $1 = lib dir (holds optional .build_date)
   local sb; sb="$(mktemp -d)"; local stub="$sb/bin"
   mkdir -p "$stub"; printf '#!/bin/sh\nexit 1\n' > "$stub/rpm"; chmod +x "$stub/rpm"
-  ( export PATH="$stub:$PATH" NFTBAN_LIB_DIR="$1" NFTBAN_NO_BANNER=1
+  # NFTBAN_CACHE_DIR: never the host's /var/cache/nftban. On an installed host the update cache
+  # is nftban:nftban 0640; read as an unprivileged user under version.sh's errexit, the failed
+  # jq assignment ended the render and every arm below saw empty output (lab2 2026-10-08).
+  ( export PATH="$stub:$PATH" NFTBAN_LIB_DIR="$1" NFTBAN_NO_BANNER=1 NFTBAN_CACHE_DIR="$sb/cache"
     unset NFTBAN_VERSION_LOADED
     # shellcheck source=/dev/null
     source "$VERSION_SH" >/dev/null 2>&1
@@ -105,11 +108,18 @@ render_version(){ # $1 = lib dir (holds optional .build_date)
   rm -rf "$sb"
 }
 
+# The render shows what the resolver resolves. On an installed host the packaged
+# /usr/lib/nftban/VERSION_DATE comes FIRST (precedence 1, version.sh), so the expected date is
+# that artifact's, stated as such; the repo date is only expected on a host without it.
+exp_rd="$rd"; exp_src="repo VERSION_DATE"
+if [[ -f /usr/lib/nftban/VERSION_DATE ]]; then
+    exp_rd="$(tr -d '[:space:]' < /usr/lib/nftban/VERSION_DATE)"; exp_src="installed /usr/lib/nftban/VERSION_DATE (precedence 1)"
+fi
 empty_lib="$(mktemp -d)"   # no .build_date
 out="$(render_version "$empty_lib")"
 printf '%s\n' "$out" | grep -q '^Build Date:' && no "Build Date rendered with no metadata" || ok "Build Date OMITTED when no authoritative metadata"
 printf '%s\n' "$out" | grep -qi 'Build Date.*unknown' && no "Build Date printed 'unknown'" || ok "no 'unknown' Build Date"
-printf '%s\n' "$out" | grep -q "^Release Date:  *$rd" && ok "render shows repo Release Date ($rd)" || no "render Release Date ($(printf '%s' "$out" | grep -m1 '^Release Date:'))"
+printf '%s\n' "$out" | grep -q "^Release Date:  *$exp_rd" && ok "render shows the resolved Release Date ($exp_rd, from $exp_src)" || no "render Release Date ($(printf '%s' "$out" | grep -m1 '^Release Date:'); want $exp_rd from $exp_src)"
 rm -rf "$empty_lib"
 
 stamp_lib="$(mktemp -d)"; printf '2026-01-02 03:04:05 UTC\n' > "$stamp_lib/.build_date"
