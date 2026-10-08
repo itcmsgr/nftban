@@ -308,9 +308,9 @@ else ko "C8 record overwritten"; fi
 # the refusal was hidden (2>/dev/null) and only a generic warning remained.
 fresh; printf '%s\n' "$UNITS_BASE" > "$SB/units"; : > "$SB/active"; : > "$SB/refuse_render"
 rc=0; svc_root 'nftban_disable_all' || rc=$?
-if [[ $rc -ne 0 ]] && has "$SB/svc.out" "could NOT be published" && has "$SB/svc.out" "ROLLBACK FAILED (D10 hold)"; then
+if [[ $rc -ne 0 ]] && has "$SB/svc.out" "could NOT be published" && has "$SB/svc.out" "cause: REFUSED: firewall render-boot: a commit-confirm rollback FAILED (D10 hold)"; then
     ok "C5b refused inert publish: disable reports the refusal's cause (rc != 0)"
-else ko "C5b refused inert publish (rc=$rc cause shown=$(has "$SB/svc.out" "ROLLBACK FAILED" && echo y || echo n))"; fi
+else ko "C5b refused inert publish (rc=$rc cause shown=$(has "$SB/svc.out" "cause: REFUSED" && echo y || echo n))"; fi
 rm -f "$SB/refuse_render"
 
 # C7b (audit H5, 2026-10-08): the stub `systemctl stop` runs no ExecStop, so C7 cannot see that a
