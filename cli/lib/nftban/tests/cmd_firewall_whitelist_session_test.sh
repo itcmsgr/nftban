@@ -282,6 +282,28 @@ assert_contains "$T10_OUT" "Unknown whitelist-session action"        "T10.1 unkn
 echo
 echo "================================================="
 echo "Results: PASS=$PASS  FAIL=$FAIL"
+# ---------------------------------------------------------------------------
+# K9-a (audit, v1.235): the reload after add/remove is REFUSED on hosts with unmanaged
+# forward rules (K9 STOP). The command must say the entry is stored but NOT active, show the
+# reason and return non-zero; a successful reload keeps the old clean result.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- K9-a refused reload after a session add/remove is surfaced ---"
+K9A_BIN="$(mktemp -d)"
+printf '#!/bin/sh\n[ "$1 $2" = "firewall reload" ] && { echo "nftban: nftban firewall reload STOPPED before any change; the installed version (if any) and the live rules are untouched." >&2; exit 1; }\nexit 0\n' > "$K9A_BIN/nftban"; chmod +x "$K9A_BIN/nftban"
+: > "$SESSION_FILE"
+k9a_rc=0; k9a_out=$(PATH="$K9A_BIN:$PATH" call_firewall_whitelist_session add 198.51.100.77 --ttl 1h 2>&1) || k9a_rc=$?
+assert_contains "$k9a_out|rc=$k9a_rc" "NOT active now" "K9-a add: refused reload -> 'Stored, but NOT active now'"
+assert_contains "$k9a_out" "STOPPED before any change" "K9-a add: the refusal reason is shown"
+assert_contains "rc=$k9a_rc" "rc=2" "K9-a add: non-zero (2) when the entry is not live"
+k9a_rc=0; k9a_out=$(PATH="$K9A_BIN:$PATH" call_firewall_whitelist_session remove 198.51.100.77 2>&1) || k9a_rc=$?
+assert_contains "$k9a_out|rc=$k9a_rc" "may REMAIN until a reload succeeds" "K9-a remove: refused reload is surfaced"
+assert_contains "rc=$k9a_rc" "rc=2" "K9-a remove: non-zero (2)"
+printf '#!/bin/sh\nexit 0\n' > "$K9A_BIN/nftban"
+k9a_rc=0; k9a_out=$(PATH="$K9A_BIN:$PATH" call_firewall_whitelist_session add 198.51.100.78 --ttl 1h 2>&1) || k9a_rc=$?
+assert_contains "rc=$k9a_rc" "rc=0" "K9-a control: a successful reload keeps rc 0"
+rm -rf "$K9A_BIN"
+
 if [[ $FAIL -gt 0 ]]; then
     echo "Failed tests:"
     for t in "${FAILED_TESTS[@]}"; do
