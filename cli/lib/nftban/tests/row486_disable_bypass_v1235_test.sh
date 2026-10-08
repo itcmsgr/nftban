@@ -241,8 +241,9 @@ else
     # published projection loads); "off" (not only "false") is understood; the bypass is never
     # blocked by an invalid value.
     fresh; printf '%s' "$ACTIVE_PROJ" > "$P"; mkdir -p "$SB/etc/conf.d"; printf 'NFTBAN_ENABLED=maybe\n' > "$SB/etc/conf.d/services.conf"
+    cp "$P" "$SB/proj.before"
     early normal || true
-    if [[ "$(cat "$P")" == "$ACTIVE_PROJ" ]] && has "$SB/early.out" "INVALID"; then ok "K2a boot (normal), NFTBAN_ENABLED=maybe -> projection left as last published, warning logged"
+    if cmp -s "$P" "$SB/proj.before" && has "$SB/early.out" "INVALID"; then ok "K2a boot (normal), NFTBAN_ENABLED=maybe -> projection left as last published, warning logged"
     else ko "K2a boot normal with an invalid value (projection changed or no warning)"; fi
     fresh; printf '%s' "$ACTIVE_PROJ" > "$P"; mkdir -p "$SB/etc/conf.d"; printf 'NFTBAN_ENABLED=off\n' > "$SB/etc/conf.d/services.conf"
     early normal || true
@@ -505,7 +506,7 @@ while IFS=$'\t' read -r _k2in _k2want || [[ -n "${_k2in:-}" ]]; do
     [[ "$_k2in" == "<EMPTY>" ]] && _k2in=""
     _k2n=$((_k2n+1))
     for _k2fn in "$_k2fn_svc" "$_k2fn_early"; do
-        _k2got=$(bash -c "$_k2fn"$'\n''_nftban_switch_word "$1"' _ "$_k2in")
+        _k2got=$(bash -c "$_k2fn"$'\n''_nftban_switch_word "$1"' _ "$_k2in" 2>/dev/null) || _k2got="(no reader)"
         [[ "$_k2got" == "$_k2want" ]] || _k2bad+=" [$_k2in]=$_k2got(want $_k2want)"
     done
 done < "$_k2tbl"
