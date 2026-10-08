@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7); no operator text advises `nft flush ruleset` (E8, audit K14). K2 (owner 2026-10-08): one NFTBAN_ENABLED contract: both shell readers answer the shared case table (E9) with byte-identical code (E10); INVALID refuses disable/enable before any change (E11/E12) and is null in status JSON (E13); at boot INVALID leaves the last published projection, off is understood, and the bypass is never blocked (K2a-c)."
+# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7); no operator text advises `nft flush ruleset` (E8, audit K14). K2 (owner 2026-10-08): one NFTBAN_ENABLED contract: both shell readers answer the shared case table (E9) with byte-identical code (E10); INVALID refuses disable/enable before any change (E11/E12) and is null in status JSON (E13); `nftban status` text and --json follow the shared table (E14, audit K2-a); the scriptlets label INVALID as invalid (E7, K2-b); at boot INVALID leaves the last published projection, off is understood, and the bypass is never blocked (K2a-c)."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,mktemp,cmp"
@@ -483,10 +483,12 @@ for _src in deb rpm; do
     printf 'NFTBAN_ENABLED="true"\n' > "$SB/e7/on/conf.d/services.conf"
     printf 'NFTBAN_ENABLED="true"\n' > "$SB/e7/off/conf.d/services.conf"
     printf 'NFTBAN_ENABLED="false"\n' > "$SB/e7/off/conf.d/services.conf.local"
+    mkdir -p "$SB/e7/inv/conf.d"; printf 'NFTBAN_ENABLED=maybe\n' > "$SB/e7/inv/conf.d/services.conf"
     a1=$(e7 "$_line" "$SB/e7/on" "$LIBDIR"); a2=$(e7 "$_line" "$SB/e7/off" "$LIBDIR"); a3=$(e7 "$_line" "$SB/e7/on" "$SB/e7/no-such-lib")
-    [[ "$a1" == on && "$a2" == off && -z "$a3" ]] || { _e7_ok=0; echo "      $_src: stored-on=[$a1] local-off=[$a2] unreadable=[$a3] (want on / off / empty)"; }
+    a4=$(e7 "$_line" "$SB/e7/inv" "$LIBDIR")
+    [[ "$a1" == on && "$a2" == off && -z "$a3" && "$a4" == invalid ]] || { _e7_ok=0; echo "      $_src: stored-on=[$a1] local-off=[$a2] unreadable=[$a3] invalid=[$a4] (want on / off / empty / invalid)"; }
 done
-if [[ $_e7_ok -eq 1 ]]; then ok "E7 both scriptlet switch lines EXECUTED: stored on -> on; disable's .local override -> off; unloadable reader -> unread (not 'disabled')"
+if [[ $_e7_ok -eq 1 ]]; then ok "E7 both scriptlet switch lines EXECUTED: stored on -> on; disable's .local override -> off; unloadable reader -> unread (not 'disabled'); NFTBAN_ENABLED=maybe -> invalid (K2-b, not 'off')"
 else ko "E7 scriptlet switch decision"; fi
 
 # E8 (audit K14, 2026-10-08): no shipped operator text ADVISES `nft flush ruleset` (it deletes
@@ -530,6 +532,39 @@ else ko "E12 enable with an invalid value (rc=$rc)"; fi
 rc=0; svc '_nftban_services_status_json' || rc=$?
 if has "$SB/svc.out" '"master_enabled": null'; then ok "E13 status JSON with an invalid value -> master_enabled null (not true/false)"
 else ko "E13 status JSON master_enabled for an invalid value"; fi
+
+# E14 (audit K2-a, peer 2026-10-08): `nftban status` is a reader too. Every case of the shared
+# table is driven through the REAL cmd_status.sh: the text "Master Control" line and the --json
+# document (the whole document must parse; master_enabled true / false / null for on / off / invalid).
+CMDSTATUS="$LIBDIR/cli/cmd_status.sh"
+st_run(){  # <function> -> stdout of the real status function in the sandbox
+    env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" NFTBAN_RUN_DIR="$SB/run" \
+        NFTBAN_LOG_DIR="$SB/log" NFTBAN_CACHE_DIR="$SB/cache" \
+        timeout 120 bash -c 'source "$1/lib/env.sh" >/dev/null 2>&1 || true; source "$2" >/dev/null 2>&1 || true
+            source "$1/core/nftban_output.sh" >/dev/null 2>&1 || true; set +e +u +o pipefail; trap - ERR; "$3"' \
+        _ "$LIBDIR" "$CMDSTATUS" "$1" 2>/dev/null
+}
+if ! command -v jq >/dev/null 2>&1; then
+    absent "E14 status reader" "jq not installed on this host"
+else
+    _e14bad=""; _e14n=0
+    while IFS=$'\t' read -r _k2in _k2want || [[ -n "${_k2in:-}" ]]; do
+        [[ -z "$_k2in" || "$_k2in" == \#* ]] && continue
+        [[ "$_k2in" == "<EMPTY>" ]] && _k2in=""
+        _e14n=$((_e14n+1))
+        fresh; mkdir -p "$SB/log" "$SB/cache"
+        printf 'NFTBAN_ENABLED=%s\n' "$_k2in" > "$SB/etc/conf.d/services.conf"
+        case "$_k2want" in on) _jw=true; _tw="ENABLED" ;; off) _jw=false; _tw="DISABLED (config)" ;; *) _jw=null; _tw="INVALID (" ;; esac
+        _txt=$(st_run _status_section_firewall | grep -m1 'Master Control' || true)
+        [[ "$_txt" == *"Master Control...... $_tw"* ]] || _e14bad+=" text[$_k2in]='${_txt##*......}'(want $_tw)"
+        st_run output_json > "$SB/e14.json" || true
+        jq -e --argjson w "$_jw" '.master_enabled == $w and (.master_switch | type == "string")' "$SB/e14.json" >/dev/null 2>&1 \
+            || _e14bad+=" json[$_k2in]=$(jq -c '.master_enabled' "$SB/e14.json" 2>/dev/null || echo PARSE-ERROR)(want $_jw)"
+    done < "$_k2tbl"
+    if [[ $_e14n -ge 30 && -z "$_e14bad" ]]; then ok "E14 nftban status text + --json follow the shared table for all $_e14n cases (JSON parses; true/false/null)"
+    else ko "E14 status reader diverges from the switch contract (cases=$_e14n):${_e14bad:0:1500}"; fi
+fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"
