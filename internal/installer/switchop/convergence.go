@@ -145,6 +145,15 @@ const (
 	// A state carrying this verdict must terminate as APPLIED_UNVERIFIED, never
 	// COMMITTED.
 	ConvergenceNotEvaluated ConvergenceVerdict = "NOT_EVALUATED"
+
+	// ConvergenceNotApplicableDisabled — v1.235 row 486 (owner U1 / R-DEC). The run
+	// DELIBERATELY loaded no ruleset because NFTBan is disabled (stored choice) or the
+	// per-boot emergency bypass is active. There is no convergence to verify; the run
+	// instead proves the DISABLED invariants (validate.RunDisabledAssertions: inert
+	// projection, boot guards enabled, no NFTBan unit enabled / no NFTBan table under
+	// the bypass). Distinct from NOT_EVALUATED (a path that declines to evaluate an
+	// ENFORCED install). Permitted for COMMITTED only together with those invariants.
+	ConvergenceNotApplicableDisabled ConvergenceVerdict = "NOT_APPLICABLE_DISABLED"
 )
 
 // generationObservation is the tri-state read of the effective generation counter.

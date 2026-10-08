@@ -94,7 +94,9 @@ for unit in \
     nftban-suricata-stats.service \
     nftban-suricata-update.timer \
     nftban-suricata-update.service \
-    nftban-suricata.service; do
+    nftban-suricata.service \
+    nftban-rollback.timer \
+    nftban-rollback.service; do
     systemctl stop "$unit" 2>/dev/null || true
     systemctl disable "$unit" 2>/dev/null || true
     remove_unit_file_if_exists "$unit"

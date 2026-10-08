@@ -46,6 +46,12 @@ declare -g -A NFTBAN_PORT_LISTEN_MAP=()    # key: proto_port_family -> "proc:pid
 declare -g -A NFTBAN_PORT_BIND_ADDR=()     # key: proto_port_family -> local address
 declare -g -A NFTBAN_PORT_NFT_RULES=()     # key: port_proto_chain_family -> action
 declare -g -A NFTBAN_PORT_NFT_GENERIC=()   # key: port_proto_chain -> action
+# v1.235 (PORT-REPORT-MISLABELS-DOCKER): published ports and the NFTBan forward verdict,
+# read from `nft -j list ruleset` (never from text, never by probing).
+declare -g -A NFTBAN_PORT_DNAT=()          # key: port_proto -> "family table" lines of foreign DNAT rules
+declare -g -A NFTBAN_PORT_FWD=()           # key: ip|ip6 -> "policy accepts" of the nftban forward chain
+declare -g NFTBAN_PORT_RULESET_STATE="unread"   # read | unreadable (text ruleset)
+declare -g NFTBAN_PORT_DNAT_STATE="unread"      # read | unreadable (JSON ruleset)
 declare -g -A NFTBAN_PORT_SEEN=()          # key: port_proto -> 1
 declare -g -A NFTBAN_PORT_SERVICE_NAME=()  # key: port_proto -> service name
 # v1.229.15: this array had eight writes and zero reads. Its only reader sat inside
@@ -194,6 +200,40 @@ nftban_port_bind_scope() {
     echo "specific"
 }
 
+# _nftban_port_forward_verdict <port> <proto>: for a port published by a foreign DNAT
+# rule, prints "EXPOSURE|FIREWALL|ICON|DETAIL" with NFTBan's forward verdict (never
+# "reachable": other tables are evaluated too). Prints nothing when no DNAT is known for
+# the port. NOT a rule evaluator: any accept rule in the nftban forward chain (including
+# `ct state established,related accept`) makes the verdict UNKNOWN.
+_nftban_port_forward_verdict() {
+    local port="$1" proto="$2" entries fam tbl tables="" st pol acc unknown="" accepts=0
+    entries="${NFTBAN_PORT_DNAT["${port}_${proto}"]:-}"
+    [[ -n "$entries" ]] || return 0
+    # IFS=' ' explicitly: this module runs with IFS=$'\n\t' (line 31).
+    while IFS=' ' read -r fam tbl; do
+        [[ -n "$fam" ]] || continue
+        [[ ", ${tables}, " == *", ${fam} ${tbl}, "* ]] || tables="${tables:+$tables, }${fam} ${tbl}"
+        local -a fams=("$fam"); [[ "$fam" == inet ]] && fams=(ip ip6)
+        local f
+        for f in "${fams[@]}"; do
+            st="${NFTBAN_PORT_FWD[$f]:-UNREADABLE}"
+            pol=""; acc=""
+            IFS=' ' read -r pol acc <<<"$st"
+            if [[ "$st" == UNREADABLE || ! "$acc" =~ ^[0-9]+$ ]]; then unknown="nftban forward chain (${f}) unreadable"
+            elif [[ "$pol" == MISSING ]]; then unknown="no nftban forward chain (${f})"
+            elif [[ "$pol" != drop ]]; then unknown="nftban forward chain (${f}) policy ${pol}"
+            elif (( acc > accepts )); then accepts="$acc"; fi
+        done
+    done <<<"$entries"
+    if [[ -n "$unknown" ]]; then
+        printf '%s|%s|%s|%s\n' UNKNOWN UNKNOWN "?" "published by ${tables} DNAT -> UNKNOWN (${unknown})"
+    elif (( accepts > 0 )); then
+        printf '%s|%s|%s|%s\n' UNKNOWN UNKNOWN "?" "published by ${tables} DNAT -> NFTBan verdict UNKNOWN: the nftban forward chain has ${accepts} accept rule(s) not managed by this report (not evaluated)"
+    else
+        printf '%s|%s|%s|%s\n' BLOCKED BLOCKED x "published by ${tables} DNAT -> blocked by the NFTBan forward policy (drop; no accept rule in the nftban forward chain)"
+    fi
+}
+
 nftban_port_compute_exposure() {
     # Correlate listener + firewall + bind → exposure state
     # Args: $1=port $2=proto
@@ -203,6 +243,12 @@ nftban_port_compute_exposure() {
     #   ICON: visual indicator
     #   DETAIL: human explanation
     local port="$1" proto="$2"
+
+    # 0. Published by a foreign DNAT rule: its traffic takes the FORWARD path, where the
+    #    input-chain rules below do not apply. Report NFTBan's forward verdict instead.
+    local fwd_verdict
+    fwd_verdict="$(_nftban_port_forward_verdict "$port" "$proto")"
+    if [[ -n "$fwd_verdict" ]]; then printf '%s\n' "$fwd_verdict"; return 0; fi
 
     # 1. Is it listening?
     local listening="no"
@@ -256,6 +302,13 @@ nftban_port_compute_exposure() {
             exposure="MISCONFIG"
             icon="?"
             detail="Listening but firewall blocks traffic"
+        elif [[ "$NFTBAN_PORT_RULESET_STATE" != read || "$NFTBAN_PORT_DNAT_STATE" != read ]]; then
+            # "No rule" would be a guess: the ruleset was not read, or the published-port
+            # (DNAT) check could not run, so the port may be on the forward path.
+            exposure="UNKNOWN"; fw_status="UNKNOWN"
+            icon="?"
+            if [[ "$NFTBAN_PORT_RULESET_STATE" != read ]]; then detail="UNKNOWN (nft ruleset unreadable)"
+            else detail="UNKNOWN (nft -j ruleset unreadable: published-port check not done)"; fi
         else
             # Listening but no firewall rule — default DROP policy blocks
             exposure="BLOCKED"
@@ -381,7 +434,36 @@ nftban_port_gather_nft_rules() {
 
     local RULESET_RAW
     RULESET_RAW="$(nft list ruleset 2>/dev/null || true)"
-    [[ -z "$RULESET_RAW" ]] && return
+    if [[ -z "$RULESET_RAW" ]]; then NFTBAN_PORT_RULESET_STATE="unreadable"; return; fi
+    NFTBAN_PORT_RULESET_STATE="read"
+
+    # Published ports (foreign DNAT) and the nftban forward chain, from the JSON ruleset.
+    # A DNAT whose dport is not a plain number or a set of numbers is not attributed.
+    local rs_json="" dl fam tbl pr pt
+    NFTBAN_PORT_DNAT_STATE="unreadable"
+    if command -v jq >/dev/null 2>&1 && rs_json="$(nft -j list ruleset 2>/dev/null)" \
+        && jq -e '.nftables | type == "array"' <<<"$rs_json" >/dev/null 2>&1; then
+        NFTBAN_PORT_DNAT_STATE="read"
+        # IFS=' ' explicitly: this module runs with IFS=$'\n\t' (line 31).
+        while IFS=' ' read -r fam tbl pr pt; do
+            [[ -n "$pt" ]] || continue
+            NFTBAN_PORT_DNAT["${pt}_${pr}"]+="${fam} ${tbl}"$'\n'
+        done < <(jq -r '.nftables[] | select(.rule) | .rule | select(.table != "nftban")
+            | select(any(.expr[]?; type == "object" and has("dnat"))) | . as $r
+            | .expr[]? | select(type == "object" and has("match")) | .match
+            | select(.left.payload.field? == "dport") | .left.payload.protocol as $p
+            | (.right | if type == "number" then . elif type == "object" and has("set")
+                  then (.set[] | select(type == "number")) else empty end)
+            | "\($r.family) \($r.table) \($p) \(.)"' <<<"$rs_json" 2>/dev/null)
+        for fam in ip ip6; do
+            dl="$(jq -r --arg f "$fam" '
+                ([.nftables[] | select(.chain) | .chain | select(.family == $f and .table == "nftban" and .name == "forward") | .policy][0] // "MISSING") as $pol
+                | ([.nftables[] | select(.rule) | .rule | select(.family == $f and .table == "nftban" and .chain == "forward")
+                    | select(any(.expr[]?; type == "object" and has("accept")))] | length) as $acc
+                | "\($pol) \($acc)"' <<<"$rs_json" 2>/dev/null)" || dl=""
+            NFTBAN_PORT_FWD["$fam"]="${dl:-UNREADABLE}"
+        done
+    fi
 
     # First, gather set-based rules (tcp dport @tcp_ports_in, etc.)
     local set_rules=()
@@ -1020,6 +1102,7 @@ nftban_port_render_section_exposure() {
         case "$fw_label" in
             ALLOWED) fw_display="${C_GREEN:-}ALLOWED${C_RESET:-}" ;;
             BLOCKED) fw_display="${C_RED:-}BLOCKED${C_RESET:-}" ;;
+            UNKNOWN) fw_display="${C_YELLOW:-}UNKNOWN${C_RESET:-}" ;;
             *)       fw_display="${C_YELLOW:-}NO-RULE${C_RESET:-}" ;;
         esac
 

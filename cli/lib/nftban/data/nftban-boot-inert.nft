@@ -1,0 +1,10 @@
+#!/usr/sbin/nft -f
+# NFTBAN GENERATED BOOT PROJECTION
+# Owner: NFTBan
+# Lifecycle: persistent early-boot nftables projection
+# Source: canonical NFTBan firewall schema + effective configuration
+# DO NOT EDIT
+# Operator overrides belong in /etc/nftban/conf.d/*.conf.local
+# NFTBAN-PROJECTION-STATE: inert
+# NFTBan is disabled (or bypassed for this boot): no NFTBan table is defined.
+# Foreign rules loaded by the distro nftables.service are not affected.

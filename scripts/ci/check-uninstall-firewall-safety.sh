@@ -5,7 +5,7 @@
 # meta:name="check-uninstall-firewall-safety"
 # meta:type="script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="CI gate: package removal must NEVER leave an NFTBan base chain with policy drop and no accept rules. Rejects the flush-without-delete pattern in DEB/RPM maintainer scripts (the v1.221.2 uninstall-connectivity defect: nft flush table ip nftban kept the drop-policy input chain and locked out inbound SSH/ping until reboot)."
+# meta:description="CI gate: package removal AND every lifecycle path that removes rules (disable --flush-rules, reset, uninstall; v1.235) must NEVER leave an NFTBan base chain with policy drop and no accept rules. Rejects the flush-without-delete pattern in DEB/RPM maintainer scripts and the lifecycle CLI files (the v1.221.2 uninstall-connectivity defect: nft flush table ip nftban kept the drop-policy input chain and locked out inbound SSH/ping until reboot)."
 # meta:inventory.files=""
 # meta:inventory.binaries="bash, awk, grep"
 # meta:inventory.env_vars=""
@@ -53,6 +53,22 @@ check_flush_paired() {
 # 1) DEB maintainer scripts.
 for f in packaging/deb/postrm packaging/deb/prerm; do
     echo "[deb] $f"
+    check_flush_paired "$f" || FAIL=1
+done
+
+# 1b) v1.235 row 486 (ASSURANCE_FAILURE_ANALYSIS section 4 / plan C2): the same
+#     invariant over every LIFECYCLE path that removes NFTBan rules, not only package
+#     maintainer scripts. `nftban disable all --flush-rules` used a bare flush for years
+#     because this gate scanned one script category. Each subject must EXIST: a missing
+#     file is a vacuous pass, which is a failure here.
+for f in cli/lib/nftban/lib/service_control.sh \
+         cli/lib/nftban/cli/cmd_firewall.sh \
+         cli/lib/nftban/cli/cmd_system.sh \
+         uninstall.sh; do
+    echo "[lifecycle] $f"
+    if [ ! -f "$f" ]; then
+        echo "::error::$f — lifecycle subject missing (the gate would pass vacuously)"; FAIL=1; continue
+    fi
     check_flush_paired "$f" || FAIL=1
 done
 

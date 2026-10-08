@@ -55,7 +55,7 @@ var lcOptInTimers = []string{
 	"nftban-community-stats.timer", "nftban-update-apply.timer", "nftban-pro-license.timer",
 	"nftban-pro-inventory.timer", "nftban-soak.timer", "nftban-tunnel.timer",
 	"nftban-rbl-check.timer", "nftban-snapshot.timer", "nftban-report-daily.timer",
-	"nftban-rebuild-recovery.timer", "nftban-rollback.timer",
+	"nftban-rebuild-recovery.timer",
 }
 
 const lcEmergencyKey = "inet:nftban_install_emergency"

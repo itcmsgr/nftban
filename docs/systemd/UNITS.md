@@ -14,7 +14,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 > `OnBootSec=` directives where applicable. The unit file is authoritative; this
 > table is a curated projection.
 
-## Timers (22)
+## Timers (21)
 
 | Timer | Schedule | Purpose |
 |-------|----------|---------|
@@ -32,7 +32,6 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-geoban-refresh.timer` | Weekly Mon 3:30 + persistent | GeoBan country-CIDR refresh |
 | `nftban-update-check.timer` | Daily 3:30 | Update availability check |
 | `nftban-update-apply.timer` | Weekly Sun 4:00 | Auto-update apply (gated) |
-| `nftban-rollback.timer` | Manual-trigger (`OnActiveSec=5min`) | Emergency rollback — started by `nftban-apply`, stopped by `nftban-confirm` |
 | `nftban-botscan.timer` | 5min boot, then every 10min | Bot scanner cycle (Clock 3) |
 | `nftban-botscan-collector.timer` | 2min boot, then every 5min | BotScan read-authority collector (feeds spool ahead of scan) |
 | `nftban-community-stats.timer` | Daily | Anonymous community stats submission (opt-in) |
@@ -41,7 +40,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (27)
+## Services (30)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
@@ -53,7 +52,10 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-health-fix.service` | oneshot | Health auto-fix |
 | `nftban-queue.service` | oneshot | Queue processing |
 | `nftban-snapshot.service` | oneshot | State snapshot |
-| `nftban-rollback.service` | oneshot | Emergency rollback |
+| `nftban-boot-bypass.service` | oneshot, early boot | As of v1.235: runs only with the kernel parameter `nftban=disabled`; makes the NFTBan boot projection inert for that boot, before `nftables.service` loads it |
+| `nftban-boot-bypass-guard.service` | oneshot | As of v1.235: runs only with `nftban=disabled`, after `nftables.service`; if NFTBan tables were loaded anyway, deletes `ip`/`ip6 nftban` and records it |
+| `nftban-boot-normal.service` | oneshot, early boot | As of v1.235: without the bypass, restores a projection set aside by a previous bypass boot, and keeps the projection inert while NFTBan is disabled |
+| `nftban-commit-confirm-boot.service` | oneshot, early boot | As of v1.235: decides a pending `nftban firewall rebuild --confirm` apply at boot, before the daemon; repeats the alarm while a rollback has failed |
 | `nftban-unified-exporter.service` | oneshot | Metrics export |
 | `nftban-watchdog.service` | oneshot | Watchdog check |
 | `nftban-core-feeds.service` | oneshot | Feed updates |

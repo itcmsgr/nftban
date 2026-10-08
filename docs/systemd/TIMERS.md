@@ -69,16 +69,17 @@ Activated by events, not by schedule.
 
 | Unit | Trigger | Purpose |
 |------|---------|---------|
-| `nftban-rollback.timer` | Manual/auto-update failure | Emergency rollback countdown |
 | `nftban-alert@.service` | `OnFailure=` in other units | Service failure alerting |
 
-#### `nftban-rollback.timer` — manual-trigger safety net
+#### Commit-confirm rollback (as of v1.235)
 
-`nftban-rollback.timer` is intentionally manual-trigger, not orphaned and not auto-enabled. `nftban-apply` starts the timer after staging a firewall ruleset; `nftban-confirm` stops it after the operator confirms the ruleset is healthy. If it is not stopped, `nftban-rollback.service` runs after `OnActiveSec=5min` and restores the previous ruleset from `backup.rules`.
-
-The timer's `WantedBy=timers.target` line is intentionally commented out. Auto-enabling it at boot would start rollback countdowns on fresh installs where no `backup.rules` exists, causing spurious failures. It should only be active during the `nftban-apply` → `nftban-confirm` window.
-
-> Future doc follow-up: the full update/apply/backup/confirm/rollback flow should be documented in a dedicated operator runbook, because this timer is only one part of the safety mechanism.
+`nftban-rollback.timer` and `nftban-rollback.service` are retired in v1.235 and removed on upgrade.
+`nftban firewall rebuild --confirm` (and the `nftban-apply` wrapper) now arms one transient rollback
+unit per apply, named `nftban-commit-rollback-<apply id>`, with the grace period from
+`conf.d/recovery.conf` (`NFTBAN_REBOOT_GRACE_PERIOD`). `nftban firewall confirm <apply id>` stops it;
+otherwise it restores the applied baseline at the deadline. A pending apply that is still open at
+boot is decided by `nftban-commit-confirm-boot.service`. These transient units are not listed above
+because they exist only during an apply.
 
 ## Services
 

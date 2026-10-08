@@ -42,6 +42,10 @@ no(){ fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; }
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 mkdir -p "$SB/lib/lib" "$SB/lib/templates" "$SB/lib/bin" "$SB/conf/ports.d"
 cp "$ROOT/cli/lib/nftban/lib/boot_projection.sh" "$SB/lib/lib/"
+# v1.235 row 486 (fix a): render-boot/refresh read the STORED enable/disable choice and
+# refuse when they cannot; stage the real authority (no services.conf here = enabled).
+cp "$ROOT/cli/lib/nftban/lib/service_control.sh" "$ROOT/cli/lib/nftban/lib/shell_predicates.sh" \
+   "$ROOT/cli/lib/nftban/lib/env.sh" "$SB/lib/lib/"
 cp "$ROOT/install/nftables/nftables.conf.tpl"    "$SB/lib/templates/"
 TPL="$SB/lib/templates/nftables.conf.tpl"
 

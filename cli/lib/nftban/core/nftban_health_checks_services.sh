@@ -485,7 +485,6 @@ nftban_health_check_timers() {
         "nftban-unified-exporter.timer" # Unified export
         "nftban-suricata-update.timer"  # Suricata rules
         "nftban-snapshot.timer"         # Firewall snapshots
-        "nftban-rollback.timer"         # Auto-rollback checks
     )
 
     local -A timer_desc=(
@@ -498,7 +497,6 @@ nftban_health_check_timers() {
         ["nftban-unified-exporter.timer"]="Unified export (Prometheus+Zabbix+Connectors)"
         ["nftban-suricata-update.timer"]="Suricata rules update (optional)"
         ["nftban-snapshot.timer"]="Firewall snapshot creation (optional)"
-        ["nftban-rollback.timer"]="Auto-rollback checks (optional)"
     )
 
     local total=0

@@ -14,10 +14,14 @@
 # imply enable. See V106_LANE_MFST_C1_SCOPE.md §7 for safety analysis.
 # =============================================================================
 nftban-alert@.service
+nftban-boot-bypass-guard.service
+nftban-boot-bypass.service
+nftban-boot-normal.service
 nftban-botscan-collector.service
 nftban-botscan-collector.timer
 nftban-botscan.service
 nftban-botscan.timer
+nftban-commit-confirm-boot.service
 nftban-community-stats.service
 nftban-community-stats.timer
 nftban-core-feeds.service
@@ -45,8 +49,6 @@ nftban-rebuild-recovery.service
 nftban-rebuild-recovery.timer
 nftban-report-daily.service
 nftban-report-daily.timer
-nftban-rollback.service
-nftban-rollback.timer
 nftban-snapshot.service
 nftban-snapshot.timer
 nftban-soak.service

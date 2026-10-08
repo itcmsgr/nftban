@@ -28,6 +28,8 @@
 # =============================================================================
 
 [Unit]
+# v1.235: deliberately NOT held by the bypass / rollback-failed conditions: failure notification only,
+# it applies no state, and it must stay available during an emergency bypass or a D10 alarm.
 Description=NFTBan Service Failure Alert for %i
 Documentation=https://nftban.com/docs/alerts
 

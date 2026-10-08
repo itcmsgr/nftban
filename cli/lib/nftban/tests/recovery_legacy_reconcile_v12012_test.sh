@@ -9,11 +9,11 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-24"
-# meta:description="RECOVERY_LEGACY_RECONCILE: the 11 dead recovery keys are deprecated in BOTH config-schema.json copies; the 3 live commit-confirm knobs stay accurate (config_file=conf.d/recovery.conf, not deprecated); shipped recovery.conf carries only the 3; nftban-apply sources recovery.conf + routes .local through _source_local + captures env for highest precedence; the rebuild_recovery.json marker is untouched."
-# meta:input="config-schema.json (x2), etc/nftban/conf.d/recovery.conf, cli/sbin/nftban-apply"
+# meta:description="RECOVERY_LEGACY_RECONCILE: the 11 dead recovery keys are deprecated in BOTH config-schema.json copies; the 3 live commit-confirm knobs stay accurate (config_file=conf.d/recovery.conf, not deprecated); shipped recovery.conf carries only the 3; the commit-confirm engine (lib/commit_confirm.sh cc_recovery_settings, reached via the nftban-apply wrapper) honours default < recovery.conf < /etc/default/nftban < recovery.conf.local (_source_local, broken file skipped) < env, behaviourally in a sandbox, and a failed SSH probe rolls the pending apply back; the rebuild_recovery.json marker is untouched."
+# meta:input="config-schema.json (x2), etc/nftban/conf.d/recovery.conf, cli/sbin/nftban-apply, cli/lib/nftban/lib/commit_confirm.sh"
 # meta:output="PASS/FAIL per assertion; nonzero on any FAIL"
 # meta:depends="bash,jq,grep"
-# meta:inventory.files="etc/nftban/conf.d/recovery.conf,cli/sbin/nftban-apply"
+# meta:inventory.files="etc/nftban/conf.d/recovery.conf,cli/sbin/nftban-apply,cli/lib/nftban/lib/commit_confirm.sh"
 # meta:inventory.binaries="jq"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="conf.d/recovery.conf"
@@ -72,13 +72,30 @@ for k in $LIVE; do grep -qE "^${k}=" "$RECOV" && ok "recovery.conf ships $k" || 
 for k in $DEAD; do grep -qE "^${k}=" "$RECOV" && no "recovery.conf still ships dead key $k" || true; done
 ok "no dead keys live-assigned in shipped recovery.conf"
 
-echo "== nftban-apply wiring + precedence =="
-grep -q 'source "$RECOVERY_CONF"' "$APPLY" && ok "nftban-apply sources shipped recovery.conf" || no "nftban-apply does not source recovery.conf"
-grep -q '_source_local "$RECOVERY_CONF_LOCAL"' "$APPLY" && ok "nftban-apply routes recovery.conf.local through _source_local" || no ".local not via _source_local"
-grep -q '_env_grace=' "$APPLY" && grep -q '_env_ssh_port=' "$APPLY" && ok "nftban-apply captures env for highest precedence" || no "env-capture precedence missing"
-grep -qE 'GRACE="\$\{_env_grace:-' "$APPLY" && ok "effective value prefers env (explicit precedence)" || no "env precedence not applied to GRACE"
-# legacy /etc/default/nftban compat retained
-grep -q 'CONFIG="/etc/default/nftban"' "$APPLY" && ok "legacy /etc/default/nftban compat retained" || no "legacy compat dropped"
+echo "== recovery.conf precedence, now owned by the commit-confirm engine (v1.235) =="
+# nftban-apply is a wrapper over `nftban firewall rebuild --confirm` since v1.235; the
+# precedence it used to implement lives in lib/commit_confirm.sh cc_recovery_settings.
+# Behavioural: default < recovery.conf < /etc/default/nftban < recovery.conf.local < env.
+CC="$REPO_ROOT/cli/lib/nftban/lib/commit_confirm.sh"
+SBX="$(mktemp -d)"; trap 'rm -rf "$SBX"' EXIT
+mkdir -p "$SBX/etc/conf.d"
+eff() {  # prints "grace ssh_test ssh_port" as the engine resolves them
+    env -i PATH="/usr/bin:/bin" NFTBAN_CONFIG_DIR="$SBX/etc" NFTBAN_DATA_DIR="$SBX/data" \
+        NFTBAN_LIB_DIR="$REPO_ROOT/cli/lib/nftban" CC_LEGACY_DEFAULTS="$SBX/default" "$@" \
+        bash -c 'source "$1" >/dev/null 2>&1; cc_recovery_settings; printf "%s %s %s" "$CC_GRACE_CONF" "$CC_SSH_TEST" "$CC_SSH_PORT"' _ "$CC"
+}
+printf 'NFTBAN_REBOOT_GRACE_PERIOD="301"\nNFTBAN_SSH_TEST_BEFORE_APPLY="true"\nNFTBAN_SSH_TEST_PORT="22"\n' > "$SBX/etc/conf.d/recovery.conf"
+[[ "$(eff)" == "301 true 22" ]] && ok "shipped recovery.conf is read" || no "shipped recovery.conf not read ($(eff))"
+printf 'NFTBAN_REBOOT_GRACE_PERIOD="402"\n' > "$SBX/default"
+[[ "$(eff)" == "402 true 22" ]] && ok "legacy /etc/default/nftban compat overrides recovery.conf" || no "legacy compat dropped ($(eff))"
+printf 'NFTBAN_REBOOT_GRACE_PERIOD="603"\nNFTBAN_SSH_TEST_PORT="2222"\n' > "$SBX/etc/conf.d/recovery.conf.local"
+[[ "$(eff)" == "603 true 2222" ]] && ok "recovery.conf.local (via _source_local) overrides both" || no ".local not applied ($(eff))"
+[[ "$(eff NFTBAN_REBOOT_GRACE_PERIOD=904 NFTBAN_SSH_TEST_BEFORE_APPLY=false)" == "904 false 2222" ]] && ok "environment wins over every file" || no "env precedence not applied ($(eff NFTBAN_REBOOT_GRACE_PERIOD=904 NFTBAN_SSH_TEST_BEFORE_APPLY=false))"
+printf 'NFTBAN_REBOOT_GRACE_PERIOD="777"\nif then fi\n' > "$SBX/etc/conf.d/recovery.conf.local"
+[[ "$(eff)" == "402 true 22" ]] && ok "a broken recovery.conf.local is skipped whole (_source_local gate)" || no "broken .local partly applied ($(eff))"
+grep -q 'firewall rebuild --confirm' "$APPLY" && ok "nftban-apply routes to rebuild --confirm (the engine)" || no "nftban-apply no longer reaches the engine"
+grep -q 'if ! cc_ssh_probe; then' "$REPO_ROOT/cli/lib/nftban/cli/cmd_firewall.sh" && grep -q 'cc_rollback "${CC_APPLY_ID}" --auto' "$REPO_ROOT/cli/lib/nftban/cli/cmd_firewall.sh" \
+    && ok "NFTBAN_SSH_TEST_BEFORE_APPLY: a failed probe rolls the pending apply back" || no "SSH probe not wired to an immediate rollback"
 
 echo "== rebuild_recovery.json marker untouched (separate mechanism) =="
 grep -q 'REBUILD_RECOVERY_MARKER' "$REPO_ROOT/cli/lib/nftban/core/nftban_rebuild_classify.sh" && ok "rebuild_recovery marker contract present + untouched" || no "rebuild_recovery marker missing"

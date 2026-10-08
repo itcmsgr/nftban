@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-05"
-# meta:description="Tests for v1.150 Lane A health/timer truth-telling. Asserts HLT-04 (a failed-but-enabled service is added to missing_required so verify returns non-zero, instead of being counted OK in the ENABLED-stopped branch), 13.7(a) (the watchdog trend enable-timer hint is suppressed when the maintenance timer is enabled, replaced by a data-accrues note), TMR-02 (NFTBAN_TIMERS lists the 6 previously-omitted shipped timers), and TMR-01 (nftban_enable_all's force-enabled core_timers set excludes the apply/confirm-managed rollback + snapshot timers). Real systemctl state transitions (actual is-failed/is-enabled on a host) are lab integration tests."
+# meta:description="Tests for v1.150 Lane A health/timer truth-telling. Asserts HLT-04 (a failed-but-enabled service is added to missing_required so verify returns non-zero, instead of being counted OK in the ENABLED-stopped branch), 13.7(a) (the watchdog trend enable-timer hint is suppressed when the maintenance timer is enabled, replaced by a data-accrues note), TMR-02 (NFTBAN_TIMERS lists the 6 previously-omitted shipped timers), and TMR-01 (nftban_enable_all's core timer set, restored with class core since v1.235 D5, is exactly maintenance/health/watchdog and excludes the rollback + snapshot timers). Real systemctl state transitions (actual is-failed/is-enabled on a host) are lab integration tests."
 # meta:input="None (self-contained sandbox)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep,awk,sed,jq"
@@ -245,7 +245,11 @@ done
 # ---------------------------------------------------------------------------
 echo; echo "[TMR-01] enable_all core_timers excludes rollback/snapshot"
 
-core_block=$(awk '/local core_timers=\(/{c=1} c{print} c&&/^[[:space:]]*\)/{exit}' "$SVCCTL_SRC")
+# v1.235 row 486 (owner D5, no forced settings): the core set is the loop that restores
+# each core timer with class "core" (enabled unless the disable record says the operator
+# had it disabled, or it is masked). The set itself, not its syntax, is what TMR-01 pins.
+core_block=$(awk '/^[[:space:]]*for timer in /{prev=$0; next} /_nftban_restore_unit "\$timer" core/{if (prev != "") print prev; exit} {prev=""}' "$SVCCTL_SRC")
+[[ -n "$core_block" ]] || core_block="(core restore loop NOT FOUND in $SVCCTL_SRC)"
 assert_not_contains "$core_block" "tmr_rollback" "TMR-01.1 core_timers omits rollback timer"
 assert_not_contains "$core_block" "tmr_snapshot" "TMR-01.2 core_timers omits snapshot timer"
 assert_contains "$core_block" "tmr_maintenance" "TMR-01.3 core_timers still has maintenance"

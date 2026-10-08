@@ -226,7 +226,7 @@ _nftban_prefetch_unit_states() {
         nftban-update-check.timer nftban-update-apply.timer
         nftban-unified-exporter.timer nftban-unified-exporter.service
         nftban-suricata.service nftban-suricata.timer nftban-suricata-update.timer
-        nftban-snapshot.timer nftban-rollback.timer nftban-rbl-check.timer
+        nftban-snapshot.timer nftban-rbl-check.timer
         nftban-pro-license.timer nftban-pro-inventory.timer
         nftban-tunnel.timer
         suricata.service prometheus victoriametrics
@@ -962,6 +962,13 @@ _status_section_firewall() {
         master_status="DISABLED (config)"
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
+    # v1.235 (row 486 contract D8): stored / applied / on-reboot / recovery as separate
+    # facts, with named EXPECTED/DIVERGENCE lines; an unread fact is UNKNOWN.
+    if [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh"
+        nftban_lifecycle_collect && nftban_lifecycle_render
+    fi
 
     # Helpful hints (only in non-quiet mode)
     if [[ $quiet_mode -eq 0 ]] && (( _ban_n > 0 || _wl_n > 0 )); then
@@ -2031,7 +2038,6 @@ _status_section_timers() {
         ["nftban-queue.timer"]="Queue processing"
         ["nftban-suricata-update.timer"]="Suricata rules update"
         ["nftban-snapshot.timer"]="Snapshot creation"
-        ["nftban-rollback.timer"]="Rollback check"
         ["nftban-rbl-check.timer"]="RBL Check"
         ["nftban-tunnel.timer"]="Tunnel suspicion scan"
         ["nftban-pro-inventory.timer"]="Pro inventory collection"
@@ -2339,6 +2345,13 @@ output_json() {
     echo "  \"firewall_runtime_status\": \"${json_runtime_raw%%:*}\","
     echo "  \"installation\": {\"class\": \"$(json_escape "${json_pkg_line%%|*}")\", \"detail\": \"$(json_escape "${_jp_rest%%|*}")\", \"recovery\": \"$(json_escape "${_jp_rest#*|}")\"},"
     echo "  \"config_divergence\": [${_json_div_array}],"
+    # v1.235 (row 486 contract D8): lifecycle facts, same collector as the human view.
+    if [[ -r "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/lifecycle_facts.sh"
+        nftban_lifecycle_collect
+        echo "  \"lifecycle\": $(nftban_lifecycle_json),"
+    fi
     echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
     echo "  \"hostname\": \"$(hostname)\","
 
@@ -2795,7 +2808,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update-check.timer" "nftban-update-apply.timer")
+    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update-check.timer" "nftban-update-apply.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"

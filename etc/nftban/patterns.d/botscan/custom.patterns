@@ -22,6 +22,12 @@
 #   nftban botscan patterns disable NAME      (writes override.local)
 # and add your own record below under a new name.
 #
+# BAN (seconds) in production (batch mode: nftban-botscan.service): BAN selects a
+# class, not an exact duration. BAN <= 1800 -> grey, enforced 3600 s;
+# BAN > 1800 -> ban, enforced 86400 s. Direct mode (BOTSCAN_BATCH_SIGNAL_MODE
+# not true, no daemon hand-off) honours BAN as given. `nftban botscan status`
+# shows requested vs enforced on its "Ban duration:" line.
+#
 # Example:
 # MY_PATTERN|malicious\.php|url-404|3|60|3600|true|My custom pattern
 #

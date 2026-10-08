@@ -485,7 +485,6 @@ nftban_system_status() {
             "nftban-rbl-check.timer"
             "nftban-suricata-update.timer"
             "nftban-snapshot.timer"
-            "nftban-rollback.timer"
             "nftban-pro-inventory.timer"
             "nftban-pro-license.timer"
             "nftban-update-check.timer"
@@ -556,7 +555,6 @@ _nftban_timers_control() {
         "nftban-rbl-check.timer"
         "nftban-suricata-update.timer"
         "nftban-snapshot.timer"
-        "nftban-rollback.timer"
         "nftban-pro-inventory.timer"
         "nftban-pro-license.timer"
         "nftban-update-check.timer"
@@ -592,7 +590,6 @@ _nftban_timers_status() {
         "nftban-rbl-check.timer"
         "nftban-suricata-update.timer"
         "nftban-snapshot.timer"
-        "nftban-rollback.timer"
         "nftban-pro-inventory.timer"
         "nftban-pro-license.timer"
         "nftban-update-check.timer"
@@ -715,9 +712,16 @@ CONFIGURATION:
     Edit services.conf.local instead of services.conf to preserve
     settings across package updates.
 
-KERNEL EMERGENCY DISABLE:
-    Add 'nftban=disabled' to kernel command line at boot to
-    completely bypass NFTBan (useful for recovery).
+KERNEL EMERGENCY BYPASS (v1.235):
+    Add 'nftban=disabled' to the kernel command line for ONE boot: no NFTBan
+    rule is loaded during that boot (the NFTBan boot projection is made inert
+    before nftables.service runs) and no NFTBan daemon, timer or recovery path
+    starts. Foreign firewall rules still load. Your stored choice
+    (NFTBAN_ENABLED) is NOT changed: the next normal boot returns to it.
+    'nftban status' shows whether the bypass held ("guarantee met") or had to
+    remove NFTBan rules late ("late recovery", a divergence).
+    Note: NFTBAN_STARTUP_DELAY does NOT delay rule loading; it is not a
+    recovery window.
 
     At GRUB menu:
     1. Press 'e' to edit boot entry

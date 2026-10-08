@@ -95,13 +95,6 @@ units:
     requires_capabilities: []
     evidence: "cron/maintenance.sh:164 first ungated nft fork of main(); also :121,:210,:387-450,:650,:658; lib/ssh_port_detect.sh:148,:150,:162,:164; unconditional child helpers/autoheal.sh:368,:405,:457,:471,:505,:513"
 
-  - name: nftban-rollback.service
-    state: confirmed_consumer
-    user: root
-    nft_operation: write
-    requires_capabilities: []
-    evidence: "cli/sbin/nftban-rollback:70,:132 `nft -f \"$BACKUP\"`; emergency fallback :77,:78 `nft delete table`"
-
   - name: nftban-snapshot.service
     state: confirmed_consumer
     user: root
@@ -193,3 +186,10 @@ already_authorized:
 unrestricted_by_design:
   - nftban-health-fix.service
   - nftband.service
+  # v1.235 row 486 early-boot units: run before sysinit.target (DefaultDependencies=no),
+  # unsandboxed by design. bypass-guard reaches nft (nftban-boot-early.sh `nft list tables`,
+  # `nft delete table <fam> nftban`); commit-confirm-boot runs the nftban CLI.
+  - nftban-boot-bypass.service
+  - nftban-boot-bypass-guard.service
+  - nftban-boot-normal.service
+  - nftban-commit-confirm-boot.service

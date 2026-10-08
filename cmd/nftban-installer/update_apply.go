@@ -181,6 +181,18 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 		return st.ExitCode()
 	}
 
+	// v1.235 row 486 (owner U1 / R-DEC): while NFTBan is disabled (stored choice) or
+	// the per-boot emergency bypass is active, an update apply must not load rules.
+	// The rebuild is NOT executed, and the record says exactly that (REBUILD_NOT_EXECUTED
+	// with the reason) instead of claiming an applied or failed rebuild.
+	resolveLifecycleMode(exec, &globalPhaseData, log)
+	if globalPhaseData.enforcementSkipped() {
+		reason := globalPhaseData.skipReason()
+		log.Warn("update apply: rebuild NOT executed — %s", reason)
+		_ = sf.Transition(state.StateRebuildNotExecuted, state.PhaseSwitch, reason)
+		return sf.State.ExitCode()
+	}
+
 	// 2. Canonical rebuild entrypoint — the ONLY mutation path.
 	// Recovery, rollback, authority enforcement, config rendering: all
 	// owned by firewall_rebuild (v1.96 pipeline). PR-18 owns NONE of them.

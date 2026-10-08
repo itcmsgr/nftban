@@ -109,8 +109,6 @@ polkit.addRule(function (action, subject) {
             "nftban-unified-exporter.timer",
             "nftban-snapshot.service",
             "nftban-snapshot.timer",
-            "nftban-rollback.service",
-            "nftban-rollback.timer",
 
             // NFTBan Rebuild Recovery (v1.96 — deferred retry)
             "nftban-rebuild-recovery.service",

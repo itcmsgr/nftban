@@ -69,7 +69,6 @@ var allKnownTimers = []string{
 	"nftban-rbl-check.timer",
 	"nftban-rebuild-recovery.timer",
 	"nftban-report-daily.timer",
-	"nftban-rollback.timer",
 	"nftban-snapshot.timer",
 	"nftban-soak.timer",
 	"nftban-tunnel.timer",

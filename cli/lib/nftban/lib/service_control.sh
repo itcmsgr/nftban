@@ -64,18 +64,44 @@ _nftban_load_services_config() {
 # MASTER SWITCH FUNCTIONS
 # =============================================================================
 
-# Check if NFTBan is globally enabled
-# Returns: 0 if enabled, 1 if disabled
-nftban_is_enabled() {
+# v1.235 R-DEC (owner 2026-10-06): the kernel parameter nftban=disabled is a REAL
+# per-boot emergency bypass. It never changes NFTBAN_ENABLED and never touches
+# foreign rules; no NFTBan loader, daemon, timer or recovery path may override it.
+# Boot side: nftban-boot-bypass.service (bind-mounts the inert projection before
+# nftables.service) + ConditionKernelCommandLine=!nftban=disabled on every NFTBan
+# unit. CLI side: this function, called by every rule-loading verb.
+# Exact word match: the command line is split on spaces (IFS is pinned because
+# callers run under IFS=$'\n\t', which would not split it).
+nftban_emergency_bypass_active() {
+    local -a _w=()
+    local _x
+    IFS=' ' read -r -a _w < /proc/cmdline 2>/dev/null || return 1
+    for _x in "${_w[@]}"; do
+        [[ "$_x" == "nftban=disabled" ]] && return 0
+    done
+    return 1
+}
+
+# nftban_refuse_under_bypass <action>: rc 1 + message when the bypass is active.
+nftban_refuse_under_bypass() {
+    nftban_emergency_bypass_active || return 0
+    echo "REFUSED: $1 — EMERGENCY BYPASS ACTIVE for this boot (kernel parameter nftban=disabled)." >&2
+    echo "  NFTBan loads no rules during this boot. The stored choice is unchanged;" >&2
+    echo "  reboot without nftban=disabled to return to it." >&2
+    return 1
+}
+
+# The STORED choice only (no kernel parameter): NFTBAN_ENABLED in services.conf(.local).
+nftban_master_switch_on() {
     _nftban_load_services_config
-
-    # Check kernel command line for emergency disable
-    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        return 1
-    fi
-
-    # Check master switch
     [[ "${NFTBAN_ENABLED:-true}" == "true" ]]
+}
+
+# Check if NFTBan is globally enabled
+# Returns: 0 if enabled, 1 if disabled (stored choice off, or the per-boot bypass)
+nftban_is_enabled() {
+    nftban_emergency_bypass_active && return 1
+    nftban_master_switch_on
 }
 
 # Check master switch and exit if disabled
@@ -276,6 +302,28 @@ nftban_enable_all() {
         echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (enable services)" >&2
         return 1
     fi
+    # v1.235 R-DEC: never enable during the per-boot emergency bypass.
+    nftban_refuse_under_bypass "nftban enable" || return 1
+    # v1.235 D10: a FAILED commit-confirm rollback keeps the kernel state for recovery.
+    # While the stored choice is ON, enable refuses (retry or abandon the rollback first).
+    # After the operator recovered with `disable all --flush-rules` (stored choice OFF),
+    # a successful enable is the documented way out: it clears the failed-rollback state.
+    local _cc_failed="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/commit-confirm.rollback-failed"
+    if [[ -e "$_cc_failed" ]]; then
+        if nftban_master_switch_on; then
+            echo "REFUSED: nftban enable: a commit-confirm ROLLBACK FAILED and NFTBan is still enabled." >&2
+            echo "  Retry: nftban firewall rollback   |   after recovery: nftban firewall rollback --abandon" >&2
+            echo "  or remove NFTBan enforcement from the console: nftban disable all --flush-rules" >&2
+            return 1
+        fi
+        rm -f "$_cc_failed"
+        # shellcheck source=/dev/null
+        if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
+            cc_set status abandoned 2>/dev/null || true
+            cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null || true
+        fi
+        echo "  Clearing the failed commit-confirm rollback state (NFTBan was disabled for recovery)."
+    fi
 
     # Track which firewall was disabled for rollback
     local _prev_firewall=""
@@ -440,9 +488,15 @@ nftban_enable_all() {
     # =========================================================================
     # [4/10] Initialize firewall (with rollback on failure)
     # =========================================================================
+    # v1.235 row 486: the stored choice is switched ON *before* the rebuild, so the
+    # rebuild republishes the ACTIVE boot projection (while disabled it stays inert).
+    # The rebuild ALWAYS runs: after a plain disable the old tables are still loaded,
+    # and skipping it would leave the inert projection in place (NFTBan would not load
+    # at the next boot even though it is enabled).
+    _nftban_set_config "NFTBAN_ENABLED" "true"
     echo "[4/10] Initializing firewall..."
-    if ! nft list table ip nftban >/dev/null 2>&1; then
-        echo "  Firewall not initialized, initializing now..."
+    if true; then
+        echo "  Rebuilding the firewall from the saved configuration..."
         if command -v nftban &>/dev/null; then
             # v1.228.5: rebuild returns non-zero with the CAUSE on stderr. Discarding
             # it left this branch — which rolls the previous firewall back and returns
@@ -480,11 +534,11 @@ nftban_enable_all() {
                     echo "  ✅ Previous firewall restored: $_prev_firewall"
                 fi
                 echo "  ❌ Protection failed — rollback applied" >&2
+                # v1.235: a failed enable leaves NFTBan in its previous (disabled) state.
+                _nftban_set_config "NFTBAN_ENABLED" "false"
                 return 1
             fi
         fi
-    else
-        echo "  ✅ Firewall already initialized"
     fi
     echo ""
 
@@ -506,25 +560,21 @@ nftban_enable_all() {
     # [6/10] Enable core services (names from central config, not hardcoded)
     # =========================================================================
     echo "[6/10] Enabling core services..."
-    _nftban_set_config "NFTBAN_ENABLED" "true"
-
-    # Service names from nftban.conf (per-distro safe)
+    # v1.235 row 486 (D4): nftables.service and suricata.service belong to other
+    # managers. enable never enables, starts or unmasks them; it reports what that means.
     local svc_daemon="${NFTBAN_SERVICE_DAEMON:-nftband.service}"
-    local svc_login="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-
-    # nftables is an external service — always "nftables.service" but resolved via config
-    local services=("nftables.service" "$svc_daemon")
-    if command -v suricata &>/dev/null; then
-        services+=("suricata.service")
+    local _nft_en=""
+    _nft_en=$(systemctl is-enabled nftables.service 2>/dev/null) || true
+    if [[ "$_nft_en" == "enabled" ]]; then
+        echo "  ✅ nftables.service enabled: it loads the NFTBan boot projection at boot"
+    else
+        echo "  ⚠️  nftables.service is '${_nft_en:-unknown}': NFTBan rules will NOT load at boot."
+        echo "     NFTBan does not change another manager's service. To load NFTBan at boot:"
+        echo "       systemctl enable nftables.service"
     fi
-
-    for svc in "${services[@]}"; do
-        if systemctl list-unit-files "$svc" &>/dev/null 2>&1; then
-            systemctl enable "$svc" 2>/dev/null && \
-            systemctl start "$svc" 2>/dev/null && \
-            echo "  ✅ Enabled & started: ${svc%.service}"
-        fi
-    done
+    # Daemon + socket: core units, restored per the unit record (D5).
+    _nftban_restore_unit "nftband.socket" core
+    _nftban_restore_unit "$svc_daemon" core
 
     # Sync whitelist into running daemon (must happen AFTER nftband starts)
     if command -v nftban &>/dev/null; then
@@ -547,50 +597,38 @@ nftban_enable_all() {
     # NFTBAN_TIMER_SURICATA_UPDATE is no longer read here: the timer it named
     # was retired in v1.228.2 (owner ruling D2). The key survives in
     # nftban.conf conffile space and is reported as a known stale key.
-    # TMR-01: Snapshot/rollback timers are apply/confirm-managed, NOT
-    # auto-enabled. nftban-rollback.timer is started by nftban-apply and stopped
-    # by nftban-confirm (its unit's [Install] explicitly says "Do NOT
-    # auto-enable" — auto-enabling fails on fresh install before any
-    # backup.rules exists). The snapshot timer is paired with it under the same
-    # apply/confirm lifecycle. They are intentionally omitted from core_timers
-    # below so they stay confirm-managed rather than force-enabled here.
+    # TMR-01: the snapshot timer is NOT auto-enabled and is omitted from the core
+    # timers below. (v1.235: the legacy nftban-rollback.timer/.service pair is
+    # retired; commit-confirm arms a transient per-apply rollback unit instead.)
 
-    # Core timers — ALWAYS enabled (non-negotiable)
-    local core_timers=(
-        "$tmr_health"
-        "$tmr_maintenance"
-        "$tmr_watchdog"
-    )
-    for timer in "${core_timers[@]}"; do
-        if systemctl list-unit-files "$timer" &>/dev/null 2>&1; then
-            systemctl enable "$timer" 2>/dev/null && \
-            systemctl start "$timer" 2>/dev/null && \
-            echo "  ✅ Enabled: $timer"
-        fi
+    # v1.235 row 486 (D5): no forced settings. Core timers follow the unit record;
+    # module-tied timers follow the module switch AS IT IS NOW; every other NFTBan
+    # unit that was enabled before `disable all` comes back exactly as recorded.
+    local -A _done=()
+    local timer
+    for timer in "$tmr_health" "$tmr_maintenance" "$tmr_watchdog"; do
+        _nftban_restore_unit "$timer" core; _done[$timer]=1
     done
-
-    # GeoIP timer — always enabled (GeoIP is default-on)
-    if systemctl list-unit-files "$tmr_geoip" &>/dev/null 2>&1; then
-        systemctl enable "$tmr_geoip" 2>/dev/null && \
-        systemctl start "$tmr_geoip" 2>/dev/null && \
-        echo "  ✅ Enabled: $tmr_geoip"
+    local _cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    _nftban_restore_unit "$tmr_geoip"   "module:$( [[ "${NFTBAN_GEOIP_ENABLED:-true}" == "true" ]] && echo on || echo off)";    _done[$tmr_geoip]=1
+    _nftban_restore_unit "$tmr_metrics" "module:$( [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]] && echo on || echo off)"; _done[$tmr_metrics]=1
+    _nftban_restore_unit "$tmr_feeds"   "module:$( [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]] && echo on || echo off)";   _done[$tmr_feeds]=1
+    local _bs; _bs=$(_nftban_switch_on "$_cfg/conf.d/botscan/main.conf" BOTSCAN_ENABLED false)
+    for timer in nftban-botscan.timer nftban-botscan-collector.timer; do
+        _nftban_restore_unit "$timer" "module:$_bs"; _done[$timer]=1
+    done
+    _done[nftband.service]=1; _done[nftband.socket]=1; _done["$svc_daemon"]=1
+    if [[ -f "$NFTBAN_DISABLE_RECORD" ]]; then
+        local _u _st _ac
+        while IFS=$'\t' read -r _u _st _ac; do
+            [[ -z "$_u" || "$_u" == \#* || -n "${_done[$_u]:-}" ]] && continue
+            [[ "$_st" == "enabled" ]] && _nftban_restore_unit "$_u" core
+        done < "$NFTBAN_DISABLE_RECORD"
+    else
+        echo "  ℹ️  No unit record (disabled by an older version): previous unit state UNKNOWN;"
+        echo "     units restored from configuration only (core timers + configured modules)."
     fi
 
-    # Optional timers (config-gated)
-    if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "$tmr_metrics" &>/dev/null 2>&1; then
-            systemctl enable "$tmr_metrics" 2>/dev/null && \
-            systemctl start "$tmr_metrics" 2>/dev/null && \
-            echo "  ✅ Enabled: $tmr_metrics"
-        fi
-    fi
-    if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "$tmr_feeds" &>/dev/null 2>&1; then
-            systemctl enable "$tmr_feeds" 2>/dev/null && \
-            systemctl start "$tmr_feeds" 2>/dev/null && \
-            echo "  ✅ Enabled: $tmr_feeds"
-        fi
-    fi
     # v1.228.2: the NFTBAN_SURICATA_ENABLED-gated enable of
     # nftban-suricata-update.timer is REMOVED. Suricata is retired from the
     # active product surface (owner ruling D2); the timer is no longer shipped
@@ -603,22 +641,24 @@ nftban_enable_all() {
     # =========================================================================
     # [8/10] Enable login monitor
     # =========================================================================
-    echo "[8/10] Enabling login monitor..."
-    if declare -f nftban_login_cmd_enable &>/dev/null; then
-        nftban_login_cmd_enable >/dev/null 2>&1 && echo "  ✅ Login monitor enabled"
-    elif command -v nftban >/dev/null 2>&1; then
-        # cmd_login.sh may not be loaded in this context — call via CLI
-        nftban login enable >/dev/null 2>&1 && echo "  ✅ Login monitor enabled"
+    echo "[8/10] Login monitor..."
+    # v1.235 row 486 (D5): `nftban login enable` REWRITES the login-alert settings
+    # (NFTBAN_LOGIN_ALERT_*=true), so calling it here silently overrode the operator's
+    # choices. The login monitor runs inside nftband from its own configuration; enable
+    # only reports it.
+    local _la; _la=$(_nftban_switch_on "$_cfg/conf.d/login_alert.conf" NFTBAN_LOGIN_ALERT_ENABLED true)
+    if [[ "$_la" == "on" ]]; then
+        echo "  ✅ Login monitoring: enabled in your configuration (runs inside nftband)"
     else
-        echo "  ⚠️  Login monitor: nftban CLI not available"
+        echo "  ⏸  Login monitoring: disabled in your configuration (left as you set it)"
     fi
     echo ""
 
     # =========================================================================
     # [9/10] GeoIP provisioning (default-on, immediate download if missing)
     # =========================================================================
-    echo "[9/10] Provisioning GeoIP database..."
-    _nftban_set_config "NFTBAN_GEOIP_ENABLED" "true"
+    echo "[9/10] GeoIP database..."
+    # v1.235 row 486 (D5): no longer forces NFTBAN_GEOIP_ENABLED=true.
     local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
     local geoip_found=0
     # Check for any supported GeoIP database
@@ -629,7 +669,9 @@ nftban_enable_all() {
             break
         fi
     done
-    if [[ $geoip_found -eq 0 ]]; then
+    if [[ "${NFTBAN_GEOIP_ENABLED:-true}" != "true" ]]; then
+        echo "  ⏸  GeoIP disabled in your configuration (left as you set it)"
+    elif [[ $geoip_found -eq 0 ]]; then
         echo "  GeoIP database missing, downloading now..."
         if declare -f nftban_geoip_download &>/dev/null; then
             if nftban_geoip_download 2>/dev/null; then
@@ -718,7 +760,7 @@ nftban_enable_all() {
             break
         fi
     done
-    if [[ $geoip_present -eq 0 ]]; then
+    if [[ $geoip_present -eq 0 && "${NFTBAN_GEOIP_ENABLED:-true}" == "true" ]]; then
         validation_failures+=("GeoIP database: missing (DEGRADED)")
     fi
 
@@ -730,6 +772,7 @@ nftban_enable_all() {
         echo ""
         echo "  Rules: $rules_count | nftband: $nftband_state | Timers: $timers_active"
         echo "  Run 'nftban status' for full details"
+        rm -f "$NFTBAN_DISABLE_RECORD" 2>/dev/null || true   # v1.235: record cleared only after a successful enable
         return 0
     else
         # Check if it's just GeoIP (DEGRADED) or something critical (NOT PROTECTED)
@@ -755,80 +798,193 @@ nftban_enable_all() {
         if [[ $critical_failures -gt 0 ]]; then
             return 1
         fi
+        rm -f "$NFTBAN_DISABLE_RECORD" 2>/dev/null || true   # DEGRADED (non-critical) still counts as enabled
         return 0
     fi
 }
 
+# =============================================================================
+# v1.235 row 486: disable / enable contract
+# (NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md §2, owner decisions final)
+#   D4 never stop/disable/enable/mask another manager's service (nftables.service,
+#      suricata.service); D5 no re-setup: a unit record preserves per-unit choices;
+#   U1 disable persists across reboot: the NFTBan-owned boot projection is INERT
+#      while disabled; without --flush-rules the kernel rules stay until the reboot;
+#   D2 --flush-rules removes ONLY NFTBan-owned enforcement: delete (never flush-only)
+#      ip/ip6 nftban, plus NFTBan's own SYNPROXY rules in the foreign raw tables.
+# =============================================================================
+NFTBAN_DISABLE_RECORD="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/disable-units.state"
+
+# NFTBan units that disable/enable manage. Excluded on purpose: the early-boot safety
+# units (they must stay armed while disabled), the commit-confirm boot unit, transient
+# commit-confirm rollback units, and template units.
+_nftban_managed_units() {
+    { systemctl list-unit-files --no-legend --plain 'nftban*' 'nftband*' 2>/dev/null || true; } \
+      | awk '{print $1}' \
+      | awk '!/^nftban-boot-(bypass|bypass-guard|normal)\.service$/ \
+             && !/^nftban-commit-confirm-boot\.service$/ \
+             && !/^nftban-commit-rollback/ && !/@\./ && NF'
+}
+
+# Write the unit record ONCE (a repeated disable never overwrites the original state).
+_nftban_record_units() {
+    local rec="$NFTBAN_DISABLE_RECORD" tmp u en ac
+    if [[ -f "$rec" ]]; then
+        echo "  Unit record kept ($(sed -n 's/^# recorded_at=//p' "$rec")): a repeated disable never overwrites it."
+        return 0
+    fi
+    mkdir -p "$(dirname "$rec")" || return 1
+    tmp=$(mktemp "${rec}.XXXXXX") || return 1
+    {
+        echo "# NFTBan unit record: written by 'nftban disable all', read by 'nftban enable'"
+        echo "# recorded_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        while IFS= read -r u; do
+            [[ -n "$u" ]] || continue
+            en=$(systemctl is-enabled "$u" 2>/dev/null) || true
+            ac=$(systemctl is-active "$u" 2>/dev/null) || true
+            printf '%s\t%s\t%s\n' "$u" "${en:-unknown}" "${ac:-unknown}"
+        done < <(_nftban_managed_units)
+    } > "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod 640 "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$rec" || { rm -f "$tmp"; return 1; }
+    echo "  Unit record written: $rec"
+}
+
+
+# _nftban_restore_unit <unit> <core|module:on|module:off>
+# Decide one unit on `nftban enable` (contract §2.1): a unit the operator masked stays
+# masked; a module-tied unit follows the module switch AS IT IS NOW (a setting changed
+# while disabled wins); a core unit follows the unit record (absent record or absent
+# entry = enable). Prints exactly what it did and why.
+_nftban_restore_unit() {
+    local u="$1" class="$2" want="on" en="" recst=""
+    [[ -n "$(systemctl list-unit-files --no-legend "$u" 2>/dev/null || true)" ]] || return 0   # unit not installed
+    en=$(systemctl is-enabled "$u" 2>/dev/null) || true
+    case "$en" in
+        masked) echo "  ⏸  left masked (operator choice): $u"; return 0 ;;
+        static) return 0 ;;
+    esac
+    case "$class" in
+        module:on)  want="on" ;;
+        module:off) want="off" ;;
+        core)
+            if [[ -f "$NFTBAN_DISABLE_RECORD" ]]; then
+                recst=$(awk -F'\t' -v u="$u" '$1==u{print $2; exit}' "$NFTBAN_DISABLE_RECORD")
+                [[ -n "$recst" && "$recst" != "enabled" ]] && want="off"
+            fi ;;
+    esac
+    if [[ "$want" == "off" ]]; then
+        echo "  ⏸  left disabled (${recst:+recorded as $recst before disable}${recst:-module switched off}): $u"
+        return 0
+    fi
+    if systemctl enable "$u" >/dev/null 2>&1 && systemctl start "$u" >/dev/null 2>&1; then
+        echo "  ✅ Enabled & started: $u"
+    else
+        echo "  ❌ Could not enable/start: $u" >&2
+    fi
+}
+
+# _nftban_switch_on <file-without-.local> <KEY> <default true|false> -> on|off (.local wins)
+_nftban_switch_on() {
+    local v="$3" f line
+    for f in "$1" "$1.local"; do
+        [[ -r "$f" ]] || continue
+        while IFS= read -r line; do
+            case "$line" in "$2"=*) v="${line#"$2"=}"; v="${v//\"/}"; v="${v//\'/}" ;; esac
+        done < "$f"
+    done
+    [[ "$v" == "true" ]] && echo on || echo off
+}
+
 # Disable all NFTBan services (emergency mode)
 # Usage: nftban_disable_all [--flush-rules]
-# Options:
-#   --flush-rules   Also flush nft tables (remove all firewall rules)
-#                   Without this flag, nft rules remain active in kernel
 nftban_disable_all() {
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (disable services)" >&2
         return 1
     fi
-
-    # v1.38.0: Parse --flush-rules flag
-    local flush_rules=false
+    local flush_rules=false arg rc=0
     for arg in "$@"; do
-        case "$arg" in
-            --flush-rules) flush_rules=true ;;
-        esac
+        case "$arg" in --flush-rules) flush_rules=true ;; esac
     done
 
     echo "EMERGENCY: Disabling all NFTBan services..."
 
-    # Stop all timers first (before stopping services that depend on them)
-    echo "  Stopping timers..."
-    local all_timers
-    all_timers=$(systemctl list-unit-files 'nftban-*.timer' --no-legend 2>/dev/null | awk '{print $1}' || true)
-    for timer in $all_timers; do
-        systemctl stop "$timer" 2>/dev/null || true
-        systemctl disable "$timer" 2>/dev/null || true
-    done
-
-    # Stop and disable systemd services (names from central config)
-    local svc_daemon="${NFTBAN_SERVICE_DAEMON:-nftband.service}"
-    local svc_login="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    local svc_metrics="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
-    local services=("${svc_login}" "${svc_metrics}" "${svc_daemon}" "suricata.service" "nftables.service")
-
-    for svc in "${services[@]}"; do
-        if systemctl list-unit-files "${svc}" &>/dev/null 2>&1; then
-            echo "  Stopping ${svc%.service}..."
-            systemctl stop "${svc}" 2>/dev/null || true
-            systemctl disable "${svc}" 2>/dev/null || true
-        fi
-    done
-
-    # v1.38.0: Flush nft tables if --flush-rules is set
-    if [[ "$flush_rules" == "true" ]]; then
-        echo "  Flushing nftables rules..."
-        if command -v nft >/dev/null 2>&1; then
-            nft flush table ip nftban 2>/dev/null || true
-            nft flush table ip6 nftban 2>/dev/null || true
-            echo "  NFTBan firewall rules removed from kernel."
-        fi
+    # 1. Record the current unit state (once), BEFORE changing anything.
+    if ! _nftban_record_units; then
+        echo "  WARNING: unit record could not be written: 'nftban enable' will restore units from configuration" >&2
     fi
 
-    # Set master switch to disabled
+    # 2. Stop and disable NFTBan units only. nftables.service and suricata.service are
+    #    other managers' services and are never touched (D4). Masked units stay masked.
+    local u en
+    while IFS= read -r u; do
+        [[ -n "$u" ]] || continue
+        en=$(systemctl is-enabled "$u" 2>/dev/null) || true
+        systemctl stop "$u" 2>/dev/null || true
+        if [[ "$en" == "enabled" ]]; then
+            systemctl disable "$u" 2>/dev/null || true
+        fi
+    done < <(_nftban_managed_units)
+    echo "  NFTBan daemon, socket, exporter, monitors and timers stopped and disabled."
+
+    # 3. Stored choice off.
     _nftban_set_config "NFTBAN_ENABLED" "false"
 
+    # 4. Disabled persists across reboot (U1): publish the INERT boot projection through
+    #    the single publication authority. The early-boot guard (nftban-boot-normal)
+    #    re-applies this before nftables.service if this step fails.
+    if nftban firewall render-boot --inert --quiet 2>/dev/null; then
+        echo "  Boot projection set INERT: no NFTBan rule will load at the next boot."
+    else
+        echo "  WARNING: inert boot projection could NOT be published now; the early-boot guard enforces it at the next boot" >&2
+        rc=1
+    fi
+
+    # 5. --flush-rules: remove NFTBan-owned enforcement only (D2), verified from the kernel.
+    if [[ "$flush_rules" == "true" ]]; then
+        echo "  Removing NFTBan-owned firewall rules (foreign tables and rules are not touched)..."
+        if command -v nft >/dev/null 2>&1; then
+            local fam
+            for fam in ip ip6; do
+                nft delete table "$fam" nftban 2>/dev/null || true
+            done
+            if ! declare -F _nft_cleanup_synproxy_raw >/dev/null 2>&1; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_fragment.sh" 2>/dev/null || true
+            fi
+            if declare -F _nft_cleanup_synproxy_raw >/dev/null 2>&1; then
+                _nft_cleanup_synproxy_raw >/dev/null 2>&1 || echo "  WARNING: NFTBan SYNPROXY raw rules could not be fully removed (see: nft -a list chain ip raw prerouting)" >&2
+            fi
+            local tables
+            if tables=$(nft list tables 2>&1); then
+                if grep -qxE 'table (ip|ip6) nftban' <<<"$tables"; then
+                    echo "  ERROR: NFTBan tables are STILL present in the kernel:" >&2
+                    grep -xE 'table (ip|ip6) nftban' <<<"$tables" | sed 's/^/    /' >&2
+                    rc=1
+                else
+                    echo "  Verified: no NFTBan table in the kernel (foreign tables untouched)."
+                fi
+            else
+                echo "  WARNING: kernel tables could not be read; removal NOT verified: $tables" >&2
+                rc=1
+            fi
+        else
+            echo "  ERROR: nft not available; NFTBan rules NOT removed" >&2
+            rc=1
+        fi
+    fi
+
     echo ""
-    echo "All NFTBan services stopped and disabled."
+    echo "All NFTBan services stopped and disabled. Your settings and module choices are kept."
     if [[ "$flush_rules" == "false" ]]; then
-        echo ""
-        echo "NOTE: Firewall rules remain active in kernel."
-        echo "  To also remove rules: nftban disable --flush-rules"
-        echo "  To delete tables:     nft delete table ip nftban; nft delete table ip6 nftban"
+        echo "  NFTBan firewall rules remain active in the kernel UNTIL THE NEXT REBOOT (unmanaged);"
+        echo "  after a reboot no NFTBan rule loads. Foreign rules are not affected."
+        echo "  To remove NFTBan's rules now: nftban disable all --flush-rules"
     fi
     echo ""
-    echo "To re-enable:"
-    echo "  nftban enable"
-
-    return 0
+    echo "To re-enable: nftban enable"
+    return "$rc"
 }
 
 # Clear systemd start-limit-hit state before starting a service.
