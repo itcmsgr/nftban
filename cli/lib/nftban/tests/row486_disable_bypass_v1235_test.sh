@@ -97,6 +97,11 @@ if [[ "$*" == "firewall rebuild"* ]]; then
     v=$(sed -n 's/^NFTBAN_ENABLED=//p' "$SBX/etc/conf.d/services.conf.local" 2>/dev/null)
     echo "rebuild-saw-switch ${v//\"/}" >> "$SBX/calls.log"
 fi
+# K5 arm: a render-boot refused by the D10 guard (as the real dispatcher does).
+if [[ "$*" == "firewall render-boot"* && -e "$SBX/refuse_render" ]]; then
+    echo "REFUSED: firewall render-boot: a commit-confirm rollback FAILED (D10 hold)" >&2
+    exit 1
+fi
 exit 0
 EOF
 # systemctl: unit states in $SBX/units ("<unit> <is-enabled>"), active set in $SBX/active.
@@ -298,6 +303,15 @@ cp "$rec" "$SB/rec.first" 2>/dev/null || : > "$SB/rec.first"   # base: no record
 svc_root 'nftban_disable_all' || true
 if cmp -s "$rec" "$SB/rec.first"; then ok "C8 repeated disable never overwrites the original record"
 else ko "C8 record overwritten"; fi
+
+# C5b (audit K5, 2026-10-08): when the inert publish is refused (D10 hold), disable must SAY WHY;
+# the refusal was hidden (2>/dev/null) and only a generic warning remained.
+fresh; printf '%s\n' "$UNITS_BASE" > "$SB/units"; : > "$SB/active"; : > "$SB/refuse_render"
+rc=0; svc_root 'nftban_disable_all' || rc=$?
+if [[ $rc -ne 0 ]] && has "$SB/svc.out" "could NOT be published" && has "$SB/svc.out" "ROLLBACK FAILED (D10 hold)"; then
+    ok "C5b refused inert publish: disable reports the refusal's cause (rc != 0)"
+else ko "C5b refused inert publish (rc=$rc cause shown=$(has "$SB/svc.out" "ROLLBACK FAILED" && echo y || echo n))"; fi
+rm -f "$SB/refuse_render"
 
 # C7b (audit H5, 2026-10-08): the stub `systemctl stop` runs no ExecStop, so C7 cannot see that a
 # real stop of nftban-firewall-init.service runs its ExecStop, which DELETES ip/ip6 nftban at once.

@@ -938,10 +938,13 @@ nftban_disable_all() {
     # 4. Disabled persists across reboot (U1): publish the INERT boot projection through
     #    the single publication authority. The early-boot guard (nftban-boot-normal)
     #    re-applies this before nftables.service if this step fails.
-    if nftban firewall render-boot --inert --quiet 2>/dev/null; then
+    local _inert_err=""
+    if _inert_err=$(nftban firewall render-boot --inert --quiet 2>&1 >/dev/null); then
         echo "  Boot projection set INERT: no NFTBan rule will load at the next boot."
     else
+        # v1.235 audit K5: say WHY (e.g. refused under a D10 hold); it used to be discarded.
         echo "  WARNING: inert boot projection could NOT be published now; the early-boot guard enforces it at the next boot" >&2
+        [[ -n "$_inert_err" ]] && printf '    cause: %s\n' "${_inert_err//$'\n'/ | }" >&2
         rc=1
     fi
 
