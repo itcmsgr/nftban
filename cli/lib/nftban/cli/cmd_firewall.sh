@@ -2276,7 +2276,7 @@ _check_nft_collisions() {
         # v1.235 audit K14: never advise `nft flush ruleset` (it deletes EVERY table, Docker's and
         # other managers' included; see the same warning in the rebuild path).
         if [[ "$json_mode" == "false" ]]; then
-            echo "       Fix: find the owner of each table above (nft list table <family> <name>) and reconcile it"
+            echo "       Fix: find the owner (manager) of each table above and reconcile it"
             echo "            with its manager; CSF/iptables/firewalld: nftban firewall takeover (reversible)."
             echo "            Then: nftban firewall rebuild. Do NOT run 'nft flush ruleset': it deletes every table."
         fi
