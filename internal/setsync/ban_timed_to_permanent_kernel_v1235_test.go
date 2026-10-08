@@ -8,7 +8,7 @@
 // meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-10-08"
-// meta:description="Audit H11 (train D #1456). Drives the REAL NFTManager.AddIPWithTimeout against a REAL kernel: an element added with a 1h timeout and then added again as permanent (timeout 0) must end up WITHOUT a timeout, in both the non-interval timeout set (netlink path, blacklist_manual_ipv4) and the interval set (nft CLI path, blacklist_ipv4). Measured on lab4 2026-10-08: the kernel keeps the old timeout on a plain re-add (rc 0), so a permanent ban silently expired. Runs ONLY as root with NFTBAN_NETNS_KERNEL_TEST=1, and refuses to run if an ip nftban table already exists (it must be started inside a throwaway network namespace: ip netns exec <ns> go test ...). Skipped everywhere else (CI)."
+// meta:description="Audit H11 (train D #1456). Drives the REAL NFTManager.AddIPWithTimeout against a REAL kernel: an element added with a 1h timeout and then added again as permanent (timeout 0) must end up WITHOUT a timeout, in both the non-interval timeout set (netlink path, blacklist_manual_ipv4) and the interval set (nft CLI path, blacklist_ipv4). Unchanged around the fix: a permanent add of an absent element works; a timed add over a permanent element stays permanent; an IP inside an existing interval range returns no error and leaves the range. Measured on lab4 2026-10-08: the kernel keeps the old timeout on a plain re-add (rc 0), so a permanent ban silently expired. Runs ONLY as root with NFTBAN_NETNS_KERNEL_TEST=1, and refuses to run if an ip nftban table already exists (it must be started inside a throwaway network namespace: ip netns exec <ns> go test ...). Skipped everywhere else (CI)."
 // meta:input="None"
 // meta:output="t.Fatal when the permanent re-add keeps the old timeout"
 // meta:depends="testing,os/exec,github.com/google/nftables"
@@ -88,5 +88,33 @@ func TestBanTimedToPermanent_Kernel_H11(t *testing.T) {
 		if strings.Contains(after, "expires") || strings.Contains(after, "timeout 1h") {
 			t.Errorf("%s: permanent ban over a live timed ban KEPT the old timeout (it will expire):\n%s", name, after)
 		}
+
+		// Unchanged behaviour around the fix:
+		// (a) a permanent add of an ABSENT element still works (the replace falls back to the plain add);
+		const fresh = "198.51.100.20"
+		if err := m.AddIPWithTimeout(set, fresh, 0); err != nil {
+			t.Errorf("%s: permanent add of an absent element failed: %v", name, err)
+		}
+		// (b) a timed add over a PERMANENT element leaves it permanent.
+		if err := m.AddIPWithTimeout(set, fresh, time.Hour); err != nil {
+			t.Errorf("%s: timed add over a permanent element failed: %v", name, err)
+		}
+		if got := nftOut(t, "list", "set", "ip", "nftban", name); !strings.Contains(got, fresh) || strings.Contains(got, fresh+" timeout") {
+			t.Errorf("%s: (a)/(b) absent->permanent->timed: want %s present and permanent:\n%s", name, fresh, got)
+		}
+	}
+
+	// (c) interval set: an IP already covered by a RANGE keeps today's behaviour (no error, the
+	// range is untouched): the replace fails as not-existing and the plain add ignores the overlap.
+	nftOut(t, "add", "element", "ip", "nftban", "blacklist_ipv4", "{ 203.0.113.0/28 }")
+	iv, err := conn.GetSetByName(tbl, "blacklist_ipv4")
+	if err != nil {
+		t.Fatalf("GetSetByName blacklist_ipv4: %v", err)
+	}
+	if err := m.AddIPWithTimeout(iv, "203.0.113.9", 0); err != nil {
+		t.Errorf("interval: permanent add of an IP inside an existing range returned an error (regression): %v", err)
+	}
+	if got := nftOut(t, "list", "set", "ip", "nftban", "blacklist_ipv4"); !strings.Contains(got, "203.0.113.0/28") {
+		t.Errorf("interval: the covering range changed:\n%s", got)
 	}
 }
