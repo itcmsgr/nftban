@@ -625,7 +625,10 @@ jobs:
             sleep "$delay"
           done
           [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
-          docker run --rm \
+          # NET_ADMIN (owner 2026-10-08): the package's forward-rule preflight must READ the
+          # kernel; without it nft gets EPERM -> UNKNOWN -> the install STOPS (by design). The
+          # container has its own network namespace: nothing on the runner host is read or changed.
+          docker run --rm --cap-add NET_ADMIN \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
             -v $(pwd)/parity-out:/parity-out \
@@ -803,7 +806,10 @@ jobs:
             sleep "$delay"
           done
           [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
-          docker run --rm \
+          # NET_ADMIN (owner 2026-10-08): the package's forward-rule preflight must READ the
+          # kernel; without it nft gets EPERM -> UNKNOWN -> the install STOPS (by design). The
+          # container has its own network namespace: nothing on the runner host is read or changed.
+          docker run --rm --cap-add NET_ADMIN \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
             -v $(pwd)/parity-out:/parity-out \
@@ -987,7 +993,8 @@ jobs:
         run: |
           set -euo pipefail
           ls -la packages/
-          docker run --rm \
+          # NET_ADMIN: see the install jobs (forward-rule preflight reads the container's own netns).
+          docker run --rm --cap-add NET_ADMIN \
             -v "$(pwd)/packages:/packages:ro" \
             -v "$(pwd)/scripts:/scripts:ro" \
             -e NFTBAN_MATRIX_VM_ASSERTIONS=0 \

@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-07"
-# meta:description="C20 (owner D5, 2026-10-06): the package upgrade STOPS before the destructive change it cannot preserve and shows the rules. Drives the REAL nftban_forward_unmanaged_preflight (cli/lib/nftban/lib/nftban_immutable_owned.sh, the maintainer-script library inlined into the DEB scripts and the RPM scriptlets) under /bin/sh against a stub nft. Arms: F1 no nft -> proceed; F2 no nftban table -> proceed; F3 empty forward chain -> proceed; F4 ip forward rules -> STOP (rc 1), every rule listed in the migration plan (UNMAPPED without a route), 'STOPPED'; F5 ip6 rules only -> STOP; F6 forward chain absent -> proceed; F7 chain unreadable (other error) -> STOP as UNKNOWN; F8 NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed with the acceptance line; F9 UPGRADE only: the DEB preinst calls it on upgrade (or install with a previous version in $2) BEFORE the immutable-flag unlock, the RPM %pre only when $1 >= 2 (a first install has no NFTBan forward chain to erase). Regression only; the packaged proof is an upgrade of a host with a hand-inserted forward rule."
+# meta:description="C20 (owner D5, 2026-10-06): the package upgrade STOPS before the destructive change it cannot preserve and shows the rules. Drives the REAL nftban_forward_unmanaged_preflight (cli/lib/nftban/lib/nftban_immutable_owned.sh, the maintainer-script library inlined into the DEB scripts and the RPM scriptlets) under /bin/sh against a stub nft. Arms: F1 no nft -> proceed; F2 no nftban table -> proceed; F3 empty forward chain -> proceed; F4 ip forward rules -> STOP (rc 1), every rule listed in the migration plan (UNMAPPED without a route), 'STOPPED'; F5 ip6 rules only -> STOP; F6 forward chain absent -> proceed; F7 chain unreadable (other error) -> STOP as UNKNOWN; F8 NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed with the acceptance line; F9 EVERY install and upgrade (owner 2026-10-08): the DEB preinst calls it for install|upgrade with NO package-manager gate BEFORE the immutable-flag unlock, the RPM %pre unconditionally; a68f08c0 (upgrade-only gate) FAILS F9. Regression only; the packaged proof is an upgrade of a host with a hand-inserted forward rule."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,packaging/deb/preinst,packaging/build_nftban.sh"
 # meta:inventory.binaries="bash,sh,mktemp"
 # meta:inventory.env_vars=""
@@ -107,15 +107,15 @@ reset; : > "$SB/tables.ip"; chain ip 'ip saddr 198.51.100.0/24 accept # handle 9
 PRE="$REPO/packaging/deb/preinst"; SPEC="$REPO/packaging/build_nftban.sh"
 l_call=$(grep -n -m1 'if ! nftban_forward_unmanaged_preflight; then' "$PRE" | cut -d: -f1)
 l_unlock=$(grep -n -m1 'nftban_immut_unlock_owned |' "$PRE" | cut -d: -f1)
-# UPGRADE only (CI 2026-10-08: gated on install|upgrade, the fail-closed UNKNOWN branch refused
-# every FIRST install in containers where nft cannot read the kernel). The DEB gate line must
-# directly precede the call; the RPM call must be inside the $1 >= 2 gate.
-l_gate=$(grep -n -m1 'if \[ "\$1" = upgrade \] || \[ -n "\${2:-}" \]; then' "$PRE" | cut -d: -f1)
-if [[ -n "$l_call" && -n "$l_unlock" && -n "$l_gate" && "$l_call" -eq $((l_gate + 1)) && "$l_call" -lt "$l_unlock" ]] \
-   && grep -qF 'if [ "\$1" -ge 2 ]; then nftban_forward_unmanaged_preflight || exit 1; fi' "$SPEC" \
-   && ! grep -q '^nftban_forward_unmanaged_preflight || exit 1$' "$SPEC"; then
-    ok "F9 upgrade only: DEB preinst (upgrade, or install with a previous version) before the immutable unlock; RPM %pre when \$1 >= 2"
-else no "F9 call sites" "deb gate=$l_gate call=$l_call unlock=$l_unlock rpm_gated=$(grep -cF 'if [ "\$1" -ge 2 ]; then nftban_forward_unmanaged_preflight' "$SPEC")"; fi
+# EVERY install and upgrade (owner 2026-10-08): a package-manager "first install" does not prove the
+# kernel holds no NFTBan tables. a68f08c0 gated the call on $1/$2 (upgrade only) and so skipped the
+# STOP on a purged/manual reinstall with live hand-added forward rules: that gate must be ABSENT.
+l_gate=$(grep -n -m1 -E 'if \[ "\$1" = upgrade \] \|\| \[ -n "\$\{2:-\}" \]' "$PRE" | cut -d: -f1 || true)
+if [[ -n "$l_call" && -n "$l_unlock" && "$l_call" -lt "$l_unlock" && -z "$l_gate" ]] \
+   && grep -q '^nftban_forward_unmanaged_preflight || exit 1$' "$SPEC" \
+   && ! grep -qF 'if [ "\$1" -ge 2 ]; then nftban_forward_unmanaged_preflight' "$SPEC"; then
+    ok "F9 every install and upgrade: DEB preinst (install|upgrade, no package-manager gate) before the immutable unlock; RPM %pre unconditional"
+else no "F9 call sites" "deb call=$l_call unlock=$l_unlock pm_gate=${l_gate:-none} rpm_bare=$(grep -c '^nftban_forward_unmanaged_preflight || exit 1$' "$SPEC")"; fi
 
 echo ""
 echo "RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL) (pass=$PASS fail=$FAIL)"
