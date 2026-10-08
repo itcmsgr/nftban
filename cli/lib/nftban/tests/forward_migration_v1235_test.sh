@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-08"
-# meta:description="Owner 2026-10-08 forward migration conditions. Drives the REAL package entry point nftban_forward_unmanaged_preflight and the shared mapper (cli/lib/nftban/lib/nftban_immutable_owned.sh) under /bin/sh with a stub nft (forward chain listing) and a stub ip (routes), plus the CLI nftban_forward_migrate (lib/nftban_forward.sh). Arms: M1 srv1-shaped unmanaged rules without approval -> STOP, plan + id + exact approve command printed, store NOT written; M2 NFTBAN_FORWARD_MIGRATE=<that id> -> proceed, store holds egress for both bridges + the uplink (deduplicated), every DIFF printed; M3 wrong id -> STOP, store unchanged; M4 an UNMAPPED rule -> STOP even with that plan's id; M5 a prefix that is not exactly one interface -> UNMAPPED -> STOP; M6 an invalid existing record -> STOP, store bytes unchanged; M7 only NFTBan-tagged rules -> proceed, no plan; M8 store dir not writable -> STOP, nothing written; M9 the plan id ignores rule handles (stable); M10 the CLI migrate prints the SAME plan id as the package path; M10b the same with TWO uplinks and the CLI under the real strict.sh IFS (audit H10). Regression only; continuity of traffic is proven in the Docker lab."
+# meta:description="Owner 2026-10-08 forward migration conditions. Drives the REAL package entry point nftban_forward_unmanaged_preflight and the shared mapper (cli/lib/nftban/lib/nftban_immutable_owned.sh) under /bin/sh with a stub nft (forward chain listing) and a stub ip (routes), plus the CLI nftban_forward_migrate (lib/nftban_forward.sh). Arms: M1 srv1-shaped unmanaged rules without approval -> STOP, plan + id + exact approve command printed, store NOT written; M2 NFTBAN_FORWARD_MIGRATE=<that id> -> proceed, store holds egress for both bridges + the uplink (deduplicated), every DIFF printed; M3 wrong id -> STOP, store unchanged; M4 an UNMAPPED rule -> STOP even with that plan's id; M5 a prefix that is not exactly one interface -> UNMAPPED -> STOP; M6 an invalid existing record -> STOP, store bytes unchanged; M7 only NFTBan-tagged rules -> proceed, no plan; M8 store dir not writable -> STOP, nothing written; M9 the plan id ignores rule handles (stable); M10 the CLI migrate prints the SAME plan id as the package path; M10b the same with TWO uplinks and the CLI under the real strict.sh IFS (audit H10). K9a-h (owner 2026-10-08): every CLI path replacing the forward chain (firewall rebuild/init/reload/reset/restore/takeover, update git/local) runs the SAME preflight: unmanaged rules STOP with nothing changed; NFTBAN_FORWARD_MIGRATE=<id> or forward migrate --confirm <id> then rebuild proceeds; a changed plan or UNKNOWN STOPS; --force is not an approval; managed-only rules proceed. Regression only; continuity of traffic is proven in the Docker lab."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,cli/lib/nftban/lib/nftban_forward.sh"
 # meta:inventory.binaries="bash,sh,mktemp,sha256sum"
 # meta:inventory.env_vars=""
@@ -50,6 +50,7 @@ mkdir -p "$SB/bin" "$SB/etc"
 cat > "$SB/bin/nft" <<'EOF'
 #!/bin/sh
 [ "$1 $2 $3" = "-a list chain" ] || exit 0
+[ -e "$SBX/nft.eperm" ] && { echo "Error: Operation not permitted" >&2; exit 1; }
 f="$SBX/fwd.$4"; [ -e "$f" ] && { cat "$f"; exit 0; }
 echo "Error: No such file or directory" >&2; exit 1
 EOF
@@ -142,6 +143,50 @@ cid2=$(env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc"
     bash -c 'source "$1/lib/strict.sh" >/dev/null 2>&1; source "$1/lib/nftban_forward.sh"; nftban_forward_migrate' _ "$LIBDIR" 2>/dev/null | sed -n 's/^Migration plan \([0-9a-f]\{12\}\) .*/\1/p' | sed -n 1p)
 [[ "$nrec" -eq 2 && -n "$pid2" && "$cid2" == "$pid2" ]] && ok "M10b two uplinks: the package records both distinct uplinks, and the CLI under strict.sh prints the SAME plan id ($pid2)" \
     || no "M10b two uplinks" "package uplink records=$nrec cli=$cid2 pkg=$pid2"
+
+# K9 (owner 2026-10-08; same cause as C20): every CLI path that replaces the forward chain runs the
+# SAME preflight. Drives the REAL nftban_cmd_firewall dispatcher; only the rebuild body is recorded.
+fw(){  # <verb...> [env...] via FWENV -> rc; RAN file when the loader body would have run
+    rm -f "$SB/ran"; rc=0
+    env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" HOME="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" ${FWENV:-} \
+        bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1
+                 firewall_rebuild(){ : > "$SBX/ran"; }; firewall_reset(){ : > "$SBX/ran"; }
+                 _fw_bypass_guard(){ :; }; _fw_cc_guard(){ :; }; nftban_ssh_pre_rebuild_lockout_guard(){ :; }
+                 shift; nftban_cmd_firewall "$@"' _ "$LIBDIR" "$@" 2>"$SB/fw.err" >/dev/null || rc=$?
+}
+st(){ [[ -e "$STORE" ]] && sha256sum < "$STORE" || echo none; }
+fresh; chain ip "${SRV1[@]}"; s0=$(st)
+FWENV="" fw rebuild
+[[ $rc -ne 0 && ! -e "$SB/ran" && "$(st)" == "$s0" ]] && grep -q 'nftban firewall rebuild STOPPED' "$SB/fw.err" \
+    && ok "K9a unmanaged forward rules -> 'firewall rebuild' STOPS before any change (nothing ran, store unchanged)" || no "K9a" "rc=$rc ran=$([[ -e "$SB/ran" ]] && echo y || echo n)"
+pre; KID=$(plan_id)
+FWENV="NFTBAN_FORWARD_MIGRATE=$KID" fw rebuild
+[[ $rc -eq 0 && -e "$SB/ran" ]] && grep -qxF "# nftban:approved-plan $KID" "$STORE" \
+    && ok "K9b NFTBAN_FORWARD_MIGRATE=<plan id> on the rebuild -> plan recorded (+ approval marker), rebuild runs" || no "K9b" "rc=$rc"
+fresh; chain ip "${SRV1[@]}"
+env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" \
+    bash -c 'source "$1/lib/nftban_forward.sh"; nftban_forward_migrate --confirm "$2"' _ "$LIBDIR" "$KID" >/dev/null 2>&1 || true
+FWENV="" fw rebuild
+[[ $rc -eq 0 && -e "$SB/ran" ]] && grep -q 'approved earlier' "$SB/fw.err" \
+    && ok "K9c forward migrate --confirm <id>, then a plain rebuild -> proceeds (the approved migration is not blocked)" || no "K9c migrate -> rebuild" "rc=$rc $(head -c 200 "$SB/fw.err")"
+chain ip "${SRV1[@]}" 'ip saddr 10.9.0.0/16 accept # handle 99'
+FWENV="" fw rebuild
+[[ $rc -ne 0 && ! -e "$SB/ran" ]] && ok "K9d rules changed after the approval -> new plan id -> STOP (the old approval does not carry over)" || no "K9d changed plan" "rc=$rc"
+: > "$SB/nft.eperm"; FWENV="" fw reset --force; rm -f "$SB/nft.eperm"
+[[ $rc -ne 0 && ! -e "$SB/ran" ]] && grep -q 'forward chain UNKNOWN' "$SB/fw.err" \
+    && ok "K9e kernel unreadable -> UNKNOWN -> 'firewall reset --force' STOPS (--force is not an approval)" || no "K9e unknown" "rc=$rc"
+fresh; chain ip 'ct state established,related counter accept comment "nftban:fwd:ct" # handle 5'
+FWENV="" fw rebuild
+[[ $rc -eq 0 && -e "$SB/ran" ]] && ok "K9f only NFTBan-managed forward rules -> rebuild runs normally" || no "K9f managed only" "rc=$rc"
+fresh; chain ip "${SRV1[@]}"; FWENV="" fw reset --force
+[[ $rc -ne 0 && ! -e "$SB/ran" ]] && ok "K9g 'firewall reset --force' with unmanaged rules -> STOP (--force is not an approval)" || no "K9g reset --force" "rc=$rc"
+# K9h census: every dispatcher verb that loads/replaces rules, and update git/local, run the guard.
+_fw="$LIBDIR/cli/cmd_firewall.sh"
+_k9miss=$(awk '/^        [a-z|-]+\)$/{v=$1; sub(/\)$/,"",v); blk=""; next} v!="" {blk=blk"\n"$0}
+    v!="" && /^            ;;$/ { if (blk ~ /(firewall_rebuild|firewall_reload|firewall_reset|firewall_restore|firewall_takeover) "\$@"/ && blk !~ /_fw_forward_guard /) printf "%s ", v; v="" }' "$_fw")
+_k9upd=$(grep -c 'nftban_forward_unmanaged_preflight "nftban update"' "$LIBDIR/cli/cmd_update_methods.sh" || true)
+[[ -z "$_k9miss" && "$_k9upd" -eq 2 ]] && ok "K9h census: every rule-replacing firewall verb and update git/local run the shared preflight" \
+    || no "K9h census" "verbs without the guard: ${_k9miss:-none}; update call sites=$_k9upd (want 2)"
 
 echo ""
 echo "RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL) (pass=$PASS fail=$FAIL)"
