@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-08"
-# meta:description="v1.235 forwarding (owner D1-D4; bans Q1/Q2 2026-10-08), kernel arm. Three throwaway network namespaces: client (198.51.100.2/.3, 2001:db8:1::2/::3), router (uplink eth0 + bridge docker0) and container (172.17.0.2, fd00:17::2). The router loads the ruleset rendered by the REAL _firewall_substitute_placeholders from the REAL template with a store of egress|docker0, uplink|eth0, publish tcp 8080 v4+v6 any, plus a Docker-like DNAT 8080->80 and 8081->81. Per family: F1 published DNAT port reaches the container; F2 an unpublished DNAT port (8081) is dropped; F3 the container reaches the outside (egress); F4 the outside cannot reach the container address directly (no DNAT); F5 a banned client is refused on the published port; F6 (Q1) an established forwarded connection from a client that is then banned stops delivering data (control: same flow unbanned delivers); F7 (Q2) a container-initiated connection towards a banned address fails while an unbanned address still works; F8 whitelist is an exemption from the ban only, never an accept (banned+whitelisted reaches 8080, 8081 still dropped). Preconditions are asserted before the subject; a missed precondition is NOT_EXECUTED (exit 3). Namespaces only: the host ruleset and sysctls are never touched. Root + nftables + python3 required; lab only. Supporting evidence; the Docker lab is the confirmation."
+# meta:description="v1.235 forwarding (owner D1-D4; bans Q1/Q2 2026-10-08), kernel arm. Three throwaway network namespaces: client (198.51.100.2/.3, 2001:db8:1::2/::3), router (uplink eth0 + bridge docker0) and container (172.17.0.2, fd00:17::2). The router loads the ruleset rendered by the REAL _firewall_substitute_placeholders from the REAL template with a store of egress|docker0, uplink|eth0, publish tcp 8080 v4+v6 any, plus a Docker-like DNAT 8080->80 and 8081->81. Per family: F1 published DNAT port reaches the container; F2 an unpublished DNAT port (8081) is dropped; F3 the container reaches the outside (egress); F4 the outside cannot reach the container address directly (no DNAT); F5 a banned client is refused on the published port; F6 (Q1) an established forwarded connection from a client that is then banned stops delivering data (control: same flow unbanned delivers); F7 (Q2) a container-initiated connection towards a banned address fails while an unbanned address still works; F8 whitelist is an exemption from the ban only, never an accept (banned+whitelisted reaches 8080, 8081 still dropped). Preconditions are asserted before the subject; a missed precondition is NOT_EXECUTED (exit 3). Namespaces only: H1 asserts the normalised host ruleset shape, H2 the host forwarding sysctls, H3 that every test namespace and process is gone. Root + nftables + python3 required; lab only. Supporting evidence; the Docker lab is the confirmation."
 # meta:inventory.files="cli/lib/nftban/cli/cmd_firewall.sh,cli/lib/nftban/lib/nftban_forward.sh,install/nftables/nftables.conf.tpl"
 # meta:inventory.binaries="bash,ip,nft,python3,mktemp,sleep"
 # meta:inventory.env_vars=""
@@ -59,6 +59,16 @@ cleanup(){
     rm -rf "$WORK"
 }
 trap cleanup EXIT
+# Host guard. The shape of the host ruleset (tables, chains, rules) with the live values
+# normalised away: counters, expiry timers and set element lists change every few seconds on
+# a running host, so a raw hash proves nothing. The forwarding sysctls are compared verbatim.
+host_shape(){
+    nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+//g; s/ expires [0-9a-z.]+//g' \
+        | awk '/elements = \{/{skip=1} !skip{print} skip && /\}/{skip=0}'
+}
+host_sysctl(){ cat /proc/sys/net/ipv4/ip_forward /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null; }
+H_SHAPE0="$(host_shape)"; H_SYS0="$(host_sysctl)"
+[[ -n "$H_SHAPE0" || "$(nft list tables 2>/dev/null | wc -l)" -eq 0 ]] || ne "host ruleset unreadable (guard cannot run)"
 for n in "$NC" "$NR" "$NK"; do ip netns add "$n" || ne "cannot create namespace $n"; done
 c(){ ip netns exec "$NC" "$@"; }
 r(){ ip netns exec "$NR" "$@"; }
@@ -221,6 +231,17 @@ for fam in 4 6; do
         [[ "$got" == "a" ]] && ok "F6 (Q1) v$fam established flow cut by the ban (control 'ab', after ban 'a')" || no "F6 (Q1) v$fam established flow after the ban delivered '$got' (want a)"
     fi
 done
+
+echo "--- host guard ---"
+[[ "$(host_shape)" == "$H_SHAPE0" ]] && ok "H1 host ruleset shape unchanged (counters, expiry and element lists normalised)" \
+                                     || no "H1 host ruleset shape CHANGED during the test"
+[[ "$(host_sysctl)" == "$H_SYS0" ]] && ok "H2 host forwarding sysctls unchanged" || no "H2 host forwarding sysctls CHANGED"
+mapfile -t _pys < <(pgrep -f "$WORK/t.py" || true)
+cleanup
+_left="$(ip netns list 2>/dev/null | grep -cE "^($NC|$NR|$NK)( |$)" || true)"
+mapfile -t _pys2 < <(pgrep -f "$WORK/t.py" || true)
+[[ "$_left" -eq 0 && ${#_pys2[@]} -eq 0 ]] && ok "H3 cleanup: test namespaces deleted, no test process left (${#_pys[@]} ended)" \
+                                          || no "H3 cleanup residue" "namespaces=$_left processes=${#_pys2[@]}"
 
 echo ""
 echo "RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL) (pass=$PASS fail=$FAIL)"
