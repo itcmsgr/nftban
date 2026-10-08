@@ -9,13 +9,13 @@
 # meta:version="1.131.2"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-26"
-# meta:description="V131.1 D13 Option C output-capture wrapper. ExecStart target of nftban-firewall-validate.service: runs the audited read-only nftban-validate --json as root+CAP_NET_ADMIN, then writes the validator JSON to a group-readable file under /run/nftban/firewall-validate/last.json (chgrp nftban, chmod 0640) so nftban-group operators can read the result WITHOUT root and WITHOUT systemd-journal/adm membership. The journal-read path (D10) failed cross-family for non-root operators because the unit journal is not readable by an unprivileged nftban-group member; this file hand-off fixes that. Also echoes the JSON to stdout so the root/audit journal copy is preserved, and PRESERVES the validator exit code (DEGRADED states return non-zero and must propagate)."
+# meta:description="V131.1 D13 Option C output-capture wrapper. ExecStart target of nftban-firewall-validate.service: runs the audited read-only nftban-validate --json as root+CAP_NET_ADMIN, then writes the validator JSON to a group-readable file under /run/nftban-firewall-validate/last.json (chgrp nftban, chmod 0640) so nftban-group operators can read the result WITHOUT root and WITHOUT systemd-journal/adm membership. The journal-read path (D10) failed cross-family for non-root operators because the unit journal is not readable by an unprivileged nftban-group member; this file hand-off fixes that. Also echoes the JSON to stdout so the root/audit journal copy is preserved, and PRESERVES the validator exit code (DEGRADED states return non-zero and must propagate)."
 # meta:input="None (delegates to nftban-validate which reads kernel nft state)"
-# meta:output="/run/nftban/firewall-validate/last.json (group nftban, 0640) + stdout copy"
+# meta:output="/run/nftban-firewall-validate/last.json (group nftban, 0640) + stdout copy"
 # meta:depends="/usr/lib/nftban/bin/nftban-validate"
-# meta:inventory.files="/run/nftban/firewall-validate/last.json"
+# meta:inventory.files="/run/nftban-firewall-validate/last.json"
 # meta:inventory.binaries="/usr/lib/nftban/bin/nftban-validate"
-# meta:inventory.env_vars="NFTBAN_RUN_DIR,NFTBAN_VALIDATE_BIN"
+# meta:inventory.env_vars="NFTBAN_VALIDATE_DIR,NFTBAN_VALIDATE_BIN"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="nftban-firewall-validate.service"
 # meta:inventory.network=""
@@ -26,7 +26,7 @@
 #   - Runs ONLY as the ExecStart of nftban-firewall-validate.service (root).
 #   - Writes a group-readable JSON snapshot the CLI reads back (see
 #     cli/lib/nftban/cli/cmd_firewall.sh::_invoke_validator_json).
-#   - The NFTBAN_RUN_DIR / NFTBAN_VALIDATE_BIN overrides exist ONLY so the
+#   - The NFTBAN_VALIDATE_DIR / NFTBAN_VALIDATE_BIN overrides exist ONLY so the
 #     deterministic test can exercise this on a dev host without root or the
 #     nftban group. Production uses /run/nftban and the installed validator.
 #   - chgrp/chmod are best-effort (|| true): a non-nftban-group dev host must
@@ -35,8 +35,10 @@
 
 set -Eeuo pipefail
 
-# Runtime dir + output file (NFTBAN_RUN_DIR override is test-only).
-_dir="${NFTBAN_RUN_DIR:-/run/nftban}/firewall-validate"
+# Runtime dir + output file (NFTBAN_VALIDATE_DIR override is test-only).
+# v1.235: a root-owned dir directly under /run (not a root child of the
+# nftban-owned /run/nftban: systemd-tmpfiles refused that "unsafe path transition").
+_dir="${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}"
 _file="$_dir/last.json"
 
 # Validator binary (NFTBAN_VALIDATE_BIN override is test-only).
@@ -46,17 +48,14 @@ _bin="${NFTBAN_VALIDATE_BIN:-/usr/lib/nftban/bin/nftban-validate}"
 # this run produces nothing (e.g. validator crashes before printing).
 rm -f "$_file" 2>/dev/null || true
 
-# Ensure the runtime dir exists and is group-readable by the nftban group.
-# V131.2 D13 / v1.175: under the service the dir is created per-start by the
-# unit's `+`-prefixed ExecStartPre (/usr/bin/install -d -o root -g nftban -m 2750);
-# it is NO LONGER created by tmpfiles (v1.175 BUG-TMPFILES: the root-under-nftban
-# transition tripped systemd-tmpfiles exit 73). ReadWritePaths binds that
-# existing dir writable. This mkdir is a best-effort no-op for the standalone/dev
-# path; under the narrow ReadWritePaths a parent-write mkdir of the bound subdir
-# would fail, so it MUST NOT abort the wrapper under set -e before the write attempt.
+# Under the service the dir is created by tmpfiles at boot/install, its SINGLE creator
+# and the only owner of its attributes (d /run/nftban-firewall-validate 2750 root
+# nftban), and bound writable by ReadWritePaths. The wrapper must NOT chmod/chgrp it:
+# it runs without CAP_FSETID and outside group nftban, so ANY chmod of the dir makes
+# the kernel clear its SETGID bit, and last.json then lands root:root, unreadable by
+# the nftban group (proven: v131_3 D1 as root, origin/main 2026-10-07). The mkdir is a
+# best-effort no-op kept for the standalone/dev path; it MUST NOT abort under set -e.
 mkdir -p "$_dir" 2>/dev/null || true
-chgrp nftban "$_dir" 2>/dev/null || true
-chmod 0750 "$_dir" 2>/dev/null || true
 
 # Run the validator, capturing stdout and PRESERVING its exit code. The
 # `|| rc=$?` form is required under `set -e`: a bare `out=$(...)` assignment

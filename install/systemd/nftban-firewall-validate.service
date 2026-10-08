@@ -9,7 +9,7 @@
 # meta:created_date="2026-05-25"
 # meta:description="On-demand read-only nftables ruleset validation. Triggered by nftban-group operators via systemctl start (polkit-authorized through 10-nftban-systemd.rules whitelist) so the nftban CLI 'firewall validate' works without sudo while preserving the v1.0.19 'no pkexec / no nft polkit' security boundary."
 # meta:input="None (reads kernel nft state)"
-# meta:output="Systemd journal (use: journalctl -u nftban-firewall-validate.service -n 0 -o cat)"
+# meta:output="/run/nftban-firewall-validate/last.json (root:nftban 0640) + systemd journal copy"
 # meta:depends="/usr/lib/nftban/bin/nftban-validate"
 # meta:inventory.files=""
 # meta:inventory.binaries="/usr/lib/nftban/bin/nftban-validate"
@@ -69,30 +69,21 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 
 # V131.1 D13 fix: ExecStart is a thin wrapper (firewall_validate_run.sh) that
 # runs nftban-validate --json and writes the JSON to a GROUP-READABLE file at
-# /run/nftban/firewall-validate/last.json (chgrp nftban, 0640). The CLI reads
+# /run/nftban-firewall-validate/last.json (group nftban, 0640). The CLI reads
 # that file. Previously the CLI read this unit's JSON via journalctl, but a
 # non-root nftban-group operator (the whole point of Option C) cannot read the
 # unit journal without systemd-journal/adm membership, so they saw no result.
 # The wrapper still echoes the JSON to stdout, so StandardOutput=journal keeps
 # the root/audit journal copy, and it PRESERVES the validator exit code.
 #
-# V131.2 D13 fix: `+`-prefixed ExecStartPre runs WITHOUT the unit sandbox, so
-# it can create the handoff dir even though ProtectSystem=strict makes /run
-# read-only for the (sandboxed) main process. The `+` exemption is required:
-# ReadWritePaths=<subdir> only binds an EXISTING path writable, so the subdir
-# must exist before the sandboxed ExecStart runs. tmpfiles creates it at boot
-# (d /run/nftban/firewall-validate 2750 root nftban); this guarantees it
-# per-start too (idempotent mkdir+chown+chmod via /usr/bin/install). Absolute
-# path is required by systemd for ExecStartPre.
-# v1.175 BUG-TMPFILES (ACCEPTED SECURITY EXCEPTION): tmpfiles emits a NON-FATAL
-# exit-73 for this one root-owned child under the nftban-owned /run/nftban (the
-# dir is still created — the whole fleet runs with it). It is RETAINED in tmpfiles
-# deliberately (see fhs-spec.yaml). Dropping the tmpfiles entry and relying on this
-# ExecStartPre as the SOLE creator was REJECTED (lab-disproven, systemd 255):
-# ReadWritePaths is bound at mount-namespace setup, which on fresh-boot tmpfs
-# precedes ExecStartPre, so the unit fails 226/NAMESPACE before this line can run.
-# tmpfiles MUST create it at boot; this ExecStartPre stays as an idempotent
-# per-start belt-and-suspenders, NOT the sole creator.
+# v1.235 (owner 2026-10-07): the handoff dir is /run/nftban-firewall-validate, a
+# root-owned dir directly under the root-owned /run. It used to be the root-owned
+# child /run/nftban/firewall-validate under the nftban-owned /run/nftban, which
+# systemd-tmpfiles refused as an "unsafe path transition" (exit 73) on every
+# install, upgrade and boot, on DEB and RPM alike. tmpfiles (generated from
+# build/fhs-spec.yaml) is now its SINGLE creator: at boot and at package install,
+# before any service starts, so ReadWritePaths below always finds it. The former
+# per-start `+`ExecStartPre install -d (a second creator) is removed.
 #
 # V131.3 D13 fix: the dir mode is now SETGID (2750, not 0750). The setgid bit
 # makes a file created in this dir inherit the dir's GROUP (nftban) regardless
@@ -104,7 +95,6 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 # WITHOUT needing CAP_CHOWN; the wrapper's `chmod 0640` still works (owner chmod
 # needs no capability) → final file root:nftban 0640 → nftban-group reads it →
 # `Validator Status:` renders. No capability widening required.
-ExecStartPre=+/usr/bin/install -d -o root -g nftban -m 2750 /run/nftban/firewall-validate
 ExecStart=/usr/lib/nftban/helpers/firewall_validate_run.sh
 StandardOutput=journal
 StandardError=journal
@@ -118,14 +108,14 @@ StandardError=journal
 # firewall_validate_run.sh wrapper, so it needs exactly one writable path.
 # ProtectSystem=strict makes all of /run (and the whole filesystem) read-only;
 # grant write to ONLY the dedicated status subdir, which tmpfiles creates as
-# setgid root:nftban 2750 (d /run/nftban/firewall-validate 2750 root nftban). This
+# setgid root:nftban 2750 (d /run/nftban-firewall-validate 2750 root nftban). This
 # does NOT expose the daemon's /run/nftban (which holds the live socket) and
 # does NOT re-chown /run/nftban — it is the narrowest writable surface that
 # lets the validator drop last.json for nftban-group operators to read.
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/run/nftban/firewall-validate
+ReadWritePaths=/run/nftban-firewall-validate
 
 # Kernel Protection
 ProtectKernelTunables=true

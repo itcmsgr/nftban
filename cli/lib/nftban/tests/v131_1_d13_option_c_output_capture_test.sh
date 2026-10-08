@@ -9,13 +9,13 @@
 # meta:version="1.131.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-26"
-# meta:description="Deterministic assertions locking the V131.1 D13 fix: nftban firewall validate Option C output is captured via a group-readable /run/nftban/firewall-validate/last.json file written by the firewall_validate_run.sh ExecStart wrapper, NOT via a non-root-unreadable journalctl read. Structural asserts: the unit ExecStart points to the wrapper (not bare nftban-validate --json); the wrapper exists, is executable, contains the run-dir/last.json path, chgrp nftban, chmod 0640, a pre-run rm -f stale-cleanup, and exit-code preservation; cmd_firewall.sh reads the last.json file. Behavioral asserts (dev-host runnable, no root/nftban group): a stub validator exercises the wrapper through NFTBAN_RUN_DIR + NFTBAN_VALIDATE_BIN overrides and proves the file is written with the validator JSON, the wrapper preserves the validator exit code (rc=0 and rc=3), and the pre-run rm -f removes stale prior output when a run produces nothing."
+# meta:description="Deterministic assertions locking the V131.1 D13 fix: nftban firewall validate Option C output is captured via a group-readable /run/nftban-firewall-validate/last.json file written by the firewall_validate_run.sh ExecStart wrapper, NOT via a non-root-unreadable journalctl read. Structural asserts: the unit ExecStart points to the wrapper (not bare nftban-validate --json); the wrapper exists, is executable, contains the run-dir/last.json path, chgrp nftban, chmod 0640, a pre-run rm -f stale-cleanup, and exit-code preservation; cmd_firewall.sh reads the last.json file. Behavioral asserts (dev-host runnable, no root/nftban group): a stub validator exercises the wrapper through NFTBAN_VALIDATE_DIR + NFTBAN_VALIDATE_BIN overrides and proves the file is written with the validator JSON, the wrapper preserves the validator exit code (rc=0 and rc=3), and the pre-run rm -f removes stale prior output when a run produces nothing."
 # meta:input="self-contained; pattern-greps the source files + runs the wrapper against a stub validator in a temp dir"
 # meta:output="[PASS]/[FAIL] per assertion; exit 0 iff all pass"
 # meta:depends="bash,grep"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_RUN_DIR,NFTBAN_VALIDATE_BIN"
+# meta:inventory.env_vars="NFTBAN_VALIDATE_DIR,NFTBAN_VALIDATE_BIN"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -88,11 +88,13 @@ else
     _t_assert "A3: wrapper exists and is executable" 1 "$_wrapper missing or not +x"
 fi
 
-# A4: wrapper resolves the /run/nftban .../firewall-validate/last.json path.
-if grep -qE '/run/nftban' "$_wrapper" && grep -qE 'firewall-validate' "$_wrapper" && grep -qE 'last\.json' "$_wrapper"; then
-    _t_assert "A4: wrapper references /run/nftban .../firewall-validate/last.json" 0
+# A4: the wrapper's default handoff dir is /run/nftban-firewall-validate (v1.235: a
+# root-owned dir under the root-owned /run), never a child of the nftban-owned /run/nftban.
+if grep -qE '^_dir="\$\{NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate\}"' "$_wrapper" \
+   && ! grep -qE '^[^#]*/run/nftban/firewall-validate' "$_wrapper" && grep -qE 'last\.json' "$_wrapper"; then
+    _t_assert "A4: wrapper writes /run/nftban-firewall-validate/last.json (not under /run/nftban)" 0
 else
-    _t_assert "A4: wrapper references /run/nftban .../firewall-validate/last.json" 1
+    _t_assert "A4: wrapper writes /run/nftban-firewall-validate/last.json (not under /run/nftban)" 1
 fi
 
 # A5: wrapper chgrps the file to the nftban group.
@@ -136,7 +138,7 @@ fi
 #      blocked and last.json is never created (the v1.131.1 latent failure). This
 #      assertion ensures THIS prior test can no longer pass while the real unit
 #      blocks the write.
-if grep -qE '^ReadWritePaths=/run/nftban/firewall-validate' "$_unit_file"; then
+if grep -qE '^ReadWritePaths=/run/nftban-firewall-validate' "$_unit_file"; then
     _t_assert "A10: unit grants ReadWritePaths for the firewall-validate handoff dir" 0
 else
     _t_assert "A10: unit grants ReadWritePaths for the firewall-validate handoff dir" 1
@@ -163,7 +165,7 @@ chmod +x "$_stub"
 _runfile="$_tmp/firewall-validate/last.json"
 
 # B1: rc=0 path → file written with the JSON, wrapper exit code 0.
-STUB_RC=0 NFTBAN_RUN_DIR="$_tmp" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
+STUB_RC=0 NFTBAN_VALIDATE_DIR="$_tmp/firewall-validate" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
 _w_rc=$?
 if [[ "$_w_rc" == "0" ]]; then
     _t_assert "B1a: wrapper preserves rc=0 from the validator" 0
@@ -178,7 +180,7 @@ else
 fi
 
 # B2: rc=3 path (DEGRADED) → wrapper exit code 3 (rc preserved), file still written.
-STUB_RC=3 NFTBAN_RUN_DIR="$_tmp" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
+STUB_RC=3 NFTBAN_VALIDATE_DIR="$_tmp/firewall-validate" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
 _w_rc=$?
 if [[ "$_w_rc" == "3" ]]; then
     _t_assert "B2a: wrapper preserves non-zero rc=3 from the validator (DEGRADED propagates)" 0
@@ -204,7 +206,7 @@ chmod +x "$_silent_stub"
 mkdir -p "$_tmp/firewall-validate"
 printf '%s\n' '{"status":"STALE_OLD_RUN"}' > "$_runfile"
 
-STUB_RC=1 NFTBAN_RUN_DIR="$_tmp" NFTBAN_VALIDATE_BIN="$_silent_stub" bash "$_wrapper" >/dev/null 2>&1
+STUB_RC=1 NFTBAN_VALIDATE_DIR="$_tmp/firewall-validate" NFTBAN_VALIDATE_BIN="$_silent_stub" bash "$_wrapper" >/dev/null 2>&1
 _w_rc=$?
 if ! grep -q 'STALE_OLD_RUN' "$_runfile" 2>/dev/null; then
     _t_assert "B3a: pre-run rm -f removes stale prior last.json content" 0

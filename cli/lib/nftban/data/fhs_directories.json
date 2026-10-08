@@ -966,11 +966,11 @@
         "created_by": "tmpfiles"
       },
       {
-        "path": "/run/nftban/firewall-validate",
+        "path": "/run/nftban-firewall-validate",
         "mode": "2750",
         "owner": "root",
         "group": "nftban",
-        "description": "V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN",
+        "description": "nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN",
         "created_by": "tmpfiles"
       }
     ],
