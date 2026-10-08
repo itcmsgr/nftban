@@ -218,9 +218,7 @@ assert_contains "$T8F" "Usage: nftban whitelist add"             "T8.7 add with 
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-echo; echo "================================================="
-echo "Results: PASS=$PASS  FAIL=$FAIL"
-# ---------------------------------------------------------------------------
+echo; # ---------------------------------------------------------------------------
 # K11 (audit, v1.235; owner 2026-10-08): runtime `whitelist add` keeps its meaning (a whitelisted IP
 # loses its NFTBan ban), but the whitelist is added and CONFIRMED FIRST; a failed or unconfirmed
 # whitelist never leaves the IP without its ban. Drives the REAL nftban_whitelist_add_ip.
@@ -249,16 +247,18 @@ k11(){  # IPC_RC WL_PRESENT -> runs `nftban_whitelist_add_ip 198.51.100.9` on an
       nftban_whitelist_add_ip 198.51.100.9
     ) 2>&1
 }
-out=$(k11 1 0); rc=$?
+rc=0; out=$(k11 1 0) || rc=$?
 assert_not_contains "$(cat "$K11LOG")" "UNBAN" "K11a whitelist add FAILED -> the ban is not removed"
 assert_contains "$out" "its ban is KEPT" "K11a failure message says the ban is kept"
-out=$(k11 0 1)
+out=$(k11 0 1) || true
 assert_eq "$(grep -n -m1 'IPC_ADD' "$K11LOG" | cut -d: -f1) < $(grep -n -m1 'UNBAN' "$K11LOG" | cut -d: -f1)" "1 < 2" "K11b confirmed whitelist -> ban removed AFTER the whitelist add (order)"
 assert_contains "$out" "NOT restored when the whitelist ends" "K11b output says what was removed and that it is not restored"
-out=$(k11 0 0)
+out=$(k11 0 0) || true
 assert_not_contains "$(cat "$K11LOG")" "UNBAN" "K11c whitelist not confirmed in the kernel -> ban KEPT"
 : "$rc"
 
+echo "================================================="
+echo "Results: PASS=$PASS  FAIL=$FAIL"
 if [[ $FAIL -gt 0 ]]; then
     echo "Failed tests:"; for t in "${FAILED_TESTS[@]}"; do echo "  - $t"; done
     exit 1
