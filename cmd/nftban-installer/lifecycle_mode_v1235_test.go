@@ -168,6 +168,9 @@ func disabledPassMock(t *testing.T, mode lmMode) (*assertionTestInjection, *exec
 	for k, v := range base.Files {
 		m.Files[k] = v
 	}
+	for k, v := range base.Dirs { // lmUnknown: the unreadable switch file is a directory
+		m.Dirs[k] = v
+	}
 	for _, u := range services.BootGuardUnits {
 		m.ServicesEnabled[u] = true
 	}
@@ -312,6 +315,9 @@ func TestPhasePrepare_InvalidSwitch_BootUnchanged(t *testing.T) {
 		m := lmMock(c.mode)
 		m.Files[switchop.BootProjectionPath] = []byte(lmOldProjection)
 		m.Files[lmDistroConf] = []byte(lmOldDistroConf)
+		for _, c := range []string{"jq", "curl", "socat", "bc", "gawk", "getfacl", "tar"} {
+			m.ExistingCommands[c] = true // dependencies present: the phase must reach the render branch
+		}
 		sf, log := lmState(t, state.StateDetectComplete)
 		globalPhaseData = phaseData{sshPort: 22, sshPorts: []int{22}, decision: authority.Fresh,
 			distro: &detect.DistroInfo{NftConfPath: lmDistroConf}}
