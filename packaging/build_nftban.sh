@@ -1691,7 +1691,7 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # v1.235 audit H3 (owner U1): a DISABLED host loads no NFTBan rules on upgrade. The shared
     # reader (service_control.sh nftban_is_enabled) answers on/off; anything else = the switch
     # could NOT be read: reload skipped and said so, never reported as "disabled".
-    _nftban_switch=\$(bash -c '. /usr/lib/nftban/lib/service_control.sh >/dev/null 2>&1 || exit 0; nftban_is_enabled; case \$? in 0) echo on ;; 2) echo invalid ;; *) echo off ;; esac' 2>/dev/null) || _nftban_switch=""
+    _nftban_switch=\$(bash -c '. /usr/lib/nftban/lib/service_control.sh >/dev/null 2>&1 || exit 0; _r=0; nftban_is_enabled || _r=\$?; case \$_r in 0) echo on ;; 2) echo invalid ;; *) echo off ;; esac' 2>/dev/null) || _nftban_switch=""
     if [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" = "off" ]; then
         echo "[NFTBan] v1.235: NFTBan is disabled (stored choice or nftban=disabled): no firewall reload on upgrade."
     elif [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" = "invalid" ]; then

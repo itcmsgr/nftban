@@ -556,7 +556,8 @@ else
         fresh; mkdir -p "$SB/log" "$SB/cache"
         printf 'NFTBAN_ENABLED=%s\n' "$_k2in" > "$SB/etc/conf.d/services.conf"
         case "$_k2want" in on) _jw=true; _tw="ENABLED" ;; off) _jw=false; _tw="DISABLED (config)" ;; *) _jw=null; _tw="INVALID (" ;; esac
-        _txt=$(st_run _status_section_firewall | grep -m1 'Master Control' || true)
+        st_run _status_section_firewall > "$SB/e14.txt" || true   # file, not a pipe (EPIPE gate)
+        _txt=$(grep -m1 'Master Control' "$SB/e14.txt" || true)
         [[ "$_txt" == *"Master Control...... $_tw"* ]] || _e14bad+=" text[$_k2in]='${_txt##*......}'(want $_tw)"
         st_run output_json > "$SB/e14.json" || true
         jq -e --argjson w "$_jw" '.master_enabled == $w and (.master_switch | type == "string")' "$SB/e14.json" >/dev/null 2>&1 \
