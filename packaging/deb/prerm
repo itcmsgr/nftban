@@ -389,7 +389,11 @@ _nfw_map_prefix() {  # <4|6> <rule> <uplinks>
     if ! _nfw_recognised_bridge "$_p_devs"; then echo "UNMAPPED $_p_pfx belongs to $_p_devs, not a recognised and tested Docker bridge"; return 0; fi
     if [ -z "$3" ]; then echo "UNMAPPED no default-route uplink to bind egress of $_p_devs to"; return 0; fi
     echo "RECORD egress|$_p_devs"
+    # The uplink list is space-separated; split on a space whatever IFS the caller set (the CLI runs
+    # under strict.sh IFS=$'\n\t': without this the CLI and the package printed different plan ids).
+    _p_ifs=$IFS; IFS=' '
     for _p_u in $3; do echo "RECORD uplink|$_p_u"; done
+    IFS=$_p_ifs
     echo "DIFF NOT EQUIVALENT: the old rule accepted every forwarded packet with source $_p_pfx, to ANY interface; the records accept only traffic from $_p_devs to the uplink(s) $3 (replies via the return path). Traffic from $_p_pfx to other interfaces (other bridges, VPN, LAN), and packets with source $_p_pfx arriving on another interface, will be DROPPED."
 }
 
@@ -414,7 +418,9 @@ _nfw_map_iif() {  # <rule> <uplinks>
     fi
     [ -n "$2" ] || { echo "UNMAPPED no default-route uplink"; return 0; }
     echo "RECORD egress|$_i_iif"
+    _i_ifs=$IFS; IFS=' '   # space-separated list, independent of the caller's IFS (see _nfw_map_prefix)
     for _i_u in $2; do echo "RECORD uplink|$_i_u"; done
+    IFS=$_i_ifs
     echo "DIFF NOT EQUIVALENT: the old rule accepted $_i_iif to ANY interface; the records accept $_i_iif to the uplink(s) $2 only"
 }
 
