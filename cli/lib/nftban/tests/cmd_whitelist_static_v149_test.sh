@@ -236,10 +236,12 @@ k11(){  # IPC_RC WL_PRESENT -> runs `nftban_whitelist_add_ip 198.51.100.9` on an
       nftban_validate_cidr() { return 1; }
       nftban_ipc_check_or_emergency() { return 0; }
       nft_ipc_add_element() { echo "IPC_ADD ${2-} ${3-}" >> "$K11LOG"; return "$IPC_RC"; }
-      nft() {   # only `nft get element <fam> <table> <set> {...}` is reached
-          case "${5-}" in
-              blacklist_manual_ipv4) return 0 ;;
-              whitelist_ipv4) [[ "$WL_PRESENT" == 1 ]] && return 0; return 1 ;;
+      nft() {   # like nft itself: the arguments are JOINED (the product passes "ip nftban" as one word
+                # under the dispatcher IFS); only `get element ... <set> {...}` is reached
+          local IFS=' '; local a=" $* "
+          case "$a" in
+              *" blacklist_manual_ipv4 "*) return 0 ;;
+              *" whitelist_ipv4 "*) [[ "$WL_PRESENT" == 1 ]] && return 0; return 1 ;;
               *) return 1 ;;
           esac
       }
