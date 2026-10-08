@@ -47,7 +47,7 @@ mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBA
 # Host guard: the HOST config paths this test once wrote must be unchanged at the end
 # (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
 _hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
-_HG_PATHS=("/etc/nftban/conf.d/ddos/main.conf.local" "/etc/nftban/conf.d/portscan/main.conf.local" "/run/nftban/convergence-generation")
+_HG_PATHS=("/etc/nftban/conf.d/ddos/main.conf.local" "/etc/nftban/conf.d/portscan/main.conf.local")
 _HG_BEFORE="$(_hg_state "${_HG_PATHS[@]}")"
 # module_authority/module_txn default these to /run/nftban (lib/module_authority.sh:335,338).
 export NFTBAN_PLAN_RECORD_DIR="$_HI/run" NFTBAN_PLAN_GENERATION_FILE="$_HI/run/convergence-generation"
@@ -128,11 +128,8 @@ done
 # --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
 if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
 else fail "HOST-GUARD host config CHANGED by this test: $(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
-# A lost redirection would change the HOST generation file (guarded above). Whether the orchestrator
-# writes a generation at all depends on the environment (CI runner 2026-10-08: none written), so its
-# absence from the sandbox is information, not a failure.
 if [[ -e "$_HI/run/convergence-generation" ]]; then ok "HOST-GUARD convergence-generation landed in the sandbox"
-else echo "  [INFO] no convergence-generation written in this environment (host file unchanged: checked above)"; fi
+else fail "HOST-GUARD convergence-generation not in the sandbox: redirection lost?"; fi
 echo ""
 if [[ $FAILURES -gt 0 ]]; then
     echo "::error::module orchestrator unbound-variable guard FAILED: $FAILURES"
