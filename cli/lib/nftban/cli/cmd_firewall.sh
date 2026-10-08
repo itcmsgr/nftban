@@ -413,6 +413,19 @@ _fw_cc_guard() {
     cc_refuse_if_rollback_failed "$1"
 }
 
+# v1.235 K9 (owner 2026-10-08, same cause as C20): every path that REPLACES the nftban forward
+# chain runs the SAME preflight as the package (lib/nftban_immutable_owned.sh): hand-added forward
+# rules STOP it before any change unless their migration plan was approved (UNKNOWN also STOPS;
+# --force is not an approval). No second implementation.
+_fw_forward_guard() {
+    if ! declare -F nftban_forward_unmanaged_preflight >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_immutable_owned.sh" 2>/dev/null \
+            || { echo "REFUSED: $1: the forward-rule check could not be loaded (lib/nftban_immutable_owned.sh)" >&2; return 1; }
+    fi
+    nftban_forward_unmanaged_preflight "nftban $1"
+}
+
 _fw_bypass_guard() {
     if ! declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
         # shellcheck source=/dev/null
@@ -816,6 +829,7 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall init" || return 1
             _fw_cc_guard "firewall init" || return 1
+            _fw_forward_guard "firewall init" || return 1
             nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
             firewall_rebuild "$@"
             ;;
@@ -847,6 +861,7 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall reload" || return 1
             _fw_cc_guard "firewall reload" || return 1
+            _fw_forward_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
             firewall_reload "$@"
             ;;
@@ -854,6 +869,7 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall rebuild" || return 1
             _fw_cc_guard "firewall rebuild" || return 1
+            _fw_forward_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
             ;;
@@ -868,6 +884,7 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall reset" || return 1
             _fw_cc_guard "firewall reset" || return 1
+            _fw_forward_guard "firewall reset" || return 1
             firewall_reset "$@"
             ;;
         conflicts)
@@ -886,6 +903,7 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall restore" || return 1
             _fw_cc_guard "firewall restore" || return 1
+            _fw_forward_guard "firewall restore" || return 1
             firewall_restore "$@"
             ;;
         confirm)
@@ -930,6 +948,7 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall takeover" || return 1
             _fw_cc_guard "firewall takeover" || return 1
+            _fw_forward_guard "firewall takeover" || return 1
             nftban_ssh_pre_rebuild_lockout_guard takeover "$@" || true
             firewall_takeover "$@"
             ;;

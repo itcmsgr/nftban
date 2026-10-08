@@ -495,8 +495,15 @@ nftban_forward_apply_plan() {
     mkdir -p "$_nfa_dir" 2>/dev/null || { echo "nftban: STOP: cannot create $_nfa_dir; nothing changed" >&2; return 1; }
     _nfa_tmp=$(mktemp "$_nfa_store.XXXXXX" 2>/dev/null) || { echo "nftban: STOP: cannot write in $_nfa_dir; nothing changed" >&2; return 1; }
     _nfa_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    _nfa_id=$(nftban_forward_plan_id "$1")
     {
         [ -e "$_nfa_store" ] && cat "$_nfa_store"
+        # v1.235 K9: the APPROVED plan id, in the same atomic write as its records. A later
+        # rebuild/reset/update proceeds without re-approval only for THIS plan (changed rules =
+        # new plan id = STOP again).
+        if ! { [ -e "$_nfa_store" ] && grep -qxF "# nftban:approved-plan $_nfa_id" "$_nfa_store"; }; then
+            printf '# nftban:approved-plan %s\n' "$_nfa_id"
+        fi
         printf '%s\n' "$1" | sed -n 's/^RECORD //p' | sort -u | while IFS= read -r _r; do
             [ -e "$_nfa_store" ] && awk -F'|' -v k="$_r" '{split(k,a,"|"); if ($1==a[1] && $2==a[2]) f=1} END{exit f?0:1}' "$_nfa_store" && continue
             printf '%s|migrated from an unmanaged forward rule|%s\n' "$_r" "$_nfa_now"
@@ -508,21 +515,46 @@ nftban_forward_apply_plan() {
     return 0
 }
 
-# Package entry point (DEB preinst / RPM %pre). Returns 0 = proceed, 1 = stop.
+# _nfw_plan_approved <plan> <id>: 0 when <id> was approved earlier (marker in the store) AND
+# every RECORD of the plan is stored. The records exist only through that approval.
+_nfw_plan_approved() {
+    _npa_store="${NFTBAN_CONFIG_DIR:-/etc/nftban}/forward.d/forward.conf"
+    [ -r "$_npa_store" ] || return 1
+    grep -qxF "# nftban:approved-plan $2" "$_npa_store" || return 1
+    _npa_recs=$(printf '%s\n' "$1" | sed -n 's/^RECORD //p')
+    _npa_ifs=$IFS; IFS='
+'
+    for _npa_r in $_npa_recs; do
+        if ! awk -F'|' -v k="$_npa_r" '{split(k,a,"|"); if ($1==a[1] && $2==a[2] && (a[3]=="" || ($3==a[3] && $4==a[4] && $5==a[5]))) f=1} END{exit f?0:1}' "$_npa_store"; then
+            IFS=$_npa_ifs; return 1
+        fi
+    done
+    IFS=$_npa_ifs
+    return 0
+}
+
+# Shared entry point: package (DEB preinst / RPM %pre) AND every CLI path that replaces the
+# forward chain (firewall rebuild/init/reload/reset/restore/takeover, update git/local).
+# $1 = what is stopped (default: the package install/upgrade). Returns 0 = proceed, 1 = stop.
 nftban_forward_unmanaged_preflight() {
+    _nfw_ctx="${1:-install/upgrade}"
     command -v nft >/dev/null 2>&1 || return 0
     _nfw_rc=0
     _nfw_rules=$(nftban_forward_unmanaged_rules) || _nfw_rc=$?
     if [ "$_nfw_rc" -ne 0 ]; then
         [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ] && { echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: proceeding despite an UNKNOWN forward chain." >&2; return 0; }
-        echo "nftban: install/upgrade STOPPED before any change by this package (forward chain UNKNOWN: the kernel could not be read, so NFTBan cannot prove there is nothing to preserve)." >&2
+        echo "nftban: ${_nfw_ctx} STOPPED before any change (forward chain UNKNOWN: the kernel could not be read, so NFTBan cannot prove there is nothing to preserve)." >&2
         return 1
     fi
     [ -n "$_nfw_rules" ] || return 0
     _nfw_plan_rc=0
     _nfw_plan=$(nftban_forward_migration_plan "$_nfw_rules") || _nfw_plan_rc=$?
     _nfw_id=$(nftban_forward_plan_id "$_nfw_plan")
-    echo "nftban: the nftban forward chain holds rules NFTBan did not create; the rebuild after this install/upgrade would ERASE them." >&2
+    if [ "$_nfw_plan_rc" -eq 0 ] && _nfw_plan_approved "$_nfw_plan" "$_nfw_id"; then
+        echo "nftban: forward rules NFTBan did not create are covered by the stored allows of plan $_nfw_id (approved earlier): ${_nfw_ctx} proceeds; they are replaced by the managed rules." >&2
+        return 0
+    fi
+    echo "nftban: the nftban forward chain holds rules NFTBan did not create; ${_nfw_ctx} would ERASE them." >&2
     echo "nftban: migration plan $_nfw_id (old rule -> stored record; every DIFF changes behaviour):" >&2
     printf '%s\n' "$_nfw_plan" | sed 's/^/    /' >&2
     if [ "$_nfw_plan_rc" -eq 0 ] && [ "${NFTBAN_FORWARD_MIGRATE:-}" = "$_nfw_id" ]; then
@@ -530,21 +562,26 @@ nftban_forward_unmanaged_preflight() {
             echo "nftban: plan $_nfw_id approved and recorded in ${NFTBAN_CONFIG_DIR:-/etc/nftban}/forward.d/forward.conf; continuing." >&2
             return 0
         fi
-        echo "nftban: install/upgrade STOPPED before any change by this package." >&2
+        echo "nftban: ${_nfw_ctx} STOPPED before any change." >&2
         return 1
     fi
     if [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ]; then
         echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: the administrator accepts the loss of the rules above; continuing." >&2
         return 0
     fi
-    echo "nftban: install/upgrade STOPPED before any change by this package; the installed version (if any) and the live rules are untouched." >&2
+    echo "nftban: ${_nfw_ctx} STOPPED before any change; the installed version (if any) and the live rules are untouched." >&2
     if [ "$_nfw_plan_rc" -ne 0 ]; then
         echo "nftban: at least one rule has no safe equivalent (UNMAPPED above): it cannot be migrated automatically." >&2
     elif [ -n "${NFTBAN_FORWARD_MIGRATE:-}" ]; then
         echo "nftban: NFTBAN_FORWARD_MIGRATE='${NFTBAN_FORWARD_MIGRATE}' does not match this plan ($_nfw_id): review the plan above." >&2
     else
-        echo "nftban: to approve EXACTLY this plan (including every DIFF), repeat the install/upgrade with:" >&2
-        echo "nftban:     NFTBAN_FORWARD_MIGRATE=$_nfw_id <your package install/upgrade command>" >&2
+        echo "nftban: to approve EXACTLY this plan (including every DIFF), repeat the ${_nfw_ctx} with:" >&2
+        if [ "$_nfw_ctx" = "install/upgrade" ]; then
+            echo "nftban:     NFTBAN_FORWARD_MIGRATE=$_nfw_id <your package install/upgrade command>" >&2
+        else
+            echo "nftban:     NFTBAN_FORWARD_MIGRATE=$_nfw_id ${_nfw_ctx}" >&2
+            echo "nftban: or record it first: nftban firewall forward migrate --confirm $_nfw_id   (then repeat: ${_nfw_ctx})" >&2
+        fi
     fi
     return 1
 }
