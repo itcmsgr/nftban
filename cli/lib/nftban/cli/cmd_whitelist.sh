@@ -251,50 +251,42 @@ nftban_whitelist_add_ip() {
             break
         fi
     done
-    if [[ "$_is_banned" == "true" ]]; then
-        local _core_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-        if [[ -x "$_core_bin" ]]; then
-            "$_core_bin" unban "$ip" &>/dev/null || true
-        else
-            # Fallback: direct nft delete (won't remove from conf files)
-            for _bl_set in "$blacklist_manual_set" "$blacklist_set"; do
-                if nft get element ${table} ${_bl_set} "{ $ip }" &>/dev/null; then
-                    if [[ $ipc_mode -eq 0 ]]; then
-                        nft_ipc_delete_element "$table" "$_bl_set" "$ip" 2>/dev/null || true
-                    else
-                        nft delete element ${table} ${_bl_set} "{ $ip }" 2>/dev/null || true
-                    fi
-                fi
-            done
-        fi
-        echo "Removed $ip from blacklist (was banned)"
-    fi
-
-    # Use IPC for add operation (or emergency direct access)
+    # v1.235 audit K11 (owner 2026-10-08): the meaning is kept: a whitelisted IP loses its
+    # NFTBan-managed ban (exact IP; a CIDR or feed entry covering other IPs is never rewritten,
+    # the whitelist exempts it). ORDER: the whitelist is added and CONFIRMED in the kernel
+    # FIRST; only then is the ban removed. A failed or unconfirmed whitelist keeps the ban.
+    local _wl_state="failed"
     if [[ $ipc_mode -eq 0 ]]; then
         if nft_ipc_add_element "$table" "$set_name" "$ip" 2>/dev/null; then
-            # Verify addition (read-only check)
-            if nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
-                echo "Added $ip to $family whitelist"
-                return 0
-            else
-                echo "Added $ip to $family whitelist (IPC success, verification pending)"
-                return 0
-            fi
-        else
-            echo "ERROR: Failed to add $ip to whitelist via IPC" >&2
-            return 1
+            if nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then _wl_state="confirmed"; else _wl_state="unconfirmed"; fi
         fi
     else
         # Emergency direct nft access
-        if nft add element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
-            echo "Added $ip to $family whitelist (emergency direct access)"
-            return 0
+        if nft add element ${table} ${set_name} "{ $ip }" 2>/dev/null \
+           && nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then _wl_state="confirmed"; fi
+    fi
+    if [[ "$_wl_state" == "failed" ]]; then
+        if [[ "$_is_banned" == "true" ]]; then
+            echo "ERROR: Failed to add $ip to the $family whitelist; its ban is KEPT (nothing removed)" >&2
         else
-            echo "ERROR: Failed to add $ip to whitelist (emergency)" >&2
-            return 1
+            echo "ERROR: Failed to add $ip to the $family whitelist" >&2
+        fi
+        return 1
+    fi
+    echo "Added $ip to the $family RUNTIME whitelist (live set only; dropped on the next firewall rebuild/reload/restart)"
+    if [[ "$_is_banned" == "true" ]]; then
+        if [[ "$_wl_state" != "confirmed" ]]; then
+            echo "  Ban KEPT: the whitelist entry could not be confirmed in the kernel, so the existing ban was not removed." >&2
+            return 0
+        fi
+        local _core_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+        if [[ -x "$_core_bin" ]] && "$_core_bin" unban "$ip" &>/dev/null; then
+            echo "  Removed the NFTBan ban on $ip (blacklist.d entry + kernel set). It is NOT restored when the whitelist ends; a new detection can ban it again."
+        else
+            echo "  WARNING: $ip is whitelisted (exempt), but its NFTBan ban could not be removed: run 'nftban unban $ip'" >&2
         fi
     fi
+    return 0
 }
 
 # Remove IP from whitelist via IPC (v1.18.0: IPC-only writes)
