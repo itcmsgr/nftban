@@ -811,7 +811,11 @@ nftban_cmd_firewall() {
             ;;
         init)
             # v1.38.0: BUG-002 — alias to rebuild (firewall init was never implemented)
+            # v1.235 audit H4: an alias loads rules exactly like rebuild, so it carries the same
+            # guards (R-DEC bypass, D10 rollback-failed).
             shift
+            _fw_bypass_guard "firewall init" || return 1
+            _fw_cc_guard "firewall init" || return 1
             nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
             firewall_rebuild "$@"
             ;;
@@ -907,7 +911,11 @@ nftban_cmd_firewall() {
                     *)             _cc_id="$_cc_a" ;;
                 esac
             done
-            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"; else cc_rollback "$_cc_id" "$_cc_mode"; fi
+            # v1.235 audit H2: --boot (the boot unit) is cc_boot: it re-raises the D10 alarm and
+            # keeps a failed rollback held; only a PENDING apply is rolled back at boot.
+            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"
+            elif [[ "$_cc_mode" == "--boot" ]]; then cc_boot
+            else cc_rollback "$_cc_id" "$_cc_mode"; fi
             ;;
         record)
             shift
@@ -3278,6 +3286,29 @@ delete table %s nftban
 # SUBCOMMAND: REBUILD
 # =============================================================================
 
+# v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
+# Called by the plain (non --confirm) rebuild after a successful load.
+_firewall_rebuild_record_baseline() {
+    # v1.235 audit H1: while an apply is PENDING confirmation, a plain rebuild (and enable,
+    # the installer, autoheal: all reach this line) must NOT re-record the baseline, or the
+    # timed rollback would "restore" the unconfirmed change. Checked and written under the
+    # shared commit-confirm lock, so a confirm/rollback cannot interleave.
+    # shellcheck source=/dev/null
+    if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
+        if cc_lock; then
+            if [[ "$(cc_status)" == "pending" ]]; then
+                echo "NOTE: apply $(cc_get apply_id) is pending confirmation: the applied baseline is kept, and its rollback still returns to it" >&2
+            else
+                cc_record_applied_baseline "$1" || echo "WARNING: applied baseline not recorded (rebuild --confirm will refuse until a rebuild records one)" >&2
+            fi
+            cc_unlock
+        else
+            echo "WARNING: applied baseline not recorded: commit-confirm lock busy (rebuild --confirm will refuse until a rebuild records one)" >&2
+        fi
+    fi
+    return 0
+}
+
 firewall_rebuild() {
     # v1.96: Retry wrapper around core rebuild.
     # Calls _firewall_rebuild_core(), then checks if result is retryable.
@@ -4664,11 +4695,7 @@ _firewall_rebuild_core() {
         fi
     else
     _boot_proj_state=$(_firewall_rebuild_refresh_boot_projection "$source_file" "$load_conf" "$quiet")
-        # v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
-        # shellcheck source=/dev/null
-        if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
-            cc_record_applied_baseline "$load_conf" || echo "WARNING: applied baseline not recorded (rebuild --confirm will refuse until a rebuild records one)" >&2
-        fi
+        _firewall_rebuild_record_baseline "$load_conf"   # v1.235 §4.1 + audit H1
     fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)

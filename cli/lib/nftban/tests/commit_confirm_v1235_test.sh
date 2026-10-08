@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for the repaired commit-confirm engine (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md section 4; the pre-v1.235 mechanism was orphaned and restored by merging). Drives the REAL lib/commit_confirm.sh in a sandbox with stubbed nft, systemd-run and systemctl. Asserts: last-known-good is the APPLIED BASELINE recorded at a successful load; apply refuses without a baseline, while an apply is pending and while a rollback has failed; the rollback is ARMED (systemd-run) BEFORE any nft -f, and a failed arm leaves no record; the change set lists modified, added and removed config files; confirm commits the candidate projection by rename while the rollback is armed and only then records confirmed; a wrong apply ID and a passed deadline are refused; a failed publication keeps the apply pending; a crash after the commit point is completed only with a recorded confirm for that apply ID (an identical projection is not proof); rollback restores only the change set, leaves a file edited after the apply untouched and lists it as a conflict, and an unresolved conflict holds the writers (D10 hold, no daemon restart) until the file is resolved and the rollback retried or abandoned; never writes files outside the change set, and its single kernel transaction deletes only ip/ip6 nftban; a failed transaction KEEPS the kernel state, records rollback-failed with the verbatim error and the kernel fact, sets the marker and keeps all artifacts (owner D10); boot mode makes no nft call; a boot after a failed rollback raises the alarm again and changes nothing; abandon clears the marker."
+# meta:description="BEHAVIORAL regression for the repaired commit-confirm engine (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md section 4; the pre-v1.235 mechanism was orphaned and restored by merging). Drives the REAL lib/commit_confirm.sh in a sandbox with stubbed nft, systemd-run and systemctl. Asserts: last-known-good is the APPLIED BASELINE recorded at a successful load; apply refuses without a baseline, while an apply is pending and while a rollback has failed; the rollback is ARMED (systemd-run) BEFORE any nft -f, and a failed arm leaves no record; the change set lists modified, added and removed config files; confirm commits the candidate projection by rename while the rollback is armed and only then records confirmed; a wrong apply ID and a passed deadline are refused; a failed publication keeps the apply pending; a crash after the commit point is completed only with a recorded confirm for that apply ID (an identical projection is not proof); rollback restores only the change set, leaves a file edited after the apply untouched and lists it as a conflict, and an unresolved conflict holds the writers (D10 hold, no daemon restart) until the file is resolved and the rollback retried or abandoned; never writes files outside the change set, and its single kernel transaction deletes only ip/ip6 nftban; a failed transaction KEEPS the kernel state, records rollback-failed with the verbatim error and the kernel fact, sets the marker and keeps all artifacts (owner D10); boot mode makes no nft call; a boot after a failed rollback raises the alarm again and changes nothing, also through the command the boot unit runs (D30, audit H2); abandon clears the marker; a plain rebuild during a pending apply keeps the applied baseline (D29, audit H1)."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,tar,sha256sum,flock,join,mktemp"
@@ -309,6 +309,21 @@ else
     sed 's/^/      cc.out| /' "$SB/cc.out"
 fi
 
+# D30 (audit H2, 2026-10-08): the SAME reboot, through the command the boot unit really runs
+# (install/systemd/nftban-commit-confirm-boot.service ExecStart), not cc_boot called directly.
+UNIT="$REPO_ROOT/install/systemd/nftban-commit-confirm-boot.service"
+fresh; stage_pending 120; ID=$(get apply_id); echo 1 > "$SB/nft_f_rc"
+cc "cc_rollback $ID --auto" >/dev/null 2>&1 || true
+: > "$SB/calls.log"; cp -p "$REC" "$SB/rec.before"; rc=0
+env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
+    NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+    bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; nftban_cmd_firewall rollback --boot' _ "$LIBDIR" > "$SB/cc.out" 2>&1 || rc=$?
+if grep -qxF 'ExecStart=/usr/sbin/nftban firewall rollback --boot' "$UNIT" \
+   && [[ -e "$SB/data/state/commit-confirm.rollback-failed" && "$(get status)" == "rollback-failed" ]] \
+   && has "$SB/cc.out" "ROLLBACK FAILED" && ! has "$SB/calls.log" "nft -f"; then
+    ok "D30 boot unit command (firewall rollback --boot) after a failed rollback: D10 KEPT (marker + status), alarm raised, no nft call"
+else ko "D30 boot unit path (rc=$rc status=$(get status) marker=$([[ -e "$SB/data/state/commit-confirm.rollback-failed" ]] && echo y || echo n) alarm=$(has "$SB/cc.out" "ROLLBACK FAILED" && echo y || echo n))"; fi
+
 # ---- recovery.conf SSH probe (pre-v1.235 nftban-apply behaviour, restored 2026-10-07)
 probe() { env -i PATH="/usr/bin:/bin" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" "$@" \
     bash -c 'source "$1" >/dev/null 2>&1; cc_ssh_probe' _ "$CC" >/dev/null 2>&1; }
@@ -328,6 +343,28 @@ if command -v python3 >/dev/null 2>&1; then
 else
     echo "  [NOT_EXECUTED] D28 listening-port arm (python3 not available)"
 fi
+
+# D29 (audit H1, 2026-10-08): a PLAIN rebuild during a pending window (also enable, installer,
+# autoheal: they all reach this call) must not re-record the applied baseline, or the timed
+# rollback would "restore" the unconfirmed change. Runs the REAL cmd_firewall.sh baseline step.
+fwbase(){  # loaded_file
+    local rc=0
+    env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+        bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; _firewall_rebuild_record_baseline "$2"' _ "$LIBDIR" "$1" > "$SB/fw.out" 2>&1 || rc=$?
+    return "$rc"
+}
+fresh; stage_pending 600
+echo 'plain-rebuild-ruleset' > "$SB/plain.nft"
+rc=0; fwbase "$SB/plain.nft" || rc=$?
+if [[ $rc -eq 0 && "$(get status)" == "pending" && "$(cat "$SB/data/state/applied/ruleset.nft" 2>/dev/null)" == "baseline-ruleset" ]] && has "$SB/fw.out" "pending confirmation"; then
+    ok "D29 plain rebuild during a pending apply KEEPS the applied baseline (the rollback still returns to it)"
+else ko "D29 baseline during pending (rc=$rc status=$(get status) baseline=$(cat "$SB/data/state/applied/ruleset.nft" 2>/dev/null))"; fi
+fresh; cc 'cc_record_applied_baseline "'"$SB"'/loaded.nft"' || true
+rc=0; fwbase "$SB/plain.nft" || rc=$?
+if [[ $rc -eq 0 && "$(cat "$SB/data/state/applied/ruleset.nft" 2>/dev/null)" == "plain-rebuild-ruleset" ]]; then
+    ok "D29b control: with nothing pending, a plain rebuild records its ruleset as the applied baseline"
+else ko "D29b baseline without pending (rc=$rc baseline=$(cat "$SB/data/state/applied/ruleset.nft" 2>/dev/null))"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

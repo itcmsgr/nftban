@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service."
+# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3)."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,mktemp,cmp"
@@ -393,6 +393,33 @@ if [[ ! -e "$UNITDIR/nftban-rollback.service" && ! -e "$UNITDIR/nftban-rollback.
    && grep -qxF -- '  - name: nftban-rollback.timer' "$_dep" && grep -qxF -- '  - name: nftban-rollback.service' "$_dep"; then
     ok "E4 legacy nftban-rollback.timer/.service retired (not shipped; registered stop_disable_remove)"
 else ko "E4 legacy rollback units still shipped or not registered for upgrade cleanup (registry: $_dep)"; fi
+
+# E5 (audit H4, 2026-10-08): EVERY firewall dispatcher verb that loads or replaces rules carries
+# BOTH guards (R-DEC bypass, D10 rollback-failed). Derived from the dispatcher itself, so an alias
+# such as `init` (-> firewall_rebuild) cannot bypass them.
+_fw="$LIBDIR/cli/cmd_firewall.sh"
+_unguarded=$(awk '/^        [a-z|-]+\)$/{v=$1; sub(/\)$/,"",v); blk=""; next}
+    v!="" {blk=blk"\n"$0}
+    v!="" && /^            ;;$/ {
+        if (blk ~ /(firewall_rebuild|firewall_reload|firewall_reset|firewall_restore|firewall_takeover|_firewall_render_boot) "\$@"/ \
+            && !(blk ~ /_fw_bypass_guard / && blk ~ /_fw_cc_guard /)) printf "%s ", v
+        v="" }' "$_fw")
+_loaders=$(grep -cE '^[[:space:]]+(firewall_rebuild|firewall_reload|firewall_reset|firewall_restore|firewall_takeover|_firewall_render_boot) "\$@"' "$_fw" || true)
+if [[ "$_loaders" -ge 6 && -z "$_unguarded" ]]; then
+    ok "E5 every rule-loading firewall verb ($_loaders call sites) carries the bypass and the rollback-failed guard"
+else ko "E5 rule-loading verbs WITHOUT both guards: ${_unguarded:-none} (loader call sites=$_loaders)"; fi
+
+# E6 (audit H3, owner U1, 2026-10-08): an UPGRADE of a disabled host loads no NFTBan rules. The
+# DEB postinst and RPM %post scriptlet reload must be gated by the shared switch reader.
+_post="$REPO_ROOT/packaging/deb/postinst"; _spec="$REPO_ROOT/packaging/build_nftban.sh"
+_h3=0
+for _f in "$_post" "$_spec"; do
+    _rl=$(grep -n 'nftban firewall reload --quiet' "$_f" | head -1 | cut -d: -f1)
+    _gate=$(grep -n "nftban_is_enabled' >/dev/null 2>&1; then" "$_f" | head -1 | cut -d: -f1)
+    [[ -n "$_rl" && -n "$_gate" && "$_gate" -lt "$_rl" && $((_rl - _gate)) -le 6 ]] || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch gate=${_gate:-none}"; }
+done
+if [[ $_h3 -eq 0 ]]; then ok "E6 DEB postinst and RPM %post upgrade reload are skipped while NFTBan is disabled (shared reader nftban_is_enabled)"
+else ko "E6 upgrade reload not gated by the master switch"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

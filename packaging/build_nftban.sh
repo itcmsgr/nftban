@@ -1688,7 +1688,12 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # safe/handoff state. \`nftban firewall reload\` is atomic (nft -f — the
     # kernel never sees an empty/partial ruleset) and this call is NON-FATAL:
     # a reload failure is warned and the package upgrade continues.
-    if [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
+    # v1.235 audit H3 (owner U1): a DISABLED host loads no NFTBan rules on upgrade; the reload
+    # runs only when the shared reader (service_control.sh nftban_is_enabled) says enabled.
+    if [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] \\
+       && ! bash -c '. /usr/lib/nftban/lib/service_control.sh && nftban_is_enabled' >/dev/null 2>&1; then
+        echo "[NFTBan] v1.235: NFTBan is disabled (stored choice or nftban=disabled): no firewall reload on upgrade."
+    elif [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
         echo "[NFTBan] v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
         if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
             echo "[NFTBan] v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
