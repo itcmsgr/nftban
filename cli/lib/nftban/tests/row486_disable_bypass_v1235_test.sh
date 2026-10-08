@@ -427,9 +427,11 @@ else ko "E5 rule-loading verbs WITHOUT both guards: ${_unguarded:-none} (loader 
 _post="$REPO_ROOT/packaging/deb/postinst"; _spec="$REPO_ROOT/packaging/build_nftban.sh"
 _h3=0
 for _f in "$_post" "$_spec"; do
-    _rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1)
-    _gate=$(grep -n -m1 "nftban_is_enabled' >/dev/null 2>&1; then" "$_f" | cut -d: -f1)
-    [[ -n "$_rl" && -n "$_gate" && "$_gate" -lt "$_rl" && $((_rl - _gate)) -le 6 ]] || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch gate=${_gate:-none}"; }
+    _rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1 || true)
+    _gate=$(grep -n -m1 '_nftban_switch=.*service_control.sh.*nftban_is_enabled' "$_f" | cut -d: -f1 || true)
+    _off=$(grep -n -m1 '_nftban_switch" = "off" \]; then' "$_f" | cut -d: -f1 || true)
+    [[ -n "$_rl" && -n "$_gate" && -n "$_off" && "$_gate" -lt "$_off" && "$_off" -lt "$_rl" && $((_rl - _gate)) -le 10 ]] \
+        || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch read=${_gate:-none} off-branch=${_off:-none}"; }
 done
 if [[ $_h3 -eq 0 ]]; then ok "E6 DEB postinst and RPM %post upgrade reload are skipped while NFTBan is disabled (shared reader nftban_is_enabled)"
 else ko "E6 upgrade reload not gated by the master switch"; fi
