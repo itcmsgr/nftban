@@ -8,7 +8,7 @@
 // meta:version="1.235.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-10-06"
-// meta:description="Installer side of the v1.235 row-486 contract (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md). EnableBootGuards enables the three early-boot safety units on every install/upgrade/repair, regardless of the master switch or the emergency bypass (they only act at boot). MasterSwitchOn reads the STORED choice (NFTBAN_ENABLED in conf.d/services.conf then services.conf.local, last value wins) exactly like the shell nftban_master_switch_on. EmergencyBypassActive reports the per-boot bypass (exact word nftban=disabled on the kernel command line). The installer uses these to never load rules, start units or enable nftables.service while NFTBan is disabled or bypassed (owner decisions U1, R-DEC, D4)."
+// meta:description="Installer side of the v1.235 row-486 contract (CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md). EnableBootGuards enables the three early-boot safety units on every install/upgrade/repair, regardless of the master switch or the emergency bypass (they only act at boot). MasterSwitchState reads the STORED choice (NFTBAN_ENABLED in conf.d/services.conf then services.conf.local, last value wins) under the ONE shared contract configloader.ParseSwitch (on/off/invalid; owner K2), exactly like the shell nftban_master_switch_state. EmergencyBypassActive reports the per-boot bypass (exact word nftban=disabled on the kernel command line). The installer uses these to never load rules, start units or enable nftables.service while NFTBan is disabled or bypassed (owner decisions U1, R-DEC, D4)."
 // meta:input="/etc/nftban/conf.d/services.conf(.local), /proc/cmdline"
 // meta:output="unit enablement of nftban-boot-*.service; lifecycle mode facts"
 // meta:depends="executor"
@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/itcmsgr/nftban/internal/configloader"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
@@ -74,17 +75,17 @@ func EnableBootGuards(exec executor.Executor, log *logging.Logger) {
 	}
 }
 
-// MasterSwitchOn returns the STORED choice NFTBAN_ENABLED.
-//
-//	on    true unless the last NFTBAN_ENABLED value is "false"
-//	known false when an existing config file could not be read (the caller must
-//	      not treat an unreadable choice as "enabled" for a lifecycle decision)
+// MasterSwitchState returns the STORED choice NFTBAN_ENABLED under the ONE shared contract
+// (configloader.ParseSwitch, owner K2 2026-10-08): on (true/yes/1/on), off (false/no/0/off),
+// invalid (any other declared value, including empty). An ABSENT key keeps the documented
+// default (on). known=false when an existing config file could not be read (the caller must not
+// treat an unreadable choice as "enabled" for a lifecycle decision). raw/file name the last
+// declaration (for the INVALID message).
 //
 // Files: <configDir>/conf.d/services.conf then <configDir>/conf.d/services.conf.local
-// (the same pair, in the same order, as the shell _nftban_load_services_config).
-// A missing file is not an error; the absent key defaults to enabled.
-func MasterSwitchOn(exec executor.Executor, configDir string) (on bool, known bool) {
-	on, known = true, true
+// (the same pair, in the same order, as the shell nftban_master_switch_state).
+func MasterSwitchState(exec executor.Executor, configDir string) (state configloader.SwitchState, raw, file string, known bool) {
+	state, known = configloader.SwitchOn, true
 	for _, name := range []string{"services.conf", "services.conf.local"} {
 		p := filepath.Join(configDir, "conf.d", name)
 		if !exec.FileExists(p) {
@@ -100,12 +101,12 @@ func MasterSwitchOn(exec executor.Executor, configDir string) (on bool, known bo
 			if !strings.HasPrefix(line, "NFTBAN_ENABLED=") {
 				continue
 			}
-			v := strings.TrimPrefix(line, "NFTBAN_ENABLED=")
-			v = strings.Trim(v, `"'`)
-			on = v != "false"
+			raw = strings.TrimPrefix(line, "NFTBAN_ENABLED=")
+			file = p
+			state = configloader.ParseSwitch(raw)
 		}
 	}
-	return on, known
+	return state, raw, file, known
 }
 
 // EmergencyBypassActive reports whether the kernel command line carries the

@@ -94,13 +94,17 @@ func cmdInit(cfg *nftbanconf.Config) error {
 	}
 
 	// Load services config
-	services, err := configloader.LoadServicesConfig()
-	if err != nil {
+	if _, err := configloader.LoadServicesConfig(); err != nil {
 		fmt.Fprintf(os.Stderr, "  ⚠️  Warning: Could not load services config: %v\n", err)
 	} else {
 		fmt.Printf("  ✅ Loaded services configuration\n")
-		if !services["nftban"] {
+		// v1.235 K2: the ONE NFTBAN_ENABLED contract (configloader.MasterSwitch, same files as
+		// the shell); an INVALID value refuses with the exact declaration, never "disabled".
+		switch st, raw, file, _ := configloader.MasterSwitch(cfg.ConfigDir); st {
+		case configloader.SwitchOff:
 			return fmt.Errorf("NFTBan is disabled in services.conf")
+		case configloader.SwitchInvalid:
+			return fmt.Errorf("NFTBAN_ENABLED is INVALID (NFTBAN_ENABLED=%s in %s): set it to true or false; nothing was changed", raw, file)
 		}
 	}
 	fmt.Println()

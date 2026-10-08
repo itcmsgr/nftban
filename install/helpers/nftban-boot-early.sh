@@ -54,15 +54,31 @@ write_inert_at() {  # path
     relabel "$1"
 }
 
-stored_switch_off() {  # true when NFTBAN_ENABLED=false in services.conf(.local), last wins
-    local v="" f line
+# v1.235 K2: the ONE NFTBAN_ENABLED contract, byte-identical to lib/service_control.sh (this
+# helper runs before anything else and sources nothing; a census test keeps the copies equal).
+_nftban_switch_word() {  # <declared value> -> on | off | invalid  (the ONE NFTBAN_ENABLED contract, owner K2)
+    local v="$1" q
+    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+    case "$v" in
+        \"*|\'*) q="${v:0:1}"; v="${v:1}"
+                 [[ "$v" == *"$q"* ]] || { echo invalid; return 0; }
+                 v="${v%%"$q"*}" ;;
+        *) if [[ "$v" =~ ^([^[:space:]]*)[[:space:]]+#.*$ ]]; then v="${BASH_REMATCH[1]}"; fi ;;
+    esac
+    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+    case "${v,,}" in true|yes|1|on) echo on ;; false|no|0|off) echo off ;; *) echo invalid ;; esac
+}
+
+stored_switch_state() {  # on | off | invalid — NFTBAN_ENABLED in services.conf(.local), last wins; absent = on
+    local st="on" f line
     for f in "$SERVICES_CONF" "${SERVICES_CONF}.local"; do
         [[ -r "$f" ]] || continue
-        while IFS= read -r line; do
-            case "$line" in NFTBAN_ENABLED=*) v="${line#NFTBAN_ENABLED=}"; v="${v//\"/}"; v="${v//\'/}" ;; esac
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            case "$line" in NFTBAN_ENABLED=*) st="$(_nftban_switch_word "${line#NFTBAN_ENABLED=}")" ;; esac
         done < "$f"
     done
-    [[ "$v" == "false" ]]
+    printf '%s\n' "$st"
 }
 
 mode_bypass() {
@@ -121,7 +137,13 @@ mode_normal() {
         else log "WARNING: could not restore $SAVED"; fi
     fi
     # U1: a disabled NFTBan never loads at boot, even if the inert publish failed at disable time.
-    if stored_switch_off && [[ -e "$PROJ" ]] && ! grep -qxF -- "$MARKER" "$PROJ" 2>/dev/null; then
+    # K2: an INVALID value changes nothing here (no inert rewrite): the last published projection loads.
+    local _sw
+    _sw="$(stored_switch_state)"
+    if [[ "$_sw" == invalid ]]; then
+        log "WARNING: NFTBAN_ENABLED is INVALID: boot projection left as last published (not made inert, not changed)"
+    fi
+    if [[ "$_sw" == off ]] && [[ -e "$PROJ" ]] && ! grep -qxF -- "$MARKER" "$PROJ" 2>/dev/null; then
         if write_inert_at "$PROJ"; then log "NFTBan is disabled (stored choice): projection made inert before nftables.service"
         else log "WARNING: NFTBan is disabled but the projection could not be made inert"; fi
     fi
