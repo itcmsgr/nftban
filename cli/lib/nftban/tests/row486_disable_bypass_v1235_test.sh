@@ -549,6 +549,15 @@ else ko "E9 switch contract mismatch (cases=$_k2n):${_k2bad:0:1500}"; fi
 # scripts and the RPM %pre), lib/service_control.sh and the boot helper are byte-identical.
 if [[ -n "$_k2fn_imm" && "$_k2fn_imm" == "$_k2fn_svc" && "$_k2fn_imm" == "$_k2fn_early" ]]; then ok "E10 the NFTBAN_ENABLED reader is byte-identical in nftban_immutable_owned.sh, service_control.sh and the boot helper"
 else ko "E10 the copies of the NFTBAN_ENABLED reader differ (imm=${#_k2fn_imm} svc=${#_k2fn_svc} early=${#_k2fn_early} bytes)"; fi
+_k2line(){  # <-F substring | -x whole line> <text> <file> -> number of the first matching line (no pipe)
+    local _n=0 _x
+    while IFS= read -r _x || [[ -n "$_x" ]]; do
+        _n=$((_n+1))
+        if [[ "$1" == -x ]]; then [[ "$_x" == "$2" ]] && { echo "$_n"; return 0; }
+        else [[ "$_x" == *"$2"* ]] && { echo "$_n"; return 0; }; fi
+    done < "$3"
+    return 0
+}
 # E16 (owner 2026-10-08): the PACKAGE pre-install check, under /bin/sh in a clean environment:
 # absent / on / off proceed; INVALID and UNKNOWN stop (rc 1) naming the value or the file. And
 # the call sites: DEB preinst (install|upgrade) and RPM %pre call it, before the forward
@@ -572,16 +581,16 @@ for _c in none on off; do [[ "$(e16 $_c)" == 0 ]] || _e16+=" $_c->stop($(head -c
 [[ "$(e16 unread)" == 1 ]] && has "$SB/e16.err" "NFTBan master switch is UNKNOWN ($SB/e16/conf.d/services.conf.local exists but could not be read" || _e16+=" unread->$(head -c 300 "$SB/e16.err")"
 [[ "$(e16 readfail)" == 1 ]] && has "$SB/e16.err" "NFTBan master switch is UNKNOWN ($SB/e16/conf.d/services.conf.local exists but could not be read" || _e16+=" readfail(EIO)->$(head -c 300 "$SB/e16.err")"
 _pre="$REPO_ROOT/packaging/deb/preinst"
-_l_case=$(grep -n -m1 '^    install|upgrade)$' "$_pre" | cut -d: -f1 || true)
-_l_sw=$(grep -n -m1 'if ! nftban_master_switch_preflight; then' "$_pre" | cut -d: -f1 || true)
-_l_fw=$(grep -n -m1 'if ! nftban_forward_unmanaged_preflight; then' "$_pre" | cut -d: -f1 || true)
+_l_case=$(_k2line -x '    install|upgrade)' "$_pre")
+_l_sw=$(_k2line -F 'if ! nftban_master_switch_preflight; then' "$_pre")
+_l_fw=$(_k2line -F 'if ! nftban_forward_unmanaged_preflight; then' "$_pre")
 [[ -n "$_l_case" && -n "$_l_sw" && -n "$_l_fw" && "$_l_case" -lt "$_l_sw" && "$_l_sw" -lt "$_l_fw" ]] || _e16+=" deb-preinst(case=${_l_case:-?} switch=${_l_sw:-none} forward=${_l_fw:-?})"
-_l_sw=$(grep -n -m1 '^nftban_master_switch_preflight || exit 1$' "$_spec" | cut -d: -f1 || true)
-_l_fw=$(grep -n -m1 '^nftban_forward_unmanaged_preflight || exit 1$' "$_spec" | cut -d: -f1 || true)
+_l_sw=$(_k2line -x 'nftban_master_switch_preflight || exit 1' "$_spec")
+_l_fw=$(_k2line -x 'nftban_forward_unmanaged_preflight || exit 1' "$_spec")
 [[ -n "$_l_sw" && -n "$_l_fw" && "$_l_sw" -lt "$_l_fw" ]] || _e16+=" rpm-pre(switch=${_l_sw:-none} forward=${_l_fw:-?})"
 for _f in "$_post" "$_spec"; do
-    _l_cfg=$(grep -n -m1 "grep -qx 'INSTALL_STATE=FAILED_CONFIG_INVALID' /var/lib/nftban/state/install_state" "$_f" | cut -d: -f1 || true)
-    _l_rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1 || true)
+    _l_cfg=$(_k2line -F "grep -qx 'INSTALL_STATE=FAILED_CONFIG_INVALID' /var/lib/nftban/state/install_state" "$_f")
+    _l_rl=$(_k2line -F 'nftban firewall reload --quiet' "$_f")
     _l_ex=$(awk -v a="$(( ${_l_cfg:-0} + 1 ))" -v b="$(( ${_l_cfg:-0} + 4 ))" 'NR>=a && NR<=b && /^ *exit 1$/{n++} END{print n+0}' "$_f")
     [[ -n "$_l_cfg" && -n "$_l_rl" && "$_l_cfg" -lt "$_l_rl" && "${_l_ex:-0}" -ge 1 ]] || _e16+=" $(basename "$_f")(config-invalid=${_l_cfg:-none} exit1=${_l_ex:-0} reload=${_l_rl:-?})"
 done
