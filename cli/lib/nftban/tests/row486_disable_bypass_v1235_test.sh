@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3)."
+# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7)."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,mktemp,cmp"
@@ -299,6 +299,19 @@ svc_root 'nftban_disable_all' || true
 if cmp -s "$rec" "$SB/rec.first"; then ok "C8 repeated disable never overwrites the original record"
 else ko "C8 record overwritten"; fi
 
+# C7b (audit H5, 2026-10-08): the stub `systemctl stop` runs no ExecStop, so C7 cannot see that a
+# real stop of nftban-firewall-init.service runs its ExecStop, which DELETES ip/ip6 nftban at once.
+# A plain disable must therefore not stop that unit (it is disabled: not started at the next boot).
+_fi_unit="$REPO_ROOT/install/systemd/nftban-firewall-init.service"
+fresh; printf '%s\nnftban-firewall-init.service enabled\n' "$UNITS_BASE" > "$SB/units"
+printf 'nftband.service\nnftban-firewall-init.service\nnftables.service\n' > "$SB/active"
+rc=0; svc_root 'nftban_disable_all' || rc=$?
+if grep -qE '^ExecStop=.*nft delete table ip nftban' "$_fi_unit" \
+   && ! grep -qxF 'systemctl stop nftban-firewall-init.service' "$SB/calls.log" \
+   && [[ "$(awk '$1=="nftban-firewall-init.service"{print $2}' "$SB/units")" == disabled ]]; then
+    ok "C7b plain disable does NOT stop nftban-firewall-init.service (its ExecStop deletes the tables); the unit is disabled"
+else ko "C7b firewall-init on plain disable (rc=$rc stop=$(grep -cxF 'systemctl stop nftban-firewall-init.service' "$SB/calls.log") state=$(awk '$1=="nftban-firewall-init.service"{print $2}' "$SB/units"))"; fi
+
 fresh; printf '%s\n' "$UNITS_BASE" > "$SB/units"
 rc=0; svc_root 'nftban_disable_all --flush-rules' || rc=$?
 if has "$SB/calls.log" "nft delete table ip nftban" && has "$SB/calls.log" "nft delete table ip6 nftban" \
@@ -414,12 +427,37 @@ else ko "E5 rule-loading verbs WITHOUT both guards: ${_unguarded:-none} (loader 
 _post="$REPO_ROOT/packaging/deb/postinst"; _spec="$REPO_ROOT/packaging/build_nftban.sh"
 _h3=0
 for _f in "$_post" "$_spec"; do
-    _rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1)
-    _gate=$(grep -n -m1 "nftban_is_enabled' >/dev/null 2>&1; then" "$_f" | cut -d: -f1)
-    [[ -n "$_rl" && -n "$_gate" && "$_gate" -lt "$_rl" && $((_rl - _gate)) -le 6 ]] || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch gate=${_gate:-none}"; }
+    _rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1 || true)
+    _gate=$(grep -n -m1 '_nftban_switch=.*service_control.sh.*nftban_is_enabled' "$_f" | cut -d: -f1 || true)
+    _off=$(grep -n -m1 '_nftban_switch" = "off" \]; then' "$_f" | cut -d: -f1 || true)
+    [[ -n "$_rl" && -n "$_gate" && -n "$_off" && "$_gate" -lt "$_off" && "$_off" -lt "$_rl" && $((_rl - _gate)) -le 10 ]] \
+        || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch read=${_gate:-none} off-branch=${_off:-none}"; }
 done
 if [[ $_h3 -eq 0 ]]; then ok "E6 DEB postinst and RPM %post upgrade reload are skipped while NFTBan is disabled (shared reader nftban_is_enabled)"
 else ko "E6 upgrade reload not gated by the master switch"; fi
+
+# E7 (audit H3 follow-up, 2026-10-08): EXECUTE the exact switch line of both scriptlets (the RPM
+# copy unescaped from the heredoc) with the reader pointed at this tree, in a clean environment:
+# stored ON -> "on"; the services.conf.local override that `disable all` writes -> "off"; a reader
+# that cannot be loaded -> "" (the scriptlet then says "could not be read", never "disabled").
+e7(){  # <scriptlet line> <config dir> <lib dir> -> prints the decided value
+    env -i PATH="/usr/bin:/bin" HOME="$SB" NFTBAN_CONFIG_DIR="$2" NFTBAN_LIB_DIR="$3" \
+        bash -c 'eval "$1"; printf "%s" "${_nftban_switch-UNSET}"' _ "${1//\/usr\/lib\/nftban\/lib\/service_control.sh/$3/lib/service_control.sh}"
+}
+_e7_ok=1
+for _src in deb rpm; do
+    if [[ $_src == deb ]]; then _line=$(grep -m1 '^ *_nftban_switch=\$(bash -c' "$REPO_ROOT/packaging/deb/postinst" | sed 's/^ *//')
+    else _line=$(grep -m1 '^ *_nftban_switch=\\\$(bash -c' "$REPO_ROOT/packaging/build_nftban.sh" | sed 's/^ *//; s/\\\$/$/g'); fi
+    [[ -n "$_line" ]] || { _e7_ok=0; echo "      $_src: switch line not found"; continue; }
+    rm -rf "$SB/e7"; mkdir -p "$SB/e7/on/conf.d" "$SB/e7/off/conf.d"
+    printf 'NFTBAN_ENABLED="true"\n' > "$SB/e7/on/conf.d/services.conf"
+    printf 'NFTBAN_ENABLED="true"\n' > "$SB/e7/off/conf.d/services.conf"
+    printf 'NFTBAN_ENABLED="false"\n' > "$SB/e7/off/conf.d/services.conf.local"
+    a1=$(e7 "$_line" "$SB/e7/on" "$LIBDIR"); a2=$(e7 "$_line" "$SB/e7/off" "$LIBDIR"); a3=$(e7 "$_line" "$SB/e7/on" "$SB/e7/no-such-lib")
+    [[ "$a1" == on && "$a2" == off && -z "$a3" ]] || { _e7_ok=0; echo "      $_src: stored-on=[$a1] local-off=[$a2] unreadable=[$a3] (want on / off / empty)"; }
+done
+if [[ $_e7_ok -eq 1 ]]; then ok "E7 both scriptlet switch lines EXECUTED: stored on -> on; disable's .local override -> off; unloadable reader -> unread (not 'disabled')"
+else ko "E7 scriptlet switch decision"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

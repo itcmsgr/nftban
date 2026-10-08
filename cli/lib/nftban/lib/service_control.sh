@@ -921,7 +921,11 @@ nftban_disable_all() {
     while IFS= read -r u; do
         [[ -n "$u" ]] || continue
         en=$(systemctl is-enabled "$u" 2>/dev/null) || true
-        systemctl stop "$u" 2>/dev/null || true
+        # v1.235 audit H5 (owner U1): a plain disable keeps the rules until reboot. Stopping
+        # nftban-firewall-init.service runs its ExecStop, which deletes ip/ip6 nftban at once,
+        # so it is only disabled here (not started at the next boot); --flush-rules removes the
+        # NFTBan tables through its own step below.
+        [[ "$u" == "nftban-firewall-init.service" ]] || systemctl stop "$u" 2>/dev/null || true
         if [[ "$en" == "enabled" ]]; then
             systemctl disable "$u" 2>/dev/null || true
         fi
