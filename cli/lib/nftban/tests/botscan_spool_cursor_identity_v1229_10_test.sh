@@ -25,6 +25,8 @@
 # meta:inventory.files="cli/lib/nftban/lib/nftban_http_logs.sh,cli/lib/nftban/core/nftban_botscan.sh"
 # meta:inventory.binaries="bash,stat,mktemp"
 set -uo pipefail
+# The SUBJECT's libraries, never /usr/lib/nftban (audit I24, 2026-10-08: same class as I23).
+NFTBAN_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export NFTBAN_LIB_DIR
 
 SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASS=0; FAIL=0
