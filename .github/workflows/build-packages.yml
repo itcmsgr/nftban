@@ -639,7 +639,7 @@ jobs:
             # v1.235 F1 (owner 2026-10-08): prove the REAL install order on a host WITHOUT nftables.
             echo "=== Phase 0: F1 precondition (no nft before the transaction) ==="
             if command -v nft >/dev/null 2>&1 || rpm -q nftables >/dev/null 2>&1; then
-              echo "[FAIL] F1: the image already has nftables: the install order cannot be proven here"; exit 1
+              echo "[NOT_EXECUTED] F1: the image already has nftables: precondition unmet, the install order cannot be proven here"; exit 1
             fi
             echo "[PASS] F1: nftables absent before the transaction"
 
@@ -660,8 +660,9 @@ jobs:
             echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
             if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
             rpm -q nftban-core >/dev/null 2>&1 || { echo "[FAIL] F1: nftban-core not installed (%pre stopped?)"; cat "$INSTALL_LOG"; exit 1; }
-            n_dep=$(grep -n -m1 -E "Installing +: nftables-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
-            n_pkg=$(grep -n -m1 -E "(Running scriptlet|Installing) +: nftban-core-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
+            # dnf4 "  Installing       : pkg" / "  Running scriptlet: pkg"; dnf5 "[ 3/20] Installing pkg"
+            n_dep=$(grep -n -m1 -E "(Installing *: |\] Installing )nftables-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
+            n_pkg=$(grep -n -m1 -E "(Running scriptlet *: |Installing *: |\] (Running [a-z]+ scriptlet|Installing) )nftban-core-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
             echo "F1 transaction lines: nftables installed at ${n_dep:-none}, nftban-core first step at ${n_pkg:-none}"
             if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables installed before nftban-core %pre"
             else echo "[FAIL] F1: install order not shown"; grep -nE "nftables|nftban-core" "$INSTALL_LOG" | head -20; exit 1; fi
@@ -879,7 +880,7 @@ jobs:
             # v1.235 F1 (owner 2026-10-08): prove the REAL install order on a host WITHOUT nftables.
             echo "=== Phase 0: F1 precondition (no nft before the transaction) ==="
             if command -v nft >/dev/null 2>&1 || dpkg -s nftables >/dev/null 2>&1; then
-              echo "[FAIL] F1: the image already has nftables: the install order cannot be proven here"; exit 1
+              echo "[NOT_EXECUTED] F1: the image already has nftables: precondition unmet, the install order cannot be proven here"; exit 1
             fi
             echo "[PASS] F1: nftables absent before the transaction"
 
