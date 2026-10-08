@@ -41,6 +41,7 @@ no(){ fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; }
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 mkdir -p "$SB/lib/lib" "$SB/lib/templates" "$SB/conf"
 cp "$ROOT/cli/lib/nftban/lib/boot_projection.sh" "$SB/lib/lib/"
+cp "$ROOT/cli/lib/nftban/lib/nftban_forward.sh"  "$SB/lib/lib/"   # v1.235: the render projects the forward store
 cp "$ROOT/install/nftables/nftables.conf.tpl"    "$SB/lib/templates/"
 # The historical conffile, present exactly as a migrated host would have it.
 cp "$ROOT/install/nftables/nftables.conf"        "$SB/conf/nftables.conf"
