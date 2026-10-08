@@ -277,6 +277,11 @@ const lmOldProjection = "#!/usr/sbin/nft -f\n# last published ACTIVE projection\
 const lmDistroConf = "/etc/nftables.conf"
 const lmOldDistroConf = "#!/usr/sbin/nft -f\ninclude \"/etc/nftban/generated/nftban-boot.nft\"\n"
 
+// A host upgraded from before v1.229.13 may still include this LEGACY file from the distro
+// conf (owner 2026-10-08: re-rendering it would break "no change").
+const lmLegacyConf = "/etc/nftban/nftables.conf"
+const lmOldLegacyConf = "#!/usr/sbin/nft -f\n# legacy boot file as last rendered\n"
+
 func lmAssertBootUnchanged(t *testing.T, name string, m *executor.MockExecutor) {
 	t.Helper()
 	if got := m.Files[switchop.BootProjectionPath]; !bytes.Equal(got, []byte(lmOldProjection)) {
@@ -284,6 +289,9 @@ func lmAssertBootUnchanged(t *testing.T, name string, m *executor.MockExecutor) 
 	}
 	if got := m.Files[lmDistroConf]; !bytes.Equal(got, []byte(lmOldDistroConf)) {
 		t.Fatalf("%s: the distro boot include changed:\n%s", name, got)
+	}
+	if got := m.Files[lmLegacyConf]; !bytes.Equal(got, []byte(lmOldLegacyConf)) {
+		t.Fatalf("%s: the legacy boot file %s changed (%d bytes)", name, lmLegacyConf, len(got))
 	}
 	for _, c := range m.Commands {
 		if line := c.Name + " " + strings.Join(c.Args, " "); strings.Contains(line, "render-boot") {
@@ -297,6 +305,7 @@ func TestPhaseSwitch_InvalidSwitch_NoMutationNoRender(t *testing.T) {
 		m := lmMock(c.mode)
 		m.Files[switchop.BootProjectionPath] = []byte(lmOldProjection)
 		m.Files[lmDistroConf] = []byte(lmOldDistroConf)
+		m.Files[lmLegacyConf] = []byte(lmOldLegacyConf)
 		sf, log := lmState(t, state.StatePrepareComplete)
 		globalPhaseData = phaseData{sshPort: 22, sshPorts: []int{22}, decision: authority.Fresh}
 		_ = phaseSwitch(context.Background(), m, sf, log)
@@ -315,6 +324,7 @@ func TestPhasePrepare_InvalidSwitch_BootUnchanged(t *testing.T) {
 		m := lmMock(c.mode)
 		m.Files[switchop.BootProjectionPath] = []byte(lmOldProjection)
 		m.Files[lmDistroConf] = []byte(lmOldDistroConf)
+		m.Files[lmLegacyConf] = []byte(lmOldLegacyConf)
 		for _, c := range []string{"jq", "curl", "socat", "bc", "gawk", "getfacl", "tar"} {
 			m.ExistingCommands[c] = true // dependencies present: the phase must reach the render branch
 		}
@@ -329,17 +339,17 @@ func TestPhasePrepare_InvalidSwitch_BootUnchanged(t *testing.T) {
 	}
 }
 
-// K2 / K2-c (owner 2026-10-08): DEGRADED reads as "completed with warnings"; an install that
-// applied no firewall because the switch is unusable ends FAILED (exit 2), never COMMITTED or
-// DEGRADED, and the reason names the cause.
+// K2 / K2-c (owner 2026-10-08): DEGRADED reads as "completed with warnings"; a run with an
+// unusable switch ends FAILED_CONFIG_INVALID (exit 2): a configuration failure kept apart from
+// the protection state (not FAILED_NO_FIREWALL: the existing firewall stays running).
 func TestPhaseValidate_InvalidSwitch_Fails(t *testing.T) {
 	for _, c := range lmUnusable {
 		inj, m := disabledPassMock(t, c.mode)
 		sf, log := lmState(t, state.StateServicesComplete)
 		globalPhaseData = phaseData{sshPort: 22, inject: inj}
 		_ = phaseValidate(context.Background(), m, sf, log)
-		if sf.State != state.StateFailedNoFirewall || sf.State.ExitCode() != state.ExitFailed {
-			t.Fatalf("%s: want FAILED_NO_FIREWALL / exit %d, got %s / exit %d", c.name, state.ExitFailed, sf.State, sf.State.ExitCode())
+		if sf.State != state.StateFailedConfigInvalid || sf.State.ExitCode() != state.ExitFailed {
+			t.Fatalf("%s: want FAILED_CONFIG_INVALID / exit %d, got %s / exit %d", c.name, state.ExitFailed, sf.State, sf.State.ExitCode())
 		}
 		if !strings.Contains(sf.FailureReason, c.want) {
 			t.Fatalf("%s: the reason must carry %q, got %q", c.name, c.want, sf.FailureReason)

@@ -749,6 +749,45 @@ jobs:
               }
             cat /parity-out/rpm-${{ matrix.distro }}-verify.txt
 
+            # v1.235 K2/K2-c (owner 2026-10-08): an INVALID or unreadable master switch is refused
+            # by the package pre-install check BEFORE any change, and by the installer if it got
+            # past that check. Records the REAL final package state (no rollback is assumed) and
+            # proves the kernel rules and the boot configuration are byte-identical.
+            echo "=== Phase 7: K2 unusable master switch (HARD FAIL) ==="
+            K2L=/etc/nftban/conf.d/services.conf.local
+            k2_snap() {
+              { nft list ruleset 2>&1
+                for f in /etc/nftban/generated/nftban-boot.nft /etc/nftban/nftables.conf /etc/nftables.conf /etc/sysconfig/nftables.conf; do
+                  printf "%s " "$f"; if [ -e "$f" ]; then sha256sum < "$f"; else echo absent; fi
+                done; } > /tmp/k2.snap
+              sha256sum < /tmp/k2.snap
+            }
+            k2_check() {  # <label> <expected text>; runs the package transaction
+              b=$(k2_snap); rc=0
+              dnf reinstall -y /packages/*.rpm > /tmp/k2.log 2>&1 || rc=$?
+              a=$(k2_snap)
+              echo "K2 $1: package manager rc=$rc; final package state: $(rpm -q nftban-core 2>&1 || true)"
+              [ "$rc" -ne 0 ] || { echo "[FAIL] K2 $1: the package transaction did not fail"; cat /tmp/k2.log; exit 1; }
+              grep -qF "$2" /tmp/k2.log || { echo "[FAIL] K2 $1: the cause is not named"; cat /tmp/k2.log; exit 1; }
+              [ "$b" = "$a" ] || { echo "[FAIL] K2 $1: kernel rules or boot configuration CHANGED"; exit 1; }
+              echo "[PASS] K2 $1: refused before any change; rules and boot configuration byte-identical"
+            }
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            k2_check invalid "master switch is INVALID (NFTBAN_ENABLED=maybe in $K2L"
+            rm -rf "$K2L"; mkdir -p "$K2L"
+            k2_check unreadable "master switch is UNKNOWN ($K2L exists but could not be read"
+            # The installer half (a switch that became unusable AFTER the pre-install check): the
+            # real installer binary ends FAILED_CONFIG_INVALID, exit 2, nothing changed.
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            b=$(k2_snap); rc=0
+            /usr/lib/nftban/bin/nftban-installer --rpm --mode=upgrade > /tmp/k2i.log 2>&1 || rc=$?
+            a=$(k2_snap); st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            echo "K2 installer: rc=$rc $st"
+            if [ "$rc" -eq 2 ] && [ "$st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 installer: FAILED_CONFIG_INVALID, exit 2; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 installer"; tail -30 /tmp/k2i.log; exit 1; fi
+            rm -rf "$K2L"
+
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="
           '
@@ -990,6 +1029,45 @@ jobs:
                 exit 1
               }
             cat /parity-out/deb-${{ matrix.distro }}-verify.txt
+
+            # v1.235 K2/K2-c (owner 2026-10-08): an INVALID or unreadable master switch is refused
+            # by the package pre-install check BEFORE any change, and by the installer if it got
+            # past that check. Records the REAL final package state (no rollback is assumed) and
+            # proves the kernel rules and the boot configuration are byte-identical.
+            echo "=== Phase 7: K2 unusable master switch (HARD FAIL) ==="
+            K2L=/etc/nftban/conf.d/services.conf.local
+            k2_snap() {
+              { nft list ruleset 2>&1
+                for f in /etc/nftban/generated/nftban-boot.nft /etc/nftban/nftables.conf /etc/nftables.conf /etc/sysconfig/nftables.conf; do
+                  printf "%s " "$f"; if [ -e "$f" ]; then sha256sum < "$f"; else echo absent; fi
+                done; } > /tmp/k2.snap
+              sha256sum < /tmp/k2.snap
+            }
+            k2_check() {  # <label> <expected text>; runs the package transaction
+              b=$(k2_snap); rc=0
+              apt-get install --reinstall -y /packages/*.deb > /tmp/k2.log 2>&1 || rc=$?
+              a=$(k2_snap)
+              echo "K2 $1: package manager rc=$rc; final package state: $(dpkg-query -W -f="\${Status} \${Version}" nftban-core 2>&1 || true)"
+              [ "$rc" -ne 0 ] || { echo "[FAIL] K2 $1: the package transaction did not fail"; cat /tmp/k2.log; exit 1; }
+              grep -qF "$2" /tmp/k2.log || { echo "[FAIL] K2 $1: the cause is not named"; cat /tmp/k2.log; exit 1; }
+              [ "$b" = "$a" ] || { echo "[FAIL] K2 $1: kernel rules or boot configuration CHANGED"; exit 1; }
+              echo "[PASS] K2 $1: refused before any change; rules and boot configuration byte-identical"
+            }
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            k2_check invalid "master switch is INVALID (NFTBAN_ENABLED=maybe in $K2L"
+            rm -rf "$K2L"; mkdir -p "$K2L"
+            k2_check unreadable "master switch is UNKNOWN ($K2L exists but could not be read"
+            # The installer half (a switch that became unusable AFTER the pre-install check): the
+            # real installer binary ends FAILED_CONFIG_INVALID, exit 2, nothing changed.
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            b=$(k2_snap); rc=0
+            /usr/lib/nftban/bin/nftban-installer --deb --mode=upgrade > /tmp/k2i.log 2>&1 || rc=$?
+            a=$(k2_snap); st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            echo "K2 installer: rc=$rc $st"
+            if [ "$rc" -eq 2 ] && [ "$st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 installer: FAILED_CONFIG_INVALID, exit 2; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 installer"; tail -30 /tmp/k2i.log; exit 1; fi
+            rm -rf "$K2L"
 
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="

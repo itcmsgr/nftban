@@ -853,6 +853,9 @@ trap '_nftban_rc=\$?; if [ "\$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owne
 # not create (srv1-class Docker hosts). Nothing has changed yet; the trap above relocks.
 # Every install and upgrade (owner 2026-10-08): confirmed absence proceeds; unmanaged
 # forward rules STOP; an unreadable kernel (EPERM included) is UNKNOWN and STOPS.
+# v1.235 K2/K2-c (owner 2026-10-08): an INVALID or unreadable master switch stops here, before
+# any change (absent = the agreed default). Same reader as every other.
+nftban_master_switch_preflight || exit 1
 nftban_forward_unmanaged_preflight || exit 1
 # =============================================================================
 # v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
@@ -1673,6 +1676,16 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         # already applies to the FAILED_AUTHORITY_ABORT block above.
         #     AN INSTRUCTION CHOSEN WITHOUT THE STATE CANNOT BE STATE-CORRECT.
         echo "[NFTBan] Recovery: follow the RECOVERY_CLASS line printed above by the installer."
+    fi
+
+    # v1.235 K2/K2-c (owner 2026-10-08): the installer refused because the master switch became
+    # INVALID or unreadable after %pre. The banner and the state file do not replace the exit
+    # status: THIS scriptlet fails (only for this state). rpm keeps the package installed and
+    # reports the scriptlet failure; nothing is rolled back, nothing switch-dependent changed.
+    if [ "\$INSTALLER_EXIT" -eq 2 ] && grep -qx 'INSTALL_STATE=FAILED_CONFIG_INVALID' /var/lib/nftban/state/install_state 2>/dev/null; then
+        echo "[NFTBan] ERROR: NFTBan master switch NFTBAN_ENABLED is not usable (see the Reason above): this %%post FAILS." >&2
+        echo "[NFTBan] Fix the setting, then run: /usr/lib/nftban/bin/nftban-installer --repair" >&2
+        exit 1
     fi
 
     # --- v1.145 PR-A.1: upgrade-path SSH rate-limit migration ---

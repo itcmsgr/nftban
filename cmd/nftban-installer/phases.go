@@ -139,7 +139,7 @@ func (pd *phaseData) skipReason() string {
 	case pd.bypassActive:
 		return "EMERGENCY BYPASS ACTIVE (kernel nftban=disabled): files updated, no rules loaded, no units started; reboot without the parameter"
 	case pd.switchInvalid:
-		return "NFTBan master switch is " + pd.switchInvalidWhat + ": files updated; no rules loaded, no units changed, boot projection NOT published"
+		return "NFTBan master switch is " + pd.switchInvalidWhat + ": nothing switch-dependent was changed (no rules loaded or removed, no units changed, boot projection not published)"
 	case pd.nftbanDisabled:
 		return "NFTBan is disabled (stored choice): files updated; firewall not applied — run 'nftban enable'"
 	}
@@ -359,6 +359,16 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 		return sf.Transition(state.StateFailedPreflightDiskSpace, state.PhaseDetect, err.Error())
 	}
 
+	// v1.235 K2/K2-c (owner 2026-10-08): an INVALID or UNKNOWN master switch is refused HERE,
+	// before any installer mutation (the package pre-install check normally stopped the
+	// transaction already; this covers a switch that became unusable after it). The later
+	// phases keep their own no-change branches as defence in depth.
+	if pd.switchInvalid {
+		reason := pd.skipReason()
+		log.Error("preflight: %s", reason)
+		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseDetect, reason)
+	}
+
 	log.PhaseEnd("Detect")
 	phaseEndMarker(log, "detect")
 	return sf.Transition(state.StateDetectComplete, state.PhaseDetect, "")
@@ -464,7 +474,15 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	// vector). For single-port hosts (the common case) pd.sshPorts is a
 	// single-element slice and the render output is byte-identical to the
 	// v1.124 single-port code path.
-	if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, log); err != nil {
+	//
+	// v1.235 K2 (owner 2026-10-08): with an INVALID / UNKNOWN master switch nothing
+	// switch-dependent changes. A host upgraded from before v1.229.13 may still have its distro
+	// include pointing at this LEGACY file, so re-rendering it would change the boot rules: it is
+	// left exactly as it is (the next run with a usable switch renders it).
+	resolveLifecycleMode(exec, pd, log)
+	if pd.switchInvalid {
+		log.Error("nftables.conf NOT re-rendered: %s", pd.skipReason())
+	} else if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, log); err != nil {
 		log.Error("nftables.conf render failed: %v", err)
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}
@@ -1120,20 +1138,20 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 // validateDisabledRun is phaseValidate for a run that skipped enforcement
 // (v1.235 row 486). It never mutates the firewall or starts a unit.
 //
-//	switch INVALID / UNKNOWN     -> FAILED_NO_FIREWALL (K2 / K2-c), reason = the skip reason
+//	switch INVALID / UNKNOWN     -> FAILED_CONFIG_INVALID (K2 / K2-c), reason = the skip reason
 //	all disabled invariants pass -> COMMITTED, reason = the skip reason
 //	any fails                    -> DEGRADED,  reason = skip reason + failures
 func validateDisabledRun(exec executor.Executor, sf *state.StateFile, log *logging.Logger, pd *phaseData) error {
 	validate.RunPermissionsEnforce(exec, log)
 
 	if pd.switchInvalid {
-		// K2 / K2-c (owner 2026-10-08): DEGRADED is reported as "completed with warnings", which
-		// an install that applied NO firewall is not. The run ends FAILED_NO_FIREWALL (exit 2;
-		// the package scripts print "NFTBan — FAILED"); the existing firewall was left as it was.
+		// K2 / K2-c (owner 2026-10-08): a CONFIGURATION failure, never COMMITTED or DEGRADED
+		// ("completed with warnings"), and never FAILED_NO_FIREWALL (the existing firewall was
+		// deliberately left running). The package scripts fail the transaction on this state.
 		validate.SetImmutableFlags(exec, log)
 		reason := pd.skipReason()
 		log.Error("%s", reason)
-		return sf.Transition(state.StateFailedNoFirewall, state.PhaseValidate, reason)
+		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseValidate, reason)
 	}
 
 	mode := validate.ModeStoredDisabled

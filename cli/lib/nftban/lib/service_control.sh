@@ -91,21 +91,53 @@ nftban_refuse_under_bypass() {
     return 1
 }
 
-# v1.235 K2 (owner 2026-10-08): ONE meaning of NFTBAN_ENABLED for every reader (this file,
-# helpers/nftban-boot-early.sh — byte-identical copy —, the Go installer and nftban-core via
-# configloader.ParseSwitch). Cases: scripts/ci/data/master-switch-cases.tsv.
-_nftban_switch_word() {  # <declared value> -> on | off | invalid  (the ONE NFTBAN_ENABLED contract, owner K2)
-    local v="$1" q
-    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
-    case "$v" in
-        \"*|\'*) q="${v:0:1}"; v="${v:1}"
-                 [[ "$v" == *"$q"* ]] || { echo invalid; return 0; }
-                 v="${v%%"$q"*}" ;;
-        *) if [[ "$v" =~ ^([^[:space:]]*)[[:space:]]+#.*$ ]]; then v="${BASH_REMATCH[1]}"; fi ;;
+# >>> NFTBAN_ENABLED reader (v1.235 K2, owner 2026-10-08) >>>
+# The ONE meaning of NFTBAN_ENABLED, POSIX sh so the SAME text also runs in the DEB preinst / RPM
+# %pre. BYTE-IDENTICAL in lib/nftban_immutable_owned.sh (inlined into the package scripts),
+# lib/service_control.sh and helpers/nftban-boot-early.sh (census: row486 E10); the Go twin is
+# configloader.ParseSwitch / MasterSwitch. Cases: scripts/ci/data/master-switch-cases.tsv.
+_nftban_switch_word() {  # <declared value> -> on | off | invalid
+    _nsw_v=$1
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        \"*|\'*)
+            _nsw_q=${_nsw_v%"${_nsw_v#?}"}; _nsw_v=${_nsw_v#?}
+            case $_nsw_v in *"$_nsw_q"*) _nsw_v=${_nsw_v%%"$_nsw_q"*} ;; *) echo invalid; return 0 ;; esac ;;
+        *[[:space:]]*)
+            # an unquoted value ends at whitespace followed by "#" (a trailing comment)
+            _nsw_t=${_nsw_v%%[[:space:]]*}; _nsw_r=${_nsw_v#"$_nsw_t"}
+            _nsw_r=${_nsw_r#"${_nsw_r%%[![:space:]]*}"}
+            case $_nsw_r in \#*) _nsw_v=$_nsw_t ;; esac ;;
     esac
-    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
-    case "${v,,}" in true|yes|1|on) echo on ;; false|no|0|off) echo off ;; *) echo invalid ;; esac
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1|[Oo][Nn]) echo on ;;
+        [Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|0|[Oo][Ff][Ff]) echo off ;;
+        *) echo invalid ;;
+    esac
 }
+# _nftban_switch_state_files <file>... : the STORED choice from these files (last declaration
+# wins; absent key = the documented default, on). Prints "on", "off",
+# "invalid<TAB><value><TAB><file>" or "unknown<TAB><TAB><file>" (K2-c: a file that EXISTS but is
+# not a readable regular file is UNKNOWN and wins: the choice was not read).
+_nftban_switch_state_files() {
+    _nss_st=on; _nss_raw=; _nss_file=; _nss_unread=
+    for _nss_f in "$@"; do
+        [ -e "$_nss_f" ] || [ -L "$_nss_f" ] || continue
+        if [ ! -f "$_nss_f" ] || [ ! -r "$_nss_f" ]; then _nss_unread=$_nss_f; continue; fi
+        while IFS= read -r _nss_l || [ -n "$_nss_l" ]; do
+            _nss_l=${_nss_l#"${_nss_l%%[![:space:]]*}"}
+            case $_nss_l in
+                NFTBAN_ENABLED=*) _nss_raw=${_nss_l#NFTBAN_ENABLED=}; _nss_file=$_nss_f
+                                  _nss_st=$(_nftban_switch_word "$_nss_raw") ;;
+            esac
+        done < "$_nss_f"
+    done
+    if [ -n "$_nss_unread" ]; then printf 'unknown\t\t%s\n' "$_nss_unread"
+    elif [ "$_nss_st" = invalid ]; then printf 'invalid\t%s\t%s\n' "$_nss_raw" "$_nss_file"
+    else printf '%s\n' "$_nss_st"; fi
+}
+# <<< NFTBAN_ENABLED reader <<<
 
 # nftban_master_switch_state: the STORED choice only (no kernel parameter). Reads NFTBAN_ENABLED
 # from services.conf then services.conf.local (last declaration wins); an ABSENT key keeps the
@@ -114,18 +146,7 @@ _nftban_switch_word() {  # <declared value> -> on | off | invalid  (the ONE NFTB
 # is not a regular file) is UNKNOWN, never "absent = on": the choice was not read, so nothing
 # that depends on it may change. UNKNOWN wins over every declaration.
 nftban_master_switch_state() {
-    local f line raw="" file="" st="on" unread=""
-    for f in "$NFTBAN_SERVICES_CONF" "$NFTBAN_SERVICES_LOCAL"; do
-        [[ -e "$f" || -L "$f" ]] || continue
-        if [[ ! -f "$f" || ! -r "$f" ]]; then unread="$f"; continue; fi
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            line="${line#"${line%%[![:space:]]*}"}"
-            [[ "$line" == NFTBAN_ENABLED=* ]] || continue
-            raw="${line#NFTBAN_ENABLED=}"; file="$f"; st="$(_nftban_switch_word "$raw")"
-        done < "$f"
-    done
-    if [[ -n "$unread" ]]; then printf 'unknown\t\t%s\n' "$unread"
-    elif [[ "$st" == invalid ]]; then printf 'invalid\t%s\t%s\n' "$raw" "$file"; else printf '%s\n' "$st"; fi
+    _nftban_switch_state_files "$NFTBAN_SERVICES_CONF" "$NFTBAN_SERVICES_LOCAL"
 }
 
 # The STORED choice only: rc 0 on, 1 off, 2 INVALID or UNKNOWN (never read as on or off).
