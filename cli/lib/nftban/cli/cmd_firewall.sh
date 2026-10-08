@@ -6083,6 +6083,8 @@ Operations:
   reset         Complete reset (flush all, rebuild clean)
   restore       Enterprise rollback (restore previous state)
   takeover      Disarm conflicting external firewalls (CSF/iptables/firewalld); reversible
+  forward       Forwarding allows for routed/container traffic
+                (status | list | allow egress|uplink|publish | remove | migrate)
 
 Examples:
   # Validate with strict mode (recommended before enabling)
@@ -6106,6 +6108,10 @@ Examples:
   # Firewall-transition health alarm (v1.198.2)
   nftban firewall transition-health        # show current verdict
   nftban firewall transition-health ack    # clear a RESOLVED alarm (gated; no ban loss)
+
+  # Forwarding (routed / Docker hosts)
+  nftban firewall forward status       # read-only: policy, unmanaged rules, bridges, uplinks
+  nftban firewall forward migrate      # show the migration plan for hand-added forward rules
 
   # Recovery operations
   nftban firewall rebuild              # Fix corruption
