@@ -45,7 +45,7 @@ echo "=== v1.235 forward migration (owner conditions 2026-10-08) ==="
 command -v sha256sum >/dev/null 2>&1 || { echo "  NOT_EXECUTED: sha256sum missing"; echo "RESULT: NOT_EXECUTED"; exit 3; }
 
 SB="$(mktemp -d)"
-trap 'chmod -R u+w "$SB" 2>/dev/null; rm -rf "$SB"' EXIT
+trap 'chmod u+w "$SB/etc/forward.d" 2>/dev/null; rm -rf "$SB"' EXIT   # M8 makes only this dir read-only
 mkdir -p "$SB/bin" "$SB/etc"
 cat > "$SB/bin/nft" <<'EOF'
 #!/bin/sh
