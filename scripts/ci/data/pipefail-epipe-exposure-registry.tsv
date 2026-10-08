@@ -116,7 +116,6 @@ gate	scripts/ci/tests/package_postinstall_verify_test.sh	0a1c50123e5818ae	1	head
 gate	scripts/ci/tests/package_postinstall_verify_test.sh	90a75c3e87b1c288	2	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 gate	scripts/ci/tests/package_postinstall_verify_test.sh	a406255794bf06d1	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_blacklist.sh	3c6aac682d8d0069	1	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/cli/cmd_blacklist.sh	ea6a2f89d95dec7e	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_cmd_blacklist; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_botguard.sh	45772b65e846a702	1	head	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_botguard.sh	cb48257bec03f716	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_botscan.sh	f7e567b4a2866bd6	1	head	C	n/a	UNVERIFIED	-
