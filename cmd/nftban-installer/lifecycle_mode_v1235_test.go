@@ -32,6 +32,7 @@ const (
 	lmNormal lmMode = iota
 	lmDisabled
 	lmBypass
+	lmInvalid // v1.235 K2: NFTBAN_ENABLED declared with a value that is neither on nor off
 )
 
 func lmMock(mode lmMode) *executor.MockExecutor {
@@ -41,6 +42,8 @@ func lmMock(mode lmMode) *executor.MockExecutor {
 		m.Files[servicesConfLocal] = []byte("NFTBAN_ENABLED=\"false\"\n")
 	case lmBypass:
 		m.Files[services.ProcCmdlinePath] = []byte("BOOT_IMAGE=/vmlinuz root=/dev/vda1 nftban=disabled\n")
+	case lmInvalid:
+		m.Files[servicesConfLocal] = []byte("NFTBAN_ENABLED=maybe\n")
 	}
 	for _, u := range services.BootGuardUnits {
 		m.Files["/usr/lib/systemd/system/"+u] = []byte("[Unit]\n")
@@ -223,5 +226,52 @@ func TestStateAllowsNotApplicableDisabledCommit(t *testing.T) {
 	}
 	if state.ConvergenceVerdictPermitsCommit("") {
 		t.Fatal("the empty verdict must still be refused")
+	}
+}
+
+// v1.235 K2 (owner 2026-10-08): an INVALID NFTBAN_ENABLED is neither enabled nor disabled. The
+// installer changes nothing switch-dependent (no rule load, no unit change, no boot projection
+// publish of ANY kind, inert included) and never ends COMMITTED.
+func TestLifecycleMode_InvalidSwitch_Resolved(t *testing.T) {
+	m := lmMock(lmInvalid)
+	var pd phaseData
+	_, log := lmState(t, state.StatePrepareComplete)
+	resolveLifecycleMode(m, &pd, log)
+	if !pd.switchInvalid || pd.nftbanDisabled || pd.bypassActive {
+		t.Fatalf("NFTBAN_ENABLED=maybe: switchInvalid=%v disabled=%v bypass=%v, want invalid only", pd.switchInvalid, pd.nftbanDisabled, pd.bypassActive)
+	}
+	if !pd.enforcementSkipped() {
+		t.Fatalf("an INVALID choice must skip enforcement")
+	}
+	if r := pd.skipReason(); !strings.Contains(r, "NFTBAN_ENABLED is INVALID") || !strings.Contains(r, "NFTBAN_ENABLED=maybe in "+servicesConfLocal) {
+		t.Fatalf("skip reason must name the value and file, got %q", r)
+	}
+}
+
+func TestPhaseSwitch_InvalidSwitch_NoMutationNoRender(t *testing.T) {
+	m := lmMock(lmInvalid)
+	sf, log := lmState(t, state.StatePrepareComplete)
+	globalPhaseData = phaseData{sshPort: 22, sshPorts: []int{22}, decision: authority.Fresh}
+	_ = phaseSwitch(context.Background(), m, sf, log)
+	if got := mutatingCommands(m); len(got) > 0 {
+		t.Fatalf("phaseSwitch mutated the firewall/units with an INVALID switch: %v", got)
+	}
+	for _, c := range m.Commands {
+		if line := c.Name + " " + strings.Join(c.Args, " "); strings.Contains(line, "render-boot") {
+			t.Fatalf("a boot projection was rendered with an INVALID switch (inert included): %s", line)
+		}
+	}
+}
+
+func TestPhaseValidate_InvalidSwitch_Degrades(t *testing.T) {
+	inj, m := disabledPassMock(t, lmInvalid)
+	sf, log := lmState(t, state.StateServicesComplete)
+	globalPhaseData = phaseData{sshPort: 22, inject: inj}
+	_ = phaseValidate(context.Background(), m, sf, log)
+	if sf.State != state.StateDegraded {
+		t.Fatalf("an INVALID switch must end DEGRADED (never COMMITTED), got %s", sf.State)
+	}
+	if !strings.Contains(sf.FailureReason, "NFTBAN_ENABLED is INVALID") {
+		t.Fatalf("the reason must name the invalid switch, got %q", sf.FailureReason)
 	}
 }
