@@ -484,6 +484,9 @@ Recommends:     mailx
 Recommends:     netmask
 Recommends:     newt
 Requires(pre):  shadow-utils
+# v1.235 F1 (owner 2026-10-08): %pre runs the forward preflight, which needs nft; an absent nft
+# is UNKNOWN -> STOP, so the package manager must install nftables BEFORE %pre.
+Requires(pre):  nftables >= 0.9.0
 
 %description
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
@@ -2431,6 +2434,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
+Pre-Depends: nftables (>= 0.9.0)
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, polkitd | policykit-1
 Recommends: dnsutils, mailutils, netmask, whiptail, conntrack
 Maintainer: NFTBan Team <noreply@nftban.com>
@@ -2961,8 +2965,10 @@ main() {
     ls -lh "${BUILD_DIR}"/*.{deb,rpm} 2>/dev/null || ls -lh "${BUILD_DIR}/RPMS"/*/*.rpm 2>/dev/null || true
     echo ""
     log_info "To install on lab servers:"
-    echo "  DEB: sudo dpkg -i ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
-    echo "  RPM: sudo rpm -ivh ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
+    # v1.235 F1: install through the package manager so nftables (a pre-install dependency) is
+    # resolved first; dpkg -i / rpm -i do not resolve dependencies.
+    echo "  DEB: sudo apt-get update && sudo apt-get install ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    echo "  RPM: sudo dnf install ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
 }
 
 # Run main only when executed directly (allows sourcing for unit tests).

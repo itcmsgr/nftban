@@ -373,9 +373,12 @@ _nfw_route_dev() {  # <4|6> <prefix> -> devices of the exact route
 }
 
 # nftban_forward_unmanaged_rules : "<fam>\t<normalized rule>" per unmanaged rule.
-# rc 0 ok, 3 UNKNOWN (a chain could not be read; reason on stderr).
+# rc 0 ok, 3 UNKNOWN (a chain could not be read, or no nft binary to read it; reason on stderr).
+# F1 (owner 2026-10-08): without nft the kernel cannot be read, so this is UNKNOWN, never "no
+# rules". The packages declare nftables before their pre-install script (DEB Pre-Depends, RPM
+# Requires(pre)), so the binary is present whenever the package manager runs the preflight.
 nftban_forward_unmanaged_rules() {
-    command -v nft >/dev/null 2>&1 || return 0
+    command -v nft >/dev/null 2>&1 || { echo "nftban: UNKNOWN: the nft binary is not installed, so the nftban forward chains cannot be read" >&2; return 3; }
     _nfu_rc=0
     for _nfu_fam in ip ip6; do
         if ! _nfu_out=$(nft -a list chain "$_nfu_fam" nftban forward 2>&1); then
@@ -538,12 +541,11 @@ _nfw_plan_approved() {
 # $1 = what is stopped (default: the package install/upgrade). Returns 0 = proceed, 1 = stop.
 nftban_forward_unmanaged_preflight() {
     _nfw_ctx="${1:-install/upgrade}"
-    command -v nft >/dev/null 2>&1 || return 0
     _nfw_rc=0
     _nfw_rules=$(nftban_forward_unmanaged_rules) || _nfw_rc=$?
     if [ "$_nfw_rc" -ne 0 ]; then
         [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ] && { echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: proceeding despite an UNKNOWN forward chain." >&2; return 0; }
-        echo "nftban: ${_nfw_ctx} STOPPED before any change (forward chain UNKNOWN: the kernel could not be read, so NFTBan cannot prove there is nothing to preserve)." >&2
+        echo "nftban: ${_nfw_ctx} STOPPED before any change (forward chain UNKNOWN: the kernel could not be read (reason above), so NFTBan cannot prove there is nothing to preserve)." >&2
         return 1
     fi
     [ -n "$_nfw_rules" ] || return 0
