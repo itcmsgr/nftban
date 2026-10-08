@@ -950,12 +950,15 @@ _nftban_migrate_reports_to_log() {
             # call is NON-FATAL: a reload failure is warned and the package
             # upgrade continues (nft -f retains the previous ruleset on error).
             # v1.235 audit H3 (owner U1): a DISABLED host loads no NFTBan rules on upgrade. The
-            # reload runs only when the shared reader (service_control.sh nftban_is_enabled:
-            # stored switch + per-boot bypass) positively says enabled; unreadable = skipped
-            # (the switch-aware installer already rebuilt; this reload is defence in depth).
-            if [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] \
-               && ! bash -c '. /usr/lib/nftban/lib/service_control.sh && nftban_is_enabled' >/dev/null 2>&1; then
+            # shared reader (service_control.sh nftban_is_enabled: stored switch + per-boot bypass)
+            # answers on/off; anything else means the switch could NOT be read: the reload is
+            # skipped and said so, never reported as "disabled" (the switch-aware installer already
+            # rebuilt; this reload is defence in depth).
+            _nftban_switch=$(bash -c '. /usr/lib/nftban/lib/service_control.sh >/dev/null 2>&1 || exit 0; if nftban_is_enabled; then echo on; else echo off; fi' 2>/dev/null) || _nftban_switch=""
+            if [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "$_nftban_switch" = "off" ]; then
                 log_info "v1.235: NFTBan is disabled (stored choice or nftban=disabled): no firewall reload on upgrade."
+            elif [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "$_nftban_switch" != "on" ]; then
+                log_warn "v1.235: the NFTBan master switch could not be read: no firewall reload on upgrade (check it, then run: nftban firewall reload)."
             elif [ "$INSTALL_MODE" = "upgrade" ] && { [ "${INSTALLER_EXIT:-0}" -le 1 ] || [ "${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
                 log_info "v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
                 if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
