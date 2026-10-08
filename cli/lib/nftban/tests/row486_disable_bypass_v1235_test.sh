@@ -477,8 +477,10 @@ for _f in "$_post" "$_spec"; do
     # was only a proxy for this).
     _chainfi=""
     if [[ -n "$_rl" && -n "$_off" ]]; then
-        _ind=$(sed -n "${_off}p" "$_f" | sed -E 's/^([[:space:]]*).*/\1/')
-        _chainfi=$(sed -n "$((_off + 1)),$((_rl - 1))p" "$_f" | grep -n -x -m1 -- "${_ind}fi" || true)
+        # one awk over the file (no pipe: EPIPE gate): the off-branch indentation, then the first
+        # "fi" at that indentation strictly between the off-branch and the reload.
+        _chainfi=$(awk -v o="$_off" -v r="$_rl" 'NR==o { match($0, /^[ \t]*/); ind=substr($0, 1, RLENGTH) }
+            NR>o && NR<r && $0==ind "fi" { print NR; exit }' "$_f")
     fi
     [[ -n "$_rl" && -n "$_gate" && -n "$_off" && "$_gate" -lt "$_off" && "$_off" -lt "$_rl" && $((_off - _gate)) -le 2 && -z "$_chainfi" ]] \
         || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch read=${_gate:-none} off-branch=${_off:-none} chain closed before reload=${_chainfi:-no}"; }
