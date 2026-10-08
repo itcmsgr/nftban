@@ -496,7 +496,13 @@ RBHELP
             echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT published; the previous boot path is unchanged" >&2
             return 1
         fi
-        if ! nftban_master_switch_on; then
+        local _ms_rc=0
+        nftban_master_switch_on || _ms_rc=$?
+        if [[ $_ms_rc -eq 2 ]]; then
+            # v1.235 K2: neither active nor inert is published; the last published projection stays.
+            echo "ERROR: NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)) — boot projection NOT published; the previous boot path is unchanged. Set it to true or false." >&2
+            return 1
+        elif [[ $_ms_rc -ne 0 ]]; then
             inert="true"
             [[ "$quiet" == "false" ]] && echo "NFTBan is disabled (stored choice): publishing the INERT projection"
         fi
@@ -572,7 +578,14 @@ _firewall_rebuild_refresh_boot_projection() {
         echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT refreshed" >&2
         echo failed; return 0
     fi
-    if ! nftban_master_switch_on; then
+    local _ms_rc=0
+    nftban_master_switch_on || _ms_rc=$?
+    if [[ $_ms_rc -eq 2 ]]; then
+        # v1.235 K2: an INVALID choice publishes nothing (the last published projection stays).
+        echo "ERROR: NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)) — boot projection NOT refreshed; set it to true or false" >&2
+        echo failed; return 0
+    fi
+    if [[ $_ms_rc -ne 0 ]]; then
         if nftban_boot_projection_publish_inert "$bp" >&2; then
             echo "WARNING: NFTBan is DISABLED (stored choice): the rules just loaded apply until the next reboot only; boot projection kept INERT. Run 'nftban enable' to make them persistent." >&2
             echo refreshed; return 0

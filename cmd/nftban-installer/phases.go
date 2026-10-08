@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/configloader"
 	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
@@ -117,11 +118,17 @@ type phaseData struct {
 	lifecycleResolved bool
 	nftbanDisabled    bool
 	bypassActive      bool
+	// v1.235 K2: NFTBAN_ENABLED declared with a value that is neither on nor off. Nothing
+	// switch-dependent changes (no rule load, no unit change, no boot projection publish).
+	switchInvalid     bool
+	switchInvalidWhat string
 }
 
 // enforcementSkipped reports whether this run must not touch the firewall or
 // start/enable NFTBan units (disabled stored choice or emergency bypass).
-func (pd *phaseData) enforcementSkipped() bool { return pd.bypassActive || pd.nftbanDisabled }
+func (pd *phaseData) enforcementSkipped() bool {
+	return pd.bypassActive || pd.nftbanDisabled || pd.switchInvalid
+}
 
 // skipReason is the operator-facing terminal reason for a run that skipped
 // enforcement. Empty when enforcement was not skipped.
@@ -129,6 +136,8 @@ func (pd *phaseData) skipReason() string {
 	switch {
 	case pd.bypassActive:
 		return "EMERGENCY BYPASS ACTIVE (kernel nftban=disabled): files updated, no rules loaded, no units started; reboot without the parameter"
+	case pd.switchInvalid:
+		return "NFTBAN_ENABLED is INVALID (" + pd.switchInvalidWhat + "): files updated; no rules loaded, no units changed, boot projection NOT published — set it to true or false"
 	case pd.nftbanDisabled:
 		return "NFTBan is disabled (stored choice): files updated; firewall not applied — run 'nftban enable'"
 	}
@@ -146,14 +155,20 @@ func resolveLifecycleMode(exec executor.Executor, pd *phaseData, log *logging.Lo
 	}
 	pd.lifecycleResolved = true
 	pd.bypassActive = services.EmergencyBypassActive(exec)
-	on, known := services.MasterSwitchOn(exec, fhs.EtcDir)
+	st, raw, file, known := services.MasterSwitchState(exec, fhs.EtcDir)
 	if !known {
 		log.Warn("stored master switch NFTBAN_ENABLED could not be read — proceeding as ENABLED (pre-v1.235 behaviour)")
 	}
-	pd.nftbanDisabled = known && !on
+	pd.nftbanDisabled = known && st == configloader.SwitchOff
+	pd.switchInvalid = known && st == configloader.SwitchInvalid
+	if pd.switchInvalid {
+		pd.switchInvalidWhat = "NFTBAN_ENABLED=" + raw + " in " + file
+	}
 	switch {
 	case pd.bypassActive:
 		log.Warn("EMERGENCY BYPASS ACTIVE (kernel parameter nftban=disabled): this run updates files only — no rule load, no render-boot, no unit start/enable, nftables.service untouched")
+	case pd.switchInvalid:
+		log.Error("%s", pd.skipReason())
 	case pd.nftbanDisabled:
 		log.Info("NFTBan is DISABLED (stored choice NFTBAN_ENABLED=false): this run updates files and keeps the boot projection inert — no rule load, no unit start/enable, nftables.service untouched")
 	}
@@ -483,6 +498,10 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	switch {
 	case pd.bypassActive:
 		log.Warn("boot projection NOT published: EMERGENCY BYPASS ACTIVE (projection is bind-mounted inert for this boot)")
+		pd.bootProjectionReady = false
+	case pd.switchInvalid:
+		// K2: neither active nor inert is published; the last published projection stays.
+		log.Error("boot projection NOT published: %s", pd.skipReason())
 		pd.bootProjectionReady = false
 	case pd.nftbanDisabled:
 		if err := switchop.RenderBootInert(exec, log); err != nil {
@@ -1113,7 +1132,14 @@ func validateDisabledRun(exec executor.Executor, sf *state.StateFile, log *loggi
 	}
 	opts := validate.AssertionOpts{}
 	opts.SystemdPayloadInputs = pd.inject.payload()
-	results := validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
+	var results []validate.AssertionResult
+	if pd.switchInvalid {
+		// K2: the disabled invariants assume a valid choice; an INVALID one is reported as
+		// what it is, so the run ends DEGRADED and never COMMITTED.
+		results = []validate.AssertionResult{{Name: "NFTBAN_ENABLED has a valid value", Passed: false, Detail: pd.switchInvalidWhat}}
+	} else {
+		results = validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
+	}
 
 	validate.SetImmutableFlags(exec, log)
 

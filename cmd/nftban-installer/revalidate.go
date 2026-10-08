@@ -159,7 +159,12 @@ func runRevalidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 			mode = validate.ModeEmergencyBypass
 		}
 		log.Info("revalidate: %s — checking the disabled invariants", rvPD.skipReason())
-		results = validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
+		if rvPD.switchInvalid {
+			// K2: never an empty (vacuously passing) result for an INVALID choice.
+			results = []validate.AssertionResult{{Name: "NFTBAN_ENABLED has a valid value", Passed: false, Detail: rvPD.switchInvalidWhat}}
+		} else {
+			results = validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
+		}
 	} else {
 		results = validate.RunAssertionsWithOpts(exec, sshPort, log, opts)
 	}

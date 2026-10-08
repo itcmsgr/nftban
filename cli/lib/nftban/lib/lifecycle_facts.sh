@@ -66,7 +66,12 @@ nftban_lifecycle_collect() {
     LF_STORED=UNKNOWN
     if declare -F nftban_master_switch_on >/dev/null 2>&1; then
         rc="$(_nftban_lf_rc nftban_master_switch_on)"
-        case "$rc" in 0) LF_STORED=enabled ;; 1) LF_STORED=disabled ;; esac
+        case "$rc" in
+            0) LF_STORED=enabled ;;
+            1) LF_STORED=disabled ;;
+            # v1.235 K2: INVALID is reported as such, never as enabled/disabled.
+            2) LF_STORED="INVALID ($(nftban_master_switch_invalid_text 2>/dev/null)) — set it to true or false" ;;
+        esac
     fi
 
     # --- per-boot emergency bypass (contract §3/§6) ---------------------------------------
@@ -247,6 +252,10 @@ nftban_lifecycle_collect() {
                 fi
             fi
             [[ "$LF_PROJECTION" == active && "$LF_TABLES" == absent ]] && LF_NOTES+=("DIVERGENCE: stored disabled, projection active (NFTBan rules would load at reboot)") ;;
+        INVALID*)
+            # v1.235 K2: nothing switch-dependent changes while the value is invalid; the boot
+            # loads whatever projection was last published.
+            LF_NOTES+=("DIVERGENCE: NFTBAN_ENABLED is INVALID: rules, units and the boot projection are NOT changed until it is set to true or false; the next boot loads the last published projection (${LF_PROJECTION})") ;;
         *) LF_NOTES+=("UNKNOWN: stored choice not read; lifecycle consistency cannot be evaluated") ;;
     esac
     [[ "$LF_TABLES" == UNKNOWN ]] && LF_NOTES+=("UNKNOWN: kernel tables not read")
