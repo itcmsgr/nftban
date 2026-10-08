@@ -464,7 +464,7 @@ else ko "E7 scriptlet switch decision"; fi
 _k14=$(grep -rnE '(echo|printf).*nft flush ruleset' "$LIBDIR" --include='*.sh' 2>/dev/null \
        | grep -v '/tests/' | grep -viE 'NOT|never|do not|don.t' || true)
 if [[ -z "$_k14" ]]; then ok "E8 no operator text advises 'nft flush ruleset'"
-else ko "E8 operator text advises 'nft flush ruleset': $(printf '%s' "$_k14" | head -c 300)"; fi
+else ko "E8 operator text advises 'nft flush ruleset': ${_k14:0:300}"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"
