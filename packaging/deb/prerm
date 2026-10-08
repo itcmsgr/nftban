@@ -485,14 +485,14 @@ nftban_forward_unmanaged_preflight() {
     _nfw_rules=$(nftban_forward_unmanaged_rules) || _nfw_rc=$?
     if [ "$_nfw_rc" -ne 0 ]; then
         [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ] && { echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: proceeding despite an UNKNOWN forward chain." >&2; return 0; }
-        echo "nftban: upgrade STOPPED before any change by this package (forward chain UNKNOWN)." >&2
+        echo "nftban: install/upgrade STOPPED before any change by this package (forward chain UNKNOWN: the kernel could not be read, so NFTBan cannot prove there is nothing to preserve)." >&2
         return 1
     fi
     [ -n "$_nfw_rules" ] || return 0
     _nfw_plan_rc=0
     _nfw_plan=$(nftban_forward_migration_plan "$_nfw_rules") || _nfw_plan_rc=$?
     _nfw_id=$(nftban_forward_plan_id "$_nfw_plan")
-    echo "nftban: the nftban forward chain holds rules NFTBan did not create; the rebuild after this upgrade would ERASE them." >&2
+    echo "nftban: the nftban forward chain holds rules NFTBan did not create; the rebuild after this install/upgrade would ERASE them." >&2
     echo "nftban: migration plan $_nfw_id (old rule -> stored record; every DIFF changes behaviour):" >&2
     printf '%s\n' "$_nfw_plan" | sed 's/^/    /' >&2
     if [ "$_nfw_plan_rc" -eq 0 ] && [ "${NFTBAN_FORWARD_MIGRATE:-}" = "$_nfw_id" ]; then
@@ -500,21 +500,21 @@ nftban_forward_unmanaged_preflight() {
             echo "nftban: plan $_nfw_id approved and recorded in ${NFTBAN_CONFIG_DIR:-/etc/nftban}/forward.d/forward.conf; continuing." >&2
             return 0
         fi
-        echo "nftban: upgrade STOPPED before any change by this package." >&2
+        echo "nftban: install/upgrade STOPPED before any change by this package." >&2
         return 1
     fi
     if [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ]; then
         echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: the administrator accepts the loss of the rules above; continuing." >&2
         return 0
     fi
-    echo "nftban: upgrade STOPPED before any change by this package; the installed version and the live rules are untouched." >&2
+    echo "nftban: install/upgrade STOPPED before any change by this package; the installed version (if any) and the live rules are untouched." >&2
     if [ "$_nfw_plan_rc" -ne 0 ]; then
         echo "nftban: at least one rule has no safe equivalent (UNMAPPED above): it cannot be migrated automatically." >&2
     elif [ -n "${NFTBAN_FORWARD_MIGRATE:-}" ]; then
         echo "nftban: NFTBAN_FORWARD_MIGRATE='${NFTBAN_FORWARD_MIGRATE}' does not match this plan ($_nfw_id): review the plan above." >&2
     else
-        echo "nftban: to approve EXACTLY this plan (including every DIFF), repeat the upgrade with:" >&2
-        echo "nftban:     NFTBAN_FORWARD_MIGRATE=$_nfw_id <your package upgrade command>" >&2
+        echo "nftban: to approve EXACTLY this plan (including every DIFF), repeat the install/upgrade with:" >&2
+        echo "nftban:     NFTBAN_FORWARD_MIGRATE=$_nfw_id <your package install/upgrade command>" >&2
     fi
     return 1
 }
