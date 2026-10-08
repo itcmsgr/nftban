@@ -220,6 +220,45 @@ assert_contains "$T8F" "Usage: nftban whitelist add"             "T8.7 add with 
 # ---------------------------------------------------------------------------
 echo; echo "================================================="
 echo "Results: PASS=$PASS  FAIL=$FAIL"
+# ---------------------------------------------------------------------------
+# K11 (audit, v1.235; owner 2026-10-08): runtime `whitelist add` keeps its meaning (a whitelisted IP
+# loses its NFTBan ban), but the whitelist is added and CONFIRMED FIRST; a failed or unconfirmed
+# whitelist never leaves the IP without its ban. Drives the REAL nftban_whitelist_add_ip.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- K11 runtime add: whitelist first, ban removed only after it is confirmed ---"
+K11LIB="$SANDBOX/k11lib"; K11LOG="$SANDBOX/k11.log"
+mkdir -p "$K11LIB/bin"
+printf '#!/bin/sh\necho "UNBAN $2" >> "%s"\nexit 0\n' "$K11LOG" > "$K11LIB/bin/nftban-core"; chmod +x "$K11LIB/bin/nftban-core"
+k11(){  # IPC_RC WL_PRESENT -> runs `nftban_whitelist_add_ip 198.51.100.9` on an IP banned in blacklist_manual_ipv4
+    : > "$K11LOG"
+    ( set +e
+      export NFTBAN_LIB_DIR="$K11LIB" K11LOG IPC_RC="$1" WL_PRESENT="$2"
+      nftban_validate_ip()   { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+      nftban_validate_cidr() { return 1; }
+      nftban_ipc_check_or_emergency() { return 0; }
+      nft_ipc_add_element() { echo "IPC_ADD ${2-} ${3-}" >> "$K11LOG"; return "$IPC_RC"; }
+      nft() {   # only `nft get element <fam> <table> <set> {...}` is reached
+          case "${5-}" in
+              blacklist_manual_ipv4) return 0 ;;
+              whitelist_ipv4) [[ "$WL_PRESENT" == 1 ]] && return 0; return 1 ;;
+              *) return 1 ;;
+          esac
+      }
+      eval "$(awk '/^nftban_whitelist_add_ip\(\) \{/{c=1} c{print} c&&/^}/{exit}' "$WL_SRC")"
+      nftban_whitelist_add_ip 198.51.100.9
+    ) 2>&1
+}
+out=$(k11 1 0); rc=$?
+assert_not_contains "$(cat "$K11LOG")" "UNBAN" "K11a whitelist add FAILED -> the ban is not removed"
+assert_contains "$out" "its ban is KEPT" "K11a failure message says the ban is kept"
+out=$(k11 0 1)
+assert_eq "$(grep -n -m1 'IPC_ADD' "$K11LOG" | cut -d: -f1) < $(grep -n -m1 'UNBAN' "$K11LOG" | cut -d: -f1)" "1 < 2" "K11b confirmed whitelist -> ban removed AFTER the whitelist add (order)"
+assert_contains "$out" "NOT restored when the whitelist ends" "K11b output says what was removed and that it is not restored"
+out=$(k11 0 0)
+assert_not_contains "$(cat "$K11LOG")" "UNBAN" "K11c whitelist not confirmed in the kernel -> ban KEPT"
+: "$rc"
+
 if [[ $FAIL -gt 0 ]]; then
     echo "Failed tests:"; for t in "${FAILED_TESTS[@]}"; do echo "  - $t"; done
     exit 1
